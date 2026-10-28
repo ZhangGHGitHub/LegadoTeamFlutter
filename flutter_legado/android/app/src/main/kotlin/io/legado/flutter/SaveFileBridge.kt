@@ -53,16 +53,26 @@ import java.io.IOException
  *    目标 `RELATIVE_PATH`（`raw:`/`primary:` 路径、`msf:` 走 MediaStore.Files
  *    按 `_id` 查询、数字 id 走显示名查询），推导不出时**明确报错**，
  *    绝不静默写「下载」根；
- * 6. **严格读回校验（P2-1）**：MediaStore 回退写入后 SIZE 必须与实际写入
- *    字节数精确相等且首 [HEAD_VERIFY_BYTES] 字节一致（参照 StorageBridge
- *    `verifyWritten`），读不到（-1/异常）即判失败并清理本次 insert 行；
+ * 6. **严格读回校验（P2-1）**：目录树与 MediaStore 回退写入后 SIZE 必须与
+ *    实际写入字节数精确相等且首 [HEAD_VERIFY_BYTES] 字节一致；
+ *    [P1-1] provider 不报 SIZE（null/负数）时**降级为全文读取字节数比对**
+ *    （见 [verifyReadback]），只有已知且确实不等才判失败并清理，绝不把
+ *    刚写成功的文件误删；
  * 7. **失败清理安全（P2-2/P2-4）**：open 前查询文档大小（COLUMN_SIZE），
  *    仅 0 字节文档（本次新建/截断，或 CREATE_DOCUMENT 刚建的空文档）允许
  *    删除；`preSize > 0`（用户选择「替换」的已有文件）失败只报错不删；
- * 8. 持久化 URI 授权仅在 take 成功时回收（最小权限）；
- * 9. 用户取消（RESULT_CANCELED）回 `result.success(null)`；RESULT_OK 但
+ * 8. [P2-2] 目录选择结果只按系统**实际授予**的 flags 取持久授权：无
+ *    WRITE 或 take 失败时**不记住目录**并回 `TREE_NOT_WRITABLE`
+ *    （中文「该文件夹不可写，请换一个」），避免只读目录每次保存循环失败；
+ * 9. 持久化 URI 授权仅在 take 成功时回收（最小权限）；目录失效清除记录
+ *    （[clearTree]）时按记录 URI 释放 READ|WRITE 持久授权，避免 grant 累积；
+ * 10. 用户取消（RESULT_CANCELED）回 `result.success(null)`；RESULT_OK 但
  *    无 URI 回 `NO_URI` 错误（P3-3）；等待结果超过 5 分钟复位 pending
  *    （P3-3），超时后迟到的回调写日志而非静默丢弃（P3-6）。
+ * 11. [P3-1] `createDocument` 按 Android SAF 常规行为视为**本次新建**文档
+ *     （同名时 provider 自动改名而非返回已有文档），失败清理只删该文档；
+ *     该假设同时记录在 Dart 通道契约
+ *     `flutter_legado/lib/src/services/file_save_channel.dart`。
  *
  * 支持方法：
  * - `saveFile`: 参数 {fileName: String, bytes: ByteArray|List<Int>, mimeType: String?,
@@ -133,6 +143,9 @@ class SaveFileBridge {
         /** 读回校验比对的头部字节数（与 StorageBridge 同口径） */
         private const val HEAD_VERIFY_BYTES = 8
 
+        /** SIZE 未知时全文扫描的缓冲大小（P1-1） */
+        private const val VERIFY_SCAN_BUFFER_BYTES = 8 * 1024
+
         /**
          * 主存储「下载」根的绝对路径前缀（含 `/sdcard` 等历史别名）。
          * 仅主存储；外置 SD 卡（`/storage/XXXX-XXXX/...`）无法用
@@ -175,6 +188,31 @@ class SaveFileBridge {
         /** 调用方声明的 MIME 优先，缺失/空白时按扩展名推断 */
         internal fun resolveMimeType(fileName: String, declared: String?): String =
             declared?.takeIf { it.isNotBlank() } ?: mimeTypeOf(fileName)
+
+        /**
+         * 从目录选择结果 Intent 的 flags 中提取可持久化的读写授权位（P2-2）。
+         *
+         * 只使用系统**实际授予**的位：硬编码 READ|WRITE 会在只读目录上
+         * 申请到不存在的写授权（take 失败后仍记住目录 → 每次保存循环
+         * 失败），也可能多拿不需要的权限。
+         */
+        internal fun persistableFlags(intentFlags: Int): Int =
+            intentFlags and (
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+
+        /** 目录树必须拿到写授权才能记住并写入（P2-2） */
+        internal fun hasWriteGrant(flags: Int): Boolean =
+            flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
+
+        /**
+         * 目录选择结果是否可被记住（P2-2 纯函数）：null = 可记住，
+         * 否则返回面向用户的错误码。无写授权直接判不可写，绝不写入
+         * 「已记住」记录。
+         */
+        internal fun treeGrantErrorCode(intentFlags: Int): String? =
+            if (hasWriteGrant(persistableFlags(intentFlags))) null else "TREE_NOT_WRITABLE"
 
         /**
          * 参数校验纯函数（JVM 单测覆盖）：返回错误码，null 表示通过。
@@ -446,13 +484,55 @@ class SaveFileBridge {
         }
 
         /**
-         * 读回大小是否通过严格校验（P2-1 纯函数）。
+         * 读回大小是否通过严格校验（旧 `useTree=false` 链路告警口径）。
          *
-         * 读不到（null）或 provider 报不可知（负数）一律判失败；读到的大小
-         * 必须与实际写入字节数精确相等。
+         * 读不到（null）或 provider 报不可知（负数）一律视为异常并记 W
+         * 日志，但旧链路**返回成功不删除**（文件可能已写入）。目录树链路
+         * 改用 [readbackSizeVerdict] / [verifyReadback]：SIZE 未知时降级
+         * 为全文扫描，绝不因 provider 不报 SIZE 就删掉刚写成功的文件。
          */
         internal fun isReadbackSizeValid(expected: Int, actual: Long?): Boolean =
             actual != null && actual >= 0L && actual == expected.toLong()
+
+        /** 读回 SIZE 判定（P1-1 纯函数，枚举放在类层级以便测试直接引用） */
+        internal fun readbackSizeVerdict(
+            expected: Int,
+            actual: Long?
+        ): ReadbackSizeVerdict = when {
+            actual == null || actual < 0L -> ReadbackSizeVerdict.UNKNOWN
+            actual == expected.toLong() -> ReadbackSizeVerdict.MATCH
+            else -> ReadbackSizeVerdict.MISMATCH
+        }
+
+        /**
+         * 读回校验结论（P1-1 纯函数）：null = 通过，非 null = 失败原因。
+         *
+         * - SIZE 已知且不等 → 失败（不读取内容）；
+         * - SIZE 已知且相等 → 只校验首字节；
+         * - SIZE 未知（null/负数）→ 用 [scannedLength]（openInputStream
+         *   全文读取的字节数）替代 SIZE，仍须与写入长度相等且首字节一致。
+         *
+         * 该函数是 P1-1 的判定核心：修复前 null/负数直接判失败，导致
+         * provider 不报 SIZE 时刚写成功的文件被误删。
+         */
+        internal fun verifyReadback(
+            expected: Int,
+            declaredSize: Long?,
+            scannedLength: Long?,
+            headMatches: Boolean
+        ): String? = when (readbackSizeVerdict(expected, declaredSize)) {
+            ReadbackSizeVerdict.MISMATCH ->
+                "读回大小校验失败：期望 $expected，实际 $declaredSize"
+            ReadbackSizeVerdict.MATCH ->
+                if (headMatches) null else "读回首字节不一致"
+            ReadbackSizeVerdict.UNKNOWN -> when {
+                scannedLength == null -> "读回内容长度不可知"
+                scannedLength != expected.toLong() ->
+                    "读回内容长度校验失败：期望 $expected，实际 $scannedLength"
+                !headMatches -> "读回首字节不一致"
+                else -> null
+            }
+        }
 
         /** 错误码 → 面向用户的中文短句（P2-3；Dart 侧 `_friendlyReason` 同口径） */
         internal fun reasonOf(code: String): String = when (code) {
@@ -466,6 +546,7 @@ class SaveFileBridge {
             "SAVE_VERIFY_FAILED" -> "写入校验失败，文件未保存，请重试或换一个文件夹"
             "TREE_UNAVAILABLE" -> "保存文件夹不可用，请重新选择文件夹后重试"
             "TREE_WRITE_FAILED" -> "无法写入所选文件夹，请换一个文件夹重试"
+            "TREE_NOT_WRITABLE" -> "该文件夹不可写，请换一个"
             "TREE_UNSUPPORTED" -> "当前系统不支持选择文件夹，请改用系统另存对话框"
             "FALLBACK_PATH_UNKNOWN" ->
                 "无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试"
@@ -476,6 +557,13 @@ class SaveFileBridge {
         }
     }
 
+    /**
+     * 读回 SIZE 判定（P1-1 纯函数）：null/负数（SAF 允许 provider 不报
+     * 大小）→ UNKNOWN，调用方必须降级为内容扫描；只有已知且确实不相等
+     * 才算 MISMATCH。定义在类层级便于 JVM 单测直接引用。
+     */
+    internal enum class ReadbackSizeVerdict { MATCH, MISMATCH, UNKNOWN }
+
     private var pendingResult: MethodChannel.Result? = null
     private var pendingActivity: Activity? = null
     private var pendingBytes: ByteArray? = null
@@ -485,8 +573,13 @@ class SaveFileBridge {
     /** 本次 pending 是否只是选目录（`chooseTree`），不写字节 */
     private var pendingPickOnly = false
 
-    /** 已记住目录的直接写入进行中（无系统对话框，无需 pending 超时） */
-    private var directWriteInFlight = false
+    /**
+     * 后台写流进行中（目录树直存 / 旧 CREATE_DOCUMENT 链路共用）。
+     *
+     * 旧链路在 `onActivityResult` 入口已清除 pending，若无该标志，后台
+     * 写线程期间 `isBusy()` 会短暂返回 false，允许并发另存（P3-3）。
+     */
+    private var writeInFlight = false
 
     /** P3-6：是否刚发生过超时（用于区分「迟到的结果」与「无主的回调」） */
     private var timedOutPending = false
@@ -520,8 +613,8 @@ class SaveFileBridge {
         }
     }
 
-    /** 是否已有请求在途（含目录树直接写入） */
-    private fun isBusy(): Boolean = pendingResult != null || directWriteInFlight
+    /** 是否已有请求在途（含目录树直存与旧链路后台写流） */
+    private fun isBusy(): Boolean = pendingResult != null || writeInFlight
 
     /**
      * 启动系统另存（批26：目录树优先）
@@ -599,7 +692,7 @@ class SaveFileBridge {
         mimeType: String,
         allowRepick: Boolean
     ) {
-        directWriteInFlight = true
+        writeInFlight = true
         Thread {
             // 最外层兜底（含 Error）：后台线程任何逃逸异常都不能让 Dart
             // Future 永久挂起
@@ -610,7 +703,7 @@ class SaveFileBridge {
                 WriteOutcome(code = "TREE_WRITE_FAILED", detail = technicalDetail(t))
             }
             mainHandler.post {
-                directWriteInFlight = false
+                writeInFlight = false
                 if (outcome.saved != null) {
                     result.success(outcome.saved.toMap())
                     return@post
@@ -794,7 +887,19 @@ class SaveFileBridge {
             replyError(result, "SAVE_FAILED", "pending 请求参数已丢失（activity）")
             return
         }
-        val tree = persistTree(activity, treeUri)
+        // P2-2：只按系统实际授予的 flags 取持久授权；无 WRITE 或 take 失败
+        // 不记住目录，直接回「该文件夹不可写，请换一个」。
+        val persisted = persistTree(activity, treeUri, data?.flags ?: 0)
+        val tree = persisted.tree
+        if (tree == null) {
+            replyError(
+                result,
+                persisted.code ?: "TREE_NOT_WRITABLE",
+                persisted.detail,
+                treeUri
+            )
+            return
+        }
         if (pickOnly) {
             result.success(tree.toMap())
             return
@@ -837,7 +942,10 @@ class SaveFileBridge {
             return
         }
 
-        // 写流 + 授权回收全部在后台线程，主线程只负责回 result
+        // 写流 + 授权回收全部在后台线程，主线程只负责回 result。
+        // P3-3：pending 已清除，用 writeInFlight 让后台写期间的 isBusy
+        // 与目录树直存保持同一口径（拒绝并发另存）。
+        writeInFlight = true
         Thread {
             // 最外层兜底（含 Error）：后台线程任何逃逸异常都不能让 Dart
             // Future 永久挂起（pending 已在回调入口清除，5 分钟超时不再生效）
@@ -848,6 +956,7 @@ class SaveFileBridge {
                 WriteOutcome(code = "SAVE_FAILED", detail = technicalDetail(t))
             }
             mainHandler.post {
+                writeInFlight = false
                 reportWriteOutcome(result, outcome, uri)
             }
         }.start()
@@ -927,12 +1036,27 @@ class SaveFileBridge {
         )
     }
 
+    /**
+     * 目录树持久授权结果（P2-2）：[tree] 非 null 表示已记住；
+     * 否则 [code]/[detail] 说明为何不能记住（不写入 prefs）。
+     */
+    private class TreePersistResult(
+        val tree: TreeRecord? = null,
+        val code: String? = null,
+        val detail: String? = null
+    )
+
     /** 读回校验失败（区分普通 IO 失败，便于回 SAVE_VERIFY_FAILED） */
     private class VerifyException(message: String) : IOException(message)
 
     /**
      * 目录树内建文件 + 写入 + 严格读回（批26 主路径，对齐原版
      * `DocumentFile.fromTreeUri(...).createFile(...).writeBytes(...)`）。
+     *
+     * [P3-1] `createDocument` 按 Android SAF 常规行为返回**本次新建**的
+     * 文档（同名时 provider 自动追加 ` (N)`，而不是返回已有文档）；本方法
+     * 的失败清理因此只删 `created`，不会误删目录中的其他文件。该假设
+     * 同步记录在 Dart 通道契约 `file_save_channel.dart` 的 `saveFile` 注释。
      *
      * 失败清理规则：**只删除本次 createDocument 创建的那个文档**
      * （`created`），绝不碰目录里的其他文件；树授权内删除可用，因此
@@ -1019,18 +1143,43 @@ class SaveFileBridge {
     }
 
     /**
-     * 记住用户选择的目录树（并尽量取持久授权）。
+     * 记住用户选择的目录树（并申请持久授权）。
      *
-     * 持久授权失败（个别 ROM/第三方 provider 不支持）只记日志：本次保存
-     * 仍可用临时授权完成；下次保存会因目录不可用而重新弹选择器。
+     * [P2-2] `intentFlags` 必须是系统回传的 `Intent.flags`：只取实际授予的
+     * READ/WRITE 位。无写授权或 `takePersistableUriPermission` 失败时
+     * **不写入 prefs**，返回 `TREE_NOT_WRITABLE`（中文「该文件夹不可写，
+     * 请换一个」）——否则只读目录会被记住，之后每次保存都循环失败。
+     *
+     * 换目录成功时释放旧目录的持久授权，避免 grant 累积。
      */
-    private fun persistTree(activity: Activity, treeUri: Uri): TreeRecord {
-        val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    private fun persistTree(
+        activity: Activity,
+        treeUri: Uri,
+        intentFlags: Int
+    ): TreePersistResult {
+        val takeFlags = persistableFlags(intentFlags)
+        val grantError = treeGrantErrorCode(intentFlags)
+        if (grantError != null) {
+            Log.w(
+                TAG,
+                "目录选择结果无写授权，未记住目录：uri=$treeUri, " +
+                    "intentFlags=0x${Integer.toHexString(intentFlags)}"
+            )
+            return TreePersistResult(
+                code = grantError,
+                detail = "系统未授予写权限（intentFlags=" +
+                    "0x${Integer.toHexString(intentFlags)}）"
+            )
+        }
         try {
             activity.contentResolver.takePersistableUriPermission(treeUri, takeFlags)
         } catch (e: Exception) {
-            Log.w(TAG, "takePersistableUriPermission 失败（仅本次临时授权）：${e.message}")
+            Log.w(TAG, "takePersistableUriPermission 失败（不记住目录）：${e.message}")
+            return TreePersistResult(
+                code = "TREE_NOT_WRITABLE",
+                detail = "无法取得持久写入授权：" +
+                    (e.message ?: e.javaClass.simpleName)
+            )
         }
         val documentId = try {
             DocumentsContract.getTreeDocumentId(treeUri)
@@ -1042,14 +1191,7 @@ class SaveFileBridge {
         // 换目录时释放旧目录的持久授权，避免授权累积
         val previous = readTree(activity)
         if (previous != null && previous.uri != treeUri.toString()) {
-            try {
-                activity.contentResolver.releasePersistableUriPermission(
-                    Uri.parse(previous.uri),
-                    takeFlags
-                )
-            } catch (e: Exception) {
-                Log.w(TAG, "释放旧目录持久授权失败：${e.message}")
-            }
+            releaseTreePermission(activity.contentResolver, previous.uri, "换目录")
         }
         activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -1061,11 +1203,18 @@ class SaveFileBridge {
             TAG,
             "已记住保存目录：uri=$treeUri, display=$displayPath, authority=${treeUri.authority}"
         )
-        return TreeRecord(treeUri.toString(), displayPath, treeUri.authority)
+        return TreePersistResult(
+            tree = TreeRecord(treeUri.toString(), displayPath, treeUri.authority)
+        )
     }
 
     /** 清除记住的目录（目录失效时调用，下次保存重新弹选择器） */
     private fun clearTree(context: Context) {
+        // P2-1：目录失效/换目录失败时清除记录，同时释放该 URI 的持久
+        // 授权，避免反复失效累积 grant（`dumpsys uri_grants` 可核对）。
+        readTree(context)?.let { previous ->
+            releaseTreePermission(context.contentResolver, previous.uri, "清除记住目录")
+        }
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .remove(KEY_TREE_URI)
@@ -1073,6 +1222,27 @@ class SaveFileBridge {
             .remove(KEY_TREE_AUTHORITY)
             .apply()
         Log.i(TAG, "已清除记住的保存目录")
+    }
+
+    /**
+     * 释放目录树的持久授权（READ|WRITE，失败只记日志）。
+     *
+     * 与 [clearTree] / 换目录共用；个别 ROM 未持有对应授权位时会抛
+     * SecurityException，属于预期情况，不影响业务。
+     */
+    private fun releaseTreePermission(
+        resolver: ContentResolver,
+        treeUri: String,
+        scene: String
+    ) {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            resolver.releasePersistableUriPermission(Uri.parse(treeUri), flags)
+            Log.i(TAG, "已释放目录持久授权（$scene）：$treeUri")
+        } catch (e: Exception) {
+            Log.w(TAG, "释放目录持久授权失败（$scene）：${e.message}")
+        }
     }
 
     /** 错误回传带的 URI（记录损坏时为 null，不影响结构化错误） */
@@ -1468,17 +1638,26 @@ class SaveFileBridge {
     }
 
     /**
-     * 严格读回校验（P2-1，参照 StorageBridge.verifyWritten）。
+     * 严格读回校验（P2-1 / P1-1，参照 StorageBridge.verifyWritten）。
      *
-     * 目录树与 MediaStore 回退共用：两项须同时成立，任一失败抛
-     * [VerifyException]：
-     * 1. 查询到的 SIZE 与实际写入字节数精确相等（读不到/负数同样失败）；
-     * 2. openInputStream 读回首 [HEAD_VERIFY_BYTES] 字节（不足则全量）一致。
+     * 目录树与 MediaStore 回退共用：
+     * 1. SIZE 已知且 `!=` 写入字节数 → 直接抛 [VerifyException]；
+     * 2. SIZE 已知且相等 → 只校验首 [HEAD_VERIFY_BYTES] 字节（不足则全量）；
+     * 3. SIZE 未知（null/负数，SAF 允许 provider 不报大小）→ **降级为
+     *    openInputStream 全文读取**：用实际读到的字节数替代 SIZE，仍须与
+     *    写入长度精确相等且首字节一致。
+     *
+     * 修复前 null/负数被 `isReadbackSizeValid` 直接判失败，provider 不报
+     * SIZE 时刚写成功的文件随后被 `writeViaTree` 的失败清理删除。
      */
     private fun verifyWritten(resolver: ContentResolver, uri: Uri, bytes: ByteArray) {
-        val size = queryDocumentSize(resolver, uri)
-        if (!isReadbackSizeValid(bytes.size, size)) {
-            throw VerifyException("读回大小校验失败：期望 ${bytes.size}，实际 $size")
+        val declaredSize = queryDocumentSize(resolver, uri)
+        val verdict = readbackSizeVerdict(bytes.size, declaredSize)
+        // 只有「已知且确实不等」才立即失败；SIZE 未知继续做内容扫描
+        if (verdict == ReadbackSizeVerdict.MISMATCH) {
+            throw VerifyException(
+                "读回大小校验失败：期望 ${bytes.size}，实际 $declaredSize"
+            )
         }
         val headLen = minOf(HEAD_VERIFY_BYTES, bytes.size)
         if (headLen <= 0) return
@@ -1495,11 +1674,32 @@ class SaveFileBridge {
             if (total < headLen) {
                 throw VerifyException("读回字节不足：期望 $headLen，实际 $total")
             }
+            var headMatches = true
             for (i in 0 until headLen) {
                 if (head[i] != bytes[i]) {
-                    throw VerifyException("读回首 $headLen 字节不一致")
+                    headMatches = false
+                    break
                 }
             }
+            // P1-1：SIZE 未知时才需要读全文统计字节数（已知相等只看头部）
+            var scannedLength: Long? = null
+            if (verdict == ReadbackSizeVerdict.UNKNOWN) {
+                var consumed = total.toLong()
+                val buffer = ByteArray(VERIFY_SCAN_BUFFER_BYTES)
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    consumed += read
+                }
+                scannedLength = consumed
+            }
+            val failure = verifyReadback(
+                expected = bytes.size,
+                declaredSize = declaredSize,
+                scannedLength = scannedLength,
+                headMatches = headMatches
+            )
+            if (failure != null) throw VerifyException(failure)
         }
     }
 
@@ -1683,8 +1883,15 @@ class SaveFileBridge {
         )
     }
 
-    /** 释放 pending 请求（Activity 销毁时避免 Dart Future 永久挂起） */
+    /**
+     * 释放 pending 请求（Activity 销毁时避免 Dart Future 永久挂起）。
+     *
+     * [P3-2] 后台写线程无法在 dispose 内同步中断：这里保守复位
+     * [writeInFlight]，避免 Activity 重建后新实例误判「仍在忙」。
+     * 旧线程结束时会在主线程回调中再次置 false（幂等），不会影响新请求。
+     */
     fun dispose() {
+        writeInFlight = false
         val result = pendingResult
         clearPending()
         if (result != null) {
