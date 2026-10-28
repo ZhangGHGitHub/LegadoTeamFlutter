@@ -41,24 +41,45 @@ void main() {
   late ProviderContainer container;
   late Book dbBook;
 
+  /// 「DB 原始 readConfig JSON」的测试替身（批32b P2-2）
+  ///
+  /// Mock 的 Book 只有 Dart 建模字段，未建模键（`useGlobalAudioSkip` /
+  /// `tocExpanded` / `manualReplaceRuleIds`）必须放在这层才能验证「保留」：
+  /// - `updateBook`（整书快照写）用类型化 `ReadConfig.toJson()` **整体替换**
+  ///   → 未建模键丢失（旧路径的红）；
+  /// - `updateReadConfigField`（单键写）只 **合并目标键** → 未建模键保留（绿）。
+  late Map<String, dynamic> dbRawConfig;
+
   setUpAll(registerFallbacks);
 
   const String bookUrl = 'https://src.com/book/persist';
 
-  Book makeBook({bool reverseToc = false, bool reverseTocDisplay = false}) =>
-      Book(
-        bookUrl: bookUrl,
-        name: '持久化测试书',
-        author: '作者P',
-        origin: 'https://src.com',
-        totalChapterNum: 3,
-        durChapterIndex: 1,
-        durChapterTitle: '第二章',
-        readConfig: ReadConfig(
-          reverseToc: reverseToc,
-          reverseTocDisplay: reverseTocDisplay,
-        ),
-      );
+  Book makeBook({
+    String url = bookUrl,
+    String name = '持久化测试书',
+    String author = '作者P',
+    String origin = 'https://src.com',
+    String originName = '',
+    bool reverseToc = false,
+    bool reverseTocDisplay = false,
+    bool splitLongChapter = true,
+    bool? useReplaceRule,
+  }) => Book(
+    bookUrl: url,
+    name: name,
+    author: author,
+    origin: origin,
+    originName: originName,
+    totalChapterNum: 3,
+    durChapterIndex: 1,
+    durChapterTitle: '第二章',
+    readConfig: ReadConfig(
+      reverseToc: reverseToc,
+      reverseTocDisplay: reverseTocDisplay,
+      splitLongChapter: splitLongChapter,
+      useReplaceRule: useReplaceRule,
+    ),
+  );
 
   List<BookChapter> chapters() => const [
     BookChapter(url: 'u0', title: '第一章', index: 0, bookUrl: bookUrl),
@@ -74,9 +95,23 @@ void main() {
     );
     addTearDown(container.dispose);
     dbBook = makeBook();
+    dbRawConfig = {
+      'reverseToc': false,
+      'reverseTocDisplay': false,
+      'splitLongChapter': true,
+      'useReplaceRule': true,
+      'useGlobalAudioSkip': true,
+      'tocExpanded': {'0': true},
+      'manualReplaceRuleIds': [3, 5],
+    };
     when(() => mockApi.getBook(any())).thenAnswer((_) async => dbBook);
     when(() => mockApi.updateBook(any())).thenAnswer((invocation) async {
-      dbBook = invocation.positionalArguments.first as Book;
+      final book = invocation.positionalArguments.first as Book;
+      dbBook = book;
+      // 整书快照写：类型化模型整体替换原始 JSON（未建模键丢失 = 红）
+      dbRawConfig = Map<String, dynamic>.from(
+        book.readConfig?.toJson() ?? const <String, dynamic>{},
+      );
     });
     // [批32] 单键写：模拟 Rust 在 DB 侧只合并目标键（其余键保留）
     when(
@@ -85,12 +120,16 @@ void main() {
       final url = invocation.positionalArguments[0] as String;
       final key = invocation.positionalArguments[1] as String;
       final value = jsonDecode(invocation.positionalArguments[2] as String);
-      if (url != dbBook.bookUrl || value is! bool) return;
+      if (url != dbBook.bookUrl) return;
+      dbRawConfig[key] = value;
+      if (value is! bool) return;
       final cfg = dbBook.readConfig ?? const ReadConfig();
       dbBook = dbBook.copyWith(
         readConfig: switch (key) {
           'reverseToc' => cfg.copyWith(reverseToc: value),
           'reverseTocDisplay' => cfg.copyWith(reverseTocDisplay: value),
+          'splitLongChapter' => cfg.copyWith(splitLongChapter: value),
+          'useReplaceRule' => cfg.copyWith(useReplaceRule: value),
           _ => cfg,
         },
       );
@@ -234,6 +273,72 @@ void main() {
       isTrue,
       reason: '阅读器整书回写不得把目录页已落库的配置还原',
     );
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // [批32b P2-2 红→绿] 目录页另两处（拆分长章节 / 使用替换规则）也必须走单键写
+  //
+  // 红：这两项此前经 `_updateBook` → `updateBook` 整书快照写，类型化
+  // `ReadConfig.toJson()` 不含未建模键（useGlobalAudioSkip/tocExpanded/
+  // manualReplaceRuleIds），一次切换即把它们清空。
+  // 绿：改走 `updateReadConfigField` 后 DB 原始 JSON 只合并目标键，
+  // 未建模键原样保留；同时断言整书 `updateBook` 从未被调用。
+  testWidgets('批32b：拆分长章节/使用替换规则单键写，未建模键保留', (tester) async {
+    const localUrl = 'file:///books/local.txt';
+    final local = makeBook(
+      url: localUrl,
+      name: 'local.txt',
+      author: '',
+      origin: 'loc_book',
+      originName: 'local.txt',
+      splitLongChapter: true,
+      useReplaceRule: true,
+    );
+    dbBook = local;
+    // 预置未建模键（Dart ReadConfig 不建模）——旧路径切换后应被清空
+    dbRawConfig = {
+      'reverseToc': false,
+      'reverseTocDisplay': false,
+      'splitLongChapter': true,
+      'useReplaceRule': true,
+      'useGlobalAudioSkip': true,
+      'tocExpanded': {'0': true},
+      'manualReplaceRuleIds': [3, 5],
+    };
+    // 本地书需自备目录/标注/书签桩（setUp 桩按在线书 URL 注册）
+    when(() => mockApi.getChapters(localUrl)).thenAnswer((_) async => chapters());
+    when(
+      () => mockApi.highlightListByBook(bookUrl: localUrl),
+    ).thenAnswer((_) async => '[]');
+    when(
+      () => mockApi.getBookmarksByBook('local.txt', ''),
+    ).thenAnswer((_) async => const <Bookmark>[]);
+
+    await tester.pumpWidget(wrap(TocScreen(book: local)));
+    await settleInitial(tester);
+
+    await toggleMenuItem(tester, '拆分长章节');
+    expect(dbRawConfig['splitLongChapter'], isFalse, reason: '拆分长章节应落库');
+    expect(
+      dbRawConfig['useGlobalAudioSkip'],
+      isTrue,
+      reason: '未建模 useGlobalAudioSkip 必须原样保留',
+    );
+    expect(dbRawConfig['tocExpanded'], {'0': true}, reason: '未建模对象键必须保留');
+    expect(dbRawConfig['manualReplaceRuleIds'], [3, 5], reason: '未建模数组键必须保留');
+    expect(dbBook.readConfig?.splitLongChapter, isFalse);
+
+    await toggleMenuItem(tester, '使用替换规则');
+    expect(dbRawConfig['useReplaceRule'], isFalse, reason: '使用替换规则应落库');
+    expect(dbRawConfig['useGlobalAudioSkip'], isTrue);
+    expect(dbRawConfig['tocExpanded'], {'0': true});
+    expect(dbRawConfig['manualReplaceRuleIds'], [3, 5]);
+    expect(dbBook.readConfig?.useReplaceRule, isFalse);
+    expect(dbBook.readConfig?.splitLongChapter, isFalse, reason: '前一次单键写不得被覆盖');
+
+    // 整书快照写从未被调用：两项切换都走单键写
+    verifyNever(() => mockApi.updateBook(any()));
 
     await tester.pumpWidget(const SizedBox());
   });

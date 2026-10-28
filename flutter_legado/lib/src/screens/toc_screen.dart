@@ -711,11 +711,15 @@ class _TocScreenState extends ConsumerState<TocScreen>
         break;
       case 'splitLongChapter':
         // 拆分长章节存于 ReadConfig（参照 book_info_screen 已有实现）
+        // [批32b P2-2] 改走单键写：updateBook 整书快照写会清空 Dart 未建模的
+        // readConfig 键（useGlobalAudioSkip/tocExpanded/manualReplaceRuleIds）
         final cfg = _book.readConfig ?? const ReadConfig();
-        final updated = _book.copyWith(
-          readConfig: cfg.copyWith(splitLongChapter: !cfg.splitLongChapter),
+        final nextSplit = !cfg.splitLongChapter;
+        await _updateReadConfigField(
+          'splitLongChapter',
+          nextSplit,
+          (c) => c.copyWith(splitLongChapter: nextSplit),
         );
-        await _updateBook(updated);
         // 对齐原版 upBookAndToc：切换后需重载目录
         await _loadChapters();
         break;
@@ -749,12 +753,14 @@ class _TocScreenState extends ConsumerState<TocScreen>
         break;
       case 'useReplace':
         // 接 ReadConfig.useReplaceRule 字段经 BookApi 更新（对齐原版 menu_use_replace）
+        // [批32b P2-2] 同 splitLongChapter：单键持久化，保留未建模 readConfig 键
         final rc = _book.readConfig ?? const ReadConfig();
-        await _updateBook(_book.copyWith(
-          readConfig: rc.copyWith(
-            useReplaceRule: !(rc.useReplaceRule ?? true),
-          ),
-        ));
+        final nextReplace = !(rc.useReplaceRule ?? true);
+        await _updateReadConfigField(
+          'useReplaceRule',
+          nextReplace,
+          (c) => c.copyWith(useReplaceRule: nextReplace),
+        );
         break;
       case 'loadWordCount':
         // 本地持久化并即时刷新字数显隐（对齐原版 menu_load_word_count）
@@ -825,42 +831,20 @@ class _TocScreenState extends ConsumerState<TocScreen>
     }
   }
 
-  /// 经 BookApi 更新书籍并同步本页状态
+  /// 单键持久化 `readConfig` 并同步本页/阅读器状态（批32，契约 §2.2）
+  ///
+  /// [批32b P2-2] 目录页全部 readConfig 勾选项（`reverseToc` /
+  /// `reverseTocDisplay` / `splitLongChapter` / `useReplaceRule`）统一走单键写：
+  /// `updateBook` 是整书快照写，Dart `ReadConfig` 未建模的键
+  /// （`useGlobalAudioSkip`、`tocExpanded`、`manualReplaceRuleIds` 等）会在
+  /// Dart→Rust 往返中被清空；单键写在 DB 侧只合并目标键，其余键原样保留。
+  /// 本页仍用 [apply] 在内存快照上更新对应字段，保持 UI 即时响应。
   ///
   /// [批31b P1-1] 落库成功后若阅读器正打开同一本书，同步 ReaderNotifier 的
   /// `currentBook`（与 `reader_menu_panel._toggleReverseTocDisplay` 同构）：
   /// 阅读器持有的是打开时的 Book 快照，目录页改了 `readConfig` 后若不同步，
   /// 阅读器后续任何整书 `updateBook`（设置保存/进度回写等）都会用旧快照
   /// 把刚落库的配置还原。
-  Future<void> _updateBook(Book updated) async {
-    try {
-      await ref.read(bookApiProvider).updateBook(updated);
-      // 页面已关闭（勾选后立即返回）：跳过内存同步——阅读器返回时
-      // 会经 RouteAware.didPopNext 重读 DB（见 reader_screen.dart）
-      if (!mounted) return;
-      setState(() => _book = updated);
-      final readerState = ref.read(readerNotifierProvider);
-      if (readerState.currentBook?.bookUrl == updated.bookUrl) {
-        ref
-            .read(readerNotifierProvider.notifier)
-            .updateCurrentBook(updated);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('更新失败: ${_errMsg(e)}')),
-        );
-      }
-    }
-  }
-
-  /// 单键持久化 `readConfig` 并同步本页/阅读器状态（批32，契约 §2.2）
-  ///
-  /// 目录反转开关改走单键写（`updateReadConfigField`）：`updateBook` 是整书
-  /// 快照写，Dart `ReadConfig` 未建模的键（`useGlobalAudioSkip`、
-  /// `tocExpanded`、`manualReplaceRuleIds` 等）会在 Dart→Rust 往返中被清空；
-  /// 单键写在 DB 侧只合并目标键，其余键原样保留。本页仍用 [apply] 在内存
-  /// 快照上更新对应字段，保持 UI 即时响应。
   Future<void> _updateReadConfigField(
     String key,
     bool value,

@@ -29,9 +29,17 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
 
   /// 单键更新内存书的 `readConfig`（契约 §2.2，批32）
   ///
-  /// Mock 无原始 JSON 层，只能更新已建模字段；未建模键在 Mock 中本就不可见
-  /// （真实保留语义由 Rust `bookUpdateReadConfigField` 的 DB 侧合并保证）。
-  /// 书籍不存在 / 键名为空白 / `valueJson` 非法按真实实现同口径抛错。
+  /// 与真实实现的**语义偏差（批32b P3-4 登记，UI 测试不得依赖）**：
+  /// 1. Mock 无原始 JSON 层，只能更新 Dart 已建模字段；未建模键
+  ///    （`useGlobalAudioSkip`/`tocExpanded`/`manualReplaceRuleIds`）在 Mock
+  ///    中不可见，真实实现的「DB 侧合并保留」无法在此复现（UI 测试如需验证
+  ///    保留语义，应在测试内自建原始 JSON 替身，见
+  ///    `test/widget/toc_persistence_writeback_test.dart`）。
+  /// 2. 未知键在 Mock 为 no-op；真实实现会把任意键写入 readConfig（仅对
+  ///    已建模键做类型校验）。
+  /// 3. 已建模 bool 键收到非 bool 值时 Mock 按 `value == true` 强转；真实实现
+  ///    在 DB 侧反序列化校验后**拒绝写入**并报「值类型不符」。
+  /// 书籍不存在 / 键名为空白 / `valueJson` 非法与真实实现同口径抛错。
   @override
   Future<void> updateReadConfigField(
     String bookUrl,
@@ -58,6 +66,7 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
       'reverseTocDisplay' => cfg.copyWith(reverseTocDisplay: value == true),
       'reSegment' => cfg.copyWith(reSegment: value == true),
       'useReplaceRule' => cfg.copyWith(useReplaceRule: value == true),
+      'splitLongChapter' => cfg.copyWith(splitLongChapter: value == true),
       'playMode' => cfg.copyWith(
         playMode: value is int ? value : int.tryParse('$value') ?? 0,
       ),
