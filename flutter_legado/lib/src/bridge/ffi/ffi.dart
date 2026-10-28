@@ -872,9 +872,13 @@ Future<bool> rssIsReadByTitle({
   title: title,
 );
 
-/// 清空所有 RSS 已读记录
-Future<void> rssClearReadRecords() =>
-    RustLib.instance.api.crateFfiFfiRssClearReadRecords();
+/// 清空 RSS 已读记录
+///
+/// `origin` 为 `Some` 时只清空该 RSS 源的记录（对齐原版
+/// `RssReadRecordDao.deleteAllRecord(origin)`）；`None`/空串清空全部
+/// （旧调用不传参数时行为不变）。
+Future<void> rssClearReadRecords({String? origin}) =>
+    RustLib.instance.api.crateFfiFfiRssClearReadRecords(origin: origin);
 
 /// 获取 RSS 已读记录总数
 Future<PlatformInt64> rssReadRecordCount() =>

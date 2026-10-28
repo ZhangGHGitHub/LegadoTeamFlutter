@@ -641,9 +641,23 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
       _rssReadRecords.any((r) => r['origin'] == origin && r['title'] == title);
 
   @override
-  Future<void> rssClearReadRecords() async {
-    _rssReadLinks.clear();
-    _rssReadRecords.clear();
+  Future<void> rssClearReadRecords({String? origin}) async {
+    final key = origin?.trim() ?? '';
+    if (key.isEmpty) {
+      _rssReadLinks.clear();
+      _rssReadRecords.clear();
+      return;
+    }
+    // 按源清空：仅移除该源的记录，link 索引按剩余记录重建
+    _rssReadRecords.removeWhere((r) => r['origin'] == key);
+    _rssReadLinks
+      ..clear()
+      ..addAll(
+        _rssReadRecords
+            .map((r) => r['link'])
+            .whereType<String>()
+            .where((l) => l.isNotEmpty),
+      );
   }
 
   @override

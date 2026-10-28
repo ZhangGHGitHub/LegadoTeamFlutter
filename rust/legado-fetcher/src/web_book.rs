@@ -926,6 +926,83 @@ pub fn strip_proxy_header(headers: &mut HashMap<String, String>) {
     headers.retain(|key, _| !key.eq_ignore_ascii_case("proxy"));
 }
 
+/// 判断登录头能否附加到目标请求（目标是否与书源同站）
+///
+/// 对齐原版 `AnalyzeUrl.isLoginHeaderSite`（legado-upstream #1099）：
+/// 登录头（Authorization/Cookie 等认证信息）只发送给与书源**同站**的请求
+/// ——封面/正文资源常托管在第三方 CDN，跨域携带认证头会被对方风控拦截。
+/// 判定粒度与 Cookie 的域处理一致（按二级域名 = eTLD+1），复用单一真源
+/// [`legado_net::cookie_store::cookie_domain_key`]（与 Cookie 域键同规则，
+/// 多段公共后缀/IP 字面量语义一致）。
+///
+/// - `request_url` 为 http(s) 绝对地址时直接判定；
+/// - 相对链接按 `base_url`（请求基准：书源/书籍/目录 URL）拼接后判定；
+/// - 任一方无法判定域名（非 http(s)、畸形串、缺 base）时保持旧行为 → `true`
+///   （对齐原版 `getSubDomainOrNull` 返回 null 时的回落分支）。
+pub fn is_login_header_site(source_url: &str, request_url: &str, base_url: Option<&str>) -> bool {
+    let Some(source_domain) = legado_net::cookie_store::cookie_domain_key(source_url) else {
+        return true;
+    };
+    let target_url = if starts_with_http(request_url) {
+        request_url.trim().to_string()
+    } else {
+        let Some(base) = base_url.map(str::trim).filter(|b| !b.is_empty()) else {
+            return true;
+        };
+        if !starts_with_http(base) {
+            return true;
+        }
+        AnalyzeUrl::get_absolute_url(base, request_url)
+    };
+    match legado_net::cookie_store::cookie_domain_key(&target_url) {
+        Some(target_domain) => target_domain.eq_ignore_ascii_case(&source_domain),
+        None => true,
+    }
+}
+
+/// 字符串是否以 http 开头（大小写不敏感，对齐原版 `startsWith("http", true)`）
+fn starts_with_http(url: &str) -> bool {
+    url.trim_start()
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http"))
+}
+
+/// 书源请求头集合（静态 header 与登录头分离保存，登录头按目标 URL 逐请求门控）
+///
+/// 原版在 `AnalyzeUrl` 构造期即决定登录头是否合并；我方书源 header 在业务
+/// 入口统一解析后跨多个请求复用（目录/正文分页等），故保留两份并在每次
+/// 出网请求处经 [`SourceHeaderSet::for_request`] 组装。
+#[derive(Debug, Clone, Default)]
+pub struct SourceHeaderSet {
+    /// 源静态 header（`BookSource.header` + CookieJar 写侧标记）
+    pub static_headers: HashMap<String, String>,
+    /// 登录头（`loginHeader_<bookSourceUrl>`，仅同站请求附加）
+    pub login_headers: HashMap<String, String>,
+}
+
+impl SourceHeaderSet {
+    /// 按目标请求组装请求头：登录头仅在目标与书源同站时附加
+    ///
+    /// `base_url` 为相对目标 URL 的解析基准（无法判定域名时保持旧行为）。
+    pub fn for_request(
+        &self,
+        source_url: &str,
+        request_url: &str,
+        base_url: Option<&str>,
+    ) -> Option<HashMap<String, String>> {
+        let mut headers = self.static_headers.clone();
+        if !self.login_headers.is_empty() && is_login_header_site(source_url, request_url, base_url)
+        {
+            headers.extend(self.login_headers.clone());
+        }
+        if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        }
+    }
+}
+
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路（对标 Kotlin WebBook 对象）。
 pub struct RealBookSourceFetcher {
@@ -949,12 +1026,14 @@ impl RealBookSourceFetcher {
         &self.deps
     }
 
-    /// 解析书源 header 字段为请求头（含登录头）
+    /// 解析书源 header 字段为请求头集合（静态 header 与登录头分离保存）
     ///
-    /// 对齐原版 `BaseSource.getHeaderMap(hasLoginHeader=true)`：
-    /// 1. 书源静态 `header` 字段（JSON map）
-    /// 2. 合并 `source_login_cache::get_login_header`（登录后保存的 loginHeader，
-    ///    覆盖同名键，对齐原版 putAll 顺序 loginHeader 在后）
+    /// 对齐原版 `BaseSource.getHeaderMap`：
+    /// 1. 书源静态 `header` 字段（JSON map）；
+    /// 2. `source_login_cache::get_login_header`（登录后保存的 loginHeader，
+    ///    覆盖同名键，对齐原版 putAll 顺序 loginHeader 在后）——**独立保存**，
+    ///    由 [`SourceHeaderSet::for_request`] 按目标请求 URL 门控后合并
+    ///    （原版 #1099 `AnalyzeUrl.isLoginHeaderSite`：仅同站请求附加）。
     ///
     /// JS `java.setCookie` 写入的 cookie **不再在本函数注入**（2026-09-23 上游同步，
     /// 用户裁决）：取用改按**请求 URL 属域**（`fetch_page` 层
@@ -965,29 +1044,74 @@ impl RealBookSourceFetcher {
     /// 写侧 CookieJar 门控（批 1）：`enabled_cookie_jar == Some(true)` 时经
     /// [`apply_cookie_jar_marker`] 补内部标记头（只补不覆盖），随 headers 流入
     /// `fetch_page` / `fetch_simple_cached` / 目录分页并发分支等全链路请求。
-    pub fn parse_source_headers(&self, source: &BookSource) -> Option<HashMap<String, String>> {
-        let mut headers: HashMap<String, String> = source
+    pub fn parse_source_header_set(&self, source: &BookSource) -> SourceHeaderSet {
+        let mut static_headers: HashMap<String, String> = source
             .header
             .as_ref()
             .and_then(|h| serde_json::from_str(h).ok())
             .unwrap_or_default();
 
-        if let Some(login_header_json) = self.deps.login_header_for(&source.book_source_url) {
-            if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
-                headers.extend(map);
-            }
-        }
-
         // 写侧 CookieJar 门控标记（批 1）：开启源补内部标记头；发送前由
         // legado-net 剥离，绝不出网。读侧 DB cookie 注入（fetch_page 层）
         // 无条件、与本标记无关。
-        apply_cookie_jar_marker(&mut headers, source);
+        apply_cookie_jar_marker(&mut static_headers, source);
 
-        if headers.is_empty() {
+        let login_headers = self
+            .deps
+            .login_header_for(&source.book_source_url)
+            .and_then(|json| serde_json::from_str::<HashMap<String, String>>(&json).ok())
+            .unwrap_or_default();
+
+        SourceHeaderSet {
+            static_headers,
+            login_headers,
+        }
+    }
+
+    /// 解析书源 header 字段为请求头（**无条件**合并登录头）
+    ///
+    /// 等价于「目标 = 书源自身站点」的 [`Self::parse_source_headers_for_url`]：
+    /// 供登录流程、宿主诊断等确认面向源站的调用使用；书源抓取链一律改用
+    /// 带目标 URL 的同站门控版本。
+    pub fn parse_source_headers(&self, source: &BookSource) -> Option<HashMap<String, String>> {
+        self.parse_source_headers_for_url(source, &source.book_source_url, None)
+    }
+
+    /// 解析书源 header 字段为请求头（登录头按目标请求 URL 门控）
+    ///
+    /// 对齐原版 `AnalyzeUrl` 构造期的 `getHeaderMap(hasLoginHeader && isLoginHeaderSite(mUrl))`：
+    /// 登录头只在目标与书源同站（eTLD+1 相同）时附加；跨域（CDN 等）不附加，
+    /// 无法判定域名时保持旧行为。`base_url` 用于相对请求 URL 的解析基准
+    /// （书源/书籍/目录 URL）。
+    pub fn parse_source_headers_for_url(
+        &self,
+        source: &BookSource,
+        request_url: &str,
+        base_url: Option<&str>,
+    ) -> Option<HashMap<String, String>> {
+        self.parse_source_header_set(source).for_request(
+            &source.book_source_url,
+            request_url,
+            base_url,
+        )
+    }
+
+    /// 以 `AnalyzeUrl` 解析结果为目标的 header 解析（base_url 取解析器携带值）
+    ///
+    /// 请求 URL 用解析后的最终地址；相对路径基准用 [`AnalyzeUrl::base_url`]
+    /// （变量 `baseUrl`，搜索链由 `build_search_url_with_setup` 注入书源 URL）。
+    fn source_headers_for_analyze_url(
+        &self,
+        source: &BookSource,
+        analyze_url: &AnalyzeUrl,
+    ) -> Option<HashMap<String, String>> {
+        let base = analyze_url.base_url();
+        let base = if base.trim().is_empty() {
             None
         } else {
-            Some(headers)
-        }
+            Some(base)
+        };
+        self.parse_source_headers_for_url(source, analyze_url.url(), base)
     }
 
     /// 根据 AnalyzeUrl 解析结果发起 HTTP 请求，返回响应体文本
@@ -1574,8 +1698,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             return Err(LegadoError::Internal("书源未配置 searchUrl".into()));
         }
 
-        let source_headers = self.parse_source_headers(source);
-
         // 队列④ P1-A 复审：删除 jsLib 预校验（与 search.rs 主路径同一处置：
         // 口径过宽会误伤纯 CSS 规则书源；能力缺失/JS 失败在真被使用时经
         // 既有路径给可读文案，error_class 映射不变）
@@ -1607,6 +1729,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 _ => "searchUrl JS 求值失败（无法解码错误详情）".into(),
             }));
         }
+
+        // 书源 header 按搜索请求最终 URL 门控登录头（原版 #1099：
+        // 登录头只发同站请求；@js 重写后的跨域搜索 URL 不附加认证信息）
+        let source_headers = self.source_headers_for_analyze_url(source, &analyze_url);
 
         // 2. 发起 HTTP 请求。baseUrl 必须用重定向后最终 URL
         //    （对齐 Kotlin WebBook.search → BookList.analyzeBookList(baseUrl = res.url)）。
@@ -1818,7 +1944,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         variables: &std::collections::HashMap<String, String>,
     ) -> LegadoResult<WebBookInfo> {
         self.deps.rate_limiter.acquire(source).await;
-        let source_headers = self.parse_source_headers(source);
 
         // 1. 请求书籍详情页
         //    对标原版 Book.infoHtml / tocHtml：无状态 FFI 无法携带 Book，故用 URL 短 TTL 缓存。
@@ -1829,6 +1954,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let t_fetch = std::time::Instant::now();
         let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
             .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
+        // 书源 header 按详情请求最终 URL 门控登录头（原版 #1099）
+        let source_headers = self.source_headers_for_analyze_url(source, &analyze_book);
         let body = self
             .fetch_url(&analyze_book, source_headers.as_ref())
             .await?;
@@ -1930,7 +2057,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         chapter: &WebChapter,
     ) -> LegadoResult<ChapterContentWithMeta> {
         self.deps.rate_limiter.acquire(source).await;
-        let source_headers = self.parse_source_headers(source);
 
         // 1. 请求章节页面（章节 URL 可能是「url,{json}」带请求选项的格式，
         //    如七猫 qmGetUrl 生成 https://.../chapter/content?id=...,
@@ -1942,6 +2068,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let url_vars = chapter_url_variables(chapter.variable.as_deref());
         let analyze_chapter = legado_parser::AnalyzeUrl::parse(&chapter.url, &url_vars, 1)
             .map_err(|e| LegadoError::Internal(format!("章节 URL 解析失败: {e}")))?;
+        // 书源 header 按正文请求最终 URL 门控登录头（原版 #1099）
+        let source_headers = self.source_headers_for_analyze_url(source, &analyze_chapter);
         let mut body = self
             .fetch_url(&analyze_chapter, source_headers.as_ref())
             .await?;
@@ -2030,7 +2158,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         );
 
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
-        let source_headers_clone = source_headers.clone();
+        //    每页按自身 URL 门控登录头：nextContentUrl 可指向第三方 CDN，
+        //    跨域页不得携带登录头（原版 #1099）
         let chapter_title = chapter.title.clone();
         let chapter_index = chapter.index;
         let chapter_variable = chapter.variable.clone();
@@ -2050,7 +2179,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             chapter_variable.as_deref(),
             book_meta.as_ref(),
             |url: String| {
-                let headers = source_headers_clone.clone();
+                let headers = self.parse_source_headers_for_url(source, &url, Some(&chapter.url));
                 async move { self.fetch_simple(&url, headers.as_ref()).await }
             },
         )
@@ -2063,7 +2192,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .clone()
             .filter(|_| !sub_content_rule.is_empty())
         {
-            let sub_headers = source_headers.clone();
             if let Some(sub) = fetch_sub_content(
                 page_body,
                 sub_content_rule,
@@ -2071,7 +2199,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 &source.book_source_url,
                 source.js_lib.as_deref(),
                 |url: String| {
-                    let headers = sub_headers.clone();
+                    let headers =
+                        self.parse_source_headers_for_url(source, &url, Some(&chapter.url));
                     async move { self.fetch_simple(&url, headers.as_ref()).await }
                 },
             )
@@ -2209,7 +2338,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             book_key.trim()
         };
         self.deps.rate_limiter.acquire(source).await;
-        let source_headers = self.parse_source_headers(source);
         // 书山聚合等聚合源详情/目录 `<js>` 脚本依赖 jsLib 函数（getServerHost 等）
         // 与书源上下文 setup；jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入，
         // 否则 init 规则失败 → tocUrl 规则 result 缺 source/book_url → /catalog
@@ -2239,7 +2367,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                     book_key,
                     raw_toc,
                     variables,
-                    source_headers.as_ref(),
                     js_lib_sanitized.as_deref(),
                     &mut book_name,
                     t0,
@@ -2251,7 +2378,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                     book_url,
                     book_key,
                     variables,
-                    source_headers.as_ref(),
                     js_lib_sanitized.as_deref(),
                     &mut book_name,
                     t0,
@@ -2290,7 +2416,6 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let chapters = self
             .parse_chapters_from_toc_body(
                 source,
-                source_headers.as_ref(),
                 &toc_url,
                 toc_body,
                 &book_name,
@@ -2358,7 +2483,6 @@ impl RealBookSourceFetcher {
         book_name_hint: Option<&str>,
     ) -> LegadoResult<Vec<WebChapter>> {
         self.deps.rate_limiter.acquire(source).await;
-        let source_headers = self.parse_source_headers(source);
         // 书山聚合等聚合源目录规则 `<js>` 脚本依赖 jsLib 函数（getServerHost
         // 等），jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入。
         let js_lib_sanitized = source.js_lib.as_deref().map(sanitize_js_lib_for_quickjs);
@@ -2373,6 +2497,8 @@ impl RealBookSourceFetcher {
         let analyze_toc = legado_parser::AnalyzeUrl::parse(toc_url, variables, 1)
             .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
         // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
+        // 书源 header 按本请求最终 URL 门控登录头（原版 #1099）
+        let source_headers = self.source_headers_for_analyze_url(source, &analyze_toc);
         let page = self
             .fetch_page(&analyze_toc, source_headers.as_ref())
             .await?;
@@ -2396,7 +2522,6 @@ impl RealBookSourceFetcher {
         // 且不记录章节→book 映射（正文阶段该路径的 book 绑定走降级面）。
         self.parse_chapters_from_toc_body(
             source,
-            source_headers.as_ref(),
             toc_url,
             toc_body,
             &book_name,
@@ -2428,7 +2553,6 @@ impl RealBookSourceFetcher {
         book_key: &str,
         raw_toc: &str,
         variables: &std::collections::HashMap<String, String>,
-        source_headers: Option<&HashMap<String, String>>,
         js_lib_sanitized: Option<&str>,
         book_name: &mut String,
         t0: std::time::Instant,
@@ -2449,7 +2573,9 @@ impl RealBookSourceFetcher {
             let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
             // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
-            let page = self.fetch_page(&analyze_book, source_headers).await?;
+            // 书源 header 按本请求最终 URL 门控登录头（原版 #1099）
+            let headers = self.source_headers_for_analyze_url(source, &analyze_book);
+            let page = self.fetch_page(&analyze_book, headers.as_ref()).await?;
             let toc_final_url = page.final_url;
             let info_body = page.body;
             Self::execute_login_check(source, &info_body, book_url, 200)?;
@@ -2512,7 +2638,9 @@ impl RealBookSourceFetcher {
             let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
             // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
-            let page = self.fetch_page(&analyze_toc, source_headers).await?;
+            // 书源 header 按本请求最终 URL 门控登录头（原版 #1099）
+            let headers = self.source_headers_for_analyze_url(source, &analyze_toc);
+            let page = self.fetch_page(&analyze_toc, headers.as_ref()).await?;
             // P2-9 ②：纯目录页路径无详情字段，author 空（详情阶段记录可补）
             Ok((toc_url, page.body, String::new(), page.final_url))
         }
@@ -2538,7 +2666,6 @@ impl RealBookSourceFetcher {
         book_url: &str,
         book_key: &str,
         variables: &std::collections::HashMap<String, String>,
-        source_headers: Option<&HashMap<String, String>>,
         js_lib_sanitized: Option<&str>,
         book_name: &mut String,
         t0: std::time::Instant,
@@ -2550,7 +2677,9 @@ impl RealBookSourceFetcher {
         let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
             .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
         // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
-        let page = self.fetch_page(&analyze_book, source_headers).await?;
+        // 书源 header 按本请求最终 URL 门控登录头（原版 #1099）
+        let headers = self.source_headers_for_analyze_url(source, &analyze_book);
+        let page = self.fetch_page(&analyze_book, headers.as_ref()).await?;
         let detail_final_url = page.final_url;
         let info_body = page.body;
         eprintln!("[web_book] get_chapters info_body in {:?}", t0.elapsed());
@@ -2641,7 +2770,9 @@ impl RealBookSourceFetcher {
             let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
             // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
-            let page = self.fetch_page(&analyze_toc, source_headers).await?;
+            // 书源 header 按本请求最终 URL 门控登录头（原版 #1099）
+            let headers = self.source_headers_for_analyze_url(source, &analyze_toc);
+            let page = self.fetch_page(&analyze_toc, headers.as_ref()).await?;
             (page.body, page.final_url)
         };
         Ok((toc_url, toc_body, book_author, toc_final_url))
@@ -2665,7 +2796,6 @@ impl RealBookSourceFetcher {
     async fn parse_chapters_from_toc_body(
         &self,
         source: &BookSource,
-        source_headers: Option<&HashMap<String, String>>,
         toc_url: &str,
         toc_body: String,
         book_name: &str,
@@ -2848,8 +2978,12 @@ impl RealBookSourceFetcher {
                     // [性能专项] 三态抓取：2xx → Some(body)；非 2xx → None（截断
                     // 保留前缀，对齐上游 res.body?.let 的 body-null 判停，而非整刷
                     // 失败）；I/O 级错误 → Err（对齐上游异常 → 整刷失败）。
+                    // 每页按自身 URL 门控登录头（原版 #1099：nextTocUrl 可指向
+                    // 第三方域名，跨域页不得携带认证信息）。
+                    let page_headers =
+                        self.parse_source_headers_for_url(source, &next_url, Some(toc_final_url));
                     let Some(page_body) = self
-                        .fetch_toc_page_optional(&next_url, source_headers)
+                        .fetch_toc_page_optional(&next_url, page_headers.as_ref())
                         .await?
                     else {
                         break;
@@ -2901,7 +3035,9 @@ impl RealBookSourceFetcher {
                 }
             } else if next_urls.len() > 1 {
                 // 并发拉页（对齐 mapAsync(threadCount)）
-                let headers = source_headers;
+                // 静态 header 与登录头分离：每页按自身 URL 门控登录头
+                // （原版 #1099：nextTocUrl 可指向第三方域名）
+                let header_set = self.parse_source_header_set(source);
                 let source_url = source.book_source_url.clone();
                 let js_lib = source.js_lib.clone();
                 let list_rule = chapter_list_rule.to_string();
@@ -2930,6 +3066,7 @@ impl RealBookSourceFetcher {
                         let volume_r = volume_r.clone();
                         let update_time_r = update_time_r.clone();
                         let client = client.clone();
+                        let header_set = header_set.clone();
                         // P2-9 ②：并发分页页内解析器同样带 `book` 绑定（对齐串行分页与
                         // chapterList 层；此前并发分支缺失，`@js:book.name` 在该路径取空）
                         let book_binding = book_binding.clone();
@@ -2949,8 +3086,11 @@ impl RealBookSourceFetcher {
                                     (cached, page_url.clone())
                                 } else {
                                     // 与 fetch_page / fetch_simple_cached 一致：按键合并
-                                    // 请求属域 JS cookie（改前缺口：并发分页请求丢 JS cookie）
-                                    let mut req_headers = headers.cloned().unwrap_or_default();
+                                    // 请求属域 JS cookie（改前缺口：并发分页请求丢 JS cookie）；
+                                    // 登录头按本页 URL 门控（跨域页不附加，原版 #1099）
+                                    let mut req_headers = header_set
+                                        .for_request(&source_url, &page_url, Some(toc_final_url))
+                                        .unwrap_or_default();
                                     legado_js::host_api::cookie_store::merge_js_cookies(
                                         &mut req_headers,
                                         &page_url,
@@ -5421,7 +5561,6 @@ mod tests {
         let fetcher = test_fetcher();
         let chapters = block_on(fetcher.parse_chapters_from_toc_body(
             &source,
-            None,
             "https://book.example.com/toc",
             body,
             "测试书名",
@@ -6710,7 +6849,6 @@ mod tests {
         let meta = lookup_book_meta_by_book_url(url_after).expect("补后：meta 应已播种");
         let ch = block_on(fetcher.parse_chapters_from_toc_body(
             &source,
-            None,
             toc_url,
             toc_body.to_string(),
             "测试书",
@@ -6740,7 +6878,6 @@ mod tests {
         // → `undefined/f/1.html` 断链（HEAD 行为）
         let ch2 = block_on(fetcher.parse_chapters_from_toc_body(
             &source,
-            None,
             toc_url,
             toc_body.to_string(),
             "测试书",
@@ -8213,6 +8350,240 @@ mod tests {
         );
     }
 
+    /// 构造带登录头注入的 fetcher（登录头只对 `source_url` 命中）
+    fn fetcher_with_login_header(source_url: &str, header_json: &str) -> RealBookSourceFetcher {
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let tag = source_url.to_string();
+        let json = header_json.to_string();
+        let deps = FetcherDeps::new(client).with_login_header(Arc::new(move |url: &str| {
+            if url == tag {
+                Some(json.clone())
+            } else {
+                None
+            }
+        }));
+        RealBookSourceFetcher::with_deps(deps)
+    }
+
+    /// 构造最简正文书源（`#content@text`）
+    fn login_header_probe_source(source_url: &str) -> BookSource {
+        serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": source_url,
+            "bookSourceName": "登录头同站门控",
+            "ruleContent": { "content": "#content@text" }
+        }))
+        .expect("书源 json")
+    }
+
+    fn login_header_probe_chapter(url: String) -> WebChapter {
+        WebChapter {
+            index: 0,
+            title: "第1章".to_string(),
+            url,
+            is_vip: false,
+            is_volume: false,
+            is_pay: false,
+            tag: None,
+            variable: None,
+            word_count: None,
+        }
+    }
+
+    /// 原版 #1099（`AnalyzeUrl.isLoginHeaderSite`）：登录头只发同站请求。
+    /// 正文 URL 落在第三方 CDN/异域时不得携带登录头——改前无条件合并
+    /// （`parse_source_headers` 只要 `login_header_for` 有值就 extend）→ 本用例红。
+    #[test]
+    fn test_login_header_not_sent_to_cross_site_content() {
+        let (port, seen) = spawn_set_cookie_html_server();
+        let fetch_url = format!("http://127.0.0.1:{port}/chap/1.html");
+        let fetcher = fetcher_with_login_header(
+            "https://source.example.com",
+            r#"{"X-Login-Token":"secret"}"#,
+        );
+        let source = login_header_probe_source("https://source.example.com");
+        let chapter = login_header_probe_chapter(fetch_url);
+
+        let content = block_on(fetcher.get_content(&source, &chapter)).expect("正文抓取应成功");
+        assert!(content.contains("正文内容"), "正文解析应成功: {content:?}");
+        let seen = seen.lock().unwrap();
+        let head = seen.first().expect("回环服务器应收到请求");
+        assert!(
+            !head.to_ascii_lowercase().contains("x-login-token"),
+            "跨域正文请求不得携带登录头: {head}"
+        );
+    }
+
+    /// 同站正文请求仍须携带登录头（IP 字面量按自身为 eTLD+1）
+    #[test]
+    fn test_login_header_sent_to_same_site_content() {
+        let (port, seen) = spawn_set_cookie_html_server();
+        let fetch_url = format!("http://127.0.0.1:{port}/chap/1.html");
+        let source_url = format!("http://127.0.0.1:{port}");
+        let fetcher = fetcher_with_login_header(&source_url, r#"{"X-Login-Token":"secret"}"#);
+        let source = login_header_probe_source(&source_url);
+        let chapter = login_header_probe_chapter(fetch_url);
+
+        block_on(fetcher.get_content(&source, &chapter)).expect("正文抓取应成功");
+        let seen = seen.lock().unwrap();
+        let head = seen.first().expect("回环服务器应收到请求");
+        assert!(
+            head.to_ascii_lowercase().contains("x-login-token: secret"),
+            "同站正文请求必须携带登录头: {head}"
+        );
+    }
+
+    /// 无法判定书源域名（书源 key 非 URL）→ 保持旧行为：仍附加登录头
+    #[test]
+    fn test_login_header_fallback_when_source_url_unparseable() {
+        let (port, seen) = spawn_set_cookie_html_server();
+        let fetch_url = format!("http://127.0.0.1:{port}/chap/1.html");
+        let fetcher =
+            fetcher_with_login_header("not-a-url-source-key", r#"{"X-Login-Token":"secret"}"#);
+        let source = login_header_probe_source("not-a-url-source-key");
+        let chapter = login_header_probe_chapter(fetch_url);
+
+        block_on(fetcher.get_content(&source, &chapter)).expect("正文抓取应成功");
+        let seen = seen.lock().unwrap();
+        let head = seen.first().expect("回环服务器应收到请求");
+        assert!(
+            head.to_ascii_lowercase().contains("x-login-token: secret"),
+            "无法判定域名时必须保持旧行为（附加登录头）: {head}"
+        );
+    }
+
+    /// 同站判定规则表（eTLD+1，与 Cookie 域键同一实现）
+    #[test]
+    fn test_is_login_header_site_etld1_rules() {
+        // 同 eTLD+1 的子域/协议/端口差异 → 同站
+        assert!(is_login_header_site(
+            "https://www.example.com/",
+            "https://m.example.com/x",
+            None
+        ));
+        assert!(is_login_header_site(
+            "https://www.example.com/",
+            "http://example.com/x",
+            None
+        ));
+        // 多段公共后缀（com.cn）
+        assert!(is_login_header_site(
+            "https://www.a.com.cn/",
+            "https://b.a.com.cn/x",
+            None
+        ));
+        assert!(!is_login_header_site(
+            "https://www.a.com.cn/",
+            "https://b.example.com/x",
+            None
+        ));
+        // 跨域 CDN → 不同站
+        assert!(!is_login_header_site(
+            "https://www.example.com/",
+            "https://cdn.example.net/x",
+            None
+        ));
+        // 私有后缀（github.io）按注册域判定：不同用户子域非同站
+        assert!(!is_login_header_site(
+            "https://a.github.io/",
+            "https://b.github.io/x",
+            None
+        ));
+        // IP 字面量以自身为键（端口/路径无关）
+        assert!(is_login_header_site(
+            "http://127.0.0.1:8080/",
+            "http://127.0.0.1:9090/x",
+            None
+        ));
+        assert!(!is_login_header_site(
+            "http://127.0.0.1:8080/",
+            "http://127.0.0.2:8080/x",
+            None
+        ));
+        // localhost 单段主机按自身为键
+        assert!(is_login_header_site(
+            "http://localhost:8080/",
+            "http://localhost/x",
+            None
+        ));
+        // 书源 key 带 `#tag` 后缀不影响主机解析
+        assert!(is_login_header_site(
+            "https://www.example.com#tag",
+            "https://m.example.com/x",
+            None
+        ));
+        // 主机大小写不敏感
+        assert!(is_login_header_site(
+            "https://WWW.EXAMPLE.COM/",
+            "https://m.Example.Com/x",
+            None
+        ));
+    }
+
+    /// 相对链接按 baseUrl 解析后判定；无法判定域名 → 旧行为（附加）
+    #[test]
+    fn test_is_login_header_site_relative_and_fallback() {
+        // 相对路径绝对化后与书源同站
+        assert!(is_login_header_site(
+            "https://www.example.com/",
+            "/chap/1.html",
+            Some("https://www.example.com/toc/")
+        ));
+        assert!(is_login_header_site(
+            "https://www.example.com/",
+            "chap/1.html",
+            Some("https://www.example.com/toc/")
+        ));
+        // 相对路径按跨域 base 绝对化后不同站
+        assert!(!is_login_header_site(
+            "https://www.example.com/",
+            "/chap/1.html",
+            Some("https://cdn.example.net/toc/")
+        ));
+        // 无 base → 无法判定 → 旧行为（附加）
+        assert!(is_login_header_site(
+            "https://www.example.com/",
+            "/chap/1.html",
+            None
+        ));
+        // 书源 URL 无法解析 → 旧行为
+        assert!(is_login_header_site(
+            "not-a-url",
+            "https://cdn.example.net/x",
+            None
+        ));
+        assert!(is_login_header_site("", "https://cdn.example.net/x", None));
+        // 目标无法解析（data: URI）→ 旧行为
+        assert!(is_login_header_site(
+            "https://www.example.com/",
+            "data:text/plain,hi",
+            None
+        ));
+    }
+
+    /// `parse_source_headers`（兼容入口）保持旧行为：无条件合并登录头
+    #[test]
+    fn test_parse_source_headers_keeps_legacy_merged_login_header() {
+        let fetcher = fetcher_with_login_header(
+            "https://legacy.example.com",
+            r#"{"Authorization":"Bearer legacy"}"#,
+        );
+        let source = BookSource {
+            book_source_url: "https://legacy.example.com".into(),
+            book_source_name: "兼容入口".into(),
+            ..BookSource::default()
+        };
+        let headers = fetcher.parse_source_headers(&source).expect("应有 header");
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer legacy"),
+            "兼容入口必须保持旧行为（无条件合并登录头）"
+        );
+    }
+
     /// 审查 P1-1（book 路径）：`fetch_page` 合并源 header 后必须剔除 `proxy`
     /// 键——它是代理配置而非 HTTP 头（上游 `AnalyzeUrl.kt:142-146` 同样从
     /// headerMap 删除），不得随请求外泄；其他源 header 照常透传。
@@ -8440,7 +8811,6 @@ mod tests {
         let fetcher = test_fetcher();
         let chapters = block_on(fetcher.parse_chapters_from_toc_body(
             &source,
-            None,
             "https://toc-fields.test/toc",
             body,
             "测试书",
@@ -8561,7 +8931,6 @@ mod tests {
         .unwrap();
         let serial = block_on(fetcher.parse_chapters_from_toc_body(
             &serial_source,
-            None,
             &format!("{base_s}/toc"),
             body_s,
             "串并一致",
@@ -8619,7 +8988,6 @@ mod tests {
         .unwrap();
         let chapters = block_on(fetcher.parse_chapters_from_toc_body(
             &source,
-            None,
             &format!("{base}/toc"),
             body,
             "串并一致",

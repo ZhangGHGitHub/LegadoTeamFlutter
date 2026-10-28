@@ -1169,9 +1169,13 @@ pub mod ffi {
         Ok(read)
     }
 
-    /// 清空所有 RSS 已读记录
-    pub fn rss_clear_read_records() -> Result<(), BridgeError> {
-        crate::api::rss_read_record_api::clear_all()?;
+    /// 清空 RSS 已读记录
+    ///
+    /// `origin` 为 `Some` 时只清空该 RSS 源的记录（对齐原版
+    /// `RssReadRecordDao.deleteAllRecord(origin)`）；`None`/空串清空全部
+    /// （旧调用不传参数时行为不变）。
+    pub fn rss_clear_read_records(origin: Option<String>) -> Result<(), BridgeError> {
+        crate::api::rss_read_record_api::clear_by_origin(origin.as_deref())?;
         Ok(())
     }
 

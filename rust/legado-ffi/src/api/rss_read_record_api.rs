@@ -67,6 +67,20 @@ pub fn clear_all() -> LegadoResult<()> {
     })
 }
 
+/// 清空指定 RSS 源的已读记录（`None`/空串退化为清空全部）
+///
+/// 对齐原版 `RssReadRecordDao.deleteAllRecord(origin)`：`ReadRecordDialog`
+/// 的「清空」按当前源过滤，全局入口传 `null` 清空全部。
+pub fn clear_by_origin(origin: Option<&str>) -> LegadoResult<()> {
+    match origin.map(str::trim).filter(|o| !o.is_empty()) {
+        Some(origin) => with_database(|db| {
+            let repo = RssReadRecordRepository::new(db.connection());
+            repo.clear_by_origin(origin).map(|_| ())
+        }),
+        None => clear_all(),
+    }
+}
+
 /// 获取已读记录总数
 pub fn count() -> LegadoResult<i64> {
     with_database(|db| {

@@ -438,21 +438,15 @@ async fn explore_books_async(
     url: &str,
     page: i32,
 ) -> LegadoResult<Vec<WebSearchResult>> {
-    // 解析书源 header（对齐原版 getHeaderMap(hasLoginHeader=true)：
-    // 静态 header + loginHeader 覆盖；JS setCookie cookie 改按**请求 URL 属域**
-    // 在下方合并请求头时兜底注入，见 2026-09-23 上游同步）— DeepSeek Harness + Bridge
-    let mut source_headers: HashMap<String, String> = source
+    // 解析书源静态 header（登录头在请求合并点按目标 URL 门控附加：
+    // 对齐原版 `AnalyzeUrl.isLoginHeaderSite`，见下方 `is_login_header_site`；
+    // JS setCookie cookie 改按**请求 URL 属域**在下方合并请求头时兜底注入，
+    // 见 2026-09-23 上游同步）— DeepSeekRuntime + Bridge
+    let source_headers: HashMap<String, String> = source
         .header
         .as_ref()
         .and_then(|h| serde_json::from_str(h).ok())
         .unwrap_or_default();
-    if let Some(login_header_json) =
-        crate::api::source_login_cache::get_login_header(&source.book_source_url)
-    {
-        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
-            source_headers.extend(map);
-        }
-    }
     let source_headers = if source_headers.is_empty() {
         None
     } else {
@@ -501,8 +495,26 @@ async fn explore_books_async(
                 // 发起 HTTP 请求（复用进程共享客户端单例）
                 let client = crate::http_state::shared_client()?;
 
-                // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
+                // 合并请求头：书源全局 header + 登录头（仅同站）+ AnalyzeUrl 解析出的 header
                 let mut headers = source_headers.clone().unwrap_or_default();
+                // 登录头只在目标与书源同站（eTLD+1）时附加（原版 #1099
+                // `AnalyzeUrl.isLoginHeaderSite`；跨域分类页不携带认证信息，
+                // 无法判定域名时保持旧行为）
+                if legado_fetcher::web_book::is_login_header_site(
+                    &source.book_source_url,
+                    &final_url,
+                    None,
+                ) {
+                    if let Some(login_header_json) =
+                        crate::api::source_login_cache::get_login_header(&source.book_source_url)
+                    {
+                        if let Ok(map) =
+                            serde_json::from_str::<HashMap<String, String>>(&login_header_json)
+                        {
+                            headers.extend(map);
+                        }
+                    }
+                }
                 headers.extend(analyze_url.headers().clone());
 
                 // JS `java.setCookie` 写入的 cookie：按**请求 URL**（解析后的 final_url）

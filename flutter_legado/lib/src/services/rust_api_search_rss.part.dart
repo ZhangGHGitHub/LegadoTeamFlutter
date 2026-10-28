@@ -438,9 +438,10 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
   Future<bool> rssIsReadByTitle(String origin, String title) =>
       bridge.rssIsReadByTitle(origin: origin, title: title);
 
-  /// 清空所有 RSS 已读记录
+  /// 清空 RSS 已读记录（[origin] 非空时只清空该源，对齐原版按源清空）
   @override
-  Future<void> rssClearReadRecords() => bridge.rssClearReadRecords();
+  Future<void> rssClearReadRecords({String? origin}) =>
+      bridge.rssClearReadRecords(origin: origin);
 
   /// 获取 RSS 已读记录总数
   @override

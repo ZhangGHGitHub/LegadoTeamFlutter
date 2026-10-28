@@ -768,7 +768,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateFfiFfiRssClearArticles({required String sourceUrl});
 
-  Future<void> crateFfiFfiRssClearReadRecords();
+  Future<void> crateFfiFfiRssClearReadRecords({String? origin});
 
   Future<void> crateFfiFfiRssClearSortCache({required String sourceUrl});
 
@@ -7205,11 +7205,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<void> crateFfiFfiRssClearReadRecords() {
+  Future<void> crateFfiFfiRssClearReadRecords({String? origin}) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_opt_String(origin, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7222,14 +7223,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiRssClearReadRecordsConstMeta,
-        argValues: [],
+        argValues: [origin],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateFfiFfiRssClearReadRecordsConstMeta =>
-      const TaskConstMeta(debugName: "rss_clear_read_records", argNames: []);
+      const TaskConstMeta(
+        debugName: "rss_clear_read_records",
+        argNames: ["origin"],
+      );
 
   @override
   Future<void> crateFfiFfiRssClearSortCache({required String sourceUrl}) {

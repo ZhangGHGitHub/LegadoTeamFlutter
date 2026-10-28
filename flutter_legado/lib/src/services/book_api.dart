@@ -496,8 +496,12 @@ abstract class BookApi {
   /// 判断 RSS 文章是否已读（按 origin + title）
   Future<bool> rssIsReadByTitle(String origin, String title);
 
-  /// 清空所有 RSS 已读记录
-  Future<void> rssClearReadRecords();
+  /// 清空 RSS 已读记录
+  ///
+  /// [origin] 非空时只清空该 RSS 源的记录（对齐原版 `ReadRecordDialog` 的
+  /// `RssReadRecordDao.deleteAllRecord(origin)`）；空/`null` 清空全部
+  /// （旧调用不传参数行为不变）。
+  Future<void> rssClearReadRecords({String? origin});
 
   /// 获取 RSS 已读记录总数
   Future<int> rssReadRecordCount();

@@ -6455,10 +6455,11 @@ fn wire__crate__ffi__ffi__rss_clear_read_records_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_origin = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::rss_clear_read_records()?;
+                    let output_ok = crate::ffi::ffi::rss_clear_read_records(api_origin)?;
                     Ok(output_ok)
                 })())
             }

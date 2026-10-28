@@ -159,6 +159,19 @@ impl<'a> RssReadRecordRepository<'a> {
         Ok(())
     }
 
+    /// 清空指定 RSS 源的已读记录（对齐原版 `RssReadRecordDao.deleteAllRecord(origin)`）
+    ///
+    /// 原版 `ReadRecordDialog` 的「清空」按当前源过滤（origin 为空时清空全部）；
+    /// 返回实际删除行数。
+    pub fn clear_by_origin(&self, origin: &str) -> LegadoResult<usize> {
+        self.conn
+            .execute(
+                "DELETE FROM rssReadRecords WHERE origin = ?1",
+                params![origin],
+            )
+            .map_err(|e| LegadoError::Database(format!("清空源已读记录失败: {e}")))
+    }
+
     /// 获取已读记录总数
     pub fn count(&self) -> LegadoResult<i64> {
         let count: i64 = self

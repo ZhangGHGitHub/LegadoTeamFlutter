@@ -918,7 +918,17 @@ fn audio_cache_download_with_client(
     let analyze_url = AnalyzeUrl::parse_with_context(play_url, &variables, &context, 1)?;
 
     let fetcher = crate::api::web_book::real_fetcher()?;
-    let mut headers = fetcher.parse_source_headers(&source).unwrap_or_default();
+    // 书源 header 按音频请求最终 URL 门控登录头（原版 #1099：
+    // 媒体资源常托管在第三方 CDN，跨域不携带认证信息；无法判定域名时保持旧行为）
+    let base_url = analyze_url.base_url();
+    let base_url = if base_url.trim().is_empty() {
+        None
+    } else {
+        Some(base_url)
+    };
+    let mut headers = fetcher
+        .parse_source_headers_for_url(&source, analyze_url.url(), base_url)
+        .unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
     legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, analyze_url.url());
 
