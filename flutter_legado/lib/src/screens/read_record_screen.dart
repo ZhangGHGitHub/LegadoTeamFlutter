@@ -299,7 +299,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除'),
-        content: Text('确定删除「${item.bookName}」吗？'),
+        // [批27b P2-2] FFI 按物理书名删除该书**全部作者**的记录（契约 §2.12），
+        // 文案须明示范围，避免用户误以为只删当前作者行
+        content: Text('将删除「${item.bookName}」该书全部作者的阅读记录，确定吗？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

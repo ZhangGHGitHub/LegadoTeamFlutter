@@ -109,6 +109,47 @@ void main() {
       expect(record.physicalBookName, '物理书名');
     });
 
+    // [批27b P2-1 | 2026-10-28] v113 迁移原样保留的旧合并作者串
+    // （`\u001Eauthors:[...]`）展示时必须解码为「A、B」，对齐原版
+    // `ReadRecordShow.displayAuthor = ReadRecordAuthors.display(author)`。
+    test('旧合并作者串解码展示（作者B、作者C）', () async {
+      stubRecords([
+        const ReadRecord(
+          bookName: '合并书',
+          author: '\u001Eauthors:["作者C","作者B"]',
+          displayAuthor: '\u001Eauthors:["作者C","作者B"]',
+          readTime: 100,
+        ),
+      ]);
+      await readNotifier().load();
+      final record = readState().records.single;
+      expect(record.author, '作者B、作者C');
+    });
+
+    test('合并作者串去空白/去重后再连接', () async {
+      expect(
+        decodeReadRecordAuthorsForDisplay(
+          '\u001Eauthors:["作者B"," ","作者B","作者C"]',
+        ),
+        '作者B、作者C',
+      );
+      // 无前缀 → 原值即单一作者
+      expect(decodeReadRecordAuthorsForDisplay('作者A'), '作者A');
+      expect(decodeReadRecordAuthorsForDisplay(''), '');
+    });
+
+    test('非法合并作者串回退原文', () async {
+      stubRecords([
+        const ReadRecord(
+          bookName: '脏数据',
+          author: '\u001Eauthors:not-json',
+          readTime: 1,
+        ),
+      ]);
+      await readNotifier().load();
+      expect(readState().records.single.author, '\u001Eauthors:not-json');
+    });
+
     test('按阅读时长排序', () async {
       stubRecords([
         const ReadRecord(bookName: '短', readTime: 100),

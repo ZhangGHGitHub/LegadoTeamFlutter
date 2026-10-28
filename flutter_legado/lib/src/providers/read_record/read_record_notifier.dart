@@ -1,3 +1,5 @@
+import 'dart:convert' show jsonDecode;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -8,6 +10,59 @@ import '../providers.dart';
 import 'read_record_state.dart';
 
 export 'read_record_state.dart';
+
+/// 历史合并作者串前缀（对齐原版 `ReadRecordAuthors.PREFIX`）
+const String _combinedAuthorsPrefix = '\u001Eauthors:';
+
+/// 历史合并作者串聚合分隔符（对齐原版 `ReadRecordAuthors.AGGREGATE_SEPARATOR`）
+const String _combinedAuthorsSeparator = '\u001F';
+
+/// 解码历史合并作者串为展示文本（对齐原版 `ReadRecordAuthors.display`）
+///
+/// v113 前「同书不同作者共用一条记录」会把多个作者编码为
+/// `\u001Eauthors:["作者B","作者C"]`，v113 迁移将其**原样保留不拆**。
+/// 展示时按原版口径解码：
+/// 1. 空白值 → 空串（调用方回退物理/解析作者）；
+/// 2. 按聚合分隔符 `\u001F` 分段；
+/// 3. 段值以 `\u001Eauthors:` 开头 → 剥前缀按 JSON 字符串数组解析，
+///    去空白项；无前缀 → 原值即单一作者；
+/// 4. 去重、按码位排序（对齐 Kotlin `sorted()`）后以「、」连接；
+/// 5. 前缀后 JSON 非法 → 回退该段原文（不吞历史脏值）。
+String decodeReadRecordAuthorsForDisplay(String value) {
+  if (value.trim().isEmpty) return '';
+  final authors = <String>{};
+  for (final segment in value.split(_combinedAuthorsSeparator)) {
+    _collectAuthorsForDisplay(segment, authors);
+  }
+  final sorted = authors.toList()..sort();
+  return sorted.join('、');
+}
+
+/// 单段作者值解码并写入 [out]（见 [decodeReadRecordAuthorsForDisplay]）
+void _collectAuthorsForDisplay(String segment, Set<String> out) {
+  if (segment.trim().isEmpty) return;
+  if (!segment.startsWith(_combinedAuthorsPrefix)) {
+    out.add(segment);
+    return;
+  }
+  final json = segment.substring(_combinedAuthorsPrefix.length);
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(json);
+  } on FormatException {
+    out.add(segment); // 非法 JSON：回退原文
+    return;
+  }
+  if (decoded is! List<Object?>) {
+    out.add(segment); // 非数组形态：回退原文
+    return;
+  }
+  for (final item in decoded) {
+    if (item is String && item.trim().isNotEmpty) {
+      out.add(item);
+    }
+  }
+}
 
 /// 阅读记录 Riverpod Notifier（对齐原版 ReadRecordActivity）
 ///
@@ -136,14 +191,21 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
   /// v113 起阅读记录主键含作者：按「显示书名 + 显示作者」分组聚合
   /// （`displayBookName`/`displayAuthor` 为空回退物理 `bookName`/`author`），
   /// `readTime` 求和、`lastRead` 取最大。同名不同作者各自成行，不再互相覆盖时长。
+  ///
+  /// [批27b P2-1 | 2026-10-28] 作者展示值经
+  /// [decodeReadRecordAuthorsForDisplay] 解码历史合并作者串
+  /// （`\u001Eauthors:["作者B","作者C"]` → 「作者B、作者C」），
+  /// 对齐原版 `ReadRecordShow.displayAuthor = ReadRecordAuthors.display(author)`；
+  /// 契约 §2.12 声称的展示解码此前缺失，合并作者行会原样显示编码串。
   static List<ReadRecordShow> _toShowList(List<ReadRecord> raw) {
     final map = <String, ReadRecordShow>{};
     for (final r in raw) {
       final displayName =
           r.displayBookName.isNotEmpty ? r.displayBookName : r.bookName;
-      final displayAuthor = r.displayAuthor.isNotEmpty
+      final rawAuthor = r.displayAuthor.isNotEmpty
           ? r.displayAuthor
           : (r.author.isNotEmpty ? r.author : (r.resolvedAuthor ?? ''));
+      final displayAuthor = decodeReadRecordAuthorsForDisplay(rawAuthor);
       final key = '$displayName\u0000$displayAuthor';
       final prev = map[key];
       if (prev == null) {

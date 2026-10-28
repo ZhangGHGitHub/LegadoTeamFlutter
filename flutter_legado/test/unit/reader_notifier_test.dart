@@ -19,6 +19,8 @@ void main() {
 
   setUpAll(() {
     registerFallbacks();
+    // 批27b P1-1：putReadRecord 的 captureAny/any 需要值类型 fallback
+    registerFallbackValue(const ReadRecord());
   });
 
   setUp(() {
@@ -516,6 +518,122 @@ void main() {
             chapterIndex: 0,
             chapterPos: 0,
           )).called(greaterThan(0));
+    });
+  });
+
+  // [批27b P1-1 | 2026-10-28] 阅读时长会话基数不得求和同书其他作者行
+  //
+  // Rust 写路径（`read_record_api.rs::upsert_read_record`）只取该书的「主记录」
+  // （author='' 优先 → lastRead 最大 → readTime 最大）作 old_read_time，再把
+  // 新时长写回该行；Dart 基数若把同书所有作者行求和，第二会话起会把其他作者
+  // 的时长重复叠加进主记录（热力图/记录页膨胀）。此处锁定「基数与 Rust 主记录
+  // 口径一致」：两行同名不同作者时，写入值必须只基于主记录。
+  group('阅读时长会话基数（主记录口径，不叠加其他作者）', () {
+    const dupBook = Book(bookUrl: 'https://b.com/dup', name: '同名书');
+
+    void stubSessionRecords(List<ReadRecord> records) {
+      when(() => mockApi.getReadRecords()).thenAnswer((_) async => records);
+      when(() => mockApi.putReadRecord(any())).thenAnswer((_) async {});
+    }
+
+    List<ReadRecord> capturedPuts() =>
+        verify(() => mockApi.putReadRecord(captureAny()))
+            .captured
+            .cast<ReadRecord>();
+
+    test('author 为空的主记录优先：不叠加其他作者行的时长', () async {
+      stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
+      // FFI 按 readTime 降序返回：另一作者行（S）排在主记录（P）之前，
+      // 基数选取必须按主记录口径而非列表首行。
+      stubSessionRecords([
+        const ReadRecord(
+          bookName: '同名书',
+          author: '作者S',
+          readTime: 900000,
+          lastRead: 99,
+        ),
+        const ReadRecord(
+          bookName: '同名书',
+          author: '',
+          readTime: 100000,
+          lastRead: 10,
+        ),
+      ]);
+      container.read(readerNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().openBook(dupBook);
+      // 确保会话增量 > 0（同毫秒内 delta 为 0 时写路径按设计跳过）
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await readNotifier().saveProgress();
+
+      final puts = capturedPuts();
+      expect(puts, isNotEmpty);
+      expect(puts.last.bookName, '同名书');
+      // 旧实现：基数 = 100000 + 900000（求和）；修复后：基数 = 主记录 100000
+      expect(puts.last.readTime, greaterThanOrEqualTo(100000));
+      expect(
+        puts.last.readTime,
+        lessThan(900000),
+        reason: '主记录时长不得包含其他作者行的 900000ms（会重复累加）',
+      );
+    });
+
+    test('无空作者行时按 lastRead 最大行取基数（与 Rust 排序一致）', () async {
+      stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
+      // readTime 最大者 lastRead 较旧：主记录应为 lastRead 最大的「作者B」
+      stubSessionRecords([
+        const ReadRecord(
+          bookName: '同名书',
+          author: '作者A',
+          readTime: 900000,
+          lastRead: 10,
+        ),
+        const ReadRecord(
+          bookName: '同名书',
+          author: '作者B',
+          readTime: 100000,
+          lastRead: 99,
+        ),
+      ]);
+      container.read(readerNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().openBook(dupBook);
+      // 确保会话增量 > 0（同毫秒内 delta 为 0 时写路径按设计跳过）
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await readNotifier().saveProgress();
+
+      final puts = capturedPuts();
+      expect(puts, isNotEmpty);
+      expect(puts.last.readTime, greaterThanOrEqualTo(100000));
+      expect(
+        puts.last.readTime,
+        lessThan(900000),
+        reason: '无空作者行时应以 lastRead 最大者为主记录（Rust 口径）',
+      );
+    });
+
+    test('无同书记录时基数为 0', () async {
+      stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
+      stubSessionRecords([
+        const ReadRecord(bookName: '另一本书', author: '', readTime: 900000),
+      ]);
+      container.read(readerNotifierProvider);
+      await pumpInit();
+
+      await readNotifier().openBook(dupBook);
+      // 确保会话增量 > 0（同毫秒内 delta 为 0 时写路径按设计跳过）
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await readNotifier().saveProgress();
+
+      final puts = capturedPuts();
+      expect(puts, isNotEmpty);
+      expect(
+        puts.last.readTime,
+        lessThan(10000),
+        reason: '不同书名的记录不得进入本书会话基数',
+      );
     });
   });
 

@@ -778,6 +778,13 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   /// 进入阅读会话：加载已有时长并重置计时起点（对标 ReadBook.resetData）
+  ///
+  /// [批27b P1-1 | 2026-10-28] 基数只取该书的「主记录」，**不得把同名书
+  /// 所有作者行的 readTime 求和**：Rust 写路径
+  /// （`read_record_api.rs::upsert_read_record`）只取一行（author='' 优先，
+  /// 其次 lastRead 最大）作 old_read_time，并把新时长写回该行；若基数含
+  /// 其他作者行，第二会话起每会话都会把别人的时长重复叠加进主记录，热力图
+  /// 与阅读记录页随之膨胀。选取口径见 [_primaryReadRecord]。
   Future<void> _beginReadRecordSession(Book book) async {
     _readStartMs = DateTime.now().millisecondsSinceEpoch;
     _baseReadTimeMs = 0;
@@ -785,14 +792,42 @@ class ReaderNotifier extends Notifier<ReaderState> {
       final enable = await _settings.getEnableReadRecord();
       if (!enable) return;
       final records = await ref.read(bookApiProvider).getReadRecords();
-      for (final r in records) {
-        if (r.bookName == book.name) {
-          _baseReadTimeMs += r.readTime;
-        }
-      }
+      _baseReadTimeMs = _primaryReadRecord(records, book.name)?.readTime ?? 0;
     } catch (_) {
       // 忽略：阅读记录失败不阻断打开书籍
     }
+  }
+
+  /// 选取该书的「主记录」——与 Rust `ReadRecordRepository::primary_record`
+  /// 的排序口径**完全一致**：
+  ///
+  /// `author == ''` 优先（旧式本机记录）→ `lastRead` 最大 → `readTime` 最大。
+  ///
+  /// 写路径（`putReadRecord`）不传作者，Rust 侧按同一口径选主记录回写；
+  /// 两侧口径任何不一致都会导致时长错记/重复累加（批27b P1-1）。
+  static ReadRecord? _primaryReadRecord(
+    List<ReadRecord> records,
+    String bookName,
+  ) {
+    ReadRecord? primary;
+    for (final r in records) {
+      if (r.bookName != bookName) continue;
+      if (primary == null || _preferPrimary(r, primary)) {
+        primary = r;
+      }
+    }
+    return primary;
+  }
+
+  /// [candidate] 是否应优先于 [current] 作为主记录（同 Rust ORDER BY 语义）
+  static bool _preferPrimary(ReadRecord candidate, ReadRecord current) {
+    final candidateBlank = candidate.author.isEmpty;
+    final currentBlank = current.author.isEmpty;
+    if (candidateBlank != currentBlank) return candidateBlank;
+    if (candidate.lastRead != current.lastRead) {
+      return candidate.lastRead > current.lastRead;
+    }
+    return candidate.readTime > current.readTime;
   }
 
   /// 累计并写入阅读时长（对标 ReadBook.upReadTime）
