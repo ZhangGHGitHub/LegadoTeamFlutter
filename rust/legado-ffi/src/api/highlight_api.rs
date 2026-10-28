@@ -101,9 +101,14 @@ pub fn highlight_rule_list() -> LegadoResult<Vec<HighlightRule>> {
 /// 保存高亮规则（新增或按 ID 覆盖），返回规则 ID
 ///
 /// `rule_json` 为 HighlightRule JSON；id 为 0 时使用自增主键新增。
+///
+/// 批28b（P3-3）：保存前只规整 `group`（trim→null），与导入/恢复口径一致；
+/// **不**调用完整 `normalize_for_restore`——编辑保存不得重新生成 uuid
+/// （规则身份需稳定），缺失 uuid 仍由 serde 默认值兜底。
 pub fn highlight_rule_save(rule_json: &str) -> LegadoResult<i64> {
-    let rule: HighlightRule = serde_json::from_str(rule_json)
+    let mut rule: HighlightRule = serde_json::from_str(rule_json)
         .map_err(|e| LegadoError::Parser(format!("解析高亮规则 JSON 失败: {e}")))?;
+    rule.normalize_group();
     with_database(|db| {
         let repo = HighlightRuleRepository::new(db.connection());
         repo.insert(&rule)
@@ -291,5 +296,36 @@ mod tests {
         let _db_guard = crate::db_state::ensure_test_db();
         assert!(highlight_add("{invalid json").is_err());
         assert!(highlight_rule_save("{invalid json").is_err());
+    }
+
+    /// 批28b（P3-3）：`highlight_rule_save` 只规整 group（trim→null），
+    /// 不得像恢复路径那样重新生成 uuid（规则身份需稳定）
+    #[test]
+    fn test_highlight_rule_save_normalizes_group_only() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let uuid = "55555555-5555-4555-8555-555555555555";
+        let json = format!(
+            r#"{{"uuid":"{uuid}","name":"分组规则","pattern":"p",
+                 "style":"{{}}","group":"  分组A  "}}"#
+        );
+        let id = highlight_rule_save(&json).unwrap();
+        let rules = highlight_rule_list().unwrap();
+        let rule = rules.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(rule.group.as_deref(), Some("分组A"), "group 应去首尾空白");
+        assert_eq!(rule.uuid, uuid, "编辑保存不得重新生成 uuid");
+        assert!(highlight_rule_delete(id).unwrap());
+
+        // 空白分组 → None（对齐原版 normalizeForRestore 的 takeIf 语义）
+        let blank_json = format!(
+            r#"{{"uuid":"{uuid}","name":"空白分组规则","pattern":"p",
+                 "style":"{{}}","group":"   "}}"#
+        );
+        let blank_id = highlight_rule_save(&blank_json).unwrap();
+        let rules = highlight_rule_list().unwrap();
+        let blank = rules.iter().find(|r| r.id == blank_id).unwrap();
+        assert_eq!(blank.group, None, "空白 group 应规整为 None");
+        assert_eq!(blank.uuid, uuid);
+        assert!(highlight_rule_delete(blank_id).unwrap());
     }
 }

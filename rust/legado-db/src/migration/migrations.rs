@@ -1019,6 +1019,77 @@ mod tests {
         assert!(column_exists(conn, "rssSources", "cacheFirst"));
     }
 
+    /// 批28b（P3-4）：`user_version` 已到 114 但缺新列时，开库自愈补列
+    ///
+    /// 历史坑：版本号门禁先推进、补列失败或被外部工具重建表时，
+    /// `highlightRules.group` / `rssSources.enableReadRecord` 会缺失；
+    /// `repair_legacy_columns` 不占版本号、每次开库执行，必须兜住。
+    #[test]
+    fn test_repair_legacy_columns_user_version_114_missing_new_columns() {
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TABLE highlightRules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                uuid TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                isRegex INTEGER NOT NULL,
+                scope TEXT,
+                isEnabled INTEGER NOT NULL,
+                style TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                timeoutMillisecond INTEGER NOT NULL,
+                applyToTitle INTEGER NOT NULL DEFAULT 0,
+                applyToBody INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE TABLE rssSources (
+                sourceUrl TEXT PRIMARY KEY,
+                sourceName TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO highlightRules (uuid, name, pattern, isRegex, isEnabled, style,
+                sortOrder, timeoutMillisecond)
+                VALUES ('33333333-3333-4333-8333-333333333333', '存量规则', 'p', 0, 1, '{}', 0, 3000);
+            INSERT INTO rssSources (sourceUrl, sourceName) VALUES ('https://heal.example.com', '存量源');",
+        )
+        .unwrap();
+        // 模拟「版本号已到 114、结构仍旧」的历史坑
+        conn.pragma_update(None, "user_version", 114).unwrap();
+
+        repair_legacy_columns(conn).unwrap();
+
+        assert!(
+            column_exists(conn, "highlightRules", "group"),
+            "user_version=114 但缺 group 时自愈应补列"
+        );
+        assert!(
+            column_exists(conn, "rssSources", "enableReadRecord"),
+            "user_version=114 但缺 enableReadRecord 时自愈应补列"
+        );
+
+        let group: Option<String> = conn
+            .query_row(
+                "SELECT \"group\" FROM highlightRules WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(group.as_deref(), Some(""), "存量行应取原版默认空串");
+        let flag: i64 = conn
+            .query_row(
+                "SELECT enableReadRecord FROM rssSources
+                 WHERE sourceUrl = 'https://heal.example.com'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(flag, 1, "存量行应取原版默认 1（true）");
+
+        // 重复执行仍幂等
+        repair_legacy_columns(conn).unwrap();
+    }
+
     #[test]
     fn test_migration_99_to_100_rule_subs_columns() {
         // 构造 v99 形态的 rule_subs 表（缺少新增 7 列）

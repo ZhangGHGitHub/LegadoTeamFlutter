@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::models::serde_utils::lenient_opt_i32;
+
 /// 正文处理规则
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ContentRule {
@@ -42,7 +44,14 @@ pub struct ContentRule {
     ///
     /// 默认 `None` 表示不支持批量；原版 `BookSource.contentBatchSize()` 把
     /// 有效值收敛到 1..=50（`MAX_CONTENT_BATCH_SIZE`），本批仅保真存储、不做行为。
-    #[serde(skip_serializing_if = "Option::is_none", rename = "maxBatchSize")]
+    /// 批28b：兼容显式 null、JSON 数字与数字字符串（Gson 容忍 `"20"`），
+    /// 避免单条源字段类型不标准击穿 `import_sources` 整批解析。
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "maxBatchSize",
+        deserialize_with = "lenient_opt_i32"
+    )]
     pub max_batch_size: Option<i32>,
 }
 
@@ -90,5 +99,30 @@ mod tests {
             serde_json::from_str(r#"{"contentBatch": "x", "maxBatchSize": null}"#).unwrap();
         assert_eq!(rule.content_batch.as_deref(), Some("x"));
         assert_eq!(rule.max_batch_size, None);
+    }
+
+    /// 批28b（P2-1 红→绿）：`maxBatchSize` 兼容数字字符串
+    ///
+    /// 修复前 `Option<i32>` 严格解析会把 `"20"` 判为类型错误，并因
+    /// `import_sources` 整数组一次解析而击穿整批导入。
+    #[test]
+    fn test_content_rule_max_batch_size_lenient_string_number() {
+        let rule: ContentRule =
+            serde_json::from_str(r#"{"contentBatch":"batch@js:result","maxBatchSize":"20"}"#)
+                .unwrap();
+        assert_eq!(rule.content_batch.as_deref(), Some("batch@js:result"));
+        assert_eq!(
+            rule.max_batch_size,
+            Some(20),
+            "\"20\" 应按 Gson 口径解析为 20"
+        );
+
+        // 带空白同样容忍
+        let padded: ContentRule = serde_json::from_str(r#"{"maxBatchSize":" 7 "}"#).unwrap();
+        assert_eq!(padded.max_batch_size, Some(7));
+
+        // 数字仍按原语义解析
+        let number: ContentRule = serde_json::from_str(r#"{"maxBatchSize":20}"#).unwrap();
+        assert_eq!(number.max_batch_size, Some(20));
     }
 }

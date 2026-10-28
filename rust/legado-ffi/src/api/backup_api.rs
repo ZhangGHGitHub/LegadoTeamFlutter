@@ -2225,10 +2225,17 @@ fn restore_backup_in_tx(
     }
     for value in &backup.highlight_rules {
         match serde_json::from_value::<legado_core::models::HighlightRule>(value.clone()) {
-            Ok(rule) => match highlight_rule_repo.insert(&rule) {
-                Ok(_) => {}
-                Err(e) => log::warn!("恢复高亮规则失败（已跳过）: {e}"),
-            },
+            Ok(mut rule) => {
+                // 批28b（P3-3）：恢复前规整对齐原版 `normalizeForRestore`
+                // （group trim→null、非法 uuid 重生成、超时回退默认）。
+                // 恢复语义允许重建 uuid（原版导入/恢复同口径）；编辑保存路径
+                // 只做 group 规整，不触碰 uuid，见 `highlight_rule_save`。
+                rule.normalize_for_restore();
+                match highlight_rule_repo.insert(&rule) {
+                    Ok(_) => {}
+                    Err(e) => log::warn!("恢复高亮规则失败（已跳过）: {e}"),
+                }
+            }
             Err(e) => log::warn!("恢复高亮规则解析失败（已跳过）: {e}"),
         }
     }
@@ -2569,7 +2576,7 @@ pub fn import_old_data(dir: &str) -> LegadoResult<String> {
 /// v2 起备份改走 repository 模型序列化；本函数仅用于兼容旧备份恢复。
 fn normalize_v1_rss_entry(value: &serde_json::Value) -> serde_json::Value {
     /// RssSource 模型中 bool / Option<bool> 字段对应的 JSON 键
-    const BOOL_KEYS: [&str; 8] = [
+    const BOOL_KEYS: [&str; 9] = [
         "enabled",
         "singleUrl",
         "enableJs",
@@ -2578,6 +2585,8 @@ fn normalize_v1_rss_entry(value: &serde_json::Value) -> serde_json::Value {
         "preload",
         "cacheFirst",
         "enabledCookieJar",
+        // 批28b（P3-5）：v1 备份 SELECT * 同样会把该列落为 0/1
+        "enableReadRecord",
     ];
     match value {
         serde_json::Value::Object(map) => {
@@ -4575,7 +4584,9 @@ mod tests {
             "bookSourceGroup":"组","bookSourceType":0,"enabled":true,"enabledExplore":true,
             "customOrder":1,"weight":0,"respondTime":180000,
             "searchUrl":"/search?q={{key}}",
-            "ruleSearch":{"bookList":"class.b","name":"a@text","bookUrl":"a@href"}}]"#;
+            "ruleSearch":{"bookList":"class.b","name":"a@text","bookUrl":"a@href"},
+            "ruleContent":{"content":".content@text","contentBatch":"batch@js:result",
+                "maxBatchSize":20}}]"#;
         let rss_sources = r#"[{"sourceUrl":"https://zip.example/rss","sourceName":"zip RSS",
             "sourceIcon":"https://zip.example/icon.png","enabled":true,"type":1,
             "enableReadRecord":false,
@@ -4713,6 +4724,19 @@ mod tests {
                 .expect("书源应落库");
             assert_eq!(source.book_source_name, "zip源");
             assert!(source.rule_search.is_some(), "搜索规则应随备份落库");
+            // 批28b（P2-3）：原版 zip bookSource.json 的批量正文规则原样透传
+            let content_rule = source.rule_content.expect("正文规则应随备份落库");
+            assert_eq!(content_rule.content.as_deref(), Some(".content@text"));
+            assert_eq!(
+                content_rule.content_batch.as_deref(),
+                Some("batch@js:result"),
+                "contentBatch 应随原版 zip 备份透传（批28b）"
+            );
+            assert_eq!(
+                content_rule.max_batch_size,
+                Some(20),
+                "maxBatchSize 应随原版 zip 备份透传（批28b）"
+            );
 
             // RSS 源 / 收藏
             let rss = RssSourceRepository::new(conn)

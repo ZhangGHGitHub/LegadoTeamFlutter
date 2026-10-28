@@ -8,6 +8,7 @@ pub mod highlight;
 pub mod misc;
 pub mod rss_source;
 pub mod rule;
+pub(crate) mod serde_utils;
 
 pub use book::book_type;
 pub use book::{Book, ReadConfig};

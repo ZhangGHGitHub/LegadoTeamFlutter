@@ -1,47 +1,7 @@
-use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::rule::{BookInfoRule, ContentRule, ExploreRule, ReviewRule, SearchRule, TocRule};
-
-/// 宽松反序列化：兼容 JSON 数字与数字字符串
-///
-/// 原版 Legado 使用 Gson，会自动把字符串数字（如 "1785432524399"）
-/// 转换为数字；第三方书源 JSON 中 lastUpdateTime 等字段经常以字符串
-/// 形式出现，serde 默认严格模式会直接报错，这里做兼容。
-fn lenient_i64<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
-    let v = serde_json::Value::deserialize(d)?;
-    match &v {
-        serde_json::Value::Number(n) => n
-            .as_i64()
-            .ok_or_else(|| D::Error::custom("数字超出 i64 范围")),
-        serde_json::Value::String(s) => s
-            .trim()
-            .parse::<i64>()
-            .map_err(|_| D::Error::custom(format!("无法解析数字: {s}"))),
-        _ => Err(D::Error::custom("期望数字或数字字符串")),
-    }
-}
-
-/// 宽松反序列化：兼容 JSON 数字与数字字符串（i32）
-fn lenient_i32<'de, D: Deserializer<'de>>(d: D) -> Result<i32, D::Error> {
-    let v = lenient_i64(d)?;
-    i32::try_from(v).map_err(|_| D::Error::custom("数字超出 i32 范围"))
-}
-
-/// 宽松反序列化：兼容 bool、0/1 数字与 "true"/"false" 字符串
-fn lenient_bool<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
-    let v = serde_json::Value::deserialize(d)?;
-    match &v {
-        serde_json::Value::Bool(b) => Ok(*b),
-        serde_json::Value::Number(n) => Ok(n.as_i64() != Some(0)),
-        serde_json::Value::String(s) => match s.trim() {
-            "true" | "1" => Ok(true),
-            "false" | "0" | "" => Ok(false),
-            other => Err(D::Error::custom(format!("无法解析布尔值: {other}"))),
-        },
-        _ => Err(D::Error::custom("期望布尔值")),
-    }
-}
+use super::serde_utils::{lenient_bool, lenient_i32, lenient_i64, lenient_opt_bool};
 
 /// 宽松反序列化：字符串字段容忍显式 null 与其他标量类型
 ///
@@ -49,28 +9,15 @@ fn lenient_bool<'de, D: Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
 /// JSON 也可能带显式 `"variable": null`；serde 严格模式对 null 直接报错，
 /// 会击穿 add_source/update_source/source_import 全链路（台账评审 C1）。
 /// 规则：Null→空串、String 原样、其他类型 to_string（Gson 式宽松）。
+///
+/// 数字/布尔宽松解析已抽到 [`super::serde_utils`]（批28b），供
+/// `ContentRule.maxBatchSize` / `RssSource.enableReadRecord` 复用。
 fn lenient_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
     match &v {
         serde_json::Value::Null => Ok(String::new()),
         serde_json::Value::String(s) => Ok(s.clone()),
         other => Ok(other.to_string()),
-    }
-}
-
-/// 宽松反序列化：Option<bool> 版本（字段缺省时为 None）
-fn lenient_opt_bool<'de, D: Deserializer<'de>>(d: D) -> Result<Option<bool>, D::Error> {
-    let v = serde_json::Value::deserialize(d)?;
-    match &v {
-        serde_json::Value::Null => Ok(None),
-        serde_json::Value::Bool(b) => Ok(Some(*b)),
-        serde_json::Value::Number(n) => Ok(Some(n.as_i64() != Some(0))),
-        serde_json::Value::String(s) => match s.trim() {
-            "true" | "1" => Ok(Some(true)),
-            "false" | "0" | "" => Ok(Some(false)),
-            other => Err(D::Error::custom(format!("无法解析布尔值: {other}"))),
-        },
-        _ => Err(D::Error::custom("期望布尔值")),
     }
 }
 

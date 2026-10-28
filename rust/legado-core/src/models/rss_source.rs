@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use super::serde_utils::lenient_bool_default_true;
+
 /// RSS源实体
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RssSource {
     #[serde(default, rename = "sourceUrl")]
     pub source_url: String,
@@ -26,7 +28,16 @@ pub struct RssSource {
     /// 批28：上游运行期已回退为全局开关（`AppConfig.enableReadRecord`），按源
     /// 开关不生效；本批只做字段/DB 往返保真（导入、导出、备份、编辑保存不丢），
     /// 不实现按源开关行为。缺键 → true（对齐 Kotlin 构造默认值）。
-    #[serde(default = "default_true", rename = "enableReadRecord")]
+    ///
+    /// 批28b：原版备份/第三方 JSON 存在 `0`/`1` 整数与字符串布尔；
+    /// `lenient_bool_default_true` 兼容 bool / 0/1 / `"true"`/`"false"`，
+    /// 显式 null 按语义默认值 `true`（差异登记于 API 契约 §2.5）。
+    /// `RssSource::default()` 同步为 `true`（批28b，见手写 Default）。
+    #[serde(
+        default = "default_true",
+        rename = "enableReadRecord",
+        deserialize_with = "lenient_bool_default_true"
+    )]
     pub enable_read_record: bool,
     /// 自定义变量说明
     #[serde(skip_serializing_if = "Option::is_none", rename = "variableComment")]
@@ -154,6 +165,65 @@ pub struct RssSource {
     pub search_url: Option<String>,
 }
 
+/// 手写 Default（批28b）：`enable_read_record` 与 serde/DB 默认值对齐为 `true`
+///
+/// 派生 `Default` 会让 bool 全部落 `false`，与反序列化缺键（`default_true`）
+/// 及 DB 列 `INTEGER NOT NULL DEFAULT 1` 不一致；`RssSource::default()` 构造
+/// 再落库/序列化时会把阅读记录开关写成 false。此处只把该字段改为 true，
+/// 其余字段保持派生默认，避免扩大行为面（`enabled` 等字段的默认语义另案）。
+impl Default for RssSource {
+    fn default() -> Self {
+        Self {
+            source_url: String::new(),
+            source_name: String::new(),
+            source_icon: String::new(),
+            source_group: None,
+            source_comment: None,
+            enabled: false,
+            enable_read_record: true,
+            variable_comment: None,
+            js_lib: None,
+            enabled_cookie_jar: None,
+            concurrent_rate: None,
+            header: None,
+            login_url: None,
+            login_ui: None,
+            login_check_js: None,
+            cover_decode_js: None,
+            sort_url: None,
+            single_url: false,
+            article_style: 0,
+            rule_articles: None,
+            rule_next_page: None,
+            rule_title: None,
+            rule_pub_date: None,
+            rule_description: None,
+            rule_image: None,
+            rule_link: None,
+            rule_content: None,
+            next_content_url: None,
+            content_whitelist: None,
+            content_blacklist: None,
+            should_override_url_loading: None,
+            style: None,
+            enable_js: false,
+            load_with_base_url: false,
+            inject_js: None,
+            preload_js: None,
+            start_html: None,
+            start_style: None,
+            start_js: None,
+            show_web_log: false,
+            last_update_time: 0,
+            custom_order: 0,
+            rss_type: 0,
+            preload: false,
+            cache_first: false,
+            search_url: None,
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -165,10 +235,11 @@ mod tests {
     #[test]
     fn test_rss_source_default() {
         let rss = RssSource::default();
-        // Note: derive(Default) gives false for bool, serde defaults only apply during deserialization
+        // Note: 手写 Default 仅把 enableReadRecord 对齐 serde/DB 默认值 true，
+        // 其余 bool 仍为 false（serde defaults 只在反序列化时生效）
         assert!(!rss.enabled);
-        // 批28：enableReadRecord 同为 bool（Default=false），反序列化缺键才是 true
-        assert!(!rss.enable_read_record);
+        // 批28b（P3-2）：Default 与 serde/DB 默认一致（阅读历史开关默认开）
+        assert!(rss.enable_read_record);
         assert!(!rss.enable_js);
         assert!(!rss.load_with_base_url);
         assert!(!rss.single_url);
@@ -240,6 +311,35 @@ mod tests {
         assert_eq!(value["enableReadRecord"], false);
         let decoded: RssSource = serde_json::from_value(value).unwrap();
         assert!(!decoded.enable_read_record);
+    }
+
+    /// 批28b（P2-1 红→绿）：`enableReadRecord` 宽松类型兼容
+    ///
+    /// 修复前 `bool` 严格字段遇到旧备份/第三方 JSON 的 `0`/`1` 整数或
+    /// `"true"`/`"false"` 字符串会解析失败，并击穿 `import_rss_sources`
+    /// 整数组导入（批28 之前该键被忽略，源可导入，属新增失败模式）。
+    #[test]
+    fn test_rss_source_enable_read_record_lenient_types() {
+        let cases: [(&str, bool); 6] = [
+            ("1", true),
+            ("0", false),
+            ("\"true\"", true),
+            ("\"false\"", false),
+            ("\"1\"", true),
+            ("\"0\"", false),
+        ];
+        for (raw, expected) in cases {
+            let json = format!(r#"{{"sourceUrl":"u","enableReadRecord":{raw}}}"#);
+            let rss: RssSource = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{raw} 应可解析（Gson 宽松口径）: {e}"));
+            assert_eq!(rss.enable_read_record, expected, "raw={raw}");
+        }
+
+        // 显式 null → 语义默认值 true（与缺键一致；与 Gson 原始类型跳赋值的
+        // 差异已登记于 docs/API_CONTRACT.md §2.5）
+        let null: RssSource =
+            serde_json::from_str(r#"{"sourceUrl":"u","enableReadRecord":null}"#).unwrap();
+        assert!(null.enable_read_record);
     }
 
     #[test]

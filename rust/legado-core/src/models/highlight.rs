@@ -175,14 +175,24 @@ impl HighlightRule {
             Err(_) => uuid::Uuid::new_v4().to_string(),
         };
         // name/pattern/style 为 String 非 null，无需原版 (x as String?).orEmpty() 等价处理
+        self.normalize_group();
+        if self.timeoutMillisecond <= 0 {
+            self.timeoutMillisecond = DEFAULT_TIMEOUT_MILLISECONDS;
+        }
+    }
+
+    /// 分组规整：去首尾空白，空白规整为 `None`
+    ///
+    /// 批28b（P3-3）：恢复路径走 [`Self::normalize_for_restore`]（含 uuid
+    /// 语义）；编辑保存路径（`highlight_rule_save`）只调用本方法，**不**
+    /// 重新生成 uuid（用户规则身份保持稳定，缺失/非法 uuid 仍由 serde
+    /// `default_uuid` 或数据库约束按既有语义处理）。
+    pub fn normalize_group(&mut self) {
         self.group = self
             .group
             .take()
             .map(|g| g.trim().to_string())
             .filter(|g| !g.is_empty());
-        if self.timeoutMillisecond <= 0 {
-            self.timeoutMillisecond = DEFAULT_TIMEOUT_MILLISECONDS;
-        }
     }
 }
 

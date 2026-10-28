@@ -1114,4 +1114,47 @@ mod tests {
         let _ =
             with_database(|db| legado_db::BookSourceRepository::new(db.connection()).delete(url));
     }
+
+    /// 批28b（P2-1 红→绿）：`enableReadRecord` 为 0/1 整数时整批导入成功
+    ///
+    /// 修复前 bool 严格字段解析失败会击穿 `import_rss_sources` 整数组导入；
+    /// 同时直测 `list_rss_sources` 行映射（P3-8）与 nextContentUrl 透传。
+    #[test]
+    fn import_rss_sources_accepts_numeric_enable_read_record() {
+        let _guard = crate::db_state::ensure_test_db();
+        let url_off = "https://rss-lenient-flag-off.example.com/feed";
+        let url_on = "https://rss-lenient-flag-on.example.com/feed";
+        let _ = delete_rss_source(url_off);
+        let _ = delete_rss_source(url_on);
+
+        let batch = format!(
+            r#"[{{"sourceUrl":"{url_off}","sourceName":"关开关","enableReadRecord":0,
+                 "nextContentUrl":".next@href"}},
+                {{"sourceUrl":"{url_on}","sourceName":"开开关","enableReadRecord":1}}]"#
+        );
+        assert_eq!(
+            import_rss_sources(&batch).expect("整数布尔不得击穿整批导入"),
+            2
+        );
+
+        let sources = list_rss_sources().expect("list rss");
+        let off = sources
+            .iter()
+            .find(|s| s.source_url == url_off)
+            .expect("关闭源应落库");
+        assert!(!off.enable_read_record, "0 应解析为 false");
+        assert_eq!(
+            off.next_content_url.as_deref(),
+            Some(".next@href"),
+            "nextContentUrl 应随 list_rss_sources 行映射返回（P3-8）"
+        );
+        let on = sources
+            .iter()
+            .find(|s| s.source_url == url_on)
+            .expect("开启源应落库");
+        assert!(on.enable_read_record, "1 应解析为 true");
+
+        let _ = delete_rss_source(url_off);
+        let _ = delete_rss_source(url_on);
+    }
 }

@@ -343,4 +343,40 @@ mod tests {
         delete_source(url_ok).unwrap();
         delete_source(url_ok2).unwrap();
     }
+
+    /// 批28b（P2-1 红→绿）：`ruleContent.maxBatchSize` 为数字字符串时
+    /// 整批导入仍成功（Gson 宽松口径），且值按 20 落库
+    ///
+    /// 修复前 `Option<i32>` 严格解析报错 → `import_sources` 整数组解析失败，
+    /// 批28 之前该键被忽略、源可导入，属新增失败模式。
+    #[test]
+    fn test_import_sources_lenient_max_batch_size_string() {
+        let _db_guard = setup_test_db();
+        let url = "https://ffi-lenient-maxbatch.example";
+
+        let batch = format!(
+            r#"[{{"bookSourceUrl":"{url}","bookSourceName":"宽松批量源",
+                 "ruleContent":{{"contentBatch":"batch@js:result","maxBatchSize":"20"}}}}]"#
+        );
+        assert_eq!(
+            import_sources(&batch).unwrap(),
+            1,
+            "maxBatchSize 字符串数字不得击穿整批导入"
+        );
+
+        let sources = list_sources().unwrap();
+        let source = sources
+            .into_iter()
+            .find(|s| s.book_source_url == url)
+            .expect("宽松书源应落库");
+        let rule = source.rule_content.expect("正文规则应落库");
+        assert_eq!(rule.content_batch.as_deref(), Some("batch@js:result"));
+        assert_eq!(
+            rule.max_batch_size,
+            Some(20),
+            "\"20\" 应按 Gson 口径落为 20"
+        );
+
+        delete_source(url).unwrap();
+    }
 }

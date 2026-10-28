@@ -383,6 +383,53 @@ mod tests {
         assert_eq!(found.unwrap().book_source_name, "测试书源");
     }
 
+    /// 批28b（P2-3 端到端）：`ruleContent.contentBatch` / `maxBatchSize`
+    /// 经 repository insert → find 往返不丢（规则 JSON 列全字段序列化）
+    #[test]
+    fn test_insert_and_find_preserves_content_batch_fields() {
+        use legado_core::models::ContentRule;
+
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("https://batch.example.com", "批量源");
+        src.rule_content = Some(ContentRule {
+            content: Some(".content@text".to_string()),
+            content_batch: Some("batch@js:result".to_string()),
+            max_batch_size: Some(20),
+            ..ContentRule::default()
+        });
+        repo.insert(&src).unwrap();
+
+        let found = repo
+            .find_by_url("https://batch.example.com")
+            .unwrap()
+            .expect("书源应可读回");
+        let rule = found.rule_content.as_ref().expect("ruleContent 应存在");
+        assert_eq!(rule.content.as_deref(), Some(".content@text"));
+        assert_eq!(
+            rule.content_batch.as_deref(),
+            Some("batch@js:result"),
+            "contentBatch 必须随仓储往返保留"
+        );
+        assert_eq!(
+            rule.max_batch_size,
+            Some(20),
+            "maxBatchSize 必须随仓储往返保留"
+        );
+
+        // 更新路径（update = INSERT OR REPLACE）同样保真
+        let mut updated = found.clone();
+        updated.rule_content.as_mut().unwrap().max_batch_size = Some(5);
+        repo.update(&updated).unwrap();
+        let reread = repo
+            .find_by_url("https://batch.example.com")
+            .unwrap()
+            .unwrap();
+        let rule = reread.rule_content.expect("ruleContent 应存在");
+        assert_eq!(rule.content_batch.as_deref(), Some("batch@js:result"));
+        assert_eq!(rule.max_batch_size, Some(5));
+    }
+
     #[test]
     fn test_find_enabled() {
         let db = crate::init_in_memory_database().unwrap();
