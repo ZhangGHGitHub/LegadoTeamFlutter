@@ -701,6 +701,13 @@
 | `readRecordDailyList(int year)` | year：年份 | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]`，日期升序） | **新增（热力图每日时长契约，2026-08-29，U 侧 UI_MD3_PLAN 登记；单位归一 2026-09-11）**：按年查询每日阅读秒数（readRecordDaily 表：`date TEXT PK` + `durationSeconds INTEGER`）；由 `putReadRecord` 写路径自动累加，UI 轨热力图「每日时长」配色模式数据源。存量毫秒值经 DB v107 迁移归一为秒（见更新记录） |
 
 > **readRecord v113（2026-10-28 批27，零 FFI 签名变化）**：`ReadRecord` 返回/接收 JSON 为 13 字段（`deviceId`/`bookName`/`author`/`readTime`/`lastRead`/`lastChapterTitle`/`lastChapterIndex`/`lastChapterPos`/`coverUrl`/`resolvedAuthor`/`displayBookName`/`displayAuthor`/`metadataEditedAt`），主键为 `(deviceId, bookName, author)`；同名不同作者的记录**分行**存在，`getReadRecords` 按 `readTime` 降序返回全部行。Dart 侧按「`displayBookName`/`displayAuthor`（为空回退物理 `bookName`/`author`）」分组聚合（`readTime` 求和、`lastRead` 取最大），同名不同作者不再互相覆盖时长。`putReadRecord` 仍只写 `bookName/readTime`（FFI 既有签名）：定位该书的「主记录」（`author=''` 优先，其次 `lastRead` 最新）并只更新 `readTime`，**不清空**章节快照/封面/显示字段（写路径不再做作者合并）；**阅读器写路径本批未传作者**（签名未变），时长记入该书主记录，作者感知写入后续批补。`deleteReadRecord(bookName)` 删除该书**全部作者**的行（上游按显示书名+作者删除，差异已登记）。旧合并作者串（`\u001Eauthors:`）在迁移中**原样保留不拆**，仅用于搜索阅读记录标识与展示解码；书备忘（`book_memos`）本批只做数据层与备份，**无 FFI 方法**（阅读器备忘面板后续批）。
+>
+> **readRecord v113 审查回修（2026-10-28 批27b，零 FFI 签名变化）**：
+> ① **会话基数口径（P1-1）**：阅读器进入会话时，Dart 侧基数**只取该书主记录**的 `readTime`，选取口径与 Rust `ReadRecordRepository::primary_record` 完全一致（`author=''` 优先 → `lastRead` 最大 → `readTime` 最大），**不得把同名书所有作者行的 `readTime` 求和**。原因：`putReadRecord` 不传作者，Rust 只把新时长写回上述主记录，并以该行旧值计算 `readRecordDaily` 增量；基数若含其他作者行，从第二个会话起每会话都会把其他作者的时长重复叠加进主记录（热力图/记录页膨胀）。**风险登记**：同书多作者共享一次阅读会话时，阅读时长只记入主记录，其他作者行时长不随本机阅读增长（作者感知写入需扩展 FFI 签名，另批处理）。
+> ② **展示解码（P2-1）**：Dart 侧按原版 `ReadRecordAuthors.display` 同构解码 `\u001Eauthors:["A","B"]`（剥前缀 → JSON 字符串数组 → 过滤空白/去重 → 按码位排序 → 「、」连接；前缀后 JSON 非法回退原文；另支持 `\u001F` 聚合分隔符分段），分组键与展示作者均使用解码后的值。
+> ③ **删除确认（P2-2）**：UI 明示「将删除该书全部作者的阅读记录」，与 FFI 按物理书名整书删除的语义一致。
+> ④ **迁移事务（P2-3）**：112→113 表重建改用 rusqlite 事务对象（失败自动 ROLLBACK），失败后连接保持 autocommit；搬运语句由 `INSERT OR REPLACE` 改为 `INSERT`（旧主键 `(deviceId, bookName)` 唯一，撞行属数据异常应显性失败）；`index_readRecord_snapshot` 改为无条件 DROP+CREATE（`PRAGMA index_info` 不暴露 ASC/DESC，条件比对可能漏判同名索引的排序方向）。
+> ⑤ **本批未做/差异登记**：跨设备显示元数据传播（上游 `ReadRecordDao.insert` 会把同 identity 的 `displayBookName`/`displayAuthor`/`metadataEditedAt` 传播到该 identity 的全部行，我方 v113 写入只更新当前行）；阅读记录列表不展示章节快照/封面（`lastChapterTitle`/`lastChapterIndex`/`lastChapterPos`/`coverUrl` 已在数据层与备份中往返，UI 展示后续批）；分组行 `physicalBookName` 取组内首行（FFI 按 `readTime` 降序返回，非上游「快照行 = `lastRead` 最大」口径），打开书籍可能落到同组另一作者行，后续批按上游 join 快照行修正。
 
 ### 2.13 RSS 收藏操作（4 个方法）
 
