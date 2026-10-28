@@ -35,6 +35,26 @@ const List<Color> kHighlightColors = [
   Color(0xFFFFCC80), // 橙
 ];
 
+/// 选区起点在章节正文中的 UTF-16 偏移（批34b P3-2）
+///
+/// [paragraphText] 为段落渲染文本（含首行缩进全角空格），[chapterPos] 为
+/// 段落正文（trim 后）在章节中的起始偏移。缩进列不在章节正文中，故精细
+/// 选区定位后须扣除缩进宽度；未精细选择（整段）时直接取段落起点。
+int chapterOffsetOfSelection({
+  required String paragraphText,
+  required int chapterPos,
+  required String selection,
+  required bool fineSelection,
+}) {
+  final indent = paragraphText.length - paragraphText.trimLeft().length;
+  if (!fineSelection || selection.isEmpty) return chapterPos;
+  final index = paragraphText.indexOf(selection);
+  if (index < 0) return chapterPos;
+  final bodyLength = paragraphText.length - indent;
+  final bodyIndex = (index - indent).clamp(0, bodyLength);
+  return chapterPos + bodyIndex;
+}
+
 /// 正文长按选择操作面板
 ///
 /// 对标原版 TextActionMenu 的菜单项清单（顺序对齐 content_select_action.xml）。
@@ -43,7 +63,8 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
   /// 长按命中的段落全文（默认操作文本）
   final String text;
 
-  /// 段落在章节正文中的起始字符偏移（ParagraphInfo.startIndex，可为 0）
+  /// 段落在章节正文中的起始字符偏移（ParagraphInfo.startIndex；
+  /// 批34 起为章节全局偏移，不再是恒 0）
   final int chapterPos;
 
   const TextSelectionPanel({
@@ -414,6 +435,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     }
     final chapter = state.currentChapter;
     final selected = _selectedText;
+    // [批34b P3-2] 段落渲染文本含首行缩进全角空格（不在章节正文中），
+    // 章节偏移须扣除缩进列，否则高亮区间整体右移 — full-stack-engineer
+    final chapterPos = chapterOffsetOfSelection(
+      paragraphText: widget.text,
+      chapterPos: widget.chapterPos,
+      selection: _userSelected,
+      fineSelection: _userSelected.trim().isNotEmpty,
+    );
     final highlight = <String, dynamic>{
       'time': 0, // 0 时由 Rust 侧自动分配主键
       'bookUrl': book.bookUrl,
@@ -421,8 +450,8 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       'bookName': book.name,
       'bookAuthor': book.author,
       'chapterIndex': state.currentChapterIndex,
-      'chapterPos': widget.chapterPos,
-      'chapterPosEnd': widget.chapterPos + selected.length,
+      'chapterPos': chapterPos,
+      'chapterPosEnd': chapterPos + selected.length,
       'layoutTitleLength': 0,
       'chapterName': chapter?.title ?? '',
       'bookText': selected,
@@ -466,7 +495,8 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             bookName: book.name,
             chapterIndex: chapterIndex,
             startChapterPos: widget.chapterPos,
-            // 分页排版下 ParagraphInfo.startIndex 恒 0，段落文本匹配兜底定位
+            // [批34] ParagraphInfo.startIndex 已改为章节全局偏移（不再是
+            // 恒 0），段落文本仍作等值校验/兜底定位 — full-stack-engineer
             startParagraphText: widget.text,
           ),
     );

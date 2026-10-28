@@ -41,8 +41,8 @@ class HighlightUnderline {
           ? rawKind.toUpperCase()
           : 'SOLID',
       color: normalizeArgb(map['color']),
-      width: (map['width'] as num?)?.toDouble() ?? 1,
-      distance: (map['distance'] as num?)?.toDouble() ?? 0,
+      width: _asDouble(map['width']) ?? 1,
+      distance: _asDouble(map['distance']) ?? 0,
     );
   }
 
@@ -225,20 +225,23 @@ class HighlightMatch {
   int get length => end - start;
 
   /// 容错解析；区间非法（start<0 / end<=start）返回 null
+  ///
+  /// 数值字段统一走 `is num` 守卫（P3-1）：坏数据（字符串/布尔等）按缺省
+  /// 值处理，不在解析期抛类型错误。
   static HighlightMatch? tryParse(Object? value) {
     if (value is! Map) return null;
     final json = value.map((k, v) => MapEntry(k.toString(), v));
-    final start = (json['start'] as num?)?.toInt() ?? -1;
-    final end = (json['end'] as num?)?.toInt() ?? -1;
+    final start = _asInt(json['start']) ?? -1;
+    final end = _asInt(json['end']) ?? -1;
     if (start < 0 || end <= start) return null;
     final styleJson = json['styleJson'] is String
         ? json['styleJson'] as String
         : '';
     return HighlightMatch(
-      ruleId: (json['ruleId'] as num?)?.toInt() ?? 0,
+      ruleId: _asInt(json['ruleId']) ?? 0,
       start: start,
       end: end,
-      order: (json['order'] as num?)?.toInt() ?? 0,
+      order: _asInt(json['order']) ?? 0,
       style: HighlightStyle.parse(styleJson),
       styleJson: styleJson,
     );
@@ -258,9 +261,16 @@ int normalizeArgb(Object? value) {
   return 0;
 }
 
+/// 数值字段守卫：非 `num`（字符串/布尔等坏数据）返回 null（P3-1）
+int? _asInt(Object? value) => value is num ? value.toInt() : null;
+
+/// 数值字段守卫：非 `num` 返回 null（P3-1）
+double? _asDouble(Object? value) => value is num ? value.toDouble() : null;
+
 /// 解析 Rust `highlightRuleMatch` 返回的 JSON 数组
 ///
-/// 非法条目跳过；结果按 `(start, order)` 升序（渲染按行切分更直观）。
+/// 非法条目跳过；逐条 try/catch（P3-1）：单条坏数据不会连累整章高亮。
+/// 结果按 `(start, order)` 升序（渲染按行切分更直观）。
 List<HighlightMatch> parseHighlightMatches(String raw) {
   if (raw.isEmpty || raw == 'null') return const [];
   Object? decoded;
@@ -272,8 +282,12 @@ List<HighlightMatch> parseHighlightMatches(String raw) {
   if (decoded is! List) return const [];
   final matches = <HighlightMatch>[];
   for (final item in decoded) {
-    final match = HighlightMatch.tryParse(item);
-    if (match != null) matches.add(match);
+    try {
+      final match = HighlightMatch.tryParse(item);
+      if (match != null) matches.add(match);
+    } catch (_) {
+      // 单条坏样式/坏字段静默跳过，保留同章其余命中
+    }
   }
   matches.sort((a, b) {
     final byStart = a.start.compareTo(b.start);

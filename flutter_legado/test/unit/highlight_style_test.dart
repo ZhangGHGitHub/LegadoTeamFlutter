@@ -85,5 +85,27 @@ void main() {
       expect(parseHighlightMatches('{'), isEmpty);
       expect(parseHighlightMatches('{"a":1}'), isEmpty);
     });
+
+    test('坏字段不抛错：数值守卫 + 单条坏样式不丢整章（P3-1）', () {
+      // 下划线数值字段为字符串/颜色非法：走缺省值而不是类型转换异常
+      final style = HighlightStyle.parse(
+        '{"underline":{"kind":"solid","color":"red","width":"2"}}',
+      );
+      expect(style.underline, isNotNull);
+      expect(style.underline!.width, 1);
+      expect(style.underline!.color, 0);
+
+      // 数组里一条坏数据（start 为字符串）只跳过自身，其余命中保留
+      final matches = parseHighlightMatches(
+        '[{"ruleId":1,"start":"x","end":3,"order":1,"styleJson":"{}"},'
+        '{"ruleId":2,"start":0,"end":"2","order":1,"styleJson":"{}"},'
+        '{"ruleId":3,"start":1,"end":4,"order":1,'
+        '"styleJson":"{\\"underline\\":{\\"width\\":\\"2\\"}}"},'
+        '{"ruleId":4,"start":6,"end":8,"order":2,"styleJson":42}]',
+      );
+      expect(matches.map((m) => m.ruleId).toList(), [3, 4]);
+      expect(matches[0].style.underline!.width, 1);
+      expect(matches[1].styleJson, '');
+    });
   });
 }

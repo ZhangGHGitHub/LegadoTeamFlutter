@@ -258,9 +258,13 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
         _mockHighlightRules.values.where((r) {
           final enabled = (r['isEnabled'] as bool?) ?? false;
           if (!enabled) return false;
-          final scope = r['scope'] as String?;
-          if (scope == null || scope.isEmpty) return true;
-          return scope.contains(bookName) || scope.contains(origin);
+          final scopeRaw = r['scope'];
+          final scope = scopeRaw is String ? scopeRaw : '';
+          if (scope.isEmpty) return true;
+          // 空 bookName/origin 不得命中任何非空 scope（对齐 Rust
+          // `(?1 != '' AND instr(scope, ?1) > 0)` 空串守卫，P3-4）
+          return (bookName.isNotEmpty && scope.contains(bookName)) ||
+              (origin.isNotEmpty && scope.contains(origin));
         }).toList()..sort(
           (a, b) => ((a['sortOrder'] as num?) ?? 0).compareTo(
             (b['sortOrder'] as num?) ?? 0,
@@ -285,10 +289,12 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
     final rules =
         _mockHighlightRules.values.where((r) {
           if (r['isEnabled'] != true) return false;
-          final scope = (r['scope'] as String?) ?? '';
+          final scopeRaw = r['scope'];
+          final scope = scopeRaw is String ? scopeRaw : '';
+          // 空 bookName/origin 不得命中任何非空 scope（对齐 Rust 空串守卫）
           if (scope.isNotEmpty &&
-              !scope.contains(bookName) &&
-              !scope.contains(origin)) {
+              !(bookName.isNotEmpty && scope.contains(bookName)) &&
+              !(origin.isNotEmpty && scope.contains(origin))) {
             return false;
           }
           final side = applyToTitle

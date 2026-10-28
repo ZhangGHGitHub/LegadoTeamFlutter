@@ -15,7 +15,7 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
-import '../../services/highlight_match_cache.dart';
+import '../../services/highlight_match_sync.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/paragraph_layout_engine.dart';
@@ -221,17 +221,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   // ===== [批34] 正文高亮匹配状态 =====
 
-  /// 命中结果 LRU 缓存（章节文本 + 规则修订号）
-  final HighlightMatchCache _highlightCache = HighlightMatchCache();
+  /// 命中同步器（缓存/在途去重/失败退避，逻辑见 highlight_match_sync.dart）
+  ///
+  /// [批34b P2-1] 从 State 抽出为可注入 helper（单测覆盖换章清空/滚动不调
+  /// FFI/修订号失效/失败重试预算）— full-stack-engineer
+  final HighlightMatchSync _highlightSync = HighlightMatchSync();
 
   /// 当前章节命中区间（渲染直接读取；异步到达后 setState 重建）
   List<HighlightMatch> _highlightMatches = const [];
-
-  /// 当前命中对应的缓存键（空=无）
-  String _highlightKey = '';
-
-  /// 在途匹配的缓存键（防重复跨 FFI）
-  String _highlightLoadingKey = '';
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -794,36 +791,16 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   // ===== [批34] 正文高亮匹配 =====
 
-  /// 当前章节匹配缓存键：书籍 + 章号 + 文本 hash + 规则修订号
-  String _highlightCacheKey(String bookUrl, int chapterIndex, String text) {
-    final revision = ref.read(highlightRulesRevisionProvider);
-    return '$bookUrl\u0000$chapterIndex\u0000${text.hashCode}\u0000$revision';
-  }
-
   /// 同步当前章节命中（缓存命中直接换值；未命中发起一次异步匹配）
   ///
   /// 在 build 内调用：缓存命中时只更新字段，不触发 setState（值本帧即用）；
-  /// 异步结果到达后在微任务中 setState 一次。
+  /// 异步结果到达后 setState 一次。键计算/命中/未命中/换章清空/旧结果丢弃
+  /// 与失败退避全部收敛在 [HighlightMatchSync]（批34b P2-1）。
   ///
   /// 以**已分页内容**为准（加载冻结帧仍显示旧章正文，若用 state 的新章
   /// 文本/章号会让旧页短暂失去高亮或套错区间）；未分页时回退 state。
   void _syncHighlightMatches(ReaderState state) {
-    // 滚动模式走 ReaderParagraphs（尚未接线高亮）：不做无意义的跨 FFI 匹配
-    if (state.pageTurnMode == PageTurnMode.scroll) {
-      if (_highlightMatches.isNotEmpty || _highlightKey.isNotEmpty) {
-        _highlightMatches = const [];
-        _highlightKey = '';
-      }
-      return;
-    }
     final book = state.currentBook;
-    if (book == null) {
-      if (_highlightMatches.isNotEmpty || _highlightKey.isNotEmpty) {
-        _highlightMatches = const [];
-        _highlightKey = '';
-      }
-      return;
-    }
     final usePaginated = _paginatedContent.isNotEmpty;
     final content = usePaginated ? _paginatedContent : state.chapterContent;
     final chapterIndex = usePaginated
@@ -831,78 +808,45 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         : state.currentChapterIndex;
     final bookUrl = usePaginated && _paginatedBookUrl.isNotEmpty
         ? _paginatedBookUrl
-        : book.bookUrl;
+        : (book?.bookUrl ?? '');
     final bookName = usePaginated && _paginatedBookName.isNotEmpty
         ? _paginatedBookName
-        : book.name;
+        : (book?.name ?? '');
     final bookOrigin = usePaginated && _paginatedBookOrigin.isNotEmpty
         ? _paginatedBookOrigin
-        : book.origin;
-    if (content.isEmpty) {
-      if (_highlightMatches.isNotEmpty || _highlightKey.isNotEmpty) {
-        _highlightMatches = const [];
-        _highlightKey = '';
-      }
-      return;
-    }
+        : (book?.origin ?? '');
 
-    final key = _highlightCacheKey(bookUrl, chapterIndex, content);
-    if (key == _highlightKey) return;
-
-    final revision = ref.read(highlightRulesRevisionProvider);
-    final cached = _highlightCache.lookup(key, revision);
-    _highlightKey = key;
-    if (cached != null) {
-      _highlightMatches = cached;
-      return;
-    }
-
-    // 换章先清旧命中，防止新章文本短暂套用上一章区间
-    _highlightMatches = const [];
-    if (_highlightLoadingKey == key) return;
-    _highlightLoadingKey = key;
-    unawaited(
-      _loadHighlightMatches(
-        key: key,
+    _highlightMatches = _highlightSync.sync(
+      HighlightMatchRequest(
+        // 滚动模式走 ReaderParagraphs（尚未接线高亮）：不做无意义的跨 FFI 匹配
+        enabled: book != null && state.pageTurnMode != PageTurnMode.scroll,
+        bookUrl: bookUrl,
         bookName: bookName,
         origin: bookOrigin,
-        text: content,
-        revision: revision,
+        chapterIndex: chapterIndex,
+        content: content,
+        rulesRevision: ref.read(highlightRulesRevisionProvider),
       ),
+      load: _loadHighlightMatches,
+      onLoaded: _onHighlightLoaded,
     );
   }
 
-  /// 跨 FFI 匹配当前章正文（失败静默降级为无高亮，不影响阅读）
-  Future<void> _loadHighlightMatches({
-    required String key,
+  /// 跨 FFI 匹配正文（失败由 [HighlightMatchSync] 降级为无高亮，不影响阅读）
+  Future<String> _loadHighlightMatches({
+    required String text,
     required String bookName,
     required String origin,
-    required String text,
-    required int revision,
-  }) async {
-    try {
-      final raw = await ref
-          .read(bookApiProvider)
-          .highlightRuleMatch(
-            text: text,
-            bookName: bookName,
-            origin: origin,
-          );
-      final matches = parseHighlightMatches(raw);
-      _highlightCache.store(key, revision, matches);
-      if (!mounted) return;
-      // 章节已切换/内容已变化/规则已变 → 丢弃该结果
-      if (_highlightLoadingKey != key || _highlightKey != key) return;
-      if (ref.read(highlightRulesRevisionProvider) != revision) return;
-      setState(() => _highlightMatches = matches);
-    } catch (e) {
-      // 高亮是增益能力：失败只降级为无高亮，不打断阅读
-      debugPrint('[highlight] 正文高亮匹配失败（已降级为无高亮）: $e');
-    } finally {
-      if (_highlightLoadingKey == key) {
-        _highlightLoadingKey = '';
-      }
-    }
+  }) {
+    return ref
+        .read(bookApiProvider)
+        .highlightRuleMatch(text: text, bookName: bookName, origin: origin);
+  }
+
+  /// 异步命中被采纳：仅重建渲染层，不触发重分页
+  void _onHighlightLoaded() {
+    if (!mounted) return;
+    setState(() => _highlightMatches = _highlightSync.matches);
   }
 
   /// 按 pageTouchSlop 包裹自定义滑动阈值（0=系统默认值，不包裹）
@@ -1122,6 +1066,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   }
 
   /// 相邻章预览页构建（与 _buildTypographicPage 同参；selectText 关闭）
+  ///
+  /// [批34b P3-6] 预览**不传** `highlightMatches`：`_highlightMatches` 是
+  /// 当前章的命中区间，偏移口径不同（章节全局偏移），套到相邻章正文会
+  /// 染错位置。相邻章高亮需在预载时按目标章单独匹配（登记为后续专项）。
   Widget _buildPreviewPage(ReaderState state, PageInfo info, int pageIndex,
       int totalPages, String title) {
     final page = ReaderTypographicPage(

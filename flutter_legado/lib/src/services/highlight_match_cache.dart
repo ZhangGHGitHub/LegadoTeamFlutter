@@ -1,7 +1,7 @@
 /// 正文高亮匹配结果缓存（批34）
 ///
 /// 阅读页滚动/翻页/重排版会多次重建，匹配结果按
-/// `(bookUrl, chapterIndex, 文本 hash, 规则修订号)` 缓存，避免重复跨 FFI。
+/// `(bookUrl, chapterIndex, 文本长度, 文本 hash, 规则修订号)` 缓存，避免重复跨 FFI。
 /// 规则修订号由 `highlightRulesRevisionProvider` 提供（规则列表加载/保存/
 /// 删除后自增），修订号变化后同 key 也不再命中，必须重新匹配。
 library;

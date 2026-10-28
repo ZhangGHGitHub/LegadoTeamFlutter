@@ -98,6 +98,30 @@ void main() {
       expect((spans[1] as TextSpan).style, isNull);
     });
 
+    test('乱序输入不丢 span（函数内有序兜底）', () {
+      // 批34b P2-2：matches 约定按 start 升序；乱序时按 (start, order)
+      // 稳定排序后再切分，避免 `start >= bodyEnd` 提前 break 漏掉区间
+      final spans = buildHighlightedLineSpans(
+        text: '一二三四五六',
+        chapterStart: 0,
+        highlightSkip: 0,
+        matches: [
+          match(4, 6),
+          match(0, 1),
+          match(2, 3),
+        ],
+      );
+      expect(
+        spans.map((s) => (s as TextSpan).text).toList(),
+        ['一', '二', '三', '四', '五六'],
+      );
+      expect((spans[0] as TextSpan).style, isNotNull);
+      expect((spans[1] as TextSpan).style, isNull);
+      expect((spans[2] as TextSpan).style, isNotNull);
+      expect((spans[3] as TextSpan).style, isNull);
+      expect((spans[4] as TextSpan).style, isNotNull);
+    });
+
     test('无命中/空文本返回单 span', () {
       final plain = buildHighlightedLineSpans(
         text: '正文',

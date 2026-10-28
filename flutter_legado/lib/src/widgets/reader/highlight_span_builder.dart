@@ -17,6 +17,11 @@ import '../../models/highlight_style.dart';
 /// - [chapterStart]：`text[highlightSkip]` 对应的章节全局 UTF-16 偏移；
 /// - [highlightSkip]：行首不可高亮字符数（首行缩进全角空格）；
 /// - [matches]：Rust `highlightRuleMatch` 结果（UTF-16 半开区间，互不重叠）。
+///
+/// [matches] 约定按 `(start 升序, order 升序)` 排列（Rust 输出与
+/// `parseHighlightMatches` 均保证）；本函数仍做一次 O(n) 有序校验，乱序时
+/// 稳定排序兜底——下方按 `start >= bodyEnd` 提前 `break`，乱序输入会漏掉
+/// 后续命中区间的 span（批34b P2-2）。
 List<InlineSpan> buildHighlightedLineSpans({
   required String text,
   required int chapterStart,
@@ -29,6 +34,7 @@ List<InlineSpan> buildHighlightedLineSpans({
     return [TextSpan(text: text)];
   }
 
+  final ordered = _startSorted(matches);
   final bodyStart = chapterStart;
   final bodyEnd = chapterStart + (text.length - skip);
   final spans = <InlineSpan>[];
@@ -38,7 +44,7 @@ List<InlineSpan> buildHighlightedLineSpans({
   }
 
   var cursor = skip;
-  for (final match in matches) {
+  for (final match in ordered) {
     if (match.end <= bodyStart) continue;
     if (match.start >= bodyEnd) break;
     final start = (math.max(match.start, bodyStart) - bodyStart + skip).clamp(
@@ -67,6 +73,21 @@ List<InlineSpan> buildHighlightedLineSpans({
     spans.add(TextSpan(text: text.substring(cursor)));
   }
   return spans;
+}
+
+/// 校验命中列表按 `start` 升序；乱序时返回稳定排序后的副本
+///
+/// 升序输入直接返回原列表（零分配）；乱序才复制排序，保证渲染不丢区间。
+List<HighlightMatch> _startSorted(List<HighlightMatch> matches) {
+  for (var i = 1; i < matches.length; i++) {
+    if (matches[i].start < matches[i - 1].start) {
+      return [...matches]..sort((a, b) {
+        final byStart = a.start.compareTo(b.start);
+        return byStart != 0 ? byStart : a.order.compareTo(b.order);
+      });
+    }
+  }
+  return matches;
 }
 
 /// 高亮样式 → 稀疏 [TextStyle]（未指定的字段由父级 [TextSpan] 继承）
