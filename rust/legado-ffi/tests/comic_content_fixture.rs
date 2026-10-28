@@ -656,3 +656,99 @@ fn test_fetch_image_http_error_is_network_error() {
         "错误信息应含 HTTP 状态，实际：{err}"
     );
 }
+
+// ─── 5. 图片链登录头同站门控 + proxy 伪头剔除（批32）────────────────────────
+
+/// 同站图片：登录头附加、`proxy` 伪头不出网（源 header 含 proxy 配置键）
+#[test]
+fn test_fetch_image_same_site_adds_login_header_and_strips_proxy() {
+    let _lock = lock_test();
+    ENV_INIT.call_once(setup_env);
+
+    let plain = min_png();
+    let mut routes: HashMap<String, Route> = HashMap::new();
+    routes.insert("/img/login.png".to_string(), binary_route(200, plain));
+    let (port, _hits, log) = spawn_mock_server(Arc::new(routes));
+
+    // 书源与图片同站（同一回环地址/端口 → 同一 eTLD+1 域键）
+    let source_url = format!("http://127.0.0.1:{port}/src");
+    let source_json = format!(
+        r#"{{"bookSourceUrl":"{source_url}","bookSourceName":"同站图片源","bookSourceType":2,"header":"{{\"X-Static\":\"s1\",\"proxy\":\"http://user:pass@127.0.0.1:9\"}}","ruleContent":{{}}}}"#
+    );
+    legado_ffi::api::source_login_cache::put_login_header(
+        &source_url,
+        r#"{"X-Login":"secret-token-9f"}"#,
+    )
+    .expect("写入登录头");
+
+    let url = format!("http://127.0.0.1:{port}/img/login.png");
+    legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
+        .expect("同站图片下载应成功");
+
+    let headers = log
+        .lock()
+        .unwrap()
+        .get("/img/login.png")
+        .cloned()
+        .expect("服务端应记录请求头");
+    assert_eq!(
+        headers.get("x-login").map(|s| s.as_str()),
+        Some("secret-token-9f"),
+        "同站图片必须附加登录头，实际头: {headers:?}"
+    );
+    assert_eq!(
+        headers.get("x-static").map(|s| s.as_str()),
+        Some("s1"),
+        "静态源 header 应照常发送"
+    );
+    assert!(
+        !headers.contains_key("proxy"),
+        "proxy 伪头必须在发送前剔除，实际头: {headers:?}"
+    );
+
+    let _ = legado_ffi::api::source_login_cache::remove_login_header(&source_url);
+}
+
+/// 跨域图片：登录头不附加（书源与图片 CDN 不同站），proxy 伪头同样剔除
+#[test]
+fn test_fetch_image_cross_site_omits_login_header_and_strips_proxy() {
+    let _lock = lock_test();
+    ENV_INIT.call_once(setup_env);
+
+    let plain = min_png();
+    let mut routes: HashMap<String, Route> = HashMap::new();
+    routes.insert("/img/cdn.png".to_string(), binary_route(200, plain));
+    let (port, _hits, log) = spawn_mock_server(Arc::new(routes));
+
+    // 书源为外部域名，图片在回环 CDN（不同注册域）
+    let source_url = "https://img-login-cross.example.com";
+    let source_json = format!(
+        r#"{{"bookSourceUrl":"{source_url}","bookSourceName":"跨域图片源","bookSourceType":2,"header":"{{\"proxy\":\"http://user:pass@127.0.0.1:9\"}}","ruleContent":{{}}}}"#
+    );
+    legado_ffi::api::source_login_cache::put_login_header(
+        source_url,
+        r#"{"X-Login":"cross-secret"}"#,
+    )
+    .expect("写入登录头");
+
+    let url = format!("http://127.0.0.1:{port}/img/cdn.png");
+    legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
+        .expect("跨域图片下载应成功");
+
+    let headers = log
+        .lock()
+        .unwrap()
+        .get("/img/cdn.png")
+        .cloned()
+        .expect("服务端应记录请求头");
+    assert!(
+        !headers.contains_key("x-login"),
+        "跨域图片不得附加登录头（认证信息不外发），实际头: {headers:?}"
+    );
+    assert!(
+        !headers.contains_key("proxy"),
+        "proxy 伪头必须在发送前剔除，实际头: {headers:?}"
+    );
+
+    let _ = legado_ffi::api::source_login_cache::remove_login_header(source_url);
+}

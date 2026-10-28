@@ -211,12 +211,25 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     // 解析复合 URL（url,{json headers}）：拆分出真实 URL 与内嵌 headers
     let (request_url, embedded_headers) = split_composite_image_url(url);
 
-    // 构造请求头：书源 header（Referer 等）+ 内嵌 header + 默认 UA
+    // 构造请求头：书源 header（Referer 等）+ 登录头（仅同站）+ 内嵌 header + 默认 UA
     let mut headers: HashMap<String, String> = source
         .header
         .as_deref()
         .map(parse_header_map)
         .unwrap_or_default();
+    // [批32] 登录头按目标同站门控（对齐原版 #1099 `AnalyzeUrl.isLoginHeaderSite`
+    // 与 `web_book::SourceHeaderSet::for_request`）：站点封面/图片常托管在
+    // 第三方 CDN，跨域携带 Authorization/Cookie 等认证信息会被对方风控拦截。
+    // 无法判定域名时保持旧行为（附加），与书源请求链回退口径一致。
+    if legado_fetcher::web_book::is_login_header_site(&source.book_source_url, &request_url, None) {
+        if let Some(login_header_json) =
+            crate::api::source_login_cache::get_login_header(&source.book_source_url)
+        {
+            if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
+                headers.extend(map);
+            }
+        }
+    }
     // 内嵌 header 优先级最高（书源规则显式指定的防盗链）
     headers.extend(embedded_headers);
     if !headers.contains_key("User-Agent") && !headers.contains_key("user-agent") {
@@ -231,6 +244,10 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
     // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
     legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, &source);
+    // [批32] `proxy` 是源 header 的代理配置键而非 HTTP 头（上游 AnalyzeUrl
+    // 提取后即从 headerMap 删除；见批29b 审查 P2-6）：合并原始源 header /
+    // 登录头 / 内嵌 header 后必须在发送前剔除，避免代理凭据随图片请求外泄。
+    legado_fetcher::web_book::strip_proxy_header(&mut headers);
 
     let resp = crate::runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
