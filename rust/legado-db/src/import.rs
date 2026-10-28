@@ -415,6 +415,36 @@ mod tests {
         assert_eq!(name, "Test Source");
     }
 
+    /// 批30b P3-6：RoomImporter 导入即重建检验状态（对齐原版 BookSourceDao.insert）
+    ///
+    /// 导入入口历史上曾绕过状态钩子，导致 `getBookSourceCheckStates` 缺行；
+    /// 本用例锁定「每条导入源都有 NEEDS_CHECK 状态」。
+    #[test]
+    fn test_import_book_sources_creates_check_states() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let json = r#"[
+            {"bookSourceUrl": "https://imp-a.example", "bookSourceName": "A"},
+            {"bookSourceUrl": "https://imp-b.example", "bookSourceName": "B"}
+        ]"#;
+        assert_eq!(RoomImporter::import_book_sources(conn, json).unwrap(), 2);
+
+        let repo =
+            crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(
+                conn,
+            );
+        for url in ["https://imp-a.example", "https://imp-b.example"] {
+            let state = repo
+                .find_by_url(url)
+                .unwrap()
+                .unwrap_or_else(|| panic!("导入应建状态行: {url}"));
+            assert_eq!(state.status, "NEEDS_CHECK");
+            assert!(!state.revision.is_empty());
+            assert!(!state.source_revision.is_empty());
+        }
+    }
+
     /// 批 2 收尾：enabledCookieJar 导入口径统一（缺键 → 1，对齐 Kotlin
     /// 构造默认 true / FFI serde `default_true_opt`）；兼容布尔与 0/1 数字
     /// 形态——旧实现 `and_then(as_i64).unwrap_or(0)` 会把缺键与显式布尔

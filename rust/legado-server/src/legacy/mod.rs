@@ -254,7 +254,8 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
         .route("/legacyReviewPage", get(review_api::legacy_review_page))
         .route("/openLegacyReview", post(review_api::open_legacy_review))
         .route("/runLegacyReview", post(review_api::run_legacy_review))
-        // B6 源写端点（source_write_api.rs；10 条全部受令牌保护）。
+        // B6 源写端点（source_write_api.rs 10 条 + 批30 检验会话 2 条，
+        // 共 12 条全部受令牌保护）。
         // 单独挂载以放宽请求体上限（axum 默认 2MB 会拒收大批量源推送）
         .merge(
             Router::new()

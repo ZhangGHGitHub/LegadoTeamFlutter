@@ -40,3 +40,52 @@ pub trait Repository<T> {
     fn update(&self, item: &T) -> LegadoResult<()>;
     fn delete(&self, id: &str) -> LegadoResult<()>;
 }
+
+/// 收集查询行；单行映射失败时记日志并跳过（批30b P3-7）
+///
+/// 背景：原 `filter_map(|r| r.ok())` 静默吞掉行解析错误（列漂移/坏 JSON 等），
+/// 表现为「书源凭空消失」且无任何线索。保持「单行坏不拖垮整表」的可用性取向
+/// （对齐 Room 逐行映射语义），但把失败行数与前几条错误写到 stderr（本 crate
+/// 无 tracing 依赖，沿用迁移自愈的 eprintln 约定）；超过 3 条只汇总条数，
+/// 避免坏库刷屏。
+pub(crate) fn collect_rows_logged<T>(
+    rows: impl Iterator<Item = rusqlite::Result<T>>,
+    context: &str,
+) -> Vec<T> {
+    let mut out = Vec::new();
+    let mut failed = 0usize;
+    for row in rows {
+        match row {
+            Ok(item) => out.push(item),
+            Err(e) => {
+                failed += 1;
+                if failed <= 3 {
+                    eprintln!("[legado-db] {context}行解析失败（已跳过）: {e}");
+                }
+            }
+        }
+    }
+    if failed > 3 {
+        eprintln!(
+            "[legado-db] {context}另有 {} 行解析失败（已跳过）",
+            failed - 3
+        );
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_rows_logged;
+
+    #[test]
+    fn test_collect_rows_logged_skips_bad_rows() {
+        let rows: Vec<rusqlite::Result<i32>> =
+            vec![Ok(1), Err(rusqlite::Error::InvalidQuery), Ok(3)];
+        assert_eq!(
+            collect_rows_logged(rows.into_iter(), "测试查询"),
+            vec![1, 3],
+            "坏行跳过、好行保留"
+        );
+    }
+}

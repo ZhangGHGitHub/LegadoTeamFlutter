@@ -1,4 +1,8 @@
 //! BookSource Repository - book_sources 表 CRUD
+//!
+//! 查询口径（批30b P3-7）：全量/批量查询不再用 `filter_map(|r| r.ok())`
+//! 静默吞掉行解析错误，统一走 [`super::collect_rows_logged`]——坏行跳过但
+//! 记 stderr 日志（含前 3 条错误与总条数），避免「书源凭空消失」无从定位。
 
 use rusqlite::{params, Connection};
 
@@ -62,11 +66,11 @@ impl<'a> BookSourceRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
-        let sources = stmt
-            .query_map([], row_to_book_source)
-            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let sources = super::collect_rows_logged(
+            stmt.query_map([], row_to_book_source)
+                .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?,
+            "启用书源查询",
+        );
         Ok(sources)
     }
 
@@ -87,11 +91,11 @@ impl<'a> BookSourceRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
-        let sources = stmt
-            .query_map(params![group], row_to_book_source)
-            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let sources = super::collect_rows_logged(
+            stmt.query_map(params![group], row_to_book_source)
+                .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?,
+            "按分组查询书源",
+        );
         Ok(sources)
     }
 
@@ -200,11 +204,11 @@ impl<'a> BookSourceRepository<'a> {
             .conn
             .prepare(&sql)
             .map_err(|e| LegadoError::Database(format!("准备批量查询失败: {e}")))?;
-        let sources = stmt
-            .query_map(rusqlite::params_from_iter(urls.iter()), row_to_book_source)
-            .map_err(|e| LegadoError::Database(format!("批量查询失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let sources = super::collect_rows_logged(
+            stmt.query_map(rusqlite::params_from_iter(urls.iter()), row_to_book_source)
+                .map_err(|e| LegadoError::Database(format!("批量查询失败: {e}")))?,
+            "书源批量查询",
+        );
         Ok(sources)
     }
 
@@ -320,11 +324,11 @@ impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
-        let sources = stmt
-            .query_map([], row_to_book_source)
-            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let sources = super::collect_rows_logged(
+            stmt.query_map([], row_to_book_source)
+                .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?,
+            "书源全量查询",
+        );
         Ok(sources)
     }
 

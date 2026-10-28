@@ -44,8 +44,25 @@ CREATE TABLE IF NOT EXISTS book_source_check_states (
 ///
 /// `INSERT OR IGNORE`：已存在的状态（含检验结果）原样保留；仅给「有源无状态」
 /// 的行播种，重复执行不产生任何变化。
+///
+/// 批30b P3-2 门控：开库自愈每库至少调用两次（`repair_legacy_columns` 在
+/// `auto_migrate` 首尾各一次），原实现每次都执行 `INSERT ... SELECT` 写扫描
+/// （即使零缺行也要拿写锁）。先比较两表计数，**计数齐平即直接返回**，只有
+/// 「表缺失或计数不齐」才真正写库。
 fn seed_missing_states(conn: &Connection) -> LegadoResult<()> {
     if !table_exists(conn, "book_sources")? {
+        return Ok(());
+    }
+    let (source_count, state_count): (i64, i64) = conn
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM book_sources),
+                    (SELECT COUNT(*) FROM book_source_check_states)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| LegadoError::Database(format!("统计书源检验状态播种规模失败: {e}")))?;
+    if state_count >= source_count {
+        // 无缺行（含状态多于源的异常残留）：跳过写扫描
         return Ok(());
     }
     conn.execute_batch(
@@ -227,6 +244,44 @@ mod tests {
             )
             .unwrap();
         assert_eq!(seeded, 1, "开库自愈/重复 up 为新增源补状态");
+    }
+
+    /// P3-2：计数齐平时开库自愈不得执行播种写扫描
+    ///
+    /// 用 AFTER INSERT 触发器观察是否真的发生 INSERT；`INSERT OR IGNORE`
+    /// 的冲突行不算 changes，无法用 `total_changes()` 区分，故用触发器计数。
+    #[test]
+    fn test_ensure_skips_seed_scan_when_counts_match() {
+        let conn = create_v114_db();
+        Migration114To115.up(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE seed_probe (n INTEGER NOT NULL);
+             INSERT INTO seed_probe (n) VALUES (0);
+             CREATE TRIGGER seed_probe_trigger AFTER INSERT ON book_source_check_states
+             BEGIN UPDATE seed_probe SET n = n + 1; END;",
+        )
+        .unwrap();
+
+        // 开库自愈每库至少两次；计数齐平时都应直接返回
+        ensure_book_source_check_states(&conn).unwrap();
+        ensure_book_source_check_states(&conn).unwrap();
+        let probes: i64 = conn
+            .query_row("SELECT n FROM seed_probe", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(probes, 0, "计数齐平不得执行播种 INSERT");
+
+        // 新增源 → 计数不齐 → 真正播种一次
+        conn.execute(
+            "INSERT INTO book_sources (bookSourceUrl, bookSourceName)
+             VALUES ('https://d.example.com', '源D')",
+            [],
+        )
+        .unwrap();
+        ensure_book_source_check_states(&conn).unwrap();
+        let probes: i64 = conn
+            .query_row("SELECT n FROM seed_probe", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(probes, 1, "计数不齐应播种新增源");
     }
 
     #[test]

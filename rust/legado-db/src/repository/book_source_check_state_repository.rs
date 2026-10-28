@@ -72,11 +72,11 @@ impl<'a> BookSourceCheckStateRepository<'a> {
                  FROM book_source_check_states ORDER BY bookSourceUrl ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询检验状态失败: {e}")))?;
-        let states = stmt
-            .query_map([], row_to_state)
-            .map_err(|e| LegadoError::Database(format!("查询检验状态失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let states = super::collect_rows_logged(
+            stmt.query_map([], row_to_state)
+                .map_err(|e| LegadoError::Database(format!("查询检验状态失败: {e}")))?,
+            "书源检验状态全量查询",
+        );
         Ok(states)
     }
 
@@ -98,11 +98,11 @@ impl<'a> BookSourceCheckStateRepository<'a> {
             .conn
             .prepare(&sql)
             .map_err(|e| LegadoError::Database(format!("准备批量查询检验状态失败: {e}")))?;
-        let states = stmt
-            .query_map(params_from_iter(urls.iter()), row_to_state)
-            .map_err(|e| LegadoError::Database(format!("批量查询检验状态失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let states = super::collect_rows_logged(
+            stmt.query_map(params_from_iter(urls.iter()), row_to_state)
+                .map_err(|e| LegadoError::Database(format!("批量查询检验状态失败: {e}")))?,
+            "书源检验状态批量查询",
+        );
         Ok(states)
     }
 

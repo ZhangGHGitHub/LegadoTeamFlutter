@@ -9,7 +9,9 @@
 //! 书源管理 4 个端点（`getBookSourcesForManagement` /
 //! `getBookSourceCheckStates` / `startBookSourceCheck` / `stopBookSourceCheck`，
 //! 实现见 `legacy/source_check_api.rs`）。旧 hash 资产已整体清除，避免
-//! 「新 index 引用新资产、旧资产残留」的脏文件。
+//! 「新 index 引用新资产、旧资产残留」的脏文件。同步提交说明补充：**其余
+//! help/assets 随上游自然更新**（本次目录 diff 中 help 仅 `jsHelp.md` 内容
+//! 变化，其余为字节相同的既有文件，未做本地改写）。
 //!
 //! 行为对齐原版（`app/src/main/java/io/legado/app/web/HttpServer.kt:161-167`
 //! + `web/utils/AssetsWeb.kt`）：

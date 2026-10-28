@@ -2894,6 +2894,62 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// 批30b P3-6：备份恢复书源后重建检验状态（NEEDS_CHECK），不沿用旧结果
+    ///
+    /// 恢复走 `insert_with_check_state`（对齐原版 BookSourceDao.insert）；
+    /// 状态是设备本地元数据、不进备份文件，恢复后必须回到待检验。
+    #[test]
+    fn test_book_source_restore_rebuilds_check_state() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_state_restore");
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("state.json");
+        let path_str = backup_path.to_str().unwrap();
+        let url = "https://restore-state.example.com";
+
+        with_database(|db| {
+            let conn = db.connection();
+            BookSourceRepository::new(conn).insert_with_check_state(&BookSource {
+                book_source_url: url.to_string(),
+                book_source_name: "恢复源".to_string(),
+                ..BookSource::default()
+            })?;
+            let mut state = legado_core::models::BookSourceCheckState::new(url);
+            state.status = "FAILED".to_string();
+            state.detail = "旧失败详情".to_string();
+            state.checked_at = 7;
+            legado_db::BookSourceCheckStateRepository::new(conn).save(&state)?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        assert!(backup_create(path_str).is_ok());
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM book_sources", [])
+                .map_err(|e| LegadoError::Database(format!("清库失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(path_str).unwrap()).unwrap();
+        assert_eq!(stats.book_sources, 1, "应恢复恰好 1 条书源");
+
+        with_database(|db| {
+            let restored = legado_db::BookSourceCheckStateRepository::new(db.connection())
+                .find_by_url(url)?
+                .expect("恢复后应重建状态行");
+            assert_eq!(restored.status, "NEEDS_CHECK", "恢复即待检验");
+            assert_eq!(restored.checked_at, 0);
+            assert!(restored.detail.is_empty(), "不得沿用备份前的失败详情");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// [批27] ReadRecord 恢复 v113 语义：物理键 `(deviceId,bookName,author)`
     ///
     /// 覆盖：非本机记录直插、同名不同作者分行、同键本机较新者胜（时长不回滚）、

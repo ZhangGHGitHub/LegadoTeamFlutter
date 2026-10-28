@@ -143,7 +143,8 @@ const JS_SOURCE_MAX_BYTES: i64 = 1024 * 1024;
 const JS_SOURCE_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// 写端点请求体上限（原版 NanoHTTPD 无显式上限；axum 默认 2MB 会拒收
-/// 大批量书源推送，故放宽到 16MB，仅覆盖本模块 10 条路由）
+/// 大批量书源推送，故放宽到 16MB，覆盖该挂载组 12 条路由：本模块 10 条 +
+/// 批30 检验会话 `/startBookSourceCheck`、`/stopBookSourceCheck`）
 pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 /// 受保护源写路由（P2-2，路由级令牌前置中间件使用）
