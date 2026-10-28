@@ -500,13 +500,15 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
     });
   }
 
-  /// 清除确认（对标原版：sure_del + 记录数 + read_record）
+  /// 清除确认（对标原版：sure_del + read_record）
+  ///
+  /// 批29b 审查 P2-1：不显示条数——列表只加载最近 100 条，而全局清空删的是
+  /// 全部记录，条数会低报（与按源对话框同一口径收敛）。
   Future<void> _confirmClear() async {
-    final count = ref.read(rssHistoryNotifierProvider).records.length;
     final confirmed = await showConfirmDialog(
       context,
       title: '提示',
-      content: '确定要删除？\n$count 条阅读记录',
+      content: '确定清空全部阅读记录？',
       confirmText: '删除',
       isDestructive: true,
     );

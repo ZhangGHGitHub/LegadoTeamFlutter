@@ -160,6 +160,39 @@ void main() {
     expect(prefs.getBool(PrefKeys.enableRssReadRecord), isFalse);
   });
 
+  testWidgets('全局清空确认框不显示条数（批29b 审查 P2-1）', (tester) async {
+    final api = MockRustApi();
+    // 全局列表只加载最近 100 条，而清空删的是全部记录 → 文案收敛为
+    // 「确定清空全部阅读记录？」（改前「确定要删除？\nN 条阅读记录」会低报）
+    await pumpRssScreen(
+      tester,
+      api,
+      records: [
+        {
+          'origin': origin,
+          'title': '历史文章',
+          'link': '$origin/article/1',
+          'read_time': 1700000000000,
+        },
+      ],
+    );
+
+    await tester.tap(find.byTooltip('阅读记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '清除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定清空全部阅读记录？'), findsOneWidget);
+    expect(
+      find.textContaining('条阅读记录'),
+      findsNothing,
+      reason: '全局清空确认框不得显示已加载条数',
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('历史记录无链接（真实 legacy 伪主键）：不传 origin', (tester) async {
     final api = MockRustApi();
     await pumpRssScreen(

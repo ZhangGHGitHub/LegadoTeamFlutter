@@ -4,6 +4,8 @@
 // 全局开关关闭时**不新增**阅读记录（已有记录保留，重新开启恢复写入）。
 // 所有 RSS 已读写入入口（列表打开、详情/桥动作打开、后续 JS 扩展）统一经
 // 本函数判定，避免开关语义散落。
+import 'package:flutter/foundation.dart';
+
 import '../services/book_api.dart';
 
 /// 按全局开关执行 RSS 已读写入
@@ -34,7 +36,8 @@ Future<void> rssMarkReadIfEnabled(
       pubDate: pubDate,
       durPos: durPos,
     );
-  } catch (_) {
-    // 历史写入失败不阻断阅读
+  } catch (e) {
+    // 历史写入失败不阻断阅读，但须留痕（批29b 审查 P3-3：不再静默吞掉）
+    debugPrint('RSS 已读记录写入失败（origin=$origin, title=$title）: $e');
   }
 }

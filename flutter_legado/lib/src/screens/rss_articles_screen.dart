@@ -1683,8 +1683,11 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
       actions: [
         // 批29：清空当前源记录（对齐原版 ReadRecordDialog 的 menu_clear →
         // `RssReadRecordDao.deleteAllRecord(origin)`，先弹确认）。
+        // 批29b 审查 P3-2：清空中禁用（防重复触发）。
         TextButton(
-          onPressed: records.isEmpty ? null : () => _confirmClear(records.length),
+          onPressed: (records.isEmpty || state.isClearing)
+              ? null
+              : _confirmClear,
           child: const Text('清空'),
         ),
         TextButton(
@@ -1696,12 +1699,18 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
   }
 
   /// 清空当前源记录（对齐原版 `alert` 确认框 + `deleteAllRecord(origin)`）
-  Future<void> _confirmClear(int count) async {
+  ///
+  /// 批29b 审查 P2-1：确认框不再显示条数——列表只加载最近 100 条
+  /// （`rssListReadRecordsByOrigin` 上限），而按源清空删的是该源**全部**
+  /// 记录，条数会低报；改为「全部阅读记录」表述。
+  /// 批29b 审查 P3-1：清空与随后的刷新分两段判断文案——清空成功但列表
+  /// 刷新失败时不得误报「清空失败」。
+  Future<void> _confirmClear() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('清空阅读记录'),
-        content: Text('确定清空当前源的 $count 条阅读记录？'),
+        content: const Text('确定清空当前源的全部阅读记录？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -1715,14 +1724,21 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await ref
+    final clearError = await ref
         .read(rssHistoryNotifierProvider.notifier)
         .clear(origin: widget.origin);
     if (!mounted) return;
-    final error = ref.read(rssHistoryNotifierProvider).error;
-    if (error != null) {
+    if (clearError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清空失败：$error')),
+        SnackBar(content: Text('清空失败：$clearError')),
+      );
+      return;
+    }
+    // 清空已成功，随后刷新失败单独提示（不得复用「清空失败」）
+    final loadError = ref.read(rssHistoryNotifierProvider).error;
+    if (loadError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('清空成功，但刷新记录失败：$loadError')),
       );
     }
   }

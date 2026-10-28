@@ -174,5 +174,30 @@ void main() {
       expect(state.error, isNotNull);
       verifyNever(() => mockApi.rssListReadRecords(any()));
     });
+
+    test('clear 失败时返回错误文案（供 UI 分段提示，批29b P3-1）', () async {
+      when(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .thenThrow(Exception('ffi'));
+
+      final result = await readNotifier().clear();
+
+      expect(result, isNotNull, reason: '清空失败应返回文案');
+      expect(readState().error, equals(result));
+    });
+
+    test('clear 成功但刷新失败：返回 null 且只写 error（批29b P3-1）', () async {
+      when(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .thenAnswer((_) async {});
+      when(() => mockApi.rssListReadRecords(any()))
+          .thenThrow(Exception('刷新失败'));
+
+      final result = await readNotifier().clear();
+
+      expect(result, isNull, reason: '清空动作本身成功（不得报「清空失败」）');
+      expect(readState().error, isNotNull, reason: '刷新失败仍需留痕');
+      expect(readState().isClearing, isFalse);
+      verify(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .called(1);
+    });
   });
 }

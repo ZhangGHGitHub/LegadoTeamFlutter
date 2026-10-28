@@ -224,12 +224,49 @@ void main() {
     // 清空当前源：确认框 → 按 origin 调用清空 → 列表刷新为空
     await tester.tap(find.widgetWithText(TextButton, '清空'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('当前源的 1 条阅读记录'), findsOneWidget);
+    expect(find.text('确定清空当前源的全部阅读记录？'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, '清空'));
     await tester.pumpAndSettle();
 
     verify(() => api.rssClearReadRecords(origin: sourceUrl)).called(1);
     expect(find.text('历史文章'), findsNothing);
     expect(find.text('暂无阅读记录'), findsOneWidget);
+  });
+
+  testWidgets('清空确认框不显示条数：>100 条也只提示清空全部（批29b 审查 P2-1）',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSource(api, source);
+    // 列表入口最多返回 100 条，而按源清空删的是该源全部记录——确认框
+    // 不得据此低报条数（改前显示「当前源的 100 条阅读记录」）。
+    when(() => api.rssListReadRecordsByOrigin(sourceUrl, null)).thenAnswer(
+      (_) async => List<Map<String, dynamic>>.generate(
+        101,
+        (i) => <String, dynamic>{
+          'origin': sourceUrl,
+          'title': '历史文章$i',
+          'link': '$sourceUrl/article/$i',
+          'read_time': 1700000000000 + i,
+        },
+      ),
+    );
+
+    await pumpScreen(tester, api, source);
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('阅读记录'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '清空'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定清空当前源的全部阅读记录？'), findsOneWidget);
+    expect(
+      find.textContaining('条阅读记录'),
+      findsNothing,
+      reason: '确认框不得显示已加载条数（与实际清空范围不符）',
+    );
   });
 }
