@@ -474,7 +474,7 @@ mod tests {
         assert_eq!(columns, SNAPSHOT_INDEX_COLUMNS);
     }
 
-    /// 经注册表从 v112 升级到 v113：版本推进且结构到位
+    /// 经注册表从 v112 升级到最新版本：版本推进且结构到位
     #[test]
     fn test_migration_112_to_113_via_registry() {
         let conn = Connection::open_in_memory().unwrap();
@@ -484,7 +484,12 @@ mod tests {
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(&conn).unwrap();
 
-        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 113);
+        // 批28 起居最新版本已推进到 v114（113→114 为独立迁移），此处按
+        // SCHEMA_VERSION 断言（本用例只验证 112→113 结构随链式迁移到位）
+        assert_eq!(
+            MigrationRegistry::current_version(&conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         assert!(column_exists(&conn, "metadataEditedAt"));
         assert!(table_exists(&conn, "book_memos").unwrap());
     }

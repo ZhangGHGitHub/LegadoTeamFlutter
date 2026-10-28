@@ -50,7 +50,14 @@ use legado_core::{LegadoError, LegadoResult};
 ///   新增 `book_memos` 表（书备忘，`bookUrl` 主键，无级联外键）。迁移 112→113
 ///   重建表**原样搬运**（不拆旧 `\u001Eauthors:` 合并串），并先探测
 ///   `displayBookName` 列保证上游「发列未升版本」场景幂等（Migration112To113）
-pub const SCHEMA_VERSION: u32 = 113;
+/// - v114：规则字段往返保真（批28，对齐原版 Room schema 113.json 中较早加入
+///   但此前未落地的两列）：`highlightRules` 补 `group`（TEXT DEFAULT ''，
+///   对齐原版 `HighlightRule.group` 与 `DatabaseMigrations.kt:65` 的
+///   `migration_108_109`）；`rssSources` 补 `enableReadRecord`
+///   （INTEGER NOT NULL DEFAULT 1，对齐原版 `RssSource.enableReadRecord` 与
+///   `@ColumnInfo(defaultValue = "1")`）。迁移 113→114 全部为
+///   `add_column_if_not_exists`，幂等（Migration113To114）
+pub const SCHEMA_VERSION: u32 = 114;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -318,6 +325,8 @@ CREATE TABLE IF NOT EXISTS rssSources (
     sourceGroup TEXT,
     sourceComment TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
+    -- v114：是否记录阅读历史（原版 RssSource.enableReadRecord，NOT NULL DEFAULT 1）
+    enableReadRecord INTEGER NOT NULL DEFAULT 1,
     sortUrl TEXT,
     customOrder INTEGER NOT NULL DEFAULT 0,
     lastUpdateTime INTEGER NOT NULL DEFAULT 0,
@@ -673,12 +682,14 @@ CREATE TABLE IF NOT EXISTS highlights (
 CREATE INDEX IF NOT EXISTS index_highlights_bookUrl ON highlights (bookUrl);
 ";
 
-/// highlightRules 表（对齐 Room schema 99.json + 原版 v101 增列）
+/// highlightRules 表（对齐 Room schema 113.json：v101 增 uuid、v109 增 group）
 ///
 /// 自动高亮规则：支持正则/普通文本匹配，scope 限定生效书籍范围；
 /// uuid 为规则身份（唯一索引，导入按其去重，原版 DatabaseMigrations v100→101），
 /// applyToBody 控制正文侧匹配（applyToTitle 控制标题侧，双开关缺一会把
-/// 标题规则错误应用到正文，对齐原版 HighlightRule.kt:38-40）。
+/// 标题规则错误应用到正文，对齐原版 HighlightRule.kt:38-40）；
+/// `"group"` 为规则分组（v114 补齐，原版 `HighlightRule.group`，
+/// `@ColumnInfo(defaultValue = "")` / DDL `TEXT DEFAULT ''`）。
 pub const CREATE_HIGHLIGHT_RULES: &str = "
 CREATE TABLE IF NOT EXISTS highlightRules (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -691,6 +702,7 @@ CREATE TABLE IF NOT EXISTS highlightRules (
     style TEXT NOT NULL,
     sortOrder INTEGER NOT NULL,
     timeoutMillisecond INTEGER NOT NULL,
+    \"group\" TEXT DEFAULT '',
     applyToTitle INTEGER NOT NULL DEFAULT 0,
     applyToBody INTEGER NOT NULL DEFAULT 1
 );

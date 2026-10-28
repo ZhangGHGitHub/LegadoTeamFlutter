@@ -95,6 +95,20 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
             "INTEGER NOT NULL DEFAULT 0",
         )?;
         add_column_if_not_exists(conn, "rssSources", "searchUrl", "TEXT")?;
+        // [批28] 原版 RssSource.enableReadRecord（NOT NULL DEFAULT 1）：
+        // 版本号已到 114 但缺列时由每次开库的自愈兜住
+        add_column_if_not_exists(
+            conn,
+            "rssSources",
+            "enableReadRecord",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
+    }
+
+    // highlightRules 表补列（仅当表存在时）
+    if table_exists(conn, "highlightRules")? {
+        // [批28] 原版 HighlightRule.group（DDL TEXT DEFAULT ''）
+        add_column_if_not_exists(conn, "highlightRules", "\"group\"", "TEXT DEFAULT ''")?;
     }
 
     // replace_rules 表补列（仅当表存在时）

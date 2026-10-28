@@ -12,6 +12,7 @@ pub mod origin_book_url_v109;
 pub mod read_record_v113;
 pub mod room_align_v105;
 pub mod rss_next_content_url_v111;
+pub mod rule_fields_v114;
 pub mod schema_align_v104;
 pub mod scope_source_v108;
 pub mod search_book_score_v106;
@@ -77,6 +78,7 @@ impl MigrationRegistry {
         self.register(Box::new(rss_next_content_url_v111::Migration110To111));
         self.register(Box::new(servers_table_v112::Migration111To112));
         self.register(Box::new(read_record_v113::Migration112To113));
+        self.register(Box::new(rule_fields_v114::Migration113To114));
     }
 
     /// 注册单个迁移
@@ -311,7 +313,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 23);
+        assert_eq!(list.len(), 24);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -442,6 +444,9 @@ mod tests {
         assert!(column_exists(conn, "highlightRules", "applyToBody"));
         // [P1-2] rssSources 补 nextContentUrl（原版正文下一页规则）
         assert!(column_exists(conn, "rssSources", "nextContentUrl"));
+        // [批28] highlightRules 补 group（规则分组）、rssSources 补 enableReadRecord
+        assert!(column_exists(conn, "highlightRules", "group"));
+        assert!(column_exists(conn, "rssSources", "enableReadRecord"));
     }
 
     #[test]
