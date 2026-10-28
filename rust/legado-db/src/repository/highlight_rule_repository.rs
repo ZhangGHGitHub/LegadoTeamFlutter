@@ -12,8 +12,11 @@ use legado_core::models::HighlightRule;
 use legado_core::{LegadoError, LegadoResult};
 
 /// 高亮规则查询列（与 row_to_rule 的索引一一对应）
+///
+/// 批28：`"group"`（原版 `HighlightRule.group`，SQLite 关键字列名须加引号）
+/// 追加在列尾，保持既有 0..11 索引不变。
 const SELECT_COLUMNS: &str = "SELECT id, uuid, name, pattern, isRegex, scope, isEnabled,
-    style, sortOrder, timeoutMillisecond, applyToTitle, applyToBody FROM highlightRules";
+    style, sortOrder, timeoutMillisecond, applyToTitle, applyToBody, \"group\" FROM highlightRules";
 
 /// 高亮规则数据访问层
 pub struct HighlightRuleRepository<'a> {
@@ -34,8 +37,8 @@ impl<'a> HighlightRuleRepository<'a> {
                 .execute(
                     "INSERT OR REPLACE INTO highlightRules
                      (id, uuid, name, pattern, isRegex, scope, isEnabled, style,
-                      sortOrder, timeoutMillisecond, applyToTitle, applyToBody)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                      sortOrder, timeoutMillisecond, applyToTitle, applyToBody, \"group\")
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                     params![
                         rule.id,
                         rule.uuid,
@@ -49,6 +52,7 @@ impl<'a> HighlightRuleRepository<'a> {
                         rule.timeoutMillisecond,
                         rule.applyToTitle,
                         rule.applyToBody,
+                        rule.group,
                     ],
                 )
                 .map_err(|e| LegadoError::Database(format!("插入高亮规则失败: {e}")))?;
@@ -58,8 +62,8 @@ impl<'a> HighlightRuleRepository<'a> {
                 .execute(
                     "INSERT INTO highlightRules
                      (uuid, name, pattern, isRegex, scope, isEnabled, style,
-                      sortOrder, timeoutMillisecond, applyToTitle, applyToBody)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                      sortOrder, timeoutMillisecond, applyToTitle, applyToBody, \"group\")
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         rule.uuid,
                         rule.name,
@@ -72,6 +76,7 @@ impl<'a> HighlightRuleRepository<'a> {
                         rule.timeoutMillisecond,
                         rule.applyToTitle,
                         rule.applyToBody,
+                        rule.group,
                     ],
                 )
                 .map_err(|e| LegadoError::Database(format!("插入高亮规则失败: {e}")))?;
@@ -85,8 +90,8 @@ impl<'a> HighlightRuleRepository<'a> {
             .execute(
                 "UPDATE highlightRules SET uuid=?1, name=?2, pattern=?3, isRegex=?4, scope=?5,
                  isEnabled=?6, style=?7, sortOrder=?8, timeoutMillisecond=?9,
-                 applyToTitle=?10, applyToBody=?11
-                 WHERE id=?12",
+                 applyToTitle=?10, applyToBody=?11, \"group\"=?12
+                 WHERE id=?13",
                 params![
                     rule.uuid,
                     rule.name,
@@ -99,6 +104,7 @@ impl<'a> HighlightRuleRepository<'a> {
                     rule.timeoutMillisecond,
                     rule.applyToTitle,
                     rule.applyToBody,
+                    rule.group,
                     rule.id,
                 ],
             )
@@ -140,8 +146,8 @@ impl<'a> HighlightRuleRepository<'a> {
             tx.execute(
                 "INSERT INTO highlightRules
                  (uuid, name, pattern, isRegex, scope, isEnabled, style,
-                  sortOrder, timeoutMillisecond, applyToTitle, applyToBody)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                  sortOrder, timeoutMillisecond, applyToTitle, applyToBody, \"group\")
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     rule.uuid,
                     rule.name,
@@ -154,6 +160,7 @@ impl<'a> HighlightRuleRepository<'a> {
                     rule.timeoutMillisecond,
                     rule.applyToTitle,
                     rule.applyToBody,
+                    rule.group,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("批量插入高亮规则失败: {e}")))?;
@@ -303,6 +310,8 @@ fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<HighlightRule> {
         timeoutMillisecond: row.get(9)?,
         applyToTitle: row.get(10)?,
         applyToBody: row.get(11)?,
+        // 批28：v114 新列（SELECT 列尾）
+        group: row.get(12)?,
     })
 }
 
@@ -530,6 +539,60 @@ mod tests {
         let found = repo.find_by_id(id).unwrap().unwrap();
         assert!(!found.applyToTitle);
         assert!(found.applyToBody);
+    }
+
+    /// 批28：`group`（v114 新列，原版 HighlightRule.group）读写往返
+    ///
+    /// - insert / update / find_all 均须保留分组（None 与有值两态）；
+    /// - `replace_all`（导入全量替换）同样保留分组。
+    #[test]
+    fn test_group_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = HighlightRuleRepository::new(db.connection());
+
+        // 有分组
+        let mut grouped = make_rule("分组规则", "a", 0);
+        grouped.uuid = "33333333-3333-4333-8333-333333333333".to_string();
+        grouped.group = Some("重要标注".to_string());
+        let id = repo.insert(&grouped).unwrap();
+        assert_eq!(
+            repo.find_by_id(id).unwrap().unwrap().group.as_deref(),
+            Some("重要标注"),
+            "insert 应落 group"
+        );
+
+        // 无分组
+        let mut plain = make_rule("无分组规则", "b", 1);
+        plain.uuid = "44444444-4444-4444-8444-444444444444".to_string();
+        let plain_id = repo.insert(&plain).unwrap();
+        assert!(
+            repo.find_by_id(plain_id).unwrap().unwrap().group.is_none(),
+            "None 分组应读回 None"
+        );
+
+        // update 通道覆盖
+        let mut updated = repo.find_by_id(id).unwrap().unwrap();
+        updated.group = Some("改名分组".to_string());
+        repo.update(&updated).unwrap();
+        assert_eq!(
+            repo.find_by_id(id).unwrap().unwrap().group.as_deref(),
+            Some("改名分组"),
+            "update 应更新 group"
+        );
+
+        // find_all 列序一致
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().any(|r| r.group.as_deref() == Some("改名分组")));
+
+        // replace_all（导入）：分组保留
+        let mut imported = make_rule("导入规则", "c", 0);
+        imported.uuid = "55555555-5555-4555-8555-555555555555".to_string();
+        imported.group = Some("导入分组".to_string());
+        repo.replace_all(&[imported]).unwrap();
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].group.as_deref(), Some("导入分组"));
     }
 
     /// [P2-11] 双开关四态持久化（仅标题/仅正文/都开/都关）：

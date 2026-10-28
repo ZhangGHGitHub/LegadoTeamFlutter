@@ -47,7 +47,8 @@ pub fn list_rss_sources() -> LegadoResult<Vec<RssSource>> {
                         contentWhitelist, contentBlacklist, shouldOverrideUrlLoading,
                         style, enableJs, loadWithBaseUrl, injectJs, preloadJs,
                         startHtml, startStyle, startJs, showWebLog, lastUpdateTime,
-                        customOrder, type, preload, cacheFirst, searchUrl
+                        customOrder, type, preload, cacheFirst, searchUrl,
+                        enableReadRecord
                  FROM rssSources ORDER BY customOrder ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -805,6 +806,8 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
         preload: row.get(42)?,
         cache_first: row.get(43)?,
         search_url: row.get(44)?,
+        // 批28：v114 新列（SELECT 列尾）
+        enable_read_record: row.get(45)?,
     })
 }
 

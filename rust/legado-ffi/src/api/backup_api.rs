@@ -2806,6 +2806,8 @@ mod tests {
             preload: true,
             cache_first: true,
             search_url: Some("search?q={{key}}".to_string()),
+            // 批28：v114 新列（原版 RssSource.enableReadRecord），随备份往返
+            enable_read_record: false,
         }
     }
 
@@ -2873,6 +2875,10 @@ mod tests {
         assert_eq!(
             restored.header.as_deref(),
             Some("{\"User-Agent\":\"RoundTripUA\"}")
+        );
+        assert!(
+            !restored.enable_read_record,
+            "enableReadRecord 应随备份往返保留（批28，原版 RSS 阅读历史开关）"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -3503,6 +3509,8 @@ mod tests {
             style: "{}".to_string(),
             sortOrder: -2,
             timeoutMillisecond: 1500,
+            // [批28] group 全字段往返（v114 新列，原版 HighlightRule.group）
+            group: Some("备份分组".to_string()),
             applyToTitle: true,
             // [P2-11] uuid/applyToBody 全字段往返（uuid 唯一、applyToBody 仅正文）
             uuid: "44444444-4444-4444-8444-444444444444".to_string(),
@@ -3655,6 +3663,12 @@ mod tests {
                 "uuid 应随备份往返保留"
             );
             assert!(!rule.applyToBody, "applyToBody 应随备份往返保留");
+            // [批28] group（v114 新列）显式断言
+            assert_eq!(
+                rule.group.as_deref(),
+                Some("备份分组"),
+                "group 应随备份往返保留（原版 HighlightRule.group）"
+            );
 
             // 5. search_keywords（usage/lastUseTime 原样保留）
             let keywords = SearchKeywordRepository::new(conn).find_all().unwrap();
@@ -4554,7 +4568,8 @@ mod tests {
             "bookText":"高亮文本","style":"{\"fill\":1}","note":"笔记"}]"#;
         let highlight_rule = r#"[{"id":77,"uuid":"77777777-7777-4777-8777-777777777777",
             "name":"zip高亮规则","pattern":"关键[词]","isRegex":true,"isEnabled":true,
-            "style":"{}","order":2,"timeoutMillisecond":3000,"applyToTitle":false,"applyToBody":true}]"#;
+            "style":"{}","order":2,"timeoutMillisecond":3000,"applyToTitle":false,"applyToBody":true,
+            "group":"zip分组"}]"#;
         let book_source = r#"[{"bookSourceUrl":"https://zip.example/source","bookSourceName":"zip源",
             "bookSourceGroup":"组","bookSourceType":0,"enabled":true,"enabledExplore":true,
             "customOrder":1,"weight":0,"respondTime":180000,
@@ -4562,6 +4577,7 @@ mod tests {
             "ruleSearch":{"bookList":"class.b","name":"a@text","bookUrl":"a@href"}}]"#;
         let rss_sources = r#"[{"sourceUrl":"https://zip.example/rss","sourceName":"zip RSS",
             "sourceIcon":"https://zip.example/icon.png","enabled":true,"type":1,
+            "enableReadRecord":false,
             "ruleArticles":"class.item","ruleLink":"a@href","ruleTitle":"h1@text"}]"#;
         let rss_star = r#"[{"origin":"https://zip.example/rss","sort":"default","title":"zip收藏",
             "starTime":1700000003000,"link":"https://zip.example/rss/a1","group":"",
@@ -4683,6 +4699,12 @@ mod tests {
                 rule.uuid, "77777777-7777-4777-8777-777777777777",
                 "uuid 应随 zip 备份保留"
             );
+            // 批28：原版 highlightRules.group 应随 zip 恢复保留
+            assert_eq!(
+                rule.group.as_deref(),
+                Some("zip分组"),
+                "group 应随原版 zip 备份保留（批28）"
+            );
 
             // 书源
             let source = BookSourceRepository::new(conn)
@@ -4697,6 +4719,11 @@ mod tests {
                 .map_err(LegadoError::Database)?
                 .expect("RSS 源应落库");
             assert_eq!(rss.rule_articles.as_deref(), Some("class.item"));
+            // 批28：原版 rssSources.enableReadRecord 应随 zip 恢复保留
+            assert!(
+                !rss.enable_read_record,
+                "enableReadRecord 应随原版 zip 备份保留（批28）"
+            );
             let stars = RssStarRepository::new(conn).find_all()?;
             assert_eq!(stars.len(), 1);
             assert_eq!(stars[0].title, "zip收藏");
@@ -5439,6 +5466,7 @@ mod tests {
             style: "{}".to_string(),
             sortOrder: 0,
             timeoutMillisecond: 1000,
+            group: None,
             applyToTitle: false,
             uuid: format!("0000000{id}-0000-4000-8000-000000000000"),
             applyToBody: true,

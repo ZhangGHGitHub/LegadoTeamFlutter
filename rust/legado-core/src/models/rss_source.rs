@@ -20,6 +20,14 @@ pub struct RssSource {
     /// 是否启用
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// 是否记录阅读历史（对齐 Kotlin `RssSource.enableReadRecord: Boolean = true`，
+    /// 列 DDL `INTEGER NOT NULL DEFAULT 1`）
+    ///
+    /// 批28：上游运行期已回退为全局开关（`AppConfig.enableReadRecord`），按源
+    /// 开关不生效；本批只做字段/DB 往返保真（导入、导出、备份、编辑保存不丢），
+    /// 不实现按源开关行为。缺键 → true（对齐 Kotlin 构造默认值）。
+    #[serde(default = "default_true", rename = "enableReadRecord")]
+    pub enable_read_record: bool,
     /// 自定义变量说明
     #[serde(skip_serializing_if = "Option::is_none", rename = "variableComment")]
     pub variable_comment: Option<String>,
@@ -159,6 +167,8 @@ mod tests {
         let rss = RssSource::default();
         // Note: derive(Default) gives false for bool, serde defaults only apply during deserialization
         assert!(!rss.enabled);
+        // 批28：enableReadRecord 同为 bool（Default=false），反序列化缺键才是 true
+        assert!(!rss.enable_read_record);
         assert!(!rss.enable_js);
         assert!(!rss.load_with_base_url);
         assert!(!rss.single_url);
@@ -208,6 +218,28 @@ mod tests {
         assert_eq!(rss.next_content_url.as_deref(), Some(".next@href"));
         let value = serde_json::to_value(&rss).unwrap();
         assert_eq!(value["nextContentUrl"], ".next@href");
+    }
+
+    /// 批28：`enableReadRecord`（原版 RssSource 阅读历史开关）
+    /// - 缺键 → true（对齐 Kotlin 构造默认值）；
+    /// - 显式 false → false；
+    /// - JSON 键名恒为 `enableReadRecord`（camelCase，与 Room 列同名）。
+    #[test]
+    fn test_rss_source_enable_read_record_serde() {
+        let missing: RssSource = serde_json::from_str(r#"{"sourceUrl": "u"}"#).unwrap();
+        assert!(
+            missing.enable_read_record,
+            "缺键应默认 true（对齐 Kotlin `var enableReadRecord: Boolean = true`）"
+        );
+
+        let disabled: RssSource =
+            serde_json::from_str(r#"{"sourceUrl": "u", "enableReadRecord": false}"#).unwrap();
+        assert!(!disabled.enable_read_record);
+
+        let value = serde_json::to_value(&disabled).unwrap();
+        assert_eq!(value["enableReadRecord"], false);
+        let decoded: RssSource = serde_json::from_value(value).unwrap();
+        assert!(!decoded.enable_read_record);
     }
 
     #[test]

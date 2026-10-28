@@ -126,6 +126,14 @@ pub struct HighlightRule {
     /// 匹配超时毫秒数
     #[serde(default = "default_timeout")]
     pub timeoutMillisecond: i64,
+    /// 规则分组（对齐 Kotlin `HighlightRule.group: String?`，Room 列
+    /// `"group" TEXT DEFAULT ''`，DatabaseMigrations v108→109 增列）
+    ///
+    /// 批28：本批只做字段/DB 往返保真（导入、导出、备份、编辑保存不丢分组）；
+    /// 原版导入前 `normalizeForRestore` 会把空白分组规整为 null，见
+    /// [`HighlightRule::normalize_for_restore`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     /// 是否应用到标题（对齐 Kotlin `applyToTitle`，默认 false）
     #[serde(default)]
     pub applyToTitle: bool,
@@ -154,6 +162,8 @@ impl HighlightRule {
     ///
     /// - uuid 非法（无法按 UUID 解析）时重新生成随机 UUID；
     /// - name/pattern/style 为空规整为空串；
+    /// - group 去首尾空白，空白规整为 None（对齐原版
+    ///   `group = (group as String?)?.trim()?.takeIf { it.isNotEmpty() }`）；
     /// - timeoutMillisecond <= 0 时回退默认超时。
     ///
     /// 原版同时会把空白 style 替换为默认 `HighlightStyle().normalized()`，
@@ -165,6 +175,11 @@ impl HighlightRule {
             Err(_) => uuid::Uuid::new_v4().to_string(),
         };
         // name/pattern/style 为 String 非 null，无需原版 (x as String?).orEmpty() 等价处理
+        self.group = self
+            .group
+            .take()
+            .map(|g| g.trim().to_string())
+            .filter(|g| !g.is_empty());
         if self.timeoutMillisecond <= 0 {
             self.timeoutMillisecond = DEFAULT_TIMEOUT_MILLISECONDS;
         }
@@ -184,6 +199,7 @@ impl Default for HighlightRule {
             style: String::new(),
             sortOrder: 0,
             timeoutMillisecond: DEFAULT_TIMEOUT_MILLISECONDS,
+            group: None,
             applyToTitle: false,
             applyToBody: true,
         }
@@ -271,6 +287,45 @@ mod tests {
         let a: HighlightRule = serde_json::from_str("{}").unwrap();
         let b: HighlightRule = serde_json::from_str("{}").unwrap();
         assert_ne!(a.uuid, b.uuid);
+    }
+
+    /// 批28：`group`（原版 HighlightRule.group，Room 列 `"group" TEXT DEFAULT ''`）
+    /// 按同名字段往返；缺键 → None；None 时省略输出键
+    #[test]
+    fn test_highlight_rule_group_serde_roundtrip() {
+        let rule: HighlightRule =
+            serde_json::from_str(r#"{"pattern": "abc", "group": "重要标注"}"#).unwrap();
+        assert_eq!(rule.group.as_deref(), Some("重要标注"));
+
+        let value = serde_json::to_value(&rule).unwrap();
+        assert_eq!(value["group"], "重要标注");
+        let decoded: HighlightRule = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.group, rule.group);
+
+        // 缺键 / 显式 null → None，且 None 时省略输出键
+        let missing: HighlightRule = serde_json::from_str(r#"{"pattern": "abc"}"#).unwrap();
+        assert!(missing.group.is_none());
+        let explicit_null: HighlightRule =
+            serde_json::from_str(r#"{"pattern": "abc", "group": null}"#).unwrap();
+        assert!(explicit_null.group.is_none());
+        assert!(!serde_json::to_string(&missing)
+            .unwrap()
+            .contains("\"group\""));
+    }
+
+    /// 批28：normalize_for_restore 对齐原版对 group 的规整
+    /// （trim 后空白 → None；有内容保留 trim 结果）
+    #[test]
+    fn test_highlight_rule_normalize_group() {
+        let mut blank: HighlightRule =
+            serde_json::from_str(r#"{"pattern": "a", "group": "   "}"#).unwrap();
+        blank.normalize_for_restore();
+        assert!(blank.group.is_none(), "空白分组应规整为 None");
+
+        let mut padded: HighlightRule =
+            serde_json::from_str(r#"{"pattern": "a", "group": "  分组A  "}"#).unwrap();
+        padded.normalize_for_restore();
+        assert_eq!(padded.group.as_deref(), Some("分组A"));
     }
 
     /// [P2-11] normalize_for_restore 对齐原版：非法 uuid 重生成、超时回退默认

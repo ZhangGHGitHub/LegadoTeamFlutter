@@ -32,7 +32,7 @@ impl<'a> RssSourceRepository<'a> {
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
-                        searchUrl
+                        searchUrl, enableReadRecord
                  FROM rssSources ORDER BY customOrder ASC",
             )
             .map_err(|e| format!("准备查询失败: {e}"))?;
@@ -60,7 +60,7 @@ impl<'a> RssSourceRepository<'a> {
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
-                        searchUrl
+                        searchUrl, enableReadRecord
                  FROM rssSources WHERE sourceUrl = ?1",
             )
             .map_err(|e| format!("准备查询失败: {e}"))?;
@@ -91,7 +91,7 @@ impl<'a> RssSourceRepository<'a> {
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
-                        searchUrl
+                        searchUrl, enableReadRecord
                  FROM rssSources WHERE enabled = 1 ORDER BY customOrder ASC",
             )
             .map_err(|e| format!("准备查询失败: {e}"))?;
@@ -124,11 +124,11 @@ impl<'a> RssSourceRepository<'a> {
               jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
               shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
               startStyle, startJs, showWebLog, type, preload, cacheFirst,
-              searchUrl)
+              searchUrl, enableReadRecord)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
                      ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,
                      ?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44,
-                     ?45)",
+                     ?45,?46)",
                 params![
                     source.source_url,
                     source.source_name,
@@ -175,6 +175,8 @@ impl<'a> RssSourceRepository<'a> {
                     source.preload,
                     source.cache_first,
                     source.search_url,
+                    // 批28：v114 新列，追加在参数末尾（与 SQL 列尾对齐）
+                    source.enable_read_record,
                 ],
             )
             .map_err(|e| format!("插入失败: {e}"))?;
@@ -212,7 +214,8 @@ impl<'a> RssSourceRepository<'a> {
                     contentBlacklist = ?34, shouldOverrideUrlLoading = ?35,
                     injectJs = ?36, preloadJs = ?37, startHtml = ?38,
                     startStyle = ?39, startJs = ?40, showWebLog = ?41,
-                    type = ?42, preload = ?43, cacheFirst = ?44, searchUrl = ?45
+                    type = ?42, preload = ?43, cacheFirst = ?44, searchUrl = ?45,
+                    enableReadRecord = ?46
                  WHERE sourceUrl = ?1",
                 params![
                     source.source_url,
@@ -260,6 +263,8 @@ impl<'a> RssSourceRepository<'a> {
                     source.preload,
                     source.cache_first,
                     source.search_url,
+                    // 批28：v114 新列（enableReadRecord = ?46）
+                    source.enable_read_record,
                 ],
             )
             .map_err(|e| format!("原子更新失败: {e}"))?;
@@ -300,7 +305,8 @@ impl<'a> RssSourceRepository<'a> {
     }
 }
 
-/// 将 rusqlite Row 转换为 RssSource（v111：含 nextContentUrl，共 45 列）
+/// 将 rusqlite Row 转换为 RssSource（v114：含 nextContentUrl + enableReadRecord，
+/// 共 46 列；enableReadRecord 追加在列尾，与 SELECT 列序一致）
 fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
     Ok(RssSource {
         source_url: row.get(0)?,
@@ -348,6 +354,8 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
         preload: row.get(42)?,
         cache_first: row.get(43)?,
         search_url: row.get(44)?,
+        // 批28：v114 新列（SELECT 列尾）
+        enable_read_record: row.get(45)?,
     })
 }
 
@@ -514,6 +522,58 @@ mod tests {
         assert!(found.preload);
         assert!(found.cache_first);
         assert_eq!(found.search_url, src.search_url);
+    }
+
+    /// 批28：`enableReadRecord`（v114 新列）读写全链路保真
+    ///
+    /// - 默认 `false`（`RssSource::default()`）与显式 `true` 都必须原样落库读回；
+    /// - `update_fields` 原子更新不得把该列重置为建表默认值 1。
+    #[test]
+    fn test_enable_read_record_roundtrip() {
+        let conn = setup_conn();
+        let repo = RssSourceRepository::new(&conn);
+
+        // 显式 false（关闭阅读历史）→ 读回 false
+        let mut off = make_source("u_rr_off", "关记录");
+        off.enable_read_record = false;
+        repo.insert(&off).unwrap();
+        let found_off = repo.find_by_url("u_rr_off").unwrap().unwrap();
+        assert!(
+            !found_off.enable_read_record,
+            "显式 false 应原样落库（不得被建表默认 1 覆盖）"
+        );
+
+        // 显式 true → 读回 true，且 find_all 列序一致
+        let mut on = make_source("u_rr_on", "开记录");
+        on.enable_read_record = true;
+        repo.insert(&on).unwrap();
+        let all = repo.find_all().unwrap();
+        let found_on = all.iter().find(|s| s.source_url == "u_rr_on").unwrap();
+        assert!(found_on.enable_read_record);
+        assert_eq!(all.len(), 2, "find_all 行数不受新列影响");
+
+        // 原子更新：false → true 生效
+        let mut loaded = repo.find_by_url("u_rr_off").unwrap().unwrap();
+        loaded.enable_read_record = true;
+        assert!(repo.update_fields(&loaded).unwrap());
+        assert!(
+            repo.find_by_url("u_rr_off")
+                .unwrap()
+                .unwrap()
+                .enable_read_record
+        );
+
+        // 原子更新保留 false：true → false 生效
+        let mut loaded = repo.find_by_url("u_rr_on").unwrap().unwrap();
+        loaded.enable_read_record = false;
+        assert!(repo.update_fields(&loaded).unwrap());
+        assert!(
+            !repo
+                .find_by_url("u_rr_on")
+                .unwrap()
+                .unwrap()
+                .enable_read_record
+        );
     }
 
     #[test]
