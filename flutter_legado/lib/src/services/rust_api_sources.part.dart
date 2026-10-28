@@ -124,6 +124,14 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   /// 模型 JSON 深合上去，表单未编辑/ Dart 模型未建模的规则字段
   /// （如 `ruleContent.contentBatch` / `maxBatchSize`）原样保留，避免编辑保存
   /// 一次即静默丢字段。缓存未命中时拉取一次 `sourceList` 兜底。
+  ///
+  /// 批28b（P2-2③）：载荷构造抽到 `buildPatchedSourcePayload`，测试可注入
+  /// 原始 JSON 直接断言最终 FFI 载荷。
+  ///
+  /// 已知限制（P3-1，本批登记）：编辑页修改 `bookSourceUrl` 时，
+  /// `SourceNotifier.saveSource` 按新 URL 找不到既有源、走 `addBookSource`
+  /// 路径，本补丁不会参与（且旧行保留）；URL 改名属主键变更语义，需
+  /// notifier/仓储配套改造，留待后续批次。
   @override
   Future<void> updateBookSource(BookSource source) async {
     final payload = await _patchedSourcePayload(source);
@@ -134,18 +142,24 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   }
 
   /// 构造保存载荷：原始 JSON（缓存，未命中则现拉）深合编辑值
-  Future<Map<String, dynamic>> _patchedSourcePayload(BookSource source) async {
-    var original = BookSourceRawCache.lookup(source.bookSourceUrl);
-    if (original == null) {
-      try {
-        BookSourceRawCache.rememberAllJson(await bridge.sourceList());
-        original = BookSourceRawCache.lookup(source.bookSourceUrl);
-      } catch (e) {
-        // 拉取失败不阻断保存：退化为纯模型 JSON（旧行为）
-        debugPrint('书源原始 JSON 拉取失败（按编辑值保存）: $e');
-      }
+  Future<Map<String, dynamic>> _patchedSourcePayload(BookSource source) =>
+      buildPatchedSourcePayload(
+        source.toJson(),
+        resolveOriginal: _resolveOriginalSourceJson,
+      );
+
+  /// 按 URL 读取原始 JSON：先查缓存，未命中回拉一次 `sourceList` 后重查
+  Future<Map<String, dynamic>?> _resolveOriginalSourceJson(String url) async {
+    var original = BookSourceRawCache.lookup(url);
+    if (original != null) return original;
+    try {
+      BookSourceRawCache.rememberAllJson(await bridge.sourceList());
+      original = BookSourceRawCache.lookup(url);
+    } catch (e) {
+      // 拉取失败不阻断保存：退化为纯模型 JSON（旧行为）
+      debugPrint('书源原始 JSON 拉取失败（按编辑值保存）: $e');
     }
-    return patchSourceJson(original, source.toJson());
+    return original;
   }
 
   /// 设置书源自定义变量（契约 §2.3，台账 §5.11-3，Task #65）
@@ -180,6 +194,9 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   @override
   Future<void> deleteBookSource(String sourceUrl) async {
     await bridge.sourceDelete(sourceUrl: sourceUrl);
+    // 批28b（P3-7）：删除成功后清理原始 JSON 缓存，避免同 URL 重新导入时
+    // 用旧原文做补丁底稿
+    BookSourceRawCache.forget(sourceUrl);
     CoverDecodeLoader.invalidateSourceRegistry();
   }
 
@@ -201,6 +218,9 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   @override
   Future<int> importBookSources(String jsonArray) async {
     final count = await bridge.sourceImport(jsonArray: jsonArray);
+    // 批28b（P3-7）：导入可替换既有行，原始 JSON 缓存整体失效；
+    // 下次保存缓存未命中会回拉 sourceList（正确性优先于一次额外拉取）
+    BookSourceRawCache.clear();
     CoverDecodeLoader.invalidateSourceRegistry();
     return count;
   }

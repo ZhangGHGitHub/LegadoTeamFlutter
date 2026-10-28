@@ -131,4 +131,38 @@ void main() {
 
     verify(() => mockApi.highlightRuleDelete(id: 1)).called(1);
   });
+
+  /// 批28b（P2-2②）：编辑保存必须保留 `group`（表单无分组输入）
+  ///
+  /// 修复前 `_save()` 重建 HighlightRule 时漏掉 group，编辑一次即丢分组；
+  /// 本用例从列表点入编辑面板保存，断言传给 highlightRuleSave 的载荷含原分组。
+  testWidgets('编辑保存保留 group 分组', (tester) async {
+    final groupedRule = <String, dynamic>{
+      ...sampleRule,
+      'group': '分组A',
+      'uuid': '11111111-1111-4111-8111-111111111111',
+      'timeoutMillisecond': 2500,
+      'applyToBody': false,
+    };
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([groupedRule]));
+    await pumpScreen(tester);
+
+    // 点击规则行进入编辑面板（表单无 group 输入）
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑高亮规则'), findsOneWidget);
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    expect(saved['group'], '分组A', reason: '编辑保存不得丢分组');
+    expect(saved['uuid'], '11111111-1111-4111-8111-111111111111');
+    expect(saved['timeoutMillisecond'], 2500);
+    expect(saved['applyToBody'], false);
+  });
 }

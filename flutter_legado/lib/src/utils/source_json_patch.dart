@@ -40,6 +40,24 @@ Map<String, dynamic> patchSourceJson(
   return merged;
 }
 
+/// 构造 `updateBookSource` 保存载荷（批28b P2-2③：抽函数便于注入测试）
+///
+/// 生产路径（[BookSourceRawCache] 命中/回拉 `sourceList`）与测试共用本函数：
+/// [editedJson] 为编辑后的模型 JSON；[resolveOriginal] 负责按 URL 提供读取时
+/// 的原始 JSON（未命中返回 null，退化为编辑值）。
+///
+/// 返回的 Map 就是传给 FFI `sourceUpdate` 的载荷（调用方负责 jsonEncode）。
+Future<Map<String, dynamic>> buildPatchedSourcePayload(
+  Map<String, dynamic> editedJson, {
+  required Future<Map<String, dynamic>?> Function(String url) resolveOriginal,
+}) async {
+  final url = editedJson['bookSourceUrl'];
+  final original = url is String && url.isNotEmpty
+      ? await resolveOriginal(url)
+      : null;
+  return patchSourceJson(original, editedJson);
+}
+
 /// 把任意 `Map`（可能来自 `jsonDecode` 的 `Map<String, dynamic>` 或嵌套 `Map`）
 /// 归一为 `Map<String, dynamic>`（键按字符串处理）。
 Map<String, dynamic> _asStringKeyedMap(Map<dynamic, dynamic> source) {
@@ -60,6 +78,12 @@ class BookSourceRawCache {
 
   static final Map<String, Map<String, dynamic>> _byUrl = {};
 
+  /// 缓存条目上限（批28b P3-7）：超出后按插入顺序淘汰最旧条目
+  ///
+  /// 书源量级通常为数百；上限只防御异常大列表/长时间运行导致的内存增长。
+  /// 淘汰仅影响「原 JSON 补丁」的底线，未命中仍会回拉 `sourceList`。
+  static const int maxEntries = 2000;
+
   /// 解析并缓存书源列表 JSON（裸数组，`ffi::source_list` 原样输出）
   ///
   /// 非法 JSON / 非数组内容静默忽略（缓存只做尽力优化，不阻断主流程）。
@@ -77,16 +101,24 @@ class BookSourceRawCache {
   }
 
   /// 缓存单个书源 JSON（按 `bookSourceUrl` 建索引；缺 URL 的条目跳过）
+  ///
+  /// 新键且已达 [maxEntries] 时先淘汰最旧条目（FIFO），防止无界增长。
   static void remember(Map<String, dynamic> source) {
     final url = source['bookSourceUrl'];
     if (url is! String || url.isEmpty) return;
+    if (!_byUrl.containsKey(url) && _byUrl.length >= maxEntries) {
+      _byUrl.remove(_byUrl.keys.first);
+    }
     _byUrl[url] = source;
   }
+
+  /// 移除单个书源的缓存（批28b P3-7：删除书源后不再保留其原始 JSON）
+  static void forget(String bookSourceUrl) => _byUrl.remove(bookSourceUrl);
 
   /// 读取书源原始 JSON（未缓存返回 null）
   static Map<String, dynamic>? lookup(String bookSourceUrl) =>
       _byUrl[bookSourceUrl];
 
-  /// 清空缓存（测试用；书源全量重置后可调用）
+  /// 清空缓存（测试用；书源导入/全量重置后可调用）
   static void clear() => _byUrl.clear();
 }

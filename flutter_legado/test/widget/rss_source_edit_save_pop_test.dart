@@ -30,8 +30,9 @@ void main() {
   /// 以「订阅源管理页」同样的强类型路由打开编辑页，返回 pop 结果
   Future<RssSource? Function()> pumpEditAndOpen(
     WidgetTester tester,
-    MockBookApi api,
-  ) async {
+    MockBookApi api, {
+    RssSource? source,
+  }) async {
     RssSource? popResult;
     await tester.pumpWidget(
       ProviderScope(
@@ -43,7 +44,7 @@ void main() {
                 onPressed: () async {
                   popResult = await Navigator.of(context).push<RssSource>(
                     MaterialPageRoute(
-                      builder: (_) => const RssSourceEditScreen(),
+                      builder: (_) => RssSourceEditScreen(source: source),
                     ),
                   );
                 },
@@ -102,5 +103,40 @@ void main() {
     expect(find.byType(RssSourceEditScreen), findsOneWidget);
     expect(result(), isNull);
     expect(find.textContaining('保存失败'), findsOneWidget);
+  });
+
+  /// 批28b（P2-2①）：编辑保存必须透传表单未展示的既有字段
+  ///
+  /// `enableReadRecord` 是原版按源阅读历史开关（无 UI 开关）、
+  /// `nextContentUrl` 不在编辑表单内；`_buildSource()` 重建对象时
+  /// 若漏掉透传，一次保存即静默丢字段。
+  testWidgets('编辑保存保留 enableReadRecord=false 与 nextContentUrl', (tester) async {
+    const url = 'https://example.com/rss-edit.xml';
+    final api = MockBookApi();
+    final original = RssSource(
+      sourceUrl: url,
+      sourceName: '旧订阅源',
+      enableReadRecord: false,
+      nextContentUrl: '.next@href',
+    );
+    await api.addRssSource(original);
+
+    final result = await pumpEditAndOpen(tester, api, source: original);
+    await tester.enterText(find.widgetWithText(TextField, '源名称'), '新订阅源');
+    await tester.pump();
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RssSourceEditScreen), findsNothing);
+    expect(result()?.sourceName, '新订阅源');
+    expect(result()?.enableReadRecord, isFalse, reason: '编辑保存必须透传按源阅读记录开关');
+    expect(result()?.nextContentUrl, '.next@href', reason: '编辑保存必须透传正文下一页规则');
+
+    final saved = (await api.getRssSources()).firstWhere(
+      (s) => s.sourceUrl == url,
+    );
+    expect(saved.enableReadRecord, isFalse);
+    expect(saved.nextContentUrl, '.next@href');
   });
 }

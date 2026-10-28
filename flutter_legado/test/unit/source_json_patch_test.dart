@@ -8,6 +8,7 @@
 // 编写：全栈工程师（批28） ｜ 2026-10-28
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/utils/source_json_patch.dart';
 
 void main() {
@@ -146,6 +147,99 @@ void main() {
       );
       expect(BookSourceRawCache.lookup(''), isNull);
       expect(BookSourceRawCache.lookup('u2'), isNotNull);
+    });
+
+    /// 批28b（P3-7）：删除书源后缓存应可单条移除；达上限按 FIFO 淘汰最旧
+    test('forget 单条移除与 maxEntries 上限淘汰', () {
+      BookSourceRawCache.remember({
+        'bookSourceUrl': 'https://forget.example',
+        'bookSourceName': '待删',
+      });
+      expect(BookSourceRawCache.lookup('https://forget.example'), isNotNull);
+      BookSourceRawCache.forget('https://forget.example');
+      expect(
+        BookSourceRawCache.lookup('https://forget.example'),
+        isNull,
+        reason: '删除书源后不得继续用旧原文做补丁底稿',
+      );
+
+      // 填满上限后再插入新键：最旧条目被淘汰、新条目保留
+      for (var i = 0; i < BookSourceRawCache.maxEntries; i++) {
+        BookSourceRawCache.remember({
+          'bookSourceUrl': 'https://cap.example/$i',
+          'bookSourceName': '源$i',
+        });
+      }
+      BookSourceRawCache.remember({
+        'bookSourceUrl': 'https://cap.example/new',
+        'bookSourceName': '新源',
+      });
+      expect(
+        BookSourceRawCache.lookup('https://cap.example/0'),
+        isNull,
+        reason: '超上限应淘汰最旧条目',
+      );
+      expect(BookSourceRawCache.lookup('https://cap.example/new'), isNotNull);
+    });
+  });
+
+  group('buildPatchedSourcePayload 保存载荷接线', () {
+    /// 批28b（P2-2③）：RustApi.updateBookSource 使用的载荷构造函数，
+    /// 模型往返丢掉的 `ruleContent.contentBatch/maxBatchSize` 必须由原始 JSON 补回
+    test('模型往返后仍保留原始批量正文规则与未知键', () async {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://payload.example',
+        'bookSourceName': '旧名',
+        'ruleContent': <String, dynamic>{
+          'content': '.old@text',
+          'contentBatch': 'batch@js:result',
+          'maxBatchSize': 20,
+          'futureRuleKey': 'keep-me',
+        },
+      };
+
+      // 前置：Dart 模型确实未建模 contentBatch/maxBatchSize，往返后丢失
+      final edited = BookSource.fromJson(
+        original,
+      ).copyWith(bookSourceName: '新名').toJson();
+      expect(
+        (edited['ruleContent'] as Map<String, dynamic>).containsKey(
+          'contentBatch',
+        ),
+        isFalse,
+        reason: '前置条件：模型未建模该键',
+      );
+
+      final payload = await buildPatchedSourcePayload(
+        edited,
+        resolveOriginal: (url) async {
+          expect(url, 'https://payload.example', reason: '应按编辑后的 URL 查原始 JSON');
+          return original;
+        },
+      );
+
+      expect(payload['bookSourceName'], '新名', reason: '编辑值应覆盖原始值');
+      final rule = payload['ruleContent'] as Map<String, dynamic>;
+      expect(rule['content'], '.old@text');
+      expect(
+        rule['contentBatch'],
+        'batch@js:result',
+        reason: '载荷必须保留 contentBatch',
+      );
+      expect(rule['maxBatchSize'], 20, reason: '载荷必须保留 maxBatchSize');
+      expect(rule['futureRuleKey'], 'keep-me', reason: '未建模的未知键也必须保留');
+    });
+
+    test('原始 JSON 未命中时退化为编辑值', () async {
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://miss.example',
+        'bookSourceName': '新源',
+      };
+      final payload = await buildPatchedSourcePayload(
+        edited,
+        resolveOriginal: (_) async => null,
+      );
+      expect(payload, edited);
     });
   });
 }
