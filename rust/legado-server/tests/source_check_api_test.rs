@@ -353,8 +353,8 @@ async fn test_start_queues_and_writes_back_failure() {
     }
     assert_eq!(final_state["status"], "FAILED", "校验失败应写回");
     assert_eq!(
-        final_state["detail"], "校验失败:搜索链接规则为空",
-        "失败详情对齐原版 message 组合"
+        final_state["detail"], "校验失败:搜索链接规则为空 | // Error: 搜索链接规则为空",
+        "失败详情对齐原版组合：失效分组 | message | 本次异常（addErrorComment 前置首行）"
     );
     assert!(final_state["checkedAt"].as_i64().unwrap() > 0);
     assert_ne!(

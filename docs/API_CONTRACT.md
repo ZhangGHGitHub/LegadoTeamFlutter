@@ -1498,11 +1498,19 @@
 - 停止时会话不存在或令牌不匹配 → `检验会话已结束或已更换`；
 - `status` 写回使用 `(bookSourceUrl, revision, status='NEEDS_CHECK')` CAS：保存触发的
   状态重建、停止或旧任务结果都不会覆盖新状态；未完成源在停止后保持 `NEEDS_CHECK`。
+- `detail` 组合（对齐 `CheckSourceService.onEach`）：`失效分组 | 结果消息 | // Error: {本次异常}`
+  按 `" | "` 连接、过滤空串并去重；第三段恒取**本次失败消息**（去「校验失败:」前缀）——
+  上游 `doCheckSource` 起始 `removeErrorComment()` 剥离历史错误块、失败时
+  `addErrorComment(本次异常)` 前置后取首行，故无注释源也有第三段、带历史错误的源不会
+  显示旧文案；`PASSED` 为 `""`，`UNCHECKABLE` 无第三段；`config:wSourceComment=false`
+  时不生成第三段。
 
 数据层：DB v115 `book_source_check_states`（`bookSourceUrl` 主键 + 外键
 `book_sources(bookSourceUrl)` ON DELETE CASCADE；删源级联删状态）。书源新增/规则变更
 （`checkContent()` 变化）重建状态；仅改启用/排序/权重等保留状态。检验执行使用
-`legado-fetcher` 的 `webbook_search/info/chapters/content` 链；**发现页校验未接入**
+`legado-fetcher` 的 `webbook_search/info/chapters/content` 链（目录首章按上游
+`selectCheckSourceChapter` 过滤卷章头：`isVolume && url.startsWith(title)`，空 URL 卷章
+合成为 `{title}{index}`，不得当正文抓取）；**发现页校验未接入**
 （服务端发现引擎不可达，登记差异）、逐源串行执行（原版按线程池并行，登记差异）。
 
 ### 4.2 既有端点索引

@@ -32,8 +32,10 @@
 //!   仍然适用于当前源内容；
 //! - `status`：`NEEDS_CHECK` / `PASSED` / `FAILED` / `UNCHECKABLE`；
 //! - `checkedAt`：检验完成时间（毫秒时间戳；`NEEDS_CHECK` 时为 0）；
-//! - `detail`：失败详情（原版：失效分组 + 结果消息 + 注释中 `// Error:` 首行，
-//!   以 `" | "` 连接；`PASSED` 恒为空串）。
+//! - `detail`：失败详情（原版：失效分组 + 结果消息 + `// Error: {本次异常}`，
+//!   以 `" | "` 连接；第三段来自本次失败异常——上游 `doCheckSource` 先
+//!   `removeErrorComment()` 剥离历史、失败时 `addErrorComment(本次)` 前置，
+//!   故与库内历史注释无关；`PASSED` 恒为空串、`UNCHECKABLE` 无第三段）。
 
 use serde::{Deserialize, Serialize};
 

@@ -679,7 +679,7 @@ async fn run_check_session(
             Err(_) => CheckOutcome::failed("校验超时"),
         };
         let elapsed_ms = started.elapsed().as_millis() as i64;
-        let detail = compose_detail(&current, &outcome, config.w_source_comment);
+        let detail = compose_detail(&outcome, config.w_source_comment);
         let respond_time = if outcome.status == check_status::PASSED {
             elapsed_ms
         } else {
@@ -824,7 +824,7 @@ async fn check_book(
     .map_err(|e| format!("目录解析失败: {e}"))?;
     let chapters: Vec<WebChapter> =
         serde_json::from_str(&chapters_raw).map_err(|e| format!("目录结果解析失败: {e}"))?;
-    let chapter = chapters.first().ok_or_else(|| "目录为空".to_string())?;
+    let chapter = select_check_chapter(&chapters).ok_or_else(|| "目录为空".to_string())?;
 
     if !config.check_content {
         return Ok(());
@@ -838,6 +838,19 @@ async fn check_book(
         return Err("正文为空".to_string());
     }
     Ok(())
+}
+
+/// 目录首章选择（对齐 `CheckSourceChapterSelection.kt:11-25`）
+///
+/// 原版先 `filterNot { it.isVolume && it.url.startsWith(it.title) }` 再取首章：
+/// 目录解析把空 URL 的卷章头合成为 `{title}{index}`（对齐
+/// `BookChapterList.kt:263-264`），这类条目不是正文页，直接 `first()` 会拿合成
+/// URL 去抓正文 → 假失败。`nextChapterUrl` 仅用于上游正文分页，Rust 正文接口
+/// 不需要，故只返回首个可读章。
+fn select_check_chapter(chapters: &[WebChapter]) -> Option<&WebChapter> {
+    chapters
+        .iter()
+        .find(|chapter| !(chapter.is_volume && chapter.url.starts_with(&chapter.title)))
 }
 
 /// 有效搜索关键词（对齐 `BookSource.getCheckKeyword`）
@@ -874,9 +887,17 @@ fn is_http_url(url: &str) -> bool {
 
 /// 失败详情拼接（对齐 CheckSourceService.onEach 的 detail 组合）
 ///
-/// 原版：`invalidGroups | message | 注释中 // Error: 首行`，过滤空串、去重、
+/// 原版：`失效分组 | message | // Error: 本次异常`，过滤空串、去重、
 /// `" | "` 连接；`PASSED` 恒为空串。
-fn compose_detail(source: &BookSource, outcome: &CheckOutcome, w_source_comment: bool) -> String {
+///
+/// 第三段来源（批30b P1-1 修正）：上游 `doCheckSource` 起始
+/// `removeErrorComment()` 剥离历史 `// Error:` 块，失败时
+/// `addErrorComment(本次异常)` 把 `// Error: {本次 message}` 前置，detail 再取
+/// 其首行——所以第三段**恒为本次失败消息**，与库内注释无关。这里直接由
+/// `outcome.message` 去「校验失败:」前缀生成：无注释源也有第三段、带历史错误
+/// 的源不会显示旧文案。`UNCHECKABLE` 没有失败异常（上游不调用
+/// `addErrorComment`），第三段不出现。
+fn compose_detail(outcome: &CheckOutcome, w_source_comment: bool) -> String {
     if outcome.status == check_status::PASSED {
         return String::new();
     }
@@ -887,16 +908,12 @@ fn compose_detail(source: &BookSource, outcome: &CheckOutcome, w_source_comment:
     if !outcome.message.is_empty() {
         parts.push(outcome.message.clone());
     }
-    if w_source_comment {
-        if let Some(line) = source
-            .book_source_comment
-            .as_deref()
-            .unwrap_or("")
-            .lines()
-            .find(|line| line.starts_with("// Error: "))
-        {
-            parts.push(line.to_string());
-        }
+    if w_source_comment && outcome.status == check_status::FAILED {
+        let message = outcome
+            .message
+            .strip_prefix("校验失败:")
+            .unwrap_or(&outcome.message);
+        parts.push(format!("// Error: {message}"));
     }
     let mut distinct: Vec<String> = Vec::new();
     for part in parts {
@@ -910,42 +927,66 @@ fn compose_detail(source: &BookSource, outcome: &CheckOutcome, w_source_comment:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legado_core::models::BookSource;
-
-    fn source_with_comment(comment: &str) -> BookSource {
-        BookSource {
-            book_source_url: "https://a.example.com".to_string(),
-            book_source_comment: Some(comment.to_string()),
-            ..BookSource::default()
-        }
-    }
 
     #[test]
     fn test_compose_detail_passed_is_empty() {
-        let source = source_with_comment("// Error: old");
-        assert_eq!(compose_detail(&source, &CheckOutcome::passed(), true), "");
+        assert_eq!(compose_detail(&CheckOutcome::passed(), true), "");
     }
 
     #[test]
     fn test_compose_detail_matches_upstream_join() {
-        let source = source_with_comment("说明\n// Error: 网站失效\n尾注");
         let outcome =
             CheckOutcome::failed_with_groups("校验失败:搜索失效", vec!["搜索失效".to_string()]);
         assert_eq!(
-            compose_detail(&source, &outcome, true),
-            "搜索失效 | 校验失败:搜索失效 | // Error: 网站失效"
+            compose_detail(&outcome, true),
+            "搜索失效 | 校验失败:搜索失效 | // Error: 搜索失效"
         );
         assert_eq!(
-            compose_detail(&source, &outcome, false),
+            compose_detail(&outcome, false),
             "搜索失效 | 校验失败:搜索失效"
         );
     }
 
     #[test]
     fn test_compose_detail_dedupes() {
-        let source = source_with_comment("");
         let outcome = CheckOutcome::failed_with_groups("校验失败:搜索失效", vec![]);
-        assert_eq!(compose_detail(&source, &outcome, true), "校验失败:搜索失效");
+        assert_eq!(
+            compose_detail(&outcome, true),
+            "校验失败:搜索失效 | // Error: 搜索失效"
+        );
+    }
+
+    /// P1-1 回归：第三段恒为本次失败消息（去「校验失败:」前缀）
+    ///
+    /// 上游 `doCheckSource` 起始 `removeErrorComment()` 剥离历史错误块，失败时
+    /// `addErrorComment(本次异常)` 前置，detail 取其首行；因此第三段不能取库内
+    /// 历史注释（修复前带历史错误的源会显示旧文案、无注释源恒缺第三段）。
+    #[test]
+    fn test_compose_detail_failed_uses_current_message() {
+        let outcome = CheckOutcome::failed("正文为空");
+        assert_eq!(
+            compose_detail(&outcome, true),
+            "校验失败:正文为空 | // Error: 正文为空"
+        );
+    }
+
+    /// P1-1 回归：UNCHECKABLE 无失败异常，不取库内注释
+    #[test]
+    fn test_compose_detail_uncheckable_has_no_comment_part() {
+        assert_eq!(
+            compose_detail(&CheckOutcome::uncheckable(), true),
+            "无法校验:源地址不是http链接"
+        );
+    }
+
+    /// P1-1 回归：无历史注释的失败源也必须有第三段（修复前恒缺）
+    #[test]
+    fn test_compose_detail_failed_without_stored_comment_still_has_error_part() {
+        let outcome = CheckOutcome::failed("搜索链接规则为空");
+        assert_eq!(
+            compose_detail(&outcome, true),
+            "校验失败:搜索链接规则为空 | // Error: 搜索链接规则为空"
+        );
     }
 
     #[test]
@@ -962,6 +1003,55 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(effective_keyword(&source, "我的"), "我的");
+    }
+
+    fn web_chapter(index: i32, title: &str, url: &str, is_volume: bool) -> WebChapter {
+        WebChapter {
+            index,
+            title: title.to_string(),
+            url: url.to_string(),
+            is_vip: false,
+            is_volume,
+            is_pay: false,
+            tag: None,
+            variable: None,
+            word_count: None,
+        }
+    }
+
+    /// P1-2 回归：空 URL 卷章头（合成为 `{title}{index}`）不得当正文章抓取
+    ///
+    /// 上游 `selectCheckSourceChapter` 先过滤
+    /// `isVolume && url.startsWith(title)` 再取首章；修复前直接 `first()` 会拿
+    /// 合成 URL 请求正文 → 假 FAILED。
+    #[test]
+    fn test_select_check_chapter_skips_volume_header() {
+        let chapters = vec![
+            web_chapter(0, "第一卷 开端", "第一卷 开端0", true),
+            web_chapter(1, "第一章", "https://a.example.com/1", false),
+            web_chapter(2, "第二章", "https://a.example.com/2", false),
+        ];
+        let chapter = select_check_chapter(&chapters).expect("应选到正文章");
+        assert_eq!(chapter.title, "第一章");
+        assert_eq!(chapter.url, "https://a.example.com/1");
+    }
+
+    /// 卷章 URL 不以标题开头（真实链接）时上游不过滤，仍按首章处理
+    #[test]
+    fn test_select_check_chapter_keeps_volume_with_real_url() {
+        let chapters = vec![web_chapter(0, "卷", "https://a.example.com/vol", true)];
+        assert_eq!(
+            select_check_chapter(&chapters).map(|c| c.url.as_str()),
+            Some("https://a.example.com/vol")
+        );
+    }
+
+    /// 全部为卷章头时等价原版 `TocEmptyException`（由调用方转「目录为空」）
+    #[test]
+    fn test_select_check_chapter_none_when_only_volume_headers() {
+        let chapters = vec![web_chapter(0, "第一卷", "第一卷0", true)];
+        assert!(select_check_chapter(&chapters).is_none());
+        assert!(select_check_chapter(&[]).is_none());
     }
 
     #[test]
