@@ -206,6 +206,10 @@ void main() {
       'http://example.com/a.zip',
       'https://cdn.example.com:8443/a-b_c~d.json?x=4&y=5&z=6',
       'https://example.com/100%25.json',
+      // 批25b P2-1：IPv6 字面量主机（JDK 17 `URI(...).toURL().host`
+      // 对 `https://[::1]/a` 返回 `[::1]`，原版 canEncode 为 true）
+      'https://[::1]/a',
+      'https://[2001:db8::1]:8443/source.json',
     ];
     for (final url in safe) {
       test('safe $url', () {
@@ -221,6 +225,13 @@ void main() {
       'example.com/a.json',
       'HTTPS://example.com/a.json',
       'https:///a.json',
+      // 批25b P3-1：Java URI 拒绝的 Unicode 空格类 / C1 控制字符
+      'https://example.com/a\u00A0b.json', // NBSP
+      'https://example.com/a\u3000b.json', // 表意空格 U+3000
+      'https://example.com/a\u0080b.json', // C1 控制字符 U+0080
+      'https://example.com/a\u0085b.json', // NEL（C1 控制字符）
+      'https://example.com/a\u2028b.json', // LINE SEPARATOR
+      'https://example.com/a\u2029b.json', // PARAGRAPH SEPARATOR
     ];
     for (final url in unsafe) {
       test('unsafe $url', () {
@@ -380,6 +391,84 @@ void main() {
         '复制口令到阅读导入#L:EXAMPLE电com/a！sy©0¥Legado^',
         1700000000000,
         'success|https://EXAMPLE.com/a|sy|0|Legado',
+      ),
+      // 批25b P2-1：IPv6 字面量主机（方括号原样透传，Java URI host 有效）
+      (
+        'AO-ipv6-literal-host',
+        '复制口令到阅读导入#L:[::1]/a！sy©0¥Legado^',
+        1700000000000,
+        'success|https://[::1]/a|sy|0|Legado',
+      ),
+      (
+        'AP-ipv6-literal-host-with-port',
+        '复制口令到阅读导入#L:[2001:db8::1]:8443/a！dy©0¥Legado^',
+        1700000000000,
+        'success|https://[2001:db8::1]:8443/a|dy|0|Legado',
+      ),
+      // 批25b P3-3：分隔符缺失
+      (
+        'AQ-missing-type-separator',
+        '复制口令到阅读导入#L:example电com/a©0¥Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      (
+        'AR-missing-metadata-separator',
+        '复制口令到阅读导入#L:example电com/a！sy0¥Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      (
+        'AS-missing-expiry-separator',
+        '复制口令到阅读导入#L:example电com/a！sy©0Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      // 批25b P3-3：过期边界——刚好等于过期时刻仍有效，晚 1ms 才过期
+      (
+        'AT-expiry-equals-now',
+        '复制口令到阅读导入#L:example电com/a！sy©1712345678901¥Legado^',
+        1712345678901,
+        'success|https://example.com/a|sy|1712345678901|Legado',
+      ),
+      (
+        'AU-expiry-one-ms-past',
+        '复制口令到阅读导入#L:example电com/a！sy©1712345678901¥Legado^',
+        1712345678902,
+        'expired',
+      ),
+      // 批25b P3-3：`-1` 不是本实现/原版的永久标记（仅 0 表示永久）
+      (
+        'AV-negative-expiry-token',
+        '复制口令到阅读导入#L:example电com/a！sy©-1¥Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      // 批25b P3-1：解码 URL 含 NBSP（Java URI 拒绝）
+      (
+        'AW-nbsp-in-url',
+        '复制口令到阅读导入#L:example电com/a\u00A0b！sy©0¥Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      // 批25b P3-1：解码 URL 含 C1 控制字符 U+0080 / NEL U+0085
+      (
+        'AX-c1-control-in-url',
+        '复制口令到阅读导入#L:example电com/a\u0080b！sy©0¥Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      (
+        'AY-nel-in-url',
+        '复制口令到阅读导入#L:example电com/a\u0085b！sy©0¥Legado^',
+        1700000000000,
+        'invalid',
+      ),
+      (
+        'AZ-ideographic-space-in-url',
+        '复制口令到阅读导入#L:example电com/a\u3000b！sy©0¥Legado^',
+        1700000000000,
+        'invalid',
       ),
     ];
 

@@ -10,7 +10,8 @@
 // - 过期 token 为 `expiresAt` 十进制前 7 位（永久为 `0`），解码兼容
 //   1/7/10/13 位数字；
 // - URL 合法性沿用原版 `URI(url).toURL().host.isNotBlank()` 口径
-//   （Java URI 的 ASCII 白名单 + `%HH` 转义校验，非 ASCII 字符放行）。
+//   （Java URI 的 ASCII 白名单 + `%HH` 转义校验；非 ASCII 字符放行，但
+//   Unicode 空格类与 C1 控制字符拒绝；host 段允许 IPv6 方括号字面量）。
 //
 // 参考版 legado-with-MD3 已移除该功能（无 SourceSharePassphrase /
 // shibboleth 文案），本文件属用户 2026-10-27 授权的超集实现。
@@ -384,17 +385,27 @@ class SourceSharePassphrase {
     return uri.host.trim().isNotEmpty;
   }
 
-  /// Java `java.net.URI` 构造校验（ASCII 白名单 + `%HH` 转义）
+  /// Java `java.net.URI` 构造校验（ASCII 白名单 + `%HH` 转义 + IPv6 主机）
   ///
-  /// JDK 实测（2026-10-27，本仓库基线 JDK 17）：允许
-  /// `!#$&'()*+,-./0-9:;=?@A-Z_a-z~` 与全部非 ASCII 字符；拒绝空格、
-  /// 引号、`%` 非两位十六进制、`< > [ \ ] ^ ` { | }` 及控制字符。
+  /// JDK 实测（2026-10-27，本仓库基线 JDK 17）：
+  /// - 允许 `!#$&'()*+,-./0-9:;=?@A-Z_a-z~`；
+  /// - 非 ASCII 字符放行，但 Unicode 空格类（Zs/Zl/Zp，如 NBSP/U+3000）与
+  ///   C1 控制字符（U+0080~U+009F）拒绝（对应 `Character.isSpaceChar` /
+  ///   `Character.isISOControl` 口径）；
+  /// - 拒绝空格、引号、`%` 非两位十六进制、`<> [ \ ] ^ ` { | }` 及控制字符；
+  /// - 方括号仅允许出现在 authority 的 host 段且内容为 IPv6 字面量
+  ///   （`https://[::1]/a`、`https://[2001:db8::1]:8443/a`，对齐 Java URI）。
   static bool _isLegalJavaUri(String url) {
     const allowedAscii =
         r"!#$&'()*+,-./0123456789:;=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz~";
+    final hostStart = _authorityHostStart(url);
     for (var i = 0; i < url.length; i++) {
       final code = url.codeUnitAt(i);
-      if (code >= 0x80) continue;
+      if (code >= 0x80) {
+        // Java URI 拒绝 Unicode 空格类与 C1 控制字符（其余非 ASCII 放行）
+        if (_isUnicodeSpaceOrControl(code)) return false;
+        continue;
+      }
       if (code == 0x25) {
         // '%' 必须后跟两位十六进制
         if (i + 2 >= url.length) return false;
@@ -405,9 +416,124 @@ class SourceSharePassphrase {
         i += 2;
         continue;
       }
+      if (code == 0x5B) {
+        // '['：仅 host 段的 IPv6 字面量
+        if (i != hostStart) return false;
+        final close = url.indexOf(']', i + 1);
+        if (close < 0) return false;
+        if (!_isLegalIpv6Literal(url.substring(i + 1, close))) {
+          return false;
+        }
+        // ']' 后只能是 authority 结束、路径/查询/片段起点或 `:port`
+        var next = close + 1;
+        if (next < url.length) {
+          final after = url.codeUnitAt(next);
+          if (after == 0x3A) {
+            next++;
+            // 端口允许为空（Java URI 接受 `[::1]:/a`），非空时只能是数字
+            while (next < url.length) {
+              final portCode = url.codeUnitAt(next);
+              if (portCode == 0x2F ||
+                  portCode == 0x3F ||
+                  portCode == 0x23) {
+                break;
+              }
+              if (portCode < 0x30 || portCode > 0x39) return false;
+              next++;
+            }
+          } else if (after != 0x2F && after != 0x3F && after != 0x23) {
+            return false;
+          }
+        }
+        i = next - 1;
+        continue;
+      }
+      if (code == 0x5D) return false; // 未被 host 段消费的 ']'
       if (!allowedAscii.contains(url[i])) return false;
     }
     return true;
+  }
+
+  /// authority 段中 host 的起始下标（`://` 之后、最后一个 `@` 之后）；
+  /// 无法定位时返回 -1
+  static int _authorityHostStart(String url) {
+    final schemeEnd = url.indexOf('://');
+    if (schemeEnd < 0) return -1;
+    final authorityStart = schemeEnd + 3;
+    var authorityEnd = url.length;
+    for (var i = authorityStart; i < url.length; i++) {
+      final code = url.codeUnitAt(i);
+      // '/' '?' '#' 结束 authority
+      if (code == 0x2F || code == 0x3F || code == 0x23) {
+        authorityEnd = i;
+        break;
+      }
+    }
+    var hostStart = authorityStart;
+    for (var i = authorityStart; i < authorityEnd; i++) {
+      if (url.codeUnitAt(i) == 0x40) hostStart = i + 1; // '@'
+    }
+    return hostStart;
+  }
+
+  /// 方括号内的 IPv6 字面量内容校验（不含 `[` `]`）
+  ///
+  /// 对齐 Java `URI.scanIPv6address` 的字符面：十六进制数字、`:`、`.`（IPv4
+  /// 混写）以及 `%25` 引导的 RFC 6874 zone id（unreserved 字符）。完整地址
+  /// 语法（如 `::1::` 非法）由后续 [Uri.tryParse] 严格解析兜底。
+  static bool _isLegalIpv6Literal(String literal) {
+    if (literal.isEmpty) return false;
+    var hasColon = false;
+    var i = 0;
+    while (i < literal.length) {
+      final code = literal.codeUnitAt(i);
+      if (code == 0x25) {
+        // zone id：`%25` + 至少一个 unreserved 字符，且必须到字面量末尾
+        if (i + 3 > literal.length) return false;
+        if (literal.substring(i, i + 3).toLowerCase() != '%25') {
+          return false;
+        }
+        i += 3;
+        final zoneStart = i;
+        while (i < literal.length && _isZoneIdChar(literal.codeUnitAt(i))) {
+          i++;
+        }
+        return hasColon && i > zoneStart && i == literal.length;
+      }
+      if (code == 0x3A) {
+        hasColon = true;
+      } else if (!_isHex(code) && code != 0x2E) {
+        return false;
+      }
+      i++;
+    }
+    return hasColon;
+  }
+
+  /// RFC 6874 zone id 可用的 unreserved 字符
+  static bool _isZoneIdChar(int code) {
+    return (code >= 0x30 && code <= 0x39) ||
+        (code >= 0x41 && code <= 0x5A) ||
+        (code >= 0x61 && code <= 0x7A) ||
+        code == 0x2D || // '-'
+        code == 0x2E || // '.'
+        code == 0x5F || // '_'
+        code == 0x7E; // '~'
+  }
+
+  /// `Character.isSpaceChar`（Unicode Zs/Zl/Zp）与 `Character.isISOControl`
+  /// 的 BMP 等价实现（Java URI 对非 ASCII 空格类与 C1 控制字符报错）
+  static bool _isUnicodeSpaceOrControl(int code) {
+    // C1 控制字符（U+0080~U+009F）；C0 与 U+007F 走 ASCII 白名单
+    if (code >= 0x80 && code <= 0x9F) return true;
+    return code == 0x00A0 || // NBSP
+        code == 0x1680 ||
+        (code >= 0x2000 && code <= 0x200A) ||
+        code == 0x2028 || // LINE SEPARATOR
+        code == 0x2029 || // PARAGRAPH SEPARATOR
+        code == 0x202F ||
+        code == 0x205F ||
+        code == 0x3000; // 表意空格
   }
 
   static bool _isHex(int code) {
