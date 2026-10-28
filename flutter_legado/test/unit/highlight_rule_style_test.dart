@@ -50,6 +50,28 @@ void main() {
       expect(rule.styleUnderline, isFalse);
       expect(rule.styleTextColor, 1);
     });
+
+    test('underline 按对象判定：false/数组不算启用，对象/空对象算启用', () {
+      // [批33b] 原版 HighlightStyle.underline 是对象通道；JSON 里的
+      // false/[] 不是启用态（旧实现「非 null 即启用」会误判）
+      expect(
+        const HighlightRule(style: '{"underline":false}').styleUnderline,
+        isFalse,
+      );
+      expect(
+        const HighlightRule(style: '{"underline":[]}').styleUnderline,
+        isFalse,
+      );
+      expect(
+        const HighlightRule(style: '{"underline":{}}').styleUnderline,
+        isTrue,
+      );
+      expect(
+        const HighlightRule(style: '{"underline":{"kind":"SOLID"}}')
+            .styleUnderline,
+        isTrue,
+      );
+    });
   });
 
   group('mergeHighlightStyleTextColor 补丁语义', () {

@@ -223,4 +223,60 @@ void main() {
     expect(style['fontSize'], 22.5);
     expect(style['futureUnknownKey'], 42);
   });
+
+  /// [批33b | 未触碰保真] 只打开编辑面板直接保存，不得把原 textColor=0
+  /// （原版语义：0=不设置文字色）改写为主题默认色。
+  testWidgets('未触碰颜色保存：原 textColor=0 原样保留', (tester) async {
+    final style = jsonEncode({
+      'textColor': 0,
+      'fill': -16711936,
+      'bold': true,
+      'futureUnknownKey': 7,
+    });
+    final rule = {...sampleRule, 'style': style};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([rule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑高亮规则'), findsOneWidget);
+
+    // 不做任何颜色选择，直接保存
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+
+    expect(savedStyle['textColor'], 0, reason: '未触碰颜色不得改写原值');
+    expect(savedStyle['fill'], -16711936);
+    expect(savedStyle['bold'], true);
+    expect(savedStyle['futureUnknownKey'], 7);
+  });
+
+  /// [批33b] 新增规则（无原 style）未选色时仍写入主题默认色，
+  /// 保持既有「新增即可见高亮」行为不回退。
+  testWidgets('新增规则未选色：写入主题默认 textColor', (tester) async {
+    await pumpScreen(tester);
+
+    await tester.tap(find.byIcon(Symbols.add_rounded));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(1), '关键词');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+    expect(savedStyle['textColor'], isA<int>());
+    expect(savedStyle['textColor'], isNot(0));
+  });
 }

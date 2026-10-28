@@ -180,8 +180,46 @@ void main() {
       );
     });
 
-    test('apply 尊重 ignore 不覆盖本地项', () async {
-      await RestoreIgnorePrefs.applyFromBackup(
+    /// [批33b] 正文搜索选项（替换/正则/范围）并入 readPrefKeys：
+    /// 勾选「忽略阅读配置」时不随备份覆盖本机搜索习惯。
+    test('正文搜索选项受 readConfig 忽略项约束并可随备份往返', () async {
+      SharedPreferences.setMockInitialValues({
+        'search_content_use_replace': true,
+        'search_content_use_regex': true,
+        'search_content_scope': 'current_and_network',
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+      expect(collected['search_content_use_replace'], isTrue);
+      expect(collected['search_content_use_regex'], isTrue);
+      expect(collected['search_content_scope'], 'current_and_network');
+
+      SharedPreferences.setMockInitialValues({});
+      await RestoreIgnorePrefs.applyFromBackup(collected, const {});
+      var prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('search_content_use_replace'), isTrue);
+      expect(prefs.getString('search_content_scope'), 'current_and_network');
+
+      // 勾选忽略阅读配置 → 三个键都不恢复
+      SharedPreferences.setMockInitialValues({});
+      await RestoreIgnorePrefs.applyFromBackup(collected, {'readConfig': true});
+      prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('search_content_use_replace'), isNull);
+      expect(prefs.getBool('search_content_use_regex'), isNull);
+      expect(prefs.getString('search_content_scope'), isNull);
+      for (final key in const [
+        'search_content_use_replace',
+        'search_content_use_regex',
+        'search_content_scope',
+      ]) {
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, {'readConfig': true}),
+          isFalse,
+          reason: '$key 属阅读偏好，应受 readConfig 忽略项覆盖',
+        );
+      }
+    });
+
+    test('apply 尊重 ignore 不覆盖本地项', () async {      await RestoreIgnorePrefs.applyFromBackup(
         {
           PrefKeys.showRss: true,
           PrefKeys.threadCount: 32,

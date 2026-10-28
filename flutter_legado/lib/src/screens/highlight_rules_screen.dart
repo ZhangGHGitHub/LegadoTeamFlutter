@@ -329,6 +329,14 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   // 高亮颜色（ARGB int，写入 style JSON 的 textColor 通道）
   late int _color;
 
+  /// 用户是否在本次编辑中主动选过颜色（批33b）
+  ///
+  /// 缺陷背景：build 里把 `_color == 0` 直接替换成主题默认色后保存，
+  /// 「只打开编辑面板再保存」也会把原 style 的 textColor（含 0=关闭）
+  /// 改写成主题色。现记录触碰标记：未触碰且原 style 已有 textColor 键
+  /// 时原样保留，只有用户选色才写入新值。
+  bool _colorTouched = false;
+
   /// 预设高亮色（M3 语义色板，对标原版 HighlightColors 预设集）
   ///
   /// [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 由 iOS 静态命名色改为随主题
@@ -393,6 +401,10 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [批28] 同时保留 group：编辑表单无分组输入，不得因重建规则对象丢分组。
     // [批33 | 高亮字段保真] style 走「原 JSON 补丁」：表单只编辑 textColor，
     // 直接重建会丢掉 fill/underline/bold/stroke 等未渲染键（渲染专项后续批）。
+    // [批33b | 未触碰保真] 未主动选色且原 style 已含 textColor（含 0=关闭）
+    // 时原样保留，避免「打开编辑再保存」把用户/原版设置改写成主题色。
+    final keepOriginalTextColor = !_colorTouched &&
+        (base?.styleMap?.containsKey('textColor') ?? false);
     final rule = HighlightRule(
       id: base?.id ?? 0,
       uuid: base?.uuid ?? '',
@@ -402,7 +414,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       applyToTitle: _applyToTitle,
       scope: scope.isEmpty ? null : scope,
       isEnabled: base?.isEnabled ?? true,
-      style: mergeHighlightStyleTextColor(base?.style, _color),
+      style: keepOriginalTextColor
+          ? base!.style
+          : mergeHighlightStyleTextColor(base?.style, _effectiveColor),
       sortOrder: base?.sortOrder ?? 0,
       timeoutMillisecond:
           base?.timeoutMillisecond ?? HighlightRule.defaultTimeoutMilliseconds,
@@ -412,13 +426,23 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     Navigator.pop(context, rule);
   }
 
+  /// 当前生效的高亮色：未选色时用主题默认色（仅预览/新规则落库使用）
+  int get _effectiveColor => _color != 0
+      ? _color
+      : _presetColors(Theme.of(context).colorScheme).first.toARGB32();
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     // [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 默认高亮色由当前主题派生
     final presetColors = _presetColors(cs);
-    if (_color == 0) _color = presetColors.first.toARGB32();
+    // [批33b | 未触碰保真] 不再把 `_color == 0` 改写进字段（原实现会在
+    // 保存时把 0 落成主题色）；预览与色块选中态改用「有效色」，字段值
+    // 只在用户主动选色时变更。
+    final effectiveColor = _color != 0
+        ? _color
+        : presetColors.first.toARGB32();
     // [批33 | 高亮字段保真] 预览回放 style 基础字段（填充/粗体/斜体/下划线），
     // 编辑表单不改这些键（保存走补丁保留），此处仅用于展示保真
     final baseStyle = widget.rule;
@@ -507,7 +531,10 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               children: [
                 for (final color in presetColors)
                   GestureDetector(
-                    onTap: () => setState(() => _color = color.toARGB32()),
+                    onTap: () => setState(() {
+                      _color = color.toARGB32();
+                      _colorTouched = true;
+                    }),
                     child: Container(
                       width: 32,
                       height: 32,
@@ -533,18 +560,18 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               decoration: BoxDecoration(
                 color: fillColor != 0
                     ? Color(fillColor)
-                    : Color(_color).withValues(alpha: 0.25),
+                    : Color(effectiveColor).withValues(alpha: 0.25),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 '高亮效果预览',
                 style: TextStyle(
-                  color: Color(_color),
+                  color: Color(effectiveColor),
                   fontWeight: bold ? FontWeight.bold : null,
                   fontStyle: italic ? FontStyle.italic : null,
                   decoration:
                       underline ? TextDecoration.underline : null,
-                  decorationColor: underline ? Color(_color) : null,
+                  decorationColor: underline ? Color(effectiveColor) : null,
                 ),
               ),
             ),

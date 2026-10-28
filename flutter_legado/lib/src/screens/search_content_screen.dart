@@ -620,9 +620,9 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
             // [PARITY C1-C2] 「清空」居中：两侧 Spacer 均分（参考 13 清空
             // 位于屏中、右侧为「仅本书」胶囊）
             const Spacer(),
-            // 「仅本书」深色胶囊（复用范围三档 scope_cached 逻辑；
-            // 参考 13：72×39dp 深色实底白字，右侧 18dp 边距，
-            // 选中=深色实底，未选=同尺寸描边态，点击切换范围并重搜）
+            // 「仅本书」胶囊（批33 已与搜索范围解绑，仅作按书搜索历史的
+            // 视觉占位；参考 13：72×39dp，右侧 18dp 边距。当前固定描边态
+            // 并提示「待后续版本支持」，点击不再切换范围/重搜）
             _buildScopeChip(),
           ],
         ),
@@ -646,14 +646,14 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
     );
   }
 
-  /// [PARITY C1-C2] 「仅本书」胶囊（参考 13 量化：72×39dp 深色实底）
+  /// [PARITY C1-C2] 「仅本书」胶囊（参考 13 量化：72×39dp）
   ///
   /// [批33 | 胶囊解绑] 参考版此胶囊只控制**搜索历史**的按书过滤，不改变
   /// 正文搜索范围；我方此前误把它绑到 scope_cached/scope_network，同一点击
   /// 既改历史意图又改搜索范围（语义串线）。按书搜索历史需要搜索结果带
   /// bookName 维度（现 `getSearchHistory` 仅返回 word/usage/lastUseTime，
   /// 无按书过滤参数），本批先解绑为「仅提示」并保留视觉位；范围统一由
-  /// ⋮ 菜单三档控制。按书搜索历史登记为后续项（契约 §2.46 注）。
+  /// ⋮ 菜单三档控制。按书搜索历史登记为后续项（契约 §2.15 注）。
   Widget _buildScopeChip() {
     // 参考 13 深色实底（(82,96,112)）+ 白字；解绑后不再表达范围选中态，
     // 固定描边态（避免误导用户以为当前范围=仅本书）

@@ -164,4 +164,69 @@ void main() {
     expect(checked['本书 + 网络'], isTrue);
     expect(checked['仅本书（已缓存）'], isFalse);
   });
+
+  /// [批33b | 首次查询等待选项] initialQuery 的自动搜索必须等
+  /// `SearchContentOptions.load()` 完成后再发起，否则会用默认范围
+  /// （已缓存档）搜一遍再被持久化值改写。
+  testWidgets('初始查询等待选项加载完成后再搜索', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'search_content_scope': SettingsService.searchScopeCurrent,
+    });
+    when(() => mockApi.getChapters(any()))
+        .thenAnswer((_) async => <BookChapter>[
+              const BookChapter(title: '第一章', index: 0, url: 'u1'),
+            ]);
+    when(() => mockApi.getChapterContentRaw(any(), any()))
+        .thenAnswer((_) async => '正文关键词正文');
+    when(() => mockApi.addSearchKeyword(any(), any())).thenAnswer((_) async {});
+    when(() => mockApi.listCachedChapterUrls(any()))
+        .thenAnswer((_) async => <String>[]);
+
+    // 注入加载较慢的选项（100ms），观察搜索是否被延后
+    final slowOptions = _SlowOptions(const Duration(milliseconds: 100));
+    await tester.binding.setSurfaceSize(const Size(500, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: MaterialApp(
+          home: SearchContentScreen(
+            bookUrl: 'https://src.com/book/1',
+            bookName: '测试书',
+            initialQuery: '关键词',
+            options: slowOptions,
+          ),
+        ),
+      ),
+    );
+
+    // 首帧：选项仍在加载，不得发起搜索
+    await tester.pump();
+    verifyNever(() => mockApi.getChapters(any()));
+
+    // 未满加载时长：继续等待
+    await tester.pump(const Duration(milliseconds: 50));
+    verifyNever(() => mockApi.getChapters(any()));
+
+    // 加载完成后：按持久化档位（仅当前章）发起搜索
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pumpAndSettle();
+    verify(() => mockApi.getChapters(any())).called(1);
+    // 必须使用已加载的范围（仅当前章），不得先用默认「已缓存」档搜索
+    verifyNever(() => mockApi.listCachedChapterUrls(any()));
+    expect(find.textContaining('第一章'), findsWidgets);
+  });
+}
+
+/// 慢加载选项：模拟持久化异步读取未就位
+class _SlowOptions extends SearchContentOptions {
+  _SlowOptions(this.delay);
+
+  final Duration delay;
+
+  @override
+  Future<void> load() async {
+    await Future<void>.delayed(delay);
+    await super.load();
+  }
 }

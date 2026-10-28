@@ -159,8 +159,12 @@ class HighlightRule {
   /// 是否斜体（原版 HighlightStyle.italic）
   bool get styleItalic => styleMap?['italic'] == true;
 
-  /// 是否有下划线（原版 HighlightStyle.underline 为对象，非 null 即启用）
-  bool get styleUnderline => styleMap?['underline'] != null;
+  /// 是否有下划线（原版 HighlightStyle.underline 是对象，非 null 即启用）
+  ///
+  /// [批33b] 按「对象/映射」判定而非仅非 null：原版 JSON 里
+  /// `"underline": null/false` 都表示未启用，只有 `{kind, color, ...}`
+  /// 形态才是启用态；仅判 `!= null` 会把 false 误当启用。
+  bool get styleUnderline => styleMap?['underline'] is Map;
 
   HighlightRule copyWith({
     int? id,

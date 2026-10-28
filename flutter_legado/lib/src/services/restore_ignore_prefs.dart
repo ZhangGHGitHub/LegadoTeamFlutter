@@ -85,6 +85,12 @@ class RestoreIgnorePrefs {
     // [批33] 正文上下边距联动（原版 ReadBookConfig 字段名；
     // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤）
     'paddingTopBottomLinked',
+    // [批33b | 搜索选项归类] 正文搜索的替换/正则/范围三键视为阅读流程
+    // 偏好（阅读器内搜索工具设置），并入「忽略阅读配置」范围：勾选该项
+    // 恢复备份时不覆盖本机的搜索习惯（与 clickAction*/reader_* 同口径）。
+    'search_content_use_replace',
+    'search_content_use_regex',
+    'search_content_scope',
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）
