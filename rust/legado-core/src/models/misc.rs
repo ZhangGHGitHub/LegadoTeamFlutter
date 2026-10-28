@@ -845,17 +845,50 @@ pub struct KeyboardAssist {
 
 // ─── ReadRecord ───────────────────────────────────────────
 
-/// 阅读记录
+/// 阅读记录（13 字段，对齐原版 Room schema 113.json `ReadRecord` 实体）
+///
+/// 主键 `(deviceId, bookName, author)`：同设备同名书按作者分行记录；
+/// `lastChapter*`/`coverUrl` 为书架删除后仍可展示的章节快照，
+/// `display*`/`metadataEditedAt` 为用户可编辑的显示元数据。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReadRecord {
     #[serde(default, rename = "deviceId")]
     pub device_id: String,
     #[serde(default, rename = "bookName")]
     pub book_name: String,
+    #[serde(default)]
+    pub author: String,
     #[serde(default, rename = "readTime")]
     pub read_time: i64,
     #[serde(default, rename = "lastRead")]
     pub last_read: i64,
+    #[serde(default, rename = "lastChapterTitle")]
+    pub last_chapter_title: Option<String>,
+    #[serde(default = "default_neg_one_i32", rename = "lastChapterIndex")]
+    pub last_chapter_index: i32,
+    #[serde(default, rename = "lastChapterPos")]
+    pub last_chapter_pos: i32,
+    #[serde(default, rename = "coverUrl")]
+    pub cover_url: Option<String>,
+    #[serde(default, rename = "resolvedAuthor")]
+    pub resolved_author: Option<String>,
+    #[serde(default, rename = "displayBookName")]
+    pub display_book_name: String,
+    #[serde(default, rename = "displayAuthor")]
+    pub display_author: String,
+    #[serde(default, rename = "metadataEditedAt")]
+    pub metadata_edited_at: i64,
+}
+
+/// 书备忘（对齐原版 `BookMemo` 实体：`bookUrl` 主键，无级联外键）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BookMemo {
+    #[serde(default, rename = "bookUrl")]
+    pub book_url: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default, rename = "updatedAt")]
+    pub updated_at: i64,
 }
 
 // ─── RssReadRecord ────────────────────────────────────────

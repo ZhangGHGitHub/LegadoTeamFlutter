@@ -9,6 +9,7 @@ pub mod daily_seconds_v107;
 pub mod highlight_rule_columns_v110;
 pub mod migrations;
 pub mod origin_book_url_v109;
+pub mod read_record_v113;
 pub mod room_align_v105;
 pub mod rss_next_content_url_v111;
 pub mod schema_align_v104;
@@ -75,6 +76,7 @@ impl MigrationRegistry {
         self.register(Box::new(highlight_rule_columns_v110::Migration109To110));
         self.register(Box::new(rss_next_content_url_v111::Migration110To111));
         self.register(Box::new(servers_table_v112::Migration111To112));
+        self.register(Box::new(read_record_v113::Migration112To113));
     }
 
     /// 注册单个迁移
@@ -309,7 +311,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 22);
+        assert_eq!(list.len(), 23);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -425,7 +427,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 112);
+        assert_eq!(version, crate::schema::SCHEMA_VERSION);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
         assert!(table_exists(conn, "dictRules").unwrap());

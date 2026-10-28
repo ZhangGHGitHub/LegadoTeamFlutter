@@ -247,7 +247,10 @@ fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
         return Ok(());
     }
     let pk = primary_key_columns(conn, "readRecord")?;
-    if pk == ["deviceId", "bookName"] {
+    // 已对齐即跳过。批27：开库自愈（repair_legacy_columns → ensure_read_record_v113）
+    // 会把旧库提前升到 v113 主键 (deviceId, bookName, author)，此处必须同样视为
+    // 已对齐，否则 v103→v104 会把新表重建回两列主键、丢失作者维度。
+    if pk == ["deviceId", "bookName"] || pk == ["deviceId", "bookName", "author"] {
         return Ok(());
     }
 
@@ -906,7 +909,10 @@ mod tests {
         conn.pragma_update(None, "user_version", 103).unwrap();
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         assert_eq!(
             primary_key_columns(conn, "rssArticles").unwrap(),
             vec!["origin", "link", "sort"]

@@ -42,7 +42,15 @@ use legado_core::{LegadoError, LegadoResult};
 ///   `servers`：`id` INTEGER 主键 / `name` / `type` / `config` / `sortNumber`；
 ///   Flutter WebDAV 同步设置由偏好一次性迁移至该表，备份 v3 纳入；
 ///   Migration111To112）
-pub const SCHEMA_VERSION: u32 = 112;
+/// - v113：原版 P0 数据兼容（批27，对齐原版 Room schema 113.json）：
+///   `readRecord` 主键改为 `(deviceId, bookName, author)` 并补齐
+///   `lastChapterTitle/lastChapterIndex/lastChapterPos/coverUrl/resolvedAuthor/
+///   displayBookName/displayAuthor/metadataEditedAt` 8 列（章节快照 + 显示元数据），
+///   新增 `index_readRecord_snapshot`/`index_readRecord_bookName_author` 两个索引；
+///   新增 `book_memos` 表（书备忘，`bookUrl` 主键，无级联外键）。迁移 112→113
+///   重建表**原样搬运**（不拆旧 `\u001Eauthors:` 合并串），并先探测
+///   `displayBookName` 列保证上游「发列未升版本」场景幂等（Migration112To113）
+pub const SCHEMA_VERSION: u32 = 113;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -102,6 +110,8 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 highlightRules 表失败：{e}")))?;
     conn.execute_batch(CREATE_SERVERS)
         .map_err(|e| LegadoError::Database(format!("创建 servers 表失败：{e}")))?;
+    conn.execute_batch(CREATE_BOOK_MEMOS)
+        .map_err(|e| LegadoError::Database(format!("创建 book_memos 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -437,15 +447,41 @@ CREATE TABLE IF NOT EXISTS txtTocRules (
 );
 ";
 
-/// readRecord 表（对齐 Room v95 主键 (deviceId, bookName)；author 为 Rust/上游超集列）
+/// readRecord 表（v113，逐列对齐原版 Room schema 113.json）
+///
+/// 主键 `(deviceId, bookName, author)`：同设备同名书按作者分行记录，阅读时长
+/// 不再合并到同一行；`lastChapter*`/`coverUrl` 为「书架删除后仍可展示」的章节
+/// 快照，`display*`/`metadataEditedAt` 承载用户可编辑的显示元数据（编辑 UI 后续批）。
 pub const CREATE_READ_RECORD: &str = "
 CREATE TABLE IF NOT EXISTS readRecord (
-    deviceId TEXT NOT NULL DEFAULT '',
+    deviceId TEXT NOT NULL,
     bookName TEXT NOT NULL,
     author TEXT NOT NULL DEFAULT '',
     readTime INTEGER NOT NULL DEFAULT 0,
     lastRead INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(deviceId, bookName)
+    lastChapterTitle TEXT,
+    lastChapterIndex INTEGER NOT NULL DEFAULT -1,
+    lastChapterPos INTEGER NOT NULL DEFAULT 0,
+    coverUrl TEXT,
+    resolvedAuthor TEXT,
+    displayBookName TEXT NOT NULL DEFAULT '',
+    displayAuthor TEXT NOT NULL DEFAULT '',
+    metadataEditedAt INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(deviceId, bookName, author)
+);
+";
+
+/// book_memos 表（v113，逐列对齐原版 Room schema 113.json `book_memos`）
+///
+/// 书备忘：`bookUrl` 主键（一书一条），`content` 为 Markdown/纯文本原文，
+/// `updatedAt` 为最后修改毫秒时间戳。原版注释明确**无级联外键**——导入时替换
+/// 书架行不得连带删除备忘（`BookMemo.kt:5`）。
+pub const CREATE_BOOK_MEMOS: &str = "
+CREATE TABLE IF NOT EXISTS book_memos (
+    bookUrl TEXT NOT NULL,
+    content TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    PRIMARY KEY(bookUrl)
 );
 ";
 
@@ -685,4 +721,9 @@ CREATE INDEX IF NOT EXISTS index_book_sources_bookSourceUrl ON book_sources (boo
 CREATE INDEX IF NOT EXISTS index_chapters_bookUrl ON chapters (bookUrl);
 CREATE UNIQUE INDEX IF NOT EXISTS index_chapters_bookUrl_index ON chapters (bookUrl, \"index\");
 CREATE INDEX IF NOT EXISTS index_replace_rules_id ON replace_rules (id);
+-- v113：阅读记录快照索引（原版 schema 113.json index_readRecord_snapshot，
+-- lastRead 降序；承载「按显示书名/作者 + 最后阅读」的列表查询与恢复合并）
+CREATE INDEX IF NOT EXISTS index_readRecord_snapshot ON readRecord
+    (displayBookName ASC, displayAuthor ASC, lastRead DESC, deviceId ASC, bookName ASC, author ASC);
+CREATE INDEX IF NOT EXISTS index_readRecord_bookName_author ON readRecord (bookName, author);
 ";

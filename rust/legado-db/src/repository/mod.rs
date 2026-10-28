@@ -3,6 +3,7 @@
 pub mod auto_task_repository;
 pub mod book_chapter_repository;
 pub mod book_group_repository;
+pub mod book_memo_repository;
 pub mod book_repository;
 pub mod book_source_repository;
 pub mod bookmark_repository;

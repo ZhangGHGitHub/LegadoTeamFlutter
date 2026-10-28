@@ -118,8 +118,8 @@ mod tests {
         registry.migrate_to_latest(&conn).unwrap();
         assert_eq!(
             MigrationRegistry::current_version(&conn).unwrap(),
-            112,
-            "注册表路径应推进版本到 112"
+            crate::schema::SCHEMA_VERSION,
+            "注册表路径应推进版本到最新"
         );
         assert!(column_exists(&conn, "sortNumber"));
     }

@@ -55,6 +55,8 @@ const BOOK_TYPE_NOT_SHELF: i64 = 0b100_0000_0000;
 ///   showWebLog, type, preload, cacheFirst, searchUrl
 /// - replace_rules 表补齐: scopeSource（v108 书源作用域开关，防「版本已到 108 但缺列」
 ///   历史坑：user_version 门禁失效/手工建库等场景下兜底补列）
+/// - readRecord/book_memos（v113）：复用 [`super::read_record_v113::ensure_read_record_v113`]
+///   的探测逻辑兜住「版本号已到 113 但结构仍旧/上游发列未升版本」场景
 pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
     // books 表补列（仅当表存在时）
     if table_exists(conn, "books")? {
@@ -104,6 +106,10 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
             "INTEGER NOT NULL DEFAULT 0",
         )?;
     }
+
+    // readRecord v113 结构自愈（主键/8 列/两索引）与 book_memos 表（幂等）。
+    // 在迁移前调用时等同提前完成 112→113 的表重建，随后 Migration112To113 为空操作。
+    super::read_record_v113::ensure_read_record_v113(conn)?;
 
     Ok(())
 }
@@ -899,11 +905,17 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -1052,7 +1064,10 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
@@ -1238,7 +1253,10 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
     }
@@ -1505,7 +1523,10 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         assert!(column_exists(conn, "book_sources", "variable"));
     }
 }

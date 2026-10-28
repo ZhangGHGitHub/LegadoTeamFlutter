@@ -3,8 +3,8 @@
 //! 提供完整的 SQLite 数据库访问能力，包括：
 //!
 //! - [`connection`] — 连接管理与 PRAGMA 配置（含自动迁移）
-//! - [`schema`] — 全量表结构 DDL（v112，28 张表）
-//! - [`repository`] — Repository 模式的数据访问层（28 个 Repository）
+//! - [`schema`] — 全量表结构 DDL（v113，29 张表）
+//! - [`repository`] — Repository 模式的数据访问层（29 个 Repository）
 //! - [`migration`] — 基于版本号的增量迁移框架（MigrationRegistry）
 //! - [`import`] — Room JSON 数据导入工具
 //! - [`default_data`] — 默认数据导入（JSON 格式）
@@ -39,6 +39,7 @@ pub use migration::MigrationRegistry;
 pub use repository::auto_task_repository::AutoTaskRepository;
 pub use repository::book_chapter_repository::BookChapterRepository;
 pub use repository::book_group_repository::{BookGroup, BookGroupRepository};
+pub use repository::book_memo_repository::{BookMemo, BookMemoRepository};
 pub use repository::book_repository::BookRepository;
 pub use repository::book_source_repository::BookSourceRepository;
 pub use repository::bookmark_repository::BookmarkRepository;
@@ -53,7 +54,7 @@ pub use repository::highlight_rule_repository::HighlightRuleRepository;
 pub use repository::http_tts_repository::{HttpTts, HttpTtsRepository};
 pub use repository::keyboard_assist_repository::{KeyboardAssist, KeyboardAssistRepository};
 pub use repository::read_record_repository::{
-    merge_read_record_authors, ReadRecord, ReadRecordRepository,
+    decode_read_record_authors, merge_restored_read_record, ReadRecord, ReadRecordRepository,
 };
 pub use repository::replace_rule_repository::ReplaceRuleRepository;
 pub use repository::review_repository::ReviewRepository;

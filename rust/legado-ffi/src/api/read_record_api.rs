@@ -10,17 +10,29 @@ use legado_db::ReadRecordRepository;
 use crate::db_state::with_database;
 
 /// 阅读记录 DTO（camelCase 对齐 Flutter `ReadRecord.fromJson`）
+///
+/// v113（批27）：13 字段对齐原版 `readRecord.json`/Room 实体；主键
+/// `(deviceId, bookName, author)`，同名不同作者分行返回。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadRecordDto {
     pub book_name: String,
+    pub author: String,
     pub read_time: i64,
     pub last_read: i64,
     #[serde(default)]
     pub device_id: String,
+    pub last_chapter_title: Option<String>,
+    pub last_chapter_index: i32,
+    pub last_chapter_pos: i32,
+    pub cover_url: Option<String>,
+    pub resolved_author: Option<String>,
+    pub display_book_name: String,
+    pub display_author: String,
+    pub metadata_edited_at: i64,
 }
 
-/// 获取所有阅读记录（按 readTime 降序）
+/// 获取所有阅读记录（13 字段，按 readTime 降序）
 pub fn get_read_records() -> LegadoResult<Vec<ReadRecordDto>> {
     with_database(|db| {
         let repo = ReadRecordRepository::new(db.connection());
@@ -29,9 +41,18 @@ pub fn get_read_records() -> LegadoResult<Vec<ReadRecordDto>> {
             .into_iter()
             .map(|r| ReadRecordDto {
                 book_name: r.book_name,
+                author: r.author,
                 read_time: r.read_time,
                 last_read: r.last_read,
                 device_id: r.device_id,
+                last_chapter_title: r.last_chapter_title,
+                last_chapter_index: r.last_chapter_index,
+                last_chapter_pos: r.last_chapter_pos,
+                cover_url: r.cover_url,
+                resolved_author: r.resolved_author,
+                display_book_name: r.display_book_name,
+                display_author: r.display_author,
+                metadata_edited_at: r.metadata_edited_at,
             })
             .collect())
     })

@@ -217,7 +217,7 @@ mod tests {
         assert!(dup.is_err(), "uuid 唯一索引应拒绝重复 uuid 插入");
     }
 
-    /// 经注册表从 v109 升级到最新版本（112）：版本推进、幂等、重复打开不变
+    /// 经注册表从 v109 升级到最新版本（最新版）：版本推进、幂等、重复打开不变
     #[test]
     fn test_migration_109_to_110_via_registry_and_reopen() {
         let conn = Connection::open_in_memory().unwrap();
@@ -232,12 +232,18 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(&conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(&conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         let first_uuid = uuid_of(&conn, 1);
 
         // 模拟重复打开数据库（再触发 migrate_to_latest）：版本不回退、uuid 不改写
         registry.migrate_to_latest(&conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 112);
+        assert_eq!(
+            MigrationRegistry::current_version(&conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
         assert_eq!(uuid_of(&conn, 1), first_uuid);
     }
 

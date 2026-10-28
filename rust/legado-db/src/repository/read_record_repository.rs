@@ -1,43 +1,136 @@
-//! ReadRecord Repository - readRecord 表 CRUD
+//! ReadRecord Repository - readRecord 表 CRUD（schema v113）
+//!
+//! v113 起主键为 `(deviceId, bookName, author)`（对齐原版 Room schema 113.json）：
+//! 同设备同名书按作者分行记录，写入侧**不再合并作者**。历史遗留的合并作者串
+//! （`\u{1E}authors:[...]`，旧版「同书不同作者共用一条记录」的产物）在迁移时
+//! 原样保留，仅由 [`decode_read_record_authors`] 解码用于展示/搜索标识。
 
-use std::collections::BTreeSet;
-
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
 use legado_core::{LegadoError, LegadoResult};
 
-/// 阅读记录
+/// 旧合并作者串前缀（仅解码历史数据，写入侧不再产生）
+const AUTHORS_PREFIX: &str = "\u{1E}authors:";
+
+/// readRecord 全列（顺序与建表语句一致，供 SELECT/INSERT 复用）
+const COLUMNS: &str = "deviceId, bookName, author, readTime, lastRead, lastChapterTitle, \
+                       lastChapterIndex, lastChapterPos, coverUrl, resolvedAuthor, \
+                       displayBookName, displayAuthor, metadataEditedAt";
+
+/// 阅读记录（13 字段，对齐原版 Room v113 `ReadRecord` 实体）
 ///
-/// serde 键名对齐 Room 列（camelCase）与原版备份 readRecord.json；
-/// `alias` 兼容历史备份的 snake_case 旧键（备份格式 v1 时期由仓库结构体
-/// 无 rename 直出，book_name/read_time/last_read 三键），恢复时双形态均可解析。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// serde 键名对齐 Room 列/原版备份 `readRecord.json`（camelCase）；`alias` 兼容
+/// 历史备份的 snake_case 旧键（备份格式 v1 时期由仓库结构体无 rename 直出，
+/// `device_id`/`book_name`/`read_time`/`last_read` 四键），恢复时双形态均可解析。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadRecord {
-    /// 设备标识（v101 补齐 Room 基线 deviceId 列，当前单设备 Rust 侧固定空串）
+    /// 设备标识（单设备模型下本机固定空串）
     #[serde(default, rename = "deviceId", alias = "device_id")]
     pub device_id: String,
     #[serde(default, rename = "bookName", alias = "book_name")]
     pub book_name: String,
-    /// 作者（同书名的多本书共用一条记录时，以作者集合形式合并存储）
+    /// 作者（v113 起为物理主键的一部分；旧合并串原样保留）
     #[serde(default)]
     pub author: String,
     #[serde(default, rename = "readTime", alias = "read_time")]
     pub read_time: i64,
-    /// 最后阅读位置/章节索引（v101 补齐 Room 基线 lastRead 列）
+    /// 最后阅读时间（毫秒时间戳）
     #[serde(default, rename = "lastRead", alias = "last_read")]
     pub last_read: i64,
+    /// 最后阅读章节标题快照（书架删除后仍可展示）
+    #[serde(default, rename = "lastChapterTitle")]
+    pub last_chapter_title: Option<String>,
+    /// 最后阅读章节索引快照（-1 表示未知）
+    #[serde(default = "default_chapter_index", rename = "lastChapterIndex")]
+    pub last_chapter_index: i32,
+    /// 最后阅读章节内位置快照
+    #[serde(default, rename = "lastChapterPos")]
+    pub last_chapter_pos: i32,
+    /// 封面 URL 快照（本地缓存路径或网络 URL）
+    #[serde(default, rename = "coverUrl")]
+    pub cover_url: Option<String>,
+    /// 旧备份中作者为空时还原出的作者（保持空白作者账户稳定）
+    #[serde(default, rename = "resolvedAuthor")]
+    pub resolved_author: Option<String>,
+    /// 显示书名（用户编辑后的展示值；空串回退 bookName）
+    #[serde(default, rename = "displayBookName")]
+    pub display_book_name: String,
+    /// 显示作者（用户编辑后的展示值；空串回退 author/resolvedAuthor）
+    #[serde(default, rename = "displayAuthor")]
+    pub display_author: String,
+    /// 显示元数据最后编辑时间（毫秒；0 表示未编辑，恢复时按物理键派生显示值）
+    #[serde(default, rename = "metadataEditedAt")]
+    pub metadata_edited_at: i64,
 }
 
-/// 作者集合存储前缀（对齐上游 Kotlin `ReadRecordAuthors.PREFIX`）
-///
-/// author 列兼容纯文本旧记录：无前缀时为单一作者；
-/// 多作者时存储为 `\u{1E}authors:` + JSON 字符串数组。
-const AUTHORS_PREFIX: &str = "\u{1E}authors:";
+/// `lastChapterIndex` 的 serde 默认值（对齐原版实体 `-1`）
+fn default_chapter_index() -> i32 {
+    -1
+}
+
+impl Default for ReadRecord {
+    fn default() -> Self {
+        Self {
+            device_id: String::new(),
+            book_name: String::new(),
+            author: String::new(),
+            read_time: 0,
+            last_read: 0,
+            last_chapter_title: None,
+            last_chapter_index: -1,
+            last_chapter_pos: 0,
+            cover_url: None,
+            resolved_author: None,
+            display_book_name: String::new(),
+            display_author: String::new(),
+            metadata_edited_at: 0,
+        }
+    }
+}
+
+impl ReadRecord {
+    /// 归一显示元数据（对齐上游 `ReadRecord.withDisplayMetadata`）
+    ///
+    /// - `metadata` 有编辑（`metadataEditedAt > 0`）且不旧于当前记录 → 采用其显示值；
+    /// - 否则若当前已有编辑 → 保留当前显示值；
+    /// - 都未编辑过 → 按物理键派生：`displayBookName = bookName`，
+    ///   `displayAuthor = author`（为空时回落 `resolvedAuthor`）。
+    pub fn with_display_metadata(mut self, metadata: Option<&Self>) -> Self {
+        let edited = metadata.filter(|m| {
+            m.metadata_edited_at > 0 && m.metadata_edited_at >= self.metadata_edited_at
+        });
+        let (book, author, edited_at) = match edited {
+            Some(source) => (
+                source.display_book_name.clone(),
+                source.display_author.clone(),
+                source.metadata_edited_at,
+            ),
+            None if self.metadata_edited_at > 0 => (
+                self.display_book_name.clone(),
+                self.display_author.clone(),
+                self.metadata_edited_at,
+            ),
+            None => (
+                self.book_name.clone(),
+                if self.author.is_empty() {
+                    self.resolved_author.clone().unwrap_or_default()
+                } else {
+                    self.author.clone()
+                },
+                0,
+            ),
+        };
+        self.display_book_name = book;
+        self.display_author = author;
+        self.metadata_edited_at = edited_at;
+        self
+    }
+}
 
 /// 解码 author 列值为作者列表（对齐上游 `ReadRecordAuthors.decode`）
 ///
-/// - 空白值返回空列表（上游返回 {""}，合并时会被非空过滤掉，等价）；
+/// - 空白值返回空列表（上游返回 {""}，合并/匹配时会被非空过滤，等价）；
 /// - 无前缀视为单一作者；
 /// - 前缀后 JSON 解析失败时返回空列表（上游 getOrNull 后同样被过滤）。
 ///
@@ -65,33 +158,86 @@ pub fn decode_read_record_authors(value: &str) -> Vec<String> {
     }
 }
 
-/// 合并两个 author 列值（对齐上游 `ReadRecordAuthors.merge`）
+/// 恢复合并（对齐上游 `mergeRestoredReadRecord`，`ReadRecordMerge.kt`）
 ///
-/// 取并集后去空白、去重并按字典序排序（上游 sortedSetOf）：
-/// - 0 个作者 → 空字符串；
-/// - 1 个作者 → 纯文本（兼容旧记录）；
-/// - 多个作者 → `前缀 + JSON 数组`。
-pub fn merge_read_record_authors(current: &str, incoming: &str) -> String {
-    let mut set: BTreeSet<String> = BTreeSet::new();
-    for author in decode_read_record_authors(current)
-        .into_iter()
-        .chain(decode_read_record_authors(incoming))
+/// `current` 为库内同主键记录（物理键 `deviceId/bookName/author` 相同）：
+/// - 章节快照取 `lastRead` 较新者（其无快照时回退另一侧）；
+/// - `readTime`：本机记录取两侧最大（防旧备份回滚时长），他机记录以传入为准；
+/// - `lastRead` 取两侧最大；`coverUrl` 取较新者非空值，否则回退另一侧；
+/// - `resolvedAuthor` 优先保留库内值；显示元数据按 `metadataEditedAt` 选择。
+pub fn merge_restored_read_record(
+    current: Option<&ReadRecord>,
+    incoming: &ReadRecord,
+    local_device: bool,
+) -> ReadRecord {
+    let Some(current) = current else {
+        return incoming.clone().with_display_metadata(None);
+    };
+    // 物理键不同（调用方按主键查找，理论不会发生）：直接采用传入记录
+    if current.device_id != incoming.device_id
+        || current.book_name != incoming.book_name
+        || current.author != incoming.author
     {
-        if !author.trim().is_empty() {
-            set.insert(author);
-        }
+        return incoming.clone().with_display_metadata(None);
     }
-    match set.len() {
-        0 => String::new(),
-        1 => set.into_iter().next().unwrap_or_default(),
-        _ => {
-            let arr: Vec<String> = set.into_iter().collect();
-            format!(
-                "{AUTHORS_PREFIX}{}",
-                serde_json::to_string(&arr).unwrap_or_default()
-            )
-        }
-    }
+
+    let (latest, previous) = if incoming.last_read >= current.last_read {
+        (incoming, current)
+    } else {
+        (current, incoming)
+    };
+    let chapter = if latest.last_chapter_index >= 0
+        || latest
+            .last_chapter_title
+            .as_deref()
+            .is_some_and(|title| !title.trim().is_empty())
+    {
+        latest
+    } else {
+        previous
+    };
+    let cover_url = latest
+        .cover_url
+        .as_deref()
+        .filter(|url| !url.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| previous.cover_url.clone());
+
+    let mut merged = incoming.clone();
+    merged.read_time = if local_device {
+        current.read_time.max(incoming.read_time)
+    } else {
+        incoming.read_time
+    };
+    merged.last_read = current.last_read.max(incoming.last_read);
+    merged.last_chapter_title = chapter.last_chapter_title.clone();
+    merged.last_chapter_index = chapter.last_chapter_index;
+    merged.last_chapter_pos = chapter.last_chapter_pos;
+    merged.cover_url = cover_url;
+    merged.resolved_author = current
+        .resolved_author
+        .clone()
+        .or_else(|| incoming.resolved_author.clone());
+    merged.with_display_metadata(Some(current))
+}
+
+/// 行 → 记录
+fn record_from_row(row: &Row<'_>) -> rusqlite::Result<ReadRecord> {
+    Ok(ReadRecord {
+        device_id: row.get(0)?,
+        book_name: row.get(1)?,
+        author: row.get(2)?,
+        read_time: row.get(3)?,
+        last_read: row.get(4)?,
+        last_chapter_title: row.get(5)?,
+        last_chapter_index: row.get(6)?,
+        last_chapter_pos: row.get(7)?,
+        cover_url: row.get(8)?,
+        resolved_author: row.get(9)?,
+        display_book_name: row.get(10)?,
+        display_author: row.get(11)?,
+        metadata_edited_at: row.get(12)?,
+    })
 }
 
 /// 阅读记录数据访问层
@@ -104,26 +250,39 @@ impl<'a> ReadRecordRepository<'a> {
         Self { conn }
     }
 
-    /// 添加/更新阅读记录（主键冲突时替换）
+    /// 本机 deviceId（Rust 侧单设备固定空串）
+    pub const LOCAL_DEVICE_ID: &'static str = "";
+
+    /// 添加/更新阅读记录（FFI 既有签名：只带书名与时长）
     ///
-    /// 说明：本方法签名保持不变（FFI 既有契约），deviceId/lastRead 依赖列默认值
-    /// （''/0）；需要写入新字段时使用 [`upsert_full`]。
+    /// 定位该书的「主记录」后只更新其 `readTime`：
+    /// 优先 `author = ''` 的旧式本机记录，其次 `lastRead` 最新的一行。
+    /// 不存在的书按本机空作者新建（`author=''`）。快照/显示字段保持不变。
     pub fn upsert(&self, book_name: &str, read_time: i64) -> LegadoResult<()> {
-        // 主键 (deviceId, bookName)；单设备 deviceId=''；保留 author/lastRead
-        self.conn
-            .execute(
-                "INSERT INTO readRecord (deviceId, bookName, readTime)
-                 VALUES ('', ?1, ?2)
-                 ON CONFLICT(deviceId, bookName) DO UPDATE SET readTime = excluded.readTime",
-                params![book_name, read_time],
-            )
-            .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
+        match self.primary_record(book_name)? {
+            Some(existing) => {
+                self.conn
+                    .execute(
+                        "UPDATE readRecord SET readTime = ?1
+                         WHERE deviceId = ?2 AND bookName = ?3 AND author = ?4",
+                        params![
+                            read_time,
+                            existing.device_id,
+                            existing.book_name,
+                            existing.author
+                        ],
+                    )
+                    .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
+            }
+            None => self.insert_local_row(book_name, "", read_time)?,
+        }
         Ok(())
     }
 
-    /// 添加/更新阅读记录（全字段版，覆盖 v101 新增的 deviceId/lastRead 列）
+    /// 添加/更新阅读记录（全字段版，覆盖 deviceId/author/lastRead）
     ///
-    /// 主键冲突时整行替换；author 不做合并（调用方自行处理）。
+    /// 主键冲突时只更新 `readTime/lastRead`，**保留**章节快照/封面/显示元数据
+    /// （旧实现用 INSERT OR REPLACE 会把 v113 新列清空，每次保存阅读进度即丢快照）。
     pub fn upsert_full(
         &self,
         device_id: &str,
@@ -134,208 +293,168 @@ impl<'a> ReadRecordRepository<'a> {
     ) -> LegadoResult<()> {
         self.conn
             .execute(
-                "INSERT OR REPLACE INTO readRecord
-                 (deviceId, bookName, author, readTime, lastRead)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO readRecord
+                 (deviceId, bookName, author, readTime, lastRead, displayBookName, displayAuthor)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?2, CASE WHEN ?3 = '' THEN '' ELSE ?3 END)
+                 ON CONFLICT(deviceId, bookName, author) DO UPDATE SET
+                   readTime = excluded.readTime,
+                   lastRead = excluded.lastRead",
                 params![device_id, book_name, author, read_time, last_read],
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
         Ok(())
     }
 
-    /// 恢复合并写入（对齐原版 `Restore.kt:366-376` 的 ReadRecord 恢复语义）
+    /// 新增/更新本机某作者记录（按新主键 upsert，不做作者合并）
     ///
-    /// 原版语义（本机 deviceId 在 Rust 侧固定为空串，与 [`upsert`] 一致）：
-    /// - 库内无同键 (deviceId, bookName) 记录 → 直接整行写入（author 与库内合并）；
-    /// - 非本机记录（deviceId != 本机）→ 直接整行 REPLACE（author 与库内合并）；
-    /// - 本机记录：仅当库内 readTime < 传入 readTime 时整行覆盖；
-    ///   否则若传入 author 非空白，仅合并作者（readTime/lastRead 保留库内值，
-    ///   对齐原版 `current.copy(author = readRecord.author)` 分支）；
-    ///   两者皆不满足时不写入。
-    ///
-    /// 供备份恢复使用；不触碰 readRecordDaily 热力图聚合面（恢复不产生阅读时长）。
-    pub fn upsert_restore(&self, record: &ReadRecord) -> LegadoResult<()> {
-        let current = self.get_by_device_pk(&record.device_id, &record.book_name)?;
-        match current {
-            // 库内无同键记录：直接整行写入（author 先与空值合并归一）
-            None => self.insert_row_merged(record),
-            Some(current) => {
-                if record.device_id != Self::LOCAL_DEVICE_ID || current.read_time < record.read_time
-                {
-                    // 非本机记录直接插入；本机记录较新者胜
-                    self.insert_row_merged(record)
-                } else if !record.author.trim().is_empty() {
-                    // 本机且库内较新：仅合并作者，readTime/lastRead 保留库内值
-                    let author_only = ReadRecord {
-                        device_id: current.device_id,
-                        book_name: current.book_name,
-                        author: record.author.clone(),
-                        read_time: current.read_time,
-                        last_read: current.last_read,
-                    };
-                    self.insert_row_merged(&author_only)
-                } else {
-                    // 本机且库内较新且传入无作者信息：不写入
-                    Ok(())
-                }
-            }
-        }
-    }
-
-    /// 本机 deviceId（与 upsert/insert_with_author 一致；Rust 侧单设备固定空串）
-    const LOCAL_DEVICE_ID: &'static str = "";
-
-    /// 按完整主键 (deviceId, bookName) 查询记录（对齐原版 `ReadRecordDao.getRecord`）
-    ///
-    /// 区别于 [`get_record`]（仅按 bookName，不带 deviceId 过滤），
-    /// 本方法为恢复合并语义的精确读取路径。
-    fn get_by_device_pk(
-        &self,
-        device_id: &str,
-        book_name: &str,
-    ) -> LegadoResult<Option<ReadRecord>> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT bookName, author, readTime, deviceId, lastRead
-                 FROM readRecord WHERE deviceId = ?1 AND bookName = ?2",
-            )
-            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
-        let record = stmt
-            .query_row(params![device_id, book_name], |row| {
-                Ok(ReadRecord {
-                    device_id: row.get(3)?,
-                    book_name: row.get(0)?,
-                    author: row.get(1)?,
-                    read_time: row.get(2)?,
-                    last_read: row.get(4)?,
-                })
-            })
-            .optional()
-            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
-        Ok(record)
-    }
-
-    /// 整行写入（作者先与库内同键记录合并，对齐原版 `ReadRecordDao.insert` 事务）
-    fn insert_row_merged(&self, record: &ReadRecord) -> LegadoResult<()> {
-        let existing_author: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT author FROM readRecord WHERE deviceId = ?1 AND bookName = ?2",
-                params![record.device_id, record.book_name],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| LegadoError::Database(format!("查询 author 失败: {e}")))?;
-        let merged =
-            merge_read_record_authors(existing_author.as_deref().unwrap_or(""), &record.author);
-        self.conn
-            .execute(
-                "INSERT OR REPLACE INTO readRecord
-                 (deviceId, bookName, author, readTime, lastRead)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    record.device_id,
-                    record.book_name,
-                    merged,
-                    record.read_time,
-                    record.last_read
-                ],
-            )
-            .map_err(|e| LegadoError::Database(format!("恢复阅读记录失败: {e}")))?;
-        Ok(())
-    }
-
-    /// 更新指定书籍的最后阅读位置（lastRead 列，v101 新增）
-    pub fn update_last_read(&self, book_name: &str, last_read: i64) -> LegadoResult<bool> {
-        let affected = self
-            .conn
-            .execute(
-                "UPDATE readRecord SET lastRead = ?1 WHERE bookName = ?2",
-                params![last_read, book_name],
-            )
-            .map_err(|e| LegadoError::Database(format!("更新 lastRead 失败: {e}")))?;
-        Ok(affected > 0)
-    }
-
-    /// 添加/更新阅读记录并合并作者（对齐上游 `ReadRecordDao.insert` 事务）
-    ///
-    /// 上游语义：同设备同书名共用一条记录，新记录的 author 与库内旧 author
-    /// 通过 `ReadRecordAuthors.merge` 合并后再 REPLACE 写入，
-    /// 避免同名书不同作者互相覆盖；readTime 以传入值为准。
+    /// 主键冲突时只更新 `readTime`，保留 `lastRead` 与快照字段。
     pub fn insert_with_author(
         &self,
         book_name: &str,
         author: &str,
         read_time: i64,
     ) -> LegadoResult<()> {
-        // 1. 读取旧记录的 author（对应上游 getAuthor(deviceId, bookName)）
-        let existing = self.get_author(book_name)?.unwrap_or_default();
+        self.insert_local_row(book_name, author, read_time)
+    }
 
-        // 2. 作者集合并（对应上游 ReadRecordAuthors.merge）
-        let merged = merge_read_record_authors(&existing, author);
-
-        // 3. upsert 写入（主键含 deviceId；保留 lastRead）
+    /// 本机记录 upsert（仅 `readTime`，保留其余列）
+    fn insert_local_row(&self, book_name: &str, author: &str, read_time: i64) -> LegadoResult<()> {
         self.conn
             .execute(
-                "INSERT INTO readRecord (deviceId, bookName, author, readTime)
-                 VALUES ('', ?1, ?2, ?3)
-                 ON CONFLICT(deviceId, bookName) DO UPDATE SET
-                   author = excluded.author,
+                "INSERT INTO readRecord
+                 (deviceId, bookName, author, readTime, displayBookName, displayAuthor)
+                 VALUES ('', ?1, ?2, ?3, ?1, ?2)
+                 ON CONFLICT(deviceId, bookName, author) DO UPDATE SET
                    readTime = excluded.readTime",
-                params![book_name, merged, read_time],
+                params![book_name, author, read_time],
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
         Ok(())
     }
 
-    /// 获取指定书籍的完整阅读记录（含 author，对齐上游 `ReadRecordDao.getRecord`）
-    pub fn get_record(&self, book_name: &str) -> LegadoResult<Option<ReadRecord>> {
+    /// 备份恢复写入（对齐原版 `Restore.kt` + `mergeRestoredReadRecord`）
+    ///
+    /// 按物理主键 `(deviceId, bookName, author)` 查找库内记录：
+    /// 无同键记录 → 直接整行写入；有 → 按 [`merge_restored_read_record`] 合并后
+    /// 整行 REPLACE。`local_device = deviceId == ''`（Rust 单设备模型）。
+    ///
+    /// 供备份恢复使用；不触碰 readRecordDaily 热力图聚合面（恢复不产生阅读时长）。
+    pub fn upsert_restore(&self, record: &ReadRecord) -> LegadoResult<()> {
+        let current = self.get_by_pk(&record.device_id, &record.book_name, &record.author)?;
+        let merged = merge_restored_read_record(
+            current.as_ref(),
+            record,
+            record.device_id == Self::LOCAL_DEVICE_ID,
+        );
+        self.write_row(&merged)
+    }
+
+    /// 整行写入（13 列，主键冲突时整行替换）
+    pub fn write_row(&self, record: &ReadRecord) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO readRecord
+                 (deviceId, bookName, author, readTime, lastRead, lastChapterTitle,
+                  lastChapterIndex, lastChapterPos, coverUrl, resolvedAuthor,
+                  displayBookName, displayAuthor, metadataEditedAt)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    record.device_id,
+                    record.book_name,
+                    record.author,
+                    record.read_time,
+                    record.last_read,
+                    record.last_chapter_title,
+                    record.last_chapter_index,
+                    record.last_chapter_pos,
+                    record.cover_url,
+                    record.resolved_author,
+                    record.display_book_name,
+                    record.display_author,
+                    record.metadata_edited_at
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("写入阅读记录失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 按完整主键 `(deviceId, bookName, author)` 查询记录
+    pub fn get_by_pk(
+        &self,
+        device_id: &str,
+        book_name: &str,
+        author: &str,
+    ) -> LegadoResult<Option<ReadRecord>> {
+        let sql = format!(
+            "SELECT {COLUMNS} FROM readRecord
+             WHERE deviceId = ?1 AND bookName = ?2 AND author = ?3"
+        );
         let mut stmt = self
             .conn
-            .prepare(
-                "SELECT bookName, author, readTime, deviceId, lastRead
-                 FROM readRecord WHERE bookName = ?1",
-            )
+            .prepare(&sql)
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
-
         let record = stmt
-            .query_row(params![book_name], |row| {
-                Ok(ReadRecord {
-                    device_id: row.get(3)?,
-                    book_name: row.get(0)?,
-                    author: row.get(1)?,
-                    read_time: row.get(2)?,
-                    last_read: row.get(4)?,
-                })
-            })
+            .query_row(params![device_id, book_name, author], record_from_row)
             .optional()
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
         Ok(record)
     }
 
-    /// 获取指定书籍记录的 author 列（对齐上游 `ReadRecordDao.getAuthor`）
-    pub fn get_author(&self, book_name: &str) -> LegadoResult<Option<String>> {
-        let author: Option<String> = self
+    /// 该书的「主记录」：同书多作者时优先 `author = ''` 的旧式本机行，
+    /// 其次 `lastRead` 最新者（无匹配返回 `None`）
+    fn primary_record(&self, book_name: &str) -> LegadoResult<Option<ReadRecord>> {
+        let sql = format!(
+            "SELECT {COLUMNS} FROM readRecord WHERE bookName = ?1
+             ORDER BY (author = '') DESC, lastRead DESC, readTime DESC
+             LIMIT 1"
+        );
+        let mut stmt = self
             .conn
-            .query_row(
-                "SELECT author FROM readRecord WHERE bookName = ?1",
-                params![book_name],
-                |row| row.get(0),
-            )
+            .prepare(&sql)
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+        let record = stmt
+            .query_row(params![book_name], record_from_row)
             .optional()
-            .map_err(|e| LegadoError::Database(format!("查询 author 失败: {e}")))?;
-        Ok(author)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
+        Ok(record)
+    }
+
+    /// 更新指定书籍主记录的最后阅读时间（lastRead 列）
+    pub fn update_last_read(&self, book_name: &str, last_read: i64) -> LegadoResult<bool> {
+        let Some(existing) = self.primary_record(book_name)? else {
+            return Ok(false);
+        };
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE readRecord SET lastRead = ?1
+                 WHERE deviceId = ?2 AND bookName = ?3 AND author = ?4",
+                params![
+                    last_read,
+                    existing.device_id,
+                    existing.book_name,
+                    existing.author
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新 lastRead 失败: {e}")))?;
+        Ok(affected > 0)
+    }
+
+    /// 获取指定书籍的主记录（含 author，对齐上游 `ReadRecordDao.getRecord` 的书名维度）
+    pub fn get_record(&self, book_name: &str) -> LegadoResult<Option<ReadRecord>> {
+        self.primary_record(book_name)
+    }
+
+    /// 获取指定书籍主记录的 author 列
+    pub fn get_author(&self, book_name: &str) -> LegadoResult<Option<String>> {
+        Ok(self.primary_record(book_name)?.map(|r| r.author))
     }
 
     /// 返回有阅读记录的书名列表（对齐上游 `ReadRecordDao.flowBooks` 的书名维度）
-    ///
-    /// 上游返回 distinct (bookName, author) 对；Rust 侧 readRecord 主键即 bookName，
-    /// 天然去重，按 bookName 排序输出。
     pub fn list_books(&self) -> LegadoResult<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT bookName FROM readRecord ORDER BY bookName ASC")
+            .prepare("SELECT DISTINCT bookName FROM readRecord ORDER BY bookName ASC")
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
         let names = stmt
@@ -346,38 +465,28 @@ impl<'a> ReadRecordRepository<'a> {
         Ok(names)
     }
 
-    /// 获取所有阅读记录（按 readTime 降序）
+    /// 获取所有阅读记录（全 13 列，按 readTime 降序）
     pub fn find_all(&self) -> LegadoResult<Vec<ReadRecord>> {
+        let sql = format!("SELECT {COLUMNS} FROM readRecord ORDER BY readTime DESC, lastRead DESC");
         let mut stmt = self
             .conn
-            .prepare(
-                "SELECT bookName, author, readTime, deviceId, lastRead
-                 FROM readRecord ORDER BY readTime DESC",
-            )
+            .prepare(&sql)
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
 
         let rows = stmt
-            .query_map([], |row| {
-                Ok(ReadRecord {
-                    device_id: row.get(3)?,
-                    book_name: row.get(0)?,
-                    author: row.get(1)?,
-                    read_time: row.get(2)?,
-                    last_read: row.get(4)?,
-                })
-            })
+            .query_map([], record_from_row)
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
     }
 
-    /// 获取指定书籍的阅读记录
+    /// 获取指定书籍的主记录
     pub fn find_by_book_name(&self, book_name: &str) -> LegadoResult<Option<ReadRecord>> {
         self.get_record(book_name)
     }
 
-    /// 删除指定书籍的阅读记录
+    /// 删除指定书籍的阅读记录（v113 起删除该书**全部作者**的行）
     pub fn delete_by_book_name(&self, book_name: &str) -> LegadoResult<bool> {
         let affected = self
             .conn
@@ -461,8 +570,6 @@ impl<'a> ReadRecordRepository<'a> {
         Ok(rows)
     }
 }
-
-use rusqlite::OptionalExtension;
 
 #[cfg(test)]
 mod tests {
@@ -552,85 +659,92 @@ mod tests {
         assert_eq!(repo.count().unwrap(), 2);
     }
 
-    // ─── 作者合并逻辑（对齐上游 ReadRecordAuthors）──────────────
+    // ─── author 解码（旧合并串，仅展示/搜索标识）────────────────
 
-    /// 单作者 + 空值：保持纯文本，不进入集合编码
+    /// 空白/单作者/集合三种形态
     #[test]
-    fn test_merge_authors_plain_and_blank() {
-        assert_eq!(merge_read_record_authors("", "作者A"), "作者A");
-        assert_eq!(merge_read_record_authors("作者A", ""), "作者A");
-        assert_eq!(merge_read_record_authors("", ""), "");
-        // 空白字符串被过滤
-        assert_eq!(merge_read_record_authors("   ", "作者A"), "作者A");
-    }
+    fn test_decode_authors() {
+        assert!(decode_read_record_authors("").is_empty());
+        assert!(decode_read_record_authors("   ").is_empty());
+        assert_eq!(
+            decode_read_record_authors("作者A"),
+            vec!["作者A".to_string()]
+        );
 
-    /// 同作者去重：仍为纯文本单作者
-    #[test]
-    fn test_merge_authors_dedup_single() {
-        assert_eq!(merge_read_record_authors("作者A", "作者A"), "作者A");
-    }
-
-    /// 多作者合并：去重 + 排序 + 前缀编码
-    #[test]
-    fn test_merge_authors_multi_sorted() {
-        let merged = merge_read_record_authors("作者B", "作者A");
-        assert!(merged.starts_with(AUTHORS_PREFIX));
-        let arr: Vec<String> =
-            serde_json::from_str(merged.strip_prefix(AUTHORS_PREFIX).unwrap()).unwrap();
-        // 排序后的作者集合
-        assert_eq!(arr, vec!["作者A".to_string(), "作者B".to_string()]);
-    }
-
-    /// 集合值与纯文本混合合并，重复作者去重
-    #[test]
-    fn test_merge_authors_set_with_plain() {
         let set_value = format!("{AUTHORS_PREFIX}[\"作者A\",\"作者B\"]");
-        let merged = merge_read_record_authors(&set_value, "作者B");
-        // 仍为两个作者，去重后保持集合编码
-        let arr: Vec<String> =
-            serde_json::from_str(merged.strip_prefix(AUTHORS_PREFIX).unwrap()).unwrap();
-        assert_eq!(arr, vec!["作者A".to_string(), "作者B".to_string()]);
+        assert_eq!(
+            decode_read_record_authors(&set_value),
+            vec!["作者A".to_string(), "作者B".to_string()]
+        );
+        // 空白项过滤 + 去重
+        let dup = format!("{AUTHORS_PREFIX}[\"作者A\",\" \",\"作者A\"]");
+        assert_eq!(decode_read_record_authors(&dup), vec!["作者A".to_string()]);
     }
 
-    /// 非法 JSON 集合值：解析失败时按空处理，不残留垃圾数据
+    /// 非法 JSON 集合值：解析失败按空列表处理，不残留垃圾数据
     #[test]
-    fn test_merge_authors_invalid_json_falls_back() {
+    fn test_decode_authors_invalid_json_falls_back() {
         let bad = format!("{AUTHORS_PREFIX}not-json");
-        assert_eq!(merge_read_record_authors(&bad, "作者C"), "作者C");
+        assert!(decode_read_record_authors(&bad).is_empty());
     }
 
-    // ─── 带作者合并的 insert ──────────────────────────────────
+    // ─── v113 主键：同名不同作者分行 ─────────────────────────────
 
-    /// 同书名多次写入不同作者：作者合并存储，readTime 以新值为准，仅一条记录
+    /// 同书名两个作者：两行独立存在，时长互不覆盖
     #[test]
-    fn test_insert_with_author_merges() {
+    fn test_insert_with_author_keeps_separate_rows() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = ReadRecordRepository::new(db.connection());
 
         repo.insert_with_author("同名书", "作者A", 100).unwrap();
         repo.insert_with_author("同名书", "作者B", 200).unwrap();
 
-        assert_eq!(repo.count().unwrap(), 1);
-        let record = repo.get_record("同名书").unwrap().unwrap();
-        assert_eq!(record.read_time, 200);
-        assert!(record.author.starts_with(AUTHORS_PREFIX));
-        let arr: Vec<String> =
-            serde_json::from_str(record.author.strip_prefix(AUTHORS_PREFIX).unwrap()).unwrap();
-        assert_eq!(arr, vec!["作者A".to_string(), "作者B".to_string()]);
+        assert_eq!(repo.count().unwrap(), 2, "同名不同作者应分行");
+        let rows = repo.find_all().unwrap();
+        let a = rows.iter().find(|r| r.author == "作者A").unwrap();
+        let b = rows.iter().find(|r| r.author == "作者B").unwrap();
+        assert_eq!(a.read_time, 100);
+        assert_eq!(b.read_time, 200);
     }
 
-    /// 同作者重复写入：不产生集合编码
+    /// 同作者重复写入：只更新 readTime，仍为一行
     #[test]
-    fn test_insert_with_author_same_author() {
+    fn test_insert_with_author_same_author_updates() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = ReadRecordRepository::new(db.connection());
 
         repo.insert_with_author("书", "作者A", 100).unwrap();
         repo.insert_with_author("书", "作者A", 300).unwrap();
 
+        assert_eq!(repo.count().unwrap(), 1);
         let record = repo.get_record("书").unwrap().unwrap();
         assert_eq!(record.author, "作者A");
         assert_eq!(record.read_time, 300);
+    }
+
+    /// 旧式 upsert（无作者）优先命中空作者行；无空作者行时更新 lastRead 最新的行
+    #[test]
+    fn test_legacy_upsert_targets_primary_row() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        // 只有带作者的行：更新 lastRead 最新者
+        repo.insert_with_author("书", "作者A", 100).unwrap();
+        repo.insert_with_author("书", "作者B", 200).unwrap();
+        repo.upsert("书", 999).unwrap();
+        let rows = repo.find_all().unwrap();
+        assert_eq!(rows.len(), 2);
+        let b = rows.iter().find(|r| r.author == "作者B").unwrap();
+        assert_eq!(b.read_time, 999, "无空作者行时应更新 lastRead 最新的主记录");
+
+        // 存在空作者行：优先更新空作者行
+        repo.upsert_full("", "书", "", 50, 500).unwrap();
+        repo.upsert("书", 777).unwrap();
+        let blank = repo
+            .get_by_pk("", "书", "")
+            .unwrap()
+            .expect("空作者行应存在");
+        assert_eq!(blank.read_time, 777);
     }
 
     /// get_author：存在/不存在两种情况
@@ -644,7 +758,7 @@ mod tests {
         assert_eq!(repo.get_author("不存在").unwrap(), None);
     }
 
-    /// list_books：返回有阅读记录的书名列表，按书名排序
+    /// list_books：书名去重并按书名排序
     #[test]
     fn test_list_books() {
         let db = crate::init_in_memory_database().unwrap();
@@ -655,6 +769,7 @@ mod tests {
         repo.upsert("b书", 10).unwrap();
         repo.upsert("a书", 20).unwrap();
         repo.upsert("c书", 30).unwrap();
+        repo.insert_with_author("c书", "另一作者", 40).unwrap();
 
         assert_eq!(
             repo.list_books().unwrap(),
@@ -662,7 +777,7 @@ mod tests {
         );
     }
 
-    /// get_record：旧接口 upsert 写入的记录 author 为空字符串，get_record 可正常读取
+    /// get_record：旧接口 upsert 写入的记录 author 为空字符串，可正常读取
     #[test]
     fn test_get_record_legacy_row() {
         let db = crate::init_in_memory_database().unwrap();
@@ -675,9 +790,9 @@ mod tests {
         assert!(repo.get_record("none").unwrap().is_none());
     }
 
-    // ─── v101 新字段（deviceId / lastRead）────────────────────
+    // ─── v101/v113 新字段 ────────────────────────────────────────
 
-    /// 全字段写入后 get_record / find_all 均能完整读回
+    /// 全字段写入后 get_record / find_all / get_by_pk 均能完整读回
     #[test]
     fn test_upsert_full_new_fields_roundtrip() {
         let db = crate::init_in_memory_database().unwrap();
@@ -692,6 +807,13 @@ mod tests {
         assert_eq!(record.author, "作者A");
         assert_eq!(record.read_time, 500);
         assert_eq!(record.last_read, 42);
+        // 新行显示字段按物理键派生（对齐上游 withDisplayMetadata）
+        assert_eq!(record.display_book_name, "书A");
+        assert_eq!(record.display_author, "作者A");
+        assert_eq!(record.last_chapter_index, -1);
+
+        let by_pk = repo.get_by_pk("device-1", "书A", "作者A").unwrap().unwrap();
+        assert_eq!(by_pk.read_time, 500);
 
         let all = repo.find_all().unwrap();
         assert_eq!(all.len(), 1);
@@ -699,7 +821,7 @@ mod tests {
         assert_eq!(all[0].last_read, 42);
     }
 
-    /// 旧接口 upsert 写入的记录：新字段回落列默认值（''/0）
+    /// 旧接口 upsert 写入的记录：新字段回落列默认值（''/0/-1/None）
     #[test]
     fn test_legacy_upsert_new_field_defaults() {
         let db = crate::init_in_memory_database().unwrap();
@@ -709,9 +831,56 @@ mod tests {
         let record = repo.get_record("旧接口").unwrap().unwrap();
         assert_eq!(record.device_id, "");
         assert_eq!(record.last_read, 0);
+        assert_eq!(record.last_chapter_index, -1);
+        assert_eq!(record.last_chapter_pos, 0);
+        assert_eq!(record.last_chapter_title, None);
+        assert_eq!(record.cover_url, None);
+        assert_eq!(record.resolved_author, None);
+        assert_eq!(record.metadata_edited_at, 0);
+        assert_eq!(record.display_book_name, "旧接口");
+        assert_eq!(record.display_author, "");
     }
 
-    /// update_last_read：存在时更新成功，不存在时返回 false
+    /// upsert_full 重复写入只更新 readTime/lastRead，章节快照/显示元数据保留
+    #[test]
+    fn test_upsert_full_preserves_snapshot_columns() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        let mut record = ReadRecord {
+            book_name: "快照书".to_string(),
+            author: "作者A".to_string(),
+            read_time: 100,
+            last_read: 10,
+            ..Default::default()
+        };
+        record = record.with_display_metadata(None);
+        record.last_chapter_title = Some("第十章".to_string());
+        record.last_chapter_index = 9;
+        record.last_chapter_pos = 88;
+        record.cover_url = Some("https://cover.example/1.jpg".to_string());
+        record.metadata_edited_at = 5;
+        record.display_book_name = "显示书名".to_string();
+        record.display_author = "显示作者".to_string();
+        repo.write_row(&record).unwrap();
+
+        repo.upsert_full("", "快照书", "作者A", 300, 30).unwrap();
+        let row = repo.get_by_pk("", "快照书", "作者A").unwrap().unwrap();
+        assert_eq!(row.read_time, 300);
+        assert_eq!(row.last_read, 30);
+        assert_eq!(row.last_chapter_title.as_deref(), Some("第十章"));
+        assert_eq!(row.last_chapter_index, 9);
+        assert_eq!(row.last_chapter_pos, 88);
+        assert_eq!(
+            row.cover_url.as_deref(),
+            Some("https://cover.example/1.jpg")
+        );
+        assert_eq!(row.display_book_name, "显示书名");
+        assert_eq!(row.display_author, "显示作者");
+        assert_eq!(row.metadata_edited_at, 5);
+    }
+
+    /// update_last_read：存在时更新主记录，不存在时返回 false
     #[test]
     fn test_update_last_read() {
         let db = crate::init_in_memory_database().unwrap();
@@ -758,7 +927,7 @@ mod tests {
         assert!(repo.list_daily_year(2024).unwrap().is_empty());
     }
 
-    // ─── 恢复合并语义（upsert_restore，对齐原版 Restore.kt:366-376）──────────────
+    // ─── 恢复合并语义（upsert_restore，对齐原版 mergeRestoredReadRecord）──────
 
     /// 非本机记录直接整行插入：deviceId 归属正确，author/lastRead 落库
     #[test]
@@ -766,7 +935,7 @@ mod tests {
         let db = crate::init_in_memory_database().unwrap();
         let repo = ReadRecordRepository::new(db.connection());
 
-        // 本机已有同书名记录（不同 deviceId，互不干扰）
+        // 本机已有同书名记录（不同 author，互不干扰）
         repo.upsert_full("", "书A", "作者甲", 100, 10).unwrap();
 
         repo.upsert_restore(&ReadRecord {
@@ -775,11 +944,11 @@ mod tests {
             author: "作者甲".to_string(),
             read_time: 500,
             last_read: 50,
+            ..Default::default()
         })
         .unwrap();
 
         assert_eq!(repo.count().unwrap(), 2);
-        // find_all 读回全表，按 deviceId 定位非本机行
         let all = repo.find_all().unwrap();
         let foreign = all.iter().find(|r| r.device_id == "device-A").unwrap();
         assert_eq!(foreign.book_name, "书A");
@@ -791,78 +960,214 @@ mod tests {
         assert_eq!(local.read_time, 100);
     }
 
-    /// 本机记录传入较旧：readTime/lastRead 保留库内值，仅合并作者
+    /// 同名不同作者：恢复时按物理键分行，不合并时长
     #[test]
-    fn test_restore_local_older_incoming_merges_author_only() {
+    fn test_restore_same_name_different_author_separate_rows() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = ReadRecordRepository::new(db.connection());
 
         repo.upsert_full("", "书B", "作者乙", 200, 20).unwrap();
         repo.upsert_restore(&ReadRecord {
-            device_id: "".to_string(),
+            device_id: String::new(),
             book_name: "书B".to_string(),
             author: "作者丙".to_string(),
             read_time: 100,
             last_read: 5,
+            ..Default::default()
         })
         .unwrap();
 
-        assert_eq!(repo.count().unwrap(), 1);
-        let row = repo.get_record("书B").unwrap().unwrap();
-        assert_eq!(row.read_time, 200, "库内较新 readTime 不得被旧值覆盖");
-        assert_eq!(row.last_read, 20, "lastRead 保留库内值");
-        // 作者合并为集合编码（含两作者）
-        let arr: Vec<String> = serde_json::from_str(
-            row.author
-                .strip_prefix(AUTHORS_PREFIX)
-                .unwrap_or(&row.author),
-        )
-        .unwrap_or_default();
-        assert!(arr.contains(&"作者乙".to_string()));
-        assert!(arr.contains(&"作者丙".to_string()));
+        assert_eq!(repo.count().unwrap(), 2, "同名不同作者应分行");
+        let rows = repo.find_all().unwrap();
+        assert_eq!(
+            rows.iter()
+                .find(|r| r.author == "作者乙")
+                .unwrap()
+                .read_time,
+            200
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|r| r.author == "作者丙")
+                .unwrap()
+                .read_time,
+            100
+        );
     }
 
-    /// 本机记录传入较新：整行覆盖（readTime/lastRead 以传入为准）
+    /// 同键本机记录传入较旧：readTime/lastRead 保留库内值，快照按较新者合并
     #[test]
-    fn test_restore_local_incoming_newer_overwrites() {
+    fn test_restore_local_older_keeps_times_and_merges_snapshot() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = ReadRecordRepository::new(db.connection());
 
-        repo.upsert_full("", "书C", "作者丁", 50, 5).unwrap();
-        repo.upsert_restore(&ReadRecord {
-            device_id: "".to_string(),
+        let mut current = ReadRecord {
+            device_id: String::new(),
             book_name: "书C".to_string(),
-            author: String::new(),
-            read_time: 999,
-            last_read: 99,
+            author: "作者丁".to_string(),
+            read_time: 200,
+            last_read: 20,
+            ..Default::default()
+        };
+        current.last_chapter_title = Some("库内章节".to_string());
+        current.last_chapter_index = 8;
+        current.last_chapter_pos = 80;
+        current.cover_url = Some("https://cover.example/old.jpg".to_string());
+        repo.write_row(&current).unwrap();
+
+        repo.upsert_restore(&ReadRecord {
+            device_id: String::new(),
+            book_name: "书C".to_string(),
+            author: "作者丁".to_string(),
+            read_time: 100,
+            last_read: 5,
+            last_chapter_title: Some("备份章节".to_string()),
+            last_chapter_index: 2,
+            last_chapter_pos: 20,
+            cover_url: Some("https://cover.example/new.jpg".to_string()),
+            ..Default::default()
         })
         .unwrap();
 
         assert_eq!(repo.count().unwrap(), 1);
         let row = repo.get_record("书C").unwrap().unwrap();
-        assert_eq!(row.read_time, 999);
-        assert_eq!(row.last_read, 99);
-        assert_eq!(row.author, "作者丁", "传入作者为空时保留库内作者");
+        assert_eq!(row.read_time, 200, "库内较新 readTime 不得被旧值覆盖");
+        assert_eq!(row.last_read, 20, "lastRead 取两侧最大");
+        assert_eq!(row.last_chapter_title.as_deref(), Some("库内章节"));
+        assert_eq!(row.last_chapter_index, 8);
+        assert_eq!(row.last_chapter_pos, 80);
+        // 快照跟随较新记录（库内），封面也取较新者的非空值
+        assert_eq!(
+            row.cover_url.as_deref(),
+            Some("https://cover.example/old.jpg")
+        );
     }
 
-    /// 库内无同键记录：直接整行写入（author 归一、lastRead 落库）
+    /// 同键本机记录传入较新：readTime/lastRead 覆盖，快照取传入值
+    #[test]
+    fn test_restore_local_incoming_newer_overwrites() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert_full("", "书D", "作者戊", 50, 5).unwrap();
+        repo.upsert_restore(&ReadRecord {
+            device_id: String::new(),
+            book_name: "书D".to_string(),
+            author: "作者戊".to_string(),
+            read_time: 999,
+            last_read: 99,
+            last_chapter_title: Some("备份章节".to_string()),
+            last_chapter_index: 3,
+            last_chapter_pos: 30,
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert_eq!(repo.count().unwrap(), 1);
+        let row = repo.get_record("书D").unwrap().unwrap();
+        assert_eq!(row.read_time, 999);
+        assert_eq!(row.last_read, 99);
+        assert_eq!(row.last_chapter_title.as_deref(), Some("备份章节"));
+        assert_eq!(row.last_chapter_index, 3);
+        assert_eq!(row.last_chapter_pos, 30);
+    }
+
+    /// 库内无同键记录：直接整行写入（显示字段按物理键派生）
     #[test]
     fn test_restore_missing_row_inserted() {
         let db = crate::init_in_memory_database().unwrap();
         let repo = ReadRecordRepository::new(db.connection());
 
         repo.upsert_restore(&ReadRecord {
-            device_id: "".to_string(),
-            book_name: "书D".to_string(),
-            author: "作者戊".to_string(),
+            device_id: String::new(),
+            book_name: "书E".to_string(),
+            author: "作者己".to_string(),
             read_time: 42,
             last_read: 7,
+            ..Default::default()
         })
         .unwrap();
 
-        let row = repo.get_record("书D").unwrap().unwrap();
-        assert_eq!(row.author, "作者戊");
+        let row = repo.get_record("书E").unwrap().unwrap();
+        assert_eq!(row.author, "作者己");
         assert_eq!(row.read_time, 42);
         assert_eq!(row.last_read, 7);
+        assert_eq!(row.display_book_name, "书E");
+        assert_eq!(row.display_author, "作者己");
+    }
+
+    /// 显示元数据：库内有编辑（metadataEditedAt>0）且不旧于传入 → 保留库内显示值
+    #[test]
+    fn test_restore_display_metadata_newer_edited_wins() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        let edited = ReadRecord {
+            book_name: "书F".to_string(),
+            author: "作者庚".to_string(),
+            read_time: 100,
+            last_read: 10,
+            metadata_edited_at: 50,
+            display_book_name: "编辑书名".to_string(),
+            display_author: "编辑作者".to_string(),
+            ..Default::default()
+        };
+        repo.write_row(&edited).unwrap();
+
+        repo.upsert_restore(&ReadRecord {
+            device_id: String::new(),
+            book_name: "书F".to_string(),
+            author: "作者庚".to_string(),
+            read_time: 200,
+            last_read: 20,
+            metadata_edited_at: 10,
+            display_book_name: "旧编辑".to_string(),
+            display_author: "旧作者".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let row = repo.get_record("书F").unwrap().unwrap();
+        assert_eq!(row.read_time, 200);
+        assert_eq!(row.display_book_name, "编辑书名");
+        assert_eq!(row.display_author, "编辑作者");
+        assert_eq!(row.metadata_edited_at, 50);
+    }
+
+    /// 显示元数据：传入编辑时间更新 → 采用传入显示值
+    #[test]
+    fn test_restore_display_metadata_incoming_edited_wins() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        let old = ReadRecord {
+            book_name: "书G".to_string(),
+            author: "作者辛".to_string(),
+            read_time: 100,
+            last_read: 10,
+            metadata_edited_at: 10,
+            display_book_name: "旧书名".to_string(),
+            display_author: "旧作者".to_string(),
+            ..Default::default()
+        };
+        repo.write_row(&old).unwrap();
+
+        repo.upsert_restore(&ReadRecord {
+            device_id: String::new(),
+            book_name: "书G".to_string(),
+            author: "作者辛".to_string(),
+            read_time: 200,
+            last_read: 20,
+            metadata_edited_at: 90,
+            display_book_name: "新书名".to_string(),
+            display_author: "新作者".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let row = repo.get_record("书G").unwrap().unwrap();
+        assert_eq!(row.display_book_name, "新书名");
+        assert_eq!(row.display_author, "新作者");
+        assert_eq!(row.metadata_edited_at, 90);
     }
 }

@@ -24,8 +24,8 @@ pub use rule::{
 };
 
 pub use misc::{
-    AutoTaskRule, BookCacheInfo, BookChapterReview, BookGroup, BookProgress, BookSourcePart,
-    Bookmark, Cache, Cookie, DictRule, HttpTts, KeyboardAssist, ReadRecord, ReadRecordShow,
-    ReplaceBook, ReplaceRule, RssArticle, RssReadRecord, RssStar, RuleSub, SearchBook,
-    SearchKeyword, Server, ServerType, TxtTocRule, WebDavConfig,
+    AutoTaskRule, BookCacheInfo, BookChapterReview, BookGroup, BookMemo, BookProgress,
+    BookSourcePart, Bookmark, Cache, Cookie, DictRule, HttpTts, KeyboardAssist, ReadRecord,
+    ReadRecordShow, ReplaceBook, ReplaceRule, RssArticle, RssReadRecord, RssStar, RuleSub,
+    SearchBook, SearchKeyword, Server, ServerType, TxtTocRule, WebDavConfig,
 };
