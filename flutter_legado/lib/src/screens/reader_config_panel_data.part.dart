@@ -574,6 +574,28 @@ class ReaderAdvancedConfig {
     await prefs.setBool('paddingDisplayCutouts', paddingDisplayCutouts);
   }
 
+  /// 应用阅读主题快照中的排版字段（批38）
+  ///
+  /// 只覆盖主题快照包含的字段（边距/字距/缩进/段距/字重/斜体/文字色/
+  /// 标题字体），其余阅读偏好（自动翻页/点击区域/状态栏/翻页模式等）
+  /// 保持用户当前设置不动。返回新实例，持久化由调用方 `save()` 负责。
+  ReaderAdvancedConfig withThemeStyle(ReaderThemeStyle style) {
+    final cfg = copy();
+    cfg.letterSpacing = style.letterSpacing;
+    cfg.paragraphIndent = style.paragraphIndent;
+    cfg.paragraphSpacing = style.paragraphSpacing;
+    cfg.textBold = style.textBold;
+    cfg.italic = style.italic;
+    // 0 = 跟随背景自动，与界面自定义配色对话框的「自动」同一语义
+    cfg.customTextColor = style.textColor;
+    cfg.pageMarginTop = style.marginTop;
+    cfg.pageMarginBottom = style.marginBottom;
+    cfg.pageMarginLeft = style.marginLeft;
+    cfg.pageMarginRight = style.marginRight;
+    cfg.titleFont = style.titleFont;
+    return cfg;
+  }
+
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
         autoPageTurn: autoPageTurn,
         autoPageTurnInterval: autoPageTurnInterval,
