@@ -288,6 +288,14 @@ class PrefKeys {
   /// 文本操作菜单显示应用（仅 Android 生效，默认 true）
   static const processText = 'process_text';
 
+  /// 拦截书源打开浏览器（批39，默认 false）
+  ///
+  /// 键名逐字对齐参考版 `OtherSettings.blockSourceBrowser`：开启后书源经
+  /// `java.openUrl` / `java.showBrowser` / `java.startBrowser` 发起的内置/
+  /// 外部浏览器跳转一律拦截并提示（`legado:/yuedu:` 关联导入仍走站内）。
+  /// 随 Flutter JSON 备份 `appPrefs` 往返。
+  static const blockSourceBrowser = 'blockSourceBrowser';
+
   // [UI-fix v2.0.5 | 2026-08-08] 注：以下三个日志键与 Android 原版
   // AppConfig 同名，但当前桌面端日志开关真源为 CrashLogService
   // （crash_record_* 键），本组键预留未来对齐 Android AppConfig 用，

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
 import '../utils/legado_deep_link.dart';
 import '../utils/video_play_utils.dart';
@@ -863,8 +864,35 @@ class PlatformBridgeService {
 
   // ========== 动作类 action：UI 分发（fire-and-forget） ==========
 
+  /// 「拦截书源打开浏览器」分派决策覆写（测试性，同
+  /// [saveViaDownloadsOverride] 范式）：null = 读全局设置镜像
+  /// （`uiSettingsListenable.blockSourceBrowser`，随 `PrefKeys.blockSourceBrowser`
+  /// 启动加载，默认关）。
+  bool? blockSourceBrowserOverride;
+
+  /// 当前是否拦截书源打开浏览器（批39，对齐参考版
+  /// `OtherSettings.blockSourceBrowser` + `SourceVerificationHelp` 提示文案）
+  ///
+  /// 同步读取 [uiSettingsListenable]（UiSettingsNotifier 启动加载并镜像），
+  /// 避免在桥接动作里做异步偏好读取（偏好 IO 失败不得阻塞浏览器动作）。
+  bool get _isSourceBrowserBlocked =>
+      blockSourceBrowserOverride ??
+      uiSettingsListenable.value.blockSourceBrowser;
+
+  /// 拦截提示（对齐参考版 block_source_browser_error）
+  void _notifySourceBrowserBlocked(String url) {
+    debugPrint('[PlatformBridge] 已阻止书源打开浏览器：$url');
+    _showSnackBar('已阻止书源打开内置浏览器');
+  }
+
   /// showBrowser → 应用内浏览器（对齐 Kotlin 应用内 WebView 对话框语义）
+  ///
+  /// 开启「拦截书源打开浏览器」时直接拦截并提示。
   void _showBrowser({required String url, required String html}) {
+    if (_isSourceBrowserBlocked) {
+      _notifySourceBrowserBlocked(url);
+      return;
+    }
     final navigator = _navigator;
     if (navigator == null) {
       debugPrint('[PlatformBridge] openBrowser：Navigator 未装配，忽略 url=$url');
@@ -884,6 +912,10 @@ class PlatformBridgeService {
     required String title,
     required String html,
   }) {
+    if (_isSourceBrowserBlocked) {
+      _notifySourceBrowserBlocked(url);
+      return;
+    }
     if (html.isNotEmpty || url.isEmpty) {
       _showBrowser(url: url, html: html);
       return;
@@ -926,9 +958,16 @@ class PlatformBridgeService {
   void _openUrl({required String url, required String mimeType}) {
     if (url.isEmpty) return;
     if (LegadoDeepLink.isImportScheme(url)) {
+      // `legado:/yuedu:` 关联导入属站内链路（导入确认页），不受浏览器拦截
+      // 影响（对齐原版直进 OnLineImportActivity 语义）
       // 忽略未 await：深链导航为 fire-and-forget UI 动作
       // ignore: unawaited_futures
       DeepLinkService.instance.handleUrl(url);
+      return;
+    }
+    // [批39] 开启「拦截书源打开浏览器」后，书源 openUrl 一律拦截并提示
+    if (_isSourceBrowserBlocked) {
+      _notifySourceBrowserBlocked(url);
       return;
     }
     final navigator = _navigator;

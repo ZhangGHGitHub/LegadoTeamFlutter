@@ -124,6 +124,12 @@ class UiSettingsState {
   /// 启用毛玻璃（BackdropFilter，默认关）
   final bool enableBlur;
 
+  /// 拦截书源打开浏览器（批39，默认关）
+  ///
+  /// 开启后书源 JS 的 openUrl/showBrowser/startBrowser 一律拦截并提示
+  /// （对齐参考版 `OtherSettings.blockSourceBrowser`）；随备份 appPrefs 往返。
+  final bool blockSourceBrowser;
+
   /// 限制封面比例（批39，默认开）
   ///
   /// 开启：书架/搜索/发现/详情封面固定 5:7（对齐参考版
@@ -183,6 +189,7 @@ class UiSettingsState {
     this.overrideBaseCardCornerRadius = false,
     this.baseCardCornerRadius = 16,
     this.enableBlur = false,
+    this.blockSourceBrowser = false,
     this.restrictCoverRatio = true,
     this.topBarBlurRadius = 24,
     this.topBarBlurAlpha = 73,
@@ -214,6 +221,7 @@ class UiSettingsState {
     bool? overrideBaseCardCornerRadius,
     int? baseCardCornerRadius,
     bool? enableBlur,
+    bool? blockSourceBrowser,
     bool? restrictCoverRatio,
     int? topBarBlurRadius,
     int? topBarBlurAlpha,
@@ -248,6 +256,7 @@ class UiSettingsState {
           overrideBaseCardCornerRadius ?? this.overrideBaseCardCornerRadius,
       baseCardCornerRadius: baseCardCornerRadius ?? this.baseCardCornerRadius,
       enableBlur: enableBlur ?? this.enableBlur,
+      blockSourceBrowser: blockSourceBrowser ?? this.blockSourceBrowser,
       restrictCoverRatio: restrictCoverRatio ?? this.restrictCoverRatio,
       topBarBlurRadius: topBarBlurRadius ?? this.topBarBlurRadius,
       topBarBlurAlpha: topBarBlurAlpha ?? this.topBarBlurAlpha,
@@ -345,6 +354,10 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       ),
       enableBlur: await _settings.getBoolPref(
         PrefKeys.enableBlur,
+        defaultValue: false,
+      ),
+      blockSourceBrowser: await _settings.getBoolPref(
+        PrefKeys.blockSourceBrowser,
         defaultValue: false,
       ),
       restrictCoverRatio: await _settings.getBoolPref(
@@ -530,6 +543,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(enableBlur: value);
     _sync();
     await _settings.setBoolPref(PrefKeys.enableBlur, value);
+  }
+
+  /// 拦截书源打开浏览器（批39）
+  Future<void> setBlockSourceBrowser(bool value) async {
+    if (state.blockSourceBrowser == value) return;
+    state = state.copyWith(blockSourceBrowser: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.blockSourceBrowser, value);
   }
 
   /// 限制封面比例（批39）

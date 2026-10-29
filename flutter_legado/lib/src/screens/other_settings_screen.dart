@@ -34,6 +34,7 @@ import 'direct_link_upload_settings_sheet.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/source_check/check_source_notifier.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/ios_widgets.dart';
@@ -84,6 +85,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   int _webPort = 1122;
   int _threadCount = 16;
   bool _processText = true;
+  bool _blockSourceBrowser = false;
   bool _recordLog = false;
   bool _recordHttpLog = false;
   bool _recordHeapDump = false;
@@ -165,6 +167,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     _threadCount = await s.getIntPref(PrefKeys.threadCount, defaultValue: 16);
     _processText =
         await s.getBoolPref(PrefKeys.processText, defaultValue: true);
+    _blockSourceBrowser = await s.getBoolPref(
+      PrefKeys.blockSourceBrowser,
+      defaultValue: false,
+    );
     // 日志开关经 CrashLogService（已接通日志记录行为）
     _recordLog = await CrashLogService.instance.getRecordLog();
     // HTTP 日志开关：prefs 仅作旧版本兼容回退，真源为 Rust caches
@@ -489,6 +495,20 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 title: '清除 WebView 数据',
                 subtitle: '清除内置浏览器所有数据',
                 onTap: _clearWebViewData,
+              ),
+              // [批39] 拦截书源打开浏览器（对齐参考版 blockSourceBrowser）
+              SettingSwitchRow(
+                title: '拦截书源打开浏览器',
+                subtitle: '开启后书源无法通过 java.startBrowser 等接口弹出浏览器',
+                value: _blockSourceBrowser,
+                onChanged: (v) {
+                  setState(() => _blockSourceBrowser = v);
+                  // 经 UiSettingsNotifier 写入偏好并同步全局镜像，
+                  // 桥接层（PlatformBridgeService）即时生效
+                  ref
+                      .read(uiSettingsProvider.notifier)
+                      .setBlockSourceBrowser(v);
+                },
               ),
               IosListTile(
                 title: '压缩数据库',
