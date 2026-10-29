@@ -167,6 +167,8 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
             icon: const Icon(Symbols.playlist_add_rounded),
             onPressed: () => _addLoadedBooksToShelf(context, ref, widget.args!),
           ),
+          // [批39 审查回修] 刷新入口（任何页可用，回到第 1 页）
+          ExploreRefreshControl(args: args),
           ExplorePageControl(args: args),
         ],
       ),

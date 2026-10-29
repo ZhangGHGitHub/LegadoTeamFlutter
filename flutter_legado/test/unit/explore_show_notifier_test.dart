@@ -546,25 +546,125 @@ void main() {
       when(() => mockApi.exploreFetchBooks(any(), any(), any()))
           .thenAnswer((invocation) async {
         final page = invocation.positionalArguments[2] as int;
-        if (page == 2) return gate.future;
+        // [批39 审查回修] 先把 displayPage 推进到 2，再让第 3 页挂起——
+        // 否则 loadPreviousPage 会被「displayPage <= 1」守卫拦下，测不到
+        // isLoading 互斥分支。
+        if (page == 3) return gate.future;
         return makeBooks(2, startId: page * 10);
       });
 
       spawn(pagedArgs);
       await pumpInit();
       expect(readState(pagedArgs).displayPage, equals(1));
+      await readNotifier(pagedArgs).loadMore();
+      expect(readState(pagedArgs).displayPage, equals(2));
 
+      // 加载更多（第 3 页）挂起中
       final more = readNotifier(pagedArgs).loadMore();
       await pumpEventQueue();
       expect(readState(pagedArgs).isLoading, isTrue);
 
-      // 上一页请求被忽略（displayPage 仍为 1，也不进入 isLoadingPrevious）
+      // 上一页请求被忽略：不进入 isLoadingPrevious、页号不变
       await readNotifier(pagedArgs).loadPreviousPage();
       expect(readState(pagedArgs).isLoadingPrevious, isFalse);
-
-      gate.complete(makeBooks(2, startId: 20));
-      await more;
       expect(readState(pagedArgs).displayPage, equals(2));
+
+      gate.complete(makeBooks(2, startId: 30));
+      await more;
+      expect(readState(pagedArgs).displayPage, equals(3));
+      expect(readState(pagedArgs).books.length, equals(6));
+    });
+
+    test('上一页为空页：displayPage 回退、列表不变、不报错', () async {
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        return page == 1 ? makeBooks(2, startId: 10) : makeBooks(2, startId: 20);
+      });
+
+      spawn();
+      await pumpInit();
+      await readNotifier().loadMore();
+      expect(readState().displayPage, equals(2));
+      final countAfterMore = readState().books.length;
+
+      // 第 1 页已无内容（榜单收缩/源端翻页到头）
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((_) async => <SearchBook>[]);
+      await readNotifier().loadPreviousPage();
+
+      // 成功但空页：页号回退到 1，书籍不增不减，无错误
+      expect(readState().displayPage, equals(1));
+      expect(readState().books.length, equals(countAfterMore));
+      expect(readState().previousError, isNull);
+      expect(readState().isLoadingPrevious, isFalse);
+    });
+
+    test('refresh 在加载上一页在途时被忽略并返回 false', () async {
+      final gate = Completer<List<SearchBook>>();
+      var calls = 0;
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        calls++;
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 1 && calls > 2) return gate.future;
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn(pagedArgs);
+      await pumpInit();
+      await readNotifier(pagedArgs).loadMore();
+      expect(readState(pagedArgs).displayPage, equals(2));
+
+      final prev = readNotifier(pagedArgs).loadPreviousPage();
+      await pumpEventQueue();
+      expect(readState(pagedArgs).isLoadingPrevious, isTrue);
+
+      // 在途时刷新被忽略：返回 false（UI 据此提示），状态不被清空
+      final accepted = await readNotifier(pagedArgs).refresh();
+      expect(accepted, isFalse);
+      expect(readState(pagedArgs).books, isNotEmpty);
+      expect(readState(pagedArgs).displayPage, equals(2));
+
+      gate.complete(<SearchBook>[
+        const SearchBook(
+          bookUrl: 'http://book.com/0',
+          name: '书籍0',
+          author: '作者0',
+        ),
+      ]);
+      await prev;
+      expect(readState(pagedArgs).displayPage, equals(1));
+      expect(readState(pagedArgs).books.first.name, equals('书籍0'));
+    });
+  });
+
+  group('发现列表去重键（批39 审查回修）', () {
+    test('无 URL 无作者书按同名出现序生成稳定键（不使用列表下标）', () {
+      const a = SearchBook(bookUrl: '', name: '同名书', author: '');
+      const b = SearchBook(bookUrl: '', name: '同名书', author: '');
+      const c = SearchBook(bookUrl: '', name: '另一本', author: '');
+
+      final before = exploreBookDedupeKeys(const [a, b, c]);
+      expect(before, ['n:同名书|0', 'n:同名书|1', 'n:另一本|0']);
+
+      // prepend 一本新书（不同名）→ 已有书键不漂移
+      const prepended = SearchBook(bookUrl: '', name: '新书', author: '');
+      final after = exploreBookDedupeKeys(const [prepended, a, b, c]);
+      expect(after, [
+        'n:新书|0',
+        'n:同名书|0',
+        'n:同名书|1',
+        'n:另一本|0',
+      ]);
+    });
+
+    test('有 bookUrl/author 的书键与顺序无关', () {
+      final keys = exploreBookDedupeKeys(const [
+        SearchBook(bookUrl: 'http://b/1', name: '书1'),
+        SearchBook(bookUrl: '', name: '书2', author: '作者2'),
+      ]);
+      expect(keys, ['u:http://b/1', 'na:书2|作者2']);
     });
   });
 }

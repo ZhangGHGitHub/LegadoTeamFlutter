@@ -205,43 +205,46 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
 
   /// 触发加载上一页（失败时由顶部条内联重试）
   ///
-  /// 加载前记录锚点（首可见书 + 相对偏移），完成后先按估值补偿让锚点项
-  /// 进入构建范围，再在下一帧按真实布局校正，保证视觉位置不跳。
+  /// [批39 审查回修] 锚点在**请求返回后、列表重建前**采集：慢网期间用户
+  /// 可能已经滚动，请求发出时采集的锚点会与返回时的视口脱节（补偿会把
+  /// 位置拉回旧视口）。此时旧布局仍然有效（state 更新只调度下一帧重建）。
+  /// 加载前只记录条目数，用于判断是否新增了书（空页/整页重复也要补偿，
+  /// 因为 page=1 后顶部提示条消失会让列表整体上移）。
   Future<void> _tryLoadPreviousPage() async {
-    final state = ref.read(exploreShowNotifierProvider(widget.args));
-    if (state.displayPage <= 1 ||
-        state.isLoading ||
-        state.isLoadingPrevious) {
+    final before = ref.read(exploreShowNotifierProvider(widget.args));
+    if (before.displayPage <= 1 ||
+        before.isLoading ||
+        before.isLoadingPrevious) {
       return;
     }
-    final anchor = _captureAnchor();
-    final countBefore = state.books.length;
+    final countBefore = before.books.length;
     await ref
         .read(exploreShowNotifierProvider(widget.args).notifier)
         .loadPreviousPage();
     if (!mounted) return;
     final next = ref.read(exploreShowNotifierProvider(widget.args));
-    if (next.books.length <= countBefore) return; // 失败或整页重复：保持原位
-    if (anchor != null) {
-      await _restoreAnchor(anchor, next.books.length - countBefore);
-    }
+    // displayPage 仅在请求成功后回退（失败/被忽略时保持不变）
+    if (next.displayPage >= before.displayPage) return;
+    final anchor = _captureAnchor();
+    if (anchor == null) return;
+    await _restoreAnchor(anchor, next.books.length - countBefore);
   }
 
-  /// 顶部条点击重试（失败态）
-  Future<void> _retryPreviousPage() async {
-    final state = ref.read(exploreShowNotifierProvider(widget.args));
-    if (state.isLoadingPrevious || state.isLoading) return;
-    final anchor = _captureAnchor();
-    final countBefore = state.books.length;
-    await ref
+  /// 下拉刷新/顶栏刷新共用入口
+  ///
+  /// [批39 审查回修] 刷新会与加载更多/加载上一页互斥：被忽略时给出提示，
+  /// 避免「下拉了没反应」。
+  Future<void> _refreshFromList() async {
+    final accepted = await ref
         .read(exploreShowNotifierProvider(widget.args).notifier)
-        .retryPreviousPage();
-    if (!mounted) return;
-    final next = ref.read(exploreShowNotifierProvider(widget.args));
-    if (next.books.length <= countBefore) return;
-    if (anchor != null) {
-      await _restoreAnchor(anchor, next.books.length - countBefore);
-    }
+        .refresh();
+    if (accepted || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('正在加载，请稍候再刷新'),
+        duration: Duration(seconds: 1),
+      ),
+    );
   }
 
   /// 记录当前首个可见书籍卡片的去重键与相对偏移
@@ -265,19 +268,24 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   }
 
   /// 恢复锚点：先按新增条目估值补偿，再在下一帧按真实布局校正
+  ///
+  /// [addedCount] 可为 0（空页/整页重复）：此时无新增行，仍要等新布局
+  /// （顶部条消失等）完成后按锚点校正，避免列表整体位移。
   Future<void> _restoreAnchor(_PreviousPageAnchor anchor, int addedCount) async {
-    if (!_scrollController.hasClients || addedCount <= 0) return;
+    if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    final approx = explorePreviousPageShift(
-      addedCount: addedCount,
-      gridCount: widget.gridCount,
-      gridRowExtent: _gridRowExtent,
-    );
-    if (approx > 0) {
-      _scrollController.jumpTo(
-        (position.pixels + approx)
-            .clamp(position.minScrollExtent, position.maxScrollExtent),
+    if (addedCount > 0) {
+      final approx = explorePreviousPageShift(
+        addedCount: addedCount,
+        gridCount: widget.gridCount,
+        gridRowExtent: _gridRowExtent,
       );
+      if (approx > 0) {
+        _scrollController.jumpTo(
+          (position.pixels + approx)
+              .clamp(position.minScrollExtent, position.maxScrollExtent),
+        );
+      }
     }
     // 等新布局完成后再按锚点真实位置校正（估值与真实行高有偏差）
     await WidgetsBinding.instance.endOfFrame;
@@ -351,16 +359,23 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     }
 
     // [A1 对齐 | Qoder UI] 关键字筛选（匹配书名/作者，忽略大小写）
+    // [批39 审查回修] 渲染键与 Notifier 去重键同源（无 URL 书按同名出现序
+    // 生成稳定 ordinal）：先对整表生成键，筛选时按键位取值，避免筛掉同
+    // 名书后 ordinal 变化导致键漂移。
     final keyword = widget.filterKeyword.trim().toLowerCase();
-    final visibleBooks = keyword.isEmpty
-        ? state.books
-        : state.books
-            .where(
-              (b) =>
-                  b.name.toLowerCase().contains(keyword) ||
-                  b.author.toLowerCase().contains(keyword),
-            )
-            .toList();
+    final allKeys = exploreBookDedupeKeys(state.books);
+    final visibleBooks = <SearchBook>[];
+    final visibleKeys = <String>[];
+    for (var i = 0; i < state.books.length; i++) {
+      final b = state.books[i];
+      if (keyword.isNotEmpty &&
+          !b.name.toLowerCase().contains(keyword) &&
+          !b.author.toLowerCase().contains(keyword)) {
+        continue;
+      }
+      visibleBooks.add(b);
+      visibleKeys.add(allKeys[i]);
+    }
     if (visibleBooks.isEmpty) {
       return EmptyState(
         icon: Symbols.filter_alt_rounded,
@@ -372,7 +387,14 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     // 网格形态（发现页源内容模式的布局列数，对齐参考版 layoutState=1）
     final columns = widget.gridCount;
     if (columns != null && columns >= 1) {
-      return _buildGridBody(args, state, visibleBooks, columns, colorScheme);
+      return _buildGridBody(
+        args,
+        state,
+        visibleBooks,
+        visibleKeys,
+        columns,
+        colorScheme,
+      );
     }
 
     return Column(
@@ -386,8 +408,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
             child: CustomRefreshIndicator(
               // 与加载上一页互斥：顶栏有上一页可用时，顶部下拉归「加载上一页」
               enabled: state.displayPage <= 1,
-              onRefresh: () =>
-                  ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+              onRefresh: _refreshFromList,
               child: ListView.separated(
                 controller: _scrollController,
                 // 内容不足一屏时也允许下拉（刷新/加载上一页手势）
@@ -395,7 +416,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                 padding: widget.padding,
                 itemCount: visibleBooks.length + 2,
                 separatorBuilder: (context, index) {
-                  if (index == 0 || index >= state.books.length) {
+                  if (index == 0 || index >= visibleBooks.length) {
                     return const SizedBox.shrink();
                   }
                   return Divider(
@@ -409,7 +430,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                     return _buildLoadPreviousIndicator(
                       state,
                       colorScheme,
-                      onRetry: _retryPreviousPage,
+                      onRetry: _tryLoadPreviousPage,
                     );
                   }
                   if (index == visibleBooks.length + 1) {
@@ -417,8 +438,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                   }
 
                   final book = visibleBooks[index - 1];
-                  final dedupeKey =
-                      exploreBookDedupeKey(book, listIndex: index - 1);
+                  final dedupeKey = visibleKeys[index - 1];
                   return RepaintBoundary(
                     key: _itemKey(dedupeKey),
                     child: _BookItem(
@@ -442,6 +462,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     ExploreShowArgs args,
     ExploreShowState state,
     List<SearchBook> visibleBooks,
+    List<String> visibleKeys,
     int columns,
     ColorScheme colorScheme,
   ) {
@@ -457,8 +478,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
             child: CustomRefreshIndicator(
               // 与加载上一页互斥（同列表形态）
               enabled: state.displayPage <= 1,
-              onRefresh: () =>
-                  ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+              onRefresh: _refreshFromList,
               // 按可用宽度推导网格单元尺寸：封面保持 3:4 等比，
               // 文本区高度随字体缩放自适应（避免固定 childAspectRatio 在
               // 大列数/大字号下压扁封面或溢出）
@@ -507,7 +527,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                           child: _buildLoadPreviousIndicator(
                             state,
                             colorScheme,
-                            onRetry: _retryPreviousPage,
+                            onRetry: _tryLoadPreviousPage,
                           ),
                         ),
                       SliverPadding(
@@ -525,10 +545,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final book = visibleBooks[index];
-                              final dedupeKey = exploreBookDedupeKey(
-                                book,
-                                listIndex: index,
-                              );
+                              final dedupeKey = visibleKeys[index];
                               return RepaintBoundary(
                                 key: _itemKey(dedupeKey),
                                 child: _BookGridItem(

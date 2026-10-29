@@ -126,13 +126,11 @@ class ExploreShowNotifier
   }
 
   /// 加载上一页失败后的顶部条重试
-  Future<void> retryPreviousPage() async {
-    if (state.previousError == null && !state.isLoadingPrevious) {
-      // 无失败记录时按普通加载上一页处理（顶部条点击兜底）
-      state = state.copyWith(previousError: null);
-    }
-    await loadPreviousPage();
-  }
+  ///
+  /// [批39 审查回修] 删除原「无失败记录时置 previousError=null」的空分支：
+  /// [loadPreviousPage] 入口本身就会清空 [ExploreShowState.previousError]，
+  /// 该分支不改变任何行为。
+  Future<void> retryPreviousPage() => loadPreviousPage();
 
   /// 跳转到指定页（对标参考版 jumpToPage / Android skipPage + explore）
   ///
@@ -181,9 +179,11 @@ class ExploreShowNotifier
 
   /// 刷新（清空重新加载，对标 Android 下拉刷新）
   ///
-  /// 与加载上一页互斥：上一页在途时忽略刷新（两链路都会改写 books）。
-  Future<void> refresh() async {
-    if (state.isLoading || state.isLoadingPrevious) return;
+  /// 与加载上一页/加载更多互斥：在途时忽略刷新（两条链路都会改写 books）。
+  /// 返回本次是否被接受——被忽略时调用方（下拉刷新/顶栏刷新入口）据此
+  /// 给出提示，避免「下拉了没反应」。
+  Future<bool> refresh() async {
+    if (state.isLoading || state.isLoadingPrevious) return false;
     state = state.copyWith(
       books: [],
       page: 1,
@@ -193,6 +193,7 @@ class ExploreShowNotifier
       previousError: null,
     );
     await fetchBooks(replace: true);
+    return true;
   }
 
   /// 加载下一页（上滑触底时调用）
@@ -208,28 +209,17 @@ class ExploreShowNotifier
       return List<SearchBook>.from(incoming);
     }
 
-    final keys = <String>{};
+    // [批39 审查回修] 先按合并顺序拼出候选序列，再一次性生成去重键
+    // （无 URL/无作者书按「同名出现序」分配稳定 ordinal）；prepend 后
+    // 已有书的键不因列表下标后移而漂移（渲染键/锚点键与 Notifier 同源）。
+    final sequence = prepend
+        ? <SearchBook>[...incoming, ...existing]
+        : <SearchBook>[...existing, ...incoming];
+    final keys = exploreBookDedupeKeys(sequence);
+    final seen = <String>{};
     final merged = <SearchBook>[];
-
-    void addBook(SearchBook book, int index) {
-      final key = exploreBookDedupeKey(book, listIndex: index);
-      if (keys.add(key)) merged.add(book);
-    }
-
-    if (prepend) {
-      for (var i = 0; i < incoming.length; i++) {
-        addBook(incoming[i], i);
-      }
-      for (var i = 0; i < existing.length; i++) {
-        addBook(existing[i], incoming.length + i);
-      }
-    } else {
-      for (var i = 0; i < existing.length; i++) {
-        addBook(existing[i], i);
-      }
-      for (var i = 0; i < incoming.length; i++) {
-        addBook(incoming[i], existing.length + i);
-      }
+    for (var i = 0; i < sequence.length; i++) {
+      if (seen.add(keys[i])) merged.add(sequence[i]);
     }
     return merged;
   }

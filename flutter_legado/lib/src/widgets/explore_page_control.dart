@@ -13,6 +13,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -20,6 +21,40 @@ import '../providers/explore/explore_show_notifier.dart';
 
 /// 页码输入最大位数（对齐参考版 `input.filter(Char::isDigit).take(4)`）
 const int explorePageInputMaxLength = 4;
+
+/// 发现分类刷新按钮（批39 审查回修）
+///
+/// page > 1 时顶部下拉手势归「加载上一页」、下拉刷新被禁用；该按钮在
+/// **任何页**都可用，点击回到第 1 页重新加载（与加载上一页/加载更多互斥，
+/// 被忽略时提示「正在加载，请稍候再刷新」）。
+///
+/// 三个宿主（独立发现页 AppBar、平板双栏右栏顶栏、源内容模式分类行）共用。
+class ExploreRefreshControl extends ConsumerWidget {
+  final ExploreShowArgs args;
+
+  const ExploreRefreshControl({super.key, required this.args});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      key: const ValueKey('explore-refresh-action'),
+      tooltip: '刷新',
+      icon: const Icon(Symbols.refresh_rounded),
+      onPressed: () async {
+        final accepted = await ref
+            .read(exploreShowNotifierProvider(args).notifier)
+            .refresh();
+        if (accepted || !context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('正在加载，请稍候再刷新'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      },
+    );
+  }
+}
 
 /// 发现分类页码按钮（AppBar actions 或双栏右栏顶栏）
 class ExplorePageControl extends ConsumerWidget {

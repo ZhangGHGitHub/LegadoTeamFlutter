@@ -255,6 +255,9 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          // [批39 审查回修] 双栏右栏顶栏同样提供刷新入口
+                          // （page>1 时下拉刷新被「加载上一页」占用）
+                          ExploreRefreshControl(args: _selectedCategory!),
                           ExplorePageControl(args: _selectedCategory!),
                         ],
                       ),

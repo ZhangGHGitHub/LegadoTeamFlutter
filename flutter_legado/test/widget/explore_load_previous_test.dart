@@ -5,7 +5,11 @@
 // - 列表在顶部继续下拉（overscroll 后松手）触发 explore(oldPage - 1)；
 // - 新页 prepend 到表头，首可见项 + offset 锚点保持视觉位置；
 // - 失败时顶部条内联重试；
-// - page = 1 不触发（下拉刷新保持原行为）。
+// - page = 1 不触发（下拉刷新保持原行为）；
+// - [批39 审查回修] 请求在途滚动按响应时刻锚点恢复、空页同样补偿、
+//   顶栏刷新入口（任何页回到第 1 页）、刷新被忽略时提示。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -193,5 +197,162 @@ void main() {
     expect(find.text('第 1 页'), findsOneWidget);
     expect(find.text('书籍0'), findsOneWidget);
     expect(stateOf(tester).previousError, isNull);
+  });
+
+  // ─── [批39 审查回修] 在途滚动 / 空页补偿 / 顶栏刷新 / 刷新被忽略提示 ─────
+
+  testWidgets('请求在途滚动：锚点按响应时刻的视口恢复（不被拉回旧位置）',
+      (tester) async {
+    final previousGate = Completer<List<SearchBook>>();
+    var page1Calls = 0;
+    when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+        .thenAnswer((invocation) async {
+      final page = invocation.positionalArguments[2] as int;
+      if (page == 1) {
+        page1Calls++;
+        // 首屏第 1 页立即返回；之后的第 1 页请求（加载上一页）挂起
+        if (page1Calls == 1) return pageOneBooks();
+        return previousGate.future;
+      }
+      return booksOfPage(page);
+    });
+
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+    await notifierOf(tester).loadMore();
+    await tester.pumpAndSettle();
+    expect(find.text('第 2 页'), findsOneWidget);
+
+    // 顶部下拉触发上一页（请求挂起；顶部条转圈动画常驻 → 只能 pump）
+    await tester.drag(find.text('书籍1'), const Offset(0, 120));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(stateOf(tester).isLoadingPrevious, isTrue);
+
+    // 在途期间继续向下滚动（用户没有停在触发位置）
+    await tester.drag(find.text('书籍2'), const Offset(0, -120));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    final beforeDy = tester.getTopLeft(find.text('书籍3')).dy;
+
+    // 响应回来：旧实现用「请求前」的锚点，会把视口拉回触发时的位置
+    previousGate.complete([prependedBook, ...pageOneBooks()]);
+    await tester.pumpAndSettle();
+
+    expect(stateOf(tester).books.first.name, equals('书籍0'));
+    final afterDy = tester.getTopLeft(find.text('书籍3')).dy;
+    expect(
+      (afterDy - beforeDy).abs(),
+      lessThan(2.0),
+      reason: '锚点必须按响应时刻的首可见项采集（在途滚动的位移不得被抹掉）',
+    );
+  });
+
+  testWidgets('上一页空页：列表不增长也要按锚点补偿顶部条高度变化',
+      (tester) async {
+    final previousGate = Completer<List<SearchBook>>();
+    var page1Calls = 0;
+    when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+        .thenAnswer((invocation) async {
+      final page = invocation.positionalArguments[2] as int;
+      if (page == 1) {
+        page1Calls++;
+        // 首屏有数据；回退时的第 1 页挂起，随后返回空页
+        if (page1Calls == 1) return pageOneBooks();
+        return previousGate.future;
+      }
+      return booksOfPage(page);
+    });
+
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+    await notifierOf(tester).loadMore();
+    await tester.pumpAndSettle();
+    expect(find.text('下拉加载上一页'), findsOneWidget);
+
+    // 触发上一页（挂起），在途期间向下滚动，避免锚点被夹在顶部边界
+    await tester.drag(find.text('书籍1'), const Offset(0, 120));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(stateOf(tester).isLoadingPrevious, isTrue);
+    await tester.drag(find.text('书籍2'), const Offset(0, -120));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    final beforeDy = tester.getTopLeft(find.text('书籍3')).dy;
+
+    // 第 1 页返回空（loadPreviousPage 成功但无新书）
+    previousGate.complete(<SearchBook>[]);
+    await tester.pumpAndSettle();
+
+    expect(stateOf(tester).displayPage, equals(1));
+    expect(find.text('书籍3'), findsOneWidget);
+    // 顶部提示条消失（高度变化）后，锚点书仍停在原视觉位置
+    final afterDy = tester.getTopLeft(find.text('书籍3')).dy;
+    expect(
+      (afterDy - beforeDy).abs(),
+      lessThan(2.0),
+      reason: '空页/重复页也要补偿（page=1 后顶部提示条不再占位）',
+    );
+  });
+
+  testWidgets('顶栏刷新：page>1 也能回到第 1 页重新加载', (tester) async {
+    var refreshed = false;
+    when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+        .thenAnswer((invocation) async {
+      final page = invocation.positionalArguments[2] as int;
+      if (page == 1) {
+        return refreshed
+            ? bookRange(100)
+            : pageOneBooks();
+      }
+      return booksOfPage(page);
+    });
+
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+    await notifierOf(tester).loadMore();
+    await tester.pumpAndSettle();
+    expect(find.text('第 2 页'), findsOneWidget);
+
+    refreshed = true;
+    await tester.tap(find.byKey(const ValueKey('explore-refresh-action')));
+    await tester.pumpAndSettle();
+
+    // 回到第 1 页并按新结果重建列表
+    expect(find.text('第 1 页'), findsOneWidget);
+    expect(find.text('书籍100'), findsOneWidget);
+    expect(find.text('书籍1'), findsNothing);
+    expect(stateOf(tester).displayPage, equals(1));
+    expect(stateOf(tester).page, equals(2));
+  });
+
+  testWidgets('刷新被忽略（加载在途）时给出提示', (tester) async {
+    final gate = Completer<List<SearchBook>>();
+    when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+        .thenAnswer((invocation) async {
+      final page = invocation.positionalArguments[2] as int;
+      if (page == 2) return gate.future;
+      return pageOneBooks();
+    });
+
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+
+    // 加载更多挂起中 → 刷新与加载互斥
+    final more = notifierOf(tester).loadMore();
+    await tester.pump();
+    expect(stateOf(tester).isLoading, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('explore-refresh-action')));
+    await tester.pump();
+
+    expect(find.text('正在加载，请稍候再刷新'), findsOneWidget);
+    // 列表未被刷新清空
+    expect(find.text('书籍1'), findsOneWidget);
+
+    gate.complete(booksOfPage(2));
+    await more;
+    await tester.pumpAndSettle();
+    expect(find.text('第 2 页'), findsOneWidget);
   });
 }

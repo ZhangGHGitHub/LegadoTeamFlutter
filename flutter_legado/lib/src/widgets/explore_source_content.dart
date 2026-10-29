@@ -155,8 +155,12 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
                               .selectKind(sourceUrl, exploreKindKey(kind)),
                         ),
                       ),
-                      if (selectedArgs != null)
+                      if (selectedArgs != null) ...[
+                        // [批39 审查回修] 源内容模式同样提供刷新入口
+                        // （page>1 时下拉刷新被「加载上一页」占用）
+                        ExploreRefreshControl(args: selectedArgs),
                         ExplorePageControl(args: selectedArgs),
+                      ],
                       IconButton(
                         tooltip: '选择分类',
                         icon: const Icon(

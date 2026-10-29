@@ -85,15 +85,44 @@ class ExploreShowState with _$ExploreShowState {
 }
 
 /// 发现列表去重键（对标 Android SearchBook equals 以 bookUrl 为主；
-/// bookUrl 为空时回退 name+author，避免全部折叠为 1 条）
-String exploreBookDedupeKey(SearchBook book, {int? listIndex}) {
+/// bookUrl 为空时回退 name+author）
+///
+/// [批39 审查回修] 无 bookUrl 且无 author 的书不再使用列表下标（prepend
+/// 上一页后下标整体后移，渲染键/锚点键会漂移）——改用「同名书出现序号」
+/// （ordinal，由 [exploreBookDedupeKeys] 按列表顺序一次性分配），prepend
+/// 只在表头新增条目，已有书的 ordinal 不受影响。
+String exploreBookDedupeKey(SearchBook book, {int ordinal = 0}) {
   if (book.bookUrl.isNotEmpty) return 'u:${book.bookUrl}';
   final author = book.author.trim();
   if (author.isNotEmpty) return 'na:${book.name}|$author';
-  if (book.name.isNotEmpty) {
-    return 'n:${book.name}|${listIndex ?? 0}';
+  if (book.name.isNotEmpty) return 'n:${book.name}|$ordinal';
+  return 'i:${book.name}|$ordinal';
+}
+
+/// 为整表一次性生成去重键（无 URL/无作者书按出现序分配稳定 ordinal）
+///
+/// 发现列表（Notifier 合并去重）与列表渲染键（GlobalKey/锚点）必须使用
+/// 同一套键，否则 prepend 后同一本书在两处得到不同键。
+List<String> exploreBookDedupeKeys(List<SearchBook> books) {
+  final counters = <String, int>{};
+  final keys = <String>[];
+  for (final book in books) {
+    if (book.bookUrl.isNotEmpty) {
+      keys.add(exploreBookDedupeKey(book));
+      continue;
+    }
+    final author = book.author.trim();
+    if (author.isNotEmpty) {
+      keys.add(exploreBookDedupeKey(book));
+      continue;
+    }
+    // 同名（或无书名的空键位）出现序：按列表顺序递增，与位置无关
+    final base = book.name;
+    final ordinal = counters[base] ?? 0;
+    counters[base] = ordinal + 1;
+    keys.add(exploreBookDedupeKey(book, ordinal: ordinal));
   }
-  return 'i:${listIndex ?? 0}';
+  return keys;
 }
 
 /// 发现分类书籍展示扩展
