@@ -2638,8 +2638,9 @@ pub mod ffi {
 
     /// 清理 WebDAV 历史备份（契约 §2.28，批40）
     ///
-    /// 仅处理 `backup*.json`；`keep_count = 0` 不清理；先排除
-    /// `current_file_name` 再保留 `keep_count - 1` 份历史备份。
+    /// 仅处理严格命名的 `backup_yyyyMMdd_HHmmss[_SSS].json`（大小写敏感）；
+    /// `keep_count = 0` 不清理；先排除 `current_file_name` 再保留
+    /// `keep_count - 1` 份历史备份；删除键取 PROPFIND href。
     /// 返回 `BackupPruneResult` JSON（deleted / failed）。
     pub fn webdav_prune_backups(
         config_json: String,

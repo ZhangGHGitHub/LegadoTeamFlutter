@@ -1496,9 +1496,10 @@ abstract class BookApi {
 
   /// 清理 WebDAV 历史备份（契约 §2.28，批40）
   ///
-  /// 对齐原版 `AppWebDav.pruneOldBackups`：只处理 `backup*.json`（我方
-  /// 单文件 JSON 备份格式），`keepCount = 0` 不清理；先排除
-  /// [currentFileName]，再按文件名降序保留 `keepCount - 1` 份历史备份。
+  /// 对齐原版 `AppWebDav.pruneOldBackups`：只处理严格命名的
+  /// `backup_yyyyMMdd_HHmmss[_SSS].json`（大小写敏感；批40b 收紧），
+  /// `keepCount = 0` 不清理；先排除 [currentFileName]，再按文件名降序
+  /// 保留 `keepCount - 1` 份历史备份；删除键取 PROPFIND href。
   /// 返回 `{"deleted":[..],"failed":[{"name":..,"error":..}]}` JSON；
   /// 单文件删除失败只记入 `failed`，不使整次调用失败。
   Future<String> webdavPruneBackups(

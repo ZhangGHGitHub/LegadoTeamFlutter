@@ -96,7 +96,7 @@ class WebDavBackupUploadResult {
     this.pruneError,
   });
 
-  /// 远端备份文件名（`backup_yyyyMMdd_HHmmss.json`）
+  /// 远端备份文件名（`backup_yyyyMMdd_HHmmss_SSS.json`）
   final String remoteFileName;
 
   /// 保留数清理结果
