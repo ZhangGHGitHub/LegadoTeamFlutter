@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.415] - 2026-10-28
+
+### Fixed
+- [UI] 发现页源内容模式下按返回键先回到源列表（不再直接切到书架），再次返回才切换 Tab。
+
 ## [2.0.414] - 2026-10-28
 
 ### Added
