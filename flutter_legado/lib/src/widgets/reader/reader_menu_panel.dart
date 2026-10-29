@@ -10,11 +10,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/models.dart';
 import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/reader/reader_notifier.dart';
+import '../../providers/reader/reader_top_bar_actions_notifier.dart';
+import '../../providers/theme/theme_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
+import 'reader_charset_dialog.dart';
 import 'reader_download_dialog.dart';
+import 'reader_top_bar_actions.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
@@ -282,11 +287,177 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
+  // ── 顶栏动作池（批37）──────────────────────────────────────────
+
+  /// 「更多」菜单里动作项的值前缀（`action:<id>`），与既有固定项区分
+  static const String _moreActionValuePrefix = 'action:';
+
+  /// 「更多」菜单里已有同义入口的动作 id（目录/界面设置/添加书签/替换规则）
+  ///
+  /// 兜底列表跳过这四项，避免同一菜单出现两个同义项；这四项本身不会丢失。
+  static const Set<String> _moreMenuOwnActionIds = {
+    'catalog',
+    'setting',
+    'addBookmark',
+    'replace',
+  };
+
+  /// 本地 TXT 判定（对齐 Book.isLocalTxt：本地书且文件名以 .txt 结尾）
+  static bool _isLocalTxtBook(Book book) {
+    if (!BookType.isLocalOrigin(book.origin)) return false;
+    final name = book.originName.trim().toLowerCase();
+    if (name.isNotEmpty) return name.endsWith('.txt');
+    return book.bookUrl.toLowerCase().endsWith('.txt');
+  }
+
+  /// 顶栏动作按钮（40dp 紧凑热区，支持长按二级动作）
+  ///
+  /// 参考版 TopBarActionButton 用 combinedClickable 同时支持点击/长按。
+  /// IconButton 自带 tooltip 在移动端默认「长按显示」，会与二级菜单抢手势，
+  /// 故改用外层手动触发 Tooltip（find.byTooltip/无障碍语义仍可用），长按
+  /// 交给 GestureDetector。
+  Widget _buildTopBarActionButton(
+    BuildContext context,
+    Book? book,
+    ReaderTopBarActionDef def,
+  ) {
+    return Tooltip(
+      message: def.label,
+      triggerMode: TooltipTriggerMode.manual,
+      child: GestureDetector(
+        key: ValueKey('reader-topbar-action-${def.id}'),
+        onLongPress: def.longPress == null
+            ? null
+            : () => _performTopBarLongPress(context, book, def.longPress!),
+        child: IconButton(
+          icon: Icon(def.icon, size: 22),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          visualDensity: VisualDensity.compact,
+          onPressed: () =>
+              unawaited(_performTopBarAction(context, book, def.id)),
+        ),
+      ),
+    );
+  }
+
+  /// 执行一个顶栏动作（顶栏按钮与「更多」兜底项共用同一实现）
+  Future<void> _performTopBarAction(
+    BuildContext context,
+    Book? book,
+    String id,
+  ) async {
+    final notifier = ref.read(readerNotifierProvider.notifier);
+    switch (id) {
+      case 'download':
+        // 对齐原版 menu_download → 离线缓存范围对话框（默认起始 = 当前章）
+        showReaderOfflineCacheDialog(context, ref);
+      case 'refresh':
+        await _refreshContentFlow(context);
+      case 'change_source':
+        if (book != null) await _changeSourceFlow(context, book);
+      case 'toc_rule':
+        Navigator.pushNamed(context, AppRoutes.txtTocRules);
+      case 'charset':
+        showReaderCharsetDialog(context, ref);
+      case 'catalog':
+        widget.onOpenCatalog();
+      case 'search':
+        widget.onOpenContentSearch();
+      case 'auto_page':
+        widget.onToggleAutoPage();
+      case 'read_aloud':
+        widget.onReadAloud();
+      case 'setting':
+        widget.onOpenSettings();
+      case 'addBookmark':
+        widget.onAddBookmark();
+      case 'replace':
+        widget.onOpenReplaceRules();
+      case 'theme':
+        // 对齐原版 fabNightTheme：显式写日/夜，外层书架同步联动
+        await ref.read(themeNotifierProvider.notifier).toggleDayNight(
+              isNight: Theme.of(context).brightness == Brightness.dark,
+            );
+      case 'prev_chapter':
+        await notifier.prevChapter();
+        notifier.hideControls();
+      case 'next_chapter':
+        await notifier.nextChapter();
+        notifier.hideControls();
+    }
+  }
+
+  /// 执行长按二级动作
+  void _performTopBarLongPress(
+    BuildContext context,
+    Book? book,
+    ReaderTopBarLongPress longPress,
+  ) {
+    switch (longPress) {
+      case ReaderTopBarLongPress.changeSource:
+        if (book != null) _showChangeSourceLongPress(context, book);
+      case ReaderTopBarLongPress.cacheManage:
+        // 长按缓存 = 进入缓存管理页（短按仍是离线缓存范围对话框）
+        Navigator.pushNamed(context, AppRoutes.offlineCache);
+    }
+  }
+
+  /// 换源长按菜单（对齐参考版 ChangeSourceMenuItems：换书源 / 单章换源）
+  void _showChangeSourceLongPress(BuildContext context, Book book) {
+    final state = ref.read(readerNotifierProvider);
+    final chapter = state.currentChapter;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Symbols.article_rounded),
+              title: const Text('单章换源'),
+              subtitle: Text(
+                chapter?.title.isNotEmpty == true
+                    ? chapter!.title
+                    : '仅替换当前章正文',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                showChangeChapterSourceSheet(
+                  context,
+                  bookUrl: book.bookUrl,
+                  bookName: book.name,
+                  author: book.author,
+                  chapterIndex: state.currentChapterIndex,
+                  chapterTitle: chapter?.title ?? '',
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Symbols.swap_horiz_rounded),
+              title: const Text('换书源'),
+              subtitle: const Text('切换整本书的书源'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                unawaited(_changeSourceFlow(context, book));
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── 分区 1：屏幕顶部工具栏（对齐原版：← 居左；⇄ ↻ ⬇ ⋮ 居右）──
   //
   // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：顶栏按参考版改造——
   // 移除书名/章名胶囊（章名在正文区与页脚已有呈现），改为参考版五钮
   //（返回/换源/刷新正文/下载当前章/更多溢出）— Qoder
+  // [批37] 右侧动作改为动作池按配置渲染（默认投影 = 换源/刷新/缓存/更多）。
   Widget _buildTopBar(
     BuildContext context,
     Color barColor,
@@ -305,6 +476,32 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // 对本地书隐藏这两项入口）；notifier 侧守卫兜底
     // （refreshChapterContent 对本地书返回原因、不触网）
     final isOnline = book != null && !BookType.isLocalOrigin(book.origin);
+    // [批37] 顶栏动作可配置（参考版 ReadMenuActionDefs.kt）：
+    // 顺序/开关来自用户配置，按当前书型过滤，最多 6 个（含末尾固定的
+    // 「更多」）。旧版写死的换源/刷新/缓存/更多正是默认配置在在线书上的
+    // 投影（参考版 DEFAULT_TITLE_BAR_ACTION_IDS），默认行为不变。
+    final actionConfig = ref.watch(readerTopBarActionsProvider);
+    final traits = ReaderBookTraits(
+      isLocal: book != null && !isOnline,
+      isLocalTxt: book != null && _isLocalTxtBook(book),
+    );
+    final topBarActions = book == null
+        ? <ReaderTopBarActionDef>[
+            readerTopBarActionById[kReaderMoreActionsId]!,
+          ]
+        : buildReaderTopBarActions(actionConfig, traits: traits);
+    final visibleActionIds = {for (final def in topBarActions) def.id};
+    // 「更多」菜单兜底：被移出顶栏（或本就不在顶栏）的动作仍从这里可达，
+    // 确保换源/刷新/缓存/编码等入口不会因配置丢失。菜单里已有同义项
+    // （目录/界面设置/添加书签/替换规则）不重复列出。
+    final hiddenActions = book == null
+        ? const <ReaderTopBarActionDef>[]
+        : hiddenReaderTopBarActions(
+            actionConfig,
+            traits: traits,
+            visibleIds: visibleActionIds,
+            excludeIds: _moreMenuOwnActionIds,
+          );
     return Material(
       color: barColor,
       child: SafeArea(
@@ -332,91 +529,92 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                       ),
                     ),
                   ),
-                  // [P2-9 fix | 2026-09-24] 本地书不渲染换源/刷新正文/缓存
-                  // 当前章（对齐原版 ReadMenu 本地书菜单构成：三项仅在线书
-                  // 可见，与顶栏 isOnline 分支一致）。首版「isOnline ? 可点
-                  // : null」的置灰形态被实机观测为「显示且点击无反应」
-                  // （35% alpha no-op），现改为不渲染。
-                  // 换源 = await 导航：路由 pop 新 bookUrl（发生切换）后
-                  // 重载书/目录/强制刷新正文；取消（pop null）不做任何事
-                  // （原实现未 await，换源后正文不刷新——缺陷根因 B）
-                  // 换源闭包体保留 HEAD 基线缩进列（collection-if 后果
-                  // 不重新缩进），避免 diff 引入纯空白行
-                  if (isOnline) IconButton(
-                    icon: const Icon(Symbols.swap_horiz_rounded),
-                    tooltip: '换源',
-                    onPressed: () => unawaited(_changeSourceFlow(context, book)),
-                  ),
-                  // [P2-9 | 2026-09-24] 刷新正文 = 强制拉取（绕过缓存，
-                  // 见 ReaderNotifier.refreshChapterContent），统一 Fix A
-                  // 路径 + 可见反馈（进行中/成功/失败含原因）
-                  if (isOnline) IconButton(
-                    icon: const Icon(Symbols.refresh_rounded),
-                    tooltip: '刷新正文',
-                    onPressed: () => unawaited(_refreshContentFlow(context)),
-                  ),
-                  // [P2-27 | 2026-09-28] 下载入口改弹「离线缓存」范围对话框
-                  // （对齐原版 menu_download → showBookDownloadDialog /
-                  // 参考版 DownloadSheet；默认起始 = 当前章，与原版一致），
-                  // 移除自创的「直接缓存当前章」行为；共享实现见
-                  // reader_download_dialog.dart（与顶栏下载钮同源）
-                  if (isOnline) IconButton(
-                    icon: const Icon(Symbols.download_rounded),
-                    tooltip: '下载（离线缓存）',
-                    onPressed: () => showReaderOfflineCacheDialog(context, ref),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: '更多',
-                    position: PopupMenuPosition.under,
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'addBookmark':
-                          widget.onAddBookmark();
-                        case 'highlightRule':
-                          Navigator.pushNamed(
-                            context,
-                            AppRoutes.highlightRules,
-                          );
-                        case 'replace':
-                          widget.onOpenReplaceRules();
-                        case 'settings':
-                          widget.onOpenSettings();
-                        case 'toc':
-                          widget.onOpenCatalog();
-                        case 'reverseTocDisplay':
-                          // [批31] 目录显示反转（对齐原版
-                          // ReadConfig.reverseTocDisplay）：仅展示层反序，
-                          // 数据顺序/章节身份不变，无需重载正文
-                          if (book != null) {
-                            unawaited(_toggleReverseTocDisplay(book));
+                  // [批37] 顶栏动作按配置渲染：旧版写死的换源/刷新/缓存
+                  // 改为动作池投影（默认配置 = 参考版默认项），新增的
+                  // 目录/设置等动作也由用户配置决定；「更多」固定末尾。
+                  for (final def in topBarActions)
+                    if (def.id == kReaderMoreActionsId)
+                      PopupMenuButton<String>(
+                        tooltip: '更多',
+                        position: PopupMenuPosition.under,
+                        onSelected: (value) {
+                          if (value.startsWith(_moreActionValuePrefix)) {
+                            unawaited(
+                              _performTopBarAction(
+                                context,
+                                book,
+                                value.substring(
+                                  _moreActionValuePrefix.length,
+                                ),
+                              ),
+                            );
+                            return;
                           }
-                      }
-                    },
-                    itemBuilder: (_) => [
-                      const PopupMenuItem(
-                        value: 'addBookmark',
-                        child: Text('添加书签'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'highlightRule',
-                        child: Text('高亮规则'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'replace',
-                        child: Text('替换规则'),
-                      ),
-                      const PopupMenuItem(value: 'toc', child: Text('查看目录')),
-                      CheckedPopupMenuItem(
-                        value: 'reverseTocDisplay',
-                        checked: book?.readConfig?.reverseTocDisplay ?? false,
-                        child: const Text('目录显示反转'),
-                      ),
-                      const PopupMenuItem(
-                        value: 'settings',
-                        child: Text('界面设置'),
-                      ),
-                    ],
-                  ),
+                          switch (value) {
+                            case 'addBookmark':
+                              widget.onAddBookmark();
+                            case 'highlightRule':
+                              Navigator.pushNamed(
+                                context,
+                                AppRoutes.highlightRules,
+                              );
+                            case 'replace':
+                              widget.onOpenReplaceRules();
+                            case 'settings':
+                              widget.onOpenSettings();
+                            case 'toc':
+                              widget.onOpenCatalog();
+                            case 'reverseTocDisplay':
+                              // [批31] 目录显示反转（对齐原版
+                              // ReadConfig.reverseTocDisplay）：仅展示层反序，
+                              // 数据顺序/章节身份不变，无需重载正文
+                              if (book != null) {
+                                unawaited(_toggleReverseTocDisplay(book));
+                              }
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          const PopupMenuItem(
+                            value: 'addBookmark',
+                            child: Text('添加书签'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'highlightRule',
+                            child: Text('高亮规则'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'replace',
+                            child: Text('替换规则'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'toc',
+                            child: Text('查看目录'),
+                          ),
+                          CheckedPopupMenuItem(
+                            value: 'reverseTocDisplay',
+                            checked:
+                                book?.readConfig?.reverseTocDisplay ?? false,
+                            child: const Text('目录显示反转'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'settings',
+                            child: Text('界面设置'),
+                          ),
+                          // [批37] 顶栏未显示的动作兜底（换源/刷新/缓存/
+                          // 编码等），保证配置后功能入口不丢失。
+                          if (hiddenActions.isNotEmpty) ...[
+                            const PopupMenuDivider(),
+                            for (final def in hiddenActions)
+                              PopupMenuItem(
+                                value:
+                                    '$_moreActionValuePrefix${def.id}',
+                                child: Text(def.label),
+                              ),
+                          ],
+                        ],
+                      )
+                    else
+                      _buildTopBarActionButton(context, book, def),
                 ],
               ),
             ),

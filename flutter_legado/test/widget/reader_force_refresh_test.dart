@@ -449,12 +449,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 在线书渲染两处换源入口（顶栏 IconButton + 中部快捷钮），
-      // 此处只取顶栏 IconButton
+      // 在线书渲染两处换源入口（顶栏动作钮 + 中部快捷钮），
+      // 此处只取顶栏动作钮（批37：顶栏按钮改为动作池渲染，按 key 定位）
       await tester.tap(
-        find.byWidgetPredicate(
-          (w) => w is IconButton && w.tooltip == '换源',
-        ),
+        find.byKey(const ValueKey('reader-topbar-action-change_source')),
       );
       // 改造前此处抛 "type _ChangeSourceSheetRoute is not a subtype
       // of type 'Route<String?>?' in type cast" —— 必须无异常才算不崩溃
@@ -583,9 +581,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(
-        find.byWidgetPredicate(
-          (w) => w is IconButton && w.tooltip == '换源',
-        ),
+        find.byKey(const ValueKey('reader-topbar-action-change_source')),
       );
       await tester.pumpAndSettle(); // 换源路由自动 pop + 重载启动（getBook 悬置）
       // 慢路径推进（1s 粒度，对齐真机 16ms 帧节奏：自动消失后的队列
