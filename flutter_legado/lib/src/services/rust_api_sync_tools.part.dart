@@ -51,6 +51,18 @@ mixin RustApiSyncTools on RustApiDecode implements BookApi {
   Future<void> webdavDelete(String configJson, String path) =>
       bridge.webdavDelete(configJson: configJson, path: path);
 
+  /// 清理 WebDAV 历史备份（契约 §2.28，批40）
+  @override
+  Future<String> webdavPruneBackups(
+    String configJson,
+    String currentFileName,
+    int keepCount,
+  ) => bridge.webdavPruneBackups(
+    configJson: configJson,
+    currentFileName: currentFileName,
+    keepCount: keepCount,
+  );
+
   /// WebDAV 全量同步
   @override
   Future<String> webdavFullSync(

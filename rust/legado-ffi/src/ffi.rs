@@ -2636,6 +2636,23 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 清理 WebDAV 历史备份（契约 §2.28，批40）
+    ///
+    /// 仅处理 `backup*.json`；`keep_count = 0` 不清理；先排除
+    /// `current_file_name` 再保留 `keep_count - 1` 份历史备份。
+    /// 返回 `BackupPruneResult` JSON（deleted / failed）。
+    pub fn webdav_prune_backups(
+        config_json: String,
+        current_file_name: String,
+        keep_count: u32,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::webdav_api::webdav_prune_backups(
+            &config_json,
+            &current_file_name,
+            keep_count,
+        )?)
+    }
+
     /// WebDAV 全量同步（返回 JSON: {"books": "...", "sources": "..."}）
     pub fn webdav_full_sync(
         config_json: String,

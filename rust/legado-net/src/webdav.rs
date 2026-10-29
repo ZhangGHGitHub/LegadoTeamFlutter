@@ -27,6 +27,34 @@ pub struct WebDavFileInfo {
     pub is_dir: bool,
 }
 
+/// 单个备份删除失败项（批40，`prune_backup_files` 返回值）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BackupPruneFailure {
+    /// 备份文件名（相对 remote_dir 根目录）
+    pub name: String,
+    /// 失败原因（中文可读文案）
+    pub error: String,
+}
+
+/// WebDAV 备份清理结果（批40，对齐原版 `AppWebDav.pruneOldBackups`）
+///
+/// `deleted` 为实际删除的文件名；`failed` 为删除失败清单（仅日志用途，
+/// 不影响上传成功与否）。
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BackupPruneResult {
+    pub deleted: Vec<String>,
+    pub failed: Vec<BackupPruneFailure>,
+}
+
+/// 判定文件名是否属于我方 JSON 备份（`backup*.json`，大小写不敏感）
+///
+/// 对齐原版 `displayName.startsWith("backup") && endsWith(".zip")` 的前缀
+/// 口径，仅把扩展名换为我方单文件 JSON 备份格式；`backup*.zip` 不参与清理。
+fn is_backup_json_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("backup") && lower.ends_with(".json")
+}
+
 /// WebDAV 客户端
 pub struct WebDavClient {
     config: WebDavConfig,
@@ -193,6 +221,93 @@ impl WebDavClient {
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
         Ok(())
+    }
+
+    /// DELETE（校验状态码）— 供备份清理使用
+    ///
+    /// 与 [`Self::delete`] 的区别：非 2xx 返回 Network 错误。既有 `delete`
+    /// 不校验状态码（保持原行为），备份清理需要逐文件判定成败以决定是否
+    /// 记入失败清单。
+    async fn delete_checked(&self, path: &str) -> LegadoResult<()> {
+        let url = self.full_url(path);
+        let response = self
+            .client
+            .delete(&url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| LegadoError::Network(e.to_string()))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(LegadoError::Network(format!(
+                "WebDAV DELETE 失败: HTTP {status}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// 清理 WebDAV 备份目录中的历史备份（批40，对齐原版
+    /// `AppWebDav.pruneOldBackups`）
+    ///
+    /// 语义（与上游逐条对齐）：
+    /// - `keep_count <= 0` 时**不清理**（默认 0，避免升级后一次性删光存量备份）；
+    /// - 只处理 `backup*.json`（我方单文件 JSON 备份格式）；`backup*.zip` 为
+    ///   原版/参考版备份格式，**不参与清理**（避免误删其它客户端的备份），
+    ///   该差异已在契约登记；
+    /// - 先排除本次刚上传的 `current_file_name`，再保留 `keep_count - 1` 份
+    ///   历史备份：服务器 PROPFIND 可能尚未列出刚上传的文件，若直接按
+    ///   「保留 N 份」删除，会把旧备份当成最新 N 份全部保留；
+    /// - 按文件名降序（`backup_yyyyMMdd_HHmmss.json` 名称即时间序）；
+    /// - 单个删除失败只记 warn 日志并写入 `failed`，不影响其它文件与上传结果。
+    pub async fn prune_backup_files(
+        &self,
+        current_file_name: &str,
+        keep_count: usize,
+    ) -> LegadoResult<BackupPruneResult> {
+        let mut result = BackupPruneResult::default();
+        if keep_count == 0 {
+            return Ok(result);
+        }
+
+        let files = self.list_dir("").await?;
+        let mut backups: Vec<&WebDavFileInfo> = files
+            .iter()
+            .filter(|f| !f.is_dir && is_backup_json_name(&f.name))
+            .collect();
+        // 名称降序 = 时间降序（我们的备份名固定为 backup_yyyyMMdd_HHmmss.json）
+        backups.sort_by(|a, b| b.name.cmp(&a.name));
+
+        // 先排除本次上传的文件，剩余名额固定为 keep_count - 1 份历史备份
+        let others: Vec<&WebDavFileInfo> = backups
+            .into_iter()
+            .filter(|f| f.name != current_file_name)
+            .collect();
+        let keep_others = keep_count.saturating_sub(1);
+
+        for file in others.into_iter().skip(keep_others) {
+            // 防御：删除路径只用文件名（相对 remote_dir 的根目录）；含路径
+            // 分隔符的名称一律跳过，避免在异常服务器响应下越目录删除。
+            if file.name.contains('/') || file.name.contains('\\') {
+                let error = "非法备份文件名（含路径分隔符），已跳过".to_string();
+                log::warn!("WebDAV 备份清理跳过 {}: {error}", file.name);
+                result.failed.push(BackupPruneFailure {
+                    name: file.name.clone(),
+                    error,
+                });
+                continue;
+            }
+            match self.delete_checked(&file.name).await {
+                Ok(()) => result.deleted.push(file.name.clone()),
+                Err(e) => {
+                    log::warn!("WebDAV 备份清理删除失败 {}: {e}", file.name);
+                    result.failed.push(BackupPruneFailure {
+                        name: file.name.clone(),
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+        Ok(result)
     }
 
     /// 获取文件 ETag 和 Last-Modified 元数据

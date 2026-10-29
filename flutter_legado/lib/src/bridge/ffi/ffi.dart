@@ -2080,6 +2080,21 @@ Future<void> webdavDelete({required String configJson, required String path}) =>
       path: path,
     );
 
+/// 清理 WebDAV 历史备份（契约 §2.28，批40）
+///
+/// 仅处理 `backup*.json`；`keep_count = 0` 不清理；先排除
+/// `current_file_name` 再保留 `keep_count - 1` 份历史备份。
+/// 返回 `BackupPruneResult` JSON（deleted / failed）。
+Future<String> webdavPruneBackups({
+  required String configJson,
+  required String currentFileName,
+  required int keepCount,
+}) => RustLib.instance.api.crateFfiFfiWebdavPruneBackups(
+  configJson: configJson,
+  currentFileName: currentFileName,
+  keepCount: keepCount,
+);
+
 /// WebDAV 全量同步（返回 JSON: {"books": "...", "sources": "..."}）
 Future<String> webdavFullSync({
   required String configJson,

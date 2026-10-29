@@ -46,6 +46,17 @@ mixin MockBookApiSyncTools on MockBookApiStore implements BookApi {
   @override
   Future<void> webdavDelete(String configJson, String path) async {}
 
+  /// 清理 WebDAV 历史备份（契约 §2.28，批40）
+  ///
+  /// Mock：不访问网络，返回空清理结果；UI/服务层测试经子类覆写注入
+  /// 期望的 `deleted` / `failed` 形态。
+  @override
+  Future<String> webdavPruneBackups(
+    String configJson,
+    String currentFileName,
+    int keepCount,
+  ) async => '{"deleted":[],"failed":[]}';
+
   @override
   Future<String> webdavFullSync(
     String configJson,

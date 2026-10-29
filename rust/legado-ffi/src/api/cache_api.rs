@@ -726,10 +726,16 @@ mod tests {
             let repo = CacheBookRepository::new(conn);
             // 有正文 + 引用图片（图片磁盘缓存故意不写）→ 显示为已缓存
             for (index, url, content) in [
-                (0i32, with_image, "<img src=\"https://img.example.com/missing.jpg\">"),
+                (
+                    0i32,
+                    with_image,
+                    "<img src=\"https://img.example.com/missing.jpg\">",
+                ),
                 (1, empty, ""),
-                (2, blank, "   
-	 "),
+                (
+                    2, blank, "   
+	 ",
+                ),
             ] {
                 repo.insert(&CachedChapter {
                     id: 0,
@@ -748,7 +754,11 @@ mod tests {
 
         // §2.43.5 显示集合：仅“有正文”的行入选（缺图不影响）
         let urls = list_cached_chapter_urls(book_url).expect("查询应成功");
-        assert_eq!(urls, vec![with_image.to_string()], "有正文即已缓存（缺图不影响），空正文行不计");
+        assert_eq!(
+            urls,
+            vec![with_image.to_string()],
+            "有正文即已缓存（缺图不影响），空正文行不计"
+        );
 
         // §2.43.6 轮询集合：同口径
         let entries = list_cached_chapters(book_url).expect("查询应成功");

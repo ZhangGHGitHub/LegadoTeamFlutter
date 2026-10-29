@@ -168,6 +168,35 @@ pub fn webdav_delete(config_json: &str, path: &str) -> LegadoResult<()> {
     crate::runtime::block_on(client.delete(path))
 }
 
+/// 清理 WebDAV 上的历史备份（批40，契约 §2.28）
+///
+/// 对齐原版 `AppWebDav.pruneOldBackups`：上传成功后按「WebDAV 备份保留
+/// 数量」清理 `backup*.json`，先排除本次刚上传的 `current_file_name`，
+/// 再按文件名降序保留 `keep_count - 1` 份历史备份。
+///
+/// - `keep_count = 0`：不清理（默认口径），直接返回空结果、不发网络请求；
+/// - `backup*.zip`（原版/参考版备份）不参与清理（差异已在契约登记）；
+/// - 单文件删除失败只记日志并计入 `failed`，不使整个调用失败。
+///
+/// # 返回
+/// JSON 序列化的 [`legado_net::webdav::BackupPruneResult`]：
+/// `{"deleted":["..."],"failed":[{"name":"...","error":"..."}]}`
+pub fn webdav_prune_backups(
+    config_json: &str,
+    current_file_name: &str,
+    keep_count: u32,
+) -> LegadoResult<String> {
+    let config: WebDavConfig = serde_json::from_str(config_json)
+        .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
+    let client = WebDavClient::new(config);
+
+    let result = crate::runtime::block_on(
+        client.prune_backup_files(current_file_name, keep_count as usize),
+    )?;
+    serde_json::to_string(&result)
+        .map_err(|e| legado_core::LegadoError::Internal(format!("序列化失败: {e}")))
+}
+
 /// 创建 WebDAV 远程目录
 pub fn webdav_mkdir(config_json: &str, path: &str) -> LegadoResult<()> {
     let config: WebDavConfig = serde_json::from_str(config_json)
@@ -278,6 +307,176 @@ pub fn webdav_server_delete(id: i64) -> LegadoResult<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ─── 批40：多请求回环 WebDAV 夹具（上传/列目录/删除链路） ───────────
+
+    /// 多请求回环 WebDAV 服务器（批40）
+    ///
+    /// 按 HTTP 方法返回固定响应，并记录 `(method, path)` 供断言：
+    /// - `PROPFIND` → 207，返回目录自身 + [files] 列表（均为普通文件）；
+    /// - `PUT` → 201 Created；
+    /// - `DELETE` → [delete_fail] 命中返回 500，否则 204。
+    ///
+    /// 每个响应带 `Connection: close`，客户端会为下一次请求新建连接；
+    /// 线程最多处理 [max_requests] 个请求后退出（避免测试挂死）。
+    struct LoopbackDavServer {
+        url: String,
+        requests: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl LoopbackDavServer {
+        fn requests(&self) -> Vec<(String, String)> {
+            self.requests.lock().unwrap().clone()
+        }
+
+        fn join(mut self) {
+            if let Some(handle) = self.handle.take() {
+                handle.join().ok();
+            }
+        }
+    }
+
+    fn spawn_loopback_dav(
+        files: &[&str],
+        delete_fail: &[&str],
+        max_requests: usize,
+    ) -> LoopbackDavServer {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{Arc, Mutex};
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环 WebDAV");
+        listener.set_nonblocking(true).expect("非阻塞监听");
+        let port = listener.local_addr().unwrap().port();
+
+        // 预生成 PROPFIND 响应体（目录自身 + files）
+        let mut propfind_body = String::from(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus xmlns:D=\"DAV:\">\n",
+        );
+        propfind_body.push_str(
+            "  <D:response><D:href>/dav/</D:href><D:propstat><D:prop>\
+<D:displayname>dav</D:displayname><D:resourcetype><D:collection/></D:resourcetype>\
+</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n",
+        );
+        for name in files {
+            propfind_body.push_str(&format!(
+                "  <D:response><D:href>/dav/{name}</D:href><D:propstat><D:prop>\
+<D:displayname>{name}</D:displayname><D:getcontentlength>10</D:getcontentlength>\
+</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n"
+            ));
+        }
+        propfind_body.push_str("</D:multistatus>");
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let requests_for_thread = Arc::clone(&requests);
+        let delete_fail: Vec<String> = delete_fail.iter().map(|s| s.to_string()).collect();
+
+        let handle = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            let mut handled = 0usize;
+            while handled < max_requests && std::time::Instant::now() < deadline {
+                let (mut stream, _) = match listener.accept() {
+                    Ok(pair) => pair,
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        continue;
+                    }
+                    Err(_) => break,
+                };
+                let _ = stream.set_nonblocking(false);
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+
+                // 读到请求头结束
+                let mut head = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => head.extend_from_slice(&buf[..n]),
+                        Err(_) => break,
+                    }
+                }
+                let head_text = String::from_utf8_lossy(&head).to_string();
+                let mut lines = head_text.split("\r\n");
+                let request_line = lines.next().unwrap_or_default();
+                let mut parts = request_line.split_whitespace();
+                let method = parts.next().unwrap_or_default().to_string();
+                let path = parts.next().unwrap_or_default().to_string();
+
+                // 按 Content-Length 读完请求体（PUT 上传体）
+                let mut content_length = 0usize;
+                for line in lines {
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(value) = lower.strip_prefix("content-length:") {
+                        content_length = value.trim().parse().unwrap_or(0);
+                    }
+                }
+                let body_start = head
+                    .windows(4)
+                    .position(|w| w == b"\r\n\r\n")
+                    .map(|i| i + 4)
+                    .unwrap_or(head.len());
+                let mut remaining = content_length.saturating_sub(head.len() - body_start);
+                while remaining > 0 {
+                    match stream.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => remaining = remaining.saturating_sub(n),
+                        Err(_) => break,
+                    }
+                }
+
+                requests_for_thread
+                    .lock()
+                    .unwrap()
+                    .push((method.clone(), path.clone()));
+
+                let name = path.rsplit('/').next().unwrap_or_default();
+                let response = match method.as_str() {
+                    "PROPFIND" => format!(
+                        "HTTP/1.1 207 Multi-Status\r\nContent-Type: application/xml; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        propfind_body.len(),
+                        propfind_body
+                    ),
+                    "PUT" => {
+                        "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
+                    }
+                    "DELETE" if delete_fail.iter().any(|n| n == name) => {
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
+                    }
+                    "DELETE" => {
+                        "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
+                    }
+                    _ => {
+                        "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
+                    }
+                };
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+                handled += 1;
+            }
+        });
+
+        LoopbackDavServer {
+            url: format!("http://127.0.0.1:{port}/dav/"),
+            requests,
+            handle: Some(handle),
+        }
+    }
+
+    fn dav_config_json(url: &str) -> String {
+        serde_json::json!({
+            "url": url,
+            "username": "u",
+            "password": "p",
+            "remote_dir": "",
+        })
+        .to_string()
+    }
 
     /// 回环 WebDAV 服务器：接受一次 PROPFIND，返回固定 207 多状态响应。
     ///
@@ -452,5 +651,148 @@ mod tests {
             matches!(err, LegadoError::Internal(_)),
             "未知 type 应为 Internal（serde 解析失败），实际: {err:?}"
         );
+    }
+
+    // ─── 批40：WebDAV 备份上传 + 保留数清理（回环） ───────────────────
+
+    /// [批40] 保留数清理：先排除本次上传文件，再按名称降序保留 N-1 份
+    ///
+    /// 夹具含 4 份 `backup_*.json`、1 份 `backup_*.zip`、1 份 `bookshelf.json`：
+    /// 清理只处理 json 备份；keep=2 时保留最新历史 1 份 + 当前文件，
+    /// 删除另外 2 份旧备份。
+    #[test]
+    fn test_webdav_prune_backups_keeps_latest_and_excludes_current() {
+        let server = spawn_loopback_dav(
+            &[
+                "backup_20261001_000000.json",
+                "backup_20261002_000000.json",
+                "backup_20261003_000000.json",
+                "backup_20261004_000000.json",
+                "backup_20261001_000000.zip",
+                "bookshelf.json",
+            ],
+            &[],
+            3, // 1 次 PROPFIND + 2 次 DELETE
+        );
+        let raw = webdav_prune_backups(
+            &dav_config_json(&server.url),
+            "backup_20261004_000000.json",
+            2,
+        )
+        .expect("清理应成功");
+        server.join();
+
+        let result: legado_net::webdav::BackupPruneResult =
+            serde_json::from_str(&raw).expect("结果 JSON 可解析");
+        assert_eq!(
+            result.deleted,
+            vec![
+                "backup_20261002_000000.json".to_string(),
+                "backup_20261001_000000.json".to_string()
+            ],
+            "应删除除当前文件与最新历史备份外的旧 JSON 备份"
+        );
+        assert!(result.failed.is_empty(), "不应有删除失败: {result:?}");
+    }
+
+    /// [批40] keep=0 不清理：不发任何网络请求（默认口径，保护存量备份）
+    #[test]
+    fn test_webdav_prune_backups_zero_does_nothing() {
+        // URL 不可达也无妨：keep=0 在创建请求前就返回
+        let raw = webdav_prune_backups(
+            &dav_config_json("http://127.0.0.1:1/dav/"),
+            "backup_20261004_000000.json",
+            0,
+        )
+        .expect("keep=0 应直接成功");
+        let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        assert!(result.deleted.is_empty());
+        assert!(result.failed.is_empty());
+    }
+
+    /// [批40] 单个删除失败只记日志与失败清单，不影响其它删除
+    #[test]
+    fn test_webdav_prune_backups_delete_failure_recorded() {
+        let server = spawn_loopback_dav(
+            &[
+                "backup_20261001_000000.json",
+                "backup_20261002_000000.json",
+                "backup_20261003_000000.json",
+            ],
+            &["backup_20261002_000000.json"],
+            3, // 1 次 PROPFIND + 2 次 DELETE（其中一次 500）
+        );
+        let raw = webdav_prune_backups(
+            &dav_config_json(&server.url),
+            "backup_20261003_000000.json",
+            1,
+        )
+        .expect("清理应成功（单文件失败不使整次失败）");
+        server.join();
+
+        let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            result.deleted,
+            vec!["backup_20261001_000000.json".to_string()]
+        );
+        assert_eq!(result.failed.len(), 1, "失败清单应记录 1 条: {result:?}");
+        assert_eq!(result.failed[0].name, "backup_20261002_000000.json");
+        assert!(
+            result.failed[0].error.contains("500"),
+            "失败原因应含状态码: {:?}",
+            result.failed[0].error
+        );
+    }
+
+    /// [批40] 上传（PUT）+ 清理（PROPFIND/DELETE）回环全链路
+    #[test]
+    fn test_webdav_upload_file_then_prune_loopback() {
+        // 本地临时备份文件
+        let dir = std::env::temp_dir().join("legado_webdav_backup_upload_prune");
+        std::fs::create_dir_all(&dir).unwrap();
+        let local_file = dir.join("legado_backup_local.json");
+        std::fs::write(&local_file, br#"{"version":5}"#).unwrap();
+
+        let server = spawn_loopback_dav(
+            &[
+                "backup_20261001_000000.json",
+                "backup_20261002_000000.json",
+                "backup_20261003_000000.json",
+            ],
+            &[],
+            3, // 1 次 PUT + 1 次 PROPFIND + 1 次 DELETE
+        );
+        let config = dav_config_json(&server.url);
+        webdav_upload_file(
+            &config,
+            "backup_20261003_120000.json",
+            local_file.to_str().unwrap(),
+        )
+        .expect("上传应成功");
+
+        let raw =
+            webdav_prune_backups(&config, "backup_20261003_120000.json", 2).expect("清理应成功");
+        let requests = server.requests();
+        server.join();
+
+        let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            result.deleted,
+            vec!["backup_20261002_000000.json".to_string()]
+        );
+
+        assert_eq!(requests.len(), 3, "请求序列: {requests:?}");
+        assert_eq!(requests[0].0, "PUT");
+        assert_eq!(requests[0].1, "/dav/backup_20261003_120000.json");
+        assert_eq!(requests[1].0, "PROPFIND");
+        assert_eq!(
+            requests[2],
+            (
+                "DELETE".to_string(),
+                "/dav/backup_20261002_000000.json".to_string()
+            )
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

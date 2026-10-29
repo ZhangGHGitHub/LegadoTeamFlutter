@@ -1494,6 +1494,19 @@ abstract class BookApi {
   /// WebDAV 删除远程文件
   Future<void> webdavDelete(String configJson, String path);
 
+  /// 清理 WebDAV 历史备份（契约 §2.28，批40）
+  ///
+  /// 对齐原版 `AppWebDav.pruneOldBackups`：只处理 `backup*.json`（我方
+  /// 单文件 JSON 备份格式），`keepCount = 0` 不清理；先排除
+  /// [currentFileName]，再按文件名降序保留 `keepCount - 1` 份历史备份。
+  /// 返回 `{"deleted":[..],"failed":[{"name":..,"error":..}]}` JSON；
+  /// 单文件删除失败只记入 `failed`，不使整次调用失败。
+  Future<String> webdavPruneBackups(
+    String configJson,
+    String currentFileName,
+    int keepCount,
+  );
+
   /// WebDAV 全量同步
   Future<String> webdavFullSync(
     String configJson,
