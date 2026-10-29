@@ -557,8 +557,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 crossAxisCount: 3,
                 mainAxisSpacing: 20,
                 crossAxisSpacing: 20,
-                childAspectRatio:
-                    _bookshelfGridCellAspectRatio(constraints.maxWidth - 44),
+                childAspectRatio: _bookshelfGridCellAspectRatio(
+                  constraints.maxWidth - 44,
+                  // [批39 审查回修] 骨架与正式网格共用同一封面比例口径
+                  // （限制比例开 = 5:7；关 = 已知原图比例），首屏骨架
+                  // 行高不会与加载完成后的网格不一致。
+                  coverRatio: _shelfCoverRatio(state.books),
+                ),
               ),
               itemCount: 6,
               itemBuilder: (_, _) => const GridSkeletonItem(),
@@ -723,12 +728,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final hasTagRow = books.any((b) => state.displayTagsOf(b).isNotEmpty);
     // [批39] 网格行高随封面比例：限制比例开 = 既有 5:7 基准；关 = 按已解析
     // 的原图比例（整格统一，取首个已知比例，行高随图片加载完成重算）
-    final restrictRatio = uiSettingsListenable.value.restrictCoverRatio;
-    final coverRatio = restrictRatio
-        ? 5 / 7
-        : CoverAspectRatio.representativeRatio(
-            books.map((b) => b.customCoverUrl ?? b.coverUrl),
-          );
+    final coverRatio = _shelfCoverRatio(books);
     // [批35b P3-4] 预留高度按 textScaler 换算（与 BookGridItem 内同一函数），
     // 大字号下 cell 同步增高，标签行不裁切、封面不被挤压
     final tagRowHeight = BookDisplayTagsRow.heightFor(
@@ -760,6 +760,18 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             state.displayTagsOf(books[index]),
             hasTagRow),
       ),
+    );
+  }
+
+  /// 书架网格封面宽高比（批39：限制比例开 = 固定 5:7；关 = 首个已解析
+  /// 原图比例）
+  ///
+  /// [批39 审查回修] 骨架与正式网格共用本方法，避免两处各写一份口径
+  /// 漂移（骨架首屏 → 内容行高跳变）。
+  double _shelfCoverRatio(Iterable<Book> books) {
+    if (uiSettingsListenable.value.restrictCoverRatio) return 5 / 7;
+    return CoverAspectRatio.representativeRatio(
+      books.map((b) => b.customCoverUrl ?? b.coverUrl),
     );
   }
 

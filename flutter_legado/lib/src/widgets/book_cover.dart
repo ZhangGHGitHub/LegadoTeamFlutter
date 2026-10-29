@@ -92,9 +92,16 @@ class _BookCoverState extends State<BookCover> {
   /// 列表/测试宿主中渲染，不要求外层存在 ProviderScope。
   double _displayHeight(bool restrict) {
     if (!widget.adaptAspectRatio || restrict) return widget.height;
+    // [批39 审查回修] 比例未知（尚未解析/缓存未命中）时按调用方声明的
+    // 宽高反推自身比例（width/height，等价于保持 height 不变），而不是
+    // 固定 5:7——列表形态的封面尺寸（如 45×60）并不等于 5:7，硬套 5:7
+    // 会在图未加载完成时先跳一下。
+    final fallbackRatio = widget.width > 0 && widget.height > 0
+        ? widget.width / widget.height
+        : CoverAspectRatio.restricted;
     final ratio = _ratio ??
         CoverAspectRatio.cached(widget.coverUrl) ??
-        CoverAspectRatio.restricted;
+        fallbackRatio;
     return CoverAspectRatio.heightFor(
       width: widget.width,
       ratio: ratio,
@@ -106,7 +113,7 @@ class _BookCoverState extends State<BookCover> {
   /// 记录已解析比例（图片加载完成回调；对齐参考版 onImageAspectRatio）
   void _reportRatio(double? ratio) {
     if (!mounted || !CoverAspectRatio.isValid(ratio)) return;
-    final changed = CoverAspectRatio.remember(widget.coverUrl, ratio);
+    final result = CoverAspectRatio.rememberDetailed(widget.coverUrl, ratio);
     final value = CoverAspectRatio.cached(widget.coverUrl);
     if (value != null && _ratio != value) {
       if (widget.adaptAspectRatio) {
@@ -116,9 +123,18 @@ class _BookCoverState extends State<BookCover> {
         _ratio = value;
       }
     }
-    if (changed) {
-      // 网格行高随新比例重算（书架/发现页监听该修订号）
-      coverAspectRatioRevision.value++;
+    if (result.changed) {
+      // 网格行高随新比例重算（书架/发现页监听该修订号）。[批39 审查回修]
+      // 「限制封面比例」开启（默认）时行高固定，逐张封面通知会让整屏
+      // 重建；此时只在「首个已知比例」写入时通知一次。
+      final restrict = uiSettingsListenable.value.restrictCoverRatio;
+      if (shouldNotifyCoverRatioRevision(
+        changed: result.changed,
+        restrict: restrict,
+        firstKnown: result.firstKnown,
+      )) {
+        coverAspectRatioRevision.value++;
+      }
     }
   }
 
@@ -385,6 +401,15 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     return (widget.width * pixelRatio).round().clamp(1, 512);
   }
 
+  /// 是否需要从已解析的 ImageProvider 读取原图比例
+  ///
+  /// [批39 审查回修] `imageBuilder` 每次 build 都会重新执行：无条件
+  /// post-frame resolve 会反复注册 ImageStream 监听（列表滚动/主题切换
+  /// 每次重建都多一次）。缓存里已有比例时直接跳过（BookCover 自身
+  /// `_ratio` 与缓存同源，缓存命中即无需再解析）。
+  bool get _needsProviderRatio =>
+      CoverAspectRatio.cached(widget.coverUrl) == null;
+
   @override
   Widget build(BuildContext context) {
     if (_decodedBytes != null) {
@@ -414,11 +439,15 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       memCacheWidth: _thumbWidth(context),
       placeholder: (_, _) => widget.placeholder,
       errorWidget: (_, _, _) => widget.placeholder,
-      // 图片就绪后（后帧）上报原图比例：关闭「限制封面比例」时据此自适应高度
+      // 图片就绪后（后帧）上报原图比例：关闭「限制封面比例」时据此自适应高度。
+      // [批39 审查回修] 仅在比例未知（缓存无命中）时调度，避免每次 build
+      // 重复 resolve 注册监听。
       imageBuilder: (context, imageProvider) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _reportProviderRatio(imageProvider);
-        });
+        if (_needsProviderRatio) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _reportProviderRatio(imageProvider);
+          });
+        }
         return Image(
           image: imageProvider,
           fit: BoxFit.cover,
