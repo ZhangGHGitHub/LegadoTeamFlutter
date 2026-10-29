@@ -8,6 +8,9 @@ import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// 初始化 Legado 运行时（首次调用时创建 tokio runtime）
+///
+/// 批34c：同时安装 `log` → logcat 桥（`crate::log_bridge::init`），
+/// 高亮匹配的降级 warn（无效正则 / 超时）此前在设备上不可见。
 Future<void> init() => RustLib.instance.api.crateFfiFfiInit();
 
 /// 注入真实设备 ID（Android Settings.Secure.ANDROID_ID）
@@ -108,6 +111,27 @@ Future<void> bookUpdateReadConfigField({
 /// 按 bookUrl 删除书籍
 Future<void> bookshelfDelete({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiBookshelfDelete(bookUrl: bookUrl);
+
+/// 批量删除书架书籍（可选同时删除本地/WebDAV 原文件，批35）
+///
+/// 返回文件删除失败的提示列表（成功为空数组）：文件删除失败**不阻断**
+/// 书籍记录删除；路径安全与白名单见 `api::bookshelf::delete_books`。
+Future<List<String>> bookshelfDeleteBooks({
+  required List<String> bookUrls,
+  required bool deleteOriginal,
+}) => RustLib.instance.api.crateFfiFfiBookshelfDeleteBooks(
+  bookUrls: bookUrls,
+  deleteOriginal: deleteOriginal,
+);
+
+/// 书籍级阅读记录开关（批35，单列写，返回更新后的整书 JSON）
+Future<String> bookSetReadRecordDisabled({
+  required String bookUrl,
+  required bool disabled,
+}) => RustLib.instance.api.crateFfiFfiBookSetReadRecordDisabled(
+  bookUrl: bookUrl,
+  disabled: disabled,
+);
 
 /// 按 bookUrl 获取书籍详情（JSON，可能为 null）
 Future<String> bookshelfGet({required String bookUrl}) =>
@@ -1450,12 +1474,17 @@ Future<String> readRecordList() =>
 /// 添加/更新阅读记录，返回阅读时长
 ///
 /// [热力图每日时长契约] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
+///
+/// [批35] `book_url` 非空时写前检查 `books.disableReadRecord`，为真则整次
+/// 跳过（返回传入 readTime，零写入）；为空保持旧行为。
 Future<PlatformInt64> readRecordUpsert({
   required String bookName,
   required PlatformInt64 readTime,
+  String? bookUrl,
 }) => RustLib.instance.api.crateFfiFfiReadRecordUpsert(
   bookName: bookName,
   readTime: readTime,
+  bookUrl: bookUrl,
 );
 
 /// 按年查询每日阅读时长列表（热力图"每日时长"模式数据源）

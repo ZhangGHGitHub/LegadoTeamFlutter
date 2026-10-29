@@ -711,6 +711,12 @@ mixin _$Book {
   String? get wordCount => throw _privateConstructorUsedError;
   @JsonKey(name: 'canUpdate')
   bool get canUpdate => throw _privateConstructorUsedError;
+
+  /// [批35] 单独为本书关闭阅读记录（对齐原版 `Book.disableReadRecord`，
+  /// `Book.kt:120-122`）：为 true 时只有这本书不写入阅读会话（全局开关
+  /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
+  @JsonKey(name: 'disableReadRecord')
+  bool get disableReadRecord => throw _privateConstructorUsedError;
   int get order => throw _privateConstructorUsedError;
   @JsonKey(name: 'originOrder')
   int get originOrder => throw _privateConstructorUsedError;
@@ -773,6 +779,7 @@ abstract class $BookCopyWith<$Res> {
       @JsonKey(name: 'durChapterTime') int durChapterTime,
       @JsonKey(name: 'wordCount') String? wordCount,
       @JsonKey(name: 'canUpdate') bool canUpdate,
+      @JsonKey(name: 'disableReadRecord') bool disableReadRecord,
       int order,
       @JsonKey(name: 'originOrder') int originOrder,
       String? variable,
@@ -825,6 +832,7 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
     Object? durChapterTime = null,
     Object? wordCount = freezed,
     Object? canUpdate = null,
+    Object? disableReadRecord = null,
     Object? order = null,
     Object? originOrder = null,
     Object? variable = freezed,
@@ -946,6 +954,10 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
           ? _value.canUpdate
           : canUpdate // ignore: cast_nullable_to_non_nullable
               as bool,
+      disableReadRecord: null == disableReadRecord
+          ? _value.disableReadRecord
+          : disableReadRecord // ignore: cast_nullable_to_non_nullable
+              as bool,
       order: null == order
           ? _value.order
           : order // ignore: cast_nullable_to_non_nullable
@@ -1026,6 +1038,7 @@ abstract class _$$BookImplCopyWith<$Res> implements $BookCopyWith<$Res> {
       @JsonKey(name: 'durChapterTime') int durChapterTime,
       @JsonKey(name: 'wordCount') String? wordCount,
       @JsonKey(name: 'canUpdate') bool canUpdate,
+      @JsonKey(name: 'disableReadRecord') bool disableReadRecord,
       int order,
       @JsonKey(name: 'originOrder') int originOrder,
       String? variable,
@@ -1076,6 +1089,7 @@ class __$$BookImplCopyWithImpl<$Res>
     Object? durChapterTime = null,
     Object? wordCount = freezed,
     Object? canUpdate = null,
+    Object? disableReadRecord = null,
     Object? order = null,
     Object? originOrder = null,
     Object? variable = freezed,
@@ -1197,6 +1211,10 @@ class __$$BookImplCopyWithImpl<$Res>
           ? _value.canUpdate
           : canUpdate // ignore: cast_nullable_to_non_nullable
               as bool,
+      disableReadRecord: null == disableReadRecord
+          ? _value.disableReadRecord
+          : disableReadRecord // ignore: cast_nullable_to_non_nullable
+              as bool,
       order: null == order
           ? _value.order
           : order // ignore: cast_nullable_to_non_nullable
@@ -1261,6 +1279,7 @@ class _$BookImpl implements _Book {
       @JsonKey(name: 'durChapterTime') this.durChapterTime = 0,
       @JsonKey(name: 'wordCount') this.wordCount,
       @JsonKey(name: 'canUpdate') this.canUpdate = true,
+      @JsonKey(name: 'disableReadRecord') this.disableReadRecord = false,
       this.order = 0,
       @JsonKey(name: 'originOrder') this.originOrder = 0,
       this.variable,
@@ -1353,6 +1372,13 @@ class _$BookImpl implements _Book {
   @override
   @JsonKey(name: 'canUpdate')
   final bool canUpdate;
+
+  /// [批35] 单独为本书关闭阅读记录（对齐原版 `Book.disableReadRecord`，
+  /// `Book.kt:120-122`）：为 true 时只有这本书不写入阅读会话（全局开关
+  /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
+  @override
+  @JsonKey(name: 'disableReadRecord')
+  final bool disableReadRecord;
   @override
   @JsonKey()
   final int order;
@@ -1386,7 +1412,7 @@ class _$BookImpl implements _Book {
 
   @override
   String toString() {
-    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl, downloadUrls: $downloadUrls)';
+    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, disableReadRecord: $disableReadRecord, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl, downloadUrls: $downloadUrls)';
   }
 
   @override
@@ -1441,6 +1467,8 @@ class _$BookImpl implements _Book {
                 other.wordCount == wordCount) &&
             (identical(other.canUpdate, canUpdate) ||
                 other.canUpdate == canUpdate) &&
+            (identical(other.disableReadRecord, disableReadRecord) ||
+                other.disableReadRecord == disableReadRecord) &&
             (identical(other.order, order) || other.order == order) &&
             (identical(other.originOrder, originOrder) ||
                 other.originOrder == originOrder) &&
@@ -1488,6 +1516,7 @@ class _$BookImpl implements _Book {
         durChapterTime,
         wordCount,
         canUpdate,
+        disableReadRecord,
         order,
         originOrder,
         variable,
@@ -1541,6 +1570,7 @@ abstract class _Book implements Book {
       @JsonKey(name: 'durChapterTime') final int durChapterTime,
       @JsonKey(name: 'wordCount') final String? wordCount,
       @JsonKey(name: 'canUpdate') final bool canUpdate,
+      @JsonKey(name: 'disableReadRecord') final bool disableReadRecord,
       final int order,
       @JsonKey(name: 'originOrder') final int originOrder,
       final String? variable,
@@ -1628,6 +1658,13 @@ abstract class _Book implements Book {
   @override
   @JsonKey(name: 'canUpdate')
   bool get canUpdate;
+  @override
+
+  /// [批35] 单独为本书关闭阅读记录（对齐原版 `Book.disableReadRecord`，
+  /// `Book.kt:120-122`）：为 true 时只有这本书不写入阅读会话（全局开关
+  /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
+  @JsonKey(name: 'disableReadRecord')
+  bool get disableReadRecord;
   @override
   int get order;
   @override

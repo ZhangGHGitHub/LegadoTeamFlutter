@@ -81,6 +81,31 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
     _books.removeWhere((b) => b.bookUrl == bookUrl);
   }
 
+  /// 批量删除（批35）：Mock 不接触真实磁盘文件，`deleteOriginal` 仅保留
+  /// 契约形态；返回值按「无文件删除失败」处理（空列表）。
+  @override
+  Future<List<String>> deleteBooks(
+    List<String> bookUrls, {
+    bool deleteOriginal = false,
+  }) async {
+    await _ensureBooksLoaded();
+    _books.removeWhere((b) => bookUrls.contains(b.bookUrl));
+    return const [];
+  }
+
+  /// 书籍级阅读记录开关（批35）：单书字段切换，书籍不存在抛错（对齐 Rust）。
+  @override
+  Future<Book> setReadRecordDisabled(String bookUrl, bool disabled) async {
+    await _ensureBooksLoaded();
+    final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
+    if (idx < 0) {
+      throw StateError('书籍不存在: $bookUrl');
+    }
+    final updated = _books[idx].copyWith(disableReadRecord: disabled);
+    _books[idx] = updated;
+    return updated;
+  }
+
   @override
   Future<Book?> getBook(String bookUrl) async {
     await _ensureBooksLoaded();

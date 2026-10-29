@@ -43,6 +43,24 @@ abstract class BookApi {
   /// 从书架删除书籍
   Future<void> deleteBook(String bookUrl);
 
+  /// 批量从书架删除书籍，可选同时删除本地/WebDAV 原文件（批35）
+  ///
+  /// 对齐参考版 `DeleteBooksUseCase.execute(bookUrls, deleteOriginal)`：
+  /// 逐本删除书籍记录（章节级联清理）；[deleteOriginal] 为 true 时仅对
+  /// 本地/WebDAV 书删除 `bookUrl` 指向的磁盘文件。文件删除失败**不阻断**
+  /// 记录删除，以中文提示逐条返回（成功返回空列表）。
+  Future<List<String>> deleteBooks(
+    List<String> bookUrls, {
+    bool deleteOriginal = false,
+  });
+
+  /// 书籍级阅读记录开关（批35，单列 UPDATE，返回更新后的整书）
+  ///
+  /// 对齐参考版 `BookInfoViewModel.toggleReadRecordDisabled`：只改
+  /// `books.disableReadRecord`，不整书回写（避免陈旧快照覆盖进度）；
+  /// 书籍不存在抛错（不静默成功）。
+  Future<Book> setReadRecordDisabled(String bookUrl, bool disabled);
+
   /// 按 bookUrl 获取书籍详情
   Future<Book?> getBook(String bookUrl);
 
@@ -836,7 +854,11 @@ abstract class BookApi {
   Future<List<ReadRecord>> getReadRecords();
 
   /// 更新阅读记录
-  Future<void> putReadRecord(ReadRecord record);
+  ///
+  /// [bookUrl] 非空时写前检查该书 `disableReadRecord`：为 true 则整次跳过
+  /// （不写 readRecord/readRecordDaily，返回传入 readTime）；为空保持旧行为。
+  /// 阅读器写路径应传 `book.bookUrl`（批35，见 API_CONTRACT §2.12）。
+  Future<void> putReadRecord(ReadRecord record, {String? bookUrl});
 
   /// 删除阅读记录
   Future<void> deleteReadRecord(String bookName);

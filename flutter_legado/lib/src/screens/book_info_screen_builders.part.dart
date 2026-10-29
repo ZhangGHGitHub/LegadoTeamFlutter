@@ -256,6 +256,21 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         if (!context.mounted) break;
         await Navigator.pushNamed(context, AppRoutes.readRecord);
         break;
+      case 'readRecordDisabled':
+        // [批35] 书籍级阅读记录开关（对齐参考版
+        // `BookInfoViewModel.toggleReadRecordDisabled`）：单列 UPDATE，
+        // 返回更新后的整书；失败提示，不假装成功。
+        if (book == null) return;
+        try {
+          final updated =
+              await api.setReadRecordDisabled(book.bookUrl, !book.disableReadRecord);
+          if (!mounted) return;
+          setState(() => _loadedBook = updated);
+          _snack(updated.disableReadRecord ? '已关闭本书阅读记录' : '已恢复本书阅读记录');
+        } catch (e) {
+          if (mounted) _snack('操作失败：$e');
+        }
+        break;
       case 'refresh':
         // 对齐原版：刷新即含目录更新（在线书走 refreshToc，本地书仅重加载）
         if (book != null && _isOnlineBook(book)) {

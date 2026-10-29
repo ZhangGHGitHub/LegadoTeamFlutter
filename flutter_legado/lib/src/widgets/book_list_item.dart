@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/time_utils.dart';
 import 'book_cover.dart';
+import 'book_display_tags_row.dart';
 
 /// 书架列表项（对标原版 item_bookshelf_list.xml）
 ///
@@ -18,9 +19,13 @@ class BookListItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
+  /// [批35] 展示标签（用户标签/书源分类/字数，空列表不渲染）
+  final List<String> tags;
+
   const BookListItem({
     super.key,
     required this.book,
+    this.tags = const [],
     this.onTap,
     this.onLongPress,
   });
@@ -95,6 +100,13 @@ class BookListItem extends StatelessWidget {
                       icon: Symbols.history_rounded,
                       text: book.durChapterTitle!,
                       style: summaryStyle,
+                    ),
+                  // [批35] 展示标签行（对齐参考版 list 布局：阅读章节之后、
+                  // 最新章节之前的标签条；空列表不占位）
+                  if (tags.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: BookDisplayTagsRow(tags: tags),
                     ),
                   // 最新章节行 + 百分比（对标 iv_last + tv_last + tv_read_percent）
                   if ((book.latestChapterTitle ?? '').isNotEmpty)

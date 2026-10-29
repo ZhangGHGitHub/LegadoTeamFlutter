@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'book_cover.dart';
+import 'book_display_tags_row.dart';
 
 /// 书架网格项（对标原版 item_bookshelf_grid.xml）
 ///
@@ -14,6 +15,9 @@ import 'book_cover.dart';
 /// - 标题区域长按 → [onInfoLongPress]（打开操作菜单）
 /// - 点击 → [onTap]（打开阅读/书籍信息）
 class BookGridItem extends StatelessWidget {
+  /// [批35] 标签行高度（父级网格计算 cell 高宽比时须同步加上）
+  static const double tagRowHeight = 20;
+
   final String title;
   final String? coverUrl;
 
@@ -39,6 +43,13 @@ class BookGridItem extends StatelessWidget {
   /// 标题区域长按回调（打开操作菜单）
   final VoidCallback? onInfoLongPress;
 
+  /// [批35] 展示标签（用户标签/书源分类/字数，空列表不渲染）
+  final List<String> tags;
+
+  /// [批35] 父级网格是否已按标签行预留高度：为真时即使本书无标签也保留
+  /// 等高空行，保证同屏卡片封面高度一致（不因个别书无标签而拉伸）
+  final bool reserveTagRow;
+
   const BookGridItem({
     super.key,
     required this.title,
@@ -47,6 +58,8 @@ class BookGridItem extends StatelessWidget {
     this.heroTag,
     this.unreadNum = 0,
     this.progress,
+    this.tags = const [],
+    this.reserveTagRow = false,
     this.onTap,
     this.onCoverLongPress,
     this.onInfoLongPress,
@@ -172,6 +185,16 @@ class BookGridItem extends StatelessWidget {
             ),
           ),
         ),
+        // [批35] 展示标签（用户标签/书源分类/字数）：空列表不占位；
+        // 父级已预留行高时空出一行，保证同屏卡片封面等高
+        if (tags.isNotEmpty)
+          BookDisplayTagsRow(
+            tags: tags,
+            height: tagRowHeight,
+            compact: true,
+          )
+        else if (reserveTagRow)
+          const SizedBox(height: tagRowHeight),
       ],
     );
   }

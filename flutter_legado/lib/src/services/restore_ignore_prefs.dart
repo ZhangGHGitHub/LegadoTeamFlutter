@@ -144,8 +144,12 @@ class RestoreIgnorePrefs {
         (key == 'themeMode' || key == themeModeStorageKey)) {
       return false;
     }
+    // [批35] 书架展示标签四键同属「书架布局」忽略项（参考版将标签内容
+    // 放在书架配置面板内，恢复备份时不覆盖本机书架展示策略）。
     if (ignore['bookshelfLayout'] == true &&
-        (key == 'bookshelfLayout' || key == bookshelfLayoutStorageKey)) {
+        (key == 'bookshelfLayout' ||
+            key == bookshelfLayoutStorageKey ||
+            SettingsService.bookshelfTagPrefKeys.contains(key))) {
       return false;
     }
     if (ignore['showRss'] == true && key == PrefKeys.showRss) return false;

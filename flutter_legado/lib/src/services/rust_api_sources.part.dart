@@ -46,6 +46,29 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   Future<void> deleteBook(String bookUrl) =>
       bridge.bookshelfDelete(bookUrl: bookUrl);
 
+  /// 批量删除书籍（可选同时删除本地/WebDAV 原文件，批35）
+  ///
+  /// 返回值 = 文件删除失败提示（中文逐条），成功为空列表；文件删除失败
+  /// 不阻断书籍记录删除（Rust 侧保证）。
+  @override
+  Future<List<String>> deleteBooks(
+    List<String> bookUrls, {
+    bool deleteOriginal = false,
+  }) => bridge.bookshelfDeleteBooks(
+    bookUrls: bookUrls,
+    deleteOriginal: deleteOriginal,
+  );
+
+  /// 书籍级阅读记录开关（批35，单列写，返回更新后的整书）
+  @override
+  Future<Book> setReadRecordDisabled(String bookUrl, bool disabled) async {
+    final json = await bridge.bookSetReadRecordDisabled(
+      bookUrl: bookUrl,
+      disabled: disabled,
+    );
+    return Book.fromJson(_decodeMap(json, 'bookApi'));
+  }
+
   /// 按 bookUrl 获取书籍详情
   @override
   Future<Book?> getBook(String bookUrl) async {

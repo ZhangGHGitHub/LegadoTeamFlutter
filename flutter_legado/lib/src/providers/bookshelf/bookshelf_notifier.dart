@@ -30,11 +30,24 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     return const BookshelfState();
   }
 
-  /// 加载持久化的书架偏好设置（网格/列表布局）
+  /// 加载持久化的书架偏好设置（网格/列表布局 + 展示标签四键）
   // [红线清理 2.0.260 | 台账 1-3] 统计行/最近阅读行移除后，偏好仅剩布局
+  // [批35] 标签四键：键名对齐参考版 `BookshelfSettings`，默认均 true
   Future<void> _loadSettings() async {
-    final isGridView = await _settings.getBookshelfLayout();
-    state = state.copyWith(isGridView: isGridView);
+    final results = await Future.wait<Object>([
+      _settings.getBookshelfLayout(),
+      _settings.getBookshelfShowTag(),
+      _settings.getBookshelfShowCustomTags(),
+      _settings.getBookshelfShowSourceTags(),
+      _settings.getBookshelfShowWordCount(),
+    ]);
+    state = state.copyWith(
+      isGridView: results[0] as bool,
+      showTag: results[1] as bool,
+      showCustomTags: results[2] as bool,
+      showSourceTags: results[3] as bool,
+      showWordCount: results[4] as bool,
+    );
   }
 
   /// 调用 Rust API 获取书籍列表
@@ -239,6 +252,31 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     await _settings.setBookshelfLayout(newValue);
   }
 
+  /// [批35] 显示标签总开关（对齐参考版 `bookshelfShowTag`）
+  Future<void> setShowTag(bool value) async {
+    state = state.copyWith(showTag: value);
+    await _settings.setBookshelfShowTag(value);
+  }
+
+  /// [批35] 标签内容三项（对齐参考版 `BookshelfTagContentDialog` 确认语义：
+  /// 一次性写回三项并持久化）
+  Future<void> setTagContent({
+    required bool showCustomTags,
+    required bool showSourceTags,
+    required bool showWordCount,
+  }) async {
+    state = state.copyWith(
+      showCustomTags: showCustomTags,
+      showSourceTags: showSourceTags,
+      showWordCount: showWordCount,
+    );
+    await Future.wait([
+      _settings.setBookshelfShowCustomTags(showCustomTags),
+      _settings.setBookshelfShowSourceTags(showSourceTags),
+      _settings.setBookshelfShowWordCount(showWordCount),
+    ]);
+  }
+
   /// 设置分组模式
   // [UI_SYNC_REFACTOR T3] 批量选择（对齐参考 SelectionBottomBar 态）
   void toggleBatchMode() {
@@ -273,26 +311,31 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   /// 批量删除已勾选书籍（选择模式顶栏「删除」动作）
   ///
-  /// [UI-fix 2.0.258] 逐本调用 `BookApi.deleteBook`（对齐
-  /// BookshelfManageNotifier.removeSelected 方案）；成功后先同步 UI 列表
-  /// 再重拉数据源保证与 Rust 一致；删除后清空选中并退出选择模式
-  /// （对标原版批量操作完成即退出选择态）。
-  Future<void> deleteSelectedBooks() async {
+  /// [UI-fix 2.0.258] 原逐本 `deleteBook` 方案收敛为单次批量调用。
+  /// [批35] 改走 `BookApi.deleteBooks(urls, deleteOriginal)`：`deleteOriginal`
+  /// 为真时由 Rust 仅对本地/WebDAV 书删除原文件；返回文件删除失败提示
+  /// （中文逐条，成功为空列表），文件失败不阻断记录删除。
+  ///
+  /// 成功后先同步 UI 列表再重拉数据源保证与 Rust 一致，最后清空选中并退出
+  /// 选择模式（对标原版批量操作完成即退出选择态）；记录删除失败置
+  /// `state.error` 后向上抛出，由调用方提示（不静默假装成功）。
+  Future<List<String>> deleteSelectedBooks({bool deleteOriginal = false}) async {
     final urls = state.selectedUrls.toList();
-    if (urls.isEmpty) return;
+    if (urls.isEmpty) return const [];
     try {
       final api = ref.read(bookApiProvider);
-      for (final url in urls) {
-        await api.deleteBook(url);
-      }
+      final warnings =
+          await api.deleteBooks(urls, deleteOriginal: deleteOriginal);
       state = state.copyWith(
         books: state.books.where((b) => !urls.contains(b.bookUrl)).toList(),
         isBatchMode: false,
         selectedUrls: {},
       );
       await _loadBooks();
+      return warnings;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
+      rethrow;
     }
   }
 

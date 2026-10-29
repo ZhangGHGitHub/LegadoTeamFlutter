@@ -292,6 +292,15 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             const PopupMenuItem(value: 'edit', child: Text('编辑')),
             const PopupMenuItem(value: 'refresh', child: Text('刷新')),
             const PopupMenuItem(value: 'readRecord', child: Text('阅读记录')),
+            // [批35] 书籍级阅读记录开关（对齐参考版
+            // `BookInfoMenuAction.ToggleReadRecordDisabled`：仅架上书显示，
+            // 勾选态 = 当前已独立关闭阅读记录）
+            if (_inBookshelf && book != null)
+              checkedItem(
+                'readRecordDisabled',
+                '独立关闭阅读记录',
+                book.disableReadRecord,
+              ),
             // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通）/
             // 设置书籍变量（[Task #39 §5.11-4] 已接通变量对话框 + updateBook）
             if (hasSource)

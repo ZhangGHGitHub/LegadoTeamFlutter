@@ -43,6 +43,18 @@ mixin _$BookshelfState {
   /// 批量选中的书籍 URL 集合
   Set<String> get selectedUrls => throw _privateConstructorUsedError;
 
+  /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
+  bool get showTag => throw _privateConstructorUsedError;
+
+  /// [批35] 标签内容 - 用户标签（`Book.customTag`）
+  bool get showCustomTags => throw _privateConstructorUsedError;
+
+  /// [批35] 标签内容 - 书源分类（`Book.kind`）
+  bool get showSourceTags => throw _privateConstructorUsedError;
+
+  /// [批35] 标签内容 - 字数（`Book.wordCount`）
+  bool get showWordCount => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $BookshelfStateCopyWith<BookshelfState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -63,7 +75,11 @@ abstract class $BookshelfStateCopyWith<$Res> {
       List<BookGroup> groups,
       int selectedGroupIndex,
       bool isBatchMode,
-      Set<String> selectedUrls});
+      Set<String> selectedUrls,
+      bool showTag,
+      bool showCustomTags,
+      bool showSourceTags,
+      bool showWordCount});
 }
 
 /// @nodoc
@@ -88,6 +104,10 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? selectedGroupIndex = null,
     Object? isBatchMode = null,
     Object? selectedUrls = null,
+    Object? showTag = null,
+    Object? showCustomTags = null,
+    Object? showSourceTags = null,
+    Object? showWordCount = null,
   }) {
     return _then(_value.copyWith(
       books: null == books
@@ -126,6 +146,22 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.selectedUrls
           : selectedUrls // ignore: cast_nullable_to_non_nullable
               as Set<String>,
+      showTag: null == showTag
+          ? _value.showTag
+          : showTag // ignore: cast_nullable_to_non_nullable
+              as bool,
+      showCustomTags: null == showCustomTags
+          ? _value.showCustomTags
+          : showCustomTags // ignore: cast_nullable_to_non_nullable
+              as bool,
+      showSourceTags: null == showSourceTags
+          ? _value.showSourceTags
+          : showSourceTags // ignore: cast_nullable_to_non_nullable
+              as bool,
+      showWordCount: null == showWordCount
+          ? _value.showWordCount
+          : showWordCount // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -147,7 +183,11 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       List<BookGroup> groups,
       int selectedGroupIndex,
       bool isBatchMode,
-      Set<String> selectedUrls});
+      Set<String> selectedUrls,
+      bool showTag,
+      bool showCustomTags,
+      bool showSourceTags,
+      bool showWordCount});
 }
 
 /// @nodoc
@@ -170,6 +210,10 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? selectedGroupIndex = null,
     Object? isBatchMode = null,
     Object? selectedUrls = null,
+    Object? showTag = null,
+    Object? showCustomTags = null,
+    Object? showSourceTags = null,
+    Object? showWordCount = null,
   }) {
     return _then(_$BookshelfStateImpl(
       books: null == books
@@ -208,6 +252,22 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value._selectedUrls
           : selectedUrls // ignore: cast_nullable_to_non_nullable
               as Set<String>,
+      showTag: null == showTag
+          ? _value.showTag
+          : showTag // ignore: cast_nullable_to_non_nullable
+              as bool,
+      showCustomTags: null == showCustomTags
+          ? _value.showCustomTags
+          : showCustomTags // ignore: cast_nullable_to_non_nullable
+              as bool,
+      showSourceTags: null == showSourceTags
+          ? _value.showSourceTags
+          : showSourceTags // ignore: cast_nullable_to_non_nullable
+              as bool,
+      showWordCount: null == showWordCount
+          ? _value.showWordCount
+          : showWordCount // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -224,7 +284,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
       final List<BookGroup> groups = const [],
       this.selectedGroupIndex = 0,
       this.isBatchMode = false,
-      final Set<String> selectedUrls = const {}})
+      final Set<String> selectedUrls = const {},
+      this.showTag = true,
+      this.showCustomTags = true,
+      this.showSourceTags = true,
+      this.showWordCount = true})
       : _books = books,
         _groups = groups,
         _selectedUrls = selectedUrls;
@@ -294,9 +358,29 @@ class _$BookshelfStateImpl implements _BookshelfState {
     return EqualUnmodifiableSetView(_selectedUrls);
   }
 
+  /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
+  @override
+  @JsonKey()
+  final bool showTag;
+
+  /// [批35] 标签内容 - 用户标签（`Book.customTag`）
+  @override
+  @JsonKey()
+  final bool showCustomTags;
+
+  /// [批35] 标签内容 - 书源分类（`Book.kind`）
+  @override
+  @JsonKey()
+  final bool showSourceTags;
+
+  /// [批35] 标签内容 - 字数（`Book.wordCount`）
+  @override
+  @JsonKey()
+  final bool showWordCount;
+
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showTag: $showTag, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount)';
   }
 
   @override
@@ -318,7 +402,14 @@ class _$BookshelfStateImpl implements _BookshelfState {
             (identical(other.isBatchMode, isBatchMode) ||
                 other.isBatchMode == isBatchMode) &&
             const DeepCollectionEquality()
-                .equals(other._selectedUrls, _selectedUrls));
+                .equals(other._selectedUrls, _selectedUrls) &&
+            (identical(other.showTag, showTag) || other.showTag == showTag) &&
+            (identical(other.showCustomTags, showCustomTags) ||
+                other.showCustomTags == showCustomTags) &&
+            (identical(other.showSourceTags, showSourceTags) ||
+                other.showSourceTags == showSourceTags) &&
+            (identical(other.showWordCount, showWordCount) ||
+                other.showWordCount == showWordCount));
   }
 
   @override
@@ -332,7 +423,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
       const DeepCollectionEquality().hash(_groups),
       selectedGroupIndex,
       isBatchMode,
-      const DeepCollectionEquality().hash(_selectedUrls));
+      const DeepCollectionEquality().hash(_selectedUrls),
+      showTag,
+      showCustomTags,
+      showSourceTags,
+      showWordCount);
 
   @JsonKey(ignore: true)
   @override
@@ -352,7 +447,11 @@ abstract class _BookshelfState implements BookshelfState {
       final List<BookGroup> groups,
       final int selectedGroupIndex,
       final bool isBatchMode,
-      final Set<String> selectedUrls}) = _$BookshelfStateImpl;
+      final Set<String> selectedUrls,
+      final bool showTag,
+      final bool showCustomTags,
+      final bool showSourceTags,
+      final bool showWordCount}) = _$BookshelfStateImpl;
 
   @override
 
@@ -390,6 +489,22 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// 批量选中的书籍 URL 集合
   Set<String> get selectedUrls;
+  @override
+
+  /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
+  bool get showTag;
+  @override
+
+  /// [批35] 标签内容 - 用户标签（`Book.customTag`）
+  bool get showCustomTags;
+  @override
+
+  /// [批35] 标签内容 - 书源分类（`Book.kind`）
+  bool get showSourceTags;
+  @override
+
+  /// [批35] 标签内容 - 字数（`Book.wordCount`）
+  bool get showWordCount;
   @override
   @JsonKey(ignore: true)
   _$$BookshelfStateImplCopyWith<_$BookshelfStateImpl> get copyWith =>

@@ -504,7 +504,15 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   Future<List<ReadRecord>> getReadRecords() async => List.from(_readRecords);
 
   @override
-  Future<void> putReadRecord(ReadRecord record) async {
+  Future<void> putReadRecord(ReadRecord record, {String? bookUrl}) async {
+    // [批35] 书籍级开关：Mock 内存态同样在写前跳过（对齐 Rust 守卫），
+    // 供 UI 测试覆盖「关闭不写/开启恢复」。
+    if (bookUrl != null && bookUrl.isNotEmpty) {
+      final disabled = _books
+          .where((b) => b.bookUrl == bookUrl)
+          .any((b) => b.disableReadRecord);
+      if (disabled) return;
+    }
     // v113 主键 (deviceId, bookName, author)：同名不同作者各自保留
     _readRecords.removeWhere((r) =>
         r.bookName == record.bookName && r.author == record.author);

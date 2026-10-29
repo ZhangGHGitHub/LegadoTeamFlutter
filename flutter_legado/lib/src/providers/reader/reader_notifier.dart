@@ -851,10 +851,16 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   /// 累计并写入阅读时长（对标 ReadBook.upReadTime）
+  ///
+  /// [批35] 书籍级开关：`book.disableReadRecord` 为真时**本地短路**（连 FFI
+  /// 都不发）；写路径同时传 `bookUrl`，由 Rust 侧再查一次 DB 兜住「详情页
+  /// 切换后阅读器仍持旧 Book 副本」的并发窗口（API_CONTRACT §2.12 注②）。
+  /// 本轨仅文本阅读器写 readRecord（朗读/听书不写，RSS 记录是独立体系）。
   Future<void> _upReadTime(Book book) async {
     try {
       final enable = await _settings.getEnableReadRecord();
       if (!enable) return;
+      if (book.disableReadRecord) return;
       final now = DateTime.now().millisecondsSinceEpoch;
       if (_readStartMs <= 0) {
         _readStartMs = now;
@@ -870,6 +876,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
               readTime: _baseReadTimeMs,
               lastRead: now,
             ),
+            bookUrl: book.bookUrl,
           );
     } catch (_) {
       // 写记录失败不阻断阅读

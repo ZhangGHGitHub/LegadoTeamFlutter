@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../models/models.dart';
+import '../../utils/book_display_tags.dart';
 
 part 'bookshelf_state.freezed.dart';
 
@@ -52,6 +53,18 @@ class BookshelfState with _$BookshelfState {
 
     /// 批量选中的书籍 URL 集合
     @Default({}) Set<String> selectedUrls,
+
+    /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
+    @Default(true) bool showTag,
+
+    /// [批35] 标签内容 - 用户标签（`Book.customTag`）
+    @Default(true) bool showCustomTags,
+
+    /// [批35] 标签内容 - 书源分类（`Book.kind`）
+    @Default(true) bool showSourceTags,
+
+    /// [批35] 标签内容 - 字数（`Book.wordCount`）
+    @Default(true) bool showWordCount,
   }) = _BookshelfState;
 }
 
@@ -62,6 +75,20 @@ extension BookshelfStateGrouping on BookshelfState {
 
   /// 是否存在多个分组 Tab（对标原版：多分组时顶栏显示 TabLayout）
   bool get hasGroupTabs => groups.length > 1;
+
+  /// [批35] 某本书在当前标签开关下的展示标签（总开关关闭 → 空）
+  ///
+  /// 纯展示层计算（对齐参考版 `BookShelfItem.getDisplayTags`）：不改
+  /// `Book` 数据，空值/空白项不产生标签；书卡与列表行共用此入口。
+  List<String> displayTagsOf(Book book) {
+    if (!showTag) return const [];
+    return bookDisplayTags(
+      book,
+      showCustomTags: showCustomTags,
+      showSourceTags: showSourceTags,
+      showWordCount: showWordCount,
+    );
+  }
 
   /// 当前选中分组
   BookGroup? get selectedGroup =>

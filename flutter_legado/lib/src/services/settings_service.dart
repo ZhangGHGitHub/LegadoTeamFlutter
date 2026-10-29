@@ -21,6 +21,23 @@ class SettingsService {
   static const _keyLocale = 'app_locale';
   static const _keyBookshelfTabPosition = 'bookshelf_tab_position';
   static const _keyBookshelfLayout = 'bookshelf_layout'; // true=网格 false=列表
+  // [批35] 书架展示标签四键：键名逐字对齐参考版 `BookshelfSettings`
+  // （`bookshelfShowTag` / `bookshelfShowCustomTags` /
+  // `bookshelfShowSourceTags` / `bookshelfShowWordCount`，默认均 true），
+  // 不进 FFI/DB；随 Flutter JSON 备份 `appPrefs` 往返，受「忽略书架布局」
+  // 约束（见 RestoreIgnorePrefs.keyIsNotIgnore）。
+  static const bookshelfShowTagKey = 'bookshelfShowTag';
+  static const bookshelfShowCustomTagsKey = 'bookshelfShowCustomTags';
+  static const bookshelfShowSourceTagsKey = 'bookshelfShowSourceTags';
+  static const bookshelfShowWordCountKey = 'bookshelfShowWordCount';
+
+  /// 书架展示标签偏好键集合（备份忽略过滤与设置读取共用）
+  static const bookshelfTagPrefKeys = <String>{
+    bookshelfShowTagKey,
+    bookshelfShowCustomTagsKey,
+    bookshelfShowSourceTagsKey,
+    bookshelfShowWordCountKey,
+  };
   // [批33 | 正文搜索选项持久化] 键名前缀独立（不占用原版业务表键）：
   // 原版把搜索范围/替换/正则放在 ViewModel 进程内静态（关页面重进保留、
   // 重启丢失），本批按裁决落 SharedPreferences，重进/重启均保持。
@@ -401,6 +418,55 @@ class SettingsService {
       await prefs.setBool(_keyBookshelfLayout, isGridView);
     } catch (e) {
       debugPrint('SettingsService.setBookshelfLayout 异常: $e');
+    }
+  }
+
+  // ===== 书架展示标签（批35，对齐参考版 BookshelfSettings）=====
+
+  /// 是否显示书架标签（总开关；关闭后标签条整体不渲染）
+  Future<bool> getBookshelfShowTag() => _getBoolPref(bookshelfShowTagKey);
+
+  Future<void> setBookshelfShowTag(bool value) =>
+      _setBoolPref(bookshelfShowTagKey, value);
+
+  /// 标签内容 - 用户标签（`Book.customTag`）
+  Future<bool> getBookshelfShowCustomTags() =>
+      _getBoolPref(bookshelfShowCustomTagsKey);
+
+  Future<void> setBookshelfShowCustomTags(bool value) =>
+      _setBoolPref(bookshelfShowCustomTagsKey, value);
+
+  /// 标签内容 - 书源分类（`Book.kind`）
+  Future<bool> getBookshelfShowSourceTags() =>
+      _getBoolPref(bookshelfShowSourceTagsKey);
+
+  Future<void> setBookshelfShowSourceTags(bool value) =>
+      _setBoolPref(bookshelfShowSourceTagsKey, value);
+
+  /// 标签内容 - 字数（`Book.wordCount`）
+  Future<bool> getBookshelfShowWordCount() =>
+      _getBoolPref(bookshelfShowWordCountKey);
+
+  Future<void> setBookshelfShowWordCount(bool value) =>
+      _setBoolPref(bookshelfShowWordCountKey, value);
+
+  /// 读取布尔偏好（缺键/异常回退 true，对齐参考版三键默认 true）
+  Future<bool> _getBoolPref(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(key) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService._getBoolPref($key) 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> _setBoolPref(String key, bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(key, value);
+    } catch (e) {
+      debugPrint('SettingsService._setBoolPref($key) 异常: $e');
     }
   }
 

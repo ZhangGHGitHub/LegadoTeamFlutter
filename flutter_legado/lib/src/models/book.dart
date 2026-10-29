@@ -283,6 +283,10 @@ class Book with _$Book {
     @Default(0) @JsonKey(name: 'durChapterTime') int durChapterTime,
     @JsonKey(name: 'wordCount') String? wordCount,
     @Default(true) @JsonKey(name: 'canUpdate') bool canUpdate,
+    /// [批35] 单独为本书关闭阅读记录（对齐原版 `Book.disableReadRecord`，
+    /// `Book.kt:120-122`）：为 true 时只有这本书不写入阅读会话（全局开关
+    /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
+    @Default(false) @JsonKey(name: 'disableReadRecord') bool disableReadRecord,
     @Default(0) int order,
     @Default(0) @JsonKey(name: 'originOrder') int originOrder,
     String? variable,

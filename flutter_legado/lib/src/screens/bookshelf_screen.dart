@@ -27,6 +27,7 @@ import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/export_file_sheet.dart';
+import '../widgets/ios_widgets.dart' show IosListTile, SettingSwitchRow;
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
 /// 书架页面（Riverpod ConsumerStatefulWidget）
@@ -179,36 +180,86 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// [UI-fix 2.0.258] 选择模式删除确认（对齐原版批量删除前二次确认，
-  /// 防误删；确认后逐本删除并退出选择模式）
+  /// 防误删；确认后批量删除并退出选择模式）
+  ///
+  /// [批35] 对齐参考版 `DeleteBooksConfirmDialog`：选中集合含本地/WebDAV
+  /// 书时才显示「删除源文件」勾选（每次打开重置为不勾选）；勾选后由 Rust
+  /// 删除 `bookUrl` 指向的磁盘文件，文件删除失败的逐条提示随结果返回。
   Future<void> _confirmDeleteSelected(
       BuildContext context, WidgetRef ref) async {
     final state = ref.read(bookshelfNotifierProvider);
     final count = state.selectedUrls.length;
     if (count == 0) return;
+    // 仅当选中集合里存在本地书才提供「删除源文件」（对齐参考版 hasLocalBook）
+    final hasLocalBook = state.books.any(
+      (b) => state.selectedUrls.contains(b.bookUrl) && BookType.isLocalBook(b),
+    );
+    var deleteOriginal = false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('删除书籍'),
-        content: Text('确定删除选中的 $count 本书籍吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('删除书籍'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('已选$count本'),
+              if (hasLocalBook)
+                InkWell(
+                  onTap: () =>
+                      setDialogState(() => deleteOriginal = !deleteOriginal),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        Checkbox(
+                          value: deleteOriginal,
+                          onChanged: (v) =>
+                              setDialogState(() => deleteOriginal = v ?? false),
+                        ),
+                        const Text('删除源文件'),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('删除'),
+            ),
+          ],
+        ),
       ),
     );
-    if (confirmed != true) return;
-    await ref.read(bookshelfNotifierProvider.notifier).deleteSelectedBooks();
-    if (!context.mounted) return;
+    if (confirmed != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    List<String> warnings;
+    try {
+      warnings = await ref
+          .read(bookshelfNotifierProvider.notifier)
+          .deleteSelectedBooks(deleteOriginal: deleteOriginal);
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('删除失败：$e')));
+      return;
+    }
+    if (!context.mounted) return;
+    // 文件删除失败不阻断记录删除：先报「已删除 N 本」，再逐条列出失败原因
+    final message = warnings.isEmpty
+        ? '已删除 $count 本书籍'
+        : '已删除 $count 本书籍；部分源文件未删除：${warnings.join('；')}';
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('已删除 $count 本书籍')));
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 分组 TabBar（对标原版 BookshelfFragment1：可滚动 TabLayout）
@@ -577,7 +628,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 ..._buildGroupedSlivers(context, ref, state, viewportWidth)
               else if (state.isGridView)
                 _buildGridSliver(
-                    context, ref, state.currentGroupBooks, viewportWidth)
+                    context, ref, state, state.currentGroupBooks, viewportWidth)
               else
                 _buildReorderableSliver(context, ref, state),
               // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
@@ -630,8 +681,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
-  Widget _buildGridSliver(
-      BuildContext context, WidgetRef ref, List<Book> books, double viewportWidth) {
+  Widget _buildGridSliver(BuildContext context, WidgetRef ref,
+      BookshelfState state, List<Book> books, double viewportWidth) {
     // [parity fix 2.0.264 | 台账 1-3] 3 列固定卡宽网格（对齐参考 03b 量测：
     // 卡宽≈屏宽 27%/列间距 20/左右边距 22；卡片=大封面+居中标题；书少时
     // 右侧格子自然留空，不撑满/居中放大——此前 2 列（卡宽≈44%）系参考误读，
@@ -643,6 +694,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // 改在 box 层取宽），按 cellH = cellW×7/5 + 40 计算 cell aspect，封面
     // 恢复精确 5:7。
     final available = viewportWidth - 44; // 扣除左右 padding 22×2
+    // [批35] 标签行按「当前网格内是否有任一本书带标签」预留高度：
+    // 无标签时不改变既有 cell 比例（封面 5:7 不被挤压）
+    final hasTagRow = books.any((b) => state.displayTagsOf(b).isNotEmpty);
     return SliverPadding(
       // 内容边距：左右 22（参考边距 22px）+ 上下 8
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
@@ -652,11 +706,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           // 网格间距 20dp（参考卡列间距 20px）
           mainAxisSpacing: 20,
           crossAxisSpacing: 20,
-          childAspectRatio: _bookshelfGridCellAspectRatio(available),
+          childAspectRatio:
+              _bookshelfGridCellAspectRatio(available, tagRow: hasTagRow),
         ),
         itemCount: books.length,
-        itemBuilder: (context, index) =>
-            _buildGridItem(context, ref, books[index]),
+        itemBuilder: (context, index) => _buildGridItem(
+            context,
+            ref,
+            books[index],
+            state.displayTagsOf(books[index]),
+            hasTagRow),
       ),
     );
   }
@@ -666,9 +725,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// SizedBox(height:40) 标题）。[availableWidth] 为扣除左右 padding 22×2
   /// 后的网格内容宽。360dp 屏：cellW=92dp → cellH=168.8dp → 0.5450（而非
   /// 固定 0.714，后者令封面被压成方形）。
-  double _bookshelfGridCellAspectRatio(double availableWidth) {
+  double _bookshelfGridCellAspectRatio(double availableWidth,
+      {bool tagRow = false}) {
     const crossSpacing = 20.0;
-    const titleHeight = 40.0;
+    final titleHeight =
+        40.0 + (tagRow ? BookGridItem.tagRowHeight : 0.0);
     final cellWidth = (availableWidth - 2 * crossSpacing) / 3;
     return cellWidth / (cellWidth * 7 / 5 + titleHeight);
   }
@@ -693,11 +754,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           // [UI-fix 2.0.258] 列表勾选态：选中高亮 + 尾部对勾，点按切换
           final selected = ref.watch(bookshelfNotifierProvider
               .select((s) => s.selectedUrls.contains(book.bookUrl)));
-          return _buildBatchListItem(context, ref, book, selected);
+          return _buildBatchListItem(context, ref, state, book, selected);
         }
         return BookListItem(
           key: ValueKey(book.bookUrl),
           book: book,
+          tags: state.displayTagsOf(book),
           onTap: () => _openBook(context, ref, book),
           // 安卓原版：长按直接打开书籍信息页
           onLongPress: () => _openBookInfo(context, book),
@@ -706,12 +768,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
-  Widget _buildGridItem(BuildContext context, WidgetRef ref, Book book) {
+  Widget _buildGridItem(BuildContext context, WidgetRef ref, Book book,
+      List<String> tags, bool reserveTagRow) {
     // [UI_SYNC_REFACTOR T3] 批量模式点击 = 切换选中
     final batch = ref.watch(bookshelfNotifierProvider
         .select((s) => s.isBatchMode));
     if (batch) {
-      return _buildBatchGridItem(context, ref, book);
+      return _buildBatchGridItem(context, ref, book, tags, reserveTagRow);
     }
     // 稳定 ValueKey（bookUrl）避免数据变化时整网格重建；RepaintBoundary 隔离重绘区域
     // [骨架对齐 2.0.260 | 台账 1-3] 卡片=封面+居中书名（对齐参考 03b）：
@@ -722,6 +785,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       title: book.name,
       coverUrl: book.customCoverUrl ?? book.coverUrl,
       sourceOrigin: book.origin,
+      tags: tags,
+      reserveTagRow: reserveTagRow,
       // Hero 封面过渡（书架↔详情，key=book url）
       // [LAYOUT_MOTION_AUDIT M1] tag 统一 book-cover:（HapeLee 同义键）
       heroTag: 'book-cover:${book.bookUrl}',
@@ -990,16 +1055,18 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       );
       // 分组内容
       if (state.isGridView) {
-        slivers.add(_buildGridSliver(context, ref, entry.value, viewportWidth));
+        slivers.add(
+            _buildGridSliver(context, ref, state, entry.value, viewportWidth));
       } else {
-        slivers.add(_buildListSliver(context, ref, entry.value));
+        slivers.add(_buildListSliver(context, ref, state, entry.value));
       }
     }
     return slivers;
   }
 
   /// 列表模式（非拖拽，用于分组内展示）
-  Widget _buildListSliver(BuildContext context, WidgetRef ref, List<Book> books) {
+  Widget _buildListSliver(BuildContext context, WidgetRef ref,
+      BookshelfState state, List<Book> books) {
     return SliverList.builder(
       itemCount: books.length,
       itemBuilder: (context, index) {
@@ -1010,11 +1077,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         if (batch) {
           final selected = ref.watch(bookshelfNotifierProvider
               .select((s) => s.selectedUrls.contains(book.bookUrl)));
-          return _buildBatchListItem(context, ref, book, selected);
+          return _buildBatchListItem(context, ref, state, book, selected);
         }
         return BookListItem(
           key: ValueKey(book.bookUrl),
           book: book,
+          tags: state.displayTagsOf(book),
           onTap: () => _openBook(context, ref, book),
           onLongPress: () => _openBookInfo(context, book),
         );
@@ -1049,8 +1117,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'groups':
         Navigator.pushNamed(context, AppRoutes.bookGroups);
       case 'layout':
-        // 原版书架布局切换：Flutter 映射为网格/列表视图切换
-        ref.read(bookshelfNotifierProvider.notifier).toggleViewMode();
+        // [批35] 布局设置收敛为书架配置面板：视图切换 + 显示标签总开关 +
+        // 「标签显示内容」摘要入口（对齐参考版 BookshelfConfigSheet）
+        _showBookshelfConfigSheet(context, ref);
       case 'group_none':
         ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.none);
       case 'group_source':
@@ -1069,6 +1138,137 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'sources':
         Navigator.pushNamed(context, AppRoutes.sources);
     }
+  }
+
+  // ===== [批35] 书架配置面板（对齐参考版 BookshelfConfigSheet 的标签部分）=====
+
+  /// 打开书架配置面板：视图切换 + 显示标签总开关 + 标签内容摘要。
+  ///
+  /// 参考版把「显示标签」做成总开关，下方「标签显示内容」行展示已选项
+  /// 摘要（`·` 连接，全不选显示「未选择显示内容」），点开对话框勾选三项。
+  Future<void> _showBookshelfConfigSheet(
+      BuildContext context, WidgetRef ref) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) => Consumer(
+        builder: (context, ref, _) {
+          final state = ref.watch(bookshelfNotifierProvider);
+          final notifier = ref.read(bookshelfNotifierProvider.notifier);
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.only(bottom: 16),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                  child: Text(
+                    '布局设置',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                SettingSwitchRow(
+                  icon: Symbols.grid_view_rounded,
+                  title: '网格视图',
+                  subtitle: state.isGridView ? '以封面网格展示' : '以列表行展示',
+                  value: state.isGridView,
+                  onChanged: (_) => notifier.toggleViewMode(),
+                ),
+                SettingSwitchRow(
+                  icon: Symbols.label_rounded,
+                  title: '显示标签',
+                  subtitle: '在书卡与列表行展示标签内容',
+                  value: state.showTag,
+                  onChanged: notifier.setShowTag,
+                ),
+                IosListTile(
+                  icon: Symbols.sell_rounded,
+                  title: '标签显示内容',
+                  subtitle: _tagContentSummary(state),
+                  onTap: state.showTag
+                      ? () => _showTagContentDialog(context, ref)
+                      : null,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 标签内容摘要（对齐参考版：选中项 ` · ` 连接，全不选 → 未选择显示内容）
+  String _tagContentSummary(BookshelfState state) {
+    final selected = <String>[
+      if (state.showCustomTags) '用户标签',
+      if (state.showSourceTags) '书源分类',
+      if (state.showWordCount) '字数',
+    ];
+    return selected.isEmpty ? '未选择显示内容' : selected.join(' · ');
+  }
+
+  /// 标签显示内容对话框（对齐参考版 BookshelfTagContentDialog：
+  /// 三项复选，确认后一次性写回）
+  Future<void> _showTagContentDialog(
+      BuildContext context, WidgetRef ref) async {
+    final state = ref.read(bookshelfNotifierProvider);
+    var showCustomTags = state.showCustomTags;
+    var showSourceTags = state.showSourceTags;
+    var showWordCount = state.showWordCount;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('标签显示内容'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CheckboxListTile(
+                value: showCustomTags,
+                onChanged: (v) =>
+                    setDialogState(() => showCustomTags = v ?? false),
+                title: const Text('用户标签'),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+              CheckboxListTile(
+                value: showSourceTags,
+                onChanged: (v) =>
+                    setDialogState(() => showSourceTags = v ?? false),
+                title: const Text('书源分类'),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+              CheckboxListTile(
+                value: showWordCount,
+                onChanged: (v) =>
+                    setDialogState(() => showWordCount = v ?? false),
+                title: const Text('字数'),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(bookshelfNotifierProvider.notifier).setTagContent(
+          showCustomTags: showCustomTags,
+          showSourceTags: showSourceTags,
+          showWordCount: showWordCount,
+        );
   }
 
   /// 导出书单（批16e：接入统一导出目标 Sheet）
@@ -1442,7 +1642,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// [UI_SYNC_REFACTOR T3] 批量模式网格瓦片（选中高亮 + 勾选角标）
-  Widget _buildBatchGridItem(BuildContext context, WidgetRef ref, Book book) {
+  Widget _buildBatchGridItem(BuildContext context, WidgetRef ref, Book book,
+      List<String> tags, bool reserveTagRow) {
     final selected = ref.watch(bookshelfNotifierProvider
         .select((s) => s.selectedUrls.contains(book.bookUrl)));
     final cs = Theme.of(context).colorScheme;
@@ -1470,6 +1671,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                   coverUrl: book.customCoverUrl ?? book.coverUrl,
                   unreadNum: 0,
                   sourceOrigin: book.origin,
+                  tags: tags,
+                  reserveTagRow: reserveTagRow,
                 ),
               ),
             ),
@@ -1499,8 +1702,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 分支返回 `BookListItem(key: ValueKey(bookUrl))` 天然满足；而批量态此前
   /// 返回无 key 的 `Material`，导致选择模式下书卡列表整块空白（台账 1-5 P0
   /// 复审缺陷）。现给外层 `Material` 补上稳定 `ValueKey(bookUrl)` 修复。
-  Widget _buildBatchListItem(
-      BuildContext context, WidgetRef ref, Book book, bool selected) {
+  Widget _buildBatchListItem(BuildContext context, WidgetRef ref,
+      BookshelfState state, Book book, bool selected) {
     final cs = Theme.of(context).colorScheme;
     return Material(
       key: ValueKey(book.bookUrl),
@@ -1513,6 +1716,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             child: BookListItem(
               key: ValueKey(book.bookUrl),
               book: book,
+              tags: state.displayTagsOf(book),
               onTap: () => ref
                   .read(bookshelfNotifierProvider.notifier)
                   .toggleSelect(book.bookUrl),
