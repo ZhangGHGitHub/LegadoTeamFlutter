@@ -7,8 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../providers/reader/reader_theme_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../screens/reader_theme_screen.dart';
 import 'reader_tip_config_sheet.dart';
 
 part 'reader_settings_sheet_font_panel.part.dart';
@@ -364,6 +366,10 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         const SizedBox(height: 12),
         _buildBackgroundCard(state, notifier, adv),
         const SizedBox(height: 12),
+        // [批38 | 阅读主题入口] 命名主题列表（参考版 GlobalThemePage 的
+        // 「阅读主题」入口）：列表/网格、列数、多选管理、导入导出分享。
+        _buildThemeEntryCard(),
+        const SizedBox(height: 12),
         IntrinsicHeight(
           child: Row(
             children: [
@@ -568,6 +574,73 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
+  /// 阅读主题入口卡（批38）
+  ///
+  /// 对齐参考版 `GlobalThemePage` 的「阅读主题」入口：展示当前主题名与
+  /// 背景色小样，点按打开主题列表页（列表/网格、列数、管理、导入导出）。
+  Widget _buildThemeEntryCard() {
+    final themeState = ref.watch(readerThemeProvider);
+    final current = themeState.currentTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    final previewColor =
+        current == null ? null : Color(current.style.backgroundColor);
+    final subtitle = current?.name ?? '未应用主题（自定义）';
+    return _panelCard(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const ReaderThemeScreen(),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 34,
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: previewColor ?? colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: Text(
+              '阅',
+              style: TextStyle(
+                fontSize: 16,
+                color: previewColor == null
+                    ? colorScheme.onSurfaceVariant
+                    : (previewColor.computeLuminance() > 0.5
+                        ? Colors.black87
+                        : Colors.white70),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text('阅读主题', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 背景卡片：标题 + 长按自定义提示 + 月亮夜间切换 + 预设 chips
   Widget _buildBackgroundCard(
     ReaderState state,
@@ -627,6 +700,8 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             child: Row(
               children: [
                 // 自定义 chip：网格图标，点按弹自定义配色
+                // [批38] 非预设背景色时该 chip 显示选中态（主题背景不在
+                // 既有预设色里 → 归为「自定义」，与参考版自定义入口一致）
                 GestureDetector(
                   onTap: () =>
                       _showCustomColorDialog(context, adv, notifier, state),
@@ -635,7 +710,10 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                     height: 56,
                     margin: const EdgeInsets.only(right: 10),
                     alignment: Alignment.center,
-                    decoration: _bgChipDecoration(selected: false),
+                    decoration: _bgChipDecoration(
+                      selected: !ReaderBackground.presets
+                          .contains(state.backgroundColor),
+                    ),
                     child: Icon(
                       Icons.grid_view_rounded,
                       size: 22,
