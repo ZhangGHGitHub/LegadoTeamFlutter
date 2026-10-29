@@ -244,8 +244,10 @@ void main() {
     await tester.tap(find.text('巅峰榜'));
     await tester.pumpAndSettle();
 
-    // 到达发现书单页（exploreShow）：页码控件 + 已抓取书籍渲染
-    expect(find.text('第 1 页'), findsOneWidget);
+    // 到达发现书单页（exploreShow）：已抓取书籍渲染
+    // 批36：页码按钮仅在规则支持页码（含 {{page}} / <,>）时显示，
+    // 该分类 URL 是普通地址 → 不显示页码控件
+    expect(find.text('第 1 页'), findsNothing);
     expect(find.text('书1'), findsOneWidget);
 
     // 分类参数正确回显（标题 = 分类名 - 书源名，对标原版 exploreName）

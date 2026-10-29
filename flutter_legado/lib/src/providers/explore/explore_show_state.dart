@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../models/models.dart';
+import '../../utils/explore_page_rule.dart';
 
 part 'explore_show_state.freezed.dart';
 
@@ -94,4 +95,11 @@ extension ExploreShowStateTitle on ExploreShowState {
     if (s == null) return categoryName;
     return '$categoryName - ${s.bookSourceName}';
   }
+
+  /// 当前分类 URL 规则是否支持直接指定页码
+  ///
+  /// 对标参考版 `ExploreShowViewModel`：`canJumpPage =
+  /// AnalyzeUrl.supportsPageSelection(kind.url)`；为 false 时顶栏不展示
+  /// 页码按钮（规则不支持时页码无法改变请求，跳页无意义）。
+  bool get canJumpPage => exploreRuleSupportsPageSelection(categoryUrl);
 }

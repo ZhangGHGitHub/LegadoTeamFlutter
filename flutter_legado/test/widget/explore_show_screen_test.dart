@@ -28,6 +28,13 @@ void main() {
     categoryUrl: 'http://source.com/rank',
   );
 
+  // 规则支持页码的分类（含 {{page}}）— 批36 起页码按钮仅在此类规则下显示
+  const pagedArgs = ExploreShowArgs(
+    source: testSource,
+    categoryName: '推荐榜',
+    categoryUrl: 'http://source.com/rank?page={{page}}',
+  );
+
   setUpAll(() {
     registerFallbacks();
   });
@@ -50,12 +57,12 @@ void main() {
     );
   });
 
-  testWidgets('顶栏展示第 1 页并可打开页码选择器', (tester) async {
+  testWidgets('支持页码的规则展示页码按钮并可打开数字输入框', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
         child: const MaterialApp(
-          home: ExploreShowScreen(args: args),
+          home: ExploreShowScreen(args: pagedArgs),
         ),
       ),
     );
@@ -68,7 +75,23 @@ void main() {
     await tester.tap(find.text('第 1 页'));
     await tester.pumpAndSettle();
 
-    expect(find.text('选择页码'), findsOneWidget);
+    expect(find.text('跳转到页码'), findsOneWidget);
+  });
+
+  testWidgets('规则不支持页码时隐藏页码按钮（批36）', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: const MaterialApp(
+          home: ExploreShowScreen(args: args),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('书1'), findsOneWidget);
+    expect(find.text('第 1 页'), findsNothing);
+    expect(find.byKey(const ValueKey('explore-page-control')), findsNothing);
   });
 
   testWidgets('顶栏「加入书架」按钮批量导入已加载书籍（R5）', (tester) async {

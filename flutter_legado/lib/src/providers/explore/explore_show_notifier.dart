@@ -88,13 +88,20 @@ class ExploreShowNotifier
     await fetchBooks(prepend: true);
   }
 
-  /// 跳转到指定页（对标 Android skipPage + explore）
+  /// 跳转到指定页（对标参考版 jumpToPage / Android skipPage + explore）
+  ///
+  /// 页码跳转仅对「规则支持页码」的分类开放（`state.canJumpPage`：
+  /// 规则含 `{{page}}` 或 `<,>` 页码列表）；跳页与加载更多互斥——
+  /// 加载中直接忽略跳页请求，跳页后清空列表并按目标页结果重建
+  /// `hasMore`（目标页为空 → 没有更多；有数据 → 可继续加载下一页）。
   Future<void> skipToPage(int targetPage) async {
     if (targetPage <= 0 || state.isLoading) return;
+    if (!state.canJumpPage) return;
     state = state.copyWith(
       books: [],
       page: targetPage,
       displayPage: targetPage,
+      // 先置 true 以放行本次抓取，最终 hasMore 由目标页结果决定
       hasMore: true,
       error: null,
     );
