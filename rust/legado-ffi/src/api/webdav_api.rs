@@ -171,11 +171,15 @@ pub fn webdav_delete(config_json: &str, path: &str) -> LegadoResult<()> {
 /// 清理 WebDAV 上的历史备份（批40，契约 §2.28）
 ///
 /// 对齐原版 `AppWebDav.pruneOldBackups`：上传成功后按「WebDAV 备份保留
-/// 数量」清理 `backup*.json`，先排除本次刚上传的 `current_file_name`，
-/// 再按文件名降序保留 `keep_count - 1` 份历史备份。
+/// 数量」清理历史备份，先排除本次刚上传的 `current_file_name`，再按
+/// 文件名降序保留 `keep_count - 1` 份。
 ///
 /// - `keep_count = 0`：不清理（默认口径），直接返回空结果、不发网络请求；
-/// - `backup*.zip`（原版/参考版备份）不参与清理（差异已在契约登记）；
+/// - 只处理严格命名的 `backup_yyyyMMdd_HHmmss[_SSS].json`（批40 回修
+///   P3-1：大小写敏感、格式严格）；`backup*.zip`（原版/参考版备份）与
+///   其它文件不参与清理（差异已在契约登记）；
+/// - 删除键取 PROPFIND `href` 解析的相对路径（百分号解码），不使用
+///   `displayname`（批40 回修 P3-2）；
 /// - 单文件删除失败只记日志并计入 `failed`，不使整个调用失败。
 ///
 /// # 返回
@@ -313,7 +317,8 @@ mod tests {
     /// 多请求回环 WebDAV 服务器（批40）
     ///
     /// 按 HTTP 方法返回固定响应，并记录 `(method, path)` 供断言：
-    /// - `PROPFIND` → 207，返回目录自身 + [files] 列表（均为普通文件）；
+    /// - `PROPFIND` → 207，返回「本次请求目录自身」+ [files] 列表（均为普通
+    ///   文件）；href 按**请求目录**动态拼接（支持非空 remote_dir）；
     /// - `PUT` → 201 Created；
     /// - `DELETE` → [delete_fail] 命中返回 500，否则 204。
     ///
@@ -337,8 +342,27 @@ mod tests {
         }
     }
 
+    /// PROPFIND 文件项：`(href 文件名, displayname)`
+    ///
+    /// href 支持百分号编码（夹具拼到本次请求目录之后）；displayname 独立
+    /// 给出，用于覆盖「服务器改写/缺失 displayname」场景（批40 回修 P3-2
+    /// 要求删除键取 href 而非 displayname）。
+    type DavEntry = (String, String);
+
     fn spawn_loopback_dav(
         files: &[&str],
+        delete_fail: &[&str],
+        max_requests: usize,
+    ) -> LoopbackDavServer {
+        let entries: Vec<DavEntry> = files
+            .iter()
+            .map(|n| (n.to_string(), n.to_string()))
+            .collect();
+        spawn_loopback_dav_entries(&entries, delete_fail, max_requests)
+    }
+
+    fn spawn_loopback_dav_entries(
+        entries: &[DavEntry],
         delete_fail: &[&str],
         max_requests: usize,
     ) -> LoopbackDavServer {
@@ -350,24 +374,7 @@ mod tests {
         listener.set_nonblocking(true).expect("非阻塞监听");
         let port = listener.local_addr().unwrap().port();
 
-        // 预生成 PROPFIND 响应体（目录自身 + files）
-        let mut propfind_body = String::from(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus xmlns:D=\"DAV:\">\n",
-        );
-        propfind_body.push_str(
-            "  <D:response><D:href>/dav/</D:href><D:propstat><D:prop>\
-<D:displayname>dav</D:displayname><D:resourcetype><D:collection/></D:resourcetype>\
-</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n",
-        );
-        for name in files {
-            propfind_body.push_str(&format!(
-                "  <D:response><D:href>/dav/{name}</D:href><D:propstat><D:prop>\
-<D:displayname>{name}</D:displayname><D:getcontentlength>10</D:getcontentlength>\
-</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n"
-            ));
-        }
-        propfind_body.push_str("</D:multistatus>");
-
+        let entries: Vec<DavEntry> = entries.to_vec();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let requests_for_thread = Arc::clone(&requests);
         let delete_fail: Vec<String> = delete_fail.iter().map(|s| s.to_string()).collect();
@@ -433,11 +440,38 @@ mod tests {
 
                 let name = path.rsplit('/').next().unwrap_or_default();
                 let response = match method.as_str() {
-                    "PROPFIND" => format!(
-                        "HTTP/1.1 207 Multi-Status\r\nContent-Type: application/xml; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        propfind_body.len(),
-                        propfind_body
-                    ),
+                    "PROPFIND" => {
+                        // href 以**本次请求目录**为前缀（支持非空 remote_dir：
+                        // url `/dav/` + remote_dir `/legado/` → `/dav//legado/`）；
+                        // 客户端折叠重复斜杠后按前缀剥离。
+                        let dir = if path.ends_with('/') {
+                            path.clone()
+                        } else {
+                            format!("{path}/")
+                        };
+                        let mut body = String::from(
+                            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+<D:multistatus xmlns:D=\"DAV:\">\n",
+                        );
+                        body.push_str(&format!(
+                            "  <D:response><D:href>{dir}</D:href><D:propstat><D:prop>\
+<D:displayname>dav</D:displayname><D:resourcetype><D:collection/></D:resourcetype>\
+</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n"
+                        ));
+                        for (href_name, display) in &entries {
+                            body.push_str(&format!(
+                                "  <D:response><D:href>{dir}{href_name}</D:href><D:propstat><D:prop>\
+<D:displayname>{display}</D:displayname><D:getcontentlength>10</D:getcontentlength>\
+</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>\n"
+                            ));
+                        }
+                        body.push_str("</D:multistatus>");
+                        format!(
+                            "HTTP/1.1 207 Multi-Status\r\nContent-Type: application/xml; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(),
+                            body
+                        )
+                    }
                     "PUT" => {
                         "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                             .to_string()
@@ -744,6 +778,135 @@ mod tests {
         );
     }
 
+    /// [批40 回修 P3-2] 删除键取 href（百分号解码），不信任 displayname
+    ///
+    /// 服务器返回的 `displayname` 可能被改写/与资源名不一致；旧实现按
+    /// displayname 匹配与删除会漏删或删错目标。本用例让 displayname 与
+    /// href 完全不同，断言实际 DELETE 路径来自 href。
+    #[test]
+    fn test_webdav_prune_uses_href_and_decodes_percent_encoding() {
+        let entries = vec![
+            (
+                "backup%5F20261001_000000.json".to_string(),
+                "旧的备份.json".to_string(),
+            ),
+            (
+                "backup_20261002_000000.json".to_string(),
+                "renamed.txt".to_string(),
+            ),
+            (
+                "backup_20261003_000000.json".to_string(),
+                "backup_20261003_000000.json".to_string(),
+            ),
+        ];
+        let server = spawn_loopback_dav_entries(&entries, &[], 3); // PROPFIND + 2 DELETE
+
+        let raw = webdav_prune_backups(
+            &dav_config_json(&server.url),
+            "backup_20261003_000000.json",
+            1,
+        )
+        .expect("清理应成功");
+        let requests = server.requests();
+        server.join();
+
+        let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            result.deleted,
+            vec![
+                "backup_20261002_000000.json".to_string(),
+                "backup_20261001_000000.json".to_string()
+            ],
+            "href 指向的备份都应参与清理（不受 displayname 影响）: {result:?}"
+        );
+        assert!(result.failed.is_empty(), "不应有删除失败: {result:?}");
+        assert_eq!(
+            requests[1],
+            (
+                "DELETE".to_string(),
+                "/dav/backup_20261002_000000.json".to_string()
+            ),
+            "删除路径应取自 href"
+        );
+        assert_eq!(
+            requests[2],
+            (
+                "DELETE".to_string(),
+                "/dav/backup_20261001_000000.json".to_string()
+            ),
+            "百分号编码的 href 应解码后删除: {requests:?}"
+        );
+    }
+
+    /// [批40 回修 P3-1] 严格命名 + 大小写敏感：`BACKUP_` 不进入清理面
+    #[test]
+    fn test_webdav_prune_ignores_uppercase_backup_name() {
+        let server = spawn_loopback_dav(
+            &["BACKUP_20261001_000000.json", "backup_20261002_000000.json"],
+            &[],
+            1, // 仅 PROPFIND；大写名不应触发 DELETE（截断会立即暴露）
+        );
+        let raw = webdav_prune_backups(
+            &dav_config_json(&server.url),
+            "backup_20261002_000000.json",
+            1,
+        )
+        .expect("清理应成功");
+        let requests = server.requests();
+        server.join();
+
+        let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        assert!(
+            result.deleted.is_empty(),
+            "BACKUP_ 前缀不是合法备份名，不得删除: {result:?}"
+        );
+        assert!(result.failed.is_empty());
+        assert_eq!(requests.len(), 1, "仅一次 PROPFIND: {requests:?}");
+    }
+
+    /// [批40 回修 P3-6] 非空 remote_dir：href 带 `/legado/` 前缀时仍能
+    /// 正确解析为相对路径并删除
+    #[test]
+    fn test_webdav_prune_with_non_empty_remote_dir() {
+        let server = spawn_loopback_dav(
+            &["backup_20261001_000000.json", "backup_20261002_000000.json"],
+            &[],
+            2, // PROPFIND + 1 DELETE
+        );
+        let config = serde_json::json!({
+            "url": server.url,
+            "username": "u",
+            "password": "p",
+            "remote_dir": "/legado/",
+        })
+        .to_string();
+
+        let raw =
+            webdav_prune_backups(&config, "backup_20261002_000000.json", 1).expect("清理应成功");
+        let requests = server.requests();
+        server.join();
+
+        let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            result.deleted,
+            vec!["backup_20261001_000000.json".to_string()],
+            "非空 remote_dir 下仍应删除旧备份: {result:?}"
+        );
+        assert_eq!(requests[0].0, "PROPFIND");
+        assert_eq!(
+            requests[0].1, "/dav//legado/",
+            "PROPFIND 目标应为 url + remote_dir: {requests:?}"
+        );
+        assert_eq!(
+            requests[1],
+            (
+                "DELETE".to_string(),
+                "/dav//legado/backup_20261001_000000.json".to_string()
+            ),
+            "删除路径应保留 remote_dir 前缀: {requests:?}"
+        );
+    }
+
     /// [批40] 上传（PUT）+ 清理（PROPFIND/DELETE）回环全链路
     #[test]
     fn test_webdav_upload_file_then_prune_loopback() {
@@ -760,7 +923,7 @@ mod tests {
                 "backup_20261003_000000.json",
             ],
             &[],
-            3, // 1 次 PUT + 1 次 PROPFIND + 1 次 DELETE
+            4, // 1 次 PUT + 1 次 PROPFIND + 2 次 DELETE（keep=2 保留当前 + 最新历史）
         );
         let config = dav_config_json(&server.url);
         webdav_upload_file(
@@ -776,12 +939,23 @@ mod tests {
         server.join();
 
         let result: legado_net::webdav::BackupPruneResult = serde_json::from_str(&raw).unwrap();
+        // 批40 回修 P2-1：夹具上限原为 3 会截断第 2 次 DELETE，本次改为 4 后
+        // 必须完整断言「2 项删除、无失败、第 4 个请求为 DELETE 最旧备份」，
+        // 否则清理链路的截断会被静默吞成 failed 而不被发现。
         assert_eq!(
             result.deleted,
-            vec!["backup_20261002_000000.json".to_string()]
+            vec![
+                "backup_20261002_000000.json".to_string(),
+                "backup_20261001_000000.json".to_string()
+            ],
+            "keep=2 应删除当前文件与最新历史备份之外的 2 份旧备份"
+        );
+        assert!(
+            result.failed.is_empty(),
+            "第 2 次 DELETE 不得因夹具截断失败: {result:?}"
         );
 
-        assert_eq!(requests.len(), 3, "请求序列: {requests:?}");
+        assert_eq!(requests.len(), 4, "请求序列: {requests:?}");
         assert_eq!(requests[0].0, "PUT");
         assert_eq!(requests[0].1, "/dav/backup_20261003_120000.json");
         assert_eq!(requests[1].0, "PROPFIND");
@@ -791,6 +965,14 @@ mod tests {
                 "DELETE".to_string(),
                 "/dav/backup_20261002_000000.json".to_string()
             )
+        );
+        assert_eq!(
+            requests[3],
+            (
+                "DELETE".to_string(),
+                "/dav/backup_20261001_000000.json".to_string()
+            ),
+            "第 4 个请求应为删除最旧备份"
         );
 
         std::fs::remove_dir_all(&dir).ok();

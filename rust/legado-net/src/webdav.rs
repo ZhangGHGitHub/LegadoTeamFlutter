@@ -46,13 +46,123 @@ pub struct BackupPruneResult {
     pub failed: Vec<BackupPruneFailure>,
 }
 
-/// 判定文件名是否属于我方 JSON 备份（`backup*.json`，大小写不敏感）
+/// 连接建立超时（批40 回修 P2-4）
 ///
-/// 对齐原版 `displayName.startsWith("backup") && endsWith(".zip")` 的前缀
-/// 口径，仅把扩展名换为我方单文件 JSON 备份格式；`backup*.zip` 不参与清理。
+/// 自动备份/导入后自动上传共用进程内互斥锁，不可达主机若不设超时会让
+/// 请求长时间挂起、锁被长期占用（后续手动/自动备份全部被跳过）。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 控制请求（PROPFIND / DELETE / MKCOL / 小文件 PUT）总超时
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// 大文件传输（书籍上传/下载）总超时
+///
+/// 书籍文件可能远大于备份 JSON，60s 会把慢速网络下的正常上传判成失败，
+/// 故单独放宽到 10 分钟（仍避免无限挂起）。
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// 判定文件名是否属于我方 JSON 备份：严格 `backup_yyyyMMdd_HHmmss[_SSS].json`
+///
+/// 批40 回修 P3-1：旧实现按 `backup` 前缀 + `.json` 后缀且大小写不敏感，
+/// `BACKUP_20261001_000000.json`、`backup_notes.json`、`backup_x.json.bak`
+/// 都会被纳入清理面并可能被误删。现改为**大小写敏感 + 严格时间戳格式**：
+/// - 文件名固定以 `backup_` 开头、`.json` 结尾；
+/// - 时间戳为 `yyyyMMdd_HHmmss`（15 字符），或带毫秒去重后缀的
+///   `yyyyMMdd_HHmmss_SSS`（19 字符，批40 回修 P3-9 起本地生成）；
+/// - 仅允许 ASCII 数字与固定位置的下划线。
 fn is_backup_json_name(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.starts_with("backup") && lower.ends_with(".json")
+    let Some(stamp) = name
+        .strip_prefix("backup_")
+        .and_then(|rest| rest.strip_suffix(".json"))
+    else {
+        return false;
+    };
+    let bytes = stamp.as_bytes();
+    match bytes.len() {
+        // yyyyMMdd_HHmmss
+        15 => bytes[8] == b'_' && is_ascii_digits(&bytes[..8]) && is_ascii_digits(&bytes[9..]),
+        // yyyyMMdd_HHmmss_SSS
+        19 => {
+            bytes[8] == b'_'
+                && bytes[15] == b'_'
+                && is_ascii_digits(&bytes[..8])
+                && is_ascii_digits(&bytes[9..15])
+                && is_ascii_digits(&bytes[16..])
+        }
+        _ => false,
+    }
+}
+
+/// 全部为 ASCII 数字
+fn is_ascii_digits(bytes: &[u8]) -> bool {
+    bytes.iter().all(u8::is_ascii_digit)
+}
+
+/// 百分号解码并把 `href` 归一为路径（保留是否以 `/` 开头）
+///
+/// - 绝对 URL（`http://host:port/dav/x`）只取 path 部分；
+/// - 去掉 query/fragment；百分号解码（服务器可能对文件名编码）；
+/// - 折叠连续 `/`（部分服务器返回归一化 href）。
+fn decode_href_path(raw: &str) -> String {
+    let path = if let Some(idx) = raw.find("://") {
+        let rest = &raw[idx + 3..];
+        match rest.find('/') {
+            Some(i) => &rest[i..],
+            None => "/",
+        }
+    } else {
+        raw
+    };
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    let decoded = urlencoding::decode(path)
+        .map(|c| c.into_owned())
+        .unwrap_or_else(|_| path.to_string());
+    let mut collapsed = String::with_capacity(decoded.len());
+    let mut prev_slash = false;
+    for ch in decoded.chars() {
+        if ch == '/' {
+            if prev_slash {
+                continue;
+            }
+            prev_slash = true;
+        } else {
+            prev_slash = false;
+        }
+        collapsed.push(ch);
+    }
+    collapsed
+}
+
+/// 从 PROPFIND `href` 解析「相对 remote_dir 根目录」的路径（批40 回修 P3-2）
+///
+/// 删除键必须用 `href`（资源实际路径）而不是 `displayname`（可被服务器
+/// 改写/缺失/非资源名）。解析规则：
+/// - 绝对 URL 取 path；百分号解码；折叠重复 `/`（[`decode_href_path`]）；
+/// - 已是相对路径（无前导 `/`）时原样返回；
+/// - 以请求目录路径 [request_dir] 为前缀时剥掉前缀（`/dav/legado/x` →
+///   `x`，[request_dir] 为 `/dav/legado`）；
+/// - 落在请求目录之外、含 `..` 段或解析为空时返回 `None`（调用方跳过，
+///   绝不猜测删除目标）。
+fn resolve_href_relative_path(href: &str, request_dir: &str) -> Option<String> {
+    let decoded = decode_href_path(href);
+    let trimmed = decoded.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let relative = if decoded.starts_with('/') {
+        let base = request_dir.trim_end_matches('/');
+        if base.is_empty() || base == "/" {
+            trimmed.trim_start_matches('/').to_string()
+        } else {
+            trimmed.strip_prefix(&format!("{base}/"))?.to_string()
+        }
+    } else {
+        trimmed.trim_start_matches("./").to_string()
+    };
+    if relative.is_empty() || relative.split('/').any(|seg| seg == ".." || seg == ".") {
+        return None;
+    }
+    Some(relative)
 }
 
 /// WebDAV 客户端
@@ -63,8 +173,22 @@ pub struct WebDavClient {
 
 impl WebDavClient {
     pub fn new(config: WebDavConfig) -> Self {
+        Self::with_timeouts(config, CONNECT_TIMEOUT, REQUEST_TIMEOUT)
+    }
+
+    /// 自定义连接/请求总超时（批40 回修 P2-4）
+    ///
+    /// 生产路径统一经 [`Self::new`] 使用默认值；本构造器供超时用例注入
+    /// 毫秒级超时（默认 60s 会让用例跑太慢），也可供将来按场景调整。
+    pub fn with_timeouts(
+        config: WebDavConfig,
+        connect_timeout: Duration,
+        request_timeout: Duration,
+    ) -> Self {
         let client = reqwest::Client::builder()
             .dns_resolver(crate::custom_hosts::resolver())
+            .connect_timeout(connect_timeout)
+            .timeout(request_timeout)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self { config, client }
@@ -134,6 +258,8 @@ impl WebDavClient {
             .client
             .put(&url)
             .header("Authorization", self.auth_header())
+            // 大文件传输单独放宽总超时（覆盖客户端默认 60s）
+            .timeout(TRANSFER_TIMEOUT)
             .body(body)
             .send()
             .await
@@ -189,6 +315,8 @@ impl WebDavClient {
             .client
             .get(&url)
             .header("Authorization", self.auth_header())
+            // 大文件下载单独放宽总超时（覆盖客户端默认 60s）
+            .timeout(TRANSFER_TIMEOUT)
             .send()
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
@@ -251,13 +379,17 @@ impl WebDavClient {
     ///
     /// 语义（与上游逐条对齐）：
     /// - `keep_count <= 0` 时**不清理**（默认 0，避免升级后一次性删光存量备份）；
-    /// - 只处理 `backup*.json`（我方单文件 JSON 备份格式）；`backup*.zip` 为
-    ///   原版/参考版备份格式，**不参与清理**（避免误删其它客户端的备份），
+    /// - 只处理严格命名的 `backup_yyyyMMdd_HHmmss[_SSS].json`（批40 回修
+    ///   P3-1：大小写敏感、格式严格，不再按 `backup*` 前缀误纳）；`backup*.zip`
+    ///   为原版/参考版备份格式，**不参与清理**（避免误删其它客户端的备份），
     ///   该差异已在契约登记；
+    /// - 删除键取 PROPFIND `href` 解析出的相对路径，而非 `displayname`
+    ///   （批40 回修 P3-2：`displayname` 可被服务器改写/缺失，且可能不是
+    ///   资源实际名称；href 经百分号解码后再定位）；
     /// - 先排除本次刚上传的 `current_file_name`，再保留 `keep_count - 1` 份
     ///   历史备份：服务器 PROPFIND 可能尚未列出刚上传的文件，若直接按
     ///   「保留 N 份」删除，会把旧备份当成最新 N 份全部保留；
-    /// - 按文件名降序（`backup_yyyyMMdd_HHmmss.json` 名称即时间序）；
+    /// - 按文件名降序（`backup_yyyyMMdd_HHmmss[_SSS].json` 名称即时间序）；
     /// - 单个删除失败只记 warn 日志并写入 `failed`，不影响其它文件与上传结果。
     pub async fn prune_backup_files(
         &self,
@@ -270,38 +402,44 @@ impl WebDavClient {
         }
 
         let files = self.list_dir("").await?;
-        let mut backups: Vec<&WebDavFileInfo> = files
+        let request_dir = normalize_url_path(&self.full_url(""));
+        // (相对 remote_dir 的删除路径, PROPFIND displayname)
+        let mut backups: Vec<(String, String)> = files
             .iter()
-            .filter(|f| !f.is_dir && is_backup_json_name(&f.name))
+            .filter(|f| !f.is_dir)
+            .filter_map(|f| {
+                let path = resolve_href_relative_path(&f.path, &request_dir)?;
+                is_backup_json_name(&path).then(|| (path, f.name.clone()))
+            })
             .collect();
-        // 名称降序 = 时间降序（我们的备份名固定为 backup_yyyyMMdd_HHmmss.json）
-        backups.sort_by(|a, b| b.name.cmp(&a.name));
+        // 名称降序 = 时间降序（我们的备份名固定为 backup_yyyyMMdd_HHmmss[_SSS].json）
+        backups.sort_by(|a, b| b.0.cmp(&a.0));
 
         // 先排除本次上传的文件，剩余名额固定为 keep_count - 1 份历史备份
-        let others: Vec<&WebDavFileInfo> = backups
+        let others: Vec<(String, String)> = backups
             .into_iter()
-            .filter(|f| f.name != current_file_name)
+            .filter(|(path, _)| path != current_file_name)
             .collect();
         let keep_others = keep_count.saturating_sub(1);
 
-        for file in others.into_iter().skip(keep_others) {
+        for (path, display_name) in others.into_iter().skip(keep_others) {
             // 防御：删除路径只用文件名（相对 remote_dir 的根目录）；含路径
             // 分隔符的名称一律跳过，避免在异常服务器响应下越目录删除。
-            if file.name.contains('/') || file.name.contains('\\') {
+            if path.contains('/') || path.contains('\\') || path.contains("..") {
                 let error = "非法备份文件名（含路径分隔符），已跳过".to_string();
-                log::warn!("WebDAV 备份清理跳过 {}: {error}", file.name);
+                log::warn!("WebDAV 备份清理跳过 {}: {error}", display_name);
                 result.failed.push(BackupPruneFailure {
-                    name: file.name.clone(),
+                    name: display_name,
                     error,
                 });
                 continue;
             }
-            match self.delete_checked(&file.name).await {
-                Ok(()) => result.deleted.push(file.name.clone()),
+            match self.delete_checked(&path).await {
+                Ok(()) => result.deleted.push(path),
                 Err(e) => {
-                    log::warn!("WebDAV 备份清理删除失败 {}: {e}", file.name);
+                    log::warn!("WebDAV 备份清理删除失败 {}: {e}", path);
                     result.failed.push(BackupPruneFailure {
-                        name: file.name.clone(),
+                        name: path,
                         error: e.to_string(),
                     });
                 }
@@ -501,33 +639,7 @@ impl WebDavClient {
 ///   不折叠会让自身项比较失效）；此处只处理 path，scheme 后的 `//` 已剥离；
 /// - 去掉末尾 `/`（根路径统一为 `/`）。
 fn normalize_url_path(raw: &str) -> String {
-    let path = if let Some(idx) = raw.find("://") {
-        let rest = &raw[idx + 3..];
-        match rest.find('/') {
-            Some(i) => &rest[i..],
-            None => "/",
-        }
-    } else {
-        raw
-    };
-    let path = path.split(['?', '#']).next().unwrap_or(path);
-    let decoded = urlencoding::decode(path)
-        .map(|c| c.into_owned())
-        .unwrap_or_else(|_| path.to_string());
-    // 折叠连续 `/`（单个 pass，保留首个斜杠）
-    let mut collapsed = String::with_capacity(decoded.len());
-    let mut prev_slash = false;
-    for ch in decoded.chars() {
-        if ch == '/' {
-            if prev_slash {
-                continue;
-            }
-            prev_slash = true;
-        } else {
-            prev_slash = false;
-        }
-        collapsed.push(ch);
-    }
+    let collapsed = decode_href_path(raw);
     let trimmed = collapsed.trim_end_matches('/');
     if trimmed.is_empty() {
         "/".to_string()
@@ -1328,5 +1440,97 @@ mod tests {
         assert_eq!(BookSyncManager::days_since_epoch(1970, 1, 1), 0);
         assert_eq!(BookSyncManager::days_since_epoch(2000, 1, 1), 10957);
         assert_eq!(BookSyncManager::days_since_epoch(2025, 7, 1), 20270);
+    }
+
+    // ─── 批40 回修：备份名严格匹配 / href 解析 / 请求超时 ─────────────
+
+    /// P3-1：备份名大小写敏感 + 格式严格，防止 `BACKUP_`/松前缀被误删
+    #[test]
+    fn test_is_backup_json_name_strict_and_case_sensitive() {
+        assert!(is_backup_json_name("backup_20261001_000000.json"));
+        assert!(is_backup_json_name("backup_20261001_000000_123.json"));
+        assert!(!is_backup_json_name("BACKUP_20261001_000000.json"));
+        assert!(!is_backup_json_name("Backup_20261001_000000.json"));
+        assert!(!is_backup_json_name("backup_2026.json"));
+        assert!(!is_backup_json_name("backup_20261001_000000.zip"));
+        assert!(!is_backup_json_name("backup_20261001_000000.json.bak"));
+        assert!(!is_backup_json_name("backup_notes.json"));
+        assert!(!is_backup_json_name("backup_2026100_000000.json"));
+        assert!(!is_backup_json_name("backup_20261001_00000.json"));
+        assert!(!is_backup_json_name("backup_20261001_000000_12.json"));
+        assert!(!is_backup_json_name("my_backup_20261001_000000.json"));
+    }
+
+    /// P3-2：删除键由 href 解析（百分号解码 + 剥离请求目录前缀）
+    #[test]
+    fn test_resolve_href_relative_path() {
+        assert_eq!(
+            resolve_href_relative_path("/dav/backup_20261001_000000.json", "/dav").as_deref(),
+            Some("backup_20261001_000000.json")
+        );
+        // 绝对 URL + 非 ASCII/编码字符解码
+        assert_eq!(
+            resolve_href_relative_path("http://h:1/dav/backup%5F20261001_000000.json", "/dav")
+                .as_deref(),
+            Some("backup_20261001_000000.json")
+        );
+        // 重复斜杠折叠
+        assert_eq!(
+            resolve_href_relative_path("/dav//legado/a.json", "/dav/legado").as_deref(),
+            Some("a.json")
+        );
+        // 相对 href 原样返回
+        assert_eq!(
+            resolve_href_relative_path("backup_20261001_000000.json", "/dav").as_deref(),
+            Some("backup_20261001_000000.json")
+        );
+        // 落在请求目录之外 / 目录自身 / 越级路径 → 不猜测
+        assert_eq!(resolve_href_relative_path("/other/a.json", "/dav"), None);
+        assert_eq!(resolve_href_relative_path("/dav/", "/dav"), None);
+        assert_eq!(
+            resolve_href_relative_path("/dav/../etc/passwd", "/dav"),
+            None
+        );
+    }
+
+    /// P2-4：服务器接受连接但永不响应时必须按总超时返回 Network 错误
+    #[tokio::test]
+    async fn test_request_total_timeout_aborts_silent_server() {
+        use std::io::Read;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 静默服务器");
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                // 读掉请求后保持静默，等待客户端超时
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                std::thread::sleep(Duration::from_secs(3));
+            }
+        });
+
+        let client = WebDavClient::with_timeouts(
+            WebDavConfig {
+                url: format!("http://127.0.0.1:{port}/dav/"),
+                username: "u".into(),
+                password: "p".into(),
+                remote_dir: String::new(),
+            },
+            Duration::from_millis(500),
+            Duration::from_millis(300),
+        );
+
+        let start = std::time::Instant::now();
+        let err = client.list_dir("").await.expect_err("静默服务器必须超时");
+        assert!(
+            matches!(err, LegadoError::Network(_)),
+            "超时错误应为 Network: {err:?}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "应在总超时附近返回，实际 {:?}",
+            start.elapsed()
+        );
+        handle.join().ok();
     }
 }
