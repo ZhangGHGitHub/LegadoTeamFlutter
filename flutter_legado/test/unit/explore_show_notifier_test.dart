@@ -33,6 +33,13 @@ void main() {
     categoryUrl: 'http://source.com/xuanhuan',
   );
 
+  // 辅助：规则支持页码的 family key（含 {{page}}）
+  const pagedArgs = ExploreShowArgs(
+    source: testSource,
+    categoryName: '玄幻',
+    categoryUrl: 'http://source.com/xuanhuan?page={{page}}',
+  );
+
   setUpAll(() {
     registerFallbacks();
   });
@@ -226,15 +233,49 @@ void main() {
         return makeBooks(3, startId: page * 10);
       });
 
+      spawn(pagedArgs);
+      await pumpInit();
+      expect(readState(pagedArgs).displayPage, equals(1));
+
+      await readNotifier(pagedArgs).skipToPage(3);
+
+      expect(readState(pagedArgs).displayPage, equals(3));
+      expect(readState(pagedArgs).books.length, equals(3));
+      expect(readState(pagedArgs).books.first.name, equals('书籍30'));
+      // 目标页有数据 → hasMore 保持 true（可继续加载下一页）
+      expect(readState(pagedArgs).hasMore, isTrue);
+    });
+
+    test('跳页到空页后 hasMore 置 false（按该页结果）', () async {
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        return page == 5 ? <SearchBook>[] : makeBooks(2);
+      });
+
+      spawn(pagedArgs);
+      await pumpInit();
+
+      await readNotifier(pagedArgs).skipToPage(5);
+
+      expect(readState(pagedArgs).displayPage, equals(5));
+      expect(readState(pagedArgs).books, isEmpty);
+      expect(readState(pagedArgs).hasMore, isFalse);
+    });
+
+    test('规则不支持页码时 skipToPage 被忽略', () async {
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((_) async => makeBooks(2));
+
       spawn();
       await pumpInit();
+      // 清掉首屏加载调用，确保后续校验只针对跳页
+      clearInteractions(mockApi);
+
+      await readNotifier().skipToPage(4);
+
       expect(readState().displayPage, equals(1));
-
-      await readNotifier().skipToPage(3);
-
-      expect(readState().displayPage, equals(3));
-      expect(readState().books.length, equals(3));
-      expect(readState().books.first.name, equals('书籍30'));
+      verifyNever(() => mockApi.exploreFetchBooks(any(), any(), any()));
     });
   });
 }
