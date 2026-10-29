@@ -15,7 +15,11 @@ import 'book_display_tags_row.dart';
 /// - 标题区域长按 → [onInfoLongPress]（打开操作菜单）
 /// - 点击 → [onTap]（打开阅读/书籍信息）
 class BookGridItem extends StatelessWidget {
-  /// [批35] 标签行高度（父级网格计算 cell 高宽比时须同步加上）
+  /// [批35] 标签行高度下限（父级网格计算 cell 高宽比时须同步使用）
+  ///
+  /// [批35b P3-4] 实际行高按 textScaler 抬升（见
+  /// [BookDisplayTagsRow.heightFor]），父级必须调用同一函数换算，不能
+  /// 直接使用本常量。
   static const double tagRowHeight = 20;
 
   final String title;
@@ -68,6 +72,13 @@ class BookGridItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // [批35b P3-4] 大字号/无障碍缩放时按 textScaler 抬升预留行高，
+    // 与父级 cell 高宽比换算共用 heightFor（否则标签文字被裁切）
+    final effectiveTagRowHeight = BookDisplayTagsRow.heightFor(
+      context,
+      compact: true,
+      minHeight: tagRowHeight,
+    );
 
     return Column(
       children: [
@@ -190,11 +201,11 @@ class BookGridItem extends StatelessWidget {
         if (tags.isNotEmpty)
           BookDisplayTagsRow(
             tags: tags,
-            height: tagRowHeight,
+            height: effectiveTagRowHeight,
             compact: true,
           )
         else if (reserveTagRow)
-          const SizedBox(height: tagRowHeight),
+          SizedBox(height: effectiveTagRowHeight),
       ],
     );
   }

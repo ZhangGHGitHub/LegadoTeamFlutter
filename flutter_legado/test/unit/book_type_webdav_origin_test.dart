@@ -447,4 +447,95 @@ void main() {
       );
     });
   });
+
+  // [批35b P3-3] 删除源文件准入判定：与 Rust `is_local_storage_book` 同构
+  group('BookType.isLocalStorageBook（Rust 真源，删除源文件准入）', () {
+    test('type == 0：按 origin 判定（本地/WebDAV 为真）', () {
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(bookUrl: '/tmp/a.txt', origin: 'loc_book'),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(
+            bookUrl: '/tmp/a.epub',
+            origin: 'webDav::https://dav.example.com/books/a.epub',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(bookUrl: 'https://src/1', origin: 'https://src'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('type 非 0 含 local 位：为真（双位域兼容）', () {
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(
+            bookUrl: '/tmp/a.txt',
+            origin: 'https://src',
+            bookType: BookType.text | BookType.local,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(
+            bookUrl: '/tmp/a.txt',
+            origin: 'https://src',
+            bookType: BookType.text | BookType.kotlinLocal,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('type 非 0 无 local 位但 origin 为 loc_book/WebDAV：为真（Rust 分支）', () {
+      // isLocalBook 在此为 false（只看 local 位），isLocalStorageBook 为 true
+      // —— 与 Rust 删除原文件的准入判断一致，弹窗不得漏显「删除源文件」。
+      const localOriginBook = Book(
+        bookUrl: '/tmp/a.epub',
+        origin: 'loc_book',
+        bookType: BookType.text,
+      );
+      expect(BookType.isLocalBook(localOriginBook), isFalse);
+      expect(BookType.isLocalStorageBook(localOriginBook), isTrue);
+
+      const webdavOriginBook = Book(
+        bookUrl: '/tmp/a.epub',
+        origin: 'webDav::https://dav.example.com/books/a.epub',
+        bookType: BookType.text,
+      );
+      expect(BookType.isLocalStorageBook(webdavOriginBook), isTrue);
+    });
+
+    test('在线书（type 非 0、非 local 位、http origin）为假', () {
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(
+            bookUrl: 'https://src/1',
+            origin: 'https://src',
+            bookType: BookType.text,
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('origin 前后空白不影响判定（与 Rust trim 一致）', () {
+      expect(
+        BookType.isLocalStorageBook(
+          const Book(bookUrl: '/tmp/a.txt', origin: ' loc_book '),
+        ),
+        isTrue,
+      );
+    });
+  });
 }

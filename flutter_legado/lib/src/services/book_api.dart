@@ -1,5 +1,36 @@
 import '../models/models.dart';
 
+/// Rust `readRecordUpsert` 因书级开关跳过写入时的返回哨兵（批35b P3-1）
+///
+/// readTime 为累计毫秒数，正常值恒 `>= 0`；Rust 侧以 `-1` 表示「本次未写入」
+/// （`read_record_api::READ_RECORD_SKIPPED`），Dart 据此让
+/// [BookApi.putReadRecord] 返回 `false`。
+const int readRecordSkippedSentinel = -1;
+
+/// 批量删除结果（批35b P3-5）
+///
+/// UI 用 [deleted]（实际删除数）展示成功提示，而非选中数：[missing] 为
+/// 请求删除时已不在书架的数量（并发删除/重复请求），不虚增「已删除」。
+class DeleteBooksResult {
+  const DeleteBooksResult({
+    required this.deleted,
+    required this.missing,
+    this.warnings = const [],
+  });
+
+  /// 实际删除的书籍记录数（删除前在库中存在）
+  final int deleted;
+
+  /// 请求删除但库中已不存在的数量
+  final int missing;
+
+  /// 源文件删除失败提示（中文逐条；全部成功为空）
+  final List<String> warnings;
+
+  /// 本次请求的总条数
+  int get requested => deleted + missing;
+}
+
 /// 书籍 API 抽象接口
 ///
 /// 定义所有数据层公开方法签名，供 UI 层依赖。
@@ -48,8 +79,12 @@ abstract class BookApi {
   /// 对齐参考版 `DeleteBooksUseCase.execute(bookUrls, deleteOriginal)`：
   /// 逐本删除书籍记录（章节级联清理）；[deleteOriginal] 为 true 时仅对
   /// 本地/WebDAV 书删除 `bookUrl` 指向的磁盘文件。文件删除失败**不阻断**
-  /// 记录删除，以中文提示逐条返回（成功返回空列表）。
-  Future<List<String>> deleteBooks(
+  /// 记录删除，以中文提示逐条返回。
+  ///
+  /// [批35b P3-5] 返回 [DeleteBooksResult]：Rust 在删除前查库，给出实际
+  /// 删除数 [DeleteBooksResult.deleted] 与已不存在数
+  /// [DeleteBooksResult.missing]，UI 不再用选中数冒充成功数。
+  Future<DeleteBooksResult> deleteBooks(
     List<String> bookUrls, {
     bool deleteOriginal = false,
   });
@@ -856,9 +891,13 @@ abstract class BookApi {
   /// 更新阅读记录
   ///
   /// [bookUrl] 非空时写前检查该书 `disableReadRecord`：为 true 则整次跳过
-  /// （不写 readRecord/readRecordDaily，返回传入 readTime）；为空保持旧行为。
+  /// （不写 readRecord/readRecordDaily）；为空保持旧行为。
   /// 阅读器写路径应传 `book.bookUrl`（批35，见 API_CONTRACT §2.12）。
-  Future<void> putReadRecord(ReadRecord record, {String? bookUrl});
+  ///
+  /// 返回是否真正写入（批35b P3-1）：`false` 表示 Rust 因书级开关跳过，
+  /// 调用方应把本轮已累加的时长从会话基数回滚（否则关闭期间的时长会在
+  /// 同会话重开后补记）。
+  Future<bool> putReadRecord(ReadRecord record, {String? bookUrl});
 
   /// 删除阅读记录
   Future<void> deleteReadRecord(String bookName);
@@ -1308,6 +1347,11 @@ abstract class BookApi {
   Future<String> exportBook(String bookUrl, String format, String outDir);
 
   /// 记录阅读时长（经 readRecordUpsert，对齐原版 ReadRecord）
+  ///
+  /// [批35b P3-6 契约登记] 本方法**不传 bookUrl**，因此书级开关
+  /// `disableReadRecord` 对它不生效（Rust 侧仅在 `bookUrl` 非空时查询）。
+  /// 当前无生产调用方（仅契约保留的历史统计入口）；需要书级门控的写路径
+  /// 必须走 [putReadRecord] 并传 `bookUrl`。见 API_CONTRACT §2.12 注⑤。
   Future<void> recordReadingTime(String bookName, int seconds);
 
   // ========== HTTP TTS ==========

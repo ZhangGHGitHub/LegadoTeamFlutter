@@ -17,10 +17,12 @@ import '../providers/reader/reader_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart'
     show TopBarButtonStyle;
 import '../routes.dart';
+import '../services/book_api.dart' show DeleteBooksResult;
 import '../services/local_book_store.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_progress_indicator.dart';
+import '../widgets/book_display_tags_row.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_list_item.dart';
 import '../widgets/custom_refresh_indicator.dart';
@@ -191,8 +193,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final count = state.selectedUrls.length;
     if (count == 0) return;
     // 仅当选中集合里存在本地书才提供「删除源文件」（对齐参考版 hasLocalBook）
+    // [批35b P3-3] 用与 Rust `is_local_storage_book` 完全同构的判定：弹窗
+    // 出现「删除源文件」的条件必须与 Rust 真正会尝试删文件的条件一致
+    //（Rust 为真源，见 BookType.isLocalStorageBook）。
     final hasLocalBook = state.books.any(
-      (b) => state.selectedUrls.contains(b.bookUrl) && BookType.isLocalBook(b),
+      (b) =>
+          state.selectedUrls.contains(b.bookUrl) &&
+          BookType.isLocalStorageBook(b),
     );
     var deleteOriginal = false;
     final confirmed = await showDialog<bool>(
@@ -240,9 +247,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
     if (confirmed != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    List<String> warnings;
+    DeleteBooksResult result;
     try {
-      warnings = await ref
+      result = await ref
           .read(bookshelfNotifierProvider.notifier)
           .deleteSelectedBooks(deleteOriginal: deleteOriginal);
     } catch (e) {
@@ -255,10 +262,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       return;
     }
     if (!context.mounted) return;
-    // 文件删除失败不阻断记录删除：先报「已删除 N 本」，再逐条列出失败原因
-    final message = warnings.isEmpty
-        ? '已删除 $count 本书籍'
-        : '已删除 $count 本书籍；部分源文件未删除：${warnings.join('；')}';
+    // [批35b P3-5] 用 Rust 返回的实际删除数（选中后已被并发删除的不计入）；
+    // 文件删除失败不阻断记录删除：先报删除数，再逐条列出失败原因。
+    final deletedText = result.missing > 0
+        ? '已删除 ${result.deleted} 本书籍（${result.missing} 本已不在书架）'
+        : '已删除 ${result.deleted} 本书籍';
+    final message = result.warnings.isEmpty
+        ? deletedText
+        : '$deletedText；部分源文件未删除：${result.warnings.join('；')}';
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
@@ -699,6 +710,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // [批35] 标签行按「当前网格内是否有任一本书带标签」预留高度：
     // 无标签时不改变既有 cell 比例（封面 5:7 不被挤压）
     final hasTagRow = books.any((b) => state.displayTagsOf(b).isNotEmpty);
+    // [批35b P3-4] 预留高度按 textScaler 换算（与 BookGridItem 内同一函数），
+    // 大字号下 cell 同步增高，标签行不裁切、封面不被挤压
+    final tagRowHeight = BookDisplayTagsRow.heightFor(
+      context,
+      compact: true,
+      minHeight: BookGridItem.tagRowHeight,
+    );
     return SliverPadding(
       // 内容边距：左右 22（参考边距 22px）+ 上下 8
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
@@ -708,8 +726,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           // 网格间距 20dp（参考卡列间距 20px）
           mainAxisSpacing: 20,
           crossAxisSpacing: 20,
-          childAspectRatio:
-              _bookshelfGridCellAspectRatio(available, tagRow: hasTagRow),
+          childAspectRatio: _bookshelfGridCellAspectRatio(
+            available,
+            tagRow: hasTagRow,
+            tagRowHeight: tagRowHeight,
+          ),
         ),
         itemCount: books.length,
         itemBuilder: (context, index) => _buildGridItem(
@@ -727,11 +748,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// SizedBox(height:40) 标题）。[availableWidth] 为扣除左右 padding 22×2
   /// 后的网格内容宽。360dp 屏：cellW=92dp → cellH=168.8dp → 0.5450（而非
   /// 固定 0.714，后者令封面被压成方形）。
+  ///
+  /// [tagRowHeight] 由调用方按当前 textScaler 换算（批35b P3-4）。
   double _bookshelfGridCellAspectRatio(double availableWidth,
-      {bool tagRow = false}) {
+      {bool tagRow = false,
+      double tagRowHeight = BookGridItem.tagRowHeight}) {
     const crossSpacing = 20.0;
-    final titleHeight =
-        40.0 + (tagRow ? BookGridItem.tagRowHeight : 0.0);
+    final titleHeight = 40.0 + (tagRow ? tagRowHeight : 0.0);
     final cellWidth = (availableWidth - 2 * crossSpacing) / 3;
     return cellWidth / (cellWidth * 7 / 5 + titleHeight);
   }

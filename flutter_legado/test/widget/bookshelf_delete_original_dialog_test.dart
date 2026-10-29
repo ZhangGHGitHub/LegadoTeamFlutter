@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
+import 'package:flutter_legado/src/services/book_api.dart' show DeleteBooksResult;
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 
 /// [批35] 批量删除确认框「删除源文件」Checkbox 行为：
@@ -91,14 +92,21 @@ class _CapturingMockBookApi extends MockBookApi {
   bool? lastDeleteOriginal;
 
   @override
-  Future<List<String>> deleteBooks(
+  Future<DeleteBooksResult> deleteBooks(
     List<String> bookUrls, {
     bool deleteOriginal = false,
   }) async {
     lastDeleteUrls = List<String>.of(bookUrls);
     lastDeleteOriginal = deleteOriginal;
-    await super.deleteBooks(bookUrls, deleteOriginal: deleteOriginal);
+    final result = await super.deleteBooks(
+      bookUrls,
+      deleteOriginal: deleteOriginal,
+    );
     // 模拟「本地文件删除失败」提示（Rust 侧真实返回形态）
-    return const ['《示例书籍 06》原文件不存在或不可访问，已跳过文件删除'];
+    return DeleteBooksResult(
+      deleted: result.deleted,
+      missing: result.missing,
+      warnings: const ['《示例书籍 06》原文件不存在或不可访问，已跳过文件删除'],
+    );
   }
 }

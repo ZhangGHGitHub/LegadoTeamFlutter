@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/book_api.dart' show DeleteBooksResult;
 import '../../services/settings_service.dart';
 import '../providers.dart';
 import 'bookshelf_state.dart';
@@ -313,18 +314,23 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   ///
   /// [UI-fix 2.0.258] 原逐本 `deleteBook` 方案收敛为单次批量调用。
   /// [批35] 改走 `BookApi.deleteBooks(urls, deleteOriginal)`：`deleteOriginal`
-  /// 为真时由 Rust 仅对本地/WebDAV 书删除原文件；返回文件删除失败提示
-  /// （中文逐条，成功为空列表），文件失败不阻断记录删除。
+  /// 为真时由 Rust 仅对本地/WebDAV 书删除原文件；文件失败不阻断记录删除。
+  /// [批35b P3-5] 返回 [DeleteBooksResult]：成功提示用 Rust 给出的实际删除
+  /// 数/已不存在数，而不是选中数（并发删除/重复请求不虚增）。
   ///
   /// 成功后先同步 UI 列表再重拉数据源保证与 Rust 一致，最后清空选中并退出
   /// 选择模式（对标原版批量操作完成即退出选择态）；记录删除失败置
   /// `state.error` 后向上抛出，由调用方提示（不静默假装成功）。
-  Future<List<String>> deleteSelectedBooks({bool deleteOriginal = false}) async {
+  Future<DeleteBooksResult> deleteSelectedBooks({
+    bool deleteOriginal = false,
+  }) async {
     final urls = state.selectedUrls.toList();
-    if (urls.isEmpty) return const [];
+    if (urls.isEmpty) {
+      return const DeleteBooksResult(deleted: 0, missing: 0);
+    }
     try {
       final api = ref.read(bookApiProvider);
-      final warnings =
+      final result =
           await api.deleteBooks(urls, deleteOriginal: deleteOriginal);
       state = state.copyWith(
         books: state.books.where((b) => !urls.contains(b.bookUrl)).toList(),
@@ -332,7 +338,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
         selectedUrls: {},
       );
       await _loadBooks();
-      return warnings;
+      return result;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
       rethrow;

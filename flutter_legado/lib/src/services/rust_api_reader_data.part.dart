@@ -562,13 +562,17 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   ///
   /// [bookUrl] 非空时 Rust 写前查 `books.disableReadRecord`，为真整次跳过
   /// （批35；阅读器写路径必须传，覆盖「详情页切换后阅读器仍持旧副本」窗口）。
+  ///
+  /// 返回是否真正写入（批35b P3-1）：Rust 跳过时返回哨兵 -1，此处折算为
+  /// `false`，调用方回滚本轮会话基数（详见 `reader_notifier._upReadTime`）。
   @override
-  Future<void> putReadRecord(ReadRecord record, {String? bookUrl}) async {
-    await bridge.readRecordUpsert(
+  Future<bool> putReadRecord(ReadRecord record, {String? bookUrl}) async {
+    final readTime = await bridge.readRecordUpsert(
       bookName: record.bookName,
       readTime: record.readTime,
       bookUrl: bookUrl,
     );
+    return readTime != readRecordSkippedSentinel;
   }
 
   /// 删除阅读记录

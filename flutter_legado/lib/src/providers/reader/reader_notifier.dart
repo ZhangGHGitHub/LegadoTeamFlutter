@@ -856,11 +856,20 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 都不发）；写路径同时传 `bookUrl`，由 Rust 侧再查一次 DB 兜住「详情页
   /// 切换后阅读器仍持旧 Book 副本」的并发窗口（API_CONTRACT §2.12 注②）。
   /// 本轨仅文本阅读器写 readRecord（朗读/听书不写，RSS 记录是独立体系）。
+  ///
+  /// [批35b P3-1] 关闭期间不得补记：
+  /// - 本地短路（全局/书级关闭）时推进 `_readStartMs`，重开后只从重开时刻
+  ///   起算，不把关闭期间算进下一次增量；
+  /// - Rust 侧跳过（陈旧副本窗口）时 `putReadRecord` 返回 `false`，把本轮已
+  ///   累加的 `delta` 从 `_baseReadTimeMs` 回滚，避免下次写入补记关闭时长。
   Future<void> _upReadTime(Book book) async {
     try {
       final enable = await _settings.getEnableReadRecord();
-      if (!enable) return;
-      if (book.disableReadRecord) return;
+      if (!enable || book.disableReadRecord) {
+        // 关闭期间不计时：推进起点，使重开后首轮 delta 从重开时刻起算
+        _readStartMs = DateTime.now().millisecondsSinceEpoch;
+        return;
+      }
       final now = DateTime.now().millisecondsSinceEpoch;
       if (_readStartMs <= 0) {
         _readStartMs = now;
@@ -870,7 +879,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       if (delta <= 0) return;
       _baseReadTimeMs += delta;
       _readStartMs = now;
-      await ref.read(bookApiProvider).putReadRecord(
+      final written = await ref.read(bookApiProvider).putReadRecord(
             ReadRecord(
               bookName: book.name,
               readTime: _baseReadTimeMs,
@@ -878,6 +887,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
             ),
             bookUrl: book.bookUrl,
           );
+      if (!written) {
+        // Rust 按库内开关跳过：回滚本轮累加（已推进的起点保留）
+        final rolledBack = _baseReadTimeMs - delta;
+        _baseReadTimeMs = rolledBack < 0 ? 0 : rolledBack;
+      }
     } catch (_) {
       // 写记录失败不阻断阅读
     }

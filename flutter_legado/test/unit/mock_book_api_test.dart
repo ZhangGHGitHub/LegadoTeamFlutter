@@ -931,12 +931,14 @@ void main() {
 
   // ===== [批35] 批量删除 / 书籍级阅读记录开关 =====
   group('批35：批量删除原文件 / 书籍级阅读记录开关', () {
-    test('deleteBooks 批量移除书籍记录并返回空提示', () async {
-      final warnings = await api.deleteBooks(
-        ['mock://book/1', 'mock://book/2'],
+    test('deleteBooks 批量移除书籍记录并返回实际删除/缺失计数', () async {
+      final result = await api.deleteBooks(
+        ['mock://book/1', 'mock://book/2', 'mock://missing'],
         deleteOriginal: true,
       );
-      expect(warnings, isEmpty, reason: 'Mock 不接触磁盘，无文件失败提示');
+      expect(result.deleted, 2, reason: '在架两本计入实际删除数');
+      expect(result.missing, 1, reason: '不在架的 URL 计入 missing');
+      expect(result.warnings, isEmpty, reason: 'Mock 不接触磁盘，无文件失败提示');
       final books = await api.getBooks();
       expect(books.length, 8);
       expect(books.any((b) => b.bookUrl == 'mock://book/1'), isFalse);
@@ -962,10 +964,11 @@ void main() {
       final name = (await api.getBook(bookUrl))!.name;
       await api.setReadRecordDisabled(bookUrl, true);
 
-      await api.putReadRecord(
+      final skipped = await api.putReadRecord(
         ReadRecord(bookName: name, readTime: 9000, lastRead: 1),
         bookUrl: bookUrl,
       );
+      expect(skipped, isFalse, reason: '书级开关为真时返回 false（未写入）');
       expect(
         (await api.getReadRecords()).any((r) => r.bookName == name),
         isFalse,
@@ -973,10 +976,11 @@ void main() {
       );
 
       await api.setReadRecordDisabled(bookUrl, false);
-      await api.putReadRecord(
+      final written = await api.putReadRecord(
         ReadRecord(bookName: name, readTime: 9000, lastRead: 1),
         bookUrl: bookUrl,
       );
+      expect(written, isTrue, reason: '重新开启后应真正写入');
       expect(
         (await api.getReadRecords()).any((r) => r.bookName == name),
         isTrue,

@@ -7,6 +7,8 @@ import '../ffi.dart';
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`
+
 /// 初始化 Legado 运行时（首次调用时创建 tokio runtime）
 ///
 /// 批34c：同时安装 `log` → logcat 桥（`crate::log_bridge::init`），
@@ -114,9 +116,10 @@ Future<void> bookshelfDelete({required String bookUrl}) =>
 
 /// 批量删除书架书籍（可选同时删除本地/WebDAV 原文件，批35）
 ///
-/// 返回文件删除失败的提示列表（成功为空数组）：文件删除失败**不阻断**
-/// 书籍记录删除；路径安全与白名单见 `api::bookshelf::delete_books`。
-Future<List<String>> bookshelfDeleteBooks({
+/// 返回实际删除数/已不存在数与文件删除失败提示：文件删除失败**不阻断**
+/// 书籍记录删除；路径安全（Documents/Cache 信任根、拒绝 `..`/符号链接/
+/// 非普通文件/白名单外扩展名）见 `api::bookshelf::delete_books`。
+Future<BookshelfDeleteResult> bookshelfDeleteBooks({
   required List<String> bookUrls,
   required bool deleteOriginal,
 }) => RustLib.instance.api.crateFfiFfiBookshelfDeleteBooks(
@@ -1476,7 +1479,10 @@ Future<String> readRecordList() =>
 /// [热力图每日时长契约] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
 ///
 /// [批35] `book_url` 非空时写前检查 `books.disableReadRecord`，为真则整次
-/// 跳过（返回传入 readTime，零写入）；为空保持旧行为。
+/// 跳过（零写入）；为空保持旧行为。
+/// [批35b P3-1] 跳过时返回哨兵 **-1**（`READ_RECORD_SKIPPED`），Dart
+/// `putReadRecord` 据此返回 `false`，阅读器回滚本轮会话基数；正常写入
+/// 返回传入 `read_time`。
 Future<PlatformInt64> readRecordUpsert({
   required String bookName,
   required PlatformInt64 readTime,
@@ -2615,3 +2621,38 @@ Future<String> directLinkUpload({
   content: content,
   filePath: filePath,
 );
+
+/// 批量删除书架书籍（可选同时删除本地/WebDAV 原文件，批35）
+///
+/// 批量删除结果（批35b P3-5）
+///
+/// UI 用 `deleted` 展示实际删除数（而非选中数）：请求集合里已被并发
+/// 删除/本就不在书架的 URL 计入 `missing`，不虚增成功提示。
+class BookshelfDeleteResult {
+  /// 实际删除的书籍记录数（删除前在库中存在）
+  final int deleted;
+
+  /// 请求删除但库中已不存在的数量
+  final int missing;
+
+  /// 文件删除失败提示（中文逐条；全部成功为空）
+  final List<String> warnings;
+
+  const BookshelfDeleteResult({
+    required this.deleted,
+    required this.missing,
+    required this.warnings,
+  });
+
+  @override
+  int get hashCode => deleted.hashCode ^ missing.hashCode ^ warnings.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is BookshelfDeleteResult &&
+          runtimeType == other.runtimeType &&
+          deleted == other.deleted &&
+          missing == other.missing &&
+          warnings == other.warnings;
+}

@@ -69,6 +69,13 @@ pub fn get_read_time(book_name: &str) -> LegadoResult<i64> {
     })
 }
 
+/// [批35b P3-1] 书级开关跳过写入时 [`upsert_read_record`] 的返回哨兵
+///
+/// Dart `putReadRecord` 据此返回 `false`，阅读器把本轮已累加的时长从
+/// 会话基数回滚（否则关闭期间/陈旧副本窗口的时长会在同会话重开后补记）。
+/// readTime 是累计毫秒数，正常值恒 `>= 0`，`-1` 不会与真实值冲突。
+pub const READ_RECORD_SKIPPED: i64 = -1;
+
 /// 添加/更新阅读记录，返回阅读时长；写入 lastRead=当前毫秒（对齐原版 upReadTime）
 ///
 /// [热力图每日时长契约] 同步累加当日阅读时长到 readRecordDaily（热力图"每日时长"数据源）：
@@ -77,6 +84,9 @@ pub fn get_read_time(book_name: &str) -> LegadoResult<i64> {
 /// readTime 单位为毫秒，而 readRecordDaily 契约为秒（readRecordDailyList 返回
 /// `[{date, seconds}]`）。取「各自下限整秒再作差」而非「差值再除 1000」：两者对单次
 /// 累加等价，但前者不会因频繁的小增量同步被反复截断丢秒，累计值不随调用次数漂移。
+///
+/// [批35b P3-1] 书级开关跳过时返回 [`READ_RECORD_SKIPPED`]（-1），供调用方
+/// 回滚会话基数；正常写入返回传入的 `read_time`。
 pub fn upsert_read_record(
     book_name: &str,
     read_time: i64,
@@ -92,7 +102,7 @@ pub fn upsert_read_record(
         if let Some(url) = book_url.map(str::trim).filter(|u| !u.is_empty()) {
             let book_repo = legado_db::BookRepository::new(db.connection());
             if book_repo.is_read_record_disabled(url)? {
-                return Ok(read_time);
+                return Ok(READ_RECORD_SKIPPED);
             }
         }
         let repo = ReadRecordRepository::new(db.connection());
@@ -287,7 +297,10 @@ mod tests {
             crate::api::bookshelf::set_read_record_disabled(book_url, true).expect("开关置真失败");
         let before = daily_seconds_today(&today, year);
         let returned = upsert_read_record(book_name, 90_000, Some(book_url)).unwrap();
-        assert_eq!(returned, 90_000, "跳过写入时返回传入 readTime");
+        assert_eq!(
+            returned, READ_RECORD_SKIPPED,
+            "跳过写入时应返回哨兵 -1（Dart 侧据此回滚会话基数）"
+        );
         assert!(
             !get_read_records()
                 .unwrap()

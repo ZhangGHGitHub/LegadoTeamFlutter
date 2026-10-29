@@ -61,15 +61,26 @@ pub fn resolve_local_book_path(book_url: &str) -> String {
         return book_url.to_string();
     }
     // 相对可迁移标识：拼接到当前 Documents 目录（DB 路径的父目录）
-    let base = current_db_path()
-        .as_deref()
-        .map(std::path::Path::new)
-        .and_then(|db| db.parent())
-        .map(|d| d.to_path_buf());
-    match base {
+    match documents_root() {
         Some(base) => base.join(p).to_string_lossy().into_owned(),
         None => book_url.to_string(),
     }
+}
+
+/// 当前应用 Documents 根目录（DB 文件所在目录）
+///
+/// 与 [`resolve_local_book_path`] 同一口径：App 的 DB 固定落在
+/// `Documents/legado.db`，其父目录即本地书相对标识与导入副本的基目录。
+/// 未记录 DB 路径（未调用 `db_open`）时返回 `None`。
+///
+/// [批35b P2-1] 同时作为「删除本地源文件」的信任边界根：DB 未初始化时
+/// 调用方不得放行任何本地路径。
+pub fn documents_root() -> Option<std::path::PathBuf> {
+    current_db_path()
+        .as_deref()
+        .map(std::path::Path::new)
+        .and_then(|db| db.parent())
+        .map(|d| d.to_path_buf())
 }
 
 /// 初始化全局数据库连接池（由 `ffi_db_open` 调用）

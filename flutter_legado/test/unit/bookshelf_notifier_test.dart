@@ -8,6 +8,7 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/services/book_api.dart' show DeleteBooksResult;
 
 import '../mocks/mocks.dart';
 
@@ -330,13 +331,17 @@ void main() {
 
       when(() => mockApi.deleteBooks(any(),
           deleteOriginal: any(named: 'deleteOriginal'))).thenAnswer(
-        (_) async => const ['《完美世界》原文件删除失败'],
+        (_) async => const DeleteBooksResult(
+          deleted: 2,
+          missing: 0,
+          warnings: ['《完美世界》原文件删除失败'],
+        ),
       );
       // 删除后重拉的数据源（仅剩 book://3）
       when(() => mockApi.getBooks())
           .thenAnswer((_) async => [testBooks[2]]);
 
-      final warnings = await readNotifier().deleteSelectedBooks();
+      final result = await readNotifier().deleteSelectedBooks();
 
       // 单次批量调用（不再逐本 deleteBook），deleteOriginal 默认 false
       verify(() => mockApi.deleteBooks(
@@ -344,7 +349,8 @@ void main() {
             deleteOriginal: false,
           )).called(1);
       verifyNever(() => mockApi.deleteBook(any()));
-      expect(warnings, ['《完美世界》原文件删除失败'],
+      expect(result.deleted, 2, reason: '实际删除数来自 Rust 返回值');
+      expect(result.warnings, ['《完美世界》原文件删除失败'],
           reason: '文件删除失败提示须原样返回给 UI');
       expect(readState().isBatchMode, isFalse);
       expect(readState().selectedUrls, isEmpty);
@@ -357,16 +363,19 @@ void main() {
       readNotifier().toggleSelect('book://1');
       when(() => mockApi.deleteBooks(any(),
           deleteOriginal: any(named: 'deleteOriginal'))).thenAnswer(
-        (_) async => const [],
+        (_) async => const DeleteBooksResult(deleted: 1, missing: 0),
       );
       when(() => mockApi.getBooks()).thenAnswer((_) async => []);
 
-      await readNotifier().deleteSelectedBooks(deleteOriginal: true);
+      final result = await readNotifier().deleteSelectedBooks(
+        deleteOriginal: true,
+      );
 
       verify(() => mockApi.deleteBooks(
             ['book://1'],
             deleteOriginal: true,
           )).called(1);
+      expect(result.deleted, 1);
     });
 
     test('deleteSelectedBooks 无选中时不触发删除', () async {

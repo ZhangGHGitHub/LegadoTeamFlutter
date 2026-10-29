@@ -324,7 +324,7 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateFfiFfiBookshelfDelete({required String bookUrl});
 
-  Future<List<String>> crateFfiFfiBookshelfDeleteBooks({
+  Future<BookshelfDeleteResult> crateFfiFfiBookshelfDeleteBooks({
     required List<String> bookUrls,
     required bool deleteOriginal,
   });
@@ -3296,7 +3296,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "bookshelf_delete", argNames: ["bookUrl"]);
 
   @override
-  Future<List<String>> crateFfiFfiBookshelfDeleteBooks({
+  Future<BookshelfDeleteResult> crateFfiFfiBookshelfDeleteBooks({
     required List<String> bookUrls,
     required bool deleteOriginal,
   }) {
@@ -3314,7 +3314,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_list_String,
+          decodeSuccessData: sse_decode_bookshelf_delete_result,
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiBookshelfDeleteBooksConstMeta,
@@ -11196,6 +11196,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BookshelfDeleteResult dco_decode_bookshelf_delete_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return BookshelfDeleteResult(
+      deleted: dco_decode_i_32(arr[0]),
+      missing: dco_decode_i_32(arr[1]),
+      warnings: dco_decode_list_String(arr[2]),
+    );
+  }
+
+  @protected
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
@@ -11332,6 +11345,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_list_prim_u_8_strict(deserializer);
     return utf8.decoder.convert(inner);
+  }
+
+  @protected
+  BookshelfDeleteResult sse_decode_bookshelf_delete_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_deleted = sse_decode_i_32(deserializer);
+    var var_missing = sse_decode_i_32(deserializer);
+    var var_warnings = sse_decode_list_String(deserializer);
+    return BookshelfDeleteResult(
+      deleted: var_deleted,
+      missing: var_missing,
+      warnings: var_warnings,
+    );
   }
 
   @protected
@@ -11506,6 +11534,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_String(String self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_list_prim_u_8_strict(utf8.encoder.convert(self), serializer);
+  }
+
+  @protected
+  void sse_encode_bookshelf_delete_result(
+    BookshelfDeleteResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.deleted, serializer);
+    sse_encode_i_32(self.missing, serializer);
+    sse_encode_list_String(self.warnings, serializer);
   }
 
   @protected

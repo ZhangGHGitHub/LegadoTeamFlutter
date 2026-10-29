@@ -82,15 +82,21 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
   }
 
   /// 批量删除（批35）：Mock 不接触真实磁盘文件，`deleteOriginal` 仅保留
-  /// 契约形态；返回值按「无文件删除失败」处理（空列表）。
+  /// 契约形态；[批35b P3-5] 按删除前是否在架返回实际删除数/已不存在数。
   @override
-  Future<List<String>> deleteBooks(
+  Future<DeleteBooksResult> deleteBooks(
     List<String> bookUrls, {
     bool deleteOriginal = false,
   }) async {
     await _ensureBooksLoaded();
+    final existing = bookUrls
+        .where((url) => _books.any((b) => b.bookUrl == url))
+        .toList();
     _books.removeWhere((b) => bookUrls.contains(b.bookUrl));
-    return const [];
+    return DeleteBooksResult(
+      deleted: existing.length,
+      missing: bookUrls.length - existing.length,
+    );
   }
 
   /// 书籍级阅读记录开关（批35）：单书字段切换，书籍不存在抛错（对齐 Rust）。

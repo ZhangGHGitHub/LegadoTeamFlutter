@@ -24,6 +24,13 @@ pub struct CreateBookRequest {
     pub origin_name: Option<String>,
     pub cover_url: Option<String>,
     pub intro: Option<String>,
+    /// 书籍级阅读记录开关（批35b P2-2）
+    ///
+    /// 缺键/`null`（`None`）时 PUT 更新保留库内既有值——本接口其余字段
+    /// 缺省由 `Book::default()` 补齐，会把已开启的开关打回 `false`；
+    /// 显式传 `true`/`false` 才覆盖。同时接受 camelCase 别名（对齐 Book JSON）。
+    #[serde(default, alias = "disableReadRecord")]
+    pub disable_read_record: Option<bool>,
 }
 
 /// GET /api/books — 获取书架全部书籍
@@ -60,6 +67,7 @@ pub async fn create_book(
         origin_name: req.origin_name.unwrap_or_default(),
         cover_url: req.cover_url,
         intro: req.intro,
+        disable_read_record: req.disable_read_record.unwrap_or(false),
         ..Book::default()
     };
 
@@ -76,6 +84,15 @@ pub async fn update_book(
     Path(book_url): Path<String>,
     Json(req): Json<CreateBookRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    let db = state.db.lock().await;
+    let repo = BookRepository::new(db.connection());
+    // [批35b P2-2] 先读库再 patch：请求体缺 `disable_read_record` 时保留库内
+    // 既有值（整书构造用 `Book::default()` 会把用户已开启的开关覆盖为 false）。
+    let existing = repo.find_by_url(&book_url)?;
+    let disable_read_record = req
+        .disable_read_record
+        .or_else(|| existing.as_ref().map(|b| b.disable_read_record))
+        .unwrap_or(false);
     let book = Book {
         book_url: req.book_url.clone(),
         name: req.name,
@@ -84,13 +101,9 @@ pub async fn update_book(
         origin_name: req.origin_name.unwrap_or_default(),
         cover_url: req.cover_url,
         intro: req.intro,
+        disable_read_record,
         ..Book::default()
     };
-
-    let db = state.db.lock().await;
-    let repo = BookRepository::new(db.connection());
-    // 先检查是否存在
-    let _existing = repo.find_by_url(&book_url)?;
     repo.update(&book)?;
 
     Ok(Json(json!(book)))
@@ -223,5 +236,87 @@ mod tests {
             .unwrap();
 
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// [批35b P2-2] PUT 请求体缺 `disableReadRecord`：保留库内 true。
+    ///
+    /// 红→绿：旧实现用 `Book::default()` 补齐（false）后整书 UPDATE，
+    /// 一次无关的字段更新就会把用户已开启的书级阅读记录开关打回假。
+    #[tokio::test]
+    async fn test_update_book_preserves_disable_read_record_when_key_missing() {
+        let state = make_test_state();
+        {
+            let db = state.db.lock().await;
+            let repo = BookRepository::new(db.connection());
+            repo.insert(&Book {
+                book_url: "merge-url".to_string(),
+                name: "开关书".to_string(),
+                author: "作者".to_string(),
+                disable_read_record: true,
+                ..Book::default()
+            })
+            .unwrap();
+        }
+
+        let app = create_router(state.clone());
+        let body = serde_json::to_string(&json!({
+            "book_url": "merge-url",
+            "name": "改名",
+            "author": "作者"
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::PUT)
+                    .uri("/api/books/merge-url")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        {
+            let db = state.db.lock().await;
+            let repo = BookRepository::new(db.connection());
+            let saved = repo.find_by_url("merge-url").unwrap().unwrap();
+            assert_eq!(saved.name, "改名", "其他字段应正常更新");
+            assert!(
+                saved.disable_read_record,
+                "缺键 PUT 不得把库内 true 覆盖为 false"
+            );
+        }
+
+        // 显式传 false：按入参覆盖（用户主动恢复记录）
+        let app = create_router(state.clone());
+        let body = serde_json::to_string(&json!({
+            "book_url": "merge-url",
+            "name": "改名",
+            "disableReadRecord": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::PUT)
+                    .uri("/api/books/merge-url")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        {
+            let db = state.db.lock().await;
+            let repo = BookRepository::new(db.connection());
+            let saved = repo.find_by_url("merge-url").unwrap().unwrap();
+            assert!(
+                !saved.disable_read_record,
+                "显式携带的 false 应按入参落库（camelCase 别名亦生效）"
+            );
+        }
     }
 }

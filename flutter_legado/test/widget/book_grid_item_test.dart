@@ -154,4 +154,34 @@ void main() {
     expect(boxes, isNotEmpty);
     expect(find.byType(BookDisplayTagsRow), findsNothing);
   });
+
+  // ===== [批35b P3-4] 无障碍缩放下的标签行高 =====
+
+  testWidgets('textScaleFactor 2.0 时标签行按 textScaler 抬升且不裁切', (tester) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(
+      buildTestWidget(tags: const ['仙侠'], reserveTagRow: true),
+    );
+
+    // 紧凑卡字号 10sp、行高系数 1.2、垂直内边距 4：缩放 2.0 需 ≥ 28dp
+    const minScaledHeight = 10.0 * 2.0 * 1.2 + 4;
+    final rowHeight = tester.getSize(find.byType(BookDisplayTagsRow)).height;
+    expect(
+      rowHeight,
+      greaterThanOrEqualTo(minScaledHeight),
+      reason: '固定 20dp 会裁切 2 倍字号标签，行高必须按 textScaler 抬升',
+    );
+    expect(tester.takeException(), isNull, reason: '大字号下不得出现布局溢出');
+  });
+
+  testWidgets('默认字号下标签行保持设计高度 20dp', (tester) async {
+    await tester.pumpWidget(buildTestWidget(tags: const ['仙侠']));
+
+    expect(
+      tester.getSize(find.byType(BookDisplayTagsRow)).height,
+      BookGridItem.tagRowHeight,
+      reason: '默认字号不改变既有视觉行高',
+    );
+  });
 }

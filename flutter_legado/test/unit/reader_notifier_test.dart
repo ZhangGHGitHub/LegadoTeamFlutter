@@ -552,10 +552,11 @@ void main() {
     void stubSessionRecords(List<ReadRecord> records) {
       when(() => mockApi.getReadRecords()).thenAnswer((_) async => records);
       // [批35] 阅读器写路径带 bookUrl（Rust 侧按书级开关二次守卫）
+      // [批35b P3-1] 返回值 = 是否真正写入；正常路径为 true
       when(() => mockApi.putReadRecord(
             any(),
             bookUrl: any(named: 'bookUrl'),
-          )).thenAnswer((_) async {});
+          )).thenAnswer((_) async => true);
     }
 
     List<ReadRecord> capturedPuts() =>
@@ -679,6 +680,80 @@ void main() {
             any(),
             bookUrl: any(named: 'bookUrl'),
           ));
+    });
+
+    // [批35b P3-1] 关闭期间不计时：本地短路也推进计时起点，同会话重开后
+    // 首轮写入不得把关闭期间补记进去。
+    test('书级开关关闭期间不累计时长（重开后不补记）', () async {
+      stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
+      stubSessionRecords([
+        const ReadRecord(bookName: '同名书', author: '', readTime: 100000),
+      ]);
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      await readNotifier().openBook(dupBook);
+
+      // 关闭开关（同一会话内改 currentBook，不重置 _readStartMs）
+      readNotifier().updateCurrentBook(
+            dupBook.copyWith(disableReadRecord: true),
+          );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await readNotifier().saveProgress();
+      verifyNever(() => mockApi.putReadRecord(
+            any(),
+            bookUrl: any(named: 'bookUrl'),
+          ));
+
+      // 重新开启：只累计重开后的 ~20ms，不含关闭期间的 120ms
+      readNotifier().updateCurrentBook(
+            dupBook.copyWith(disableReadRecord: false),
+          );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await readNotifier().saveProgress();
+
+      final puts = capturedPuts();
+      expect(puts, hasLength(1), reason: '关闭期间不得写记录');
+      expect(
+        puts.single.readTime - 100000,
+        lessThan(100),
+        reason: '关闭期间约 120ms 不得补记到重开后的写入',
+      );
+    });
+
+    // [批35b P3-1] Rust 侧跳过（陈旧副本窗口）：putReadRecord 返回 false
+    // 时回滚本轮 delta，下一次写入不补记被跳过的时长。
+    test('Rust 侧跳过时回滚会话基数', () async {
+      stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
+      stubSessionRecords([
+        const ReadRecord(bookName: '同名书', author: '', readTime: 100000),
+      ]);
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      await readNotifier().openBook(dupBook);
+
+      // 第一轮：Rust 按库内开关跳过（Dart 快照仍是开启态）
+      when(() => mockApi.putReadRecord(
+            any(),
+            bookUrl: any(named: 'bookUrl'),
+          )).thenAnswer((_) async => false);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      await readNotifier().saveProgress();
+
+      // 第二轮：恢复写入
+      when(() => mockApi.putReadRecord(
+            any(),
+            bookUrl: any(named: 'bookUrl'),
+          )).thenAnswer((_) async => true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await readNotifier().saveProgress();
+
+      final puts = capturedPuts();
+      expect(puts, hasLength(2), reason: '两轮都会发起调用（跳过来自 Rust）');
+      expect(
+        puts.last.readTime - 100000,
+        lessThan(100),
+        reason: '第一轮被跳过的约 120ms 必须回滚，不得补记',
+      );
     });
   });
 

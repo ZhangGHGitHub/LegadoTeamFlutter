@@ -10758,6 +10758,20 @@ impl SseDecode for String {
     }
 }
 
+impl SseDecode for crate::ffi::ffi::BookshelfDeleteResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_deleted = <i32>::sse_decode(deserializer);
+        let mut var_missing = <i32>::sse_decode(deserializer);
+        let mut var_warnings = <Vec<String>>::sse_decode(deserializer);
+        return crate::ffi::ffi::BookshelfDeleteResult {
+            deleted: var_deleted,
+            missing: var_missing,
+            warnings: var_warnings,
+        };
+    }
+}
+
 impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -11438,6 +11452,28 @@ fn pde_ffi_dispatcher_sync_impl(
 // Section: rust2dart
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::ffi::ffi::BookshelfDeleteResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.deleted.into_into_dart().into_dart(),
+            self.missing.into_into_dart().into_dart(),
+            self.warnings.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::ffi::ffi::BookshelfDeleteResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::ffi::ffi::BookshelfDeleteResult>
+    for crate::ffi::ffi::BookshelfDeleteResult
+{
+    fn into_into_dart(self) -> crate::ffi::ffi::BookshelfDeleteResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::ffi::BridgeError {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.message.into_into_dart().into_dart()].into_dart()
@@ -11468,6 +11504,15 @@ impl SseEncode for String {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <Vec<u8>>::sse_encode(self.into_bytes(), serializer);
+    }
+}
+
+impl SseEncode for crate::ffi::ffi::BookshelfDeleteResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.deleted, serializer);
+        <i32>::sse_encode(self.missing, serializer);
+        <Vec<String>>::sse_encode(self.warnings, serializer);
     }
 }
 

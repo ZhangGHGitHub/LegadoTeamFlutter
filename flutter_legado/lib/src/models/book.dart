@@ -78,6 +78,24 @@ class BookType {
       ? isLocalOrigin(book.origin)
       : (book.bookType & (local | kotlinLocal)) != 0;
 
+  /// 是否「本地/WebDAV 存储书」——与 Rust `is_local_storage_book` 完全同构
+  ///
+  /// [批35b P3-3] **Rust 为真源**：删除源文件由 Rust
+  /// `api/bookshelf.rs::is_local_storage_book` 决定，UI 只在「可能删文件」
+  /// 时展示「删除源文件」勾选，两端口径必须一致，否则弹窗与实际行为错位。
+  ///
+  /// 与 [isLocalBook] 的唯一区别：`bookType != 0` 时 Rust 仍接受
+  /// `origin == loc_book` / `webDav::` 作为存储书（[isLocalOrigin]），而
+  /// [isLocalBook] 只看 local 位。此差异是有意的——[isLocalBook] 对齐的是
+  /// Kotlin `Book.isLocal`（决定能否更新目录/换源），本函数对齐的是 Rust
+  /// 删除原文件的准入判断。修改任一侧必须同步另一侧
+  /// （Rust `rust/legado-ffi/src/api/bookshelf.rs`）。
+  static bool isLocalStorageBook(Book book) {
+    final originStorage = isLocalOrigin(book.origin.trim());
+    if (book.bookType == 0) return originStorage;
+    return (book.bookType & (local | kotlinLocal)) != 0 || originStorage;
+  }
+
   /// 「更新全部目录」候选：允许更新且非本地书
   ///
   /// 对齐 Kotlin `updateAllBooks` 的 `it.canUpdate && !it.isLocal` 过滤；

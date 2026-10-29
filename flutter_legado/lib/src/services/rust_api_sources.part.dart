@@ -48,16 +48,23 @@ mixin RustApiSources on RustApiDecode implements BookApi {
 
   /// 批量删除书籍（可选同时删除本地/WebDAV 原文件，批35）
   ///
-  /// 返回值 = 文件删除失败提示（中文逐条），成功为空列表；文件删除失败
-  /// 不阻断书籍记录删除（Rust 侧保证）。
+  /// [批35b P3-5] Rust 删除前查库，返回实际删除数与已不存在数：
+  /// 文件删除失败不阻断书籍记录删除（Rust 侧保证），提示随结果返回。
   @override
-  Future<List<String>> deleteBooks(
+  Future<DeleteBooksResult> deleteBooks(
     List<String> bookUrls, {
     bool deleteOriginal = false,
-  }) => bridge.bookshelfDeleteBooks(
-    bookUrls: bookUrls,
-    deleteOriginal: deleteOriginal,
-  );
+  }) async {
+    final outcome = await bridge.bookshelfDeleteBooks(
+      bookUrls: bookUrls,
+      deleteOriginal: deleteOriginal,
+    );
+    return DeleteBooksResult(
+      deleted: outcome.deleted,
+      missing: outcome.missing,
+      warnings: outcome.warnings,
+    );
+  }
 
   /// 书籍级阅读记录开关（批35，单列写，返回更新后的整书）
   @override
