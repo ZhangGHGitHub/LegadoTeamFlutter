@@ -7,8 +7,10 @@
 //
 // 格式差异（已登记 docs/API_CONTRACT.md §2.28 批40 注）：原版/参考版备份是
 // `backup<yyyy-MM-dd>[-<设备名>].zip`，我方是单文件 JSON；远端命名取
-// `backup_yyyyMMdd_HHmmss.json`（本地文件名保持 `legado_backup_<millis>.json`
-// 不变），保留数清理只处理 `backup*.json`，不触碰远端 `backup*.zip`。
+// `backup_yyyyMMdd_HHmmss_SSS.json`（毫秒段用于同秒去重，批40 回修 P3-9；
+// 本地文件名保持 `legado_backup_<millis>.json` 不变），保留数清理只处理
+// `backup_yyyyMMdd_HHmmss[_SSS].json`（大小写敏感），不触碰远端
+// `backup*.zip` 与其它文件。
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -121,15 +123,20 @@ class WebDavBackupService {
   final BookApi _api;
   final SettingsService _settings;
 
-  /// 构造远端备份文件名：`backup_yyyyMMdd_HHmmss.json`
+  /// 构造远端备份文件名：`backup_yyyyMMdd_HHmmss_SSS.json`
   ///
   /// 名称即时间序（保留数清理按名称降序 = 时间降序）。
+  ///
+  /// 批40 回修 P3-9：原命名精确到秒，同一秒内连续两次备份（手动紧接着
+  /// 自动/连点）会覆盖同一远端文件；追加毫秒段去重。Rust 清理侧同时接受
+  /// 无毫秒的旧命名（`backup_yyyyMMdd_HHmmss.json`）。
   static String buildRemoteFileName(DateTime now) {
     String two(int v) => v.toString().padLeft(2, '0');
+    final millis = now.millisecond.toString().padLeft(3, '0');
     return '${kWebDavBackupPrefix}_'
         '${now.year.toString().padLeft(4, '0')}'
         '${two(now.month)}${two(now.day)}_'
-        '${two(now.hour)}${two(now.minute)}${two(now.second)}.json';
+        '${two(now.hour)}${two(now.minute)}${two(now.second)}_$millis.json';
   }
 
   /// 从默认 WebDAV 配置构造 Rust `WebDavConfig` JSON

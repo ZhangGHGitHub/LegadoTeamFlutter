@@ -698,7 +698,13 @@ class SettingsService {
 
   // ===== WebDAV 备份族（批40，键名逐字对齐原版 PreferKey/AppConfig）=====
 
-  /// WebDAV 备份保留数量（默认 0 = 不清理；负数/非法值归一为 0）
+  /// WebDAV 备份保留数量上限（批40 回修 P3-3）
+  ///
+  /// 原版只做 `coerceAtLeast(0)`，输入 999999 会把远端备份全部删光；我方
+  /// UI/服务双侧统一 clamp 到 `0..1000`（0 = 不清理）。
+  static const int webDavBackupKeepCountMax = 1000;
+
+  /// WebDAV 备份保留数量（默认 0 = 不清理；负数/非法值归一为 0，上限 1000）
   ///
   /// 对齐原版 `AppConfig.webDavBackupKeepCount`：存为**字符串**偏好，
   /// `trim().toIntOrNull()?.coerceAtLeast(0) ?: 0`。
@@ -707,7 +713,10 @@ class SettingsService {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(PrefKeys.webDavBackupKeepCount);
       final parsed = int.tryParse(raw?.trim() ?? '') ?? 0;
-      return parsed < 0 ? 0 : parsed;
+      if (parsed < 0) return 0;
+      return parsed > webDavBackupKeepCountMax
+          ? webDavBackupKeepCountMax
+          : parsed;
     } catch (e) {
       debugPrint('SettingsService.getWebDavBackupKeepCount 异常: $e');
       return 0;
@@ -717,7 +726,8 @@ class SettingsService {
   Future<void> setWebDavBackupKeepCount(int value) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final normalized = value < 0 ? 0 : value;
+      final normalized =
+          value < 0 ? 0 : (value > webDavBackupKeepCountMax ? webDavBackupKeepCountMax : value);
       await prefs.setString(
         PrefKeys.webDavBackupKeepCount,
         '$normalized',

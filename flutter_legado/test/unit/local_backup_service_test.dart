@@ -90,6 +90,59 @@ void main() {
     });
   });
 
+  group('恢复互斥（批40 回修 P2-2）', () {
+    test('恢复进行中 → 备份触发返回 null（自动备份 busy）', () async {
+      final service = LocalBackupService();
+      final gate = Completer<void>();
+      final restore = service.runExclusiveRestore(() async {
+        await gate.future;
+        return 'restore';
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(LocalBackupService.isRestoring, isTrue);
+      expect(await service.runExclusive(() async => 'backup'), isNull);
+
+      gate.complete();
+      expect(await restore, 'restore');
+      expect(LocalBackupService.isRestoring, isFalse);
+      // 恢复结束后锁释放，备份可正常执行
+      expect(await service.runExclusive(() async => 'backup'), 'backup');
+    });
+
+    test('备份进行中 → 恢复触发返回 null（不并发写库）', () async {
+      final service = LocalBackupService();
+      final gate = Completer<void>();
+      final backup = service.runExclusive(() async {
+        await gate.future;
+        return 'backup';
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(await service.runExclusiveRestore(() async => 'restore'), isNull);
+
+      gate.complete();
+      expect(await backup, 'backup');
+      expect(await service.runExclusiveRestore(() async => 'restore'), 'restore');
+    });
+
+    test('恢复重入 → 直接返回 null 且不排队', () async {
+      final service = LocalBackupService();
+      final gate = Completer<void>();
+      final first = service.runExclusiveRestore(() async {
+        await gate.future;
+        return 'first';
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(await service.runExclusiveRestore(() async => 'second'), isNull);
+
+      gate.complete();
+      expect(await first, 'first');
+      expect(LocalBackupService.isBusy, isFalse);
+    });
+  });
+
   group('createBackup', () {
     test('上传成功 → 返回上传结果并写 lastBackup', () async {
       final webDav = _FakeWebDavBackupService(api: api);

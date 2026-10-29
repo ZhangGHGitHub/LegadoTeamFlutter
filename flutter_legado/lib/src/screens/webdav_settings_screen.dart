@@ -237,32 +237,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     bool obscure = false,
     String? hint,
   }) async {
-    final controller = TextEditingController(text: initial);
+    // 批40 回修 P3-9：controller 由对话框自身持有并在 dispose 中释放
+    // （直接在 showDialog 返回后 dispose 会在退场动画重建 TextField 时
+    // 触发「used after being disposed」）。
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
-        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          obscureText: obscure,
-          autofocus: true,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (ctx) => _TextInputDialog(
+        title: title,
+        initial: initial,
+        hint: hint,
+        obscure: obscure,
       ),
     );
     if (result == null) return;
@@ -273,47 +257,24 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 编辑「WebDAV 备份保留数量」（批40）
   ///
   /// 对齐原版 `EditTextPreference(key=webDavBackupKeepCount)`：字符串偏好，
-  /// 0 = 不清理；非法/负数在对话框关闭后统一提示且不落盘。
+  /// 0 = 不清理；非法/负数/超上限（1000，批40 回修 P3-3）在对话框关闭后
+  /// 统一提示且不落盘。
   Future<void> _editBackupKeepCount() async {
-    final controller = TextEditingController(text: '$_backupKeepCount');
     final result = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
-        title: const Text('WebDAV 备份保留数量'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('上传成功后保留最近几份备份；0 表示不自动清理（默认）。'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(hintText: '0'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('确定'),
-          ),
-        ],
+      builder: (ctx) => const _TextInputDialog(
+        title: 'WebDAV 备份保留数量',
+        description: '上传成功后保留最近几份备份；0 表示不自动清理（默认）。',
+        hint: '0',
+        keyboardType: TextInputType.number,
       ),
     );
     if (result == null || !mounted) return;
-    final parsed = int.tryParse(result);
-    if (parsed == null || parsed < 0) {
-      _showSnack('请输入 0 或正整数');
+    final parsed = int.tryParse(result.trim());
+    if (parsed == null ||
+        parsed < 0 ||
+        parsed > SettingsService.webDavBackupKeepCountMax) {
+      _showSnack('请输入 0~${SettingsService.webDavBackupKeepCountMax} 的整数');
       return;
     }
     setState(() => _backupKeepCount = parsed);
@@ -331,104 +292,28 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   ///
   /// 三个偏好一次写入：`autoBackup` / `autoBackupWebDav` /
   /// `autoBackupIntervalDays`；间隔天数校验 ≥1（原版同样拒绝 0/非法值）。
+  ///
+  /// 批40 回修 P3-9：controller 由 [_AutoBackupDialog] 自身持有并释放。
   Future<void> _configureAutoBackup() async {
-    var enabled = _autoBackup;
-    var destination = _autoBackupWebDav ? 'webdav' : 'local';
-    final daysController =
-        TextEditingController(text: '$_autoBackupIntervalDays');
-    String? daysError;
-
-    final saved = await showDialog<bool>(
+    final saved = await showDialog<_AutoBackupConfig>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
-          ),
-          title: const Text('自动备份'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('启用自动备份'),
-                  subtitle: const Text('启动或回到前台时检查，按间隔最多备份一次；手动备份不受影响'),
-                  value: enabled,
-                  onChanged: (v) => setDialogState(() => enabled = v),
-                ),
-                RadioGroup<String>(
-                  groupValue: destination,
-                  onChanged: (v) => setDialogState(
-                    () => destination = v ?? destination,
-                  ),
-                  child: IgnorePointer(
-                    ignoring: !enabled,
-                    child: Opacity(
-                      opacity: enabled ? 1 : 0.5,
-                      child: const Column(
-                        children: [
-                          RadioListTile<String>(
-                            value: 'local',
-                            title: Text('仅本地'),
-                          ),
-                          RadioListTile<String>(
-                            value: 'webdav',
-                            title: Text('本地 + WebDAV'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                TextField(
-                  controller: daysController,
-                  enabled: enabled,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: '备份间隔（天）',
-                    hintText: '1',
-                    errorText: daysError,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final days = int.tryParse(daysController.text.trim());
-                if (days == null || days < 1) {
-                  setDialogState(() => daysError = '请输入大于 0 的整数');
-                  return;
-                }
-                Navigator.pop(ctx, true);
-              },
-              child: const Text('确定'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _AutoBackupDialog(
+        enabled: _autoBackup,
+        webDav: _autoBackupWebDav,
+        intervalDays: _autoBackupIntervalDays,
       ),
     );
-    if (saved != true || !mounted) return;
+    if (saved == null || !mounted) return;
 
-    final days = int.tryParse(daysController.text.trim()) ?? 1;
-    final normalizedDays = days < 1 ? 1 : days;
     setState(() {
-      _autoBackup = enabled;
-      _autoBackupWebDav = destination == 'webdav';
-      _autoBackupIntervalDays = normalizedDays;
+      _autoBackup = saved.enabled;
+      _autoBackupWebDav = saved.webDav;
+      _autoBackupIntervalDays = saved.intervalDays;
     });
     await Future.wait([
-      _settings.setAutoBackup(enabled),
-      _settings.setAutoBackupWebDav(destination == 'webdav'),
-      _settings.setAutoBackupIntervalDays(normalizedDays),
+      _settings.setAutoBackup(saved.enabled),
+      _settings.setAutoBackupWebDav(saved.webDav),
+      _settings.setAutoBackupIntervalDays(saved.intervalDays),
     ]);
   }
 
@@ -474,7 +359,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final messenger = ScaffoldMessenger.of(context);
       if (result == null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('正在备份，请稍候')),
+          const SnackBar(content: Text('正在备份或恢复，请稍候')),
         );
         return;
       }
@@ -544,9 +429,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       if (!await _confirmWebDavSync()) return;
       if (!mounted) return;
       await _runWithProgress('恢复中…', () async {
-        final message =
-            await ref.read(syncNotifierProvider.notifier).restoreFromWebDav();
+        // 批40 回修 P2-2：恢复与备份/自动备份共用进程内互斥（恢复会写库，
+        // 与自动备份并发会互相覆盖）；已有备份执行中直接提示稍候。
+        final message = await LocalBackupService.instance.runExclusiveRestore(
+          () => ref.read(syncNotifierProvider.notifier).restoreFromWebDav(),
+        );
         if (!mounted) return;
+        if (message == null) {
+          _showSnack('正在备份或恢复，请稍候');
+          return;
+        }
         await _reloadPrefsAfterRestore();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -632,14 +524,26 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       }
     }
 
+    var restoreBusy = false;
     final restoreResult = await _runWithProgress(
       '恢复中…',
-      () => _performLocalRestore(backupPath, password: null, isZipContainer: isZip),
+      () async {
+        restoreBusy = !await _performLocalRestore(
+          backupPath,
+          password: null,
+          isZipContainer: isZip,
+        );
+      },
       captureError: true,
     );
     if (!mounted) return;
     // 忙（另一操作进行中）：不提示成功、不改任何状态
     if (!restoreResult.ran) return;
+    // 备份/恢复互斥拒绝（批40 回修 P2-2）：提示稍候，不提示成功
+    if (restoreBusy) {
+      _showSnack('正在备份或恢复，请稍候');
+      return;
+    }
     if (restoreResult.error == null) {
       _showSnack(AppStrings.restoreSuccess);
       return;
@@ -669,7 +573,30 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 现算。zip 容器**不做** JSON 偏好/账号回读（zip 备份没有 `appPrefs`
   /// 段，按 `.json` 扩展名硬读会把压缩字节当 JSON 解析——`.json` 命名的
   /// zip 会在这里抛异常或卡住恢复链）。
-  Future<void> _performLocalRestore(
+  ///
+  /// 批40 回修 P2-2：整条恢复链跑在 `LocalBackupService.runExclusiveRestore`
+  /// 内（与手动/自动备份共用互斥）；返回 false = 已有备份/恢复执行中，
+  /// 本次未执行（调用方提示稍候，不得提示成功）。
+  Future<bool> _performLocalRestore(
+    String backupPath, {
+    String? password,
+    bool? isZipContainer,
+  }) async {
+    final acquired = await LocalBackupService.instance.runExclusiveRestore(
+      () async {
+        await _performLocalRestoreLocked(
+          backupPath,
+          password: password,
+          isZipContainer: isZipContainer,
+        );
+        return true;
+      },
+    );
+    return acquired ?? false;
+  }
+
+  /// 本地恢复实际执行体（调用方须已持有备份/恢复互斥锁）
+  Future<void> _performLocalRestoreLocked(
     String backupPath, {
     String? password,
     bool? isZipContainer,
@@ -755,17 +682,25 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       lastPassword = password;
       inlineError = null;
 
+      var restoreBusy = false;
       final error = await _runWithProgress(
         '恢复中…',
-        () => _performLocalRestore(
-          backupPath,
-          password: password,
-          isZipContainer: isZipContainer,
-        ),
+        () async {
+          restoreBusy = !await _performLocalRestore(
+            backupPath,
+            password: password,
+            isZipContainer: isZipContainer,
+          );
+        },
         captureError: true,
       );
       // 忙（另一操作进行中）或页面已销毁：中止循环，不提示成功
       if (!error.ran) return;
+      // 备份/恢复互斥拒绝（批40 回修 P2-2）：中止循环（不重开密码框）
+      if (restoreBusy) {
+        _showSnack('正在备份或恢复，请稍候');
+        return;
+      }
       if (error.error == null) {
         _showSnack(AppStrings.restoreSuccess);
         return;
@@ -885,6 +820,22 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     ref.invalidate(readerTopBarActionsProvider);
     // [批38] 阅读主题库/当前 id/列数随 appPrefs 恢复后重读
     ref.invalidate(readerThemeProvider);
+    // [批40 回修 P3-4] 备份 appPrefs 会覆盖 WebDAV 备份族偏好；恢复后必须
+    // 重读新增设置行（保留数量/导入后自动上传/自动备份三键）与既有两开关，
+    // 否则页面继续显示恢复前的旧值。
+    final keepCount = await _settings.getWebDavBackupKeepCount();
+    final bookAutoUpload = await _settings.getWebDavBookAutoUpload();
+    final autoBackup = await _settings.getAutoBackup();
+    final autoBackupWebDav = await _settings.getAutoBackupWebDav();
+    final autoBackupDays = await _settings.getAutoBackupIntervalDays();
+    final onlyLatest = await _settings.getBoolPref(
+      PrefKeys.onlyLatestBackup,
+      defaultValue: true,
+    );
+    final autoCheck = await _settings.getBoolPref(
+      PrefKeys.autoCheckNewBackup,
+      defaultValue: true,
+    );
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
     setState(() {
@@ -893,6 +844,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       _pass = state.webDavPassword;
       _dir = state.remoteDir;
       _device = state.deviceName;
+      _backupKeepCount = keepCount;
+      _bookAutoUpload = bookAutoUpload;
+      _autoBackup = autoBackup;
+      _autoBackupWebDav = autoBackupWebDav;
+      _autoBackupIntervalDays = autoBackupDays;
+      _onlyLatestBackup = onlyLatest;
+      _autoCheckNewBackup = autoCheck;
     });
   }
 
@@ -1428,6 +1386,220 @@ class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
             onSubmitted: (_) => _submit(),
           ),
         ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单行文本输入对话框（批40 回修 P3-9）
+///
+/// controller 由本 State 持有并在 [dispose] 中释放：若在 `showDialog`
+/// 返回后立刻 dispose，退场动画重建 TextField 会触发
+/// 「A TextEditingController was used after being disposed」。
+class _TextInputDialog extends StatefulWidget {
+  const _TextInputDialog({
+    required this.title,
+    this.initial = '',
+    this.hint,
+    this.description,
+    this.obscure = false,
+    this.keyboardType,
+  });
+
+  final String title;
+  final String initial;
+  final String? hint;
+  final String? description;
+  final bool obscure;
+  final TextInputType? keyboardType;
+
+  @override
+  State<_TextInputDialog> createState() => _TextInputDialogState();
+}
+
+class _TextInputDialogState extends State<_TextInputDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final field = TextField(
+      controller: _controller,
+      autofocus: true,
+      obscureText: widget.obscure,
+      keyboardType: widget.keyboardType,
+      decoration: InputDecoration(hintText: widget.hint),
+    );
+    return AlertDialog(
+      // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺）
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      title: Text(widget.title),
+      content: widget.description == null
+          ? field
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.description!),
+                const SizedBox(height: 12),
+                field,
+              ],
+            ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 自动备份配置对话框返回值（三个偏好一次写入）
+class _AutoBackupConfig {
+  const _AutoBackupConfig({
+    required this.enabled,
+    required this.webDav,
+    required this.intervalDays,
+  });
+
+  final bool enabled;
+  final bool webDav;
+  final int intervalDays;
+}
+
+/// 自动备份配置对话框（批40；批40 回修 P3-9 改为 StatefulWidget 持有 controller）
+class _AutoBackupDialog extends StatefulWidget {
+  const _AutoBackupDialog({
+    required this.enabled,
+    required this.webDav,
+    required this.intervalDays,
+  });
+
+  final bool enabled;
+  final bool webDav;
+  final int intervalDays;
+
+  @override
+  State<_AutoBackupDialog> createState() => _AutoBackupDialogState();
+}
+
+class _AutoBackupDialogState extends State<_AutoBackupDialog> {
+  late bool _enabled;
+  late String _destination;
+  late final TextEditingController _daysController;
+  String? _daysError;
+
+  @override
+  void initState() {
+    super.initState();
+    _enabled = widget.enabled;
+    _destination = widget.webDav ? 'webdav' : 'local';
+    _daysController = TextEditingController(text: '${widget.intervalDays}');
+  }
+
+  @override
+  void dispose() {
+    _daysController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final days = int.tryParse(_daysController.text.trim());
+    if (days == null || days < 1) {
+      setState(() => _daysError = '请输入大于 0 的整数');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _AutoBackupConfig(
+        enabled: _enabled,
+        webDav: _destination == 'webdav',
+        intervalDays: days,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      title: const Text('自动备份'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('启用自动备份'),
+              subtitle: const Text('启动或回到前台时检查，按间隔最多备份一次；手动备份不受影响'),
+              value: _enabled,
+              onChanged: (v) => setState(() => _enabled = v),
+            ),
+            RadioGroup<String>(
+              groupValue: _destination,
+              onChanged: (v) => setState(
+                () => _destination = v ?? _destination,
+              ),
+              child: IgnorePointer(
+                ignoring: !_enabled,
+                child: Opacity(
+                  opacity: _enabled ? 1 : 0.5,
+                  child: const Column(
+                    children: [
+                      RadioListTile<String>(
+                        value: 'local',
+                        title: Text('仅本地'),
+                      ),
+                      RadioListTile<String>(
+                        value: 'webdav',
+                        title: Text('本地 + WebDAV'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            TextField(
+              controller: _daysController,
+              enabled: _enabled,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: '备份间隔（天）',
+                hintText: '1',
+                errorText: _daysError,
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(

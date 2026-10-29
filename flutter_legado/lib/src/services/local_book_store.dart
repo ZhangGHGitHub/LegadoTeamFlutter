@@ -83,8 +83,15 @@ class LocalBookStore {
   /// - 相对可迁移标识（`books/x.epub`）→ 拼接到当前 `Documents` 目录。
   /// - 基目录未缓存（未初始化 / 未预热）时原样返回，调用方按「文件不存在」
   ///   优雅降级（与既有 try/catch 行为一致，不崩溃）。
+  ///
+  /// 前导 `/` 一律视为绝对路径（[批40 回修 P1-1]）：Android/iOS 真实路径
+  /// 以 `/` 开头；Windows 上 `/x` 也是当前盘根路径，且 `File.isAbsolute`
+  /// 不识别 POSIX 风格路径，若不显式判定会把 `/storage/...` 误拼到
+  /// `Documents` 下（单测/桌面端）。相对标识固定为 `books/<name>`，
+  /// 不以 `/` 开头，不受影响。
   static String resolveSync(String bookUrl) {
     if (bookUrl.contains('://')) return bookUrl;
+    if (bookUrl.startsWith('/')) return bookUrl;
     if (File(bookUrl).isAbsolute) return bookUrl;
     final docs = _docsPath;
     if (docs == null) return bookUrl;

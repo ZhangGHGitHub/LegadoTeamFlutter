@@ -41,6 +41,10 @@ class LocalBackupResult {
 }
 
 /// 本地备份服务（互斥 + 统一备份链路）
+///
+/// 批40 回修 P2-2：互斥语义扩展为「备份/恢复共用」——恢复（WebDAV 短按
+/// 同步、本地长按恢复）也会写库，与自动备份并发会互相覆盖；恢复期间
+/// 自动备份必须按 busy 返回（对齐原版共用 `backupRestoreLocked`）。
 class LocalBackupService {
   /// 公共构造仅用于测试替身（互斥锁为**全局静态**，所有实例共享；
   /// 生产代码一律经 [instance] 使用单例）
@@ -52,22 +56,32 @@ class LocalBackupService {
   /// 进程内互斥标志（Dart 单线程事件循环保证读写原子性）
   static bool _running = false;
 
+  /// 恢复进行中标志（与 [_running] 共用忙碌语义）
+  static bool _restoring = false;
+
   /// 是否有备份正在执行
   static bool get isRunning => _running;
+
+  /// 是否有恢复正在执行
+  static bool get isRestoring => _restoring;
+
+  /// 是否有备份或恢复正在执行（自动备份需据此返回 busy）
+  static bool get isBusy => _running || _restoring;
 
   /// 测试用：复位互斥标志（生产代码不得调用）
   @visibleForTesting
   static void resetForTest() {
     _running = false;
+    _restoring = false;
   }
 
   /// 在互斥锁内执行 [action]
   ///
-  /// - 已有备份在执行：返回 `null`（**不排队**，对齐原版重复触发跳过）；
+  /// - 已有备份/恢复在执行：返回 `null`（**不排队**，对齐原版重复触发跳过）；
   /// - [action] 抛出的异常原样上抛，锁在 finally 中释放。
   Future<T?> runExclusive<T>(Future<T> Function() action) async {
-    if (_running) {
-      debugPrint('[LocalBackupService] 已有备份执行中，跳过本次触发');
+    if (isBusy) {
+      debugPrint('[LocalBackupService] 已有备份/恢复执行中，跳过本次备份触发');
       return null;
     }
     _running = true;
@@ -75,6 +89,23 @@ class LocalBackupService {
       return await action();
     } finally {
       _running = false;
+    }
+  }
+
+  /// 在「恢复」互斥内执行 [action]（批40 回修 P2-2）
+  ///
+  /// 与 [runExclusive] 共用忙碌判定：备份进行中时恢复直接返回 `null`
+  /// （调用方提示稍候）；恢复进行中时自动备份/手动备份同样返回 `null`。
+  Future<T?> runExclusiveRestore<T>(Future<T> Function() action) async {
+    if (isBusy) {
+      debugPrint('[LocalBackupService] 已有备份/恢复执行中，跳过本次恢复触发');
+      return null;
+    }
+    _restoring = true;
+    try {
+      return await action();
+    } finally {
+      _restoring = false;
     }
   }
 

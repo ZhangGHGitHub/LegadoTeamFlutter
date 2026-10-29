@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
+import 'package:flutter_legado/src/services/local_backup_service.dart';
 import 'package:flutter_legado/src/services/settings_service.dart';
 
 import '../mocks/mocks.dart';
@@ -80,6 +81,8 @@ void main() {
   setUpAll(registerFallbacks);
 
   setUp(() {
+    // 批40 回修 P2-2：恢复/备份互斥为进程内静态状态，逐用例复位
+    LocalBackupService.resetForTest();
     SharedPreferences.setMockInitialValues({});
     mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);

@@ -2,7 +2,10 @@
 //
 // 覆盖：shouldBackup 天数边界（从未备份/差 1 毫秒/正好 N 天/间隔归一）、
 // 开关关闭、未到期、到期执行（上传开关透传）、备份失败不写 lastBackup、
-// 与手动备份互斥（busy 时跳过且不创建备份）。
+// 与手动备份互斥（busy 时跳过且不创建备份）、恢复互斥（恢复进行中 busy）、
+// 锁内二次判定（autoBackup 关闭/已到期状态变化）、lastBackup 在未来视为到期。
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -46,6 +49,34 @@ class _FakeLocalBackupService extends LocalBackupService {
   }
 }
 
+/// 可按调用次序返回不同值的设置桩（批40 回修 P3-5 锁内二次判定用例）
+class _SequencedSettings extends SettingsService {
+  _SequencedSettings({this.autoBackupValues, this.lastBackupValues});
+
+  final List<bool>? autoBackupValues;
+  final List<int>? lastBackupValues;
+  int autoBackupCalls = 0;
+  int lastBackupCalls = 0;
+
+  @override
+  Future<bool> getAutoBackup() async {
+    final values = autoBackupValues;
+    if (values == null || values.isEmpty) return super.getAutoBackup();
+    final value = values[autoBackupCalls.clamp(0, values.length - 1)];
+    autoBackupCalls++;
+    return value;
+  }
+
+  @override
+  Future<int> getLastBackupTime() async {
+    final values = lastBackupValues;
+    if (values == null || values.isEmpty) return super.getLastBackupTime();
+    final value = values[lastBackupCalls.clamp(0, values.length - 1)];
+    lastBackupCalls++;
+    return value;
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -55,15 +86,19 @@ void main() {
   final now = DateTime(2026, 10, 29, 12, 0, 0);
 
   setUp(() {
+    LocalBackupService.resetForTest();
     SharedPreferences.setMockInitialValues({});
     api = FakeServersRustApi();
     settings = SettingsService();
     backupService = _FakeLocalBackupService();
   });
 
-  AutoBackupScheduler buildScheduler() => AutoBackupScheduler(
+  tearDown(LocalBackupService.resetForTest);
+
+  AutoBackupScheduler buildScheduler({SettingsService? overrideSettings}) =>
+      AutoBackupScheduler(
         api: api,
-        settings: settings,
+        settings: overrideSettings ?? settings,
         backupService: backupService,
         resolveBackupDir: () async => '/tmp/backup',
         clock: () => now,
@@ -140,6 +175,17 @@ void main() {
         isTrue,
       );
     });
+
+    test('lastBackup 在未来（时钟回拨/恢复他机偏好）→ 视为到期', () {
+      expect(
+        AutoBackupScheduler.shouldBackup(
+          now: now,
+          lastBackup: now.add(const Duration(days: 3)),
+          intervalDays: 1,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('checkNow', () {
@@ -198,6 +244,48 @@ void main() {
         await buildScheduler().checkNow(),
         AutoBackupDecision.busy,
       );
+      expect(backupService.createCalls, 0);
+    });
+
+    test('恢复进行中 → busy 且不创建备份（批40 回修 P2-2）', () async {
+      final gate = Completer<void>();
+      final restore = LocalBackupService.instance.runExclusiveRestore(() async {
+        await gate.future;
+        return true;
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      final scheduler = AutoBackupScheduler(
+        api: api,
+        settings: settings,
+        backupService: LocalBackupService.instance,
+        resolveBackupDir: () async => '/tmp/backup',
+        clock: () => now,
+      );
+      expect(await scheduler.checkNow(), AutoBackupDecision.busy);
+      expect(backupService.createCalls, 0);
+
+      gate.complete();
+      expect(await restore, isTrue);
+    });
+
+    test('锁内复检开关：首次判定后被关闭 → disabled 且不创建备份', () async {
+      final sequenced = _SequencedSettings(autoBackupValues: [true, false]);
+      final scheduler = buildScheduler(overrideSettings: sequenced);
+
+      expect(await scheduler.checkNow(), AutoBackupDecision.disabled);
+      expect(sequenced.autoBackupCalls, 2, reason: '锁内必须复检 autoBackup');
+      expect(backupService.createCalls, 0);
+    });
+
+    test('锁内二次判定到期状态：等待锁期间已备份 → notDue', () async {
+      final sequenced = _SequencedSettings(
+        lastBackupValues: [0, now.millisecondsSinceEpoch],
+      );
+      final scheduler = buildScheduler(overrideSettings: sequenced);
+
+      expect(await scheduler.checkNow(), AutoBackupDecision.notDue);
+      expect(sequenced.lastBackupCalls, 2, reason: '锁内必须复检到期状态');
       expect(backupService.createCalls, 0);
     });
   });

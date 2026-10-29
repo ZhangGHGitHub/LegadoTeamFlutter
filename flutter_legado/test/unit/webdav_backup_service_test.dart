@@ -47,17 +47,27 @@ void main() {
   }
 
   group('buildRemoteFileName', () {
-    test('命名 backup_yyyyMMdd_HHmmss.json（补零）', () {
+    test('命名 backup_yyyyMMdd_HHmmss_SSS.json（补零）', () {
       expect(
         WebDavBackupService.buildRemoteFileName(DateTime(2026, 1, 2, 3, 4, 5)),
-        'backup_20260102_030405.json',
+        'backup_20260102_030405_000.json',
       );
       expect(
         WebDavBackupService.buildRemoteFileName(
-          DateTime(2026, 12, 31, 23, 59, 59),
+          DateTime(2026, 12, 31, 23, 59, 59, 7),
         ),
-        'backup_20261231_235959.json',
+        'backup_20261231_235959_007.json',
       );
+    });
+
+    test('同秒不同毫秒 → 文件名不同（批40 回修 P3-9 去重）', () {
+      final a = WebDavBackupService.buildRemoteFileName(
+        DateTime(2026, 10, 29, 12, 0, 0, 100),
+      );
+      final b = WebDavBackupService.buildRemoteFileName(
+        DateTime(2026, 10, 29, 12, 0, 0, 900),
+      );
+      expect(a, isNot(b), reason: '同秒连续备份不得覆盖同一远端文件');
     });
   });
 
@@ -97,13 +107,13 @@ void main() {
       );
 
       expect(result, isNotNull);
-      expect(result!.remoteFileName, 'backup_20261029_120000.json');
+      expect(result!.remoteFileName, 'backup_20261029_120000_000.json');
       expect(result.prune.isEmpty, isTrue);
       expect(result.pruneError, isNull);
       verify(
         () => api.webdavUploadFile(
           any(),
-          'backup_20261029_120000.json',
+          'backup_20261029_120000_000.json',
           '/tmp/legado_backup_1.json',
         ),
       ).called(1);
@@ -126,7 +136,7 @@ void main() {
       verify(
         () => api.webdavPruneBackups(
           any(),
-          'backup_20261029_120000.json',
+          'backup_20261029_120000_000.json',
           3,
         ),
       ).called(1);
@@ -159,6 +169,49 @@ void main() {
       expect(result!.remoteFileName, endsWith('.json'));
       expect(result.pruneError, isNotNull);
       expect(result.prune.isEmpty, isTrue);
+    });
+
+    test('保留数 1 → 只保留当前文件（清理携带 keep=1）', () async {
+      seedDefaultServer();
+      await settings.setWebDavBackupKeepCount(1);
+
+      final result = await service.uploadBackup(
+        localFilePath: '/tmp/legado_backup_1.json',
+        now: DateTime(2026, 10, 29, 12, 0, 0),
+      );
+
+      expect(result, isNotNull);
+      verify(
+        () => api.webdavPruneBackups(
+          any(),
+          'backup_20261029_120000_000.json',
+          1,
+        ),
+      ).called(1);
+    });
+  });
+
+  group('备份保留数 clamp（批40 回修 P3-3）', () {
+    test('写入超上限 → 归一为 1000', () async {
+      await settings.setWebDavBackupKeepCount(5000);
+      expect(await settings.getWebDavBackupKeepCount(), 1000);
+    });
+
+    test('写入负数 → 归一为 0', () async {
+      await settings.setWebDavBackupKeepCount(-3);
+      expect(await settings.getWebDavBackupKeepCount(), 0);
+    });
+
+    test('已有偏好超上限/负数 → 读取时 clamp', () async {
+      SharedPreferences.setMockInitialValues({
+        'webDavBackupKeepCount': '999999',
+      });
+      expect(await SettingsService().getWebDavBackupKeepCount(), 1000);
+
+      SharedPreferences.setMockInitialValues({
+        'webDavBackupKeepCount': '-2',
+      });
+      expect(await SettingsService().getWebDavBackupKeepCount(), 0);
     });
   });
 

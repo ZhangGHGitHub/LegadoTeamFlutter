@@ -106,6 +106,9 @@ class AutoBackupScheduler with WidgetsBindingObserver {
   ///
   /// `lastBackup == null`（从未备份）视为到期；边界取 `>=`（正好达到
   /// 间隔天数即触发，与原版毫秒差比较一致）。
+  ///
+  /// 批40 回修 P3-5：`lastBackup` 落在未来（系统时钟回拨、恢复了他机
+  /// 备份的偏好等）时视为到期，避免「未来时间」让自动备份永久停摆。
   static bool shouldBackup({
     required DateTime now,
     required DateTime? lastBackup,
@@ -113,7 +116,9 @@ class AutoBackupScheduler with WidgetsBindingObserver {
   }) {
     final days = intervalDays < 1 ? 1 : intervalDays;
     if (lastBackup == null) return true;
-    return now.difference(lastBackup) >= Duration(days: days);
+    final elapsed = now.difference(lastBackup);
+    if (elapsed.isNegative) return true;
+    return elapsed >= Duration(days: days);
   }
 
   /// 判定并执行一次自动备份
@@ -128,11 +133,21 @@ class AutoBackupScheduler with WidgetsBindingObserver {
     final uploadWebDav = await _settings.getAutoBackupWebDav();
     // 锁定后二次判定：并发的手动备份刚完成时不再重复备份
     var acquired = false;
+    var lockedDecision = AutoBackupDecision.notDue;
     try {
       final result = await _backupService.runExclusive<LocalBackupResult?>(
         () async {
           acquired = true;
-          if (!await _isDue()) return null;
+          // 批40 回修 P3-5：锁内复检开关——等待锁期间用户可能已关闭
+          // 自动备份，此时不得再创建备份（对齐原版 autoBackupLocked 双检）
+          if (!await _settings.getAutoBackup()) {
+            lockedDecision = AutoBackupDecision.disabled;
+            return null;
+          }
+          if (!await _isDue()) {
+            lockedDecision = AutoBackupDecision.notDue;
+            return null;
+          }
           final dir = await _backupDir();
           return _backupService.createBackup(
             api: _api,
@@ -144,7 +159,7 @@ class AutoBackupScheduler with WidgetsBindingObserver {
         },
       );
       if (!acquired) return AutoBackupDecision.busy;
-      if (result == null) return AutoBackupDecision.notDue;
+      if (result == null) return lockedDecision;
       debugPrint(
         '[AutoBackupScheduler] 自动备份完成: ${result.filePath}'
         '（上传=${result.uploaded}）',

@@ -9,12 +9,14 @@
 //
 // 自动上传（[autoUploadAfterImport]）受 `webDavBookAutoUpload` 开关控制，
 // 默认关闭；未配置 WebDAV 直接跳过；任何失败仅日志，不阻断导入。
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
 import '../models/book.dart';
 import 'book_api.dart';
+import 'local_book_store.dart';
 import 'settings_service.dart';
 import 'webdav_server_service.dart';
 
@@ -92,6 +94,37 @@ class WebDavBookUploadService {
   final BookApi _api;
   final SettingsService _settings;
 
+  /// 进程内自动上传单飞队列（批40 回修 P2-3）
+  ///
+  /// 导入多本书时 `BookshelfNotifier` 逐本 `unawaited` 触发，若各请求并发
+  /// 上传会同时占用多个连接/内存；原版 `LocalBook.autoUploadToWebDav` 在
+  /// 单个协程内**串行**上传。队列为静态（每次触发都会新建服务实例），
+  /// 保证同一时刻只有一个自动上传在跑，后一个在前一个结束（含失败）后
+  /// 才开始；单个失败已由 [autoUploadAfterImport] 内部捕获，不会阻断队列。
+  static Future<void> _autoUploadChain = Future<void>.value();
+
+  /// 测试用：等待队列中已排队的任务全部结束
+  @visibleForTesting
+  static Future<void> get autoUploadQueueIdle => _autoUploadChain;
+
+  /// 测试用：复位队列（仅当队列已空闲时使用）
+  @visibleForTesting
+  static void resetAutoUploadQueueForTest() {
+    _autoUploadChain = Future<void>.value();
+  }
+
+  static Future<T> _enqueueAutoUpload<T>(Future<T> Function() task) {
+    final completer = Completer<T>();
+    _autoUploadChain = _autoUploadChain.then((_) async {
+      try {
+        completer.complete(await task());
+      } catch (e, stack) {
+        completer.completeError(e, stack);
+      }
+    });
+    return completer.future;
+  }
+
   /// 解析默认 WebDAV 目标（DB `servers` 表 `id = -1` + 子目录偏好）
   ///
   /// 返回 null = 未配置；读取异常向上抛。
@@ -125,9 +158,15 @@ class WebDavBookUploadService {
     required WebDavBookTarget target,
   }) async {
     final remotePath = webDavBookRemotePath(book);
-    // 本地书 bookUrl 即本地文件路径（对齐 Rust import_local_book 落库约定）
+    // 批40 回修 P1-1：本地书 `bookUrl` 不一定是绝对路径。
+    // iOS 批量导入把文件拷入 `Documents/books/` 并落库「相对 Documents 的
+    // 可迁移标识」（`books/<name>`，见 LocalBookStore）；Rust
+    // `webdav_upload_file` 直接 `std::fs::read` 相对路径会相对进程 CWD
+    // 解析，必然失败（自动上传静默、手动报错）。上传前统一解析为当前容器
+    // 的绝对路径；绝对路径与 `://` Web URL 原样返回。
+    final localPath = LocalBookStore.resolveSync(book.bookUrl);
     try {
-      await _api.webdavUploadFile(target.configJson, remotePath, book.bookUrl);
+      await _api.webdavUploadFile(target.configJson, remotePath, localPath);
     } catch (e) {
       throw WebDavBookUploadException(WebDavBookUploadStage.upload, e);
     }
@@ -155,7 +194,14 @@ class WebDavBookUploadService {
   ///
   /// 判定顺序对齐原版 `LocalBook.autoUploadToWebDav`：开关 → 是否配置 →
   /// 仅本地书（调用方保证）→ 逐个上传；任何失败只记日志。
-  Future<BookAutoUploadOutcome> autoUploadAfterImport(Book book) async {
+  ///
+  /// 批40 回修 P2-3：本方法进入进程内单飞队列串行执行（见
+  /// [_autoUploadChain]），避免逐本 `unawaited` 触发时并发上传。
+  Future<BookAutoUploadOutcome> autoUploadAfterImport(Book book) {
+    return _enqueueAutoUpload(() => _autoUploadAfterImportNow(book));
+  }
+
+  Future<BookAutoUploadOutcome> _autoUploadAfterImportNow(Book book) async {
     try {
       if (!await _settings.getWebDavBookAutoUpload()) {
         return BookAutoUploadOutcome.disabled;
