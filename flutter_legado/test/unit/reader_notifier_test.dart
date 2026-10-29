@@ -551,13 +551,18 @@ void main() {
 
     void stubSessionRecords(List<ReadRecord> records) {
       when(() => mockApi.getReadRecords()).thenAnswer((_) async => records);
-      when(() => mockApi.putReadRecord(any())).thenAnswer((_) async {});
+      // [批35] 阅读器写路径带 bookUrl（Rust 侧按书级开关二次守卫）
+      when(() => mockApi.putReadRecord(
+            any(),
+            bookUrl: any(named: 'bookUrl'),
+          )).thenAnswer((_) async {});
     }
 
     List<ReadRecord> capturedPuts() =>
-        verify(() => mockApi.putReadRecord(captureAny()))
-            .captured
-            .cast<ReadRecord>();
+        verify(() => mockApi.putReadRecord(
+              captureAny(),
+              bookUrl: any(named: 'bookUrl'),
+            )).captured.cast<ReadRecord>();
 
     test('author 为空的主记录优先：不叠加其他作者行的时长', () async {
       stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
@@ -652,6 +657,28 @@ void main() {
         lessThan(10000),
         reason: '不同书名的记录不得进入本书会话基数',
       );
+    });
+
+    // [批35] 书级开关 Dart 侧短路：连 FFI 都不发（Rust 侧另有二次守卫）
+    test('书籍级开关关闭时不写阅读记录', () async {
+      stubOpenBook(chapters: [const BookChapter(title: 'ch1', index: 0)]);
+      stubSessionRecords(const []);
+      container.read(readerNotifierProvider);
+      await pumpInit();
+
+      const disabledBook = Book(
+        bookUrl: 'https://b.com/disabled',
+        name: '关闭记录书',
+        disableReadRecord: true,
+      );
+      await readNotifier().openBook(disabledBook);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await readNotifier().saveProgress();
+
+      verifyNever(() => mockApi.putReadRecord(
+            any(),
+            bookUrl: any(named: 'bookUrl'),
+          ));
     });
   });
 

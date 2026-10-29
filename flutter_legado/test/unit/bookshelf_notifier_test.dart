@@ -17,6 +17,9 @@ void main() {
 
   setUpAll(() {
     registerFallbacks();
+    // [批35] deleteBooks(List<String>, {deleteOriginal}) 的 any() 匹配需要
+    // List 类型的 fallback
+    registerFallbackValue(<String>[]);
   });
 
   setUp(() {
@@ -318,25 +321,52 @@ void main() {
       expect(readState().selectedUrls, isEmpty);
     });
 
-    test('deleteSelectedBooks 逐本删除并退出选择模式', () async {
+    test('deleteSelectedBooks 批量删除（批发 35：单次 deleteBooks）并退出选择模式',
+        () async {
       await pumpInit();
       readNotifier().toggleBatchMode();
       readNotifier().toggleSelect('book://1');
       readNotifier().toggleSelect('book://2');
 
-      when(() => mockApi.deleteBook('book://1')).thenAnswer((_) async {});
-      when(() => mockApi.deleteBook('book://2')).thenAnswer((_) async {});
+      when(() => mockApi.deleteBooks(any(),
+          deleteOriginal: any(named: 'deleteOriginal'))).thenAnswer(
+        (_) async => const ['《完美世界》原文件删除失败'],
+      );
       // 删除后重拉的数据源（仅剩 book://3）
       when(() => mockApi.getBooks())
           .thenAnswer((_) async => [testBooks[2]]);
 
-      await readNotifier().deleteSelectedBooks();
+      final warnings = await readNotifier().deleteSelectedBooks();
 
-      verify(() => mockApi.deleteBook('book://1')).called(1);
-      verify(() => mockApi.deleteBook('book://2')).called(1);
+      // 单次批量调用（不再逐本 deleteBook），deleteOriginal 默认 false
+      verify(() => mockApi.deleteBooks(
+            ['book://1', 'book://2'],
+            deleteOriginal: false,
+          )).called(1);
+      verifyNever(() => mockApi.deleteBook(any()));
+      expect(warnings, ['《完美世界》原文件删除失败'],
+          reason: '文件删除失败提示须原样返回给 UI');
       expect(readState().isBatchMode, isFalse);
       expect(readState().selectedUrls, isEmpty);
       expect(readState().books.map((b) => b.bookUrl), contains('book://3'));
+    });
+
+    test('deleteSelectedBooks 透传 deleteOriginal=true', () async {
+      await pumpInit();
+      readNotifier().toggleBatchMode();
+      readNotifier().toggleSelect('book://1');
+      when(() => mockApi.deleteBooks(any(),
+          deleteOriginal: any(named: 'deleteOriginal'))).thenAnswer(
+        (_) async => const [],
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+
+      await readNotifier().deleteSelectedBooks(deleteOriginal: true);
+
+      verify(() => mockApi.deleteBooks(
+            ['book://1'],
+            deleteOriginal: true,
+          )).called(1);
     });
 
     test('deleteSelectedBooks 无选中时不触发删除', () async {
@@ -345,20 +375,27 @@ void main() {
 
       await readNotifier().deleteSelectedBooks();
 
+      verifyNever(() => mockApi.deleteBooks(any(),
+          deleteOriginal: any(named: 'deleteOriginal')));
       verifyNever(() => mockApi.deleteBook(any()));
       expect(readState().isBatchMode, isTrue);
       expect(readState().books, hasLength(testBooks.length));
     });
 
-    test('deleteSelectedBooks 失败时记录 error', () async {
+    test('deleteSelectedBooks 失败时记录 error 并向上抛出', () async {
       await pumpInit();
       readNotifier().toggleBatchMode();
       readNotifier().toggleSelect('book://1');
 
-      when(() => mockApi.deleteBook('book://1'))
+      when(() => mockApi.deleteBooks(any(),
+              deleteOriginal: any(named: 'deleteOriginal')))
           .thenThrow(const BridgeError(message: '删除失败'));
 
-      await readNotifier().deleteSelectedBooks();
+      await expectLater(
+        readNotifier().deleteSelectedBooks(),
+        throwsA(isA<BridgeError>()),
+        reason: '记录删除失败必须抛给 UI 提示，不静默成功',
+      );
 
       expect(readState().error, equals('删除失败'));
     });
@@ -497,4 +534,92 @@ void main() {
     });
   });
 
+  // ===== [批35] 书架展示标签开关 =====
+
+  group('BookshelfNotifier 展示标签（批35）', () {
+    test('默认四键均为 true（对齐参考版 BookshelfSettings）', () async {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => testBooks);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      expect(readState().showTag, isTrue);
+      expect(readState().showCustomTags, isTrue);
+      expect(readState().showSourceTags, isTrue);
+      expect(readState().showWordCount, isTrue);
+    });
+
+    test('初始化读取已持久化偏好（键名对齐参考版）', () async {
+      SharedPreferences.setMockInitialValues({
+        'bookshelfShowTag': true,
+        'bookshelfShowCustomTags': false,
+        'bookshelfShowSourceTags': true,
+        'bookshelfShowWordCount': false,
+      });
+      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      expect(readState().showTag, isTrue);
+      expect(readState().showCustomTags, isFalse);
+      expect(readState().showSourceTags, isTrue);
+      expect(readState().showWordCount, isFalse);
+    });
+
+    test('setShowTag 持久化 bookshelfShowTag', () async {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+      await readNotifier().setShowTag(false);
+
+      expect(readState().showTag, isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('bookshelfShowTag'), isFalse);
+    });
+
+    test('setTagContent 一次写回三项并持久化', () async {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+      await readNotifier().setTagContent(
+        showCustomTags: false,
+        showSourceTags: false,
+        showWordCount: true,
+      );
+
+      expect(readState().showCustomTags, isFalse);
+      expect(readState().showSourceTags, isFalse);
+      expect(readState().showWordCount, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('bookshelfShowCustomTags'), isFalse);
+      expect(prefs.getBool('bookshelfShowSourceTags'), isFalse);
+      expect(prefs.getBool('bookshelfShowWordCount'), isTrue);
+    });
+
+    test('displayTagsOf 受总开关与三项开关约束', () async {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => []);
+      container.read(bookshelfNotifierProvider);
+      await pumpInit();
+
+      const book = Book(
+        bookUrl: 'book://tags',
+        name: '标签书',
+        customTag: '仙侠, 热血',
+        kind: '玄幻, 仙侠',
+        wordCount: '123万字',
+      );
+
+      expect(readState().displayTagsOf(book),
+          ['仙侠', '热血', '玄幻', '123万字']);
+
+      await readNotifier().setTagContent(
+        showCustomTags: false,
+        showSourceTags: true,
+        showWordCount: false,
+      );
+      expect(readState().displayTagsOf(book), ['玄幻', '仙侠']);
+
+      await readNotifier().setShowTag(false);
+      expect(readState().displayTagsOf(book), isEmpty, reason: '总开关关闭 = 不展示');
+    });
+  });
 }

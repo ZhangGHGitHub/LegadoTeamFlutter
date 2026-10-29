@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_legado/src/widgets/book_display_tags_row.dart';
 import 'package:flutter_legado/src/widgets/book_grid_item.dart';
 
 void main() {
@@ -8,6 +9,8 @@ void main() {
     String? coverUrl,
     int unreadNum = 0,
     double? progress,
+    List<String> tags = const [],
+    bool reserveTagRow = false,
     VoidCallback? onTap,
     VoidCallback? onCoverLongPress,
     VoidCallback? onInfoLongPress,
@@ -16,12 +19,14 @@ void main() {
       home: Scaffold(
         body: SizedBox(
           width: 120,
-          height: 200,
+          height: 240,
           child: BookGridItem(
             title: title,
             coverUrl: coverUrl,
             unreadNum: unreadNum,
             progress: progress,
+            tags: tags,
+            reserveTagRow: reserveTagRow,
             onTap: onTap,
             onCoverLongPress: onCoverLongPress,
             onInfoLongPress: onInfoLongPress,
@@ -114,5 +119,39 @@ void main() {
       img.image,
       const AssetImage('assets/images/default_book_cover.jpg'),
     );
+  });
+
+  // ===== [批35] 展示标签行 =====
+
+  testWidgets('传入标签时书卡渲染标签条', (tester) async {
+    await tester.pumpWidget(
+      buildTestWidget(tags: const ['仙侠', '12万字']),
+    );
+
+    expect(find.text('仙侠'), findsOneWidget);
+    expect(find.text('12万字'), findsOneWidget);
+    expect(find.byType(BookDisplayTagsRow), findsOneWidget);
+  });
+
+  testWidgets('空标签且未预留行高时不渲染标签条', (tester) async {
+    await tester.pumpWidget(
+      buildTestWidget(tags: const [], reserveTagRow: false),
+    );
+
+    expect(find.byType(BookDisplayTagsRow), findsNothing);
+    expect(find.byType(SizedBox), findsWidgets);
+  });
+
+  testWidgets('预留行高时无标签书卡也占等高空行（兄弟卡片封面等高）', (tester) async {
+    await tester.pumpWidget(
+      buildTestWidget(tags: const [], reserveTagRow: true),
+    );
+
+    // 空行由固定高度的 SizedBox 承担
+    final boxes = tester
+        .widgetList<SizedBox>(find.byType(SizedBox))
+        .where((b) => b.height == BookGridItem.tagRowHeight);
+    expect(boxes, isNotEmpty);
+    expect(find.byType(BookDisplayTagsRow), findsNothing);
   });
 }

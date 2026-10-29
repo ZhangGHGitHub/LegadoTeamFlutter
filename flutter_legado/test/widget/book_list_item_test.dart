@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/widgets/book_display_tags_row.dart';
 import 'package:flutter_legado/src/widgets/book_list_item.dart';
 
 /// BookListItem 结构与角标验证（对标 item_bookshelf_list.xml）
@@ -101,5 +102,39 @@ void main() {
 
     await tester.longPress(find.text('交互测试'));
     expect(longPressed, isTrue);
+  });
+
+  // ===== [批35] 展示标签行 =====
+
+  Widget wrapWithTags(Book book, List<String> tags) {
+    return MaterialApp(
+      home: Scaffold(
+        body: ListView(
+          children: [BookListItem(book: book, tags: tags)],
+        ),
+      ),
+    );
+  }
+
+  testWidgets('传入标签时列表行渲染标签条（阅读章节之后）', (tester) async {
+    final book = Book(
+      bookUrl: 'u5',
+      name: '标签书',
+      durChapterTitle: '第一章',
+      latestChapterTitle: '第二章',
+    );
+    await tester.pumpWidget(wrapWithTags(book, ['仙侠', '玄幻', '12万字']));
+
+    expect(find.text('仙侠'), findsOneWidget);
+    expect(find.text('玄幻'), findsOneWidget);
+    expect(find.text('12万字'), findsOneWidget);
+    expect(find.byType(BookDisplayTagsRow), findsOneWidget);
+  });
+
+  testWidgets('空标签列表不渲染标签行（空值不占位）', (tester) async {
+    final book = Book(bookUrl: 'u6', name: '无标签');
+    await tester.pumpWidget(wrapWithTags(book, const []));
+
+    expect(find.byType(BookDisplayTagsRow), findsNothing);
   });
 }

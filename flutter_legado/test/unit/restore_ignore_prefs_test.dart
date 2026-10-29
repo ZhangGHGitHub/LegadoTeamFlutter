@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
+import 'package:flutter_legado/src/services/settings_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -79,6 +80,19 @@ void main() {
         ),
         isFalse,
       );
+      // [批35] 书架展示标签四键同受「忽略书架布局」约束
+      for (final key in SettingsService.bookshelfTagPrefKeys) {
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, {'bookshelfLayout': true}),
+          isFalse,
+          reason: '$key 应随「忽略书架布局」一并排除',
+        );
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, const {}),
+          isTrue,
+          reason: '$key 默认应可备份/恢复',
+        );
+      }
     });
 
     test('勾选 themeConfig / coverConfig', () {
@@ -154,6 +168,45 @@ void main() {
         isTrue,
         reason: '恢复后偏好应回到备份值',
       );
+    });
+
+    /// [批35] 书架展示标签四键随 JSON 备份 appPrefs 往返；
+    /// 勾选「忽略书架布局」时不导出、不覆盖本机值。
+    test('书架标签四键随备份往返且受 bookshelfLayout 忽略项约束', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsService.bookshelfShowTagKey: true,
+        SettingsService.bookshelfShowCustomTagsKey: false,
+        SettingsService.bookshelfShowSourceTagsKey: false,
+        SettingsService.bookshelfShowWordCountKey: true,
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+      expect(collected[SettingsService.bookshelfShowTagKey], isTrue);
+      expect(collected[SettingsService.bookshelfShowCustomTagsKey], isFalse);
+      expect(collected[SettingsService.bookshelfShowSourceTagsKey], isFalse);
+      expect(collected[SettingsService.bookshelfShowWordCountKey], isTrue);
+
+      // 忽略书架布局 → 四键不导出
+      final ignored =
+          await RestoreIgnorePrefs.collectForBackup({'bookshelfLayout': true});
+      for (final key in SettingsService.bookshelfTagPrefKeys) {
+        expect(ignored.containsKey(key), isFalse, reason: '$key 应被忽略项排除');
+      }
+
+      // 本机值不得被备份覆盖
+      SharedPreferences.setMockInitialValues({
+        SettingsService.bookshelfShowCustomTagsKey: true,
+      });
+      await RestoreIgnorePrefs.applyFromBackup(
+        collected,
+        {'bookshelfLayout': true},
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(SettingsService.bookshelfShowCustomTagsKey), isTrue,
+          reason: '忽略时保留本机值');
+
+      // 不忽略 → 备份值生效
+      await RestoreIgnorePrefs.applyFromBackup(collected, const {});
+      expect(prefs.getBool(SettingsService.bookshelfShowCustomTagsKey), isFalse);
     });
 
     /// [批33] 正文上下边距联动随 JSON 备份 appPrefs 往返；

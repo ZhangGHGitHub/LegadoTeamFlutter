@@ -928,4 +928,62 @@ void main() {
       expect(api.previewReplaceRuleCalls, 2);
     });
   });
+
+  // ===== [批35] 批量删除 / 书籍级阅读记录开关 =====
+  group('批35：批量删除原文件 / 书籍级阅读记录开关', () {
+    test('deleteBooks 批量移除书籍记录并返回空提示', () async {
+      final warnings = await api.deleteBooks(
+        ['mock://book/1', 'mock://book/2'],
+        deleteOriginal: true,
+      );
+      expect(warnings, isEmpty, reason: 'Mock 不接触磁盘，无文件失败提示');
+      final books = await api.getBooks();
+      expect(books.length, 8);
+      expect(books.any((b) => b.bookUrl == 'mock://book/1'), isFalse);
+      expect(books.any((b) => b.bookUrl == 'mock://book/2'), isFalse);
+    });
+
+    test('setReadRecordDisabled 单书切换；书籍不存在抛错', () async {
+      final updated = await api.setReadRecordDisabled('mock://book/1', true);
+      expect(updated.disableReadRecord, isTrue);
+      expect((await api.getBook('mock://book/1'))!.disableReadRecord, isTrue);
+
+      final restored = await api.setReadRecordDisabled('mock://book/1', false);
+      expect(restored.disableReadRecord, isFalse);
+
+      await expectLater(
+        api.setReadRecordDisabled('mock://missing', true),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('putReadRecord 关闭记录后跳过写入，重新开启恢复', () async {
+      const bookUrl = 'mock://book/3';
+      final name = (await api.getBook(bookUrl))!.name;
+      await api.setReadRecordDisabled(bookUrl, true);
+
+      await api.putReadRecord(
+        ReadRecord(bookName: name, readTime: 9000, lastRead: 1),
+        bookUrl: bookUrl,
+      );
+      expect(
+        (await api.getReadRecords()).any((r) => r.bookName == name),
+        isFalse,
+        reason: '书级开关为真时不得写入阅读记录',
+      );
+
+      await api.setReadRecordDisabled(bookUrl, false);
+      await api.putReadRecord(
+        ReadRecord(bookName: name, readTime: 9000, lastRead: 1),
+        bookUrl: bookUrl,
+      );
+      expect(
+        (await api.getReadRecords()).any((r) => r.bookName == name),
+        isTrue,
+        reason: '重新开启后恢复写入',
+      );
+
+      await api.deleteReadRecord(name);
+    });
+  });
 }
