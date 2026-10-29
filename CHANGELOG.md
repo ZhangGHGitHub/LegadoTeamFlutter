@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.420] - 2026-10-29
+
+### Added
+- [UI] WebDAV 备份：本地备份后可上传到 WebDAV（失败不影响本地备份），支持按保留数量清理旧备份（0=不清理）；新增自动备份间隔（天）与「自动备份上传 WebDAV」；本地导入书籍后可自动上传到 WebDAV（默认关）。
+### Fixed
+- [Rust] WebDAV 清理按严格备份名与真实 href 删除，避免误删；WebDAV 请求增加超时；恢复与备份互斥，导入后上传串行执行。
+
 ## [2.0.419] - 2026-10-29
 
 ### Added
