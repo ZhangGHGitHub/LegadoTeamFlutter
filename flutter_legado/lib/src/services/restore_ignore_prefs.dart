@@ -38,6 +38,9 @@ class RestoreIgnorePrefs {
     // config.xml 内以备份密码 AES 加密；我方 JSON 备份不加密），整键排除
     SettingsService.webDavPasswordKey,
     SettingsService.restoreIgnoreStorageKey,
+    // [批40] 上次备份时间：对齐原版 LocalConfig（独立 `local` 偏好文件，
+    // 不随备份往返）；随备份恢复会让自动备份判定基于旧时间
+    PrefKeys.lastBackup,
   };
 
   /// 需要**值净化**（而非整键排除）的偏好键 → 剥除其中敏感字段

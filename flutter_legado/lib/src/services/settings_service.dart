@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/pref_keys.dart';
 import '../theme/md3_colors.dart';
 
 /// 阅读设置持久化服务
@@ -692,6 +693,144 @@ class SettingsService {
       await prefs.setString(_keyWebDavDeviceName, value);
     } catch (e) {
       debugPrint('SettingsService.setWebDavDeviceName 异常: $e');
+    }
+  }
+
+  // ===== WebDAV 备份族（批40，键名逐字对齐原版 PreferKey/AppConfig）=====
+
+  /// WebDAV 备份保留数量（默认 0 = 不清理；负数/非法值归一为 0）
+  ///
+  /// 对齐原版 `AppConfig.webDavBackupKeepCount`：存为**字符串**偏好，
+  /// `trim().toIntOrNull()?.coerceAtLeast(0) ?: 0`。
+  Future<int> getWebDavBackupKeepCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(PrefKeys.webDavBackupKeepCount);
+      final parsed = int.tryParse(raw?.trim() ?? '') ?? 0;
+      return parsed < 0 ? 0 : parsed;
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavBackupKeepCount 异常: $e');
+      return 0;
+    }
+  }
+
+  Future<void> setWebDavBackupKeepCount(int value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final normalized = value < 0 ? 0 : value;
+      await prefs.setString(
+        PrefKeys.webDavBackupKeepCount,
+        '$normalized',
+      );
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavBackupKeepCount 异常: $e');
+    }
+  }
+
+  /// 导入后自动上传本地书（默认 false，对齐原版）
+  Future<bool> getWebDavBookAutoUpload() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(PrefKeys.webDavBookAutoUpload) ?? false;
+    } catch (e) {
+      debugPrint('SettingsService.getWebDavBookAutoUpload 异常: $e');
+      return false;
+    }
+  }
+
+  Future<void> setWebDavBookAutoUpload(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(PrefKeys.webDavBookAutoUpload, value);
+    } catch (e) {
+      debugPrint('SettingsService.setWebDavBookAutoUpload 异常: $e');
+    }
+  }
+
+  /// 自动备份开关（默认 true，对齐原版 `AppConfig.autoBackup`）
+  Future<bool> getAutoBackup() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(PrefKeys.autoBackup) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getAutoBackup 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setAutoBackup(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(PrefKeys.autoBackup, value);
+    } catch (e) {
+      debugPrint('SettingsService.setAutoBackup 异常: $e');
+    }
+  }
+
+  /// 自动备份上传 WebDAV（默认 true，对齐原版
+  /// `AppConfig.autoBackupWebDav`）
+  Future<bool> getAutoBackupWebDav() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(PrefKeys.autoBackupWebDav) ?? true;
+    } catch (e) {
+      debugPrint('SettingsService.getAutoBackupWebDav 异常: $e');
+      return true;
+    }
+  }
+
+  Future<void> setAutoBackupWebDav(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(PrefKeys.autoBackupWebDav, value);
+    } catch (e) {
+      debugPrint('SettingsService.setAutoBackupWebDav 异常: $e');
+    }
+  }
+
+  /// 自动备份间隔天数（默认 1；读取时强制 ≥1，对齐原版
+  /// `getPrefInt(...).coerceAtLeast(1)`）
+  Future<int> getAutoBackupIntervalDays() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final days = prefs.getInt(PrefKeys.autoBackupIntervalDays) ?? 1;
+      return days < 1 ? 1 : days;
+    } catch (e) {
+      debugPrint('SettingsService.getAutoBackupIntervalDays 异常: $e');
+      return 1;
+    }
+  }
+
+  Future<void> setAutoBackupIntervalDays(int days) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final normalized = days < 1 ? 1 : days;
+      await prefs.setInt(PrefKeys.autoBackupIntervalDays, normalized);
+    } catch (e) {
+      debugPrint('SettingsService.setAutoBackupIntervalDays 异常: $e');
+    }
+  }
+
+  /// 上次本地备份成功时间（毫秒时间戳；0 = 从未备份）
+  ///
+  /// 对齐原版 `LocalConfig.lastBackup`（独立 `local` 偏好文件，设备级）；
+  /// 我方同键名存 SharedPreferences，并从备份 `appPrefs` 中排除。
+  Future<int> getLastBackupTime() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(PrefKeys.lastBackup) ?? 0;
+    } catch (e) {
+      debugPrint('SettingsService.getLastBackupTime 异常: $e');
+      return 0;
+    }
+  }
+
+  Future<void> setLastBackupTime(int millis) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(PrefKeys.lastBackup, millis);
+    } catch (e) {
+      debugPrint('SettingsService.setLastBackupTime 异常: $e');
     }
   }
 

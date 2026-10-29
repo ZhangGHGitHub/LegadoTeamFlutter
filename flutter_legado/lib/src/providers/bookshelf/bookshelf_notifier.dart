@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -5,6 +8,7 @@ import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart' show DeleteBooksResult;
 import '../../services/settings_service.dart';
+import '../../services/webdav_book_upload_service.dart';
 import '../providers.dart';
 import 'bookshelf_state.dart';
 
@@ -211,6 +215,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   ///
   /// 成功后将返回的书籍加入列表；
   /// 失败时异常向上抛出，由 UI 层负责提示。
+  ///
+  /// [批40] 导入成功后按「导入后自动上传本地书」开关异步补传 WebDAV
+  /// （对齐原版 `LocalBook.autoUploadToWebDav`）：不 await、不阻断导入，
+  /// 失败仅日志（服务内部兜底）。
   Future<Book> importLocalBook(String filePath) async {
     final api = ref.read(bookApiProvider);
     final book = await api.importLocalBook(filePath);
@@ -220,7 +228,24 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
         book,
       ],
     );
+    unawaited(_autoUploadImportedBook(book));
     return book;
+  }
+
+  /// 导入后自动上传书籍文件到 WebDAV（批40）
+  ///
+  /// 开关/配置判定与失败兜底都在 [WebDavBookUploadService] 内；此处仅
+  /// 注入当前 BookApi，异常一律吞掉（不得影响导入结果）。
+  Future<void> _autoUploadImportedBook(Book book) async {
+    try {
+      await WebDavBookUploadService(
+        api: ref.read(bookApiProvider),
+        settings: _settings,
+      ).autoUploadAfterImport(book);
+    } catch (e) {
+      // 服务内部已捕获；此处为最后一道防线（如 ref 已销毁）
+      debugPrint('[BookshelfNotifier] 导入后自动上传异常: $e');
+    }
   }
 
   /// 删除书籍：调用 Rust API 后同步本地 UI 状态

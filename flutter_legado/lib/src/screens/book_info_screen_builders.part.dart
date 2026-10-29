@@ -527,54 +527,33 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       );
       if (confirmed != true || !mounted) return;
     }
-    // 本地书 bookUrl 即本地文件路径（对齐 Rust import_local_book 落库约定）
-    final localPath = book.bookUrl;
-    final fileName = book.originName.isNotEmpty
-        ? book.originName
-        : localPath.split(Platform.pathSeparator).last;
-    // 远程路径规则对齐原版 RemoteBookWebDav：rootBookUrl(books/) + originName；
-    // path 相对 remote_dir，Rust 侧 full_url = url + remote_dir + path
-    final remotePath = 'books/$fileName';
+    // [批40] 远端路径/文件名与「导入后自动上传」共用同一实现
+    // （`WebDavBookUploadService`：books/<originName> + origin 回写）
+    final uploader = WebDavBookUploadService(api: api);
+    final target = await uploader.resolveTarget();
+    if (!mounted) return;
+    if (target == null) {
+      await _showWebDavNotConfiguredDialog();
+      return;
+    }
     _snack('正在上传至远程…');
-    // [Task #55 F9 | 2026-08-10] 上传与 origin 回写分两段 try/catch：
-    // 回写失败时提示「上传成功但保存记录失败」而非误报「上传失败」 — Qoder
+    // [Task #55 F9 | 2026-08-10] 上传与 origin 回写分两阶段（批40 收敛到
+    // 服务层）：回写失败时提示「上传成功但保存记录失败」而非误报「上传失败」
     try {
-      await api.webdavUploadFile(
-        syncNotifier.buildConfigJson(),
-        remotePath,
-        localPath,
+      await uploader.uploadBook(book: book, target: target);
+    } on WebDavBookUploadException catch (e) {
+      debugPrint('上传至远程失败(${e.stage}): ${e.cause}');
+      if (!mounted) return;
+      _snack(
+        e.stage == WebDavBookUploadStage.upload
+            ? '上传失败: ${_errMsg(e.cause)}'
+            : '上传成功但保存记录失败，请重试',
       );
-    } catch (e) {
-      debugPrint('上传至远程失败: $e');
-      if (mounted) _snack('上传失败: ${_errMsg(e)}');
       return;
     }
     if (!mounted) return;
-    try {
-      // 回写 book.origin（webDav 标记 + 远程完整地址）；从库中读回完整 Book
-      // 再 copyWith，防全行覆盖（与 _setBookVariable 同模式）
-      final full = await api.getBook(book.bookUrl) ?? book;
-      // 对齐原版 RemoteBookWebDav.upload：完整远程 URL（根目录 + books/ + 文件名），
-      // 默认 WebDAV 服务器 serverID = null → origin 不带属性后缀
-      final remoteUrl = BookType.joinRemoteUrl(
-        BookType.joinRemoteUrl(
-          sync.webDavUrl,
-          syncNotifier.normalizedRemoteDir,
-        ),
-        remotePath,
-      );
-      await api.updateBook(full.copyWith(
-        origin: BookType.buildWebDavOrigin(remoteUrl),
-        // 对齐原版：刷新最后检查时间，使之比远程书籍的时间新
-        lastCheckTime: DateTime.now().millisecondsSinceEpoch,
-      ));
-      if (!mounted) return;
-      _reload();
-      _snack('上传至远程成功');
-    } catch (e) {
-      debugPrint('上传成功但保存记录失败: $e');
-      if (mounted) _snack('上传成功但保存记录失败，请重试');
-    }
+    _reload();
+    _snack('上传至远程成功');
   }
 
   /// WebDAV 未配置引导对话框（确认后跳转 WebDAV 设置页）

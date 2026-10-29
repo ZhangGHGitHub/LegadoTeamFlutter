@@ -25,6 +25,7 @@ import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../routes.dart';
 import '../services/crash_log_service.dart';
+import '../services/local_backup_service.dart';
 import '../services/restore_ignore_prefs.dart';
 import '../services/server_service.dart';
 import '../services/settings_service.dart';
@@ -134,6 +135,19 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   bool _autoCheckNewBackup = true;
   bool _busy = false;
 
+  // ===== WebDAV 备份族（批40，对齐原版 PreferKey/AppConfig）=====
+
+  /// WebDAV 备份保留数量（0 = 不清理）
+  int _backupKeepCount = 0;
+
+  /// 导入后自动上传本地书（默认关）
+  bool _bookAutoUpload = false;
+
+  /// 自动备份开关/上传 WebDAV/间隔天数
+  bool _autoBackup = true;
+  bool _autoBackupWebDav = true;
+  int _autoBackupIntervalDays = 1;
+
   /// 「测试配置」行连接测试状态（差异清单 C7）
   _WebDavTestStatus _testStatus = _WebDavTestStatus.notTested;
 
@@ -165,6 +179,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         PrefKeys.autoCheckNewBackup,
         defaultValue: true,
       );
+      // 批40：WebDAV 备份族偏好（键名对齐原版，默认值同 AppConfig）
+      final keepCount = await _settings.getWebDavBackupKeepCount();
+      final bookAutoUpload = await _settings.getWebDavBookAutoUpload();
+      final autoBackup = await _settings.getAutoBackup();
+      final autoBackupWebDav = await _settings.getAutoBackupWebDav();
+      final autoBackupDays = await _settings.getAutoBackupIntervalDays();
       if (!mounted) return;
       setState(() {
         _url = state.webDavUrl;
@@ -175,6 +195,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         _backupPath = path;
         _onlyLatestBackup = onlyLatest;
         _autoCheckNewBackup = autoCheck;
+        _backupKeepCount = keepCount;
+        _bookAutoUpload = bookAutoUpload;
+        _autoBackup = autoBackup;
+        _autoBackupWebDav = autoBackupWebDav;
+        _autoBackupIntervalDays = autoBackupDays;
       });
     } catch (e) {
       if (!mounted) return;
@@ -245,6 +270,168 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await _saveWebDav();
   }
 
+  /// 编辑「WebDAV 备份保留数量」（批40）
+  ///
+  /// 对齐原版 `EditTextPreference(key=webDavBackupKeepCount)`：字符串偏好，
+  /// 0 = 不清理；非法/负数在对话框关闭后统一提示且不落盘。
+  Future<void> _editBackupKeepCount() async {
+    final controller = TextEditingController(text: '$_backupKeepCount');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+        ),
+        title: const Text('WebDAV 备份保留数量'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('上传成功后保留最近几份备份；0 表示不自动清理（默认）。'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(hintText: '0'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    final parsed = int.tryParse(result);
+    if (parsed == null || parsed < 0) {
+      _showSnack('请输入 0 或正整数');
+      return;
+    }
+    setState(() => _backupKeepCount = parsed);
+    await _settings.setWebDavBackupKeepCount(parsed);
+  }
+
+  /// 自动备份行副标题（对齐原版 updateAutoBackupSummary）
+  String _autoBackupSummary() {
+    if (!_autoBackup) return '已关闭';
+    final destination = _autoBackupWebDav ? '本地 + WebDAV' : '仅本地';
+    return '每 $_autoBackupIntervalDays 天自动备份（$destination）';
+  }
+
+  /// 自动备份配置对话框（对齐原版 configureAutoBackup）
+  ///
+  /// 三个偏好一次写入：`autoBackup` / `autoBackupWebDav` /
+  /// `autoBackupIntervalDays`；间隔天数校验 ≥1（原版同样拒绝 0/非法值）。
+  Future<void> _configureAutoBackup() async {
+    var enabled = _autoBackup;
+    var destination = _autoBackupWebDav ? 'webdav' : 'local';
+    final daysController =
+        TextEditingController(text: '$_autoBackupIntervalDays');
+    String? daysError;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          title: const Text('自动备份'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('启用自动备份'),
+                  subtitle: const Text('启动或回到前台时检查，按间隔最多备份一次；手动备份不受影响'),
+                  value: enabled,
+                  onChanged: (v) => setDialogState(() => enabled = v),
+                ),
+                RadioGroup<String>(
+                  groupValue: destination,
+                  onChanged: (v) => setDialogState(
+                    () => destination = v ?? destination,
+                  ),
+                  child: IgnorePointer(
+                    ignoring: !enabled,
+                    child: Opacity(
+                      opacity: enabled ? 1 : 0.5,
+                      child: const Column(
+                        children: [
+                          RadioListTile<String>(
+                            value: 'local',
+                            title: Text('仅本地'),
+                          ),
+                          RadioListTile<String>(
+                            value: 'webdav',
+                            title: Text('本地 + WebDAV'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                TextField(
+                  controller: daysController,
+                  enabled: enabled,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: '备份间隔（天）',
+                    hintText: '1',
+                    errorText: daysError,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final days = int.tryParse(daysController.text.trim());
+                if (days == null || days < 1) {
+                  setDialogState(() => daysError = '请输入大于 0 的整数');
+                  return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+
+    final days = int.tryParse(daysController.text.trim()) ?? 1;
+    final normalizedDays = days < 1 ? 1 : days;
+    setState(() {
+      _autoBackup = enabled;
+      _autoBackupWebDav = destination == 'webdav';
+      _autoBackupIntervalDays = normalizedDays;
+    });
+    await Future.wait([
+      _settings.setAutoBackup(enabled),
+      _settings.setAutoBackupWebDav(destination == 'webdav'),
+      _settings.setAutoBackupIntervalDays(normalizedDays),
+    ]);
+  }
+
   Future<void> _pickBackupPath() async {
     final picked = await FilePicker.platform.getDirectoryPath(
       dialogTitle: '选择备份路径',
@@ -255,9 +442,17 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     setState(() => _backupPath = picked);
   }
 
+  /// 本地备份（批40：本地 JSON 备份 + 上传本次备份文件到 WebDAV）
+  ///
+  /// 对齐原版 `web_dav_backup`（`backupLocked(uploadWebDav=true)`）：
+  /// - 上传的是**本次备份文件本身**（不再走 `webdavFullSync` 上传
+  ///   bookshelf.json/sources.json，那属「恢复」短按入口）；
+  /// - 与自动备份共用 `LocalBackupService` 互斥锁：已有备份在执行时
+  ///   提示稍候，不排队；
+  /// - 上传失败不影响本地备份成功，SnackBar 分开提示；
+  /// - 未配置 WebDAV 时仅本地备份（与既有行为一致）。
   Future<void> _doLocalBackup() async {
     await _runWithProgress('备份中…', () async {
-      final api = ref.read(bookApiProvider);
       var dirPath = _backupPath;
       if (dirPath.isEmpty) {
         final picked = await FilePicker.platform.getDirectoryPath();
@@ -266,22 +461,44 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         await CrashLogService.instance.setBackupPath(dirPath);
         if (mounted) setState(() => _backupPath = dirPath);
       }
-      final filePath = await api.backup(dirPath);
-      final ignore = await _settings.getRestoreIgnoreConfig();
-      await RestoreIgnorePrefs.injectAppPrefsIntoBackupFile(filePath, ignore);
-      // 同步 WebDAV（对齐原版本地与 WebDav 一起备份）
-      final sync = ref.read(syncNotifierProvider);
-      if (sync.isConfigured) {
-        try {
-          await ref.read(syncNotifierProvider.notifier).backupToWebDav();
-        } catch (_) {
-          // WebDAV 失败不阻断本地备份成功提示
-        }
-      }
+      final api = ref.read(bookApiProvider);
+      final result = await LocalBackupService.instance.runExclusive(
+        () => LocalBackupService.instance.createBackup(
+          api: api,
+          settings: _settings,
+          dirPath: dirPath,
+          uploadWebDav: true,
+        ),
+      );
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
+      if (result == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('正在备份，请稍候')),
+        );
+        return;
+      }
+      if (result.uploadError != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '${AppStrings.backupSuccess}：${result.filePath}\n'
+              'WebDAV 上传失败：${errorMessage(result.uploadError!)}',
+            ),
+          ),
+        );
+        return;
+      }
+      final upload = result.upload;
       messenger.showSnackBar(
-        SnackBar(content: Text('${AppStrings.backupSuccess}：$filePath')),
+        SnackBar(
+          content: Text(
+            upload == null
+                ? '${AppStrings.backupSuccess}：${result.filePath}'
+                : '${AppStrings.backupSuccess}：${result.filePath}\n'
+                    '已上传 WebDAV：${upload.remoteFileName}',
+          ),
+        ),
       );
     });
   }
@@ -971,6 +1188,27 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                       ? null
                       : _testWebDavConnection,
                 ),
+                // [批40] 对齐原版 pref_config_backup.xml：
+                // webDavBackupKeepCount（默认 0=不清理）+ webDavBookAutoUpload
+                IosListTile(
+                  title: 'WebDAV 备份保留数量',
+                  subtitle: _backupKeepCount <= 0
+                      ? '0（不自动清理）'
+                      : '$_backupKeepCount（仅保留最近 $_backupKeepCount 份）',
+                  onTap: _busy ? null : _editBackupKeepCount,
+                ),
+                SettingSwitchRow(
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  title: '导入后自动上传本地书',
+                  subtitle: '导入本地书后自动上传到 WebDAV 的 books 目录',
+                  value: _bookAutoUpload,
+                  onChanged: (v) async {
+                    setState(() => _bookAutoUpload = v);
+                    await _settings.setWebDavBookAutoUpload(v);
+                  },
+                ),
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
@@ -1037,6 +1275,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                     setState(() => _onlyLatestBackup = v);
                     _settings.setBoolPref(PrefKeys.onlyLatestBackup, v);
                   },
+                ),
+                // [批40] 对齐原版 autoBackup Preference（点击弹配置对话框）
+                IosListTile(
+                  title: '自动备份',
+                  subtitle: _autoBackupSummary(),
+                  onTap: _busy ? null : _configureAutoBackup,
                 ),
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron

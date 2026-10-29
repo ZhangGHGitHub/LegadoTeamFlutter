@@ -15,6 +15,7 @@ import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
 import 'src/screens/video_screen.dart';
 import 'src/services/auto_task_scheduler.dart';
+import 'src/services/auto_backup_scheduler.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/services/video_float_window.dart';
@@ -232,6 +233,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     //（Task #146，对齐原版 App.kt 启动时 AutoTaskScheduler.refresh；
     // 引擎已在 main.dart 先行初始化，此处可直接注入 BookApi） — QoderCN
     AutoTaskScheduler.instance.attach(ref.read(bookApiProvider));
+    // [批40] 自动备份调度：启动首帧后判定一次，之后回前台（resumed）再判定
+    //（对齐原版 MainActivity.onResume → Backup.autoBack）
+    AutoBackupScheduler.attach(ref.read(bookApiProvider));
     // P1-11：监听系统 legado:// / yuedu:// 深链 → Association；
     // P1-4：注入本地书籍导入器，消费外部书籍文件 VIEW intent（content://）
     WidgetsBinding.instance.addPostFrameCallback((_) {

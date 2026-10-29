@@ -343,4 +343,34 @@ class PrefKeys {
 
   /// 打开软件时自动检查新备份（默认 true）
   static const autoCheckNewBackup = 'autoCheckNewBackup';
+
+  // ===== WebDAV 备份族（批40，键名逐字对齐原版 PreferKey）=====
+
+  /// WebDAV 上保留的备份份数（**字符串**偏好；默认 "0" = 不自动清理，
+  /// 正整数生效，填 1 即只保留最新一份）。对齐原版
+  /// `AppConfig.webDavBackupKeepCount`（`getPrefString(...).toIntOrNull()`）。
+  /// 随 Flutter JSON 备份 `appPrefs` 往返。
+  static const webDavBackupKeepCount = 'webDavBackupKeepCount';
+
+  /// 导入后自动上传本地书（默认 false，对齐原版
+  /// `AppConfig.webDavBookAutoUpload`）。随备份 `appPrefs` 往返。
+  static const webDavBookAutoUpload = 'webDavBookAutoUpload';
+
+  /// 自动备份开关（默认 true，对齐原版 `AppConfig.autoBackup`）。
+  static const autoBackup = 'autoBackup';
+
+  /// 自动备份同时上传 WebDAV（默认 true，对齐原版
+  /// `AppConfig.autoBackupWebDav`）。
+  static const autoBackupWebDav = 'autoBackupWebDav';
+
+  /// 自动备份间隔天数（默认 1；读取时 `coerceAtLeast(1)`，对齐原版
+  /// `AppConfig.autoBackupIntervalDays`）。
+  static const autoBackupIntervalDays = 'autoBackupIntervalDays';
+
+  /// 上次本地备份成功时间（毫秒时间戳，对齐原版 `LocalConfig.lastBackup`）。
+  ///
+  /// **设备级状态**：原版存于独立 `local` 偏好文件、不随备份往返；我方
+  /// 加入 `RestoreIgnorePrefs.alwaysIgnoreKeys` 排除，避免恢复旧备份后
+  /// 误触发/抑制自动备份。
+  static const lastBackup = 'lastBackup';
 }
