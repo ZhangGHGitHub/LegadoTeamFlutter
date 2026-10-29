@@ -280,6 +280,22 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return labels[v];
   }
 
+  // ===== 顶栏按钮入口（批37，对齐参考版 SystemMenuPage「顶栏按钮」）=====
+
+  /// 阅读器顶栏动作配置入口（选择/排序/恢复默认）
+  Widget _buildTopBarActionsEntry() {
+    return ListTile(
+      // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
+      contentPadding:
+          const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      leading: const Icon(Icons.view_week_outlined),
+      title: const Text('顶栏按钮'),
+      subtitle: const Text('选择、排序阅读器顶栏动作（最多 6 个，可恢复默认）'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => ReaderTopBarConfigSheet.show(context),
+    );
+  }
+
   // ===== 更多配置（对标原版 MoreConfigDialog） =====
 
   Widget _buildMoreConfig() {

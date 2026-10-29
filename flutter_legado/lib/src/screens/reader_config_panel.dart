@@ -14,6 +14,7 @@ import '../services/system_brightness.dart';
 import '../widgets/app_progress_indicator.dart'; // [STAGE-UI-P43UNIFY2 B3] part 文件内裸环换接统一封装
 import '../widgets/reader/reader_padding_config_sheet.dart';
 import '../widgets/reader/reader_tip_config_sheet.dart';
+import '../widgets/reader/reader_top_bar_config_sheet.dart';
 part 'reader_config_panel_data.part.dart';
 part 'reader_config_panel_builders.part.dart';
 
@@ -239,6 +240,9 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          // [批37] 顶栏按钮配置入口（选择/排序/恢复默认）
+          _groupCard(_buildTopBarActionsEntry()),
         ];
         break;
       case ReaderConfigSection.all:
@@ -304,6 +308,9 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           const SizedBox(height: 12),
           // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
           _groupCard(_buildMoreConfig()),
+          const SizedBox(height: 12),
+          // [批37] 顶栏按钮配置入口（选择/排序/恢复默认）
+          _groupCard(_buildTopBarActionsEntry()),
           const SizedBox(height: 12),
           // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
           _groupCard(_buildBrightnessControl()),
