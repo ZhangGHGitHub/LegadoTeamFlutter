@@ -146,12 +146,21 @@
 //!
 //! 安全与限额：
 //! - 路径先过 [`is_safe_zip_entry_name`]（拒绝空名/反斜杠/NUL/绝对路径/盘符/`.`/`..`），
-//!   媒体相对路径再过 [`is_safe_media_relative_path`]（拒绝空段、`.`/`..`、`:`）；
+//!   媒体相对路径再过 [`is_safe_media_relative_path`]（拒绝空段、`.`/`..`、`:`、
+//!   控制字符、Windows 保留设备名与结尾空格/点）；
 //! - 落盘走 [`write_zip_media_entry`]：逐段 `symlink_metadata` 拒绝符号链接与非目录
-//!   中间段，写入前 `canonicalize` 父目录并校验仍在规范化媒体根内（纵深防御）；
+//!   中间段，写入前 `canonicalize` 父目录并校验仍在规范化媒体根内；写入用同目录
+//!   临时文件 + `rename` 覆盖（[`write_media_file_atomic`]），避免 `fs::write` 截断
+//!   留下半个文件。**注意**：canonicalize 校验与写入之间的换链窗口仍是尽力而为的
+//!   纵深防御，不是强一致的原子/并发保证（Windows 还要「先删后 rename」，存在
+//!   短暂目标缺失窗口，登记见下）；
+//! - 封面字体 `coverFont.ttf` 落盘前做 TTF/OTF 魔数首检（[`COVER_FONT_MAGICS`]），
+//!   非字体内容只跳过该条；
 //! - 单媒体文件实际解压 ≤ [`MAX_BACKUP_MEDIA_FILE_BYTES`]（32 MiB，超限 warn 跳过），
-//!   跨条目仍共用 [`MAX_BACKUP_TOTAL_BYTES`]（512 MiB，超限中止整次恢复）；
-//!   zip 条目总数 ≤ [`MAX_BACKUP_ZIP_ENTRIES`]（50 000，结构异常直接报错）；
+//!   跨条目仍共用 [`MAX_BACKUP_TOTAL_BYTES`]（512 MiB，超限中止整次恢复；**错误
+//!   路径已读出的字节同样入账**，见 [`read_zip_entry_limited`]）；
+//!   zip 条目总数 ≤ [`MAX_BACKUP_ZIP_ENTRIES`]（50 000）：先在 EOCD 预检
+//!   （[`zip_declared_entry_count`]）提前拒绝，解析后的 `archive.len()` 仍是权威判定；
 //! - 单条目写失败只 warn 并继续后续条目（不阻断整体恢复；对齐本模块条目级容错口径；
 //!   原版对 covers/readRecordCovers 失败会整次抛错，本实现按批次要求收窄）；
 //! - 合并语义与 `restoreBackupMediaDirectory` 一致：备份内文件覆盖同名旧文件，
@@ -164,6 +173,15 @@
 //! `.../readRecordCovers/<file>` 两种形态）改写为本地绝对路径；目标不存在时置
 //! null（书架回落书源封面）。与上游一致，只识别**直系子文件**
 //! （`.../covers/<file>`），子目录形态不 remap。
+//! 写进 DB 的本地路径已剥离 Windows `\\?\` 逐字前缀（`canonicalize` 只用于
+//! 包含关系判断，见 [`strip_verbatim_prefix`]）。
+//!
+//! JSON 备份的封面口径（批41 回修 P2-1）：
+//! - 创建侧 [`backup_create`]：位于本机媒体根 `covers/`、`readRecordCovers/` 下的
+//!   绝对封面路径归一为 null（JSON 备份不含媒体，原样外带到异机必然悬空）；
+//! - 恢复侧 [`guard_json_backup_covers`]：对 JSON 备份的封面字段做
+//!   「目标存在才保留，否则 null」守卫（`.../covers/<file>` 按本地媒体根 remap，
+//!   其他绝对路径目标不存在则置空，网络 URL/相对路径原样保留）。
 //!
 //! 未接线/差异登记：
 //! - 我方 UI 当前无封面缓存、阅读背景图、阅读记录封面、封面字体的消费面（封面按
@@ -173,7 +191,17 @@
 //! - 封面字体只落盘，不写 `coverFont` 偏好：zip 恢复不恢复 `config.xml` 偏好快照，
 //!   我方也无封面字体设置项；
 //! - 我方单文件 JSON 备份**不含媒体**（二进制无法内嵌，不做 base64 膨胀），
-//!   媒体只在原版 zip 恢复路径落盘；`backup_create` 也不写媒体（无 zip 创建面）。
+//!   媒体只在原版 zip 恢复路径落盘；`backup_create` 也不写媒体（无 zip 创建面）；
+//! - **媒体先于数据库事务落盘**：数据恢复事务失败回滚时，已写出的媒体文件**不会**
+//!   被撤销（媒体与 DB 无事务关系，原版暂存/回滚仅覆盖目录内失败）；媒体是幂等
+//!   合并写，重复恢复不会累积垃圾，但「恢复失败 + 媒体已更新」是可见差异；
+//! - **remap 判据与上游差异**：上游按备份内 `.../covers/<file>` 直系形态 remap，
+//!   本实现同形态判定，但额外要求「目标文件存在」才改写（上游直接拼本地路径，
+//!   目标不存在时保留悬空绝对路径）；JSON 恢复侧对非 covers/readRecordCovers 形态
+//!   的绝对路径也做「存在才保留」，属本实现加固，上游无对应逻辑；
+//! - **Windows 落盘非原子窗口**：`fs::rename` 不覆盖已存在目标，故「先 remove 再
+//!   rename」，两步之间目标短暂缺失；并发恢复同一文件时可能互相覆盖，不提供并发
+//!   安全保证。
 
 use std::collections::HashMap;
 use std::fs;
@@ -493,11 +521,20 @@ pub struct RestoreStats {
 /// **媒体不在 JSON 备份内**（批41）：备份格式为单文件 JSON，无法内嵌封面/背景/
 /// 阅读记录封面等二进制媒体，也不做 base64 膨胀；我方无 zip 创建面，故创建侧
 /// 不写媒体。原版 zip 备份的媒体由恢复侧落盘（见模块注释「批41」）。
+///
+/// 批41 回修 P2-1：位于本机媒体根 `covers/`、`readRecordCovers/` 下的封面绝对
+/// 路径（zip 恢复 remap 写入的本地缓存引用）归一为 null，避免 JSON 备份外带
+/// 本机路径、异机恢复得到悬空引用。
 pub fn backup_create(path: &str) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
+
+    // 批41 回修 P2-1：JSON 备份不含媒体，本机媒体根下的封面绝对路径（zip 恢复
+    // remap 写入的本地缓存引用）不得原样外带——异机恢复必然悬空。此处只做
+    // 「归一为 null」，不收集媒体字节。
+    let cover_scope = LocalMediaCoverScope::new();
 
     let backup_data = with_database(|db| {
         let conn = db.connection();
@@ -508,6 +545,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .find_all()?
             .into_iter()
             .filter_map(|b| serde_json::to_value(&b).ok())
+            .map(|v| strip_local_media_cover(v, "customCoverUrl", &cover_scope))
             .collect();
 
         // 收集书签
@@ -543,11 +581,13 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .collect();
 
         // 收集阅读记录（v113：13 字段全列，含作者主键/章节快照/显示元数据）
+        // 批41 回修 P2-1：封面路径同书架口径归一（异机悬空）
         let record_repo = ReadRecordRepository::new(conn);
         let read_records: Vec<serde_json::Value> = record_repo
             .find_all()?
             .into_iter()
             .filter_map(|r| serde_json::to_value(&r).ok())
+            .map(|v| strip_local_media_cover(v, "coverUrl", &cover_scope))
             .collect();
 
         // 收集书备忘（v5：仅书架内书籍，对齐原版 `bookMemoDao.all()` 的 inner join）；
@@ -561,10 +601,12 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
         // ─── v2 扩表收集（表已在库，repository 全列读取）──────────────
 
         // 书籍分组
+        // 批41 回修 P2-1：分组封面同书架口径归一（异机悬空）
         let book_groups: Vec<serde_json::Value> = BookGroupRepository::new(conn)
             .find_all()?
             .iter()
             .filter_map(|g| serde_json::to_value(to_core_book_group(g)).ok())
+            .map(|v| strip_local_media_cover(v, "cover", &cover_scope))
             .collect();
 
         // RSS 收藏
@@ -768,8 +810,11 @@ pub fn backup_restore_with_password(path: &str, password: Option<&str>) -> Legad
         keyboard_assists: value.get("keyboardAssists").is_some(),
     };
 
-    let backup: BackupData = serde_json::from_value(value)
+    let mut backup: BackupData = serde_json::from_value(value)
         .map_err(|e| LegadoError::Internal(format!("备份文件解析失败: {e}")))?;
+    // 批41 回修 P2-1：JSON 备份不含媒体，本机绝对封面路径在异机悬空——
+    // 恢复前按「目标存在才保留，否则 null」守卫（zip 分支已在 normalize_zip_* 处理）
+    guard_json_backup_covers(&mut backup);
 
     restore_backup_data(&backup, replace_policy)
 }
@@ -936,7 +981,10 @@ const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_BACKUP_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
 /// 备份 zip 条目总数上限（含目录条目，批41）：防海量条目拖垮中央目录解析与恢复；
-/// 结构异常直接报错（与跨条目总量超限同口径），不按条目静默跳过
+/// 结构异常直接报错（与跨条目总量超限同口径），不按条目静默跳过。
+///
+/// 批41 回修 P3-1：先在 EOCD 预检（[`zip_declared_entry_count`]）提前拒绝，避免
+/// 为解析完整中央目录先付出内存/CPU；解析后 `archive.len()` 校验仍是权威判定。
 const MAX_BACKUP_ZIP_ENTRIES: usize = 50_000;
 
 /// 单个媒体文件实际解压上限（32 MiB，批41）：封面/背景图/封面字体远小于此；
@@ -1029,11 +1077,42 @@ fn is_zip_backup(bytes: &[u8]) -> bool {
     bytes.starts_with(&ZIP_ENTRY_MAGIC) || bytes.starts_with(&ZIP_EMPTY_MAGIC)
 }
 
+/// 从 EOCD（中央目录结束记录）预读声明的条目总数（批41 回修 P3-1）
+///
+/// 在 `ZipArchive::new` 之前扫文件尾部 `EOCD(22) + 注释(≤65535)` 范围找
+/// `PK\x05\x06`，取偏移 10..12 的 u16 条目数（classic zip）。用途**仅是提前**
+/// 拒绝海量条目包，避免为解析完整中央目录先付出内存/CPU 代价；判定仍是
+/// 「解析后 `archive.len()` 权威」——以下情况本函数返回 `None` 并交给后续校验：
+/// - 无 EOCD（畸形/截断包，`ZipArchive::new` 会自行报错）；
+/// - 条目数为 `0xFFFF`（zip64 占位）——真实条目数在 zip64 EOCD 中，不在此猜。
+fn zip_declared_entry_count(bytes: &[u8]) -> Option<usize> {
+    const EOCD_MAGIC: &[u8; 4] = b"PK\x05\x06";
+    const EOCD_LEN: usize = 22;
+    const MAX_COMMENT_LEN: usize = 0xFFFF;
+    if bytes.len() < EOCD_LEN {
+        return None;
+    }
+    let search_start = bytes.len().saturating_sub(EOCD_LEN + MAX_COMMENT_LEN);
+    let tail = &bytes[search_start..];
+    let pos = tail
+        .windows(EOCD_MAGIC.len())
+        .rposition(|w| w == EOCD_MAGIC)?;
+    let eocd = &tail[pos..];
+    if eocd.len() < EOCD_LEN {
+        return None;
+    }
+    let declared = u16::from_le_bytes([eocd[10], eocd[11]]) as usize;
+    (declared != usize::from(u16::MAX)).then_some(declared)
+}
+
 /// 读取 zip 备份：校验条目路径、只解压已知数据文件与媒体条目
 ///
 /// [批9 回修 P1] 解压按**实际字节数**限量（[`read_zip_entry_limited`]）：
 /// zip 头的 `uncompressed_size` 不可信，声明值只用于提前日志；跨条目累计
 /// 解压量超过 [`MAX_BACKUP_TOTAL_BYTES`] 时中止整次恢复（明确报错）。
+///
+/// [批41 回修 P1] 解压**失败**的条目也会把已读出的字节计入累计（见
+/// [`read_zip_entry_limited`]）——否则「合法 deflate + 坏 CRC」可批量绕过总限额。
 ///
 /// [批41] 同时收集 [`ZIP_MEDIA_DIRS`] 前缀下的媒体条目与封面字体（单文件按
 /// [`MAX_BACKUP_MEDIA_FILE_BYTES`] 限量），供 [`restore_zip_media`] 落盘。
@@ -1050,6 +1129,17 @@ fn read_zip_selected(
     wanted: &[&str],
     collect_media: bool,
 ) -> LegadoResult<ZipBackupArchive> {
+    // 批41 回修 P3-1：先做 EOCD 预检，海量条目包在中央目录完整解析**之前**拒绝；
+    // 解析后的 `archive.len()` 仍是权威判定（zip64 的 0xFFFF 占位、畸形 EOCD
+    // 都落到那一步）。
+    if let Some(declared) = zip_declared_entry_count(bytes) {
+        if declared > MAX_BACKUP_ZIP_ENTRIES {
+            return Err(LegadoError::Internal(format!(
+                "备份 zip 条目数超过上限（EOCD 声明 {declared} > {MAX_BACKUP_ZIP_ENTRIES}），\
+                 已拒绝恢复；备份包可能异常"
+            )));
+        }
+    }
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| LegadoError::Internal(format!("备份 zip 解析失败: {e}")))?;
     // 批41：条目数上限（结构异常直接报错，防海量条目拖垮中央目录解析与恢复）
@@ -1172,21 +1262,47 @@ fn classify_zip_media_entry(name: &str) -> Option<ZipMediaTarget<'_>> {
     })
 }
 
+/// Windows 保留设备名（批41 回修 P3-2）：任意扩展名形态都保留
+/// （`con`/`con.txt`/`NUL.png` 在 Windows 上均指向设备而非文件）
+const WINDOWS_RESERVED_DEVICE_NAMES: [&str; 22] = [
+    "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+];
+
 /// 媒体条目相对路径安全校验（批41）
 ///
 /// 完整条目名已过 [`is_safe_zip_entry_name`]；这里再拒绝空段、`.`/`..` 段、
-/// 反斜杠、NUL 与冒号（Windows 盘符/ADS 形态），保证落盘只发生在白名单子目录内。
+/// 反斜杠、NUL 与其他控制字符、冒号（Windows 盘符/ADS 形态），以及
+/// Windows 保留设备名与「结尾空格/点」形态（批41 回修 P3-2：Windows 会静默
+/// 去掉结尾空格/点，`a.` 与 `a` 落点相同，`con.txt` 则直接写入设备），保证
+/// 落盘只发生在白名单子目录内且落点唯一。
 fn is_safe_media_relative_path(relative: &str) -> bool {
-    if relative.is_empty()
-        || relative.contains('\\')
-        || relative.contains('\0')
-        || relative.contains(':')
-    {
+    if relative.is_empty() || relative.contains('\\') || relative.contains(':') {
         return false;
     }
-    !relative
-        .split('/')
-        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    if relative.chars().any(char::is_control) {
+        return false;
+    }
+    relative.split('/').all(is_safe_media_path_segment)
+}
+
+/// 单个媒体路径段是否安全（非空、非 `.`/`..`、非 Windows 保留设备名）
+fn is_safe_media_path_segment(segment: &str) -> bool {
+    if segment.is_empty() || segment == "." || segment == ".." {
+        return false;
+    }
+    // Windows 落盘会去掉文件名结尾的空格与点：`a.`/`a ` 与 `a` 同落点，
+    // 不同条目相互覆盖或绕过同名判断，一律拒绝
+    if segment.ends_with(' ') || segment.ends_with('.') {
+        return false;
+    }
+    let stem = segment
+        .split('.')
+        .next()
+        .unwrap_or(segment)
+        .trim_end_matches([' ', '.'])
+        .to_ascii_lowercase();
+    !WINDOWS_RESERVED_DEVICE_NAMES.contains(&stem.as_str())
 }
 
 /// 测试专用媒体根注入槽（批41）：进程级全局状态，媒体用例须持
@@ -1197,7 +1313,8 @@ static TEST_MEDIA_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::ne
 /// 媒体恢复上下文（批41）：供封面路径 remap 判断目标文件是否存在
 #[derive(Debug, Clone)]
 struct ZipMediaRestore {
-    /// 规范化后的媒体根目录（未解析到 → None，remap 一律按「文件不存在」处理）
+    /// 规范化后的媒体根目录（已剥离 Windows 逐字前缀；未解析到 → None，
+    /// remap 一律按「文件不存在」处理）
     root: Option<PathBuf>,
 }
 
@@ -1245,11 +1362,14 @@ fn media_file_name(path: &str) -> Option<&str> {
 fn backup_media_root() -> Option<PathBuf> {
     #[cfg(test)]
     {
-        // 测试隔离：注入槽优先（测试库在共享 temp 目录，不能污染 DB 父目录）
-        if let Ok(guard) = TEST_MEDIA_ROOT.lock() {
-            if let Some(dir) = guard.clone() {
-                return Some(dir);
-            }
+        // 测试隔离：注入槽优先（测试库在共享 temp 目录，不能污染 DB 父目录）。
+        // 批41 回修 P3-4：中毒锁按 `into_inner` 取回，避免一次用例 panic 后
+        // 其余用例静默跳过注入槽、误写到 DB 父目录。
+        let guard = TEST_MEDIA_ROOT
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(dir) = guard.clone() {
+            return Some(dir);
         }
     }
     if let Ok(dir) = std::env::var(BACKUP_MEDIA_DIR_ENV) {
@@ -1259,6 +1379,219 @@ fn backup_media_root() -> Option<PathBuf> {
         }
     }
     crate::db_state::documents_root()
+}
+
+/// 去掉 Windows `fs::canonicalize` 产生的逐字（verbatim）前缀（批41 回修 P3-9）
+///
+/// Windows 的 `canonicalize` 返回 `\\?\D:\...` / `\\?\UNC\srv\share\...`。
+/// 逐字路径只用于**包含关系判断**（解析符号链接后再比较），不得写入 DB 或
+/// 交给前端：部分 Windows API 与 Dart/Flutter 侧按普通路径处理，逐字前缀会
+/// 造成「显示/打开失败」的隐性缺陷。落库/返回前统一剥离前缀：
+/// - `\\?\UNC\server\share` → `\\server\share`
+/// - `\\?\D:\dir` → `D:\dir`
+///
+/// 非 Windows 路径原样返回（无前缀时等价于恒等）。
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path.to_path_buf()
+}
+
+/// 解析用于封面 remap 的媒体根（批41 回修 P2-1/P3-9）
+///
+/// 与 [`restore_zip_media`] 的区别：**不创建目录**（JSON 恢复不落媒体，只为
+/// 判断目标文件是否存在）。已存在时尽量规范化并剥离 Windows 逐字前缀，
+/// 使写入 DB 的 remap 路径是普通绝对路径；不存在时退化为逻辑路径。
+fn backup_media_root_for_remap() -> Option<PathBuf> {
+    let root = backup_media_root()?;
+    Some(match fs::canonicalize(&root) {
+        Ok(canonical) => strip_verbatim_prefix(&canonical),
+        Err(_) => root,
+    })
+}
+
+/// 本机媒体封面路径识别上下文（批41 回修 P2-1）
+///
+/// 用途：`backup_create` 把「位于本机媒体根 `covers/` / `readRecordCovers/` 下的
+/// 绝对路径」从 JSON 备份里归一为 null——这些是 zip 媒体恢复 remap 写入的
+/// 机器本地缓存引用，JSON 备份不含媒体，写到异机必然悬空。
+///
+/// 判定双轨：文件存在时按 `fs::canonicalize` 的解析结果比较（可穿透符号链接与
+/// 大小写差异）；不存在时按词法归一（分隔符/逐字前缀/ASCII 大小写）比较。
+#[derive(Debug, Default)]
+struct LocalMediaCoverScope {
+    /// 词法归一后的目录前缀（`.../covers`、`.../readRecordCovers`）
+    lexical_prefixes: Vec<String>,
+    /// 规范化后的目录（目录存在时才有）
+    canonical_dirs: Vec<PathBuf>,
+}
+
+impl LocalMediaCoverScope {
+    fn new() -> Self {
+        match backup_media_root() {
+            Some(root) => Self::from_root(&root),
+            None => Self::default(),
+        }
+    }
+
+    fn from_root(root: &Path) -> Self {
+        let mut scope = Self::default();
+        for dir in ["covers", "readRecordCovers"] {
+            let dir = root.join(dir);
+            scope
+                .lexical_prefixes
+                .push(normalize_path_for_compare(&dir.to_string_lossy()));
+            if let Ok(canonical) = fs::canonicalize(&dir) {
+                scope.canonical_dirs.push(strip_verbatim_prefix(&canonical));
+            }
+        }
+        scope
+    }
+
+    /// 路径是否位于本机媒体根的封面目录下
+    fn contains(&self, path: &str) -> bool {
+        if self.lexical_prefixes.is_empty() {
+            return false;
+        }
+        if let Ok(canonical) = fs::canonicalize(path) {
+            let canonical = strip_verbatim_prefix(&canonical);
+            if self
+                .canonical_dirs
+                .iter()
+                .any(|dir| canonical.starts_with(dir))
+            {
+                return true;
+            }
+        }
+        let normalized = normalize_path_for_compare(path);
+        self.lexical_prefixes.iter().any(|prefix| {
+            normalized == *prefix
+                || normalized
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
+    }
+}
+
+/// 路径词法归一（比较用）：统一分隔符、剥离 Windows 逐字前缀、ASCII 小写
+fn normalize_path_for_compare(path: &str) -> String {
+    let unified = path.replace('\\', "/");
+    let stripped = match unified.strip_prefix("//?/UNC/") {
+        Some(rest) => format!("//{rest}"),
+        None => unified
+            .strip_prefix("//?/")
+            .map(str::to_string)
+            .unwrap_or(unified),
+    };
+    stripped.to_ascii_lowercase()
+}
+
+/// 归一 JSON 备份中单个封面字段（批41 回修 P2-1，创建侧）
+///
+/// 命中本机媒体根封面目录的绝对路径 → 置 null（不写相对名：JSON 备份不带媒体，
+/// 相对名在异机同样无目标，null 更明确地表达「无可用封面」）。
+fn strip_local_media_cover(
+    mut value: serde_json::Value,
+    key: &str,
+    scope: &LocalMediaCoverScope,
+) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        let local = match map.get(key) {
+            Some(serde_json::Value::String(path)) => scope.contains(path),
+            _ => false,
+        };
+        if local {
+            map.insert(key.to_string(), serde_json::Value::Null);
+        }
+    }
+    value
+}
+
+/// JSON 恢复的封面路径守卫（批41 回修 P2-1，恢复侧）
+///
+/// 本机绝对封面路径在异机必然悬空。对齐 zip 恢复的 remap 口径：
+/// - `.../covers/<file>` → 本地 `<媒体根>/covers/<file>` 存在则改写为本地路径，
+///   否则 null（阅读记录另识别 `.../readRecordCovers/<file>`）；
+/// - 其他绝对路径：目标存在才保留，否则 null；
+/// - 网络 URL / 相对路径原样保留。
+fn guard_json_backup_covers(backup: &mut BackupData) {
+    let media = ZipMediaRestore {
+        root: backup_media_root_for_remap(),
+    };
+    let mut cleared = 0usize;
+    for value in backup.books.iter_mut() {
+        if guard_json_cover_field(value, "customCoverUrl", &media, false) {
+            cleared += 1;
+        }
+    }
+    for value in backup.book_groups.iter_mut() {
+        if guard_json_cover_field(value, "cover", &media, false) {
+            cleared += 1;
+        }
+    }
+    for value in backup.read_records.iter_mut() {
+        if guard_json_cover_field(value, "coverUrl", &media, true) {
+            cleared += 1;
+        }
+    }
+    if cleared > 0 {
+        log::warn!(
+            "JSON 恢复：{cleared} 个封面路径在本机不存在（异机缓存或媒体未随 JSON 备份），已置空"
+        );
+    }
+}
+
+/// 单字段封面守卫；返回是否置空（`true` = 原值悬空被清为 null）
+fn guard_json_cover_field(
+    value: &mut serde_json::Value,
+    key: &str,
+    media: &ZipMediaRestore,
+    read_record: bool,
+) -> bool {
+    let serde_json::Value::Object(map) = value else {
+        return false;
+    };
+    let Some(serde_json::Value::String(path)) = map.get(key).cloned() else {
+        return false;
+    };
+    let guarded = if read_record && is_absolute_path_under_directory(&path, "readRecordCovers") {
+        media.remap_read_record_cover(Some(&path))
+    } else if is_absolute_cover_path(&path) {
+        media.remap_cover_path(&path)
+    } else if looks_like_absolute_file_path(&path) {
+        // 用户在异机选的本地图片同样会悬空：目标存在才保留
+        Path::new(&path).is_file().then(|| path.clone())
+    } else {
+        Some(path.clone())
+    };
+    match guarded {
+        Some(same) if same == path => false,
+        Some(remapped) => {
+            map.insert(key.to_string(), serde_json::Value::String(remapped));
+            false
+        }
+        None => {
+            map.insert(key.to_string(), serde_json::Value::Null);
+            true
+        }
+    }
+}
+
+/// 是否形如本地绝对文件路径（Unix `/...`、Windows `C:/...`、UNC `\\\\srv\\...`）
+///
+/// 仅按路径形态判断（网络 URL 的 `https://` 不命中）；用于「异机绝对路径
+/// 目标不存在则置空」的守卫。
+fn looks_like_absolute_file_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    if normalized.starts_with('/') {
+        return true;
+    }
+    normalized.get(1..3).is_some_and(|s| s.starts_with(":/"))
 }
 
 /// 落盘 zip 内媒体条目，返回 remap 上下文（批41）
@@ -1314,6 +1647,9 @@ fn restore_zip_media(archive: &ZipBackupArchive) -> ZipMediaRestore {
 }
 
 /// 创建并规范化媒体根（必须是真实目录，拒绝符号链接根）
+///
+/// 返回值已剥离 Windows 逐字前缀（P3-9）：后续落盘/remap 都以它为基础，
+/// 写进 DB 的封面路径因此是普通绝对路径。
 fn prepare_media_root(root: &Path) -> Result<PathBuf, String> {
     match fs::symlink_metadata(root) {
         Ok(meta) => {
@@ -1329,7 +1665,9 @@ fn prepare_media_root(root: &Path) -> Result<PathBuf, String> {
         }
         Err(e) => return Err(format!("读取媒体根 {root:?} 失败: {e}")),
     }
-    fs::canonicalize(root).map_err(|e| format!("规范化媒体根 {root:?} 失败: {e}"))
+    fs::canonicalize(root)
+        .map(|canonical| strip_verbatim_prefix(&canonical))
+        .map_err(|e| format!("规范化媒体根 {root:?} 失败: {e}"))
 }
 
 /// 创建/校验媒体子目录（目录本身规范化后必须仍位于规范媒体根内）
@@ -1349,12 +1687,35 @@ fn prepare_media_subdir(root: &Path, dir: &str) -> Result<PathBuf, String> {
         }
         Err(e) => return Err(format!("读取媒体子目录 {sub:?} 失败: {e}")),
     }
-    let canonical =
-        fs::canonicalize(&sub).map_err(|e| format!("规范化媒体子目录 {sub:?} 失败: {e}"))?;
+    let canonical = fs::canonicalize(&sub)
+        .map(|canonical| strip_verbatim_prefix(&canonical))
+        .map_err(|e| format!("规范化媒体子目录 {sub:?} 失败: {e}"))?;
     if !canonical.starts_with(root) {
         return Err(format!("媒体子目录 {sub:?} 规范化后逃出媒体根"));
     }
     Ok(canonical)
+}
+
+/// 封面字体魔数白名单（批41 回修 P3-3）：TTF/OTF/TTC 的首 4 字节
+///
+/// - `\x00\x01\x00\x00`：TrueType；
+/// - `OTTO`：CFF 轮廓的 OpenType；
+/// - `true`/`typ1`：Apple TrueType 变体；
+/// - `ttcf`：字体集合。
+///
+/// 原版把 `coverFont.ttf` 原样安装到 `externalFiles/font`，不校验内容；本实现
+/// 落盘前首检——任意二进制塞进字体文件只会污染字体加载路径（且我方 UI 暂无
+/// 封面字体消费面），按单条 warn 跳过。
+const COVER_FONT_MAGICS: [&[u8; 4]; 5] = [b"\x00\x01\x00\x00", b"OTTO", b"true", b"typ1", b"ttcf"];
+
+/// 字节是否具备字体文件魔数（不足 4 字节按不通过处理）
+fn has_font_magic(bytes: &[u8]) -> bool {
+    let Some(head) = bytes.get(..4) else {
+        return false;
+    };
+    COVER_FONT_MAGICS
+        .iter()
+        .any(|magic| head == magic.as_slice())
 }
 
 /// 安全落盘单个媒体条目（批41）
@@ -1362,12 +1723,26 @@ fn prepare_media_subdir(root: &Path, dir: &str) -> Result<PathBuf, String> {
 /// 逐段 `symlink_metadata` 拒绝符号链接与非目录中间段；写入前 `canonicalize`
 /// 父目录并校验仍在规范化媒体根内（`..`/绝对路径已在读取侧拒绝，这里是
 /// 纵深防御）。目标为符号链接或目录一律拒绝，不跟随、不覆盖。
+///
+/// 批41 回修：
+/// - P2-2：写入走 [`write_media_file_atomic`]（同目录临时文件 + rename），
+///   不再用 `fs::write` 直接截断目标；canonicalize 校验与写入之间的换链窗口
+///   仍是**尽力而为**的纵深防御，不是强一致的原子保证；
+/// - P3-3：封面字体落盘前做 TTF/OTF 魔数首检；
+/// - P3-9：canonicalize 结果只用于包含判断，实际写入/返回的路径已剥离
+///   Windows 逐字前缀（避免 `\\?\` 路径进 DB）。
 fn write_zip_media_entry(root: &Path, entry: &ZipMediaEntry) -> Result<PathBuf, String> {
     if !is_safe_media_relative_path(&entry.relative) {
         return Err(format!("相对路径不安全: {}", entry.relative));
     }
     if !ZIP_MEDIA_DIRS.contains(&entry.dir) && entry.dir != COVER_FONT_DIR {
         return Err(format!("落盘子目录不在白名单: {}", entry.dir));
+    }
+    if entry.dir == COVER_FONT_DIR && !has_font_magic(&entry.bytes) {
+        return Err(format!(
+            "封面字体魔数不符（{} 字节，既非 TTF 也非 OTF），已跳过",
+            entry.bytes.len()
+        ));
     }
     let dir_root = prepare_media_subdir(root, entry.dir)?;
     let segments: Vec<&str> = entry.relative.split('/').collect();
@@ -1396,8 +1771,9 @@ fn write_zip_media_entry(root: &Path, entry: &ZipMediaEntry) -> Result<PathBuf, 
     let parent = current
         .parent()
         .ok_or_else(|| "目标路径缺少父目录".to_string())?;
-    let canonical_parent =
-        fs::canonicalize(parent).map_err(|e| format!("规范化目标目录 {parent:?} 失败: {e}"))?;
+    let canonical_parent = fs::canonicalize(parent)
+        .map(|canonical| strip_verbatim_prefix(&canonical))
+        .map_err(|e| format!("规范化目标目录 {parent:?} 失败: {e}"))?;
     if !canonical_parent.starts_with(root) {
         return Err(format!("目标路径 {current:?} 规范化后逃出媒体根"));
     }
@@ -1414,8 +1790,81 @@ fn write_zip_media_entry(root: &Path, entry: &ZipMediaEntry) -> Result<PathBuf, 
         Err(e) => return Err(format!("读取目标 {current:?} 失败: {e}")),
     }
     let target = canonical_parent.join(last);
-    fs::write(&target, &entry.bytes).map_err(|e| format!("写入 {target:?} 失败: {e}"))?;
+    write_media_file_atomic(&target, &entry.bytes)?;
     Ok(target)
+}
+
+/// 同目录临时文件 + rename 覆盖写入单个媒体文件（批41 回修 P2-2）
+///
+/// 动机：`fs::write` 直接以截断方式打开目标，写入中途失败（磁盘满/进程被杀/
+/// 并发恢复）会留下**半个文件**；原版 `restoreBackupMediaDirectory` 用暂存目录
+/// 再合并，语义上不会暴露半文件。
+///
+/// 实现：在目标同目录 `create_new` 建临时文件（同名目录保证 rename 不跨卷）→
+/// 写完 flush → `rename` 覆盖。命名带 pid/纳秒/尝试序号，`AlreadyExists` 时
+/// 重试，避免并发恢复互相踩临时文件。
+///
+/// **非原子窗口（登记）**：Windows 的 `fs::rename` 不能覆盖已存在目标，故先
+/// `remove_file` 再 rename——两步之间目标短暂缺失，严格意义上非原子；Unix
+/// `rename` 本身原子覆盖。该实现是**尽力而为**的加固（减少半文件与写入窗口），
+/// 不构成并发安全保证。
+fn write_media_file_atomic(target: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write as _;
+
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("目标 {target:?} 缺少父目录"))?;
+    let file_name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "media".to_string());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let mut last_error = None;
+    for attempt in 0..8u32 {
+        let tmp = parent.join(format!(
+            ".{file_name}.legado-tmp-{}-{nanos}-{attempt}",
+            std::process::id()
+        ));
+        let file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_error = Some(format!("临时文件 {tmp:?} 已存在: {e}"));
+                continue;
+            }
+            Err(e) => return Err(format!("创建临时文件 {tmp:?} 失败: {e}")),
+        };
+        let write_result = {
+            let mut writer = std::io::BufWriter::new(file);
+            writer.write_all(bytes).and_then(|()| writer.flush())
+        };
+        if let Err(e) = write_result {
+            let _ = fs::remove_file(&tmp);
+            return Err(format!("写入临时文件 {tmp:?} 失败: {e}"));
+        }
+        // Windows rename 不覆盖已存在文件：先删目标再 rename（非原子，见文档）
+        #[cfg(windows)]
+        if target.symlink_metadata().is_ok() {
+            if let Err(e) = fs::remove_file(target) {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("删除旧目标 {target:?} 失败: {e}"));
+            }
+        }
+        match fs::rename(&tmp, target) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(format!("替换目标 {target:?} 失败: {e}"));
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| format!("为 {target:?} 创建临时文件失败")))
 }
 
 /// 限量读取单个 zip 条目（解压炸弹防护的唯一读取入口）
@@ -1428,6 +1877,13 @@ fn write_zip_media_entry(root: &Path, entry: &ZipMediaEntry) -> Result<PathBuf, 
 ///
 /// 截断读取不会读到 deflate 流末尾，因此不会触发 zip crate 的 CRC 校验——
 /// 这正是「伪造声明值」的绕行路径：CRC 正确与否不影响本函数的判定。
+///
+/// **[批41 回修 P1] 错误路径同样入账**：`read_to_end` 可能已经解压出 N 字节
+/// 后再报错（合法 deflate 流 + 坏 CRC/data descriptor、流中途截断等）。若只在
+/// 成功路径累计字节，攻击者可以构造大量「能解压但 CRC 必坏」的条目反复消耗
+/// CPU/内存却不计入总限额——媒体条目还会把该错误吞成 warn 继续下一条，总限额
+/// 被完全绕过。故**先**把 `buf` 中已读出的字节计入 `total_decoded`，再判定
+/// 总限额（限额违规优先于读错误上抛），最后才把读错误转成 `LegadoError`。
 fn read_zip_entry_limited<R: Read>(
     name: &str,
     declared_size: u64,
@@ -1444,10 +1900,8 @@ fn read_zip_entry_limited<R: Read>(
     // 预分配只参考声明值且封顶 1 MiB，避免伪造的巨大声明值直接触发巨额分配
     let mut buf = Vec::with_capacity(declared_size.min(1024 * 1024) as usize);
     let mut limited = reader.take(limit.saturating_add(1));
-    limited
-        .read_to_end(&mut buf)
-        .map_err(|e| LegadoError::Internal(format!("读取备份 zip 条目 {name} 失败: {e}")))?;
-
+    // 批41 回修 P1：无论读取成功与否，已解压字节都要入账（见函数文档）
+    let read_result = limited.read_to_end(&mut buf);
     *total_decoded = total_decoded.saturating_add(buf.len() as u64);
     if *total_decoded > total_limit {
         return Err(LegadoError::Internal(format!(
@@ -1455,6 +1909,8 @@ fn read_zip_entry_limited<R: Read>(
              备份包可能异常或为解压炸弹"
         )));
     }
+    read_result
+        .map_err(|e| LegadoError::Internal(format!("读取备份 zip 条目 {name} 失败: {e}")))?;
     if buf.len() as u64 > limit {
         log::warn!(
             "备份条目实际解压大小超过上限（已跳过）: {name} 实际超过 {limit} 字节（声明 {declared_size} 字节）"
@@ -1492,7 +1948,8 @@ fn is_safe_zip_entry_name(name: &str) -> bool {
 ///
 /// 批41：媒体在数据落库前写入磁盘（合并语义，失败逐条 warn 不阻断），随后
 /// 封面路径 remap 才能看到「本次恢复或本地既有」的目标文件；媒体写入失败
-/// 不回滚、不影响数据库恢复结果（与条目级容错口径一致）。
+/// 不回滚、不影响数据库恢复结果（与条目级容错口径一致）。**数据库事务失败
+/// 回滚时已写出的媒体也不会撤销**（媒体与 DB 无事务关系，登记见模块注释）。
 fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String> {
     let archive = read_zip_backup(bytes)?;
     let cipher = BackupCipher::new(password);
@@ -5571,7 +6028,8 @@ mod tests {
         const SUB_COVER_BYTES: &[u8] = b"SUB-COVER-BYTES-MARKER";
         const BG_BYTES: &[u8] = b"BG-BYTES-MARKER";
         const RECORD_COVER_BYTES: &[u8] = b"RECORD-COVER-BYTES-MARKER";
-        const FONT_BYTES: &[u8] = b"FONT-BYTES-MARKER";
+        // 批41 回修 P3-3：封面字体落盘前首检 TTF/OTF 魔数（真字体头 + 标记）
+        const FONT_BYTES: &[u8] = b"\x00\x01\x00\x00FONT-BYTES-MARKER";
 
         let bookshelf = r#"[
             {"bookUrl":"https://zip.example/media/1","name":"媒体书一","author":"作者甲",
@@ -5695,6 +6153,29 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed.get("media").is_none(), "JSON 备份不应新增媒体段");
 
+        // 批41 回修 P2-1：本机媒体根下的封面绝对路径会被归一为 null，
+        // 不得随 JSON 备份外带（异机恢复必然悬空）
+        let books = parsed["books"].as_array().expect("books 段应为数组");
+        let book1 = books
+            .iter()
+            .find(|b| b["bookUrl"] == "https://zip.example/media/1")
+            .expect("JSON 备份应含媒体书一");
+        assert!(
+            book1["customCoverUrl"].is_null(),
+            "本机媒体根下的封面绝对路径应以 null 写入 JSON: {book1}"
+        );
+        let records = parsed["readRecords"]
+            .as_array()
+            .expect("readRecords 应为数组");
+        assert!(
+            records.iter().all(|r| r["coverUrl"].is_null()),
+            "阅读记录的本机封面路径同样应归一为 null: {records:?}"
+        );
+        assert!(
+            !json.contains(media_root.to_string_lossy().as_ref()),
+            "JSON 备份不得包含媒体根绝对路径"
+        );
+
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_dir_all(&zip_dir);
     }
@@ -5726,6 +6207,13 @@ mod tests {
                 ("covers\\backslash.jpg", b"bs"),
                 ("/abs.jpg", b"abs"),
                 ("C:/win.jpg", b"win"),
+                // 批41 回修 P3-2：Windows 保留设备名 / 结尾点形态一律拒绝
+                ("covers/con.txt", b"device"),
+                ("covers/aux.png", b"device"),
+                ("covers/lpt1.jpg", b"device"),
+                ("covers/trailing.", b"trailing-dot"),
+                // 批41 回修 P3-3：封面字体魔数不符 → 跳过（不得落盘）
+                ("coverFont.ttf", b"not-a-real-font"),
                 // 单文件超限（32 MiB + 1）→ 跳过该条
                 ("bg/huge.png", huge.as_slice()),
             ],
@@ -5740,6 +6228,10 @@ mod tests {
             "abs.jpg",
             "win.jpg",
             "covers/backslash.jpg",
+            "covers/con.txt",
+            "covers/aux.png",
+            "covers/lpt1.jpg",
+            "covers/trailing.",
             "bg/huge.png",
         ] {
             assert!(
@@ -5750,7 +6242,11 @@ mod tests {
         assert!(!dir.join("evil.jpg").exists(), "路径穿越不得写出媒体根之外");
         assert!(
             !media_root.join("covers").exists(),
-            "只有目录条目时不应创建 covers 目录"
+            "只有被拒条目时不应创建 covers 目录"
+        );
+        assert!(
+            !media_root.join("font").join("coverFont.ttf").exists(),
+            "魔数不符的封面字体不得落盘"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -5825,6 +6321,27 @@ mod tests {
         assert!(!is_safe_media_relative_path("sub//a.jpg"));
         assert!(!is_safe_media_relative_path("c:/a.jpg"));
         assert!(!is_safe_media_relative_path("a\\b.jpg"));
+        // 批41 回修 P3-2：NUL/控制字符、Windows 保留设备名、结尾空格/点
+        assert!(!is_safe_media_relative_path("a\0b.jpg"));
+        assert!(!is_safe_media_relative_path("a\nb.jpg"));
+        assert!(!is_safe_media_relative_path("a\tb.jpg"));
+        assert!(!is_safe_media_relative_path("a:b.jpg"));
+        for name in [
+            "con", "CON.txt", "nul.png", "aux", "prn.jpg", "com1.png", "COM9.txt", "lpt1.jpg",
+            "LPT9.png",
+        ] {
+            assert!(
+                !is_safe_media_relative_path(name),
+                "Windows 保留设备名必须拒绝: {name}"
+            );
+        }
+        assert!(!is_safe_media_relative_path("sub/con.txt"));
+        assert!(!is_safe_media_relative_path("trailing."));
+        assert!(!is_safe_media_relative_path("trailing "));
+        // 非保留名（含保留名前缀但不是设备名）仍放行
+        assert!(is_safe_media_relative_path("console.png"));
+        assert!(is_safe_media_relative_path("com10.png"));
+        assert!(is_safe_media_relative_path("null.jpg"));
 
         assert!(matches!(
             classify_zip_media_entry("covers/x.jpg"),
@@ -5858,6 +6375,471 @@ mod tests {
             "封面字体只匹配备份根目录的固定条目名"
         );
         assert!(classify_zip_media_entry("other/covers/x.jpg").is_none());
+    }
+
+    /// [批41 回修 P1 红→绿] 读取中途报错的条目也必须把已解压字节计入总限额
+    ///
+    /// 红态（修复前）：`read_to_end(...)?` 先于累计返回 → `total_decoded` 恒为 0，
+    /// 且错误类型是普通读错误；媒体条目会把该错误吞成 warn，反复构造「合法
+    /// deflate + 坏 CRC」条目即可无上限解压。
+    /// 绿态（修复后）：先累计再判定 → 超限返回总限额错误，`total_decoded >= N`。
+    #[test]
+    fn test_read_zip_entry_limited_counts_bytes_on_error_path() {
+        /// 先吐 `remaining` 字节，再永久返回错误（模拟坏 CRC/截断流）
+        struct MakeThenErr {
+            remaining: usize,
+        }
+
+        impl std::io::Read for MakeThenErr {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.remaining == 0 {
+                    return Err(std::io::Error::other("模拟坏 CRC"));
+                }
+                let n = self.remaining.min(buf.len());
+                buf[..n].fill(b'x');
+                self.remaining -= n;
+                Ok(n)
+            }
+        }
+
+        // 1) 错误路径字节达到总限额：必须报「解压总量超过上限」，且 total 已入账
+        let mut total = 0u64;
+        let err = read_zip_entry_limited(
+            "covers/bad-crc.jpg",
+            1024,
+            MakeThenErr { remaining: 64 },
+            1024,
+            &mut total,
+            32,
+        )
+        .expect_err("总限额超限必须报错");
+        assert!(
+            total >= 64,
+            "错误路径已读出的 64 字节必须计入 total_decoded（实际 {total}）"
+        );
+        assert!(
+            err.to_string().contains("解压总量超过上限"),
+            "限额违规应优先于读错误上抛: {err}"
+        );
+
+        // 2) 未超总限额：错误路径同样入账，原读错误照常上抛
+        let mut total = 0u64;
+        let err = read_zip_entry_limited(
+            "covers/bad-crc.jpg",
+            1024,
+            MakeThenErr { remaining: 10 },
+            1024,
+            &mut total,
+            1024,
+        )
+        .expect_err("读取失败必须报错");
+        assert_eq!(total, 10, "未超限时错误路径的已读字节同样要入账");
+        assert!(
+            err.to_string().contains("读取备份 zip 条目"),
+            "未超限时应保留读错误文案: {err}"
+        );
+    }
+
+    /// [批41 回修 P3-1] 条目数上限在 `ZipArchive::new` 之前按 EOCD 预检拒绝
+    #[test]
+    fn test_zip_entry_count_limit_rejected_before_parse() {
+        // 伪包：只有魔数与 EOCD（中央目录与条目都不存在）。若预检不存在，
+        // 会先走到 `ZipArchive::new` 报「zip 解析失败」；预检命中则报条目数超限。
+        let mut bytes = ZIP_ENTRY_MAGIC.to_vec();
+        bytes.extend_from_slice(&[0u8; 8]);
+        let mut eocd = vec![0u8; 22];
+        eocd[0..4].copy_from_slice(b"PK\x05\x06");
+        eocd[10..12].copy_from_slice(&((MAX_BACKUP_ZIP_ENTRIES + 1) as u16).to_le_bytes());
+        bytes.extend_from_slice(&eocd);
+
+        let err = match read_zip_backup(&bytes) {
+            Ok(_) => panic!("EOCD 声明超限必须拒绝"),
+            Err(e) => e,
+        };
+        let message = err.to_string();
+        assert!(
+            message.contains("条目数超过上限") && message.contains("EOCD"),
+            "应在解析中央目录前按 EOCD 拒绝: {message}"
+        );
+
+        // 真实小包的 EOCD 预读数应与实际条目数一致
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_zip_eocd_entry_count",
+            &[("bookshelf.json", b"[]"), ("bg/a.png", b"x")],
+        );
+        let real = fs::read(&path).unwrap();
+        assert_eq!(
+            zip_declared_entry_count(&real),
+            Some(2),
+            "EOCD 预读条目数应与实际条目数一致"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批41 回修 P3-5] 媒体条目累计解压超总限额 → 中止整次恢复（不吞成 warn）
+    ///
+    /// 16 个条目各 33 MiB（均超单文件 32 MiB 上限、被跳过但**计入累计**），
+    /// 累计读取 16 × (32 MiB + 1) > 512 MiB → 必须在读包阶段中止，数据零落库。
+    #[test]
+    fn test_restore_zip_media_total_limit_aborts() {
+        use std::io::Write as _;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_restore_zip_media_total_limit");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        let _media_guard = set_test_media_root(&media_root);
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/total","name":"限额书","author":"作者"}]"#;
+        let payload = vec![0u8; (MAX_BACKUP_MEDIA_FILE_BYTES + 1024 * 1024) as usize];
+        let zip_path = dir.join("total-limit.zip");
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            // 全零负载 + 快速压缩级别：压缩后很小，但解压量足以命中总限额
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .compression_level(Some(1));
+            writer.start_file("bookshelf.json", options).unwrap();
+            writer.write_all(bookshelf.as_bytes()).unwrap();
+            for index in 0..16 {
+                writer
+                    .start_file(format!("bg/big{index}.png"), options)
+                    .unwrap();
+                writer.write_all(&payload).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+
+        let err =
+            backup_restore(zip_path.to_str().unwrap()).expect_err("媒体累计超总限额必须中止恢复");
+        assert!(
+            err.to_string().contains("解压总量超过上限"),
+            "应报总限额中止而非逐条 warn: {err}"
+        );
+        with_database(|db| {
+            assert_eq!(
+                BookRepository::new(db.connection()).find_all()?.len(),
+                0,
+                "中止发生在落库前：书架不得写入"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        assert!(
+            !media_root.exists(),
+            "超限中止时不得创建媒体根或落盘任何条目"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批41 回修 P2-2/P3-5] 媒体落盘为合并覆盖：同名旧文件被替换、本地独有文件保留、
+    /// 不残留临时文件（原子写临时文件已 rename 或清理）
+    #[test]
+    fn test_restore_zip_media_merge_overwrites_and_keeps_local() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_restore_zip_media_merge");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        fs::create_dir_all(media_root.join("covers")).unwrap();
+        fs::write(media_root.join("covers").join("same.jpg"), b"OLD-LOCAL").unwrap();
+        fs::write(
+            media_root.join("covers").join("local-only.jpg"),
+            b"LOCAL-ONLY",
+        )
+        .unwrap();
+        let _media_guard = set_test_media_root(&media_root);
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/merge","name":"合并书","author":"作者"}]"#;
+        let (zip_dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_media_merge_src",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("covers/same.jpg", b"NEW-FROM-BACKUP"),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1);
+
+        assert_eq!(
+            fs::read(media_root.join("covers").join("same.jpg")).unwrap(),
+            b"NEW-FROM-BACKUP",
+            "同名旧文件应被备份内容覆盖"
+        );
+        assert_eq!(
+            fs::read(media_root.join("covers").join("local-only.jpg")).unwrap(),
+            b"LOCAL-ONLY",
+            "本地独有媒体不得因恢复被删除"
+        );
+        let leftovers: Vec<String> = fs::read_dir(media_root.join("covers"))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.contains("legado-tmp"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "原子写临时文件必须已 rename 或清理: {leftovers:?}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 回修 P3-5] 探测（backup_inspect）只解压加密候选条目，不收集/不落盘媒体
+    #[test]
+    fn test_backup_inspect_does_not_restore_media() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_inspect_no_media");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        let _media_guard = set_test_media_root(&media_root);
+
+        let (zip_dir, path) = write_upstream_backup_zip(
+            "legado_backup_inspect_no_media_src",
+            &[
+                ("bookshelf.json", b"[]"),
+                ("covers/a.jpg", b"COVER"),
+                ("bg/b.png", b"BG"),
+                ("coverFont.ttf", b"\x00\x01\x00\x00FONT"),
+            ],
+        );
+
+        let inspected = backup_inspect(&path).unwrap();
+        assert!(
+            inspected.contains("\"format\":\"zip\""),
+            "探测应识别 zip 格式: {inspected}"
+        );
+        assert!(!media_root.exists(), "探测不得创建媒体根或落盘媒体条目");
+        assert!(!dir.join("covers").exists(), "探测不得在临时目录落盘媒体");
+        with_database(|db| {
+            assert_eq!(
+                BookRepository::new(db.connection()).find_all()?.len(),
+                0,
+                "探测不得写任何表"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 回修 P2-1] zip → JSON → 异机恢复：JSON 备份不得外带本机媒体绝对路径，
+    /// 异机恢复后封面为 null 而不是悬空路径
+    #[test]
+    fn test_zip_restore_to_json_backup_drops_local_cover_paths() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_zip_to_json_cover_paths");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let machine_a = dir.join("machine_a");
+        let media_guard_a = set_test_media_root(&machine_a);
+
+        let bookshelf = r#"[
+            {"bookUrl":"https://zip.example/migrate/1","name":"迁移书","author":"作者甲",
+             "customCoverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/a.jpg"}
+        ]"#;
+        let book_group = r#"[{"groupId":701,"groupName":"迁移分组",
+            "cover":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/g.png"}]"#;
+        let read_record = r#"[{"deviceId":"other","bookName":"迁移书","author":"作者甲",
+            "readTime":1700000020000,"lastRead":3,
+            "coverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/readRecordCovers/r.jpg"}]"#;
+        let (zip_dir, zip_path) = write_upstream_backup_zip(
+            "legado_zip_to_json_cover_src",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("bookGroup.json", book_group.as_bytes()),
+                ("readRecord.json", read_record.as_bytes()),
+                ("covers/a.jpg", b"COVER-A"),
+                ("covers/g.png", b"GROUP-G"),
+                ("readRecordCovers/r.jpg", b"RECORD-R"),
+            ],
+        );
+
+        backup_restore(&zip_path).unwrap();
+        with_database(|db| {
+            let book = BookRepository::new(db.connection())
+                .find_by_url("https://zip.example/migrate/1")?
+                .expect("迁移书应落库");
+            assert!(
+                book.custom_cover_url
+                    .as_deref()
+                    .is_some_and(|cover| Path::new(cover).is_file()),
+                "前置条件：zip 恢复应把封面 remap 到本机媒体"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        // 创建 JSON 备份（媒体根 A 下仍是本机路径）
+        let json_path = dir.join("backup.json");
+        backup_create(json_path.to_str().unwrap()).unwrap();
+        let json = fs::read_to_string(&json_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(
+            parsed["books"][0]["customCoverUrl"].is_null(),
+            "书面封面本机路径应归一为 null: {}",
+            parsed["books"][0]
+        );
+        assert!(
+            parsed["bookGroups"][0]["cover"].is_null(),
+            "分组封面本机路径应归一为 null: {}",
+            parsed["bookGroups"][0]
+        );
+        assert!(
+            parsed["readRecords"][0]["coverUrl"].is_null(),
+            "阅读记录封面本机路径应归一为 null: {}",
+            parsed["readRecords"][0]
+        );
+        assert!(
+            !json.contains(machine_a.to_string_lossy().as_ref()),
+            "JSON 备份不得包含本机媒体根绝对路径"
+        );
+
+        // 异机：清库 + 换到没有媒体的媒体根 B，再恢复 JSON
+        drop(media_guard_a);
+        clear_backup_tables();
+        let machine_b = dir.join("machine_b");
+        let _media_guard_b = set_test_media_root(&machine_b);
+        backup_restore(json_path.to_str().unwrap()).unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            let book = BookRepository::new(conn)
+                .find_by_url("https://zip.example/migrate/1")?
+                .expect("异机恢复后书籍应存在");
+            assert_eq!(
+                book.custom_cover_url, None,
+                "异机恢复后封面应为 null（不得悬空指向媒体根 A）"
+            );
+            let group = BookGroupRepository::new(conn)
+                .find_by_id(701)?
+                .expect("异机恢复后分组应存在");
+            assert_eq!(group.cover, None, "异机恢复后分组封面应为 null");
+            let records = ReadRecordRepository::new(conn).find_all()?;
+            assert_eq!(records.len(), 1);
+            assert_eq!(
+                records[0].cover_url, None,
+                "异机恢复后阅读记录封面应为 null"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 回修 P2-1] JSON 恢复守卫：本机绝对封面目标存在才保留（covers 路径
+    /// 按本地媒体根 remap），不存在置 null；网络 URL/相对路径原样保留
+    #[test]
+    fn test_json_restore_guards_dangling_cover_paths() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_json_restore_cover_guard");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        fs::create_dir_all(media_root.join("covers")).unwrap();
+        fs::create_dir_all(media_root.join("readRecordCovers")).unwrap();
+        fs::write(media_root.join("covers").join("local.jpg"), b"LOCAL").unwrap();
+        fs::write(
+            media_root.join("readRecordCovers").join("local.jpg"),
+            b"LOCAL-RECORD",
+        )
+        .unwrap();
+        let _media_guard = set_test_media_root(&media_root);
+
+        let json = r#"{
+            "version":5,"backupTime":1,
+            "books":[
+                {"bookUrl":"https://json.example/1","name":"有封面","author":"作者",
+                 "customCoverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/local.jpg"},
+                {"bookUrl":"https://json.example/2","name":"悬空封面","author":"作者",
+                 "customCoverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/gone.jpg"},
+                {"bookUrl":"https://json.example/3","name":"网络封面","author":"作者",
+                 "customCoverUrl":"https://cdn.example/cover.jpg"}
+            ],
+            "bookGroups":[{"groupId":702,"groupName":"悬空分组",
+                "cover":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/gone.png"}],
+            "readRecords":[{"deviceId":"","bookName":"有封面","author":"作者",
+                "readTime":1700000030000,"lastRead":2,
+                "coverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/readRecordCovers/local.jpg"}]
+        }"#;
+        let json_path = dir.join("legacy.json");
+        fs::write(&json_path, json).unwrap();
+
+        backup_restore(json_path.to_str().unwrap()).unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            let with_cover = BookRepository::new(conn)
+                .find_by_url("https://json.example/1")?
+                .expect("有封面书应落库");
+            let cover = with_cover
+                .custom_cover_url
+                .as_deref()
+                .expect("本地目标存在时应保留封面");
+            assert!(
+                Path::new(cover).is_file()
+                    && cover.replace('\\', "/").ends_with("covers/local.jpg"),
+                "应 remap 到本地媒体根的 covers/local.jpg: {cover}"
+            );
+            let dangling = BookRepository::new(conn)
+                .find_by_url("https://json.example/2")?
+                .expect("悬空封面书应落库");
+            assert_eq!(
+                dangling.custom_cover_url, None,
+                "本机不存在的绝对封面路径应置 null"
+            );
+            let network = BookRepository::new(conn)
+                .find_by_url("https://json.example/3")?
+                .expect("网络封面书应落库");
+            assert_eq!(
+                network.custom_cover_url.as_deref(),
+                Some("https://cdn.example/cover.jpg"),
+                "网络封面 URL 必须原样保留"
+            );
+            let group = BookGroupRepository::new(conn)
+                .find_by_id(702)?
+                .expect("分组应落库");
+            assert_eq!(group.cover, None, "悬空的分组封面应置 null");
+            let records = ReadRecordRepository::new(conn).find_all()?;
+            assert_eq!(records.len(), 1);
+            let record_cover = records[0]
+                .cover_url
+                .as_deref()
+                .expect("阅读记录本地封面目标存在时应保留");
+            assert!(
+                Path::new(record_cover).is_file()
+                    && record_cover
+                        .replace('\\', "/")
+                        .ends_with("readRecordCovers/local.jpg"),
+                "阅读记录封面应 remap 到本地媒体根: {record_cover}"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// [批9 兼容] zip 内缺某文件 → 跳过该类，其余照常恢复（对齐原版 fileToListT 缺文件语义）
