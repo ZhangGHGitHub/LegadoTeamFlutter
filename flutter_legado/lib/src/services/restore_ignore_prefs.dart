@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import 'reader_theme_service.dart';
 import 'settings_service.dart';
 
 /// 备份 JSON 中偏好字段名（Flutter 单文件备份扩展，对齐原版 config.xml）
@@ -94,6 +95,12 @@ class RestoreIgnorePrefs {
     // [批37] 阅读器顶栏动作配置（参考版 title_bar_actions/actions）：
     // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤；默认随备份往返。
     PrefKeys.readerTopBarActions,
+    // [批38] 阅读主题库 / 当前主题 id / 网格列数（键名对齐参考版
+    // themeGridColumns）：属阅读界面偏好，随备份 appPrefs 往返；
+    // 勾选「忽略阅读配置」时恢复备份不覆盖本机主题库。
+    ReaderThemeService.themesKey,
+    ReaderThemeService.currentIdKey,
+    ReaderThemeService.gridColumnsKey,
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

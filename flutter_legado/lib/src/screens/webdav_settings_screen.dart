@@ -18,6 +18,7 @@ import '../models/book.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
+import '../providers/reader/reader_theme_notifier.dart';
 import '../providers/reader/reader_top_bar_actions_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
@@ -665,6 +666,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     ref.invalidate(bookshelfNotifierProvider);
     // [批37] 顶栏动作配置随 appPrefs 恢复后重读，避免继续用旧配置
     ref.invalidate(readerTopBarActionsProvider);
+    // [批38] 阅读主题库/当前 id/列数随 appPrefs 恢复后重读
+    ref.invalidate(readerThemeProvider);
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
     setState(() {

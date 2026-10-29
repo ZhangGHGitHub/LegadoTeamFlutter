@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
+import 'package:flutter_legado/src/services/reader_theme_service.dart';
 import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 import 'package:flutter_legado/src/services/settings_service.dart';
 
@@ -263,6 +264,48 @@ void main() {
         'search_content_use_replace',
         'search_content_use_regex',
         'search_content_scope',
+      ]) {
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, {'readConfig': true}),
+          isFalse,
+          reason: '$key 属阅读偏好，应受 readConfig 忽略项覆盖',
+        );
+      }
+    });
+
+    /// [批38] 阅读主题库/当前 id/网格列数随 JSON 备份 appPrefs 往返；
+    /// 勾选「忽略阅读配置」时不覆盖本机主题库。
+    test('阅读主题偏好随备份往返且受 readConfig 忽略项约束', () async {
+      const themesJson = '[{"id":"theme-1","name":"我的主题","style":{}}]';
+      SharedPreferences.setMockInitialValues({
+        ReaderThemeService.themesKey: themesJson,
+        ReaderThemeService.currentIdKey: 'theme-1',
+        ReaderThemeService.gridColumnsKey: 5,
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+      expect(collected[ReaderThemeService.themesKey], themesJson);
+      expect(collected[ReaderThemeService.currentIdKey], 'theme-1');
+      expect(collected[ReaderThemeService.gridColumnsKey], 5);
+
+      // 不忽略 → 备份值恢复
+      SharedPreferences.setMockInitialValues({});
+      await RestoreIgnorePrefs.applyFromBackup(collected, const {});
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(ReaderThemeService.themesKey), themesJson);
+      expect(prefs.getString(ReaderThemeService.currentIdKey), 'theme-1');
+      expect(prefs.getInt(ReaderThemeService.gridColumnsKey), 5);
+
+      // 忽略阅读配置 → 三个键都不恢复
+      SharedPreferences.setMockInitialValues({});
+      await RestoreIgnorePrefs.applyFromBackup(collected, {'readConfig': true});
+      final ignored = await SharedPreferences.getInstance();
+      expect(ignored.getString(ReaderThemeService.themesKey), isNull);
+      expect(ignored.getString(ReaderThemeService.currentIdKey), isNull);
+      expect(ignored.getInt(ReaderThemeService.gridColumnsKey), isNull);
+      for (final key in const [
+        ReaderThemeService.themesKey,
+        ReaderThemeService.currentIdKey,
+        ReaderThemeService.gridColumnsKey,
       ]) {
         expect(
           RestoreIgnorePrefs.keyIsNotIgnore(key, {'readConfig': true}),
