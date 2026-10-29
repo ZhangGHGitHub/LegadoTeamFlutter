@@ -259,3 +259,66 @@
    而非整段拒绝，满足验收要求「禁用或截断」。
 
 编写者：QA（ZCode）｜ 2026-10-29
+
+## 六、回修复验（批36c）：场景 6 系统返回键
+
+> 本节为**修复后的回修复验**追加记录，不改变前述 §二 / §五 的原始验收结论与证据；
+> 场景 6 的 FAIL 判定对应修复前构建（2.0.414/415，源码 `46e7ccba74`）。
+
+### 6.1 修复内容（提交 `80f256bb6b`）
+
+- **根因**：`ExploreScreen` 内容模式 `PopScope` 与 `HomeScreen` 根 `PopScope` 同属
+  一个 `ModalRoute`，系统返回会依次通知两者（`didPop=false`），内层无法消费本次
+  返回 → 内容模式关闭的同时 `_handleBack` 把 Tab 切回书架。
+- **修法**：
+  1. 「内容模式返回 → 回源列表且不切 Tab」上移到 `HomeScreen._handleBack`：
+     当前 Tab=发现且实际展示源内容（`showContent` 为真且选中书源仍在发现源列表，
+     与 `ExploreScreen` 展示条件一致）时消费本次返回并直接 return；
+  2. 移除 `ExploreScreen` 内内容模式 `PopScope`，避免同一路由双重消费。
+- **测试**：新增 `flutter_legado/test/widget/explore_content_back_test.dart`
+  （挂载 `HomeScreen` 宿主），修复前红（返回后底栏索引 1，即切到书架）、修复后绿；
+  覆盖「内容模式返回→源列表，再返回→书架」「源列表模式返回→书架」
+  「内容模式手动切回源列表后返回→书架」三条路径。
+
+### 6.2 门禁
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| Rust FFI | `cargo build -p legado-ffi --features quickjs` | 退出码 0 |
+| 静态分析 | `flutter analyze` | No issues found（13.6s） |
+| 全量测试 | `flutter test` | **3210 passed / 1 skipped**（00:01:28） |
+| 定向测试 | `flutter test test/widget/explore_content_back_test.dart test/widget/explore_source_content_test.dart` | **11 passed**（修复前该新用例红：`Expected: <2> Actual: <1>`） |
+| Android 构建 | `flutter build apk --release` | 退出码 0，188.5MB，sha1 `e82170bc47b2532476479c534da8e98f1eba1b25`（`verify2/logcat/apk_sha1_verify2.txt`） |
+
+- Rust `.so` 复用同日验收构建产物（源码 HEAD 与验收基线一致，本批只改 Dart）；
+  安装后 `dumpsys` 实测 versionName **2.0.414** / versionCode **415**，未改版本号。
+
+### 6.3 设备复验（`192.168.100.62:5555`，21:19~21:24）
+
+注入方式与 §1.3 相同：`seed_batch36.sql` 注入 3 个本地规则书源、宿主
+`mock_server.py`（18080）+ `adb reverse tcp:18080 tcp:18080` 提供发现页数据。
+修复前现场快照：`verify2/db_pre_verify.db`、`verify2/prefs_pre_verify.xml`。
+
+| # | 操作 | 期望 | 实际 | 证据 |
+|---|---|---|---|---|
+| 1 | 发现页进入内容模式（QA36分页源·玄幻·第 1 页） | 内容模式正常展示 | 符合（标题/分类 Tab/第 1 页/书单齐全） | `verify2/shots/02_content_mode.png` |
+| 2 | 内容模式按系统返回（keyevent 4） | 停留发现并回源列表 | **符合**：底栏「发现」保持选中，显示 QA36 三源列表 | `verify2/shots/03_back_to_source_list.png` |
+| 3 | 源列表模式再按返回 | 切回书架 | 符合 | `verify2/shots/04_back_again_bookshelf.png` |
+| 4 | 源列表模式（重新进入发现）按返回 | 切回书架 | 符合 | `verify2/shots/05、06` |
+| 5 | 内容模式手动点顶栏「返回源列表」后再按返回 | 切回书架 | 符合 | `verify2/shots/07、08、09` |
+| 6 | 内容模式返回后的偏好 | `exploreMainContent=false` 落盘 | 符合（`prefs_after_content_back.xml`） | 同名文件 |
+| 7 | 稳定性 | FATAL=0、ANR=0、无自身崩溃记录 | 符合（`logcat_verify2.log` 计数 0；无 `crash_log.txt`） | `verify2/logcat/` |
+
+**结论（仅针对回修复验构建）**：场景 6 由 FAIL 改判 **PASS**——内容模式返回停在
+源列表且不退出发现，再按返回按原两段式逻辑切回书架；源列表模式/手动切回后的
+返回行为不变。
+
+### 6.4 清理
+
+- `am force-stop` 后恢复 `verify2/db_pre_verify.db` 与
+  `verify2/prefs_pre_verify.xml`，删除设备临时文件与 `adb reverse`；
+- 复核（`verify2/logcat/post_cleanup_state_verify2.txt`）：`user_version=117`、
+  `book_sources=1`（`批25口令源`）、`books=0`；偏好与复核前**逐字节一致**
+  （`PREFS_IDENTICAL`）。
+
+编写者：full-stack-engineer（ZCode）｜ 2026-10-29
