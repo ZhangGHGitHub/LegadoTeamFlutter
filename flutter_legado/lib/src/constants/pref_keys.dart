@@ -151,6 +151,15 @@ class PrefKeys {
   /// 阅读菜单亮度竖条位置：left/right（参考仓 brightnessVwPos）
   static const readMenuBrightnessPos = 'readMenuBrightnessVwPos';
 
+  /// 阅读器顶栏动作配置（批37）
+  ///
+  /// 参考版持久化在 SharedPreferences 文件 `title_bar_actions` 的 `actions`
+  /// 键（`ReadButtonConfigDelegate.TITLE_BAR_ACTION_PREFS/KEY`），值格式
+  /// `id,true;id,false`。Flutter 只有单一 prefs 存储，故以
+  /// `文件名.键名` 拼接；随 Flutter JSON 备份 `appPrefs` 往返，并受
+  /// 「忽略阅读配置」约束（RestoreIgnorePrefs.readPrefKeys）。
+  static const readerTopBarActions = 'title_bar_actions.actions';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

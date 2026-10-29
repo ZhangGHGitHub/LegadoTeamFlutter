@@ -91,6 +91,9 @@ class RestoreIgnorePrefs {
     'search_content_use_replace',
     'search_content_use_regex',
     'search_content_scope',
+    // [批37] 阅读器顶栏动作配置（参考版 title_bar_actions/actions）：
+    // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤；默认随备份往返。
+    PrefKeys.readerTopBarActions,
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）
