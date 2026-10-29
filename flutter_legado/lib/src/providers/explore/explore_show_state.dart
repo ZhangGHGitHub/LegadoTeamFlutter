@@ -64,8 +64,17 @@ class ExploreShowState with _$ExploreShowState {
     /// 当前展示页码（对标 Android pageLiveData，0 表示尚未完成首次加载）
     @Default(0) int displayPage,
 
-    /// 是否正在加载
+    /// 是否正在加载（首屏/加载更多/跳页共用，不含加载上一页）
     @Default(false) bool isLoading,
+
+    /// 是否正在加载上一页（顶部下拉触发的独立在途标记）
+    ///
+    /// 与 [isLoading] 分离：加载上一页不推进 [page]，也不改写 [hasMore]，
+    /// 两条链路互斥（任一在途时另一侧直接忽略），失败只写 [previousError]。
+    @Default(false) bool isLoadingPrevious,
+
+    /// 加载上一页失败的错误信息（顶部条内联重试；不占用 [error]）
+    String? previousError,
 
     /// 是否还有更多数据
     @Default(true) bool hasMore,

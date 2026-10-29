@@ -1,7 +1,8 @@
 // ExploreShowNotifier 单元测试
 //
 // 覆盖：args 初始状态/title/fetchBooks 分页/去重/空列表 hasMore/
-// 加载失败/refresh/loadMore/守卫（hasMore=false、categoryUrl 空）
+// 加载失败/refresh/loadMore/守卫（hasMore=false、categoryUrl 空）/
+// 批39 加载上一页（prepend、page=1 不触发、防重入、失败重试、与跳页互斥）
 //
 // 注意：exploreShowNotifierProvider 为 autoDispose family，
 // 必须用 container.listen 维持订阅，否则 read 后实例立即被销毁。
@@ -339,6 +340,231 @@ void main() {
       // 互斥验证：本次完成的是第 2 页（未被跳页请求打断）
       expect(readState(pagedArgs).displayPage, equals(2));
       expect(readState(pagedArgs).books.length, equals(4));
+    });
+  });
+
+  group('ExploreShowNotifier 加载上一页（批39）', () {
+    test('page=2 顶部下拉加载 page1 并 prepend，页号同步且游标不回退', () async {
+      var page1Calls = 0;
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 1) {
+          page1Calls++;
+          // 第二次请求第 1 页：榜单变化，多出一本新书（触发 prepend）
+          return page1Calls == 1
+              ? makeBooks(2, startId: 1)
+              : <SearchBook>[
+                  const SearchBook(
+                    bookUrl: 'http://book.com/0',
+                    name: '书籍0',
+                    author: '作者0',
+                  ),
+                  ...makeBooks(2, startId: 1),
+                ];
+        }
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn();
+      await pumpInit();
+      expect(readState().displayPage, equals(1));
+
+      // 加载第 2 页 → displayPage=2，下一页游标=3
+      await readNotifier().loadMore();
+      expect(readState().displayPage, equals(2));
+      expect(readState().page, equals(3));
+      expect(readState().books.length, equals(4));
+
+      await readNotifier().loadPreviousPage();
+
+      // 新页 prepend 到表头，页号回退到 1
+      expect(readState().displayPage, equals(1));
+      expect(readState().books.length, equals(5));
+      expect(readState().books.first.name, equals('书籍0'));
+      expect(readState().books[1].name, equals('书籍1'));
+      // 游标与 hasMore 不受上一页影响（仍可继续向下加载第 3 页）
+      expect(readState().page, equals(3));
+      expect(readState().hasMore, isTrue);
+      expect(readState().isLoadingPrevious, isFalse);
+      expect(readState().previousError, isNull);
+    });
+
+    test('page=1 时不加载上一页（不发请求）', () async {
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((_) async => makeBooks(2));
+      spawn();
+      await pumpInit();
+      clearInteractions(mockApi);
+
+      await readNotifier().loadPreviousPage();
+
+      expect(readState().displayPage, equals(1));
+      expect(readState().isLoadingPrevious, isFalse);
+      verifyNever(() => mockApi.exploreFetchBooks(any(), any(), any()));
+    });
+
+    test('加载中防重入：在途时重复请求被忽略', () async {
+      final gate = Completer<List<SearchBook>>();
+      var calls = 0;
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        calls++;
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 1 && calls > 2) {
+          // 第 3 次调用 = 加载上一页（首屏 + 加载更多之后）
+          return gate.future;
+        }
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn();
+      await pumpInit();
+      await readNotifier().loadMore();
+      expect(readState().displayPage, equals(2));
+      expect(calls, equals(2));
+
+      final first = readNotifier().loadPreviousPage();
+      await pumpEventQueue();
+      expect(readState().isLoadingPrevious, isTrue);
+
+      // 在途期间再次触发：直接忽略
+      await readNotifier().loadPreviousPage();
+      expect(calls, equals(3));
+
+      gate.complete([
+        const SearchBook(
+          bookUrl: 'http://book.com/0',
+          name: '书籍0',
+          author: '作者0',
+        ),
+      ]);
+      await first;
+      expect(readState().isLoadingPrevious, isFalse);
+      expect(readState().displayPage, equals(1));
+      expect(readState().books.first.name, equals('书籍0'));
+    });
+
+    test('失败显示 previousError，重试成功后恢复', () async {
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        if (page != 1) return makeBooks(2, startId: page * 10);
+        throw Exception('上一页网络错误');
+      });
+
+      spawn();
+      await pumpInit();
+      // 首屏失败：displayPage 仍为 0（未成功加载任何页）
+      expect(readState().displayPage, equals(0));
+      expect(readState().error, contains('上一页网络错误'));
+
+      // 首屏失败后列表为空，先按首屏重试恢复第 1 页
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        return makeBooks(2, startId: page * 10);
+      });
+      await readNotifier().retry();
+      expect(readState().displayPage, equals(1));
+      expect(readState().books.length, equals(2));
+
+      // 加载第 2 页 → displayPage=2
+      await readNotifier().loadMore();
+      expect(readState().displayPage, equals(2));
+
+      // 第 1 页请求失败 → previousError，页号保持 2
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenThrow(Exception('上一页网络错误'));
+      await readNotifier().loadPreviousPage();
+      expect(readState().previousError, contains('上一页网络错误'));
+      expect(readState().displayPage, equals(2));
+      expect(readState().isLoadingPrevious, isFalse);
+
+      // 重试成功：清空 previousError 并 prepend 上一页
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 1) {
+          return <SearchBook>[
+            const SearchBook(
+              bookUrl: 'http://book.com/0',
+              name: '书籍0',
+              author: '作者0',
+            ),
+          ];
+        }
+        return makeBooks(2, startId: page * 10);
+      });
+      await readNotifier().retryPreviousPage();
+
+      expect(readState().previousError, isNull);
+      expect(readState().displayPage, equals(1));
+      expect(readState().books.first.name, equals('书籍0'));
+    });
+
+    test('与跳页互斥：上一页在途时跳页被忽略', () async {
+      final gate = Completer<List<SearchBook>>();
+      var calls = 0;
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        calls++;
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 1 && calls > 2) return gate.future;
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn(pagedArgs);
+      await pumpInit();
+      await readNotifier(pagedArgs).loadMore();
+      expect(readState(pagedArgs).displayPage, equals(2));
+      expect(calls, equals(2));
+
+      final prev = readNotifier(pagedArgs).loadPreviousPage();
+      await pumpEventQueue();
+      expect(readState(pagedArgs).isLoadingPrevious, isTrue);
+
+      await readNotifier(pagedArgs).skipToPage(5);
+      // 跳页未发起新请求，列表与页号仍由上一页请求决定
+      expect(calls, equals(3));
+      expect(readState(pagedArgs).displayPage, equals(2));
+
+      gate.complete([
+        const SearchBook(
+          bookUrl: 'http://book.com/0',
+          name: '书籍0',
+          author: '作者0',
+        ),
+      ]);
+      await prev;
+      expect(readState(pagedArgs).displayPage, equals(1));
+      expect(readState(pagedArgs).books.first.name, equals('书籍0'));
+    });
+
+    test('与加载更多互斥：加载更多在途时上一页被忽略', () async {
+      final gate = Completer<List<SearchBook>>();
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 2) return gate.future;
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn(pagedArgs);
+      await pumpInit();
+      expect(readState(pagedArgs).displayPage, equals(1));
+
+      final more = readNotifier(pagedArgs).loadMore();
+      await pumpEventQueue();
+      expect(readState(pagedArgs).isLoading, isTrue);
+
+      // 上一页请求被忽略（displayPage 仍为 1，也不进入 isLoadingPrevious）
+      await readNotifier(pagedArgs).loadPreviousPage();
+      expect(readState(pagedArgs).isLoadingPrevious, isFalse);
+
+      gate.complete(makeBooks(2, startId: 20));
+      await more;
+      expect(readState(pagedArgs).displayPage, equals(2));
     });
   });
 }

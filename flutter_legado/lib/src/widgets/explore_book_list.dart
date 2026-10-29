@@ -5,7 +5,6 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -125,10 +124,23 @@ class ExploreBookList extends ConsumerStatefulWidget {
 
 class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   final _scrollController = ScrollController();
-  bool _loadingPrevious = false;
+
+  /// 顶部下拉累计过冲量（达到阈值触发加载上一页）
+  double _topOverscroll = 0;
+
+  /// 触发加载上一页的过冲阈值（逻辑像素）：避免轻触/回弹误触
+  static const double _previousPageOverscrollTrigger = 24;
 
   /// 网格行高（封面 + 文本，最近一次布局推导）；用于上一页滚动补偿
   double _gridRowExtent = 0;
+
+  /// 书籍卡片渲染键（去重键 → GlobalKey）：顶部下拉加载上一页后按
+  /// 「首可见项 + 相对偏移」恢复滚动位置（对齐原版 upData 的
+  /// firstVisibleItemPosition/offset 锚点）
+  final Map<String, GlobalKey> _itemKeys = {};
+
+  /// 渲染键缓存上限（超出后清空重建，避免长列表无限增长）
+  static const int _itemKeyCacheLimit = 600;
 
   @override
   void initState() {
@@ -147,38 +159,144 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - 200) {
       ref.read(exploreShowNotifierProvider(widget.args).notifier).loadMore();
-    } else if (position.pixels <= position.minScrollExtent + 40 &&
-        position.userScrollDirection == ScrollDirection.reverse) {
-      _tryLoadPreviousPage();
     }
   }
 
+  /// 滚动通知：在列表顶部继续下拉（overscroll）后松手加载上一页
+  ///
+  /// 对齐原版 RecyclerView `!canScrollVertically(-1) && dy < 0` 的触发语义，
+  /// 但把触发点定在 [ScrollEndNotification]（松手/回弹后）：若在拖动中段就
+  /// 改写列表并跳转锚点，会和用户仍在进行的手势抢滚动位置。
+  /// page = 1（[ExploreShowState.displayPage] <= 1）时不触发，下拉刷新保持原行为。
+  bool _onScrollNotification(ScrollNotification notification) {
+    // 只处理列表自身的滚动（忽略嵌套滚动如横向标签条）
+    if (notification.depth != 0) return false;
+    if (notification is ScrollEndNotification) {
+      final pulled = _topOverscroll;
+      _topOverscroll = 0;
+      if (pulled >= _previousPageOverscrollTrigger) {
+        _tryLoadPreviousPage();
+      }
+      return false;
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.metrics.extentBefore > 0) {
+      _topOverscroll = 0;
+      return false;
+    }
+    if (notification is OverscrollNotification &&
+        notification.overscroll < 0 &&
+        notification.metrics.extentBefore <= 0) {
+      _topOverscroll += -notification.overscroll;
+    }
+    return false;
+  }
+
+  /// 触发加载上一页（失败时由顶部条内联重试）
+  ///
+  /// 加载前记录锚点（首可见书 + 相对偏移），完成后先按估值补偿让锚点项
+  /// 进入构建范围，再在下一帧按真实布局校正，保证视觉位置不跳。
   Future<void> _tryLoadPreviousPage() async {
     final state = ref.read(exploreShowNotifierProvider(widget.args));
-    if (_loadingPrevious || state.isLoading || state.displayPage <= 1) return;
-    _loadingPrevious = true;
-    final prevCount = state.books.length;
+    if (state.displayPage <= 1 ||
+        state.isLoading ||
+        state.isLoadingPrevious) {
+      return;
+    }
+    final anchor = _captureAnchor();
+    final countBefore = state.books.length;
     await ref
         .read(exploreShowNotifierProvider(widget.args).notifier)
         .loadPreviousPage();
     if (!mounted) return;
-    _loadingPrevious = false;
-    final newCount =
-        ref.read(exploreShowNotifierProvider(widget.args)).books.length;
-    final added = newCount - prevCount;
-    if (added > 0 && _scrollController.hasClients) {
-      _scrollController.jumpTo(
-        _scrollController.offset + _previousPageShift(added),
-      );
+    final next = ref.read(exploreShowNotifierProvider(widget.args));
+    if (next.books.length <= countBefore) return; // 失败或整页重复：保持原位
+    if (anchor != null) {
+      await _restoreAnchor(anchor, next.books.length - countBefore);
     }
   }
 
-  /// 加载上一页后的滚动补偿（详见 [explorePreviousPageShift]）
-  double _previousPageShift(int added) => explorePreviousPageShift(
-    addedCount: added,
-    gridCount: widget.gridCount,
-    gridRowExtent: _gridRowExtent,
-  );
+  /// 顶部条点击重试（失败态）
+  Future<void> _retryPreviousPage() async {
+    final state = ref.read(exploreShowNotifierProvider(widget.args));
+    if (state.isLoadingPrevious || state.isLoading) return;
+    final anchor = _captureAnchor();
+    final countBefore = state.books.length;
+    await ref
+        .read(exploreShowNotifierProvider(widget.args).notifier)
+        .retryPreviousPage();
+    if (!mounted) return;
+    final next = ref.read(exploreShowNotifierProvider(widget.args));
+    if (next.books.length <= countBefore) return;
+    if (anchor != null) {
+      await _restoreAnchor(anchor, next.books.length - countBefore);
+    }
+  }
+
+  /// 记录当前首个可见书籍卡片的去重键与相对偏移
+  _PreviousPageAnchor? _captureAnchor() {
+    final ancestor = context.findRenderObject();
+    if (ancestor is! RenderBox || !ancestor.hasSize) return null;
+    _PreviousPageAnchor? best;
+    for (final entry in _itemKeys.entries) {
+      final itemContext = entry.value.currentContext;
+      if (itemContext == null) continue;
+      final box = itemContext.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final dy = box.localToGlobal(Offset.zero, ancestor: ancestor).dy;
+      // 完全滚出视口上方的不作为锚点
+      if (dy + box.size.height <= 0) continue;
+      if (best == null || dy < best.dy) {
+        best = _PreviousPageAnchor(bookKey: entry.key, dy: dy);
+      }
+    }
+    return best;
+  }
+
+  /// 恢复锚点：先按新增条目估值补偿，再在下一帧按真实布局校正
+  Future<void> _restoreAnchor(_PreviousPageAnchor anchor, int addedCount) async {
+    if (!_scrollController.hasClients || addedCount <= 0) return;
+    final position = _scrollController.position;
+    final approx = explorePreviousPageShift(
+      addedCount: addedCount,
+      gridCount: widget.gridCount,
+      gridRowExtent: _gridRowExtent,
+    );
+    if (approx > 0) {
+      _scrollController.jumpTo(
+        (position.pixels + approx)
+            .clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
+    }
+    // 等新布局完成后再按锚点真实位置校正（估值与真实行高有偏差）
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    _correctAnchor(anchor);
+  }
+
+  /// 按锚点项当前真实位置与触发时偏移的差值精确校正滚动位置
+  void _correctAnchor(_PreviousPageAnchor anchor) {
+    if (!_scrollController.hasClients) return;
+    final itemContext = _itemKeys[anchor.bookKey]?.currentContext;
+    final ancestor = context.findRenderObject();
+    if (itemContext == null || ancestor is! RenderBox) return;
+    final box = itemContext.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return;
+    final dy = box.localToGlobal(Offset.zero, ancestor: ancestor).dy;
+    final delta = dy - anchor.dy;
+    if (delta.abs() < 0.5) return;
+    final position = _scrollController.position;
+    _scrollController.jumpTo(
+      (position.pixels + delta)
+          .clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+  }
+
+  /// 取（或创建）书籍卡片渲染键
+  Key _itemKey(String dedupeKey) {
+    if (_itemKeys.length >= _itemKeyCacheLimit) _itemKeys.clear();
+    return _itemKeys.putIfAbsent(dedupeKey, GlobalKey.new);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -251,43 +369,55 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       children: [
         TopNetworkLoadingBar(isLoading: state.isLoading && state.books.isNotEmpty),
         Expanded(
-          child: CustomRefreshIndicator(
-            onRefresh: () =>
-                ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
-            child: ListView.separated(
-              controller: _scrollController,
-              padding: widget.padding,
-              itemCount: visibleBooks.length + 2,
-              separatorBuilder: (context, index) {
-                if (index == 0 || index >= state.books.length) {
-                  return const SizedBox.shrink();
-                }
-                return Divider(
-                  height: 1,
-                  indent: 73,
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.55),
-                );
-              },
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return _buildLoadPreviousIndicator(state, colorScheme);
-                }
-                if (index == visibleBooks.length + 1) {
-                  return _buildLoadMoreIndicator(args, state, colorScheme);
-                }
+          // 顶部下拉手势：page > 1 时加载上一页；page = 1 时保留下拉刷新
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onScrollNotification,
+            child: CustomRefreshIndicator(
+              // 与加载上一页互斥：顶栏有上一页可用时，顶部下拉归「加载上一页」
+              enabled: state.displayPage <= 1,
+              onRefresh: () =>
+                  ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+              child: ListView.separated(
+                controller: _scrollController,
+                // 内容不足一屏时也允许下拉（刷新/加载上一页手势）
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: widget.padding,
+                itemCount: visibleBooks.length + 2,
+                separatorBuilder: (context, index) {
+                  if (index == 0 || index >= state.books.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Divider(
+                    height: 1,
+                    indent: 73,
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.55),
+                  );
+                },
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _buildLoadPreviousIndicator(
+                      state,
+                      colorScheme,
+                      onRetry: _retryPreviousPage,
+                    );
+                  }
+                  if (index == visibleBooks.length + 1) {
+                    return _buildLoadMoreIndicator(args, state, colorScheme);
+                  }
 
-                final book = visibleBooks[index - 1];
-                final dedupeKey =
-                    exploreBookDedupeKey(book, listIndex: index - 1);
-                return RepaintBoundary(
-                  child: _BookItem(
-                    key: ValueKey(dedupeKey),
-                    book: book,
-                    compact: widget.compact,
-                    onTap: () => _showBookInfo(book),
-                  ),
-                );
-              },
+                  final book = visibleBooks[index - 1];
+                  final dedupeKey =
+                      exploreBookDedupeKey(book, listIndex: index - 1);
+                  return RepaintBoundary(
+                    key: _itemKey(dedupeKey),
+                    child: _BookItem(
+                      book: book,
+                      compact: widget.compact,
+                      onTap: () => _showBookInfo(book),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -296,7 +426,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   }
 
   /// 网格形态列表（对齐参考版 LazyVerticalGrid：固定列数 + 上滑加载更多 +
-  /// 顶部「上滑加载上一页」提示；下拉刷新/错误重试链路与列表形态一致）
+  /// 顶部条（page > 1 时下拉加载上一页）；下拉刷新/错误重试链路与列表形态一致）
   Widget _buildGridBody(
     ExploreShowArgs args,
     ExploreShowState state,
@@ -311,85 +441,100 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
           isLoading: state.isLoading && state.books.isNotEmpty,
         ),
         Expanded(
-          child: CustomRefreshIndicator(
-            onRefresh: () =>
-                ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
-            // 按可用宽度推导网格单元尺寸：封面保持 3:4 等比，
-            // 文本区高度随字体缩放自适应（避免固定 childAspectRatio 在
-            // 大列数/大字号下压扁封面或溢出）
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final crossAxisCount = columns.clamp(1, 10);
-                const crossSpacing = 8.0;
-                const mainSpacing = 12.0;
-                // 网格自带水平页边距（列表形态的行内边距在行组件内部）
-                final horizontalPadding = widget.padding.horizontal > 0
-                    ? widget.padding.horizontal
-                    : 16.0;
-                final contentWidth =
-                    constraints.maxWidth - horizontalPadding * 2;
-                final itemWidth = contentWidth > 0
-                    ? (contentWidth -
-                              crossSpacing * (crossAxisCount - 1)) /
-                          crossAxisCount
-                    : 0.0;
-                final textScaler = MediaQuery.textScalerOf(context);
-                final textBlockHeight = textScaler.scale(14) * 1.25 * 2 + 6;
-                final rowExtent = itemWidth > 0
-                    ? itemWidth * 4 / 3 + textBlockHeight + 6
-                    : 120.0;
-                _gridRowExtent = rowExtent;
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onScrollNotification,
+            child: CustomRefreshIndicator(
+              // 与加载上一页互斥（同列表形态）
+              enabled: state.displayPage <= 1,
+              onRefresh: () =>
+                  ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+              // 按可用宽度推导网格单元尺寸：封面保持 3:4 等比，
+              // 文本区高度随字体缩放自适应（避免固定 childAspectRatio 在
+              // 大列数/大字号下压扁封面或溢出）
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final crossAxisCount = columns.clamp(1, 10);
+                  const crossSpacing = 8.0;
+                  const mainSpacing = 12.0;
+                  // 网格自带水平页边距（列表形态的行内边距在行组件内部）
+                  final horizontalPadding = widget.padding.horizontal > 0
+                      ? widget.padding.horizontal
+                      : 16.0;
+                  final contentWidth =
+                      constraints.maxWidth - horizontalPadding * 2;
+                  final itemWidth = contentWidth > 0
+                      ? (contentWidth -
+                                crossSpacing * (crossAxisCount - 1)) /
+                            crossAxisCount
+                      : 0.0;
+                  final textScaler = MediaQuery.textScalerOf(context);
+                  final textBlockHeight = textScaler.scale(14) * 1.25 * 2 + 6;
+                  final rowExtent = itemWidth > 0
+                      ? itemWidth * 4 / 3 + textBlockHeight + 6
+                      : 120.0;
+                  _gridRowExtent = rowExtent;
 
-                return CustomScrollView(
-                  controller: _scrollController,
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: SizedBox(height: widget.padding.top),
-                    ),
-                    if (state.displayPage > 1)
+                  return CustomScrollView(
+                    controller: _scrollController,
+                    // 内容不足一屏时也允许下拉（刷新/加载上一页手势）
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
                       SliverToBoxAdapter(
-                        child: _buildLoadPreviousIndicator(state, colorScheme),
+                        child: SizedBox(height: widget.padding.top),
                       ),
-                    SliverPadding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: horizontalPadding,
-                      ),
-                      sliver: SliverGrid(
-                        gridDelegate:
-                            SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: crossSpacing,
-                              mainAxisSpacing: mainSpacing,
-                              mainAxisExtent: rowExtent,
-                            ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final book = visibleBooks[index];
-                            final dedupeKey = exploreBookDedupeKey(
-                              book,
-                              listIndex: index,
-                            );
-                            return RepaintBoundary(
-                              child: _BookGridItem(
-                                key: ValueKey(dedupeKey),
-                                book: book,
-                                onTap: () => _showBookInfo(book),
+                      if (state.displayPage > 1)
+                        SliverToBoxAdapter(
+                          child: _buildLoadPreviousIndicator(
+                            state,
+                            colorScheme,
+                            onRetry: _retryPreviousPage,
+                          ),
+                        ),
+                      SliverPadding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: horizontalPadding,
+                        ),
+                        sliver: SliverGrid(
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: crossSpacing,
+                                mainAxisSpacing: mainSpacing,
+                                mainAxisExtent: rowExtent,
                               ),
-                            );
-                          },
-                          childCount: visibleBooks.length,
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final book = visibleBooks[index];
+                              final dedupeKey = exploreBookDedupeKey(
+                                book,
+                                listIndex: index,
+                              );
+                              return RepaintBoundary(
+                                key: _itemKey(dedupeKey),
+                                child: _BookGridItem(
+                                  book: book,
+                                  onTap: () => _showBookInfo(book),
+                                ),
+                              );
+                            },
+                            childCount: visibleBooks.length,
+                          ),
                         ),
                       ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _buildLoadMoreIndicator(args, state, colorScheme),
-                    ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(height: widget.padding.bottom),
-                    ),
-                  ],
-                );
-              },
+                      SliverToBoxAdapter(
+                        child: _buildLoadMoreIndicator(
+                          args,
+                          state,
+                          colorScheme,
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(height: widget.padding.bottom),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -397,15 +542,22 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     );
   }
 
+  /// 顶部「加载上一页」条（page > 1 才显示）
+  ///
+  /// - 加载中：转圈（对齐原版顶部 LoadMoreView.startLoad）
+  /// - 失败：内联错误 + 点击重试（对齐原版 errorTopLiveData → loadMoreViewTop.error）
+  /// - 就绪：下拉提示（原版该条无文字，仅作为顶部手势入口的视觉提示）
   Widget _buildLoadPreviousIndicator(
     ExploreShowState state,
-    ColorScheme colorScheme,
-  ) {
+    ColorScheme colorScheme, {
+    required Future<void> Function() onRetry,
+  }) {
     if (state.displayPage <= 1) {
       return const SizedBox(height: 8);
     }
-    if (state.isLoading && state.books.isNotEmpty) {
+    if (state.isLoadingPrevious) {
       return Padding(
+        key: const ValueKey('explore-load-previous-loading'),
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Center(
           child: SizedBox(
@@ -419,11 +571,25 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
         ),
       );
     }
+    if (state.previousError != null) {
+      return Padding(
+        key: const ValueKey('explore-load-previous-error'),
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(
+          child: TextButton(
+            style: TextButton.styleFrom(foregroundColor: colorScheme.onSurface),
+            onPressed: onRetry,
+            child: const Text('上一页加载失败，点击重试'),
+          ),
+        ),
+      );
+    }
     return Padding(
+      key: const ValueKey('explore-load-previous-hint'),
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Center(
         child: Text(
-          '上滑加载上一页',
+          '下拉加载上一页',
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -481,6 +647,18 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   }
 }
 
+/// 加载上一页前的滚动锚点（对齐原版 upData：
+/// `findFirstVisibleItemPosition` + `findViewByPosition(...).top`）
+class _PreviousPageAnchor {
+  const _PreviousPageAnchor({required this.bookKey, required this.dy});
+
+  /// 首可见书籍卡片的去重键（[exploreBookDedupeKey]）
+  final String bookKey;
+
+  /// 锚点卡片顶边相对列表区域的像素偏移（触发加载时的值）
+  final double dy;
+}
+
 /// 加载上一页后的滚动补偿距离
 ///
 /// 列表形态沿用既有估值（单行 76dp）；网格按「新增行数 ×（行高 + 行间距）」
@@ -506,7 +684,6 @@ class _BookItem extends ConsumerWidget {
   final bool compact;
 
   const _BookItem({
-    super.key,
     required this.book,
     required this.onTap,
     this.compact = false,
@@ -670,7 +847,6 @@ class _BookGridItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _BookGridItem({
-    super.key,
     required this.book,
     required this.onTap,
   });

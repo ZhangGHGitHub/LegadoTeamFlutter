@@ -39,8 +39,10 @@ class ExplorePageControl extends ConsumerWidget {
     return TextButton(
       key: const ValueKey('explore-page-control'),
       // 加载中不再静默禁用按钮：点击明确提示，避免「点了没反应」
+      // （加载上一页在途时同样互斥，跳页会改写整表）
       onPressed: () {
-        if (ref.read(exploreShowNotifierProvider(args)).isLoading) {
+        final current = ref.read(exploreShowNotifierProvider(args));
+        if (current.isLoading || current.isLoadingPrevious) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('正在加载，请加载完成后再跳页'),

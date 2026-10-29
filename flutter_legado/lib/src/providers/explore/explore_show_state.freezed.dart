@@ -34,8 +34,17 @@ mixin _$ExploreShowState {
   /// 当前展示页码（对标 Android pageLiveData，0 表示尚未完成首次加载）
   int get displayPage => throw _privateConstructorUsedError;
 
-  /// 是否正在加载
+  /// 是否正在加载（首屏/加载更多/跳页共用，不含加载上一页）
   bool get isLoading => throw _privateConstructorUsedError;
+
+  /// 是否正在加载上一页（顶部下拉触发的独立在途标记）
+  ///
+  /// 与 [isLoading] 分离：加载上一页不推进 [page]，也不改写 [hasMore]，
+  /// 两条链路互斥（任一在途时另一侧直接忽略），失败只写 [previousError]。
+  bool get isLoadingPrevious => throw _privateConstructorUsedError;
+
+  /// 加载上一页失败的错误信息（顶部条内联重试；不占用 [error]）
+  String? get previousError => throw _privateConstructorUsedError;
 
   /// 是否还有更多数据
   bool get hasMore => throw _privateConstructorUsedError;
@@ -62,6 +71,8 @@ abstract class $ExploreShowStateCopyWith<$Res> {
       int page,
       int displayPage,
       bool isLoading,
+      bool isLoadingPrevious,
+      String? previousError,
       bool hasMore,
       String? error});
 
@@ -88,6 +99,8 @@ class _$ExploreShowStateCopyWithImpl<$Res, $Val extends ExploreShowState>
     Object? page = null,
     Object? displayPage = null,
     Object? isLoading = null,
+    Object? isLoadingPrevious = null,
+    Object? previousError = freezed,
     Object? hasMore = null,
     Object? error = freezed,
   }) {
@@ -120,6 +133,14 @@ class _$ExploreShowStateCopyWithImpl<$Res, $Val extends ExploreShowState>
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
               as bool,
+      isLoadingPrevious: null == isLoadingPrevious
+          ? _value.isLoadingPrevious
+          : isLoadingPrevious // ignore: cast_nullable_to_non_nullable
+              as bool,
+      previousError: freezed == previousError
+          ? _value.previousError
+          : previousError // ignore: cast_nullable_to_non_nullable
+              as String?,
       hasMore: null == hasMore
           ? _value.hasMore
           : hasMore // ignore: cast_nullable_to_non_nullable
@@ -160,6 +181,8 @@ abstract class _$$ExploreShowStateImplCopyWith<$Res>
       int page,
       int displayPage,
       bool isLoading,
+      bool isLoadingPrevious,
+      String? previousError,
       bool hasMore,
       String? error});
 
@@ -185,6 +208,8 @@ class __$$ExploreShowStateImplCopyWithImpl<$Res>
     Object? page = null,
     Object? displayPage = null,
     Object? isLoading = null,
+    Object? isLoadingPrevious = null,
+    Object? previousError = freezed,
     Object? hasMore = null,
     Object? error = freezed,
   }) {
@@ -217,6 +242,14 @@ class __$$ExploreShowStateImplCopyWithImpl<$Res>
           ? _value.isLoading
           : isLoading // ignore: cast_nullable_to_non_nullable
               as bool,
+      isLoadingPrevious: null == isLoadingPrevious
+          ? _value.isLoadingPrevious
+          : isLoadingPrevious // ignore: cast_nullable_to_non_nullable
+              as bool,
+      previousError: freezed == previousError
+          ? _value.previousError
+          : previousError // ignore: cast_nullable_to_non_nullable
+              as String?,
       hasMore: null == hasMore
           ? _value.hasMore
           : hasMore // ignore: cast_nullable_to_non_nullable
@@ -240,6 +273,8 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
       this.page = 1,
       this.displayPage = 0,
       this.isLoading = false,
+      this.isLoadingPrevious = false,
+      this.previousError,
       this.hasMore = true,
       this.error})
       : _books = books;
@@ -280,10 +315,22 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
   @JsonKey()
   final int displayPage;
 
-  /// 是否正在加载
+  /// 是否正在加载（首屏/加载更多/跳页共用，不含加载上一页）
   @override
   @JsonKey()
   final bool isLoading;
+
+  /// 是否正在加载上一页（顶部下拉触发的独立在途标记）
+  ///
+  /// 与 [isLoading] 分离：加载上一页不推进 [page]，也不改写 [hasMore]，
+  /// 两条链路互斥（任一在途时另一侧直接忽略），失败只写 [previousError]。
+  @override
+  @JsonKey()
+  final bool isLoadingPrevious;
+
+  /// 加载上一页失败的错误信息（顶部条内联重试；不占用 [error]）
+  @override
+  final String? previousError;
 
   /// 是否还有更多数据
   @override
@@ -296,7 +343,7 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
 
   @override
   String toString() {
-    return 'ExploreShowState(source: $source, categoryName: $categoryName, categoryUrl: $categoryUrl, books: $books, page: $page, displayPage: $displayPage, isLoading: $isLoading, hasMore: $hasMore, error: $error)';
+    return 'ExploreShowState(source: $source, categoryName: $categoryName, categoryUrl: $categoryUrl, books: $books, page: $page, displayPage: $displayPage, isLoading: $isLoading, isLoadingPrevious: $isLoadingPrevious, previousError: $previousError, hasMore: $hasMore, error: $error)';
   }
 
   @override
@@ -315,6 +362,10 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
                 other.displayPage == displayPage) &&
             (identical(other.isLoading, isLoading) ||
                 other.isLoading == isLoading) &&
+            (identical(other.isLoadingPrevious, isLoadingPrevious) ||
+                other.isLoadingPrevious == isLoadingPrevious) &&
+            (identical(other.previousError, previousError) ||
+                other.previousError == previousError) &&
             (identical(other.hasMore, hasMore) || other.hasMore == hasMore) &&
             (identical(other.error, error) || other.error == error));
   }
@@ -329,6 +380,8 @@ class _$ExploreShowStateImpl implements _ExploreShowState {
       page,
       displayPage,
       isLoading,
+      isLoadingPrevious,
+      previousError,
       hasMore,
       error);
 
@@ -349,6 +402,8 @@ abstract class _ExploreShowState implements ExploreShowState {
       final int page,
       final int displayPage,
       final bool isLoading,
+      final bool isLoadingPrevious,
+      final String? previousError,
       final bool hasMore,
       final String? error}) = _$ExploreShowStateImpl;
 
@@ -378,8 +433,19 @@ abstract class _ExploreShowState implements ExploreShowState {
   int get displayPage;
   @override
 
-  /// 是否正在加载
+  /// 是否正在加载（首屏/加载更多/跳页共用，不含加载上一页）
   bool get isLoading;
+  @override
+
+  /// 是否正在加载上一页（顶部下拉触发的独立在途标记）
+  ///
+  /// 与 [isLoading] 分离：加载上一页不推进 [page]，也不改写 [hasMore]，
+  /// 两条链路互斥（任一在途时另一侧直接忽略），失败只写 [previousError]。
+  bool get isLoadingPrevious;
+  @override
+
+  /// 加载上一页失败的错误信息（顶部条内联重试；不占用 [error]）
+  String? get previousError;
   @override
 
   /// 是否还有更多数据

@@ -34,10 +34,10 @@ class ExploreShowNotifier
 
   /// 抓取当前 [state.page] 页书籍（对标 Android ExploreShowViewModel.explore）
   ///
-  /// [prepend] 为 true 时将新页插入列表头部（上滑加载上一页）；
-  /// [replace] 为 true 时替换整表（跳页后首次加载）。
-  Future<void> fetchBooks({bool prepend = false, bool replace = false}) async {
-    if (state.isLoading || !state.hasMore) return;
+  /// [replace] 为 true 时替换整表（跳页/刷新后首次加载）；否则追加到表尾并
+  /// 推进页码。加载上一页走独立的 [loadPreviousPage]（prepend 合并）。
+  Future<void> fetchBooks({bool replace = false}) async {
+    if (state.isLoading || state.isLoadingPrevious || !state.hasMore) return;
     final source = state.source;
     if (source == null || state.categoryUrl.isEmpty) return;
 
@@ -55,7 +55,7 @@ class ExploreShowNotifier
       final merged = _mergeBooks(
         state.books,
         newBooks,
-        prepend: prepend,
+        prepend: false,
         replace: replace,
       );
 
@@ -80,12 +80,58 @@ class ExploreShowNotifier
     }
   }
 
-  /// 加载指定上一页（对标 Android scrollToTop → explore(oldPage)）
+  /// 加载上一页（对齐 Android ExploreShowActivity.scrollToTop
+  /// → `viewModel.explore(oldPage - 1)`）
+  ///
+  /// 与 [fetchBooks] 的增量路径完全分离：
+  /// - 页码取 [ExploreShowState.displayPage] - 1（顶部页号），
+  ///   成功后把新页 prepend 到表头并只回写 [ExploreShowState.displayPage]；
+  /// - [ExploreShowState.page]（下一待抓取页）与
+  ///   [ExploreShowState.hasMore] 保持不变，避免倒灌脏加载更多游标；
+  /// - 与首屏/加载更多/跳页互斥（[ExploreShowState.isLoading] 或本方法在途
+  ///   时直接忽略）；失败只写 [ExploreShowState.previousError]，顶部条内联重试。
   Future<void> loadPreviousPage() async {
-    if (state.isLoading || state.displayPage <= 1) return;
+    if (state.isLoading || state.isLoadingPrevious) return;
+    if (state.displayPage <= 1) return;
+    final source = state.source;
+    if (source == null || state.categoryUrl.isEmpty) return;
+
     final prevPage = state.displayPage - 1;
-    state = state.copyWith(page: prevPage, hasMore: true, error: null);
-    await fetchBooks(prepend: true);
+    state = state.copyWith(isLoadingPrevious: true, previousError: null);
+    try {
+      final api = ref.read(bookApiProvider);
+      final newBooks = await api.exploreFetchBooks(
+        jsonEncode(source.toJson()),
+        state.categoryUrl,
+        prevPage,
+      );
+      final merged = _mergeBooks(
+        state.books,
+        newBooks,
+        prepend: true,
+        replace: false,
+      );
+      state = state.copyWith(
+        books: merged,
+        isLoadingPrevious: false,
+        // 对齐原版 pageLiveData.value = request.page：顶部页号同步为已加载页
+        displayPage: prevPage,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoadingPrevious: false,
+        previousError: _mapError(e),
+      );
+    }
+  }
+
+  /// 加载上一页失败后的顶部条重试
+  Future<void> retryPreviousPage() async {
+    if (state.previousError == null && !state.isLoadingPrevious) {
+      // 无失败记录时按普通加载上一页处理（顶部条点击兜底）
+      state = state.copyWith(previousError: null);
+    }
+    await loadPreviousPage();
   }
 
   /// 跳转到指定页（对标参考版 jumpToPage / Android skipPage + explore）
@@ -99,7 +145,7 @@ class ExploreShowNotifier
   /// （顶栏不展示未成功加载的页），[ExploreShowState.page] 保留目标页，
   /// 由 [retry] 重放该目标页。
   Future<void> skipToPage(int targetPage) async {
-    if (targetPage <= 0 || state.isLoading) return;
+    if (targetPage <= 0 || state.isLoading || state.isLoadingPrevious) return;
     if (!state.canJumpPage) return;
     final previousDisplayPage = state.displayPage;
     state = state.copyWith(
@@ -109,6 +155,7 @@ class ExploreShowNotifier
       // 先置 true 以放行本次抓取，最终 hasMore 由目标页结果决定
       hasMore: true,
       error: null,
+      previousError: null,
     );
     await fetchBooks(replace: true);
     if (state.error != null) {
@@ -122,7 +169,7 @@ class ExploreShowNotifier
   ///（跳页失败后仍为目标页，避免重试悄悄退回第 1 页）；
   /// 列表非空时说明只是「加载更多」失败：继续抓取下一页。
   Future<void> retry() async {
-    if (state.isLoading) return;
+    if (state.isLoading || state.isLoadingPrevious) return;
     if (state.source == null || state.categoryUrl.isEmpty) return;
     if (state.books.isEmpty) {
       state = state.copyWith(error: null, hasMore: true);
@@ -133,13 +180,17 @@ class ExploreShowNotifier
   }
 
   /// 刷新（清空重新加载，对标 Android 下拉刷新）
+  ///
+  /// 与加载上一页互斥：上一页在途时忽略刷新（两链路都会改写 books）。
   Future<void> refresh() async {
+    if (state.isLoading || state.isLoadingPrevious) return;
     state = state.copyWith(
       books: [],
       page: 1,
       displayPage: 0,
       hasMore: true,
       error: null,
+      previousError: null,
     );
     await fetchBooks(replace: true);
   }
