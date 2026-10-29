@@ -59,6 +59,7 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
                 Text(
                   '选择与排序阅读器顶栏的动作，最多显示 '
                   '$kReaderTopBarMaxActions 个（含固定的「更多」）。'
+                  '已达上限时需先关闭其它动作才能开启新的；'
                   '未显示的动作仍可在「更多」菜单中使用。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -134,10 +135,18 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
   ) {
     final isMore = item.id == kReaderMoreActionsId;
     final scope = def.scope.scopeLabel;
+    // 配置页限制：最多选 5 个可配置动作 + 固定「更多」= 6 个。
+    // 已达上限时只允许关闭，不允许再开启（需要腾位时先关一个）。
+    final enabledNonMore = config.items
+        .where((e) => e.id != kReaderMoreActionsId && e.enabled)
+        .length;
+    final atLimit = enabledNonMore >= kReaderTopBarMaxActions - 1;
+    final canToggle = isMore ? false : (item.enabled || !atLimit);
     final notes = <String>[
       ?scope,
       if (def.supportsLongPress) '支持长按',
       if (isMore) '固定显示',
+      if (!item.enabled && atLimit) '已达上限',
     ];
     // 「更多」是渲染期固定末位项，不参与排序；其余项只在本区间内移动
     final movable = !isMore;
@@ -176,7 +185,9 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
           Switch(
             key: ValueKey('reader-topbar-switch-${item.id}'),
             value: item.enabled,
-            onChanged: isMore ? null : (_) => notifier.toggle(item.id),
+            onChanged: canToggle
+                ? (_) => notifier.toggle(item.id)
+                : null,
           ),
         ],
       ),

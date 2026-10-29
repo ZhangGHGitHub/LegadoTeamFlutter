@@ -203,6 +203,21 @@ void main() {
         const ValueKey('reader-topbar-switch-catalog'),
       );
       await tester.ensureVisible(switchCatalog);
+      // 默认已开启 5 个动作 + 固定「更多」= 6 个上限，先腾位再开启目录
+      final switchDownload = find.byKey(
+        const ValueKey('reader-topbar-switch-download'),
+      );
+      await tester.ensureVisible(switchDownload);
+      await tester.tap(switchDownload);
+      await tester.pump();
+      expect(
+        container
+            .read(readerTopBarActionsProvider)
+            .itemFor('download')
+            ?.enabled,
+        isFalse,
+      );
+      await tester.ensureVisible(switchCatalog);
       await tester.tap(switchCatalog);
       await tester.pump();
       expect(
@@ -239,6 +254,37 @@ void main() {
         container.read(readerTopBarActionsProvider),
         ReaderTopBarActionsState(defaultReaderTopBarActionItems()),
       );
+    });
+
+    testWidgets('达到 6 个上限后，未开启项开关禁用（配置页限制）', (tester) async {
+      final container = makeContainer();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: ReaderTopBarConfigSheet()),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // 默认开启 5 个动作（download/refresh/change_source/toc_rule/charset）
+      final switchCatalog = find.byKey(
+        const ValueKey('reader-topbar-switch-catalog'),
+      );
+      await tester.ensureVisible(switchCatalog);
+      expect(
+        tester.widget<Switch>(switchCatalog).onChanged,
+        isNull,
+        reason: '已满 6 个（含「更多」）时不允许再开启',
+      );
+      // 已开启项仍可关闭
+      final switchDownload = find.byKey(
+        const ValueKey('reader-topbar-switch-download'),
+      );
+      await tester.ensureVisible(switchDownload);
+      expect(tester.widget<Switch>(switchDownload).onChanged, isNotNull);
     });
 
     testWidgets('「更多」固定开启且不可关闭', (tester) async {
