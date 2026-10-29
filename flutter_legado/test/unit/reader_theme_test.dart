@@ -692,6 +692,112 @@ void main() {
     });
   });
 
+  group('备份恢复后重建（批38c P2）', () {
+    // 设备验收现象：备份恢复成功后同一会话进「阅读主题」页无限转圈、入口
+    // 显示「未应用主题（自定义）」；重启后正常。根因是 `ref.invalidate` 会
+    // 触发 `onDispose`，而 Riverpod 2.x 重建时复用同一个 Notifier 实例，
+    // 旧的 `_disposed = true` 未被复位 → `_loadLoop` 直接返回，`loaded`
+    // 永远为 false。恢复链路正是 `applyFromBackup` 写 prefs 后
+    // `ref.invalidate(readerThemeProvider)`（webdav_settings_screen）。
+    const restoredTheme = ReaderTheme(
+      id: 'theme-from-backup',
+      name: '备份主题',
+      style: ReaderThemeStyle(backgroundColor: 0xFF123456),
+    );
+
+    /// 模拟恢复：备份里的主题库/当前 id 写入本地 prefs（与
+    /// RestoreIgnorePrefs.applyFromBackup 同一 SharedPreferences 路径）
+    Future<void> writeRestoredPrefs() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        ReaderThemeService.themesKey,
+        ReaderThemeCodec.encodeStoredList(<ReaderTheme>[restoredTheme]),
+      );
+      await prefs.setString(ReaderThemeService.currentIdKey, restoredTheme.id);
+    }
+
+    test('invalidate 后重建：重读磁盘 prefs，loaded=true 且当前 id 生效', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await waitThemeLoaded(container);
+      expect(container.read(readerThemeProvider).loaded, isTrue);
+
+      await writeRestoredPrefs();
+      container.invalidate(readerThemeProvider);
+
+      // 重建后必须重新完成加载（否则 waitThemeLoaded 超时）
+      await waitThemeLoaded(container);
+      final state = container.read(readerThemeProvider);
+      expect(state.loaded, isTrue);
+      expect(state.customThemes.map((theme) => theme.name), <String>['备份主题']);
+      expect(state.currentId, 'theme-from-backup');
+      expect(state.currentTheme?.name, '备份主题');
+    });
+
+    test('重建后变更操作可用：markCurrent/新建不因旧生命周期卡住', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await waitThemeLoaded(container);
+
+      await writeRestoredPrefs();
+      container.invalidate(readerThemeProvider);
+      await waitThemeLoaded(container);
+
+      final notifier = container.read(readerThemeProvider.notifier);
+      final created = await notifier.addTheme(
+        name: '恢复后新建',
+        style: const ReaderThemeStyle(backgroundColor: 0xFF654321),
+      );
+      await notifier.markCurrent(created.id);
+      final state = container.read(readerThemeProvider);
+      expect(state.loaded, isTrue);
+      expect(
+        state.customThemes.map((theme) => theme.name),
+        <String>['备份主题', '恢复后新建'],
+      );
+      expect(state.currentId, created.id);
+      // 落盘同样包含备份主题，未被空状态覆盖
+      final persisted = await ReaderThemeService().loadCustomThemes();
+      expect(
+        persisted.map((theme) => theme.name),
+        <String>['备份主题', '恢复后新建'],
+      );
+    });
+
+    testWidgets('恢复后重建不无限转圈：主题页加载完成并标记当前', (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final container = await pumpThemeScreen(
+        tester,
+        overrides: <Override>[bookApiProvider.overrideWithValue(MockRustApi())],
+      );
+      await pumpUntilFound(tester, find.byType(ReaderThemeGrid));
+
+      // 同一会话内恢复：prefs 换成备份内容 + invalidate（webdav 设置页路径）
+      await writeRestoredPrefs();
+      container.invalidate(readerThemeProvider);
+      await tester.pump();
+      expect(
+        find.byType(CircularProgressIndicator),
+        findsOneWidget,
+        reason: '重建后应短暂回到加载中态（证明本次确实重建了 provider）',
+      );
+
+      // 卡在 loaded=false 时这里会一直转圈直到超时
+      await pumpUntilFound(tester, find.byType(ReaderThemeGrid));
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('备份主题'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('theme-current-theme-from-backup'),
+        ),
+        findsOneWidget,
+        reason: '恢复的当前主题 id 应被标记',
+      );
+    });
+  });
+
   group('主题列表 UI', () {
     testWidgets('网格列数 2..6 生效并标记当前主题', (tester) async {
       final controller = ScrollController();

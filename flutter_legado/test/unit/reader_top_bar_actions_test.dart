@@ -6,9 +6,12 @@
 //
 // 编写：全栈工程师（批37） ｜ 2026-10-29
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
+import 'package:flutter_legado/src/providers/reader/reader_top_bar_actions_notifier.dart';
 import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_top_bar_actions.dart';
 
@@ -317,6 +320,48 @@ void main() {
       }, const {});
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString(PrefKeys.readerTopBarActions), raw);
+    });
+  });
+
+  group('备份恢复后重建（批38c P2）', () {
+    // 与阅读主题同一根因：`ref.invalidate` 先触发 onDispose，Riverpod 2.x
+    // 重建时复用同一个 Notifier 实例，旧 `_disposed=true` 未复位导致重载
+    // 直接返回，恢复后的顶栏配置停留在默认值（webdav 恢复链同处 invalidate）。
+    Future<void> waitConfig(
+      ProviderContainer container,
+      bool Function(ReaderTopBarActionsState state) condition,
+    ) async {
+      for (var i = 0; i < 100; i++) {
+        if (condition(container.read(readerTopBarActionsProvider))) return;
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      fail('顶栏动作配置超时未加载');
+    }
+
+    test('invalidate 后重建：重读 prefs 配置而非停在默认', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        PrefKeys.readerTopBarActions: 'catalog,true;more_actions,true',
+      });
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await waitConfig(container, (state) => state.itemFor('catalog')?.enabled == true);
+
+      // 模拟备份恢复：备份配置写入 prefs 后 invalidate（webdav 设置页路径）
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        PrefKeys.readerTopBarActions,
+        'refresh,true;more_actions,true',
+      );
+      container.invalidate(readerTopBarActionsProvider);
+
+      await waitConfig(
+        container,
+        (state) => state.items.first.id == 'refresh',
+      );
+      final restored = container.read(readerTopBarActionsProvider);
+      expect(restored.itemFor('refresh')?.enabled, isTrue);
+      expect(restored.itemFor('catalog')?.enabled, isFalse);
+      expect(restored.items.first.id, 'refresh', reason: '顺序应来自恢复后的配置');
     });
   });
 }

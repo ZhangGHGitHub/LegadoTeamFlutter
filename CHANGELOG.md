@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.418] - 2026-10-29
+
+### Fixed
+- [UI] 备份恢复成功后同一会话打开「阅读主题」不再无限转圈，设置入口正确显示已恢复的当前主题。
+- [UI] 备份恢复后阅读器顶栏按钮配置同步生效（不再停留在默认顺序与开关）。
+
 ## [2.0.417] - 2026-10-28
 
 ### Added

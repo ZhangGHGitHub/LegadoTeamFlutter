@@ -79,8 +79,18 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
   /// 变更代数：异步加载返回时若用户已改数据，丢弃旧值
   int _generation = 0;
 
-  /// provider 销毁后不再写 state
-  bool _disposed = false;
+  /// 构建生命周期序号（批38c P2）
+  ///
+  /// Riverpod 2.x 在 `invalidate` / 依赖变化后**复用同一个 Notifier 实例**
+  /// 再次执行 `build()`，且 `ref.onDispose` 在重建前就会触发。因此不能用一次
+  /// 性布尔量记录「已销毁」：重建后它仍为 true，新 `_loadLoop` 会立刻返回，
+  /// `loaded` 永远停在 false ——设备现象即「备份恢复成功后同一会话打开主题页
+  /// 无限转圈、设置入口显示未应用主题」。改为每次 build 递增生命周期序号并
+  /// 由异步任务捕获：序号不匹配（已被重建/销毁）即退出，新任务按新序号加载。
+  int _lifecycle = 0;
+
+  /// 当前生命周期是否仍存活（区分「已销毁」与「重建后的新序号」）
+  bool _alive = false;
 
   /// 首次加载任务（供变更操作等待）
   ///
@@ -90,20 +100,32 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
 
   @override
   ReaderThemeState build() {
-    ref.onDispose(() => _disposed = true);
-    _initialLoad = _loadLoop();
+    final lifecycle = ++_lifecycle;
+    _alive = true;
+    // 重建（invalidate）与最终销毁都会触发：让本生命周期内的异步任务失效
+    ref.onDispose(() {
+      if (lifecycle != _lifecycle) return;
+      _alive = false;
+      _lifecycle++;
+    });
+    _initialLoad = _loadLoop(lifecycle);
     return ReaderThemeState(themes: ReaderThemeService.mergeThemes(const []));
   }
 
+  /// 捕获的 [lifecycle] 是否仍是当前存活生命周期
+  bool _isAlive(int lifecycle) => _alive && lifecycle == _lifecycle;
+
   /// 加载循环：加载期间若被变更打断（[_generation] 变化），丢弃本次结果
   /// 并重新读取，直到成功应用到 state（保证磁盘主题库不会因竞态缺失）。
-  Future<void> _loadLoop() async {
-    while (!_disposed) {
+  ///
+  /// [lifecycle] 不匹配时立即退出：provider 已重建/销毁，本次结果作废。
+  Future<void> _loadLoop(int lifecycle) async {
+    while (_isAlive(lifecycle)) {
       final generation = _generation;
       final custom = await _service.loadCustomThemes();
       final currentId = await _service.loadCurrentId();
       final columns = await _service.loadGridColumns();
-      if (_disposed) return;
+      if (!_isAlive(lifecycle)) return;
       if (generation != _generation) continue;
       final themes = ReaderThemeService.mergeThemes(custom);
       state = ReaderThemeState(
@@ -118,9 +140,12 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
   }
 
   /// 等待首次加载完成（未完成则等待；加载被丢弃时等待重试后的加载）
+  ///
+  /// provider 重建/销毁后立即返回，不得再启动加载（否则会空转）。
   Future<void> _ensureLoaded() async {
-    while (!_disposed && !state.loaded) {
-      final pending = _initialLoad ??= _loadLoop();
+    final lifecycle = _lifecycle;
+    while (_isAlive(lifecycle) && !state.loaded) {
+      final pending = _initialLoad ??= _loadLoop(lifecycle);
       await pending;
       if (identical(_initialLoad, pending)) _initialLoad = null;
     }

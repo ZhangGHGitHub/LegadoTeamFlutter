@@ -20,24 +20,40 @@ class ReaderTopBarActionsNotifier extends Notifier<ReaderTopBarActionsState> {
   /// 变更代数：异步加载返回时若用户已改配置，丢弃旧值（对齐 ThemeNotifier）
   int _generation = 0;
 
-  /// [批37b P3-10] provider 是否已销毁：异步 `_load` 返回时不得再读 ref /
-  /// 写 state（Riverpod 销毁后写 state 会抛错）
-  bool _disposed = false;
+  /// 构建生命周期序号（批38c P2）
+  ///
+  /// Riverpod 2.x 在 `invalidate` 后复用同一个 Notifier 实例再跑 `build()`，
+  /// 且 `ref.onDispose` 在重建前触发。旧的布尔「已销毁」标记会让重建后的
+  /// `_load` 直接返回，恢复后的顶栏配置停留在默认值（与阅读主题同一根因、
+  /// 同一恢复链 invalidate）。改用生命周期序号：不匹配即退出。
+  int _lifecycle = 0;
+
+  /// 当前生命周期是否仍存活（区分「已销毁」与「重建后的新序号」）
+  bool _alive = false;
 
   @override
   ReaderTopBarActionsState build() {
-    ref.onDispose(() => _disposed = true);
-    Future.microtask(_load);
+    final lifecycle = ++_lifecycle;
+    _alive = true;
+    ref.onDispose(() {
+      if (lifecycle != _lifecycle) return;
+      _alive = false;
+      _lifecycle++;
+    });
+    Future.microtask(() => _load(lifecycle));
     return ReaderTopBarActionsState(defaultReaderTopBarActionItems());
   }
 
-  Future<void> _load() async {
-    if (_disposed) return;
+  /// 捕获的 [lifecycle] 是否仍是当前存活生命周期
+  bool _isAlive(int lifecycle) => _alive && lifecycle == _lifecycle;
+
+  Future<void> _load(int lifecycle) async {
+    if (!_isAlive(lifecycle)) return;
     final generation = _generation;
     final raw = await ref
         .read(settingsProvider)
         .getStringPref(kReaderTopBarActionsPrefsKey);
-    if (_disposed || generation != _generation) return;
+    if (!_isAlive(lifecycle) || generation != _generation) return;
     state = ReaderTopBarActionsState(decodeReaderTopBarActions(raw));
   }
 
