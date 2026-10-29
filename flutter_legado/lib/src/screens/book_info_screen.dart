@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
 
+import '../bridge/ffi.dart' show BridgeError;
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/auto_task/auto_task_notifier.dart';

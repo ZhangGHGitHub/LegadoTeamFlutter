@@ -268,7 +268,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           setState(() => _loadedBook = updated);
           _snack(updated.disableReadRecord ? '已关闭本书阅读记录' : '已恢复本书阅读记录');
         } catch (e) {
-          if (mounted) _snack('操作失败：$e');
+          // BridgeError 未覆写 toString，须取 message 才能给出可读原因
+          if (mounted) {
+            _snack('操作失败：${e is BridgeError ? e.message : e}');
+          }
         }
         break;
       case 'refresh':

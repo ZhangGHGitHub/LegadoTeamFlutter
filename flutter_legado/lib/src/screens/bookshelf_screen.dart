@@ -247,9 +247,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           .deleteSelectedBooks(deleteOriginal: deleteOriginal);
     } catch (e) {
       if (!context.mounted) return;
+      // BridgeError 未覆写 toString，必须取 message（否则提示 Instance of ...）
+      final reason = e is BridgeError ? e.message : '$e';
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('删除失败：$e')));
+        ..showSnackBar(SnackBar(content: Text('删除失败：$reason')));
       return;
     }
     if (!context.mounted) return;
