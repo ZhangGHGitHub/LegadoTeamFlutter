@@ -24,17 +24,24 @@ import 'package:flutter/foundation.dart' show immutable;
 const int kReaderThemeSchemaVersion = 1;
 
 /// 颜色编码为 `#AARRGGBB`（对齐参考版 Config 的 `#ffc0edc6` 形态）
+///
+/// [argb] 先掩码到 32 位再转 hex：Dart int 是 64 位有符号数，负 int（如
+/// `-16711680`，即 0xFF010000）直接 `toRadixString(16)` 会得到 `-FF0100`，
+/// 拼上 `#` 与零填充后变成 `#0-FF0100`，重启/再次导入时无法解析 → 主题
+/// 丢失。掩码后任何 int 都稳定编码为 8 位大写 hex，与解码形成闭环。
 String encodeReaderThemeColor(int argb) =>
-    '#${argb.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+    '#${(argb & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0').toUpperCase()}';
 
 /// 解析颜色：接受 `#AARRGGBB` / `#RRGGBB` / ARGB int
 ///
 /// - 6 位 hex 视为不透明（补 `FF` 前缀）
+/// - int 形式收敛到 32 位（兼容负 int、带高 32 位脏数据的备份；与
+///   [encodeReaderThemeColor] 的掩码互逆，保证编解码闭环）
 /// - 非法输入抛 [FormatException]（导入侧据此拒绝整份主题）
 int decodeReaderThemeColor(Object? raw) {
   switch (raw) {
     case final int value:
-      return value;
+      return value & 0xFFFFFFFF;
     case final String text:
       final hex = text.trim().replaceFirst('#', '');
       if (hex.length == 6) {
@@ -400,11 +407,19 @@ class ReaderThemeCodec {
   /// - 单对象 `{ "name": ..., "style": {...} }`
   /// - 数组 `[ {...}, {...} ]`（批量导入，逐份校验）
   ///
+  /// 导入入口统一去掉 UTF-8 BOM（`\uFEFF`，Windows 记事本/部分导出工具会
+  /// 在文件头写入）：`jsonDecode` 遇到首字符是 BOM 会直接抛
+  /// [FormatException]，用户会看到「不是有效的 JSON」却看不出文件有问题。
+  ///
   /// 任一形态非法即抛 [FormatException]（调用方提示导入失败原因）。
   static List<ReaderTheme> decodeAll(String raw) {
+    var text = raw.trim();
+    if (text.startsWith('\uFEFF')) {
+      text = text.substring(1).trimLeft();
+    }
     final dynamic decoded;
     try {
-      decoded = jsonDecode(raw);
+      decoded = jsonDecode(text);
     } on FormatException catch (e) {
       throw FormatException('不是有效的 JSON：${e.message}');
     }
