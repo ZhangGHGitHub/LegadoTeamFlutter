@@ -640,6 +640,10 @@ extension _SearchBuilders on _SearchScreenState {
                   height: 104,
                   borderRadius: 10,
                   sourceOrigin: book.origin,
+                  // [批39] 跟随「限制封面比例」：关闭时按原图比例自适应高度
+                  adaptAspectRatio: true,
+                  adaptiveMinHeight: 74,
+                  adaptiveMaxHeight: 160,
                   // [LAYOUT_MOTION_AUDIT M1] 搜索结果封面补 Hero（进详情过渡）
                   heroTag: 'book-cover:${book.bookUrl}',
                 ),
@@ -1141,6 +1145,10 @@ extension _SearchBuilders on _SearchScreenState {
                   height: 56,
                   borderRadius: 6,
                   sourceOrigin: book.origin,
+                  // [批39] 跟随「限制封面比例」：关闭时按原图比例自适应高度
+                  adaptAspectRatio: true,
+                  adaptiveMinHeight: 40,
+                  adaptiveMaxHeight: 90,
                   // [LAYOUT_MOTION_AUDIT M1] 同源书封面补 Hero（进详情过渡）
                   heroTag: 'book-cover:${book.bookUrl}',
                 ),

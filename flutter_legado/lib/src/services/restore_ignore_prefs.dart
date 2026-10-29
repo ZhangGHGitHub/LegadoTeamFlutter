@@ -128,6 +128,9 @@ class RestoreIgnorePrefs {
     PrefKeys.loadCoverOnlyWifi,
     PrefKeys.coverShowName,
     PrefKeys.coverShowAuthor,
+    // [批39] 限制封面比例：属封面配置，勾选「忽略封面配置」时恢复备份
+    // 不覆盖本机设置（键名对齐参考版 coverRestrictRatio）
+    PrefKeys.coverRestrictRatio,
     'coverShowNameN',
     'coverShowAuthorN',
   };

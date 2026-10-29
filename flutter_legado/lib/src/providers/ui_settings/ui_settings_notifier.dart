@@ -124,6 +124,13 @@ class UiSettingsState {
   /// 启用毛玻璃（BackdropFilter，默认关）
   final bool enableBlur;
 
+  /// 限制封面比例（批39，默认开）
+  ///
+  /// 开启：书架/搜索/发现/详情封面固定 5:7（对齐参考版
+  /// `CoverSettings.restrictCoverRatio=true`）；
+  /// 关闭：按封面原图宽高比自适应（网格行高随代表比例调整）。
+  final bool restrictCoverRatio;
+
   /// 顶栏模糊半径 dp
   final int topBarBlurRadius;
 
@@ -176,6 +183,7 @@ class UiSettingsState {
     this.overrideBaseCardCornerRadius = false,
     this.baseCardCornerRadius = 16,
     this.enableBlur = false,
+    this.restrictCoverRatio = true,
     this.topBarBlurRadius = 24,
     this.topBarBlurAlpha = 73,
     this.bottomBarBlurRadius = 8,
@@ -206,6 +214,7 @@ class UiSettingsState {
     bool? overrideBaseCardCornerRadius,
     int? baseCardCornerRadius,
     bool? enableBlur,
+    bool? restrictCoverRatio,
     int? topBarBlurRadius,
     int? topBarBlurAlpha,
     int? bottomBarBlurRadius,
@@ -239,6 +248,7 @@ class UiSettingsState {
           overrideBaseCardCornerRadius ?? this.overrideBaseCardCornerRadius,
       baseCardCornerRadius: baseCardCornerRadius ?? this.baseCardCornerRadius,
       enableBlur: enableBlur ?? this.enableBlur,
+      restrictCoverRatio: restrictCoverRatio ?? this.restrictCoverRatio,
       topBarBlurRadius: topBarBlurRadius ?? this.topBarBlurRadius,
       topBarBlurAlpha: topBarBlurAlpha ?? this.topBarBlurAlpha,
       bottomBarBlurRadius: bottomBarBlurRadius ?? this.bottomBarBlurRadius,
@@ -336,6 +346,10 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       enableBlur: await _settings.getBoolPref(
         PrefKeys.enableBlur,
         defaultValue: false,
+      ),
+      restrictCoverRatio: await _settings.getBoolPref(
+        PrefKeys.coverRestrictRatio,
+        defaultValue: true,
       ),
       topBarBlurRadius: await _settings.getIntPref(
         PrefKeys.topBarBlurRadius,
@@ -516,6 +530,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(enableBlur: value);
     _sync();
     await _settings.setBoolPref(PrefKeys.enableBlur, value);
+  }
+
+  /// 限制封面比例（批39）
+  Future<void> setRestrictCoverRatio(bool value) async {
+    if (state.restrictCoverRatio == value) return;
+    state = state.copyWith(restrictCoverRatio: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.coverRestrictRatio, value);
   }
 
   /// 顶栏模糊半径

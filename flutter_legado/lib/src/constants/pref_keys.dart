@@ -200,6 +200,14 @@ class PrefKeys {
   /// 默认封面显示作者（默认 true）
   static const coverShowAuthor = 'coverShowAuthor';
 
+  /// 限制封面比例（批39，默认 true）
+  ///
+  /// 键名逐字对齐参考版 `PreferKey.coverRestrictRatio`：开启（默认）时
+  /// 书架/搜索/发现/详情封面固定 5:7；关闭后按封面原图宽高比自适应。
+  /// 随 Flutter JSON 备份 `appPrefs` 往返，并受「忽略封面配置」约束
+  /// （RestoreIgnorePrefs.coverPrefKeys）。
+  static const coverRestrictRatio = 'coverRestrictRatio';
+
   // ===== 其他设置页（pref_config_other.xml）=====
 
   /// 启动时自动刷新书架（默认 false）

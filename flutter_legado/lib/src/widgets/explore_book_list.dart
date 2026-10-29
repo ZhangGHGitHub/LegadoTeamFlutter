@@ -11,7 +11,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/explore/explore_show_notifier.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
+import '../services/cover_aspect_ratio.dart';
 import '../utils/source_login_entry.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
@@ -146,13 +148,22 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // 封面比例设置/新解析比例 → 网格行高重算
+    uiSettingsListenable.addListener(_onCoverLayoutChanged);
+    coverAspectRatioRevision.addListener(_onCoverLayoutChanged);
   }
 
   @override
   void dispose() {
+    uiSettingsListenable.removeListener(_onCoverLayoutChanged);
+    coverAspectRatioRevision.removeListener(_onCoverLayoutChanged);
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onCoverLayoutChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onScroll() {
@@ -469,8 +480,17 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                       : 0.0;
                   final textScaler = MediaQuery.textScalerOf(context);
                   final textBlockHeight = textScaler.scale(14) * 1.25 * 2 + 6;
+                  // [批39] 网格行高随封面比例：限制比例开 = 既有 3:4 基准；
+                  // 关 = 按已解析的原图比例（整格统一，取首个已知比例）
+                  final restrictRatio =
+                      uiSettingsListenable.value.restrictCoverRatio;
+                  final coverRatio = restrictRatio
+                      ? 3 / 4
+                      : CoverAspectRatio.representativeRatio(
+                          visibleBooks.map((b) => b.coverUrl),
+                        );
                   final rowExtent = itemWidth > 0
-                      ? itemWidth * 4 / 3 + textBlockHeight + 6
+                      ? itemWidth / coverRatio + textBlockHeight + 6
                       : 120.0;
                   _gridRowExtent = rowExtent;
 
@@ -728,6 +748,10 @@ class _BookItem extends ConsumerWidget {
                 width: compact ? 36 : 45,
                 height: compact ? 48 : 60,
                 sourceOrigin: book.origin,
+                // [批39] 跟随「限制封面比例」：关闭时按原图比例自适应高度
+                adaptAspectRatio: true,
+                adaptiveMinHeight: compact ? 36 : 45,
+                adaptiveMaxHeight: compact ? 84 : 105,
                 // [LAYOUT_MOTION_AUDIT M1] 发现结果封面补 Hero（进详情过渡）
                 heroTag: 'book-cover:${book.bookUrl}',
               ),

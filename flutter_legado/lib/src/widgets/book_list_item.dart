@@ -52,6 +52,11 @@ class BookListItem extends StatelessWidget {
               height: 90,
               borderRadius: 4,
               sourceOrigin: book.origin,
+              // [批39] 跟随「限制封面比例」：关闭时按原图比例自适应高度，
+              // 行高随封面变化（上下限保持列表稳定）
+              adaptAspectRatio: true,
+              adaptiveMinHeight: 66,
+              adaptiveMaxHeight: 140,
               // Hero 封面过渡（书架↔详情，key=book url）
               // [LAYOUT_MOTION_AUDIT M1] tag 统一 book-cover:（HapeLee 同义键）
               heroTag: 'book-cover:${book.bookUrl}',

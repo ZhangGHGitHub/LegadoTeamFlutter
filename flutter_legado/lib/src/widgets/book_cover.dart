@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart';
+import '../services/cover_aspect_ratio.dart';
 import '../services/cover_decode_loader.dart';
 import '../utils/comic_image_utils.dart';
 
@@ -19,8 +21,12 @@ import '../utils/comic_image_utils.dart';
 /// - 无 `coverDecodeJs`：`CachedNetworkImage` 直连（缩略 memCacheWidth）
 /// - 有 `coverDecodeJs`：经 [CoverDecodeLoader] 限流/缓存/取消后走 FFI
 ///
+/// [批39] 新增 [adaptAspectRatio]：跟随「限制封面比例」设置（默认开 = 固定
+/// 5:7；关闭 = 按原图比例自适应高度），对齐参考版 `adaptCoverAspectRatio`
+/// 与 `cachedCoverAspectRatio` 语义。
+///
 /// [UI-FIX v2.0.32 | 2026-08-11] 搜索列表封面解密卡顿 — Reasonix + UI
-class BookCover extends ConsumerWidget {
+class BookCover extends StatefulWidget {
   final String? coverUrl;
   final double width;
   final double height;
@@ -36,6 +42,20 @@ class BookCover extends ConsumerWidget {
   /// 约定 `cover:<book url>`，空/null 不启用 Hero）
   final String? heroTag;
 
+  /// 跟随「限制封面比例」设置自适应高度（批39）
+  ///
+  /// true 时读取 `uiSettingsProvider.restrictCoverRatio`：
+  /// - 开启（默认）：保持 [height]（固定 5:7）；
+  /// - 关闭：按封面原图宽高比换算高度，并夹在
+  ///   [adaptiveMinHeight]..[adaptiveMaxHeight]（保持布局稳定）。
+  final bool adaptAspectRatio;
+
+  /// 自适应高度下限（null = [height] 的 70%）
+  final double? adaptiveMinHeight;
+
+  /// 自适应高度上限（null = [height] 的 160%）
+  final double? adaptiveMaxHeight;
+
   const BookCover({
     super.key,
     this.coverUrl,
@@ -45,27 +65,94 @@ class BookCover extends ConsumerWidget {
     this.sourceOrigin,
     this.sourceJson,
     this.heroTag,
+    this.adaptAspectRatio = false,
+    this.adaptiveMinHeight,
+    this.adaptiveMaxHeight,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  State<BookCover> createState() => _BookCoverState();
+}
+
+class _BookCoverState extends State<BookCover> {
+  /// 已解析的封面宽高比（宽/高；null = 尚未解析，回退固定 5:7）
+  double? _ratio;
+
+  @override
+  void didUpdateWidget(covariant BookCover oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.coverUrl != widget.coverUrl) {
+      _ratio = CoverAspectRatio.cached(widget.coverUrl);
+    }
+  }
+
+  /// 当前封面显示高度
+  ///
+  /// 直接读全局 [uiSettingsListenable]（非 Riverpod）：BookCover 在大量
+  /// 列表/测试宿主中渲染，不要求外层存在 ProviderScope。
+  double _displayHeight(bool restrict) {
+    if (!widget.adaptAspectRatio || restrict) return widget.height;
+    final ratio = _ratio ??
+        CoverAspectRatio.cached(widget.coverUrl) ??
+        CoverAspectRatio.restricted;
+    return CoverAspectRatio.heightFor(
+      width: widget.width,
+      ratio: ratio,
+      minHeight: widget.adaptiveMinHeight ?? widget.height * 0.7,
+      maxHeight: widget.adaptiveMaxHeight ?? widget.height * 1.6,
+    );
+  }
+
+  /// 记录已解析比例（图片加载完成回调；对齐参考版 onImageAspectRatio）
+  void _reportRatio(double? ratio) {
+    if (!mounted || !CoverAspectRatio.isValid(ratio)) return;
+    final changed = CoverAspectRatio.remember(widget.coverUrl, ratio);
+    final value = CoverAspectRatio.cached(widget.coverUrl);
+    if (value != null && _ratio != value) {
+      if (widget.adaptAspectRatio) {
+        setState(() => _ratio = value);
+      } else {
+        // 非自适应封面只登记比例（供网格/其他入口复用），不触发自身重建
+        _ratio = value;
+      }
+    }
+    if (changed) {
+      // 网格行高随新比例重算（书架/发现页监听该修订号）
+      coverAspectRatioRevision.value++;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.adaptAspectRatio) {
+      return _buildCover(widget.height);
+    }
+    return ValueListenableBuilder<UiSettingsState>(
+      valueListenable: uiSettingsListenable,
+      builder: (context, settings, _) =>
+          _buildCover(_displayHeight(settings.restrictCoverRatio)),
+    );
+  }
+
+  Widget _buildCover(double height) {
     Widget cover = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius: BorderRadius.circular(widget.borderRadius),
       child: SizedBox(
-        width: width,
+        width: widget.width,
         height: height,
-        child: (coverUrl != null && coverUrl!.isNotEmpty)
+        child: (widget.coverUrl != null && widget.coverUrl!.isNotEmpty)
             ? _CoverImage(
-                coverUrl: coverUrl!,
-                width: width,
-                sourceOrigin: sourceOrigin,
-                sourceJson: sourceJson,
-                placeholder: _defaultCover(),
+                coverUrl: widget.coverUrl!,
+                width: widget.width,
+                sourceOrigin: widget.sourceOrigin,
+                sourceJson: widget.sourceJson,
+                placeholder: _defaultCover(height),
+                onAspectRatio: _reportRatio,
               )
-            : _defaultCover(),
+            : _defaultCover(height),
       ),
     );
-    final tag = heroTag;
+    final tag = widget.heroTag;
     if (tag != null && tag.isNotEmpty) {
       // [LAYOUT_PLAN P4] 内置 Hero 保持无 flightShuttle（防与外层 Hero 嵌套）。
       cover = Hero(tag: tag, child: cover);
@@ -74,11 +161,11 @@ class BookCover extends ConsumerWidget {
   }
 
   /// 默认封面（对标原版 image_cover_default.jpg）：无封面 / 加载中 / 加载失败时显示
-  Widget _defaultCover() {
+  Widget _defaultCover(double height) {
     return Image.asset(
       'assets/images/default_book_cover.jpg',
       fit: BoxFit.cover,
-      width: width,
+      width: widget.width,
       height: height,
     );
   }
@@ -121,12 +208,16 @@ class _CoverImage extends ConsumerStatefulWidget {
   final String? sourceJson;
   final Widget placeholder;
 
+  /// 图片加载完成后上报原图宽高比（宽/高；解析失败为 null）
+  final ValueChanged<double>? onAspectRatio;
+
   const _CoverImage({
     required this.coverUrl,
     required this.width,
     required this.placeholder,
     this.sourceOrigin,
     this.sourceJson,
+    this.onAspectRatio,
   });
 
   @override
@@ -185,6 +276,7 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
         _useDirect = false;
         _decodeFailed = false;
       });
+      unawaited(_reportBytesRatio(cached, url, gen));
       return;
     }
 
@@ -245,6 +337,7 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
           _loadingDecode = false;
           _decodeFailed = false;
         });
+        unawaited(_reportBytesRatio(bytes, url, gen));
       } else {
         setState(() {
           _loadingDecode = false;
@@ -259,6 +352,32 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
         _decodeFailed = true;
       });
     }
+  }
+
+  /// 从解码字节上报原图比例（仅读文件头，不做完整解码）
+  Future<void> _reportBytesRatio(Uint8List bytes, String url, int gen) async {
+    final ratio = await decodeImageAspectRatio(bytes);
+    if (!mounted || gen != _loadGen || widget.coverUrl != url) return;
+    if (ratio != null) widget.onAspectRatio?.call(ratio);
+  }
+
+  /// 从已解析的 ImageProvider 上报原图比例（imageBuilder 内调度，
+  /// 避免在 build 期间触发 setState）
+  void _reportProviderRatio(ImageProvider provider) {
+    if (!mounted) return;
+    final stream = provider.resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        stream.removeListener(listener);
+        final height = info.image.height;
+        if (height > 0) {
+          widget.onAspectRatio?.call(info.image.width / height);
+        }
+      },
+      onError: (_, _) => stream.removeListener(listener),
+    );
+    stream.addListener(listener);
   }
 
   int _thumbWidth(BuildContext context) {
@@ -295,6 +414,18 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       memCacheWidth: _thumbWidth(context),
       placeholder: (_, _) => widget.placeholder,
       errorWidget: (_, _, _) => widget.placeholder,
+      // 图片就绪后（后帧）上报原图比例：关闭「限制封面比例」时据此自适应高度
+      imageBuilder: (context, imageProvider) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _reportProviderRatio(imageProvider);
+        });
+        return Image(
+          image: imageProvider,
+          fit: BoxFit.cover,
+          width: widget.width,
+          gaplessPlayback: true,
+        );
+      },
     );
   }
 }

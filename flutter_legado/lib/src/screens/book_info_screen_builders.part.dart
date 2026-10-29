@@ -954,6 +954,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                           height: 160,
                           borderRadius: 3,
                           sourceOrigin: book.origin,
+                          // [批39] 跟随「限制封面比例」：关闭时按原图比例
+                          // 自适应高度（参考版 BookInfoScreen 同口径）
+                          adaptAspectRatio: true,
+                          adaptiveMinHeight: 110,
+                          adaptiveMaxHeight: 250,
                         ),
                       ),
                     ),

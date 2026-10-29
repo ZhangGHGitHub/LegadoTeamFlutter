@@ -1241,6 +1241,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       PrefKeys.coverShowAuthor,
       defaultValue: true,
     );
+    var restrictRatio = await _settings.getBoolPref(
+      PrefKeys.coverRestrictRatio,
+      defaultValue: true,
+    );
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -1284,6 +1288,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                 onChanged: (v) {
                   setDialogState(() => showAuthor = v);
                   _settings.setBoolPref(PrefKeys.coverShowAuthor, v);
+                },
+              ),
+              // [批39] 限制封面比例（对齐参考版 cover_restrict_ratio）
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('限制封面比例'),
+                subtitle: const Text('开启后书架/搜索/发现/详情封面固定 5:7，关闭按原图比例'),
+                value: restrictRatio,
+                onChanged: (v) {
+                  setDialogState(() => restrictRatio = v);
+                  ref.read(uiSettingsProvider.notifier).setRestrictCoverRatio(v);
                 },
               ),
               // F4：对齐原版 CoverRuleConfigDialog（get/save/delete + 测试搜索）

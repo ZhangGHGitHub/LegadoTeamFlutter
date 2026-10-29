@@ -15,9 +15,10 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart'
-    show TopBarButtonStyle;
+    show TopBarButtonStyle, uiSettingsListenable;
 import '../routes.dart';
 import '../services/book_api.dart' show DeleteBooksResult;
+import '../services/cover_aspect_ratio.dart';
 import '../services/local_book_store.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/app_scaffold.dart';
@@ -64,15 +65,25 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   void initState() {
     super.initState();
     widget.scrollTopSignal?.addListener(_onScrollTopSignal);
+    // [批39] 封面比例设置/新解析比例 → 网格行高重算
+    uiSettingsListenable.addListener(_onCoverLayoutChanged);
+    coverAspectRatioRevision.addListener(_onCoverLayoutChanged);
   }
 
   @override
   void dispose() {
+    uiSettingsListenable.removeListener(_onCoverLayoutChanged);
+    coverAspectRatioRevision.removeListener(_onCoverLayoutChanged);
     widget.scrollTopSignal?.removeListener(_onScrollTopSignal);
     _scrollController.dispose();
     _tabController?.removeListener(_onTabControllerChanged);
     _tabController?.dispose();
     super.dispose();
+  }
+
+  /// 封面比例设置变化 / 新比例解析 → 重算网格行高
+  void _onCoverLayoutChanged() {
+    if (mounted) setState(() {});
   }
 
   /// 双击底栏书架项 → 列表回滚顶部（对标 BaseBookshelfFragment.gotoTop）
@@ -710,6 +721,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // [批35] 标签行按「当前网格内是否有任一本书带标签」预留高度：
     // 无标签时不改变既有 cell 比例（封面 5:7 不被挤压）
     final hasTagRow = books.any((b) => state.displayTagsOf(b).isNotEmpty);
+    // [批39] 网格行高随封面比例：限制比例开 = 既有 5:7 基准；关 = 按已解析
+    // 的原图比例（整格统一，取首个已知比例，行高随图片加载完成重算）
+    final restrictRatio = uiSettingsListenable.value.restrictCoverRatio;
+    final coverRatio = restrictRatio
+        ? 5 / 7
+        : CoverAspectRatio.representativeRatio(
+            books.map((b) => b.customCoverUrl ?? b.coverUrl),
+          );
     // [批35b P3-4] 预留高度按 textScaler 换算（与 BookGridItem 内同一函数），
     // 大字号下 cell 同步增高，标签行不裁切、封面不被挤压
     final tagRowHeight = BookDisplayTagsRow.heightFor(
@@ -730,6 +749,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             available,
             tagRow: hasTagRow,
             tagRowHeight: tagRowHeight,
+            coverRatio: coverRatio,
           ),
         ),
         itemCount: books.length,
@@ -750,13 +770,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 固定 0.714，后者令封面被压成方形）。
   ///
   /// [tagRowHeight] 由调用方按当前 textScaler 换算（批35b P3-4）。
+  /// [coverRatio] 封面宽高比（宽/高；批39：限制比例开 = 5:7，
+  /// 关 = 首个已解析原图比例，网格行高随之调整）。
   double _bookshelfGridCellAspectRatio(double availableWidth,
       {bool tagRow = false,
-      double tagRowHeight = BookGridItem.tagRowHeight}) {
+      double tagRowHeight = BookGridItem.tagRowHeight,
+      double coverRatio = 5 / 7}) {
     const crossSpacing = 20.0;
     final titleHeight = 40.0 + (tagRow ? tagRowHeight : 0.0);
     final cellWidth = (availableWidth - 2 * crossSpacing) / 3;
-    return cellWidth / (cellWidth * 7 / 5 + titleHeight);
+    return cellWidth / (cellWidth / coverRatio + titleHeight);
   }
 
   Widget _buildReorderableSliver(BuildContext context, WidgetRef ref, BookshelfState state) {
