@@ -77,8 +77,24 @@ pub fn get_read_time(book_name: &str) -> LegadoResult<i64> {
 /// readTime 单位为毫秒，而 readRecordDaily 契约为秒（readRecordDailyList 返回
 /// `[{date, seconds}]`）。取「各自下限整秒再作差」而非「差值再除 1000」：两者对单次
 /// 累加等价，但前者不会因频繁的小增量同步被反复截断丢秒，累计值不随调用次数漂移。
-pub fn upsert_read_record(book_name: &str, read_time: i64) -> LegadoResult<i64> {
+pub fn upsert_read_record(
+    book_name: &str,
+    read_time: i64,
+    book_url: Option<&str>,
+) -> LegadoResult<i64> {
     with_database(|db| {
+        // [批35] 书籍级阅读记录开关守卫（对齐参考版
+        // `ReadRecordRepository.saveReadSession` 写前判断）：
+        // `book_url` 非空且该书 disableReadRecord=true 时整次跳过，
+        // readRecord 与 readRecordDaily 均零写入；书籍不存在按无记录处理
+        // （临时书/未落库书不阻断阅读）。Dart 侧另有本地短路，此处是
+        // 「详情页切换后阅读器仍持有旧 Book 副本」的第二道保险。
+        if let Some(url) = book_url.map(str::trim).filter(|u| !u.is_empty()) {
+            let book_repo = legado_db::BookRepository::new(db.connection());
+            if book_repo.is_read_record_disabled(url)? {
+                return Ok(read_time);
+            }
+        }
         let repo = ReadRecordRepository::new(db.connection());
         let existing = repo.get_record(book_name)?;
         let old_read_time = existing.as_ref().map(|r| r.read_time).unwrap_or(0);
@@ -120,13 +136,14 @@ pub fn clear_read_records() -> LegadoResult<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legado_db::repository::Repository;
 
     #[test]
     fn test_read_record_crud() {
         let _db_guard = crate::db_state::ensure_test_db();
 
         // 添加记录
-        let rt = upsert_read_record("测试书籍", 5000).unwrap();
+        let rt = upsert_read_record("测试书籍", 5000, None).unwrap();
         assert_eq!(rt, 5000);
 
         // 获取列表
@@ -134,7 +151,7 @@ mod tests {
         assert!(records.iter().any(|r| r.book_name == "测试书籍"));
 
         // 更新记录
-        upsert_read_record("测试书籍", 8000).unwrap();
+        upsert_read_record("测试书籍", 8000, None).unwrap();
         let records = get_read_records().unwrap();
         let rec = records.iter().find(|r| r.book_name == "测试书籍").unwrap();
         assert_eq!(rec.read_time, 8000);
@@ -158,10 +175,10 @@ mod tests {
         let before = daily_seconds_today(&today, year);
 
         // 无记录 → 增量为全量 5000ms = 5s
-        upsert_read_record("每日聚合书", 5000).unwrap();
+        upsert_read_record("每日聚合书", 5000, None).unwrap();
         assert_eq!(get_read_time("每日聚合书").unwrap(), 5000);
         // 已有 → 增量为差值 3000ms = 3s
-        upsert_read_record("每日聚合书", 8000).unwrap();
+        upsert_read_record("每日聚合书", 8000, None).unwrap();
         assert_eq!(get_read_time("每日聚合书").unwrap(), 8000);
 
         // 共享测试库中其他用例也会向当日累加，只断言本书两次增量（5s+3s=8s）均已入账
@@ -203,7 +220,7 @@ mod tests {
         .unwrap();
 
         let before = daily_seconds_today(&today, year);
-        upsert_read_record(book, 160_000).unwrap();
+        upsert_read_record(book, 160_000, None).unwrap();
         let after = daily_seconds_today(&today, year);
 
         assert_eq!(
@@ -237,5 +254,70 @@ mod tests {
         .find(|(d, _)| d == today)
         .map(|(_, s)| *s)
         .unwrap_or(0)
+    }
+
+    /// [批35] 书级开关为真时写路径整次跳过（readRecord 与每日时长零写入），
+    /// 重新开启后恢复写入。
+    #[test]
+    fn test_upsert_read_record_skips_when_book_disabled() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch35-read-record-guard.example.com/book/1";
+        let book_name = "批35阅读记录守卫书";
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let year = chrono::Local::now()
+            .format("%Y")
+            .to_string()
+            .parse::<i32>()
+            .unwrap();
+
+        with_database(|db| {
+            let repo = legado_db::BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                name: book_name.to_string(),
+                origin: "https://batch35.example.com".to_string(),
+                ..legado_core::models::Book::default()
+            })
+        })
+        .expect("测试书入库失败");
+        let _ = delete_read_record(book_name);
+
+        let _ =
+            crate::api::bookshelf::set_read_record_disabled(book_url, true).expect("开关置真失败");
+        let before = daily_seconds_today(&today, year);
+        let returned = upsert_read_record(book_name, 90_000, Some(book_url)).unwrap();
+        assert_eq!(returned, 90_000, "跳过写入时返回传入 readTime");
+        assert!(
+            !get_read_records()
+                .unwrap()
+                .iter()
+                .any(|r| r.book_name == book_name),
+            "关闭后不得创建阅读记录"
+        );
+        assert_eq!(
+            daily_seconds_today(&today, year),
+            before,
+            "关闭后不得累加每日阅读时长"
+        );
+
+        let _ =
+            crate::api::bookshelf::set_read_record_disabled(book_url, false).expect("开关置假失败");
+        upsert_read_record(book_name, 90_000, Some(book_url)).unwrap();
+        assert!(
+            get_read_records()
+                .unwrap()
+                .iter()
+                .any(|r| r.book_name == book_name),
+            "重新开启后应恢复写入"
+        );
+
+        // 清理（共享测试库不留固定行）
+        let _ = delete_read_record(book_name);
+        with_database(|db| {
+            let _ = legado_db::BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
     }
 }

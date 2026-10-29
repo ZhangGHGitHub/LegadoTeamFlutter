@@ -262,6 +262,12 @@ pub struct Book {
     /// 刷新书架时更新书籍信息
     #[serde(default = "default_true", rename = "canUpdate")]
     pub can_update: bool,
+    /// 单独为本书关闭阅读记录（批35，对齐原版 `Book.disableReadRecord`，
+    /// `Book.kt:120-122`）：为 true 时只有这本书不写入阅读会话
+    /// （全局开关见 Flutter `enableReadRecord` 偏好）。加法式字段：旧 JSON /
+    /// 旧数据库缺键 → `false`，既有行为不变；备份按本字段原样往返。
+    #[serde(default, rename = "disableReadRecord")]
+    pub disable_read_record: bool,
     /// 手动排序
     #[serde(default)]
     pub order: i32,
@@ -323,6 +329,7 @@ impl Default for Book {
             dur_chapter_time: 0,
             word_count: None,
             can_update: true,
+            disable_read_record: false,
             order: 0,
             origin_order: 0,
             variable: None,

@@ -311,6 +311,15 @@ impl RoomImporter {
                 .and_then(|v| v.as_i64())
                 .map(|v| v != 0)
                 .unwrap_or(true);
+            // [批35] 书籍级阅读记录开关：原版 bookshelf.json 为 boolean，
+            // 手改/旧数据可能写成 0/1；两种形态均识别，缺省 false。
+            let disable_read_record = obj
+                .get("disableReadRecord")
+                .map(|v| {
+                    v.as_bool()
+                        .unwrap_or_else(|| v.as_i64().map(|n| n != 0).unwrap_or(false))
+                })
+                .unwrap_or(false);
             let order = obj.get("order").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let origin_order = obj.get("originOrder").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let variable = obj.get("variable").and_then(|v| v.as_str());
@@ -358,6 +367,7 @@ impl RoomImporter {
                 dur_chapter_time,
                 word_count: word_count.map(str::to_string),
                 can_update,
+                disable_read_record,
                 order,
                 origin_order,
                 variable: variable.map(str::to_string),
@@ -922,6 +932,39 @@ mod tests {
         assert_eq!(cfg["reverseToc"], true);
         assert_eq!(cfg["pageAnim"], 1);
         assert_eq!(cfg["ttsEngine"], "local");
+    }
+
+    /// [批35] 书籍级阅读记录开关导入：boolean / 0-1 整数两种形态均识别，
+    /// 缺键默认 false（旧 bookshelf.json 照常导入，行为不变）。
+    #[test]
+    fn test_import_books_disable_read_record_forms() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let json = r#"[
+            {"bookUrl":"https://example.com/book/rr-bool","name":"布尔形态","disableReadRecord":true},
+            {"bookUrl":"https://example.com/book/rr-int","name":"整数形态","disableReadRecord":1},
+            {"bookUrl":"https://example.com/book/rr-zero","name":"整数零","disableReadRecord":0},
+            {"bookUrl":"https://example.com/book/rr-missing","name":"缺键"}
+        ]"#;
+        RoomImporter::import_books(conn, json).unwrap();
+
+        let read_flag = |url: &str| -> i64 {
+            conn.query_row(
+                "SELECT disableReadRecord FROM books WHERE bookUrl = ?1",
+                rusqlite::params![url],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(read_flag("https://example.com/book/rr-bool"), 1);
+        assert_eq!(read_flag("https://example.com/book/rr-int"), 1);
+        assert_eq!(read_flag("https://example.com/book/rr-zero"), 0);
+        assert_eq!(
+            read_flag("https://example.com/book/rr-missing"),
+            0,
+            "缺键 = false（既有行为不变）"
+        );
     }
 
     /// readConfig 形态不符（数组）显式报错（防复发规定 4）

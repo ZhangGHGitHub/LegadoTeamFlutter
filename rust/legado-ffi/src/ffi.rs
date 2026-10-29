@@ -250,6 +250,29 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 批量删除书架书籍（可选同时删除本地/WebDAV 原文件，批35）
+    ///
+    /// 返回文件删除失败的提示列表（成功为空数组）：文件删除失败**不阻断**
+    /// 书籍记录删除；路径安全与白名单见 `api::bookshelf::delete_books`。
+    pub fn bookshelf_delete_books(
+        book_urls: Vec<String>,
+        delete_original: bool,
+    ) -> Result<Vec<String>, BridgeError> {
+        Ok(crate::api::bookshelf::delete_books(
+            &book_urls,
+            delete_original,
+        )?)
+    }
+
+    /// 书籍级阅读记录开关（批35，单列写，返回更新后的整书 JSON）
+    pub fn book_set_read_record_disabled(
+        book_url: String,
+        disabled: bool,
+    ) -> Result<String, BridgeError> {
+        let book = crate::api::bookshelf::set_read_record_disabled(&book_url, disabled)?;
+        to_json(&book)
+    }
+
     /// 按 bookUrl 获取书籍详情（JSON，可能为 null）
     pub fn bookshelf_get(book_url: String) -> Result<String, BridgeError> {
         let book = crate::api::bookshelf::get_book(&book_url)?;
@@ -1869,8 +1892,19 @@ pub mod ffi {
     /// 添加/更新阅读记录，返回阅读时长
     ///
     /// [热力图每日时长契约] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
-    pub fn read_record_upsert(book_name: String, read_time: i64) -> Result<i64, BridgeError> {
-        let rt = crate::api::read_record_api::upsert_read_record(&book_name, read_time)?;
+    ///
+    /// [批35] `book_url` 非空时写前检查 `books.disableReadRecord`，为真则整次
+    /// 跳过（返回传入 readTime，零写入）；为空保持旧行为。
+    pub fn read_record_upsert(
+        book_name: String,
+        read_time: i64,
+        book_url: Option<String>,
+    ) -> Result<i64, BridgeError> {
+        let rt = crate::api::read_record_api::upsert_read_record(
+            &book_name,
+            read_time,
+            book_url.as_deref(),
+        )?;
         Ok(rt)
     }
 

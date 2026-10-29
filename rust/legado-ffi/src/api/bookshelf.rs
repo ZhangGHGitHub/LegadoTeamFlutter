@@ -2,13 +2,15 @@
 //!
 //! 提供书籍的增删改查操作，通过 BookRepository 访问数据库。
 
-use legado_core::models::Book;
-use legado_core::LegadoResult;
+use std::path::Path;
+
+use legado_core::models::{book_type, Book};
+use legado_core::{LegadoError, LegadoResult};
 use legado_db::import::RoomImporter;
 use legado_db::repository::Repository;
 use legado_db::BookRepository;
 
-use crate::db_state::with_database;
+use crate::db_state::{resolve_local_book_path, with_database};
 
 /// 获取书架上所有书籍
 pub fn list_books() -> LegadoResult<Vec<Book>> {
@@ -123,6 +125,132 @@ pub fn delete_book(book_url: &str) -> LegadoResult<()> {
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
         repo.delete_by_url(book_url)
+    })
+}
+
+/// 可删除的本地书籍/媒体文件扩展名白名单（批35，路径安全 fail-safe）
+///
+/// 删除原文件是破坏性操作，而 `books.bookUrl` 来自 DB（可能被损坏的导入/
+/// 手改数据污染）。只允许删除**明确属于书籍或本地媒体**的扩展名；其他路径
+/// 一律跳过并提示，绝不把任意路径交给 `remove_file`。
+const DELETABLE_LOCAL_FILE_EXTS: &[&str] = &[
+    // 电子书
+    "txt", "text", "epub", "mobi", "azw", "azw3", "pdf", "umd", "cbz",
+    "zip", // 本地音频/视频书
+    "mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "mp4", "mkv", "webm", "avi", "mov", "3gp",
+    "flv", "ts",
+];
+
+/// 是否为本地/WebDAV 存储书（批35，删除原文件的准入判断）
+///
+/// 对齐 Dart `BookType.isLocalBook` 的双分支：`type == 0` 按 origin
+/// （`loc_book` / `webDav::` / 存量 `dav:`）判定；否则看 local 位
+/// （Rust 域 0x1000 与原版 Kotlin 0x100 双标准）。
+fn is_local_storage_book(book: &Book) -> bool {
+    let origin = book.origin.trim();
+    if book.book_type == 0 {
+        return origin == book_type::LOCAL_TAG || book_type::is_web_dav_origin(origin);
+    }
+    book_type::is_local_type(book.book_type)
+        || origin == book_type::LOCAL_TAG
+        || book_type::is_web_dav_origin(origin)
+}
+
+/// 删除本地/WebDAV 书的原文件（批35）
+///
+/// - 非本地书：直接返回 `Ok(())`（非本地书不删任何文件）；
+/// - 路径安全：`bookUrl` 必须为无 scheme 的磁盘路径，经
+///   [`resolve_local_book_path`] 还原 iOS 相对标识后再 `canonicalize`；
+///   拒绝空值/非普通文件/扩展名不在 [`DELETABLE_LOCAL_FILE_EXTS`]；
+/// - 失败语义：返回中文提示字符串，**调用方继续删除书籍记录**（对齐任务
+///   「失败不阻断删除记录并提示」，也贴近参考版 `runCatching` 不中断删除）。
+fn delete_local_book_file(book: &Book) -> Result<(), String> {
+    if !is_local_storage_book(book) {
+        return Ok(());
+    }
+    let raw = book.book_url.trim();
+    if raw.is_empty() || raw.contains("://") {
+        return Err(format!(
+            "《{}》原文件地址不是本地路径，已跳过文件删除",
+            book.name
+        ));
+    }
+    let resolved = resolve_local_book_path(raw);
+    let canonical = match std::fs::canonicalize(Path::new(&resolved)) {
+        Ok(path) => path,
+        Err(e) => {
+            return Err(format!(
+                "《{}》原文件不存在或不可访问（{e}），已跳过文件删除",
+                book.name
+            ));
+        }
+    };
+    if !canonical.is_file() {
+        return Err(format!(
+            "《{}》原文件不是普通文件，已跳过文件删除",
+            book.name
+        ));
+    }
+    let ext = canonical
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    if !DELETABLE_LOCAL_FILE_EXTS.contains(&ext.as_str()) {
+        return Err(format!(
+            "《{}》文件类型 .{} 不在可删除白名单，已跳过文件删除",
+            book.name,
+            if ext.is_empty() {
+                "(无)"
+            } else {
+                ext.as_str()
+            }
+        ));
+    }
+    std::fs::remove_file(&canonical).map_err(|e| format!("《{}》原文件删除失败：{e}", book.name))
+}
+
+/// 批量删除书架书籍，可选同时删除本地/WebDAV 原文件（批35）
+///
+/// 对齐参考版 `DeleteBooksUseCase.execute(bookUrls, deleteOriginal)`：
+/// - 逐本查库后删除记录（`delete_by_url`，章节经外键级联清理）；
+/// - `delete_original` 为真时仅处理本地/WebDAV 书，文件删除失败**不阻断**
+///   记录删除，以中文提示逐条返回；
+/// - 返回值为文件删除失败提示（成功删除返回空数组），UI 汇总展示。
+pub fn delete_books(book_urls: &[String], delete_original: bool) -> LegadoResult<Vec<String>> {
+    with_database(|db| {
+        let repo = BookRepository::new(db.connection());
+        let mut warnings = Vec::new();
+        for book_url in book_urls {
+            let url = book_url.trim();
+            if url.is_empty() {
+                continue;
+            }
+            let book = repo.find_by_url(url)?;
+            if delete_original {
+                if let Some(book) = book.as_ref() {
+                    if let Err(message) = delete_local_book_file(book) {
+                        warnings.push(message);
+                    }
+                }
+            }
+            // 文件删除失败/书籍不存在（可能已被并发删除）都不阻断记录删除
+            repo.delete_by_url(url)?;
+        }
+        Ok(warnings)
+    })
+}
+
+/// 书籍级阅读记录开关（批35）
+///
+/// 对齐参考版 `BookInfoViewModel.toggleReadRecordDisabled`：单列 UPDATE
+/// （不整书回写，防陈旧快照覆盖进度），成功返回更新后的整书；书籍不存在
+/// 报错（fail-closed，UI 可提示而不是假装成功）。
+pub fn set_read_record_disabled(book_url: &str, disabled: bool) -> LegadoResult<Book> {
+    with_database(|db| {
+        let repo = BookRepository::new(db.connection());
+        repo.set_read_record_disabled(book_url, disabled)?
+            .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))
     })
 }
 
@@ -241,7 +369,7 @@ pub fn reorder_books(orders_json: &str) -> LegadoResult<()> {
 #[cfg(test)]
 mod tests {
     use crate::db_state::with_database;
-    use legado_core::models::{Book, ReadConfig};
+    use legado_core::models::{book_type, Book, ReadConfig};
     use legado_db::repository::Repository;
     use legado_db::BookRepository;
 
@@ -903,6 +1031,238 @@ mod tests {
         // 失败调用不得留下半写状态
         let cfg = raw_read_config(book_url);
         assert_eq!(cfg, serde_json::json!({"reverseToc": false}));
+
+        cleanup_book(book_url);
+    }
+
+    // ─── 批35：批量删除原文件 / 书籍级阅读记录开关 ──────────────────────
+
+    /// 生成临时文件并返回其绝对路径（文件名带进程 id + 纳秒，测试并行安全）
+    fn temp_book_file(ext: &str) -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "legado-batch35-{}-{unique}.{ext}",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"batch35 fixture").expect("写临时书籍文件失败");
+        path
+    }
+
+    fn seed_book(book_url: &str, origin: &str, book_type: i32) {
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "批35测试书".to_string(),
+                author: "作者".to_string(),
+                origin: origin.to_string(),
+                origin_name: "批35测试书.txt".to_string(),
+                book_type,
+                ..Book::default()
+            })
+        })
+        .expect("批35测试书入库失败");
+    }
+
+    /// 本地书 + deleteOriginal=true：磁盘文件与书架记录一起删除
+    #[test]
+    fn test_delete_books_removes_local_file_and_record() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let path = temp_book_file("epub");
+        let book_url = path.to_string_lossy().into_owned();
+        seed_book(&book_url, book_type::LOCAL_TAG, book_type::LOCAL);
+
+        let warnings =
+            super::delete_books(std::slice::from_ref(&book_url), true).expect("批量删除应成功");
+        assert!(
+            warnings.is_empty(),
+            "本地书文件正常删除不应有提示：{warnings:?}"
+        );
+        assert!(!path.exists(), "本地书原文件应被删除");
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            assert!(repo.find_by_url(&book_url)?.is_none(), "书籍记录应被删除");
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+    }
+
+    /// 非本地书：即使 deleteOriginal=true 也不删磁盘文件（只删记录）
+    #[test]
+    fn test_delete_books_keeps_non_local_file() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let path = temp_book_file("epub");
+        let book_url = path.to_string_lossy().into_owned();
+        seed_book(&book_url, "https://batch35.example.com", book_type::TEXT);
+
+        let warnings =
+            super::delete_books(std::slice::from_ref(&book_url), true).expect("批量删除应成功");
+        assert!(warnings.is_empty());
+        assert!(path.exists(), "非本地书不得删除磁盘文件");
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            assert!(repo.find_by_url(&book_url)?.is_none());
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// WebDAV 书：bookUrl 为本地缓存文件路径 → 删除缓存文件 + 记录
+    ///
+    /// WebDAV 书 origin 为 `webDav::`（bookType 无 local 位），仍属本地/远程
+    /// 存储书；原文件即 `bookUrl` 指向的本机缓存（导入时落盘）。
+    #[test]
+    fn test_delete_books_removes_webdav_cached_file() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let path = temp_book_file("txt");
+        let book_url = path.to_string_lossy().into_owned();
+        seed_book(
+            &book_url,
+            "webDav::https://dav.example.com/books/x.txt",
+            book_type::TEXT,
+        );
+
+        let warnings =
+            super::delete_books(std::slice::from_ref(&book_url), true).expect("批量删除应成功");
+        assert!(
+            warnings.is_empty(),
+            "WebDAV 缓存文件正常删除不应有提示：{warnings:?}"
+        );
+        assert!(!path.exists(), "WebDAV 书的本机缓存文件应被删除");
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            assert!(repo.find_by_url(&book_url)?.is_none(), "书籍记录应被删除");
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+    }
+
+    /// 路径安全：bookUrl 带 URL scheme → 不删任何文件、返回提示，记录照删
+    #[test]
+    fn test_delete_books_rejects_url_scheme_but_deletes_record() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch35-scheme.example.com/books/x.epub";
+        seed_book(book_url, book_type::LOCAL_TAG, book_type::LOCAL);
+
+        let warnings = super::delete_books(&[book_url.to_string()], true).expect("批量删除应成功");
+        assert_eq!(warnings.len(), 1, "应返回一条文件删除提示：{warnings:?}");
+        assert!(
+            warnings[0].contains("不是本地路径"),
+            "提示应说明 URL 非本地路径被跳过，实际：{}",
+            warnings[0]
+        );
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            assert!(
+                repo.find_by_url(book_url)?.is_none(),
+                "文件删除被拒绝不得阻断记录删除"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+    }
+
+    /// 路径安全：扩展名不在白名单 → 不删文件、返回提示，但记录照删
+    #[test]
+    fn test_delete_books_rejects_unlisted_extension_but_deletes_record() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let path = temp_book_file("db");
+        let book_url = path.to_string_lossy().into_owned();
+        seed_book(&book_url, book_type::LOCAL_TAG, book_type::LOCAL);
+
+        let warnings =
+            super::delete_books(std::slice::from_ref(&book_url), true).expect("批量删除应成功");
+        assert_eq!(warnings.len(), 1, "应返回一条文件删除提示：{warnings:?}");
+        assert!(
+            warnings[0].contains("白名单"),
+            "提示应说明白名单拒绝，实际：{}",
+            warnings[0]
+        );
+        assert!(path.exists(), "白名单外文件不得被删除");
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            assert!(
+                repo.find_by_url(&book_url)?.is_none(),
+                "文件删除失败不得阻断记录删除"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 文件已不存在：返回提示（含书名），记录照删
+    #[test]
+    fn test_delete_books_missing_file_yields_warning() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = std::env::temp_dir()
+            .join(format!(
+                "legado-batch35-missing-{}.epub",
+                std::process::id()
+            ))
+            .to_string_lossy()
+            .into_owned();
+        let _ = std::fs::remove_file(&book_url);
+        seed_book(&book_url, book_type::LOCAL_TAG, book_type::LOCAL);
+
+        let warnings =
+            super::delete_books(std::slice::from_ref(&book_url), true).expect("批量删除应成功");
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("原文件不存在"),
+            "提示应说明文件不存在，实际：{}",
+            warnings[0]
+        );
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            assert!(repo.find_by_url(&book_url)?.is_none());
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+    }
+
+    /// 单列写：只改 disableReadRecord，不覆盖阅读进度；书籍不存在报错
+    #[test]
+    fn test_set_read_record_disabled_single_column() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch35-read-record-disabled.example.com/book/1";
+        seed_book(book_url, "https://batch35.example.com", book_type::TEXT);
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            repo.update_progress(book_url, 7, 11, Some("第七章"), 1_700_000_000_000)
+        })
+        .expect("进度写入失败");
+
+        let updated = super::set_read_record_disabled(book_url, true).expect("开关写入应成功");
+        assert!(updated.disable_read_record, "返回值应携带新开关态");
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍应仍存在");
+            assert!(saved.disable_read_record);
+            assert_eq!(saved.dur_chapter_index, 7, "进度列不得被单列写覆盖");
+            assert_eq!(saved.dur_chapter_pos, 11);
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        let updated = super::set_read_record_disabled(book_url, false).expect("关闭应成功");
+        assert!(!updated.disable_read_record);
+
+        let err = super::set_read_record_disabled(
+            "https://batch35-read-record-disabled.example.com/book/missing",
+            true,
+        )
+        .expect_err("书籍不存在必须报错");
+        assert!(
+            err.to_string().contains("书籍不存在"),
+            "错误信息应指出书籍不存在，实际：{err}"
+        );
 
         cleanup_book(book_url);
     }

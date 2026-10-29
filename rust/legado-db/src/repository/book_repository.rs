@@ -28,7 +28,8 @@ impl<'a> BookRepository<'a> {
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl
+                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
+                        disableReadRecord
                  FROM books WHERE bookUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -62,7 +63,8 @@ impl<'a> BookRepository<'a> {
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl
+                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
+                        disableReadRecord
                  FROM books WHERE originBookUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -89,7 +91,8 @@ impl<'a> BookRepository<'a> {
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl
+                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
+                        disableReadRecord
                  FROM books WHERE name = ?1 AND author = ?2",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -119,7 +122,8 @@ impl<'a> BookRepository<'a> {
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl
+                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
+                        disableReadRecord
                  FROM books WHERE (type & 1024) = 0 ORDER BY \"order\" ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -138,6 +142,46 @@ impl<'a> BookRepository<'a> {
             .execute("DELETE FROM books WHERE bookUrl = ?1", params![book_url])
             .map_err(|e| LegadoError::Database(format!("删除失败: {e}")))?;
         Ok(())
+    }
+
+    /// 书籍级阅读记录开关（批35，对齐原版 `BookDao.setReadRecordDisabled`）
+    ///
+    /// **单列 UPDATE**：只改 `disableReadRecord`，不做整书回写——阅读器/详情页
+    /// 并发保存进度时，调用方持有的 Book 快照可能是旧的，全行写会覆盖进度或
+    /// 其他列（参考版 `BookRepository.setReadRecordDisabled` 同款事务内单列写）。
+    /// 返回更新后的整书（行不存在返回 `None`，由 FFI 层报「书籍不存在」）。
+    pub fn set_read_record_disabled(
+        &self,
+        book_url: &str,
+        disabled: bool,
+    ) -> LegadoResult<Option<Book>> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE books SET disableReadRecord = ?1 WHERE bookUrl = ?2",
+                params![disabled, book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新阅读记录开关失败: {e}")))?;
+        if affected == 0 {
+            return Ok(None);
+        }
+        self.find_by_url(book_url)
+    }
+
+    /// 该书是否关闭了阅读记录（批35，阅读记录写路径的前置判断）
+    ///
+    /// 书籍不存在时返回 `false`（保持旧行为：临时书/未落库书照常写入）。
+    pub fn is_read_record_disabled(&self, book_url: &str) -> LegadoResult<bool> {
+        let value: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT disableReadRecord FROM books WHERE bookUrl = ?1",
+                params![book_url],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| LegadoError::Database(format!("查询阅读记录开关失败: {e}")))?;
+        Ok(value.unwrap_or(0) != 0)
     }
 
     /// 获取书籍总数
@@ -467,11 +511,12 @@ impl<'a> BookRepository<'a> {
               \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
               lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
               durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
-              wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-              infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl)
+              wordCount, canUpdate, disableReadRecord, \"order\", originOrder, variable,
+              readConfig, syncTime, infoHtml, tocHtml, downloadUrls, coverOrigin,
+              originBookUrl)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,
                      ?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,
-                     ?34,?35,?36,?37,?38)",
+                     ?34,?35,?36,?37,?38,?39)",
                 params![
                     item.book_url,
                     item.toc_url,
@@ -501,6 +546,8 @@ impl<'a> BookRepository<'a> {
                     item.dur_chapter_time,
                     item.word_count,
                     item.can_update,
+                    // [批35] 书籍级阅读记录开关（bool → SQLite INTEGER）
+                    item.disable_read_record,
                     item.order,
                     item.origin_order,
                     item.variable,
@@ -595,7 +642,8 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                         lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
-                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl
+                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
+                        disableReadRecord
                  FROM books ORDER BY \"order\" ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -671,11 +719,11 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     charset=?12, type=?13, \"group\"=?14, latestChapterTitle=?15,
                     latestChapterTime=?16, lastCheckTime=?17, lastCheckCount=?18,
                     totalChapterNum=?19, durVolumeIndex=?20, chapterInVolumeIndex=?21,
-                    wordCount=?22, canUpdate=?23, \"order\"=?24,
-                    originOrder=?25, variable=?26, readConfig=?27, syncTime=?28,
-                    infoHtml=?29, tocHtml=?30, downloadUrls=?31, coverOrigin=?32,
-                    originBookUrl=?33
-                 WHERE bookUrl=?34",
+                    wordCount=?22, canUpdate=?23, disableReadRecord=?24, \"order\"=?25,
+                    originOrder=?26, variable=?27, readConfig=?28, syncTime=?29,
+                    infoHtml=?30, tocHtml=?31, downloadUrls=?32, coverOrigin=?33,
+                    originBookUrl=?34
+                 WHERE bookUrl=?35",
                 params![
                     item.toc_url,
                     item.origin,
@@ -700,6 +748,8 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     item.chapter_in_volume_index,
                     item.word_count,
                     item.can_update,
+                    // [批35] 书籍级阅读记录开关（单列写入口见 set_read_record_disabled）
+                    item.disable_read_record,
                     item.order,
                     item.origin_order,
                     item.variable,
@@ -775,6 +825,8 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
         cover_origin: row.get(36)?,
         // [P2-8] 当前书源下该书的详情页地址（换源事务写入；空=回退 book_url）
         origin_book_url: row.get(37)?,
+        // [批35] 书籍级阅读记录开关（SELECT 末尾追加，列顺序与旧版兼容）
+        disable_read_record: row.get(38)?,
     })
 }
 

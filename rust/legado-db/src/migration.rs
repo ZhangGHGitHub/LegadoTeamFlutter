@@ -6,6 +6,7 @@
 //! - 使用 SQLite `user_version` PRAGMA 追踪当前版本
 
 pub mod daily_seconds_v107;
+pub mod disable_read_record_v117;
 pub mod highlight_rule_columns_v110;
 pub mod migrations;
 pub mod origin_book_url_v109;
@@ -83,6 +84,7 @@ impl MigrationRegistry {
         self.register(Box::new(rule_fields_v114::Migration113To114));
         self.register(Box::new(source_check_state_v115::Migration114To115));
         self.register(Box::new(reverse_toc_display_v116::Migration115To116));
+        self.register(Box::new(disable_read_record_v117::Migration116To117));
     }
 
     /// 注册单个迁移
@@ -317,7 +319,8 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 26);
+        // 批35：新增 Migration116To117（books.disableReadRecord）→ 27
+        assert_eq!(list.len(), 27);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }

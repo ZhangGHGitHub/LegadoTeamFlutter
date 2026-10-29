@@ -1099,7 +1099,8 @@ pub unsafe extern "C" fn ffi_read_record_upsert(
 ) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let name = c_char_to_str(book_name)?;
-        crate::api::read_record_api::upsert_read_record(name, read_time)
+        // [批35] 旧 C ABI 保持无 bookUrl（书级开关只在 frb 主链路生效）
+        crate::api::read_record_api::upsert_read_record(name, read_time, None)
     }))
 }
 

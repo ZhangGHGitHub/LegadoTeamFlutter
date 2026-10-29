@@ -66,6 +66,13 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
         add_column_if_not_exists(conn, "books", "coverOrigin", "TEXT DEFAULT ''")?;
         // [P2-8 审查 P2-1] 「版本号已到 109 但缺列」场景由每次开库的自愈补列兜住
         add_column_if_not_exists(conn, "books", "originBookUrl", "TEXT NOT NULL DEFAULT ''")?;
+        // [批35] 书籍级阅读记录开关（v117）：版本号已到 117 但缺列时自愈
+        add_column_if_not_exists(
+            conn,
+            "books",
+            "disableReadRecord",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
     }
 
     // rssSources 表补列（仅当表存在时）

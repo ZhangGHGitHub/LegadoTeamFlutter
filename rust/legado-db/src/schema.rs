@@ -73,7 +73,12 @@ use legado_core::{LegadoError, LegadoResult};
 ///   `books.readConfig` 为 JSON TEXT 列（与原版 Room 一致），新键随
 ///   ReadConfig 序列化写入、旧库缺键按 serde 默认 `false` 读取；迁移
 ///   115→116 为幂等版本登记（空操作），用于记录数据契约版本。
-pub const SCHEMA_VERSION: u32 = 116;
+/// - v117：books 补 `disableReadRecord` 列（批35，对齐原版
+///   `Book.disableReadRecord`，`Book.kt:120-122`）：单本书独立关闭阅读记录，
+///   `INTEGER NOT NULL DEFAULT 0`（旧库/旧备份缺键 = false，既有行为不变）；
+///   写入侧只在阅读记录写路径按书级开关跳过，不删除既有历史记录。
+///   Migration116To117 幂等增列，并纳入开库自愈 `repair_legacy_columns`。
+pub const SCHEMA_VERSION: u32 = 117;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -179,6 +184,7 @@ CREATE TABLE IF NOT EXISTS books (
     durChapterTime INTEGER NOT NULL DEFAULT 0,
     wordCount TEXT,
     canUpdate INTEGER NOT NULL DEFAULT 1,
+    disableReadRecord INTEGER NOT NULL DEFAULT 0,
     \"order\" INTEGER NOT NULL DEFAULT 0,
     originOrder INTEGER NOT NULL DEFAULT 0,
     variable TEXT,

@@ -4340,6 +4340,86 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// [批35] 书籍级阅读记录开关备份往返：`books` 段携带 disableReadRecord，
+    /// 清库后恢复仍为 true；旧备份缺键恢复为 false（不误开/误关）。
+    #[test]
+    fn test_disable_read_record_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        let book_url = "https://batch35-backup.example.com/book/1";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "批35备份书".to_string(),
+                author: "作者".to_string(),
+                origin: "https://batch35-backup.example.com".to_string(),
+                disable_read_record: true,
+                ..Book::default()
+            })
+        })
+        .expect("批35备份书入库失败");
+
+        let dir = std::env::temp_dir().join("legado_backup_disable_read_record");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("disable_read_record.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        assert_eq!(backup_create(path_str).unwrap(), path_str);
+        let content = fs::read_to_string(&backup_path).unwrap();
+        // 备份 JSON 为缩进格式，按模型反序列化后取本书条目断言（不依赖空格）
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        let backed_up = parsed
+            .books
+            .iter()
+            .find(|b| b["bookUrl"] == serde_json::json!(book_url))
+            .expect("备份 books 段应包含本书");
+        assert_eq!(
+            backed_up["disableReadRecord"],
+            serde_json::json!(true),
+            "备份 books 段应携带 disableReadRecord=true：{backed_up}"
+        );
+
+        // 清库 → 恢复 → 开关与书籍记录一起回来
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url))
+            .expect("清库失败");
+        assert!(backup_restore(path_str).is_ok());
+        let restored =
+            with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+                .expect("恢复后查询失败")
+                .expect("恢复后书籍应存在");
+        assert!(restored.disable_read_record, "恢复后开关应为 true");
+
+        // 旧备份缺键 → false（默认照常记录）
+        let legacy = serde_json::json!({
+            "version": BACKUP_VERSION,
+            "books": [{
+                "bookUrl": book_url,
+                "name": "批35旧备份书",
+                "author": "作者",
+                "origin": "https://batch35-backup.example.com"
+            }],
+        });
+        let (legacy_dir, legacy_path) = write_json_backup_file(
+            "legado_backup_disable_read_record_legacy",
+            "legacy.json",
+            &legacy.to_string(),
+        );
+        assert!(backup_restore(&legacy_path).is_ok());
+        let legacy_book =
+            with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+                .expect("旧备份恢复后查询失败")
+                .expect("旧备份恢复后书籍应存在");
+        assert!(!legacy_book.disable_read_record, "旧备份缺键应恢复为 false");
+
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url)).ok();
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&legacy_dir);
+    }
+
     /// [批16f] 配置缺失/空串时不写该键（备份形状保持旧版兼容）
     #[test]
     fn test_backup_without_direct_link_rule_omits_key() {
