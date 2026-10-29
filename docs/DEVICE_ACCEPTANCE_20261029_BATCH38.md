@@ -11,6 +11,8 @@
 > 备份恢复成功后**同一会话内**打开阅读主题页会一直转圈、设置入口显示「未应用主题（自定义）」，
 > **重启应用后恢复正常**（主题列表与当前 id 数据本身已正确往返）。缺陷详见 §五.1。
 > 全流程 OS 层 FATAL=0、ANR=0。
+>
+> **回修（2.0.418+419，2026-10-30）**：§五.1 P2 已修复，同设备复验通过（见 §七）。
 
 ## 一、环境与产物
 
@@ -259,3 +261,75 @@
 - 设备已清理：DB/偏好恢复至升级前内容，测试主题与文件删除，应用保留 2.0.417/418。
 
 编写者：QA（ZCode 子代理）｜ 2026-10-30
+
+## 七、批 38c 回修：P2 缺陷修复与复验（2.0.418+419）
+
+### 7.1 根因
+
+Riverpod 2.x 的 `NotifierProvider` 在 `ref.invalidate` / 依赖变化重建时**复用同一个
+Notifier 实例**再次执行 `build()`，且 `ref.onDispose` 在重建前就触发
+（`ProviderElementBase.invalidateSelf` → `runOnDispose`）。`ReaderThemeNotifier` 用一次性
+`_disposed` 布尔量判定「已销毁」，重建后该值仍为 true → `_loadLoop()` 一进循环立即退出，
+`loaded` 永远停在 false：
+
+- 主题页 `body: loaded ? 网格/列表 : CircularProgressIndicator` → 无限转圈；
+- 设置入口 `currentTheme == null` → 显示「未应用主题（自定义）」。
+
+`_loadLoop` 由 `build()` 内不 await 启动，异常路径不抛错，故验收时仅表现为「不加载」。
+只有恢复链路会 invalidate 该 provider，因此仅「恢复后同会话」复现，重启（新容器/新
+Notifier 实例）即恢复。同一函数 `_reloadPrefsAfterRestore` 里的 `readerTopBarActionsProvider`
+存在同一缺陷（恢复后顶栏按钮配置停留在默认顺序与开关）。
+
+### 7.2 修法
+
+- 两个 Notifier 改为**构建生命周期序号**：`build()` 递增 `_lifecycle` 并置 `_alive=true`；
+  `ref.onDispose` 只让「自己这一代」失效（`_alive=false; _lifecycle++`）；
+- `_loadLoop(lifecycle)` / `_load(lifecycle)` 捕获序号，序号不匹配立即返回，绝不写 state；
+- `_ensureLoaded()` 同样按捕获序号判定存活，provider 销毁后不再启动空转加载；
+- 未改 FFI/契约/持久化格式，未改 UI 结构。
+
+### 7.3 红→绿用例（`flutter test`）
+
+| 用例 | 修复前 | 修复后 |
+|---|---|---|
+| `reader_theme_test.dart`「invalidate 后重建：重读磁盘 prefs，loaded=true 且当前 id 生效」 | 超时（loaded 永假） | PASS |
+| 同文件「重建后变更操作可用：markCurrent/新建不因旧生命周期卡住」 | 超时 | PASS |
+| 同文件 widget「恢复后重建不无限转圈：主题页加载完成并标记当前」 | 一直 `CircularProgressIndicator` | PASS |
+| `reader_top_bar_actions_test.dart`「invalidate 后重建：重读 prefs 配置而非停在默认」 | 配置停在默认（顺序以 download 开头） | PASS |
+
+门禁：`flutter analyze` 0 issue；`flutter test` 3286 passed / 1 skipped；
+`cargo build -p legado-ffi --features quickjs` 成功。
+
+### 7.4 真机复验（同设备 `192.168.100.62:5555`，2.0.418+419 覆盖安装保留数据）
+
+复验走与验收相同的用户路径（provider 先被实例化再恢复，才能覆盖缺陷场景）：
+
+1. 冷启动 → 我的 → 设置 → 备份与恢复 → 长按「恢复」选 `legado_backup_verify2.json`
+   （批38 验收备份，含自建主题「QA38备份往返」、current id 与恢复书）→「恢复成功」
+   （`shots/02~06`）。
+2. 打开恢复书 → 阅读设置：主题入口显示「QA38备份往返」；进主题页（provider 首载完成）
+   （`shots/07~09`）。
+3. 主题页「更多 → 恢复默认主题」清空自建库（provider 仍存活、`loaded=true`）
+   （`shots/10、11`）。
+4. **同一会话**回备份页长按恢复同一备份 →「恢复成功」（`shots/12~15`）。
+5. 立刻打开阅读设置：入口显示「QA38备份往返」（不再是「未应用主题（自定义）」）；
+   打开主题页：**1s/3s/8s 截图均为完整网格**，6 项（内置 5 + 自建 1）齐全，
+   当前主题带加粗主色边框，无转圈（`shots/16~19`）。
+6. logcat（`logcat/logcat_session.txt`，975 行）：`FATAL EXCEPTION` 0、
+   `ANR in io.legado.flutter_legado` 0、`E/flutter` 0；prefs（`prefs/15`）与备份一致：
+   `reader_theme_list` 含 QA38备份往返、`reader_theme_current_id=theme-1793292014848143-35`、
+   `themeGridColumns=4`。
+
+### 7.5 证据（`tmp_debug/device_acceptance_20261029_batch38/verify2/`）
+
+| 类别 | 文件 |
+|---|---|
+| 构建 | `build_apk_418.log` |
+| 截图 | `shots/01_launch` … `shots/19_theme_after_restore2_8s`（每张附 uiautomator XML） |
+| prefs | `prefs/prefs_before.xml`、`06_prefs_after_restore1.xml`、`11_prefs_after_defaults.xml`、`15_prefs_after_restore2.xml` |
+| 日志 | `logcat/logcat_session.txt` |
+| 驱动 | `qa38v.py`（复用批38驱动，证据目录重定向到 `verify2/`） |
+
+设备当前状态：已装 2.0.418+419，保留本次复验主题与恢复书（如需清理可参照 §3.9 步骤）。
+
+编写者：全栈工程师（ZCode 子代理，批 38c 回修）｜ 2026-10-30
