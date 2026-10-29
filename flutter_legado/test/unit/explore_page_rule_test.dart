@@ -110,5 +110,92 @@ void main() {
         isFalse,
       );
     });
+
+    test('字符串与注释里的 page 不算引用（对齐参考版 AST 判定）', () {
+      // 纯字符串
+      expect(
+        exploreRuleSupportsPageSelection("@js: 'https://site.com/page'"),
+        isFalse,
+      );
+      // 注释
+      expect(
+        exploreRuleSupportsPageSelection(
+          "@js: /* page */ 'https://site.com/list'",
+        ),
+        isFalse,
+      );
+      // 行注释
+      expect(
+        exploreRuleSupportsPageSelection(
+          '@js: // page\n"https://site.com/list"',
+        ),
+        isFalse,
+      );
+      // 表达式里的字符串
+      expect(
+        exploreRuleSupportsPageSelection("https://site.com/{{'page'}}"),
+        isFalse,
+      );
+    });
+
+    test(r'模板字符串 ${page} 表达式仍算引用', () {
+      expect(
+        exploreRuleSupportsPageSelection(
+          r'@js: `https://site.com/list?page=${page}`',
+        ),
+        isTrue,
+      );
+    });
+
+    test('局部变量/函数形参遮蔽全局 page → 不支持', () {
+      expect(
+        exploreRuleSupportsPageSelection(
+          "@js: var page = 1; 'https://site.com/list?page=' + page",
+        ),
+        isFalse,
+      );
+      expect(
+        exploreRuleSupportsPageSelection(
+          'https://site.com/{{(function(page) { return page; })(1)}}',
+        ),
+        isFalse,
+      );
+    });
+
+    test('对象属性键位 page 不误判（{page:1}.page）', () {
+      expect(
+        exploreRuleSupportsPageSelection(
+          'https://site.com/{{({page: 1}).page}}',
+        ),
+        isFalse,
+      );
+    });
+
+    test('Rust 引擎支持的 {page} / {page,a,b} 花括号页码 → 支持', () {
+      expect(
+        exploreRuleSupportsPageSelection('https://site.com/list/{page}.html'),
+        isTrue,
+      );
+      expect(
+        exploreRuleSupportsPageSelection(
+          'https://site.com/list/{page,1,2,3}.html',
+        ),
+        isTrue,
+      );
+      // 花括号里没有 page 键的普通占位不算页码
+      expect(
+        exploreRuleSupportsPageSelection('https://site.com/list/{id}.html'),
+        isFalse,
+      );
+    });
+
+    test('@Header JSON 字符串中的 page 不误判', () {
+      expect(
+        exploreRuleSupportsPageSelection(
+          'https://site.com/list,{"headers":{"Referer":"https://site.com/page"}}',
+        ),
+        isFalse,
+      );
+    });
   });
 }
