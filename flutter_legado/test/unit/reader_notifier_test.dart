@@ -298,6 +298,36 @@ void main() {
       expect(readState().backgroundColor, equals(ReaderBackground.white));
     });
 
+    // [批38b | P3-2] 自定义背景选中态以显式标志 reader_bg_use_custom 为准，
+    // 不能按「背景色不在预设色表内」反推（深色默认纯黑会误判为自定义）
+    test('useCustomBackground 跟随显式标志变化', () async {
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(
+        readNotifier().useCustomBackground,
+        isFalse,
+        reason: '默认背景即使不在预设色表内也不算自定义',
+      );
+
+      await readNotifier().updateCustomBackgroundColor(
+        const Color(0xFF232323),
+      );
+      expect(readNotifier().useCustomBackground, isTrue);
+
+      readNotifier().updateBackgroundColor(ReaderBackground.green);
+      expect(readNotifier().useCustomBackground, isFalse);
+    });
+
+    test('深色主题默认纯黑背景不亮自定义背景标志', () async {
+      SharedPreferences.setMockInitialValues({
+        'app_theme_mode': 'dark',
+      });
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(const Color(0xFF000000)));
+      expect(readNotifier().useCustomBackground, isFalse);
+    });
+
     test('翻页模式 name 优先', () async {
       SharedPreferences.setMockInitialValues({
         'reader_flip_mode_name': 'slide',

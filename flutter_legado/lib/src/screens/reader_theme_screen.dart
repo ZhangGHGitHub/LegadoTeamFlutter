@@ -22,6 +22,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection, SliverConstraints;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -123,7 +124,13 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
 
   /// 应用主题：字号/行距/背景走 ReaderNotifier，排版走 ReaderAdvancedConfig，
   /// 正文字体写 prefs（ReaderPageView 在下一次布局读取并重载自定义字体）
-  Future<void> _applyTheme(ReaderTheme theme) async {
+  ///
+  /// [showMessage] 为 false 时不弹「已应用」提示（「恢复默认」等复合操作自己
+  /// 汇总一条提示，避免连续两条 SnackBar 互相覆盖）。
+  Future<void> _applyTheme(
+    ReaderTheme theme, {
+    bool showMessage = true,
+  }) async {
     if (_applying) return;
     setState(() => _applying = true);
     try {
@@ -164,7 +171,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       }
 
       await ref.read(readerThemeProvider.notifier).markCurrent(theme.id);
-      if (!mounted) return;
+      if (!mounted || !showMessage) return;
       _showSnack('已应用「${theme.name}」');
     } catch (e) {
       if (mounted) _showSnack('应用主题失败：$e');
@@ -200,11 +207,13 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       hint: '主题名称',
     );
     if (newName == null) return;
-    final ok = await ref
+    final actualName = await ref
         .read(readerThemeProvider.notifier)
         .renameTheme(theme.id, newName);
     if (!mounted) return;
-    _showSnack(ok ? '已重命名为「$newName」' : '重命名失败');
+    _showSnack(
+      actualName == null ? '重命名失败' : '已重命名为「$actualName」',
+    );
   }
 
   Future<void> _confirmDelete(Set<String> ids) async {
@@ -249,12 +258,17 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         .moveThemesToEdge(_selectedIds, toTop: toTop);
   }
 
+  /// 恢复默认主题
+  ///
+  /// 语义与字面一致（批38b 审查 P2-4）：「恢复默认」= 清空用户自建主题 +
+  /// 把当前阅读样式应用为内置默认（预设1），而不是只删数据、阅读样式留在
+  /// 用户最后一次的自定义状态。
   Future<void> _restoreDefaults() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('恢复默认主题'),
-        content: const Text('将删除全部自建主题并恢复内置主题，是否继续？'),
+        content: const Text('将删除全部自建主题，并把阅读样式恢复为内置「预设1」，是否继续？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -271,7 +285,14 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     await ref.read(readerThemeProvider.notifier).restoreDefaults();
     if (!mounted) return;
     setState(() => _selectedIds.clear());
-    _showSnack('已恢复默认主题');
+    // 内置默认 = 预设1（kBuiltInReaderThemes 顺序固定：微信读书、预设1..4）
+    final defaultTheme = kBuiltInReaderThemes.firstWhere(
+      (theme) => theme.id == 'builtin-preset-1',
+      orElse: () => kBuiltInReaderThemes[1],
+    );
+    await _applyTheme(defaultTheme, showMessage: false);
+    if (!mounted) return;
+    _showSnack('已恢复默认主题，阅读样式已应用「${defaultTheme.name}」');
   }
 
   // ===== 导入 / 导出 / 分享 =====
@@ -283,11 +304,13 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         allowedExtensions: const ['json'],
         withData: true,
       );
+      if (!mounted) return;
       if (result == null || result.files.isEmpty) return;
       final file = result.files.single;
       final bytes =
           file.bytes ??
           (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (!mounted) return;
       if (bytes == null) {
         _showSnack('读取文件失败');
         return;
@@ -300,6 +323,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
 
   Future<void> _importFromClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
     final text = data?.text;
     if (text == null || text.trim().isEmpty) {
       _showSnack('剪贴板没有主题 JSON');
@@ -357,10 +381,18 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       final file = File(
         '${dir.path}${Platform.pathSeparator}${_safeFileName(name)}.json',
       );
-      await file.writeAsString(content);
-      await Share.shareXFiles(<XFile>[
-        XFile(file.path, mimeType: 'application/json'),
-      ], subject: name);
+      try {
+        await file.writeAsString(content);
+        await Share.shareXFiles(<XFile>[
+          XFile(file.path, mimeType: 'application/json'),
+        ], subject: name);
+      } finally {
+        // 分享结束即清理临时文件（系统分享已拿到副本/句柄）；删除失败不影响
+        // 分享结果，也不向用户报错
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
     } catch (e) {
       if (mounted) _showSnack('分享失败：$e');
     }
@@ -388,45 +420,107 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       );
       return;
     }
-    // 网格是惰性构建：目标卡未构建时没有 context，先按行列估算滚到附近，
-    // 等一帧构建出目标卡后再精确定位（列表布局全部 chip 已构建，走上面）
+    // 网格是惰性构建：目标卡未构建时没有 context，先按网格代理自身几何
+    // 精确算出目标行偏移滚到附近，等目标卡构建出 context 后再居中
     if (!_gridMode || !_scrollController.hasClients) return;
     final index = themeState.themes.indexWhere((theme) => theme.id == id);
     if (index < 0) return;
-    final columns = themeState.gridColumns.clamp(
-      ReaderThemeService.minGridColumns,
-      ReaderThemeService.maxGridColumns,
-    );
-    final contentWidth = MediaQuery.sizeOf(context).width - 32;
-    final tileWidth =
-        (contentWidth - 10 * (columns - 1)) / columns;
-    // 卡片 44:56 + 名称行（6 间距 + 约 16 行高）+ 10 行距
-    final tileHeight = tileWidth / 0.62 + 32;
-    final row = index ~/ columns;
     final position = _scrollController.position;
-    final target = (row * tileHeight + 16 - position.viewportDimension / 2)
-        .clamp(0.0, position.maxScrollExtent);
+    final target = _gridItemCenterOffset(
+      index: index,
+      columns: themeState.gridColumns,
+      position: position,
+      crossAxisExtent: _gridViewportWidth(position),
+    );
     await _scrollController.animateTo(
       target,
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
     if (!mounted) return;
-    // 下一帧目标卡构建完成后再精确定位（回调里重新取 context，避免跨
-    // async gap 复用 BuildContext）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final builtContext = _itemKeys[id]?.currentContext;
-      if (builtContext == null) return;
-      unawaited(
-        Scrollable.ensureVisible(
-          builtContext,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutCubic,
-          alignment: 0.5,
-        ),
-      );
-    });
+    // 懒加载可能分帧构建目标卡：逐帧等待 context 出现再精确居中（最多 5 帧，
+    // 目标行此时已在可视区内，正常 1~2 帧即命中）
+    final builtContext = await _waitForItemContext(id);
+    if (builtContext == null || !mounted) return;
+    // builtContext 来自 GlobalKey 重新取到的目标卡，不是 State.context；
+    // 上面的 mounted 已守住页面销毁，分析器的跨 async gap 提示属误报
+    await Scrollable.ensureVisible(
+      // ignore: use_build_context_synchronously
+      builtContext,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      alignment: 0.5,
+    );
+  }
+
+  /// 网格视口横向宽度（交叉轴）
+  ///
+  /// [ScrollPosition.viewportDimension] 是主轴（纵向）尺寸，不能当交叉轴用；
+  /// 这里取滚动视图实际渲染宽度，网格代理据此算出与真实布局一致的列宽。
+  double _gridViewportWidth(ScrollPosition position) {
+    final renderObject = position.context.storageContext.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      return renderObject.size.width;
+    }
+    return MediaQuery.sizeOf(context).width;
+  }
+
+  /// 目标卡中心在滚动轴上的位置（用网格代理几何计算，含行距与名称行）
+  ///
+  /// 直接请求 [ReaderThemeGrid.delegateFor] 的 `SliverGridLayout`：
+  /// 卡片高度由代理按宽高比算出（名称行在卡片内部，不再手工 `/0.62 + 32`
+  /// 重复加名称行、也不漏 [ReaderThemeGrid.gridSpacing] 的主轴行距）。
+  /// `crossAxisExtent` 取减去网格左右内边距后的内容宽度，与实际
+  /// `SliverPadding` 内的网格 sliver 一致。
+  double _gridItemCenterOffset({
+    required int index,
+    required int columns,
+    required ScrollPosition position,
+    required double crossAxisExtent,
+  }) {
+    final delegate = ReaderThemeGrid.delegateFor(columns);
+    final contentWidth =
+        crossAxisExtent - ReaderThemeGrid.gridPadding.horizontal;
+    final layout = delegate.getLayout(
+      SliverConstraints(
+        axisDirection: AxisDirection.down,
+        growthDirection: GrowthDirection.forward,
+        userScrollDirection: ScrollDirection.idle,
+        scrollOffset: position.pixels,
+        precedingScrollExtent: 0,
+        overlap: 0,
+        remainingPaintExtent: position.viewportDimension,
+        crossAxisExtent: contentWidth,
+        crossAxisDirection: AxisDirection.right,
+        viewportMainAxisExtent: position.viewportDimension,
+        remainingCacheExtent: position.viewportDimension + 250,
+        cacheOrigin: -250,
+      ),
+    );
+    final geometry = layout.getGeometryForChildIndex(index);
+    final itemCenter =
+        ReaderThemeGrid.gridPadding.top +
+        geometry.scrollOffset +
+        geometry.mainAxisExtent / 2;
+    return (itemCenter - position.viewportDimension / 2).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+  }
+
+  /// 逐帧等待目标卡的 [GlobalKey] 拿到 context（最多 [attempts] 帧）
+  Future<BuildContext?> _waitForItemContext(
+    String id, {
+    int attempts = 5,
+  }) async {
+    for (var i = 0; i < attempts; i++) {
+      final context = _itemKeys[id]?.currentContext;
+      if (context != null) return context;
+      if (!mounted) return null;
+      WidgetsBinding.instance.scheduleFrame();
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    return _itemKeys[id]?.currentContext;
   }
 
   Future<void> _scrollToEdge({required bool toBottom}) async {
@@ -453,6 +547,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
   // ===== 交互辅助 =====
 
   void _showSnack(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
@@ -480,6 +575,11 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       setState(() {
         if (!_selectedIds.remove(theme.id)) _selectedIds.add(theme.id);
       });
+      return;
+    }
+    // 应用进行中给出点击反馈，而不是静默吞掉（批38b 审查 P3-5）
+    if (_applying) {
+      _showSnack('正在应用主题…');
       return;
     }
     unawaited(_applyTheme(theme));
@@ -585,6 +685,13 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(readerThemeProvider);
+    // 清理已删除/已替换主题的 GlobalKey，避免 _itemKeys 随增删无限增长
+    // （批38b 审查 P3-7）
+    final liveIds = <String>{for (final theme in themeState.themes) theme.id};
+    _itemKeys.removeWhere((id, _) => !liveIds.contains(id));
+    // 首载完成前禁用菜单/列数/管理等入口：此时内存列表还是空的，任何变更
+    // 都可能以空列表落盘覆盖磁盘主题库（批38b 审查 P2-1）
+    final loaded = themeState.loaded;
     // 当前主题标记按已记录的 id（对齐参考版 styleSelect 语义：手动改样式
     // 不撤销「正在使用」标记，重新应用同一主题即再次对齐）
     final currentId = themeState.currentId;
@@ -599,12 +706,15 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
             icon: Icon(
               _gridMode ? Icons.view_list_rounded : Icons.grid_view_rounded,
             ),
-            onPressed: () => setState(() => _gridMode = !_gridMode),
+            onPressed: loaded
+                ? () => setState(() => _gridMode = !_gridMode)
+                : null,
           ),
           if (_gridMode)
             PopupMenuButton<int>(
               tooltip: '网格列数',
               icon: const Icon(Icons.view_column_rounded),
+              enabled: loaded,
               initialValue: themeState.gridColumns,
               onSelected: (columns) {
                 unawaited(
@@ -638,10 +748,11 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
             IconButton(
               tooltip: '管理主题',
               icon: const Icon(Icons.checklist_rounded),
-              onPressed: () => setState(() => _manageMode = true),
+              onPressed: loaded ? () => setState(() => _manageMode = true) : null,
             ),
           PopupMenuButton<String>(
             tooltip: '更多',
+            enabled: loaded,
             onSelected: (value) {
               switch (value) {
                 case 'create':
@@ -667,7 +778,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           ),
         ],
       ),
-      body: themeState.loaded
+      body: loaded
           ? Stack(
               children: <Widget>[
                 Column(
@@ -694,6 +805,14 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                   ],
                 ),
                 _buildFloatingActions(currentId, colorScheme),
+                // 应用进行中：顶部细进度条给出反馈（点击已由 _onThemeTap 拦截）
+                if (_applying)
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
               ],
             )
           : const Center(child: CircularProgressIndicator()),
@@ -992,6 +1111,28 @@ class ReaderThemeGrid extends StatelessWidget {
     this.onAdd,
   });
 
+  /// 网格内边距（渲染与「定位当前」的几何计算共用同一来源）
+  static const EdgeInsets gridPadding = EdgeInsets.fromLTRB(16, 16, 16, 96);
+
+  /// 卡片横纵间距（渲染与定位共用；主轴行距必须参与偏移计算）
+  static const double gridSpacing = 10;
+
+  /// 卡片宽高比（宽:高）
+  static const double gridChildAspectRatio = 0.62;
+
+  /// 网格代理（渲染与「定位当前」共用，避免手写偏移与真实布局漂移）
+  static SliverGridDelegateWithFixedCrossAxisCount delegateFor(int columns) {
+    return SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: columns.clamp(
+        ReaderThemeService.minGridColumns,
+        ReaderThemeService.maxGridColumns,
+      ),
+      crossAxisSpacing: gridSpacing,
+      mainAxisSpacing: gridSpacing,
+      childAspectRatio: gridChildAspectRatio,
+    );
+  }
+
   final List<ReaderTheme> themes;
   final int columns;
   final String currentId;
@@ -1009,16 +1150,8 @@ class ReaderThemeGrid extends StatelessWidget {
     final itemCount = themes.length + (showAddTile ? 1 : 0);
     return GridView.builder(
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns.clamp(
-          ReaderThemeService.minGridColumns,
-          ReaderThemeService.maxGridColumns,
-        ),
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.62,
-      ),
+      padding: gridPadding,
+      gridDelegate: delegateFor(columns),
       itemCount: itemCount,
       itemBuilder: (context, index) {
         if (index >= themes.length) {
@@ -1076,120 +1209,131 @@ class ReaderThemeCard extends StatelessWidget {
     final borderColor = isCurrent
         ? colorScheme.primary
         : colorScheme.outlineVariant;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: borderColor, width: isCurrent ? 2 : 1),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Material(
-              color: background,
-              child: InkWell(
-                onTap: onTap,
-                onLongPress: onLongPress,
-                child: Stack(
-                  children: <Widget>[
-                    Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        // 6 列窄卡下 22pt 样张会超宽：统一缩放到卡片内
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                '阅读',
-                                style: TextStyle(
-                                  color: _foreground,
-                                  fontSize: 22,
-                                  height: 1.15,
-                                  fontWeight: theme.style.textBold == 1
-                                      ? FontWeight.w700
-                                      : theme.style.textBold == 2
-                                      ? FontWeight.w300
-                                      : FontWeight.w500,
-                                  fontStyle: theme.style.italic
-                                      ? FontStyle.italic
-                                      : FontStyle.normal,
+    // 整卡（含名称行）一个 InkWell：名称区此前在点击区域外，点名称无反应
+    // （批38b 审查 P2-3）
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: borderColor,
+                    width: isCurrent ? 2 : 1,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Material(
+                  color: background,
+                  child: Stack(
+                    children: <Widget>[
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          // 6 列窄卡下 22pt 样张会超宽：统一缩放到卡片内
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Text(
+                                  '阅读',
+                                  style: TextStyle(
+                                    color: _foreground,
+                                    fontSize: 22,
+                                    height: 1.15,
+                                    fontWeight: theme.style.textBold == 1
+                                        ? FontWeight.w700
+                                        : theme.style.textBold == 2
+                                        ? FontWeight.w300
+                                        : FontWeight.w500,
+                                    fontStyle: theme.style.italic
+                                        ? FontStyle.italic
+                                        : FontStyle.normal,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Aa',
-                                style: TextStyle(
-                                  color: _foreground.withValues(alpha: 0.6),
-                                  fontSize: 11,
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Aa',
+                                  style: TextStyle(
+                                    color: _foreground.withValues(alpha: 0.6),
+                                    fontSize: 11,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (isCurrent && !manageMode)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          key: ValueKey<String>('theme-current-${theme.id}'),
-                          height: 3,
-                          color: colorScheme.primary,
-                        ),
-                      ),
-                    if (manageMode && theme.builtIn)
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: Icon(
-                          Icons.lock_outline_rounded,
-                          size: 12,
-                          color: _foreground.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    if (manageMode && checked)
-                      Positioned(
-                        right: 4,
-                        top: 4,
-                        child: Container(
-                          width: 18,
-                          height: 18,
-                          decoration: BoxDecoration(
+                      if (isCurrent && !manageMode)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            key: ValueKey<String>(
+                              'theme-current-${theme.id}',
+                            ),
+                            height: 3,
                             color: colorScheme.primary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.check_rounded,
-                            size: 13,
-                            color: colorScheme.onPrimary,
                           ),
                         ),
-                      ),
-                  ],
+                      if (manageMode && theme.builtIn)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: Icon(
+                            Icons.lock_outline_rounded,
+                            size: 12,
+                            color: _foreground.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      if (manageMode && checked)
+                        Positioned(
+                          right: 4,
+                          top: 4,
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.check_rounded,
+                              size: 13,
+                              color: colorScheme.onPrimary,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+            const SizedBox(height: 6),
+            Text(
+              theme.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: isCurrent
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+                fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 6),
-        Text(
-          theme.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: isCurrent
-                ? colorScheme.primary
-                : colorScheme.onSurfaceVariant,
-            fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1203,40 +1347,45 @@ class ReaderThemeAddCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: Material(
-            color: colorScheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: colorScheme.outlineVariant),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              child: Center(
-                child: Icon(
-                  Icons.add_rounded,
-                  size: 24,
-                  color: colorScheme.onSurfaceVariant,
+    // 整卡（含「新建主题」名称行）可点，与主题卡一致（批38b 审查 P2-3）
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              child: Material(
+                color: colorScheme.surfaceContainerLow,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: colorScheme.outlineVariant),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Center(
+                  child: Icon(
+                    Icons.add_rounded,
+                    size: 24,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
-          ),
+            const SizedBox(height: 6),
+            Text(
+              '新建主题',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 6),
-        Text(
-          '新建主题',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
-        ),
-      ],
+      ),
     );
   }
 }

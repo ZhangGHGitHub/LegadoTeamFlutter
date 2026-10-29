@@ -700,8 +700,9 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             child: Row(
               children: [
                 // 自定义 chip：网格图标，点按弹自定义配色
-                // [批38] 非预设背景色时该 chip 显示选中态（主题背景不在
-                // 既有预设色里 → 归为「自定义」，与参考版自定义入口一致）
+                // [批38b | P3-2] 选中态改读显式标志 reader_bg_use_custom：
+                // 深色主题默认背景纯黑不在预设色表内，按颜色反推会误亮
+                // 自定义 chip（用户从没选过自定义背景）
                 GestureDetector(
                   onTap: () =>
                       _showCustomColorDialog(context, adv, notifier, state),
@@ -711,8 +712,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                     margin: const EdgeInsets.only(right: 10),
                     alignment: Alignment.center,
                     decoration: _bgChipDecoration(
-                      selected: !ReaderBackground.presets
-                          .contains(state.backgroundColor),
+                      selected: notifier.useCustomBackground,
                     ),
                     child: Icon(
                       Icons.grid_view_rounded,

@@ -93,6 +93,15 @@ class ReaderNotifier extends Notifier<ReaderState> {
     _changeSourceFlowActive = false;
   }
 
+  /// 是否使用用户自定义背景（prefs `reader_bg_use_custom`）
+  ///
+  /// 背景 chip 的「自定义」选中态必须看这个显式标志，而不是「背景色不在
+  /// 预设色表里」：深色主题的默认阅读背景是纯黑 0xFF000000（不在预设内），
+  /// 用颜色反推会把它误标成自定义背景（批38b 审查 P3-2）。
+  bool get useCustomBackground => _useCustomBackground;
+
+  bool _useCustomBackground = false;
+
   @override
   ReaderState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
@@ -141,8 +150,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
     // [UI-fix v2.0.4 | 2026-08-08] 恢复自定义背景色（界面 Sheet 长按
     // 背景圆圈自定义配色，对标原版 ReadBookConfig 自定义背景）— Qoder
     final prefs = await SharedPreferences.getInstance();
+    // [批38b | P3-2] 自定义背景选中态以显式标志为准（见 useCustomBackground）
+    _useCustomBackground = prefs.getBool('reader_bg_use_custom') ?? false;
     Color? customBgColor;
-    if (prefs.getBool('reader_bg_use_custom') ?? false) {
+    if (_useCustomBackground) {
       final custom = prefs.getInt('reader_custom_bg_color');
       if (custom != null) customBgColor = Color(custom);
     }
@@ -419,6 +430,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
       _settings.setBgColorIndex(index);
       // [UI-fix v2.0.4 | 2026-08-08] 选中预设时清除自定义背景标志，
       // 下次启动按预设恢复 — Qoder
+      // [批38b | P3-2] 内存标志同步清零（背景 chip 选中态立刻跟随）
+      _useCustomBackground = false;
       unawaited(
         SharedPreferences.getInstance().then(
           (p) => p.setBool('reader_bg_use_custom', false),
@@ -441,6 +454,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // 自定义配色）：即时应用并持久化，启动时经 _loadSettings 恢复 — Qoder
   Future<void> updateCustomBackgroundColor(Color color) async {
     state = state.copyWith(backgroundColor: color);
+    _useCustomBackground = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('reader_custom_bg_color', color.toARGB32());
     await prefs.setBool('reader_bg_use_custom', true);

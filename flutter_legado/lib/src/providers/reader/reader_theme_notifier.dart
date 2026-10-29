@@ -82,34 +82,48 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
   /// provider 销毁后不再写 state
   bool _disposed = false;
 
+  /// 首次加载任务（供变更操作等待）
+  ///
+  /// 变更前必须等首次加载完成：否则在磁盘主题库尚未读入时改内存状态并
+  /// 落盘，会把磁盘上的自建主题整体覆盖掉（首载竞态，批38b 审查 P2-1）。
+  Future<void>? _initialLoad;
+
   @override
   ReaderThemeState build() {
     ref.onDispose(() => _disposed = true);
-    Future.microtask(_load);
+    _initialLoad = _loadLoop();
     return ReaderThemeState(themes: ReaderThemeService.mergeThemes(const []));
   }
 
-  Future<void> _load() async {
-    if (_disposed) return;
-    final generation = _generation;
-    final custom = await _service.loadCustomThemes();
-    final currentId = await _service.loadCurrentId();
-    final columns = await _service.loadGridColumns();
-    if (_disposed || generation != _generation) return;
-    final themes = ReaderThemeService.mergeThemes(custom);
-    state = ReaderThemeState(
-      themes: themes,
-      // 当前 id 必须真实存在，否则视为未应用（历史/备份脏数据自愈）
-      currentId: themes.any((t) => t.id == currentId) ? currentId : '',
-      gridColumns: columns,
-      loaded: true,
-    );
+  /// 加载循环：加载期间若被变更打断（[_generation] 变化），丢弃本次结果
+  /// 并重新读取，直到成功应用到 state（保证磁盘主题库不会因竞态缺失）。
+  Future<void> _loadLoop() async {
+    while (!_disposed) {
+      final generation = _generation;
+      final custom = await _service.loadCustomThemes();
+      final currentId = await _service.loadCurrentId();
+      final columns = await _service.loadGridColumns();
+      if (_disposed) return;
+      if (generation != _generation) continue;
+      final themes = ReaderThemeService.mergeThemes(custom);
+      state = ReaderThemeState(
+        themes: themes,
+        // 当前 id 必须真实存在，否则视为未应用（历史/备份脏数据自愈）
+        currentId: themes.any((t) => t.id == currentId) ? currentId : '',
+        gridColumns: columns,
+        loaded: true,
+      );
+      return;
+    }
   }
 
-  /// 重新加载（备份恢复后/外部写入后调用）
-  Future<void> reload() async {
-    _generation++;
-    await _load();
+  /// 等待首次加载完成（未完成则等待；加载被丢弃时等待重试后的加载）
+  Future<void> _ensureLoaded() async {
+    while (!_disposed && !state.loaded) {
+      final pending = _initialLoad ??= _loadLoop();
+      await pending;
+      if (identical(_initialLoad, pending)) _initialLoad = null;
+    }
   }
 
   /// 名称占用表（内置 + 自建）
@@ -124,6 +138,7 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
 
   /// 应用主题后记录当前 id
   Future<void> markCurrent(String id) async {
+    await _ensureLoaded();
     _generation++;
     if (!state.themes.any((theme) => theme.id == id)) return;
     state = state.copyWith(currentId: id);
@@ -135,6 +150,7 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
     required String name,
     required ReaderThemeStyle style,
   }) async {
+    await _ensureLoaded();
     _generation++;
     final theme = ReaderThemeService.createTheme(
       name: name,
@@ -152,25 +168,35 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
     return theme;
   }
 
-  /// 重命名（内置主题不可改；允许与其它主题同名，身份按 id）
-  Future<bool> renameTheme(String id, String name) async {
+  /// 重命名（内置主题不可改；名称冲突自动加后缀，与新建/导入一致）
+  ///
+  /// 返回最终名称（可能带 ` (2)` 后缀），`null` = 重命名失败。
+  Future<String?> renameTheme(String id, String name) async {
+    await _ensureLoaded();
     final trimmed = name.trim();
-    if (trimmed.isEmpty) return false;
+    if (trimmed.isEmpty) return null;
     final customs = state.customThemes;
     final index = customs.indexWhere((theme) => theme.id == id);
-    if (index < 0) return false;
+    if (index < 0) return null;
+    // 自身原名称不参与冲突判定，否则改名成同名会被加多余后缀
+    final otherNames = <String>{
+      for (final theme in state.themes)
+        if (theme.id != id) theme.name,
+    };
+    final finalName = uniqueReaderThemeName(trimmed, otherNames);
     _generation++;
     final updated = <ReaderTheme>[
       for (var i = 0; i < customs.length; i++)
-        i == index ? customs[i].copyWith(name: trimmed) : customs[i],
+        i == index ? customs[i].copyWith(name: finalName) : customs[i],
     ];
     state = state.copyWith(themes: ReaderThemeService.mergeThemes(updated));
     await _persist();
-    return true;
+    return finalName;
   }
 
   /// 删除自建主题（内置忽略）；删除当前主题时清空当前 id
   Future<int> deleteThemes(Set<String> ids) async {
+    await _ensureLoaded();
     final targets = <String>{
       for (final id in ids)
         if (state.customThemes.any((theme) => theme.id == id)) id,
@@ -192,6 +218,7 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
 
   /// 自建主题内上移/下移一位（[delta] 仅 -1/+1；越界忽略）
   Future<bool> moveTheme(String id, int delta) async {
+    await _ensureLoaded();
     final customs = state.customThemes;
     final index = customs.indexWhere((theme) => theme.id == id);
     final target = index + delta;
@@ -206,6 +233,7 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
 
   /// 自建主题内批量置顶/置底（对齐参考版 MoveReadStylesToEdge）
   Future<bool> moveThemesToEdge(Set<String> ids, {required bool toTop}) async {
+    await _ensureLoaded();
     final customs = state.customThemes;
     final selected = <ReaderTheme>[
       for (final theme in customs)
@@ -227,6 +255,7 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
 
   /// 导入 JSON（单份或数组），冲突名称自动加后缀；非法内容抛 [FormatException]
   Future<List<ReaderTheme>> importThemes(String raw) async {
+    await _ensureLoaded();
     // 先解析再改状态：解析失败绝不落盘、不动现有列表
     final imported = ReaderThemeService.importThemes(
       raw,
@@ -244,8 +273,12 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
     return imported;
   }
 
-  /// 恢复默认：删除全部自建主题并清除当前主题（内置主题不可删）
+  /// 恢复默认（Notifier 层）：删除全部自建主题并清除当前主题（内置不可删）
+  ///
+  /// 页面层「恢复默认」还会随后把阅读样式应用为内置预设1
+  /// （见 `ReaderThemeScreen._restoreDefaults`），此方法只负责主题库清理。
   Future<void> restoreDefaults() async {
+    await _ensureLoaded();
     _generation++;
     state = state.copyWith(
       themes: ReaderThemeService.mergeThemes(const []),
@@ -257,6 +290,7 @@ class ReaderThemeNotifier extends Notifier<ReaderThemeState> {
 
   /// 设置网格列数（2..6，持久化）
   Future<void> setGridColumns(int columns) async {
+    await _ensureLoaded();
     _generation++;
     final normalized = ReaderThemeService.normalizeGridColumns(columns);
     state = state.copyWith(gridColumns: normalized);
