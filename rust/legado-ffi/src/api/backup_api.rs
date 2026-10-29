@@ -51,8 +51,10 @@
 //! - 设置：`readConfig.json`、`shareReadConfig.json`、`themeConfig.json`、`coverRule.json`、
 //!   `config.xml`、`videoConfig.xml`
 //! - 可选加密：`cookies.json`、`runtimeSourceCache.json`
-//! - 媒体：`covers/`（可含子目录）、`bg/`、`readRecordCovers/`（阅读记录封面缓存）
-//! - 封面字体：`coverFont.ttf`（原版设置页自定义封面字体，随设置项备份）
+//! - 媒体：`covers/`（可含子目录）、`bg/`、`readRecordCovers/`（阅读记录封面缓存）——
+//!   批41 起按白名单前缀落盘（见下「批41：原版 zip 媒体恢复」）
+//! - 封面字体：`coverFont.ttf`（原版设置页自定义封面字体，随设置项备份）——
+//!   批41 起落 `<媒体根>/font/coverFont.ttf`
 //!
 //! 加密口径（`BackupAES` + hutool 5.8 `new AES(key)`）：
 //! - 密钥 = `MD5(password)` 小写十六进制串的**前 16 个 ASCII 字符**（不做 hex 解码）；
@@ -66,13 +68,11 @@
 //! - `config.xml` 内的 `webDavPassword` 同密钥加密（本实现跳过整个偏好快照，见下）。
 //!
 //! 未映射项（本批登记，不静默）：`readConfig.json` / `shareReadConfig.json` /
-//! `themeConfig.json` / `coverRule.json` / `config.xml` / `videoConfig.xml` /
-//! `coverFont.ttf` 与媒体目录 `covers/`、`bg/`、`readRecordCovers/` 只记 warn
-//! 日志后跳过——我方没有等价的阅读主题配置面或封面/背景/阅读记录封面落盘目录
-//! （封面按 URL 直取、不落本地 `covers/`），恢复媒体会写到无人消费的目录并引入
-//! 路径安全面；书内指向 `.../covers/xxx` 的绝对封面路径按原版 remap 失败语义
-//! 置空（回落到书源封面 URL）。**批27 起** `bookMemo.json` 已从「未映射」移入
-//! 数据映射（[`ZIP_DATA_FILES`]），`readRecord.json` 解析全部 13 字段。
+//! `themeConfig.json` / `coverRule.json` / `config.xml` / `videoConfig.xml` 只记
+//! warn 日志后跳过——我方没有等价的阅读主题配置面；书内指向 `.../covers/xxx` 的
+//! 绝对封面路径按原版 remap 语义处理（媒体已恢复时改写为本地路径，否则置空回落
+//! 到书源封面 URL）。**批27 起** `bookMemo.json` 已从「未映射」移入数据映射
+//! （[`ZIP_DATA_FILES`]），`readRecord.json` 解析全部 13 字段。
 //!
 //! # 批9 审查回修登记（P2，仅登记，本批不实现）
 //!
@@ -120,11 +120,65 @@
 //! 探测（[`backup_inspect`]）只解压三个候选条目判定是否需要密码，不写任何表。
 //! 空/纯空白条目按「内容损坏」处理（不弹永远失败的密码框，P3-3）。
 //! **本批不做备份创建侧加密**（`backup_create` 仍写明文 JSON，另行立项）。
+//!
+//! # 批41：原版 zip 媒体恢复（covers/bg/readRecordCovers/coverFont.ttf）
+//!
+//! 原版依据：
+//! - `Backup.kt:399-429` 写出 `covers/`（可含子目录）、`bg/`、`readRecordCovers/`
+//!   与封面字体（`BookCover.fontBackupFileName = "coverFont.ttf"`，`BookCover.kt:57`）；
+//! - `Restore.kt:613-627` 调 `restoreBackupMediaDirectory` 把三个目录合并到
+//!   `externalFiles/<目录名>`（暂存 + 回滚，**保留本地既有文件**）；
+//! - `Restore.kt:487-495` 把字体安装到 `externalFiles/font/coverFont.ttf`。
+//!
+//! 落点映射（我方无 `externalFiles` 注入点，媒体根取 DB 父目录——移动端即应用
+//! Documents，桌面端为 `legado.db` 所在工作目录）：
+//!
+//! | zip 内条目 | 落盘位置 |
+//! |---|---|
+//! | `covers/<相对路径>` | `<媒体根>/covers/<相对路径>` |
+//! | `bg/<相对路径>` | `<媒体根>/bg/<相对路径>` |
+//! | `readRecordCovers/<相对路径>` | `<媒体根>/readRecordCovers/<相对路径>` |
+//! | `coverFont.ttf` | `<媒体根>/font/coverFont.ttf` |
+//!
+//! 媒体根解析优先级：env `LEGADO_BACKUP_MEDIA_DIR`（非空；测试隔离/宿主覆盖）>
+//! [`crate::db_state::documents_root`]（DB 文件父目录）；两者都不可得（DB 未初始化）
+//! 时只 warn 跳过媒体（不写系统临时目录）。目录不存在时按需创建。
+//!
+//! 安全与限额：
+//! - 路径先过 [`is_safe_zip_entry_name`]（拒绝空名/反斜杠/NUL/绝对路径/盘符/`.`/`..`），
+//!   媒体相对路径再过 [`is_safe_media_relative_path`]（拒绝空段、`.`/`..`、`:`）；
+//! - 落盘走 [`write_zip_media_entry`]：逐段 `symlink_metadata` 拒绝符号链接与非目录
+//!   中间段，写入前 `canonicalize` 父目录并校验仍在规范化媒体根内（纵深防御）；
+//! - 单媒体文件实际解压 ≤ [`MAX_BACKUP_MEDIA_FILE_BYTES`]（32 MiB，超限 warn 跳过），
+//!   跨条目仍共用 [`MAX_BACKUP_TOTAL_BYTES`]（512 MiB，超限中止整次恢复）；
+//!   zip 条目总数 ≤ [`MAX_BACKUP_ZIP_ENTRIES`]（50 000，结构异常直接报错）；
+//! - 单条目写失败只 warn 并继续后续条目（不阻断整体恢复；对齐本模块条目级容错口径；
+//!   原版对 covers/readRecordCovers 失败会整次抛错，本实现按批次要求收窄）；
+//! - 合并语义与 `restoreBackupMediaDirectory` 一致：备份内文件覆盖同名旧文件，
+//!   **不删除**本地既有媒体。
+//!
+//! 封面路径 remap（对齐 `Restore.remapRestoredCoverPath` / `remapReadRecordCover`）：
+//! 媒体先落盘，再按「目标文件存在（本次恢复或本地既有）」把
+//! `bookshelf.json` 的 `customCoverUrl`、`bookGroup.json` 的 `cover`、
+//! `readRecord.json` 的 `coverUrl`（`.../covers/<file>` 与
+//! `.../readRecordCovers/<file>` 两种形态）改写为本地绝对路径；目标不存在时置
+//! null（书架回落书源封面）。与上游一致，只识别**直系子文件**
+//! （`.../covers/<file>`），子目录形态不 remap。
+//!
+//! 未接线/差异登记：
+//! - 我方 UI 当前无封面缓存、阅读背景图、阅读记录封面、封面字体的消费面（封面按
+//!   URL 直取），恢复出的媒体目录暂为数据保留面，后续功能接入即可直接消费；
+//! - `bg/` 无条件恢复：zip 恢复不支持「忽略阅读配置」过滤（既有口径），原版在该
+//!   开关开启时跳过 bg；
+//! - 封面字体只落盘，不写 `coverFont` 偏好：zip 恢复不恢复 `config.xml` 偏好快照，
+//!   我方也无封面字体设置项；
+//! - 我方单文件 JSON 备份**不含媒体**（二进制无法内嵌，不做 base64 膨胀），
+//!   媒体只在原版 zip 恢复路径落盘；`backup_create` 也不写媒体（无 zip 创建面）。
 
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use rusqlite::Connection;
@@ -435,6 +489,10 @@ pub struct RestoreStats {
 /// 中所有表已在库的类别，以及 `servers.json`/`directLinkUploadRule.json`/
 /// `bookMemo.json`），统一经各 repository/配置仓储读取后模型序列化，写入
 /// JSON 文件，返回备份文件路径。
+///
+/// **媒体不在 JSON 备份内**（批41）：备份格式为单文件 JSON，无法内嵌封面/背景/
+/// 阅读记录封面等二进制媒体，也不做 base64 膨胀；我方无 zip 创建面，故创建侧
+/// 不写媒体。原版 zip 备份的媒体由恢复侧落盘（见模块注释「批41」）。
 pub fn backup_create(path: &str) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -737,7 +795,7 @@ pub fn backup_inspect(path: &str) -> LegadoResult<String> {
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
 
     if is_zip_backup(&bytes) {
-        let archive = read_zip_selected(&bytes, &ZIP_ENCRYPTED_FILES)?;
+        let archive = read_zip_selected(&bytes, &ZIP_ENCRYPTED_FILES, false)?;
         let mut protected: Vec<&str> = Vec::new();
         for name in ZIP_ENCRYPTED_FILES {
             let Some(entry) = archive.files.get(name) else {
@@ -877,6 +935,26 @@ const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 /// 无限占用内存/CPU，超预算直接中止整次恢复并给出明确错误
 const MAX_BACKUP_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
+/// 备份 zip 条目总数上限（含目录条目，批41）：防海量条目拖垮中央目录解析与恢复；
+/// 结构异常直接报错（与跨条目总量超限同口径），不按条目静默跳过
+const MAX_BACKUP_ZIP_ENTRIES: usize = 50_000;
+
+/// 单个媒体文件实际解压上限（32 MiB，批41）：封面/背景图/封面字体远小于此；
+/// 超大单文件只跳过该条（warn），不中止整次恢复
+const MAX_BACKUP_MEDIA_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// 原版 `BackupMedia.kt` 的三个媒体目录（zip 内前缀 = 我方落盘子目录名）
+const ZIP_MEDIA_DIRS: [&str; 3] = ["covers", "bg", "readRecordCovers"];
+
+/// 原版封面字体备份名（`BookCover.fontBackupFileName = "coverFont.ttf"`），
+/// 恢复落 `<媒体根>/font/coverFont.ttf`（对齐 `Restore.kt:487-495` 的安装目录）
+const ZIP_COVER_FONT_ENTRY: &str = "coverFont.ttf";
+/// 封面字体落盘子目录（对齐原版 `externalFiles/font`）
+const COVER_FONT_DIR: &str = "font";
+
+/// 媒体恢复根目录覆盖环境变量（批41；非空即覆盖 DB 父目录，测试隔离/宿主覆盖用）
+const BACKUP_MEDIA_DIR_ENV: &str = "LEGADO_BACKUP_MEDIA_DIR";
+
 /// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
 const ZIP_DATA_FILES: [&str; 22] = [
     "bookshelf.json",
@@ -910,26 +988,40 @@ const ZIP_DATA_FILES: [&str; 22] = [
 const ZIP_ENCRYPTED_FILES: [&str; 3] = ["servers.json", "cookies.json", "runtimeSourceCache.json"];
 
 /// 原版 zip 内存在、但本实现无对应落库面的文件（只报告不落库，登记见模块注释）
-const ZIP_UNMAPPED_FILES: [&str; 7] = [
+///
+/// 批41：`coverFont.ttf` 已移入媒体恢复（`<媒体根>/font/coverFont.ttf`）。
+const ZIP_UNMAPPED_FILES: [&str; 6] = [
     "readConfig.json",
     "shareReadConfig.json",
     "themeConfig.json",
     "coverRule.json",
     "config.xml",
     "videoConfig.xml",
-    // 封面字体（批27：原版设置页自定义封面字体，我方无封面渲染配置面）
-    "coverFont.ttf",
 ];
+
+/// zip 内待落盘的媒体条目（批41：`covers/`、`bg/`、`readRecordCovers/` 子树与封面字体）
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ZipMediaEntry {
+    /// 落盘子目录（`covers`/`bg`/`readRecordCovers`/`font`）
+    dir: &'static str,
+    /// 相对子目录的路径（`/` 分隔，如 `x.jpg`、`sub/y.png`；字体为固定文件名）
+    relative: String,
+    /// 媒体字节内容（解压时已按 [`MAX_BACKUP_MEDIA_FILE_BYTES`] 限量）
+    bytes: Vec<u8>,
+}
 
 /// 原版 zip 备份读取结果
 ///
-/// 只解压 [`ZIP_DATA_FILES`] 命中条目的内容；`entry_names` 保留全部文件条目名，
-/// 用于报告媒体目录与未映射文件（**不解压、不落盘**，因此不存在路径逃逸面）。
+/// 解压 [`ZIP_DATA_FILES`] 命中的内容与媒体条目；`entry_names` 保留全部文件条目名，
+/// 用于报告未映射文件。媒体条目在恢复路径才收集（`backup_inspect` 不收集、不解压），
+/// 落盘前仍会逐条做路径安全校验（[`write_zip_media_entry`]）。
 struct ZipBackupArchive {
     /// 数据文件内容（键为 zip 内相对路径，如 `bookshelf.json`）
     files: HashMap<String, Vec<u8>>,
     /// 全部文件条目名
     entry_names: Vec<String>,
+    /// 媒体条目（批41；仅恢复入口收集，探测入口恒为空）
+    media: Vec<ZipMediaEntry>,
 }
 
 /// 是否原版 zip 备份（按魔数判定，见模块注释）
@@ -937,24 +1029,40 @@ fn is_zip_backup(bytes: &[u8]) -> bool {
     bytes.starts_with(&ZIP_ENTRY_MAGIC) || bytes.starts_with(&ZIP_EMPTY_MAGIC)
 }
 
-/// 读取 zip 备份：校验条目路径、只解压已知数据文件
+/// 读取 zip 备份：校验条目路径、只解压已知数据文件与媒体条目
 ///
 /// [批9 回修 P1] 解压按**实际字节数**限量（[`read_zip_entry_limited`]）：
 /// zip 头的 `uncompressed_size` 不可信，声明值只用于提前日志；跨条目累计
 /// 解压量超过 [`MAX_BACKUP_TOTAL_BYTES`] 时中止整次恢复（明确报错）。
+///
+/// [批41] 同时收集 [`ZIP_MEDIA_DIRS`] 前缀下的媒体条目与封面字体（单文件按
+/// [`MAX_BACKUP_MEDIA_FILE_BYTES`] 限量），供 [`restore_zip_media`] 落盘。
 fn read_zip_backup(bytes: &[u8]) -> LegadoResult<ZipBackupArchive> {
-    read_zip_selected(bytes, &ZIP_DATA_FILES)
+    read_zip_selected(bytes, &ZIP_DATA_FILES, true)
 }
 
 /// 读取 zip 备份中**指定**条目（路径安全校验与解压限额与恢复入口一致）
 ///
-/// 批17a：探测入口只传 [`ZIP_ENCRYPTED_FILES`]，避免为了判断「是否要密码」
-/// 把整个备份的全部数据文件解压一遍。
-fn read_zip_selected(bytes: &[u8], wanted: &[&str]) -> LegadoResult<ZipBackupArchive> {
+/// 批17a：探测入口只传 [`ZIP_ENCRYPTED_FILES`] 且 `collect_media=false`，避免
+/// 为了判断「是否要密码」把整个备份的全部数据文件与媒体解压一遍。
+fn read_zip_selected(
+    bytes: &[u8],
+    wanted: &[&str],
+    collect_media: bool,
+) -> LegadoResult<ZipBackupArchive> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| LegadoError::Internal(format!("备份 zip 解析失败: {e}")))?;
+    // 批41：条目数上限（结构异常直接报错，防海量条目拖垮中央目录解析与恢复）
+    if archive.len() > MAX_BACKUP_ZIP_ENTRIES {
+        return Err(LegadoError::Internal(format!(
+            "备份 zip 条目数超过上限（{} > {MAX_BACKUP_ZIP_ENTRIES}），已拒绝恢复；\
+             备份包可能异常",
+            archive.len()
+        )));
+    }
     let mut files: HashMap<String, Vec<u8>> = HashMap::new();
     let mut entry_names: Vec<String> = Vec::new();
+    let mut media: Vec<ZipMediaEntry> = Vec::new();
     let mut total_decoded: u64 = 0;
 
     for index in 0..archive.len() {
@@ -972,26 +1080,342 @@ fn read_zip_selected(bytes: &[u8], wanted: &[&str]) -> LegadoResult<ZipBackupArc
             continue;
         }
         entry_names.push(name.clone());
-        if !wanted.contains(&name.as_str()) {
+        let declared_size = entry.size();
+        if wanted.contains(&name.as_str()) {
+            match read_zip_entry_limited(
+                &name,
+                declared_size,
+                &mut entry,
+                MAX_BACKUP_ENTRY_BYTES,
+                &mut total_decoded,
+                MAX_BACKUP_TOTAL_BYTES,
+            )? {
+                Some(buf) => {
+                    files.insert(name, buf);
+                }
+                None => continue,
+            }
             continue;
         }
-        let declared_size = entry.size();
-        match read_zip_entry_limited(
+        if !collect_media {
+            continue;
+        }
+        // 批41：媒体白名单前缀（covers/、bg/、readRecordCovers/）与封面字体
+        let Some(target) = classify_zip_media_entry(&name) else {
+            continue;
+        };
+        let (dir, relative) = match target {
+            ZipMediaTarget::MediaDir { dir, relative } => (dir, relative.to_string()),
+            ZipMediaTarget::CoverFont => (COVER_FONT_DIR, ZIP_COVER_FONT_ENTRY.to_string()),
+        };
+        // 纵深防御：完整条目名已过 [`is_safe_zip_entry_name`]，相对路径再校验一次
+        if !is_safe_media_relative_path(&relative) {
+            log::warn!("跳过路径不安全的备份媒体条目: {name}");
+            continue;
+        }
+        let read_result = read_zip_entry_limited(
             &name,
             declared_size,
             &mut entry,
-            MAX_BACKUP_ENTRY_BYTES,
+            MAX_BACKUP_MEDIA_FILE_BYTES,
             &mut total_decoded,
             MAX_BACKUP_TOTAL_BYTES,
-        )? {
-            Some(buf) => {
-                files.insert(name, buf);
+        );
+        match read_result {
+            Ok(Some(bytes)) => media.push(ZipMediaEntry {
+                dir,
+                relative,
+                bytes,
+            }),
+            Ok(None) => continue,
+            Err(e) => {
+                // 批41：媒体条目损坏只跳过该条，不阻断整次恢复；跨条目总量超限
+                // 属结构性异常，仍中止（安全检查不能因单条容错被绕过）。
+                if total_decoded > MAX_BACKUP_TOTAL_BYTES {
+                    return Err(e);
+                }
+                log::warn!("读取备份媒体条目 {name} 失败（已跳过该条）: {e}");
+                continue;
             }
-            None => continue,
         }
     }
 
-    Ok(ZipBackupArchive { files, entry_names })
+    Ok(ZipBackupArchive {
+        files,
+        entry_names,
+        media,
+    })
+}
+
+/// 媒体条目分类结果（批41）
+enum ZipMediaTarget<'a> {
+    /// 三个媒体目录之一：`dir` 为落盘子目录，`relative` 为相对子目录的路径
+    MediaDir {
+        dir: &'static str,
+        relative: &'a str,
+    },
+    /// 封面字体（固定落 `<媒体根>/font/coverFont.ttf`）
+    CoverFont,
+}
+
+/// 按原版 `BackupMedia.kt` 白名单前缀分类媒体条目（`None` 表示非媒体条目）
+///
+/// 前缀必须带 `/`（`covers.txt` 不算 `covers/` 子项）；`coverFont.ttf` 只匹配
+/// zip 根目录下的固定条目名（原版 `Backup.kt:404-409` 写到备份根）。
+fn classify_zip_media_entry(name: &str) -> Option<ZipMediaTarget<'_>> {
+    if name == ZIP_COVER_FONT_ENTRY {
+        return Some(ZipMediaTarget::CoverFont);
+    }
+    ZIP_MEDIA_DIRS.iter().find_map(|dir| {
+        let relative = name.strip_prefix(dir)?.strip_prefix('/')?;
+        Some(ZipMediaTarget::MediaDir { dir, relative })
+    })
+}
+
+/// 媒体条目相对路径安全校验（批41）
+///
+/// 完整条目名已过 [`is_safe_zip_entry_name`]；这里再拒绝空段、`.`/`..` 段、
+/// 反斜杠、NUL 与冒号（Windows 盘符/ADS 形态），保证落盘只发生在白名单子目录内。
+fn is_safe_media_relative_path(relative: &str) -> bool {
+    if relative.is_empty()
+        || relative.contains('\\')
+        || relative.contains('\0')
+        || relative.contains(':')
+    {
+        return false;
+    }
+    !relative
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+}
+
+/// 测试专用媒体根注入槽（批41）：进程级全局状态，媒体用例须持
+/// [`crate::db_state::ensure_test_db`] 串行锁后再设置/清理
+#[cfg(test)]
+static TEST_MEDIA_ROOT: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// 媒体恢复上下文（批41）：供封面路径 remap 判断目标文件是否存在
+#[derive(Debug, Clone)]
+struct ZipMediaRestore {
+    /// 规范化后的媒体根目录（未解析到 → None，remap 一律按「文件不存在」处理）
+    root: Option<PathBuf>,
+}
+
+impl ZipMediaRestore {
+    /// 原版 `remapRestoredCoverPath`：绝对 `<...>/covers/<file>` → 本地目标路径
+    ///
+    /// 非该形态的路径原样返回（与上游一致：只有直系 `covers/` 子文件参与 remap）。
+    /// 目标文件不存在（本次未恢复且本地也没有）时返回 `None`（调用方置 null）。
+    fn remap_cover_path(&self, path: &str) -> Option<String> {
+        if !is_absolute_cover_path(path) {
+            return Some(path.to_string());
+        }
+        let name = media_file_name(path)?;
+        let target = self.root.as_ref()?.join("covers").join(name);
+        target
+            .is_file()
+            .then(|| target.to_string_lossy().into_owned())
+    }
+
+    /// 原版 `remapReadRecordCover`：先按 covers remap，再按 readRecordCovers remap
+    fn remap_read_record_cover(&self, path: Option<&str>) -> Option<String> {
+        let remapped = self.remap_cover_path(path?)?;
+        if !is_absolute_path_under_directory(&remapped, "readRecordCovers") {
+            return Some(remapped);
+        }
+        let name = media_file_name(&remapped)?;
+        let target = self.root.as_ref()?.join("readRecordCovers").join(name);
+        target
+            .is_file()
+            .then(|| target.to_string_lossy().into_owned())
+    }
+}
+
+/// 媒体路径最后一段文件名（对齐原版 `File(path).name`；空名返回 `None`）
+fn media_file_name(path: &str) -> Option<&str> {
+    path.rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+}
+
+/// 媒体根目录（批41）：env 覆盖 > DB 父目录（移动端应用 Documents）
+///
+/// 解析失败（DB 未初始化且无 env）时返回 `None`——媒体只 warn 跳过，不写系统
+/// 临时目录（避免恢复出「重启/清理即丢」的假落盘）。
+fn backup_media_root() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        // 测试隔离：注入槽优先（测试库在共享 temp 目录，不能污染 DB 父目录）
+        if let Ok(guard) = TEST_MEDIA_ROOT.lock() {
+            if let Some(dir) = guard.clone() {
+                return Some(dir);
+            }
+        }
+    }
+    if let Ok(dir) = std::env::var(BACKUP_MEDIA_DIR_ENV) {
+        let dir = dir.trim();
+        if !dir.is_empty() {
+            return Some(PathBuf::from(dir));
+        }
+    }
+    crate::db_state::documents_root()
+}
+
+/// 落盘 zip 内媒体条目，返回 remap 上下文（批41）
+///
+/// 语义与差异见模块注释「批41」：合并写（不删除本地既有文件）、逐条失败只
+/// warn、未解析到媒体根（DB 未初始化且无 env）时整体跳过。
+fn restore_zip_media(archive: &ZipBackupArchive) -> ZipMediaRestore {
+    let Some(root) = backup_media_root() else {
+        if !archive.media.is_empty() {
+            log::warn!(
+                "未解析到应用文档目录（DB 未初始化且未设 {BACKUP_MEDIA_DIR_ENV}），\
+                 备份内 {} 个媒体条目未恢复",
+                archive.media.len()
+            );
+        }
+        return ZipMediaRestore { root: None };
+    };
+    let canonical_root = match prepare_media_root(&root) {
+        Ok(dir) => dir,
+        Err(e) => {
+            if !archive.media.is_empty() {
+                log::warn!(
+                    "备份媒体根目录不可用（{e}），{} 个媒体条目未恢复",
+                    archive.media.len()
+                );
+            }
+            return ZipMediaRestore { root: None };
+        }
+    };
+    let mut restored = 0usize;
+    let mut failed = 0usize;
+    for entry in &archive.media {
+        let display = format!("{}/{}", entry.dir, entry.relative);
+        match write_zip_media_entry(&canonical_root, entry) {
+            Ok(target) => {
+                restored += 1;
+                log::debug!("恢复备份媒体 {display} -> {target:?}");
+            }
+            Err(e) => {
+                failed += 1;
+                log::warn!("恢复备份媒体 {display} 失败（已跳过该条）: {e}");
+            }
+        }
+    }
+    if restored > 0 || failed > 0 {
+        log::info!(
+            "原版备份媒体恢复完成：成功 {restored} 条、跳过 {failed} 条（媒体根 {canonical_root:?}）"
+        );
+    }
+    ZipMediaRestore {
+        root: Some(canonical_root),
+    }
+}
+
+/// 创建并规范化媒体根（必须是真实目录，拒绝符号链接根）
+fn prepare_media_root(root: &Path) -> Result<PathBuf, String> {
+    match fs::symlink_metadata(root) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(format!("媒体根 {root:?} 是符号链接，已拒绝"));
+            }
+            if !meta.is_dir() {
+                return Err(format!("媒体根 {root:?} 不是目录"));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(root).map_err(|e| format!("创建媒体根 {root:?} 失败: {e}"))?;
+        }
+        Err(e) => return Err(format!("读取媒体根 {root:?} 失败: {e}")),
+    }
+    fs::canonicalize(root).map_err(|e| format!("规范化媒体根 {root:?} 失败: {e}"))
+}
+
+/// 创建/校验媒体子目录（目录本身规范化后必须仍位于规范媒体根内）
+fn prepare_media_subdir(root: &Path, dir: &str) -> Result<PathBuf, String> {
+    let sub = root.join(dir);
+    match fs::symlink_metadata(&sub) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(format!("媒体子目录是符号链接: {sub:?}"));
+            }
+            if !meta.is_dir() {
+                return Err(format!("媒体子目录不是目录: {sub:?}"));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir(&sub).map_err(|e| format!("创建媒体子目录 {sub:?} 失败: {e}"))?;
+        }
+        Err(e) => return Err(format!("读取媒体子目录 {sub:?} 失败: {e}")),
+    }
+    let canonical =
+        fs::canonicalize(&sub).map_err(|e| format!("规范化媒体子目录 {sub:?} 失败: {e}"))?;
+    if !canonical.starts_with(root) {
+        return Err(format!("媒体子目录 {sub:?} 规范化后逃出媒体根"));
+    }
+    Ok(canonical)
+}
+
+/// 安全落盘单个媒体条目（批41）
+///
+/// 逐段 `symlink_metadata` 拒绝符号链接与非目录中间段；写入前 `canonicalize`
+/// 父目录并校验仍在规范化媒体根内（`..`/绝对路径已在读取侧拒绝，这里是
+/// 纵深防御）。目标为符号链接或目录一律拒绝，不跟随、不覆盖。
+fn write_zip_media_entry(root: &Path, entry: &ZipMediaEntry) -> Result<PathBuf, String> {
+    if !is_safe_media_relative_path(&entry.relative) {
+        return Err(format!("相对路径不安全: {}", entry.relative));
+    }
+    if !ZIP_MEDIA_DIRS.contains(&entry.dir) && entry.dir != COVER_FONT_DIR {
+        return Err(format!("落盘子目录不在白名单: {}", entry.dir));
+    }
+    let dir_root = prepare_media_subdir(root, entry.dir)?;
+    let segments: Vec<&str> = entry.relative.split('/').collect();
+    let Some((last, parents)) = segments.split_last() else {
+        return Err("相对路径为空".to_string());
+    };
+    let mut current = dir_root;
+    for segment in parents {
+        current.push(segment);
+        match fs::symlink_metadata(&current) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(format!("路径中间段是符号链接: {current:?}"));
+                }
+                if !meta.is_dir() {
+                    return Err(format!("路径中间段不是目录: {current:?}"));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&current).map_err(|e| format!("创建目录 {current:?} 失败: {e}"))?;
+            }
+            Err(e) => return Err(format!("读取路径 {current:?} 失败: {e}")),
+        }
+    }
+    current.push(last);
+    let parent = current
+        .parent()
+        .ok_or_else(|| "目标路径缺少父目录".to_string())?;
+    let canonical_parent =
+        fs::canonicalize(parent).map_err(|e| format!("规范化目标目录 {parent:?} 失败: {e}"))?;
+    if !canonical_parent.starts_with(root) {
+        return Err(format!("目标路径 {current:?} 规范化后逃出媒体根"));
+    }
+    match fs::symlink_metadata(&current) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(format!("目标文件是符号链接: {current:?}"));
+            }
+            if meta.is_dir() {
+                return Err(format!("目标路径是目录: {current:?}"));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("读取目标 {current:?} 失败: {e}")),
+    }
+    let target = canonical_parent.join(last);
+    fs::write(&target, &entry.bytes).map_err(|e| format!("写入 {target:?} 失败: {e}"))?;
+    Ok(target)
 }
 
 /// 限量读取单个 zip 条目（解压炸弹防护的唯一读取入口）
@@ -1042,7 +1466,8 @@ fn read_zip_entry_limited<R: Read>(
 
 /// zip 条目路径安全校验（不接受绝对路径、盘符、反斜杠与 `.`/`..` 段）
 ///
-/// 本实现不从 zip 解包到磁盘，此处为纵深防御：路径不合法的条目连内容都不读。
+/// [批41] 媒体条目会落盘，本函数是媒体路径安全的第一道门（落盘侧
+/// [`write_zip_media_entry`] 再做符号链接与规范化根校验）。
 fn is_safe_zip_entry_name(name: &str) -> bool {
     if name.is_empty() || name.contains('\\') || name.contains('\0') {
         return false;
@@ -1058,18 +1483,25 @@ fn is_safe_zip_entry_name(name: &str) -> bool {
         .any(|segment| segment == "." || segment == "..")
 }
 
-/// zip 恢复入口：读包 → 加密前置校验 → 报告未映射项 → 转 [`BackupData`] → 同一恢复体落库
+/// zip 恢复入口：读包 → 加密前置校验 → 媒体落盘 → 报告未映射项 → 转 [`BackupData`]
+/// → 同一恢复体落库
 ///
 /// 批17a：`password` 仅用于解密 `servers.json`/`cookies.json`/
 /// `runtimeSourceCache.json`；前置校验（[`precheck_zip_encrypted`]）在开事务**之前**
 /// 完成，密码缺失/错误/加密内容损坏时库内零残留。
+///
+/// 批41：媒体在数据落库前写入磁盘（合并语义，失败逐条 warn 不阻断），随后
+/// 封面路径 remap 才能看到「本次恢复或本地既有」的目标文件；媒体写入失败
+/// 不回滚、不影响数据库恢复结果（与条目级容错口径一致）。
 fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String> {
     let archive = read_zip_backup(bytes)?;
     let cipher = BackupCipher::new(password);
     let credentials = precheck_zip_encrypted(&archive, &cipher)?;
+    // 批41：媒体落盘（covers/bg/readRecordCovers + coverFont.ttf）
+    let media = restore_zip_media(&archive);
     // 返回值仅供回归测试断言告警，恢复流程无需消费
     let _ = report_unmapped_zip_entries(&archive);
-    let (backup, replace_policy) = backup_data_from_zip(&archive, &cipher, credentials);
+    let (backup, replace_policy) = backup_data_from_zip(&archive, &cipher, credentials, &media);
     let runtime_restored = !backup.runtime_source_caches.is_empty();
     let stats = restore_backup_data(&backup, replace_policy)?;
     // 批17c P2-1：Cookie 在**主事务提交后**落库并同步进程内存
@@ -1601,12 +2033,13 @@ fn current_time_millis() -> i64 {
         .as_millis() as i64
 }
 
-/// 报告未映射内容（媒体目录与配置快照）：只记日志，不落盘
+/// 报告未映射内容（配置快照）：只记日志，不落库
 ///
 /// 返回是否发出了「未找到原版数据文件」告警（仅供回归测试断言，调用方无需消费）。
 /// [批9 回修 P2-13] 判定只看「是否有可读数据文件」：全部条目被路径校验拒绝
 /// 时 `entry_names` 同样为空，原条件（`files.is_empty() && !entry_names.is_empty()`）
 /// 会漏报，用户会误以为「恢复成功但数据为空」。
+/// 批41：媒体目录与封面字体已由 [`restore_zip_media`] 落盘，不再在此报告。
 fn report_unmapped_zip_entries(archive: &ZipBackupArchive) -> bool {
     let mut no_data_warned = false;
     if archive.files.is_empty() {
@@ -1615,19 +2048,7 @@ fn report_unmapped_zip_entries(archive: &ZipBackupArchive) -> bool {
             "备份 zip 内未找到原版数据文件（条目缺失、被拒绝或嵌套在子目录），本次恢复不写入任何表"
         );
     }
-    let mut reported_media: Vec<&str> = Vec::new();
     for name in &archive.entry_names {
-        if let Some(prefix) = ["covers/", "bg/", "readRecordCovers/"]
-            .iter()
-            .find(|prefix| name.starts_with(**prefix))
-        {
-            let dir = prefix.trim_end_matches('/');
-            if !reported_media.contains(&dir) {
-                reported_media.push(dir);
-                log::warn!("备份包含媒体目录 {dir}/，当前版本不恢复图片文件（已跳过）");
-            }
-            continue;
-        }
         if ZIP_UNMAPPED_FILES.contains(&name.as_str()) {
             log::warn!("备份包含 {name}，当前版本无对应配置面（已跳过）");
         }
@@ -1639,21 +2060,24 @@ fn report_unmapped_zip_entries(archive: &ZipBackupArchive) -> bool {
 ///
 /// 同时返回 [`ReplaceTablePolicy`]：高亮规则/键盘辅助两表在原版恢复里是
 /// 「文件存在且解析成功 → 全量替换」，zip 适配层必须把该事实显式带出。
+///
+/// 批41：`media` 为媒体落盘结果，书/分组/阅读记录的封面路径按它 remap。
 fn backup_data_from_zip(
     archive: &ZipBackupArchive,
     cipher: &BackupCipher,
     credentials: ZipCredentials,
+    media: &ZipMediaRestore,
 ) -> (BackupData, ReplaceTablePolicy) {
     let mut data = BackupData::empty();
     data.books = zip_json_array(archive, "bookshelf.json")
         .unwrap_or_default()
         .into_iter()
-        .map(normalize_zip_book)
+        .map(|value| normalize_zip_book(value, media))
         .collect();
     data.book_groups = zip_json_array(archive, "bookGroup.json")
         .unwrap_or_default()
         .into_iter()
-        .map(normalize_zip_book_group)
+        .map(|value| normalize_zip_book_group(value, media))
         .collect();
     // 书备忘（批27，对齐原版 bookMemo.json；恢复时按 restoredBookUrls 过滤）
     data.book_memos = zip_json_array(archive, "bookMemo.json").unwrap_or_default();
@@ -1673,10 +2097,11 @@ fn backup_data_from_zip(
         .map(normalize_zip_sort_order)
         .collect();
     // [批9 回修 P2-5] readRecord 的 deviceId 归一为空串（单设备模型）
+    // [批41] 阅读记录封面路径按媒体落盘结果 remap
     data.read_records = zip_json_array(archive, "readRecord.json")
         .unwrap_or_default()
         .into_iter()
-        .map(normalize_zip_read_record)
+        .map(|value| normalize_zip_read_record(value, media))
         .collect();
     data.search_history = zip_json_array(archive, "searchHistory.json").unwrap_or_default();
     data.rule_subs = zip_json_array(archive, "sourceSub.json")
@@ -1735,33 +2160,48 @@ fn decode_zip_text<'a>(name: &str, bytes: &'a [u8]) -> Option<&'a str> {
     }
 }
 
-/// 书内封面路径归一：原版绝对 `<...>/covers/<file>` 路径在未恢复媒体时置空
+/// 书内封面路径归一（批41：对齐原版 `Restore.remapRestoredCoverPath`）
 ///
-/// 对齐原版 `Restore.remapRestoredCoverPath`：目标封面文件不存在时返回 null。
-/// 我方媒体目录不落盘（模块注释），故这类路径必然悬空，置空后书架回落到
-/// 书源 `coverUrl`。
-fn normalize_zip_book(mut value: serde_json::Value) -> serde_json::Value {
+/// - 绝对 `.../covers/<file>` 路径：本次媒体恢复出目标文件（或本地既有）→ 改写为
+///   本地绝对路径；目标不存在 → null（书架回落书源 `coverUrl`）；
+/// - 其余路径（网络 URL、相对路径、covers 子目录形态）原样保留。
+fn normalize_zip_book(mut value: serde_json::Value, media: &ZipMediaRestore) -> serde_json::Value {
     if let serde_json::Value::Object(map) = &mut value {
-        let stale_cover = matches!(
-            map.get("customCoverUrl"),
-            Some(serde_json::Value::String(path)) if is_absolute_cover_path(path)
-        );
-        if stale_cover {
-            map.insert("customCoverUrl".to_string(), serde_json::Value::Null);
+        let cover = match map.get("customCoverUrl") {
+            Some(serde_json::Value::String(path)) => Some(path.clone()),
+            _ => None,
+        };
+        if let Some(cover) = cover {
+            let remapped = media.remap_cover_path(&cover);
+            map.insert(
+                "customCoverUrl".to_string(),
+                remapped
+                    .map(serde_json::Value::String)
+                    .unwrap_or(serde_json::Value::Null),
+            );
         }
     }
     value
 }
 
 /// 分组封面路径归一（同 [`normalize_zip_book`]，键为 `cover`）
-fn normalize_zip_book_group(mut value: serde_json::Value) -> serde_json::Value {
+fn normalize_zip_book_group(
+    mut value: serde_json::Value,
+    media: &ZipMediaRestore,
+) -> serde_json::Value {
     if let serde_json::Value::Object(map) = &mut value {
-        let stale_cover = matches!(
-            map.get("cover"),
-            Some(serde_json::Value::String(path)) if is_absolute_cover_path(path)
-        );
-        if stale_cover {
-            map.insert("cover".to_string(), serde_json::Value::Null);
+        let cover = match map.get("cover") {
+            Some(serde_json::Value::String(path)) => Some(path.clone()),
+            _ => None,
+        };
+        if let Some(cover) = cover {
+            let remapped = media.remap_cover_path(&cover);
+            map.insert(
+                "cover".to_string(),
+                remapped
+                    .map(serde_json::Value::String)
+                    .unwrap_or(serde_json::Value::Null),
+            );
         }
     }
     value
@@ -1777,7 +2217,13 @@ fn normalize_zip_book_group(mut value: serde_json::Value) -> serde_json::Value {
 /// 归一一律置空串后，恢复走 [`ReadRecordRepository::upsert_restore`] 的
 /// 「同键较新者胜」路径（v113 起同名不同作者本就分行，不再合并作者），
 /// 对齐原版「同设备比较」意图。
-fn normalize_zip_read_record(mut value: serde_json::Value) -> serde_json::Value {
+///
+/// 批41：`coverUrl` 按原版 `remapRestoredCoverPath` + `remapReadRecordCover` 两级
+/// remap（`.../covers/<file>` 与 `.../readRecordCovers/<file>`），目标不存在置 null。
+fn normalize_zip_read_record(
+    mut value: serde_json::Value,
+    media: &ZipMediaRestore,
+) -> serde_json::Value {
     if let serde_json::Value::Object(map) = &mut value {
         // 兼容理论上的 snake_case 旧键，避免归一后同义键并存
         map.remove("device_id");
@@ -1785,12 +2231,21 @@ fn normalize_zip_read_record(mut value: serde_json::Value) -> serde_json::Value 
             "deviceId".to_string(),
             serde_json::Value::String(String::new()),
         );
+        if let Some(serde_json::Value::String(cover)) = map.get("coverUrl").cloned() {
+            let remapped = media.remap_read_record_cover(Some(&cover));
+            map.insert(
+                "coverUrl".to_string(),
+                remapped
+                    .map(serde_json::Value::String)
+                    .unwrap_or(serde_json::Value::Null),
+            );
+        }
     }
     value
 }
 
-/// 是否为原版绝对封面路径（`/.../covers/<file>` 或 `C:/.../covers/<file>`）
-fn is_absolute_cover_path(path: &str) -> bool {
+/// 是否为指向指定目录直系子文件的绝对路径（`/.../<dir>/<file>` 或 `C:/.../<dir>/<file>`）
+fn is_absolute_path_under_directory(path: &str, dir: &str) -> bool {
     let normalized = path.replace('\\', "/");
     let absolute =
         normalized.starts_with('/') || normalized.get(1..3).is_some_and(|s| s.starts_with(":/"));
@@ -1799,8 +2254,13 @@ fn is_absolute_cover_path(path: &str) -> bool {
     }
     normalized
         .rsplit_once('/')
-        .map(|(parent, _)| parent.rsplit('/').next() == Some("covers"))
+        .map(|(parent, _)| parent.rsplit('/').next() == Some(dir))
         .unwrap_or(false)
+}
+
+/// 是否为原版绝对封面路径（`/.../covers/<file>` 或 `C:/.../covers/<file>`）
+fn is_absolute_cover_path(path: &str) -> bool {
+    is_absolute_path_under_directory(path, "covers")
 }
 
 /// 规则订阅条目归一：原版 `RuleSub` 键 → 我方 [`RuleSubRecord`] 键
@@ -3988,6 +4448,9 @@ mod tests {
     #[test]
     fn test_backup_create_and_restore() {
         let _db_guard = crate::db_state::ensure_test_db();
+        // 共享测试库：先清表，避免其他用例遗留的 book_memos 等数据影响
+        // 「空表也写空数组」断言（批41 新增用例后暴露的顺序敏感）
+        clear_backup_tables();
 
         let dir = std::env::temp_dir().join("legado_backup_test");
         let _ = fs::create_dir_all(&dir);
@@ -4729,6 +5192,25 @@ mod tests {
         (dir, path)
     }
 
+    /// 媒体根测试覆盖守卫（批41）：设置进程级注入槽，drop 时清空
+    struct TestMediaRootGuard;
+
+    impl Drop for TestMediaRootGuard {
+        fn drop(&mut self) {
+            if let Ok(mut guard) = TEST_MEDIA_ROOT.lock() {
+                *guard = None;
+            }
+        }
+    }
+
+    /// 设置本次恢复的媒体根（调用方须持 [`crate::db_state::ensure_test_db`] 串行锁）
+    fn set_test_media_root(dir: &Path) -> TestMediaRootGuard {
+        *TEST_MEDIA_ROOT
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(dir.to_path_buf());
+        TestMediaRootGuard
+    }
+
     /// 原版「空密码」密钥加密的 servers.json（openssl AES-128-ECB/PKCS7 独立生成）
     ///
     /// 密钥 = MD5("") 小写 hex 前 16 个 ASCII 字符 `d41d8cd98f00b204`；
@@ -4742,7 +5224,8 @@ mod tests {
     /// 密钥 = MD5("secret") 小写 hex 前 16 个 ASCII 字符 `5ebe2294ecd0e0f0`。
     const UPSTREAM_SECRET_PW_SERVERS: &str = "2vU9PxdlMNdJf1ZFkNTKycmGR0xILunMY6nIlKNqGxbBimVUkWjSd0juf6gc/wO5/Gf0BuDDaTzIqpLG1FWHe0kv2jIAZZiIrlG/2gyyyV8Rpnrdkw6KxU0pWcUDah9/dm+xTmldxLQNMeYqaCjXmbCAm8HhRvwnfLB34pV/Hpw=";
 
-    /// [批9 回归] 原版 zip 全类别落库：18 类数据文件 + 加密 servers + 媒体/配置跳过
+    /// [批9 回归 / 批41 媒体] 原版 zip 全类别落库：18 类数据文件 + 加密 servers +
+    /// 媒体落盘与封面 remap + 配置快照跳过
     /// （`cookies.json`/`runtimeSourceCache.json` 有独立分支用例，
     /// `directLinkUploadRule.json` 有批16f 专项用例）
     #[test]
@@ -4831,7 +5314,7 @@ mod tests {
                 ("keyboardAssists.json", keyboard_assists.as_bytes()),
                 ("autoTask.json", auto_task.as_bytes()),
                 ("servers.json", UPSTREAM_EMPTY_PW_SERVERS.as_bytes()),
-                // 媒体与配置快照：存在但不落盘（登记跳过），验证不中断恢复
+                // 媒体落盘（批41）；配置快照存在但跳过（登记），验证不中断恢复
                 ("covers/book1.jpg", b"\xFF\xD8\xFF-fake-jpeg"),
                 ("bg/wall.jpg", b"fake-bg"),
                 ("readConfig.json", b"[]"),
@@ -4839,6 +5322,9 @@ mod tests {
                 ("config.xml", b"<map />"),
             ],
         );
+        // 媒体根隔离到本用例临时目录（共享测试库在系统 temp 下）
+        let media_root = dir.join("media");
+        let _media_guard = set_test_media_root(&media_root);
 
         let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
         assert_eq!(stats.books, 2);
@@ -4848,10 +5334,20 @@ mod tests {
         assert_eq!(stats.rss_sources, 1);
         assert_eq!(stats.read_records, 1);
 
+        // 批41：媒体落盘且内容一致
+        assert_eq!(
+            fs::read(media_root.join("covers").join("book1.jpg")).unwrap(),
+            b"\xFF\xD8\xFF-fake-jpeg"
+        );
+        assert_eq!(
+            fs::read(media_root.join("bg").join("wall.jpg")).unwrap(),
+            b"fake-bg"
+        );
+
         with_database(|db| {
             let conn = db.connection();
 
-            // 书架：进度原样、绝对封面路径置空、网络封面保留
+            // 书架：进度原样、绝对封面路径 remap 到本地媒体、网络封面保留
             let book1 = BookRepository::new(conn)
                 .find_by_url("https://zip.example/book/1")?
                 .expect("zip 备份书一应落库");
@@ -4859,9 +5355,19 @@ mod tests {
             assert_eq!(book1.dur_chapter_pos, 12);
             assert_eq!(book1.dur_chapter_title.as_deref(), Some("第五章"));
             assert_eq!(book1.dur_chapter_time, 1700000000123);
-            assert_eq!(
-                book1.custom_cover_url, None,
-                "原版绝对 covers 路径在未恢复媒体时应置空（对齐 remap 失败语义）"
+            let restored_cover = book1
+                .custom_cover_url
+                .as_deref()
+                .expect("媒体已恢复时原版绝对 covers 路径应 remap 为本地路径");
+            assert!(
+                Path::new(restored_cover).is_file(),
+                "remap 后的封面路径应指向已落盘文件: {restored_cover}"
+            );
+            assert!(
+                restored_cover
+                    .replace('\\', "/")
+                    .ends_with("covers/book1.jpg"),
+                "remap 目标应位于媒体根 covers 目录: {restored_cover}"
             );
             let book2 = BookRepository::new(conn)
                 .find_by_url("https://zip.example/book/2")?
