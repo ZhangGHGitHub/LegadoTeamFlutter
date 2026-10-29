@@ -10,6 +10,12 @@
 // 其中 toc_rule/charset 只对本地书生效，所以在线书默认仍是旧版那套
 // 「换源 / 刷新 / 缓存 / 更多」四个图标（池顺序即默认展示顺序）。
 //
+// [批37b P2-2 登记] 本仓库的 `toc_rule` 目前只打开「目录规则库」管理页，
+// 尚未把选中规则作用于当前本地 TXT（参考版 MenuTocRegex 会写 book.tocUrl
+// 并重解析目录）。为不误导用户，本批将其移出默认启用集；入口文案改为
+// 「目录规则库（仅管理规则）」，配置页仍可手动开启，后续批次打通后再
+// 恢复默认开启。
+//
 // 持久化键对齐参考版 SharedPreferences 文件名 + 键名：
 // `title_bar_actions` / `actions`。Flutter 只有单一 prefs 存储，故实际键
 // 写作 `title_bar_actions.actions`；值格式沿用参考版
@@ -153,7 +159,8 @@ const List<ReaderTopBarActionDef> readerTopBarActionPool = [
   ReaderTopBarActionDef(
     id: 'toc_rule',
     icon: Symbols.toc_rounded,
-    label: 'TXT 目录规则',
+    // [批37b P2-2] 当前仅打开规则库管理页，不作用于当前书——文案如实标注
+    label: '目录规则库（仅管理规则）',
     scope: ReaderBookScope.localTxt,
   ),
   ReaderTopBarActionDef(
@@ -200,7 +207,7 @@ const List<ReaderTopBarActionDef> readerTopBarActionPool = [
   ReaderTopBarActionDef(
     id: 'theme',
     icon: Symbols.dark_mode_rounded,
-    label: '夜间模式',
+    label: '日/夜切换',
   ),
   ReaderTopBarActionDef(
     id: 'prev_chapter',
@@ -225,11 +232,13 @@ final Map<String, ReaderTopBarActionDef> readerTopBarActionById = {
 };
 
 /// 参考版默认开启的顶栏动作（顺序由 [readerTopBarActionPool] 决定）
+///
+/// [批37b P2-2] `toc_rule` 暂未接通「作用于当前书」的语义，默认关闭
+/// （入口仍在池内，用户可在配置页手动开启；见文件头登记）。
 const Set<String> kReaderDefaultTopBarActionIds = {
   'download',
   'refresh',
   'change_source',
-  'toc_rule',
   'charset',
   kReaderMoreActionsId,
 };
@@ -264,14 +273,6 @@ class ReaderTopBarActionsState {
   final List<ReaderTopBarActionItem> items;
 
   const ReaderTopBarActionsState(this.items);
-
-  /// 配置页用：按当前顺序取描述符
-  List<ReaderTopBarActionDef> get defs => [
-    for (final item in items) ?readerTopBarActionById[item.id],
-  ];
-
-  /// 已开启数量（含固定的「更多」，配置页提示用）
-  int get enabledCount => items.where((e) => e.enabled).length;
 
   ReaderTopBarActionItem? itemFor(String id) {
     for (final item in items) {
@@ -381,6 +382,9 @@ List<ReaderTopBarActionDef> buildReaderTopBarActions(
 ///
 /// 范围 = 当前书适用的全部池内动作（不论配置开关，只要是「顶栏没有显示」），
 /// 去掉「更多」本身与 [excludeIds]（已在「更多」菜单里以原名存在的项）。
+///
+/// [批37b P3-11] 顺序按用户配置（`config.items`）而非动作池顺序：兜底菜单
+/// 与顶栏配置页顺序一致，用户上移/下移后「更多」里的排列同步变化。
 List<ReaderTopBarActionDef> hiddenReaderTopBarActions(
   ReaderTopBarActionsState config, {
   required ReaderBookTraits traits,
@@ -388,11 +392,10 @@ List<ReaderTopBarActionDef> hiddenReaderTopBarActions(
   Set<String> excludeIds = const {},
 }) {
   return [
-    for (final def in readerTopBarActionPool)
-      if (def.id != kReaderMoreActionsId &&
-          !visibleIds.contains(def.id) &&
-          !excludeIds.contains(def.id) &&
-          def.isApplicable(traits))
-        def,
-  ];
+    for (final item in config.items)
+      if (item.id != kReaderMoreActionsId &&
+          !visibleIds.contains(item.id) &&
+          !excludeIds.contains(item.id))
+        ?readerTopBarActionById[item.id],
+  ].where((def) => def.isApplicable(traits)).toList();
 }

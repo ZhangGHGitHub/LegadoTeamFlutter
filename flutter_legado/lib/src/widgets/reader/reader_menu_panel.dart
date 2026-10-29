@@ -120,9 +120,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       ref.read(readerNotifierProvider.notifier).updateCurrentBook(updated);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('设置保存失败: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('设置保存失败: $e')));
     }
   }
 
@@ -271,10 +271,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // 与换源流程 _applying 防重入同形态；notifier 侧 _refreshing 兜底）
     if (notifier.isRefreshing) return;
     messenger.showSnackBar(
-      const SnackBar(
-        content: Text('正在刷新正文…'),
-        duration: Duration(minutes: 10),
-      ),
+      const SnackBar(content: Text('正在刷新正文…'), duration: Duration(minutes: 10)),
     );
     final err = await notifier.refreshChapterContent();
     // [SB-HUNT | 2026-09-25] 必收清理（与换源流程统一）：先 clearSnackBars
@@ -292,23 +289,38 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   /// 「更多」菜单里动作项的值前缀（`action:<id>`），与既有固定项区分
   static const String _moreActionValuePrefix = 'action:';
 
-  /// 「更多」菜单里已有同义入口的动作 id（目录/界面设置/添加书签/替换规则）
+  /// 「更多」菜单里已有同义入口的动作 id（目录/界面设置/添加书签/替换规则
+  /// + 底部常驻动作行的全文搜索/自动翻页/朗读）
   ///
-  /// 兜底列表跳过这四项，避免同一菜单出现两个同义项；这四项本身不会丢失。
+  /// 兜底列表跳过这些项，避免同一菜单出现两个同义入口；这些动作本身
+  /// 已在固定位置（「更多」菜单项或底部五键行动作行），不会丢失。
   static const Set<String> _moreMenuOwnActionIds = {
     'catalog',
     'setting',
     'addBookmark',
     'replace',
+    // [批37b P2-1] 底部动作行常驻的三项：顶栏未显示时不再在「更多」重复
+    'search',
+    'auto_page',
+    'read_aloud',
   };
 
-  /// 本地 TXT 判定（对齐 Book.isLocalTxt：本地书且文件名以 .txt 结尾）
-  static bool _isLocalTxtBook(Book book) {
-    if (!BookType.isLocalOrigin(book.origin)) return false;
-    final name = book.originName.trim().toLowerCase();
-    if (name.isNotEmpty) return name.endsWith('.txt');
-    return book.bookUrl.toLowerCase().endsWith('.txt');
-  }
+  /// 本地书判定（批37b P2-3）
+  ///
+  /// origin 为空视为本地（存量/未落库书没有书源可换源/刷新），其余复用
+  /// 类型感知的 [BookType.isLocalBook]（对齐参考版 `Book.isLocal`）——
+  /// 仅看 origin 会漏掉 type 位标记的本地书。
+  static bool _isLocalBook(Book book) =>
+      book.origin.trim().isEmpty || BookType.isLocalBook(book);
+
+  /// 本地 TXT 判定（对齐参考版 `Book.isLocalTxt`：
+  /// `isLocal && originName.endsWith(".txt", ignoreCase = true)`）
+  ///
+  /// 参考版只认 `originName`；本地导入（`import_local_book`）总会写入
+  /// 文件名，故不再用 bookUrl 兜底。
+  static bool _isLocalTxtBook(Book book) =>
+      _isLocalBook(book) &&
+      book.originName.trim().toLowerCase().endsWith('.txt');
 
   /// 顶栏动作按钮（40dp 紧凑热区，支持长按二级动作）
   ///
@@ -330,7 +342,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             ? null
             : () => _performTopBarLongPress(context, book, def.longPress!),
         child: IconButton(
-          icon: Icon(def.icon, size: 22),
+          icon: Icon(def.icon, size: 22, semanticLabel: def.label),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints.tightFor(width: 40, height: 40),
           visualDensity: VisualDensity.compact,
@@ -376,7 +388,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         widget.onOpenReplaceRules();
       case 'theme':
         // 对齐原版 fabNightTheme：显式写日/夜，外层书架同步联动
-        await ref.read(themeNotifierProvider.notifier).toggleDayNight(
+        await ref
+            .read(themeNotifierProvider.notifier)
+            .toggleDayNight(
               isNight: Theme.of(context).brightness == Brightness.dark,
             );
       case 'prev_chapter':
@@ -418,9 +432,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               leading: const Icon(Symbols.article_rounded),
               title: const Text('单章换源'),
               subtitle: Text(
-                chapter?.title.isNotEmpty == true
-                    ? chapter!.title
-                    : '仅替换当前章正文',
+                chapter?.title.isNotEmpty == true ? chapter!.title : '仅替换当前章正文',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -475,7 +487,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // 本地）：本地书（loc_book/webDav::/存量 dav:）不显示换源/刷新正文（原版 ReadMenu
     // 对本地书隐藏这两项入口）；notifier 侧守卫兜底
     // （refreshChapterContent 对本地书返回原因、不触网）
-    final isOnline = book != null && !BookType.isLocalOrigin(book.origin);
+    // [批37b P2-3] origin 为空同样按本地处理；其余走类型感知的
+    // BookType.isLocalBook（仅 origin 判定会漏掉 type 位标记的本地书）
+    final isOnline = book != null && !_isLocalBook(book);
     // [批37] 顶栏动作可配置（参考版 ReadMenuActionDefs.kt）：
     // 顺序/开关来自用户配置，按当前书型过滤，最多 6 个（含末尾固定的
     // 「更多」）。旧版写死的换源/刷新/缓存/更多正是默认配置在在线书上的
@@ -486,9 +500,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       isLocalTxt: book != null && _isLocalTxtBook(book),
     );
     final topBarActions = book == null
-        ? <ReaderTopBarActionDef>[
-            readerTopBarActionById[kReaderMoreActionsId]!,
-          ]
+        ? <ReaderTopBarActionDef>[readerTopBarActionById[kReaderMoreActionsId]!]
         : buildReaderTopBarActions(actionConfig, traits: traits);
     final visibleActionIds = {for (final def in topBarActions) def.id};
     // 「更多」菜单兜底：被移出顶栏（或本就不在顶栏）的动作仍从这里可达，
@@ -514,7 +526,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Symbols.arrow_back_rounded),
+                    icon: const Icon(
+                      Symbols.arrow_back_rounded,
+                      semanticLabel: '退出阅读',
+                    ),
                     tooltip: '退出阅读',
                     onPressed: widget.onBack,
                   ),
@@ -543,9 +558,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                               _performTopBarAction(
                                 context,
                                 book,
-                                value.substring(
-                                  _moreActionValuePrefix.length,
-                                ),
+                                value.substring(_moreActionValuePrefix.length),
                               ),
                             );
                             return;
@@ -606,8 +619,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                             const PopupMenuDivider(),
                             for (final def in hiddenActions)
                               PopupMenuItem(
-                                value:
-                                    '$_moreActionValuePrefix${def.id}',
+                                value: '$_moreActionValuePrefix${def.id}',
                                 child: Text(def.label),
                               ),
                           ],
@@ -687,12 +699,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                         // [P2-9 fix | 2026-09-24] 本地书不渲染换源快捷钮
                         // （隐藏而非置灰，同顶栏行）；换源 = await 导航，
                         // 成功后重载，取消不做任何事
-                        if (isOnline) _shortcutButton(
-                          context,
-                          Symbols.swap_horiz_rounded,
-                          '换源',
-                          () => unawaited(_changeSourceFlow(context, book)),
-                        ),
+                        if (isOnline)
+                          _shortcutButton(
+                            context,
+                            Symbols.swap_horiz_rounded,
+                            '换源',
+                            () => unawaited(_changeSourceFlow(context, book)),
+                          ),
                       ],
                     ),
                   ],
@@ -724,6 +737,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
           child: Icon(
             icon,
             size: 22,
+            semanticLabel: tip,
             color: onTap == null
                 ? cs.onSurface.withValues(alpha: 0.35)
                 : cs.onSurface,
@@ -800,9 +814,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final items = <Widget>[
       item(Symbols.search_rounded, '全文搜索', widget.onOpenContentSearch),
       item(
-        autoPageActive
-            ? Symbols.pause_rounded
-            : Symbols.play_arrow_rounded,
+        autoPageActive ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
         '自动翻页',
         widget.onToggleAutoPage,
         active: autoPageActive,
@@ -811,10 +823,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       item(Symbols.headphones_rounded, '朗读', widget.onReadAloud),
       item(Symbols.settings_rounded, '设置', widget.onOpenSettings),
     ];
-    return SizedBox(
-      height: 76,
-      child: Row(children: items),
-    );
+    return SizedBox(height: 76, child: Row(children: items));
   }
 
   // ── 分区：进度滑条行（page=调章内页 / chapter=调章节）──
@@ -866,9 +875,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
     // [PARITY C2 M4] 参考底行形态：「X/Y + 目录%」文字行 + 全宽滑条。
     // 文字行左=位置、右=百分比；下方保留滑条寻址（章节/章内页两种语义）。
-    final textStyle = Theme.of(context).textTheme.labelMedium?.copyWith(
-      color: progressColor,
-    );
+    final textStyle = Theme.of(
+      context,
+    ).textTheme.labelMedium?.copyWith(color: progressColor);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(

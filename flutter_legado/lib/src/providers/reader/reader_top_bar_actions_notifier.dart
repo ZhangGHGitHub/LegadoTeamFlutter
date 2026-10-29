@@ -20,18 +20,24 @@ class ReaderTopBarActionsNotifier extends Notifier<ReaderTopBarActionsState> {
   /// 变更代数：异步加载返回时若用户已改配置，丢弃旧值（对齐 ThemeNotifier）
   int _generation = 0;
 
+  /// [批37b P3-10] provider 是否已销毁：异步 `_load` 返回时不得再读 ref /
+  /// 写 state（Riverpod 销毁后写 state 会抛错）
+  bool _disposed = false;
+
   @override
   ReaderTopBarActionsState build() {
+    ref.onDispose(() => _disposed = true);
     Future.microtask(_load);
     return ReaderTopBarActionsState(defaultReaderTopBarActionItems());
   }
 
   Future<void> _load() async {
+    if (_disposed) return;
     final generation = _generation;
     final raw = await ref
         .read(settingsProvider)
         .getStringPref(kReaderTopBarActionsPrefsKey);
-    if (generation != _generation) return;
+    if (_disposed || generation != _generation) return;
     state = ReaderTopBarActionsState(decodeReaderTopBarActions(raw));
   }
 

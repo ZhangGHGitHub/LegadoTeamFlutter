@@ -8,6 +8,8 @@
 // 配置只存一份：此处不按书型过滤列表，只在副标题标注适用范围；实际渲染
 // 由 `buildReaderTopBarActions` 按当前书型过滤（与参考版
 // `isReadMenuActionApplicable` 同口径）。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -16,7 +18,7 @@ import '../../providers/reader/reader_top_bar_actions_notifier.dart';
 import 'reader_top_bar_actions.dart';
 
 /// 顶栏按钮配置底部弹层
-class ReaderTopBarConfigSheet extends ConsumerWidget {
+class ReaderTopBarConfigSheet extends ConsumerStatefulWidget {
   const ReaderTopBarConfigSheet({super.key});
 
   /// 便捷入口：从阅读设置页打开
@@ -34,7 +36,33 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReaderTopBarConfigSheet> createState() =>
+      _ReaderTopBarConfigSheetState();
+}
+
+class _ReaderTopBarConfigSheetState
+    extends ConsumerState<ReaderTopBarConfigSheet> {
+  /// [批37b P3-7] 恢复默认的反馈改在弹层内展示：ModalBottomSheet 之下的
+  /// ScaffoldMessenger SnackBar 会被弹层遮住，用户看不到。
+  String? _notice;
+  Timer? _noticeTimer;
+
+  @override
+  void dispose() {
+    _noticeTimer?.cancel();
+    super.dispose();
+  }
+
+  void _showNotice(String text) {
+    _noticeTimer?.cancel();
+    setState(() => _notice = text);
+    _noticeTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _notice = null);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final config = ref.watch(readerTopBarActionsProvider);
     final notifier = ref.read(readerTopBarActionsProvider.notifier);
     final theme = Theme.of(context);
@@ -74,6 +102,16 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
                     ),
                   ),
                 ],
+                if (_notice != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _notice!,
+                    key: const ValueKey('reader-topbar-notice'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -98,10 +136,8 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
                   key: const ValueKey('reader-topbar-restore'),
                   onPressed: () async {
                     await notifier.restoreDefaults();
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('已恢复默认顶栏按钮')));
+                    if (!mounted) return;
+                    _showNotice('已恢复默认顶栏按钮');
                   },
                   icon: const Icon(Icons.restart_alt, size: 18),
                   label: const Text('恢复默认'),
@@ -185,9 +221,7 @@ class ReaderTopBarConfigSheet extends ConsumerWidget {
           Switch(
             key: ValueKey('reader-topbar-switch-${item.id}'),
             value: item.enabled,
-            onChanged: canToggle
-                ? (_) => notifier.toggle(item.id)
-                : null,
+            onChanged: canToggle ? (_) => notifier.toggle(item.id) : null,
           ),
         ],
       ),

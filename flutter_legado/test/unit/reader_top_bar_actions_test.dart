@@ -23,7 +23,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('动作池与默认配置', () {
-    test('默认开启集合与顺序对齐参考版', () {
+    test('默认开启集合与顺序对齐参考版（toc_rule 批37b 暂默认关闭）', () {
       final items = defaultReaderTopBarActionItems();
       final enabled = [
         for (final item in items)
@@ -33,11 +33,15 @@ void main() {
         'download',
         'refresh',
         'change_source',
-        'toc_rule',
         'charset',
         kReaderMoreActionsId,
-      ], reason: '参考版 DEFAULT_TITLE_BAR_ACTION_IDS 按池顺序展开');
+      ], reason: '参考版默认集去掉未接通的 toc_rule（批37b P2-2 登记）');
       expect(items.last.id, kReaderMoreActionsId, reason: '「更多」固定末位');
+      expect(
+        readerTopBarActionById['toc_rule']?.label,
+        '目录规则库（仅管理规则）',
+        reason: '入口只打开规则库，文案不得暗示作用于当前书',
+      );
     });
 
     test('默认在线书顶栏 = 缓存/刷新/换源/更多（旧版写死四钮）', () {
@@ -53,12 +57,12 @@ void main() {
       ]);
     });
 
-    test('书型过滤：本地 TXT 显示 TXT 目录规则/编码，不显示在线动作', () {
+    test('书型过滤：本地 TXT 默认只显示编码（toc_rule 默认关闭）', () {
       final actions = buildReaderTopBarActions(
         ReaderTopBarActionsState(defaultReaderTopBarActionItems()),
         traits: const ReaderBookTraits(isLocal: true, isLocalTxt: true),
       );
-      expect(_ids(actions), ['toc_rule', 'charset', kReaderMoreActionsId]);
+      expect(_ids(actions), ['charset', kReaderMoreActionsId]);
     });
 
     test('书型过滤：本地 EPUB 只显示编码（toc_rule 仅本地 TXT）', () {
@@ -216,7 +220,15 @@ void main() {
         config,
         traits: const ReaderBookTraits(),
         visibleIds: _ids(visible).toSet(),
-        excludeIds: const {'catalog', 'setting', 'addBookmark', 'replace'},
+        excludeIds: const {
+          'catalog',
+          'setting',
+          'addBookmark',
+          'replace',
+          'search',
+          'auto_page',
+          'read_aloud',
+        },
       );
       final hiddenIds = _ids(hidden);
       expect(hiddenIds, contains('change_source'));
@@ -225,6 +237,33 @@ void main() {
       expect(hiddenIds, isNot(contains(kReaderMoreActionsId)));
       expect(hiddenIds, isNot(contains('catalog')), reason: '菜单已有同义项');
       expect(hiddenIds, isNot(contains('setting')));
+      expect(hiddenIds, isNot(contains('search')), reason: '底部动作行常驻');
+      expect(hiddenIds, isNot(contains('auto_page')), reason: '底部动作行常驻');
+      expect(hiddenIds, isNot(contains('read_aloud')), reason: '底部动作行常驻');
+    });
+
+    test('兜底菜单顺序跟随用户配置（批37b P3-11）', () {
+      final config = _config([
+        const ReaderTopBarActionItem(id: 'theme', enabled: false),
+        const ReaderTopBarActionItem(id: 'next_chapter', enabled: false),
+        const ReaderTopBarActionItem(id: 'prev_chapter', enabled: false),
+        ...defaultReaderTopBarActionItems(),
+      ]);
+      final hidden = hiddenReaderTopBarActions(
+        config,
+        traits: const ReaderBookTraits(),
+        visibleIds: {kReaderMoreActionsId},
+      );
+      final hiddenIds = _ids(hidden);
+      expect(
+        hiddenIds.indexOf('theme') < hiddenIds.indexOf('next_chapter'),
+        isTrue,
+        reason: '配置里 theme 排在 next_chapter 前，兜底菜单应同序',
+      );
+      expect(
+        hiddenIds.indexOf('next_chapter') < hiddenIds.indexOf('prev_chapter'),
+        isTrue,
+      );
     });
 
     test('本地书兜底不含在线动作', () {

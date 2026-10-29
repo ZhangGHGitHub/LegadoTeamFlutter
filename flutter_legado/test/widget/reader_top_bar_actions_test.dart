@@ -2,11 +2,13 @@
 //
 // 覆盖：默认顶栏顺序、书型过滤、最多 6 个、配置持久化/重启读回、
 // 配置页开关/上下移/恢复默认、被移出顶栏的动作在「更多」菜单仍可达、
-// 长按二级动作（换源）。
+// 长按二级动作（换源/缓存管理）、批37b 回修项（更多菜单去重、
+// origin 为空书型判定、charset/toc_rule 点击、同树配置即时生效）。
 //
-// 编写：全栈工程师（批37） ｜ 2026-10-29
+// 编写：全栈工程师（批37/37b） ｜ 2026-10-29
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
@@ -14,6 +16,7 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/providers/reader/reader_top_bar_actions_notifier.dart';
+import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_menu_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_top_bar_actions.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_top_bar_config_sheet.dart';
@@ -58,6 +61,10 @@ void main() {
   Widget wrapMenu(ProviderContainer container) => UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
+      routes: {
+        AppRoutes.offlineCache: (_) => const Scaffold(body: Text('缓存管理页')),
+        AppRoutes.txtTocRules: (_) => const Scaffold(body: Text('目录规则库页')),
+      },
       home: Scaffold(
         body: Stack(
           children: [
@@ -120,16 +127,41 @@ void main() {
       expect(xDownload < xRefresh && xRefresh < xChange, isTrue);
     });
 
-    testWidgets('本地 TXT 显示 TXT 目录规则/设置编码，不显示在线动作', (tester) async {
+    testWidgets('本地 TXT 默认显示设置编码，不显示在线动作（toc_rule 默认关闭）', (tester) async {
       final container = makeContainer();
       await pumpMenu(tester, container, localTxtBook);
 
-      expect(topBarAction('toc_rule'), findsOneWidget);
       expect(topBarAction('charset'), findsOneWidget);
+      expect(
+        topBarAction('toc_rule'),
+        findsNothing,
+        reason: '批37b P2-2：未接通的目录规则入口移出默认启用集',
+      );
       expect(topBarAction('download'), findsNothing);
       expect(topBarAction('refresh'), findsNothing);
       expect(topBarAction('change_source'), findsNothing);
       expect(find.byTooltip('更多'), findsOneWidget);
+    });
+
+    testWidgets('origin 为空按本地书处理（批37b P2-3）', (tester) async {
+      const orphanBook = Book(
+        bookUrl: 'file:///books/orphan.txt',
+        name: '无 origin 本地书',
+        author: '作者O',
+        origin: '',
+        originName: 'orphan.txt',
+      );
+      final container = makeContainer();
+      await pumpMenu(tester, container, orphanBook);
+
+      expect(
+        topBarAction('change_source'),
+        findsNothing,
+        reason: 'origin 空不得误判为在线书',
+      );
+      expect(topBarAction('refresh'), findsNothing);
+      expect(topBarAction('download'), findsNothing);
+      expect(topBarAction('charset'), findsOneWidget, reason: '按本地 TXT 处理');
     });
   });
 
@@ -155,6 +187,37 @@ void main() {
       // 菜单里已有同义项不重复
       expect(find.text('查看目录'), findsOneWidget);
       expect(find.text('界面设置'), findsOneWidget);
+    });
+
+    testWidgets('默认在线书「更多」不含底部动作行常驻项（批37b P2-1）', (tester) async {
+      final container = makeContainer();
+      await pumpMenu(tester, container, onlineBook);
+
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+
+      final menuItem = find.byWidgetPredicate((w) => w is PopupMenuItem);
+      Finder inMenu(String text) =>
+          find.descendant(of: menuItem, matching: find.text(text));
+      // 底部五键行动作行已有同义入口，不再进「更多」
+      expect(inMenu('全文搜索'), findsNothing);
+      expect(inMenu('自动翻页'), findsNothing);
+      expect(inMenu('朗读'), findsNothing);
+      // 目录/设置同理（既有去重）
+      expect(inMenu('查看目录'), findsOneWidget);
+      expect(inMenu('界面设置'), findsOneWidget);
+      // 顶栏未显示的动作仍可达
+      expect(inMenu('日/夜切换'), findsOneWidget);
+      expect(inMenu('上一章'), findsOneWidget);
+    });
+
+    testWidgets('长按下载进入缓存管理页（批37b P2-4）', (tester) async {
+      final container = makeContainer();
+      await pumpMenu(tester, container, onlineBook);
+
+      await tester.longPress(topBarAction('download'));
+      await tester.pumpAndSettle();
+      expect(find.text('缓存管理页'), findsOneWidget);
     });
 
     testWidgets('全部动作开启时顶栏最多 6 个（含固定「更多」）', (tester) async {
@@ -183,6 +246,112 @@ void main() {
       expect(find.text('单章换源'), findsOneWidget);
       expect(find.text('换书源'), findsOneWidget);
     });
+
+    testWidgets('同一树中配置页关闭换源后顶栏立即消失（批37b P2-4）', (tester) async {
+      final container = makeContainer();
+      container
+          .read(readerNotifierProvider.notifier)
+          .updateCurrentBook(onlineBook);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Stack(
+                children: [
+                  ReaderMenuPanel(
+                    visible: true,
+                    onBack: () {},
+                    onAddBookmark: () {},
+                    onOpenCatalog: () {},
+                    onOpenSettings: () {},
+                    onOpenAdvancedConfig: () {},
+                    onOpenContentSearch: () {},
+                    onReadAloud: () {},
+                    onToggleAutoPage: () {},
+                    onOpenReplaceRules: () {},
+                  ),
+                  Align(
+                    alignment: Alignment.center,
+                    child: Builder(
+                      builder: (ctx) => TextButton(
+                        key: const ValueKey('open-topbar-config'),
+                        onPressed: () => ReaderTopBarConfigSheet.show(ctx),
+                        child: const Text('open-config'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(topBarAction('change_source'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('open-topbar-config')));
+      await tester.pumpAndSettle();
+      final changeSourceSwitch = find.byKey(
+        const ValueKey('reader-topbar-switch-change_source'),
+      );
+      await tester.ensureVisible(changeSourceSwitch);
+      await tester.tap(changeSourceSwitch);
+      await tester.pump();
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+
+      expect(
+        topBarAction('change_source'),
+        findsNothing,
+        reason: '配置即时生效，同一 ProviderScope 下顶栏立即重绘',
+      );
+    });
+
+    testWidgets('点击设置编码：对话框 → 单列写 → 成功提示（批37b P1-1）', (tester) async {
+      final container = makeContainer();
+      const chapter = BookChapter(
+        url: 'txt://chapter/0',
+        title: '第一章',
+        index: 0,
+      );
+      when(() => mockApi.setBookCharset(any(), any())).thenAnswer((inv) async {
+        final charset = inv.positionalArguments[1] as String;
+        return localTxtBook.copyWith(charset: charset);
+      });
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => [chapter]);
+      when(
+        () => mockApi.getChapterContentFull(any(), any()),
+      ).thenAnswer((_) async => '正文内容');
+
+      await pumpMenu(tester, container, localTxtBook);
+      await tester.tap(topBarAction('charset'));
+      await tester.pumpAndSettle();
+      expect(find.text('设置编码'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'GBK');
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      verify(
+        () => mockApi.setBookCharset(localTxtBook.bookUrl, 'GBK'),
+      ).called(1);
+      expect(find.text('已设置编码：GBK'), findsOneWidget);
+    });
+
+    testWidgets('点击目录规则库入口打开管理页（批37b P2-2 登记）', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readerTopBarActions: 'toc_rule,true;more_actions,true',
+      });
+      final container = makeContainer();
+      await pumpMenu(tester, container, localTxtBook);
+
+      expect(topBarAction('toc_rule'), findsOneWidget);
+      await tester.tap(topBarAction('toc_rule'));
+      await tester.pumpAndSettle();
+      expect(find.text('目录规则库页'), findsOneWidget);
+    });
   });
 
   group('配置页', () {
@@ -203,7 +372,8 @@ void main() {
         const ValueKey('reader-topbar-switch-catalog'),
       );
       await tester.ensureVisible(switchCatalog);
-      // 默认已开启 5 个动作 + 固定「更多」= 6 个上限，先腾位再开启目录
+      // 先关闭下载（腾位），再开启目录（批37b 默认只开 4 项，此处仍按
+      // 开关往返验证即时落盘）
       final switchDownload = find.byKey(
         const ValueKey('reader-topbar-switch-download'),
       );
@@ -269,21 +439,39 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      // 默认开启 5 个动作（download/refresh/change_source/toc_rule/charset）
+      // 默认开启 4 个可配置动作（download/refresh/change_source/charset）
+      // 先开启目录补到 5 个（+ 固定「更多」= 6）
       final switchCatalog = find.byKey(
         const ValueKey('reader-topbar-switch-catalog'),
       );
       await tester.ensureVisible(switchCatalog);
+      expect(tester.widget<Switch>(switchCatalog).onChanged, isNotNull);
+      await tester.tap(switchCatalog);
+      await tester.pump();
+
+      // 已满 6 个时其余未开启项不允许再开启（列表懒构建，先滚动到位）
+      final switchSearch = find.byKey(
+        const ValueKey('reader-topbar-switch-search'),
+      );
+      await tester.scrollUntilVisible(
+        switchSearch,
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
-        tester.widget<Switch>(switchCatalog).onChanged,
+        tester.widget<Switch>(switchSearch).onChanged,
         isNull,
         reason: '已满 6 个（含「更多」）时不允许再开启',
       );
-      // 已开启项仍可关闭
+      // 已开启项仍可关闭（滚回列表顶部）
       final switchDownload = find.byKey(
         const ValueKey('reader-topbar-switch-download'),
       );
-      await tester.ensureVisible(switchDownload);
+      await tester.scrollUntilVisible(
+        switchDownload,
+        -120,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(tester.widget<Switch>(switchDownload).onChanged, isNotNull);
     });
 
