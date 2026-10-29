@@ -6097,6 +6097,10 @@ mod tests {
                 "remap 后的封面路径应指向已落盘文件: {cover}"
             );
             assert!(
+                !cover.starts_with(r"\\?\"),
+                "落库路径不得带 Windows 逐字（verbatim）前缀: {cover}"
+            );
+            assert!(
                 cover.replace('\\', "/").ends_with("covers/a.jpg"),
                 "remap 目标应位于媒体根 covers 目录: {cover}"
             );
@@ -6307,6 +6311,28 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 回修 P3-9] Windows 逐字前缀剥离：canonicalize 只用于包含判断，
+    /// 落库/返回路径统一去前缀（非 Windows 路径恒等）
+    #[test]
+    fn test_strip_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\D:\media\covers\a.jpg")),
+            PathBuf::from(r"D:\media\covers\a.jpg")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"\\?\UNC\srv\share\a.jpg")),
+            PathBuf::from(r"\\srv\share\a.jpg")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(Path::new("/tmp/media/a.jpg")),
+            PathBuf::from("/tmp/media/a.jpg")
+        );
+        assert_eq!(
+            strip_verbatim_prefix(Path::new(r"C:\media\a.jpg")),
+            PathBuf::from(r"C:\media\a.jpg")
+        );
     }
 
     /// [批41 单元] 媒体条目分类与相对路径守卫
