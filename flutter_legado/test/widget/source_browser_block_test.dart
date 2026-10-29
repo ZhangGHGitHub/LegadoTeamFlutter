@@ -1,8 +1,10 @@
 // 「拦截书源打开浏览器」行为测试（批39）
 //
 // 对齐参考版 OtherSettings.blockSourceBrowser：
-// - 开启后书源 JS 的 openUrl / showBrowser / startBrowser 一律拦截并提示；
-// - `legado:/yuedu:` 关联导入仍走站内（不受拦截影响）；
+// - 开启后书源 JS 的 openUrl / showBrowser / startBrowser 一律拦截并提示
+//   （[批39 审查回修] 文案中性化统一为「已阻止书源打开浏览器」）；
+// - `legado:/yuedu:` 关联导入仍走站内（不受拦截影响；[批39 审查回修]
+//   openBrowser/startBrowser 也豁免）；
 // - 关闭时保持既有 openUrl 外跳确认链路。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider;
@@ -34,7 +36,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsNothing);
-    expect(find.text('已阻止书源打开内置浏览器'), findsOneWidget);
+    expect(find.text('已阻止书源打开浏览器'), findsOneWidget);
     expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
   });
 
@@ -52,7 +54,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
-    expect(find.text('已阻止书源打开内置浏览器'), findsOneWidget);
+    expect(find.text('已阻止书源打开浏览器'), findsOneWidget);
   });
 
   testWidgets('开启拦截：startBrowser 不外开也不降级内置浏览器', (tester) async {
@@ -70,7 +72,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
-    expect(find.text('已阻止书源打开内置浏览器'), findsOneWidget);
+    expect(find.text('已阻止书源打开浏览器'), findsOneWidget);
   });
 
   testWidgets('开启拦截：legado:// 关联导入仍走站内，不提示拦截', (tester) async {
@@ -86,7 +88,7 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    expect(find.text('已阻止书源打开内置浏览器'), findsNothing);
+    expect(find.text('已阻止书源打开浏览器'), findsNothing);
     expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsNothing);
   });
 
@@ -106,7 +108,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsNothing);
-    expect(find.text('已阻止书源打开内置浏览器'), findsOneWidget);
+    expect(find.text('已阻止书源打开浏览器'), findsOneWidget);
   });
 
   testWidgets('关闭拦截：openUrl 恢复外跳确认链路', (tester) async {
@@ -123,7 +125,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsOneWidget);
-    expect(find.text('已阻止书源打开内置浏览器'), findsNothing);
+    expect(find.text('已阻止书源打开浏览器'), findsNothing);
+  });
+
+  // ─── [批39 审查回修] openBrowser/startBrowser 同样豁免 legado:/yuedu: ────
+
+  testWidgets('开启拦截：openBrowser 的 legado:// 深链仍走站内、不提示拦截',
+      (tester) async {
+    final observer = _RouteRecorder();
+    bridge().blockSourceBrowserOverride = true;
+    await tester.pumpWidget(_host(observer));
+    await tester.pumpAndSettle();
+
+    await bridge().dispatchPayload({
+      'action': 'openBrowser',
+      'url': 'legado://import/bookSource',
+      'html': '',
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('已阻止书源打开浏览器'), findsNothing);
+    expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
+  });
+
+  testWidgets('开启拦截：startBrowser 的 yuedu:// 深链仍走站内、不提示拦截',
+      (tester) async {
+    final observer = _RouteRecorder();
+    bridge().blockSourceBrowserOverride = true;
+    await tester.pumpWidget(_host(observer));
+    await tester.pumpAndSettle();
+
+    await bridge().dispatchPayload({
+      'action': 'startBrowser',
+      'url': 'yuedu://import/booksource',
+      'title': '导入',
+      'html': '',
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('已阻止书源打开浏览器'), findsNothing);
+    expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
   });
 }
 

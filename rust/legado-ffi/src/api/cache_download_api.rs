@@ -550,6 +550,8 @@ fn set_status(task: &TaskInner, status: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Repository trait：BookChapterRepository::insert / BookRepository::delete_by_url
+    use legado_db::repository::Repository;
 
     /// 未知任务：progress 返回 notFound，cancel 返回 false
     #[test]
@@ -713,6 +715,153 @@ mod tests {
         .unwrap();
         crate::api::cache_api::clear_cache().unwrap();
         let _ = std::fs::remove_file(&txt_path);
+    }
+
+    /// [批39 审查回修 P3-11 登记] 网络章「缺图」不会重抓（与参考版严格口径
+    /// 的已知差异，成本高，本批登记不改）：
+    ///
+    /// - 参考版 `BookHelp.isChapterCacheComplete` 对批量下载用**严格**口径
+    ///   （正文 + 章节内图片均已缓存），缺图章视为未完成 → 重抓；
+    /// - 本仓 `download_one` 的在线书分支复用
+    ///   [`crate::api::reader::get_chapter_content_full`]，该链是 **cache-first**
+    ///   （正文非空即返回），因此「有正文但图片未落盘」的缓存行不会被重抓；
+    /// - 要补齐严格口径，需要（a）解析缓存正文中的 `<img src>`（含相对 URL
+    ///   解析）并逐张校验图片磁盘缓存、（b）绕过正文缓存重新抓取，且需同步
+    ///   补「下载时缓存图片」的能力，否则每次批量下载都会对相对图片 URL 的
+    ///   章节重复联网 —— 属功能级改动，超出本批审查回修授权。
+    ///
+    /// 本用例**锁定当前行为**（不发起章节请求、缓存行原样保留），并作为差异
+    /// 登记；参考版严格口径落地后本用例应改为断言重抓（红 → 绿）。
+    #[test]
+    fn test_network_chapter_missing_image_is_not_refetched_registered_gap() {
+        use legado_core::models::BookChapter;
+        use legado_db::CacheBookRepository;
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicUsize;
+
+        // 网络抓取会经 begin_book_flow（全局 store）→ 必须先持 store 锁
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+
+        let chapter_hits = Arc::new(AtomicUsize::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().expect("取端口").port();
+        let hits = Arc::clone(&chapter_hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&head);
+                let path = head
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .split('?')
+                    .next()
+                    .unwrap_or("/")
+                    .to_string();
+                let (status, body) = if path.starts_with("/ch/") {
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    (
+                        200,
+                        "<html><body><div class=\"content\">网络正文A\
+                         <img src=\"http://127.0.0.1/not-cached.jpg\"/></div></body></html>"
+                            .to_string(),
+                    )
+                } else {
+                    (404, "missing".to_string())
+                };
+                let reason = if status < 400 { "OK" } else { "Not Found" };
+                let resp = format!(
+                    "HTTP/1.1 {status} {reason}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        let source_url = format!("http://127.0.0.1:{port}/src/p311");
+        let source_json = format!(
+            r#"{{"bookSourceUrl":"{source_url}","bookSourceName":"P3-11 缺图源","ruleContent":{{"content":"class.content@html"}}}}"#
+        );
+        crate::api::source::add_source(&source_json).expect("书源写入");
+
+        let book_url = format!("http://127.0.0.1:{port}/book/p311");
+        let chapter_url = format!("http://127.0.0.1:{port}/ch/p311");
+        crate::api::bookshelf::add_book(
+            &serde_json::json!({
+                "bookUrl": book_url,
+                "name": "P3-11 网络缺图书",
+                "author": "P3-11",
+                "origin": source_url,
+            })
+            .to_string(),
+        )
+        .expect("书行写入");
+        with_database(|db| {
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                book_url: book_url.clone(),
+                index: 0,
+                title: "第一章".to_string(),
+                url: chapter_url.clone(),
+                base_url: chapter_url.clone(),
+                ..BookChapter::default()
+            })
+        })
+        .expect("章节行写入");
+
+        // 预置「缺图」缓存行：正文引用未落盘图片 → 显示口径仍算已缓存
+        let loose_content = "<img src=\"http://127.0.0.1/not-cached.jpg\"/>";
+        assert!(crate::api::cache_api::save_chapter_content(
+            &book_url,
+            0,
+            "第一章",
+            loose_content,
+            &chapter_url,
+        )
+        .unwrap());
+        let display = crate::api::cache_api::list_cached_chapter_urls(&book_url).unwrap();
+        assert!(
+            display.contains(&chapter_url),
+            "显示口径宽松：有正文（含缺图）即已缓存"
+        );
+
+        // 登记项（当前行为）：cache-first 正文链返回已缓存内容 → 不发起
+        // 章节请求，缺图缓存行原样保留（参考版严格口径下应重抓）
+        download_one(&book_url, 0).expect("网络章下载应成功（命中缓存直接返回）");
+        assert_eq!(
+            chapter_hits.load(Ordering::SeqCst),
+            0,
+            "当前实现为 cache-first：缺图缓存行不会触发章节请求（登记差异）"
+        );
+        let after = crate::api::cache_api::get_chapter_cache(&book_url, 0).unwrap();
+        assert_eq!(
+            after, loose_content,
+            "当前实现保留原缓存行（严格口径落地后应被服务器正文覆盖）"
+        );
+
+        // 清理
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(&book_url)?;
+            CacheBookRepository::new(conn).delete_by_book(&book_url)?;
+            BookRepository::new(conn).delete_by_url(&book_url)
+        })
+        .unwrap();
+        crate::api::cache_api::clear_cache().unwrap();
     }
 
     /// [批18d P3] 相对可迁移标识（`books/rel_cache.txt`）批量缓存必须经

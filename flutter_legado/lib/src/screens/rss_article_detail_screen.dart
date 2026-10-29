@@ -22,6 +22,7 @@ import '../services/deep_link_service.dart';
 import '../services/rss_header.dart';
 import '../services/rss_web_bridge.dart';
 import '../services/rss_web_config.dart';
+import '../services/source_browser_block.dart';
 import '../utils/legado_deep_link.dart';
 import '../utils/rss_read_record.dart';
 import '../widgets/empty_state.dart';
@@ -843,15 +844,28 @@ class _RssArticleDetailScreenState
         return;
       case 'openUrl':
         final url = action.url;
-        if (url != null) {
-          unawaited(
-            openExternalUrlWithConfirm(
-              context,
-              url: url,
-              sourceName: widget.sourceName,
-            ),
-          );
+        if (url == null) return;
+        // [批39 审查回修] 与 PlatformBridge.openUrl 同口径：
+        // - `legado:/yuedu:` 关联导入属站内链路，不交浏览器、不受拦截；
+        // - 开启「拦截书源打开浏览器」后其余 URL 一律拦截并提示同一文案。
+        if (isSourceBrowserBlockedExempt(url)) {
+          unawaited(DeepLinkService.instance.handleUrl(url));
+          return;
         }
+        if (sourceBrowserBlocked) {
+          CrashLogService.instance.put(
+            '[RSS WebView] $kSourceBrowserBlockedMessage：$url',
+          );
+          _showBridgeSnack(kSourceBrowserBlockedMessage);
+          return;
+        }
+        unawaited(
+          openExternalUrlWithConfirm(
+            context,
+            url: url,
+            sourceName: widget.sourceName,
+          ),
+        );
         return;
       case 'showPhoto':
         final src = action.data['src']?.toString().trim() ?? '';

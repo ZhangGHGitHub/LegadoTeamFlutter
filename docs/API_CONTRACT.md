@@ -1286,10 +1286,19 @@
 > 目录页云图标缓存态数据源：复用 `legado-db` `CacheBookRepository.get_by_book`（按
 > `book_url` 复合键查询，不串本），仅提取 `chapter_url`。对齐 Kotlin
 > `item_chapter_list` 的 `iv_toc_cache`（已缓存实心云 / 未缓存空心云）。
+>
+> **[批39 空正文过滤（显示宽松口径）]** 对齐参考版 `TocViewModel`（显示用宽松判定
+> `BookHelp.hasContent`：有正文即算已缓存；下载是否补图仍走严格口径）：
+> - **只收正文非空的缓存行**：`cached_chapters.content.trim()` 为空的历史/异常写入行
+>   不算已缓存（读侧 `get_chapter_cache` 同样按空正文视为 miss）；
+> - **不检查章节内图片**：正文引用的图片未落盘（缺图）时该章**仍算已缓存**，
+>   云图标照常点亮；下载链路（§2.43.3）不消费本集合，逐章严格抓取（缺图会重抓）；
+> - 有目录的书同步过滤已退出当前目录的陈旧缓存行（[B-5]：按 `chapters` 表当前
+>   `chapter_url` 集合校验），无目录记录的书保持既有行为。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `cacheListCachedChapterUrls({required String bookUrl})` | bookUrl | `Future<String>` | 已缓存 `chapter_url` 的 JSON 字符串数组（`["url1","url2",...]`，按 chapter_index 升序、空 url 过滤）；Dart 侧 `RustApi.listCachedChapterUrls` 解析为 `List<String>` 供目录页渲染云图标 |
+| `cacheListCachedChapterUrls({required String bookUrl})` | bookUrl | `Future<String>` | 已缓存 `chapter_url` 的 JSON 字符串数组（`["url1","url2",...]`，按 chapter_index 升序、空 url 与空正文行过滤）；Dart 侧 `RustApi.listCachedChapterUrls` 解析为 `List<String>` 供目录页渲染云图标 |
 
 #### 2.43.6 目录页实时字数刷新查询（P2-28c，1 个方法）
 
@@ -1301,10 +1310,14 @@
 > wordCount 取 `chapters` 表当前值（与 P2-28b 回填链同源，避免 `cached_chapters` 表内旧快照），
 > 未回填为空串。过滤语义与 §2.43.5 一致：按 chapter_index 升序（repository 已排序）、空
 > `chapter_url` 过滤；有目录的书同步过滤已退出当前目录的陈旧缓存行（[B-5] 同源）。
+>
+> **[批39 空正文过滤（显示宽松口径）]** 与 §2.43.5 同源：`content.trim()` 为空的缓存行
+> 不收录（空正文不算已缓存）；正文非空但缺图仍收录（宽松显示）；下载链路不消费本集合，
+> 保持逐章严格抓取。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `cacheListCachedChapters({required String bookUrl})` | bookUrl | `Future<String>` | 该书已缓存章节 url+wordCount 的 JSON 对象数组（`[{"url":"...","wordCount":"..."},...]`，按 chapter_index 升序、空 url 过滤；wordCount 取 `chapters` 表当前值，未回填为空串）；Dart 侧 `RustApi.listCachedChapters` 解析为 `Map<String, String>`（url → wordCount，空 wordCount 不收录）供目录页实时字数胶囊渲染 |
+| `cacheListCachedChapters({required String bookUrl})` | bookUrl | `Future<String>` | 该书已缓存章节 url+wordCount 的 JSON 对象数组（`[{"url":"...","wordCount":"..."},...]`，按 chapter_index 升序、空 url 与空正文行过滤；wordCount 取 `chapters` 表当前值，未回填为空串）；Dart 侧 `RustApi.listCachedChapters` 解析为 `Map<String, String>`（url → wordCount，空 wordCount 不收录）供目录页实时字数胶囊渲染 |
 
 #### 2.43.7 目录页下载中态查询（P2-29，1 个方法）
 

@@ -3,7 +3,8 @@
 // 覆盖：preloadJs 非空注册通道并内联组合脚本、为空不注册、enableJs=false
 // 不执行、hello + java.put（__store）写穿 + getAwait 回调、ajaxAwait 失败
 // 回调 ok=false、injectJs 裸执行、shouldOverrideUrlLoading 快照桩、
-// console 钩子先于 preload、URL 模式 Cookie 预写/回流。
+// console 钩子先于 preload、URL 模式 Cookie 预写/回流；
+// [批39 审查回修] java.openUrl 接入「拦截书源打开浏览器」+ legado: 深链豁免。
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/screens/rss_article_detail_screen.dart';
 import 'package:flutter_legado/src/utils/webview_support.dart';
 
@@ -38,6 +40,7 @@ void main() {
   setUp(() {
     mockApi = MockRustApi();
     SharedPreferences.setMockInitialValues({});
+    uiSettingsListenable.value = const UiSettingsState();
     FakeWebViewController.lastCreated = null;
     FakeWebViewPlatform.resetCookieManager();
     FakeWebViewPlatform.failNextJavaScriptChannelAdd = false;
@@ -842,6 +845,93 @@ void main() {
         hasLength(2),
         reason: '子资源错误不得清空去重键',
       );
+    });
+  });
+
+  // ─── [批39 审查回修] java.openUrl 接入浏览器拦截 ─────────────────────────
+
+  /// 发一条页面动作（`__action`）并等待动作分发
+  Future<void> dispatchPageAction(
+    WidgetTester tester, {
+    required dynamic channel,
+    required String nonce,
+    required String id,
+    required Map<String, dynamic> action,
+  }) async {
+    channel.onMessageReceived(
+      JavaScriptMessage(
+        message: pageMessage(
+          method: '__action',
+          nonce: nonce,
+          id: id,
+          args: jsonEncode(action),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('java.openUrl：开启拦截后提示且不弹外跳确认（批39 审查回修）',
+      (tester) async {
+    await runWithWebView(() async {
+      uiSettingsListenable.value =
+          const UiSettingsState(blockSourceBrowser: true);
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+      );
+      await pumpScreen(tester, source: source);
+      final controller = FakeWebViewController.lastCreated!;
+      final channel = controller.javaScriptChannels.single;
+      final handshake = await completeHandshake(tester, channel, controller);
+
+      await dispatchPageAction(
+        tester,
+        channel: channel,
+        nonce: handshake.nonce,
+        id: 'block_1',
+        action: const {
+          'action': 'openUrl',
+          'url': 'https://example.com/target',
+        },
+      );
+
+      // 与书源桥同一提示文案（中性化：不含「内置」）
+      expect(find.text('已阻止书源打开浏览器'), findsOneWidget);
+      expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsNothing);
+    });
+  });
+
+  testWidgets('java.openUrl：legado:// 深链豁免拦截（批39 审查回修）', (tester) async {
+    await runWithWebView(() async {
+      uiSettingsListenable.value =
+          const UiSettingsState(blockSourceBrowser: true);
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+      );
+      await pumpScreen(tester, source: source);
+      final controller = FakeWebViewController.lastCreated!;
+      final channel = controller.javaScriptChannels.single;
+      final handshake = await completeHandshake(tester, channel, controller);
+
+      await dispatchPageAction(
+        tester,
+        channel: channel,
+        nonce: handshake.nonce,
+        id: 'deep_1',
+        action: const {
+          'action': 'openUrl',
+          'url': 'legado://import/bookSource',
+        },
+      );
+
+      // 站内导入链路不受拦截：不提示、不弹外跳确认
+      expect(find.text('已阻止书源打开浏览器'), findsNothing);
+      expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsNothing);
     });
   });
 }
