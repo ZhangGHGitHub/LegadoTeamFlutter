@@ -375,16 +375,58 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
   // ===== 定位 / 回顶 / 回底 =====
 
   Future<void> _locateCurrent() async {
-    final id = ref.read(readerThemeProvider).currentId;
+    final themeState = ref.read(readerThemeProvider);
+    final id = themeState.currentId;
     if (id.isEmpty) return;
     final itemContext = _itemKeys[id]?.currentContext;
-    if (itemContext == null) return;
-    await Scrollable.ensureVisible(
-      itemContext,
+    if (itemContext != null) {
+      await Scrollable.ensureVisible(
+        itemContext,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        alignment: 0.5,
+      );
+      return;
+    }
+    // 网格是惰性构建：目标卡未构建时没有 context，先按行列估算滚到附近，
+    // 等一帧构建出目标卡后再精确定位（列表布局全部 chip 已构建，走上面）
+    if (!_gridMode || !_scrollController.hasClients) return;
+    final index = themeState.themes.indexWhere((theme) => theme.id == id);
+    if (index < 0) return;
+    final columns = themeState.gridColumns.clamp(
+      ReaderThemeService.minGridColumns,
+      ReaderThemeService.maxGridColumns,
+    );
+    final contentWidth = MediaQuery.sizeOf(context).width - 32;
+    final tileWidth =
+        (contentWidth - 10 * (columns - 1)) / columns;
+    // 卡片 44:56 + 名称行（6 间距 + 约 16 行高）+ 10 行距
+    final tileHeight = tileWidth / 0.62 + 32;
+    final row = index ~/ columns;
+    final position = _scrollController.position;
+    final target = (row * tileHeight + 16 - position.viewportDimension / 2)
+        .clamp(0.0, position.maxScrollExtent);
+    await _scrollController.animateTo(
+      target,
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
-      alignment: 0.5,
     );
+    if (!mounted) return;
+    // 下一帧目标卡构建完成后再精确定位（回调里重新取 context，避免跨
+    // async gap 复用 BuildContext）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final builtContext = _itemKeys[id]?.currentContext;
+      if (builtContext == null) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          builtContext,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          alignment: 0.5,
+        ),
+      );
+    });
   }
 
   Future<void> _scrollToEdge({required bool toBottom}) async {
