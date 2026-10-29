@@ -102,18 +102,13 @@ class ReaderNotifier extends Notifier<ReaderState> {
     // setThemeMode 同路）。监听挂在阅读器 Notifier 上：仅阅读器实际
     // 被使用（provider 已构建）时才随主题重解析，设置页切主题不会
     // 强制构建阅读器状态。
-    ref.listen(
-      themeNotifierProvider,
-      (previous, next) {
-        if (previous?.themeMode != next.themeMode) {
-          // 传入监听值（next.themeMode）而非重读持久化：setThemeMode
-          // 先更新内存状态（触发本监听）后异步落盘，此刻读 prefs 是旧值
-          unawaited(reapplyBackgroundForCurrentTheme(
-            themeMode: next.themeMode,
-          ));
-        }
-      },
-    );
+    ref.listen(themeNotifierProvider, (previous, next) {
+      if (previous?.themeMode != next.themeMode) {
+        // 传入监听值（next.themeMode）而非重读持久化：setThemeMode
+        // 先更新内存状态（触发本监听）后异步落盘，此刻读 prefs 是旧值
+        unawaited(reapplyBackgroundForCurrentTheme(themeMode: next.themeMode));
+      }
+    });
     return const ReaderState();
   }
 
@@ -188,7 +183,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
     }
     if (prefs.getBool('reader_bg_use_custom') ?? false) return;
     final storedIndex = await _settings.getBgColorIndexOrNull();
-    final hasExplicitIndex = storedIndex != null &&
+    final hasExplicitIndex =
+        storedIndex != null &&
         storedIndex >= 0 &&
         storedIndex < ReaderBackground.presets.length;
     if (hasExplicitIndex) return;
@@ -213,8 +209,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final effectiveMode = mode ?? await _settings.getThemeMode();
     Brightness platform;
     try {
-      platform =
-          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      platform = WidgetsBinding.instance.platformDispatcher.platformBrightness;
     } catch (_) {
       platform = Brightness.light;
     }
@@ -424,8 +419,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
       _settings.setBgColorIndex(index);
       // [UI-fix v2.0.4 | 2026-08-08] 选中预设时清除自定义背景标志，
       // 下次启动按预设恢复 — Qoder
-      unawaited(SharedPreferences.getInstance()
-          .then((p) => p.setBool('reader_bg_use_custom', false)));
+      unawaited(
+        SharedPreferences.getInstance().then(
+          (p) => p.setBool('reader_bg_use_custom', false),
+        ),
+      );
       _pushReadBookConfig();
     }
   }
@@ -482,8 +480,12 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 同步全局页信息到 State
   void _syncGlobalPageInfo() {
     final total = _paginator.totalPages();
-    final globalStart = _paginator.globalIndexForChapterStart(state.currentChapterIndex);
-    final globalIndex = globalStart >= 0 ? globalStart + state.currentChapterPos : state.globalPageIndex;
+    final globalStart = _paginator.globalIndexForChapterStart(
+      state.currentChapterIndex,
+    );
+    final globalIndex = globalStart >= 0
+        ? globalStart + state.currentChapterPos
+        : state.globalPageIndex;
     state = state.copyWith(
       totalPages: total,
       globalPageIndex: globalIndex.clamp(0, total > 0 ? total - 1 : 0),
@@ -552,6 +554,46 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // 内代际守卫 + 清错），被取代的加载静默返回，不影响设置变更流程
   Future<void> reloadChapterContent() async {
     await _loadChapterContent();
+  }
+
+  /// 设置编码后重载目录与当前章正文（批37b P1-1，对齐 `ReadBook.setCharset`）
+  ///
+  /// Rust `setBookCharset` 对本地 TXT 已清空章节表（目录 `start/end` 是
+  /// 解码后文本的字节偏移，跨编码不可复用）。这里重新拉取目录、按索引
+  /// 尽量保持位置，再重载当前章正文。
+  ///
+  /// 成功返回 null；失败返回原因（UI 据此展示失败，**不得提示成功**）。
+  Future<String?> reloadAfterCharsetChange(Book book) async {
+    final openSeq = _openSeq;
+    state = state.copyWith(currentBook: book, isLoading: true, error: null);
+    try {
+      final api = ref.read(bookApiProvider);
+      final chapters = await api.getChapters(book.bookUrl);
+      // 开书代际已变化（并发切换到别的书）→ 丢弃旧结果
+      if (openSeq != _openSeq) return null;
+      if (chapters.isEmpty) {
+        state = state.copyWith(error: '目录加载失败（编码或文件不可读）');
+        return state.error;
+      }
+      final index = state.currentChapterIndex
+          .clamp(0, chapters.length - 1)
+          .toInt();
+      state = state.copyWith(
+        chapters: chapters,
+        currentChapterIndex: index,
+        currentChapterPos: 0,
+      );
+      await _loadChapterContent();
+      return state.error;
+    } catch (e) {
+      final message = _mapError(e);
+      state = state.copyWith(error: message);
+      return message;
+    } finally {
+      if (openSeq == _openSeq) {
+        state = state.copyWith(isLoading: false);
+      }
+    }
   }
 
   // [UI-fix v2.0.2 | 2026-08-06] 同步已持久化的书对象到 State
@@ -879,7 +921,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
       if (delta <= 0) return;
       _baseReadTimeMs += delta;
       _readStartMs = now;
-      final written = await ref.read(bookApiProvider).putReadRecord(
+      final written = await ref
+          .read(bookApiProvider)
+          .putReadRecord(
             ReadRecord(
               bookName: book.name,
               readTime: _baseReadTimeMs,
@@ -943,7 +987,6 @@ class ReaderNotifier extends Notifier<ReaderState> {
 /// final state = ref.watch(readerNotifierProvider);
 /// ref.read(readerNotifierProvider.notifier).openBook(book);
 /// ```
-final readerNotifierProvider =
-    NotifierProvider<ReaderNotifier, ReaderState>(
+final readerNotifierProvider = NotifierProvider<ReaderNotifier, ReaderState>(
   ReaderNotifier.new,
 );

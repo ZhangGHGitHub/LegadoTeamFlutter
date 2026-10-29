@@ -112,6 +112,26 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
     return updated;
   }
 
+  /// 设置本地书编码（批37b P1-1）：Mock 仅更新内存书籍字段。
+  ///
+  /// 语义偏差：不做 `encoding_rs` 编码名校验/归一化（Rust 侧负责），
+  /// 也不清本地 TXT 目录（Mock 无真实文件解析）。
+  @override
+  Future<Book> setBookCharset(String bookUrl, String charset) async {
+    await _ensureBooksLoaded();
+    final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
+    if (idx < 0) {
+      throw StateError('书籍不存在: $bookUrl');
+    }
+    final trimmed = charset.trim();
+    if (trimmed.isEmpty) {
+      throw StateError('编码不能为空');
+    }
+    final updated = _books[idx].copyWith(charset: trimmed);
+    _books[idx] = updated;
+    return updated;
+  }
+
   @override
   Future<Book?> getBook(String bookUrl) async {
     await _ensureBooksLoaded();
@@ -453,8 +473,7 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
     String key,
     String result,
     String cookiesJson,
-  ) async =>
-      false;
+  ) async => false;
 
   @override
   Future<bool> cancelWebviewRequest(String key) async => false;

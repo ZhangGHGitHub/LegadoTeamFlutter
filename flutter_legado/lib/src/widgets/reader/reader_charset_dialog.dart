@@ -2,13 +2,19 @@
 //
 // 本地书（含 WebDAV 导入）读正文时可能需要指定 charset；入口原先只挂在
 // 旧工具栏顶栏，菜单面板化后在把该动作放进可配置动作池时复用本实现。
-// 行为与旧实现一致：写 Book.charset → 同步 ReaderNotifier → 重载当前章。
+//
+// [批37b P1-1] 改为单列写 `setBookCharset`（对齐参考版 ReadBook.setCharset）：
+// - 不再用 `updateBook` 整书回写（会清空 readConfig 未建模键/覆盖进度）；
+// - Rust 侧真正消费 charset（TXT 目录+正文按指定编码解码），并对本地 TXT
+//   清空旧目录，这里重载目录后再读正文；
+// - 只有目录/正文读取成功才提示成功，失败显示原因（不假成功）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../models/models.dart' show BookType;
 import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/reader/reader_notifier.dart';
 
@@ -85,7 +91,7 @@ void showReaderCharsetDialog(BuildContext context, WidgetRef ref) {
   );
 }
 
-/// 持久化 charset 并重载当前章正文（对标 ReadBook.setCharset）
+/// 持久化 charset 并重载目录/当前章正文（对标 ReadBook.setCharset）
 Future<void> _applyCharset(
   BuildContext context,
   WidgetRef ref,
@@ -93,14 +99,27 @@ Future<void> _applyCharset(
 ) async {
   final book = ref.read(readerNotifierProvider).currentBook;
   if (book == null) return;
-  final updated = book.copyWith(charset: charset);
   final messenger = ScaffoldMessenger.of(context);
+  final notifier = ref.read(readerNotifierProvider.notifier);
   try {
-    await ref.read(bookApiProvider).updateBook(updated);
-    final notifier = ref.read(readerNotifierProvider.notifier);
-    notifier.updateCurrentBook(updated);
-    await notifier.reloadChapterContent();
-    messenger.showSnackBar(SnackBar(content: Text('已设置编码：$charset')));
+    // 单列写：只改 books.charset；本地 TXT 由 Rust 侧清空旧目录
+    final updated = await ref
+        .read(bookApiProvider)
+        .setBookCharset(book.bookUrl, charset);
+    final applied = updated.charset ?? charset;
+    if (!BookType.isLocalBook(updated)) {
+      // 在线书不需要重新解码（编码只对本地文本生效），仅同步内存状态
+      notifier.updateCurrentBook(updated);
+      messenger.showSnackBar(SnackBar(content: Text('已设置编码：$applied')));
+      return;
+    }
+    // 本地书：目录/正文都要按新编码重读；失败不得提示成功
+    final error = await notifier.reloadAfterCharsetChange(updated);
+    if (error != null) {
+      messenger.showSnackBar(SnackBar(content: Text('设置编码失败：$error')));
+      return;
+    }
+    messenger.showSnackBar(SnackBar(content: Text('已设置编码：$applied')));
   } catch (e) {
     messenger.showSnackBar(SnackBar(content: Text('设置编码失败: $e')));
   }

@@ -76,6 +76,16 @@ mixin RustApiSources on RustApiDecode implements BookApi {
     return Book.fromJson(_decodeMap(json, 'bookApi'));
   }
 
+  /// 设置本地书编码（批37b P1-1，单列写，返回更新后的整书）
+  @override
+  Future<Book> setBookCharset(String bookUrl, String charset) async {
+    final json = await bridge.bookSetCharset(
+      bookUrl: bookUrl,
+      charset: charset,
+    );
+    return Book.fromJson(_decodeMap(json, 'bookApi'));
+  }
+
   /// 按 bookUrl 获取书籍详情
   @override
   Future<Book?> getBook(String bookUrl) async {
@@ -212,10 +222,7 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   /// 书源不存在/写入失败由 Rust 侧抛 BridgeError — Qoder
   @override
   Future<void> setSourceVariable(String sourceUrl, String variable) async {
-    await bridge.setSourceVariable(
-      sourceUrl: sourceUrl,
-      variable: variable,
-    );
+    await bridge.setSourceVariable(sourceUrl: sourceUrl, variable: variable);
     CoverDecodeLoader.invalidateSourceRegistry();
   }
 
@@ -426,12 +433,11 @@ mixin RustApiSources on RustApiDecode implements BookApi {
     String key,
     String result,
     String cookiesJson,
-  ) =>
-      bridge.webviewSubmitResultWithCookies(
-        key: key,
-        result: result,
-        cookiesJson: cookiesJson,
-      );
+  ) => bridge.webviewSubmitResultWithCookies(
+    key: key,
+    result: result,
+    cookiesJson: cookiesJson,
+  );
 
   @override
   Future<bool> cancelWebviewRequest(String key) =>

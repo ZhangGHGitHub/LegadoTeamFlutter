@@ -96,6 +96,14 @@ abstract class BookApi {
   /// 书籍不存在抛错（不静默成功）。
   Future<Book> setReadRecordDisabled(String bookUrl, bool disabled);
 
+  /// 设置本地书编码（批37b P1-1，单列写，返回更新后的整书）
+  ///
+  /// 对齐参考版 `ReadBook.setCharset`：只写 `books.charset`，不整书回写
+  /// （避免陈旧快照清空 `readConfig` 未建模键/覆盖进度）；本地 TXT 同时
+  /// 清空章节表，下一次 `getChapters` 按新编码重解析目录。编码名经 Rust
+  /// `encoding_rs` 校验/归一化，不支持的编码抛错（UI 不得提示成功）。
+  Future<Book> setBookCharset(String bookUrl, String charset);
+
   /// 按 bookUrl 获取书籍详情
   Future<Book?> getBook(String bookUrl);
 
