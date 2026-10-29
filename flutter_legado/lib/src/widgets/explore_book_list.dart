@@ -104,12 +104,19 @@ class ExploreBookList extends ConsumerStatefulWidget {
   /// [A1 对齐 | Qoder UI] 紧凑密度（参考版 ☰ 列表切换语义；false=舒适）
   final bool compact;
 
+  /// 网格列数（null = 列表形态；对齐参考版 layoutState/gridCount）
+  ///
+  /// 发现页「源内容模式」的书源选择 sheet 可切换列表/网格与列数，
+  /// 该参数由调用方传入；独立发现书单页保持既有的列表/紧凑形态。
+  final int? gridCount;
+
   const ExploreBookList({
     super.key,
     required this.args,
     this.padding = EdgeInsets.zero,
     this.filterKeyword = '',
     this.compact = false,
+    this.gridCount,
   });
 
   @override
@@ -221,6 +228,12 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       );
     }
 
+    // 网格形态（发现页源内容模式的布局列数，对齐参考版 layoutState=1）
+    final columns = widget.gridCount;
+    if (columns != null && columns >= 1) {
+      return _buildGridBody(args, state, visibleBooks, columns, colorScheme);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -263,6 +276,75 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                   ),
                 );
               },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 网格形态列表（对齐参考版 LazyVerticalGrid：固定列数 + 上滑加载更多 +
+  /// 顶部「上滑加载上一页」提示；下拉刷新/错误重试链路与列表形态一致）
+  Widget _buildGridBody(
+    ExploreShowArgs args,
+    ExploreShowState state,
+    List<SearchBook> visibleBooks,
+    int columns,
+    ColorScheme colorScheme,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TopNetworkLoadingBar(
+          isLoading: state.isLoading && state.books.isNotEmpty,
+        ),
+        Expanded(
+          child: CustomRefreshIndicator(
+            onRefresh: () =>
+                ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+            child: CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                SliverToBoxAdapter(
+                  child: SizedBox(height: widget.padding.top),
+                ),
+                if (state.displayPage > 1)
+                  SliverToBoxAdapter(
+                    child: _buildLoadPreviousIndicator(state, colorScheme),
+                  ),
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(horizontal: widget.padding.left),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns.clamp(1, 10),
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.58,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final book = visibleBooks[index];
+                        final dedupeKey =
+                            exploreBookDedupeKey(book, listIndex: index);
+                        return RepaintBoundary(
+                          child: _BookGridItem(
+                            key: ValueKey(dedupeKey),
+                            book: book,
+                            onTap: () => _showBookInfo(book),
+                          ),
+                        );
+                      },
+                      childCount: visibleBooks.length,
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: _buildLoadMoreIndicator(args, state, colorScheme),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(height: widget.padding.bottom),
+                ),
+              ],
             ),
           ),
         ),
@@ -515,6 +597,64 @@ class _BookItem extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 发现书籍网格卡（书封 + 书名 + 作者；对齐参考版 ExploreBookGridItem 形态）
+class _BookGridItem extends StatelessWidget {
+  final SearchBook book;
+  final VoidCallback onTap;
+
+  const _BookGridItem({
+    super.key,
+    required this.book,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) => BookCover(
+                coverUrl: book.coverUrl,
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                sourceOrigin: book.origin,
+                heroTag: 'book-cover:${book.bookUrl}',
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            book.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
+          ),
+          if (book.author.isNotEmpty)
+            Text(
+              book.author,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
       ),
     );
   }

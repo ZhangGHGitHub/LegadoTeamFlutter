@@ -22,6 +22,15 @@ export 'explore_state.dart';
 /// - 书源卸载（CRUD 透传）
 /// - 禁止包含业务计算（分类解析/书籍抓取由 Rust 完成）
 class ExploreNotifier extends Notifier<ExploreState> {
+  /// 发现书源列表是否已完成首次加载（成功/失败均置 true）
+  ///
+  /// 供「源内容模式」判断书源选择是否失效：只有加载完成后才能把
+  /// 「选中书源不在列表里」判定为「源被删除」并回退源列表，
+  /// 避免启动初期列表为空时误清用户选择。
+  bool _sourcesLoaded = false;
+
+  bool get sourcesLoaded => _sourcesLoaded;
+
   @override
   ExploreState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
@@ -56,6 +65,9 @@ class ExploreNotifier extends Notifier<ExploreState> {
         error: '加载书源失败：${_mapError(e)}',
         isLoading: false,
       );
+    } finally {
+      // 成功/失败均视为「已加载」：源内容模式据此判断选中源是否被删除
+      _sourcesLoaded = true;
     }
   }
 

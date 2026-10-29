@@ -21,6 +21,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/explore/explore_main_notifier.dart';
+import '../providers/explore/explore_main_state.dart';
 import '../providers/explore/explore_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
@@ -33,6 +35,7 @@ import '../widgets/explore_book_list.dart';
 import '../widgets/dynamic_search_app_bar.dart';
 import '../widgets/explore_kind_layout.dart';
 import '../widgets/explore_page_control.dart';
+import '../widgets/explore_source_content.dart';
 import '../widgets/error_view.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
@@ -85,6 +88,19 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(exploreNotifierProvider);
+    // [批36 源内容模式] 模式/书源选择持久化（参考版 ExploreMainViewModel）
+    final mainState = ref.watch(exploreMainNotifierProvider);
+
+    if (mainState.showContent) {
+      final contentSource = _resolveContentSource(state, mainState);
+      // 书源选择尚未解析/已失效的过渡帧沿用源列表，避免闪空页
+      if (contentSource != null) {
+        return ExploreSourceContent(
+          key: ValueKey(contentSource.bookSourceUrl),
+          source: contentSource,
+        );
+      }
+    }
 
     // 响应式：expanded/large（≥840dp，对齐 UI_RESTRUCTURE_PLAN.md §6.2）启用左源右内容双栏
     return LayoutBuilder(
@@ -110,6 +126,14 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               ref.read(exploreNotifierProvider.notifier).clearSearch();
             },
             actions: [
+              // [批36 源内容模式] 源列表 ⇄ 源内容切换（参考版顶栏 SwapHoriz）
+              IconButton(
+                tooltip: '切换到源内容',
+                icon: const Icon(Symbols.swap_horiz_rounded),
+                onPressed: () => ref
+                    .read(exploreMainNotifierProvider.notifier)
+                    .setShowContent(true),
+              ),
               // [A4 形态对齐 | full-stack-engineer + UI] 顶栏 ⋮ 更多菜单
               // （对齐参考版/原版顶栏形态：搜索 + ⋮；原版 main_explore.xml 的
               //  menu_group 分组子菜单并入此处，文件夹图标能力无损收编）
@@ -135,6 +159,16 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         );
       },
     );
+  }
+
+  /// 解析源内容模式当前书源（持久化选择 → 当前发现源列表）
+  BookSource? _resolveContentSource(ExploreState state, ExploreMainState main) {
+    final url = main.selectedSourceUrl;
+    if (url.isEmpty) return null;
+    for (final source in state.bookSources) {
+      if (source.bookSourceUrl == url) return source;
+    }
+    return null;
   }
 
   Widget _buildBody(ExploreState state, bool isTablet) {
