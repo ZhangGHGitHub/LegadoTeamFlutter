@@ -7,6 +7,8 @@
 // - 选中源被删除时回退源列表（本批验收要求）；
 // - 布局模式与横竖屏列数持久化；
 // - 分类键编码/解码往返与非法条目丢弃。
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -18,8 +20,22 @@ import 'package:flutter_legado/src/providers/explore/explore_main_notifier.dart'
 import 'package:flutter_legado/src/providers/explore/explore_main_state.dart';
 import 'package:flutter_legado/src/providers/explore/explore_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/services/settings_service.dart';
 
 import '../mocks/mocks.dart';
+
+/// 偏好回读被门闩挂起的设置服务（用于构造「书源先到、偏好后到」时序）
+class _DelayedSettingsService extends SettingsService {
+  _DelayedSettingsService(this.gate);
+
+  final Future<void> gate;
+
+  @override
+  Future<bool> getBoolPref(String key, {required bool defaultValue}) async {
+    await gate;
+    return super.getBoolPref(key, defaultValue: defaultValue);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -139,6 +155,132 @@ void main() {
       expect(state.showContent, isFalse);
       expect(state.selectedSourceUrl, isEmpty);
     });
+
+    test('书源晚于偏好到达（Completer 延迟）仍恢复内容模式与选中书源', () async {
+      SharedPreferences.setMockInitialValues({
+        exploreMainContentKey: true,
+        exploreMainSourceUrlKey: sourceB.bookSourceUrl,
+      });
+      // 书源加载被挂起：保证「偏好先完成、书源后完成」的启动时序
+      final sourcesCompleter = Completer<List<BookSource>>();
+      when(() => mockApi.getBookSources())
+          .thenAnswer((_) => sourcesCompleter.future);
+
+      await createContainer();
+      // 偏好已回读，但书源尚未返回：此帧不做回退判断、不误清选择
+      expect(readState().loaded, isTrue);
+      expect(readState().selectedSourceUrl, isEmpty);
+
+      sourcesCompleter.complete([sourceA, sourceB]);
+      await pumpEventQueue();
+
+      // 红→绿：书源通知时 sourcesLoaded 必须已为 true，否则选中源永远为空
+      expect(readState().selectedSourceUrl, sourceB.bookSourceUrl);
+      expect(readState().showContent, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(exploreMainSourceUrlKey), sourceB.bookSourceUrl);
+      expect(prefs.getBool(exploreMainContentKey), isTrue);
+    });
+
+    test('偏好晚于书源到达（偏好回读被延迟）仍按偏好恢复', () async {
+      SharedPreferences.setMockInitialValues({
+        exploreMainContentKey: true,
+        exploreMainSourceUrlKey: sourceB.bookSourceUrl,
+      });
+      final gate = Completer<void>();
+      container = ProviderContainer(
+        overrides: [
+          bookApiProvider.overrideWithValue(mockApi),
+          settingsProvider.overrideWithValue(_DelayedSettingsService(gate.future)),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(exploreMainNotifierProvider, (_, _) {});
+      await pumpEventQueue();
+
+      // 书源已加载完成，偏好仍未回读
+      expect(
+        container.read(exploreNotifierProvider).bookSources,
+        hasLength(2),
+      );
+      expect(readState().loaded, isFalse);
+
+      gate.complete();
+      await pumpEventQueue();
+
+      expect(readState().loaded, isTrue);
+      expect(readState().showContent, isTrue);
+      expect(readState().selectedSourceUrl, sourceB.bookSourceUrl);
+    });
+
+    test('书源加载失败：只回退 UI 不清偏好，加载恢复后自愈', () async {
+      final kindKey = exploreKindKey(kindB);
+      SharedPreferences.setMockInitialValues({
+        exploreMainContentKey: true,
+        exploreMainSourceUrlKey: sourceB.bookSourceUrl,
+        exploreMainKindKey: encodeExploreKindSelections({
+          sourceB.bookSourceUrl: kindKey,
+        }),
+      });
+      when(() => mockApi.getBookSources())
+          .thenThrow(Exception('数据库读取失败'));
+
+      await createContainer();
+
+      // 失败：UI 回退源列表，不展示失效内容
+      expect(readState().showContent, isFalse);
+      expect(readState().selectedSourceUrl, isEmpty);
+      // 三键原样保留（失败 ≠ 无源）
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(exploreMainContentKey), isTrue);
+      expect(prefs.getString(exploreMainSourceUrlKey), sourceB.bookSourceUrl);
+      expect(
+        parseExploreKindSelections(
+          prefs.getString(exploreMainKindKey) ?? '',
+        )[sourceB.bookSourceUrl],
+        kindKey,
+      );
+      expect(readState().kindKeyFor(sourceB.bookSourceUrl), kindKey);
+
+      // 加载恢复（用户刷新/书源库变更）→ 自动回到偏好源内容模式
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => [sourceA, sourceB]);
+      await container.read(exploreNotifierProvider.notifier).refresh();
+      await pumpEventQueue();
+
+      expect(readState().showContent, isTrue);
+      expect(readState().selectedSourceUrl, sourceB.bookSourceUrl);
+    });
+
+    test('偏好回读前用户显式选择优先（不被回读覆盖）', () async {
+      SharedPreferences.setMockInitialValues({
+        exploreMainContentKey: false,
+        exploreMainSourceUrlKey: sourceA.bookSourceUrl,
+      });
+      final gate = Completer<void>();
+      container = ProviderContainer(
+        overrides: [
+          bookApiProvider.overrideWithValue(mockApi),
+          settingsProvider.overrideWithValue(_DelayedSettingsService(gate.future)),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(exploreMainNotifierProvider, (_, _) {});
+      await pumpEventQueue();
+
+      expect(readState().loaded, isFalse);
+      // 用户先操作：切内容模式 + 选源 B
+      readNotifier().setShowContent(true);
+      readNotifier().selectSource(sourceB.bookSourceUrl);
+
+      gate.complete();
+      await pumpEventQueue();
+
+      expect(readState().showContent, isTrue);
+      expect(readState().selectedSourceUrl, sourceB.bookSourceUrl);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(exploreMainSourceUrlKey), sourceB.bookSourceUrl);
+      expect(prefs.getBool(exploreMainContentKey), isTrue);
+    });
   });
 
   group('用户操作与持久化', () {
@@ -199,6 +341,82 @@ void main() {
 
       expect(readState().showContent, isFalse);
       expect(readState().selectedSourceUrl, isEmpty);
+    });
+
+    test('删除非当前选中源时同步清理该源的分类记忆', () async {
+      SharedPreferences.setMockInitialValues({
+        exploreMainSourceUrlKey: sourceA.bookSourceUrl,
+        exploreMainKindKey: encodeExploreKindSelections({
+          sourceA.bookSourceUrl: exploreKindKey(kindA),
+          sourceB.bookSourceUrl: exploreKindKey(kindB),
+        }),
+      });
+      await createContainer();
+      expect(readState().selectedSourceUrl, sourceA.bookSourceUrl);
+      expect(readState().kindKeyFor(sourceB.bookSourceUrl), exploreKindKey(kindB));
+
+      // 源 B 被删除（当前选中源 A 仍存在，不触发回退）
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => [sourceA]);
+      await container.read(exploreNotifierProvider.notifier).refresh();
+      await pumpEventQueue();
+
+      expect(readState().selectedSourceUrl, sourceA.bookSourceUrl);
+      expect(readState().kindKeyFor(sourceA.bookSourceUrl), exploreKindKey(kindA));
+      expect(readState().kindKeyFor(sourceB.bookSourceUrl), isEmpty);
+      final prefs = await SharedPreferences.getInstance();
+      final decoded = parseExploreKindSelections(
+        prefs.getString(exploreMainKindKey) ?? '',
+      );
+      expect(decoded.containsKey(sourceB.bookSourceUrl), isFalse);
+      expect(decoded[sourceA.bookSourceUrl], exploreKindKey(kindA));
+    });
+
+    test('偏好回读前用户改布局/分类优先，分类映射合并写盘', () async {
+      final kindAKey = exploreKindKey(kindA);
+      SharedPreferences.setMockInitialValues({
+        exploreMainSourceUrlKey: sourceA.bookSourceUrl,
+        exploreMainKindKey: encodeExploreKindSelections({
+          sourceA.bookSourceUrl: kindAKey,
+        }),
+        exploreLayoutModeKey: 0,
+        exploreLayoutGridPortraitKey: 3,
+      });
+      final gate = Completer<void>();
+      container = ProviderContainer(
+        overrides: [
+          bookApiProvider.overrideWithValue(mockApi),
+          settingsProvider.overrideWithValue(_DelayedSettingsService(gate.future)),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(exploreMainNotifierProvider, (_, _) {});
+      await pumpEventQueue();
+      expect(readState().loaded, isFalse);
+
+      // 偏好回读完成前：用户切网格/改列数/选分类
+      readNotifier().setGridMode(true);
+      readNotifier().setGridCount(5, landscape: false);
+      readNotifier().selectKind(sourceB.bookSourceUrl, exploreKindKey(kindB));
+
+      gate.complete();
+      await pumpEventQueue();
+
+      // 用户改动不被回读值覆盖
+      expect(readState().gridMode, isTrue);
+      expect(readState().gridCountFor(landscape: false), 5);
+      expect(
+        readState().kindKeyFor(sourceB.bookSourceUrl),
+        exploreKindKey(kindB),
+      );
+      // 回读后合并写盘：其它源的旧分类记忆不丢
+      final prefs = await SharedPreferences.getInstance();
+      final decoded = parseExploreKindSelections(
+        prefs.getString(exploreMainKindKey) ?? '',
+      );
+      expect(decoded[sourceA.bookSourceUrl], kindAKey);
+      expect(decoded[sourceB.bookSourceUrl], exploreKindKey(kindB));
+      expect(prefs.getInt(exploreLayoutModeKey), 1);
+      expect(prefs.getInt(exploreLayoutGridPortraitKey), 5);
     });
   });
 

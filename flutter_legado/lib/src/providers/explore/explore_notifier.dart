@@ -59,15 +59,17 @@ class ExploreNotifier extends Notifier<ExploreState> {
               s.enabledExplore &&
               (s.exploreUrl != null && s.exploreUrl!.trim().isNotEmpty))
           .toList();
+      // 必须先于 state= 置真：Riverpod 的 state 通知是同步派发的，
+      // 监听方（源内容模式）在回调里读 sourcesLoaded 时若仍为 false，
+      // 会放弃本次恢复判定 → 启动后停在源列表且切换按钮 no-op。
+      _sourcesLoaded = true;
       state = state.copyWith(bookSources: exploreSources, isLoading: false);
     } catch (e) {
+      _sourcesLoaded = true;
       state = state.copyWith(
         error: '加载书源失败：${_mapError(e)}',
         isLoading: false,
       );
-    } finally {
-      // 成功/失败均视为「已加载」：源内容模式据此判断选中源是否被删除
-      _sourcesLoaded = true;
     }
   }
 
