@@ -361,6 +361,37 @@ void main() {
       readNotifier().toggleSource('https://a.com');
       expect(readState().hasFilter, isTrue);
     });
+
+    test('selectSourceOnly 始终选中：已是唯一筛选时不取消（单源搜索入口语义）', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      readNotifier().selectSourceOnly('https://a.com');
+      expect(readState().selectedSourceUrls, {'https://a.com'});
+
+      // 与 toggleSource 相反：重复调用保持选中，不退回「搜全部」
+      readNotifier().selectSourceOnly('https://a.com');
+      expect(readState().selectedSourceUrls, {'https://a.com'});
+      expect(readState().hasFilter, isTrue);
+    });
+
+    test('selectSourceOnly 替换已有筛选并清空分组筛选', () async {
+      container.read(searchNotifierProvider);
+      await pumpInit();
+
+      readNotifier().toggleSource('https://a.com');
+      readNotifier().toggleGroup('分组一');
+      expect(readState().selectedGroups, isNotEmpty);
+
+      readNotifier().selectSourceOnly('https://b.com');
+      expect(readState().selectedSourceUrls, {'https://b.com'});
+      expect(readState().selectedGroups, isEmpty);
+
+      // 落盘 scope 为单书源写法（::url）
+      await pumpEventQueue();
+      verify(() => mockApi.setConfig('searchScope', '::https://b.com'))
+          .called(greaterThanOrEqualTo(1));
+    });
   });
 
   group('SearchNotifier 分组筛选', () {

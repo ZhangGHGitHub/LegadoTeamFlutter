@@ -278,7 +278,10 @@ class _ExploreSourceContentState extends ConsumerState<ExploreSourceContent> {
 }
 
 /// 分类 Tab 横滑条（选中项加下划线指示，对齐参考版 AppTabRow）
-class _KindTabStrip extends StatelessWidget {
+///
+/// 恢复上次浏览分类时把选中项滚入可视区（对齐参考版 AppTabRow 的
+/// `LaunchedEffect(selectedTabIndex)` → `animateScrollToItem`）。
+class _KindTabStrip extends StatefulWidget {
   final List<ExploreCategory> kinds;
   final String selectedKey;
   final ValueChanged<ExploreCategory> onSelected;
@@ -290,49 +293,99 @@ class _KindTabStrip extends StatelessWidget {
   });
 
   @override
+  State<_KindTabStrip> createState() => _KindTabStripState();
+}
+
+class _KindTabStripState extends State<_KindTabStrip> {
+  final Map<String, GlobalKey> _itemKeys = {};
+  String _ensuredKey = '';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureSelectedVisible());
+  }
+
+  @override
+  void didUpdateWidget(covariant _KindTabStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedKey != widget.selectedKey) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _ensureSelectedVisible(),
+      );
+    }
+  }
+
+  /// 把当前选中分类滚到横条中部（首次恢复 / 用户切换都适用）
+  void _ensureSelectedVisible() {
+    if (!mounted) return;
+    final key = widget.selectedKey;
+    if (key.isEmpty || key == _ensuredKey) return;
+    final itemContext = _itemKeys[key]?.currentContext;
+    if (itemContext == null) return;
+    _ensuredKey = key;
+    Scrollable.ensureVisible(
+      itemContext,
+      alignment: 0.5,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return ListView.builder(
+    return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      itemCount: kinds.length,
-      itemBuilder: (context, index) {
-        final kind = kinds[index];
-        final selected = exploreKindKey(kind) == selectedKey;
-        return InkWell(
-          onTap: () => onSelected(kind),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(height: 8),
-                Text(
-                  kind.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: selected
-                        ? colorScheme.primary
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      child: Row(
+        children: [
+          for (final kind in widget.kinds)
+            Builder(
+              builder: (context) {
+                final key = exploreKindKey(kind);
+                final selected = key == widget.selectedKey;
+                return InkWell(
+                  key: _itemKeys.putIfAbsent(key, GlobalKey.new),
+                  onTap: () => widget.onSelected(kind),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 8),
+                        Text(
+                          kind.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: selected
+                                    ? colorScheme.primary
+                                    : colorScheme.onSurfaceVariant,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          height: 2,
+                          width: selected ? 20 : 0,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 2,
-                  width: selected ? 20 : 0,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary,
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
-          ),
-        );
-      },
+        ],
+      ),
     );
   }
 }

@@ -80,41 +80,58 @@ class _ExploreSourceSelectSheetState
               ),
             ),
             // 布局控件：列表/网格切换 + 网格列数（对齐参考版 sheet 顶部）
+            // 窄屏（<360dp）下 Row 会因两段控件最小宽度之和溢出，改为 Wrap
+            // 换行排布；常规宽度保持「切换段占满 + 列数步进器靠右」。
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SegmentedButton<bool>(
-                      segments: const [
-                        ButtonSegment<bool>(
-                          value: false,
-                          icon: Icon(Symbols.view_list_rounded, size: 18),
-                          label: Text('列表'),
-                        ),
-                        ButtonSegment<bool>(
-                          value: true,
-                          icon: Icon(Symbols.grid_view_rounded, size: 18),
-                          label: Text('网格'),
-                        ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final segmented = SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment<bool>(
+                        value: false,
+                        icon: Icon(Symbols.view_list_rounded, size: 18),
+                        label: Text('列表'),
+                      ),
+                      ButtonSegment<bool>(
+                        value: true,
+                        icon: Icon(Symbols.grid_view_rounded, size: 18),
+                        label: Text('网格'),
+                      ),
+                    ],
+                    selected: {main.gridMode},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (selection) => ref
+                        .read(exploreMainNotifierProvider.notifier)
+                        .setGridMode(selection.first),
+                  );
+                  final stepper = _GridCountStepper(
+                    count: gridCount,
+                    onChanged: (value) => ref
+                        .read(exploreMainNotifierProvider.notifier)
+                        .setGridCount(value, landscape: landscape),
+                  );
+                  if (constraints.maxWidth < 360) {
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        segmented,
+                        if (main.gridMode) stepper,
                       ],
-                      selected: {main.gridMode},
-                      showSelectedIcon: false,
-                      onSelectionChanged: (selection) => ref
-                          .read(exploreMainNotifierProvider.notifier)
-                          .setGridMode(selection.first),
-                    ),
-                  ),
-                  if (main.gridMode) ...[
-                    const SizedBox(width: 12),
-                    _GridCountStepper(
-                      count: gridCount,
-                      onChanged: (value) => ref
-                          .read(exploreMainNotifierProvider.notifier)
-                          .setGridCount(value, landscape: landscape),
-                    ),
-                  ],
-                ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: segmented),
+                      if (main.gridMode) ...[
+                        const SizedBox(width: 12),
+                        stepper,
+                      ],
+                    ],
+                  );
+                },
               ),
             ),
             const SizedBox(height: 12),

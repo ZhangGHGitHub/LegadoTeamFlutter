@@ -38,9 +38,19 @@ class ExplorePageControl extends ConsumerWidget {
 
     return TextButton(
       key: const ValueKey('explore-page-control'),
-      onPressed: state.isLoading
-          ? null
-          : () => _showPageDialog(context, ref, pageLabel),
+      // 加载中不再静默禁用按钮：点击明确提示，避免「点了没反应」
+      onPressed: () {
+        if (ref.read(exploreShowNotifierProvider(args)).isLoading) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('正在加载，请加载完成后再跳页'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+          return;
+        }
+        _showPageDialog(context, ref, pageLabel);
+      },
       child: Text(
         '第 $pageLabel 页',
         style: theme.textTheme.bodyMedium?.copyWith(

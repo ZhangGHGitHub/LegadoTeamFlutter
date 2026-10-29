@@ -127,6 +127,9 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
   final _scrollController = ScrollController();
   bool _loadingPrevious = false;
 
+  /// 网格行高（封面 + 文本，最近一次布局推导）；用于上一页滚动补偿
+  double _gridRowExtent = 0;
+
   @override
   void initState() {
     super.initState();
@@ -164,9 +167,18 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
         ref.read(exploreShowNotifierProvider(widget.args)).books.length;
     final added = newCount - prevCount;
     if (added > 0 && _scrollController.hasClients) {
-      _scrollController.jumpTo(_scrollController.offset + added * 76.0);
+      _scrollController.jumpTo(
+        _scrollController.offset + _previousPageShift(added),
+      );
     }
   }
+
+  /// 加载上一页后的滚动补偿（详见 [explorePreviousPageShift]）
+  double _previousPageShift(int added) => explorePreviousPageShift(
+    addedCount: added,
+    gridCount: widget.gridCount,
+    gridRowExtent: _gridRowExtent,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -191,13 +203,13 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
           message: err.replaceFirst('LOGIN_REQUIRED:', ''),
           source: state.source,
           onRetry: () =>
-              ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+              ref.read(exploreShowNotifierProvider(args).notifier).retry(),
         );
       }
       return ErrorView(
         message: state.error!,
         onRetry: () =>
-            ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
+            ref.read(exploreShowNotifierProvider(args).notifier).retry(),
       );
     }
 
@@ -302,49 +314,82 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
           child: CustomRefreshIndicator(
             onRefresh: () =>
                 ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
-            child: CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SizedBox(height: widget.padding.top),
-                ),
-                if (state.displayPage > 1)
-                  SliverToBoxAdapter(
-                    child: _buildLoadPreviousIndicator(state, colorScheme),
-                  ),
-                SliverPadding(
-                  padding: EdgeInsets.symmetric(horizontal: widget.padding.left),
-                  sliver: SliverGrid(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns.clamp(1, 10),
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.58,
+            // 按可用宽度推导网格单元尺寸：封面保持 3:4 等比，
+            // 文本区高度随字体缩放自适应（避免固定 childAspectRatio 在
+            // 大列数/大字号下压扁封面或溢出）
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final crossAxisCount = columns.clamp(1, 10);
+                const crossSpacing = 8.0;
+                const mainSpacing = 12.0;
+                // 网格自带水平页边距（列表形态的行内边距在行组件内部）
+                final horizontalPadding = widget.padding.horizontal > 0
+                    ? widget.padding.horizontal
+                    : 16.0;
+                final contentWidth =
+                    constraints.maxWidth - horizontalPadding * 2;
+                final itemWidth = contentWidth > 0
+                    ? (contentWidth -
+                              crossSpacing * (crossAxisCount - 1)) /
+                          crossAxisCount
+                    : 0.0;
+                final textScaler = MediaQuery.textScalerOf(context);
+                final textBlockHeight = textScaler.scale(14) * 1.25 * 2 + 6;
+                final rowExtent = itemWidth > 0
+                    ? itemWidth * 4 / 3 + textBlockHeight + 6
+                    : 120.0;
+                _gridRowExtent = rowExtent;
+
+                return CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: SizedBox(height: widget.padding.top),
                     ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final book = visibleBooks[index];
-                        final dedupeKey =
-                            exploreBookDedupeKey(book, listIndex: index);
-                        return RepaintBoundary(
-                          child: _BookGridItem(
-                            key: ValueKey(dedupeKey),
-                            book: book,
-                            onTap: () => _showBookInfo(book),
-                          ),
-                        );
-                      },
-                      childCount: visibleBooks.length,
+                    if (state.displayPage > 1)
+                      SliverToBoxAdapter(
+                        child: _buildLoadPreviousIndicator(state, colorScheme),
+                      ),
+                    SliverPadding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: horizontalPadding,
+                      ),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              crossAxisSpacing: crossSpacing,
+                              mainAxisSpacing: mainSpacing,
+                              mainAxisExtent: rowExtent,
+                            ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final book = visibleBooks[index];
+                            final dedupeKey = exploreBookDedupeKey(
+                              book,
+                              listIndex: index,
+                            );
+                            return RepaintBoundary(
+                              child: _BookGridItem(
+                                key: ValueKey(dedupeKey),
+                                book: book,
+                                onTap: () => _showBookInfo(book),
+                              ),
+                            );
+                          },
+                          childCount: visibleBooks.length,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: _buildLoadMoreIndicator(args, state, colorScheme),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(height: widget.padding.bottom),
-                ),
-              ],
+                    SliverToBoxAdapter(
+                      child: _buildLoadMoreIndicator(args, state, colorScheme),
+                    ),
+                    SliverToBoxAdapter(
+                      child: SizedBox(height: widget.padding.bottom),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -434,6 +479,23 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     );
     Navigator.pushNamed(context, AppRoutes.bookInfo, arguments: bookObj);
   }
+}
+
+/// 加载上一页后的滚动补偿距离
+///
+/// 列表形态沿用既有估值（单行 76dp）；网格按「新增行数 ×（行高 + 行间距）」
+/// 补偿，避免用列表行高导致视口跳到半行位置。
+double explorePreviousPageShift({
+  required int addedCount,
+  int? gridCount,
+  double gridRowExtent = 0,
+}) {
+  if (addedCount <= 0) return 0;
+  if (gridCount != null && gridCount >= 1 && gridRowExtent > 0) {
+    final rows = (addedCount / gridCount.clamp(1, 10)).ceil();
+    return rows * (gridRowExtent + 12);
+  }
+  return addedCount * 76.0;
 }
 
 class _BookItem extends ConsumerWidget {

@@ -697,6 +697,22 @@ class SearchNotifier extends Notifier<SearchState> {
     unawaited(_persistSearchScope());
   }
 
+  /// 仅选中指定书源（单源搜索入口，不做 toggle 取消）
+  ///
+  /// 「发现页源内容模式 → 搜索」等入口语义是「只用该书源搜索」；
+  /// 用 [toggleSource] 时若该书源已是当前唯一筛选（例如上次搜索遗留、
+  /// 偏好回读后已选），会被 toggle 成「空筛选 = 搜全部」，与入口语义相反。
+  void selectSourceOnly(String sourceUrl) {
+    if (sourceUrl.isEmpty) return;
+    if (state.selectedGroups.isEmpty &&
+        state.selectedSourceUrls.length == 1 &&
+        state.selectedSourceUrls.contains(sourceUrl)) {
+      return;
+    }
+    state = state.copyWith(selectedSourceUrls: {sourceUrl}, selectedGroups: {});
+    unawaited(_persistSearchScope());
+  }
+
   /// 清除书源筛选
   void clearSourceFilter() {
     state = state.copyWith(selectedSourceUrls: {});

@@ -5,6 +5,8 @@
 //
 // 注意：exploreShowNotifierProvider 为 autoDispose family，
 // 必须用 container.listen 维持订阅，否则 read 后实例立即被销毁。
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -276,6 +278,67 @@ void main() {
 
       expect(readState().displayPage, equals(1));
       verifyNever(() => mockApi.exploreFetchBooks(any(), any(), any()));
+    });
+
+    test('跳页失败：displayPage 保留旧页，retry 重放目标页', () async {
+      var failPage5 = true;
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 5 && failPage5) throw Exception('网络错误');
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn(pagedArgs);
+      await pumpInit();
+      expect(readState(pagedArgs).displayPage, equals(1));
+
+      await readNotifier(pagedArgs).skipToPage(5);
+
+      // 失败：顶栏页码不展示未成功加载的目标页
+      expect(readState(pagedArgs).displayPage, equals(1));
+      expect(readState(pagedArgs).error, contains('网络错误'));
+      // page 仍指向目标页，供重试重放
+      expect(readState(pagedArgs).page, equals(5));
+
+      failPage5 = false;
+      await readNotifier(pagedArgs).retry();
+
+      expect(readState(pagedArgs).displayPage, equals(5));
+      expect(readState(pagedArgs).books.first.name, equals('书籍50'));
+      expect(readState(pagedArgs).error, isNull);
+    });
+
+    test('加载中跳页/加载更多互斥：进行中的抓取优先', () async {
+      final gate = Completer<List<SearchBook>>();
+      var calls = 0;
+      when(() => mockApi.exploreFetchBooks(any(), any(), any()))
+          .thenAnswer((invocation) async {
+        calls++;
+        final page = invocation.positionalArguments[2] as int;
+        if (page == 2) return gate.future;
+        return makeBooks(2, startId: page * 10);
+      });
+
+      spawn(pagedArgs);
+      await pumpInit();
+      expect(readState(pagedArgs).displayPage, equals(1));
+
+      // 加载更多（第 2 页）挂起中
+      final loadMore = readNotifier(pagedArgs).loadMore();
+      await pumpEventQueue();
+      expect(readState(pagedArgs).isLoading, isTrue);
+
+      // 跳页请求被忽略：不会并发发起第 5 页抓取
+      await readNotifier(pagedArgs).skipToPage(5);
+      expect(readState(pagedArgs).page, equals(2));
+      expect(calls, equals(2));
+
+      gate.complete(makeBooks(2, startId: 20));
+      await loadMore;
+      // 互斥验证：本次完成的是第 2 页（未被跳页请求打断）
+      expect(readState(pagedArgs).displayPage, equals(2));
+      expect(readState(pagedArgs).books.length, equals(4));
     });
   });
 }

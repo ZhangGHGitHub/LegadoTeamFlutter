@@ -94,9 +94,14 @@ class ExploreShowNotifier
   /// 规则含 `{{page}}` 或 `<,>` 页码列表）；跳页与加载更多互斥——
   /// 加载中直接忽略跳页请求，跳页后清空列表并按目标页结果重建
   /// `hasMore`（目标页为空 → 没有更多；有数据 → 可继续加载下一页）。
+  ///
+  /// 跳页失败时 [ExploreShowState.displayPage] 回退到跳转前的页码
+  /// （顶栏不展示未成功加载的页），[ExploreShowState.page] 保留目标页，
+  /// 由 [retry] 重放该目标页。
   Future<void> skipToPage(int targetPage) async {
     if (targetPage <= 0 || state.isLoading) return;
     if (!state.canJumpPage) return;
+    final previousDisplayPage = state.displayPage;
     state = state.copyWith(
       books: [],
       page: targetPage,
@@ -106,6 +111,25 @@ class ExploreShowNotifier
       error: null,
     );
     await fetchBooks(replace: true);
+    if (state.error != null) {
+      state = state.copyWith(displayPage: previousDisplayPage);
+    }
+  }
+
+  /// 失败重试（错误视图「重试」按钮）
+  ///
+  /// 列表为空时说明首屏或跳页整体失败：重放 [ExploreShowState.page]
+  ///（跳页失败后仍为目标页，避免重试悄悄退回第 1 页）；
+  /// 列表非空时说明只是「加载更多」失败：继续抓取下一页。
+  Future<void> retry() async {
+    if (state.isLoading) return;
+    if (state.source == null || state.categoryUrl.isEmpty) return;
+    if (state.books.isEmpty) {
+      state = state.copyWith(error: null, hasMore: true);
+      await fetchBooks(replace: true);
+      return;
+    }
+    await fetchBooks();
   }
 
   /// 刷新（清空重新加载，对标 Android 下拉刷新）

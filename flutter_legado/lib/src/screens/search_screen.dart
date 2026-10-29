@@ -112,12 +112,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           ref.read(searchNotifierProvider.notifier).toggleGroup(group);
         }
       }
-      // 预选书源（发现页「搜索」入口指定书源，单选取首个）
+      // 预选书源（发现页「搜索」入口指定书源，单选取首个）。
+      // 用 selectSourceOnly 而非 toggleSource：入口语义是「只用该书源搜索」，
+      // 若该书源已是上次遗留的唯一筛选，toggle 会取消筛选导致搜全部。
       final sourceUrls = widget.initialSourceUrls;
       if (sourceUrls != null && sourceUrls.isNotEmpty) {
         ref
             .read(searchNotifierProvider.notifier)
-            .toggleSource(sourceUrls.first);
+            .selectSourceOnly(sourceUrls.first);
       }
       final q = widget.initialQuery?.trim();
       if (q != null && q.isNotEmpty) {

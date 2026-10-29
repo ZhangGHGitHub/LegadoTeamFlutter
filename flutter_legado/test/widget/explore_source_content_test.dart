@@ -230,4 +230,106 @@ void main() {
     );
     expect(saved[source.bookSourceUrl], exploreKindKey(kindTwo));
   });
+
+  testWidgets('系统返回键在内容模式先回源列表（PopScope）', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('切换到源内容'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('返回源列表'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    // 不停在内容模式，也不离开发现页：回到源列表
+    expect(find.byTooltip('切换到源内容'), findsOneWidget);
+    expect(find.byTooltip('返回源列表'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(exploreMainContentKey), isFalse);
+  });
+
+  testWidgets('网格布局按可用宽度推导行高并补水平内边距', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('切换到源内容'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('选择书源'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('网格'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+
+    final grid = tester.widget<SliverGrid>(find.byType(SliverGrid));
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 3);
+    // 行高由可用宽度推导（封面 3:4 + 两行文本），非固定比例压扁
+    expect(delegate.mainAxisExtent, isNotNull);
+    expect(delegate.mainAxisExtent!, greaterThan(150));
+    expect(
+      tester
+          .widgetList<SliverPadding>(find.byType(SliverPadding))
+          .any((p) => p.padding == const EdgeInsets.symmetric(horizontal: 16)),
+      isTrue,
+    );
+  });
+
+  testWidgets('窄屏（320dp）书源选择 sheet 顶部控件不溢出', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('切换到源内容'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('选择书源'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('网格'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('3 列'), findsOneWidget);
+  });
+
+  testWidgets('恢复分类选择时把选中 Tab 滚入可视区', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final kinds = [
+      for (var i = 1; i <= 20; i++)
+        ExploreCategory(title: '分类$i', url: 'https://a.test/k$i'),
+    ];
+    when(
+      () => mockApi.exploreParseUrl(any(), sourceJson: any(named: 'sourceJson')),
+    ).thenAnswer((_) async => kinds);
+    SharedPreferences.setMockInitialValues({
+      exploreMainContentKey: true,
+      exploreMainSourceUrlKey: source.bookSourceUrl,
+      exploreMainKindKey: encodeExploreKindSelections({
+        source.bookSourceUrl: exploreKindKey(kinds.last),
+      }),
+    });
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    // 选中项（第 20 个）被 ensureVisible 滚入可视区（横条宽约 352，
+    // 末尾项居中受 maxScrollExtent 限制会贴右侧，但必须可见）
+    final selectedTab = find.text('分类20');
+    expect(selectedTab, findsOneWidget);
+    expect(tester.getCenter(selectedTab).dx, lessThan(352));
+    // 首个 Tab 已被滚出左侧，证明发生过滚动而非从头排布
+    expect(tester.getCenter(find.text('分类1')).dx, lessThan(0));
+  });
 }

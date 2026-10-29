@@ -2,6 +2,8 @@
 //
 // 参考版依据：ExploreShowScreen.kt:439-470（canJumpPage 才显示页码按钮 +
 // 数字输入对话框 ≤4 位）与 ExploreShowViewModel.kt:357-380（跳页重建列表）。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -9,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/explore/explore_show_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/explore_show_screen.dart';
 import 'package:flutter_legado/src/widgets/explore_page_control.dart';
@@ -152,5 +155,84 @@ void main() {
     expect(find.text('第 1 页书'), findsNothing);
     // hasMore=false → 不展示「上滑加载更多」相关错误/加载尾巴
     expect(find.text('加载失败，点击重试'), findsNothing);
+  });
+
+  testWidgets('跳页失败：保留原页码并展示错误，重试重放目标页', (tester) async {
+    var failPage5 = true;
+    when(() => mockApi.exploreFetchBooks(any(), any(), any())).thenAnswer((
+      invocation,
+    ) async {
+      final page = invocation.positionalArguments[2] as int;
+      if (page == 5 && failPage5) throw Exception('网络错误');
+      return [
+        SearchBook(
+          bookUrl: 'https://paged.test/book/$page',
+          name: '第 $page 页书',
+          author: '作者',
+        ),
+      ];
+    });
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('第 1 页'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '5');
+    await tester.pump();
+    await tester.tap(confirmButton());
+    await tester.pumpAndSettle();
+
+    // 失败：顶栏页码停留在跳转前，错误视图提供重试
+    expect(find.text('第 1 页'), findsOneWidget);
+    expect(find.text('第 5 页'), findsNothing);
+    expect(find.textContaining('网络错误'), findsOneWidget);
+
+    failPage5 = false;
+    await tester.tap(find.widgetWithText(FilledButton, '重试'));
+    await tester.pumpAndSettle();
+
+    // 重试重放目标页 5（而不是悄悄退回第 1 页）
+    expect(find.text('第 5 页'), findsOneWidget);
+    expect(find.text('第 5 页书'), findsOneWidget);
+  });
+
+  testWidgets('加载中点页码按钮：提示稍后再跳，不弹跳页对话框', (tester) async {
+    final gate = Completer<List<SearchBook>>();
+    when(() => mockApi.exploreFetchBooks(any(), any(), any())).thenAnswer((
+      invocation,
+    ) async {
+      final page = invocation.positionalArguments[2] as int;
+      if (page == 1) {
+        return [
+          SearchBook(
+            bookUrl: 'https://paged.test/book/1',
+            name: '第 1 页书',
+            author: '作者',
+          ),
+        ];
+      }
+      return gate.future;
+    });
+    await pumpScreen(tester);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ExploreShowScreen)),
+    );
+    unawaited(
+      container.read(exploreShowNotifierProvider(pagedArgs).notifier).loadMore(),
+    );
+    await tester.pump();
+    expect(
+      container.read(exploreShowNotifierProvider(pagedArgs)).isLoading,
+      isTrue,
+    );
+
+    await tester.tap(find.text('第 1 页'));
+    await tester.pump();
+
+    expect(find.text('正在加载，请加载完成后再跳页'), findsOneWidget);
+    expect(find.text('跳转到页码'), findsNothing);
+
+    gate.complete(const <SearchBook>[]);
+    await tester.pumpAndSettle();
   });
 }
