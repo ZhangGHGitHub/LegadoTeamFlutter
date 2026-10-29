@@ -137,10 +137,21 @@ impl LocalBook {
 
     /// 获取章节列表
     pub fn get_chapters(path: &str) -> LegadoResult<Vec<ChapterInfo>> {
+        Self::get_chapters_with_charset(path, None)
+    }
+
+    /// 获取章节列表（可指定编码覆盖自动检测）
+    ///
+    /// [批37b P1-1] 编码只对 TXT 有意义：其它格式天然自带编码声明，
+    /// 传 `charset` 也不改变解析结果（避免把 EPUB/PDF 误按文本解码）。
+    pub fn get_chapters_with_charset(
+        path: &str,
+        charset: Option<&str>,
+    ) -> LegadoResult<Vec<ChapterInfo>> {
         let format = Self::detect_format(path)?;
         match format {
+            BookFormat::Txt => txt::TxtParser::get_chapters_with_charset(path, charset),
             BookFormat::Epub => epub::EpubParser::get_chapters(path),
-            BookFormat::Txt => txt::TxtParser::get_chapters(path),
             BookFormat::Mobi => mobi::MobiParser::get_chapters(path),
             BookFormat::Pdf => pdf::PdfParser::get_chapters(path),
             BookFormat::Umd => umd::UmdParser::get_chapters(path),
@@ -150,10 +161,21 @@ impl LocalBook {
 
     /// 获取章节正文内容
     pub fn get_chapter_content(path: &str, chapter: &ChapterInfo) -> LegadoResult<String> {
+        Self::get_chapter_content_with_charset(path, chapter, None)
+    }
+
+    /// 获取章节正文内容（可指定编码覆盖自动检测，仅 TXT 生效）
+    pub fn get_chapter_content_with_charset(
+        path: &str,
+        chapter: &ChapterInfo,
+        charset: Option<&str>,
+    ) -> LegadoResult<String> {
         let format = Self::detect_format(path)?;
         match format {
+            BookFormat::Txt => {
+                txt::TxtParser::get_chapter_content_with_charset(path, chapter, charset)
+            }
             BookFormat::Epub => epub::EpubParser::get_chapter_content(path, chapter),
-            BookFormat::Txt => txt::TxtParser::get_chapter_content(path, chapter),
             BookFormat::Mobi => mobi::MobiParser::get_chapter_content(path, chapter),
             BookFormat::Pdf => pdf::PdfParser::get_chapter_content(path, chapter),
             BookFormat::Umd => umd::UmdParser::get_chapter_content(path, chapter),

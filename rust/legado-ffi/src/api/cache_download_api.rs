@@ -357,9 +357,12 @@ fn download_one(book_url: &str, chapter_index: i32) -> LegadoResult<()> {
         // 落盘读取前必须经 resolver 还原为当前 Documents 下的真实路径；
         // 绝对路径/Web URL 原样透传（与 reader.rs 阅读链路同语义）。
         let real_path = crate::db_state::resolve_local_book_path(book_url);
-        let content = legado_book::LocalBook::get_chapter_content(
+        // [批37b P1-1] 离线缓存与阅读器同口径：本地 TXT 按 Book.charset 解码
+        let charset = crate::api::reader::local_book_charset(book_url)?;
+        let content = legado_book::LocalBook::get_chapter_content_with_charset(
             &real_path,
             &crate::api::reader::chapter_to_local_info(&chapter),
+            charset.as_deref(),
         )?;
         crate::api::cache_api::save_chapter_content(
             book_url,

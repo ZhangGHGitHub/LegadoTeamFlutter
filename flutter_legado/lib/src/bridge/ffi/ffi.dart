@@ -136,6 +136,20 @@ Future<String> bookSetReadRecordDisabled({
   disabled: disabled,
 );
 
+/// 书籍编码设置（批37b P1-1，单列写，返回更新后的整书 JSON）
+///
+/// 对齐参考版 `ReadBook.setCharset`：只写 `books.charset`，不整书回写
+/// （避免陈旧快照清空 readConfig 未建模键/覆盖进度）；本地 TXT 同时
+/// 清空章节表，下一次 `reader_get_chapters` 按新编码重新解析目录。
+/// 编码名经 `encoding_rs` 校验/归一化，不支持的编码抛错（不假成功）。
+Future<String> bookSetCharset({
+  required String bookUrl,
+  required String charset,
+}) => RustLib.instance.api.crateFfiFfiBookSetCharset(
+  bookUrl: bookUrl,
+  charset: charset,
+);
+
 /// 按 bookUrl 获取书籍详情（JSON，可能为 null）
 Future<String> bookshelfGet({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiBookshelfGet(bookUrl: bookUrl);

@@ -52,11 +52,23 @@ impl TxtParser {
         })
     }
 
-    /// 获取章节列表
+    /// 获取章节列表（自动检测编码）
     pub fn get_chapters(path: &str) -> LegadoResult<Vec<ChapterInfo>> {
-        let encoding_name = Self::detect_encoding(path)?;
+        Self::get_chapters_with_charset(path, None)
+    }
+
+    /// 获取章节列表，可指定编码覆盖自动检测
+    ///
+    /// [批37b P1-1] 阅读器「设置编码」写入 `Book.charset` 后，目录/正文
+    /// 都必须按该编码解码——只改正文会让目录偏移（按解码后文本字节数
+    /// 计算）与正文解码结果失配。`charset` 为 `None`/空白时保持原有检测
+    /// 逻辑；显式传入不支持的编码名直接报错（fail-closed，不静默回退）。
+    pub fn get_chapters_with_charset(
+        path: &str,
+        charset: Option<&str>,
+    ) -> LegadoResult<Vec<ChapterInfo>> {
         let text_bytes = read_file_bytes(path)?;
-        let text = decode_text(&text_bytes, &encoding_name);
+        let text = decode_with_charset(&text_bytes, path, charset)?;
 
         // 合并所有正则为一个（内置常量 pattern 拼接，仍走统一安全入口以命中全局编译缓存）
         let pattern = CHAPTER_PATTERNS.join("|");
@@ -113,11 +125,23 @@ impl TxtParser {
         Ok(chapters)
     }
 
-    /// 获取章节正文内容
+    /// 获取章节正文内容（自动检测编码）
     pub fn get_chapter_content(path: &str, chapter: &ChapterInfo) -> LegadoResult<String> {
-        let encoding_name = Self::detect_encoding(path)?;
+        Self::get_chapter_content_with_charset(path, chapter, None)
+    }
+
+    /// 获取章节正文内容，可指定编码覆盖自动检测
+    ///
+    /// `chapter.start/end` 是**解码后文本**的字节偏移（由
+    /// [`Self::get_chapters_with_charset`] 在同一编码下生成），换编码后
+    /// 必须重新解析目录才能保证偏移一致（调用方负责清目录）。
+    pub fn get_chapter_content_with_charset(
+        path: &str,
+        chapter: &ChapterInfo,
+        charset: Option<&str>,
+    ) -> LegadoResult<String> {
         let text_bytes = read_file_bytes(path)?;
-        let text = decode_text(&text_bytes, &encoding_name);
+        let text = decode_with_charset(&text_bytes, path, charset)?;
 
         let start = chapter.start.unwrap_or(0) as usize;
         let end = chapter.end.unwrap_or(text.len() as i64) as usize;
@@ -192,18 +216,53 @@ fn read_file_bytes(path: &str) -> LegadoResult<Vec<u8>> {
 }
 
 /// 将字节按指定编码解码为字符串
-fn decode_text(bytes: &[u8], encoding_name: &str) -> String {
-    let enc = Encoding::for_label(encoding_name.as_bytes()).unwrap_or(UTF_8);
-    // 跳过 BOM（如有）
-    let skip = if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+///
+/// `encoding_rs::Encoding` 的实例均为 `'static`（`name()` 要求 `&'static self`）
+fn decode_text(bytes: &[u8], enc: &'static Encoding) -> String {
+    // 仅跳过与所选编码匹配的 BOM：显式 GBK 覆盖时，开头 `EF BB BF`
+    // 是真实文本而非 BOM，不能无条件丢弃
+    let skip = if enc == UTF_8 && bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         3
-    } else if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
+    } else if (enc.name().eq_ignore_ascii_case("utf-16le") && bytes.starts_with(&[0xFF, 0xFE]))
+        || (enc.name().eq_ignore_ascii_case("utf-16be") && bytes.starts_with(&[0xFE, 0xFF]))
+    {
         2
     } else {
         0
     };
     let (cow, _, _) = enc.decode(&bytes[skip..]);
     cow.into_owned()
+}
+
+/// 解析编码名（`encoding_rs` 标签体系），不支持/空白一律报错
+///
+/// [批37b P1-1] 供 FFI 单列写入口做 fail-closed 校验：用户输入不支持的
+/// 编码名时必须报错，不能落库一个「看起来成功但读正文仍乱码」的值。
+pub fn encoding_for_label(label: &str) -> LegadoResult<&'static Encoding> {
+    let label = label.trim();
+    if label.is_empty() {
+        return Err(LegadoError::BookParse("编码不能为空".to_string()));
+    }
+    Encoding::for_label(label.as_bytes())
+        .ok_or_else(|| LegadoError::BookParse(format!("不支持的编码: {label}")))
+}
+
+/// 编码名归一化为 `encoding_rs` 标准名（如 `GB2312` → `GBK`）
+pub fn normalize_charset(label: &str) -> LegadoResult<String> {
+    Ok(encoding_for_label(label)?.name().to_string())
+}
+
+/// 解码文本：显式 charset 覆盖自动检测
+///
+/// 显式覆盖优先于检测/默认；为空时回退 [`TxtParser::detect_encoding`]。
+fn decode_with_charset(bytes: &[u8], path: &str, charset: Option<&str>) -> LegadoResult<String> {
+    if let Some(label) = charset.map(str::trim).filter(|s| !s.is_empty()) {
+        let enc = encoding_for_label(label)?;
+        return Ok(decode_text(bytes, enc));
+    }
+    let detected = TxtParser::detect_encoding(path)?;
+    let enc = Encoding::for_label(detected.as_bytes()).unwrap_or(UTF_8);
+    Ok(decode_text(bytes, enc))
 }
 
 /// 判断标题是否为卷名（第X卷/第X部等）
@@ -273,7 +332,7 @@ mod tests {
     #[test]
     fn test_decode_text_utf8() {
         let text = "Hello World".as_bytes();
-        let result = decode_text(text, "utf-8");
+        let result = decode_text(text, UTF_8);
         assert_eq!(result, "Hello World");
     }
 
@@ -281,7 +340,77 @@ mod tests {
     fn test_decode_text_utf8_bom() {
         let mut bytes = vec![0xEF, 0xBB, 0xBF];
         bytes.extend_from_slice("BOM content".as_bytes());
-        let result = decode_text(&bytes, "utf-8");
+        let result = decode_text(&bytes, UTF_8);
         assert_eq!(result, "BOM content");
+    }
+
+    #[test]
+    fn test_normalize_charset_aliases_and_unknown() {
+        assert_eq!(normalize_charset("utf-8").unwrap(), "UTF-8");
+        assert_eq!(normalize_charset("GBK").unwrap(), "GBK");
+        // GB2312 是 GBK 的标签别名，归一化后按 GBK 解码
+        assert_eq!(normalize_charset("GB2312").unwrap(), "GBK");
+        assert!(normalize_charset("  ").is_err(), "空白编码必须报错");
+        assert!(
+            normalize_charset("no-such-charset").is_err(),
+            "不支持的编码必须 fail-closed"
+        );
+    }
+
+    /// [批37b P1-1] 红→绿：GBK 正文 + 前 4KB 纯 ASCII（检测阶段误判 UTF-8）
+    /// → 无覆盖时乱码；显式 charset=GBK 后目录与正文都正确解码。
+    #[test]
+    fn test_charset_override_decodes_gbk_after_ascii_prefix() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let dir =
+            std::env::temp_dir().join(format!("legado_txt_charset_{}_{}", std::process::id(), n));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("gbk.txt");
+
+        // 前 4096 字节全 ASCII（末位换行）：detect_encoding 的 UTF-8 探测
+        // 会成功，从而把后续 GBK 中文误判为 UTF-8
+        let mut bytes = vec![b'A'; 4095];
+        bytes.push(b'\n');
+        let (gbk_body, _, _) = encoding_rs::GBK
+            .encode("第一章 起始\r\n这是正文内容。\r\n第二章 继续\r\n更多正文内容。\r\n");
+        bytes.extend_from_slice(&gbk_body);
+        std::fs::write(&path, &bytes).unwrap();
+        let path_str = path.to_str().unwrap();
+
+        // 自动检测：前 4KB ASCII → utf-8，中文标题无法匹配 → 单章「全文」
+        let auto = TxtParser::get_chapters(path_str).unwrap();
+        assert_eq!(auto.len(), 1, "无覆盖时标题乱码，应回退单章");
+        assert_eq!(auto[0].title, "全文");
+
+        // 显式 GBK：目录按 GBK 解码后正确分章
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("GBK")).unwrap();
+        assert_eq!(chapters.len(), 2, "GBK 覆盖后应识别出两章: {chapters:?}");
+        assert_eq!(chapters[0].title, "第一章 起始");
+        assert_eq!(chapters[1].title, "第二章 继续");
+
+        // 显式 GBK：正文正确解码
+        let content =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[1], Some("gbk"))
+                .unwrap();
+        assert!(
+            content.contains("更多正文内容"),
+            "GBK 覆盖后正文应正确解码: {content}"
+        );
+        // 对照：无覆盖（UTF-8）拿不到正确文本
+        let auto_content = TxtParser::get_chapter_content(path_str, &chapters[1]).unwrap();
+        assert!(
+            !auto_content.contains("更多正文内容"),
+            "无覆盖时应为乱码（红）: {auto_content}"
+        );
+
+        // 不支持的编码：fail-closed
+        let err = TxtParser::get_chapters_with_charset(path_str, Some("no-such-charset"))
+            .expect_err("不支持的编码必须报错");
+        assert!(err.to_string().contains("不支持的编码"), "{err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

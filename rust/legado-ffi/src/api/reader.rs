@@ -218,7 +218,11 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
     if is_local_book(book_url) {
         // [C1] 还原为真实文件路径（相对标识 → 当前 Documents；绝对原样）
         let real_path = resolve_local_book_path(book_url);
-        let chapter_infos = legado_book::LocalBook::get_chapters(&real_path)?;
+        // [批37b P1-1] 目录与正文必须使用同一 `Book.charset` 解码，
+        // 否则用户设置编码后目录偏移与正文对不上
+        let charset = local_book_charset(book_url)?;
+        let chapter_infos =
+            legado_book::LocalBook::get_chapters_with_charset(&real_path, charset.as_deref())?;
         let mut book_chapters: Vec<BookChapter> = chapter_infos
             .iter()
             .map(|ci| BookChapter {
@@ -323,9 +327,13 @@ fn get_chapter_content_inner(
         // 使用 legado-book 解析本地文件
         // [C1] 还原为真实文件路径（相对标识 → 当前 Documents；绝对原样）
         let real_path = resolve_local_book_path(book_url);
-        let content = legado_book::LocalBook::get_chapter_content(
+        // [批37b P1-1] 消费 `Book.charset`：阅读器「设置编码」后正文按
+        // 用户指定编码解码（检测/默认之上）；TXT 之外的格式忽略该值
+        let charset = local_book_charset(book_url)?;
+        let content = legado_book::LocalBook::get_chapter_content_with_charset(
             &real_path,
             &chapter_to_local_info(&chapter),
+            charset.as_deref(),
         )?;
         // 读取时净化：DB/文件保留原始正文，返回前应用内容净化
         Ok(apply_content_processing_inner(
@@ -345,6 +353,25 @@ fn get_chapter_content_inner(
             "need_fetch": true,
         }))?)
     }
+}
+
+/// 读取本地书的 `Book.charset`（未设置/书籍不存在时返回 `None`）
+///
+/// [批37b P1-1] 编码覆盖只对 TXT 生效；书籍行缺失时保持自动检测行为，
+/// 不让「查不到书」把正文读取变成硬失败（懒解析/临时书场景仍可读）。
+///
+/// 库内编码名若已无法被 `encoding_rs` 识别（手工改库/历史脏值），读取侧
+/// 按未设置处理回退自动检测——设置入口本身 fail-closed，不会写入脏值；
+/// 读取侧再报错只会让整本书打不开，代价大于收益。
+pub(crate) fn local_book_charset(book_url: &str) -> LegadoResult<Option<String>> {
+    let charset = with_database(|db| {
+        Ok(BookRepository::new(db.connection())
+            .find_by_url(book_url)?
+            .and_then(|book| book.charset))
+    })?;
+    Ok(charset
+        .filter(|value| !value.trim().is_empty())
+        .filter(|value| legado_book::txt::encoding_for_label(value).is_ok()))
 }
 
 /// 判断是否为本地书籍
@@ -1024,9 +1051,12 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
         // （`books/x.txt`）须先还原为当前容器真实路径，否则阅读器主取正文
         // 链路（`getChapterContentFull`）会报「无法打开文件」。
         let real_path = resolve_local_book_path(book_url);
-        let content = legado_book::LocalBook::get_chapter_content(
+        // [批37b P1-1] 阅读器主取正文链路同样消费 `Book.charset`
+        let charset = local_book_charset(book_url)?;
+        let content = legado_book::LocalBook::get_chapter_content_with_charset(
             &real_path,
             &chapter_to_local_info(&chapter),
+            charset.as_deref(),
         )?;
         return Ok(apply_content_processing_chapter(
             book_url,
@@ -1438,6 +1468,146 @@ mod tests {
             Ok(())
         })
         .unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ─── [批37b P1-1] 设置编码端到端（charset 消费 + 目录重解析） ───────────
+
+    /// 红→绿：GBK 正文 + 前 4KB 纯 ASCII（自动检测误判 UTF-8）
+    /// → 未设置编码时正文乱码、目录退化为单章；
+    /// → `book_set_charset(GBK)` 后目录按新编码重解析、正文正确解码。
+    ///
+    /// 同时验证单列写：设置编码不走 `update_book` 整书回写，
+    /// `readConfig` 未建模键与阅读进度保持原值。
+    #[test]
+    fn local_txt_charset_setting_rebuilds_toc_and_decodes_content() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let base =
+            std::env::temp_dir().join(format!("legado_charset_base_{}_{}", std::process::id(), n));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        let file = books.join("gbk.txt");
+        // 前 4096 字节 ASCII（末位换行）→ detect_encoding 命中 UTF-8；
+        // 其后为 GBK 正文
+        let mut bytes = vec![b'A'; 4095];
+        bytes.push(b'\n');
+        let (gbk_body, _, _) =
+            encoding_rs::GBK.encode("第一章 起始\n这是正文内容。\n\n第二章 继续\n更多正文内容。\n");
+        bytes.extend_from_slice(&gbk_body);
+        std::fs::write(&file, &bytes).unwrap();
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let previous_db_path = crate::db_state::current_db_path();
+        crate::db_state::record_db_path(base.join("legado.db").to_str().unwrap());
+
+        let res = crate::api::book_import::import_local_book("books/gbk.txt").unwrap();
+        assert!(res.success, "导入失败: {:?}", res.error);
+        let book_url = res.book.as_ref().unwrap().book_url.clone();
+        assert_eq!(book_url, "books/gbk.txt");
+
+        // 红：未设置编码时按 UTF-8 解码 → 标题乱码 → 回退单章「全文」
+        let auto = get_chapters(&book_url).unwrap();
+        assert_eq!(auto.total, 1, "乱码目录应退化为单章: {:?}", auto.chapters);
+        assert_eq!(auto.chapters[0].title, "全文");
+
+        // 造未建模 readConfig 键 + 进度，验证单列写不回退
+        with_database(|db| {
+            db.connection()
+                .execute(
+                    "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
+                    rusqlite::params![
+                        r#"{"reverseToc":false,"useGlobalAudioSkip":true,"tocExpanded":{"0":true}}"#,
+                        book_url
+                    ],
+                )
+                .map_err(|e| LegadoError::Database(format!("写原始 readConfig 失败: {e}")))?;
+            BookRepository::new(db.connection()).update_progress(
+                &book_url,
+                1,
+                42,
+                Some("旧章"),
+                1_700_000_000_000,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 绿：设置 GBK（单列写 + 清本地 TXT 目录）
+        let updated = crate::api::bookshelf::set_book_charset(&book_url, "GBK").unwrap();
+        assert_eq!(updated.charset.as_deref(), Some("GBK"));
+        assert_eq!(updated.total_chapter_num, 0, "旧目录应失效");
+
+        // 目录按 GBK 重解析
+        let chapters = get_chapters(&book_url).unwrap();
+        assert_eq!(
+            chapters.total, 2,
+            "GBK 目录应识别两章: {:?}",
+            chapters.chapters
+        );
+        assert_eq!(chapters.chapters[0].title, "第一章 起始");
+        assert_eq!(chapters.chapters[1].title, "第二章 继续");
+
+        // 正文按 GBK 解码（阅读器主链路）
+        let content = get_chapter_content_full(&book_url, 1).unwrap();
+        assert!(
+            content.contains("更多正文内容"),
+            "GBK 正文应正确解码: {content}"
+        );
+        // 旧读取入口（get_chapter_content）同口径
+        let content_legacy = get_chapter_content(&book_url, 0).unwrap();
+        assert!(
+            content_legacy.contains("这是正文内容"),
+            "get_chapter_content 也应消费 charset: {content_legacy}"
+        );
+
+        // 单列写断言：未建模 readConfig 键 + 进度保持
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(&book_url)?
+                .expect("书籍记录应存在");
+            assert_eq!(saved.charset.as_deref(), Some("GBK"));
+            assert_eq!(saved.dur_chapter_index, 1, "进度不得被编码写回退");
+            assert_eq!(saved.dur_chapter_pos, 42, "进度不得被编码写回退");
+            let raw: Option<String> = db
+                .connection()
+                .query_row(
+                    "SELECT readConfig FROM books WHERE bookUrl = ?1",
+                    rusqlite::params![book_url],
+                    |row| row.get(0),
+                )
+                .map_err(|e| LegadoError::Database(format!("查询 readConfig 失败: {e}")))?;
+            let cfg: serde_json::Value =
+                serde_json::from_str(&raw.unwrap_or_else(|| "{}".into())).unwrap();
+            assert_eq!(cfg["useGlobalAudioSkip"], serde_json::json!(true));
+            assert_eq!(cfg["tocExpanded"], serde_json::json!({"0": true}));
+            Ok(())
+        })
+        .unwrap();
+
+        // 不支持的编码：fail-closed（UI 不得假成功）
+        let err = crate::api::bookshelf::set_book_charset(&book_url, "no-such-charset")
+            .expect_err("不支持的编码必须报错");
+        assert!(err.to_string().contains("不支持的编码"), "{err}");
+
+        // 收尾：事务内清章节 + 书行，恢复 DB 路径
+        with_database(|db| {
+            let tx = db
+                .connection()
+                .unchecked_transaction()
+                .map_err(|e| LegadoError::Database(format!("开启清理事务失败: {e}")))?;
+            BookChapterRepository::new(db.connection()).delete_by_book_url(&book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(&book_url)?;
+            tx.commit()
+                .map_err(|e| LegadoError::Database(format!("提交清理事务失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+        match previous_db_path {
+            Some(path) => crate::db_state::record_db_path(&path),
+            None => crate::db_state::record_db_path(""),
+        }
         let _ = std::fs::remove_dir_all(&base);
     }
 

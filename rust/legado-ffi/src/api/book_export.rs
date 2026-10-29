@@ -165,6 +165,12 @@ fn export_book_inner(
 
     // 逐章取正文（与阅读器 get_chapter_content 同源）并应用净化，与 Android 导出经 ContentProcessor 一致
     let local = is_local_book(book_url);
+    // [批37b P1-1] 导出与阅读器同口径：本地 TXT 按 Book.charset 解码
+    let local_charset = if local {
+        crate::api::reader::local_book_charset(book_url).unwrap_or_default()
+    } else {
+        None
+    };
     let export_chapters: Vec<ExportChapter> = chapters
         .iter()
         .filter(|ch| range_ok(ch.index))
@@ -174,8 +180,12 @@ fn export_book_inner(
                 // [批18d P3] book_url 可能是相对可迁移标识（`books/x.txt`），
                 // 落盘前经 resolver 还原到当前 Documents 下的真实路径。
                 let real_path = resolve_local_book_path(book_url);
-                legado_book::LocalBook::get_chapter_content(&real_path, &chapter_to_local_info(ch))
-                    .unwrap_or_default()
+                legado_book::LocalBook::get_chapter_content_with_charset(
+                    &real_path,
+                    &chapter_to_local_info(ch),
+                    local_charset.as_deref(),
+                )
+                .unwrap_or_default()
             } else {
                 // 在线书：从缓存取原始正文
                 cached

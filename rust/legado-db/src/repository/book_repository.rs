@@ -168,6 +168,26 @@ impl<'a> BookRepository<'a> {
         self.find_by_url(book_url)
     }
 
+    /// 书籍编码（批37b P1-1，单列写）
+    ///
+    /// 只改 `books.charset`，**不整书回写**：Dart 侧持有的 Book 是陈旧快照，
+    /// 全行写会清空 `readConfig` 中 Dart 未建模的键（`useGlobalAudioSkip` /
+    /// `tocExpanded` / `manualReplaceRuleIds` 等），也会覆盖阅读进度。
+    /// 返回更新后的整书（行不存在返回 `None`，由 FFI 层报「书籍不存在」）。
+    pub fn set_charset(&self, book_url: &str, charset: &str) -> LegadoResult<Option<Book>> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE books SET charset = ?1 WHERE bookUrl = ?2",
+                params![charset, book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新书籍编码失败: {e}")))?;
+        if affected == 0 {
+            return Ok(None);
+        }
+        self.find_by_url(book_url)
+    }
+
     /// 该书是否关闭了阅读记录（批35，阅读记录写路径的前置判断）
     ///
     /// 书籍不存在时返回 `false`（保持旧行为：临时书/未落库书照常写入）。

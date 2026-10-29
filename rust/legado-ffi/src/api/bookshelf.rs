@@ -8,7 +8,7 @@ use legado_core::models::{book_type, Book};
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::import::RoomImporter;
 use legado_db::repository::Repository;
-use legado_db::BookRepository;
+use legado_db::{BookChapterRepository, BookRepository};
 
 use crate::db_state::{documents_root, resolve_local_book_path, with_database};
 
@@ -404,6 +404,51 @@ pub fn set_read_record_disabled(book_url: &str, disabled: bool) -> LegadoResult<
         repo.set_read_record_disabled(book_url, disabled)?
             .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))
     })
+}
+
+/// 书籍编码设置（批37b P1-1，单列写 + 本地 TXT 目录失效）
+///
+/// 对齐参考版 `ReadBook.setCharset`：写 `Book.charset` 后，本地 TXT 还须
+/// 清空章节表，让目录按新编码重新解析——目录的 `start/end` 是**解码后
+/// 文本**的字节偏移，跨编码不可复用，否则正文切片会错位。
+///
+/// - 编码名先经 `encoding_rs` 校验并归一化（如 `GB2312` → `GBK`），不支持
+///   的编码直接报错（fail-closed，UI 不得提示成功）；
+/// - 单列 UPDATE 只改 `books.charset`，不整书回写（防陈旧快照清空
+///   `readConfig` 未建模键/覆盖进度）；
+/// - 非 TXT 本地书（EPUB/PDF/MOBI/UMD/CBZ）只写编码列，不动目录。
+pub fn set_book_charset(book_url: &str, charset: &str) -> LegadoResult<Book> {
+    let normalized = legado_book::txt::normalize_charset(charset)?;
+    with_database(|db| {
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let book = repo
+            .find_by_url(book_url)?
+            .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))?;
+        let reset_local_txt_toc = is_local_storage_book(&book) && is_txt_path(book_url);
+
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启编码更新事务失败: {e}")))?;
+        repo.set_charset(book_url, &normalized)?
+            .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))?;
+        if reset_local_txt_toc {
+            // delete_by_book_url 在事务外为 no-op（B-7），此处已显式开启事务
+            BookChapterRepository::new(conn).delete_by_book_url(book_url)?;
+            repo.update_toc_derived_fields(book_url, 0, None, None)?;
+        }
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交编码更新事务失败: {e}")))?;
+
+        repo.find_by_url(book_url)?
+            .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))
+    })
+}
+
+/// 路径是否 TXT 本地书（编码覆盖仅对 TXT 生效）
+fn is_txt_path(book_url: &str) -> bool {
+    let lower = book_url.to_lowercase();
+    lower.ends_with(".txt") || lower.ends_with(".text")
 }
 
 /// 按 bookUrl 获取单本书籍详情
@@ -1729,6 +1774,69 @@ mod tests {
             err.to_string().contains("书籍不存在"),
             "错误信息应指出书籍不存在，实际：{err}"
         );
+
+        cleanup_book(book_url);
+    }
+
+    /// [批37b P1-1] 设置编码单列写：只改 charset，不清 readConfig 未建模键、
+    /// 不覆盖阅读进度；编码名归一化；不支持编码 fail-closed。
+    #[test]
+    fn test_set_book_charset_single_column_preserves_read_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch37b-charset.example.com/book/1";
+        seed_read_config_raw(
+            book_url,
+            Some(
+                r#"{"reverseToc":false,"useGlobalAudioSkip":true,"tocExpanded":{"0":true},"manualReplaceRuleIds":[3,5]}"#,
+            ),
+        );
+        with_database(|db| {
+            BookRepository::new(db.connection()).update_progress(
+                book_url,
+                3,
+                27,
+                Some("第三章"),
+                1_700_000_000_000,
+            )?;
+            Ok(())
+        })
+        .expect("进度写入失败");
+
+        // 旧路径 update_book（整书快照写）会用 Dart ReadConfig 回写并丢未建模键；
+        // 单列写必须原样保留
+        let updated = super::set_book_charset(book_url, "gb2312").expect("编码写入应成功");
+        assert_eq!(
+            updated.charset.as_deref(),
+            Some("GBK"),
+            "GB2312 应归一化为 encoding_rs 标准名 GBK"
+        );
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应存在");
+            assert_eq!(saved.charset.as_deref(), Some("GBK"));
+            assert_eq!(saved.dur_chapter_index, 3, "进度不得被编码写回退");
+            assert_eq!(saved.dur_chapter_pos, 27, "进度不得被编码写回退");
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        let cfg = raw_read_config(book_url);
+        assert_eq!(cfg["useGlobalAudioSkip"], serde_json::json!(true));
+        assert_eq!(cfg["tocExpanded"], serde_json::json!({"0": true}));
+        assert_eq!(cfg["manualReplaceRuleIds"], serde_json::json!([3, 5]));
+
+        // 不支持的编码：fail-closed
+        let err =
+            super::set_book_charset(book_url, "no-such-charset").expect_err("不支持的编码必须报错");
+        assert!(err.to_string().contains("不支持的编码"), "{err}");
+
+        // 书籍不存在：报错而不是假装成功
+        let err =
+            super::set_book_charset("https://batch37b-charset.example.com/book/missing", "UTF-8")
+                .expect_err("书籍不存在必须报错");
+        assert!(err.to_string().contains("书籍不存在"), "{err}");
 
         cleanup_book(book_url);
     }
