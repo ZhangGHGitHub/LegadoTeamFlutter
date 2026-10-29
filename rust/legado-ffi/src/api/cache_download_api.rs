@@ -632,6 +632,89 @@ mod tests {
         let _ = std::fs::remove_file(&txt_path);
     }
 
+    /// [批39] 下载口径保持严格：目录「已缓存」显示为宽松（有正文即已缓存，
+    /// 缺图不影响），下载链路不消费该显示集合——即使缓存行已存在（含缺图
+    /// 正文），仍按章节重新抓取/解析并覆盖缓存。
+    #[test]
+    fn test_download_strict_even_when_loose_cache_exists() {
+        use legado_core::cache_book::CachedChapter;
+        use legado_db::CacheBookRepository;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+
+        let dir = std::env::temp_dir().join("legado_r7_strict_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let txt_path = dir.join("r7_strict.txt");
+        std::fs::write(
+            &txt_path,
+            "第一章 开始
+
+这是第一章的正文内容。
+
+第二章 继续
+
+这是第二章的正文内容。
+",
+        )
+        .unwrap();
+        let book_url = txt_path.to_string_lossy().to_string();
+
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "严格下载测试",
+            "author": "",
+            "origin": "loc_book"
+        })
+        .to_string();
+        crate::api::bookshelf::add_book(&book_json).unwrap();
+        let chapters = crate::api::reader::get_chapters(&book_url).unwrap();
+        assert_eq!(chapters.total, 2, "TXT 应解析出 2 章");
+        let chapter_url = chapters.chapters[0].url.clone();
+
+        // 预置「缺图」缓存行：正文引用未落盘图片 → 显示口径仍算已缓存
+        let loose_content = "<img src=\"https://img.example.com/missing.jpg\">";
+        with_database(|db| {
+            CacheBookRepository::new(db.connection()).insert(&CachedChapter {
+                id: 0,
+                book_url: book_url.clone(),
+                chapter_index: 0,
+                chapter_title: "第一章".to_string(),
+                chapter_url: chapter_url.clone(),
+                content: loose_content.to_string(),
+                cached_at: 0,
+                size_bytes: loose_content.len() as i64,
+            })?;
+            Ok(())
+        })
+        .unwrap();
+        let display = crate::api::cache_api::list_cached_chapter_urls(&book_url).unwrap();
+        assert!(
+            display.contains(&chapter_url),
+            "显示口径宽松：有正文（含缺图）即已缓存"
+        );
+
+        // 下载链路严格：不因显示集合命中而跳过，仍重新解析并覆盖缓存
+        download_one(&book_url, 0).expect("本地解析下载应成功");
+        let after = crate::api::cache_api::get_chapter_cache(&book_url, 0).unwrap();
+        assert_ne!(after, loose_content, "严格下载应覆盖缺图缓存行");
+        assert!(
+            after.contains("这是第一章的正文内容"),
+            "下载后应为真实正文，实际: {after}"
+        );
+
+        // 清理
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(&book_url)?;
+            CacheBookRepository::new(conn).delete_by_book(&book_url)?;
+            BookRepository::new(conn).delete_by_url(&book_url)
+        })
+        .unwrap();
+        crate::api::cache_api::clear_cache().unwrap();
+        let _ = std::fs::remove_file(&txt_path);
+    }
+
     /// [批18d P3] 相对可迁移标识（`books/rel_cache.txt`）批量缓存必须经
     /// resolver 还原真实文件，否则本地书每章读取失败、任务以 failed 收尾。
     #[test]

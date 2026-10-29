@@ -120,6 +120,13 @@ pub fn get_chapter_cache(book_url: &str, chapter_index: i32) -> LegadoResult<Str
 /// 复用 [`CacheBookRepository::get_by_book`]（按 book_url 复合键查询，不串本），
 /// 仅提取 chapter_url 供 Flutter 目录页据此为每章标记「已缓存/未缓存」渲染
 /// 云图标；返回顺序按 chapter_index 升序（仓储已排序），空 chapter_url 过滤。
+///
+/// [批39 显示口径宽松] 对齐参考版 `TocViewModel`（显示用宽松判定：
+/// `BookHelp.hasContent` 有正文即算已缓存；下载是否补图仍走严格口径）：
+/// - 仅正文非空（`content.trim()` 非空）的缓存行才算已缓存——历史遗留/异常
+///   写入的空正文行不再点亮云图标（读侧同样按空正文视为 miss）；
+/// - **不检查章节内图片是否已缓存**：缺图章节仍显示为已缓存（宽松），
+///   下载链路（`cache_download_api`）不消费本集合、保持逐章严格抓取。
 pub fn list_cached_chapter_urls(book_url: &str) -> LegadoResult<Vec<String>> {
     with_database(|db| {
         let conn = db.connection();
@@ -127,6 +134,7 @@ pub fn list_cached_chapter_urls(book_url: &str) -> LegadoResult<Vec<String>> {
         let chapters = repo.get_by_book(book_url)?;
         let urls: Vec<String> = chapters
             .into_iter()
+            .filter(|c| !c.content.trim().is_empty())
             .map(|c| c.chapter_url)
             .filter(|u| !u.trim().is_empty())
             .collect();
@@ -167,7 +175,8 @@ pub struct CachedChapterEntry {
 /// ⬇ 图标翻转与字数胶囊同帧刷新。
 ///
 /// 过滤语义与 [`list_cached_chapter_urls`] 一致：按 chapter_index 升序
-/// （仓储已排序）、空 `chapter_url` 过滤；书籍有目录时同步过滤已退出
+/// （仓储已排序）、空 `chapter_url` 过滤、**空正文行过滤（批39 显示宽松口径：
+/// 有正文即已缓存，缺图不判未缓存）**；书籍有目录时同步过滤已退出
 /// 当前目录的陈旧缓存行（[B-5] 同源）。`word_count` 取 `chapters` 表
 /// 当前值（与 P2-28b 回填链同源，避免 `cached_chapters` 表内旧快照），
 /// 未回填（NULL/空）为空串。
@@ -190,6 +199,7 @@ pub fn list_cached_chapters(book_url: &str) -> LegadoResult<Vec<CachedChapterEnt
         };
         Ok(cached
             .into_iter()
+            .filter(|c| !c.content.trim().is_empty())
             .filter(|c| !c.chapter_url.trim().is_empty())
             .filter(|c| match &current {
                 Some(set) => set.contains(&c.chapter_url),
@@ -696,6 +706,58 @@ mod tests {
             CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
             let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
             BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [批39] 目录「已缓存」显示口径宽松：有正文即已缓存，缺图仍算已缓存；
+    /// 空正文/纯空白正文行不算（读侧同样按 miss 处理）。
+    #[test]
+    fn test_list_cached_display_loose_body_only() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://loose-cache.example.com/book/1";
+        let with_image = "https://loose-cache.example.com/ch/0";
+        let empty = "https://loose-cache.example.com/ch/1";
+        let blank = "https://loose-cache.example.com/ch/2";
+
+        with_database(|db| {
+            let conn = db.connection();
+            let repo = CacheBookRepository::new(conn);
+            // 有正文 + 引用图片（图片磁盘缓存故意不写）→ 显示为已缓存
+            for (index, url, content) in [
+                (0i32, with_image, "<img src=\"https://img.example.com/missing.jpg\">"),
+                (1, empty, ""),
+                (2, blank, "   
+	 "),
+            ] {
+                repo.insert(&CachedChapter {
+                    id: 0,
+                    book_url: book_url.to_string(),
+                    chapter_index: index,
+                    chapter_title: format!("第{}章", index + 1),
+                    chapter_url: url.to_string(),
+                    content: content.to_string(),
+                    cached_at: 0,
+                    size_bytes: content.len() as i64,
+                })?;
+            }
+            Ok(())
+        })
+        .expect("前置数据写入失败");
+
+        // §2.43.5 显示集合：仅“有正文”的行入选（缺图不影响）
+        let urls = list_cached_chapter_urls(book_url).expect("查询应成功");
+        assert_eq!(urls, vec![with_image.to_string()], "有正文即已缓存（缺图不影响），空正文行不计");
+
+        // §2.43.6 轮询集合：同口径
+        let entries = list_cached_chapters(book_url).expect("查询应成功");
+        assert_eq!(entries.len(), 1, "空正文行不显示为已缓存");
+        assert_eq!(entries[0].url, with_image);
+
+        // 清理测试数据
+        with_database(|db| {
+            CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
             Ok(())
         })
         .ok();

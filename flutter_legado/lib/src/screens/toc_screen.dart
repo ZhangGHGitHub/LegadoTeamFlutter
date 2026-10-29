@@ -21,6 +21,7 @@ import '../services/bookmark_export.dart';
 import '../services/settings_service.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/toc_cache_state.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
 ///
@@ -1228,10 +1229,15 @@ class _TocScreenState extends ConsumerState<TocScreen>
     // 沿用文本缓存 URL 判定（契约 §2.43.5 cacheFileNames 等价）。本地书
     // 恒视为已缓存不显示徽标（原版 isLocalBook → cached=true → 图标隐藏；
     // 且本地书无书源不可缓存）。分卷章节行走 _buildVolumeRow，不进入本行。
-    final isCached = !_isLocal &&
-        (_isAudioBook
-            ? _audioCachedIndices.contains(chapter.index)
-            : _cachedUrls.contains(chapter.url));
+    // [批39] 显示口径改为宽松判定（有正文即已缓存，缺图仍算已缓存，
+    // 对齐参考版 TocViewModel.kt:293-320）；下载链路仍严格（Rust 逐章抓取）。
+    final isCached = tocChapterCacheBadge(
+          isLocal: _isLocal,
+          isAudioBook: _isAudioBook,
+          audioCached: _audioCachedIndices.contains(chapter.index),
+          textCached: _cachedUrls.contains(chapter.url),
+        ) ==
+        TocChapterCacheBadge.cached;
     // [P2-29c] 下载中/失败标记先于 showCount 判定：失败章不显示字数胶囊
     // （对齐参考版 StatusIcon :1146-1157 字数分支仅 LOCAL/SUCCESS 态命中）
     final bool isDownloading = _downloadingIndices.contains(chapter.index);
