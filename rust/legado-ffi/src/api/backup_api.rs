@@ -5552,6 +5552,314 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    // ─── 批41：原版 zip 媒体恢复 ─────────────────────────────────────────
+
+    /// [批41 回归] 原版 zip 媒体落盘：covers（含子目录）/bg/readRecordCovers/封面字体
+    /// → 目标目录且内容一致；书/分组/阅读记录封面按 remap 改写到本地路径
+    #[test]
+    fn test_restore_zip_media_files_and_remap() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_restore_zip_media_positive");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        let _media_guard = set_test_media_root(&media_root);
+
+        const COVER_BYTES: &[u8] = b"COVER-BYTES-MARKER";
+        const SUB_COVER_BYTES: &[u8] = b"SUB-COVER-BYTES-MARKER";
+        const BG_BYTES: &[u8] = b"BG-BYTES-MARKER";
+        const RECORD_COVER_BYTES: &[u8] = b"RECORD-COVER-BYTES-MARKER";
+        const FONT_BYTES: &[u8] = b"FONT-BYTES-MARKER";
+
+        let bookshelf = r#"[
+            {"bookUrl":"https://zip.example/media/1","name":"媒体书一","author":"作者甲",
+             "customCoverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/a.jpg"},
+            {"bookUrl":"https://zip.example/media/2","name":"媒体书二","author":"作者乙",
+             "customCoverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/missing.png"}
+        ]"#;
+        let book_group = r#"[{"groupId":91,"groupName":"媒体分组",
+            "cover":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/g.png"}]"#;
+        let read_record = r#"[{"deviceId":"other-device","bookName":"媒体书一","author":"作者甲",
+            "readTime":1700000010000,"lastRead":5,
+            "coverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/readRecordCovers/r.jpg"}]"#;
+
+        let (zip_dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_media_positive_src",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("bookGroup.json", book_group.as_bytes()),
+                ("readRecord.json", read_record.as_bytes()),
+                ("covers/a.jpg", COVER_BYTES),
+                ("covers/sub/b.png", SUB_COVER_BYTES),
+                ("bg/y.png", BG_BYTES),
+                ("readRecordCovers/r.jpg", RECORD_COVER_BYTES),
+                ("coverFont.ttf", FONT_BYTES),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 2);
+        assert_eq!(stats.read_records, 1);
+
+        // 文件落点与内容一致（子目录保留）
+        assert_eq!(
+            fs::read(media_root.join("covers").join("a.jpg")).unwrap(),
+            COVER_BYTES
+        );
+        assert_eq!(
+            fs::read(media_root.join("covers").join("sub").join("b.png")).unwrap(),
+            SUB_COVER_BYTES
+        );
+        assert_eq!(
+            fs::read(media_root.join("bg").join("y.png")).unwrap(),
+            BG_BYTES
+        );
+        assert_eq!(
+            fs::read(media_root.join("readRecordCovers").join("r.jpg")).unwrap(),
+            RECORD_COVER_BYTES
+        );
+        assert_eq!(
+            fs::read(media_root.join("font").join("coverFont.ttf")).unwrap(),
+            FONT_BYTES
+        );
+
+        with_database(|db| {
+            let conn = db.connection();
+            let book1 = BookRepository::new(conn)
+                .find_by_url("https://zip.example/media/1")?
+                .expect("媒体书一应落库");
+            let cover = book1
+                .custom_cover_url
+                .as_deref()
+                .expect("媒体已恢复时应 remap 为本地封面路径");
+            assert!(
+                Path::new(cover).is_file(),
+                "remap 后的封面路径应指向已落盘文件: {cover}"
+            );
+            assert!(
+                cover.replace('\\', "/").ends_with("covers/a.jpg"),
+                "remap 目标应位于媒体根 covers 目录: {cover}"
+            );
+
+            let book2 = BookRepository::new(conn)
+                .find_by_url("https://zip.example/media/2")?
+                .expect("媒体书二应落库");
+            assert_eq!(
+                book2.custom_cover_url, None,
+                "备份未携带的封面目标应置空（对齐 remap 失败语义）"
+            );
+
+            let group = BookGroupRepository::new(conn)
+                .find_by_id(91)?
+                .expect("媒体分组应落库");
+            assert_eq!(group.cover, None, "备份未携带的分组封面应置空");
+
+            let records = ReadRecordRepository::new(conn).find_all()?;
+            assert_eq!(records.len(), 1);
+            let record_cover = records[0]
+                .cover_url
+                .as_deref()
+                .expect("阅读记录封面应 remap 为本地路径");
+            assert!(
+                Path::new(record_cover).is_file(),
+                "阅读记录封面应指向已落盘文件: {record_cover}"
+            );
+            assert!(
+                record_cover
+                    .replace('\\', "/")
+                    .ends_with("readRecordCovers/r.jpg"),
+                "阅读记录封面应位于媒体根 readRecordCovers 目录: {record_cover}"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        // [批41] 我方 JSON 备份不含媒体：媒体字节标记不得出现在 JSON 备份里
+        let json_path = dir.join("json_backup.json");
+        backup_create(json_path.to_str().unwrap()).unwrap();
+        let json = fs::read_to_string(&json_path).unwrap();
+        for marker in [
+            "COVER-BYTES-MARKER",
+            "SUB-COVER-BYTES-MARKER",
+            "BG-BYTES-MARKER",
+            "RECORD-COVER-BYTES-MARKER",
+            "FONT-BYTES-MARKER",
+        ] {
+            assert!(
+                !json.contains(marker),
+                "JSON 备份不应内嵌媒体字节（含标记 {marker}）"
+            );
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("media").is_none(), "JSON 备份不应新增媒体段");
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 负例] 媒体条目路径穿越/绝对路径/反斜杠/超限/目录条目：
+    /// 逐条跳过且不阻断整体恢复，目标目录外不得出现文件
+    #[test]
+    fn test_restore_zip_media_rejects_unsafe_and_oversized() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_restore_zip_media_negative");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        let _media_guard = set_test_media_root(&media_root);
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/media/neg","name":"负例书","author":"作者"}]"#;
+        let huge = vec![0u8; (MAX_BACKUP_MEDIA_FILE_BYTES + 1) as usize];
+        let (zip_dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_media_negative_src",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                // 只有目录条目：不得创建目录、不得报错
+                ("covers/", b""),
+                ("../evil.jpg", b"evil"),
+                ("covers/../escape.jpg", b"escape"),
+                ("covers\\backslash.jpg", b"bs"),
+                ("/abs.jpg", b"abs"),
+                ("C:/win.jpg", b"win"),
+                // 单文件超限（32 MiB + 1）→ 跳过该条
+                ("bg/huge.png", huge.as_slice()),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1, "媒体条目全部被拒不得影响数据恢复");
+
+        for rel in [
+            "evil.jpg",
+            "escape.jpg",
+            "abs.jpg",
+            "win.jpg",
+            "covers/backslash.jpg",
+            "bg/huge.png",
+        ] {
+            assert!(
+                !media_root.join(rel).exists(),
+                "不安全或超限媒体不得落盘: {rel}"
+            );
+        }
+        assert!(!dir.join("evil.jpg").exists(), "路径穿越不得写出媒体根之外");
+        assert!(
+            !media_root.join("covers").exists(),
+            "只有目录条目时不应创建 covers 目录"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 负例/unix] 媒体子目录或目标文件是符号链接 → 拒绝落盘，不跟随到根外
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_zip_media_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_restore_zip_media_symlink");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let media_root = dir.join("media");
+        let outside = dir.join("outside");
+        fs::create_dir_all(&media_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let _media_guard = set_test_media_root(&media_root);
+
+        // covers 整目录是符号链接；bg 是真目录但目标文件是符号链接
+        symlink(&outside, media_root.join("covers")).unwrap();
+        fs::create_dir_all(media_root.join("bg")).unwrap();
+        let outside_file = outside.join("hijacked.png");
+        fs::write(&outside_file, b"original").unwrap();
+        symlink(&outside_file, media_root.join("bg").join("wall.png")).unwrap();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/media/sym","name":"符号链接书","author":"作者"}]"#;
+        let (zip_dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_media_symlink_src",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("covers/a.jpg", b"symlink-escape"),
+                ("bg/wall.png", b"symlink-file-escape"),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1, "媒体符号链接拒绝不得影响数据恢复");
+        assert!(
+            !outside.join("a.jpg").exists(),
+            "符号链接目录不得把媒体写到根外"
+        );
+        assert_eq!(
+            fs::read(&outside_file).unwrap(),
+            b"original",
+            "符号链接目标文件不得被覆盖"
+        );
+        assert!(
+            media_root.join("covers").is_symlink(),
+            "原符号链接应保持原样（不替换、不跟随）"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&zip_dir);
+    }
+
+    /// [批41 单元] 媒体条目分类与相对路径守卫
+    #[test]
+    fn test_zip_media_path_guard() {
+        assert!(is_safe_media_relative_path("a.jpg"));
+        assert!(is_safe_media_relative_path("sub/a.jpg"));
+        assert!(!is_safe_media_relative_path(""));
+        assert!(!is_safe_media_relative_path("/a.jpg"));
+        assert!(!is_safe_media_relative_path("../a.jpg"));
+        assert!(!is_safe_media_relative_path("sub/../a.jpg"));
+        assert!(!is_safe_media_relative_path("sub//a.jpg"));
+        assert!(!is_safe_media_relative_path("c:/a.jpg"));
+        assert!(!is_safe_media_relative_path("a\\b.jpg"));
+
+        assert!(matches!(
+            classify_zip_media_entry("covers/x.jpg"),
+            Some(ZipMediaTarget::MediaDir {
+                dir: "covers",
+                relative: "x.jpg"
+            })
+        ));
+        assert!(matches!(
+            classify_zip_media_entry("bg/sub/y.png"),
+            Some(ZipMediaTarget::MediaDir {
+                dir: "bg",
+                relative: "sub/y.png"
+            })
+        ));
+        assert!(matches!(
+            classify_zip_media_entry("readRecordCovers/z.jpg"),
+            Some(ZipMediaTarget::MediaDir {
+                dir: "readRecordCovers",
+                relative: "z.jpg"
+            })
+        ));
+        assert!(matches!(
+            classify_zip_media_entry("coverFont.ttf"),
+            Some(ZipMediaTarget::CoverFont)
+        ));
+        assert!(classify_zip_media_entry("covers.txt").is_none());
+        assert!(classify_zip_media_entry("bg.jpg").is_none());
+        assert!(
+            classify_zip_media_entry("sub/coverFont.ttf").is_none(),
+            "封面字体只匹配备份根目录的固定条目名"
+        );
+        assert!(classify_zip_media_entry("other/covers/x.jpg").is_none());
+    }
+
     /// [批9 兼容] zip 内缺某文件 → 跳过该类，其余照常恢复（对齐原版 fileToListT 缺文件语义）
     #[test]
     fn test_restore_upstream_zip_missing_files_skip_class() {
