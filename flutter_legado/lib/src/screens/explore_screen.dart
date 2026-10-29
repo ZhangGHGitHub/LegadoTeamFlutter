@@ -95,23 +95,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       final contentSource = _resolveContentSource(state, mainState);
       // 书源选择尚未解析/已失效的过渡帧沿用源列表，避免闪空页
       if (contentSource != null) {
-        // [批36b] 源内容模式系统返回 → 回源列表（PopScope）。
-        // 与参考版核对：参考版 ExploreMainRoute 内无返回拦截（发现 Tab 是
-        // 主页内嵌页面，系统返回由 Activity 处理）；我方发现页是独立路由，
-        // 系统返回会直接离开发现页，按本批验收要求改为先回源列表，
-        // 属最小化平台差异处理，不改变源列表模式下的既有返回行为。
-        return PopScope(
-          canPop: false,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            ref
-                .read(exploreMainNotifierProvider.notifier)
-                .setShowContent(false);
-          },
-          child: ExploreSourceContent(
-            key: ValueKey(contentSource.bookSourceUrl),
-            source: contentSource,
-          ),
+        // [批36c 源内容模式返回键归属] 内容模式的系统返回统一由宿主
+        // HomeScreen._handleBack 消费（回到源列表且不切 Tab）。此处不再挂
+        // PopScope：发现页与首页根节点同属一个 ModalRoute，返回时两个
+        // PopScope 都会收到回调，内层无法阻止根节点把 Tab 切回书架。
+        return ExploreSourceContent(
+          key: ValueKey(contentSource.bookSourceUrl),
+          source: contentSource,
         );
       }
     }

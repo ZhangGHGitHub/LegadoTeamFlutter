@@ -231,26 +231,10 @@ void main() {
     expect(saved[source.bookSourceUrl], exploreKindKey(kindTwo));
   });
 
-  testWidgets('系统返回键在内容模式先回源列表（PopScope）', (tester) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(buildApp());
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('切换到源内容'));
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('返回源列表'), findsOneWidget);
-
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-
-    // 不停在内容模式，也不离开发现页：回到源列表
-    expect(find.byTooltip('切换到源内容'), findsOneWidget);
-    expect(find.byTooltip('返回源列表'), findsNothing);
-    final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool(exploreMainContentKey), isFalse);
-  });
+  // [批36c 源内容模式返回键归属] 原「系统返回键在内容模式先回源列表
+  // （PopScope）」用例已移除：返回消费上移到宿主 HomeScreen._handleBack，
+  // 发现页不再自行拦截返回；对应回归见 explore_content_back_test.dart
+  // （挂载 HomeScreen，覆盖内容模式/源列表模式/手动切回后返回三种路径）。
 
   testWidgets('网格布局按可用宽度推导行高并补水平内边距', (tester) async {
     tester.view.physicalSize = const Size(400, 800);

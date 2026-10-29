@@ -7,6 +7,8 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/explore/explore_main_notifier.dart';
+import '../providers/explore/explore_notifier.dart';
 import '../routes.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/navigation/app_navigation_bars.dart';
@@ -159,6 +161,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
   Future<void> _handleBack(List<_HomeTab> tabs) async {
+    // [批36c 源内容模式返回键归属] 内容模式的返回由宿主统一消费：
+    // 发现页与首页根节点同属一个 ModalRoute，Flutter 返回处理会依次通知
+    // 该路由上所有 PopScope（didPop=false），内层 PopScope 无法「消费」本次
+    // 返回；旧实现因此同时关闭内容模式并把 Tab 切回书架（设备验收场景 6）。
+    // 现在先判定「发现 Tab 正在展示源内容」，命中则回源列表并直接返回，
+    // 不再走切 Tab 分支。
+    if (_currentTab == _HomeTab.explore && _consumeExploreContentBack()) {
+      return;
+    }
     if (_currentTab != _HomeTab.bookshelf) {
       // [LAYOUT_MOTION_AUDIT L3] IndexedStack 回书架
       final index = tabs.indexOf(_HomeTab.bookshelf);
@@ -182,6 +193,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           duration: _exitInterval,
         ),
       );
+  }
+
+  /// 发现 Tab 源内容模式返回：切回源列表并返回 true（已消费本次返回）
+  ///
+  /// 判定口径与 [ExploreScreen] 的展示条件保持一致：仅当 `showContent` 为真
+  /// 且选中书源仍在当前发现源列表中（源内容实际可见）才算内容模式；
+  /// 源列表模式、书源解析过渡帧、选中源失效回退等情况一律返回 false，
+  /// 交由原有 Tab 返回逻辑（切回书架）。
+  bool _consumeExploreContentBack() {
+    final main = ref.read(exploreMainNotifierProvider);
+    if (!main.showContent) return false;
+    final url = main.selectedSourceUrl;
+    final explore = ref.read(exploreNotifierProvider);
+    final hasSource = url.isNotEmpty &&
+        explore.bookSources.any((s) => s.bookSourceUrl == url);
+    if (!hasSource) return false;
+    ref.read(exploreMainNotifierProvider.notifier).setShowContent(false);
+    return true;
   }
 
 
