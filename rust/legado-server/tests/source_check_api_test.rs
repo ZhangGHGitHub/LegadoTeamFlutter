@@ -21,7 +21,7 @@ use tokio::sync::Mutex;
 use tower::ServiceExt;
 
 use legado_core::download_manager::DownloadManager;
-use legado_core::models::BookSource;
+use legado_core::models::{BookSource, ExploreRule};
 use legado_db::repository::cache_repository::CacheRepository;
 use legado_db::BookSourceRepository;
 use legado_server::routes::create_router;
@@ -490,6 +490,405 @@ async fn test_stop_aborts_running_check() {
     assert!(body["data"]["sessionToken"].is_null());
     let state_json = state_of(&body["data"]["states"], "https://a.example.com").unwrap();
     assert_eq!(state_json["status"], "NEEDS_CHECK");
+}
+
+// ─── 批42：发现页校验 ──────────────────────────────────────────────────────
+
+/// 只开启发现校验（关闭搜索/详情/目录/正文），隔离发现项断言
+async fn only_discovery_config(state: &Arc<AppState>) {
+    let db = state.db.lock().await;
+    let cache = CacheRepository::new(db.connection());
+    cache.put("config:checkSearch", "false", 0).unwrap();
+    cache.put("config:checkInfo", "false", 0).unwrap();
+    cache.put("config:checkCategory", "false", 0).unwrap();
+    cache.put("config:checkContent", "false", 0).unwrap();
+}
+
+/// 简单 HTML 列表页（`ruleExplore` 用 `class` 选择器解析）
+const LIST_HTML: &str = r#"<html><body>
+<div class="book"><a class="name" href="/book/1">发现书甲</a></div>
+<div class="book"><a class="name" href="/book/2">发现书乙</a></div>
+</body></html>"#;
+
+/// 启动返回固定 HTML 的 mock 服务（可注入响应延迟，用于并发度断言）
+async fn spawn_html_server(delay_ms: u64, body: &'static str) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let _ = stream.read(&mut buf).await;
+                if delay_ms > 0 {
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    port
+}
+
+/// 带发现规则的源：`explore_url` 指向 mock，列表规则命中 `class="book"`
+fn discovery_source(url: &str, explore_url: Option<String>) -> BookSource {
+    BookSource {
+        book_source_url: url.to_string(),
+        book_source_name: format!("发现检验源{url}"),
+        explore_url,
+        rule_explore: Some(ExploreRule {
+            book_list: Some("@css:.book".to_string()),
+            name: Some("@css:.name@text".to_string()),
+            book_url: Some("@css:.name@href".to_string()),
+            ..Default::default()
+        }),
+        ..BookSource::default()
+    }
+}
+
+/// 等待指定书本源进入终态（PASSED/FAILED/UNCHECKABLE），超时 panic
+async fn wait_terminal(app: axum::Router, url: &str, timeout: Duration) -> (Value, Duration) {
+    let started = std::time::Instant::now();
+    loop {
+        let (_, body) = get_json(app.clone(), "/getBookSourceCheckStates").await;
+        if let Some(state) = state_of(&body["data"]["states"], url) {
+            let status = state["status"].as_str().unwrap_or("");
+            if status != "NEEDS_CHECK" {
+                return (state.clone(), started.elapsed());
+            }
+        }
+        if started.elapsed() > timeout {
+            panic!("等待 {url} 终态超时，最后状态: {body}");
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+#[tokio::test]
+async fn test_discovery_rule_empty_fails() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    // exploreUrl 非空但只含分组标题（无分类 URL）→ 上游「发现规则为空」
+    let source = discovery_source("https://a.example.com", Some("玄幻\n都市".to_string()));
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) =
+        wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
+    assert_eq!(final_state["status"], "FAILED", "{final_state}");
+    assert_eq!(
+        final_state["detail"],
+        "发现规则为空 | 校验失败:发现规则为空 | // Error: 发现规则为空"
+    );
+}
+
+#[tokio::test]
+async fn test_discovery_empty_explore_url_passes() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    let source = discovery_source("https://a.example.com", None);
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) =
+        wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
+    assert_eq!(final_state["status"], "PASSED", "{final_state}");
+    assert_eq!(final_state["detail"], "", "PASSED 详情恒为空");
+}
+
+#[tokio::test]
+async fn test_discovery_bad_list_rule_fails() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    let port = spawn_html_server(0, LIST_HTML).await;
+    let mut source = discovery_source(
+        "https://a.example.com",
+        Some(format!("分类::http://127.0.0.1:{port}/list")),
+    );
+    // 列表规则不命中任何元素 → 发现失效
+    source.rule_explore = Some(ExploreRule {
+        book_list: Some("@css:.missing".to_string()),
+        name: Some("@css:.name@text".to_string()),
+        book_url: Some("@css:.name@href".to_string()),
+        ..Default::default()
+    });
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) =
+        wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
+    assert_eq!(final_state["status"], "FAILED", "{final_state}");
+    assert_eq!(
+        final_state["detail"],
+        "发现失效 | 校验失败:发现失效 | // Error: 发现失效"
+    );
+}
+
+#[tokio::test]
+async fn test_discovery_good_rule_passes() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    let port = spawn_html_server(0, LIST_HTML).await;
+    let source = discovery_source(
+        "https://a.example.com",
+        Some(format!("分类::http://127.0.0.1:{port}/list")),
+    );
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) =
+        wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
+    assert_eq!(final_state["status"], "PASSED", "{final_state}");
+    assert_eq!(final_state["detail"], "");
+}
+
+// ─── 批42：并行检验 ────────────────────────────────────────────────────────
+
+/// 3 个源各 500ms 的网络请求：串行 ≥1500ms，有界并发（≥2）应 <1200ms
+#[tokio::test]
+async fn test_checks_run_in_parallel() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    let port = spawn_html_server(500, LIST_HTML).await;
+    let mut sources = Vec::new();
+    for index in 0..3 {
+        let source = discovery_source(
+            &format!("https://source{index}.example.com"),
+            Some(format!("分类::http://127.0.0.1:{port}/list")),
+        );
+        seed_source(&state, source.clone()).await;
+        sources.push(source);
+    }
+    let app = create_router(Arc::clone(&state));
+
+    let started = std::time::Instant::now();
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&sources, ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+
+    for index in 0..3 {
+        let (final_state, _) = wait_terminal(
+            app.clone(),
+            &format!("https://source{index}.example.com"),
+            Duration::from_secs(20),
+        )
+        .await;
+        assert_eq!(final_state["status"], "PASSED", "{final_state}");
+    }
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(400),
+        "应真实等待 mock 延迟，实际 {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(1200),
+        "有界并发应显著快于串行（3×500ms），实际 {elapsed:?}"
+    );
+}
+
+/// 多源在途时停止：会话清空、全部源保持 NEEDS_CHECK（取消在途工作线程）
+#[tokio::test]
+async fn test_stop_cancels_parallel_checks() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    let port = spawn_hanging_server().await;
+    {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:checkSourceTimeout", "5000", 0)
+            .unwrap();
+    }
+    let mut sources = Vec::new();
+    for index in 0..3 {
+        let source = discovery_source(
+            &format!("https://source{index}.example.com"),
+            Some(format!("分类::http://127.0.0.1:{port}/list")),
+        );
+        seed_source(&state, source.clone()).await;
+        sources.push(source);
+    }
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&sources, ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let token = body["data"]["sessionToken"].as_str().unwrap().to_string();
+
+    // 等待全部源排队（NEEDS_CHECK）且会话仍占用
+    let mut running = false;
+    for _ in 0..60 {
+        let (_, body) = get_json(app.clone(), "/getBookSourceCheckStates").await;
+        if body["data"]["sessionToken"] == token {
+            let states = body["data"]["states"].as_array().unwrap();
+            if states.iter().all(|s| s["status"] == "NEEDS_CHECK") {
+                running = true;
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(running, "应进入检验中状态");
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/stopBookSourceCheck",
+        &json!({ "sessionToken": token }).to_string(),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let (_, body) = get_json(app, "/getBookSourceCheckStates").await;
+    assert!(body["data"]["sessionToken"].is_null());
+    for index in 0..3 {
+        let state_json = state_of(
+            &body["data"]["states"],
+            &format!("https://source{index}.example.com"),
+        )
+        .unwrap();
+        assert_eq!(
+            state_json["status"], "NEEDS_CHECK",
+            "停止后在途源保持 NEEDS_CHECK: {state_json}"
+        );
+    }
+}
+
+// ─── 批42：源地址 TCP 探测（checkDomain） ──────────────────────────────────
+
+#[tokio::test]
+async fn test_check_domain_unreachable_fails() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    // 取一个已关闭的本地端口（bind 后立刻释放，连接必然拒绝）
+    let port = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap().port()
+    };
+    {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:checkDomain", "true", 0)
+            .unwrap();
+    }
+    let source = BookSource {
+        book_source_url: format!("http://127.0.0.1:{port}"),
+        book_source_name: "不可达源".to_string(),
+        ..BookSource::default()
+    };
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) = wait_terminal(
+        app,
+        &format!("http://127.0.0.1:{port}"),
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(final_state["status"], "FAILED", "{final_state}");
+    assert_eq!(
+        final_state["detail"],
+        "域名失效 | 校验失败:源地址不可访问 | // Error: 源地址不可访问"
+    );
+}
+
+#[tokio::test]
+async fn test_check_domain_reachable_passes() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    // 本地监听端口 = 可达端点
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            drop(stream);
+        }
+    });
+    {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:checkDomain", "true", 0)
+            .unwrap();
+    }
+    let source = BookSource {
+        book_source_url: format!("http://127.0.0.1:{port}"),
+        book_source_name: "可达源".to_string(),
+        ..BookSource::default()
+    };
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) = wait_terminal(
+        app,
+        &format!("http://127.0.0.1:{port}"),
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(final_state["status"], "PASSED", "{final_state}");
 }
 
 // ─── 令牌头路径（required=true 且令牌正确） ─────────────────────────────────
