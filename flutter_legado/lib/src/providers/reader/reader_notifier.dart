@@ -267,6 +267,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
       _paginator.clear();
       // 全局页数随清空归零（totalPages=0 → globalPageIndex 钳制到 0）
       _syncGlobalPageInfo();
+      // [P1-1/P2-2 | 批9a 复审] 换书重置预取状态：清去重表/失败计数
+      //（新书同索引章不被旧书记录静默跳过）、代际自增（旧书排队任务
+      // 出队时丢弃）。Notifier 全局单例，重开书（isBookChange=true）同样
+      // 走此分支完成会话级重置。
+      _resetPreDownloadState();
     }
     await _beginReadRecordSession(book);
 
@@ -1031,16 +1036,57 @@ class ReaderNotifier extends Notifier<ReaderState> {
 
   // ===== [批9a 项8] 预下载（轻量预取）=====
 
+  /// 预取代际 token（P2-2）：换书/重开书时自增，被取代的预取任务
+  /// 出队前检查（未开始的不再发起）；在途 HTTP 由异常路径静默，
+  /// 且预取只调 api 落盘、不写 state，迟到结果天然无副作用。
+  int _preDownloadGen = 0;
+
   /// 预取批次号（每次触发递增，用于记录表收敛）
   int _preDownloadSeq = 0;
 
-  /// 已预取章节记录（章索引 → 批次号）：同一阅读会话内同章只预取一次
-  ///（Rust 侧缓存命中零开销，重复调用纯浪费；重开书/重进阅读器
-  /// Notifier 重建时自然重置）
+  /// 已成功预取章节记录（章索引 → 入队批次号，P2-1 修正）：**仅在预取
+  /// 成功后写入**（对齐原版 CacheBook.kt:266 downloadedChapters.add 在
+  /// onSuccess 时机），同会话同章只抓一次；失败章不入表，由失败计数
+  /// 门控重试。换书时清空（P1-1：Notifier 全局单例，残留表会让新书
+  /// 同索引章被静默跳过——openBook isBookChange 分支调
+  /// [_resetPreDownloadState]）。
   final Map<int, int> _preDownloadedBatch = {};
 
+  /// 已入队/在途章节（P2-1）：防同章重复排队；出队完成后移除
+  ///（成功 → 转入成功表，失败 → 仅留失败计数）。
+  final Set<int> _preDownloadQueued = {};
+
+  /// 预取失败计数（章索引 → 连续失败次数，P2-1）：对齐原版
+  /// CacheBook.kt:290 失败计数 / ReadBook.kt:1889 `>= 3 continue` 的
+  /// 「同章失败 3 次后本会话不再重试」语义；成功即移除（成功章仍去重）。
+  final Map<int, int> _preDownloadFailCount = {};
+
+  /// 单章预取连续失败上限（对齐原版 downloadFailChapters >= 3 门）
+  static const _preDownloadMaxFail = 3;
+
+  /// 是否有预取泵在跑（P2-2 串行队列门）
+  bool _preDownloadPumping = false;
+
+  /// 待预取队列（P2-2：串行泵逐章出队，避免连点翻章时整窗并发轰炸；
+  /// 原版 preDownloadSemaphore = Semaphore(2) 的串行等价）
+  final List<({int gen, String bookUrl, int index})> _preDownloadQueue = [];
+
+  /// 换书/重开书时重置预取状态（P1-1/P2-2，openBook isBookChange 分支调用）
+  ///
+  /// - 清空成功表/在途集/失败计数：新书章节索引与旧书重叠时不被静默跳过；
+  /// - 代际自增：旧书排队中/尚未出队的任务出队时直接丢弃；
+  /// - 在途 HTTP 结果只进 Rust 落盘链路、不回写任何 state，无需取消。
+  void _resetPreDownloadState() {
+    _preDownloadGen++;
+    _preDownloadSeq = 0;
+    _preDownloadedBatch.clear();
+    _preDownloadQueued.clear();
+    _preDownloadFailCount.clear();
+    _preDownloadQueue.clear();
+  }
+
   /// 翻章成功后按 `preDownloadNum` 预取后续 N 章正文（参考版
-  /// `ReadBook.kt:1929 preDownload` 语义的轻量对齐）
+  /// `ReadBook.kt:1870 preDownload` 语义的轻量对齐）
   ///
   /// - 窗口 `[index+1, min(index+N, total-1)]`（参考版向后预取窗口；
   ///   参考版另有独立 preDownloadNumPrev 向前窗口，我方偏好仅一枚，
@@ -1048,12 +1094,16 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// - 本地书不预取（参考版 `book?.isLocal == true` 直接 return；本地
   ///   章节是文件随机读取，无「下载」语义）；
   /// - 0 = 关闭（参考版 `forward <= 0 && backward <= 0` return）；
-  /// - fire-and-forget：失败静默（catchError 吞掉，Rust 链路写库失败也
-  ///   仅告警不传播）；命中既有缓存时 Rust 直接返回，零网络开销；
-  /// - 不阻塞当前章加载（unawaited，在 await 链外）；
-  /// - 不重复：同章在更新批次内已发起过则跳过（批次号随翻章递增，
-  ///   防同章反复网络抓取；重开书/重进阅读器自然重置）。
+  /// - 串行泵（P2-2）：窗口章逐章入队出队，同刻至多 1 个在途请求，
+  ///   对齐原版 preDownloadSemaphore(2) 的限流意图；
+  /// - 失败重试（P2-1）：单章连续失败 < 3 次时下次翻章窗口仍会重试，
+  ///   达 3 次后本会话跳过（原版 downloadFailChapters 语义）；成功章
+  ///   移出失败表并保持去重（同章同会话只抓一次）；
+  /// - 失败静默（异常路径吞掉，Rust 链路写库失败也仅告警不传播）；
+  /// - 不阻塞当前章加载（unawaited，在 await 链外）。
   void _preDownloadNextChapters(Book book, int index) {
+    // P3-4：本地书判断前置（读偏好/入队前直接短路，零开销）
+    if (BookType.isLocalBook(book)) return;
     // 开销考虑：进页读一次偏好而非每章读；失败按关闭处理（安全侧）
     unawaited(() async {
       int n;
@@ -1064,27 +1114,69 @@ class ReaderNotifier extends Notifier<ReaderState> {
         return;
       }
       if (n <= 0) return; // 0 = 关闭（对齐参考版语义）
+      final gen = _preDownloadGen;
       final chapters = state.chapters;
       final total = chapters.length;
       if (total == 0) return;
       final batch = ++_preDownloadSeq;
       final maxIndex = (index + n < total - 1) ? index + n : total - 1;
-      final api = ref.read(bookApiProvider);
-      if (BookType.isLocalBook(book)) return; // 本地书不预取
       for (var i = index + 1; i <= maxIndex; i++) {
-        if (_preDownloadedBatch.containsKey(i)) {
-          continue; // 同章已由此前批次预取过（Rust 缓存幂等，无需重抓）
+        if (gen != _preDownloadGen) return; // 换书/重开书后旧窗口作废
+        if (_preDownloadedBatch.containsKey(i) ||
+            _preDownloadQueued.contains(i)) {
+          continue; // 成功章去重 / 在途或排队章不重复排队
         }
-        _preDownloadedBatch[i] = batch;
-        // 静默失败：预取不影响阅读（Rust 内部写库失败也仅告警）
-        unawaited(
-          api.getChapterContentFull(book.bookUrl, i).catchError((_) => ''),
-        );
+        if ((_preDownloadFailCount[i] ?? 0) >= _preDownloadMaxFail) {
+          continue; // P2-1：连续失败 3 次的章节本会话不再重试
+        }
+        _preDownloadQueued.add(i);
+        _preDownloadQueue.add((gen: gen, bookUrl: book.bookUrl, index: i));
       }
       // 收敛记录表：仅保留近期批次章索引，防长时间阅读无限增长
       if (_preDownloadedBatch.length > maxIndex - index + 64) {
         _preDownloadedBatch
             .removeWhere((chapter, b) => b < batch - 8);
+      }
+      _pumpPreDownloadQueue();
+    }());
+  }
+
+  /// 串行预取泵（P2-2）：逐章出队发起，出队前复查代际与失败门；
+  /// 成功后写入成功表（P2-1：对齐原版 downloadedChapters 在 onSuccess
+  /// 时机加入，CacheBook.kt:266），失败则计数供下次窗口重试。
+  void _pumpPreDownloadQueue() {
+    if (_preDownloadPumping) return;
+    _preDownloadPumping = true;
+    unawaited(() async {
+      try {
+        while (_preDownloadQueue.isNotEmpty) {
+          final task = _preDownloadQueue.removeAt(0);
+          _preDownloadQueued.remove(task.index);
+          // 代际过期（换书/重开书）或失败达上限 → 丢弃不发
+          if (task.gen != _preDownloadGen) continue;
+          if ((_preDownloadFailCount[task.index] ?? 0) >=
+              _preDownloadMaxFail) {
+            continue;
+          }
+          try {
+            await ref.read(bookApiProvider).getChapterContentFull(
+                  task.bookUrl,
+                  task.index,
+                );
+            // 成功：入成功表（同会话去重）+ 清失败计数
+            //（换书清表后旧键自然消失，不判代际也无害）
+            _preDownloadedBatch[task.index] = _preDownloadSeq;
+            _preDownloadFailCount.remove(task.index);
+          } catch (_) {
+            // 静默失败；仅在仍属当前会话时计数（旧书任务不污染新书表）
+            if (task.gen == _preDownloadGen) {
+              _preDownloadFailCount[task.index] =
+                  (_preDownloadFailCount[task.index] ?? 0) + 1;
+            }
+          }
+        }
+      } finally {
+        _preDownloadPumping = false;
       }
     }());
   }
