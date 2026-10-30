@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
+import '../../constants/pref_keys.dart';
 import '../../models/models.dart';
 import '../../services/rust_api.dart';
 import '../../services/settings_service.dart';
@@ -1017,12 +1018,75 @@ class ReaderNotifier extends Notifier<ReaderState> {
       final content = await api.getChapterContentFull(book.bookUrl, index);
       if (seq != _loadSeq) return false; // 已被更新的加载取代，丢弃旧结果
       state = state.copyWith(chapterContent: content, error: null);
+      // [批9a 项8] 翻章成功钩子：按 preDownloadNum 向前轻量预取
+      //（对齐参考版 ReadBook.preDownload 的触发时机与窗口语义）
+      _preDownloadNextChapters(book, index);
       return true;
     } catch (e) {
       if (seq != _loadSeq) return false; // 被取代加载的错误同样不得覆盖新状态
       state = state.copyWith(error: _mapError(e), chapterContent: '');
       return true;
     }
+  }
+
+  // ===== [批9a 项8] 预下载（轻量预取）=====
+
+  /// 预取批次号（每次触发递增，用于记录表收敛）
+  int _preDownloadSeq = 0;
+
+  /// 已预取章节记录（章索引 → 批次号）：同一阅读会话内同章只预取一次
+  ///（Rust 侧缓存命中零开销，重复调用纯浪费；重开书/重进阅读器
+  /// Notifier 重建时自然重置）
+  final Map<int, int> _preDownloadedBatch = {};
+
+  /// 翻章成功后按 `preDownloadNum` 预取后续 N 章正文（参考版
+  /// `ReadBook.kt:1929 preDownload` 语义的轻量对齐）
+  ///
+  /// - 窗口 `[index+1, min(index+N, total-1)]`（参考版向后预取窗口；
+  ///   参考版另有独立 preDownloadNumPrev 向前窗口，我方偏好仅一枚，
+  ///   按 UI 副题「预先下载 N 章正文」实现向后窗口）；
+  /// - 本地书不预取（参考版 `book?.isLocal == true` 直接 return；本地
+  ///   章节是文件随机读取，无「下载」语义）；
+  /// - 0 = 关闭（参考版 `forward <= 0 && backward <= 0` return）；
+  /// - fire-and-forget：失败静默（catchError 吞掉，Rust 链路写库失败也
+  ///   仅告警不传播）；命中既有缓存时 Rust 直接返回，零网络开销；
+  /// - 不阻塞当前章加载（unawaited，在 await 链外）；
+  /// - 不重复：同章在更新批次内已发起过则跳过（批次号随翻章递增，
+  ///   防同章反复网络抓取；重开书/重进阅读器自然重置）。
+  void _preDownloadNextChapters(Book book, int index) {
+    // 开销考虑：进页读一次偏好而非每章读；失败按关闭处理（安全侧）
+    unawaited(() async {
+      int n;
+      try {
+        n = await _settings.getIntPref(PrefKeys.preDownloadNum,
+            defaultValue: 10);
+      } catch (_) {
+        return;
+      }
+      if (n <= 0) return; // 0 = 关闭（对齐参考版语义）
+      final chapters = state.chapters;
+      final total = chapters.length;
+      if (total == 0) return;
+      final batch = ++_preDownloadSeq;
+      final maxIndex = (index + n < total - 1) ? index + n : total - 1;
+      final api = ref.read(bookApiProvider);
+      if (BookType.isLocalBook(book)) return; // 本地书不预取
+      for (var i = index + 1; i <= maxIndex; i++) {
+        if (_preDownloadedBatch.containsKey(i)) {
+          continue; // 同章已由此前批次预取过（Rust 缓存幂等，无需重抓）
+        }
+        _preDownloadedBatch[i] = batch;
+        // 静默失败：预取不影响阅读（Rust 内部写库失败也仅告警）
+        unawaited(
+          api.getChapterContentFull(book.bookUrl, i).catchError((_) => ''),
+        );
+      }
+      // 收敛记录表：仅保留近期批次章索引，防长时间阅读无限增长
+      if (_preDownloadedBatch.length > maxIndex - index + 64) {
+        _preDownloadedBatch
+            .removeWhere((chapter, b) => b < batch - 8);
+      }
+    }());
   }
 
   /// 统一错误映射
