@@ -250,6 +250,51 @@ pub fn build_search_url_with_setup(
     )
 }
 
+/// 构建发现页分类 URL（书源检验「发现校验」入口）
+///
+/// 对齐上游 `WebBook.exploreBookAwait` 的 `AnalyzeUrl(source, url, page)`：
+/// - `{{表达式}}` / `<js>` / `@js:` 模板经 QuickJS 求值（携带书源 jsLib +
+///   setup 脚本；分类 URL 脚本常引用 `page`/`baseUrl`/`infoMap`）；
+/// - 纯字面模板直接 `AnalyzeUrl::new`；
+/// - 检验场景没有发现页交互状态，`infoMap` 注入空对象，避免脚本引用未定义
+///   标识符；`page` / `baseUrl` 以变量形式注入（对齐原版 evalJS 绑定）。
+///
+/// 与 [`build_search_url_with_setup`] 的差异：JS 求值失败一律**上抛**，不做
+/// 字面回退——上游检验把求值失败视为「发现规则求值失败」，字面回退会把
+/// 脚本文本当 URL 请求并产出误导性 404。
+pub fn build_explore_url_with_setup(
+    template: &str,
+    page: i32,
+    source_tag: &str,
+    js_lib: Option<&str>,
+    setup_script: Option<String>,
+) -> legado_core::LegadoResult<AnalyzeUrl> {
+    let page_u32 = page.max(1) as u32;
+    let lower = template.to_ascii_lowercase();
+    let has_js = template.contains("{{")
+        || template.contains("<js>")
+        || lower.contains("<js>")
+        || lower.contains("@js:");
+    if !has_js {
+        return Ok(AnalyzeUrl::new(
+            template,
+            None,
+            Some(page_u32),
+            source_tag,
+            None,
+        ));
+    }
+    let mut variables = std::collections::HashMap::new();
+    variables.insert("page".to_string(), page.to_string());
+    variables.insert("baseUrl".to_string(), source_tag.to_string());
+    // 检验无用户选择态：infoMap 空对象，供 `infoMap.xxx` 引用不抛 ReferenceError
+    let setup = Some(format!(
+        "{}\nvar infoMap = {{}};",
+        setup_script.unwrap_or_default()
+    ));
+    search_url_with_js(template, &variables, page, source_tag, js_lib, setup)
+}
+
 /// 极简 URL 编码（仅错误消息占位，避免引入额外依赖）
 pub fn urlencoding_lite(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

@@ -4648,6 +4648,217 @@ pub async fn webbook_search(
     serde_json::to_string(&results).map_err(LegadoError::Serialization)
 }
 
+/// 发现页首个分类书籍（书源检验「发现校验」入口，批42）
+///
+/// 对齐上游 `WebBook.exploreBookAwait` 的可达子集：
+/// 1. 分类 URL 经 [`build_explore_url_with_setup`] 求值（`{{page}}` / `@js:` /
+///    `<js>` 模板携带书源 jsLib + setup，JS 失败上抛）；
+/// 2. 发起请求（复用抓取链的 header / cookie / 限流 / loginCheckJs 语义）；
+/// 3. 列表规则取 `ruleExplore.bookList`，为空回退 `ruleSearch.bookList`
+///    （对齐原版 `BookList.analyzeBookList` 的 `isSearch=false` 分支）；
+/// 4. 返回首个解析出书名的条目；列表为空且未配置 `bookUrlPattern` 时按详情页
+///    解析（对齐原版「列表为空,按详情页解析」）。
+///
+/// 返回 `Ok(None)` 表示请求成功但未解析出任何书籍（上游判「发现失效」）。
+/// JS 书源走 `JsSourceBookOrchestrator::explore`（与 `webbook_search` 同构）。
+///
+/// 单一实现说明：ffi 旧 `explore_api::explore_fetch_books` 仍保留自有实现
+/// （携带 infoMap 交互态与 toast 级错误文案），本函数为 server 检验路径的
+/// 可达子集，后续批次收敛到同一入口（登记项）。
+pub async fn webbook_explore_first_book(
+    deps: FetcherDeps,
+    source_json: &str,
+    category_url: &str,
+    page: i32,
+) -> LegadoResult<Option<WebSearchResult>> {
+    let source: BookSource = serde_json::from_str(source_json)?;
+    // 与搜索链同族的流程作用域键（防上一流程残留变量串读）
+    begin_book_flow(&format!("explore:{}", source.book_source_url));
+
+    if category_url.trim().is_empty() {
+        return Err(LegadoError::Internal("发现分类 URL 为空".into()));
+    }
+
+    if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
+        let source_clone = source.clone();
+        let url = category_url.to_string();
+        let values =
+            tokio::task::spawn_blocking(move || orchestrator.explore(&source_clone, &url, page))
+                .await
+                .map_err(|e| LegadoError::Internal(format!("JS 发现任务异常: {e}")))??;
+        return Ok(convert_js_search_results(values, &source.book_source_url)
+            .into_iter()
+            .next());
+    }
+
+    let fetcher = RealBookSourceFetcher::with_deps(deps);
+    fetcher
+        .explore_first_book(&source, category_url, page)
+        .await
+}
+
+impl RealBookSourceFetcher {
+    /// 规则书源发现页首个分类书籍（[`webbook_explore_first_book`] 的规则路径）
+    pub async fn explore_first_book(
+        &self,
+        source: &BookSource,
+        category_url: &str,
+        page: i32,
+    ) -> LegadoResult<Option<WebSearchResult>> {
+        self.deps.rate_limiter.acquire(source).await;
+
+        let analyze_url = crate::js_adapter::build_explore_url_with_setup(
+            category_url,
+            page,
+            &source.book_source_url,
+            source.js_lib.as_deref(),
+            self.deps.setup_script_for(source),
+        )
+        .map_err(|e| LegadoError::Internal(format!("发现页地址求值失败: {e}")))?;
+
+        // 登录头仅在目标与书源同站时附加（对齐原版 `isLoginHeaderSite`）
+        let headers = self.parse_source_header_set(source).for_request(
+            &source.book_source_url,
+            analyze_url.url(),
+            None,
+        );
+        let fetched = self.fetch_page(&analyze_url, headers.as_ref()).await?;
+        // loginCheckJs：未登录上抛，交由调用方按「发现请求失败」处理
+        let login = Self::execute_login_check(source, &fetched.body, &fetched.final_url, 200)?;
+        let body = login.body;
+        let base_url = login.url;
+
+        // 列表规则：explore.bookList 为空回退 search.bookList（原版 BookList）
+        let (list_rule, is_explore_rule) = match source
+            .rule_explore
+            .as_ref()
+            .and_then(|r| r.book_list.as_deref())
+            .filter(|rule| !rule.trim().is_empty())
+        {
+            Some(rule) => (rule.to_string(), true),
+            None => (
+                source
+                    .rule_search
+                    .as_ref()
+                    .and_then(|r| r.book_list.as_deref())
+                    .unwrap_or("")
+                    .to_string(),
+                false,
+            ),
+        };
+        // `-` 反转 / `+` 剥离前缀（对齐原版 BookList.kt:90-96）；检验只取首条，
+        // `-` 的反转对首条有影响，故按完整语义处理
+        let mut reverse = false;
+        let mut list_rule = list_rule;
+        if let Some(stripped) = list_rule.strip_prefix('-') {
+            reverse = true;
+            list_rule = stripped.to_string();
+        } else if let Some(stripped) = list_rule.strip_prefix('+') {
+            list_rule = stripped.to_string();
+        }
+
+        let js_lib_sanitized = source.js_lib.as_deref().map(sanitize_js_lib_for_quickjs);
+        let body_src_json = serde_json::to_string(&body).unwrap_or_default();
+        let analyzer = construct_analyzer_with_source_context(
+            body.clone(),
+            base_url.clone(),
+            &source.book_source_url,
+            js_lib_sanitized.as_deref(),
+            self.deps.setup_script_for(source),
+        )
+        .with_js_binding("src", &body_src_json);
+
+        let mut elements = if list_rule.trim().is_empty() {
+            vec![analyzer.content().to_string()]
+        } else {
+            book_list_elements_or_default(analyzer.get_elements(&list_rule))?
+        };
+        if reverse {
+            elements.reverse();
+        }
+
+        // 列表为空且未配置 bookUrlPattern → 按详情页解析（原版 BookList 回退）
+        if elements.is_empty() {
+            let has_pattern = source
+                .book_url_pattern
+                .as_deref()
+                .is_some_and(|p| !p.trim().is_empty());
+            if has_pattern {
+                return Ok(None);
+            }
+            let info =
+                self.parse_book_info_from_body(source, body, &base_url, &base_url, true, "", "")?;
+            return Ok(if info.name.is_empty() {
+                None
+            } else {
+                Some(info_to_search_result(info, &source.book_source_url))
+            });
+        }
+
+        let (name_rule, book_url_rule, author_rule, cover_url_rule) = if is_explore_rule {
+            let rule = source.rule_explore.as_ref();
+            (
+                rule.and_then(|r| r.name.as_deref()).unwrap_or(""),
+                rule.and_then(|r| r.book_url.as_deref()).unwrap_or(""),
+                rule.and_then(|r| r.author.as_deref()).unwrap_or(""),
+                rule.and_then(|r| r.cover_url.as_deref()).unwrap_or(""),
+            )
+        } else {
+            let rule = source.rule_search.as_ref();
+            (
+                rule.and_then(|r| r.name.as_deref()).unwrap_or(""),
+                rule.and_then(|r| r.book_url.as_deref()).unwrap_or(""),
+                rule.and_then(|r| r.author.as_deref()).unwrap_or(""),
+                rule.and_then(|r| r.cover_url.as_deref()).unwrap_or(""),
+            )
+        };
+
+        for element in elements {
+            let mut elem_analyzer = construct_analyzer_with_source_context(
+                element.clone(),
+                base_url.clone(),
+                &source.book_source_url,
+                js_lib_sanitized.as_deref(),
+                self.deps.setup_script_for(source),
+            );
+            elem_analyzer.set_element_content(element.clone());
+
+            let name = eval_rule_string(&elem_analyzer, name_rule).unwrap_or_default();
+            if name.is_empty() {
+                continue;
+            }
+            let author = eval_rule_string(&elem_analyzer, author_rule).unwrap_or_default();
+            let raw_book_url = eval_rule_string(&elem_analyzer, book_url_rule).unwrap_or_default();
+            let book_url = if raw_book_url.is_empty() {
+                base_url.clone()
+            } else {
+                AnalyzeUrl::get_absolute_url(&base_url, &raw_book_url)
+            };
+            let cover_url = {
+                let value = eval_rule_string(&elem_analyzer, cover_url_rule).unwrap_or_default();
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(AnalyzeUrl::get_absolute_url(&base_url, &value))
+                }
+            };
+            return Ok(Some(WebSearchResult {
+                name,
+                author,
+                book_url,
+                cover_url,
+                intro: None,
+                latest_chapter: None,
+                source_url: source.book_source_url.clone(),
+                kind: None,
+                word_count: None,
+                book_type: book_type_of_source(source.book_source_type),
+            }));
+        }
+        Ok(None)
+    }
+}
+
 /// webbook_info 核心（P2-12 变量链，2026-09-18；生产入口 [`webbook_info`]
 /// 构建真实 fetcher 后委托本函数，单测可注入脚本化 fetcher）
 ///
