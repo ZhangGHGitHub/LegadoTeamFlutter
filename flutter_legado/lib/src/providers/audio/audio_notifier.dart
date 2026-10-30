@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../constants/pref_keys.dart';
 import '../../models/book.dart';
 import '../../services/audio_service.dart';
 import '../../services/book_api.dart';
@@ -322,6 +324,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (bookName.isNotEmpty) state = state.copyWith(bookName: bookName);
     if (state.isMediaSessionReady) return;
 
+    // 批9a 项6：会话入口读取「忽略音频焦点」偏好（流模式听书与 TTS 朗读
+    // 两条路径都经此初始化，一处读取两路生效）
+    await _loadIgnoreAudioFocus();
     await _audioService.init();
 
     _mediaButtonSub = _audioService.mediaButtonStream.listen((event) {
@@ -340,6 +345,21 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     });
 
     _audioFocusSub = _audioService.audioFocusStream.listen((event) {
+      // 批9a 项6：ignoreAudioFocus 开启时忽略焦点丢失事件（对齐原版
+      // AudioPlayService.kt:838 / BaseReadAloudService.kt:706「忽略焦点丢失」
+      // 语义——允许与其他应用同时播放音频，来电/他应用抢占不再暂停）；
+      // gain 恢复事件无副作用不分支。
+      if (_ignoreAudioFocus) {
+        switch (event) {
+          case AudioFocusEvent.gain:
+            break;
+          case AudioFocusEvent.loss:
+          case AudioFocusEvent.lossTransient:
+          case AudioFocusEvent.lossTransientCanDuck:
+            break;
+        }
+        return;
+      }
       switch (event) {
         case AudioFocusEvent.gain:
           if (state.state == PlayerState.paused) {
@@ -1077,9 +1097,31 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   Future<void> _syncMediaSession() async {
     if (!state.isMediaSessionReady) return;
-    await _audioService.requestAudioFocus();
+    // 批9a 项6：ignoreAudioFocus 开启时跳过焦点请求（对齐原版
+    // BaseReadAloudService.kt:582 不请求焦点语义；允许与其他应用同时出声）
+    if (!_ignoreAudioFocus) {
+      await _audioService.requestAudioFocus();
+    }
     await _pushMediaSessionMetadata();
     await _audioService.notifyPlaying();
+  }
+
+  /// 忽略音频焦点偏好镜像（批9a 项6）
+  ///
+  /// 朗读/听书会话入口（initMediaSession）读取一次并缓存：会话中途改
+  /// 偏好下次开朗读生效（与原版 AppConfig 读取时机一致——服务创建时读）。
+  /// 默认 false（请求焦点、被抢占即暂停）。
+  bool _ignoreAudioFocus = false;
+
+  /// 读取 ignoreAudioFocus 偏好（失败保持默认 false）
+  Future<void> _loadIgnoreAudioFocus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _ignoreAudioFocus =
+          prefs.getBool(PrefKeys.ignoreAudioFocus) ?? false;
+    } catch (_) {
+      // prefs 读取失败保持默认：请求焦点（安全侧）
+    }
   }
 
   /// 组装并推送媒体元数据（通知标题/锁屏副标题）

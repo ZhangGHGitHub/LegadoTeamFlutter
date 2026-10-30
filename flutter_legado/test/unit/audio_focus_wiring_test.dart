@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
@@ -33,6 +34,11 @@ void main() {
   });
 
   setUp(() {
+    // 批9a 项6：initMediaSession 入口新增 ignoreAudioFocus 偏好读取
+    //（audio_notifier._loadIgnoreAudioFocus），未 mock 的 prefs 平台通道在
+    // testWidgets FakeAsync 区内永不应答导致 await 挂死，故与项目其他
+    // 音频测试同口径补 mock（测试读默认 false，既有焦点语义不受影响）。
+    SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
     mockAudio = MockAudioService();
     fakePlayer = FakeStreamAudioPlayer();
