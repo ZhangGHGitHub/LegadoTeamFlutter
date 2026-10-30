@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -114,6 +115,45 @@ class AppUpdateService {
       await prefs.remove(PrefKeys.ignoreUpdateVersion);
     } else {
       await prefs.setString(PrefKeys.ignoreUpdateVersion, versionName);
+    }
+  }
+
+  /// 启动后自动检查更新（批9a 项5，对齐原版 MainActivity.upVersion）
+  ///
+  /// 语义（原版 `MainActivity.kt:308-320`）：
+  /// - 「每日最多一次」：`lastCheckUpdate + 24h` 之内直接跳过；时间戳在
+  ///   发起检查**之前**写入（与原版一致：失败也不在当日重复打扰）；
+  /// - 有更新且未忽略 → 返回 [AppUpdateInfo] 供调用方弹 `UpdateDialog`；
+  /// - 已最新 / 被忽略 / 网络失败 → 静默返回 null（原版 check 失败也无感）。
+  ///
+  /// 时间戳键 [PrefKeys.lastCheckUpdate] 为设备级（LocalConfig 语义），
+  /// 已列入 `RestoreIgnorePrefs.alwaysIgnoreKeys` 不随备份往返。
+  ///
+  /// 不实现 `updateToVariant` 通道语义（待裁决）：当前发布为单一 official
+  /// 变种，`check()` 默认 variant 即 official，多变种发布后再按参考版
+  /// AppUpdateGitHub.kt:32-37 映射补齐。
+  /// [debugSkip] 仅测试注入：生产恒为 [kDebugMode]（测试内传 false 以覆盖
+  /// 时间戳逻辑；DEBUG 下方法直接返回，时间戳不写入）
+  Future<AppUpdateInfo?> checkDailyOnStartup({bool? debugSkip}) async {
+    // DEBUG / Mock（纯 UI 轨）构建跳过：调试期频繁重启不应触发每日检查
+    if (debugSkip ?? kDebugMode) return null;
+    final prefs = await SharedPreferences.getInstance();
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final last = prefs.getInt(PrefKeys.lastCheckUpdate) ?? 0;
+    if (last > 0 && nowMs - last < const Duration(hours: 24).inMilliseconds) {
+      return null;
+    }
+    // 时间戳先行（对齐原版：check 发起即记，失败不当日重试）
+    await prefs.setInt(PrefKeys.lastCheckUpdate, nowMs);
+    try {
+      final info = await check();
+      if (info == null) return null;
+      if (await isIgnored(info.tagName)) return null;
+      return info;
+    } catch (e) {
+      // 失败静默：自动检查不打扰用户（手动检查在关于页仍可见错误）
+      debugPrint('[AppUpdate] 启动自动检查更新失败（静默）：$e');
+      return null;
     }
   }
 

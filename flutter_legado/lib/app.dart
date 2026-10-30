@@ -16,9 +16,12 @@ import 'src/routes.dart';
 import 'src/screens/video_screen.dart';
 import 'src/services/auto_task_scheduler.dart';
 import 'src/services/auto_backup_scheduler.dart';
+import 'src/services/app_update_service.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
+import 'src/services/settings_service.dart';
 import 'src/services/video_float_window.dart';
+import 'src/constants/pref_keys.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/theme_engine_parameterized.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -27,6 +30,7 @@ import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/system_bar_binder.dart';
 import 'src/widgets/crash_log_dialog.dart';
+import 'src/widgets/update_dialog.dart';
 import 'src/widgets/verification_code_listener.dart';
 import 'src/widgets/webview_bridge_listener.dart';
 
@@ -255,6 +259,33 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       ..openFullscreen = _openVideoFromFloatWindow
       ..onNotice = _showFloatWindowNotice;
     VideoFloatWindowBridge.instance.attach();
+    // [批9a 项5] 自动更新：启动后延迟检查（每日最多一次，语义对齐原版
+    // MainActivity.upVersion 的 lastCheckUpdate+24h 门）。偏好关/Mock/DEBUG
+    // 构建直接跳过；失败静默不弹任何提示；有更新且未忽略才弹 UpdateDialog。
+    // 不实现 updateToVariant 通道（待裁决，见 AppUpdateService.checkDailyOnStartup）。
+    unawaited(_maybeAutoCheckUpdate());
+  }
+
+  /// 启动自动检查更新（批9a 项5）
+  ///
+  /// 延迟 5s（首帧 + 闪屏退出前不抢占启动 IO）；仅在偏好开启时执行。
+  /// 弹窗经全局 Navigator context（与崩溃弹窗同源，见 showCrashLogDialog）。
+  Future<void> _maybeAutoCheckUpdate() async {
+    try {
+      final enabled = await SettingsService()
+          .getBoolPref(PrefKeys.autoUpdateVariant, defaultValue: true);
+      if (!enabled) return;
+      await Future<void>.delayed(const Duration(seconds: 5));
+      if (!mounted) return;
+      final info = await AppUpdateService().checkDailyOnStartup();
+      if (info == null || !mounted) return;
+      final navContext = PlatformBridgeService.navigatorKey.currentContext;
+      if (navContext == null || !navContext.mounted) return;
+      final service = AppUpdateService();
+      await showAppUpdateDialog(navContext, info: info, service: service);
+    } catch (_) {
+      // 自动检查链路任何异常静默：不阻塞启动、不打扰用户
+    }
   }
 
   /// [V-B3] 悬浮窗「全屏」/通知点击回传：导航到视频页从交回位置续播

@@ -336,6 +336,12 @@ class PrefKeys {
   /// 忽略的更新版本号（对齐 LocalConfig.ignoreUpdateVersion）
   static const ignoreUpdateVersion = 'ignoreUpdateVersion';
 
+  /// 上次自动检查更新时间戳（毫秒，对齐原版 LocalConfig.lastCheckUpdate；
+  /// 批9a 项5 自动更新「每日最多一次」判定。设备级键，不随备份往返——
+  /// 见 RestoreIgnorePrefs.alwaysIgnoreKeys，随备份恢复会让每日判定
+  /// 基于旧设备的时间）
+  static const lastCheckUpdate = 'lastCheckUpdate';
+
   // ===== 备份与恢复（pref_config_backup.xml）=====
 
   /// 本地备份仅保留最新备份文件（默认 true）
