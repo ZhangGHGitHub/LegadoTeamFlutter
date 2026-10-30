@@ -205,6 +205,9 @@ extension _SourceEditBuilders on _SourceEditScreenState {
   /// - 字段底部保留细分割线（Material 下划线样式，对齐原版 TextInputLayout
   ///   默认分隔线；聚焦时变主色）
   /// - 默认单行（minLines=1），输入/内容增长时展开到 [field.maxLines]
+  /// - 批9a 项7：代码/JS 类大文本字段（[_codeFieldKeys] 且 maxLines≥2）
+  ///   行数上限改按「源编辑框最大行数」偏好（对齐原版
+  ///   BookSourceEditAdapter.editEntityMaxLine）；短字段保持原定义
   Widget _buildField(_Field field) {
     _fieldLabels[field.key] = field.label;
     final colorScheme = Theme.of(context).colorScheme;
@@ -214,6 +217,15 @@ extension _SourceEditBuilders on _SourceEditScreenState {
     // 标签在上/输入在下的形态，且保证可访问性文本可被 uiautomator 命中，
     // 而非 Material 浮动 labelText——后者在有值时不暴露为独立可访问节点）。
     final label = field.required ? '${field.label} *' : field.label;
+    // 批9a 项7：仅代码/JS 类大文本字段套用偏好（原定义与偏好取较大者，
+    // 保证偏好较小时既有字段可用性不降级）
+    final effectiveMaxLines =
+        field.maxLines >= 2 &&
+                _SourceEditScreenState._codeFieldKeys.contains(field.key)
+            ? (field.maxLines > _sourceEditMaxLine
+                ? field.maxLines
+                : _sourceEditMaxLine)
+            : field.maxLines;
     return KeyedSubtree(
       key: _fieldKeys.putIfAbsent(field.key, GlobalKey.new),
       child: Padding(
@@ -237,7 +249,7 @@ extension _SourceEditBuilders on _SourceEditScreenState {
               controller: _ctrl(field.key),
               focusNode: _focus(field.key),
               minLines: 1,
-              maxLines: field.maxLines,
+              maxLines: effectiveMaxLines,
               decoration: InputDecoration(
                 hintText: field.hint,
                 hintStyle: TextStyle(
