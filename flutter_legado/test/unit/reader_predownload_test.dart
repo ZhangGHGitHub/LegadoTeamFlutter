@@ -339,5 +339,93 @@ void main() {
       verify(() => mockApi.getChapterContentFull(any(), 3)).called(1);
       verify(() => mockApi.getChapterContentFull(any(), 4)).called(1);
     });
+
+    test('P3 在途成功判代际：旧书慢请求放行于换书后，不污染新书成功表',
+        () async {
+      stubOpenBook(chapterCount: 6);
+      SharedPreferences.setMockInitialValues({PrefKeys.preDownloadNum: 2});
+      // A 书章 2 慢请求（可控 Completer）：占住串行泵
+      final slow2 = Completer<String>();
+      when(() => mockApi.getChapterContentFull(any(), any()))
+          .thenAnswer((inv) async {
+        final index = inv.positionalArguments[1] as int;
+        if (index == 2) return slow2.future;
+        return '第$index章';
+      });
+      await readNotifier().openBook(onlineBook);
+      await pumpInit();
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      await readNotifier().nextChapter(); // cur=1 → A 书窗口 [2,3]
+      // 章 2 出队在途（gate 未放行，章 3 排队）
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      // 换 B 书（代际自增、成功表清空）→ 放行 A 书章 2 慢请求
+      stubOpenBook(chapterCount: 6);
+      await readNotifier().openBook(bookB);
+      await pumpInit();
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      slow2.complete('A书第2章迟到结果');
+      await readNotifier().nextChapter(); // cur=1 → B 书窗口 [2,3]
+      await pumpPredownload(rounds: 12);
+
+      // 修复前：旧书章 2 成功结果判代际前写入成功表——但换书已清表，
+      // 真正风险是迟到结果在 B 书窗口入队检查**之后**落表 → B 书章 2
+      // 被误去重跳过；修复后守卫 gen 相等才写表，B 书章 2/3 照常预取
+      verify(() => mockApi.getChapterContentFull('https://book.com/2', 2))
+          .called(1);
+      verify(() => mockApi.getChapterContentFull('https://book.com/2', 3))
+          .called(1);
+      // A 书章 3 在换书前已在队列，代际过期不发起
+      verifyNever(
+          () => mockApi.getChapterContentFull('https://book.com/1', 3));
+    });
+
+    test('P3 在途集 settle 后移除：在途期间同章不重复入队，失败后可重排',
+        () async {
+      stubOpenBook(chapterCount: 6);
+      SharedPreferences.setMockInitialValues({PrefKeys.preDownloadNum: 1});
+      var chapter2Calls = 0;
+      final gate2 = Completer<String>();
+      when(() => mockApi.getChapterContentFull(any(), any()))
+          .thenAnswer((inv) async {
+        final index = inv.positionalArguments[1] as int;
+        if (index == 2) {
+          chapter2Calls++;
+          // 首次调用挂起（可控 settle）；settle 后的再次调用直接成功
+          if (!gate2.isCompleted) return gate2.future;
+          return '第2章';
+        }
+        return '第$index章';
+      });
+      await readNotifier().openBook(onlineBook);
+      await pumpInit();
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      await readNotifier().nextChapter(); // cur=1 → 章 2 在途（gate 挂起）
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      // 在途期间快速 prev/next 往返重建窗口 [2]：章 2 在在途集内，
+      // 不得重复入队（修复前出队即移 → 第二请求同章，调用数涨到 2）
+      await readNotifier().prevChapter(); // cur=0
+      await pumpPredownload();
+      await readNotifier().nextChapter(); // cur=1 → 窗口 [2]
+      await pumpPredownload();
+      expect(chapter2Calls, 1,
+          reason: '在途章 settle 前不得重复发起（在途集对称性）');
+
+      // settle：以错误放行首个在途请求（失败 settle）→ 在途集移除 +
+      // 失败计数=1；再往返一轮，失败 <3 次可重新排队（本次网络恢复成功）
+      gate2.completeError(StateError('网络失败'));
+      await pumpPredownload(rounds: 12);
+      await readNotifier().prevChapter(); // cur=0
+      await pumpPredownload();
+      await readNotifier().nextChapter(); // cur=1 → 章 2 重试
+      await pumpPredownload(rounds: 12);
+      expect(chapter2Calls, 2,
+          reason: 'settle（失败）后在途集移除，<3 次可重新排队');
+      // 重试成功，不抛错
+      expect(readNotifier().state.error, isNull);
+    });
   });
 }

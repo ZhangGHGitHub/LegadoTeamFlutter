@@ -1142,8 +1142,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   /// 串行预取泵（P2-2）：逐章出队发起，出队前复查代际与失败门；
-  /// 成功后写入成功表（P2-1：对齐原版 downloadedChapters 在 onSuccess
-  /// 时机加入，CacheBook.kt:266），失败则计数供下次窗口重试。
+  /// settle（成功/失败）后写入对应记录（P2-1：对齐原版
+  /// downloadedChapters 在 onSuccess 时机加入，CacheBook.kt:266）。
   void _pumpPreDownloadQueue() {
     if (_preDownloadPumping) return;
     _preDownloadPumping = true;
@@ -1151,7 +1151,6 @@ class ReaderNotifier extends Notifier<ReaderState> {
       try {
         while (_preDownloadQueue.isNotEmpty) {
           final task = _preDownloadQueue.removeAt(0);
-          _preDownloadQueued.remove(task.index);
           // 代际过期（换书/重开书）或失败达上限 → 丢弃不发
           if (task.gen != _preDownloadGen) continue;
           if ((_preDownloadFailCount[task.index] ?? 0) >=
@@ -1163,15 +1162,24 @@ class ReaderNotifier extends Notifier<ReaderState> {
                   task.bookUrl,
                   task.index,
                 );
-            // 成功：入成功表（同会话去重）+ 清失败计数
-            //（换书清表后旧键自然消失，不判代际也无害）
-            _preDownloadedBatch[task.index] = _preDownloadSeq;
-            _preDownloadFailCount.remove(task.index);
+            if (task.gen == _preDownloadGen) {
+              // 成功且仍属当前会话：入成功表（同会话去重）+ 清失败计数
+              //（P3 补：判代际——换书瞬间旧书慢请求不污染新书成功表，
+              // 否则新书同索引章会被误去重跳过）
+              _preDownloadedBatch[task.index] = _preDownloadSeq;
+              _preDownloadFailCount.remove(task.index);
+            }
           } catch (_) {
             // 静默失败；仅在仍属当前会话时计数（旧书任务不污染新书表）
             if (task.gen == _preDownloadGen) {
               _preDownloadFailCount[task.index] =
                   (_preDownloadFailCount[task.index] ?? 0) + 1;
+            }
+          } finally {
+            // P3 补：在途集在 settle（成功/失败）后移除——出队即移会让
+            // 在途章被快速 prev/next 往返重复入队（同刻双请求同章）
+            if (task.gen == _preDownloadGen) {
+              _preDownloadQueued.remove(task.index);
             }
           }
         }
