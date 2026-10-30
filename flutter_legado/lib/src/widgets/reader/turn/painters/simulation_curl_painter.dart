@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../../utils/image_paint_utils.dart';
 import '../page_direction.dart';
 import '../simulation_curl_math.dart';
 
@@ -440,10 +441,12 @@ void _rotateAround(Canvas canvas, double radians, Offset pivot) {
 
 void _drawPage(Canvas canvas, ui.Image? image, Size size) {
   if (image == null) return;
+  // P3-2：图片绘制 Paint 走共享镜像（与 cover/slide painter 同口径；
+  // 阴影/遮罩的纯色 Paint 属页面装饰不在此列）
   canvas.drawImageRect(
     image,
     Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
     Offset.zero & size,
-    Paint(),
+    ImagePaintPrefs.imagePaint(),
   );
 }

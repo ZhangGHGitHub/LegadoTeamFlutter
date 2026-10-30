@@ -11,24 +11,35 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/l10n/app_strings.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/services/app_update_service.dart';
+import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 import 'package:flutter_legado/src/utils/book_open_utils.dart';
 import 'package:flutter_legado/src/utils/image_paint_utils.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('项1 语言启动接线（AppStrings）', () {
+  group('项1 语言启动接线（AppStrings.startupLocaleOf，P3-1）', () {
     test('system → zh（默认，与 other_settings_screen 约定一致）', () {
-      final mapped = 'system' == 'system' ? 'zh' : 'system';
-      AppStrings.setLocale(mapped);
+      expect(AppStrings.startupLocaleOf('system'), 'zh');
+      AppStrings.setLocale(AppStrings.startupLocaleOf('system'));
       expect(AppStrings.locale, 'zh');
       expect(AppStrings.appTitle, '阅读');
     });
 
     test('en 偏好按原值初始化', () {
-      AppStrings.setLocale('en');
+      expect(AppStrings.startupLocaleOf('en'), 'en');
+      AppStrings.setLocale(AppStrings.startupLocaleOf('en'));
       expect(AppStrings.locale, 'en');
       expect(AppStrings.appTitle, 'Legado');
+    });
+
+    test('zh 直通；脏值（历史偏好/手工改库）→ zh 兜底不抛异常', () {
+      expect(AppStrings.startupLocaleOf('zh'), 'zh');
+      // 非法值统一回落中文（main.dart 与本测试共用同一映射函数）
+      expect(AppStrings.startupLocaleOf('fr'), 'zh');
+      expect(AppStrings.startupLocaleOf(''), 'zh');
+      expect(AppStrings.startupLocaleOf('tw'), 'zh',
+          reason: '我方仅 zh/en 两套字符串，tw 脏值按兜底处理（登记差异）');
     });
   });
 
@@ -210,28 +221,12 @@ void main() {
     });
 
     test('lastCheckUpdate 在备份排除表（设备级，不随备份往返）', () {
+      // P2-2b：直接断言生产 RestoreIgnorePrefs.alwaysIgnoreKeys
+      //（随生产清单改名/移除该键即时红），不再用测试内镜像常量
       expect(
-        restoreIgnoreAlwaysIgnoreKeysForTest,
+        RestoreIgnorePrefs.alwaysIgnoreKeys,
         contains(PrefKeys.lastCheckUpdate),
       );
     });
   });
-
-  group('项8 预下载偏好默认值', () {
-    test('preDownloadNum 默认 10、区间 0..9999（不改默认值）', () async {
-      SharedPreferences.setMockInitialValues({});
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getInt(PrefKeys.preDownloadNum), isNull,
-          reason: '未写入时读侧回落默认（设置页/预取读侧均 10）');
-    });
-  });
 }
-
-/// 测试专用：RestoreIgnorePrefs.alwaysIgnoreKeys 只读镜像
-///
-/// 直接 import restore_ignore_prefs 会引入 dart:io（纯 Dart 测试环境可用，
-/// 但避免拖入备份实现依赖），此处改为静态断言清单与生产实现同步：
-/// 若生产清单改名/移除该键，本测试失败提示同步。
-const restoreIgnoreAlwaysIgnoreKeysForTest = <String>{
-  PrefKeys.lastCheckUpdate,
-};

@@ -87,7 +87,9 @@ void main() {
     sw = Stopwatch()..start();
     try {
       final locale = await SettingsService().getLocale();
-      AppStrings.setLocale(locale == 'system' ? 'zh' : locale);
+      // P3-1：启动映射抽为 AppStrings.startupLocaleOf（system 与脏值→zh，
+      // en/zh 直通），与单测共用同一口径
+      AppStrings.setLocale(AppStrings.startupLocaleOf(locale));
       await ImagePaintPrefs.refresh();
       ImagePaintPrefs.applyImageCacheLimit();
       // 批9a 项4：漫画浏览开书分流镜像启动初始化

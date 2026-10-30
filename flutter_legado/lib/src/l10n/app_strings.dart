@@ -8,6 +8,25 @@ class AppStrings {
 
   static String get locale => _locale;
 
+  /// 启动 locale 映射（批9a 项1 / P3-1）：把 `app_locale` 偏好值归一到
+  /// AppStrings 支持的 zh/en。
+  ///
+  /// 口径与运行中切换（other_settings_screen 的语言选择）一致：
+  /// - `system` → `zh`（默认中文；原版 AppContextWrapper.getSetLocale 的
+  ///   else 分支跟系统语言，我方仅两套字符串，既有约定取 zh）；
+  /// - 非 system/zh/en 的脏值（历史偏好/手工改库）→ `zh` 兜底，不抛异常。
+  static String startupLocaleOf(String prefValue) {
+    switch (prefValue) {
+      case 'en':
+        return 'en';
+      case 'zh':
+        return 'zh';
+      default:
+        // 'system' 与未知脏值统一回落中文（安全侧）
+        return 'zh';
+    }
+  }
+
   static String _get(String zh, String en) => _locale == 'zh' ? zh : en;
 
   // 通用
