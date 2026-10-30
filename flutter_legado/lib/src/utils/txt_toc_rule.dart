@@ -7,10 +7,27 @@
 // 2. 判断当前书是否已选某条规则（用于弹层勾选态）。
 import 'dart:convert';
 
+import '../models/book.dart' show Book, BookType;
 import '../models/misc.dart' show TxtTocRule;
 
-/// 原版 `TextFile.spaceChars`（U+1F945 / U+1F333 / U+1F3FB）
+/// 原版 `TextFile.spaceChars`（U+1FAC5 / U+1F233 / U+1F3FB）
 const String kTxtTocRuleSeparator = '🫅🈳🏻';
+
+/// 本地 TXT 书判定（[批43b P3-4] 全仓唯一 Dart 口径）
+///
+/// 与 Rust `bookshelf.rs::is_local_txt_book` 严格同构：
+/// `is_local_storage_book(book) && is_txt_path(book.book_url)`。
+/// 扩展名只看 `bookUrl`（Rust `is_txt_path` 的唯一依据）——若 UI 用
+/// `originName` 放宽，会出现「入口可见但 Rust 拒绝」的假入口。
+///
+/// 历史上有四份口径（阅读器菜单 / 目录页 / 规则弹层 / 详情页，分别混用
+/// origin-only、originName、`.txt` 不含 `.text` 等判定），本函数收敛后
+/// 这些调用点统一改为调用本函数。
+bool isLocalTxtBook(Book book) {
+  if (!BookType.isLocalStorageBook(book)) return false;
+  final url = book.bookUrl.toLowerCase();
+  return url.endsWith('.txt') || url.endsWith('.text');
+}
 
 /// 规则 + 分隔符 + replacement 的存储形态（原版 `Book.tocUrl`）
 String txtTocRuleStorageValue(TxtTocRule rule) =>

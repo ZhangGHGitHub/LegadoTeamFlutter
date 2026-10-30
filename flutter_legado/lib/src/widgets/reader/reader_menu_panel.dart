@@ -15,6 +15,7 @@ import '../../providers/theme/theme_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../utils/txt_toc_rule.dart' show isLocalTxtBook;
 import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
 import 'reader_charset_dialog.dart';
@@ -314,14 +315,12 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   static bool _isLocalBook(Book book) =>
       book.origin.trim().isEmpty || BookType.isLocalBook(book);
 
-  /// 本地 TXT 判定（对齐参考版 `Book.isLocalTxt`：
-  /// `isLocal && originName.endsWith(".txt", ignoreCase = true)`）
+  /// 本地 TXT 判定（[批43b P3-4] 统一走 `utils/txt_toc_rule.dart::isLocalTxtBook`）
   ///
-  /// 参考版只认 `originName`；本地导入（`import_local_book`）总会写入
-  /// 文件名，故不再用 bookUrl 兜底。
-  static bool _isLocalTxtBook(Book book) =>
-      _isLocalBook(book) &&
-      book.originName.trim().toLowerCase().endsWith('.txt');
+  /// 与 Rust `is_local_txt_book`（本地存储 + `bookUrl` 扩展名 `.txt/.text`）
+  /// 同构；此前本处只认 `originName.endsWith('.txt')`，会漏 `.text` 且与
+  /// Rust 准入不一致（UI 可见但设置失败）。
+  static bool _isLocalTxtBook(Book book) => isLocalTxtBook(book);
 
   /// 顶栏动作按钮（40dp 紧凑热区，支持长按二级动作）
   ///

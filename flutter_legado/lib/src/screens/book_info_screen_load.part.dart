@@ -302,16 +302,11 @@ extension _BookInfoLoad on _BookInfoScreenState {
   /// 是否在线书籍（非本地、非 WebDAV）——仅在线书才走网络补全链路
   bool _isOnlineBook(Book book) => BookOpenUtils.isOnlineBook(book);
 
-  /// 本地 TXT（对齐原版 Book.isLocalTxt：isLocal && originName 以 .txt 结尾）
-  /// — Cursor UI：拆分长章节菜单仅对本地 txt 可见，此前误用 isLocal 导致 epub 等也显示
-  bool _isLocalTxt(Book book) {
-    if (_isOnlineBook(book)) return false;
-    final name = book.originName.trim();
-    if (name.isNotEmpty) {
-      return name.toLowerCase().endsWith('.txt');
-    }
-    return book.bookUrl.toLowerCase().endsWith('.txt');
-  }
+  /// 本地 TXT（[批43b P3-4] 统一走 `utils/txt_toc_rule.dart::isLocalTxtBook`）
+  ///
+  /// 拆分长章节菜单仅对本地 TXT 可见（此前误用 isLocal 导致 epub 等也显示）；
+  /// 与 Rust `is_local_txt_book` 同构（本地存储 + `.txt/.text`）。
+  bool _isLocalTxt(Book book) => isLocalTxtBook(book);
 
   /// 元数据是否需要联网补全（封面/简介/目录链接任一缺失）
   bool _needCompleteInfo(Book book) =>

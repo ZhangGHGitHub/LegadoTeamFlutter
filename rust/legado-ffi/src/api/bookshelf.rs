@@ -21,18 +21,35 @@ pub fn list_books() -> LegadoResult<Vec<Book>> {
     })
 }
 
-/// [B-2 | P2-8 写侧防守 | 2026-09-18 审查 P1-1] 书源字段防陈旧快照回写合并：
-/// `origin` / `originName` / `tocUrl` / `originBookUrl` 四列语义唯一——只由
-/// 换源事务（source_switch.rs）与 preUpdateJs 钩子（reader.rs）写入，书架侧
-/// **不存在合法的清空/改源场景**（改源走 `switch_book_source` API）。
-/// Dart 侧持有的 Book 是陈旧内存快照（目录页/详情页 `_book` 对象不随换源
-/// 更新），全行回写会把换源结果（origin/tocUrl/originBookUrl=新源）打回旧源，
-/// 形成「origin=旧源 + 目录=新源章节」的不一致态，按旧源取正文必然失败。
+/// [B-2 | P2-8 写侧防守 | 2026-09-18 审查 P1-1 | 批43b] 整书快照写的
+/// **受保护列**合并（陈旧 Dart Book 不得反写真源）：
 ///
-/// 合并规则（书籍已存在时）：库内既有值非空 → 既有值优先（入参忽略）；
-/// 既有值为空 → 用入参补齐（含 [P2-8 P1-1] 的 originBookUrl 入参为空补齐
-/// 场景）。新建路径（无既有行）按入参原样落库。
-/// `variable`/`customTag` 等**不参与**合并——用户可合法清空/修改，保持
+/// 1) **书源字段** `origin` / `originName` / `originBookUrl`：语义唯一——
+///    只由换源事务（source_switch.rs）与 preUpdateJs 钩子（reader.rs）写入，
+///    书架侧**不存在合法的清空/改源场景**（改源走 `switch_book_source` API）。
+///    Dart 侧持有的 Book 是陈旧内存快照（目录页/详情页 `_book` 对象不随换源
+///    更新），全行回写会把换源结果（origin/originBookUrl=新源）打回旧源，
+///    形成「origin=旧源 + 目录=新源章节」的不一致态，按旧源取正文必然失败。
+///    合并规则：库内既有值非空 → 既有值优先（入参忽略）；既有值为空 → 用
+///    入参补齐（含 [P2-8 P1-1] 的 originBookUrl 入参为空补齐场景）。
+///
+/// 2) **本地 TXT 的 `tocUrl`**（[批43b P1-1]）：库内值（含**空串**）一律
+///    优先，整书更新**永不写入**该列——只由 `set_book_toc_rule`（单列写）与
+///    备份/导入写入。批43 起「恢复默认」是合法清空（`setBookTocRule(null)`
+///    把库内值写成空串）；旧规则「库内为空则用入参补齐」会让陈旧快照里的
+///    旧规则在清空后复活，用户看到的「恢复默认」在下一次整书回写即失效。
+///    非本地 TXT 书（在线书目录页地址）保持原有的「既有非空优先、空则补齐」
+///    语义，避免影响换源场景的 tocUrl 自愈。
+///
+/// 3) **目录派生字段** `totalChapterNum` / `latestChapterTitle` /
+///    `latestChapterTime`（[批43b P1-2]）：唯一写入口是目录真源——懒解析
+///    （`reader::get_chapters`）、在线刷新（`refresh_toc`）与规则变更后的
+///    重置（`set_book_toc_rule`）。`setBookTocRule` 返回的 Book 在重解析前
+///    派生字段已被重置为 0/NULL；Dart 若把该快照（或书架/目录页更旧的
+///    快照）整书写回，会把刚解析出的 N 打回 0，且目录缓存命中路径不再修复。
+///    故整书更新一律取库内值（新建路径仍按入参落库）。
+///
+/// `variable` / `customTag` 等**不参与**合并——用户可合法清空/修改，保持
 /// 全行写入语义（入参为准）。
 ///
 /// [批18c 设备复验 | 2026-10-27] origin 的例外：远程书库导入先把文件导入为
@@ -40,7 +57,7 @@ pub fn list_books() -> LegadoResult<Vec<Book>> {
 /// 「存储位置」变化而非换源，若沿用「既有非空即优先」会被打回 `loc_book`，
 /// 导致远程书 origin 丢失。故入参为 WebDAV origin 且库内为本地/WebDAV
 /// origin 时，允许入参覆盖；在线书源（http(s)）仍按 B-2 防回退。
-fn merge_source_fields(repo: &BookRepository<'_>, book: &mut Book) -> LegadoResult<()> {
+fn merge_protected_columns(repo: &BookRepository<'_>, book: &mut Book) -> LegadoResult<()> {
     use legado_core::models::book_type;
 
     let Ok(Some(existing)) = repo.find_by_url(&book.book_url) else {
@@ -50,18 +67,27 @@ fn merge_source_fields(repo: &BookRepository<'_>, book: &mut Book) -> LegadoResu
     let existing_is_storage = existing.origin.trim() == book_type::LOCAL_TAG
         || book_type::is_web_dav_origin(existing.origin.trim());
     let allow_webdav_rewrite = incoming_is_webdav && existing_is_storage;
+    // 先判定再搬移字段（String 字段 move 后不能再借用 existing）
+    let existing_is_local_txt = is_local_txt_book(&existing);
     if !existing.origin.trim().is_empty() && !allow_webdav_rewrite {
         book.origin = existing.origin;
     }
     if !existing.origin_name.trim().is_empty() {
         book.origin_name = existing.origin_name;
     }
-    if !existing.toc_url.trim().is_empty() {
+    if existing_is_local_txt {
+        // [批43b P1-1] 本地 TXT：库内值优先（含空串），整书更新不写该列
+        book.toc_url = existing.toc_url;
+    } else if !existing.toc_url.trim().is_empty() {
         book.toc_url = existing.toc_url;
     }
     if !existing.origin_book_url.trim().is_empty() {
         book.origin_book_url = existing.origin_book_url;
     }
+    // [批43b P1-2] 目录派生字段只认库内真源
+    book.total_chapter_num = existing.total_chapter_num;
+    book.latest_chapter_title = existing.latest_chapter_title;
+    book.latest_chapter_time = existing.latest_chapter_time;
     Ok(())
 }
 
@@ -69,7 +95,7 @@ fn merge_source_fields(repo: &BookRepository<'_>, book: &mut Book) -> LegadoResu
 ///
 /// `repo.update` 是全行 UPDATE（`disableReadRecord` 列参与 SET），整书
 /// 载荷缺该键时 `#[serde(default)]` 会补成 `false`，把库内已置真的开关
-/// 打回假。规则与 [`merge_source_fields`] 不同——这里**只认缺键**：
+/// 打回假。规则与 [`merge_protected_columns`] 不同——这里**只认缺键**：
 /// - 载荷显式携带 `disableReadRecord`（含 `false`）→ 以入参为准（用户
 ///   主动开启/关闭，或备份恢复的完整快照）；
 /// - 载荷缺键或为 `null` → 保留库内既有值（新建路径按 `false` 落库）。
@@ -118,8 +144,8 @@ pub fn add_book(book_json: &str) -> LegadoResult<Book> {
         let repo = BookRepository::new(db.connection());
         // Task#125 P0：用原地 UPDATE 语义的 upsert，避免对已存在的临时书
         // 触发 INSERT OR REPLACE 级联删除其章节目录（转正/重复加入书架时安全）
-        merge_source_fields(&repo, &mut book)?; // [B-2 / P2-8 P1-1] 书源字段防回退
-                                                // [批35b P2-2] 缺键时保留库内书级阅读记录开关（重复加入书架不回退）
+        merge_protected_columns(&repo, &mut book)?; // [B-2 / P2-8 / 批43b] 受保护列防回退
+                                                    // [批35b P2-2] 缺键时保留库内书级阅读记录开关（重复加入书架不回退）
         merge_missing_user_switches(&repo, &mut book, disable_read_record_present)?;
         repo.update(&book)?;
         Ok(book)
@@ -131,8 +157,8 @@ pub fn update_book(book_json: &str) -> LegadoResult<()> {
     let (mut book, disable_read_record_present) = parse_book_json_for_update(book_json)?;
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
-        merge_source_fields(&repo, &mut book)?; // [B-2] 陈旧快照不得撤销换源结果
-                                                // [批35b P2-2] 缺键时保留库内开关：整书全行写不得把 true 覆盖为 false
+        merge_protected_columns(&repo, &mut book)?; // [B-2] 陈旧快照不得撤销换源/规则/派生字段
+                                                    // [批35b P2-2] 缺键时保留库内开关：整书全行写不得把 true 覆盖为 false
         merge_missing_user_switches(&repo, &mut book, disable_read_record_present)?;
         repo.update(&book)
     })
@@ -445,10 +471,20 @@ pub fn set_book_charset(book_url: &str, charset: &str) -> LegadoResult<Book> {
     })
 }
 
-/// 路径是否 TXT 本地书（编码覆盖 / TXT 目录规则仅对 TXT 生效）
+/// 路径是否 TXT（编码覆盖 / TXT 目录规则仅对 TXT 生效）
 pub(crate) fn is_txt_path(book_url: &str) -> bool {
     let lower = book_url.to_lowercase();
     lower.ends_with(".txt") || lower.ends_with(".text")
+}
+
+/// 是否为「本地/WebDAV 存储的 TXT 书」（[批43b P3-4] 单一口径）
+///
+/// `set_book_toc_rule` 的准入、`get_chapters` 对 `books.tocUrl` 的消费、
+/// 以及整书快照的 `tocUrl` 防回写都走本函数，避免「存储判定 / 扩展名判定」
+/// 各写一套导致 UI 可点但 Rust 拒绝（或反之）。Dart 侧
+/// `utils/txt_toc_rule.dart::isLocalTxtBook` 与此同构。
+pub(crate) fn is_local_txt_book(book: &Book) -> bool {
+    is_local_storage_book(book) && is_txt_path(&book.book_url)
 }
 
 /// 原版 `TxtTocRule` 入参（`setBookTocRule` 的 `ruleJson`）
@@ -516,7 +552,8 @@ pub fn set_book_toc_rule(book_url: &str, rule_json: Option<&str>) -> LegadoResul
         let book = repo
             .find_by_url(book_url)?
             .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))?;
-        if !(is_local_storage_book(&book) && is_txt_path(book_url)) {
+        // [批43b P3-4] 与整书防回写 / 解析消费共用同一判定
+        if !is_local_txt_book(&book) {
             return Err(LegadoError::BookParse(
                 "TXT 目录规则仅适用于本地 TXT 书籍".to_string(),
             ));

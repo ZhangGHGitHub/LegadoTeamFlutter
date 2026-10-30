@@ -36,7 +36,7 @@ const CHAPTER_PATTERNS: &[&str] = &[
 ];
 
 /// 原版 `TextFile.spaceChars`：`Book.tocUrl` 中「目录正则」与「JS 替换片段」的
-/// 分隔符（U+1F945 / U+1F333 / U+1F3FB，见 `TextFile.kt` 常量与
+/// 分隔符（U+1FAC5 / U+1F233 / U+1F3FB，见 `TextFile.kt` 常量与
 /// `TxtTocRuleDialog.kt` 的 `tocRule.rule + spaceChars + tocRule.replacement`）。
 ///
 /// 沿用原版格式而非自定义 JSON：Android 备份/跨端数据库中的 `books.tocUrl`
@@ -46,24 +46,31 @@ pub const TOC_RULE_SEPARATOR: &str = "🫅🈳🏻";
 /// 拆分原版格式的 `Book.tocUrl`
 ///
 /// 返回 `(目录正则, JS 替换片段)`：
-/// - 含分隔符：前半为正则、后半为 replacement（可为空串）；
+/// - 含分隔符：前半为正则、后半为 replacement（可为空串，`split_once`
+///   只按**第一个**分隔符切分，replacement 内含分隔符时原样保留）；
 /// - 无分隔符：整串视为正则（兼容手工写入/旧数据）；
 /// - 空白：`(None, "")`，表示走内置默认规则。
+///
+/// [批43b P3-2] **外部 `tocUrl` 保持原样**：原版 `TextFile.analyze` 直接取
+/// `tocUrl.split(spaceChars, limit=2)[0]` 作为正则，不做 trim——正则首尾的
+/// 空白（如 `^\s第.+章`）可能是用户语义的一部分。这里只对「整串空白」
+/// 判默认，正则与 replacement 均按库内原样返回；仅当分隔符左侧**恰好为空**
+/// 时按原版 `rr[0].isEmpty()` 回退默认。写入侧 [`crate::txt`] 的
+/// `build_toc_rule_storage` 仍会规范化新写入的规则（UI 输入口径），两者
+/// 不冲突：外部历史数据只读不改。
 pub fn split_toc_rule(toc_url: &str) -> (Option<String>, String) {
-    let trimmed = toc_url.trim();
-    if trimmed.is_empty() {
+    if toc_url.trim().is_empty() {
         return (None, String::new());
     }
-    match trimmed.split_once(TOC_RULE_SEPARATOR) {
+    match toc_url.split_once(TOC_RULE_SEPARATOR) {
         Some((rule, replacement)) => {
-            let rule = rule.trim();
             if rule.is_empty() {
                 (None, replacement.to_string())
             } else {
                 (Some(rule.to_string()), replacement.to_string())
             }
         }
-        None => (Some(trimmed.to_string()), String::new()),
+        None => (Some(toc_url.to_string()), String::new()),
     }
 }
 
@@ -304,6 +311,11 @@ fn parse_with_builtin_rule(text: &str) -> LegadoResult<Vec<ChapterInfo>> {
 /// `fancy-regex`（支持原版默认规则大量使用的 lookbehind）按同样语义匹配，
 /// 再把命中位置映射回所属行：章节起点取行首、标题取命中片段（trim）。
 ///
+/// [批43b P3-3] 空标题口径对齐原版 `replacement(...).takeIf { it.isNotEmpty() }`：
+/// 命中片段 trim 后为空（空匹配 / 纯空白）→ **跳过该命中**，不回退整行文本；
+/// 零宽字符（U+200B 等）不属于 Unicode White_Space，trim 不会移除，标题按原版
+/// 原样保留（这些字符常用于排版对齐，原版同样保留）。
+///
 /// 返回 `None` 表示规则不可编译（调用方回退默认规则）；返回空 `Vec`
 /// 表示规则可编译但未命中任何标题。
 fn parse_with_custom_rule(text: &str, rule: &str) -> Option<Vec<ChapterInfo>> {
@@ -325,19 +337,17 @@ fn parse_with_custom_rule(text: &str, rule: &str) -> Option<Vec<ChapterInfo>> {
         if last_line.is_some_and(|prev| line_idx <= prev) {
             continue;
         }
+        let matched_title = matched.as_str().trim();
+        // [批43b P3-3] 空/纯空白命中按原版 takeIf{isNotEmpty()} 跳过；
+        // 只有真正入章后才占用该行（否则后续命中会被 last_line 误抑制）
+        if matched_title.is_empty() {
+            continue;
+        }
         last_line = Some(line_idx);
+        let title = matched_title;
 
         let span = line_spans[line_idx];
         let line = &text[span.start..span.end];
-        let matched_title = matched.as_str().trim();
-        let title = if matched_title.is_empty() {
-            line.trim()
-        } else {
-            matched_title
-        };
-        if title.is_empty() {
-            continue;
-        }
         let idx = chapters.len() as i32;
         chapters.push(ChapterInfo {
             url: format!("txt://chapter/{idx}"),
@@ -621,9 +631,36 @@ mod tests {
         assert_eq!(rule.as_deref(), Some("^第.+章$"));
         assert_eq!(replacement, "");
 
+        // 分隔符左侧为空：原版 rr[0].isEmpty() → 默认规则
+        assert_eq!(
+            split_toc_rule("🫅🈳🏻only-replacement"),
+            (None, "only-replacement".to_string())
+        );
+
         // 空白：默认规则
         assert_eq!(split_toc_rule("   "), (None, String::new()));
         assert_eq!(split_toc_rule(""), (None, String::new()));
+    }
+
+    /// [批43b P3-2] 外部 `tocUrl` 原样消费：正则首尾空白不 trim
+    /// （原版 `tocUrl.split(spaceChars)[0]` 直接当正则），只按第一个
+    /// 分隔符切分，replacement 内含分隔符时原样保留。
+    #[test]
+    fn test_split_toc_rule_preserves_external_format() {
+        let (rule, replacement) = split_toc_rule(r"\s^第.+章$\s🫅🈳🏻x🫅🈳🏻y");
+        assert_eq!(
+            rule.as_deref(),
+            Some(r"\s^第.+章$\s"),
+            "外部 tocUrl 的正则首尾空白必须原样保留"
+        );
+        assert_eq!(
+            replacement, "x🫅🈳🏻y",
+            "split_once 只按第一个分隔符切分，replacement 内的分隔符原样保留"
+        );
+
+        // 无分隔符时整串（含首尾空白）原样作为正则
+        let (rule, _) = split_toc_rule(" ^第.+章$ ");
+        assert_eq!(rule.as_deref(), Some(" ^第.+章$ "));
     }
 
     /// 显式规则（含 lookbehind）同时覆盖 UTF-8 / GBK：
@@ -710,6 +747,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
+    /// [批43b P3-3] 零宽/空标题口径：空匹配与纯空白命中跳过（对齐原版
+    /// `takeIf { it.isNotEmpty() }`），零宽字符（U+200B）按原版保留。
+    #[test]
+    fn test_custom_rule_skips_empty_titles_and_keeps_zero_width() {
+        // 1) 规则可匹配空串：不得产生空标题章节，回退内置默认
+        let text = "第一章 起始\n正文。\n第二章 继续\n正文二。\n";
+        let path = write_temp_txt("empty_match", text.as_bytes());
+        let path_str = path.to_str().unwrap();
+        let empty = TxtParser::get_chapters_with_rule(path_str, None, Some(r"^")).unwrap();
+        assert!(!empty.used_custom_rule, "空匹配不得算作有效自定义规则");
+        assert_eq!(empty.chapters.len(), 2, "{:?}", empty.chapters);
+        assert!(empty.chapters.iter().all(|c| !c.title.is_empty()));
+
+        // 2) 零宽字符标题：trim 不移除 U+200B，按原版原样保留
+        let zw = "\u{200B}标题A\n正文。\n\u{200B}标题B\n正文二。\n";
+        let zw_path = write_temp_txt("zero_width", zw.as_bytes());
+        let zw_outcome = TxtParser::get_chapters_with_rule(
+            zw_path.to_str().unwrap(),
+            None,
+            Some("^\\u{200B}.+$"),
+        )
+        .unwrap();
+        assert!(zw_outcome.used_custom_rule);
+        assert_eq!(zw_outcome.chapters.len(), 2, "{:?}", zw_outcome.chapters);
+        assert_eq!(zw_outcome.chapters[0].title, "\u{200B}标题A");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let _ = std::fs::remove_dir_all(zw_path.parent().unwrap());
+    }
+
     /// CRLF 文件偏移按真实行宽累加：换规则后正文不串行
     #[test]
     fn test_custom_rule_crlf_offsets_are_exact() {
@@ -719,6 +786,10 @@ mod tests {
         let outcome =
             TxtParser::get_chapters_with_rule(path_str, None, Some(r"^第.+章.*$")).unwrap();
         assert_eq!(outcome.chapters.len(), 2);
+        assert!(
+            outcome.used_custom_rule,
+            "CRLF 文件显式规则命中应标记 used_custom_rule"
+        );
 
         let second_start = text.find("第二章").unwrap() as i64;
         assert_eq!(outcome.chapters[1].start, Some(second_start));

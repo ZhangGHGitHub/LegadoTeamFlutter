@@ -15,7 +15,19 @@ import 'package:flutter_legado/src/services/stream_audio_player.dart';
 import 'package:flutter_legado/src/models/models.dart';
 
 /// RustApi 的 mock 实现
-class MockRustApi extends Mock implements RustApi {}
+///
+/// [批43b] `getChaptersWithMeta` 默认委托同名 `getChapters` stub（mocktail
+/// 调用记录不共享，但既有用例均按 `getChapters` stub 数据源）：目录页
+/// `_loadChapters` 已改调元信息版本，未覆写时 mocktail 返回 null → 章节
+/// 恒空，大量 TocScreen 用例假失败。需要断言 `usedCustomRule` 的用例可
+/// 自行覆写本方法。
+class MockRustApi extends Mock implements RustApi {
+  @override
+  Future<ChapterListMeta> getChaptersWithMeta(String bookUrl) async {
+    final chapters = await (this as dynamic).getChapters(bookUrl) as List<BookChapter>;
+    return (chapters: chapters, usedCustomRule: false);
+  }
+}
 
 /// 带 servers 表内存实现的 RustApi Mock（批8）
 ///

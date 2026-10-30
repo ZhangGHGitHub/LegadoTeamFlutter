@@ -208,21 +208,31 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
 
   /// 获取书籍的章节列表
   @override
-  Future<List<BookChapter>> getChapters(String bookUrl) async {
+  Future<List<BookChapter>> getChapters(String bookUrl) async =>
+      (await getChaptersWithMeta(bookUrl)).chapters;
+
+  /// 获取章节列表 + 解析元信息（批43b P2-1）
+  ///
+  /// Rust 侧返回 `ChapterListResponse { total, chapters, used_custom_rule }`，
+  /// 兼容 Map 和 List 两种格式；缺字段（旧 DLL/旧路径）按 false 处理。
+  @override
+  Future<ChapterListMeta> getChaptersWithMeta(String bookUrl) async {
     final json = await bridge.readerGetChapters(bookUrl: bookUrl);
     final decoded = jsonDecode(json);
-    // Rust 侧返回 ChapterListResponse { total, chapters }，兼容 Map 和 List 两种格式
     final List<dynamic> list;
+    var usedCustomRule = false;
     if (decoded is Map<String, dynamic>) {
       list = (decoded['chapters'] as List<dynamic>?) ?? [];
+      usedCustomRule = decoded['used_custom_rule'] == true;
     } else if (decoded is List<dynamic>) {
       list = decoded;
     } else {
       list = [];
     }
-    return list
+    final chapters = list
         .map((e) => BookChapter.fromJson(e as Map<String, dynamic>))
         .toList();
+    return (chapters: chapters, usedCustomRule: usedCustomRule);
   }
 
   /// 获取章节正文内容（本地书籍直接返回正文）

@@ -9,8 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/utils/txt_toc_rule.dart';
-import 'package:flutter_legado/src/widgets/reader/reader_toc_rule_dialog.dart'
-    show isLocalTxtBook;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -93,6 +91,36 @@ void main() {
           originName: 'a.epub',
         )),
         isFalse,
+      );
+    });
+
+    test('与 Rust is_local_txt_book 同构：只认 bookUrl 扩展名', () {
+      // originName 是 .txt 但 bookUrl 不是：Rust `is_txt_path` 会拒绝，
+      // UI 不得展示入口（否则「可见但设置失败」）
+      expect(
+        isLocalTxtBook(base.copyWith(
+          bookUrl: 'books/no-extension',
+          originName: 'a.txt',
+        )),
+        isFalse,
+      );
+      // 本地存储判定：在线 origin + .txt 不适用
+      expect(
+        isLocalTxtBook(base.copyWith(
+          bookUrl: 'books/a.txt',
+          origin: 'https://source.example',
+          originName: 'a.txt',
+        )),
+        isFalse,
+      );
+      // WebDAV 本地存储同样适用
+      expect(
+        isLocalTxtBook(base.copyWith(
+          bookUrl: 'books/a.text',
+          origin: 'webDav::https://dav.example.com/a.text',
+          originName: 'a.text',
+        )),
+        isTrue,
       );
     });
   });

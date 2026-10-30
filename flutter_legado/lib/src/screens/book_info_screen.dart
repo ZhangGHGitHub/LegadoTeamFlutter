@@ -37,6 +37,7 @@ import '../utils/meaningful_text_guard.dart'; // [U4 | 台账 0917] 详情页渲
 // 行移除而不再使用（工具本身保留：book_list_item 仍用，单测保留）
 import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
+import '../utils/txt_toc_rule.dart' show isLocalTxtBook;
 import 'archive_import_dialog.dart'; // [批3 P1-3 余项] webFile 压缩包下载后解压导入
 import '../widgets/book_cover.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4 收尾] 详情下拉 M3 化

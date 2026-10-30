@@ -22,6 +22,7 @@ import '../services/settings_service.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/toc_cache_state.dart';
+import '../utils/txt_toc_rule.dart' show isLocalTxtBook;
 import '../widgets/reader/reader_toc_rule_dialog.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
@@ -131,6 +132,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
   List<BookChapter> _chapters = [];
   bool _chaptersLoading = true;
   String? _chaptersError;
+
+  /// [批43b P2-1] 最近一次目录加载是否真正应用了显式 TXT 目录规则
+  /// （Rust `ChapterListResponse.used_custom_rule`；缓存命中/未解析为 false）
+  bool _chaptersUsedCustomRule = false;
 
   /// [P2-28] 本书已缓存章节 URL 集合（经 BookApi.listCachedChapterUrls，
   /// 契约 §2.43.5；对齐原版 cacheFileNames.contains(chapter.getFileName()) 判定。
@@ -416,7 +421,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
     });
     try {
       final api = ref.read(bookApiProvider);
-      var chapters = await api.getChapters(_book.bookUrl);
+      // [批43b P2-1] 取解析元信息：规则未命中回退默认时 UI 需提示
+      final meta = await api.getChaptersWithMeta(_book.bookUrl);
+      var chapters = meta.chapters;
+      var usedCustomRule = meta.usedCustomRule;
       // [Task #21 | 2026-08-08] 自愈：本地库无目录的在线书籍（含换源后旧章节
       // 已清、或历史遗留未拉取过目录的书），自动经书源规则从网络刷新目录。
       // 与 reader_notifier.openBook 的回退保持一致，使打开目录页时也能触发
@@ -429,6 +437,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
           // 未入库：仅网络取目录展示，不落库（对齐 BookInfoScreen / 原版 !inBookshelf）
           chapters = await _fetchWebChaptersOnline(api);
         }
+        // 在线目录刷新不经过 TXT 规则解析
+        usedCustomRule = false;
       }
       if (!mounted) return;
       // [P2-28] 加载已缓存章节 URL 集供章节行缓存状态图标渲染（对齐原版
@@ -475,11 +485,21 @@ class _TocScreenState extends ConsumerState<TocScreen>
       }
       setState(() {
         _chapters = chapters;
+        _chaptersUsedCustomRule = usedCustomRule;
         _cachedUrls = cachedUrls;
         _downloadingIndices = downloading.toSet();
         _failedIndices = failed.toSet();
         _audioCachedIndices = audioCached;
         _chaptersLoading = false;
+        // [批43b P1-2] 目录已加载即同步派生字段：`setBookTocRule` 返回的
+        // Book 在重解析前 totalChapterNum=0，目录页底部「第 x / 0」会一直
+        // 显示坏值；这里以刚加载的 chapters 为准修正内存快照。
+        if (chapters.isNotEmpty) {
+          _book = _book.copyWith(
+            totalChapterNum: chapters.length,
+            latestChapterTitle: chapters.last.title,
+          );
+        }
       });
       // 初次进入自动滚动定位当前章节（按 index 估算偏移）
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -570,11 +590,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 本地书（含 WebDAV 导入，对齐原版 Book.isLocal）
   bool get _isLocal => BookType.isLocalOrigin(_book.origin);
 
-  /// 本地 TXT 书（对齐原版 Book.isLocalTxt，控制 TXT 目录规则/拆分长章节显隐）
-  bool get _isLocalTxt =>
-      _isLocal &&
-      (_book.originName.toLowerCase().endsWith('.txt') ||
-          _book.bookUrl.toLowerCase().endsWith('.txt'));
+  /// 本地 TXT 书（批43b P3-4：统一走 utils 共享判定，与 Rust 同构，
+  /// 覆盖 `.txt` / `.text`，避免「UI 可见但 Rust 拒绝」的假入口）
+  bool get _isLocalTxt => isLocalTxtBook(_book);
 
   /// 音频书（位标记判定，对齐原版 Book.isAudio = isType(BookType.audio)；
   /// bookType 为位标记，须用 `&` 而非 `==`，同 book_open_utils 分流先例）
@@ -715,21 +733,30 @@ class _TocScreenState extends ConsumerState<TocScreen>
           ref,
           book: _book,
           onApplied: (updated) async {
-            if (!mounted) return null;
+            if (!mounted) return (error: null, usedCustomRule: true);
             setState(() => _book = updated);
             final readerState = ref.read(readerNotifierProvider);
+            TocRuleReloadResult? readerResult;
             if (readerState.currentBook?.bookUrl == updated.bookUrl) {
               // 阅读器持有旧章节表：同步按新规则重载（目录页 pop 回阅读器
               // 时 didPopNext 只重读书籍快照，不重拉章节）
-              await ref
+              readerResult = await ref
                   .read(readerNotifierProvider.notifier)
                   .reloadAfterTocRuleChange(updated);
             }
             await _loadChapters();
-            if (!mounted) return null;
-            if (_chaptersError != null) return _chaptersError;
-            if (_chapters.isEmpty) return '目录为空（可尝试其它规则）';
-            return null;
+            if (!mounted) return (error: null, usedCustomRule: true);
+            // [批43b P3-7] 阅读器重载失败也必须并入结果（此前被直接丢弃，
+            // 目录页成功就提示「已应用」，阅读器实际仍停在旧目录）。
+            final error = readerResult?.error ??
+                _chaptersError ??
+                (_chapters.isEmpty ? '目录为空（可尝试其它规则）' : null);
+            // 阅读器先重解析并已入库时，本页 `_loadChapters` 是缓存命中
+            // （used_custom_rule=false 表示「未解析」而非「未命中」）——
+            // 以阅读器本次解析结果为准；阅读器未参与时才用本页结果。
+            final usedCustomRule =
+                readerResult?.usedCustomRule ?? _chaptersUsedCustomRule;
+            return (error: error, usedCustomRule: usedCustomRule);
           },
         );
         break;

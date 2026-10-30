@@ -736,6 +736,14 @@ abstract class BookApi {
   /// 获取书籍的章节列表
   Future<List<BookChapter>> getChapters(String bookUrl);
 
+  /// 获取章节列表 + 本次解析是否应用了显式 TXT 目录规则（批43b P2-1）
+  ///
+  /// Rust `ChapterListResponse.used_custom_rule` 透出：本地 TXT 重新解析时，
+  /// false 表示「未配置规则」或「规则不可用/未命中，已回退内置默认」——
+  /// UI 用后者提示「规则未命中，已回退默认规则」，不再一律提示「已应用」。
+  /// 目录缓存命中（未重新解析）、在线书与其它本地格式恒为 false。
+  Future<ChapterListMeta> getChaptersWithMeta(String bookUrl);
+
   /// 获取章节正文内容
   Future<String> getChapterContent(String bookUrl, int chapterIndex);
 

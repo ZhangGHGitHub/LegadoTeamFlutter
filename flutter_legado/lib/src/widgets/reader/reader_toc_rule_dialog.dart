@@ -13,7 +13,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
-import '../../models/models.dart' show Book, BookType, TxtTocRule;
+import '../../models/models.dart'
+    show Book, TocRuleReloadResult, TxtTocRule;
 import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../../routes.dart';
@@ -22,26 +23,17 @@ import '../../utils/txt_toc_rule.dart';
 /// 弹层中「默认规则」的单选值（规则 id 用字符串，避免与默认值冲突）
 const String _defaultRuleValue = '__default__';
 
-/// 本地 TXT 判定（对齐原版 `Book.isLocalTxt`：本地存储 + .txt/.text）
-bool isLocalTxtBook(Book book) {
-  if (!BookType.isLocalStorageBook(book)) return false;
-  final name = book.originName.toLowerCase();
-  final url = book.bookUrl.toLowerCase();
-  return name.endsWith('.txt') ||
-      name.endsWith('.text') ||
-      url.endsWith('.txt') ||
-      url.endsWith('.text');
-}
-
 /// 弹出「TXT 目录规则」选择弹层
 ///
-/// [onApplied] 在单列写成功后调用（调用方负责重载目录），返回错误文案；
-/// 返回 null 表示重载成功。弹层只在成功时提示「已应用规则」，失败展示原因。
+/// [onApplied] 在单列写成功后调用（调用方负责重载目录），返回
+/// [TocRuleReloadResult]：[TocRuleReloadResult.error] 非 null 表示重载失败
+/// （提示失败，**不得提示成功**）；`usedCustomRule=false` 且本次选择的是
+/// 具体规则时提示「规则未命中，已回退默认规则」（批43b P2-1，避免假成功）。
 Future<void> showReaderTocRuleDialog(
   BuildContext context,
   WidgetRef ref, {
   required Book book,
-  required Future<String?> Function(Book updated) onApplied,
+  required Future<TocRuleReloadResult> Function(Book updated) onApplied,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   if (!isLocalTxtBook(book)) {
@@ -58,14 +50,26 @@ Future<void> showReaderTocRuleDialog(
           final updated = await ref
               .read(bookApiProvider)
               .setBookTocRule(book.bookUrl, ruleJson);
-          final error = await onApplied(updated);
-          if (error != null) {
+          final result = await onApplied(updated);
+          if (result.error != null) {
             messenger.showSnackBar(
-              SnackBar(content: Text('应用目录规则后重载失败：$error')),
+              SnackBar(content: Text('应用目录规则后重载失败：${result.error}')),
             );
             return;
           }
-          messenger.showSnackBar(const SnackBar(content: Text('已应用目录规则')));
+          // 恢复默认（ruleJson == null）时 usedCustomRule=false 是预期结果；
+          // 只有选了具体规则却回退默认，才提示「未命中」。
+          if (ruleJson != null && !result.usedCustomRule) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('规则未命中，已回退默认规则')),
+            );
+            return;
+          }
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(ruleJson == null ? '已恢复默认目录规则' : '已应用目录规则'),
+            ),
+          );
         } catch (e) {
           messenger.showSnackBar(SnackBar(content: Text('设置目录规则失败: $e')));
         }
@@ -129,7 +133,13 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
     final currentCustomRule =
         selected == null ? txtTocRuleRuleOf(widget.book.tocUrl) : null;
 
+    // [批43b P3-6] 小屏自适应：规则列表高度不超过可用窗口的 45%，
+    // 同时设上限 360；AlertDialog 开启 scrollable 兜底标题/说明/操作区，
+    // 避免 360 固定高度在矮屏（如横屏/分屏）被系统裁切。
+    final listMaxHeight =
+        (MediaQuery.sizeOf(context).height * 0.45).clamp(160.0, 360.0);
     return AlertDialog(
+      scrollable: true,
       title: const Text('TXT 目录规则'),
       content: SizedBox(
         width: double.maxFinite,
@@ -144,7 +154,7 @@ class _TxtTocRuleDialogState extends ConsumerState<_TxtTocRuleDialog> {
               )
             else
               ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 360),
+                constraints: BoxConstraints(maxHeight: listMaxHeight),
                 child: SingleChildScrollView(
                   child: RadioGroup<String?>(
                     groupValue: selected,

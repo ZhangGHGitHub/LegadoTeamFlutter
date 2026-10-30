@@ -577,19 +577,25 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 尽量保持位置，再重载当前章正文。
   ///
   /// 成功返回 null；失败返回原因（UI 据此展示失败，**不得提示成功**）。
-  Future<String?> reloadAfterCharsetChange(Book book) =>
-      _reloadLocalTocAndContent(book, failureHint: '编码或文件不可读');
+  Future<String?> reloadAfterCharsetChange(Book book) async =>
+      (await _reloadLocalTocAndContent(book, failureHint: '编码或文件不可读'))
+          .error;
 
   /// 设置 TXT 目录规则后重载目录与当前章正文（批43，对齐 `MenuTocRegex`）
   ///
   /// Rust `setBookTocRule` 已清空本地 TXT 章节表并写入 `books.tocUrl`；
   /// 与换编码同理：重新拉取目录（按新规则解析）、尽量保持当前章索引，
-  /// 再重载正文。成功返回 null，失败返回原因。
-  Future<String?> reloadAfterTocRuleChange(Book book) =>
+  /// 再重载正文。
+  ///
+  /// 返回 [TocRuleReloadResult]：[TocRuleReloadResult.error] 非 null 表示
+  /// 目录/正文重载失败；[TocRuleReloadResult.usedCustomRule] 来自 Rust
+  /// `ChapterListResponse.used_custom_rule`——false 表示规则未命中/不可用，
+  /// 已回退默认规则（批43b P2-1，UI 据此提示，不假报「已应用」）。
+  Future<TocRuleReloadResult> reloadAfterTocRuleChange(Book book) =>
       _reloadLocalTocAndContent(book, failureHint: '目录规则未命中或文件不可读');
 
   /// 本地书目录/正文重载共用实现（编码 / 目录规则变更）
-  Future<String?> _reloadLocalTocAndContent(
+  Future<TocRuleReloadResult> _reloadLocalTocAndContent(
     Book book, {
     required String failureHint,
   }) async {
@@ -597,12 +603,15 @@ class ReaderNotifier extends Notifier<ReaderState> {
     state = state.copyWith(currentBook: book, isLoading: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
-      final chapters = await api.getChapters(book.bookUrl);
+      final meta = await api.getChaptersWithMeta(book.bookUrl);
+      final chapters = meta.chapters;
       // 开书代际已变化（并发切换到别的书）→ 丢弃旧结果
-      if (openSeq != _openSeq) return null;
+      if (openSeq != _openSeq) {
+        return (error: null, usedCustomRule: meta.usedCustomRule);
+      }
       if (chapters.isEmpty) {
         state = state.copyWith(error: '目录加载失败（$failureHint）');
-        return state.error;
+        return (error: state.error, usedCustomRule: meta.usedCustomRule);
       }
       final index = state.currentChapterIndex
           .clamp(0, chapters.length - 1)
@@ -613,11 +622,25 @@ class ReaderNotifier extends Notifier<ReaderState> {
         currentChapterPos: 0,
       );
       await _loadChapterContent();
-      return state.error;
+      // [批43b P1-2] 重载成功后以库内真源刷新 currentBook：
+      // `setBookTocRule` 返回的 Book 在重解析前派生字段（totalChapterNum/
+      // latestChapterTitle）已重置为 0/NULL，若停留在 State 里，后续整书
+      // 回写会把刚回填的 N 打回 0。getBook 失败不覆盖当前快照（不影响阅读）。
+      if (openSeq == _openSeq) {
+        try {
+          final fresh = await api.getBook(book.bookUrl);
+          if (fresh != null && openSeq == _openSeq) {
+            state = state.copyWith(currentBook: fresh);
+          }
+        } catch (_) {
+          // 刷新 Book 快照失败不阻断阅读；Rust 整书写侧已保护派生字段
+        }
+      }
+      return (error: state.error, usedCustomRule: meta.usedCustomRule);
     } catch (e) {
       final message = _mapError(e);
       state = state.copyWith(error: message);
-      return message;
+      return (error: message, usedCustomRule: false);
     } finally {
       if (openSeq == _openSeq) {
         state = state.copyWith(isLoading: false);

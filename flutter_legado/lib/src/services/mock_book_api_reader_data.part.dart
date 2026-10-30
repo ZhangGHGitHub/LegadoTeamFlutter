@@ -118,9 +118,28 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   // ========== 阅读器操作 ==========
 
   @override
-  Future<List<BookChapter>> getChapters(String bookUrl) async {
+  Future<List<BookChapter>> getChapters(String bookUrl) async =>
+      (await getChaptersWithMeta(bookUrl)).chapters;
+
+  /// 获取章节列表 + 规则使用情况（Mock 形状对齐 Rust，批43b P2-1）
+  ///
+  /// Mock 无真实解析引擎：以「有章节 + 书行 `tocUrl` 非空白」近似
+  /// `usedCustomRule=true`；「规则未命中回退」由调用方/测试注入
+  /// [TocRuleReloadResult] 覆盖，不在此模拟。
+  @override
+  Future<ChapterListMeta> getChaptersWithMeta(String bookUrl) async {
     await _ensureBooksLoaded();
-    return _chaptersCache[bookUrl] ?? [];
+    final chapters = _chaptersCache[bookUrl] ?? <BookChapter>[];
+    Book? book;
+    for (final candidate in _books) {
+      if (candidate.bookUrl == bookUrl) {
+        book = candidate;
+        break;
+      }
+    }
+    final usedCustomRule =
+        chapters.isNotEmpty && (book?.tocUrl.trim().isNotEmpty ?? false);
+    return (chapters: chapters, usedCustomRule: usedCustomRule);
   }
 
   @override
