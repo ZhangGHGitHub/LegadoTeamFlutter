@@ -223,7 +223,9 @@ void main() {
         introTotal,
         reason: '表 A（$introA）+ 表 B（$introB）≠ 导语合计声明 $introTotal',
       );
-      expect(introA, 15, reason: '表 A 改名等价对数为冻结值 15，变更须走契约评审');
+      // [批43b] 冻结值 15→16：新增 BookApi 只读别名 getChaptersWithMeta
+      // （→ 同一 reader_get_chapters，不新增 FFI/§2.x 行），属契约评审批内变更。
+      expect(introA, 16, reason: '表 A 改名等价对数为冻结值 16，变更须走契约评审');
     });
 
     test('BookApi ⊆ RustApi 且 BookApi ⊆ MockBookApi', () {
