@@ -127,15 +127,15 @@ void main() {
       expect(xDownload < xRefresh && xRefresh < xChange, isTrue);
     });
 
-    testWidgets('本地 TXT 默认显示设置编码，不显示在线动作（toc_rule 默认关闭）', (tester) async {
+    testWidgets('本地 TXT 默认显示 TXT 目录规则 + 设置编码，不显示在线动作', (tester) async {
       final container = makeContainer();
       await pumpMenu(tester, container, localTxtBook);
 
       expect(topBarAction('charset'), findsOneWidget);
       expect(
         topBarAction('toc_rule'),
-        findsNothing,
-        reason: '批37b P2-2：未接通的目录规则入口移出默认启用集',
+        findsOneWidget,
+        reason: '批43：目录规则已接通作用于当前书，恢复默认启用',
       );
       expect(topBarAction('download'), findsNothing);
       expect(topBarAction('refresh'), findsNothing);
@@ -340,15 +340,25 @@ void main() {
       expect(find.text('已设置编码：GBK'), findsOneWidget);
     });
 
-    testWidgets('点击目录规则库入口打开管理页（批37b P2-2 登记）', (tester) async {
+    testWidgets('点击 TXT 目录规则打开选择弹层并可进入管理页（批43）', (tester) async {
       SharedPreferences.setMockInitialValues({
         PrefKeys.readerTopBarActions: 'toc_rule,true;more_actions,true',
+        // 已灌过默认规则，跳过资产导入
+        'txtTocRuleVersion': 1,
       });
+      when(() => mockApi.getConfig('txt_toc_rules'))
+          .thenAnswer((_) async => '[]');
       final container = makeContainer();
       await pumpMenu(tester, container, localTxtBook);
 
       expect(topBarAction('toc_rule'), findsOneWidget);
       await tester.tap(topBarAction('toc_rule'));
+      await tester.pumpAndSettle();
+      // 选择弹层（不再是直接跳转规则库管理页）
+      expect(find.text('TXT 目录规则'), findsWidgets);
+      expect(find.text('默认规则'), findsOneWidget);
+
+      await tester.tap(find.text('管理规则'));
       await tester.pumpAndSettle();
       expect(find.text('目录规则库页'), findsOneWidget);
     });
@@ -439,11 +449,25 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      // 默认开启 4 个可配置动作（download/refresh/change_source/charset）
-      // 先开启目录补到 5 个（+ 固定「更多」= 6）
+      // 批43 默认集已满 6 个（download/refresh/change_source/toc_rule/charset
+      // + 固定「更多」）→ 未开启项直接禁用
       final switchCatalog = find.byKey(
         const ValueKey('reader-topbar-switch-catalog'),
       );
+      await tester.ensureVisible(switchCatalog);
+      expect(
+        tester.widget<Switch>(switchCatalog).onChanged,
+        isNull,
+        reason: '默认即满 6 个（含「更多」）',
+      );
+
+      // 关闭一个已开启项腾出名额 → 目录项恢复可开启
+      final switchRefresh = find.byKey(
+        const ValueKey('reader-topbar-switch-refresh'),
+      );
+      await tester.ensureVisible(switchRefresh);
+      await tester.tap(switchRefresh);
+      await tester.pump();
       await tester.ensureVisible(switchCatalog);
       expect(tester.widget<Switch>(switchCatalog).onChanged, isNotNull);
       await tester.tap(switchCatalog);

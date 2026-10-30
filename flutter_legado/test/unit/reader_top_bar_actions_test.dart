@@ -26,7 +26,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('动作池与默认配置', () {
-    test('默认开启集合与顺序对齐参考版（toc_rule 批37b 暂默认关闭）', () {
+    test('默认开启集合与顺序对齐参考版（toc_rule 批43 恢复默认开启）', () {
       final items = defaultReaderTopBarActionItems();
       final enabled = [
         for (final item in items)
@@ -36,14 +36,15 @@ void main() {
         'download',
         'refresh',
         'change_source',
+        'toc_rule',
         'charset',
         kReaderMoreActionsId,
-      ], reason: '参考版默认集去掉未接通的 toc_rule（批37b P2-2 登记）');
+      ], reason: '对齐参考版 DEFAULT_TITLE_BAR_ACTION_IDS（6 项含「更多」）');
       expect(items.last.id, kReaderMoreActionsId, reason: '「更多」固定末位');
       expect(
         readerTopBarActionById['toc_rule']?.label,
-        '目录规则库（仅管理规则）',
-        reason: '入口只打开规则库，文案不得暗示作用于当前书',
+        'TXT 目录规则',
+        reason: '已接通作用于当前书，文案对齐原版 menu_toc_regex',
       );
     });
 
@@ -60,12 +61,12 @@ void main() {
       ]);
     });
 
-    test('书型过滤：本地 TXT 默认只显示编码（toc_rule 默认关闭）', () {
+    test('书型过滤：本地 TXT 默认显示目录规则 + 编码', () {
       final actions = buildReaderTopBarActions(
         ReaderTopBarActionsState(defaultReaderTopBarActionItems()),
         traits: const ReaderBookTraits(isLocal: true, isLocalTxt: true),
       );
-      expect(_ids(actions), ['charset', kReaderMoreActionsId]);
+      expect(_ids(actions), ['toc_rule', 'charset', kReaderMoreActionsId]);
     });
 
     test('书型过滤：本地 EPUB 只显示编码（toc_rule 仅本地 TXT）', () {
