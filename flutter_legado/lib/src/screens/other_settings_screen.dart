@@ -16,6 +16,7 @@
 // 「校验书源配置」对话框经 CheckSourceNotifier 持久化并入 configJson）；
 // [Task #52 | 2026-08-10] 压缩数据库已接线（§5.13-9，经 BookApi.shrinkDatabase
 // 接通 cacheShrinkDatabase FFI，契约 §2.16.6） — Qoder
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -355,7 +356,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   setState(() => _antiAlias = v);
                   _settingsService.setBoolPref(PrefKeys.antiAlias, v);
                   // 批9a：刷新绘制镜像，翻页 painter/漫画绘制即时生效
-                  ImagePaintPrefs.refresh();
+                  //（P3-3：显式 unawaited 标注 fire-and-forget）
+                  unawaited(ImagePaintPrefs.refresh());
                 },
               ),
               IosListTile(
@@ -370,7 +372,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   apply: (v) {
                     setState(() => _bitmapCacheSize = v);
                     // 批9a：同步全局解码缓存上限（越界回落 50 由镜像钳制）
-                    ImagePaintPrefs.refresh();
+                    //（P3-3：显式 unawaited 标注 fire-and-forget）
+                    unawaited(ImagePaintPrefs.refresh());
                     ImagePaintPrefs.applyImageCacheLimit();
                   },
                 ),
@@ -472,7 +475,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   setState(() => _showMangaUi = v);
                   _settingsService.setBoolPref(PrefKeys.showMangaUi, v);
                   // 批9a：刷新开书分流镜像（在线图片书即时按新开关分流）
-                  BookOpenUtils.refreshShowMangaUi();
+                  //（P3-3：显式 unawaited 标注 fire-and-forget）
+                  unawaited(BookOpenUtils.refreshShowMangaUi());
                 },
               ),
               IosListTile(

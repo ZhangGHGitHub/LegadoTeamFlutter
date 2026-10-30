@@ -279,18 +279,23 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
     // 对标原版 BookSourceEditActivity.onPostCreate：
     // if (!LocalConfig.ruleHelpVersionIsLast) showHelp("ruleHelp")
     _maybeShowFirstHelp();
-    // 批9a 项7：读取「源编辑框最大行数」偏好（进页读一次；仅作用于
-    // 代码/JS 类大文本字段，短字段不套用——映射语义见 _sourceEditMaxLine）
+    // 批9a 项7：读取「源编辑框最大行数」偏好（进页读一次；对齐原版
+    // BookSourceEditAdapter.kt:99-103——全部编辑实体统一套用
+    // editEntityMaxLine 无字段过滤；我方映射为**所有多行字段**
+    // （maxLines≥2），单行字段不套用，语义见 _sourceEditMaxLine）
     _loadSourceEditMaxLine();
   }
 
   /// 源编辑框最大行数（批9a 项7，对齐原版 BookSourceEditAdapter
   /// `editEntityMaxLine = AppConfig.sourceEditMaxLine`）
   ///
-  /// 语义映射：原版是「编辑实体输入框」统一行数上限（超出内部滚动）；
-  /// 我方为逐字段表单，映射到**代码/JS 类大文本字段**（loginUi/loginCheckJs/
-  /// coverDecodeJs/jsLib/c_webJs 等多行字段），URL/名称等短字段不套用。
-  /// 合法下限 10（对齐设置页区间），越界回落默认 99。
+  /// 语义映射（P2-3 修正）：原版是「编辑实体输入框」**统一**行数上限
+  /// （BookSourceEditAdapter.kt:99 `editText.maxLines = editEntityMaxLine`，
+  /// 对基本信息/搜索/发现/详情/目录/正文全部 EditEntity 生效，无字段
+  /// 白名单；仅 isUnsafeText 超长预览分支除外）。我方为逐字段表单，
+  /// 映射到**所有多行字段**（maxLines≥2）；单行字段（maxLines=1：源
+  /// URL/名称/分组/并发率）保持 1 不套用。合法下限 10（对齐设置页
+  /// 区间），越界回落默认 99。
   int _sourceEditMaxLine = _defaultSourceEditMaxLine;
 
   /// 偏好默认 99（原版默认 Int.MAX_VALUE，我方 UI 默认 99，对齐设置页口径）
@@ -298,33 +303,6 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
 
   /// 合法下限（对齐设置页 min=10；越界回落默认）
   static const int _minSourceEditMaxLine = 10;
-
-  /// 代码/JS 类大文本字段键（maxLines≥2 即带「代码编辑」入口的字段集合）
-  static const _codeFieldKeys = {
-    'bookSourceComment',
-    'loginUrl',
-    'loginUi',
-    'loginCheckJs',
-    'coverDecodeJs',
-    'header',
-    'variableComment',
-    'jsLib',
-    's_checkKeyWord',
-    's_bookList',
-    's_name',
-    's_author',
-    's_kind',
-    's_wordCount',
-    's_lastChapter',
-    's_intro',
-    's_coverUrl',
-    's_bookUrl',
-    'c_content',
-    'c_replaceRegex',
-    'c_webJs',
-    'r_detailContentRule',
-    'r_replyContentRule',
-  };
 
   Future<void> _loadSourceEditMaxLine() async {
     try {
