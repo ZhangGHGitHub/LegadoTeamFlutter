@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-30 | **批42：书源检验补齐发现页校验 + 并行检验 + 域名 TCP 探测（零 FFI 签名/方法计数变化；服务端 4 条检验端点请求/响应形状不变，仅执行语义补齐，见 §4.1 批42 注）**：① **发现页校验接入**——`config:checkDiscovery`（默认 true）且 `exploreUrl` 非空时取首个可用分类 URL（纯文本/JSON 分类数组/`@js:`/`<js>` 求值），经新增 `legado-fetcher::web_book::webbook_explore_first_book`（规则源 `RealBookSourceFetcher::explore_first_book`：AnalyzeUrl + `ruleExplore.bookList`（空则回退 `ruleSearch.bookList`）+ loginCheckJs + 「列表为空按详情页解析」回退）抓取首书并跑详情/目录/正文；失败口径区分「发现规则为空 / 发现规则求值失败 / 发现页请求失败 / 发现失效 / 发现目录失效 / 发现正文失效」，搜索书同步改为「搜索目录失效 / 搜索正文失效」（对齐原版 `checkBook(isSearchBook)`）；未启用 quickjs 构建跳过 JS 发现规则求值（登记）。② **并行检验**——`run_check_session` 由逐源串行改为有界并发（`JoinSet` + 共享队列），并发数 = CPU 核数夹逼 4~8、caches `config:checkThreadCount` 可覆盖（硬上限 32）；单会话/sessionToken/stop 取消（在途工作线程随会话任务中止）/CAS 写回语义不变，DB 写经 AppState 互斥锁串行。③ **checkDomain**——`config:checkDomain=true` 时 TCP 探测源地址（连接 1.6s，对齐原版 `isDomainReachable`），不可达 → 「域名失效」+「源地址不可访问」，非 http(s) → UNCHECKABLE。④ **测试**：service 集成 19 例（新增发现项 4 + 并行耗时 + 并行停止 + 域名探测），fetcher 既有面不变。 |
 | 2026-10-29 | **批41b：原版 zip 媒体恢复审查回修（P1×1 + P2×2 + P3；零 FFI 签名/方法计数变化：§2.11 = 4、附录合计 318、BookApi 315、§1.7 表 B 152）**：① **P1-1 解压字节错误路径入账**——`read_zip_entry_limited` 先累计 `read_to_end` 已读出的字节、再处理读错误与总限额（此前错误路径直接 `?` 返回、`total_decoded` 不增长），「合法 deflate + 坏 CRC」批量条目不再能绕过 512 MiB 总限额（媒体条目原本把该错误吞成 warn）；红→绿用例 `test_read_zip_entry_limited_counts_bytes_on_error_path`。② **P2-1 JSON 备份不再外带本机媒体绝对路径**——`backup_create` 把本机媒体根 `covers/`、`readRecordCovers/` 下的封面绝对路径归一为 null（书面 `customCoverUrl` / 分组 `cover` / 阅读记录 `coverUrl`）；JSON 恢复新增封面守卫：`.../covers/<file>` 按本地媒体根 remap、其他绝对路径「目标存在才保留」，否则 null，网络 URL/相对路径原样；补 zip→JSON→异机恢复用例。③ **P2-2 媒体落盘原子化**——同目录临时文件 `create_new` + `rename` 覆盖（Windows 先删后 rename，非原子窗口登记），替代 `fs::write` 直接截断。④ **P3**——条目数上限前移 EOCD 预检（解析后 `archive.len()` 仍权威）；媒体相对路径拒绝控制字符与 Windows 保留设备名（con/nul/aux/prn/com1..9/lpt1..9）及结尾空格/点；`coverFont.ttf` 落盘前 TTF/OTF 魔数首检；测试注入槽中毒锁 `into_inner`；`canonicalize` 只用于包含判断、落库路径剥离 Windows 逐字前缀；补条目数/总限额/合并覆盖/设备名/inspect 不收集媒体用例；登记「DB 事务失败不回滚媒体」与 remap 判据差异。详见 §2.11 批41b 回修补记。 |
 | 2026-10-29 | **批41：原版 zip 媒体恢复（covers/bg/readRecordCovers/coverFont.ttf；零 FFI 签名/方法计数变化：§2.11 = 4、附录合计 318、BookApi 315、§1.7 表 B 152）**：原版 zip 备份内的 `covers/`（可含子目录）、`bg/`、`readRecordCovers/` 与封面字体 `coverFont.ttf` 从「只 warn 跳过」改为按白名单前缀落盘（对齐原版 `Backup.kt:399-429` / `Restore.kt:613-627` / `Restore.kt:487-495`）。媒体根 = DB 父目录（移动端应用 Documents；env `LEGADO_BACKUP_MEDIA_DIR` 可覆盖），映射 `<媒体根>/covers|bg|readRecordCovers/<相对路径>` 与 `<媒体根>/font/coverFont.ttf`；合并写不删除本地既有媒体，失败逐条 warn 不阻断恢复。路径安全：白名单前缀 + 既有条目名校验 + 相对段校验（拒绝 `..`/绝对/空段/`:`），逐段拒绝符号链接，写入前 `canonicalize` 父目录并校验仍在媒体根内。限额：单媒体文件 32 MiB、跨条目共用 512 MiB 总限额、zip 条目总数 ≤ 50 000。媒体落盘后按目标文件存在性 remap `customCoverUrl`/分组 `cover`/阅读记录 `coverUrl`（covers 与 readRecordCovers 两形态），目标缺失置 null。我方 JSON 备份不含媒体（不 base64 膨胀），`backup_create` 不写媒体。详见 §2.11 批41 补记。 |
 | 2026-10-29 | **批40b：WebDAV 备份族审查回修（P1×1 + P2×4 + P3；方法计数不变：§2.28 11、附录合计 318、BookApi 315、§1.7 表 B 152）**：① **P1-1 本地书相对标识上传**——`WebDavBookUploadService.uploadBook` 上传前经 `LocalBookStore.resolveSync(book.bookUrl)` 还原为当前容器绝对路径（iOS 批量导入落库 `books/<name>`，Rust `webdav_upload_file` 直接读相对路径必然失败；绝对路径/`://` 原样）；`LocalBookStore.resolveSync` 显式把前导 `/` 视为绝对路径（Windows 下 `File.isAbsolute` 不识别 POSIX 路径）。② **P2**——回环全链用例夹具 `max_requests` 3→4（原值截断第二次 DELETE，`failed` 静默吞掉）；恢复链（WebDAV 短按/本地长按）经 `LocalBackupService.runExclusiveRestore` 与备份共用互斥，恢复进行中自动备份返回 busy；导入后逐本自动上传由服务层进程内单飞队列串行（原版单协程串行）；`WebDavClient` 增加 connect 15s / 控制请求 60s / 文件传输 600s 超时（自动链路不再无限占锁）。③ **P3**——备份名清理改为严格 `backup_yyyyMMdd_HHmmss[_SSS].json`（大小写敏感）；删除键取 PROPFIND `href`（百分号解码、剥离 `remote_dir` 前缀），不再信任 `displayname`；保留数 UI/服务双侧 clamp `0..1000`；恢复后重读备份族新增设置行；自动备份锁内复检 `autoBackup` 与到期状态、`lastBackup` 在未来视为到期；远端备份名追加毫秒段（同秒去重）；设置页对话框 controller 改为对话框自持并 dispose；差异/缺口见 §2.28 批40 注②③⑤⑥⑦⑧⑨。 |
@@ -1646,8 +1647,26 @@
 （`checkContent()` 变化）重建状态；仅改启用/排序/权重等保留状态。检验执行使用
 `legado-fetcher` 的 `webbook_search/info/chapters/content` 链（目录首章按上游
 `selectCheckSourceChapter` 过滤卷章头：`isVolume && url.startsWith(title)`，空 URL 卷章
-合成为 `{title}{index}`，不得当正文抓取）；**发现页校验未接入**
-（服务端发现引擎不可达，登记差异）、逐源串行执行（原版按线程池并行，登记差异）。
+合成为 `{title}{index}`，不得当正文抓取）。
+
+**批42 语义补充（发现页校验 + 并行检验 + 域名探测；端点/请求/响应形状零变化）**：
+
+- **发现页校验已接入**：`config:checkDiscovery`（默认 `true`）且源 `exploreUrl` 非空时，
+  取首个可用分类 URL（纯文本 `分类::URL` / JSON 分类数组 / `@js:` / `<js>` 求值），
+  经 `legado-fetcher::webbook_explore_first_book` 抓取首个书籍并跑详情/目录/正文。
+  `exploreUrl` 为空或该项关闭 → 跳过（不影响 `PASSED`）。失败口径（detail 首段分组）：
+  无可用分类 → `发现规则为空`；`@js:`/`<js>`/分类 JSON 求值异常 → `FAILED` +
+  `校验失败:发现规则求值失败: …`；请求/解析异常 → `FAILED` + `校验失败:发现页请求失败: …`；
+  请求成功但解析不出书 → `发现失效`；发现书目录/正文为空 → `发现目录失效` /
+  `发现正文失效`（搜索书对应 `搜索目录失效` / `搜索正文失效`，对齐原版 `checkBook`）。
+  未启用 quickjs 的构建跳过 JS 发现规则求值（能力缺口不判失败，日志登记）。
+- **并行检验**：并发数 = CPU 核数夹逼 4~8（caches `config:checkThreadCount` 可覆盖，
+  硬上限 32），对齐原版 `AppConfig.threadCount` 并行语义；`sessionToken` 契约、单会话、
+  `stop` 取消（在途工作线程随会话任务一并中止）、未完成源保持 `NEEDS_CHECK`、
+  `(url, revision, status='NEEDS_CHECK')` CAS 写回均不变；DB 写经 AppState 互斥锁串行。
+- **源地址可访问性**：`config:checkDomain=true` 时对源地址做 TCP 探测（连接超时 1.6s，
+  对齐原版 `isDomainReachable`）；不可达 → `域名失效` 分组 + `FAILED`「源地址不可访问」；
+  非 http(s) → `UNCHECKABLE`。缺省 `false` 与原版一致。
 
 ### 4.2 既有端点索引
 
