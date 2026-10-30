@@ -21,6 +21,7 @@ import '../services/platform_bridge_service.dart';
 import '../services/system_brightness.dart';
 import '../utils/comic_image_utils.dart';
 import '../utils/error_message.dart';
+import '../utils/image_paint_utils.dart';
 import '../utils/manga_epaper.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/loading_indicator.dart';
@@ -2994,6 +2995,8 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
         fit: widget.fit,
         width: double.infinity,
         gaplessPlayback: true,
+        // 批9a：图片采样质量按 antiAlias 偏好（medium 默认/high 开启）
+        filterQuality: ImagePaintPrefs.imageFilterQuality,
         errorBuilder: (context, _, _) => _errorPlaceholder(),
       );
     }
@@ -3226,6 +3229,8 @@ class _LocalCbzImageState extends ConsumerState<_LocalCbzImage> {
         fit: widget.fit,
         width: double.infinity,
         gaplessPlayback: true,
+        // 批9a：图片采样质量按 antiAlias 偏好（medium 默认/high 开启）
+        filterQuality: ImagePaintPrefs.imageFilterQuality,
         errorBuilder: (context, _, _) => _errorPlaceholder(),
       );
     }

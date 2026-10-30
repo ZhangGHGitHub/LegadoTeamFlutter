@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../../utils/image_paint_utils.dart';
 import '../page_direction.dart';
 
 /// Jingshiro `SlidePageDelegate.onDraw` — current page underlay is drawn by
@@ -69,11 +70,12 @@ void _drawPage(Canvas canvas, ui.Image? image, Size size) {
   if (image == null) {
     return;
   }
+  // 批9a：图片绘制 Paint 走共享镜像（antiAlias 控制 isAntiAlias/filterQuality）
   canvas.drawImageRect(
     image,
     Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
     Offset.zero & size,
-    Paint()..filterQuality = FilterQuality.medium,
+    ImagePaintPrefs.imagePaint(),
   );
 }
 

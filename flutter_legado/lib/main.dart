@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'src/l10n/app_strings.dart';
 import 'src/providers/providers.dart';
 import 'src/routes.dart';
 import 'src/services/book_api.dart';
@@ -14,6 +15,9 @@ import 'src/services/crash_log_service.dart';
 import 'src/services/mock_book_api.dart';
 import 'src/services/rust_api.dart';
 import 'src/services/server_service.dart';
+import 'src/services/settings_service.dart';
+import 'src/utils/book_open_utils.dart';
+import 'src/utils/image_paint_utils.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -71,6 +75,27 @@ void main() {
     } catch (e, stack) {
       CrashLogService.instance.logError(e, stack);
       debugPrint('[启动] 远程书库服务器迁移失败（不阻断启动）：$e');
+    }
+
+    // 5b. 全局偏好镜像与设备级启动设置（批9a，失败不阻断启动）：
+    // - 语言：冷启动读 app_locale 初始化 AppStrings（system→zh，与
+    //   other_settings_screen 约定一致）；运行中切换仍即时 setLocale（现行为），
+    //   AppStrings 无变更通知机制，重启生效语义与原版 attachBaseContext 一致。
+    // - 抗锯齿/图片绘制缓存镜像：翻页 painter 与漫画绘制处的同步快照。
+    // - 全局解码缓存上限：bitmapCacheSize（1..1024 MB，越界回落 50，
+    //   对齐原版 ImageProvider.kt 的钳制）应用到 imageCache.maximumSizeBytes。
+    sw = Stopwatch()..start();
+    try {
+      final locale = await SettingsService().getLocale();
+      AppStrings.setLocale(locale == 'system' ? 'zh' : locale);
+      await ImagePaintPrefs.refresh();
+      ImagePaintPrefs.applyImageCacheLimit();
+      // 批9a 项4：漫画浏览开书分流镜像启动初始化
+      await BookOpenUtils.refreshShowMangaUi();
+      debugPrint('[启动] 语言/图片绘制偏好初始化耗时：${sw.elapsedMilliseconds}ms');
+    } catch (e, stack) {
+      CrashLogService.instance.logError(e, stack);
+      debugPrint('[启动] 语言/图片绘制偏好初始化失败（不阻断启动）：$e');
     }
 
     // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）

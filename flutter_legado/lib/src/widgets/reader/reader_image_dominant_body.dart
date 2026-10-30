@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../screens/reader_comic_screen.dart' show ComicImageDecodeCache;
 import '../../utils/comic_image_utils.dart';
+import '../../utils/image_paint_utils.dart';
 import '../app_progress_indicator.dart';
 
 /// 文本阅读器内「图片主导正文」兜底渲染。
@@ -303,7 +304,8 @@ class _FfiComicImageState extends ConsumerState<_FfiComicImage> {
           bytes,
           fit: widget.fit,
           width: double.infinity,
-          filterQuality: FilterQuality.medium,
+          // 批9a：图片采样质量按 antiAlias 偏好（medium 默认/high 开启）
+          filterQuality: ImagePaintPrefs.imageFilterQuality,
         );
         if (widget.maxHeight != null) {
           img = ConstrainedBox(

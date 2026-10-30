@@ -37,6 +37,8 @@ import '../providers/source_check/check_source_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
+import '../utils/book_open_utils.dart';
+import '../utils/image_paint_utils.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/video_settings_dialog.dart';
 
@@ -352,6 +354,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 onChanged: (v) {
                   setState(() => _antiAlias = v);
                   _settingsService.setBoolPref(PrefKeys.antiAlias, v);
+                  // 批9a：刷新绘制镜像，翻页 painter/漫画绘制即时生效
+                  ImagePaintPrefs.refresh();
                 },
               ),
               IosListTile(
@@ -363,7 +367,12 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   current: _bitmapCacheSize,
                   min: 1,
                   max: 1024,
-                  apply: (v) => setState(() => _bitmapCacheSize = v),
+                  apply: (v) {
+                    setState(() => _bitmapCacheSize = v);
+                    // 批9a：同步全局解码缓存上限（越界回落 50 由镜像钳制）
+                    ImagePaintPrefs.refresh();
+                    ImagePaintPrefs.applyImageCacheLimit();
+                  },
                 ),
               ),
               IosListTile(
@@ -462,6 +471,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 onChanged: (v) {
                   setState(() => _showMangaUi = v);
                   _settingsService.setBoolPref(PrefKeys.showMangaUi, v);
+                  // 批9a：刷新开书分流镜像（在线图片书即时按新开关分流）
+                  BookOpenUtils.refreshShowMangaUi();
                 },
               ),
               IosListTile(
