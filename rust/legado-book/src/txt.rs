@@ -10,7 +10,7 @@ use std::io::Read;
 
 use encoding_rs::{Encoding, UTF_8};
 
-use legado_core::regex_safe::compile_regex_safe;
+use legado_core::regex_safe::{compile_fancy_regex_safe, compile_regex_safe};
 use legado_core::{LegadoError, LegadoResult};
 
 use crate::{BookFormat, BookMetadata, ChapterInfo};
@@ -34,6 +34,38 @@ const CHAPTER_PATTERNS: &[&str] = &[
     r"(?m)^\s{0,4}尾声\s*$",
     r"(?m)^\s{0,4}附录\s*.+$",
 ];
+
+/// 原版 `TextFile.spaceChars`：`Book.tocUrl` 中「目录正则」与「JS 替换片段」的
+/// 分隔符（U+1F945 / U+1F333 / U+1F3FB，见 `TextFile.kt` 常量与
+/// `TxtTocRuleDialog.kt` 的 `tocRule.rule + spaceChars + tocRule.replacement`）。
+///
+/// 沿用原版格式而非自定义 JSON：Android 备份/跨端数据库中的 `books.tocUrl`
+/// 可直接消费，无需迁移；本批新增的显式规则写入也复用同一格式。
+pub const TOC_RULE_SEPARATOR: &str = "🫅🈳🏻";
+
+/// 拆分原版格式的 `Book.tocUrl`
+///
+/// 返回 `(目录正则, JS 替换片段)`：
+/// - 含分隔符：前半为正则、后半为 replacement（可为空串）；
+/// - 无分隔符：整串视为正则（兼容手工写入/旧数据）；
+/// - 空白：`(None, "")`，表示走内置默认规则。
+pub fn split_toc_rule(toc_url: &str) -> (Option<String>, String) {
+    let trimmed = toc_url.trim();
+    if trimmed.is_empty() {
+        return (None, String::new());
+    }
+    match trimmed.split_once(TOC_RULE_SEPARATOR) {
+        Some((rule, replacement)) => {
+            let rule = rule.trim();
+            if rule.is_empty() {
+                (None, replacement.to_string())
+            } else {
+                (Some(rule.to_string()), replacement.to_string())
+            }
+        }
+        None => (Some(trimmed.to_string()), String::new()),
+    }
+}
 
 impl TxtParser {
     /// 解析 TXT 文件元数据
@@ -67,51 +99,51 @@ impl TxtParser {
         path: &str,
         charset: Option<&str>,
     ) -> LegadoResult<Vec<ChapterInfo>> {
+        Ok(Self::get_chapters_with_rule(path, charset, None)?.chapters)
+    }
+
+    /// 获取章节列表，显式指定 TXT 目录规则（批43）
+    ///
+    /// 语义对齐 Android 原版 `TextFile`：
+    /// - `rule` 为正则串（可空/空白 = 自动目录，即内置默认规则）；
+    /// - 规则按 `Pattern.MULTILINE` 语义匹配整段解码后文本（原版
+    ///   `book.tocUrl` 中 `rule` 部分，见 [`split_toc_rule`]）；
+    /// - 规则编译失败或未匹配到任何标题时**回退内置默认规则**，返回值的
+    ///   `used_custom_rule=false` 供调用方记日志/提示；
+    /// - `replacement`（原版 JS 替换片段）不参与解析（Rust 侧未内嵌 JS
+    ///   引擎），标题保留正则命中原文。
+    ///
+    /// 返回 [`crate::TocParseOutcome`]：章节列表 + 是否真正使用了显式规则。
+    pub fn get_chapters_with_rule(
+        path: &str,
+        charset: Option<&str>,
+        rule: Option<&str>,
+    ) -> LegadoResult<crate::TocParseOutcome> {
         let text_bytes = read_file_bytes(path)?;
         let text = decode_with_charset(&text_bytes, path, charset)?;
 
-        // 合并所有正则为一个（内置常量 pattern 拼接，仍走统一安全入口以命中全局编译缓存）
-        let pattern = CHAPTER_PATTERNS.join("|");
-        let re = compile_regex_safe(&pattern)
-            .ok_or_else(|| LegadoError::BookParse("章节正则编译失败（非法或超限）".to_string()))?;
-
+        let custom_rule = rule.map(str::trim).filter(|r| !r.is_empty());
+        let mut used_custom_rule = false;
         let mut chapters = Vec::new();
-        let mut idx = 0i32;
 
-        // 在文本中逐行查找章节标题，记录字节偏移
-        let mut byte_offset: i64 = 0;
-        for line in text.lines() {
-            let line_byte_len = line.len() as i64 + 1; // +1 for '\n'
-            if re.is_match(line) {
-                let title = line.trim().to_string();
-                if !title.is_empty() {
-                    chapters.push(ChapterInfo {
-                        url: format!("txt://chapter/{idx}"),
-                        title,
-                        index: idx,
-                        is_volume: is_volume_title(line),
-                        start: Some(byte_offset),
-                        end: None, // 稍后回填
-                    });
-                    idx += 1;
+        if let Some(rule) = custom_rule {
+            match parse_with_custom_rule(&text, rule) {
+                Some(mut matched) if !matched.is_empty() => {
+                    used_custom_rule = true;
+                    chapters.append(&mut matched);
                 }
+                // 规则不可编译 / 未命中 → 回退内置默认规则（调用方记 warn）
+                _ => {}
             }
-            byte_offset += line_byte_len;
         }
 
-        // 回填 end 偏移
-        let total_len = text.len() as i64;
-        for i in 0..chapters.len() {
-            let next_start = if i + 1 < chapters.len() {
-                chapters[i + 1].start.unwrap_or(total_len)
-            } else {
-                total_len
-            };
-            chapters[i].end = Some(next_start);
+        if chapters.is_empty() {
+            chapters = parse_with_builtin_rule(&text)?;
         }
 
         // 若未检测到任何章节，将整文件作为一个章节
         if chapters.is_empty() {
+            let total_len = text.len() as i64;
             chapters.push(ChapterInfo {
                 url: "txt://chapter/0".to_string(),
                 title: "全文".to_string(),
@@ -122,7 +154,21 @@ impl TxtParser {
             });
         }
 
-        Ok(chapters)
+        // 回填 end 偏移（下一章起点 / 文件末尾）
+        let total_len = text.len() as i64;
+        for i in 0..chapters.len() {
+            let next_start = if i + 1 < chapters.len() {
+                chapters[i + 1].start.unwrap_or(total_len)
+            } else {
+                total_len
+            };
+            chapters[i].end = Some(next_start);
+        }
+
+        Ok(crate::TocParseOutcome {
+            chapters,
+            used_custom_rule,
+        })
     }
 
     /// 获取章节正文内容（自动检测编码）
@@ -213,6 +259,136 @@ fn read_file_bytes(path: &str) -> LegadoResult<Vec<u8>> {
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
     Ok(buf)
+}
+
+/// 内置默认规则解析（自动目录）
+///
+/// 逐行匹配内置 `CHAPTER_PATTERNS`。偏移按原始行字节数累加
+/// （`split_inclusive('\n')` 保留行尾 `\n`/`\r\n` 的真实长度，避免 CRLF
+/// 文件逐行少算 1 字节导致正文切片错位）。
+fn parse_with_builtin_rule(text: &str) -> LegadoResult<Vec<ChapterInfo>> {
+    // 合并所有正则为一个（内置常量 pattern 拼接，仍走统一安全入口以命中全局编译缓存）
+    let pattern = CHAPTER_PATTERNS.join("|");
+    let re = compile_regex_safe(&pattern)
+        .ok_or_else(|| LegadoError::BookParse("章节正则编译失败（非法或超限）".to_string()))?;
+
+    let mut chapters: Vec<ChapterInfo> = Vec::new();
+    let mut byte_offset: i64 = 0;
+    for raw_line in text.split_inclusive('\n') {
+        let line_start = byte_offset;
+        // 去掉行尾换行（含 CRLF 的 `\r`），标题与卷判定都按无换行文本
+        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if re.is_match(line) {
+            let title = line.trim();
+            if !title.is_empty() {
+                let idx = chapters.len() as i32;
+                chapters.push(ChapterInfo {
+                    url: format!("txt://chapter/{idx}"),
+                    title: title.to_string(),
+                    index: idx,
+                    is_volume: is_volume_title(line),
+                    start: Some(line_start),
+                    end: None, // 稍后回填
+                });
+            }
+        }
+        byte_offset += raw_line.len() as i64;
+    }
+    Ok(chapters)
+}
+
+/// 显式规则解析（对齐原版 `TextFile.analyze(rr)`）
+///
+/// 原版以 Java `Pattern.MULTILINE` 在**整段文本**上 `matcher.find()`；此处用
+/// `fancy-regex`（支持原版默认规则大量使用的 lookbehind）按同样语义匹配，
+/// 再把命中位置映射回所属行：章节起点取行首、标题取命中片段（trim）。
+///
+/// 返回 `None` 表示规则不可编译（调用方回退默认规则）；返回空 `Vec`
+/// 表示规则可编译但未命中任何标题。
+fn parse_with_custom_rule(text: &str, rule: &str) -> Option<Vec<ChapterInfo>> {
+    // 原版 `toPattern(Pattern.MULTILINE)`：统一前置 `(?m)`（用户自带
+    // `(?-m)` 等后续 flag 仍可覆盖）
+    let pattern = format!("(?m){rule}");
+    let re = compile_fancy_regex_safe(&pattern)?;
+
+    let line_spans = line_spans(text);
+    let mut chapters: Vec<ChapterInfo> = Vec::new();
+    let mut last_line: Option<usize> = None;
+
+    for matched in re.find_iter(text) {
+        // 回溯超限等运行时错误：停止匹配，由调用方按「未命中」回退默认规则
+        let Ok(matched) = matched else { break };
+        let line_idx = line_index_for(&line_spans, matched.start());
+        // 同一行的多次命中只算一个标题（对齐原版逐 matcher.find() 的
+        // 「匹配串即标题」语义中，同一行重复命中会得到重复章节的偏差）
+        if last_line.is_some_and(|prev| line_idx <= prev) {
+            continue;
+        }
+        last_line = Some(line_idx);
+
+        let span = line_spans[line_idx];
+        let line = &text[span.start..span.end];
+        let matched_title = matched.as_str().trim();
+        let title = if matched_title.is_empty() {
+            line.trim()
+        } else {
+            matched_title
+        };
+        if title.is_empty() {
+            continue;
+        }
+        let idx = chapters.len() as i32;
+        chapters.push(ChapterInfo {
+            url: format!("txt://chapter/{idx}"),
+            title: title.to_string(),
+            index: idx,
+            is_volume: is_volume_title(line),
+            start: Some(span.start as i64),
+            end: None,
+        });
+    }
+    Some(chapters)
+}
+
+/// 行区间（`end` 不含行尾 `\n`/`\r`），用于把整段匹配位置映射回行
+#[derive(Clone, Copy)]
+struct LineSpan {
+    start: usize,
+    end: usize,
+}
+
+/// 构建行区间表（按字节；`\n` 分隔，兼容 `\r\n`）
+fn line_spans(text: &str) -> Vec<LineSpan> {
+    let bytes = text.as_bytes();
+    let mut spans = Vec::new();
+    let mut start = 0usize;
+    for (i, byte) in bytes.iter().enumerate() {
+        if *byte == b'\n' {
+            let end = if i > start && bytes[i - 1] == b'\r' {
+                i - 1
+            } else {
+                i
+            };
+            spans.push(LineSpan { start, end });
+            start = i + 1;
+        }
+    }
+    // 末尾无换行时补最后一行；文本以 `\n` 结尾时补一个空行，保证
+    // `line_index_for(text.len())` 仍有合法区间
+    spans.push(LineSpan {
+        start,
+        end: text.len(),
+    });
+    spans
+}
+
+/// 匹配位置所属行下标（文本末尾/空文本落在最后一个区间）
+fn line_index_for(spans: &[LineSpan], offset: usize) -> usize {
+    spans
+        .partition_point(|span| span.start <= offset)
+        .saturating_sub(1)
+        .min(spans.len().saturating_sub(1))
 }
 
 /// 将字节按指定编码解码为字符串
@@ -412,5 +588,146 @@ mod tests {
         assert!(err.to_string().contains("不支持的编码"), "{err}");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ─── [批43] 显式 TXT 目录规则 ─────────────────────────────────────────
+
+    /// 临时目录 + 文件写入（测试内唯一路径，避免并行用例互踩）
+    fn write_temp_txt(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "legado_txt_rule_{}_{}_{}",
+            std::process::id(),
+            n,
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sample.txt");
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_split_toc_rule_matches_original_format() {
+        let (rule, replacement) = split_toc_rule("^第.+章$🫅🈳🏻result");
+        assert_eq!(rule.as_deref(), Some("^第.+章$"));
+        assert_eq!(replacement, "result");
+
+        // 无分隔符：整串视为规则（兼容手工/旧数据）
+        let (rule, replacement) = split_toc_rule("^第.+章$");
+        assert_eq!(rule.as_deref(), Some("^第.+章$"));
+        assert_eq!(replacement, "");
+
+        // 空白：默认规则
+        assert_eq!(split_toc_rule("   "), (None, String::new()));
+        assert_eq!(split_toc_rule(""), (None, String::new()));
+    }
+
+    /// 显式规则（含 lookbehind）同时覆盖 UTF-8 / GBK：
+    /// 目录标题正确、`used_custom_rule=true`；正文按同一编码切片。
+    #[test]
+    fn test_custom_rule_parses_utf8_and_gbk() {
+        // UTF-8：默认内置规则不认识的「【第X章】」标题
+        // 首行留空：lookbehind `(?<=[　\s])` 需要标题前有空白（原版整段
+        // 匹配时行首换行即空白，文件第一行则没有）
+        let utf8 = "\n【第一章】 开端\n正文一。\n【第二章】 继续\n正文二。\n";
+        let path = write_temp_txt("utf8", utf8.as_bytes());
+        let outcome = TxtParser::get_chapters_with_rule(
+            path.to_str().unwrap(),
+            None,
+            Some(r"^【第.+章】.*$"),
+        )
+        .unwrap();
+        assert!(outcome.used_custom_rule, "显式规则应命中");
+        assert_eq!(outcome.chapters.len(), 2);
+        assert_eq!(outcome.chapters[0].title, "【第一章】 开端");
+        assert_eq!(outcome.chapters[1].title, "【第二章】 继续");
+        let content = TxtParser::get_chapter_content_with_charset(
+            path.to_str().unwrap(),
+            &outcome.chapters[1],
+            None,
+        )
+        .unwrap();
+        assert!(content.contains("正文二"), "{content}");
+
+        // lookbehind（原版默认规则大量使用）在 fancy 引擎下可用
+        let lookbehind = TxtParser::get_chapters_with_rule(
+            path.to_str().unwrap(),
+            None,
+            Some(r"(?<=[　\s])【第.+章】.*$"),
+        )
+        .unwrap();
+        assert_eq!(lookbehind.chapters.len(), 2, "{:?}", lookbehind.chapters);
+        assert!(lookbehind.used_custom_rule);
+
+        // GBK：显式编码 + 自定义规则
+        let (gbk_body, _, _) =
+            encoding_rs::GBK.encode("第一章 起始\n正文甲。\n第二章 继续\n正文乙。\n");
+        let gbk_path = write_temp_txt("gbk", &gbk_body);
+        let gbk = TxtParser::get_chapters_with_rule(
+            gbk_path.to_str().unwrap(),
+            Some("GBK"),
+            Some("^第[一二]章.*$"),
+        )
+        .unwrap();
+        assert!(gbk.used_custom_rule);
+        assert_eq!(gbk.chapters.len(), 2, "{:?}", gbk.chapters);
+        assert_eq!(gbk.chapters[0].title, "第一章 起始");
+        assert_eq!(gbk.chapters[1].title, "第二章 继续");
+        let gbk_content = TxtParser::get_chapter_content_with_charset(
+            gbk_path.to_str().unwrap(),
+            &gbk.chapters[1],
+            Some("GBK"),
+        )
+        .unwrap();
+        assert!(gbk_content.contains("正文乙"), "{gbk_content}");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        let _ = std::fs::remove_dir_all(gbk_path.parent().unwrap());
+    }
+
+    /// 规则未命中 / 非法正则 → 回退内置默认规则并标记未使用显式规则
+    #[test]
+    fn test_custom_rule_falls_back_to_builtin() {
+        let text = "第一章 起始\n正文一。\n第二章 继续\n正文二。\n";
+        let path = write_temp_txt("fallback", text.as_bytes());
+        let path_str = path.to_str().unwrap();
+
+        let no_match =
+            TxtParser::get_chapters_with_rule(path_str, None, Some(r"^不存在的标题$")).unwrap();
+        assert!(!no_match.used_custom_rule, "未命中必须标记回退");
+        assert_eq!(no_match.chapters.len(), 2, "{:?}", no_match.chapters);
+        assert_eq!(no_match.chapters[0].title, "第一章 起始");
+
+        let invalid =
+            TxtParser::get_chapters_with_rule(path_str, None, Some(r"([unclosed")).unwrap();
+        assert!(!invalid.used_custom_rule, "非法正则必须标记回退");
+        assert_eq!(invalid.chapters.len(), 2);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// CRLF 文件偏移按真实行宽累加：换规则后正文不串行
+    #[test]
+    fn test_custom_rule_crlf_offsets_are_exact() {
+        let text = "第一章 起始\r\n正文一。\r\n第二章 继续\r\n正文二。\r\n";
+        let path = write_temp_txt("crlf", text.as_bytes());
+        let path_str = path.to_str().unwrap();
+        let outcome =
+            TxtParser::get_chapters_with_rule(path_str, None, Some(r"^第.+章.*$")).unwrap();
+        assert_eq!(outcome.chapters.len(), 2);
+
+        let second_start = text.find("第二章").unwrap() as i64;
+        assert_eq!(outcome.chapters[1].start, Some(second_start));
+        let first =
+            TxtParser::get_chapter_content_with_charset(path_str, &outcome.chapters[0], None)
+                .unwrap();
+        assert!(first.contains("正文一"), "{first}");
+        assert!(!first.contains("正文二"), "首章不得串入下章: {first}");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

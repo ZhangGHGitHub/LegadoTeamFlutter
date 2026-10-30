@@ -303,6 +303,25 @@ pub mod ffi {
         to_json(&book)
     }
 
+    /// 本地 TXT 目录规则设置（批43，单列写，返回更新后的整书 JSON）
+    ///
+    /// 对齐参考版 `MenuTocRegex` / 原版 `TocActivity.onTocRegexDialogResult`：
+    /// 选中规则后只写 `books.tocUrl`（原版格式 `rule + spaceChars +
+    /// replacement`），同事务清空 `chapters` 表该书行并重置目录派生字段，
+    /// 下一次 `reader_get_chapters` 按新规则重解析目录。
+    ///
+    /// `rule_json` 为 `TxtTocRule` JSON（`{"rule":"...","replacement":"..."}`）
+    /// 或直接的正则串；`null`/空白表示恢复默认规则。正则经 `fancy-regex`
+    /// （支持原版 lookbehind）试编译，非法/超长/嵌套过深抛错（不假成功）。
+    /// 非本地 TXT 书籍调用抛错（UI 对非 TXT 隐藏入口）。
+    pub fn book_set_toc_rule(
+        book_url: String,
+        rule_json: Option<String>,
+    ) -> Result<String, BridgeError> {
+        let book = crate::api::bookshelf::set_book_toc_rule(&book_url, rule_json.as_deref())?;
+        to_json(&book)
+    }
+
     /// 按 bookUrl 获取书籍详情（JSON，可能为 null）
     pub fn bookshelf_get(book_url: String) -> Result<String, BridgeError> {
         let book = crate::api::bookshelf::get_book(&book_url)?;

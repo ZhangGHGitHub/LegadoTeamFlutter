@@ -221,8 +221,27 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
         // [批37b P1-1] 目录与正文必须使用同一 `Book.charset` 解码，
         // 否则用户设置编码后目录偏移与正文对不上
         let charset = local_book_charset(book_url)?;
-        let chapter_infos =
-            legado_book::LocalBook::get_chapters_with_charset(&real_path, charset.as_deref())?;
+        // [批43] 本地 TXT 优先使用该书显式目录规则（`books.tocUrl`，原版
+        // `rule + spaceChars + replacement`）；其它格式忽略该字段。
+        let (toc_rule, toc_replacement) = if crate::api::bookshelf::is_txt_path(book_url) {
+            local_book_toc_rule(book_url)?
+        } else {
+            (None, String::new())
+        };
+        if toc_rule.is_some() && !toc_replacement.trim().is_empty() {
+            log::warn!(
+                "TXT 目录规则包含 JS 替换片段，Rust 解析不执行替换（标题保留正则命中原文）: {book_url}"
+            );
+        }
+        let outcome = legado_book::LocalBook::get_chapters_with_rule(
+            &real_path,
+            charset.as_deref(),
+            toc_rule.as_deref(),
+        )?;
+        if toc_rule.is_some() && !outcome.used_custom_rule {
+            log::warn!("TXT 目录规则未命中或不可用，已回退内置默认规则: {book_url}");
+        }
+        let chapter_infos = outcome.chapters;
         let mut book_chapters: Vec<BookChapter> = chapter_infos
             .iter()
             .map(|ci| BookChapter {
@@ -372,6 +391,22 @@ pub(crate) fn local_book_charset(book_url: &str) -> LegadoResult<Option<String>>
     Ok(charset
         .filter(|value| !value.trim().is_empty())
         .filter(|value| legado_book::txt::encoding_for_label(value).is_ok()))
+}
+
+/// 读取本地 TXT 书的显式目录规则（`books.tocUrl`，批43）
+///
+/// 原版把规则以 `rule + TextFile.spaceChars + replacement` 写入 `book.tocUrl`；
+/// 这里复用 [`legado_book::txt::split_toc_rule`] 拆分。书籍行缺失/`tocUrl`
+/// 空白时返回 `(None, "")`，走内置默认规则（与懒解析/临时书场景一致，
+/// 不让「查不到书」把目录读取变成硬失败）。
+pub(crate) fn local_book_toc_rule(book_url: &str) -> LegadoResult<(Option<String>, String)> {
+    let toc_url = with_database(|db| {
+        Ok(BookRepository::new(db.connection())
+            .find_by_url(book_url)?
+            .map(|book| book.toc_url)
+            .unwrap_or_default())
+    })?;
+    Ok(legado_book::txt::split_toc_rule(&toc_url))
 }
 
 /// 判断是否为本地书籍
@@ -1599,6 +1634,169 @@ mod tests {
                 .map_err(|e| LegadoError::Database(format!("开启清理事务失败: {e}")))?;
             BookChapterRepository::new(db.connection()).delete_by_book_url(&book_url)?;
             BookRepository::new(db.connection()).delete_by_url(&book_url)?;
+            tx.commit()
+                .map_err(|e| LegadoError::Database(format!("提交清理事务失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+        match previous_db_path {
+            Some(path) => crate::db_state::record_db_path(&path),
+            None => crate::db_state::record_db_path(""),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // ─── [批43] TXT 目录规则作用于当前书 ─────────────────────────────────────
+
+    /// 端到端：显式规则写 `books.tocUrl` → 清章节 → 下次 `get_chapters`
+    /// 按新规则重解析；规则未命中回退默认；清空恢复默认；单列写保留其它列。
+    #[test]
+    fn local_txt_toc_rule_applies_falls_back_and_clears() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let base =
+            std::env::temp_dir().join(format!("legado_toc_rule_{}_{}", std::process::id(), n));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        let file = books.join("rules.txt");
+        // 内置默认规则只认识「第五章 默认」；两组自定义标记各自成章
+        std::fs::write(
+            &file,
+            "\n【第一篇】 开端\n甲。\n【第二篇】 继续\n乙。\n\
+             @@第三篇@@\n丙。\n@@第四篇@@\n丁。\n第五章 默认\n戊。\n",
+        )
+        .unwrap();
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let previous_db_path = crate::db_state::current_db_path();
+        crate::db_state::record_db_path(base.join("legado.db").to_str().unwrap());
+
+        let res = crate::api::book_import::import_local_book("books/rules.txt").unwrap();
+        assert!(res.success, "导入失败: {:?}", res.error);
+        let book_url = res.book.as_ref().unwrap().book_url.clone();
+        assert_eq!(book_url, "books/rules.txt");
+
+        // 红：默认规则只识别「第五章 默认」
+        let auto = get_chapters(&book_url).unwrap();
+        assert_eq!(auto.total, 1, "{:?}", auto.chapters);
+        assert_eq!(auto.chapters[0].title, "第五章 默认");
+
+        // 造未建模 readConfig 键 + 进度，验证单列写不回退
+        with_database(|db| {
+            db.connection()
+                .execute(
+                    "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
+                    rusqlite::params![r#"{"useGlobalAudioSkip":true}"#, book_url],
+                )
+                .map_err(|e| LegadoError::Database(format!("写原始 readConfig 失败: {e}")))?;
+            BookRepository::new(db.connection()).update_progress(
+                &book_url,
+                0,
+                7,
+                Some("第五章 默认"),
+                1_700_000_000_000,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 绿 1：显式规则 A
+        let rule_a = r#"{"name":"方括号篇","rule":"^【第.+篇】.*$","replacement":""}"#;
+        let updated = crate::api::bookshelf::set_book_toc_rule(&book_url, Some(rule_a)).unwrap();
+        assert_eq!(
+            updated.toc_url,
+            format!("^【第.+篇】.*${}", legado_book::txt::TOC_RULE_SEPARATOR)
+        );
+        assert_eq!(updated.total_chapter_num, 0, "旧目录应失效");
+        let chapters = get_chapters(&book_url).unwrap();
+        assert_eq!(chapters.total, 2, "{:?}", chapters.chapters);
+        assert_eq!(chapters.chapters[0].title, "【第一篇】 开端");
+        let content = get_chapter_content_full(&book_url, 1).unwrap();
+        assert!(content.contains("乙"), "换规则后正文切片应正确: {content}");
+
+        // 单列写：未建模 readConfig 键 + 进度保持
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(&book_url)?
+                .expect("书籍记录应存在");
+            assert_eq!(saved.dur_chapter_index, 0, "进度不得被规则写回退");
+            assert_eq!(saved.dur_chapter_pos, 7, "进度不得被规则写回退");
+            let raw: Option<String> = db
+                .connection()
+                .query_row(
+                    "SELECT readConfig FROM books WHERE bookUrl = ?1",
+                    rusqlite::params![book_url],
+                    |row| row.get(0),
+                )
+                .map_err(|e| LegadoError::Database(format!("查询 readConfig 失败: {e}")))?;
+            let cfg: serde_json::Value =
+                serde_json::from_str(&raw.unwrap_or_else(|| "{}".into())).unwrap();
+            assert_eq!(cfg["useGlobalAudioSkip"], serde_json::json!(true));
+            Ok(())
+        })
+        .unwrap();
+
+        // 绿 2：换规则 B → 目录重载为新标题
+        let rule_b = r#"{"rule":"^@@.+@@$"}"#;
+        crate::api::bookshelf::set_book_toc_rule(&book_url, Some(rule_b)).unwrap();
+        let chapters = get_chapters(&book_url).unwrap();
+        assert_eq!(chapters.total, 2, "{:?}", chapters.chapters);
+        assert_eq!(chapters.chapters[0].title, "@@第三篇@@");
+
+        // 规则未命中 → 回退内置默认规则
+        crate::api::bookshelf::set_book_toc_rule(&book_url, Some(r#"{"rule":"^不存在的标题$"}"#))
+            .unwrap();
+        let fallback = get_chapters(&book_url).unwrap();
+        assert_eq!(
+            fallback.total, 1,
+            "未命中应回退默认: {:?}",
+            fallback.chapters
+        );
+        assert_eq!(fallback.chapters[0].title, "第五章 默认");
+
+        // 清空（null）→ 恢复默认规则
+        crate::api::bookshelf::set_book_toc_rule(&book_url, None).unwrap();
+        let cleared = get_chapters(&book_url).unwrap();
+        assert_eq!(cleared.total, 1, "{:?}", cleared.chapters);
+        assert_eq!(cleared.chapters[0].title, "第五章 默认");
+
+        // 非法规则 fail-closed：不落库、不清旧目录
+        let err =
+            crate::api::bookshelf::set_book_toc_rule(&book_url, Some(r#"{"rule":"([unclosed"}"#))
+                .expect_err("非法正则应报错");
+        assert!(err.to_string().contains("目录规则正则无效"), "{err}");
+        let after_err = with_database(|db| {
+            Ok(BookRepository::new(db.connection())
+                .find_by_url(&book_url)?
+                .map(|b| b.toc_url))
+        })
+        .unwrap();
+        assert_eq!(after_err.as_deref(), Some(""), "非法规则不得落库");
+
+        // 非本地 TXT：fail-closed
+        let epub_url = "books/not-txt.epub";
+        with_database(|db| {
+            let book = legado_core::models::Book {
+                book_url: epub_url.to_string(),
+                ..Default::default()
+            };
+            BookRepository::new(db.connection()).insert(&book)
+        })
+        .unwrap();
+        let err = crate::api::bookshelf::set_book_toc_rule(epub_url, Some("^第.+章$"))
+            .expect_err("非 TXT 应报错");
+        assert!(err.to_string().contains("仅适用于本地 TXT"), "{err}");
+
+        // 收尾：事务内清章节 + 书行，恢复 DB 路径
+        with_database(|db| {
+            let tx = db
+                .connection()
+                .unchecked_transaction()
+                .map_err(|e| LegadoError::Database(format!("开启清理事务失败: {e}")))?;
+            BookChapterRepository::new(db.connection()).delete_by_book_url(&book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(&book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(epub_url)?;
             tx.commit()
                 .map_err(|e| LegadoError::Database(format!("提交清理事务失败: {e}")))?;
             Ok(())

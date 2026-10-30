@@ -5340,6 +5340,65 @@ mod tests {
         let _ = fs::remove_dir_all(&legacy_dir);
     }
 
+    /// [批43] 本地 TXT 目录规则随 `books.tocUrl` 备份/恢复往返
+    ///
+    /// 原版把规则存于 `Book.tocUrl`（`rule + spaceChars + replacement`），
+    /// 备份 `bookshelf.json` 即自然携带；本用例锁定该透传口径，防后续
+    /// 备份字段白名单误删 `tocUrl`。
+    #[test]
+    fn test_toc_url_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        let book_url = "books/batch43.txt";
+        let stored_rule = format!("^【第.+篇】.*${}", legado_book::txt::TOC_RULE_SEPARATOR);
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "批43规则书".to_string(),
+                origin: "loc_book".to_string(),
+                origin_name: "batch43.txt".to_string(),
+                toc_url: stored_rule.clone(),
+                ..Book::default()
+            })
+        })
+        .expect("批43规则书入库失败");
+
+        let dir = std::env::temp_dir().join("legado_backup_toc_url");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("toc_url.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        assert_eq!(backup_create(path_str).unwrap(), path_str);
+        let content = fs::read_to_string(&backup_path).unwrap();
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        let backed_up = parsed
+            .books
+            .iter()
+            .find(|b| b["bookUrl"] == serde_json::json!(book_url))
+            .expect("备份 books 段应包含本书");
+        assert_eq!(
+            backed_up["tocUrl"],
+            serde_json::json!(stored_rule),
+            "备份 books 段应携带 tocUrl 规则标识：{backed_up}"
+        );
+
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url))
+            .expect("清库失败");
+        assert!(backup_restore(path_str).is_ok());
+        let restored =
+            with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+                .expect("恢复后查询失败")
+                .expect("恢复后书籍应存在");
+        assert_eq!(restored.toc_url, stored_rule, "恢复后规则标识应保持一致");
+
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url)).ok();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// [批16f] 配置缺失/空串时不写该键（备份形状保持旧版兼容）
     #[test]
     fn test_backup_without_direct_link_rule_omits_key() {

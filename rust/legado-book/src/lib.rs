@@ -67,6 +67,18 @@ pub struct ChapterInfo {
     pub end: Option<i64>,
 }
 
+/// 目录解析结果（批43：区分「显式规则命中」与「回退内置默认规则」）
+#[derive(Debug, Clone)]
+pub struct TocParseOutcome {
+    /// 章节列表（始终非空：无法分章时退化为单章「全文」）
+    pub chapters: Vec<ChapterInfo>,
+    /// 是否真正使用了调用方传入的显式规则
+    ///
+    /// `false` 表示：未传规则（自动目录）或显式规则不可编译/未命中而回退
+    /// 内置默认规则——调用方据此记 warn 或提示用户。
+    pub used_custom_rule: bool,
+}
+
 /// 书籍格式
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BookFormat {
@@ -148,14 +160,42 @@ impl LocalBook {
         path: &str,
         charset: Option<&str>,
     ) -> LegadoResult<Vec<ChapterInfo>> {
+        Ok(Self::get_chapters_with_rule(path, charset, None)?.chapters)
+    }
+
+    /// 获取章节列表（可指定编码覆盖 + TXT 显式目录规则，批43）
+    ///
+    /// `rule` 仅对 TXT 生效（其它格式目录由文件自身结构决定，忽略该参数且
+    /// `used_custom_rule=false`）。规则未命中/不可编译时回退内置默认规则，
+    /// 见 [`txt::TxtParser::get_chapters_with_rule`]。
+    pub fn get_chapters_with_rule(
+        path: &str,
+        charset: Option<&str>,
+        rule: Option<&str>,
+    ) -> LegadoResult<TocParseOutcome> {
         let format = Self::detect_format(path)?;
         match format {
-            BookFormat::Txt => txt::TxtParser::get_chapters_with_charset(path, charset),
-            BookFormat::Epub => epub::EpubParser::get_chapters(path),
-            BookFormat::Mobi => mobi::MobiParser::get_chapters(path),
-            BookFormat::Pdf => pdf::PdfParser::get_chapters(path),
-            BookFormat::Umd => umd::UmdParser::get_chapters(path),
-            BookFormat::Cbz => cbz::CbzFile::open(path)?.get_chapters(),
+            BookFormat::Txt => txt::TxtParser::get_chapters_with_rule(path, charset, rule),
+            BookFormat::Epub => Ok(TocParseOutcome {
+                chapters: epub::EpubParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Mobi => Ok(TocParseOutcome {
+                chapters: mobi::MobiParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Pdf => Ok(TocParseOutcome {
+                chapters: pdf::PdfParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Umd => Ok(TocParseOutcome {
+                chapters: umd::UmdParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Cbz => Ok(TocParseOutcome {
+                chapters: cbz::CbzFile::open(path)?.get_chapters()?,
+                used_custom_rule: false,
+            }),
         }
     }
 

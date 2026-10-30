@@ -445,10 +445,96 @@ pub fn set_book_charset(book_url: &str, charset: &str) -> LegadoResult<Book> {
     })
 }
 
-/// 路径是否 TXT 本地书（编码覆盖仅对 TXT 生效）
-fn is_txt_path(book_url: &str) -> bool {
+/// 路径是否 TXT 本地书（编码覆盖 / TXT 目录规则仅对 TXT 生效）
+pub(crate) fn is_txt_path(book_url: &str) -> bool {
     let lower = book_url.to_lowercase();
     lower.ends_with(".txt") || lower.ends_with(".text")
+}
+
+/// 原版 `TxtTocRule` 入参（`setBookTocRule` 的 `ruleJson`）
+///
+/// 只取解析所需两列：`name`/`example` 仅用于规则库展示，`replacement`
+/// 原样写入 `books.tocUrl`（与原版格式一致，供备份往返），Rust 解析阶段
+/// 不执行 JS 替换（见 `legado_book::txt` 模块注释）。
+#[derive(Debug, serde::Deserialize)]
+struct TxtTocRuleInput {
+    #[serde(default)]
+    rule: String,
+    #[serde(default)]
+    replacement: String,
+}
+
+/// 构造写入 `books.tocUrl` 的规则串（原版 `rule + spaceChars + replacement`）
+///
+/// - `None`/空白 → 空串（恢复默认规则，下一次解析走内置默认）；
+/// - `rule_json` 以 `{` 开头按 JSON 对象解析（`rule` 必填、`replacement` 可选）；
+/// - 其它情况整串视为正则（兼容 UI 直接传规则串/手工调试）；
+/// - 正则先按 `(?m)` 语义试编译（`fancy-regex`，对齐原版 lookbehind 支持），
+///   非法/超长/嵌套过深 → fail-closed 报错，不落库「看似成功」的坏规则。
+fn build_toc_rule_storage(rule_json: Option<&str>) -> LegadoResult<String> {
+    let Some(raw) = rule_json.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(String::new());
+    };
+    let (rule, replacement) = if raw.starts_with('{') {
+        let input: TxtTocRuleInput = serde_json::from_str(raw)
+            .map_err(|e| LegadoError::BookParse(format!("目录规则 JSON 非法: {e}")))?;
+        (input.rule, input.replacement)
+    } else {
+        (raw.to_string(), String::new())
+    };
+    let rule = rule.trim();
+    if rule.is_empty() {
+        return Err(LegadoError::BookParse("目录规则不能为空".to_string()));
+    }
+    let pattern = format!("(?m){rule}");
+    if legado_core::regex_safe::compile_fancy_regex_safe(&pattern).is_none() {
+        return Err(LegadoError::BookParse(
+            "目录规则正则无效（非法、超长或嵌套过深）".to_string(),
+        ));
+    }
+    Ok(format!(
+        "{rule}{}{replacement}",
+        legado_book::txt::TOC_RULE_SEPARATOR
+    ))
+}
+
+/// 本地 TXT 目录规则设置（批43，单列写 + 清本地目录缓存）
+///
+/// 对齐参考版 `MenuTocRegex` / 原版 `TocActivity.onTocRegexDialogResult`：
+/// 选中规则后写 `book.tocUrl` 并清空本地章节，下一次打开目录按新规则重解析。
+///
+/// - `rule_json` 语义见 [`build_toc_rule_storage`]；`None`/空白 = 恢复默认；
+/// - **单列 UPDATE** 只写 `books.tocUrl`（不整书回写，`readConfig` 未建模键
+///   与阅读进度原样保留）；
+/// - 仅本地 TXT 可调用，其它格式 fail-closed（UI 对非 TXT 隐藏入口）；
+/// - 同事务清空 `chapters` 表该书行并重置目录派生字段，保证下次重新解析。
+pub fn set_book_toc_rule(book_url: &str, rule_json: Option<&str>) -> LegadoResult<Book> {
+    let stored = build_toc_rule_storage(rule_json)?;
+    with_database(|db| {
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let book = repo
+            .find_by_url(book_url)?
+            .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))?;
+        if !(is_local_storage_book(&book) && is_txt_path(book_url)) {
+            return Err(LegadoError::BookParse(
+                "TXT 目录规则仅适用于本地 TXT 书籍".to_string(),
+            ));
+        }
+
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启目录规则更新事务失败: {e}")))?;
+        repo.update_toc_url(book_url, &stored)?;
+        // delete_by_book_url 在事务外为 no-op（B-7），此处已显式开启事务
+        BookChapterRepository::new(conn).delete_by_book_url(book_url)?;
+        repo.update_toc_derived_fields(book_url, 0, None, None)?;
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交目录规则更新事务失败: {e}")))?;
+
+        repo.find_by_url(book_url)?
+            .ok_or_else(|| LegadoError::Internal(format!("书籍不存在: {book_url}")))
+    })
 }
 
 /// 按 bookUrl 获取单本书籍详情
