@@ -1961,8 +1961,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         // 空目录自愈；详情页「未入库」路径又不落库章节 → 必须在开读前
         // 把目录写入 DB，否则进 comic/video 仍是「暂无章节」。
         // 对齐原版 readBook 前确保目录可用。— Reasonix + UI
+        // 批9a 项4：分流前刷新漫画浏览开关镜像（showMangaUi=false 时在线
+        // 图片书回落文本阅读器，同样需目录就绪）
+        await BookOpenUtils.refreshShowMangaUi();
         if (!BookOpenUtils.needsReaderNotifier(
-            BookOpenUtils.routeForTypeBits(typeBits))) {
+            BookOpenUtils.routeForTypeBits(
+          typeBits,
+          isLocalBook: BookType.isLocalBook(book),
+        ))) {
           final existingChapters = await api.getChapters(book.bookUrl);
           if (existingChapters.isEmpty && book.origin.isNotEmpty) {
             await api.refreshToc(book.bookUrl, book.origin);
@@ -1978,7 +1984,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         ? book.copyWith(durChapterIndex: chapterIndex, bookType: typeBits)
         : book.copyWith(bookType: typeBits);
     // 按类型分流（对齐原版 BookInfoActivity.startReadActivity）— Reasonix + UI
-    final route = BookOpenUtils.routeForTypeBits(typeBits);
+    // 批9a 项4：镜像已在上方阅读前落库分支刷新（本函数 _isOnlineBook 时）；
+    // 本地书/离线再进时镜像可能过期，这里兜底再刷一次（幂等）
+    await BookOpenUtils.refreshShowMangaUi();
+    final route = BookOpenUtils.routeForTypeBits(
+      typeBits,
+      isLocalBook: BookType.isLocalBook(book),
+    );
     debugPrint(
       '[BookOpen] name=${book.name} origin=${book.origin} '
       'typeBits=$typeBits route=$route '

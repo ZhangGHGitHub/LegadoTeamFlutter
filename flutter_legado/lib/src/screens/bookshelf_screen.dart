@@ -903,7 +903,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (!context.mounted) return;
     final bookToOpen =
         typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
-    final route = BookOpenUtils.routeForTypeBits(typeBits);
+    // 批9a 项4：分流前刷新漫画浏览开关镜像（showMangaUi=false 时在线
+    // 图片书回落文本阅读器）
+    await BookOpenUtils.refreshShowMangaUi();
+    if (!context.mounted) return;
+    final route = BookOpenUtils.routeForTypeBits(
+      typeBits,
+      isLocalBook: BookType.isLocalBook(book),
+    );
     if (BookOpenUtils.needsReaderNotifier(route)) {
       ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
       await Navigator.pushNamed(context, route);

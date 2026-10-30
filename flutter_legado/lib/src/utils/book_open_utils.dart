@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/pref_keys.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
@@ -57,6 +59,60 @@ class BookOpenUtils {
 
   /// 从书籍已有 bookType 提取媒体类型位
   static int typeBitsOf(Book book) => book.bookType & typeMask;
+
+  /// 漫画浏览开关镜像（批9a 项4：showMangaUi 的运行时快照）
+  ///
+  /// 开书分流在 async 编排与同步路由选择中都会走，painter 式异步直读
+  /// SharedPreferences 不合适，故启动（main.dart）与设置页开关回调
+  /// （other_settings_screen）各刷新一次，分流处同步读快照。
+  /// 默认 true 对齐参考版 MangaSettings.showMangaUi。
+  static bool showMangaUi = true;
+
+  /// 刷新漫画浏览开关镜像（读 SharedPreferences，失败保持当前值）
+  static Future<void> refreshShowMangaUi() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      showMangaUi =
+          prefs.getBool(PrefKeys.showMangaUi) ?? true;
+    } catch (_) {
+      // prefs 读取失败保持当前镜像值（默认 true）
+    }
+  }
+
+  /// 是否以漫画 UI 打开图片书（对齐参考版 BookInfoRouteScreen.kt:147 /
+  /// ContextExtensions.kt:78：`!isLocal && isImage && showMangaUi`）
+  ///
+  /// 关闭开关时本地 cbz 也回落文本阅读器？否——参考版两处消费点均带
+  /// `!book.isLocal` 条件：本地漫画包（cbz 等）不受该开关影响恒走漫画 UI，
+  /// 仅在线图片书受控（关闭 → 文本阅读器，正文为 <img> 时由文本阅读器
+  /// 的 isImageDominantContent 分支兜底出图）。
+  static bool shouldOpenMangaUi(int typeBits, {required bool isLocalBook}) =>
+      !isLocalBook &&
+      (typeBits & BookType.image) != 0 &&
+      showMangaUi;
+
+  /// 按类型位选择路由名（video→/video、audio→/audio、image→/reader-comic、
+  /// 其余→/reader）
+  ///
+  /// 批9a 项4：在线图片书在 showMangaUi=false 时回落文本阅读器
+  /// /reader（对齐参考版开书分流语义）；**本地图片书（cbz 等）恒走
+  /// /reader-comic 不随开关降级**——参考版两处消费点语义不一致
+  /// （BookInfoRouteScreen.kt:147 / MainNavGraph.kt:552 带 `!isLocal`，
+  /// ContextExtensions.kt:78 不带），取「本地书不受开关影响」侧：既有
+  /// cbz 导入链路依赖 comic 阅读器呈现（批 cbz 测试钉住 0x1040 →
+  /// /reader-comic），降级路径未实机验证前不硬接。
+  /// 调用方须先经 [refreshShowMangaUi] 保证镜像新鲜（openBook 编排与
+  /// book_info 阅读入口均已接入）。
+  static String routeForTypeBits(int typeBits, {bool isLocalBook = false}) {
+    if ((typeBits & BookType.video) != 0) return AppRoutes.video;
+    if ((typeBits & BookType.audio) != 0) return AppRoutes.audio;
+    if ((typeBits & BookType.image) != 0) {
+      if (isLocalBook) return AppRoutes.readerComic;
+      if (showMangaUi) return AppRoutes.readerComic;
+      return AppRoutes.reader;
+    }
+    return AppRoutes.reader;
+  }
 
   /// [P2-15 ② | type 回流 2026-09-18] 详情解析 type（WebBookInfo JSON
   /// `type` 键，BookType 位标记）并入书籍 bookType。
@@ -235,15 +291,6 @@ class BookOpenUtils {
     return existing;
   }
 
-  /// 按类型位选择路由名（video→/video、audio→/audio、image→/reader-comic、
-  /// 其余→/reader）
-  static String routeForTypeBits(int typeBits) {
-    if ((typeBits & BookType.video) != 0) return AppRoutes.video;
-    if ((typeBits & BookType.audio) != 0) return AppRoutes.audio;
-    if ((typeBits & BookType.image) != 0) return AppRoutes.readerComic;
-    return AppRoutes.reader;
-  }
-
   /// 路由参数：video/audio 传 [Book]；漫画传 bookUrl；文本阅读器由
   /// ReaderNotifier 持有状态，无 arguments
   static Object? argumentsForRoute(String route, Book book) {
@@ -315,7 +362,12 @@ class BookOpenUtils {
     }
     if (!useGlobalNavigator && !context.mounted) return;
     final bookToOpen = typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
-    final route = routeForTypeBits(typeBits);
+    // 批9a 项4：分流前刷新漫画浏览开关镜像（异步上下文内直读一次）
+    await refreshShowMangaUi();
+    final route = routeForTypeBits(
+      typeBits,
+      isLocalBook: BookType.isLocalBook(book),
+    );
     if (needsReaderNotifier(route)) {
       ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
       await navigator.pushNamed(route);
