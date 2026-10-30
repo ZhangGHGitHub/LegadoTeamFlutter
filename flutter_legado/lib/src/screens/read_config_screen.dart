@@ -250,14 +250,17 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
 //    other_settings_screen）──
 
 /// 行内滑块行：标题 + 当前值 + Slider（参考版 SliderSettingItem 形态）
-class SettingSliderRow extends StatelessWidget {
+///
+/// [批1a 审查回修 | 2026-10-31] 提交时机对齐既有字号滑块口径（批33b）：
+/// 拖动中（onChanged）仅本地预览数值，松手（onChangeEnd）才提交一次——
+/// 避免逐帧触发约 90 键全量写盘 + provider 推送 — 全栈工程师
+class SettingSliderRow extends StatefulWidget {
   final String title;
   final int value;
   final int min;
   final int max;
 
-  /// 拖动即提交（数值行拖动频率低，逐帧写盘与既有字号滑块不同、可接受；
-  /// 调用方 _update 内部为异步 save，无 UI 卡顿路径）
+  /// 松手提交（一次）
   final ValueChanged<int> onChanged;
 
   const SettingSliderRow({
@@ -270,8 +273,17 @@ class SettingSliderRow extends StatelessWidget {
   });
 
   @override
+  State<SettingSliderRow> createState() => _SettingSliderRowState();
+}
+
+class _SettingSliderRowState extends State<SettingSliderRow> {
+  /// 拖动中的本地预览值（null = 未在拖动，显示外部值）
+  int? _preview;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final shown = _preview ?? widget.value;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Column(
@@ -280,21 +292,28 @@ class SettingSliderRow extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              Text(widget.title,
+                  style: Theme.of(context).textTheme.titleMedium),
               Text(
-                '$value',
+                '$shown',
                 style: Theme.of(context).textTheme.labelMediumEmphasized
                     ?.copyWith(color: cs.primary),
               ),
             ],
           ),
           Slider(
-            value: value.toDouble().clamp(min.toDouble(), max.toDouble()),
-            min: min.toDouble(),
-            max: max.toDouble(),
-            divisions: max - min,
-            label: '$value',
-            onChanged: (v) => onChanged(v.round()),
+            value: shown.toDouble().clamp(widget.min.toDouble(),
+                widget.max.toDouble()),
+            min: widget.min.toDouble(),
+            max: widget.max.toDouble(),
+            divisions: widget.max - widget.min,
+            label: '$shown',
+            onChanged: (v) => setState(() => _preview = v.round()),
+            onChangeEnd: (v) {
+              final target = v.round().clamp(widget.min, widget.max);
+              setState(() => _preview = null);
+              widget.onChanged(target);
+            },
           ),
         ],
       ),

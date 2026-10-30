@@ -492,18 +492,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// 退出判定入口（PopScope 拦截所有 pop 尝试后调用）
   Future<void> _onExitPop(BuildContext context) async {
-    // [批1a | 2026-10-31] disableReturnKey 接线（对齐原版
-    // ReadBookActivity.kt:411 `disableReturnKey && !menuLayoutIsVisible`
-    // 语义）— 全栈工程师：
-    // - 开启且阅读菜单未展开 → 返回键不退出（吞掉本次返回）
-    // - 开启且菜单展开 → 先关菜单（原版菜单返回由 ReadMenu 拦截关菜单，
-    //   等价语义：菜单开时返回不退出阅读器）
-    // - 未开启 → 原行为不变（走下方既有退出判定）
+    // [批1a 审查回修 | 2026-10-31] disableReturnKey 语义对齐原版
+    // ReadBookActivity.kt:391-414（onBackPressed）：
+    // `if (getPrefBoolean("disableReturnKey") && !menuLayoutIsVisible)
+    // return@addCallback` —— **仅「开关开启且菜单未展开」时吞返回**；
+    // 菜单展开时不拦截，继续走既有退出判定（保证至少一条可达退出路径，
+    // 避免开启后死锁）— 全栈工程师
     final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
-    if (cfg.disableReturnKey) {
-      if (ref.read(readerNotifierProvider).showControls) {
-        ref.read(readerNotifierProvider.notifier).toggleControls();
-      }
+    if (cfg.disableReturnKey &&
+        !ref.read(readerNotifierProvider).showControls) {
       return;
     }
     if (_exitPending) return;

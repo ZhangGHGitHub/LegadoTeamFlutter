@@ -250,6 +250,38 @@ void main() {
       expect((await ReaderAdvancedConfig.load()).pageTouchSlop, 1000);
     });
 
+    testWidgets('滑块拖动中只预览不落盘，松手才提交一次（审查回修 P2-2）',
+        (tester) async {
+      useTallViewport(tester);
+      await _pump(tester);
+      final container =
+          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+
+      final sliderCenter = tester.getCenter(find.byType(Slider));
+      // 拖动到中段（手势未松手）
+      final gesture = await tester.startGesture(sliderCenter);
+      await gesture.moveBy(const Offset(200, 0));
+      await tester.pump();
+
+      // 拖动中：持久值未变（仍 0），页面显示本地预览值
+      expect(container.read(readerAdvConfigProvider)?.pageTouchSlop, 0,
+          reason: '拖动中不得写盘/推送（逐帧 save 回修点）');
+      expect((await ReaderAdvancedConfig.load()).pageTouchSlop, 0);
+
+      // 松手提交
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final committed = container.read(readerAdvConfigProvider)?.pageTouchSlop;
+      expect(committed, greaterThan(0), reason: '松手后提交最终值');
+      expect((await ReaderAdvancedConfig.load()).pageTouchSlop, committed);
+      // 预览值复位：行数值显示回到已提交值
+      final row = tester
+          .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
+          .single;
+      expect(row.value, committed);
+    });
+
     testWidgets('往返幂等：改值后 load()==save 的值；重进页面回显', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
