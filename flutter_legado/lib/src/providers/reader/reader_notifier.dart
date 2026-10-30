@@ -577,7 +577,22 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 尽量保持位置，再重载当前章正文。
   ///
   /// 成功返回 null；失败返回原因（UI 据此展示失败，**不得提示成功**）。
-  Future<String?> reloadAfterCharsetChange(Book book) async {
+  Future<String?> reloadAfterCharsetChange(Book book) =>
+      _reloadLocalTocAndContent(book, failureHint: '编码或文件不可读');
+
+  /// 设置 TXT 目录规则后重载目录与当前章正文（批43，对齐 `MenuTocRegex`）
+  ///
+  /// Rust `setBookTocRule` 已清空本地 TXT 章节表并写入 `books.tocUrl`；
+  /// 与换编码同理：重新拉取目录（按新规则解析）、尽量保持当前章索引，
+  /// 再重载正文。成功返回 null，失败返回原因。
+  Future<String?> reloadAfterTocRuleChange(Book book) =>
+      _reloadLocalTocAndContent(book, failureHint: '目录规则未命中或文件不可读');
+
+  /// 本地书目录/正文重载共用实现（编码 / 目录规则变更）
+  Future<String?> _reloadLocalTocAndContent(
+    Book book, {
+    required String failureHint,
+  }) async {
     final openSeq = _openSeq;
     state = state.copyWith(currentBook: book, isLoading: true, error: null);
     try {
@@ -586,7 +601,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       // 开书代际已变化（并发切换到别的书）→ 丢弃旧结果
       if (openSeq != _openSeq) return null;
       if (chapters.isEmpty) {
-        state = state.copyWith(error: '目录加载失败（编码或文件不可读）');
+        state = state.copyWith(error: '目录加载失败（$failureHint）');
         return state.error;
       }
       final index = state.currentChapterIndex

@@ -10,11 +10,10 @@
 // 其中 toc_rule/charset 只对本地书生效，所以在线书默认仍是旧版那套
 // 「换源 / 刷新 / 缓存 / 更多」四个图标（池顺序即默认展示顺序）。
 //
-// [批37b P2-2 登记] 本仓库的 `toc_rule` 目前只打开「目录规则库」管理页，
-// 尚未把选中规则作用于当前本地 TXT（参考版 MenuTocRegex 会写 book.tocUrl
-// 并重解析目录）。为不误导用户，本批将其移出默认启用集；入口文案改为
-// 「目录规则库（仅管理规则）」，配置页仍可手动开启，后续批次打通后再
-// 恢复默认开启。
+// [批43 已接通] `toc_rule` 现在选择规则后写当前书 `books.tocUrl` 并清空
+// 本地章节缓存重解析目录（对齐参考版 MenuTocRegex / 原版
+// TocActivity.onTocRegexDialogResult），恢复为默认启用并复用原版文案
+// 「TXT 目录规则」，与参考版默认顶栏集一致。
 //
 // 持久化键对齐参考版 SharedPreferences 文件名 + 键名：
 // `title_bar_actions` / `actions`。Flutter 只有单一 prefs 存储，故实际键
@@ -159,8 +158,8 @@ const List<ReaderTopBarActionDef> readerTopBarActionPool = [
   ReaderTopBarActionDef(
     id: 'toc_rule',
     icon: Symbols.toc_rounded,
-    // [批37b P2-2] 当前仅打开规则库管理页，不作用于当前书——文案如实标注
-    label: '目录规则库（仅管理规则）',
+    // 对齐原版 menu_toc_regex / 参考版 toc_rule 文案
+    label: 'TXT 目录规则',
     scope: ReaderBookScope.localTxt,
   ),
   ReaderTopBarActionDef(
@@ -233,12 +232,13 @@ final Map<String, ReaderTopBarActionDef> readerTopBarActionById = {
 
 /// 参考版默认开启的顶栏动作（顺序由 [readerTopBarActionPool] 决定）
 ///
-/// [批37b P2-2] `toc_rule` 暂未接通「作用于当前书」的语义，默认关闭
-/// （入口仍在池内，用户可在配置页手动开启；见文件头登记）。
+/// [批43] `toc_rule` 已接通「作用于当前书」，按参考版默认集恢复开启
+/// （在线书仍被书型过滤掉，本地 TXT 显示为「TXT 目录规则」）。
 const Set<String> kReaderDefaultTopBarActionIds = {
   'download',
   'refresh',
   'change_source',
+  'toc_rule',
   'charset',
   kReaderMoreActionsId,
 };

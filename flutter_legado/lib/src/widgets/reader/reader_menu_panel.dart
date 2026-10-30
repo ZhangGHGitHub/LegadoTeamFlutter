@@ -19,6 +19,7 @@ import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
 import 'reader_charset_dialog.dart';
 import 'reader_download_dialog.dart';
+import 'reader_toc_rule_dialog.dart';
 import 'reader_top_bar_actions.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
@@ -369,7 +370,17 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       case 'change_source':
         if (book != null) await _changeSourceFlow(context, book);
       case 'toc_rule':
-        Navigator.pushNamed(context, AppRoutes.txtTocRules);
+        // 批43：对齐原版 menu_toc_regex → TxtTocRuleDialog：选择规则弹层，
+        // 选中后单列写 books.tocUrl + 清本地章节缓存 + 重载目录/正文；
+        // 「管理规则」入口在弹层内（不再直接跳规则库管理页）。
+        if (book != null) {
+          await showReaderTocRuleDialog(
+            context,
+            ref,
+            book: book,
+            onApplied: (updated) => notifier.reloadAfterTocRuleChange(updated),
+          );
+        }
       case 'charset':
         showReaderCharsetDialog(context, ref);
       case 'catalog':

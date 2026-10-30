@@ -22,6 +22,7 @@ import '../services/settings_service.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/toc_cache_state.dart';
+import '../widgets/reader/reader_toc_rule_dialog.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
 ///
@@ -707,8 +708,30 @@ class _TocScreenState extends ConsumerState<TocScreen>
   Future<void> _handleMenu(String value) async {
     switch (value) {
       case 'tocRegex':
-        // 跳转已有 TXT 目录规则页（对齐原版 menu_toc_regex → TxtTocRuleDialog）
-        Navigator.pushNamed(context, AppRoutes.txtTocRules);
+        // 批43：对齐原版 menu_toc_regex → TxtTocRuleDialog：选择规则后写
+        // 当前书 books.tocUrl 并清空本地章节缓存，本页重载目录。
+        await showReaderTocRuleDialog(
+          context,
+          ref,
+          book: _book,
+          onApplied: (updated) async {
+            if (!mounted) return null;
+            setState(() => _book = updated);
+            final readerState = ref.read(readerNotifierProvider);
+            if (readerState.currentBook?.bookUrl == updated.bookUrl) {
+              // 阅读器持有旧章节表：同步按新规则重载（目录页 pop 回阅读器
+              // 时 didPopNext 只重读书籍快照，不重拉章节）
+              await ref
+                  .read(readerNotifierProvider.notifier)
+                  .reloadAfterTocRuleChange(updated);
+            }
+            await _loadChapters();
+            if (!mounted) return null;
+            if (_chaptersError != null) return _chaptersError;
+            if (_chapters.isEmpty) return '目录为空（可尝试其它规则）';
+            return null;
+          },
+        );
         break;
       case 'splitLongChapter':
         // 拆分长章节存于 ReadConfig（参照 book_info_screen 已有实现）

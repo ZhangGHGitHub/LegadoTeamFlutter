@@ -132,6 +132,41 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
     return updated;
   }
 
+  /// 设置本地 TXT 目录规则（批43）：Mock 更新内存 `tocUrl` 并清空章节缓存。
+  ///
+  /// 语义偏差：不做正则试编译（Rust 侧 `fancy-regex` 负责）与非 TXT 拒绝；
+  /// 只保留「规则串/replacement 拼成原版 tocUrl + 下次重解析」的形状。
+  @override
+  Future<Book> setBookTocRule(String bookUrl, String? ruleJson) async {
+    await _ensureBooksLoaded();
+    final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
+    if (idx < 0) {
+      throw StateError('书籍不存在: $bookUrl');
+    }
+    final raw = ruleJson?.trim() ?? '';
+    String stored;
+    if (raw.isEmpty) {
+      stored = '';
+    } else if (raw.startsWith('{')) {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('目录规则 JSON 非法');
+      }
+      final rule = (decoded['rule'] as String? ?? '').trim();
+      if (rule.isEmpty) {
+        throw const FormatException('目录规则不能为空');
+      }
+      final replacement = decoded['replacement'] as String? ?? '';
+      stored = '$rule$kTxtTocRuleSeparator$replacement';
+    } else {
+      stored = raw;
+    }
+    final updated = _books[idx].copyWith(tocUrl: stored);
+    _books[idx] = updated;
+    _chaptersCache.remove(bookUrl);
+    return updated;
+  }
+
   @override
   Future<Book?> getBook(String bookUrl) async {
     await _ensureBooksLoaded();

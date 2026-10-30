@@ -86,6 +86,19 @@ mixin RustApiSources on RustApiDecode implements BookApi {
     return Book.fromJson(_decodeMap(json, 'bookApi'));
   }
 
+  /// 设置本地 TXT 目录规则（批43，单列写，返回更新后的整书）
+  ///
+  /// [ruleJson] 为空（null/空白）表示恢复默认规则；Rust 侧写
+  /// `books.tocUrl` 并清空该书章节表，下一次 `getChapters` 按新规则重解析。
+  @override
+  Future<Book> setBookTocRule(String bookUrl, String? ruleJson) async {
+    final json = await bridge.bookSetTocRule(
+      bookUrl: bookUrl,
+      ruleJson: ruleJson,
+    );
+    return Book.fromJson(_decodeMap(json, 'bookApi'));
+  }
+
   /// 按 bookUrl 获取书籍详情
   @override
   Future<Book?> getBook(String bookUrl) async {

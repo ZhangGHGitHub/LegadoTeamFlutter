@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/models.dart';
+import '../utils/txt_toc_rule.dart';
 import 'book_api.dart';
 
 part 'mock_book_api_store.part.dart';

@@ -104,6 +104,18 @@ abstract class BookApi {
   /// `encoding_rs` 校验/归一化，不支持的编码抛错（UI 不得提示成功）。
   Future<Book> setBookCharset(String bookUrl, String charset);
 
+  /// 设置本地 TXT 目录规则（批43，单列写，返回更新后的整书）
+  ///
+  /// 对齐参考版 `MenuTocRegex` / 原版 `TocActivity.onTocRegexDialogResult`：
+  /// 选中规则后只写 `books.tocUrl`（原版格式 `rule + spaceChars +
+  /// replacement`），Rust 侧同事务清空 `chapters` 表该书行并重置目录派生
+  /// 字段，下一次 [getChapters] 按新规则重解析目录。
+  ///
+  /// [ruleJson] 为 `TxtTocRule` JSON（`{"rule":"...","replacement":"..."}`）
+  /// 或直接的正则串；`null`/空白表示恢复默认规则。正则经 Rust 侧试编译，
+  /// 非法/超长/嵌套过深抛错（UI 不得提示成功）；非本地 TXT 抛错。
+  Future<Book> setBookTocRule(String bookUrl, String? ruleJson);
+
   /// 按 bookUrl 获取书籍详情
   Future<Book?> getBook(String bookUrl);
 
