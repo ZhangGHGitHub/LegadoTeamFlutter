@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 import 'package:flutter_legado/src/widgets/reader/text_selection_panel.dart';
@@ -10,6 +13,9 @@ import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
 void main() {
   testWidgets('长按正文出现浮窗工具条（复制/分享/浏览器/朗读/书签/更多）',
       (tester) async {
+    // [批1a] ReaderSelectionToolbar.show 读取共享 readerAdvConfigProvider
+    //（selectVibrator 选词振动接线），外壳需 ProviderScope — 全栈工程师
+    SharedPreferences.setMockInitialValues({});
     final pageInfo = PageInfo(
       paragraphs: [
         ParagraphInfo(
@@ -34,24 +40,26 @@ void main() {
 
     // 复现真实手势环境：阅读器 onTapUp 点触区 + PageView 包裹
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: GestureDetector(
-            onTapUp: (_) {},
-            child: PageView(
-              children: [
-                SingleChildScrollView(
-                  child: ReaderTextContent(
-                    pageInfo: pageInfo,
-                    fontSize: 16,
-                    lineHeight: 1.5,
-                    paragraphSpacing: 8,
-                    textColor: Colors.white,
-                    selectText: true,
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: GestureDetector(
+              onTapUp: (_) {},
+              child: PageView(
+                children: [
+                  SingleChildScrollView(
+                    child: ReaderTextContent(
+                      pageInfo: pageInfo,
+                      fontSize: 16,
+                      lineHeight: 1.5,
+                      paragraphSpacing: 8,
+                      textColor: Colors.white,
+                      selectText: true,
+                    ),
                   ),
-                ),
-                const Scaffold(body: Center(child: Text('第2页'))),
-              ],
+                  const Scaffold(body: Center(child: Text('第2页'))),
+                ],
+              ),
             ),
           ),
         ),

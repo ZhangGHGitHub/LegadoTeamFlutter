@@ -24,6 +24,7 @@ import '../../providers/bookmark/bookmark_notifier.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
+import '../../screens/reader_config_panel.dart';
 import '../dict_dialog.dart';
 
 /// 高亮配色（对齐原版 HighlightStyle 多色能力，颜色写入 BookHighlight.style JSON）
@@ -597,6 +598,14 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     required String text,
     required int chapterPos,
   }) {
+    // [批1a | 2026-10-31] selectVibrator 接线（对标参考版
+    // ReadBookRouteScreen selectionHapticsEnabled → ReaderCanvasSurface
+    // 选词起选时 HapticFeedback）：选词振动开关开启时长按起选即触发 —
+    // 全栈工程师
+    final container = ProviderScope.containerOf(context);
+    if (container.read(readerAdvConfigProvider)?.selectVibrator ?? false) {
+      HapticFeedback.selectionClick();
+    }
     final overlay = Overlay.of(context, rootOverlay: true);
     late OverlayEntry entry;
     var dismissed = false;

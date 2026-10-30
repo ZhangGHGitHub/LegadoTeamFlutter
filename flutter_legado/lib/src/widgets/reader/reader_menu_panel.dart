@@ -493,6 +493,11 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // [PARITY C2 M2] 移除来源 URL 全文行：参考版顶栏信息块只保留
     // 章节名 + 书源小字徽标，不再渲染章节链接全文（来源名并入小字行）。
     final sourceName = book?.originName ?? '';
+    // [批1a | 2026-10-31] showReadTitleAddition 接线（对标原版
+    // showReadTitleAddition / 参考版 ReadConfigScreen #42）：关闭后
+    // 顶栏信息块（章节名 + 书源徽标）整体不渲染 — 全栈工程师
+    final showTitleAddition =
+        ref.watch(readerAdvConfigProvider.select((v) => v?.showReadTitleAddition ?? true));
     // [P2-9 | 2026-09-24] 在线书判定（对齐顶栏 isOnline 语义，WebDAV 视作
     // 本地）：本地书（loc_book/webDav::/存量 dav:）不显示换源/刷新正文（原版 ReadMenu
     // 对本地书隐藏这两项入口）；notifier 侧守卫兜底
@@ -640,7 +645,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                 ],
               ),
             ),
-            if (chapter != null || sourceName.isNotEmpty)
+            // [批1a] showReadTitleAddition：关闭时顶栏信息块不渲染
+            if (showTitleAddition &&
+                (chapter != null || sourceName.isNotEmpty))
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Column(

@@ -251,6 +251,23 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // 对标原版 ReadView 滚轮事件单次翻页语义）— Qoder
   DateTime _lastWheelTurn = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// [批1a | 2026-10-31] 翻页成功振动（sliderVibrator）注入点 — 全栈工程师
+  ///
+  /// 默认走 HapticFeedback.selectionClick；测试可覆写为收集器断言
+  /// （Flutter 测试内 HapticFeedback 走 platform channel，默认消息被
+  /// TestDefaultBinaryMessenger 吞掉、不可直接断言，故留注入开关）。
+  static void Function() onPageTurnedHaptic =
+      HapticFeedback.selectionClick;
+
+  /// 翻页成功振动（sliderVibrator=true 时触发；对标参考版 sliderVibrator
+  /// 语义：翻页动作成功落地后短振反馈。原版无此键，默认 false）
+  void _maybeVibrateOnPageTurn() {
+    final cfg = ref.read(readerAdvConfigProvider);
+    if (cfg?.sliderVibrator ?? false) {
+      onPageTurnedHaptic();
+    }
+  }
+
   /// 当前章分页总数（进度条「调章内页」行为消费）
   int get pageCount => _paginatedPages.length;
 
@@ -259,6 +276,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   void _navigateToPage(int index) {
     setState(() => _currentPageIndex = index);
     ref.read(readerNotifierProvider.notifier).updatePosition(index);
+    // [批1a] sliderVibrator：翻页成功振动（直设索引路径）
+    _maybeVibrateOnPageTurn();
     // 跳页同样驱动相邻章预载
     _maybePreloadAdjacent(ref.read(readerNotifierProvider));
   }
@@ -273,6 +292,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       pos.minScrollExtent,
       pos.maxScrollExtent,
     );
+    // [批1a] sliderVibrator：滚动翻页成功振动（到边界不再滚动则不触发）
+    if (target != pos.pixels) {
+      _maybeVibrateOnPageTurn();
+    }
     if (widget.noAnimScroll) {
       _scrollController.jumpTo(target);
     } else {
@@ -302,11 +325,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       if (_scrollController.hasClients) {
         final pos = _scrollController.position;
         if (pos.hasViewportDimension && pos.pixels >= pos.maxScrollExtent - 1) {
+          // [批1a] sliderVibrator：滚动模式跨章振动
+          _maybeVibrateOnPageTurn();
           notifier.nextChapter();
         } else {
           _scrollByViewport(true);
         }
       } else {
+        _maybeVibrateOnPageTurn();
         notifier.nextChapter();
       }
       return;
@@ -323,6 +349,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (_currentPageIndex + step < _paginatedPages.length) {
       _navigateToPage(_currentPageIndex + step);
     } else {
+      _maybeVibrateOnPageTurn();
       notifier.nextChapter();
     }
   }
@@ -337,11 +364,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       if (_scrollController.hasClients) {
         final pos = _scrollController.position;
         if (pos.hasViewportDimension && pos.pixels <= pos.minScrollExtent + 1) {
+          // [批1a] sliderVibrator：滚动模式跨章振动
+          _maybeVibrateOnPageTurn();
           notifier.prevChapter();
         } else {
           _scrollByViewport(false);
         }
       } else {
+        _maybeVibrateOnPageTurn();
         notifier.prevChapter();
       }
       return;
@@ -356,6 +386,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (_currentPageIndex - step >= 0) {
       _navigateToPage(_currentPageIndex - step);
     } else {
+      _maybeVibrateOnPageTurn();
       notifier.prevChapter();
     }
   }
@@ -1131,13 +1162,23 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           final page = _isDoublePage ? i * 2 : i;
           setState(() => _currentPageIndex = page);
           notifier.updatePosition(page);
+          // [批1a] sliderVibrator：翻页成功振动
+          _maybeVibrateOnPageTurn();
           // 翻页不触发重分页 → 此处驱动相邻章预载（原仅分页触发导致章末无预载）
           _maybePreloadAdjacent(ref.read(readerNotifierProvider));
         },
         chapterPrevPage: _prevChapterPreview,
         chapterNextPage: _nextChapterPreview,
-        onTurnChapterPrev: notifier.prevChapter,
-        onTurnChapterNext: notifier.nextChapter,
+        onTurnChapterPrev: () {
+          // [批1a] sliderVibrator：跨章翻页成功振动
+          _maybeVibrateOnPageTurn();
+          notifier.prevChapter();
+        },
+        onTurnChapterNext: () {
+          // [批1a] sliderVibrator：跨章翻页成功振动
+          _maybeVibrateOnPageTurn();
+          notifier.nextChapter();
+        },
         hasChapterPrev: state.hasPreviousChapter,
         hasChapterNext: state.hasNextChapter,
       ),

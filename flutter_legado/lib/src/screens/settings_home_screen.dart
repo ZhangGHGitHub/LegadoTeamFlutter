@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../routes.dart';
-import '../widgets/reader/reader_settings_sheet.dart';
 
 /// 设置主页（集中化分组入口）
 ///
@@ -21,8 +20,11 @@ class SettingsHomeScreen extends StatelessWidget {
           () => Navigator.pushNamed(context, AppRoutes.themeConfig)),
       (Symbols.tune_rounded, '高级', '功能相关的一些设置',
           () => Navigator.pushNamed(context, AppRoutes.otherSettings)),
-      (Symbols.style_rounded, '阅读界面', '字号/背景/翻页动画/排版',
-          () => ReaderSettingsSheet.show(context)),
+      // [批1a | 2026-10-31] 「阅读界面」改进独立「阅读设置」页（对齐参考版
+      // ConfigNavScreen Reading Interface Settings 入口语义）；阅读器内
+      // 四页签弹层（ReaderSettingsSheet）入口保留不动 — 全栈工程师
+      (Symbols.style_rounded, '阅读界面', '屏幕/页面控制/阅读偏好',
+          () => Navigator.pushNamed(context, AppRoutes.readConfig)),
       (Symbols.backup_rounded, '备份与恢复', 'WebDav 设置/导入旧版本数据',
           () => Navigator.pushNamed(context, AppRoutes.webdavSettings)),
       (Symbols.download_rounded, '缓存管理', '书籍下载任务与缓存进度',

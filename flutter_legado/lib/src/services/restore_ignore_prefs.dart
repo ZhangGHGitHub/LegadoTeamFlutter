@@ -108,6 +108,32 @@ class RestoreIgnorePrefs {
     ReaderThemeService.themesKey,
     ReaderThemeService.currentIdKey,
     ReaderThemeService.gridColumnsKey,
+    // [批1a 阅读设置页 | 2026-10-31] 阅读设置页读写键（键名=参考版
+    // PreferKey / 原版字段名）：属阅读界面偏好，随「忽略阅读配置」
+    // 开关一并过滤 — 全栈工程师
+    'screenOrientation',
+    'keep_light',
+    'paddingDisplayCutouts',
+    'readBodyToLh',
+    'showBrightnessView',
+    'doubleHorizontalPage',
+    'progressBarBehavior',
+    'mouseWheelPage',
+    'volumeKeyPage',
+    'volumeKeyPageOnPlay',
+    'pageTouchSlop',
+    'pageTouchClick',
+    'useZhLayout',
+    'hangingPunctuation',
+    'textFullJustify',
+    'noAnimScrollPage',
+    'autoChangeSource',
+    'selectText',
+    'showReadTitleAddition',
+    'readBarStyleFollowPage',
+    'sliderVibrator',
+    'selectVibrator',
+    'disableReturnKey',
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

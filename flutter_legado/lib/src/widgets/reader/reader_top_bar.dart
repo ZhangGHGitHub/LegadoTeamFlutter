@@ -43,9 +43,6 @@ class ReaderTopBar extends ConsumerStatefulWidget {
 
   // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
 
-  /// 显示标题附加区（章节名/URL/源徽章，对标原版 showReadTitleAddition）
-  final bool showTitleAddition;
-
   /// 工具栏样式跟随阅读页（对标原版 readBarStyleFollowPage/immersiveMenu）
   final bool styleFollowPage;
 
@@ -58,7 +55,6 @@ class ReaderTopBar extends ConsumerStatefulWidget {
   const ReaderTopBar({
     super.key,
     required this.onAddBookmark,
-    this.showTitleAddition = true,
     this.styleFollowPage = false,
     this.readBodyToLh = true,
     this.visible = true,
@@ -1362,11 +1358,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                   ),
                 ),
                 // [UI-fix v2.0.4 | 2026-08-08] 标题附加区（对齐原版
-                // title_bar_addition，受 showReadTitleAddition 控制）：
-                // 章节名 + 章节 URL（点击复制）+ 书源徽章
-                // （tv_source_action，点击弹源操作菜单，本地书隐藏） — Qoder
-                if (widget.showTitleAddition &&
-                    book != null &&
+                // title_bar_addition）：章节名 + 章节 URL（点击复制）+
+                // 书源徽章（tv_source_action，点击弹源操作菜单，本地书隐藏）
+                // [批1a | 2026-10-31] 原 showTitleAddition 参数无调用方传值
+                //（ReaderTopBar 当前无实例化点），删除死参数 — 全栈工程师
+                if (book != null &&
                     (chapterTitle.isNotEmpty || isOnline))
                   Padding(
                     padding:

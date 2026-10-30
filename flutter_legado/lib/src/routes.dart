@@ -46,6 +46,8 @@ import 'screens/source_edit_screen.dart';
 import 'screens/rss_source_edit_screen.dart';
 import 'screens/source_debug_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
+// [批1a | 2026-10-31] 独立「阅读设置」页（对齐参考版 ReadConfigScreen）
+import 'screens/read_config_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/bottom_bar_skin_screen.dart';
 import 'screens/toc_screen.dart';
@@ -105,6 +107,8 @@ class AppRoutes {
   static const sourceDebug = '/sources/debug';
   static const rssSourceEdit = '/rss/edit';
   static const readAloudConfig = '/read_aloud_config';
+  // [批1a | 2026-10-31] 独立「阅读设置」页（设置主页「阅读界面」入口）
+  static const readConfig = '/read_config';
   static const themeConfig = '/theme_config';
   static const bottomBarSkin = '/bottom_bar_skin';
   static const importBooks = '/import_books';
@@ -304,6 +308,8 @@ class AppRoutes {
       return RssSourceEditScreen(source: source);
     },
     readAloudConfig: (_) => const ReadAloudConfigScreen(),
+    // [批1a | 2026-10-31] 独立「阅读设置」页（三组：屏幕/页面控制/其他）
+    readConfig: (_) => const ReadConfigScreen(),
     themeConfig: (_) => const ThemeConfigScreen(),
     bottomBarSkin: (_) => const BottomBarSkinScreen(),
     importBooks: (_) => const ImportScreen(),

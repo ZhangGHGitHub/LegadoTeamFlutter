@@ -172,6 +172,20 @@ class ReaderAdvancedConfig {
   /// 填充刘海区域（对标原版 paddingDisplayCutouts；仅 Android 生效）
   bool paddingDisplayCutouts;
 
+  // [批1a 阅读设置页 | 2026-10-31] 新增三项接线偏好（键名对齐参考版
+  // PreferKey，默认值对齐参考版 ReadSettingsRepository compatDsValue）—
+  // 全栈工程师
+
+  /// 翻页成功振动（对标参考版 sliderVibrator；原版无此键，默认 false）
+  bool sliderVibrator;
+
+  /// 选词振动（对标参考版 selectVibrator；原版无此键，默认 false）
+  bool selectVibrator;
+
+  /// 禁用返回键（对标原版 disableReturnKey / 参考版 ReadBookRouteScreen：
+  /// 开启且阅读菜单未展开时，系统返回键不退出阅读器；菜单展开时先关菜单）
+  bool disableReturnKey;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -247,6 +261,10 @@ class ReaderAdvancedConfig {
     this.pageTouchClick = 0,
     this.readBodyToLh = true,
     this.paddingDisplayCutouts = false,
+    // [批1a] 参考版默认值（ReadSettingsRepository compatDsValue 均 false）
+    this.sliderVibrator = false,
+    this.selectVibrator = false,
+    this.disableReturnKey = false,
   });
 
   /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
@@ -470,6 +488,10 @@ class ReaderAdvancedConfig {
       pageTouchClick: (prefs.getInt('pageTouchClick') ?? 0).clamp(0, 399),
       readBodyToLh: prefs.getBool('readBodyToLh') ?? true,
       paddingDisplayCutouts: prefs.getBool('paddingDisplayCutouts') ?? false,
+      // [批1a] 新三项读取（键名=参考版 PreferKey，默认对齐参考版）
+      sliderVibrator: prefs.getBool('sliderVibrator') ?? false,
+      selectVibrator: prefs.getBool('selectVibrator') ?? false,
+      disableReturnKey: prefs.getBool('disableReturnKey') ?? false,
     );
   }
 
@@ -572,6 +594,10 @@ class ReaderAdvancedConfig {
     await prefs.setInt('pageTouchClick', pageTouchClick);
     await prefs.setBool('readBodyToLh', readBodyToLh);
     await prefs.setBool('paddingDisplayCutouts', paddingDisplayCutouts);
+    // [批1a] 新三项持久化（键名=参考版 PreferKey）
+    await prefs.setBool('sliderVibrator', sliderVibrator);
+    await prefs.setBool('selectVibrator', selectVibrator);
+    await prefs.setBool('disableReturnKey', disableReturnKey);
   }
 
   /// 应用阅读主题快照中的排版字段（批38）
@@ -665,6 +691,9 @@ class ReaderAdvancedConfig {
         pageTouchClick: pageTouchClick,
         readBodyToLh: readBodyToLh,
         paddingDisplayCutouts: paddingDisplayCutouts,
+        sliderVibrator: sliderVibrator,
+        selectVibrator: selectVibrator,
+        disableReturnKey: disableReturnKey,
       );
 }
 
