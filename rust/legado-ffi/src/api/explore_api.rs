@@ -4,6 +4,13 @@
 //! 对标 Android 端 ExploreShowActivity / ExploreShowViewModel。
 //!
 //! 所有复杂类型通过 JSON String 传递，避免 frb 为外部类型生成绑定。
+//!
+//! `[收敛项 B42-C1]` exploreKinds 的 JS 求值在服务端检验链
+//! （`legado-server/src/legacy/source_check_api.rs::eval_explore_kinds_js`）
+//! 与本文件 `eval_explore_js` 各有一份实现：前者只取首个分类、不读写
+//! infoMap；本文件保留完整 infoMap 交互态与 toast 级错误文案。两份实现
+//! 当前行为口径一致（非严格包装、jsLib/setup 前导），待后续批次收敛到
+//! 同一入口；改动任一侧须同步另一侧。
 
 use std::collections::HashMap;
 
@@ -79,6 +86,9 @@ pub fn explore_info_map_ensure_default(
 /// `source_json` — BookSource JSON（`@js:` / `<js>` exploreUrl 必填；纯文本可为空）
 ///
 /// 返回 `ExploreCategory` JSON 数组字符串
+///
+/// `[收敛项 B42-C1]` 服务端书源检验链另有一份 exploreKinds 求值实现
+/// （见模块文档），本函数保留 infoMap 交互态，改动须双端同步。
 pub fn explore_parse_url(explore_url: &str, source_json: &str) -> LegadoResult<String> {
     let source = parse_source_for_explore_optional(source_json)?;
     let rule_str = resolve_explore_rule_str(explore_url, source_json, source.as_ref())?;

@@ -40,9 +40,14 @@
 //!    - 发现书的目录/正文为空 → 失效分组「发现目录失效 / 发现正文失效」
 //!      （搜索书对应「搜索目录失效 / 搜索正文失效」，对齐原版 `checkBook`）。
 //!
-//!    差异：**未启用 quickjs 的构建**无法求值 JS 发现规则，此时跳过发现项并在
-//!    日志登记（能力缺口不判 FAILED）；服务端发现链是 `legado-fetcher` 新增的
-//!    检验专用入口，ffi 旧 `explore_api` 仍保留自有实现（后续批次收敛）；
+//!    **非 quickjs 边界（批42b P3-7）**：未启用 quickjs 的构建只缺「JS 求值」
+//!    能力——纯文本 `分类::URL` 与 JSON 分类数组仍正常解析，仅 `@js:` / `<js>`
+//!    的 exploreUrl 无法求值。此时跳过发现项并按能力缺口登记（warn + stderr，
+//!    不判 FAILED），不把 `Unavailable` 计入失效分组。
+//!
+//!    发现链是 `legado-fetcher` 新增的检验专用入口，ffi 旧 `explore_api` 仍
+//!    保留自有 exploreKinds 实现（`[收敛项 B42-C1]`，见 `webbook_explore_first_book`
+//!    与 `legado-ffi/src/api/explore_api.rs` 同名标记；后续批次收敛到单一入口）；
 //! 2. **并发模型（批42）**：原版按 `AppConfig.threadCount`（默认 32）并行；本实现
 //!    有界并发：缺省 CPU 核数夹逼 4~8，可经 caches `config:checkThreadCount`
 //!    覆盖（硬上限 32）。单会话、停止（AbortHandle + JoinSet 连带取消在途工作
@@ -63,16 +68,23 @@
 //!    搜索失效/发现失效…」等分组并拼进 `detail` 首段；本实现保留「域名失效/
 //!    搜索失效/发现规则为空/发现失效/{搜索,发现}目录失效/{搜索,发现}正文失效」
 //!    与超时/错误消息，网络/JS 类失败仍以消息形式呈现（原版分组只用于 detail
-//!    组合、不落库），故这类 detail 会比原版少「网站失效/js失效」分组前缀；
+//!    组合、不落库），故这类 detail 会比原版少「网站失效/js失效」分组前缀。
+//!    批42b P2-2：硬失败早退也携带**此前已累计**的失效分组（如搜索已判
+//!    「搜索失效」后，发现规则求值又抛错），detail 首段不再丢失已判分组；
 //! 8. **源地址可访问性（批42 已接入）**：`checkDomain=true` 时对源地址做 TCP
-//!    探测（连接超时 1.6s，对齐原版 `isDomainReachable`）；不可达 → 失效分组
-//!    「域名失效」+ FAILED「源地址不可访问」；非 http(s) → UNCHECKABLE。
+//!    探测（整体 1.6s 上限，单地址 500ms 子超时，批42b P3-5），对齐原版
+//!    `isDomainReachable`（withTimeout 2000 / connect 1600）；不可达 → 失效
+//!    分组「域名失效」+ FAILED「源地址不可访问」；非 http(s) → UNCHECKABLE。
 //!    默认 `checkDomain=false` 与原版一致；
-//! 9. **并行检验的流程变量作用域残余风险（登记）**：`legado-fetcher` 的流程会话
-//!    变量（`begin_book_flow` → `legado_js` 单槽 `FLOW_SCOPE`）是进程级全局，
-//!    多源并行时后启动的流程会清掉前一流程的会话前缀（上游按协程上下文隔离）。
-//!    影响面限于依赖 `@put`/`@get` 跨步骤变量的书源，通常按空值优雅降级；
-//!    彻底消除需把 variable_store 改为 task-local（跨宿主改动，留待裁决）。
+//! 9. **并行检验的流程变量作用域风险（登记项 B42-C2）**：`legado-fetcher` 的
+//!    流程会话变量（`begin_book_flow` → `legado_js` 单槽 `FLOW_SCOPE`）是
+//!    进程级单槽，多源并行时**不只会按空值降级**：A 源 `@put` 前后若 B 源
+//!    切换了 scope，A 写入的会话变量会落进 B 的 `lgflow::{scope}` 命名空间，
+//!    B 后续 `@get` 可读到 A 的值（跨源串读）；同理 B 的 `@put` 也会覆盖 A
+//!    已写值。并行度 >1 且存在 ≥2 个使用 `@put`/`@get`/`java.put`/`java.get`
+//!    的源时，`run_check_session` 输出一次可观测 warn（tracing + stderr）。
+//!    彻底消除需把 variable_store 改为 task-local（跨宿主改动，登记项
+//!    B42-C2 留待裁决）。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -127,8 +139,12 @@ const CHECK_CONCURRENCY_MAX: usize = 8;
 /// 配置显式覆盖的硬上限（防 caches 写入超大值打爆连接池/线程）
 const CHECK_CONCURRENCY_HARD_MAX: usize = 32;
 
-/// 源地址 TCP 探测超时（对齐原版 `isDomainReachable`：总 2000ms / 连接 1600ms）
+/// 源地址 TCP 探测总超时（对齐原版 `isDomainReachable`：withTimeout 2000 /
+/// connect 1600）
 const DOMAIN_PROBE_TIMEOUT: Duration = Duration::from_millis(1_600);
+/// 单地址连接子超时（批42b P3-5）：多 A/AAAA 记录不得让首个慢地址吃掉
+/// 全部预算，按 500ms/地址逐个尝试，整体仍受 [`DOMAIN_PROBE_TIMEOUT`] 约束
+const DOMAIN_PROBE_PER_ADDRESS_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// 默认并发数：CPU 核数夹逼到 4~8（原版默认 `threadCount=32`，本批按任务
 /// 口径收敛；显式配置经 `config:checkThreadCount` 覆盖）
@@ -158,7 +174,8 @@ pub struct CheckConfig {
     pub check_domain: bool,
     /// 是否校验搜索
     pub check_search: bool,
-    /// 是否校验发现（Rust 侧引擎不可达，见模块登记 1）
+    /// 是否校验发现（批42 接入；`@js:`/`<js>` 规则依赖 quickjs，非 quickjs
+    /// 构建按能力缺口跳过该源发现项，见模块登记 1 的边界说明）
     pub check_discovery: bool,
     /// 是否校验详情
     pub check_info: bool,
@@ -699,23 +716,29 @@ impl CheckOutcome {
         }
     }
 
-    fn failed(message: impl Into<String>) -> Self {
+    /// 统一「校验失败:」前缀（原版 resultMessage 恒带该前缀）
+    fn normalize_failed_message(message: impl Into<String>) -> String {
         let message = message.into();
+        if message.starts_with("校验失败:") {
+            message
+        } else {
+            format!("校验失败:{message}")
+        }
+    }
+
+    fn failed(message: impl Into<String>) -> Self {
         Self {
             status: check_status::FAILED,
-            message: if message.starts_with("校验失败:") {
-                message
-            } else {
-                format!("校验失败:{message}")
-            },
+            message: Self::normalize_failed_message(message),
             invalid_groups: Vec::new(),
         }
     }
 
+    /// 带失效分组的硬失败（批42b P2-2）：早退时也携带已累计分组
     fn failed_with_groups(message: impl Into<String>, groups: Vec<String>) -> Self {
         Self {
             status: check_status::FAILED,
-            message: message.into(),
+            message: Self::normalize_failed_message(message),
             invalid_groups: groups,
         }
     }
@@ -743,6 +766,23 @@ struct SessionGuard {
 impl Drop for SessionGuard {
     fn drop(&mut self) {
         self.manager.finish(&self.token);
+    }
+}
+
+/// 源是否可能使用流程会话变量（`@put`/`@get`，JS 源视为可能）
+///
+/// 批42b P2-5：用于在并行检验前识别 FLOW_SCOPE 串读高风险源。判定基于
+/// 序列化后的规则文本（`@put`/`@get`/`java.put`/`java.get`），JS 源恒为真；
+/// 宁可多报（规则里出现同名子串）也不漏报，告警只用于可观测性。
+fn source_uses_flow_variables(source: &BookSource) -> bool {
+    if source.is_js_source() {
+        return true;
+    }
+    match serde_json::to_string(source) {
+        Ok(json) => ["@put", "@get", "java.put", "java.get"]
+            .iter()
+            .any(|needle| json.contains(needle)),
+        Err(_) => false,
     }
 }
 
@@ -775,6 +815,30 @@ async fn run_check_session(
     // client。并发工作线程各自 clone（LegadoClient/注册表/闭包均为共享句柄）。
     let deps = server_deps(&state).map_err(|e| format!("抓取组件初始化失败: {e}"));
     let concurrency = config.concurrency.clamp(1, total);
+
+    // 批42b P2-5：并行检验下 FLOW_SCOPE 串读的可观测告警（登记项 B42-C2）。
+    // 单槽 scope 不只是「按空值降级」——A 的 @put 可能落进 B 的 scope，B 随后
+    // @get 会读到 A 的值。仅在并行度 >1 且至少两个源可能使用流程会话变量时
+    // 输出一次，避免对普通检验刷屏。
+    if concurrency > 1 {
+        let flow_sensitive: Vec<&str> = parts
+            .iter()
+            .filter(|part| source_uses_flow_variables(&part.source))
+            .map(|part| part.source.book_source_url.as_str())
+            .collect();
+        if flow_sensitive.len() >= 2 {
+            let message = format!(
+                "书源检验并行度={concurrency}，其中 {} 个源使用流程会话变量（@put/@get/java.put）；\
+                 legado-js FLOW_SCOPE 为进程级单槽，跨源变量可能互相串读（A 的 @put 可能写进 B 的 scope，\
+                 登记项 B42-C2）: {}",
+                flow_sensitive.len(),
+                flow_sensitive.join(", ")
+            );
+            tracing::warn!("{message}");
+            // 服务端未安装 tracing subscriber 时 warn 不可见，补 stderr 便于取证
+            eprintln!("[书源检验] {message}");
+        }
+    }
 
     let queue = Arc::new(StdMutex::new(parts.into_iter()));
     let mut workers = tokio::task::JoinSet::new();
@@ -864,7 +928,38 @@ async fn check_one_source(
         Err(_) => CheckOutcome::failed("校验超时"),
     };
     let elapsed_ms = started.elapsed().as_millis() as i64;
-    let detail = compose_detail(&outcome, config.w_source_comment);
+    write_back_check_result(
+        state,
+        token,
+        &url,
+        &part.state.revision,
+        &outcome,
+        elapsed_ms,
+        config,
+    )
+    .await;
+}
+
+/// 写回单源检验结果（对齐 `CheckSourceService.onEach` 的 detail/respondTime）
+///
+/// 批42b P2-1：**取消检查放在写回入口**。`stop` 的 AbortHandle 只能在 await
+/// 点打断任务，若检查恰在 stop 前后返回（超时/请求完成），没有显式检查时
+/// 结果仍会以 FAILED/UNCHECKABLE 覆盖「停止后保持 NEEDS_CHECK」语义。写回
+/// 前再判一次会话令牌，已停止/已更换则直接丢弃本次结果。
+async fn write_back_check_result(
+    state: &Arc<AppState>,
+    token: &str,
+    url: &str,
+    revision: &str,
+    outcome: &CheckOutcome,
+    elapsed_ms: i64,
+    config: &CheckConfig,
+) {
+    if state.source_check.is_cancelled(token) {
+        tracing::debug!("书源 {url} 检验会话已停止，丢弃在途结果（{outcome:?}）");
+        return;
+    }
+    let detail = compose_detail(outcome, config.w_source_comment);
     // P3-1：对齐 `Debug.getRespondTime(..., status != FAILED)`——UNCHECKABLE
     // 也算成功、按实际耗时；仅 FAILED 叠加超时基数
     let respond_time = if outcome.status == check_status::FAILED {
@@ -873,28 +968,20 @@ async fn check_one_source(
         elapsed_ms
     };
 
-    {
-        let db = state.db.lock().await;
-        let state_repo = BookSourceCheckStateRepository::new(db.connection());
-        match state_repo.finish_check(
-            &url,
-            &part.state.revision,
-            outcome.status,
-            &detail,
-            now_millis(),
-        ) {
-            Ok(true) => {
-                if let Err(e) = BookSourceRepository::new(db.connection())
-                    .update_respond_time(&url, respond_time)
-                {
-                    tracing::warn!("更新书源 {url} 响应时间失败: {e}");
-                }
+    let db = state.db.lock().await;
+    let state_repo = BookSourceCheckStateRepository::new(db.connection());
+    match state_repo.finish_check(url, revision, outcome.status, &detail, now_millis()) {
+        Ok(true) => {
+            if let Err(e) =
+                BookSourceRepository::new(db.connection()).update_respond_time(url, respond_time)
+            {
+                tracing::warn!("更新书源 {url} 响应时间失败: {e}");
             }
-            Ok(false) => {
-                tracing::debug!("书源 {url} 检验结果未写回：已变更或已删除");
-            }
-            Err(e) => tracing::warn!("写回书源 {url} 检验结果失败: {e}"),
         }
+        Ok(false) => {
+            tracing::debug!("书源 {url} 检验结果未写回：已变更或已删除");
+        }
+        Err(e) => tracing::warn!("写回书源 {url} 检验结果失败: {e}"),
     }
 }
 
@@ -914,17 +1001,16 @@ async fn check_source(
     let mut invalid_groups: Vec<String> = Vec::new();
 
     // 源地址可访问性（对齐原版 checkDomain 分支）：非 http(s) → UNCHECKABLE；
-    // http(s) 且开启探测时做 TCP 连接（1600ms），不可达 → FAILED「域名失效」
+    // http(s) 且开启探测时做 TCP 连接（1.6s 总预算 / 500ms 单地址），
+    // 不可达 → FAILED「域名失效」
     let mut domain_unchecked = false;
     if config.check_domain {
         match parse_check_source_endpoint(&source.book_source_url) {
             None => domain_unchecked = true,
             Some((host, port)) => {
                 if !is_domain_reachable(&host, port).await {
-                    return CheckOutcome::failed_with_groups(
-                        "校验失败:源地址不可访问",
-                        vec!["域名失效".to_string()],
-                    );
+                    invalid_groups.push("域名失效".to_string());
+                    return CheckOutcome::failed_with_groups("源地址不可访问", invalid_groups);
                 }
             }
         }
@@ -932,7 +1018,7 @@ async fn check_source(
 
     let source_json = match serde_json::to_string(source) {
         Ok(json) => json,
-        Err(e) => return CheckOutcome::failed(format!("源序列化失败: {e}")),
+        Err(e) => return fail_check(format!("源序列化失败: {e}"), &invalid_groups),
     };
 
     let mut searched_book: Option<WebSearchResult> = None;
@@ -945,19 +1031,19 @@ async fn check_source(
                 .unwrap_or("")
                 .is_empty()
         {
-            return CheckOutcome::failed("搜索链接规则为空");
+            return fail_check("搜索链接规则为空", &invalid_groups);
         }
         let deps = match deps {
             Ok(deps) => deps,
-            Err(e) => return CheckOutcome::failed(e.clone()),
+            Err(e) => return fail_check(e.clone(), &invalid_groups),
         };
         let keyword = effective_keyword(source, &config.keyword);
         match legado_fetcher::web_book::webbook_search(deps.clone(), &source_json, &keyword, 1)
             .await
         {
-            Err(e) => return CheckOutcome::failed(e.to_string()),
+            Err(e) => return fail_check(e.to_string(), &invalid_groups),
             Ok(raw) => match serde_json::from_str::<Vec<WebSearchResult>>(&raw) {
-                Err(e) => return CheckOutcome::failed(format!("搜索结果解析失败: {e}")),
+                Err(e) => return fail_check(format!("搜索结果解析失败: {e}"), &invalid_groups),
                 Ok(results) if results.is_empty() => invalid_groups.push("搜索失效".to_string()),
                 Ok(mut results) => searched_book = Some(results.remove(0)),
             },
@@ -968,12 +1054,14 @@ async fn check_source(
     if let Some(book) = searched_book.as_ref() {
         let deps = match deps {
             Ok(deps) => deps,
-            Err(e) => return CheckOutcome::failed(e.clone()),
+            Err(e) => return fail_check(e.clone(), &invalid_groups),
         };
         match check_book(source, book, config, deps, CheckFlow::Search).await {
             Ok(()) => {}
             Err(CheckBookError::Group(group)) => invalid_groups.push(group),
-            Err(CheckBookError::Failed(message)) => return CheckOutcome::failed(message),
+            Err(CheckBookError::Failed(message)) => {
+                return fail_check(message, &invalid_groups);
+            }
         }
     }
 
@@ -998,19 +1086,24 @@ async fn check_source(
             Err(ExploreRuleError::Empty) => invalid_groups.push("发现规则为空".to_string()),
             // 求值异常：上游异常上抛 → FAILED（detail 区分「求值失败」）
             Err(ExploreRuleError::Eval(message)) => {
-                return CheckOutcome::failed(format!("发现规则求值失败: {message}"))
+                return fail_check(format!("发现规则求值失败: {message}"), &invalid_groups);
             }
-            // 宿主未启用 JS 引擎：能力缺口而非源缺陷，跳过发现校验（登记差异）
+            // 宿主未启用 JS 引擎：能力缺口而非源缺陷，跳过发现校验（登记差异）。
+            // 服务端未安装 tracing subscriber 时 debug 不可见 → warn + stderr。
             Err(ExploreRuleError::Unavailable(message)) => {
-                tracing::debug!(
-                    "书源 {} 的 JS 发现规则跳过求值（{message}）",
+                tracing::warn!(
+                    "书源 {} 的 JS 发现规则跳过求值（{message}；非 quickjs 边界）",
+                    source.book_source_url
+                );
+                eprintln!(
+                    "[书源检验] 跳过 JS 发现规则（{}）：{message}（非 quickjs 构建，不计入失效）",
                     source.book_source_url
                 );
             }
             Ok(category_url) => {
                 let deps = match deps {
                     Ok(deps) => deps,
-                    Err(e) => return CheckOutcome::failed(e.clone()),
+                    Err(e) => return fail_check(e.clone(), &invalid_groups),
                 };
                 match legado_fetcher::web_book::webbook_explore_first_book(
                     deps.clone(),
@@ -1020,14 +1113,16 @@ async fn check_source(
                 )
                 .await
                 {
-                    Err(e) => return CheckOutcome::failed(format!("发现页请求失败: {e}")),
+                    Err(e) => {
+                        return fail_check(format!("发现页请求失败: {e}"), &invalid_groups);
+                    }
                     Ok(None) => invalid_groups.push("发现失效".to_string()),
                     Ok(Some(book)) => {
                         match check_book(source, &book, config, deps, CheckFlow::Discovery).await {
                             Ok(()) => {}
                             Err(CheckBookError::Group(group)) => invalid_groups.push(group),
                             Err(CheckBookError::Failed(message)) => {
-                                return CheckOutcome::failed(message)
+                                return fail_check(message, &invalid_groups);
                             }
                         }
                     }
@@ -1037,16 +1132,21 @@ async fn check_source(
     }
 
     if !invalid_groups.is_empty() {
-        return CheckOutcome::failed_with_groups(
-            format!("校验失败:{}", invalid_groups.join(", ")),
-            invalid_groups,
-        );
+        return CheckOutcome::failed_with_groups(invalid_groups.join(", "), invalid_groups);
     }
 
     if domain_unchecked {
         return CheckOutcome::uncheckable();
     }
     CheckOutcome::passed()
+}
+
+/// 硬失败早退并保留已累计的失效分组（批42b P2-2）
+///
+/// 修复前各早退点直接构造 `CheckOutcome::failed`，会把此前已判定的失效分组
+/// （如「搜索失效」）丢掉：搜索空 + 发现求值抛错时 detail 只剩后者。
+fn fail_check(message: impl Into<String>, invalid_groups: &[String]) -> CheckOutcome {
+    CheckOutcome::failed_with_groups(message, invalid_groups.to_vec())
 }
 
 /// 检验流程（决定详情/目录/正文失效分组前缀，对齐原版 `checkBook(isSearchBook)`）
@@ -1141,6 +1241,10 @@ enum ExploreRuleError {
     /// 宿主未启用 JS 引擎（能力缺口，调用方跳过发现校验）
     ///
     /// 仅 `not(quickjs)` 构建构造；quickjs 构建保留变体以统一匹配分支。
+    /// 非 quickjs 边界（批42b P3-7）：只影响 `@js:` / `<js>` 形态的 exploreUrl
+    /// 求值——纯文本 `分类::URL` 与 JSON 分类数组不经过 JS，两种构建行为一致；
+    /// 遇到本变体时调用方跳过该源的发现项（不判 FAILED、不计失效分组），并
+    /// 以 warn + stderr 留下可观测记录。
     #[cfg_attr(feature = "quickjs", allow(dead_code))]
     Unavailable(String),
 }
@@ -1271,6 +1375,10 @@ fn eval_explore_kinds_js(
 ///
 /// 这是宿主能力缺口而非源缺陷：返回 [`ExploreRuleError::Unavailable`] 由
 /// 调用方跳过发现校验（否则默认构建会把全部 JS 发现源误判 FAILED）。
+///
+/// 非 quickjs 边界（批42b P3-7）：该分支只在 exploreUrl 以 `@js:` / `<js>`
+/// 开头时命中；纯文本分类与 JSON 分类数组仍走 [`parse_explore_url`] 正常
+/// 解析，不受构建特性影响。
 #[cfg(not(feature = "quickjs"))]
 fn eval_explore_kinds_js(
     _js_code: &str,
@@ -1298,25 +1406,33 @@ fn parse_check_source_endpoint(domain: &str) -> Option<(String, u16)> {
     Some((host.to_string(), port))
 }
 
-/// TCP 连接探测（对齐原版 `isDomainReachable`：连接 1600ms）
+/// TCP 连接探测（对齐原版 `isDomainReachable`：withTimeout 2000 / connect 1600）
 ///
 /// 先经 tokio 异步解析地址（多 A/AAAA 记录逐个尝试，对齐 Java
-/// `Socket.connect(InetSocketAddress)` 的地址列表语义），整体受
-/// [`DOMAIN_PROBE_TIMEOUT`] 约束。
+/// `Socket.connect(InetSocketAddress)` 的地址列表语义）。批42b P3-5：单地址
+/// 连接限 [`DOMAIN_PROBE_PER_ADDRESS_TIMEOUT`]（500ms），避免首个地址慢连接
+/// 吃掉全部预算；整体仍受 [`DOMAIN_PROBE_TIMEOUT`]（1.6s）约束。
 async fn is_domain_reachable(host: &str, port: u16) -> bool {
-    let connect = async {
+    let probe = async {
         let Ok(addrs) = tokio::net::lookup_host((host, port)).await else {
             return false;
         };
         for addr in addrs {
-            if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            if matches!(
+                tokio::time::timeout(
+                    DOMAIN_PROBE_PER_ADDRESS_TIMEOUT,
+                    tokio::net::TcpStream::connect(addr)
+                )
+                .await,
+                Ok(Ok(_))
+            ) {
                 return true;
             }
         }
         false
     };
     matches!(
-        tokio::time::timeout(DOMAIN_PROBE_TIMEOUT, connect).await,
+        tokio::time::timeout(DOMAIN_PROBE_TIMEOUT, probe).await,
         Ok(true)
     )
 }
@@ -1664,8 +1780,9 @@ mod tests {
             "https://a.example.com/xh"
         );
         // 分类 JSON 损坏 → 求值失败（不得把 ERROR 原文当 URL 抓取）
+        // 批42b P3-10：JSON 形态判定需首尾括号，损坏样本保留闭合符
         assert!(matches!(
-            first_explore_category_url("[{\"title\":", &source, None),
+            first_explore_category_url("[{\"title\":}]", &source, None),
             Err(ExploreRuleError::Eval(_))
         ));
     }
@@ -1735,5 +1852,138 @@ mod tests {
         // 自然结束清理
         manager.finish(&second);
         assert!(manager.current_token().is_none());
+    }
+
+    /// 批42b P2-2：硬失败早退必须携带已累计的失效分组
+    ///
+    /// 场景：搜索已判「搜索失效」后，发现规则求值抛错（原版异常上抛 →
+    /// FAILED）。修复前早退直接 `failed(...)`，detail 首段丢失「搜索失效」。
+    #[test]
+    fn test_fail_check_keeps_accumulated_groups() {
+        let outcome = fail_check("发现规则求值失败: boom", &["搜索失效".to_string()]);
+        assert_eq!(outcome.status, check_status::FAILED);
+        assert_eq!(outcome.invalid_groups, vec!["搜索失效".to_string()]);
+        assert_eq!(
+            outcome.message, "校验失败:发现规则求值失败: boom",
+            "硬失败消息仍带「校验失败:」前缀"
+        );
+        assert_eq!(
+            compose_detail(&outcome, true),
+            "搜索失效 | 校验失败:发现规则求值失败: boom | // Error: 发现规则求值失败: boom",
+            "detail 同时包含已判分组与本次失败消息"
+        );
+    }
+
+    /// `failed_with_groups` 对已带前缀的消息不重复加前缀
+    #[test]
+    fn test_failed_with_groups_prefix_is_idempotent() {
+        let outcome = CheckOutcome::failed_with_groups(
+            "校验失败:源地址不可访问",
+            vec!["域名失效".to_string()],
+        );
+        assert_eq!(outcome.message, "校验失败:源地址不可访问");
+        assert_eq!(
+            compose_detail(&outcome, true),
+            "域名失效 | 校验失败:源地址不可访问 | // Error: 源地址不可访问"
+        );
+    }
+
+    /// 批42b P2-5：流程会话变量使用识别（并行串读告警的触发条件）
+    #[test]
+    fn test_source_uses_flow_variables() {
+        let plain = BookSource {
+            book_source_url: "https://plain.example.com".to_string(),
+            ..BookSource::default()
+        };
+        assert!(!source_uses_flow_variables(&plain));
+
+        let mut put_source = plain.clone();
+        put_source.rule_search = Some(legado_core::models::SearchRule {
+            book_list: Some("@put:{kind:小说}@css:.book".to_string()),
+            ..Default::default()
+        });
+        assert!(source_uses_flow_variables(&put_source));
+
+        let mut get_source = plain.clone();
+        get_source.rule_content = Some(legado_core::models::ContentRule {
+            content: Some("@get:{kind}@css:#content@text".to_string()),
+            ..Default::default()
+        });
+        assert!(source_uses_flow_variables(&get_source));
+
+        // mainJs 非空 → JS 源恒视为可能使用会话变量
+        let mut js_source = plain.clone();
+        js_source.main_js = Some("function search() { return '[]' }".to_string());
+        assert!(source_uses_flow_variables(&js_source));
+    }
+
+    /// 批42b P2-1：会话停止后写回入口必须丢弃在途结果
+    ///
+    /// 端到端用例（`source_check_api_test.rs`）验证 stop 后的状态；取消与
+    /// 写回之间的调度窗口无法稳定制造，故守卫本身在这里做直接覆盖：
+    /// 同一份源 + revision，取消状态下调用不得落库，活跃会话下必须落库
+    /// （对照组证明测试具备区分力）。
+    #[tokio::test]
+    async fn test_write_back_skipped_when_session_cancelled() {
+        use legado_core::download_manager::DownloadManager;
+        use tokio::sync::Mutex;
+
+        let db = legado_db::init_in_memory_database().expect("内存库");
+        let state = Arc::new(AppState {
+            db: Mutex::new(db),
+            search_cancelled: Arc::new(AtomicBool::new(false)),
+            download_manager: Mutex::new(DownloadManager::new(1)),
+            injected_paths: Default::default(),
+            legacy_review: Default::default(),
+            source_check: Default::default(),
+        });
+        let url = "https://cancel.example.com";
+        let source = BookSource {
+            book_source_url: url.to_string(),
+            book_source_name: "取消写回源".to_string(),
+            ..BookSource::default()
+        };
+        let revision = {
+            let db = state.db.lock().await;
+            BookSourceRepository::new(db.connection())
+                .insert_with_check_state(&source)
+                .expect("种源");
+            BookSourceCheckStateRepository::new(db.connection())
+                .find_by_url(url)
+                .expect("查状态")
+                .expect("状态存在")
+                .revision
+        };
+        let config = CheckConfig::default();
+        let outcome = CheckOutcome::failed("校验超时");
+
+        // 1) 会话已停止 → 丢弃
+        let (token, _) = state.source_check.try_start().expect("开始会话");
+        assert!(state.source_check.stop(&token));
+        write_back_check_result(&state, &token, url, &revision, &outcome, 10, &config).await;
+        let (status, detail) = {
+            let db = state.db.lock().await;
+            let state = BookSourceCheckStateRepository::new(db.connection())
+                .find_by_url(url)
+                .expect("查状态")
+                .expect("状态存在");
+            (state.status, state.detail)
+        };
+        assert_eq!(status, check_status::NEEDS_CHECK, "取消后不得写回");
+        assert_eq!(detail, "");
+
+        // 2) 活跃会话 → 正常写回（对照）
+        let (token, _) = state.source_check.try_start().expect("重新开始会话");
+        write_back_check_result(&state, &token, url, &revision, &outcome, 10, &config).await;
+        let (status, detail) = {
+            let db = state.db.lock().await;
+            let state = BookSourceCheckStateRepository::new(db.connection())
+                .find_by_url(url)
+                .expect("查状态")
+                .expect("状态存在");
+            (state.status, state.detail)
+        };
+        assert_eq!(status, check_status::FAILED, "活跃会话应写回");
+        assert!(detail.starts_with("校验失败:校验超时"), "detail={detail}");
     }
 }

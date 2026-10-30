@@ -1,16 +1,19 @@
-//! 批30：书源检验状态 4 端点集成测试
+//! 批30 / 批42 / 批42b：书源检验状态 4 端点集成测试
 //!
 //! 覆盖：
 //! - `GET /getBookSourcesForManagement`：全量 / 指定 urls / 坏 urls；
 //! - `GET /getBookSourceCheckStates`：`{states, sessionToken}` 形状与键名；
 //! - `POST /startBookSourceCheck`：令牌前置、参数校验、内容版本校验、
 //!   排队状态重置、后台检验失败写回、完成后 sessionToken 清空；
-//! - `POST /stopBookSourceCheck`：会话不匹配文案；挂起请求时停止成功且
-//!   未完成源保持 `NEEDS_CHECK`。
+//! - `POST /stopBookSourceCheck`：会话不匹配文案；请求真实到达 mock 后停止，
+//!   在途结果不得写回（批42b P2-1/P2-3），未完成源保持 `NEEDS_CHECK`；
+//! - 批42：发现页校验（规则为空/坏列表/正常/JS 求值失败）、并行检验
+//!   （与串行耗时对比）、源地址 TCP 探测（可达/不可达，带请求计数）；
+//! - 批42b P2-2：硬失败早退保留已累计失效分组（搜索失效 + 发现失败）。
 //!
 //! 原版依据见 `legado-server/src/legacy/source_check_api.rs` 模块文档。
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -419,10 +422,23 @@ async fn test_stop_with_invalid_token() {
 
 /// 挂起请求（本地 TCP 只 accept 不响应）以稳定命中「检验进行中」
 async fn spawn_hanging_server() -> u16 {
+    let (port, _hits) = spawn_hanging_server_counting().await;
+    port
+}
+
+/// 同 [`spawn_hanging_server`]，另返回「请求已到达」计数
+///
+/// 批42b P2-3：停止取消类用例必须先确认请求真实到达 mock 再 stop，
+/// 否则 stop 可能发生在请求发出之前，用例近恒真（旧实现只等状态变为
+/// `NEEDS_CHECK`，而该状态在后台任务开始前就已写入）。
+async fn spawn_hanging_server_counting() -> (u16, Arc<AtomicUsize>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_srv = Arc::clone(&hits);
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
+            hits_srv.fetch_add(1, Ordering::SeqCst);
             tokio::spawn(async move {
                 // 保持连接直到测试结束/任务被取消
                 let _stream = stream;
@@ -430,14 +446,27 @@ async fn spawn_hanging_server() -> u16 {
             });
         }
     });
-    port
+    (port, hits)
+}
+
+/// 等待 mock 收到至少一次请求（避免 stop 早于请求发出导致用例恒真）
+async fn wait_mock_hit(hits: &AtomicUsize, timeout: Duration) {
+    let started = std::time::Instant::now();
+    while hits.load(Ordering::SeqCst) == 0 {
+        assert!(
+            started.elapsed() < timeout,
+            "等待 mock 收到请求超时（{}ms）",
+            timeout.as_millis()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 #[tokio::test]
 async fn test_stop_aborts_running_check() {
     let state = make_state();
     disable_token_requirement(&state).await;
-    let port = spawn_hanging_server().await;
+    let (port, hits) = spawn_hanging_server_counting().await;
     let mut source = make_source("https://a.example.com");
     source.search_url = Some(format!("http://127.0.0.1:{port}/search?q={{key}}"));
     seed_source(&state, source.clone()).await;
@@ -459,21 +488,9 @@ async fn test_stop_aborts_running_check() {
     assert_eq!(body["isSuccess"], true, "{body}");
     let token = body["data"]["sessionToken"].as_str().unwrap().to_string();
 
-    // 等待进入 NEEDS_CHECK（已排队）且会话仍在
-    let mut running = false;
-    for _ in 0..40 {
-        let (_, body) = get_json(app.clone(), "/getBookSourceCheckStates").await;
-        if body["data"]["sessionToken"] == token {
-            if let Some(state) = state_of(&body["data"]["states"], "https://a.example.com") {
-                if state["status"] == "NEEDS_CHECK" {
-                    running = true;
-                    break;
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(running, "应进入检验中状态");
+    // 等待请求真实到达 mock（P2-3：不能只等 NEEDS_CHECK 状态，该状态在
+    // 后台任务发出请求前就已写入，stop 可能先于请求到达 → 用例近恒真）
+    wait_mock_hit(&hits, Duration::from_secs(5)).await;
 
     let (_, body) = post_json(
         app.clone(),
@@ -492,6 +509,68 @@ async fn test_stop_aborts_running_check() {
     assert_eq!(state_json["status"], "NEEDS_CHECK");
 }
 
+/// 批42b P2-1：stop 后不得再把在途结果写回
+///
+/// 回归窗口：`check_one_source` 在 `check_source` 返回后、`finish_check` 前
+/// 没有取消检查。取消（AbortHandle）只能打断 await 点，若请求刚好在 stop
+/// 前后超时返回，结果会照常写回 FAILED，覆盖「停止后保持 NEEDS_CHECK」语义。
+///
+/// 设计区分力：挂起 mock 保证请求一直未响应；`config:checkSourceTimeout`
+/// 写入 500ms，但实现把超时夹逼到下限 1000ms（`load_check_config`），故
+/// 等待 1600ms（> 生效超时）后断言仍为 NEEDS_CHECK——若结果被写回则必为
+/// FAILED。请求到达 mock 后才 stop（P2-3），避免 stop 早于请求发出。
+#[tokio::test]
+async fn test_stop_after_inflight_timeout_keeps_needs_check() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    only_discovery_config(&state).await;
+    let (port, hits) = spawn_hanging_server_counting().await;
+    {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:checkSourceTimeout", "500", 0)
+            .unwrap();
+    }
+    let source = discovery_source(
+        "https://a.example.com",
+        Some(format!("分类::http://127.0.0.1:{port}/list")),
+    );
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let token = body["data"]["sessionToken"].as_str().unwrap().to_string();
+
+    wait_mock_hit(&hits, Duration::from_secs(5)).await;
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/stopBookSourceCheck",
+        &json!({ "sessionToken": token }).to_string(),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+
+    // 生效超时 1000ms（500 被夹逼），再留 600ms 余量：在途结果若写回，
+    // 此处必已是 FAILED「校验超时」
+    tokio::time::sleep(Duration::from_millis(1_600)).await;
+    let (_, body) = get_json(app, "/getBookSourceCheckStates").await;
+    assert!(body["data"]["sessionToken"].is_null(), "停止后会话应清空");
+    let state_json = state_of(&body["data"]["states"], "https://a.example.com").unwrap();
+    assert_eq!(
+        state_json["status"], "NEEDS_CHECK",
+        "停止后在途结果不得写回（detail={}）",
+        state_json["detail"]
+    );
+    assert_eq!(state_json["detail"], "", "未写回则 detail 仍为空");
+}
+
 // ─── 批42：发现页校验 ──────────────────────────────────────────────────────
 
 /// 只开启发现校验（关闭搜索/详情/目录/正文），隔离发现项断言
@@ -499,6 +578,15 @@ async fn only_discovery_config(state: &Arc<AppState>) {
     let db = state.db.lock().await;
     let cache = CacheRepository::new(db.connection());
     cache.put("config:checkSearch", "false", 0).unwrap();
+    cache.put("config:checkInfo", "false", 0).unwrap();
+    cache.put("config:checkCategory", "false", 0).unwrap();
+    cache.put("config:checkContent", "false", 0).unwrap();
+}
+
+/// 开启搜索 + 发现，关闭详情/目录/正文（批42b P2-2 用例隔离用）
+async fn search_and_discovery_config(state: &Arc<AppState>) {
+    let db = state.db.lock().await;
+    let cache = CacheRepository::new(db.connection());
     cache.put("config:checkInfo", "false", 0).unwrap();
     cache.put("config:checkCategory", "false", 0).unwrap();
     cache.put("config:checkContent", "false", 0).unwrap();
@@ -512,15 +600,25 @@ const LIST_HTML: &str = r#"<html><body>
 
 /// 启动返回固定 HTML 的 mock 服务（可注入响应延迟，用于并发度断言）
 async fn spawn_html_server(delay_ms: u64, body: &'static str) -> u16 {
+    let (port, _hits) = spawn_html_server_counting(delay_ms, body).await;
+    port
+}
+
+/// 同 [`spawn_html_server`]，另返回「收到的请求数」（批42b P3-8 区分力）
+async fn spawn_html_server_counting(delay_ms: u64, body: &'static str) -> (u16, Arc<AtomicUsize>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_srv = Arc::clone(&hits);
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
+            let hits = Arc::clone(&hits_srv);
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 8192];
                 let _ = stream.read(&mut buf).await;
+                hits.fetch_add(1, Ordering::SeqCst);
                 if delay_ms > 0 {
                     tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                 }
@@ -534,7 +632,7 @@ async fn spawn_html_server(delay_ms: u64, body: &'static str) -> u16 {
             });
         }
     });
-    port
+    (port, hits)
 }
 
 /// 带发现规则的源：`explore_url` 指向 mock，列表规则命中 `class="book"`
@@ -660,7 +758,7 @@ async fn test_discovery_good_rule_passes() {
     let state = make_state();
     disable_token_requirement(&state).await;
     only_discovery_config(&state).await;
-    let port = spawn_html_server(0, LIST_HTML).await;
+    let (port, hits) = spawn_html_server_counting(0, LIST_HTML).await;
     let source = discovery_source(
         "https://a.example.com",
         Some(format!("分类::http://127.0.0.1:{port}/list")),
@@ -679,11 +777,131 @@ async fn test_discovery_good_rule_passes() {
         wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
     assert_eq!(final_state["status"], "PASSED", "{final_state}");
     assert_eq!(final_state["detail"], "");
+    // 批42b P3-8：区分力——PASSED 必须来自真实执行过发现请求，而不是
+    // 校验项被跳过/配置未生效
+    assert!(
+        hits.load(Ordering::SeqCst) >= 1,
+        "发现校验应真实请求 mock（实际 {} 次）",
+        hits.load(Ordering::SeqCst)
+    );
+}
+
+// ─── 批42b P2-2：硬失败早退保留已累计失效分组 ──────────────────────────────
+
+/// 搜索空（组「搜索失效」）+ 发现页请求失败 → detail 同时含两段
+///
+/// 修复前发现页请求失败走 `CheckOutcome::failed(...)` 早退，已累计的
+/// 「搜索失效」分组被丢弃；修复后 detail 首段保留该分组。
+#[tokio::test]
+async fn test_hard_failure_keeps_search_group() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    search_and_discovery_config(&state).await;
+    // 搜索请求成功但列表规则不命中 → 搜索失效
+    let (search_port, search_hits) = spawn_html_server_counting(0, "<html></html>").await;
+    // 发现分类指向已关闭端口 → 请求失败（硬失败早退）
+    let closed_port = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap().port()
+    };
+    let mut source = discovery_source(
+        "https://a.example.com",
+        Some(format!("分类::http://127.0.0.1:{closed_port}/list")),
+    );
+    source.search_url = Some(format!("http://127.0.0.1:{search_port}/search?q={{key}}"));
+    source.rule_search = Some(legado_core::models::SearchRule {
+        book_list: Some("@css:.missing".to_string()),
+        ..Default::default()
+    });
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) =
+        wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
+    assert_eq!(final_state["status"], "FAILED", "{final_state}");
+    let detail = final_state["detail"].as_str().unwrap_or("");
+    assert!(
+        detail.contains("搜索失效"),
+        "detail 必须保留已判「搜索失效」分组: {detail}"
+    );
+    assert!(
+        detail.contains("发现页请求失败"),
+        "detail 必须包含发现页硬失败消息: {detail}"
+    );
+    assert!(
+        detail.starts_with("搜索失效 | "),
+        "已判分组应位于 detail 首段: {detail}"
+    );
+    assert!(
+        search_hits.load(Ordering::SeqCst) >= 1,
+        "搜索校验应真实请求 mock（否则「搜索失效」来源不成立）"
+    );
+}
+
+/// quickjs 构建：`exploreUrl=@js:throw`（求值硬失败）同样保留「搜索失效」
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_js_eval_failure_keeps_search_group() {
+    let state = make_state();
+    disable_token_requirement(&state).await;
+    search_and_discovery_config(&state).await;
+    let (search_port, search_hits) = spawn_html_server_counting(0, "<html></html>").await;
+    let mut source = discovery_source(
+        "https://a.example.com",
+        Some("@js:throw new Error('discovery-boom')".to_string()),
+    );
+    source.search_url = Some(format!("http://127.0.0.1:{search_port}/search?q={{key}}"));
+    source.rule_search = Some(legado_core::models::SearchRule {
+        book_list: Some("@css:.missing".to_string()),
+        ..Default::default()
+    });
+    seed_source(&state, source.clone()).await;
+    let app = create_router(Arc::clone(&state));
+
+    let (_, body) = post_json(
+        app.clone(),
+        "/startBookSourceCheck",
+        &start_body(&[source], ""),
+    )
+    .await;
+    assert_eq!(body["isSuccess"], true, "{body}");
+    let (final_state, _) =
+        wait_terminal(app, "https://a.example.com", Duration::from_secs(10)).await;
+    assert_eq!(final_state["status"], "FAILED", "{final_state}");
+    let detail = final_state["detail"].as_str().unwrap_or("");
+    assert!(
+        detail.contains("搜索失效"),
+        "detail 必须保留已判「搜索失效」分组: {detail}"
+    );
+    assert!(
+        detail.contains("发现规则求值失败") && detail.contains("discovery-boom"),
+        "detail 必须包含 JS 求值失败消息: {detail}"
+    );
+    assert!(
+        detail.starts_with("搜索失效 | "),
+        "已判分组应位于 detail 首段: {detail}"
+    );
+    assert!(
+        search_hits.load(Ordering::SeqCst) >= 1,
+        "搜索校验应真实请求 mock（否则「搜索失效」来源不成立）"
+    );
 }
 
 // ─── 批42：并行检验 ────────────────────────────────────────────────────────
 
-/// 3 个源各 500ms 的网络请求：串行 ≥1500ms，有界并发（≥2）应 <1200ms
+/// 批42b P3-9：并行耗时与串行基线对比（替代固定绝对上界）
+///
+/// 同一批 3 源、每个请求 500ms：`config:checkThreadCount=1` 串行 ≈1500ms，
+/// 并发 3 ≈500ms。断言「并行显著快于串行」而不是固定 1200ms 绝对上界，
+/// 降低 CI 负载抖动导致的偶发失败；同时保留放宽的绝对上界（2500ms）
+/// 防止并行退化为串行。
 #[tokio::test]
 async fn test_checks_run_in_parallel() {
     let state = make_state();
@@ -701,33 +919,55 @@ async fn test_checks_run_in_parallel() {
     }
     let app = create_router(Arc::clone(&state));
 
+    // 串行基线：并发数=1
+    set_check_thread_count(&state, "1").await;
+    let serial = run_check_and_wait(app.clone(), &sources).await;
+    assert!(
+        serial >= Duration::from_millis(1_200),
+        "串行基线应≈3×500ms，实际 {serial:?}"
+    );
+
+    // 并行：并发数=3
+    set_check_thread_count(&state, "3").await;
+    let parallel = run_check_and_wait(app.clone(), &sources).await;
+    assert!(
+        parallel < Duration::from_millis(2_500),
+        "并行绝对上界（防退化为串行），实际 {parallel:?}"
+    );
+    assert!(
+        parallel + Duration::from_millis(400) < serial,
+        "有界并发应显著快于串行：parallel={parallel:?} serial={serial:?}"
+    );
+}
+
+/// 写入检验线程数配置（会话开始时读取）
+async fn set_check_thread_count(state: &Arc<AppState>, value: &str) {
+    let db = state.db.lock().await;
+    CacheRepository::new(db.connection())
+        .put("config:checkThreadCount", value, 0)
+        .unwrap();
+}
+
+/// 启动一次检验并等待全部源进入终态，返回总耗时
+async fn run_check_and_wait(app: axum::Router, sources: &[BookSource]) -> Duration {
     let started = std::time::Instant::now();
     let (_, body) = post_json(
         app.clone(),
         "/startBookSourceCheck",
-        &start_body(&sources, ""),
+        &start_body(sources, ""),
     )
     .await;
     assert_eq!(body["isSuccess"], true, "{body}");
-
-    for index in 0..3 {
+    for source in sources {
         let (final_state, _) = wait_terminal(
             app.clone(),
-            &format!("https://source{index}.example.com"),
+            &source.book_source_url,
             Duration::from_secs(20),
         )
         .await;
         assert_eq!(final_state["status"], "PASSED", "{final_state}");
     }
-    let elapsed = started.elapsed();
-    assert!(
-        elapsed >= Duration::from_millis(400),
-        "应真实等待 mock 延迟，实际 {elapsed:?}"
-    );
-    assert!(
-        elapsed < Duration::from_millis(1200),
-        "有界并发应显著快于串行（3×500ms），实际 {elapsed:?}"
-    );
+    started.elapsed()
 }
 
 /// 多源在途时停止：会话清空、全部源保持 NEEDS_CHECK（取消在途工作线程）
@@ -853,11 +1093,14 @@ async fn test_check_domain_reachable_passes() {
     let state = make_state();
     disable_token_requirement(&state).await;
     only_discovery_config(&state).await;
-    // 本地监听端口 = 可达端点
+    // 本地监听端口 = 可达端点；计数连接数以证明 TCP 探测真实发生（P3-8）
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
+    let connects = Arc::new(AtomicUsize::new(0));
+    let connects_srv = Arc::clone(&connects);
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
+            connects_srv.fetch_add(1, Ordering::SeqCst);
             drop(stream);
         }
     });
@@ -889,6 +1132,11 @@ async fn test_check_domain_reachable_passes() {
     )
     .await;
     assert_eq!(final_state["status"], "PASSED", "{final_state}");
+    assert!(
+        connects.load(Ordering::SeqCst) >= 1,
+        "checkDomain=true 应真实发起 TCP 探测（实际 {} 次连接）",
+        connects.load(Ordering::SeqCst)
+    );
 }
 
 // ─── 令牌头路径（required=true 且令牌正确） ─────────────────────────────────

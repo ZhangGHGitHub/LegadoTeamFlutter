@@ -133,8 +133,11 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
         return vec![];
     }
 
-    // 尝试 JSON 数组解析（保留 style / type 等字段）
-    if trimmed.starts_with('[') {
+    // 尝试 JSON 数组解析（保留 style / type 等字段）。
+    // 批42b P3-10：同时要求首尾为 `[` / `]`（对齐上游 `String.isJsonArray()`
+    // 的形态判定）：纯文本分类（如 `[玄幻]::https://…`、未闭合的标题行）
+    // 不再被误判为 JSON 数组而产出 ERROR 分类。
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
         if let Ok(kinds) = serde_json::from_str::<Vec<ExploreCategory>>(trimmed) {
             return kinds
                 .into_iter()
@@ -276,9 +279,11 @@ mod tests {
 
     /// JSON 形态但解析失败 → 产出 ERROR 分类（对齐原版 exploreKinds 失败追加，
     /// UI 渲染红色 ERROR 行可点击查看详情）— 发现页修复 B②
+    ///
+    /// 批42b P3-10：JSON 形态判定要求首尾 `[` / `]`，故损坏样本须保留闭合符
     #[test]
     fn test_parse_explore_url_json_invalid_yields_error_category() {
-        let result = parse_explore_url(r#"[{"title":"玄幻""#);
+        let result = parse_explore_url(r#"[{"title":}]"#);
         assert_eq!(result.len(), 1);
         assert!(
             result[0].title.starts_with("ERROR:"),
@@ -286,6 +291,20 @@ mod tests {
             result[0].title
         );
         assert!(result[0].url.is_some(), "ERROR 分类 url 应携带详情");
+    }
+
+    /// 批42b P3-10：以 `[` 开头但未闭合的纯文本分类不得被误判为 JSON
+    #[test]
+    fn test_parse_explore_url_bracketed_text_is_not_json() {
+        let result = parse_explore_url("[玄幻]::https://a.com/xh");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].title, "[玄幻]");
+        assert_eq!(result[0].url, Some("https://a.com/xh".to_string()));
+        assert!(
+            !result[0].title.starts_with("ERROR:"),
+            "纯文本分类不应产出 ERROR: {}",
+            result[0].title
+        );
     }
 
     #[test]

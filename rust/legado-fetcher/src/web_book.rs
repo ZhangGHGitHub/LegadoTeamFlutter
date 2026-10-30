@@ -4664,7 +4664,9 @@ pub async fn webbook_search(
 ///
 /// 单一实现说明：ffi 旧 `explore_api::explore_fetch_books` 仍保留自有实现
 /// （携带 infoMap 交互态与 toast 级错误文案），本函数为 server 检验路径的
-/// 可达子集，后续批次收敛到同一入口（登记项）。
+/// 可达子集，后续批次收敛到同一入口（`[收敛项 B42-C1]`：与
+/// `legado-server/src/legacy/source_check_api.rs` 模块登记 1、
+/// `legado-ffi/src/api/explore_api.rs` 的 exploreKinds 实现同编号）。
 pub async fn webbook_explore_first_book(
     deps: FetcherDeps,
     source_json: &str,
@@ -9590,5 +9592,236 @@ mod tests {
         );
         assert!(img.is_none());
         assert_eq!(title.as_deref().map(str::trim), Some("纯文字标题"));
+    }
+
+    // ─── 批42b P2-4：发现链 fetcher 级单测 ─────────────────────────────────
+
+    /// 发现链单测 HTML：两个 `class="book"` 条目
+    const EXPLORE_LIST_HTML: &str = r#"<html><body>
+<div class="book"><a class="name" href="/book/1">发现书甲</a></div>
+<div class="book"><a class="name" href="/book/2">发现书乙</a></div>
+</body></html>"#;
+
+    /// 回环 HTML 服务：记录每个请求行，固定 200 响应（发现链单测用）
+    fn spawn_explore_html_server(body: &'static str) -> (u16, Arc<Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_srv = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let request_line = head_str.lines().next().unwrap_or("").to_string();
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(request_line);
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (port, seen)
+    }
+
+    /// 发现链测试 fetcher（no_proxy 直连回环）
+    fn explore_test_fetcher() -> RealBookSourceFetcher {
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        RealBookSourceFetcher::new(client)
+    }
+
+    /// 发现链测试源（ruleExplore 命中 `class="book"`）
+    fn explore_test_source(url: &str) -> BookSource {
+        BookSource {
+            book_source_url: url.to_string(),
+            book_source_name: "发现链测试源".to_string(),
+            rule_explore: Some(legado_core::models::ExploreRule {
+                book_list: Some("@css:.book".to_string()),
+                name: Some("@css:.name@text".to_string()),
+                book_url: Some("@css:.name@href".to_string()),
+                ..Default::default()
+            }),
+            ..BookSource::default()
+        }
+    }
+
+    /// `{{page}}` 求值：分类 URL 模板按页码替换后再请求
+    #[test]
+    fn test_explore_first_book_evaluates_page_placeholder() {
+        let (port, seen) = spawn_explore_html_server(EXPLORE_LIST_HTML);
+        let fetcher = explore_test_fetcher();
+        let source = explore_test_source("https://explore-page.example.com");
+        let category_url = format!("http://127.0.0.1:{port}/list/{{{{page}}}}");
+        let book = block_on(fetcher.explore_first_book(&source, &category_url, 2))
+            .expect("发现链应成功")
+            .expect("应解析出首书");
+        assert_eq!(book.name, "发现书甲");
+        assert!(
+            book.book_url.ends_with("/book/1"),
+            "相对 bookUrl 应拼绝对地址: {}",
+            book.book_url
+        );
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen.iter().any(|line| line.contains("/list/2")),
+            "页面占位符应求值为 2，实际请求: {seen:?}"
+        );
+    }
+
+    /// `@js:` / `<js>` 求值失败必须上抛（不得静默退化为「无书」）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_first_book_js_error_propagates() {
+        let fetcher = explore_test_fetcher();
+        let source = explore_test_source("https://explore-js.example.com");
+        let err =
+            block_on(fetcher.explore_first_book(&source, "@js:throw new Error('explore-boom')", 1))
+                .expect_err("@js: 抛错应上抛");
+        let message = err.to_string();
+        assert!(
+            message.contains("发现页地址求值失败") && message.contains("explore-boom"),
+            "错误应保留求值上下文与原始异常: {message}"
+        );
+
+        let err = block_on(fetcher.explore_first_book(
+            &source,
+            "<js>throw new Error('tag-boom')</js>",
+            1,
+        ))
+        .expect_err("<js> 抛错应上抛");
+        let message = err.to_string();
+        assert!(
+            message.contains("发现页地址求值失败") && message.contains("tag-boom"),
+            "错误应保留求值上下文与原始异常: {message}"
+        );
+    }
+
+    /// `ruleExplore.bookList` 为空 → 回退 `ruleSearch.bookList`
+    #[test]
+    fn test_explore_list_rule_falls_back_to_search_rule() {
+        let (port, _seen) = spawn_explore_html_server(EXPLORE_LIST_HTML);
+        let mut source = explore_test_source("https://explore-fallback.example.com");
+        source.rule_explore = Some(legado_core::models::ExploreRule {
+            book_list: None,
+            ..Default::default()
+        });
+        source.rule_search = Some(legado_core::models::SearchRule {
+            book_list: Some("@css:.book".to_string()),
+            name: Some("@css:.name@text".to_string()),
+            book_url: Some("@css:.name@href".to_string()),
+            ..Default::default()
+        });
+        let fetcher = explore_test_fetcher();
+        let category_url = format!("http://127.0.0.1:{port}/list");
+        let book = block_on(fetcher.explore_first_book(&source, &category_url, 1))
+            .expect("发现链应成功")
+            .expect("搜索列表规则应回退命中");
+        assert_eq!(book.name, "发现书甲");
+    }
+
+    /// 列表为空 + `bookUrlPattern` 非空 → 不回落详情页；去掉后回落
+    #[test]
+    fn test_explore_empty_list_with_book_url_pattern_skips_detail_fallback() {
+        let body = r#"<html><body><div id="detail">详情书</div></body></html>"#;
+        let (port, seen) = spawn_explore_html_server(body);
+        let mut source = explore_test_source("https://explore-pattern.example.com");
+        source.rule_explore = Some(legado_core::models::ExploreRule {
+            book_list: Some("@css:.missing".to_string()),
+            ..Default::default()
+        });
+        source.rule_book_info = Some(legado_core::models::BookInfoRule {
+            name: Some("@css:#detail@text".to_string()),
+            ..Default::default()
+        });
+        source.book_url_pattern = Some("^https?://".to_string());
+        let fetcher = explore_test_fetcher();
+        let category_url = format!("http://127.0.0.1:{port}/list");
+        let result =
+            block_on(fetcher.explore_first_book(&source, &category_url, 1)).expect("发现链应成功");
+        assert!(
+            result.is_none(),
+            "配置 bookUrlPattern 时列表为空不得回落详情页"
+        );
+        assert_eq!(
+            seen.lock().unwrap().len(),
+            1,
+            "只应请求一次列表页（不得再抓详情）"
+        );
+
+        // 对照：去掉 bookUrlPattern → 按详情页解析出书
+        let mut fallback_source = source.clone();
+        fallback_source.book_url_pattern = None;
+        let book = block_on(fetcher.explore_first_book(&fallback_source, &category_url, 1))
+            .expect("发现链应成功")
+            .expect("无 bookUrlPattern 应回落详情页");
+        assert_eq!(book.name, "详情书");
+        assert_eq!(seen.lock().unwrap().len(), 2, "详情回退应发起第二次请求");
+    }
+
+    /// 发现链遵守 `concurrentRate` 限流（第二次调用需等待窗口）
+    #[test]
+    fn test_explore_first_book_applies_rate_limit() {
+        let (port, _seen) = spawn_explore_html_server(EXPLORE_LIST_HTML);
+        let mut source = explore_test_source("https://explore-rate.example.com");
+        source.concurrent_rate = Some("1/300".to_string());
+        let fetcher = explore_test_fetcher();
+        let category_url = format!("http://127.0.0.1:{port}/list");
+        let first = block_on(fetcher.explore_first_book(&source, &category_url, 1))
+            .expect("首次发现应成功");
+        assert!(first.is_some());
+
+        let started = Instant::now();
+        let second = block_on(fetcher.explore_first_book(&source, &category_url, 1))
+            .expect("第二次发现应成功");
+        assert!(second.is_some());
+        assert!(
+            started.elapsed() >= Duration::from_millis(200),
+            "1/300 限流应在窗口内等待，实际 {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// JSON 分类数组解析出的 URL 可直接作为发现链入口（`{{page}}` 同链求值）
+    #[test]
+    fn test_explore_json_category_array_url_feeds_fetcher() {
+        let (port, seen) = spawn_explore_html_server(EXPLORE_LIST_HTML);
+        let explore_url =
+            format!(r#"[{{"title":"分类","url":"http://127.0.0.1:{port}/list/{{{{page}}}}"}}]"#);
+        let categories = legado_core::explore::parse_explore_url(&explore_url);
+        assert_eq!(categories.len(), 1, "JSON 分类数组应解析出一个分类");
+        let category_url = categories[0].url.clone().expect("分类 URL 应有值");
+        let fetcher = explore_test_fetcher();
+        let source = explore_test_source("https://explore-json.example.com");
+        let book = block_on(fetcher.explore_first_book(&source, &category_url, 3))
+            .expect("发现链应成功")
+            .expect("应解析出首书");
+        assert_eq!(book.name, "发现书甲");
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen.iter().any(|line| line.contains("/list/3")),
+            "JSON 分类 URL 的页码占位符应求值为 3: {seen:?}"
+        );
     }
 }
