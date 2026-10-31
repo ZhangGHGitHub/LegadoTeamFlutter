@@ -112,6 +112,37 @@ void main() {
         isFalse,
       );
     });
+
+    // [设置批2a-1] 护眼模式六键归主题配置组（对齐参考版
+    // BackupConfig.themePrefKeys:311-316）
+    test('护眼模式六键随 themeConfig 忽略组过滤', () {
+      const keys = <String>[
+        PrefKeys.eyeProtectionEnabled,
+        PrefKeys.colorTemperature,
+        PrefKeys.eyeProtectionAutoNight,
+        PrefKeys.eyeProtectionSchedule,
+        PrefKeys.eyeProtectionStartTime,
+        PrefKeys.eyeProtectionEndTime,
+      ];
+      for (final key in keys) {
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, {'themeConfig': true}),
+          isFalse,
+          reason: '$key 应随「忽略主题配置」一并排除',
+        );
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, const {}),
+          isTrue,
+          reason: '$key 默认应随备份往返',
+        );
+        // 与阅读配置互不影响（六键属主题组而非阅读组）
+        expect(
+          RestoreIgnorePrefs.keyIsNotIgnore(key, {'readConfig': true}),
+          isTrue,
+          reason: '$key 不应被「忽略阅读配置」误伤',
+        );
+      }
+    });
   });
 
   group('RestoreIgnorePrefs collect/apply', () {

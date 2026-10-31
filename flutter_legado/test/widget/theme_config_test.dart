@@ -83,9 +83,19 @@ void main() {
     expect(find.text('书籍详情页'), findsOneWidget);
     expect(find.text('界面颜色跟随封面取色'), findsOneWidget);
 
+    // 「护眼模式」组（[设置批2a-1] 对齐参考版 ThemeConfigScreen：书籍详情页
+    // 之后、容器设置之前；默认两开关关闭，强度/定时行收起）
+    await tester
+        .dragUntilVisible(find.text('护眼模式'), find.byType(ListView),
+            const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(find.text('护眼模式'), findsOneWidget);
+    expect(find.text('启用护眼模式'), findsOneWidget);
+    expect(find.text('深色模式时自动开启'), findsOneWidget);
+
     // 「容器设置」组（原详情与圆角的卡片圆角/分隔线两行）。注意页内顺序：
-    // 容器设置 位于 模糊效果 之上（书籍详情页→容器设置→模糊效果），单向下滚
-    // 的 dragUntilVisible 必须先断言靠上的组，否则滚过后再找上方组会失败
+    // 容器设置 位于 模糊效果 之上（书籍详情页→护眼模式→容器设置→模糊效果），
+    // 单向下滚的 dragUntilVisible 必须先断言靠上的组，否则滚过后再找上方组会失败
     await tester
         .dragUntilVisible(find.text('容器设置'), find.byType(ListView),
             const Offset(0, -120));
