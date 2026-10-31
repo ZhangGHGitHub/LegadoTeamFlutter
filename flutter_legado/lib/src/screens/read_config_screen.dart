@@ -269,9 +269,11 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
         // 范围 3000..100000 对齐参考版 ReadConfigScreen.kt:308-318 滑块与
         // ReadConfigViewModel coerceIn；Rust 经 caches `config:maxLengthWithNoToc`
         // 消费——本地 TXT 无目录规则时按该字数分章。改值后已入库目录不自动
-        // 失效，重进目录/改规则时按新值重解析）
+        // 失效，对新导入/重新解析生效（目录页溢出菜单「重新解析目录」可
+        // 立即应用，审查回修 P2-3））
         SettingSliderRow(
           title: '无目录时每章字数',
+          subtitle: '对本地 TXT 无目录规则分章生效；对新导入/重新解析生效',
           value: cfg.maxLengthWithNoToc,
           min: 3000,
           max: 100000,
@@ -282,16 +284,20 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
   /// [批1b-3] 提交无目录分章字数：模型 + prefs 镜像（统一 _update）+
   /// caches `config:maxLengthWithNoToc` 真源（Rust 解析侧消费）。
   ///
-  /// 写 Rust 失败不阻断 UI 保存（下次改值重试；与 recordHttpLog 等
-  /// prefs+DB 双写键的容错口径一致）。
+  /// 写 Rust 失败不阻断 UI 保存，但必须 debugPrint 留痕（审查回修 P2-2：
+  /// 静默吞错会掩盖「prefs 与 Rust 真源分叉」，排障时无从下手）；
+  /// 失败后 prefs 镜像保留本次值，Rust 真源沿用旧值/缺省。
   void _updateMaxLengthWithNoToc(int value) {
     _update((c) => c.maxLengthWithNoToc = value);
     unawaited(
       ref
           .read(bookApiProvider)
           .setConfig('maxLengthWithNoToc', '$value')
-          .catchError((_) {
-        // Rust 侧写失败：保留 prefs 镜像值，Rust 真源沿用旧值/缺省
+          .catchError((Object e) {
+        debugPrint(
+          'ReadConfigScreen: 写 config:maxLengthWithNoToc 失败（保留 prefs '
+          '镜像值，Rust 真源沿用旧值/缺省）: $e',
+        );
       }),
     );
   }
@@ -312,6 +318,9 @@ class SettingSliderRow extends StatefulWidget {
   final int min;
   final int max;
 
+  /// 可选说明文字（标题下方小字；[批1b-3 审查回修 P2-3] 用于生效范围提示）
+  final String? subtitle;
+
   /// 松手提交（一次）
   final ValueChanged<int> onChanged;
 
@@ -321,6 +330,7 @@ class SettingSliderRow extends StatefulWidget {
     required this.value,
     required this.min,
     required this.max,
+    this.subtitle,
     required this.onChanged,
   });
 
@@ -353,6 +363,13 @@ class _SettingSliderRowState extends State<SettingSliderRow> {
               ),
             ],
           ),
+          if (widget.subtitle != null)
+            Text(
+              widget.subtitle!,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           Slider(
             value: shown.toDouble().clamp(widget.min.toDouble(),
                 widget.max.toDouble()),

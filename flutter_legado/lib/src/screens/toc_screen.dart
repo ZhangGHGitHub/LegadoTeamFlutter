@@ -22,7 +22,8 @@ import '../services/settings_service.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/toc_cache_state.dart';
-import '../utils/txt_toc_rule.dart' show isLocalTxtBook;
+import '../utils/txt_toc_rule.dart'
+    show isLocalTxtBook, kTxtTocRuleSeparator;
 import '../widgets/reader/reader_toc_rule_dialog.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
@@ -684,6 +685,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
           checked: _book.readConfig?.splitLongChapter ?? true,
           child: const Text('拆分长章节'),
         ));
+        // [批1b-3 审查回修 P2-3] 重新解析目录（对齐参考版 TocScreen.kt:457
+        // menu「update_toc」→ TocViewModel.updateToc：本地书重跑
+        // LocalBook.getChapterList 并 replaceChaptersAndUpdateBook）。为
+        // 「无目录时每章字数」等解析档位改值后的重进目录入口。
+        items.add(const PopupMenuItem(
+            value: 'reparseToc', child: Text('重新解析目录')));
       }
       // menu_group_toc：目录 Tab 可见
       // [批31] 目录反转（ReadConfig.reverseToc，数据反转）与目录显示反转
@@ -832,7 +839,54 @@ class _TocScreenState extends ConsumerState<TocScreen>
       case 'log':
         Navigator.pushNamed(context, AppRoutes.appLog);
         break;
+      case 'reparseToc':
+        await _reparseLocalToc();
+        break;
     }
+  }
+
+  /// [批1b-3 审查回修 P2-3] 重新解析目录（本地 TXT 专属，对齐参考版
+  /// `TocViewModel.updateToc` 本地分支：重跑解析并 `replaceChaptersAndUpdateBook`）。
+  ///
+  /// 失效通道复用 `setBookTocRule`：把当前 `books.tocUrl` 拆回
+  /// `{rule, replacement}` JSON 原样写回（Rust 单列写 + 同事务清空
+  /// `chapters` 表该书行并重置目录派生字段）——规则选择原样保留
+  /// （默认书为空串 → `null` 恢复默认，语义不变），下一次
+  /// `_loadChapters` 必然按当前设置（含 `maxLengthWithNoToc` 档位）重新
+  /// 懒解析。阅读器持有旧章节表时同步 `reloadAfterTocRuleChange`（与
+  /// `tocRegex` 分支同一数据链）。
+  Future<void> _reparseLocalToc() async {
+    final api = ref.read(bookApiProvider);
+    // 1) 拆解当前规则并原样写回 → 清章节行 + 失效派生字段
+    //    （直接传 raw tocUrl 会被 Rust 当无分隔符正则重编码，追加多余
+    //    分隔符且丢失 replacement，故必须拆回 JSON 形态）
+    final tocUrl = _book.tocUrl;
+    final String? ruleJson;
+    if (tocUrl.trim().isEmpty) {
+      ruleJson = null; // 默认规则 → 恢复默认（清目录，语义不变）
+    } else {
+      final sepIndex = tocUrl.indexOf(kTxtTocRuleSeparator);
+      final rule = sepIndex < 0 ? tocUrl : tocUrl.substring(0, sepIndex);
+      final replacement =
+          sepIndex < 0 ? '' : tocUrl.substring(sepIndex + kTxtTocRuleSeparator.length);
+      ruleJson = jsonEncode({'rule': rule, 'replacement': replacement});
+    }
+    final updated = await api.setBookTocRule(_book.bookUrl, ruleJson);
+    if (!mounted) return;
+    setState(() => _book = updated);
+    // 2) 阅读器若持有该书，同步重载目录与正文
+    final readerState = ref.read(readerNotifierProvider);
+    if (readerState.currentBook?.bookUrl == _book.bookUrl) {
+      await ref
+          .read(readerNotifierProvider.notifier)
+          .reloadAfterTocRuleChange(_book);
+    }
+    // 3) 本页重载（必然走懒解析，消费最新解析档位）
+    await _loadChapters();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已重新解析目录（共 ${_chapters.length} 章）')),
+    );
   }
 
   /// 导出书签（JSON / Markdown 双格式，对齐原版 TocViewModel.saveBookmark/

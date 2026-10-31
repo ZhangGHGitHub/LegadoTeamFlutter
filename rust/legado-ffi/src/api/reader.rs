@@ -2202,14 +2202,14 @@ mod tests {
     /// 已入库目录不自动失效，用户重进目录经既有失效机制重解析）
     fn clear_chapters_for_reparse(book_url: &str) {
         with_database(|db| {
-            // [B-7] delete_by_book_url äºå¡å¤ä¸º no-opï¼å¿é¡»æ¾å¼å¼å¯äºå¡
-            let tx = db.connection().unchecked_transaction().map_err(|e| {
-                LegadoError::Database(format!("å¼å¯ç®å½æ¸çäºå¡å¤±è´¥: {e}"))
-            })?;
+            // [B-7] delete_by_book_url 事务外为 no-op：必须显式开启事务
+            let tx = db
+                .connection()
+                .unchecked_transaction()
+                .map_err(|e| LegadoError::Database(format!("开启目录清理事务失败: {e}")))?;
             BookChapterRepository::new(db.connection()).delete_by_book_url(book_url)?;
-            tx.commit().map_err(|e| {
-                LegadoError::Database(format!("æäº¤ç®å½æ¸çäºå¡å¤±è´¥: {e}"))
-            })?;
+            tx.commit()
+                .map_err(|e| LegadoError::Database(format!("提交目录清理事务失败: {e}")))?;
             Ok(())
         })
         .unwrap();
