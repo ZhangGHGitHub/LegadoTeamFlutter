@@ -94,6 +94,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         final status = await api.getServerStatus();
         if (!mounted) return;
         setState(() => _webServiceStatus = status);
+        // 批9b-6：进程级唤醒锁运行态对账（Activity/引擎重建后 Dart 状态
+        // 归零，原生锁可能仍持；运行中按偏好确认/释放，未运行则清理）
+        await _reconcileWebWakeLock(status);
       }
       if (_autoTaskService) {
         AutoTaskScheduler.instance.refresh();
@@ -129,6 +132,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return port;
   }
 
+  /// 服务状态串是否为「运行中」
+  ///
+  /// RustApi.getServerStatus 统一返回 `running on port X` / `stopped`
+  ///（见 rust_api_media_format.part.dart）。
+  bool _isServerRunning(String status) =>
+      status.trim().toLowerCase().startsWith('running');
+
+  /// 批9b-6 审查回修：按运行态对账进程级 Web 服务唤醒锁
+  ///
+  /// 原生锁为进程级持有，Activity/引擎重建后 Dart 状态归零但锁可能仍在：
+  /// - 服务运行 + 偏好开 → 重新确认持有（原生 acquire 幂等）
+  /// - 服务运行 + 偏好关 → 释放
+  /// - 服务未运行 → 释放一切遗留锁
+  Future<void> _reconcileWebWakeLock(String status) async {
+    final keepAwake = await ref
+        .read(settingsProvider)
+        .getBoolPref(PrefKeys.webServiceWakeLock, defaultValue: false);
+    if (_isServerRunning(status)) {
+      await WebServiceWakeLockService.instance.onServiceStarted(
+        keepAwake: keepAwake,
+      );
+    } else {
+      await WebServiceWakeLockService.instance.onServiceStopped();
+    }
+  }
+
   /// Web 服务开关（对标原版 pref_main SwitchPreference）
   ///
   /// [iOS Web 服务后台保活 | 2026-10-07 用户批准方案 C+A] iOS 无前台服务，
@@ -139,10 +168,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 「仅前台可用」（卡片副题提示），不阻断服务开关。
   ///
   /// [Android Web 服务唤醒锁 | 批9b-6] 对齐原版
-  /// `WebService.kt:76-78,104,139,159`：偏好 `webServiceWakeLock`（默认 false）
-  /// 开且服务运行 → 持 `PARTIAL_WAKE_LOCK`（tag `legado:WebService`，acquire
-  /// 无超时），服务停止 / 开关关 → release。Android 经
-  /// [WebServiceWakeLockService] 接线（运行中切换由其他设置页即时下发）；
+  /// `WebService.kt:76-78,105,140,160`：偏好 `webServiceWakeLock`（默认 false）
+  /// 开且服务运行 → 同时持 `PARTIAL_WAKE_LOCK` 与 `WifiLock`
+  ///（`WIFI_MODE_FULL_HIGH_PERF`，tag `legado:WebService`，acquire 无超时），
+  /// 服务停止 / 开关关 → release。Android 经 [WebServiceWakeLockService]
+  /// 接线（运行中切换由其他设置页即时下发；原生锁为进程级，Activity/引擎
+  /// 重建不释放，设置页初始化按 running 状态重新对账）；
   /// iOS 由 [WebKeepAliveService]（静音音轨）负责；桌面不适用。
   ///
   /// 生命周期差异（如实登记）：原版唤醒锁依附 `WebService` 前台服务，服务在
@@ -167,6 +198,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           keepAwake: keepAwake,
         );
         final status = await api.getServerStatus();
+        if (!_isServerRunning(status)) {
+          // 批9b-6 审查回修：启动「假成功」（状态仍 stopped）时回滚唤醒锁，
+          // 不把开关置为开，也不接保活/写 webService=true
+          await WebServiceWakeLockService.instance.onServiceStopped();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Web 服务启动失败: 服务状态异常（$status）')),
+          );
+          return;
+        }
         // 服务成功即接保活（iOS 专用；其它平台 no-op）
         final keepAlive = await WebKeepAliveService.instance.start();
         await api.setConfig('webService', 'true');
@@ -177,7 +218,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _webKeepAliveUnavailable = keepAlive == WebKeepAliveStatus.failed;
         });
       } else {
-        await api.stopServer();
+        try {
+          await api.stopServer();
+        } catch (e) {
+          // 批9b-6 审查回修：停服报错先用状态确认——已停则继续释放锁，
+          // 仍运行才按失败上抛（避免「实际已停」被误报为切换失败）
+          var stillRunning = true;
+          try {
+            stillRunning = _isServerRunning(await api.getServerStatus());
+          } catch (_) {
+            // 状态查询也失败：按仍运行处理，保留现场
+          }
+          if (stillRunning) rethrow;
+          debugPrint('Web 服务停止报错但状态已停（忽略）：$e');
+        }
         // 服务已停：先无条件释放唤醒锁（偏好仍开也不再持锁）
         await WebServiceWakeLockService.instance.onServiceStopped();
         // 服务停止必须同步停保活（否则静音音轨会让进程继续存活）

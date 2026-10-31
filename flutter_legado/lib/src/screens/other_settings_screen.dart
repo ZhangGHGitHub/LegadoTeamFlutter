@@ -317,13 +317,21 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 title: 'Web 服务唤醒锁',
                 subtitle: _androidOnly,
                 value: _webServiceWakeLock,
-                onChanged: (v) {
-                  setState(() => _webServiceWakeLock = v);
-                  _settingsService.setBoolPref(PrefKeys.webServiceWakeLock, v);
-                  // 批9b-6：Web 服务运行中切换即时 acquire/release；
-                  // 服务未运行时只更新偏好（下次启动生效，非 Android 不触通道）
-                  WebServiceWakeLockService.instance.onPreferenceChanged(v);
-                },
+                // 批9b-6 审查回修：非 Android 无平台实现 → 开关置灰
+                //（副题已说明「仅 Android 生效」，不新增平台文案）
+                onChanged: WebServiceWakeLockService.instance.isSupported
+                    ? (v) {
+                        setState(() => _webServiceWakeLock = v);
+                        _settingsService.setBoolPref(
+                          PrefKeys.webServiceWakeLock,
+                          v,
+                        );
+                        // 运行中切换即时 acquire/release；未运行只更新偏好
+                        //（非 Android 不触通道）
+                        WebServiceWakeLockService.instance
+                            .onPreferenceChanged(v);
+                      }
+                    : null,
               ),
               IosListTile(
                 title: '书籍保存位置',
