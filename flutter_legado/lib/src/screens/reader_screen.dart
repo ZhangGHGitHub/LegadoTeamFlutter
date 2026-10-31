@@ -65,6 +65,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   late final VolumeKeyPageGate _volumeKeyPageGate =
       widget.volumeKeyPageGate ?? VolumeKeyPageGate();
 
+  /// [设备验收 P1] Android 原生音量键捕获是否由本页开启。
+  ///
+  /// 冷启动直达阅读器时 FlutterView 可能未聚焦，HardwareKeyboard 收不到
+  /// 音量键 → 改走原生 ReaderKeysBridge（与焦点无关），由 native 消费后
+  /// 经 `volumeKey` 事件回传 Dart。桌面/iOS 无该通道，保留
+  /// HardwareKeyboard 路径。此标记与原生侧真实开关同步，dispose/切书/
+  /// 菜单/子路由按需关闭，避免误拦截系统音量。
+  bool _nativeVolumeKeyCaptureActive = false;
+
+  /// [设备验收 P1] 是否注册了桌面键盘 handler（Android 不注册，防双触发）
+  bool _hardwareKeyboardHandlerRegistered = false;
+
   /// 自动翻页定时器
   Timer? _autoTimer;
 
@@ -181,7 +193,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   void initState() {
     super.initState();
     // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
-    HardwareKeyboard.instance.addHandler(_onHardwareKey);
+    // [设备验收 P1] Android 走原生 ReaderKeysBridge 捕获（不依赖
+    // FlutterView 焦点）；桌面/iOS 无该通道，保留 HardwareKeyboard。
+    // 两条路径互斥，Android 不注册键盘 handler，防原生+Dart 双翻页。
+    _hardwareKeyboardHandlerRegistered =
+        !PlatformBridgeService.instance.volumeKeyCaptureSupported;
+    if (_hardwareKeyboardHandlerRegistered) {
+      HardwareKeyboard.instance.addHandler(_onHardwareKey);
+    }
     // [C3-hunt | 2026-09-24] 注册 App 生命周期观察者：切后台/分离时
     // 落盘章内进度（见 didChangeAppLifecycleState）
     WidgetsBinding.instance.addObserver(this);
@@ -206,11 +225,23 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (route != null) {
       appRouteObserver.subscribe(this, route);
     }
+    // [设备验收 P1] 进入阅读器即按门控开启原生捕获（走 didChangeDependencies
+    // 而非 initState：ModalRoute 依赖在此可用）；首帧后再同步一次，覆盖
+    // 路由 isCurrent 尚未稳定的瞬间。_sync 内部按状态去重，不会重复 enable。
+    _syncVolumeKeyCapture();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncVolumeKeyCapture();
+    });
   }
 
   @override
   void dispose() {
-    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
+    if (_hardwareKeyboardHandlerRegistered) {
+      HardwareKeyboard.instance.removeHandler(_onHardwareKey);
+    }
+    // [设备验收 P1] 退出阅读器立即交还系统音量（仅在本页确实开启时
+    // 关闭，避免误关上层漫画阅读器的捕获）
+    _disableNativeVolumeKeyCapture();
     // [批1b-1 审查回修 P1-2] 还原翻页回调默认实现（防泄漏到非阅读页）
     ReaderPageView.onPageTurnInteraction = () {};
     // [C3-hunt | 2026-09-24] 注销生命周期观察者（与 initState 配对）
@@ -264,6 +295,24 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
+  // ===== [设备验收 P1] 路由变化 → 原生音量键捕获同步 =====
+  //
+  // 子路由（目录/设置/换源等）压栈时阅读器非当前路由，必须交还系统音量；
+  // 返回本页后再恢复。didPopNext 延迟到下一帧：上层若为漫画阅读器，
+  // 其 dispose 释放租约与本人 didPopNext 的先后顺序不固定，帧末再
+  // acquire 可确保最终由本页持有（PlatformBridgeService 租约 API 同时
+  // 保证中间态不抖动）。
+
+  @override
+  void didPush() {
+    _syncVolumeKeyCapture();
+  }
+
+  @override
+  void didPushNext() {
+    _syncVolumeKeyCapture();
+  }
+
   /// [批31b P1-1] 目录页返回：重读 DB 书籍快照并同步 `currentBook`
   ///
   /// 目录页可直接持久化 `ReadConfig`（目录显示反转/倒序目录/使用替换规则），
@@ -276,6 +325,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// 章内位置，不能让 DB 快照回退。
   @override
   void didPopNext() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncVolumeKeyCapture();
+    });
     if (!_tocRouteOpen) return;
     _tocRouteOpen = false;
     unawaited(_refreshCurrentBookFromDb());
@@ -363,19 +415,100 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _syncAutoTimer();
     // [UI-fix v2.0.3 | 2026-08-08] 进入阅读器即应用隐藏栏/方向配置 — Qoder
     _applySystemChrome(config);
+    // [设备验收 P1] 配置落定后重算原生捕获（volumeKeyPage /
+    // volumeKeyPageOnPlay 可能关闭捕获，交还系统音量）
+    _syncVolumeKeyCapture();
   }
 
-  /// F6：音量键翻页（仅 Android 有效；桌面无音量键事件）
+  /// [设备验收 P1] 原生音量键捕获通道是否支持（Android 壳；桌面/iOS false）
+  bool get _nativeVolumeKeySupported =>
+      PlatformBridgeService.instance.volumeKeyCaptureSupported;
+
+  /// 当前上下文是否允许音量键翻页（原生 capture 与桌面键盘共用门控）
+  ///
+  /// - 阅读菜单展开：交还系统（对齐原版 ReadBookActivity.onKeyDown
+  ///   L1042-1044 `if (menuLayoutIsVisible) return super.onKeyDown`）；
+  /// - 目录/设置等子路由压栈（阅读器非当前路由）：不生效；
+  /// - volumeKeyPage 关闭，或朗读中且 volumeKeyPageOnPlay 关闭：交还系统。
+  bool get _volumeKeyContextAllows {
+    if (ref.read(readerNotifierProvider).showControls) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+    final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
+    final aloud = ref.read(audioNotifierProvider).isPlaying;
+    return cfg.volumeKeyPage && (!aloud || cfg.volumeKeyPageOnPlay);
+  }
+
+  /// [设备验收 P1] 同步 Android 原生 capture 开关（与门控状态去重）
+  ///
+  /// 冷启动直达阅读器时 FlutterView 可能未聚焦，HardwareKeyboard 收不到
+  /// 音量键；原生 ReaderKeysBridge 由 MainActivity.onKeyDown 拦截，与
+  /// 焦点无关。仅在文本阅读器活跃且门控通过时开启；菜单展开/子路由/
+  /// 退出/切书时关闭，交还系统音量。桌面/iOS 无通道直接 no-op。
+  void _syncVolumeKeyCapture() {
+    if (!mounted) return;
+    final bridge = PlatformBridgeService.instance;
+    if (!bridge.volumeKeyCaptureSupported) return;
+    final shouldCapture = _volumeKeyContextAllows;
+    if (shouldCapture == _nativeVolumeKeyCaptureActive) return;
+    _nativeVolumeKeyCaptureActive = shouldCapture;
+    if (shouldCapture) {
+      unawaited(bridge.acquireVolumeKeyCapture(this, _handleNativeVolumeKey));
+    } else {
+      unawaited(bridge.releaseVolumeKeyCapture(this));
+    }
+  }
+
+  /// [设备验收 P1] 强制关闭原生 capture（dispose/切书路径）
+  ///
+  /// 仅在本页确实开启过时关闭：若子路由（含漫画阅读器）已接管捕获，
+  /// 本页不得重复 unregister/disable，避免误关上层阅读器。
+  void _disableNativeVolumeKeyCapture() {
+    if (!_nativeVolumeKeyCaptureActive) return;
+    final bridge = PlatformBridgeService.instance;
+    if (!bridge.volumeKeyCaptureSupported) return;
+    _nativeVolumeKeyCaptureActive = false;
+    unawaited(bridge.releaseVolumeKeyCapture(this));
+  }
+
+  /// [设备验收 P1] 原生 `volumeKey` 事件入口（Map {direction,longPress}）
+  Future<void> _handleNativeVolumeKey(String direction, bool longPress) async {
+    _handleVolumeKey(direction, longPress);
+  }
+
+  /// 统一音量键翻页处理（原生事件与桌面 Keyboard 共用）
   ///
   /// [批1b-2a] 对齐原版 ReadBookActivity.volumeKeyPage → handleKeyPage：
-  /// - `keyPageOnLongPress=true`：每个 keydown 都翻页（含 KeyRepeatEvent
-  ///   长按 repeat），即长按连续翻页；
-  /// - false：长按 repeat 忽略；普通按键同方向 600ms 内只翻一次
-  ///   （leading 节流，第一次立即翻）。
-  /// 音量键语义生效（volumeKeyPage 且朗读门控通过）且阅读器为当前路由、
-  /// 菜单未展开时，按键事件一律消费（含被节流忽略的长按/连点），避免
-  /// 系统调整音量；菜单展开或子路由压栈时交还系统（不消费）。
+  /// - `keyPageOnLongPress=true`：每个 keydown 都翻页（含长按 repeat）；
+  /// - false：长按 repeat 忽略；普通按键同方向 600ms 内只翻一次。
+  ///
+  /// @return 是否应由调用方消费事件（门控未通过或页面视图未就绪时 false）
+  bool _handleVolumeKey(String direction, bool longPress) {
+    if (!mounted || !_volumeKeyContextAllows) return false;
+    final pageView = _pageViewKey.currentState;
+    if (pageView == null) return false;
+    final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
+    if (!_volumeKeyPageGate.shouldTurnPage(
+      direction: direction,
+      longPress: longPress,
+      keyPageOnLongPress: cfg.keyPageOnLongPress,
+    )) {
+      return true; // 语义生效但被节流/忽略：仍消费，避免系统调音量
+    }
+    if (direction == 'down') {
+      pageView.nextPageOrChapter();
+    } else {
+      pageView.prevPageOrChapter();
+    }
+    return true;
+  }
+
+  /// 桌面/iOS 音量键（HardwareKeyboard 路径）
+  ///
+  /// Android 走原生捕获，本 handler 不注册；防御性返回 false 防双触发。
+  /// 菜单/子路由/配置门控在 [_volumeKeyContextAllows] 统一处理。
   bool _onHardwareKey(KeyEvent event) {
+    if (_nativeVolumeKeySupported) return false;
     final isVolUp = event.logicalKey == LogicalKeyboardKey.audioVolumeUp;
     final isVolDown = event.logicalKey == LogicalKeyboardKey.audioVolumeDown;
     if (!isVolUp && !isVolDown) return false;
@@ -384,42 +517,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         event is! KeyUpEvent) {
       return false;
     }
-
-    // [批1b-2a 审查回修 P3-2] 阅读菜单展开时交还系统（不翻页、不消费）：
-    // 对齐原版 ReadBookActivity.onKeyDown L1042-1044
-    // `if (menuLayoutIsVisible) return super.onKeyDown(keyCode, event)`。
-    if (ref.read(readerNotifierProvider).showControls) return false;
-
-    // 目录/设置等子路由压栈时阅读器非当前路由：handler 不生效
-    // （HardwareKeyboard 为全局处理器，阅读器仍挂载在栈下层）。
-    final route = ModalRoute.of(context);
-    if (route != null && !route.isCurrent) return false;
-
-    final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
-    final aloud = ref.read(audioNotifierProvider).isPlaying;
-    final allow = cfg.volumeKeyPage && (!aloud || cfg.volumeKeyPageOnPlay);
-    if (!allow) return false;
+    if (!_volumeKeyContextAllows) return false;
 
     // 抬起事件：对齐原版 onKeyUp → volumeKeyPage(NONE) 只消费不翻页
     if (event is KeyUpEvent) return true;
 
-    final pageView = _pageViewKey.currentState;
-    if (pageView == null) return false;
-
-    final direction = isVolDown ? 'down' : 'up';
-    final longPress = event is KeyRepeatEvent;
-    if (_volumeKeyPageGate.shouldTurnPage(
-      direction: direction,
-      longPress: longPress,
-      keyPageOnLongPress: cfg.keyPageOnLongPress,
-    )) {
-      if (isVolDown) {
-        pageView.nextPageOrChapter();
-      } else {
-        pageView.prevPageOrChapter();
-      }
-    }
-    return true; // 消费事件，避免系统调音量
+    return _handleVolumeKey(
+      isVolDown ? 'down' : 'up',
+      event is KeyRepeatEvent,
+    );
   }
 
   /// 根据配置同步自动翻页定时器
@@ -768,12 +874,51 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
     });
     // 工具栏显隐时同步系统状态栏（对标原版 ReadMenu 动画回调 upSystemUiVisibility）
+    // [设备验收 P1] 菜单展开 → 关闭 Android 原生音量键捕获（交还系统音量）；
+    // 收起菜单 → 按门控恢复。桌面路径由 _volumeKeyContextAllows 直接拦截。
     ref.listen(
       readerNotifierProvider.select((s) => s.showControls),
       (prev, next) {
         if (prev != next) {
           _applySystemChrome(_advConfig, menuVisible: next);
+          _syncVolumeKeyCapture();
         }
+      },
+    );
+    // [设备验收 P1] volumeKeyPage / 朗读时翻页开关变化 → 重算原生捕获
+    ref.listen(
+      readerAdvConfigProvider.select(
+        (c) => (c?.volumeKeyPage, c?.volumeKeyPageOnPlay),
+      ),
+      (prev, next) {
+        if (prev != next) _syncVolumeKeyCapture();
+      },
+    );
+    // [设备验收 P1] 朗读开始/停止 → volumeKeyPageOnPlay=false 时交还音量键
+    ref.listen(
+      audioNotifierProvider.select((s) => s.isPlaying),
+      (prev, next) {
+        if (prev != next) _syncVolumeKeyCapture();
+      },
+    );
+    // [设备验收 P1] 切书：先关闭捕获，等新书状态落定后按门控恢复
+    // （仅同页 openBook 路径；正常换书走新路由由 dispose 关闭）
+    ref.listen(
+      readerNotifierProvider.select((s) => s.currentBook?.bookUrl),
+      (prev, next) {
+        if (prev == next) return;
+        if (next == null) {
+          _disableNativeVolumeKeyCapture();
+          return;
+        }
+        if (prev != null) {
+          _disableNativeVolumeKeyCapture();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _syncVolumeKeyCapture();
+          });
+          return;
+        }
+        _syncVolumeKeyCapture();
       },
     );
     // [批1b-1 审查回修 P2-4] keep_light 值变更即时生效：阅读器内有多条

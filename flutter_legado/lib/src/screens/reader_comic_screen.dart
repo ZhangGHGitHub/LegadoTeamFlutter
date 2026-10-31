@@ -277,8 +277,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// 章节导航区标题隐藏，按钮保留）
   bool _hideMangaTitle = false;
 
-  /// 音量键翻页（平台无按键拦截通道 → 仅持久化，行为待平台支持）
+  /// 音量键翻页（Android 经原生 ReaderKeysBridge 捕获；桌面无音量键事件）
   bool _volumeKeyPage = true;
+
+  /// [设备验收 P1] 原生音量键捕获租约是否由本页持有（去重 enable）
+  bool _volumeKeyCaptureActive = false;
 
   /// 反转音量键翻页方向（同上仅持久化）
   bool _reverseVolumeKeyPage = false;
@@ -334,11 +337,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     _menuCtrl.dispose();
     // [P4-3 E1] 单页式控制器（此时元素树已卸载，控制器已解绑，可安全释放）
     _pagedController?.dispose();
-    // [P4-3 M5] 音量键捕获注销：退出阅读器立即关闭，防拦截范围
-    // 外泄到其它页面（系统音量键恢复默认行为）
-    final bridge = PlatformBridgeService.instance;
-    bridge.unregisterVolumeKeyHandler();
-    unawaited(bridge.setVolumeKeyCapture(false));
+    // [P4-3 M5] 音量键捕获释放：退出阅读器立即交还系统音量（租约 API
+    // 保证不会误关下层文本阅读器/上层漫画的捕获）
+    if (_volumeKeyCaptureActive) {
+      _volumeKeyCaptureActive = false;
+      unawaited(
+        PlatformBridgeService.instance.releaseVolumeKeyCapture(this),
+      );
+    }
     // 退出前保存阅读进度
     unawaited(_saveProgress());
     super.dispose();
@@ -472,17 +478,22 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     _restartAutoReadTimer();
   }
 
-  /// [P4-3 M5] 音量键捕获同步：仅阅读器活跃且开关开启时启用捕获
+  /// [P4-3 M5] 音量键捕获同步：仅阅读器活跃且开关开启时获取租约
   /// （对齐原版 ReadMangaActivity.onKeyDown L894-902 的阅读器内
   /// 拦截语义；壳侧 onKeyDown 捕获后经 legado/reader_keys 通道回发）
+  ///
+  /// [设备验收 P1] 改用 PlatformBridgeService 租约 API：文本/漫画
+  /// 阅读器叠栈时由栈顶 owner 生效，避免互相覆盖捕获开关。
   void _syncVolumeKeyCapture() {
     final bridge = PlatformBridgeService.instance;
     if (_volumeKeyPage) {
-      bridge.registerVolumeKeyHandler(_handleVolumeKey);
-      unawaited(bridge.setVolumeKeyCapture(true));
+      if (_volumeKeyCaptureActive) return;
+      _volumeKeyCaptureActive = true;
+      unawaited(bridge.acquireVolumeKeyCapture(this, _handleVolumeKey));
     } else {
-      bridge.unregisterVolumeKeyHandler();
-      unawaited(bridge.setVolumeKeyCapture(false));
+      if (!_volumeKeyCaptureActive) return;
+      _volumeKeyCaptureActive = false;
+      unawaited(bridge.releaseVolumeKeyCapture(this));
     }
   }
 

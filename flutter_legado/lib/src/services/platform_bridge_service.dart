@@ -1122,62 +1122,128 @@ class PlatformBridgeService {
   bool get volumeKeyCaptureSupported =>
       volumeKeyCaptureOverride ?? Platform.isAndroid;
 
-  /// [M5] 设置音量键捕获（仅漫画阅读器活跃且开关开启时启用；
-  /// 退出阅读器立即关闭，防拦截范围外泄到其它页面——
-  /// 对齐原版 ReadMangaActivity.onKeyDown L894-902 的阅读器内拦截语义）
+  /// [M5] 低级捕获开关（直接调用原生；页面应使用
+  /// [acquireVolumeKeyCapture] / [releaseVolumeKeyCapture] 租约 API，
+  /// 避免文本/漫画阅读器叠栈时互相覆盖）
   Future<void> setVolumeKeyCapture(bool enabled) async {
     if (!volumeKeyCaptureSupported) return;
     await PlatformChannel.setVolumeKeyCapture(enabled);
   }
 
-  /// [M5] 注册音量键事件回调（原生端捕获后回发方向 + 长按标记）
+  // ===== [设备验收 P1] 音量键捕获租约（文本/漫画阅读器共存） =====
+  //
+  // 同一通道被文本阅读器与漫画阅读器共用；页面压栈/弹栈顺序不保证
+  // （Flutter RouteObserver 的 didPushNext 与上层 initState/dispose 的
+  // 先后不固定）。用 owner 租约统一仲裁：
+  // - 最后 acquire 的 owner 为活动捕获方，事件只派发给它；
+  // - 活动 owner 释放后回退到剩余最近 owner，捕获保持 true 不抖动；
+  // - 全部释放才 clear handler + setVolumeKeyCapture(false)。
+  // 这样文本→漫画→返回文本时，漫画的 capture(true) 不会被下层文本的
+  // didPushNext 关掉，漫画 dispose 的 false 也不会关掉已恢复的文本。
+
+  /// 活动 owner 的优先级表（插入顺序即租约顺序；取最后一项）
+  final Map<Object, Future<void> Function(String, bool)> _volumeKeyOwners =
+      <Object, Future<void> Function(String, bool)>{};
+
+  Object? _activeVolumeKeyOwner;
+  bool _volumeKeyCaptureEnabled = false;
+  bool _volumeKeyDispatchRegistered = false;
+
+  /// 兼容旧 [registerVolumeKeyHandler] 的保留 owner
+  static final Object _legacyVolumeKeyOwner = Object();
+
+  /// 获取音量键捕获租约（Android 壳通道；非 Android no-op）
   ///
-  /// 事件形状（批1b-2a，`ReaderKeysBridge.handleKeyDown`）：
-  /// - 新：`{"direction": "up"/"down", "longPress": bool}`；
-  /// - 旧：`"up"/"down"`（向后兼容，按短按处理）。
-  /// `longPress` 由原生侧 `KeyEvent.repeatCount > 0` 判定，供消费方按
-  /// `keyPageOnLongPress` 语义处理（当前通道路径消费方为漫画阅读器：
-  /// 按原版 ReadMangaActivity 语义每个 keydown 都翻页，不区分长按）。
+  /// 同一 owner 重复 acquire 只更新回调，不重复 enable。
+  Future<void> acquireVolumeKeyCapture(
+    Object owner,
+    Future<void> Function(String direction, bool longPress) onVolumeKey,
+  ) async {
+    if (!volumeKeyCaptureSupported) return;
+    _volumeKeyOwners[owner] = onVolumeKey;
+    _activeVolumeKeyOwner = owner;
+    if (!_volumeKeyDispatchRegistered) {
+      _volumeKeyDispatchRegistered = true;
+      PlatformChannel.setVolumeKeyHandler(_dispatchVolumeKeyEvent);
+    }
+    if (!_volumeKeyCaptureEnabled) {
+      _volumeKeyCaptureEnabled = true;
+      await PlatformChannel.setVolumeKeyCapture(true);
+    }
+  }
+
+  /// 释放音量键捕获租约
+  ///
+  /// 非活动 owner 释放不影响当前捕获；活动 owner 释放后回退到剩余
+  /// owner（保持 true），全部释放才关闭原生捕获。
+  Future<void> releaseVolumeKeyCapture(Object owner) async {
+    if (!volumeKeyCaptureSupported) return;
+    final wasActive = identical(_activeVolumeKeyOwner, owner);
+    final hadOwner = _volumeKeyOwners.remove(owner) != null;
+    if (!wasActive || !hadOwner) return;
+    final remaining = _volumeKeyOwners.keys.toList(growable: false);
+    if (remaining.isEmpty) {
+      _activeVolumeKeyOwner = null;
+      _volumeKeyDispatchRegistered = false;
+      PlatformChannel.clearVolumeKeyHandler();
+      if (_volumeKeyCaptureEnabled) {
+        _volumeKeyCaptureEnabled = false;
+        await PlatformChannel.setVolumeKeyCapture(false);
+      }
+      return;
+    }
+    _activeVolumeKeyOwner = remaining.last;
+  }
+
+  /// 单一通道分发：按当前活动 owner 取回调（事件会动态跟随栈顶）
+  Future<dynamic> _dispatchVolumeKeyEvent(MethodCall call) async {
+    if (call.method != 'volumeKey') return null;
+    final parsed = _parseVolumeKeyArguments(call.arguments);
+    if (parsed == null) return null;
+    final owner = _activeVolumeKeyOwner;
+    final handler = owner == null ? null : _volumeKeyOwners[owner];
+    if (handler != null) {
+      await handler(parsed.$1, parsed.$2);
+    }
+    return null;
+  }
+
+  /// 解析原生音量键事件参数（旧 String / 新 Map / 畸形 → null）
+  (String, bool)? _parseVolumeKeyArguments(Object? arguments) {
+    switch (arguments) {
+      // 旧协议（M5 起）：仅方向字符串，等价短按
+      case final String raw when raw == 'up' || raw == 'down':
+        return (raw, false);
+      // 新协议（批1b-2a）：方向 + 长按 repeat 标记
+      case {'direction': final String raw, 'longPress': final bool lp}
+          when raw == 'up' || raw == 'down':
+        return (raw, lp);
+      // 缺 longPress 的 Map（跨端防御）：按短按兜底；若 longPress
+      // 存在但类型非法（如字符串/数字），按畸形事件忽略而不是降级为
+      // 短按——否则长按 repeat 会绕过 keyPageOnLongPress 的忽略语义
+      case {'direction': final String raw}
+          when (raw == 'up' || raw == 'down') &&
+              !arguments.containsKey('longPress'):
+        return (raw, false);
+      default:
+        return null;
+    }
+  }
+
+  /// [M5] 注册音量键事件回调（兼容入口，内部使用保留 owner 租约）
+  ///
+  /// 新代码请用 [acquireVolumeKeyCapture]（支持多页面栈仲裁）。
   void registerVolumeKeyHandler(
     Future<void> Function(String direction, bool longPress) onVolumeKey,
   ) {
     if (!volumeKeyCaptureSupported) return;
-    PlatformChannel.setVolumeKeyHandler((call) async {
-      if (call.method != 'volumeKey') return null;
-      final String direction;
-      final bool longPress;
-      switch (call.arguments) {
-        // 旧协议（M5 起）：仅方向字符串，等价短按
-        case final String raw when raw == 'up' || raw == 'down':
-          direction = raw;
-          longPress = false;
-        // 新协议（批1b-2a）：方向 + 长按 repeat 标记
-        case {'direction': final String raw, 'longPress': final bool lp}
-            when raw == 'up' || raw == 'down':
-          direction = raw;
-          longPress = lp;
-        // 缺 longPress 的 Map（跨端防御）：按短按兜底；若 longPress
-        // 存在但类型非法（如字符串/数字），按畸形事件忽略而不是降级为
-        // 短按——否则长按 repeat 会绕过 keyPageOnLongPress 的忽略语义
-        case {'direction': final String raw}
-            when (raw == 'up' ||
-                raw == 'down') &&
-                !(call.arguments as Map<Object?, Object?>)
-                    .containsKey('longPress'):
-          direction = raw;
-          longPress = false;
-        default:
-          return null;
-      }
-      await onVolumeKey(direction, longPress);
-      return null;
-    });
+    unawaited(acquireVolumeKeyCapture(_legacyVolumeKeyOwner, onVolumeKey));
   }
 
-  /// [M5] 注销音量键事件回调
+  /// [M5] 注销音量键事件回调（兼容入口，释放保留 owner 租约）
   void unregisterVolumeKeyHandler() {
     if (!volumeKeyCaptureSupported) return;
-    PlatformChannel.clearVolumeKeyHandler();
+    unawaited(releaseVolumeKeyCapture(_legacyVolumeKeyOwner));
   }
 
   // ========== [批1b-1] keepLight 保持亮屏（Android 平台通道） ==========
