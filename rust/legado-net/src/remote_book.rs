@@ -88,6 +88,18 @@ impl RemoteBook {
     }
 }
 
+/// 远程书库 HTTP 客户端（批9b-4）
+///
+/// 对齐原版 `RemoteBookWebDav`（继承 `WebDav`，`okHttpClient.newBuilder()`
+/// 派生自全局 OkHttp，含 `AppConfig.userAgent` 拦截器）：远程书库请求
+/// 同样携带用户全局 UA。客户端按操作短生命周期创建，构建期取当前值。
+fn remote_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .user_agent(crate::user_agent::default_user_agent())
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
 /// 远程书籍管理器（对应 Kotlin RemoteBookManager + RemoteBookWebDav）
 pub struct RemoteBookManager {
     /// WebDAV 根目录 URL
@@ -112,7 +124,7 @@ impl RemoteBookManager {
     /// 使用 WebDAV PROPFIND 列出指定路径下的文件，
     /// 过滤出书籍文件和目录。
     pub async fn get_remote_book_list(&self, path: &str) -> Result<Vec<RemoteBook>, String> {
-        let client = reqwest::Client::new();
+        let client = remote_http_client();
         let propfind_body = r#"<?xml version="1.0" encoding="utf-8"?>
 <D:propfind xmlns:D="DAV:">
   <D:prop>
@@ -149,7 +161,7 @@ impl RemoteBookManager {
 
     /// 下载远程书籍（对应 Kotlin downloadRemoteBook）
     pub async fn download_remote_book(&self, remote_book: &RemoteBook) -> Result<Vec<u8>, String> {
-        let client = reqwest::Client::new();
+        let client = remote_http_client();
         let resp = client
             .get(&remote_book.path)
             .basic_auth(&self.username, Some(&self.password))
@@ -174,7 +186,7 @@ impl RemoteBookManager {
         remote_name: &str,
     ) -> Result<String, String> {
         let put_url = format!("{}/{}", self.root_book_url, remote_name);
-        let client = reqwest::Client::new();
+        let client = remote_http_client();
         let resp = client
             .put(&put_url)
             .basic_auth(&self.username, Some(&self.password))
@@ -192,7 +204,7 @@ impl RemoteBookManager {
 
     /// 删除远程书籍（对应 Kotlin delete）
     pub async fn delete_remote_book(&self, remote_book_url: &str) -> Result<(), String> {
-        let client = reqwest::Client::new();
+        let client = remote_http_client();
         let resp = client
             .delete(remote_book_url)
             .basic_auth(&self.username, Some(&self.password))

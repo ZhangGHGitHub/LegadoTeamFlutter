@@ -185,10 +185,14 @@ impl WebDavClient {
         connect_timeout: Duration,
         request_timeout: Duration,
     ) -> Self {
+        // 批9b-4：对齐原版 `lib/webdav/WebDav.kt:104`（`okHttpClient.newBuilder()`
+        // 派生自全局 OkHttp，含 AppConfig.userAgent 请求拦截器）——WebDAV
+        // 请求同样携带用户全局 UA；构建期取当前值（客户端按操作短生命周期创建）。
         let client = reqwest::Client::builder()
             .dns_resolver(crate::custom_hosts::resolver())
             .connect_timeout(connect_timeout)
             .timeout(request_timeout)
+            .user_agent(crate::user_agent::default_user_agent())
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self { config, client }

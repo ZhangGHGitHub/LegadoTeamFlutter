@@ -84,7 +84,12 @@ pub struct LegadoClientConfig {
     pub connect_timeout: Duration,
     /// 读取超时，默认 60s（对应 OkHttp `.readTimeout(60, TimeUnit.SECONDS)`）
     pub read_timeout: Duration,
-    /// User-Agent 字符串（缺省见 [`DEFAULT_USER_AGENT`]，轮换优先级低于 `user_agents`）
+    /// User-Agent 字符串（轮换优先级低于 `user_agents`）
+    ///
+    /// 缺省值 [`DEFAULT_USER_AGENT`] 是「未显式定制」哨兵：请求期
+    /// [`LegadoClient::request_default_user_agent`] 会改读进程级全局
+    /// （[`crate::user_agent::default_user_agent`]，即 `config:userAgent`）；
+    /// 显式设为其它值时按显式值发送（不随全局设置漂移）。
     pub user_agent: String,
     /// 代理配置（单一代理，兼容旧接口）
     pub proxy: Option<ProxyConfig>,
@@ -115,7 +120,10 @@ impl Default for LegadoClientConfig {
             read_timeout: Duration::from_secs(60),
             // 缺省 UA 对齐上游浏览器形态（见 [`DEFAULT_USER_AGENT`] 文档）：
             // 此前 "Legado/1.0" 仅被 FFI 主链路补注入覆盖，JS 桥四池漏网，
-            // 两客户端 UA 指纹不一致致 WAF cookie 跨层失效
+            // 两客户端 UA 指纹不一致致 WAF cookie 跨层失效。
+            // 批9b-4：Default 保持内置常量作为「未显式定制」哨兵；请求期
+            // 由 [`LegadoClient::request_default_user_agent`] 读取进程级全局
+            // （config:userAgent），显式定制的 config.user_agent 仍优先。
             user_agent: DEFAULT_USER_AGENT.to_string(),
             proxy: None,
             accept_invalid_certs: true,
@@ -387,6 +395,23 @@ impl LegadoClient {
         self.client_id
     }
 
+    /// 本客户端请求期兜底 User-Agent（无调用方显式 UA 时使用）
+    ///
+    /// - `config.user_agent` 等于内置 [`DEFAULT_USER_AGENT`]（视为「未显式
+    ///   定制」）→ 每次请求读取进程级全局
+    ///   [`crate::user_agent::default_user_agent`]（`config:userAgent`；
+    ///   未设置/空白回落内置默认）——用户修改设置后已构建客户端即时生效；
+    /// - 显式定制为其它值 → 保持显式值，不随全局设置漂移。
+    ///
+    /// 对齐原版 `HttpHelper.kt:70-77` 拦截器每请求读取 `AppConfig.userAgent`。
+    fn request_default_user_agent(&self) -> String {
+        if self.config.user_agent == DEFAULT_USER_AGENT {
+            crate::user_agent::default_user_agent()
+        } else {
+            self.config.user_agent.clone()
+        }
+    }
+
     /// 获取重试执行器引用（如有）
     pub fn retry_executor(&self) -> Option<&Arc<RetryExecutor>> {
         self.retry_executor.as_ref()
@@ -405,6 +430,7 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
         // HTTP 日志采集上下文（开关关闭时为 None，零额外开销；原版拦截器同款门控）
@@ -416,12 +442,19 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             async move {
                 let mut req = client.get(&url);
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -452,6 +485,7 @@ impl LegadoClient {
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let log = HttpLogCapture::start("GET", url, headers.as_ref(), "");
@@ -462,12 +496,19 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             async move {
                 let mut req = client.get(&url);
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -512,6 +553,7 @@ impl LegadoClient {
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let log = HttpLogCapture::start("POST", url, headers.as_ref(), body);
@@ -523,13 +565,20 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             let body = body.clone();
             async move {
                 let mut req = client.post(&url).body(body);
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -572,6 +621,7 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let log = HttpLogCapture::start("POST", url, headers.as_ref(), body);
@@ -583,13 +633,20 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             let body = body.clone();
             async move {
                 let mut req = client.post(&url).body(body);
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -647,10 +704,12 @@ impl LegadoClient {
         let url = url.to_string();
         let url_for_retry = url.clone();
         let content_type = Arc::new(content_type);
+        let fallback_ua = self.request_default_user_agent();
 
         let factory = move || {
             let client = self.client.clone();
             let cookie_store = self.cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             let body = body.clone();
@@ -663,7 +722,13 @@ impl LegadoClient {
                     // P1-1：覆写客户端级总超时（按载荷大小估算的上传预算）
                     .timeout(request_timeout);
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -680,6 +745,7 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let log = HttpLogCapture::start("HEAD", url, headers.as_ref(), "");
@@ -690,12 +756,19 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             async move {
                 let mut req = client.head(&url);
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -711,6 +784,7 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         let method = request.method.to_reqwest();
         let url = request.url.clone();
         let body = request.body.clone();
@@ -729,6 +803,7 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             let body = body.clone();
@@ -742,7 +817,13 @@ impl LegadoClient {
                     req = req.timeout(t);
                 }
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -769,6 +850,7 @@ impl LegadoClient {
     ) -> LegadoResult<crate::response::LegadoStreamResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        let fallback_ua = self.request_default_user_agent();
         let method = request.method.to_reqwest();
         let url = request.url.clone();
         let body = request.body.clone();
@@ -788,6 +870,7 @@ impl LegadoClient {
         let factory = move || {
             let client = client.clone();
             let cookie_store = cookie_store.clone();
+            let fallback_ua = fallback_ua.clone();
             let headers = Arc::clone(&headers);
             let url = url.clone();
             let body = body.clone();
@@ -801,7 +884,13 @@ impl LegadoClient {
                     req = req.timeout(t);
                 }
                 req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req = apply_headers_and_cookies(
+                    req,
+                    &cookie_store,
+                    &url,
+                    (*headers).clone(),
+                    fallback_ua.clone(),
+                );
                 req.send().await
             }
         };
@@ -1394,6 +1483,12 @@ fn merge_cookie_headers(db_cookie: &str, rule_cookie: &str) -> String {
 /// 应用自定义请求头与 Cookie（对齐上游 `AnalyzeUrl.setCookie` 语义，静态版本）
 ///
 /// - 默认头之外的自定义头**原样应用**（语义不变，含 UA=`"null"` 移除特判）；
+/// - `User-Agent`：调用方未显式提供（键名大小写不敏感）时，注入
+///   `fallback_ua`（由 [`LegadoClient::request_default_user_agent`] 按
+///   「显式定制 > 进程级全局 > 内置默认」解析）——对齐原版
+///   `HttpHelper.kt:70-77` OkHttp 拦截器的每请求读取
+///   `AppConfig.userAgent`：用户修改设置后无需重建客户端/连接池即生效；
+///   已显式配置的书源/规则/接口 UA 永不覆盖；
 /// - `Cookie` 头单独处理：DB 持久化 Cookie 与规则/自定义 Cookie **按键合并、
 ///   规则优先**（[`merge_cookie_headers`]），最后一次性注入，避免整体替换
 ///   导致规则 Cookie 丢失（P1-2 缺陷修复）。
@@ -1402,6 +1497,7 @@ fn apply_headers_and_cookies(
     cookie_store: &Arc<RwLock<CookieStore>>,
     url: &str,
     headers: Option<HashMap<String, String>>,
+    fallback_ua: String,
 ) -> reqwest::RequestBuilder {
     // 规则/自定义 Cookie 头（键不区分大小写；无则为空串）
     let rule_cookie: String = headers
@@ -1412,6 +1508,9 @@ fn apply_headers_and_cookies(
                 .map(|(_, v)| v.clone())
         })
         .unwrap_or_default();
+
+    // 调用方是否显式提供了 UA（含 "null" 移除语义：提供过就不再补全局 UA）
+    let mut has_user_agent = false;
 
     // 其余自定义头原样应用（跳过 Cookie，稍后统一合并注入）
     if let Some(hdrs) = headers {
@@ -1425,11 +1524,21 @@ fn apply_headers_and_cookies(
                 continue;
             }
             // 特殊处理: UA 为 "null" 时移除（对应 Kotlin 拦截器逻辑）
-            if name.to_lowercase() == "user-agent" && value == "null" {
-                continue;
+            if name.to_lowercase() == "user-agent" {
+                has_user_agent = true;
+                if value == "null" {
+                    continue;
+                }
             }
             req = req.header(&name, &value);
         }
+    }
+
+    // 批9b-4：调用方未显式设置 UA → 注入请求期兜底 UA（默认配置下为
+    // 进程级全局 config:userAgent；未设置/空白回落内置 DEFAULT_USER_AGENT）。
+    // 显式 UA 优先，绝不覆盖。
+    if !has_user_agent {
+        req = req.header("User-Agent", fallback_ua);
     }
 
     // DB 持久化 Cookie
@@ -1546,6 +1655,8 @@ mod tests {
     /// （跨 crate 钉死见 legado-ffi search.rs::test_default_user_agent_matches_net_client_default）
     #[test]
     fn test_default_user_agent_is_browser_ua() {
+        // 全局 UA 覆盖为进程级状态：与本模块其他 UA 用例串行（批9b-4）
+        let _ua_guard = crate::user_agent::UaTestGuard::new();
         let cfg = LegadoClientConfig::default();
         assert_eq!(cfg.user_agent, DEFAULT_USER_AGENT);
         assert!(
@@ -2251,6 +2362,180 @@ mod tests {
         assert!(
             !body.contains("user-agent: null"),
             "UA=\"null\" 不应下发（沿用旧拦截器跳过语义）: {}",
+            resp.body
+        );
+    }
+
+    // ─── 批9b-4：全局 User-Agent（config:userAgent）请求期注入 ─────────
+
+    /// 一次性回显服务器：把收到的完整请求头原样写入响应体
+    async fn spawn_header_echo_server() -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut head: Vec<u8> = Vec::new();
+                loop {
+                    let mut b = [0u8; 1];
+                    let n = match sock.read(&mut b).await {
+                        Ok(n) => n,
+                        Err(_) => return,
+                    };
+                    if n == 0 {
+                        return;
+                    }
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let body = String::from_utf8_lossy(&head).to_string();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    fn ua_header_line(body: &str, ua: &str) -> bool {
+        body.to_ascii_lowercase()
+            .lines()
+            .any(|line| line.trim() == format!("user-agent: {}", ua.to_ascii_lowercase()))
+    }
+
+    /// 无显式 header → 请求期注入全局 UA（已构建客户端也即时生效）
+    ///
+    /// 语义基准：原版 `HttpHelper.kt:70-77` 每请求读取 `AppConfig.userAgent`。
+    #[tokio::test]
+    async fn test_global_user_agent_applied_when_header_missing() {
+        let _ua_guard = crate::user_agent::UaTestGuard::new();
+        let addr = spawn_header_echo_server().await;
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        // 先构建客户端、后设置全局：证明请求期读取，无需重建客户端
+        crate::user_agent::set_default_user_agent(Some("GlobalUA/9.9"));
+
+        let resp = client
+            .get(&format!("http://{addr}/"), None)
+            .await
+            .expect("请求回显服务器失败");
+        assert!(
+            ua_header_line(&resp.body, "GlobalUA/9.9"),
+            "未显式设置 UA 时应注入全局 UA: {}",
+            resp.body
+        );
+    }
+
+    /// 显式 UA（任意大小写键名）优先于全局，绝不被覆盖
+    #[tokio::test]
+    async fn test_explicit_user_agent_header_wins_over_global() {
+        let _ua_guard = crate::user_agent::UaTestGuard::new();
+        let addr = spawn_header_echo_server().await;
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        crate::user_agent::set_default_user_agent(Some("GlobalUA/9.9"));
+
+        let mut headers = HashMap::new();
+        headers.insert("user-agent".to_string(), "SourceUA/1.0".to_string());
+        let resp = client
+            .get(&format!("http://{addr}/"), Some(headers))
+            .await
+            .expect("请求回显服务器失败");
+        assert!(
+            ua_header_line(&resp.body, "SourceUA/1.0"),
+            "书源/规则显式 UA 必须保留: {}",
+            resp.body
+        );
+        assert!(
+            !ua_header_line(&resp.body, "GlobalUA/9.9"),
+            "显式 UA 存在时不得再注入全局 UA: {}",
+            resp.body
+        );
+    }
+
+    /// 全局空/纯空白 → 回落内置 DEFAULT_USER_AGENT
+    #[tokio::test]
+    async fn test_blank_global_user_agent_falls_back_to_builtin() {
+        let _ua_guard = crate::user_agent::UaTestGuard::new();
+        let addr = spawn_header_echo_server().await;
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        crate::user_agent::set_default_user_agent(Some("   "));
+        let resp = client
+            .get(&format!("http://{addr}/"), None)
+            .await
+            .expect("请求回显服务器失败");
+        assert!(
+            ua_header_line(&resp.body, DEFAULT_USER_AGENT),
+            "全局 UA 为空白时应回落内置默认: {}",
+            resp.body
+        );
+    }
+
+    /// Default 的 UA 是「未显式定制」哨兵：不随设置时点的全局值冻结
+    /// （全局在请求期读取，见 `request_default_user_agent`）
+    #[test]
+    fn test_default_config_user_agent_is_sentinel() {
+        let _ua_guard = crate::user_agent::UaTestGuard::new();
+        crate::user_agent::set_default_user_agent(Some("BuildTimeUA/2.0"));
+        assert_eq!(
+            LegadoClientConfig::default().user_agent,
+            DEFAULT_USER_AGENT,
+            "Default 必须保持内置哨兵，不能冻结构建期全局值"
+        );
+
+        let explicit = LegadoClientConfig {
+            user_agent: "ExplicitUA/3.0".to_string(),
+            ..LegadoClientConfig::default()
+        };
+        assert_eq!(explicit.user_agent, "ExplicitUA/3.0");
+    }
+
+    /// 显式定制 `LegadoClientConfig.user_agent` 的客户端优先于全局设置
+    #[tokio::test]
+    async fn test_explicit_client_config_user_agent_wins_over_global() {
+        let _ua_guard = crate::user_agent::UaTestGuard::new();
+        let addr = spawn_header_echo_server().await;
+        crate::user_agent::set_default_user_agent(Some("GlobalUA/9.9"));
+
+        let client = LegadoClient::new(LegadoClientConfig {
+            user_agent: "ExplicitClientUA/3.0".to_string(),
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let resp = client
+            .get(&format!("http://{addr}/"), None)
+            .await
+            .expect("请求回显服务器失败");
+        assert!(
+            ua_header_line(&resp.body, "ExplicitClientUA/3.0"),
+            "显式定制的客户端 UA 应保留: {}",
+            resp.body
+        );
+        assert!(
+            !ua_header_line(&resp.body, "GlobalUA/9.9"),
+            "显式定制时不得被全局设置覆盖: {}",
             resp.body
         );
     }

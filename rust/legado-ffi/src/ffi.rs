@@ -199,10 +199,12 @@ pub mod ffi {
             // 书源开关决定是否补 COOKIE_JAR_HEADER 标记（读侧不受影响）
             crate::http_state::register_js_source_cookie_jar_lookup();
         }
-        // 启动时恢复配置（契约 §2.20.3 / §2.22.5，Task #73）：
-        // 读回 customHosts 映射与独立 MCP 端口，尽力而为（失败仅记日志）
+        // 启动时恢复配置（契约 §2.20.3 / §2.22.5 / §2.10，Task #73、批9b-4）：
+        // 读回 customHosts 映射、独立 MCP 端口与全局 UserAgent，尽力而为
+        // （失败仅记日志）
         crate::api::net_api::restore_custom_hosts();
         crate::api::server_api::restore_mcp_port();
+        crate::api::config_api::restore_user_agent();
         // 批11（契约 §2.10）：注册 HTTP 采集实现并按 config:recordHttpLog
         // 回填运行期开关（App 侧请求与 Web 端日志写入同一 ring）
         crate::api::http_log_api::restore_http_log_recording();

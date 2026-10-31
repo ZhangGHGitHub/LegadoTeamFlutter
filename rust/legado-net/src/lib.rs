@@ -72,5 +72,7 @@ pub use rule_update_client::{
 pub use source_checker::{CaptchaInfo, CheckResult, CheckerConfig, RedirectInfo, SourceChecker};
 pub use ssl_config::SslConfig;
 pub use url_template::{parse_url_template, ParsedUrl, UrlOption};
-pub use user_agent::{UserAgentMiddleware, UserAgentRotator};
+pub use user_agent::{
+    default_user_agent, set_default_user_agent, UserAgentMiddleware, UserAgentRotator,
+};
 pub use verification::{VerificationFlightRegistry, VerificationResult};

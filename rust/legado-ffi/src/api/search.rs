@@ -18,7 +18,6 @@ use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::read_record_repository::decode_read_record_authors;
 use legado_db::ReadRecordRepository;
-use legado_net::client::DEFAULT_USER_AGENT;
 use legado_net::LegadoClient;
 // P2-19 尾项后 lib 侧不再直接使用 AnalyzeUrl（响应解码已收敛到 fetcher 四级
 // 入口）；仅 `#[cfg(test)] build_search_url` 的返回类型仍需，测试期导入
@@ -2186,19 +2185,22 @@ fn parse_header_option(header_str: Option<&str>) -> Option<HashMap<String, Strin
     header_str.and_then(|s| serde_json::from_str(s).ok())
 }
 
-/// 请求头缺少 User-Agent 时补充 Chrome UA
+/// 请求头缺少 User-Agent 时补充当前全局 UA（批9b-4）
 ///
-/// [UI-fix 2026-08-10 | Reasonix] 对齐原版 BaseSource.kt:202-204 + AppConfig.userAgent：
-/// 默认 UA（旧缺省 "Legado/1.0"）会被反爬站点识别为非浏览器而拒绝/返回空列表。
-/// 书源 header 已配置 UA（任意大小写键名）时不覆盖。
+/// 对齐原版 BaseSource.kt:202-204 + AppConfig.userAgent：
+/// 书源 header 已配置 UA（任意大小写键名）时不覆盖；未配置时回落
+/// [`legado_net::user_agent::default_user_agent`]——用户全局 UA
+/// （`config:userAgent`）优先，空/未设置时回到内置桌面 Chrome 默认。
 ///
-/// UA 字面量统一引用 [`legado_net::client::DEFAULT_USER_AGENT`]（全仓唯一
-/// 缺省 UA 常量，与 JS 桥共享客户端池的 `LegadoClientConfig::default` 同串
-/// ——同 UA 指纹使 WAF 与 UA 绑定的 cookie 跨层复用；跨 crate 钉死测试
-/// `test_default_user_agent_matches_net_client_default` 防漂移）。
+/// 说明：`LegadoClient` 统一出口也会在请求期做同样的注入（兜底所有未显式
+/// 设置 UA 的链路）；本函数保留是为了让搜索链路的请求头在进入网络层前
+/// 即完整（HTTP 日志/调试快照可见 UA），两处读取同一进程级真源。
 fn ensure_default_user_agent(headers: &mut HashMap<String, String>) {
     if !headers.keys().any(|k| k.eq_ignore_ascii_case("user-agent")) {
-        headers.insert("User-Agent".to_string(), DEFAULT_USER_AGENT.to_string());
+        headers.insert(
+            "User-Agent".to_string(),
+            legado_net::user_agent::default_user_agent(),
+        );
     }
 }
 
@@ -3116,17 +3118,43 @@ mod tests {
 
     #[test]
     fn test_ensure_default_user_agent_adds_when_missing() {
+        // 全局 UA 为进程级状态：与其他 UA 用例串行（批9b-4）
+        let _ua_guard = crate::api::config_api::UserAgentTestGuard::new();
         let mut headers = HashMap::new();
         headers.insert("Referer".to_string(), "https://www.example.com".to_string());
         ensure_default_user_agent(&mut headers);
-        assert!(headers
-            .get("User-Agent")
-            .unwrap()
-            .starts_with("Mozilla/5.0"));
+        assert_eq!(
+            headers.get("User-Agent").map(String::as_str),
+            Some(legado_net::client::DEFAULT_USER_AGENT)
+        );
+    }
+
+    /// 批9b-4：未显式配置 UA 时优先回落用户全局 UA（config:userAgent）
+    #[test]
+    fn test_ensure_default_user_agent_uses_global_setting() {
+        let _ua_guard = crate::api::config_api::UserAgentTestGuard::new();
+        legado_net::set_default_user_agent(Some("GlobalConfigUA/3.0"));
+
+        let mut headers = HashMap::new();
+        ensure_default_user_agent(&mut headers);
+        assert_eq!(
+            headers.get("User-Agent").map(String::as_str),
+            Some("GlobalConfigUA/3.0")
+        );
+
+        // 显式书源 UA 仍优先（全局设置不得覆盖）
+        let mut source_headers = HashMap::new();
+        source_headers.insert("user-agent".to_string(), "SourceUA/1.0".to_string());
+        ensure_default_user_agent(&mut source_headers);
+        assert_eq!(
+            source_headers.get("user-agent").map(String::as_str),
+            Some("SourceUA/1.0")
+        );
     }
 
     #[test]
     fn test_ensure_default_user_agent_keeps_source_ua() {
+        let _ua_guard = crate::api::config_api::UserAgentTestGuard::new();
         // 书源 header 已配置 UA（含小写键名）时不覆盖
         let mut headers = HashMap::new();
         headers.insert("user-agent".to_string(), "CustomMobile/1.0".to_string());
@@ -3137,21 +3165,28 @@ mod tests {
 
     /// 跨 crate 不变式：FFI 主链路注入的缺省 UA 与 JS 桥共享客户端池
     /// （legado-net `LegadoClientConfig::default`，四池配置逐项派生自 Default）
-    /// 完全同串——两客户端同 UA 指纹，WAF 与 UA 绑定的 cookie（report_d）
-    /// 才能跨层复用；任一侧字面量漂移此测试必红
+    /// 读取同一进程级真源——两客户端同 UA 指纹，WAF 与 UA 绑定的 cookie
+    /// （report_d）才能跨层复用；任一侧读取源漂移此测试必红
     #[test]
     fn test_default_user_agent_matches_net_client_default() {
+        let _ua_guard = crate::api::config_api::UserAgentTestGuard::new();
         let mut headers = HashMap::new();
         ensure_default_user_agent(&mut headers);
+        let expected = legado_net::user_agent::default_user_agent();
         assert_eq!(
             headers.get("User-Agent").map(String::as_str),
-            Some(legado_net::client::DEFAULT_USER_AGENT),
-            "ensure_default_user_agent 注入的 UA 必须引用共享常量"
+            Some(expected.as_str()),
+            "ensure_default_user_agent 注入的 UA 必须引用共享真源"
         );
         assert_eq!(
             legado_net::client::LegadoClientConfig::default().user_agent,
-            legado_net::client::DEFAULT_USER_AGENT,
+            expected,
             "JS 桥池缺省 UA（LegadoClientConfig::default）必须与主链路同串"
+        );
+        assert_eq!(
+            expected,
+            legado_net::client::DEFAULT_USER_AGENT,
+            "未设置全局 UA 时应为内置默认"
         );
     }
 

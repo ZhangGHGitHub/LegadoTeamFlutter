@@ -20,9 +20,6 @@ use legado_core::LegadoResult;
 use legado_js::JsEngine;
 #[cfg(feature = "quickjs")]
 use legado_js::JsValue;
-// 默认 Chrome UA（与搜索链路一致，避免图片 CDN 按 UA 拒请求）：
-// 引用全仓唯一缺省 UA 常量（FFI 主链路 / JS 桥四池共享，同串防漂移）
-use legado_net::client::DEFAULT_USER_AGENT;
 
 /// 解析书源 header 字符串（JSON 对象 或 `key: value` 行）
 /// 对齐原版 AnalyzeUrl.headerMap 语义
@@ -233,7 +230,12 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     // 内嵌 header 优先级最高（书源规则显式指定的防盗链）
     headers.extend(embedded_headers);
     if !headers.contains_key("User-Agent") && !headers.contains_key("user-agent") {
-        headers.insert("User-Agent".to_string(), DEFAULT_USER_AGENT.to_string());
+        // 批9b-4：图片 UA 兜底改读全局真源（config:userAgent；未设置时
+        // 回落内置 Chrome UA），与搜索/正文链路同 UA 指纹
+        headers.insert(
+            "User-Agent".to_string(),
+            legado_net::user_agent::default_user_agent(),
+        );
     }
     // 图片防盗链：无 Referer 时以书源主页兜底（对齐原版 ImageLoader referer）
     if !headers.contains_key("Referer") && !headers.contains_key("referer") {

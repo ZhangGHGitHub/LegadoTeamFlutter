@@ -273,12 +273,12 @@ fn remembered_ua(source_url: &str) -> Option<String> {
         .cloned()
 }
 
-/// 有效 UA：`__prepare` 记忆值 → 共享客户端默认 UA
+/// 有效 UA：`__prepare` 记忆值 → 进程级全局 UA（config:userAgent）→ 内置默认
 fn effective_ua(source_url: &str) -> String {
     remembered_ua(source_url)
         .map(|ua| ua.trim().to_string())
         .filter(|ua| !ua.is_empty())
-        .unwrap_or_else(|| legado_net::client::LegadoClientConfig::default().user_agent)
+        .unwrap_or_else(legado_net::user_agent::default_user_agent)
 }
 
 // ─── 信封 ────────────────────────────────────────────────────────────────────

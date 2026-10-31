@@ -4,13 +4,85 @@
 //! 并可作为中间件自动为每个请求注入不同的 User-Agent。
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 use legado_core::LegadoResult;
 use reqwest::{RequestBuilder, Response};
 
+use crate::client::DEFAULT_USER_AGENT;
 use crate::middleware::{Middleware, Next};
+
+/// 进程级默认 User-Agent 覆盖（`config:userAgent` 的运行期镜像）
+///
+/// 语义对齐原版 `AppConfig.userAgent` / 参考版
+/// `DownloadCacheSettings.userAgent`：用户全局设置对所有**未显式设置
+/// `User-Agent`** 的请求生效；显式 header（书源/规则/接口）始终优先。
+///
+/// - `None`：未设置/已清除 → 回落 [`DEFAULT_USER_AGENT`]；
+/// - `Some(ua)`：已 trim 的非空用户值。
+///
+/// 由 `legado-ffi` 在 `db_open`（回填 `config:userAgent`）与
+/// `config_set("userAgent", …)` 时注入；`legado-net` 不依赖上层存储，
+/// 因此以进程级全局承载，避免每个请求重复读 DB。
+/// 锁中毒时 `into_inner` 继续使用（覆盖值本身无跨字段一致性约束，
+/// 与 legado-net 其他全局配置锁口径一致）。
+static DEFAULT_USER_AGENT_OVERRIDE: RwLock<Option<String>> = RwLock::new(None);
+
+/// 设置进程级默认 User-Agent（`None`/空/纯空白 = 清除覆盖）
+///
+/// 对齐原版 `AppConfig.getPrefUserAgent()`（`AppConfig.kt:918-925`）：
+/// 偏好空白时回落内置桌面 Chrome UA。本函数在写入前 trim，保证
+/// 「空白串」与「未设置」同义。
+pub fn set_default_user_agent(user_agent: Option<&str>) {
+    let normalized = user_agent
+        .map(str::trim)
+        .filter(|ua| !ua.is_empty())
+        .map(ToOwned::to_owned);
+    *DEFAULT_USER_AGENT_OVERRIDE
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = normalized;
+}
+
+/// 当前生效的进程级默认 User-Agent（未设置时返回 [`DEFAULT_USER_AGENT`]）
+///
+/// 请求期调用（[`crate::client::LegadoClient`] 统一出口）——用户修改
+/// 设置后无需重建客户端/连接池即即时生效，对齐原版 OkHttp 拦截器每次
+/// 请求读取 `AppConfig.userAgent` 的语义。
+pub fn default_user_agent() -> String {
+    DEFAULT_USER_AGENT_OVERRIDE
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+        .unwrap_or_else(|| DEFAULT_USER_AGENT.to_string())
+}
+
+/// 测试用串行守卫：持有期间独占全局 UA 覆盖，并在 drop 时清除覆盖
+///
+/// 全局覆盖是进程级状态，Rust 测试默认并行；所有读写该全局的
+/// legado-net 用例必须持有本守卫，否则会互相污染（且 panic 时 Drop
+/// 仍会清理，避免后续用例看到残留值）。
+#[cfg(test)]
+pub(crate) struct UaTestGuard {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl UaTestGuard {
+    pub(crate) fn new() -> Self {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let lock = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        set_default_user_agent(None);
+        Self { _lock: lock }
+    }
+}
+
+#[cfg(test)]
+impl Drop for UaTestGuard {
+    fn drop(&mut self) {
+        set_default_user_agent(None);
+    }
+}
 
 /// 内置 UA 列表
 const DEFAULT_USER_AGENTS: &[&str] = &[
@@ -182,6 +254,65 @@ mod tests {
     fn test_default_trait() {
         let rotator = UserAgentRotator::default();
         assert_eq!(rotator.len(), DEFAULT_USER_AGENTS.len());
+    }
+
+    // ─── 批9b-4：进程级默认 UA 覆盖（config:userAgent） ─────────────
+
+    /// 未设置全局覆盖时回落内置桌面 Chrome UA（原版 `AppConfig.kt:918-925`）
+    #[test]
+    fn test_default_user_agent_builtin_when_unset() {
+        let _guard = UaTestGuard::new();
+        assert_eq!(default_user_agent(), DEFAULT_USER_AGENT);
+    }
+
+    /// 设置值 trim 后生效；空白/None 清除并回落内置默认
+    #[test]
+    fn test_set_default_user_agent_normalizes_and_clears() {
+        let _guard = UaTestGuard::new();
+
+        set_default_user_agent(Some("  CustomUA/1.0  "));
+        assert_eq!(default_user_agent(), "CustomUA/1.0");
+
+        set_default_user_agent(Some("   \t\r\n "));
+        assert_eq!(
+            default_user_agent(),
+            DEFAULT_USER_AGENT,
+            "纯空白应与未设置同义"
+        );
+
+        set_default_user_agent(Some("CustomUA/2.0"));
+        set_default_user_agent(None);
+        assert_eq!(default_user_agent(), DEFAULT_USER_AGENT);
+    }
+
+    /// 并发读写全局覆盖：无 panic/无死锁，读值恒为已设置的非空 UA 或内置默认
+    #[test]
+    fn test_default_user_agent_concurrent_read_write_is_safe() {
+        let _guard = UaTestGuard::new();
+
+        std::thread::scope(|scope| {
+            for worker in 0..8 {
+                scope.spawn(move || {
+                    for i in 0..200 {
+                        let ua = format!("Worker{worker}/UA-{i}");
+                        set_default_user_agent(Some(&ua));
+                        let observed = default_user_agent();
+                        assert!(
+                            !observed.trim().is_empty(),
+                            "并发读不应得到空 UA（worker={worker}, i={i}）"
+                        );
+                        if i % 7 == 0 {
+                            // 并发窗口内其他线程可能随即写入新值，故此处
+                            // 只验证「清除操作可安全并发执行」，不断言具体值
+                            set_default_user_agent(None);
+                        }
+                    }
+                });
+            }
+        });
+
+        set_default_user_agent(None);
+        assert_eq!(default_user_agent(), DEFAULT_USER_AGENT);
     }
 
     #[tokio::test]
