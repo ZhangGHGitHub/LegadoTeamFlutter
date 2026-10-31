@@ -23,6 +23,7 @@ import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
+import 'package:flutter_legado/src/services/web_service_wake_lock_service.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
 import '../mocks/mocks.dart';
@@ -389,6 +390,121 @@ void main() {
       );
     });
 
+    // [批9b-6 | Web 服务唤醒锁] 接线回归：偏好 `webServiceWakeLock` 开 →
+    // startServer 成功后 acquire，stopServer 成功后 release（对齐原版
+    // WebService.kt:104,139,159；Android 通道语义，测试注入平台标志）。
+    testWidgets('Web 服务开关：偏好开 → 启动接唤醒锁，停止释放', (tester) async {
+      WebServiceWakeLockService.platformIsAndroid = () => true;
+      WebServiceWakeLockService.instance.debugReset();
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(WebServiceWakeLockService.channel, (
+        call,
+      ) async {
+        calls.add(call);
+        return null;
+      });
+      addTearDown(() {
+        WebServiceWakeLockService.platformIsAndroid = () => Platform.isAndroid;
+        WebServiceWakeLockService.instance.debugReset();
+        messenger.setMockMethodCallHandler(
+          WebServiceWakeLockService.channel,
+          null,
+        );
+      });
+      // 偏好开（其他设置 → Web 服务唤醒锁）
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.webServiceWakeLock: true,
+      });
+
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((_) async {});
+      when(() => mockApi.stopServer()).thenAnswer((_) async {});
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 1122');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await dragTo(tester, 'Web 服务');
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(calls, hasLength(1), reason: 'startServer 成功后应持唤醒锁');
+      expect(calls.single.method, 'setEnabled');
+      expect((calls.single.arguments as Map)['enabled'], isTrue);
+      expect(WebServiceWakeLockService.instance.isHeld, isTrue);
+
+      tester.widget<Switch>(switchFinder).onChanged!(false);
+      await tester.pumpAndSettle();
+
+      expect(calls, hasLength(2), reason: 'stopServer 成功后应释放唤醒锁');
+      expect((calls.last.arguments as Map)['enabled'], isFalse);
+      expect(WebServiceWakeLockService.instance.isHeld, isFalse);
+    });
+
+    // 偏好关（默认 false）→ 服务启动也不得持有唤醒锁
+    testWidgets('Web 服务开关：偏好关 → 不 acquire 唤醒锁', (tester) async {
+      WebServiceWakeLockService.platformIsAndroid = () => true;
+      WebServiceWakeLockService.instance.debugReset();
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(WebServiceWakeLockService.channel, (
+        call,
+      ) async {
+        calls.add(call);
+        return null;
+      });
+      addTearDown(() {
+        WebServiceWakeLockService.platformIsAndroid = () => Platform.isAndroid;
+        WebServiceWakeLockService.instance.debugReset();
+        messenger.setMockMethodCallHandler(
+          WebServiceWakeLockService.channel,
+          null,
+        );
+      });
+
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((_) async {});
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 1122');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await dragTo(tester, 'Web 服务');
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(calls, isEmpty, reason: '偏好关闭时不得持有唤醒锁');
+      expect(WebServiceWakeLockService.instance.isHeld, isFalse);
+    });
+
     // [批23 | 全栈工程师] 整卡可点：原实现只有右端 Switch 可点，点标题/
     // 图标/副题无响应。本用例点标题文本（InkWell 覆盖区域）验证开关被切换。
     testWidgets('Web 服务卡：点卡片标题即切换开关', (tester) async {
@@ -681,6 +797,76 @@ void main() {
       expect(tile.value, '256', reason: '存量超上限仅夹逼显示');
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.threadCount), 999, reason: '不改写存量偏好');
+    });
+
+    // [批9b-6 | Web 服务唤醒锁] 运行中切换即时生效：Web 服务已运行且偏好原为
+    // 关时，打开开关立即 acquire、关闭立即 release（对齐原版开关关即释放）；
+    // 服务未运行的分支由 service 单测覆盖。
+    testWidgets('Web 服务唤醒锁：运行中切换即时 acquire/release', (tester) async {
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+
+      WebServiceWakeLockService.platformIsAndroid = () => true;
+      WebServiceWakeLockService.instance.debugReset();
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(WebServiceWakeLockService.channel, (
+        call,
+      ) async {
+        calls.add(call);
+        return null;
+      });
+      addTearDown(() {
+        WebServiceWakeLockService.platformIsAndroid = () => Platform.isAndroid;
+        WebServiceWakeLockService.instance.debugReset();
+        messenger.setMockMethodCallHandler(
+          WebServiceWakeLockService.channel,
+          null,
+        );
+      });
+      // 模拟「Web 服务运行中、偏好关」（进页面前服务已启动）
+      await WebServiceWakeLockService.instance.onServiceStarted(
+        keepAwake: false,
+      );
+
+      await tester.pumpWidget(wrap(const OtherSettingsScreen()));
+      await tester.pumpAndSettle();
+
+      await dragTo(tester, 'Web 服务唤醒锁');
+      await tester.pumpAndSettle();
+      // 仅 Android 生效的既有副题（不新增平台文案）
+      expect(find.text('仅 Android 生效'), findsWidgets);
+
+      final row = find
+          .ancestor(
+            of: find.text('Web 服务唤醒锁'),
+            matching: find.byType(IosListTile),
+          )
+          .first;
+      final switchFinder = find.descendant(
+        of: row,
+        matching: find.byType(Switch),
+      );
+      expect(tester.widget<Switch>(switchFinder).value, isFalse);
+
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(calls, hasLength(1), reason: '运行中打开开关应立即 acquire');
+      expect(calls.single.method, 'setEnabled');
+      expect((calls.single.arguments as Map)['enabled'], isTrue);
+      expect(WebServiceWakeLockService.instance.isHeld, isTrue);
+
+      tester.widget<Switch>(switchFinder).onChanged!(false);
+      await tester.pumpAndSettle();
+
+      expect(calls, hasLength(2), reason: '运行中关闭开关应立即 release');
+      expect((calls.last.arguments as Map)['enabled'], isFalse);
+      expect(WebServiceWakeLockService.instance.isHeld, isFalse);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(PrefKeys.webServiceWakeLock), isFalse);
     });
   });
 }
