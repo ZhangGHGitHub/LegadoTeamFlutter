@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.431] - 2026-11-01
+
+### Added
+- [UI] Android Web 前台服务：Web 服务运行期间显示常驻通知（点击回到 App），锁屏/切后台仍可局域网访问；从最近任务划掉后保持运行。
+- [UI] Android 13+ 首次开启 Web 服务时请求通知权限；拒绝后服务仍运行，但提示通知不可见。
+### Fixed
+- [UI] Web 前台服务通知 ID 与听书/视频通知隔离；启动失败或状态异常回滚时同时停止服务，不再留下无前台服务的 Web 服务。
+- [UI] 回到设置页时重新对账前台服务，避免系统停止后状态错位。
+
 ## [2.0.430] - 2026-11-01
 
 ### Added
