@@ -86,7 +86,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   bool _showMangaUi = true;
   String _jsSourceApiToken = '';
   int _webPort = 1122;
-  int _threadCount = 16;
+  int _threadCount = 32;
   bool _processText = true;
   bool _blockSourceBrowser = false;
   bool _recordLog = false;
@@ -167,7 +167,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     _showMangaUi =
         await s.getBoolPref(PrefKeys.showMangaUi, defaultValue: true);
     _webPort = await s.getIntPref(PrefKeys.webPort, defaultValue: 1122);
-    _threadCount = await s.getIntPref(PrefKeys.threadCount, defaultValue: 16);
+    _threadCount = await s.getIntPref(PrefKeys.threadCount, defaultValue: 32);
     _processText =
         await s.getBoolPref(PrefKeys.processText, defaultValue: true);
     _blockSourceBrowser = await s.getBoolPref(
@@ -537,9 +537,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   title: '线程数量',
                   key: PrefKeys.threadCount,
                   current: _threadCount,
+                  // 批9b-2：范围对齐参考版 DownloadCacheConfigScreen（1..256）；
+                  // 运行期搜索上限 64、下载上限 8 由 Rust 夹逼（契约 §2.10）
                   min: 1,
-                  max: 999,
+                  max: 256,
                   apply: (v) => setState(() => _threadCount = v),
+                  // 批9b-2：保存即同步 Rust caches config:threadCount，
+                  // 下一次搜索/下载任务按新值执行（无需重启）
+                  onSaved: _syncThreadCountToRust,
                 ),
               ),
               SettingSwitchRow(
@@ -1067,6 +1072,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     required int min,
     required int max,
     required ValueChanged<int> apply,
+    /// 保存成功后的可选同步钩子（如批9b-2 线程数同步 Rust 配置）
+    Future<void> Function(int value)? onSaved,
   }) async {
     final value = await _showNumberInputDialog(
       title: title,
@@ -1078,6 +1085,27 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     if (value == null || !mounted) return;
     apply(value);
     await _settingsService.setIntPref(key, value);
+    if (onSaved != null) {
+      await onSaved(value);
+    }
+  }
+
+  /// 批9b-2：线程数保存后同步 Rust（caches `config:threadCount`）
+  ///
+  /// Rust 在每次搜索/批量下载入口读取该值（缺省 32；搜索夹逼 1..=64、
+  /// 下载夹逼 1..=8），故保存后无需重启，下一次任务即生效。SharedPreferences
+  /// 仍是 UI 真源；同步失败仅提示，不回滚已保存的偏好（下次启动会重试同步）。
+  Future<void> _syncThreadCountToRust(int value) async {
+    try {
+      await ref.read(bookApiProvider).setConfig(
+            PrefKeys.threadCount,
+            '$value',
+          );
+      if (mounted) _toast('线程数已保存，下次搜索/下载生效');
+    } catch (e) {
+      debugPrint('OtherSettingsScreen 同步线程数到 Rust 失败: $e');
+      if (mounted) _toast('线程数已保存（引擎同步失败，重启应用后生效）');
+    }
   }
 
   /// 通用数字输入对话框（返回 null 表示取消）

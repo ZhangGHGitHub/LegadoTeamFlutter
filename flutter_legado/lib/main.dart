@@ -116,6 +116,13 @@ void main() {
     await syncUserAgentOnStartup(startupApi, useMock: useMock);
     debugPrint('[启动] UserAgent 同步耗时：${sw.elapsedMilliseconds}ms');
 
+    // 5e. 线程数同步到 Rust（批9b-2）：搜索/批量下载在每次入口读 caches
+    // config:threadCount（缺省 32；搜索夹逼 1..=64、下载夹逼 1..=8）。
+    // SharedPreferences 为 UI 真源，值相同不写库；USE_MOCK 跳过；失败静默。
+    sw = Stopwatch()..start();
+    await syncThreadCountOnStartup(startupApi, useMock: useMock);
+    debugPrint('[启动] 线程数同步耗时：${sw.elapsedMilliseconds}ms');
+
     // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
     const initialRoute = AppRoutes.welcome;
 
@@ -212,6 +219,40 @@ Future<void> syncUserAgentOnStartup(
     // 与 clearExpiredSearchBooksOnStartup 同口径，仅记 AppLog 内存。
     CrashLogService.instance.put(
       '[启动] UserAgent 同步失败（不阻断启动）：$e',
+      error: e,
+    );
+  }
+}
+
+/// 批9b-2：启动时把「更新和搜索线程数」从 SharedPreferences 同步到 Rust
+///
+/// Rust 在每次搜索/批量下载入口读 caches `config:threadCount`（缺省 32；
+/// 搜索夹逼 1..=64、批量下载夹逼 1..=8，见 API_CONTRACT 批9b-2）。
+/// - SharedPreferences（`PrefKeys.threadCount`）为 UI 真源，已存旧值
+///   （如 16）原样保留，仅未设置时默认 32；
+/// - Rust caches 为运行期镜像，值相同不写库；
+/// - [useMock] 为 true 时跳过（Mock 无 DB）；任何失败静默记录、不阻断启动。
+Future<void> syncThreadCountOnStartup(
+  BookApi api, {
+  required bool useMock,
+}) async {
+  try {
+    if (useMock) {
+      return;
+    }
+    final pref = await SettingsService()
+        .getIntPref(PrefKeys.threadCount, defaultValue: 32);
+    final rustRaw = ((await api.getConfig(PrefKeys.threadCount)) ?? '').trim();
+    if (int.tryParse(rustRaw) == pref) {
+      return;
+    }
+    await api.setConfig(PrefKeys.threadCount, '$pref');
+    debugPrint('[启动] 线程数已同步到 Rust：$pref');
+  } catch (e) {
+    // 静默失败：同步属启动附带维护，失败不影响用户可见流程；
+    // 仅记 AppLog 内存，不写 crash_log（同 UserAgent 同步口径）。
+    CrashLogService.instance.put(
+      '[启动] 线程数同步失败（不阻断启动）：$e',
       error: e,
     );
   }

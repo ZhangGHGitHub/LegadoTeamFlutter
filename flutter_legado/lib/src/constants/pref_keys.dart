@@ -289,7 +289,10 @@ class PrefKeys {
   /// Web 服务端口（默认 1122，1024~60000）
   static const webPort = 'webPort';
 
-  /// 更新书籍并发数（默认 16，1~999）
+  /// 更新/搜索/下载线程数（默认 32，UI 1~256；批9b-2）
+  ///
+  /// SharedPreferences 为 UI 真源，保存与启动时同步 Rust caches
+  /// `config:threadCount`（运行期：搜索并发夹逼 1~64、批量下载夹逼 1~8）。
   static const threadCount = 'threadCount';
 
   /// 文本操作菜单显示应用（仅 Android 生效，默认 true）
