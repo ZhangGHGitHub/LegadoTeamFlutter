@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.428] - 2026-10-31
+
+### Added
+- [UI] UserAgent 设置全局生效：书源/规则未显式设置 UA 时使用全局 UA，显式 UA 始终优先；搜索、详情、目录、正文、图片、RSS 与 WebDAV 统一回落。
+- [UI] 启动、设置保存与备份恢复后都会把 UserAgent 同步到 Rust；空值或含控制字符的值按未设置处理并回落内置 UA。
+### Fixed
+- [Rust] 显式 UA 大小写不敏感，不再重复下发；并发读写全局 UA 安全。
+
 ## [2.0.427] - 2026-10-31
 
 ### Added
