@@ -25,6 +25,10 @@ use crate::runtime;
 /// 备份恢复时可跨端互通）
 const CHINESE_CONVERT_CONFIG_KEY: &str = "chineseConverterType";
 
+/// [批1b-3] 配置键：无目录规则时每章最大字数（与参考版
+/// `PreferKey.maxLengthWithNoToc` 同名，跨端备份可互通）
+const MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY: &str = "maxLengthWithNoToc";
+
 /// 读取持久化的繁简转换类型（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
 ///
 /// 配置不存在、非数字或超出 0..=2 范围时回退为 0（不转换）。
@@ -60,6 +64,38 @@ fn chinese_convert_direction(convert_type: i32) -> Option<String> {
 /// 当前配置的管线转换方向（读取持久化配置）
 fn current_chinese_convert_direction() -> Option<String> {
     chinese_convert_direction(get_chinese_convert_type())
+}
+
+// ─── 无目录规则时每章最大字数（批1b-3，对齐参考版 PreferKey.maxLengthWithNoToc）───
+
+/// 读取无目录规则时每章最大字数（caches `config:maxLengthWithNoToc`）
+///
+/// 缺省/非数字/越界回落默认 3000，范围内原样保留（对齐参考版
+/// `ReadConfigViewModel` 写入口 `coerceIn(3000, 100000)` 与
+/// `ReadSettings.maxLengthWithNoToc` 默认 3000；DB 读取失败同样回落默认，
+/// 不阻断目录解析）。注意：夹逼语义与写入侧一致——**越界值夹到边界**
+/// （如 100 → 3000、200000 → 100000），非数字/空值回落 3000。
+fn get_max_length_with_no_toc() -> u32 {
+    let parsed = crate::api::config_api::get_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY)
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok());
+    match parsed {
+        Some(v)
+            if (legado_book::txt::MIN_MAX_LENGTH_WITH_NO_TOC
+                ..=legado_book::txt::MAX_MAX_LENGTH_WITH_NO_TOC)
+                .contains(&v) =>
+        {
+            v
+        }
+        Some(v) => {
+            // 越界：夹到边界（保留用户量级意图，对齐 coerceIn）
+            v.clamp(
+                legado_book::txt::MIN_MAX_LENGTH_WITH_NO_TOC,
+                legado_book::txt::MAX_MAX_LENGTH_WITH_NO_TOC,
+            )
+        }
+        None => legado_book::txt::DEFAULT_MAX_LENGTH_WITH_NO_TOC,
+    }
 }
 
 // ─── 章级「删除重复标题」开关（API_CONTRACT §2.9.10，Task #51） ───────────────
@@ -260,10 +296,13 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
                     "TXT 目录规则包含 JS 替换片段，Rust 解析不执行替换（标题保留正则命中原文）: {book_url}"
                 );
             }
-            let outcome = legado_book::LocalBook::get_chapters_with_rule(
+            let outcome = legado_book::LocalBook::get_chapters_with_rule_config(
                 &real_path,
                 charset.as_deref(),
                 toc_rule.as_deref(),
+                // [批1b-3] 无目录规则时的长度分章档位（config:maxLengthWithNoToc，
+                // 缺省/非法回落 3000、越界夹逼 3000..100000）
+                get_max_length_with_no_toc(),
             )?;
             if toc_rule.is_some() && !outcome.used_custom_rule {
                 log::warn!("TXT 目录规则未命中或不可用，已回退内置默认规则: {book_url}");
@@ -1680,10 +1719,16 @@ mod tests {
         let book_url = res.book.as_ref().unwrap().book_url.clone();
         assert_eq!(book_url, "books/gbk.txt");
 
-        // 红：未设置编码时按 UTF-8 解码 → 标题乱码 → 回退单章「全文」
+        // 红：未设置编码时按 UTF-8 解码 → 标题乱码 → 内置规则零命中 →
+        // [批1b-3] 按默认 3000 字符档位长度分章（4230 字节 ≈ 4149 字符
+        // > 3000 → 切 2 章；内容仍为乱码，仅长度分章语义生效）
         let auto = get_chapters(&book_url).unwrap();
-        assert_eq!(auto.total, 1, "乱码目录应退化为单章: {:?}", auto.chapters);
-        assert_eq!(auto.chapters[0].title, "全文");
+        assert_eq!(
+            auto.total, 2,
+            "乱码长文应按默认档位长度分章: {:?}",
+            auto.chapters
+        );
+        assert_eq!(auto.chapters[0].title, "第1章(1)");
 
         // 造未建模 readConfig 键 + 进度，验证单列写不回退
         with_database(|db| {
@@ -2072,6 +2117,102 @@ mod tests {
             }
             let _ = std::fs::remove_dir_all(&self.base);
         }
+    }
+
+    /// [批1b-3] config 缺省/非法/越界回落语义 + 本地 TXT 目录数量随配置变化
+    ///
+    /// 端到端：无规则长文（内置规则零命中）→ 缺省 3000 字档位分章；
+    /// `config:maxLengthWithNoToc` 改大（50000，范围内）→ 章节数减少；
+    /// 非法值/越界下限回落夹逼到 3000（同默认）；越界上限夹逼到 100000。
+    /// 规则命中时不按长度切。夹逼语义对齐参考版 `coerceIn(3000, 100000)`。
+    #[test]
+    fn local_txt_no_rule_length_split_follows_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        // ASCII 头 + 6 行 × 1500 汉字（UTF-8 4501 字节/行，27011 字节）
+        let line = "文".repeat(1500);
+        let mut content = String::from("head\n");
+        for _ in 0..6 {
+            content.push_str(&line);
+            content.push('\n');
+        }
+        let fixture = LocalTxtFixture::new("1b3", "longdoc.txt", &content);
+        let book_url = fixture.book_url.clone();
+
+        // 1) 缺省（无配置）：按默认 3000 字符档位分章
+        let dflt = get_chapters(&book_url).unwrap();
+        assert!(
+            dflt.total > 1,
+            "缺省档位长文应切多章: {:?}",
+            dflt.chapters
+                .iter()
+                .map(|c| (&c.title, c.start))
+                .collect::<Vec<_>>()
+        );
+        assert!(!dflt.used_custom_rule, "长度分章不得标记 used_custom_rule");
+        let total_default = dflt.total;
+
+        // 2) 范围内改大档位（50000）→ 重新解析后章节数减少
+        crate::api::config_api::set_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY, "50000").unwrap();
+        clear_chapters_for_reparse(&book_url);
+        let big = get_chapters(&book_url).unwrap();
+        assert!(
+            big.total < total_default,
+            "50000 字档位应比 3000 档位切更少章: {} vs {total_default}",
+            big.total
+        );
+
+        // 3) 非法值（非数字）→ 回落默认档位
+        crate::api::config_api::set_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY, "abc").unwrap();
+        clear_chapters_for_reparse(&book_url);
+        let invalid = get_chapters(&book_url).unwrap();
+        assert_eq!(invalid.total, total_default, "非法值应回落默认 3000 档位");
+
+        // 4) 越界值：下限以下（100）夹逼到 3000（同默认）；上限以上（200000）
+        //    夹逼到 100000（同 50000 档章数）
+        crate::api::config_api::set_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY, "100").unwrap();
+        clear_chapters_for_reparse(&book_url);
+        let below = get_chapters(&book_url).unwrap();
+        assert_eq!(below.total, total_default, "越界下限应夹逼到 3000");
+        crate::api::config_api::set_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY, "200000").unwrap();
+        clear_chapters_for_reparse(&book_url);
+        let above = get_chapters(&book_url).unwrap();
+        assert_eq!(
+            above.total, big.total,
+            "越界上限应夹逼到 100000（与 50000 档同章数分配）"
+        );
+
+        // 5) 规则命中时不按长度切（档位 3000 + 显式规则命中 → 章数=命中数）
+        crate::api::config_api::set_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY, "3000").unwrap();
+        crate::api::bookshelf::set_book_toc_rule(&book_url, Some(r#"{"rule":"^head$"}"#)).unwrap();
+        let ruled = get_chapters(&book_url).unwrap();
+        assert_eq!(
+            ruled.total, 1,
+            "规则命中（单标题）不得按长度切: {:?}",
+            ruled.chapters
+        );
+        assert!(ruled.used_custom_rule);
+        crate::api::bookshelf::set_book_toc_rule(&book_url, None).unwrap();
+
+        // 收尾：清配置键，避免污染共享测试库其它用例
+        crate::api::config_api::set_config(MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY, "").unwrap();
+        fixture.cleanup();
+    }
+
+    /// [批1b-3] 清空指定书的章节行（模拟「重新解析」触发条件：改配置后
+    /// 已入库目录不自动失效，用户重进目录经既有失效机制重解析）
+    fn clear_chapters_for_reparse(book_url: &str) {
+        with_database(|db| {
+            // [B-7] delete_by_book_url äºå¡å¤ä¸º no-opï¼å¿é¡»æ¾å¼å¼å¯äºå¡
+            let tx = db.connection().unchecked_transaction().map_err(|e| {
+                LegadoError::Database(format!("å¼å¯ç®å½æ¸çäºå¡å¤±è´¥: {e}"))
+            })?;
+            BookChapterRepository::new(db.connection()).delete_by_book_url(book_url)?;
+            tx.commit().map_err(|e| {
+                LegadoError::Database(format!("æäº¤ç®å½æ¸çäºå¡å¤±è´¥: {e}"))
+            })?;
+            Ok(())
+        })
+        .unwrap();
     }
 
     /// [批43b P1-1 红→绿] 恢复默认（tocUrl 清空）后，陈旧整书快照不得

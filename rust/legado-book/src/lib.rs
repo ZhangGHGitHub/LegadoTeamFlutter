@@ -199,6 +199,51 @@ impl LocalBook {
         }
     }
 
+    /// 获取章节列表（可指定编码覆盖 + TXT 显式目录规则 + 无目录规则时的
+    /// 长度分章档位，批1b-3）
+    ///
+    /// `max_chars_with_no_toc` 仅在 TXT「显式规则与内置默认规则均零命中」时
+    /// 生效（FFI 侧读 `config:maxLengthWithNoToc`，缺省/非法回落 3000、越界
+    /// 夹逼 3000..100000，见 [`txt::clamp_max_length_with_no_toc`]）；其它
+    /// 格式与命中规则的路径忽略该参数，行为与 [`Self::get_chapters_with_rule`]
+    /// 完全一致。
+    pub fn get_chapters_with_rule_config(
+        path: &str,
+        charset: Option<&str>,
+        rule: Option<&str>,
+        max_chars_with_no_toc: u32,
+    ) -> LegadoResult<TocParseOutcome> {
+        let format = Self::detect_format(path)?;
+        match format {
+            BookFormat::Txt => txt::TxtParser::get_chapters_with_rule_config(
+                path,
+                charset,
+                rule,
+                max_chars_with_no_toc,
+            ),
+            BookFormat::Epub => Ok(TocParseOutcome {
+                chapters: epub::EpubParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Mobi => Ok(TocParseOutcome {
+                chapters: mobi::MobiParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Pdf => Ok(TocParseOutcome {
+                chapters: pdf::PdfParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Umd => Ok(TocParseOutcome {
+                chapters: umd::UmdParser::get_chapters(path)?,
+                used_custom_rule: false,
+            }),
+            BookFormat::Cbz => Ok(TocParseOutcome {
+                chapters: cbz::CbzFile::open(path)?.get_chapters()?,
+                used_custom_rule: false,
+            }),
+        }
+    }
+
     /// 获取章节正文内容
     pub fn get_chapter_content(path: &str, chapter: &ChapterInfo) -> LegadoResult<String> {
         Self::get_chapter_content_with_charset(path, chapter, None)
