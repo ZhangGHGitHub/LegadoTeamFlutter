@@ -39,7 +39,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with WidgetsBindingObserver {
   // 服务开关（对标 pref_main SwitchPreference）
   bool _autoTaskService = false;
   bool _webService = false;
@@ -49,6 +50,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// iOS 后台保活不可用（start 失败回退「仅前台可用」时，卡片副题提示）
   bool _webKeepAliveUnavailable = false;
+
+  /// Android 通知权限未授予（批9b-6c 审查回修 P2）：
+  /// FGS 仍运行、LAN 访问不受影响，仅前台通知不可见，卡片副题提示。
+  bool _webNotificationDegraded = false;
   String _webServiceStatus = '';
   int _mcpPort = 0;
 
@@ -66,7 +71,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // 批9b-6c 审查回修 P3：回到前台重新对账——系统可能在后台停止 FGS，
+    // 而 Dart 镜像仍为运行中（需强制查询原生 isRunning）。
+    WidgetsBinding.instance.addObserver(this);
     _initServiceStates();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // 开关切换进行中跳过：避免与启动/停止流程并发改写 FGS 状态
+    if (state == AppLifecycleState.resumed && !_webServiceBusy) {
+      _reconcileWebForegroundOnResume();
+    }
   }
 
   /// 恢复服务开关持久化状态（config 键 webService / autoTaskService / mcpPort）
@@ -168,17 +191,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ///
   /// 9b-6 设备验收确认唤醒锁无法改变 `APP_BACKGROUND` 网络策略，需前台服务
   /// 把进程提升为可见前台（原版 `WebService` 同构，见
-  /// [WebServiceForegroundService] 文档）。初始化对账：
+  /// [WebServiceForegroundService] 文档）。初始化/回前台对账：
   /// - 服务运行 → 确保前台服务也运行（先查原生 `isRunning`，已运行不重复拉起）
+  ///   并刷新通知权限降级提示
   /// - 服务未运行 → 停掉可能遗留的前台服务（引擎重建 / 配置写失败边界）
+  ///
+  /// [forceQuery] 供 App 回到前台时强制查询原生状态（系统可能已停止 FGS，
+  /// 而 Dart 镜像仍是 true，审查回修 P3）。
   ///
   /// 与唤醒锁完全解耦：不读 `webServiceWakeLock` 偏好，前台服务恒随 Web 服务
   /// 启停（唤醒锁仍由 [_reconcileWebWakeLock] 按原开关控制）。
-  Future<void> _reconcileWebForeground(String status) async {
+  Future<void> _reconcileWebForeground(
+    String status, {
+    bool forceQuery = false,
+  }) async {
+    final foreground = WebServiceForegroundService.instance;
     if (_isServerRunning(status)) {
-      await WebServiceForegroundService.instance.ensureStarted();
+      await foreground.ensureStarted(forceQuery: forceQuery);
+      final granted = await foreground.hasNotificationPermission();
+      if (!mounted) return;
+      setState(() => _webNotificationDegraded = !granted);
     } else {
-      await WebServiceForegroundService.instance.stop();
+      await foreground.stop();
+      if (!mounted) return;
+      setState(() => _webNotificationDegraded = false);
+    }
+  }
+
+  /// App 回到前台时重新对账（审查回修 P3）
+  ///
+  /// 只查询 Rust server 运行态后交给 [_reconcileWebForeground]；查询失败
+  /// （FFI 未初始化等）静默跳过，不影响用户操作。
+  Future<void> _reconcileWebForegroundOnResume() async {
+    try {
+      final status = await ref.read(bookApiProvider).getServerStatus();
+      if (!mounted) return;
+      await _reconcileWebForeground(status, forceQuery: true);
+    } catch (e) {
+      debugPrint('回前台对账 Web 前台服务失败（忽略）：$e');
+    }
+  }
+
+  /// 批9b-6c 审查回修 P2：启动后校验失败的回滚（best-effort，逐项容错）
+  ///
+  /// 顺序：撤前台服务 → 释放唤醒锁 → 停 Rust server。停 server 失败只记
+  /// 日志——回滚本身已在错误路径，不能让二次失败覆盖对用户的原始提示。
+  Future<void> _rollbackWebStart(Future<void> Function() stopServer) async {
+    await WebServiceForegroundService.instance.stop();
+    await WebServiceWakeLockService.instance.onServiceStopped();
+    try {
+      await stopServer();
+    } catch (e) {
+      debugPrint('Web 服务启动回滚停服失败（忽略）：$e');
     }
   }
 
@@ -224,6 +288,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             .read(settingsProvider)
             .getBoolPref(PrefKeys.webServiceWakeLock, defaultValue: false);
         await api.startServer(port: port);
+        // 批9b-6c 审查回修 P2：开启 Web 服务时请求通知权限（已授予不弹框；
+        // 拒绝仅影响通知可见性，FGS 与 LAN 访问照常，不阻断开关）。
+        final notificationGranted = await WebServiceForegroundService.instance
+            .ensureNotificationPermission();
         // 批9b-6c：服务启动成功即起前台服务（与唤醒锁偏好解耦；非 Android no-op）。
         // 失败仅静默记日志，由原生按「仅前台可用」降级，不阻断开关。
         await WebServiceForegroundService.instance.start();
@@ -237,9 +305,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         } catch (e) {
           // 批9b-6 边界回修：启动后状态查询失败 → 回滚释放唤醒锁并提示，
           // 不留在「已 acquire 但状态未知」
-          // 批9b-6c：回滚同时停前台服务（否则通知在、server 状态未知）
-          await WebServiceForegroundService.instance.stop();
-          await WebServiceWakeLockService.instance.onServiceStopped();
+          // 批9b-6c 审查回修：回滚同时停前台服务并 best-effort 停 server，
+          // 不留下「server 在跑、开关却是关」的孤儿态
+          await _rollbackWebStart(api.stopServer);
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -253,9 +321,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (!_isServerRunning(status)) {
           // 批9b-6 审查回修：启动「假成功」（状态仍 stopped）时回滚唤醒锁，
           // 不把开关置为开，也不接保活/写 webService=true
-          // 批9b-6c：同时停前台服务，避免「通知显示运行中」的假象
-          await WebServiceForegroundService.instance.stop();
-          await WebServiceWakeLockService.instance.onServiceStopped();
+          // 批9b-6c 审查回修：同时停前台服务并 best-effort 停 server
+          await _rollbackWebStart(api.stopServer);
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Web 服务启动失败: 服务状态异常（$status）')),
@@ -270,7 +337,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _webService = true;
           _webServiceStatus = status;
           _webKeepAliveUnavailable = keepAlive == WebKeepAliveStatus.failed;
+          _webNotificationDegraded = !notificationGranted;
         });
+        if (!notificationGranted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('通知权限未授予：Web 服务前台通知不可见（局域网访问不受影响）')),
+          );
+        }
       } else {
         try {
           await api.stopServer();
@@ -298,6 +371,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _webService = false;
           _webServiceStatus = '';
           _webKeepAliveUnavailable = false;
+          _webNotificationDegraded = false;
         });
       }
     } catch (e) {
@@ -401,8 +475,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         : '用浏览器写源或看书';
     // [2026-10-07 保活批 | 方案 A 兜底] 保活启动失败 → 回退「仅前台可用」，
     // 仅副题提示（对齐需求：不阻断服务、UI 主形态不变）。
+    // [批9b-6c 审查回修] Android 通知权限未授予 → FGS 与 LAN 访问不受影响，
+    // 仅前台通知不可见，同样只加副题提示。
     final subtitle = enabled && _webKeepAliveUnavailable
         ? '$baseSubtitle · 后台保活不可用，请保持 App 打开'
+        : enabled && _webNotificationDegraded
+        ? '$baseSubtitle · 通知权限未授予，前台通知不可见'
         : baseSubtitle;
     // [批23 | 全栈工程师] 整卡可点切换：原实现只有右端 Switch 可点，点
     // 标题/图标/副题无响应（与原版整行可点不一致）。用 Material+InkWell

@@ -48,15 +48,33 @@ import androidx.core.content.ContextCompat
  * - 通知点击打开 App（任务给出），不提供原版「点击复制地址」「停止按钮」：
  *   本服务的停止权在 Dart（Web 服务开关），通知单独停服会造成「通知消失但
  *   server 仍在跑」的可见状态不一致；
+ * - **最近任务划掉不停止本服务**（审查回修 P2，有意偏离原版
+ *   `BaseService.kt:67-71` 的 `onTaskRemoved → stopSelf`）：本仓库 server 在
+ *   宿主进程内、不随 Activity 销毁而停止；若任务移除即撤 FGS，会留下
+ *   「server 仍在监听但进程退回后台」的孤儿态，息屏后 LAN 再次不可达。
+ *   保留 FGS 可让进程继续保持前台可见性；用户经 Web 服务开关停止时才撤。
+ *   因此本类**不重写** `onTaskRemoved`（默认实现不停止服务，
+ *   `android:stopWithTask` 保持默认 false），`ServerTaskRemovalTest` 断言
+ *   该重写不存在；
  * - 前台服务类型用 `specialUse`（任务指定）而非原版 `dataSync`：Android 15
  *   对 dataSync 有累计 6 小时超时，而本地 LAN 服务需要长期驻留，
  *   `specialUse` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 是更贴切的声明。
+ *   **上架 Google Play 需在 Play Console 申报 specialUse 用途**（本地侧载/
+ *   企业分发不受影响）；此申报义务登记于此，不阻塞本地构建。
+ *
+ * ## 文案与权限
+ * - 通知标题/正文为中文硬编码：遵循项目 l10n 口径（D5=B，中文主语言，
+ *   不做全面国际化），不新增英文资源；
+ * - Android 13+ `POST_NOTIFICATIONS` 由 Dart 在用户开启 Web 服务时经
+ *   [WebServiceForegroundBridge] 请求；拒绝后 FGS 照常运行（网络优先级
+ *   不受影响），仅通知不可见，原生记录降级日志、Dart 侧 UI 提示。
  *
  * ## 生命周期
  * - Dart `start` → [start]（`ContextCompat.startForegroundService`）→
- *   `onCreate` 建渠道 + `startForeground`；
+ *   `onCreate` 建渠道 + `startForeground`（只调用一次，后续
+ *   `onStartCommand` 不重复前台化）；
  * - Dart `stop` → [stop]（`stopService`）→ `onDestroy` 移出前台并清理通知；
- * - 通知权限未授予（Android 13+）不阻断、不请求：FGS 仍生效，通知仅出现在
+ * - 通知权限未授予（Android 13+）不阻断：FGS 仍生效，通知仅出现在
  *   系统任务管理器（记录降级日志），绝不因权限崩溃。
  *
  * — 全栈工程师 ｜ 2026-11-01
@@ -64,26 +82,27 @@ import androidx.core.content.ContextCompat
 class WebServerForegroundService : Service() {
 
     companion object {
-        /** 启动动作（内容与 `WebServiceForegroundBridge.CHANNEL` 分属两层，勿混用） */
+        /**
+         * 启动动作（仅供 [start] 与 intent-filter 语义标识；停止统一走
+         * `stopService`，不提供 `ACTION_STOP`——通知/外部 intent 无权单独停
+         * 前台服务，否则会与 Dart 侧 Web 服务状态不一致）。
+         */
         const val ACTION_START = "io.legado.flutter.action.WEB_SERVER_START"
-
-        /** 停止动作（桥直接 stopService；保留该 action 供系统/测试显式停止） */
-        const val ACTION_STOP = "io.legado.flutter.action.WEB_SERVER_STOP"
 
         /** 通知渠道：低重要性、不响铃、不震动（对齐原版常驻静默通知） */
         const val CHANNEL_ID = "legado_web_server"
 
-        /** 通知标题/正文（任务指定文案，原版对应 R.string.web_service_live_started） */
+        /** 通知标题/正文（任务指定文案，中文-only，l10n 口径见类注释） */
         const val NOTIFICATION_TITLE = "Web 服务运行中"
         const val NOTIFICATION_TEXT = "局域网可访问"
 
-        /** 通知 id（避开听书 0x1E60 与旧通知服务 1001-1003） */
-        const val NOTIFICATION_ID = 0x1E61
+        /** 通知 id：集中登记，避免与听书/视频/旧通知冲突（审查回修 P1） */
+        const val NOTIFICATION_ID = LegadoNotificationIds.WEB_SERVER
 
         private const val TAG = "WebServerFgs"
 
-        /** 通知点击 PendingIntent 请求码（同域内唯一即可） */
-        private const val REQUEST_CODE_OPEN_APP = 0x1E61
+        /** 通知点击 PendingIntent 请求码（与通知 ID 不同命名空间，独立取值） */
+        private const val REQUEST_CODE_OPEN_APP = 0x1E64
 
         /**
          * 服务进程内运行标志（`isRunning` 通道与 Dart 初始化对账使用）。
@@ -111,6 +130,9 @@ class WebServerForegroundService : Service() {
     /** 通知权限降级日志只记一次，避免重复拉起刷屏 */
     private var notificationDegradationLogged = false
 
+    /** 是否已成功 startForeground（审查回修 P3：只调用一次） */
+    private var foregroundStarted = false
+
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
@@ -121,31 +143,18 @@ class WebServerForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            else -> if (!startForegroundCompat()) {
-                stopSelf()
-                return START_NOT_STICKY
-            }
+        // 已前台化时不重复调用 startForeground（Android 会刷新通知/重复计数）；
+        // 仅当 onCreate 前台化失败但服务仍被拉起时补一次尝试。
+        if (!startForegroundCompat()) {
+            stopSelf()
         }
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /**
-     * 最近任务划掉即停（对齐原版 `BaseService.kt:67-71`）。
-     *
-     * 进程内 Rust server 与宿主进程同生命周期，任务移除后即使保留前台服务
-     * 也无法继续提供 LAN 访问；停掉可避免「通知在、服务已死」的假象。
-     */
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        stopSelf()
-    }
+    // 刻意不重写 onTaskRemoved：任务划掉后保持 FGS 与进程内 Rust server
+    // 可达（审查回修 P2；与原版 BaseService.kt:67-71 的差异见类注释）。
 
     override fun onDestroy() {
         isRunning = false
@@ -179,6 +188,7 @@ class WebServerForegroundService : Service() {
      * 由调用方 stopSelf，绝不让服务异常上抛到主线程崩溃。
      */
     private fun startForegroundCompat(): Boolean {
+        if (foregroundStarted) return true
         return try {
             logIfNotificationsDegraded()
             val notification = buildNotification()
@@ -192,6 +202,7 @@ class WebServerForegroundService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            foregroundStarted = true
             isRunning = true
             true
         } catch (e: Exception) {

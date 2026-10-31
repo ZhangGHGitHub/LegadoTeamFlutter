@@ -27,9 +27,10 @@ object NotificationService {
     private const val CHANNEL_ID_READING = "legado_reading"
     private const val CHANNEL_ID_SERVICE = "legado_service"
 
-    private const val NOTIFICATION_ID_DOWNLOAD = 1001
-    private const val NOTIFICATION_ID_READING = 1002
-    private const val NOTIFICATION_ID_SERVICE = 1003
+    // ID 集中登记于 LegadoNotificationIds（与前台服务通知共用进程命名空间）
+    private const val NOTIFICATION_ID_DOWNLOAD = LegadoNotificationIds.LEGACY_DOWNLOAD
+    private const val NOTIFICATION_ID_READING = LegadoNotificationIds.LEGACY_READING
+    private const val NOTIFICATION_ID_SERVICE = LegadoNotificationIds.LEGACY_SERVICE
 
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result, context: Context) {
         when (call.method) {

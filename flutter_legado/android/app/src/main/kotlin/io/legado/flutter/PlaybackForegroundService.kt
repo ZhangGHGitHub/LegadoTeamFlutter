@@ -31,7 +31,7 @@ class PlaybackForegroundService : Service() {
     companion object {
         const val EXTRA_STATE = "state"
         private const val CHANNEL_ID = "legado_playback_foreground"
-        private const val NOTIFICATION_ID = 0x1E60
+        private const val NOTIFICATION_ID = LegadoNotificationIds.PLAYBACK
 
         /** 运行中服务实例（元数据变化时由 [MediaSessionBridge] 触发通知刷新） */
         @Volatile

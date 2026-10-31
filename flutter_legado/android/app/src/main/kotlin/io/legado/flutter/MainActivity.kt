@@ -671,7 +671,23 @@ open class MainActivity : FlutterActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /**
+     * 批9b-6c：转发通知权限结果给 Web 服务前台服务桥。
+     *
+     * 其他权限请求（当前无）由桥按 requestCode 忽略，返回 false 不消费。
+     */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        WebServiceForegroundBridge.onRequestPermissionsResult(requestCode, grantResults)
+    }
+
     override fun onDestroy() {
+        // 批9b-6c：完成挂起的通知权限请求，避免 Dart Future 永久挂起
+        WebServiceForegroundBridge.onActivityDestroyed()
         super.onDestroy()
         ttsBridge.release()
         webViewBridge.destroy()

@@ -112,7 +112,7 @@ class VideoPlayService : Service() {
         /** 回全屏时携带的状态 Bundle（MainActivity → Dart） */
         const val EXTRA_RETURN = "video_float_return"
 
-        const val NOTIFICATION_ID = 0x1E61
+        const val NOTIFICATION_ID = LegadoNotificationIds.VIDEO
         const val CHANNEL_ID = "legado_video_float"
 
         /** 播完等待 Dart 决定续播/关闭的窗口（对齐原版 upDurIndex 立即决策；本侧需异步解析） */

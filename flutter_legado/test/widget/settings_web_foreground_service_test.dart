@@ -5,16 +5,19 @@
 // 无法改变息屏后的 `APP_BACKGROUND` 网络策略，前台服务是 LAN 可达的等价物。
 //
 // 覆盖：
-// 1. startServer 成功 → 前台服务 start；stopServer 成功 → stop；
-// 2. 启动后状态异常（查询失败 / 假成功）→ 回滚 stop；
+// 1. startServer 成功 → 权限确认 + 前台服务 start + 启动后确认；
+//    stopServer 成功 → stop；
+// 2. 启动后状态异常（查询失败 / 假成功）→ 回滚 stop + best-effort 停 server；
 // 3. 设置页初始化 running → ensureStarted 幂等（已运行不重复 start）；
 // 4. 前台服务启动失败不阻断 Web 服务开关（静默降级）；
 // 5. 与唤醒锁解耦：偏好 `webServiceWakeLock=false` 仍启动前台服务；
-// 6. 停服报错但状态已停 → 仍撤前台服务并关闭开关。
+// 6. 停服报错但状态已停 → 仍撤前台服务并关闭开关；
+// 7. 通知权限拒绝 → FGS 照常运行、UI 提示「通知不可见」；
+// 8. 回到前台对账 → FGS 被系统停止时重新拉起（审查回修 P3）。
 //
 // 平台标志经 WebServiceForegroundService.platformIsAndroid /
 // WebServiceWakeLockService.platformIsAndroid 测试缝隙注入（Windows 测试
-// 环境 Platform.isAndroid=false，不注入则全部 no-op）。
+// 环境 Platform.isAndroid=false，不注入则全部 no-op）；启动确认延时置零。
 
 import 'dart:io';
 
@@ -36,6 +39,41 @@ import 'package:flutter_legado/src/services/web_service_wake_lock_service.dart';
 
 import '../mocks/mocks.dart';
 
+/// 模拟原生前台服务（含通知权限），记录方法调用顺序
+class _ForegroundMock {
+  _ForegroundMock({this.running = false});
+
+  bool running;
+  bool notificationGranted = true;
+  bool requestGranted = true;
+  final List<String> calls = <String>[];
+
+  void install(TestDefaultBinaryMessenger messenger) {
+    messenger.setMockMethodCallHandler(WebServiceForegroundService.channel, (
+      call,
+    ) async {
+      calls.add(call.method);
+      switch (call.method) {
+        case 'start':
+          running = true;
+          return true;
+        case 'stop':
+          running = false;
+          return true;
+        case 'isRunning':
+          return running;
+        case 'hasNotificationPermission':
+          return notificationGranted;
+        case 'requestNotificationPermission':
+          notificationGranted = requestGranted;
+          return notificationGranted;
+        default:
+          return null;
+      }
+    });
+  }
+}
+
 void main() {
   late MockRustApi mockApi;
   late ProviderContainer container;
@@ -55,12 +93,16 @@ void main() {
     WebKeepAliveService.instance.debugReset();
     WebServiceForegroundService.instance.debugReset();
     WebServiceForegroundService.platformIsAndroid = () => true;
+    WebServiceForegroundService.startConfirmDelay = Duration.zero;
     WebServiceWakeLockService.instance.debugReset();
     WebServiceWakeLockService.platformIsAndroid = () => Platform.isAndroid;
   });
 
   tearDown(() {
     WebServiceForegroundService.platformIsAndroid = () => Platform.isAndroid;
+    WebServiceForegroundService.startConfirmDelay = const Duration(
+      milliseconds: 200,
+    );
     WebServiceForegroundService.instance.debugReset();
     messenger.setMockMethodCallHandler(
       WebServiceForegroundService.channel,
@@ -110,30 +152,6 @@ void main() {
         .value;
   }
 
-  /// 模型原生前台服务：记录方法名，isRunning 按 [running] 返回
-  List<String> installForegroundChannel({bool running = false}) {
-    final calls = <String>[];
-    var nativeRunning = running;
-    messenger.setMockMethodCallHandler(WebServiceForegroundService.channel, (
-      call,
-    ) async {
-      calls.add(call.method);
-      switch (call.method) {
-        case 'start':
-          nativeRunning = true;
-          return true;
-        case 'stop':
-          nativeRunning = false;
-          return true;
-        case 'isRunning':
-          return nativeRunning;
-        default:
-          return null;
-      }
-    });
-    return calls;
-  }
-
   void stubServer({
     required List<String> statuses,
     bool stopThrows = false,
@@ -148,9 +166,9 @@ void main() {
       () => mockApi.startServer(port: any(named: 'port')),
     ).thenAnswer((_) async {});
     if (stopThrows) {
-      when(() => mockApi.stopServer()).thenAnswer(
-        (_) async => throw const BridgeError(message: '停止超时'),
-      );
+      when(
+        () => mockApi.stopServer(),
+      ).thenAnswer((_) async => throw const BridgeError(message: '停止超时'));
     } else {
       when(() => mockApi.stopServer()).thenAnswer((_) async {});
     }
@@ -166,10 +184,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('startServer 成功 → 前台服务 start；stopServer 成功 → stop', (
-    tester,
-  ) async {
-    final calls = installForegroundChannel();
+  testWidgets('startServer 成功 → 权限确认 + 前台服务 start；停止 → stop', (tester) async {
+    final foreground = _ForegroundMock();
+    foreground.install(messenger);
     stubServer(statuses: ['stopped', 'running on port 1122']);
 
     await tester.pumpWidget(wrap());
@@ -177,32 +194,35 @@ void main() {
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
     // 初始化对账（服务未运行）会撤一次遗留前台服务，先清掉
-    calls.clear();
+    foreground.calls.clear();
 
     toggleWebService(tester, true);
     await tester.pumpAndSettle();
-    expect(
-      calls,
-      ['start'],
-      reason: 'startServer 成功后应启动前台服务（对齐原版 WebService.onCreate）',
-    );
+    expect(foreground.calls, [
+      'hasNotificationPermission',
+      'start',
+      'isRunning',
+    ], reason: '开启时先确认通知权限，再启动 FGS 并短延时确认');
 
     toggleWebService(tester, false);
     await tester.pumpAndSettle();
-    expect(
-      calls,
-      ['start', 'stop'],
-      reason: 'stopServer 成功后应停止前台服务',
-    );
+    expect(foreground.calls, [
+      'hasNotificationPermission',
+      'start',
+      'isRunning',
+      'stop',
+    ], reason: 'stopServer 成功后应停止前台服务');
   });
 
-  testWidgets('启动后状态查询失败 → 回滚 stop 并提示', (tester) async {
-    final calls = installForegroundChannel();
+  testWidgets('启动后状态查询失败 → 回滚 stop + best-effort 停 server', (tester) async {
+    final foreground = _ForegroundMock();
+    foreground.install(messenger);
     when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
     when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     when(
       () => mockApi.startServer(port: any(named: 'port')),
     ).thenAnswer((_) async {});
+    when(() => mockApi.stopServer()).thenAnswer((_) async {});
     var statusCall = 0;
     when(() => mockApi.getServerStatus()).thenAnswer((_) async {
       statusCall++;
@@ -215,56 +235,68 @@ void main() {
     await tester.pumpAndSettle();
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
-    calls.clear();
+    foreground.calls.clear();
 
     toggleWebService(tester, true);
     await tester.pumpAndSettle();
 
-    expect(calls, ['start', 'stop'], reason: '状态未知时回滚前台服务');
+    expect(foreground.calls, [
+      'hasNotificationPermission',
+      'start',
+      'isRunning',
+      'stop',
+    ], reason: '状态未知时回滚前台服务');
     expect(find.textContaining('无法确认服务状态'), findsOneWidget);
     expect(webServiceSwitchValue(tester), isFalse);
+    verify(() => mockApi.stopServer()).called(1);
 
     await settleSnackBar(tester);
   });
 
-  testWidgets('启动假成功（状态 stopped）→ 回滚 stop 并提示', (tester) async {
-    final calls = installForegroundChannel();
+  testWidgets('启动假成功（状态 stopped）→ 回滚 stop + best-effort 停 server', (
+    tester,
+  ) async {
+    final foreground = _ForegroundMock();
+    foreground.install(messenger);
     stubServer(statuses: ['stopped']);
 
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
-    calls.clear();
+    foreground.calls.clear();
 
     toggleWebService(tester, true);
     await tester.pumpAndSettle();
 
-    expect(calls, ['start', 'stop'], reason: '假成功不得留下前台通知');
+    expect(foreground.calls, [
+      'hasNotificationPermission',
+      'start',
+      'isRunning',
+      'stop',
+    ], reason: '假成功不得留下前台通知');
     expect(find.textContaining('服务状态异常'), findsOneWidget);
     expect(webServiceSwitchValue(tester), isFalse);
+    verify(() => mockApi.stopServer()).called(1);
     verifyNever(() => mockApi.setConfig('webService', 'true'));
 
     await settleSnackBar(tester);
   });
 
   testWidgets('初始化 running → ensureStarted 幂等（不重复 start）', (tester) async {
-    final calls = installForegroundChannel(running: true);
-    stubServer(
-      statuses: ['running on port 1122'],
-      webServiceConfig: 'true',
-    );
+    final foreground = _ForegroundMock(running: true);
+    foreground.install(messenger);
+    stubServer(statuses: ['running on port 1122'], webServiceConfig: 'true');
 
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
 
-    expect(
-      calls,
-      ['isRunning'],
-      reason: '原生已运行：只查询对账，不重复拉起',
-    );
+    expect(foreground.calls, [
+      'isRunning',
+      'hasNotificationPermission',
+    ], reason: '原生已运行：只查询对账，不重复拉起');
     expect(webServiceSwitchValue(tester), isTrue);
   });
 
@@ -274,11 +306,19 @@ void main() {
       call,
     ) async {
       calls.add(call.method);
-      if (call.method == 'isRunning') return false;
-      throw PlatformException(
-        code: 'web_foreground_start_failed',
-        message: '后台启动限制',
-      );
+      switch (call.method) {
+        case 'isRunning':
+          return false;
+        case 'hasNotificationPermission':
+          return true;
+        case 'requestNotificationPermission':
+          return true;
+        default:
+          throw PlatformException(
+            code: 'web_foreground_start_failed',
+            message: '后台启动限制',
+          );
+      }
     });
     stubServer(statuses: ['stopped', 'running on port 1122']);
 
@@ -291,7 +331,7 @@ void main() {
     toggleWebService(tester, true);
     await tester.pumpAndSettle();
 
-    expect(calls, ['start']);
+    expect(calls, ['hasNotificationPermission', 'start']);
     expect(
       webServiceSwitchValue(tester),
       isTrue,
@@ -313,7 +353,8 @@ void main() {
     });
     WebServiceWakeLockService.platformIsAndroid = () => true;
 
-    final calls = installForegroundChannel();
+    final foreground = _ForegroundMock();
+    foreground.install(messenger);
     // 偏好默认 false（未设置）
     SharedPreferences.setMockInitialValues({});
     stubServer(statuses: ['stopped', 'running on port 1122']);
@@ -322,12 +363,16 @@ void main() {
     await tester.pumpAndSettle();
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
-    calls.clear();
+    foreground.calls.clear();
 
     toggleWebService(tester, true);
     await tester.pumpAndSettle();
 
-    expect(calls, ['start'], reason: '前台服务恒随 Web 服务启停');
+    expect(foreground.calls, [
+      'hasNotificationPermission',
+      'start',
+      'isRunning',
+    ], reason: '前台服务恒随 Web 服务启停');
     expect(wakeLockCalls, isEmpty, reason: '偏好关：绕过唤醒锁，不影响前台服务');
 
     // 偏好键确实是关（防止测试误设）
@@ -336,7 +381,8 @@ void main() {
   });
 
   testWidgets('停服报错但状态已停 → 仍撤前台服务并关闭开关', (tester) async {
-    final calls = installForegroundChannel(running: true);
+    final foreground = _ForegroundMock(running: true);
+    foreground.install(messenger);
     stubServer(
       statuses: ['running on port 1122', 'stopped'],
       stopThrows: true,
@@ -347,15 +393,87 @@ void main() {
     await tester.pumpAndSettle();
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
-    expect(calls, ['isRunning'], reason: '初始化对账：运行中仅查询');
-    calls.clear();
+    expect(foreground.calls, [
+      'isRunning',
+      'hasNotificationPermission',
+    ], reason: '初始化对账：运行中仅查询');
+    foreground.calls.clear();
 
     toggleWebService(tester, false);
     await tester.pumpAndSettle();
 
-    expect(calls, ['stop'], reason: '状态确认已停 → 撤前台服务');
+    expect(foreground.calls, ['stop'], reason: '状态确认已停 → 撤前台服务');
     expect(webServiceSwitchValue(tester), isFalse);
     expect(find.textContaining('Web 服务切换失败'), findsNothing);
     verify(() => mockApi.setConfig('webService', 'false')).called(1);
+  });
+
+  testWidgets('通知权限拒绝 → FGS 照常运行并提示通知不可见', (tester) async {
+    final foreground = _ForegroundMock()
+      ..notificationGranted = false
+      ..requestGranted = false;
+    foreground.install(messenger);
+    stubServer(statuses: ['stopped', 'running on port 1122']);
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await dragTo(tester, 'Web 服务');
+    await tester.pumpAndSettle();
+    foreground.calls.clear();
+
+    toggleWebService(tester, true);
+    await tester.pumpAndSettle();
+
+    expect(foreground.calls, [
+      'hasNotificationPermission',
+      'requestNotificationPermission',
+      'start',
+      'isRunning',
+    ], reason: '未授予时才弹权限框；拒绝后仍启动 FGS');
+    expect(webServiceSwitchValue(tester), isTrue, reason: '通知权限拒绝不阻断 Web 服务');
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('通知权限未授予：Web 服务前台通知不可见（局域网访问不受影响）'),
+      ),
+      findsOneWidget,
+      reason: '拒绝时给出一次性 SnackBar 提示',
+    );
+    expect(
+      find.textContaining('通知权限未授予，前台通知不可见'),
+      findsOneWidget,
+      reason: '卡片副题登记通知不可见（FGS 与 LAN 访问不受影响）',
+    );
+    verify(() => mockApi.setConfig('webService', 'true')).called(1);
+
+    await settleSnackBar(tester);
+  });
+
+  testWidgets('回到前台对账：FGS 被系统停止 → 重新拉起', (tester) async {
+    final foreground = _ForegroundMock(running: true);
+    foreground.install(messenger);
+    stubServer(statuses: ['running on port 1122'], webServiceConfig: 'true');
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await dragTo(tester, 'Web 服务');
+    await tester.pumpAndSettle();
+    expect(foreground.calls, ['isRunning', 'hasNotificationPermission']);
+    foreground.calls.clear();
+
+    // 模拟系统在后台停止 FGS：Dart 镜像仍为 true，原生已停
+    foreground.running = false;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(foreground.calls, [
+      'isRunning',
+      'start',
+      'isRunning',
+      'hasNotificationPermission',
+    ], reason: '回前台强制查询并重新拉起（forceQuery，修复镜像陈旧）');
+    expect(foreground.running, isTrue);
   });
 }

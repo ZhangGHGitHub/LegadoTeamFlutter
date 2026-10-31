@@ -295,11 +295,18 @@
              策略）。原版 WebService 用 dataSync（manifest:554-556），这里改用
              specialUse：Android 15 的 dataSync 累计 6 小时限制不适合长期驻留
              的本地 LAN 服务；PROPERTY_SPECIAL_USE_FGS_SUBTYPE 为 Android 14+
-             要求的用途声明。服务本身不承载 Rust server，启停由 Dart 驱动。 -->
+             要求的用途声明。上架 Google Play 需在 Play Console 申报该用途
+             （本地侧载/企业分发不受影响）。服务本身不承载 Rust server，启停
+             由 Dart 驱动。
+             stopWithTask=false（显式声明默认值，审查回修 P2）：最近任务划掉
+             后保留 FGS 与进程内 Rust server，避免「server 在跑但无 FGS」的
+             孤儿态；与原版 BaseService.onTaskRemoved → stopSelf 的差异见
+             WebServerForegroundService 类注释。 -->
         <service
             android:name=".WebServerForegroundService"
             android:foregroundServiceType="specialUse"
-            android:exported="false">
+            android:exported="false"
+            android:stopWithTask="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Local web server for LAN access" />
