@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- [体检 N1] 听书前台服务 mediaPlayback 类型（Android 14 起必需声明对应类型权限） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- [批9b-6c] Web 服务前台服务 specialUse 类型（Android 14 起必需声明对应类型权限） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- 唤醒锁（阅读时常亮 / 听书 / Web 服务 PARTIAL_WAKE_LOCK + Wi-Fi 锁） -->
@@ -287,6 +289,21 @@
             android:name=".PlaybackForegroundService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
+
+        <!-- [批9b-6c] Web 服务前台服务：锁屏/切后台时把进程提升为前台，
+             维持局域网访问（9b-6 验收确认唤醒锁无法改变 APP_BACKGROUND 网络
+             策略）。原版 WebService 用 dataSync（manifest:554-556），这里改用
+             specialUse：Android 15 的 dataSync 累计 6 小时限制不适合长期驻留
+             的本地 LAN 服务；PROPERTY_SPECIAL_USE_FGS_SUBTYPE 为 Android 14+
+             要求的用途声明。服务本身不承载 Rust server，启停由 Dart 驱动。 -->
+        <service
+            android:name=".WebServerForegroundService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local web server for LAN access" />
+        </service>
 
         <!-- [V-B3] 视频悬浮窗服务：全局 overlay 承载原生 Media3 ExoPlayer
              （对齐原版 VideoPlayService.kt + manifest:555-557；与听书服务

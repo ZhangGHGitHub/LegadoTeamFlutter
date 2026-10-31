@@ -258,6 +258,15 @@ open class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             WebServiceWakeLockBridge.handleMethodCall(call, result, this)
         }
+
+        // 批9b-6c：Web 服务前台服务通道（锁屏/切后台维持 UID 网络可见性）。
+        // 随 Web 服务启停，与唤醒锁偏好解耦（唤醒锁只影响 CPU/Wi-Fi 休眠）。
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            WebServiceForegroundBridge.CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            WebServiceForegroundBridge.handleMethodCall(call, result, this)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

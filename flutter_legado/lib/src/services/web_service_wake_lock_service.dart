@@ -40,9 +40,12 @@ import 'package:flutter/widgets.dart';
 /// 供调用方判断（其他设置页在非 Android 下置灰该开关）。
 ///
 /// ## 生命周期差异（与 Android 原版，如实登记）
-/// 原版唤醒锁依附 `WebService` 前台服务，退后台期间持续持有；本仓库 Web
-/// 服务是进程内 Rust server、无对应前台服务，进程被系统回收时锁随进程消失，
-/// 后台存活不作保证（不硬造后台服务）。
+/// 原版唤醒锁依附 `WebService` 前台服务，退后台期间持续持有；本仓库 Rust
+/// server 在 Flutter 进程内，锁同样由进程级单例持有。批9b-6c 起 Android
+/// 增加真实前台服务 `WebServerForegroundService`（Dart 侧
+/// `WebServiceForegroundService`）随 Web 服务启停，用于息屏后维持 UID 网络
+/// 可见性；但**唤醒锁仍只由本类按偏好独立控制**（前台服务不依赖该开关，
+/// 也不代替它）。进程被系统回收时锁随进程消失。
 ///
 /// — 全栈工程师 ｜ 2026-11-01
 class WebServiceWakeLockService {

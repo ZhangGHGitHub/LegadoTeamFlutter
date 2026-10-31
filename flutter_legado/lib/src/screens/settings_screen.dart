@@ -11,6 +11,7 @@ import '../constants/pref_keys.dart';
 import '../utils/error_message.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/web_keep_alive_service.dart';
+import '../services/web_service_foreground_service.dart';
 import '../services/web_service_wake_lock_service.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
@@ -98,9 +99,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (!mounted) return;
         if (_webService) setState(() => _webServiceStatus = status);
         await _reconcileWebWakeLock(status);
+        await _reconcileWebForeground(status);
       } catch (e) {
-        // 状态查询失败（FFI 未初始化等）：保持现状，不下发唤醒锁命令
-        debugPrint('Web 服务状态查询失败（跳过唤醒锁对账）：$e');
+        // 状态查询失败（FFI 未初始化等）：保持现状，不下发唤醒锁/前台服务命令
+        debugPrint('Web 服务状态查询失败（跳过唤醒锁/前台服务对账）：$e');
       }
       if (_autoTaskService) {
         AutoTaskScheduler.instance.refresh();
@@ -162,6 +164,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// 批9b-6c：按运行态对账 Android Web 服务前台服务（幂等）
+  ///
+  /// 9b-6 设备验收确认唤醒锁无法改变 `APP_BACKGROUND` 网络策略，需前台服务
+  /// 把进程提升为可见前台（原版 `WebService` 同构，见
+  /// [WebServiceForegroundService] 文档）。初始化对账：
+  /// - 服务运行 → 确保前台服务也运行（先查原生 `isRunning`，已运行不重复拉起）
+  /// - 服务未运行 → 停掉可能遗留的前台服务（引擎重建 / 配置写失败边界）
+  ///
+  /// 与唤醒锁完全解耦：不读 `webServiceWakeLock` 偏好，前台服务恒随 Web 服务
+  /// 启停（唤醒锁仍由 [_reconcileWebWakeLock] 按原开关控制）。
+  Future<void> _reconcileWebForeground(String status) async {
+    if (_isServerRunning(status)) {
+      await WebServiceForegroundService.instance.ensureStarted();
+    } else {
+      await WebServiceForegroundService.instance.stop();
+    }
+  }
+
   /// Web 服务开关（对标原版 pref_main SwitchPreference）
   ///
   /// [iOS Web 服务后台保活 | 2026-10-07 用户批准方案 C+A] iOS 无前台服务，
@@ -170,6 +190,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 启动成功后接[WebKeepAliveService.start]，停止成功后接 stop，让 App
   /// 退后台/锁屏时局域网浏览器仍可访问。保活启动失败仅记日志并回退
   /// 「仅前台可用」（卡片副题提示），不阻断服务开关。
+  ///
+  /// [Android Web 服务前台服务 | 批9b-6c] Android 等价物是真实前台服务
+  /// [WebServiceForegroundService]（原版 `WebService` 同构）：startServer
+  /// 成功即 start、stopServer 成功即 stop、启动后状态异常回滚即 stop；
+  /// **与唤醒锁偏好解耦**（唤醒锁只影响 CPU/Wi-Fi 休眠，无法改变息屏后的
+  /// `APP_BACKGROUND` 网络策略，见 9b-6 验收报告）。
   ///
   /// [Android Web 服务唤醒锁 | 批9b-6] 对齐原版
   /// `WebService.kt:76,77-82,83-89,105-106,140-141,160-161`：偏好
@@ -182,10 +208,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 初始化按实际 running 状态重新对账）；iOS 由 [WebKeepAliveService]
   ///（静音音轨）负责；桌面不适用。
   ///
-  /// 生命周期差异（如实登记）：原版唤醒锁依附 `WebService` 前台服务，服务在
-  /// App 退后台期间持续持有；本仓库 Web 服务是进程内 Rust server、无对应
-  /// 前台服务，进程被系统回收时唤醒锁随进程消失，后台存活不作保证
-  ///（不硬造后台服务）。
+  /// 生命周期差异（如实登记）：原版唤醒锁与前台服务同属 `WebService`；
+  /// 本仓库 Rust server 在 Flutter 进程内，前台服务只做进程提权、不承载
+  /// server，因此「前台服务随 Web 服务启停」、唤醒锁仍按偏好独立控制。
   Future<void> _toggleWebService(bool v) async {
     if (_webServiceBusy) return;
     setState(() => _webServiceBusy = true);
@@ -199,6 +224,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             .read(settingsProvider)
             .getBoolPref(PrefKeys.webServiceWakeLock, defaultValue: false);
         await api.startServer(port: port);
+        // 批9b-6c：服务启动成功即起前台服务（与唤醒锁偏好解耦；非 Android no-op）。
+        // 失败仅静默记日志，由原生按「仅前台可用」降级，不阻断开关。
+        await WebServiceForegroundService.instance.start();
         // 服务已启动：Android 按偏好持唤醒锁（非 Android 内部不触平台通道）
         await WebServiceWakeLockService.instance.onServiceStarted(
           keepAwake: keepAwake,
@@ -209,6 +237,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         } catch (e) {
           // 批9b-6 边界回修：启动后状态查询失败 → 回滚释放唤醒锁并提示，
           // 不留在「已 acquire 但状态未知」
+          // 批9b-6c：回滚同时停前台服务（否则通知在、server 状态未知）
+          await WebServiceForegroundService.instance.stop();
           await WebServiceWakeLockService.instance.onServiceStopped();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -223,6 +253,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         if (!_isServerRunning(status)) {
           // 批9b-6 审查回修：启动「假成功」（状态仍 stopped）时回滚唤醒锁，
           // 不把开关置为开，也不接保活/写 webService=true
+          // 批9b-6c：同时停前台服务，避免「通知显示运行中」的假象
+          await WebServiceForegroundService.instance.stop();
           await WebServiceWakeLockService.instance.onServiceStopped();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
@@ -256,6 +288,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         }
         // 服务已停：先无条件释放唤醒锁（偏好仍开也不再持锁）
         await WebServiceWakeLockService.instance.onServiceStopped();
+        // 批9b-6c：停前台服务（幂等；进程内 server 已不在，前台通知必须撤）
+        await WebServiceForegroundService.instance.stop();
         // 服务停止必须同步停保活（否则静音音轨会让进程继续存活）
         await WebKeepAliveService.instance.stop();
         await api.setConfig('webService', 'false');
