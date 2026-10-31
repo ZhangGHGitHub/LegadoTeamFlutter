@@ -404,7 +404,7 @@ mod tests {
         assert!(repo.find_by_book_url("u_eq").unwrap().is_some());
         assert!(repo.find_by_book_url("u_new").unwrap().is_some());
 
-        // 空表（无匹配行）返回 0
+        // 无匹配行返回 0
         assert_eq!(repo.delete_expired(0).unwrap(), 0);
 
         // 再以更大边界清理，删去 == 原边界与新行

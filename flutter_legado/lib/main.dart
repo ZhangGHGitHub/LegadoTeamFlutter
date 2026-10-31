@@ -159,8 +159,14 @@ Future<void> clearExpiredSearchBooksOnStartup(
     final deleted = await api.clearExpiredSearchBooks(before);
     debugPrint('[启动] 自动清除过期搜索：删除 $deleted 条（阈值 -1 天）');
   } catch (e) {
-    // 静默失败：清理属附带维护，失败不影响任何用户可见流程
-    debugPrint('[启动] 自动清除过期搜索失败（不阻断启动）：$e');
+    // 静默失败：清理属附带维护，失败不影响任何用户可见流程。
+    // CrashLogService.init() 已在启动第 1 步完成，此处补一条 AppLog 内存
+    // 记录便于诊断；刻意不用 logError——不写 crash_log、不置崩溃标记，
+    // 避免把非致命维护失败误报为「上次运行崩溃」。
+    CrashLogService.instance.put(
+      '[启动] 自动清除过期搜索失败（不阻断启动）：$e',
+      error: e,
+    );
   }
 }
 

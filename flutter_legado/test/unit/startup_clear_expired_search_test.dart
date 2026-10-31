@@ -16,7 +16,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/main.dart';
 import 'package:flutter_legado/src/constants/pref_keys.dart';
-import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/services/book_api.dart';
 
 /// 记录 clearExpiredSearchBooks 调用参数的桩 BookApi
@@ -109,13 +108,35 @@ void main() {
       );
     });
 
-    test('unawaited 语义：返回 Future 独立执行不抛未捕获异常', () async {
-      final api = _RecordingApi(clearThrows: true);
-      // 生产调用形态为 unawaited(...)：失败仅 debugPrint，
-      // zone 不应收到未捕获异常（本测试自行 await 捕获验证）
-      final f = clearExpiredSearchBooksOnStartup(api, useMock: false);
-      unawaited(f);
-      await expectLater(f, completes);
+    test('unawaited 调用：清理失败静默完成，不向所在 Zone 抛未捕获异常', () async {
+      final uncaught = <Object>[];
+      final settled = Completer<void>();
+
+      runZonedGuarded<void>(() {
+        // 生产调用形态为 unawaited(...)（main.dart 第 5c 步），失败仅记录、
+        // 不产生未捕获异常。实现若移除内部 catch，本用例即会收到 Zone 错误。
+        final future = clearExpiredSearchBooksOnStartup(
+          _RecordingApi(clearThrows: true),
+          useMock: false,
+        );
+        unawaited(future);
+        future.whenComplete(() {
+          if (!settled.isCompleted) settled.complete();
+        });
+      }, (error, stack) {
+        uncaught.add(error);
+        if (!settled.isCompleted) settled.complete();
+      });
+
+      await settled.future;
+      // 再让一轮事件循环，确保（若有）未捕获异常已派发到 Zone 处理器
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        uncaught,
+        isEmpty,
+        reason: 'unawaited 的 Future 失败必须被静默，Zone 不应收到未捕获异常',
+      );
     });
   });
 }
