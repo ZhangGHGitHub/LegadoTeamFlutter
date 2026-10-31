@@ -165,8 +165,8 @@ class ReaderAdvancedConfig {
   ///
   /// 语义对齐原版 ReadBookActivity.volumeKeyPage → handleKeyPage：
   /// - true：每个 keydown 都翻页（含长按 repeat），即长按连续翻页；
-  /// - false：长按 repeat 直接忽略，且相邻两次翻页至少间隔 600ms
-  ///   （leading 节流：第一次立即翻，窗口内后续按键不再翻）。
+  /// - false：长按 repeat 直接忽略；普通按键同方向相邻两次翻页至少间隔
+  ///   600ms（leading 节流：第一次立即翻，窗口内后续按键不再翻）。
   bool keyPageOnLongPress;
 
   /// 鼠标滚轮翻页（对标原版 mouseWheelPage，桌面端真实生效）

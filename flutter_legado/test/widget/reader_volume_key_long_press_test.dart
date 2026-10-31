@@ -20,6 +20,8 @@
 // 每次翻页成功调用；既有 1a 振动测试同款注入范式，避免依赖动画中间态）。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,14 +39,14 @@ import 'package:flutter_legado/src/widgets/reader/reader_page_view.dart';
 
 import '../mocks/mocks.dart';
 
-/// 可推进假时钟（毫秒精度）：让 600ms 节流窗口断言不依赖真实时间
+/// 可推进假单调时钟（毫秒精度）：让 600ms 节流窗口断言不依赖真实时间
 class _FakeClock {
-  DateTime _now = DateTime(2026, 11, 1, 12);
+  Duration _elapsed = Duration.zero;
 
-  DateTime call() => _now;
+  Duration call() => _elapsed;
 
   void advance(int milliseconds) {
-    _now = _now.add(Duration(milliseconds: milliseconds));
+    _elapsed += Duration(milliseconds: milliseconds);
   }
 }
 
@@ -208,12 +210,78 @@ void main() {
       expect(turns, 2, reason: 'true 时 repeat 第 2 次继续翻页');
     });
 
+    testWidgets('[P1 红→绿] 50ms repeat 连续 1s：cover 动画中继续翻页 ≥3', (tester) async {
+      _mockPrefs(keyPageOnLongPress: true);
+      final container = await _pumpReader(tester);
+      await _applyConfig(container, keyPageOnLongPress: true);
+      expect(
+        container.read(readerNotifierProvider).pageTurnMode,
+        PageTurnMode.cover,
+        reason: '本用例固定默认 cover 动画路径（动画时长约 300ms）',
+      );
+      expect(turns, 0);
+
+      // 真实节奏：每 50ms 一次 repeat + pump 50ms，不 pumpAndSettle；
+      // 连续 1s（20 次）。修前每次 repeat 触发 _abortSettle，动画永远
+      // 无法提交，整段长按只翻 1 页；修后动画中忽略新 repeat，动画完成
+      // 后下一次 repeat 再翻，1s 内应至少 3 页。
+      for (var i = 0; i < 20; i++) {
+        await simulateKeyRepeatEvent(
+          LogicalKeyboardKey.audioVolumeDown,
+          character: null,
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      // 让最后一次收尾动画完成（仍不 pumpAndSettle，保持帧驱动语义）
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        turns,
+        greaterThanOrEqualTo(3),
+        reason: '50ms repeat 连续 1s 必须连续翻页（修前只有 1 页）',
+      );
+    });
+
+    testWidgets('[P1] 手势取消 abort 程序化翻页后仍可继续翻页（Completer 不悬挂）', (tester) async {
+      _mockPrefs(keyPageOnLongPress: true);
+      final container = await _pumpReader(tester);
+      await _applyConfig(container, keyPageOnLongPress: true);
+
+      // 启动一次程序化翻页（动画进行中）
+      await simulateKeyRepeatEvent(
+        LogicalKeyboardKey.audioVolumeDown,
+        character: null,
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // 手势按下 → _abortSettle（唯一允许 abort 的路径）→ 取消
+      final size = tester.getSize(find.byType(ReaderScreen));
+      final origin = tester.getTopLeft(find.byType(ReaderScreen));
+      final gesture = await tester.startGesture(
+        origin + Offset(size.width * 0.5, size.height * 0.5),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.cancel();
+      await tester.pumpAndSettle();
+
+      expect(turns, 0, reason: '被 abort 的翻页不提交');
+
+      // abort 的 Completer 已 settle，控制器未卡在 isSettling：
+      // 下一次 repeat 必须能重新启动动画并提交
+      await simulateKeyRepeatEvent(
+        LogicalKeyboardKey.audioVolumeDown,
+        character: null,
+      );
+      await tester.pumpAndSettle();
+      expect(turns, 1, reason: 'abort 后仍可继续翻页（不永久挂起/不卡动画态）');
+    });
+
     testWidgets('false：快速连点 600ms 内只翻一次，600ms 后可再翻', (tester) async {
       _mockPrefs();
       final clock = _FakeClock();
       final container = await _pumpReader(
         tester,
-        gate: VolumeKeyPageGate(clock: clock.call),
+        gate: VolumeKeyPageGate(elapsed: clock.call),
       );
       await _applyConfig(container, keyPageOnLongPress: false);
 
@@ -272,6 +340,107 @@ void main() {
 
       expect(handledUp, isTrue, reason: '语义生效时抬起事件也消费');
       expect(turns, 0, reason: '抬起事件不翻页');
+    });
+
+    testWidgets('[P3-2] 阅读菜单展开时音量键交还系统（不翻页/不消费）', (tester) async {
+      _mockPrefs(keyPageOnLongPress: true);
+      final container = await _pumpReader(tester);
+      await _applyConfig(container, keyPageOnLongPress: true);
+
+      container.read(readerNotifierProvider.notifier).toggleControls();
+      await tester.pumpAndSettle();
+      expect(
+        container.read(readerNotifierProvider).showControls,
+        isTrue,
+        reason: '菜单已展开',
+      );
+
+      final handled = await simulateKeyDownEvent(
+        LogicalKeyboardKey.audioVolumeDown,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        handled,
+        isFalse,
+        reason: '对齐原版 menuLayoutIsVisible → super.onKeyDown（交还系统）',
+      );
+      expect(turns, 0, reason: '菜单展开不翻页');
+
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeDown);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('[P3-2] 目录/设置等子路由压栈时 handler 不生效', (tester) async {
+      _mockPrefs(keyPageOnLongPress: true);
+      final container = await _pumpReader(tester);
+      await _applyConfig(container, keyPageOnLongPress: true);
+
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      // push 的 Future 在路由 pop 时才完成，测试内不 await（否则挂起）
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Center(child: Text('子路由'))),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('子路由'), findsOneWidget);
+
+      final handled = await simulateKeyDownEvent(
+        LogicalKeyboardKey.audioVolumeDown,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        handled,
+        isFalse,
+        reason: '阅读器非当前路由（ModalRoute.isCurrent=false），交还系统',
+      );
+      expect(turns, 0, reason: '子路由压栈时不翻页');
+
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeDown);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('[P3-4] dispose 时 reset 节流闸门（重进首键不被节流）', (tester) async {
+      _mockPrefs();
+      final clock = _FakeClock();
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
+      final container = await _pumpReader(tester, gate: gate);
+      await _applyConfig(container, keyPageOnLongPress: false);
+
+      // 第一次翻页占住 600ms 节流窗口
+      await simulateKeyDownEvent(LogicalKeyboardKey.audioVolumeDown);
+      await tester.pumpAndSettle();
+      expect(turns, 1);
+      await simulateKeyUpEvent(LogicalKeyboardKey.audioVolumeDown);
+      await tester.pumpAndSettle();
+
+      // 未推进时钟，闸门仍处于节流窗口
+      expect(
+        gate.shouldTurnPage(
+          direction: 'down',
+          longPress: false,
+          keyPageOnLongPress: false,
+        ),
+        isFalse,
+        reason: '节流窗口内（600ms 未到）应拒绝',
+      );
+
+      // 退出阅读器 → dispose 调 reset
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(ReaderScreen), findsNothing, reason: '阅读器已销毁');
+
+      expect(
+        gate.shouldTurnPage(
+          direction: 'down',
+          longPress: false,
+          keyPageOnLongPress: false,
+        ),
+        isTrue,
+        reason: 'dispose 必须 reset 闸门，重进阅读器首键立即翻',
+      );
     });
   });
 }

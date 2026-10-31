@@ -79,6 +79,13 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   bool _overlayVisible = false;
   int _warmGeneration = 0;
 
+  /// [批1b-2a P1] 程序化翻页在途标记：对齐参考版
+  /// `ReaderProgrammaticTurnPolicy.shouldAccept(!animationRunning)`——
+  /// 动画进行中忽略新的程序化翻页（不 abort、不排队），动画结束后
+  /// 下一次 repeat 再翻。修复前 50ms 长按 repeat 会反复 abort 收尾动画，
+  /// 被取消的 Completer 永不完成、页面不提交，整段长按只翻 1 页。
+  bool _programmaticTurnInFlight = false;
+
   /// Gesture may cross chapter; bitmap exists only for in-chapter neighbors.
   bool get _gestureHasPrev => widget.pageIndex > 0 || widget.hasChapterPrev;
   bool get _gestureHasNext =>
@@ -240,52 +247,71 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   }
 
   /// Programmatic turn used by tap zones / volume keys / auto-read.
+  ///
+  /// [批1b-2a P1] 动画运行中直接忽略（不 abort、不排队）：对齐参考版
+  /// `ReaderProgrammaticTurnPolicy.shouldAccept(!animationRunning)`。
+  /// 在途标记同时覆盖 `_ensureCacheReady` 的 await 窗口，防止两个
+  /// 程序化翻页并发进入控制器。
   Future<void> turnByAnim(PageTurnDirection dir) async {
     if (dir == PageTurnDirection.none) return;
+    if (_programmaticTurnInFlight ||
+        _controller.isSettling ||
+        _controller.isDragging) {
+      return;
+    }
     final size = context.size;
     if (size == null || size.isEmpty) return;
 
-    if (widget.mode == PageTurnMode.none) {
-      _applyCompleted(dir);
-      return;
-    }
-
-    // 章边界：有预载相邻章快照则照常动画；缺失才瞬时填充
-    if (dir == PageTurnDirection.prev && !_captureHasPrev) {
-      if (_chapPrevImg == null) {
+    _programmaticTurnInFlight = true;
+    try {
+      if (widget.mode == PageTurnMode.none) {
         _applyCompleted(dir);
         return;
       }
-    }
-    if (dir == PageTurnDirection.next && !_captureHasNext) {
-      if (_chapNextImg == null) {
+
+      // 章边界：有预载相邻章快照则照常动画；缺失才瞬时填充
+      if (dir == PageTurnDirection.prev && !_captureHasPrev) {
+        if (_chapPrevImg == null) {
+          _applyCompleted(dir);
+          return;
+        }
+      }
+      if (dir == PageTurnDirection.next && !_captureHasNext) {
+        if (_chapNextImg == null) {
+          _applyCompleted(dir);
+          return;
+        }
+      }
+
+      final ready = await _ensureCacheReady();
+      if (!mounted) return;
+      // await 期间手势/其它动画可能已接管：不打断，直接放弃本次
+      if (_controller.isSettling || _controller.isDragging) return;
+      if (!ready || !_cache.hasCur) {
         _applyCompleted(dir);
         return;
       }
-    }
 
-    final ready = await _ensureCacheReady();
-    if (!mounted) return;
-    if (!ready || !_cache.hasCur) {
-      _applyCompleted(dir);
-      return;
-    }
+      setState(() => _overlayVisible = true);
 
-    setState(() => _overlayVisible = true);
-
-    await _controller.turnByAnim(
-      dir,
-      vsync: this,
-      viewWidth: size.width,
-      viewHeight: size.height,
-      hasPrev: _gestureHasPrev,
-      hasNext: _gestureHasNext,
-      onCompleted: _applyCompleted,
-      settleStyle: _settleStyle,
-    );
-    if (mounted && !_chapterTurning) {
-      setState(() => _overlayVisible = false);
-      _scheduleWarmSnapshots();
+      await _controller.turnByAnim(
+        dir,
+        vsync: this,
+        viewWidth: size.width,
+        viewHeight: size.height,
+        hasPrev: _gestureHasPrev,
+        hasNext: _gestureHasNext,
+        onCompleted: _applyCompleted,
+        settleStyle: _settleStyle,
+      );
+    } finally {
+      _programmaticTurnInFlight = false;
+      // 收尾清理不依赖 Completer 是否由动画正常完成：_abortSettle 现在
+      // 也会 settle，被手势打断时同样走到这里恢复遮罩/调度快照
+      if (mounted && !_chapterTurning) {
+        setState(() => _overlayVisible = false);
+        _scheduleWarmSnapshots();
+      }
     }
   }
 

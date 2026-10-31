@@ -18,14 +18,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/utils/volume_key_page_gate.dart';
 
-/// 可推进的假时钟（毫秒精度，避免依赖真实时间导致测试抖动）
+/// 可推进的假单调时钟（毫秒精度，避免依赖真实时间导致测试抖动）
 class _FakeClock {
-  DateTime _now = DateTime(2026, 11, 1, 12);
+  Duration _elapsed = Duration.zero;
 
-  DateTime call() => _now;
+  Duration call() => _elapsed;
 
   void advance(int milliseconds) {
-    _now = _now.add(Duration(milliseconds: milliseconds));
+    _elapsed += Duration(milliseconds: milliseconds);
   }
 }
 
@@ -33,7 +33,7 @@ void main() {
   group('VolumeKeyPageGate keyPageOnLongPress=true', () {
     test('长按 repeat 与短按都翻页（每个 keydown 一页，无节流）', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
 
       for (var i = 0; i < 3; i++) {
         expect(
@@ -61,7 +61,7 @@ void main() {
   group('VolumeKeyPageGate keyPageOnLongPress=false', () {
     test('长按 repeat 直接忽略（不翻页）', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
 
       expect(
         gate.shouldTurnPage(
@@ -86,7 +86,7 @@ void main() {
 
     test('首次立即翻；599ms 内再按忽略；600ms 后可再翻', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
 
       bool press() => gate.shouldTurnPage(
         direction: 'down',
@@ -107,7 +107,7 @@ void main() {
 
     test('快速连点 600ms 窗口内只翻一次', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
       var pages = 0;
       for (var i = 0; i < 6; i++) {
         if (gate.shouldTurnPage(
@@ -124,7 +124,7 @@ void main() {
 
     test('方向分桶：next 节流不影响 prev（对齐原版两个 Debounce）', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
 
       expect(
         gate.shouldTurnPage(
@@ -163,7 +163,7 @@ void main() {
 
     test('被忽略的长按不延长节流窗口（原版 longPress 提前 return）', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
 
       expect(
         gate.shouldTurnPage(
@@ -197,7 +197,7 @@ void main() {
 
     test('reset 清空节流状态（退出/切书后首次按键立即翻）', () {
       final clock = _FakeClock();
-      final gate = VolumeKeyPageGate(clock: clock.call);
+      final gate = VolumeKeyPageGate(elapsed: clock.call);
 
       expect(
         gate.shouldTurnPage(

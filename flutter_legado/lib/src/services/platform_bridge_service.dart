@@ -1135,8 +1135,9 @@ class PlatformBridgeService {
   /// 事件形状（批1b-2a，`ReaderKeysBridge.handleKeyDown`）：
   /// - 新：`{"direction": "up"/"down", "longPress": bool}`；
   /// - 旧：`"up"/"down"`（向后兼容，按短按处理）。
-  /// `longPress` 由原生侧 `KeyEvent.repeatCount > 0` 判定，供阅读器
-  /// `keyPageOnLongPress` 语义消费。
+  /// `longPress` 由原生侧 `KeyEvent.repeatCount > 0` 判定，供消费方按
+  /// `keyPageOnLongPress` 语义处理（当前通道路径消费方为漫画阅读器：
+  /// 按原版 ReadMangaActivity 语义每个 keydown 都翻页，不区分长按）。
   void registerVolumeKeyHandler(
     Future<void> Function(String direction, bool longPress) onVolumeKey,
   ) {
@@ -1155,9 +1156,14 @@ class PlatformBridgeService {
             when raw == 'up' || raw == 'down':
           direction = raw;
           longPress = lp;
-        // 缺 longPress 的 Map（跨端防御）：按短按兜底
+        // 缺 longPress 的 Map（跨端防御）：按短按兜底；若 longPress
+        // 存在但类型非法（如字符串/数字），按畸形事件忽略而不是降级为
+        // 短按——否则长按 repeat 会绕过 keyPageOnLongPress 的忽略语义
         case {'direction': final String raw}
-            when raw == 'up' || raw == 'down':
+            when (raw == 'up' ||
+                raw == 'down') &&
+                !(call.arguments as Map<Object?, Object?>)
+                    .containsKey('longPress'):
           direction = raw;
           longPress = false;
         default:

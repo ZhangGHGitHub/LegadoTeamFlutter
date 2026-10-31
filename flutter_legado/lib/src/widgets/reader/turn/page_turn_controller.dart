@@ -77,6 +77,10 @@ class PageTurnController extends ChangeNotifier {
   AnimationController? _settleController;
   VoidCallback? _settleListener;
 
+  /// 当前收尾动画对应的 Future（完成/被 abort 都必须 settle，避免
+  /// `await turnByAnim` 永久挂起——P1 红→绿回归点）
+  Completer<void>? _settleCompleter;
+
   void onPointerDown(Offset p, {double? viewWidth, double? viewHeight}) {
     _abortSettle(applyCompletion: false);
     _isMoved = false;
@@ -191,7 +195,15 @@ class PageTurnController extends ChangeNotifier {
     PageTurnSettleStyle settleStyle = PageTurnSettleStyle.simulation,
     int animationSpeed = kDefaultPageAnimSpeed,
   }) {
-    _abortSettle(applyCompletion: false);
+    // [批1b-2a P1] 对齐参考版 ReaderProgrammaticTurnPolicy.shouldAccept(
+    // !animationRunning)：动画/手势进行中直接忽略本次程序化翻页，
+    // **不 abort、不排队**；动画结束后下一次按键再翻。
+    // 修复前此处 `_abortSettle(applyCompletion: false)` 会在每次长按
+    // repeat（约 50ms）时取消未完成的收尾动画 → Completer 永不完成、
+    // 页面永不提交，整段长按只翻 1 页。
+    if (isSettling || isDragging) {
+      return Future.value();
+    }
     if (dir == PageTurnDirection.next) {
       if (!hasNext) {
         return Future.value();
@@ -353,6 +365,7 @@ class PageTurnController extends ChangeNotifier {
     controller.addListener(listener);
 
     final completer = Completer<void>();
+    _settleCompleter = completer;
     controller.addStatusListener((status) {
       if (status != AnimationStatus.completed) {
         return;
@@ -360,31 +373,44 @@ class PageTurnController extends ChangeNotifier {
       controller.removeListener(listener);
       _settleController = null;
       _settleListener = null;
+      _settleCompleter = null;
       if (!cancelled) {
         onCompleted(completedDirection);
       }
       _resetAfterGesture();
-      completer.complete();
+      if (!completer.isCompleted) {
+        completer.complete();
+      }
     });
 
     controller.forward();
     return completer.future;
   }
 
+  /// 中止当前收尾动画（仅手势按下 / reset / dispose 路径使用；
+  /// 程序化翻页不得调用，见 [turnByAnim] 的 P1 说明）。
+  ///
+  /// 必须 complete 挂起的 completer：`ReaderTurnView.turnByAnim` 在
+  /// await 之后负责 `_overlayVisible=false` 与 warm snapshot 调度，
+  /// 若不 settle 会导致遮罩常驻、快照不刷新且 Future 永久挂起。
   void _abortSettle({required bool applyCompletion}) {
+    final completer = _settleCompleter;
+    _settleCompleter = null;
     final controller = _settleController;
-    if (controller == null) {
-      return;
+    if (controller != null) {
+      final listener = _settleListener;
+      if (listener != null) {
+        controller.removeListener(listener);
+      }
+      controller.stop();
+      controller.dispose();
+      _settleController = null;
+      _settleListener = null;
     }
-    final listener = _settleListener;
-    if (listener != null) {
-      controller.removeListener(listener);
-    }
-    controller.stop();
-    controller.dispose();
-    _settleController = null;
-    _settleListener = null;
     isSettling = false;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
   }
 
   void resetGesture() {

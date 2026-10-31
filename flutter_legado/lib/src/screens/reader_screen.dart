@@ -372,8 +372,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   ///   长按 repeat），即长按连续翻页；
   /// - false：长按 repeat 忽略；普通按键同方向 600ms 内只翻一次
   ///   （leading 节流，第一次立即翻）。
-  /// 只要音量键翻页语义生效（volumeKeyPage 且朗读门控通过），按键
-  /// 事件一律消费（含被节流忽略的长按/连点），避免系统调整音量。
+  /// 音量键语义生效（volumeKeyPage 且朗读门控通过）且阅读器为当前路由、
+  /// 菜单未展开时，按键事件一律消费（含被节流忽略的长按/连点），避免
+  /// 系统调整音量；菜单展开或子路由压栈时交还系统（不消费）。
   bool _onHardwareKey(KeyEvent event) {
     final isVolUp = event.logicalKey == LogicalKeyboardKey.audioVolumeUp;
     final isVolDown = event.logicalKey == LogicalKeyboardKey.audioVolumeDown;
@@ -383,6 +384,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         event is! KeyUpEvent) {
       return false;
     }
+
+    // [批1b-2a 审查回修 P3-2] 阅读菜单展开时交还系统（不翻页、不消费）：
+    // 对齐原版 ReadBookActivity.onKeyDown L1042-1044
+    // `if (menuLayoutIsVisible) return super.onKeyDown(keyCode, event)`。
+    if (ref.read(readerNotifierProvider).showControls) return false;
+
+    // 目录/设置等子路由压栈时阅读器非当前路由：handler 不生效
+    // （HardwareKeyboard 为全局处理器，阅读器仍挂载在栈下层）。
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
 
     final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
     final aloud = ref.read(audioNotifierProvider).isPlaying;
