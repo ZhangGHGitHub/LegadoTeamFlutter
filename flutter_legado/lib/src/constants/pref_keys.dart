@@ -386,4 +386,12 @@ class PrefKeys {
   /// 加入 `RestoreIgnorePrefs.alwaysIgnoreKeys` 排除，避免恢复旧备份后
   /// 误触发/抑制自动备份。
   static const lastBackup = 'lastBackup';
+
+  // ===== 阅读设置页（批1a/1b-3，键名对齐参考版 PreferKey）=====
+
+  /// 无目录规则时每章字数（默认 3000，范围 3000..100000，对齐参考版
+  /// `ReadConfigViewModel` coerceIn 与 `ReadSettings.maxLengthWithNoToc`）。
+  /// SharedPreferences 镜像 + caches `config:maxLengthWithNoToc` 真源
+  /// （Rust 本地 TXT 无目录规则时按该字数分章，批1b-3）。
+  static const maxLengthWithNoToc = 'maxLengthWithNoToc';
 }

@@ -200,6 +200,12 @@ class ReaderAdvancedConfig {
   /// 开启且阅读菜单未展开时，系统返回键不退出阅读器；菜单展开时先关菜单）
   bool disableReturnKey;
 
+  /// 无目录规则时每章字数（键名对齐参考版 PreferKey.maxLengthWithNoToc，
+  /// 默认 3000、范围 3000..100000 对齐参考版 ReadConfigViewModel coerceIn；
+  /// Rust 解析侧经 caches `config:maxLengthWithNoToc` 消费——本批 1b-3
+  /// 落地「本地 TXT 无目录规则时按长度分章」）— [批1b-3] 全栈工程师
+  int maxLengthWithNoToc;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -283,6 +289,8 @@ class ReaderAdvancedConfig {
     this.sliderVibrator = false,
     this.selectVibrator = false,
     this.disableReturnKey = false,
+    // [批1b-3] 参考版默认 3000（ReadSettings.maxLengthWithNoToc）
+    this.maxLengthWithNoToc = 3000,
   });
 
   /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
@@ -547,6 +555,10 @@ class ReaderAdvancedConfig {
       sliderVibrator: prefs.getBool('sliderVibrator') ?? false,
       selectVibrator: prefs.getBool('selectVibrator') ?? false,
       disableReturnKey: prefs.getBool('disableReturnKey') ?? false,
+      // [批1b-3] 读取并夹逼（越界/非法回落 3000..100000 区间，对齐参考版
+      // ReadConfigViewModel coerceIn；缺省 3000）
+      maxLengthWithNoToc:
+          (prefs.getInt('maxLengthWithNoToc') ?? 3000).clamp(3000, 100000),
     );
   }
 
@@ -666,6 +678,9 @@ class ReaderAdvancedConfig {
     await prefs.setBool('sliderVibrator', sliderVibrator);
     await prefs.setBool('selectVibrator', selectVibrator);
     await prefs.setBool('disableReturnKey', disableReturnKey);
+    // [批1b-3] 无目录规则时每章字数（键名=参考版 PreferKey；
+    // SharedPreferences 镜像 + caches `config:` 真源由设置页接线写 Rust）
+    await prefs.setInt('maxLengthWithNoToc', maxLengthWithNoToc);
   }
 
   /// 应用阅读主题快照中的排版字段（批38）
@@ -764,6 +779,7 @@ class ReaderAdvancedConfig {
         sliderVibrator: sliderVibrator,
         selectVibrator: selectVibrator,
         disableReturnKey: disableReturnKey,
+        maxLengthWithNoToc: maxLengthWithNoToc,
       );
 }
 

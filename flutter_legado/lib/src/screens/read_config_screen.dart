@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../providers/providers.dart' show bookApiProvider;
 import '../widgets/app_scaffold.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
@@ -264,7 +265,36 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           value: cfg.disableReturnKey,
           onChanged: (v) => _update((c) => c.disableReturnKey = v),
         ),
+        // [批1b-3] 无目录规则时每章字数（键 maxLengthWithNoToc，默认 3000、
+        // 范围 3000..100000 对齐参考版 ReadConfigScreen.kt:308-318 滑块与
+        // ReadConfigViewModel coerceIn；Rust 经 caches `config:maxLengthWithNoToc`
+        // 消费——本地 TXT 无目录规则时按该字数分章。改值后已入库目录不自动
+        // 失效，重进目录/改规则时按新值重解析）
+        SettingSliderRow(
+          title: '无目录时每章字数',
+          value: cfg.maxLengthWithNoToc,
+          min: 3000,
+          max: 100000,
+          onChanged: (v) => _updateMaxLengthWithNoToc(v),
+        ),
       ];
+
+  /// [批1b-3] 提交无目录分章字数：模型 + prefs 镜像（统一 _update）+
+  /// caches `config:maxLengthWithNoToc` 真源（Rust 解析侧消费）。
+  ///
+  /// 写 Rust 失败不阻断 UI 保存（下次改值重试；与 recordHttpLog 等
+  /// prefs+DB 双写键的容错口径一致）。
+  void _updateMaxLengthWithNoToc(int value) {
+    _update((c) => c.maxLengthWithNoToc = value);
+    unawaited(
+      ref
+          .read(bookApiProvider)
+          .setConfig('maxLengthWithNoToc', '$value')
+          .catchError((_) {
+        // Rust 侧写失败：保留 prefs 镜像值，Rust 真源沿用旧值/缺省
+      }),
+    );
+  }
 }
 
 // ── 行内控件行组件（对齐参考版 SliderSettingItem / DropdownListSettingItem

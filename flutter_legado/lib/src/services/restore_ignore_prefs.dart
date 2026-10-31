@@ -145,6 +145,10 @@ class RestoreIgnorePrefs {
     'sliderVibrator',
     'selectVibrator',
     'disableReturnKey',
+    // [批1b-3] 无目录规则时每章字数（键名=参考版 PreferKey
+    // maxLengthWithNoToc）：属阅读界面偏好，随「忽略阅读配置」一并过滤 —
+    // 全栈工程师
+    'maxLengthWithNoToc',
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）
