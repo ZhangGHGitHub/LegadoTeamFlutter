@@ -99,6 +99,8 @@ void main() {
         'mouseWheelPage',
         'volumeKeyPage',
         'volumeKeyPageOnPlay',
+        // [批1b-2a] 按键长按翻页（键名=原版 PreferKey）
+        'keyPageOnLongPress',
         'noAnimScrollPage',
         'autoChangeSource',
         'selectText',

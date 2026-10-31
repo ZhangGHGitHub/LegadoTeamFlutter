@@ -1,8 +1,9 @@
 // [批1a | 2026-10-31] 独立「阅读设置」页行为测试（非仅渲染）— 全栈工程师
 //
 // 覆盖：
-// 1. 三组渲染 + 行数（屏幕 10 / 页面控制 12 / 其他 3；[批1b-1] 屏幕组增
-//    「保持亮屏」「亮度条模式」，亮度条位置行仅模式=竖排时渲染）
+// 1. 三组渲染 + 行数（屏幕 10 / 页面控制 13 / 其他 4；[批1b-1] 屏幕组增
+//    「保持亮屏」「亮度条模式」，亮度条位置行仅模式=竖排时渲染；
+//    [批1b-2a] 页面控制组增「按键长按翻页」）
 // 2. 页面默认值与 ReaderAdvancedConfig.load() 一致（空存储）
 // 3. 改值生效：开关切换 → save 落盘 → 共享 provider 推送
 // 4. 下拉/滑块/步进行改值生效（含值域钳制）
@@ -49,7 +50,7 @@ void main() {
   });
 
   group('阅读设置页：结构与默认值', () {
-    testWidgets('三组标题与行数齐备（屏幕10/页面控制12/其他3）', (tester) async {
+    testWidgets('三组标题与行数齐备（屏幕10/页面控制13/其他4）', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
 
@@ -71,7 +72,7 @@ void main() {
       expect(find.text('平板/横屏双页'), findsOneWidget);
       expect(find.text('进度条行为'), findsOneWidget);
 
-      // 页面控制组 12 行（随滚动分批可见）
+      // 页面控制组 13 行（随滚动分批可见；[批1b-2a] +按键长按翻页）
       expect(find.text('使用自定义中文分行'), findsOneWidget);
       expect(find.text('文字两端对齐'), findsOneWidget);
       expect(find.text('段首标点悬挂'), findsOneWidget);
@@ -80,6 +81,7 @@ void main() {
       expect(find.text('鼠标滚轮翻页'), findsOneWidget);
       expect(find.text('音量键翻页'), findsOneWidget);
       expect(find.text('朗读时音量键翻页'), findsOneWidget);
+      expect(find.text('按键长按翻页'), findsOneWidget);
       expect(find.text('禁用滚动点击动画'), findsOneWidget);
       expect(find.text('自动换源'), findsOneWidget);
       expect(find.text('长按选择文本'), findsOneWidget);
@@ -111,6 +113,8 @@ void main() {
       expect(rowValue('音量键翻页'), expected.volumeKeyPage, reason: '默认 true');
       expect(rowValue('朗读时音量键翻页'), expected.volumeKeyPageOnPlay,
           reason: '默认 false（原版口径）');
+      expect(rowValue('按键长按翻页'), expected.keyPageOnLongPress,
+          reason: '默认 false（原版 AppConfig / pref_config_read.xml）');
       expect(rowValue('自动换源'), expected.autoChangeSource, reason: '默认 true');
       expect(rowValue('长按选择文本'), expected.selectText, reason: '默认 true');
       expect(rowValue('展示顶部工具栏附加区域'), expected.showReadTitleAddition,
@@ -192,6 +196,40 @@ void main() {
       await tester.pumpAndSettle();
       expect(container.read(readerAdvConfigProvider)?.selectText, isFalse);
       expect((await ReaderAdvancedConfig.load()).selectText, isFalse);
+    });
+
+    testWidgets('[批1b-2a] 按键长按翻页开关 → 持久化 + 共享 provider 推送',
+        (tester) async {
+      useTallViewport(tester);
+      await _pump(tester);
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(ReadConfigScreen)));
+
+      // 默认 false → 开
+      expect(container.read(readerAdvConfigProvider)?.keyPageOnLongPress,
+          isFalse);
+      await tester.tap(find.text('按键长按翻页'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(readerAdvConfigProvider)?.keyPageOnLongPress,
+        isTrue,
+        reason: '改值即推送共享 provider（阅读器即时生效）',
+      );
+      expect((await ReaderAdvancedConfig.load()).keyPageOnLongPress, isTrue,
+          reason: 'save 落盘可读回');
+
+      // 再点回 false
+      await tester.tap(find.text('按键长按翻页'));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(readerAdvConfigProvider)?.keyPageOnLongPress,
+        isFalse,
+      );
+      expect(
+        (await ReaderAdvancedConfig.load()).keyPageOnLongPress,
+        isFalse,
+      );
     });
 
     testWidgets('下拉选择 → 持久化生效（屏幕方向 1=竖屏）', (tester) async {

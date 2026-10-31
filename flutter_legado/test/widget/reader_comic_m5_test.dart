@@ -141,13 +141,26 @@ Future<void> _pumpReader(WidgetTester tester, _M5MockApi api) async {
   await tester.pumpAndSettle();
 }
 
-/// 模拟原生端回发音量键事件（MainActivity.onKeyDown →
-/// invokeMethod('volumeKey', 'up'/'down')）
-Future<void> _emitVolumeKey(WidgetTester tester, String direction) async {
+/// 模拟原生端回发音量键事件（MainActivity.onKeyDown → 通道事件）
+///
+/// - [longPress] 为 null：旧协议 `"up"/"down"`（向后兼容路径）；
+/// - 非 null：新协议 `{direction, longPress}`（批1b-2a，原生
+///   `KeyEvent.repeatCount > 0` → longPress=true）。
+Future<void> _emitVolumeKey(
+  WidgetTester tester,
+  String direction, {
+  bool? longPress,
+}) async {
+  final Object payload = longPress == null
+      ? direction
+      : <String, Object>{
+          'direction': direction,
+          'longPress': longPress,
+        };
   await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
     'legado/reader_keys',
     const StandardMethodCodec()
-        .encodeMethodCall(MethodCall('volumeKey', direction)),
+        .encodeMethodCall(MethodCall('volumeKey', payload)),
     (_) {},
   );
   await tester.pumpAndSettle();
@@ -222,6 +235,29 @@ void main() {
       // up = 上一页（原版 scrollToPrev）
       await _emitVolumeKey(tester, 'up');
       expect(find.textContaining('页数1/3'), findsOneWidget);
+    });
+
+    testWidgets('[批1b-2a] 新事件形状 Map{direction,longPress}：漫画仍每个 keydown 翻页',
+        (tester) async {
+      final api = _M5MockApi(
+        configWrites: <List<String>>[],
+        configs: {'mangaScrollMode': '1'},
+      );
+      await _pumpReader(tester, api);
+      expect(find.textContaining('页数1/3'), findsOneWidget);
+
+      // 长按 repeat（longPress=true）：漫画对齐原版 ReadMangaActivity，
+      // 不区分长按，仍翻页
+      await _emitVolumeKey(tester, 'down', longPress: true);
+      expect(find.textContaining('页数2/3'), findsOneWidget);
+
+      // 短按（longPress=false）：同样翻页
+      await _emitVolumeKey(tester, 'down', longPress: false);
+      expect(find.textContaining('页数3/3'), findsOneWidget);
+
+      // 方向解析：up=上一页
+      await _emitVolumeKey(tester, 'up', longPress: false);
+      expect(find.textContaining('页数2/3'), findsOneWidget);
     });
 
     testWidgets('reverseVolumeKeyPage=true：up=下一页（方向反转）', (tester) async {
