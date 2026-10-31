@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
@@ -578,6 +579,36 @@ void main() {
       await tester.scrollUntilVisible(find.text('清理缓存'), 100);
       await tester.pumpAndSettle();
       expect(find.text('清理缓存'), findsOneWidget);
+    });
+
+    // 批9b-4：用户代理保存/清空经既有 BookApi.setConfig 同步 Rust 网络层
+    testWidgets('用户代理保存与清空同步 Rust config:userAgent', (tester) async {
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+
+      await tester.pumpWidget(wrap(const OtherSettingsScreen()));
+      await tester.pumpAndSettle();
+
+      // 保存：打开对话框输入自定义 UA
+      await dragTo(tester, '用户代理');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('用户代理'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'GlobalUA/9.9');
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.setConfig(PrefKeys.userAgent, 'GlobalUA/9.9'))
+          .called(1);
+
+      // 清空：再次打开对话框，清空文本 → 写空串（Rust 回落内置默认）
+      await tester.tap(find.text('用户代理'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '');
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.setConfig(PrefKeys.userAgent, '')).called(1);
     });
   });
 }
