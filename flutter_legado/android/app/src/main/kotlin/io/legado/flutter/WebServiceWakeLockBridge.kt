@@ -19,24 +19,25 @@ import io.flutter.plugin.common.MethodChannel
  *
  * ## 语义基准
  * 原版 `legado-upstream/app/src/main/java/io/legado/app/service/WebService.kt`
- * （参考版 `legado-with-MD3/.../service/WebService.kt:68-74,75-81,92-93,133-134,145-146`
+ * （参考版 `legado-with-MD3/.../service/WebService.kt:68,69-74,75-81,92-93,133-134,145-146`
  * 电源语义一致）：
- * - `:76-78` 偏好 `webServiceWakeLock`（默认 false）开 → CPU 唤醒锁创建，
- *   `:83-89` 同 tag `WifiLock` 创建
- *   （`WIFI_MODE_FULL_HIGH_PERF`，tag `legado:WebService`，
- *   `setReferenceCounted(false)`）；
+ * - `:76` 偏好 `webServiceWakeLock`（默认 false），`:77-82` CPU 唤醒锁创建，
+ *   `:83-89` 同 tag `WifiLock` 创建（`WIFI_MODE_FULL_HIGH_PERF`，
+ *   tag `legado:WebService`，均 `setReferenceCounted(false)`）；
  * - `:105-106` / `:140-141` 服务创建 / 唤醒请求时成对 `acquire()`（均无超时）；
  * - `:160-161` 服务 `onDestroy` 时成对 `release()`。
  *
- * 本桥成对持有/释放两种锁；Wi-Fi 锁获取按原版 `wifiLock?.acquire()` 的
- * 尽力而为语义处理（WifiManager 不可用或创建失败时降级为仅 CPU 唤醒锁）。
- * CPU 获取失败、或释放阶段任一锁失败，都向 Dart 回 `result.error`：
- * 释放严格「先 Wi-Fi 后 CPU」，Wi-Fi 释放失败时保留 CPU 锁，绝不留下
- * 「CPU 已放、Wi-Fi 仍持」的单锁残留。
+ * 实际持有/释放逻辑在 [WebServiceWakeLockSet]（与 Android 框架解耦，可用
+ * fake 锁做 JVM 单测）：
+ * - Wi-Fi 锁获取失败按原版 `wifiLock?.acquire()` 尽力而为降级为仅 CPU 锁，
+ *   且**只在 acquire 成功后才缓存句柄**——否则字段非空但未持有会让
+ *   `isHeld=false`，Dart 误判未持锁而跳过 release，CPU 锁残留；
+ * - 释放严格「先 Wi-Fi 后 CPU」，成功后清空对应句柄；Wi-Fi 失败保留 CPU 锁
+ *   并回 error，绝不留下「CPU 已放、Wi-Fi 仍持」的不可见单锁；
+ *   CPU 失败保留句柄（`isHeld` 仍 true），Dart 可重试。
  *
  * 刻意不复用 `legado/media_session` 的 `setWakeLock`：那是听书
- * `audioPlayWakeLock` 语义（由播放态驱动，tag `legado:AudioPlayWakeLock`），
- * 共用会与 Web 服务保活互相踩停。
+ * `audioPlayWakeLock` 语义（由播放态驱动，tag 不同），共用会互相踩停。
  *
  * 支持方法（Flutter → Android）：
  * - setEnabled: `{enabled: bool}` 幂等持有/释放；成功返回 `isHeld`，
@@ -47,26 +48,26 @@ object WebServiceWakeLockBridge {
 
     const val CHANNEL = "legado/web_service_wakelock"
 
-    private const val TAG = "WebServiceWakeLock"
-
-    /** 唤醒锁 tag：与原版 `WebService.kt:77` 逐字一致（CPU 锁与 Wi-Fi 锁共用） */
+    /** 唤醒锁 tag：与原版 `WebService.kt` 的 `"legado:WebService"` 逐字一致 */
     internal const val WAKE_LOCK_TAG = "legado:WebService"
 
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var wifiLock: WifiManager.WifiLock? = null
+    private const val TAG = "WebServiceWakeLock"
+
+    /** 进程级锁状态机（首次调用时用 Application Context 建工厂） */
+    private var lockSet: WebServiceWakeLockSet? = null
 
     /** 解析 enabled 参数（缺省/类型不符一律视为关闭，避免误持有） */
     @JvmStatic
     internal fun enabledFromArgument(raw: Any?): Boolean = raw as? Boolean ?: false
 
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result, context: Context) {
-        val appContext = context.applicationContext
         when (call.method) {
             "setEnabled" -> {
                 val enabled = enabledFromArgument(call.argument("enabled"))
-                val failure = if (enabled) acquire(appContext) else release()
+                val locks = lockSet(context)
+                val failure = if (enabled) locks.acquire() else locks.release()
                 if (failure == null) {
-                    result.success(isHeld())
+                    result.success(locks.isHeld())
                 } else {
                     val action = if (enabled) "获取" else "释放"
                     result.error(
@@ -83,93 +84,169 @@ object WebServiceWakeLockBridge {
         }
     }
 
-    /**
-     * 是否处于完整持有态：CPU 唤醒锁必须持有；Wi-Fi 锁存在时也必须持有。
-     *
-     * `wifiLock == null`（WifiManager 不可用 / 创建失败）时只看 CPU 锁，
-     * 与原版 `wifiLock?.acquire()` 的可空语义一致。
-     */
+    /** 是否处于完整持有态（未初始化过锁时为 false） */
+    @Synchronized
+    fun isHeld(): Boolean = lockSet?.isHeld() ?: false
+
+    @Synchronized
+    private fun lockSet(context: Context): WebServiceWakeLockSet {
+        lockSet?.let { return it }
+        val appContext = context.applicationContext
+        return WebServiceWakeLockSet(
+            createCpuLock = { createCpuLock(appContext) },
+            createWifiLock = { createWifiLock(appContext) },
+            logWarning = { message -> Log.w(TAG, message) },
+        ).also { lockSet = it }
+    }
+
+    private fun createCpuLock(context: Context): WakeLockHandle {
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+            ?: throw IllegalStateException("PowerManager 不可用")
+        val lock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
+        lock.setReferenceCounted(false)
+        return PowerWakeLockHandle(lock)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun createWifiLock(context: Context): WakeLockHandle? {
+        val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        if (wifiManager == null) {
+            Log.w(TAG, "WifiManager 不可用，跳过 Wi-Fi 锁（仅持 CPU 唤醒锁）")
+            return null
+        }
+        val lock = wifiManager.createWifiLock(
+            WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+            WAKE_LOCK_TAG,
+        ) ?: return null
+        lock.setReferenceCounted(false)
+        return WifiWakeLockHandle(lock)
+    }
+}
+
+/** 可测试的锁句柄：真实实现包装 PowerManager.WakeLock / WifiManager.WifiLock */
+internal interface WakeLockHandle {
+    val isHeld: Boolean
+    fun acquire()
+    fun release()
+}
+
+internal class PowerWakeLockHandle(
+    private val lock: PowerManager.WakeLock,
+) : WakeLockHandle {
+    override val isHeld: Boolean get() = lock.isHeld
+
+    @SuppressLint("WakelockTimeout")
+    override fun acquire() = lock.acquire()
+
+    override fun release() = lock.release()
+}
+
+internal class WifiWakeLockHandle(
+    private val lock: WifiManager.WifiLock,
+) : WakeLockHandle {
+    override val isHeld: Boolean get() = lock.isHeld
+    override fun acquire() = lock.acquire()
+    override fun release() = lock.release()
+}
+
+/**
+ * 两种锁的持有/释放状态机（与 Android 框架解耦，JVM 单测可注入 fake）。
+ *
+ * 不变量（审查 P2 边界）：
+ * - Wi-Fi 句柄只在 acquire 成功后才缓存；获取失败保持 null，[isHeld] 只看
+ *   CPU 锁（降级语义），避免「字段已缓存但未持有 → isHeld=false」导致 CPU
+ *   锁对 Dart 不可见、停止时跳过 release；
+ * - release 成功后清空对应句柄；CPU 释放失败保留句柄（[isHeld] 仍 true，
+ *   Dart 会重试）；Wi-Fi 释放失败保留 CPU 锁并回 error，不留 Wi-Fi 单锁。
+ */
+internal class WebServiceWakeLockSet(
+    private val createCpuLock: () -> WakeLockHandle,
+    private val createWifiLock: () -> WakeLockHandle?,
+    private val logWarning: (String) -> Unit = {},
+) {
+    private var cpuLock: WakeLockHandle? = null
+    private var wifiLock: WakeLockHandle? = null
+
+    /** 完整持有：CPU 必须持有；Wi-Fi 句柄存在时也必须持有 */
     @Synchronized
     fun isHeld(): Boolean {
-        if (wakeLock?.isHeld != true) return false
+        if (cpuLock?.isHeld != true) return false
         val wifi = wifiLock ?: return true
         return wifi.isHeld
     }
 
-    /**
-     * 幂等持有两种锁：已持有则跳过，否则 acquire（无超时，对齐原版）。
-     *
-     * @return 错误描述；null 表示成功
-     */
-    @SuppressLint("WakelockTimeout")
+    /** 幂等持有；返回错误描述（null=成功，Wi-Fi 失败降级不报错） */
     @Synchronized
-    private fun acquire(context: Context): String? {
+    fun acquire(): String? {
         return try {
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                ?: return "PowerManager 不可用"
-            val lock = wakeLock ?: powerManager
-                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
-                .apply { setReferenceCounted(false) }
-                .also { wakeLock = it }
-            if (!lock.isHeld) lock.acquire()
-            acquireWifiLock(context)
+            val cpu = cpuLock ?: createCpuLock().also { cpuLock = it }
+            if (!cpu.isHeld) cpu.acquire()
+            acquireWifiLock()
             null
         } catch (e: Exception) {
-            Log.w(TAG, "持有 Web 服务唤醒锁失败：${e.message}")
+            logWarning("持有 Web 服务 CPU 唤醒锁失败：${e.message}")
             e.message ?: e.javaClass.simpleName
         }
     }
 
-    /**
-     * 幂等释放两种锁：未持有安全跳过。
-     *
-     * **释放顺序：先 Wi-Fi、后 CPU**（审查边界 4）。若 Wi-Fi 释放失败则
-     * 立即返回错误并保留 CPU 锁，确保任何失败路径都不会留下「CPU 已释放、
-     * Wi-Fi 仍持有」的单锁残留；Dart 侧收到 error 后标记原生态未知并在
-     * 下次同步重试（此时 CPU 锁仍在，`isHeld()` 仍为 true，可再次下发）。
-     *
-     * @return 错误描述；null 表示成功（含本就没持有）
-     */
+    /** 幂等释放；返回错误描述（null=成功，含本就没持有） */
     @Synchronized
-    private fun release(): String? {
-        try {
-            val lock = wifiLock
-            if (lock?.isHeld == true) lock.release()
-        } catch (e: Exception) {
-            Log.w(TAG, "释放 Web 服务 Wi-Fi 锁失败（保留 CPU 锁，避免 Wi-Fi 单锁）：${e.message}")
-            return e.message ?: e.javaClass.simpleName
+    fun release(): String? {
+        // 先 Wi-Fi 后 CPU：Wi-Fi 失败时保留 CPU 锁，避免单锁残留
+        val wifi = wifiLock
+        if (wifi != null) {
+            try {
+                if (wifi.isHeld) wifi.release()
+                wifiLock = null
+            } catch (e: Exception) {
+                logWarning("释放 Wi-Fi 锁失败（保留 CPU 锁，避免 Wi-Fi 单锁）：${e.message}")
+                return e.message ?: e.javaClass.simpleName
+            }
         }
-        return try {
-            val lock = wakeLock
-            if (lock?.isHeld == true) lock.release()
-            null
-        } catch (e: Exception) {
-            Log.w(TAG, "释放 Web 服务 CPU 唤醒锁失败：${e.message}")
-            e.message ?: e.javaClass.simpleName
+        val cpu = cpuLock
+        if (cpu != null) {
+            try {
+                if (cpu.isHeld) cpu.release()
+                cpuLock = null
+            } catch (e: Exception) {
+                logWarning("释放 CPU 唤醒锁失败：${e.message}")
+                return e.message ?: e.javaClass.simpleName
+            }
         }
+        return null
     }
 
     /**
-     * 尽力而为地持有 Wi-Fi 锁（对齐原版 `wifiLock?.acquire()`）。
+     * 尽力而为持有 Wi-Fi 锁（对齐原版 `wifiLock?.acquire()`）。
      *
-     * 失败只降级为「仅 CPU 唤醒锁」，不计入 setEnabled 失败——Wi-Fi 锁是
-     * 原版的附加省电项，CPU 锁才是「Web 服务不被休眠」的主保障。
+     * 本地创建 → acquire 成功后才赋给字段；失败保持 null 并回滚本地句柄，
+     * 保证 [isHeld] 退化为「只看 CPU 锁」，CPU 锁始终对 Dart 可见。
      */
-    @Suppress("DEPRECATION")
-    private fun acquireWifiLock(context: Context) {
+    private fun acquireWifiLock() {
         try {
-            val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            if (wifiManager == null) {
-                Log.w(TAG, "WifiManager 不可用，跳过 Wi-Fi 锁（仅持 CPU 唤醒锁）")
+            val existing = wifiLock
+            if (existing != null) {
+                if (!existing.isHeld) existing.acquire()
                 return
             }
-            val lock = wifiLock ?: wifiManager
-                .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, WAKE_LOCK_TAG)
-                ?.apply { setReferenceCounted(false) }
-                ?.also { wifiLock = it }
-            if (lock != null && !lock.isHeld) lock.acquire()
+            val created = createWifiLock() ?: return
+            try {
+                created.acquire()
+            } catch (e: Exception) {
+                // acquire 失败：回滚本地句柄（若已部分生效则释放），字段保持 null
+                try {
+                    created.release()
+                } catch (_: Exception) {
+                }
+                throw e
+            }
+            wifiLock = created
         } catch (e: Exception) {
-            Log.w(TAG, "持有 Wi-Fi 锁失败（降级为仅 CPU 唤醒锁）：${e.message}")
+            logWarning("持有 Wi-Fi 锁失败（降级为仅 CPU 唤醒锁）：${e.message}")
         }
     }
+
+    internal fun cpuLockForTest(): WakeLockHandle? = cpuLock
+
+    internal fun wifiLockForTest(): WakeLockHandle? = wifiLock
 }

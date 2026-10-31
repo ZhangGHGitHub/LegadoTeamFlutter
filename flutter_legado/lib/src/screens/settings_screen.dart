@@ -172,11 +172,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 「仅前台可用」（卡片副题提示），不阻断服务开关。
   ///
   /// [Android Web 服务唤醒锁 | 批9b-6] 对齐原版
-  /// `WebService.kt:76-78,83-89,105-106,140-141,160-161`：偏好
+  /// `WebService.kt:76,77-82,83-89,105-106,140-141,160-161`：偏好
   /// `webServiceWakeLock`（默认 false）开且服务运行 → 同时持
   /// `PARTIAL_WAKE_LOCK` 与 `WifiLock`（`WIFI_MODE_FULL_HIGH_PERF`，
   /// tag `legado:WebService`，acquire 无超时），服务停止 / 开关关 → release。
-  /// 参考版 `legado-with-MD3/.../service/WebService.kt:68-74,75-81,92-93,133-134,145-146`
+  /// 参考版 `legado-with-MD3/.../service/WebService.kt:68,69-74,75-81,92-93,133-134,145-146`
   /// 电源语义一致。Android 经 [WebServiceWakeLockService] 接线（运行中切换由
   /// 其他设置页即时下发；原生锁为进程级，Activity/引擎重建不释放，设置页
   /// 初始化按实际 running 状态重新对账）；iOS 由 [WebKeepAliveService]

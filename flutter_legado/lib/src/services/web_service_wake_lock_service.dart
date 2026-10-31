@@ -7,13 +7,13 @@ import 'package:flutter/widgets.dart';
 ///
 /// ## 语义基准（原版 / 参考版一致）
 /// `legado-upstream/.../service/WebService.kt`
-/// - `:76-78` 偏好 `webServiceWakeLock`（默认 false）+ CPU 唤醒锁创建，
+/// - `:76` 偏好 `webServiceWakeLock`（默认 false），`:77-82` CPU 唤醒锁创建，
 ///   `:83-89` 同 tag `WifiLock` 创建
 ///   （`WIFI_MODE_FULL_HIGH_PERF`，`legado:WebService`，
 ///   `setReferenceCounted(false)`）；
 /// - `:105-106` / `:140-141`：服务创建 / 唤醒请求时成对 `acquire()`（不带超时）；
 /// - `:160-161`：服务 `onDestroy` 时成对 `release()`。
-/// 参考版 `legado-with-MD3/.../service/WebService.kt:68-74,75-81,92-93,133-134,145-146`
+/// 参考版 `legado-with-MD3/.../service/WebService.kt:68,69-74,75-81,92-93,133-134,145-146`
 /// 电源语义一致（仅多一层设置持久化网关）。
 ///
 /// ## 生命周期（进程级，审查回修）
@@ -77,6 +77,12 @@ class WebServiceWakeLockService {
   /// 原生持有态是否已确认（新引擎 / 首次同步时为 false，先查询再下发）
   bool _nativeStateKnown = false;
 
+  /// 下一次对账是否强制下发 release（从运行态停止时置位）
+  ///
+  /// 原生「部分持锁」（如 Wi-Fi 获取失败/回传异常）会让 `isHeld=false`，
+  /// 但 CPU 锁可能仍在；停机是明确的用户意图，不能仅凭镜像跳过释放。
+  bool _forceReleaseOnStop = false;
+
   /// 串行化同步链：快速连续切换时后一次不会读取到旧 [_held]（审查回修）
   Future<void>? _syncChain;
 
@@ -100,7 +106,11 @@ class WebServiceWakeLockService {
   }
 
   /// Web 服务停止成功后调用（幂等；无条件释放，偏好是否仍开都不再持锁）
+  ///
+  /// 从运行态停止时强制下发一次 release：即使镜像显示未持有（原生部分持锁
+  /// / Wi-Fi 降级导致 `isHeld=false`），也不跳过释放 CPU 锁（审查 P2）。
   Future<void> onServiceStopped() {
+    if (_serviceRunning) _forceReleaseOnStop = true;
     _serviceRunning = false;
     return _sync();
   }
@@ -151,6 +161,20 @@ class WebServiceWakeLockService {
       }
     }
     final desired = _serviceRunning && _preferenceEnabled;
+    final forceRelease = _forceReleaseOnStop && !desired;
+    _forceReleaseOnStop = false;
+    if (forceRelease) {
+      // 停服兜底：原生「部分持锁」（Wi-Fi 降级/回传异常）会让 isHeld=false，
+      // 但 CPU 锁可能仍在；这里不依赖镜像与查询结果，强制下发一次 release。
+      final nativeHeld = await _send(false);
+      if (nativeHeld == null) {
+        _nativeStateKnown = false;
+        return;
+      }
+      _held = nativeHeld;
+      _nativeStateKnown = nativeHeld == false;
+      return;
+    }
     // 已确认原生态且与期望一致 → 无需下发；未知时即使镜像碰巧相同也要
     // 强制下发一次（原生幂等），避免引擎重建后遗留锁无法释放。
     if (_nativeStateKnown && desired == _held) return;
@@ -211,6 +235,7 @@ class WebServiceWakeLockService {
     _preferenceEnabled = false;
     _held = false;
     _nativeStateKnown = false;
+    _forceReleaseOnStop = false;
     _syncChain = null;
   }
 }
