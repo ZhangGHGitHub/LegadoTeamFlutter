@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'src/constants/pref_keys.dart';
 import 'src/l10n/app_strings.dart';
 import 'src/providers/providers.dart';
 import 'src/routes.dart';
@@ -100,6 +101,13 @@ void main() {
       debugPrint('[启动] 语言/图片绘制偏好初始化失败（不阻断启动）：$e');
     }
 
+    // 5c. 自动清除过期搜索结果（批9b-1，对齐原版 App.onCreate）：
+    // autoClearExpired 开关（默认 true）开启时，删除 searchBooks 中
+    // time < now - 1 天的记录。不阻塞首帧（unawaited）、失败静默
+    // （debugPrint，不阻断启动）；开关关闭不调用；USE_MOCK 模式跳过
+    // （Mock 无 searchBooks 表）。
+    unawaited(clearExpiredSearchBooksOnStartup(startupApi, useMock: useMock));
+
     // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
     const initialRoute = AppRoutes.welcome;
 
@@ -120,6 +128,40 @@ void main() {
     // Zone 级异常兜底：记录到崩溃日志
     CrashLogService.instance.logError(error, stack);
   });
+}
+
+/// 批9b-1：按「自动清除过期搜索」开关清理过期搜索结果
+///
+/// 对齐原版 `App.onCreate`（`legado-upstream/.../App.kt:114-117`）：
+/// `autoClearExpired` 默认 true，清理阈值 = 当前时间 - 1 天
+/// （`clearTime = now - TimeUnit.DAYS.toMillis(1)`），SQL 为
+/// `delete from searchBooks where time < :time`（严格小于）。
+/// 任何失败（开关读取/FFI 调用）静默降级（debugPrint），不阻断启动。
+/// [useMock] 为 true（USE_MOCK 测试模式）时直接跳过，避免测试触碰 DB。
+Future<void> clearExpiredSearchBooksOnStartup(
+  BookApi api, {
+  required bool useMock,
+}) async {
+  try {
+    if (useMock) {
+      return;
+    }
+    // 对齐原版 AppConfig.autoClearExpired 默认 true
+    final enabled = await SettingsService()
+        .getBoolPref(PrefKeys.autoClearExpired, defaultValue: true);
+    if (!enabled) {
+      return;
+    }
+    // 原版 clearTime = now - 1 天（TimeUnit.DAYS.toMillis(1) = 86400000ms）
+    const oneDayMs = 86400000;
+    final before =
+        DateTime.now().millisecondsSinceEpoch - oneDayMs;
+    final deleted = await api.clearExpiredSearchBooks(before);
+    debugPrint('[启动] 自动清除过期搜索：删除 $deleted 条（阈值 -1 天）');
+  } catch (e) {
+    // 静默失败：清理属附带维护，失败不影响任何用户可见流程
+    debugPrint('[启动] 自动清除过期搜索失败（不阻断启动）：$e');
+  }
 }
 
 /// FFI 初始化失败时显示的错误页面

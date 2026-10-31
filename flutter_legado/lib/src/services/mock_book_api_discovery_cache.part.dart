@@ -84,6 +84,11 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     _searchHistory.clear();
   }
 
+  /// Mock 无 searchBooks 表：no-op 返回 0（契约 §2.15 批9b-1；
+  /// 启动接线 USE_MOCK 模式不调用，本实现仅保接口完备）
+  @override
+  Future<int> clearExpiredSearchBooks(int beforeTimestampMs) async => 0;
+
   // ========== 缓存管理 ==========
 
   @override

@@ -986,6 +986,14 @@ abstract class BookApi {
   /// 清空搜索历史
   Future<void> clearSearchHistory();
 
+  /// 清理过期搜索结果（批9b-1，契约 §2.15）
+  ///
+  /// 删除 `searchBooks` 表中 `time < beforeTimestampMs` 的行，返回删除行数；
+  /// 严格小于边界（`time == beforeTimestampMs` 保留）。启动接线：
+  /// `autoClearExpired` 开关（默认 true）开启时以 `now - 1 天` 调用
+  /// （对齐原版 `App.onCreate` → `SearchBookDao.clearExpired`）。
+  Future<int> clearExpiredSearchBooks(int beforeTimestampMs);
+
   // ========== 缓存管理 ==========
 
   /// 获取缓存大小

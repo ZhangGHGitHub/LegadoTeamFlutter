@@ -127,6 +127,15 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     await bridge.searchHistoryClear();
   }
 
+  /// 清理过期搜索结果（批9b-1，契约 §2.15；返回删除行数）
+  @override
+  Future<int> clearExpiredSearchBooks(int beforeTimestampMs) async {
+    final deleted = await bridge.searchBooksClearExpired(
+      beforeMs: beforeTimestampMs,
+    );
+    return deleted.toInt();
+  }
+
   // ========== 缓存管理 ==========
 
   /// 获取缓存大小
