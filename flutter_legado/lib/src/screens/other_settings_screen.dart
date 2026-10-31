@@ -38,6 +38,7 @@ import '../providers/source_check/check_source_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/crash_log_service.dart';
 import '../services/settings_service.dart';
+import '../services/web_service_wake_lock_service.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/image_paint_utils.dart';
 import '../widgets/ios_widgets.dart';
@@ -319,6 +320,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 onChanged: (v) {
                   setState(() => _webServiceWakeLock = v);
                   _settingsService.setBoolPref(PrefKeys.webServiceWakeLock, v);
+                  // 批9b-6：Web 服务运行中切换即时 acquire/release；
+                  // 服务未运行时只更新偏好（下次启动生效，非 Android 不触通道）
+                  WebServiceWakeLockService.instance.onPreferenceChanged(v);
                 },
               ),
               IosListTile(

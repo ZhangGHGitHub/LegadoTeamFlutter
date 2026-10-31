@@ -19,7 +19,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 唤醒锁（阅读时常亮 / 听书 PARTIAL_WAKE_LOCK） -->
+    <!-- 唤醒锁（阅读时常亮 / 听书 / Web 服务 PARTIAL_WAKE_LOCK） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- [V-B3] 视频悬浮窗：全局 overlay（对齐原版 AndroidManifest.xml:26）。

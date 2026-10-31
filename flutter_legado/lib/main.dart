@@ -17,6 +17,7 @@ import 'src/services/mock_book_api.dart';
 import 'src/services/rust_api.dart';
 import 'src/services/server_service.dart';
 import 'src/services/settings_service.dart';
+import 'src/services/web_service_wake_lock_service.dart';
 import 'src/utils/book_open_utils.dart';
 import 'src/utils/image_paint_utils.dart';
 
@@ -122,6 +123,11 @@ void main() {
     sw = Stopwatch()..start();
     await syncThreadCountOnStartup(startupApi, useMock: useMock);
     debugPrint('[启动] 线程数同步耗时：${sw.elapsedMilliseconds}ms');
+
+    // 5f. Android Web 服务唤醒锁 detached 兜底（批9b-6）：引擎/应用销毁但
+    // 进程仍存活时释放 PARTIAL_WAKE_LOCK（原生 MainActivity.onDestroy 已同步
+    // 释放，这里补 Dart 侧窗口；幂等）。非 Android 平台内部直接跳过，不触通道。
+    WebServiceWakeLockService.instance.attachLifecycleFallback();
 
     // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
     const initialRoute = AppRoutes.welcome;

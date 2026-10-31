@@ -11,6 +11,7 @@ import '../constants/pref_keys.dart';
 import '../utils/error_message.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/web_keep_alive_service.dart';
+import '../services/web_service_wake_lock_service.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../widgets/app_scaffold.dart';
@@ -137,10 +138,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 退后台/锁屏时局域网浏览器仍可访问。保活启动失败仅记日志并回退
   /// 「仅前台可用」（卡片副题提示），不阻断服务开关。
   ///
-  /// Android 侧本仓库虽有前台服务机制（platform_channel），但 Web 服务当前
-  /// 未接入保活：`webServiceWakeLock` 偏好仅持久化未接线，既有前台服务仅用于
-  /// 视频/听书播放（VideoPlayService / PlaybackForegroundService），故 Android
-  /// 后台存活同样不作保证（如实登记，未夸大；本批按红线不动 Android）。
+  /// [Android Web 服务唤醒锁 | 批9b-6] 对齐原版
+  /// `WebService.kt:76-78,104,139,159`：偏好 `webServiceWakeLock`（默认 false）
+  /// 开且服务运行 → 持 `PARTIAL_WAKE_LOCK`（tag `legado:WebService`，acquire
+  /// 无超时），服务停止 / 开关关 → release。Android 经
+  /// [WebServiceWakeLockService] 接线（运行中切换由其他设置页即时下发）；
+  /// iOS 由 [WebKeepAliveService]（静音音轨）负责；桌面不适用。
+  ///
+  /// 生命周期差异（如实登记）：原版唤醒锁依附 `WebService` 前台服务，服务在
+  /// App 退后台期间持续持有；本仓库 Web 服务是进程内 Rust server、无对应
+  /// 前台服务，进程被系统回收时唤醒锁随进程消失，后台存活不作保证
+  ///（不硬造后台服务）。
   Future<void> _toggleWebService(bool v) async {
     if (_webServiceBusy) return;
     setState(() => _webServiceBusy = true);
@@ -149,7 +157,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (v) {
         // 启动端口取用户配置（PrefKeys.webPort），越界按 1122 兜底
         final port = await _readWebPort();
+        // 批9b-6：启动前读唤醒锁偏好；运行中切换由其他设置页负责
+        final keepAwake = await ref
+            .read(settingsProvider)
+            .getBoolPref(PrefKeys.webServiceWakeLock, defaultValue: false);
         await api.startServer(port: port);
+        // 服务已启动：Android 按偏好持唤醒锁（非 Android 内部不触平台通道）
+        await WebServiceWakeLockService.instance.onServiceStarted(
+          keepAwake: keepAwake,
+        );
         final status = await api.getServerStatus();
         // 服务成功即接保活（iOS 专用；其它平台 no-op）
         final keepAlive = await WebKeepAliveService.instance.start();
@@ -162,6 +178,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         });
       } else {
         await api.stopServer();
+        // 服务已停：先无条件释放唤醒锁（偏好仍开也不再持锁）
+        await WebServiceWakeLockService.instance.onServiceStopped();
         // 服务停止必须同步停保活（否则静音音轨会让进程继续存活）
         await WebKeepAliveService.instance.stop();
         await api.setConfig('webService', 'false');

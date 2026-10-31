@@ -32,6 +32,9 @@ open class MainActivity : FlutterActivity() {
     private val readerKeysBridge = ReaderKeysBridge()
     private val videoFloatBridge = VideoFloatWindowBridge()
 
+    /** 批9b-6：Web 服务唤醒锁（对齐原版 WebService.kt 的 PARTIAL_WAKE_LOCK） */
+    private val webServiceWakeLockBridge = WebServiceWakeLockBridge()
+
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
     private var initialDeepLink: String? = null
@@ -248,6 +251,15 @@ open class MainActivity : FlutterActivity() {
         // [V-B3] 视频悬浮窗通道（原生服务承载 overlay + Media3 ExoPlayer；
         // 回全屏经 MainActivity Intent → onReturnToFullscreen）
         videoFloatBridge.register(flutterEngine, this)
+
+        // 批9b-6：Web 服务唤醒锁通道（偏好开 + 服务运行 → PARTIAL_WAKE_LOCK，
+        // tag "legado:WebService" 与原版一致；不复用 media_session 的听书锁）
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            WebServiceWakeLockBridge.CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            webServiceWakeLockBridge.handleMethodCall(call, result, this)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -660,5 +672,8 @@ open class MainActivity : FlutterActivity() {
         videoFloatBridge.dispose()
         // [D1] 释放未完成的另存请求，避免 Dart Future 永久挂起
         saveFileBridge.dispose()
+        // 批9b-6：Activity/引擎销毁兜底释放 Web 服务唤醒锁（幂等；
+        // 进程被杀时锁由系统随进程回收，这里防「引擎卸载后进程仍存活」漏放）
+        webServiceWakeLockBridge.releaseQuietly()
     }
 }
