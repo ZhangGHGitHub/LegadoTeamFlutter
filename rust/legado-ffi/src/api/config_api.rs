@@ -21,6 +21,47 @@ pub(crate) const CONFIG_PREFIX: &str = "config:";
 /// 同名；`set_config` 落库成功后同步更新 `legado-net` 进程级默认 UA 覆盖。
 pub const USER_AGENT_CONFIG_KEY: &str = "userAgent";
 
+/// 线程数配置短键（批9b-2，契约 §2.10 / §2.4 / §2.43.3）
+///
+/// 与 Dart 偏好键 `threadCount`（`pref_keys.dart`）及原版 `PreferKey.threadCount`
+/// 同名。搜索/批量下载在**每次入口**读取该键，故 `set_config` 保存后下一次
+/// 任务即生效，无需额外的运行期缓存同步。
+pub const THREAD_COUNT_CONFIG_KEY: &str = "threadCount";
+
+/// 线程数缺省值（批9b-2）
+///
+/// 对齐原版 `AppConfig.threadCount` 默认 32（`AppConfig.kt:416-419`）。
+pub(crate) const DEFAULT_THREAD_COUNT: usize = 32;
+
+/// 解析线程数配置文本（批9b-2）
+///
+/// 口径（契约 §2.10 批9b-2）：
+/// - 缺失 / 空串 / 纯空白 / 非整数 → 回落 `default`；
+/// - 数值越界 → 夹逼 `1..=max`（`<1` → 1，含 0/负数）。
+pub(crate) fn parse_thread_count(raw: &str, default: usize, max: usize) -> usize {
+    let max = max.max(1);
+    let default = default.clamp(1, max);
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default;
+    }
+    match trimmed.parse::<i64>() {
+        Ok(v) => v.clamp(1, max as i64) as usize,
+        Err(_) => default,
+    }
+}
+
+/// 读取运行期线程数（caches `config:threadCount`，批9b-2）
+///
+/// 每次调用读库（一次索引主键查询），保证用户保存后下一次搜索/下载入口
+/// 即取到新值；DB 未初始化/读失败同样回落 `default`（不阻断业务）。
+pub(crate) fn resolve_thread_count(default: usize, max: usize) -> usize {
+    match get_config(THREAD_COUNT_CONFIG_KEY) {
+        Ok(raw) => parse_thread_count(&raw, default, max),
+        Err(_) => default.clamp(1, max.max(1)),
+    }
+}
+
 /// 读配置行失败的一次性告警标记（高频路径，避免逐行刷屏）
 static CONFIG_ROW_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -221,5 +262,56 @@ mod tests {
             legado_net::default_user_agent(),
             legado_net::client::DEFAULT_USER_AGENT
         );
+    }
+
+    // ─── 批9b-2：线程数配置解析/夹逼 ─────────────────────────────────────
+
+    /// 配置文本解析：缺省/空串/非整数回落缺省；数值夹逼 1..=max
+    #[test]
+    fn test_parse_thread_count_defaults_and_clamp() {
+        // 搜索口径（缺省 32、上限 64）
+        assert_eq!(parse_thread_count("", 32, 64), 32, "缺失回落缺省");
+        assert_eq!(parse_thread_count("   ", 32, 64), 32, "纯空白回落缺省");
+        assert_eq!(parse_thread_count("abc", 32, 64), 32, "非整数回落缺省");
+        assert_eq!(parse_thread_count("1.5", 32, 64), 32, "小数非整数回落缺省");
+        assert_eq!(parse_thread_count("0", 32, 64), 1, "0 夹逼到下限 1");
+        assert_eq!(parse_thread_count("-9", 32, 64), 1, "负数夹逼到下限 1");
+        assert_eq!(parse_thread_count("1", 32, 64), 1);
+        assert_eq!(parse_thread_count("48", 32, 64), 48);
+        assert_eq!(parse_thread_count("64", 32, 64), 64);
+        assert_eq!(parse_thread_count("999", 32, 64), 64, "超上限夹逼到 64");
+
+        // 下载口径（同一解析器，上限 8）：缺省 32 → 8
+        assert_eq!(parse_thread_count("", 32, 8), 8);
+        assert_eq!(parse_thread_count("5", 32, 8), 5);
+        assert_eq!(parse_thread_count("100", 32, 8), 8);
+        // max=0 防御：至少 1
+        assert_eq!(parse_thread_count("5", 32, 0), 1);
+    }
+
+    /// `resolve_thread_count` 读取 caches `config:threadCount`：
+    /// 保存后即时生效；非法/缺失回落缺省
+    #[test]
+    fn test_resolve_thread_count_reads_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        set_config(THREAD_COUNT_CONFIG_KEY, "12").unwrap();
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 12);
+
+        set_config(THREAD_COUNT_CONFIG_KEY, "999").unwrap();
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 64);
+
+        set_config(THREAD_COUNT_CONFIG_KEY, "not-a-number").unwrap();
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 32);
+
+        set_config(THREAD_COUNT_CONFIG_KEY, "").unwrap();
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 32);
+
+        // 下载口径：同一配置值 99 → 夹逼到 8
+        set_config(THREAD_COUNT_CONFIG_KEY, "99").unwrap();
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 8), 8);
+
+        // 复原，避免影响共享测试库中的其他用例
+        set_config(THREAD_COUNT_CONFIG_KEY, "32").unwrap();
     }
 }

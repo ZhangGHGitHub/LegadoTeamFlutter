@@ -212,6 +212,8 @@ pub fn search_alternative_sources(
     // 并行搜索（对齐 SearchModel.mapParallelSafe：限流并发 + 单源超时 60s）
     let book_name_for_search = book_name.to_string();
     let sources_for_search = sources.clone();
+    // 批9b-2：换源批量搜索与主搜索共用运行期 threadCount（缺省 32，夹逼 1..=64）
+    let concurrency = crate::api::search::search_concurrency();
     let candidates = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
 
@@ -230,7 +232,7 @@ pub fn search_alternative_sources(
                     (url, result)
                 }
             })
-            .buffer_unordered(crate::api::search::SEARCH_CONCURRENCY)
+            .buffer_unordered(concurrency)
             .collect()
             .await;
 
@@ -433,10 +435,12 @@ pub async fn run_change_source_stream<F>(
     // search_one 闭包为 move（'static），需预克隆；on_source 闭包借用 book_name/author/options
     let client_for_search = client.clone();
     let book_name_for_search = book_name.clone();
+    // 批9b-2：换源流式搜索与主搜索共用运行期 threadCount
+    let concurrency = crate::api::search::search_concurrency();
 
     crate::api::search::drive_source_batches(
         sources.clone(),
-        crate::api::search::SEARCH_CONCURRENCY,
+        concurrency,
         crate::api::search::SWITCH_SOURCE_TIMEOUT,
         &cancel,
         &paused,

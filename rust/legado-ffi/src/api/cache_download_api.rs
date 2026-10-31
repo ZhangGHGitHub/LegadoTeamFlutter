@@ -43,12 +43,28 @@ struct TaskInner {
     total: i32,
     completed: AtomicI32,
     failed: AtomicI32,
-    next_index: AtomicI32,
+    /// 派发游标：下一个待派发的章节 index（批9b-2 起多 worker 共享，
+    /// `fetch_add` 保证每章恰好派发一次；进程内状态，不持久化）
+    next_dispatch: AtomicI32,
+    /// 连续完成前缀：所有 `< 该值` 的章节 index 均已尝试（成功或失败）。
+    /// 持久化快照的 `nextIndex` 取该值，重启续跑从此处继续（不跳过未完成章）
+    finished_prefix: AtomicI32,
     cancel: AtomicBool,
     status: Mutex<String>,
     /// 任务内已失败章节 index 集合（对齐参考版 `CacheDownloadStateStore`
     /// 的 `failedIndices`：失败加入、成功移除、恢复回读；查询按书跨任务合并）
     failed_chapters: Mutex<HashSet<i32>>,
+    /// 已完成但连续前缀尚未推进的章节 index（`>= finished_prefix`，
+    /// 批9b-2；任务内在途窗口 ≤ 并发数故集合有界）。持久化到快照
+    /// `finishedChapters`，重启后续跑既不重复计数也不重复下载已完成的散章
+    finished_ahead: Mutex<HashSet<i32>>,
+    /// 当前在途（正在抓取）的章节 index 集合（§2.43.7 数据源；
+    /// 批9b-2 起 1..=N 个）
+    in_flight: Mutex<HashSet<i32>>,
+    /// 任务状态锁：完成计数 / 失败集合 / 完成前缀与快照落库在同一临界区内
+    /// 更新，保证落库快照自洽（completed 包含的章必然也在完成集合中）。
+    /// 锁序：state_lock → failed_chapters / finished_ahead；禁止反向获取
+    state_lock: Mutex<()>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -72,12 +88,18 @@ struct PersistedTask {
     total: i32,
     completed: i32,
     failed: i32,
+    /// 连续完成前缀（批9b-2 语义；旧快照的「下一待下载章」含义是其特例：
+    /// 单 worker 顺序执行时两者等价）。所有 `< nextIndex` 的章均已尝试
     next_index: i32,
     status: String,
     /// 失败章索引集合（升序存储）。`#[serde(default)]` 兼容旧快照：
     /// 契约冻结前落库的 `cacheDownloadTask:` JSON 无此字段，读为未失败
     #[serde(default)]
     failed_chapters: Vec<i32>,
+    /// 已完成但连续前缀尚未推进的章索引（升序；批9b-2）。
+    /// `#[serde(default)]` 兼容旧快照（旧版单 worker 无此状态）
+    #[serde(default)]
+    finished_chapters: Vec<i32>,
 }
 
 fn persist_key(task_id: u64) -> String {
@@ -85,6 +107,19 @@ fn persist_key(task_id: u64) -> String {
 }
 
 fn persist_snapshot(task_id: u64, task: &TaskInner) {
+    let _state_guard = task
+        .state_lock
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    persist_snapshot_locked(task_id, task);
+}
+
+/// 快照落库（调用方必须持有 `task.state_lock`）
+///
+/// 批9b-2：并发完成路径在同一临界区内更新计数/集合/前缀后再调用本函数，
+/// 保证快照不会出现「completed 已增加但完成集合未记录」的撕裂状态
+/// （否则重启续跑会重复计数/重复下载）。
+fn persist_snapshot_locked(task_id: u64, task: &TaskInner) {
     let status = task
         .status
         .lock()
@@ -98,9 +133,10 @@ fn persist_snapshot(task_id: u64, task: &TaskInner) {
         total: task.total,
         completed: task.completed.load(Ordering::SeqCst),
         failed: task.failed.load(Ordering::SeqCst),
-        next_index: task.next_index.load(Ordering::SeqCst),
+        next_index: task.finished_prefix.load(Ordering::SeqCst),
         status,
         failed_chapters: failed_indices(task),
+        finished_chapters: finished_ahead_indices(task),
     };
     let Ok(json) = serde_json::to_string(&row) else {
         return;
@@ -166,19 +202,76 @@ fn clear_failed_for_book(book_url: &str, index: i32) {
     }
 }
 
+/// 已完成但连续前缀未推进的章索引（升序；锁中毒时降级空集合）
+fn finished_ahead_indices(task: &TaskInner) -> Vec<i32> {
+    let mut out: Vec<i32> = task
+        .finished_ahead
+        .lock()
+        .map(|set| set.iter().copied().collect())
+        .unwrap_or_default();
+    out.sort_unstable();
+    out
+}
+
+/// 记录一章已完成（成功或失败均算「已尝试」），并推进连续完成前缀
+///
+/// 批9b-2：调用方必须持有 `task.state_lock`（与计数/快照同一临界区）。
+/// 乱序完成时该章先进入 `finished_ahead`；前缀逐章推进时把它们移出，
+/// 故持久化的 `finishedChapters` 长度有界（≤ 并发窗口）。
+fn record_finished_locked(task: &TaskInner, index: i32) {
+    if let Ok(mut ahead) = task.finished_ahead.lock() {
+        let mut prefix = task.finished_prefix.load(Ordering::SeqCst);
+        if index >= prefix {
+            ahead.insert(index);
+            while ahead.remove(&prefix) {
+                prefix += 1;
+            }
+            task.finished_prefix.store(prefix, Ordering::SeqCst);
+        }
+    }
+}
+
+/// 在途章索引（升序；锁中毒时降级空集合）
+fn in_flight_indices(task: &TaskInner) -> Vec<i32> {
+    let mut out: Vec<i32> = task
+        .in_flight
+        .lock()
+        .map(|set| set.iter().copied().collect())
+        .unwrap_or_default();
+    out.sort_unstable();
+    out
+}
+
 /// 由落库快照构建任务内存态（`ensure_restored` 回读复用；失败集合一并恢复）
 fn task_from_persisted(row: PersistedTask) -> Arc<TaskInner> {
+    // 批9b-2：恢复连续完成前缀，并把「已完成但前缀未推进」的散章重放回
+    // finished_ahead；派发游标从前缀开始（散章在前缀推进到其位置时跳过）。
+    let start = row.start_chapter;
+    let end = row.end_chapter;
+    let mut prefix = row.next_index.max(start).min(end.saturating_add(1));
+    let mut ahead: HashSet<i32> = row
+        .finished_chapters
+        .into_iter()
+        .filter(|index| *index >= prefix && *index >= start && *index <= end)
+        .collect();
+    while ahead.remove(&prefix) {
+        prefix += 1;
+    }
     Arc::new(TaskInner {
         book_url: row.book_url,
-        start_chapter: row.start_chapter,
-        end_chapter: row.end_chapter,
+        start_chapter: start,
+        end_chapter: end,
         total: row.total,
         completed: AtomicI32::new(row.completed),
         failed: AtomicI32::new(row.failed),
-        next_index: AtomicI32::new(row.next_index.max(row.start_chapter)),
+        next_dispatch: AtomicI32::new(prefix),
+        finished_prefix: AtomicI32::new(prefix),
         cancel: AtomicBool::new(false),
         status: Mutex::new("running".to_string()),
         failed_chapters: Mutex::new(row.failed_chapters.into_iter().collect()),
+        finished_ahead: Mutex::new(ahead),
+        in_flight: Mutex::new(HashSet::new()),
+        state_lock: Mutex::new(()),
     })
 }
 
@@ -286,10 +379,14 @@ pub fn cache_download_start(
         total: end - start + 1,
         completed: AtomicI32::new(0),
         failed: AtomicI32::new(0),
-        next_index: AtomicI32::new(start),
+        next_dispatch: AtomicI32::new(start),
+        finished_prefix: AtomicI32::new(start),
         cancel: AtomicBool::new(false),
         status: Mutex::new("running".to_string()),
         failed_chapters: Mutex::new(HashSet::new()),
+        finished_ahead: Mutex::new(HashSet::new()),
+        in_flight: Mutex::new(HashSet::new()),
+        state_lock: Mutex::new(()),
     });
 
     TASKS
@@ -307,43 +404,122 @@ pub fn cache_download_start(
     Ok(task_id)
 }
 
+/// 批量下载并发硬上限（批9b-2，契约 §2.43.3）
+///
+/// 对齐参考版 `CacheBook.maxDownloadConcurrency = 8`（`CacheBook.kt:50,79`
+/// 的 `cacheBookThreadCount.coerceIn(1, 8)`）与原版下载线程池
+/// `min(threadCount, AppConst.MAX_THREAD=9)` 的收敛口径。
+pub(crate) const MAX_DOWNLOAD_CONCURRENCY: usize = 8;
+
+/// 读取本次任务的章节下载并发（批9b-2）
+///
+/// `config:threadCount`（缺省 32）夹逼 1..=[`MAX_DOWNLOAD_CONCURRENCY`]；
+/// 任务启动时读取一次，进行中任务不热更新。
+fn download_concurrency() -> usize {
+    crate::api::config_api::resolve_thread_count(
+        crate::api::config_api::DEFAULT_THREAD_COUNT,
+        MAX_DOWNLOAD_CONCURRENCY,
+    )
+}
+
 fn run_download(task_id: u64, task: Arc<TaskInner>) {
+    let concurrency = download_concurrency();
+    // 当前线程作为 worker 0；其余 worker 用显式系统线程承载——正文抓取
+    // 链路内部含 `runtime::block_on`，不可在 tokio worker 内嵌套执行。
+    let mut workers = Vec::with_capacity(concurrency.saturating_sub(1));
+    for worker in 1..concurrency {
+        let task_for_worker = Arc::clone(&task);
+        match std::thread::Builder::new()
+            .name(format!("cache-download-{task_id}-w{worker}"))
+            .spawn(move || download_worker(task_id, &task_for_worker))
+        {
+            Ok(handle) => workers.push(handle),
+            // 启动失败降级为更少并发，不阻断任务
+            Err(e) => log::warn!("下载 worker 启动失败（降级并发继续）: {e}"),
+        }
+    }
+    download_worker(task_id, &task);
+    for handle in workers {
+        let _ = handle.join();
+    }
+
+    // 取消判定：已全部尝试（前缀越过末章）时保持 completed/failed，
+    // 与旧单线程实现「最后一章完成后循环自然退出」语义一致。
+    let all_attempted = task.finished_prefix.load(Ordering::SeqCst) > task.end_chapter;
+    if task.cancel.load(Ordering::SeqCst) && !all_attempted {
+        set_status(&task, "cancelled");
+        persist_snapshot(task_id, &task);
+        return;
+    }
+
+    let all_failed = task.failed.load(Ordering::SeqCst) == task.total;
+    set_status(&task, if all_failed { "failed" } else { "completed" });
+    persist_snapshot(task_id, &task);
+}
+
+/// 下载 worker：从共享派发游标取章，每章恰好派发一次
+///
+/// 批9b-2：N 个 worker 并发执行；取消只在**派发前**检查（在途章完成后
+/// 停止，单线程时代「当前章完成后停止」的推广）。完成计数、失败集合、
+/// 连续完成前缀与快照落库在同一 `state_lock` 临界区内更新。
+fn download_worker(task_id: u64, task: &Arc<TaskInner>) {
     let book_url = task.book_url.clone();
-    let mut index = task.next_index.load(Ordering::SeqCst);
-    while index <= task.end_chapter {
+    loop {
         if task.cancel.load(Ordering::SeqCst) {
-            set_status(&task, "cancelled");
-            persist_snapshot(task_id, &task);
             return;
+        }
+        let index = task.next_dispatch.fetch_add(1, Ordering::SeqCst);
+        if index > task.end_chapter {
+            return;
+        }
+        // 重启续跑：已完成但前缀尚未推进的散章直接跳过（计数已随快照恢复，
+        // 不重复下载/不重复计数；前缀会在缺口章完成时自然推进并移除该项）
+        let already_done = task
+            .finished_ahead
+            .lock()
+            .map(|set| set.contains(&index))
+            .unwrap_or(false);
+        if already_done {
+            continue;
         }
 
         // 取到该章开始下载即清除其失败标记（对齐参考版
         // `CacheBookModel.kt:571-573` nextDownloadCandidate 的 clearFailure，
         // 「任务启动清空/重试移除」）；若本次再失败，下方失败分支重新记入
         clear_failed_for_book(&book_url, index);
-        match download_one(&book_url, index) {
+        task.in_flight
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(index);
+        let result = download_one(&book_url, index);
+        task.in_flight
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&index);
+
+        // 计数/失败集合/完成前缀/快照同一临界区，保证快照自洽
+        let _state_guard = task
+            .state_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match result {
             Ok(()) => {
                 task.completed.fetch_add(1, Ordering::SeqCst);
                 // 成功分支从集合移除（对齐参考版 markSuccess
                 // `CacheDownloadStateStore.kt:35-46`；取章时已清，此处二次兜底）
-                clear_failed(&task, index);
+                clear_failed(task, index);
             }
             Err(_) => {
                 task.failed.fetch_add(1, Ordering::SeqCst);
                 // 失败分支除计数外同步记入失败集合（契约 §2.43.8）：
                 // 目录页 ERROR 态数据来源（对齐参考版 markFailed
                 // `CacheDownloadStateStore.kt:48-57`）
-                mark_failed(&task, index);
+                mark_failed(task, index);
             }
         }
-        index += 1;
-        task.next_index.store(index, Ordering::SeqCst);
-        persist_snapshot(task_id, &task);
+        record_finished_locked(task, index);
+        persist_snapshot_locked(task_id, task);
     }
-
-    let all_failed = task.failed.load(Ordering::SeqCst) == task.total;
-    set_status(&task, if all_failed { "failed" } else { "completed" });
-    persist_snapshot(task_id, &task);
 }
 
 fn download_one(book_url: &str, chapter_index: i32) -> LegadoResult<()> {
@@ -474,26 +650,30 @@ pub fn cache_download_list() -> LegadoResult<Vec<CacheDownloadTask>> {
 /// P2-29：该书当前在途下载章节 index 集合（API_CONTRACT §2.43.7，
 /// 纯任务表读 + `ensure_restored` 落库恢复回读，**零写入**）
 ///
-/// 在途章语义：§2.43.3 worker 顺序逐章下载（`next_index` 恒为「当前正在
-/// 抓取的章」或「刚完成一章后待抓的下一章」），故每 `running` 任务至多
-/// 一个在途章 = `next_index`（越出 `[start_chapter, end_chapter]` 闭区间
-/// 不收录，任务终态后不收录）；无活跃任务的书籍返回空集合。
+/// 在途章语义（批9b-2 起）：§2.43.3 每任务 N 个 worker 并发逐章下载
+/// （N = `config:threadCount` 夹逼 1..=8），故每 `running` 任务的在途章
+/// 集合 = 当前正在抓取的全部章节（1..=N 个；越出 `[start_chapter,
+/// end_chapter]` 闭区间不收录，任务终态后不收录）。`threadCount=1` 时
+/// 退化为至多一个在途章，与旧版语义一致；无活跃任务的书籍返回空集合。
 /// 返回升序（0-based；同书多任务时各自去重排序）。
 pub fn cache_download_running_chapters(book_url: &str) -> LegadoResult<Vec<i32>> {
     ensure_restored();
     let map = TASKS
         .lock()
         .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?;
-    let mut out: Vec<i32> = map
-        .values()
-        .filter(|t| {
-            t.book_url == book_url && t.status.lock().map(|s| *s == "running").unwrap_or(false)
-        })
-        .filter_map(|t| {
-            let next = t.next_index.load(Ordering::SeqCst);
-            (next >= t.start_chapter && next <= t.end_chapter).then_some(next)
-        })
-        .collect();
+    let mut out: Vec<i32> = Vec::new();
+    for task in map.values() {
+        if task.book_url != book_url
+            || !task.status.lock().map(|s| *s == "running").unwrap_or(false)
+        {
+            continue;
+        }
+        out.extend(
+            in_flight_indices(task)
+                .into_iter()
+                .filter(|index| *index >= task.start_chapter && *index <= task.end_chapter),
+        );
+    }
     out.sort_unstable();
     out.dedup();
     Ok(out)
@@ -928,6 +1108,11 @@ mod tests {
     #[test]
     fn test_cancel_flag_set() {
         let _db_guard = crate::db_state::ensure_test_db();
+        // 批9b-2：单 worker 以保持「创建后立即取消」的确定性（并发下本地
+        // 解析极快，多个 worker 可能在取消到达前完成更多章）；并发取消
+        // 语义由 `test_download_cancel_with_concurrency_stops_after_in_flight`
+        // 用回环服务器覆盖。
+        crate::api::config_api::set_config("threadCount", "1").unwrap();
         // 复用 test_local_book_batch_download 之外的独立书
         let dir = std::env::temp_dir().join("legado_r7_cancel_test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -982,9 +1167,10 @@ mod tests {
         })
         .unwrap();
         let _ = std::fs::remove_file(&txt_path);
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
     }
 
-    /// P2-29：在途章集合 = 运行中任务的 next_index（区间内）；
+    /// P2-29：在途章集合 = 运行中任务的 in-flight 章节（区间内）；
     /// 终态后清空；无关书恒空；零写入（只读）
     #[test]
     fn test_running_chapters() {
@@ -1035,7 +1221,7 @@ mod tests {
         }
         assert!(seen > 0, "任务运行期间应观测到非空在途章集合");
 
-        // 终态：在途章集合清空（next_index 越出区间 / 状态非 running）
+        // 终态：在途章集合清空（in-flight 清空 / 状态非 running）
         assert!(
             cache_download_running_chapters(&book_url)
                 .unwrap()
@@ -1217,10 +1403,14 @@ mod tests {
             total: 6,
             completed: AtomicI32::new(4),
             failed: AtomicI32::new(2),
-            next_index: AtomicI32::new(6),
+            next_dispatch: AtomicI32::new(6),
+            finished_prefix: AtomicI32::new(6),
             cancel: AtomicBool::new(false),
             status: Mutex::new("completed".to_string()),
             failed_chapters: Mutex::new([5, 3].iter().copied().collect()),
+            finished_ahead: Mutex::new(HashSet::new()),
+            in_flight: Mutex::new(HashSet::new()),
+            state_lock: Mutex::new(()),
         });
         persist_snapshot(task_id, &task);
         let json =
@@ -1248,5 +1438,308 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(after, before, "查询不得改写任务快照（零写入）");
+    }
+
+    // ─── 批9b-2：下载并发受 config:threadCount 控制 ─────────────────────
+
+    /// 回环章节服务器：统计每章请求次数 + 最大在途请求数
+    struct ChapterServer {
+        port: u16,
+        hits: Arc<Mutex<HashMap<i32, usize>>>,
+        max_active: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    /// 启动回环章节服务器：`/ch/{index}` 返回含 index 的正文（延迟 delay_ms）
+    fn start_chapter_server(delay_ms: u64) -> ChapterServer {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicUsize;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().expect("取端口").port();
+        let hits: Arc<Mutex<HashMap<i32, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let active = Arc::new(AtomicUsize::new(0));
+
+        let hits_srv = Arc::clone(&hits);
+        let max_srv = Arc::clone(&max_active);
+        let active_srv = Arc::clone(&active);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let hits = Arc::clone(&hits_srv);
+                let max_active = Arc::clone(&max_srv);
+                let active = Arc::clone(&active_srv);
+                // 每连接独立线程，避免 accept 循环把请求串行化
+                std::thread::spawn(move || {
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        match stream.read(&mut byte) {
+                            Ok(1) => head.push(byte[0]),
+                            _ => break,
+                        }
+                        if head.len() > 16 * 1024 {
+                            break;
+                        }
+                    }
+                    let path = String::from_utf8_lossy(&head)
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("/")
+                        .split('?')
+                        .next()
+                        .unwrap_or("/")
+                        .to_string();
+                    let index = path.rsplit('/').next().and_then(|s| s.parse::<i32>().ok());
+                    let (status, body) = match index {
+                        Some(i) => {
+                            *hits.lock().unwrap().entry(i).or_insert(0) += 1;
+                            let cur = active.fetch_add(1, Ordering::SeqCst) + 1;
+                            max_active.fetch_max(cur, Ordering::SeqCst);
+                            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                            active.fetch_sub(1, Ordering::SeqCst);
+                            (
+                                "200 OK",
+                                format!(
+                                    "<html><body><div class=\"content\">正文{i}</div></body></html>"
+                                ),
+                            )
+                        }
+                        None => ("404 Not Found", "missing".to_string()),
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                });
+            }
+        });
+
+        ChapterServer {
+            port,
+            hits,
+            max_active,
+        }
+    }
+
+    /// 写入在线书 + 章节目录（章节 URL = 回环服务器 `/ch/{index}`）
+    fn setup_online_book(port: u16, chapter_count: i32) -> (String, String) {
+        use legado_core::models::BookChapter;
+
+        let source_url = format!("http://127.0.0.1:{port}/src");
+        crate::api::source::add_source(
+            &serde_json::json!({
+                "bookSourceUrl": source_url,
+                "bookSourceName": "下载并发源",
+                "ruleContent": {"content": "class.content@text"},
+            })
+            .to_string(),
+        )
+        .expect("书源写入");
+        let book_url = format!("http://127.0.0.1:{port}/book");
+        crate::api::bookshelf::add_book(
+            &serde_json::json!({
+                "bookUrl": book_url,
+                "name": "下载并发测试书",
+                "author": "测试",
+                "origin": source_url,
+            })
+            .to_string(),
+        )
+        .expect("书籍写入");
+        let chapters: Vec<BookChapter> = (0..chapter_count)
+            .map(|index| {
+                let url = format!("http://127.0.0.1:{port}/ch/{index}");
+                BookChapter {
+                    url: url.clone(),
+                    title: format!("第{index}章"),
+                    base_url: url,
+                    book_url: book_url.clone(),
+                    index,
+                    ..BookChapter::default()
+                }
+            })
+            .collect();
+        with_database(|db| BookChapterRepository::new(db.connection()).insert_batch(&chapters))
+            .expect("章节写入");
+        (book_url, source_url)
+    }
+
+    /// 清理在线书夹具（章节/缓存/书行/书源）
+    fn cleanup_online_book(book_url: &str, source_url: &str) {
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(book_url)?;
+            legado_db::CacheBookRepository::new(conn).delete_by_book(book_url)?;
+            BookRepository::new(conn).delete_by_url(book_url)
+        })
+        .unwrap();
+        let _ = crate::api::source::delete_source(source_url);
+        crate::api::cache_api::clear_cache().unwrap();
+    }
+
+    /// 下载并发解析：config:threadCount 夹逼 1..=8（缺省 32 → 8）
+    #[test]
+    fn test_download_concurrency_clamps_thread_count() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        crate::api::config_api::set_config("threadCount", "1").unwrap();
+        assert_eq!(download_concurrency(), 1);
+        crate::api::config_api::set_config("threadCount", "5").unwrap();
+        assert_eq!(download_concurrency(), 5);
+        crate::api::config_api::set_config("threadCount", "99").unwrap();
+        assert_eq!(download_concurrency(), MAX_DOWNLOAD_CONCURRENCY);
+        crate::api::config_api::set_config("threadCount", "-3").unwrap();
+        assert_eq!(download_concurrency(), 1);
+        crate::api::config_api::set_config("threadCount", "").unwrap();
+        assert_eq!(
+            download_concurrency(),
+            MAX_DOWNLOAD_CONCURRENCY,
+            "缺省 32 被下载上限 8 夹逼"
+        );
+        crate::api::config_api::set_config("threadCount", "abc").unwrap();
+        assert_eq!(download_concurrency(), MAX_DOWNLOAD_CONCURRENCY);
+
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
+    }
+
+    /// 批9b-2：N worker 并发——最大在途 = threadCount、每章恰好下载一次、
+    /// 进度/终态/逐章缓存内容正确
+    #[test]
+    fn test_download_concurrency_max_in_flight_order_and_no_duplicate() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let server = start_chapter_server(120);
+        let (book_url, source_url) = setup_online_book(server.port, 6);
+
+        let task_id = cache_download_start(&book_url, 0, 5).unwrap();
+        let progress = wait_terminal(task_id);
+
+        assert_eq!(progress.status, "completed");
+        assert_eq!(progress.completed, 6);
+        assert_eq!(progress.failed, 0);
+        assert_eq!(
+            server.max_active.load(Ordering::SeqCst),
+            2,
+            "最大在途下载数应等于 config:threadCount=2"
+        );
+
+        let hits = server.hits.lock().unwrap().clone();
+        for index in 0..6 {
+            assert_eq!(
+                hits.get(&index),
+                Some(&1),
+                "章节 {index} 应恰好下载一次（无重复）: {hits:?}"
+            );
+            let cached = crate::api::cache_api::get_chapter_cache(&book_url, index).unwrap();
+            assert!(
+                cached.contains(&format!("正文{index}")),
+                "章节 {index} 缓存内容应与章节号对应（无串章）: {cached}"
+            );
+        }
+
+        // 快照自洽：前缀推进到末章之后、无散章残留
+        let json =
+            with_database(|db| CacheRepository::new(db.connection()).get(&persist_key(task_id)))
+                .unwrap()
+                .expect("终态快照应落库");
+        let row: PersistedTask = serde_json::from_str(&json).unwrap();
+        assert_eq!(row.next_index, 6, "连续完成前缀应越过末章");
+        assert!(
+            row.finished_chapters.is_empty(),
+            "前缀已推进，finishedChapters 应为空"
+        );
+
+        cleanup_online_book(&book_url, &source_url);
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
+    }
+
+    /// 批9b-2：重启续跑——连续前缀 + 已完成散章恢复后不跳过、不重复下载/计数
+    #[test]
+    fn test_download_resume_finished_ahead_no_duplicate_or_skip() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let server = start_chapter_server(10);
+        let (book_url, source_url) = setup_online_book(server.port, 5);
+
+        // 模拟崩溃快照：0、1 已连续完成（前缀 = 2）；4 已完成但前缀未推进；
+        // completed 已包含这 3 章
+        let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
+        let task = task_from_persisted(PersistedTask {
+            task_id,
+            book_url: book_url.clone(),
+            start_chapter: 0,
+            end_chapter: 4,
+            total: 5,
+            completed: 3,
+            failed: 0,
+            next_index: 2,
+            status: "running".to_string(),
+            failed_chapters: Vec::new(),
+            finished_chapters: vec![4],
+        });
+        TASKS.lock().unwrap().insert(task_id, Arc::clone(&task));
+
+        run_download(task_id, task);
+
+        let progress = cache_download_progress(task_id).unwrap();
+        assert_eq!(progress.status, "completed");
+        assert_eq!(progress.completed, 5, "恢复计数不重复：3 + 新下载 2");
+        assert_eq!(progress.failed, 0);
+
+        let hits = server.hits.lock().unwrap().clone();
+        assert_eq!(hits.get(&2), Some(&1), "缺口章 2 应下载一次");
+        assert_eq!(hits.get(&3), Some(&1), "缺口章 3 应下载一次");
+        for done in [0, 1, 4] {
+            assert!(
+                !hits.contains_key(&done),
+                "已完成章 {done} 不得重复下载: {hits:?}"
+            );
+        }
+
+        TASKS.lock().unwrap().remove(&task_id);
+        cleanup_online_book(&book_url, &source_url);
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
+    }
+
+    /// 批9b-2：并发任务取消——不再派发新章，在途章完成后停止；
+    /// 终态 cancelled 且未跑完全量
+    #[test]
+    fn test_download_cancel_with_concurrency_stops_after_in_flight() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let server = start_chapter_server(250);
+        let (book_url, source_url) = setup_online_book(server.port, 10);
+
+        let task_id = cache_download_start(&book_url, 0, 9).unwrap();
+        assert!(cache_download_cancel(task_id).unwrap());
+        let progress = wait_terminal(task_id);
+
+        assert_eq!(progress.status, "cancelled");
+        assert!(
+            progress.completed + progress.failed < 10,
+            "取消后不得跑完全量: {progress:?}"
+        );
+        assert!(
+            cache_download_running_chapters(&book_url)
+                .unwrap()
+                .is_empty(),
+            "终态后不应再有在途章"
+        );
+
+        cleanup_online_book(&book_url, &source_url);
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
     }
 }

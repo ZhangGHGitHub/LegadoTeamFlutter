@@ -103,14 +103,32 @@ fn clear_current_session_if_same(session: &Arc<SearchSession>) {
     }
 }
 
-/// 多源搜索并发上限
+/// 多源搜索并发缺省上限（批9b-2）
 ///
 /// 对齐原版 `SearchModel` **有效并发**语义：`mapParallelSafe(AppConfig.threadCount)`，
 /// threadCount 默认 32（用户可配置）。原版的固定线程池 `min(threadCount, MAX_THREAD=9)`
 /// 只限制执行协程的线程数——OkHttp 异步 I/O 等待响应时不占线程，故真实并发搜索数
 /// = threadCount（32），而非线程池大小。2026-08-25 实测对比（快速组 219/236 源）：
 /// 原版 ~100s 收敛 vs 本引擎 335–352s，根因即并发数差异。
-pub(crate) const SEARCH_CONCURRENCY: usize = 32;
+///
+/// 批9b-2 起该值仅为**缺省**：每次搜索入口经 [`search_concurrency`] 读取
+/// caches `config:threadCount`（越界夹逼 1..=[`MAX_SEARCH_CONCURRENCY`]）。
+pub(crate) const DEFAULT_SEARCH_CONCURRENCY: usize = crate::api::config_api::DEFAULT_THREAD_COUNT;
+
+/// 搜索并发硬上限（批9b-2 契约 §2.4）
+///
+/// 用户设置范围 1..=256，但运行期并发夹逼到 64：与既有 blocking 池容量
+/// （`runtime.rs` `max_blocking_threads=64`，按 2×缺省 32 设计）对齐，避免
+/// 设置过大时 URL 构建/解析在 blocking 池排队而把排队时间计入单源 30s 超时。
+pub(crate) const MAX_SEARCH_CONCURRENCY: usize = 64;
+
+/// 读取运行期搜索并发上限（批9b-2）
+///
+/// 每次搜索入口读 `config:threadCount`：缺失/空串/非整数 → 32；
+/// 数值夹逼 1..=64。单源内顺序/结果聚合/取消/超时路径不受影响。
+pub(crate) fn search_concurrency() -> usize {
+    crate::api::config_api::resolve_thread_count(DEFAULT_SEARCH_CONCURRENCY, MAX_SEARCH_CONCURRENCY)
+}
 
 /// 单源搜索超时（对齐原版 `SearchModel` `withTimeout(30000)`）
 pub(crate) const SEARCH_SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -227,7 +245,7 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
 /// `keyword` — 搜索关键词
 /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
 pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<SearchResult>> {
-    // P1-2 入口收口：多源并行搜索（SEARCH_CONCURRENCY 路并发）执行 JS 搜索
+    // P1-2 入口收口：多源并行搜索（search_concurrency() 路并发，config:threadCount）执行 JS 搜索
     // 规则（变量桥读写）→ 先切 flow scope。运行级键 "search"（非逐源键）：
     // 并行各源共享同一 scope 槽，逐源 begin 会在并发中途互清前缀（比旧
     // 全局表时代更糟）；运行级键下并发各源 begin 同键 no-op，跨源混写
@@ -245,6 +263,8 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     // 限流并发 + 单源超时 + 异常隔离（对齐原版 SearchModel 线程池语义），
     // 逐源完成后累积结果；失败源跳过不阻断整体。
     let keyword_owned = keyword.to_string();
+    // 批9b-2：本次搜索的跨源并发（config:threadCount，缺省 32，夹逼 1..=64）
+    let concurrency = search_concurrency();
     // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
     let session = Arc::new(SearchSession::new());
     register_current_session(&session);
@@ -255,7 +275,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
         let session_cb = Arc::clone(&session);
         drive_source_batches(
             sources,
-            SEARCH_CONCURRENCY,
+            concurrency,
             SEARCH_SOURCE_TIMEOUT,
             &session.cancel,
             &session.paused,
@@ -388,11 +408,13 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
 
     // 委托统一单源执行器（drive_source_batches + search_single_source），与
     // search_books / run_multi_stream 共享同一并发/超时/解析语义：有界并发
-    // SEARCH_CONCURRENCY、每源 SEARCH_SOURCE_TIMEOUT(30s)、无截断。原
+    // search_concurrency()（config:threadCount，缺省 32/上限 64）、
+    // 每源 SEARCH_SOURCE_TIMEOUT(30s)、无截断。原
     // MultiSourceSearcher/WebSourceSearcher 独立驱动器的 10s 全局超时、20 条
     // 截断与跨源去重/相关性排序已移除——聚合排序下沉至 Flutter，对齐原版
     // SearchModel「Rust 出原始单源结果、UI 按 mergeItems 聚合」。
     let query_owned = query.to_string();
+    let concurrency = search_concurrency();
     let results: Vec<SearchResult> = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         let mut all_results: Vec<SearchResult> = Vec::new();
@@ -400,7 +422,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
         let session_cb = Arc::clone(&session);
         drive_source_batches(
             sources,
-            SEARCH_CONCURRENCY,
+            concurrency,
             SEARCH_SOURCE_TIMEOUT,
             &session.cancel,
             &session.paused,
@@ -634,10 +656,12 @@ pub async fn run_multi_stream<F>(
     let precision = crate::api::config_api::get_config("precisionSearch")
         .map(|v| v == "true")
         .unwrap_or(false);
+    // 批9b-2：流式搜索跨源并发同样取运行期 threadCount（缺省 32，夹逼 1..=64）
+    let concurrency = search_concurrency();
 
     drive_source_batches(
         sources,
-        SEARCH_CONCURRENCY,
+        concurrency,
         SEARCH_SOURCE_TIMEOUT,
         &session.cancel,
         &session.paused,
@@ -5598,6 +5622,138 @@ mod p3f_tests {
                 "{label}: 元素级变量应导出 svid"
             );
         }
+    }
+
+    // ─── 批9b-2：搜索并发按 config:threadCount 运行期取值 ─────────────────
+
+    /// `search_concurrency()` 读取 caches `config:threadCount`：
+    /// 缺省/非法回落 32，数值夹逼 1..=64
+    #[test]
+    fn test_search_concurrency_reads_thread_count_config() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        crate::api::config_api::set_config("threadCount", "7").unwrap();
+        assert_eq!(search_concurrency(), 7);
+
+        crate::api::config_api::set_config("threadCount", "999").unwrap();
+        assert_eq!(search_concurrency(), MAX_SEARCH_CONCURRENCY);
+
+        crate::api::config_api::set_config("threadCount", "0").unwrap();
+        assert_eq!(search_concurrency(), 1);
+
+        crate::api::config_api::set_config("threadCount", "abc").unwrap();
+        assert_eq!(search_concurrency(), DEFAULT_SEARCH_CONCURRENCY);
+
+        crate::api::config_api::set_config("threadCount", "").unwrap();
+        assert_eq!(search_concurrency(), DEFAULT_SEARCH_CONCURRENCY);
+
+        // 复原默认值，避免影响共享测试库中的其他用例
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
+    }
+
+    /// E2E：多源搜索入口按 `config:threadCount=2` 限流——回环服务器
+    /// 观测最大在途请求数 = 2；结果聚合（每源 1 条）不受并发影响
+    #[test]
+    fn test_search_books_max_in_flight_uses_thread_count_config() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // search_books 入口执行 begin_book_flow → 先 store 锁后 DB 锁
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().expect("取端口").port();
+
+        let active_srv = Arc::clone(&active);
+        let max_srv = Arc::clone(&max_active);
+        let hits_srv = Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                // 每连接独立线程，避免 accept 循环串行化请求
+                let active = Arc::clone(&active_srv);
+                let max_active = Arc::clone(&max_srv);
+                let hits = Arc::clone(&hits_srv);
+                std::thread::spawn(move || {
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        match stream.read(&mut byte) {
+                            Ok(1) => head.push(byte[0]),
+                            _ => break,
+                        }
+                        if head.len() > 16 * 1024 {
+                            break;
+                        }
+                    }
+                    let cur = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_active.fetch_max(cur, Ordering::SeqCst);
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    // 持有并发窗口，使最大在途观测可靠
+                    std::thread::sleep(Duration::from_millis(150));
+                    active.fetch_sub(1, Ordering::SeqCst);
+
+                    let body = r#"<html><body><div class="book"><a class="name" href="/b/1">并发测试书</a><span class="author">并发作者</span></div></body></html>"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                });
+            }
+        });
+
+        let mut source_urls = Vec::new();
+        for i in 0..6 {
+            let source_url = format!("http://127.0.0.1:{port}/src{i}");
+            let source_json = serde_json::json!({
+                "bookSourceUrl": source_url,
+                "bookSourceName": format!("并发源{i}"),
+                "searchUrl": format!("http://127.0.0.1:{port}/search{i}?q={{key}}"),
+                "ruleSearch": {
+                    "bookList": "class.book",
+                    "name": "class.name@text",
+                    "author": "class.author@text",
+                    "bookUrl": "class.name@href",
+                },
+            })
+            .to_string();
+            crate::api::source::add_source(&source_json).expect("写入书源");
+            source_urls.push(source_url);
+        }
+
+        let urls_json = serde_json::to_string(&source_urls).unwrap();
+        let started = std::time::Instant::now();
+        let results = search_books("并发", &urls_json).expect("搜索应成功");
+        let elapsed = started.elapsed();
+
+        assert_eq!(results.len(), 6, "每个书源各 1 条结果");
+        assert_eq!(hits.load(Ordering::SeqCst), 6, "每源恰好请求一次");
+        assert_eq!(
+            max_active.load(Ordering::SeqCst),
+            2,
+            "最大在途请求数应等于 config:threadCount=2"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(300),
+            "6 源 / 2 并发 × 150ms 至少 3 波，实际 {elapsed:?}"
+        );
+
+        // 清理：删除书源与本次落库的 searchBooks 行
+        for url in &source_urls {
+            crate::api::source::delete_source(url).expect("删除书源");
+        }
+        let _ =
+            crate::api::source_switch::delete_search_book(&format!("http://127.0.0.1:{port}/b/1"));
+        crate::api::config_api::set_config("threadCount", "32").unwrap();
     }
 }
 

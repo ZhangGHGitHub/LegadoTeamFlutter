@@ -12,8 +12,9 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-// [体检 §三.14] 与 SEARCH_CONCURRENCY=32 对齐:多源跨源并发时避免 LRU 抖动
-// (缓存外的源每次 eval 仍需重挂 587KB jsLib,批次 A 收益会被打折)
+// [体检 §三.14] 与搜索缺省并发 32 对齐（config:threadCount，批9b-2）:
+// 多源跨源并发时避免 LRU 抖动(缓存外的源每次 eval 仍需重挂 587KB jsLib,
+// 批次 A 收益会被打折)
 /// 进程级引擎缓存容量上限（LRU 驱逐阈值；pub 供 FFI 层回归测试断言不变式）
 pub const MAX_ENTRIES: usize = 32;
 type SharedEngine = Arc<Mutex<QuickJsEngine>>;
