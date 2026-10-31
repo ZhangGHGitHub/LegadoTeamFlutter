@@ -108,6 +108,14 @@ void main() {
     // （Mock 无 searchBooks 表）。
     unawaited(clearExpiredSearchBooksOnStartup(startupApi, useMock: useMock));
 
+    // 5d. 全局 UserAgent 同步到 Rust 网络层（批9b-4，对齐原版
+    // AppConfig.userAgent 启动初始化）：SharedPreferences 为 UI 真源，
+    // caches config:userAgent 为 Rust 运行期镜像；值相同不写库，空值写
+    // 空串清除旧值（回落内置默认）；USE_MOCK 跳过，失败静默不阻断启动。
+    sw = Stopwatch()..start();
+    await syncUserAgentOnStartup(startupApi, useMock: useMock);
+    debugPrint('[启动] UserAgent 同步耗时：${sw.elapsedMilliseconds}ms');
+
     // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
     const initialRoute = AppRoutes.welcome;
 
@@ -165,6 +173,45 @@ Future<void> clearExpiredSearchBooksOnStartup(
     // 避免把非致命维护失败误报为「上次运行崩溃」。
     CrashLogService.instance.put(
       '[启动] 自动清除过期搜索失败（不阻断启动）：$e',
+      error: e,
+    );
+  }
+}
+
+/// 批9b-4：启动时把全局 UserAgent 从 SharedPreferences 同步到 Rust 网络层
+///
+/// 对齐原版 `AppConfig.userAgent = getPrefUserAgent()`（启动初始化）：
+/// - SharedPreferences（`PrefKeys.userAgent`）是 UI 真源，留空表示使用默认；
+/// - Rust caches `config:userAgent` 是网络层运行期镜像（`configSet` 落库并
+///   即时更新 `legado-net` 进程级默认 UA）；
+/// - 值相同不写库（避免每次启动无谓 DB 写）；偏好为空且 Rust 有旧值时写
+///   空串清除（回落内置默认）；
+/// - [useMock] 为 true 时跳过（Mock 无 DB）；任何失败静默记录、不阻断启动。
+Future<void> syncUserAgentOnStartup(
+  BookApi api, {
+  required bool useMock,
+}) async {
+  try {
+    if (useMock) {
+      return;
+    }
+    final pref =
+        (await SharedPreferences.getInstance()).getString(PrefKeys.userAgent) ??
+            '';
+    final normalizedPref = pref.trim();
+    final rustValue = ((await api.getConfig(PrefKeys.userAgent)) ?? '').trim();
+    if (normalizedPref == rustValue) {
+      return;
+    }
+    await api.setConfig(PrefKeys.userAgent, normalizedPref);
+    debugPrint(
+      '[启动] UserAgent 已同步到 Rust：${normalizedPref.isEmpty ? '默认' : normalizedPref}',
+    );
+  } catch (e) {
+    // 静默失败：同步属启动附带维护，失败不影响用户可见流程；
+    // 与 clearExpiredSearchBooksOnStartup 同口径，仅记 AppLog 内存。
+    CrashLogService.instance.put(
+      '[启动] UserAgent 同步失败（不阻断启动）：$e',
       error: e,
     );
   }

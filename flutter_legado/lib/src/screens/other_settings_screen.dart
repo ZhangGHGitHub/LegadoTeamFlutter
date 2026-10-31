@@ -682,6 +682,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   }
 
   /// UserAgent 编辑（对齐原版 userAgent 对话框，留空恢复默认）
+  ///
+  /// 批9b-4：SharedPreferences 写入后经既有 `BookApi.setConfig` 同步到
+  /// Rust（caches `config:userAgent` + `legado-net` 进程级默认 UA），
+  /// 保存/清空即时影响所有未显式设置 UA 的网络请求；同步失败不回收
+  /// 偏好（UI 真源已保存），仅提示网络层未更新。
   Future<void> _showUserAgentDialog() async {
     final value = await _showTextInputDialog(
       title: '浏览器标识（UserAgent）',
@@ -696,6 +701,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await _settingsService.removePref(PrefKeys.userAgent);
     } else {
       await _settingsService.setStringPref(PrefKeys.userAgent, value);
+    }
+    try {
+      // 空值同样写空串（清除 Rust 侧旧值 → 回落内置默认）
+      await ref.read(bookApiProvider).setConfig(PrefKeys.userAgent, value);
+    } catch (e) {
+      if (mounted) {
+        _toast('已保存偏好，但同步网络层失败：$e');
+      }
     }
   }
 
