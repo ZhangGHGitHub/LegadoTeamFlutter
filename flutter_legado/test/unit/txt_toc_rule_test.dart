@@ -66,6 +66,38 @@ void main() {
     });
   });
 
+  group('buildReparseRuleJson（批1b-3 复验 P3-4：重新解析目录拆回）', () {
+    test('默认规则（空白 tocUrl）→ null（Rust 恢复默认，清目录语义不变）',
+        () {
+      expect(buildReparseRuleJson(''), isNull);
+      expect(buildReparseRuleJson('   '), isNull);
+    });
+
+    test('带 replacement 的规则拆回 {rule, replacement} JSON（逐字还原）',
+        () {
+      const storage = r'^【第.+篇】.*$🫅🈳🏻result.replace("【","")';
+      final json = buildReparseRuleJson(storage);
+      expect(json, isNotNull);
+      final decoded = jsonDecode(json!) as Map<String, dynamic>;
+      expect(decoded['rule'], r'^【第.+篇】.*$');
+      expect(decoded['replacement'], 'result.replace("【","")');
+      // 与 Rust setBookTocRule 重编码结果逐字对齐：
+      // rule + 分隔符 + replacement == 原 tocUrl
+      expect(
+        '${decoded['rule']}🫅🈳🏻${decoded['replacement']}',
+        storage,
+      );
+    });
+
+    test('无分隔符的历史/手工正则 → 整串作 rule、replacement 置空', () {
+      final json = buildReparseRuleJson(r'^第.+章$');
+      expect(json, isNotNull);
+      final decoded = jsonDecode(json!) as Map<String, dynamic>;
+      expect(decoded['rule'], r'^第.+章$');
+      expect(decoded['replacement'], '');
+    });
+  });
+
   group('本地 TXT 判定', () {
     const base = Book(
       bookUrl: 'books/a.txt',

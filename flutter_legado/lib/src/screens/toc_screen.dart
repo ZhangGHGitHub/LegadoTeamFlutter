@@ -23,7 +23,7 @@ import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/toc_cache_state.dart';
 import '../utils/txt_toc_rule.dart'
-    show isLocalTxtBook, kTxtTocRuleSeparator;
+    show buildReparseRuleJson, isLocalTxtBook;
 import '../widgets/reader/reader_toc_rule_dialog.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
@@ -855,38 +855,55 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// `_loadChapters` 必然按当前设置（含 `maxLengthWithNoToc` 档位）重新
   /// 懒解析。阅读器持有旧章节表时同步 `reloadAfterTocRuleChange`（与
   /// `tocRegex` 分支同一数据链）。
+  ///
+  /// [批1b-3 复验 P2-5] 全链 try/catch：Rust 清表/重载任一步失败都
+  /// SnackBar 明示「重新解析目录失败」并 return——清表 fail-closed 时
+  /// 旧目录仍在，绝不可误报成功（兜底口径对齐
+  /// `reader_toc_rule_dialog` 的「设置目录规则失败: $e」）。
   Future<void> _reparseLocalToc() async {
-    final api = ref.read(bookApiProvider);
-    // 1) 拆解当前规则并原样写回 → 清章节行 + 失效派生字段
-    //    （直接传 raw tocUrl 会被 Rust 当无分隔符正则重编码，追加多余
-    //    分隔符且丢失 replacement，故必须拆回 JSON 形态）
-    final tocUrl = _book.tocUrl;
-    final String? ruleJson;
-    if (tocUrl.trim().isEmpty) {
-      ruleJson = null; // 默认规则 → 恢复默认（清目录，语义不变）
-    } else {
-      final sepIndex = tocUrl.indexOf(kTxtTocRuleSeparator);
-      final rule = sepIndex < 0 ? tocUrl : tocUrl.substring(0, sepIndex);
-      final replacement =
-          sepIndex < 0 ? '' : tocUrl.substring(sepIndex + kTxtTocRuleSeparator.length);
-      ruleJson = jsonEncode({'rule': rule, 'replacement': replacement});
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final api = ref.read(bookApiProvider);
+      // 1) 拆回规则 JSON 并原样写回 → 清章节行 + 失效派生字段
+      //    （buildReparseRuleJson：直接传 raw tocUrl 会被 Rust 当无分隔符
+      //    正则重编码，追加多余分隔符且丢失 replacement）
+      final updated =
+          await api.setBookTocRule(_book.bookUrl, buildReparseRuleJson(_book.tocUrl));
+      if (!mounted) return;
+      setState(() => _book = updated);
+      // 2) 阅读器若持有该书，同步重载目录与正文
+      final readerState = ref.read(readerNotifierProvider);
+      if (readerState.currentBook?.bookUrl == _book.bookUrl) {
+        final result = await ref
+            .read(readerNotifierProvider.notifier)
+            .reloadAfterTocRuleChange(_book);
+        if (result.error != null) {
+          if (!mounted) return;
+          messenger.showSnackBar(
+            SnackBar(content: Text('重新解析目录失败: ${result.error}')),
+          );
+          return;
+        }
+      }
+      // 3) 本页重载（必然走懒解析，消费最新解析档位）
+      await _loadChapters();
+      if (!mounted) return;
+      if (_chaptersError != null) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('重新解析目录失败: $_chaptersError')),
+        );
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('已重新解析目录（共 ${_chapters.length} 章）')),
+      );
+    } catch (e) {
+      // [P2-5] fail-closed 不误报：Rust 拒绝/清表失败时旧目录仍在，
+      // 必须明示失败（口径对齐 reader_toc_rule_dialog）
+      messenger.showSnackBar(
+        SnackBar(content: Text('重新解析目录失败: $e')),
+      );
     }
-    final updated = await api.setBookTocRule(_book.bookUrl, ruleJson);
-    if (!mounted) return;
-    setState(() => _book = updated);
-    // 2) 阅读器若持有该书，同步重载目录与正文
-    final readerState = ref.read(readerNotifierProvider);
-    if (readerState.currentBook?.bookUrl == _book.bookUrl) {
-      await ref
-          .read(readerNotifierProvider.notifier)
-          .reloadAfterTocRuleChange(_book);
-    }
-    // 3) 本页重载（必然走懒解析，消费最新解析档位）
-    await _loadChapters();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已重新解析目录（共 ${_chapters.length} 章）')),
-    );
   }
 
   /// 导出书签（JSON / Markdown 双格式，对齐原版 TocViewModel.saveBookmark/

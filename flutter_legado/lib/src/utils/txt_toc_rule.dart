@@ -58,3 +58,25 @@ String encodeTxtTocRuleJson(TxtTocRule rule) => jsonEncode({
       'rule': rule.rule,
       'replacement': rule.replacement,
     });
+
+/// [批1b-3 审查回修 P3-4] 把当前 `books.tocUrl` 拆回 `setBookTocRule`
+/// 的 `ruleJson` 入参（「重新解析目录」复用该单列写做失效通道）。
+///
+/// 三种形态：
+/// - 空白（默认规则）→ `null`（Rust 侧恢复默认，清目录语义不变）；
+/// - `rule + 分隔符 + replacement` → 拆回 `{rule, replacement}` JSON
+///   （Rust 重编码后存储值逐字还原；直接传 raw tocUrl 会被 Rust 按
+///   「无分隔符正则」分支追加多余分隔符并丢失 replacement）；
+/// - 无分隔符的历史/手工正则 → 整串作 `rule`、replacement 置空
+///   （与 Rust `split_toc_rule` 同口径；写回后存储值追加分隔符，
+///   解析语义等价，批43 UI 输入通道规范化既有行为）。
+String? buildReparseRuleJson(String tocUrl) {
+  final trimmed = tocUrl.trim();
+  if (trimmed.isEmpty) return null;
+  final sepIndex = trimmed.indexOf(kTxtTocRuleSeparator);
+  final rule = sepIndex < 0 ? trimmed : trimmed.substring(0, sepIndex);
+  final replacement = sepIndex < 0
+      ? ''
+      : trimmed.substring(sepIndex + kTxtTocRuleSeparator.length);
+  return jsonEncode({'rule': rule, 'replacement': replacement});
+}
