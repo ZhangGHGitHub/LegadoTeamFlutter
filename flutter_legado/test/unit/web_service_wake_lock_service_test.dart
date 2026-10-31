@@ -189,9 +189,10 @@ void main() {
       expect(service.isHeld, isFalse);
     });
 
-    test('服务未运行时切换偏好：只更新偏好，不触通道；下次启动生效', () async {
+    test('服务未运行时切换偏好：只更新偏好、不 acquire（仅查询原生态）', () async {
       await service.onPreferenceChanged(true);
       expect(platform.enabledArgs, isEmpty, reason: '服务未运行不得 acquire');
+      expect(platform.queryCount, 1, reason: '原生态未知时仍需查询一次（避免新引擎遗留锁）');
 
       await service.onServiceStarted(keepAwake: true);
       expect(platform.enabledArgs, [true], reason: '启动时按传入偏好 acquire');
@@ -316,6 +317,64 @@ void main() {
     });
   });
 
+  group('原生回传态对账（审查边界 4）', () {
+    test('acquire 回传与期望不一致（部分失败）：保持未知，下次先查询校正', () async {
+      var nativeHeld = false;
+      var setEnabledCalls = 0;
+      var lieOnFirstAcquire = true;
+      messenger.setMockMethodCallHandler(WebServiceWakeLockService.channel, (
+        call,
+      ) async {
+        if (call.method == 'isHeld') return nativeHeld;
+        setEnabledCalls++;
+        final enabled = (call.arguments as Map)['enabled'] as bool;
+        nativeHeld = enabled;
+        if (enabled && lieOnFirstAcquire) {
+          lieOnFirstAcquire = false;
+          // 原生实际已持有，但回传与期望不一致（视作部分失败）
+          return false;
+        }
+        return nativeHeld;
+      });
+
+      await service.onServiceStarted(keepAwake: true);
+
+      expect(setEnabledCalls, 1);
+      expect(service.isHeld, isFalse, reason: '镜像按原生回传值更新');
+
+      // 下次同步先查询原生真实态（已持有）→ 与期望一致，不再重复下发
+      await service.onServiceStarted(keepAwake: true);
+
+      expect(setEnabledCalls, 1, reason: '查询发现已持有 → 不重复 acquire');
+      expect(service.isHeld, isTrue);
+    });
+
+    test('release 回传与期望不一致：标记未知，下次查询校正', () async {
+      var nativeHeld = true;
+      var setEnabledCalls = 0;
+      messenger.setMockMethodCallHandler(WebServiceWakeLockService.channel, (
+        call,
+      ) async {
+        if (call.method == 'isHeld') return nativeHeld;
+        setEnabledCalls++;
+        nativeHeld = (call.arguments as Map)['enabled'] as bool;
+        // 释放实际生效，但回传不一致（模拟部分失败，恒回 true）
+        return true;
+      });
+
+      await service.onServiceStopped();
+
+      expect(setEnabledCalls, 1);
+      expect(service.isHeld, isTrue, reason: '镜像按原生回传值更新（回传 true）');
+
+      // 下次同步先查询原生真实态（已释放）→ 与期望一致，不再重复下发
+      await service.onServiceStopped();
+
+      expect(setEnabledCalls, 1, reason: '查询发现已释放 → 不再重复 release');
+      expect(service.isHeld, isFalse);
+    });
+  });
+
   group('同步竞态（审查 P2）', () {
     test('延迟 acquire 时快速 true→false：最终补发 release', () async {
       final gate = Completer<void>();
@@ -392,6 +451,18 @@ void main() {
       await service.onServiceStopped();
 
       expect(platform.enabledArgs, [false]);
+      expect(platform.held, isFalse);
+    });
+
+    test('新引擎服务未运行 + 关开关：查询并释放原生遗留锁（审查边界 1）', () async {
+      platform.held = true;
+      service.debugReset();
+
+      await service.onPreferenceChanged(false);
+
+      expect(platform.queryCount, 1);
+      expect(platform.enabledArgs, [false]);
+      expect(service.isHeld, isFalse);
       expect(platform.held, isFalse);
     });
 

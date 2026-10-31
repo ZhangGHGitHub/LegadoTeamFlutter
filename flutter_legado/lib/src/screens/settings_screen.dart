@@ -90,13 +90,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _mcpService = mcpPort > 0;
         _mcpTokenConfigured = (mcpToken ?? '').trim().isNotEmpty;
       });
-      if (_webService) {
+      // 批9b-6 边界回修：无论 webService 配置镜像真假都查询运行态——
+      // 新引擎 Dart 状态归零、配置写失败等边界下原生锁仍可能持有；
+      // 以实际 status 为准做唤醒锁对账（stopped → 释放一切遗留锁）。
+      try {
         final status = await api.getServerStatus();
         if (!mounted) return;
-        setState(() => _webServiceStatus = status);
-        // 批9b-6：进程级唤醒锁运行态对账（Activity/引擎重建后 Dart 状态
-        // 归零，原生锁可能仍持；运行中按偏好确认/释放，未运行则清理）
+        if (_webService) setState(() => _webServiceStatus = status);
         await _reconcileWebWakeLock(status);
+      } catch (e) {
+        // 状态查询失败（FFI 未初始化等）：保持现状，不下发唤醒锁命令
+        debugPrint('Web 服务状态查询失败（跳过唤醒锁对账）：$e');
       }
       if (_autoTaskService) {
         AutoTaskScheduler.instance.refresh();
@@ -168,13 +172,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// 「仅前台可用」（卡片副题提示），不阻断服务开关。
   ///
   /// [Android Web 服务唤醒锁 | 批9b-6] 对齐原版
-  /// `WebService.kt:76-78,105,140,160`：偏好 `webServiceWakeLock`（默认 false）
-  /// 开且服务运行 → 同时持 `PARTIAL_WAKE_LOCK` 与 `WifiLock`
-  ///（`WIFI_MODE_FULL_HIGH_PERF`，tag `legado:WebService`，acquire 无超时），
-  /// 服务停止 / 开关关 → release。Android 经 [WebServiceWakeLockService]
-  /// 接线（运行中切换由其他设置页即时下发；原生锁为进程级，Activity/引擎
-  /// 重建不释放，设置页初始化按 running 状态重新对账）；
-  /// iOS 由 [WebKeepAliveService]（静音音轨）负责；桌面不适用。
+  /// `WebService.kt:76-78,83-89,105-106,140-141,160-161`：偏好
+  /// `webServiceWakeLock`（默认 false）开且服务运行 → 同时持
+  /// `PARTIAL_WAKE_LOCK` 与 `WifiLock`（`WIFI_MODE_FULL_HIGH_PERF`，
+  /// tag `legado:WebService`，acquire 无超时），服务停止 / 开关关 → release。
+  /// 参考版 `legado-with-MD3/.../service/WebService.kt:68-74,75-81,92-93,133-134,145-146`
+  /// 电源语义一致。Android 经 [WebServiceWakeLockService] 接线（运行中切换由
+  /// 其他设置页即时下发；原生锁为进程级，Activity/引擎重建不释放，设置页
+  /// 初始化按实际 running 状态重新对账）；iOS 由 [WebKeepAliveService]
+  ///（静音音轨）负责；桌面不适用。
   ///
   /// 生命周期差异（如实登记）：原版唤醒锁依附 `WebService` 前台服务，服务在
   /// App 退后台期间持续持有；本仓库 Web 服务是进程内 Rust server、无对应
@@ -197,7 +203,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await WebServiceWakeLockService.instance.onServiceStarted(
           keepAwake: keepAwake,
         );
-        final status = await api.getServerStatus();
+        final String status;
+        try {
+          status = await api.getServerStatus();
+        } catch (e) {
+          // 批9b-6 边界回修：启动后状态查询失败 → 回滚释放唤醒锁并提示，
+          // 不留在「已 acquire 但状态未知」
+          await WebServiceWakeLockService.instance.onServiceStopped();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Web 服务启动失败: 无法确认服务状态（${errorMessage(e)}）',
+              ),
+            ),
+          );
+          return;
+        }
         if (!_isServerRunning(status)) {
           // 批9b-6 审查回修：启动「假成功」（状态仍 stopped）时回滚唤醒锁，
           // 不把开关置为开，也不接保活/写 webService=true

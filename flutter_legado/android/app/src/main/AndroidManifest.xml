@@ -19,7 +19,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- 唤醒锁（阅读时常亮 / 听书 / Web 服务 PARTIAL_WAKE_LOCK） -->
+    <!-- 唤醒锁（阅读时常亮 / 听书 / Web 服务 PARTIAL_WAKE_LOCK + Wi-Fi 锁） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- [V-B3] 视频悬浮窗：全局 overlay（对齐原版 AndroidManifest.xml:26）。
@@ -179,11 +179,14 @@
         </activity>
 
         <!-- 图标变体（对齐原版 Launcher1~6：默认禁用，LauncherIconBridge
-             经 setComponentEnabledSetting 切换哪个可见以更换桌面图标） -->
+             经 setComponentEnabledSetting 切换哪个可见以更换桌面图标）。
+             configChanges 与 MainActivity 保持一致：旋转/语言等配置变化不重建
+             引擎（批9b-6 边界回修，避免 Dart 状态归零后重复对账）。 -->
         <activity
             android:name=".Launcher1"
             android:enabled="false"
             android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:icon="@mipmap/launcher1"
             android:theme="@style/LaunchTheme">
             <meta-data
@@ -198,6 +201,7 @@
             android:name=".Launcher2"
             android:enabled="false"
             android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:icon="@mipmap/launcher2"
             android:theme="@style/LaunchTheme">
             <meta-data
@@ -212,6 +216,7 @@
             android:name=".Launcher3"
             android:enabled="false"
             android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:icon="@mipmap/launcher3"
             android:theme="@style/LaunchTheme">
             <meta-data
@@ -226,6 +231,7 @@
             android:name=".Launcher4"
             android:enabled="false"
             android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:icon="@mipmap/launcher4"
             android:theme="@style/LaunchTheme">
             <meta-data
@@ -240,6 +246,7 @@
             android:name=".Launcher5"
             android:enabled="false"
             android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:icon="@mipmap/launcher5"
             android:theme="@style/LaunchTheme">
             <meta-data
@@ -254,6 +261,7 @@
             android:name=".Launcher6"
             android:enabled="false"
             android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:icon="@mipmap/launcher6"
             android:theme="@style/LaunchTheme">
             <meta-data

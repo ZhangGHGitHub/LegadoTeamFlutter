@@ -19,17 +19,20 @@ import io.flutter.plugin.common.MethodChannel
  *
  * ## 语义基准
  * 原版 `legado-upstream/app/src/main/java/io/legado/app/service/WebService.kt`
- * （参考版 `legado-with-MD3` 同实现）：
- * - `:76-78` 偏好 `webServiceWakeLock`（默认 false）开 → 同时创建
- *   `PowerManager.PARTIAL_WAKE_LOCK` 与 `WifiManager.WifiLock`
+ * （参考版 `legado-with-MD3/.../service/WebService.kt:68-74,75-81,92-93,133-134,145-146`
+ * 电源语义一致）：
+ * - `:76-78` 偏好 `webServiceWakeLock`（默认 false）开 → CPU 唤醒锁创建，
+ *   `:83-89` 同 tag `WifiLock` 创建
  *   （`WIFI_MODE_FULL_HIGH_PERF`，tag `legado:WebService`，
  *   `setReferenceCounted(false)`）；
- * - `:105` / `:140` 服务创建 / 唤醒请求时 `acquire()`（均无超时）；
- * - `:160` 服务 `onDestroy` 时 `release()`。
+ * - `:105-106` / `:140-141` 服务创建 / 唤醒请求时成对 `acquire()`（均无超时）；
+ * - `:160-161` 服务 `onDestroy` 时成对 `release()`。
  *
- * 本桥成对持有/释放两种锁；Wi-Fi 锁按原版 `wifiLock?.acquire()` 的尽力而为
- * 语义处理（WifiManager 不可用或创建失败时降级为仅 CPU 唤醒锁，不阻断），
- * CPU 唤醒锁失败则向 Dart 回 `result.error`。
+ * 本桥成对持有/释放两种锁；Wi-Fi 锁获取按原版 `wifiLock?.acquire()` 的
+ * 尽力而为语义处理（WifiManager 不可用或创建失败时降级为仅 CPU 唤醒锁）。
+ * CPU 获取失败、或释放阶段任一锁失败，都向 Dart 回 `result.error`：
+ * 释放严格「先 Wi-Fi 后 CPU」，Wi-Fi 释放失败时保留 CPU 锁，绝不留下
+ * 「CPU 已放、Wi-Fi 仍持」的单锁残留。
  *
  * 刻意不复用 `legado/media_session` 的 `setWakeLock`：那是听书
  * `audioPlayWakeLock` 语义（由播放态驱动，tag `legado:AudioPlayWakeLock`），
@@ -120,26 +123,30 @@ object WebServiceWakeLockBridge {
     /**
      * 幂等释放两种锁：未持有安全跳过。
      *
+     * **释放顺序：先 Wi-Fi、后 CPU**（审查边界 4）。若 Wi-Fi 释放失败则
+     * 立即返回错误并保留 CPU 锁，确保任何失败路径都不会留下「CPU 已释放、
+     * Wi-Fi 仍持有」的单锁残留；Dart 侧收到 error 后标记原生态未知并在
+     * 下次同步重试（此时 CPU 锁仍在，`isHeld()` 仍为 true，可再次下发）。
+     *
      * @return 错误描述；null 表示成功（含本就没持有）
      */
     @Synchronized
     private fun release(): String? {
-        var failure: String? = null
-        try {
-            val lock = wakeLock
-            if (lock?.isHeld == true) lock.release()
-        } catch (e: Exception) {
-            Log.w(TAG, "释放 Web 服务 CPU 唤醒锁失败：${e.message}")
-            failure = e.message ?: e.javaClass.simpleName
-        }
         try {
             val lock = wifiLock
             if (lock?.isHeld == true) lock.release()
         } catch (e: Exception) {
-            Log.w(TAG, "释放 Web 服务 Wi-Fi 锁失败：${e.message}")
-            failure = failure ?: (e.message ?: e.javaClass.simpleName)
+            Log.w(TAG, "释放 Web 服务 Wi-Fi 锁失败（保留 CPU 锁，避免 Wi-Fi 单锁）：${e.message}")
+            return e.message ?: e.javaClass.simpleName
         }
-        return failure
+        return try {
+            val lock = wakeLock
+            if (lock?.isHeld == true) lock.release()
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "释放 Web 服务 CPU 唤醒锁失败：${e.message}")
+            e.message ?: e.javaClass.simpleName
+        }
     }
 
     /**

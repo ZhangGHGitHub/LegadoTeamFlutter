@@ -7,14 +7,14 @@ import 'package:flutter/widgets.dart';
 ///
 /// ## 语义基准（原版 / 参考版一致）
 /// `legado-upstream/.../service/WebService.kt`
-/// - `:76-78`：偏好 `webServiceWakeLock`（默认 false）→ 同时创建
-///   `PowerManager.PARTIAL_WAKE_LOCK` 与 `WifiManager.WifiLock`
-///   （`WIFI_MODE_FULL_HIGH_PERF`），tag `legado:WebService`，
-///   `setReferenceCounted(false)`；
-/// - `:105` / `:140`：服务创建 / 唤醒请求时 `acquire()`（不带超时）；
-/// - `:160`：服务 `onDestroy` 时 `release()`。
-/// 参考版 `legado-with-MD3/.../service/WebService.kt:68-74,92,133,145` 电源语义
-/// 一致（仅多一层设置持久化网关）。
+/// - `:76-78` 偏好 `webServiceWakeLock`（默认 false）+ CPU 唤醒锁创建，
+///   `:83-89` 同 tag `WifiLock` 创建
+///   （`WIFI_MODE_FULL_HIGH_PERF`，`legado:WebService`，
+///   `setReferenceCounted(false)`）；
+/// - `:105-106` / `:140-141`：服务创建 / 唤醒请求时成对 `acquire()`（不带超时）；
+/// - `:160-161`：服务 `onDestroy` 时成对 `release()`。
+/// 参考版 `legado-with-MD3/.../service/WebService.kt:68-74,75-81,92-93,133-134,145-146`
+/// 电源语义一致（仅多一层设置持久化网关）。
 ///
 /// ## 生命周期（进程级，审查回修）
 /// 原生锁由 Application Context 创建并挂在进程级单例上（Kotlin `object`）：
@@ -24,7 +24,7 @@ import 'package:flutter/widgets.dart';
 /// （Flutter 无法可靠判断「进程退出」与「引擎重建」，宁可保留）。
 ///
 /// 新引擎的 Dart 状态归零后，[_reconcileOnce] 先经原生 `isHeld` 查询对账
-/// （设置页 `_initServiceStates` 在服务运行时会调 [onServiceStarted]），
+/// （设置页 `_initServiceStates` 无论配置真假都按实际运行态对账），
 /// 避免误丢锁或误持有。
 ///
 /// ## 本仓库接线
@@ -107,11 +107,15 @@ class WebServiceWakeLockService {
 
   /// 偏好运行中切换后调用（其他设置页 onChanged）
   ///
-  /// 服务未运行：只更新镜像值，不触平台（下次启动时以调用方传入值为准）；
   /// 服务运行中：true → acquire、false → release，即时生效。
+  /// 服务未运行：期望态恒为 false，不 acquire；但原生态未知（新引擎 Dart
+  /// 状态归零）或上次 release 失败（[_held] 仍 true）时仍要 `_sync`，
+  /// 否则「关开关」无法释放原生遗留锁（审查边界 1）。
   Future<void> onPreferenceChanged(bool enabled) {
     _preferenceEnabled = enabled;
-    if (!_serviceRunning) return Future<void>.value();
+    if (!_serviceRunning && _nativeStateKnown && !_held) {
+      return Future<void>.value();
+    }
     return _sync();
   }
 
@@ -132,6 +136,11 @@ class WebServiceWakeLockService {
   }
 
   /// 一次对账：先确认原生态（新引擎状态归零），再按期望态下发
+  ///
+  /// 下发结果以原生 `setEnabled` 回传的 `isHeld` 为准（审查边界 4）：
+  /// - 回传 null（通道/原生失败）→ 原生态未知，下次先查询再重试；
+  /// - 回传值与期望不一致（部分失败，如 Wi-Fi 锁降级）→ 镜像按回传值更新，
+  ///   但保持「未知」，下次同步先查询实际状态再决定是否补发。
   Future<void> _reconcileOnce() async {
     if (!isSupported) return;
     if (!_nativeStateKnown) {
@@ -142,20 +151,17 @@ class WebServiceWakeLockService {
       }
     }
     final desired = _serviceRunning && _preferenceEnabled;
-    if (!_nativeStateKnown) {
-      // 查询失败（通道缺失/异常）：按期望态强制下发一次（原生幂等），
-      // 避免引擎重建后遗留锁无法释放；失败则保持未知，下次重试。
-      final applied = await _send(desired);
-      if (applied) {
-        _held = desired;
-        _nativeStateKnown = true;
-      }
+    // 已确认原生态且与期望一致 → 无需下发；未知时即使镜像碰巧相同也要
+    // 强制下发一次（原生幂等），避免引擎重建后遗留锁无法释放。
+    if (_nativeStateKnown && desired == _held) return;
+    final nativeHeld = await _send(desired);
+    if (nativeHeld == null) {
+      // 通道/原生失败：回到未知，下次同步先查询后重试
+      _nativeStateKnown = false;
       return;
     }
-    if (desired == _held) return;
-    final applied = await _send(desired);
-    // 平台失败保持旧镜像，后续状态变化/初始化对账时自动重试
-    if (applied) _held = desired;
+    _held = nativeHeld;
+    _nativeStateKnown = nativeHeld == desired;
   }
 
   /// 查询原生持有态（`isHeld`）：无法确认时返回 null
@@ -173,21 +179,25 @@ class WebServiceWakeLockService {
     }
   }
 
-  /// 唯一平台出口：成功返回 true；缺失通道/平台异常静默降级
-  Future<bool> _send(bool enabled) async {
+  /// 唯一平台出口：返回原生 `setEnabled` 回传的实际持有态；失败返回 null
+  ///
+  /// 原生回传 `isHeld`（审查边界 4）：Dart 不再假定「调用成功=达到期望」，
+  /// 由 `_reconcileOnce` 比较回传与期望后决定是否保持未知并重试。
+  Future<bool?> _send(bool enabled) async {
     try {
-      await channel.invokeMethod<bool>('setEnabled', {'enabled': enabled});
-      return true;
+      return await channel.invokeMethod<bool>('setEnabled', {
+        'enabled': enabled,
+      });
     } on MissingPluginException {
       // 非 Android 构建 / 测试环境未注册：静默（可预期）
-      return false;
+      return null;
     } on PlatformException catch (error) {
-      // 原生 acquire/release 失败（result.error）：保持旧状态，可重试
+      // 原生 acquire/release 失败（result.error）：回到未知，可重试
       debugPrint('[WebWakeLock] 平台通道异常（忽略）: $error');
-      return false;
+      return null;
     } catch (error) {
       debugPrint('[WebWakeLock] 唤醒锁调用异常（忽略）: $error');
-      return false;
+      return null;
     }
   }
 
