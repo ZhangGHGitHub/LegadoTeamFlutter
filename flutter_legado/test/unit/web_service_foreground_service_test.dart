@@ -251,7 +251,7 @@ void main() {
       expect(WebServiceForegroundService.instance.isRunningMirror, isFalse);
     });
 
-    test('重复 stop 幂等：已确认停止后不再下发', () async {
+    test('重复 stop 仍下发原生 stop（幂等，兜底晚到 FGS）', () async {
       await WebServiceForegroundService.instance.start();
       await WebServiceForegroundService.instance.stop();
       platform.calls.clear();
@@ -259,7 +259,9 @@ void main() {
       final ok = await WebServiceForegroundService.instance.stop();
 
       expect(ok, isTrue);
-      expect(platform.calls, isEmpty);
+      expect(platform.calls, [
+        'stop',
+      ], reason: '镜像 false 也不得短路：原生 stopService 幂等，必须始终下发');
     });
 
     test('镜像未知（引擎重建）→ 仍下发一次 stop 清理遗留服务', () async {
@@ -272,7 +274,26 @@ void main() {
       expect(platform.running, isFalse);
     });
 
-    test('stop 抛 PlatformException → 返回 false 不崩，镜像保持运行中可重试', () async {
+    test('start 确认失败后原生晚到 running → stop 仍下发并清理', () async {
+      // 模拟审查场景：start 受理但 200ms 确认窗口内服务未就绪 → _running=false；
+      // 之后原生 onCreate 晚到使 FGS 实际运行。stop 不得因镜像 false 短路。
+      platform.startAcceptedButNotRunning = true;
+      final started = await WebServiceForegroundService.instance.start();
+      expect(started, isFalse);
+      expect(WebServiceForegroundService.instance.isRunningMirror, isFalse);
+
+      platform.running = true; // 原生晚到：FGS 实际已运行
+      platform.calls.clear();
+
+      final stopped = await WebServiceForegroundService.instance.stop();
+
+      expect(stopped, isTrue);
+      expect(platform.calls, ['stop'], reason: '镜像 false 也必须下发 stop');
+      expect(platform.running, isFalse);
+      expect(WebServiceForegroundService.instance.isRunningMirror, isFalse);
+    });
+
+    test('stop 抛 PlatformException → 返回 false 不崩，镜像置未知可重试', () async {
       await WebServiceForegroundService.instance.start();
       platform.failStop = true;
       platform.calls.clear();
@@ -281,11 +302,16 @@ void main() {
 
       expect(ok, isFalse);
       expect(platform.calls, ['stop']);
-      // 未确认停止：镜像仍为运行中，下一次 stop 会重试
-      expect(WebServiceForegroundService.instance.isRunningMirror, isTrue);
+      // 未确认停止：镜像置未知（下次 stop 仍会下发，且 init 对账先查询）
+      expect(WebServiceForegroundService.instance.isRunningMirror, isFalse);
+
+      platform.failStop = false;
+      platform.calls.clear();
+      expect(await WebServiceForegroundService.instance.stop(), isTrue);
+      expect(platform.calls, ['stop'], reason: '失败后必须可重试');
     });
 
-    test('原生 stop 返回 false → 视为失败且镜像保持运行中', () async {
+    test('原生 stop 返回 false → 视为失败且镜像置未知', () async {
       await WebServiceForegroundService.instance.start();
       messenger.setMockMethodCallHandler(
         WebServiceForegroundService.channel,
@@ -296,7 +322,7 @@ void main() {
       final ok = await WebServiceForegroundService.instance.stop();
 
       expect(ok, isFalse);
-      expect(WebServiceForegroundService.instance.isRunningMirror, isTrue);
+      expect(WebServiceForegroundService.instance.isRunningMirror, isFalse);
     });
   });
 

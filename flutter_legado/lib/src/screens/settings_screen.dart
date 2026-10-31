@@ -287,11 +287,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         final keepAwake = await ref
             .read(settingsProvider)
             .getBoolPref(PrefKeys.webServiceWakeLock, defaultValue: false);
-        await api.startServer(port: port);
-        // 批9b-6c 审查回修 P2：开启 Web 服务时请求通知权限（已授予不弹框；
-        // 拒绝仅影响通知可见性，FGS 与 LAN 访问照常，不阻断开关）。
+        // 批9b-6c 审查回修 P2：先取通知权限（可能弹框）再启动 server/FGS。
+        // 若放在 startServer 之后，权限框 pending 期间 server 已运行却没有
+        // FGS/唤醒锁，锁屏后 LAN 会短暂不可达；先拿结果再启动，拒绝也继续。
         final notificationGranted = await WebServiceForegroundService.instance
             .ensureNotificationPermission();
+        await api.startServer(port: port);
         // 批9b-6c：服务启动成功即起前台服务（与唤醒锁偏好解耦；非 Android no-op）。
         // 失败仅静默记日志，由原生按「仅前台可用」降级，不阻断开关。
         await WebServiceForegroundService.instance.start();

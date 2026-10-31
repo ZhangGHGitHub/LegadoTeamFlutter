@@ -94,7 +94,11 @@ class WebServiceForegroundService {
     if (!isSupported) return false;
     if (_running == true) return true;
     final accepted = await _invoke('start');
-    if (!accepted) return false;
+    if (!accepted) {
+      // 下发失败：原生态未知（可能从未启动，也可能已受理但回传异常）
+      _running = null;
+      return false;
+    }
     _running = true;
     if (startConfirmDelay > Duration.zero) {
       await Future<void>.delayed(startConfirmDelay);
@@ -107,16 +111,19 @@ class WebServiceForegroundService {
     return confirmed;
   }
 
-  /// 停止前台服务（幂等；非 Android no-op）
+  /// 停止前台服务（非 Android no-op）
   ///
-  /// 停机是明确的用户意图：即使镜像未知（引擎重建）也下发一次原生 stop，
-  /// 清理可能遗留的前台服务。
+  /// **始终下发一次原生 stop**（审查回修）：`stopService` 原生幂等，不能因
+  /// Dart 镜像为 false 就跳过——`start()` 确认失败时原生 `onCreate` 仍可能
+  /// 晚到，跳过会留下无主的前台通知。失败时镜像置未知（保持可重试）。
   Future<bool> stop() async {
     if (!isSupported) return false;
-    if (_running == false) return true;
     final ok = await _invoke('stop');
     if (ok) {
       _running = false;
+    } else {
+      // 未确认停止：原生态未知，下次对账先查询再决定
+      _running = null;
     }
     return ok;
   }

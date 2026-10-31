@@ -19,6 +19,7 @@
 // WebServiceWakeLockService.platformIsAndroid 测试缝隙注入（Windows 测试
 // 环境 Platform.isAndroid=false，不注入则全部 no-op）；启动确认延时置零。
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -212,6 +213,70 @@ void main() {
       'isRunning',
       'stop',
     ], reason: 'stopServer 成功后应停止前台服务');
+  });
+
+  testWidgets('通知权限 pending 时 server 尚未启动；完成后才启动 server/FGS', (tester) async {
+    final foreground = _ForegroundMock();
+    final permissionCompleter = Completer<bool>();
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(WebServiceForegroundService.channel, (
+      call,
+    ) async {
+      calls.add(call.method);
+      switch (call.method) {
+        case 'hasNotificationPermission':
+          return false;
+        case 'requestNotificationPermission':
+          // 模拟权限对话框未关闭：Dart 侧必须停在 await，不得先启 server
+          return permissionCompleter.future;
+        case 'start':
+          foreground.running = true;
+          return true;
+        case 'isRunning':
+          return foreground.running;
+        case 'stop':
+          foreground.running = false;
+          return true;
+        default:
+          return null;
+      }
+    });
+    stubServer(statuses: ['stopped', 'running on port 1122']);
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await dragTo(tester, 'Web 服务');
+    await tester.pumpAndSettle();
+    calls.clear();
+
+    toggleWebService(tester, true);
+    await tester.pump();
+    await tester.pump();
+
+    expect(calls, [
+      'hasNotificationPermission',
+      'requestNotificationPermission',
+    ]);
+    verifyNever(() => mockApi.startServer(port: any(named: 'port')));
+    expect(foreground.running, isFalse, reason: '权限未决时不得启动 FGS');
+    // 开关处于 busy（Switch 被进度圈替换），此处不读开关值，仅验证无启动副作用
+
+    // 用户拒绝权限：仍继续启动 server 与 FGS（仅通知不可见）
+    permissionCompleter.complete(false);
+    await tester.pumpAndSettle();
+
+    verify(() => mockApi.startServer(port: any(named: 'port'))).called(1);
+    expect(calls, [
+      'hasNotificationPermission',
+      'requestNotificationPermission',
+      'start',
+      'isRunning',
+    ]);
+    expect(foreground.running, isTrue);
+    expect(webServiceSwitchValue(tester), isTrue);
+    expect(find.textContaining('通知权限未授予，前台通知不可见'), findsOneWidget);
+
+    await settleSnackBar(tester);
   });
 
   testWidgets('启动后状态查询失败 → 回滚 stop + best-effort 停 server', (tester) async {
