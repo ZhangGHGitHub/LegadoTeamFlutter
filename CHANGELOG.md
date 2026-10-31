@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.430] - 2026-11-01
+
+### Added
+- [UI] 「Web 服务唤醒锁」真正生效：Android 在 Web 服务运行且开关开启时同时持有 CPU 与 Wi-Fi 锁，停止或关闭开关立即释放；运行中切换即时生效。
+### Fixed
+- [UI] 唤醒锁改为进程级持有，Activity/引擎重建或旋转不会丢失；Wi-Fi 获取失败降级为仅 CPU 锁并仍可释放；失败路径保留可重试状态。
+
 ## [2.0.429] - 2026-10-31
 
 ### Added
