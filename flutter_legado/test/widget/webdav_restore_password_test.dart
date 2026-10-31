@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
@@ -89,6 +90,7 @@ void main() {
     mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
     when(() => mockApi.getBookSources()).thenAnswer((_) async => <BookSource>[]);
+    when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     when(
       () => mockApi.restore(any(), password: any(named: 'password')),
     ).thenAnswer((_) async {});
@@ -223,6 +225,21 @@ void main() {
 
     expect(find.text('输入备份密码'), findsNothing);
     verify(() => mockApi.restore(backupPath, password: null)).called(1);
+  });
+
+  // 批9b-4 审查回修 P2-2：恢复完成的 appPrefs 需同步全局 UserAgent 到 Rust
+  testWidgets('恢复完成后把 userAgent 同步到 Rust config', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.userAgent: ' RestoredUA/1.0 ',
+    });
+    stubPasswordNotRequired();
+    final backupPath = fakeBackupPath('legado_backup_ua.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+    verify(() => mockApi.setConfig(PrefKeys.userAgent, 'RestoredUA/1.0'))
+        .called(1);
   });
 
   testWidgets('中文/含空格密码原样透传（不 trim）', (tester) async {

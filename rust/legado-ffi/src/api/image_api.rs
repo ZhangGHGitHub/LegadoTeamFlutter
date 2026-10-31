@@ -193,6 +193,24 @@ fn split_composite_image_url(url: &str) -> (String, HashMap<String, String>) {
     (url.to_string(), HashMap::new())
 }
 
+/// 图片请求头缺少 User-Agent 时补当前全局 UA（批9b-4）
+///
+/// 键名大小写不敏感：书源 header 可能写 `USER-AGENT` / `User-Agent` /
+/// `user-agent`，任一存在即视为显式配置，绝不重复注入（审查 P3-4）。
+fn ensure_image_default_user_agent(headers: &mut HashMap<String, String>) {
+    if !headers
+        .keys()
+        .any(|key| key.eq_ignore_ascii_case("user-agent"))
+    {
+        // 批9b-4：图片 UA 兜底改读全局真源（config:userAgent；未设置时
+        // 回落内置 Chrome UA），与搜索/正文链路同 UA 指纹
+        headers.insert(
+            "User-Agent".to_string(),
+            legado_net::user_agent::default_user_agent(),
+        );
+    }
+}
+
 /// 下载图片（带书源 header 防盗链）并按 imageDecode 解码，返回 base64
 ///
 /// source_json：书源 JSON（单对象）。无 imageDecode 时返回原始图片 base64。
@@ -229,14 +247,7 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
     }
     // 内嵌 header 优先级最高（书源规则显式指定的防盗链）
     headers.extend(embedded_headers);
-    if !headers.contains_key("User-Agent") && !headers.contains_key("user-agent") {
-        // 批9b-4：图片 UA 兜底改读全局真源（config:userAgent；未设置时
-        // 回落内置 Chrome UA），与搜索/正文链路同 UA 指纹
-        headers.insert(
-            "User-Agent".to_string(),
-            legado_net::user_agent::default_user_agent(),
-        );
-    }
+    ensure_image_default_user_agent(&mut headers);
     // 图片防盗链：无 Referer 时以书源主页兜底（对齐原版 ImageLoader referer）
     if !headers.contains_key("Referer") && !headers.contains_key("referer") {
         if let Some(referer) = default_referer_from_source_url(&source.book_source_url) {
@@ -309,6 +320,51 @@ fn looks_like_image_bytes(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 批9b-4 审查 P3-4：显式 UA 键名任意大小写都视为已配置，
+    /// 不得重复注入默认 UA
+    #[test]
+    fn test_ensure_image_default_user_agent_case_insensitive() {
+        let _guard = crate::api::config_api::UserAgentTestGuard::new();
+
+        for key in ["USER-AGENT", "User-Agent", "user-agent"] {
+            let mut headers = HashMap::new();
+            headers.insert(key.to_string(), "SourceUA/1.0".to_string());
+            ensure_image_default_user_agent(&mut headers);
+            assert_eq!(
+                headers.len(),
+                1,
+                "显式 UA 已存在时不得重复注入（key={key}）"
+            );
+            assert_eq!(
+                headers.get(key).map(String::as_str),
+                Some("SourceUA/1.0"),
+                "显式 UA 值不得被覆盖（key={key}）"
+            );
+        }
+    }
+
+    /// 批9b-4：缺少 UA 时补进程级全局 UA（未设置回落内置默认）
+    #[test]
+    fn test_ensure_image_default_user_agent_adds_global() {
+        let _guard = crate::api::config_api::UserAgentTestGuard::new();
+        legado_net::set_default_user_agent(Some("ImgGlobalUA/2.0"));
+
+        let mut headers = HashMap::new();
+        ensure_image_default_user_agent(&mut headers);
+        assert_eq!(
+            headers.get("User-Agent").map(String::as_str),
+            Some("ImgGlobalUA/2.0")
+        );
+
+        legado_net::set_default_user_agent(None);
+        let mut builtin = HashMap::new();
+        ensure_image_default_user_agent(&mut builtin);
+        assert_eq!(
+            builtin.get("User-Agent").map(String::as_str),
+            Some(legado_net::client::DEFAULT_USER_AGENT)
+        );
+    }
 
     /// 复合图片 URL（url,{json headers}）拆分：真实 URL + 内嵌 headers
     #[test]

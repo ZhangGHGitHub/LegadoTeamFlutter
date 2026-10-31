@@ -836,6 +836,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       PrefKeys.autoCheckNewBackup,
       defaultValue: true,
     );
+    // 批9b-4 审查回修 P2-2：备份 appPrefs 可能替换 userAgent，恢复完成后
+    // 必须同步到 Rust（caches config:userAgent + 运行期默认 UA），否则同
+    // 会话内 prefs 与 Rust 分叉，重启前网络请求仍用旧 UA。失败不阻断恢复。
+    try {
+      final userAgent =
+          (await _settings.getStringPref(PrefKeys.userAgent)).trim();
+      await ref.read(bookApiProvider).setConfig(PrefKeys.userAgent, userAgent);
+    } catch (e) {
+      debugPrint('恢复后同步 UserAgent 失败（不阻断恢复）：$e');
+    }
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
     setState(() {

@@ -29,15 +29,22 @@ use crate::middleware::{Middleware, Next};
 /// 与 legado-net 其他全局配置锁口径一致）。
 static DEFAULT_USER_AGENT_OVERRIDE: RwLock<Option<String>> = RwLock::new(None);
 
-/// 设置进程级默认 User-Agent（`None`/空/纯空白 = 清除覆盖）
+/// 设置进程级默认 User-Agent（`None`/空/纯空白/非法 = 清除覆盖）
 ///
 /// 对齐原版 `AppConfig.getPrefUserAgent()`（`AppConfig.kt:918-925`）：
 /// 偏好空白时回落内置桌面 Chrome UA。本函数在写入前 trim，保证
 /// 「空白串」与「未设置」同义。
+///
+/// **控制字符防护（批9b-4 审查 P3-3）**：含 CR/LF/0x00-0x1F 等控制字符的
+/// 值不是合法 HTTP header value，直接注入会让每个请求 builder 失败（
+/// reqwest 返回 "builder error"），WebDAV 等 `unwrap_or_else` 路径还会静默
+/// 降级为无 UA 客户端。故此类值按「非法」处理——清除覆盖、回落内置默认，
+/// 且不清留上一次的有效值（与清空同义）。
 pub fn set_default_user_agent(user_agent: Option<&str>) {
     let normalized = user_agent
         .map(str::trim)
         .filter(|ua| !ua.is_empty())
+        .filter(|ua| !ua.chars().any(char::is_control))
         .map(ToOwned::to_owned);
     *DEFAULT_USER_AGENT_OVERRIDE
         .write()
@@ -285,21 +292,63 @@ mod tests {
         assert_eq!(default_user_agent(), DEFAULT_USER_AGENT);
     }
 
-    /// 并发读写全局覆盖：无 panic/无死锁，读值恒为已设置的非空 UA 或内置默认
+    /// 含控制字符的 UA 属非法 header value：清除覆盖并回落内置默认，
+    /// 不得让后续请求 builder 失败（审查 P3-3）
+    #[test]
+    fn test_set_default_user_agent_rejects_control_chars() {
+        let _guard = UaTestGuard::new();
+
+        // 先设置有效值，再注入 CRLF 头注入形态：应清除旧值并回落内置
+        set_default_user_agent(Some("ValidUA/1.0"));
+        assert_eq!(default_user_agent(), "ValidUA/1.0");
+        set_default_user_agent(Some("A\r\nX: 1"));
+        assert_eq!(
+            default_user_agent(),
+            DEFAULT_USER_AGENT,
+            "CRLF 注入形态应被拒绝并回落内置默认"
+        );
+
+        // 其余控制字符（NUL / 0x1F / DEL）同样拒绝
+        for invalid in ["A\0B", "A\u{1f}B", "A\u{7f}B"] {
+            set_default_user_agent(Some("TmpUA/2.0"));
+            set_default_user_agent(Some(invalid));
+            assert_eq!(
+                default_user_agent(),
+                DEFAULT_USER_AGENT,
+                "控制字符 UA 应被拒绝: {invalid:?}"
+            );
+        }
+
+        // 合法值不受影响
+        set_default_user_agent(Some("A B/3.0 (X; Y)"));
+        assert_eq!(default_user_agent(), "A B/3.0 (X; Y)");
+    }
+
+    /// 并发读写全局覆盖：无 panic/无死锁，读值恒为「某线程写入值集合 ∪
+    /// 内置默认」中的成员（不能只断言非空——审查 P3-5：那样恒真）
     #[test]
     fn test_default_user_agent_concurrent_read_write_is_safe() {
+        use std::collections::HashSet;
+
         let _guard = UaTestGuard::new();
+
+        // 所有可能被观测到的值：8 线程 × 200 次写入 + 内置默认
+        let allowed: HashSet<String> = (0..8u32)
+            .flat_map(|worker| (0..200u32).map(move |i| format!("Worker{worker}/UA-{i}")))
+            .chain(std::iter::once(DEFAULT_USER_AGENT.to_string()))
+            .collect();
 
         std::thread::scope(|scope| {
             for worker in 0..8 {
+                let allowed = &allowed;
                 scope.spawn(move || {
                     for i in 0..200 {
                         let ua = format!("Worker{worker}/UA-{i}");
                         set_default_user_agent(Some(&ua));
                         let observed = default_user_agent();
                         assert!(
-                            !observed.trim().is_empty(),
-                            "并发读不应得到空 UA（worker={worker}, i={i}）"
+                            allowed.contains(&observed),
+                            "并发读得到未写入的值（worker={worker}, i={i}）: {observed:?}"
                         );
                         if i % 7 == 0 {
                             // 并发窗口内其他线程可能随即写入新值，故此处

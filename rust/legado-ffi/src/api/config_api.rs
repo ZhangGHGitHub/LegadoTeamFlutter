@@ -43,15 +43,16 @@ pub fn set_config(key: &str, value: &str) -> LegadoResult<bool> {
     with_database(|db| {
         let repo = CacheRepository::new(db.connection());
         let full_key = format!("{}{}", CONFIG_PREFIX, key);
-        repo.put(&full_key, value, 0)?; // ttl=0 永不过期
+        // ttl=0 永不过期
+        repo.put(&full_key, value, 0)?;
+        // 审查 P3-4：运行期更新放在 DB 闭包内——落库成功后才更新，
+        // 且与 DB 写入同序（并发 setConfig 不会出现「库值 A、运行期值 B」
+        // 的乱序分叉）
+        if key == USER_AGENT_CONFIG_KEY {
+            legado_net::set_default_user_agent(Some(value));
+        }
         Ok(true)
-    })?;
-
-    if key == USER_AGENT_CONFIG_KEY {
-        legado_net::set_default_user_agent(Some(value));
-    }
-
-    Ok(true)
+    })
 }
 
 /// 启动时从 caches 回填进程级默认 User-Agent（由 `db_open` 调用，尽力而为）
