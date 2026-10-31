@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.427] - 2026-10-31
+
+### Added
+- [UI] 「自动清除过期搜索」设置真正生效：启动时清理 1 天前的搜索结果缓存（默认开，失败静默不阻塞启动）。
+### Fixed
+- [Rust] 过期搜索清理按严格小于时间阈值删除并返回行数，边界记录保留。
+
 ## [2.0.426] - 2026-10-31
 
 ### Added
