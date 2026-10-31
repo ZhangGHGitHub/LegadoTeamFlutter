@@ -1491,6 +1491,15 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 清理过期搜索结果（批9b-1，契约 §2.15 `clearExpiredSearchBooks`）
+    ///
+    /// 删除 `searchBooks` 表中 `time < before_ms` 的行，返回删除行数；
+    /// 严格小于边界（`time == before_ms` 保留），对齐原版
+    /// `App.onCreate` → `SearchBookDao.clearExpired`。
+    pub fn search_books_clear_expired(before_ms: i64) -> Result<i64, BridgeError> {
+        Ok(crate::api::search::clear_expired_search_books(before_ms)?)
+    }
+
     // ─── HTTP 工具 ────────────────────────────────────────────
 
     /// HTTP GET 请求，返回 JSON 格式的响应

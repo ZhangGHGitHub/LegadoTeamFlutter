@@ -1151,6 +1151,16 @@ Future<void> updateSearchBookScore({
 Future<void> deleteSearchBook({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiDeleteSearchBook(bookUrl: bookUrl);
 
+/// 清理过期搜索结果（批9b-1，契约 §2.15 `clearExpiredSearchBooks`）
+///
+/// 删除 `searchBooks` 表中 `time < before_ms` 的行，返回删除行数；
+/// 严格小于边界（`time == before_ms` 保留），对齐原版
+/// `App.onCreate` → `SearchBookDao.clearExpired`。
+Future<PlatformInt64> searchBooksClearExpired({
+  required PlatformInt64 beforeMs,
+}) =>
+    RustLib.instance.api.crateFfiFfiSearchBooksClearExpired(beforeMs: beforeMs);
+
 /// HTTP GET 请求，返回 JSON 格式的响应
 Future<String> httpGet({required String url}) =>
     RustLib.instance.api.crateFfiFfiHttpGet(url: url);

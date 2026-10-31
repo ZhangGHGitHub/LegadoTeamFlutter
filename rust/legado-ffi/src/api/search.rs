@@ -474,6 +474,24 @@ pub fn resume_search() {
     }
 }
 
+// ─── 过期搜索结果清理（批9b-1，契约 §2.15）────────────────────────────────────
+
+/// 清理过期搜索结果（对齐原版 `App.onCreate` → `SearchBookDao.clearExpired`）
+///
+/// 删除 `searchBooks` 表中 `time < before_ms` 的行，返回删除行数。
+/// **严格小于**边界（`time == before_ms` 保留，对齐原版 Room `<` 语义）；
+/// 数据库未初始化时报错（同 `source_switch::delete_search_book` 风格）。
+pub fn clear_expired_search_books(before_ms: i64) -> LegadoResult<i64> {
+    if !crate::db_state::is_initialized() {
+        return Err(LegadoError::Database("数据库未初始化".into()));
+    }
+    crate::db_state::with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        let deleted = repo.delete_expired(before_ms)?;
+        Ok(deleted as i64)
+    })
+}
+
 // ─── 封面搜索 ──────────────────────────────────────────────────────────────────
 
 /// 封面候选项
@@ -5718,5 +5736,86 @@ mod error_class_tests {
         assert_eq!(classify_source_outcome(&r1), "empty");
         let r2 = LegadoResult::Err(LegadoError::TocEmpty("无目录".into()));
         assert_eq!(classify_source_outcome(&r2), "empty");
+    }
+
+    /// 批9b-1（契约 §2.15 `clearExpiredSearchBooks`）：FFI 清理走真实临时库——
+    /// 插入过期/边界/新鲜三行（searchBooks.origin 有 FK 指向 book_sources，
+    /// 先插书源行），`time < before` 删 1 行、`==` 保留，返回行数；
+    /// 再验证空匹配返回 0
+    #[test]
+    fn test_clear_expired_search_books_row_count() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let now = chrono_now_ms();
+        // FK 前置：searchBooks.origin → book_sources.bookSourceUrl
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::BookSourceRepository::new(db.connection());
+            let src = legado_core::models::BookSource {
+                book_source_url: "https://source.example.com/9b1".to_string(),
+                book_source_name: "批9b1测试源".to_string(),
+                enabled: true,
+                ..Default::default()
+            };
+            repo.insert_batch(&[src]).unwrap();
+            Ok(())
+        })
+        .unwrap();
+
+        let mk = |url: &str, name: &str, time: i64| CoreSearchBook {
+            book_url: url.to_string(),
+            origin: "https://source.example.com/9b1".to_string(),
+            origin_name: "批9b1测试源".to_string(),
+            name: name.to_string(),
+            author: "a".to_string(),
+            time,
+            ..Default::default()
+        };
+        let books = vec![
+            mk(
+                "https://expire.example.com/1",
+                "过期书",
+                now - 86_400_000 - 1,
+            ),
+            mk("https://edge.example.com/1", "边界书", now - 86_400_000),
+            mk("https://fresh.example.com/1", "新鲜书", now),
+        ];
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::SearchBookRepository::new(db.connection());
+            let inserted = repo.insert_all(&books).unwrap();
+            assert_eq!(inserted, 3, "FK 前置就位后三行应全部落库");
+            Ok(())
+        })
+        .unwrap();
+
+        // before = now - 1 天：过期行（time < before）删除，边界行（==）保留
+        let before = now - 86_400_000;
+        let deleted = clear_expired_search_books(before).unwrap();
+        assert_eq!(deleted, 1);
+
+        let remaining = crate::db_state::with_database(|db| {
+            let repo = legado_db::SearchBookRepository::new(db.connection());
+            let mut hit = repo.find_by_keyword("书").unwrap();
+            hit.sort_by(|a, b| a.book_url.cmp(&b.book_url));
+            Ok(hit.into_iter().map(|b| b.book_url).collect::<Vec<_>>())
+        })
+        .unwrap();
+        assert_eq!(
+            remaining,
+            vec![
+                "https://edge.example.com/1".to_string(),
+                "https://fresh.example.com/1".to_string()
+            ]
+        );
+
+        // 空匹配：更早边界返回 0
+        assert_eq!(clear_expired_search_books(0).unwrap(), 0);
+
+        // 清理现场（test 库共享，删除本测插入行）
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::SearchBookRepository::new(db.connection());
+            repo.clear_all().unwrap();
+            Ok(())
+        })
+        .unwrap();
     }
 }

@@ -208,6 +208,19 @@ impl<'a> SearchBookRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("清空失败: {e}")))?;
         Ok(affected)
     }
+
+    /// 删除过期搜索结果（`time < before`），返回删除行数
+    ///
+    /// 对齐原版 `SearchBookDao.clearExpired`（App.onCreate 启动清理，
+    /// `App.kt:114-117`）：SQL `delete from searchBooks where time < :time`，
+    /// **严格小于**——`time == before` 的行保留（原版 Room `<` 比较符语义）。
+    pub fn delete_expired(&self, before: i64) -> LegadoResult<usize> {
+        let affected = self
+            .conn
+            .execute("DELETE FROM searchBooks WHERE time < ?1", params![before])
+            .map_err(|e| LegadoError::Database(format!("删除过期搜索结果失败: {e}")))?;
+        Ok(affected)
+    }
 }
 
 /// 分组字段是否包含目标组名（`,`/`;`/`，`/`；` 分隔，trim 后精确相等）
@@ -364,5 +377,38 @@ mod tests {
         let cleared = repo.clear_all().unwrap();
         assert_eq!(cleared, 2);
         assert!(repo.find_by_keyword("book").unwrap().is_empty());
+    }
+
+    /// 批9b-1：过期清理严格小于边界（对齐原版 `SearchBookDao.clearExpired`
+    /// `time < :time`）——< before 删、== before 保留、> before 保留、
+    /// 返回删除行数、空表返回 0
+    #[test]
+    fn test_delete_expired_boundary() {
+        let conn = make_repo_conn();
+        let repo = SearchBookRepository::new(&conn);
+
+        let mut old = make_book("u_old", "旧书", "a", "origin1");
+        old.time = 1000;
+        let mut equal = make_book("u_eq", "边界书", "a", "origin1");
+        equal.time = 3000;
+        let mut fresh = make_book("u_new", "新书", "a", "origin1");
+        fresh.time = 5000;
+        repo.insert(&old).unwrap();
+        repo.insert(&equal).unwrap();
+        repo.insert(&fresh).unwrap();
+
+        // < before 删 1 条；== before 保留；> before 保留
+        let deleted = repo.delete_expired(3000).unwrap();
+        assert_eq!(deleted, 1);
+        assert!(repo.find_by_book_url("u_old").unwrap().is_none());
+        assert!(repo.find_by_book_url("u_eq").unwrap().is_some());
+        assert!(repo.find_by_book_url("u_new").unwrap().is_some());
+
+        // 空表（无匹配行）返回 0
+        assert_eq!(repo.delete_expired(0).unwrap(), 0);
+
+        // 再以更大边界清理，删去 == 原边界与新行
+        assert_eq!(repo.delete_expired(9999).unwrap(), 2);
+        assert_eq!(repo.clear_all().unwrap(), 0);
     }
 }
