@@ -85,10 +85,11 @@ void main() {
       expect(find.text('长按选择文本'), findsOneWidget);
       expect(find.text('展示顶部工具栏附加区域'), findsOneWidget);
 
-      // 其他组 3 行
+      // 其他组 4 行（[批1b-3] +无目录时每章字数）
       expect(find.text('翻页成功振动'), findsOneWidget);
       expect(find.text('选词振动'), findsOneWidget);
       expect(find.text('禁用返回键'), findsOneWidget);
+      expect(find.text('无目录时每章字数'), findsOneWidget);
     });
 
     testWidgets('页面默认值与 ReaderAdvancedConfig.load() 一致', (tester) async {
@@ -148,7 +149,16 @@ void main() {
       final sliders = tester
           .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
           .toList();
-      expect(sliders.single.value, expected.pageTouchSlop, reason: '默认 0');
+      // [批1b-3] 其他组 +1 滑块（无目录时每章字数）
+      expect(sliders, hasLength(2));
+      final slopRow =
+          sliders.firstWhere((s) => s.title == '滑动翻页阈值');
+      expect(slopRow.value, expected.pageTouchSlop, reason: '默认 0');
+      final maxLenRow =
+          sliders.firstWhere((s) => s.title == '无目录时每章字数');
+      expect(maxLenRow.value, expected.maxLengthWithNoToc, reason: '默认 3000');
+      expect(maxLenRow.min, 3000, reason: '对齐参考版 valueRange 下限');
+      expect(maxLenRow.max, 100000, reason: '对齐参考版 valueRange 上限');
     });
 
     testWidgets('[批1b-1] keepLight/亮度条两行已入页且消费接线', (tester) async {
@@ -249,17 +259,54 @@ void main() {
       final container =
           ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
 
-      final slider = tester.widget<Slider>(find.byType(Slider));
+      // [批1b-3] 页面现有两个滑块行，取「滑动翻页阈值」行内的 Slider
+      final slopSliderFinder = find.descendant(
+        of: find.widgetWithText(Column, '滑动翻页阈值'),
+        matching: find.byType(Slider),
+      );
+      final slider = tester.widget<Slider>(slopSliderFinder);
       expect(slider.min, 0.0);
       expect(slider.max, 1000.0);
 
       // 拖到最右 → 1000
-      final sliderCenter = tester.getCenter(find.byType(Slider));
+      final sliderCenter = tester.getCenter(slopSliderFinder);
       await tester.dragFrom(sliderCenter, const Offset(400, 0));
       await tester.pumpAndSettle();
 
       expect(container.read(readerAdvConfigProvider)?.pageTouchSlop, 1000);
       expect((await ReaderAdvancedConfig.load()).pageTouchSlop, 1000);
+    });
+
+    testWidgets('[批1b-3] 无目录时每章字数滑块 → 持久化 + Rust config 真源同步',
+        (tester) async {
+      useTallViewport(tester);
+      await _pump(tester);
+      final container =
+          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+
+      final maxLenSliderFinder = find.descendant(
+        of: find.widgetWithText(Column, '无目录时每章字数'),
+        matching: find.byType(Slider),
+      );
+      final slider = tester.widget<Slider>(maxLenSliderFinder);
+      expect(slider.min, 3000.0);
+      expect(slider.max, 100000.0);
+
+      // 拖到最右 → 100000
+      final sliderCenter = tester.getCenter(maxLenSliderFinder);
+      await tester.dragFrom(sliderCenter, const Offset(400, 0));
+      await tester.pumpAndSettle();
+
+      expect(container.read(readerAdvConfigProvider)?.maxLengthWithNoToc,
+          100000);
+      expect(
+        (await ReaderAdvancedConfig.load()).maxLengthWithNoToc,
+        100000,
+      );
+      // Rust 真源（caches config:maxLengthWithNoToc）的联动语义由
+      // _updateMaxLengthWithNoToc 经 bookApiProvider.setConfig 落库，
+      // 真实链路由 FFI 层用例（local_txt_no_rule_length_split_follows_config）
+      // 覆盖——widget 测试无 Rust 运行时，仅锁定 UI 持久化面。
     });
 
     testWidgets('滑块拖动中只预览不落盘，松手才提交一次（审查回修 P2-2）',
@@ -269,7 +316,12 @@ void main() {
       final container =
           ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
 
-      final sliderCenter = tester.getCenter(find.byType(Slider));
+      // [批1b-3] 取「滑动翻页阈值」行内的 Slider（页面现有两个滑块行）
+      final slopSliderFinder = find.descendant(
+        of: find.widgetWithText(Column, '滑动翻页阈值'),
+        matching: find.byType(Slider),
+      );
+      final sliderCenter = tester.getCenter(slopSliderFinder);
       // 拖动到中段（手势未松手）
       final gesture = await tester.startGesture(sliderCenter);
       await gesture.moveBy(const Offset(200, 0));
@@ -290,7 +342,7 @@ void main() {
       // 预览值复位：行数值显示回到已提交值
       final row = tester
           .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
-          .single;
+          .firstWhere((r) => r.title == '滑动翻页阈值');
       expect(row.value, committed);
     });
 
