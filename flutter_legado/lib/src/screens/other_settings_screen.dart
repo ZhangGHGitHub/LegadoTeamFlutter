@@ -86,7 +86,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   bool _showMangaUi = true;
   String _jsSourceApiToken = '';
   int _webPort = 1122;
-  int _threadCount = 32;
+  int _threadCount = 16;
   bool _processText = true;
   bool _blockSourceBrowser = false;
   bool _recordLog = false;
@@ -167,7 +167,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     _showMangaUi =
         await s.getBoolPref(PrefKeys.showMangaUi, defaultValue: true);
     _webPort = await s.getIntPref(PrefKeys.webPort, defaultValue: 1122);
-    _threadCount = await s.getIntPref(PrefKeys.threadCount, defaultValue: 32);
+    // 批9b-2 审查回修：缺省 16（对齐参考版）；存量 >256 仅夹逼显示（见下）
+    final rawThreadCount =
+        await s.getIntPref(PrefKeys.threadCount, defaultValue: 16);
+    _threadCount = rawThreadCount.clamp(1, 256);
     _processText =
         await s.getBoolPref(PrefKeys.processText, defaultValue: true);
     _blockSourceBrowser = await s.getBoolPref(
@@ -532,13 +535,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               IosListTile(
                 title: '更新和搜索线程数（太多会卡顿）',
+                subtitle: '搜索有效上限 32；离线缓存有效上限 8',
                 value: '$_threadCount',
                 onTap: () => _editIntPref(
                   title: '线程数量',
                   key: PrefKeys.threadCount,
                   current: _threadCount,
-                  // 批9b-2：范围对齐参考版 DownloadCacheConfigScreen（1..256）；
-                  // 运行期搜索上限 64、下载上限 8 由 Rust 夹逼（契约 §2.10）
+                  // 批9b-2 审查回修：UI 范围保持参考版 1..256；
+                  // 运行期搜索有效上限 32、下载上限 8 由 Rust 夹逼（契约 §2.10）
                   min: 1,
                   max: 256,
                   apply: (v) => setState(() => _threadCount = v),
@@ -1092,7 +1096,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
 
   /// 批9b-2：线程数保存后同步 Rust（caches `config:threadCount`）
   ///
-  /// Rust 在每次搜索/批量下载入口读取该值（缺省 32；搜索夹逼 1..=64、
+  /// Rust 在每次搜索/批量下载入口读取该值（缺省 16；搜索有效上限 32、
   /// 下载夹逼 1..=8），故保存后无需重启，下一次任务即生效。SharedPreferences
   /// 仍是 UI 真源；同步失败仅提示，不回滚已保存的偏好（下次启动会重试同步）。
   Future<void> _syncThreadCountToRust(int value) async {

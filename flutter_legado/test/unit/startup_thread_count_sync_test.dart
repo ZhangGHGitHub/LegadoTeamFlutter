@@ -1,12 +1,13 @@
 // 批9b-2 单元测试：线程数启动同步 + 默认值
 //
 // 覆盖口径（任务要求）：
-// 1. 未设置偏好 → 默认 32，与 Rust 不同则写入一次（Rust 缺省 32 亦生效）；
-// 2. 已存旧值（如 16）→ 原样保留并写入 Rust（只改默认、不迁移用户现值）；
+// 1. 未设置偏好 → 默认 16，与 Rust 不同则写入一次（Rust 缺省 16 亦生效）；
+// 2. 已存旧值（如 12）→ 原样保留并写入 Rust（只改默认、不迁移用户现值）；
 // 3. 偏好与 Rust 相同 → 不写库；
 // 4. USE_MOCK → 不读不写（Mock 无 DB）；
 // 5. Rust 值非整数 → 视为不同并写入偏好值；
-// 6. 读取/写入失败 → 静默不崩（Future 正常完成，不抛异常）。
+// 6. 存量 >256（如 999）→ 夹逼为 256 写入（仅夹逼显示/镜像，不改 prefs）；
+// 7. 读取/写入失败 → 静默不崩（Future 正常完成，不抛异常）。
 //
 // 生产入口：main.dart `syncThreadCountOnStartup`（启动第 5e 步，await 调用）。
 // 语义基准：legado-upstream AppConfig.kt:416-419（threadCount 默认 32）；
@@ -63,7 +64,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
     });
 
-    test('未设置偏好 → 默认 32 写入 Rust（缺省值亦镜像）', () async {
+    test('未设置偏好 → 默认 16 写入 Rust（缺省值亦镜像）', () async {
       final api = _RecordingApi(rustValue: null);
 
       await syncThreadCountOnStartup(api, useMock: false);
@@ -71,19 +72,31 @@ void main() {
       expect(api.getCalls, [PrefKeys.threadCount]);
       expect(api.setCalls, hasLength(1));
       expect(api.setCalls.single.key, PrefKeys.threadCount);
-      expect(api.setCalls.single.value, '32', reason: '默认值对齐原版 threadCount=32');
+      expect(api.setCalls.single.value, '16', reason: '默认值对齐参考版 threadCount=16');
     });
 
-    test('已存旧值 16 → 保留现值并写入 Rust（只改默认不迁移）', () async {
-      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 16});
+    test('已存旧值 12 → 保留现值并写入 Rust（只改默认不迁移）', () async {
+      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 12});
       final api = _RecordingApi(rustValue: null);
 
       await syncThreadCountOnStartup(api, useMock: false);
 
       expect(api.setCalls, hasLength(1));
-      expect(api.setCalls.single.value, '16', reason: '用户已设置的值不得被默认值覆盖');
+      expect(api.setCalls.single.value, '12', reason: '用户已设置的值不得被默认值覆盖');
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getInt(PrefKeys.threadCount), 16);
+      expect(prefs.getInt(PrefKeys.threadCount), 12);
+    });
+
+    test('存量 999 → 夹逼为 256 写入 Rust（prefs 不改）', () async {
+      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 999});
+      final api = _RecordingApi(rustValue: null);
+
+      await syncThreadCountOnStartup(api, useMock: false);
+
+      expect(api.setCalls, hasLength(1));
+      expect(api.setCalls.single.value, '256', reason: '超过 UI 上限的存量值夹逼');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.threadCount), 999, reason: '不改写用户存量偏好');
     });
 
     test('偏好与 Rust 相同 → 不写库', () async {
@@ -97,17 +110,17 @@ void main() {
     });
 
     test('Rust 值非整数 → 视为不同并写入偏好值', () async {
-      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 32});
+      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 16});
       final api = _RecordingApi(rustValue: 'abc');
 
       await syncThreadCountOnStartup(api, useMock: false);
 
       expect(api.setCalls, hasLength(1));
-      expect(api.setCalls.single.value, '32');
+      expect(api.setCalls.single.value, '16');
     });
 
     test('USE_MOCK → 不读不写（Mock 无 DB）', () async {
-      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 16});
+      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 12});
       final api = _RecordingApi(rustValue: null);
 
       await syncThreadCountOnStartup(api, useMock: true);

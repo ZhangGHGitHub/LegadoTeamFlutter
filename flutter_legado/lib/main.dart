@@ -117,7 +117,7 @@ void main() {
     debugPrint('[启动] UserAgent 同步耗时：${sw.elapsedMilliseconds}ms');
 
     // 5e. 线程数同步到 Rust（批9b-2）：搜索/批量下载在每次入口读 caches
-    // config:threadCount（缺省 32；搜索夹逼 1..=64、下载夹逼 1..=8）。
+    // config:threadCount（缺省 16；搜索有效上限 32、下载夹逼 1..=8）。
     // SharedPreferences 为 UI 真源，值相同不写库；USE_MOCK 跳过；失败静默。
     sw = Stopwatch()..start();
     await syncThreadCountOnStartup(startupApi, useMock: useMock);
@@ -226,10 +226,10 @@ Future<void> syncUserAgentOnStartup(
 
 /// 批9b-2：启动时把「更新和搜索线程数」从 SharedPreferences 同步到 Rust
 ///
-/// Rust 在每次搜索/批量下载入口读 caches `config:threadCount`（缺省 32；
-/// 搜索夹逼 1..=64、批量下载夹逼 1..=8，见 API_CONTRACT 批9b-2）。
-/// - SharedPreferences（`PrefKeys.threadCount`）为 UI 真源，已存旧值
-///   （如 16）原样保留，仅未设置时默认 32；
+/// Rust 在每次搜索/批量下载入口读 caches `config:threadCount`（缺省 16；
+/// 搜索有效上限 32、批量下载夹逼 1..=8，见 API_CONTRACT 批9b-2）。
+/// - SharedPreferences（`PrefKeys.threadCount`）为 UI 真源，已存值原样保留；
+///   存量 >256 仅夹逼（显示/同步均为 256），未设置时默认 16；
 /// - Rust caches 为运行期镜像，值相同不写库；
 /// - [useMock] 为 true 时跳过（Mock 无 DB）；任何失败静默记录、不阻断启动。
 Future<void> syncThreadCountOnStartup(
@@ -240,8 +240,9 @@ Future<void> syncThreadCountOnStartup(
     if (useMock) {
       return;
     }
-    final pref = await SettingsService()
-        .getIntPref(PrefKeys.threadCount, defaultValue: 32);
+    final pref = (await SettingsService()
+            .getIntPref(PrefKeys.threadCount, defaultValue: 16))
+        .clamp(1, 256);
     final rustRaw = ((await api.getConfig(PrefKeys.threadCount)) ?? '').trim();
     if (int.tryParse(rustRaw) == pref) {
       return;

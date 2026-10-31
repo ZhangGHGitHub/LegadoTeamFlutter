@@ -242,6 +242,33 @@ void main() {
         .called(1);
   });
 
+  // 批9b-2 审查回修：恢复完成的 appPrefs 需同步 threadCount 到 Rust
+  testWidgets('恢复完成后把 threadCount 同步到 Rust config', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.threadCount: 12,
+    });
+    stubPasswordNotRequired();
+    final backupPath = fakeBackupPath('legado_backup_thread.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+    verify(() => mockApi.setConfig(PrefKeys.threadCount, '12')).called(1);
+  });
+
+  // 批9b-2 审查回修：恢复后存量 >256 夹逼为 256 再同步 Rust
+  testWidgets('恢复后 threadCount 存量 999 夹逼为 256 同步 Rust', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.threadCount: 999,
+    });
+    stubPasswordNotRequired();
+    final backupPath = fakeBackupPath('legado_backup_thread_clamp.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+
+    verify(() => mockApi.setConfig(PrefKeys.threadCount, '256')).called(1);
+  });
+
   testWidgets('中文/含空格密码原样透传（不 trim）', (tester) async {
     stubPasswordRequired();
     final backupPath = fakeBackupPath('legado_backup_cn_pwd.zip');

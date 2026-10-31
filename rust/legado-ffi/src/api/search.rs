@@ -103,29 +103,27 @@ fn clear_current_session_if_same(session: &Arc<SearchSession>) {
     }
 }
 
-/// 多源搜索并发缺省上限（批9b-2）
+/// 多源搜索并发缺省上限（批9b-2 审查回修：16，对齐参考版）
 ///
-/// 对齐原版 `SearchModel` **有效并发**语义：`mapParallelSafe(AppConfig.threadCount)`，
-/// threadCount 默认 32（用户可配置）。原版的固定线程池 `min(threadCount, MAX_THREAD=9)`
-/// 只限制执行协程的线程数——OkHttp 异步 I/O 等待响应时不占线程，故真实并发搜索数
-/// = threadCount（32），而非线程池大小。2026-08-25 实测对比（快速组 219/236 源）：
-/// 原版 ~100s 收敛 vs 本引擎 335–352s，根因即并发数差异。
+/// 对齐参考版 `DownloadCacheSettings.threadCount = 16`（多平台更稳）；
+/// 原版 `AppConfig.threadCount` 默认 32 仅作历史语义参考。
 ///
 /// 批9b-2 起该值仅为**缺省**：每次搜索入口经 [`search_concurrency`] 读取
 /// caches `config:threadCount`（越界夹逼 1..=[`MAX_SEARCH_CONCURRENCY`]）。
 pub(crate) const DEFAULT_SEARCH_CONCURRENCY: usize = crate::api::config_api::DEFAULT_THREAD_COUNT;
 
-/// 搜索并发硬上限（批9b-2 契约 §2.4）
+/// 搜索并发硬上限（批9b-2 审查回修：32）
 ///
-/// 用户设置范围 1..=256，但运行期并发夹逼到 64：与既有 blocking 池容量
-/// （`runtime.rs` `max_blocking_threads=64`，按 2×缺省 32 设计）对齐，避免
-/// 设置过大时 URL 构建/解析在 blocking 池排队而把排队时间计入单源 30s 超时。
-pub(crate) const MAX_SEARCH_CONCURRENCY: usize = 64;
+/// 本架构 `runtime` 的 `max_blocking_threads=64`，单源约 2 个
+/// spawn_blocking（URL 构建 + 解析），32 并发即匹配池容量；参考版 UI
+/// 允许更高值（1..256），但本架构有效上限取 32（设置更大值按 32 执行），
+/// 避免 URL 构建/解析排队时间被计入单源 30s 超时。
+pub(crate) const MAX_SEARCH_CONCURRENCY: usize = 32;
 
 /// 读取运行期搜索并发上限（批9b-2）
 ///
-/// 每次搜索入口读 `config:threadCount`：缺失/空串/非整数 → 32；
-/// 数值夹逼 1..=64。单源内顺序/结果聚合/取消/超时路径不受影响。
+/// 每次搜索入口读 `config:threadCount`：缺失/空串/非整数 → 16；
+/// 数值夹逼 1..=32。单源内顺序/结果聚合/取消/超时路径不受影响。
 pub(crate) fn search_concurrency() -> usize {
     crate::api::config_api::resolve_thread_count(DEFAULT_SEARCH_CONCURRENCY, MAX_SEARCH_CONCURRENCY)
 }
@@ -263,7 +261,7 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
     // 限流并发 + 单源超时 + 异常隔离（对齐原版 SearchModel 线程池语义），
     // 逐源完成后累积结果；失败源跳过不阻断整体。
     let keyword_owned = keyword.to_string();
-    // 批9b-2：本次搜索的跨源并发（config:threadCount，缺省 32，夹逼 1..=64）
+    // 批9b-2：本次搜索的跨源并发（config:threadCount，缺省 16，夹逼 1..=32）
     let concurrency = search_concurrency();
     // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
     let session = Arc::new(SearchSession::new());
@@ -408,7 +406,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
 
     // 委托统一单源执行器（drive_source_batches + search_single_source），与
     // search_books / run_multi_stream 共享同一并发/超时/解析语义：有界并发
-    // search_concurrency()（config:threadCount，缺省 32/上限 64）、
+    // search_concurrency()（config:threadCount，缺省 16/有效上限 32）、
     // 每源 SEARCH_SOURCE_TIMEOUT(30s)、无截断。原
     // MultiSourceSearcher/WebSourceSearcher 独立驱动器的 10s 全局超时、20 条
     // 截断与跨源去重/相关性排序已移除——聚合排序下沉至 Flutter，对齐原版
@@ -656,7 +654,7 @@ pub async fn run_multi_stream<F>(
     let precision = crate::api::config_api::get_config("precisionSearch")
         .map(|v| v == "true")
         .unwrap_or(false);
-    // 批9b-2：流式搜索跨源并发同样取运行期 threadCount（缺省 32，夹逼 1..=64）
+    // 批9b-2：流式搜索跨源并发同样取运行期 threadCount（缺省 16，夹逼 1..=32）
     let concurrency = search_concurrency();
 
     drive_source_batches(
@@ -3793,8 +3791,7 @@ mod tests {
 
     // ─── P0-3 会话注册与清理安全（复审 7.5）：register(B) 取消 A；A 的清理不误清 B ──
     //     触碰全局 CURRENT_SEARCH_SESSION → 用 TEST_SESSION_LOCK 串行化，避免与其他此类测试并发
-    static TEST_SESSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+    //     （锁定义在模块级，供 p3f_tests 的 search_books E2E 复用）
     #[tokio::test]
     async fn test_session_registration_and_cleanup_safety() {
         let _lock = TEST_SESSION_LOCK.lock().unwrap();
@@ -5509,6 +5506,15 @@ mod tests {
     }
 }
 
+/// 搜索会话级全局状态测试串行锁（批9b-2 回修提升至模块级）
+///
+/// `CURRENT_SEARCH_SESSION` 是进程级单槽：任何直接注册会话或经
+/// `search_books`/`multi_source_search` 等入口触发会话注册的测试都必须
+/// 持本锁，避免并发测试互相取消（P0-3 会话测试与 p3f 搜索 E2E 共用）。
+/// 锁序：本锁（模块级，最外层）→ `test_support::lock_global_store` → DB。
+#[cfg(test)]
+static TEST_SESSION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// [P3-6 阶段三] precision filter(解析期逐条过滤)测试
 #[cfg(test)]
 mod p3f_tests {
@@ -5627,11 +5633,15 @@ mod p3f_tests {
     // ─── 批9b-2：搜索并发按 config:threadCount 运行期取值 ─────────────────
 
     /// `search_concurrency()` 读取 caches `config:threadCount`：
-    /// 缺省/非法回落 32，数值夹逼 1..=64
+    /// `search_concurrency()` 读取 caches `config:threadCount`：
+    /// 缺省/非法回落 16，数值夹逼 1..=32
     #[test]
     fn test_search_concurrency_reads_thread_count_config() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+
+        assert_eq!(DEFAULT_SEARCH_CONCURRENCY, 16, "缺省对齐参考版");
+        assert_eq!(MAX_SEARCH_CONCURRENCY, 32, "本架构有效上限 32");
 
         crate::api::config_api::set_config("threadCount", "7").unwrap();
         assert_eq!(search_concurrency(), 7);
@@ -5649,7 +5659,7 @@ mod p3f_tests {
         assert_eq!(search_concurrency(), DEFAULT_SEARCH_CONCURRENCY);
 
         // 复原默认值，避免影响共享测试库中的其他用例
-        crate::api::config_api::set_config("threadCount", "32").unwrap();
+        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// E2E：多源搜索入口按 `config:threadCount=2` 限流——回环服务器
@@ -5660,7 +5670,10 @@ mod p3f_tests {
         use std::net::TcpListener;
         use std::sync::atomic::{AtomicUsize, Ordering};
 
-        // search_books 入口执行 begin_book_flow → 先 store 锁后 DB 锁
+        // 会话锁（最外层）→ store 锁 → DB 锁；search_books 注册全局会话
+        let _session_lock = TEST_SESSION_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
         crate::api::config_api::set_config("threadCount", "2").unwrap();
@@ -5753,7 +5766,7 @@ mod p3f_tests {
         }
         let _ =
             crate::api::source_switch::delete_search_book(&format!("http://127.0.0.1:{port}/b/1"));
-        crate::api::config_api::set_config("threadCount", "32").unwrap();
+        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 }
 

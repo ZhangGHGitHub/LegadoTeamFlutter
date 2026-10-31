@@ -212,7 +212,7 @@ pub fn search_alternative_sources(
     // 并行搜索（对齐 SearchModel.mapParallelSafe：限流并发 + 单源超时 60s）
     let book_name_for_search = book_name.to_string();
     let sources_for_search = sources.clone();
-    // 批9b-2：换源批量搜索与主搜索共用运行期 threadCount（缺省 32，夹逼 1..=64）
+    // 批9b-2：换源批量搜索与主搜索共用运行期 threadCount（缺省 16，夹逼 1..=32）
     let concurrency = crate::api::search::search_concurrency();
     let candidates = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;

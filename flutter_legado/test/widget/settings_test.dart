@@ -614,7 +614,7 @@ void main() {
 
     // 批9b-2：线程数默认 32（空 prefs）、保存经 setConfig 同步 Rust、
     // 范围对齐参考版 1..256（越界不保存）
-    testWidgets('线程数：默认 32、保存同步 Rust、越界拒绝', (tester) async {
+    testWidgets('线程数：默认 16、保存同步 Rust、越界拒绝', (tester) async {
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
       when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
 
@@ -631,7 +631,7 @@ void main() {
           matching: find.byType(IosListTile),
         ).first,
       );
-      expect(tile.value, '32', reason: '未设置偏好时默认 32（对齐原版）');
+      expect(tile.value, '16', reason: '未设置偏好时默认 16（对齐参考版）');
 
       // 保存：写 prefs 并经 BookApi.setConfig 同步 Rust
       await tester.tap(find.text(tileTitle));
@@ -657,6 +657,30 @@ void main() {
 
       verifyNever(() => mockApi.setConfig(PrefKeys.threadCount, '999'));
       expect(prefs.getInt(PrefKeys.threadCount), 48, reason: '越界值不得写入');
+    });
+
+    // 批9b-2 审查回修：存量 >256 仅夹逼显示（不改写 prefs）
+    testWidgets('线程数：存量 999 夹逼显示 256', (tester) async {
+      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 999});
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+
+      await tester.pumpWidget(wrap(const OtherSettingsScreen()));
+      await tester.pumpAndSettle();
+
+      const tileTitle = '更新和搜索线程数（太多会卡顿）';
+      await dragTo(tester, tileTitle);
+      await tester.pumpAndSettle();
+
+      final tile = tester.widget<IosListTile>(
+        find.ancestor(
+          of: find.text(tileTitle),
+          matching: find.byType(IosListTile),
+        ).first,
+      );
+      expect(tile.value, '256', reason: '存量超上限仅夹逼显示');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.threadCount), 999, reason: '不改写存量偏好');
     });
   });
 }

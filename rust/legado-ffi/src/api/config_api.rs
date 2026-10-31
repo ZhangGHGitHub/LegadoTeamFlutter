@@ -28,16 +28,20 @@ pub const USER_AGENT_CONFIG_KEY: &str = "userAgent";
 /// 任务即生效，无需额外的运行期缓存同步。
 pub const THREAD_COUNT_CONFIG_KEY: &str = "threadCount";
 
-/// 线程数缺省值（批9b-2）
+/// 线程数缺省值（批9b-2 审查回修）
 ///
-/// 对齐原版 `AppConfig.threadCount` 默认 32（`AppConfig.kt:416-419`）。
-pub(crate) const DEFAULT_THREAD_COUNT: usize = 32;
+/// 对齐参考版 `DownloadCacheSettings.threadCount = 16`（多平台更稳）；
+/// 原版 `AppConfig.threadCount` 默认 32 仅作历史语义参考。
+pub(crate) const DEFAULT_THREAD_COUNT: usize = 16;
 
-/// 解析线程数配置文本（批9b-2）
+/// 解析线程数配置文本（批9b-2，审查回修补齐溢出/存量口径）
 ///
 /// 口径（契约 §2.10 批9b-2）：
 /// - 缺失 / 空串 / 纯空白 / 非整数 → 回落 `default`；
-/// - 数值越界 → 夹逼 `1..=max`（`<1` → 1，含 0/负数）。
+/// - 数值越界 → 夹逼 `1..=max`（`<1` → 1，含 0/负数）；
+/// - **超出 i64 的纯数字**：正数按上限 `max` 夹逼、负数按下限 1
+///   （避免超大值被误判为「非数字」而回落缺省）；
+/// - 带前导 `+` 的纯数字按正数处理。
 pub(crate) fn parse_thread_count(raw: &str, default: usize, max: usize) -> usize {
     let max = max.max(1);
     let default = default.clamp(1, max);
@@ -45,10 +49,20 @@ pub(crate) fn parse_thread_count(raw: &str, default: usize, max: usize) -> usize
     if trimmed.is_empty() {
         return default;
     }
-    match trimmed.parse::<i64>() {
-        Ok(v) => v.clamp(1, max as i64) as usize,
-        Err(_) => default,
+    if let Ok(v) = trimmed.parse::<i64>() {
+        return v.clamp(1, max as i64) as usize;
     }
+    let (negative, digits) = if let Some(digits) = trimmed.strip_prefix('-') {
+        (true, digits)
+    } else if let Some(digits) = trimmed.strip_prefix('+') {
+        (false, digits)
+    } else {
+        (false, trimmed)
+    };
+    if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+        return if negative { 1 } else { max };
+    }
+    default
 }
 
 /// 读取运行期线程数（caches `config:threadCount`，批9b-2）
@@ -266,27 +280,44 @@ mod tests {
 
     // ─── 批9b-2：线程数配置解析/夹逼 ─────────────────────────────────────
 
-    /// 配置文本解析：缺省/空串/非整数回落缺省；数值夹逼 1..=max
+    /// 配置文本解析：缺省/空串/非整数回落缺省；数值夹逼 1..=max；
+    /// 超出 i64 的纯数字正数按上限、负数按下限（批9b-2 审查回修）
     #[test]
     fn test_parse_thread_count_defaults_and_clamp() {
-        // 搜索口径（缺省 32、上限 64）
-        assert_eq!(parse_thread_count("", 32, 64), 32, "缺失回落缺省");
-        assert_eq!(parse_thread_count("   ", 32, 64), 32, "纯空白回落缺省");
-        assert_eq!(parse_thread_count("abc", 32, 64), 32, "非整数回落缺省");
-        assert_eq!(parse_thread_count("1.5", 32, 64), 32, "小数非整数回落缺省");
-        assert_eq!(parse_thread_count("0", 32, 64), 1, "0 夹逼到下限 1");
-        assert_eq!(parse_thread_count("-9", 32, 64), 1, "负数夹逼到下限 1");
-        assert_eq!(parse_thread_count("1", 32, 64), 1);
-        assert_eq!(parse_thread_count("48", 32, 64), 48);
-        assert_eq!(parse_thread_count("64", 32, 64), 64);
-        assert_eq!(parse_thread_count("999", 32, 64), 64, "超上限夹逼到 64");
+        // 搜索口径（缺省 16、上限 32）
+        assert_eq!(parse_thread_count("", 16, 32), 16, "缺失回落缺省");
+        assert_eq!(parse_thread_count("   ", 16, 32), 16, "纯空白回落缺省");
+        assert_eq!(parse_thread_count("abc", 16, 32), 16, "非整数回落缺省");
+        assert_eq!(parse_thread_count("1.5", 16, 32), 16, "小数非整数回落缺省");
+        assert_eq!(parse_thread_count("0", 16, 32), 1, "0 夹逼到下限 1");
+        assert_eq!(parse_thread_count("-9", 16, 32), 1, "负数夹逼到下限 1");
+        assert_eq!(parse_thread_count("1", 16, 32), 1);
+        assert_eq!(parse_thread_count("24", 16, 32), 24);
+        assert_eq!(parse_thread_count("32", 16, 32), 32);
+        assert_eq!(parse_thread_count("999", 16, 32), 32, "超上限夹逼到 32");
+        // 超出 i64 的纯数字：正数按上限、负数按下限（不得回落缺省）
+        assert_eq!(
+            parse_thread_count("999999999999999999999999999", 16, 32),
+            32,
+            "超 i64 正数按上限"
+        );
+        assert_eq!(
+            parse_thread_count("+999999999999999999999999999", 16, 32),
+            32,
+            "超 i64 带 + 正数按上限"
+        );
+        assert_eq!(
+            parse_thread_count("-999999999999999999999999999", 16, 32),
+            1,
+            "超 i64 负数按下限"
+        );
 
-        // 下载口径（同一解析器，上限 8）：缺省 32 → 8
-        assert_eq!(parse_thread_count("", 32, 8), 8);
-        assert_eq!(parse_thread_count("5", 32, 8), 5);
-        assert_eq!(parse_thread_count("100", 32, 8), 8);
+        // 下载口径（同一解析器，上限 8）：缺省 16 → 8
+        assert_eq!(parse_thread_count("", 16, 8), 8);
+        assert_eq!(parse_thread_count("5", 16, 8), 5);
+        assert_eq!(parse_thread_count("100", 16, 8), 8);
         // max=0 防御：至少 1
-        assert_eq!(parse_thread_count("5", 32, 0), 1);
+        assert_eq!(parse_thread_count("5", 16, 0), 1);
     }
 
     /// `resolve_thread_count` 读取 caches `config:threadCount`：
@@ -296,22 +327,22 @@ mod tests {
         let _db_guard = crate::db_state::ensure_test_db();
 
         set_config(THREAD_COUNT_CONFIG_KEY, "12").unwrap();
-        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 12);
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 32), 12);
 
         set_config(THREAD_COUNT_CONFIG_KEY, "999").unwrap();
-        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 64);
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 32), 32);
 
         set_config(THREAD_COUNT_CONFIG_KEY, "not-a-number").unwrap();
-        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 32);
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 32), 16);
 
         set_config(THREAD_COUNT_CONFIG_KEY, "").unwrap();
-        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 64), 32);
+        assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 32), 16);
 
         // 下载口径：同一配置值 99 → 夹逼到 8
         set_config(THREAD_COUNT_CONFIG_KEY, "99").unwrap();
         assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 8), 8);
 
         // 复原，避免影响共享测试库中的其他用例
-        set_config(THREAD_COUNT_CONFIG_KEY, "32").unwrap();
+        set_config(THREAD_COUNT_CONFIG_KEY, "16").unwrap();
     }
 }

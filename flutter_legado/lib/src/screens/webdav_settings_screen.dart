@@ -846,6 +846,21 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     } catch (e) {
       debugPrint('恢复后同步 UserAgent 失败（不阻断恢复）：$e');
     }
+    // 批9b-2 审查回修：备份 appPrefs 同样可能替换 threadCount，恢复后与
+    // UserAgent 同口径同步 Rust（caches config:threadCount），避免同会话
+    // prefs/Rust 分叉；存量 >256 夹逼到 UI 上限。失败不阻断恢复。
+    try {
+      final threadCount = (await _settings.getIntPref(
+        PrefKeys.threadCount,
+        defaultValue: 16,
+      ))
+          .clamp(1, 256);
+      await ref
+          .read(bookApiProvider)
+          .setConfig(PrefKeys.threadCount, '$threadCount');
+    } catch (e) {
+      debugPrint('恢复后同步线程数失败（不阻断恢复）：$e');
+    }
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
     setState(() {
