@@ -17,6 +17,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../services/platform_bridge_service.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/reader/read_aloud_bar.dart';
@@ -141,6 +142,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // 对标原版 ReadBookActivity 退出时 upSystemUiMode 还原）— Qoder
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(const []);
+    // [批1b-1] 退出阅读器清除保持亮屏 flag，恢复系统息屏策略（对标参考版
+    // ReadBookController 销毁路径 restoreActivityWindowState →
+    // keepScreenOn(originalKeepScreenOn)；通道层幂等去重+异常吞没）—
+    // 全栈工程师
+    unawaited(
+        PlatformBridgeService.instance.setKeepScreenOn(false));
     super.dispose();
   }
 
@@ -232,9 +239,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: overlays);
     SystemChrome.setPreferredOrientations(
         _orientationsFor(cfg.screenOrientation));
-    // keep_light（保持亮屏）：项目未引入 wakelock 依赖（不改 pubspec），
-    // 设置仅持久化，待平台能力接入后生效（与 audio_screen audioWakeLock
-    // 标注一致，诚实标注平台限制）— Qoder
+    // [批1b-1] keep_light（保持亮屏）：0=默认（交还系统策略，清 flag）；
+    // >0=限定时常亮（秒→flag 常亮，参考版屏幕超时到点回清由系统息屏语义
+    // 承接，Flutter 无处方式定时器基准，诚实登记偏差）；-1=常亮。经
+    // 平台通道对 Activity window 增删 FLAG_KEEP_SCREEN_ON（对齐参考版
+    // ReadBookController.keepScreenOn，非 PARTIAL_WAKE_LOCK）；iOS/桌面
+    // 无基准恒 no-op（PlatformBridgeService 内灰字留痕）— 全栈工程师
+    unawaited(PlatformBridgeService.instance
+        .setKeepScreenOn(cfg.keepLight != 0));
   }
 
   /// 原版 screen_direction_value → Flutter DeviceOrientation 映射
@@ -822,7 +834,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   onToggleAutoPage: _toggleAutoPage,
                   onOpenReplaceRules: () =>
                       Navigator.pushNamed(context, AppRoutes.replaceRules),
-                  showBrightnessView: _advConfig.showBrightnessView,
+                  brightnessMode: _advConfig.readBrightnessMode,
+                  brightnessVwPos: _advConfig.readBrightnessVwPos,
                   progressBehavior: _advConfig.progressBarBehavior,
                   onSeekPage: (page) =>
                       _pageViewKey.currentState?.goToPage(page),

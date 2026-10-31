@@ -8,10 +8,10 @@
 // 不动 other_settings_screen）。
 //
 // 仅收录已有消费方的项（禁新造死开关）：
-// - 屏幕：screenOrientation/hideStatusBar/hideNavigationBar/
-//   paddingDisplayCutouts/showBrightnessView/doubleHorizontalPage/
-//   progressBarBehavior/readBodyToLh
-//   （keepLight 有字段无消费，留 1b，不放本页）
+// - 屏幕：screenOrientation/keepLight（[批1b-1] 通道接通）/hideStatusBar/
+//   hideNavigationBar/paddingDisplayCutouts/readBrightnessMode+readBrightnessVwPos
+//   （[批1b-1] 取代旧布尔 showBrightnessView，横条/竖条消费接线）/
+//   doubleHorizontalPage/progressBarBehavior/readBodyToLh
 // - 页面控制：useZhLayout/textFullJustify/hangingPunctuation/pageTouchClick/
 //   pageTouchSlop/volumeKeyPage/volumeKeyPageOnPlay/mouseWheelPage/
 //   noAnimScrollPage/autoChangeSource/selectText/showReadTitleAddition
@@ -113,6 +113,15 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           options: _kScreenOrientationOptions,
           onChanged: (v) => _update((c) => c.screenOrientation = v),
         ),
+        // [批1b-1] 保持亮屏（键 keep_light，秒值 0/60/300/600/-1，档位对齐
+        // 参考版 screen_time_out arrays；1b-1 平台通道已接通：阅读器进入/
+        // 退出/设置变更经 setKeepScreenOn 增删 FLAG_KEEP_SCREEN_ON）
+        SettingDropdownRow<int>(
+          title: '保持亮屏',
+          value: cfg.keepLight,
+          options: _kKeepLightOptions,
+          onChanged: (v) => _update((c) => c.keepLight = v),
+        ),
         SettingSwitchRow(
           title: '隐藏状态栏',
           value: cfg.hideStatusBar,
@@ -133,11 +142,24 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           value: cfg.readBodyToLh,
           onChanged: (v) => _update((c) => c.readBodyToLh = v),
         ),
-        SettingSwitchRow(
-          title: '显示亮度调节控件',
-          value: cfg.showBrightnessView,
-          onChanged: (v) => _update((c) => c.showBrightnessView = v),
+        // [批1b-1] 亮度条模式三档（键 readBrightnessMode，档位对齐参考版
+        // brightness_bar_mode arrays：0=不显示/1=横排/2=竖排；取代批1a
+        // 的旧布尔开关行 showBrightnessView——旧键迁移后停消费）
+        SettingDropdownRow<String>(
+          title: '亮度条模式',
+          value: cfg.readBrightnessMode,
+          options: _kBrightnessModeOptions,
+          onChanged: (v) => _update((c) => c.readBrightnessMode = v),
         ),
+        // [批1b-1] 亮度条位置（键 readBrightnessVwPos，0=左/1=右；仅
+        // 模式=竖排时显示，对齐参考版 ReadConfigScreen.kt:191 条件渲染）
+        if (cfg.readBrightnessMode == '2')
+          SettingDropdownRow<String>(
+            title: '亮度条位置',
+            value: cfg.readBrightnessVwPos,
+            options: _kBrightnessPosOptions,
+            onChanged: (v) => _update((c) => c.readBrightnessVwPos = v),
+          ),
         SettingDropdownRow<int>(
           title: '平板/横屏双页',
           value: cfg.doubleHorizontalPage,

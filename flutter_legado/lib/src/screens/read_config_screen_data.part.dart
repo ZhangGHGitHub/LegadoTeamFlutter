@@ -12,8 +12,35 @@ const _kScreenOrientationOptions = <int, String>{
   5: '反向横屏',
 };
 
-// keep_light（保持亮屏/屏幕超时）有字段无消费（reader_screen.dart:235 诚实
-// 标注仅持久化），按「禁新造死开关」不放入本页，留 1b 平台通道接线后补行。
+/// [批1b-1] 保持亮屏档位（键 keep_light，秒值；对标参考版
+/// screen_time_out arrays：Default/1 min/5 min/10 min/Always →
+/// 0/60/300/600/-1）
+const _kKeepLightOptions = <int, String>{
+  0: '默认',
+  60: '1 分钟',
+  300: '5 分钟',
+  600: '10 分钟',
+  -1: '常亮',
+};
+
+// [批1b-1] keep_light 平台通道已接通（PlatformBridgeService.setKeepScreenOn
+// → Kotlin BrightnessBridge FLAG_KEEP_SCREEN_ON），本行自 1a 留位转正。
+
+/// [批1b-1] 亮度条模式档位（键 readBrightnessMode，对标参考版
+/// brightness_bar_mode_title/value：关闭/横排/竖排 → 0/1/2；
+/// 消费 reader_bottom_bar（横条）与 reader_menu_panel（竖条））
+const _kBrightnessModeOptions = <String, String>{
+  '0': '不显示',
+  '1': '横排',
+  '2': '竖排',
+};
+
+/// [批1b-1] 亮度条位置档位（键 readBrightnessVwPos，仅模式=竖排时显示；
+/// 对标参考版 brightness_bar_position_title/value：左侧/右侧 → 0/1）
+const _kBrightnessPosOptions = <String, String>{
+  '0': '左侧',
+  '1': '右侧',
+};
 
 /// 双页模式档位（对标原版 double_page_value 0-3）
 const _kDoublePageOptions = <int, String>{

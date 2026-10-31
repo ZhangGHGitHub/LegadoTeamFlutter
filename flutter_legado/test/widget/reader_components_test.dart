@@ -454,6 +454,9 @@ void main() {
         onOpenAdvancedConfig: () {},
         onOpenContentSearch: () {},
         onReadAloud: () {},
+        // [批1b-1] 横条=模式 '1' 时渲染（旧布尔 showBrightnessView 停消费，
+        // 默认 '0' 不显示——需显式传横条模式断言亮度行）
+        brightnessMode: '1',
       )));
       // _loadBrightness 为微任务链（isSupported → isAutoBrightness →
       // getBrightness：iOS 通道未注册 → 通道响应经真实异步 I/O 回传

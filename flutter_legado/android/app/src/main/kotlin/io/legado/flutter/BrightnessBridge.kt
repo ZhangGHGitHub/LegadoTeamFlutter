@@ -61,7 +61,40 @@ class BrightnessBridge {
                     result.error("BRIGHTNESS_ERROR", "设置自动亮度失败: ${e.message}", null)
                 }
             }
+            // [批1b-1] keepLight 保持亮屏：阅读器进入/退出/设置变更时由 Dart
+            // 调用，对 Activity window 增删 FLAG_KEEP_SCREEN_ON（对齐参考版
+            // ReadBookController.keepScreenOn：退出阅读页即恢复系统息屏策略，
+            // 非 PARTIAL_WAKE_LOCK、不引入 wakelock 包）。失败经 result.error
+            // 回传，不向引擎抛未捕获异常（D2 教训：原生层异常主线程 FATAL）。
+            "setKeepScreenOn" -> {
+                try {
+                    val enabled = call.arguments as? Boolean ?: false
+                    setKeepScreenOn(activity, enabled)
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("BRIGHTNESS_ERROR", "设置保持亮屏失败: ${e.message}", null)
+                }
+            }
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * [批1b-1] 阅读页保持屏幕常亮（FLAG_KEEP_SCREEN_ON）
+     *
+     * FLAG_KEEP_SCREEN_ON 为 window 级最省电的常亮方式：仅 Activity 前台
+     * 可见时生效，页面销毁/离开前台系统自动恢复息屏策略，无泄漏面
+     * （对齐参考版 ReadBookController.keepScreenOn 与 upstream
+     * ReadBookActivity 的 keepScreenOn 实现）。
+     */
+    private fun setKeepScreenOn(activity: MainActivity, enabled: Boolean) {
+        val current =
+            (activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
+        if (enabled == current) return
+        if (enabled) {
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
     }
 

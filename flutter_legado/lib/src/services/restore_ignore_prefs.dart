@@ -116,6 +116,12 @@ class RestoreIgnorePrefs {
     'paddingDisplayCutouts',
     'readBodyToLh',
     'showBrightnessView',
+    // [批1b-1] 亮度条模式/位置新键（键名=参考版 PreferKey
+    // readBrightnessMode / readBrightnessControlPosition）：取代旧布尔
+    // showBrightnessView 的显隐语义，随「忽略阅读配置」一并过滤 —
+    // 全栈工程师
+    'readBrightnessMode',
+    'readBrightnessVwPos',
     'doubleHorizontalPage',
     'progressBarBehavior',
     'mouseWheelPage',

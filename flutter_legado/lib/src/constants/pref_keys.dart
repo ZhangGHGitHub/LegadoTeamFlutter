@@ -146,9 +146,16 @@ class PrefKeys {
   static const themeAmoled = 'themeAmoled';
 
   /// 阅读菜单亮度竖条开关（参考仓 showBrightnessView="2" 变体，默认关）
+  ///
+  /// [批1b-1] 停止消费：竖条显隐改由 ReaderAdvancedConfig.readBrightnessMode
+  /// 三档承载（键 readBrightnessMode）；本键仅在迁移时读取一次旧值，
+  /// 不再有任何消费方（保留常量供迁移代码引用）。
   static const readMenuBrightnessVertical = 'readMenuBrightnessVertical';
 
   /// 阅读菜单亮度竖条位置：left/right（参考仓 brightnessVwPos）
+  ///
+  /// [批1b-1] 停止消费：位置改由 readBrightnessVwPos（'0'=左/'1'=右）
+  /// 承载；迁移时读取一次旧值（left→'0'/right→'1'），之后不再消费。
   static const readMenuBrightnessPos = 'readMenuBrightnessVwPos';
 
   /// 阅读器顶栏动作配置（批37）

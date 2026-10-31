@@ -1,7 +1,8 @@
 // [批1a | 2026-10-31] 独立「阅读设置」页行为测试（非仅渲染）— 全栈工程师
 //
 // 覆盖：
-// 1. 三组渲染 + 行数（屏幕 8 / 页面控制 12 / 其他 3）
+// 1. 三组渲染 + 行数（屏幕 10 / 页面控制 12 / 其他 3；[批1b-1] 屏幕组增
+//    「保持亮屏」「亮度条模式」，亮度条位置行仅模式=竖排时渲染）
 // 2. 页面默认值与 ReaderAdvancedConfig.load() 一致（空存储）
 // 3. 改值生效：开关切换 → save 落盘 → 共享 provider 推送
 // 4. 下拉/滑块/步进行改值生效（含值域钳制）
@@ -48,7 +49,7 @@ void main() {
   });
 
   group('阅读设置页：结构与默认值', () {
-    testWidgets('三组标题与行数齐备（屏幕8/页面控制12/其他3）', (tester) async {
+    testWidgets('三组标题与行数齐备（屏幕10/页面控制12/其他3）', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
 
@@ -57,13 +58,16 @@ void main() {
       expect(find.text('页面控制'), findsOneWidget);
       expect(find.text('其他'), findsOneWidget);
 
-      // 屏幕组 8 行
+      // 屏幕组 10 行（[批1b-1] +保持亮屏 +亮度条模式；位置行默认模式 0 不渲染）
       expect(find.text('屏幕方向'), findsOneWidget);
+      expect(find.text('保持亮屏'), findsOneWidget);
       expect(find.text('隐藏状态栏'), findsOneWidget);
       expect(find.text('隐藏导航栏'), findsOneWidget);
       expect(find.text('填充刘海区域'), findsOneWidget);
       expect(find.text('扩展到刘海'), findsOneWidget);
-      expect(find.text('显示亮度调节控件'), findsOneWidget);
+      expect(find.text('亮度条模式'), findsOneWidget);
+      expect(find.text('亮度条位置'), findsNothing,
+          reason: '默认模式 0=不显示时位置行不渲染（对齐参考版条件渲染）');
       expect(find.text('平板/横屏双页'), findsOneWidget);
       expect(find.text('进度条行为'), findsOneWidget);
 
@@ -102,8 +106,6 @@ void main() {
       expect(rowValue('隐藏导航栏'), expected.hideNavigationBar);
       expect(rowValue('填充刘海区域'), expected.paddingDisplayCutouts);
       expect(rowValue('扩展到刘海'), expected.readBodyToLh, reason: '默认 true');
-      expect(rowValue('显示亮度调节控件'), expected.showBrightnessView,
-          reason: '默认 false（PARITY C2 M5）');
       expect(rowValue('鼠标滚轮翻页'), expected.mouseWheelPage, reason: '默认 true');
       expect(rowValue('音量键翻页'), expected.volumeKeyPage, reason: '默认 true');
       expect(rowValue('朗读时音量键翻页'), expected.volumeKeyPageOnPlay,
@@ -123,9 +125,16 @@ void main() {
           ))
           .whereType<SettingDropdownRow>()
           .toList();
-      expect(dropdowns, hasLength(3));
+      // [批1b-1] 屏幕组下拉 +2（保持亮屏 / 亮度条模式）
+      expect(dropdowns, hasLength(5));
       final orientationRow = dropdowns.firstWhere((d) => d.title == '屏幕方向');
       expect(orientationRow.value, expected.screenOrientation, reason: '默认 0');
+      final keepLightRow = dropdowns.firstWhere((d) => d.title == '保持亮屏');
+      expect(keepLightRow.value, expected.keepLight, reason: '默认 0（系统策略）');
+      final brightnessModeRow =
+          dropdowns.firstWhere((d) => d.title == '亮度条模式');
+      expect(brightnessModeRow.value, expected.readBrightnessMode,
+          reason: "默认 '0'（参考版 ReadSettings）");
       final doubleRow = dropdowns.firstWhere((d) => d.title == '平板/横屏双页');
       expect(doubleRow.value, expected.doubleHorizontalPage, reason: '默认 0');
       final progressRow = dropdowns.firstWhere((d) => d.title == '进度条行为');
@@ -142,11 +151,12 @@ void main() {
       expect(sliders.single.value, expected.pageTouchSlop, reason: '默认 0');
     });
 
-    testWidgets('keepLight（有字段无消费）不放入页面（1b 留位）', (tester) async {
+    testWidgets('[批1b-1] keepLight/亮度条两行已入页且消费接线', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
-      expect(find.text('保持亮屏'), findsNothing);
-      expect(find.text('屏幕超时'), findsNothing);
+      // 1b-1 起 keepLight 平台通道接通、亮度条三档接线消费，两行转正
+      expect(find.text('保持亮屏'), findsOneWidget);
+      expect(find.text('亮度条模式'), findsOneWidget);
     });
   });
 
@@ -190,6 +200,8 @@ void main() {
     });
 
     testWidgets('进度条行为下拉 → 持久化生效（chapter）', (tester) async {
+      // [批1b-1] 屏幕组 +2 行后默认视口放不下，放大视口保证行可见可点
+      useTallViewport(tester);
       await _pump(tester);
       await tester.tap(find.text('进度条行为'));
       await tester.pumpAndSettle();

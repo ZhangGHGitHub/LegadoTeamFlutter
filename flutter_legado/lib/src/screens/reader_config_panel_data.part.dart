@@ -130,7 +130,21 @@ class ReaderAdvancedConfig {
   bool selectText;
 
   /// 底栏亮度控件显隐（对标原版 showBrightnessView）
+  ///
+  /// [批1b-1] 已由 [readBrightnessMode] 三档取代：本布尔键 load 迁移后
+  /// 不再消费、save 不再写（保留旧值仅作迁移来源），消费点见
+  /// reader_bottom_bar / reader_menu_panel。
   bool showBrightnessView;
+
+  /// 亮度条模式三档（0=不显示 / 1=横条（底栏亮度行）/ 2=竖条（贴边），
+  /// 键名与档位对齐参考版 PreferKey.readBrightnessMode + ReadSettings
+  /// 默认 "0"）— [批1b-1] 全栈工程师
+  String readBrightnessMode;
+
+  /// 竖条位置（0=左侧 / 1=右侧，键名对齐参考版
+  /// PreferKey.readBrightnessControlPosition，默认 "1"=右；仅模式=2 时生效）
+  /// — [批1b-1] 全栈工程师
+  String readBrightnessVwPos;
 
   /// 顶栏显示标题附加区（书名后追加章名，对标原版 showReadTitleAddition）
   bool showReadTitleAddition;
@@ -249,6 +263,10 @@ class ReaderAdvancedConfig {
     // [PARITY C2 M5] 参考阅读器菜单该态未见亮度条：默认关闭菜单内亮度行，
     // 亮度控件改为用户按需开启（设置开关保留），对齐参考紧凑浮层形态。
     this.showBrightnessView = false,
+    // [批1b-1] 亮度条模式/位置默认对齐参考版 ReadSettings（"0"=不显示 /
+    // "1"=右）；旧布尔键 showBrightnessView 迁移在 load 中一次性完成
+    this.readBrightnessMode = '0',
+    this.readBrightnessVwPos = '1',
     this.showReadTitleAddition = true,
     this.readBarStyleFollowPage = false,
     this.volumeKeyPage = true,
@@ -392,6 +410,26 @@ class ReaderAdvancedConfig {
       return legacy ? 2 : 0;
     }
 
+    // [批1b-1] 亮度条旧布尔键一次性迁移（幂等，对齐参考版 Backup.kt:266-275
+    // 恢复迁移口径：legacy true→"1"（横条）/false→"0"（不显示）；位置键
+    // 同法 readMenuBrightnessVwPos left/right → 0/1）。迁移标志落地后
+    // 旧键不再读写（可逆：不清旧值，模式 0 ⇆ 1 往返经新键表达）—
+    // 全栈工程师
+    const brightnessModeMigratedKey = 'brightness_mode_migrated_v1b1';
+    if (!(prefs.getBool(brightnessModeMigratedKey) ?? false)) {
+      final legacyMode = prefs.getBool('showBrightnessView');
+      if (legacyMode != null && prefs.getString('readBrightnessMode') == null) {
+        await prefs.setString(
+            'readBrightnessMode', legacyMode ? '1' : '0');
+      }
+      final legacyPos = prefs.getString('readMenuBrightnessVwPos');
+      if (legacyPos != null && prefs.getString('readBrightnessVwPos') == null) {
+        await prefs.setString('readBrightnessVwPos',
+            legacyPos == 'left' ? '0' : '1');
+      }
+      await prefs.setBool(brightnessModeMigratedKey, true);
+    }
+
     return ReaderAdvancedConfig(
       autoPageTurn: prefs.getBool('${_prefix}auto_page_turn') ?? false,
       autoPageTurnInterval: (prefs.getDouble('${_prefix}auto_interval') ?? 10)
@@ -472,7 +510,13 @@ class ReaderAdvancedConfig {
       autoChangeSource: prefs.getBool('autoChangeSource') ?? true,
       selectText: prefs.getBool('selectText') ?? true,
       // [PARITY C2 M5] load 缺省对齐构造器默认（关闭），参考菜单该态无亮度条。
+      // [批1b-1] 旧布尔键停止消费：显隐语义由 readBrightnessMode 三档承载；
+      // 本字段保留模型兼容（弹层旧行读取处随本批移除）。
       showBrightnessView: prefs.getBool('showBrightnessView') ?? false,
+      readBrightnessMode:
+          _clampBrightnessMode(prefs.getString('readBrightnessMode')),
+      readBrightnessVwPos:
+          _clampBrightnessPos(prefs.getString('readBrightnessVwPos')),
       showReadTitleAddition: prefs.getBool('showReadTitleAddition') ?? true,
       readBarStyleFollowPage: prefs.getBool('readBarStyleFollowPage') ?? false,
       // [UI-fix v2.0.4 | 2026-08-08] 第②批 MoreConfig 项读取（键名=原版键，
@@ -494,6 +538,16 @@ class ReaderAdvancedConfig {
       disableReturnKey: prefs.getBool('disableReturnKey') ?? false,
     );
   }
+
+  /// [批1b-1] 亮度条模式档位钳制（合法值 "0"/"1"/"2"，缺省/非法回落
+  /// 参考版默认 "0"=不显示）
+  static String _clampBrightnessMode(String? raw) =>
+      const {'0', '1', '2'}.contains(raw) ? raw! : '0';
+
+  /// [批1b-1] 竖条位置档位钳制（合法值 "0"=左/"1"=右，缺省/非法回落
+  /// 参考版默认 "1"=右）
+  static String _clampBrightnessPos(String? raw) =>
+      const {'0', '1'}.contains(raw) ? raw! : '1';
 
   /// 持久化当前配置
   ///
@@ -574,7 +628,10 @@ class ReaderAdvancedConfig {
     await prefs.setBool('noAnimScrollPage', noAnimScrollPage);
     await prefs.setBool('autoChangeSource', autoChangeSource);
     await prefs.setBool('selectText', selectText);
-    await prefs.setBool('showBrightnessView', showBrightnessView);
+    // [批1b-1] 旧布尔键 showBrightnessView 停止写入（迁移来源值保留，
+    // 迁移标志存在后不再读取）；亮度条显隐由三档键承载
+    await prefs.setString('readBrightnessMode', readBrightnessMode);
+    await prefs.setString('readBrightnessVwPos', readBrightnessVwPos);
     await prefs.setBool('${_prefix}italic', italic);
     await prefs.setBool('showReadTitleAddition', showReadTitleAddition);
     await prefs.setBool('readBarStyleFollowPage', readBarStyleFollowPage);
@@ -679,6 +736,8 @@ class ReaderAdvancedConfig {
         autoChangeSource: autoChangeSource,
         selectText: selectText,
         showBrightnessView: showBrightnessView,
+        readBrightnessMode: readBrightnessMode,
+        readBrightnessVwPos: readBrightnessVwPos,
         showReadTitleAddition: showReadTitleAddition,
         readBarStyleFollowPage: readBarStyleFollowPage,
         volumeKeyPage: volumeKeyPage,

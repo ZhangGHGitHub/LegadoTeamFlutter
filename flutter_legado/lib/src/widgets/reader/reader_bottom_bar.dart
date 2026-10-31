@@ -33,8 +33,10 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
 
   // [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批消费点 — Qoder
 
-  /// 亮度控件显隐（对标原版 showBrightnessView）
-  final bool showBrightnessView;
+  /// 亮度条模式三档（'0'=不显示 / '1'=横条（本底栏亮度行）/ '2'=竖条，
+  /// 对齐参考版 PreferKey.readBrightnessMode；[批1b-1] 取代旧布尔
+  /// showBrightnessView，旧布尔键迁移后停消费）— 全栈工程师
+  final String brightnessMode;
 
   /// 进度条行为（'page'=调章内页 'chapter'=调章节，对标原版 progressBarBehavior）
   final String progressBehavior;
@@ -58,7 +60,7 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
     required this.onOpenAdvancedConfig,
     required this.onOpenContentSearch,
     required this.onReadAloud,
-    this.showBrightnessView = true,
+    this.brightnessMode = '0',
     this.progressBehavior = 'chapter',
     this.onSeekPage,
     this.styleFollowPage = false,
@@ -292,7 +294,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar>
             children: [
               // 亮度行（对标 ll_brightness：自动亮度 + 亮度滑条）
               // [UI-fix v2.0.3 | 2026-08-08] showBrightnessView 关闭时隐藏 — Qoder
-              if (_brightnessSupported && widget.showBrightnessView)
+              // [批1b-1] 模式三档化：横条=模式 '1'（参考版
+              // ReadBookMenuBarBottom.kt:138 showBrightnessView=="1" 语义）
+              if (_brightnessSupported && widget.brightnessMode == '1')
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Row(

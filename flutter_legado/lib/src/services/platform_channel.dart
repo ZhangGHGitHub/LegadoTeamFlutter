@@ -36,6 +36,12 @@ class PlatformChannel {
   /// 阅读器按键通道（[M5] 音量键翻页：捕获开关 + 原生端 volumeKey 事件）
   static const MethodChannel readerKeys = MethodChannel('legado/reader_keys');
 
+  /// [批1b-1] 保持亮屏通道：复用 Kotlin BrightnessBridge 的
+  /// `io.legado.app/brightness` 屏幕控制通道（该桥已持 MainActivity 并操作
+  /// window 属性，与 SystemBrightness 的私有通道常量同名同注册，互不冲突）
+  static const MethodChannel keepScreenOn =
+      MethodChannel('io.legado.app/brightness');
+
   /// 事件通道：用于接收原生层的流式事件
   static const EventChannel eventChannel =
       EventChannel('io.legado.app/events');
@@ -243,6 +249,22 @@ class PlatformChannel {
   /// 注销音量键事件回调（退出阅读器时调用，防回调泄漏）。
   static void clearVolumeKeyHandler() {
     readerKeys.setMethodCallHandler(null);
+  }
+
+  // ─── 保持亮屏方法（[批1b-1] keepLight） ──────────────────────
+
+  /// 设置阅读页保持屏幕常亮（Kotlin BrightnessBridge.setKeepScreenOn：
+  /// 在 Activity window 上增删 FLAG_KEEP_SCREEN_ON，对齐参考版
+  /// ReadBookController.keepScreenOn；非 PARTIAL_WAKE_LOCK）。
+  ///
+  /// 通道未注册（非 Android / 测试环境）或原生端失败时静默降级，绝不向上抛
+  /// （语义同 setVolumeKeyCapture）。
+  static Future<void> setKeepScreenOn(bool enabled) async {
+    try {
+      await keepScreenOn.invokeMethod<void>('setKeepScreenOn', enabled);
+    } catch (_) {
+      // MissingPluginException / PlatformException → 静默降级
+    }
   }
 
   // ─── 通知方法 ─────────────────────────────────────────────────

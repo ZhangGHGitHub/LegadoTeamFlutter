@@ -15,6 +15,7 @@ import '../../providers/theme/theme_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../services/system_brightness.dart';
 import '../../utils/txt_toc_rule.dart' show isLocalTxtBook;
 import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
@@ -45,7 +46,14 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
   final VoidCallback onReadAloud;
   final VoidCallback onToggleAutoPage;
   final VoidCallback onOpenReplaceRules;
-  final bool showBrightnessView;
+
+  /// 亮度条模式三档（'0'=不显示 / '1'=横条 / '2'=竖条，对齐参考版
+  /// PreferKey.readBrightnessMode；[批1b-1] 取代旧布尔 showBrightnessView）
+  final String brightnessMode;
+
+  /// 竖条位置（'0'=左侧 / '1'=右侧，对齐参考版
+  /// PreferKey.readBrightnessControlPosition，仅模式='2' 生效）
+  final String brightnessVwPos;
   final String progressBehavior;
   final ValueChanged<int>? onSeekPage;
   final bool styleFollowPage;
@@ -62,7 +70,8 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
     required this.onReadAloud,
     required this.onToggleAutoPage,
     required this.onOpenReplaceRules,
-    this.showBrightnessView = true,
+    this.brightnessMode = '0',
+    this.brightnessVwPos = '1',
     this.progressBehavior = 'chapter',
     this.onSeekPage,
     this.styleFollowPage = false,
@@ -169,22 +178,36 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             child: FadeTransition(opacity: fade, child: child!),
           );
         },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
           children: [
-            // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏置屏幕顶部（用户
-            // 反馈①：此前误置于底部面板首行；对齐原版布局——← 居左，
-            // 换源/刷新/缓存/更多 居右）— Qoder
-            _buildTopBar(context, barColor, book, chapter, notifier),
-            const Spacer(),
-            useSurfaceBlur
-                ? ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(32),
-                    ),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                      child: _panelSurface(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏置屏幕顶部（用户
+                // 反馈①：此前误置于底部面板首行；对齐原版布局——← 居左，
+                // 换源/刷新/缓存/更多 居右）— Qoder
+                _buildTopBar(context, barColor, book, chapter, notifier),
+                const Spacer(),
+                useSurfaceBlur
+                    ? ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(32),
+                        ),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                          child: _panelSurface(
+                            context,
+                            barColor,
+                            foreground,
+                            book,
+                            chapter,
+                            notifier,
+                            state,
+                            autoPageActive,
+                          ),
+                        ),
+                      )
+                    : _panelSurface(
                         context,
                         barColor,
                         foreground,
@@ -194,18 +217,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                         state,
                         autoPageActive,
                       ),
-                    ),
-                  )
-                : _panelSurface(
-                    context,
-                    barColor,
-                    foreground,
-                    book,
-                    chapter,
-                    notifier,
-                    state,
-                    autoPageActive,
-                  ),
+              ],
+            ),
+            // [批1b-1] 亮度竖条（模式='2'）：贴左/右缘居中（对齐参考版
+            // ReadBookMenuBar.kt:189-274 CenterStart/CenterEnd + 圆角 40
+            // 胶囊形态）；与底部面板/顶部栏不重叠，滑动手势区域独立，
+            // 不遮挡翻页点击区（菜单展开时翻页手势本已停用）— 全栈工程师
+            if (widget.brightnessMode == '2')
+              _buildVerticalBrightnessBar(context, foreground),
           ],
         ),
       ),
@@ -935,6 +954,131 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ===== [批1b-1] 亮度竖条（模式='2'，贴左/右缘） =====
+
+  /// 亮度竖条：圆角 40 胶囊（对齐参考版 RoundedCornerShape(40.dp)）+
+  /// 竖向亮度滑条 + 自动亮度切换钮；贴 [widget.brightnessVwPos] 指定侧
+  /// 屏幕边缘垂直居中（左右 8dp 边距，对齐参考版 padding start/end 8dp）。
+  ///
+  /// 亮度值与底栏横条同源（SystemBrightness 系统亮度服务），旋转 -90°
+  /// 承载竖向滑动（RotatedBox 不参与父级水平手势竞争，仅胶囊自身区域
+  /// 接收拖动，不影响正文翻页手势——菜单展开时正文点击/滑动本已由
+  /// 面板层截停）。
+  Widget _buildVerticalBrightnessBar(BuildContext context, Color? foreground) {
+    final cs = Theme.of(context).colorScheme;
+    final isLeft = widget.brightnessVwPos == '0';
+    return Positioned(
+      top: 0,
+      bottom: 0,
+      left: isLeft ? 8 : null,
+      right: isLeft ? null : 8,
+      child: Center(
+        child: _VerticalBrightnessBar(
+          foreground: foreground,
+          fallbackColor: cs.surface,
+        ),
+      ),
+    );
+  }
+}
+
+/// [批1b-1] 亮度竖条内容（ StatefulWidget 独立承载亮度异步加载与拖动值，
+/// 避免污染面板整体 rebuild）
+class _VerticalBrightnessBar extends StatefulWidget {
+  final Color? foreground;
+  final Color fallbackColor;
+
+  const _VerticalBrightnessBar({
+    required this.foreground,
+    required this.fallbackColor,
+  });
+
+  @override
+  State<_VerticalBrightnessBar> createState() => _VerticalBrightnessBarState();
+}
+
+class _VerticalBrightnessBarState extends State<_VerticalBrightnessBar> {
+  bool _supported = false;
+  bool _auto = false;
+  double _value = 0.5;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final supported = await SystemBrightness.isSupported();
+      if (!supported) return;
+      final auto = await SystemBrightness.isAutoBrightness();
+      final value = await SystemBrightness.getBrightness();
+      if (!mounted) return;
+      setState(() {
+        _supported = true;
+        _auto = auto;
+        _value = value;
+      });
+    } catch (e) {
+      debugPrint('亮度通道不可用，隐藏亮度竖条: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_supported) return const SizedBox.shrink();
+    final fg = widget.foreground ??
+        Theme.of(context).colorScheme.onSurfaceVariant;
+    return Material(
+      color: widget.fallbackColor.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(40),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(40),
+        onTap: () {}, // 胶囊自身消费点击，避免透传翻页手势
+        child: Padding(
+          // 竖条内边距：贴合参考版 BrightnessBar 纵向形态（上下留滑动余量）
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  _auto ? Icons.brightness_auto : Icons.brightness_auto_outlined,
+                  color: fg,
+                ),
+                tooltip: _auto ? '关闭自动亮度' : '自动亮度',
+                onPressed: _auto
+                    ? null
+                    : () async {
+                        await SystemBrightness.setAutoBrightness(true);
+                        await _load();
+                      },
+              ),
+              // 旋转 90° 承载竖向滑条（底部=暗、顶部=亮，拖动方向自下而上）
+              RotatedBox(
+                quarterTurns: -1,
+                child: SizedBox(
+                  width: 180,
+                  child: Slider(
+                    value: _value.clamp(0.0, 1.0),
+                    onChanged: _auto
+                        ? null
+                        : (v) {
+                            setState(() => _value = v);
+                            unawaited(SystemBrightness.setBrightness(v));
+                          },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

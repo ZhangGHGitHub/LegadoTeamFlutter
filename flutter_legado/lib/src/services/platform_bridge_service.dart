@@ -1151,4 +1151,35 @@ class PlatformBridgeService {
     if (!volumeKeyCaptureSupported) return;
     PlatformChannel.clearVolumeKeyHandler();
   }
+
+  // ========== [批1b-1] keepLight 保持亮屏（Android 平台通道） ==========
+
+  /// [批1b-1] 「是否支持保持亮屏通道」的分派决策覆写（测试性，同
+  /// [volumeKeyCaptureOverride] 范式）：默认 `Platform.isAndroid`。
+  ///
+  /// 参考版无 iOS 基准（ReadBookController.keepScreenOn 仅 Android window
+  /// 语义），iOS / 桌面恒 no-op 并留痕，不引入 wakelock 包。
+  bool? keepScreenOnOverride;
+
+  /// 最近一次下发的保持亮屏指令（测试观测点；生产无消费方）
+  bool? lastKeepScreenOn;
+
+  /// [批1b-1] 保持亮屏是否可用（Android 壳通道；iOS/桌面 no-op）
+  bool get keepScreenOnSupported => keepScreenOnOverride ?? Platform.isAndroid;
+
+  /// [批1b-1] 设置阅读页保持屏幕常亮（阅读器进入/退出/设置变更时调用）
+  ///
+  /// Kotlin 侧对 Activity window 增删 `FLAG_KEEP_SCREEN_ON`（对齐参考版
+  /// ReadBookController.keepScreenOn 语义：退出阅读器即恢复系统策略，
+  /// 不用 PARTIAL_WAKE_LOCK）。iOS/桌面无基准恒 no-op（灰字登记，
+  /// 参考 `docs/SETTINGS_READ_PAGE_PLAN_20261031.md` §七.2）。
+  Future<void> setKeepScreenOn(bool enabled) async {
+    lastKeepScreenOn = enabled;
+    if (!keepScreenOnSupported) {
+      debugPrint('[PlatformBridge] setKeepScreenOn($enabled)：'
+          '当前平台无保持亮屏通道基准（仅 Android），no-op');
+      return;
+    }
+    await PlatformChannel.setKeepScreenOn(enabled);
+  }
 }
