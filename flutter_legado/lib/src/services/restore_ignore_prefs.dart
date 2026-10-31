@@ -171,6 +171,15 @@ class RestoreIgnorePrefs {
     'themeConfigList',
     'bgImageBlurring',
     'bgImageNBlurring',
+    // [设置批2a-1] 护眼模式六键：参考版 BackupConfig.themePrefKeys
+    // （`help/storage/BackupConfig.kt:311-316`）归入主题配置组，勾选
+    // 「忽略主题配置」恢复备份时不覆盖本机护眼设置 — 全栈工程师
+    PrefKeys.eyeProtectionEnabled,
+    PrefKeys.colorTemperature,
+    PrefKeys.eyeProtectionAutoNight,
+    PrefKeys.eyeProtectionSchedule,
+    PrefKeys.eyeProtectionStartTime,
+    PrefKeys.eyeProtectionEndTime,
   };
 
   /// 封面规则相关键（对齐 BackupConfig.coverPrefKeys）

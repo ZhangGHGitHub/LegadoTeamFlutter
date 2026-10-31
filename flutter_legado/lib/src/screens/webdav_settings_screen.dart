@@ -21,6 +21,7 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_theme_notifier.dart';
 import '../providers/reader/reader_top_bar_actions_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
+import '../providers/theme/eye_protection_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../routes.dart';
@@ -814,6 +815,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await ref.read(syncNotifierProvider.notifier).loadConfig();
     await ref.read(themeNotifierProvider.notifier).load();
     ref.invalidate(themeColorsProvider);
+    // [设置批2a-1] 备份 appPrefs 可能替换护眼模式六键：恢复后重读，
+    // 让全局叠加层与外观设置页在同一会话即时生效（否则重启前沿用旧值）
+    ref.invalidate(eyeProtectionProvider);
     ref.invalidate(mainPrefsProvider);
     ref.invalidate(bookshelfNotifierProvider);
     // [批37] 顶栏动作配置随 appPrefs 恢复后重读，避免继续用旧配置

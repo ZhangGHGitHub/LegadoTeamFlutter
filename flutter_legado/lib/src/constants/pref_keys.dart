@@ -68,6 +68,30 @@ class PrefKeys {
   /// 夜间导航栏透明（仅 Android 生效，默认 false）
   static const transparentNavBarNight = 'transparentNavBarNight';
 
+  // ===== 护眼模式（设置批2a-1，键名逐字对齐参考版 PreferKey.kt:489-495）=====
+  //
+  // 六键同属外观/主题偏好：参考版把它们放在 BackupConfig.themePrefKeys
+  // （`help/storage/BackupConfig.kt:311-316`），因此我方也随「忽略主题配置」
+  // 一并过滤，见 RestoreIgnorePrefs.themePrefKeys。
+
+  /// 启用护眼模式（默认 false）
+  static const eyeProtectionEnabled = 'eyeProtectionEnabled';
+
+  /// 护眼强度/色温 0..100（默认 50；0=不改变颜色）
+  static const colorTemperature = 'colorTemperature';
+
+  /// 深色模式时自动开启（默认 false；跟随应用主题明暗）
+  static const eyeProtectionAutoNight = 'eyeProtectionAutoNight';
+
+  /// 定时开启（默认 false）
+  static const eyeProtectionSchedule = 'eyeProtectionSchedule';
+
+  /// 定时开始时间 HH:mm（默认 22:00）
+  static const eyeProtectionStartTime = 'eyeProtectionStartTime';
+
+  /// 定时结束时间 HH:mm（默认 07:00，结束时刻不含）
+  static const eyeProtectionEndTime = 'eyeProtectionEndTime';
+
   // ===== UI 布局同步重构开关族（UI_SYNC_REFACTOR_PLAN_20260905.md，
   // key 名对齐参考仓 PreferKey，经 SharedPreferences 透存，Rust 不解释）=====
 

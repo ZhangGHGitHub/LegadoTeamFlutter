@@ -29,6 +29,7 @@ import 'src/theme/md3_colors.dart';
 import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/system_bar_binder.dart';
+import 'src/widgets/eye_protection_layer.dart';
 import 'src/widgets/crash_log_dialog.dart';
 import 'src/widgets/update_dialog.dart';
 import 'src/widgets/verification_code_listener.dart';
@@ -439,6 +440,11 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
           path: themeColors.bgImageFor(Theme.of(context).brightness),
           child: wrapped,
         );
+        // [设置批2a-1 | 2026-11-01] 护眼模式全局叠加（对齐参考版
+        // BaseComposeActivity：整个 App 内容统一套暖色颜色矩阵；含全屏
+        // 阅读页/漫画页/弹层，纯绘制不拦截手势，系统栏在 Flutter 视图外
+        // 不受影响）。挂在背景图层之外，壁纸同样被滤镜统一处理 — 全栈工程师
+        wrapped = EyeProtectionLayer(child: wrapped);
         if (scale == null) return wrapped;
         return MediaQuery(
           data: MediaQuery.of(context)

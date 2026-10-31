@@ -19,7 +19,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../bridge/ffi.dart';
 import '../constants/pref_keys.dart';
+import '../models/eye_protection.dart';
 import '../providers/providers.dart';
+import '../providers/theme/eye_protection_notifier.dart';
 import '../providers/theme/system_bar_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
@@ -627,12 +629,48 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     );
   }
 
+  /// [设置批2a-1] 选择护眼定时起止时间
+  ///
+  /// 对齐参考版 `TimePickerDialog.kt`：24 小时制、值格式 `HH:mm`；当前值
+  /// 解析失败时回落到 00:00（解析口径见 EyeProtectionFilter.parseClock）。
+  Future<void> _pickEyeProtectionTime({required bool start}) async {
+    final settings = ref.read(eyeProtectionProvider);
+    final current = EyeProtectionFilter.parseClock(
+      start ? settings.startTime : settings.endTime,
+    );
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: current?.hour ?? 0,
+        minute: current?.minute ?? 0,
+      ),
+      helpText: start ? '开始时间' : '结束时间',
+      // 参考版固定 24 小时制（rememberTimePickerState(is24Hour = true)）
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final text = '${picked.hour.toString().padLeft(2, '0')}:'
+        '${picked.minute.toString().padLeft(2, '0')}';
+    final notifier = ref.read(eyeProtectionProvider.notifier);
+    if (start) {
+      await notifier.setStartTime(text);
+    } else {
+      await notifier.setEndTime(text);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeNotifierProvider);
     final themeNotifier = ref.read(themeNotifierProvider.notifier);
     final colors = ref.watch(themeColorsProvider);
     final ui = ref.watch(uiSettingsProvider);
+    // [设置批2a-1] 护眼模式：与全局叠加层共用同一 Notifier（写入即全局生效）
+    final eyeProtection = ref.watch(eyeProtectionProvider);
+    final eyeProtectionNotifier = ref.read(eyeProtectionProvider.notifier);
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
@@ -924,6 +962,54 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: _coverBgLabel(ui.bookInfoDefaultCoverBackground),
                       onTap: () => _showCoverBgPicker(true),
                     ),
+                  ]),
+
+                  // === 分组「护眼模式」（设置批2a-1；对齐参考版
+                  // ThemeConfigScreen.kt:433-521 同名分组：启用护眼模式 →
+                  // 深色模式时自动开启 → 已配置时展开「色温」滑杆 → 定时开启 →
+                  // 起止时间。值经 ThemeSettings 六键持久化，全局叠加见
+                  // EyeProtectionLayer） ===
+                  const IosSectionHeader('护眼模式'),
+                  IosGroup(
+                      children: [
+                    SettingSwitchRow(
+                      title: '启用护眼模式',
+                      subtitle: '使用暖色调降低蓝光',
+                      value: eyeProtection.enabled,
+                      onChanged: eyeProtectionNotifier.setEnabled,
+                    ),
+                    SettingSwitchRow(
+                      title: '深色模式时自动开启',
+                      subtitle: '跟随阅读界面的深色/浅色模式自动切换',
+                      value: eyeProtection.autoNight,
+                      onChanged: eyeProtectionNotifier.setAutoNight,
+                    ),
+                    // 参考版 AnimatedVisibility(theme.isEyeProtectionConfigured)：
+                    // 未启用（总开关与自动夜间均关）时不显示强度/定时行
+                    if (eyeProtection.isConfigured) ...[
+                      _EyeProtectionIntensityRow(
+                        value: eyeProtection.intensity,
+                        onChanged: eyeProtectionNotifier.setIntensity,
+                      ),
+                      SettingSwitchRow(
+                        title: '定时开启',
+                        subtitle: '仅在设定的时间段内生效',
+                        value: eyeProtection.schedule,
+                        onChanged: eyeProtectionNotifier.setSchedule,
+                      ),
+                      if (eyeProtection.schedule) ...[
+                        IosListTile(
+                          title: '开始时间',
+                          value: eyeProtection.startTime,
+                          onTap: () => _pickEyeProtectionTime(start: true),
+                        ),
+                        IosListTile(
+                          title: '结束时间',
+                          value: eyeProtection.endTime,
+                          onTap: () => _pickEyeProtectionTime(start: false),
+                        ),
+                      ],
+                    ],
                   ]),
 
                   // === 分组 8「容器设置」（参考 R.string
@@ -2403,6 +2489,71 @@ class _PaletteDots extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// [设置批2a-1] 护眼「色温」行内滑块（对齐参考版 SliderSettingItem 形态：
+/// 标题 + 当前值说明 + 行内滑杆；拖动中仅本地预览，松手提交一次，
+/// 与阅读设置页 SettingSliderRow 的提交口径一致）
+class _EyeProtectionIntensityRow extends StatefulWidget {
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  const _EyeProtectionIntensityRow({
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  State<_EyeProtectionIntensityRow> createState() =>
+      _EyeProtectionIntensityRowState();
+}
+
+class _EyeProtectionIntensityRowState extends State<_EyeProtectionIntensityRow> {
+  /// 拖动中的本地预览值（null = 未在拖动，显示外部值）
+  int? _preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final shown = _preview ?? widget.value;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('色温', style: theme.textTheme.titleMedium),
+          Text(
+            '当前色温：$shown',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Slider(
+            key: const ValueKey<String>('eyeProtectionIntensitySlider'),
+            value: shown
+                .toDouble()
+                .clamp(
+                  EyeProtectionFilter.minIntensity.toDouble(),
+                  EyeProtectionFilter.maxIntensity.toDouble(),
+                ),
+            min: EyeProtectionFilter.minIntensity.toDouble(),
+            max: EyeProtectionFilter.maxIntensity.toDouble(),
+            divisions: EyeProtectionFilter.maxIntensity,
+            label: '$shown',
+            onChanged: (v) => setState(() => _preview = v.round()),
+            onChangeEnd: (v) {
+              final target = v.round().clamp(
+                    EyeProtectionFilter.minIntensity,
+                    EyeProtectionFilter.maxIntensity,
+                  );
+              setState(() => _preview = null);
+              widget.onChanged(target);
+            },
+          ),
         ],
       ),
     );
