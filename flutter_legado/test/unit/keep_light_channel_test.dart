@@ -214,4 +214,54 @@ void main() {
       );
     });
   });
+
+  group('审查回修 P2-3/P3-6：迁移标志备份排除 + 旧派生键优先级', () {
+    test('迁移标志 brightness_mode_migrated_v1b1 入 backupExcludedKeys '
+        '（设备级一次性状态不随备份往返）', () {
+      expect(
+        RestoreIgnorePrefs.backupExcludedKeys
+            .contains('brightness_mode_migrated_v1b1'),
+        isTrue,
+      );
+    });
+
+    test('备份往返：未迁移设备恢复旧备份（无迁移标志）仍能迁移', () async {
+      // 模拟「备份里携带旧布尔键、目标设备从未迁移」：标志不在备份
+      //（被 backupExcludedKeys 剥除）也不在本机 → 恢复后首次 load 执行迁移
+      SharedPreferences.setMockInitialValues({'showBrightnessView': true});
+      expect(
+        SharedPreferences.getInstance().then(
+          (p) => p.getBool('brightness_mode_migrated_v1b1'),
+        ),
+        completion(isNull),
+        reason: '旧备份不含设备级迁移标志（被备份排除键剥除）',
+      );
+      final cfg = await ReaderAdvancedConfig.load();
+      expect(cfg.readBrightnessMode, '1',
+          reason: '未迁移设备照常执行旧键迁移');
+    });
+
+    test('历史派生键 readMenuBrightnessVertical=true 优先迁移为 mode 2（竖条）',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'readMenuBrightnessVertical': true,
+        'showBrightnessView': true,
+      });
+      final cfg = await ReaderAdvancedConfig.load();
+      expect(cfg.readBrightnessMode, '2',
+          reason: '旧竖条开关（参考版 showBrightnessView="2" 变体）优先于'
+              ' showBrightnessView 两态口径');
+    });
+
+    test('readMenuBrightnessVertical=false 不触发竖条迁移（回落两态口径）',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'readMenuBrightnessVertical': false,
+        'showBrightnessView': true,
+      });
+      final cfg = await ReaderAdvancedConfig.load();
+      expect(cfg.readBrightnessMode, '1',
+          reason: '派生键仅 true 表达竖条，false 无信息量，按两态口径迁移');
+    });
+  });
 }

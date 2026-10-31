@@ -30,6 +30,12 @@ import 'reader_text_content.dart';
 /// 拥有排版分页状态与 PageController，通过 [ReaderPageViewState] 对外暴露
 /// 翻页导航方法（供自动翻页/点击区域调用）。
 class ReaderPageView extends ConsumerStatefulWidget {
+  /// [批1b-1 审查回修 P1-2] 翻页成功回调注入点（保持亮屏交互重挂接线）：
+  /// ReaderScreen 在挂载时注入 `_reprioritizeKeepLight`（keepLight>0 时
+  /// 重置超时计时，对齐参考版用户交互后 screenOffTimerStart 重挂语义）；
+  /// 默认空实现（组件独立可用），dispose 时由 ReaderScreen 还原。
+  static void Function() onPageTurnInteraction = () {};
+
   /// 段落间距（来自高级配置）
   final double paragraphSpacing;
 
@@ -266,6 +272,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (cfg?.sliderVibrator ?? false) {
       onPageTurnedHaptic();
     }
+    // [批1b-1 审查回修 P1-2] 翻页成功即视为用户主交互：重挂保持亮屏
+    //（所有翻页路径——直设索引/滚动/手势/跨章——统一收敛于此）
+    ReaderPageView.onPageTurnInteraction();
   }
 
   /// 当前章分页总数（进度条「调章内页」行为消费）

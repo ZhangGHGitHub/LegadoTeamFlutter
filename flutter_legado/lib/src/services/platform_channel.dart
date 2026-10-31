@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -262,8 +263,11 @@ class PlatformChannel {
   static Future<void> setKeepScreenOn(bool enabled) async {
     try {
       await keepScreenOn.invokeMethod<void>('setKeepScreenOn', enabled);
-    } catch (_) {
-      // MissingPluginException / PlatformException → 静默降级
+    } catch (e) {
+      // MissingPluginException（非 Android / 通道未注册）/ PlatformException
+      // （原生端 error）→ 统一降级 no-op，绝不向上抛（语义同
+      // setVolumeKeyCapture）；debugPrint 留痕便于排障 — 审查回修 P3-6
+      debugPrint('setKeepScreenOn($enabled) 通道不可用，降级 no-op: $e');
     }
   }
 

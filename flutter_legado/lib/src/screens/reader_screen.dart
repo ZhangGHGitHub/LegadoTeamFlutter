@@ -100,6 +100,71 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// 避免每次关闭弹窗都多一次 DB 读。
   bool _tocRouteOpen = false;
 
+  // ===== [批1b-1 审查回修 P1-2] keepLight 屏幕超时定时器 =====
+
+  /// 保持亮屏超时定时器（keepLight>0 档：到点清 flag 恢复系统息屏；
+  /// 对齐参考版 ReadBookController screenOffRunnable 到点 keepScreenOn(false)）
+  Timer? _keepLightTimer;
+
+  /// 当前生效的保持亮屏秒值（交互重挂判定用；-1=常亮 0=系统策略）
+  int _keepLightSeconds = 0;
+
+  /// 保持亮屏是否已置 flag（交互重挂仅在 flag 已置时重置计时）
+  bool _keepScreenOnActive = false;
+
+  /// 应用 keep_light 档位（进入/设置变更/交互重挂共用）
+  ///
+  /// - 0（默认）：清 flag + 取消定时器，交还系统息屏策略；
+  /// - -1（常亮）：置 flag + 取消定时器（不自动清）；
+  /// - \>0（限时秒）：置 flag + 重置 [Timer]（keepLight 秒后到点清 flag，
+  ///   对齐参考版 screenTimeOut 到点语义）。
+  void _applyKeepLight(int seconds) {
+    _keepLightSeconds = seconds;
+    _keepLightTimer?.cancel();
+    _keepLightTimer = null;
+    if (seconds == 0) {
+      if (_keepScreenOnActive) {
+        _keepScreenOnActive = false;
+        unawaited(
+            PlatformBridgeService.instance.setKeepScreenOn(false));
+      }
+      return;
+    }
+    if (!_keepScreenOnActive) {
+      _keepScreenOnActive = true;
+      unawaited(
+          PlatformBridgeService.instance.setKeepScreenOn(true));
+    }
+    if (seconds > 0) {
+      _keepLightTimer = Timer(Duration(seconds: seconds), () {
+        // 到点清 flag（对齐参考版 screenOffRunnable → keepScreenOn(false)）；
+        // 下次用户交互（翻页/点击正文）经 _reprioritizeKeepLight 重挂
+        _keepScreenOnActive = false;
+        unawaited(
+            PlatformBridgeService.instance.setKeepScreenOn(false));
+      });
+    }
+  }
+
+  /// 用户主交互（翻页/点击正文）后重挂保持亮屏：keepLight>0 时重置计时，
+  /// -1 时确保 flag 常亮（对齐参考版 onResume/交互后 screenOffTimerStart
+  /// 重挂语义；0 档不动作）— 审查回修 P1-2
+  void _reprioritizeKeepLight() {
+    if (_keepLightSeconds == 0) return;
+    _applyKeepLight(_keepLightSeconds);
+  }
+
+  /// 退出阅读器：取消定时器 + 清 flag 恢复系统息屏策略（对齐参考版销毁
+  /// 路径 restoreActivityWindowState → keepScreenOn(originalKeepScreenOn)）
+  void _teardownKeepLight() {
+    _keepLightTimer?.cancel();
+    _keepLightTimer = null;
+    _keepLightSeconds = 0;
+    _keepScreenOnActive = false;
+    unawaited(
+        PlatformBridgeService.instance.setKeepScreenOn(false));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -108,6 +173,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // [C3-hunt | 2026-09-24] 注册 App 生命周期观察者：切后台/分离时
     // 落盘章内进度（见 didChangeAppLifecycleState）
     WidgetsBinding.instance.addObserver(this);
+    // [批1b-1 审查回修 P1-2] 翻页成功 → 保持亮屏计时重挂（集中接线：
+    // ReaderPageView 所有翻页成功路径回调至此；dispose 还原默认实现）
+    ReaderPageView.onPageTurnInteraction = _reprioritizeKeepLight;
   }
 
   @override
@@ -131,6 +199,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
+    // [批1b-1 审查回修 P1-2] 还原翻页回调默认实现（防泄漏到非阅读页）
+    ReaderPageView.onPageTurnInteraction = () {};
     // [C3-hunt | 2026-09-24] 注销生命周期观察者（与 initState 配对）
     WidgetsBinding.instance.removeObserver(this);
     // [批31b P1-1] 注销路由观察（与 didChangeDependencies 配对，
@@ -142,12 +212,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // 对标原版 ReadBookActivity 退出时 upSystemUiMode 还原）— Qoder
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(const []);
-    // [批1b-1] 退出阅读器清除保持亮屏 flag，恢复系统息屏策略（对标参考版
-    // ReadBookController 销毁路径 restoreActivityWindowState →
-    // keepScreenOn(originalKeepScreenOn)；通道层幂等去重+异常吞没）—
+    // [批1b-1 审查回修 P1-2] 退出阅读器：取消超时定时器 + 清除保持亮屏
+    // flag，恢复系统息屏策略（对齐参考版销毁路径
+    // restoreActivityWindowState → keepScreenOn(originalKeepScreenOn)）—
     // 全栈工程师
-    unawaited(
-        PlatformBridgeService.instance.setKeepScreenOn(false));
+    _teardownKeepLight();
     super.dispose();
   }
 
@@ -239,14 +308,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: overlays);
     SystemChrome.setPreferredOrientations(
         _orientationsFor(cfg.screenOrientation));
-    // [批1b-1] keep_light（保持亮屏）：0=默认（交还系统策略，清 flag）；
-    // >0=限定时常亮（秒→flag 常亮，参考版屏幕超时到点回清由系统息屏语义
-    // 承接，Flutter 无处方式定时器基准，诚实登记偏差）；-1=常亮。经
-    // 平台通道对 Activity window 增删 FLAG_KEEP_SCREEN_ON（对齐参考版
+    // [批1b-1] keep_light（保持亮屏）：0=默认（交还系统策略）/ >0=限时
+    // 秒数（到点清 flag，交互重挂）/ -1=常亮。经平台通道对 Activity
+    // window 增删 FLAG_KEEP_SCREEN_ON（对齐参考版
     // ReadBookController.keepScreenOn，非 PARTIAL_WAKE_LOCK）；iOS/桌面
     // 无基准恒 no-op（PlatformBridgeService 内灰字留痕）— 全栈工程师
-    unawaited(PlatformBridgeService.instance
-        .setKeepScreenOn(cfg.keepLight != 0));
+    _applyKeepLight(cfg.keepLight);
   }
 
   /// 原版 screen_direction_value → Flutter DeviceOrientation 映射
@@ -659,6 +726,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       },
     );
+    // [批1b-1 审查回修 P2-4] keep_light 值变更即时生效：阅读器内有多条
+    // 改值路径（高级面板 onChanged / 界面 Sheet _commitAdv / 独立阅读
+    // 设置页），其中 Sheet 与独立页仅推 provider 不回调 State——listen
+    // keepLight 统一覆盖（对齐参考版 MoreConfigDialog
+    // onSharedPreferenceChanged keepLight → postEvent 即时语义）。
+    // _applyKeepLight 内部幂等（值未变时 flag 已置/定时器重置亦无害），
+    // _advConfig 字段由 didChangeDependencies/面板回调另行回写。
+    ref.listen(
+      readerAdvConfigProvider.select((c) => c?.keepLight),
+      (prev, next) {
+        if (next != null && prev != next) {
+          _applyKeepLight(next);
+        }
+      },
+    );
 
     return PopScope<Object?>(
       // [P2-30] 退出判定统一收敛到 onPopInvokedWithResult（canPop=false 使
@@ -978,6 +1060,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (deadZone > 0 && (tapX < deadZone || tapX > screenWidth - deadZone)) {
       return;
     }
+
+    // [批1b-1 审查回修 P1-2] 主交互（点击正文）重挂保持亮屏计时
+    _reprioritizeKeepLight();
 
     TapAction action;
     if (tapX < screenWidth * 0.3) {

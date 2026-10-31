@@ -255,6 +255,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // [批1b-1 审查回修 P1-1] 亮度横条（模式='1'）：挂进菜单底部
+              // 面板进度行上方（对齐参考版 ReadBookMenuBarBottom.kt:138
+              // showBrightnessView=="1" → BrightnessBar(horizontal) 行）；
+              // ReaderBottomBar 已被本面板取代、生产不再挂载，横条消费点
+              // 收敛到唯一生产路径 — 全栈工程师
+              if (widget.brightnessMode == '1')
+                _buildHorizontalBrightnessRow(context, foreground),
               _buildProgressRow(context, notifier, state, foreground),
               _buildActionRow(context, foreground, autoPageActive),
             ],
@@ -262,6 +269,17 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         ),
       ),
     );
+  }
+
+  // ===== [批1b-1 审查回修 P1-1] 亮度横条行（模式='1'） =====
+
+  /// 亮度横条行：自动亮度钮 + 亮度滑条（结构对齐原 ReadMenu 底栏
+  /// ll_brightness 亮度行；亮度值与竖条同源 SystemBrightness 服务）。
+  Widget _buildHorizontalBrightnessRow(
+    BuildContext context,
+    Color? foreground,
+  ) {
+    return _HorizontalBrightnessRow(foreground: foreground);
   }
 
   // [P2-9 | 2026-09-24] 换源流程（Fix B）：await 导航 → 路由以新 bookUrl
@@ -986,6 +1004,87 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   }
 }
 
+/// [批1b-1 审查回修 P1-1] 亮度横条行内容（模式='1'，StatefulWidget 独立
+/// 承载亮度异步加载与拖动值，避免污染面板整体 rebuild）
+class _HorizontalBrightnessRow extends StatefulWidget {
+  final Color? foreground;
+
+  const _HorizontalBrightnessRow({required this.foreground});
+
+  @override
+  State<_HorizontalBrightnessRow> createState() =>
+      _HorizontalBrightnessRowState();
+}
+
+class _HorizontalBrightnessRowState extends State<_HorizontalBrightnessRow> {
+  bool _supported = false;
+  bool _auto = false;
+  double _value = 0.5;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final supported = await SystemBrightness.isSupported();
+      if (!supported) return;
+      final auto = await SystemBrightness.isAutoBrightness();
+      final value = await SystemBrightness.getBrightness();
+      if (!mounted) return;
+      setState(() {
+        _supported = true;
+        _auto = auto;
+        _value = value;
+      });
+    } catch (e) {
+      debugPrint('亮度通道不可用，隐藏亮度行: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_supported) return const SizedBox.shrink();
+    final fg = widget.foreground ??
+        Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(
+              _auto
+                  ? Icons.brightness_auto
+                  : Icons.brightness_auto_outlined,
+              color: fg,
+            ),
+            tooltip: _auto ? '关闭自动亮度' : '自动亮度',
+            // [批1b-1 审查回修 P2-5] 双向切换：开启后可关闭（对齐参考版
+            // onToggleAuto = ToggleBrightnessAuto(!brightnessAuto)）
+            onPressed: () async {
+              await SystemBrightness.setAutoBrightness(!_auto);
+              await _load();
+            },
+          ),
+          Expanded(
+            child: Slider(
+              value: _value.clamp(0.0, 1.0),
+              onChanged: _auto
+                  ? null
+                  : (v) {
+                      setState(() => _value = v);
+                      unawaited(SystemBrightness.setBrightness(v));
+                    },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// [批1b-1] 亮度竖条内容（ StatefulWidget 独立承载亮度异步加载与拖动值，
 /// 避免污染面板整体 rebuild）
 class _VerticalBrightnessBar extends StatefulWidget {
@@ -1053,12 +1152,12 @@ class _VerticalBrightnessBarState extends State<_VerticalBrightnessBar> {
                   color: fg,
                 ),
                 tooltip: _auto ? '关闭自动亮度' : '自动亮度',
-                onPressed: _auto
-                    ? null
-                    : () async {
-                        await SystemBrightness.setAutoBrightness(true);
-                        await _load();
-                      },
+                // [批1b-1 审查回修 P2-5] 双向切换：开启后可关闭（对齐参考版
+                // onToggleAuto = ToggleBrightnessAuto(!brightnessAuto)）
+                onPressed: () async {
+                  await SystemBrightness.setAutoBrightness(!_auto);
+                  await _load();
+                },
               ),
               // 旋转 90° 承载竖向滑条（底部=暗、顶部=亮，拖动方向自下而上）
               RotatedBox(

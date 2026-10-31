@@ -412,17 +412,28 @@ class ReaderAdvancedConfig {
 
     // [批1b-1] 亮度条旧布尔键一次性迁移（幂等，对齐参考版 Backup.kt:266-275
     // 恢复迁移口径：legacy true→"1"（横条）/false→"0"（不显示）；位置键
-    // 同法 readMenuBrightnessVwPos left/right → 0/1）。迁移标志落地后
-    // 旧键不再读写（可逆：不清旧值，模式 0 ⇆ 1 往返经新键表达）—
-    // 全栈工程师
+    // 同法 readMenuBrightnessVwPos left/right → 0/1）。
+    // [批1b-1 审查回修 P3-6] 历史派生键 readMenuBrightnessVertical=true
+    // （旧竖条开关，参考版 showBrightnessView="2" 变体）优先映射 mode '2'
+    // 竖条——该键为参考版三档语义的旧派生表达，优先级高于 showBrightnessView
+    // 的两态口径。迁移标志落地后旧键不再读写（可逆：不清旧值，模式往返
+    // 经新键表达）— 全栈工程师
     const brightnessModeMigratedKey = 'brightness_mode_migrated_v1b1';
     if (!(prefs.getBool(brightnessModeMigratedKey) ?? false)) {
-      final legacyMode = prefs.getBool('showBrightnessView');
-      if (legacyMode != null && prefs.getString('readBrightnessMode') == null) {
-        await prefs.setString(
-            'readBrightnessMode', legacyMode ? '1' : '0');
+      final legacyVertical =
+          prefs.getBool(PrefKeys.readMenuBrightnessVertical);
+      if (legacyVertical == true &&
+          prefs.getString('readBrightnessMode') == null) {
+        await prefs.setString('readBrightnessMode', '2');
+      } else {
+        final legacyMode = prefs.getBool('showBrightnessView');
+        if (legacyMode != null &&
+            prefs.getString('readBrightnessMode') == null) {
+          await prefs.setString(
+              'readBrightnessMode', legacyMode ? '1' : '0');
+        }
       }
-      final legacyPos = prefs.getString('readMenuBrightnessVwPos');
+      final legacyPos = prefs.getString(PrefKeys.readMenuBrightnessPos);
       if (legacyPos != null && prefs.getString('readBrightnessVwPos') == null) {
         await prefs.setString('readBrightnessVwPos',
             legacyPos == 'left' ? '0' : '1');

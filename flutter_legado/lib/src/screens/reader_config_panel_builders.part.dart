@@ -470,9 +470,9 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             _commit();
           },
         ),
-        // 显示亮度控件（原版 showBrightnessView；[批1b-1] 改亮度条模式
-        // 三档下拉：0=不显示 / 1=横条（底栏亮度行）/ 2=竖条（贴边），档位
-        // 对齐参考版 brightness_bar_mode arrays；旧布尔键停写）
+        // 显示亮度控件（[批1b-1] 亮度条模式三档下拉：0=不显示 / 1=横条
+        //（菜单底部栏亮度行）/ 2=竖条（贴边），档位对齐参考版
+        // brightness_bar_mode arrays；旧布尔键停写）
         _moreRow('显示亮度调节控件', _brightnessModeLabel(), () {
           _showChoiceDialog<String>(
             title: '显示亮度调节控件',

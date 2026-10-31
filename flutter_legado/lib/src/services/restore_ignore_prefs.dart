@@ -59,11 +59,16 @@ class RestoreIgnorePrefs {
   /// - `remote_servers`：批18a 起服务器列表以 servers 表为准，新备份由
   ///   `servers` 段承载；旧备份仍可能携带该键，恢复侧继续读取并写入 DB
   ///   （见 `ServerService.migrateLegacyPrefs`）。
+  /// - `brightness_mode_migrated_v1b1`（批1b-1 审查回修 P2-3）：亮度条
+  ///   旧布尔键一次性迁移标志属**设备级一次性状态**而非用户偏好——随
+  ///   备份带到未迁移设备会跳过迁移（旧布尔键值丢失），故仅备份侧排除、
+  ///   恢复侧不受影响（旧备份不含该键时目标设备照常执行迁移）。
   ///
   /// 与 [alwaysIgnoreKeys] 的区别：本清单**不影响恢复侧**（旧备份兼容），
   /// 因此不能塞进 [alwaysIgnoreKeys]。
   static const backupExcludedKeys = <String>{
     SettingsService.remoteServersKey,
+    'brightness_mode_migrated_v1b1',
   };
 
   /// 阅读界面相关键（对齐 BackupConfig.readPrefKeys + Flutter 阅读偏好）

@@ -168,19 +168,25 @@ void main() {
           reason: '竖向滑条经 RotatedBox(-90°) 承载');
     });
 
-    testWidgets("模式 '0'/'1'：菜单面板不渲染竖条", (tester) async {
+    testWidgets("模式 '0'：菜单面板无任何亮度控件；模式 '1'：横条（无竖条）",
+        (tester) async {
       final container = newContainer();
+      // [批1b-1 审查回修] 模式 '1' 自本批起在面板渲染横条亮度行
+      //（ReadBookMenuBarBottom 同语义），仅竖条（RotatedBox）不渲染
       await tester.pumpWidget(
           menuPanelHarness(container, mode: '0', pos: '1'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       expect(find.byTooltip('自动亮度'), findsNothing);
+      expect(find.byType(RotatedBox), findsNothing);
 
       await tester.pumpWidget(
           menuPanelHarness(container, mode: '1', pos: '1'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.byTooltip('自动亮度'), findsNothing);
+      // 横条亮度行渲染（自动亮度钮），竖条不渲染
+      expect(find.byTooltip('自动亮度'), findsOneWidget);
+      expect(find.byType(RotatedBox), findsNothing);
     });
   });
 

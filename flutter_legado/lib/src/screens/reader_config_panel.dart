@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../constants/pref_keys.dart' show PrefKeys;
 import '../models/flip_mode.dart';
 import '../models/reader_theme.dart';
 import '../providers/providers.dart';
