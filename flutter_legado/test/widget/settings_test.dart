@@ -23,6 +23,7 @@ import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
+import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
 import '../mocks/mocks.dart';
 
@@ -609,6 +610,53 @@ void main() {
       await tester.pumpAndSettle();
 
       verify(() => mockApi.setConfig(PrefKeys.userAgent, '')).called(1);
+    });
+
+    // 批9b-2：线程数默认 32（空 prefs）、保存经 setConfig 同步 Rust、
+    // 范围对齐参考版 1..256（越界不保存）
+    testWidgets('线程数：默认 32、保存同步 Rust、越界拒绝', (tester) async {
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+
+      await tester.pumpWidget(wrap(const OtherSettingsScreen()));
+      await tester.pumpAndSettle();
+
+      const tileTitle = '更新和搜索线程数（太多会卡顿）';
+      await dragTo(tester, tileTitle);
+      await tester.pumpAndSettle();
+
+      final tile = tester.widget<IosListTile>(
+        find.ancestor(
+          of: find.text(tileTitle),
+          matching: find.byType(IosListTile),
+        ).first,
+      );
+      expect(tile.value, '32', reason: '未设置偏好时默认 32（对齐原版）');
+
+      // 保存：写 prefs 并经 BookApi.setConfig 同步 Rust
+      await tester.tap(find.text(tileTitle));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '48');
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.setConfig(PrefKeys.threadCount, '48')).called(1);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.threadCount), 48);
+
+      // 范围校验：999 超出 1..256 → toast 且不写入
+      await tester.tap(find.text(tileTitle));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '999');
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('请输入 1 ~ 256 之间的数字'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      verifyNever(() => mockApi.setConfig(PrefKeys.threadCount, '999'));
+      expect(prefs.getInt(PrefKeys.threadCount), 48, reason: '越界值不得写入');
     });
   });
 }
