@@ -1130,18 +1130,40 @@ class PlatformBridgeService {
     await PlatformChannel.setVolumeKeyCapture(enabled);
   }
 
-  /// [M5] 注册音量键事件回调（原生端捕获后回发 up/down）
+  /// [M5] 注册音量键事件回调（原生端捕获后回发方向 + 长按标记）
+  ///
+  /// 事件形状（批1b-2a，`ReaderKeysBridge.handleKeyDown`）：
+  /// - 新：`{"direction": "up"/"down", "longPress": bool}`；
+  /// - 旧：`"up"/"down"`（向后兼容，按短按处理）。
+  /// `longPress` 由原生侧 `KeyEvent.repeatCount > 0` 判定，供阅读器
+  /// `keyPageOnLongPress` 语义消费。
   void registerVolumeKeyHandler(
-    Future<void> Function(String direction) onVolumeKey,
+    Future<void> Function(String direction, bool longPress) onVolumeKey,
   ) {
     if (!volumeKeyCaptureSupported) return;
     PlatformChannel.setVolumeKeyHandler((call) async {
-      if (call.method == 'volumeKey') {
-        final direction = call.arguments;
-        if (direction == 'up' || direction == 'down') {
-          await onVolumeKey(direction as String);
-        }
+      if (call.method != 'volumeKey') return null;
+      final String direction;
+      final bool longPress;
+      switch (call.arguments) {
+        // 旧协议（M5 起）：仅方向字符串，等价短按
+        case final String raw when raw == 'up' || raw == 'down':
+          direction = raw;
+          longPress = false;
+        // 新协议（批1b-2a）：方向 + 长按 repeat 标记
+        case {'direction': final String raw, 'longPress': final bool lp}
+            when raw == 'up' || raw == 'down':
+          direction = raw;
+          longPress = lp;
+        // 缺 longPress 的 Map（跨端防御）：按短按兜底
+        case {'direction': final String raw}
+            when raw == 'up' || raw == 'down':
+          direction = raw;
+          longPress = false;
+        default:
+          return null;
       }
+      await onVolumeKey(direction, longPress);
       return null;
     });
   }

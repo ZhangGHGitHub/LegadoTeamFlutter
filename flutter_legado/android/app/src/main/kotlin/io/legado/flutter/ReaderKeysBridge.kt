@@ -16,9 +16,18 @@ import android.view.KeyEvent
  * - Dart 经 `setVolumeKeyCapture(enabled)` 开关捕获——仅漫画阅读器
  *   活跃且设置开启时启用，退出阅读器立即关闭，防拦截范围外泄到
  *   其它页面（回归系统音量键默认行为）；
- * - `MainActivity.onKeyDown` 在捕获开启且为音量键时经本通道
- *   `invokeMethod("volumeKey", "up"/"down")` 通知 Dart 翻页并消费
- *   按键；方向反转（reverseVolumeKeyPage）在 Dart 侧处理。
+ * - `MainActivity.onKeyDown` 在捕获开启且为音量键时经本通道通知
+ *   Dart 翻页并消费按键；方向反转（reverseVolumeKeyPage）在 Dart
+ *   侧处理。
+ *
+ * 事件形状（批1b-2a）：
+ * - 旧：`invokeMethod("volumeKey", "up"/"down")`；
+ * - 新：`invokeMethod("volumeKey", {"direction": "up"/"down",
+ *   "longPress": Boolean})`。
+ * `longPress` 取 `KeyEvent.repeatCount > 0`（对齐原版
+ * ReadBookActivity.onKeyDown 的 `val longPress = event.repeatCount > 0`），
+ * 供 Dart 侧实现 `keyPageOnLongPress`：false 时忽略长按 repeat 并做
+ * 600ms 节流。Dart 解析侧同时兼容旧 String 形态（向后兼容）。
  *
  * 全部异常捕获后经 `result.error` / 不消费降级返回，绝不向 Flutter
  * 引擎抛未捕获异常（对照 D2 教训：插件原生层异常会 FATAL 强杀）。
@@ -26,7 +35,7 @@ import android.view.KeyEvent
  * 支持方法：
  * - `setVolumeKeyCapture`: 参数 Boolean；成功返回 true。
  * 信道事件（原生 → Dart）：
- * - `volumeKey`: 参数 "up" / "down"。
+ * - `volumeKey`: `{direction: "up"/"down", longPress: Boolean}`（旧版 String）。
  */
 class ReaderKeysBridge {
 
@@ -63,18 +72,26 @@ class ReaderKeysBridge {
      * `MainActivity.onKeyDown` 调用：捕获开启且为音量键时通知 Dart
      * 翻页并消费按键。
      *
+     * @param keyCode `KeyEvent.keyCode`
+     * @param event 原始按键事件（取 `repeatCount` 判定长按 repeat；
+     *              允许 null 兼容旧调用方，此时按非长按处理）
      * @return true = 已消费（不调系统音量）；false = 交还系统处理
      *         （捕获未开 / 非音量键 / 通知失败的安全降级）
      */
-    fun handleKeyDown(keyCode: Int): Boolean {
+    fun handleKeyDown(keyCode: Int, event: KeyEvent? = null): Boolean {
         if (!captureEnabled) return false
         val direction = when (keyCode) {
             KeyEvent.KEYCODE_VOLUME_UP -> "up"
             KeyEvent.KEYCODE_VOLUME_DOWN -> "down"
             else -> return false
         }
+        // repeatCount > 0 即系统长按自动重复（原版 onKeyDown 同一判定）
+        val longPress = (event?.repeatCount ?: 0) > 0
         return try {
-            channel?.invokeMethod("volumeKey", direction)
+            channel?.invokeMethod(
+                "volumeKey",
+                mapOf("direction" to direction, "longPress" to longPress)
+            )
             true
         } catch (e: Exception) {
             // 通知失败则不消费（安全降级，让系统处理音量）

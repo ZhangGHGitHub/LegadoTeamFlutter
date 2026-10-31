@@ -132,6 +132,9 @@ class RestoreIgnorePrefs {
     'mouseWheelPage',
     'volumeKeyPage',
     'volumeKeyPageOnPlay',
+    // [批1b-2a] 按键长按翻页（键名对齐原版 PreferKey keyPageOnLongPress）：
+    // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤 — 全栈工程师
+    'keyPageOnLongPress',
     'pageTouchSlop',
     'pageTouchClick',
     'useZhLayout',

@@ -13,9 +13,10 @@
 //   （[批1b-1] 取代旧布尔 showBrightnessView，横条/竖条消费接线）/
 //   doubleHorizontalPage/progressBarBehavior/readBodyToLh
 // - 页面控制：useZhLayout/textFullJustify/hangingPunctuation/pageTouchClick/
-//   pageTouchSlop/volumeKeyPage/volumeKeyPageOnPlay/mouseWheelPage/
-//   noAnimScrollPage/autoChangeSource/selectText/showReadTitleAddition
-//   （showReadTitleAddition 本批新接线 reader_menu_panel 信息块显隐）
+//   pageTouchSlop/volumeKeyPage/volumeKeyPageOnPlay/keyPageOnLongPress/
+//   mouseWheelPage/noAnimScrollPage/autoChangeSource/selectText/
+//   showReadTitleAddition（showReadTitleAddition 本批新接线 reader_menu_panel
+//   信息块显隐）
 // - 其他：sliderVibrator/selectVibrator（本批新接线振动）、disableReturnKey
 //   （本批新接线 PopScope 拦截）
 library;
@@ -224,6 +225,15 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           title: '朗读时音量键翻页',
           value: cfg.volumeKeyPageOnPlay,
           onChanged: (v) => _update((c) => c.volumeKeyPageOnPlay = v),
+        ),
+        // [批1b-2a] 按键长按翻页（键 keyPageOnLongPress，默认 false，对齐
+        // 原版 pref_config_read.xml / AppConfig）：开启后长按 repeat 连续
+        // 翻页；关闭时长按 repeat 忽略且 600ms 内只翻一页（leading 节流）
+        SettingSwitchRow(
+          title: '按键长按翻页',
+          subtitle: '关闭时长按不连续翻页，且 600 毫秒内只翻一页',
+          value: cfg.keyPageOnLongPress,
+          onChanged: (v) => _update((c) => c.keyPageOnLongPress = v),
         ),
         SettingSwitchRow(
           title: '禁用滚动点击动画',

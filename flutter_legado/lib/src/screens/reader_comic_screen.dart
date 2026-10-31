@@ -489,7 +489,12 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// [P4-3 M5] 音量键事件：up=上一页、down=下一页（对齐原版
   /// scrollToPrev/scrollToNext），反转开关交换方向；走九区点击同一
   /// 导航链 [_stepPage]（条漫滚动/单页翻页自然适配，边界与点击一致）
-  Future<void> _handleVolumeKey(String direction) async {
+  ///
+  /// [longPress] 为原生 `repeatCount > 0` 长按 repeat 标记。漫画语义
+  /// 对齐原版 ReadMangaActivity.onKeyDown：不区分长按，每个 keydown
+  /// 都翻页（`keyPageOnLongPress` 仅作用于文本阅读器，原版漫画无此
+  /// 开关消费）；保留参数以兼容桥接新事件形状。
+  Future<void> _handleVolumeKey(String direction, bool longPress) async {
     if (!mounted || !_volumeKeyPage) return;
     final forward = direction == 'down';
     final next = _reverseVolumeKeyPage ? !forward : forward;

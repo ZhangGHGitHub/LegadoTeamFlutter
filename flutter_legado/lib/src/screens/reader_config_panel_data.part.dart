@@ -161,6 +161,14 @@ class ReaderAdvancedConfig {
   /// 朗读时音量键翻页（对标原版 volumeKeyPageOnPlay；仅 Android 生效）
   bool volumeKeyPageOnPlay;
 
+  /// 按键长按翻页（对标原版 keyPageOnLongPress，默认 false）
+  ///
+  /// 语义对齐原版 ReadBookActivity.volumeKeyPage → handleKeyPage：
+  /// - true：每个 keydown 都翻页（含长按 repeat），即长按连续翻页；
+  /// - false：长按 repeat 直接忽略，且相邻两次翻页至少间隔 600ms
+  ///   （leading 节流：第一次立即翻，窗口内后续按键不再翻）。
+  bool keyPageOnLongPress;
+
   /// 鼠标滚轮翻页（对标原版 mouseWheelPage，桌面端真实生效）
   bool mouseWheelPage;
 
@@ -277,6 +285,9 @@ class ReaderAdvancedConfig {
     this.readBarStyleFollowPage = false,
     this.volumeKeyPage = true,
     this.volumeKeyPageOnPlay = false,
+    // 原版 AppConfig.keyPageOnLongPress 默认 false（pref_config_read.xml
+    // android:defaultValue=false）
+    this.keyPageOnLongPress = false,
     this.mouseWheelPage = true,
     this.doubleHorizontalPage = 0,
     this.useZhLayout = false,
@@ -542,6 +553,7 @@ class ReaderAdvancedConfig {
       // 默认值对齐 pref_config_read.xml android:defaultValue）— Qoder
       volumeKeyPage: prefs.getBool('volumeKeyPage') ?? true,
       volumeKeyPageOnPlay: prefs.getBool('volumeKeyPageOnPlay') ?? false,
+      keyPageOnLongPress: prefs.getBool('keyPageOnLongPress') ?? false,
       mouseWheelPage: prefs.getBool('mouseWheelPage') ?? true,
       doubleHorizontalPage:
           (prefs.getInt('doubleHorizontalPage') ?? 0).clamp(0, 3),
@@ -666,6 +678,7 @@ class ReaderAdvancedConfig {
     await prefs.setInt('${_prefix}custom_text_color', customTextColor);
     await prefs.setBool('volumeKeyPage', volumeKeyPage);
     await prefs.setBool('volumeKeyPageOnPlay', volumeKeyPageOnPlay);
+    await prefs.setBool('keyPageOnLongPress', keyPageOnLongPress);
     await prefs.setBool('mouseWheelPage', mouseWheelPage);
     await prefs.setInt('doubleHorizontalPage', doubleHorizontalPage);
     await prefs.setBool('useZhLayout', useZhLayout);
@@ -768,6 +781,7 @@ class ReaderAdvancedConfig {
         readBarStyleFollowPage: readBarStyleFollowPage,
         volumeKeyPage: volumeKeyPage,
         volumeKeyPageOnPlay: volumeKeyPageOnPlay,
+        keyPageOnLongPress: keyPageOnLongPress,
         mouseWheelPage: mouseWheelPage,
         doubleHorizontalPage: doubleHorizontalPage,
         useZhLayout: useZhLayout,

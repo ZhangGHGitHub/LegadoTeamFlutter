@@ -31,6 +31,7 @@ import '../widgets/reader/reader_menu_panel.dart';
 import '../widgets/reader/review_detail_sheet.dart';
 import '../utils/comic_image_utils.dart';
 import '../utils/source_login_prompt.dart';
+import '../utils/volume_key_page_gate.dart';
 import 'reader_config_panel.dart';
 
 /// 阅读器页面（Riverpod ConsumerStatefulWidget 薄壳）
@@ -39,7 +40,12 @@ import 'reader_config_panel.dart';
 /// 工具栏/目录/设置/状态栏拆分为独立子组件（widgets/reader/）。
 /// 本文件仅负责编排：高级配置、自动翻页、点击区域、预加载、书签、正文搜索。
 class ReaderScreen extends ConsumerStatefulWidget {
-  const ReaderScreen({super.key});
+  const ReaderScreen({super.key, this.volumeKeyPageGate});
+
+  /// [批1b-2a] 音量键节流闸门注入点（仅测试：注入假时钟使 600ms 窗口
+  /// 断言不依赖真实时间；生产为 null，由 State 内部新建）
+  @visibleForTesting
+  final VolumeKeyPageGate? volumeKeyPageGate;
 
   @override
   ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
@@ -52,6 +58,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// 阅读器高级配置（自动翻页/点击区域/段距/状态栏）
   ReaderAdvancedConfig _advConfig = ReaderAdvancedConfig();
+
+  /// [批1b-2a] 音量键翻页节流闸门（keyPageOnLongPress=false 时长按 repeat
+  /// 忽略 + 同方向 600ms leading 节流；对齐原版 ReadBookActivity
+  /// handleKeyPage/keyPageDebounce）
+  late final VolumeKeyPageGate _volumeKeyPageGate =
+      widget.volumeKeyPageGate ?? VolumeKeyPageGate();
 
   /// 自动翻页定时器
   Timer? _autoTimer;
@@ -207,6 +219,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // 防销毁后回调泄漏）
     appRouteObserver.unsubscribe(this);
     _autoTimer?.cancel();
+    // [批1b-2a] 清空音量键节流状态（无 Timer，重置即无残留；防跨书/重进
+    // 阅读器沿用上次翻页时间导致首次按键被误节流）
+    _volumeKeyPageGate.reset();
     // [UI-fix v2.0.3 | 2026-08-08] 退出阅读器恢复系统 UI 与方向
     // （hideStatusBar/hideNavigationBar/screenOrientation 仅阅读页内生效，
     // 对标原版 ReadBookActivity 退出时 upSystemUiMode 还原）— Qoder
@@ -351,23 +366,47 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   /// F6：音量键翻页（仅 Android 有效；桌面无音量键事件）
+  ///
+  /// [批1b-2a] 对齐原版 ReadBookActivity.volumeKeyPage → handleKeyPage：
+  /// - `keyPageOnLongPress=true`：每个 keydown 都翻页（含 KeyRepeatEvent
+  ///   长按 repeat），即长按连续翻页；
+  /// - false：长按 repeat 忽略；普通按键同方向 600ms 内只翻一次
+  ///   （leading 节流，第一次立即翻）。
+  /// 只要音量键翻页语义生效（volumeKeyPage 且朗读门控通过），按键
+  /// 事件一律消费（含被节流忽略的长按/连点），避免系统调整音量。
   bool _onHardwareKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return false;
     final isVolUp = event.logicalKey == LogicalKeyboardKey.audioVolumeUp;
     final isVolDown = event.logicalKey == LogicalKeyboardKey.audioVolumeDown;
     if (!isVolUp && !isVolDown) return false;
+    if (event is! KeyDownEvent &&
+        event is! KeyRepeatEvent &&
+        event is! KeyUpEvent) {
+      return false;
+    }
 
     final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
     final aloud = ref.read(audioNotifierProvider).isPlaying;
     final allow = cfg.volumeKeyPage && (!aloud || cfg.volumeKeyPageOnPlay);
     if (!allow) return false;
 
+    // 抬起事件：对齐原版 onKeyUp → volumeKeyPage(NONE) 只消费不翻页
+    if (event is KeyUpEvent) return true;
+
     final pageView = _pageViewKey.currentState;
     if (pageView == null) return false;
-    if (isVolDown) {
-      pageView.nextPageOrChapter();
-    } else {
-      pageView.prevPageOrChapter();
+
+    final direction = isVolDown ? 'down' : 'up';
+    final longPress = event is KeyRepeatEvent;
+    if (_volumeKeyPageGate.shouldTurnPage(
+      direction: direction,
+      longPress: longPress,
+      keyPageOnLongPress: cfg.keyPageOnLongPress,
+    )) {
+      if (isVolDown) {
+        pageView.nextPageOrChapter();
+      } else {
+        pageView.prevPageOrChapter();
+      }
     }
     return true; // 消费事件，避免系统调音量
   }

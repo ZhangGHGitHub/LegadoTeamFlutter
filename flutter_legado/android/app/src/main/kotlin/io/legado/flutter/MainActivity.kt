@@ -665,9 +665,12 @@ open class MainActivity : FlutterActivity() {
      * [M5] 音量键翻页：漫画阅读器活跃且捕获开启时消费音量键并通知
      * Dart 翻页（对齐原版 ReadMangaActivity.onKeyDown L894-902）；
      * 其余情况交还系统（全局音量键行为不变）。
+     *
+     * 批1b-2a：把原始 [KeyEvent] 传给桥接层，以 `repeatCount > 0`
+     * 标记长按 repeat（Dart 侧 `keyPageOnLongPress` 语义消费）。
      */
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (readerKeysBridge.handleKeyDown(keyCode)) return true
+        if (readerKeysBridge.handleKeyDown(keyCode, event)) return true
         return super.onKeyDown(keyCode, event)
     }
 
