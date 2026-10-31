@@ -5639,6 +5639,7 @@ mod p3f_tests {
     fn test_search_concurrency_reads_thread_count_config() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
 
         assert_eq!(DEFAULT_SEARCH_CONCURRENCY, 16, "缺省对齐参考版");
         assert_eq!(MAX_SEARCH_CONCURRENCY, 32, "本架构有效上限 32");
@@ -5657,9 +5658,6 @@ mod p3f_tests {
 
         crate::api::config_api::set_config("threadCount", "").unwrap();
         assert_eq!(search_concurrency(), DEFAULT_SEARCH_CONCURRENCY);
-
-        // 复原默认值，避免影响共享测试库中的其他用例
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// E2E：多源搜索入口按 `config:threadCount=2` 限流——回环服务器
@@ -5676,6 +5674,7 @@ mod p3f_tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::config_api::set_config("threadCount", "2").unwrap();
 
         let active = Arc::new(AtomicUsize::new(0));
@@ -5766,7 +5765,6 @@ mod p3f_tests {
         }
         let _ =
             crate::api::source_switch::delete_search_book(&format!("http://127.0.0.1:{port}/b/1"));
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 }
 

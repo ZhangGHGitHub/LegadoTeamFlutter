@@ -202,6 +202,27 @@ impl Drop for UserAgentTestGuard {
     }
 }
 
+/// 批9b-2：`config:threadCount` 测试复位守卫
+///
+/// 在测试中声明于 DB 守卫**之后**（Drop 顺序反向：本守卫先于 DB 守卫释放），
+/// panic 展开时也保证把共享测试库的 threadCount 复回缺省 16，避免污染后续用例。
+#[cfg(test)]
+pub(crate) struct ThreadCountResetGuard;
+
+#[cfg(test)]
+impl ThreadCountResetGuard {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for ThreadCountResetGuard {
+    fn drop(&mut self) {
+        let _ = set_config(THREAD_COUNT_CONFIG_KEY, &DEFAULT_THREAD_COUNT.to_string());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +346,7 @@ mod tests {
     #[test]
     fn test_resolve_thread_count_reads_config() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = ThreadCountResetGuard::new();
 
         set_config(THREAD_COUNT_CONFIG_KEY, "12").unwrap();
         assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 32), 12);
@@ -341,8 +363,5 @@ mod tests {
         // 下载口径：同一配置值 99 → 夹逼到 8
         set_config(THREAD_COUNT_CONFIG_KEY, "99").unwrap();
         assert_eq!(resolve_thread_count(DEFAULT_THREAD_COUNT, 8), 8);
-
-        // 复原，避免影响共享测试库中的其他用例
-        set_config(THREAD_COUNT_CONFIG_KEY, "16").unwrap();
     }
 }

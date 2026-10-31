@@ -10,7 +10,7 @@
 // 7. 读取/写入失败 → 静默不崩（Future 正常完成，不抛异常）。
 //
 // 生产入口：main.dart `syncThreadCountOnStartup`（启动第 5e 步，await 调用）。
-// 语义基准：legado-upstream AppConfig.kt:416-419（threadCount 默认 32）；
+// 语义基准：参考版 DownloadCacheSettings.threadCount 默认 16（原版 32 仅历史参考）；
 // Rust 运行期在搜索/下载入口读 caches config:threadCount（契约批9b-2）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

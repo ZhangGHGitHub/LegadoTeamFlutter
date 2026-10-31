@@ -28,10 +28,9 @@ pub fn get_runtime() -> &'static Runtime {
             .thread_name("legado-ffi-worker")
             .thread_stack_size(8 * 1024 * 1024)
             // 阻塞池扩容（2026-08-27 搜索速度对比实测）：spawn_blocking 承载单源
-            // URL 构建 JS + 解析（regex/JS），默认 10 线程在并发 32 下排队 ~20s，
-            // 排队时间计入单源 30s 超时 → 79 个 HTTP <1s 完成的源被误判超时。
-            // 64 = 2×搜索缺省并发 32（批9b-2 起上限 64，单源 CPU 工作已降至
-            // 毫秒级，两波排队代价可忽略），保证搜索负载下无积压。
+            // URL 构建 JS + 解析（regex/JS），默认 10 线程下排队会吃掉单源超时。
+            // 64 = 4×搜索缺省 16 / 2×有效上限 32（批9b-2：缺省 16、上限 32；
+            // 单源 CPU 工作已降至毫秒级，两波排队代价可忽略）。
             .max_blocking_threads(64)
             // runtime 全部线程（worker + blocking 池，二者均走 after_start 回调）降权
             .on_thread_start(lower_thread_priority)

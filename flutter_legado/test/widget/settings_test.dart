@@ -612,7 +612,7 @@ void main() {
       verify(() => mockApi.setConfig(PrefKeys.userAgent, '')).called(1);
     });
 
-    // 批9b-2：线程数默认 32（空 prefs）、保存经 setConfig 同步 Rust、
+    // 批9b-2：线程数默认 16（空 prefs）、保存经 setConfig 同步 Rust、
     // 范围对齐参考版 1..256（越界不保存）
     testWidgets('线程数：默认 16、保存同步 Rust、越界拒绝', (tester) async {
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);

@@ -39,6 +39,10 @@ static RESTORED: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 static TEST_PANIC_CHAPTER: AtomicI32 = AtomicI32::new(i32::MIN);
 
+/// 测试注入：worker 循环入口 panic（验证 P3-5 整体隔离与 join 收尾）
+#[cfg(test)]
+static TEST_PANIC_WORKER_LOOP: AtomicBool = AtomicBool::new(false);
+
 const PERSIST_PREFIX: &str = "cacheDownloadTask:";
 const PERSIST_INDEX: &str = "cacheDownloadTaskIndex";
 const PERSIST_NEXT_ID: &str = "cacheDownloadNextId";
@@ -159,6 +163,9 @@ struct TaskInner {
     /// （等待用 100ms 超时兜底丢失唤醒，非忙等）
     window_lock: Mutex<()>,
     window_cv: Condvar,
+    /// worker 循环 panic 标志（P3-5）：任一 worker 逃逸单章隔离后置位，
+    /// 终态不判 completed，置 failed 供用户重试
+    worker_panicked: AtomicBool,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -390,6 +397,7 @@ fn task_from_persisted(row: PersistedTask) -> Arc<TaskInner> {
         state_lock: Mutex::new(()),
         window_lock: Mutex::new(()),
         window_cv: Condvar::new(),
+        worker_panicked: AtomicBool::new(false),
     })
 }
 
@@ -507,6 +515,7 @@ pub fn cache_download_start(
         state_lock: Mutex::new(()),
         window_lock: Mutex::new(()),
         window_cv: Condvar::new(),
+        worker_panicked: AtomicBool::new(false),
     });
 
     TASKS
@@ -573,32 +582,58 @@ fn run_download(task_id: u64, task: Arc<TaskInner>) {
         }
     }
     download_worker(task_id, &task);
-    let mut worker_panicked = false;
+    let mut join_failed = false;
     for handle in workers {
         if handle.join().is_err() {
-            worker_panicked = true;
+            join_failed = true;
         }
     }
+    // 主 worker 的循环 panic 已在 download_worker 内捕获并置位；
+    // spawned worker 若逃逸（join Err）同样计入。
+    let worker_panicked = task.worker_panicked.load(Ordering::SeqCst) || join_failed;
 
     let all_attempted = task.finished_prefix.load(Ordering::SeqCst) > task.end_chapter;
     let counted = task.completed.load(Ordering::SeqCst) + task.failed.load(Ordering::SeqCst);
-    if task.cancel.load(Ordering::SeqCst) && !all_attempted {
+    if worker_panicked {
+        // worker 循环 panic：不再派发并等待收尾后置 failed（供用户重试；
+        // `ensure_restored` 只恢复 running 状态，不会自动重跑 failed 任务）。
+        // 即使 panic 置位了取消标志，也不能误报 cancelled。
+        log::warn!(
+            "批量下载任务 {task_id} worker panic：attempted={all_attempted} counted={counted}/{}",
+            task.total
+        );
+        set_status(&task, "failed");
+    } else if task.cancel.load(Ordering::SeqCst) && !all_attempted {
         // 取消：已全部尝试时保持 completed/failed，与旧单线程实现
         // 「最后一章完成后循环自然退出」语义一致。
         set_status(&task, "cancelled");
-    } else if all_attempted && counted == task.total && !worker_panicked {
+    } else if all_attempted && counted == task.total {
         let all_failed = task.failed.load(Ordering::SeqCst) == task.total;
         set_status(&task, if all_failed { "failed" } else { "completed" });
     } else {
-        // 未全部尝试（worker 逃逸 panic / 意外早退）或计数不自洽：
-        // 不谎报 completed，置 failed 供重启续跑/用户重试。
+        // 未全部尝试（意外早退）或计数不自洽：不谎报 completed，
+        // 置 failed 供**用户重试**（`ensure_restored` 只恢复 running 状态）。
         log::warn!(
-            "批量下载任务 {task_id} 未完整完成：attempted={all_attempted} counted={counted}/{} worker_panicked={worker_panicked}",
+            "批量下载任务 {task_id} 未完整完成：attempted={all_attempted} counted={counted}/{}",
             task.total
         );
         set_status(&task, "failed");
     }
     persist_snapshot(task_id, &task);
+}
+
+/// 判断章 index 是否已尝试（连续前缀之前，或已完成散章）
+///
+/// P0-1（批9b-2 复验）：必须在 `finished_ahead` 锁内**同时**读取
+/// `finished_prefix`——`record_finished_locked` 在同一把锁内先移除 ahead
+/// 条目、再把前缀写回原子变量；分开读取会出现「ahead 已移除、前缀尚未更新」
+/// 的窗口，导致刚完成（或快照中已完成）的章被重新下载并重复计数。
+fn is_finished(task: &TaskInner, index: i32) -> bool {
+    let ahead = task
+        .finished_ahead
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    index < task.finished_prefix.load(Ordering::SeqCst) || ahead.contains(&index)
 }
 
 /// 从滑动窗口认领下一个章节 index（批9b-2 审查回修）
@@ -611,6 +646,9 @@ fn claim_next(task: &TaskInner) -> Option<i32> {
         if task.cancel.load(Ordering::SeqCst) {
             return None;
         }
+        // P0-1：游标不得落后于连续前缀，避免派发已被前缀越过的陈旧 index
+        let prefix_now = task.finished_prefix.load(Ordering::SeqCst);
+        task.next_dispatch.fetch_max(prefix_now, Ordering::SeqCst);
         let mut claim = task.next_dispatch.load(Ordering::SeqCst);
         loop {
             if claim > task.end_chapter {
@@ -640,26 +678,37 @@ fn claim_next(task: &TaskInner) -> Option<i32> {
     }
 }
 
-/// 下载 worker：从共享滑动窗口取章，每章恰好派发一次
+/// 下载 worker：整个循环经 `catch_unwind` 包裹（P3-5）
 ///
-/// 批9b-2：N 个 worker 并发执行；取消只在**派发前**检查（竞态窗口内最多
-/// 再派发 N 章，在途章完成后停止）。完成计数、失败集合、连续完成前缀与
-/// 快照落库在同一 `state_lock` 临界区内更新。`download_one` 经
-/// `catch_unwind` 隔离：panic 计为该章失败并记录日志。
+/// panic 时置 `worker_panicked` + 取消标志，停止其他 worker 继续派发并
+/// 唤醒窗口等待者；在途章完成后各 worker 退出，`run_download` join 全部
+/// worker 后才释放全局准入。单章抓取另有一层 `catch_unwind`（panic 计为
+/// 该章失败，任务可继续）。
 fn download_worker(task_id: u64, task: &Arc<TaskInner>) {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        download_worker_loop(task_id, task);
+    }));
+    if result.is_err() {
+        log::error!("下载 worker 循环 panic（已隔离；停止派发并等待其他 worker 收尾）");
+        task.worker_panicked.store(true, Ordering::SeqCst);
+        task.cancel.store(true, Ordering::SeqCst);
+        task.window_cv.notify_all();
+    }
+}
+
+fn download_worker_loop(task_id: u64, task: &Arc<TaskInner>) {
     let book_url = task.book_url.clone();
+    #[cfg(test)]
+    if TEST_PANIC_WORKER_LOOP.load(Ordering::SeqCst) {
+        panic!("测试注入：worker loop panic");
+    }
     loop {
         let Some(index) = claim_next(task) else {
             return;
         };
-        // 重启续跑：已完成但前缀尚未推进的散章直接跳过（计数已随快照恢复，
-        // 不重复下载/不重复计数；前缀会在缺口章完成时自然推进并移除该项）
-        let already_done = task
-            .finished_ahead
-            .lock()
-            .map(|set| set.contains(&index))
-            .unwrap_or(false);
-        if already_done {
+        // P0-1：前缀推进可能使刚认领的 index 过期，或该章已在恢复快照的
+        // 完成集合中——跳过且不重复计数（is_finished 在 ahead 锁内同时读前缀）
+        if is_finished(task, index) {
             continue;
         }
 
@@ -929,6 +978,38 @@ mod tests {
     // Repository trait：BookChapterRepository::insert / BookRepository::delete_by_url
     use legado_db::repository::Repository;
 
+    /// 单章 panic 注入守卫（Drop 复位，panic 展开也安全）
+    struct PanicChapterGuard;
+
+    impl PanicChapterGuard {
+        fn set(index: i32) -> Self {
+            TEST_PANIC_CHAPTER.store(index, Ordering::SeqCst);
+            Self
+        }
+    }
+
+    impl Drop for PanicChapterGuard {
+        fn drop(&mut self) {
+            TEST_PANIC_CHAPTER.store(i32::MIN, Ordering::SeqCst);
+        }
+    }
+
+    /// worker 循环 panic 注入守卫（Drop 复位）
+    struct PanicWorkerLoopGuard;
+
+    impl PanicWorkerLoopGuard {
+        fn new() -> Self {
+            TEST_PANIC_WORKER_LOOP.store(true, Ordering::SeqCst);
+            Self
+        }
+    }
+
+    impl Drop for PanicWorkerLoopGuard {
+        fn drop(&mut self) {
+            TEST_PANIC_WORKER_LOOP.store(false, Ordering::SeqCst);
+        }
+    }
+
     /// 未知任务：progress 返回 notFound，cancel 返回 false
     #[test]
     fn test_unknown_task() {
@@ -941,6 +1022,7 @@ mod tests {
     #[test]
     fn test_start_validation() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         let err = cache_download_start("http://no-such-book.example.com", 0, 10).unwrap_err();
         assert!(err.to_string().contains("书籍不存在"));
     }
@@ -950,6 +1032,7 @@ mod tests {
     #[test]
     fn test_local_book_batch_download() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
 
         // 构造本地 TXT 文件 + 入库书与章节目录
@@ -1019,6 +1102,7 @@ mod tests {
         use legado_db::CacheBookRepository;
 
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
 
         let dir = std::env::temp_dir().join("legado_r7_strict_test");
@@ -1119,6 +1203,7 @@ mod tests {
         // 网络抓取会经 begin_book_flow（全局 store）→ 必须先持 store 锁
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
 
         let chapter_hits = Arc::new(AtomicUsize::new(0));
@@ -1258,6 +1343,7 @@ mod tests {
         .unwrap();
 
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         let prev_db_path = crate::db_state::current_db_path();
         // resolver 以 DB 路径的父目录为 Documents 基
         crate::db_state::record_db_path(base.join("legado.db").to_str().unwrap());
@@ -1304,6 +1390,7 @@ mod tests {
     #[test]
     fn test_cancel_flag_set() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         // 批9b-2：单 worker 以保持「创建后立即取消」的确定性（并发下本地
         // 解析极快，多个 worker 可能在取消到达前完成更多章）；并发取消
         // 语义由 `test_download_cancel_with_concurrency_stops_after_in_flight`
@@ -1363,7 +1450,6 @@ mod tests {
         })
         .unwrap();
         let _ = std::fs::remove_file(&txt_path);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// P2-29：在途章集合 = 运行中任务的 in-flight 章节（区间内）；
@@ -1371,6 +1457,7 @@ mod tests {
     #[test]
     fn test_running_chapters() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
 
         // 200 章本地 TXT：保证 worker 运行窗口足够长，可稳定观测在途态
@@ -1493,6 +1580,7 @@ mod tests {
     #[test]
     fn test_failed_chapters_recorded_and_cleared_on_retry() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
 
         let (book_url, chapters) = make_local_txt_book(
@@ -1576,6 +1664,7 @@ mod tests {
     #[test]
     fn test_failed_chapters_persistence_roundtrip_and_legacy_snapshot() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
 
         // 旧快照（契约冻结前落库，无 failedChapters 字段）可读 → 空集合
         let legacy_json = r#"{"taskId":99991,"bookUrl":"http://legacy-book.example.com","startChapter":0,"endChapter":2,"total":3,"completed":1,"failed":1,"nextIndex":2,"status":"completed"}"#;
@@ -1609,6 +1698,7 @@ mod tests {
             state_lock: Mutex::new(()),
             window_lock: Mutex::new(()),
             window_cv: Condvar::new(),
+            worker_panicked: AtomicBool::new(false),
         });
         persist_snapshot(task_id, &task);
         let json =
@@ -1989,6 +2079,7 @@ mod tests {
     #[test]
     fn test_download_concurrency_clamps_thread_count() {
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
 
         assert_eq!(
             download_concurrency(),
@@ -2011,8 +2102,6 @@ mod tests {
         );
         crate::api::config_api::set_config("threadCount", "abc").unwrap();
         assert_eq!(download_concurrency(), MAX_DOWNLOAD_CONCURRENCY);
-
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// 批9b-2：N worker 并发——最大在途 = threadCount、每章恰好下载一次、
@@ -2021,6 +2110,7 @@ mod tests {
     fn test_download_concurrency_max_in_flight_order_and_no_duplicate() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "2").unwrap();
 
@@ -2066,35 +2156,84 @@ mod tests {
         );
 
         cleanup_online_book(&book_url, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
-    /// 批9b-2：重启续跑——连续前缀 + 已完成散章恢复后不跳过、不重复下载/计数
+    /// P0-1 回归（单 worker 确定性复现）：快照 `nextIndex=0`、
+    /// `finishedChapters=[1]`、`completed=1`；worker 完成 0 后前缀越过 1，
+    /// 随后 claim 到 1 时必须跳过——不得重下/重复计数。
+    /// 修复前：completed 超 total（4/3）且终态 failed、章 1 被重复请求。
     #[test]
-    fn test_download_resume_finished_ahead_no_duplicate_or_skip() {
+    fn test_download_resume_p0_prefix_advance_must_not_redownload_finished_ahead() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
-        crate::api::config_api::set_config("threadCount", "2").unwrap();
+        crate::api::config_api::set_config("threadCount", "1").unwrap();
 
         let server = start_chapter_server(10);
-        let (book_url, source_url) = setup_online_book(server.port, 5);
+        let (book_url, source_url) = setup_online_book(server.port, 3);
 
-        // 模拟崩溃快照：0、1 已连续完成（前缀 = 2）；4 已完成但前缀未推进；
-        // completed 已包含这 3 章
+        // 快照：章 1 已完成；章 0、2 未完成
         let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
         let task = task_from_persisted(PersistedTask {
             task_id,
             book_url: book_url.clone(),
             start_chapter: 0,
-            end_chapter: 4,
-            total: 5,
-            completed: 3,
+            end_chapter: 2,
+            total: 3,
+            completed: 1,
             failed: 0,
-            next_index: 2,
+            next_index: 0,
             status: "running".to_string(),
             failed_chapters: Vec::new(),
-            finished_chapters: vec![4],
+            finished_chapters: vec![1],
+        });
+        TASKS.lock().unwrap().insert(task_id, Arc::clone(&task));
+
+        run_download(task_id, task);
+
+        let progress = cache_download_progress(task_id).unwrap();
+        assert_eq!(progress.status, "completed", "不得因重复计数判 failed");
+        assert_eq!(progress.completed, 3, "completed 不得超 total");
+        assert_eq!(progress.failed, 0);
+        assert_eq!(progress.completed + progress.failed, progress.total);
+
+        let hits = server.hits.lock().unwrap().clone();
+        assert_eq!(hits.get(&0), Some(&1), "缺口章 0 应下载一次");
+        assert_eq!(hits.get(&2), Some(&1), "缺口章 2 应下载一次");
+        assert!(!hits.contains_key(&1), "快照已完成章 1 不得重下: {hits:?}");
+
+        TASKS.lock().unwrap().remove(&task_id);
+        cleanup_online_book(&book_url, &source_url);
+    }
+
+    /// P0-1 竞态保护（2 worker）：前缀推进与 ahead 移除交错时，
+    /// 已完成的散章仍不得被重新派发/重复计数
+    #[test]
+    fn test_download_resume_two_workers_skip_finished_ahead_race() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let server = start_chapter_server(15);
+        let (book_url, source_url) = setup_online_book(server.port, 6);
+
+        // 快照：章 1、3 已完成（前缀 0）；completed 已含这 2 章
+        let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
+        let task = task_from_persisted(PersistedTask {
+            task_id,
+            book_url: book_url.clone(),
+            start_chapter: 0,
+            end_chapter: 5,
+            total: 6,
+            completed: 2,
+            failed: 0,
+            next_index: 0,
+            status: "running".to_string(),
+            failed_chapters: Vec::new(),
+            finished_chapters: vec![1, 3],
         });
         TASKS.lock().unwrap().insert(task_id, Arc::clone(&task));
 
@@ -2102,22 +2241,23 @@ mod tests {
 
         let progress = cache_download_progress(task_id).unwrap();
         assert_eq!(progress.status, "completed");
-        assert_eq!(progress.completed, 5, "恢复计数不重复：3 + 新下载 2");
+        assert_eq!(progress.completed, 6, "2 已恢复 + 4 新下载");
         assert_eq!(progress.failed, 0);
+        assert_eq!(progress.completed + progress.failed, progress.total);
 
         let hits = server.hits.lock().unwrap().clone();
-        assert_eq!(hits.get(&2), Some(&1), "缺口章 2 应下载一次");
-        assert_eq!(hits.get(&3), Some(&1), "缺口章 3 应下载一次");
-        for done in [0, 1, 4] {
+        for index in [0, 2, 4, 5] {
+            assert_eq!(hits.get(&index), Some(&1), "缺口章 {index} 应下载一次");
+        }
+        for done in [1, 3] {
             assert!(
                 !hits.contains_key(&done),
-                "已完成章 {done} 不得重复下载: {hits:?}"
+                "已完成章 {done} 不得重下: {hits:?}"
             );
         }
 
         TASKS.lock().unwrap().remove(&task_id);
         cleanup_online_book(&book_url, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// 批9b-2：并发任务取消——不再派发新章，在途章完成后停止；
@@ -2126,6 +2266,7 @@ mod tests {
     fn test_download_cancel_with_concurrency_stops_after_in_flight() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "2").unwrap();
 
@@ -2149,7 +2290,6 @@ mod tests {
         );
 
         cleanup_online_book(&book_url, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     // ─── 批9b-2 审查回修：全局准入 / 有界快照 / panic 隔离 ───────────────
@@ -2164,7 +2304,7 @@ mod tests {
             start_chapter: 0,
             end_chapter: 99,
             total: 100,
-            completed: 40, // 前缀 0 + 40 个散章（1..=40）
+            completed: 39, // 40 个散章（1..=40）中 39 成功
             failed: 1,     // 其中第 40 章失败
             next_index: 0,
             status: "running".to_string(),
@@ -2182,8 +2322,8 @@ mod tests {
         assert_eq!(ahead.last(), Some(&31), "保留窗口内最小的 31 个散章");
         assert_eq!(
             task.completed.load(Ordering::SeqCst),
-            32,
-            "窗口外 8 个成功散章计数扣减"
+            31,
+            "窗口外 8 个成功散章计数扣减（39-8）"
         );
         assert_eq!(
             task.failed.load(Ordering::SeqCst),
@@ -2197,12 +2337,64 @@ mod tests {
         );
     }
 
+    /// P2：超窗快照裁剪后实际跑完，`completed+failed==total`（不重复计数）
+    #[test]
+    fn test_task_from_persisted_trimmed_fixture_runs_to_total() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let (book_url, _chapters) =
+            make_local_txt_book("legado_trim_run_test", "trim_run.txt", "裁剪续跑测试", 50);
+
+        let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
+        let task = task_from_persisted(PersistedTask {
+            task_id,
+            book_url: book_url.clone(),
+            start_chapter: 0,
+            end_chapter: 49,
+            total: 50,
+            completed: 39,
+            failed: 1,
+            next_index: 0,
+            status: "running".to_string(),
+            failed_chapters: vec![40],
+            finished_chapters: (1..=40).collect(),
+        });
+        TASKS.lock().unwrap().insert(task_id, Arc::clone(&task));
+
+        run_download(task_id, task);
+
+        let progress = cache_download_progress(task_id).unwrap();
+        assert_eq!(progress.status, "completed");
+        assert_eq!(progress.failed, 0);
+        assert_eq!(progress.completed, 50, "裁剪后跑完不得重复计数");
+        assert_eq!(
+            progress.completed + progress.failed,
+            progress.total,
+            "completed 终态计数必须闭合"
+        );
+
+        TASKS.lock().unwrap().remove(&task_id);
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(&book_url)?;
+            legado_db::CacheBookRepository::new(conn).delete_by_book(&book_url)?;
+            BookRepository::new(conn).delete_by_url(&book_url)
+        })
+        .unwrap();
+        crate::api::cache_api::clear_cache().unwrap();
+        let _ = std::fs::remove_file(&book_url);
+    }
+
     /// 全局准入：3 本书同时启动——任意时刻全局在途 ≤8、同时只有 1 本书
     /// 在发请求（请求序列中每本书各成连续一段）、单书 8 worker 达到 8 在途
     #[test]
     fn test_download_global_admission_one_book_at_a_time() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "8").unwrap();
 
@@ -2254,7 +2446,6 @@ mod tests {
         }
 
         cleanup_multi_book(&books, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// 重启恢复：多个 running 任务同时续跑时仍只准入 1 本书
@@ -2263,6 +2454,7 @@ mod tests {
     fn test_download_restore_running_tasks_admit_one_book() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "8").unwrap();
 
@@ -2310,7 +2502,6 @@ mod tests {
             TASKS.lock().unwrap().remove(task_id);
         }
         cleanup_multi_book(&books, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// 取消排队任务：首本持有准入期间取消第二本 → 第二本零 HTTP、终态 cancelled
@@ -2318,6 +2509,7 @@ mod tests {
     fn test_download_cancel_queued_task_not_executed() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "8").unwrap();
 
@@ -2364,7 +2556,6 @@ mod tests {
 
         assert_eq!(wait_terminal(first).status, "completed");
         cleanup_multi_book(&books, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// 慢首章：滑动窗口保证 in-memory/持久化 `finishedChapters` 长度 ≤32，
@@ -2373,6 +2564,7 @@ mod tests {
     fn test_download_slow_first_chapter_keeps_finished_ahead_bounded() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "8").unwrap();
 
@@ -2428,7 +2620,6 @@ mod tests {
         assert_eq!(server.hits.lock().unwrap().len(), 100, "每章恰好请求一次");
 
         cleanup_multi_book(&books, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
     }
 
     /// worker panic 隔离：panic 章计为失败并记录，其余章继续，
@@ -2437,16 +2628,16 @@ mod tests {
     fn test_download_worker_panic_counted_as_failed() {
         let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
         crate::api::cache_api::clear_cache().unwrap();
         crate::api::config_api::set_config("threadCount", "2").unwrap();
 
         let server = start_chapter_server(10);
         let (book_url, source_url) = setup_online_book(server.port, 3);
 
-        TEST_PANIC_CHAPTER.store(1, Ordering::SeqCst);
+        let _panic_guard = PanicChapterGuard::set(1);
         let task_id = cache_download_start(&book_url, 0, 2).unwrap();
         let progress = wait_terminal(task_id);
-        TEST_PANIC_CHAPTER.store(i32::MIN, Ordering::SeqCst);
 
         assert_eq!(progress.status, "completed", "全部章已尝试 → completed");
         assert_eq!(progress.completed, 2);
@@ -2463,6 +2654,35 @@ mod tests {
         );
 
         cleanup_online_book(&book_url, &source_url);
-        crate::api::config_api::set_config("threadCount", "16").unwrap();
+    }
+
+    /// P3-5：worker 循环（主 + spawned）panic 被整体捕获——任务不挂死、
+    /// 先 join 收尾再释放准入，终态置 failed（不误报 cancelled/completed）
+    #[test]
+    fn test_download_worker_loop_panic_marks_failed_and_joins() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _thread_guard = crate::api::config_api::ThreadCountResetGuard::new();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::api::config_api::set_config("threadCount", "2").unwrap();
+
+        let server = start_chapter_server(10);
+        let (book_url, source_url) = setup_online_book(server.port, 3);
+
+        let _panic_guard = PanicWorkerLoopGuard::new();
+        let task_id = cache_download_start(&book_url, 0, 2).unwrap();
+        let progress = wait_terminal(task_id);
+
+        assert_eq!(progress.status, "failed", "worker 循环 panic → failed");
+        assert!(
+            progress.completed + progress.failed <= progress.total,
+            "计数不得超 total: {progress:?}"
+        );
+        assert!(
+            server.hits.lock().unwrap().is_empty(),
+            "worker 在认领前 panic，不应发起 HTTP"
+        );
+
+        cleanup_online_book(&book_url, &source_url);
     }
 }
