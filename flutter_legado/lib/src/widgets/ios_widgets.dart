@@ -1,11 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/theme_background_image_store.dart';
 
 import 'setting_cards.dart';
+import 'theme_background_layer.dart';
 
 /// MD3 风格分组列表组件库（Batch 0 集中改造，UI_MD3_PLAN.md 第八节）
 ///
@@ -142,6 +141,8 @@ class IosGroup extends StatelessWidget {
     );
 
     if (flat) {
+      // 登记：flat 模式无卡片面，不参与容器背景图/不透明度（参考版
+      // SplicedColumnGroup 卡片语义只对应 flat=false 结构）。
       final rows = <Widget>[];
       for (var i = 0; i < children.length; i++) {
         rows.add(children[i]);
@@ -175,18 +176,26 @@ class IosGroup extends StatelessWidget {
       valueListenable: uiSettingsListenable,
       builder: (context, ui, _) {
         final opacity = (ui.containerOpacity / 100).clamp(0.0, 1.0);
+        // [P1 回修] 乘 alpha 而非替换：参考版 GlassCard.kt:74-75 为
+        // `it.copy(alpha = it.alpha * alpha)`。透明调色板的 surfaceContainer/
+        // surfaceContainerLow 自带 alpha（如 0x33/0x00），直接 withValues 会
+        // 覆盖调色板 alpha 把透明主题洗成不透明白卡、盖住容器背景图。
+        final groupSurface = theme.colorScheme.surfaceContainer;
+        final rowSurface = theme.colorScheme.surfaceContainerLow;
         final stored = theme.brightness == Brightness.dark
             ? ui.largeContainerBackgroundImageDark
             : ui.largeContainerBackgroundImageLight;
-        final hasImage = ThemeBackgroundImageStore.isUsableSync(stored);
+        final hasImage = ui.enableContainerBackgroundImage &&
+            ThemeBackgroundImageStore.isUsableSync(stored);
         final imagePath =
             hasImage ? ThemeBackgroundImageStore.resolveSync(stored) : '';
         return Padding(
           padding: margin,
           child: Container(
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainer
-                  .withValues(alpha: opacity),
+              color: groupSurface.withValues(
+                alpha: groupSurface.a * opacity,
+              ),
               borderRadius: BorderRadius.circular(16),
             ),
             clipBehavior: Clip.antiAlias,
@@ -197,7 +206,10 @@ class IosGroup extends StatelessWidget {
                     child: IgnorePointer(
                       child: Image(
                         key: const ValueKey('ios-group-container-background'),
-                        image: FileImage(File(imagePath)),
+                        image: themeBackgroundImageProvider(
+                          imagePath,
+                          context,
+                        ),
                         fit: BoxFit.cover,
                         alignment: Alignment.center,
                         gaplessPlayback: true,
@@ -213,8 +225,9 @@ class IosGroup extends StatelessWidget {
                     children: [
                       for (var i = 0; i < children.length; i++) ...[
                         Material(
-                          color: theme.colorScheme.surfaceContainerLow
-                              .withValues(alpha: opacity),
+                          color: rowSurface.withValues(
+                            alpha: rowSurface.a * opacity,
+                          ),
                           borderRadius: BorderRadius.circular(4),
                           clipBehavior: Clip.antiAlias,
                           child: children[i],

@@ -14,6 +14,7 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/screens/theme_config_screen.dart';
 import 'package:flutter_legado/src/services/theme_background_image_store.dart';
+import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 import 'package:flutter_legado/src/widgets/setting_slider_row.dart';
 
 void main() {
@@ -76,26 +77,18 @@ void main() {
         matching: find.byType(Slider),
       );
 
-  testWidgets('容器设置组渲染新行与默认值', (tester) async {
+  testWidgets('容器设置组渲染新行与默认值（总开关默认关、图片行隐藏）',
+      (tester) async {
     await pumpPage(tester);
     await scrollTo(tester, find.text('容器设置'));
 
-    expect(find.text('容器背景图片（日间）'), findsOneWidget);
-    expect(find.text('容器背景图片（夜间）'), findsOneWidget);
+    expect(find.text('容器背景图'), findsOneWidget);
     expect(find.text('容器不透明度'), findsOneWidget);
     expect(find.text('背景图虚化（日间）'), findsOneWidget);
     expect(find.text('背景图虚化（夜间）'), findsOneWidget);
-
-    // 仅断言两条容器图片行自身的副标题（自定义主题组的背景图行同为「未设置」）
-    Finder subtitleOf(String title) => find.descendant(
-          of: find.ancestor(
-            of: find.text(title),
-            matching: find.byType(ListTile),
-          ),
-          matching: find.text('未设置'),
-        );
-    expect(subtitleOf('容器背景图片（日间）'), findsOneWidget);
-    expect(subtitleOf('容器背景图片（夜间）'), findsOneWidget);
+    // 参考版总开关默认 false → 图片行条件隐藏
+    expect(find.text('容器背景图片（日间）'), findsNothing);
+    expect(find.text('容器背景图片（夜间）'), findsNothing);
 
     final rows = tester
         .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
@@ -104,6 +97,44 @@ void main() {
     expect(byTitle['容器不透明度']!.value, 100);
     expect(byTitle['背景图虚化（日间）']!.value, 0);
     expect(byTitle['背景图虚化（夜间）']!.value, 0);
+  });
+
+  testWidgets('总开关：开启显示图片行；关闭隐藏但保留已选路径', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.largeContainerBackgroundImageLight:
+          'theme_backgrounds/large_light/keep.png',
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器背景图'));
+
+    Finder switchOf(String title) => find.descendant(
+          of: find.ancestor(
+            of: find.text(title),
+            matching: find.byType(SettingSwitchRow),
+          ),
+          matching: find.byType(Switch),
+        );
+    expect(tester.widget<Switch>(switchOf('容器背景图')).value, isFalse);
+    expect(find.text('容器背景图片（日间）'), findsNothing);
+
+    // 开启 → 图片行出现（路径虽缺失也显示文件名+回落提示）
+    await tester.tap(find.text('容器背景图'));
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(PrefKeys.enableContainerBackgroundImage), isTrue);
+    expect(find.text('容器背景图片（日间）'), findsOneWidget);
+    expect(find.text('容器背景图片（夜间）'), findsOneWidget);
+
+    // 关闭 → 行隐藏，但 prefs 路径仍在（再次开启可恢复）
+    await tester.tap(find.text('容器背景图'));
+    await tester.pumpAndSettle();
+    expect(prefs.getBool(PrefKeys.enableContainerBackgroundImage), isFalse);
+    expect(find.text('容器背景图片（日间）'), findsNothing);
+    expect(
+      prefs.getString(PrefKeys.largeContainerBackgroundImageLight),
+      'theme_backgrounds/large_light/keep.png',
+    );
   });
 
   testWidgets('容器不透明度滑块：点按轨道 0% 落盘 containerOpacity=0', (tester) async {
@@ -150,6 +181,7 @@ void main() {
 
   testWidgets('容器背景图行显示文件名；点击行弹选择/清除', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
       PrefKeys.largeContainerBackgroundImageLight:
           'theme_backgrounds/large_light/day.png',
       PrefKeys.largeContainerBackgroundImageDark:
@@ -183,6 +215,10 @@ void main() {
   });
 
   testWidgets('未设置时图片行弹窗不显示清除项', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
     await pumpPage(tester);
     await scrollTo(tester, find.text('容器背景图片（夜间）'));
 

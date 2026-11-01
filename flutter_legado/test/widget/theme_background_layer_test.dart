@@ -131,6 +131,23 @@ void main() {
     expect(find.text('内容'), findsOneWidget);
   });
 
+  testWidgets('背景图解码限制到窗口宽高×DPR（ResizeImage.fit，不放大）',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(wrap(path: png.path));
+    await tester.pumpAndSettle();
+
+    final image = tester.widget<Image>(find.byType(Image));
+    final provider = image.image as ResizeImage;
+    expect(provider.width, 1200, reason: '逻辑宽 600 × DPR 2');
+    expect(provider.height, 2000, reason: '逻辑高 1000 × DPR 2');
+    expect(provider.policy, ResizeImagePolicy.fit);
+    expect(provider.allowUpscaling, isFalse);
+  });
+
   testWidgets('背景图「无→有」「有→无」切换不重建应用子树', (tester) async {
     await tester.pumpWidget(wrap(path: '', child: const _Probe()));
     await tester.pumpAndSettle();

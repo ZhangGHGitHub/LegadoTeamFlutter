@@ -2,13 +2,22 @@
 //
 // 覆盖：内容哈希命名/去重、相对 Support 标识解析、绝对路径透传、
 // 文件缺失回落（isUsableSync=false）、清除只删自有文件（外部路径不动）、
-// 非法槽位拒绝。
+// 非法槽位拒绝、存前试解码、.9.png 保留、孤儿清理。
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/services/theme_background_image_store.dart';
+
+/// 1x1 透明 PNG（真实可解码）
+final _pngBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8'
+  '/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
+);
+
+/// 32 位十六进制样式名字（配合自有文件命名规则）
+String _hashLike(String ch) => List<String>.filled(32, ch).join();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -31,11 +40,11 @@ void main() {
     }
   });
 
-  Future<File> writeSource(String name, {int size = 8}) async {
+  Future<File> writeSource(String name, {List<int>? bytes}) async {
     final dir = Directory('${temp.path}${Platform.pathSeparator}src');
     await dir.create(recursive: true);
     final file = File('${dir.path}${Platform.pathSeparator}$name');
-    await file.writeAsBytes(List<int>.filled(size, 7));
+    await file.writeAsBytes(bytes ?? _pngBytes);
     return file;
   }
 
@@ -167,6 +176,77 @@ void main() {
       () => ThemeBackgroundImageStore.store(empty.path, slot: 'large_light'),
       throwsA(isA<FormatException>()),
     );
+  });
+
+  test('非图片/HEIC 等不可解码内容存前拒绝（FormatException）', () async {
+    final source = await writeSource(
+      'fake.png',
+      bytes: utf8.encode('this is not an image'),
+    );
+    expect(
+      () => ThemeBackgroundImageStore.store(source.path, slot: 'large_light'),
+      throwsA(isA<FormatException>()),
+    );
+    // 不产生正式文件/残留 tmp
+    final dir = Directory(
+      '${temp.path}${Platform.pathSeparator}theme_backgrounds'
+      '${Platform.pathSeparator}large_light',
+    );
+    if (dir.existsSync()) {
+      expect(dir.listSync().whereType<File>(), isEmpty);
+    }
+  });
+
+  test('.9.png 保留双扩展名（供 2b-1b 九宫格迁移识别）', () async {
+    final source = await writeSource('frame.9.png');
+    final stored = await ThemeBackgroundImageStore.store(
+      source.path,
+      slot: 'large_light',
+    );
+    expect(
+      stored,
+      matches(RegExp(r'^theme_backgrounds/large_light/[0-9a-f]{32}\.9\.png$')),
+    );
+    expect(ThemeBackgroundImageStore.isUsableSync(stored), isTrue);
+  });
+
+  test('cleanupOrphansSync 清理未引用自有图/残留 tmp，其他槽位与非自有名不动',
+      () async {
+    final source = await writeSource('keep.png');
+    final kept = await ThemeBackgroundImageStore.store(
+      source.path,
+      slot: 'large_light',
+    );
+    final sep = Platform.pathSeparator;
+    final lightDir = Directory(
+      '${temp.path}$sep${ThemeBackgroundImageStore.subDir}${sep}large_light',
+    );
+    final hashA = _hashLike('a');
+    final orphan = File('${lightDir.path}$sep$hashA.png')
+      ..writeAsBytesSync(const <int>[1, 2, 3]);
+    final tmp = File('${lightDir.path}$sep.${_hashLike('b')}.png.tmp-123')
+      ..writeAsBytesSync(const <int>[1]);
+    final notOurs = File('${lightDir.path}${sep}readme.txt')
+      ..writeAsBytesSync(const <int>[1]);
+    // 2b-1b 的项目图槽位：本批清理不扫描，必须保留
+    final itemDir = Directory(
+      '${temp.path}$sep${ThemeBackgroundImageStore.subDir}${sep}item_light',
+    )..createSync(recursive: true);
+    final itemFile = File('${itemDir.path}$sep${_hashLike('c')}.png')
+      ..writeAsBytesSync(const <int>[1]);
+
+    final removed = ThemeBackgroundImageStore.cleanupOrphansSync(keep: [kept]);
+
+    expect(removed, 2);
+    expect(
+      File(ThemeBackgroundImageStore.resolveSync(kept)).existsSync(),
+      isTrue,
+    );
+    expect(orphan.existsSync(), isFalse);
+    expect(tmp.existsSync(), isFalse);
+    expect(notOurs.existsSync(), isTrue);
+    expect(itemFile.existsSync(), isTrue,
+        reason: 'item_* 槽位属 2b-1b，本批不清理');
   });
 
   // 便于其他用例复用：1x1 透明 PNG（widget 测试真实可解码）

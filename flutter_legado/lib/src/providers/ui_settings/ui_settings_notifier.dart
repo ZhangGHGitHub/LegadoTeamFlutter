@@ -164,8 +164,13 @@ class UiSettingsState {
   ///
   /// 作用于 IosGroup 分组卡面（外部分组底 + 行小卡底）：值越低，底层
   /// 容器背景图/全局壁纸透出越多；文字颜色不随之改变（参考版 GlassCard
-  /// 同口径，见 `card/GlassCard.kt:155`）。
+  /// 同口径，见 `card/GlassCard.kt:74-75`：`alpha = alpha * containerOpacity`）。
   final int containerOpacity;
+
+  /// 启用容器背景图（参考版 enableContainerBackgroundImage，默认 false）
+  ///
+  /// 关闭时保留 largeContainerBackgroundImage* 路径但不绘制；选图时自动置 true。
+  final bool enableContainerBackgroundImage;
 
   /// 日间大容器背景图偏好值（相对 Support 目录的可迁移标识；空=未设置）
   final String largeContainerBackgroundImageLight;
@@ -222,6 +227,7 @@ class UiSettingsState {
     this.wallpaperColorFollow = false,
     this.enableItemDivider = false,
     this.containerOpacity = 100,
+    this.enableContainerBackgroundImage = false,
     this.largeContainerBackgroundImageLight = '',
     this.largeContainerBackgroundImageDark = '',
     this.bgImageBlurring = 0,
@@ -259,6 +265,7 @@ class UiSettingsState {
     bool? wallpaperColorFollow,
     bool? enableItemDivider,
     int? containerOpacity,
+    bool? enableContainerBackgroundImage,
     String? largeContainerBackgroundImageLight,
     String? largeContainerBackgroundImageDark,
     int? bgImageBlurring,
@@ -299,6 +306,8 @@ class UiSettingsState {
       wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
       enableItemDivider: enableItemDivider ?? this.enableItemDivider,
       containerOpacity: containerOpacity ?? this.containerOpacity,
+      enableContainerBackgroundImage: enableContainerBackgroundImage ??
+          this.enableContainerBackgroundImage,
       largeContainerBackgroundImageLight: largeContainerBackgroundImageLight ??
           this.largeContainerBackgroundImageLight,
       largeContainerBackgroundImageDark: largeContainerBackgroundImageDark ??
@@ -440,6 +449,10 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
         PrefKeys.containerOpacity,
         defaultValue: 100,
       ).then(_clampOpacity),
+      enableContainerBackgroundImage: await _settings.getBoolPref(
+        PrefKeys.enableContainerBackgroundImage,
+        defaultValue: false,
+      ),
       largeContainerBackgroundImageLight: await _settings.getStringPref(
         PrefKeys.largeContainerBackgroundImageLight,
       ),
@@ -754,14 +767,30 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     await _settings.setIntPref(PrefKeys.containerOpacity, v);
   }
 
+  /// 启用容器背景图（参考版 enableContainerBackgroundImage）
+  Future<void> setEnableContainerBackgroundImage(bool value) async {
+    if (state.enableContainerBackgroundImage == value) return;
+    state = state.copyWith(enableContainerBackgroundImage: value);
+    _sync();
+    await _settings.setBoolPref(
+      PrefKeys.enableContainerBackgroundImage,
+      value,
+    );
+  }
+
   /// 大容器背景图（日/夜；空串 = 清除/恢复默认）
   ///
   /// [storedPath] 为 ThemeBackgroundImageStore 返回的相对可迁移标识。
   /// 清除时移除偏好键（参考版置 null）；旧图文件清理由调用方负责。
+  /// 选定非空图片时自动打开总开关（保证「选图即生效」；关闭开关仍保留路径）。
   Future<void> setLargeContainerBackgroundImage({
     required bool night,
     required String storedPath,
   }) async {
+    // 选图即生效（含重复选择同一张图）：先开总开关，再按需更新路径
+    if (storedPath.isNotEmpty) {
+      await setEnableContainerBackgroundImage(true);
+    }
     if (night) {
       if (state.largeContainerBackgroundImageDark == storedPath) return;
       state = state.copyWith(largeContainerBackgroundImageDark: storedPath);

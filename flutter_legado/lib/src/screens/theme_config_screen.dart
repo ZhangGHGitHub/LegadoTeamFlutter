@@ -127,6 +127,20 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       PrefKeys.transparentNavBarNight,
       defaultValue: false,
     );
+    // [P2.4] 低成本孤儿清理：删除 theme_backgrounds/{large_light,large_dark}
+    // 下未被引用的自有图片与中断残留 tmp（仅同步扫描两个槽位，其他槽位/
+    // 非自有命名不动）。基目录未预热时直接跳过，不触发平台通道。
+    final containerImageLight = await _settings.getStringPref(
+      PrefKeys.largeContainerBackgroundImageLight,
+    );
+    final containerImageDark = await _settings.getStringPref(
+      PrefKeys.largeContainerBackgroundImageDark,
+    );
+    if (ThemeBackgroundImageStore.isWarm) {
+      ThemeBackgroundImageStore.cleanupOrphansSync(
+        keep: [containerImageLight, containerImageDark],
+      );
+    }
     if (!mounted) return;
     setState(() {
       _launcherIcon = launcherIcon;
@@ -988,36 +1002,58 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //
                   // [设置批2b-1a] 补齐参考版容器背景（日/夜）+ 容器不透明度 +
                   // 背景图虚化（日/夜）：
+                  // - 总开关 enableContainerBackgroundImage（默认 false，键名对
+                  //   齐参考 PreferKey.kt:270）；关闭保留路径不渲染，选图自动置
+                  //   true。图片行仅在开关开启时显示（参考 :534-544 条件显隐）。
                   // - 大容器背景图键 largeContainerBackgroundImageLight/Dark，
                   //   选择后复制到应用目录（内容哈希命名），IosGroup 分组卡面
                   //   按当前亮暗绘制；文件缺失回落纯主题底色。
-                  // - 容器不透明度 containerOpacity 0..100（默认 100），作用于
-                  //   分组卡面与行小卡面（文字不透明，参考 GlassCard 口径）。
+                  // - 容器不透明度 containerOpacity 0..100（默认 100），乘调色板
+                  //   alpha（参考 GlassCard.kt:74-75），作用于分组卡面与行小卡面；
+                  //   当前仅覆盖 IosGroup（参考版为全局 GlassCard，2b-1b 扩展）。
                   // - 背景图虚化 backgroundImageBlurring/backgroundImageNightBlurring
                   //   0..100（默认 0），仅作用全局壁纸，不影响内容/文字。
                   // - 参考 关闭设置分组圆角/覆盖卡片边框/边框粗细/日夜卡片边框
                   //   颜色/分割线粗细/长度/颜色 等子项仍属参考独有，留待批2b-1b。
+                  // - 登记（本批边界）：图片自身透明度 appColumnBackgroundOpacity/
+                  //   glassCardBackgroundOpacity、项目背景图 item_*、.9 九宫格渲染
+                  //   属 2b-1b；IosGroup(flat) 扁平模式无卡片面，不参与容器背景/
+                  //   不透明度；虚化行常显（不随背景图是否已设置而隐藏）。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
                       children: [
-                    IosListTile(
-                      icon: Symbols.wallpaper_rounded,
-                      title: '容器背景图片（日间）',
-                      subtitle: _containerBgLabel(
-                          ui.largeContainerBackgroundImageLight),
-                      onTap: () => _showContainerBgImageDialog(night: false),
+                    // 参考 容器背景图 总开关（enableContainerBackgroundImage）
+                    SettingSwitchRow(
+                      title: '容器背景图',
+                      subtitle: '大容器使用独立的日间/夜间图片',
+                      value: ui.enableContainerBackgroundImage,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setEnableContainerBackgroundImage(v),
                     ),
-                    IosListTile(
-                      icon: Symbols.wallpaper_rounded,
-                      title: '容器背景图片（夜间）',
-                      subtitle: _containerBgLabel(
-                          ui.largeContainerBackgroundImageDark),
-                      onTap: () => _showContainerBgImageDialog(night: true),
-                    ),
+                    // 参考 AnimatedVisibility(enableContainerBackgroundImage)：
+                    // 关闭时隐藏图片行但保留已选路径（再次开启即恢复）
+                    if (ui.enableContainerBackgroundImage) ...[
+                      IosListTile(
+                        icon: Symbols.wallpaper_rounded,
+                        title: '容器背景图片（日间）',
+                        subtitle: _containerBgLabel(
+                            ui.largeContainerBackgroundImageLight),
+                        onTap: () => _showContainerBgImageDialog(night: false),
+                      ),
+                      IosListTile(
+                        icon: Symbols.wallpaper_rounded,
+                        title: '容器背景图片（夜间）',
+                        subtitle: _containerBgLabel(
+                            ui.largeContainerBackgroundImageDark),
+                        onTap: () => _showContainerBgImageDialog(night: true),
+                      ),
+                    ],
                     // 参考 container_opacity 滑杆：0..100，默认 100
                     SettingSliderRow(
                       title: '容器不透明度',
-                      subtitle: '0-100；越低背景图/壁纸透出越多（文字不受影响）',
+                      subtitle:
+                          '0-100；当前仅作用于设置分组卡面，越低底色越透（文字不受影响）',
                       value: ui.containerOpacity,
                       min: 0,
                       max: 100,
@@ -1026,7 +1062,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                           .setContainerOpacity(v),
                     ),
                     // 参考版虚化在「背景图片」面板内（日/夜各一条 0..100）；
-                    // 我方按用户指令并入「容器设置」分组，仅影响全局壁纸
+                    // 我方按用户指令并入「容器设置」分组，仅影响全局壁纸。
+                    // 登记：虚化行常显（无背景图时调值不产生视觉变化）。
                     SettingSliderRow(
                       title: '背景图虚化（日间）',
                       subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
@@ -1846,7 +1883,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         }
       } catch (e) {
         debugPrint('ThemeConfigScreen._showContainerBgImageDialog 设置异常: $e');
-        if (mounted) _toast('设置容器背景图失败：${errorMessage(e)}');
+        if (mounted) {
+          // 非图片/超大图（FormatException）直接给中文原因，避免包一层异常名
+          final detail = e is FormatException ? e.message : errorMessage(e);
+          _toast('设置容器背景图失败：$detail');
+        }
       }
     } else if (action == 'delete') {
       await notifier.setLargeContainerBackgroundImage(

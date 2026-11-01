@@ -367,6 +367,7 @@ void main() {
     ).thenAnswer((_) async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(PrefKeys.containerOpacity, 30);
+      await prefs.setBool(PrefKeys.enableContainerBackgroundImage, true);
       await prefs.setInt(PrefKeys.bgImageBlurring, 44);
       await prefs.setString(
         PrefKeys.largeContainerBackgroundImageLight,
@@ -411,6 +412,7 @@ void main() {
     verify(() => mockApi.restore(backupPath, password: null)).called(1);
     final restored = container.read(uiSettingsProvider);
     expect(restored.containerOpacity, 30, reason: '恢复后同会话立即生效');
+    expect(restored.enableContainerBackgroundImage, isTrue);
     expect(restored.bgImageBlurring, 44);
     expect(
       restored.largeContainerBackgroundImageLight,

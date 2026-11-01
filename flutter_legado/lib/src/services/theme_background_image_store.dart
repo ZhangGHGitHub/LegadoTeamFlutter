@@ -13,7 +13,16 @@
 // - 去重：同一张图重复选择命中同一哈希文件名，不重复写盘；替换/清除只删除
 //   Support 根目录内的自有文件，绝不删除外部路径（参考版 deleteOwnedBackground
 //   同口径）。
+//
+// [P2 回修 | 2026-11-01]
+// - 存前校验：大小上限 32MB + 引擎试解码（HEIC/改扩展名的非图片在选图时
+//   即失败并提示，不把坏图落盘）；
+// - 流式 md5（crypto 的 Hash 作为 StreamTransformer）+ 原生 File.copy，
+//   避免整文件读入 Dart 堆；落盘先写 `.tmp-<micros>` 再 rename 原子替换；
+// - `.9.png` 保留原双扩展名，供 2b-1b 九宫格渲染迁移识别；
+// - cleanupOrphansSync：设置页低成本回收未引用的自有图片（含中断残留 tmp）。
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
@@ -26,7 +35,11 @@ class ThemeBackgroundImageStore {
   /// 相对应用 Support 目录的根子目录
   static const String subDir = 'theme_backgrounds';
 
-  /// 允许的图片扩展名（小写、无点）；其余回落到 jpg
+  /// 单张图大小上限（32MB）：超过直接拒绝，避免异常大图拖垮内存/磁盘
+  static const int maxBytes = 32 * 1024 * 1024;
+
+  /// 允许的图片扩展名（小写、无点）；其余回落到 jpg。
+  /// 注意 `.9.png` 不在集合内，由 [_extensionOf] 单独保留双扩展名。
   static const Set<String> _imageExts = <String>{
     'jpg',
     'jpeg',
@@ -38,6 +51,16 @@ class ThemeBackgroundImageStore {
 
   /// 槽位名只允许小写字母/下划线，防止路径穿越（调用方传固定常量）
   static final RegExp _slotPattern = RegExp(r'^[a-z_]+$');
+
+  /// 自有正式文件名：`<32位小写md5>.<ext>`（含 `.9.png`）
+  static final RegExp _ownedFileNamePattern = RegExp(
+    r'^[0-9a-f]{32}\.(?:9\.png|jpe?g|png|webp|gif|bmp)$',
+  );
+
+  /// 自有原子写临时文件名：`.<32位小写md5>.<ext>.tmp-<micros>`
+  static final RegExp _tmpFileNamePattern = RegExp(
+    r'^\.[0-9a-f]{32}\..+\.tmp-\d+$',
+  );
 
   /// 测试 seam：应用 Support 目录获取（默认 path_provider）。
   /// 测试可覆盖为返回临时目录，避免触碰真实沙盒。
@@ -77,6 +100,9 @@ class ThemeBackgroundImageStore {
   ///
   /// - 幂等：源文件已在目标槽位内 → 直接返回相对标识，不做自拷贝。
   /// - 去重：目标文件名（内容哈希）已存在 → 不重复写盘。
+  /// - 存前校验：空文件/超 [maxBytes]/引擎不可解码（HEIC 等）→ 抛
+  ///   [FormatException]，调用方提示并保留旧图。
+  /// - 原子写：先落 `.tmp-<micros>` 再 rename，异常不留下半成品正式文件。
   /// - 失败（源不存在 / 读写异常 / Web）抛出，由调用方提示并保留旧图。
   static Future<String> store(
     String sourcePath, {
@@ -101,15 +127,40 @@ class ThemeBackgroundImageStore {
       return '$subDir/$slot/$name';
     }
 
-    final bytes = await File(source).readAsBytes();
-    if (bytes.isEmpty) throw const FormatException('图片内容为空');
+    final sourceFile = File(source);
+    final length = await sourceFile.length();
+    if (length <= 0) throw const FormatException('图片内容为空');
+    if (length > maxBytes) {
+      throw FormatException(
+        '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）',
+      );
+    }
+    await _validateDecodable(sourceFile);
+    // 流式 md5：不把整文件读入 Dart 堆（32MB 上限已兜底）
+    final digest = await md5.bind(sourceFile.openRead()).first;
     final ext = _extensionOf(source);
-    final hash = md5.convert(bytes).toString();
-    final fileName = '$hash.$ext';
+    final fileName = '$digest.$ext';
+
     await Directory(slotDir).create(recursive: true);
     final target = File('$slotDir$sep$fileName');
-    if (!target.existsSync()) {
-      await target.writeAsBytes(bytes, flush: true);
+    if (target.existsSync()) return '$subDir/$slot/$fileName';
+
+    // 原子写：同目录临时文件 + rename，避免读到写了一半的文件
+    final tmp = File(
+      '$slotDir$sep.$fileName.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await sourceFile.copy(tmp.path);
+      if (target.existsSync()) {
+        // 并发写入同一内容：对方已落正式文件，丢弃本次临时文件
+        await _safeDelete(tmp);
+      } else {
+        await tmp.rename(target.path);
+      }
+    } on FileSystemException {
+      await _safeDelete(tmp);
+      // rename 竞态：对方刚好同时落盘 → 视为成功
+      if (!target.existsSync()) rethrow;
     }
     return '$subDir/$slot/$fileName';
   }
@@ -181,18 +232,97 @@ class ThemeBackgroundImageStore {
     }
   }
 
-  /// 源文件扩展名（小写）；未知/无扩展名回落 jpg
+  /// 低成本孤儿清理（设置页加载时调用）：删除槽位目录中未被引用的自有图片
+  /// 与中断残留的临时文件；非自有命名/其他槽位（如 2b-1b 的 item_*）不动。
+  ///
+  /// [keep] 为当前仍被引用的偏好值（绝对路径或相对标识均可）。
+  /// 返回删除数量。基目录未预热时直接返回 0（不触发平台通道）。
+  static int cleanupOrphansSync({required Iterable<String> keep}) {
+    if (kIsWeb) return 0;
+    final root = _supportPath;
+    if (root == null) return 0;
+    final sep = Platform.pathSeparator;
+    final keepPaths = <String>{};
+    for (final stored in keep) {
+      final resolved = resolveSync(stored);
+      if (resolved.isEmpty || _hasParentSegment(resolved)) continue;
+      keepPaths.add(File(resolved).absolute.path);
+    }
+    var removed = 0;
+    for (final slot in const <String>['large_light', 'large_dark']) {
+      final dir = Directory('$root$sep$subDir$sep$slot');
+      if (!dir.existsSync()) continue;
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is! File) continue;
+        final path = entity.absolute.path;
+        if (keepPaths.contains(path)) continue;
+        final name = path.split(sep).last;
+        if (!_ownedFileNamePattern.hasMatch(name) &&
+            !_tmpFileNamePattern.hasMatch(name)) {
+          continue;
+        }
+        try {
+          entity.deleteSync();
+          removed++;
+        } catch (_) {
+          // 正被读取/权限异常：跳过，下次再清
+        }
+      }
+    }
+    return removed;
+  }
+
+  /// 引擎试解码（只解 1x1 验证容器/格式），HEIC 等不支持格式抛
+  /// [FormatException]；不把原始 codec 帧留给调用方（立即释放）。
+  static Future<void> _validateDecodable(File file) async {
+    ui.ImmutableBuffer? buffer;
+    ui.Codec? codec;
+    try {
+      buffer = await ui.ImmutableBuffer.fromFilePath(file.path);
+      codec = await ui.instantiateImageCodecFromBuffer(
+        buffer,
+        targetWidth: 1,
+        targetHeight: 1,
+      );
+      // 成功：codec 创建后 buffer 所有权归引擎（dart:ui 文档约定），
+      // 调用方不得再 dispose，否则触发 ImmutableBuffer 双重释放断言。
+      buffer = null;
+    } catch (_) {
+      throw FormatException('不是可解码的图片：${_baseName(file.path)}');
+    } finally {
+      codec?.dispose();
+      // 仅失败路径仍由本方法持有 buffer
+      buffer?.dispose();
+    }
+  }
+
+  /// 源文件扩展名（小写）；未知/无扩展名回落 jpg；`.9.png` 保留双扩展名
   static String _extensionOf(String path) {
-    final name = path.split(Platform.pathSeparator).last;
+    final name = _baseName(path);
+    final lower = name.toLowerCase();
+    if (lower.endsWith('.9.png')) return '9.png';
     final dot = name.lastIndexOf('.');
     if (dot <= 0 || dot == name.length - 1) return 'jpg';
     final ext = name.substring(dot + 1).toLowerCase();
     return _imageExts.contains(ext) ? ext : 'jpg';
   }
 
+  static String _baseName(String path) {
+    final parts = path.split(Platform.pathSeparator);
+    return parts.isEmpty ? path : parts.last;
+  }
+
   /// 路径是否含 `..` 段（统一按 / 与 \ 切分，跨平台判定）
   static bool _hasParentSegment(String path) {
     final normalized = path.replaceAll('\\', '/');
     return normalized.split('/').contains('..');
+  }
+
+  static Future<void> _safeDelete(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // 清理失败不影响主流程
+    }
   }
 }

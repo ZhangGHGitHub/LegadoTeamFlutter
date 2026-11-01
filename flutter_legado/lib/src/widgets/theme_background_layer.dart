@@ -16,8 +16,11 @@
 //   （见原 app.dart 登记注释）；本批一并消除。
 // - 图片层套 IgnorePointer：不拦截点击/手势；blur>0 时套 RepaintBoundary，
 //   让模糊结果可被引擎缓存为绘制层（低端机减少逐帧模糊开销）。
+// - 解码用 ResizeImage 限到窗口×DPR（P2.2），避免 12MP 全量解码。
 // - 护眼模式在本层之外（app.dart 中 EyeProtectionLayer 包在最外层），
 //   因此壁纸与内容被同一暖色矩阵统一处理，顺序与参考版一致。
+// - 设备项（登记）：sigma 最大 100 的全屏虚化、壁纸按窗口×DPR 解码后的
+//   RSS/帧率需真机粗测（widget 测试无法覆盖 GPU 成本）。
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -36,6 +39,30 @@ bool isThemeBackgroundFileUsable(String path) {
   } catch (_) {
     return false;
   }
+}
+
+/// 主题背景图解码 provider（全局壁纸/容器图共用）
+///
+/// [P2.2 回修] 用 ResizeImage 把解码尺寸限制到「窗口宽高 × DPR」并保持比例
+/// （`ResizeImagePolicy.fit`，不放大），避免 12MP 照片全量解码造成 40-50MB
+/// 峰值内存。窗口尺寸不可得（极少见的独立 widget 场景）时退回 FileImage。
+ImageProvider<Object> themeBackgroundImageProvider(
+  String path,
+  BuildContext context,
+) {
+  final media = MediaQuery.maybeSizeOf(context);
+  final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+  if (media == null) return FileImage(File(path));
+  // 上限 8192 防止极端桌面 DPR 组合产生过大 target（8K 级别）
+  final targetWidth = (media.width * dpr).round().clamp(1, 8192);
+  final targetHeight = (media.height * dpr).round().clamp(1, 8192);
+  return ResizeImage(
+    FileImage(File(path)),
+    width: targetWidth,
+    height: targetHeight,
+    policy: ResizeImagePolicy.fit,
+    allowUpscaling: false,
+  );
 }
 
 /// 全局主题背景图层
@@ -82,7 +109,7 @@ class _BackgroundImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = Image(
-      image: FileImage(File(path)),
+      image: themeBackgroundImageProvider(path, context),
       fit: BoxFit.cover,
       alignment: Alignment.center,
       gaplessPlayback: true,

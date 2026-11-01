@@ -40,6 +40,10 @@ void main() {
     test('键名逐字对齐参考版 PreferKey.kt', () {
       expect(PrefKeys.containerOpacity, 'containerOpacity');
       expect(
+        PrefKeys.enableContainerBackgroundImage,
+        'enableContainerBackgroundImage',
+      );
+      expect(
         PrefKeys.largeContainerBackgroundImageLight,
         'largeContainerBackgroundImageLight',
       );
@@ -51,9 +55,10 @@ void main() {
       expect(PrefKeys.bgImageNBlurring, 'backgroundImageNightBlurring');
     });
 
-    test('UiSettingsState 默认：不透明度 100、虚化 0、无容器背景图', () {
+    test('UiSettingsState 默认：不透明度 100、虚化 0、总开关关、无容器背景图', () {
       const state = UiSettingsState();
       expect(state.containerOpacity, 100);
+      expect(state.enableContainerBackgroundImage, isFalse);
       expect(state.bgImageBlurring, 0);
       expect(state.bgImageDarkBlurring, 0);
       expect(state.largeContainerBackgroundImageLight, isEmpty);
@@ -64,6 +69,7 @@ void main() {
       final container = await containerWith(<String, Object>{});
       final state = container.read(uiSettingsProvider);
       expect(state.containerOpacity, 100);
+      expect(state.enableContainerBackgroundImage, isFalse);
       expect(state.bgImageBlurring, 0);
       expect(state.bgImageDarkBlurring, 0);
       expect(state.largeContainerBackgroundImageLight, isEmpty);
@@ -75,6 +81,7 @@ void main() {
     test('加载已存值（含越界钳制到 0..100）', () async {
       final container = await containerWith(<String, Object>{
         PrefKeys.containerOpacity: 40,
+        PrefKeys.enableContainerBackgroundImage: true,
         PrefKeys.bgImageBlurring: 12,
         PrefKeys.bgImageNBlurring: 34,
         PrefKeys.largeContainerBackgroundImageLight:
@@ -84,6 +91,7 @@ void main() {
       });
       final state = container.read(uiSettingsProvider);
       expect(state.containerOpacity, 40);
+      expect(state.enableContainerBackgroundImage, isTrue);
       expect(state.bgImageBlurring, 12);
       expect(state.bgImageDarkBlurring, 34);
       expect(
@@ -138,12 +146,51 @@ void main() {
         prefs.getString(PrefKeys.largeContainerBackgroundImageDark),
         'theme_backgrounds/large_dark/e.png',
       );
+      // 选图自动打开总开关（选图即生效）
+      expect(prefs.getBool(PrefKeys.enableContainerBackgroundImage), isTrue);
+      expect(
+        container.read(uiSettingsProvider).enableContainerBackgroundImage,
+        isTrue,
+      );
 
       // 越界 setter 同样钳制
       await notifier.setContainerOpacity(1000);
       expect(prefs.getInt(PrefKeys.containerOpacity), 100);
       await notifier.setBgImageBlurring(night: false, value: -3);
       expect(prefs.getInt(PrefKeys.bgImageBlurring), 0);
+    });
+
+    test('关闭总开关保留图片路径（渲染开关与路径解耦）', () async {
+      final container = await containerWith(<String, Object>{
+        PrefKeys.enableContainerBackgroundImage: true,
+        PrefKeys.largeContainerBackgroundImageLight:
+            'theme_backgrounds/large_light/keep.png',
+      });
+      final notifier = container.read(uiSettingsProvider.notifier);
+      final prefs = await SharedPreferences.getInstance();
+
+      await notifier.setEnableContainerBackgroundImage(false);
+      expect(prefs.getBool(PrefKeys.enableContainerBackgroundImage), isFalse);
+      expect(
+        container.read(uiSettingsProvider).largeContainerBackgroundImageLight,
+        'theme_backgrounds/large_light/keep.png',
+        reason: '关闭开关只影响渲染，不得清路径',
+      );
+      expect(
+        prefs.getString(PrefKeys.largeContainerBackgroundImageLight),
+        'theme_backgrounds/large_light/keep.png',
+      );
+
+      // 重新开启 → 原路径仍生效
+      await notifier.setEnableContainerBackgroundImage(true);
+      expect(
+        container.read(uiSettingsProvider).enableContainerBackgroundImage,
+        isTrue,
+      );
+      expect(
+        container.read(uiSettingsProvider).largeContainerBackgroundImageLight,
+        'theme_backgrounds/large_light/keep.png',
+      );
     });
 
     test('清除容器背景图移除偏好键并同步状态', () async {
@@ -170,9 +217,10 @@ void main() {
   });
 
   group('备份白名单/忽略组（对齐参考版 BackupConfig.themePrefKeys）', () {
-    test('三个主题键默认进备份', () async {
+    test('主题键与总开关默认进备份', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         PrefKeys.containerOpacity: 40,
+        PrefKeys.enableContainerBackgroundImage: true,
         PrefKeys.bgImageBlurring: 12,
         PrefKeys.bgImageNBlurring: 34,
         PrefKeys.largeContainerBackgroundImageLight:
@@ -182,6 +230,7 @@ void main() {
       });
       final out = await RestoreIgnorePrefs.collectForBackup(const {});
       expect(out[PrefKeys.containerOpacity], 40);
+      expect(out[PrefKeys.enableContainerBackgroundImage], isTrue);
       expect(out[PrefKeys.bgImageBlurring], 12);
       expect(out[PrefKeys.bgImageNBlurring], 34);
       expect(
@@ -194,9 +243,10 @@ void main() {
       );
     });
 
-    test('忽略主题配置：不透明度/虚化被过滤，容器背景图键仍往返', () async {
+    test('忽略主题配置：不透明度/虚化被过滤，总开关与容器图键仍往返', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         PrefKeys.containerOpacity: 40,
+        PrefKeys.enableContainerBackgroundImage: true,
         PrefKeys.bgImageBlurring: 12,
         PrefKeys.bgImageNBlurring: 34,
         PrefKeys.largeContainerBackgroundImageLight:
@@ -209,7 +259,9 @@ void main() {
       expect(out.containsKey(PrefKeys.containerOpacity), isFalse);
       expect(out.containsKey(PrefKeys.bgImageBlurring), isFalse);
       expect(out.containsKey(PrefKeys.bgImageNBlurring), isFalse);
-      // 参考版 themePrefKeys 不含 largeContainerBackgroundImage* → 始终往返
+      // 参考版 themePrefKeys 不含 enableContainerBackgroundImage 与
+      // largeContainerBackgroundImage* → 始终往返
+      expect(out[PrefKeys.enableContainerBackgroundImage], isTrue);
       expect(
         out[PrefKeys.largeContainerBackgroundImageLight],
         'theme_backgrounds/large_light/a.png',
@@ -241,6 +293,7 @@ void main() {
       await RestoreIgnorePrefs.applyFromBackup(
         <String, dynamic>{
           PrefKeys.containerOpacity: 22,
+          PrefKeys.enableContainerBackgroundImage: true,
           PrefKeys.bgImageBlurring: 45,
           PrefKeys.bgImageNBlurring: 55,
           PrefKeys.largeContainerBackgroundImageLight:
@@ -253,6 +306,7 @@ void main() {
 
       final state = container.read(uiSettingsProvider);
       expect(state.containerOpacity, 22);
+      expect(state.enableContainerBackgroundImage, isTrue);
       expect(state.bgImageBlurring, 45);
       expect(state.bgImageDarkBlurring, 55);
       expect(
@@ -266,10 +320,12 @@ void main() {
       final container = await containerWith(<String, Object>{
         PrefKeys.containerOpacity: 80,
         PrefKeys.bgImageBlurring: 5,
+        PrefKeys.enableContainerBackgroundImage: false,
       });
       await RestoreIgnorePrefs.applyFromBackup(
         <String, dynamic>{
           PrefKeys.containerOpacity: 10,
+          PrefKeys.enableContainerBackgroundImage: true,
           PrefKeys.bgImageBlurring: 90,
           PrefKeys.largeContainerBackgroundImageLight:
               'theme_backgrounds/large_light/from-backup.png',
@@ -281,7 +337,8 @@ void main() {
       final state = container.read(uiSettingsProvider);
       expect(state.containerOpacity, 80);
       expect(state.bgImageBlurring, 5);
-      // 容器背景图键不在主题忽略组 → 恢复
+      // 总开关/容器背景图键不在主题忽略组 → 恢复（参考版 BackupConfig 同口径）
+      expect(state.enableContainerBackgroundImage, isTrue);
       expect(
         state.largeContainerBackgroundImageLight,
         'theme_backgrounds/large_light/from-backup.png',

@@ -111,11 +111,101 @@ void main() {
     expect(row.color!.a, closeTo(0.5, 0.001));
   });
 
+  testWidgets('透明调色板：不透明度乘 alpha（100% 保 0.2/0.0，50% 变 0.1/0.0）',
+      (tester) async {
+    // [P1 回归] 参考 GlassCard.kt:74-75 为 `it.copy(alpha = it.alpha * alpha)`；
+    // 若直接 withValues(alpha: opacity) 会覆盖调色板自身 alpha，把透明主题
+    // （surfaceContainer=0x33FFFFFF、surfaceContainerLow=0x00FFFFFF）洗成
+    // 不透明白卡并盖住容器背景图。
+    final scheme = ColorScheme.fromSeed(seedColor: Colors.blue).copyWith(
+      surfaceContainer: const Color(0x33FFFFFF),
+      surfaceContainerLow: const Color(0x00FFFFFF),
+    );
+    Widget wrapWithPalette() => MaterialApp(
+          theme: ThemeData(colorScheme: scheme, useMaterial3: true),
+          home: Scaffold(
+            body: Center(
+              child: IosGroup(children: [IosListTile(title: '行')]),
+            ),
+          ),
+        );
+
+    uiSettingsListenable.value = const UiSettingsState(containerOpacity: 100);
+    await tester.pumpWidget(wrapWithPalette());
+    await tester.pumpAndSettle();
+
+    var surface = tester.widget<Container>(groupSurface());
+    expect(
+      (surface.decoration as BoxDecoration).color!.a,
+      closeTo(0.2, 0.001),
+      reason: '100% 时必须保留 surfaceContainer 的 0x33 alpha',
+    );
+    var row = tester.widget<Material>(
+      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+    );
+    expect(row.color!.a, closeTo(0.0, 0.001),
+        reason: '100% 时必须保留 surfaceContainerLow 的全透明');
+
+    uiSettingsListenable.value = const UiSettingsState(containerOpacity: 50);
+    await tester.pumpAndSettle();
+    surface = tester.widget<Container>(groupSurface());
+    expect(
+      (surface.decoration as BoxDecoration).color!.a,
+      closeTo(0.1, 0.001),
+      reason: '50% 应为调色板 alpha 0.2 × 0.5',
+    );
+    row = tester.widget<Material>(
+      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+    );
+    expect(row.color!.a, closeTo(0.0, 0.001),
+        reason: '0.0 × 0.5 仍为 0.0');
+  });
+
+  testWidgets('容器背景图总开关：默认关+有路径不渲染；开启渲染；关闭保留路径',
+      (tester) async {
+    final light = (await tester.runAsync(() => storePng('large_light')))!;
+
+    // 默认 false + 有路径 → 不渲染（参考 enableContainerBackgroundImage 默认关）
+    uiSettingsListenable.value = UiSettingsState(
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pumpWidget(wrap(onTap: null));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('ios-group-container-background')),
+        findsNothing);
+
+    // 开关开 → 渲染
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('ios-group-container-background')),
+        findsOneWidget);
+
+    // 关闭开关 → 不渲染，但状态里路径仍在（设置页/备份保留）
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: false,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('ios-group-container-background')),
+        findsNothing);
+    expect(
+      uiSettingsListenable.value.largeContainerBackgroundImageLight,
+      light,
+    );
+  });
+
   testWidgets('日/夜各取对应容器背景图；缺失文件回落无图', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2000);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
     // testWidgets 处于 fake-async zone，真实文件读写必须经 runAsync
     final light = (await tester.runAsync(() => storePng('large_light')))!;
     final dark = (await tester.runAsync(() => storePng('large_dark')))!;
     uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
       largeContainerBackgroundImageLight: light,
       largeContainerBackgroundImageDark: dark,
     );
@@ -127,23 +217,31 @@ void main() {
     var image = tester.widget<Image>(
       find.byKey(const ValueKey('ios-group-container-background')),
     );
+    var provider = image.image as ResizeImage;
     expect(
-      (image.image as FileImage).file.path,
+      (provider.imageProvider as FileImage).file.path,
       ThemeBackgroundImageStore.resolveSync(light),
     );
+    // [P2.2] 解码限制到「窗口宽高 × DPR」，保持比例且不放大
+    expect(provider.width, 1200);
+    expect(provider.height, 2000);
+    expect(provider.policy, ResizeImagePolicy.fit);
+    expect(provider.allowUpscaling, isFalse);
 
     await tester.pumpWidget(wrap(brightness: Brightness.dark, onTap: null));
     await tester.pump(const Duration(milliseconds: 300));
     image = tester.widget<Image>(
       find.byKey(const ValueKey('ios-group-container-background')),
     );
+    provider = image.image as ResizeImage;
     expect(
-      (image.image as FileImage).file.path,
+      (provider.imageProvider as FileImage).file.path,
       ThemeBackgroundImageStore.resolveSync(dark),
     );
 
     // 夜间图缺失 → 夜间回落为无图（不沿用日间图，不抛错）
     uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
       largeContainerBackgroundImageLight: light,
       largeContainerBackgroundImageDark:
           'theme_backgrounds/large_dark/missing.png',
@@ -158,6 +256,7 @@ void main() {
   testWidgets('背景图不拦截点击：行点击仍可触发', (tester) async {
     final light = (await tester.runAsync(() => storePng('large_light')))!;
     uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
       largeContainerBackgroundImageLight: light,
     );
     var tapped = false;

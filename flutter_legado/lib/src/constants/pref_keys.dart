@@ -83,6 +83,14 @@ class PrefKeys {
   /// 容器卡面不透明度 0..100（参考版 containerOpacity，默认 100）
   static const containerOpacity = 'containerOpacity';
 
+  /// 启用容器背景图（参考版 enableContainerBackgroundImage，默认 false）
+  ///
+  /// 关闭时保留已选图片路径但不渲染（参考版 `ThemeConfigScreen.kt:534-544`
+  /// 为总开关 + 条件显隐图片行）；选择图片时由设置页/Notifier 自动置 true。
+  /// 参考版 BackupConfig.themePrefKeys 未收录此键 → 随 appPrefs 始终往返。
+  static const enableContainerBackgroundImage =
+      'enableContainerBackgroundImage';
+
   /// 日间大容器背景图（参考版 largeContainerBackgroundImageLight，默认 null）
   ///
   /// 值为「相对应用 Support 目录的可迁移标识」（`theme_backgrounds/large_light/<md5>.<ext>`），
