@@ -2,7 +2,8 @@
 //
 // 覆盖：内容哈希命名/去重、相对 Support 标识解析、绝对路径透传、
 // 文件缺失回落（isUsableSync=false）、清除只删自有文件（外部路径不动）、
-// 非法槽位拒绝、存前试解码、.9.png 保留、孤儿清理。
+// 非法槽位拒绝、存前试解码（含截断 PNG/非图片）、JPG/12MP 正常图回归、
+// .9.png 保留、孤儿清理（超龄 tmp 与新 tmp 区分）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -226,6 +227,30 @@ void main() {
         reason: '仅解析头部成功的截断 PNG 必须在解帧阶段被拒绝',
       );
     }
+  });
+
+  test('正常 JPG 与 12MP 大图仍可选（解码校验不误拒真图）', () async {
+    final jpgBytes = img.encodeJpg(img.Image(width: 64, height: 48));
+    final jpgSource = await writeSource('photo.jpg', bytes: jpgBytes);
+    final jpgStored = await ThemeBackgroundImageStore.store(
+      jpgSource.path,
+      slot: 'large_light',
+    );
+    expect(jpgStored, endsWith('.jpg'));
+    expect(ThemeBackgroundImageStore.isUsableSync(jpgStored), isTrue);
+
+    // 12MP：验证链路按 1x1 试解码，不会全量解码/拒绝真图
+    final bigBytes = img.encodePng(
+      img.Image(width: 4000, height: 3000),
+      level: 1,
+    );
+    final bigSource = await writeSource('big12mp.png', bytes: bigBytes);
+    final bigStored = await ThemeBackgroundImageStore.store(
+      bigSource.path,
+      slot: 'large_dark',
+    );
+    expect(bigStored, endsWith('.png'));
+    expect(ThemeBackgroundImageStore.isUsableSync(bigStored), isTrue);
   });
 
   test('.9.png 保留双扩展名（供 2b-1b 九宫格迁移识别）', () async {

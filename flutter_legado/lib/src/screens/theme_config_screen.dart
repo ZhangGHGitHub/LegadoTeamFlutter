@@ -1872,6 +1872,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         dialogTitle: '选择容器背景图片',
+        // [P2 设备回修] file_picker 默认 allowCompression=true，在 Android
+        // 压缩链路对非图片/伪造扩展名会走 Bitmap.compress NPE 导致 FATAL；
+        // 关闭原生压缩，格式/完整性统一由 Dart 侧解码校验（失败 toast）。
+        allowCompression: false,
+        // 不需要把整图读进内存：路径交由 ThemeBackgroundImageStore 流式处理
+        withData: false,
       );
       final source = result?.files.single.path;
       if (source == null || !mounted) return;

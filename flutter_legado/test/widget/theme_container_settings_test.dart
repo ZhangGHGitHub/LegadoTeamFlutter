@@ -1,9 +1,12 @@
 // [设置批2b-1a | 2026-11-01] 外观页「容器设置」分组交互测试 — 全栈工程师
 //
 // 覆盖：三组新行渲染与默认值、容器不透明度/背景图虚化行内滑块落盘、
-// 容器背景图（日/夜）行副标题（文件名/缺失回落）、清除图片按钮与键移除。
+// 容器背景图（日/夜）行副标题（文件名/缺失回落）、清除图片按钮与键移除;
+// [设备回修] 选图参数 allowCompression=false/withData=false（避免原生压缩
+// 对非图片 NPE 崩溃）。
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -16,6 +19,54 @@ import 'package:flutter_legado/src/screens/theme_config_screen.dart';
 import 'package:flutter_legado/src/services/theme_background_image_store.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 import 'package:flutter_legado/src/widgets/setting_slider_row.dart';
+
+/// 记录 pickFiles 参数的桩（返回 null = 用户取消，不进入存储链路）
+class _RecordingFilePicker extends FilePicker {
+  int pickCalls = 0;
+  FileType? type;
+  bool? allowCompression;
+  bool? withData;
+  String? dialogTitle;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    pickCalls++;
+    this.dialogTitle = dialogTitle;
+    this.type = type;
+    this.allowCompression = allowCompression;
+    this.withData = withData;
+    return null;
+  }
+}
+
+/// 注入 FilePicker 平台桩并登记恢复
+void _useFakeFilePicker(FilePicker fake) {
+  FilePicker? original;
+  var initialized = false;
+  try {
+    original = FilePicker.platform;
+    initialized = true;
+  } catch (_) {
+    // 宿主未初始化（测试 registrant 无本平台分支）
+  }
+  FilePicker.platform = fake;
+  addTearDown(
+    () => FilePicker.platform = initialized ? original! : FilePickerIO(),
+  );
+}
 
 void main() {
   late ProviderContainer container;
@@ -226,6 +277,30 @@ void main() {
     await scrollTo(tester, find.text('容器背景图片（日间）'));
 
     expect(find.text('day.png（文件缺失，已回落）'), findsOneWidget);
+  });
+
+  testWidgets('选图参数：allowCompression=false、withData=false（防原生 NPE）',
+      (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    final picker = _RecordingFilePicker();
+    _useFakeFilePicker(picker);
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器背景图片（日间）'));
+
+    await tester.tap(find.text('容器背景图片（日间）'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择图片'));
+    await tester.pumpAndSettle();
+
+    expect(picker.pickCalls, 1);
+    expect(picker.type, FileType.image);
+    expect(picker.allowCompression, isFalse,
+        reason: '必须关闭 file_picker 原生压缩（非图片会 Bitmap.compress NPE）');
+    expect(picker.withData, isFalse, reason: '不需要把整图读进内存');
+    expect(picker.dialogTitle, '选择容器背景图片');
   });
 
   testWidgets('未设置时图片行弹窗不显示清除项', (tester) async {

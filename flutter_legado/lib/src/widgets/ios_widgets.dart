@@ -166,12 +166,15 @@ class IosGroup extends StatelessWidget {
     // 小卡底（SettingCard 等效）
     //
     // [设置批2b-1a] 容器背景图/容器不透明度（参考版大容器语义）：
-    // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark，绘制在
-    //   分组底色之上、行小卡之下；文件缺失时静默回落为纯主题底色
-    //   （参考版 `AppContainerBackground.kt:33-75` 的 Large 分支）。
+    // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark；图像
+    //   **位于分组底色之下**（Stack 第 0 层），由同一 16dp 圆角裁剪。100%
+    //   时分组底色完全不透明、整卡覆盖图像（不再从 4dp/2dp 缝隙漏出成
+    //   「彩色虚线边框」）；<100% 时分组底色整体半透明，整卡统一混合。
+    //   文件缺失时静默回落为纯主题底色。
     // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
-    //   文字不透明（参考版 `GlassCard.kt:150-156` 只改容器色 alpha）。
+    //   文字不透明（参考版 `GlassCard.kt:74-75` 乘 alpha）。
     // - 图片层 IgnorePointer，不拦截点击/手势。
+    final radius = BorderRadius.circular(16);
     return ValueListenableBuilder<UiSettingsState>(
       valueListenable: uiSettingsListenable,
       builder: (context, ui, _) {
@@ -191,16 +194,11 @@ class IosGroup extends StatelessWidget {
             hasImage ? ThemeBackgroundImageStore.resolveSync(stored) : '';
         return Padding(
           padding: margin,
-          child: Container(
-            decoration: BoxDecoration(
-              color: groupSurface.withValues(
-                alpha: groupSurface.a * opacity,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            clipBehavior: Clip.antiAlias,
+          child: ClipRRect(
+            borderRadius: radius,
             child: Stack(
               children: [
+                // 背景图必须位于分组底色之下：100% 时被底色完全覆盖
                 if (hasImage)
                   Positioned.fill(
                     child: IgnorePointer(
@@ -218,7 +216,16 @@ class IosGroup extends StatelessWidget {
                       ),
                     ),
                   ),
-                Padding(
+                // 分组底色（单一整卡 scrim）绘制在图片之上、行小卡之下；
+                // 其 padding（4dp）与行间距（2dp）同属本底色区域，不会漏原图
+                Container(
+                  key: const ValueKey('ios-group-surface'),
+                  decoration: BoxDecoration(
+                    color: groupSurface.withValues(
+                      alpha: groupSurface.a * opacity,
+                    ),
+                    borderRadius: radius,
+                  ),
                   padding: const EdgeInsets.all(4),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

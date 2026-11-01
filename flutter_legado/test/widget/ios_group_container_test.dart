@@ -65,15 +65,87 @@ void main() {
 
   Finder groupSurface() => find.descendant(
         of: find.byType(IosGroup),
-        matching: find.byWidgetPredicate(
-          (w) =>
-              w is Container &&
-              w.clipBehavior == Clip.antiAlias &&
-              w.decoration is BoxDecoration &&
-              (w.decoration as BoxDecoration).borderRadius ==
-                  BorderRadius.circular(16),
-        ),
+        matching: find.byKey(const ValueKey('ios-group-surface')),
       );
+
+  Finder groupStack() => find
+      .descendant(of: find.byType(IosGroup), matching: find.byType(Stack))
+      .first;
+
+  testWidgets('容器图层序：图片在分组底色之下并同圆角裁剪（100% 无缝隙）',
+      (tester) async {
+    final light = (await tester.runAsync(() => storePng('large_light')))!;
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pumpWidget(wrap(onTap: null));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final stack = tester.widget<Stack>(groupStack());
+    expect(stack.children.length, 2);
+    expect(stack.children.first, isA<Positioned>(),
+        reason: '背景图必须是 Stack 第 0 层（分组底色之下）');
+    expect(stack.children.last, isA<Container>(),
+        reason: '分组底色/行小卡必须在背景图之上');
+
+    // 同一 16dp 圆角裁剪
+    final clip = tester.widget<ClipRRect>(
+      find.ancestor(of: groupStack(), matching: find.byType(ClipRRect)).first,
+    );
+    expect(clip.borderRadius, BorderRadius.circular(16));
+
+    // 底色铺满整卡：与背景图同尺寸，100% 时不透明 → 图片被完全覆盖，
+    // 4dp 分组 padding 与 2dp 行间距都落在底色区域，无原图缝隙。
+    final imageFinder =
+        find.byKey(const ValueKey('ios-group-container-background'));
+    expect(imageFinder, findsOneWidget);
+    final surface = tester.widget<Container>(groupSurface());
+    expect(
+      (surface.decoration as BoxDecoration).color!.a,
+      closeTo(1.0, 0.001),
+    );
+    expect(
+      tester.getSize(groupSurface()),
+      tester.getSize(imageFinder),
+      reason: '底色与背景图同尺寸（整卡覆盖）',
+    );
+    expect(
+      tester.getSize(groupSurface()),
+      tester.getSize(find.byType(IosGroup)),
+      reason: '底色铺满分组卡（含 4dp padding 区域）',
+    );
+  });
+
+  testWidgets('50%：整卡单一底色 scrim 覆盖图片，缝隙不露原图', (tester) async {
+    final light = (await tester.runAsync(() => storePng('large_light')))!;
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      containerOpacity: 50,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pumpWidget(wrap(onTap: null));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final surface = tester.widget<Container>(groupSurface());
+    expect(
+      (surface.decoration as BoxDecoration).color!.a,
+      closeTo(0.5, 0.001),
+    );
+    // 单一整卡 scrim：底色与图片同尺寸且位于图片之上（Stack 顺序见上一用例）
+    expect(
+      tester.getSize(groupSurface()),
+      tester.getSize(
+        find.byKey(const ValueKey('ios-group-container-background')),
+      ),
+    );
+    final imageRect = tester.getRect(
+      find.byKey(const ValueKey('ios-group-container-background')),
+    );
+    final surfaceRect = tester.getRect(groupSurface());
+    expect(surfaceRect, imageRect,
+        reason: '50% 时缝隙与卡面同属一个 scrim，不再有全强度原图线');
+  });
 
   testWidgets('默认：100% 不透明、无背景图，视觉与改造前等价', (tester) async {
     await tester.pumpWidget(wrap(onTap: null));
