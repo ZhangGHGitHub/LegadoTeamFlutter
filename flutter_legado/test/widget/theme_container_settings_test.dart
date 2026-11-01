@@ -1,0 +1,194 @@
+// [设置批2b-1a | 2026-11-01] 外观页「容器设置」分组交互测试 — 全栈工程师
+//
+// 覆盖：三组新行渲染与默认值、容器不透明度/背景图虚化行内滑块落盘、
+// 容器背景图（日/夜）行副标题（文件名/缺失回落）、清除图片按钮与键移除。
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flutter_legado/src/constants/pref_keys.dart';
+import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
+import 'package:flutter_legado/src/screens/theme_config_screen.dart';
+import 'package:flutter_legado/src/services/theme_background_image_store.dart';
+import 'package:flutter_legado/src/widgets/setting_slider_row.dart';
+
+void main() {
+  late ProviderContainer container;
+  late Directory temp;
+  late Future<Directory> Function() originalSupportDir;
+
+  setUp(() async {
+    SharedPreferences.resetStatic();
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    uiSettingsListenable.value = const UiSettingsState();
+    // 容器背景图存储基目录固定到临时目录：widget fake-async 下避免
+    // path_provider 通道调用，同时保证「缺失文件」路径可同步判定
+    temp = await Directory.systemTemp.createTemp('legado_theme_cfg_');
+    originalSupportDir = ThemeBackgroundImageStore.supportDir;
+    ThemeBackgroundImageStore.supportDir = () async => temp;
+    ThemeBackgroundImageStore.warmWith(temp);
+    container = ProviderContainer();
+    addTearDown(container.dispose);
+  });
+
+  tearDown(() async {
+    uiSettingsListenable.value = const UiSettingsState();
+    ThemeBackgroundImageStore.supportDir = originalSupportDir;
+    ThemeBackgroundImageStore.resetWarmCache();
+    if (await temp.exists()) await temp.delete(recursive: true);
+  });
+
+  Widget wrap() {
+    return UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: ThemeConfigScreen()),
+    );
+  }
+
+  Future<void> pumpPage(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 2600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> scrollTo(WidgetTester tester, Finder target) async {
+    await tester.dragUntilVisible(
+      target,
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Finder sliderRow(String title) => find.ancestor(
+        of: find.text(title),
+        matching: find.byType(SettingSliderRow),
+      );
+
+  Finder sliderOf(String title) => find.descendant(
+        of: sliderRow(title),
+        matching: find.byType(Slider),
+      );
+
+  testWidgets('容器设置组渲染新行与默认值', (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器设置'));
+
+    expect(find.text('容器背景图片（日间）'), findsOneWidget);
+    expect(find.text('容器背景图片（夜间）'), findsOneWidget);
+    expect(find.text('容器不透明度'), findsOneWidget);
+    expect(find.text('背景图虚化（日间）'), findsOneWidget);
+    expect(find.text('背景图虚化（夜间）'), findsOneWidget);
+
+    // 仅断言两条容器图片行自身的副标题（自定义主题组的背景图行同为「未设置」）
+    Finder subtitleOf(String title) => find.descendant(
+          of: find.ancestor(
+            of: find.text(title),
+            matching: find.byType(ListTile),
+          ),
+          matching: find.text('未设置'),
+        );
+    expect(subtitleOf('容器背景图片（日间）'), findsOneWidget);
+    expect(subtitleOf('容器背景图片（夜间）'), findsOneWidget);
+
+    final rows = tester
+        .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
+        .toList();
+    final byTitle = {for (final r in rows) r.title: r};
+    expect(byTitle['容器不透明度']!.value, 100);
+    expect(byTitle['背景图虚化（日间）']!.value, 0);
+    expect(byTitle['背景图虚化（夜间）']!.value, 0);
+  });
+
+  testWidgets('容器不透明度滑块：点按轨道 0% 落盘 containerOpacity=0', (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器不透明度'));
+
+    final slider = sliderOf('容器不透明度');
+    final rect = tester.getRect(slider);
+    // Slider 轨道两端各留 thumb 半径；点最左端取 0
+    await tester.tapAt(Offset(rect.left + 2, rect.center.dy));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.containerOpacity), 0);
+    expect(container.read(uiSettingsProvider).containerOpacity, 0);
+    expect(uiSettingsListenable.value.containerOpacity, 0);
+  });
+
+  testWidgets('背景图虚化日/夜滑块独立落盘（>50% 与 <50%）', (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('背景图虚化（日间）'));
+
+    final dayRect = tester.getRect(sliderOf('背景图虚化（日间）'));
+    await tester.tapAt(Offset(dayRect.left + dayRect.width * 0.8, dayRect.center.dy));
+    await tester.pumpAndSettle();
+
+    await scrollTo(tester, find.text('背景图虚化（夜间）'));
+    final nightRect = tester.getRect(sliderOf('背景图虚化（夜间）'));
+    await tester.tapAt(
+      Offset(nightRect.left + nightRect.width * 0.2, nightRect.center.dy),
+    );
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    final day = prefs.getInt(PrefKeys.bgImageBlurring);
+    final night = prefs.getInt(PrefKeys.bgImageNBlurring);
+    expect(day, isNotNull);
+    expect(night, isNotNull);
+    expect(day!, greaterThan(50));
+    expect(night!, lessThan(50));
+    expect(container.read(uiSettingsProvider).bgImageBlurring, day);
+    expect(container.read(uiSettingsProvider).bgImageDarkBlurring, night);
+  });
+
+  testWidgets('容器背景图行显示文件名；点击行弹选择/清除', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.largeContainerBackgroundImageLight:
+          'theme_backgrounds/large_light/day.png',
+      PrefKeys.largeContainerBackgroundImageDark:
+          'theme_backgrounds/large_dark/night.png',
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器背景图片（日间）'));
+
+    expect(find.text('day.png（文件缺失，已回落）'), findsOneWidget);
+    expect(find.text('night.png（文件缺失，已回落）'), findsOneWidget);
+
+    await tester.tap(find.text('容器背景图片（日间）'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择图片'), findsOneWidget);
+    expect(find.text('清除图片'), findsOneWidget);
+
+    await tester.tap(find.text('清除图片'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.containsKey(PrefKeys.largeContainerBackgroundImageLight),
+      isFalse,
+    );
+    expect(find.text('未设置'), findsWidgets);
+    expect(
+      container.read(uiSettingsProvider).largeContainerBackgroundImageLight,
+      isEmpty,
+    );
+  });
+
+  testWidgets('未设置时图片行弹窗不显示清除项', (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器背景图片（夜间）'));
+
+    await tester.tap(find.text('容器背景图片（夜间）'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择图片'), findsOneWidget);
+    expect(find.text('清除图片'), findsNothing);
+  });
+}

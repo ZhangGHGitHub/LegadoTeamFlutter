@@ -31,6 +31,7 @@ import 'package:flutter_legado/src/models/eye_protection.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/theme/eye_protection_notifier.dart';
+import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import 'package:flutter_legado/src/services/local_backup_service.dart';
 
@@ -353,6 +354,75 @@ void main() {
     expect(transitions.last, restored);
     expect(wroteFlags, everyElement(isTrue),
         reason: 'provider 更新必须晚于 mock restore 写盘');
+  });
+
+  testWidgets('恢复 appPrefs 后容器外观设置同会话立即重读', (tester) async {
+    // [设置批2b-1a] 容器不透明度/容器背景图/背景图虚化随 appPrefs 恢复后，
+    // _reloadPrefsAfterRestore 必须 await 重读 uiSettingsProvider，否则页面
+    // 与 IosGroup/全局背景层继续用恢复前的旧值到重启为止。
+    final backupPath = fakeBackupPath('legado_backup_container_theme.zip');
+    var restoreWrotePrefs = false;
+    when(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    ).thenAnswer((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(PrefKeys.containerOpacity, 30);
+      await prefs.setInt(PrefKeys.bgImageBlurring, 44);
+      await prefs.setString(
+        PrefKeys.largeContainerBackgroundImageLight,
+        'theme_backgrounds/large_light/restored.png',
+      );
+      restoreWrotePrefs = true;
+    });
+
+    final container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await container.read(uiSettingsProvider.notifier).reload();
+    await tester.pumpAndSettle();
+    expect(container.read(uiSettingsProvider).containerOpacity, 100);
+
+    final transitions = <UiSettingsState>[];
+    final wroteFlags = <bool>[];
+    final subscription = container.listen<UiSettingsState>(
+      uiSettingsProvider,
+      (previous, next) {
+        transitions.add(next);
+        wroteFlags.add(restoreWrotePrefs);
+      },
+      fireImmediately: false,
+    );
+    addTearDown(subscription.close);
+
+    stubPasswordNotRequired();
+    await startLocalRestore(
+      tester,
+      backupPath: backupPath,
+      container: container,
+    );
+
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+    final restored = container.read(uiSettingsProvider);
+    expect(restored.containerOpacity, 30, reason: '恢复后同会话立即生效');
+    expect(restored.bgImageBlurring, 44);
+    expect(
+      restored.largeContainerBackgroundImageLight,
+      'theme_backgrounds/large_light/restored.png',
+    );
+    expect(transitions, isNotEmpty);
+    expect(transitions.last.containerOpacity, 30);
+    expect(
+      wroteFlags,
+      everyElement(isTrue),
+      reason: 'provider 更新必须晚于 mock restore 写盘',
+    );
   });
 
   testWidgets('中文/含空格密码原样透传（不 trim）', (tester) async {
