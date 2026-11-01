@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:io' show File;
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -30,6 +28,7 @@ import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/system_bar_binder.dart';
 import 'src/widgets/eye_protection_layer.dart';
+import 'src/widgets/theme_background_layer.dart';
 import 'src/widgets/crash_log_dialog.dart';
 import 'src/widgets/update_dialog.dart';
 import 'src/widgets/verification_code_listener.dart';
@@ -436,14 +435,17 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
         // 沉浸式状态栏 / 导航栏：对齐原版 transparentStatusBar / immNavigationBar
         wrapped = SystemBarBinder(child: wrapped);
         // P1-8：按当前亮度叠全局背景图（分组卡片仍自带不透明底，可读性保留）
-        // [设置批2a-1 登记] 同型结构风险：_ThemeBackgroundLayer 在「无图→有图」
-        // （或日夜切换不同图）时返回 child / DecoratedBox 两种类型，Element
-        // 类型变化会重建其下 SystemBarBinder/WebView/验证码监听器子树，与护眼
-        // 层修复前的 P1 同类；当前不在本批范围，未改。若后续切换背景图出现
-        // 系统栏重显/WebView 队列丢失，按 EyeProtectionFilterBox 同法改为恒定
-        // 结构（RenderProxyBox + 可选背景绘制） — 全栈工程师
-        wrapped = _ThemeBackgroundLayer(
-          path: themeColors.bgImageFor(Theme.of(context).brightness),
+        // [设置批2b-1a] 背景图虚化（日/夜半径 0..100，参考版 bgImageBlurring/
+        // bgImageNBlurring）：只虚化背景图本身，内容层不受影响；图层恒定
+        // 结构（Stack 两槽）已消除「无图→有图」重建应用子树的既有风险 —
+        // 全栈工程师
+        final backgroundBrightness = Theme.of(context).brightness;
+        final backgroundDark = backgroundBrightness == Brightness.dark;
+        wrapped = ThemeBackgroundLayer(
+          path: themeColors.bgImageFor(backgroundBrightness),
+          blurRadius: backgroundDark
+              ? uiTheme.bgImageDarkBlurring
+              : uiTheme.bgImageBlurring,
           child: wrapped,
         );
         // [设置批2a-1 | 2026-11-01] 护眼模式全局叠加（对齐参考版
@@ -469,39 +471,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
 
   /// 本地背景图可用时让 Scaffold 透明，露出下层壁纸
   ThemeData _withOptionalTransparentScaffold(ThemeData base, String path) {
-    if (!_bgFileUsable(path)) return base;
+    if (!isThemeBackgroundFileUsable(path)) return base;
     return base.copyWith(scaffoldBackgroundColor: Colors.transparent);
   }
 }
 
-/// 全局主题背景图层（对齐原版 ThemeConfig.getBgImage）
-class _ThemeBackgroundLayer extends StatelessWidget {
-  final String path;
-  final Widget child;
-
-  const _ThemeBackgroundLayer({required this.path, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_bgFileUsable(path)) return child;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: FileImage(File(path)),
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-        ),
-      ),
-      child: child,
-    );
-  }
-}
-
-bool _bgFileUsable(String path) {
-  if (kIsWeb || path.isEmpty) return false;
-  try {
-    return File(path).existsSync();
-  } catch (_) {
-    return false;
-  }
-}

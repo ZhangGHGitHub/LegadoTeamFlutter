@@ -1,12 +1,15 @@
 // [UI_SYNC_REFACTOR B2] UI 布局设置状态：顶栏/底栏/详情/阅读菜单开关族的
 // 统一加载与分发（UI_SYNC_REFACTOR_PLAN_20260905.md）。key 名对齐参考仓
 // PreferKey，经 SharedPreferences 透存（Rust 不解释），改动即时全局生效。
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../constants/pref_keys.dart';
 import '../../services/settings_service.dart';
+import '../../services/theme_background_image_store.dart';
 
 /// 顶栏按钮样式档位（对齐参考仓 TopBarButtonStyle）
 enum TopBarButtonStyle {
@@ -155,6 +158,27 @@ class UiSettingsState {
   /// 设置行分隔线开关
   final bool enableItemDivider;
 
+  // ===== [设置批2b-1a] 容器外观（对齐参考版 ThemeSettings）=====
+
+  /// 容器卡面不透明度 0-100（参考版 containerOpacity，默认 100）
+  ///
+  /// 作用于 IosGroup 分组卡面（外部分组底 + 行小卡底）：值越低，底层
+  /// 容器背景图/全局壁纸透出越多；文字颜色不随之改变（参考版 GlassCard
+  /// 同口径，见 `card/GlassCard.kt:155`）。
+  final int containerOpacity;
+
+  /// 日间大容器背景图偏好值（相对 Support 目录的可迁移标识；空=未设置）
+  final String largeContainerBackgroundImageLight;
+
+  /// 夜间大容器背景图偏好值（相对 Support 目录的可迁移标识；空=未设置）
+  final String largeContainerBackgroundImageDark;
+
+  /// 日间全局背景图虚化半径 0-100（参考版 bgImageBlurring，默认 0）
+  final int bgImageBlurring;
+
+  /// 夜间全局背景图虚化半径 0-100（参考版 bgImageNBlurring，默认 0）
+  final int bgImageDarkBlurring;
+
   /// 大屏侧栏展开态（持久化）
   final bool railExtended;
 
@@ -197,6 +221,11 @@ class UiSettingsState {
     this.bottomBarBlurAlpha = 40,
     this.wallpaperColorFollow = false,
     this.enableItemDivider = false,
+    this.containerOpacity = 100,
+    this.largeContainerBackgroundImageLight = '',
+    this.largeContainerBackgroundImageDark = '',
+    this.bgImageBlurring = 0,
+    this.bgImageDarkBlurring = 0,
     this.railExtended = false,
     this.readMenuBrightnessVertical = false,
     this.readMenuBrightnessPos = 'right',
@@ -229,6 +258,11 @@ class UiSettingsState {
     int? bottomBarBlurAlpha,
     bool? wallpaperColorFollow,
     bool? enableItemDivider,
+    int? containerOpacity,
+    String? largeContainerBackgroundImageLight,
+    String? largeContainerBackgroundImageDark,
+    int? bgImageBlurring,
+    int? bgImageDarkBlurring,
     bool? railExtended,
     bool? readMenuBrightnessVertical,
     String? readMenuBrightnessPos,
@@ -264,6 +298,13 @@ class UiSettingsState {
       bottomBarBlurAlpha: bottomBarBlurAlpha ?? this.bottomBarBlurAlpha,
       wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
       enableItemDivider: enableItemDivider ?? this.enableItemDivider,
+      containerOpacity: containerOpacity ?? this.containerOpacity,
+      largeContainerBackgroundImageLight: largeContainerBackgroundImageLight ??
+          this.largeContainerBackgroundImageLight,
+      largeContainerBackgroundImageDark: largeContainerBackgroundImageDark ??
+          this.largeContainerBackgroundImageDark,
+      bgImageBlurring: bgImageBlurring ?? this.bgImageBlurring,
+      bgImageDarkBlurring: bgImageDarkBlurring ?? this.bgImageDarkBlurring,
       railExtended: railExtended ?? this.railExtended,
       readMenuBrightnessVertical:
           readMenuBrightnessVertical ?? this.readMenuBrightnessVertical,
@@ -296,6 +337,12 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     Future.microtask(_load);
     return const UiSettingsState();
   }
+
+  /// 恢复备份后重读偏好（备份 appPrefs 已写入 SharedPreferences）。
+  ///
+  /// 用 await 重读而非 invalidate：避免 provider 重建时先以默认值渲染一帧
+  /// （容器不透明度/背景图虚化会闪一下 100/0），与护眼模式 reload 同口径。
+  Future<void> reload() => _load();
 
   Future<void> _load() async {
     state = UiSettingsState(
@@ -388,6 +435,25 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
         PrefKeys.enableItemDivider,
         defaultValue: false,
       ),
+      // [设置批2b-1a] 容器外观：不透明度/背景图（相对标识）与日夜虚化半径
+      containerOpacity: await _settings.getIntPref(
+        PrefKeys.containerOpacity,
+        defaultValue: 100,
+      ).then(_clampOpacity),
+      largeContainerBackgroundImageLight: await _settings.getStringPref(
+        PrefKeys.largeContainerBackgroundImageLight,
+      ),
+      largeContainerBackgroundImageDark: await _settings.getStringPref(
+        PrefKeys.largeContainerBackgroundImageDark,
+      ),
+      bgImageBlurring: await _settings.getIntPref(
+        PrefKeys.bgImageBlurring,
+        defaultValue: 0,
+      ).then(_clampOpacity),
+      bgImageDarkBlurring: await _settings.getIntPref(
+        PrefKeys.bgImageNBlurring,
+        defaultValue: 0,
+      ).then(_clampOpacity),
       railExtended: await _settings.getBoolPref(
         PrefKeys.railExtended,
         defaultValue: false,
@@ -414,6 +480,22 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       ),
     );
     _sync();
+    // [设置批2b-1a] 容器背景图按「相对 Support 目录标识」解析：基目录预热
+    // 不阻塞设置加载（避免启动/恢复流程等待平台通道），完成后再通知一次
+    // 让已挂载的 IosGroup 从「相对标识未解析」切换到真实图片。
+    unawaited(_refreshAfterBackgroundWarm());
+  }
+
+  /// 基目录预热完成后，若状态未被用户改动，则推送一次同值新实例触发重建
+  ///
+  /// 说明：UiSettingsState 未重写 ==，copyWith() 产生新实例 → ValueNotifier
+  /// 认为值变化并通知；这是启动时最多一次的重建，不影响持久化。
+  Future<void> _refreshAfterBackgroundWarm() async {
+    final snapshot = uiSettingsListenable.value;
+    await ThemeBackgroundImageStore.ensureWarm();
+    if (!ThemeBackgroundImageStore.isWarm) return;
+    if (!identical(uiSettingsListenable.value, snapshot)) return;
+    uiSettingsListenable.value = snapshot.copyWith();
   }
 
   static int _clampOpacity(int v) => v.clamp(0, 100);
@@ -659,6 +741,71 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(wallpaperColorFollow: value);
     _sync();
     await _settings.setBoolPref(PrefKeys.wallpaperColorFollow, value);
+  }
+
+  // ===== [设置批2b-1a] 容器外观 =====
+
+  /// 容器卡面不透明度（0-100，默认 100）
+  Future<void> setContainerOpacity(int value) async {
+    final v = _clampOpacity(value);
+    if (state.containerOpacity == v) return;
+    state = state.copyWith(containerOpacity: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.containerOpacity, v);
+  }
+
+  /// 大容器背景图（日/夜；空串 = 清除/恢复默认）
+  ///
+  /// [storedPath] 为 ThemeBackgroundImageStore 返回的相对可迁移标识。
+  /// 清除时移除偏好键（参考版置 null）；旧图文件清理由调用方负责。
+  Future<void> setLargeContainerBackgroundImage({
+    required bool night,
+    required String storedPath,
+  }) async {
+    if (night) {
+      if (state.largeContainerBackgroundImageDark == storedPath) return;
+      state = state.copyWith(largeContainerBackgroundImageDark: storedPath);
+      _sync();
+      if (storedPath.isEmpty) {
+        await _settings.removePref(PrefKeys.largeContainerBackgroundImageDark);
+      } else {
+        await _settings.setStringPref(
+          PrefKeys.largeContainerBackgroundImageDark,
+          storedPath,
+        );
+      }
+      return;
+    }
+    if (state.largeContainerBackgroundImageLight == storedPath) return;
+    state = state.copyWith(largeContainerBackgroundImageLight: storedPath);
+    _sync();
+    if (storedPath.isEmpty) {
+      await _settings.removePref(PrefKeys.largeContainerBackgroundImageLight);
+    } else {
+      await _settings.setStringPref(
+        PrefKeys.largeContainerBackgroundImageLight,
+        storedPath,
+      );
+    }
+  }
+
+  /// 全局背景图虚化半径（0-100；[night] 区分日夜）
+  Future<void> setBgImageBlurring({
+    required bool night,
+    required int value,
+  }) async {
+    final v = _clampOpacity(value);
+    if (night) {
+      if (state.bgImageDarkBlurring == v) return;
+      state = state.copyWith(bgImageDarkBlurring: v);
+      _sync();
+      await _settings.setIntPref(PrefKeys.bgImageNBlurring, v);
+      return;
+    }
+    if (state.bgImageBlurring == v) return;
+    state = state.copyWith(bgImageBlurring: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.bgImageBlurring, v);
   }
 }
 

@@ -169,8 +169,18 @@ class RestoreIgnorePrefs {
     PrefKeys.transparentNavBar,
     PrefKeys.transparentNavBarNight,
     'themeConfigList',
-    'bgImageBlurring',
-    'bgImageNBlurring',
+    // [设置批2b-1a] 修正既有两键：原字面量 'bgImageBlurring'/'bgImageNBlurring'
+    // 是参考版**常量名**，真实偏好键为 'backgroundImageBlurring'/
+    // 'backgroundImageNightBlurring'（PreferKey.kt:282-283）。本批接入背景图
+    // 虚化后按真实键归组，勾选「忽略主题配置」时过滤 — 全栈工程师
+    PrefKeys.bgImageBlurring,
+    PrefKeys.bgImageNBlurring,
+    // [设置批2b-1a] 容器不透明度：参考版 themePrefKeys 成员
+    // （BackupConfig.kt:263-318），随「忽略主题配置」过滤。
+    // 注意：largeContainerBackgroundImageLight/Dark 不在参考版
+    // themePrefKeys 内 → 任何忽略组合下都随 appPrefs 往返（图片缺失时
+    // 恢复后按缺失回落），此处刻意不加入。
+    PrefKeys.containerOpacity,
     // [设置批2a-1] 护眼模式六键：参考版 BackupConfig.themePrefKeys
     // （`help/storage/BackupConfig.kt:311-316`）归入主题配置组，勾选
     // 「忽略主题配置」恢复备份时不覆盖本机护眼设置 — 全栈工程师

@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../providers/ui_settings/ui_settings_notifier.dart';
+import '../services/theme_background_image_store.dart';
 
 import 'setting_cards.dart';
 
@@ -138,13 +141,12 @@ class IosGroup extends StatelessWidget {
       color: theme.dividerColor,
     );
 
-    final rows = <Widget>[];
-    for (var i = 0; i < children.length; i++) {
-      rows.add(children[i]);
-      if (i != children.length - 1) rows.add(separator);
-    }
-
     if (flat) {
+      final rows = <Widget>[];
+      for (var i = 0; i < children.length; i++) {
+        rows.add(children[i]);
+        if (i != children.length - 1) rows.add(separator);
+      }
       // 扁平模式需自备透明 Material，否则 ListTile 的 ink 溅在远端
       // Material 祖先上会被中间 ColoredBox（IosGroupedBody）遮住而断言失败
       return Padding(
@@ -161,30 +163,73 @@ class IosGroup extends StatelessWidget {
     // [UI_SYNC_REFACTOR T2] 对齐参考 SplicedColumnGroup：16dp 玻璃分组卡
     //（surfaceContainer 底）+ 组内 spacedBy 2 + 每行 4dp surfaceContainerLow
     // 小卡底（SettingCard 等效）
-    return Padding(
-      padding: margin,
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        clipBehavior: Clip.antiAlias,
-        padding: const EdgeInsets.all(4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < children.length; i++) ...[
-              Material(
-                color: theme.colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(4),
-                clipBehavior: Clip.antiAlias,
-                child: children[i],
-              ),
-              if (i != children.length - 1) const SizedBox(height: 2),
-            ],
-          ],
-        ),
-      ),
+    //
+    // [设置批2b-1a] 容器背景图/容器不透明度（参考版大容器语义）：
+    // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark，绘制在
+    //   分组底色之上、行小卡之下；文件缺失时静默回落为纯主题底色
+    //   （参考版 `AppContainerBackground.kt:33-75` 的 Large 分支）。
+    // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
+    //   文字不透明（参考版 `GlassCard.kt:150-156` 只改容器色 alpha）。
+    // - 图片层 IgnorePointer，不拦截点击/手势。
+    return ValueListenableBuilder<UiSettingsState>(
+      valueListenable: uiSettingsListenable,
+      builder: (context, ui, _) {
+        final opacity = (ui.containerOpacity / 100).clamp(0.0, 1.0);
+        final stored = theme.brightness == Brightness.dark
+            ? ui.largeContainerBackgroundImageDark
+            : ui.largeContainerBackgroundImageLight;
+        final hasImage = ThemeBackgroundImageStore.isUsableSync(stored);
+        final imagePath =
+            hasImage ? ThemeBackgroundImageStore.resolveSync(stored) : '';
+        return Padding(
+          padding: margin,
+          child: Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainer
+                  .withValues(alpha: opacity),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                if (hasImage)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Image(
+                        key: const ValueKey('ios-group-container-background'),
+                        image: FileImage(File(imagePath)),
+                        fit: BoxFit.cover,
+                        alignment: Alignment.center,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) =>
+                            const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < children.length; i++) ...[
+                        Material(
+                          color: theme.colorScheme.surfaceContainerLow
+                              .withValues(alpha: opacity),
+                          borderRadius: BorderRadius.circular(4),
+                          clipBehavior: Clip.antiAlias,
+                          child: children[i],
+                        ),
+                        if (i != children.length - 1)
+                          const SizedBox(height: 2),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

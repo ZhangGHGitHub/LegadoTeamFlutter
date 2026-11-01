@@ -29,10 +29,12 @@ import '../routes.dart';
 import '../services/export_file_service.dart';
 import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
+import '../services/theme_background_image_store.dart';
 import '../theme/md3_colors.dart';
 import '../utils/error_message.dart';
 import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
+import '../widgets/setting_slider_row.dart';
 
 /// 主题设置页面（对齐原版 ThemeConfigFragment）
 ///
@@ -982,13 +984,69 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   ]),
 
                   // === 分组 8「容器设置」（参考 R.string
-                  // .theme_manage_section_container=容器设置；原"详情与圆角"的
-                  // 卡片圆角/分隔线两行；参考 容器背景图/容器背景不透明度/
-                  // 关闭设置分组圆角/覆盖卡片边框/边框粗细/日夜卡片边框颜色/
-                  // 分割线粗细/长度/颜色 等子项属参考独有，仅登记不实现） ===
+                  // .theme_manage_section_container=容器设置）
+                  //
+                  // [设置批2b-1a] 补齐参考版容器背景（日/夜）+ 容器不透明度 +
+                  // 背景图虚化（日/夜）：
+                  // - 大容器背景图键 largeContainerBackgroundImageLight/Dark，
+                  //   选择后复制到应用目录（内容哈希命名），IosGroup 分组卡面
+                  //   按当前亮暗绘制；文件缺失回落纯主题底色。
+                  // - 容器不透明度 containerOpacity 0..100（默认 100），作用于
+                  //   分组卡面与行小卡面（文字不透明，参考 GlassCard 口径）。
+                  // - 背景图虚化 backgroundImageBlurring/backgroundImageNightBlurring
+                  //   0..100（默认 0），仅作用全局壁纸，不影响内容/文字。
+                  // - 参考 关闭设置分组圆角/覆盖卡片边框/边框粗细/日夜卡片边框
+                  //   颜色/分割线粗细/长度/颜色 等子项仍属参考独有，留待批2b-1b。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
                       children: [
+                    IosListTile(
+                      icon: Symbols.wallpaper_rounded,
+                      title: '容器背景图片（日间）',
+                      subtitle: _containerBgLabel(
+                          ui.largeContainerBackgroundImageLight),
+                      onTap: () => _showContainerBgImageDialog(night: false),
+                    ),
+                    IosListTile(
+                      icon: Symbols.wallpaper_rounded,
+                      title: '容器背景图片（夜间）',
+                      subtitle: _containerBgLabel(
+                          ui.largeContainerBackgroundImageDark),
+                      onTap: () => _showContainerBgImageDialog(night: true),
+                    ),
+                    // 参考 container_opacity 滑杆：0..100，默认 100
+                    SettingSliderRow(
+                      title: '容器不透明度',
+                      subtitle: '0-100；越低背景图/壁纸透出越多（文字不受影响）',
+                      value: ui.containerOpacity,
+                      min: 0,
+                      max: 100,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setContainerOpacity(v),
+                    ),
+                    // 参考版虚化在「背景图片」面板内（日/夜各一条 0..100）；
+                    // 我方按用户指令并入「容器设置」分组，仅影响全局壁纸
+                    SettingSliderRow(
+                      title: '背景图虚化（日间）',
+                      subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
+                      value: ui.bgImageBlurring,
+                      min: 0,
+                      max: 100,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setBgImageBlurring(night: false, value: v),
+                    ),
+                    SettingSliderRow(
+                      title: '背景图虚化（夜间）',
+                      subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
+                      value: ui.bgImageDarkBlurring,
+                      min: 0,
+                      max: 100,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setBgImageBlurring(night: true, value: v),
+                    ),
                     // 参考 base_card_corner_radius=卡片圆角（0-40 滑杆）；我方为
                     // 单对话框（覆写开关 + 4-28），参考 覆盖卡片圆角 双行开关
                     // 结构属参考独有，仅登记
@@ -1714,6 +1772,88 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       } else {
         await notifier.setBgImage(day: '');
       }
+    }
+  }
+
+  /// 容器背景图（日/夜）行副标题：未设置 / 文件名 / 文件缺失提示
+  ///
+  /// 偏好值可能是相对 Support 目录的可迁移标识（新选图）、绝对路径
+  /// （参考版备份/存量），故统一经 store 解析后取文件名；解析不到或文件
+  /// 不存在时明确提示「已回落」，与 IosGroup 实际渲染行为一致。
+  String _containerBgLabel(String stored) {
+    if (stored.isEmpty) return '未设置';
+    final resolved = ThemeBackgroundImageStore.resolveSync(stored);
+    final name = resolved.split(Platform.pathSeparator).last;
+    return ThemeBackgroundImageStore.isUsableSync(stored)
+        ? name
+        : '$name（文件缺失，已回落）';
+  }
+
+  /// 容器背景图选择/清除（日/夜独立）
+  ///
+  /// 对齐参考版 `ThemeConfigViewModel.setContainerBackground`：
+  /// 选图后复制到应用目录（内容哈希命名，自动去重），偏好存可迁移标识；
+  /// 替换/清除时删除上一张自有图片（外部/参考版路径不删）。
+  Future<void> _showContainerBgImageDialog({required bool night}) async {
+    final ui = ref.read(uiSettingsProvider);
+    final current = night
+        ? ui.largeContainerBackgroundImageDark
+        : ui.largeContainerBackgroundImageLight;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(night ? '容器背景图片（夜间）' : '容器背景图片（日间）'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'select'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('选择图片'),
+            ),
+          ),
+          if (current.isNotEmpty)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'delete'),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('清除图片'),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    final notifier = ref.read(uiSettingsProvider.notifier);
+    if (action == 'select') {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        dialogTitle: '选择容器背景图片',
+      );
+      final source = result?.files.single.path;
+      if (source == null || !mounted) return;
+      try {
+        final stored = await ThemeBackgroundImageStore.store(
+          source,
+          slot: night ? 'large_dark' : 'large_light',
+        );
+        await notifier.setLargeContainerBackgroundImage(
+          night: night,
+          storedPath: stored,
+        );
+        // 仅删除自有旧图；参考版/外部绝对路径不动
+        if (current.isNotEmpty && current != stored) {
+          await ThemeBackgroundImageStore.deleteOwned(current);
+        }
+      } catch (e) {
+        debugPrint('ThemeConfigScreen._showContainerBgImageDialog 设置异常: $e');
+        if (mounted) _toast('设置容器背景图失败：${errorMessage(e)}');
+      }
+    } else if (action == 'delete') {
+      await notifier.setLargeContainerBackgroundImage(
+        night: night,
+        storedPath: '',
+      );
+      await ThemeBackgroundImageStore.deleteOwned(current);
     }
   }
 

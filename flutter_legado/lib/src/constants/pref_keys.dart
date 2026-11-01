@@ -68,6 +68,41 @@ class PrefKeys {
   /// 夜间导航栏透明（仅 Android 生效，默认 false）
   static const transparentNavBarNight = 'transparentNavBarNight';
 
+  // ===== 容器外观（设置批2b-1a，键名逐字对齐参考版 PreferKey.kt:228,270-283）=====
+  //
+  // 容器背景图（大容器）/容器不透明度/背景图虚化同属「外观」设置。参考版
+  // 把它们放在 `ThemeSettings`（`domain/model/settings/ThemeSettings.kt:27,
+  // 54-57`）并经 `FeatureSettingsRepositories.kt:376,408-414` 读写。
+  //
+  // 备份归组口径（对齐参考版 `help/storage/BackupConfig.kt:263-318`）：
+  // - `containerOpacity` / `bgImageBlurring` / `bgImageNBlurring` 在参考版
+  //   themePrefKeys 内，随「忽略主题配置」过滤；
+  // - `largeContainerBackgroundImageLight/Dark` **不在** themePrefKeys 内，
+  //   任何忽略组合下都随 appPrefs 备份/恢复（恢复后图片缺失按缺失回落）。
+
+  /// 容器卡面不透明度 0..100（参考版 containerOpacity，默认 100）
+  static const containerOpacity = 'containerOpacity';
+
+  /// 日间大容器背景图（参考版 largeContainerBackgroundImageLight，默认 null）
+  ///
+  /// 值为「相对应用 Support 目录的可迁移标识」（`theme_backgrounds/large_light/<md5>.<ext>`），
+  /// 由 ThemeBackgroundImageStore 解析；旧备份/参考版备份可能携带绝对路径，
+  /// 解析侧对绝对路径原样透传，文件不存在时按缺失回落。
+  static const largeContainerBackgroundImageLight =
+      'largeContainerBackgroundImageLight';
+
+  /// 夜间大容器背景图（参考版 largeContainerBackgroundImageDark，默认 null）
+  static const largeContainerBackgroundImageDark =
+      'largeContainerBackgroundImageDark';
+
+  /// 日间全局背景图虚化半径 0..100（参考版 bgImageBlurring="backgroundImageBlurring"，
+  /// 默认 0；仅作用于全局壁纸，不影响内容/文字）
+  static const bgImageBlurring = 'backgroundImageBlurring';
+
+  /// 夜间全局背景图虚化半径 0..100（参考版 bgImageNBlurring=
+  /// "backgroundImageNightBlurring"，默认 0）
+  static const bgImageNBlurring = 'backgroundImageNightBlurring';
+
   // ===== 护眼模式（设置批2a-1，键名逐字对齐参考版 PreferKey.kt:489-495）=====
   //
   // 六键同属外观/主题偏好：参考版把它们放在 BackupConfig.themePrefKeys

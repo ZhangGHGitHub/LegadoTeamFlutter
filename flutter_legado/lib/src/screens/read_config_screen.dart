@@ -35,7 +35,12 @@ import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/setting_cards.dart' show LabelMediumEmphasized;
+import '../widgets/setting_slider_row.dart';
 import 'reader_config_panel.dart';
+
+// 既有调用方/测试从本文件导入 SettingSliderRow（批1a 时定义在本文件）；
+// 提取到独立文件后 re-export，保持 import 路径稳定。
+export '../widgets/setting_slider_row.dart';
 
 part 'read_config_screen_data.part.dart';
 
@@ -332,91 +337,8 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
 }
 
 // ── 行内控件行组件（对齐参考版 SliderSettingItem / DropdownListSettingItem
-//    形态：标题 + 行内控件；仅本页使用，避免动批9a 触碰的
-//    other_settings_screen）──
-
-/// 行内滑块行：标题 + 当前值 + Slider（参考版 SliderSettingItem 形态）
-///
-/// [批1a 审查回修 | 2026-10-31] 提交时机对齐既有字号滑块口径（批33b）：
-/// 拖动中（onChanged）仅本地预览数值，松手（onChangeEnd）才提交一次——
-/// 避免逐帧触发约 90 键全量写盘 + provider 推送 — 全栈工程师
-class SettingSliderRow extends StatefulWidget {
-  final String title;
-  final int value;
-  final int min;
-  final int max;
-
-  /// 可选说明文字（标题下方小字；[批1b-3 审查回修 P2-3] 用于生效范围提示）
-  final String? subtitle;
-
-  /// 松手提交（一次）
-  final ValueChanged<int> onChanged;
-
-  const SettingSliderRow({
-    super.key,
-    required this.title,
-    required this.value,
-    required this.min,
-    required this.max,
-    this.subtitle,
-    required this.onChanged,
-  });
-
-  @override
-  State<SettingSliderRow> createState() => _SettingSliderRowState();
-}
-
-class _SettingSliderRowState extends State<SettingSliderRow> {
-  /// 拖动中的本地预览值（null = 未在拖动，显示外部值）
-  int? _preview;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final shown = _preview ?? widget.value;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(widget.title,
-                  style: Theme.of(context).textTheme.titleMedium),
-              Text(
-                '$shown',
-                style: Theme.of(context).textTheme.labelMediumEmphasized
-                    ?.copyWith(color: cs.primary),
-              ),
-            ],
-          ),
-          if (widget.subtitle != null)
-            Text(
-              widget.subtitle!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          Slider(
-            value: shown.toDouble().clamp(widget.min.toDouble(),
-                widget.max.toDouble()),
-            min: widget.min.toDouble(),
-            max: widget.max.toDouble(),
-            divisions: widget.max - widget.min,
-            label: '$shown',
-            onChanged: (v) => setState(() => _preview = v.round()),
-            onChangeEnd: (v) {
-              final target = v.round().clamp(widget.min, widget.max);
-              setState(() => _preview = null);
-              widget.onChanged(target);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
+//    形态：标题 + 行内控件；滑块行已提取到 widgets/setting_slider_row.dart，
+//    本文件 re-export 保持既有调用方/测试 import 不变）──
 
 /// 行内下拉行：标题 + 尾部 DropdownButton（参考版 DropdownListSettingItem
 /// 形态：行尾展开选择，选中值显示在尾部；整行可点弹同数据选择框兜底）

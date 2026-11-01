@@ -24,6 +24,7 @@ import '../providers/sync/sync_notifier.dart';
 import '../providers/theme/eye_protection_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/local_backup_service.dart';
@@ -819,6 +820,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     // 让全局叠加层与外观设置页在同一会话即时生效；用 reload 而非 invalidate
     // 避免 provider 重建时先以默认值渲染一帧（护眼会闪一下关闭）
     await ref.read(eyeProtectionProvider.notifier).reload();
+    // [设置批2b-1a] 备份 appPrefs 可能替换容器不透明度/容器背景图路径/
+    // 背景图虚化半径；恢复后 await 重读，保证同会话即时生效（不透明度与
+    // 虚化会立即反映到 IosGroup/全局背景层） — 全栈工程师
+    await ref.read(uiSettingsProvider.notifier).reload();
     ref.invalidate(mainPrefsProvider);
     ref.invalidate(bookshelfNotifierProvider);
     // [批37] 顶栏动作配置随 appPrefs 恢复后重读，避免继续用旧配置
