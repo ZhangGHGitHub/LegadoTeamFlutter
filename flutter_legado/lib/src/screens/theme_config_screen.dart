@@ -137,9 +137,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       PrefKeys.largeContainerBackgroundImageDark,
     );
     if (ThemeBackgroundImageStore.isWarm) {
-      ThemeBackgroundImageStore.cleanupOrphansSync(
-        keep: [containerImageLight, containerImageDark],
-      );
+      // best effort：清理失败（权限/IO）不得阻断外观页加载
+      try {
+        ThemeBackgroundImageStore.cleanupOrphansSync(
+          keep: [containerImageLight, containerImageDark],
+        );
+      } catch (e) {
+        debugPrint('ThemeConfigScreen 容器背景图孤儿清理失败（不阻断）：$e');
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -1820,7 +1825,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   String _containerBgLabel(String stored) {
     if (stored.isEmpty) return '未设置';
     final resolved = ThemeBackgroundImageStore.resolveSync(stored);
-    final name = resolved.split(Platform.pathSeparator).last;
+    // 相对标识用 `/`（Windows 未预热时 resolveSync 原样返回），绝对路径用
+    // 平台分隔符；统一按 `/` 切分取末段文件名。
+    final name = resolved.replaceAll('\\', '/').split('/').last;
     return ThemeBackgroundImageStore.isUsableSync(stored)
         ? name
         : '$name（文件缺失，已回落）';

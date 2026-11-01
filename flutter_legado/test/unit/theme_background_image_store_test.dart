@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 import 'package:flutter_legado/src/services/theme_background_image_store.dart';
 
@@ -197,6 +198,36 @@ void main() {
     }
   });
 
+  test('截断 PNG（50/60 字节）存前拒绝（getNextFrame 校验）', () async {
+    // 1x1 样例的 IDAT 极短，截到 50/60 字节仍可能解出完整像素（仅缺 IEND），
+    // 无法覆盖 getNextFrame 分支；用 64x64 PNG 让截断落在 IDAT 数据流中。
+    final bigPng = img.encodePng(img.Image(width: 64, height: 64));
+    expect(bigPng.length, greaterThan(100));
+
+    // 完整图可正常存储（证明样本有效，排除"样本本身坏"）
+    final okSource = await writeSource('big_ok.png', bytes: bigPng);
+    final okStored = await ThemeBackgroundImageStore.store(
+      okSource.path,
+      slot: 'large_light',
+    );
+    expect(ThemeBackgroundImageStore.isUsableSync(okStored), isTrue);
+
+    for (final length in <int>[50, 60]) {
+      final source = await writeSource(
+        'truncated_$length.png',
+        bytes: bigPng.sublist(0, length),
+      );
+      expect(
+        () => ThemeBackgroundImageStore.store(
+          source.path,
+          slot: 'large_dark',
+        ),
+        throwsA(isA<FormatException>()),
+        reason: '仅解析头部成功的截断 PNG 必须在解帧阶段被拒绝',
+      );
+    }
+  });
+
   test('.9.png 保留双扩展名（供 2b-1b 九宫格迁移识别）', () async {
     final source = await writeSource('frame.9.png');
     final stored = await ThemeBackgroundImageStore.store(
@@ -210,7 +241,7 @@ void main() {
     expect(ThemeBackgroundImageStore.isUsableSync(stored), isTrue);
   });
 
-  test('cleanupOrphansSync 清理未引用自有图/残留 tmp，其他槽位与非自有名不动',
+  test('cleanupOrphansSync 清理未引用自有图/超龄 tmp，保留新 tmp 与其他槽位',
       () async {
     final source = await writeSource('keep.png');
     final kept = await ThemeBackgroundImageStore.store(
@@ -224,7 +255,14 @@ void main() {
     final hashA = _hashLike('a');
     final orphan = File('${lightDir.path}$sep$hashA.png')
       ..writeAsBytesSync(const <int>[1, 2, 3]);
-    final tmp = File('${lightDir.path}$sep.${_hashLike('b')}.png.tmp-123')
+    // 超龄 tmp：应清理
+    final oldTmp = File('${lightDir.path}$sep.${_hashLike('b')}.png.tmp-123')
+      ..writeAsBytesSync(const <int>[1]);
+    oldTmp.setLastModifiedSync(
+      DateTime.now().subtract(const Duration(hours: 1)),
+    );
+    // 刚写入的 tmp（可能是一次进行中的原子写）：不得删除
+    final freshTmp = File('${lightDir.path}$sep.${_hashLike('d')}.png.tmp-456')
       ..writeAsBytesSync(const <int>[1]);
     final notOurs = File('${lightDir.path}${sep}readme.txt')
       ..writeAsBytesSync(const <int>[1]);
@@ -237,13 +275,14 @@ void main() {
 
     final removed = ThemeBackgroundImageStore.cleanupOrphansSync(keep: [kept]);
 
-    expect(removed, 2);
+    expect(removed, 2, reason: '未引用正式图 + 超龄 tmp');
     expect(
       File(ThemeBackgroundImageStore.resolveSync(kept)).existsSync(),
       isTrue,
     );
     expect(orphan.existsSync(), isFalse);
-    expect(tmp.existsSync(), isFalse);
+    expect(oldTmp.existsSync(), isFalse);
+    expect(freshTmp.existsSync(), isTrue, reason: '新 tmp 可能是进行中的写入');
     expect(notOurs.existsSync(), isTrue);
     expect(itemFile.existsSync(), isTrue,
         reason: 'item_* 槽位属 2b-1b，本批不清理');

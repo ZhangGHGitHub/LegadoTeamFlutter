@@ -38,6 +38,10 @@ class ThemeBackgroundImageStore {
   /// 单张图大小上限（32MB）：超过直接拒绝，避免异常大图拖垮内存/磁盘
   static const int maxBytes = 32 * 1024 * 1024;
 
+  /// 中断残留 `.tmp-*` 的最短保留时长：只清理超过该时长的临时文件，
+  /// 避免与"正在写入的新图"竞争（参考 10 分钟阈值）。
+  static const Duration tmpOrphanMinAge = Duration(minutes: 10);
+
   /// 允许的图片扩展名（小写、无点）；其余回落到 jpg。
   /// 注意 `.9.png` 不在集合内，由 [_extensionOf] 单独保留双扩展名。
   static const Set<String> _imageExts = <String>{
@@ -233,7 +237,8 @@ class ThemeBackgroundImageStore {
   }
 
   /// 低成本孤儿清理（设置页加载时调用）：删除槽位目录中未被引用的自有图片
-  /// 与中断残留的临时文件；非自有命名/其他槽位（如 2b-1b 的 item_*）不动。
+  /// 与**超过 [tmpOrphanMinAge] 的**中断残留临时文件；非自有命名/其他槽位
+  /// （如 2b-1b 的 item_*）不动。
   ///
   /// [keep] 为当前仍被引用的偏好值（绝对路径或相对标识均可）。
   /// 返回删除数量。基目录未预热时直接返回 0（不触发平台通道）。
@@ -242,6 +247,7 @@ class ThemeBackgroundImageStore {
     final root = _supportPath;
     if (root == null) return 0;
     final sep = Platform.pathSeparator;
+    final now = DateTime.now();
     final keepPaths = <String>{};
     for (final stored in keep) {
       final resolved = resolveSync(stored);
@@ -256,10 +262,17 @@ class ThemeBackgroundImageStore {
         if (entity is! File) continue;
         final path = entity.absolute.path;
         if (keepPaths.contains(path)) continue;
-        final name = path.split(sep).last;
-        if (!_ownedFileNamePattern.hasMatch(name) &&
-            !_tmpFileNamePattern.hasMatch(name)) {
-          continue;
+        final name = _baseName(path);
+        final isTmp = _tmpFileNamePattern.hasMatch(name);
+        if (!isTmp && !_ownedFileNamePattern.hasMatch(name)) continue;
+        if (isTmp) {
+          // 只清超过保留时长的 tmp：刚写入/并发中的临时文件不动
+          try {
+            final modified = entity.statSync().modified;
+            if (now.difference(modified) < tmpOrphanMinAge) continue;
+          } catch (_) {
+            continue;
+          }
         }
         try {
           entity.deleteSync();
@@ -272,26 +285,33 @@ class ThemeBackgroundImageStore {
     return removed;
   }
 
-  /// 引擎试解码（只解 1x1 验证容器/格式），HEIC 等不支持格式抛
-  /// [FormatException]；不把原始 codec 帧留给调用方（立即释放）。
+  /// 引擎试解码：显式 `ImageDescriptor.encoded` 接管所有权（成功即释放
+  /// buffer），再 `getNextFrame()` 解一帧——只解析头部但帧数据截断的图片
+  /// （如截断 PNG）也会在此失败。HEIC 等不支持格式同样抛
+  /// [FormatException]。
   static Future<void> _validateDecodable(File file) async {
     ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
     ui.Codec? codec;
     try {
       buffer = await ui.ImmutableBuffer.fromFilePath(file.path);
-      codec = await ui.instantiateImageCodecFromBuffer(
-        buffer,
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      // descriptor 已接管解码数据；立即释放 buffer，置空避免 finally 双释放
+      buffer.dispose();
+      buffer = null;
+      codec = await descriptor.instantiateCodec(
         targetWidth: 1,
         targetHeight: 1,
       );
-      // 成功：codec 创建后 buffer 所有权归引擎（dart:ui 文档约定），
-      // 调用方不得再 dispose，否则触发 ImmutableBuffer 双重释放断言。
-      buffer = null;
+      // 真正解一帧：截断 PNG/损坏数据在此暴露（只建 codec 不够）
+      final frame = await codec.getNextFrame();
+      frame.image.dispose();
     } catch (_) {
       throw FormatException('不是可解码的图片：${_baseName(file.path)}');
     } finally {
       codec?.dispose();
-      // 仅失败路径仍由本方法持有 buffer
+      descriptor?.dispose();
+      // 仅失败且仍由本方法持有的 buffer（成功路径已提前释放）
       buffer?.dispose();
     }
   }
@@ -308,7 +328,9 @@ class ThemeBackgroundImageStore {
   }
 
   static String _baseName(String path) {
-    final parts = path.split(Platform.pathSeparator);
+    // 同时兼容 Windows `\` 与相对标识的 `/`（后者在未预热时原样返回）
+    final normalized = path.replaceAll('\\', '/');
+    final parts = normalized.split('/');
     return parts.isEmpty ? path : parts.last;
   }
 

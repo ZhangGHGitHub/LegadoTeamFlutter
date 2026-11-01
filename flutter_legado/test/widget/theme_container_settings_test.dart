@@ -214,6 +214,20 @@ void main() {
     );
   });
 
+  testWidgets('相对标识按 / 切分显示文件名（Windows/未预热场景）', (tester) async {
+    ThemeBackgroundImageStore.resetWarmCache();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.largeContainerBackgroundImageLight:
+          'theme_backgrounds/large_light/sub/day.png',
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器背景图片（日间）'));
+
+    expect(find.text('day.png（文件缺失，已回落）'), findsOneWidget);
+  });
+
   testWidgets('未设置时图片行弹窗不显示清除项', (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       PrefKeys.enableContainerBackgroundImage: true,
