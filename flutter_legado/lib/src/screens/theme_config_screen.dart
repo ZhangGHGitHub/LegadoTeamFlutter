@@ -31,6 +31,7 @@ import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
 import '../services/theme_background_image_store.dart';
 import '../theme/md3_colors.dart';
+import '../utils/color_hex.dart';
 import '../utils/error_message.dart';
 import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
@@ -978,6 +979,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // - 覆盖卡片圆角 overrideBaseCardCornerRadius +
                   //   baseCardCornerRadius 0..40；作用于 IosGroup 与全局
                   //   CardTheme（参考版 BaseCard/GlassCard 同源分支）。
+                  //   范围：仅未显式 shape 的 Card；18 处显式 shape 的卡片
+                  //   （字典/首页/阅读设置等）不在覆盖内，登记 2b-1b-2。
                   // - 覆盖卡片边框 overrideBaseCardBorder + 宽度 0..5 + 日夜色
                   //   （0=outlineVariant）；IosGroup 用 foregroundDecoration
                   //   绘制，不改变布局/不裁剪内容。
@@ -1066,7 +1069,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     // 参考 覆盖卡片圆角 开关 + 卡片圆角滑杆（0..40dp）
                     SettingSwitchRow(
                       title: '覆盖卡片圆角',
-                      subtitle: '开启后按下方数值覆盖主题卡片圆角',
+                      subtitle: '覆盖使用默认卡片样式的卡片；'
+                          '自定义形状卡片（字典/首页/阅读设置等）不覆盖',
                       value: ui.overrideBaseCardCornerRadius,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -1087,7 +1091,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     // 参考 覆盖卡片边框 开关 + 宽度 + 日/夜颜色
                     SettingSwitchRow(
                       title: '覆盖卡片边框',
-                      subtitle: '开启后按宽度与日/夜颜色绘制；0 色跟随主题描边',
+                      subtitle: '覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；'
+                          '自定义形状卡片（字典/首页/阅读设置等）不覆盖',
                       value: ui.overrideBaseCardBorder,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -1112,6 +1117,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         showDotWhenZero: true,
                         onTap: () => _showContainerColorPicker(
                           title: '日间边框颜色',
+                          initialColor: ui.baseCardBorderColor,
                           defaultHint: '恢复默认',
                           onSelected: (v) => ref
                               .read(uiSettingsProvider.notifier)
@@ -1125,6 +1131,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         showDotWhenZero: true,
                         onTap: () => _showContainerColorPicker(
                           title: '夜间边框颜色',
+                          initialColor: ui.baseCardBorderColorNight,
                           defaultHint: '恢复默认',
                           onSelected: (v) => ref
                               .read(uiSettingsProvider.notifier)
@@ -1169,8 +1176,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         color: ui.itemDividerColor,
                         defaultHint: '默认（灰色半透明）',
                         showDotWhenZero: false,
+                        showChevron: ui.itemDividerColor != 0,
                         onTap: () => _showContainerColorPicker(
                           title: '分隔线颜色',
+                          initialColor: ui.itemDividerColor,
                           defaultHint: '恢复默认',
                           onSelected: (v) => ref
                               .read(uiSettingsProvider.notifier)
@@ -1336,17 +1345,19 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   /// [设置批2b-1b-1] 参考版 `BaseCardBorderColorSettingItem` / 分隔线颜色行
   /// 形态：标题 + 副标题（十六进制或"默认"）+ 右侧色点；0 色时边框行仍
   /// 显示 outlineVariant 色点，分隔线行不显示色点（参考版同口径）。
+  /// [设置批2b-1b-1-b] 分隔线颜色 0 时隐藏 Chevron（无下一级可选值语义）。
   Widget _containerColorTile({
     required String title,
     required int color,
     required String defaultHint,
     required VoidCallback onTap,
     required bool showDotWhenZero,
+    bool showChevron = true,
   }) {
     final scheme = Theme.of(context).colorScheme;
     return IosListTile(
       title: title,
-      subtitle: color == 0 ? defaultHint : _argbHex(color),
+      subtitle: color == 0 ? defaultHint : argbToHex(color),
       trailing: (color != 0 || showDotWhenZero)
           ? Container(
               width: 22,
@@ -1358,62 +1369,29 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               ),
             )
           : null,
+      showChevron: showChevron,
       onTap: onTap,
     );
   }
 
-  /// ARGB → `#AARRGGBB`（参考版 `Integer.toHexString(color)` 大写形态）
-  static String _argbHex(int argb) =>
-      '#${argb.toRadixString(16).toUpperCase().padLeft(8, '0')}';
-
-  /// 卡片边框/分隔线颜色选择（预设色板 + 恢复默认=0）
+  /// 卡片边框/分隔线颜色选择（预设色板 + HEX 输入 + 恢复默认=0）
   ///
   /// 与 [_showColorPicker] 同源色板，但结果写回 UiSettings（而非
-  /// ThemeColorsNotifier），0 表示跟随主题/默认色。
+  /// ThemeColorsNotifier），0 表示跟随主题/默认色。HEX 支持
+  /// `#RRGGBB`/`#AARRGGBB`（# 可省略），非法输入禁用确定并提示。
   Future<void> _showContainerColorPicker({
     required String title,
+    required int initialColor,
     required String defaultHint,
     required Future<void> Function(int value) onSelected,
   }) async {
     final selected = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SizedBox(
-          width: 300,
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final c in _presetColors)
-                InkWell(
-                  onTap: () => Navigator.pop(ctx, c),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Color(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Theme.of(ctx).colorScheme.outlineVariant,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 0),
-            child: Text(defaultHint),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-        ],
+      builder: (ctx) => _ContainerColorDialog(
+        title: title,
+        initialColor: initialColor,
+        defaultHint: defaultHint,
+        presetColors: _presetColors,
       ),
     );
     if (selected == null || !mounted) return;
@@ -2813,6 +2791,123 @@ class _PaletteDots extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 卡片边框/分隔线颜色对话框（预设色板 + HEX 输入 + 恢复默认）
+///
+/// [设置批2b-1b-1-b] 参考版 `ColorPickerSheet` 支持任意 HEX；本对话框在
+/// 既有预设色板基础上补 `#RRGGBB`/`#AARRGGBB` 输入，非法时禁用确定并
+/// 内联提示。0 由「恢复默认」返回，表示跟随主题/默认色。
+class _ContainerColorDialog extends StatefulWidget {
+  final String title;
+  final int initialColor;
+  final String defaultHint;
+  final List<int> presetColors;
+
+  const _ContainerColorDialog({
+    required this.title,
+    required this.initialColor,
+    required this.defaultHint,
+    required this.presetColors,
+  });
+
+  @override
+  State<_ContainerColorDialog> createState() => _ContainerColorDialogState();
+}
+
+class _ContainerColorDialogState extends State<_ContainerColorDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialColor == 0 ? '' : argbToHex(widget.initialColor),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  int? get _parsed => parseArgbHexColor(_controller.text);
+
+  void _submit() {
+    final parsed = _parsed;
+    if (parsed == null) return;
+    Navigator.pop(context, parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = _controller.text.trim();
+    final invalid = trimmed.isNotEmpty && _parsed == null;
+    return AlertDialog(
+      scrollable: true,
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _controller,
+            textCapitalization: TextCapitalization.characters,
+            textInputAction: TextInputAction.done,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
+              LengthLimitingTextInputFormatter(9),
+            ],
+            decoration: InputDecoration(
+              labelText: 'HEX',
+              hintText: '#AARRGGBB 或 #RRGGBB',
+              errorText: invalid ? '请输入 6/8 位十六进制颜色' : null,
+            ),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final c in widget.presetColors)
+                InkWell(
+                  onTap: () => Navigator.pop(context, c),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Color(c),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, 0),
+          child: Text(widget.defaultHint),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _parsed == null ? null : _submit,
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }

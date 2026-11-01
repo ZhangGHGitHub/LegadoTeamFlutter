@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 /// M3 胶囊分隔线（对齐 HapeLee PillDivider）
 ///
 /// 规格：厚度 2dp、宽度 20%、颜色 outlineVariant 60%、两端圆角、上下间距各 4dp。
-/// 用于分组卡内行间分隔（SettingItemDivider 开关打开时）。
+/// 默认参数用于弹窗菜单项分隔；设置分组行间分隔由 `IosGroup` 以
+/// `thickness/widthFraction/color/padding` 参数化复用（参考版
+/// `SettingItemDivider` 已由该参数化用法取代）。
 ///
 /// [设置批2b-1b-1] 增加 [thickness]/[color]/[padding] 参数：设置行分隔线
 /// 改用参考版 `SettingItemDivider` 的宽度/长度百分比/颜色三参数，分组间距
 /// 由 IosGroup 自己提供，因此传入零 padding；弹窗菜单用法保持默认值不变。
 class PillDivider extends StatelessWidget {
   /// 分隔线长度占可用宽度的比例（HapeLee itemDividerLength 默认 80%；
-  /// PillDivider 默认 20%，见 SettingItemDivider 的 length 参数）。
+  /// PillDivider 默认 20%，设置行分组按 `itemDividerLength/100` 传入）。
   final double widthFraction;
 
   /// 是否启用（HapeLee enableItemDivider，默认 false 关）。
@@ -54,22 +56,6 @@ class PillDivider extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// 设置行分隔线（对齐 HapeLee SettingItemDivider）
-///
-/// 默认关闭（enableItemDivider=false），打开时为 80% 长 pill 线。
-/// 存量 IosGroup 内 0.5dp 全宽线保持不动，逐屏迁移时替换。
-class SettingItemDivider extends StatelessWidget {
-  /// 是否启用（默认 false，与 HapeLee 一致）。
-  final bool enabled;
-
-  const SettingItemDivider({super.key, this.enabled = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return PillDivider(widthFraction: 0.8, enabled: enabled);
   }
 }
 

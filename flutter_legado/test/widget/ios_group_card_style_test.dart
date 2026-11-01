@@ -45,6 +45,31 @@ void main() {
     );
   }
 
+  Widget wrapFlat({Brightness brightness = Brightness.light, int rows = 2}) {
+    return MaterialApp(
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: brightness,
+        ),
+        useMaterial3: true,
+      ),
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 400,
+            child: IosGroup(
+              flat: true,
+              children: [
+                for (var i = 0; i < rows; i++) IosListTile(title: '行$i'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Finder clip() => find
       .descendant(of: find.byType(IosGroup), matching: find.byType(ClipRRect))
       .first;
@@ -90,7 +115,7 @@ void main() {
       expect(gapCount(tester), 1);
     });
 
-    testWidgets('开关全关时 IosListTile 不再自绘行底线', (tester) async {
+    testWidgets('单行分组：开关开也不产生分隔线（末行不留线）', (tester) async {
       uiSettingsListenable.value = const UiSettingsState(
         enableItemDivider: true,
         itemDividerWidth: 1,
@@ -98,9 +123,7 @@ void main() {
       await tester.pumpWidget(wrap(rows: 1));
       await tester.pumpAndSettle();
 
-      // 单行分组：项间无分隔线（末行不再多一条）
       expect(find.byType(PillDivider), findsNothing);
-      expect(find.byType(ListTile), findsOneWidget);
     });
   });
 
@@ -281,8 +304,8 @@ void main() {
             )
             .first,
       );
-      // 分组宽 400 - 4dp×2 内边距 = 392；80% = 313.6
-      expect(lineSize.width, closeTo(392 * 0.8, 0.01));
+      // 分组外宽 400；80% = 320（分隔线按外宽计算，不含 4dp 行内缩进）
+      expect(lineSize.width, closeTo(400 * 0.8, 0.01));
       expect(lineSize.height, 1);
       final color = (line.decoration! as BoxDecoration).color!;
       expect(color.a, closeTo(0.3, 0.001), reason: '0 色回落灰色 30%');
@@ -310,7 +333,7 @@ void main() {
             )
             .first,
       );
-      expect(lineSize.width, closeTo(392 * 0.5, 0.01));
+      expect(lineSize.width, closeTo(400 * 0.5, 0.01));
       expect(lineSize.height, 2);
     });
 
@@ -361,6 +384,94 @@ void main() {
     });
   });
 
+  group('扁平分组分隔线', () {
+    testWidgets('开关开：使用 PillDivider 参数（外宽 80%、宽 2、0 色灰 30%）',
+        (tester) async {
+      uiSettingsListenable.value = const UiSettingsState(
+        enableItemDivider: true,
+        itemDividerWidth: 2,
+        itemDividerLength: 80,
+      );
+      await tester.pumpWidget(wrapFlat(rows: 2));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PillDivider), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('ios-group-flat-divider-0')),
+        findsOneWidget,
+      );
+      // flat 无卡片面：不再出现卡片分组专用结构/旧细线
+      expect(find.byType(Divider), findsNothing);
+
+      final lineFinder = find.descendant(
+        of: find.byType(PillDivider),
+        matching: find.byType(Container),
+      );
+      final size = tester.getSize(lineFinder);
+      expect(size.width, closeTo(400 * 0.8, 0.01));
+      expect(size.height, 2);
+      final color =
+          (tester.widget<Container>(lineFinder).decoration! as BoxDecoration)
+              .color!;
+      expect(color.a, closeTo(0.3, 0.001));
+    });
+
+    testWidgets('开关开：长度 50% 与显式颜色生效', (tester) async {
+      uiSettingsListenable.value = const UiSettingsState(
+        enableItemDivider: true,
+        itemDividerWidth: 1,
+        itemDividerLength: 50,
+        itemDividerColor: 0xFFFF0000,
+      );
+      await tester.pumpWidget(wrapFlat(rows: 3));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PillDivider), findsNWidgets(2));
+      final lineFinder = find
+          .descendant(
+            of: find.byType(PillDivider),
+            matching: find.byType(Container),
+          )
+          .first;
+      expect(tester.getSize(lineFinder).width, closeTo(400 * 0.5, 0.01));
+      expect(
+        (tester.widget<Container>(lineFinder).decoration! as BoxDecoration)
+            .color,
+        const Color(0xFFFF0000),
+      );
+    });
+
+    testWidgets('开关关：保留既有 0.5dp 细线（旧形态）', (tester) async {
+      await tester.pumpWidget(wrapFlat(rows: 3));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PillDivider), findsNothing);
+      final dividers = tester.widgetList<Divider>(find.byType(Divider));
+      expect(dividers.length, 2);
+      expect(dividers.first.thickness, 0.5);
+      final theme = Theme.of(tester.element(find.byType(IosGroup)));
+      expect(dividers.first.color, theme.dividerColor);
+    });
+
+    testWidgets('宽度 0：开关开也不绘制线', (tester) async {
+      uiSettingsListenable.value = const UiSettingsState(
+        enableItemDivider: true,
+        itemDividerWidth: 0,
+      );
+      await tester.pumpWidget(wrapFlat(rows: 2));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PillDivider), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(PillDivider),
+          matching: find.byType(Container),
+        ),
+        findsNothing,
+      );
+    });
+  });
+
   group('全局 CardTheme（可复用卡片 surface）', () {
     test('默认 20dp 无边框；覆盖后圆角/边框同步', () {
       final defaultShape =
@@ -406,6 +517,59 @@ void main() {
       final disabledShape =
           AppTheme.light.cardTheme.shape! as RoundedRectangleBorder;
       expect(disabledShape.borderRadius, BorderRadius.circular(20));
+    });
+
+    testWidgets('默认样式 Card 出边框；显式 shape Card 不随覆盖', (tester) async {
+      uiSettingsListenable.value = const UiSettingsState(
+        overrideBaseCardCornerRadius: true,
+        baseCardCornerRadius: 9,
+        overrideBaseCardBorder: true,
+        baseCardBorderWidth: 2,
+        baseCardBorderColor: 0xFF102030,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: Column(
+              children: [
+                Card(child: ListTile(title: Text('默认卡片'))),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: ListTile(title: Text('自定义卡片')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      ShapeBorder? materialShape(String text) {
+        final card = find.ancestor(
+          of: find.text(text),
+          matching: find.byType(Card),
+        );
+        final material = find
+            .descendant(of: card, matching: find.byType(Material))
+            .first;
+        return tester.widget<Material>(material).shape;
+      }
+
+      // 范围锁定：默认样式随 CardTheme 覆盖
+      final defaultShape =
+          materialShape('默认卡片')! as RoundedRectangleBorder;
+      expect(defaultShape.borderRadius, BorderRadius.circular(9));
+      expect(defaultShape.side.width, 2);
+      expect(defaultShape.side.color, const Color(0xFF102030));
+
+      // 显式 shape（18 处之一）保持自身，不随全局覆盖
+      final customShape =
+          materialShape('自定义卡片')! as RoundedRectangleBorder;
+      expect(customShape.borderRadius, BorderRadius.circular(4));
+      expect(customShape.side, BorderSide.none);
     });
   });
 }

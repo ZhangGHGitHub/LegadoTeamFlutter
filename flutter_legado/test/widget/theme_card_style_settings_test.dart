@@ -252,4 +252,82 @@ void main() {
     await tester.pumpAndSettle();
     expect(prefs.getInt(PrefKeys.itemDividerColor), 0);
   });
+
+  testWidgets('边框颜色 HEX：6/8 位输入生效，非法禁用确定', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.overrideBaseCardBorder: true,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    final prefs = await SharedPreferences.getInstance();
+
+    await scrollTo(tester, find.text('日间边框颜色'));
+    await tester.tap(find.text('日间边框颜色'));
+    await tester.pumpAndSettle();
+
+    // 6 位 → 补 FF
+    await tester.enterText(find.byType(TextField), '112233');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(prefs.getInt(PrefKeys.baseCardBorderColor), 0xFF112233);
+
+    // 重新打开：字段带当前值（#AARRGGBB 大写）
+    await scrollTo(tester, find.text('日间边框颜色'));
+    await tester.tap(find.text('日间边框颜色'));
+    await tester.pumpAndSettle();
+    final controller = tester.widget<TextField>(find.byType(TextField))
+        .controller!;
+    expect(controller.text, '#FF112233');
+
+    // 非法 5 位：提示 + 确定禁用
+    await tester.enterText(find.byType(TextField), '12345');
+    await tester.pumpAndSettle();
+    expect(find.text('请输入 6/8 位十六进制颜色'), findsOneWidget);
+    final confirm = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '确定'),
+    );
+    expect(confirm.onPressed, isNull);
+
+    // 8 位 ARGB 生效
+    await tester.enterText(find.byType(TextField), '80112233');
+    await tester.pumpAndSettle();
+    expect(find.text('请输入 6/8 位十六进制颜色'), findsNothing);
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+    expect(prefs.getInt(PrefKeys.baseCardBorderColor), 0x80112233);
+    expect(
+      container.read(uiSettingsProvider).baseCardBorderColor,
+      0x80112233,
+    );
+  });
+
+  testWidgets('分隔线颜色 0 时隐藏 Chevron，非 0 时显示', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableItemDivider: true,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+
+    await scrollTo(tester, find.text('分隔线颜色'));
+    bool rowChevron() => tester
+        .widget<IosListTile>(
+          find.ancestor(
+            of: find.text('分隔线颜色'),
+            matching: find.byType(IosListTile),
+          ),
+        )
+        .showChevron;
+    expect(rowChevron(), isFalse);
+
+    await tester.tap(find.text('分隔线颜色'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '4CAF50');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    await scrollTo(tester, find.text('分隔线颜色'));
+    expect(rowChevron(), isTrue);
+  });
 }

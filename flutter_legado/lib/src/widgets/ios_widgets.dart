@@ -116,8 +116,8 @@ class IosSectionFooter extends StatelessWidget {
 /// [separatorIndent] 为扁平模式分隔线左侧缩进（有 leading 图标时约 56）。
 /// [LAYOUT_MOTION_AUDIT L2] 分组默认圆角 16dp（HapeLee SplicedColumnGroup，
 /// 已确认；cardTheme 全局 20 保留，此处显式覆盖）；
-/// [flat] 为 true 时走扁平模式（Column + 条件 80% pill 分隔，
-/// HapeLee 设置页式，9 屏迁移用），默认 false 保持卡片兼容。
+/// [flat] 为 true 时走扁平模式（Column + 分隔线，HapeLee 设置页式，
+/// 9 屏迁移用），默认 false 保持卡片兼容。
 ///
 /// [设置批2b-1b-1] 卡片视觉接入参考版三项全局覆盖：
 /// - 圆角：`disableSplicedColumnGroupCornerRadius`（0）优先于
@@ -126,7 +126,8 @@ class IosSectionFooter extends StatelessWidget {
 ///   0 色回落 outlineVariant；用 foregroundDecoration 绘制，不改变布局、
 ///   不裁剪内容；
 /// - 分隔线：`enableItemDivider` 开启时在相邻行之间插入 PillDivider
-///   （行间距保持 2dp，与参考版 Column spacedBy(2) + divider 子项同构）。
+///   （行间距保持 2dp，与参考版 Column spacedBy(2) + divider 子项同构）；
+///   [flat] 模式开关开同样使用该参数化线，开关关回落既有 0.5dp 细线。
 class IosGroup extends StatelessWidget {
   final List<Widget> children;
   final double separatorIndent;
@@ -144,51 +145,60 @@ class IosGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final separator = Divider(
+    final legacySeparator = Divider(
       height: 0.5,
       thickness: 0.5,
       indent: separatorIndent,
       color: theme.dividerColor,
     );
 
-    if (flat) {
-      // 登记：flat 模式无卡片面，不参与容器背景图/不透明度/圆角/边框
-      //（参考版 SplicedColumnGroup 卡片语义只对应 flat=false 结构）；
-      // 其既有 0.5dp 分隔线保持原样，不随 enableItemDivider 变化。
-      final rows = <Widget>[];
-      for (var i = 0; i < children.length; i++) {
-        rows.add(children[i]);
-        if (i != children.length - 1) rows.add(separator);
-      }
-      // 扁平模式需自备透明 Material，否则 ListTile 的 ink 溅在远端
-      // Material 祖先上会被中间 ColoredBox（IosGroupedBody）遮住而断言失败
-      return Padding(
-        padding: margin,
-        child: Material(
-          type: MaterialType.transparency,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: rows,
-          ),
-        ),
-      );
-    }
-    // [UI_SYNC_REFACTOR T2] 对齐参考 SplicedColumnGroup：16dp 玻璃分组卡
-    //（surfaceContainer 底）+ 组内 spacedBy 2 + 每行 4dp surfaceContainerLow
-    // 小卡底（SettingCard 等效）
-    //
-    // [设置批2b-1a] 容器背景图/容器不透明度（参考版大容器语义）：
-    // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark；图像
-    //   **位于分组底色之下**（Stack 第 0 层），由同一圆角裁剪。100%
-    //   时分组底色完全不透明、整卡覆盖图像（不再从 4dp/2dp 缝隙漏出成
-    //   「彩色虚线边框」）；<100% 时分组底色整体半透明，整卡统一混合。
-    //   文件缺失时静默回落为纯主题底色。
-    // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
-    //   文字不透明（参考版 `GlassCard.kt:74-75` 乘 alpha）。
-    // - 图片层 IgnorePointer，不拦截点击/手势。
     return ValueListenableBuilder<UiSettingsState>(
       valueListenable: uiSettingsListenable,
       builder: (context, ui, _) {
+        if (flat) {
+          // 登记：flat 模式无卡片面，不参与容器背景图/不透明度/圆角/边框。
+          // 分隔线：开关开 → 与卡片分组相同的 PillDivider 参数（宽/百分比/
+          // 颜色/0 色灰 30%）；开关关 → 保留既有 0.5dp 细线作为「关」形态。
+          final rows = <Widget>[];
+          for (var i = 0; i < children.length; i++) {
+            rows.add(children[i]);
+            if (i != children.length - 1) {
+              rows.add(
+                ui.enableItemDivider
+                    ? _itemDivider(
+                        ui,
+                        key: ValueKey('ios-group-flat-divider-$i'),
+                      )
+                    : legacySeparator,
+              );
+            }
+          }
+          // 扁平模式需自备透明 Material，否则 ListTile 的 ink 溅在远端
+          // Material 祖先上会被中间 ColoredBox（IosGroupedBody）遮住而断言失败
+          return Padding(
+            padding: margin,
+            child: Material(
+              type: MaterialType.transparency,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: rows,
+              ),
+            ),
+          );
+        }
+        // [UI_SYNC_REFACTOR T2] 对齐参考 SplicedColumnGroup：16dp 玻璃分组卡
+        //（surfaceContainer 底）+ 组内 spacedBy 2 + 每行 4dp surfaceContainerLow
+        // 小卡底（SettingCard 等效）
+        //
+        // [设置批2b-1a] 容器背景图/容器不透明度（参考版大容器语义）：
+        // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark；图像
+        //   **位于分组底色之下**（Stack 第 0 层），由同一圆角裁剪。100%
+        //   时分组底色完全不透明、整卡覆盖图像（不再从 4dp/2dp 缝隙漏出成
+        //   「彩色虚线边框」）；<100% 时分组底色整体半透明，整卡统一混合。
+        //   文件缺失时静默回落为纯主题底色。
+        // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
+        //   文字不透明（参考版 `GlassCard.kt:74-75` 乘 alpha）。
+        // - 图片层 IgnorePointer，不拦截点击/手势。
         final radius = BorderRadius.circular(
           resolveSplicedGroupCornerRadius(ui),
         );
@@ -245,8 +255,10 @@ class IosGroup extends StatelessWidget {
                         ),
                       ),
                     ),
-                  // 分组底色（单一整卡 scrim）绘制在图片之上、行小卡之下；
-                  // 其 padding（4dp）与行间距（2dp）同属本底色区域，不会漏原图
+                  // 分组底色（单一整卡 scrim）绘制在图片之上、行小卡之下。
+                  // [设置批2b-1b-1-b] 外层 Container 只留纵向 4dp，行 Material
+                  // 各自水平内缩 4dp：分隔线因此拿到分组**外宽**（参考版
+                  // `fillMaxWidth(fraction)` 不含额外内层缩进）。
                   Container(
                     key: const ValueKey('ios-group-surface'),
                     decoration: BoxDecoration(
@@ -255,34 +267,29 @@ class IosGroup extends StatelessWidget {
                       ),
                       borderRadius: radius,
                     ),
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         for (var i = 0; i < children.length; i++) ...[
-                          Material(
-                            color: rowSurface.withValues(
-                              alpha: rowSurface.a * opacity,
+                          Padding(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 4),
+                            child: Material(
+                              color: rowSurface.withValues(
+                                alpha: rowSurface.a * opacity,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                              clipBehavior: Clip.antiAlias,
+                              child: children[i],
                             ),
-                            borderRadius: BorderRadius.circular(4),
-                            clipBehavior: Clip.antiAlias,
-                            child: children[i],
                           ),
                           if (i != children.length - 1) ...[
                             const SizedBox(height: 2),
                             if (ui.enableItemDivider)
-                              PillDivider(
+                              _itemDivider(
+                                ui,
                                 key: ValueKey('ios-group-divider-$i'),
-                                widthFraction:
-                                    resolveItemDividerWidthFraction(
-                                  ui.itemDividerLength,
-                                ),
-                                thickness: ui.itemDividerWidth.toDouble(),
-                                color: resolveItemDividerColor(
-                                  ui.itemDividerColor,
-                                ),
-                                padding: EdgeInsets.zero,
-                                enabled: ui.itemDividerWidth > 0,
                               ),
                             if (ui.enableItemDivider)
                               const SizedBox(height: 2),
@@ -297,6 +304,18 @@ class IosGroup extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// 参数化分隔线（卡片/扁平分组共用；调用方保证开关已开）
+  Widget _itemDivider(UiSettingsState ui, {required Key key}) {
+    return PillDivider(
+      key: key,
+      widthFraction: resolveItemDividerWidthFraction(ui.itemDividerLength),
+      thickness: ui.itemDividerWidth.toDouble(),
+      color: resolveItemDividerColor(ui.itemDividerColor),
+      padding: EdgeInsets.zero,
+      enabled: ui.itemDividerWidth > 0,
     );
   }
 }

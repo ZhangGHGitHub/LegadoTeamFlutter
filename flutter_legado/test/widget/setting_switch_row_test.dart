@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
 /// M3 设置开关行（`SettingSwitchRow`，对齐参考版 `SwitchSettingItem`）测试
@@ -8,8 +7,8 @@ import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 /// 覆盖：标题/副标题渲染、整行点击即切换（参考版非 Miuix 分支
 /// `onClick = onCheckedChange(!checked)`）、开关直点、禁用态（行不可点 +
 /// ListTile.enabled=false + 开关灰置）、icon/leading 前导、无 Chevron、
-/// 语义合并（MergeSemantics，同 SwitchListTile）、dense/contentPadding 透传、
-/// [设置批2b-1b-1] 行内不再自绘分隔线（改由 IosGroup 在项间统一插入）。
+/// 语义合并（MergeSemantics，同 SwitchListTile）、dense/contentPadding 透传。
+/// 行间分隔线由 `IosGroup` 统一插入，见 `ios_group_card_style_test.dart`。
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -188,46 +187,6 @@ void main() {
       tile.contentPadding,
       const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
     );
-  });
-
-  testWidgets('enableItemDivider 不再由单行自绘（改由分组容器统一插入）',
-      (tester) async {
-    final before = uiSettingsListenable.value;
-    addTearDown(() => uiSettingsListenable.value = before);
-
-    // 旧实现：行底 80×1dp 固定线（会为末行多画一条、扁平分组出现双线）。
-    // 参考版 SettingItemDivider 由 SplicedColumnGroup 在相邻项之间插入，
-    // 行自身不画线。
-    final legacyPill = find.byWidgetPredicate(
-      (w) =>
-          w is Container &&
-          w.constraints?.maxWidth == 80 &&
-          w.constraints?.maxHeight == 1,
-    );
-
-    await tester.pumpWidget(
-      wrap(
-        SettingSwitchRow(
-          title: '自动刷新',
-          value: false,
-          onChanged: _noop,
-        ),
-      ),
-    );
-    expect(legacyPill, findsNothing);
-
-    uiSettingsListenable.value = before.copyWith(enableItemDivider: true);
-    await tester.pumpWidget(
-      wrap(
-        SettingSwitchRow(
-          title: '自动刷新',
-          value: false,
-          onChanged: _noop,
-        ),
-      ),
-    );
-    expect(legacyPill, findsNothing);
-    expect(find.byType(ListTile), findsOneWidget);
   });
 }
 
