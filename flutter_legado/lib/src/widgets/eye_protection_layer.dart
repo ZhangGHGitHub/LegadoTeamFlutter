@@ -5,14 +5,29 @@
 // `rememberEyeProtectionActive`（`ui/book/read/EyeProtection.kt:122-149`）在
 // 启用定时时每 60 秒重算一次生效状态。
 //
-// Flutter 等价实现：
-// - 挂在 `MaterialApp.builder` 最外层 → 覆盖所有路由（含全屏阅读页/漫画页）、
-//   背景图层与弹层（同一 Overlay，绘制受滤镜影响）；
-// - [ColorFiltered] 是纯绘制代理，不参与命中测试 → 不拦截点击/滑动手势；
-// - 只作用于 Flutter 视图内容 → 系统状态栏/导航栏（系统窗口）不受影响。
+// 实现要点（P1 审查回修）：
+// - 生效/失效切换时**不改变 widget 树形状**：始终返回
+//   [EyeProtectionFilterBox]（自定义 RenderProxyBox），只更新绘制属性。
+//   若在 `child` 与 `ColorFiltered(child)` 之间切换，Element 类型变化会
+//   整棵重建 Navigator 子树，导致 SystemBarBinder / WebViewBridgeListener /
+//   VerificationCodeListener 的 State 丢失（系统栏重显、WebView 队列丢失、
+//   验证码重复弹窗）。
+// - 生效时 `paint` 内 `pushColorFilter`（一次离屏合成）；失效时直接
+//   `super.paint`，不产生离屏合成。
+// - 定时对齐分钟边界重算；`resumed` 立即重算。
+//
+// 已知边界（设置批2a-1 登记，设备验收清单）：
+// 1. 滤镜覆盖 Flutter 绘制内容：弹层（对话框/底部弹层）与背景壁纸同样被
+//    着色；参考版 Compose Dialog 是独立窗口不着色，属框架差异。
+// 2. PlatformView（WebView/视频 SurfaceTexture 等）可能绕过 ColorFilter。
+// 3. 生效期间全屏 saveLayer 有一次离屏合成开销（参考版 graphicsLayer 同量级），
+//    低端机需实机观察帧率。
+// 4. 系统状态栏/导航栏/输入法在 Flutter 视图外，不受影响；系统截图/录屏
+//    会包含应用绘制结果（参考版同样如此）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -33,16 +48,20 @@ class EyeProtectionLayer extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<EyeProtectionLayer> createState() => _EyeProtectionLayerState();
+  EyeProtectionLayerState createState() => EyeProtectionLayerState();
 }
 
-class _EyeProtectionLayerState extends ConsumerState<EyeProtectionLayer>
+class EyeProtectionLayerState extends ConsumerState<EyeProtectionLayer>
     with WidgetsBindingObserver {
   /// 分钟边界定时器（仅「已配置 + 定时开启」时存在）
   Timer? _timer;
 
   /// 当前是否处于定时刷新态（用于 build 期间检测状态迁移）
   bool _ticking = false;
+
+  /// [P3 测试] 定时器是否存活（验证关闭定时/未配置时不轮询）
+  @visibleForTesting
+  bool get debugTickerActive => _timer != null;
 
   DateTime _now() => widget.clock();
 
@@ -111,14 +130,111 @@ class _EyeProtectionLayerState extends ConsumerState<EyeProtectionLayer>
       isDark: isDark,
       now: _now(),
     );
-    if (!active) return widget.child;
-    return ColorFiltered(
-      // 语义标记：叠加层（测试与排障定位；不影响命中测试）
-      key: const ValueKey<String>('eyeProtectionOverlay'),
-      colorFilter: EyeProtectionFilter.colorFilterForIntensity(
-        settings.intensity,
-      ),
+    // 结构恒定：始终返回同一 widget 类型，仅更新 active/intensity；
+    // child 是稳定的 Navigator 子树 → 切换生效态不重建宿主 State。
+    return EyeProtectionFilterBox(
+      active: active,
+      intensity: settings.intensity,
       child: widget.child,
+    );
+  }
+}
+
+/// 稳定宿主：把「是否生效」作为绘制属性而非 widget 树形状
+///
+/// 生效时在 [EyeProtectionFilterRenderObject.paint] 中推入颜色滤镜层；
+/// 失效时直接绘制子节点。widget 始终存在，因此子树 Element/State 不因
+/// 开关切换而重建。
+class EyeProtectionFilterBox extends SingleChildRenderObjectWidget {
+  final bool active;
+  final int intensity;
+
+  const EyeProtectionFilterBox({
+    super.key,
+    required Widget super.child,
+    required this.active,
+    required this.intensity,
+  });
+
+  @override
+  EyeProtectionFilterRenderObject createRenderObject(BuildContext context) {
+    return EyeProtectionFilterRenderObject(
+      active: active,
+      intensity: intensity,
+    );
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    EyeProtectionFilterRenderObject renderObject,
+  ) {
+    renderObject
+      ..active = active
+      ..intensity = intensity;
+  }
+}
+
+/// 护眼颜色滤镜 RenderObject（替代「有/无 ColorFiltered」的树形切换）
+class EyeProtectionFilterRenderObject extends RenderProxyBox {
+  EyeProtectionFilterRenderObject({
+    required bool active,
+    required int intensity,
+  }) : _active = active,
+       _intensity = intensity,
+       _colorFilter = active
+           ? EyeProtectionFilter.colorFilterForIntensity(intensity)
+           : null;
+
+  bool _active;
+  int _intensity;
+  ColorFilter? _colorFilter;
+  ColorFilterLayer? _layer;
+
+  bool get active => _active;
+  set active(bool value) {
+    if (_active == value) return;
+    _active = value;
+    _colorFilter = value
+        ? EyeProtectionFilter.colorFilterForIntensity(_intensity)
+        : null;
+    if (!value) _layer = null;
+    // 合成位变化：告知祖先本节点是否需要独立图层（同 ColorFiltered 的
+    // alwaysNeedsCompositing 动态切换）
+    markNeedsCompositingBitsUpdate();
+    markNeedsPaint();
+  }
+
+  int get intensity => _intensity;
+  set intensity(int value) {
+    final clamped = value.clamp(
+      EyeProtectionFilter.minIntensity,
+      EyeProtectionFilter.maxIntensity,
+    );
+    if (_intensity == clamped) return;
+    _intensity = clamped;
+    if (_active) {
+      _colorFilter = EyeProtectionFilter.colorFilterForIntensity(clamped);
+      markNeedsPaint();
+    }
+  }
+
+  @override
+  bool get alwaysNeedsCompositing => _colorFilter != null;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final filter = _colorFilter;
+    if (filter == null) {
+      // 未生效：直接绘制，无离屏合成
+      super.paint(context, offset);
+      return;
+    }
+    _layer = context.pushColorFilter(
+      offset,
+      filter,
+      super.paint,
+      oldLayer: _layer,
     );
   }
 }

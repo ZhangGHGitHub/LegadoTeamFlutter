@@ -213,9 +213,10 @@ class EyeProtectionFilter {
   ///
   /// - 手动开关开启，或「深色模式时自动开启」开启且当前为深色 → 候选生效；
   /// - 未启用定时 → 候选生效即生效；
-  /// - 启用定时但时间无法解析 → 退化为不看时段（参考版同）；
+  /// - 启用定时但时间无法解析 → 退化为不看时段（参考版 `parseTime(...) ?: return true`
+  ///   同方向：宁可全天生效也不因脏值让护眼失效）；
   /// - 起止时间相同 → 全天生效；
-  /// - 支持跨零点（如 22:00–07:00，结束时刻不含）。
+  /// - 支持跨零点（如 22:00–07:00，结束时刻不含），按秒比较（对齐 LocalTime）。
   static bool isActiveAt({
     required EyeProtectionSettings settings,
     required bool isDark,
@@ -225,32 +226,52 @@ class EyeProtectionFilter {
     if (!settings.schedule) return true;
     final start = parseClock(settings.startTime);
     final end = parseClock(settings.endTime);
+    // 解析失败退化为全天：与参考版一致（脏值不应让用户预期的护眼失效），
+    // 见上方注释与单测「时间无法解析时退化为按开关生效」。
     if (start == null || end == null) return true;
-    final startMinutes = start.hour * 60 + start.minute;
-    final endMinutes = end.hour * 60 + end.minute;
-    if (startMinutes == endMinutes) return true;
-    final nowMinutes = now.hour * 60 + now.minute;
-    return startMinutes < endMinutes
-        ? nowMinutes >= startMinutes && nowMinutes < endMinutes
-        : nowMinutes >= startMinutes || nowMinutes < endMinutes;
+    final startSeconds = _secondsOfDay(start);
+    final endSeconds = _secondsOfDay(end);
+    if (startSeconds == endSeconds) return true;
+    final nowSeconds = now.hour * 3600 + now.minute * 60 + now.second;
+    return startSeconds < endSeconds
+        ? nowSeconds >= startSeconds && nowSeconds < endSeconds
+        : nowSeconds >= startSeconds || nowSeconds < endSeconds;
   }
 
-  /// 解析 `HH:mm` / `HH:mm:ss`（参考版先归一 Unicode 数字再 LocalTime.parse）
+  static int _secondsOfDay(({int hour, int minute, int second}) time) {
+    return time.hour * 3600 + time.minute * 60 + time.second;
+  }
+
+  /// 解析 `HH:mm` / `HH:mm:ss` / `HH:mm:ss.SSS`（参考版先归一 Unicode 数字
+  /// 再 `LocalTime.parse`，即 ISO_LOCAL_TIME 形状）
   ///
   /// 解析失败返回 null（调用方按「定时不生效→全天」处理）。小时/分钟/秒
-  /// 必须为两位数字且落在合法范围，与 java.time.LocalTime.parse 的
-  /// ISO_LOCAL_TIME 形状一致；秒被忽略（界面选择器只产出 HH:mm）。
-  static ({int hour, int minute})? parseClock(String value) {
+  /// 必须为两位数字且落在合法范围；秒之后的小数部分只做形状校验、不参与
+  /// 比较（界面选择器只产出 HH:mm，参考版 LocalTime 比较到秒）。
+  static ({int hour, int minute, int second})? parseClock(String value) {
     final parts = value.trim().split(':');
     if (parts.length != 2 && parts.length != 3) return null;
     if (parts[0].length != 2 || parts[1].length != 2) return null;
-    if (parts.length == 3 && parts[2].length != 2) return null;
     final hour = _parseDigits(parts[0]);
     final minute = _parseDigits(parts[1]);
     if (hour == null || minute == null) return null;
-    if (parts.length == 3 && _parseDigits(parts[2]) == null) return null;
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-    return (hour: hour, minute: minute);
+    var second = 0;
+    if (parts.length == 3) {
+      // 秒可带 ISO 小数（.SSS / ,SSS）；小数前的秒必须两位
+      final secondPart = parts[2];
+      final dot = secondPart.indexOf(RegExp(r'[.,]'));
+      final secondText = dot >= 0 ? secondPart.substring(0, dot) : secondPart;
+      if (secondText.length != 2) return null;
+      final parsedSecond = _parseDigits(secondText);
+      if (parsedSecond == null) return null;
+      second = parsedSecond;
+      if (dot >= 0) {
+        final fraction = secondPart.substring(dot + 1);
+        if (fraction.isEmpty || _parseDigits(fraction) == null) return null;
+      }
+    }
+    if (hour > 23 || minute > 59 || second > 59) return null;
+    return (hour: hour, minute: minute, second: second);
   }
 
   /// 十进制数字解析（支持 Unicode Nd 数字，对齐 Character.digit(char, 10)）
@@ -269,46 +290,80 @@ class EyeProtectionFilter {
 
   /// Unicode 十进制数字（Nd）区段零码点；码点落在 [zero, zero+9] 即数字
   ///
-  /// 覆盖 Unicode 常见文种（含参考版测试用到的阿拉伯-印度数字 ٠-٩），
-  /// 等价于 Kotlin Character.digit(char, 10) 对 Nd 区的支持。
+  /// 覆盖 Unicode 14.0 的全部 Nd 区（含参考版测试用到的阿拉伯-印度数字
+  /// ٠-٩、全角数字、数学粗体数字）＋ Unicode 15 的 Kawi / Nag Mundari；
+  /// 与 Kotlin `Character.digit(char, 10)` 对 Nd 区的支持等价。Dart 无内建
+  /// Unicode 数字判定，故按码点表实现；未来新增 Nd 区未列入时按非数字
+  /// 处理（安全方向：解析失败 → 定时退化为全天，不会误启用护眼）。
   static const List<int> _decimalZeroCodePoints = <int>[
-    0x0030,
-    0x0660,
-    0x06F0,
-    0x07C0,
-    0x0966,
-    0x09E6,
-    0x0A66,
-    0x0AE6,
-    0x0B66,
-    0x0BE6,
-    0x0C66,
-    0x0CE6,
-    0x0D66,
-    0x0DE6,
-    0x0E50,
-    0x0ED0,
-    0x0F20,
-    0x1040,
-    0x1090,
-    0x17E0,
-    0x1810,
-    0x1946,
-    0x19D0,
-    0x1A80,
-    0x1A90,
-    0x1B50,
-    0x1BB0,
-    0x1C40,
-    0x1C50,
-    0xA620,
-    0xA8D0,
-    0xA900,
-    0xA9D0,
-    0xA9F0,
-    0xAA50,
-    0xABF0,
-    0xFF10,
+    0x0030, // ASCII
+    0x0660, // Arabic-Indic
+    0x06F0, // Extended Arabic-Indic
+    0x07C0, // NKo
+    0x0966, // Devanagari
+    0x09E6, // Bengali
+    0x0A66, // Gurmukhi
+    0x0AE6, // Gujarati
+    0x0B66, // Oriya
+    0x0BE6, // Tamil
+    0x0C66, // Telugu
+    0x0CE6, // Kannada
+    0x0D66, // Malayalam
+    0x0DE6, // Sinhala Lith
+    0x0E50, // Thai
+    0x0ED0, // Lao
+    0x0F20, // Tibetan
+    0x1040, // Myanmar
+    0x1090, // Myanmar Shan
+    0x17E0, // Khmer
+    0x1810, // Mongolian
+    0x1946, // Limbu
+    0x19D0, // New Tai Lue
+    0x1A80, // Tai Tham Hora
+    0x1A90, // Tai Tham Tham
+    0x1B50, // Balinese
+    0x1BB0, // Sundanese
+    0x1C40, // Lepcha
+    0x1C50, // Ol Chiki
+    0xA620, // Vai
+    0xA8D0, // Saurashtra
+    0xA900, // Kayah Li
+    0xA9D0, // Javanese
+    0xA9F0, // Myanmar Tai Laing
+    0xAA50, // Cham
+    0xABF0, // Meetei Mayek
+    0xFF10, // Fullwidth
+    0x104A0, // Osmanya
+    0x10D30, // Hanifi Rohingya
+    0x11066, // Brahmi
+    0x110F0, // Sora Sompeng
+    0x11136, // Chakma
+    0x111D0, // Sharada
+    0x112F0, // Khudawadi
+    0x11450, // Newa
+    0x114D0, // Tirhuta
+    0x11650, // Modi
+    0x116C0, // Takri
+    0x11730, // Ahom
+    0x118E0, // Warang Citi
+    0x11950, // Dives Akuru
+    0x11C50, // Bhaiksuki
+    0x11D50, // Masaram Gondi
+    0x11DA0, // Gunjala Gondi
+    0x11F50, // Kawi (Unicode 15)
+    0x16A60, // Mro
+    0x16AC0, // Tangsa
+    0x16B50, // Pahawh Hmong
+    0x1D7CE, // Mathematical bold
+    0x1D7D8, // Mathematical double-struck
+    0x1D7E2, // Mathematical sans-serif
+    0x1D7EC, // Mathematical sans-serif bold
+    0x1D7F6, // Mathematical monospace
+    0x1E140, // Nyiakeng Puachue Hmong
+    0x1E2F0, // Wancho
+    0x1E4F0, // Nag Mundari (Unicode 15)
+    0x1E950, // Adlam
+    0x1FBF0, // Segmented
   ];
 
   static int? _digitValue(int rune) {

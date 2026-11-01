@@ -15,6 +15,14 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/eye_protection.dart';
 import 'package:flutter_legado/src/providers/theme/eye_protection_notifier.dart';
 
+/// 全量矩阵比对（4x5 行主序；逐元素容差，避免只抽查两个系数）
+void expectMatrixClose(List<double> actual, List<double> expected) {
+  expect(actual.length, expected.length);
+  for (var i = 0; i < actual.length; i++) {
+    expect(actual[i], closeTo(expected[i], 1e-9), reason: 'matrix[$i]');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -50,27 +58,67 @@ void main() {
       );
     });
 
-    test('强度越界钳制：>100 与 100 相同', () {
-      expect(
+    test('强度越界钳制：>100 与 100 矩阵完全相等', () {
+      expectMatrixClose(
         EyeProtectionFilter.matrixForIntensity(101),
+        EyeProtectionFilter.matrixForIntensity(100),
+      );
+      expectMatrixClose(
+        EyeProtectionFilter.matrixForIntensity(1000),
         EyeProtectionFilter.matrixForIntensity(100),
       );
     });
 
-    test('强度 100 = 2596K：红 1、绿约 0.7232、蓝约 0.4588', () {
+    test('强度 100 = 2596K：全量 4x5 矩阵真比对', () {
       expect(EyeProtectionFilter.temperatureForIntensity(100), 2596);
-      final m = EyeProtectionFilter.matrixForIntensity(100);
-      expect(m.length, 20);
-      expect(m[0], 1.0);
-      expect(m[6], closeTo(0.7232337, 1e-4));
-      expect(m[12], closeTo(0.4587980, 1e-4));
+      expectMatrixClose(EyeProtectionFilter.matrixForIntensity(100), <double>[
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.723233768509872,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.45879802398873604,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]);
     });
 
-    test('强度 50 = 4048K：绿约 0.8526、蓝约 0.7152', () {
+    test('强度 50 = 4048K：全量 4x5 矩阵真比对', () {
       expect(EyeProtectionFilter.temperatureForIntensity(50), 4048);
-      final m = EyeProtectionFilter.matrixForIntensity(50);
-      expect(m[6], closeTo(0.8526167, 1e-4));
-      expect(m[12], closeTo(0.7152242, 1e-4));
+      expectMatrixClose(EyeProtectionFilter.matrixForIntensity(50), <double>[
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.8526167357479679,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.7152242061411841,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+      ]);
     });
 
     test('强度越大暖色越重（绿/蓝系数单调下降）', () {
@@ -115,6 +163,7 @@ void main() {
     bool activeAt(
       int hour, {
       int minute = 0,
+      int second = 0,
       bool enabled = true,
       bool autoNight = false,
       bool isDark = false,
@@ -131,7 +180,7 @@ void main() {
           end: end,
         ),
         isDark: isDark,
-        now: DateTime(2026, 1, 1, hour, minute),
+        now: DateTime(2026, 1, 1, hour, minute, second),
       );
     }
 
@@ -206,9 +255,35 @@ void main() {
       expect(activeAt(18, start: '08:00', end: '18:00'), isFalse);
     });
 
-    test('时间无法解析时退化为按开关生效', () {
+    test('秒级边界（对齐 LocalTime 比较）：开始含秒、结束不含秒', () {
+      // 开始 22:00:30：22:00:29 不生效，22:00:30 生效
+      expect(
+        activeAt(22, minute: 0, second: 29, start: '22:00:30', end: '07:00:00'),
+        isFalse,
+      );
+      expect(
+        activeAt(22, minute: 0, second: 30, start: '22:00:30', end: '07:00:00'),
+        isTrue,
+      );
+      // 结束 07:00:30：07:00:29 生效，07:00:30 不生效
+      expect(
+        activeAt(7, minute: 0, second: 29, start: '22:00:00', end: '07:00:30'),
+        isTrue,
+      );
+      expect(
+        activeAt(7, minute: 0, second: 30, start: '22:00:00', end: '07:00:30'),
+        isFalse,
+      );
+    });
+
+    test('时间无法解析时退化为按开关生效（失败方向：宁可全天）', () {
       expect(activeAt(12, start: 'bad', end: '07:00'), isTrue);
       expect(activeAt(12, start: '22:00', end: ''), isTrue);
+      expect(
+        activeAt(12, start: '22:00', end: 'bad'),
+        isTrue,
+        reason: '结束时间非法同样退化全天（参考版 parseTime ?: return true）',
+      );
       expect(
         activeAt(12, start: '7:00', end: '18:00'),
         isTrue,
@@ -219,11 +294,21 @@ void main() {
         isTrue,
         reason: '小时越界 → 非法 → 退化全天',
       );
+      expect(
+        activeAt(12, start: '22:00:60', end: '07:00'),
+        isTrue,
+        reason: '秒越界 → 非法 → 退化全天',
+      );
     });
 
-    test('定时时间兼容 Unicode 数字（阿拉伯-印度数字 ٢٢:٠٠）', () {
+    test('定时时间兼容 Unicode 数字（阿拉伯-印度/全角/天城文）', () {
       expect(activeAt(23, start: '٢٢:٠٠', end: '٠٧:٠٠'), isTrue);
       expect(activeAt(12, start: '٢٢:٠٠', end: '٠٧:٠٠'), isFalse);
+      // 全角数字（U+FF10 区）
+      expect(activeAt(23, start: '２２:００', end: '０７:００'), isTrue);
+      expect(activeAt(12, start: '２２:００', end: '０７:００'), isFalse);
+      // 天城文数字（U+0966 区）：२२:०० / ०७:००
+      expect(activeAt(23, start: '२२:००', end: '०७:००'), isTrue);
     });
 
     test('起止时间相同视为全天生效', () {
@@ -232,11 +317,26 @@ void main() {
   });
 
   group('parseClock', () {
-    test('接受 HH:mm 与 HH:mm:ss', () {
-      expect(EyeProtectionFilter.parseClock('22:05'), (hour: 22, minute: 5));
+    test('接受 HH:mm / HH:mm:ss / ISO 小数秒', () {
+      expect(EyeProtectionFilter.parseClock('22:05'), (
+        hour: 22,
+        minute: 5,
+        second: 0,
+      ));
       expect(EyeProtectionFilter.parseClock(' 07:30:59 '), (
         hour: 7,
         minute: 30,
+        second: 59,
+      ));
+      expect(EyeProtectionFilter.parseClock('22:05:07.123'), (
+        hour: 22,
+        minute: 5,
+        second: 7,
+      ));
+      expect(EyeProtectionFilter.parseClock('22:05:07,5'), (
+        hour: 22,
+        minute: 5,
+        second: 7,
       ));
     });
 
@@ -250,7 +350,12 @@ void main() {
         '24:00',
         'ab:cd',
         '22:05:',
+        '22:05:5',
+        '22:05:60',
+        '22:05:07.',
+        '22:05:07.x',
         '-1:00',
+        '2026-01-01T22:00',
       ]) {
         expect(
           EyeProtectionFilter.parseClock(value),

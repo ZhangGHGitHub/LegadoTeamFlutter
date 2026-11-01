@@ -815,9 +815,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await ref.read(syncNotifierProvider.notifier).loadConfig();
     await ref.read(themeNotifierProvider.notifier).load();
     ref.invalidate(themeColorsProvider);
-    // [设置批2a-1] 备份 appPrefs 可能替换护眼模式六键：恢复后重读，
-    // 让全局叠加层与外观设置页在同一会话即时生效（否则重启前沿用旧值）
-    ref.invalidate(eyeProtectionProvider);
+    // [设置批2a-1] 备份 appPrefs 可能替换护眼模式六键：恢复后 await 重读，
+    // 让全局叠加层与外观设置页在同一会话即时生效；用 reload 而非 invalidate
+    // 避免 provider 重建时先以默认值渲染一帧（护眼会闪一下关闭）
+    await ref.read(eyeProtectionProvider.notifier).reload();
     ref.invalidate(mainPrefsProvider);
     ref.invalidate(bookshelfNotifierProvider);
     // [批37] 顶栏动作配置随 appPrefs 恢复后重读，避免继续用旧配置

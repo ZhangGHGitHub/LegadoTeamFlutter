@@ -29,6 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/theme/eye_protection_notifier.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import 'package:flutter_legado/src/services/local_backup_service.dart';
 
@@ -122,12 +123,21 @@ void main() {
     );
   }
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    ProviderContainer? container,
+  }) async {
+    final child = const MaterialApp(home: WebDavSettingsScreen());
     await tester.pumpWidget(
-      ProviderScope(
-        overrides: [bookApiProvider.overrideWithValue(mockApi)],
-        child: const MaterialApp(home: WebDavSettingsScreen()),
-      ),
+      container == null
+          ? ProviderScope(
+              overrides: [bookApiProvider.overrideWithValue(mockApi)],
+              child: child,
+            )
+          : UncontrolledProviderScope(
+              container: container,
+              child: child,
+            ),
     );
     await tester.pumpAndSettle();
   }
@@ -141,6 +151,7 @@ void main() {
   Future<void> startLocalRestore(
     WidgetTester tester, {
     required String backupPath,
+    ProviderContainer? container,
   }) async {
     _useFakeFilePicker(
       _FakeFilePicker(
@@ -149,7 +160,7 @@ void main() {
         ]),
       ),
     );
-    await pumpScreen(tester);
+    await pumpScreen(tester, container: container);
 
     await tester.scrollUntilVisible(find.text('恢复'), 100);
     await tester.pumpAndSettle();
@@ -267,6 +278,50 @@ void main() {
     await startLocalRestore(tester, backupPath: backupPath);
 
     verify(() => mockApi.setConfig(PrefKeys.threadCount, '256')).called(1);
+  });
+
+  // [设置批2a-1 P2-1] 恢复 appPrefs 后护眼设置同会话重读（reload 而非
+  // invalidate：避免 provider 重建时先以默认值渲染一帧导致滤镜闪断）。
+  // 恢复产物用「恢复前写 prefs」模拟（widget 测试 FakeAsync 中不做真实文件
+  // 异步 I/O；appPrefs 落盘路径已有 applyFromBackup 单测覆盖）。
+  testWidgets('恢复 appPrefs 后护眼设置同会话立即重读', (tester) async {
+    final backupPath = fakeBackupPath('legado_backup_eye_settings.zip');
+
+    final container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
+    // 先挂一个空宿主并冲刷微任务，让 provider 以默认值完成首轮加载
+    //（模拟恢复前已打开过护眼设置/全局叠加层）
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    container.read(eyeProtectionProvider);
+    await tester.pump();
+    expect(container.read(eyeProtectionProvider).enabled, isFalse);
+
+    // 模拟恢复流程写入 appPrefs 新值（此时 provider 仍是旧值）
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(PrefKeys.eyeProtectionEnabled, true);
+    await prefs.setInt(PrefKeys.colorTemperature, 30);
+    await prefs.setString(PrefKeys.eyeProtectionStartTime, '23:00');
+
+    stubPasswordNotRequired();
+    await startLocalRestore(
+      tester,
+      backupPath: backupPath,
+      container: container,
+    );
+
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+    final restored = container.read(eyeProtectionProvider);
+    expect(restored.enabled, isTrue,
+        reason: '恢复后同会话内应立即生效，不得等重启');
+    expect(restored.intensity, 30);
+    expect(restored.startTime, '23:00');
   });
 
   testWidgets('中文/含空格密码原样透传（不 trim）', (tester) async {

@@ -27,8 +27,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../models/eye_protection.dart';
 import '../providers/providers.dart' show bookApiProvider;
+import '../providers/theme/eye_protection_notifier.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/setting_cards.dart' show LabelMediumEmphasized;
@@ -82,6 +85,8 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
   @override
   Widget build(BuildContext context) {
     final cfg = _config;
+    // [设置批2a-1] 护眼模式行：与外观页/全局叠加层共用同一 Notifier
+    final eyeProtection = ref.watch(eyeProtectionProvider);
     return AppScaffold(
       topBar: const LegadoAppBar(title: Text('阅读设置')),
       body: cfg == null
@@ -91,7 +96,7 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
               children: [
                 const IosSectionHeader('屏幕'),
                 IosGroup(
-                  children: _screenGroup(cfg),
+                  children: _screenGroup(cfg, eyeProtection),
                 ),
                 const IosSectionHeader('页面控制'),
                 IosGroup(
@@ -108,7 +113,11 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
 
   // ── 组1「屏幕」（对齐参考版 ReadConfigScreen 组1，仅放已有消费方） ──
 
-  List<Widget> _screenGroup(ReaderAdvancedConfig cfg) => [
+  List<Widget> _screenGroup(
+    ReaderAdvancedConfig cfg,
+    EyeProtectionSettings eyeProtection,
+  ) =>
+      [
         SettingDropdownRow<int>(
           title: '屏幕方向',
           value: cfg.screenOrientation,
@@ -173,6 +182,14 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           value: cfg.progressBarBehavior,
           options: _kProgressBarBehaviorOptions,
           onChanged: (v) => _update((c) => c.progressBarBehavior = v),
+        ),
+        // [设置批2a-1] 护眼模式（参考版 ReadConfigScreen.kt:171-179 第 14 行：
+        // 行尾显示已启用/未启用，点击打开 EyeProtectionConfigSheet；与外观
+        // 设置页、全局叠加层共用同一 Notifier，改值即全局生效）
+        IosListTile(
+          title: '护眼模式',
+          value: eyeProtection.isConfigured ? '已启用' : '未启用',
+          onTap: () => showEyeProtectionConfigSheet(context),
         ),
       ];
 

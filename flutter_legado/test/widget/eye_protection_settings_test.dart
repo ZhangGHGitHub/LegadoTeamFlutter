@@ -1,8 +1,8 @@
 // [设置批2a-1 | 2026-11-01] 外观设置页「护眼模式」分组交互测试
 // — 全栈工程师
 //
-// 覆盖：分组渲染/默认值、开关展开/收起、定时时间行、时间选择器入口、
-// 色温滑杆落盘、开关状态写入 SharedPreferences。
+// 覆盖：分组渲染/默认值、开关展开/收起、定时时间行、24 小时时间选择器、
+// 色温滑杆落盘、开关状态写入 SharedPreferences；阅读设置页入口打开同一面板。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -10,7 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
+import 'package:flutter_legado/src/screens/read_config_screen.dart';
 import 'package:flutter_legado/src/screens/theme_config_screen.dart';
+import 'package:flutter_legado/src/widgets/eye_protection_config_sheet.dart';
 
 void main() {
   late ProviderContainer container;
@@ -116,6 +118,11 @@ void main() {
       findsOneWidget,
       reason: '点击开始时间应打开 24 小时制时间选择器',
     );
+    // 24 小时制断言：TimePicker 子树内 alwaysUse24HourFormat=true，且无 AM/PM
+    final pickerContext = tester.element(find.byType(TimePickerDialog));
+    expect(MediaQuery.of(pickerContext).alwaysUse24HourFormat, isTrue);
+    expect(find.text('AM'), findsNothing);
+    expect(find.text('PM'), findsNothing);
 
     // 关闭时间选择器（不改变值）
     await tester.binding.handlePopRoute();
@@ -147,5 +154,44 @@ void main() {
     expect(value, isNotNull);
     expect(value, greaterThan(50), reason: '向右拖动应增大色温强度');
     expect(find.text('当前色温：$value'), findsOneWidget);
+  });
+
+  // [P2-2] 阅读设置页入口：与外观页共用同一面板/Notifier
+  testWidgets('阅读设置页「护眼模式」行打开同一面板并即时写回', (tester) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: ReadConfigScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.dragUntilVisible(
+      find.text('护眼模式'),
+      find.byType(ListView),
+      const Offset(0, -150),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('护眼模式'), findsOneWidget);
+    expect(find.text('未启用'), findsOneWidget);
+
+    await tester.tap(find.text('护眼模式'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EyeProtectionConfigPanel), findsOneWidget);
+    expect(find.text('启用护眼模式'), findsOneWidget);
+
+    await tester.tap(find.text('启用护眼模式'));
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(PrefKeys.eyeProtectionEnabled), isTrue);
+
+    // 关闭面板：行尾状态由同一 Notifier 驱动即时变为「已启用」
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(EyeProtectionConfigPanel), findsNothing);
+    expect(find.text('已启用'), findsOneWidget);
   });
 }
