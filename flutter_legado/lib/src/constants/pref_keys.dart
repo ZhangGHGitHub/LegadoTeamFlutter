@@ -179,8 +179,32 @@ class PrefKeys {
   /// 覆写基础卡片圆角（参考仓 overrideBaseCardCornerRadius，默认关）
   static const overrideBaseCardCornerRadius = 'overrideBaseCardCornerRadius';
 
-  /// 基础卡片圆角值 4-28（参考仓 baseCardCornerRadius，默认 16）
+  /// 基础卡片圆角值 0-40（参考仓 baseCardCornerRadius，默认 16）
+  ///
+  /// [设置批2b-1b-1] 参考版滑杆范围 0f..40f（ThemeConfigScreen.kt:622-635）；
+  /// 我方以整数 dp 存储，0 = 直角。
   static const baseCardCornerRadius = 'baseCardCornerRadius';
+
+  /// 覆写基础卡片边框（参考仓 overrideBaseCardBorder，默认关）
+  static const overrideBaseCardBorder = 'overrideBaseCardBorder';
+
+  /// 基础卡片边框宽度 dp 0-5（参考仓 baseCardBorderWidth，默认 1）
+  static const baseCardBorderWidth = 'baseCardBorderWidth';
+
+  /// 日间基础卡片边框颜色 ARGB（参考仓 baseCardBorderColor，
+  /// 0=跟随主题 outlineVariant）
+  static const baseCardBorderColor = 'baseCardBorderColor';
+
+  /// 夜间基础卡片边框颜色 ARGB（参考仓 baseCardBorderColorNight，
+  /// 0=跟随主题 outlineVariant）
+  static const baseCardBorderColorNight = 'baseCardBorderColorNight';
+
+  /// 关闭拼接分组圆角（参考仓 disableSplicedColumnGroupCornerRadius，默认关）
+  ///
+  /// 开启后分组外角固定 0，优先级高于 [overrideBaseCardCornerRadius]
+  /// （参考仓 SplicedColumnGroup.kt:50-53）。
+  static const disableSplicedColumnGroupCornerRadius =
+      'disableSplicedColumnGroupCornerRadius';
 
   /// 启用毛玻璃（参考仓 enableBlur，默认关——低端机掉帧保护）
   static const enableBlur = 'enableBlur';
@@ -199,6 +223,18 @@ class PrefKeys {
 
   /// 设置行分隔线开关（参考仓 enableItemDivider，默认关）
   static const enableItemDivider = 'enableItemDivider';
+
+  /// 设置行分隔线宽度 dp 0-5（参考仓 itemDividerWidth，默认 1）
+  static const itemDividerWidth = 'itemDividerWidth';
+
+  /// 设置行分隔线长度百分比 30-100（参考仓 itemDividerLength，默认 80）
+  ///
+  /// 参考版换算为 `length / 100f` 后作为 `fillMaxWidth(fraction)` 使用
+  /// （SettingItemDivider.kt:23-24），即占分组可用宽度的百分比，不是 dp。
+  static const itemDividerLength = 'itemDividerLength';
+
+  /// 设置行分隔线颜色 ARGB（参考仓 itemDividerColor，0=默认灰色 30%）
+  static const itemDividerColor = 'itemDividerColor';
 
   /// 大屏侧栏展开态持久化（参考仓 navExtended）
   static const railExtended = 'railExtended';

@@ -22,6 +22,9 @@ class SettingSliderRow extends StatefulWidget {
   /// 可选说明文字（标题下方小字；[批1b-3 审查回修 P2-3] 用于生效范围提示）
   final String? subtitle;
 
+  /// 当前值后缀（如 'dp'/'%'；默认空串保持既有行形态）
+  final String valueSuffix;
+
   /// 松手提交（一次）
   final ValueChanged<int> onChanged;
 
@@ -32,6 +35,7 @@ class SettingSliderRow extends StatefulWidget {
     required this.min,
     required this.max,
     this.subtitle,
+    this.valueSuffix = '',
     required this.onChanged,
   });
 
@@ -58,7 +62,7 @@ class _SettingSliderRowState extends State<SettingSliderRow> {
               Text(widget.title,
                   style: Theme.of(context).textTheme.titleMedium),
               Text(
-                '$shown',
+                '$shown${widget.valueSuffix}',
                 style: Theme.of(context).textTheme.labelMediumEmphasized
                     ?.copyWith(color: cs.primary),
               ),

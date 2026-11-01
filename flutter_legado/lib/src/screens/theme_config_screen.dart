@@ -524,54 +524,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
-  Future<void> _showCardRadiusDialog() async {
-    final uiNow = ref.read(uiSettingsProvider);
-    var override = uiNow.overrideBaseCardCornerRadius;
-    var radius = uiNow.baseCardCornerRadius.toDouble();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('卡片圆角'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                title: const Text('覆写主题圆角'),
-                value: override,
-                onChanged: (v) => setDialogState(() => override = v),
-              ),
-              Slider(
-                value: radius,
-                min: 4,
-                max: 28,
-                divisions: 12,
-                label: '${radius.round()}dp',
-                onChanged: (v) => setDialogState(() => radius = v),
-              ),
-              Text('当前 ${radius.round()}dp（随主题重建生效）'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed == true) {
-      final notifier = ref.read(uiSettingsProvider.notifier);
-      await notifier.setOverrideBaseCardCornerRadius(override);
-      await notifier.setBaseCardCornerRadius(radius.round());
-    }
-  }
-
   Future<void> _showBlurRadiusDialog({
     required String title,
     required int currentRadius,
@@ -1018,12 +970,24 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   当前仅覆盖 IosGroup（参考版为全局 GlassCard，2b-1b 扩展）。
                   // - 背景图虚化 backgroundImageBlurring/backgroundImageNightBlurring
                   //   0..100（默认 0），仅作用全局壁纸，不影响内容/文字。
-                  // - 参考 关闭设置分组圆角/覆盖卡片边框/边框粗细/日夜卡片边框
-                  //   颜色/分割线粗细/长度/颜色 等子项仍属参考独有，留待批2b-1b。
+                  // [设置批2b-1b-1] 补齐参考版容器卡面三项覆盖（当前开关即时
+                  // 生效，重启保持；随 appPrefs 往返）：
+                  // - 关闭设置分组圆角 disableSplicedColumnGroupCornerRadius：
+                  //   分组外角 0，优先级高于卡片圆角覆盖（参考
+                  //   SplicedColumnGroup.kt:50-53）。
+                  // - 覆盖卡片圆角 overrideBaseCardCornerRadius +
+                  //   baseCardCornerRadius 0..40；作用于 IosGroup 与全局
+                  //   CardTheme（参考版 BaseCard/GlassCard 同源分支）。
+                  // - 覆盖卡片边框 overrideBaseCardBorder + 宽度 0..5 + 日夜色
+                  //   （0=outlineVariant）；IosGroup 用 foregroundDecoration
+                  //   绘制，不改变布局/不裁剪内容。
+                  // - 显示分隔线 enableItemDivider + 宽度 0..5 + 长度 30..100%
+                  //   + 颜色（0=灰色 30%）；行之间插入胶囊线，行间距保持 2dp
+                  //   （参考 SplicedColumnGroup + SettingItemDivider）。
                   // - 登记（本批边界）：图片自身透明度 appColumnBackgroundOpacity/
                   //   glassCardBackgroundOpacity、项目背景图 item_*、.9 九宫格渲染
-                  //   属 2b-1b；IosGroup(flat) 扁平模式无卡片面，不参与容器背景/
-                  //   不透明度；虚化行常显（不随背景图是否已设置而隐藏）。
+                  //   属 2b-1b-2；IosGroup(flat) 扁平模式无卡片面，不参与容器
+                  //   背景/不透明度/圆角/边框/分隔线开关；虚化行常显。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
                       children: [
@@ -1089,25 +1053,131 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                           .read(uiSettingsProvider.notifier)
                           .setBgImageBlurring(night: true, value: v),
                     ),
-                    // 参考 base_card_corner_radius=卡片圆角（0-40 滑杆）；我方为
-                    // 单对话框（覆写开关 + 4-28），参考 覆盖卡片圆角 双行开关
-                    // 结构属参考独有，仅登记
-                    IosListTile(
-                      title: '卡片圆角',
-                      subtitle: ui.overrideBaseCardCornerRadius
-                          ? '覆写中：${ui.baseCardCornerRadius}dp'
-                          : '跟随主题（20dp）',
-                      onTap: _showCardRadiusDialog,
+                    // 参考 disable_spliced_group_corner_radius：分组外角 0，
+                    // 优先级高于下方圆角覆盖（参考 SplicedColumnGroup.kt:50-53）
+                    SettingSwitchRow(
+                      title: '关闭设置分组圆角',
+                      subtitle: '分组卡片外角置 0；优先于卡片圆角覆盖',
+                      value: ui.disableSplicedColumnGroupCornerRadius,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setDisableSplicedColumnGroupCornerRadius(v),
                     ),
-                    // 参考 show_divider_line=显示分隔线
+                    // 参考 覆盖卡片圆角 开关 + 卡片圆角滑杆（0..40dp）
+                    SettingSwitchRow(
+                      title: '覆盖卡片圆角',
+                      subtitle: '开启后按下方数值覆盖主题卡片圆角',
+                      value: ui.overrideBaseCardCornerRadius,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setOverrideBaseCardCornerRadius(v),
+                    ),
+                    if (ui.overrideBaseCardCornerRadius)
+                      SettingSliderRow(
+                        title: '卡片圆角',
+                        subtitle: '0-40dp；0 = 直角（参考版滑杆 0..40）',
+                        value: ui.baseCardCornerRadius,
+                        min: 0,
+                        max: 40,
+                        valueSuffix: 'dp',
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setBaseCardCornerRadius(v),
+                      ),
+                    // 参考 覆盖卡片边框 开关 + 宽度 + 日/夜颜色
+                    SettingSwitchRow(
+                      title: '覆盖卡片边框',
+                      subtitle: '开启后按宽度与日/夜颜色绘制；0 色跟随主题描边',
+                      value: ui.overrideBaseCardBorder,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setOverrideBaseCardBorder(v),
+                    ),
+                    if (ui.overrideBaseCardBorder) ...[
+                      SettingSliderRow(
+                        title: '边框宽度',
+                        subtitle: '0-5dp；0 = 不绘制（不改变卡片尺寸）',
+                        value: ui.baseCardBorderWidth,
+                        min: 0,
+                        max: 5,
+                        valueSuffix: 'dp',
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setBaseCardBorderWidth(v),
+                      ),
+                      _containerColorTile(
+                        title: '日间边框颜色',
+                        color: ui.baseCardBorderColor,
+                        defaultHint: '默认（跟随主题描边）',
+                        showDotWhenZero: true,
+                        onTap: () => _showContainerColorPicker(
+                          title: '日间边框颜色',
+                          defaultHint: '恢复默认',
+                          onSelected: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setBaseCardBorderColor(v),
+                        ),
+                      ),
+                      _containerColorTile(
+                        title: '夜间边框颜色',
+                        color: ui.baseCardBorderColorNight,
+                        defaultHint: '默认（跟随主题描边）',
+                        showDotWhenZero: true,
+                        onTap: () => _showContainerColorPicker(
+                          title: '夜间边框颜色',
+                          defaultHint: '恢复默认',
+                          onSelected: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setBaseCardBorderColorNight(v),
+                        ),
+                      ),
+                    ],
+                    // 参考 show_divider_line：行之间显示分隔线
                     SettingSwitchRow(
                       title: '显示分隔线',
-                      subtitle: '分组列表行底部显示短分隔线',
+                      subtitle: '在分组行之间绘制；关闭保持 2dp 间距',
                       value: ui.enableItemDivider,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
                           .setEnableItemDivider(v),
                     ),
+                    if (ui.enableItemDivider) ...[
+                      SettingSliderRow(
+                        title: '分隔线宽度',
+                        subtitle: '0-5dp；0 = 不绘制',
+                        value: ui.itemDividerWidth,
+                        min: 0,
+                        max: 5,
+                        valueSuffix: 'dp',
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setItemDividerWidth(v),
+                      ),
+                      SettingSliderRow(
+                        title: '分隔线长度',
+                        subtitle: '占分组可用宽度的百分比（30-100%）',
+                        value: ui.itemDividerLength,
+                        min: 30,
+                        max: 100,
+                        valueSuffix: '%',
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setItemDividerLength(v),
+                      ),
+                      _containerColorTile(
+                        title: '分隔线颜色',
+                        color: ui.itemDividerColor,
+                        defaultHint: '默认（灰色半透明）',
+                        showDotWhenZero: false,
+                        onTap: () => _showContainerColorPicker(
+                          title: '分隔线颜色',
+                          defaultHint: '恢复默认',
+                          onSelected: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setItemDividerColor(v),
+                        ),
+                      ),
+                    ],
                   ]),
 
                   // === 分组 7「模糊效果」（参考 R.string.blur_effects=模糊效果；
@@ -1259,6 +1329,95 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         isBackground: isBackground,
       ),
     );
+  }
+
+  /// 容器设置颜色行（卡片边框/分隔线）：0 = 默认语义，显示回落色/说明
+  ///
+  /// [设置批2b-1b-1] 参考版 `BaseCardBorderColorSettingItem` / 分隔线颜色行
+  /// 形态：标题 + 副标题（十六进制或"默认"）+ 右侧色点；0 色时边框行仍
+  /// 显示 outlineVariant 色点，分隔线行不显示色点（参考版同口径）。
+  Widget _containerColorTile({
+    required String title,
+    required int color,
+    required String defaultHint,
+    required VoidCallback onTap,
+    required bool showDotWhenZero,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return IosListTile(
+      title: title,
+      subtitle: color == 0 ? defaultHint : _argbHex(color),
+      trailing: (color != 0 || showDotWhenZero)
+          ? Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: color != 0 ? Color(color) : scheme.outlineVariant,
+                shape: BoxShape.circle,
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+            )
+          : null,
+      onTap: onTap,
+    );
+  }
+
+  /// ARGB → `#AARRGGBB`（参考版 `Integer.toHexString(color)` 大写形态）
+  static String _argbHex(int argb) =>
+      '#${argb.toRadixString(16).toUpperCase().padLeft(8, '0')}';
+
+  /// 卡片边框/分隔线颜色选择（预设色板 + 恢复默认=0）
+  ///
+  /// 与 [_showColorPicker] 同源色板，但结果写回 UiSettings（而非
+  /// ThemeColorsNotifier），0 表示跟随主题/默认色。
+  Future<void> _showContainerColorPicker({
+    required String title,
+    required String defaultHint,
+    required Future<void> Function(int value) onSelected,
+  }) async {
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 300,
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final c in _presetColors)
+                InkWell(
+                  onTap: () => Navigator.pop(ctx, c),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Color(c),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Theme.of(ctx).colorScheme.outlineVariant,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 0),
+            child: Text(defaultHint),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (selected == null || !mounted) return;
+    await onSelected(selected);
   }
 
   /// 预设色板选择器（对齐原版 ColorPreference preset 对话框 + 背景明暗校验）

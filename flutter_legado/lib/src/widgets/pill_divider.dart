@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 ///
 /// 规格：厚度 2dp、宽度 20%、颜色 outlineVariant 60%、两端圆角、上下间距各 4dp。
 /// 用于分组卡内行间分隔（SettingItemDivider 开关打开时）。
+///
+/// [设置批2b-1b-1] 增加 [thickness]/[color]/[padding] 参数：设置行分隔线
+/// 改用参考版 `SettingItemDivider` 的宽度/长度百分比/颜色三参数，分组间距
+/// 由 IosGroup 自己提供，因此传入零 padding；弹窗菜单用法保持默认值不变。
 class PillDivider extends StatelessWidget {
   /// 分隔线长度占可用宽度的比例（HapeLee itemDividerLength 默认 80%；
   /// PillDivider 默认 20%，见 SettingItemDivider 的 length 参数）。
@@ -12,10 +16,22 @@ class PillDivider extends StatelessWidget {
   /// 是否启用（HapeLee enableItemDivider，默认 false 关）。
   final bool enabled;
 
+  /// 线高 dp（参考版 itemDividerWidth，默认 2dp 保持原弹窗形态）
+  final double thickness;
+
+  /// 线色；null = outlineVariant 60%（保持原弹窗形态）
+  final Color? color;
+
+  /// 线上下内边距（设置行分隔线传 EdgeInsets.zero）
+  final EdgeInsetsGeometry padding;
+
   const PillDivider({
     super.key,
     this.widthFraction = 0.2,
     this.enabled = true,
+    this.thickness = 2,
+    this.color,
+    this.padding = const EdgeInsets.symmetric(vertical: 4),
   });
 
   @override
@@ -23,15 +39,16 @@ class PillDivider extends StatelessWidget {
     if (!enabled) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: padding,
       child: Center(
         child: FractionallySizedBox(
           widthFactor: widthFraction,
           child: Container(
-            height: 2,
+            height: thickness,
             decoration: BoxDecoration(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(1),
+              color: color ??
+                  colorScheme.outlineVariant.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(thickness / 2),
             ),
           ),
         ),

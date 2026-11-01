@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import 'app_typography.dart';
+import 'card_style.dart';
 import 'md3_colors.dart';
 
 /// Android 页面转场（对齐 HapeLee MainActivity NavDisplay 实际行为）
@@ -61,13 +62,11 @@ class AppTheme {
   /// Expressive 圆角：卡片 / 分组
   /// [UI_SYNC_REFACTOR B6] 圆角覆写生效链（overrideBaseCardCornerRadius
   /// 开启时取 baseCardCornerRadius；控件/弹窗档维持默认，随主题重建生效）
-  static double get _cardRadius {
-    final ui = uiSettingsListenable.value;
-    if (ui.overrideBaseCardCornerRadius) {
-      return ui.baseCardCornerRadius.toDouble();
-    }
-    return 20.0;
-  }
+  /// [设置批2b-1b-1] 解析逻辑集中到 [resolveCardThemeCornerRadius]，与
+  /// IosGroup/全局 CardTheme 共用同一优先级（disable 分组圆角只作用于
+  /// IosGroup，不改全局卡片档）。
+  static double get _cardRadius =>
+      resolveCardThemeCornerRadius(uiSettingsListenable.value);
 
   /// 圆角：输入框 / 菜单 / 小控件
   static const double _controlRadius = 12.0;
@@ -217,6 +216,14 @@ class AppTheme {
     required Color tabBarBg,
   }) {
     final bool isLight = brightness == Brightness.light;
+    // [设置批2b-1b-1] 全局卡片边框覆盖（参考版 BaseCard/GlassCard 分支）：
+    // 开关关/宽度 0 时不绘制；0 色回落 outlineVariant。RoundedRectangleBorder
+    // 的 side 不参与布局，卡片尺寸与无边框一致。
+    final cardBorderSide = resolveBaseCardBorderSide(
+      uiSettingsListenable.value,
+      colorScheme,
+      brightness: brightness,
+    ) ?? BorderSide.none;
 
     return ThemeData(
       useMaterial3: true,
@@ -292,6 +299,7 @@ class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_cardRadius),
+          side: cardBorderSide,
         ),
         clipBehavior: Clip.antiAlias,
       ),

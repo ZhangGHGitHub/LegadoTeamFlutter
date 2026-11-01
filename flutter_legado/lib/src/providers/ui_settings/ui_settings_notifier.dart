@@ -121,8 +121,23 @@ class UiSettingsState {
   /// 覆写基础卡片圆角
   final bool overrideBaseCardCornerRadius;
 
-  /// 基础卡片圆角值 4-28
+  /// 基础卡片圆角值 0-40（0=直角；参考版滑杆 0..40）
   final int baseCardCornerRadius;
+
+  /// 覆写基础卡片边框（参考版 overrideBaseCardBorder，默认关）
+  final bool overrideBaseCardBorder;
+
+  /// 基础卡片边框宽度 dp 0-5（0=不绘制）
+  final int baseCardBorderWidth;
+
+  /// 日间卡片边框颜色 ARGB（0=跟随主题 outlineVariant）
+  final int baseCardBorderColor;
+
+  /// 夜间卡片边框颜色 ARGB（0=跟随主题 outlineVariant）
+  final int baseCardBorderColorNight;
+
+  /// 关闭拼接分组圆角（优先级高于 [overrideBaseCardCornerRadius]）
+  final bool disableSplicedColumnGroupCornerRadius;
 
   /// 启用毛玻璃（BackdropFilter，默认关）
   final bool enableBlur;
@@ -157,6 +172,15 @@ class UiSettingsState {
 
   /// 设置行分隔线开关
   final bool enableItemDivider;
+
+  /// 设置行分隔线宽度 dp 0-5（0=不绘制）
+  final int itemDividerWidth;
+
+  /// 设置行分隔线长度百分比 30-100（占分组可用宽度，不是 dp）
+  final int itemDividerLength;
+
+  /// 设置行分隔线颜色 ARGB（0=默认灰色 30%）
+  final int itemDividerColor;
 
   // ===== [设置批2b-1a] 容器外观（对齐参考版 ThemeSettings）=====
 
@@ -217,6 +241,11 @@ class UiSettingsState {
     this.bookInfoDefaultCoverBackground = 'on',
     this.overrideBaseCardCornerRadius = false,
     this.baseCardCornerRadius = 16,
+    this.overrideBaseCardBorder = false,
+    this.baseCardBorderWidth = 1,
+    this.baseCardBorderColor = 0,
+    this.baseCardBorderColorNight = 0,
+    this.disableSplicedColumnGroupCornerRadius = false,
     this.enableBlur = false,
     this.blockSourceBrowser = false,
     this.restrictCoverRatio = true,
@@ -226,6 +255,9 @@ class UiSettingsState {
     this.bottomBarBlurAlpha = 40,
     this.wallpaperColorFollow = false,
     this.enableItemDivider = false,
+    this.itemDividerWidth = 1,
+    this.itemDividerLength = 80,
+    this.itemDividerColor = 0,
     this.containerOpacity = 100,
     this.enableContainerBackgroundImage = false,
     this.largeContainerBackgroundImageLight = '',
@@ -255,6 +287,11 @@ class UiSettingsState {
     String? bookInfoDefaultCoverBackground,
     bool? overrideBaseCardCornerRadius,
     int? baseCardCornerRadius,
+    bool? overrideBaseCardBorder,
+    int? baseCardBorderWidth,
+    int? baseCardBorderColor,
+    int? baseCardBorderColorNight,
+    bool? disableSplicedColumnGroupCornerRadius,
     bool? enableBlur,
     bool? blockSourceBrowser,
     bool? restrictCoverRatio,
@@ -264,6 +301,9 @@ class UiSettingsState {
     int? bottomBarBlurAlpha,
     bool? wallpaperColorFollow,
     bool? enableItemDivider,
+    int? itemDividerWidth,
+    int? itemDividerLength,
+    int? itemDividerColor,
     int? containerOpacity,
     bool? enableContainerBackgroundImage,
     String? largeContainerBackgroundImageLight,
@@ -296,6 +336,15 @@ class UiSettingsState {
       overrideBaseCardCornerRadius:
           overrideBaseCardCornerRadius ?? this.overrideBaseCardCornerRadius,
       baseCardCornerRadius: baseCardCornerRadius ?? this.baseCardCornerRadius,
+      overrideBaseCardBorder:
+          overrideBaseCardBorder ?? this.overrideBaseCardBorder,
+      baseCardBorderWidth: baseCardBorderWidth ?? this.baseCardBorderWidth,
+      baseCardBorderColor: baseCardBorderColor ?? this.baseCardBorderColor,
+      baseCardBorderColorNight:
+          baseCardBorderColorNight ?? this.baseCardBorderColorNight,
+      disableSplicedColumnGroupCornerRadius:
+          disableSplicedColumnGroupCornerRadius ??
+              this.disableSplicedColumnGroupCornerRadius,
       enableBlur: enableBlur ?? this.enableBlur,
       blockSourceBrowser: blockSourceBrowser ?? this.blockSourceBrowser,
       restrictCoverRatio: restrictCoverRatio ?? this.restrictCoverRatio,
@@ -305,6 +354,9 @@ class UiSettingsState {
       bottomBarBlurAlpha: bottomBarBlurAlpha ?? this.bottomBarBlurAlpha,
       wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
       enableItemDivider: enableItemDivider ?? this.enableItemDivider,
+      itemDividerWidth: itemDividerWidth ?? this.itemDividerWidth,
+      itemDividerLength: itemDividerLength ?? this.itemDividerLength,
+      itemDividerColor: itemDividerColor ?? this.itemDividerColor,
       containerOpacity: containerOpacity ?? this.containerOpacity,
       enableContainerBackgroundImage: enableContainerBackgroundImage ??
           this.enableContainerBackgroundImage,
@@ -407,6 +459,27 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       baseCardCornerRadius: await _settings.getIntPref(
         PrefKeys.baseCardCornerRadius,
         defaultValue: 16,
+      ).then(_clampCardCornerRadius),
+      // [设置批2b-1b-1] 卡片边框/分组圆角开关（参考版 ThemeSettings）
+      overrideBaseCardBorder: await _settings.getBoolPref(
+        PrefKeys.overrideBaseCardBorder,
+        defaultValue: false,
+      ),
+      baseCardBorderWidth: await _settings.getIntPref(
+        PrefKeys.baseCardBorderWidth,
+        defaultValue: 1,
+      ).then(_clampBorderWidth),
+      baseCardBorderColor: await _settings.getIntPref(
+        PrefKeys.baseCardBorderColor,
+        defaultValue: 0,
+      ),
+      baseCardBorderColorNight: await _settings.getIntPref(
+        PrefKeys.baseCardBorderColorNight,
+        defaultValue: 0,
+      ),
+      disableSplicedColumnGroupCornerRadius: await _settings.getBoolPref(
+        PrefKeys.disableSplicedColumnGroupCornerRadius,
+        defaultValue: false,
       ),
       enableBlur: await _settings.getBoolPref(
         PrefKeys.enableBlur,
@@ -443,6 +516,19 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       enableItemDivider: await _settings.getBoolPref(
         PrefKeys.enableItemDivider,
         defaultValue: false,
+      ),
+      // [设置批2b-1b-1] 条目分隔线几何/颜色（参考版 itemDivider*）
+      itemDividerWidth: await _settings.getIntPref(
+        PrefKeys.itemDividerWidth,
+        defaultValue: 1,
+      ).then(_clampBorderWidth),
+      itemDividerLength: await _settings.getIntPref(
+        PrefKeys.itemDividerLength,
+        defaultValue: 80,
+      ).then(_clampDividerLength),
+      itemDividerColor: await _settings.getIntPref(
+        PrefKeys.itemDividerColor,
+        defaultValue: 0,
       ),
       // [设置批2b-1a] 容器外观：不透明度/背景图（相对标识）与日夜虚化半径
       containerOpacity: await _settings.getIntPref(
@@ -512,6 +598,15 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
   }
 
   static int _clampOpacity(int v) => v.clamp(0, 100);
+
+  /// 卡片圆角 0-40（参考版滑杆 0f..40f；0=直角）
+  static int _clampCardCornerRadius(int v) => v.clamp(0, 40);
+
+  /// 边框/分隔线宽度 0-5dp（参考版滑杆 0f..5f）
+  static int _clampBorderWidth(int v) => v.clamp(0, 5);
+
+  /// 分隔线长度百分比 30-100（参考版滑杆 30f..100f）
+  static int _clampDividerLength(int v) => v.clamp(30, 100);
 
   /// 顶栏按钮样式（持久化 + 全局生效）
   Future<void> setTopBarButtonStyle(TopBarButtonStyle style) async {
@@ -623,13 +718,57 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     await _settings.setBoolPref(PrefKeys.overrideBaseCardCornerRadius, value);
   }
 
-  /// 基础卡片圆角值（4-28，随主题重建生效）
+  /// 基础卡片圆角值（0-40，随主题重建生效；0=直角）
   Future<void> setBaseCardCornerRadius(int value) async {
-    final v = value.clamp(4, 28);
+    final v = _clampCardCornerRadius(value);
     if (state.baseCardCornerRadius == v) return;
     state = state.copyWith(baseCardCornerRadius: v);
     _sync();
     await _settings.setIntPref(PrefKeys.baseCardCornerRadius, v);
+  }
+
+  /// 覆写基础卡片边框开关（参考版 overrideBaseCardBorder）
+  Future<void> setOverrideBaseCardBorder(bool value) async {
+    if (state.overrideBaseCardBorder == value) return;
+    state = state.copyWith(overrideBaseCardBorder: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.overrideBaseCardBorder, value);
+  }
+
+  /// 基础卡片边框宽度 dp（0-5；0 = 不绘制）
+  Future<void> setBaseCardBorderWidth(int value) async {
+    final v = _clampBorderWidth(value);
+    if (state.baseCardBorderWidth == v) return;
+    state = state.copyWith(baseCardBorderWidth: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.baseCardBorderWidth, v);
+  }
+
+  /// 日间卡片边框颜色（0 = 跟随主题 outlineVariant）
+  Future<void> setBaseCardBorderColor(int value) async {
+    if (state.baseCardBorderColor == value) return;
+    state = state.copyWith(baseCardBorderColor: value);
+    _sync();
+    await _settings.setIntPref(PrefKeys.baseCardBorderColor, value);
+  }
+
+  /// 夜间卡片边框颜色（0 = 跟随主题 outlineVariant）
+  Future<void> setBaseCardBorderColorNight(int value) async {
+    if (state.baseCardBorderColorNight == value) return;
+    state = state.copyWith(baseCardBorderColorNight: value);
+    _sync();
+    await _settings.setIntPref(PrefKeys.baseCardBorderColorNight, value);
+  }
+
+  /// 关闭拼接分组圆角（优先级高于圆角覆盖）
+  Future<void> setDisableSplicedColumnGroupCornerRadius(bool value) async {
+    if (state.disableSplicedColumnGroupCornerRadius == value) return;
+    state = state.copyWith(disableSplicedColumnGroupCornerRadius: value);
+    _sync();
+    await _settings.setBoolPref(
+      PrefKeys.disableSplicedColumnGroupCornerRadius,
+      value,
+    );
   }
 
   /// 启用毛玻璃
@@ -746,6 +885,32 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(enableItemDivider: value);
     _sync();
     await _settings.setBoolPref(PrefKeys.enableItemDivider, value);
+  }
+
+  /// 设置行分隔线宽度 dp（0-5；0 = 不绘制）
+  Future<void> setItemDividerWidth(int value) async {
+    final v = _clampBorderWidth(value);
+    if (state.itemDividerWidth == v) return;
+    state = state.copyWith(itemDividerWidth: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.itemDividerWidth, v);
+  }
+
+  /// 设置行分隔线长度百分比（30-100）
+  Future<void> setItemDividerLength(int value) async {
+    final v = _clampDividerLength(value);
+    if (state.itemDividerLength == v) return;
+    state = state.copyWith(itemDividerLength: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.itemDividerLength, v);
+  }
+
+  /// 设置行分隔线颜色（0 = 默认灰色 30%）
+  Future<void> setItemDividerColor(int value) async {
+    if (state.itemDividerColor == value) return;
+    state = state.copyWith(itemDividerColor: value);
+    _sync();
+    await _settings.setIntPref(PrefKeys.itemDividerColor, value);
   }
 
   /// 跟随壁纸取色

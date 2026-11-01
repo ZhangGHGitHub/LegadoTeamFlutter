@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/theme_background_image_store.dart';
+import '../theme/card_style.dart';
 
+import 'pill_divider.dart';
 import 'setting_cards.dart';
 import 'theme_background_layer.dart';
 
@@ -108,14 +110,23 @@ class IosSectionFooter extends StatelessWidget {
   }
 }
 
-/// tonal 圆角分组容器：在 children 之间绘制 outlineVariant 分隔线。
+/// tonal 圆角分组容器：行之间按设置绘制可选分隔线。
 ///
 /// 容器视觉由 cardTheme 驱动（tonal surfaceContainer 层次）；
-/// [separatorIndent] 为分隔线左侧缩进（有 leading 图标时约 56）。
-/// [LAYOUT_MOTION_AUDIT L2] 分组圆角 16dp（HapeLee SplicedColumnGroup，
+/// [separatorIndent] 为扁平模式分隔线左侧缩进（有 leading 图标时约 56）。
+/// [LAYOUT_MOTION_AUDIT L2] 分组默认圆角 16dp（HapeLee SplicedColumnGroup，
 /// 已确认；cardTheme 全局 20 保留，此处显式覆盖）；
 /// [flat] 为 true 时走扁平模式（Column + 条件 80% pill 分隔，
 /// HapeLee 设置页式，9 屏迁移用），默认 false 保持卡片兼容。
+///
+/// [设置批2b-1b-1] 卡片视觉接入参考版三项全局覆盖：
+/// - 圆角：`disableSplicedColumnGroupCornerRadius`（0）优先于
+///   `overrideBaseCardCornerRadius`（baseCardCornerRadius），否则 16dp；
+/// - 边框：`overrideBaseCardBorder` 开启时按宽度/日/夜色绘制，
+///   0 色回落 outlineVariant；用 foregroundDecoration 绘制，不改变布局、
+///   不裁剪内容；
+/// - 分隔线：`enableItemDivider` 开启时在相邻行之间插入 PillDivider
+///   （行间距保持 2dp，与参考版 Column spacedBy(2) + divider 子项同构）。
 class IosGroup extends StatelessWidget {
   final List<Widget> children;
   final double separatorIndent;
@@ -141,8 +152,9 @@ class IosGroup extends StatelessWidget {
     );
 
     if (flat) {
-      // 登记：flat 模式无卡片面，不参与容器背景图/不透明度（参考版
-      // SplicedColumnGroup 卡片语义只对应 flat=false 结构）。
+      // 登记：flat 模式无卡片面，不参与容器背景图/不透明度/圆角/边框
+      //（参考版 SplicedColumnGroup 卡片语义只对应 flat=false 结构）；
+      // 其既有 0.5dp 分隔线保持原样，不随 enableItemDivider 变化。
       final rows = <Widget>[];
       for (var i = 0; i < children.length; i++) {
         rows.add(children[i]);
@@ -167,17 +179,24 @@ class IosGroup extends StatelessWidget {
     //
     // [设置批2b-1a] 容器背景图/容器不透明度（参考版大容器语义）：
     // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark；图像
-    //   **位于分组底色之下**（Stack 第 0 层），由同一 16dp 圆角裁剪。100%
+    //   **位于分组底色之下**（Stack 第 0 层），由同一圆角裁剪。100%
     //   时分组底色完全不透明、整卡覆盖图像（不再从 4dp/2dp 缝隙漏出成
     //   「彩色虚线边框」）；<100% 时分组底色整体半透明，整卡统一混合。
     //   文件缺失时静默回落为纯主题底色。
     // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
     //   文字不透明（参考版 `GlassCard.kt:74-75` 乘 alpha）。
     // - 图片层 IgnorePointer，不拦截点击/手势。
-    final radius = BorderRadius.circular(16);
     return ValueListenableBuilder<UiSettingsState>(
       valueListenable: uiSettingsListenable,
       builder: (context, ui, _) {
+        final radius = BorderRadius.circular(
+          resolveSplicedGroupCornerRadius(ui),
+        );
+        final borderSide = resolveBaseCardBorderSide(
+          ui,
+          theme.colorScheme,
+          brightness: theme.brightness,
+        );
         final opacity = (ui.containerOpacity / 100).clamp(0.0, 1.0);
         // [P1 回修] 乘 alpha 而非替换：参考版 GlassCard.kt:74-75 为
         // `it.copy(alpha = it.alpha * alpha)`。透明调色板的 surfaceContainer/
@@ -194,58 +213,86 @@ class IosGroup extends StatelessWidget {
             hasImage ? ThemeBackgroundImageStore.resolveSync(stored) : '';
         return Padding(
           padding: margin,
-          child: ClipRRect(
-            borderRadius: radius,
-            child: Stack(
-              children: [
-                // 背景图必须位于分组底色之下：100% 时被底色完全覆盖
-                if (hasImage)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Image(
-                        key: const ValueKey('ios-group-container-background'),
-                        image: themeBackgroundImageProvider(
-                          imagePath,
-                          context,
+          child: Container(
+            key: const ValueKey('ios-group-frame'),
+            // 边框画在内容之上、不参与布局（参考版 BorderStroke 不改变卡尺寸）
+            foregroundDecoration: borderSide == null
+                ? null
+                : BoxDecoration(
+                    borderRadius: radius,
+                    border: Border.fromBorderSide(borderSide),
+                  ),
+            child: ClipRRect(
+              borderRadius: radius,
+              child: Stack(
+                children: [
+                  // 背景图必须位于分组底色之下：100% 时被底色完全覆盖
+                  if (hasImage)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Image(
+                          key: const ValueKey(
+                              'ios-group-container-background'),
+                          image: themeBackgroundImageProvider(
+                            imagePath,
+                            context,
+                          ),
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) =>
+                              const SizedBox.shrink(),
                         ),
-                        fit: BoxFit.cover,
-                        alignment: Alignment.center,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, _, _) =>
-                            const SizedBox.shrink(),
                       ),
                     ),
-                  ),
-                // 分组底色（单一整卡 scrim）绘制在图片之上、行小卡之下；
-                // 其 padding（4dp）与行间距（2dp）同属本底色区域，不会漏原图
-                Container(
-                  key: const ValueKey('ios-group-surface'),
-                  decoration: BoxDecoration(
-                    color: groupSurface.withValues(
-                      alpha: groupSurface.a * opacity,
+                  // 分组底色（单一整卡 scrim）绘制在图片之上、行小卡之下；
+                  // 其 padding（4dp）与行间距（2dp）同属本底色区域，不会漏原图
+                  Container(
+                    key: const ValueKey('ios-group-surface'),
+                    decoration: BoxDecoration(
+                      color: groupSurface.withValues(
+                        alpha: groupSurface.a * opacity,
+                      ),
+                      borderRadius: radius,
                     ),
-                    borderRadius: radius,
-                  ),
-                  padding: const EdgeInsets.all(4),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < children.length; i++) ...[
-                        Material(
-                          color: rowSurface.withValues(
-                            alpha: rowSurface.a * opacity,
+                    padding: const EdgeInsets.all(4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < children.length; i++) ...[
+                          Material(
+                            color: rowSurface.withValues(
+                              alpha: rowSurface.a * opacity,
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                            clipBehavior: Clip.antiAlias,
+                            child: children[i],
                           ),
-                          borderRadius: BorderRadius.circular(4),
-                          clipBehavior: Clip.antiAlias,
-                          child: children[i],
-                        ),
-                        if (i != children.length - 1)
-                          const SizedBox(height: 2),
+                          if (i != children.length - 1) ...[
+                            const SizedBox(height: 2),
+                            if (ui.enableItemDivider)
+                              PillDivider(
+                                key: ValueKey('ios-group-divider-$i'),
+                                widthFraction:
+                                    resolveItemDividerWidthFraction(
+                                  ui.itemDividerLength,
+                                ),
+                                thickness: ui.itemDividerWidth.toDouble(),
+                                color: resolveItemDividerColor(
+                                  ui.itemDividerColor,
+                                ),
+                                padding: EdgeInsets.zero,
+                                enabled: ui.itemDividerWidth > 0,
+                              ),
+                            if (ui.enableItemDivider)
+                              const SizedBox(height: 2),
+                          ],
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -354,45 +401,10 @@ class IosListTile extends StatelessWidget {
       }
     }
 
-    // [UI_SYNC_REFACTOR R3] 设置行分隔线（参考仓 enableItemDivider：
-    // 行底 1dp 胶囊线，长度 80dp 缩进 16，默认关）
-    final divider = uiSettingsListenable.value.enableItemDivider
-        ? Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: leading,
-                title: Text(title, style: theme.textTheme.titleMedium),
-                subtitle: subtitle != null
-                    ? Text(
-                        subtitle!,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurface.withValues(alpha: 0.7),
-                        ),
-                      )
-                    : null,
-                trailing: trailing,
-                onTap: onTap,
-                enabled: enabled,
-                dense: dense,
-                contentPadding: contentPadding,
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 16),
-                  child: Container(
-                    width: 80,
-                    height: 1,
-                    color: scheme.outlineVariant.withValues(alpha: 0.8),
-                  ),
-                ),
-              ),
-            ],
-          )
-        : null;
-
-    if (divider != null) return divider;
+    // [设置批2b-1b-1] 行内分隔线已移除：参考版 `SettingItemDivider` 由分组
+    // 容器在相邻项之间插入（SplicedColumnGroup + SettingItemWithDivider），
+    // 行自身不画线（否则末行多一条、扁平分组出现双线）。分隔线配置
+    //（开关/宽度/长度百分比/颜色）统一由 IosGroup 消费。
     return ListTile(
       leading: leading,
       title: Text(title, style: theme.textTheme.titleMedium),

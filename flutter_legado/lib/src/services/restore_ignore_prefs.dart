@@ -181,6 +181,12 @@ class RestoreIgnorePrefs {
     // themePrefKeys 内 → 任何忽略组合下都随 appPrefs 往返（图片缺失时
     // 恢复后按缺失回落），此处刻意不加入。
     PrefKeys.containerOpacity,
+    // [设置批2b-1b-1] 卡片圆角/边框/分组圆角/分隔线键**刻意不加入**：
+    // 参考版 BackupConfig.themePrefKeys 未收录
+    //（overrideBaseCardCornerRadius/baseCardCornerRadius/
+    // overrideBaseCardBorder/baseCardBorder*/disableSplicedColumnGroupCornerRadius/
+    // enableItemDivider/itemDivider*），因此任何忽略组合下都随 appPrefs
+    // 完整往返（与参考版一致）。— 全栈工程师
     // [设置批2a-1] 护眼模式六键：参考版 BackupConfig.themePrefKeys
     // （`help/storage/BackupConfig.kt:311-316`）归入主题配置组，勾选
     // 「忽略主题配置」恢复备份时不覆盖本机护眼设置 — 全栈工程师
