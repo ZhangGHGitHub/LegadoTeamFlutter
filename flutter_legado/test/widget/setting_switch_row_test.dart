@@ -9,7 +9,7 @@ import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 /// `onClick = onCheckedChange(!checked)`）、开关直点、禁用态（行不可点 +
 /// ListTile.enabled=false + 开关灰置）、icon/leading 前导、无 Chevron、
 /// 语义合并（MergeSemantics，同 SwitchListTile）、dense/contentPadding 透传、
-/// enableItemDivider 打开时的行底 80dp 分隔线。
+/// [设置批2b-1b-1] 行内不再自绘分隔线（改由 IosGroup 在项间统一插入）。
 void main() {
   Widget wrap(Widget child) => MaterialApp(home: Scaffold(body: child));
 
@@ -190,12 +190,15 @@ void main() {
     );
   });
 
-  testWidgets('enableItemDivider 打开时行底出现 80dp 胶囊线', (tester) async {
+  testWidgets('enableItemDivider 不再由单行自绘（改由分组容器统一插入）',
+      (tester) async {
     final before = uiSettingsListenable.value;
     addTearDown(() => uiSettingsListenable.value = before);
 
-    // IosListTile 分隔线形态：80×1dp 圆角线（enableItemDivider 打开时）
-    final pill = find.byWidgetPredicate(
+    // 旧实现：行底 80×1dp 固定线（会为末行多画一条、扁平分组出现双线）。
+    // 参考版 SettingItemDivider 由 SplicedColumnGroup 在相邻项之间插入，
+    // 行自身不画线。
+    final legacyPill = find.byWidgetPredicate(
       (w) =>
           w is Container &&
           w.constraints?.maxWidth == 80 &&
@@ -211,7 +214,7 @@ void main() {
         ),
       ),
     );
-    expect(pill, findsNothing);
+    expect(legacyPill, findsNothing);
 
     uiSettingsListenable.value = before.copyWith(enableItemDivider: true);
     await tester.pumpWidget(
@@ -223,7 +226,8 @@ void main() {
         ),
       ),
     );
-    expect(pill, findsOneWidget);
+    expect(legacyPill, findsNothing);
+    expect(find.byType(ListTile), findsOneWidget);
   });
 }
 
