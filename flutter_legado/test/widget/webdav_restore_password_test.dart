@@ -27,6 +27,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
+import 'package:flutter_legado/src/models/eye_protection.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/theme/eye_protection_notifier.dart';
@@ -282,17 +283,29 @@ void main() {
 
   // [设置批2a-1 P2-1] 恢复 appPrefs 后护眼设置同会话重读（reload 而非
   // invalidate：避免 provider 重建时先以默认值渲染一帧导致滤镜闪断）。
-  // 恢复产物用「恢复前写 prefs」模拟（widget 测试 FakeAsync 中不做真实文件
-  // 异步 I/O；appPrefs 落盘路径已有 applyFromBackup 单测覆盖）。
-  testWidgets('恢复 appPrefs 后护眼设置同会话立即重读', (tester) async {
+  // 恢复写盘放在 mockApi.restore stub 内，模拟真实恢复顺序；同时监听
+  // provider 中间状态，断言 reload 期间没有默认值帧、且状态变化发生在
+  // 恢复写盘之后。
+  testWidgets('恢复 appPrefs 后护眼设置同会话立即重读（无默认值中间帧）',
+      (tester) async {
     final backupPath = fakeBackupPath('legado_backup_eye_settings.zip');
+    var restoreWrotePrefs = false;
+    when(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    ).thenAnswer((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(PrefKeys.eyeProtectionEnabled, true);
+      await prefs.setInt(PrefKeys.colorTemperature, 30);
+      await prefs.setString(PrefKeys.eyeProtectionStartTime, '23:00');
+      restoreWrotePrefs = true;
+    });
 
     final container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );
     addTearDown(container.dispose);
-    // 先挂一个空宿主并冲刷微任务，让 provider 以默认值完成首轮加载
-    //（模拟恢复前已打开过护眼设置/全局叠加层）
+    // 先挂一个空宿主并冲刷加载，使 provider 以默认值稳定（模拟恢复前已
+    // 打开过护眼设置/全局叠加层）
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -300,14 +313,21 @@ void main() {
       ),
     );
     container.read(eyeProtectionProvider);
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(container.read(eyeProtectionProvider).enabled, isFalse);
 
-    // 模拟恢复流程写入 appPrefs 新值（此时 provider 仍是旧值）
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(PrefKeys.eyeProtectionEnabled, true);
-    await prefs.setInt(PrefKeys.colorTemperature, 30);
-    await prefs.setString(PrefKeys.eyeProtectionStartTime, '23:00');
+    // 监听 reload 期间的状态迁移（首轮加载已稳定，之后只应有恢复后的新值）
+    final transitions = <EyeProtectionSettings>[];
+    final wroteFlags = <bool>[];
+    final subscription = container.listen<EyeProtectionSettings>(
+      eyeProtectionProvider,
+      (previous, next) {
+        transitions.add(next);
+        wroteFlags.add(restoreWrotePrefs);
+      },
+      fireImmediately: false,
+    );
+    addTearDown(subscription.close);
 
     stubPasswordNotRequired();
     await startLocalRestore(
@@ -322,6 +342,17 @@ void main() {
         reason: '恢复后同会话内应立即生效，不得等重启');
     expect(restored.intensity, 30);
     expect(restored.startTime, '23:00');
+    // 中间状态证据：reload 直接旧值→新值，不得出现默认值帧；且此次状态
+    // 迁移必须发生在恢复写盘之后（若实现退回 invalidate，会先发默认值）
+    expect(
+      transitions.where((s) => s == const EyeProtectionSettings()),
+      isEmpty,
+      reason: 'reload 期间不得回落默认 EyeProtectionSettings（会闪断滤镜）',
+    );
+    expect(transitions, isNotEmpty);
+    expect(transitions.last, restored);
+    expect(wroteFlags, everyElement(isTrue),
+        reason: 'provider 更新必须晚于 mock restore 写盘');
   });
 
   testWidgets('中文/含空格密码原样透传（不 trim）', (tester) async {

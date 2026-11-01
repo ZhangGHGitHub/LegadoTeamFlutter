@@ -229,26 +229,43 @@ class EyeProtectionFilter {
     // 解析失败退化为全天：与参考版一致（脏值不应让用户预期的护眼失效），
     // 见上方注释与单测「时间无法解析时退化为按开关生效」。
     if (start == null || end == null) return true;
-    final startSeconds = _secondsOfDay(start);
-    final endSeconds = _secondsOfDay(end);
-    if (startSeconds == endSeconds) return true;
-    final nowSeconds = now.hour * 3600 + now.minute * 60 + now.second;
-    return startSeconds < endSeconds
-        ? nowSeconds >= startSeconds && nowSeconds < endSeconds
-        : nowSeconds >= startSeconds || nowSeconds < endSeconds;
+    final startNanos = _nanosOfDay(start);
+    final endNanos = _nanosOfDay(end);
+    if (startNanos == endNanos) return true;
+    // DateTime 只有微秒精度；按纳秒口径换算（毫秒 + 微秒），与 LocalTime 比较一致
+    final nowNanos =
+        now.hour * 3600 * 1000000000 +
+        now.minute * 60 * 1000000000 +
+        now.second * 1000000000 +
+        now.millisecond * 1000000 +
+        now.microsecond * 1000;
+    return startNanos < endNanos
+        ? nowNanos >= startNanos && nowNanos < endNanos
+        : nowNanos >= startNanos || nowNanos < endNanos;
   }
 
-  static int _secondsOfDay(({int hour, int minute, int second}) time) {
-    return time.hour * 3600 + time.minute * 60 + time.second;
+  static int _nanosOfDay(
+    ({int hour, int minute, int second, int nanosecond}) time,
+  ) {
+    return time.hour * 3600 * 1000000000 +
+        time.minute * 60 * 1000000000 +
+        time.second * 1000000000 +
+        time.nanosecond;
   }
 
-  /// 解析 `HH:mm` / `HH:mm:ss` / `HH:mm:ss.SSS`（参考版先归一 Unicode 数字
-  /// 再 `LocalTime.parse`，即 ISO_LOCAL_TIME 形状）
+  /// 解析 `HH:mm` / `HH:mm:ss` / `HH:mm:ss.SSS`（ISO_LOCAL_TIME 形状）
   ///
-  /// 解析失败返回 null（调用方按「定时不生效→全天」处理）。小时/分钟/秒
-  /// 必须为两位数字且落在合法范围；秒之后的小数部分只做形状校验、不参与
-  /// 比较（界面选择器只产出 HH:mm，参考版 LocalTime 比较到秒）。
-  static ({int hour, int minute, int second})? parseClock(String value) {
+  /// 口径（对齐 java.time.LocalTime.parse，同时保留参考版对整数部分的
+  /// Unicode 数字归一化）：
+  /// - 小时/分钟/秒必须两位；整数部分允许 Unicode Nd 数字（参考版
+  ///   `parseTime` 先归一化再 LocalTime.parse）；
+  /// - 秒后小数**仅允许** ASCII 数字、长度 1..9；允许尾点（`07.` 视为 0 纳秒）；
+  ///   逗号小数分隔符拒绝（java.time DecimalStyle 只认 `.`）；
+  /// - 小数参与比较（精确到纳秒；DateTime 取毫秒+微秒换算）；
+  /// - 解析失败返回 null（调用方按「定时不生效→全天」处理）。
+  static ({int hour, int minute, int second, int nanosecond})? parseClock(
+    String value,
+  ) {
     final parts = value.trim().split(':');
     if (parts.length != 2 && parts.length != 3) return null;
     if (parts[0].length != 2 || parts[1].length != 2) return null;
@@ -256,10 +273,12 @@ class EyeProtectionFilter {
     final minute = _parseDigits(parts[1]);
     if (hour == null || minute == null) return null;
     var second = 0;
+    var nanosecond = 0;
     if (parts.length == 3) {
-      // 秒可带 ISO 小数（.SSS / ,SSS）；小数前的秒必须两位
       final secondPart = parts[2];
-      final dot = secondPart.indexOf(RegExp(r'[.,]'));
+      // 逗号小数分隔符拒绝（ISO_LOCAL_TIME 只认 `.`）
+      if (secondPart.contains(',')) return null;
+      final dot = secondPart.indexOf('.');
       final secondText = dot >= 0 ? secondPart.substring(0, dot) : secondPart;
       if (secondText.length != 2) return null;
       final parsedSecond = _parseDigits(secondText);
@@ -267,11 +286,16 @@ class EyeProtectionFilter {
       second = parsedSecond;
       if (dot >= 0) {
         final fraction = secondPart.substring(dot + 1);
-        if (fraction.isEmpty || _parseDigits(fraction) == null) return null;
+        // 尾点允许（0 位小数）；否则 1..9 位 ASCII 数字
+        if (fraction.isNotEmpty) {
+          if (fraction.length > 9) return null;
+          if (_parseAsciiDigits(fraction) == null) return null;
+          nanosecond = int.parse(fraction.padRight(9, '0'));
+        }
       }
     }
     if (hour > 23 || minute > 59 || second > 59) return null;
-    return (hour: hour, minute: minute, second: second);
+    return (hour: hour, minute: minute, second: second, nanosecond: nanosecond);
   }
 
   /// 十进制数字解析（支持 Unicode Nd 数字，对齐 Character.digit(char, 10)）
@@ -286,6 +310,15 @@ class EyeProtectionFilter {
       buffer.write(digit);
     }
     return int.tryParse(buffer.toString());
+  }
+
+  /// ASCII 十进制数字解析（ISO_LOCAL_TIME 小数部分的 DecimalStyle 口径）
+  static int? _parseAsciiDigits(String text) {
+    if (text.isEmpty) return null;
+    for (final rune in text.runes) {
+      if (rune < 0x30 || rune > 0x39) return null;
+    }
+    return int.tryParse(text);
   }
 
   /// Unicode 十进制数字（Nd）区段零码点；码点落在 [zero, zero+9] 即数字

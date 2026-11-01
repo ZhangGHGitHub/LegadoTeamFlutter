@@ -436,6 +436,12 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
         // 沉浸式状态栏 / 导航栏：对齐原版 transparentStatusBar / immNavigationBar
         wrapped = SystemBarBinder(child: wrapped);
         // P1-8：按当前亮度叠全局背景图（分组卡片仍自带不透明底，可读性保留）
+        // [设置批2a-1 登记] 同型结构风险：_ThemeBackgroundLayer 在「无图→有图」
+        // （或日夜切换不同图）时返回 child / DecoratedBox 两种类型，Element
+        // 类型变化会重建其下 SystemBarBinder/WebView/验证码监听器子树，与护眼
+        // 层修复前的 P1 同类；当前不在本批范围，未改。若后续切换背景图出现
+        // 系统栏重显/WebView 队列丢失，按 EyeProtectionFilterBox 同法改为恒定
+        // 结构（RenderProxyBox + 可选背景绘制） — 全栈工程师
         wrapped = _ThemeBackgroundLayer(
           path: themeColors.bgImageFor(Theme.of(context).brightness),
           child: wrapped,

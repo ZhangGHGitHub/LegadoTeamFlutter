@@ -153,6 +153,15 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           value: cfg.readBodyToLh,
           onChanged: (v) => _update((c) => c.readBodyToLh = v),
         ),
+        // [设置批2a-1] 护眼模式（参考版 ReadConfigScreen.kt:171-179 第 14 行，
+        // 位于亮度条模式之前：行尾显示已启用/未启用，点击打开
+        // EyeProtectionConfigSheet；与外观设置页、全局叠加层共用同一
+        // Notifier，改值即全局生效）
+        IosListTile(
+          title: '护眼模式',
+          value: eyeProtection.isConfigured ? '已启用' : '未启用',
+          onTap: () => showEyeProtectionConfigSheet(context),
+        ),
         // [批1b-1] 亮度条模式三档（键 readBrightnessMode，档位对齐参考版
         // brightness_bar_mode arrays：0=不显示/1=横排/2=竖排；取代批1a
         // 的旧布尔开关行 showBrightnessView——旧键迁移后停消费）
@@ -182,14 +191,6 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           value: cfg.progressBarBehavior,
           options: _kProgressBarBehaviorOptions,
           onChanged: (v) => _update((c) => c.progressBarBehavior = v),
-        ),
-        // [设置批2a-1] 护眼模式（参考版 ReadConfigScreen.kt:171-179 第 14 行：
-        // 行尾显示已启用/未启用，点击打开 EyeProtectionConfigSheet；与外观
-        // 设置页、全局叠加层共用同一 Notifier，改值即全局生效）
-        IosListTile(
-          title: '护眼模式',
-          value: eyeProtection.isConfigured ? '已启用' : '未启用',
-          onTap: () => showEyeProtectionConfigSheet(context),
         ),
       ];
 

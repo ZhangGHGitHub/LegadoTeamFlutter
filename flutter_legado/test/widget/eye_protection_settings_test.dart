@@ -177,6 +177,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('护眼模式'), findsOneWidget);
     expect(find.text('未启用'), findsOneWidget);
+    // 参考版 ReadConfigScreen 顺序：护眼模式（#14）在亮度条模式（#15）之前
+    expect(
+      tester.getTopLeft(find.text('护眼模式')).dy,
+      lessThan(tester.getTopLeft(find.text('亮度条模式')).dy),
+    );
 
     await tester.tap(find.text('护眼模式'));
     await tester.pumpAndSettle();
@@ -185,6 +190,9 @@ void main() {
 
     await tester.tap(find.text('启用护眼模式'));
     await tester.pumpAndSettle();
+    // 阅读侧面板文案：护眼强度 / 当前强度（外观页仍是 色温 / 当前色温）
+    expect(find.text('护眼强度'), findsOneWidget);
+    expect(find.text('当前强度：50'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(PrefKeys.eyeProtectionEnabled), isTrue);
 

@@ -164,6 +164,7 @@ void main() {
       int hour, {
       int minute = 0,
       int second = 0,
+      int microsecond = 0,
       bool enabled = true,
       bool autoNight = false,
       bool isDark = false,
@@ -180,7 +181,7 @@ void main() {
           end: end,
         ),
         isDark: isDark,
-        now: DateTime(2026, 1, 1, hour, minute, second),
+        now: DateTime(2026, 1, 1, hour, minute, second, 0, microsecond),
       );
     }
 
@@ -276,6 +277,27 @@ void main() {
       );
     });
 
+    test('纳秒级边界（小数秒参与比较，DateTime 微秒换算）', () {
+      // 开始 22:00:00.000500（500000ns）：now=400µs 不生效，600µs 生效
+      expect(
+        activeAt(22, microsecond: 400, start: '22:00:00.000500', end: '07:00'),
+        isFalse,
+      );
+      expect(
+        activeAt(22, microsecond: 600, start: '22:00:00.000500', end: '07:00'),
+        isTrue,
+      );
+      // 结束 07:00:00.000500：now=400µs 生效，600µs 不生效
+      expect(
+        activeAt(7, microsecond: 400, start: '22:00', end: '07:00:00.000500'),
+        isTrue,
+      );
+      expect(
+        activeAt(7, microsecond: 600, start: '22:00', end: '07:00:00.000500'),
+        isFalse,
+      );
+    });
+
     test('时间无法解析时退化为按开关生效（失败方向：宁可全天）', () {
       expect(activeAt(12, start: 'bad', end: '07:00'), isTrue);
       expect(activeAt(12, start: '22:00', end: ''), isTrue);
@@ -316,31 +338,42 @@ void main() {
     });
   });
 
-  group('parseClock', () {
-    test('接受 HH:mm / HH:mm:ss / ISO 小数秒', () {
+  group('parseClock（严格 ISO_LOCAL_TIME 口径）', () {
+    test('接受 HH:mm / HH:mm:ss / 1-9 位 ASCII 小数 / 尾点', () {
       expect(EyeProtectionFilter.parseClock('22:05'), (
         hour: 22,
         minute: 5,
         second: 0,
+        nanosecond: 0,
       ));
       expect(EyeProtectionFilter.parseClock(' 07:30:59 '), (
         hour: 7,
         minute: 30,
         second: 59,
+        nanosecond: 0,
       ));
-      expect(EyeProtectionFilter.parseClock('22:05:07.123'), (
+      expect(EyeProtectionFilter.parseClock('22:05:07.1'), (
         hour: 22,
         minute: 5,
         second: 7,
+        nanosecond: 100000000,
       ));
-      expect(EyeProtectionFilter.parseClock('22:05:07,5'), (
+      expect(EyeProtectionFilter.parseClock('22:05:07.123456789'), (
         hour: 22,
         minute: 5,
         second: 7,
+        nanosecond: 123456789,
+      ));
+      // 尾点接受（0 位小数 = 0 纳秒，java.time appendFraction minWidth=0）
+      expect(EyeProtectionFilter.parseClock('22:05:07.'), (
+        hour: 22,
+        minute: 5,
+        second: 7,
+        nanosecond: 0,
       ));
     });
 
-    test('拒绝非法形态', () {
+    test('拒绝非法形态（含逗号小数、10 位小数、非 ASCII 小数）', () {
       for (final value in <String>[
         '',
         '22',
@@ -352,8 +385,10 @@ void main() {
         '22:05:',
         '22:05:5',
         '22:05:60',
-        '22:05:07.',
-        '22:05:07.x',
+        '22:05:07,5',
+        '22:05:07.1234567890',
+        '22:05:07.١٢٣',
+        '22:05:07.12.3',
         '-1:00',
         '2026-01-01T22:00',
       ]) {

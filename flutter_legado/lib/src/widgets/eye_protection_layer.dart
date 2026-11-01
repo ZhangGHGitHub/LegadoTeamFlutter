@@ -189,7 +189,6 @@ class EyeProtectionFilterRenderObject extends RenderProxyBox {
   bool _active;
   int _intensity;
   ColorFilter? _colorFilter;
-  ColorFilterLayer? _layer;
 
   bool get active => _active;
   set active(bool value) {
@@ -198,7 +197,8 @@ class EyeProtectionFilterRenderObject extends RenderProxyBox {
     _colorFilter = value
         ? EyeProtectionFilter.colorFilterForIntensity(_intensity)
         : null;
-    if (!value) _layer = null;
+    // 失效时释放框架 layer 句柄，避免旧 ColorFilterLayer 悬挂
+    if (!value) layer = null;
     // 合成位变化：告知祖先本节点是否需要独立图层（同 ColorFiltered 的
     // alwaysNeedsCompositing 动态切换）
     markNeedsCompositingBitsUpdate();
@@ -222,6 +222,10 @@ class EyeProtectionFilterRenderObject extends RenderProxyBox {
   @override
   bool get alwaysNeedsCompositing => _colorFilter != null;
 
+  /// [测试] 当前挂载的颜色滤镜层（inactive/dispose 后应为 null）
+  @visibleForTesting
+  ColorFilterLayer? get debugColorFilterLayer => layer as ColorFilterLayer?;
+
   @override
   void paint(PaintingContext context, Offset offset) {
     final filter = _colorFilter;
@@ -230,11 +234,20 @@ class EyeProtectionFilterRenderObject extends RenderProxyBox {
       super.paint(context, offset);
       return;
     }
-    _layer = context.pushColorFilter(
+    // 使用框架 layer 句柄（同 Flutter _ColorFilterRenderObject），
+    // 便于测试断言 ColorFilterLayer 是否存在，并由框架统一回收
+    layer = context.pushColorFilter(
       offset,
       filter,
       super.paint,
-      oldLayer: _layer,
+      oldLayer: layer as ColorFilterLayer?,
     );
+  }
+
+  @override
+  void dispose() {
+    // 显式置空：RenderObject 销毁时不保留旧 ColorFilterLayer
+    layer = null;
+    super.dispose();
   }
 }

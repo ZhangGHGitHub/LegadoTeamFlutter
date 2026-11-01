@@ -68,6 +68,10 @@ class EyeProtectionConfigPanel extends ConsumerWidget {
               EyeProtectionIntensityRow(
                 value: settings.intensity,
                 onChanged: notifier.setIntensity,
+                // 阅读侧文案对齐参考版 EyeProtectionConfigSheet（护眼强度）；
+                // 外观页沿用 ThemeConfigScreen 的「色温」（默认参数）
+                title: '护眼强度',
+                descriptionPrefix: '当前强度',
               ),
               SettingSwitchRow(
                 title: '定时开启',
@@ -144,10 +148,18 @@ class EyeProtectionIntensityRow extends StatefulWidget {
   final int value;
   final ValueChanged<int> onChanged;
 
+  /// 行标题：外观页「色温」/ 阅读面板「护眼强度」（参考版两处文案不同）
+  final String title;
+
+  /// 当前值说明前缀：外观页「当前色温」/ 阅读面板「当前强度」
+  final String descriptionPrefix;
+
   const EyeProtectionIntensityRow({
     super.key,
     required this.value,
     required this.onChanged,
+    this.title = '色温',
+    this.descriptionPrefix = '当前色温',
   });
 
   @override
@@ -168,9 +180,9 @@ class _EyeProtectionIntensityRowState extends State<EyeProtectionIntensityRow> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('色温', style: theme.textTheme.titleMedium),
+          Text(widget.title, style: theme.textTheme.titleMedium),
           Text(
-            '当前色温：$shown',
+            '${widget.descriptionPrefix}：$shown',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
