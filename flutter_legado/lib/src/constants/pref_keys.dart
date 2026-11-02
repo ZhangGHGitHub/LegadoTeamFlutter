@@ -339,14 +339,36 @@ class PrefKeys {
   /// 打开书架书籍时默认进入阅读界面（默认 false）
   static const defaultToRead = 'defaultToRead';
 
-  /// 显示发现（默认 true）
+  // ===== [设置批2b-2a] 首页与导航（键名逐字对齐参考版 PreferKey）=====
+
+  /// 显示首页（参考版 PreferKey.showHome，默认 true）
+  static const showHome = 'showHome';
+
+  /// 显示发现（参考版 PreferKey.showDiscovery，默认 true）
   static const showDiscovery = 'showDiscovery';
 
-  /// 显示订阅/RSS（默认 true）
+  /// 显示订阅/RSS（参考版 PreferKey.showRss，默认 true）
   static const showRss = 'showRss';
 
-  /// 默认首页（bookshelf/explore/rss/my）
+  /// 默认首页（home/bookshelf/explore/rss/my，默认 bookshelf）
   static const defaultHomePage = 'defaultHomePage';
+
+  /// 主导航顺序（逗号分隔 route，参考版 PreferKey.mainNavigationOrder；
+  /// 默认 home,bookshelf,explore,rss,my）
+  static const mainNavigationOrder = 'mainNavigationOrder';
+
+  /// 主导航自定义图标（未选中态，值为本地图片路径；空=内置图标）
+  /// 10 个键名逐字对齐参考版 PreferKey：5 个未选中 + 5 个选中
+  static const navIconHome = 'navIconHome';
+  static const navIconBookshelf = 'navIconBookshelf';
+  static const navIconExplore = 'navIconExplore';
+  static const navIconRss = 'navIconRss';
+  static const navIconMy = 'navIconMy';
+  static const navIconHomeSelected = 'navIconHomeSelected';
+  static const navIconBookshelfSelected = 'navIconBookshelfSelected';
+  static const navIconExploreSelected = 'navIconExploreSelected';
+  static const navIconRssSelected = 'navIconRssSelected';
+  static const navIconMySelected = 'navIconMySelected';
 
   /// 本地密码（用于 Web 服务鉴权）
   static const localPassword = 'localPassword';

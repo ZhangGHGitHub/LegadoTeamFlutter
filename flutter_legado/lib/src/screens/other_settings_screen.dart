@@ -31,6 +31,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../bridge/ffi.dart';
 import '../l10n/app_strings.dart';
+import '../models/main_tab.dart';
 import 'direct_link_upload_settings_sheet.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
@@ -627,33 +628,21 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   }
 
   /// 默认首页值 → 展示文案（对齐原版 default_home_page 数组）
-  /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增首页页签后补 'home' 选项 — Qoder
-  String _homePageLabel(String value) {
-    switch (value) {
-      case 'home':
-        return '首页';
-      case 'explore':
-        return '发现';
-      case 'rss':
-        return '订阅';
-      case 'my':
-        return '我的';
-      default:
-        return '书架';
-    }
-  }
+  /// [设置批2b-2a] 合并到 MainTab 统一映射，避免与「首页与导航」Sheet
+  /// 文案漂移 — 全栈工程师
+  String _homePageLabel(String value) =>
+      mainTabLabel(mainTabFromRoute(value) ?? MainTab.bookshelf);
 
   /// 默认首页选择（对齐原版 defaultHomePage ListPreference）
+  ///
+  /// [设置批2b-2a] 仅列出可见页签（对齐参考版 MainNavigationSettingsSheet
+  /// 下拉过滤；隐藏页无法落地，选它只会造成启动落点跳变） — 全栈工程师
   Future<void> _showHomePagePicker(
     MainPrefsState prefs,
     MainPrefsNotifier notifier,
   ) async {
-    const options = [
-      ('home', '首页'),
-      ('bookshelf', '书架'),
-      ('explore', '发现'),
-      ('rss', '订阅'),
-      ('my', '我的'),
+    final options = [
+      for (final tab in prefs.visibleTabs) (tab.route, mainTabLabel(tab)),
     ];
     final selected = await showDialog<String>(
       context: context,

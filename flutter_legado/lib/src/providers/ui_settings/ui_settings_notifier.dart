@@ -39,8 +39,12 @@ enum TopBarButtonStyle {
 
 /// 底栏 label 显示档位（对齐参考仓 labelVisibilityMode）
 enum BottomBarLabelMode {
-  /// 仅选中显示 label（参考仓 "auto" 默认）
+  /// 自动（参考仓 "auto" 默认；参考版 AppNavigationBar 映射为
+  /// IconWithSelectedLabel，与 [selected] 当前行为一致）
   auto,
+
+  /// 仅选中显示 label（参考仓 "selected"；同参考版 IconWithSelectedLabel）
+  selected,
 
   /// 全部常显（"labeled"）
   labeled,

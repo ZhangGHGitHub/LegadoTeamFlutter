@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../../models/main_tab.dart';
 import '../../services/bottom_bar_skin_service.dart';
 /// [UI_SYNC_REFACTOR S1c] 主框架导航组件族（对齐参考仓 ShortNavigationBar/
 /// AppNavigationBar/FloatingBottomBar/Rail）
@@ -13,18 +14,106 @@ import '../../services/bottom_bar_skin_service.dart';
 ///（参考为 Rail 项长按菜单，本地交互等效为入口钮，登记差异）+ 展开切换
 ///（railExtended 持久化）。
 
-/// 导航项规格（图标/文案/皮肤槽位）
+/// 导航项规格（图标/文案/皮肤槽位/自定义图标）
+///
+/// [customIconPath] / [customSelectedIconPath] 对齐参考版 navIcon* /
+/// navIcon*Selected：非空时优先渲染用户选择的本地图片，缺文件回退皮肤/
+/// 内置 symbol（参考版 AsyncImage→AppIcons 回退同口径）。
 class AppNavSpec {
   final IconData symbol;
   final String label;
   final String? skinSlot;
+  final String customIconPath;
+  final String customSelectedIconPath;
 
   const AppNavSpec({
     required this.symbol,
     required this.label,
     this.skinSlot,
+    this.customIconPath = '',
+    this.customSelectedIconPath = '',
   });
 }
+
+/// 导航图标（自定义图片 > 底栏皮肤 > 内置 symbol）
+class NavSpecIcon extends StatelessWidget {
+  final AppNavSpec spec;
+  final bool selected;
+  final String activeSkin;
+
+  const NavSpecIcon({
+    super.key,
+    required this.spec,
+    required this.selected,
+    required this.activeSkin,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final custom = selected && spec.customSelectedIconPath.isNotEmpty
+        ? spec.customSelectedIconPath
+        : spec.customIconPath;
+    if (custom.isNotEmpty) {
+      return Image.file(
+        // ignore: avoid_slow_placeholder_io
+        File(custom),
+        width: 24,
+        height: 24,
+        fit: BoxFit.contain,
+        // 备份跨设备恢复/文件被清理 → 回退内置图标，不让导航项变空白
+        errorBuilder: (_, _, _) => _fallback(),
+      );
+    }
+    return _fallback();
+  }
+
+  Widget _fallback() {
+    Widget glyph() => Icon(spec.symbol, size: 24, fill: selected ? 1 : 0);
+    if (spec.skinSlot == null || activeSkin.isEmpty) return glyph();
+    return SkinNavIcon(
+      skin: activeSkin,
+      slot: spec.skinSlot!,
+      selected: selected,
+      fallback: glyph(),
+    );
+  }
+}
+
+/// 主导航页签内置图标（参考版 AppIcons.mainDestination 对应项）
+IconData mainTabSymbol(MainTab tab) => switch (tab) {
+      // [UI_SYNC_REFACTOR S6] 首页页签底栏项（新皮肤槽位，无皮肤回退 symbol）
+      MainTab.home => Symbols.home_rounded,
+      MainTab.bookshelf => Symbols.menu_book_rounded,
+      MainTab.explore => Symbols.explore_rounded,
+      // [parity C3 B5] 订阅页签图标改 RSS 选形：参考底栏第 4 项为经典 RSS
+      //（左下圆点 + 双弧，量测 ref 01 底栏），原 feed_rounded 为报纸/文档
+      // 版式（参考判为「文档图标」），改 rss_feed_rounded 对齐
+      MainTab.rss => Symbols.rss_feed_rounded,
+      MainTab.my => Symbols.person_rounded,
+    };
+
+/// 主导航页签底栏皮肤槽位（沿用既有映射）
+String mainTabSkinSlot(MainTab tab) => switch (tab) {
+      MainTab.home => 'home_page',
+      MainTab.bookshelf => 'bookshelf',
+      MainTab.explore => 'home',
+      MainTab.rss => 'notes',
+      MainTab.my => 'settings',
+    };
+
+/// 构造主导航项规格（首页/设置页共用，避免图标与槽位映射两处漂移）
+AppNavSpec mainTabNavSpec(
+  MainTab tab, {
+  String customIconPath = '',
+  String customSelectedIconPath = '',
+}) =>
+    AppNavSpec(
+      symbol: mainTabSymbol(tab),
+      label: mainTabLabel(tab),
+      skinSlot: mainTabSkinSlot(tab),
+      customIconPath: customIconPath,
+      customSelectedIconPath: customSelectedIconPath,
+    );
 
 /// 底栏皮肤图标（缺图回退系统 glyph；原 home_screen 私有件公共化）
 class SkinNavIcon extends StatelessWidget {
@@ -104,13 +193,10 @@ class AppShortNavigationBar extends StatelessWidget {
   }
 
   Widget _icon(AppNavSpec spec, {required bool selected}) {
-    Widget fallback() => Icon(spec.symbol, size: 24, fill: selected ? 1 : 0);
-    if (spec.skinSlot == null || activeSkin.isEmpty) return fallback();
-    return SkinNavIcon(
-      skin: activeSkin,
-      slot: spec.skinSlot!,
+    return NavSpecIcon(
+      spec: spec,
       selected: selected,
-      fallback: fallback(),
+      activeSkin: activeSkin,
     );
   }
 }
@@ -144,17 +230,10 @@ class _AppFloatingBottomBarState extends State<AppFloatingBottomBar> {
   int _pressedIndex = -1;
 
   Widget _icon(int index, {required bool selected}) {
-    final spec = widget.specs[index];
-    Widget fallback({required bool sel}) =>
-        Icon(spec.symbol, size: 24, fill: sel ? 1 : 0);
-    if (widget.activeSkin.isEmpty || spec.skinSlot == null) {
-      return fallback(sel: selected);
-    }
-    return SkinNavIcon(
-      skin: widget.activeSkin,
-      slot: spec.skinSlot!,
+    return NavSpecIcon(
+      spec: widget.specs[index],
       selected: selected,
-      fallback: fallback(sel: selected),
+      activeSkin: widget.activeSkin,
     );
   }
 
@@ -252,6 +331,10 @@ class AppRailBar extends StatelessWidget {
   final VoidCallback onToggleExtended;
   final VoidCallback onSearch;
 
+  /// 是否显示导航文字（底栏文字档位=纯图标时隐藏；对齐参考版 Rail
+  /// labelVisibilityMode=unlabeled 时 label=null）
+  final bool showLabel;
+
   /// 书架分组菜单（参考 Rail 项长按菜单的入口钮等效；null 隐藏）
   final List<String>? groups;
   final int? selectedGroupIndex;
@@ -266,6 +349,7 @@ class AppRailBar extends StatelessWidget {
     required this.onSelect,
     required this.onToggleExtended,
     required this.onSearch,
+    this.showLabel = true,
     this.groups,
     this.selectedGroupIndex,
     this.onGroupSelected,
@@ -275,24 +359,23 @@ class AppRailBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     Widget railIcon(AppNavSpec spec, {required bool selected}) {
-      Widget fallback() => Icon(spec.symbol, size: 24, fill: selected ? 1 : 0);
-      if (spec.skinSlot == null || activeSkin.isEmpty) return fallback();
-      return SkinNavIcon(
-        skin: activeSkin,
-        slot: spec.skinSlot!,
+      return NavSpecIcon(
+        spec: spec,
         selected: selected,
-        fallback: fallback(),
+        activeSkin: activeSkin,
       );
     }
 
     return NavigationRail(
       selectedIndex: currentIndex,
       onDestinationSelected: onSelect,
-      // 展开态走 extended 侧栏形态；折叠态仅选中显示 label
+      // 展开态走 extended 侧栏形态；折叠态按文字档位显示 label
       extended: extended,
-      labelType: extended
+      labelType: !showLabel
           ? NavigationRailLabelType.none
-          : NavigationRailLabelType.all,
+          : (extended
+              ? NavigationRailLabelType.none
+              : NavigationRailLabelType.all),
       leading: Column(
         children: [
           const SizedBox(height: 8),

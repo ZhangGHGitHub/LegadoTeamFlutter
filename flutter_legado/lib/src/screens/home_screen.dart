@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:material_symbols_icons/symbols.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/main_tab.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/explore/explore_main_notifier.dart';
 import '../providers/explore/explore_notifier.dart';
@@ -33,16 +33,20 @@ import 'settings_screen.dart';
 /// - [UI-fix v2.0.5 | 2026-08-08] 接通其他设置页主界面分组：显示发现/
 ///   显示订阅控制 Tab 显隐、默认首页控制启动落地页
 ///   （对标原版 AppConfig.showDiscovery/showRSS/defaultHomePage） — Qoder
+///
+/// [设置批2b-2a | 2026-11-02] 对齐参考版「首页与导航」：
+/// - 底栏页签按 mainNavigationOrder 动态排序/显隐（参考版 MainScreen
+///   `destinations = MainDestination.ordered(...).filter{...}`）；
+/// - 隐藏当前页签（含恢复备份后的异常配置）回退到首个可见页签
+///   （任务约定；参考版为越界回退 lastIndex，见 MainScreen.kt:257-261）；
+/// - 默认首页在偏好加载后按可见页签映射索引（参考版 initialPage 同口径）；
+/// - 自定义导航图标经 AppNavSpec 透传给三态底栏/Rail。
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
-
-/// 首页逻辑 Tab（与底栏索引解耦，便于按偏好动态显隐）
-/// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增 home 首页页签（对齐参考版首页）— Qoder
-enum _HomeTab { home, bookshelf, explore, rss, my }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 底栏双击判定窗口（对标原版 bookshelfReselected/exploreReselected 300ms）
@@ -51,22 +55,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 返回键双击退出判定窗口（对标原版 EXIT_INTERVAL = 2000ms）
   static const _exitInterval = Duration(seconds: 2);
 
-  /// [LAYOUT_MOTION_AUDIT L3] IndexedStack 当前索引。
-  /// 禁滑动切页（HapeLee IndexedStack 语义），切页一律经 setState 切索引。
-  int _stackIndex = 0;
-  // [UI_SYNC_REFACTOR S1] 滑动切页控制器（对齐参考 MainScreen
-  // HorizontalPager userScrollEnabled=true；2026-09-05 拉源码核实，
-  // 早前审计 IndexedStack 口径系误读——原版本就是 ViewPager 滑动）
-  // [UI_SYNC_REFACTOR S6 | 2026-09-08] 首页页签恒为索引 0，书架恒为索引 1
-  //（默认主页=书架，与既有默认主页偏好语义一致）；默认主页跳转逻辑不变 — Qoder
+  /// [LAYOUT_MOTION_AUDIT L3] 当前页签索引由 [_currentTab] 在 tabs 中反查，
+  /// 不再单独维护栈索引（顺序变化时不会出现索引与页签错位）。
+  ///
+  /// 初始页沿用默认配置（书架位于索引 1），偏好异步加载完成后再按
+  /// defaultHomePage/顺序校正一次。
   final PageController _pageController = PageController(initialPage: 1);
 
-  /// 当前逻辑 Tab（Tab 显隐变化时据此重新定位索引）
-  _HomeTab _currentTab = _HomeTab.bookshelf;
+  /// 当前逻辑 Tab（Tab 显隐/顺序变化时据此重新定位索引）
+  MainTab _currentTab = MainTab.bookshelf;
 
   /// 已访问过的 Tab 集合（首屏默认访问书架）— 保留懒构建语义
-  /// [UI_SYNC_REFACTOR S6] 首页页签相邻预载，一并加入初始集 — Qoder
-  final Set<_HomeTab> _visitedTabs = {_HomeTab.home, _HomeTab.bookshelf};
+  final Set<MainTab> _visitedTabs = {MainTab.home, MainTab.bookshelf};
 
   /// 书架页回滚顶部信号（双击书架底栏项时自增）
   final ValueNotifier<int> _bookshelfScrollTopSignal = ValueNotifier(0);
@@ -78,8 +78,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _lastTapIndex = -1;
   DateTime? _lastBackTime;
 
-  /// 默认首页是否已应用（偏好异步加载完成后仅跳转一次）
+  /// 默认首页是否已应用（偏好异步加载完成后仅应用一次）
   bool _defaultHomePageApplied = false;
+
+  /// 用户是否已手动切页（加载完成前手动切页则不再套用默认首页）
+  bool _userNavigated = false;
+
+  /// 上次同步给 PageController 的页签组合与索引（避免 build 内重复跳页）
+  String _lastTabsSignature = '';
+  int _lastControllerIndex = -1;
 
   @override
   void dispose() {
@@ -89,35 +96,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.dispose();
   }
 
-  /// 按主界面偏好计算可见 Tab 列表（对标原版 showDiscovery/showRSS 显隐）
-  /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增首页页签（最近阅读+统计+目标表盘，
-  /// 对齐参考版首页；恒显示，模块管理登记后续批次）— Qoder
-  List<_HomeTab> _visibleTabs(MainPrefsState prefs) => [
-        _HomeTab.home,
-        _HomeTab.bookshelf,
-        if (prefs.showDiscovery) _HomeTab.explore,
-        if (prefs.showRss) _HomeTab.rss,
-        _HomeTab.my,
-      ];
-
   /// 默认首页偏好值 → 逻辑 Tab（对标原版 defaultHomePage 数组值）
-  /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增首页页签后补 'home' 映射 — Qoder
-  _HomeTab _tabOfHomePage(String value) {
-    switch (value) {
-      case 'home':
-        return _HomeTab.home;
-      case 'explore':
-        return _HomeTab.explore;
-      case 'rss':
-        return _HomeTab.rss;
-      case 'my':
-        return _HomeTab.my;
-      default:
-        return _HomeTab.bookshelf;
-    }
-  }
+  MainTab _tabOfHomePage(String value) =>
+      mainTabFromRoute(value) ?? MainTab.bookshelf;
 
-  void _onDestinationSelected(List<_HomeTab> tabs, int index) {
+  void _onDestinationSelected(List<MainTab> tabs, int index) {
+    if (index < 0 || index >= tabs.length) return;
     final now = DateTime.now();
     final currentIndex = tabs.indexOf(_currentTab);
     // 双击检测：300ms 内再次点击当前选中项 → 触发 reselect 动作
@@ -132,27 +116,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _lastTapTime = now;
     _lastTapIndex = index;
     if (index != currentIndex) {
+      _userNavigated = true;
+      setState(() {
+        _currentTab = tabs[index];
+        _visitedTabs.add(_currentTab);
+      });
       // 对标原版 setCurrentItem(position, false)：无过渡动画
-      // [UI_SYNC_REFACTOR S1] PageView 跳页（滑动切页开启，同参考 HorizontalPager）
-      setState(() => _stackIndex = index);
-      _pageController.jumpToPage(index);
-      _onPageChanged(tabs, index);
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(index);
+      }
     }
   }
 
   /// 底栏双击动作（对标 onNavigationItemReselected）
-  void _onReselect(_HomeTab tab) {
+  void _onReselect(MainTab tab) {
     switch (tab) {
-      case _HomeTab.bookshelf: // 书架：gotoTop
+      case MainTab.bookshelf: // 书架：gotoTop
         _bookshelfScrollTopSignal.value++;
-      case _HomeTab.explore: // 发现：compressExplore（收起已展开的分类）
+      case MainTab.explore: // 发现：compressExplore（收起已展开的分类）
         _exploreCollapseSignal.value++;
       default:
         break;
     }
   }
 
-  void _onPageChanged(List<_HomeTab> tabs, int index) {
+  void _onPageChanged(List<MainTab> tabs, int index) {
+    if (index < 0 || index >= tabs.length) return;
+    if (tabs[index] != _currentTab) {
+      // 滑动切页视为用户主动导航：偏好加载完成前不再套用默认首页
+      _userNavigated = true;
+    }
     setState(() {
       _currentTab = tabs[index];
       _visitedTabs.add(_currentTab);
@@ -160,22 +153,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
-  Future<void> _handleBack(List<_HomeTab> tabs) async {
+  Future<void> _handleBack(List<MainTab> tabs) async {
     // [批36c 源内容模式返回键归属] 内容模式的返回由宿主统一消费：
     // 发现页与首页根节点同属一个 ModalRoute，Flutter 返回处理会依次通知
     // 该路由上所有 PopScope（didPop=false），内层 PopScope 无法「消费」本次
     // 返回；旧实现因此同时关闭内容模式并把 Tab 切回书架（设备验收场景 6）。
     // 现在先判定「发现 Tab 正在展示源内容」，命中则回源列表并直接返回，
     // 不再走切 Tab 分支。
-    if (_currentTab == _HomeTab.explore && _consumeExploreContentBack()) {
+    if (_currentTab == MainTab.explore && _consumeExploreContentBack()) {
       return;
     }
-    if (_currentTab != _HomeTab.bookshelf) {
-      // [LAYOUT_MOTION_AUDIT L3] IndexedStack 回书架
-      final index = tabs.indexOf(_HomeTab.bookshelf);
-      setState(() => _stackIndex = index >= 0 ? index : 0);
-      _pageController.jumpToPage(_stackIndex);
-      _onPageChanged(tabs, _stackIndex);
+    if (_currentTab != MainTab.bookshelf) {
+      final bookshelfIndex = tabs.indexOf(MainTab.bookshelf);
+      final targetIndex = bookshelfIndex >= 0 ? bookshelfIndex : 0;
+      if (targetIndex >= 0 && targetIndex < tabs.length) {
+        setState(() {
+          _currentTab = tabs[targetIndex];
+          _visitedTabs.add(_currentTab);
+        });
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(targetIndex);
+        }
+      }
       return;
     }
     final now = DateTime.now();
@@ -213,29 +212,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return true;
   }
 
-
   /// 逻辑 Tab → 页面内容（未访问过的 Tab 用占位以保留懒构建语义）
-  Widget _pageOf(_HomeTab tab) {
+  Widget _pageOf(MainTab tab) {
     switch (tab) {
-      case _HomeTab.home:
+      case MainTab.home:
         return _visitedTabs.contains(tab)
             ? const HomeTabScreen()
             : const SizedBox.shrink();
-      case _HomeTab.bookshelf:
+      case MainTab.bookshelf:
         return BookshelfScreen(scrollTopSignal: _bookshelfScrollTopSignal);
-      case _HomeTab.explore:
+      case MainTab.explore:
         return _visitedTabs.contains(tab)
             ? ExploreScreen(collapseSignal: _exploreCollapseSignal)
             : const SizedBox.shrink();
-      case _HomeTab.rss:
+      case MainTab.rss:
         return _visitedTabs.contains(tab)
             ? const RssScreen()
             : const SizedBox.shrink();
-      case _HomeTab.my:
+      case MainTab.my:
         return _visitedTabs.contains(tab)
             ? const SettingsScreen()
             : const SizedBox.shrink();
     }
+  }
+
+  /// 页签组合/当前索引变化后校正 PageController
+  ///
+  /// 顺序或显隐变化会改变页签在 PageView 中的索引；用页签签名 + 索引去重，
+  /// 只在真正变化时调度一次 post-frame 跳页（build 内不能直接 jump）。
+  void _syncPageController(List<MainTab> tabs, int index) {
+    final signature = tabs.map((tab) => tab.route).join(',');
+    if (signature == _lastTabsSignature && index == _lastControllerIndex) {
+      return;
+    }
+    _lastTabsSignature = signature;
+    _lastControllerIndex = index;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      final page = _pageController.page;
+      if (page != null && page.round() == index) return;
+      _pageController.jumpToPage(index);
+    });
   }
 
   @override
@@ -243,41 +260,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final prefs = ref.watch(mainPrefsProvider);
     final skinState = ref.watch(bottomBarSkinProvider);
     final activeSkin = skinState.active;
-    final tabs = _visibleTabs(prefs);
-    // 偏好加载完成后应用默认首页（仅启动时生效一次，对标原版
-    // ViewPager 初始 setCurrentItem(defaultHomePage)）
-    ref.listen(mainPrefsProvider, (previous, next) {
-      if (_defaultHomePageApplied) return;
-      final target = _tabOfHomePage(next.defaultHomePage);
-      if (target == _HomeTab.bookshelf) {
-        _defaultHomePageApplied = true;
-        return;
+    final tabs = prefs.visibleTabs;
+
+    // 偏好加载完成后应用默认首页（仅启动时生效一次，对标参考版 MainScreen
+    // initialPage = destinations.indexOf(defaultHomePage)）
+    if (prefs.loaded && !_defaultHomePageApplied) {
+      _defaultHomePageApplied = true;
+      if (!_userNavigated) {
+        final target = _tabOfHomePage(prefs.defaultHomePage);
+        if (tabs.contains(target)) _currentTab = target;
       }
-      final targetIndex = _visibleTabs(next).indexOf(target);
-      // 目标 Tab 被隐藏或用户已手动切页时不再跳转
-      if (targetIndex >= 0 && _currentTab == _HomeTab.bookshelf) {
-        _defaultHomePageApplied = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引
-          setState(() => _stackIndex = targetIndex);
-          _pageController.jumpToPage(targetIndex);
-          _onPageChanged(_visibleTabs(next), targetIndex);
-        });
-      }
-    });
-    // Tab 显隐变化后当前 Tab 可能被隐藏，回退书架并同步页面位置
-    var currentIndex = tabs.indexOf(_currentTab);
-    if (currentIndex < 0) {
-      _currentTab = _HomeTab.bookshelf;
-      currentIndex = 0;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引
-        setState(() => _stackIndex = 0);
-        _pageController.jumpToPage(0);
-      });
     }
+    // Tab 显隐/顺序变化后当前 Tab 可能被隐藏：回退首个可见页签
+    //（参考版越界回退 lastIndex；本实现按任务约定回退 first visible）
+    if (!tabs.contains(_currentTab)) {
+      _currentTab = tabs.first;
+    }
+    final currentIndex = tabs.indexOf(_currentTab);
+    _visitedTabs.add(_currentTab);
+    _syncPageController(tabs, currentIndex);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -291,16 +293,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             constraints.maxWidth,
             MediaQuery.of(context).orientation,
           );
-          final pageArea = PageView(
+          final pageArea = PageView.builder(
             controller: _pageController,
             // [UI_SYNC_REFACTOR S1] 滑动切页（对齐参考 HorizontalPager
             // userScrollEnabled=true；allowImplicitScrolling≈预载相邻页）
             physics: const ClampingScrollPhysics(),
             allowImplicitScrolling: true,
+            itemCount: tabs.length,
+            // 顺序变化时按页签 key 找回新索引，保住各页 State（滚动位置等）
+            findChildIndexCallback: (key) {
+              if (key is ValueKey<MainTab>) {
+                final index = tabs.indexOf(key.value);
+                return index >= 0 ? index : null;
+              }
+              return null;
+            },
             onPageChanged: (index) => _onPageChanged(tabs, index),
-            children: [
-              for (final tab in tabs) _KeepAlivePage(child: _pageOf(tab)),
-            ],
+            itemBuilder: (context, index) {
+              final tab = tabs[index];
+              return _KeepAlivePage(
+                key: ValueKey(tab),
+                child: _pageOf(tab),
+              );
+            },
           );
           // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
           return AppScaffold(
@@ -316,7 +331,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: useRail
                   ? Row(
                       children: [
-                        _buildRail(ui, tabs, currentIndex),
+                        _buildRail(ui, tabs, currentIndex, prefs),
                         const VerticalDivider(width: 1, thickness: 0),
                         Expanded(child: pageArea),
                       ],
@@ -331,6 +346,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               tabs,
               currentIndex,
               activeSkin,
+              prefs,
             ),
           );
         },
@@ -339,40 +355,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 导航项规格（三态底栏统一消费源）
-  List<AppNavSpec> _specsFor(List<_HomeTab> tabs) => [
+  List<AppNavSpec> _specsFor(
+    List<MainTab> tabs,
+    MainPrefsState prefs,
+  ) =>
+      [
         for (final tab in tabs)
-          switch (tab) {
-            // [UI_SYNC_REFACTOR S6] 首页页签底栏项（新皮肤槽位，无皮肤回退 symbol）
-            _HomeTab.home => AppNavSpec(
-                symbol: Symbols.home_rounded,
-                label: '首页',
-                skinSlot: 'home_page',
-              ),
-            _HomeTab.bookshelf => AppNavSpec(
-                symbol: Symbols.menu_book_rounded,
-                label: AppStrings.bookshelf,
-                skinSlot: 'bookshelf',
-              ),
-            _HomeTab.explore => AppNavSpec(
-                symbol: Symbols.explore_rounded,
-                label: AppStrings.discover,
-                skinSlot: 'home',
-              ),
-            _HomeTab.rss => AppNavSpec(
-                // [parity C3 B5] 订阅页签图标改 RSS 选形：参考底栏第 4 项
-                // 为经典 RSS（左下圆点 + 双弧，量测 ref 01 底栏），原
-                // feed_rounded 为报纸/文档版式（参考判为「文档图标」），
-                // 改 rss_feed_rounded 对齐
-                symbol: Symbols.rss_feed_rounded,
-                label: AppStrings.rss,
-                skinSlot: 'notes',
-              ),
-            _HomeTab.my => AppNavSpec(
-                symbol: Symbols.person_rounded,
-                label: AppStrings.my,
-                skinSlot: 'settings',
-              ),
-          },
+          mainTabNavSpec(
+            tab,
+            customIconPath: prefs.navIconPath(tab),
+            customSelectedIconPath: prefs.navIconPath(tab, selected: true),
+          ),
       ];
 
   /// Rail 激活判定（对齐参考仓 tabletInterface：auto/always/landscape/off）
@@ -390,13 +383,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 平板侧栏（组件化：皮肤图标+头部搜索钮+书架分组菜单+expand 持久化）
-  Widget _buildRail(UiSettingsState ui, List<_HomeTab> tabs, int currentIndex) {
+  Widget _buildRail(
+    UiSettingsState ui,
+    List<MainTab> tabs,
+    int currentIndex,
+    MainPrefsState prefs,
+  ) {
     final bookshelf = ref.watch(bookshelfNotifierProvider);
     return AppRailBar(
-      specs: _specsFor(tabs),
+      specs: _specsFor(tabs, prefs),
       currentIndex: currentIndex,
       activeSkin: ref.watch(bottomBarSkinProvider.select((s) => s.active)),
       extended: ui.railExtended,
+      showLabel: ui.labelVisibilityMode != BottomBarLabelMode.unlabeled,
       onSelect: (index) => _onDestinationSelected(tabs, index),
       onToggleExtended: () => ref
           .read(uiSettingsProvider.notifier)
@@ -415,14 +414,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget? _buildBottomBar(
     BuildContext context,
     UiSettingsState ui,
-    List<_HomeTab> tabs,
+    List<MainTab> tabs,
     int currentIndex,
     String activeSkin,
+    MainPrefsState prefs,
   ) {
     if (!ui.showBottomView) return null;
+    final specs = _specsFor(tabs, prefs);
     if (ui.useFloatingBottomBar) {
       return AppFloatingBottomBar(
-        specs: _specsFor(tabs),
+        specs: specs,
         currentIndex: currentIndex,
         activeSkin: activeSkin,
         onSelect: (index) => _onDestinationSelected(tabs, index),
@@ -432,11 +433,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
     return AppShortNavigationBar(
-      specs: _specsFor(tabs),
+      specs: specs,
       currentIndex: currentIndex,
       activeSkin: activeSkin,
       labelBehavior: switch (ui.labelVisibilityMode) {
-        BottomBarLabelMode.auto =>
+        // 参考版 auto 与 selected 都映射 IconWithSelectedLabel
+        BottomBarLabelMode.auto ||
+        BottomBarLabelMode.selected =>
           NavigationDestinationLabelBehavior.onlyShowSelected,
         BottomBarLabelMode.labeled =>
           NavigationDestinationLabelBehavior.alwaysShow,
@@ -449,15 +452,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 }
 
-
-
-
 /// [UI_SYNC_REFACTOR S1] 页保活（对齐参考 HorizontalPager
 /// beyondViewportPageCount=4：全部页常驻不销毁，懒构建语义保留）
 class _KeepAlivePage extends StatefulWidget {
   final Widget child;
 
-  const _KeepAlivePage({required this.child});
+  const _KeepAlivePage({super.key, required this.child});
 
   @override
   State<_KeepAlivePage> createState() => _KeepAlivePageState();

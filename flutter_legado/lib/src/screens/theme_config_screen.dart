@@ -37,6 +37,7 @@ import '../utils/error_message.dart';
 import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/setting_slider_row.dart';
+import 'main_navigation_settings_sheet.dart';
 
 /// 主题设置页面（对齐原版 ThemeConfigFragment）
 ///
@@ -256,7 +257,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _labelModeLabel(BottomBarLabelMode m) => switch (m) {
-        BottomBarLabelMode.auto => '仅选中显示（默认）',
+        BottomBarLabelMode.auto => '自动（默认）',
+        BottomBarLabelMode.selected => '选中时显示',
         BottomBarLabelMode.labeled => '全部常显',
         BottomBarLabelMode.unlabeled => '纯图标',
       };
@@ -826,6 +828,16 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   const IosSectionHeader('主界面'),
                   IosGroup(
                       children: [
+                    // [设置批2b-2a] 参考版「首页与导航」独立设置项
+                    //（MainNavigationSettingsSheet）：显隐首页/发现/订阅、
+                    // 排序、默认首页、底栏文字、导航图标。参考版将其放在
+                    // 外观页「主界面」组首位，本项同位置对齐 — 全栈工程师
+                    IosListTile(
+                      icon: Symbols.explore_rounded,
+                      title: '首页与导航',
+                      subtitle: '设置首页、发现、订阅、默认主页和导航栏图标',
+                      onTap: () => MainNavigationSettingsSheet.show(context),
+                    ),
                     IosListTile(
                       title: '顶栏按钮样式',
                       subtitle: _topBarStyleLabel(ui.topBarButtonStyle),

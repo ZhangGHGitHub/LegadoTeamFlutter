@@ -200,6 +200,12 @@ class RestoreIgnorePrefs {
     PrefKeys.eyeProtectionSchedule,
     PrefKeys.eyeProtectionStartTime,
     PrefKeys.eyeProtectionEndTime,
+    // [设置批2b-2a] 首页与导航键（showHome/showDiscovery/showRss/
+    // defaultHomePage/mainNavigationOrder/navIcon*）**刻意不加入**：
+    // 参考版 BackupConfig.themePrefKeys（263-317）未收录这些键，任何忽略
+    // 组合下都随 appPrefs 完整往返。navIcon* 是设备本地路径，跨设备恢复后
+    // 文件不存在时由 NavSpecIcon 回退内置图标（参考版 AsyncImage 同口径），
+    // 不因此改变备份范围 — 全栈工程师
   };
 
   /// 封面规则相关键（对齐 BackupConfig.coverPrefKeys）
