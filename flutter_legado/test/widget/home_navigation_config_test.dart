@@ -22,6 +22,7 @@ import 'package:flutter_legado/src/screens/explore_screen.dart';
 import 'package:flutter_legado/src/screens/home_screen.dart';
 import 'package:flutter_legado/src/screens/home_tab_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
+import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 import 'package:flutter_legado/src/widgets/navigation/app_navigation_bars.dart';
 
 import '../mocks/mocks.dart';
@@ -138,16 +139,31 @@ void main() {
     expect(find.byType(ExploreScreen), findsOneWidget);
   });
 
-  testWidgets('默认首页被隐藏：落回首个可见页签', (tester) async {
+  testWidgets('默认首页被隐藏：落回首个可见页签（索引 0）', (tester) async {
     await pumpHome(
       tester,
       prefs: {PrefKeys.defaultHomePage: 'rss', PrefKeys.showRss: false},
       api: buildApi(),
     );
-    // 顺序中 rss 被移到末尾并隐藏，首个可见页签为 home
+    // 顺序中 rss 仍第 5 且隐藏；默认页不可见 → initialPage 回退 0（首页）
     expect(destinationLabels(tester), ['首页', '书架', '发现', '我的']);
-    expect(selectedIndex(tester), 1);
-    expect(find.byType(BookshelfScreen), findsOneWidget);
+    expect(selectedIndex(tester), 0);
+    expect(find.byType(HomeTabScreen), findsOneWidget);
+  });
+
+  testWidgets('默认首页不可见且首个可见项不是书架：落点仍是索引 0', (tester) async {
+    await pumpHome(
+      tester,
+      prefs: {
+        PrefKeys.mainNavigationOrder: 'my,explore,bookshelf,home,rss',
+        PrefKeys.defaultHomePage: 'rss',
+        PrefKeys.showRss: false,
+      },
+      api: buildApi(),
+    );
+    expect(destinationLabels(tester), ['我的', '发现', '书架', '首页']);
+    expect(selectedIndex(tester), 0);
+    expect(find.byType(SettingsScreen), findsOneWidget);
   });
 
   testWidgets('当前页被隐藏：回退首个可见页签', (tester) async {
@@ -232,6 +248,61 @@ void main() {
     await pumpFresh(tester, api);
     expect(destinationLabels(tester), ['我的', '首页', '书架', '发现']);
     expect(selectedIndex(tester), 2);
+  });
+
+  testWidgets('顺序变化：书架页 State（滚动位置）跟随页签保持', (tester) async {
+    await pumpHome(tester, prefs: {}, api: buildApi());
+    final scrollable = find.descendant(
+      of: find.byType(CustomScrollView),
+      matching: find.byWidgetPredicate(
+        (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      ),
+    );
+    await tester.drag(scrollable, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final before =
+        tester.state<ScrollableState>(scrollable).position.pixels;
+    expect(before, greaterThan(0));
+
+    // 书架从索引 1 移到索引 2：PageView 按 ValueKey 保留各页 State
+    await prefsNotifier(tester).setNavigationOrder([
+      MainTab.home,
+      MainTab.my,
+      MainTab.bookshelf,
+      MainTab.explore,
+      MainTab.rss,
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(selectedIndex(tester), 2);
+    expect(find.byType(BookshelfScreen), findsOneWidget);
+    final after = tester.state<ScrollableState>(scrollable).position.pixels;
+    expect(after, before, reason: '排序不应重建书架页/丢滚动位置');
+  });
+
+  testWidgets('备份恢复同会话：applyFromBackup + invalidate 立即刷新底栏', (tester) async {
+    await pumpHome(tester, prefs: {}, api: buildApi());
+    expect(destinationLabels(tester).length, 5);
+
+    await RestoreIgnorePrefs.applyFromBackup(
+      {
+        PrefKeys.showHome: false,
+        PrefKeys.showDiscovery: false,
+        PrefKeys.showRss: false,
+        PrefKeys.mainNavigationOrder: 'my,bookshelf',
+        PrefKeys.defaultHomePage: 'my',
+      },
+      const {},
+    );
+    final container =
+        ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+    container.invalidate(mainPrefsProvider);
+    await tester.pumpAndSettle();
+
+    expect(destinationLabels(tester), ['我的', '书架']);
+    // 启动默认页仅冷启动应用一次；同会话保持当前书架页（新索引 1）
+    expect(selectedIndex(tester), 1);
+    expect(find.byType(BookshelfScreen), findsOneWidget);
   });
 
   testWidgets('返回键：顺序变化后仍按书架新索引回退', (tester) async {

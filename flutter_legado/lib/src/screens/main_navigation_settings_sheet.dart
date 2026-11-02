@@ -10,8 +10,6 @@
 // — 全栈工程师 + UI，2026-11-02
 import 'dart:io' show File;
 
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -21,6 +19,7 @@ import '../models/main_tab.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
+import '../services/container_image_picker.dart';
 import '../services/nav_icon_store.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/navigation/app_navigation_bars.dart';
@@ -61,11 +60,11 @@ class _MainNavigationSettingsSheetState
   }
 
   String _labelModeLabel(BottomBarLabelMode mode) => switch (mode) {
-    BottomBarLabelMode.auto => '自动（默认）',
-    BottomBarLabelMode.selected => '选中时显示',
-    BottomBarLabelMode.labeled => '全部常显',
-    BottomBarLabelMode.unlabeled => '不显示',
-  };
+        BottomBarLabelMode.auto => '自动',
+        BottomBarLabelMode.selected => '选中时显示',
+        BottomBarLabelMode.labeled => '常驻',
+        BottomBarLabelMode.unlabeled => '不显示',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +106,7 @@ class _MainNavigationSettingsSheetState
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
             children: [
               IosListTile(
-                title: '默认首页',
+                title: '默认主页',
                 subtitle: '启动应用时优先打开的页签（仅显示可见项）',
                 trailing: DropdownButton<String>(
                   value: defaultRoute,
@@ -328,11 +327,33 @@ class _MainNavigationSettingsSheetState
 }
 
 /// 导航栏图标管理（5 页签 × 未选中/选中）
-class _NavIconManagerSheet extends ConsumerWidget {
+class _NavIconManagerSheet extends ConsumerStatefulWidget {
   const _NavIconManagerSheet();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_NavIconManagerSheet> createState() =>
+      _NavIconManagerSheetState();
+}
+
+class _NavIconManagerSheetState
+    extends ConsumerState<_NavIconManagerSheet> {
+  @override
+  void initState() {
+    super.initState();
+    // [复核 P2-5] 打开图标管理时低成本回收未引用自有文件/超龄 tmp；
+    // 先确保 Support 缓存就绪（平台通道失败时 ensureWarm 内部吞掉）。
+    _cleanupOrphans();
+  }
+
+  Future<void> _cleanupOrphans() async {
+    await NavIconStore.ensureWarm();
+    if (!mounted) return;
+    final prefs = ref.read(mainPrefsProvider);
+    NavIconStore.cleanupOrphansSync(keep: _navIconPathsOf(prefs));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final prefs = ref.watch(mainPrefsProvider);
     final theme = Theme.of(context);
     return Column(
@@ -440,6 +461,8 @@ class _IconSlot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final resolved = NavIconStore.resolveSync(path);
+    final usable = path.isNotEmpty && NavIconStore.isUsableSync(path);
     return SizedBox(
       width: 44,
       height: 44,
@@ -457,16 +480,22 @@ class _IconSlot extends ConsumerWidget {
                   size: 22,
                   color: theme.colorScheme.primary,
                 )
-              : Image.file(
-                  // ignore: avoid_slow_placeholder_io
-                  File(path),
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => Icon(
-                    Symbols.broken_image_rounded,
-                    size: 20,
-                    color: theme.colorScheme.error,
-                  ),
-                ),
+              : usable
+                  ? Image.file(
+                      // ignore: avoid_slow_placeholder_io
+                      File(resolved),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => Icon(
+                        Symbols.broken_image_rounded,
+                        size: 20,
+                        color: theme.colorScheme.error,
+                      ),
+                    )
+                  : Icon(
+                      Symbols.broken_image_rounded,
+                      size: 20,
+                      color: theme.colorScheme.error,
+                    ),
         ),
       ),
     );
@@ -503,31 +532,40 @@ class _IconSlot extends ConsumerWidget {
   }
 
   Future<void> _pickIcon(BuildContext context, WidgetRef ref) async {
-    if (kIsWeb) {
-      _toast(context, '当前平台不支持自定义导航图标');
-      return;
-    }
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      allowMultiple: false,
-    );
-    final files = result?.files ?? const [];
-    if (files.isEmpty) return;
-    final sourcePath = files.first.path;
-    if (sourcePath == null || sourcePath.isEmpty) return;
-    final stored = await NavIconStore.importFromPath(sourcePath);
-    if (stored.isEmpty) {
-      if (context.mounted) _toast(context, '图标读取失败，请换一张图片');
-      return;
-    }
-    final before = ref.read(mainPrefsProvider);
-    final oldPath = before.navIconPath(tab, selected: selected);
-    await ref
-        .read(mainPrefsProvider.notifier)
-        .setNavIconPath(tab, selected: selected, path: stored);
-    if (oldPath.isNotEmpty && oldPath != stored) {
-      final after = ref.read(mainPrefsProvider);
-      await NavIconStore.deleteIfUnused(oldPath, keep: _iconPaths(after));
+    try {
+      // [复核 P1] Android 走 SAF（fd 读字节），不再使用 file_picker 的
+      // MediaStore 路径；iOS/桌面走 file_picker（allowCompression:false）。
+      final picked = await ContainerImagePicker.pick(
+        maxBytes: NavIconStore.maxBytes,
+        dialogTitle: '选择导航图标',
+      );
+      if (picked == null) return;
+      final stored = await NavIconStore.importBytes(
+        picked.bytes,
+        originalName: picked.name,
+      );
+      final before = ref.read(mainPrefsProvider);
+      final oldPath = before.navIconPath(tab, selected: selected);
+      await ref
+          .read(mainPrefsProvider.notifier)
+          .setNavIconPath(tab, selected: selected, path: stored);
+      if (oldPath.isNotEmpty && oldPath != stored) {
+        final after = ref.read(mainPrefsProvider);
+        await NavIconStore.deleteIfUnused(
+          oldPath,
+          keep: _navIconPathsOf(after),
+        );
+      }
+    } on ContainerImagePickException catch (e) {
+      if (context.mounted) _toast(context, e.message);
+    } on FormatException catch (e) {
+      if (context.mounted) _toast(context, e.message);
+    } on UnsupportedError catch (e) {
+      if (context.mounted) {
+        _toast(context, e.message ?? '当前平台不支持自定义导航图标');
+      }
+    } catch (e) {
+      if (context.mounted) _toast(context, '图标保存失败，请重试');
     }
   }
 
@@ -539,7 +577,10 @@ class _IconSlot extends ConsumerWidget {
         .setNavIconPath(tab, selected: selected, path: '');
     if (oldPath.isNotEmpty) {
       final after = ref.read(mainPrefsProvider);
-      await NavIconStore.deleteIfUnused(oldPath, keep: _iconPaths(after));
+      await NavIconStore.deleteIfUnused(
+        oldPath,
+        keep: _navIconPathsOf(after),
+      );
     }
   }
 
@@ -548,13 +589,14 @@ class _IconSlot extends ConsumerWidget {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
   }
+}
 
-  static Iterable<String> _iconPaths(MainPrefsState state) sync* {
-    for (final path in state.navIconPaths.values) {
-      if (path.isNotEmpty) yield path;
-    }
-    for (final path in state.navIconSelectedPaths.values) {
-      if (path.isNotEmpty) yield path;
-    }
+/// 当前全部图标偏好值（相对标识或旧绝对路径）
+Iterable<String> _navIconPathsOf(MainPrefsState state) sync* {
+  for (final path in state.navIconPaths.values) {
+    if (path.isNotEmpty) yield path;
+  }
+  for (final path in state.navIconSelectedPaths.values) {
+    if (path.isNotEmpty) yield path;
   }
 }

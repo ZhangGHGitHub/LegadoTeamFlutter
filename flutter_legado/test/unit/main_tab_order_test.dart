@@ -71,7 +71,15 @@ void main() {
       );
     });
 
-    test('至少保留一项：异常空配置回退书架', () {
+    test('单页兜底：空可见列表返回单页书架', () {
+      expect(ensureAtLeastOneMainTab(const []), const [MainTab.bookshelf]);
+      expect(
+        ensureAtLeastOneMainTab(const [MainTab.my]),
+        const [MainTab.my],
+      );
+    });
+
+    test('三项全隐藏时书架/我的恒显示（至少一项）', () {
       expect(
         visibleMainTabs(
           order: 'home,explore,rss',
@@ -79,7 +87,7 @@ void main() {
           showDiscovery: false,
           showRss: false,
         ),
-        isNotEmpty,
+        [MainTab.bookshelf, MainTab.my],
       );
     });
   });

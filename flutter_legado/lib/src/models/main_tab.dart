@@ -113,9 +113,15 @@ List<MainTab> visibleMainTabs({
     };
     if (shown) visible.add(tab);
   }
-  if (visible.isEmpty) return const [MainTab.bookshelf];
-  return visible;
+  return ensureAtLeastOneMainTab(visible);
 }
+
+/// 至少一项兜底：极端配置（未来新增可隐藏项后全部隐藏）返回单页书架。
+///
+/// 当前书架/我的恒显示，正常路径至少 2 项；本函数保证 HomeScreen 的
+/// `tabs.first`/PageView `itemCount` 永远非 0（单页兜底）。
+List<MainTab> ensureAtLeastOneMainTab(List<MainTab> visible) =>
+    visible.isEmpty ? const [MainTab.bookshelf] : visible;
 
 /// 拖拽排序结果（仅对可见项生效；隐藏项保持原相对顺序接在末尾）
 ///

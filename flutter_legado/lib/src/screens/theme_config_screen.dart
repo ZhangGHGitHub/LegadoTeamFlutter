@@ -256,46 +256,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
-  String _labelModeLabel(BottomBarLabelMode m) => switch (m) {
-        BottomBarLabelMode.auto => '自动（默认）',
-        BottomBarLabelMode.selected => '选中时显示',
-        BottomBarLabelMode.labeled => '全部常显',
-        BottomBarLabelMode.unlabeled => '纯图标',
-      };
-
-  Future<void> _showLabelModePicker() async {
-    final current = ref.read(uiSettingsProvider).labelVisibilityMode;
-    final selected = await showDialog<BottomBarLabelMode>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('底栏文字'),
-        children: [
-          for (final m in BottomBarLabelMode.values)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, m),
-              child: Row(
-                children: [
-                  Icon(
-                    current == m
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(_labelModeLabel(m)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-    if (selected != null) {
-      await ref
-          .read(uiSettingsProvider.notifier)
-          .setLabelVisibilityMode(selected);
-    }
-  }
-
   Future<void> _showBottomBarOpacityDialog() async {
     var value = ref.read(uiSettingsProvider).bottomBarOpacity.toDouble();
     final confirmed = await showDialog<bool>(
@@ -879,11 +839,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
                           .setUseFloatingBottomBar(v),
-                    ),
-                    IosListTile(
-                      title: '底栏文字',
-                      subtitle: _labelModeLabel(ui.labelVisibilityMode),
-                      onTap: _showLabelModePicker,
                     ),
                     IosListTile(
                       title: '底栏不透明度',

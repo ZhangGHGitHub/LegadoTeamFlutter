@@ -10,12 +10,15 @@
 //   仅首页/发现/订阅可隐藏，书架与我的恒显示（至少保留一项）；
 // - 隐藏当前默认页时回落 bookshelf（参考版
 //   ThemeConfigViewModel.fallbackHomePage）。
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../constants/pref_keys.dart';
 import '../models/main_tab.dart';
+import '../services/nav_icon_store.dart';
 import '../services/settings_service.dart';
 
 /// 主界面偏好状态
@@ -105,8 +108,13 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
   @visibleForTesting
   Future<void>? get loadFuture => _loadFuture;
 
+  /// provider 是否已销毁（异步预热回来不再写 state）
+  bool _disposed = false;
+
   @override
   MainPrefsState build() {
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
     _loadFuture = _load();
     return const MainPrefsState();
   }
@@ -142,6 +150,9 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
           await _settings.getStringPref(_iconKey(tab, selected: true));
       if (selectedPath.isNotEmpty) selectedIcons[tab] = selectedPath;
     }
+    // [复核 P2-6] 先发布 loaded 状态，再异步预热 Support 缓存：widget 测试/
+    // 平台通道不可用时 ensureWarm 不会阻塞偏好加载；预热完成后补一次状态
+    // 通知，让相对图标标识从“首帧回退内置”切到真实图片。
     state = MainPrefsState(
       showHome: showHome,
       showDiscovery: showDiscovery,
@@ -152,6 +163,17 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
       navIconSelectedPaths: Map.unmodifiable(selectedIcons),
       loaded: true,
     );
+    unawaited(_warmIconBase());
+  }
+
+  /// 预热图标 Support 目录并刷新一次（仅当存在自定义图标且缓存已就绪）
+  Future<void> _warmIconBase() async {
+    await NavIconStore.ensureWarm();
+    if (_disposed || !NavIconStore.isWarm) return;
+    if (state.navIconPaths.isEmpty && state.navIconSelectedPaths.isEmpty) {
+      return;
+    }
+    state = state.copyWith();
   }
 
   /// 设置显示首页

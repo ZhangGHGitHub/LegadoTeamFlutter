@@ -48,7 +48,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(DropdownButton<BottomBarLabelMode>),
-        matching: find.text('自动（默认）'),
+        matching: find.text('自动'),
       ),
       findsOneWidget,
     );
@@ -108,11 +108,11 @@ void main() {
     expect(prefs.getString(PrefKeys.defaultHomePage), 'my');
   });
 
-  testWidgets('底栏文字下拉切换为全部常显', (tester) async {
+  testWidgets('底栏文字下拉切换为常驻', (tester) async {
     final container = await pumpSheet(tester);
     await tester.tap(find.byType(DropdownButton<BottomBarLabelMode>));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('全部常显').last);
+    await tester.tap(find.text('常驻').last);
     await tester.pumpAndSettle();
     expect(
       container.read(uiSettingsProvider).labelVisibilityMode,

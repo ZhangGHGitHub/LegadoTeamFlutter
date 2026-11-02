@@ -1,14 +1,17 @@
-// [设置批2b-1b-2a | 2026-11-02] 容器背景图选择器（Android SAF / 其余 file_picker）
+// [设置批2b-1b-2a | 2026-11-02] 图片选择器（Android SAF / 其余 file_picker）
 //
 // 设备根因：file_picker 的 Android MediaStore 路径在选中「已删除文件」的陈旧
-// 缩略图时会触发原生 FATAL。容器图改走 SAF `ACTION_OPEN_DOCUMENT`：
+// 缩略图时会触发原生 FATAL。容器图/导航图标统一改走 SAF
+// `ACTION_OPEN_DOCUMENT`：
 // - `Saf().pickFile(mimeTypes: ['image/*'])`，取消返回 null；
 // - `withFileDescriptor(uri, 'r', ...)` 直接读字节，不解析 MediaStore 路径、
 //   不触发 file_picker 原生压缩；
 // - Android 分支**不再调用 file_picker**（SAF 异常时提示重试，不降级到
 //   MediaStore 路径）；
 // - iOS/桌面保留 file_picker（allowCompression:false）。
-// 读取后的字节交由 ThemeBackgroundImageStore.storeBytes 统一校验/原子写。
+// 读取后的字节交由 ThemeBackgroundImageStore.storeBytes /
+// NavIconStore.importBytes 统一校验/原子写。
+// — 全栈工程师 + UI，2026-11-02
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -18,6 +21,9 @@ import 'package:saf/saf.dart';
 import 'theme_background_image_store.dart';
 
 /// 选中图片的字节内容与显示名（SAF/file_picker 统一口径）
+///
+/// 容器背景图与导航图标共用；调用方通过 [ContainerImagePicker.pick] 的
+/// `maxBytes`/`dialogTitle` 区分场景。
 class ContainerImagePick {
   final Uint8List bytes;
   final String name;
@@ -83,13 +89,24 @@ class ContainerImagePicker {
   }
 
   /// 选择一张图片；用户取消返回 null，失败抛 [ContainerImagePickException]。
-  static Future<ContainerImagePick?> pick() async {
-    if (isAndroid()) return _pickAndroid();
-    return _pickFilePicker();
+  ///
+  /// [maxBytes]：读入内存前的尺寸上限（默认容器图 32MB；导航图标传
+  /// `NavIconStore.maxBytes`）。Android 先按 SAF 元数据拦截，iOS/桌面按
+  /// `PlatformFile.size` 与最终字节双重校验。
+  /// [dialogTitle]：iOS/桌面 file_picker 标题；Android SAF 由系统选择器决定。
+  static Future<ContainerImagePick?> pick({
+    int maxBytes = ThemeBackgroundImageStore.maxBytes,
+    String dialogTitle = '选择容器背景图片',
+  }) async {
+    if (maxBytes <= 0) throw ArgumentError.value(maxBytes, 'maxBytes');
+    if (isAndroid()) return _pickAndroid(maxBytes: maxBytes);
+    return _pickFilePicker(maxBytes: maxBytes, dialogTitle: dialogTitle);
   }
 
   /// Android：SAF pickFile + fd 读字节。异常只提示，不触碰 file_picker。
-  static Future<ContainerImagePick?> _pickAndroid() async {
+  static Future<ContainerImagePick?> _pickAndroid({
+    required int maxBytes,
+  }) async {
     try {
       final doc = await safGateway.pickImage(
         mimeTypes: const <String>['image/*'],
@@ -98,13 +115,13 @@ class ContainerImagePicker {
         debugPrint('[ContainerImagePicker] 平台=Android SAF 用户取消');
         return null;
       }
-      // 先按 provider 元数据拦截超大图，避免把 >32MB 内容整体读入 Dart 堆；
-      // 实际字节仍由 storeBytes 再校验一次（元数据可能为 0/不准）。
-      if (doc.length > ThemeBackgroundImageStore.maxBytes) {
+      // 先按 provider 元数据拦截超大图，避免把超限内容整体读入 Dart 堆；
+      // 实际字节仍由 storeBytes/importBytes 再校验一次（元数据可能为 0/不准）。
+      if (doc.length > maxBytes) {
         debugPrint(
           '[ContainerImagePicker] Android SAF 文件过大: ${doc.length} bytes',
         );
-        throw const ContainerImagePickException('图片过大（上限 32MB）');
+        throw ContainerImagePickException(_tooLargeMessage(maxBytes));
       }
       final bytes = await safGateway.readBytes(doc.uri);
       debugPrint(
@@ -123,11 +140,14 @@ class ContainerImagePicker {
   }
 
   /// iOS/桌面：保留 file_picker；allowCompression:false 防原生压缩异常。
-  static Future<ContainerImagePick?> _pickFilePicker() async {
+  static Future<ContainerImagePick?> _pickFilePicker({
+    required int maxBytes,
+    required String dialogTitle,
+  }) async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
-        dialogTitle: '选择容器背景图片',
+        dialogTitle: dialogTitle,
         allowCompression: false,
         withData: false,
       );
@@ -136,12 +156,23 @@ class ContainerImagePicker {
         return null;
       }
       final file = result.files.single;
+      // 先按平台元数据拦截，避免超大文件整体读入内存
+      if (file.size > maxBytes) {
+        debugPrint(
+          '[ContainerImagePicker] 平台=iOS/桌面 file_picker 文件过大: '
+          '${file.size} bytes',
+        );
+        throw ContainerImagePickException(_tooLargeMessage(maxBytes));
+      }
       final bytes =
           file.bytes ??
           (file.path != null ? await File(file.path!).readAsBytes() : null);
       if (bytes == null) {
         debugPrint('[ContainerImagePicker] 平台=iOS/桌面 file_picker 无路径/字节');
         throw const ContainerImagePickException('无法读取所选图片');
+      }
+      if (bytes.length > maxBytes) {
+        throw ContainerImagePickException(_tooLargeMessage(maxBytes));
       }
       return ContainerImagePick(bytes: bytes, name: file.name);
     } on ContainerImagePickException {
@@ -151,4 +182,7 @@ class ContainerImagePicker {
       throw const ContainerImagePickException('选择图片失败，请重试');
     }
   }
+
+  static String _tooLargeMessage(int maxBytes) =>
+      '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）';
 }

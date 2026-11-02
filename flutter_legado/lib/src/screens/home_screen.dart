@@ -263,12 +263,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final tabs = prefs.visibleTabs;
 
     // 偏好加载完成后应用默认首页（仅启动时生效一次，对标参考版 MainScreen
-    // initialPage = destinations.indexOf(defaultHomePage)）
+    // initialPage = destinations.indexOf(defaultHomePage)；目标不可见时回退
+    // 首个可见页签（参考版回退 index 0）
     if (prefs.loaded && !_defaultHomePageApplied) {
       _defaultHomePageApplied = true;
       if (!_userNavigated) {
         final target = _tabOfHomePage(prefs.defaultHomePage);
-        if (tabs.contains(target)) _currentTab = target;
+        _currentTab = tabs.contains(target) ? target : tabs.first;
       }
     }
     // Tab 显隐/顺序变化后当前 Tab 可能被隐藏：回退首个可见页签
@@ -421,6 +422,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ) {
     if (!ui.showBottomView) return null;
     final specs = _specsFor(tabs, prefs);
+    final labelBehavior = _labelBehaviorOf(ui.labelVisibilityMode);
     if (ui.useFloatingBottomBar) {
       return AppFloatingBottomBar(
         specs: specs,
@@ -430,13 +432,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         useBlur: ui.enableBlur,
         blurRadius: ui.bottomBarBlurRadius,
         blurAlpha: ui.bottomBarBlurAlpha,
+        labelBehavior: labelBehavior,
       );
     }
     return AppShortNavigationBar(
       specs: specs,
       currentIndex: currentIndex,
       activeSkin: activeSkin,
-      labelBehavior: switch (ui.labelVisibilityMode) {
+      labelBehavior: labelBehavior,
+      opacity: ui.bottomBarOpacity / 100,
+      onSelect: (index) => _onDestinationSelected(tabs, index),
+    );
+  }
+
+  /// 底栏文字档位 → Flutter NavigationBar 标签行为
+  NavigationDestinationLabelBehavior _labelBehaviorOf(
+    BottomBarLabelMode mode,
+  ) =>
+      switch (mode) {
         // 参考版 auto 与 selected 都映射 IconWithSelectedLabel
         BottomBarLabelMode.auto ||
         BottomBarLabelMode.selected =>
@@ -445,11 +458,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           NavigationDestinationLabelBehavior.alwaysShow,
         BottomBarLabelMode.unlabeled =>
           NavigationDestinationLabelBehavior.alwaysHide,
-      },
-      opacity: ui.bottomBarOpacity / 100,
-      onSelect: (index) => _onDestinationSelected(tabs, index),
-    );
-  }
+      };
 }
 
 /// [UI_SYNC_REFACTOR S1] 页保活（对齐参考 HorizontalPager

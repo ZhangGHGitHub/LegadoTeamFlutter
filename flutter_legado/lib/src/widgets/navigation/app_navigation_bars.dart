@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../models/main_tab.dart';
 import '../../services/bottom_bar_skin_service.dart';
+import '../../services/nav_icon_store.dart';
 /// [UI_SYNC_REFACTOR S1c] 主框架导航组件族（对齐参考仓 ShortNavigationBar/
 /// AppNavigationBar/FloatingBottomBar/Rail）
 ///
@@ -35,6 +36,12 @@ class AppNavSpec {
   });
 }
 
+/// 选中态图标路径优先级（参考版 `selectedCustomIconPath.ifEmpty { custom }`）
+String navSpecIconPath(AppNavSpec spec, {required bool selected}) =>
+    selected && spec.customSelectedIconPath.isNotEmpty
+        ? spec.customSelectedIconPath
+        : spec.customIconPath;
+
 /// 导航图标（自定义图片 > 底栏皮肤 > 内置 symbol）
 class NavSpecIcon extends StatelessWidget {
   final AppNavSpec spec;
@@ -50,17 +57,17 @@ class NavSpecIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final custom = selected && spec.customSelectedIconPath.isNotEmpty
-        ? spec.customSelectedIconPath
-        : spec.customIconPath;
-    if (custom.isNotEmpty) {
+    final custom = navSpecIconPath(spec, selected: selected);
+    // [复核 P2-6] 偏好值可能是相对标识 `nav_icons/<sha1>.<ext>`（新）或
+    // 旧绝对路径；缺失/未预热时直接回退内置图标，避免 Image.file 反复报错。
+    if (custom.isNotEmpty && NavIconStore.isUsableSync(custom)) {
       return Image.file(
         // ignore: avoid_slow_placeholder_io
-        File(custom),
+        File(NavIconStore.resolveSync(custom)),
         width: 24,
         height: 24,
         fit: BoxFit.contain,
-        // 备份跨设备恢复/文件被清理 → 回退内置图标，不让导航项变空白
+        // 读取/解码失败（文件被清理/格式不支持）→ 回退内置图标
         errorBuilder: (_, _, _) => _fallback(),
       );
     }
@@ -211,6 +218,13 @@ class AppFloatingBottomBar extends StatefulWidget {
   final int blurRadius;
   final int blurAlpha;
 
+  /// 文字档位（对齐参考版 FloatingBottomBarItem：
+  /// `showLabel && (alwaysShowLabel || selected)`）。
+  /// [NavigationDestinationLabelBehavior.alwaysShow] 全部显示，
+  /// [NavigationDestinationLabelBehavior.onlyShowSelected] 仅选中显示，
+  /// [NavigationDestinationLabelBehavior.alwaysHide] 纯图标。
+  final NavigationDestinationLabelBehavior labelBehavior;
+
   const AppFloatingBottomBar({
     super.key,
     required this.specs,
@@ -220,6 +234,7 @@ class AppFloatingBottomBar extends StatefulWidget {
     required this.useBlur,
     required this.blurRadius,
     required this.blurAlpha,
+    required this.labelBehavior,
   });
 
   @override
@@ -275,24 +290,60 @@ class _AppFloatingBottomBarState extends State<AppFloatingBottomBar> {
                     scale: _pressedIndex == i ? 1.08 : 1.0,
                     duration: const Duration(milliseconds: 120),
                     curve: Curves.fastOutSlowIn,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.fastOutSlowIn,
-                      width: widget.currentIndex == i ? 64 : 48,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: widget.currentIndex == i
-                            ? cs.secondaryContainer
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      alignment: Alignment.center,
-                      child: AnimatedScale(
-                        scale: widget.currentIndex == i ? 1.2 : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.fastOutSlowIn,
-                        child: _icon(i, selected: widget.currentIndex == i),
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        final selected = widget.currentIndex == i;
+                        final showLabel = switch (widget.labelBehavior) {
+                          NavigationDestinationLabelBehavior.alwaysShow => true,
+                          NavigationDestinationLabelBehavior.alwaysHide => false,
+                          NavigationDestinationLabelBehavior.onlyShowSelected =>
+                            selected,
+                        };
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.fastOutSlowIn,
+                          width: selected ? 64 : 48,
+                          // 文字行需要额外高度；纯图标保持胶囊内 32dp
+                          height: showLabel ? 46 : 32,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? cs.secondaryContainer
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          alignment: Alignment.center,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              AnimatedScale(
+                                scale: selected ? 1.15 : 1.0,
+                                duration: const Duration(milliseconds: 200),
+                                curve: Curves.fastOutSlowIn,
+                                child: _icon(i, selected: selected),
+                              ),
+                              if (showLabel) ...[
+                                const SizedBox(height: 1),
+                                Text(
+                                  widget.specs[i].label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        fontSize: 10,
+                                        height: 1.1,
+                                        color: selected
+                                            ? cs.onSecondaryContainer
+                                            : cs.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -358,6 +409,10 @@ class AppRailBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // [复核 P2-4] Flutter 的 `NavigationRail.extended` 强制显示文字标签，
+    // 无法在展开态隐藏；文字档位=纯图标时强制折叠（宽度差异已登记），
+    // 并隐藏展开切换钮避免无效操作。参考版展开态仍是 label=null 的图标栏。
+    final effectiveExtended = showLabel && extended;
     Widget railIcon(AppNavSpec spec, {required bool selected}) {
       return NavSpecIcon(
         spec: spec,
@@ -370,23 +425,24 @@ class AppRailBar extends StatelessWidget {
       selectedIndex: currentIndex,
       onDestinationSelected: onSelect,
       // 展开态走 extended 侧栏形态；折叠态按文字档位显示 label
-      extended: extended,
+      extended: effectiveExtended,
       labelType: !showLabel
           ? NavigationRailLabelType.none
-          : (extended
+          : (effectiveExtended
               ? NavigationRailLabelType.none
               : NavigationRailLabelType.all),
       leading: Column(
         children: [
           const SizedBox(height: 8),
-          // 展开切换（railExtended 持久化）
-          IconButton(
-            tooltip: extended ? '收起侧栏' : '展开侧栏',
-            icon: Icon(extended
-                ? Symbols.menu_open_rounded
-                : Symbols.menu_rounded),
-            onPressed: onToggleExtended,
-          ),
+          // 展开切换（railExtended 持久化；纯图标档位强制折叠，隐藏切换钮）
+          if (showLabel)
+            IconButton(
+              tooltip: effectiveExtended ? '收起侧栏' : '展开侧栏',
+              icon: Icon(effectiveExtended
+                  ? Symbols.menu_open_rounded
+                  : Symbols.menu_rounded),
+              onPressed: onToggleExtended,
+            ),
           // 头部搜索钮（对齐参考 Rail header 搜索入口）
           IconButton(
             tooltip: '搜索',

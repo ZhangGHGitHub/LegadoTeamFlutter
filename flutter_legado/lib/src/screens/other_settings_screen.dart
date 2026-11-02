@@ -1,10 +1,11 @@
 ﻿// [UI-fix v2.0.5 | 2026-08-08] 其他设置页对齐原版 pref_config_other.xml +
-// OtherConfigFragment（33 项）：语言 + 主界面分组（自动刷新/仅更新已读/
-// 默认进入阅读/显示发现/显示订阅/默认首页）+ 其他分组（本地密码/UserAgent/
+// OtherConfigFragment：语言 + 主界面分组（自动刷新/仅更新已读/
+// 默认进入阅读）+ 其他分组（本地密码/UserAgent/
 // Web 服务唤醒锁/默认书籍保存位置/源编辑最大行数/抗锯齿/图片缓存/图片保留/
 // 预下载/替换净化默认/媒体按钮 ×3/自动清除过期/加书架提示/变种更新/漫画界面/
 // Web 端口/缓存管理/线程数/文本菜单/记录日志 ×3）。
-// 显示发现/显示订阅/默认首页经 MainPrefsNotifier 接通首页底栏；
+// [复核 P3 | 2026-11-02] 显示发现/显示订阅/默认主页已迁至外观页
+// 「首页与导航」Sheet（参考版唯一入口），本页不再重复；
 // Web 端口经 BookApi.setServerPort 接通；记录日志经 CrashLogService 接通；
 // Android 专属项持久化并以灰字"仅 Android 生效"标注；
 // customHosts/mcpPort 已于 Task #74 接线（契约 §2.20.3/§2.22.5，
@@ -31,9 +32,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../bridge/ffi.dart';
 import '../l10n/app_strings.dart';
-import '../models/main_tab.dart';
 import 'direct_link_upload_settings_sheet.dart';
-import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/source_check/check_source_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
@@ -220,9 +219,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mainPrefs = ref.watch(mainPrefsProvider);
-    final mainPrefsNotifier = ref.read(mainPrefsProvider.notifier);
-
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(title: const Text('其他设置')),
@@ -273,22 +269,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   _settingsService.setBoolPref(PrefKeys.defaultToRead, v);
                 },
               ),
-              SettingSwitchRow(
-                title: '显示发现',
-                value: mainPrefs.showDiscovery,
-                onChanged: (v) => mainPrefsNotifier.setShowDiscovery(v),
-              ),
-              SettingSwitchRow(
-                title: '显示订阅',
-                value: mainPrefs.showRss,
-                onChanged: (v) => mainPrefsNotifier.setShowRss(v),
-              ),
-              IosListTile(
-                icon: Symbols.home_rounded,
-                title: '默认主页',
-                value: _homePageLabel(mainPrefs.defaultHomePage),
-                onTap: () => _showHomePagePicker(mainPrefs, mainPrefsNotifier),
-              ),
+              // [复核 P3 | 2026-11-02] 显示发现/显示订阅/默认主页已移至
+              // 外观页「首页与导航」Sheet（参考版唯一入口），此处不再重复。
             ]),
 
             // ===== 其他（顺序严格对齐 pref_config_other.xml）=====
@@ -625,52 +607,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       default:
         return AppStrings.langSystem;
     }
-  }
-
-  /// 默认首页值 → 展示文案（对齐原版 default_home_page 数组）
-  /// [设置批2b-2a] 合并到 MainTab 统一映射，避免与「首页与导航」Sheet
-  /// 文案漂移 — 全栈工程师
-  String _homePageLabel(String value) =>
-      mainTabLabel(mainTabFromRoute(value) ?? MainTab.bookshelf);
-
-  /// 默认首页选择（对齐原版 defaultHomePage ListPreference）
-  ///
-  /// [设置批2b-2a] 仅列出可见页签（对齐参考版 MainNavigationSettingsSheet
-  /// 下拉过滤；隐藏页无法落地，选它只会造成启动落点跳变） — 全栈工程师
-  Future<void> _showHomePagePicker(
-    MainPrefsState prefs,
-    MainPrefsNotifier notifier,
-  ) async {
-    final options = [
-      for (final tab in prefs.visibleTabs) (tab.route, mainTabLabel(tab)),
-    ];
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('默认首页'),
-        children: [
-          // 用 RadioGroup 统一管理选中值（避免 groupValue/onChanged 废弃 API）
-          RadioGroup<String>(
-            groupValue: prefs.defaultHomePage,
-            onChanged: (v) => Navigator.pop(ctx, v),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final (value, label) in options)
-                  RadioListTile<String>(
-                    title: Text(label),
-                    value: value,
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    // [UI-fix v2.0.5 | 2026-08-08] 异步对话框返回后统一补 mounted 防护，
-    // 避免页面已销毁时继续 setState/持久化 — Qoder
-    if (selected == null || !mounted) return;
-    await notifier.setDefaultHomePage(selected);
   }
 
   /// 本地密码编辑（对齐原版 localPassword EditTextPreference）
