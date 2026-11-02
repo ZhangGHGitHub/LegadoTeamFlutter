@@ -126,18 +126,12 @@ void main() {
         expect(find.text(label), findsOneWidget, reason: '其他组应含「$label」');
       }
 
-      // 已合并/已移除项不得再出现
-      expect(find.text('规则管理'), findsNothing);
-      expect(find.text('高亮标注'), findsNothing);
-      expect(find.text('主题模式'), findsNothing);
-      expect(find.text('选择主题模式'), findsNothing);
+      // 已合并/移除项的负向断言由 my_page_m1_test 的高画布用例承担：
+      // 默认 800x600 列表存在懒构建，未滚动到的条目不在树上，
+      // 此处 findsNothing 无法区分「已移除」与「尚未构建」。
 
       expect(find.text('我的'), findsWidgets,
           reason: 'SliverAppBar.large 展开大标题与折叠工具栏标题同时存在');
-      expect(find.text('备份与恢复'), findsNothing);
-      expect(find.text('主题设置'), findsNothing);
-      expect(find.text('导出日志'), findsNothing);
-      expect(find.text('词典规则'), findsNothing);
     });
 
     testWidgets('滚动可见其他分组（书签/阅读记录/关于）', (tester) async {

@@ -6,6 +6,8 @@
 /// 固定 host 的同步实现。
 library;
 
+import 'dart:async';
+
 import 'package:flutter_legado/src/services/web_service_address_resolver.dart';
 
 class FakeWebServiceAddressResolver implements WebServiceAddressResolver {
@@ -14,8 +16,8 @@ class FakeWebServiceAddressResolver implements WebServiceAddressResolver {
     this.throwOnResolve = false,
   });
 
-  /// 固定局域网 IP（测试断言 `http://<host>:<port>`）
-  final String host;
+  /// 固定 host（测试可在用例中改写，模拟回到前台后 IP 变化）
+  String host;
 
   /// 模拟枚举失败（验证地址为空时操作按钮隐藏）
   final bool throwOnResolve;
@@ -31,4 +33,15 @@ class FakeWebServiceAddressResolver implements WebServiceAddressResolver {
     }
     return 'http://$host:$port';
   }
+}
+
+/// 永不完成的地址解析（模拟网卡枚举卡死）
+///
+/// 用于验证启动成功后开关/状态先落定、不出现 spinner，地址异步晚到。
+class NeverCompletingWebServiceAddressResolver
+    implements WebServiceAddressResolver {
+  final Completer<String> _completer = Completer<String>();
+
+  @override
+  Future<String> resolve(int port) => _completer.future;
 }

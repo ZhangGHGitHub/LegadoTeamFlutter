@@ -1,15 +1,19 @@
 // 「我的」页 M1 信息架构回归测试（docs/MY_PAGE_ALIGNMENT_PLAN_20261103.md）
 //
-// 覆盖用户裁决（2026-11-03）：
+// 覆盖用户裁决（2026-11-03）与复核补强：
 // 1. Web 服务块置顶：运行中显示可访问地址 + 「复制地址」「在浏览器中打开」；
 //    地址取局域网 IPv4（测试注入固定 IP），端口取状态串实际端口；
 // 2. 规则组收敛 5 项（书源/替换/TXT/字典/高亮标签规则）；
 // 3. 「服务与工具」组保留定时任务/运行定时任务/MCP；
 // 4. 移除独立「设置」组，入口并入「其他」组；
-// 5. AI 聊天占位页导航；
+// 5. AI 聊天占位页导航（无输入框）；
 // 6. 字典规则单入口默认进管理页，旧 AppRoutes.dict 深链保留且查询页页内可达；
-// 7. 主题模式不在「我的」，设置→外观仍可达；
-// 8. 小屏滚动无溢出、返回栈正常。
+// 7. 主题模式不在「我的」，设置→外观→深色端到端生效并持久化；
+// 8. 小屏滚动无溢出、返回栈正常；
+// 9. 复核 P1：回前台刷新地址、地址解析失败降级、网卡枚举卡死不阻塞开关、
+//    网卡/VPN 选择纯函数；P2：复制失败提示、定时任务 scheduler 接线。
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -17,19 +21,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// url_launcher_platform_interface 是 url_launcher 的传递依赖，
-// 测试仅用它注入最小平台假实现（不改 pubspec）。
-// ignore: depend_on_referenced_packages
 import 'package:url_launcher_platform_interface/link.dart';
-// ignore: depend_on_referenced_packages
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/ai_chat_screen.dart';
 import 'package:flutter_legado/src/screens/dict_rule_screen.dart';
+import 'package:flutter_legado/src/screens/dict_screen.dart';
 import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
+import 'package:flutter_legado/src/screens/theme_config_screen.dart';
+import 'package:flutter_legado/src/services/auto_task_scheduler.dart';
 import 'package:flutter_legado/src/services/web_service_address_resolver.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
@@ -91,6 +95,9 @@ void main() {
     originalLauncher = UrlLauncherPlatform.instance;
     launcher = _FakeUrlLauncherPlatform();
     UrlLauncherPlatform.instance = launcher;
+    // 定时任务调度器为进程单例：逐用例复位（取消挂起的 Timer/观察者）
+    AutoTaskScheduler.instance.debugReset();
+    addTearDown(AutoTaskScheduler.instance.debugReset);
     // 未列出的 config 键按 null（未配置）；服务默认停止
     when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
     when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
@@ -130,6 +137,15 @@ void main() {
       const Offset(0, -120),
     );
     await tester.pumpAndSettle();
+  }
+
+  /// 模拟 Web 服务运行中（配置镜像 + 状态串）
+  void stubWebServiceRunning({String status = 'running on port 1122'}) {
+    when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
+      final key = inv.positionalArguments.first as String;
+      return key == 'webService' ? 'true' : null;
+    });
+    when(() => mockApi.getServerStatus()).thenAnswer((_) async => status);
   }
 
   group('M1 我的页信息架构', () {
@@ -174,10 +190,14 @@ void main() {
         );
       }
 
-      // 已合并/移除的入口不再出现
+      // 已合并/移除的入口不再出现（高画布下整页已构建，断言有效）
       expect(find.text('规则管理'), findsNothing);
       expect(find.text('高亮标注'), findsNothing);
       expect(find.text('主题模式'), findsNothing);
+      expect(find.text('备份与恢复'), findsNothing);
+      expect(find.text('主题设置'), findsNothing);
+      expect(find.text('导出日志'), findsNothing);
+      expect(find.text('词典规则'), findsNothing);
 
       // 独立「设置」分组已移除：全文仅一个「设置」入口
       expect(find.text('设置'), findsOneWidget);
@@ -185,13 +205,7 @@ void main() {
 
     testWidgets('Web 服务运行中：地址取状态串端口 + 复制地址', (tester) async {
       SharedPreferences.setMockInitialValues({'webPort': 9999});
-      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
-        final key = inv.positionalArguments.first as String;
-        return key == 'webService' ? 'true' : null;
-      });
-      when(
-        () => mockApi.getServerStatus(),
-      ).thenAnswer((_) async => 'running on port 8080');
+      stubWebServiceRunning(status: 'running on port 8080');
 
       String? clipboardText;
       final messenger =
@@ -220,6 +234,9 @@ void main() {
 
       expect(clipboardText, 'http://192.168.1.20:8080');
       expect(find.text('已复制访问地址'), findsOneWidget);
+      // 复制纯 UI 操作：不得启停服务
+      verifyNever(() => mockApi.startServer(port: any(named: 'port')));
+      verifyNever(() => mockApi.stopServer());
 
       // 收起 SnackBar，防跨用例计时器
       await tester.pump(const Duration(seconds: 5));
@@ -227,13 +244,7 @@ void main() {
     });
 
     testWidgets('Web 服务运行中：在浏览器中打开（url_launcher 外部打开）', (tester) async {
-      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
-        final key = inv.positionalArguments.first as String;
-        return key == 'webService' ? 'true' : null;
-      });
-      when(
-        () => mockApi.getServerStatus(),
-      ).thenAnswer((_) async => 'running on port 1122');
+      stubWebServiceRunning();
 
       useTallViewport(tester);
       await tester.pumpWidget(wrap());
@@ -244,18 +255,41 @@ void main() {
 
       expect(launcher.launched, ['http://192.168.1.20:1122']);
       expect(find.text('无法打开浏览器'), findsNothing);
+      // 打开纯 UI 操作：不得启停服务
+      verifyNever(() => mockApi.startServer(port: any(named: 'port')));
+      verifyNever(() => mockApi.stopServer());
+    });
+
+    testWidgets('Web 服务运行中：复制失败给 SnackBar 提示', (tester) async {
+      stubWebServiceRunning();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          throw PlatformException(code: 'clipboard', message: '剪贴板不可用');
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('复制地址'));
+      await tester.pump();
+
+      expect(find.textContaining('复制地址失败'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('Web 服务运行中：打开失败给 SnackBar 提示', (tester) async {
       launcher = _FakeUrlLauncherPlatform(result: false);
       UrlLauncherPlatform.instance = launcher;
-      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
-        final key = inv.positionalArguments.first as String;
-        return key == 'webService' ? 'true' : null;
-      });
-      when(
-        () => mockApi.getServerStatus(),
-      ).thenAnswer((_) async => 'running on port 1122');
+      stubWebServiceRunning();
 
       useTallViewport(tester);
       await tester.pumpWidget(wrap());
@@ -265,6 +299,36 @@ void main() {
       await tester.pump();
 
       expect(find.text('无法打开浏览器'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('Web 服务运行中：回环地址标注「（本机）」且复制不含标注', (tester) async {
+      addressResolver.host = '127.0.0.1';
+      stubWebServiceRunning();
+      String? clipboardText;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('http://127.0.0.1:1122（本机）'), findsOneWidget);
+
+      await tester.tap(find.text('复制地址'));
+      await tester.pump();
+      expect(clipboardText, 'http://127.0.0.1:1122');
+
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
     });
@@ -289,13 +353,7 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
-        final key = inv.positionalArguments.first as String;
-        return key == 'webService' ? 'true' : null;
-      });
-      when(
-        () => mockApi.getServerStatus(),
-      ).thenAnswer((_) async => 'running on port 1122');
+      stubWebServiceRunning();
 
       useTallViewport(tester);
       await tester.pumpWidget(wrap());
@@ -317,7 +375,102 @@ void main() {
       expect(find.text('在浏览器中打开'), findsNothing);
     });
 
-    testWidgets('AI 聊天入口打开占位页并可返回（返回栈）', (tester) async {
+    testWidgets('回到前台：running 刷新地址（新 IP 展示并可复制），stopped 清空', (tester) async {
+      stubWebServiceRunning();
+      String? clipboardText;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      expect(find.text('http://192.168.1.20:1122'), findsOneWidget);
+
+      // 后台期间网卡/IP 变化 → 回前台重新解析
+      addressResolver.host = '192.168.1.99';
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.text('http://192.168.1.99:1122'), findsOneWidget);
+      expect(find.text('http://192.168.1.20:1122'), findsNothing);
+
+      await tester.tap(find.text('复制地址'));
+      await tester.pump();
+      expect(clipboardText, 'http://192.168.1.99:1122');
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      // 服务在后台被停止 → 回前台清空状态/地址与操作按钮
+      when(() => mockApi.getServerStatus()).thenAnswer((_) async => 'stopped');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('192.168.1.99'), findsNothing);
+      expect(find.text('复制地址'), findsNothing);
+      expect(find.text('在浏览器中打开'), findsNothing);
+    });
+
+    testWidgets('Web 服务启动：网卡枚举永不完成也不阻塞开关/不残留 spinner', (tester) async {
+      var serverStatus = 'stopped';
+      when(
+        () => mockApi.getServerStatus(),
+      ).thenAnswer((_) async => serverStatus);
+      when(() => mockApi.startServer(port: any(named: 'port'))).thenAnswer((
+        _,
+      ) async {
+        serverStatus = 'running on port 1122';
+      });
+      container = ProviderContainer(
+        overrides: [
+          bookApiProvider.overrideWithValue(mockApi),
+          webServiceAddressResolverProvider.overrideWithValue(
+            NeverCompletingWebServiceAddressResolver(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<Switch>(switchFinder).value,
+        isTrue,
+        reason: '地址解析挂起不得影响开关落定',
+      );
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+        reason: '启动成功后 busy spinner 应收起',
+      );
+      expect(find.text('running on port 1122'), findsOneWidget);
+      verify(() => mockApi.setConfig('webService', 'true')).called(1);
+    });
+
+    testWidgets('AI 聊天入口打开占位页（无输入框）并可返回（返回栈）', (tester) async {
       useTallViewport(tester);
       await tester.pumpWidget(
         wrap(routes: {AppRoutes.aiChat: (_) => const AiChatScreen()}),
@@ -329,6 +482,11 @@ void main() {
 
       expect(find.text('AI 聊天暂未支持'), findsOneWidget);
       expect(find.text('待 Rust 能力接入后开放'), findsOneWidget);
+      expect(
+        find.byType(TextField),
+        findsNothing,
+        reason: '占位页不得提供可用输入框，避免误以为已接 LLM',
+      );
 
       await tester.pageBack();
       await tester.pumpAndSettle();
@@ -337,9 +495,28 @@ void main() {
     });
 
     testWidgets('字典规则单入口默认进管理页（旧 dict 查询路由保留）', (tester) async {
-      // 旧查询路由仍注册（深链兼容）
-      expect(AppRoutes.routes.containsKey(AppRoutes.dict), isTrue);
-      expect(AppRoutes.routes.containsKey(AppRoutes.dictRule), isTrue);
+      // 旧查询路由经 generateRoute 仍可构建（深链兼容）
+      late BuildContext probeContext;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              probeContext = context;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      final dictRoute = AppRoutes.generateRoute(
+        const RouteSettings(name: AppRoutes.dict),
+      );
+      expect(dictRoute, isA<MaterialPageRoute<dynamic>>());
+      final dictBuilder = (dictRoute as MaterialPageRoute<dynamic>).builder;
+      expect(dictBuilder(probeContext), isA<DictScreen>());
+      expect(
+        AppRoutes.generateRoute(const RouteSettings(name: AppRoutes.dictRule)),
+        isA<MaterialPageRoute<dynamic>>(),
+      );
 
       final recorder = _RouteRecorder();
       useTallViewport(tester);
@@ -419,25 +596,85 @@ void main() {
       verify(() => mockApi.setMcpPort(1236)).called(1);
     });
 
-    testWidgets('主题模式不在「我的」，设置→外观入口仍可用', (tester) async {
+    testWidgets('运行定时任务：写入 autoTaskService 并触发 scheduler refresh', (
+      tester,
+    ) async {
+      var autoTaskEnabled = false;
+      when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
+        final key = inv.positionalArguments.first as String;
+        return switch (key) {
+          'autoTaskService' => autoTaskEnabled ? 'true' : 'false',
+          _ => null,
+        };
+      });
+      when(() => mockApi.setConfig('autoTaskService', any())).thenAnswer((
+        inv,
+      ) async {
+        autoTaskEnabled = inv.positionalArguments[1] == 'true';
+      });
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => []);
+      AutoTaskScheduler.instance.attach(mockApi);
+      await tester.pump();
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final row = find
+          .ancestor(of: find.text('运行定时任务'), matching: find.byType(IosListTile))
+          .first;
+      final switchFinder = find.descendant(
+        of: row,
+        matching: find.byType(Switch),
+      );
+
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.setConfig('autoTaskService', 'true')).called(1);
+      verify(
+        () => mockApi.autoTaskListRules(),
+      ).called(1); // 开关开启触发 scheduler.refresh
+
+      tester.widget<Switch>(switchFinder).onChanged!(false);
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.setConfig('autoTaskService', 'false')).called(1);
+      verifyNever(() => mockApi.startServer(port: any(named: 'port')));
+    });
+
+    testWidgets('主题模式不在「我的」，设置→外观→深色端到端生效并持久化', (tester) async {
       final recorder = _RouteRecorder();
       await tester.pumpWidget(
         wrap(
-          home: const SettingsHomeScreen(),
           routes: {
-            AppRoutes.themeConfig: (_) => const Scaffold(body: Text('外观设置页')),
+            AppRoutes.settingsHome: (_) => const SettingsHomeScreen(),
+            AppRoutes.themeConfig: (_) => const ThemeConfigScreen(),
           },
           observer: recorder,
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('外观'), findsOneWidget);
+      // 我的页无主题模式入口
+      expect(find.text('主题模式'), findsNothing);
+
+      await dragTo(tester, '设置');
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      expect(recorder.pushed, contains(AppRoutes.settingsHome));
+
       await tester.tap(find.text('外观'));
       await tester.pumpAndSettle();
-
       expect(recorder.pushed, contains(AppRoutes.themeConfig));
-      expect(find.text('外观设置页'), findsOneWidget);
+
+      expect(container.read(themeNotifierProvider).themeMode, ThemeMode.system);
+      await tester.tap(find.text('深色'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(themeNotifierProvider).themeMode, ThemeMode.dark);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('app_theme_mode'), 'dark');
     });
 
     testWidgets('小屏（360x640）滚动到底无布局溢出', (tester) async {
@@ -450,6 +687,24 @@ void main() {
       // 从顶部 Web 服务块滚到「退出」
       await dragTo(tester, '退出');
 
+      expect(find.text('退出'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('运行态小屏（360x640）地址/操作按钮不溢出', (tester) async {
+      stubWebServiceRunning();
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('http://192.168.1.20:1122'), findsOneWidget);
+      expect(find.text('复制地址'), findsOneWidget);
+      expect(find.text('在浏览器中打开'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await dragTo(tester, '退出');
       expect(find.text('退出'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -485,6 +740,85 @@ void main() {
         ),
         'http://127.0.0.1:8080',
       );
+    });
+
+    test('selectHost：过滤 tun，优先 wlan（172.20 胜 10.8）', () {
+      expect(
+        LanWebServiceAddressResolver.selectHost(const [
+          NetworkAddressEntry(interfaceName: 'tun0', address: '10.8.0.2'),
+          NetworkAddressEntry(interfaceName: 'wlan0', address: '172.20.10.2'),
+        ]),
+        '172.20.10.2',
+      );
+    });
+
+    test('selectHost：过滤 vEthernet/Hyper-V 等虚拟网卡', () {
+      expect(
+        LanWebServiceAddressResolver.selectHost(const [
+          NetworkAddressEntry(
+            interfaceName: 'vEthernet (Default Switch)',
+            address: '172.20.0.1',
+          ),
+          NetworkAddressEntry(interfaceName: 'docker0', address: '172.17.0.1'),
+          NetworkAddressEntry(interfaceName: 'en0', address: '10.0.0.8'),
+        ]),
+        '10.0.0.8',
+      );
+    });
+
+    test('selectHost：多 192.168 按网卡名/IP 数值确定性 tie-break', () {
+      expect(
+        LanWebServiceAddressResolver.selectHost(const [
+          NetworkAddressEntry(interfaceName: 'eth0', address: '192.168.1.9'),
+          NetworkAddressEntry(interfaceName: 'eth0', address: '192.168.1.5'),
+        ]),
+        '192.168.1.5',
+      );
+      expect(
+        LanWebServiceAddressResolver.selectHost(const [
+          NetworkAddressEntry(interfaceName: 'eth1', address: '192.168.1.5'),
+          NetworkAddressEntry(interfaceName: 'eth0', address: '192.168.1.9'),
+        ]),
+        '192.168.1.9',
+        reason: '同名优先后按网卡名升序：eth0 早于 eth1',
+      );
+      expect(
+        LanWebServiceAddressResolver.selectHost(const [
+          NetworkAddressEntry(interfaceName: 'wlan0', address: '192.168.1.9'),
+          NetworkAddressEntry(interfaceName: 'eth0', address: '192.168.1.5'),
+        ]),
+        '192.168.1.9',
+        reason: 'wlan 优先于私网排序',
+      );
+    });
+
+    test('selectHost：仅虚拟网卡/空列表回落回环', () {
+      expect(LanWebServiceAddressResolver.selectHost(const []), '127.0.0.1');
+      expect(
+        LanWebServiceAddressResolver.selectHost(const [
+          NetworkAddressEntry(interfaceName: 'tun0', address: '10.8.0.2'),
+          NetworkAddressEntry(interfaceName: 'vmnet8', address: '192.168.56.1'),
+        ]),
+        '127.0.0.1',
+      );
+    });
+
+    test('可注入枚举 seam：resolve 走 selectHost 并拼接端口', () async {
+      final resolver = LanWebServiceAddressResolver(
+        enumerate: () async => const [
+          NetworkAddressEntry(interfaceName: 'veth0', address: '10.8.0.2'),
+          NetworkAddressEntry(interfaceName: 'wlan0', address: '192.168.1.7'),
+        ],
+      );
+      expect(await resolver.resolve(1122), 'http://192.168.1.7:1122');
+      expect(await resolver.resolveHost(), '192.168.1.7');
+    });
+
+    test('真实网卡枚举：返回合法 IPv4（无候选时为回环）', () async {
+      final host = await const LanWebServiceAddressResolver().resolveHost();
+      final parsed = InternetAddress.tryParse(host);
+      expect(parsed, isNotNull);
+      expect(parsed!.type, InternetAddressType.IPv4);
     });
   });
 }

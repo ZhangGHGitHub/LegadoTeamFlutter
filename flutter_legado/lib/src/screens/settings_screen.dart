@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
@@ -207,6 +209,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
+  /// 运行中地址展示文案
+  ///
+  /// [M1 复核 P3] 回落回环地址时标注「（本机）」：该地址只能在本机浏览器
+  /// 访问，避免用户误以为局域网其他设备可用。复制/打开仍使用原始地址。
+  String get _webServiceAddressLabel {
+    final host = Uri.tryParse(_webServiceAddress)?.host ?? '';
+    return host == LanWebServiceAddressResolver.loopbackHost
+        ? '$_webServiceAddress（本机）'
+        : _webServiceAddress;
+  }
+
   /// 批9b-6 审查回修：按运行态对账进程级 Web 服务唤醒锁
   ///
   /// 原生锁为进程级持有，Activity/引擎重建后 Dart 状态归零但锁可能仍在：
@@ -261,11 +274,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   ///
   /// 只查询 Rust server 运行态后交给 [_reconcileWebForeground]；查询失败
   /// （FFI 未初始化等）静默跳过，不影响用户操作。
+  ///
+  /// [M1 复核 P1-1 | 2026-11-03] 同时对账 UI 镜像：运行中刷新状态串并重新
+  /// 解析地址（网卡/IP 可能在后台切换，如 Wi-Fi 漫游/热点变化），停止则清空
+  /// 状态与地址，避免卡片长期展示已失效地址与复制/打开按钮。
   Future<void> _reconcileWebForegroundOnResume() async {
     try {
       final status = await ref.read(bookApiProvider).getServerStatus();
       if (!mounted) return;
       await _reconcileWebForeground(status, forceQuery: true);
+      if (!mounted) return;
+      if (_isServerRunning(status)) {
+        setState(() => _webServiceStatus = status);
+        await _refreshWebAddress(status);
+      } else {
+        setState(() {
+          _webServiceStatus = '';
+          _webServiceAddress = '';
+        });
+      }
     } catch (e) {
       debugPrint('回前台对账 Web 前台服务失败（忽略）：$e');
     }
@@ -372,16 +399,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         // 服务成功即接保活（iOS 专用；其它平台 no-op）
         final keepAlive = await WebKeepAliveService.instance.start();
         await api.setConfig('webService', 'true');
-        // [M1] 运行中地址（局域网 IPv4 优先；失败为空 → 只隐藏操作按钮）
-        final address = await _resolveAddressForStatus(status);
         if (!mounted) return;
+        // [M1 复核 P1-3 | 2026-11-03] 先落定开关/状态（并结束 busy spinner），
+        // 地址解析改为异步刷新：网卡枚举慢或永不完成时，开关已开启、
+        // 无 spinner，仅操作按钮晚到，不把「启动成功」表现成卡住/未开启。
         setState(() {
           _webService = true;
           _webServiceStatus = status;
-          _webServiceAddress = address;
+          _webServiceAddress = '';
           _webKeepAliveUnavailable = keepAlive == WebKeepAliveStatus.failed;
           _webNotificationDegraded = !notificationGranted;
         });
+        unawaited(_refreshWebAddress(status));
         if (!notificationGranted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('通知权限未授予：Web 服务前台通知不可见（局域网访问不受影响）')),
@@ -566,8 +595,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     // [M1] 运行中优先展示可访问地址；地址解析中/失败回落状态串
     final baseSubtitle = enabled
         ? (_webServiceAddress.isNotEmpty
-              ? _webServiceAddress
-              : (_webServiceStatus.isNotEmpty ? _webServiceStatus : '正在启动…'))
+              ? _webServiceAddressLabel
+              : (_webServiceStatus.isNotEmpty
+                    ? _webServiceStatus
+                    : '用浏览器写源或看书'))
         : '用浏览器写源或看书';
     // [2026-10-07 保活批 | 方案 A 兜底] 保活启动失败 → 回退「仅前台可用」，
     // 仅副题提示（对齐需求：不阻断服务、UI 主形态不变）。

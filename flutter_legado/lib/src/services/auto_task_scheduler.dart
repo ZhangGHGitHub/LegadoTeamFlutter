@@ -74,6 +74,20 @@ class AutoTaskScheduler with WidgetsBindingObserver {
     refresh();
   }
 
+  /// 测试专用：复位单例（取消挂起调度、清空注入 API、移除生命周期观察者）
+  ///
+  /// 设置页「运行定时任务」开关测试需要 [attach] 后断言 refresh 行为；
+  /// 逐用例复位避免进程级单例跨用例泄漏。
+  @visibleForTesting
+  void debugReset() {
+    _generation++;
+    _timer?.cancel();
+    _timer = null;
+    _running = false;
+    _api = null;
+    WidgetsBinding.instance.removeObserver(this);
+  }
+
   void _bindJobChannel() {
     if (_jobHandlerBound || !Platform.isAndroid) return;
     _jobHandlerBound = true;

@@ -71,6 +71,9 @@ dev_dependencies:
   riverpod_generator: ^2.4.0
   custom_lint: ^0.6.0
   riverpod_lint: ^2.3.0
+  # [M1 复核 P3] 测试直接注入 UrlLauncherPlatform 假实现；显式声明避免
+  # depend_on_referenced_packages（版本与 url_launcher 传递依赖一致）
+  url_launcher_platform_interface: ^2.3.0
   # codegen 通过 cargo install flutter_rust_bridge_codegen 安装
   # 运行: flutter_rust_bridge_codegen generate
 
