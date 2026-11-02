@@ -51,6 +51,10 @@ import '../widgets/passphrase_import.dart';
 ///
 /// 行模型说明：契约 §2.45 行字段含 `id`，而既有 `DictRule` 模型（无 id、
 /// 冻结不改）不承载主键，故本页使用私有 [_DictRuleRow] 携带 id。
+///
+/// [M1 我的页字典合并 | 2026-11-03 用户裁决] 「我的」页「字典规则」单入口
+/// 默认进入本页；顶栏「字典查询」按钮跳转 [AppRoutes.dict]（查询页），
+/// 旧路由 `AppRoutes.dict` 深链保持可用。
 class DictRuleScreen extends ConsumerStatefulWidget {
   const DictRuleScreen({super.key});
 
@@ -565,6 +569,14 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     return LegadoAppBar(
       title: const Text('字典规则管理'),
       actions: [
+        // [M1 我的页字典合并 | full-stack-engineer + UI] 我的页单入口默认
+        // 进本管理页（原「字典规则」查询入口与「规则管理」合并）；查询页
+        // AppRoutes.dict 保留注册与深链，由本按钮保证页内可达，避免功能孤岛。
+        IconButton(
+          icon: const Icon(Symbols.menu_book_rounded),
+          tooltip: '字典查询',
+          onPressed: () => Navigator.of(context).pushNamed(AppRoutes.dict),
+        ),
         // 对标 R.menu.dict_rule（menu_add/menu_import_local/menu_import_qr/
         // menu_import_onLine/menu_import_default/menu_help；
         // menu_import_qr 复用 QrcodeScreen 扫码链路，见 _importFromQr）

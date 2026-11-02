@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'models/models.dart';
 import 'screens/about_screen.dart';
+import 'screens/ai_chat_screen.dart';
 import 'screens/app_log_screen.dart';
 import 'screens/browser_screen.dart';
 import 'screens/dict_rule_screen.dart';
@@ -130,6 +131,9 @@ class AppRoutes {
   static const dict = '/dict';
   // [C2 批2 | full-stack-engineer + UI] 字典规则管理页（对齐原版 DictRuleActivity）
   static const dictRule = '/dict_rule';
+  // [M1 我的页信息架构 | full-stack-engineer + UI] AI 聊天占位页
+  // （用户裁决 2026-11-03：先做入口 + 页面壳，不接 LLM）
+  static const aiChat = '/ai_chat';
   static const fonts = '/fonts';
   static const highlightRules = '/highlight_rules';
   static const fileManage = '/file_manage';
@@ -382,6 +386,9 @@ class AppRoutes {
     dict: (_) => const DictScreen(),
     // [C2 批2 | full-stack-engineer + UI] 字典规则管理页
     dictRule: (_) => const DictRuleScreen(),
+    // [M1 我的页信息架构 | full-stack-engineer + UI] AI 聊天占位页：
+    // 「我的 → 其他」入口默认落点，亦可供深链直接打开（route 名稳定）
+    aiChat: (_) => const AiChatScreen(),
     // [C3 标题字体] 标题字体入口经 arguments 传 'title'（默认 'body' 保持
     // 既有调用方兼容）— full-stack-engineer
     fonts: (context) {

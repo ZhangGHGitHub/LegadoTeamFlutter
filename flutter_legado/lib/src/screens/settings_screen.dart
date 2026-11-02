@@ -4,6 +4,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_strings.dart';
 import '../routes.dart';
@@ -11,27 +12,34 @@ import '../constants/pref_keys.dart';
 import '../utils/error_message.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/web_keep_alive_service.dart';
+import '../services/web_service_address_resolver.dart';
 import '../services/web_service_foreground_service.dart';
 import '../services/web_service_wake_lock_service.dart';
 import '../providers/providers.dart';
-import '../providers/theme/theme_notifier.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
-import '../widgets/bottom_sheet_widget.dart';
 
 /// 我的页面（枢纽菜单）
 ///
-/// 对标 Android 原版「我的」页（`fragment_my_config.xml` + `pref_main.xml`）：
-/// - 顶部：书源管理 / 定时任务 / 运行定时任务 / TXT 目录规则 / 替换净化 /
-///   字典规则 / 主题模式 / Web 服务 / MCP 服务
-/// - 「设置」分组：备份与恢复 / 主题设置 / 其他设置
-/// - 「其他」分组：书签 / 阅读记录 / 文件管理 / 关于 / 退出
+/// [M1 我的页信息架构 | full-stack-engineer + UI | 2026-11-03]
+/// 按 `docs/MY_PAGE_ALIGNMENT_PLAN_20261103.md` 与用户裁决对齐参考版
+/// （`legado-with-MD3/.../ui/main/my/MyScreen.kt`），同时保留 Android 原版
+/// （`pref_main.xml`）独有能力：
+/// - 顶部无标题分组：Web 服务块（开关 + 运行地址 + 复制地址/在浏览器中打开）
+/// - 「规则」组：书源管理 / 替换净化 / TXT 目录规则 / 字典规则 / 高亮标签规则
+///   （原「规则管理」与「字典规则」合并为单入口，默认进管理页）
+/// - 「服务与工具」组：定时任务 / 运行定时任务 / MCP 服务（原版能力保留区）
+/// - 「其他」组：AI 聊天（占位）/ 设置 / 书签 / 阅读记录 / 缓存管理 /
+///   文件管理 / 关于 / 退出
+///
+/// 主题模式快捷入口按参考版移除，统一从「设置 → 外观」进入。
 ///
 /// 视觉：apple-ui-designer — iOS 分组 inset 列表、系统感图标色块、克制分隔。
 ///
 /// — UI 子代理 + UI ｜ 2026-08-13
+/// 修订：全栈工程师 + UI ｜ 2026-11-03（M1 信息架构）
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -55,6 +63,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   /// FGS 仍运行、LAN 访问不受影响，仅前台通知不可见，卡片副题提示。
   bool _webNotificationDegraded = false;
   String _webServiceStatus = '';
+
+  /// 运行中可访问地址（`http://<局域网IPv4>:<port>`；失败回落回环）。
+  /// 由 [webServiceAddressResolverProvider] 解析，经 [_refreshWebAddress] 更新。
+  String _webServiceAddress = '';
   int _mcpPort = 0;
 
   /// Web 书源访问令牌（config:jsSourceApiToken）是否已配置。
@@ -123,6 +135,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         if (_webService) setState(() => _webServiceStatus = status);
         await _reconcileWebWakeLock(status);
         await _reconcileWebForeground(status);
+        // [M1] 服务对账完成后再解析展示地址（UI 操作不阻断保活/前台服务）
+        if (_webService && _isServerRunning(status)) {
+          await _refreshWebAddress(status);
+        }
       } catch (e) {
         // 状态查询失败（FFI 未初始化等）：保持现状，不下发唤醒锁/前台服务命令
         debugPrint('Web 服务状态查询失败（跳过唤醒锁/前台服务对账）：$e');
@@ -167,6 +183,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   ///（见 rust_api_media_format.part.dart）。
   bool _isServerRunning(String status) =>
       status.trim().toLowerCase().startsWith('running');
+
+  /// 解析并写入 Web 服务可访问地址（M1）
+  ///
+  /// 端口优先取状态串 `running on port X`（Rust 实际绑定端口），解析失败
+  /// （异常状态串/旧实现）回落用户配置端口 [_readWebPort]。
+  Future<void> _refreshWebAddress(String status) async {
+    final address = await _resolveAddressForStatus(status);
+    if (!mounted) return;
+    setState(() => _webServiceAddress = address);
+  }
+
+  /// 按运行状态串解析地址；解析失败只记日志并返回空串——复制/打开按钮
+  /// 随地址为空隐藏，不影响开关与唤醒锁/前台服务对账。
+  Future<String> _resolveAddressForStatus(String status) async {
+    try {
+      final parsedPort = LanWebServiceAddressResolver.parsePort(status);
+      final port = parsedPort ?? await _readWebPort();
+      return await ref.read(webServiceAddressResolverProvider).resolve(port);
+    } catch (e) {
+      debugPrint('Web 服务访问地址解析失败（忽略）：$e');
+      return '';
+    }
+  }
 
   /// 批9b-6 审查回修：按运行态对账进程级 Web 服务唤醒锁
   ///
@@ -333,10 +372,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         // 服务成功即接保活（iOS 专用；其它平台 no-op）
         final keepAlive = await WebKeepAliveService.instance.start();
         await api.setConfig('webService', 'true');
+        // [M1] 运行中地址（局域网 IPv4 优先；失败为空 → 只隐藏操作按钮）
+        final address = await _resolveAddressForStatus(status);
         if (!mounted) return;
         setState(() {
           _webService = true;
           _webServiceStatus = status;
+          _webServiceAddress = address;
           _webKeepAliveUnavailable = keepAlive == WebKeepAliveStatus.failed;
           _webNotificationDegraded = !notificationGranted;
         });
@@ -371,6 +413,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         setState(() {
           _webService = false;
           _webServiceStatus = '';
+          _webServiceAddress = '';
           _webKeepAliveUnavailable = false;
           _webNotificationDegraded = false;
         });
@@ -450,11 +493,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
+  /// 复制 Web 服务访问地址（M1）
+  ///
+  /// 纯 UI 操作（对齐参考版 `PrefClickEvent.CopyUrl`），不触碰服务状态；
+  /// 剪贴板失败给出 SnackBar 提示。
+  Future<void> _copyWebServiceAddress() async {
+    final address = _webServiceAddress;
+    if (address.isEmpty) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: address));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已复制访问地址')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('复制地址失败: ${errorMessage(e)}')));
+    }
+  }
+
+  /// 系统浏览器打开 Web 服务地址（M1）
+  ///
+  /// 对齐参考版 `PrefClickEvent.OpenUrl(webServiceAddress)`：外部浏览器打开；
+  /// 无实现/失败时 SnackBar 提示，不静默。
+  Future<void> _openWebServiceAddress() async {
+    final address = _webServiceAddress;
+    if (address.isEmpty) return;
+    final uri = Uri.tryParse(address);
+    var opened = false;
+    try {
+      opened =
+          uri != null &&
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('打开 Web 服务地址失败：$e');
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开浏览器')));
+    }
+  }
+
   /// [B2-C2 2-10 | 全栈工程师] Web 服务大卡（图标 + 绿 accent）
   ///
   /// 对齐 ref 12 原版「我的」页 Web 服务大卡形态：48dp 圆角图标槽
   /// （language 图标）+ 标题/状态副题 + 右端 Switch（busy 时 spinner）；
   /// 开启态卡片描边与图标槽转绿（iOS 系统绿语义色）。
+  ///
+  /// [M1 我的页 | 2026-11-03] 运行中副题显示可访问地址（参考版
+  /// `MyUiState.webServiceAddress`），卡片下方补「复制地址」「在浏览器中
+  /// 打开」两个操作（对齐参考版 `WebServiceSettingBlock`）。操作按钮放在
+  /// 卡片 InkWell **之外**，避免点击按钮冒泡触发挥手切换开关。
   Widget _buildWebServiceCard(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
@@ -471,8 +563,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     // 同卡内 Switch 与卡描边/图标槽同源，主题切换无残留绿。
     final green = cs.primary;
     final enabled = _webService;
-    final baseSubtitle = enabled && _webServiceStatus.isNotEmpty
-        ? _webServiceStatus
+    // [M1] 运行中优先展示可访问地址；地址解析中/失败回落状态串
+    final baseSubtitle = enabled
+        ? (_webServiceAddress.isNotEmpty
+              ? _webServiceAddress
+              : (_webServiceStatus.isNotEmpty ? _webServiceStatus : '正在启动…'))
         : '用浏览器写源或看书';
     // [2026-10-07 保活批 | 方案 A 兜底] 保活启动失败 → 回退「仅前台可用」，
     // 仅副题提示（对齐需求：不阻断服务、UI 主形态不变）。
@@ -490,92 +585,130 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     // [批23b] 语义合并：整卡与右端 Switch 合并为单一开关节点（与
     // SwitchListTile / SettingSwitchRow 同法），避免读屏出现「可点击卡片 +
     // 独立开关」两个焦点；Switch 不参与焦点，整卡即唯一语义目标。
+    // [M1] 复制/打开按钮位于本 MergeSemantics/InkWell 之外（见下），
+    // 不并入开关语义节点，也不参与整卡切换手势。
     final radius = BorderRadius.circular(16);
-    return MergeSemantics(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: radius,
-            onTap:
-                _webServiceBusy ? null : () => _toggleWebService(!_webService),
-            child: Ink(
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerLow,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MergeSemantics(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
                 borderRadius: radius,
-                border: Border.all(
-                  color:
-                      enabled ? green.withValues(alpha: 0.6) : cs.outlineVariant,
-                  width: enabled ? 1.5 : 0.5,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: enabled
-                            ? green.withValues(alpha: 0.15)
-                            : cs.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Symbols.language_rounded,
-                        size: 28,
-                        color: enabled ? green : cs.onSurfaceVariant,
-                      ),
+                onTap: _webServiceBusy
+                    ? null
+                    : () => _toggleWebService(!_webService),
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerLow,
+                    borderRadius: radius,
+                    border: Border.all(
+                      color: enabled
+                          ? green.withValues(alpha: 0.6)
+                          : cs.outlineVariant,
+                      width: enabled ? 1.5 : 0.5,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Web 服务',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: enabled
+                                ? green.withValues(alpha: 0.15)
+                                : cs.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
+                          child: Icon(
+                            Symbols.language_rounded,
+                            size: 28,
+                            color: enabled ? green : cs.onSurfaceVariant,
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Web 服务',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _webServiceBusy
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : ExcludeFocus(
+                                child: Switch(
+                                  value: _webService,
+                                  onChanged: _toggleWebService,
+                                ),
+                              ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    _webServiceBusy
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : ExcludeFocus(
-                            child: Switch(
-                              value: _webService,
-                              onChanged: _toggleWebService,
-                            ),
-                          ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+        // [M1] 运行中操作（对齐参考版 WebServiceSettingBlock 的展开按钮）：
+        // 位于 InkWell 之外，点按不会切换开关；小屏用 Wrap 右对齐换行防溢出。
+        if (enabled && _webServiceAddress.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  TextButton.icon(
+                    key: const ValueKey('web-service-copy-address'),
+                    onPressed: _copyWebServiceAddress,
+                    icon: const Icon(Symbols.content_copy_rounded, size: 18),
+                    label: const Text('复制地址'),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('web-service-open-browser'),
+                    onPressed: _openWebServiceAddress,
+                    icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
+                    label: const Text('在浏览器中打开'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = ref.watch(themeNotifierProvider).themeMode;
     // [MD3 LargeTitle] 主 Tab 根页可折叠大标题（UI_MD3_PLAN.md Batch 1）
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
@@ -592,7 +725,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           child: ListView(
             padding: const EdgeInsets.only(bottom: 32),
             children: [
-              // ===== 顶部管理入口（对标 pref_main 顶层项，文案对齐 values-zh）=====
+              // ===== 顶部 Web 服务块 =====
+              // [M1 我的页 | 2026-11-03 用户裁决] 按参考版置顶：开关 + 运行中
+              // 可访问地址 + 复制/浏览器打开；M2 再做块形态视觉对齐。
+              _buildWebServiceCard(context),
+
+              // ===== 规则分组（M1：收敛为 5 个规则入口）=====
+              const IosSectionHeader('规则'),
               IosGroup(
                 separatorIndent: 62,
                 children: [
@@ -603,6 +742,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.sources),
                   ),
+                  IosListTile(
+                    icon: Symbols.find_replace_rounded,
+                    title: '替换净化',
+                    subtitle: '配置替换净化规则',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.replaceRules),
+                  ),
+                  IosListTile(
+                    icon: Symbols.toc_rounded,
+                    title: 'TXT 目录规则',
+                    subtitle: '配置 TXT 目录规则',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.txtTocRules),
+                  ),
+                  // [M1 字典规则合并 | 2026-11-03 用户裁决] 原「字典规则」
+                  // （查询页）+「规则管理」（管理页）两个入口合并为单入口：
+                  // 默认进管理页（对齐原版 DictRuleActivity / 参考版
+                  // PrefClickEvent.OpenDictRule）；查询页 AppRoutes.dict 保留
+                  // 注册与深链，从管理页顶栏「字典查询」进入（见
+                  // dict_rule_screen.dart）。
+                  IosListTile(
+                    icon: Symbols.translate_rounded,
+                    title: '字典规则',
+                    subtitle: '管理字典规则，查询词典释义',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.dictRule),
+                  ),
+                  IosListTile(
+                    icon: Icons.sell_rounded,
+                    title: '高亮标签规则',
+                    subtitle: '自动高亮标注规则',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.highlightRules),
+                  ),
+                ],
+              ),
+
+              // ===== 服务与工具分组 =====
+              // [M1 用户裁决] 原版 pref_main 独有能力保留区：定时任务 /
+              // 运行定时任务 / MCP 服务（主题模式不在此，统一从设置→外观）。
+              const IosSectionHeader('服务与工具'),
+              IosGroup(
+                separatorIndent: 62,
+                children: [
                   IosListTile(
                     icon: Symbols.schedule_rounded,
                     title: '定时任务',
@@ -617,59 +800,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     value: _autoTaskService,
                     onChanged: _toggleAutoTaskService,
                   ),
-                  IosListTile(
-                    icon: Symbols.toc_rounded,
-                    title: 'TXT 目录规则',
-                    subtitle: '配置 TXT 目录规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.txtTocRules),
-                  ),
-                  IosListTile(
-                    icon: Symbols.find_replace_rounded,
-                    title: '替换净化',
-                    subtitle: '配置替换净化规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.replaceRules),
-                  ),
-                  IosListTile(
-                    icon: Symbols.translate_rounded,
-                    title: '字典规则',
-                    subtitle: '配置字典规则',
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.dict),
-                  ),
-                  // [C2 批2 | full-stack-engineer + UI] 字典规则管理页入口
-                  // （对齐原版 DictRuleActivity；「字典规则」仍进查询页）
-                  IosListTile(
-                    icon: Symbols.manage_search_rounded,
-                    title: '规则管理',
-                    subtitle: '管理字典规则（增删改、启停、排序、导入）',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.dictRule),
-                  ),
-                  IosListTile(
-                    icon: Icons.sell_rounded,
-                    title: '高亮标注',
-                    subtitle: '自动高亮标注规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.highlightRules),
-                  ),
-                  IosListTile(
-                    icon: Symbols.brightness_6_rounded,
-                    title: '主题模式',
-                    subtitle: '选择主题模式',
-                    value: _themeModeLabel(themeMode),
-                    onTap: () => _showThemePicker(context),
-                  ),
-                ],
-              ),
-
-              // [B2-C2 2-10 | 全栈工程师] Web 服务卡片化：图标+绿 accent 独立大卡
-              //（对齐 ref 12「大卡带图标/绿acc」；_toggleWebService 语义不变）
-              _buildWebServiceCard(context),
-
-              IosGroup(
-                separatorIndent: 62,
-                children: [
                   SettingSwitchRow(
                     leading: _mcpServiceBusy
                         ? const SizedBox(
@@ -691,15 +821,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 ],
               ),
 
-              // ===== 设置分组 =====
-              const IosSectionHeader('设置'),
+              // ===== 其他分组 =====
+              const IosSectionHeader('其他'),
               IosGroup(
                 separatorIndent: 62,
                 children: [
+                  // [M1 我的页 | 2026-11-03 用户裁决] AI 聊天先占位：
+                  // 入口 + 明确「暂未支持」页面壳，不接任何 LLM。
+                  IosListTile(
+                    icon: Symbols.auto_awesome_rounded,
+                    title: 'AI 聊天',
+                    subtitle: '暂未支持，待 Rust 能力接入',
+                    onTap: () => Navigator.pushNamed(context, AppRoutes.aiChat),
+                  ),
                   // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页集中化：我的页
                   // 原备份与恢复/主题设置/其他设置三 tile 收敛为单一「设置」
                   // 入口（对齐参考版我的页「设置」项；各页经设置主页分组到达）
                   // — Qoder
+                  // [M1 我的页 | 2026-11-03] 移除独立「设置」分组，入口并入
+                  // 「其他」组（对齐参考版顺序：AI 聊天 → 设置 → 书签 …）
                   IosListTile(
                     icon: Symbols.settings_rounded,
                     title: '设置',
@@ -707,14 +847,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.settingsHome),
                   ),
-                ],
-              ),
-
-              // ===== 其他分组 =====
-              const IosSectionHeader('其他'),
-              IosGroup(
-                separatorIndent: 62,
-                children: [
                   IosListTile(
                     icon: Symbols.bookmark_rounded,
                     title: '书签',
@@ -765,60 +897,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  String _themeModeLabel(ThemeMode mode) {
-    switch (mode) {
-      case ThemeMode.light:
-        return AppStrings.themeLight;
-      case ThemeMode.dark:
-        return AppStrings.themeDark;
-      default:
-        return AppStrings.themeSystem;
-    }
-  }
-
   /// 帮助（对标 main_my.xml → showHelp("appHelp")）
   void _showHelp() {
     showHelp(context, HelpAssets.appHelp);
-  }
-
-  void _showThemePicker(BuildContext context) {
-    final themeNotifier = ref.read(themeNotifierProvider.notifier);
-    final currentMode = ref.read(themeNotifierProvider).themeMode;
-    // [统一壳 B2a] 自造壳迁移统一 AppBottomSheet（对齐参考版 AppModalBottomSheet
-    // 语义；把手由主题 bottomSheetTheme.showDragHandle 统一提供）
-    AppBottomSheet.show<ThemeMode>(
-      context: context,
-      title: AppStrings.selectTheme,
-      children: [
-        ...ThemeMode.values.map((mode) {
-          final selected = mode == currentMode;
-          return ListTile(
-            leading: Icon(
-              selected ? Symbols.check_circle_rounded : Symbols.radio_button_unchecked_rounded,
-              color: selected ? Theme.of(context).colorScheme.primary : null,
-            ),
-            title: Text(_getThemeLabel(mode)),
-            onTap: () => Navigator.pop(context, mode),
-          );
-        }),
-        const SizedBox(height: 8),
-      ],
-    ).then((selectedMode) {
-      if (selectedMode != null) {
-        themeNotifier.setThemeMode(selectedMode);
-      }
-    });
-  }
-
-  String _getThemeLabel(ThemeMode mode) {
-    switch (mode) {
-      case ThemeMode.system:
-        return AppStrings.themeSystem;
-      case ThemeMode.light:
-        return AppStrings.themeLight;
-      case ThemeMode.dark:
-        return AppStrings.themeDark;
-    }
   }
 
   Future<void> _confirmExit() async {

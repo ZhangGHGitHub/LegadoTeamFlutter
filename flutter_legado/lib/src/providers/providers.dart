@@ -4,6 +4,7 @@ import '../services/book_api.dart';
 import '../services/mock_book_api.dart';
 import '../services/rust_api.dart';
 import '../services/settings_service.dart';
+import '../services/web_service_address_resolver.dart';
 
 /// BookApi 全局 Provider（Riverpod 注入层）
 ///
@@ -27,3 +28,12 @@ final settingsProvider = Provider<SettingsService>((ref) => SettingsService());
 /// 外部导入/备份恢复不经规则页的路径不会自增——切换章节或重开书后生效
 /// （登记为 MVP 限制）。
 final highlightRulesRevisionProvider = StateProvider<int>((ref) => 0);
+
+/// Web 服务可访问地址解析 Provider（M1 我的页）
+///
+/// 默认真实网卡枚举（[LanWebServiceAddressResolver]，局域网 IPv4 优先、
+/// 失败回落回环）；widget 测试注入固定 IP 实现，避免 FakeAsync 下
+/// `NetworkInterface.list` 不完成导致地址/开关状态悬挂。
+final webServiceAddressResolverProvider = Provider<WebServiceAddressResolver>(
+  (ref) => const LanWebServiceAddressResolver(),
+);
