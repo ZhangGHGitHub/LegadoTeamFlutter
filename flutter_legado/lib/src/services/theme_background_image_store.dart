@@ -22,6 +22,7 @@
 // - `.9.png` 保留原双扩展名，供 2b-1b 九宫格渲染迁移识别；
 // - cleanupOrphansSync：设置页低成本回收未引用的自有图片（含中断残留 tmp）。
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
@@ -155,6 +156,64 @@ class ThemeBackgroundImageStore {
     );
     try {
       await sourceFile.copy(tmp.path);
+      if (target.existsSync()) {
+        // 并发写入同一内容：对方已落正式文件，丢弃本次临时文件
+        await _safeDelete(tmp);
+      } else {
+        await tmp.rename(target.path);
+      }
+    } on FileSystemException {
+      await _safeDelete(tmp);
+      // rename 竞态：对方刚好同时落盘 → 视为成功
+      if (!target.existsSync()) rethrow;
+    }
+    return '$subDir/$slot/$fileName';
+  }
+
+  /// [设置批2b-1b-2a] 字节流落盘（Android SAF 选图路径）
+  ///
+  /// SAF 通过 fd 读出字节后直接交给本方法，避免 file_picker 的 Android
+  /// MediaStore 路径/压缩链路（陈旧缩略图会触发原生 FATAL）。校验口径与
+  /// [store] 完全一致：非空、≤[maxBytes]、引擎可解码；文件名仍按内容 md5，
+  /// 先写 `.tmp-<micros>` 再 rename 原子替换。
+  ///
+  /// [originalName] 仅用于推断扩展名与错误提示（内容哈希才是文件名）。
+  static Future<String> storeBytes(
+    Uint8List bytes, {
+    required String originalName,
+    required String slot,
+  }) async {
+    if (kIsWeb) throw UnsupportedError('Web 端不支持容器背景图');
+    if (!_slotPattern.hasMatch(slot)) {
+      throw ArgumentError.value(slot, 'slot', '非法槽位名');
+    }
+    if (bytes.isEmpty) throw const FormatException('图片内容为空');
+    if (bytes.length > maxBytes) {
+      throw FormatException(
+        '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）',
+      );
+    }
+    await _validateDecodableBytes(bytes, originalName);
+
+    final support = await supportDir();
+    final supportPath = support.absolute.path;
+    _supportPath = supportPath;
+
+    final sep = Platform.pathSeparator;
+    final slotDir = '$supportPath$sep$subDir$sep$slot';
+    final digest = md5.convert(bytes).toString();
+    final ext = _extensionOf(originalName);
+    final fileName = '$digest.$ext';
+
+    await Directory(slotDir).create(recursive: true);
+    final target = File('$slotDir$sep$fileName');
+    if (target.existsSync()) return '$subDir/$slot/$fileName';
+
+    final tmp = File(
+      '$slotDir$sep.$fileName.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await tmp.writeAsBytes(bytes, flush: true);
       if (target.existsSync()) {
         // 并发写入同一内容：对方已落正式文件，丢弃本次临时文件
         await _safeDelete(tmp);
@@ -308,6 +367,37 @@ class ThemeBackgroundImageStore {
       frame.image.dispose();
     } catch (_) {
       throw FormatException('不是可解码的图片：${_baseName(file.path)}');
+    } finally {
+      codec?.dispose();
+      descriptor?.dispose();
+      // 仅失败且仍由本方法持有的 buffer（成功路径已提前释放）
+      buffer?.dispose();
+    }
+  }
+
+  /// 字节流版本：SAF fd 读取后不落中间文件，直接做同样的引擎试解码。
+  static Future<void> _validateDecodableBytes(
+    Uint8List bytes,
+    String originalName,
+  ) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    ui.Codec? codec;
+    try {
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      // descriptor 已接管解码数据；立即释放 buffer，置空避免 finally 双释放
+      buffer.dispose();
+      buffer = null;
+      codec = await descriptor.instantiateCodec(
+        targetWidth: 1,
+        targetHeight: 1,
+      );
+      // 真正解一帧：截断 PNG/损坏数据在此暴露（只建 codec 不够）
+      final frame = await codec.getNextFrame();
+      frame.image.dispose();
+    } catch (_) {
+      throw FormatException('不是可解码的图片：${_baseName(originalName)}');
     } finally {
       codec?.dispose();
       descriptor?.dispose();

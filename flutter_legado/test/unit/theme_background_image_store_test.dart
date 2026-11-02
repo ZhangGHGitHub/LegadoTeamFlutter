@@ -1,11 +1,14 @@
-// [设置批2b-1a | 2026-11-01] 容器背景图存储单测 — 全栈工程师
+// [设置批2b-1a | 2026-11-01；2b-1b-2a 2026-11-02]
+// 容器背景图存储单测 — 全栈工程师
 //
 // 覆盖：内容哈希命名/去重、相对 Support 标识解析、绝对路径透传、
 // 文件缺失回落（isUsableSync=false）、清除只删自有文件（外部路径不动）、
 // 非法槽位拒绝、存前试解码（含截断 PNG/非图片）、JPG/12MP 正常图回归、
-// .9.png 保留、孤儿清理（超龄 tmp 与新 tmp 区分）。
+// .9.png 保留、孤儿清理（超龄 tmp 与新 tmp 区分）；
+// [2b-1b-2a] storeBytes（Android SAF 字节流）校验/原子写/去重/无 tmp 残留。
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
@@ -311,6 +314,93 @@ void main() {
     expect(notOurs.existsSync(), isTrue);
     expect(itemFile.existsSync(), isTrue,
         reason: 'item_* 槽位属 2b-1b，本批不清理');
+  });
+
+  group('storeBytes（Android SAF 字节流路径）', () {
+    test('校验通过后内容哈希落盘、字节一致、无 tmp 残留、重复去重', () async {
+      final bytes = Uint8List.fromList(_pngBytes);
+      final first = await ThemeBackgroundImageStore.storeBytes(
+        bytes,
+        originalName: 'picked.PNG',
+        slot: 'large_light',
+      );
+      expect(
+        first,
+        matches(RegExp(r'^theme_backgrounds/large_light/[0-9a-f]{32}\.png$')),
+      );
+      final resolved = ThemeBackgroundImageStore.resolveSync(first);
+      expect(File(resolved).readAsBytesSync(), bytes);
+      expect(ThemeBackgroundImageStore.isUsableSync(first), isTrue);
+
+      final second = await ThemeBackgroundImageStore.storeBytes(
+        bytes,
+        originalName: 'picked.PNG',
+        slot: 'large_light',
+      );
+      expect(second, first, reason: '同一内容重复选择应去重');
+      final slotDir = Directory(
+        '${temp.path}${Platform.pathSeparator}theme_backgrounds'
+        '${Platform.pathSeparator}large_light',
+      );
+      final files = slotDir.listSync().whereType<File>().toList();
+      expect(files.length, 1);
+      expect(
+        files.where((f) => f.path.contains('.tmp-')),
+        isEmpty,
+        reason: '原子写完成/去重后不得留下临时文件',
+      );
+    });
+
+    test('空字节/超 32MB/非图片均拒绝且不落盘', () async {
+      await expectLater(
+        ThemeBackgroundImageStore.storeBytes(
+          Uint8List(0),
+          originalName: 'empty.png',
+          slot: 'large_light',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      final tooBig = Uint8List(ThemeBackgroundImageStore.maxBytes + 1);
+      await expectLater(
+        ThemeBackgroundImageStore.storeBytes(
+          tooBig,
+          originalName: 'big.png',
+          slot: 'large_light',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('32MB'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        ThemeBackgroundImageStore.storeBytes(
+          Uint8List.fromList(const <int>[1, 2, 3, 4]),
+          originalName: 'fake.png',
+          slot: 'large_light',
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('不是可解码的图片'),
+          ),
+        ),
+      );
+      final slotDir = Directory(
+        '${temp.path}${Platform.pathSeparator}theme_backgrounds'
+        '${Platform.pathSeparator}large_light',
+      );
+      expect(
+        slotDir.existsSync() ? slotDir.listSync() : const <FileSystemEntity>[],
+        isEmpty,
+        reason: '校验失败不得写正式文件或 tmp',
+      );
+    });
   });
 
   // 便于其他用例复用：1x1 透明 PNG（widget 测试真实可解码）

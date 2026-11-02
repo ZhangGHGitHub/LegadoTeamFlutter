@@ -26,6 +26,7 @@ import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
+import '../services/container_image_picker.dart';
 import '../services/export_file_service.dart';
 import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
@@ -2039,21 +2040,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (!mounted || action == null) return;
     final notifier = ref.read(uiSettingsProvider.notifier);
     if (action == 'select') {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        dialogTitle: '选择容器背景图片',
-        // [P2 设备回修] file_picker 默认 allowCompression=true，在 Android
-        // 压缩链路对非图片/伪造扩展名会走 Bitmap.compress NPE 导致 FATAL；
-        // 关闭原生压缩，格式/完整性统一由 Dart 侧解码校验（失败 toast）。
-        allowCompression: false,
-        // 不需要把整图读进内存：路径交由 ThemeBackgroundImageStore 流式处理
-        withData: false,
-      );
-      final source = result?.files.single.path;
-      if (source == null || !mounted) return;
+      // [设置批2b-1b-2a] Android 走 SAF 字节流（规避 file_picker MediaStore
+      // 陈旧缩略图 FATAL）；iOS/桌面仍由 picker 内部走 file_picker。
       try {
-        final stored = await ThemeBackgroundImageStore.store(
-          source,
+        final picked = await ContainerImagePicker.pick();
+        if (picked == null || !mounted) return;
+        final stored = await ThemeBackgroundImageStore.storeBytes(
+          picked.bytes,
+          originalName: picked.name,
           slot: night ? 'large_dark' : 'large_light',
         );
         await notifier.setLargeContainerBackgroundImage(
@@ -2064,6 +2058,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         if (current.isNotEmpty && current != stored) {
           await ThemeBackgroundImageStore.deleteOwned(current);
         }
+      } on ContainerImagePickException catch (e) {
+        debugPrint(
+          'ThemeConfigScreen._showContainerBgImageDialog 选择失败: $e',
+        );
+        if (mounted) _toast(e.message);
       } catch (e) {
         debugPrint('ThemeConfigScreen._showContainerBgImageDialog 设置异常: $e');
         if (mounted) {
