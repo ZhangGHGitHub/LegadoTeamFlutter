@@ -22,6 +22,7 @@ import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
+import '../mocks/fake_web_service_address_resolver.dart';
 import '../mocks/mocks.dart';
 
 void main() {
@@ -34,7 +35,13 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      overrides: [
+        bookApiProvider.overrideWithValue(mockApi),
+        // [M1] FakeAsync 下真实网卡枚举不完成，注入固定局域网 IP
+        webServiceAddressResolverProvider.overrideWithValue(
+          FakeWebServiceAddressResolver(),
+        ),
+      ],
     );
     addTearDown(container.dispose);
     WebKeepAliveService.instance.debugReset();

@@ -17,7 +17,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
-import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_home_screen.dart';
@@ -27,11 +26,13 @@ import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
 import 'package:flutter_legado/src/services/web_service_wake_lock_service.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
+import '../mocks/fake_web_service_address_resolver.dart';
 import '../mocks/mocks.dart';
 
 void main() {
   late FakeServersRustApi mockApi;
   late ProviderContainer container;
+  late FakeWebServiceAddressResolver addressResolver;
 
   setUpAll(() {
     registerFallbacks();
@@ -40,8 +41,13 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     mockApi = FakeServersRustApi();
+    addressResolver = FakeWebServiceAddressResolver();
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      overrides: [
+        bookApiProvider.overrideWithValue(mockApi),
+        // [M1] FakeAsync 下真实网卡枚举不完成，注入固定局域网 IP
+        webServiceAddressResolverProvider.overrideWithValue(addressResolver),
+      ],
     );
     addTearDown(container.dispose);
     // 保活单例为进程单例：逐用例复位，防跨用例状态泄漏
@@ -90,30 +96,46 @@ void main() {
   }
 
   group('SettingsScreen 枢纽菜单', () {
-    testWidgets('渲染顶部管理入口与设置/其他分组', (tester) async {
+    testWidgets('渲染 Web 服务置顶与规则/服务与工具/其他分组（M1）', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
 
-      // 顶部管理入口（对标 pref_main；字典规则非「词典规则」）
-      expect(find.text('书源管理'), findsOneWidget);
-      expect(find.text('定时任务'), findsOneWidget);
-      expect(find.text('TXT 目录规则'), findsOneWidget);
-      expect(find.text('替换净化'), findsOneWidget);
-      expect(find.text('字典规则'), findsOneWidget);
-      expect(find.text('主题模式'), findsOneWidget);
+      // [M1 我的页 | 2026-11-03] Web 服务块置顶后无需滚动即可见
+      expect(find.text('Web 服务'), findsOneWidget);
+
+      // 「规则」组 5 项（原「规则管理」并入「字典规则」；文案对齐
+      // 参考版「高亮标签规则」）
+      for (final label in ['书源管理', '替换净化', 'TXT 目录规则', '字典规则', '高亮标签规则']) {
+        await dragTo(tester, label);
+        await tester.pumpAndSettle();
+        expect(find.text(label), findsOneWidget, reason: '规则组应含「$label」');
+      }
+
+      // 「服务与工具」组：原版能力保留区
+      for (final label in ['定时任务', '运行定时任务', 'MCP 服务']) {
+        await dragTo(tester, label);
+        await tester.pumpAndSettle();
+        expect(find.text(label), findsOneWidget, reason: '服务与工具组应含「$label」');
+      }
+
+      // 「其他」组：AI 聊天 / 设置 / 书签 / 阅读记录 / 缓存管理 / 文件管理 /
+      // 关于 / 退出
+      for (final label in ['AI 聊天', '设置', '书签', '阅读记录', '缓存管理', '文件管理', '关于', '退出']) {
+        await dragTo(tester, label);
+        await tester.pumpAndSettle();
+        expect(find.text(label), findsOneWidget, reason: '其他组应含「$label」');
+      }
+
+      // 已合并/已移除项不得再出现
+      expect(find.text('规则管理'), findsNothing);
+      expect(find.text('高亮标注'), findsNothing);
+      expect(find.text('主题模式'), findsNothing);
+      expect(find.text('选择主题模式'), findsNothing);
 
       expect(find.text('我的'), findsWidgets,
           reason: 'SliverAppBar.large 展开大标题与折叠工具栏标题同时存在');
-      // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页集中化：我的页原
-      // 备份与恢复/主题设置/其他设置三 tile 收敛为单一「设置」入口
-      //（组头「设置」+ 入口 tile 同文案，skipOffstage 计 2）— Qoder
-      await dragTo(tester, '设置');
-      expect(
-          find.text('设置', skipOffstage: false), findsNWidgets(2));
       expect(find.text('备份与恢复'), findsNothing);
       expect(find.text('主题设置'), findsNothing);
-
-      // 已删除创意项
       expect(find.text('导出日志'), findsNothing);
       expect(find.text('词典规则'), findsNothing);
     });
@@ -998,35 +1020,6 @@ void main() {
         reason: '点开关只应写入一次 webService=true（效果幂等）',
       );
       verifyNever(() => mockApi.stopServer());
-    });
-
-    testWidgets('点击主题模式弹出选择对话框并可切换（全局生效）', (tester) async {
-      await tester.pumpWidget(wrap(const SettingsScreen()));
-      await tester.pumpAndSettle();
-
-      expect(find.text('跟随系统'), findsOneWidget);
-      expect(
-        container.read(themeNotifierProvider).themeMode,
-        ThemeMode.system,
-      );
-
-      // 点标题「主题模式」（subtitle「选择主题模式」同屏，勿用模糊 finder）；
-      // LargeTitle 展开占高，先滚动到可见区，再回拖使其离开 pinned 头部遮挡区
-      await dragTo(tester, '主题模式');
-      await tester.drag(find.byType(ListView), const Offset(0, 140));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('主题模式'));
-      await tester.pumpAndSettle();
-
-      // 底栏标题与列表 subtitle 可能同文案，用 ListTile 精确匹配选项
-      expect(find.widgetWithText(ListTile, '浅色'), findsOneWidget);
-      expect(find.widgetWithText(ListTile, '深色'), findsOneWidget);
-
-      await tester.tap(find.widgetWithText(ListTile, '深色'));
-      await tester.pumpAndSettle();
-
-      expect(container.read(themeNotifierProvider).themeMode, ThemeMode.dark);
-      expect(find.text('深色'), findsOneWidget);
     });
 
     testWidgets('经设置主页进入备份与恢复全页 WebDAV/备份设置', (tester) async {

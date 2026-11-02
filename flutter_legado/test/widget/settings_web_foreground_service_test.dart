@@ -38,6 +38,7 @@ import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
 import 'package:flutter_legado/src/services/web_service_foreground_service.dart';
 import 'package:flutter_legado/src/services/web_service_wake_lock_service.dart';
 
+import '../mocks/fake_web_service_address_resolver.dart';
 import '../mocks/mocks.dart';
 
 /// 模拟原生前台服务（含通知权限），记录方法调用顺序
@@ -86,7 +87,14 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      overrides: [
+        bookApiProvider.overrideWithValue(mockApi),
+        // [M1] 初始化/启动路径会解析 Web 服务地址；FakeAsync 下真实网卡枚举
+        // 不完成，注入固定 IP（否则 _initServiceStates 挂在地址解析上）
+        webServiceAddressResolverProvider.overrideWithValue(
+          FakeWebServiceAddressResolver(),
+        ),
+      ],
     );
     addTearDown(container.dispose);
     messenger =
