@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
 
 /// 设置主页（集中化分组入口）
@@ -9,12 +10,29 @@ import '../routes.dart';
 /// 集中化」结构——参考版 8 组（外观/高级/阅读界面/封面设置/下载与缓存/
 /// 备份与恢复/AI 设置/翻译设置）；我方按真实功能映射为 9 组，封面设置/
 /// AI 设置/翻译设置暂缺（AI 设置随 AI 批次，其余登记）— Qoder
+///
+/// [设置批2b-1b-2a] 本页入口卡为手写 Material（16dp 圆角、10dp 行距），
+/// 不在 IosGroup/CardTheme 覆盖范围内；此处按同一口径乘 containerOpacity
+/// 卡面 alpha（文字/图标保持不透明），使容器不透明度在该页生效。
 class SettingsHomeScreen extends StatelessWidget {
   const SettingsHomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<UiSettingsState>(
+      valueListenable: uiSettingsListenable,
+      builder: (context, ui, _) => _buildContent(context, ui),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, UiSettingsState ui) {
     final cs = Theme.of(context).colorScheme;
+    final opacity = (ui.containerOpacity / 100).clamp(0.0, 1.0);
+    // 乘 alpha 而非替换（同 IosGroup/参考 GlassCard.kt:74-75）：
+    // 透明调色板的 surfaceContainerLow 自带 alpha 时不能被洗成实色。
+    final cardColor = cs.surfaceContainerLow.withValues(
+      alpha: cs.surfaceContainerLow.a * opacity,
+    );
     final entries = [
       (Symbols.palette_rounded, '外观', '主题配色与显示模式',
           () => Navigator.pushNamed(context, AppRoutes.themeConfig)),
@@ -60,7 +78,7 @@ class SettingsHomeScreen extends StatelessWidget {
               itemBuilder: (context, i) {
                 final (icon, title, subtitle, onTap) = entries[i];
                 return Material(
-                  color: cs.surfaceContainerLow,
+                  color: cardColor,
                   borderRadius: BorderRadius.circular(16),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(16),

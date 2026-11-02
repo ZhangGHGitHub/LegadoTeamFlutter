@@ -186,10 +186,19 @@ class UiSettingsState {
 
   /// 容器卡面不透明度 0-100（参考版 containerOpacity，默认 100）
   ///
-  /// 作用于 IosGroup 分组卡面（外部分组底 + 行小卡底）：值越低，底层
-  /// 容器背景图/全局壁纸透出越多；文字颜色不随之改变（参考版 GlassCard
-  /// 同口径，见 `card/GlassCard.kt:74-75`：`alpha = alpha * containerOpacity`）。
+  /// 作用于 IosGroup 分组卡面（外部分组底 + 行小卡底）与设置首页手写卡片：
+  /// 值越低，底层容器背景图/全局壁纸透出越多；文字颜色不随之改变（参考版
+  /// GlassCard 同口径，见 `card/GlassCard.kt:74-75`：`alpha = alpha * containerOpacity`）。
   final int containerOpacity;
+
+  /// 大容器背景图自身不透明度 0-100（参考版 appColumnBackgroundOpacity，
+  /// 默认 100）
+  ///
+  /// 只乘在 IosGroup 容器背景图的绘制 alpha 上（参考版
+  /// `AppContainerBackground.kt:61`：Large 图 `alpha = value / 100f`），与
+  /// [containerOpacity] 的卡面 scrim 独立叠加：0 时图片完全透明，卡面仍按
+  /// containerOpacity 遮挡。
+  final int appColumnBackgroundOpacity;
 
   /// 启用容器背景图（参考版 enableContainerBackgroundImage，默认 false）
   ///
@@ -259,6 +268,7 @@ class UiSettingsState {
     this.itemDividerLength = 80,
     this.itemDividerColor = 0,
     this.containerOpacity = 100,
+    this.appColumnBackgroundOpacity = 100,
     this.enableContainerBackgroundImage = false,
     this.largeContainerBackgroundImageLight = '',
     this.largeContainerBackgroundImageDark = '',
@@ -305,6 +315,7 @@ class UiSettingsState {
     int? itemDividerLength,
     int? itemDividerColor,
     int? containerOpacity,
+    int? appColumnBackgroundOpacity,
     bool? enableContainerBackgroundImage,
     String? largeContainerBackgroundImageLight,
     String? largeContainerBackgroundImageDark,
@@ -358,6 +369,8 @@ class UiSettingsState {
       itemDividerLength: itemDividerLength ?? this.itemDividerLength,
       itemDividerColor: itemDividerColor ?? this.itemDividerColor,
       containerOpacity: containerOpacity ?? this.containerOpacity,
+      appColumnBackgroundOpacity:
+          appColumnBackgroundOpacity ?? this.appColumnBackgroundOpacity,
       enableContainerBackgroundImage: enableContainerBackgroundImage ??
           this.enableContainerBackgroundImage,
       largeContainerBackgroundImageLight: largeContainerBackgroundImageLight ??
@@ -533,6 +546,10 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       // [设置批2b-1a] 容器外观：不透明度/背景图（相对标识）与日夜虚化半径
       containerOpacity: await _settings.getIntPref(
         PrefKeys.containerOpacity,
+        defaultValue: 100,
+      ).then(_clampOpacity),
+      appColumnBackgroundOpacity: await _settings.getIntPref(
+        PrefKeys.appColumnBackgroundOpacity,
         defaultValue: 100,
       ).then(_clampOpacity),
       enableContainerBackgroundImage: await _settings.getBoolPref(
@@ -930,6 +947,16 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(containerOpacity: v);
     _sync();
     await _settings.setIntPref(PrefKeys.containerOpacity, v);
+  }
+
+  /// 大容器背景图自身不透明度（0-100，默认 100；参考版
+  /// appColumnBackgroundOpacity）
+  Future<void> setAppColumnBackgroundOpacity(int value) async {
+    final v = _clampOpacity(value);
+    if (state.appColumnBackgroundOpacity == v) return;
+    state = state.copyWith(appColumnBackgroundOpacity: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.appColumnBackgroundOpacity, v);
   }
 
   /// 启用容器背景图（参考版 enableContainerBackgroundImage）

@@ -83,6 +83,16 @@ class PrefKeys {
   /// 容器卡面不透明度 0..100（参考版 containerOpacity，默认 100）
   static const containerOpacity = 'containerOpacity';
 
+  /// 大容器背景图自身不透明度 0..100（参考版 appColumnBackgroundOpacity，
+  /// 默认 100；仅乘在容器背景图 alpha 上，与 [containerOpacity] 卡面 scrim
+  /// 独立叠加）
+  ///
+  /// 参考版 `ThemeSettings.kt:61` 默认 100，`AppContainerBackground.kt:61`
+  /// 对 Large 图取 `value / 100f` 作为绘制 alpha。备份归组已核对参考版
+  /// `BackupConfig.kt:264-318`：该键**不在** themePrefKeys 内，因此任何
+  /// 忽略组合下都随 appPrefs 往返（与 [containerOpacity] 的归组不同）。
+  static const appColumnBackgroundOpacity = 'appColumnBackgroundOpacity';
+
   /// 启用容器背景图（参考版 enableContainerBackgroundImage，默认 false）
   ///
   /// 关闭时保留已选图片路径但不渲染（参考版 `ThemeConfigScreen.kt:534-544`

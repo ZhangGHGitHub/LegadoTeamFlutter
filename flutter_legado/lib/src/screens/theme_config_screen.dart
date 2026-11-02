@@ -968,7 +968,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   按当前亮暗绘制；文件缺失回落纯主题底色。
                   // - 容器不透明度 containerOpacity 0..100（默认 100），乘调色板
                   //   alpha（参考 GlassCard.kt:74-75），作用于分组卡面与行小卡面；
-                  //   当前仅覆盖 IosGroup（参考版为全局 GlassCard，2b-1b 扩展）。
+                  //   覆盖 IosGroup 与设置首页手写卡片，其余书架/详情/对话框等
+                  //   全局 GlassCard 登记 2b-1b-2b。
+                  // - 大容器背景图自身不透明度 appColumnBackgroundOpacity
+                  //   0..100（默认 100；参考 ThemeSettings.kt:61，
+                  //   AppContainerBackground.kt:61 对 Large 图 alpha=value/100），
+                  //   仅乘在 IosGroup 容器背景图上，与 containerOpacity 独立叠加。
                   // - 背景图虚化 backgroundImageBlurring/backgroundImageNightBlurring
                   //   0..100（默认 0），仅作用全局壁纸，不影响内容/文字。
                   // [设置批2b-1b-1] 补齐参考版容器卡面三项覆盖（当前开关即时
@@ -980,17 +985,18 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   baseCardCornerRadius 0..40；作用于 IosGroup 与全局
                   //   CardTheme（参考版 BaseCard/GlassCard 同源分支）。
                   //   范围：仅未显式 shape 的 Card；18 处显式 shape 的卡片
-                  //   （字典/首页/阅读设置等）不在覆盖内，登记 2b-1b-2。
+                  //   （字典/首页/阅读器内面板等）不在覆盖内，登记 2b-1b-2b。
                   // - 覆盖卡片边框 overrideBaseCardBorder + 宽度 0..5 + 日夜色
                   //   （0=outlineVariant）；IosGroup 用 foregroundDecoration
                   //   绘制，不改变布局/不裁剪内容。
                   // - 显示分隔线 enableItemDivider + 宽度 0..5 + 长度 30..100%
                   //   + 颜色（0=灰色 30%）；行之间插入胶囊线，行间距保持 2dp
                   //   （参考 SplicedColumnGroup + SettingItemDivider）。
-                  // - 登记（本批边界）：图片自身透明度 appColumnBackgroundOpacity/
-                  //   glassCardBackgroundOpacity、项目背景图 item_*、.9 九宫格渲染
-                  //   属 2b-1b-2；IosGroup(flat) 扁平模式无卡片面，不参与容器
-                  //   背景/不透明度/圆角/边框/分隔线开关；虚化行常显。
+                  // - 登记（2b-1b-2b）：glassCardBackgroundOpacity（项目图不透明度）、
+                  //   itemBackgroundImage 日夜图、.9 九宫格渲染、书架/详情/对话框
+                  //   等其余全局 GlassCard 卡面覆盖；IosGroup(flat) 扁平模式无
+                  //   卡片面，不参与容器背景/不透明度/圆角/边框/分隔线开关；
+                  //   虚化行常显。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
                       children: [
@@ -1021,11 +1027,24 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         onTap: () => _showContainerBgImageDialog(night: true),
                       ),
                     ],
+                    // 参考 appColumnBackgroundOpacity：大容器背景图自身透明度
+                    // 0..100，默认 100；仅乘图片 alpha，与卡面 scrim 独立叠加
+                    SettingSliderRow(
+                      title: '大容器背景图透明度',
+                      subtitle: '0-100；仅作用于大容器背景图自身，'
+                          '与容器不透明度独立叠加（0=图片完全透明）',
+                      value: ui.appColumnBackgroundOpacity,
+                      min: 0,
+                      max: 100,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setAppColumnBackgroundOpacity(v),
+                    ),
                     // 参考 container_opacity 滑杆：0..100，默认 100
                     SettingSliderRow(
                       title: '容器不透明度',
-                      subtitle:
-                          '0-100；当前仅作用于设置分组卡面，越低底色越透（文字不受影响）',
+                      subtitle: '0-100；作用于设置分组卡面与设置首页卡片，'
+                          '越低底色越透（文字不受影响）',
                       value: ui.containerOpacity,
                       min: 0,
                       max: 100,
@@ -1070,7 +1089,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     SettingSwitchRow(
                       title: '覆盖卡片圆角',
                       subtitle: '覆盖使用默认卡片样式的卡片；'
-                          '自定义形状卡片（字典/首页/阅读设置等）不覆盖',
+                          '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
                       value: ui.overrideBaseCardCornerRadius,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -1092,7 +1111,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     SettingSwitchRow(
                       title: '覆盖卡片边框',
                       subtitle: '覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；'
-                          '自定义形状卡片（字典/首页/阅读设置等）不覆盖',
+                          '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
                       value: ui.overrideBaseCardBorder,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)

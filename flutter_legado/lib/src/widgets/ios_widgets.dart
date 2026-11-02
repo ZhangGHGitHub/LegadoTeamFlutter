@@ -198,6 +198,9 @@ class IosGroup extends StatelessWidget {
         //   文件缺失时静默回落为纯主题底色。
         // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
         //   文字不透明（参考版 `GlassCard.kt:74-75` 乘 alpha）。
+        // - [设置批2b-1b-2a] 图片自身透明度 = appColumnBackgroundOpacity/100
+        //   （参考版 Large 图口径），只乘图片 alpha，与上方卡面 scrim 独立
+        //   叠加；0 时图片完全透明。
         // - 图片层 IgnorePointer，不拦截点击/手势。
         final radius = BorderRadius.circular(
           resolveSplicedGroupCornerRadius(ui),
@@ -208,6 +211,12 @@ class IosGroup extends StatelessWidget {
           brightness: theme.brightness,
         );
         final opacity = (ui.containerOpacity / 100).clamp(0.0, 1.0);
+        // [设置批2b-1b-2a] 大容器背景图自身不透明度（参考版
+        // appColumnBackgroundOpacity，默认 100）：只乘图片 alpha，与卡面
+        // scrim 的 containerOpacity 独立叠加；0 时图片完全透明，卡面仍按
+        // containerOpacity 遮挡（参考 AppContainerBackground.kt:61）。
+        final imageOpacity =
+            (ui.appColumnBackgroundOpacity / 100).clamp(0.0, 1.0);
         // [P1 回修] 乘 alpha 而非替换：参考版 GlassCard.kt:74-75 为
         // `it.copy(alpha = it.alpha * alpha)`。透明调色板的 surfaceContainer/
         // surfaceContainerLow 自带 alpha（如 0x33/0x00），直接 withValues 会
@@ -240,18 +249,23 @@ class IosGroup extends StatelessWidget {
                   if (hasImage)
                     Positioned.fill(
                       child: IgnorePointer(
-                        child: Image(
+                        child: Opacity(
                           key: const ValueKey(
-                              'ios-group-container-background'),
-                          image: themeBackgroundImageProvider(
-                            imagePath,
-                            context,
+                              'ios-group-container-background-opacity'),
+                          opacity: imageOpacity,
+                          child: Image(
+                            key: const ValueKey(
+                                'ios-group-container-background'),
+                            image: themeBackgroundImageProvider(
+                              imagePath,
+                              context,
+                            ),
+                            fit: BoxFit.cover,
+                            alignment: Alignment.center,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) =>
+                                const SizedBox.shrink(),
                           ),
-                          fit: BoxFit.cover,
-                          alignment: Alignment.center,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) =>
-                              const SizedBox.shrink(),
                         ),
                       ),
                     ),
