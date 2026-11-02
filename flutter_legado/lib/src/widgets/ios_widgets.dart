@@ -269,29 +269,26 @@ class IosGroup extends StatelessWidget {
                       ),
                     ),
                   // 行容器无整卡 scrim（参考 SplicedColumnGroup 无分组底色）：
-                  // 仅保留纵向 4dp + 行水平内缩 4dp，让背景图从边距/2dp 行距
-                  // 露出；decoration 只承载圆角供既有测试/识别，不绘制颜色。
+                  // 行卡**满宽**、无 4dp 内边距，图片只从 2dp 行距与分组圆角
+                  // 边缘露出；decoration 只承载圆角供既有测试/识别，不绘制颜色。
+                  // [设置批2b-1b-2a] 参考 `SplicedColumnGroup.kt:107-133` 的
+                  // Column 无 padding/spacedBy(2)，行卡自身满宽。
                   // [设置批2b-1b-1-b] 分隔线拿到分组**外宽**（参考版
                   // `fillMaxWidth(fraction)` 不含额外内层缩进）。
                   Container(
                     key: const ValueKey('ios-group-surface'),
                     decoration: BoxDecoration(borderRadius: radius),
-                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         for (var i = 0; i < children.length; i++) ...[
-                          Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 4),
-                            child: Material(
-                              color: rowSurface.withValues(
-                                alpha: rowSurface.a * opacity,
-                              ),
-                              borderRadius: BorderRadius.circular(4),
-                              clipBehavior: Clip.antiAlias,
-                              child: children[i],
+                          Material(
+                            color: rowSurface.withValues(
+                              alpha: rowSurface.a * opacity,
                             ),
+                            borderRadius: BorderRadius.circular(4),
+                            clipBehavior: Clip.antiAlias,
+                            child: children[i],
                           ),
                           if (i != children.length - 1) ...[
                             const SizedBox(height: 2),

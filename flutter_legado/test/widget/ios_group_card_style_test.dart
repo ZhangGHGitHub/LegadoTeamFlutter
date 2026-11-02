@@ -304,7 +304,7 @@ void main() {
             )
             .first,
       );
-      // 分组外宽 400；80% = 320（分隔线按外宽计算，不含 4dp 行内缩进）
+      // 分组外宽 400；80% = 320（行卡满宽，分隔线按外宽计算）
       expect(lineSize.width, closeTo(400 * 0.8, 0.01));
       expect(lineSize.height, 1);
       final color = (line.decoration! as BoxDecoration).color!;

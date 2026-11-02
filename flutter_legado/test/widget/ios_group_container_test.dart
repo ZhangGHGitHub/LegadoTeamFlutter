@@ -2,10 +2,11 @@
 // IosGroup 容器背景图/不透明度 widget 测试 — 全栈工程师
 //
 // 参考层序（SplicedColumnGroup.kt:107-133）：图片铺满分组最底层，**无整卡
-// scrim**；行卡直接叠在图上，4dp 边距/2dp 行距露出原图；containerOpacity
-// 只乘行卡 alpha，appColumnBackgroundOpacity 只乘图片 alpha。
-// 覆盖：默认无图；行卡不透明度；100% 缝隙可见图；图片 100/50/0 可见差异；
-// 日/夜各取对应背景图；文件缺失回落；背景图不拦截点击。
+// scrim、无 4dp 行内缩/整卡内边距**；行卡满宽直接叠在图上，仅 2dp 行距与
+// 分组圆角边缘露出原图；containerOpacity 只乘行卡 alpha，
+// appColumnBackgroundOpacity 只乘图片 alpha。
+// 覆盖：默认无图；行卡不透明度；100% 仅 2dp 行距可见图；图片 100/50/0 可见
+// 差异；日/夜各取对应背景图；文件缺失回落；背景图不拦截点击。
 import 'dart:convert';
 import 'dart:io';
 
@@ -84,7 +85,7 @@ void main() {
       .descendant(of: find.byType(IosGroup), matching: find.byType(Stack))
       .first;
 
-  testWidgets('容器图层序：图片铺满最底层、无整卡 scrim（100% 缝隙仍可见图）',
+  testWidgets('容器图层序：图片铺满最底层、无整卡 scrim（100% 仅 2dp 行距可见图）',
       (tester) async {
     final light = (await tester.runAsync(() => storePng('large_light')))!;
     uiSettingsListenable.value = UiSettingsState(
@@ -115,17 +116,18 @@ void main() {
     final surface = tester.widget<Container>(groupSurface());
     expect((surface.decoration as BoxDecoration).color, isNull,
         reason: '不得存在整卡 groupSurface scrim');
+    expect(surface.padding, isNull, reason: '整卡无 4dp 内边距');
     expect(
       tester.getSize(groupSurface()),
       tester.getSize(imageFinder),
-      reason: '行容器与背景图同尺寸，图片从边距/行距露出',
+      reason: '行容器与背景图同尺寸，图片从 2dp 行距/圆角露出',
     );
     expect(
       tester.getSize(groupSurface()),
       tester.getSize(find.byType(IosGroup)),
-      reason: '图片铺满分组卡（含 4dp 边距区域）',
+      reason: '图片铺满分组卡（行卡满宽，无 4dp 边距）',
     );
-    // 2 行 → 1 个 2dp 行距（露出图片的通道）
+    // 2 行 → 1 个 2dp 行距（100% 时唯一的图片露出通道，无 4dp 彩色边框）
     expect(
       find.descendant(
         of: find.byType(IosGroup),
@@ -135,13 +137,23 @@ void main() {
       ),
       findsOneWidget,
     );
-    final rows = tester.widgetList<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+    final rowFinder = find.descendant(
+      of: find.byType(IosGroup),
+      matching: find.byType(Material),
     );
+    final rows = tester.widgetList<Material>(rowFinder);
     expect(rows.length, 2);
+    final groupWidth = tester.getSize(find.byType(IosGroup)).width;
     for (final row in rows) {
       expect(row.color!.a, closeTo(1.0, 0.001),
           reason: '默认 containerOpacity=100 → 行卡不透明');
+    }
+    for (var i = 0; i < rows.length; i++) {
+      expect(
+        tester.getSize(rowFinder.at(i)).width,
+        groupWidth,
+        reason: '行卡满宽（不得保留 4dp 水平内缩）',
+      );
     }
     expect(
       tester
@@ -167,10 +179,18 @@ void main() {
 
     final surface = tester.widget<Container>(groupSurface());
     expect((surface.decoration as BoxDecoration).color, isNull);
-    final row = tester.widget<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+    expect(surface.padding, isNull);
+    final rowFinder = find.descendant(
+      of: find.byType(IosGroup),
+      matching: find.byType(Material),
     );
+    final row = tester.widget<Material>(rowFinder);
     expect(row.color!.a, closeTo(0.5, 0.001));
+    expect(
+      tester.getSize(rowFinder).width,
+      tester.getSize(find.byType(IosGroup)).width,
+      reason: '行卡满宽，50% 时整行卡面透出、无 4dp 边框',
+    );
     // 图片只受 appColumnBackgroundOpacity（默认 100）控制，缝隙保持全强度
     expect(
       tester
@@ -214,7 +234,13 @@ void main() {
       (tester.widget<Container>(surfaceFinder).decoration as BoxDecoration)
           .color,
       isNull,
-      reason: '无整卡 scrim，图片可从 4dp/2dp 缝隙看到',
+      reason: '无整卡 scrim，图片可从 2dp 行距看到',
+    );
+    expect(tester.widget<Container>(surfaceFinder).padding, isNull);
+    expect(
+      tester.getSize(rowFinder.first).width,
+      tester.getSize(find.byType(IosGroup)).width,
+      reason: '行卡满宽，无 4dp 水平内缩',
     );
     for (final row in tester.widgetList<Material>(rowFinder)) {
       expect(row.color!.a, closeTo(1.0, 0.001),
