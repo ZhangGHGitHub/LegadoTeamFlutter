@@ -181,6 +181,8 @@ class AppShortNavigationBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Flutter NavigationBar 断言至少 2 项；单页配置不渲染导航栏
+    if (specs.length < 2) return const SizedBox.shrink();
     return Opacity(
       opacity: opacity,
       child: NavigationBar(
@@ -254,6 +256,7 @@ class _AppFloatingBottomBarState extends State<AppFloatingBottomBar> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.specs.length < 2) return const SizedBox.shrink();
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final capsule = Container(
@@ -408,6 +411,8 @@ class AppRailBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // NavigationRail 同样要求 ≥2 项；单页配置不渲染侧栏
+    if (specs.length < 2) return const SizedBox.shrink();
     final cs = Theme.of(context).colorScheme;
     // [复核 P2-4] Flutter 的 `NavigationRail.extended` 强制显示文字标签，
     // 无法在展开态隐藏；文字档位=纯图标时强制折叠（宽度差异已登记），

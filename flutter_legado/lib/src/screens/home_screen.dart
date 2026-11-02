@@ -84,9 +84,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 用户是否已手动切页（加载完成前手动切页则不再套用默认首页）
   bool _userNavigated = false;
 
-  /// 上次同步给 PageController 的页签组合与索引（避免 build 内重复跳页）
-  String _lastTabsSignature = '';
-  int _lastControllerIndex = -1;
+  /// 待校正的 PageView 目标索引（同帧多次 build 只保留最后一次）
+  int? _pendingPageIndex;
+
+  /// 是否已调度 post-frame 校正（避免同帧重复注册回调）
+  bool _pageSyncScheduled = false;
 
   @override
   void dispose() {
@@ -236,22 +238,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// 页签组合/当前索引变化后校正 PageController
+  /// 校正 PageController 到当前页签索引
   ///
-  /// 顺序或显隐变化会改变页签在 PageView 中的索引；用页签签名 + 索引去重，
-  /// 只在真正变化时调度一次 post-frame 跳页（build 内不能直接 jump）。
-  void _syncPageController(List<MainTab> tabs, int index) {
-    final signature = tabs.map((tab) => tab.route).join(',');
-    if (signature == _lastTabsSignature && index == _lastControllerIndex) {
-      return;
-    }
-    _lastTabsSignature = signature;
-    _lastControllerIndex = index;
+  /// 不能只在顺序/显隐变化时校正：横竖屏切换导致底栏 ↔ Rail 布局变化时，
+  /// PageView 的父级结构改变会被重建，`PageController` 会按 initialPage
+  /// 重新挂载（回到索引 1），而选中页签与内容索引仍保留。因此每次 build
+  /// 都调度一次 post-frame 检查，发现 page 与目标索引不一致就 jump。
+  ///
+  /// 单页配置下目标恒为 0，initialPage=1 也会在此收敛。
+  void _syncPageController(int index) {
+    _pendingPageIndex = index;
+    if (_pageSyncScheduled) return;
+    _pageSyncScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
+      _pageSyncScheduled = false;
+      final target = _pendingPageIndex;
+      _pendingPageIndex = null;
+      if (!mounted || !_pageController.hasClients || target == null) return;
       final page = _pageController.page;
-      if (page != null && page.round() == index) return;
-      _pageController.jumpToPage(index);
+      if (page != null && page.round() == target) return;
+      _pageController.jumpToPage(target);
     });
   }
 
@@ -279,7 +285,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final currentIndex = tabs.indexOf(_currentTab);
     _visitedTabs.add(_currentTab);
-    _syncPageController(tabs, currentIndex);
+    _syncPageController(currentIndex);
 
     return PopScope(
       canPop: false,
@@ -294,6 +300,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             constraints.maxWidth,
             MediaQuery.of(context).orientation,
           );
+          // 单页配置：NavigationBar/Rail 均要求 ≥2 项，隐藏导航容器，
+          // 仅保留单页内容（PageView 由 post-frame 收敛到索引 0）。
+          final showRail = useRail && tabs.length >= 2;
           final pageArea = PageView.builder(
             controller: _pageController,
             // [UI_SYNC_REFACTOR S1] 滑动切页（对齐参考 HorizontalPager
@@ -329,15 +338,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               bottom: false,
               // [UI_SYNC_REFACTOR B3] tabletInterface + sw≥600 切 NavigationRail
               //（简版：系统图标不带皮肤，expand 持久化登记差异延后）
-              child: useRail
-                  ? Row(
-                      children: [
-                        _buildRail(ui, tabs, currentIndex, prefs),
-                        const VerticalDivider(width: 1, thickness: 0),
-                        Expanded(child: pageArea),
-                      ],
-                    )
-                  : pageArea,
+              // [批2b-2a 旋转回修] 保持 Row/Expanded 结构恒定，Rail 用
+              // 零尺寸占位替代：横竖屏切换时 PageView 的父链不改变，元素与
+              // PageController position 不会被重建（否则会按 initialPage
+              // 回到索引 1，与选中页签不一致）。NavigationRail 仅在 useRail
+              // 时构建，窄屏仍保持底栏形态。
+              child: Row(
+                children: [
+                  if (showRail)
+                    _buildRail(ui, tabs, currentIndex, prefs)
+                  else
+                    const SizedBox.shrink(),
+                  if (showRail)
+                    const VerticalDivider(width: 1, thickness: 0)
+                  else
+                    const SizedBox.shrink(),
+                  Expanded(child: pageArea),
+                ],
+              ),
             ),
             // [UI_SYNC_REFACTOR B3] 底栏三形态：隐藏 / 悬浮 64dp 胶囊 / 标准
             // NavigationBar（label 三档 + 透明度）；皮肤图标两种形态均保留
@@ -420,7 +438,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     String activeSkin,
     MainPrefsState prefs,
   ) {
-    if (!ui.showBottomView) return null;
+    // NavigationBar/悬浮栏单页无意义，且 Flutter NavigationBar 断言 ≥2 项
+    if (!ui.showBottomView || tabs.length < 2) return null;
     final specs = _specsFor(tabs, prefs);
     final labelBehavior = _labelBehaviorOf(ui.labelVisibilityMode);
     if (ui.useFloatingBottomBar) {

@@ -520,14 +520,22 @@ class AppTheme {
 
       // Switch 主题 —— 跟随 primary（M3 默认，显式声明防回归）
       // [LAYOUT_MOTION_AUDIT L1] 新增
+      // [批2b-2a P3] disabled 优先于 selected：禁用开关必须置灰，
+      // 不能沿用 primary 的“启用”配色（导航 Sheet 书架/我的恒显示开关）。
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return colorScheme.onSurface.withValues(alpha: 0.38);
+          }
           if (states.contains(WidgetState.selected)) {
             return colorScheme.onPrimary;
           }
           return colorScheme.outline;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.disabled)) {
+            return colorScheme.onSurface.withValues(alpha: 0.12);
+          }
           if (states.contains(WidgetState.selected)) {
             return colorScheme.primary;
           }

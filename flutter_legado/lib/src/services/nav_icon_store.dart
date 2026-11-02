@@ -287,38 +287,43 @@ class NavIconStore {
     if (kIsWeb) return 0;
     final root = _supportPath;
     if (root == null) return 0;
-    final keepPaths = <String>{};
-    for (final item in keep) {
-      final resolved = resolveSync(item);
-      if (resolved.isEmpty || _hasParentSegment(resolved)) continue;
-      keepPaths.add(File(resolved).absolute.path);
-    }
-    final sep = Platform.pathSeparator;
-    final dir = Directory('$root$sep$subDir');
-    if (!dir.existsSync()) return 0;
-    final now = DateTime.now();
     var removed = 0;
-    for (final entity in dir.listSync(followLinks: false)) {
-      if (entity is! File) continue;
-      final path = entity.absolute.path;
-      if (keepPaths.contains(path)) continue;
-      final name = _baseName(path);
-      final isTmp = _tmpFileNamePattern.hasMatch(name);
-      if (!isTmp && !_ownedFileNamePattern.hasMatch(name)) continue;
-      if (isTmp) {
+    try {
+      final keepPaths = <String>{};
+      for (final item in keep) {
+        final resolved = resolveSync(item);
+        if (resolved.isEmpty || _hasParentSegment(resolved)) continue;
+        keepPaths.add(File(resolved).absolute.path);
+      }
+      final sep = Platform.pathSeparator;
+      final dir = Directory('$root$sep$subDir');
+      if (!dir.existsSync()) return 0;
+      final now = DateTime.now();
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is! File) continue;
+        final path = entity.absolute.path;
+        if (keepPaths.contains(path)) continue;
+        final name = _baseName(path);
+        final isTmp = _tmpFileNamePattern.hasMatch(name);
+        if (!isTmp && !_ownedFileNamePattern.hasMatch(name)) continue;
+        if (isTmp) {
+          try {
+            final modified = entity.statSync().modified;
+            if (now.difference(modified) < tmpOrphanMinAge) continue;
+          } catch (_) {
+            continue;
+          }
+        }
         try {
-          final modified = entity.statSync().modified;
-          if (now.difference(modified) < tmpOrphanMinAge) continue;
+          entity.deleteSync();
+          removed++;
         } catch (_) {
-          continue;
+          // 正被读取/权限异常：跳过，下次再清
         }
       }
-      try {
-        entity.deleteSync();
-        removed++;
-      } catch (_) {
-        // 正被读取/权限异常：跳过，下次再清
-      }
+    } catch (e) {
+      // 目录不可读/路径异常：清理是尽力而为，不阻断设置页
+      debugPrint('NavIconStore.cleanupOrphansSync 失败: $e');
     }
     return removed;
   }

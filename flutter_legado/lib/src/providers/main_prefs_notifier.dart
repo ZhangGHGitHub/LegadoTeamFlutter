@@ -63,11 +63,11 @@ class MainPrefsState {
 
   /// 可见页签（按配置顺序；书架/我的恒显示，至少一项）
   List<MainTab> get visibleTabs => visibleMainTabs(
-        order: navigationOrder,
-        showHome: showHome,
-        showDiscovery: showDiscovery,
-        showRss: showRss,
-      );
+    order: navigationOrder,
+    showHome: showHome,
+    showDiscovery: showDiscovery,
+    showRss: showRss,
+  );
 
   /// 指定页签的自定义图标路径（空串 = 未设置）
   String navIconPath(MainTab tab, {bool selected = false}) =>
@@ -90,8 +90,7 @@ class MainPrefsState {
       defaultHomePage: defaultHomePage ?? this.defaultHomePage,
       navigationOrder: navigationOrder ?? this.navigationOrder,
       navIconPaths: navIconPaths ?? this.navIconPaths,
-      navIconSelectedPaths:
-          navIconSelectedPaths ?? this.navIconSelectedPaths,
+      navIconSelectedPaths: navIconSelectedPaths ?? this.navIconSelectedPaths,
       loaded: loaded ?? this.loaded,
     );
   }
@@ -146,10 +145,14 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
     for (final tab in MainTab.values) {
       final path = await _settings.getStringPref(_iconKey(tab));
       if (path.isNotEmpty) icons[tab] = path;
-      final selectedPath =
-          await _settings.getStringPref(_iconKey(tab, selected: true));
+      final selectedPath = await _settings.getStringPref(
+        _iconKey(tab, selected: true),
+      );
       if (selectedPath.isNotEmpty) selectedIcons[tab] = selectedPath;
     }
+    // [批2b-2a P3] provider 在异步读取期间可能被 invalidate/dispose：
+    // 此时不得再写 state（Riverpod 会抛 disposed 异常）。
+    if (_disposed) return;
     // [复核 P2-6] 先发布 loaded 状态，再异步预热 Support 缓存：widget 测试/
     // 平台通道不可用时 ensureWarm 不会阻塞偏好加载；预热完成后补一次状态
     // 通知，让相对图标标识从“首帧回退内置”切到真实图片。
@@ -177,8 +180,7 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
   }
 
   /// 设置显示首页
-  Future<void> setShowHome(bool value) =>
-      _setTabVisible(MainTab.home, value);
+  Future<void> setShowHome(bool value) => _setTabVisible(MainTab.home, value);
 
   /// 设置显示发现
   Future<void> setShowDiscovery(bool value) =>
@@ -234,16 +236,10 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
       await _settings.setBoolPref(visibleKey, value);
     }
     if (nextOrder != previousOrder) {
-      await _settings.setStringPref(
-        PrefKeys.mainNavigationOrder,
-        nextOrder,
-      );
+      await _settings.setStringPref(PrefKeys.mainNavigationOrder, nextOrder);
     }
     if (fallbackDefault != previousDefault) {
-      await _settings.setStringPref(
-        PrefKeys.defaultHomePage,
-        fallbackDefault,
-      );
+      await _settings.setStringPref(PrefKeys.defaultHomePage, fallbackDefault);
     }
   }
 
@@ -311,21 +307,16 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
     await _settings.removePref(PrefKeys.mainNavigationOrder);
   }
 
-  static String _iconKey(MainTab tab, {bool selected = false}) =>
-      switch (tab) {
-        MainTab.home =>
-          selected ? PrefKeys.navIconHomeSelected : PrefKeys.navIconHome,
-        MainTab.bookshelf => selected
-            ? PrefKeys.navIconBookshelfSelected
-            : PrefKeys.navIconBookshelf,
-        MainTab.explore => selected
-            ? PrefKeys.navIconExploreSelected
-            : PrefKeys.navIconExplore,
-        MainTab.rss =>
-          selected ? PrefKeys.navIconRssSelected : PrefKeys.navIconRss,
-        MainTab.my =>
-          selected ? PrefKeys.navIconMySelected : PrefKeys.navIconMy,
-      };
+  static String _iconKey(MainTab tab, {bool selected = false}) => switch (tab) {
+    MainTab.home =>
+      selected ? PrefKeys.navIconHomeSelected : PrefKeys.navIconHome,
+    MainTab.bookshelf =>
+      selected ? PrefKeys.navIconBookshelfSelected : PrefKeys.navIconBookshelf,
+    MainTab.explore =>
+      selected ? PrefKeys.navIconExploreSelected : PrefKeys.navIconExplore,
+    MainTab.rss => selected ? PrefKeys.navIconRssSelected : PrefKeys.navIconRss,
+    MainTab.my => selected ? PrefKeys.navIconMySelected : PrefKeys.navIconMy,
+  };
 }
 
 /// 主界面偏好全局 Provider

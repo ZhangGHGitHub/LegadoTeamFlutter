@@ -23,6 +23,16 @@ void main() {
     return container;
   }
 
+  test('加载期间 dispose：异步读取完成后不再写 state/抛异常', () async {
+    SharedPreferences.setMockInitialValues({});
+    final container = ProviderContainer();
+    final notifier = container.read(mainPrefsProvider.notifier);
+    final loadFuture = notifier.loadFuture!;
+    container.dispose();
+    // 不抛 StateError: Cannot use "state" after dispose
+    await loadFuture;
+  });
+
   group('默认值（对齐参考版 AppShellSettings）', () {
     test('空偏好：显示全部页签 / 默认书架 / 默认顺序 / 无自定义图标', () async {
       final container = await containerWith({});
@@ -284,6 +294,25 @@ void main() {
         state.navIconPath(MainTab.home, selected: true),
         '/backup/home-selected.png',
       );
+    });
+
+    test('备份缺省导航键不覆盖本机 false（有意缺省语义）', () async {
+      // 旧备份/未落盘的默认键：applyFromBackup 只写备份中存在的键，
+      // 缺失的 showDiscovery 不重置本机 false。此为有意语义：缺省=不覆盖。
+      SharedPreferences.setMockInitialValues({PrefKeys.showDiscovery: false});
+      await RestoreIgnorePrefs.applyFromBackup({
+        PrefKeys.mainNavigationOrder: 'my,bookshelf',
+      }, const {});
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(PrefKeys.showDiscovery), isFalse);
+
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(mainPrefsProvider.notifier).loadFuture;
+      final state = container.read(mainPrefsProvider);
+      expect(state.showDiscovery, isFalse);
+      expect(state.visibleTabs, isNot(contains(MainTab.explore)));
+      expect(state.navigationOrder, 'my,bookshelf,home,explore,rss');
     });
   });
 }

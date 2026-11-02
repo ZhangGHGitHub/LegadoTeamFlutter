@@ -2,11 +2,14 @@
 //
 // 覆盖：默认值 / 显隐开关 / 默认首页下拉 / 底栏文字下拉 / 拖拽排序接线 /
 // 图标管理入口 / 恢复默认（含底栏文字）。
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:saf/saf.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
@@ -14,8 +17,21 @@ import 'package:flutter_legado/src/models/main_tab.dart';
 import 'package:flutter_legado/src/providers/main_prefs_notifier.dart';
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/screens/main_navigation_settings_sheet.dart';
+import 'package:flutter_legado/src/services/container_image_picker.dart';
+
+class _ThrowingSafGateway implements ContainerSafGateway {
+  @override
+  Future<SafDocumentFile?> pickImage({
+    List<String> mimeTypes = const <String>['image/*'],
+  }) async => throw StateError('saf unavailable');
+
+  @override
+  Future<Uint8List> readBytes(String uri) async => Uint8List(0);
+}
 
 void main() {
+  setUp(ContainerImagePicker.resetForTest);
+  tearDown(ContainerImagePicker.resetForTest);
   Future<ProviderContainer> pumpSheet(
     WidgetTester tester, {
     Map<String, Object> prefs = const {},
@@ -179,6 +195,27 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.containsKey(PrefKeys.showHome), isFalse);
     expect(prefs.containsKey(PrefKeys.navIconHome), isFalse);
+  });
+
+  testWidgets('图标选择失败：toast 显示在 Sheet 内且可命中（不被遮挡）', (tester) async {
+    await pumpSheet(tester);
+    await tester.tap(find.text('导航栏图标'));
+    await tester.pumpAndSettle();
+
+    ContainerImagePicker.isAndroid = () => true;
+    ContainerImagePicker.safGateway = _ThrowingSafGateway();
+    await tester.tap(find.byIcon(Symbols.add_rounded).first);
+    await tester.pumpAndSettle();
+
+    final toast = find.text('无法打开系统图片选择器，请重试');
+    expect(toast, findsOneWidget);
+    expect(
+      toast.hitTestable(),
+      findsOneWidget,
+      reason: 'Sheet 内嵌 ScaffoldMessenger，SnackBar 不应被 Modal 遮挡',
+    );
+    // 让 SnackBar 计时结束，避免测试结束时有 pending timer
+    await tester.pump(const Duration(seconds: 5));
   });
 }
 

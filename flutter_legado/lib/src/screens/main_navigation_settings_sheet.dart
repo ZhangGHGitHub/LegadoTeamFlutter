@@ -60,11 +60,11 @@ class _MainNavigationSettingsSheetState
   }
 
   String _labelModeLabel(BottomBarLabelMode mode) => switch (mode) {
-        BottomBarLabelMode.auto => '自动',
-        BottomBarLabelMode.selected => '选中时显示',
-        BottomBarLabelMode.labeled => '常驻',
-        BottomBarLabelMode.unlabeled => '不显示',
-      };
+    BottomBarLabelMode.auto => '自动',
+    BottomBarLabelMode.selected => '选中时显示',
+    BottomBarLabelMode.labeled => '常驻',
+    BottomBarLabelMode.unlabeled => '不显示',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -85,125 +85,134 @@ class _MainNavigationSettingsSheetState
       ...prefs.navIconSelectedPaths.values,
     ].where((path) => path.isNotEmpty).length;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
-          child: Row(
-            children: [
-              Expanded(child: Text('首页与导航', style: theme.textTheme.titleLarge)),
-              IconButton(
-                tooltip: '关闭',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Symbols.close_rounded),
+    // [批2b-2a P3] Sheet 内嵌 ScaffoldMessenger/Scaffold：SnackBar 显示在
+    // Sheet 内部（否则根 Scaffold 的 SnackBar 会被 Modal Sheet 遮挡）。
+    return ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('首页与导航', style: theme.textTheme.titleLarge),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Symbols.close_rounded),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                children: [
+                  IosListTile(
+                    title: '默认主页',
+                    subtitle: '启动应用时优先打开的页签（仅显示可见项）',
+                    trailing: DropdownButton<String>(
+                      value: defaultRoute,
+                      underline: const SizedBox.shrink(),
+                      borderRadius: BorderRadius.circular(16),
+                      items: [
+                        for (final tab in tabs)
+                          DropdownMenuItem<String>(
+                            value: tab.route,
+                            child: Text(mainTabLabel(tab)),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        ref
+                            .read(mainPrefsProvider.notifier)
+                            .setDefaultHomePage(value);
+                      },
+                    ),
+                  ),
+                  IosListTile(
+                    title: '底栏文字',
+                    subtitle: '导航栏标签显示方式',
+                    trailing: DropdownButton<BottomBarLabelMode>(
+                      value: ui.labelVisibilityMode,
+                      underline: const SizedBox.shrink(),
+                      borderRadius: BorderRadius.circular(16),
+                      items: [
+                        for (final mode in BottomBarLabelMode.values)
+                          DropdownMenuItem<BottomBarLabelMode>(
+                            value: mode,
+                            child: Text(_labelModeLabel(mode)),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        ref
+                            .read(uiSettingsProvider.notifier)
+                            .setLabelVisibilityMode(value);
+                      },
+                    ),
+                  ),
+                  IosListTile(
+                    icon: Symbols.image_rounded,
+                    title: '导航栏图标',
+                    subtitle: iconCount > 0 ? '已自定义 $iconCount 个图标' : '使用默认图标',
+                    onTap: () => _showIconManager(context),
+                  ),
+                  const IosSectionHeader(
+                    '导航项',
+                    padding: EdgeInsets.fromLTRB(0, 20, 0, 4),
+                  ),
+                  Text(
+                    '拖动左侧把手调整顺序；开关控制首页/发现/订阅是否显示；'
+                    '书架与我的始终显示。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ReorderableListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    buildDefaultDragHandles: false,
+                    itemCount: tabs.length + hidden.length,
+                    onReorderItem: (oldIndex, newIndex) => _onReorder(
+                      tabs: tabs,
+                      all: ordered,
+                      oldIndex: oldIndex,
+                      newIndex: newIndex,
+                    ),
+                    itemBuilder: (context, index) {
+                      final isVisible = index < tabs.length;
+                      final tab = isVisible
+                          ? tabs[index]
+                          : hidden[index - tabs.length];
+                      return _buildItem(
+                        context,
+                        tab: tab,
+                        index: index,
+                        visible: isVisible,
+                        prefs: prefs,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: _confirmReset,
+                      icon: const Icon(Symbols.restart_alt_rounded),
+                      label: const Text('恢复默认'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-            children: [
-              IosListTile(
-                title: '默认主页',
-                subtitle: '启动应用时优先打开的页签（仅显示可见项）',
-                trailing: DropdownButton<String>(
-                  value: defaultRoute,
-                  underline: const SizedBox.shrink(),
-                  borderRadius: BorderRadius.circular(16),
-                  items: [
-                    for (final tab in tabs)
-                      DropdownMenuItem<String>(
-                        value: tab.route,
-                        child: Text(mainTabLabel(tab)),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    ref
-                        .read(mainPrefsProvider.notifier)
-                        .setDefaultHomePage(value);
-                  },
-                ),
-              ),
-              IosListTile(
-                title: '底栏文字',
-                subtitle: '导航栏标签显示方式',
-                trailing: DropdownButton<BottomBarLabelMode>(
-                  value: ui.labelVisibilityMode,
-                  underline: const SizedBox.shrink(),
-                  borderRadius: BorderRadius.circular(16),
-                  items: [
-                    for (final mode in BottomBarLabelMode.values)
-                      DropdownMenuItem<BottomBarLabelMode>(
-                        value: mode,
-                        child: Text(_labelModeLabel(mode)),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    ref
-                        .read(uiSettingsProvider.notifier)
-                        .setLabelVisibilityMode(value);
-                  },
-                ),
-              ),
-              IosListTile(
-                icon: Symbols.image_rounded,
-                title: '导航栏图标',
-                subtitle: iconCount > 0 ? '已自定义 $iconCount 个图标' : '使用默认图标',
-                onTap: () => _showIconManager(context),
-              ),
-              const IosSectionHeader(
-                '导航项',
-                padding: EdgeInsets.fromLTRB(0, 20, 0, 4),
-              ),
-              Text(
-                '拖动左侧把手调整顺序；开关控制首页/发现/订阅是否显示；'
-                '书架与我的始终显示。',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ReorderableListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                buildDefaultDragHandles: false,
-                itemCount: tabs.length + hidden.length,
-                onReorderItem: (oldIndex, newIndex) => _onReorder(
-                  tabs: tabs,
-                  all: ordered,
-                  oldIndex: oldIndex,
-                  newIndex: newIndex,
-                ),
-                itemBuilder: (context, index) {
-                  final isVisible = index < tabs.length;
-                  final tab = isVisible
-                      ? tabs[index]
-                      : hidden[index - tabs.length];
-                  return _buildItem(
-                    context,
-                    tab: tab,
-                    index: index,
-                    visible: isVisible,
-                    prefs: prefs,
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _confirmReset,
-                  icon: const Icon(Symbols.restart_alt_rounded),
-                  label: const Text('恢复默认'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -335,8 +344,7 @@ class _NavIconManagerSheet extends ConsumerStatefulWidget {
       _NavIconManagerSheetState();
 }
 
-class _NavIconManagerSheetState
-    extends ConsumerState<_NavIconManagerSheet> {
+class _NavIconManagerSheetState extends ConsumerState<_NavIconManagerSheet> {
   @override
   void initState() {
     super.initState();
@@ -356,81 +364,89 @@ class _NavIconManagerSheetState
   Widget build(BuildContext context) {
     final prefs = ref.watch(mainPrefsProvider);
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
-          child: Row(
-            children: [
-              Expanded(child: Text('导航栏图标', style: theme.textTheme.titleLarge)),
-              IconButton(
-                tooltip: '关闭',
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Symbols.close_rounded),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-            children: [
-              Text(
-                '可为每个页签分别选择未选中/选中图标；留空使用内置图标。',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
+    // 同上：图标管理 Sheet 自带 ScaffoldMessenger，失败 toast 不被遮挡。
+    return ScaffoldMessenger(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
+              child: Row(
                 children: [
-                  const Spacer(),
-                  _columnHeader(theme, '未选中'),
-                  const SizedBox(width: 12),
-                  _columnHeader(theme, '选中'),
+                  Expanded(
+                    child: Text('导航栏图标', style: theme.textTheme.titleLarge),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Symbols.close_rounded),
+                  ),
                 ],
               ),
-              const SizedBox(height: 4),
-              for (final tab in MainTab.values)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                children: [
+                  Text(
+                    '可为每个页签分别选择未选中/选中图标；留空使用内置图标。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
                     children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            NavSpecIcon(
-                              spec: mainTabNavSpec(tab),
-                              selected: false,
-                              activeSkin: '',
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              mainTabLabel(tab),
-                              style: theme.textTheme.titleMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                      _IconSlot(
-                        tab: tab,
-                        selected: false,
-                        path: prefs.navIconPath(tab),
-                      ),
+                      const Spacer(),
+                      _columnHeader(theme, '未选中'),
                       const SizedBox(width: 12),
-                      _IconSlot(
-                        tab: tab,
-                        selected: true,
-                        path: prefs.navIconPath(tab, selected: true),
-                      ),
+                      _columnHeader(theme, '选中'),
                     ],
                   ),
-                ),
-            ],
-          ),
+                  const SizedBox(height: 4),
+                  for (final tab in MainTab.values)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                NavSpecIcon(
+                                  spec: mainTabNavSpec(tab),
+                                  selected: false,
+                                  activeSkin: '',
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  mainTabLabel(tab),
+                                  style: theme.textTheme.titleMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                          _IconSlot(
+                            tab: tab,
+                            selected: false,
+                            path: prefs.navIconPath(tab),
+                          ),
+                          const SizedBox(width: 12),
+                          _IconSlot(
+                            tab: tab,
+                            selected: true,
+                            path: prefs.navIconPath(tab, selected: true),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -481,21 +497,21 @@ class _IconSlot extends ConsumerWidget {
                   color: theme.colorScheme.primary,
                 )
               : usable
-                  ? Image.file(
-                      // ignore: avoid_slow_placeholder_io
-                      File(resolved),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => Icon(
-                        Symbols.broken_image_rounded,
-                        size: 20,
-                        color: theme.colorScheme.error,
-                      ),
-                    )
-                  : Icon(
-                      Symbols.broken_image_rounded,
-                      size: 20,
-                      color: theme.colorScheme.error,
-                    ),
+              ? Image.file(
+                  // ignore: avoid_slow_placeholder_io
+                  File(resolved),
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => Icon(
+                    Symbols.broken_image_rounded,
+                    size: 20,
+                    color: theme.colorScheme.error,
+                  ),
+                )
+              : Icon(
+                  Symbols.broken_image_rounded,
+                  size: 20,
+                  color: theme.colorScheme.error,
+                ),
         ),
       ),
     );
@@ -577,10 +593,7 @@ class _IconSlot extends ConsumerWidget {
         .setNavIconPath(tab, selected: selected, path: '');
     if (oldPath.isNotEmpty) {
       final after = ref.read(mainPrefsProvider);
-      await NavIconStore.deleteIfUnused(
-        oldPath,
-        keep: _navIconPathsOf(after),
-      );
+      await NavIconStore.deleteIfUnused(oldPath, keep: _navIconPathsOf(after));
     }
   }
 

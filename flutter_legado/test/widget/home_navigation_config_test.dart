@@ -84,6 +84,20 @@ void main() {
   int selectedIndex(WidgetTester tester) =>
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
+  int pageIndex(WidgetTester tester) =>
+      tester.widget<PageView>(find.byType(PageView)).controller!.page!.round();
+
+  int? railSelectedIndex(WidgetTester tester) {
+    final rail = find.byType(NavigationRail);
+    if (rail.evaluate().isEmpty) return null;
+    return tester.widget<NavigationRail>(rail).selectedIndex;
+  }
+
+  void resize(WidgetTester tester, Size size) {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = size;
+  }
+
   List<String> destinationLabels(WidgetTester tester) => tester
       .widgetList<NavigationDestination>(find.byType(NavigationDestination))
       .map((d) => d.label)
@@ -260,8 +274,7 @@ void main() {
     );
     await tester.drag(scrollable, const Offset(0, -600));
     await tester.pumpAndSettle();
-    final before =
-        tester.state<ScrollableState>(scrollable).position.pixels;
+    final before = tester.state<ScrollableState>(scrollable).position.pixels;
     expect(before, greaterThan(0));
 
     // 书架从索引 1 移到索引 2：PageView 按 ValueKey 保留各页 State
@@ -284,18 +297,16 @@ void main() {
     await pumpHome(tester, prefs: {}, api: buildApi());
     expect(destinationLabels(tester).length, 5);
 
-    await RestoreIgnorePrefs.applyFromBackup(
-      {
-        PrefKeys.showHome: false,
-        PrefKeys.showDiscovery: false,
-        PrefKeys.showRss: false,
-        PrefKeys.mainNavigationOrder: 'my,bookshelf',
-        PrefKeys.defaultHomePage: 'my',
-      },
-      const {},
+    await RestoreIgnorePrefs.applyFromBackup({
+      PrefKeys.showHome: false,
+      PrefKeys.showDiscovery: false,
+      PrefKeys.showRss: false,
+      PrefKeys.mainNavigationOrder: 'my,bookshelf',
+      PrefKeys.defaultHomePage: 'my',
+    }, const {});
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(HomeScreen)),
     );
-    final container =
-        ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
     container.invalidate(mainPrefsProvider);
     await tester.pumpAndSettle();
 
@@ -350,4 +361,111 @@ void main() {
     expect(selectedIndex(tester), 0);
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
+
+  testWidgets('横竖屏切换：底栏 → Rail → 底栏，PageView 与选中页签始终同步', (tester) async {
+    resize(tester, const Size(500, 800));
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpHome(tester, prefs: {}, api: buildApi());
+
+    // 窄屏：底栏布局，先切到「我的」
+    expect(find.byType(NavigationRail), findsNothing);
+    await tester.tap(find.byType(NavigationDestination).at(4));
+    await tester.pumpAndSettle();
+    expect(selectedIndex(tester), 4);
+    expect(pageIndex(tester), 4);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    // 旋转/拉宽 → Rail：PageView 父级重建，post-frame 必须回到索引 4
+    resize(tester, const Size(1000, 800));
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(railSelectedIndex(tester), 4);
+    expect(pageIndex(tester), 4);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    // 旋转/缩窄 → 底栏：同样保持索引 4
+    resize(tester, const Size(500, 800));
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(selectedIndex(tester), 4);
+    expect(pageIndex(tester), 4);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
+  testWidgets('顺序重排后横竖屏切换：Rail 索引、PageView、内容一致', (tester) async {
+    resize(tester, const Size(500, 800));
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpHome(tester, prefs: {}, api: buildApi());
+
+    // 重排后「书架」索引从 1 → 2，随后选中「我的」（索引 0）
+    await prefsNotifier(tester).setNavigationOrder([
+      MainTab.my,
+      MainTab.home,
+      MainTab.bookshelf,
+      MainTab.explore,
+      MainTab.rss,
+    ]);
+    await tester.pumpAndSettle();
+    expect(pageIndex(tester), 2, reason: '重排后当前书架页应跟随新索引');
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    expect(selectedIndex(tester), 0);
+    expect(pageIndex(tester), 0);
+
+    resize(tester, const Size(1000, 800));
+    await tester.pumpAndSettle();
+    expect(railSelectedIndex(tester), 0);
+    expect(pageIndex(tester), 0);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    resize(tester, const Size(500, 800));
+    await tester.pumpAndSettle();
+    expect(selectedIndex(tester), 0);
+    expect(pageIndex(tester), 0);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+  });
+
+  testWidgets('单页配置：initialPage=1 由 post-frame 收敛到索引 0', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = buildApi();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookApiProvider.overrideWithValue(api),
+          mainPrefsProvider.overrideWith(_SingleTabPrefsNotifier.new),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Flutter NavigationBar/Rail 要求 ≥2 项：单页配置不渲染导航容器
+    expect(find.byType(NavigationDestination), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(pageIndex(tester), 0);
+    expect(find.byType(BookshelfScreen), findsOneWidget);
+  });
+}
+
+/// 单页配置桩：绕过「书架/我的恒显示」直接给 HomeScreen 一个单页列表，
+/// 验证 PageController(initialPage:1) 在单页时收敛到 0。
+class _SingleTabPrefsState extends MainPrefsState {
+  const _SingleTabPrefsState()
+    : super(
+        loaded: true,
+        showHome: false,
+        showDiscovery: false,
+        showRss: false,
+      );
+
+  @override
+  List<MainTab> get visibleTabs => const [MainTab.bookshelf];
+}
+
+class _SingleTabPrefsNotifier extends MainPrefsNotifier {
+  @override
+  MainPrefsState build() => const _SingleTabPrefsState();
 }
