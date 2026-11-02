@@ -134,6 +134,7 @@ void main() {
     await scrollTo(tester, find.text('容器设置'));
 
     expect(find.text('容器背景图'), findsOneWidget);
+    expect(find.text('大容器背景图透明度'), findsOneWidget);
     expect(find.text('容器不透明度'), findsOneWidget);
     expect(find.text('背景图虚化（日间）'), findsOneWidget);
     expect(find.text('背景图虚化（夜间）'), findsOneWidget);
@@ -145,6 +146,7 @@ void main() {
         .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
         .toList();
     final byTitle = {for (final r in rows) r.title: r};
+    expect(byTitle['大容器背景图透明度']!.value, 100);
     expect(byTitle['容器不透明度']!.value, 100);
     expect(byTitle['背景图虚化（日间）']!.value, 0);
     expect(byTitle['背景图虚化（夜间）']!.value, 0);
@@ -202,6 +204,41 @@ void main() {
     expect(prefs.getInt(PrefKeys.containerOpacity), 0);
     expect(container.read(uiSettingsProvider).containerOpacity, 0);
     expect(uiSettingsListenable.value.containerOpacity, 0);
+  });
+
+  testWidgets('大容器背景图透明度滑块：点按轨道 0% 落盘 appColumnBackgroundOpacity=0',
+      (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('大容器背景图透明度'));
+
+    final slider = sliderOf('大容器背景图透明度');
+    final rect = tester.getRect(slider);
+    await tester.tapAt(Offset(rect.left + 2, rect.center.dy));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.appColumnBackgroundOpacity), 0);
+    expect(container.read(uiSettingsProvider).appColumnBackgroundOpacity, 0);
+    expect(uiSettingsListenable.value.appColumnBackgroundOpacity, 0);
+  });
+
+  testWidgets('覆盖范围文案：不把独立阅读设置页列为不覆盖', (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('覆盖卡片圆角'));
+    expect(
+      find.text('覆盖使用默认卡片样式的卡片；'
+          '字典/首页/阅读器内面板等自定义形状卡片不覆盖'),
+      findsOneWidget,
+    );
+
+    await scrollTo(tester, find.text('覆盖卡片边框'));
+    expect(
+      find.text('覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；'
+          '字典/首页/阅读器内面板等自定义形状卡片不覆盖'),
+      findsOneWidget,
+    );
+    // 独立阅读设置页使用 IosGroup，实际会被覆盖；仅阅读器内面板不覆盖
+    expect(find.textContaining('阅读设置'), findsNothing);
   });
 
   testWidgets('背景图虚化日/夜滑块独立落盘（>50% 与 <50%）', (tester) async {

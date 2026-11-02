@@ -147,6 +147,75 @@ void main() {
         reason: '50% 时缝隙与卡面同属一个 scrim，不再有全强度原图线');
   });
 
+  testWidgets('大容器背景图透明度：默认 100→alpha 1，50→0.5，0→完全透明',
+      (tester) async {
+    final light = (await tester.runAsync(() => storePng('large_light')))!;
+    final imageOpacity = find.byKey(
+      const ValueKey('ios-group-container-background-opacity'),
+    );
+
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pumpWidget(wrap(onTap: null));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(imageOpacity).opacity, closeTo(1.0, 0.001),
+        reason: '默认 appColumnBackgroundOpacity=100 → 图片不透明');
+
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      appColumnBackgroundOpacity: 50,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(imageOpacity).opacity, closeTo(0.5, 0.001));
+
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      appColumnBackgroundOpacity: 0,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<Opacity>(imageOpacity).opacity, 0.0);
+    // 0% 只影响图片自身；卡面仍按 containerOpacity（默认 100）不透明遮挡
+    final surface = tester.widget<Container>(groupSurface());
+    expect(
+      (surface.decoration as BoxDecoration).color!.a,
+      closeTo(1.0, 0.001),
+    );
+  });
+
+  testWidgets('图片透明度与卡面不透明度独立叠加（40% / 30%）', (tester) async {
+    final light = (await tester.runAsync(() => storePng('large_light')))!;
+    uiSettingsListenable.value = UiSettingsState(
+      enableContainerBackgroundImage: true,
+      containerOpacity: 40,
+      appColumnBackgroundOpacity: 30,
+      largeContainerBackgroundImageLight: light,
+    );
+    await tester.pumpWidget(wrap(onTap: null));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final surface = tester.widget<Container>(groupSurface());
+    expect(
+      (surface.decoration as BoxDecoration).color!.a,
+      closeTo(0.4, 0.001),
+      reason: '卡面 scrim 只受 containerOpacity 控制',
+    );
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-group-container-background-opacity'),
+            ),
+          )
+          .opacity,
+      closeTo(0.3, 0.001),
+      reason: '图片 alpha 只受 appColumnBackgroundOpacity 控制',
+    );
+  });
+
   testWidgets('默认：100% 不透明、无背景图，视觉与改造前等价', (tester) async {
     await tester.pumpWidget(wrap(onTap: null));
     await tester.pumpAndSettle();
