@@ -1,9 +1,11 @@
-// [设置批2b-1a | 2026-11-01] 外观页「容器设置」分组交互测试 — 全栈工程师
+// [设置批2b-1a | 2026-11-01；2b-1b-2a 2026-11-02]
+// 外观页「容器设置」分组交互测试 — 全栈工程师
 //
 // 覆盖：三组新行渲染与默认值、容器不透明度/背景图虚化行内滑块落盘、
-// 容器背景图（日/夜）行副标题（文件名/缺失回落）、清除图片按钮与键移除;
-// [设备回修] 选图参数 allowCompression=false/withData=false（避免原生压缩
-// 对非图片 NPE 崩溃）。
+// 容器背景图（日/夜）行副标题（文件名/缺失回落）、清除图片按钮与键移除；
+// [2b-1b-2a] 大容器背景图透明度行仅总开关开且当前图可用时显示，
+// min/max/副题/非默认值绑定；[设备回修] 选图参数
+// allowCompression=false/withData=false（避免原生压缩对非图片 NPE 崩溃）。
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -118,6 +120,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 当前亮暗图可用才显示图片透明度行：写入一个非空文件即可通过
+  /// isUsableSync（该行不触发图片解码）。widget fake-async 下必须用同步写，
+  /// 否则真实文件 I/O 不推进。
+  String writeUsableContainerImage() {
+    final file = File(
+      '${temp.path}${Platform.pathSeparator}container-light.png',
+    );
+    file.writeAsBytesSync(const <int>[1, 2, 3]);
+    return file.path;
+  }
+
   Finder sliderRow(String title) => find.ancestor(
         of: find.text(title),
         matching: find.byType(SettingSliderRow),
@@ -134,7 +147,8 @@ void main() {
     await scrollTo(tester, find.text('容器设置'));
 
     expect(find.text('容器背景图'), findsOneWidget);
-    expect(find.text('大容器背景图透明度'), findsOneWidget);
+    // [2b-1b-2a P2-3] 总开关默认关 → 图片透明度行不显示（参考随图片出现）
+    expect(find.text('大容器背景图透明度'), findsNothing);
     expect(find.text('容器不透明度'), findsOneWidget);
     expect(find.text('背景图虚化（日间）'), findsOneWidget);
     expect(find.text('背景图虚化（夜间）'), findsOneWidget);
@@ -146,7 +160,6 @@ void main() {
         .widgetList<SettingSliderRow>(find.byType(SettingSliderRow))
         .toList();
     final byTitle = {for (final r in rows) r.title: r};
-    expect(byTitle['大容器背景图透明度']!.value, 100);
     expect(byTitle['容器不透明度']!.value, 100);
     expect(byTitle['背景图虚化（日间）']!.value, 0);
     expect(byTitle['背景图虚化（夜间）']!.value, 0);
@@ -206,8 +219,87 @@ void main() {
     expect(uiSettingsListenable.value.containerOpacity, 0);
   });
 
+  testWidgets('大容器背景图透明度行：仅总开关开且当前日/夜图可用时显示',
+      (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器设置'));
+    expect(find.text('大容器背景图透明度'), findsNothing,
+        reason: '总开关默认关，不显示图片透明度行');
+
+    // 总开关开但未选图 → 仍隐藏
+    await tester.tap(find.text('容器背景图'));
+    await tester.pumpAndSettle();
+    expect(find.text('大容器背景图透明度'), findsNothing);
+
+    // 有路径但文件缺失 → 隐藏（回落为无图）
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.largeContainerBackgroundImageLight:
+          'theme_backgrounds/large_light/missing.png',
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await tester.pumpAndSettle();
+    expect(find.text('大容器背景图透明度'), findsNothing);
+
+    // 当前亮暗图可用 → 显示
+    final image = writeUsableContainerImage();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.largeContainerBackgroundImageLight: image,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await tester.pumpAndSettle();
+    expect(find.text('大容器背景图透明度'), findsOneWidget);
+  });
+
+  testWidgets('大容器背景图透明度行：min/max/副题与非默认值绑定', (tester) async {
+    final image = writeUsableContainerImage();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.largeContainerBackgroundImageLight: image,
+      PrefKeys.appColumnBackgroundOpacity: 35,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('大容器背景图透明度'));
+
+    final row = tester.widget<SettingSliderRow>(
+      sliderRow('大容器背景图透明度'),
+    );
+    expect(row.value, 35);
+    expect(row.min, 0);
+    expect(row.max, 100);
+    expect(
+      find.text('0-100；仅作用于大容器背景图自身，'
+          '与容器不透明度独立叠加（0=图片完全透明）'),
+      findsOneWidget,
+    );
+    final slider = tester.widget<Slider>(sliderOf('大容器背景图透明度'));
+    expect(slider.min, 0);
+    expect(slider.max, 100);
+    expect(slider.value, 35);
+
+    final rect = tester.getRect(sliderOf('大容器背景图透明度'));
+    await tester.tapAt(
+      Offset(rect.left + rect.width * 0.8, rect.center.dy),
+    );
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getInt(PrefKeys.appColumnBackgroundOpacity);
+    expect(value, isNotNull);
+    expect(value, greaterThan(50));
+    expect(value, isNot(35));
+    expect(container.read(uiSettingsProvider).appColumnBackgroundOpacity, value);
+  });
+
   testWidgets('大容器背景图透明度滑块：点按轨道 0% 落盘 appColumnBackgroundOpacity=0',
       (tester) async {
+    final image = writeUsableContainerImage();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.largeContainerBackgroundImageLight: image,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
     await pumpPage(tester);
     await scrollTo(tester, find.text('大容器背景图透明度'));
 

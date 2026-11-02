@@ -74,7 +74,7 @@ class PrefKeys {
   // 把它们放在 `ThemeSettings`（`domain/model/settings/ThemeSettings.kt:27,
   // 54-57`）并经 `FeatureSettingsRepositories.kt:376,408-414` 读写。
   //
-  // 备份归组口径（对齐参考版 `help/storage/BackupConfig.kt:263-318`）：
+  // 备份归组口径（对齐参考版 `help/storage/BackupConfig.kt:263-317`）：
   // - `containerOpacity` / `bgImageBlurring` / `bgImageNBlurring` 在参考版
   //   themePrefKeys 内，随「忽略主题配置」过滤；
   // - `largeContainerBackgroundImageLight/Dark` **不在** themePrefKeys 内，
@@ -89,7 +89,7 @@ class PrefKeys {
   ///
   /// 参考版 `ThemeSettings.kt:61` 默认 100，`AppContainerBackground.kt:61`
   /// 对 Large 图取 `value / 100f` 作为绘制 alpha。备份归组已核对参考版
-  /// `BackupConfig.kt:264-318`：该键**不在** themePrefKeys 内，因此任何
+  /// `BackupConfig.kt:263-317`：该键**不在** themePrefKeys 内，因此任何
   /// 忽略组合下都随 appPrefs 往返（与 [containerOpacity] 的归组不同）。
   static const appColumnBackgroundOpacity = 'appColumnBackgroundOpacity';
 

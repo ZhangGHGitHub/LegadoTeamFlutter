@@ -176,13 +176,13 @@ class RestoreIgnorePrefs {
     PrefKeys.bgImageBlurring,
     PrefKeys.bgImageNBlurring,
     // [设置批2b-1a] 容器不透明度：参考版 themePrefKeys 成员
-    // （BackupConfig.kt:263-318），随「忽略主题配置」过滤。
+    // （BackupConfig.kt:263-317），随「忽略主题配置」过滤。
     // 注意：largeContainerBackgroundImageLight/Dark 不在参考版
     // themePrefKeys 内 → 任何忽略组合下都随 appPrefs 往返（图片缺失时
     // 恢复后按缺失回落），此处刻意不加入。
     PrefKeys.containerOpacity,
     // [设置批2b-1b-2a] appColumnBackgroundOpacity **刻意不加入**：已核对
-    // 参考版 BackupConfig.kt:264-318，该键不在 themePrefKeys 内（只有
+    // 参考版 BackupConfig.kt:263-317，该键不在 themePrefKeys 内（只有
     // containerOpacity 在内），因此任何忽略组合下都随 appPrefs 往返 —
     // 与参考版一致。— 全栈工程师
     // [设置批2b-1b-1] 卡片圆角/边框/分组圆角/分隔线键**刻意不加入**：

@@ -612,6 +612,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     // [设置批2a-1] 护眼模式：与全局叠加层共用同一 Notifier（写入即全局生效）
     final eyeProtection = ref.watch(eyeProtectionProvider);
     final eyeProtectionNotifier = ref.read(eyeProtectionProvider.notifier);
+    // [设置批2b-1b-2a P2-3] 大容器图片透明度行只在「总开关开 + 当前亮暗
+    // 图片可用」时显示（参考版该滑杆在图片管理面板内、随图片出现）。
+    final containerBgForCurrentBrightness =
+        Theme.of(context).brightness == Brightness.dark
+            ? ui.largeContainerBackgroundImageDark
+            : ui.largeContainerBackgroundImageLight;
+    final showAppColumnBackgroundOpacity =
+        ui.enableContainerBackgroundImage &&
+            ThemeBackgroundImageStore.isUsableSync(
+              containerBgForCurrentBrightness,
+            );
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
@@ -994,9 +1005,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   （参考 SplicedColumnGroup + SettingItemDivider）。
                   // - 登记（2b-1b-2b）：glassCardBackgroundOpacity（项目图不透明度）、
                   //   itemBackgroundImage 日夜图、.9 九宫格渲染、书架/详情/对话框
-                  //   等其余全局 GlassCard 卡面覆盖；IosGroup(flat) 扁平模式无
-                  //   卡片面，不参与容器背景/不透明度/圆角/边框/分隔线开关；
-                  //   虚化行常显。
+                  //   等其余全局 GlassCard 卡面覆盖；设置首页手写卡片只应用
+                  //   containerOpacity 卡面 alpha，不渲染大容器图（appColumn 在
+                  //   该页无视觉作用）；IosGroup(flat) 扁平模式无卡片面，不参与
+                  //   容器背景/不透明度/圆角/边框/分隔线开关；虚化行常显。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
                       children: [
@@ -1028,18 +1040,20 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                     ],
                     // 参考 appColumnBackgroundOpacity：大容器背景图自身透明度
-                    // 0..100，默认 100；仅乘图片 alpha，与卡面 scrim 独立叠加
-                    SettingSliderRow(
-                      title: '大容器背景图透明度',
-                      subtitle: '0-100；仅作用于大容器背景图自身，'
-                          '与容器不透明度独立叠加（0=图片完全透明）',
-                      value: ui.appColumnBackgroundOpacity,
-                      min: 0,
-                      max: 100,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setAppColumnBackgroundOpacity(v),
-                    ),
+                    // 0..100，默认 100；仅乘图片 alpha，与行卡 scrim 独立叠加。
+                    // [P2-3] 参考版该滑杆位于图片管理面板内，仅图片存在时可见。
+                    if (showAppColumnBackgroundOpacity)
+                      SettingSliderRow(
+                        title: '大容器背景图透明度',
+                        subtitle: '0-100；仅作用于大容器背景图自身，'
+                            '与容器不透明度独立叠加（0=图片完全透明）',
+                        value: ui.appColumnBackgroundOpacity,
+                        min: 0,
+                        max: 100,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setAppColumnBackgroundOpacity(v),
+                      ),
                     // 参考 container_opacity 滑杆：0..100，默认 100
                     SettingSliderRow(
                       title: '容器不透明度',

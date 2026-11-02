@@ -190,18 +190,18 @@ class IosGroup extends StatelessWidget {
         //（surfaceContainer 底）+ 组内 spacedBy 2 + 每行 4dp surfaceContainerLow
         // 小卡底（SettingCard 等效）
         //
-        // [设置批2b-1a] 容器背景图/容器不透明度（参考版大容器语义）：
-        // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark；图像
-        //   **位于分组底色之下**（Stack 第 0 层），由同一圆角裁剪。100%
-        //   时分组底色完全不透明、整卡覆盖图像（不再从 4dp/2dp 缝隙漏出成
-        //   「彩色虚线边框」）；<100% 时分组底色整体半透明，整卡统一混合。
-        //   文件缺失时静默回落为纯主题底色。
-        // - 不透明度 = containerOpacity/100，同时作用于分组底与行小卡底；
-        //   文字不透明（参考版 `GlassCard.kt:74-75` 乘 alpha）。
-        // - [设置批2b-1b-2a] 图片自身透明度 = appColumnBackgroundOpacity/100
-        //   （参考版 Large 图口径），只乘图片 alpha，与上方卡面 scrim 独立
-        //   叠加；0 时图片完全透明。
-        // - 图片层 IgnorePointer，不拦截点击/手势。
+        // [设置批2b-1a / 2b-1b-2a 层序修正] 容器背景图/容器不透明度
+        //（参考 `SplicedColumnGroup.kt:107-133`）：
+        // - 背景图按当前亮暗取 largeContainerBackgroundImageLight/Dark；
+        //   图像**铺满分组卡最底层**（Stack 第 0 层），由同一圆角裁剪。
+        // - **没有整卡 scrim**：行小卡直接叠在图上，4dp 边距与 2dp 行距
+        //   露出容器图；`containerOpacity` 只乘行卡 surface alpha
+        //   （参考 `GlassCard.kt:155` alpha 只进行卡 BaseCard）。
+        //   100% 时行卡不透明，但缝隙/边距仍显示图片（不是虚线边框）。
+        // - 图片自身 alpha = appColumnBackgroundOpacity/100（参考版 Large
+        //   图口径），与行卡 containerOpacity 独立叠加；0 时图片完全透明。
+        //   文件缺失时静默回落为纯主题底色/全局壁纸。
+        // - 文字不透明；图片层 IgnorePointer，不拦截点击/手势。
         final radius = BorderRadius.circular(
           resolveSplicedGroupCornerRadius(ui),
         );
@@ -212,16 +212,15 @@ class IosGroup extends StatelessWidget {
         );
         final opacity = (ui.containerOpacity / 100).clamp(0.0, 1.0);
         // [设置批2b-1b-2a] 大容器背景图自身不透明度（参考版
-        // appColumnBackgroundOpacity，默认 100）：只乘图片 alpha，与卡面
-        // scrim 的 containerOpacity 独立叠加；0 时图片完全透明，卡面仍按
-        // containerOpacity 遮挡（参考 AppContainerBackground.kt:61）。
+        // appColumnBackgroundOpacity，默认 100）：只乘图片 alpha，与行卡
+        // 的 containerOpacity 独立叠加；0 时图片完全透明（参考
+        // AppContainerBackground.kt:61）。
         final imageOpacity =
             (ui.appColumnBackgroundOpacity / 100).clamp(0.0, 1.0);
         // [P1 回修] 乘 alpha 而非替换：参考版 GlassCard.kt:74-75 为
-        // `it.copy(alpha = it.alpha * alpha)`。透明调色板的 surfaceContainer/
-        // surfaceContainerLow 自带 alpha（如 0x33/0x00），直接 withValues 会
+        // `it.copy(alpha = it.alpha * alpha)`。透明调色板的
+        // surfaceContainerLow 自带 alpha（如 0x00），直接 withValues 会
         // 覆盖调色板 alpha 把透明主题洗成不透明白卡、盖住容器背景图。
-        final groupSurface = theme.colorScheme.surfaceContainer;
         final rowSurface = theme.colorScheme.surfaceContainerLow;
         final stored = theme.brightness == Brightness.dark
             ? ui.largeContainerBackgroundImageDark
@@ -245,7 +244,7 @@ class IosGroup extends StatelessWidget {
               borderRadius: radius,
               child: Stack(
                 children: [
-                  // 背景图必须位于分组底色之下：100% 时被底色完全覆盖
+                  // 背景图铺满分组最底层；行卡直接叠在图上，缝隙/边距露出图片
                   if (hasImage)
                     Positioned.fill(
                       child: IgnorePointer(
@@ -269,18 +268,14 @@ class IosGroup extends StatelessWidget {
                         ),
                       ),
                     ),
-                  // 分组底色（单一整卡 scrim）绘制在图片之上、行小卡之下。
-                  // [设置批2b-1b-1-b] 外层 Container 只留纵向 4dp，行 Material
-                  // 各自水平内缩 4dp：分隔线因此拿到分组**外宽**（参考版
+                  // 行容器无整卡 scrim（参考 SplicedColumnGroup 无分组底色）：
+                  // 仅保留纵向 4dp + 行水平内缩 4dp，让背景图从边距/2dp 行距
+                  // 露出；decoration 只承载圆角供既有测试/识别，不绘制颜色。
+                  // [设置批2b-1b-1-b] 分隔线拿到分组**外宽**（参考版
                   // `fillMaxWidth(fraction)` 不含额外内层缩进）。
                   Container(
                     key: const ValueKey('ios-group-surface'),
-                    decoration: BoxDecoration(
-                      color: groupSurface.withValues(
-                        alpha: groupSurface.a * opacity,
-                      ),
-                      borderRadius: radius,
-                    ),
+                    decoration: BoxDecoration(borderRadius: radius),
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

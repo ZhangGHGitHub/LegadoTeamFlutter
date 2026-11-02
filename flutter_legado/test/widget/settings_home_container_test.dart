@@ -63,13 +63,13 @@ void main() {
         reason: '100% 时不得改变主题卡面 alpha',
       );
     }
-    // 手写结构保留：10dp 行距（分隔 SizedBox）仍在
+    // 手写结构保留：8 个入口之间 7 条 10dp 分隔
     expect(
       find.byWidgetPredicate(
         (w) => w is SizedBox && w.height == 10,
         skipOffstage: false,
       ),
-      findsWidgets,
+      findsNWidgets(7),
     );
   });
 
@@ -83,12 +83,15 @@ void main() {
       expect(material.color!.a, closeTo(0.5, 0.001));
     }
 
-    // 文字走 Text 自身颜色，不随卡面 alpha 一起变淡
-    final title = tester.widget<Text>(find.text('外观'));
+    // [P2-1] 文字不得被任何 Opacity/RenderOpacity 包裹而整体变淡：
+    // 只允许 Material.color 半透明，文字节点自身保持不透明。
     expect(
-      title.style?.color?.a ?? 1.0,
-      closeTo(1.0, 0.001),
-      reason: '卡面半透明不得降低文字 alpha',
+      find.ancestor(
+        of: find.text('外观'),
+        matching: find.byType(Opacity),
+      ),
+      findsNothing,
+      reason: '卡面半透明不得通过 Opacity 祖先降低文字透明度',
     );
   });
 

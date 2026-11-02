@@ -14,6 +14,8 @@ import '../routes.dart';
 /// [设置批2b-1b-2a] 本页入口卡为手写 Material（16dp 圆角、10dp 行距），
 /// 不在 IosGroup/CardTheme 覆盖范围内；此处按同一口径乘 containerOpacity
 /// 卡面 alpha（文字/图标保持不透明），使容器不透明度在该页生效。
+/// 登记（2b-1b-2b）：本页不渲染大容器背景图（无 IosGroup 图片层），
+/// 因此 appColumnBackgroundOpacity 在该页无视觉作用；仅卡面 alpha 生效。
 class SettingsHomeScreen extends StatelessWidget {
   const SettingsHomeScreen({super.key});
 
