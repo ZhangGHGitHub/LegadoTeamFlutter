@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - [UI] 容器设置新增「大容器背景图透明度」（0–100，仅设置容器图时显示）；设置首页卡片纳入容器不透明度，覆盖范围文案修正。
 ### Fixed
 - [UI] 容器背景图按参考版层序绘制：行卡满宽叠在图上，默认不透明度下仍从 2dp 行距/圆角边缘可见；图片透明度与卡面不透明度独立生效。
+- [UI] Android 容器图选择改用系统 SAF（ACTION_OPEN_DOCUMENT），已删除的 MediaStore 陈旧条目只提示失败，不再触发原生崩溃。
 
 ## [2.0.435] - 2026-11-01
 
