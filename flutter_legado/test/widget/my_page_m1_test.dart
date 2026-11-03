@@ -35,6 +35,7 @@ import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/screens/theme_config_screen.dart';
 import 'package:flutter_legado/src/services/auto_task_scheduler.dart';
 import 'package:flutter_legado/src/services/web_service_address_resolver.dart';
+import 'package:flutter_legado/src/theme/app_theme.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
 import '../mocks/fake_web_service_address_resolver.dart';
@@ -112,15 +113,25 @@ void main() {
     Widget? home,
     Map<String, WidgetBuilder>? routes,
     NavigatorObserver? observer,
+    ThemeData? theme,
+    double? textScale,
   }) {
-    return UncontrolledProviderScope(
-      container: container,
-      child: MaterialApp(
-        home: home ?? const SettingsScreen(),
-        routes: routes ?? const {},
-        navigatorObservers: observer == null ? const [] : [observer],
-      ),
+    Widget app = MaterialApp(
+      theme: theme,
+      home: home ?? const SettingsScreen(),
+      routes: routes ?? const {},
+      navigatorObservers: observer == null ? const [] : [observer],
     );
+    if (textScale != null) {
+      // 系统字体缩放：与 md3_acceptance_matrix_test 同法置于 MaterialApp 之上
+      app = MediaQuery(
+        data: const MediaQueryData().copyWith(
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: app,
+      );
+    }
+    return UncontrolledProviderScope(container: container, child: app);
   }
 
   /// 高画布（800x4200 @1.0）：整页入口一次性构建，便于断言纵向顺序
@@ -230,6 +241,19 @@ void main() {
         24,
         reason: '开关行沿用 IosListTile 裸 24dp 图标，无 48dp 图标槽',
       );
+      // 排除回退为 48x48 图标槽（旧大卡 Container(width:48,height:48)）
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byWidgetPredicate((w) {
+            if (w is! Container) return false;
+            final c = w.constraints;
+            return c != null && c.maxWidth == 48 && c.maxHeight == 48;
+          }),
+        ),
+        findsNothing,
+        reason: '开关行不得出现 48x48 图标槽容器',
+      );
 
       // 开关行整行可点（SettingSwitchRow 语义），开关可操作
       expect(
@@ -241,7 +265,10 @@ void main() {
         isNotNull,
       );
       // 停止态不展开操作行
-      expect(find.byKey(const ValueKey('web-service-copy-address')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('web-service-copy-address')),
+        findsNothing,
+      );
       expect(
         find.byKey(const ValueKey('web-service-open-browser')),
         findsNothing,
@@ -265,20 +292,34 @@ void main() {
       // 操作行在开关行之外：不在开关行的语义/手势区域，不会误触开关
       expect(find.descendant(of: row, matching: copy), findsNothing);
       expect(find.descendant(of: row, matching: open), findsNothing);
+      // 且不在置顶分组内（IosGroup 强制行卡，动作行按约定放组外）
+      final firstGroup = find.byType(IosGroup).first;
+      expect(
+        find.descendant(of: firstGroup, matching: copy),
+        findsNothing,
+        reason: '操作行在 IosGroup 组外（组内会被套成行卡）',
+      );
+      expect(find.descendant(of: firstGroup, matching: open), findsNothing);
 
       // 贴邻：操作行紧接开关行下方（组外 + 小间距，视觉仍为一体）
       final rowRect = tester.getRect(row);
       final copyRect = tester.getRect(copy);
       expect(
         copyRect.top - rowRect.bottom,
-        lessThanOrEqualTo(12),
-        reason: '操作行应紧贴开关行下方',
+        inInclusiveRange(0, 12),
+        reason: '操作行与开关行的垂直间距应在 0~12dp',
       );
       // 右对齐：末个按钮右缘与开关行右缘相差 16dp 内边距
       expect(
         tester.getRect(open).right,
         closeTo(rowRect.right - 16, 1.0),
         reason: '操作行右对齐（参考版 Row Arrangement.End）',
+      );
+      // 按钮间距对齐参考版 SmallPlainButton 12dp（Wrap spacing 12）
+      expect(
+        tester.getRect(open).left - copyRect.right,
+        closeTo(12, 0.5),
+        reason: '两个操作按钮间距 12dp',
       );
 
       // 点「复制地址」不得切换开关/停服
@@ -298,6 +339,89 @@ void main() {
 
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
+    });
+
+    // 运行中 → 停止：参考版 AnimatedVisibility 收起动作行；本实现随
+    // `enabled && 地址非空` 同步收起。
+    testWidgets('M2 运行中→停止：操作行随开关收起', (tester) async {
+      stubWebServiceRunning();
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(() => mockApi.stopServer()).thenAnswer((_) async {});
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+      final copy = find.byKey(const ValueKey('web-service-copy-address'));
+      final open = find.byKey(const ValueKey('web-service-open-browser'));
+      expect(copy, findsOneWidget);
+      expect(open, findsOneWidget);
+
+      tester.widget<SettingSwitchRow>(row).onChanged!(false);
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<SettingSwitchRow>(row).value, isFalse);
+      expect(copy, findsNothing, reason: '停止后「复制地址」应收起');
+      expect(open, findsNothing, reason: '停止后「在浏览器中打开」应收起');
+      expect(find.text('用浏览器写源或看书'), findsOneWidget);
+      verify(() => mockApi.setConfig('webService', 'false')).called(1);
+    });
+
+    testWidgets('M2 深色 + 字体 1.6（360x640）：整页滚动到底无溢出', (tester) async {
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(wrap(theme: AppTheme.dark, textScale: 1.6));
+      await tester.pumpAndSettle();
+
+      final screenContext = tester.element(find.byType(SettingsScreen));
+      expect(
+        Theme.of(screenContext).brightness,
+        Brightness.dark,
+        reason: '应使用深色主题渲染',
+      );
+      expect(MediaQuery.textScalerOf(screenContext).scale(10), 16);
+      expect(find.text('Web 服务'), findsOneWidget);
+
+      await dragTo(tester, '退出');
+      expect(find.text('退出'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('M2 运行态小屏 + 字体 1.6：地址与操作按钮换行不溢出', (tester) async {
+      stubWebServiceRunning();
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(wrap(theme: AppTheme.dark, textScale: 1.6));
+      await tester.pumpAndSettle();
+
+      expect(find.text('http://192.168.1.20:1122'), findsOneWidget);
+      final copy = find.byKey(const ValueKey('web-service-copy-address'));
+      final open = find.byKey(const ValueKey('web-service-open-browser'));
+      expect(copy, findsOneWidget);
+      expect(open, findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // 右对齐且不横向越界；大字体下允许 Wrap 换行，但不得重叠
+      final logicalWidth =
+          tester.view.physicalSize.width / tester.view.devicePixelRatio;
+      final copyRect = tester.getRect(copy);
+      final openRect = tester.getRect(open);
+      expect(openRect.right, lessThanOrEqualTo(logicalWidth));
+      expect(copyRect.right, lessThanOrEqualTo(logicalWidth));
+      expect(
+        openRect.top > copyRect.top || openRect.left >= copyRect.right - 0.5,
+        isTrue,
+        reason: '大字体下按钮应按 Wrap 换行或同行排布，不得重叠',
+      );
+
+      await dragTo(tester, '退出');
+      expect(find.text('退出'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('Web 服务运行中：地址取状态串端口 + 复制地址', (tester) async {

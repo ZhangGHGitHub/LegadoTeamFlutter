@@ -265,11 +265,49 @@ void main() {
     ]);
     verifyNever(() => mockApi.startServer(port: any(named: 'port')));
     expect(foreground.running, isFalse, reason: '权限未决时不得启动 FGS');
-    // 开关处于 busy（Switch 被进度圈替换），此处不读开关值，仅验证无启动副作用
+    // [M2] busy 态：开关行禁用（onChanged=null）+ spinner 取代前导图标；
+    // Switch 仍可见但同样禁用（不再像旧大卡那样被进度圈替换）
+    final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+    expect(
+      tester.widget<SettingSwitchRow>(row).onChanged,
+      isNull,
+      reason: 'busy 时开关行 onChanged 应为 null（整行禁用）',
+    );
+    expect(
+      tester
+          .widget<Switch>(
+            find.descendant(of: row, matching: find.byType(Switch)),
+          )
+          .onChanged,
+      isNull,
+      reason: 'busy 时 Switch 禁用',
+    );
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+      reason: 'busy 时开关行内显示轻量 spinner',
+    );
 
     // 用户拒绝权限：仍继续启动 server 与 FGS（仅通知不可见）
     permissionCompleter.complete(false);
     await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<SettingSwitchRow>(row).onChanged,
+      isNotNull,
+      reason: '完成后开关行恢复可操作',
+    );
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+      reason: '完成后 spinner 应收起',
+    );
 
     verify(() => mockApi.startServer(port: any(named: 'port'))).called(1);
     expect(calls, [
