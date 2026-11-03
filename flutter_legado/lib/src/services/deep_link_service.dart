@@ -49,6 +49,13 @@ class DeepLinkService {
   /// 超时仍强制尝试展示，避免异常滞留时静默丢弃分享内容。
   static const int _maxSplashWaitFrames = 90;
 
+  /// 登记一次「下一帧再试」：`addPostFrameCallback` 本身不排帧，闪屏期
+  /// 若无动画在跑须显式请求下一帧，否则等待链会停摆到下一次用户交互。
+  static void _scheduleUiReadyRetry(VoidCallback retry) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => retry());
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
   /// P1-4：本地书籍导入执行器（由 app.dart 注入 bookshelfNotifier 闭包，
   /// 服务层不依赖 Riverpod；对齐 [attach] 的回调装配模式）
   Future<Book> Function(String filePath)? importLocalBook;
@@ -184,18 +191,15 @@ class DeepLinkService {
     final nav = navigatorKey?.currentState;
     final splashVisible = isSplashVisible?.call() ?? false;
     if (nav == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _handleSharedTextWhenUiReady(raw, frame + 1);
-      });
+      _scheduleUiReadyRetry(
+        () => _handleSharedTextWhenUiReady(raw, frame + 1),
+      );
       return;
     }
     if (splashVisible && frame < _maxSplashWaitFrames) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _handleSharedTextWhenUiReady(raw, frame + 1);
-      });
-      // addPostFrameCallback 本身不排帧：闪屏期若无动画在跑，须显式请求
-      // 下一帧，否则等待链会停摆到下一次用户交互才继续
-      WidgetsBinding.instance.scheduleFrame();
+      _scheduleUiReadyRetry(
+        () => _handleSharedTextWhenUiReady(raw, frame + 1),
+      );
       return;
     }
     _lastHandledShared = text;
@@ -313,6 +317,11 @@ class DeepLinkService {
   /// [M3 我的页 | 2026-11-03] 分流顺序：**应用内路由深链优先**
   ///（`legado://dict` / `legado://dict_rule` → 对应页面），其余仍按既有
   /// 导入语义走关联导入确认框（`legado://import/...` 与未知 host 不变）。
+  ///
+  /// [P2-E1 2026-11-03] 导入分支改走 [_handleImportUrlWhenUiReady]：
+  /// 冷启动闪屏 `/welcome` 未退出时不得立即弹框，否则
+  /// `WelcomeScreen.pushReplacementNamed(home)` 会把确认框连同闪屏一起
+  /// 替换掉（干净进程冷启动投递导入深链表现为「不弹框、直接落书架」）。
   Future<void> handleUrl(String url) async {
     final routeTarget = LegadoDeepLink.tryParseRoute(url);
     if (routeTarget != null) {
@@ -324,28 +333,79 @@ class DeepLinkService {
     }
     if (!LegadoDeepLink.isImportScheme(url)) return;
     if (_lastHandled == url) return;
-    _lastHandled = url;
+    // 不 await：等待链可能跨多帧，平台通道回调与 attach 冷启动链不应被
+    // 闪屏等待阻塞（确认框存续期由去重标志约束，见等待器注释）
+    unawaited(
+      _handleImportUrlWhenUiReady(url, LegadoDeepLink.tryParse(url), 0),
+    );
+  }
 
-    final parsed = LegadoDeepLink.tryParse(url);
+  /// [P2-E1 2026-11-03] [handleUrl] 导入分支的就绪等待实现
+  ///
+  /// 与 [handleSharedText] / [_handleRouteDeepLinkWhenUiReady] 同法：
+  /// - Navigator 未装配 → 逐帧重试（有界：超过 [_maxSplashWaitFrames]
+  ///   放弃并记录，避免无宿主时永挂等待链）；
+  /// - 闪屏仍在栈顶 → 逐帧等待退出（同一上限），到点后再展示确认框；
+  /// - 超限仍强制展示（与分享文本一致）并记录 debug 日志，异常滞留时
+  ///   不静默丢弃导入；
+  /// - 去重 [_lastHandled] 在确认框**真正展示时**设置（等待期重复投递由
+  ///   每次重入的顶部判定收口），关闭（取消/导入完成/异常）后清空，
+  ///   保证弹框存续期同一链接只弹一次、关闭后可再次打开。
+  Future<void> _handleImportUrlWhenUiReady(
+    String url,
+    LegadoDeepLink? parsed,
+    int frame,
+  ) async {
+    // 每次重入都判定：等待链被重复投递拉起时，先到的一条展示后另一条退出
+    if (_lastHandled == url) return;
     final nav = navigatorKey?.currentState;
     if (nav == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _lastHandled = null;
-        handleUrl(url);
-      });
+      if (frame >= _maxSplashWaitFrames) {
+        debugPrint('[DeepLink] 等待 Navigator 超限（$frame 帧），'
+            '放弃展示导入确认框：$url');
+        return;
+      }
+      _scheduleUiReadyRetry(
+        () => _handleImportUrlWhenUiReady(url, parsed, frame + 1),
+      );
       return;
     }
-
+    final splashVisible = isSplashVisible?.call() ?? false;
+    if (splashVisible && frame < _maxSplashWaitFrames) {
+      _scheduleUiReadyRetry(
+        () => _handleImportUrlWhenUiReady(url, parsed, frame + 1),
+      );
+      return;
+    }
+    if (splashVisible) {
+      // 超限仍强制展示：与分享文本一致，异常滞留时不静默丢弃导入
+      debugPrint('[DeepLink] 闪屏等待超限（$frame 帧），'
+          '强制展示导入确认框：$url');
+    }
+    _lastHandled = url;
     final type = parsed?.importType;
     final src = parsed?.srcUrl ?? '';
     // [UI-fix v2.0.174] 同链接去重仅在弹窗存续期生效：弹窗关闭（手动关/
     // 导入完成自动 pop）即清标志，避免同一链接再次点击永远不弹（用户报障
-    // 「关联导入无法弹出」根因之一）
-    showAssociationImportDialog(
-      nav.context,
-      url: src.isEmpty ? null : src,
-      type: type,
-    ).whenComplete(() => _lastHandled = null);
+    // 「关联导入无法弹出」根因之一）。
+    // 不 await 弹窗：调用方（平台通道/分享文本链）不应被用户操作阻塞；
+    // 展示失败（含同步抛出的导航异常）同样清标志，避免去重锁死。
+    try {
+      unawaited(
+        showAssociationImportDialog(
+          nav.context,
+          url: src.isEmpty ? null : src,
+          type: type,
+        ).whenComplete(() {
+          if (_lastHandled == url) _lastHandled = null;
+        }).catchError((Object e) {
+          debugPrint('[DeepLink] 导入确认框展示失败：$e');
+        }),
+      );
+    } catch (e) {
+      if (_lastHandled == url) _lastHandled = null;
+      debugPrint('[DeepLink] 导入确认框展示失败：$e');
+    }
   }
 
   /// [M3 我的页 | 2026-11-03] 应用内路由深链导航（`legado://dict` 等）
@@ -370,19 +430,16 @@ class DeepLinkService {
     if (_lastRoutedDeepLink == normalized) return;
     final nav = navigatorKey?.currentState;
     if (nav == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _handleRouteDeepLinkWhenUiReady(url, routeName, frame + 1);
-      });
+      _scheduleUiReadyRetry(
+        () => _handleRouteDeepLinkWhenUiReady(url, routeName, frame + 1),
+      );
       return;
     }
     final splashVisible = isSplashVisible?.call() ?? false;
     if (splashVisible && frame < _maxSplashWaitFrames) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _handleRouteDeepLinkWhenUiReady(url, routeName, frame + 1);
-      });
-      // addPostFrameCallback 本身不排帧：闪屏期须显式请求下一帧，
-      // 否则等待链会停摆到下一次用户交互（同 handleSharedText）
-      WidgetsBinding.instance.scheduleFrame();
+      _scheduleUiReadyRetry(
+        () => _handleRouteDeepLinkWhenUiReady(url, routeName, frame + 1),
+      );
       return;
     }
     _lastRoutedDeepLink = normalized;
