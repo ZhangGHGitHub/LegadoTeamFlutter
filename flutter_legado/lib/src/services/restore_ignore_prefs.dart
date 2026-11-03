@@ -69,6 +69,8 @@ class RestoreIgnorePrefs {
   static const backupExcludedKeys = <String>{
     SettingsService.remoteServersKey,
     'brightness_mode_migrated_v1b1',
+    // [批4a] 九宫格迁移标记：设备级一次性状态，随备份携带会跳过迁移
+    PrefKeys.clickActionMigratedV2,
   };
 
   /// 阅读界面相关键（对齐 BackupConfig.readPrefKeys + Flutter 阅读偏好）
@@ -88,6 +90,16 @@ class RestoreIgnorePrefs {
     'clickActionBL',
     'clickActionBC',
     'clickActionBR',
+    // [批4a] 九宫格点击动作真实键名（读预键 clickActionTL 等为历史误名）
+    PrefKeys.clickActionTopLeft,
+    PrefKeys.clickActionTopCenter,
+    PrefKeys.clickActionTopRight,
+    PrefKeys.clickActionMiddleLeft,
+    PrefKeys.clickActionMiddleCenter,
+    PrefKeys.clickActionMiddleRight,
+    PrefKeys.clickActionBottomLeft,
+    PrefKeys.clickActionBottomCenter,
+    PrefKeys.clickActionBottomRight,
     'reader_font_size',
     'reader_line_height',
     'reader_bg_color_index',

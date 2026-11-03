@@ -11,10 +11,22 @@ class ReaderAdvancedConfig {
   double autoPageTurnInterval; // 秒
   bool autoPageTurnForward; // true=下一章 false=上一章
 
-  // 点击区域映射
+  // 点击区域映射（旧三区；批4a 起仅保留读取做一次性迁移，UI/分发改用
+  // 下方九宫格字段。字段保留避免其它引用编译错误。）
   TapAction leftAction;
   TapAction centerAction;
   TapAction rightAction;
+
+  // [批4a] 九宫格点击动作（行优先：TL/TC/TR/ML/MC/MR/BL/BC/BR）
+  ReaderTapAction tapTopLeft;
+  ReaderTapAction tapTopCenter;
+  ReaderTapAction tapTopRight;
+  ReaderTapAction tapMiddleLeft;
+  ReaderTapAction tapMiddleCenter;
+  ReaderTapAction tapMiddleRight;
+  ReaderTapAction tapBottomLeft;
+  ReaderTapAction tapBottomCenter;
+  ReaderTapAction tapBottomRight;
 
   // 段落间距
   double paragraphSpacing;
@@ -227,6 +239,15 @@ class ReaderAdvancedConfig {
     this.leftAction = TapAction.prevPage,
     this.centerAction = TapAction.toggleControls,
     this.rightAction = TapAction.nextPage,
+    this.tapTopLeft = ReaderTapAction.previousPage,
+    this.tapTopCenter = ReaderTapAction.previousPage,
+    this.tapTopRight = ReaderTapAction.nextPage,
+    this.tapMiddleLeft = ReaderTapAction.previousPage,
+    this.tapMiddleCenter = ReaderTapAction.menu,
+    this.tapMiddleRight = ReaderTapAction.nextPage,
+    this.tapBottomLeft = ReaderTapAction.previousPage,
+    this.tapBottomCenter = ReaderTapAction.nextPage,
+    this.tapBottomRight = ReaderTapAction.nextPage,
     this.paragraphSpacing = 2,
     this.letterSpacing = 0.1,
     this.paragraphIndent = 2,
@@ -364,6 +385,65 @@ class ReaderAdvancedConfig {
       return TapAction.values[i];
     }
 
+    // [批4a] 九宫格读取；键不存在回落参考默认
+    ReaderTapAction newTap(String key, ReaderTapAction def) {
+      final code = prefs.getInt(key);
+      return code == null ? def : ReaderTapAction.fromCode(code);
+    }
+
+    final legacyLeft = tap('left_action', TapAction.prevPage);
+    final legacyCenter = tap('center_action', TapAction.toggleControls);
+    final legacyRight = tap('right_action', TapAction.nextPage);
+    const gridKeys = [
+      PrefKeys.clickActionTopLeft,
+      PrefKeys.clickActionTopCenter,
+      PrefKeys.clickActionTopRight,
+      PrefKeys.clickActionMiddleLeft,
+      PrefKeys.clickActionMiddleCenter,
+      PrefKeys.clickActionMiddleRight,
+      PrefKeys.clickActionBottomLeft,
+      PrefKeys.clickActionBottomCenter,
+      PrefKeys.clickActionBottomRight,
+    ];
+    final hasAnyGridKey = gridKeys.any((k) => prefs.getInt(k) != null);
+    final hasAnyLegacyKey = [
+      'left_action',
+      'center_action',
+      'right_action',
+    ].any((k) => prefs.getInt('$_prefix$k') != null);
+    // 仅当确实存在旧三区持久化值时才迁移；新装（旧键也缺失）走九宫格
+    // 默认值，避免旧默认 center=toggleControls 污染新默认 TC/BC=上一页。
+    if (!hasAnyGridKey &&
+        hasAnyLegacyKey &&
+        prefs.getBool(PrefKeys.clickActionMigratedV2) != true) {
+      // 旧三区 → 九宫格整列映射（left→*L / center→*C / right→*R），写标记
+      // 保证幂等；旧 none/prev/next/toggleControls/openCatalog →
+      // -1/2/1/0/10。
+      int legacyCode(TapAction action) {
+        return switch (action) {
+          TapAction.none => -1,
+          TapAction.prevPage => 2,
+          TapAction.nextPage => 1,
+          TapAction.toggleControls => 0,
+          TapAction.openCatalog => 10,
+        };
+      }
+
+      final leftCode = legacyCode(legacyLeft);
+      final centerCode = legacyCode(legacyCenter);
+      final rightCode = legacyCode(legacyRight);
+      await prefs.setInt(PrefKeys.clickActionTopLeft, leftCode);
+      await prefs.setInt(PrefKeys.clickActionMiddleLeft, leftCode);
+      await prefs.setInt(PrefKeys.clickActionBottomLeft, leftCode);
+      await prefs.setInt(PrefKeys.clickActionTopCenter, centerCode);
+      await prefs.setInt(PrefKeys.clickActionMiddleCenter, centerCode);
+      await prefs.setInt(PrefKeys.clickActionBottomCenter, centerCode);
+      await prefs.setInt(PrefKeys.clickActionTopRight, rightCode);
+      await prefs.setInt(PrefKeys.clickActionMiddleRight, rightCode);
+      await prefs.setInt(PrefKeys.clickActionBottomRight, rightCode);
+      await prefs.setBool(PrefKeys.clickActionMigratedV2, true);
+    }
+
     // [UI-fix v2.0.4 | 2026-08-08] 字距旧值一次性迁移：旧版以 px 存储
     // （0~5，UI 25 档），若仅按 raw>1.0 判断会漏掉 0<raw≤1.0 的旧 px
     // 值（如 0.5px 会被当作 0.5em，渲染后放大一个数量级）。首次读取
@@ -474,9 +554,45 @@ class ReaderAdvancedConfig {
       autoPageTurnInterval: (prefs.getDouble('${_prefix}auto_interval') ?? 10)
           .clamp(3.0, 120.0),
       autoPageTurnForward: prefs.getBool('${_prefix}auto_forward') ?? true,
-      leftAction: tap('left_action', TapAction.prevPage),
-      centerAction: tap('center_action', TapAction.toggleControls),
-      rightAction: tap('right_action', TapAction.nextPage),
+      leftAction: legacyLeft,
+      centerAction: legacyCenter,
+      rightAction: legacyRight,
+      tapTopLeft: newTap(
+        PrefKeys.clickActionTopLeft,
+        ReaderTapAction.previousPage,
+      ),
+      tapTopCenter: newTap(
+        PrefKeys.clickActionTopCenter,
+        ReaderTapAction.previousPage,
+      ),
+      tapTopRight: newTap(
+        PrefKeys.clickActionTopRight,
+        ReaderTapAction.nextPage,
+      ),
+      tapMiddleLeft: newTap(
+        PrefKeys.clickActionMiddleLeft,
+        ReaderTapAction.previousPage,
+      ),
+      tapMiddleCenter: newTap(
+        PrefKeys.clickActionMiddleCenter,
+        ReaderTapAction.menu,
+      ),
+      tapMiddleRight: newTap(
+        PrefKeys.clickActionMiddleRight,
+        ReaderTapAction.nextPage,
+      ),
+      tapBottomLeft: newTap(
+        PrefKeys.clickActionBottomLeft,
+        ReaderTapAction.previousPage,
+      ),
+      tapBottomCenter: newTap(
+        PrefKeys.clickActionBottomCenter,
+        ReaderTapAction.nextPage,
+      ),
+      tapBottomRight: newTap(
+        PrefKeys.clickActionBottomRight,
+        ReaderTapAction.nextPage,
+      ),
       paragraphSpacing: layoutDouble('paragraph_spacing', 2).clamp(0.0, 48.0),
       letterSpacing: letterSpacingEm(),
       paragraphIndent: indentChars(),
@@ -610,9 +726,16 @@ class ReaderAdvancedConfig {
     await prefs.setBool('${_prefix}auto_page_turn', autoPageTurn);
     await prefs.setDouble('${_prefix}auto_interval', autoPageTurnInterval);
     await prefs.setBool('${_prefix}auto_forward', autoPageTurnForward);
-    await prefs.setInt('${_prefix}left_action', leftAction.index);
-    await prefs.setInt('${_prefix}center_action', centerAction.index);
-    await prefs.setInt('${_prefix}right_action', rightAction.index);
+    // [批4a] 九宫格为唯一写入源；旧三区键停止更新（仅迁移读取）
+    await prefs.setInt(PrefKeys.clickActionTopLeft, tapTopLeft.code);
+    await prefs.setInt(PrefKeys.clickActionTopCenter, tapTopCenter.code);
+    await prefs.setInt(PrefKeys.clickActionTopRight, tapTopRight.code);
+    await prefs.setInt(PrefKeys.clickActionMiddleLeft, tapMiddleLeft.code);
+    await prefs.setInt(PrefKeys.clickActionMiddleCenter, tapMiddleCenter.code);
+    await prefs.setInt(PrefKeys.clickActionMiddleRight, tapMiddleRight.code);
+    await prefs.setInt(PrefKeys.clickActionBottomLeft, tapBottomLeft.code);
+    await prefs.setInt(PrefKeys.clickActionBottomCenter, tapBottomCenter.code);
+    await prefs.setInt(PrefKeys.clickActionBottomRight, tapBottomRight.code);
     // F6：布局字段写入日夜/共用桶（并对齐旧 reader_adv_ 键便于未升级路径）
     await prefs.setDouble('${lp}paragraph_spacing', paragraphSpacing);
     await prefs.setDouble('${_prefix}paragraph_spacing', paragraphSpacing);
@@ -733,6 +856,67 @@ class ReaderAdvancedConfig {
     return cfg;
   }
 
+  /// 九宫格动作（行优先）
+  List<ReaderTapAction> get tapActions => [
+    tapTopLeft,
+    tapTopCenter,
+    tapTopRight,
+    tapMiddleLeft,
+    tapMiddleCenter,
+    tapMiddleRight,
+    tapBottomLeft,
+    tapBottomCenter,
+    tapBottomRight,
+  ];
+
+  ReaderTapAction tapActionAt(int index) {
+    switch (index) {
+      case 0:
+        return tapTopLeft;
+      case 1:
+        return tapTopCenter;
+      case 2:
+        return tapTopRight;
+      case 3:
+        return tapMiddleLeft;
+      case 4:
+        return tapMiddleCenter;
+      case 5:
+        return tapMiddleRight;
+      case 6:
+        return tapBottomLeft;
+      case 7:
+        return tapBottomCenter;
+      case 8:
+        return tapBottomRight;
+      default:
+        return ReaderTapAction.none;
+    }
+  }
+
+  void setTapActionAt(int index, ReaderTapAction action) {
+    switch (index) {
+      case 0:
+        tapTopLeft = action;
+      case 1:
+        tapTopCenter = action;
+      case 2:
+        tapTopRight = action;
+      case 3:
+        tapMiddleLeft = action;
+      case 4:
+        tapMiddleCenter = action;
+      case 5:
+        tapMiddleRight = action;
+      case 6:
+        tapBottomLeft = action;
+      case 7:
+        tapBottomCenter = action;
+      case 8:
+        tapBottomRight = action;
+    }
+  }
+
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
         autoPageTurn: autoPageTurn,
         autoPageTurnInterval: autoPageTurnInterval,
@@ -740,6 +924,15 @@ class ReaderAdvancedConfig {
         leftAction: leftAction,
         centerAction: centerAction,
         rightAction: rightAction,
+        tapTopLeft: tapTopLeft,
+        tapTopCenter: tapTopCenter,
+        tapTopRight: tapTopRight,
+        tapMiddleLeft: tapMiddleLeft,
+        tapMiddleCenter: tapMiddleCenter,
+        tapMiddleRight: tapMiddleRight,
+        tapBottomLeft: tapBottomLeft,
+        tapBottomCenter: tapBottomCenter,
+        tapBottomRight: tapBottomRight,
         paragraphSpacing: paragraphSpacing,
         letterSpacing: letterSpacing,
         paragraphIndent: paragraphIndent,

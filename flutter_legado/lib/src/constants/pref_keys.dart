@@ -417,6 +417,21 @@ class PrefKeys {
   /// 顶栏紧凑模式：仅保留「更多」动作（参考 titleBarCompact，默认 false）
   static const titleBarCompact = 'titleBarCompact';
 
+  // ===== [批4a] 阅读器九宫格点击区域（键名逐字对齐参考 PreferKey）=====
+
+  static const clickActionTopLeft = 'clickActionTopLeft';
+  static const clickActionTopCenter = 'clickActionTopCenter';
+  static const clickActionTopRight = 'clickActionTopRight';
+  static const clickActionMiddleLeft = 'clickActionMiddleLeft';
+  static const clickActionMiddleCenter = 'clickActionMiddleCenter';
+  static const clickActionMiddleRight = 'clickActionMiddleRight';
+  static const clickActionBottomLeft = 'clickActionBottomLeft';
+  static const clickActionBottomCenter = 'clickActionBottomCenter';
+  static const clickActionBottomRight = 'clickActionBottomRight';
+
+  /// 旧三区 → 九宫格一次性迁移标记（设备级，仅备份排除、恢复侧不拦截）
+  static const clickActionMigratedV2 = 'clickActionMigratedV2';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

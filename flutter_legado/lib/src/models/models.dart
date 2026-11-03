@@ -12,6 +12,7 @@ export 'manga_config.dart';
 export 'misc.dart';
 // [批43b] 目录解析元信息（used_custom_rule）与规则重载结果
 export 'reader_meta.dart';
+export 'reader_tap_action.dart';
 export 'rss_article.dart';
 export 'rss_read_record_row.dart';
 export 'rss_source.dart';

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart' show PrefKeys;
 import '../models/flip_mode.dart';
+import '../models/reader_tap_action.dart';
 import '../models/reader_theme.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
@@ -18,6 +19,7 @@ import '../widgets/app_progress_indicator.dart'; // [STAGE-UI-P43UNIFY2 B3] part
 import '../widgets/reader/reader_padding_config_sheet.dart';
 import '../widgets/reader/reader_tip_config_sheet.dart';
 import '../widgets/reader/reader_top_bar_config_sheet.dart';
+import 'click_action_config_sheet.dart';
 part 'reader_config_panel_data.part.dart';
 part 'reader_config_panel_builders.part.dart';
 
@@ -27,7 +29,7 @@ part 'reader_config_panel_builders.part.dart';
 /// 边距区域（对标原版 PaddingConfigDialog.Region）
 enum PaddingRegion { header, body, footer }
 
-/// 点击区域可映射的功能
+/// 旧三区点击动作（批4a 起仅用于一次性迁移到九宫格 ReaderTapAction）
 enum TapAction {
   none,
   prevPage,
@@ -62,7 +64,7 @@ enum ReaderConfigSection { all, margins, statusBar, menu, more }
 ///
 /// 以底部弹出面板形式展示，支持：
 /// - 自动翻页（开关 / 间隔 / 方向）
-/// - 点击区域功能映射（左 / 中 / 右）
+/// - 点击区域九宫格（3×3，入口打开 ClickActionConfigSheet）
 /// - 段落间距调节
 /// - 状态栏提示栏项配置（电量 / 时间 / 进度 / 章节名）
 /// - 翻页模式选择（仿真 / 滑动 / 覆盖 / 无动画）
@@ -210,7 +212,7 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         children = [
           _groupCard(_buildAutoPageTurn()),
           const SizedBox(height: 12),
-          _groupCard(_buildTapZones()),
+          _groupCard(_buildClickActionEntry()),
           const SizedBox(height: 12),
           _groupCard(_buildBrightnessControl()),
         ];
@@ -223,7 +225,7 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         children = [
           _groupCard(_buildAutoPageTurn()),
           const SizedBox(height: 12),
-          _groupCard(_buildTapZones()),
+          _groupCard(_buildClickActionEntry()),
           const SizedBox(height: 12),
           _groupCard(_buildBrightnessControl()),
           const SizedBox(height: 12),
@@ -267,7 +269,7 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           _groupCard(_buildAutoPageTurn()),
           const SizedBox(height: 12),
           // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
-          _groupCard(_buildTapZones()),
+          _groupCard(_buildClickActionEntry()),
           const SizedBox(height: 12),
           // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
           _groupCard(_buildParagraphSpacing()),
