@@ -155,6 +155,30 @@ class RestoreIgnorePrefs {
     // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey clickImgWay）：
     // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤 — 全栈工程师
     'clickImgWay',
+    // [批3a] 阅读器菜单系统（键名逐字对齐参考版 PreferKey）：底栏布局、
+    // 工具栏样式/配色、顶栏标题模式/胶囊/合并按钮均属阅读界面偏好，
+    // 随「忽略阅读配置」开关一并过滤；未勾选时随 appPrefs 备份往返。
+    PrefKeys.readMenuIconShowText,
+    PrefKeys.readMenuIconItemsPerRow,
+    PrefKeys.readMenuIconRowCount,
+    PrefKeys.readMenuIconStyle,
+    PrefKeys.readMenuFloatingBottomBar,
+    PrefKeys.readMenuBottomCornerRadius,
+    PrefKeys.readBarStyle,
+    PrefKeys.readMenuColorMode,
+    PrefKeys.readMenuPaletteStyle,
+    PrefKeys.readMenuBgColor,
+    PrefKeys.readMenuBgColorNight,
+    PrefKeys.readMenuAccentColor,
+    PrefKeys.readMenuAccentColorNight,
+    PrefKeys.readMenuContainerColor,
+    PrefKeys.readMenuContainerColorNight,
+    PrefKeys.readMenuTextColor,
+    PrefKeys.readMenuTextColorNight,
+    PrefKeys.readMenuTopBarTitleCapsule,
+    PrefKeys.titleBarMode,
+    PrefKeys.readMenuTopBarMergeButtons,
+    PrefKeys.titleBarIconStyle,
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

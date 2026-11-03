@@ -1023,6 +1023,20 @@ class SettingsService {
     }
   }
 
+  /// 读取可空布尔偏好（键不存在时返回 null，用于「未设置」语义）
+  ///
+  /// [批3a] 旧键 `readBarStyleFollowPage` 迁移需要区分「未设置」与
+  /// 显式 false：显式 false 迁移为 readBarStyle=0，未设置则保留默认 1。
+  Future<bool?> getBoolPrefOrNull(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(key);
+    } catch (e) {
+      debugPrint('SettingsService.getBoolPrefOrNull($key) 异常: $e');
+      return null;
+    }
+  }
+
   /// 写入布尔偏好
   Future<void> setBoolPref(String key, bool value) async {
     try {

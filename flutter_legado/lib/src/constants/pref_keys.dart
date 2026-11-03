@@ -316,6 +316,73 @@ class PrefKeys {
   /// 「忽略阅读配置」约束（RestoreIgnorePrefs.readPrefKeys）。
   static const readerTopBarActions = 'title_bar_actions.actions';
 
+  // ===== [批3a] 阅读器菜单系统（键名逐字对齐参考版 PreferKey）=====
+  //
+  // 参考依据：`SystemMenuPage.kt`（全局/底栏布局/顶栏布局三子页）、
+  // `ReadBookMenuBarBottom.kt`（图标网格/分页）、
+  // `ReadBookMenuBarTitle.kt`（标题模式/胶囊/合并按钮/图标三态）、
+  // `domain/model/settings/ReadSettings.kt` 默认值。
+  // 全部随 Flutter JSON 备份 `appPrefs` 往返，并加入
+  // `RestoreIgnorePrefs.readPrefKeys`（「忽略阅读配置」）。
+
+  /// 底栏图标是否显示文字（参考默认 false）
+  static const readMenuIconShowText = 'readMenuIconShowText';
+
+  /// 底栏每行图标数 2..8（参考默认 5）
+  static const readMenuIconItemsPerRow = 'readMenuIconItemsPerRow';
+
+  /// 底栏图标行数 1..2（参考默认 1）
+  static const readMenuIconRowCount = 'readMenuIconRowCount';
+
+  /// 底栏图标容器样式 0 无底衬 / 1 色调 / 2 描边（参考默认 0）
+  static const readMenuIconStyle = 'readMenuIconStyle';
+
+  /// 浮动底栏（参考默认 true）
+  static const readMenuFloatingBottomBar = 'readMenuFloatingBottomBar';
+
+  /// 底栏圆角 0..32（参考默认 32）
+  static const readMenuBottomCornerRadius = 'readMenuBottomCornerRadius';
+
+  /// 工具栏样式 0 跟随系统 / 1 跟随阅读背景 / 2 自定义（参考默认 1）
+  static const readBarStyle = 'readBarStyle';
+
+  /// 旧工具栏跟随页面布尔键（仅在新键缺失时一次性迁移：true→1/false→0）
+  static const readBarStyleFollowPage = 'readBarStyleFollowPage';
+
+  /// 菜单颜色来源 0 种子色 / 1 自定义主题色（参考默认 1）
+  static const readMenuColorMode = 'readMenuColorMode';
+
+  /// 菜单调色板（`''`=跟随系统，其余对齐 arrays.xml paletteStyle 值）
+  static const readMenuPaletteStyle = 'readMenuPaletteStyle';
+
+  /// 自定义菜单背景色（日/夜，ARGB，0=跟随/回落）
+  static const readMenuBgColor = 'readMenuBgColor';
+  static const readMenuBgColorNight = 'readMenuBgColorNight';
+
+  /// 自定义菜单强调色（日/夜，ARGB，0=回落主题 primary）
+  static const readMenuAccentColor = 'readMenuAccentColor';
+  static const readMenuAccentColorNight = 'readMenuAccentColorNight';
+
+  /// 自定义菜单容器色（日/夜，ARGB，0=回落背景色）
+  static const readMenuContainerColor = 'readMenuContainerColor';
+  static const readMenuContainerColorNight = 'readMenuContainerColorNight';
+
+  /// 自定义菜单文字色（日/夜，ARGB，0=按背景对比色）
+  static const readMenuTextColor = 'readMenuTextColor';
+  static const readMenuTextColorNight = 'readMenuTextColorNight';
+
+  /// 顶栏标题胶囊布局（参考默认 false）
+  static const readMenuTopBarTitleCapsule = 'readMenuTopBarTitleCapsule';
+
+  /// 顶栏标题显示方式 '0' 顶栏显示 / '1' 另起一行 / '2' 仅章节 / '3' 不显示
+  static const titleBarMode = 'titleBarMode';
+
+  /// 顶栏动作按钮合并为胶囊（参考默认 false）
+  static const readMenuTopBarMergeButtons = 'readMenuTopBarMergeButtons';
+
+  /// 顶栏图标容器样式 0 无底衬 / 1 色调 / 2 描边（参考默认 0）
+  static const titleBarIconStyle = 'titleBarIconStyle';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
