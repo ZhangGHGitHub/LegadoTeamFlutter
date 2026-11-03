@@ -34,6 +34,20 @@ void main() {
       expect(style.titleBarMode, '0');
       expect(style.mergeButtons, isFalse);
       expect(style.titleIconStyle, 0);
+      expect(style.borderWidth, 1);
+      expect(style.borderColor, 0);
+      expect(style.borderColorNight, 0);
+      expect(style.blurRadius, 24);
+      expect(style.blurAlpha, 85);
+      expect(style.blurColor, 0);
+      expect(style.blurColorNight, 0);
+      expect(style.topBarBlurMode, 0);
+      expect(style.bottomBarBlurMode, 0);
+      expect(style.topBarBlurStyle, 0);
+      expect(style.bottomBarBlurStyle, 0);
+      expect(style.topBarLiquidGlassButtons, isFalse);
+      expect(style.bottomBarLiquidGlassButtons, isFalse);
+      expect(style.titleBarCompact, isFalse);
       expect(style.pageSize, 5);
     });
 
@@ -47,6 +61,13 @@ void main() {
         colorMode: 9,
         titleIconStyle: -1,
         titleBarMode: '9',
+        borderWidth: 9,
+        blurRadius: 99,
+        blurAlpha: -5,
+        topBarBlurMode: 8,
+        bottomBarBlurMode: -1,
+        topBarBlurStyle: 4,
+        bottomBarBlurStyle: -2,
       );
       expect(style.itemsPerRow, 8);
       expect(style.rowCount, 1);
@@ -56,6 +77,13 @@ void main() {
       expect(style.colorMode, 1);
       expect(style.titleIconStyle, 0);
       expect(style.titleBarMode, '0');
+      expect(style.borderWidth, 4);
+      expect(style.blurRadius, 32);
+      expect(style.blurAlpha, 0);
+      expect(style.topBarBlurMode, 2);
+      expect(style.bottomBarBlurMode, 0);
+      expect(style.topBarBlurStyle, 1);
+      expect(style.bottomBarBlurStyle, 0);
 
       final low = ReaderMenuStyle(
         itemsPerRow: 1,
@@ -111,6 +139,20 @@ void main() {
         titleBarMode: '2',
         mergeButtons: true,
         titleIconStyle: 1,
+        borderWidth: 3,
+        borderColor: 0xFF123456,
+        borderColorNight: 0xFF654321,
+        blurRadius: 18,
+        blurAlpha: 42,
+        blurColor: 0xFFABCDEF,
+        blurColorNight: 0xFFFEDCBA,
+        topBarBlurMode: 2,
+        bottomBarBlurMode: 1,
+        topBarBlurStyle: 1,
+        bottomBarBlurStyle: 0,
+        topBarLiquidGlassButtons: true,
+        bottomBarLiquidGlassButtons: true,
+        titleBarCompact: true,
       );
       final decoded = decodeReaderMenuStyle(encodeReaderMenuStyle(style));
       expect(decoded.toJson(), style.toJson());
@@ -127,6 +169,12 @@ void main() {
         'readBarStyle': '2',
         'readMenuTopBarMergeButtons': 1,
         'titleBarMode': '3',
+        'readMenuBorderWidth': '4',
+        'readMenuBlurRadius': '32',
+        'readMenuBlurAlpha': 100,
+        'readMenuTopBarBlurMode': 2,
+        'readMenuBottomBarBlurMode': '1',
+        'titleBarCompact': 'true',
       });
       expect(style.itemsPerRow, 4);
       expect(style.rowCount, 2);
@@ -134,6 +182,12 @@ void main() {
       expect(style.readBarStyle, 2);
       expect(style.mergeButtons, isTrue);
       expect(style.titleBarMode, '3');
+      expect(style.borderWidth, 4);
+      expect(style.blurRadius, 32);
+      expect(style.blurAlpha, 100);
+      expect(style.topBarBlurMode, 2);
+      expect(style.bottomBarBlurMode, 1);
+      expect(style.titleBarCompact, isTrue);
     });
 
     test('空串/非法 JSON 回落默认', () {
@@ -184,87 +238,83 @@ void main() {
       expect(colors.onSurfaceVariant, scheme.onSurfaceVariant);
     });
 
-    test('readBarStyle=1：背景/容器/文字跟随阅读页，强调取主题 primary', () {
-      final style = ReaderMenuStyle(readBarStyle: 1);
+    test('readBarStyle=1：页面底色作 seed 生成 roles（背景/容器/文字）', () {
       const pageBg = Color(0xFF1A1A1A);
-      const pageText = Color(0xFFCCCCCC);
+      final expected = _expectedFollowPage(pageBg, isDark: true);
       final colors = resolveReaderMenuColors(
-        style: style,
+        style: ReaderMenuStyle(readBarStyle: 1),
         isDark: true,
         scheme: scheme,
         pageBackgroundColor: pageBg,
-        pageTextColor: pageText,
       );
-      expect(colors.background, pageBg);
-      expect(
-        colors.container,
-        Color.alphaBlend(pageText.withValues(alpha: 0.08), pageBg),
-        reason: '跟随阅读背景档容器 = 文字色 8% 混入背景（让色调底衬可见）',
-      );
-      expect(colors.text, pageText);
-      expect(colors.onSurface, pageText);
-      expect(colors.accent, scheme.primary);
+      expect(colors.background, expected.background);
+      expect(colors.container, expected.container);
+      expect(colors.text, expected.text);
+      expect(colors.onSurface, expected.text);
+      expect(colors.accent, expected.accent);
+      expect(colors.onSurfaceVariant, expected.onSurfaceVariant);
     });
 
-    test('readBarStyle=1 对比度不足时改用白字（WCAG < 4.5）', () {
-      const text = Color(0xFF333333);
+    test('readBarStyle=1 深色预设：roles.onSurface 且对比度 ≥ 4.5', () {
       for (final argb in [
         0xFF1A1A1A,
         0xFF263238,
         0xFF37474F,
         0xFF616161,
       ]) {
-        final background = Color(argb);
+        final seed = Color(argb);
+        final expected = _expectedFollowPage(seed, isDark: true);
         final colors = resolveReaderMenuColors(
           style: ReaderMenuStyle(readBarStyle: 1),
           isDark: true,
           scheme: scheme,
-          pageBackgroundColor: background,
-          pageTextColor: text,
+          pageBackgroundColor: seed,
         );
-        expect(colors.text, const Color(0xFFFFFFFF), reason: '$background');
-        final ratio = _contrastRatio(colors.text, background);
-        expect(ratio, greaterThan(4.5), reason: '$background 对比度 $ratio');
+        expect(colors.background, expected.background, reason: '$seed');
+        expect(colors.text, expected.text, reason: '$seed');
+        final ratio = _contrastRatio(colors.text, colors.background);
+        expect(ratio, greaterThanOrEqualTo(4.5), reason: '$seed: $ratio');
       }
     });
 
-    test('readBarStyle=1 棕/蓝灰预设保留 #333333（对比度达标不回退）', () {
-      const text = Color(0xFF333333);
-      // ReaderBackground.brown #D4A574（5.68:1）与 #90A4AE（4.88:1）
+    test('readBarStyle=1 棕/蓝灰预设：roles.onSurface 达标不回退', () {
+      // ReaderBackground.brown #D4A574 与蓝灰 #90A4AE
       for (final argb in [0xFFD4A574, 0xFF90A4AE]) {
-        final background = Color(argb);
+        final seed = Color(argb);
+        final expected = _expectedFollowPage(seed, isDark: false);
         final colors = resolveReaderMenuColors(
           style: ReaderMenuStyle(readBarStyle: 1),
           isDark: false,
           scheme: scheme,
-          pageBackgroundColor: background,
-          pageTextColor: text,
+          pageBackgroundColor: seed,
         );
-        expect(colors.text, text, reason: '$background 应保留原文字色');
+        expect(colors.text, expected.text, reason: '$seed');
+        expect(colors.text, Color(expected.roleText), reason: '$seed 使用角色文字色');
         expect(
-          _contrastRatio(colors.text, background),
+          _contrastRatio(colors.text, colors.background),
           greaterThanOrEqualTo(4.5),
-          reason: '$background 对比度不得回退',
+          reason: '$seed 对比度不得回退',
         );
       }
     });
 
-    test('readBarStyle=1 亮底亮字同样改用黑字', () {
+    test('readBarStyle=1 亮底：roles.onSurface 对比度 ≥ 4.5', () {
+      const seed = Color(0xFFF5F5DC);
+      final expected = _expectedFollowPage(seed, isDark: false);
       final colors = resolveReaderMenuColors(
         style: ReaderMenuStyle(readBarStyle: 1),
         isDark: false,
         scheme: scheme,
-        pageBackgroundColor: const Color(0xFFF5F5DC),
-        pageTextColor: const Color(0xFFFFF9C4),
+        pageBackgroundColor: seed,
       );
-      expect(colors.text, const Color(0xFF000000));
+      expect(colors.text, expected.text);
       expect(
-        _contrastRatio(colors.text, const Color(0xFFF5F5DC)),
-        greaterThan(4.5),
+        _contrastRatio(colors.text, colors.background),
+        greaterThanOrEqualTo(4.5),
       );
     });
 
-    test('readBarStyle=1 无阅读页色时回落系统样式', () {
+    test('readBarStyle=1 无阅读页色（图片背景缺失）回落系统样式', () {
       final colors = resolveReaderMenuColors(
         style: ReaderMenuStyle(readBarStyle: 1),
         isDark: false,
@@ -274,14 +324,20 @@ void main() {
       expect(colors.text, scheme.onSurface);
     });
 
-    test('readBarStyle=1 无阅读页文字色时按背景对比色', () {
+    test('readBarStyle=1 不再使用阅读页文字色（改由种子 roles 决定）', () {
+      final expected = _expectedFollowPage(
+        const Color(0xFF000000),
+        isDark: false,
+      );
       final colors = resolveReaderMenuColors(
         style: ReaderMenuStyle(readBarStyle: 1),
         isDark: false,
         scheme: scheme,
         pageBackgroundColor: const Color(0xFF000000),
+        pageTextColor: const Color(0xFF333333),
       );
-      expect(colors.text, const Color(0xFFFFFFFF));
+      expect(colors.text, expected.text);
+      expect(colors.text, isNot(const Color(0xFF333333)));
     });
 
     test('readBarStyle=2 + 自定义：日/夜分别取对应键，0 回落', () {
@@ -433,6 +489,33 @@ void main() {
       expect(colors.background, const Color(0xFFF5F5DC));
     });
   });
+}
+
+/// 与生产 resolver 同构：seed → tonalSpot roles → 菜单色/文字对比回退
+({Color background, Color container, Color accent, Color text, Color onSurfaceVariant, int roleText})
+_expectedFollowPage(Color seed, {required bool isDark}) {
+  final rolesPair = buildParameterizedRoles(
+    style: 'tonalSpot',
+    seed: seed.toARGB32(),
+    contrastLevel: 0,
+  );
+  final roles = isDark ? rolesPair.dark : rolesPair.light;
+  final background = Color(roles.surfaceContainerHigh);
+  var text = Color(roles.onSurface);
+  if (_contrastRatio(text, background) < 4.5) {
+    final luminance = background.computeLuminance();
+    final blackContrast = (luminance + 0.05) / 0.05;
+    final whiteContrast = 1.05 / (luminance + 0.05);
+    text = blackContrast >= whiteContrast ? Colors.black : Colors.white;
+  }
+  return (
+    background: background,
+    container: Color(roles.surfaceContainerLow),
+    accent: Color(roles.primary),
+    text: text,
+    onSurfaceVariant: Color(roles.onSurfaceVariant),
+    roleText: roles.onSurface,
+  );
 }
 
 /// WCAG 对比度（1.0..21.0）

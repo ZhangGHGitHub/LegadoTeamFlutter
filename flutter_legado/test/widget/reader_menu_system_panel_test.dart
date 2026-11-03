@@ -54,15 +54,14 @@ void main() {
     expect(find.text('底栏布局'), findsOneWidget);
     expect(find.text('顶栏布局'), findsOneWidget);
 
-    // [批3a P2-8] 全局默认（readBarStyle=1 跟随阅读背景）：不显示调色板
-    // （1 档取种映射留 3b），也不显示颜色来源
+    // [批3b] 跟随阅读背景档已接种子映射，调色板可用；颜色来源仍仅自定义档
     expect(
       find.byKey(const ValueKey('reader-menu-style-dropdown')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('reader-menu-palette-dropdown')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('reader-menu-color-mode-dropdown')),
@@ -263,5 +262,194 @@ void main() {
     );
     prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(PrefKeys.titleBarMode), '2');
+  });
+
+  testWidgets('全局子页：亮度回迁 / 边框 / 模糊控件即时落盘', (tester) async {
+    await pumpPanel(tester);
+
+    // 亮度模式默认不显示，位置行隐藏
+    expect(
+      find.byKey(const ValueKey('reader-menu-brightness-mode-dropdown')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('reader-menu-brightness-pos-dropdown')),
+      findsNothing,
+    );
+    await selectDropdown(
+      tester,
+      const ValueKey('reader-menu-brightness-mode-dropdown'),
+      '竖排',
+    );
+    expect(
+      find.byKey(const ValueKey('reader-menu-brightness-pos-dropdown')),
+      findsOneWidget,
+    );
+    await selectDropdown(
+      tester,
+      const ValueKey('reader-menu-brightness-pos-dropdown'),
+      '左侧',
+    );
+    var prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('readBrightnessMode'), '2');
+    expect(prefs.getString('readBrightnessVwPos'), '0');
+
+    // 边框默认开（宽度 1）；关闭写 0，再开写 1
+    final borderSwitch = find.byKey(
+      const ValueKey('reader-menu-border-switch'),
+    );
+    expect(tester.widget<SwitchListTile>(borderSwitch).value, isTrue);
+    await tester.ensureVisible(borderSwitch);
+    await tester.tap(borderSwitch);
+    await tester.pump();
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.readMenuBorderWidth), 0);
+    expect(
+      find.byKey(const ValueKey('reader-menu-border-width-slider')),
+      findsNothing,
+    );
+    await tester.tap(borderSwitch);
+    await tester.pump();
+
+    final widthSlider = tester.widget<Slider>(
+      find.byKey(const ValueKey('reader-menu-border-width-slider')),
+    );
+    expect(widthSlider.min, 1);
+    expect(widthSlider.max, 4);
+    widthSlider.onChanged!(3);
+    await tester.pump();
+
+    // 边框日间色（HEX 取色）
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('reader-menu-border-color-day')),
+    );
+    await tester.tap(find.byKey(const ValueKey('reader-menu-border-color-day')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'FF123456');
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    final radiusSlider = tester.widget<Slider>(
+      find.byKey(const ValueKey('reader-menu-blur-radius-slider')),
+    );
+    expect(radiusSlider.max, 32);
+    radiusSlider.onChanged!(18);
+    await tester.pump();
+    final alphaSlider = tester.widget<Slider>(
+      find.byKey(const ValueKey('reader-menu-blur-alpha-slider')),
+    );
+    expect(alphaSlider.max, 100);
+    alphaSlider.onChanged!(50);
+    await tester.pump();
+
+    // 模糊底色（日）
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('reader-menu-blur-color-day')),
+    );
+    await tester.tap(find.byKey(const ValueKey('reader-menu-blur-color-day')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'FFABCDEF');
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.readMenuBorderWidth), 3);
+    expect(prefs.getInt(PrefKeys.readMenuBorderColor), 0xFF123456);
+    expect(prefs.getInt(PrefKeys.readMenuBlurRadius), 18);
+    expect(prefs.getInt(PrefKeys.readMenuBlurAlpha), 50);
+    expect(prefs.getInt(PrefKeys.readMenuBlurColor), 0xFFABCDEF);
+  });
+
+  testWidgets('底栏子页：模糊/液态玻璃/按钮玻璃落盘', (tester) async {
+    await pumpPanel(tester);
+    await tester.tap(find.byKey(const ValueKey('reader-menu-tab-1')));
+    await tester.pump();
+
+    // 浮动默认：有液态玻璃开关、无风格下拉
+    expect(
+      find.byKey(const ValueKey('reader-menu-bottom-liquid-switch')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('reader-menu-bottom-blur-style-dropdown')),
+      findsNothing,
+    );
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('reader-menu-bottom-blur-switch')),
+    );
+    await tester.tap(find.byKey(const ValueKey('reader-menu-bottom-blur-switch')));
+    await tester.pump();
+    var prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurMode), 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey('reader-menu-bottom-liquid-switch')),
+    );
+    await tester.pump();
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurMode), 2);
+
+    await tester.tap(
+      find.byKey(const ValueKey('reader-menu-bottom-glass-buttons-switch')),
+    );
+    await tester.pump();
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(PrefKeys.readMenuBottomBarLiquidGlassButtons), isTrue);
+
+    // 关闭浮动：风格下拉出现，液态玻璃开关隐藏
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('reader-menu-floating-switch')),
+    );
+    await tester.tap(find.byKey(const ValueKey('reader-menu-floating-switch')));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('reader-menu-bottom-liquid-switch')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('reader-menu-bottom-blur-style-dropdown')),
+      findsOneWidget,
+    );
+    await selectDropdown(
+      tester,
+      const ValueKey('reader-menu-bottom-blur-style-dropdown'),
+      'Progressive',
+    );
+    prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurStyle), 1);
+  });
+
+  testWidgets('顶栏子页：紧凑标题 / 模糊 / 玻璃按钮落盘', (tester) async {
+    await pumpPanel(tester);
+    await tester.tap(find.byKey(const ValueKey('reader-menu-tab-2')));
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('reader-menu-title-compact-switch')),
+    );
+    await tester.pump();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('reader-menu-top-blur-switch')),
+    );
+    await tester.tap(find.byKey(const ValueKey('reader-menu-top-blur-switch')));
+    await tester.pump();
+    await selectDropdown(
+      tester,
+      const ValueKey('reader-menu-top-blur-style-dropdown'),
+      'Progressive',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('reader-menu-top-glass-buttons-switch')),
+    );
+    await tester.pump();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(PrefKeys.titleBarCompact), isTrue);
+    expect(prefs.getInt(PrefKeys.readMenuTopBarBlurMode), 1);
+    expect(prefs.getInt(PrefKeys.readMenuTopBarBlurStyle), 1);
+    expect(prefs.getBool(PrefKeys.readMenuTopBarLiquidGlassButtons), isTrue);
   });
 }

@@ -71,6 +71,19 @@ void main() {
       PrefKeys.titleBarMode: '2',
       PrefKeys.readMenuTopBarMergeButtons: true,
       PrefKeys.titleBarIconStyle: 2,
+      PrefKeys.readMenuBorderWidth: 9,
+      PrefKeys.readMenuBorderColor: 0xFF123456,
+      PrefKeys.readMenuBorderColorNight: 0xFF654321,
+      PrefKeys.readMenuBlurRadius: 99,
+      PrefKeys.readMenuBlurAlpha: 120,
+      PrefKeys.readMenuBlurColor: 0xFFABCDEF,
+      PrefKeys.readMenuBlurColorNight: 0xFFFEDCBA,
+      PrefKeys.readMenuTopBarBlurMode: 2,
+      PrefKeys.readMenuBottomBarBlurMode: 1,
+      PrefKeys.readMenuTopBarBlurStyle: 1,
+      PrefKeys.readMenuTopBarLiquidGlassButtons: true,
+      PrefKeys.readMenuBottomBarLiquidGlassButtons: true,
+      PrefKeys.titleBarCompact: true,
     });
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -91,6 +104,20 @@ void main() {
     expect(style.bgColorNight, 0xFF223344);
     expect(style.accentColor, 0xFF334455);
     expect(style.accentColorNight, 0xFF445566);
+    expect(style.borderWidth, 4);
+    expect(style.borderColor, 0xFF123456);
+    expect(style.borderColorNight, 0xFF654321);
+    expect(style.blurRadius, 32);
+    expect(style.blurAlpha, 100);
+    expect(style.blurColor, 0xFFABCDEF);
+    expect(style.blurColorNight, 0xFFFEDCBA);
+    expect(style.topBarBlurMode, 2);
+    expect(style.bottomBarBlurMode, 1);
+    expect(style.topBarBlurStyle, 1);
+    expect(style.bottomBarBlurStyle, 0);
+    expect(style.topBarLiquidGlassButtons, isTrue);
+    expect(style.bottomBarLiquidGlassButtons, isTrue);
+    expect(style.titleBarCompact, isTrue);
     expect(style.containerColor, 0xFF556677);
     expect(style.containerColorNight, 0xFF667788);
     expect(style.textColor, 0xFF778899);
@@ -182,6 +209,20 @@ void main() {
     notifier.setTitleBarMode('9');
     notifier.setMergeButtons(true);
     notifier.setTitleIconStyle(3);
+    notifier.setBorderWidth(9);
+    notifier.setBorderColor(0xFF123456, isNight: false);
+    notifier.setBorderColor(0xFF654321, isNight: true);
+    notifier.setBlurRadius(99);
+    notifier.setBlurAlpha(-4);
+    notifier.setBlurColor(0xFFABCDEF, isNight: false);
+    notifier.setBlurColor(0xFFFEDCBA, isNight: true);
+    notifier.setTopBarBlurMode(5);
+    notifier.setBottomBarBlurMode(1);
+    notifier.setTopBarBlurStyle(2);
+    notifier.setBottomBarBlurStyle(1);
+    notifier.setTopBarLiquidGlassButtons(true);
+    notifier.setBottomBarLiquidGlassButtons(true);
+    notifier.setTitleBarCompact(true);
     await pumpEventQueue();
 
     final style = container.read(readerMenuStyleProvider);
@@ -213,6 +254,23 @@ void main() {
     expect(prefs.getString(PrefKeys.titleBarMode), '0');
     expect(prefs.getBool(PrefKeys.readMenuTopBarMergeButtons), isTrue);
     expect(prefs.getInt(PrefKeys.titleBarIconStyle), 2);
+    expect(prefs.getInt(PrefKeys.readMenuBorderWidth), 4);
+    expect(prefs.getInt(PrefKeys.readMenuBorderColor), 0xFF123456);
+    expect(prefs.getInt(PrefKeys.readMenuBorderColorNight), 0xFF654321);
+    expect(prefs.getInt(PrefKeys.readMenuBlurRadius), 32);
+    expect(prefs.getInt(PrefKeys.readMenuBlurAlpha), 0);
+    expect(prefs.getInt(PrefKeys.readMenuBlurColor), 0xFFABCDEF);
+    expect(prefs.getInt(PrefKeys.readMenuBlurColorNight), 0xFFFEDCBA);
+    expect(prefs.getInt(PrefKeys.readMenuTopBarBlurMode), 2);
+    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurMode), 1);
+    expect(prefs.getInt(PrefKeys.readMenuTopBarBlurStyle), 1);
+    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurStyle), 1);
+    expect(prefs.getBool(PrefKeys.readMenuTopBarLiquidGlassButtons), isTrue);
+    expect(
+      prefs.getBool(PrefKeys.readMenuBottomBarLiquidGlassButtons),
+      isTrue,
+    );
+    expect(prefs.getBool(PrefKeys.titleBarCompact), isTrue);
   });
 
   test('加载在途时用户修改：陈旧加载不得覆盖（generation 防竞态）', () async {
@@ -282,6 +340,20 @@ void main() {
       PrefKeys.titleBarMode,
       PrefKeys.readMenuTopBarMergeButtons,
       PrefKeys.titleBarIconStyle,
+      PrefKeys.readMenuBorderWidth,
+      PrefKeys.readMenuBorderColor,
+      PrefKeys.readMenuBorderColorNight,
+      PrefKeys.readMenuBlurRadius,
+      PrefKeys.readMenuBlurAlpha,
+      PrefKeys.readMenuBlurColor,
+      PrefKeys.readMenuBlurColorNight,
+      PrefKeys.readMenuTopBarBlurMode,
+      PrefKeys.readMenuBottomBarBlurMode,
+      PrefKeys.readMenuTopBarBlurStyle,
+      PrefKeys.readMenuBottomBarBlurStyle,
+      PrefKeys.readMenuTopBarLiquidGlassButtons,
+      PrefKeys.readMenuBottomBarLiquidGlassButtons,
+      PrefKeys.titleBarCompact,
     ];
     for (final key in keys) {
       expect(
@@ -297,11 +369,13 @@ void main() {
       PrefKeys.readMenuIconShowText: true,
       PrefKeys.readBarStyle: 2,
       PrefKeys.titleBarMode: '2',
+      PrefKeys.readMenuBlurRadius: 18,
     });
     final backup = await RestoreIgnorePrefs.collectForBackup(const {});
     expect(backup[PrefKeys.readMenuIconShowText], isTrue);
     expect(backup[PrefKeys.readBarStyle], 2);
     expect(backup[PrefKeys.titleBarMode], '2');
+    expect(backup[PrefKeys.readMenuBlurRadius], 18);
 
     final ignored = await RestoreIgnorePrefs.collectForBackup(const {
       'readConfig': true,
@@ -309,5 +383,6 @@ void main() {
     expect(ignored.containsKey(PrefKeys.readMenuIconShowText), isFalse);
     expect(ignored.containsKey(PrefKeys.readBarStyle), isFalse);
     expect(ignored.containsKey(PrefKeys.titleBarMode), isFalse);
+    expect(ignored.containsKey(PrefKeys.readMenuBlurRadius), isFalse);
   });
 }

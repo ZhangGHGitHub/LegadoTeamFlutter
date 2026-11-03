@@ -16,6 +16,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_menu_style_notifier.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
+import 'package:flutter_legado/src/theme/theme_engine_parameterized.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_menu_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_top_bar_actions.dart';
 
@@ -61,9 +62,11 @@ void main() {
     TextScaler? textScaler,
     bool parentHandlesBottomInset = false,
     EdgeInsets outerPadding = EdgeInsets.zero,
+    Brightness brightness = Brightness.light,
   }) => UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
+      theme: ThemeData(brightness: brightness),
       routes: {
         AppRoutes.bookInfo: (_) => const Scaffold(body: Text('书籍详情页')),
         AppRoutes.offlineCache: (_) => const Scaffold(body: Text('缓存管理页')),
@@ -124,6 +127,7 @@ void main() {
     TextScaler? textScaler,
     bool parentHandlesBottomInset = false,
     EdgeInsets outerPadding = EdgeInsets.zero,
+    Brightness brightness = Brightness.light,
   }) async {
     final container = makeContainer();
     if (currentBook != null) stubOpenBook();
@@ -135,6 +139,7 @@ void main() {
         textScaler: textScaler,
         parentHandlesBottomInset: parentHandlesBottomInset,
         outerPadding: outerPadding,
+        brightness: brightness,
       ),
     );
     if (currentBook != null) {
@@ -765,20 +770,27 @@ void main() {
   });
 
   group('菜单配色接线', () {
-    testWidgets('readBarStyle=1：顶/底栏背景跟随阅读页底色', (tester) async {
+    testWidgets('readBarStyle=1：页面底色作 seed 生成 roles 背景', (tester) async {
       final container = makeContainer();
-      // 阅读页底色改为夜间深色（默认文字色为 #CCCCCC）
       final readerNotifier = container.read(readerNotifierProvider.notifier);
       readerNotifier.updateCurrentBook(book);
       await tester.pumpWidget(wrapMenu(container));
-      readerNotifier.updateBackgroundColor(const Color(0xFF1A1A1A));
+      const pageBg = Color(0xFF1A1A1A);
+      readerNotifier.updateBackgroundColor(pageBg);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
+      // App 主题为亮色（注册项：文字日夜按 App 明暗），故用 light roles
+      final roles = buildParameterizedRoles(
+        style: 'tonalSpot',
+        seed: pageBg.toARGB32(),
+        contrastLevel: 0,
+      );
       final material = tester.widget<Material>(
         find.byKey(const ValueKey('reader-bottom-panel-surface')),
       );
-      expect(material.color, const Color(0xFF1A1A1A));
+      expect(material.color, Color(roles.light.surfaceContainerHigh));
+      expect(material.color, isNot(pageBg));
     });
 
     testWidgets('readBarStyle=2 自定义：背景/文字/强调按配置解析', (tester) async {
@@ -818,6 +830,243 @@ void main() {
         sliderTheme.data.activeTrackColor,
         const Color(0xFF00AA00).withValues(alpha: 0.25),
       );
+    });
+  });
+
+  group('模糊 / 边框 / 紧凑顶栏（批3b）', () {
+    testWidgets('底栏 Haze：BackdropFilter 半径 + alpha 85/100 + tint', (tester) async {
+      for (final alpha in [85, 100]) {
+        SharedPreferences.setMockInitialValues({
+          PrefKeys.readBarStyle: 0,
+          PrefKeys.readMenuBottomBarBlurMode: 1,
+          PrefKeys.readMenuBlurRadius: 12,
+          PrefKeys.readMenuBlurAlpha: alpha,
+          PrefKeys.readMenuBlurColor: 0xFFFF0000,
+        });
+        await tester.pumpWidget(const SizedBox.shrink());
+        await pumpMenu(tester, currentBook: book);
+        final backdrop = tester.widget<BackdropFilter>(
+          find.byKey(const ValueKey('reader-bottom-blur-backdrop')),
+        );
+        expect(backdrop.filter.toString(), contains('12'));
+        final tint = tester.widget<ColoredBox>(
+          find.byKey(const ValueKey('reader-bottom-blur-tint')),
+        );
+        expect(tint.color.a, closeTo(alpha / 100, 0.001));
+        expect(tint.color.r, closeTo(1, 0.001));
+        expect(tint.color.g, closeTo(0, 0.001));
+      }
+    });
+
+    testWidgets('底栏 Progressive：Haze 上叠加渐变遮罩', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBottomBarBlurMode: 1,
+        PrefKeys.readMenuBottomBarBlurStyle: 1,
+      });
+      await pumpMenu(tester, currentBook: book);
+      expect(
+        find.byKey(const ValueKey('reader-bottom-blur-progressive')),
+        findsOneWidget,
+      );
+      final box = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('reader-bottom-blur-progressive')),
+      );
+      final gradient =
+          (box.decoration as BoxDecoration).gradient! as LinearGradient;
+      expect(gradient.begin, Alignment.bottomCenter, reason: '底栏下实上透');
+    });
+
+    testWidgets('底栏 LiquidGlass：模糊 + 高光描边 + 镜面渐变', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBottomBarBlurMode: 2,
+        PrefKeys.readMenuBlurRadius: 8,
+        PrefKeys.readMenuBlurAlpha: 60,
+      });
+      await pumpMenu(tester, currentBook: book);
+      expect(
+        find.byKey(const ValueKey('reader-bottom-blur-backdrop')),
+        findsOneWidget,
+      );
+      final glass = find.byKey(const ValueKey('reader-bottom-liquid-glass'));
+      expect(glass, findsOneWidget);
+      final deco =
+          tester.widget<DecoratedBox>(glass).decoration as BoxDecoration;
+      final border = deco.border! as Border;
+      expect(border.top.width, 1);
+      expect(border.top.color.a, closeTo(0.22, 0.001));
+      final glassGradient = deco.gradient! as LinearGradient;
+      expect(glassGradient.colors.first.a, closeTo(0.10, 0.001));
+    });
+
+    testWidgets('非浮动底栏 LiquidGlass 回落 Haze（不做透镜）', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBottomBarBlurMode: 2,
+        PrefKeys.readMenuFloatingBottomBar: false,
+      });
+      await pumpMenu(tester, currentBook: book);
+      expect(
+        find.byKey(const ValueKey('reader-bottom-blur-backdrop')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('reader-bottom-liquid-glass')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('顶栏 Haze：透明 Material + 独立模糊层', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuTopBarBlurMode: 1,
+        PrefKeys.readMenuBlurRadius: 9,
+        PrefKeys.readMenuBlurAlpha: 100,
+      });
+      await pumpMenu(tester, currentBook: book);
+      final backdrop = tester.widget<BackdropFilter>(
+        find.byKey(const ValueKey('reader-topbar-blur-backdrop')),
+      );
+      expect(backdrop.filter.toString(), contains('9'));
+      final tint = tester.widget<ColoredBox>(
+        find.byKey(const ValueKey('reader-topbar-blur-tint')),
+      );
+      expect(tint.color.a, closeTo(1, 0.001));
+    });
+
+    testWidgets('边框 0/1/4 与日夜色：底栏整框、顶栏下边线', (tester) async {
+      // 默认 1
+      SharedPreferences.setMockInitialValues({PrefKeys.readBarStyle: 0});
+      await pumpMenu(tester, currentBook: book);
+      final defaultBorder = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('reader-bottom-border')),
+      );
+      expect(
+        ((defaultBorder.decoration as BoxDecoration).border! as Border)
+            .top
+            .width,
+        1,
+      );
+
+      // 0 = 关闭
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBorderWidth: 0,
+      });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpMenu(tester, currentBook: book);
+      expect(find.byKey(const ValueKey('reader-bottom-border')), findsNothing);
+      expect(find.byKey(const ValueKey('reader-topbar-border')), findsNothing);
+
+      // 4 + 日间自定义色
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBorderWidth: 4,
+        PrefKeys.readMenuBorderColor: 0xFFFF0000,
+      });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpMenu(tester, currentBook: book);
+      final bottomBorder = tester.widget<DecoratedBox>(
+        find.byKey(const ValueKey('reader-bottom-border')),
+      );
+      final border =
+          (bottomBorder.decoration as BoxDecoration).border! as Border;
+      expect(border.top.width, 4);
+      expect(border.top.color, const Color(0xFFFF0000));
+      final topBorder = tester.widget<ColoredBox>(
+        find.byKey(const ValueKey('reader-topbar-border')),
+      );
+      expect(topBorder.color, const Color(0xFFFF0000));
+
+      // 夜间色（dark theme）
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBorderWidth: 2,
+        PrefKeys.readMenuBorderColor: 0xFFFF0000,
+        PrefKeys.readMenuBorderColorNight: 0xFF00FF00,
+      });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        brightness: Brightness.dark,
+      );
+      final nightTop = tester.widget<ColoredBox>(
+        find.byKey(const ValueKey('reader-topbar-border')),
+      );
+      expect(nightTop.color, const Color(0xFF00FF00));
+    });
+
+    testWidgets('胶囊开启时顶栏不画下边线（参考行为）', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBorderWidth: 2,
+        PrefKeys.readMenuTopBarTitleCapsule: true,
+      });
+      await pumpMenu(tester, currentBook: book);
+      expect(find.byKey(const ValueKey('reader-topbar-border')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('reader-bottom-border')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('液态玻璃按钮：半透明容器 + 白色高光描边', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.readMenuBottomBarLiquidGlassButtons: true,
+        PrefKeys.readMenuTopBarLiquidGlassButtons: true,
+      });
+      await pumpMenu(tester, currentBook: book);
+      final bottomDeco =
+          tester.widget<Container>(actionSurface('全文搜索')).decoration
+              as BoxDecoration;
+      expect(
+        ((bottomDeco.border! as Border).top.color.a),
+        closeTo(0.18, 0.001),
+      );
+      final topDeco =
+          tester.widget<Container>(topBarSurface('下载（离线缓存）')).decoration
+              as BoxDecoration;
+      expect(((topDeco.border! as Border).top.color.a), closeTo(0.18, 0.001));
+    });
+
+    testWidgets('紧凑顶栏：360dp + 6 动作只留更多，书名可见', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.titleBarCompact: true,
+        PrefKeys.readerTopBarActions: [
+          for (final def in readerTopBarActionPool) '${def.id},true',
+        ].join(';'),
+      });
+      await pumpMenu(tester, currentBook: book);
+
+      expect(tester.takeException(), isNull);
+      final bookName = find.byKey(const ValueKey('reader-topbar-book-name'));
+      expect(bookName, findsOneWidget);
+      expect(tester.getSize(bookName).width, greaterThan(0));
+      for (final id in [
+        'download',
+        'refresh',
+        'change_source',
+        'catalog',
+        'search',
+      ]) {
+        expect(
+          find.byKey(ValueKey('reader-topbar-action-$id')),
+          findsNothing,
+          reason: '紧凑模式不渲染 $id',
+        );
+      }
+      expect(find.byTooltip('更多'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      expect(find.text('换源'), findsOneWidget);
+      expect(find.text('刷新正文'), findsOneWidget);
+      expect(find.text('下载（离线缓存）'), findsOneWidget);
     });
   });
 }
