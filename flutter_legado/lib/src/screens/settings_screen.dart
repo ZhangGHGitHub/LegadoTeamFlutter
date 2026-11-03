@@ -670,14 +670,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  /// [设置批2b-2b] 我的页入口导航：容器内（双栏/单栏）统一推进同一个
-  /// nested Navigator；仅独立打开的 SettingsScreen（无 scope）走 root push。
+  /// [设置批2b-2b] 我的页入口导航：
+  /// - 双栏：推进容器 nested Navigator（右栏）；
+  /// - 单栏 / 独立页：root push 全屏（参考版单栏目的地覆盖 MainScreen，
+  ///   底栏由 root 页面覆盖）。
   void _openMyEntry(String route) {
     final scope = context.getInheritedWidgetOfExactType<MyPaneScope>();
-    if (scope != null && scope.controller.pushNamed(route)) {
+    if (scope != null &&
+        scope.isMultiPane &&
+        scope.controller.pushNamed(route)) {
       return;
     }
-    Navigator.pushNamed(context, route);
+    Navigator.of(context, rootNavigator: true).pushNamed(route);
   }
 
   /// 我的页可导航行（容器内按当前入口高亮）

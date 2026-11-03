@@ -12,6 +12,14 @@ import 'my_pane_scope.dart';
 /// 容器初始（空态）路由名；`AppRoutes` 中不存在，避免与业务路由冲突。
 const String kMyPaneEmptyRoute = '/__my_pane_empty__';
 
+/// 单栏匿名栈全屏覆盖开关
+///
+/// 双栏 → 单栏时若容器栈顶是匿名路由（`RouteSettings.name == null`，
+/// 编辑页/表单等无法按名字重建），保留 nested 栈并让 HomeScreen 隐藏
+/// 底栏/Rail、禁用 PageView 横滑，使页面覆盖 MainScreen（对齐参考版单栏
+/// 目的地覆盖主界面）；退出该栈后恢复。
+final myPaneFullscreenProvider = StateProvider<bool>((ref) => false);
+
 /// 「我的」页容器：按 `multiPaneMode` + 当前窗口尺寸在双栏/单栏间切换。
 ///
 /// 双栏（对齐参考版 `ListDetailSceneStrategy` 的容器左栏 + 详情右栏）：
@@ -20,15 +28,21 @@ const String kMyPaneEmptyRoute = '/__my_pane_empty__';
 /// - 右：nested `Navigator`（`AppRoutes.generateRoute`），初始为空态
 ///   「选择左侧项目」。
 ///
-/// 单栏：**同一个 nested Navigator 全宽保留**（不再 root 转推/清空）：
-/// - 右栏栈非空 → 左菜单隐藏，栈顶页面全宽显示；
+/// 单栏（对齐参考版单栏目的地覆盖 MainScreen）：
+/// - 菜单入口的**命名路由**走 root push（全屏，底栏被 root 页面覆盖）；
+/// - 双栏 → 单栏时，命名栈顶转 root push；匿名栈顶保留 nested 栈并
+///   全屏覆盖（HomeScreen 隐藏底栏/Rail、禁用 PageView 横滑）；
 /// - 右栏栈为空 → 全宽显示 `SettingsScreen` 菜单；
-/// - 菜单入口仍进 nested Navigator；back 逐级 pop，空栈回菜单；
-/// - 再变宽恢复「左菜单 + 右栏」，栈与页面内状态不丢。
+/// - 退出匿名栈后恢复底栏/Rail，回到菜单。
 ///
 /// 模式阈值按**完整窗口**宽（含导航 Rail），左右最小宽度/高度按扣掉 Rail
 /// 后的窗格约束判定（见 [resolveMultiPane] 的 `windowSize`）。
 /// 「我的」页不可见期间冻结上一次可见形态，重新可见时再按新窗口判定。
+///
+/// 弹层策略（登记）：`showModalBottomSheet` 默认 `useRootNavigator=false`，
+/// 会落在本 nested Navigator（双栏右栏 / 单栏匿名全屏内）；`showDialog`
+/// 默认 `useRootNavigator=true`，落在根栈覆盖全窗口。需要整窗对话框时保持
+/// 默认，需要栏内底部弹层时保持默认；跨栏浮层须显式指定 root。
 class AdaptiveMyPane extends ConsumerStatefulWidget {
   const AdaptiveMyPane({
     super.key,
@@ -70,13 +84,23 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
   /// 右栏栈是否有业务页面（决定单栏时显示菜单还是页面）
   bool _rightStackNotEmpty = false;
 
+  /// 已请求的全屏值（避免重复调度 provider 更新）
+  bool _fullscreenRequested = false;
+
+  late final StateController<bool> _fullscreenController;
+
   /// State 已销毁（防止 Navigator 卸载期间 observer 回调再触发通知）
   bool _disposed = false;
+
+  /// 测试观测：容器栈深度（0=未挂载，1=仅初始空态，>1=有业务页面）
+  @visibleForTesting
+  int get rightStackDepth => _observer.stackDepth;
 
   @override
   void initState() {
     super.initState();
     _controller.navigatorKey = _navigatorKey;
+    _fullscreenController = ref.read(myPaneFullscreenProvider.notifier);
   }
 
   @override
@@ -84,8 +108,66 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
     _disposed = true;
     // 容器销毁时清空 observer 栈，避免 GlobalKey 复用/重建时残留旧路由。
     _observer.clear();
+    if (_fullscreenRequested) {
+      try {
+        _fullscreenController.state = false;
+      } catch (_) {
+        // Provider 容器已销毁时忽略（应用退出场景）
+      }
+    }
     _controller.dispose();
     super.dispose();
+  }
+
+  /// 延迟一帧更新全屏开关（build/layout 期间不能直接改 provider）
+  void _setFullscreen(bool value) {
+    if (_fullscreenRequested == value) return;
+    _fullscreenRequested = value;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _fullscreenController.state = value;
+    });
+  }
+
+  /// 双栏 → 单栏：命名栈顶转 root push；匿名栈顶保留 nested 并全屏覆盖
+  void _enterSinglePane() {
+    final top = _observer.topSettings;
+    final name = top?.name;
+    if (_observer.hasPage && name != null && name != kMyPaneEmptyRoute) {
+      final arguments = top!.arguments;
+      final navigator = _navigatorKey.currentState;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !widget.active || _wasMultiPane) return;
+        // 先清空容器栈，再按同名路由 root 打开（全屏覆盖 MainScreen）
+        navigator?.popUntil((route) => route.isFirst);
+        _setFullscreen(false);
+        _controller.select(null);
+        Navigator.of(
+          context,
+          rootNavigator: true,
+        ).pushNamed(name, arguments: arguments);
+      });
+      return;
+    }
+    if (_observer.hasPage) {
+      // 匿名路由无法按名字重建：保留 nested 栈，整页全屏覆盖
+      _setFullscreen(true);
+      return;
+    }
+    _setFullscreen(false);
+  }
+
+  /// 单栏 → 双栏：恢复左菜单 + 右栏，撤掉全屏覆盖
+  void _enterDualPane() {
+    _setFullscreen(false);
+    final topName = _observer.topSettings?.name;
+    final selected = topName != null && topName != kMyPaneEmptyRoute
+        ? topName
+        : null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _controller.select(selected);
+    });
   }
 
   /// 右栏栈顶变化：回写栈顶用于去重；空态清空左栏选中项
@@ -99,6 +181,13 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
     final hasPage = _observer.hasPage;
     // 匿名路由（RouteSettings.name == null）同样算业务页面，不能按名字判空。
     _controller.setTopRoute(hasPage ? name : null);
+    if (!hasPage) {
+      // 空栈：退出匿名全屏覆盖，恢复底栏/Rail 与菜单
+      _setFullscreen(false);
+    } else if (_modeSeen && !_wasMultiPane && name == null) {
+      // 单栏内新增匿名页：保持全屏覆盖语义
+      _setFullscreen(true);
+    }
     final changed = hasPage != _rightStackNotEmpty;
     final clearSelection = !hasPage;
     if (!changed && !clearSelection) return;
@@ -150,6 +239,15 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
         if (widget.active || !_modeSeen) {
           multi = computed;
           if (widget.active) {
+            final previous = _wasMultiPane;
+            final seen = _modeSeen;
+            if (seen && previous != computed) {
+              if (previous) {
+                _enterSinglePane();
+              } else {
+                _enterDualPane();
+              }
+            }
             _wasMultiPane = computed;
             _modeSeen = true;
           }
@@ -205,10 +303,26 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
                   child: _buildNavigator(),
                 ),
               ),
-              if (showMenuOverlay)
-                const Positioned.fill(
-                  child: SettingsScreen(key: ValueKey('my-pane-menu-overlay')),
+              // 菜单进出用短淡入淡出（返回空栈时避免硬切）；淡出期间忽略
+              // 指针/语义，防止已隐藏的菜单抢点击。
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !showMenuOverlay,
+                  child: ExcludeSemantics(
+                    excluding: !showMenuOverlay,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 140),
+                      child: showMenuOverlay
+                          ? const SettingsScreen(
+                              key: ValueKey('my-pane-menu-overlay'),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('my-pane-menu-none'),
+                            ),
+                    ),
+                  ),
                 ),
+              ),
             ],
           ),
         ),
@@ -283,6 +397,9 @@ class _MyPaneNavigatorObserver extends NavigatorObserver {
 
   RouteSettings? get topSettings =>
       _stack.isEmpty ? null : _stack.last.settings;
+
+  /// 当前栈深度（测试观测）
+  int get stackDepth => _stack.length;
 
   /// 是否有初始空态之外的业务页面（匿名路由也算，不能只看 name）
   bool get hasPage =>

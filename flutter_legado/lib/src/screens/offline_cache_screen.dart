@@ -262,7 +262,14 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
 
   Future<void> _openBook(Book book) async {
     // 分流编排统一在 BookOpenUtils.openBook（未读进书详 + 类型位分流）
-    await BookOpenUtils.openBook(context, ref, book);
+    // [设置批2b-2b P1-3] 缓存管理可位于「我的」容器 nested Navigator 内，
+    // 阅读器/书详必须打开在根导航，不能关进右栏/My 页签。
+    await BookOpenUtils.openBook(
+      context,
+      ref,
+      book,
+      useGlobalNavigator: true,
+    );
   }
 
   // ===== 单本导出（对齐原版 CacheActivity → ExportBookService） =====

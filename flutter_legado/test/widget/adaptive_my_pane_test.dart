@@ -2,11 +2,12 @@
 //
 // 覆盖：
 // - 双栏结构（左菜单 + 24dp 间距 + 右 nested Navigator 空态）；
-// - 菜单入口双栏/单栏都进同一 nested Navigator（不再 root push）；
+// - 双栏菜单入口进右栏 nested；单栏命名入口 root push 全屏；
+// - 双→单：命名栈顶转 root、匿名栈顶 nested 全屏（隐藏底栏/禁横滑）；
 // - 重复点同入口去重；返回逐级 pop，空栈回菜单并清高亮；
 // - 宽度变化双→单→双保留同一栈（含匿名 MaterialPageRoute 与输入内容）；
-// - 不可见 Tab 期间形态冻结，重新可见后按新窗口判定；
-// - 最小双栏高度 + 2x 大字体、右栏 360x320 nested 弹层不溢出；
+// - 不可见 Tab 期间形态冻结（含窄窗安全回单栏），重新可见后按新窗口判定；
+// - 最小双栏高度 + 2x 大字体、右栏 360x320 / 页签减高 nested 弹层不溢出；
 // - HomeScreen + Rail 840/839dp 窗口阈值与返回键优先级。
 import 'dart:async';
 
@@ -110,6 +111,31 @@ Route<dynamic> _stubRoute(RouteSettings settings) {
   );
 }
 
+/// 根导航栈深度计数（用于断言 root push / 容器栈不变）
+class _DepthObserver extends NavigatorObserver {
+  int depth = 0;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    depth++;
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    depth--;
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    depth--;
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute == null) depth++;
+  }
+}
+
 void main() {
   setUpAll(registerFallbacks);
 
@@ -147,10 +173,14 @@ void main() {
     required GlobalKey<NavigatorState> navigatorKey,
     bool active = true,
     double textScale = 1,
+    GlobalKey<NavigatorState>? rootKey,
+    NavigatorObserver? rootObserver,
   }) {
     return UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
+        navigatorKey: rootKey,
+        navigatorObservers: rootObserver == null ? const [] : [rootObserver],
         onGenerateRoute: _stubRoute,
         builder: (context, child) {
           return MediaQuery(
@@ -176,12 +206,19 @@ void main() {
     required MultiPaneMode mode,
     required Size size,
     double textScale = 1,
+    GlobalKey<NavigatorState>? rootKey,
+    NavigatorObserver? rootObserver,
   }) async {
     SharedPreferences.setMockInitialValues({PrefKeys.multiPaneMode: mode.name});
     setWindowSize(tester, size);
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
-      buildPaneApp(navigatorKey: navigatorKey, textScale: textScale),
+      buildPaneApp(
+        navigatorKey: navigatorKey,
+        textScale: textScale,
+        rootKey: rootKey,
+        rootObserver: rootObserver,
+      ),
     );
     await tester.pumpAndSettle();
     return navigatorKey;
@@ -253,38 +290,44 @@ void main() {
     );
   });
 
-  testWidgets('单栏（off）：入口仍进 nested Navigator，返回回菜单', (tester) async {
+  testWidgets('单栏（off）：命名入口 root push 全屏，容器栈不变，返回回菜单', (tester) async {
+    final rootKey = GlobalKey<NavigatorState>();
+    final rootObserver = _DepthObserver();
     final navigatorKey = await pumpPane(
       tester,
       mode: MultiPaneMode.off,
       size: const Size(900, 700),
+      rootKey: rootKey,
+      rootObserver: rootObserver,
+    );
+    final paneState = tester.state<AdaptiveMyPaneState>(
+      find.byType(AdaptiveMyPane),
     );
 
     expect(find.byKey(const ValueKey('my-pane-right')), findsOneWidget);
     expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
     expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(navigatorKey.currentState!.canPop(), isFalse);
+    expect(paneState.rightStackDepth, 1);
+    expect(rootObserver.depth, 1);
 
     await tester.tap(find.text('书源管理'));
     await tester.pumpAndSettle();
 
-    // 页面全宽显示在容器里，菜单隐藏；没有走 root 路由。
+    // 单栏命名入口走 root push（全屏覆盖容器），容器栈保持初始空态
     expect(find.text('stub:/sources'), findsOneWidget);
     expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsNothing);
-    expect(find.byType(SettingsScreen), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('my-pane-right')),
-        matching: find.text('stub:/sources'),
-      ),
-      findsOneWidget,
-    );
+    expect(rootKey.currentState!.canPop(), isTrue);
+    expect(rootObserver.depth, 2);
+    expect(paneState.rightStackDepth, 1);
 
-    await navigatorKey.currentState!.maybePop();
+    rootKey.currentState!.pop();
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
     expect(find.byType(SettingsScreen), findsOneWidget);
     expect(find.text('stub:/sources'), findsNothing);
+    expect(rootObserver.depth, 1);
   });
 
   testWidgets('双→单→双：匿名路由栈顶与输入内容保留，菜单按空栈恢复', (tester) async {
@@ -346,6 +389,44 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
   });
 
+  testWidgets('双→单：命名栈顶转 root push，容器栈清空，返回回菜单', (tester) async {
+    final rootKey = GlobalKey<NavigatorState>();
+    final rootObserver = _DepthObserver();
+    final navigatorKey = await pumpPane(
+      tester,
+      mode: MultiPaneMode.always,
+      size: const Size(900, 700),
+      rootKey: rootKey,
+      rootObserver: rootObserver,
+    );
+    final paneState = tester.state<AdaptiveMyPaneState>(
+      find.byType(AdaptiveMyPane),
+    );
+
+    await tester.tap(find.text('书源管理'));
+    await tester.pumpAndSettle();
+    expect(find.text('stub:/sources'), findsOneWidget);
+    expect(navigatorKey.currentState!.canPop(), isTrue);
+    expect(paneState.rightStackDepth, 2);
+    expect(rootObserver.depth, 1);
+
+    // 缩到单栏：命名栈顶转 root push（全屏），容器栈清空
+    tester.view.physicalSize = const Size(700, 700);
+    await tester.pumpAndSettle();
+    expect(find.text('stub:/sources'), findsOneWidget);
+    expect(rootKey.currentState!.canPop(), isTrue);
+    expect(rootObserver.depth, 2);
+    expect(navigatorKey.currentState!.canPop(), isFalse);
+    expect(paneState.rightStackDepth, 1);
+
+    rootKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.text('stub:/sources'), findsNothing);
+    expect(rootObserver.depth, 1);
+  });
+
   testWidgets('不可见 Tab 期间形态冻结，重新可见后按新窗口判定', (tester) async {
     final navigatorKey = await pumpPane(
       tester,
@@ -369,6 +450,30 @@ void main() {
     expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
   });
 
+  testWidgets('不可见 Tab 冻结：窄窗放不下双栏时安全回落单栏', (tester) async {
+    final navigatorKey = await pumpPane(
+      tester,
+      mode: MultiPaneMode.always,
+      size: const Size(900, 700),
+    );
+    expect(find.byKey(const ValueKey('my-pane-left-menu')), findsOneWidget);
+
+    // 不可见 + 窄到双栏最小宽度以下：冻结值不再适用，安全回单栏防溢出
+    tester.view.physicalSize = const Size(400, 700);
+    await tester.pumpWidget(
+      buildPaneApp(navigatorKey: navigatorKey, active: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('my-pane-left-menu')), findsNothing);
+    expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // 重新可见仍为单栏
+    await tester.pumpWidget(buildPaneApp(navigatorKey: navigatorKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
+  });
+
   testWidgets('最小双栏 744x320 + 2x 大字体与右栏 360x320 nested 弹层不溢出', (tester) async {
     final navigatorKey = await pumpPane(
       tester,
@@ -382,6 +487,45 @@ void main() {
     expect(tester.takeException(), isNull);
 
     // 右栏宽度 360dp、高度 320dp：nested Navigator 内弹层不溢出
+    unawaited(navigatorKey.currentState!.pushNamed('/sheet'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('open-sheet')));
+    await tester.pumpAndSettle();
+    expect(find.text('右栏弹层'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('右栏 360x320 + 页签减高（56dp）nested 弹层不溢出', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.multiPaneMode: MultiPaneMode.always.name,
+    });
+    setWindowSize(tester, const Size(744, 376));
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          onGenerateRoute: _stubRoute,
+          home: Scaffold(
+            body: Column(
+              children: [
+                Expanded(
+                  child: AdaptiveMyPane(
+                    navigatorKey: navigatorKey,
+                    routeGenerator: _stubRoute,
+                  ),
+                ),
+                // 模拟底栏页签占用 56dp：窗格实际高度 376-56=320
+                const SizedBox(height: 56, child: Center(child: Text('页签栏'))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('my-pane-right')), findsOneWidget);
+
     unawaited(navigatorKey.currentState!.pushNamed('/sheet'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('open-sheet')));
@@ -459,6 +603,140 @@ void main() {
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
       1,
     );
+  });
+
+  testWidgets('HomeScreen 单栏命名页：root 全屏无底栏，返回恢复 My', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.multiPaneMode: MultiPaneMode.off.name,
+      PrefKeys.tabletInterface: 'off',
+    });
+    setWindowSize(tester, const Size(900, 700));
+    final rootKey = GlobalKey<NavigatorState>();
+    final rootObserver = _DepthObserver();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          navigatorKey: rootKey,
+          navigatorObservers: [rootObserver],
+          home: const HomeScreen(),
+          onGenerateRoute: _stubRoute,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(NavigationDestination).at(4));
+    await tester.pumpAndSettle();
+    final paneState = tester.state<AdaptiveMyPaneState>(
+      find.byType(AdaptiveMyPane),
+    );
+    expect(find.byType(NavigationBar), findsOneWidget);
+
+    await tester.tap(find.text('书源管理'));
+    await tester.pumpAndSettle();
+
+    // 单栏命名入口 root push：全屏覆盖，底栏不可见，容器栈不变
+    expect(find.text('stub:/sources'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(rootObserver.depth, 2);
+    expect(paneState.rightStackDepth, 1);
+
+    rootKey.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(rootObserver.depth, 1);
+  });
+
+  testWidgets('双→单匿名栈全屏：隐藏底栏/禁横滑，退出恢复 My', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.multiPaneMode: MultiPaneMode.always.name,
+      PrefKeys.tabletInterface: 'off',
+    });
+    setWindowSize(tester, const Size(900, 700));
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: const HomeScreen(),
+          onGenerateRoute: _stubRoute,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(NavigationDestination).at(4));
+    await tester.pumpAndSettle();
+    final paneState = tester.state<AdaptiveMyPaneState>(
+      find.byType(AdaptiveMyPane),
+    );
+    final nestedNavigator = tester.state<NavigatorState>(
+      find.descendant(
+        of: find.byKey(const ValueKey('my-pane-right')),
+        matching: find.byType(Navigator),
+      ),
+    );
+    unawaited(
+      nestedNavigator.push(
+        MaterialPageRoute<void>(builder: (_) => const _AnonEditorPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('anon-editor')), '草稿内容');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    expect(find.byType(NavigationBar), findsOneWidget);
+
+    // 缩到单栏：匿名栈顶保持 nested，但整页全屏（隐藏底栏、禁横滑）
+    tester.view.physicalSize = const Size(700, 700);
+    await tester.pumpAndSettle();
+    expect(find.byType(_AnonEditorPage), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsNothing);
+    expect(find.byType(SettingsScreen), findsNothing);
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).physics,
+      isA<NeverScrollableScrollPhysics>(),
+    );
+    expect(paneState.rightStackDepth, 2);
+    expect(container.read(myPaneFullscreenProvider), isTrue);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('anon-editor')))
+          .controller!
+          .text,
+      '草稿内容',
+    );
+
+    // 再变宽：恢复双栏与底栏，匿名页仍在右栏（栈未重建）
+    tester.view.physicalSize = const Size(900, 700);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byKey(const ValueKey('my-pane-left-menu')), findsOneWidget);
+    expect(find.byType(_AnonEditorPage), findsOneWidget);
+    expect(container.read(myPaneFullscreenProvider), isFalse);
+
+    // 再缩窄：重新进入匿名全屏覆盖
+    tester.view.physicalSize = const Size(700, 700);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(_AnonEditorPage), findsOneWidget);
+    expect(container.read(myPaneFullscreenProvider), isTrue);
+
+    // 退出匿名栈：恢复底栏/横滑与 My 菜单
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(_AnonEditorPage), findsNothing);
+    expect(find.byKey(const ValueKey('my-pane-menu-overlay')), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(
+      tester.widget<PageView>(find.byType(PageView)).physics,
+      isA<ClampingScrollPhysics>(),
+    );
+    expect(paneState.rightStackDepth, 1);
+    expect(container.read(myPaneFullscreenProvider), isFalse);
   });
 
   testWidgets('HomeScreen + Rail：840dp 双栏、839dp 单栏（阈值含 Rail）', (tester) async {

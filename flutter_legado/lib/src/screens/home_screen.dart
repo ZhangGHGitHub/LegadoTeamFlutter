@@ -303,6 +303,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _visitedTabs.add(_currentTab);
     _syncPageController(currentIndex);
 
+    // [设置批2b-2b] 单栏匿名栈全屏：隐藏底栏/Rail 并禁用横滑，避免
+    // 页面被底栏压缩或滑动切走（参考版单栏目的地覆盖 MainScreen）。
+    final myPaneFullscreen =
+        ref.watch(myPaneFullscreenProvider) && _currentTab == MainTab.my;
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -318,12 +323,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
           // 单页配置：NavigationBar/Rail 均要求 ≥2 项，隐藏导航容器，
           // 仅保留单页内容（PageView 由 post-frame 收敛到索引 0）。
-          final showRail = useRail && tabs.length >= 2;
+          final showRail =
+              useRail && tabs.length >= 2 && !myPaneFullscreen;
           final pageArea = PageView.builder(
             controller: _pageController,
             // [UI_SYNC_REFACTOR S1] 滑动切页（对齐参考 HorizontalPager
             // userScrollEnabled=true；allowImplicitScrolling≈预载相邻页）
-            physics: const ClampingScrollPhysics(),
+            // 单栏匿名栈全屏时禁止横滑，避免退出全屏页面。
+            physics: myPaneFullscreen
+                ? const NeverScrollableScrollPhysics()
+                : const ClampingScrollPhysics(),
             allowImplicitScrolling: true,
             itemCount: tabs.length,
             // 顺序变化时按页签 key 找回新索引，保住各页 State（滚动位置等）
@@ -375,14 +384,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             // [UI_SYNC_REFACTOR B3] 底栏三形态：隐藏 / 悬浮 64dp 胶囊 / 标准
             // NavigationBar（label 三档 + 透明度）；皮肤图标两种形态均保留
-            bottomBar: _buildBottomBar(
-              context,
-              ui,
-              tabs,
-              currentIndex,
-              activeSkin,
-              prefs,
-            ),
+            // 单栏匿名栈全屏时整条底栏隐藏（退出该栈后恢复）。
+            bottomBar: myPaneFullscreen
+                ? null
+                : _buildBottomBar(
+                    context,
+                    ui,
+                    tabs,
+                    currentIndex,
+                    activeSkin,
+                    prefs,
+                  ),
           );
         },
       ),

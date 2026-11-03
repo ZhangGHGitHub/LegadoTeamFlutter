@@ -276,8 +276,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     if (!context.mounted) return;
     if (book == null) {
       // 对齐原版：书架无书 → 带书名打开搜索
-      await Navigator.pushNamed(
-        context,
+      // [设置批2b-2b P1-3] 阅读记录可位于「我的」容器 nested Navigator 内，
+      // 搜索必须打开在根导航（全屏），不能关进右栏/My 页签。
+      await Navigator.of(context, rootNavigator: true).pushNamed(
         AppRoutes.search,
         arguments: item.bookName,
       );
@@ -287,8 +288,17 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
   }
 
   /// 对齐原版 startActivityForBook（分流编排统一在 BookOpenUtils.openBook）
+  ///
+  /// [设置批2b-2b P1-3] 阅读记录在「我的」容器 nested Navigator 内时，
+  /// 阅读器/书详必须走根导航；[BookOpenUtils.openBook] 的
+  /// `useGlobalNavigator` 经 `PlatformBridgeService.navigatorKey` 落根栈。
   Future<void> _openBook(BuildContext context, Book book) async {
-    await BookOpenUtils.openBook(context, ref, book);
+    await BookOpenUtils.openBook(
+      context,
+      ref,
+      book,
+      useGlobalNavigator: true,
+    );
   }
 
   Future<void> _confirmDelete(

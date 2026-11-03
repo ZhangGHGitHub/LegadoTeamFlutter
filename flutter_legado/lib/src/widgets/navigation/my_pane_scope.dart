@@ -1,10 +1,11 @@
 import 'package:flutter/widgets.dart';
 
-/// 「我的」容器双栏控制器
+/// 「我的」容器导航控制器
 ///
 /// 左栏菜单（[SettingsScreen]）经 [MyPaneScope] 取得本控制器：
 /// - 双栏激活时，入口 [pushNamed] 推进右栏 nested Navigator，并记录选中项；
-/// - 单栏/未挂载时返回 false，调用方回退到 root `Navigator.pushNamed`。
+/// - 单栏命名入口由 SettingsScreen 直接 root push（全屏），不调用本控制器；
+/// - 容器未挂载（独立 SettingsScreen / 深链）时 [pushNamed] 返回 false。
 ///
 /// 右栏栈顶变化由 `AdaptiveMyPane` 内的 NavigatorObserver 回写
 /// [selectedRoute]（用于左栏选中高亮与返回后清空）。
@@ -21,9 +22,6 @@ class MyPaneController extends ChangeNotifier {
   /// 右栏栈顶路由名（空态为 null）；用于重复点击去重
   String? get topRoute => _topRoute;
 
-  /// 右栏 nested Navigator 当前是否可用
-  bool get isAttached => navigatorKey?.currentState != null;
-
   /// 更新选中项（值未变化时不通知，避免无谓重建）
   void select(String? route) {
     if (_selectedRoute == route) return;
@@ -36,26 +34,35 @@ class MyPaneController extends ChangeNotifier {
     _topRoute = route;
   }
 
-  /// 尝试在「我的」容器打开命名路由。
+  /// 尝试在「我的」容器 nested Navigator 打开命名路由。
   ///
-  /// 单栏/双栏都进同一 nested Navigator（单栏时菜单隐藏、页面全宽）；
-  /// 仅当容器未挂载（独立 SettingsScreen / 深链）时返回 false，调用方
-  /// 回退 root push。栈顶已是同一路由时去重，避免重复点入口叠页。
+  /// 仅双栏菜单入口使用（单栏命名入口由 SettingsScreen 直接 root push）；
+  /// 容器未挂载（独立 SettingsScreen / 深链）时返回 false。栈顶已是同一
+  /// 路由时去重，避免重复点入口叠页；push 抛错时回滚去重/选中态，保证
+  /// 重试仍可进入。
   bool pushNamed(String name, {Object? arguments}) {
     final navigator = navigatorKey?.currentState;
     if (navigator == null) return false;
     if (_topRoute == name) return true;
+    final previousTop = _topRoute;
+    final previousSelected = _selectedRoute;
     _topRoute = name;
     select(name);
-    navigator.pushNamed(name, arguments: arguments);
+    try {
+      navigator.pushNamed(name, arguments: arguments);
+    } catch (_) {
+      _topRoute = previousTop;
+      select(previousSelected);
+      rethrow;
+    }
     return true;
   }
 }
 
-/// 双栏作用域：向「我的」页菜单暴露当前是否双栏与容器控制器。
+/// 容器作用域：向「我的」页菜单暴露当前是否双栏与容器控制器。
 ///
-/// 单栏时同样挂载（`isMultiPane=false`）：菜单与页面共用同一个
-/// nested Navigator，切换宽度不会丢右栏栈。
+/// 单栏时同样挂载（`isMultiPane=false`）：命名入口由菜单直接 root push，
+/// 匿名栈仍共用同一个 nested Navigator，切换宽度不会丢右栏栈。
 class MyPaneScope extends InheritedNotifier<MyPaneController> {
   /// 当前窗口是否处于双栏展示
   final bool isMultiPane;
