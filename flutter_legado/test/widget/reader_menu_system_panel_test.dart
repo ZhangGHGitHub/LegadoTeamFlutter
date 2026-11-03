@@ -383,14 +383,22 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('reader-menu-bottom-blur-switch')));
     await tester.pump();
     var prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurMode), 1);
+    expect(
+      prefs.getInt(PrefKeys.readMenuBottomBarBlurMode),
+      2,
+      reason: 'Haze=2',
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('reader-menu-bottom-liquid-switch')),
     );
     await tester.pump();
     prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt(PrefKeys.readMenuBottomBarBlurMode), 2);
+    expect(
+      prefs.getInt(PrefKeys.readMenuBottomBarBlurMode),
+      1,
+      reason: 'LiquidGlass=1',
+    );
 
     await tester.tap(
       find.byKey(const ValueKey('reader-menu-bottom-glass-buttons-switch')),
@@ -448,7 +456,7 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(PrefKeys.titleBarCompact), isTrue);
-    expect(prefs.getInt(PrefKeys.readMenuTopBarBlurMode), 1);
+    expect(prefs.getInt(PrefKeys.readMenuTopBarBlurMode), 2);
     expect(prefs.getInt(PrefKeys.readMenuTopBarBlurStyle), 1);
     expect(prefs.getBool(PrefKeys.readMenuTopBarLiquidGlassButtons), isTrue);
   });

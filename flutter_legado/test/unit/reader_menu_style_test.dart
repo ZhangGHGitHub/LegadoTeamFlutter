@@ -479,6 +479,46 @@ void main() {
       expect(user.background, Color(neutralExpected.light.surfaceContainerHigh));
     });
 
+    test('roles 记忆化：同 seed/palette 只计算一次，LRU 命中', () {
+      resetReaderMenuRolesCacheForTest();
+      const seed = 0xFF6750A4;
+      final style = ReaderMenuStyle(
+        readBarStyle: 2,
+        colorMode: 0,
+        paletteStyle: 'vibrant',
+        accentColor: seed,
+        accentColorNight: seed,
+      );
+      resolveReaderMenuColors(
+        style: style,
+        isDark: false,
+        scheme: scheme,
+      );
+      expect(readerMenuRolesComputeCountForTest, 1);
+      resolveReaderMenuColors(
+        style: style,
+        isDark: true,
+        scheme: scheme,
+      );
+      expect(readerMenuRolesComputeCountForTest, 1, reason: '同输入命中缓存');
+
+      final other = style.copyWith(paletteStyle: 'neutral');
+      resolveReaderMenuColors(
+        style: other,
+        isDark: false,
+        scheme: scheme,
+      );
+      expect(readerMenuRolesComputeCountForTest, 2);
+      // LRU 回访第一项仍命中
+      resolveReaderMenuColors(
+        style: style,
+        isDark: false,
+        scheme: scheme,
+      );
+      expect(readerMenuRolesComputeCountForTest, 2);
+      resetReaderMenuRolesCacheForTest();
+    });
+
     test('readBarStyle=2 自定义背景 0 时回落阅读页底色', () {
       final colors = resolveReaderMenuColors(
         style: ReaderMenuStyle(readBarStyle: 2, colorMode: 1),
