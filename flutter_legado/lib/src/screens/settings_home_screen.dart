@@ -114,42 +114,49 @@ class SettingsHomeScreen extends StatelessWidget {
                                 'settings-home-item-background-image-$i'),
                           ),
                         ),
-                      InkWell(
-                        borderRadius: cardRadius,
-                        onTap: onTap,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(icon, size: 22, color: cs.onSurfaceVariant),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(title,
+                      // 内容层恒为透明 Material：InkWell 水波纹画在项目图
+                      // 之上（100% 不透明时仍可见），且无图/有图结构一致。
+                      Material(
+                        type: MaterialType.transparency,
+                        child: InkWell(
+                          borderRadius: cardRadius,
+                          onTap: onTap,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(icon,
+                                    size: 22, color: cs.onSurfaceVariant),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(title,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleSmall),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        subtitle,
                                         style: Theme.of(context)
                                             .textTheme
-                                            .titleSmall),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      subtitle,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: cs.onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: cs.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              Icon(Symbols.chevron_right_rounded,
-                                  size: 20, color: cs.onSurfaceVariant),
-                            ],
+                                Icon(Symbols.chevron_right_rounded,
+                                    size: 20, color: cs.onSurfaceVariant),
+                              ],
+                            ),
                           ),
                         ),
                       ),

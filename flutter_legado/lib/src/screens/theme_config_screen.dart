@@ -94,6 +94,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    // [设置批2b-1b-2b P3] 预热背景图基目录：完成后重建一次，让相对标识从
+    // 「未解析」切换为真实图片/可用性判断（不阻塞首帧，失败静默）。
+    ThemeBackgroundImageStore.ensureWarm().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   /// 加载持久化偏好（键名对齐原版 PreferKey）
@@ -134,30 +139,42 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     // （large_light/large_dark/item_light/item_dark）下未被引用的自有图片与
     // 中断残留 tmp（[设置批2b-1b-2b] 起包含项目图槽位）；非自有命名不动。
     // 基目录未预热时直接跳过，不触发平台通道。
-    final containerImageLight = await _settings.getStringPref(
-      PrefKeys.largeContainerBackgroundImageLight,
-    );
-    final containerImageDark = await _settings.getStringPref(
-      PrefKeys.largeContainerBackgroundImageDark,
-    );
-    // [设置批2b-1b-2b] 项目图必须加入 keep，否则刚选好的项目图会被当孤儿删除
-    final itemImageLight = await _settings.getStringPref(
-      PrefKeys.itemBackgroundImageLight,
-    );
-    final itemImageDark = await _settings.getStringPref(
-      PrefKeys.itemBackgroundImageDark,
-    );
-    if (ThemeBackgroundImageStore.isWarm) {
+    // [P2 回修] 数据安全：任一 keep 读取失败，或四个 keep 全为空时跳过清理
+    //（避免偏好读取异常/空值把用户图片当孤儿删除）；读取失败不影响页面。
+    String containerImageLight = '';
+    String containerImageDark = '';
+    String itemImageLight = '';
+    String itemImageDark = '';
+    var backgroundPrefsReadable = true;
+    try {
+      containerImageLight = await _settings.getStringPref(
+        PrefKeys.largeContainerBackgroundImageLight,
+      );
+      containerImageDark = await _settings.getStringPref(
+        PrefKeys.largeContainerBackgroundImageDark,
+      );
+      itemImageLight = await _settings.getStringPref(
+        PrefKeys.itemBackgroundImageLight,
+      );
+      itemImageDark = await _settings.getStringPref(
+        PrefKeys.itemBackgroundImageDark,
+      );
+    } catch (e) {
+      backgroundPrefsReadable = false;
+      debugPrint('ThemeConfigScreen 读取背景图偏好失败，跳过孤儿清理：$e');
+    }
+    final backgroundKeep = <String>[
+      containerImageLight,
+      containerImageDark,
+      itemImageLight,
+      itemImageDark,
+    ];
+    if (backgroundPrefsReadable &&
+        backgroundKeep.any((value) => value.isNotEmpty) &&
+        ThemeBackgroundImageStore.isWarm) {
       // best effort：清理失败（权限/IO）不得阻断外观页加载
       try {
-        ThemeBackgroundImageStore.cleanupOrphansSync(
-          keep: [
-            containerImageLight,
-            containerImageDark,
-            itemImageLight,
-            itemImageDark,
-          ],
-        );
+        ThemeBackgroundImageStore.cleanupOrphansSync(keep: backgroundKeep);
       } catch (e) {
         debugPrint('ThemeConfigScreen 容器背景图孤儿清理失败（不阻断）：$e');
       }
@@ -600,16 +617,15 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               containerBgForCurrentBrightness,
             );
     // [设置批2b-1b-2b] 项目背景图透明度行：与 Large 图同口径，仅总开关开
-    // 且当前亮暗项目图可用时显示（参考版滑杆在图片管理面板内、随图片出现）。
-    final itemBgForCurrentBrightness =
-        Theme.of(context).brightness == Brightness.dark
-            ? ui.itemBackgroundImageDark
-            : ui.itemBackgroundImageLight;
+    // 且**任一日/夜**项目图可用时显示（[P3] 不在切换亮暗时隐藏，便于统一
+    // 调整；参考版滑杆在图片管理面板内、随图片出现）。
+    final hasUsableItemBgLight =
+        ThemeBackgroundImageStore.isUsableSync(ui.itemBackgroundImageLight);
+    final hasUsableItemBgDark =
+        ThemeBackgroundImageStore.isUsableSync(ui.itemBackgroundImageDark);
     final showGlassCardBackgroundOpacity =
         ui.enableContainerBackgroundImage &&
-            ThemeBackgroundImageStore.isUsableSync(
-              itemBgForCurrentBrightness,
-            );
+            (hasUsableItemBgLight || hasUsableItemBgDark);
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
@@ -972,8 +988,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // - 容器不透明度 containerOpacity 0..100（默认 100），乘调色板
                   //   alpha（参考 GlassCard.kt:74-75），作用于分组卡面与行小卡面；
                   //   [设置批2b-1b-2b] 起同时作用于全局 CardTheme 默认色
-                  //   （未显式 color 的 Card）、IosGroup 与设置首页手写卡片；
-                  //   书架/详情/对话框等剩余 GlassCard 卡面登记 2b-1b-2c。
+                  //   （含显式 shape 但未显式 color 的 Card；显式 color 不受
+                  //   影响）、IosGroup 与设置首页手写卡片；书架/详情/对话框
+                  //   等剩余 GlassCard 卡面登记 2b-1b-2c。
                   // - 大容器背景图自身不透明度 appColumnBackgroundOpacity
                   //   0..100（默认 100；参考 ThemeSettings.kt:61，
                   //   AppContainerBackground.kt:61 对 Large 图 alpha=value/100），
@@ -988,8 +1005,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // - 覆盖卡片圆角 overrideBaseCardCornerRadius +
                   //   baseCardCornerRadius 0..40；作用于 IosGroup 与全局
                   //   CardTheme（参考版 BaseCard/GlassCard 同源分支）。
-                  //   范围：仅未显式 shape 的 Card；18 处显式 shape 的卡片
-                  //   （字典/首页/阅读器内面板等）不在覆盖内，登记 2b-1b-2c。
+                  //   形状覆盖范围：仅未显式 shape 的 Card；18 处显式 shape
+                  //   的卡片（字典/首页/阅读器内面板等）形状不覆盖，登记
+                  //   2b-1b-2c；其底色若未显式 color，仍随 CardTheme 乘 alpha。
                   // - 覆盖卡片边框 overrideBaseCardBorder + 宽度 0..5 + 日夜色
                   //   （0=outlineVariant）；IosGroup 用 foregroundDecoration
                   //   绘制，不改变布局/不裁剪内容。
@@ -1003,6 +1021,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   （参考 AppContainerBackground.kt:51-63）。
                   // - 渲染范围：IosGroup 行卡 + 设置首页手写卡片；图片层在卡面
                   //   色之上、内容之下，`.9.png` 按 centerSlice 拉伸。
+                  //   `.9.png` 仅识别带 npTc 的编译产物（32B 序列化 header、
+                  //   大端 divs）；源码形态（仅黑边/无 npTc）回落普通图
+                  //   cover。100% 图片不遮挡行水波纹（内容层透明 Material）。
+                  //   超过单边 8192 / 32MP 的 `.9` 回落 ResizeImage cover
+                  //   （设备项：超大 `.9` 峰值内存）。
                   // - 登记（2b-1b-2c）：书架/详情/对话框等其余 GlassCard 卡面；
                   //   设置首页仍不渲染大容器图（appColumn 在该页无视觉作用）；
                   //   IosGroup(flat) 扁平模式无卡片面，不参与容器背景/不透明度/
@@ -1086,8 +1109,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     // 参考 container_opacity 滑杆：0..100，默认 100
                     SettingSliderRow(
                       title: '容器不透明度',
-                      subtitle: '0-100；作用于设置分组卡面与设置首页卡片，'
-                          '越低底色越透（文字不受影响）',
+                      subtitle: '0-100；作用于默认卡片（含自定义形状但未设色）'
+                          '与设置分组/设置首页卡面，越低底色越透（文字不受影响）',
                       value: ui.containerOpacity,
                       min: 0,
                       max: 100,

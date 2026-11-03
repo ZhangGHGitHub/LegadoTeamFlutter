@@ -490,7 +490,7 @@ void main() {
     );
   });
 
-  testWidgets('项目背景图透明度行：仅总开关开且当前日/夜项目图可用时显示',
+  testWidgets('项目背景图透明度行：仅总开关开且任一日/夜项目图可用时显示',
       (tester) async {
     await pumpPage(tester);
     await scrollTo(tester, find.text('容器设置'));
@@ -509,8 +509,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('项目背景图透明度'), findsOneWidget);
 
+    // [P3] 仅夜间图可用（当前为亮色）→ 仍显示，切换亮暗不隐藏滑块
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.itemBackgroundImageDark: image,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await tester.pumpAndSettle();
+    expect(find.text('项目背景图透明度'), findsOneWidget);
+
     // 大容器图缺失但项目图可用：项目图行显示、Large 透明度行隐藏（互不影响）
     expect(find.text('大容器背景图透明度'), findsNothing);
+  });
+
+  testWidgets('孤儿清理数据安全：四个 keep 全空时跳过清理', (tester) async {
+    // 预置一个符合自有命名规则的孤儿文件；四个背景图偏好均为空时应跳过
+    final sep = Platform.pathSeparator;
+    final dir = Directory(
+      '${temp.path}$sep${ThemeBackgroundImageStore.subDir}${sep}large_light',
+    )..createSync(recursive: true);
+    final orphan = File(
+      '${dir.path}$sep${List<String>.filled(32, 'a').join()}.png',
+    )..writeAsBytesSync(const <int>[1, 2, 3]);
+
+    await pumpPage(tester);
+    expect(orphan.existsSync(), isTrue,
+        reason: 'keep 全空时不得把磁盘图片当孤儿删除');
   });
 
   testWidgets('项目图选图参数：dialogTitle=选择项目背景图片', (tester) async {

@@ -230,9 +230,10 @@ class AppTheme {
     // 生效（参考 GlassCard.kt:74-75 `it.copy(alpha = it.alpha * alpha)`）。
     // 解析集中到 [resolveCardThemeColor]：**乘**而非替换 alpha，透明调色板
     // 的卡面 role 自带 alpha 时不会被洗成实色（否则会盖住容器图/壁纸）。
-    // 作用范围：使用 CardTheme 默认色的 Card；IosGroup 行卡/设置首页手写
-    // 卡片在外观页另行乘同一 alpha；18 处显式 shape/自定义色卡片不在覆盖内
-    //（沿用 2b-1b-1 登记，2b-1b-2c 迁移）。
+    // 作用范围：使用 CardTheme 默认色的 Card，**包括显式 shape 但未显式
+    // color 的卡片**（Flutter 的 Card.shape 只覆盖形状，color 仍取
+    // CardTheme）；显式 color 的卡片不受影响。18 处显式 shape 卡片的
+    // 圆角/边框仍不在覆盖内（沿用 2b-1b-1 登记，2b-1b-2c 迁移）。
     final cardSurfaceColor = resolveCardThemeColor(
       cardColor,
       uiSettingsListenable.value.containerOpacity,

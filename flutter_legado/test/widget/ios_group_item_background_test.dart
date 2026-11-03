@@ -15,7 +15,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:image/image.dart' as img;
 
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/services/theme_background_image_store.dart';
@@ -28,60 +27,11 @@ final _pngBytes = base64Decode(
   '/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
 );
 
-/// ---- synthetic `.9.png`（npTc 单拉伸区域 2,2..7,7）----
-
-final List<int> _crcTable = List<int>.generate(256, (n) {
-  var c = n;
-  for (var k = 0; k < 8; k++) {
-    c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
-  }
-  return c;
-});
-
-int _crc32(Iterable<int> bytes) {
-  var crc = 0xFFFFFFFF;
-  for (final b in bytes) {
-    crc = _crcTable[(crc ^ b) & 0xFF] ^ (crc >> 8);
-  }
-  return (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF;
-}
-
-Uint8List _pngChunk(String type, List<int> data) {
-  final typeBytes = type.codeUnits;
-  final bytes = Uint8List(8 + data.length + 4);
-  final view = ByteData.sublistView(bytes);
-  view.setUint32(0, data.length, Endian.big);
-  bytes.setRange(4, 8, typeBytes);
-  bytes.setRange(8, 8 + data.length, data);
-  view.setUint32(
-    8 + data.length,
-    _crc32(<int>[...typeBytes, ...data]),
-    Endian.big,
-  );
-  return bytes;
-}
-
-Uint8List _ninePatchPng() {
-  final image = img.Image(width: 9, height: 9);
-  img.fill(image, color: img.ColorRgb8(180, 40, 40));
-  final base = Uint8List.fromList(img.encodePng(image));
-  final ihdrLength = ByteData.sublistView(base, 8, 12).getUint32(0, Endian.big);
-  final ihdrEnd = 8 + 12 + ihdrLength;
-  final npTc = Uint8List(20);
-  final view = ByteData.sublistView(npTc);
-  npTc[0] = 1;
-  npTc[1] = 2;
-  npTc[2] = 2;
-  view.setInt32(4, 2, Endian.little);
-  view.setInt32(8, 7, Endian.little);
-  view.setInt32(12, 2, Endian.little);
-  view.setInt32(16, 7, Endian.little);
-  final out = BytesBuilder(copy: false)
-    ..add(base.sublist(0, ihdrEnd))
-    ..add(_pngChunk('npTc', npTc))
-    ..add(base.sublist(ihdrEnd));
-  return out.toBytes();
-}
+/// 真实 fixture：参考版 release APK res/0x.9.png（12x12，单拉伸区域
+/// x/y divs=(4,8)，npTc 为文件序列化格式）与去除 npTc 的源码形态 `.9.png`
+const String _fixture0x = 'test/fixtures/nine_patch_0x.9.png';
+const String _fixtureNoNpTc =
+    'test/fixtures/nine_patch_source_no_nptc.9.png';
 
 void main() {
   late Directory temp;
@@ -157,12 +107,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(itemBg(0), findsNothing);
     expect(find.byType(GlassCardBackground), findsNothing);
-    final rows = tester.widgetList<Material>(
-      find.descendant(
-        of: find.byType(IosGroup),
-        matching: find.byType(Material),
-      ),
-    );
+    final rows = tester
+        .widgetList<Material>(
+          find.descendant(
+            of: find.byType(IosGroup),
+            matching: find.byType(Material),
+          ),
+        )
+        .where((m) => m.color != null)
+        .toList();
     expect(rows.length, 2);
     for (final row in rows) {
       expect(row.color!.a, closeTo(1.0, 0.001));
@@ -189,13 +142,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(itemBg(0), findsOneWidget);
-    // 最近的 Stack 是行卡内层：第 0 层图片、第 1 层行内容
+    // 恒 Stack：第 0 层图片、第 1 层透明 Material 承载行内容
     final stack = tester.widget<Stack>(
       find.ancestor(of: itemBg(0), matching: find.byType(Stack)).first,
     );
     expect(stack.children.length, 2);
     expect(stack.children.first, isA<Positioned>());
-    expect(stack.children.last, isA<IosListTile>());
+    final contentMaterial = stack.children.last as Material;
+    expect(contentMaterial.type, MaterialType.transparency,
+        reason: '内容层透明 Material 在水波纹/图片之上（100% 仍可见）');
+
+    // 行内容 InkWell 最近 Material 是透明内容层（绘制在项目图之上）
+    final inkWell = find
+        .descendant(of: find.byType(IosGroup), matching: find.byType(InkWell))
+        .first;
+    final inkMaterial = tester.widget<Material>(
+      find.ancestor(of: inkWell, matching: find.byType(Material)).first,
+    );
+    expect(inkMaterial.type, MaterialType.transparency,
+        reason: '项目图 100% 时水波纹仍画在图片之上');
 
     // 图片在行卡 Material 内（Material 即卡面底色层）
     final material = tester.widget<Material>(
@@ -329,11 +294,12 @@ void main() {
     expect(find.text('测试行'), findsOneWidget);
   });
 
-  testWidgets('`.9.png` 项目图：centerSlice + BoxFit.fill（不模糊）', (tester) async {
+  testWidgets('真实 `.9.png` fixture：centerSlice=(4,4,8,8) + BoxFit.fill',
+      (tester) async {
     final nine = await storeBytes(
       tester,
       'item_light',
-      bytes: _ninePatchPng(),
+      bytes: Uint8List.fromList(File(_fixture0x).readAsBytesSync()),
       name: 'frame.9.png',
     );
     expect(nine, endsWith('.9.png'));
@@ -345,7 +311,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     final image = tester.widget<Image>(itemImage(0));
-    expect(image.centerSlice, const Rect.fromLTRB(2, 2, 7, 7));
+    expect(image.centerSlice, const Rect.fromLTRB(4, 4, 8, 8));
     expect(
       image.fit,
       BoxFit.fill,
@@ -359,16 +325,16 @@ void main() {
     expect(tester.widget<Opacity>(itemOpacity(0)).opacity, closeTo(1.0, 0.001));
   });
 
-  testWidgets('`.9.png` 解析失败（无 npTc）→ 回落普通图 cover', (tester) async {
-    final fakeNine = await storeBytes(
+  testWidgets('源码形态 `.9.png`（无 npTc）→ 回落普通图 cover', (tester) async {
+    final sourceNine = await storeBytes(
       tester,
       'item_light',
-      bytes: Uint8List.fromList(_pngBytes),
-      name: 'fake.9.png',
+      bytes: Uint8List.fromList(File(_fixtureNoNpTc).readAsBytesSync()),
+      name: 'source.9.png',
     );
     uiSettingsListenable.value = UiSettingsState(
       enableContainerBackgroundImage: true,
-      itemBackgroundImageLight: fakeNine,
+      itemBackgroundImageLight: sourceNine,
     );
     await tester.pumpWidget(wrap(onTap: null));
     await tester.pump(const Duration(milliseconds: 300));
@@ -383,7 +349,7 @@ void main() {
     final nine = await storeBytes(
       tester,
       'large_light',
-      bytes: _ninePatchPng(),
+      bytes: Uint8List.fromList(File(_fixture0x).readAsBytesSync()),
       name: 'large.9.png',
     );
     uiSettingsListenable.value = UiSettingsState(
@@ -396,7 +362,7 @@ void main() {
     final image = tester.widget<Image>(
       find.byKey(const ValueKey('ios-group-container-background')),
     );
-    expect(image.centerSlice, const Rect.fromLTRB(2, 2, 7, 7));
+    expect(image.centerSlice, const Rect.fromLTRB(4, 4, 8, 8));
     expect(image.fit, BoxFit.fill);
     expect(image.image, isA<FileImage>());
   });

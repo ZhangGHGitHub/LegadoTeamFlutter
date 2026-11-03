@@ -123,7 +123,21 @@ void main() {
     );
     expect(stack.children.length, 2);
     expect(stack.children.first, isA<Positioned>());
-    expect(stack.children.last, isA<InkWell>());
+    final contentMaterial = stack.children.last as Material;
+    expect(contentMaterial.type, MaterialType.transparency,
+        reason: '内容层透明 Material 在水波纹/图片之上（100% 仍可见）');
+
+    // InkWell 最近 Material 是透明内容层 → 水波纹画在项目图之上
+    final inkWell = find
+        .descendant(
+          of: find.ancestor(of: itemBg(0), matching: find.byType(Stack)).first,
+          matching: find.byType(InkWell),
+        )
+        .first;
+    final inkMaterial = tester.widget<Material>(
+      find.ancestor(of: inkWell, matching: find.byType(Material)).first,
+    );
+    expect(inkMaterial.type, MaterialType.transparency);
 
     final material = tester.widget<Material>(
       find.ancestor(of: itemBg(0), matching: find.byType(Material)).first,

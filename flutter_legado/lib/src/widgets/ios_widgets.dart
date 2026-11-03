@@ -323,35 +323,41 @@ class IosGroup extends StatelessWidget {
                       children: [
                         for (var i = 0; i < children.length; i++) ...[
                           Material(
+                            key: ValueKey('ios-group-row-$i'),
                             color: rowSurface.withValues(
                               alpha: rowSurface.a * opacity,
                             ),
                             borderRadius: rowRadius,
                             clipBehavior: Clip.antiAlias,
-                            // [设置批2b-1b-2b] 项目图在行卡底色之上、行内容
-                            // 之下（参考 BaseCardContent 的 Spacer + Column）；
-                            // 无项目图时保持原树（children[i] 直接作为 child）。
-                            child: hasItemImage
-                                ? Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: GlassCardBackground(
-                                          key: ValueKey(
-                                              'ios-group-item-background-$i'),
-                                          path: itemImagePath,
-                                          opacityPercent:
-                                              ui.glassCardBackgroundOpacity,
-                                          borderRadius: rowRadius,
-                                          opacityKey: ValueKey(
-                                              'ios-group-item-background-opacity-$i'),
-                                          imageKey: ValueKey(
-                                              'ios-group-item-background-image-$i'),
-                                        ),
-                                      ),
-                                      children[i],
-                                    ],
-                                  )
-                                : children[i],
+                            // [设置批2b-1b-2b P2] 行树恒定 Stack：
+                            // - 有项目图时第 0 层为图片（卡面色之上）；
+                            // - 第 1 层恒为透明 Material 承载行内容：ListTile/
+                            //   InkWell 的水波纹画在该层（图片之上），项目图
+                            //   100% 不透明时仍可见；无图时结构不变，避免
+                            //   图片开关导致 Element 类型切换丢状态。
+                            child: Stack(
+                              children: [
+                                if (hasItemImage)
+                                  Positioned.fill(
+                                    child: GlassCardBackground(
+                                      key: ValueKey(
+                                          'ios-group-item-background-$i'),
+                                      path: itemImagePath,
+                                      opacityPercent:
+                                          ui.glassCardBackgroundOpacity,
+                                      borderRadius: rowRadius,
+                                      opacityKey: ValueKey(
+                                          'ios-group-item-background-opacity-$i'),
+                                      imageKey: ValueKey(
+                                          'ios-group-item-background-image-$i'),
+                                    ),
+                                  ),
+                                Material(
+                                  type: MaterialType.transparency,
+                                  child: children[i],
+                                ),
+                              ],
+                            ),
                           ),
                           if (i != children.length - 1) ...[
                             const SizedBox(height: 2),

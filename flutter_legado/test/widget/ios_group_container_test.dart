@@ -22,6 +22,11 @@ final _pngBytes = base64Decode(
   '/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
 );
 
+/// 行卡 Material（color 非空）；排除项目图内容层的透明 Material
+final Finder _rowCardFinder = find.byWidgetPredicate(
+  (w) => w is Material && w.color != null,
+);
+
 void main() {
   late Directory temp;
   late Future<Directory> Function() originalSupportDir;
@@ -139,7 +144,7 @@ void main() {
     );
     final rowFinder = find.descendant(
       of: find.byType(IosGroup),
-      matching: find.byType(Material),
+      matching: _rowCardFinder,
     );
     final rows = tester.widgetList<Material>(rowFinder);
     expect(rows.length, 2);
@@ -182,7 +187,7 @@ void main() {
     expect(surface.padding, isNull);
     final rowFinder = find.descendant(
       of: find.byType(IosGroup),
-      matching: find.byType(Material),
+      matching: _rowCardFinder,
     );
     final row = tester.widget<Material>(rowFinder);
     expect(row.color!.a, closeTo(0.5, 0.001));
@@ -218,7 +223,7 @@ void main() {
     );
     final rowFinder = find.descendant(
       of: find.byType(IosGroup),
-      matching: find.byType(Material),
+      matching: _rowCardFinder,
     );
     final surfaceFinder = groupSurface();
 
@@ -280,7 +285,7 @@ void main() {
     final surface = tester.widget<Container>(groupSurface());
     expect((surface.decoration as BoxDecoration).color, isNull);
     final row = tester.widget<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+      find.descendant(of: find.byType(IosGroup), matching: _rowCardFinder),
     );
     expect(row.color!.a, closeTo(0.4, 0.001),
         reason: '行卡 alpha 只受 containerOpacity 控制');
@@ -307,7 +312,7 @@ void main() {
     expect((surface.decoration as BoxDecoration).color, isNull);
     final theme = Theme.of(tester.element(find.byType(IosGroup)));
     final rows = tester.widgetList<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+      find.descendant(of: find.byType(IosGroup), matching: _rowCardFinder),
     );
     expect(rows.length, 1);
     expect(rows.first.color!.a, closeTo(1.0, 0.001));
@@ -323,7 +328,7 @@ void main() {
     final surface = tester.widget<Container>(groupSurface());
     expect((surface.decoration as BoxDecoration).color, isNull);
     final row = tester.widget<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+      find.descendant(of: find.byType(IosGroup), matching: _rowCardFinder),
     );
     expect(row.color!.a, closeTo(0.5, 0.001));
   });
@@ -350,7 +355,7 @@ void main() {
     await tester.pumpAndSettle();
 
     var row = tester.widget<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+      find.descendant(of: find.byType(IosGroup), matching: _rowCardFinder),
     );
     expect(row.color!.a, closeTo(0.2, 0.001),
         reason: '100% 时必须保留 surfaceContainerLow 的 0x33 alpha');
@@ -358,7 +363,7 @@ void main() {
     uiSettingsListenable.value = const UiSettingsState(containerOpacity: 50);
     await tester.pumpAndSettle();
     row = tester.widget<Material>(
-      find.descendant(of: find.byType(IosGroup), matching: find.byType(Material)),
+      find.descendant(of: find.byType(IosGroup), matching: _rowCardFinder),
     );
     expect(row.color!.a, closeTo(0.1, 0.001),
         reason: '50% 应为调色板 alpha 0.2 × 0.5');

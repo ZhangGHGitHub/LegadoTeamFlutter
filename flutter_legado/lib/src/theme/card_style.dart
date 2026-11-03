@@ -71,6 +71,8 @@ BorderSide? resolveBaseCardBorderSide(
 /// （`it.copy(alpha = it.alpha * alpha)`）同口径：**乘**原 alpha 而非
 /// 替换，透明调色板的卡面 role（如 `0x33FFFFFF`）不会被洗成实色。
 /// 100% 保持原 alpha；0 完全透明（露出壁纸/容器图）；越界按 0..100 钳制。
+/// 覆盖所有使用 CardTheme 默认色的 Card：显式 shape 但未显式 color 的卡片
+/// 同样继承该 color（Flutter 的 shape 只覆盖形状）；显式 color 不受影响。
 Color resolveCardThemeColor(Color cardColor, int containerOpacityPercent) {
   final opacity = (containerOpacityPercent / 100).clamp(0.0, 1.0);
   return cardColor.withValues(alpha: cardColor.a * opacity);

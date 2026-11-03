@@ -30,6 +30,12 @@ void main() {
             color: Color(0xFF3366CC),
             child: ListTile(title: Text('自定义色卡片')),
           ),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(4)),
+            ),
+            child: ListTile(title: Text('自定义形状卡片')),
+          ),
         ],
       ),
     ),
@@ -54,6 +60,11 @@ void main() {
     expect(materialColor(tester, '默认卡片'), theme.cardTheme.color);
     expect(materialColor(tester, '默认卡片')!.a, closeTo(1.0, 0.001));
     expect(materialColor(tester, '自定义色卡片'), const Color(0xFF3366CC));
+    expect(
+      materialColor(tester, '自定义形状卡片'),
+      theme.cardTheme.color,
+      reason: '显式 shape 但未显式 color：color 仍继承 CardTheme',
+    );
   });
 
   testWidgets('containerOpacity 50：默认卡片 alpha=0.5，显式色仍不透明', (tester) async {
@@ -66,6 +77,11 @@ void main() {
       materialColor(tester, '自定义色卡片')!.a,
       closeTo(1.0, 0.001),
       reason: '显式 color 的卡片不在 CardTheme 覆盖内',
+    );
+    expect(
+      materialColor(tester, '自定义形状卡片')!.a,
+      closeTo(0.5, 0.001),
+      reason: '显式 shape 未显式 color 的卡片同样乘 alpha',
     );
 
     // 暗色卡面 role（surfaceContainerLow）同样乘 alpha
