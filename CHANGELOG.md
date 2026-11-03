@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.447] - 2026-11-04
+
+### Added
+- [UI] 阅读设置新增「点击图片方式」五档（预览/兼容/关闭/双击/默认）；图片主导页面按档位处理点击，支持复合图片 URL 的 click/action/headers 解析与全屏预览。
+### Known limitations
+- 文本行内 `<img>` 渲染需重写排版引擎（对象断行/变高行/尺寸预测量，约 3–5 天），当前混排章节仍不渲染行内图。
+- 图片 click/js action 执行需要绑定书源 JS 上下文，当前 `BookApi.evalJs` 不满足；2/默认/双击命中 action 时回退预览。
+
 ## [2.0.446] - 2026-11-04
 
 ### Added
