@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.445] - 2026-11-03
+
+### Added
+- [UI] 漫画图片保留数真正生效：0=不清理；N>0 时保留当前章及前后窗口章节的图片，删除本书其余已缓存图片（默认改为 0，存量设置保留）。
+### Fixed
+- [Rust] 图片保留窗口仅要求当前章与后窗章节有缓存正文，前窗缺失跳过单章；卷章、复合图片 URL（`url,{json}`）、首图 `imgUrl` 均正确处理；窗口查询只加载所需章节正文。
+
 ## [2.0.444] - 2026-11-03
 
 ### Fixed
