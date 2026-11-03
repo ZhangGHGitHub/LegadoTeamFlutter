@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.450] - 2026-11-04
+
+### Fixed
+- [UI] 耳机媒体键「从最近阅读启动朗读」兼容本仓库 Rust 域本地书类型（type=4096 无 text 位），本地导入 TXT 不再被过滤；cbz 漫画与本地音频书不误判。
+- [Android] 停止朗读后残留的 MediaSession（STOPPED）不再吞掉媒体键，按键转为交 Flutter 按用户偏好重新决策；暂停中的播放/恢复仍由会话处理。
+
 ## [2.0.449] - 2026-11-04
 
 ### Added

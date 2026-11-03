@@ -1,0 +1,106 @@
+--------- beginning of main
+I/sh      (47275): type=1400 audit(0.0:17440): avc:  denied  { getattr } for  path="/system/bin/input" dev="sda6" ino=272 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+I/sh      (47275): type=1400 audit(0.0:17441): avc:  denied  { open } for  path="/system/bin/input" dev="sda6" ino=272 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+I/sh      (47275): type=1400 audit(0.0:17442): avc:  denied  { execute_no_trans } for  path="/system/bin/input" dev="sda6" ino=272 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+W/screencap(47307): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+W/BpBinder(47307): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+W/ProcessState(47307): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+D/gralloc_kona(  712): gralloc_alloc: Creating ashmem region of size 8298496
+E/HidlServiceManagement(47307): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+W/screencap(47307): Cannot open renderer configuration file (nemuhotd pid=499)
+--------- beginning of system
+D/PowerUI ( 1085): can't show warning due to - plugged: true status unknown: false
+I/serial_console(47311): type=1400 audit(0.0:17443): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=774 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+I/serial_console(47311): type=1400 audit(0.0:17444): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=774 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+I/sh      (47312): type=1400 audit(0.0:17445): avc:  denied  { write search } for  name="tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+I/sh      (47312): type=1400 audit(0.0:17446): avc:  denied  { getattr } for  path="/data/local/tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+I/cmd     (47320): type=1400 audit(0.0:17447): avc:  denied  { use } for  path="socket:[658245]" dev="sockfs" ino=658245 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=fd permissive=1
+I/MediaFocusControl(  837): requestAudioFocus() from uid/pid 10066/46732 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@3986b90X0.b@a0bdc89 callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+I/AS.FadeOutManager(  837): unfadeOutUid() uid:10066
+I/MediaSessionStack(  837): onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/5 (userId=0)
+D/MediaSessionService(  837): onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=50291828, actions=3670015, custom actions=[], active item id=-1, error=null}
+D/BackgroundInstallControlService(  837): Package event received: 0
+I/ActivityManager(  837): Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10066; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+D/BackgroundInstallControlService(  837): Package event received: 0
+W/NotificationHistory(  837): Attempted to add notif for locked/gone/disabled user 0
+D/BackgroundInstallControlService(  837): Package event received: 0
+D/MediaResumeListener( 1085): Checking for service component for io.legado.flutter_legado
+W/ConstraintSet( 1085): id unknown center_vertical_guideline
+W/ConstraintSet( 1085): id unknown action_button_guideline
+W/ConstraintSet( 1085): id unknown icon
+W/ConstraintSet( 1085): id unknown media_seamless
+W/ConstraintSet( 1085): id unknown media_action_barrier_start
+W/ConstraintSet( 1085): id unknown media_action_barrier_end
+W/ConstraintSet( 1085): id unknown media_action_barrier_top
+W/ConstraintSet( 1085): id unknown remove_text
+W/ConstraintSet( 1085): id unknown settings
+W/ConstraintSet( 1085): id unknown dismiss
+W/ConstraintSet( 1085): id unknown cancel
+W/ConstraintSet( 1085): id unknown center_vertical_guideline
+W/ConstraintSet( 1085): id unknown action_button_guideline
+W/ConstraintSet( 1085): id unknown icon
+W/ConstraintSet( 1085): id unknown media_seamless
+W/ConstraintSet( 1085): id unknown media_action_barrier_start
+W/ConstraintSet( 1085): id unknown media_action_barrier_end
+W/ConstraintSet( 1085): id unknown media_action_barrier_top
+W/ConstraintSet( 1085): id unknown remove_text
+W/ConstraintSet( 1085): id unknown settings
+W/ConstraintSet( 1085): id unknown dismiss
+W/ConstraintSet( 1085): id unknown cancel
+W/ConstraintSet( 1085): id unknown center_vertical_guideline
+W/ConstraintSet( 1085): id unknown action_button_guideline
+W/ConstraintSet( 1085): id unknown icon
+W/ConstraintSet( 1085): id unknown media_seamless
+W/ConstraintSet( 1085): id unknown media_action_barrier_start
+W/ConstraintSet( 1085): id unknown media_action_barrier_end
+W/ConstraintSet( 1085): id unknown media_action_barrier_top
+W/ConstraintSet( 1085): id unknown remove_text
+W/ConstraintSet( 1085): id unknown settings
+W/ConstraintSet( 1085): id unknown dismiss
+W/ConstraintSet( 1085): id unknown cancel
+D/gralloc_kona( 1085): gralloc_alloc: Creating ashmem region of size 12288
+W/HWUI    ( 1085): Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+W/HWUI    ( 1085): Image decoding logging dropped!
+W/ConstraintSet( 1085): id unknown center_vertical_guideline
+W/ConstraintSet( 1085): id unknown action_button_guideline
+W/ConstraintSet( 1085): id unknown icon
+W/ConstraintSet( 1085): id unknown media_seamless
+W/ConstraintSet( 1085): id unknown media_action_barrier_start
+W/ConstraintSet( 1085): id unknown media_action_barrier_end
+W/ConstraintSet( 1085): id unknown media_action_barrier_top
+W/ConstraintSet( 1085): id unknown remove_text
+W/ConstraintSet( 1085): id unknown settings
+W/ConstraintSet( 1085): id unknown dismiss
+W/ConstraintSet( 1085): id unknown cancel
+W/ConstraintSet( 1085): id unknown center_vertical_guideline
+W/ConstraintSet( 1085): id unknown action_button_guideline
+W/ConstraintSet( 1085): id unknown icon
+W/ConstraintSet( 1085): id unknown media_seamless
+W/ConstraintSet( 1085): id unknown media_action_barrier_start
+W/ConstraintSet( 1085): id unknown media_action_barrier_end
+W/ConstraintSet( 1085): id unknown media_action_barrier_top
+W/ConstraintSet( 1085): id unknown remove_text
+W/ConstraintSet( 1085): id unknown settings
+W/ConstraintSet( 1085): id unknown dismiss
+W/ConstraintSet( 1085): id unknown cancel
+W/screencap(47331): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+W/BpBinder(47331): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+W/ProcessState(47331): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+D/gralloc_kona(  712): gralloc_alloc: Creating ashmem region of size 8298496
+E/HidlServiceManagement(47331): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+W/screencap(47331): Cannot open renderer configuration file (nemuhotd pid=499)
+I/binder:712_3(  712): type=1400 audit(0.0:17448): avc:  denied  { call } for  scontext=u:r:surfaceflinger:s0 tcontext=u:r:su:s0 tclass=binder permissive=1
+I/binder:47331_1(47331): type=1400 audit(0.0:17449): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:hwservicemanager:s0 tclass=binder permissive=1
+I/MediaFocusControl(  837): abandonAudioFocus() from uid/pid 10066/46732 clientId=android.media.AudioManager@3986b90X0.b@a0bdc89 callingPack=io.legado.flutter_legado
+D/MediaSessionService(  837): onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=50294530, actions=3670015, custom actions=[], active item id=-1, error=null}
+D/BackgroundInstallControlService(  837): Package event received: 0
+W/ForegroundServiceTypeLoggerModule(  837): Logger should be tracking FGS types correctly for UID 10066 in package io.legado.flutter_legado
+D/BackgroundInstallControlService(  837): Package event received: 0
+D/MediaDataManager( 1085): State updated outside of notification
+D/NotificationMediaManager( 1085): Not dismissing 0|io.legado.flutter_legado|7776|null|10066 because it was removed by the system
+W/screencap(47351): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+W/BpBinder(47351): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+W/ProcessState(47351): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+D/gralloc_kona(  712): gralloc_alloc: Creating ashmem region of size 8298496
+E/HidlServiceManagement(47351): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+W/screencap(47351): Cannot open renderer configuration file (nemuhotd pid=499)

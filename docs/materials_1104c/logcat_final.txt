@@ -1,0 +1,775 @@
+--------- beginning of main
+11-04 04:56:56.546 I/sh      (47548): type=1400 audit(0.0:17563): avc:  denied  { read open } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-04 04:56:56.546 I/sh      (47548): type=1400 audit(0.0:17564): avc:  denied  { execute_no_trans } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-04 04:56:56.546 I/logcat  (47548): type=1400 audit(0.0:17565): avc:  denied  { map } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-04 04:56:56.697 I/ActivityManager(  837): Broadcasting: Intent { flg=0x400000 cmp=io.legado.qa.mediakey/.SendReceiver (has extras) }
+--------- beginning of system
+11-04 04:56:56.698 I/ActivityManager(  837): Enqueued broadcast Intent { flg=0x400000 cmp=io.legado.qa.mediakey/.SendReceiver (has extras) }: 0
+11-04 04:56:56.698 D/ActivityManager(  837): sync unfroze 45773 io.legado.qa.mediakey for 3
+11-04 04:56:56.698 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:56:56.700 I/QAMediaKey(45773): sent key=85 action=0 repeat=0 idx=0/1
+11-04 04:56:56.700 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:56:56.700 D/MediaButtonReceiver(47425): 转发耳机键到 Flutter（keyCode=85）
+11-04 04:56:56.700 I/ActivityManager(  837): Broadcast completed: result=0
+11-04 04:56:56.701 I/flutter (47425): [耳机按键] 从最近阅读启动朗读：qa_9b5_book
+11-04 04:56:56.704 I/MediaSessionStack(  837): addSession to bottom of stack | record: io.legado.flutter_legado/legado_flutter_media/6 (userId=0)
+11-04 04:56:56.705 D/MediaSessionService(  837): onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/6 (userId=0) playbackState=null
+11-04 04:56:56.710 I/MediaFocusControl(  837): requestAudioFocus() from uid/pid 10066/47425 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@48cd17aX0.b@6248d2b callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-04 04:56:56.711 I/AS.FadeOutManager(  837): unfadeOutUid() uid:10066
+11-04 04:56:56.712 I/MediaSessionStack(  837): onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/6 (userId=0)
+11-04 04:56:56.712 D/MediaSessionService(  837): onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/6 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=50361566, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-04 04:56:56.712 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:56:56.713 I/ActivityManager(  837): Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10066; uidState: LAST; uidBFSL: n/a; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:ACTIVITY_VISIBILITY_GRACE_PERIOD; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-04 04:56:56.716 W/ActivityManager(  837): Foreground service started from background can not have location/camera/microphone access: service io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService
+11-04 04:56:56.716 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:56:56.919 W/NotificationHistory(  837): Attempted to add notif for locked/gone/disabled user 0
+11-04 04:56:56.919 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:56:57.129 W/HWUI    ( 1085): Image decoding logging dropped!
+11-04 04:56:57.323 D/MediaResumeListener( 1085): Checking for service component for io.legado.flutter_legado
+11-04 04:56:57.330 W/HWUI    ( 1085): Image decoding logging dropped!
+11-04 04:56:57.330 W/HWUI    ( 1085): Image decoding logging dropped!
+11-04 04:56:57.330 W/HWUI    ( 1085): Image decoding logging dropped!
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown center_vertical_guideline
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown action_button_guideline
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown icon
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown media_seamless
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown media_action_barrier_start
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown media_action_barrier_end
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown media_action_barrier_top
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown remove_text
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown settings
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown dismiss
+11-04 04:56:57.332 W/ConstraintSet( 1085): id unknown cancel
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown center_vertical_guideline
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown action_button_guideline
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown icon
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown media_seamless
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown media_action_barrier_start
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown media_action_barrier_end
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown media_action_barrier_top
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown remove_text
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown settings
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown dismiss
+11-04 04:56:57.334 W/ConstraintSet( 1085): id unknown cancel
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown center_vertical_guideline
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown action_button_guideline
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown icon
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown media_seamless
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown media_action_barrier_start
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown media_action_barrier_end
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown media_action_barrier_top
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown remove_text
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown settings
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown dismiss
+11-04 04:56:57.335 W/ConstraintSet( 1085): id unknown cancel
+11-04 04:56:57.345 D/gralloc_kona( 1085): gralloc_alloc: Creating ashmem region of size 12288
+11-04 04:56:57.346 W/HWUI    ( 1085): Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-04 04:56:57.351 W/HWUI    ( 1085): Image decoding logging dropped!
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown center_vertical_guideline
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown action_button_guideline
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown icon
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown media_seamless
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown media_action_barrier_start
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown media_action_barrier_end
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown media_action_barrier_top
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown remove_text
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown settings
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown dismiss
+11-04 04:56:57.428 W/ConstraintSet( 1085): id unknown cancel
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown center_vertical_guideline
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown action_button_guideline
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown icon
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown media_seamless
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown media_action_barrier_start
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown media_action_barrier_end
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown media_action_barrier_top
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown remove_text
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown settings
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown dismiss
+11-04 04:56:57.745 W/ConstraintSet( 1085): id unknown cancel
+11-04 04:56:59.718 I/init    (47556): type=1400 audit(0.0:17572): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-04 04:56:59.718 I/init    (47556): type=1400 audit(0.0:17573): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-04 04:56:59.718 I/serial_console(47556): type=1400 audit(0.0:17574): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-04 04:56:59.718 I/serial_console(47556): type=1400 audit(0.0:17575): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-04 04:57:00.746 I/logcat  (47557): type=1400 audit(0.0:17576): avc:  denied  { read } for  name="u:object_r:default_prop:s0" dev="tmpfs" ino=202 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-04 04:57:00.746 I/logcat  (47557): type=1400 audit(0.0:17577): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:default_prop:s0" dev="tmpfs" ino=202 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-04 04:57:00.746 I/logcat  (47557): type=1400 audit(0.0:17578): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:default_prop:s0" dev="tmpfs" ino=202 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-04 04:57:00.746 I/logcat  (47557): type=1400 audit(0.0:17579): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:default_prop:s0" dev="tmpfs" ino=202 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-04 04:57:00.746 I/logcat  (47557): type=1400 audit(0.0:17580): avc:  denied  { write } for  name="logdr" dev="tmpfs" ino=923 scontext=u:r:su:s0 tcontext=u:object_r:logdr_socket:s0 tclass=sock_file permissive=1
+11-04 04:57:00.746 I/adbd    ( 3125): type=1400 audit(0.0:17581): avc:  denied  { write } for  path="socket:[45059]" dev="sockfs" ino=45059 scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=tcp_socket permissive=1
+11-04 04:57:00.795 W/dumpsys (47560): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-04 04:57:00.834 W/dumpsys (47563): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-04 04:57:00.873 W/dumpsys (47566): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-04 04:57:00.913 W/dumpsys (47569): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-04 04:57:01.034 W/screencap(47574): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-04 04:57:01.034 W/BpBinder(47574): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-04 04:57:01.034 W/ProcessState(47574): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-04 04:57:01.034 D/gralloc_kona(  712): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:01.037 E/HidlServiceManagement(47574): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-04 04:57:01.038 W/screencap(47574): Cannot open renderer configuration file (nemuhotd pid=499)
+11-04 04:57:06.710 D/ActivityManager(  837): freezing 45773 io.legado.qa.mediakey
+11-04 04:57:06.711 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-04 04:57:06.711 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-04 04:57:06.711 D/InetDiagMessage(  837): Destroyed live tcp sockets for uids={10055} in 0ms
+11-04 04:57:12.833 W/dumpsys (47578): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-04 04:57:12.885 I/ActivityManager(  837): Force stopping io.legado.flutter_legado appid=10066 user=0: from pid 47583
+11-04 04:57:12.887 D/DisplayManagerService(  837): Drop pending events for gone uid 10066
+11-04 04:57:12.878 I/cmd     (47583): type=1400 audit(0.0:17598): avc:  denied  { read write } for  path="socket:[660925]" dev="sockfs" ino=660925 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-04 04:57:12.892 I/ActivityManager(  837): Killing 47425:io.legado.flutter_legado/u0a66 (adj 50): stop io.legado.flutter_legado due to from pid 47583
+11-04 04:57:12.893 E/AppOps  (  837): Operation not started: uid=10066 pkg=io.legado.flutter_legado(null) op=START_FOREGROUND
+11-04 04:57:12.893 W/ForegroundServiceTypeLoggerModule(  837): Logger should be tracking FGS types correctly for UID 10066 in package io.legado.flutter_legado
+11-04 04:57:12.894 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-04 04:57:12.894 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-04 04:57:12.894 W/ActivityTaskManager(  837): Force removing ActivityRecord{163009209 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity t1056 f}}: app died, no saved state
+11-04 04:57:12.895 D/InetDiagMessage(  837): Destroyed live tcp sockets for uids={10066} in 0ms
+11-04 04:57:12.895 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:12.895 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-04 04:57:12.896 W/UsageStatsService(  837): Unexpected activity event reported! (io.legado.flutter_legado/io.legado.flutter.MainActivity event : 23 instanceId : 48385631)
+11-04 04:57:12.897 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-04 04:57:12.897 D/InetDiagMessage(  837): Destroyed live tcp sockets for uids={20066} in 2ms
+11-04 04:57:12.897 I/AppsFilter(  837): interaction: PackageSetting{56506fd com.android.adbkeyboard/10056} -> PackageSetting{b0d075e io.legado.flutter_legado/10066} BLOCKED
+11-04 04:57:12.901 I/system_server(  837): AssetManager2(0x79bb0a9094f8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.902 I/system_server(  837): AssetManager2(0x79bb0a969cb8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.902 I/system_server(  837): AssetManager2(0x79bb0a8ffef8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.902 I/system_server(  837): AssetManager2(0x79bb0a8f01d8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.902 E/SingleInstanceRemoteListener( 1085): Failed remote call on null listener
+11-04 04:57:12.902 I/system_server(  837): AssetManager2(0x79bb0a8ea738) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.902 I/system_server(  837): AssetManager2(0x79bb0a913458) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.903 I/system_server(  837): AssetManager2(0x79bb0a911e78) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.903 I/system_server(  837): AssetManager2(0x79bb0a8e9478) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.903 I/system_server(  837): AssetManager2(0x79bb0a8ea0f8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.904 I/system_server(  837): AssetManager2(0x79bb0a8e3078) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.904 I/system_server(  837): AssetManager2(0x79bb0a8e4338) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.904 I/system_server(  837): AssetManager2(0x79bb0a8e39d8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.905 I/system_server(  837): AssetManager2(0x79bb0a8eb9f8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.905 I/system_server(  837): AssetManager2(0x79bb0a8f4698) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.905 I/system_server(  837): AssetManager2(0x79bb0a931278) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.905 I/system_server(  837): AssetManager2(0x79bb0a8fef58) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.906 I/system_server(  837): AssetManager2(0x79bb0a8f8518) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.906 I/system_server(  837): AssetManager2(0x79bb0a9366d8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.906 I/system_server(  837): AssetManager2(0x79bb0a93e0b8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.906 I/system_server(  837): AssetManager2(0x79bb0a8e6bd8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.907 I/system_server(  837): AssetManager2(0x79bb0a8ed618) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.894 I/binder:837_B(  837): type=1400 audit(0.0:17599): avc:  denied  { call } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=binder permissive=1
+11-04 04:57:12.907 I/system_server(  837): AssetManager2(0x79bb0a8ef878) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.907 I/system_server(  837): AssetManager2(0x79bb0a8eef18) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.908 D/NotificationMediaManager( 1085): Not dismissing 0|io.legado.flutter_legado|7776|null|10066 because it was removed by the system
+11-04 04:57:12.908 I/system_server(  837): AssetManager2(0x79bb0a8f2118) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.909 I/system_server(  837): AssetManager2(0x79bb0a8eb098) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.909 I/system_server(  837): AssetManager2(0x79bb0a8eccb8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.909 I/system_server(  837): AssetManager2(0x79bb0a8f0e58) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.909 I/system_server(  837): AssetManager2(0x79bb0a8e7218) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.910 I/system_server(  837): AssetManager2(0x79bb0a8e4018) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.910 I/system_server(  837): AssetManager2(0x79bb0a906c58) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.911 I/system_server(  837): AssetManager2(0x79bb0a9046d8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.911 I/system_server(  837): AssetManager2(0x79bb0a9049f8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.911 I/system_server(  837): AssetManager2(0x79bb0a8f6c18) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.912 I/system_server(  837): AssetManager2(0x79bb0a8f4cd8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.912 I/system_server(  837): AssetManager2(0x79bb0a8deed8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.913 I/system_server(  837): AssetManager2(0x79bb0a8fc078) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.913 I/system_server(  837): AssetManager2(0x79bb0a8fd658) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.913 I/system_server(  837): AssetManager2(0x79bb0a8e4978) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:12.915 E/ActivityManager(  837): Sending non-protected broadcast uu.intent.action.STOP_ACCELERATE from system 837:system/1000 pkg android
+11-04 04:57:12.915 E/ActivityManager(  837): java.lang.Throwable
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.wm.TaskUtils.$r8$lambda$zCiVPiagCM9gvj0qkEpNf1ODT4k(TaskUtils.java:2205)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda5.run(R8$$SyntheticClass:0)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.os.Handler.handleCallback(Handler.java:991)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.os.Looper.loop(Looper.java:317)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-04 04:57:12.915 E/ActivityManager(  837): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-04 04:57:12.894 I/binder:837_B(  837): type=1400 audit(0.0:17600): avc:  denied  { getopt } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-04 04:57:12.920 D/CarrierSvcBindHelper( 1153): onHandleForceStop: [io.legado.flutter_legado]
+11-04 04:57:12.922 D/CarrierSvcBindHelper( 1153): No carrier app for: 0
+11-04 04:57:12.935 V/ActivityManager(  837): Got obituary of 47425:io.legado.flutter_legado
+11-04 04:57:12.935 I/MediaSessionStack(  837): removeSession | record: io.legado.flutter_legado/legado_flutter_media/6 (userId=0)
+11-04 04:57:12.935 D/MediaSessionService(  837): destroySessionLocked: record=io.legado.flutter_legado/legado_flutter_media/6 (userId=0)
+11-04 04:57:12.935 I/MediaFocusControl(  837): AudioFocus  removeFocusStackEntryOnDeath(): removing entry for android.os.BinderProxy@720789c
+11-04 04:57:12.936 W/ActivityManager(  837): setHasOverlayUi called on unknown pid: 47425
+11-04 04:57:12.936 I/Zygote  (  661): Process 47425 exited due to signal 9 (Killed)
+11-04 04:57:12.937 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:13.416 W/AccMsgReceiver( 2004): AccMsgReceiver: onReceive action = uu.intent.action.STOP_ACCELERATE
+11-04 04:57:13.419 W/ActivityManager(  837): Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-04 04:57:13.420 W/AccServiceManager( 2004): onAppClose: packageName = io.legado.flutter_legado
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17601): avc:  denied  { search } for  name="1" dev="proc" ino=10339 scontext=u:r:su:s0 tcontext=u:r:init:s0 tclass=dir permissive=1
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17602): avc:  denied  { read } for  name="cmdline" dev="proc" ino=13085 scontext=u:r:su:s0 tcontext=u:r:init:s0 tclass=file permissive=1
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17603): avc:  denied  { open } for  path="/proc/1/cmdline" dev="proc" ino=13085 scontext=u:r:su:s0 tcontext=u:r:init:s0 tclass=file permissive=1
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17604): avc:  denied  { search } for  name="2" dev="proc" ino=26173 scontext=u:r:su:s0 tcontext=u:r:kernel:s0 tclass=dir permissive=1
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17605): avc:  denied  { read } for  name="cmdline" dev="proc" ino=26288 scontext=u:r:su:s0 tcontext=u:r:kernel:s0 tclass=file permissive=1
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17606): avc:  denied  { open } for  path="/proc/2/cmdline" dev="proc" ino=26288 scontext=u:r:su:s0 tcontext=u:r:kernel:s0 tclass=file permissive=1
+11-04 04:57:14.962 I/pidof   (47589): type=1400 audit(0.0:17607): avc:  denied  { search } for  name="459" dev="proc" ino=11798 scontext=u:r:su:s0 tcontext=u:r:vendor_init:s0 tclass=dir permissive=1
+11-04 04:57:15.036 W/dumpsys (47591): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-04 04:57:15.075 W/dumpsys (47594): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-04 04:57:15.122 W/dumpsys (47597): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-04 04:57:19.746 I/init    (47600): type=1400 audit(0.0:17811): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-04 04:57:25.410 D/WifiNl80211Manager(  837): Scan result ready event
+11-04 04:57:25.411 D/WifiNative(  837): Scan result ready event
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17812): avc:  denied  { search } for  name="data" dev="sdc3" ino=3801089 scontext=u:r:su:s0 tcontext=u:object_r:system_data_file:s0:c512,c768 tclass=dir permissive=1
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17813): avc:  denied  { dac_read_search } for  capability=2  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-04 04:57:28.278 D/sqlite3 (47604): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:28.278 D/sqlite3 (47604): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17814): avc:  denied  { search } for  name="io.legado.flutter_legado" dev="sdc3" ino=3801622 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=dir permissive=1
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17815): avc:  denied  { read } for  name="legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17816): avc:  denied  { open } for  path="/data/data/io.legado.flutter_legado/app_flutter/legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17817): avc:  denied  { getattr } for  path="/data/data/io.legado.flutter_legado/app_flutter/legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:28.325 D/sqlite3 (47607): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:28.325 D/sqlite3 (47607): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17818): avc:  denied  { getattr } for  path="/data/data" dev="sdc3" ino=3801089 scontext=u:r:su:s0 tcontext=u:object_r:system_data_file:s0:c512,c768 tclass=dir permissive=1
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17819): avc:  denied  { getattr } for  path="/data/data/io.legado.flutter_legado" dev="sdc3" ino=3801622 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=dir permissive=1
+11-04 04:57:28.250 I/sqlite3 (47604): type=1400 audit(0.0:17820): avc:  denied  { write } for  name="legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:38.078 D/sqlite3 (47618): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:38.078 D/sqlite3 (47618): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:38.070 I/sh      (47616): type=1400 audit(0.0:17840): avc:  denied  { dac_override } for  capability=1  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-04 04:57:38.070 I/sqlite3 (47618): type=1400 audit(0.0:17841): avc:  denied  { search } for  name="data" dev="sdc3" ino=3801089 scontext=u:r:su:s0 tcontext=u:object_r:system_data_file:s0:c512,c768 tclass=dir permissive=1
+11-04 04:57:38.070 I/sqlite3 (47618): type=1400 audit(0.0:17842): avc:  denied  { dac_read_search } for  capability=2  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-04 04:57:38.070 I/sqlite3 (47618): type=1400 audit(0.0:17843): avc:  denied  { getattr } for  path="/data/data" dev="sdc3" ino=3801089 scontext=u:r:su:s0 tcontext=u:object_r:system_data_file:s0:c512,c768 tclass=dir permissive=1
+11-04 04:57:38.074 I/sqlite3 (47618): type=1400 audit(0.0:17844): avc:  denied  { chown } for  capability=0  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-04 04:57:38.123 D/sqlite3 (47621): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:38.123 D/sqlite3 (47621): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:39.496 D/PowerUI ( 1085): can't show warning due to - plugged: true status unknown: false
+11-04 04:57:39.774 I/serial_console(47622): type=1400 audit(0.0:17845): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=774 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-04 04:57:39.774 I/serial_console(47622): type=1400 audit(0.0:17846): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=774 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-04 04:57:44.484 I/UsageStatsService(  837): User[0] Flushing usage stats to disk
+11-04 04:57:44.494 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:44.542 W/TslTokenProvider( 1767): profile refresh failed with exception: current refresh token is empty.
+11-04 04:57:45.604 E/AndroidCll-SettingsSync( 1767): Could not get or parse settings
+11-04 04:57:45.673 E/AndroidCll-SettingsSync( 1767): Could not get or parse settings
+11-04 04:57:46.466 I/NemuSysOpt( 1505): Start compat memory
+11-04 04:57:46.495 I/NemuSysOpt( 1505): Compat memory done
+11-04 04:57:47.591 D/sqlite3 (47630): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:47.592 D/sqlite3 (47630): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17847): avc:  denied  { rmdir } for  name="1793738153096" dev="sdc3" ino=3803614 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=dir permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17848): avc:  denied  { search } for  name="0" dev="tmpfs" ino=12 scontext=u:r:su:s0 tcontext=u:object_r:mnt_user_file:s0 tclass=dir permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17849): avc:  denied  { read } for  name="primary" dev="tmpfs" ino=46 scontext=u:r:su:s0 tcontext=u:object_r:mnt_user_file:s0 tclass=lnk_file permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17850): avc:  denied  { search } for  name="/" dev="fuse" ino=2883585 scontext=u:r:su:s0 tcontext=u:object_r:fuse:s0 tclass=dir permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17851): avc:  denied  { search } for  name="Download" dev="f2fs" ino=1048605 scontext=u:r:su:s0 tcontext=u:object_r:vboxsf_file:s0 tclass=dir permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17852): avc:  denied  { getattr } for  path="/storage/emulated/0/Download/qa_9b5_book.txt" dev="f2fs" ino=1051406 scontext=u:r:su:s0 tcontext=u:object_r:vboxsf_file:s0 tclass=file permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17853): avc:  denied  { write } for  name="Download" dev="f2fs" ino=1048605 scontext=u:r:su:s0 tcontext=u:object_r:vboxsf_file:s0 tclass=dir permissive=1
+11-04 04:57:47.622 I/rm      (47631): type=1400 audit(0.0:17854): avc:  denied  { remove_name } for  name="qa_9b5_book.txt" dev="f2fs" ino=1051406 scontext=u:r:su:s0 tcontext=u:object_r:vboxsf_file:s0 tclass=dir permissive=1
+11-04 04:57:47.722 I/ActivityManager(  837): Force stopping io.legado.qa.mediakey appid=10055 user=0: deletePackageX
+11-04 04:57:47.723 I/AppsFilter(  837): interaction: PackageSetting{9396bf6 com.android.adbkeyboard/10056} -> PackageSetting{2e2cbd7 io.legado.qa.mediakey/10055} BLOCKED
+11-04 04:57:47.756 E/ActivityManager(  837): Unable to freeze binder for 45773: -11
+11-04 04:57:47.762 D/DisplayManagerService(  837): Drop pending events for gone uid 10055
+11-04 04:57:47.762 I/ActivityManager(  837): Killing 45773:io.legado.qa.mediakey/u0a55 (adj 905): stop io.legado.qa.mediakey due to deletePackageX
+11-04 04:57:47.767 V/ActivityManager(  837): Got obituary of 45773:io.legado.qa.mediakey
+11-04 04:57:47.768 I/Zygote  (  661): Process 45773 exited due to signal 9 (Killed)
+11-04 04:57:47.773 I/artd    (47641): Starting artd
+11-04 04:57:47.774 I/AidlLazyServiceRegistrar(47641): Registering service artd
+11-04 04:57:47.780 I/AidlLazyServiceRegistrar(47641): Process has 1 (of 1 available) client(s) in use after notification artd has clients: 1
+11-04 04:57:47.788 W/PackageManager(  837): Could not find package com.android.companiondevicemanager
+11-04 04:57:47.788 W/PackageManager(  837): Could not find package com.android.companiondevicemanager
+11-04 04:57:47.793 I/keystore2(  503): system/security/keystore2/src/maintenance.rs:461 - clearNamespace(r#APP, nspace=10055)
+11-04 04:57:47.798 D/BackgroundInstallControlService(  837): Package event received: 2
+11-04 04:57:47.799 D/BackgroundInstallControlService(  837): handlePackageRemove: removing io.legado.qa.mediakey from 0
+11-04 04:57:47.808 I/ActivityManager(  837): Force stopping io.legado.qa.mediakey appid=10055 user=0: pkg removed
+11-04 04:57:47.812 W/TextServicesManagerService(  837): no available spell checker services found
+11-04 04:57:47.812 D/CarrierSvcBindHelper( 1153): onPackageRemoved: io.legado.qa.mediakey
+11-04 04:57:47.815 D/CarrierSvcBindHelper( 1153): No carrier app for: 0
+11-04 04:57:47.821 V/StorageManagerService(  837): Package io.legado.qa.mediakey does not have legacy storage
+11-04 04:57:47.826 W/MagnificationConnectionManager(  837): requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-04 04:57:47.827 D/ShortcutService(  837): received package broadcast intent: Intent { act=android.intent.action.PACKAGE_REMOVED dat=package: flg=0x4000010 (has extras) }
+11-04 04:57:47.828 W/WifiService(  837): Couldn't get PackageInfo for package:io.legado.qa.mediakey
+11-04 04:57:47.828 D/WifiService(  837): Remove settings for package:io.legado.qa.mediakey
+11-04 04:57:47.829 D/ActivityManager(  837): sync unfroze 3010 com.microsoft.launcher:hockeysender for 3
+11-04 04:57:47.829 D/WifiConfigManager(  837): Remove all networks for app ApplicationInfo{ec5bebf io.legado.qa.mediakey}
+11-04 04:57:47.830 I/RollbackManager(  837): broadcast=ACTION_PACKAGE_FULLY_REMOVED pkg=io.legado.qa.mediakey
+11-04 04:57:47.830 E/AppOps  (  837): attributionTag VCN not declared in manifest of android
+11-04 04:57:47.831 D/ShortcutService(  837): removing package: io.legado.qa.mediakey userId=0
+11-04 04:57:47.833 W/ContextImpl( 1752): Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcast:1274 android.content.ContextWrapper.sendBroadcast:506 com.mumu.store.search.k.c:31 A0.b$a.b:277 A0.b$a.onNext:3 
+11-04 04:57:47.837 D/ActivityManager(  837): sync unfroze 1755 com.android.keychain for 10
+11-04 04:57:47.838 D/ActivityManager(  837): sync unfroze 5258 com.android.documentsui for 10
+11-04 04:57:47.838 D/ActivityManager(  837): sync unfroze 2158 com.android.localtransport for 10
+11-04 04:57:47.843 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:47.843 W/Binder  ( 5258): Caught a RuntimeException from the binder stub implementation.
+11-04 04:57:47.843 W/Binder  ( 5258): java.lang.NullPointerException: Attempt to invoke virtual method 'int android.view.InputDevice.getId()' on a null object reference
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.hardware.input.InputDeviceModifier.modifyInputDeviceIfNeeded(InputDeviceModifier.java:43)
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.onInputDevicesChanged(InputManagerGlobal.java:381)
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.-$$Nest$monInputDevicesChanged(Unknown Source:0)
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal$InputDevicesChangedListener.onInputDevicesChanged(InputManagerGlobal.java:299)
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.hardware.input.IInputDevicesChangedListener$Stub.onTransact(IInputDevicesChangedListener.java:105)
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-04 04:57:47.843 W/Binder  ( 5258): 	at android.os.Binder.execTransact(Binder.java:1350)
+11-04 04:57:47.844 W/Binder  ( 5258): Caught a RuntimeException from the binder stub implementation.
+11-04 04:57:47.844 W/Binder  ( 5258): java.lang.NullPointerException: Attempt to invoke virtual method 'int android.view.InputDevice.getId()' on a null object reference
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.hardware.input.InputDeviceModifier.modifyInputDeviceIfNeeded(InputDeviceModifier.java:43)
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.onInputDevicesChanged(InputManagerGlobal.java:381)
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.-$$Nest$monInputDevicesChanged(Unknown Source:0)
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal$InputDevicesChangedListener.onInputDevicesChanged(InputManagerGlobal.java:299)
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.hardware.input.IInputDevicesChangedListener$Stub.onTransact(IInputDevicesChangedListener.java:105)
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-04 04:57:47.844 W/Binder  ( 5258): 	at android.os.Binder.execTransact(Binder.java:1350)
+11-04 04:57:47.845 W/Binder  ( 5258): Caught a RuntimeException from the binder stub implementation.
+11-04 04:57:47.845 W/Binder  ( 5258): java.lang.NullPointerException: Attempt to invoke virtual method 'int android.view.InputDevice.getId()' on a null object reference
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputDeviceModifier.modifyInputDeviceIfNeeded(InputDeviceModifier.java:43)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.onInputDevicesChanged(InputManagerGlobal.java:381)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.-$$Nest$monInputDevicesChanged(Unknown Source:0)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal$InputDevicesChangedListener.onInputDevicesChanged(InputManagerGlobal.java:299)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.IInputDevicesChangedListener$Stub.onTransact(IInputDevicesChangedListener.java:105)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.os.Binder.execTransact(Binder.java:1350)
+11-04 04:57:47.845 W/Binder  ( 5258): Caught a RuntimeException from the binder stub implementation.
+11-04 04:57:47.845 W/Binder  ( 5258): java.lang.NullPointerException: Attempt to invoke virtual method 'int android.view.InputDevice.getId()' on a null object reference
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputDeviceModifier.modifyInputDeviceIfNeeded(InputDeviceModifier.java:43)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.onInputDevicesChanged(InputManagerGlobal.java:381)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.-$$Nest$monInputDevicesChanged(Unknown Source:0)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal$InputDevicesChangedListener.onInputDevicesChanged(InputManagerGlobal.java:299)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.hardware.input.IInputDevicesChangedListener$Stub.onTransact(IInputDevicesChangedListener.java:105)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-04 04:57:47.845 W/Binder  ( 5258): 	at android.os.Binder.execTransact(Binder.java:1350)
+11-04 04:57:47.846 W/Binder  ( 5258): Caught a RuntimeException from the binder stub implementation.
+11-04 04:57:47.846 W/Binder  ( 5258): java.lang.NullPointerException: Attempt to invoke virtual method 'int android.view.InputDevice.getId()' on a null object reference
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.hardware.input.InputDeviceModifier.modifyInputDeviceIfNeeded(InputDeviceModifier.java:43)
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.onInputDevicesChanged(InputManagerGlobal.java:381)
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal.-$$Nest$monInputDevicesChanged(Unknown Source:0)
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.hardware.input.InputManagerGlobal$InputDevicesChangedListener.onInputDevicesChanged(InputManagerGlobal.java:299)
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.hardware.input.IInputDevicesChangedListener$Stub.onTransact(IInputDevicesChangedListener.java:105)
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-04 04:57:47.846 W/Binder  ( 5258): 	at android.os.Binder.execTransact(Binder.java:1350)
+11-04 04:57:47.847 I/CredentialManager(  837): updateProvidersWhenPackageRemoved
+11-04 04:57:47.847 W/CredentialManager(  837): settings key is null
+11-04 04:57:47.848 D/LauncherAppsService(  837): onPackageRemoved: triggering onPackageRemoved for user=UserHandle{0}, packageName=io.legado.qa.mediakey
+11-04 04:57:47.848 D/LauncherAppsService(  837): onPackageRemoved: triggering onPackageRemoved for user=UserHandle{0}, packageName=io.legado.qa.mediakey
+11-04 04:57:47.848 D/LauncherAppsService(  837): onPackageRemoved: triggering onPackageRemoved for user=UserHandle{0}, packageName=io.legado.qa.mediakey
+11-04 04:57:47.849 I/RoleService(  837): Granting default roles...
+11-04 04:57:47.850 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:47.851 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:47.853 I/Telecom (  837): CarModeTracker: Package io.legado.qa.mediakey is not tracked.: SSH.oR@AJQ
+11-04 04:57:47.860 I/system_server(  837): AssetManager2(0x79bb0a907bf8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:47.864 I/Telecom (  837): InCallController: updateCarModeForConnections: car mode apps: : SSH.oR@AJQ
+11-04 04:57:47.864 I/Telecom (  837): InCallController: update carmode current:UserHandle{0} parent:null: SSH.oR@AJQ
+11-04 04:57:47.868 D/LauncherAppsCallbackImpl( 1366): package removed received io.legado.qa.mediakey
+11-04 04:57:47.871 I/PasspointManager(  837): No app ops listener found for io.legado.qa.mediakey
+11-04 04:57:47.871 W/WifiService(  837): Couldn't get PackageInfo for package:io.legado.qa.mediakey
+11-04 04:57:47.871 D/WifiService(  837): Remove settings for package:io.legado.qa.mediakey
+11-04 04:57:47.871 D/WifiConfigManager(  837): Remove all networks for app ApplicationInfo{3edc8f2 io.legado.qa.mediakey}
+11-04 04:57:47.871 I/PasspointManager(  837): No app ops listener found for io.legado.qa.mediakey
+11-04 04:57:47.880 W/system_server(  837): Suspending all threads took: 8.019ms
+11-04 04:57:47.882 W/ContextImpl( 1752): Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcast:1274 android.content.ContextWrapper.sendBroadcast:506 com.mumu.store.search.k.c:31 A0.b$a.b:277 A0.b$a.onNext:3 
+11-04 04:57:47.884 W/Role    (  837): Cannot get ApplicationInfo for default holder: com.android.contacts
+11-04 04:57:47.920 W/com.mumu.store( 1752): Reducing the number of considered missed Gc histogram windows from 101 to 100
+11-04 04:57:47.928 I/system_server(  837): Background concurrent mark compact GC freed 15MB AllocSpace bytes, 162(3608KB) LOS objects, 50% free, 21MB/42MB, paused 9.968ms,4.097ms total 129.048ms
+11-04 04:57:47.929 I/ConditionProviders(  837): Disallowing condition provider io.legado.qa.mediakey (userSet: true)
+11-04 04:57:47.930 E/RoleControllerServiceImpl(  837): Default/fallback role holder package doesn't qualify for the role, package: com.android.bluetooth, role: android.app.role.SYSTEM_BLUETOOTH_STACK
+11-04 04:57:47.932 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.933 D/IntervalStats(  837): Unable to parse usage stats packages: [28]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 D/IntervalStats(  837): Unable to parse usage stats packages: [28, 36, 37]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.934 D/IntervalStats(  837): Unable to parse usage stats packages: [37]
+11-04 04:57:47.936 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.936 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.936 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.936 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.936 D/IntervalStats(  837): Unable to parse usage stats packages: [37]
+11-04 04:57:47.937 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.937 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.937 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.937 D/IntervalStats(  837): Unable to parse usage stats packages: [37]
+11-04 04:57:47.938 W/System  (  837): A resource failed to call release. 
+11-04 04:57:47.938 W/System  (  837): A resource failed to call HardwareBuffer.close. 
+11-04 04:57:47.939 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.939 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.939 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.939 D/IntervalStats(  837): Unable to parse usage stats packages: [37, 38, 39, 40]
+11-04 04:57:47.941 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.941 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.941 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.943 W/Role    (  837): Cannot get ApplicationInfo for default holder: com.android.messaging
+11-04 04:57:47.943 W/Role    (  837): Cannot get ApplicationInfo for default holder: com.android.dialer
+11-04 04:57:47.944 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.944 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.950 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.950 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.950 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.950 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.950 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 D/IntervalStats(  837): Unable to parse usage stats packages: [28]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.952 D/IntervalStats(  837): Unable to parse usage stats packages: [28, 36, 37]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 D/IntervalStats(  837): Unable to parse usage stats packages: [37]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.953 D/IntervalStats(  837): Unable to parse usage stats packages: [37]
+11-04 04:57:47.953 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.954 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.954 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.954 D/IntervalStats(  837): Unable to parse usage stats packages: [37]
+11-04 04:57:47.954 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.954 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.954 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.954 D/IntervalStats(  837): Unable to parse usage stats packages: [37, 38, 39, 40]
+11-04 04:57:47.954 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.955 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.955 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.955 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.955 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.955 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.955 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.956 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.956 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:47.956 V/Configuration(  837): Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-04 04:57:48.176 W/er:hockeysender( 3010): Reducing the number of considered missed Gc histogram windows from 4998 to 100
+11-04 04:57:48.313 W/MediaProvider( 1540): WorkProfileOwnerApps cache is empty
+11-04 04:57:48.313 D/PickerSyncLockManager( 1540): Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@535ebf5[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-04 04:57:48.313 D/CloseableReentrantLock( 1540): Successfully acquired lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@535ebf5[Locked by thread main]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-04 04:57:48.313 D/CloseableReentrantLock( 1540): Successfully released lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@535ebf5[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-04 04:57:48.314 W/AccMsgReceiver( 2004): AccMsgReceiver: onReceive action = android.intent.action.PACKAGE_REMOVED
+11-04 04:57:48.314 D/ControlsListingControllerImpl( 1085): ServiceConfig reloaded, count: 0
+11-04 04:57:48.319 W/AccMsgReceiver( 2004): AccMsgReceiver: onReceive action = android.intent.action.PACKAGE_FULLY_REMOVED
+11-04 04:57:48.320 W/ActivityManager(  837): Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-04 04:57:48.321 W/ActivityManager(  837): Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-04 04:57:48.324 W/MediaProvider( 1540): Failed to invalidate FUSE dentry
+11-04 04:57:48.324 W/MediaProvider( 1540): java.io.FileNotFoundException: Missing FUSE daemon for /mnt/shared/MuMuShared/Android/media/io.legado.qa.mediakey
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.providers.media.MediaProvider.getFuseDaemonForFile(MediaProvider.java:9950)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.providers.media.MediaProvider.invalidateFuseDentry(MediaProvider.java:9987)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.providers.media.MediaProvider.invalidateDentryForExternalStorage(MediaProvider.java:866)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.providers.media.MediaProvider.-$$Nest$minvalidateDentryForExternalStorage(MediaProvider.java:0)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.providers.media.MediaProvider$3.onReceive(MediaProvider.java:838)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.app.LoadedApk$ReceiverDispatcher$Args.lambda$getRunnable$0(LoadedApk.java:1825)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.app.LoadedApk$ReceiverDispatcher$Args.$r8$lambda$mcNAAl1SQ4MyJPyDg8TJ2x2h0Rk(Unknown Source:0)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.app.LoadedApk$ReceiverDispatcher$Args$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.os.Handler.handleCallback(Handler.java:991)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.os.Looper.loop(Looper.java:317)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at android.app.ActivityThread.main(ActivityThread.java:8971)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at java.lang.reflect.Method.invoke(Native Method)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:597)
+11-04 04:57:48.324 W/MediaProvider( 1540): 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:919)
+11-04 04:57:48.331 W/com.mumu.acc( 2004): Reducing the number of considered missed Gc histogram windows from 101 to 100
+11-04 04:57:55.530 I/sh      (47668): type=1400 audit(0.0:17861): avc:  denied  { write search } for  name="tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-04 04:57:55.547 D/sqlite3 (47670): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:55.547 D/sqlite3 (47670): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:55.530 I/sh      (47668): type=1400 audit(0.0:17862): avc:  denied  { getattr } for  path="/data/local/tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-04 04:57:55.534 I/sqlite3 (47670): type=1400 audit(0.0:17863): avc:  denied  { read } for  name="legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:55.534 I/sqlite3 (47670): type=1400 audit(0.0:17864): avc:  denied  { open } for  path="/data/data/io.legado.flutter_legado/app_flutter/legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:55.534 I/sqlite3 (47670): type=1400 audit(0.0:17865): avc:  denied  { getattr } for  path="/data/data/io.legado.flutter_legado/app_flutter/legado.db" dev="sdc3" ino=3801936 scontext=u:r:su:s0 tcontext=u:object_r:app_data_file:s0:c66,c256,c512,c768 tclass=file permissive=1
+11-04 04:57:55.628 D/AndroidRuntime(47671): >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+11-04 04:57:55.630 I/AndroidRuntime(47671): Using default boot image
+11-04 04:57:55.630 I/AndroidRuntime(47671): Leaving lock profiling enabled
+11-04 04:57:55.633 W/app_process(47671): ART APEX data files are untrusted.
+11-04 04:57:55.634 I/app_process(47671): Using CollectorTypeCMC GC.
+11-04 04:57:55.672 D/nativeloader(47671): InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-04 04:57:55.681 D/nativeloader(47671): Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-04 04:57:55.682 D/app_process(47671): u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-04 04:57:55.682 D/app_process(47671): I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-04 04:57:55.683 D/nativeloader(47671): Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-04 04:57:55.683 D/nativeloader(47671): Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-04 04:57:55.685 W/app_process(47671): Unexpected CPU variant for x86: x86_64.
+11-04 04:57:55.685 W/app_process(47671): Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-04 04:57:55.685 W/nativebridge(47671): Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-04 04:57:55.685 W/nativebridge(47671): Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-04 04:57:55.685 W/nativebridge(47671): Cannot create code cache directory ./code_cache: Read-only file system.
+11-04 04:57:55.685 V/libnb   (47671): enter native_bridge2_initialize (null) x86_64
+11-04 04:57:55.685 E/libnb   (47671): The translator implementation library has not been set.
+11-04 04:57:55.691 E/libnb   (47671): get_callbacks native_handle 0x4e06d2ebb86d28f9: 1 libnb:/system/lib64/libhoudini.so
+11-04 04:57:55.691 I/libnb   (47671): Found /system/lib64/libhoudini.so version 7
+11-04 04:57:55.709 D/nativeloader(47671): Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-04 04:57:55.710 D/AndroidRuntime(47671): Calling main entry com.android.commands.monkey.Monkey
+11-04 04:57:55.710 D/nativeloader(47671): Load /system/lib64/libmonkey_jni.so using ns default for caller /system/framework/monkey.jar in same partition (is_bridged=0): ok
+11-04 04:57:55.711 W/Monkey  (47671): args: [-p, io.legado.flutter_legado, -c, android.intent.category.LAUNCHER, 1]
+11-04 04:57:55.716 D/EventHub(  837): configureBatteryLocked rawBatteryId 1 name battery
+11-04 04:57:55.717 W/Monkey  (47671):  arg: "-p"
+11-04 04:57:55.717 D/EventHub(  837): No input device configuration file found for device 'Monkey touch'.
+11-04 04:57:55.717 I/EventHub(  837): usingClockIoctl=true
+11-04 04:57:55.717 I/EventHub(  837): New device: id=21, fd=419, path='/dev/input/event8', name='Monkey touch', classes=TOUCH | TOUCH_MT | BATTERY, configuration='', keyLayout='', keyCharacterMap='', builtinKeyboard=false, 
+11-04 04:57:55.717 W/Monkey  (47671):  arg: "io.legado.flutter_legado"
+11-04 04:57:55.717 W/Monkey  (47671):  arg: "-c"
+11-04 04:57:55.717 W/Monkey  (47671):  arg: "android.intent.category.LAUNCHER"
+11-04 04:57:55.717 W/Monkey  (47671):  arg: "1"
+11-04 04:57:55.717 W/Monkey  (47671): data="io.legado.flutter_legado"
+11-04 04:57:55.717 W/Monkey  (47671): data="android.intent.category.LAUNCHER"
+11-04 04:57:55.717 W/InputReader(  837): Input device Monkey touch should be associated with display id: 1 but the corresponding viewport cannot be found
+11-04 04:57:55.717 I/InputReader(  837): Device reconfigured: id=22, name='Monkey touch', size 1080x1920, orientation Rotation0, mode DIRECT, display id 0
+11-04 04:57:55.717 W/InputReader(  837): Input device Monkey touch should be associated with display id: 1 but the corresponding viewport cannot be found
+11-04 04:57:55.717 I/InputReader(  837): Device added: id=22, eventHubId=21, name='Monkey touch', descriptor='e1fe28b90f915c7d1febbd52c1ef84b3c4cbed9f',sources=TOUCHSCREEN
+11-04 04:57:55.719 E/WindowManager(  837): Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-04 04:57:55.728 W/ActivityManager(  837): registerReceiverWithFeature: no app for null
+11-04 04:57:55.731 W/ActivityTaskManager(  837): callingPackage for (uid=0, pid=47671) has no WPC
+11-04 04:57:55.732 V/GrammaticalInflectionUtils(  837): AttributionSource: android.content.AttributionSource@3b4d758b does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-04 04:57:55.732 W/OptProp (  837): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-04 04:57:55.733 W/OptProp (  837): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-04 04:57:55.735 E/CellBroadcastUtils(  837): getDefaultCellBroadcastReceiverPackageName: no package found
+11-04 04:57:55.738 V/WindowManagerShell( 1085): Transition requested (#179): android.os.BinderProxy@c7f08fc TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1057 effectiveUid=10066 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=50420592 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@5bbcb85} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{6d65dda io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 179 }
+11-04 04:57:55.738 I/ActivityTaskManager(  837): START u0 {act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity} with LAUNCH_SINGLE_TOP from uid 0 (BAL_ALLOW_ALLOWLISTED_UID) result code=0
+11-04 04:57:55.738 D/ShellSplitScreen( 1085): logExit: no-op, mLoggerSessionId is null
+11-04 04:57:55.738 V/GrammaticalInflectionUtils(  837): AttributionSource: android.content.AttributionSource@3b4d758b does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-04 04:57:55.738 W/ActivityManager(  837): Unknown package:com.google.android.gms
+11-04 04:57:55.739 E/SingleInstanceRemoteListener( 1085): Failed remote call on null listener
+11-04 04:57:55.739 E/SingleInstanceRemoteListener( 1085): Failed remote call on null listener
+11-04 04:57:55.739 I/Monkey  (47671): Events injected: 1
+11-04 04:57:55.742 I/Monkey  (47671): ## Network stats: elapsed time=11ms (0ms mobile, 0ms wifi, 11ms not connected)
+11-04 04:57:55.742 D/Zygote  (  661): Forked child process 47683
+11-04 04:57:55.742 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:55.743 I/AppsFilter(  837): interaction: PackageSetting{56506fd com.android.adbkeyboard/10056} -> PackageSetting{713cf3c io.legado.flutter_legado/10066} BLOCKED
+11-04 04:57:55.744 I/ActivityManager(  837): Start proc 47683:io.legado.flutter_legado/u0a66 for next-top-activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}
+11-04 04:57:55.744 I/system_server(  837): AssetManager2(0x79bb0a907bf8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:55.744 I/system_server(  837): AssetManager2(0x79bb0a8e4978) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:55.745 I/BpBinder(  712): onLastStrongRef automatically unlinking death recipients: 
+11-04 04:57:55.745 W/OptProp (  837): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-04 04:57:55.746 I/app_process(47671): System.exit called, status: 0
+11-04 04:57:55.746 I/AndroidRuntime(47671): VM exiting with result code 0.
+11-04 04:57:55.746 D/gralloc_kona( 1085): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:55.747 D/CoreBackPreview(  837): Window{72c1109 u0 Splash Screen io.legado.flutter_legado}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@c9bd766, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-04 04:57:55.751 D/HWUI    ( 1085): HOOK FAILED! Expected 3 got = 2
+11-04 04:57:55.753 I/EventHub(  837): Removing device Monkey touch due to epoll hang-up event.
+11-04 04:57:55.753 I/EventHub(  837): Removed device: path=/dev/input/event8 name=Monkey touch id=21 fd=419 classes=TOUCH | TOUCH_MT | BATTERY
+11-04 04:57:55.753 D/gralloc_kona( 1085): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:55.755 V/WindowManagerShell( 1085): onTransitionReady(transaction=3594887647254)
+11-04 04:57:55.755 V/WindowManagerShell( 1085): onTransitionReady (#179) android.os.BinderProxy@c7f08fc: {id=179 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-04 04:57:55.755 V/WindowManagerShell( 1085):         {m=OPEN f=NONE leash=Surface(name=Task=1057)/@0x9f1f18a sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-04 04:57:55.755 V/WindowManagerShell( 1085):         {m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xe5813fb sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}
+11-04 04:57:55.755 V/WindowManagerShell( 1085):     ]}
+11-04 04:57:55.755 V/WindowManagerShell( 1085): Playing animation for (#179) android.os.BinderProxy@c7f08fc@0
+11-04 04:57:55.755 V/WindowManager(  837): Sent Transition (#179) createdAt=11-04 04:57:55.733 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1057 effectiveUid=10066 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=50420592 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{e9c710d Task{a15fe37 #1057 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{d524bf8 io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 179 }
+11-04 04:57:55.755 V/WindowManager(  837):     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-04 04:57:55.755 V/WindowManager(  837):     info={id=179 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-04 04:57:55.755 V/WindowManager(  837):         {WCT{RemoteToken{e9c710d Task{a15fe37 #1057 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} m=OPEN f=NONE leash=Surface(name=Task=1057)/@0x8dffaa7 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-04 04:57:55.755 V/WindowManager(  837):         {WCT{RemoteToken{ac9d1fe Task{8c87c79 #1 type=home}}} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x288debd sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}
+11-04 04:57:55.755 V/WindowManager(  837):     ]}
+11-04 04:57:55.756 V/ShellRecents( 1085): RecentsTransitionHandler.startAnimation: no controller found
+11-04 04:57:55.756 V/WindowManagerShell( 1085): Transition doesn't have explicit remote, search filters for match for {id=179 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=OPEN f=NONE leash=Surface(name=Task=1057)/@0x9f1f18a sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xe5813fb sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}]}
+11-04 04:57:55.756 V/WindowManagerShell( 1085):  Delegate animation for (#179) to null
+11-04 04:57:55.756 V/WindowManagerShell( 1085): start default transition animation, info = {id=179 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=OPEN f=NONE leash=Surface(name=Task=1057)/@0x9f1f18a sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xe5813fb sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}]}
+11-04 04:57:55.756 V/WindowManagerShell( 1085): loadAnimation: anim=android.view.animation.AnimationSet@e09f4d7 animAttr=0x13 type=OPEN isEntrance=false
+11-04 04:57:55.756 W/UserManagerService(  837): Requested status bar icon for non-badged user 0
+11-04 04:57:55.756 V/WindowManagerShell( 1085): loadAnimation: anim=android.view.animation.AnimationSet@48f0773 animAttr=0x12 type=OPEN isEntrance=true
+11-04 04:57:55.757 V/WindowManagerShell( 1085):  animated by com.android.wm.shell.transition.DefaultTransitionHandler@520ddcb
+11-04 04:57:55.762 W/nativebridge(47683): Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-04 04:57:55.762 W/nativebridge(47683): Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-04 04:57:55.762 E/Zygote  (47683): pkg name is 0 => io.legado.flutter_legado, data dir is /data/user/0/io.legado.flutter_legado
+11-04 04:57:55.762 V/WindowManagerShell( 1085): Transition animation finished (aborted=false), notifying core (#179) android.os.BinderProxy@c7f08fc@0
+11-04 04:57:55.763 D/VRI[Launcher]( 1767): visibilityChanged oldVisibility=true newVisibility=false
+11-04 04:57:55.763 W/zygote64(47683): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: nemuhotd
+11-04 04:57:55.763 V/WindowManager(  837): Finish Transition (#179): created at 11-04 04:57:55.733 collect-started=0.038ms request-sent=4.686ms started=5.022ms ready=21.541ms sent=22.003ms finished=29.206ms
+11-04 04:57:55.763 V/WindowManagerShell( 1085): Track 0 became idle
+11-04 04:57:55.764 V/WindowManagerShell( 1085): All active transition animations finished
+11-04 04:57:55.764 W/UserManagerService(  837): Requested status bar icon for non-badged user 0
+11-04 04:57:55.765 W/UserManagerService(  837): Requested status bar icon for non-badged user 0
+11-04 04:57:55.770 I/InputReader(  837): Device removed: id=22, eventHubId=21, name='Monkey touch', descriptor='e1fe28b90f915c7d1febbd52c1ef84b3c4cbed9f', sources=TOUCHSCREEN
+11-04 04:57:55.771 E/WindowManager(  837): Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-04 04:57:55.771 I/EventHub(  837): Removing device '/dev/input/event8' due to inotify event
+11-04 04:57:55.787 I/Zygote  (47683): seccomp disabled by setenforce 0
+11-04 04:57:55.790 I/.flutter_legado(47683): Using CollectorTypeCMC GC.
+11-04 04:57:55.791 W/.flutter_legado(47683): Unexpected CPU variant for x86: x86_64.
+11-04 04:57:55.791 W/.flutter_legado(47683): Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-04 04:57:55.791 V/libnb   (47683): enter native_bridge2_initialize /data/user/0/io.legado.flutter_legado/code_cache arm64
+11-04 04:57:55.791 E/libnb   (47683): The translator implementation library has not been set.
+11-04 04:57:55.801 E/libnb   (47683): get_callbacks native_handle 0x692b6d24baba5b1b: 1 libnb:/system/lib64/libhoudini.so
+11-04 04:57:55.801 I/libnb   (47683): Found /system/lib64/libhoudini.so version 7
+11-04 04:57:55.803 I/houdini (47683): [47683] Houdini now in android app mode
+11-04 04:57:55.803 I/houdini (47683): [47683] Intel Bridge Technology for NetEase Mumu only, Copyright(C) Intel Corp. 2012-now.
+11-04 04:57:55.803 I/houdini (47683): [47683] Use permitted only under a valid commercial software license agreement - all other rights reserved.
+11-04 04:57:55.803 I/houdini (47683): [47683] Initialize library(version: 15.0.0.Netease_com3.0 RELEASE)... successfully.
+11-04 04:57:55.803 W/HP      (47683): x_initialize private_dir:/data/user/0/io.legado.flutter_legado/code_cache instruction_set:arm64 getMethodShorty:0x79ba7855c700 ret:1
+11-04 04:57:55.805 E/.flutter_legado(47683): Not starting debugger since process cannot load the jdwp agent.
+11-04 04:57:55.806 D/nativeloader(47683): Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-04 04:57:55.827 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:55.828 I/system_server(  837): AssetManager2(0x79bb0a8f8838) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:55.830 D/ApplicationLoaders(47683): Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+11-04 04:57:55.830 D/ApplicationLoaders(47683): Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+11-04 04:57:55.836 D/nativeloader(47683): Configuring clns-7 for other apk /data/app/~~IHAgEu7A0HAWAmjyyfHOcg==/io.legado.flutter_legado-oQ1X5yuafsJToSmgeTpqjg==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~IHAgEu7A0HAWAmjyyfHOcg==/io.legado.flutter_legado-oQ1X5yuafsJToSmgeTpqjg==/lib/x86_64:/data/app/~~IHAgEu7A0HAWAmjyyfHOcg==/io.legado.flutter_legado-oQ1X5yuafsJToSmgeTpqjg==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/io.legado.flutter_legado
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): setPresentationRotation 0 for io.legado.flutter_legado:1057
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): java.lang.Exception
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at android.os.Looper.loop(Looper.java:317)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-04 04:57:55.837 E/[MUMU]TaskTab(  837): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-04 04:57:55.839 E/ActivityManager(  837): Sending non-protected broadcast nemu.intent.action.NEW_TASK from system 837:system/1000 pkg android
+11-04 04:57:55.839 E/ActivityManager(  837): java.lang.Throwable
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.wm.TaskUtils.$r8$lambda$JRBio5N1z1PXvDB9E_DBrd2vjYw(TaskUtils.java:2179)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda2.run(R8$$SyntheticClass:0)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.os.Handler.handleCallback(Handler.java:991)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.os.Looper.loop(Looper.java:317)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-04 04:57:55.839 E/ActivityManager(  837): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-04 04:57:55.840 I/.flutter_legado(47683): AssetManager2(0x79bb0a8d87b8) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:55.842 V/GraphicsEnvironment(47683): Currently set values for:
+11-04 04:57:55.842 V/GraphicsEnvironment(47683):   angle_gl_driver_selection_pkgs=[]
+11-04 04:57:55.842 V/GraphicsEnvironment(47683):   angle_gl_driver_selection_values=[]
+11-04 04:57:55.842 V/GraphicsEnvironment(47683): io.legado.flutter_legado is not listed in per-application setting
+11-04 04:57:55.842 V/GraphicsEnvironment(47683): Neither updatable production driver nor prerelease driver is supported.
+11-04 04:57:55.845 E/SingleInstanceRemoteListener( 1085): Failed remote call on null listener
+11-04 04:57:55.849 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:55.849 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): setPresentationRotation 0 for io.legado.flutter_legado:1057
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): java.lang.Exception
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at android.os.Looper.loop(Looper.java:317)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-04 04:57:55.850 E/[MUMU]TaskTab(  837): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-04 04:57:55.851 E/libEGL  (47683): intercept_property_get () for (persist.graphics.egl)
+11-04 04:57:55.851 I/.flutter_legado(47683): AssetManager2(0x79bb0a8de258) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:55.856 I/EGL_emulation(47683): EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-04 04:57:55.865 D/FileUtils(  837): Rounded bytes from 6231203840 to 8000000000
+11-04 04:57:55.870 I/.flutter_legado(47683): AssetManager2(0x79bb0a8e1778) locale list changing from [] to [zh-Hans-CN]
+11-04 04:57:55.872 D/skia    (47683): [SkFontMgr Android Parser] '/product/etc/fonts_customization.xml' could not be opened
+11-04 04:57:55.887 E/vulkan  (47683): intercept_property_get () for (ro.hardware.vulkan)
+11-04 04:57:55.892 D/DesktopModeFlagsUtil(47683): Toggle override initialized to: OVERRIDE_OFF
+11-04 04:57:55.905 D/vulkan  (47683): searching for layers in '/data/app/~~IHAgEu7A0HAWAmjyyfHOcg==/io.legado.flutter_legado-oQ1X5yuafsJToSmgeTpqjg==/lib/x86_64'
+11-04 04:57:55.905 D/vulkan  (47683): searching for layers in '/data/app/~~IHAgEu7A0HAWAmjyyfHOcg==/io.legado.flutter_legado-oQ1X5yuafsJToSmgeTpqjg==/base.apk!/lib/x86_64'
+11-04 04:57:55.939 I/hwservicemanager(  481): getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-04 04:57:55.940 E/HidlServiceManagement(47683): getService: Potential race detected, descriptor: android.hardware.configstore@1.0::ISurfaceFlingerConfigs instance: default
+11-04 04:57:55.955 D/com.llfbandit.app_links(47683): Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity }
+11-04 04:57:55.962 E/TTS     (47683): Failed to initialize TextToSpeech with status: -1
+11-04 04:57:55.967 I/MESA    (47683): on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x79b970889000 0x79b970c89000]
+11-04 04:57:55.977 I/flutter (47683): [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
+11-04 04:57:55.991 W/HWUI    (47683): Unknown dataspace 0
+11-04 04:57:56.001 I/WindowExtensionsImpl(47683): Initializing Window Extensions, vendor API level=8, activity embedding enabled=true
+11-04 04:57:56.005 D/CoreBackPreview(  837): Window{ec3869b u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@9841e4, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-04 04:57:56.008 I/EGL_emulation(47683): EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-04 04:57:56.011 W/HWUI    (47683): Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-04 04:57:56.012 E/HidlServiceManagement(47683): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-04 04:57:56.014 E/HidlServiceManagement(47683): getService: Potential race detected, descriptor: android.hardware.graphics.allocator@2.0::IAllocator instance: default
+11-04 04:57:56.016 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 4096
+11-04 04:57:56.016 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 4096
+11-04 04:57:56.017 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 4096
+11-04 04:57:56.018 E/gralloc_kona(47683): gralloc_alloc: Unknown format 56
+11-04 04:57:56.018 E/GraphicBufferAllocator(47683): Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-04 04:57:56.018 E/AHardwareBuffer(47683): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-04 04:57:56.018 E/gralloc_kona(47683): gralloc_alloc: Unknown format 59
+11-04 04:57:56.018 E/GraphicBufferAllocator(47683): Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-04 04:57:56.018 E/AHardwareBuffer(47683): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-04 04:57:56.018 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 4096
+11-04 04:57:56.019 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 4096
+11-04 04:57:56.019 E/HWComposer(  712): getSupportedContentTypes: getSupportedContentTypes failed for display 4619827820427265280: UNSUPPORTED (8)
+11-04 04:57:56.019 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:56.019 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 4096
+11-04 04:57:56.021 E/gralloc_kona(47683): gralloc_alloc: Unknown format 56
+11-04 04:57:56.021 E/GraphicBufferAllocator(47683): Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-04 04:57:56.021 E/AHardwareBuffer(47683): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-04 04:57:56.021 E/gralloc_kona(47683): gralloc_alloc: Unknown format 59
+11-04 04:57:56.021 E/GraphicBufferAllocator(47683): Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-04 04:57:56.021 E/AHardwareBuffer(47683): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-04 04:57:56.021 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:56.032 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:56.041 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:56.050 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:56.069 I/flutter (47683): [启动] CrashLogService 初始化耗时：71ms
+11-04 04:57:56.103 D/WindowLayoutComponentImpl(47683): Register WindowLayoutInfoListener on Context=io.legado.flutter.MainActivity@4aa59d4, of which baseContext=android.app.ContextImpl@9f15ac3
+11-04 04:57:56.129 I/flutter (47683): [RustApi] ttsSetCacheDir -> /data/user/0/io.legado.flutter_legado/files/tts_cache（ok=true）
+11-04 04:57:56.129 I/flutter (47683): [RustApi] setCacheDir -> /data/user/0/io.legado.flutter_legado/cache/js_cache
+11-04 04:57:56.130 I/flutter (47683): [RustApi] setImageCacheDir -> /data/user/0/io.legado.flutter_legado/cache/image_cache
+11-04 04:57:56.130 I/flutter (47683): [RustApi] setAudioCacheDir -> /data/user/0/io.legado.flutter_legado/cache/audio_cache
+11-04 04:57:56.133 I/flutter (47683): [RustApi] 设备 ID 注入完成：60fc9ee0e1bfe876
+11-04 04:57:56.134 I/flutter (47683): [RustApi] 主题注入完成（palette=def mode=1）
+11-04 04:57:56.134 I/flutter (47683): [RustApi] 阅读配置注入完成（bgIndex=0）
+11-04 04:57:56.134 I/flutter (47683): [启动] 并行初始化（prefs+FFI）耗时：64ms
+11-04 04:57:56.135 I/flutter (47683): [启动] 远程书库服务器迁移耗时：0ms
+11-04 04:57:56.135 I/flutter (47683): [启动] 语言/图片绘制偏好初始化耗时：0ms
+11-04 04:57:56.136 I/flutter (47683): [启动] UserAgent 同步耗时：0ms
+11-04 04:57:56.136 I/flutter (47683): [启动] 自动清除过期搜索：删除 0 条（阈值 -1 天）
+11-04 04:57:56.136 I/flutter (47683): [启动] 线程数同步耗时：0ms
+11-04 04:57:56.136 I/flutter (47683): [启动] 总启动耗时：142ms
+11-04 04:57:56.177 W/WindowOnBackDispatcher(47683): OnBackInvokedCallback is not enabled for the application.
+11-04 04:57:56.177 W/WindowOnBackDispatcher(47683): Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+11-04 04:57:56.187 D/gralloc_kona(47683): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:56.197 I/ActivityTaskManager(  837): Displayed io.legado.flutter_legado/io.legado.flutter.MainActivity for user 0: +458ms
+11-04 04:57:56.197 I/ActivityTaskManager(  837): Fully drawn io.legado.flutter_legado/io.legado.flutter.MainActivity: +458ms
+11-04 04:57:56.209 I/MESA    (47683): on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x79b962e0f000 0x79b96320f000]
+11-04 04:57:56.219 I/ImeTracker(  837): io.legado.flutter_legado:81175ed2: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-04 04:57:56.221 D/InsetsController(47683): hide(ime(), fromIme=false)
+11-04 04:57:56.221 I/ImeTracker(47683): io.legado.flutter_legado:81175ed2: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-04 04:57:56.247 D/BackgroundInstallControlService(  837): Package event received: 0
+11-04 04:57:56.340 W/AccMsgReceiver( 2004): AccMsgReceiver: onReceive action = nemu.intent.action.NEW_TASK
+11-04 04:57:56.341 W/ActivityManager(  837): Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-04 04:57:56.342 W/AccServiceManager( 2004): onAppLaunch: packageName = io.legado.flutter_legado
+11-04 04:57:56.342 W/TranslateGameManager( 2004): onAppLaunch: packageName = io.legado.flutter_legado, hasPackageLaunchedBefore = false, supportTranslateReally = false, isLocalTranslateEnabled = false
+11-04 04:57:56.381 W/WindowOnBackDispatcher( 1085): sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@4a13783
+11-04 04:57:56.382 D/CoreBackPreview(  837): Window{72c1109 u0 Splash Screen io.legado.flutter_legado EXITING}: Setting back callback null
+11-04 04:57:57.829 D/ActivityManager(  837): freezing 3010 com.microsoft.launcher:hockeysender
+11-04 04:57:57.894 W/FileUtils(  837): Failed to chmod(AtomicFile[/data/system_de/0/system/game-manager-service.xml]): android.system.ErrnoException: chmod failed: ENOENT (No such file or directory)
+11-04 04:57:58.317 I/keystore2(  503): system/security/keystore2/watchdog/src/lib.rs:356 - Watchdog thread idle -> terminating. Have a great day.
+11-04 04:57:59.810 I/adbd    (47766): type=1400 audit(0.0:17939): avc:  denied  { read write } for  name="0" dev="devpts" ino=3 scontext=u:r:su:s0 tcontext=u:object_r:devpts:s0 tclass=chr_file permissive=1
+11-04 04:57:59.810 I/adbd    (47766): type=1400 audit(0.0:17940): avc:  denied  { open } for  path="/dev/pts/0" dev="devpts" ino=3 scontext=u:r:su:s0 tcontext=u:object_r:devpts:s0 tclass=chr_file permissive=1
+11-04 04:57:59.810 I/adbd    (47766): type=1400 audit(0.0:17941): avc:  denied  { ioctl } for  path="/dev/pts/0" dev="devpts" ino=3 ioctlcmd=0x5401 scontext=u:r:su:s0 tcontext=u:object_r:devpts:s0 tclass=chr_file permissive=1
+11-04 04:57:59.814 I/sh      (47766): type=1400 audit(0.0:17942): avc:  denied  { dac_override } for  capability=1  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-04 04:57:59.814 I/sh      (47766): type=1400 audit(0.0:17943): avc:  denied  { write search } for  name="tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-04 04:57:59.888 W/screencap(47768): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-04 04:57:59.889 W/BpBinder(47768): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-04 04:57:59.889 W/ProcessState(47768): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-04 04:57:59.889 D/gralloc_kona(  712): gralloc_alloc: Creating ashmem region of size 8298496
+11-04 04:57:59.892 E/HidlServiceManagement(47768): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-04 04:57:59.894 W/screencap(47768): Cannot open renderer configuration file (nemuhotd pid=499)
+11-04 04:58:01.146 D/ProfileInstaller(47683): Installing profile for io.legado.flutter_legado
+11-04 04:58:01.222 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-04 04:58:01.223 D/InetDiagMessage(  837): Destroyed 2 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-04 04:58:01.223 D/InetDiagMessage(  837): Destroyed live tcp sockets for uids={10052} in 1ms
+11-04 04:58:01.224 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-04 04:58:01.224 D/InetDiagMessage(  837): Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-04 04:58:01.224 D/InetDiagMessage(  837): Destroyed live tcp sockets for uids={20052} in 1ms
+11-04 04:58:05.377 D/WifiConfigStore(  837): Writing to stores completed in 5 ms.
+11-04 04:58:23.162 I/sh      (47803): type=1400 audit(0.0:17975): avc:  denied  { getattr } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-04 04:58:23.162 I/sh      (47803): type=1400 audit(0.0:17976): avc:  denied  { execute } for  name="logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-04 04:58:23.162 I/sh      (47803): type=1400 audit(0.0:17977): avc:  denied  { read open } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
