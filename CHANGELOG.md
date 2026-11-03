@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.440] - 2026-11-03
+
+### Changed
+- [UI] 「我的」页 Web 服务运行中的「复制地址/在浏览器打开」移入分组容器底部（容器背景、边框、圆角一并包裹），停止时收起；`IosGroup` 新增 footer 能力。
+- [UI] 支持外部 `legado://dict`、`legado://dict_rule`（含 yuedu/三斜杠/query/末尾斜杠）直达字典查询/规则管理页；`legado://import/...` 导入语义不变。
+
 ## [2.0.439] - 2026-11-03
 
 ### Changed

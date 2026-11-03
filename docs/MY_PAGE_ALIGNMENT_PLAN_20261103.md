@@ -131,7 +131,7 @@
 - **M2 视觉偏差登记（M3 已闭环）**：
   1. ~~**动作行组外**~~：M2 时 `IosGroup` 对每个 child 强制套 surfaceContainerLow 行卡，无法表达「组内无卡片行」，动作行暂置组外（4dp 贴邻、按钮间距 12dp、右对齐）。**M3 已通过 `IosGroup(footer:)` 回移组内**（容器内、不套行卡、不参与分隔线/2dp 行距），见下方 M3 记录。
   2. ~~**容器背景/边框组合**~~：M2 时组外动作行不参与分组容器的圆角裁剪与边框包裹。**M3 footer 处于 `ios-group-frame` → ClipRRect → surface Column 内**，容器背景图、圆角裁剪与 `foregroundDecoration` 边框一并包裹动作行（测试断言覆盖）。
-- **M3（边缘一致性）已完成（2026-11-03，全栈工程师 + UI；版本号/双日志由主代理收尾）**：
+- **M3（边缘一致性）代码完成（2026-11-03，版本 2.0.440+441；设备验收待执行）**：
   - **IosGroup footer 能力**：新增可选 `footer` 与 `footerPadding`（默认 `EdgeInsets.fromLTRB(16, 12, 16, 12)`：水平 16dp 对齐行内容/参考版 `WebServiceSettingBlock`，垂直 12dp 满足 8–12dp 要求）。footer 位于最后一行下方、同一容器内（背景图图层之上、圆角裁剪内、边框之下）；**不**套行卡 Material、**不**乘 `containerOpacity`、**不**参与行分隔线与 2dp 行距；`flat` 模式同样在末尾渲染；默认 null 不占位（既有调用零影响）。
   - **Web 动作行入组**：「复制地址 / 在浏览器中打开」从组外移入 Web 服务 `IosGroup(footer: ...)`，右对齐 Wrap（间距 12dp、大字体换行）；停止态/地址为空时 footer=null；仍不属于开关行手势/语义子树，点按不误触开关。
   - **外部深链映射**：`DeepLinkService.handleUrl` 在导入分流前识别 `legado://dict`、`legado://dict_rule`（含 `yuedu://`、带/不带三斜杠 `legado:///dict`、末尾斜杠，query 忽略、大小写不敏感），分别 `pushNamed(AppRoutes.dict / dictRule)`；`legado://import/...` 与未知 host 仍走原有导入确认框。冷启动经 `isSplashVisible` 等待闪屏退出（上限 90 帧，与分享文本同法），热路径 `onLink` 直接生效；同一 URI 在页面 push 存续期内去重，pop 后可再次打开。
