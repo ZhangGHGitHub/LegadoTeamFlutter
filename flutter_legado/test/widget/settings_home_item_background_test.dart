@@ -94,10 +94,10 @@ void main() {
       .where((m) => m.borderRadius == BorderRadius.circular(16))
       .toList();
 
-  testWidgets('默认：无项目图，8 张卡不建图片层', (tester) async {
+  testWidgets('默认：无项目图，11 张卡不建图片层', (tester) async {
     await pumpPage(tester);
     expect(find.byType(GlassCardBackground), findsNothing);
-    expect(cardMaterials(tester).length, 8);
+    expect(cardMaterials(tester).length, 11);
   });
 
   testWidgets('总开关关：有可用项目图也不渲染', (tester) async {
@@ -109,7 +109,7 @@ void main() {
     expect(find.byType(GlassCardBackground), findsNothing);
   });
 
-  testWidgets('层序：图片在卡面 Material 内、入口内容之下，8 卡各有图层', (tester) async {
+  testWidgets('层序：图片在卡面 Material 内、入口内容之下，11 卡各有图层', (tester) async {
     final light = await storeItem(tester);
     uiSettingsListenable.value = UiSettingsState(
       enableContainerBackgroundImage: true,
@@ -117,7 +117,7 @@ void main() {
     );
     await pumpPage(tester);
 
-    expect(find.byType(GlassCardBackground), findsNWidgets(8));
+    expect(find.byType(GlassCardBackground), findsNWidgets(11));
     final stack = tester.widget<Stack>(
       find.ancestor(of: itemBg(0), matching: find.byType(Stack)).first,
     );
