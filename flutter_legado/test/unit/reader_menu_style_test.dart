@@ -206,9 +206,14 @@ void main() {
       expect(colors.accent, scheme.primary);
     });
 
-    test('readBarStyle=1 文字与背景同属暗色时改用白字（对比度修复）', () {
+    test('readBarStyle=1 对比度不足时改用白字（WCAG < 4.5）', () {
       const text = Color(0xFF333333);
-      for (final argb in [0xFF263238, 0xFF37474F, 0xFF616161]) {
+      for (final argb in [
+        0xFF1A1A1A,
+        0xFF263238,
+        0xFF37474F,
+        0xFF616161,
+      ]) {
         final background = Color(argb);
         final colors = resolveReaderMenuColors(
           style: ReaderMenuStyle(readBarStyle: 1),
@@ -220,6 +225,27 @@ void main() {
         expect(colors.text, const Color(0xFFFFFFFF), reason: '$background');
         final ratio = _contrastRatio(colors.text, background);
         expect(ratio, greaterThan(4.5), reason: '$background 对比度 $ratio');
+      }
+    });
+
+    test('readBarStyle=1 棕/蓝灰预设保留 #333333（对比度达标不回退）', () {
+      const text = Color(0xFF333333);
+      // ReaderBackground.brown #D4A574（5.68:1）与 #90A4AE（4.88:1）
+      for (final argb in [0xFFD4A574, 0xFF90A4AE]) {
+        final background = Color(argb);
+        final colors = resolveReaderMenuColors(
+          style: ReaderMenuStyle(readBarStyle: 1),
+          isDark: false,
+          scheme: scheme,
+          pageBackgroundColor: background,
+          pageTextColor: text,
+        );
+        expect(colors.text, text, reason: '$background 应保留原文字色');
+        expect(
+          _contrastRatio(colors.text, background),
+          greaterThanOrEqualTo(4.5),
+          reason: '$background 对比度不得回退',
+        );
       }
     });
 
@@ -325,7 +351,7 @@ void main() {
         isDark: false,
         scheme: scheme,
       );
-      expect(light.background, Color(expected.light.background));
+      expect(light.background, Color(expected.light.surfaceContainerHigh));
       expect(light.container, Color(expected.light.surfaceContainerLow));
       expect(light.accent, Color(expected.light.primary));
       expect(light.text, Color(expected.light.onSurface));
@@ -335,10 +361,66 @@ void main() {
         isDark: true,
         scheme: scheme,
       );
-      expect(dark.background, Color(expected.dark.background));
+      expect(dark.background, Color(expected.dark.surfaceContainerHigh));
       expect(dark.container, Color(expected.dark.surfaceContainerLow));
       expect(dark.accent, Color(expected.dark.primary));
       expect(dark.text, Color(expected.dark.onSurface));
+    });
+
+    test("paletteStyle='' 跟随应用 palette；非空用户选择优先", () {
+      const seed = 0xFF6750A4;
+      final style = ReaderMenuStyle(
+        readBarStyle: 2,
+        colorMode: 0,
+        paletteStyle: '',
+        accentColor: seed,
+        accentColorNight: seed,
+      );
+      final appExpected = buildParameterizedRoles(
+        style: 'vibrant',
+        seed: seed,
+        contrastLevel: 0,
+      );
+      final followed = resolveReaderMenuColors(
+        style: style,
+        isDark: false,
+        scheme: scheme,
+        appPaletteStyle: 'vibrant',
+      );
+      expect(
+        followed.background,
+        Color(appExpected.light.surfaceContainerHigh),
+        reason: "paletteStyle='' 使用应用调色板 vibrant",
+      );
+
+      // 'none' / 未知值归一为 tonalSpot
+      final tonalExpected = buildParameterizedRoles(
+        style: 'tonalSpot',
+        seed: seed,
+        contrastLevel: 0,
+      );
+      final none = resolveReaderMenuColors(
+        style: style,
+        isDark: false,
+        scheme: scheme,
+        appPaletteStyle: 'none',
+      );
+      expect(none.background, Color(tonalExpected.light.surfaceContainerHigh));
+
+      // 用户显式选择优先于应用调色板
+      final userStyle = style.copyWith(paletteStyle: 'neutral');
+      final neutralExpected = buildParameterizedRoles(
+        style: 'neutral',
+        seed: seed,
+        contrastLevel: 0,
+      );
+      final user = resolveReaderMenuColors(
+        style: userStyle,
+        isDark: false,
+        scheme: scheme,
+        appPaletteStyle: 'vibrant',
+      );
+      expect(user.background, Color(neutralExpected.light.surfaceContainerHigh));
     });
 
     test('readBarStyle=2 自定义背景 0 时回落阅读页底色', () {

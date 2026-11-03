@@ -60,6 +60,7 @@ void main() {
     EdgeInsets viewPadding = EdgeInsets.zero,
     TextScaler? textScaler,
     bool parentHandlesBottomInset = false,
+    EdgeInsets outerPadding = EdgeInsets.zero,
   }) => UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
@@ -75,9 +76,11 @@ void main() {
             textScaler: textScaler,
           ),
           child: Scaffold(
-            body: Stack(
-              children: [
-                ReaderMenuPanel(
+            body: Padding(
+              padding: outerPadding,
+              child: Stack(
+                children: [
+                  ReaderMenuPanel(
                   visible: true,
                   onBack: () {},
                   onAddBookmark: () {},
@@ -88,9 +91,10 @@ void main() {
                   onReadAloud: () {},
                   onToggleAutoPage: () {},
                   onOpenReplaceRules: () {},
-                  parentHandlesBottomInset: parentHandlesBottomInset,
-                ),
-              ],
+                    parentHandlesBottomInset: parentHandlesBottomInset,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -119,6 +123,7 @@ void main() {
     EdgeInsets viewPadding = EdgeInsets.zero,
     TextScaler? textScaler,
     bool parentHandlesBottomInset = false,
+    EdgeInsets outerPadding = EdgeInsets.zero,
   }) async {
     final container = makeContainer();
     if (currentBook != null) stubOpenBook();
@@ -129,6 +134,7 @@ void main() {
         viewPadding: viewPadding,
         textScaler: textScaler,
         parentHandlesBottomInset: parentHandlesBottomInset,
+        outerPadding: outerPadding,
       ),
     );
     if (currentBook != null) {
@@ -471,6 +477,33 @@ void main() {
         find.byKey(const ValueKey('reader-bottom-panel-surface')),
       );
       expect(surface.bottom, closeTo(screen.height - 16, 0.01));
+      expect(
+        tester.getRect(action('设置')).bottom,
+        closeTo(surface.bottom - 16, 0.01),
+      );
+    });
+
+    testWidgets('真实外层 Padding(bottom:34)+flag：只保留外层 34 与内 16', (
+      tester,
+    ) async {
+      const navBottom = 34.0;
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        padding: const EdgeInsets.only(bottom: navBottom),
+        viewPadding: const EdgeInsets.only(bottom: navBottom),
+        parentHandlesBottomInset: true,
+        outerPadding: const EdgeInsets.only(bottom: navBottom),
+      );
+      final screen = tester.getSize(find.byType(Scaffold));
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('reader-bottom-panel-surface')),
+      );
+      expect(
+        surface.bottom,
+        closeTo(screen.height - navBottom - 16, 0.01),
+        reason: '外层 Padding 34 + 浮动边距 16，面板自身不再加 34',
+      );
       expect(
         tester.getRect(action('设置')).bottom,
         closeTo(surface.bottom - 16, 0.01),
