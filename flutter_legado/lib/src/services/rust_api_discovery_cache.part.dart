@@ -369,6 +369,29 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     }
   }
 
+  /// [批9b-3 | 2026-11-03] 接通 retain_comic_images FFI（契约 §2.46）：
+  /// 清理失败/FFI 异常统一降级 `0`（不清理；返回删除数由 Rust 计算，
+  /// 缓存是加速器不是数据源）。
+  @override
+  Future<int> retainComicImages({
+    required String bookUrl,
+    required int durIndex,
+    required int retain,
+    required int preDownload,
+  }) async {
+    try {
+      return await bridge.retainComicImages(
+        bookUrl: bookUrl,
+        durIndex: durIndex,
+        retain: retain,
+        preDownload: preDownload,
+      );
+    } catch (e) {
+      debugPrint('[RustApi] retainComicImages 失败（降级不清理）：$e');
+      return 0;
+    }
+  }
+
   // ========== 音频章节文件缓存（对齐原版 AudioCacheManager，契约 §2.47） ==========
 
   /// [B1 | 2026-10-04] 接通 audio_cache_query FFI（契约 §2.47）：

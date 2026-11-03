@@ -427,7 +427,9 @@ class PrefKeys {
   /// 图片解码缓存大小 MB（默认 50，1~1024）
   static const bitmapCacheSize = 'bitmapCacheSize';
 
-  /// 图片文件保留数量（默认 100，0~999）
+  /// 图片文件保留数量（默认 0 = 不清理，0~999；对齐原版
+  /// `AppConfig.imageRetainNum`。随备份 `appPrefs` 往返——参考版
+  /// `BackupConfig.readPrefKeys` 未收录，任何忽略组合下均恢复）
   static const imageRetainNum = 'imageRetainNum';
 
   /// 预下载章节数量（默认 10，0~9999）

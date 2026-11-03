@@ -75,7 +75,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   int _sourceEditMaxLine = 99;
   bool _antiAlias = false;
   int _bitmapCacheSize = 50;
-  int _imageRetainNum = 100;
+  // [批9b-3] 默认 0 = 不清理（对齐原版 AppConfig.imageRetainNum 默认值；
+  // 存量已保存值保留，仅改缺省）
+  int _imageRetainNum = 0;
   int _preDownloadNum = 10;
   bool _replaceEnableDefault = true;
   bool _mediaButtonOnExit = true;
@@ -146,7 +148,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     _bitmapCacheSize =
         await s.getIntPref(PrefKeys.bitmapCacheSize, defaultValue: 50);
     _imageRetainNum =
-        await s.getIntPref(PrefKeys.imageRetainNum, defaultValue: 100);
+        await s.getIntPref(PrefKeys.imageRetainNum, defaultValue: 0);
     _preDownloadNum =
         await s.getIntPref(PrefKeys.preDownloadNum, defaultValue: 10);
     _replaceEnableDefault =
@@ -378,7 +380,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               IosListTile(
                 title: '漫画保留数量',
-                subtitle: '保留已读章节数量 $_imageRetainNum',
+                subtitle: _imageRetainNum == 0
+                    ? '不清理已缓存图片（0=不清理）'
+                    : '保留已读章节数量 $_imageRetainNum',
                 onTap: () => _editIntPref(
                   title: '漫画保留数量',
                   key: PrefKeys.imageRetainNum,

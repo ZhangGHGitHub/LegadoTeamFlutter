@@ -1103,6 +1103,24 @@ abstract class BookApi {
   /// [P4-2a | 2026-09-29] 加法式新增（契约 §2.46 image_cache FFI）。
   Future<List<int>?> getImageCache(String bookUrl, String url);
 
+  /// 删除本书不在「已读保留窗口」内的图片缓存（对齐原版
+  /// `BookHelp.clearComicCache`，契约 §2.46）
+  ///
+  /// 窗口 = `[durIndex - retain, durIndex + preDownload]`（`preDownload`
+  /// 为向后保留章节数，与正文预下载偏好同源）；窗口内章节正文来自
+  /// `cached_chapters`，逐章解析 `<img src>` 并绝对化后按
+  /// `md5_16(url).suffix` 保留。`retain<=0` 直接返回 0（不清理）。
+  /// **安全性**：窗口内任一章节缺缓存正文/正文空白、非图片书、或保留集合
+  /// 为空时整次跳过返回 0（避免误删未缓存章节图片）；DB/IO 失败降级 0，
+  /// 不抛异常。返回实际删除文件数。
+  /// [批9b-3 | 2026-11-03] 加法式新增（契约 §2.46 image_cache FFI）。
+  Future<int> retainComicImages({
+    required String bookUrl,
+    required int durIndex,
+    required int retain,
+    required int preDownload,
+  });
+
   // ========== 音频章节文件缓存（对齐原版 AudioCacheManager，契约 §2.47） ==========
 
   /// 查询某章音频是否已缓存（只读、幂等，契约 §2.47 `audioCacheQuery`）

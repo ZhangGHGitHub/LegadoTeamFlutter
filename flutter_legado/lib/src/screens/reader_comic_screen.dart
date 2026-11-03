@@ -30,6 +30,7 @@ import '../widgets/manga/manga_config_sheet.dart';
 import 'reader_comic/manga_auto_read.dart';
 import 'reader_comic/manga_catalog_sheet.dart';
 import 'reader_comic/manga_click_actions.dart';
+import 'reader_comic/manga_image_retention.dart';
 import 'reader_comic/manga_menu.dart';
 import 'reader_comic/manga_paged_view.dart';
 import 'reader_comic/manga_page_actions_sheet.dart';
@@ -153,6 +154,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// （_buildPagedContent）强制重建——语义等价「token 失配 → 丢弃结果」，
   /// 无需引入参考版 Empty/Loading/Ready/Failed 四态状态机。
   int _loadSeq = 0;
+
+  /// [批9b-3] 漫画已读图片保留清理触发器（契约 §2.46 retainComicImages）
+  /// 懒创建；换书/换源经 [MangaImageRetention.reset] 作废旧排队任务。
+  MangaImageRetention? _imageRetention;
 
   /// [P4-3 E4] 当前错误是否为「章级」错误（章节正文获取失败 / 非卷章
   /// 0 图校验失败）：ErrorView 重试只重载当前章节 [_loadChapterImages]
@@ -1126,6 +1131,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// 加载书籍信息和章节列表
   Future<void> _loadBook() async {
+    // [批9b-3] 换书/换源重载：作废旧书排队中的图片保留清理，
+    // 允许新书同章节索引再次触发（见 MangaImageRetention.reset）。
+    _imageRetention?.reset();
     setState(() {
       _loading = true;
       _error = null;
@@ -1190,6 +1198,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
       // 加载当前章节的图片
       await _loadChapterImages();
+      // [批9b-3] 打开成功钩子：按 imageRetainNum/preDownloadNum 清理窗口外
+      // 图片缓存（fire-and-forget，失败/0 值静默，见 MangaImageRetention）
+      unawaited(_retainComicImages());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -1650,6 +1661,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     await _loadChapterImages();
     // 新章章首进度（chapterPos=0，与 chapterIndex 一并落库）
     await _saveProgress();
+    // [批9b-3] 翻章成功钩子：保留窗口随当前章移动（同书同索引由触发器去重）
+    unawaited(_retainComicImages());
   }
 
   /// 切换到下一章
@@ -1685,6 +1698,23 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     } catch (_) {
       // 保存失败不阻断阅读流程
     }
+  }
+
+  /// [批9b-3] 触发漫画已读图片保留清理（契约 §2.46）
+  ///
+  /// 本地书（含 cbz 本地漫画）无「网络图片磁盘缓存」语义，直接跳过；
+  /// 远程书交给 [MangaImageRetention]（读偏好 → FFI → 失败静默）。
+  Future<void> _retainComicImages() async {
+    final book = _book;
+    if (book == null || BookType.isLocalBook(book)) return;
+    final retention = _imageRetention ??= MangaImageRetention(
+      api: ref.read(bookApiProvider),
+      settings: ref.read(settingsProvider),
+    );
+    await retention.onChapterOpened(
+      bookUrl: _activeBookUrl,
+      chapterIndex: _currentChapterIndex,
+    );
   }
 
   /// 切换控制栏显示/隐藏

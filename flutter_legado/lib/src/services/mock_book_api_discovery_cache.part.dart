@@ -185,6 +185,18 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     return hit == null ? null : List<int>.of(hit);
   }
 
+  /// [批9b-3 | 2026-11-03] mock 漫画图片保留清理：内存索引不含章节正文，
+  /// 无法还原 Rust 侧窗口判定，恒返回 0（不清理；真实语义由 Rust 单测/
+  /// 端到端测试覆盖，契约 §2.46）。
+  @override
+  Future<int> retainComicImages({
+    required String bookUrl,
+    required int durIndex,
+    required int retain,
+    required int preDownload,
+  }) async =>
+      0;
+
   // ========== 音频章节文件缓存（契约 §2.47 读面 + §2.48 写入面，Mock 内存态） ==========
 
   /// mock 音频缓存（bookUrl → 章节下标集合；仅会话内存态，不落盘）
