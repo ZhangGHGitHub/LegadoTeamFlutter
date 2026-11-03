@@ -275,7 +275,9 @@ void main() {
       );
     });
 
-    testWidgets('M2 运行中操作行贴邻开关行、右对齐且不误触开关', (tester) async {
+    // [M3 我的页 | 2026-11-03] M2 时动作行只能在组外；IosGroup footer 落地后
+    // 回移分组容器内（不套行卡、不参与分隔线），背景图/圆角/边框一并包裹。
+    testWidgets('M3 运行中操作行入组为 footer、右对齐且不误触开关', (tester) async {
       stubWebServiceRunning();
       when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
 
@@ -286,28 +288,40 @@ void main() {
       final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final copy = find.byKey(const ValueKey('web-service-copy-address'));
       final open = find.byKey(const ValueKey('web-service-open-browser'));
+      final footer = find.byKey(const ValueKey('ios-group-footer'));
       expect(copy, findsOneWidget);
       expect(open, findsOneWidget);
+      expect(footer, findsOneWidget);
 
       // 操作行在开关行之外：不在开关行的语义/手势区域，不会误触开关
       expect(find.descendant(of: row, matching: copy), findsNothing);
       expect(find.descendant(of: row, matching: open), findsNothing);
-      // 且不在置顶分组内（IosGroup 强制行卡，动作行按约定放组外）
+
+      // [M3] 操作行在置顶分组内，且是分组 footer（容器内、非行卡）
       final firstGroup = find.byType(IosGroup).first;
       expect(
         find.descendant(of: firstGroup, matching: copy),
-        findsNothing,
-        reason: '操作行在 IosGroup 组外（组内会被套成行卡）',
+        findsOneWidget,
+        reason: '操作行应在 Web 服务分组容器内（参考版 SplicedColumnGroup）',
       );
-      expect(find.descendant(of: firstGroup, matching: open), findsNothing);
+      expect(find.descendant(of: firstGroup, matching: open), findsOneWidget);
+      expect(find.descendant(of: firstGroup, matching: footer), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ios-group-surface')),
+          matching: footer,
+        ),
+        findsOneWidget,
+        reason: 'footer 在分组容器 surface 内（同一背景图/圆角/边框包裹）',
+      );
 
-      // 贴邻：操作行紧接开关行下方（组外 + 小间距，视觉仍为一体）
+      // 贴邻：操作行紧接开关行下方（footer 垂直内边距 12dp）
       final rowRect = tester.getRect(row);
       final copyRect = tester.getRect(copy);
       expect(
         copyRect.top - rowRect.bottom,
-        inInclusiveRange(0, 12),
-        reason: '操作行与开关行的垂直间距应在 0~12dp',
+        inInclusiveRange(8, 12),
+        reason: '操作行与开关行的垂直间距（footer 内边距）应在 8~12dp',
       );
       // 右对齐：末个按钮右缘与开关行右缘相差 16dp 内边距
       expect(

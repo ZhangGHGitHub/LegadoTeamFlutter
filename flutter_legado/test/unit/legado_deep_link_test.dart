@@ -57,4 +57,65 @@ void main() {
       expect(LegadoDeepLink.tryParse('legado://import/bookSource'), isNull);
     });
   });
+
+  // [M3 我的页 | 2026-11-03] 外部路由深链：legado://dict / dict_rule
+  group('LegadoDeepLink.tryParseRoute', () {
+    test('host 级 dict / dict_rule', () {
+      expect(
+        LegadoDeepLink.tryParseRoute('legado://dict'),
+        LegadoRouteDeepLink.dict,
+      );
+      expect(
+        LegadoDeepLink.tryParseRoute('legado://dict_rule'),
+        LegadoRouteDeepLink.dictRule,
+      );
+    });
+
+    test('yuedu:// 与大小写不敏感', () {
+      expect(
+        LegadoDeepLink.tryParseRoute('yuedu://dict'),
+        LegadoRouteDeepLink.dict,
+      );
+      expect(
+        LegadoDeepLink.tryParseRoute('Yuedu://DICT_RULE'),
+        LegadoRouteDeepLink.dictRule,
+      );
+    });
+
+    test('带/不带三斜杠、末尾斜杠、query 忽略', () {
+      expect(
+        LegadoDeepLink.tryParseRoute('legado:///dict'),
+        LegadoRouteDeepLink.dict,
+      );
+      expect(
+        LegadoDeepLink.tryParseRoute('legado:///dict_rule?src=https://a/b'),
+        LegadoRouteDeepLink.dictRule,
+      );
+      expect(
+        LegadoDeepLink.tryParseRoute('legado://dict/'),
+        LegadoRouteDeepLink.dict,
+      );
+      expect(
+        LegadoDeepLink.tryParseRoute('  legado://dict?foo=bar  '),
+        LegadoRouteDeepLink.dict,
+      );
+    });
+
+    test('导入深链与未知 host / 额外路径不识别（交回导入分流）', () {
+      expect(
+        LegadoDeepLink.tryParseRoute(
+          'legado://import/dictRule?src=https://example.com/dict.json',
+        ),
+        isNull,
+      );
+      expect(
+        LegadoDeepLink.tryParseRoute('legado://import/bookSource'),
+        isNull,
+      );
+      expect(LegadoDeepLink.tryParseRoute('legado://mystery'), isNull);
+      expect(LegadoDeepLink.tryParseRoute('legado://dict/child'), isNull);
+      expect(LegadoDeepLink.tryParseRoute('https://example.com/dict'), isNull);
+      expect(LegadoDeepLink.tryParseRoute(''), isNull);
+    });
+  });
 }
