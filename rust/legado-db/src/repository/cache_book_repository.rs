@@ -139,6 +139,38 @@ impl<'a> CacheBookRepository<'a> {
         Ok(rows)
     }
 
+    /// 按书籍 URL + 章节索引窗口查询缓存章节（批9b-3）
+    ///
+    /// 供漫画已读图片保留清理只装载窗口内正文（`[start_index, end_index]`
+    /// 闭区间、`start_index <= end_index`），避免 `get_by_book` 把整书
+    /// `content` 全部读入内存；返回按 `chapter_index` 升序。
+    pub fn get_by_book_index_range(
+        &self,
+        book_url: &str,
+        start_index: i32,
+        end_index: i32,
+    ) -> LegadoResult<Vec<CachedChapter>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, book_url, chapter_index, chapter_title, chapter_url, content, cached_at, size_bytes
+                 FROM cached_chapters
+                 WHERE book_url = ?1 AND chapter_index >= ?2 AND chapter_index <= ?3
+                 ORDER BY chapter_index ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                params![book_url, start_index, end_index],
+                row_to_cached_chapter,
+            )
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
     /// 按 chapter_url 查询单条缓存
     ///
     /// 注意（Task #16）：仅按 chapter_url 查找在不同书籍共用相同章节 URL 时
@@ -304,6 +336,38 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].chapter_url, "http://ex.com/ch1");
         assert_eq!(results[0].content, "content here");
+    }
+
+    /// 批9b-3：窗口查询只返回 `[start, end]` 闭区间行，且不串书
+    #[test]
+    fn test_get_by_book_index_range() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = CacheBookRepository::new(db.connection());
+
+        for i in 0..5 {
+            repo.insert(&make_cached(
+                "book1",
+                &format!("http://ex.com/ch{i}"),
+                i,
+                1000 + i as i64,
+            ))
+            .unwrap();
+        }
+        repo.insert(&make_cached("book2", "http://ex.com/other", 2, 2000))
+            .unwrap();
+
+        let rows = repo.get_by_book_index_range("book1", 1, 3).unwrap();
+        assert_eq!(
+            rows.iter().map(|c| c.chapter_index).collect::<Vec<_>>(),
+            vec![1, 2, 3],
+            "窗口 [1,3] 应只返回三行且按索引升序"
+        );
+        assert!(
+            repo.get_by_book_index_range("book1", 9, 12)
+                .unwrap()
+                .is_empty(),
+            "窗口无行应返回空"
+        );
     }
 
     #[test]

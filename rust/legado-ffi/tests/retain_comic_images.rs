@@ -164,14 +164,77 @@ fn e2e_missing_window_content_skips_cleanup() {
             urls.push(img);
         }
 
-        assert_eq!(
-            call(book, 1, 1, 1),
-            0,
-            "窗口 [0,2] 含缺正文章节时必须整次跳过"
-        );
+        // dur=2 当前章（章 2）缺缓存正文 → 整次跳过
+        assert_eq!(call(book, 2, 1, 1), 0, "当前章缺正文时必须整次跳过");
         for url in &urls {
             assert!(has(book, url), "跳过清理时所有图片必须保留: {url}");
         }
+    });
+}
+
+#[test]
+fn e2e_forward_missing_default_predownload_still_cleans() {
+    let _guard = setup();
+    with_cache_root("forward-missing", |_root| {
+        let book = "https://e2e-retain/forward-missing";
+        insert_book(book, book_type::IMAGE_BIT);
+        let mut urls = Vec::new();
+        // 顺序阅读：当前章 2，后窗 1，前窗 3..12 尚未预载（默认 preDownload=10）
+        for i in 0..13 {
+            let chapter_url = insert_chapter(book, i);
+            let img = format!("https://cdn.example.com/forward-{i}.jpg");
+            if i <= 2 {
+                insert_cached(book, i, &chapter_url, &format!("<img src=\"{img}\">"));
+                save(&img, book);
+            }
+            urls.push(img);
+        }
+
+        // 窗口 [1,12]：前窗 3..12 缺正文仅跳过该章；章 0 窗口外应删除
+        assert_eq!(call(book, 2, 1, 10), 1, "前窗缺缓存不得导致整跳");
+        assert!(!has(book, &urls[0]), "窗口外章 0 图片应删除");
+        assert!(has(book, &urls[1]), "后窗章 1 图片应保留");
+        assert!(has(book, &urls[2]), "当前章 2 图片应保留");
+    });
+}
+
+#[test]
+fn e2e_volume_chapter_missing_content_does_not_block() {
+    let _guard = setup();
+    with_cache_root("volume", |_root| {
+        let book = "https://e2e-retain/volume";
+        insert_book(book, book_type::IMAGE_BIT);
+
+        let ch0 = insert_chapter(book, 0);
+        let img0 = "https://cdn.example.com/volume-0.jpg";
+        insert_cached(book, 0, &ch0, &format!("<img src=\"{img0}\">"));
+        save(img0, book);
+
+        // 卷章 1：is_volume=true 且无 cached_chapters 正文
+        legado_ffi::db_state::with_database(|db| {
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                url: "https://e2e-source.example.com/volume/ch/1".to_string(),
+                title: "第一卷".to_string(),
+                book_url: book.to_string(),
+                index: 1,
+                is_volume: true,
+                ..BookChapter::default()
+            })
+        })
+        .expect("插入卷章");
+
+        let ch2 = insert_chapter(book, 2);
+        let img2 = "https://cdn.example.com/volume-2.jpg";
+        insert_cached(book, 2, &ch2, &format!("<img src=\"{img2}\">"));
+        save(img2, book);
+
+        let outside = "https://cdn.example.com/volume-outside.jpg";
+        save(outside, book);
+
+        assert_eq!(call(book, 0, 1, 2), 1, "卷章缺正文不得阻断清理");
+        assert!(has(book, img0), "章 0 图片保留");
+        assert!(has(book, img2), "章 2 图片保留");
+        assert!(!has(book, outside), "集合外图片应删除");
     });
 }
 

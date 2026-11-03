@@ -265,13 +265,16 @@ pub fn get_image_cache(book_url: &str, url: &str) -> Option<Vec<u8>> {
 
 // ─── 漫画已读窗口图片保留（批9b-3，契约 §2.46）─────────────────────────────────
 
-/// HTML `<img ...>` 标签（大小写不敏感；`[^>]*` 天然跨行）
-static IMG_TAG_RE: OnceLock<regex::Regex> = OnceLock::new();
-
-/// `<img>` 标签内图片地址属性（同时匹配 `src`/`data-src`/`data-original`；
-/// 单/双引号与无引号三态）——与 Dart `comicImgSrcRegex` 的读取面保持超集，
-/// 宁可多保留（不误删阅读器可能已缓存的图片）也不漏解析。
-static IMG_SRC_ATTR_RE: OnceLock<regex::Regex> = OnceLock::new();
+/// `<img>` 图片地址正则（四分支，逐字对齐 Dart `comicImgSrcRegex` /
+/// 原版 `AppPattern.imgPattern`）：
+/// 1. `src` 复合 URL `url,{json}`（单/双引号，允许 JSON 内嵌 `"` 与一层 `{}`）；
+/// 2. `data-src`/`data-original`/`data-srcset`；
+/// 3. 普通双引号 `src`；
+/// 4. 其他 `data-*` / 单引号 `src`。
+///
+/// 复合 URL 必须整体保留：阅读器以完整字符串（含 `,{json}`）计算 md5 写盘，
+/// 截断到 `{` 会得到不同文件名并误删当前章图片。
+static IMG_SRC_RE: OnceLock<regex::Regex> = OnceLock::new();
 
 /// 从章节正文解析图片 URL（标签内地址原样；无 `<img>` 时回退图片 URL 行）
 ///
@@ -281,32 +284,26 @@ fn extract_image_urls(content: &str) -> Vec<String> {
     if content.trim().is_empty() {
         return Vec::new();
     }
-    let tag_re = IMG_TAG_RE
-        .get_or_init(|| regex::Regex::new(r"(?is)<img\b[^>]*>").expect("img 标签正则必须合法"));
-    let attr_re = IMG_SRC_ATTR_RE.get_or_init(|| {
+    let re = IMG_SRC_RE.get_or_init(|| {
         regex::Regex::new(
-            r#"(?is)(?:^|[\s/])(?:src|data-src|data-original)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))"#,
+            r#"(?is)<img[^>]*\ssrc\s*=\s*['"]([^'"{>]*\{(?:[^{}]|\{[^}>]+\})+\})['"][^>]*>|<img[^>]*\sdata-(?:src|original|srcset)\s*=\s*['"]([^'">]+)['"][^>]*>|<img[^>]*\ssrc\s*=\s*"([^">]+)"[^>]*>|<img[^>]*\s(?:data-[^=>]*|src)=\s*['"]([^'">]*)['"][^>]*>"#,
         )
-        .expect("img 地址属性正则必须合法")
+        .expect("img src 四分支正则必须合法")
     });
 
     let mut urls = Vec::new();
-    for tag in tag_re.find_iter(content) {
-        for caps in attr_re.captures_iter(tag.as_str()) {
-            let value = caps
-                .get(1)
-                .or_else(|| caps.get(2))
-                .or_else(|| caps.get(3))
-                .map(|m| m.as_str().trim())
-                .unwrap_or("");
-            if !value.is_empty() {
-                urls.push(value.to_string());
-            }
+    for caps in re.captures_iter(content) {
+        let value = (1..=4)
+            .find_map(|i| caps.get(i))
+            .map(|m| m.as_str().trim())
+            .unwrap_or("");
+        if !value.is_empty() {
+            urls.push(value.to_string());
         }
     }
     if urls.is_empty() {
         // 兜底：部分漫画源正文就是逐行图片 URL（与 Dart
-        // `parseComicImageUrls` 的 line 回退同口径）
+        // `parseComicImageUrls` 的 line 回退同口径；后缀判定剥复合尾）
         urls.extend(
             content
                 .lines()
@@ -319,9 +316,16 @@ fn extract_image_urls(content: &str) -> Vec<String> {
     urls
 }
 
-/// 是否「像图片 URL」（对齐 Dart `looksLikeImageUrl` 的判定集合）
+/// 剥去复合图片 URL 尾 `,{json}`（仅用于「是否像图片」判定；
+/// 计算缓存文件名时必须保留完整原串）
+fn strip_composite_suffix(url: &str) -> &str {
+    url.split_once(",{").map(|(base, _)| base).unwrap_or(url)
+}
+
+/// 是否「像图片 URL」（对齐 Dart `looksLikeImageUrl` 的判定集合；
+/// 复合 URL 先剥 `,{json}` 再判后缀）
 fn looks_like_image_url(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
+    let lower = strip_composite_suffix(url).to_ascii_lowercase();
     if [".m3u8", ".mp4", ".flv", ".mkv", ".webm"]
         .iter()
         .any(|ext| lower.contains(ext))
@@ -339,12 +343,17 @@ fn looks_like_image_url(url: &str) -> bool {
         || lower.contains("/pic")
 }
 
-/// 计算保留窗口内全部图片缓存文件名
+/// 计算保留窗口内全部图片缓存文件名（批9b-3 回修窗口必需集）
 ///
-/// 窗口 = `chapters` 表中 `index ∈ [start_index, end_index]` 的章节；
-/// 每章必须能按 `(book_url, chapter.url)` 命中非空 `cached_chapters` 正文，
-/// 否则返回 `None`（调用方整次跳过清理，避免误删未缓存章节图片——原版
-/// `clearComicCache` 对缺失正文仅跳过该章，属已知差异）。
+/// 窗口 = `chapters` 表中 `index ∈ [start_index, end_index]` 的章节：
+/// - **当前章**（`index == dur_index`）必须存在且正文非空，否则 `None`
+///   （调用方整次跳过；当前章为卷章同样跳过）；
+/// - **后窗**（`index < dur_index`）章节缺正文/正文空白 → `None`（保守，
+///   避免删除尚未缓存章节的图片；阅读早期可能因此暂不清理）；
+/// - **前窗**（`index > dur_index`）章节缺正文 → 仅跳过该章（默认
+///   `preDownloadNum=10`、实际只预载 ±1 时避免每次整跳）；
+/// - **卷章** `is_volume` → 跳过（不要求正文、不贡献图片）；
+/// - 每章 `img_url`（阅读器首图）与正文解析结果一同纳入保留集合。
 ///
 /// 返回 `Some(空集合)` 表示窗口内正文均无图片地址（由调用方再决定跳过）。
 fn retained_names_for_window(
@@ -352,6 +361,7 @@ fn retained_names_for_window(
     cached: &[CachedChapter],
     start_index: i32,
     end_index: i32,
+    dur_index: i32,
 ) -> Option<HashSet<String>> {
     let window: Vec<&BookChapter> = chapters
         .iter()
@@ -360,16 +370,43 @@ fn retained_names_for_window(
     if window.is_empty() {
         return None;
     }
+    let current = window.iter().find(|c| c.index == dur_index)?;
+    if current.is_volume {
+        return None;
+    }
     let by_url: HashMap<&str, &CachedChapter> =
         cached.iter().map(|c| (c.chapter_url.as_str(), c)).collect();
+    let content_of = |chapter: &BookChapter| -> Option<&str> {
+        let cached = by_url.get(chapter.url.as_str())?;
+        let content = cached.content.trim();
+        (!content.is_empty()).then_some(cached.content.as_str())
+    };
+    content_of(current)?; // 当前章无正文：整次跳过（安全优先）
+
     let mut names = HashSet::new();
     for chapter in window {
-        let cached = by_url.get(chapter.url.as_str())?;
-        if cached.content.trim().is_empty() {
-            return None;
+        if chapter.is_volume {
+            continue;
         }
-        for url in extract_image_urls(&cached.content) {
+        let Some(content) = content_of(chapter) else {
+            if chapter.index < dur_index {
+                return None; // 后窗缺正文：保守整跳，避免误删未缓存章节图片
+            }
+            continue; // 前窗缺正文：跳过该章，不影响其余窗口清理
+        };
+        for url in extract_image_urls(content) {
             let absolute = AnalyzeUrl::get_absolute_url(&chapter.url, &url);
+            names.insert(cache_file_name(&absolute));
+        }
+        if let Some(img_url) = chapter
+            .img_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+        {
+            // 阅读器把 chapter.imgUrl 插到图片列表首位（reader_comic_screen
+            // `_loadChapterImages`），其缓存键也须纳入保留集合。
+            let absolute = AnalyzeUrl::get_absolute_url(&chapter.url, img_url);
             names.insert(cache_file_name(&absolute));
         }
     }
@@ -453,12 +490,18 @@ fn retain_comic_images_inner(
             return Ok(None); // 非图片书不清理（对齐原版 book.isImage 门）
         }
         let chapters = BookChapterRepository::new(conn).find_by_book_url(book_url)?;
-        let cached = CacheBookRepository::new(conn).get_by_book(book_url)?;
+        // 只取窗口内 cached_chapters 行，避免整书正文装载（批9b-3 回修 P2）
+        let cached = CacheBookRepository::new(conn).get_by_book_index_range(
+            book_url,
+            start_index,
+            end_index,
+        )?;
         Ok(retained_names_for_window(
             &chapters,
             &cached,
             start_index,
             end_index,
+            dur_index,
         ))
     })?;
 
@@ -762,14 +805,36 @@ mod tests {
         }
     }
 
-    // 标签解析：双/单/无引号 + data-src/data-original 超集
+    // 标签解析：单/双引号 + data-src/data-original（对齐 Dart 四分支）
     #[test]
     fn extract_image_urls_supports_quote_variants() {
-        let content = r#"<p><img src="/a/1.webp"><img data-src='https://cdn/2.jpg'><img data-original=3.gif></p>"#;
+        let content = r#"<p><img src="/a/1.webp"><img data-src='https://cdn/2.jpg'><img data-original="3.gif"></p>"#;
         assert_eq!(
             extract_image_urls(content),
             vec!["/a/1.webp", "https://cdn/2.jpg", "3.gif"],
-            "img src/data-src/data-original（单/双/无引号）均应解析"
+            "img src/data-src/data-original（单/双引号）均应解析"
+        );
+    }
+
+    // 复合 URL 双引号：完整保留 ,{json} 尾（不截断到 {）
+    #[test]
+    fn extract_image_urls_keeps_double_quoted_composite() {
+        let content = r#"<img src="https://cdn.com/a.webp,{"headers":{"Referer":"https://x"}}">"#;
+        assert_eq!(
+            extract_image_urls(content),
+            vec![r#"https://cdn.com/a.webp,{"headers":{"Referer":"https://x"}}"#],
+            "双引号复合 URL 必须完整保留（含 JSON 内嵌引号）"
+        );
+    }
+
+    // 复合 URL 单引号：完整保留 ,{json} 尾
+    #[test]
+    fn extract_image_urls_keeps_single_quoted_composite() {
+        let content = r#"<img src='https://cdn.com/b.jpg,{"headers":{"X-Token":"abc"}}'>"#;
+        assert_eq!(
+            extract_image_urls(content),
+            vec![r#"https://cdn.com/b.jpg,{"headers":{"X-Token":"abc"}}"#],
+            "单引号复合 URL 必须完整保留"
         );
     }
 
@@ -781,6 +846,17 @@ mod tests {
             extract_image_urls(content),
             vec!["https://cdn.example.com/a/b.jpg"],
             "URL 行回退应识别图片后缀并排除视频"
+        );
+    }
+
+    // 行回退：复合 URL 剥 ,{json} 后判后缀，但保留完整原串
+    #[test]
+    fn extract_image_urls_line_fallback_composite() {
+        let line = r#"https://cdn.example.com/c.webp,{"headers":{"Referer":"https://x"}}"#;
+        assert_eq!(
+            extract_image_urls(line),
+            vec![line],
+            "复合 URL 行应识别为图片且原样保留"
         );
     }
 
@@ -804,7 +880,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let keep = retained_names_for_window(&chapters, &cached_rows, 1, 2)
+        let keep = retained_names_for_window(&chapters, &cached_rows, 1, 2, 1)
             .expect("窗口内章节均有正文，应返回保留集合");
         assert_eq!(keep.len(), 2, "窗口 [1,2] 只保留两章图片");
         assert!(keep.contains(&cache_file_name("https://cdn.com/1.jpg")));
@@ -813,9 +889,9 @@ mod tests {
         assert!(!keep.contains(&cache_file_name("https://cdn.com/3.jpg")));
     }
 
-    // 窗口内任一章节无缓存行 → 整次跳过（None）
+    // 当前章缺缓存行 → 整次跳过（None）
     #[test]
-    fn retained_names_skip_when_window_content_missing() {
+    fn retained_names_skip_when_current_content_missing() {
         let book = "https://a.com/book";
         let chapters = vec![
             chapter(1, "https://h.com/ch/1"),
@@ -823,25 +899,154 @@ mod tests {
         ];
         let cached_rows = vec![cached(
             book,
+            2,
+            "https://h.com/ch/2",
+            "<img src=\"https://cdn.com/2.jpg\">",
+        )];
+        assert_eq!(
+            retained_names_for_window(&chapters, &cached_rows, 1, 2, 1),
+            None,
+            "当前章缺正文时必须整次跳过"
+        );
+    }
+
+    // 后窗缺正文 → 保守整跳（None）
+    #[test]
+    fn retained_names_skip_when_backward_content_missing() {
+        let book = "https://a.com/book";
+        let chapters = vec![
+            chapter(0, "https://h.com/ch/0"),
+            chapter(1, "https://h.com/ch/1"),
+            chapter(2, "https://h.com/ch/2"),
+        ];
+        let cached_rows = vec![
+            cached(
+                book,
+                1,
+                "https://h.com/ch/1",
+                "<img src=\"https://cdn.com/1.jpg\">",
+            ),
+            cached(
+                book,
+                2,
+                "https://h.com/ch/2",
+                "<img src=\"https://cdn.com/2.jpg\">",
+            ),
+        ];
+        assert_eq!(
+            retained_names_for_window(&chapters, &cached_rows, 0, 2, 2),
+            None,
+            "后窗（index<dur）缺正文时保守整跳，避免误删未缓存章节图片"
+        );
+    }
+
+    // 默认 preDownload=10：前窗缺缓存只跳过该章，不整跳
+    #[test]
+    fn retained_names_forward_missing_skips_chapter_only() {
+        let book = "https://a.com/book";
+        let chapters = (0..13)
+            .map(|i| chapter(i, &format!("https://h.com/ch/{i}")))
+            .collect::<Vec<_>>();
+        // 仅 0/1/2（后窗+当前章）有缓存；前窗 3..12 尚未预载
+        let cached_rows = (0..3)
+            .map(|i| {
+                cached(
+                    book,
+                    i,
+                    &format!("https://h.com/ch/{i}"),
+                    &format!("<img src=\"https://cdn.com/{i}.jpg\">"),
+                )
+            })
+            .collect::<Vec<_>>();
+        // dur=2, retain=1, pre=10 → 窗口 [1,12]
+        let keep = retained_names_for_window(&chapters, &cached_rows, 1, 12, 2)
+            .expect("前窗缺正文不应导致整跳");
+        assert!(keep.contains(&cache_file_name("https://cdn.com/1.jpg")));
+        assert!(keep.contains(&cache_file_name("https://cdn.com/2.jpg")));
+        assert!(
+            !keep.contains(&cache_file_name("https://cdn.com/3.jpg")),
+            "未缓存的前窗章节不贡献保留名"
+        );
+    }
+
+    // 卷章跳过：不要求正文、不贡献图片，也不阻断清理
+    #[test]
+    fn retained_names_skip_volume_chapter() {
+        let book = "https://a.com/book";
+        let mut volume = chapter(1, "https://h.com/ch/1");
+        volume.is_volume = true;
+        let chapters = vec![
+            chapter(0, "https://h.com/ch/0"),
+            volume,
+            chapter(2, "https://h.com/ch/2"),
+        ];
+        let cached_rows = vec![
+            cached(
+                book,
+                0,
+                "https://h.com/ch/0",
+                "<img src=\"https://cdn.com/0.jpg\">",
+            ),
+            cached(
+                book,
+                2,
+                "https://h.com/ch/2",
+                "<img src=\"https://cdn.com/2.jpg\">",
+            ),
+        ];
+        let keep = retained_names_for_window(&chapters, &cached_rows, 0, 2, 0)
+            .expect("窗口内卷章缺正文不应阻断清理");
+        assert_eq!(keep.len(), 2);
+        assert!(keep.contains(&cache_file_name("https://cdn.com/0.jpg")));
+        assert!(keep.contains(&cache_file_name("https://cdn.com/2.jpg")));
+    }
+
+    // 当前章本身为卷章 → 整次跳过
+    #[test]
+    fn retained_names_current_volume_skips() {
+        let mut volume = chapter(2, "https://h.com/ch/2");
+        volume.is_volume = true;
+        let chapters = vec![chapter(1, "https://h.com/ch/1"), volume];
+        let cached_rows = vec![cached(
+            "https://a.com/book",
             1,
             "https://h.com/ch/1",
             "<img src=\"https://cdn.com/1.jpg\">",
         )];
         assert_eq!(
-            retained_names_for_window(&chapters, &cached_rows, 1, 2),
+            retained_names_for_window(&chapters, &cached_rows, 1, 2, 2),
             None,
-            "窗口章缺正文时必须整次跳过（避免误删未缓存章节图片）"
+            "当前章为卷章时无当前正文锚点，整次跳过"
         );
     }
 
-    // 窗口内正文空白 → 整次跳过（None）
+    // chapter.imgUrl 作为阅读器首图纳入保留集合
+    #[test]
+    fn retained_names_include_chapter_img_url() {
+        let book = "https://a.com/book";
+        let mut ch = chapter(0, "https://h.com/ch/0");
+        ch.img_url = Some("/img/first.jpg".to_string());
+        let chapters = vec![ch];
+        let cached_rows = vec![cached(
+            book,
+            0,
+            "https://h.com/ch/0",
+            "<img src=\"https://cdn.com/second.jpg\">",
+        )];
+        let keep =
+            retained_names_for_window(&chapters, &cached_rows, 0, 0, 0).expect("当前章正文存在");
+        assert!(keep.contains(&cache_file_name("https://h.com/img/first.jpg")));
+        assert!(keep.contains(&cache_file_name("https://cdn.com/second.jpg")));
+    }
+
+    // 当前章正文空白 → 整次跳过（None）
     #[test]
     fn retained_names_skip_when_content_blank() {
         let book = "https://a.com/book";
         let chapters = vec![chapter(2, "https://h.com/ch/2")];
         let cached_rows = vec![cached(book, 2, "https://h.com/ch/2", "  \n\t ")];
         assert_eq!(
-            retained_names_for_window(&chapters, &cached_rows, 1, 2),
+            retained_names_for_window(&chapters, &cached_rows, 1, 2, 2),
             None,
             "空白正文视为缺失内容，必须整次跳过"
         );
@@ -851,7 +1056,7 @@ mod tests {
     #[test]
     fn retained_names_empty_window_skips() {
         let chapters = vec![chapter(0, "https://h.com/ch/0")];
-        assert_eq!(retained_names_for_window(&chapters, &[], 5, 9), None);
+        assert_eq!(retained_names_for_window(&chapters, &[], 5, 9, 5), None);
     }
 
     // 相对/协议相对/绝对 URL 绝对化后参与 md5 命名
@@ -865,7 +1070,7 @@ mod tests {
             "https://site.com/manga/ch/5.html",
             "<img src=\"/img/a.png\"><img src=\"https://cdn.com/b.webp?x=1\"><img src=\"//cdn.com/c.jpg\">",
         )];
-        let keep = retained_names_for_window(&chapters, &cached_rows, 0, 0)
+        let keep = retained_names_for_window(&chapters, &cached_rows, 0, 0, 0)
             .expect("单章窗口应返回保留集合");
         assert_eq!(keep.len(), 3);
         assert!(keep.contains(&cache_file_name("https://site.com/img/a.png")));
@@ -910,6 +1115,80 @@ mod tests {
             dir.join("nested").join("inner.jpg").exists(),
             "子目录内容不得递归删除"
         );
+        let _ = fs::remove_dir_all(&root);
+        clear_test_root();
+    }
+
+    // 符号链接文件不跟随删除（Unix）
+    #[cfg(unix)]
+    #[test]
+    fn delete_unreferenced_skips_symlink_file() {
+        use std::os::unix::fs::symlink;
+        let _lock = test_lock();
+        let root = unique_root("retain-symlink-file");
+        set_test_root(&root);
+        let book = "https://a.com/book/symlink";
+        let dir = image_dir(book);
+        fs::create_dir_all(&dir).unwrap();
+        let outside = root.join("outside.jpg");
+        fs::write(&outside, b"outside").unwrap();
+        symlink(&outside, dir.join("link.jpg")).unwrap();
+
+        assert_eq!(delete_unreferenced_images(book, &HashSet::new()), 0);
+        assert!(outside.exists(), "符号链接目标不得被删除");
+        assert!(
+            fs::symlink_metadata(dir.join("link.jpg"))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "符号链接本身应跳过保留"
+        );
+        let _ = fs::remove_dir_all(&root);
+        clear_test_root();
+    }
+
+    // images 目录本身为符号链接 → 不进入（Unix）
+    #[cfg(unix)]
+    #[test]
+    fn delete_unreferenced_skips_symlink_dir() {
+        use std::os::unix::fs::symlink;
+        let _lock = test_lock();
+        let root = unique_root("retain-symlink-dir");
+        set_test_root(&root);
+        let book = "https://a.com/book/symlink-dir";
+        let book_dir = root.join(book_dir_name(book));
+        let outside = root.join("outside-images");
+        fs::create_dir_all(&book_dir).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep.jpg"), b"keep").unwrap();
+        symlink(&outside, book_dir.join(IMAGES_DIR)).unwrap();
+
+        assert_eq!(delete_unreferenced_images(book, &HashSet::new()), 0);
+        assert!(
+            outside.join("keep.jpg").exists(),
+            "符号链接目录不得被遍历/删除"
+        );
+        let _ = fs::remove_dir_all(&root);
+        clear_test_root();
+    }
+
+    // 非 UTF-8 文件名跳过（不会误删也无法用缓存键命中；Unix）
+    #[cfg(unix)]
+    #[test]
+    fn delete_unreferenced_skips_non_utf8_name() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        let _lock = test_lock();
+        let root = unique_root("retain-non-utf8");
+        set_test_root(&root);
+        let book = "https://a.com/book/non-utf8";
+        let dir = image_dir(book);
+        fs::create_dir_all(&dir).unwrap();
+        let name = OsStr::from_bytes(b"bad-\xFF.jpg");
+        fs::write(dir.join(name), b"bytes").unwrap();
+
+        assert_eq!(delete_unreferenced_images(book, &HashSet::new()), 0);
+        assert!(dir.join(name).exists(), "非 UTF-8 文件名应跳过");
         let _ = fs::remove_dir_all(&root);
         clear_test_root();
     }
