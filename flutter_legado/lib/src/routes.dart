@@ -41,6 +41,8 @@ import 'screens/rss_screen.dart';
 import 'screens/rule_sub_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/settings_home_screen.dart';
+// [设置批10a | 2026-11-04] AI 设置/翻译设置/实验室占位页（明确暂未支持）
+import 'screens/settings_placeholder_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/source_screen.dart';
 import 'screens/source_edit_screen.dart';
@@ -89,6 +91,13 @@ class AppRoutes {
   static const otherSettings = '/other_settings';
   // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页（集中化分组入口）— Qoder
   static const settingsHome = '/settings_home';
+  // [设置批10a | 2026-11-04 用户裁决] AI 设置/翻译设置/实验室占位路由：
+  // 仅入口 + 页面壳，明确暂未支持；Rust 能力立项后再替换实现。
+  // 使用扁平路径（不嵌在 /settings 下）：Navigator 初始路由会逐段生成
+  // '/settings' 中间路由（拉起完整设置页），深链时产生无谓页面栈
+  static const aiSettings = '/ai_settings';
+  static const translationSettings = '/translation_settings';
+  static const labSettings = '/lab_settings';
   static const cacheDownloads = '/cache_downloads';
   // [UI-fix v2.0.17 | 2026-08-11] 离线缓存页（对齐原版 CacheActivity 书籍列表）— Reasonix
   static const offlineCache = '/offline_cache';
@@ -199,6 +208,10 @@ class AppRoutes {
     },
     settings: (_) => const SettingsScreen(),
     settingsHome: (_) => const SettingsHomeScreen(),
+    // [设置批10a | 2026-11-04] 三个占位页：无输入/网络/开关，仅说明暂未支持
+    aiSettings: (_) => const SettingsPlaceholderScreen.ai(),
+    translationSettings: (_) => const SettingsPlaceholderScreen.translation(),
+    labSettings: (_) => const SettingsPlaceholderScreen.lab(),
     otherSettings: (_) => const OtherSettingsScreen(),
     cacheDownloads: (_) => const CacheDownloadScreen(),
     offlineCache: (_) => const OfflineCacheScreen(),

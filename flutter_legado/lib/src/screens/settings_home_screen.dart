@@ -10,8 +10,12 @@ import '../widgets/glass_card_background.dart';
 ///
 /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 差异清单批八：对齐参考版「设置主页
 /// 集中化」结构——参考版 8 组（外观/高级/阅读界面/封面设置/下载与缓存/
-/// 备份与恢复/AI 设置/翻译设置）；我方按真实功能映射为 9 组，封面设置/
-/// AI 设置/翻译设置暂缺（AI 设置随 AI 批次，其余登记）— Qoder
+/// 备份与恢复/AI 设置/翻译设置）；我方按真实功能映射为入口列表，封面设置
+/// 暂缺（登记）。
+///
+/// [设置批10a | 2026-11-04 用户裁决] 参考版「AI 设置/翻译设置/实验室」
+/// 三入口以占位形态补齐（副题「暂未支持」），点击进入只说明暂未支持的
+/// 页面壳，不接任何功能；Rust 能力立项后再替换路由实现。
 ///
 /// [设置批2b-1b-2a] 本页入口卡为手写 Material（16dp 圆角、10dp 行距），
 /// 不在 IosGroup/CardTheme 覆盖范围内；此处按同一口径乘 containerOpacity
@@ -67,6 +71,14 @@ class SettingsHomeScreen extends StatelessWidget {
           () => Navigator.pushNamed(context, AppRoutes.sources)),
       (Symbols.schedule_rounded, '定时任务', '管理按计划执行的 JavaScript 任务',
           () => Navigator.pushNamed(context, AppRoutes.autoTasks)),
+      // [设置批10a | 2026-11-04 用户裁决] 三占位入口：明确「暂未支持」，
+      // 页面无输入/网络/开关（不制造可用假象）
+      (Symbols.auto_awesome_rounded, 'AI 设置', '暂未支持',
+          () => Navigator.pushNamed(context, AppRoutes.aiSettings)),
+      (Symbols.translate_rounded, '翻译设置', '暂未支持',
+          () => Navigator.pushNamed(context, AppRoutes.translationSettings)),
+      (Symbols.science_rounded, '实验室', '暂未支持',
+          () => Navigator.pushNamed(context, AppRoutes.labSettings)),
       // [N6 | 2026-09-20 用户裁决（授权偏离已登记，见
       // docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md 3-7/N6）]「字体管理」
       // 入口自设置可见列表收起：参考版字号/字体仅在阅读器内调整、无独立
