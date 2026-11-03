@@ -132,6 +132,50 @@ class ReaderMenuStyleNotifier extends Notifier<ReaderMenuStyle> {
           false,
       titleIconStyle:
           await settings.getIntPrefOrNull(PrefKeys.titleBarIconStyle) ?? 0,
+      borderWidth:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBorderWidth) ?? 1,
+      borderColor:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBorderColor) ?? 0,
+      borderColorNight:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBorderColorNight) ??
+          0,
+      blurRadius:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBlurRadius) ?? 24,
+      blurAlpha:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBlurAlpha) ?? 85,
+      blurColor:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBlurColor) ?? 0,
+      blurColorNight:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuBlurColorNight) ??
+          0,
+      topBarBlurMode:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuTopBarBlurMode) ??
+          0,
+      bottomBarBlurMode:
+          await settings.getIntPrefOrNull(
+            PrefKeys.readMenuBottomBarBlurMode,
+          ) ??
+          0,
+      topBarBlurStyle:
+          await settings.getIntPrefOrNull(PrefKeys.readMenuTopBarBlurStyle) ??
+          0,
+      bottomBarBlurStyle:
+          await settings.getIntPrefOrNull(
+            PrefKeys.readMenuBottomBarBlurStyle,
+          ) ??
+          0,
+      topBarLiquidGlassButtons:
+          await settings.getBoolPrefOrNull(
+            PrefKeys.readMenuTopBarLiquidGlassButtons,
+          ) ??
+          false,
+      bottomBarLiquidGlassButtons:
+          await settings.getBoolPrefOrNull(
+            PrefKeys.readMenuBottomBarLiquidGlassButtons,
+          ) ??
+          false,
+      titleBarCompact:
+          await settings.getBoolPrefOrNull(PrefKeys.titleBarCompact) ?? false,
     );
 
     if (!_isAlive(lifecycle) || generation != _generation) return;
@@ -284,6 +328,95 @@ class ReaderMenuStyleNotifier extends Notifier<ReaderMenuStyle> {
     unawaited(_saveInt(PrefKeys.titleBarIconStyle, next.titleIconStyle));
   }
 
+  void setBorderWidth(int value) {
+    final next = state.copyWith(borderWidth: value);
+    _apply(next);
+    unawaited(_saveInt(PrefKeys.readMenuBorderWidth, next.borderWidth));
+  }
+
+  void setBorderColor(int value, {required bool isNight}) {
+    final next = isNight
+        ? state.copyWith(borderColorNight: value)
+        : state.copyWith(borderColor: value);
+    _apply(next);
+    unawaited(
+      _saveInt(
+        isNight
+            ? PrefKeys.readMenuBorderColorNight
+            : PrefKeys.readMenuBorderColor,
+        isNight ? next.borderColorNight : next.borderColor,
+      ),
+    );
+  }
+
+  void setBlurRadius(int value) {
+    final next = state.copyWith(blurRadius: value);
+    _apply(next);
+    unawaited(_saveInt(PrefKeys.readMenuBlurRadius, next.blurRadius));
+  }
+
+  void setBlurAlpha(int value) {
+    final next = state.copyWith(blurAlpha: value);
+    _apply(next);
+    unawaited(_saveInt(PrefKeys.readMenuBlurAlpha, next.blurAlpha));
+  }
+
+  void setBlurColor(int value, {required bool isNight}) {
+    final next = isNight
+        ? state.copyWith(blurColorNight: value)
+        : state.copyWith(blurColor: value);
+    _apply(next);
+    unawaited(
+      _saveInt(
+        isNight ? PrefKeys.readMenuBlurColorNight : PrefKeys.readMenuBlurColor,
+        isNight ? next.blurColorNight : next.blurColor,
+      ),
+    );
+  }
+
+  void setTopBarBlurMode(int value) {
+    final next = state.copyWith(topBarBlurMode: value);
+    _apply(next);
+    unawaited(_saveInt(PrefKeys.readMenuTopBarBlurMode, next.topBarBlurMode));
+  }
+
+  void setBottomBarBlurMode(int value) {
+    final next = state.copyWith(bottomBarBlurMode: value);
+    _apply(next);
+    unawaited(
+      _saveInt(PrefKeys.readMenuBottomBarBlurMode, next.bottomBarBlurMode),
+    );
+  }
+
+  void setTopBarBlurStyle(int value) {
+    final next = state.copyWith(topBarBlurStyle: value);
+    _apply(next);
+    unawaited(_saveInt(PrefKeys.readMenuTopBarBlurStyle, next.topBarBlurStyle));
+  }
+
+  void setBottomBarBlurStyle(int value) {
+    final next = state.copyWith(bottomBarBlurStyle: value);
+    _apply(next);
+    unawaited(
+      _saveInt(PrefKeys.readMenuBottomBarBlurStyle, next.bottomBarBlurStyle),
+    );
+  }
+
+  void setTopBarLiquidGlassButtons(bool value) {
+    _apply(state.copyWith(topBarLiquidGlassButtons: value));
+    unawaited(_saveBool(PrefKeys.readMenuTopBarLiquidGlassButtons, value));
+  }
+
+  void setBottomBarLiquidGlassButtons(bool value) {
+    _apply(state.copyWith(bottomBarLiquidGlassButtons: value));
+    unawaited(_saveBool(PrefKeys.readMenuBottomBarLiquidGlassButtons, value));
+  }
+
+  void setTitleBarCompact(bool value) {
+    _apply(state.copyWith(titleBarCompact: value));
+    unawaited(_saveBool(PrefKeys.titleBarCompact, value));
+  }
+
   /// 恢复默认并整体落盘
   Future<void> restoreDefaults() async {
     final defaults = ReaderMenuStyle.defaults();
@@ -351,6 +484,59 @@ class ReaderMenuStyleNotifier extends Notifier<ReaderMenuStyle> {
     await settings.setIntPref(
       PrefKeys.titleBarIconStyle,
       defaults.titleIconStyle,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBorderWidth,
+      defaults.borderWidth,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBorderColor,
+      defaults.borderColor,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBorderColorNight,
+      defaults.borderColorNight,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBlurRadius,
+      defaults.blurRadius,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBlurAlpha,
+      defaults.blurAlpha,
+    );
+    await settings.setIntPref(PrefKeys.readMenuBlurColor, defaults.blurColor);
+    await settings.setIntPref(
+      PrefKeys.readMenuBlurColorNight,
+      defaults.blurColorNight,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuTopBarBlurMode,
+      defaults.topBarBlurMode,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBottomBarBlurMode,
+      defaults.bottomBarBlurMode,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuTopBarBlurStyle,
+      defaults.topBarBlurStyle,
+    );
+    await settings.setIntPref(
+      PrefKeys.readMenuBottomBarBlurStyle,
+      defaults.bottomBarBlurStyle,
+    );
+    await settings.setBoolPref(
+      PrefKeys.readMenuTopBarLiquidGlassButtons,
+      defaults.topBarLiquidGlassButtons,
+    );
+    await settings.setBoolPref(
+      PrefKeys.readMenuBottomBarLiquidGlassButtons,
+      defaults.bottomBarLiquidGlassButtons,
+    );
+    await settings.setBoolPref(
+      PrefKeys.titleBarCompact,
+      defaults.titleBarCompact,
     );
   }
 }

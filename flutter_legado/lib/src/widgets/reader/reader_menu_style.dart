@@ -62,6 +62,27 @@ abstract final class ReaderMenuIconStyle {
   static const int outlined = 2;
 }
 
+/// 菜单模糊模式（readMenuTopBarBlurMode / readMenuBottomBarBlurMode）
+abstract final class ReaderMenuBlurMode {
+  /// 不模糊（实色）
+  static const int none = 0;
+
+  /// BackdropFilter + 半透明底色
+  static const int haze = 1;
+
+  /// 液态玻璃近似（模糊 + 高光描边 + 镜面渐变）
+  static const int liquidGlass = 2;
+}
+
+/// 菜单模糊风格（readMenuTopBarBlurStyle / readMenuBottomBarBlurStyle）
+abstract final class ReaderMenuBlurStyle {
+  /// 均匀半透明
+  static const int solid = 0;
+
+  /// 边缘更实、中部更透的线性渐变（近似）
+  static const int progressive = 1;
+}
+
 /// 顶栏标题显示方式（titleBarMode）
 abstract final class ReaderMenuTitleBarMode {
   /// 书名显示在顶栏行内
@@ -169,6 +190,38 @@ class ReaderMenuStyle {
   /// 顶栏图标容器样式（0/1/2，独立于底栏）
   final int titleIconStyle;
 
+  /// 菜单边框宽度（0 关闭，1..4）
+  final int borderWidth;
+
+  /// 菜单边框颜色（ARGB，0=outlineVariant）
+  final int borderColor;
+  final int borderColorNight;
+
+  /// 菜单模糊半径 dp（0..32）
+  final int blurRadius;
+
+  /// 菜单背景透明度百分比（0..100，用于 alpha/100）
+  final int blurAlpha;
+
+  /// 菜单模糊底色（ARGB，0=跟随菜单背景）
+  final int blurColor;
+  final int blurColorNight;
+
+  /// 顶/底栏模糊模式（0 None / 1 Haze / 2 LiquidGlass）
+  final int topBarBlurMode;
+  final int bottomBarBlurMode;
+
+  /// 顶/底栏模糊风格（0 Solid / 1 Progressive）
+  final int topBarBlurStyle;
+  final int bottomBarBlurStyle;
+
+  /// 顶/底栏按钮液态玻璃（近似）
+  final bool topBarLiquidGlassButtons;
+  final bool bottomBarLiquidGlassButtons;
+
+  /// 顶栏紧凑模式：仅保留「更多」动作
+  final bool titleBarCompact;
+
   ReaderMenuStyle({
     this.showIconText = false,
     int itemsPerRow = 5,
@@ -191,6 +244,20 @@ class ReaderMenuStyle {
     String titleBarMode = ReaderMenuTitleBarMode.inTopBar,
     this.mergeButtons = false,
     int titleIconStyle = ReaderMenuIconStyle.plain,
+    int borderWidth = 1,
+    int borderColor = 0,
+    int borderColorNight = 0,
+    int blurRadius = 24,
+    int blurAlpha = 85,
+    int blurColor = 0,
+    int blurColorNight = 0,
+    int topBarBlurMode = ReaderMenuBlurMode.none,
+    int bottomBarBlurMode = ReaderMenuBlurMode.none,
+    int topBarBlurStyle = ReaderMenuBlurStyle.solid,
+    int bottomBarBlurStyle = ReaderMenuBlurStyle.solid,
+    this.topBarLiquidGlassButtons = false,
+    this.bottomBarLiquidGlassButtons = false,
+    this.titleBarCompact = false,
   }) : itemsPerRow = itemsPerRow.clamp(2, 8),
        rowCount = rowCount.clamp(1, 2),
        iconStyle = iconStyle.clamp(0, 2),
@@ -206,7 +273,18 @@ class ReaderMenuStyle {
        textColor = normalizeReaderMenuColor(textColor),
        textColorNight = normalizeReaderMenuColor(textColorNight),
        titleBarMode = ReaderMenuTitleBarMode.normalize(titleBarMode),
-       titleIconStyle = titleIconStyle.clamp(0, 2);
+       titleIconStyle = titleIconStyle.clamp(0, 2),
+       borderWidth = borderWidth.clamp(0, 4),
+       borderColor = normalizeReaderMenuColor(borderColor),
+       borderColorNight = normalizeReaderMenuColor(borderColorNight),
+       blurRadius = blurRadius.clamp(0, 32),
+       blurAlpha = blurAlpha.clamp(0, 100),
+       blurColor = normalizeReaderMenuColor(blurColor),
+       blurColorNight = normalizeReaderMenuColor(blurColorNight),
+       topBarBlurMode = topBarBlurMode.clamp(0, 2),
+       bottomBarBlurMode = bottomBarBlurMode.clamp(0, 2),
+       topBarBlurStyle = topBarBlurStyle.clamp(0, 1),
+       bottomBarBlurStyle = bottomBarBlurStyle.clamp(0, 1);
 
   /// 默认样式（对齐参考版 ReadSettings 默认值；titleBarMode 按批3a
   /// 任务口径为 '0'，与参考版 ReadSettings 的 '1' 差异见 ACTIVE_PLAN
@@ -251,6 +329,20 @@ class ReaderMenuStyle {
     String? titleBarMode,
     bool? mergeButtons,
     int? titleIconStyle,
+    int? borderWidth,
+    int? borderColor,
+    int? borderColorNight,
+    int? blurRadius,
+    int? blurAlpha,
+    int? blurColor,
+    int? blurColorNight,
+    int? topBarBlurMode,
+    int? bottomBarBlurMode,
+    int? topBarBlurStyle,
+    int? bottomBarBlurStyle,
+    bool? topBarLiquidGlassButtons,
+    bool? bottomBarLiquidGlassButtons,
+    bool? titleBarCompact,
   }) {
     return ReaderMenuStyle(
       showIconText: showIconText ?? this.showIconText,
@@ -274,6 +366,22 @@ class ReaderMenuStyle {
       titleBarMode: titleBarMode ?? this.titleBarMode,
       mergeButtons: mergeButtons ?? this.mergeButtons,
       titleIconStyle: titleIconStyle ?? this.titleIconStyle,
+      borderWidth: borderWidth ?? this.borderWidth,
+      borderColor: borderColor ?? this.borderColor,
+      borderColorNight: borderColorNight ?? this.borderColorNight,
+      blurRadius: blurRadius ?? this.blurRadius,
+      blurAlpha: blurAlpha ?? this.blurAlpha,
+      blurColor: blurColor ?? this.blurColor,
+      blurColorNight: blurColorNight ?? this.blurColorNight,
+      topBarBlurMode: topBarBlurMode ?? this.topBarBlurMode,
+      bottomBarBlurMode: bottomBarBlurMode ?? this.bottomBarBlurMode,
+      topBarBlurStyle: topBarBlurStyle ?? this.topBarBlurStyle,
+      bottomBarBlurStyle: bottomBarBlurStyle ?? this.bottomBarBlurStyle,
+      topBarLiquidGlassButtons:
+          topBarLiquidGlassButtons ?? this.topBarLiquidGlassButtons,
+      bottomBarLiquidGlassButtons:
+          bottomBarLiquidGlassButtons ?? this.bottomBarLiquidGlassButtons,
+      titleBarCompact: titleBarCompact ?? this.titleBarCompact,
     );
   }
 
@@ -300,6 +408,20 @@ class ReaderMenuStyle {
     PrefKeys.titleBarMode: titleBarMode,
     PrefKeys.readMenuTopBarMergeButtons: mergeButtons,
     PrefKeys.titleBarIconStyle: titleIconStyle,
+    PrefKeys.readMenuBorderWidth: borderWidth,
+    PrefKeys.readMenuBorderColor: borderColor,
+    PrefKeys.readMenuBorderColorNight: borderColorNight,
+    PrefKeys.readMenuBlurRadius: blurRadius,
+    PrefKeys.readMenuBlurAlpha: blurAlpha,
+    PrefKeys.readMenuBlurColor: blurColor,
+    PrefKeys.readMenuBlurColorNight: blurColorNight,
+    PrefKeys.readMenuTopBarBlurMode: topBarBlurMode,
+    PrefKeys.readMenuBottomBarBlurMode: bottomBarBlurMode,
+    PrefKeys.readMenuTopBarBlurStyle: topBarBlurStyle,
+    PrefKeys.readMenuBottomBarBlurStyle: bottomBarBlurStyle,
+    PrefKeys.readMenuTopBarLiquidGlassButtons: topBarLiquidGlassButtons,
+    PrefKeys.readMenuBottomBarLiquidGlassButtons: bottomBarLiquidGlassButtons,
+    PrefKeys.titleBarCompact: titleBarCompact,
   };
 
   /// 从 JSON 宽松解码（int/double/String/bool 均可；非法值回落默认）
@@ -390,6 +512,47 @@ class ReaderMenuStyle {
         PrefKeys.titleBarIconStyle,
         defaults.titleIconStyle,
       ),
+      borderWidth: intOf(PrefKeys.readMenuBorderWidth, defaults.borderWidth),
+      borderColor: intOf(PrefKeys.readMenuBorderColor, defaults.borderColor),
+      borderColorNight: intOf(
+        PrefKeys.readMenuBorderColorNight,
+        defaults.borderColorNight,
+      ),
+      blurRadius: intOf(PrefKeys.readMenuBlurRadius, defaults.blurRadius),
+      blurAlpha: intOf(PrefKeys.readMenuBlurAlpha, defaults.blurAlpha),
+      blurColor: intOf(PrefKeys.readMenuBlurColor, defaults.blurColor),
+      blurColorNight: intOf(
+        PrefKeys.readMenuBlurColorNight,
+        defaults.blurColorNight,
+      ),
+      topBarBlurMode: intOf(
+        PrefKeys.readMenuTopBarBlurMode,
+        defaults.topBarBlurMode,
+      ),
+      bottomBarBlurMode: intOf(
+        PrefKeys.readMenuBottomBarBlurMode,
+        defaults.bottomBarBlurMode,
+      ),
+      topBarBlurStyle: intOf(
+        PrefKeys.readMenuTopBarBlurStyle,
+        defaults.topBarBlurStyle,
+      ),
+      bottomBarBlurStyle: intOf(
+        PrefKeys.readMenuBottomBarBlurStyle,
+        defaults.bottomBarBlurStyle,
+      ),
+      topBarLiquidGlassButtons: boolOf(
+        PrefKeys.readMenuTopBarLiquidGlassButtons,
+        defaults.topBarLiquidGlassButtons,
+      ),
+      bottomBarLiquidGlassButtons: boolOf(
+        PrefKeys.readMenuBottomBarLiquidGlassButtons,
+        defaults.bottomBarLiquidGlassButtons,
+      ),
+      titleBarCompact: boolOf(
+        PrefKeys.titleBarCompact,
+        defaults.titleBarCompact,
+      ),
     );
   }
 }
@@ -446,8 +609,10 @@ class ResolvedReaderMenuColors {
 /// 按工具栏样式解析菜单颜色
 ///
 /// [isDark] 取应用当前明暗（对齐参考版「日夜按 App 暗色」）；
-/// [pageBackgroundColor]/[pageTextColor] 为阅读页当前底色/文字色，
-/// 仅 readBarStyle=1 与 readBarStyle=2 自定义背景缺失时作为回落源。
+/// [pageBackgroundColor] 为阅读页底色：readBarStyle=1 时作为 seed 生成
+/// 整套 roles，readBarStyle=2 自定义背景缺失时作为回落源。
+/// [pageTextColor] 仅保留签名兼容；3b 起文字由 seed roles.onSurface 决定
+/// （不足 4.5 对比度时回退黑白），不再直接使用阅读页文字色。
 ResolvedReaderMenuColors resolveReaderMenuColors({
   required ReaderMenuStyle style,
   required bool isDark,
@@ -459,9 +624,11 @@ ResolvedReaderMenuColors resolveReaderMenuColors({
   switch (style.readBarStyle) {
     case ReaderMenuBarStyle.followPage:
       return _resolveFollowPage(
+        style: style,
+        isDark: isDark,
         scheme: scheme,
         pageBackgroundColor: pageBackgroundColor,
-        pageTextColor: pageTextColor,
+        appPaletteStyle: appPaletteStyle,
       );
     case ReaderMenuBarStyle.custom:
       return _resolveCustom(
@@ -490,32 +657,41 @@ ResolvedReaderMenuColors _resolveSystem(ColorScheme scheme) {
 }
 
 ResolvedReaderMenuColors _resolveFollowPage({
+  required ReaderMenuStyle style,
+  required bool isDark,
   required ColorScheme scheme,
   Color? pageBackgroundColor,
-  Color? pageTextColor,
+  required String appPaletteStyle,
 }) {
-  // 无阅读页色（如独立的菜单测试宿主）→ 回落系统样式
+  // 无阅读页色（如独立的菜单测试宿主）→ 回落系统样式。
+  // 阅读页当前只有纯色背景（ReaderState 无 backgroundImagePath），
+  // 图片背景取种留 3b 登记；见最终汇报。
   if (pageBackgroundColor == null) return _resolveSystem(scheme);
-  final background = _opaqueColor(pageBackgroundColor);
-  final providedText = pageTextColor == null
-      ? null
-      : _opaqueColor(pageTextColor);
-  // [批3a P1-A] 以 WCAG 对比度 4.5 为界：不足才回退黑白对比色；
-  // 棕色 #D4A574 / 蓝灰 #90A4AE 上的 #333333 本身达标（5.68/4.88），
-  // 不再被「同亮/同暗分桶」误判覆盖。
-  final text =
-      providedText == null ||
-          _contrastRatio(providedText, background) < 4.5
+  final seed = _opaqueColor(pageBackgroundColor);
+  final palette = style.paletteStyle.trim().isEmpty
+      ? normalizeReaderMenuPaletteStyle(appPaletteStyle)
+      : normalizeReaderMenuPaletteStyle(style.paletteStyle);
+  final rolesPair = buildParameterizedRoles(
+    style: palette,
+    seed: seed.toARGB32(),
+    contrastLevel: 0,
+  );
+  final Md3Roles roles = isDark ? rolesPair.dark : rolesPair.light;
+  final background = Color(roles.surfaceContainerHigh);
+  final roleText = Color(roles.onSurface);
+  // 参考 ReadBookColorTheme：菜单底 surfaceContainerHigh、容器
+  // surfaceContainerLow、accent=primary、文字=onSurface；若某预设
+  // onSurface 对 surfaceContainerHigh 不足 4.5，按 WCAG 回退黑白。
+  final text = _contrastRatio(roleText, background) < 4.5
       ? _contrastText(background)
-      : providedText;
+      : roleText;
   return ResolvedReaderMenuColors(
     background: background,
-    // 让 iconStyle=1（色调底衬）在跟随阅读背景档仍可见：文字色 8% 混入
-    container: Color.alphaBlend(text.withValues(alpha: 0.08), background),
-    accent: scheme.primary,
+    container: Color(roles.surfaceContainerLow),
+    accent: Color(roles.primary),
     onSurface: text,
     text: text,
-    onSurfaceVariant: _mutedOn(text, background),
+    onSurfaceVariant: Color(roles.onSurfaceVariant),
   );
 }
 

@@ -179,6 +179,21 @@ class RestoreIgnorePrefs {
     PrefKeys.titleBarMode,
     PrefKeys.readMenuTopBarMergeButtons,
     PrefKeys.titleBarIconStyle,
+    // [批3b] 边框 / 模糊 / 液态玻璃按钮 / 紧凑顶栏
+    PrefKeys.readMenuBorderWidth,
+    PrefKeys.readMenuBorderColor,
+    PrefKeys.readMenuBorderColorNight,
+    PrefKeys.readMenuBlurRadius,
+    PrefKeys.readMenuBlurAlpha,
+    PrefKeys.readMenuBlurColor,
+    PrefKeys.readMenuBlurColorNight,
+    PrefKeys.readMenuTopBarBlurMode,
+    PrefKeys.readMenuBottomBarBlurMode,
+    PrefKeys.readMenuTopBarBlurStyle,
+    PrefKeys.readMenuBottomBarBlurStyle,
+    PrefKeys.readMenuTopBarLiquidGlassButtons,
+    PrefKeys.readMenuBottomBarLiquidGlassButtons,
+    PrefKeys.titleBarCompact,
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

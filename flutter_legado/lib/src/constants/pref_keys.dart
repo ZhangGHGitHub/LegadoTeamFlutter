@@ -383,6 +383,40 @@ class PrefKeys {
   /// 顶栏图标容器样式 0 无底衬 / 1 色调 / 2 描边（参考默认 0）
   static const titleBarIconStyle = 'titleBarIconStyle';
 
+  // ===== [批3b] 菜单模糊 / 边框 / 紧凑顶栏（键名逐字对齐参考版 PreferKey）=====
+
+  /// 菜单边框宽度 0..4（0=关闭，参考默认 1）
+  static const readMenuBorderWidth = 'readMenuBorderWidth';
+
+  /// 菜单边框颜色（日/夜，ARGB，0=outlineVariant）
+  static const readMenuBorderColor = 'readMenuBorderColor';
+  static const readMenuBorderColorNight = 'readMenuBorderColorNight';
+
+  /// 菜单模糊半径 0..32 dp（参考默认 24）
+  static const readMenuBlurRadius = 'readMenuBlurRadius';
+
+  /// 菜单背景透明度 0..100（参考默认 85，alpha/100）
+  static const readMenuBlurAlpha = 'readMenuBlurAlpha';
+
+  /// 菜单模糊底色（日/夜，ARGB，0=跟随菜单背景）
+  static const readMenuBlurColor = 'readMenuBlurColor';
+  static const readMenuBlurColorNight = 'readMenuBlurColorNight';
+
+  /// 顶/底栏模糊模式 0 None / 1 Haze / 2 LiquidGlass
+  static const readMenuTopBarBlurMode = 'readMenuTopBarBlurMode';
+  static const readMenuBottomBarBlurMode = 'readMenuBottomBarBlurMode';
+
+  /// 顶/底栏模糊风格 0 Solid / 1 Progressive
+  static const readMenuTopBarBlurStyle = 'readMenuTopBarBlurStyle';
+  static const readMenuBottomBarBlurStyle = 'readMenuBottomBarBlurStyle';
+
+  /// 顶/底栏图标液态玻璃（参考默认 false）
+  static const readMenuTopBarLiquidGlassButtons = 'readMenuTopBarLiquidGlassButtons';
+  static const readMenuBottomBarLiquidGlassButtons = 'readMenuBottomBarLiquidGlassButtons';
+
+  /// 顶栏紧凑模式：仅保留「更多」动作（参考 titleBarCompact，默认 false）
+  static const titleBarCompact = 'titleBarCompact';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
