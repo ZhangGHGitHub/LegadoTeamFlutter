@@ -203,6 +203,103 @@ void main() {
       expect(find.text('设置'), findsOneWidget);
     });
 
+    // [M2 我的页 | 2026-11-03] 视觉形态回归：参考版 WebServiceSettingBlock 是
+    // 无标题 SplicedColumnGroup 内的 SwitchSettingItem（开关行），不是独立
+    // 大卡（旧实现：48dp 图标槽 + 整卡描边 + 整卡 InkWell/MergeSemantics）。
+    testWidgets('M2 Web 服务为置顶分组开关行而非独立大卡', (tester) async {
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+      expect(row, findsOneWidget, reason: 'Web 服务应为 SettingSwitchRow 开关行');
+
+      // 置顶无标题 IosGroup（对齐参考版 SplicedColumnGroup(title = "")）
+      final firstGroup = find.byType(IosGroup).first;
+      expect(
+        find.descendant(of: firstGroup, matching: row),
+        findsOneWidget,
+        reason: 'Web 服务开关行应在首个无标题分组内',
+      );
+
+      // 裸 24dp 图标（旧大卡为 48dp 图标槽 + 28dp 图标）
+      final rowIcon = find.descendant(of: row, matching: find.byType(Icon));
+      expect(rowIcon, findsOneWidget);
+      expect(
+        tester.widget<Icon>(rowIcon).size,
+        24,
+        reason: '开关行沿用 IosListTile 裸 24dp 图标，无 48dp 图标槽',
+      );
+
+      // 开关行整行可点（SettingSwitchRow 语义），开关可操作
+      expect(
+        tester
+            .widget<Switch>(
+              find.descendant(of: row, matching: find.byType(Switch)),
+            )
+            .onChanged,
+        isNotNull,
+      );
+      // 停止态不展开操作行
+      expect(find.byKey(const ValueKey('web-service-copy-address')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('web-service-open-browser')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('M2 运行中操作行贴邻开关行、右对齐且不误触开关', (tester) async {
+      stubWebServiceRunning();
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+      final copy = find.byKey(const ValueKey('web-service-copy-address'));
+      final open = find.byKey(const ValueKey('web-service-open-browser'));
+      expect(copy, findsOneWidget);
+      expect(open, findsOneWidget);
+
+      // 操作行在开关行之外：不在开关行的语义/手势区域，不会误触开关
+      expect(find.descendant(of: row, matching: copy), findsNothing);
+      expect(find.descendant(of: row, matching: open), findsNothing);
+
+      // 贴邻：操作行紧接开关行下方（组外 + 小间距，视觉仍为一体）
+      final rowRect = tester.getRect(row);
+      final copyRect = tester.getRect(copy);
+      expect(
+        copyRect.top - rowRect.bottom,
+        lessThanOrEqualTo(12),
+        reason: '操作行应紧贴开关行下方',
+      );
+      // 右对齐：末个按钮右缘与开关行右缘相差 16dp 内边距
+      expect(
+        tester.getRect(open).right,
+        closeTo(rowRect.right - 16, 1.0),
+        reason: '操作行右对齐（参考版 Row Arrangement.End）',
+      );
+
+      // 点「复制地址」不得切换开关/停服
+      await tester.tap(copy);
+      await tester.pump();
+      expect(
+        tester
+            .widget<Switch>(
+              find.descendant(of: row, matching: find.byType(Switch)),
+            )
+            .value,
+        isTrue,
+        reason: '复制地址不改变开关状态',
+      );
+      verifyNever(() => mockApi.setConfig('webService', 'false'));
+      verifyNever(() => mockApi.stopServer());
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('Web 服务运行中：地址取状态串端口 + 复制地址', (tester) async {
       SharedPreferences.setMockInitialValues({'webPort': 9999});
       stubWebServiceRunning(status: 'running on port 8080');
@@ -359,13 +456,13 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      // [M2] 开关行（SettingSwitchRow）取代原大卡
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+      expect(row, findsOneWidget);
       expect(
         tester
             .widget<Switch>(
-              find.descendant(of: card, matching: find.byType(Switch)),
+              find.descendant(of: row, matching: find.byType(Switch)),
             )
             .value,
         isTrue,
@@ -443,11 +540,10 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+      expect(row, findsOneWidget);
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -460,7 +556,7 @@ void main() {
       );
       expect(
         find.descendant(
-          of: card,
+          of: row,
           matching: find.byType(CircularProgressIndicator),
         ),
         findsNothing,

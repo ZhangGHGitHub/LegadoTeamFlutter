@@ -83,12 +83,12 @@ void main() {
     );
   }
 
-  /// 把 Web 服务卡滚到「可真实命中」的位置（批23）
+  /// 把 Web 服务开关行滚到「可真实命中」的位置（批23）
   ///
   /// [dragTo] 只保证目标「刚可见」：实测卡片标题停在 y=0，被折叠大标题的
   /// PinnedHeader 覆盖，`tester.tap` 会命中 AppBar 而非卡片（hit test 失败）。
   /// 额外向下拖 200 逻辑像素，让卡片离开顶部覆盖层再点按。
-  Future<void> centerWebServiceCard(WidgetTester tester) async {
+  Future<void> centerWebServiceRow(WidgetTester tester) async {
     await dragTo(tester, 'Web 服务');
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView), const Offset(0, 200));
@@ -162,13 +162,11 @@ void main() {
 
         expect(find.text('用浏览器写源或看书'), findsOneWidget);
         expect(find.text('暂不可用，将在后续版本修复'), findsNothing);
-        final card = find
-            .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-            .first;
+        final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
         expect(
           tester
               .widget<Switch>(
-                find.descendant(of: card, matching: find.byType(Switch)),
+                find.descendant(of: row, matching: find.byType(Switch)),
               )
               .onChanged,
           isNotNull,
@@ -190,13 +188,11 @@ void main() {
 
         expect(find.text('用浏览器写源或看书'), findsOneWidget);
         expect(find.text('暂不可用，将在后续版本修复'), findsNothing);
-        final card = find
-            .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-            .first;
+        final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
         expect(
           tester
               .widget<Switch>(
-                find.descendant(of: card, matching: find.byType(Switch)),
+                find.descendant(of: row, matching: find.byType(Switch)),
               )
               .onChanged,
           isNotNull,
@@ -227,11 +223,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       // 直接触发 onChanged（等价用户点开关）：NestedScrollView 下
@@ -259,11 +253,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -290,11 +282,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -343,11 +333,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
 
@@ -398,11 +386,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -463,11 +449,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
 
@@ -525,11 +509,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -579,11 +561,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -655,11 +635,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       expect(
@@ -777,11 +755,9 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
+      final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
       tester.widget<Switch>(switchFinder).onChanged!(true);
@@ -906,9 +882,10 @@ void main() {
       expect(nativeHeld, isFalse);
     });
 
-    // [批23 | 全栈工程师] 整卡可点：原实现只有右端 Switch 可点，点标题/
-    // 图标/副题无响应。本用例点标题文本（InkWell 覆盖区域）验证开关被切换。
-    testWidgets('Web 服务卡：点卡片标题即切换开关', (tester) async {
+    // [批23 | 全栈工程师] 整行可点：原实现只有右端 Switch 可点，点标题/
+    // 图标/副题无响应。M2 起为 SettingSwitchRow（ListTile 行内 InkWell），
+    // 本用例点标题文本验证开关被切换。
+    testWidgets('Web 服务开关行：点标题即切换开关', (tester) async {
       final startedPorts = <int>[];
       final configWrites = <MapEntry<String, String>>[];
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
@@ -930,24 +907,24 @@ void main() {
 
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
-      await centerWebServiceCard(tester);
+      await centerWebServiceRow(tester);
 
-      final card = find
+      final row = find
           .ancestor(of: find.text('Web 服务'), matching: find.byType(InkWell))
           .first;
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
 
       await tester.tap(find.text('Web 服务'));
       await tester.pumpAndSettle();
 
-      expect(startedPorts, [1122], reason: '点卡片标题应等价点开关（启动服务）');
+      expect(startedPorts, [1122], reason: '点开关行标题应等价点开关（启动服务）');
       expect(
         tester.widget<Switch>(switchFinder).value,
         isTrue,
-        reason: '整卡点击后开关应变为开启',
+        reason: '整行点击后开关应变为开启',
       );
       expect(
         configWrites
@@ -955,15 +932,15 @@ void main() {
             .map((e) => e.value)
             .toList(),
         ['true'],
-        reason: '整卡点击只应写入一次 webService=true',
+        reason: '整行点击只应写入一次 webService=true',
       );
     });
 
-    // [批23b] 效果幂等：点右端 Switch 即使冒泡到整卡 onTap，busy 守卫也会
+    // [批23b] 效果幂等：点右端 Switch 即使冒泡到整行 onTap，busy 守卫也会
     // 吞掉同步重复触发。本用例只断言可观察结果「只切换一次」（启动一次、
     // 仅写一次 webService=true、无 stopServer 二次切换），不宣称能证明
     // 手势来源唯一（若晚到触发发生在 busy 释放后，会表现为二次切换）。
-    testWidgets('Web 服务卡：点开关不误触整卡点击', (tester) async {
+    testWidgets('Web 服务开关行：点开关不误触整行点击', (tester) async {
       final startedPorts = <int>[];
       final configWrites = <MapEntry<String, String>>[];
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
@@ -986,13 +963,13 @@ void main() {
 
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();
-      await centerWebServiceCard(tester);
+      await centerWebServiceRow(tester);
 
-      final card = find
+      final row = find
           .ancestor(of: find.text('Web 服务'), matching: find.byType(InkWell))
           .first;
       final switchFinder = find.descendant(
-        of: card,
+        of: row,
         matching: find.byType(Switch),
       );
 
@@ -1003,7 +980,7 @@ void main() {
       expect(
         tester.widget<Switch>(switchFinder).value,
         isTrue,
-        reason: '点开关后应开启（若被整卡 onTap 二次触发会再次切换）',
+        reason: '点开关后应开启（若被整行 onTap 二次触发会再次切换）',
       );
       expect(
         configWrites

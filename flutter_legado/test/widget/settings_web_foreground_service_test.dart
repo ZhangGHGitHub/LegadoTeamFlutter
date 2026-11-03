@@ -37,6 +37,7 @@ import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
 import 'package:flutter_legado/src/services/web_service_foreground_service.dart';
 import 'package:flutter_legado/src/services/web_service_wake_lock_service.dart';
+import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
 import '../mocks/fake_web_service_address_resolver.dart';
 import '../mocks/mocks.dart';
@@ -140,23 +141,20 @@ void main() {
 
   /// 直接触发 SwitchRow 的 onChanged（NestedScrollView 下 tap 易被折叠头遮挡）
   void toggleWebService(WidgetTester tester, bool value) {
-    final card = find
-        .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-        .first;
+    final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
+    expect(row, findsOneWidget);
     final switchFinder = find.descendant(
-      of: card,
+      of: row,
       matching: find.byType(Switch),
     );
     tester.widget<Switch>(switchFinder).onChanged!(value);
   }
 
   bool webServiceSwitchValue(WidgetTester tester) {
-    final card = find
-        .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-        .first;
+    final row = find.widgetWithText(SettingSwitchRow, 'Web 服务');
     return tester
         .widget<Switch>(
-          find.descendant(of: card, matching: find.byType(Switch)),
+          find.descendant(of: row, matching: find.byType(Switch)),
         )
         .value;
   }

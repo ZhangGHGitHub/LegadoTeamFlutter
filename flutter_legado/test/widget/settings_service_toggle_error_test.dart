@@ -224,14 +224,7 @@ void main() {
       await dragTo(tester, 'Web 服务');
       await tester.pumpAndSettle();
 
-      final card = find
-          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
-          .first;
-      final switchFinder = find.descendant(
-        of: card,
-        matching: find.byType(Switch),
-      );
-      tester.widget<Switch>(switchFinder).onChanged!(true);
+      toggleRow(tester, 'Web 服务', true);
       await tester.pumpAndSettle();
 
       expect(
