@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.439] - 2026-11-03
+
+### Changed
+- [UI] 「我的」页 Web 服务块改为参考版标准开关行（裸图标+行内开关），运行中「复制地址/在浏览器打开」贴邻右对齐；分组图标与间距对齐参考版，深色/大字体/小屏适配。
+
 ## [2.0.438] - 2026-11-03
 
 ### Added
