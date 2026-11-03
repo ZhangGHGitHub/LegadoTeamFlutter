@@ -112,11 +112,9 @@ String normalizeReaderMenuPaletteStyle(String raw) {
 /// 菜单颜色不透明化：0 保留为「未设置」，`0x00RRGGBB` 视为不透明 RGB，
 /// 其余 alpha 一律拉满到 0xFF。
 int normalizeReaderMenuColor(int argb) {
+  // 0 保留「未设置」；其余颜色统一拉满 alpha（含历史 0x00RRGGBB 纯 RGB）
   if (argb == 0) return 0;
-  final rgb = argb & 0x00FFFFFF;
-  final alpha = (argb >> 24) & 0xFF;
-  if (alpha == 0xFF) return 0xFF000000 | rgb;
-  return 0xFF000000 | rgb;
+  return 0xFF000000 | (argb & 0x00FFFFFF);
 }
 
 /// 阅读器菜单样式（不可变值对象）
@@ -478,7 +476,8 @@ ResolvedReaderMenuColors resolveReaderMenuColors({
 
 ResolvedReaderMenuColors _resolveSystem(ColorScheme scheme) {
   return ResolvedReaderMenuColors(
-    background: scheme.surface,
+    // 参考 ReadBookColorTheme 的 system 档取 surfaceContainerHigh
+    background: scheme.surfaceContainerHigh,
     container: scheme.surfaceContainerLow,
     accent: scheme.primary,
     onSurface: scheme.onSurface,
@@ -495,12 +494,19 @@ ResolvedReaderMenuColors _resolveFollowPage({
   // 无阅读页色（如独立的菜单测试宿主）→ 回落系统样式
   if (pageBackgroundColor == null) return _resolveSystem(scheme);
   final background = _opaqueColor(pageBackgroundColor);
-  final text = pageTextColor == null
-      ? _contrastText(background)
+  final providedText = pageTextColor == null
+      ? null
       : _opaqueColor(pageTextColor);
+  // 文字与背景同属亮/同属暗（对比度约 1.0~2.3）时改用黑白对比色，
+  // 避免 #616161 底 + #333333 字这类不可读组合。
+  final text = providedText == null ||
+          _sameBrightnessBucket(providedText, background)
+      ? _contrastText(background)
+      : providedText;
   return ResolvedReaderMenuColors(
     background: background,
-    container: background,
+    // 让 iconStyle=1（色调底衬）在跟随阅读背景档仍可见：文字色 8% 混入
+    container: Color.alphaBlend(text.withValues(alpha: 0.08), background),
     accent: scheme.primary,
     onSurface: text,
     text: text,
@@ -567,6 +573,11 @@ ResolvedReaderMenuColors _resolveCustom({
 /// 阅读页色不透明化（阅读页颜色恒为实色，历史值可能带 alpha）
 Color _opaqueColor(Color color) =>
     Color(normalizeReaderMenuColor(color.toARGB32()));
+
+/// 两者是否同属亮色区/暗色区（参考 0.5 亮度阈值）
+bool _sameBrightnessBucket(Color a, Color b) {
+  return (a.computeLuminance() > 0.5) == (b.computeLuminance() > 0.5);
+}
 
 /// 黑/白对比文字（对齐参考版 `contrastContentColor`：亮底黑字、暗底白字）
 Color _contrastText(Color background) {

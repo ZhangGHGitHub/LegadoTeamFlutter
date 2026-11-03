@@ -1142,6 +1142,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   progressBehavior: _advConfig.progressBarBehavior,
                   onSeekPage: (page) =>
                       _pageViewKey.currentState?.goToPage(page),
+                  // [批3a P1-1] paddingDisplayCutouts 的外层 Padding 已含
+                  // 导航栏 inset，面板不再重复叠加
+                  parentHandlesBottomInset: cfg.paddingDisplayCutouts,
                   styleFollowPage: _advConfig.readBarStyleFollowPage,
                 ),
             ],

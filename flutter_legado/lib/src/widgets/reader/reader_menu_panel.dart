@@ -61,6 +61,12 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
   final String progressBehavior;
   final ValueChanged<int>? onSeekPage;
 
+  /// 父级是否已处理底部系统 inset（`paddingDisplayCutouts` 外层 Padding）
+  ///
+  /// [批3a P1-1] 为 true 时浮动外边距不再叠加 `MediaQuery.padding.bottom`，
+  /// 非浮动面板也不在内部 SafeArea 计底部，避免导航栏/手势条双计。
+  final bool parentHandlesBottomInset;
+
   /// 旧「工具栏跟随页面」布尔参数（兼容既有调用方）
   ///
   /// [批3a] 配色已由 `readBarStyle`（0 系统 / 1 跟随阅读背景 / 2 自定义）
@@ -84,6 +90,7 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
     this.brightnessVwPos = '1',
     this.progressBehavior = 'chapter',
     this.onSeekPage,
+    this.parentHandlesBottomInset = false,
     this.styleFollowPage = false,
   });
 
@@ -231,7 +238,11 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             // 胶囊形态）；与底部面板/顶部栏不重叠，滑动手势区域独立，
             // 不遮挡翻页点击区（菜单展开时翻页手势本已停用）— 全栈工程师
             if (widget.brightnessMode == '2')
-              _buildVerticalBrightnessBar(context, menuColors.text),
+              // [批3a P2-11] 竖条前景与胶囊底色 cs.surface 同源
+              _buildVerticalBrightnessBar(
+                context,
+                Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
           ],
         ),
       ),
@@ -270,9 +281,15 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       );
     }
     if (!style.floatingBottomBar) return surface;
+    // [批3a P1-1] 浮动形态：外边距 16 + 系统导航栏/手势条高度；
+    // 面板内部 SafeArea(bottom:false)，避免同一 padding.bottom 双计。
+    // 父级（reader_screen paddingDisplayCutouts）已加底部 inset 时传 0。
+    final bottomInset = widget.parentHandlesBottomInset
+        ? 0.0
+        : MediaQuery.paddingOf(context).bottom;
     return Padding(
       key: const ValueKey('reader-bottom-panel-floating'),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottomInset),
       child: surface,
     );
   }
@@ -296,6 +313,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
+        // 浮动形态底部留白已由外层 Padding 计入；贴底形态仍需 SafeArea
+        // 导航栏（父级已处理时不再重复）
+        bottom: !style.floatingBottomBar && !widget.parentHandlesBottomInset,
         child: IconTheme(
           data: IconThemeData(color: colors.text),
           child: Column(
@@ -716,68 +736,115 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: showCapsule
-                        ? _buildTitleCapsule(
-                            context,
-                            style: style,
-                            colors: colors,
-                            book: book,
-                            chapter: chapter,
-                          )
-                        : showBookInRow
-                        ? InkWell(
-                            key: const ValueKey('reader-topbar-book-name'),
-                            onTap: () => _openBookInfo(context, book),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                book.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(color: colors.text),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // [批3a P2-6] 动作区优先占位：先按动作自然宽度
+                        // （40dp/个 + 独立态 6dp 间距）分配，剩余给标题；
+                        // 6 动作在 320dp 时标题收敛为 0，动作整体 scaleDown，
+                        // 保证全部可见且可点，不产生 RenderFlex 溢出。
+                        final actionNaturalWidth = style.mergeButtons
+                            ? topBarActions.length * 40.0
+                            : topBarActions.length * 40.0 +
+                                  (topBarActions.length - 1) * 6.0;
+                        final actionWidth = actionNaturalWidth
+                            .clamp(0.0, constraints.maxWidth)
+                            .toDouble();
+                        final titleWidth =
+                            (constraints.maxWidth -
+                                    actionWidth -
+                                    (actionWidth > 0 ? 16.0 : 0.0))
+                                .clamp(0.0, constraints.maxWidth)
+                                .toDouble();
+                        final title = showCapsule
+                            ? _buildTitleCapsule(
+                                context,
+                                style: style,
+                                colors: colors,
+                                book: book,
+                                chapter: chapter,
+                              )
+                            : showBookInRow
+                            ? InkWell(
+                                key: const ValueKey(
+                                  'reader-topbar-book-name',
+                                ),
+                                onTap: () => _openBookInfo(context, book),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  child: Text(
+                                    book.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(color: colors.text),
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink();
+                        final actions = style.mergeButtons
+                            ? _buildMergedTopBarActions(
+                                context,
+                                style: style,
+                                colors: colors,
+                                book: book,
+                                topBarActions: topBarActions,
+                                hiddenActions: hiddenActions,
+                              )
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (
+                                    var i = 0;
+                                    i < topBarActions.length;
+                                    i++
+                                  ) ...[
+                                    if (i > 0) const SizedBox(width: 6),
+                                    if (topBarActions[i].id ==
+                                        kReaderMoreActionsId)
+                                      _buildMoreMenuButton(
+                                        context,
+                                        book: book,
+                                        hiddenActions: hiddenActions,
+                                        style: style,
+                                        colors: colors,
+                                        merged: false,
+                                      )
+                                    else
+                                      _buildTopBarActionButton(
+                                        context,
+                                        book: book,
+                                        def: topBarActions[i],
+                                        style: style,
+                                        colors: colors,
+                                        merged: false,
+                                      ),
+                                  ],
+                                ],
+                              );
+                        return Row(
+                          children: [
+                            if (titleWidth > 0) ...[
+                              SizedBox(width: titleWidth, child: title),
+                              const SizedBox(width: 16),
+                            ],
+                            Flexible(
+                              fit: FlexFit.loose,
+                              child: SizedBox(
+                                width: actionWidth,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: actions,
+                                ),
                               ),
                             ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  const SizedBox(width: 16),
-                  if (style.mergeButtons)
-                    _buildMergedTopBarActions(
-                      context,
-                      style: style,
-                      colors: colors,
-                      book: book,
-                      topBarActions: topBarActions,
-                      hiddenActions: hiddenActions,
-                    )
-                  else
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < topBarActions.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 6),
-                          if (topBarActions[i].id == kReaderMoreActionsId)
-                            _buildMoreMenuButton(
-                              context,
-                              book: book,
-                              hiddenActions: hiddenActions,
-                              style: style,
-                              colors: colors,
-                              merged: false,
-                            )
-                          else
-                            _buildTopBarActionButton(
-                              context,
-                              book: book,
-                              def: topBarActions[i],
-                              style: style,
-                              colors: colors,
-                              merged: false,
-                            ),
-                        ],
-                      ],
+                          ],
+                        );
+                      },
                     ),
+                  ),
                 ],
               ),
             ),
@@ -836,8 +903,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       onTap: () => _openBookInfo(context, book),
       borderRadius: BorderRadius.circular(50),
       child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        // [批3a P2-10] 胶囊随字体缩放增高（两行文本仍各 maxLines 1）
+        constraints: const BoxConstraints(minHeight: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(50),
           color: style.titleIconStyle == ReaderMenuIconStyle.tonal
@@ -937,7 +1005,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       key: const ValueKey('reader-topbar-merged-actions'),
       height: 40,
       decoration: BoxDecoration(
-        color: colors.container,
+        // [批3a P2-5] 仅 tonal 档使用容器底色，其余透明
+        color: style.titleIconStyle == ReaderMenuIconStyle.tonal
+            ? colors.container
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(20),
         border: style.titleIconStyle == ReaderMenuIconStyle.outlined
             ? Border.all(color: colors.onSurfaceVariant.withValues(alpha: 0.45))
@@ -1129,7 +1200,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     ];
     final pageSize = style.pageSize;
     final pageCount = (items.length + pageSize - 1) ~/ pageSize;
-    final itemHeight = style.showIconText ? 58.0 : 40.0;
+    // [批3a P1-3] 图标文字高度按系统字体缩放伸展，避免大字体纵向溢出
+    final itemHeight = style.showIconText
+        ? 42.0 + MediaQuery.textScalerOf(context).scale(16)
+        : 40.0;
     final gridHeight =
         style.rowCount * itemHeight + (style.rowCount - 1) * 12.0;
 
@@ -1160,7 +1234,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: SizedBox(
         height: gridHeight,
         child: pageCount > 1
@@ -1246,6 +1320,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       }
     }
     final tint = action.active ? colors.accent : colors.onSurfaceVariant;
+    // 与 _buildActionRow 的 itemHeight 同一度量：文字行高 = 16 * textScale。
+    // SizedBox 固定行高 + OverflowBox 允许横向自然绘制，纵向不撑破 Column。
+    final labelHeight = MediaQuery.textScalerOf(context).scale(16);
     return Tooltip(
       key: ValueKey('reader-menu-action-${action.label}'),
       message: action.label,
@@ -1274,14 +1351,27 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                 ),
                 if (style.showIconText) ...[
                   const SizedBox(height: 2),
-                  Text(
-                    action.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.labelSmall?.copyWith(color: colors.text),
+                  // [批3a P2-4] 文字不锁 40dp 定宽：OverflowBox 居中自然
+                  // 绘制，避免「全文搜索」等标签被 ellipsis 截断
+                  SizedBox(
+                    height: labelHeight,
+                    child: OverflowBox(
+                      alignment: Alignment.topCenter,
+                      minWidth: 0,
+                      maxWidth: double.infinity,
+                      minHeight: labelHeight,
+                      maxHeight: labelHeight,
+                      child: Text(
+                        action.label,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelSmall?.copyWith(color: colors.text),
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -1319,18 +1409,18 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final positionText = usePageSeek
         ? '${currentPage + 1}/$chapterPageCount'
         : '${state.currentChapterIndex + 1}/${state.chapters.length}';
-    // [批3a] 进度条 thumb/activeTrack/文字统一使用解析后的菜单文字色
+    // [批3a P2-9] 进度条 thumb/track 用强调色，文字仍用菜单文字色
     final progressColor = colors.text;
     final sliderTheme = SliderTheme.of(context).copyWith(
       trackHeight: 8,
       year2023: false,
-      thumbColor: colors.text,
-      activeTrackColor: colors.text.withValues(alpha: 0.25),
-      inactiveTrackColor: colors.text.withValues(alpha: 0.12),
-      disabledActiveTrackColor: colors.text.withValues(alpha: 0.15),
-      disabledInactiveTrackColor: colors.text.withValues(alpha: 0.08),
+      thumbColor: colors.accent,
+      activeTrackColor: colors.accent.withValues(alpha: 0.25),
+      inactiveTrackColor: colors.accent.withValues(alpha: 0.12),
+      disabledActiveTrackColor: colors.accent.withValues(alpha: 0.15),
+      disabledInactiveTrackColor: colors.accent.withValues(alpha: 0.08),
       activeTickMarkColor: Colors.transparent,
-      inactiveTickMarkColor: colors.text.withValues(alpha: 0.35),
+      inactiveTickMarkColor: colors.accent.withValues(alpha: 0.35),
       overlayShape: SliderComponentShape.noOverlay,
     );
     // [PARITY C2 M4] 参考底行形态：「X/Y + 目录%」文字行 + 全宽滑条。

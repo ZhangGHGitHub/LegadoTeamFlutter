@@ -110,10 +110,11 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
     ReaderMenuStyle style,
     ReaderMenuStyleNotifier notifier,
   ) {
+    // [批3a P2-8] 调色板仅在「自定义 + 种子色」生效；跟随阅读背景档
+    // 的取种映射留 3b（参考 ReadBookColorTheme 从页面底色/图片取种）。
     final showPalette =
-        style.readBarStyle == ReaderMenuBarStyle.followPage ||
-        (style.readBarStyle == ReaderMenuBarStyle.custom &&
-            style.colorMode == ReaderMenuColorMode.seed);
+        style.readBarStyle == ReaderMenuBarStyle.custom &&
+        style.colorMode == ReaderMenuColorMode.seed;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
