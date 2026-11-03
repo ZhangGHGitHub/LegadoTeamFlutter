@@ -402,7 +402,7 @@ class PrefKeys {
   static const readMenuBlurColor = 'readMenuBlurColor';
   static const readMenuBlurColorNight = 'readMenuBlurColorNight';
 
-  /// 顶/底栏模糊模式 0 None / 1 Haze / 2 LiquidGlass
+  /// 顶/底栏模糊模式 0 None / 1 LiquidGlass / 2 Haze（对齐参考）
   static const readMenuTopBarBlurMode = 'readMenuTopBarBlurMode';
   static const readMenuBottomBarBlurMode = 'readMenuBottomBarBlurMode';
 

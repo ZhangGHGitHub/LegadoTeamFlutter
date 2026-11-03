@@ -183,13 +183,19 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // [批3b] 菜单模糊只由 readMenu*BlurMode 控制（移除全局 enableBlur 硬编码）；
     // 顶栏模糊时 Material 透明，由 _wrapMenuSurface 的 BackdropFilter 承载。
     final topBarBlurMode = _effectiveBlurMode(menuStyle, isTopBar: true);
+    // [批3b P2-3] None 档无模糊但仍按 blurAlpha 半透明
     final topBarColor = topBarBlurMode == ReaderMenuBlurMode.none
-        ? menuColors.background
+        ? menuColors.background.withValues(alpha: menuStyle.blurAlpha / 100)
         : Colors.transparent;
     final radius = menuStyle.bottomCornerRadius.toDouble();
     final panelRadius = menuStyle.floatingBottomBar
         ? BorderRadius.circular(radius)
         : BorderRadius.vertical(top: Radius.circular(radius));
+    // [批3b P2-5] 淡入淡出只作用于内容；模糊/边框层在 FadeTransition 外
+    final fade = CurvedAnimation(
+      parent: _menuController,
+      curve: const Interval(0, 0.82, curve: Curves.easeOut),
+    );
 
     return Positioned.fill(
       child: AnimatedBuilder(
@@ -197,16 +203,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         builder: (context, child) {
           final v = _menuController.value;
           if (v == 0) return const SizedBox.shrink();
-          final fade = Tween<double>(begin: 0, end: 1).animate(
-            CurvedAnimation(
-              parent: _menuController,
-              curve: const Interval(0, 0.82, curve: Curves.easeOut),
-            ),
-          );
-          return IgnorePointer(
-            ignoring: !widget.visible,
-            child: FadeTransition(opacity: fade, child: child!),
-          );
+          return IgnorePointer(ignoring: !widget.visible, child: child!);
         },
         child: Stack(
           children: [
@@ -221,6 +218,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   book,
                   chapter,
                   topBarColor,
+                  fade,
                 ),
                 const Spacer(),
                 _buildBottomPanel(
@@ -231,6 +229,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   notifier: notifier,
                   state: state,
                   autoPageActive: autoPageActive,
+                  fade: fade,
                 ),
               ],
             ),
@@ -285,6 +284,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     required ResolvedReaderMenuColors colors,
     required bool isTopBar,
     required BorderRadius borderRadius,
+    required Animation<double> fade,
     required Widget child,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -296,6 +296,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         : style.bottomBarBlurStyle;
     final progressive = haze && blurStyle == ReaderMenuBlurStyle.progressive;
 
+    // [批3b P2-4] None 档不应用 tint；Haze/LiquidGlass 才使用 blurColor。
     final tintArgb = isDark ? style.blurColorNight : style.blurColor;
     final tint = tintArgb != 0
         ? Color(normalizeReaderMenuColor(tintArgb))
@@ -305,29 +306,16 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final surfaceColor = baseColor.withValues(alpha: alpha);
     final scope = isTopBar ? 'topbar' : 'bottom';
 
-    final layers = <Widget>[];
+    // 模糊/高光层在内容之下；边框层必须在内容之后（最上层），
+    // 否则会被不透明 Material 子层盖住。
+    final effectLayers = <Widget>[];
+    final borderLayers = <Widget>[];
+
     if (haze) {
-      layers.add(
-        Positioned.fill(
-          child: BackdropFilter(
-            key: ValueKey('reader-$scope-blur-backdrop'),
-            filter: ImageFilter.blur(
-              sigmaX: style.blurRadius.toDouble(),
-              sigmaY: style.blurRadius.toDouble(),
-            ),
-            child: ColoredBox(
-              key: ValueKey('reader-$scope-blur-tint'),
-              color: surfaceColor,
-            ),
-          ),
-        ),
-      );
-    }
-    if (progressive) {
-      layers.add(
-        Positioned.fill(
-          child: IgnorePointer(
-            child: DecoratedBox(
+      // [批3b P2-4] Progressive 不再「均匀 tint + 渐变叠加」，直接让
+      // BackdropFilter 的子层绘制渐变：实边 alpha=设置值、透边 alpha=0。
+      final Widget backdropChild = progressive
+          ? DecoratedBox(
               key: ValueKey('reader-$scope-blur-progressive'),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -337,19 +325,29 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   end: isTopBar
                       ? Alignment.bottomCenter
                       : Alignment.topCenter,
-                  colors: [
-                    surfaceColor,
-                    surfaceColor.withValues(alpha: alpha * 0.35),
-                  ],
+                  colors: [surfaceColor, surfaceColor.withValues(alpha: 0)],
                 ),
               ),
+            )
+          : ColoredBox(
+              key: ValueKey('reader-$scope-blur-tint'),
+              color: surfaceColor,
+            );
+      effectLayers.add(
+        Positioned.fill(
+          child: BackdropFilter(
+            key: ValueKey('reader-$scope-blur-backdrop'),
+            filter: ImageFilter.blur(
+              sigmaX: style.blurRadius.toDouble(),
+              sigmaY: style.blurRadius.toDouble(),
             ),
+            child: backdropChild,
           ),
         ),
       );
     }
     if (glass) {
-      layers.add(
+      effectLayers.add(
         Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(
@@ -378,7 +376,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     if (style.borderWidth > 0 && !(isTopBar && style.titleCapsule)) {
       final borderColor = _menuBorderColor(context, style);
       if (isTopBar) {
-        layers.add(
+        borderLayers.add(
           Positioned(
             left: 0,
             right: 0,
@@ -391,7 +389,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
           ),
         );
       } else {
-        layers.add(
+        borderLayers.add(
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -410,9 +408,21 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       }
     }
 
+    // [批3b P2-5] 仅内容层做 FadeTransition；模糊层/边框层不受整体
+    // OpacityLayer 影响，打开时模糊立即可见、内容淡入。
     return ClipRRect(
       borderRadius: borderRadius,
-      child: Stack(children: [...layers, child]),
+      child: Stack(
+        children: [
+          ...effectLayers,
+          FadeTransition(
+            key: ValueKey('reader-$scope-content-fade'),
+            opacity: fade,
+            child: child,
+          ),
+          ...borderLayers,
+        ],
+      ),
     );
   }
 
@@ -425,10 +435,12 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     required ReaderNotifier notifier,
     required ReaderState state,
     required bool autoPageActive,
+    required Animation<double> fade,
   }) {
     final blurMode = _effectiveBlurMode(style, isTopBar: false);
+    // [批3b P2-3] None 档仍按 blurAlpha 半透明（无 BackdropFilter）
     final barColor = blurMode == ReaderMenuBlurMode.none
-        ? colors.background
+        ? colors.background.withValues(alpha: style.blurAlpha / 100)
         : Colors.transparent;
     Widget surface = _panelSurface(
       context,
@@ -446,6 +458,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       colors: colors,
       isTopBar: false,
       borderRadius: panelRadius,
+      fade: fade,
       child: surface,
     );
     if (!style.floatingBottomBar) return surface;
@@ -831,6 +844,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     Book? book,
     BookChapter? chapter,
     Color barColor,
+    Animation<double> fade,
   ) {
     final sourceName = book?.originName ?? '';
     // [批1a] showReadTitleAddition：关闭后章节/书源信息块整体不渲染
@@ -881,6 +895,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         (chapter != null || sourceName.isNotEmpty);
 
     final topBar = Material(
+      key: const ValueKey('reader-topbar-surface'),
       color: barColor,
       child: SafeArea(
         bottom: false,
@@ -1060,6 +1075,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       colors: colors,
       isTopBar: true,
       borderRadius: BorderRadius.zero,
+      fade: fade,
       child: topBar,
     );
   }

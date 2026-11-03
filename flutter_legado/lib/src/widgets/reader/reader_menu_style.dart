@@ -22,7 +22,7 @@
 // 编写：全栈工程师（批3a） ｜ 2026-11-04
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/foundation.dart' show immutable, visibleForTesting;
 import 'package:flutter/material.dart' show Color, ColorScheme;
 
 import '../../constants/pref_keys.dart';
@@ -63,15 +63,18 @@ abstract final class ReaderMenuIconStyle {
 }
 
 /// 菜单模糊模式（readMenuTopBarBlurMode / readMenuBottomBarBlurMode）
+///
+/// [批3b P2-2] 常量值对齐参考 `ReadMenuBlurMode`：
+/// None=0 / LiquidGlass=1 / Haze=2（此前 3b 初版误对调）。
 abstract final class ReaderMenuBlurMode {
-  /// 不模糊（实色）
+  /// 不模糊（仍按 blurAlpha 半透明）
   static const int none = 0;
 
-  /// BackdropFilter + 半透明底色
-  static const int haze = 1;
-
   /// 液态玻璃近似（模糊 + 高光描边 + 镜面渐变）
-  static const int liquidGlass = 2;
+  static const int liquidGlass = 1;
+
+  /// BackdropFilter + 半透明底色
+  static const int haze = 2;
 }
 
 /// 菜单模糊风格（readMenuTopBarBlurStyle / readMenuBottomBarBlurStyle）
@@ -606,6 +609,52 @@ class ResolvedReaderMenuColors {
   });
 }
 
+/// roles 计算缓存条目（批3b P2-6）
+class _RolesCacheEntry {
+  final String key;
+  final ({Md3Roles light, Md3Roles dark}) roles;
+
+  const _RolesCacheEntry(this.key, this.roles);
+}
+
+/// 小型 LRU（8 条）：翻页重建时同 seed/palette 不重复跑 HCT scheme
+final List<_RolesCacheEntry> _rolesCache = <_RolesCacheEntry>[];
+int _rolesComputeCount = 0;
+
+/// [批3b P2-6] 测试钩子：roles 实际计算次数
+@visibleForTesting
+int get readerMenuRolesComputeCountForTest => _rolesComputeCount;
+
+/// [批3b P2-6] 测试钩子：清空缓存/计数
+@visibleForTesting
+void resetReaderMenuRolesCacheForTest() {
+  _rolesCache.clear();
+  _rolesComputeCount = 0;
+}
+
+({Md3Roles light, Md3Roles dark}) _cachedParameterizedRoles({
+  required String style,
+  required int seed,
+}) {
+  final key = '$style|$seed';
+  for (var i = 0; i < _rolesCache.length; i++) {
+    if (_rolesCache[i].key == key) {
+      final entry = _rolesCache.removeAt(i);
+      _rolesCache.add(entry); // LRU touch
+      return entry.roles;
+    }
+  }
+  final roles = buildParameterizedRoles(
+    style: style,
+    seed: seed,
+    contrastLevel: 0,
+  );
+  _rolesComputeCount++;
+  if (_rolesCache.length >= 8) _rolesCache.removeAt(0);
+  _rolesCache.add(_RolesCacheEntry(key, roles));
+  return roles;
+}
+
 /// 按工具栏样式解析菜单颜色
 ///
 /// [isDark] 取应用当前明暗（对齐参考版「日夜按 App 暗色」）；
@@ -671,10 +720,9 @@ ResolvedReaderMenuColors _resolveFollowPage({
   final palette = style.paletteStyle.trim().isEmpty
       ? normalizeReaderMenuPaletteStyle(appPaletteStyle)
       : normalizeReaderMenuPaletteStyle(style.paletteStyle);
-  final rolesPair = buildParameterizedRoles(
+  final rolesPair = _cachedParameterizedRoles(
     style: palette,
     seed: seed.toARGB32(),
-    contrastLevel: 0,
   );
   final Md3Roles roles = isDark ? rolesPair.dark : rolesPair.light;
   final background = Color(roles.surfaceContainerHigh);
@@ -712,10 +760,9 @@ ResolvedReaderMenuColors _resolveCustom({
     final palette = style.paletteStyle.trim().isEmpty
         ? normalizeReaderMenuPaletteStyle(appPaletteStyle)
         : normalizeReaderMenuPaletteStyle(style.paletteStyle);
-    final rolesPair = buildParameterizedRoles(
+    final rolesPair = _cachedParameterizedRoles(
       style: palette,
       seed: seed.toARGB32(),
-      contrastLevel: 0,
     );
     final Md3Roles roles = isDark ? rolesPair.dark : rolesPair.light;
     return ResolvedReaderMenuColors(
