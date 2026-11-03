@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.444] - 2026-11-03
+
+### Fixed
+- [UI] 干净进程冷启动投递 `legado://import/...` 或未知 host 深链时，等待闪屏退出后再显示关联导入确认框，不再直接落书架；等待有界（Navigator/闪屏异常时超限强制展示或放弃），热路径行为不变。
+
 ## [2.0.443] - 2026-11-03
 
 ### Added
