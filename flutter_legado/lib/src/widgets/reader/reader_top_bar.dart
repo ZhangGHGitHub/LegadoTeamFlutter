@@ -13,6 +13,7 @@ import '../../models/book_source.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/sync/sync_notifier.dart';
+import 'reader_action_helpers.dart';
 import '../../routes.dart';
 import '../../screens/source_edit_screen.dart';
 import '../../utils/source_login_entry.dart';
@@ -145,77 +146,6 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  /// 拉取/同步云端进度（对齐 menu_get_progress → syncBookProgress）
-  Future<void> _getCloudProgress(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final reader = ref.read(readerNotifierProvider);
-    final book = reader.currentBook;
-    if (book == null) return;
-    final syncNotifier = ref.read(syncNotifierProvider.notifier);
-    await syncNotifier.loadConfig();
-    final liveBook = book.copyWith(
-      durChapterIndex: reader.currentChapterIndex,
-      durChapterPos: reader.currentChapterPos,
-      durChapterTitle: reader.currentChapter?.title,
-      durChapterTime: DateTime.now().millisecondsSinceEpoch,
-    );
-    try {
-      final result = await syncNotifier.syncBookProgressForBook(
-        liveBook,
-        onCloudNewer: (progress) async {
-          if (!context.mounted) return;
-          final go = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('同步阅读进度'),
-              content: Text(
-                '云端进度更新（第 ${progress.durChapterIndex + 1} 章'
-                '${progress.durChapterTitle != null && progress.durChapterTitle!.isNotEmpty ? '「${progress.durChapterTitle}」' : ''}）。'
-                '\n是否跳转到云端进度？',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('取消'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('跳转'),
-                ),
-              ],
-            ),
-          );
-          if (go == true && context.mounted) {
-            await ref.read(readerNotifierProvider.notifier).applyBookProgress(
-                  chapterIndex: progress.durChapterIndex,
-                  chapterPos: progress.durChapterPos,
-                );
-          }
-        },
-      );
-      if (!context.mounted) return;
-      switch (result) {
-        case 'uploaded':
-          messenger.showSnackBar(
-            const SnackBar(content: Text('本地进度较新，已上传到云端')),
-          );
-        case 'same':
-          messenger.showSnackBar(
-            const SnackBar(content: Text('进度已与云端一致')),
-          );
-        case 'skipped':
-          messenger.showSnackBar(
-            const SnackBar(content: Text('请先在 WebDAV 设置中开启「同步书籍进度」')),
-          );
-        case 'cloud':
-          break; // 已弹确认框
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('同步进度失败：$e')));
-    }
-  }
-
   /// 覆盖上传本地进度（对齐 menu_cover_progress → uploadProgress）
   Future<void> _coverCloudProgress(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -316,34 +246,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     BuildContext context,
     WidgetRef ref,
     ReadConfig Function(ReadConfig config) transform,
-  ) async {
-    final book = ref.read(readerNotifierProvider).currentBook;
-    if (book == null) return;
-    final updated =
-        book.copyWith(readConfig: transform(book.readConfig ?? const ReadConfig()));
-    try {
-      await ref.read(bookApiProvider).updateBook(updated);
-      final notifier = ref.read(readerNotifierProvider.notifier);
-      notifier.updateCurrentBook(updated);
-      await notifier.reloadChapterContent();
-    } catch (e) {
-      if (context.mounted) _snack(context, '设置保存失败: $e');
-    }
-  }
-
-  /// 替换规则开关（对标原版 menu_enable_replace）
-  void _toggleReplaceRule(BuildContext context, WidgetRef ref) {
-    final book = ref.read(readerNotifierProvider).currentBook;
-    final enabled = book?.readConfig?.useReplaceRule ?? true;
-    unawaited(_updateBookConfig(
-      context,
-      ref,
-      (c) => c.copyWith(useReplaceRule: !enabled),
-    ));
-    if (context.mounted) {
-      _snack(context, enabled ? '已关闭替换规则' : '已开启替换规则');
-    }
-  }
+  ) => updateReaderBookConfig(context, ref, transform);
 
   /// 重新分段开关（对标原版 menu_re_segment）
   void _toggleReSegment(BuildContext context, WidgetRef ref) {
@@ -493,71 +396,6 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
 
   /// 编辑章节内容（对标原版 EditContentDialog：可编辑正文，保存经
   /// saveChapterContent FFI 持久化后重载当前章）
-  void _showEditContentDialog(BuildContext context, WidgetRef ref) {
-    final state = ref.read(readerNotifierProvider);
-    final chapter = state.currentChapter;
-    final ctrl = TextEditingController(text: state.chapterContent);
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(chapter != null ? '编辑：${chapter.title}' : '编辑内容'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: TextField(
-            controller: ctrl,
-            maxLines: null,
-            minLines: 12,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              // [UI-fix v2.0.3 | 2026-08-08] 保存接线（对标原版
-              // saveContent → BookHelp.saveText + loadContent） — Qoder
-              unawaited(_saveEditedContent(context, ref, ctrl.text));
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // [UI-fix v2.0.3 | 2026-08-08] 编辑内容保存闭环：saveChapterContent
-  // FFI（契约 §2.43.1）写回缓存后重载当前章正文 — Qoder
-  Future<void> _saveEditedContent(
-    BuildContext context,
-    WidgetRef ref,
-    String content,
-  ) async {
-    final state = ref.read(readerNotifierProvider);
-    final book = state.currentBook;
-    if (book == null) return;
-    try {
-      final ok = await ref.read(bookApiProvider).saveChapterContent(
-            bookUrl: book.bookUrl,
-            chapterIndex: state.currentChapterIndex,
-            title: state.currentChapter?.title ?? '',
-            content: content,
-          );
-      if (!context.mounted) return;
-      if (ok) {
-        await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
-        if (context.mounted) _snack(context, '章节内容已保存');
-      } else {
-        _snack(context, '章节内容保存失败');
-      }
-    } catch (e) {
-      if (context.mounted) _snack(context, '章节内容保存失败: $e');
-    }
-  }
-
   /// 反转内容（对标原版 ReadBookViewModel.reverseContent L447-459：
   /// toStringArray（StringExtensions L143，按码点拆单字符）逐个 insert(0)
   /// 即整串码点级倒序，随后 saveText 写回并 loadContent 重载）
@@ -1194,7 +1032,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                                   context, AppRoutes.highlightRules);
                               break;
                             case 'editContent':
-                              _showEditContentDialog(context, ref);
+                              showReaderEditContentDialog(context, ref);
                               break;
                             case 'pageAnim':
                               // [UI-fix v2.0.1 | 2026-08-06] 翻页动画接阅读
@@ -1202,7 +1040,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               ReaderSettingsSheet.show(context);
                               break;
                             case 'getProgress':
-                              unawaited(_getCloudProgress(context));
+                              unawaited(syncReaderProgress(context, ref));
                               break;
                             case 'coverProgress':
                               unawaited(_coverCloudProgress(context));
@@ -1214,7 +1052,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               _showSimulatedReadingDialog(context, ref);
                               break;
                             case 'enableReplace':
-                              _toggleReplaceRule(context, ref);
+                              toggleReaderReplaceRule(context, ref);
                               break;
                             case 'sameTitleRemoved':
                               unawaited(_toggleSameTitleRemoved(context));
