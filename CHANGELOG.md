@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.443] - 2026-11-03
+
+### Added
+- [UI] 书架/发现/RSS 支持 list-detail 双栏：宽屏左列表 + 右侧书籍详情/RSS 文章（RSS 源→文章列表→文章详情逐级），左列表选择替换右栏，切 Tab 清空，返回逐级；窄屏/关闭模式保持全屏。
+### Fixed
+- [UI] 登录/WebView/搜索/阅读器/视频等独立页面始终全屏；打开全屏内容前清理旧右栏；来源 Tab 变化后丢弃过期右栏跳转；右栏隐藏时不消费自动开读。
+
 ## [2.0.442] - 2026-11-03
 
 ### Added
