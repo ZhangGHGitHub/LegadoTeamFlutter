@@ -39,9 +39,13 @@ import '../widgets/help/show_help.dart';
 /// 主题模式快捷入口按参考版移除，统一从「设置 → 外观」进入。
 ///
 /// 视觉：apple-ui-designer — iOS 分组 inset 列表、系统感图标色块、克制分隔。
+/// [M2 我的页 | 2026-11-03] 对齐参考版 `MyScreen.kt` / `WebServiceSettingBlock`：
+/// Web 服务改为无标题 `IosGroup` 内的 `SettingSwitchRow`（不再是 48dp 图标槽
+/// 大卡），运行中操作行置于组外紧邻下方；规则/其他组图标按参考版
+/// `Source/FindReplace/Rule/LibraryBooks/Sell/…/ExitToApp` 对齐。
 ///
 /// — UI 子代理 + UI ｜ 2026-08-13
-/// 修订：全栈工程师 + UI ｜ 2026-11-03（M1 信息架构）
+/// 修订：全栈工程师 + UI ｜ 2026-11-03（M1 信息架构 / M2 视觉对齐）
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -566,31 +570,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     }
   }
 
-  /// [B2-C2 2-10 | 全栈工程师] Web 服务大卡（图标 + 绿 accent）
+  /// [M2 我的页 | 2026-11-03] Web 服务块（参考版 `WebServiceSettingBlock`）
   ///
-  /// 对齐 ref 12 原版「我的」页 Web 服务大卡形态：48dp 圆角图标槽
-  /// （language 图标）+ 标题/状态副题 + 右端 Switch（busy 时 spinner）；
-  /// 开启态卡片描边与图标槽转绿（iOS 系统绿语义色）。
+  /// 参考版形态（`legado-with-MD3/.../ui/main/my/MyScreen.kt`）：
+  /// 无标题 `SplicedColumnGroup` 内一个 `SwitchSettingItem`
+  /// （Web 图标 + 标题「Web 服务」+ 状态/地址副题 + 开关）；运行中在其下方
+  /// 展开「复制地址」「在浏览器中打开」两个 `SmallPlainButton`（右对齐），
+  /// 不是独立大卡。本实现据此替换此前 48dp 图标槽大卡：
+  /// - 开关行 = `IosGroup` + `SettingSwitchRow`（裸 24dp 图标、行内开关、
+  ///   整行可点、busy 时禁用并显示轻量 spinner——与「MCP 服务」行同法）；
+  /// - 开启态不再有整卡描边/Ink 底色/整卡 MergeSemantics/InkWell。
+  ///
+  /// 运行中操作行的落位（登记）：参考版把按钮 Row 放在分组 Column 内（非卡片）；
+  /// 本仓库 `IosGroup` 会给每个 child 强制套 surfaceContainerLow 行卡
+  /// （ios_widgets.dart），无法表达「组内无卡片行」，故按任务约定放在
+  /// `IosGroup` 组外紧邻下方：右对齐、与开关行视觉贴邻，且不属于开关行
+  /// 手势/语义区域，点击不会误触开关。
   ///
   /// [M1 我的页 | 2026-11-03] 运行中副题显示可访问地址（参考版
-  /// `MyUiState.webServiceAddress`），卡片下方补「复制地址」「在浏览器中
-  /// 打开」两个操作（对齐参考版 `WebServiceSettingBlock`）。操作按钮放在
-  /// 卡片 InkWell **之外**，避免点击按钮冒泡触发挥手切换开关。
-  Widget _buildWebServiceCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    // [2026-10-06 登记待修 → 本批已修复] 原「iOS 标记暂不可用」门控（副题
-    // 「暂不可用，将在后续版本修复」+ Switch 禁用）已整体移除：根因见
-    // docs/IOS_WEB_SERVICE_ROOT_CAUSE_SURVEY_20261006.md（缺陷 A 绑定
-    // 127.0.0.1、缺陷 B bind 失败假成功、缺陷 C 缺本地网络用途描述），
-    // 三处已随本批修复，iOS 与其他平台恢复统一形态。
-    // [A-5 | 2026-09-20 用户裁决] AppColors 整体删除，本卡启用态 accent
-    // 改 MD3 scheme 取值。槽位映射（保持"开启态强调"视觉语义）：
-    //   AppColors.iosGreenLight / iosGreenDark（iOS 系统绿，按亮暗双取值）
-    //     → cs.primary（MD3 主色，随当前 13 套调色板亮/暗各自生效）
-    // 对齐参考版 SwitchSettingItem：开关 checked 色即 colorScheme.primary，
-    // 同卡内 Switch 与卡描边/图标槽同源，主题切换无残留绿。
-    final green = cs.primary;
+  /// `MyUiState.webServiceAddress`）；保活/通知降级提示保留。
+  Widget _buildWebServiceBlock(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final enabled = _webService;
     // [M1] 运行中优先展示可访问地址；地址解析中/失败回落状态串
     final baseSubtitle = enabled
@@ -609,113 +609,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         : enabled && _webNotificationDegraded
         ? '$baseSubtitle · 通知权限未授予，前台通知不可见'
         : baseSubtitle;
-    // [批23 | 全栈工程师] 整卡可点切换：原实现只有右端 Switch 可点，点
-    // 标题/图标/副题无响应（与原版整行可点不一致）。用 Material+InkWell
-    // 包卡片（Ink 承载底色与描边，保证水波纹可见）；卡片内无展开说明/
-    // 复制地址等独立子按钮，无需避让；右端 Switch 的自身手势优先。
-    // [批23b] 语义合并：整卡与右端 Switch 合并为单一开关节点（与
-    // SwitchListTile / SettingSwitchRow 同法），避免读屏出现「可点击卡片 +
-    // 独立开关」两个焦点；Switch 不参与焦点，整卡即唯一语义目标。
-    // [M1] 复制/打开按钮位于本 MergeSemantics/InkWell 之外（见下），
-    // 不并入开关语义节点，也不参与整卡切换手势。
-    final radius = BorderRadius.circular(16);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MergeSemantics(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: radius,
-                onTap: _webServiceBusy
-                    ? null
-                    : () => _toggleWebService(!_webService),
-                child: Ink(
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerLow,
-                    borderRadius: radius,
-                    border: Border.all(
-                      color: enabled
-                          ? green.withValues(alpha: 0.6)
-                          : cs.outlineVariant,
-                      width: enabled ? 1.5 : 0.5,
+        IosGroup(
+          margin: const EdgeInsets.only(top: 8),
+          children: [
+            SettingSwitchRow(
+              // busy：行禁用（onChanged = null）+ 轻量 spinner 取代图标，
+              // 与「MCP 服务」行同法；开关本身保留可见但灰置。
+              leading: _webServiceBusy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Symbols.language_rounded,
+                      size: 24,
+                      color: cs.onSurfaceVariant,
                     ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: enabled
-                                ? green.withValues(alpha: 0.15)
-                                : cs.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Symbols.language_rounded,
-                            size: 28,
-                            color: enabled ? green : cs.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Web 服务',
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                subtitle,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        _webServiceBusy
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : ExcludeFocus(
-                                child: Switch(
-                                  value: _webService,
-                                  onChanged: _toggleWebService,
-                                ),
-                              ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+              title: 'Web 服务',
+              subtitle: subtitle,
+              value: _webService,
+              onChanged: _webServiceBusy ? null : _toggleWebService,
             ),
-          ),
+          ],
         ),
-        // [M1] 运行中操作（对齐参考版 WebServiceSettingBlock 的展开按钮）：
-        // 位于 InkWell 之外，点按不会切换开关；小屏用 Wrap 右对齐换行防溢出。
+        // [M2] 运行中操作（对齐参考版 WebServiceSettingBlock 的展开按钮）：
+        // 在 IosGroup 组外紧邻下方（落位原因见方法注释），右对齐 Wrap 防
+        // 小屏溢出；不属于开关行手势/语义区域，点按不会切换开关。
         if (enabled && _webServiceAddress.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Align(
               alignment: Alignment.centerRight,
               child: Wrap(
                 alignment: WrapAlignment.end,
-                spacing: 8,
+                spacing: 12,
                 runSpacing: 4,
                 children: [
                   TextButton.icon(
@@ -757,9 +688,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             padding: const EdgeInsets.only(bottom: 32),
             children: [
               // ===== 顶部 Web 服务块 =====
-              // [M1 我的页 | 2026-11-03 用户裁决] 按参考版置顶：开关 + 运行中
-              // 可访问地址 + 复制/浏览器打开；M2 再做块形态视觉对齐。
-              _buildWebServiceCard(context),
+              // [M2 我的页 | 2026-11-03] 对齐参考版无标题 SplicedColumnGroup：
+              // 开关行（SwitchSettingItem 形态）+ 运行中复制/浏览器打开。
+              _buildWebServiceBlock(context),
 
               // ===== 规则分组（M1：收敛为 5 个规则入口）=====
               const IosSectionHeader('规则'),
@@ -767,7 +698,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 separatorIndent: 62,
                 children: [
                   IosListTile(
-                    icon: Symbols.library_books_rounded,
+                    // [M2] 图标对齐参考版 ClickableSettingItem：Source
+                    icon: Symbols.source_rounded,
                     title: '书源管理',
                     subtitle: '新建、导入、编辑或管理书源',
                     onTap: () =>
@@ -781,7 +713,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                         Navigator.pushNamed(context, AppRoutes.replaceRules),
                   ),
                   IosListTile(
-                    icon: Symbols.toc_rounded,
+                    // [M2] 图标对齐参考版：Rule
+                    icon: Symbols.rule_rounded,
                     title: 'TXT 目录规则',
                     subtitle: '配置 TXT 目录规则',
                     onTap: () =>
@@ -794,14 +727,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   // 注册与深链，从管理页顶栏「字典查询」进入（见
                   // dict_rule_screen.dart）。
                   IosListTile(
-                    icon: Symbols.translate_rounded,
+                    // [M2] 图标对齐参考版：LibraryBooks
+                    icon: Symbols.library_books_rounded,
                     title: '字典规则',
                     subtitle: '管理字典规则，查询词典释义',
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.dictRule),
                   ),
                   IosListTile(
-                    icon: Icons.sell_rounded,
+                    // [M2] 图标对齐参考版：Sell
+                    icon: Symbols.sell_rounded,
                     title: '高亮标签规则',
                     subtitle: '自动高亮标注规则',
                     onTap: () =>
@@ -915,7 +850,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     onTap: () => Navigator.pushNamed(context, AppRoutes.about),
                   ),
                   IosListTile(
-                    icon: Symbols.logout_rounded,
+                    // [M2] 图标对齐参考版：AutoMirrored ExitToApp
+                    icon: Symbols.exit_to_app_rounded,
                     title: '退出',
                     onTap: _confirmExit,
                   ),
