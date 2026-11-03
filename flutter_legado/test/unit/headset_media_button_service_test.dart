@@ -31,7 +31,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
-import 'package:flutter_legado/src/models/book.dart';
+import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/audio_service.dart';
@@ -76,8 +76,9 @@ class _FakeAudio implements HeadsetMediaAudioController {
     required String bookUrl,
     required String bookName,
     required int chapterIndex,
+    int? startChapterPos,
   }) async {
-    calls.add('startReadAloud:$bookUrl:$chapterIndex');
+    calls.add('startReadAloud:$bookUrl:$chapterIndex:$startChapterPos');
   }
 
   @override
@@ -193,15 +194,28 @@ void main() {
       );
     });
 
-    test('无播放 + 启动朗读开 + 阅读页存在 → 交活动处理（不直接启动）', () {
+    test('无播放 + 启动朗读开 + 阅读页存在且前台 → 交活动处理', () {
       expect(
         decide(readAloud: true, activity: true, foreground: true),
         HeadsetMediaAction.dispatchToActivity,
       );
+    });
+
+    test('后台 + 阅读页仍挂载：不向不可见页面分派；onExit 关则忽略', () {
       expect(
         decide(readAloud: true, activity: true, foreground: false),
-        HeadsetMediaAction.dispatchToActivity,
-        reason: '原版 LifecycleHelp.isExistActivity 只看实例存在，不看 resumed',
+        HeadsetMediaAction.startReadAloud,
+        reason: '后台不投递活动处理器；onExit=true 时改为从最近书启动',
+      );
+      expect(
+        decide(
+          readAloud: true,
+          activity: true,
+          foreground: false,
+          onExit: false,
+        ),
+        HeadsetMediaAction.ignoreExitDisabled,
+        reason: '后台 + handler 挂载 + 全程响应关 → 必须忽略（P1 负例）',
       );
     });
 
@@ -324,7 +338,7 @@ void main() {
       sessionButtons.add(MediaButtonEvent.play);
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
-      expect(audio.calls, ['startReadAloud:last:3']);
+      expect(audio.calls, ['startReadAloud:last:3:0']);
     });
 
     test('会话空闲态播放键 + 启动朗读关 → 忽略', () async {
@@ -414,7 +428,42 @@ void main() {
       );
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
-      expect(audio.calls, ['startReadAloud:newest:7']);
+      expect(audio.calls, ['startReadAloud:newest:7:0']);
+    });
+
+    test('同章不同章内位置：取最近书的 durChapterPos（不回到章首）', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: true,
+        PrefKeys.readAloudByMediaButton: true,
+      });
+      when(() => api.getBooks()).thenAnswer(
+        (_) async => [
+          const Book(
+            bookUrl: 'newer',
+            name: '较新',
+            bookType: BookType.text,
+            durChapterTime: 200,
+            durChapterIndex: 4,
+            durChapterPos: 999,
+          ),
+          const Book(
+            bookUrl: 'older',
+            name: '较旧',
+            bookType: BookType.text,
+            durChapterTime: 100,
+            durChapterIndex: 4,
+            durChapterPos: 123,
+          ),
+        ],
+      );
+      service = buildService(
+        audio: audio,
+        api: api,
+        foreground: () => false,
+      );
+      await service.start();
+      await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
+      expect(audio.calls, ['startReadAloud:newer:4:999']);
     });
 
     test('后台 + 无最近阅读书：忽略启动朗读', () async {
@@ -492,6 +541,54 @@ void main() {
       expect(service.hasActivityHandler, isTrue);
     });
 
+    test('后台 + handler 挂载 + 全程响应关 → 忽略（不向不可见页面分派）', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: false,
+        PrefKeys.readAloudByMediaButton: true,
+      });
+      service = buildService(
+        audio: audio,
+        api: api,
+        foreground: () => false,
+      );
+      final received = <HeadsetMediaKey>[];
+      service.attachActivityHandler(Object(), received.add);
+      await service.start();
+      await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
+      expect(received, isEmpty);
+      expect(audio.calls, isEmpty);
+      verifyNever(() => api.getBooks());
+    });
+
+    test('后台 + handler 挂载 + 全程响应开 → 从最近书启动（不分派页面）', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: true,
+        PrefKeys.readAloudByMediaButton: true,
+      });
+      when(() => api.getBooks()).thenAnswer(
+        (_) async => [
+          const Book(
+            bookUrl: 'bg',
+            name: '后台书',
+            bookType: BookType.text,
+            durChapterIndex: 2,
+            durChapterPos: 1200,
+          ),
+        ],
+      );
+      service = buildService(
+        audio: audio,
+        api: api,
+        foreground: () => false,
+      );
+      final received = <HeadsetMediaKey>[];
+      service.attachActivityHandler(Object(), received.add);
+      await service.start();
+      await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
+      expect(received, isEmpty);
+      expect(audio.calls, ['startReadAloud:bg:2:1200']);
+    });
+
     test('后台且全程响应关、无播放：退出后台时释放会话', () async {
       SharedPreferences.setMockInitialValues({
         PrefKeys.mediaButtonOnExit: false,
@@ -559,6 +656,24 @@ void main() {
       when(() => audioService.dispose()).thenAnswer((_) async {});
       when(() => audioService.notifyStopped()).thenAnswer((_) async {});
       when(() => audioService.abandonAudioFocus()).thenAnswer((_) async {});
+      when(() => audioService.init()).thenAnswer((_) async {});
+      when(() => audioService.isInitialized).thenReturn(true);
+      when(() => audioService.requestAudioFocus()).thenAnswer((_) async => true);
+      when(() => audioService.updateMetadata(
+            title: any(named: 'title'),
+            artist: any(named: 'artist'),
+            album: any(named: 'album'),
+          )).thenAnswer((_) async {});
+      when(() => audioService.notifyPlaying(position: any(named: 'position')))
+          .thenAnswer((_) async {});
+      when(() => audioService.notifyPaused(position: any(named: 'position')))
+          .thenAnswer((_) async {});
+      when(() => audioService.setPlaying(any())).thenAnswer((_) async {});
+      when(() => audioService.updatePlaybackState(
+            state: any(named: 'state'),
+            position: any(named: 'position'),
+          )).thenAnswer((_) async {});
+      when(() => audioService.setWakeLock(any())).thenAnswer((_) async {});
       when(() => audioService.mediaButtonStream)
           .thenAnswer((_) => Stream<MediaButtonEvent>.empty());
       when(() => audioService.audioFocusStream)
@@ -600,6 +715,43 @@ void main() {
       verify(() => audioService.dispose()).called(1);
     });
 
+    test('播放中（流媒体）退出听书页：onExit=false 也不释放会话', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: false,
+      });
+      when(() => api.getChapters(any())).thenAnswer(
+        (_) async => [
+          const BookChapter(title: 'ch1', index: 0),
+          const BookChapter(title: 'ch2', index: 1),
+        ],
+      );
+      when(() => api.getBook(any())).thenAnswer((_) async => null);
+      when(() => api.getAudioChapterMedia(any(), any())).thenAnswer(
+        (_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'},
+      );
+      when(() => api.getAudioProgress(any(), any()))
+          .thenAnswer((_) async => null);
+      when(() => api.getConfig(any())).thenAnswer((_) async => null);
+      when(() => api.saveAudioProgress(any(), any(), any()))
+          .thenAnswer((_) async {});
+
+      final notifier = container.read(audioNotifierProvider.notifier);
+      await notifier.initMediaSession();
+      await notifier.loadChapters('audio-url');
+      notifier.setAudioBookMode(true);
+      await notifier.play();
+      expect(container.read(audioNotifierProvider).state, PlayerState.playing);
+
+      await notifier.releaseMediaSession();
+      verifyNever(() => audioService.dispose());
+
+      // 已暂停也算播放会话：仍保留会话（耳机键可恢复），不释放
+      notifier.pause();
+      expect(container.read(audioNotifierProvider).state, PlayerState.paused);
+      await notifier.releaseMediaSession();
+      verifyNever(() => audioService.dispose());
+    });
+
     test('空闲态会话播放/切段键不盲目启动播放（交服务按偏好决策）', () async {
       final buttons = StreamController<MediaButtonEvent>.broadcast();
       addTearDown(buttons.close);
@@ -621,6 +773,151 @@ void main() {
       expect(container.read(audioNotifierProvider).state, PlayerState.idle);
       verifyNever(() => api.getChapters(any()));
       verifyNever(() => audioService.notifyPlaying(position: any(named: 'position')));
+    });
+  });
+
+  group('[批9b-5 回修] 真实 mediaButtonStream 按键接线（126/127/86/79/87/88）',
+      () {
+    const sessionChannel = MethodChannel('legado/media_session');
+    late MockRustApi api;
+    late FakeStreamAudioPlayer player;
+    late ProviderContainer container;
+    late AudioService realAudio;
+
+    setUpAll(registerFallbacks);
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({'httpTtsSeedVersion': 1});
+      api = MockRustApi();
+      player = FakeStreamAudioPlayer();
+      realAudio = AudioService.instance;
+      messenger.setMockMethodCallHandler(sessionChannel, (call) async {
+        switch (call.method) {
+          case 'init':
+            return true;
+          case 'requestAudioFocus':
+            return true;
+          default:
+            return null;
+        }
+      });
+      when(() => api.getConfig(any())).thenAnswer((_) async => null);
+      container = ProviderContainer(
+        overrides: [
+          bookApiProvider.overrideWithValue(api),
+          audioServiceProvider.overrideWithValue(realAudio),
+          streamAudioPlayerProvider.overrideWithValue(player),
+        ],
+      );
+      addTearDown(container.dispose);
+    });
+
+    tearDown(() async {
+      await realAudio.dispose();
+      messenger.setMockMethodCallHandler(sessionChannel, null);
+    });
+
+    /// 原生 MediaSession Callback → Dart 通道事件（真实 AudioService 链路）
+    Future<void> emitSession(String method) async {
+      await messenger.handlePlatformMessage(
+        sessionChannel.name,
+        const StandardMethodCodec().encodeMethodCall(MethodCall(method)),
+        (_) {},
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    void stubChapters() {
+      when(() => api.getChapters(any())).thenAnswer(
+        (_) async => [
+          const BookChapter(title: 'ch1', index: 0),
+          const BookChapter(title: 'ch2', index: 1),
+        ],
+      );
+      when(() => api.getBook(any())).thenAnswer((_) async => null);
+    }
+
+    test('87/88：TTS 模式切段（nextParagraph/prevParagraph），不整章切换', () async {
+      stubChapters();
+      when(() => api.getChapterContentFull(any(), any())).thenAnswer(
+        (_) async => '段一。\n\n段二。\n\n段三。',
+      );
+      final notifier = container.read(audioNotifierProvider.notifier);
+      await notifier.initMediaSession();
+      await notifier.loadChapters('tts-url');
+      await notifier.play();
+      expect(container.read(audioNotifierProvider).state, PlayerState.playing);
+      expect(notifier.currentParagraphIndex, 0);
+
+      await emitSession('onSkipToNext'); // KEYCODE_MEDIA_NEXT=87
+      expect(notifier.currentParagraphIndex, 1);
+      expect(container.read(audioNotifierProvider).currentIndex, 0,
+          reason: 'TTS 不应整章切换');
+
+      await emitSession('onSkipToPrevious'); // KEYCODE_MEDIA_PREVIOUS=88
+      expect(notifier.currentParagraphIndex, 0);
+      expect(container.read(audioNotifierProvider).currentIndex, 0);
+
+      notifier.stop();
+    });
+
+    test('87/88：流媒体模式切章（next/previous）', () async {
+      stubChapters();
+      when(() => api.getAudioChapterMedia(any(), any())).thenAnswer(
+        (_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'},
+      );
+      when(() => api.getAudioProgress(any(), any()))
+          .thenAnswer((_) async => null);
+      when(() => api.saveAudioProgress(any(), any(), any()))
+          .thenAnswer((_) async {});
+
+      final notifier = container.read(audioNotifierProvider.notifier);
+      await notifier.initMediaSession();
+      await notifier.loadChapters('audio-url');
+      notifier.setAudioBookMode(true);
+      await notifier.play();
+      expect(container.read(audioNotifierProvider).currentIndex, 0);
+
+      await emitSession('onSkipToNext');
+      expect(container.read(audioNotifierProvider).currentIndex, 1);
+
+      await emitSession('onSkipToPrevious');
+      expect(container.read(audioNotifierProvider).currentIndex, 0);
+
+      notifier.stop();
+    });
+
+    test('126/127/79/86：暂停→恢复；播放中 PLAY 键 no-op；STOP 停止', () async {
+      stubChapters();
+      when(() => api.getAudioChapterMedia(any(), any())).thenAnswer(
+        (_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'},
+      );
+      when(() => api.getAudioProgress(any(), any()))
+          .thenAnswer((_) async => null);
+      when(() => api.saveAudioProgress(any(), any(), any()))
+          .thenAnswer((_) async {});
+
+      final notifier = container.read(audioNotifierProvider.notifier);
+      await notifier.initMediaSession();
+      await notifier.loadChapters('audio-url');
+      notifier.setAudioBookMode(true);
+      await notifier.play();
+
+      await emitSession('onPause'); // KEYCODE_MEDIA_PAUSE=127
+      expect(container.read(audioNotifierProvider).state, PlayerState.paused);
+
+      await emitSession('onPlay'); // KEYCODE_MEDIA_PLAY=126
+      expect(container.read(audioNotifierProvider).state, PlayerState.playing);
+
+      final plays = player.playedUrls.length;
+      await emitSession('onPlay'); // 已播放：no-op，不重播当前段
+      await emitSession('onPlay'); // KEYCODE_HEADSETHOOK=79 同走 onPlay
+      expect(player.playedUrls.length, plays,
+          reason: '已播放时 PLAY/HEADSETHOOK 必须 no-op，避免重复出声');
+
+      await emitSession('onStop'); // KEYCODE_MEDIA_STOP=86
+      expect(container.read(audioNotifierProvider).state, PlayerState.idle);
     });
   });
 

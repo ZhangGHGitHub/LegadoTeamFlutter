@@ -74,13 +74,14 @@ enum HeadsetMediaAction {
 /// 语义基准（原版 `MediaButtonReceiver.kt:73-118`，参考版同构）：
 /// 1. TTS/音频播放服务运行 → 播放/暂停切换；
 /// 2. 否则 `isMediaKey && !readAloudByMediaButton` → 忽略；
-/// 3. 有 ReadBook/AudioPlay Activity → 事件交给活动处理；
+/// 3. 有 ReadBook/AudioPlay Activity 且应用在前台（路由可见）→ 事件交给活动处理；
 /// 4. 否则 `mediaButtonOnExit || activitySize>0 || !isMediaKey`
 ///    → 从最近阅读书启动/恢复朗读；
 /// 5. 其余（后台且 mediaButtonOnExit=false）→ 忽略。
 ///
 /// 上一首/下一首键只在播放会话存在时生效（对齐原版：这两个键不触发
-/// 「启动朗读」）。
+/// 「启动朗读」）。后台即便页面处理器仍挂载也不分派（避免向不可见页面
+/// 启动朗读/闪烁 UI）。
 HeadsetMediaAction decideHeadsetMediaAction({
   required HeadsetMediaKey key,
   required bool hasPlaybackSession,
@@ -109,7 +110,9 @@ HeadsetMediaAction decideHeadsetMediaAction({
   if (isMediaKey && !readAloudByMediaButton) {
     return HeadsetMediaAction.ignoreStartDisabled;
   }
-  if (activityHandlerAttached) {
+  // [批9b-5 回修] 页面处理器只在应用前台（路由可见）时接管；后台挂载的
+  // 阅读器/听书页不得被投递事件（否则会向不可见页面启动朗读）
+  if (activityHandlerAttached && appForeground) {
     return HeadsetMediaAction.dispatchToActivity;
   }
   if (mediaButtonOnExit || appForeground || !isMediaKey) {
@@ -135,6 +138,7 @@ abstract class HeadsetMediaAudioController {
     required String bookUrl,
     required String bookName,
     required int chapterIndex,
+    int? startChapterPos,
   });
 
   Future<void> releaseMediaSession();
@@ -181,11 +185,13 @@ class AudioNotifierHeadsetController implements HeadsetMediaAudioController {
     required String bookUrl,
     required String bookName,
     required int chapterIndex,
+    int? startChapterPos,
   }) =>
       _notifier.startReadAloud(
         bookUrl: bookUrl,
         bookName: bookName,
         chapterIndex: chapterIndex,
+        startChapterPos: startChapterPos,
       );
 
   @override
@@ -205,6 +211,9 @@ class AudioNotifierHeadsetController implements HeadsetMediaAudioController {
 ///
 /// 限制：进程被系统杀死后无法拉起 Flutter 引擎（未做 headless engine），
 /// 冷启动按键只在系统把广播投递到静态接收器且引擎可建立时生效。
+/// 未纳入：视频悬浮窗 `VideoPlayService` 的独立 MediaSession（其媒体键由
+/// 视频自身会话处理）、原版 `mediaButtonPerNext` 偏好、iOS/桌面（无静态
+/// 媒体键接收器）。会话/静态接收器的 250ms 去抖见 [debounceWindow]。
 ///
 /// — 全栈工程师 ｜ 2026-11-04
 class HeadsetMediaButtonService with WidgetsBindingObserver {
@@ -238,9 +247,6 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
 
   StreamSubscription<MediaButtonEvent>? _mediaSessionSub;
 
-  final StreamController<HeadsetMediaKey> _activityEvents =
-      StreamController<HeadsetMediaKey>.broadcast();
-
   bool _started = false;
   DateTime? _lastHandledAt;
   AppLifecycleState? _lifecycleState;
@@ -251,9 +257,6 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
   /// 阅读页处理；单槽会在听书页 dispose 后丢失阅读页处理器。
   final List<({Object owner, void Function(HeadsetMediaKey key) handler})>
       _activityHandlers = [];
-
-  /// 前台页面订阅流（阅读器也可直接 attach，当前由 attach 回调驱动）
-  Stream<HeadsetMediaKey> get activityEvents => _activityEvents.stream;
 
   /// 是否已挂载前台处理器（诊断/测试）
   bool get hasActivityHandler => _activityHandlers.isNotEmpty;
@@ -289,7 +292,6 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
     await _mediaSessionSub?.cancel();
     _mediaSessionSub = null;
     _activityHandlers.clear();
-    await _activityEvents.close();
   }
 
   /// 阅读器/听书页等前台页挂载时登记处理器（后挂载者优先）
@@ -368,7 +370,6 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
         if (_activityHandlers.isNotEmpty) {
           _activityHandlers.last.handler(key);
         }
-        _activityEvents.add(key);
       case HeadsetMediaAction.startReadAloud:
         await _startFromLastReadBook(audio);
       case HeadsetMediaAction.ignoreStartDisabled:
@@ -399,6 +400,9 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
       bookUrl: book.bookUrl,
       bookName: book.name,
       chapterIndex: book.durChapterIndex,
+      // [批9b-5 回修] 同章内保留章内位置（对齐原版 ReadBook.loadContent →
+      // readAloud 从 durChapterPos 继续，而不是回到章首）
+      startChapterPos: book.durChapterPos,
     );
   }
 

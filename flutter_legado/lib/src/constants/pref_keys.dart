@@ -438,10 +438,15 @@ class PrefKeys {
   /// 新增书籍默认启用替换净化（默认 true）
   static const replaceEnableDefault = 'replaceEnableDefault';
 
-  /// 退出应用时中断朗读（媒体按钮，仅 Android 生效，默认 true）
+  /// 退到后台（进程与 Flutter 引擎存活）时仍响应耳机媒体键
+  ///
+  /// 仅 Android 生效，默认 true（对齐原版 `AppConfig.mediaButtonOnExit`）。
+  /// 注意语义是「后台仍响应」而非「退出时中断朗读」；进程或 Flutter 引擎
+  /// 销毁后不生效（未做 headless 冷启动拉起）。
   static const mediaButtonOnExit = 'mediaButtonOnExit';
 
-  /// 媒体按钮触发朗读（仅 Android 生效，默认 false）
+  /// 耳机媒体键启动/恢复朗读（仅 Android 生效，默认 false；
+  /// 对齐原版 `AppConfig.readAloudByMediaButton`）
   static const readAloudByMediaButton = 'readAloudByMediaButton';
 
   /// 朗读时忽略音频焦点（仅 Android 生效，默认 false）

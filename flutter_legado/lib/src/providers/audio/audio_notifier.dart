@@ -343,7 +343,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _mediaButtonSub = _audioService.mediaButtonStream.listen((event) {
       switch (event) {
         case MediaButtonEvent.play:
-          // [批9b-5] 空闲态不盲目重播：会话在停播后仍可能活跃
+          // [批9b-5 回修] 已播放时 PLAY 键 no-op：原版只在暂停/未运行时
+          // 才播放，直接 resumeOrPlay 会从当前段重播（重复出声）。
+          if (state.isPlaying) break;
+          // 空闲态不盲目重播：会话在停播后仍可能活跃
           //（mediaButtonOnExit=true 保留会话），直接 play() 会绕过
           // readAloudByMediaButton/mediaButtonOnExit。交由
           // HeadsetMediaButtonService 统一决策（从最近书启动/忽略）。
@@ -352,14 +355,26 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         case MediaButtonEvent.pause:
           pause();
         case MediaButtonEvent.skipToNext:
-          // [批9b-5] 空闲态上一首/下一首不启动播放（对齐原版：非运行态的
-          // 段落移动为 no-op，不绕过两偏好）
+          // [批9b-5 回修] 按当前模式分流：音频书切章，TTS 切段
+          //（对齐原版 ReadAloud.nextParagraph；不得整章切换 TTS）。
+          // 空闲态不启动播放（非运行态段落移动为 no-op）。
+          // 未实现原版 `mediaButtonPerNext`（TTS 上一/下一首翻章偏好）。
           if (state.state == PlayerState.idle) break;
-          unawaited(next());
+          if (state.isStreamMode) {
+            unawaited(next());
+          } else {
+            unawaited(nextParagraph());
+          }
         case MediaButtonEvent.skipToPrevious:
           if (state.state == PlayerState.idle) break;
-          unawaited(previous());
+          if (state.isStreamMode) {
+            unawaited(previous());
+          } else {
+            unawaited(prevParagraph());
+          }
         case MediaButtonEvent.stop:
+          // [批9b-5] MEDIA_STOP → 停止当前会话（停播后按 mediaButtonOnExit
+          // 决定会话保留/释放）；空闲态 stop() 为幂等重置，不启动朗读。
           stop();
       }
     });
@@ -402,12 +417,19 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   ///
   /// [批9b-5] `mediaButtonOnExit=true`（默认，对齐原版 AppConfig.kt:468）
   /// 时保留会话：退出听书页后耳机键仍能经 MediaSession 控制朗读/播放
-  /// （进程存活范围）。开关关闭时维持旧行为立即释放。需要强制释放
-  /// （应用内明确停止且不希望后台媒体键接管）时传 [force]。
+  /// （进程存活范围）。开关关闭时维持旧行为释放；但**播放中（含暂停）**
+  /// 不释放，否则退出听书页会切断会话、丢失后台播放控制——先停播再由
+  /// 调用方释放，或由后台生命周期钩子处理。需要强制释放时传 [force]。
   Future<void> releaseMediaSession({bool force = false}) async {
-    if (!force && await _keepMediaSessionForHeadsetKey()) {
-      debugPrint('[媒体会话] mediaButtonOnExit=true，保留会话以响应耳机按键');
-      return;
+    if (!force) {
+      if (await _keepMediaSessionForHeadsetKey()) {
+        debugPrint('[媒体会话] mediaButtonOnExit=true，保留会话以响应耳机按键');
+        return;
+      }
+      if (_hasActivePlayback) {
+        debugPrint('[媒体会话] 播放会话进行中，mediaButtonOnExit=false 也不释放');
+        return;
+      }
     }
     _mediaButtonSub?.cancel();
     _mediaButtonSub = null;
@@ -429,6 +451,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       return true;
     }
   }
+
+  /// 是否存在播放会话（播放/暂停/加载中；idle 不算）
+  bool get _hasActivePlayback =>
+      state.bookUrl.isNotEmpty && state.state != PlayerState.idle;
 
   Future<void> loadChapters(String bookUrl) async {
     if (state.bookUrl != bookUrl) {

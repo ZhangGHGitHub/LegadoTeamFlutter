@@ -3,6 +3,7 @@ package io.legado.flutter
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Parcelable
 import android.util.Log
 import android.view.KeyEvent
 
@@ -34,8 +35,12 @@ import android.view.KeyEvent
 class MediaButtonReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
+        // [批9b-5 回修] 仅当确实转发给 Dart 时才中止有序广播：
+        // - 会话活跃/无引擎/ACTION_UP/长按重复均不 abort，交系统或其它
+        //   接收器处理，避免误吞媒体键（原版无条件 abort 的差异已登记）；
+        // - 伪造的 am broadcast 仍会进入本接收器（exported=true），伪造
+        //   事件在无引擎时仅日志、不会启动朗读。
         if (handleIntent(context, intent) && isOrderedBroadcast) {
-            // 对齐原版：消费后中止有序广播，避免系统/其他应用重复处理
             abortBroadcast()
         }
     }
@@ -51,28 +56,31 @@ class MediaButtonReceiver : BroadcastReceiver() {
         /**
          * 处理媒体键 Intent。
          *
-         * @return true=已识别并消费（调用方据此 abortBroadcast）
+         * @return true=已转发给 Flutter（调用方据此 abort）；false=未消费
+         *         （非 MEDIA_BUTTON / 无有效 KeyEvent / UP / 长按 / 会话
+         *         活跃 / 引擎未就绪）
          */
         @JvmStatic
         @Suppress("DEPRECATION")
         fun handleIntent(context: Context, intent: Intent): Boolean {
             if (intent.action != Intent.ACTION_MEDIA_BUTTON) return false
-            val keyEvent = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                ?: return false
+            // 安全转换：EXTRA_KEY_EVENT 可能被伪造为其它 Parcelable，
+            // 旧泛型 getParcelableExtra<KeyEvent> 会 ClassCastException。
+            val raw: Parcelable? = intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+            val keyEvent = raw as? KeyEvent ?: return false
             val keyCode = keyEvent.keyCode
             val action = keyEvent.action
             val repeatCount = keyEvent.repeatCount
             if (!shouldForward(action, repeatCount)) {
-                // ACTION_UP / 长按重复：消费但不重复触发，避免长按连续切换
-                return true
+                // ACTION_UP / 长按重复：不重复触发也不 abort
+                return false
             }
             if (MediaSessionBridge.hasActiveSession()) {
                 Log.d(TAG, "媒体会话活跃，交会话处理（keyCode=$keyCode）")
-                return true
+                return false
             }
             Log.d(TAG, "转发耳机键到 Flutter（keyCode=$keyCode）")
-            HeadsetMediaButtonBridge.deliver(keyCode, action, repeatCount)
-            return true
+            return HeadsetMediaButtonBridge.deliver(keyCode, action, repeatCount)
         }
     }
 }

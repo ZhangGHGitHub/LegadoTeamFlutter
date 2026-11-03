@@ -216,7 +216,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     //（MediaButtonReceiver → EventBus → ReadBookActivity.onClickReadAloud），
     // 由本页切换朗读，而不是由服务直接启动另一份朗读
     _headsetMediaButtonService = ref.read(headsetMediaButtonServiceProvider);
-    _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
+    _attachHeadsetHandler();
   }
 
   @override
@@ -324,6 +324,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void didPushNext() {
     _syncVolumeKeyCapture();
+    // [批9b-5 回修] 路由被覆盖（目录/设置/听书页等）时注销耳机键处理器：
+    // 不可见页面不再接收媒体键；didPopNext 恢复
+    _headsetMediaButtonService?.detachActivityHandler(this);
   }
 
   /// [批31b P1-1] 目录页返回：重读 DB 书籍快照并同步 `currentBook`
@@ -341,9 +344,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncVolumeKeyCapture();
     });
+    // [批9b-5 回修] 上层路由退出 → 重新登记耳机键处理器
+    _attachHeadsetHandler();
     if (!_tocRouteOpen) return;
     _tocRouteOpen = false;
     unawaited(_refreshCurrentBookFromDb());
+  }
+
+  /// [批9b-5] 登记阅读页耳机键处理器（initState/didPopNext 复用）
+  void _attachHeadsetHandler() {
+    _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
   }
 
   Future<void> _refreshCurrentBookFromDb() async {

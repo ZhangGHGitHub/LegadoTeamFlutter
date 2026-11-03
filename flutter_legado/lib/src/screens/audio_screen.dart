@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/providers.dart';
+import '../utils/app_route_observer.dart';
 import '../utils/audio_skip_policy.dart';
 import '../routes.dart';
 import '../services/audio_cache_events.dart';
@@ -53,7 +54,7 @@ class AudioScreen extends ConsumerStatefulWidget {
   ConsumerState<AudioScreen> createState() => _AudioScreenState();
 }
 
-class _AudioScreenState extends ConsumerState<AudioScreen> {
+class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   bool _showSettings = false;
   bool _wakeLock = false;
 
@@ -116,7 +117,29 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // [批9b-5 回修] 订阅路由可见性：被来源编辑/登录等子路由覆盖时注销
+    // 耳机键处理器，返回后重新登记（不可见页面不接收媒体键）
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() {
+    _headsetMediaButtonService?.detachActivityHandler(this);
+  }
+
+  @override
+  void didPopNext() {
+    _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
+  }
+
+  @override
   void dispose() {
+    appRouteObserver.unsubscribe(this);
     // [批9b-5] 注销耳机媒体键前台处理器（owner 校验防误清上层页面）
     _headsetMediaButtonService?.detachActivityHandler(this);
     // 页面销毁只清理输入控制器；定时停止计时归 Notifier 所有

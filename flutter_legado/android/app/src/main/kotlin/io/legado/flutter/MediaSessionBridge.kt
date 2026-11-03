@@ -415,6 +415,17 @@ class MediaSessionBridge {
         }
         audioFocusRequest = null
 
+        // [批9b-5 回修] 释放并清空播放唤醒锁：旧实现只置 mediaSession/焦点，
+        // wakeLock 句柄与 wakeLockEnabled 残留到下次 init；引擎销毁后锁仍
+        // 持有（后台耗电）且新会话 setWakeLock(enabled=false) 因 enabled 已
+        // 为 false 的旧状态可能跳过释放。这里无条件尽力释放。
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {
+        }
+        wakeLock = null
+        wakeLockEnabled = false
+
         // 释放 MediaSession
         mediaSession?.apply {
             isActive = false

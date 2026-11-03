@@ -416,7 +416,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               SettingSwitchRow(
                 title: '全程响应耳机按键',
-                subtitle: '即使退出软件也响应耳机按键（需应用进程存活）',
+                subtitle: '退到后台（进程与 Flutter 引擎存活）时生效；结束应用后不生效',
                 value: _mediaButtonOnExit,
                 onChanged: (v) {
                   setState(() => _mediaButtonOnExit = v);
