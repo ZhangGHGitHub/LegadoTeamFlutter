@@ -26,9 +26,11 @@ import java.util.ArrayDeque
  * 但 Dart 尚未注册处理器」窗口内按键被静默丢弃。
  *
  * ## 与 MediaSession 的关系
- * 会话活跃时按键优先由 `MediaSessionBridge` 的 Callback 处理
- * （[MediaButtonReceiver] 检测到 `MediaSessionBridge.hasActiveSession()` 即
- * 不转发），从结构上避免同一按键被会话与静态接收器双处理。
+ * 会话可控（活跃且播放状态为 PLAYING/PAUSED/BUFFERING/CONNECTING）时按键
+ * 优先由 `MediaSessionBridge` 的 Callback 处理（[MediaButtonReceiver] 检测到
+ * `MediaSessionBridge.hasControllableSession()` 即不转发），从结构上避免同一
+ * 按键被会话与静态接收器双处理；会话活跃但已 stopped 时仍转发到本桥
+ * （批9b-5 P2-2，避免陈旧会话吞键）。
  *
  * — 全栈工程师 ｜ 2026-11-04
  */

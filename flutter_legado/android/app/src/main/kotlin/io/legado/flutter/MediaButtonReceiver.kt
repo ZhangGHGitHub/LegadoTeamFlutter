@@ -20,8 +20,14 @@ import android.view.KeyEvent
  *   直接处理后仍会自广播媒体键；我方 TTS/音频书运行时
  *   [MediaSessionBridge] 会话活跃，系统优先把按键投给会话回调。为避免同一
  *   按键被「会话 + 静态接收器」双处理，本接收器检测到
- *   [MediaSessionBridge.hasActiveSession] 时**不转发**（仅日志），由会话
- *   Callback 处理暂停/恢复（[MediaSessionBridge] `onPlay`/`onPause`）。
+ *   [MediaSessionBridge.hasControllableSession] 时**不转发**（仅日志），
+ *   由会话 Callback 处理暂停/恢复（[MediaSessionBridge] `onPlay`/`onPause`）。
+ * - **会话活跃但已 stopped**（`AudioNotifier.stop()` 只发 STOPPED 状态、
+ *   不释放会话）时系统可能已不再把按键路由给会话（`Media button session`
+ *   为 null），若仍按「活跃」抑制转发，按键会两头丢失（批9b-5 P2-2）。
+ *   故门控用「活跃且播放状态可控」：STOPPED/NONE/ERROR → 交静态接收器
+ *   转发，由 Dart `HeadsetMediaButtonService` 按偏好重新决策（含再次
+ *   启动朗读）；PAUSED 仍交会话，保留「暂停中按播放键恢复」语义。
  * - 会话不活跃（退出听书页后会话被释放、或从未启动过播放）时，静态接收器
  *   把按键交给 Dart `HeadsetMediaButtonService` 按偏好决策。
  *
@@ -56,9 +62,14 @@ class MediaButtonReceiver : BroadcastReceiver() {
         /**
          * 处理媒体键 Intent。
          *
+         * [批9b-5 P2-2] 会话门控从 [MediaSessionBridge.hasActiveSession] 改为
+         * [MediaSessionBridge.hasControllableSession]：会话活跃但 playbackState
+         * 为 STOPPED/NONE/ERROR 时不再抑制转发，避免陈旧会话吞键（无音频时
+         * 系统不会把按键路由到该会话）。
+         *
          * @return true=已转发给 Flutter（调用方据此 abort）；false=未消费
-         *         （非 MEDIA_BUTTON / 无有效 KeyEvent / UP / 长按 / 会话
-         *         活跃 / 引擎未就绪）
+         *         （非 MEDIA_BUTTON / 无有效 KeyEvent / UP / 长按 / 可控
+         *         会话存在 / 引擎未就绪）
          */
         @JvmStatic
         @Suppress("DEPRECATION")
@@ -75,8 +86,8 @@ class MediaButtonReceiver : BroadcastReceiver() {
                 // ACTION_UP / 长按重复：不重复触发也不 abort
                 return false
             }
-            if (MediaSessionBridge.hasActiveSession()) {
-                Log.d(TAG, "媒体会话活跃，交会话处理（keyCode=$keyCode）")
+            if (MediaSessionBridge.hasControllableSession()) {
+                Log.d(TAG, "媒体会话可控（播放/暂停/缓冲中），交会话处理（keyCode=$keyCode）")
                 return false
             }
             Log.d(TAG, "转发耳机键到 Flutter（keyCode=$keyCode）")

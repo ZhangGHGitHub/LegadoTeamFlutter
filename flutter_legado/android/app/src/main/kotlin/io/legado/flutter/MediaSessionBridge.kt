@@ -70,9 +70,62 @@ class MediaSessionBridge {
          * 注意 `active` 是进程级引用；引擎销毁时若未经 `release` 清理，
          * [MediaButtonReceiver] 最多表现为「按键交会话处理但无响应」，
          * 不会崩溃。
+         *
+         * [批9b-5 P2-2] 仅「活跃」不足以说明会话能处理按键：`AudioNotifier.stop()`
+         * 只把 playbackState 置为 STOPPED，并不释放会话，此时系统侧
+         * `Media button session` 可能为 null，按键既不到会话也到不了静态
+         * 接收器。转发门控请优先用 [hasControllableSession]；本方法保留给
+         * 需要「会话存在」语义的其他调用方（如前台通知）。
          */
         @JvmStatic
         fun hasActiveSession(): Boolean = active?.mediaSession?.isActive == true
+
+        /**
+         * [批9b-5 P2-2] 会话是否仍值得接收媒体键（活跃且播放状态可控）。
+         *
+         * 可控状态见 [isControllableState]：PLAYING / PAUSED / BUFFERING /
+         * CONNECTING。STOPPED（`AudioNotifier.stop()` 后的陈旧会话）、
+         * NONE（未发布过播放状态）、ERROR 均视为不可控——静态接收器应转发
+         * 给 Flutter 按偏好重新决策，避免陈旧会话吞键。
+         */
+        @JvmStatic
+        fun hasControllableSession(): Boolean = isControllableSession(
+            active?.mediaSession?.isActive == true,
+            // MediaSessionCompat 不公开 getPlaybackState，经 controller 读取
+            active?.mediaSession?.controller?.playbackState?.state,
+        )
+
+        /**
+         * [批9b-5 P2-2] 纯函数内核：会话活跃 + 播放状态可控才交给会话。
+         *
+         * @param isActive 会话是否 active（[MediaSessionCompat.isActive]）
+         * @param playbackState [PlaybackStateCompat.getState]；null=尚未发布
+         */
+        @JvmStatic
+        internal fun isControllableSession(
+            isActive: Boolean,
+            playbackState: Int?,
+        ): Boolean = isActive &&
+            isControllableState(playbackState ?: PlaybackStateCompat.STATE_NONE)
+
+        /**
+         * [批9b-5 P2-2] 播放状态是否可控（值对齐 `PlaybackStateCompat.STATE_*`）。
+         *
+         * 排除了 STOPPED / NONE / ERROR：这些状态下会话不发声，媒体键交给
+         * 会话不会有响应；保留 PAUSED 以维持「暂停中按播放键恢复」语义，
+         * 保留 BUFFERING / CONNECTING 以免缓冲期按键被静态接收器抢走。
+         *
+         * 独立成纯函数供 JVM 单测（不构造 MediaSessionCompat）。
+         */
+        @JvmStatic
+        internal fun isControllableState(playbackState: Int): Boolean =
+            when (playbackState) {
+                PlaybackStateCompat.STATE_PLAYING,
+                PlaybackStateCompat.STATE_PAUSED,
+                PlaybackStateCompat.STATE_BUFFERING,
+                PlaybackStateCompat.STATE_CONNECTING -> true
+                else -> false
+            }
     }
 
     private var mediaSession: MediaSessionCompat? = null
