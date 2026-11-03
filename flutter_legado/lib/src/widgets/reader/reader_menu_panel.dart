@@ -180,18 +180,12 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
     final adv = ref.watch(readerAdvConfigProvider);
     final autoPageActive = adv?.autoPageTurn ?? false;
-    var barColor = menuColors.background;
-    // [UI_SYNC_REFACTOR S2-2] 表面 Haze 档（实色等效）：enableBlur 时
-    // 半透明底（α 85/255，参考 readMenuBlurAlpha 默认）+ BackdropFilter(24)。
-    // [批3a] 跟随阅读背景（readBarStyle=1）不使用模糊，与旧
-    // styleFollowPage 语义一致。
-    final ui = uiSettingsListenable.value;
-    final useSurfaceBlur =
-        ui.enableBlur &&
-        menuStyle.readBarStyle != ReaderMenuBarStyle.followPage;
-    if (useSurfaceBlur) {
-      barColor = barColor.withValues(alpha: 85 / 255);
-    }
+    // [批3b] 菜单模糊只由 readMenu*BlurMode 控制（移除全局 enableBlur 硬编码）；
+    // 顶栏模糊时 Material 透明，由 _wrapMenuSurface 的 BackdropFilter 承载。
+    final topBarBlurMode = _effectiveBlurMode(menuStyle, isTopBar: true);
+    final topBarColor = topBarBlurMode == ReaderMenuBlurMode.none
+        ? menuColors.background
+        : Colors.transparent;
     final radius = menuStyle.bottomCornerRadius.toDouble();
     final panelRadius = menuStyle.floatingBottomBar
         ? BorderRadius.circular(radius)
@@ -220,15 +214,20 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // [批3a] 顶栏风格/标题模式/胶囊/合并按钮由菜单配置驱动。
-                _buildTopBar(context, menuStyle, menuColors, book, chapter),
+                _buildTopBar(
+                  context,
+                  menuStyle,
+                  menuColors,
+                  book,
+                  chapter,
+                  topBarColor,
+                ),
                 const Spacer(),
                 _buildBottomPanel(
                   context,
                   style: menuStyle,
                   colors: menuColors,
-                  barColor: barColor,
                   panelRadius: panelRadius,
-                  useSurfaceBlur: useSurfaceBlur,
                   notifier: notifier,
                   state: state,
                   autoPageActive: autoPageActive,
@@ -251,18 +250,186 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
+  /// [批3b] 有效模糊模式：非浮动底栏不支持 LiquidGlass，回落 Haze
+  int _effectiveBlurMode(ReaderMenuStyle style, {required bool isTopBar}) {
+    final mode = isTopBar
+        ? style.topBarBlurMode
+        : style.bottomBarBlurMode;
+    if (!isTopBar &&
+        !style.floatingBottomBar &&
+        mode == ReaderMenuBlurMode.liquidGlass) {
+      return ReaderMenuBlurMode.haze;
+    }
+    return mode;
+  }
+
+  /// [批3b] 边框色：日夜自定义优先，0 回落 outlineVariant
+  Color _menuBorderColor(BuildContext context, ReaderMenuStyle style) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final argb = isDark ? style.borderColorNight : style.borderColor;
+    return argb != 0
+        ? Color(normalizeReaderMenuColor(argb))
+        : Theme.of(context).colorScheme.outlineVariant;
+  }
+
+  /// [批3b] 模糊/高光/边框外壳
+  ///
+  /// - Haze：BackdropFilter(sigma=readMenuBlurRadius) + 背景 alpha/100，
+  ///   可选 blurColor tint（0=跟随菜单背景）；
+  /// - Progressive：Haze 上叠线性渐变（顶栏上实下透、底栏下实上透，近似）；
+  /// - LiquidGlass：Haze + 1dp 白色高光描边 + 顶部白色 10% 镜面渐变；
+  /// - 边框：底栏整框、顶栏仅下边线（胶囊开启时参考版不画）。
+  Widget _wrapMenuSurface(
+    BuildContext context, {
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required bool isTopBar,
+    required BorderRadius borderRadius,
+    required Widget child,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mode = _effectiveBlurMode(style, isTopBar: isTopBar);
+    final haze = mode != ReaderMenuBlurMode.none;
+    final glass = mode == ReaderMenuBlurMode.liquidGlass;
+    final blurStyle = isTopBar
+        ? style.topBarBlurStyle
+        : style.bottomBarBlurStyle;
+    final progressive = haze && blurStyle == ReaderMenuBlurStyle.progressive;
+
+    final tintArgb = isDark ? style.blurColorNight : style.blurColor;
+    final tint = tintArgb != 0
+        ? Color(normalizeReaderMenuColor(tintArgb))
+        : null;
+    final baseColor = tint ?? colors.background;
+    final alpha = style.blurAlpha / 100;
+    final surfaceColor = baseColor.withValues(alpha: alpha);
+    final scope = isTopBar ? 'topbar' : 'bottom';
+
+    final layers = <Widget>[];
+    if (haze) {
+      layers.add(
+        Positioned.fill(
+          child: BackdropFilter(
+            key: ValueKey('reader-$scope-blur-backdrop'),
+            filter: ImageFilter.blur(
+              sigmaX: style.blurRadius.toDouble(),
+              sigmaY: style.blurRadius.toDouble(),
+            ),
+            child: ColoredBox(
+              key: ValueKey('reader-$scope-blur-tint'),
+              color: surfaceColor,
+            ),
+          ),
+        ),
+      );
+    }
+    if (progressive) {
+      layers.add(
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              key: ValueKey('reader-$scope-blur-progressive'),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: isTopBar
+                      ? Alignment.topCenter
+                      : Alignment.bottomCenter,
+                  end: isTopBar
+                      ? Alignment.bottomCenter
+                      : Alignment.topCenter,
+                  colors: [
+                    surfaceColor,
+                    surfaceColor.withValues(alpha: alpha * 0.35),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (glass) {
+      layers.add(
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              key: ValueKey('reader-$scope-liquid-glass'),
+              decoration: BoxDecoration(
+                borderRadius: borderRadius,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.22),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.10),
+                    Colors.white.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 边框：底栏整框；顶栏仅下边线（参考 ReadBookMenuBarTitle 胶囊时跳过）
+    if (style.borderWidth > 0 && !(isTopBar && style.titleCapsule)) {
+      final borderColor = _menuBorderColor(context, style);
+      if (isTopBar) {
+        layers.add(
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: style.borderWidth.toDouble(),
+            child: ColoredBox(
+              key: const ValueKey('reader-topbar-border'),
+              color: borderColor,
+            ),
+          ),
+        );
+      } else {
+        layers.add(
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                key: const ValueKey('reader-bottom-border'),
+                decoration: BoxDecoration(
+                  borderRadius: borderRadius,
+                  border: Border.all(
+                    color: borderColor,
+                    width: style.borderWidth.toDouble(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: Stack(children: [...layers, child]),
+    );
+  }
+
   /// [批3a] 底部面板外壳：浮动（16dp 边距/四角圆角）或贴底全宽（仅上圆角）
   Widget _buildBottomPanel(
     BuildContext context, {
     required ReaderMenuStyle style,
     required ResolvedReaderMenuColors colors,
-    required Color barColor,
     required BorderRadius panelRadius,
-    required bool useSurfaceBlur,
     required ReaderNotifier notifier,
     required ReaderState state,
     required bool autoPageActive,
   }) {
+    final blurMode = _effectiveBlurMode(style, isTopBar: false);
+    final barColor = blurMode == ReaderMenuBlurMode.none
+        ? colors.background
+        : Colors.transparent;
     Widget surface = _panelSurface(
       context,
       style: style,
@@ -273,15 +440,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       state: state,
       autoPageActive: autoPageActive,
     );
-    if (useSurfaceBlur) {
-      surface = ClipRRect(
-        borderRadius: panelRadius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-          child: surface,
-        ),
-      );
-    }
+    surface = _wrapMenuSurface(
+      context,
+      style: style,
+      colors: colors,
+      isTopBar: false,
+      borderRadius: panelRadius,
+      child: surface,
+    );
     if (!style.floatingBottomBar) return surface;
     // [批3a P1-1] 浮动形态：外边距 16 + 系统导航栏/手势条高度；
     // 面板内部 SafeArea(bottom:false)，避免同一 padding.bottom 双计。
@@ -504,6 +670,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
           containerColor = Colors.transparent;
       }
     }
+    if (!merged && style.topBarLiquidGlassButtons) {
+      containerColor = colors.container.withValues(alpha: 0.55);
+      border = Border.all(color: Colors.white.withValues(alpha: 0.18));
+    }
     return Semantics(
       button: true,
       label: label,
@@ -660,6 +830,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     ResolvedReaderMenuColors colors,
     Book? book,
     BookChapter? chapter,
+    Color barColor,
   ) {
     final sourceName = book?.originName ?? '';
     // [批1a] showReadTitleAddition：关闭后章节/书源信息块整体不渲染
@@ -675,9 +846,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       isLocal: book != null && !isOnline,
       isLocalTxt: book != null && _isLocalTxtBook(book),
     );
-    final topBarActions = book == null
+    final configuredActions = book == null
         ? <ReaderTopBarActionDef>[readerTopBarActionById[kReaderMoreActionsId]!]
         : buildReaderTopBarActions(actionConfig, traits: traits);
+    // [批3b] 紧凑顶栏只保留「更多」；其余动作在「更多」菜单兜底可达，
+    // 避免 320dp 下标题被 5/6 个动作压到 0（参考 titleBarCompact）。
+    final topBarActions = style.titleBarCompact && book != null
+        ? <ReaderTopBarActionDef>[readerTopBarActionById[kReaderMoreActionsId]!]
+        : configuredActions;
     final visibleActionIds = {for (final def in topBarActions) def.id};
     // 「更多」菜单兜底：被移出顶栏的动作仍从这里可达。
     final hiddenActions = book == null
@@ -704,8 +880,8 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         mode != ReaderMenuTitleBarMode.hidden &&
         (chapter != null || sourceName.isNotEmpty);
 
-    return Material(
-      color: colors.background,
+    final topBar = Material(
+      color: barColor,
       child: SafeArea(
         bottom: false,
         child: Column(
@@ -878,6 +1054,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         ),
       ),
     );
+    return _wrapMenuSurface(
+      context,
+      style: style,
+      colors: colors,
+      isTopBar: true,
+      borderRadius: BorderRadius.zero,
+      child: topBar,
+    );
   }
 
   /// 书名/胶囊点击进入书籍详情（沿用现有 BookInfo 路由参数约定：Book）
@@ -1002,12 +1186,17 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       key: const ValueKey('reader-topbar-merged-actions'),
       height: 40,
       decoration: BoxDecoration(
-        // [批3a P2-5] 仅 tonal 档使用容器底色，其余透明
-        color: style.titleIconStyle == ReaderMenuIconStyle.tonal
+        // [批3a P2-5] 仅 tonal 档使用容器底色，其余透明；
+        // [批3b] 液态玻璃按钮开启时改用半透明容器 + 白色高光描边
+        color: style.topBarLiquidGlassButtons
+            ? colors.container.withValues(alpha: 0.55)
+            : style.titleIconStyle == ReaderMenuIconStyle.tonal
             ? colors.container
             : Colors.transparent,
         borderRadius: BorderRadius.circular(20),
-        border: style.titleIconStyle == ReaderMenuIconStyle.outlined
+        border: style.topBarLiquidGlassButtons
+            ? Border.all(color: Colors.white.withValues(alpha: 0.18))
+            : style.titleIconStyle == ReaderMenuIconStyle.outlined
             ? Border.all(color: colors.onSurfaceVariant.withValues(alpha: 0.45))
             : null,
       ),
@@ -1134,6 +1323,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         default:
           containerColor = Colors.transparent;
       }
+    }
+    if (!merged && style.topBarLiquidGlassButtons) {
+      containerColor = colors.container.withValues(alpha: 0.55);
+      border = Border.all(color: Colors.white.withValues(alpha: 0.18));
     }
     return Semantics(
       button: true,
@@ -1303,6 +1496,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     if (action.active) {
       containerColor = scheme.secondaryContainer;
       border = Border.all(color: scheme.secondary, width: 1.5);
+    } else if (style.bottomBarLiquidGlassButtons) {
+      // [批3b] 液态玻璃按钮近似：半透明容器 + 1dp 白色高光描边
+      containerColor = colors.container.withValues(alpha: 0.55);
+      border = Border.all(color: Colors.white.withValues(alpha: 0.18));
     } else {
       switch (style.iconStyle) {
         case ReaderMenuIconStyle.tonal:

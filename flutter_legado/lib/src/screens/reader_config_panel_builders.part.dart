@@ -472,24 +472,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             _commit();
           },
         ),
-        // 显示亮度控件（[批1b-1] 亮度条模式三档下拉：0=不显示 / 1=横条
-        //（菜单底部栏亮度行）/ 2=竖条（贴边），档位对齐参考版
-        // brightness_bar_mode arrays；旧布尔键停写）
-        _moreRow('显示亮度调节控件', _brightnessModeLabel(), () {
-          _showChoiceDialog<String>(
-            title: '显示亮度调节控件',
-            current: _config.readBrightnessMode,
-            options: const {
-              '0': '不显示',
-              '1': '横排',
-              '2': '竖排',
-            },
-            onPick: (v) {
-              _config.readBrightnessMode = v;
-              _commit();
-            },
-          );
-        }),
+        // [批3b] 亮度调节控件（模式/位置）已回迁到阅读菜单系统
+        // 「全局」子页，避免「更多」页重复入口。
         // 滚动翻页无动画（原版 noAnimScrollPage：程序化翻页去除动画）
         // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
@@ -771,19 +755,6 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         return '常亮';
       default:
         return '默认';
-    }
-  }
-
-  /// [批1b-1] 亮度条模式行当前值标签（档位文案对齐参考版
-  /// brightness_bar_mode arrays：关闭/横排/竖排）
-  String _brightnessModeLabel() {
-    switch (_config.readBrightnessMode) {
-      case '1':
-        return '横排';
-      case '2':
-        return '竖排';
-      default:
-        return '不显示';
     }
   }
 

@@ -1,19 +1,26 @@
 // 阅读器菜单系统设置面板（批3a）
 //
 // 对齐参考版 `ui/book/read/sheet/SystemMenuPage.kt` 三个子页：
-// - 全局：工具栏样式（readBarStyle）、调色板、颜色来源、日/夜颜色；
-// - 底栏布局：图标文字、图标容器三态、每行图标数/行数、圆角、浮动底栏；
-// - 顶栏布局：标题胶囊、标题显示方式、图标容器三态、合并按钮。
+// - 全局：工具栏样式（readBarStyle）、调色板、颜色来源、日/夜颜色、
+//   亮度模式/位置、边框、模糊半径/透明度/底色（批3b）；
+// - 底栏布局：图标文字、图标容器三态、每行图标数/行数、圆角、浮动底栏、
+//   模糊/液态玻璃/按钮玻璃（批3b）；
+// - 顶栏布局：标题胶囊、标题显示方式、紧凑标题、图标容器三态、模糊、
+//   按钮玻璃、合并按钮（批3b）。
 //
 // 本面板只做配置展示与写入，具体渲染在 `reader_menu_panel.dart`；
 // 持久化在 `providers/reader/reader_menu_style_notifier.dart`。
 //
 // 编写：全栈工程师（批3a） ｜ 2026-11-04
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/reader/reader_menu_style_notifier.dart';
+import 'reader_config_panel.dart'
+    show ReaderAdvancedConfig, readerAdvConfigProvider;
 import '../widgets/container_color_dialog.dart';
 import '../widgets/reader/reader_menu_style.dart';
 
@@ -46,18 +53,26 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
   Widget build(BuildContext context) {
     final style = ref.watch(readerMenuStyleProvider);
     final notifier = ref.read(readerMenuStyleProvider.notifier);
+    final adv = ref.watch(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildTabBar(context),
         const SizedBox(height: 12),
         switch (_tab) {
-          0 => _buildGlobalTab(context, style, notifier),
+          0 => _buildGlobalTab(context, style, notifier, adv),
           1 => _buildBottomTab(context, style, notifier),
           _ => _buildTopTab(context, style, notifier),
         },
       ],
     );
+  }
+
+  /// 阅读高级配置（亮度模式/位置）统一持久化并推送共享 Provider
+  void _commitAdv(ReaderAdvancedConfig cfg) {
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    unawaited(cfg.save(isNight: isNight));
+    ref.read(readerAdvConfigProvider.notifier).apply(cfg);
   }
 
   // ===== 三段胶囊 Tab（高度/圆角沿用阅读界面弹层页签风格）=====
@@ -109,12 +124,14 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
     BuildContext context,
     ReaderMenuStyle style,
     ReaderMenuStyleNotifier notifier,
+    ReaderAdvancedConfig adv,
   ) {
-    // [批3a P2-8] 调色板仅在「自定义 + 种子色」生效；跟随阅读背景档
-    // 的取种映射留 3b（参考 ReadBookColorTheme 从页面底色/图片取种）。
+    // [批3b] 跟随阅读背景档已接种子映射，调色板重新可用；
+    // 自定义档仅在种子色来源下显示调色板。
     final showPalette =
-        style.readBarStyle == ReaderMenuBarStyle.custom &&
-        style.colorMode == ReaderMenuColorMode.seed;
+        style.readBarStyle == ReaderMenuBarStyle.followPage ||
+        (style.readBarStyle == ReaderMenuBarStyle.custom &&
+            style.colorMode == ReaderMenuColorMode.seed);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -217,6 +234,97 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
                 ),
               ],
             ],
+            // [批3b] 亮度控件从「更多」页回迁（参考全局子页位置）
+            _dropdownRow(
+              key: const ValueKey('reader-menu-brightness-mode-dropdown'),
+              title: '亮度调节控件',
+              value: adv.readBrightnessMode,
+              options: const {'0': '不显示', '1': '横排', '2': '竖排'},
+              onChanged: (v) {
+                final cfg = adv.copy()..readBrightnessMode = v;
+                _commitAdv(cfg);
+              },
+            ),
+            if (adv.readBrightnessMode == '2')
+              _dropdownRow(
+                key: const ValueKey('reader-menu-brightness-pos-dropdown'),
+                title: '亮度条位置',
+                value: adv.readBrightnessVwPos,
+                options: const {'0': '左侧', '1': '右侧'},
+                onChanged: (v) {
+                  final cfg = adv.copy()..readBrightnessVwPos = v;
+                  _commitAdv(cfg);
+                },
+              ),
+            SwitchListTile(
+              key: const ValueKey('reader-menu-border-switch'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('显示边框'),
+              subtitle: const Text('顶栏下边线 / 底栏整框'),
+              value: style.borderWidth > 0,
+              onChanged: (v) => notifier.setBorderWidth(v ? 1 : 0),
+            ),
+            if (style.borderWidth > 0) ...[
+              _sliderRow(
+                key: const ValueKey('reader-menu-border-width-slider'),
+                title: '边框宽度',
+                value: style.borderWidth.clamp(1, 4).toDouble(),
+                min: 1,
+                max: 4,
+                divisions: 3,
+                label: '${style.borderWidth.clamp(1, 4)}',
+                onChanged: (v) => notifier.setBorderWidth(v.round()),
+              ),
+              _colorRow(
+                key: const ValueKey('reader-menu-border-color-day'),
+                title: '边框颜色（日）',
+                value: style.borderColor,
+                isNight: false,
+                onPick: (v) => notifier.setBorderColor(v, isNight: false),
+              ),
+              _colorRow(
+                key: const ValueKey('reader-menu-border-color-night'),
+                title: '边框颜色（夜）',
+                value: style.borderColorNight,
+                isNight: true,
+                onPick: (v) => notifier.setBorderColor(v, isNight: true),
+              ),
+            ],
+            _sliderRow(
+              key: const ValueKey('reader-menu-blur-radius-slider'),
+              title: '模糊半径',
+              value: style.blurRadius.toDouble(),
+              min: 0,
+              max: 32,
+              divisions: 32,
+              label: '${style.blurRadius}',
+              onChanged: (v) => notifier.setBlurRadius(v.round()),
+            ),
+            _sliderRow(
+              key: const ValueKey('reader-menu-blur-alpha-slider'),
+              title: '模糊透明度',
+              value: style.blurAlpha.toDouble(),
+              min: 0,
+              max: 100,
+              divisions: 100,
+              label: '${style.blurAlpha}',
+              onChanged: (v) => notifier.setBlurAlpha(v.round()),
+            ),
+            _colorRow(
+              key: const ValueKey('reader-menu-blur-color-day'),
+              title: '模糊底色（日）',
+              value: style.blurColor,
+              isNight: false,
+              onPick: (v) => notifier.setBlurColor(v, isNight: false),
+            ),
+            _colorRow(
+              key: const ValueKey('reader-menu-blur-color-night'),
+              title: '模糊底色（夜）',
+              value: style.blurColorNight,
+              isNight: true,
+              onPick: (v) => notifier.setBlurColor(v, isNight: true),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -294,6 +402,53 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           value: style.floatingBottomBar,
           onChanged: notifier.setFloatingBottomBar,
         ),
+        SwitchListTile(
+          key: const ValueKey('reader-menu-bottom-blur-switch'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('底栏模糊'),
+          subtitle: const Text('半透明背景 + 背景模糊'),
+          value: style.bottomBarBlurMode != ReaderMenuBlurMode.none,
+          onChanged: (v) => notifier.setBottomBarBlurMode(
+            v ? ReaderMenuBlurMode.haze : ReaderMenuBlurMode.none,
+          ),
+        ),
+        if (!style.floatingBottomBar)
+          _dropdownRow(
+            key: const ValueKey('reader-menu-bottom-blur-style-dropdown'),
+            title: '模糊风格',
+            value: '${style.bottomBarBlurStyle}',
+            options: const {'0': 'Solid', '1': 'Progressive'},
+            onChanged: (v) => notifier.setBottomBarBlurStyle(int.parse(v)),
+          ),
+        if (style.floatingBottomBar)
+          SwitchListTile(
+            key: const ValueKey('reader-menu-bottom-liquid-switch'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('液态玻璃底栏'),
+            subtitle: const Text('模糊 + 高光描边 + 镜面渐变（近似）'),
+            value:
+                style.bottomBarBlurMode == ReaderMenuBlurMode.liquidGlass,
+            onChanged: (v) {
+              notifier.setBottomBarBlurMode(
+                v
+                    ? ReaderMenuBlurMode.liquidGlass
+                    : (style.bottomBarBlurMode != ReaderMenuBlurMode.none
+                          ? ReaderMenuBlurMode.haze
+                          : ReaderMenuBlurMode.none),
+              );
+            },
+          ),
+        SwitchListTile(
+          key: const ValueKey('reader-menu-bottom-glass-buttons-switch'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('液态玻璃按钮'),
+          subtitle: const Text('底栏图标按钮半透明高光（近似）'),
+          value: style.bottomBarLiquidGlassButtons,
+          onChanged: notifier.setBottomBarLiquidGlassButtons,
+        ),
       ],
     );
   }
@@ -331,6 +486,42 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           value: '${style.titleIconStyle}',
           options: _iconStyleOptions,
           onChanged: (v) => notifier.setTitleIconStyle(int.parse(v)),
+        ),
+        SwitchListTile(
+          key: const ValueKey('reader-menu-title-compact-switch'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('紧凑标题'),
+          subtitle: const Text('顶栏只保留「更多」，其余动作移入菜单'),
+          value: style.titleBarCompact,
+          onChanged: notifier.setTitleBarCompact,
+        ),
+        SwitchListTile(
+          key: const ValueKey('reader-menu-top-blur-switch'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('顶栏模糊'),
+          subtitle: const Text('半透明背景 + 背景模糊'),
+          value: style.topBarBlurMode != ReaderMenuBlurMode.none,
+          onChanged: (v) => notifier.setTopBarBlurMode(
+            v ? ReaderMenuBlurMode.haze : ReaderMenuBlurMode.none,
+          ),
+        ),
+        _dropdownRow(
+          key: const ValueKey('reader-menu-top-blur-style-dropdown'),
+          title: '模糊风格',
+          value: '${style.topBarBlurStyle}',
+          options: const {'0': 'Solid', '1': 'Progressive'},
+          onChanged: (v) => notifier.setTopBarBlurStyle(int.parse(v)),
+        ),
+        SwitchListTile(
+          key: const ValueKey('reader-menu-top-glass-buttons-switch'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('液态玻璃按钮'),
+          subtitle: const Text('顶栏图标按钮半透明高光（近似）'),
+          value: style.topBarLiquidGlassButtons,
+          onChanged: notifier.setTopBarLiquidGlassButtons,
         ),
         SwitchListTile(
           key: const ValueKey('reader-menu-merge-switch'),
