@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../models/main_tab.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/explore/explore_show_notifier.dart';
@@ -681,8 +682,15 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       latestChapterTitle: book.latestChapterTitle,
       wordCount: book.wordCount,
     );
-    // [设置批2b-2c] 列表-详情：宽屏进右栏（左书单保持），窄屏/off root 全屏
-    pushMainDetailNamed(context, AppRoutes.bookInfo, arguments: bookObj);
+    // [设置批2b-2c] 列表-详情：宽屏进右栏（左书单保持），窄屏/off root
+    // 全屏；左列表选择书 A→B 替换旧右栏栈（replace）。
+    pushMainDetailNamed(
+      context,
+      AppRoutes.bookInfo,
+      arguments: bookObj,
+      replace: true,
+      source: MainTab.explore,
+    );
   }
 }
 

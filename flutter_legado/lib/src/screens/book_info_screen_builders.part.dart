@@ -1563,11 +1563,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       return;
     }
     if (!mounted) return;
-    await Navigator.pushNamed(
+    // [2b-2c 复核 P1] 源编辑属 standalone：详情页可能位于列表-详情右栏，
+    // 固定 root 全屏。
+    await Navigator.of(
       context,
-      AppRoutes.sourceEdit,
-      arguments: source,
-    );
+      rootNavigator: true,
+    ).pushNamed(AppRoutes.sourceEdit, arguments: source);
     if (mounted) _reload();
   }
 

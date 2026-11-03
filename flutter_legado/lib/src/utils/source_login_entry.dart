@@ -67,7 +67,9 @@ Future<bool> showSourceLogin(
   //    WebView 打开 loginUrl，系统 CookieManager 经 CookieBridge 通道自动
   //    落库 loginHeader；手动 Cookie/Header/Token 页降级为其菜单次级入口，
   //    能力保留）
-  final saved = await Navigator.of(context).push<bool>(
+  // [2b-2c 复核 P1] 登录属 standalone：入口可能位于列表-详情右栏
+  //（BookInfo/发现书单），WebView 登录页固定 root 全屏。
+  final saved = await Navigator.of(context, rootNavigator: true).push<bool>(
     MaterialPageRoute(
       builder: (_) => WebViewLoginScreen(
         api: api,

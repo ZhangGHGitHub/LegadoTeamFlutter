@@ -51,7 +51,9 @@ Future<void> promptSourceLoginIfNeeded(
   );
   if (go != true || !context.mounted) return;
 
-  await Navigator.of(context).push(
+  // [2b-2c 复核 P1] 登录属 standalone：提示可能来自列表-详情右栏内的
+  // BookInfo，登录页固定 root 全屏。
+  await Navigator.of(context, rootNavigator: true).push(
     MaterialPageRoute(
       builder: (_) => SourceLoginScreen(
         sourceUrl: source.bookSourceUrl,

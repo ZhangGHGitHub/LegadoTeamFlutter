@@ -102,6 +102,17 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
       _RssArticleDetailScreenState();
 }
 
+/// 打开搜索结果页（RSS WebView `java.searchBook` 桥动作）
+///
+/// [2b-2c 复核] 搜索属 standalone：本页可能位于列表-详情右栏，搜索结果
+/// 固定压到 root 全屏；右栏作用域外（独立打开）行为不变。
+@visibleForTesting
+Future<T?> openRssArticleSearch<T>(BuildContext context, String query) {
+  return Navigator.of(context, rootNavigator: true).push<T>(
+    MaterialPageRoute(builder: (_) => SearchScreen(initialQuery: query)),
+  );
+}
+
 class _RssArticleDetailScreenState
     extends ConsumerState<RssArticleDetailScreen> {
   /// WebView 控制器（仅在支持 WebView 的平台初始化）
@@ -884,11 +895,7 @@ class _RssArticleDetailScreenState
         if (key.isEmpty) return;
         // [设置批2b-2c] 搜索属 standalone：固定 root 全屏（本页可能在
         // 列表-详情右栏内）。
-        unawaited(
-          Navigator.of(context, rootNavigator: true).push(
-            MaterialPageRoute(builder: (_) => SearchScreen(initialQuery: key)),
-          ),
-        );
+        unawaited(openRssArticleSearch(context, key));
         return;
       case 'addBook':
         // 原版 `AddToBookshelfDialog(bookUrl)`：按 URL 抓详情后选择分组；
@@ -1058,7 +1065,8 @@ class _RssArticleDetailScreenState
       return;
     }
     if (!mounted) return;
-    await Navigator.of(context).push(
+    // [2b-2c 复核 P1] 登录属 standalone：详情页在右栏时也固定 root 全屏
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => SourceLoginScreen(
           sourceUrl: target.sourceUrl,

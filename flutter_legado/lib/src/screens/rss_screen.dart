@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/main_tab.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
@@ -282,6 +283,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     if (source.singleUrl) {
       final url = await _resolveSingleUrl(source);
       if (!mounted) return;
+      // [2b-2c 复核] await 期间切 Tab：来源令牌失效则放弃本次打开，避免
+      // 在新 Tab 上弹出旧源详情/浏览器。
+      if (!isMainDetailSourceCurrent(context, MainTab.rss)) return;
       if (rssIsHttpUrl(url)) {
         // 批15g④：http(s) singleUrl 与原版一致走站内阅读 WebView
         // （URL 直开模式，详情页按源 singleUrl 强制加载该地址）。
@@ -302,13 +306,17 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               // 原版该入口无 rssArticle：隐藏收藏与文章头部（P2-4）
               singleUrlDirect: true,
             ),
+            replace: true,
+            source: MainTab.rss,
           );
         } else {
-          await Navigator.pushNamed(
+          // [2b-2c 复核] 浏览器属 standalone：root 全屏；左列表选择先清
+          // 旧右栏（替换语义）。
+          clearMainDetailPane(context);
+          await Navigator.of(
             context,
-            AppRoutes.browser,
-            arguments: url,
-          );
+            rootNavigator: true,
+          ).pushNamed(AppRoutes.browser, arguments: url);
         }
         return;
       }
@@ -347,16 +355,21 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           sourceUrl: source.sourceUrl,
           startHtml: startHtml,
         ),
+        replace: true,
+        source: MainTab.rss,
       );
       return;
     }
 
     if (!mounted) return;
     // [设置批2b-2c] 订阅源 → 文章列表进右栏（左源列表保持）；左栏文章
-    // 点击再压入文章详情（同一右栏栈）。窄屏/off 仍为 root 全屏。
+    // 点击再压入文章详情（同一右栏栈）。左源选择替换旧右栏（replace），
+    // 窄屏/off 仍为 root 全屏。
     await pushMainDetailPage(
       context,
       (_) => RssArticlesScreen(source: source),
+      replace: true,
+      source: MainTab.rss,
     );
   }
 
@@ -548,6 +561,8 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
       ),
       source: source,
       sourceName: _sourceNameOf(record.origin),
+      // [2b-2c 复核] 记录入口属左列表选择：替换旧右栏栈
+      replace: true,
       // 上游 `ReadRssActivity.start(origin=record.origin, link, sort)`：
       // 详情页据 origin 查源规则抓正文；无链接（legacy 键）时不触发
       sourceUrl: hasLink ? record.origin : '',

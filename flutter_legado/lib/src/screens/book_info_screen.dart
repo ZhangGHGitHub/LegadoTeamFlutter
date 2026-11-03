@@ -42,6 +42,7 @@ import 'archive_import_dialog.dart'; // [批3 P1-3 余项] webFile 压缩包下�
 import '../widgets/book_cover.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4 收尾] 详情下拉 M3 化
 import '../widgets/error_view.dart';
+import '../widgets/navigation/main_detail_pane_scope.dart';
 import '../widgets/pill_divider.dart'; // [GLOBALCOMP B5] 弹窗菜单分隔统一
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/list_footer.dart';

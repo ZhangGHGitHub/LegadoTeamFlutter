@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../bridge/ffi.dart' show BridgeError;
 import '../l10n/app_strings.dart';
+import '../models/main_tab.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
@@ -871,15 +872,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // [A4 对齐 B | 2026-09-21 裁决] 未读书单击 = 详情页 + 立即自动开读
       // （等价重构版 BookInfoPage(openReaderImmediately: true)）：详情页
       // 目录就绪即自动开读（未读书取首章）；目录不可用则停留详情页，仍可
-      // 经「阅读」FAB 手动开读。长按入口仍走 _openBookInfo 普通详情页，
-      // 行为不变。
+      // 经「阅读」FAB 手动开读。长按入口走 _openBookInfo（同为右栏详情，
+      // 只是不自动开读）。
       // [设置批2b-2c] 列表-详情：宽屏进右栏（左书架保持），窄屏/off root
-      // 全屏。await 至弹回书架（先关阅读器再关详情页）后单本定向刷新：
-      // 未读链路（详情+自动开读）返回时同步新进度。
+      // 全屏；左列表选择替换旧右栏栈（replace）。await 至弹回书架（先关
+      // 阅读器再关详情页）后单本定向刷新：未读链路返回时同步新进度。
       await pushMainDetailNamed(
         context,
         AppRoutes.bookInfo,
         arguments: BookInfoArgs(book: book, openReaderImmediately: true),
+        replace: true,
+        source: MainTab.bookshelf,
       );
       if (!context.mounted) return;
       await _refreshBookOnReturn(context, ref, book);
@@ -913,8 +916,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       typeBits,
       isLocalBook: BookType.isLocalBook(book),
     );
-    // [设置批2b-2c] 阅读器/漫画/音频/视频属 standalone，固定 root 全屏
-    // （书架本身在 root PageView 内，此写法与原行为等价，仅显式化）。
+    // [设置批2b-2c 复核] 左列表选择已读书 A→B：阅读器是 standalone root
+    // 页，先把旧右栏详情清空（关闭阅读器后回到空右栏）；await 期间切 Tab
+    // 则放弃本次打开。
+    if (!isMainDetailSourceCurrent(context, MainTab.bookshelf)) return;
+    clearMainDetailPane(context);
+    // 阅读器/漫画/音频/视频属 standalone，固定 root 全屏（书架本身在 root
+    // PageView 内，此写法与原行为等价，仅显式化）。
     final rootNavigator = Navigator.of(context, rootNavigator: true);
     if (BookOpenUtils.needsReaderNotifier(route)) {
       ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
@@ -944,12 +952,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// 长按封面/书名直接打开书籍信息页（对齐安卓原版行为）
   ///
-  /// [设置批2b-2c] 与单击同一列表-详情入口：宽屏进右栏，窄屏 root 全屏。
+  /// [设置批2b-2c] 与单击同一列表-详情入口：宽屏进右栏（替换旧栈），
+  /// 窄屏 root 全屏。
   void _openBookInfo(BuildContext context, Book book) {
     pushMainDetailNamed(
       context,
       AppRoutes.bookInfo,
       arguments: book,
+      replace: true,
+      source: MainTab.bookshelf,
     );
   }
 

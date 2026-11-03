@@ -271,6 +271,12 @@ extension _BookInfoLoad on _BookInfoScreenState {
           // 非栈顶，此时再压第二个阅读器，返回会落在上一层阅读器，
           // 表现为「返回无反应」
           if (ModalRoute.of(context)?.isCurrent != true) return;
+          // [2b-2c 复核 P3] 列表-详情右栏隐藏期间（窗口缩窄/切 Tab 过渡）
+          // 不得自动开读：只有右栏实际可见时才消费自动开读机会。
+          final detailScope = MainDetailPaneScope.maybeOf(context);
+          if (detailScope != null && !detailScope.controller.isPaneVisible) {
+            return;
+          }
           final b = _loadedBook;
           if (b == null) return;
           // 续读位置仍取 durChapterIndex（未读书=0，即首章）；落库/分流

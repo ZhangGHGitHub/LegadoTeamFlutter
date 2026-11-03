@@ -14,7 +14,12 @@ const String kMainDetailEmptyRoute = '/__main_detail_empty__';
 /// - [clear]：切换 Tab 时清空右栏（登记行为）。
 ///
 /// 右栏 Navigator 始终挂载（隐藏时零宽 + Offstage），窄屏期间保留的栈在
-/// 窗口重新变宽后原样恢复；只有切换 Tab 才清空。
+/// 窗口重新变宽后原样恢复；清空时机为：切换 Tab、左列表选择替换
+///（`replace: true`）、root standalone 前显式 [clear]。
+///
+/// 左列表选择（书架/发现书单/RSS 源列表）使用 `replace: true`：先清空
+/// 右栏再压入，等价参考版 `selectMainPaneChild` 的「左栏选择替换详情」；
+/// 右栏内部下钻（BookInfo → 目录、RSS 文章列表 → 文章）保持追加。
 class MainDetailPaneController extends ChangeNotifier {
   /// 右栏 nested Navigator 的 key（隐藏期间同样挂载）
   GlobalKey<NavigatorState>? navigatorKey;
@@ -24,12 +29,25 @@ class MainDetailPaneController extends ChangeNotifier {
   bool _disposed = false;
   int _stackDepth = 0;
 
+  /// 当前 Tab（来源令牌）：左列表入口在 await 后据此校验来源是否仍有效
+  Object? _activeSource;
+
+  /// 当前右栏栈所属来源 Tab（首次压栈时记录，用于横滑 settle 后清栈）
+  Object? _stackSource;
+
   /// 当前窗口/当前 Tab 是否允许使用右栏（build 期间由 HomeScreen 写入，
   /// 不通知：显隐由 HomeScreen 自身的布局构建驱动）。
   bool get isEnabled => _isEnabled;
 
   /// 右栏是否有初始空态之外的业务页面
   bool get hasStack => _hasStack;
+
+  /// 右栏当前是否可见（多栏可用且栈非空）；右栏页面据此判定自身是否
+  /// 真正展示（如隐藏期间不得触发自动开读）。
+  bool get isPaneVisible => _isEnabled && _hasStack;
+
+  /// 右栏栈所属来源（无栈为 null）
+  Object? get stackSource => _stackSource;
 
   /// 测试观测：右栏栈深度（0=未挂载，1=仅初始空态，>1=有业务页面）
   @visibleForTesting
@@ -40,6 +58,11 @@ class MainDetailPaneController extends ChangeNotifier {
     _isEnabled = value;
   }
 
+  /// 当前 Tab 变化（静默；供异步入口在 await 后比对来源）
+  void setActiveSource(Object? value) {
+    _activeSource = value;
+  }
+
   /// Observer 回写栈状态
   ///
   /// 栈变化可能发生在 build/layout 帧内（如页面 initState 里 push），
@@ -47,6 +70,7 @@ class MainDetailPaneController extends ChangeNotifier {
   void updateStack({required int depth, required bool hasPage}) {
     if (_disposed) return;
     _stackDepth = depth;
+    if (!hasPage) _stackSource = null;
     if (_hasStack == hasPage) return;
     _hasStack = hasPage;
     if (SchedulerBinding.instance.schedulerPhase ==
@@ -60,16 +84,29 @@ class MainDetailPaneController extends ChangeNotifier {
     }
   }
 
+  /// 来源令牌是否仍有效（null = 调用方未提供令牌，不校验）
+  bool isSourceCurrent(Object? source) =>
+      source == null || _activeSource == null || source == _activeSource;
+
   /// 在多栏右栏打开命名路由；不可用时退回 root 全屏。
+  ///
+  /// [replace]：左列表选择语义——先清空右栏再压入（窄屏时同时清掉隐藏
+  /// 的旧栈）；[source]：来源 Tab 令牌，await 完成后 Tab 已切换则丢弃。
   Future<T?> openNamed<T>(
     BuildContext context,
     String name, {
     Object? arguments,
+    bool replace = false,
+    Object? source,
   }) {
+    if (!isSourceCurrent(source)) return Future<T?>.value();
     final navigator = navigatorKey?.currentState;
     if (_isEnabled && navigator != null) {
+      if (replace) _popToEmpty();
+      _stackSource = source ?? _activeSource;
       return navigator.pushNamed<T>(name, arguments: arguments);
     }
+    if (replace) _popToEmpty();
     return Navigator.of(
       context,
       rootNavigator: true,
@@ -77,25 +114,36 @@ class MainDetailPaneController extends ChangeNotifier {
   }
 
   /// 在多栏右栏打开构建器页面（RSS 文章详情等无全局命名路由的页面）；
-  /// 不可用时退回 root 全屏。
+  /// 不可用时退回 root 全屏。参数语义同 [openNamed]。
   Future<T?> openPage<T>(
     BuildContext context,
     WidgetBuilder builder, {
     RouteSettings? settings,
+    bool replace = false,
+    Object? source,
   }) {
+    if (!isSourceCurrent(source)) return Future<T?>.value();
     final navigator = navigatorKey?.currentState;
     if (_isEnabled && navigator != null) {
+      if (replace) _popToEmpty();
+      _stackSource = source ?? _activeSource;
       return navigator.push<T>(
         MaterialPageRoute<T>(builder: builder, settings: settings),
       );
     }
+    if (replace) _popToEmpty();
     return Navigator.of(context, rootNavigator: true).push<T>(
       MaterialPageRoute<T>(builder: builder, settings: settings),
     );
   }
 
-  /// 清空右栏（回到初始空态）；切换 Tab 时调用。
+  /// 清空右栏（回到初始空态）；切换 Tab / 左列表替换时调用。
   void clear() {
+    _stackSource = null;
+    _popToEmpty();
+  }
+
+  void _popToEmpty() {
     final navigator = navigatorKey?.currentState;
     if (navigator == null) return;
     navigator.popUntil((route) => route.isFirst);
@@ -143,10 +191,18 @@ Future<T?> pushMainDetailNamed<T>(
   BuildContext context,
   String name, {
   Object? arguments,
+  bool replace = false,
+  Object? source,
 }) {
   final scope = MainDetailPaneScope.maybeOf(context);
   if (scope != null) {
-    return scope.controller.openNamed<T>(context, name, arguments: arguments);
+    return scope.controller.openNamed<T>(
+      context,
+      name,
+      arguments: arguments,
+      replace: replace,
+      source: source,
+    );
   }
   return Navigator.of(
     context,
@@ -159,12 +215,31 @@ Future<T?> pushMainDetailPage<T>(
   BuildContext context,
   WidgetBuilder builder, {
   RouteSettings? settings,
+  bool replace = false,
+  Object? source,
 }) {
   final scope = MainDetailPaneScope.maybeOf(context);
   if (scope != null) {
-    return scope.controller.openPage<T>(context, builder, settings: settings);
+    return scope.controller.openPage<T>(
+      context,
+      builder,
+      settings: settings,
+      replace: replace,
+      source: source,
+    );
   }
   return Navigator.of(context, rootNavigator: true).push<T>(
     MaterialPageRoute<T>(builder: builder, settings: settings),
   );
+}
+
+/// 来源令牌是否仍有效：右栏作用域外（独立页面/深链）恒为 true。
+bool isMainDetailSourceCurrent(BuildContext context, Object source) {
+  final scope = MainDetailPaneScope.maybeOf(context);
+  return scope == null || scope.controller.isSourceCurrent(source);
+}
+
+/// 清空首页右栏（root standalone 前调用；作用域外 no-op）。
+void clearMainDetailPane(BuildContext context) {
+  MainDetailPaneScope.maybeOf(context)?.controller.clear();
 }

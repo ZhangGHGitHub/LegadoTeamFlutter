@@ -180,7 +180,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _lastTapIndex = index;
     if (index != currentIndex) {
       _userNavigated = true;
-      // 切 Tab 清空列表-详情右栏（登记行为：不跨 Tab 复用详情栈）
+      // 切 Tab 清空列表-详情右栏（登记行为：不跨 Tab 复用详情栈）；
+      // 同步更新来源令牌，使切 Tab 期间完成的异步入口被丢弃。
+      _detailPaneController.setActiveSource(tabs[index]);
       _detailPaneController.clear();
       setState(() {
         _currentTab = tabs[index];
@@ -210,13 +212,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (tabs[index] != _currentTab) {
       // 滑动切页视为用户主动导航：偏好加载完成前不再套用默认首页
       _userNavigated = true;
-      // 切 Tab 清空列表-详情右栏
-      _detailPaneController.clear();
+      // [2b-2c 复核] 不在此清右栏：PageView 的 onPageChanged 在越过
+      // 半程即触发，半程折返会误清。统一在滚动 settle 后按当前 Tab 判定。
     }
     setState(() {
       _currentTab = tabs[index];
       _visitedTabs.add(_currentTab);
     });
+  }
+
+  /// PageView 横向滚动结束：Tab 真正切换后才清右栏
+  ///
+  /// 只响应 PageView 自身的横向滚动（depth=0）；页面内部的横向条带
+  /// （分类 chips 等）depth>0，不参与。
+  void _onPageSettled() {
+    if (!_detailPaneController.hasStack) return;
+    final source = _detailPaneController.stackSource;
+    if (source != null && source != _currentTab) {
+      _detailPaneController.clear();
+    }
   }
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
@@ -254,6 +268,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final targetIndex = bookshelfIndex >= 0 ? bookshelfIndex : 0;
       if (targetIndex >= 0 && targetIndex < tabs.length) {
         // 返回切回书架同样清空右栏（右栏内容属于原 Tab）
+        _detailPaneController.setActiveSource(tabs[targetIndex]);
         _detailPaneController.clear();
         setState(() {
           _currentTab = tabs[targetIndex];
@@ -502,7 +517,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           windowSize: MediaQuery.sizeOf(context),
         );
         final enabled = multi && _tabSupportsDetail(_currentTab);
-        // build 期间静默写入（不通知），列表点击时经 controller 读取。
+        // build 期间静默写入（不通知），列表点击时经 controller 读取；
+        // 来源令牌供异步入口在 await 后校验（切 Tab 后丢弃旧推入）。
+        _detailPaneController.setActiveSource(_currentTab);
         _detailPaneController.setEnabled(enabled);
         return MainDetailPaneScope(
           controller: _detailPaneController,
@@ -518,7 +535,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(child: pageArea),
+                  Expanded(
+                    child: NotificationListener<ScrollEndNotification>(
+                      onNotification: (notification) {
+                        // PageView 自身横向滚动结束（半程折返不清栈）
+                        if (notification.depth == 0 &&
+                            notification.metrics.axis == Axis.horizontal) {
+                          _onPageSettled();
+                        }
+                        return false;
+                      },
+                      child: pageArea,
+                    ),
+                  ),
                   SizedBox(
                     key: const ValueKey('main-detail-gap'),
                     width: showDetail ? kMultiPaneGap : 0,

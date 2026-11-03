@@ -13,6 +13,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../models/main_tab.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
@@ -42,6 +43,9 @@ import 'video_screen.dart';
 /// - 其余（0/未知）：进入 [RssArticleDetailScreen]（WebView 阅读链）。
 ///
 /// 类型优先级：文章 `type`（列表规则解析已复制源 `type`）→ 源 `type`。
+///
+/// [replace]：来源是左列表选择（如 RSS 阅读记录入口）时替换旧右栏栈；
+/// 右栏内文章列表的点击保持追加（默认 false）。
 Future<void> openRssArticle(
   BuildContext context,
   WidgetRef ref, {
@@ -50,7 +54,11 @@ Future<void> openRssArticle(
   String sourceName = '',
   String sourceUrl = '',
   void Function(String description)? onContentFetched,
+  bool replace = false,
 }) async {
+  // [2b-2c 复核] 来源令牌：调用期间已切走 RSS Tab 则放弃（右栏作用域外
+  // 恒为有效，独立页面行为不变）。
+  if (!isMainDetailSourceCurrent(context, MainTab.rss)) return;
   // 空串 / legacy: 伪主键视为无链接：不触发正文抓取、不发起外链
   final article0 = article;
   final readable = hasRssArticleLink(article0.url)
@@ -70,7 +78,9 @@ Future<void> openRssArticle(
     sourceType: source?.rssType,
   );
   if (type == 2) {
-    // 视频属 standalone：固定 root 全屏（右栏内打开也不进右栏）
+    // 视频属 standalone：固定 root 全屏（右栏内打开也不进右栏）；
+    // 左列表选择入口先清旧右栏。
+    if (replace) clearMainDetailPane(context);
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => VideoScreen(
@@ -85,6 +95,10 @@ Future<void> openRssArticle(
     final imageUrl =
         await _resolveRssImageUrl(ref, readable, source, sourceUrl);
     if (!context.mounted) return;
+    // await 期间切走 RSS Tab：来源令牌失效，不再弹整窗图片查看器
+    if (!isMainDetailSourceCurrent(context, MainTab.rss)) return;
+    // 图片查看器是 root 整窗对话框；左列表替换入口先清旧右栏
+    if (replace) clearMainDetailPane(context);
     await showRssPhotoViewer(
       context,
       url: imageUrl,
@@ -104,6 +118,8 @@ Future<void> openRssArticle(
       sourceUrl: sourceUrl,
       onContentFetched: onContentFetched,
     ),
+    replace: replace,
+    source: MainTab.rss,
   );
 }
 
@@ -1366,8 +1382,8 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     switch (value) {
       case 'login':
         // 对标原版 menu_login → SourceLoginActivity(type=rssSource)
-        Navigator.push(
-          context,
+        // [2b-2c 复核 P1] 登录属 standalone：列表在右栏时也固定 root 全屏
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(
             builder: (_) => SourceLoginScreen(
               sourceUrl: widget.source.sourceUrl,
@@ -1384,8 +1400,8 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
         _showSetVariableDialog();
       case 'editSource':
         // 对标原版 menu_edit_source → RssSourceEditActivity
-        Navigator.push(
-          context,
+        // [2b-2c 复核 P1] 源编辑属 standalone：固定 root 全屏
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(
             builder: (_) => RssSourceEditScreen(source: widget.source),
           ),
