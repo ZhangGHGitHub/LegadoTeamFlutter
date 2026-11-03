@@ -214,6 +214,12 @@ class ReaderAdvancedConfig {
   /// 落地「本地 TXT 无目录规则时按长度分章」）— [批1b-3] 全栈工程师
   int maxLengthWithNoToc;
 
+  /// 正文图片点击方式（键名对齐原版 PreferKey.clickImgWay，五档
+  /// "0"=默认行为 / "1"=预览 / "2"=兼容旧版 / "3"=关闭 / "4"=双击；
+  /// 参考版默认 "2"）。档位常量/决策见 utils/click_img_way.dart —
+  /// [批1b-2b] 全栈工程师
+  String clickImgWay;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -302,6 +308,9 @@ class ReaderAdvancedConfig {
     this.disableReturnKey = false,
     // [批1b-3] 参考版默认 3000（ReadSettings.maxLengthWithNoToc）
     this.maxLengthWithNoToc = 3000,
+    // [批1b-2b] 参考版默认 "2"=兼容旧版（原版 pref default 为 "0"，
+    // 按任务裁决取参考版默认）
+    this.clickImgWay = kDefaultClickImgWay,
   });
 
   /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
@@ -571,6 +580,9 @@ class ReaderAdvancedConfig {
       // ReadConfigViewModel coerceIn；缺省 3000）
       maxLengthWithNoToc:
           (prefs.getInt('maxLengthWithNoToc') ?? 3000).clamp(3000, 100000),
+      // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey.clickImgWay；
+      // 缺省/非法回落参考版默认 "2"=兼容旧版）
+      clickImgWay: clampClickImgWay(prefs.getString('clickImgWay')),
     );
   }
 
@@ -694,6 +706,9 @@ class ReaderAdvancedConfig {
     // [批1b-3] 无目录规则时每章字数（键名=参考版 PreferKey；
     // SharedPreferences 镜像 + caches `config:` 真源由设置页接线写 Rust）
     await prefs.setInt('maxLengthWithNoToc', maxLengthWithNoToc);
+    // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey.clickImgWay，
+    // 写入前钳制，避免非法值落盘）
+    await prefs.setString('clickImgWay', clampClickImgWay(clickImgWay));
   }
 
   /// 应用阅读主题快照中的排版字段（批38）
@@ -794,6 +809,7 @@ class ReaderAdvancedConfig {
         selectVibrator: selectVibrator,
         disableReturnKey: disableReturnKey,
         maxLengthWithNoToc: maxLengthWithNoToc,
+        clickImgWay: clickImgWay,
       );
 }
 

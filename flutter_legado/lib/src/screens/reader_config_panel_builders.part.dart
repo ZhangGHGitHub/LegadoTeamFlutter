@@ -502,6 +502,21 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             _commit();
           },
         ),
+        // [批1b-2b] 点击图片方式（原版 clickImgWay：0 默认行为/1 预览/
+        // 2 兼容旧版/3 关闭/4 双击生效；参考版默认 "2"）。文本阅读器
+        // 尚无行内图片渲染，当前消费点为 image-dominant 图片页 —
+        // 语义见 utils/click_img_way.dart
+        _moreRow('点击图片方式', clickImgWayLabel(_config.clickImgWay), () {
+          _showChoiceDialog<String>(
+            title: '点击图片方式',
+            current: clampClickImgWay(_config.clickImgWay),
+            options: kClickImgWayOptions,
+            onPick: (v) {
+              _config.clickImgWay = v;
+              _commit();
+            },
+          );
+        }),
         // 显示标题附加区（原版 showReadTitleAddition：顶栏书名后追加章名）
         // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(

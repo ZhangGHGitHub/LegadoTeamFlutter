@@ -30,6 +30,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/eye_protection.dart';
 import '../providers/providers.dart' show bookApiProvider;
 import '../providers/theme/eye_protection_notifier.dart';
+import '../utils/click_img_way.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
@@ -262,6 +263,16 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           title: '禁用滚动点击动画',
           value: cfg.noAnimScrollPage,
           onChanged: (v) => _update((c) => c.noAnimScrollPage = v),
+        ),
+        // [批1b-2b] 正文图片点击方式（键 clickImgWay，五档对齐原版
+        // pref_config_read.xml click_image_way_value/title 0..4；参考版
+        // 默认 "2"=兼容旧版）。档位语义见 utils/click_img_way.dart：
+        // 文本阅读器尚无行内图片渲染，当前消费点为 image-dominant 页面。
+        SettingDropdownRow<String>(
+          title: '点击图片方式',
+          value: clampClickImgWay(cfg.clickImgWay),
+          options: kClickImgWayOptions,
+          onChanged: (v) => _update((c) => c.clickImgWay = v),
         ),
         SettingSwitchRow(
           title: '自动换源',

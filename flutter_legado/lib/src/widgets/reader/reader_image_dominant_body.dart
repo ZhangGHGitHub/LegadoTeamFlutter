@@ -9,9 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../screens/reader_comic_screen.dart' show ComicImageDecodeCache;
+// [批1b-2b] 复用既有全屏图片查看器（PhotoDialog 等价物：缩放 + 保存）
+import '../../screens/rss_articles_screen.dart' show showRssPhotoViewer;
+import '../../utils/click_img_way.dart';
 import '../../utils/comic_image_utils.dart';
 import '../../utils/image_paint_utils.dart';
 import '../app_progress_indicator.dart';
+import 'click_img_tap_detector.dart';
 
 /// 文本阅读器内「图片主导正文」兜底渲染。
 ///
@@ -34,6 +38,11 @@ class ReaderImageDominantBody extends ConsumerStatefulWidget {
   /// 图片样式：FULL / TEXT / SINGLE（大小写不敏感）；空=默认
   final String? imageStyle;
 
+  /// 正文图片点击方式（clickImgWay 五档，默认 "2"=兼容旧版）。
+  /// [批1b-2b] 文本排版引擎尚无行内图片渲染，图片只在本兜底页出现，
+  /// 故五档点击分流在此消费。
+  final String clickImgWay;
+
   const ReaderImageDominantBody({
     super.key,
     required this.content,
@@ -44,6 +53,7 @@ class ReaderImageDominantBody extends ConsumerStatefulWidget {
     this.hasNextChapter = false,
     this.hasPrevChapter = false,
     this.imageStyle,
+    this.clickImgWay = kDefaultClickImgWay,
   });
 
   @override
@@ -56,10 +66,19 @@ class _ReaderImageDominantBodyState
   BookSource? _bookSource;
   List<String> _urls = [];
 
+  /// 与 [_urls] 同序的复合 URL 解析结果（click/js/headers）
+  List<ClickImgUrlOptions> _options = const [];
+
+  /// 在线文本书（对齐原版 `Book.isOnLineTxt`：非本地且文本类型）——
+  /// clickImgWay "2"（兼容旧版）仅对该类书执行动作
+  bool get _onlineText =>
+      !BookType.isLocalBook(widget.book) &&
+      (widget.book.bookType & BookType.text) != 0;
+
   @override
   void initState() {
     super.initState();
-    _urls = parseComicImageUrls(widget.content);
+    _applyContent(widget.content);
     _loadSource();
   }
 
@@ -67,12 +86,17 @@ class _ReaderImageDominantBodyState
   void didUpdateWidget(covariant ReaderImageDominantBody oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.content != widget.content) {
-      _urls = parseComicImageUrls(widget.content);
+      _applyContent(widget.content);
     }
     if (oldWidget.book.origin != widget.book.origin) {
       _bookSource = null;
       _loadSource();
     }
+  }
+
+  void _applyContent(String content) {
+    _urls = parseComicImageUrls(content);
+    _options = _urls.map(parseClickImgUrlOptions).toList(growable: false);
   }
 
   Future<void> _loadSource() async {
@@ -181,20 +205,45 @@ class _ReaderImageDominantBodyState
       );
     }
 
+    Widget result;
     if (maxH != null && style != 'SINGLE') {
-      return ConstrainedBox(
+      result = ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxH),
         child: image,
       );
-    }
-    if (style == 'SINGLE') {
-      return SizedBox(
+    } else if (style == 'SINGLE') {
+      result = SizedBox(
         height: viewH,
         width: double.infinity,
         child: image,
       );
+    } else {
+      result = image;
     }
-    return image;
+    return _wrapImageTap(index, result);
+  }
+
+  /// [批1b-2b] 按 clickImgWay 五档包裹图片点击（语义见 utils/click_img_way.dart）
+  Widget _wrapImageTap(int index, Widget child) {
+    final options = index < _options.length
+        ? _options[index]
+        : ClickImgUrlOptions(url: _urls[index]);
+    return ClickImgTapDetector(
+      clickImgWay: widget.clickImgWay,
+      onlineText: _onlineText,
+      options: options,
+      onPreview: () => _previewImage(options),
+      child: child,
+    );
+  }
+
+  /// 打开图片预览（复用既有全屏查看器；复合 URL 的 headers 一并透传）
+  Future<void> _previewImage(ClickImgUrlOptions options) {
+    return showRssPhotoViewer(
+      context,
+      url: stripCompositeImageUrl(options.url),
+      headers: options.headers,
+    );
   }
 
   Widget _buildChapterNav() {

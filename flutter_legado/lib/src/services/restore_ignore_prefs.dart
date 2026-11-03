@@ -152,6 +152,9 @@ class RestoreIgnorePrefs {
     // maxLengthWithNoToc）：属阅读界面偏好，随「忽略阅读配置」一并过滤 —
     // 全栈工程师
     'maxLengthWithNoToc',
+    // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey clickImgWay）：
+    // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤 — 全栈工程师
+    'clickImgWay',
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

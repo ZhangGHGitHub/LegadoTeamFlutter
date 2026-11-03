@@ -992,6 +992,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                 ReaderImageDominantBody(
                   content: state.chapterContent,
                   book: book,
+                  // [批1b-2b] 正文图片点击五档（文本行内图片待渲染；
+                  // 图片当前仅在该兜底页出现，档位在此消费）
+                  clickImgWay: cfg.clickImgWay,
                   imageStyle: book.readConfig?.imageStyle,
                   onToggleControls: notifier.toggleControls,
                   hasNextChapter: state.hasNextChapter,
