@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.446] - 2026-11-04
+
+### Added
+- [UI] 耳机媒体键接线：后台（进程与 Flutter 引擎存活）可响应媒体键；`readAloudByMediaButton` 开启时从最近阅读书启动/恢复朗读并回到上次章内位置；`mediaButtonOnExit` 控制退出后是否仍响应；TTS 上一/下一首切段、流媒体切章。
+### Fixed
+- [UI] 会话活跃时媒体键不再整章误切；后台/隐藏路由不再启动朗读；播放中退出听书页在 `mediaButtonOnExit=false` 时不误释放会话；`release` 释放唤醒锁；接收器安全解析 KeyEvent、仅转发成功时 abort。
+
 ## [2.0.445] - 2026-11-03
 
 ### Added
