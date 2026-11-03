@@ -269,6 +269,113 @@ void main() {
     });
   });
 
+  group('[批9b-5 P2-1] 媒体键文本书判定（Rust/Kotlin 位域兼容）', () {
+    Book book(int type, {String origin = 'loc_book'}) =>
+        Book(bookUrl: 'u', name: 'n', bookType: type, origin: origin);
+
+    test('Rust 域本地 TXT（4096 仅 local 位）→ 文本', () {
+      expect(
+        isTextBookForMediaButton(book(BookType.local)),
+        isTrue,
+        reason: 'QA 复现值：本地导入 TXT 落库 type=4096',
+      );
+      expect(
+        isTextBookForMediaButton(book(BookType.local, origin: '')),
+        isTrue,
+        reason: 'type 已表明本地书，origin 为空不影响',
+      );
+    });
+
+    test('Kotlin 域本地 TXT（264）与在线文本（8）→ 文本', () {
+      expect(
+        isTextBookForMediaButton(
+          book(BookType.text | BookType.kotlinLocal, origin: ''),
+        ),
+        isTrue,
+      );
+      expect(
+        isTextBookForMediaButton(book(BookType.text, origin: 'https://x')),
+        isTrue,
+      );
+      // 验收期间临时补位的 4104（local|text）也应继续入选
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.text)),
+        isTrue,
+      );
+    });
+
+    test('本地 cbz（4160 local|image）不得误判为文本', () {
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.image)),
+        isFalse,
+        reason: '压缩漫画有 image 位，启动 TTS 无意义',
+      );
+      expect(
+        isTextBookForMediaButton(
+          book(BookType.text | BookType.local | BookType.image),
+        ),
+        isTrue,
+        reason: '显式 text 位优先（原版 type & text 语义）',
+      );
+    });
+
+    test('本地音频/视频/网页文件（无 text 位）不入选', () {
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.audio)),
+        isFalse,
+      );
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.video)),
+        isFalse,
+      );
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.webFile)),
+        isFalse,
+      );
+    });
+
+    test('在线图片/音频（无 text 位、非本地）不入选', () {
+      expect(
+        isTextBookForMediaButton(book(BookType.image, origin: 'https://x')),
+        isFalse,
+      );
+      expect(
+        isTextBookForMediaButton(book(BookType.audio, origin: 'https://x')),
+        isFalse,
+      );
+    });
+
+    test('状态位不影响：updateError/archive/notShelf 叠加仍为文本', () {
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.updateError)),
+        isTrue,
+      );
+      // 原版 archive 位（512）：压缩包内文本（776）不视为媒体类型
+      expect(isTextBookForMediaButton(book(BookType.local | 512)), isTrue);
+      expect(
+        isTextBookForMediaButton(book(BookType.local | BookType.notShelf)),
+        isTrue,
+      );
+    });
+
+    test('类型缺失边界：type=0 按 origin 判定，都缺失则不猜测', () {
+      expect(
+        isTextBookForMediaButton(book(0)),
+        isTrue,
+        reason: '默认 origin=loc_book，历史数据按本地文本处理',
+      );
+      expect(
+        isTextBookForMediaButton(book(0, origin: '')),
+        isFalse,
+        reason: 'type/origin 均缺失，不能猜测为文本',
+      );
+      expect(
+        isTextBookForMediaButton(book(0, origin: 'https://x')),
+        isFalse,
+      );
+    });
+  });
+
   group('[批9b-5] 服务接线', () {
     late _FakeAudio audio;
     late MockRustApi api;
@@ -429,6 +536,96 @@ void main() {
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, ['startReadAloud:newest:7:0']);
+    });
+
+    test('后台 + 本地 TXT（Rust 域 type=4096）：媒体键启动朗读', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: true,
+        PrefKeys.readAloudByMediaButton: true,
+      });
+      when(() => api.getBooks()).thenAnswer(
+        (_) async => [
+          const Book(
+            bookUrl: 'local-txt',
+            name: '本地TXT',
+            bookType: BookType.local,
+            durChapterTime: 10,
+            durChapterIndex: 2,
+            durChapterPos: 320,
+          ),
+        ],
+      );
+      service = buildService(
+        audio: audio,
+        api: api,
+        foreground: () => false,
+      );
+      await service.start();
+      await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
+      expect(
+        audio.calls,
+        ['startReadAloud:local-txt:2:320'],
+        reason: 'P2-1：本地 TXT 无 Kotlin text 位也必须入选',
+      );
+    });
+
+    test('后台 + 本地 cbz（4160）不启动；最近文本仍优先', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: true,
+        PrefKeys.readAloudByMediaButton: true,
+      });
+      when(() => api.getBooks()).thenAnswer(
+        (_) async => [
+          const Book(
+            bookUrl: 'local-cbz',
+            name: '本地漫画',
+            bookType: BookType.local | BookType.image,
+            durChapterTime: 999,
+            durChapterIndex: 0,
+          ),
+          const Book(
+            bookUrl: 'local-txt',
+            name: '本地TXT',
+            bookType: BookType.local,
+            durChapterTime: 100,
+            durChapterIndex: 4,
+          ),
+        ],
+      );
+      service = buildService(
+        audio: audio,
+        api: api,
+        foreground: () => false,
+      );
+      await service.start();
+      await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
+      expect(audio.calls, ['startReadAloud:local-txt:4:0']);
+    });
+
+    test('后台 + 仅有本地 cbz（4160）：忽略启动朗读', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: true,
+        PrefKeys.readAloudByMediaButton: true,
+      });
+      when(() => api.getBooks()).thenAnswer(
+        (_) async => [
+          const Book(
+            bookUrl: 'local-cbz',
+            name: '本地漫画',
+            bookType: BookType.local | BookType.image,
+            durChapterTime: 999,
+            durChapterIndex: 0,
+          ),
+        ],
+      );
+      service = buildService(
+        audio: audio,
+        api: api,
+        foreground: () => false,
+      );
+      await service.start();
+      await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
+      expect(audio.calls, isEmpty);
     });
 
     test('同章不同章内位置：取最近书的 durChapterPos（不回到章首）', () async {

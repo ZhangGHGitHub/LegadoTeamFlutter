@@ -121,6 +121,35 @@ HeadsetMediaAction decideHeadsetMediaAction({
   return HeadsetMediaAction.ignoreExitDisabled;
 }
 
+/// 「从最近阅读启动朗读」的文本书判定（纯函数，便于单测）
+///
+/// 语义基准是原版 `bookDao.lastReadBook` 的 `type & BookType.text > 0`，
+/// 但本仓库存在两套位域（批9b-5 设备验收 P2-1）：
+/// - 原版 Kotlin 域本地书 `type = text|local = 264`，在线文本 `type = 8`；
+/// - Rust 域本地书只写 `LOCAL = 0x1000`（4096），**不带 text 位 8**
+///   （`legado-core` `book_type::LOCAL`），直接按 text 位过滤会把本地
+///   TXT 全部排除，媒体键「从最近阅读启动朗读」被判空。
+///
+/// 因此文本判定兼容两域：
+/// 1. 带 text 位 → 文本（264 / 4104 / 在线 8）；
+/// 2. 本地书（[BookType.isLocalBook] 双 local 位）且**没有任何媒体类型位**
+///    （video/audio/image/webFile）→ 按文本处理（Rust 域 4096）。
+///    cbz 压缩漫画带 image 位（4160）、本地音频书带 audio 位（4128）不得
+///    误判；`updateError(16)` / `archive(512)` / `notShelf(1024)` 等状态位
+///    不参与媒体类型判定。
+///
+/// 边界：`type == 0` 的历史数据由 [BookType.isLocalBook] 按 origin 判定；
+/// 判为本地书且无媒体位时按文本处理（与 Rust 域 4096 同构）。类型与
+/// origin 均缺失（`type == 0` 且 origin 为空）不猜测，返回 false。
+bool isTextBookForMediaButton(Book book) {
+  final type = book.bookType;
+  if ((type & BookType.text) != 0) return true;
+  if (!BookType.isLocalBook(book)) return false;
+  const mediaTypeMask =
+      BookType.video | BookType.audio | BookType.image | BookType.webFile;
+  return (type & mediaTypeMask) == 0;
+}
+
 /// 耳机键可驱动的音频控制面（AudioNotifier 适配层，便于单测注入 fake）
 abstract class HeadsetMediaAudioController {
   bool get hasActivePlayback;
@@ -383,11 +412,14 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
 
   /// 从最近阅读的书启动朗读（对齐原版 `bookDao.lastReadBook`：
   /// `type & text > 0 ORDER BY durChapterTime DESC LIMIT 1`）
+  ///
+  /// [批9b-5 P2-1] 文本过滤改用 [isTextBookForMediaButton]：Rust 域本地书
+  /// `type=4096` 只有 local 位（无 Kotlin text 位），旧实现会漏掉本地 TXT。
   Future<void> _startFromLastReadBook(HeadsetMediaAudioController audio) async {
     final books = await _bookApi.getBooks();
     final candidates = books
         .where((book) =>
-            book.bookUrl.isNotEmpty && (book.bookType & BookType.text) != 0)
+            book.bookUrl.isNotEmpty && isTextBookForMediaButton(book))
         .toList()
       ..sort((a, b) => b.durChapterTime.compareTo(a.durChapterTime));
     if (candidates.isEmpty) {
