@@ -127,7 +127,7 @@
 ## 六、执行状态
 
 - **M1 已完成并设备验收**（2026-11-03，版本 2.0.438+439）：Web 服务置顶+复制/打开、规则组 5 项、服务与工具、设置并入其他、AI 聊天占位、字典单入口、主题模式移出；回修地址刷新/多网卡过滤/启动不阻塞。门禁 flutter analyze 0、flutter test 3948 通过 + 1 skipped。设备 **9/10 PASS**（唯一 P2：外部 `legado://dict*` URI 非既有深链契约；应用内 `/dict`、`/dict_rule` 正常）。
-- **M2 已完成（自测通过，设备待验）**（2026-11-03）：Web 服务块替换为无标题 `IosGroup` + `SettingSwitchRow`（24dp 裸图标、行内开关、整行可点；busy 时行禁用 + 轻量 spinner），移除 48dp 图标槽/整卡描边/Ink 底色/整卡语义；运行中「复制地址」「在浏览器中打开」右对齐并随停止收起；规则/其他组图标对齐参考版 `Source/FindReplace/Rule/LibraryBooks/Sell/…/ExitToApp`。门禁：flutter analyze 0、flutter test 3953 通过 + 1 skipped、release APK 构建成功（191.0MB）；深色 + textScaler 1.6、360x640 小屏运行态回归无溢出。设备截图对照（MuMu 三包）与实机验收待办。
+- **M2 已完成并设备验收 PASS**（2026-11-03，版本 2.0.439+440）：Web 服务块替换为无标题 `IosGroup` + `SettingSwitchRow`（24dp 裸图标、行内开关、整行可点；busy 时行禁用 + 轻量 spinner），移除 48dp 图标槽/整卡描边/Ink 底色/整卡语义；运行中「复制地址」「在浏览器中打开」右对齐并随停止收起；规则/其他组图标对齐参考版。门禁：flutter analyze 0、flutter test 3953 通过 + 1 skipped、release APK 191.0MB；设备 P1/P2=0，P3：Web 图标地球、动作行组外、大字体换行；busy 停止方向 <120ms 未捕获稳定帧。
 - **M2 视觉偏差登记**：
   1. **动作行组外**：参考版运行中按钮 Row 位于 `SplicedColumnGroup` 内（非卡片）；本仓库 `IosGroup` 对每个 child 强制套 surfaceContainerLow 行卡，无法表达「组内无卡片行」，故置于组外、垂直间距 4dp 贴邻（按钮间距 12dp、右对齐与参考版一致）；不在开关行手势/语义区域内，不误触开关。
   2. **容器背景/边框组合**：分组开启「容器背景图 + 自定义边框」时，组外动作行不参与分组容器的圆角裁剪与边框包裹（参考版动作行在容器内）；后续 `IosGroup` 若提供「无卡片 child」能力，可无损回移组内。
