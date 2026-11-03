@@ -269,7 +269,7 @@ void main() {
     expect(ThemeBackgroundImageStore.isUsableSync(stored), isTrue);
   });
 
-  test('cleanupOrphansSync 清理未引用自有图/超龄 tmp，保留新 tmp 与其他槽位',
+  test('cleanupOrphansSync 清理四个槽位的未引用自有图/超龄 tmp，保留新 tmp',
       () async {
     final source = await writeSource('keep.png');
     final kept = await ThemeBackgroundImageStore.store(
@@ -294,7 +294,7 @@ void main() {
       ..writeAsBytesSync(const <int>[1]);
     final notOurs = File('${lightDir.path}${sep}readme.txt')
       ..writeAsBytesSync(const <int>[1]);
-    // 2b-1b 的项目图槽位：本批清理不扫描，必须保留
+    // [设置批2b-1b-2b] item_* 槽位起纳入清理；未引用 → 应删除
     final itemDir = Directory(
       '${temp.path}$sep${ThemeBackgroundImageStore.subDir}${sep}item_light',
     )..createSync(recursive: true);
@@ -303,7 +303,7 @@ void main() {
 
     final removed = ThemeBackgroundImageStore.cleanupOrphansSync(keep: [kept]);
 
-    expect(removed, 2, reason: '未引用正式图 + 超龄 tmp');
+    expect(removed, 3, reason: '未引用 large 图 + 超龄 tmp + 未引用 item 图');
     expect(
       File(ThemeBackgroundImageStore.resolveSync(kept)).existsSync(),
       isTrue,
@@ -312,8 +312,8 @@ void main() {
     expect(oldTmp.existsSync(), isFalse);
     expect(freshTmp.existsSync(), isTrue, reason: '新 tmp 可能是进行中的写入');
     expect(notOurs.existsSync(), isTrue);
-    expect(itemFile.existsSync(), isTrue,
-        reason: 'item_* 槽位属 2b-1b，本批不清理');
+    expect(itemFile.existsSync(), isFalse,
+        reason: 'item_* 槽位自 2b-1b-2b 起参与孤儿清理');
   });
 
   group('storeBytes（Android SAF 字节流路径）', () {

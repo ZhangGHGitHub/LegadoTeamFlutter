@@ -445,4 +445,128 @@ void main() {
     expect(find.text('选择图片'), findsOneWidget);
     expect(find.text('清除图片'), findsNothing);
   });
+
+  // ===== [设置批2b-1b-2b] 项目（卡片）背景图行 / 透明度滑块 =====
+
+  testWidgets('项目背景图行：随总开关显隐（日/夜两行）', (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器设置'));
+    expect(find.text('项目背景图片（日间）'), findsNothing);
+    expect(find.text('项目背景图片（夜间）'), findsNothing);
+    expect(find.text('项目背景图透明度'), findsNothing);
+
+    await tester.tap(find.text('容器背景图'));
+    await tester.pumpAndSettle();
+    expect(find.text('项目背景图片（日间）'), findsOneWidget);
+    expect(find.text('项目背景图片（夜间）'), findsOneWidget);
+    // 未选图 → 透明度行隐藏
+    expect(find.text('项目背景图透明度'), findsNothing);
+  });
+
+  testWidgets('项目背景图行：副标题显示缺失回落；清除移除键', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.itemBackgroundImageLight:
+          'theme_backgrounds/item_light/day.png',
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('项目背景图片（日间）'));
+
+    expect(find.text('day.png（文件缺失，已回落）'), findsOneWidget);
+    await tester.tap(find.text('项目背景图片（日间）'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择图片'), findsOneWidget);
+    expect(find.text('清除图片'), findsOneWidget);
+
+    await tester.tap(find.text('清除图片'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.containsKey(PrefKeys.itemBackgroundImageLight), isFalse);
+    expect(
+      container.read(uiSettingsProvider).itemBackgroundImageLight,
+      isEmpty,
+    );
+  });
+
+  testWidgets('项目背景图透明度行：仅总开关开且当前日/夜项目图可用时显示',
+      (tester) async {
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('容器设置'));
+    expect(find.text('项目背景图透明度'), findsNothing);
+
+    await tester.tap(find.text('容器背景图'));
+    await tester.pumpAndSettle();
+    expect(find.text('项目背景图透明度'), findsNothing, reason: '未选图');
+
+    final image = writeUsableContainerImage();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.itemBackgroundImageLight: image,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await tester.pumpAndSettle();
+    expect(find.text('项目背景图透明度'), findsOneWidget);
+
+    // 大容器图缺失但项目图可用：项目图行显示、Large 透明度行隐藏（互不影响）
+    expect(find.text('大容器背景图透明度'), findsNothing);
+  });
+
+  testWidgets('项目图选图参数：dialogTitle=选择项目背景图片', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    final picker = _RecordingFilePicker();
+    _useFakeFilePicker(picker);
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('项目背景图片（日间）'));
+
+    await tester.tap(find.text('项目背景图片（日间）'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择图片'));
+    await tester.pumpAndSettle();
+
+    expect(picker.pickCalls, 1);
+    expect(picker.dialogTitle, '选择项目背景图片');
+    expect(picker.allowCompression, isFalse);
+    expect(picker.withData, isFalse);
+  });
+
+  testWidgets('项目背景图透明度：min/max/副题/绑定与落盘', (tester) async {
+    final image = writeUsableContainerImage();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.enableContainerBackgroundImage: true,
+      PrefKeys.itemBackgroundImageLight: image,
+      PrefKeys.glassCardBackgroundOpacity: 65,
+    });
+    await container.read(uiSettingsProvider.notifier).reload();
+    await pumpPage(tester);
+    await scrollTo(tester, find.text('项目背景图透明度'));
+
+    expect(
+      sliderRow('项目背景图透明度'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('0-100；仅作用于设置页项目卡面图片自身，'
+          '与容器不透明度独立叠加（0=图片完全透明）'),
+      findsOneWidget,
+    );
+    final slider = tester.widget<Slider>(sliderOf('项目背景图透明度'));
+    expect(slider.min, 0);
+    expect(slider.max, 100);
+    expect(slider.value, 65);
+
+    final rect = tester.getRect(sliderOf('项目背景图透明度'));
+    await tester.tapAt(Offset(rect.left + 1, rect.center.dy));
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(PrefKeys.glassCardBackgroundOpacity), 0);
+    expect(
+      container.read(uiSettingsProvider).glassCardBackgroundOpacity,
+      0,
+    );
+  });
 }
