@@ -260,4 +260,46 @@ void main() {
       );
     });
   });
+
+  group('列表-详情右栏宽度（书架/发现/RSS 2b-2c）', () {
+    test('可用宽 < 744 返回 0（不占位）', () {
+      expect(resolveListDetailRightWidth(600), 0);
+      expect(resolveListDetailRightWidth(743.9), 0);
+    });
+
+    test('744 起左 360 + 间距 24 + 右 360', () {
+      expect(resolveListDetailRightWidth(744), 360);
+    });
+
+    test('左栏按可用宽 40% 增长，右栏占剩余且 ≥360', () {
+      // 840：左 360（40% 不足最小宽，取 360），右 456
+      expect(resolveListDetailRightWidth(840), 456);
+      // 1000：左 400，右 576
+      expect(resolveListDetailRightWidth(1000), 576);
+      // 1280：左 512，右 744
+      expect(resolveListDetailRightWidth(1280), 744);
+      for (final width in [744.0, 800.0, 900.0, 1280.0, 1600.0]) {
+        final right = resolveListDetailRightWidth(width);
+        expect(right, greaterThanOrEqualTo(kMultiPaneRightWidth));
+      }
+    });
+
+    test('无限/非有限宽度返回 0', () {
+      expect(resolveListDetailRightWidth(double.infinity), 0);
+      expect(resolveListDetailRightWidth(double.nan), 0);
+    });
+
+    test('自定义间距/最小宽度按同一口径计算', () {
+      // 360+16+300=676 下限；700 时左 360，右 324
+      expect(
+        resolveListDetailRightWidth(
+          700,
+          leftWidth: 360,
+          rightWidth: 300,
+          gap: 16,
+        ),
+        324,
+      );
+    });
+  });
 }
