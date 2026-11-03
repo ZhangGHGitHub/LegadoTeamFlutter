@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.448] - 2026-11-04
+
+### Added
+- [UI] 设置主页新增「AI 设置」「翻译设置」「实验室」入口及占位页，明确标注暂未支持；无输入/开关/网络，不制造可用假象。
+
 ## [2.0.447] - 2026-11-04
 
 ### Added
