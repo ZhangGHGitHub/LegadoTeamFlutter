@@ -104,6 +104,8 @@ Widget wrapReader(ProviderContainer container, {RouteFactory? onGenerateRoute}) 
       home: Scaffold(
         body: Stack(
           children: [
+            ReaderTopBar(onAddBookmark: () {}),
+            // [批3a] 面板顶栏已承载换源动作；置于上层保证按钮可命中
             ReaderMenuPanel(
               visible: true,
               onBack: () {},
@@ -116,7 +118,6 @@ Widget wrapReader(ProviderContainer container, {RouteFactory? onGenerateRoute}) 
               onToggleAutoPage: () {},
               onOpenReplaceRules: () {},
             ),
-            ReaderTopBar(onAddBookmark: () {}),
           ],
         ),
       ),
@@ -242,20 +243,13 @@ RouteFactory pageContractRoute(Object? result, String sourceName) => (
   );
 };
 
-/// 菜单面板中部快捷「换源」钮（面板内第二处换源入口：顶栏行 IconButton
-/// 在先、中部快捷钮在后；位于屏幕中部，与顶栏按钮无命中区重叠）
-Finder get _panelMidChangeSource => find
-    .descendant(
-      of: find.byType(ReaderMenuPanel),
-      matching: find.byTooltip('换源'),
-    )
-    .last;
-
-/// 顶栏「换源」钮（顶栏树中唯一）
-Finder get _topBarChangeSource => find.descendant(
-  of: find.byType(ReaderTopBar),
-  matching: find.byTooltip('换源'),
+/// 菜单面板顶栏「换源」动作（[批3a] 中部快捷钮已移除，短按直连换源流程，
+/// 长按弹出换书源/单章换源二级菜单——双入口回归仍覆盖同一动作的两条路径）
+Finder get _panelChangeSource => find.descendant(
+  of: find.byType(ReaderMenuPanel),
+  matching: find.byKey(const ValueKey('reader-topbar-action-change_source')),
 );
+
 
 void main() {
   setUpAll(registerFallbacks);
@@ -294,13 +288,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // A = 菜单面板中部快捷「换源」
-      await tester.tap(_panelMidChangeSource);
+      // A = 面板顶栏「换源」短按（直连换源流程）
+      await tester.tap(_panelChangeSource);
       await tester.pumpAndSettle(); // A 路由自动 pop + 重载启动（getBook#1 悬置 8s）
       expect(find.text('正在更换书源…'), findsOneWidget);
 
-      // B = 顶栏「换源」→「换书源」（A 在途时触发）
-      await tester.tap(_topBarChangeSource);
+      // B = 同一动作长按 →「换书源」（A 在途时触发第二入口）
+      await tester.longPress(_panelChangeSource);
       await tester.pumpAndSettle(); // 底部菜单弹层入场
       await tester.tap(find.text('换书源'));
       await tester.pumpAndSettle(); // B 路由自动 pop +（改造前）第二次重载启动

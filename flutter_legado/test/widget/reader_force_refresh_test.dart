@@ -518,7 +518,9 @@ void main() {
       // 面板仍完整渲染（退出/更多/快捷钮保留，非整体隐藏）
       expect(find.byTooltip('退出阅读'), findsOneWidget);
       expect(find.byTooltip('更多'), findsOneWidget);
-      expect(find.byTooltip('搜索'), findsOneWidget);
+      // [批3a] 顶栏中部快捷钮已移除，全文搜索由底栏图标网格承载
+      expect(find.byTooltip('全文搜索'), findsOneWidget);
+      expect(find.byTooltip('搜索'), findsNothing);
       await tester.pumpAndSettle();
     });
   });

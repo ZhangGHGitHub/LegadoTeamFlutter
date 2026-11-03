@@ -77,11 +77,24 @@ void main() {
     await tester.pump();
     expect(find.text('21'), findsOneWidget);
 
-    // 页签切换 → 菜单页（自动翻页/点击区域）
+    // [批3a] 页签切换 → 菜单系统三子页（全局/底栏布局/顶栏布局）；
+    // 原自动翻页/点击区域/亮度三卡移入「更多」弹层（下方断言）。
     await tester.tap(find.text('菜单'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
-    expect(find.text('自动翻页'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('reader-menu-tab-0')),
+      findsOneWidget,
+      reason: '菜单页内嵌三段 Tab：全局',
+    );
+    expect(find.text('底栏布局'), findsOneWidget);
+    expect(find.text('顶栏布局'), findsOneWidget);
+    expect(find.text('工具栏样式'), findsOneWidget);
+    expect(
+      find.text('自动翻页'),
+      findsNothing,
+      reason: '自动翻页已移入「更多」，不再占据菜单页',
+    );
 
     // [更多全高形态 | Qoder UI] 点「更多」页签 → 全高独立弹层覆盖打开
     //（把手 + 居中标题「更多」，无底部页签栏——对齐参考版形态）
@@ -94,6 +107,10 @@ void main() {
     expect(find.text('行距'), findsOneWidget);
     expect(find.text('字重'), findsOneWidget);
     expect(find.text('共用布局'), findsOneWidget);
+    // [批3a] 原「菜单」页三卡移入 more 页，功能不丢失
+    expect(find.text('自动翻页'), findsWidgets);
+    expect(find.text('点击区域'), findsOneWidget);
+    expect(find.text('亮度控制'), findsOneWidget);
     // 全高几何：弹层高度 ≈ 屏高 92%
     final sheetHeight = tester
         .getTopLeft(find.byWidget(
