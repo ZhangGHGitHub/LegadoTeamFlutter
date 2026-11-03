@@ -15,6 +15,18 @@ enum IncomingUriKind {
   none,
 }
 
+/// 应用内路由深链（M3 我的页：`legado://dict` / `legado://dict_rule`）
+///
+/// 与导入深链（`legado://import/<type>?src=...`）区分：路由深链只带 host，
+/// 目标是应用内命名页面，不涉及网络拉取与关联导入确认框。
+enum LegadoRouteDeepLink {
+  /// 字典查询页（`AppRoutes.dict`）
+  dict,
+
+  /// 字典规则管理页（`AppRoutes.dictRule`）
+  dictRule,
+}
+
 /// 外部文件分流类型（批16d；对齐原版 FileAssociationViewModel.dispatch）
 ///
 /// 原版对非压缩包文件先做 JSON 内容嗅探，再按书籍后缀判定，最后落到
@@ -96,6 +108,42 @@ class LegadoDeepLink {
       return IncomingUriKind.bookFile;
     }
     return IncomingUriKind.none;
+  }
+
+  /// [M3 我的页 | 2026-11-03] 识别应用内路由深链
+  ///
+  /// 支持 `legado://dict`、`legado://dict_rule` 及 `yuedu://` 同构形式：
+  /// - host 级（`legado://dict`）与三斜杠空 host（`legado:///dict`）；
+  /// - 查询串忽略（`?src=...` 即使存在也不改变路由语义）；
+  /// - scheme/host 大小写不敏感（`Uri` 解析已归一）；
+  /// - **不**匹配 `legado://import/...`（path 非空）与未知 host，
+  ///   返回 null 后交回既有导入分流，导入语义不变。
+  static LegadoRouteDeepLink? tryParseRoute(String url) {
+    final trimmed = url.trim();
+    if (!isImportScheme(trimmed)) return null;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return null;
+    final host = uri.host;
+    if (host.isEmpty) {
+      // legado:///dict → host 为空、pathSegments = ['dict']
+      final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      if (segments.length != 1) return null;
+      return _routeByName(segments.single);
+    }
+    // host 级路由深链不接受额外路径；legado://import/xxx 归导入分流
+    if (uri.path.isNotEmpty && uri.path != '/') return null;
+    return _routeByName(host);
+  }
+
+  static LegadoRouteDeepLink? _routeByName(String name) {
+    switch (name.toLowerCase()) {
+      case 'dict':
+        return LegadoRouteDeepLink.dict;
+      case 'dict_rule':
+        return LegadoRouteDeepLink.dictRule;
+      default:
+        return null;
+    }
   }
 
   /// 取路径/文件名后缀（小写、不含点；无后缀返回空串）

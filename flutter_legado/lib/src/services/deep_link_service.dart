@@ -56,6 +56,17 @@ class DeepLinkService {
   bool _attached = false;
   String? _lastHandled;
 
+  /// [M3 我的页 | 2026-11-03] 最近一次派发的应用内路由深链（push 存续期
+  /// 去重；页面 pop 后清空，允许再次打开）。冷启动 `getInitialLink` 与
+  /// `onNewIntent` 双投递同一 URI 时不会叠栈。
+  String? _lastRoutedDeepLink;
+
+  /// [M3] 应用内路由深链 → 命名路由映射
+  static const Map<LegadoRouteDeepLink, String> _routeDeepLinkTargets = {
+    LegadoRouteDeepLink.dict: AppRoutes.dict,
+    LegadoRouteDeepLink.dictRule: AppRoutes.dictRule,
+  };
+
   /// P1-4：最近一次处理的文件 URI（弹窗存续期去重，语义同 [_lastHandled]）
   String? _lastHandledFile;
 
@@ -298,7 +309,19 @@ class DeepLinkService {
   }
 
   /// 处理深链或平台桥 openUrl 转来的 legado/yuedu URI
+  ///
+  /// [M3 我的页 | 2026-11-03] 分流顺序：**应用内路由深链优先**
+  ///（`legado://dict` / `legado://dict_rule` → 对应页面），其余仍按既有
+  /// 导入语义走关联导入确认框（`legado://import/...` 与未知 host 不变）。
   Future<void> handleUrl(String url) async {
+    final routeTarget = LegadoDeepLink.tryParseRoute(url);
+    if (routeTarget != null) {
+      final routeName = _routeDeepLinkTargets[routeTarget];
+      if (routeName != null) {
+        await _handleRouteDeepLink(url, routeName);
+        return;
+      }
+    }
     if (!LegadoDeepLink.isImportScheme(url)) return;
     if (_lastHandled == url) return;
     _lastHandled = url;
@@ -323,6 +346,69 @@ class DeepLinkService {
       url: src.isEmpty ? null : src,
       type: type,
     ).whenComplete(() => _lastHandled = null);
+  }
+
+  /// [M3 我的页 | 2026-11-03] 应用内路由深链导航（`legado://dict` 等）
+  ///
+  /// 冷启动与热路径共用：
+  /// - 冷启动时闪屏 `/welcome` 仍可能在栈顶，`pushReplacementNamed(home)`
+  ///   会替换当时栈顶路由（与分享文本/崩溃弹窗同类竞态）。此处复用
+  ///   [isSplashVisible] 逐帧等待（上限 [_maxSplashWaitFrames]，语义同
+  ///   [handleSharedText]），闪屏退出后再 push；
+  /// - Navigator 未装配时逐帧重试（与 [handleUrl] 既有行为一致）；
+  /// - 去重：同一 URI 在本次 push 存续期（直到页面 pop）只导航一次；
+  ///   页面 pop 后清空，用户再次触发可重新打开。
+  Future<void> _handleRouteDeepLink(String url, String routeName) =>
+      _handleRouteDeepLinkWhenUiReady(url, routeName, 0);
+
+  Future<void> _handleRouteDeepLinkWhenUiReady(
+    String url,
+    String routeName,
+    int frame,
+  ) async {
+    final normalized = url.trim();
+    if (_lastRoutedDeepLink == normalized) return;
+    final nav = navigatorKey?.currentState;
+    if (nav == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleRouteDeepLinkWhenUiReady(url, routeName, frame + 1);
+      });
+      return;
+    }
+    final splashVisible = isSplashVisible?.call() ?? false;
+    if (splashVisible && frame < _maxSplashWaitFrames) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleRouteDeepLinkWhenUiReady(url, routeName, frame + 1);
+      });
+      // addPostFrameCallback 本身不排帧：闪屏期须显式请求下一帧，
+      // 否则等待链会停摆到下一次用户交互（同 handleSharedText）
+      WidgetsBinding.instance.scheduleFrame();
+      return;
+    }
+    _lastRoutedDeepLink = normalized;
+    try {
+      final pushed = nav.pushNamed(routeName);
+      // 页面 pop 后清空去重标记；不 await，避免阻塞深链调用方
+      unawaited(
+        pushed.whenComplete(() {
+          if (_lastRoutedDeepLink == normalized) {
+            _lastRoutedDeepLink = null;
+          }
+        }),
+      );
+    } catch (e) {
+      if (_lastRoutedDeepLink == normalized) _lastRoutedDeepLink = null;
+      debugPrint('[DeepLink] 路由深链导航失败（$routeName）：$e');
+    }
+  }
+
+  /// 测试用：清空深链去重标记（不改变通道订阅/装配状态）
+  @visibleForTesting
+  void debugResetDedup() {
+    _lastHandled = null;
+    _lastHandledFile = null;
+    _lastHandledShared = null;
+    _lastRoutedDeepLink = null;
   }
 
   /// P1-4 / 批16d：处理外部文件 URI（content:// / file://）

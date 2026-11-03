@@ -128,10 +128,16 @@
 
 - **M1 已完成并设备验收**（2026-11-03，版本 2.0.438+439）：Web 服务置顶+复制/打开、规则组 5 项、服务与工具、设置并入其他、AI 聊天占位、字典单入口、主题模式移出；回修地址刷新/多网卡过滤/启动不阻塞。门禁 flutter analyze 0、flutter test 3948 通过 + 1 skipped。设备 **9/10 PASS**（唯一 P2：外部 `legado://dict*` URI 非既有深链契约；应用内 `/dict`、`/dict_rule` 正常）。
 - **M2 已完成并设备验收 PASS**（2026-11-03，版本 2.0.439+440）：Web 服务块替换为无标题 `IosGroup` + `SettingSwitchRow`（24dp 裸图标、行内开关、整行可点；busy 时行禁用 + 轻量 spinner），移除 48dp 图标槽/整卡描边/Ink 底色/整卡语义；运行中「复制地址」「在浏览器中打开」右对齐并随停止收起；规则/其他组图标对齐参考版。门禁：flutter analyze 0、flutter test 3953 通过 + 1 skipped、release APK 191.0MB；设备 P1/P2=0，P3：Web 图标地球、动作行组外、大字体换行；busy 停止方向 <120ms 未捕获稳定帧。
-- **M2 视觉偏差登记**：
-  1. **动作行组外**：参考版运行中按钮 Row 位于 `SplicedColumnGroup` 内（非卡片）；本仓库 `IosGroup` 对每个 child 强制套 surfaceContainerLow 行卡，无法表达「组内无卡片行」，故置于组外、垂直间距 4dp 贴邻（按钮间距 12dp、右对齐与参考版一致）；不在开关行手势/语义区域内，不误触开关。
-  2. **容器背景/边框组合**：分组开启「容器背景图 + 自定义边框」时，组外动作行不参与分组容器的圆角裁剪与边框包裹（参考版动作行在容器内）；后续 `IosGroup` 若提供「无卡片 child」能力，可无损回移组内。
-- **M3（边缘一致性）**：待开始。
+- **M2 视觉偏差登记（M3 已闭环）**：
+  1. ~~**动作行组外**~~：M2 时 `IosGroup` 对每个 child 强制套 surfaceContainerLow 行卡，无法表达「组内无卡片行」，动作行暂置组外（4dp 贴邻、按钮间距 12dp、右对齐）。**M3 已通过 `IosGroup(footer:)` 回移组内**（容器内、不套行卡、不参与分隔线/2dp 行距），见下方 M3 记录。
+  2. ~~**容器背景/边框组合**~~：M2 时组外动作行不参与分组容器的圆角裁剪与边框包裹。**M3 footer 处于 `ios-group-frame` → ClipRRect → surface Column 内**，容器背景图、圆角裁剪与 `foregroundDecoration` 边框一并包裹动作行（测试断言覆盖）。
+- **M3（边缘一致性）已完成（2026-11-03，全栈工程师 + UI；版本号/双日志由主代理收尾）**：
+  - **IosGroup footer 能力**：新增可选 `footer` 与 `footerPadding`（默认 `EdgeInsets.fromLTRB(16, 12, 16, 12)`：水平 16dp 对齐行内容/参考版 `WebServiceSettingBlock`，垂直 12dp 满足 8–12dp 要求）。footer 位于最后一行下方、同一容器内（背景图图层之上、圆角裁剪内、边框之下）；**不**套行卡 Material、**不**乘 `containerOpacity`、**不**参与行分隔线与 2dp 行距；`flat` 模式同样在末尾渲染；默认 null 不占位（既有调用零影响）。
+  - **Web 动作行入组**：「复制地址 / 在浏览器中打开」从组外移入 Web 服务 `IosGroup(footer: ...)`，右对齐 Wrap（间距 12dp、大字体换行）；停止态/地址为空时 footer=null；仍不属于开关行手势/语义子树，点按不误触开关。
+  - **外部深链映射**：`DeepLinkService.handleUrl` 在导入分流前识别 `legado://dict`、`legado://dict_rule`（含 `yuedu://`、带/不带三斜杠 `legado:///dict`、末尾斜杠，query 忽略、大小写不敏感），分别 `pushNamed(AppRoutes.dict / dictRule)`；`legado://import/...` 与未知 host 仍走原有导入确认框。冷启动经 `isSplashVisible` 等待闪屏退出（上限 90 帧，与分享文本同法），热路径 `onLink` 直接生效；同一 URI 在页面 push 存续期内去重，pop 后可再次打开。
+  - **P3 处置**：Web 图标维持 `Symbols.language_rounded`（与参考版 `Icons.Default.Web` 同为地球语义，登记不改）；大字体动作行 Wrap 换行保持（1.6 字体小屏测试无溢出）。
+  - **测试**：新增 `ios_group_footer_test.dart`（6 例：容器内/不套行卡/不分隔线/背景边框包裹/containerOpacity 不适用/flat 与默认兼容）、`deep_link_route_dispatch_test.dart`（8 例：dict/dict_rule/变体/导入不变/未知 host/去重/冷启动/热路径）、`legado_deep_link_test.dart` 补 `tryParseRoute` 4 例；`my_page_m1_test.dart` 的 M2 动作行断言更新为 M3「入组 footer」。
+  - **门禁**：`flutter analyze` 0；`flutter test` **3971 通过 + 1 skipped**（基线 3953 + 新增 18）；debug/release APK 构建通过（release 191.0MB）。
 - **M4（AI 占位）**：已并入 M1 完成。
 
 编写：ZCode 主代理 ｜ 2026-11-03

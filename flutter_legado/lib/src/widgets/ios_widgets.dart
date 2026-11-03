@@ -128,11 +128,29 @@ class IosSectionFooter extends StatelessWidget {
 /// - 分隔线：`enableItemDivider` 开启时在相邻行之间插入 PillDivider
 ///   （行间距保持 2dp，与参考版 Column spacedBy(2) + divider 子项同构）；
 ///   [flat] 模式开关开同样使用该参数化线，开关关回落既有 0.5dp 细线。
+///
+/// [M3 我的页 | full-stack-engineer + UI | 2026-11-03] 新增可选 [footer]：
+/// 参考版 `WebServiceSettingBlock` 的运行中操作按钮位于
+/// `SplicedColumnGroup` 分组 Column **内**、且不是卡片行。footer 因此：
+/// - 渲染在分组容器内部（同一背景图图层、同一圆角裁剪、同一
+///   foregroundDecoration 边框包裹），位于最后一行之下；
+/// - **不**套行卡（不包 surfaceContainerLow Material、不乘
+///   containerOpacity）、**不**参与行分隔线与 2dp 行距；
+/// - 仅由 [footerPadding] 提供内边距（默认水平 16dp 与行内容对齐、垂直
+///   12dp，与参考版 `Row(padding(start/end = 16, top/bottom = 12))` 同值）。
+/// [flat] 模式无卡片面，footer 同样按 [footerPadding] 渲染在末尾。
 class IosGroup extends StatelessWidget {
   final List<Widget> children;
   final double separatorIndent;
   final EdgeInsets margin;
   final bool flat;
+
+  /// 可选分组脚注（如运行中操作按钮行）：在分组容器内、最后一行下方，
+  /// 不套行卡、不参与分隔线/2dp 行距；null 时不占位（默认）。
+  final Widget? footer;
+
+  /// footer 内边距（仅 footer 存在时生效）
+  final EdgeInsetsGeometry footerPadding;
 
   const IosGroup({
     super.key,
@@ -140,6 +158,8 @@ class IosGroup extends StatelessWidget {
     this.separatorIndent = 16,
     this.margin = const EdgeInsets.symmetric(horizontal: 0),
     this.flat = false,
+    this.footer,
+    this.footerPadding = const EdgeInsets.fromLTRB(16, 12, 16, 12),
   });
 
   @override
@@ -181,7 +201,17 @@ class IosGroup extends StatelessWidget {
               type: MaterialType.transparency,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: rows,
+                children: [
+                  ...rows,
+                  // [M3] 扁平模式无卡片面，footer 仍按同一内边距渲染在末尾
+                  //（不插分隔线/不加行距）
+                  if (footer != null)
+                    Padding(
+                      key: const ValueKey('ios-group-footer'),
+                      padding: footerPadding,
+                      child: footer,
+                    ),
+                ],
               ),
             ),
           );
@@ -301,6 +331,16 @@ class IosGroup extends StatelessWidget {
                               const SizedBox(height: 2),
                           ],
                         ],
+                        // [M3] footer 在分组容器内、最后一行下方：位于同一
+                        // Container（背景图之上、圆角裁剪内、foregroundDecoration
+                        // 边框下），但不套行卡 Material、不插分隔线/2dp 行距。
+                        // containerOpacity 只作用于行卡 alpha，footer 无卡片面。
+                        if (footer != null)
+                          Padding(
+                            key: const ValueKey('ios-group-footer'),
+                            padding: footerPadding,
+                            child: footer,
+                          ),
                       ],
                     ),
                   ),

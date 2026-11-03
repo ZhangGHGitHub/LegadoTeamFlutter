@@ -41,11 +41,15 @@ import '../widgets/help/show_help.dart';
 /// 视觉：apple-ui-designer — iOS 分组 inset 列表、系统感图标色块、克制分隔。
 /// [M2 我的页 | 2026-11-03] 对齐参考版 `MyScreen.kt` / `WebServiceSettingBlock`：
 /// Web 服务改为无标题 `IosGroup` 内的 `SettingSwitchRow`（不再是 48dp 图标槽
-/// 大卡），运行中操作行置于组外紧邻下方；规则/其他组图标按参考版
+/// 大卡）；规则/其他组图标按参考版
 /// `Source/FindReplace/Rule/LibraryBooks/Sell/…/ExitToApp` 对齐。
+/// [M3 我的页 | 2026-11-03] 运行中「复制地址/在浏览器中打开」经
+/// `IosGroup(footer:)` 回移分组容器内（不套行卡、不参与分隔线），
+/// 容器背景图/圆角/边框一并包裹动作行。
 ///
 /// — UI 子代理 + UI ｜ 2026-08-13
-/// 修订：全栈工程师 + UI ｜ 2026-11-03（M1 信息架构 / M2 视觉对齐）
+/// 修订：全栈工程师 + UI ｜ 2026-11-03（M1 信息架构 / M2 视觉对齐 /
+/// M3 动作行入组与深链）
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
@@ -581,11 +585,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   ///   整行可点、busy 时禁用并显示轻量 spinner——与「MCP 服务」行同法）；
   /// - 开启态不再有整卡描边/Ink 底色/整卡 MergeSemantics/InkWell。
   ///
-  /// 运行中操作行的落位（登记）：参考版把按钮 Row 放在分组 Column 内（非卡片）；
-  /// 本仓库 `IosGroup` 会给每个 child 强制套 surfaceContainerLow 行卡
-  /// （ios_widgets.dart），无法表达「组内无卡片行」，故按任务约定放在
-  /// `IosGroup` 组外紧邻下方：右对齐、与开关行视觉贴邻，且不属于开关行
-  /// 手势/语义区域，点击不会误触开关。
+  /// 运行中操作行的落位（M3 更新）：参考版把按钮 Row 放在分组 Column 内
+  /// （非卡片、`AnimatedVisibility` 展开）。M2 时 `IosGroup` 会给每个 child
+  /// 强制套行卡，只能放组外；M3 起 `IosGroup` 支持 `footer`（容器内、
+  /// 不套行卡、不参与分隔线/2dp 行距），故按要求回移组内：
+  /// - footer 与开关行同处一个分组容器（背景图/圆角/边框一并包裹）；
+  /// - 右对齐 Wrap（`WrapAlignment.end`、间距 12dp、大字体换行）防小屏溢出；
+  /// - 不在开关行手势/语义子树内，点按不会误触开关。
   ///
   /// [M1 我的页 | 2026-11-03] 运行中副题显示可访问地址（参考版
   /// `MyUiState.webServiceAddress`）；保活/通知降级提示保留。
@@ -609,40 +615,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         : enabled && _webNotificationDegraded
         ? '$baseSubtitle · 通知权限未授予，前台通知不可见'
         : baseSubtitle;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        IosGroup(
-          margin: const EdgeInsets.only(top: 8),
-          children: [
-            SettingSwitchRow(
-              // busy：行禁用（onChanged = null）+ 轻量 spinner 取代图标，
-              // 与「MCP 服务」行同法；开关本身保留可见但灰置。
-              leading: _webServiceBusy
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      Symbols.language_rounded,
-                      size: 24,
-                      color: cs.onSurfaceVariant,
-                    ),
-              title: 'Web 服务',
-              subtitle: subtitle,
-              value: _webService,
-              onChanged: _webServiceBusy ? null : _toggleWebService,
-            ),
-          ],
-        ),
-        // [M2] 运行中操作（对齐参考版 WebServiceSettingBlock 的展开按钮）：
-        // 在 IosGroup 组外紧邻下方（落位原因见方法注释），右对齐 Wrap 防
-        // 小屏溢出；不属于开关行手势/语义区域，点按不会切换开关。
-        if (enabled && _webServiceAddress.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Align(
+    return IosGroup(
+      margin: const EdgeInsets.only(top: 8),
+      // [M3] 运行中操作行作为分组 footer：位于容器内、开关行下方；
+      // 停止态 footer 为 null（不占位、不残留分隔线）。
+      footer: enabled && _webServiceAddress.isNotEmpty
+          ? Align(
               alignment: Alignment.centerRight,
               child: Wrap(
                 alignment: WrapAlignment.end,
@@ -663,8 +641,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   ),
                 ],
               ),
-            ),
-          ),
+            )
+          : null,
+      children: [
+        SettingSwitchRow(
+          // busy：行禁用（onChanged = null）+ 轻量 spinner 取代图标，
+          // 与「MCP 服务」行同法；开关本身保留可见但灰置。
+          leading: _webServiceBusy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  // [M3 P3] 与参考版 `Icons.Default.Web` 同为地球语义
+                  //（Material Symbols language = 地球仪），登记不改。
+                  Symbols.language_rounded,
+                  size: 24,
+                  color: cs.onSurfaceVariant,
+                ),
+          title: 'Web 服务',
+          subtitle: subtitle,
+          value: _webService,
+          onChanged: _webServiceBusy ? null : _toggleWebService,
+        ),
       ],
     );
   }
