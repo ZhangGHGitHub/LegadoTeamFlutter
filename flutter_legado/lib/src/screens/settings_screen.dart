@@ -22,6 +22,7 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/navigation/my_pane_scope.dart';
 
 /// 我的页面（枢纽菜单）
 ///
@@ -669,6 +670,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
+  /// [设置批2b-2b] 我的页入口导航：双栏时推进右栏 nested Navigator，
+  /// 单栏/独立页时保持既有 root push。
+  void _openMyEntry(String route) {
+    final scope = context.getInheritedWidgetOfExactType<MyPaneScope>();
+    if (scope != null &&
+        scope.isMultiPane &&
+        scope.controller.pushNamed(route)) {
+      return;
+    }
+    Navigator.pushNamed(context, route);
+  }
+
+  /// 我的页可导航行（双栏时按右栏栈顶路由高亮）
+  Widget _myEntry({
+    IconData? icon,
+    required String title,
+    String? subtitle,
+    required String route,
+  }) {
+    final scope = MyPaneScope.maybeOf(context);
+    final selected = scope != null &&
+        scope.isMultiPane &&
+        scope.controller.selectedRoute == route;
+    return IosListTile(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      selected: selected,
+      onTap: () => _openMyEntry(route),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // [MD3 LargeTitle] 主 Tab 根页可折叠大标题（UI_MD3_PLAN.md Batch 1）
@@ -697,28 +730,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               IosGroup(
                 separatorIndent: 62,
                 children: [
-                  IosListTile(
+                  _myEntry(
                     // [M2] 图标对齐参考版 ClickableSettingItem：Source
                     icon: Symbols.source_rounded,
                     title: '书源管理',
                     subtitle: '新建、导入、编辑或管理书源',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.sources),
+                    route: AppRoutes.sources,
                   ),
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.find_replace_rounded,
                     title: '替换净化',
                     subtitle: '配置替换净化规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.replaceRules),
+                    route: AppRoutes.replaceRules,
                   ),
-                  IosListTile(
+                  _myEntry(
                     // [M2] 图标对齐参考版：Rule
                     icon: Symbols.rule_rounded,
                     title: 'TXT 目录规则',
                     subtitle: '配置 TXT 目录规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.txtTocRules),
+                    route: AppRoutes.txtTocRules,
                   ),
                   // [M1 字典规则合并 | 2026-11-03 用户裁决] 原「字典规则」
                   // （查询页）+「规则管理」（管理页）两个入口合并为单入口：
@@ -726,21 +756,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   // PrefClickEvent.OpenDictRule）；查询页 AppRoutes.dict 保留
                   // 注册与深链，从管理页顶栏「字典查询」进入（见
                   // dict_rule_screen.dart）。
-                  IosListTile(
+                  _myEntry(
                     // [M2] 图标对齐参考版：LibraryBooks
                     icon: Symbols.library_books_rounded,
                     title: '字典规则',
                     subtitle: '管理字典规则，查询词典释义',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.dictRule),
+                    route: AppRoutes.dictRule,
                   ),
-                  IosListTile(
+                  _myEntry(
                     // [M2] 图标对齐参考版：Sell
                     icon: Symbols.sell_rounded,
                     title: '高亮标签规则',
                     subtitle: '自动高亮标注规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.highlightRules),
+                    route: AppRoutes.highlightRules,
                   ),
                 ],
               ),
@@ -752,12 +780,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               IosGroup(
                 separatorIndent: 62,
                 children: [
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.schedule_rounded,
                     title: '定时任务',
                     subtitle: '管理按计划执行的 JavaScript 任务',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.autoTasks),
+                    route: AppRoutes.autoTasks,
                   ),
                   SettingSwitchRow(
                     icon: Symbols.autorenew_rounded,
@@ -794,11 +821,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 children: [
                   // [M1 我的页 | 2026-11-03 用户裁决] AI 聊天先占位：
                   // 入口 + 明确「暂未支持」页面壳，不接任何 LLM。
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.auto_awesome_rounded,
                     title: 'AI 聊天',
                     subtitle: '暂未支持，待 Rust 能力接入',
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.aiChat),
+                    route: AppRoutes.aiChat,
                   ),
                   // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页集中化：我的页
                   // 原备份与恢复/主题设置/其他设置三 tile 收敛为单一「设置」
@@ -806,48 +833,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   // — Qoder
                   // [M1 我的页 | 2026-11-03] 移除独立「设置」分组，入口并入
                   // 「其他」组（对齐参考版顺序：AI 聊天 → 设置 → 书签 …）
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.settings_rounded,
                     title: '设置',
                     subtitle: '外观 / 高级 / 阅读界面 / 备份 / 缓存',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.settingsHome),
+                    route: AppRoutes.settingsHome,
                   ),
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.bookmark_rounded,
                     title: '书签',
                     subtitle: '所有书签',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.bookmarks),
+                    route: AppRoutes.bookmarks,
                   ),
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.history_rounded,
                     title: '阅读记录',
                     subtitle: '阅读时间记录',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.readRecord),
+                    route: AppRoutes.readRecord,
                   ),
                   // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 补「缓存管理」入口
                   //（对齐参考版我的页其它组；页面复用既有离线缓存页
                   // OfflineCacheScreen，此前入口仅在书架菜单「离线缓存」）— Qoder
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.download_rounded,
                     title: '缓存管理',
                     subtitle: '书籍下载任务与缓存进度',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.offlineCache),
+                    route: AppRoutes.offlineCache,
                   ),
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.folder_rounded,
                     title: '文件管理',
                     subtitle: '管理私有文件夹的文件',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.fileManage),
+                    route: AppRoutes.fileManage,
                   ),
-                  IosListTile(
+                  _myEntry(
                     icon: Symbols.info_rounded,
                     title: '关于',
-                    onTap: () => Navigator.pushNamed(context, AppRoutes.about),
+                    route: AppRoutes.about,
                   ),
                   IosListTile(
                     // [M2] 图标对齐参考版：AutoMirrored ExitToApp

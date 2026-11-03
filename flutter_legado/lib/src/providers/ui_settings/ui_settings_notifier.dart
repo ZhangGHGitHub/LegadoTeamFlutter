@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../constants/pref_keys.dart';
 import '../../services/settings_service.dart';
 import '../../services/theme_background_image_store.dart';
+import '../../utils/multi_pane_layout.dart';
 
 /// 顶栏按钮样式档位（对齐参考仓 TopBarButtonStyle）
 enum TopBarButtonStyle {
@@ -112,6 +113,9 @@ class UiSettingsState {
 
   /// 平板/大屏导航形态
   final TabletInterfaceMode tabletInterface;
+
+  /// 多栏布局模式（auto/landscape/always/off，参考版 multiPaneMode）
+  final MultiPaneMode multiPaneMode;
 
   /// 详情页跟随封面取色换肤
   final bool bookInfoFollowCoverColor;
@@ -267,6 +271,7 @@ class UiSettingsState {
     this.useFloatingBottomBar = false,
     this.showBottomView = true,
     this.tabletInterface = TabletInterfaceMode.auto,
+    this.multiPaneMode = MultiPaneMode.auto,
     this.bookInfoFollowCoverColor = true,
     this.bookInfoNetworkCoverBackground = 'on',
     this.bookInfoDefaultCoverBackground = 'on',
@@ -317,6 +322,7 @@ class UiSettingsState {
     bool? useFloatingBottomBar,
     bool? showBottomView,
     TabletInterfaceMode? tabletInterface,
+    MultiPaneMode? multiPaneMode,
     bool? bookInfoFollowCoverColor,
     String? bookInfoNetworkCoverBackground,
     String? bookInfoDefaultCoverBackground,
@@ -366,6 +372,7 @@ class UiSettingsState {
       useFloatingBottomBar: useFloatingBottomBar ?? this.useFloatingBottomBar,
       showBottomView: showBottomView ?? this.showBottomView,
       tabletInterface: tabletInterface ?? this.tabletInterface,
+      multiPaneMode: multiPaneMode ?? this.multiPaneMode,
       bookInfoFollowCoverColor:
           bookInfoFollowCoverColor ?? this.bookInfoFollowCoverColor,
       bookInfoNetworkCoverBackground:
@@ -486,6 +493,9 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       ),
       tabletInterface: TabletInterfaceMode.fromName(
         await _settings.getStringPref(PrefKeys.tabletInterface),
+      ),
+      multiPaneMode: MultiPaneMode.fromName(
+        await _settings.getStringPref(PrefKeys.multiPaneMode),
       ),
       bookInfoFollowCoverColor: await _settings.getBoolPref(
         PrefKeys.bookInfoFollowCoverColor,
@@ -742,6 +752,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(tabletInterface: mode);
     _sync();
     await _settings.setStringPref(PrefKeys.tabletInterface, mode.name);
+  }
+
+  /// 多栏布局模式（auto/landscape/always/off；未知值读回 auto）
+  Future<void> setMultiPaneMode(MultiPaneMode mode) async {
+    if (state.multiPaneMode == mode) return;
+    state = state.copyWith(multiPaneMode: mode);
+    _sync();
+    await _settings.setStringPref(PrefKeys.multiPaneMode, mode.name);
   }
 
   /// 详情页跟随封面取色

@@ -11,6 +11,7 @@ import '../providers/explore/explore_main_notifier.dart';
 import '../providers/explore/explore_notifier.dart';
 import '../routes.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/navigation/adaptive_my_pane.dart';
 import '../widgets/navigation/app_navigation_bars.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
@@ -20,7 +21,6 @@ import 'bookshelf_screen.dart';
 import 'explore_screen.dart';
 import 'home_tab_screen.dart';
 import 'rss_screen.dart';
-import 'settings_screen.dart';
 
 /// 首页 - 底部 Tab 导航 + 左右滑动切页
 ///
@@ -73,6 +73,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 发现页收起展开项信号（双击发现底栏项时自增）
   final ValueNotifier<int> _exploreCollapseSignal = ValueNotifier(0);
+
+  /// 「我的」双栏右栏 nested Navigator（返回键优先 pop 右栏）
+  final GlobalKey<NavigatorState> _myPaneNavigatorKey =
+      GlobalKey<NavigatorState>();
 
   DateTime? _lastTapTime;
   int _lastTapIndex = -1;
@@ -156,6 +160,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
   Future<void> _handleBack(List<MainTab> tabs) async {
+    // [设置批2b-2b] 「我的」双栏：先 pop 右栏 nested Navigator，
+    // 空栈后继续走原有「切回书架 / 双击退出」逻辑。
+    if (_currentTab == MainTab.my) {
+      final myPane = _myPaneNavigatorKey.currentState;
+      if (myPane != null && myPane.canPop()) {
+        myPane.maybePop();
+        return;
+      }
+    }
     // [批36c 源内容模式返回键归属] 内容模式的返回由宿主统一消费：
     // 发现页与首页根节点同属一个 ModalRoute，Flutter 返回处理会依次通知
     // 该路由上所有 PopScope（didPop=false），内层 PopScope 无法「消费」本次
@@ -233,7 +246,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             : const SizedBox.shrink();
       case MainTab.my:
         return _visitedTabs.contains(tab)
-            ? const SettingsScreen()
+            ? AdaptiveMyPane(
+                navigatorKey: _myPaneNavigatorKey,
+                active: _currentTab == MainTab.my,
+              )
             : const SizedBox.shrink();
     }
   }

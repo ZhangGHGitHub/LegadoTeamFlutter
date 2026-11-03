@@ -201,6 +201,16 @@ class PrefKeys {
   /// 平板/大屏导航形态：auto/always/landscape/off（参考仓默认 auto）
   static const tabletInterface = 'tabletInterface';
 
+  /// 多栏布局模式：auto/landscape/always/off（参考版
+  /// `PreferKey.multiPaneMode`，默认 auto）
+  ///
+  /// [设置批2b-2b] 判定只取当前窗口尺寸（见 `resolveMultiPane`），
+  /// 与 [tabletInterface]（导航侧栏形态）相互独立。
+  /// 备份归组已核对参考版 `BackupConfig.themePrefKeys`（263-317）：
+  /// 该键**不在** themePrefKeys 内 → 任何忽略组合下都随 appPrefs 往返；
+  /// 开关本身属窗口布局偏好，不随「忽略主题配置」过滤。
+  static const multiPaneMode = 'multiPaneMode';
+
   /// 详情页跟随封面取色换肤（参考仓 bookInfoFollowCoverColor，默认开）
   static const bookInfoFollowCoverColor = 'bookInfoFollowCoverColor';
 

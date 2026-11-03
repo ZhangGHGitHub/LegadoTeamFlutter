@@ -34,6 +34,7 @@ import '../services/theme_background_image_store.dart';
 import '../theme/md3_colors.dart';
 import '../utils/color_hex.dart';
 import '../utils/error_message.dart';
+import '../utils/multi_pane_layout.dart';
 import '../widgets/eye_protection_config_sheet.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/setting_slider_row.dart';
@@ -364,6 +365,47 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       await ref
           .read(uiSettingsProvider.notifier)
           .setTabletInterface(selected);
+    }
+  }
+
+  /// [设置批2b-2b] 多栏布局档位文案（对齐参考版 multi_pane.xml 中文条目）
+  String _multiPaneLabel(MultiPaneMode m) => switch (m) {
+        MultiPaneMode.auto => '自动（宽窗口）',
+        MultiPaneMode.landscape => '横屏开启（宽窗口）',
+        MultiPaneMode.always => '始终开启（空间足够时）',
+        MultiPaneMode.off => '关闭',
+      };
+
+  Future<void> _showMultiPanePicker() async {
+    final current = ref.read(uiSettingsProvider).multiPaneMode;
+    final selected = await showDialog<MultiPaneMode>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('多栏布局'),
+        children: [
+          for (final m in MultiPaneMode.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, m),
+              child: Row(
+                children: [
+                  Icon(
+                    current == m
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Flexible(child: Text(_multiPaneLabel(m))),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setMultiPaneMode(selected);
     }
   }
 
@@ -891,6 +933,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       title: '大屏导航形态',
                       subtitle: _tabletLabel(ui.tabletInterface),
                       onTap: _showTabletModePicker,
+                    ),
+                    // [设置批2b-2b] 多栏布局（参考版主界面组 multiPaneMode
+                    // 紧随 tabletInterface：四档 auto/landscape/always/off）
+                    IosListTile(
+                      title: '多栏布局',
+                      subtitle: _multiPaneLabel(ui.multiPaneMode),
+                      onTap: _showMultiPanePicker,
                     ),
                   ]),
 

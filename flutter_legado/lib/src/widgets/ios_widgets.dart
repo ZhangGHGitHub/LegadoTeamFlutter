@@ -437,6 +437,9 @@ class IosListTile extends StatelessWidget {
   /// 行是否可用（同 ListTile.enabled：false 时文字/图标灰显且不可点）
   final bool enabled;
 
+  /// 选中态（双栏「我的」左栏高亮当前入口；默认 false 保持原样）
+  final bool selected;
+
   /// 行高密度（透传 ListTile.dense；null 走 ListTileTheme）
   final bool? dense;
 
@@ -457,6 +460,7 @@ class IosListTile extends StatelessWidget {
     this.showChevron = true,
     this.onTap,
     this.enabled = true,
+    this.selected = false,
     this.dense,
     this.contentPadding,
   });
@@ -523,6 +527,12 @@ class IosListTile extends StatelessWidget {
       trailing: trailing,
       onTap: onTap,
       enabled: enabled,
+      selected: selected,
+      // [设置批2b-2b] 双栏左栏选中高亮：容器行卡自带底色，选中只叠一层
+      // 低透明度 secondaryContainer，不改变行高/分隔线布局。
+      selectedTileColor: selected
+          ? scheme.secondaryContainer.withValues(alpha: 0.45)
+          : null,
       dense: dense,
       contentPadding: contentPadding,
     );

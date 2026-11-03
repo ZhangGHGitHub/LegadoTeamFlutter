@@ -210,6 +210,9 @@ class RestoreIgnorePrefs {
     // 组合下都随 appPrefs 完整往返。navIcon* 是设备本地路径，跨设备恢复后
     // 文件不存在时由 NavSpecIcon 回退内置图标（参考版 AsyncImage 同口径），
     // 不因此改变备份范围 — 全栈工程师
+    // [设置批2b-2b] multiPaneMode 同样**刻意不加入**：参考版
+    // BackupConfig.themePrefKeys 未收录，属窗口布局偏好，任何忽略组合下
+    // 都随 appPrefs 往返 — 全栈工程师
   };
 
   /// 封面规则相关键（对齐 BackupConfig.coverPrefKeys）
