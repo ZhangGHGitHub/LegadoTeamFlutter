@@ -1682,6 +1682,27 @@ Future<bool> saveImageCache({
 Future<String?> getImageCache({required String bookUrl, required String url}) =>
     RustLib.instance.api.crateFfiFfiGetImageCache(bookUrl: bookUrl, url: url);
 
+/// 删除漫画书不在「已读保留窗口」内的图片缓存（批9b-3，API_CONTRACT §2.46）
+///
+/// 对齐原版 `BookHelp.clearComicCache`：窗口
+/// `[dur_index - retain, dur_index + pre_download]` 内的章节正文
+/// （`cached_chapters`）解析 `<img src>` 并以章节 URL 绝对化，按
+/// `md5_16(url).suffix` 组成保留集合，删除本书 `images/` 下集合外的
+/// 直接普通文件。`retain <= 0` / 非图片书 / 窗口内任一章节缺正文 /
+/// 保留集合为空 → 返回 0（不清理）；DB/IO 失败降级 0，不抛异常。
+/// 返回实际删除文件数。
+Future<int> retainComicImages({
+  required String bookUrl,
+  required int durIndex,
+  required int retain,
+  required int preDownload,
+}) => RustLib.instance.api.crateFfiFfiRetainComicImages(
+  bookUrl: bookUrl,
+  durIndex: durIndex,
+  retain: retain,
+  preDownload: preDownload,
+);
+
 /// 查询音频章节是否已缓存（B1，API_CONTRACT §2.47）
 ///
 /// 按原版键规则 `md5Encode16(chapterUrl.ifBlank { chapterTitle })` 在

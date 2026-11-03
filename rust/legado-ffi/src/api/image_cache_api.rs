@@ -23,11 +23,19 @@
 //!   不抛异常——缓存是加速器不是数据源，失败必须不影响在线加载（对齐原版
 //!   saveImage catch 仅记日志语义）。
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
+
+use legado_core::cache_book::CachedChapter;
+use legado_core::models::BookChapter;
+use legado_db::{BookChapterRepository, BookRepository, CacheBookRepository};
+use legado_parser::AnalyzeUrl;
+
+use crate::db_state::with_database;
 
 /// 图片缓存磁盘目录环境变量名（测试隔离用，非空即覆盖）
 pub const CACHE_DIR_ENV: &str = "LEGADO_IMAGE_CACHE_DIR";
@@ -54,6 +62,12 @@ static WRITE_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// 读盘失败一次性告警
 static READ_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// 保留清理删除失败一次性告警（单个文件失败不阻断后续清理）
+static RETAIN_DELETE_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// 保留清理 DB/整体失败一次性告警（避免逐章翻页刷屏）
+static RETAIN_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// 回落系统 temp 目录时的一次性告警（对齐 cache_store [`DEFAULT_DIR_WARNED`] 先例，
 /// 契约 §1.6.1/§2.46「未注入时回落 `<temp_dir>/legado-image-cache`（一次性告警）」）
@@ -175,12 +189,20 @@ fn image_suffix(url: &str) -> String {
 /// `md5_mid16` = MD5 小写 hex 的 `[8..24]` 中段 16 字符（原版
 /// `MD5Utils.md5Encode16` = `substring(8, 24)`，逐字节对齐）。
 fn image_file_path(book_url: &str, url: &str) -> PathBuf {
+    image_dir(book_url).join(cache_file_name(url))
+}
+
+/// 图片缓存文件名（原版 `MD5Utils.md5Encode16(url) + "." + getImageSuffix(url)`）
+///
+/// 抽成单一构造器，保证「读/写路径」与「保留窗口保留集合」逐字节一致。
+fn cache_file_name(url: &str) -> String {
     let hex = format!("{:x}", md5::compute(url));
-    let mid16 = &hex[8..24];
-    cache_root()
-        .join(book_dir_name(book_url))
-        .join(IMAGES_DIR)
-        .join(format!("{mid16}.{}", image_suffix(url)))
+    format!("{}.{}", &hex[8..24], image_suffix(url))
+}
+
+/// 本书图片缓存目录 `{root}/{book_dir_name(bookUrl)}/images`
+fn image_dir(book_url: &str) -> PathBuf {
+    cache_root().join(book_dir_name(book_url)).join(IMAGES_DIR)
 }
 
 /// 写入图片缓存（对齐原版 `BookHelp.writeImage` L399）
@@ -237,6 +259,249 @@ pub fn get_image_cache(book_url: &str, url: &str) -> Option<Vec<u8>> {
                 );
             }
             None
+        }
+    }
+}
+
+// ─── 漫画已读窗口图片保留（批9b-3，契约 §2.46）─────────────────────────────────
+
+/// HTML `<img ...>` 标签（大小写不敏感；`[^>]*` 天然跨行）
+static IMG_TAG_RE: OnceLock<regex::Regex> = OnceLock::new();
+
+/// `<img>` 标签内图片地址属性（同时匹配 `src`/`data-src`/`data-original`；
+/// 单/双引号与无引号三态）——与 Dart `comicImgSrcRegex` 的读取面保持超集，
+/// 宁可多保留（不误删阅读器可能已缓存的图片）也不漏解析。
+static IMG_SRC_ATTR_RE: OnceLock<regex::Regex> = OnceLock::new();
+
+/// 从章节正文解析图片 URL（标签内地址原样；无 `<img>` 时回退图片 URL 行）
+///
+/// 不做 HTML 实体解码：阅读器缓存键使用正文原始 URL 字符串（含 `&amp;`），
+/// 此处必须同源，否则 md5 文件名对不上。
+fn extract_image_urls(content: &str) -> Vec<String> {
+    if content.trim().is_empty() {
+        return Vec::new();
+    }
+    let tag_re = IMG_TAG_RE
+        .get_or_init(|| regex::Regex::new(r"(?is)<img\b[^>]*>").expect("img 标签正则必须合法"));
+    let attr_re = IMG_SRC_ATTR_RE.get_or_init(|| {
+        regex::Regex::new(
+            r#"(?is)(?:^|[\s/])(?:src|data-src|data-original)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))"#,
+        )
+        .expect("img 地址属性正则必须合法")
+    });
+
+    let mut urls = Vec::new();
+    for tag in tag_re.find_iter(content) {
+        for caps in attr_re.captures_iter(tag.as_str()) {
+            let value = caps
+                .get(1)
+                .or_else(|| caps.get(2))
+                .or_else(|| caps.get(3))
+                .map(|m| m.as_str().trim())
+                .unwrap_or("");
+            if !value.is_empty() {
+                urls.push(value.to_string());
+            }
+        }
+    }
+    if urls.is_empty() {
+        // 兜底：部分漫画源正文就是逐行图片 URL（与 Dart
+        // `parseComicImageUrls` 的 line 回退同口径）
+        urls.extend(
+            content
+                .lines()
+                .map(str::trim)
+                .filter(|line| line.starts_with("http"))
+                .filter(|line| looks_like_image_url(line))
+                .map(str::to_string),
+        );
+    }
+    urls
+}
+
+/// 是否「像图片 URL」（对齐 Dart `looksLikeImageUrl` 的判定集合）
+fn looks_like_image_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    if [".m3u8", ".mp4", ".flv", ".mkv", ".webm"]
+        .iter()
+        .any(|ext| lower.contains(ext))
+    {
+        return false;
+    }
+    if lower.contains("ffzy-plays") || lower.contains("ffzy-play") {
+        return false;
+    }
+    [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+        || lower.contains("/image")
+        || lower.contains("/img")
+        || lower.contains("/pic")
+}
+
+/// 计算保留窗口内全部图片缓存文件名
+///
+/// 窗口 = `chapters` 表中 `index ∈ [start_index, end_index]` 的章节；
+/// 每章必须能按 `(book_url, chapter.url)` 命中非空 `cached_chapters` 正文，
+/// 否则返回 `None`（调用方整次跳过清理，避免误删未缓存章节图片——原版
+/// `clearComicCache` 对缺失正文仅跳过该章，属已知差异）。
+///
+/// 返回 `Some(空集合)` 表示窗口内正文均无图片地址（由调用方再决定跳过）。
+fn retained_names_for_window(
+    chapters: &[BookChapter],
+    cached: &[CachedChapter],
+    start_index: i32,
+    end_index: i32,
+) -> Option<HashSet<String>> {
+    let window: Vec<&BookChapter> = chapters
+        .iter()
+        .filter(|c| c.index >= start_index && c.index <= end_index)
+        .collect();
+    if window.is_empty() {
+        return None;
+    }
+    let by_url: HashMap<&str, &CachedChapter> =
+        cached.iter().map(|c| (c.chapter_url.as_str(), c)).collect();
+    let mut names = HashSet::new();
+    for chapter in window {
+        let cached = by_url.get(chapter.url.as_str())?;
+        if cached.content.trim().is_empty() {
+            return None;
+        }
+        for url in extract_image_urls(&cached.content) {
+            let absolute = AnalyzeUrl::get_absolute_url(&chapter.url, &url);
+            names.insert(cache_file_name(&absolute));
+        }
+    }
+    Some(names)
+}
+
+/// 删除本书 `images/` 下不在保留集合内的**直接普通文件**，返回删除数
+///
+/// 安全边界：目录或条目为符号链接一律跳过（`file_type()` 不跟随链接），
+/// 不递归子目录；单个文件删除失败跳过并一次性告警。
+fn delete_unreferenced_images(book_url: &str, keep: &HashSet<String>) -> usize {
+    let dir = image_dir(book_url);
+    let Ok(meta) = fs::symlink_metadata(&dir) else {
+        return 0; // 目录不存在：无可清理
+    };
+    if !meta.file_type().is_dir() {
+        return 0; // 非目录（含符号链接目录）：不进入、不删除
+    }
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            if RETAIN_DELETE_FAIL_WARNED
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                log::warn!("[image_cache] 清理目录读取失败 {dir:?}: {e}（降级：本次不清理）");
+            }
+            return 0;
+        }
+    };
+    let mut deleted = 0usize;
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
+            continue; // 子目录/符号链接/其他特殊文件不碰
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue; // 非 UTF-8 文件名不可能由本模块写出，跳过
+        };
+        if keep.contains(&name) {
+            continue;
+        }
+        match fs::remove_file(entry.path()) {
+            Ok(()) => deleted += 1,
+            Err(e) => {
+                if RETAIN_DELETE_FAIL_WARNED
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    log::warn!(
+                        "[image_cache] 删除过期图片失败 {:?}: {e}（跳过该文件继续；同类失败后续不再逐条记日志）",
+                        entry.path()
+                    );
+                }
+            }
+        }
+    }
+    deleted
+}
+
+fn retain_comic_images_inner(
+    book_url: &str,
+    dur_index: i32,
+    retain: i32,
+    pre_download: i32,
+) -> legado_core::LegadoResult<usize> {
+    if retain <= 0 {
+        return Ok(0); // 0 = 不清理（对齐原版 AppConfig.imageRetainNum 默认 0）
+    }
+    let start_index = dur_index.saturating_sub(retain);
+    let end_index = dur_index.saturating_add(pre_download);
+
+    let keep = with_database(|db| {
+        let conn = db.connection();
+        let Some(book) = BookRepository::new(conn).find_by_url(book_url)? else {
+            return Ok(None); // 书不在库：无从判定窗口
+        };
+        if book.book_type & legado_fetcher::book_type::IMAGE == 0 {
+            return Ok(None); // 非图片书不清理（对齐原版 book.isImage 门）
+        }
+        let chapters = BookChapterRepository::new(conn).find_by_book_url(book_url)?;
+        let cached = CacheBookRepository::new(conn).get_by_book(book_url)?;
+        Ok(retained_names_for_window(
+            &chapters,
+            &cached,
+            start_index,
+            end_index,
+        ))
+    })?;
+
+    let Some(keep) = keep else {
+        return Ok(0);
+    };
+    if keep.is_empty() {
+        // 窗口正文一个图片地址都没解析出来：视作解析/缓存异常，整次跳过，
+        // 不把本书 images 目录清空（安全性加法式收紧）。
+        return Ok(0);
+    }
+    Ok(delete_unreferenced_images(book_url, &keep))
+}
+
+/// 删除漫画书不在「已读保留窗口」内的图片缓存（对齐原版
+/// `BookHelp.clearComicCache` L204-235；契约 §2.46 `retainComicImages`）
+///
+/// - `retain <= 0` → 不清理，返回 0（原版 `imageRetainNum == 0` 语义）；
+/// - 非图片书 → 返回 0；
+/// - 窗口 `[dur_index - retain, dur_index + pre_download]`（start 夹 0）；
+///   窗口内任一章节缺 `cached_chapters` 正文或正文空白 → 整次跳过返回 0；
+/// - 正文 `<img src>`（含 `data-src`/`data-original` 与 URL 行回退）按章节
+///   URL 绝对化，保留名 = `md5_16(url).suffix`（与读写路径同一构造器）；
+/// - 仅删除本书 `images/` 下的直接普通文件，不递归、不跟随符号链接；
+/// - DB/IO 失败降级返回 0（一次性日志），不抛异常——缓存是加速器不是数据源。
+pub fn retain_comic_images(
+    book_url: &str,
+    dur_index: i32,
+    retain: i32,
+    pre_download: i32,
+) -> usize {
+    match retain_comic_images_inner(book_url, dur_index, retain, pre_download) {
+        Ok(deleted) => deleted,
+        Err(e) => {
+            if RETAIN_FAIL_WARNED
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                log::warn!(
+                    "[image_cache] 漫画图片保留清理失败 book={book_url:?} dur={dur_index} retain={retain} pre={pre_download}: {e}（降级：本次不删除；同类失败后续不再逐条记日志）"
+                );
+            }
+            0
         }
     }
 }
@@ -470,6 +735,230 @@ mod tests {
             injected_cache_dir(),
             None,
             "未注入时读取入口必须返回 None（不由 temp 回落伪造注入值）"
+        );
+    }
+
+    // ─── 批9b-3：漫画图片保留窗口 ─────────────────────────────────────────────
+
+    fn chapter(index: i32, url: &str) -> BookChapter {
+        BookChapter {
+            index,
+            url: url.to_string(),
+            book_url: "https://a.com/book".to_string(),
+            ..BookChapter::default()
+        }
+    }
+
+    fn cached(book_url: &str, index: i32, url: &str, content: &str) -> CachedChapter {
+        CachedChapter {
+            id: 0,
+            book_url: book_url.to_string(),
+            chapter_index: index,
+            chapter_title: format!("第{}章", index + 1),
+            chapter_url: url.to_string(),
+            content: content.to_string(),
+            cached_at: 0,
+            size_bytes: content.len() as i64,
+        }
+    }
+
+    // 标签解析：双/单/无引号 + data-src/data-original 超集
+    #[test]
+    fn extract_image_urls_supports_quote_variants() {
+        let content = r#"<p><img src="/a/1.webp"><img data-src='https://cdn/2.jpg'><img data-original=3.gif></p>"#;
+        assert_eq!(
+            extract_image_urls(content),
+            vec!["/a/1.webp", "https://cdn/2.jpg", "3.gif"],
+            "img src/data-src/data-original（单/双/无引号）均应解析"
+        );
+    }
+
+    // 无 <img> 时回退逐行图片 URL（与 Dart parseComicImageUrls 同口径）
+    #[test]
+    fn extract_image_urls_line_fallback() {
+        let content = "https://cdn.example.com/a/b.jpg\nhttps://cdn.example.com/v.mp4\nnot-a-url";
+        assert_eq!(
+            extract_image_urls(content),
+            vec!["https://cdn.example.com/a/b.jpg"],
+            "URL 行回退应识别图片后缀并排除视频"
+        );
+    }
+
+    // 窗口内保留/窗口外删：保留集合只含窗口章图片
+    #[test]
+    fn retained_names_only_cover_window() {
+        let book = "https://a.com/book";
+        let chapters = vec![
+            chapter(0, "https://h.com/ch/0"),
+            chapter(1, "https://h.com/ch/1"),
+            chapter(2, "https://h.com/ch/2"),
+            chapter(3, "https://h.com/ch/3"),
+        ];
+        let cached_rows = (0..4)
+            .map(|i| {
+                cached(
+                    book,
+                    i,
+                    &format!("https://h.com/ch/{i}"),
+                    &format!("<img src=\"https://cdn.com/{i}.jpg\">"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let keep = retained_names_for_window(&chapters, &cached_rows, 1, 2)
+            .expect("窗口内章节均有正文，应返回保留集合");
+        assert_eq!(keep.len(), 2, "窗口 [1,2] 只保留两章图片");
+        assert!(keep.contains(&cache_file_name("https://cdn.com/1.jpg")));
+        assert!(keep.contains(&cache_file_name("https://cdn.com/2.jpg")));
+        assert!(!keep.contains(&cache_file_name("https://cdn.com/0.jpg")));
+        assert!(!keep.contains(&cache_file_name("https://cdn.com/3.jpg")));
+    }
+
+    // 窗口内任一章节无缓存行 → 整次跳过（None）
+    #[test]
+    fn retained_names_skip_when_window_content_missing() {
+        let book = "https://a.com/book";
+        let chapters = vec![
+            chapter(1, "https://h.com/ch/1"),
+            chapter(2, "https://h.com/ch/2"),
+        ];
+        let cached_rows = vec![cached(
+            book,
+            1,
+            "https://h.com/ch/1",
+            "<img src=\"https://cdn.com/1.jpg\">",
+        )];
+        assert_eq!(
+            retained_names_for_window(&chapters, &cached_rows, 1, 2),
+            None,
+            "窗口章缺正文时必须整次跳过（避免误删未缓存章节图片）"
+        );
+    }
+
+    // 窗口内正文空白 → 整次跳过（None）
+    #[test]
+    fn retained_names_skip_when_content_blank() {
+        let book = "https://a.com/book";
+        let chapters = vec![chapter(2, "https://h.com/ch/2")];
+        let cached_rows = vec![cached(book, 2, "https://h.com/ch/2", "  \n\t ")];
+        assert_eq!(
+            retained_names_for_window(&chapters, &cached_rows, 1, 2),
+            None,
+            "空白正文视为缺失内容，必须整次跳过"
+        );
+    }
+
+    // 窗口无章节 → None（dur 越界/目录为空时不清）
+    #[test]
+    fn retained_names_empty_window_skips() {
+        let chapters = vec![chapter(0, "https://h.com/ch/0")];
+        assert_eq!(retained_names_for_window(&chapters, &[], 5, 9), None);
+    }
+
+    // 相对/协议相对/绝对 URL 绝对化后参与 md5 命名
+    #[test]
+    fn retained_names_absolutize_urls() {
+        let book = "https://a.com/book";
+        let chapters = vec![chapter(0, "https://site.com/manga/ch/5.html")];
+        let cached_rows = vec![cached(
+            book,
+            0,
+            "https://site.com/manga/ch/5.html",
+            "<img src=\"/img/a.png\"><img src=\"https://cdn.com/b.webp?x=1\"><img src=\"//cdn.com/c.jpg\">",
+        )];
+        let keep = retained_names_for_window(&chapters, &cached_rows, 0, 0)
+            .expect("单章窗口应返回保留集合");
+        assert_eq!(keep.len(), 3);
+        assert!(keep.contains(&cache_file_name("https://site.com/img/a.png")));
+        assert!(keep.contains(&cache_file_name("https://cdn.com/b.webp?x=1")));
+        assert!(keep.contains(&cache_file_name("https://cdn.com/c.jpg")));
+    }
+
+    // 保留名构造器与真实落盘文件名逐字节一致（md5_16 + suffix）
+    #[test]
+    fn cache_file_name_matches_image_file_path() {
+        let url = "https://cdn.com/img/page-001.WEBP?v=2";
+        let path = image_file_path("https://a.com/book/7", url);
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some(cache_file_name(url).as_str()),
+            "保留集合文件名必须与读写路径同名"
+        );
+        assert!(
+            cache_file_name(url).ends_with(".WEBP"),
+            "后缀沿用原版 UrlUtil.getSuffix 规则（大小写保留）"
+        );
+    }
+
+    // 删除只作用于 images 下直接普通文件：保留名留下、子目录不递归
+    #[test]
+    fn delete_unreferenced_only_direct_files() {
+        let _lock = test_lock();
+        let root = unique_root("retain-delete");
+        set_test_root(&root);
+        let book = "https://a.com/book/retain";
+        let dir = image_dir(book);
+        fs::create_dir_all(dir.join("nested")).unwrap();
+        fs::write(dir.join("keep.jpg"), b"keep").unwrap();
+        fs::write(dir.join("drop.jpg"), b"drop").unwrap();
+        fs::write(dir.join("nested").join("inner.jpg"), b"inner").unwrap();
+
+        let keep = HashSet::from(["keep.jpg".to_string()]);
+        assert_eq!(delete_unreferenced_images(book, &keep), 1);
+        assert!(dir.join("keep.jpg").exists(), "保留集合内文件不得删除");
+        assert!(!dir.join("drop.jpg").exists(), "集合外文件应删除");
+        assert!(
+            dir.join("nested").join("inner.jpg").exists(),
+            "子目录内容不得递归删除"
+        );
+        let _ = fs::remove_dir_all(&root);
+        clear_test_root();
+    }
+
+    // 目录不存在 → 0（幂等、不报错）
+    #[test]
+    fn delete_unreferenced_missing_dir_returns_zero() {
+        let _lock = test_lock();
+        let root = unique_root("retain-missing");
+        set_test_root(&root);
+        assert_eq!(
+            delete_unreferenced_images("https://a.com/book/none", &HashSet::new()),
+            0
+        );
+        let _ = fs::remove_dir_all(&root);
+        clear_test_root();
+    }
+
+    // retain=0 不清理（且不触碰 DB），文件保持
+    #[test]
+    fn retain_zero_keeps_files() {
+        let _lock = test_lock();
+        let root = unique_root("retain-zero");
+        set_test_root(&root);
+        let book = "https://a.com/book/zero";
+        let dir = image_dir(book);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("old.jpg"), b"old").unwrap();
+        assert_eq!(
+            retain_comic_images(book, 10, 0, 20),
+            0,
+            "retain=0 必须直接返回 0（不清理）"
+        );
+        assert!(dir.join("old.jpg").exists());
+        let _ = fs::remove_dir_all(&root);
+        clear_test_root();
+    }
+
+    // 路径安全：bookUrl 净化后始终是单层安全目录名（无分隔符/父目录）
+    #[test]
+    fn book_dir_name_is_single_safe_component() {
+        let name = book_dir_name("../../etc/passwd");
+        assert!(!name.contains('/'), "不得含路径分隔符: {name}");
+        assert!(!name.contains('\\'), "不得含 Windows 分隔符: {name}");
+        assert!(!name.contains(':'), "不得含盘符/ADS 分隔符: {name}");
+        assert_eq!(
+            std::path::Path::new(&name).components().count(),
+            1,
+            "净化后必须为单层目录名: {name}"
         );
     }
 }
