@@ -882,8 +882,10 @@ class _RssArticleDetailScreenState
       case 'searchBook':
         final key = action.data['key']?.toString().trim() ?? '';
         if (key.isEmpty) return;
+        // [设置批2b-2c] 搜索属 standalone：固定 root 全屏（本页可能在
+        // 列表-详情右栏内）。
         unawaited(
-          Navigator.of(context).push(
+          Navigator.of(context, rootNavigator: true).push(
             MaterialPageRoute(builder: (_) => SearchScreen(initialQuery: key)),
           ),
         );

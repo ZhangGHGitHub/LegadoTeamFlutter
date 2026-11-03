@@ -10,9 +10,11 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/explore/explore_main_notifier.dart';
 import '../providers/explore/explore_notifier.dart';
 import '../routes.dart';
+import '../utils/multi_pane_layout.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/navigation/adaptive_my_pane.dart';
 import '../widgets/navigation/app_navigation_bars.dart';
+import '../widgets/navigation/main_detail_pane_scope.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/theme/system_bar_notifier.dart';
@@ -42,7 +44,14 @@ import 'rss_screen.dart';
 /// - 默认首页在偏好加载后按可见页签映射索引（参考版 initialPage 同口径）；
 /// - 自定义导航图标经 AppNavSpec 透传给三态底栏/Rail。
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.detailRouteGenerator});
+
+  /// 右侧详情栏路由生成器（默认 [AppRoutes.generateRoute]；测试可注入
+  /// 桩页面，避免为结构用例构建真实详情页）。
+  ///
+  /// 不用 Flutter 的 `RouteFactory`：其返回类型为 `Route<dynamic>?`，而
+  /// nested Navigator 的 `onGenerateRoute` 契约要求非空路由。
+  final Route<dynamic> Function(RouteSettings)? detailRouteGenerator;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -78,6 +87,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final GlobalKey<NavigatorState> _myPaneNavigatorKey =
       GlobalKey<NavigatorState>();
 
+  /// 书架/发现/RSS 列表-详情右栏 nested Navigator
+  ///
+  /// 始终挂载（隐藏时零宽 + Offstage）：窗口变窄只隐藏右栏、不清栈，
+  /// 重新变宽原样恢复；只有切换 Tab 才清空（[MainDetailPaneController.clear]）。
+  final GlobalKey<NavigatorState> _detailPaneNavigatorKey =
+      GlobalKey<NavigatorState>();
+
+  final MainDetailPaneController _detailPaneController =
+      MainDetailPaneController();
+
+  late final _MainDetailNavigatorObserver _detailPaneObserver =
+      _MainDetailNavigatorObserver(_onDetailPaneStackChanged);
+
+  /// 配置变化导致当前 Tab 被隐藏时，帧末清空右栏（避免显示旧 Tab 详情）
+  bool _detailClearScheduled = false;
+
   DateTime? _lastTapTime;
   int _lastTapIndex = -1;
   DateTime? _lastBackTime;
@@ -95,11 +120,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _pageSyncScheduled = false;
 
   @override
+  void initState() {
+    super.initState();
+    _detailPaneController.navigatorKey = _detailPaneNavigatorKey;
+  }
+
+  @override
   void dispose() {
+    _detailPaneController.dispose();
     _pageController.dispose();
     _bookshelfScrollTopSignal.dispose();
     _exploreCollapseSignal.dispose();
     super.dispose();
+  }
+
+  /// 右栏栈变化：回写 hasStack（HomeScreen 经 ListenableBuilder 重排）
+  void _onDetailPaneStackChanged() {
+    _detailPaneController.updateStack(
+      depth: _detailPaneObserver.stackDepth,
+      hasPage: _detailPaneObserver.hasPage,
+    );
+  }
+
+  /// 主 Tab 是否支持列表-详情（书架/发现/RSS）
+  bool _tabSupportsDetail(MainTab tab) => switch (tab) {
+    MainTab.bookshelf || MainTab.explore || MainTab.rss => true,
+    MainTab.home || MainTab.my => false,
+  };
+
+  /// 帧末清空右栏（配置变更等 build 阶段无法同步 pop 的场景）
+  void _scheduleDetailPaneClear() {
+    if (_detailClearScheduled) return;
+    _detailClearScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _detailClearScheduled = false;
+      if (!mounted) return;
+      _detailPaneController.clear();
+    });
   }
 
   /// 默认首页偏好值 → 逻辑 Tab（对标原版 defaultHomePage 数组值）
@@ -123,6 +180,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _lastTapIndex = index;
     if (index != currentIndex) {
       _userNavigated = true;
+      // 切 Tab 清空列表-详情右栏（登记行为：不跨 Tab 复用详情栈）
+      _detailPaneController.clear();
       setState(() {
         _currentTab = tabs[index];
         _visitedTabs.add(_currentTab);
@@ -151,6 +210,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (tabs[index] != _currentTab) {
       // 滑动切页视为用户主动导航：偏好加载完成前不再套用默认首页
       _userNavigated = true;
+      // 切 Tab 清空列表-详情右栏
+      _detailPaneController.clear();
     }
     setState(() {
       _currentTab = tabs[index];
@@ -169,6 +230,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         return;
       }
     }
+    // [设置批2b-2c] 书架/发现/RSS 列表-详情：先 pop 右侧详情栈；空栈后
+    // 继续走原有「切回书架 / 双击退出」逻辑。仅在多栏可用（右栏可见）时
+    // 消费返回：窄屏隐藏的旧栈不拦截返回。
+    if (_tabSupportsDetail(_currentTab) && _detailPaneController.isEnabled) {
+      final detailPane = _detailPaneNavigatorKey.currentState;
+      if (detailPane != null && detailPane.canPop()) {
+        detailPane.maybePop();
+        return;
+      }
+    }
     // [批36c 源内容模式返回键归属] 内容模式的返回由宿主统一消费：
     // 发现页与首页根节点同属一个 ModalRoute，Flutter 返回处理会依次通知
     // 该路由上所有 PopScope（didPop=false），内层 PopScope 无法「消费」本次
@@ -182,6 +253,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final bookshelfIndex = tabs.indexOf(MainTab.bookshelf);
       final targetIndex = bookshelfIndex >= 0 ? bookshelfIndex : 0;
       if (targetIndex >= 0 && targetIndex < tabs.length) {
+        // 返回切回书架同样清空右栏（右栏内容属于原 Tab）
+        _detailPaneController.clear();
         setState(() {
           _currentTab = tabs[targetIndex];
           _visitedTabs.add(_currentTab);
@@ -298,6 +371,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     //（参考版越界回退 lastIndex；本实现按任务约定回退 first visible）
     if (!tabs.contains(_currentTab)) {
       _currentTab = tabs.first;
+      // 旧 Tab 的右栏详情不能展示在新 Tab 上；build 阶段不能同步 pop，
+      // 帧末清空（与用户切 Tab 的显式 clear 同一语义）。
+      _scheduleDetailPaneClear();
     }
     final currentIndex = tabs.indexOf(_currentTab);
     _visitedTabs.add(_currentTab);
@@ -378,7 +454,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const VerticalDivider(width: 1, thickness: 0)
                   else
                     const SizedBox.shrink(),
-                  Expanded(child: pageArea),
+                  Expanded(
+                    child: _buildPageAreaWithDetail(
+                      pageArea,
+                      ui.multiPaneMode,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -398,6 +479,86 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
         },
       ),
+    );
+  }
+
+  /// 主 Tab 内容 + 列表-详情右栏
+  ///
+  /// 结构恒定：`Row[Expanded(PageView), 间距槽, 右栏槽]`。右栏槽宽度为 0
+  /// （空栈/窄屏/off）时仍挂载 nested Navigator（Offstage），窗口变窄不会
+  /// 销毁右栏栈，重新变宽原样恢复；PageView 的父链在横竖屏切换时不变，
+  /// 保住 PageController position 与各页 State（2b-2a 旋转回修口径）。
+  ///
+  /// 多栏判定用当前 PageView 区域尺寸（已扣 Rail）+ 完整窗口尺寸，与
+  /// `AdaptiveMyPane` 同口径；右栏只在当前 Tab ∈ 书架/发现/RSS 且栈非空
+  /// 时占位。
+  Widget _buildPageAreaWithDetail(Widget pageArea, MultiPaneMode mode) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final paneSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final multi = resolveMultiPane(
+          mode,
+          paneSize,
+          windowSize: MediaQuery.sizeOf(context),
+        );
+        final enabled = multi && _tabSupportsDetail(_currentTab);
+        // build 期间静默写入（不通知），列表点击时经 controller 读取。
+        _detailPaneController.setEnabled(enabled);
+        return MainDetailPaneScope(
+          controller: _detailPaneController,
+          isMultiPane: enabled,
+          child: ListenableBuilder(
+            listenable: _detailPaneController,
+            builder: (context, _) {
+              final rightWidth =
+                  enabled && _detailPaneController.hasStack
+                  ? resolveListDetailRightWidth(paneSize.width)
+                  : 0.0;
+              final showDetail = rightWidth > 0;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: pageArea),
+                  SizedBox(
+                    key: const ValueKey('main-detail-gap'),
+                    width: showDetail ? kMultiPaneGap : 0,
+                  ),
+                  SizedBox(
+                    key: const ValueKey('main-detail-right'),
+                    width: rightWidth,
+                    child: TickerMode(
+                      // 隐藏期间暂停页面动画（Offstage 只停绘制，不停 ticker）
+                      enabled: showDetail,
+                      child: Offstage(
+                        offstage: !showDetail,
+                        child: _buildDetailNavigator(),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  /// 右侧详情 nested Navigator（路由表与 root 一致）
+  Widget _buildDetailNavigator() {
+    return Navigator(
+      key: _detailPaneNavigatorKey,
+      initialRoute: kMainDetailEmptyRoute,
+      // 只生成一个空态路由：默认 initialRoutes 会把哨兵路径拆成
+      // `/` + 目标两页，导致初始栈深 2（canPop 为真）。
+      onGenerateInitialRoutes: (_, _) => [
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: kMainDetailEmptyRoute),
+          builder: (_) => const SizedBox.shrink(),
+        ),
+      ],
+      onGenerateRoute: widget.detailRouteGenerator ?? AppRoutes.generateRoute,
+      observers: [_detailPaneObserver],
     );
   }
 
@@ -528,5 +689,52 @@ class _KeepAlivePageState extends State<_KeepAlivePage>
   Widget build(BuildContext context) {
     super.build(context);
     return widget.child;
+  }
+}
+
+/// 列表-详情右栏 Navigator 观察者：维护栈顶与业务页面存在性
+class _MainDetailNavigatorObserver extends NavigatorObserver {
+  _MainDetailNavigatorObserver(this.onChanged);
+
+  final VoidCallback onChanged;
+  final List<Route<dynamic>> _stack = <Route<dynamic>>[];
+
+  /// 当前栈深度（初始空态为 1）
+  int get stackDepth => _stack.length;
+
+  /// 是否有初始空态之外的业务页面（匿名路由也算，不能只看 name）
+  bool get hasPage =>
+      _stack.isNotEmpty &&
+      !(_stack.length == 1 &&
+          _stack.single.settings.name == kMainDetailEmptyRoute);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _stack.add(route);
+    onChanged();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _stack.remove(route);
+    onChanged();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _stack.remove(route);
+    onChanged();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (newRoute == null) return;
+    final index = oldRoute == null ? -1 : _stack.indexOf(oldRoute);
+    if (index >= 0) {
+      _stack[index] = newRoute;
+    } else {
+      _stack.add(newRoute);
+    }
+    onChanged();
   }
 }

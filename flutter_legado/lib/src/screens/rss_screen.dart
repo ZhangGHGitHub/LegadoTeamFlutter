@@ -22,6 +22,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/dynamic_search_app_bar.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/navigation/main_detail_pane_scope.dart';
 import 'rss_articles_screen.dart';
 import 'rss_article_detail_screen.dart';
 
@@ -287,20 +288,19 @@ class _RssScreenState extends ConsumerState<RssScreen> {
         // 批19 审查 P1：WebView 不支持的桌面端不能进详情页（否则落到
         // 「暂无内容」空态），保持原路径经内置浏览器页自动外开。
         if (isWebViewPlatformSupported) {
-          await Navigator.push(
+          // [设置批2b-2c] 列表-详情：宽屏进右栏，窄屏/off root 全屏
+          await pushMainDetailPage(
             context,
-            MaterialPageRoute(
-              builder: (_) => RssArticleDetailScreen(
-                article: RssFeedArticle(
-                  title: source.sourceName,
-                  url: url,
-                ),
-                source: source,
-                sourceName: source.sourceName,
-                sourceUrl: source.sourceUrl,
-                // 原版该入口无 rssArticle：隐藏收藏与文章头部（P2-4）
-                singleUrlDirect: true,
+            (_) => RssArticleDetailScreen(
+              article: RssFeedArticle(
+                title: source.sourceName,
+                url: url,
               ),
+              source: source,
+              sourceName: source.sourceName,
+              sourceUrl: source.sourceUrl,
+              // 原版该入口无 rssArticle：隐藏收藏与文章头部（P2-4）
+              singleUrlDirect: true,
             ),
           );
         } else {
@@ -334,30 +334,29 @@ class _RssScreenState extends ConsumerState<RssScreen> {
         !startHtml.startsWith('@js:') &&
         !startHtml.startsWith('<js>')) {
       if (!mounted) return;
-      await Navigator.push(
+      // [设置批2b-2c] 起始页阅读同样走列表-详情入口
+      await pushMainDetailPage(
         context,
-        MaterialPageRoute(
-          builder: (_) => RssArticleDetailScreen(
-            article: RssFeedArticle(
-              title: source.sourceName,
-              url: source.sourceUrl,
-            ),
-            source: source,
-            sourceName: source.sourceName,
-            sourceUrl: source.sourceUrl,
-            startHtml: startHtml,
+        (_) => RssArticleDetailScreen(
+          article: RssFeedArticle(
+            title: source.sourceName,
+            url: source.sourceUrl,
           ),
+          source: source,
+          sourceName: source.sourceName,
+          sourceUrl: source.sourceUrl,
+          startHtml: startHtml,
         ),
       );
       return;
     }
 
     if (!mounted) return;
-    await Navigator.push(
+    // [设置批2b-2c] 订阅源 → 文章列表进右栏（左源列表保持）；左栏文章
+    // 点击再压入文章详情（同一右栏栈）。窄屏/off 仍为 root 全屏。
+    await pushMainDetailPage(
       context,
-      MaterialPageRoute(
-        builder: (_) => RssArticlesScreen(source: source),
-      ),
+      (_) => RssArticlesScreen(source: source),
     );
   }
 

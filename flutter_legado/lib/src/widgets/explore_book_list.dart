@@ -20,6 +20,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/list_footer.dart';
 import '../widgets/custom_refresh_indicator.dart';
+import '../widgets/navigation/main_detail_pane_scope.dart';
 import '../widgets/skeleton.dart';
 
 /// 登录引导错误视图（书源需登录时展示，提供「去登录」主按钮与重试）
@@ -680,7 +681,8 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       latestChapterTitle: book.latestChapterTitle,
       wordCount: book.wordCount,
     );
-    Navigator.pushNamed(context, AppRoutes.bookInfo, arguments: bookObj);
+    // [设置批2b-2c] 列表-详情：宽屏进右栏（左书单保持），窄屏/off root 全屏
+    pushMainDetailNamed(context, AppRoutes.bookInfo, arguments: bookObj);
   }
 }
 

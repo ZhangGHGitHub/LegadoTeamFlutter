@@ -1516,7 +1516,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     } else if (book != null && _isOnlineBook(book)) {
       args['sourceUrl'] = book.origin;
     }
-    await Navigator.pushNamed(context, AppRoutes.search, arguments: args);
+    // [设置批2b-2c] 搜索属 standalone：详情页在列表-详情右栏时也走 root
+    // 全屏（窄屏时 root 与当前栈一致，行为不变）。
+    await Navigator.of(
+      context,
+      rootNavigator: true,
+    ).pushNamed(AppRoutes.search, arguments: args);
   }
 
   /// 返回 true 表示 JS 回调已接管，不应再执行默认动作
@@ -1997,15 +2002,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       'srcType=${matchedSource?.bookSourceType} '
       'videoLike=${BookOpenUtils.looksLikeVideoSource(matchedSource)}',
     );
+    // [设置批2b-2c] 阅读器/漫画/音频/视频属 standalone：详情页可能位于
+    // 列表-详情右栏，阅读必须固定 root 全屏（窄屏时 root 与当前栈一致，
+    // 行为不变）。
+    if (!context.mounted) return;
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
     if (BookOpenUtils.needsReaderNotifier(route)) {
       container.read(readerNotifierProvider.notifier).openBook(bookToRead);
       // [UI-fix v2.0.11 | 2026-08-10] 阅读返回后重新加载详情数据 — Reasonix
       if (!context.mounted) return;
-      await Navigator.pushNamed(context, route);
+      await rootNavigator.pushNamed(route);
     } else {
       if (!context.mounted) return;
-      await Navigator.pushNamed(
-        context,
+      await rootNavigator.pushNamed(
         route,
         arguments: BookOpenUtils.argumentsForRoute(route, bookToRead),
       );

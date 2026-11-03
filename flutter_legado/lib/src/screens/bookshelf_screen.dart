@@ -31,6 +31,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/ios_widgets.dart' show IosListTile, SettingSwitchRow;
+import '../widgets/navigation/main_detail_pane_scope.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
 /// 书架页面（Riverpod ConsumerStatefulWidget）
@@ -872,9 +873,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // 目录就绪即自动开读（未读书取首章）；目录不可用则停留详情页，仍可
       // 经「阅读」FAB 手动开读。长按入口仍走 _openBookInfo 普通详情页，
       // 行为不变。
-      // [队列⑫ P3 | 2026-09-22] await 至弹回书架（先关阅读器再关详情页）
-      // 后触发单本定向刷新：未读链路（详情+自动开读）返回时同步新进度
-      await Navigator.pushNamed(
+      // [设置批2b-2c] 列表-详情：宽屏进右栏（左书架保持），窄屏/off root
+      // 全屏。await 至弹回书架（先关阅读器再关详情页）后单本定向刷新：
+      // 未读链路（详情+自动开读）返回时同步新进度。
+      await pushMainDetailNamed(
         context,
         AppRoutes.bookInfo,
         arguments: BookInfoArgs(book: book, openReaderImmediately: true),
@@ -911,12 +913,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       typeBits,
       isLocalBook: BookType.isLocalBook(book),
     );
+    // [设置批2b-2c] 阅读器/漫画/音频/视频属 standalone，固定 root 全屏
+    // （书架本身在 root PageView 内，此写法与原行为等价，仅显式化）。
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
     if (BookOpenUtils.needsReaderNotifier(route)) {
       ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
-      await Navigator.pushNamed(context, route);
+      await rootNavigator.pushNamed(route);
     } else {
-      await Navigator.pushNamed(
-        context,
+      await rootNavigator.pushNamed(
         route,
         arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
       );
@@ -939,8 +943,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// 长按封面/书名直接打开书籍信息页（对齐安卓原版行为）
+  ///
+  /// [设置批2b-2c] 与单击同一列表-详情入口：宽屏进右栏，窄屏 root 全屏。
   void _openBookInfo(BuildContext context, Book book) {
-    Navigator.pushNamed(
+    pushMainDetailNamed(
       context,
       AppRoutes.bookInfo,
       arguments: book,

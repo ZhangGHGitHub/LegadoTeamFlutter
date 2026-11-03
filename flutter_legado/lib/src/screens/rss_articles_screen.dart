@@ -28,6 +28,7 @@ import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/navigation/main_detail_pane_scope.dart';
 import 'rss_article_detail_screen.dart';
 import 'rss_source_edit_screen.dart';
 import 'source_login_screen.dart';
@@ -69,8 +70,8 @@ Future<void> openRssArticle(
     sourceType: source?.rssType,
   );
   if (type == 2) {
-    await Navigator.push(
-      context,
+    // 视频属 standalone：固定 root 全屏（右栏内打开也不进右栏）
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => VideoScreen(
           videoUrl: readable.url,
@@ -92,16 +93,16 @@ Future<void> openRssArticle(
     );
     return;
   }
-  await Navigator.push(
+  // [设置批2b-2c] 文章详情走列表-详情右栏：订阅源/文章列表在左（或右栏
+  // 内的列表）时保持可见，栈内可继续下钻；窄屏/off 仍为 root 全屏。
+  await pushMainDetailPage(
     context,
-    MaterialPageRoute(
-      builder: (_) => RssArticleDetailScreen(
-        article: readable,
-        source: source,
-        sourceName: sourceName,
-        sourceUrl: sourceUrl,
-        onContentFetched: onContentFetched,
-      ),
+    (_) => RssArticleDetailScreen(
+      article: readable,
+      source: source,
+      sourceName: sourceName,
+      sourceUrl: sourceUrl,
+      onContentFetched: onContentFetched,
     ),
   );
 }

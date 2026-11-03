@@ -49,6 +49,35 @@ const double kMultiPaneGap = 24;
 /// 可用高度下限（dp）：过矮窗口即使够宽也不分栏
 const double kMultiPaneMinHeight = 320;
 
+/// 列表-详情双栏的左栏（主 Tab 列表）占窗格可用宽的比例。
+///
+/// 参考版列表-详情容器里列表约 2/5 宽、详情占其余；左栏最窄 360dp，
+/// 右栏保持 ≥360dp（见 [resolveListDetailRightWidth]）。
+const double kListDetailLeftFraction = 0.4;
+
+/// 计算列表-详情右栏宽度（dp）；无法容纳双栏时返回 0。
+///
+/// 语义（对齐参考版 `ListDetailSceneStrategy` 的列表-详情宽度分配）：
+/// - 左栏 = 可用宽 × [leftFraction]，且不小于 [leftWidth]；
+/// - 右栏 = 可用宽 − 左栏 − [gap]，且不小于 [rightWidth]；
+/// - 可用宽 < 左栏最小 + 间距 + 右栏最小 → 0（调用方不显示右栏）。
+///
+/// [available] 是扣掉导航 Rail 后的 PageView 区域宽度；隐藏状态下
+/// HomeScreen 不占位，由本函数在模式判定通过后按宽度给出实际槽宽。
+double resolveListDetailRightWidth(
+  double available, {
+  double leftFraction = kListDetailLeftFraction,
+  double leftWidth = kMultiPaneLeftWidth,
+  double rightWidth = kMultiPaneRightWidth,
+  double gap = kMultiPaneGap,
+}) {
+  if (!available.isFinite) return 0;
+  final maxLeft = available - gap - rightWidth;
+  if (maxLeft < leftWidth) return 0;
+  final left = (available * leftFraction).clamp(leftWidth, maxLeft);
+  return available - left - gap;
+}
+
 /// 判定当前窗口是否应切换为双栏。
 ///
 /// 语义（对齐参考版 `shouldUseListDetail` + `paneLayout`）：
