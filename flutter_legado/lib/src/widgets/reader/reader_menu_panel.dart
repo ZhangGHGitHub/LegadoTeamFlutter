@@ -175,6 +175,8 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       scheme: cs,
       pageBackgroundColor: state.backgroundColor,
       pageTextColor: state.textColor,
+      // [批3a P2-3] paletteStyle='' 时跟随应用主题调色板
+      appPaletteStyle: uiSettingsListenable.value.themeStyle,
     );
     final adv = ref.watch(readerAdvConfigProvider);
     final autoPageActive = adv?.autoPageTurn ?? false;
@@ -482,10 +484,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     required ResolvedReaderMenuColors colors,
     required bool merged,
     required VoidCallback onTap,
-    bool selected = false,
   }) {
-    final scheme = Theme.of(context).colorScheme;
-    final tint = selected ? colors.accent : colors.onSurfaceVariant;
+    // 顶栏动作当前无选中态（无调用方传 selected）；合并态仅染图标。
+    final tint = colors.onSurfaceVariant;
     Color? containerColor;
     Border? border;
     if (merged) {
@@ -502,10 +503,6 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         default:
           containerColor = Colors.transparent;
       }
-    }
-    if (selected) {
-      containerColor = scheme.secondaryContainer;
-      border = Border.all(color: scheme.secondary, width: 1.5);
     }
     return Semantics(
       button: true,

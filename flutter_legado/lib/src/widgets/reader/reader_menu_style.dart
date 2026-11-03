@@ -209,7 +209,8 @@ class ReaderMenuStyle {
        titleIconStyle = titleIconStyle.clamp(0, 2);
 
   /// 默认样式（对齐参考版 ReadSettings 默认值；titleBarMode 按批3a
-  /// 任务口径为 '0'，与参考版 ReadSettings 的 '1' 差异已登记）
+  /// 任务口径为 '0'，与参考版 ReadSettings 的 '1' 差异见 ACTIVE_PLAN
+  /// 批3a 登记（收尾写入））
   static ReaderMenuStyle defaults() => ReaderMenuStyle();
 
   /// 当前明暗下的背景色原始值
@@ -453,6 +454,7 @@ ResolvedReaderMenuColors resolveReaderMenuColors({
   required ColorScheme scheme,
   Color? pageBackgroundColor,
   Color? pageTextColor,
+  String appPaletteStyle = '',
 }) {
   switch (style.readBarStyle) {
     case ReaderMenuBarStyle.followPage:
@@ -467,6 +469,7 @@ ResolvedReaderMenuColors resolveReaderMenuColors({
         isDark: isDark,
         scheme: scheme,
         pageBackgroundColor: pageBackgroundColor,
+        appPaletteStyle: appPaletteStyle,
       );
     case ReaderMenuBarStyle.system:
     default:
@@ -497,10 +500,12 @@ ResolvedReaderMenuColors _resolveFollowPage({
   final providedText = pageTextColor == null
       ? null
       : _opaqueColor(pageTextColor);
-  // 文字与背景同属亮/同属暗（对比度约 1.0~2.3）时改用黑白对比色，
-  // 避免 #616161 底 + #333333 字这类不可读组合。
-  final text = providedText == null ||
-          _sameBrightnessBucket(providedText, background)
+  // [批3a P1-A] 以 WCAG 对比度 4.5 为界：不足才回退黑白对比色；
+  // 棕色 #D4A574 / 蓝灰 #90A4AE 上的 #333333 本身达标（5.68/4.88），
+  // 不再被「同亮/同暗分桶」误判覆盖。
+  final text =
+      providedText == null ||
+          _contrastRatio(providedText, background) < 4.5
       ? _contrastText(background)
       : providedText;
   return ResolvedReaderMenuColors(
@@ -519,13 +524,18 @@ ResolvedReaderMenuColors _resolveCustom({
   required bool isDark,
   required ColorScheme scheme,
   Color? pageBackgroundColor,
+  required String appPaletteStyle,
 }) {
   if (style.colorMode == ReaderMenuColorMode.seed) {
     final accentArgb = style.accentColorFor(isDark);
     final seed = accentArgb != 0
         ? Color(normalizeReaderMenuColor(accentArgb))
         : scheme.primary;
-    final palette = normalizeReaderMenuPaletteStyle(style.paletteStyle);
+    // [批3a P2-3] paletteStyle='' 跟随应用调色板（UiSettingsState.
+    // themeStyle；'none'/空 → tonalSpot），非空时用户选择优先。
+    final palette = style.paletteStyle.trim().isEmpty
+        ? normalizeReaderMenuPaletteStyle(appPaletteStyle)
+        : normalizeReaderMenuPaletteStyle(style.paletteStyle);
     final rolesPair = buildParameterizedRoles(
       style: palette,
       seed: seed.toARGB32(),
@@ -533,7 +543,8 @@ ResolvedReaderMenuColors _resolveCustom({
     );
     final Md3Roles roles = isDark ? rolesPair.dark : rolesPair.light;
     return ResolvedReaderMenuColors(
-      background: Color(roles.background),
+      // [批3a P2-2] 种子档背景与 system 档一致取 surfaceContainerHigh
+      background: Color(roles.surfaceContainerHigh),
       container: Color(roles.surfaceContainerLow),
       accent: Color(roles.primary),
       onSurface: Color(roles.onSurface),
@@ -574,14 +585,21 @@ ResolvedReaderMenuColors _resolveCustom({
 Color _opaqueColor(Color color) =>
     Color(normalizeReaderMenuColor(color.toARGB32()));
 
-/// 两者是否同属亮色区/暗色区（参考 0.5 亮度阈值）
-bool _sameBrightnessBucket(Color a, Color b) {
-  return (a.computeLuminance() > 0.5) == (b.computeLuminance() > 0.5);
+/// WCAG 对比度（1.0..21.0）
+double _contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  final lighter = la > lb ? la : lb;
+  final darker = la > lb ? lb : la;
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
-/// 黑/白对比文字（对齐参考版 `contrastContentColor`：亮底黑字、暗底白字）
+/// 黑/白中对比度更高的文字色
 Color _contrastText(Color background) {
-  return background.computeLuminance() > 0.5
+  final luminance = background.computeLuminance();
+  final blackContrast = (luminance + 0.05) / 0.05;
+  final whiteContrast = 1.05 / (luminance + 0.05);
+  return blackContrast >= whiteContrast
       ? const Color(0xFF000000)
       : const Color(0xFFFFFFFF);
 }
