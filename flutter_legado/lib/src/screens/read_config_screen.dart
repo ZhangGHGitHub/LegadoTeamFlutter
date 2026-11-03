@@ -37,6 +37,7 @@ import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/setting_cards.dart' show LabelMediumEmphasized;
 import '../widgets/setting_slider_row.dart';
+import 'click_action_config_sheet.dart';
 import 'reader_config_panel.dart';
 
 // 既有调用方/测试从本文件导入 SettingSliderRow（批1a 时定义在本文件）；
@@ -227,6 +228,20 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           max: 399,
           step: 10,
           onChanged: (v) => _update((c) => c.pageTouchClick = v),
+        ),
+        IosListTile(
+          key: const ValueKey('read-config-click-action-entry'),
+          title: '点击区域设置',
+          subtitle: '9 个区域（3×3 九宫格）',
+          onTap: () => ClickActionConfigSheet.show(
+            context,
+            config: cfg.copy(),
+            onChanged: (updated) {
+              _config = updated.copy();
+              setState(() {});
+              unawaited(_persist());
+            },
+          ),
         ),
         SettingSliderRow(
           title: '滑动翻页阈值',

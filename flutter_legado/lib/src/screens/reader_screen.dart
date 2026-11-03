@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../models/book.dart';
 import '../models/book_source.dart';
+import '../models/reader_tap_action.dart';
 import '../models/source_match.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
@@ -25,6 +26,7 @@ import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/auto_turn_panel.dart';
 import '../widgets/reader/reader_page_chrome.dart';
 import '../widgets/reader/reader_image_dominant_body.dart';
+import '../widgets/reader/reader_action_helpers.dart';
 import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
 import '../widgets/reader/reader_status_strip.dart';
@@ -59,6 +61,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// 阅读器高级配置（自动翻页/点击区域/段距/状态栏）
   ReaderAdvancedConfig _advConfig = ReaderAdvancedConfig();
+
+  /// [批4a] 点击 DOWN 坐标（九宫格分区用）与长按抑制标记
+  Offset? _tapDownPosition;
+  Timer? _tapHoldTimer;
+  bool _tapWasLong = false;
 
   /// [批1b-2a] 音量键翻页节流闸门（keyPageOnLongPress=false 时长按 repeat
   /// 忽略 + 同方向 600ms leading 节流；对齐原版 ReadBookActivity
@@ -246,6 +253,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   @override
   void dispose() {
+    _tapHoldTimer?.cancel();
     if (_hardwareKeyboardHandlerRegistered) {
       HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     }
@@ -983,9 +991,29 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             final cfg =
                 ref.watch(readerAdvConfigProvider) ?? _advConfig;
             Widget body = GestureDetector(
+          onTapDown: imageDominant
+              ? null
+              : (details) {
+                  _tapDownPosition = details.globalPosition;
+                  _tapWasLong = false;
+                  _tapHoldTimer?.cancel();
+                  _tapHoldTimer = Timer(
+                    const Duration(milliseconds: 450),
+                    () => _tapWasLong = true,
+                  );
+                },
+          onTapCancel: imageDominant
+              ? null
+              : () {
+                  _tapHoldTimer?.cancel();
+                  _tapDownPosition = null;
+                },
           onTapUp: imageDominant
               ? null
-              : (details) => _handleTap(context, details),
+              : (details) {
+                  _tapHoldTimer?.cancel();
+                  _handleTap(context, details);
+                },
           child: Stack(
             children: [
               if (imageDominant)
@@ -1274,20 +1302,26 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         );
   }
 
-  /// 根据点击区域配置执行对应功能
+  /// 根据九宫格点击配置执行对应功能（批4a）
+  ///
+  /// 区域按 DOWN 坐标 x/y 各三等分（行优先 0..8）；保留 pageTouchClick
+  /// 左右边缘死区与长按/选区手势（仅在 TapUp 且未升级为长按时进入）。
   void _handleTap(BuildContext context, TapUpDetails details) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final tapX = details.globalPosition.dx;
+    final down = _tapDownPosition;
+    final wasLong = _tapWasLong;
+    _tapDownPosition = null;
+    _tapWasLong = false;
+    // 长按（DOWN 后 >450ms）不触发九宫格动作，保留选区/长按手势语义
+    if (wasLong) return;
+    final position = down ?? details.globalPosition;
+    final size = MediaQuery.of(context).size;
+    final screenWidth = size.width;
+    final tapX = position.dx;
     final notifier = ref.read(readerNotifierProvider.notifier);
     final pageView = _pageViewKey.currentState;
 
-    // [fix Task#41 | 2026-08-09] pageTouchClick 消费点（对标原版
-    // ReadView.setRect9x：左右边缘 pageTouchClick px 内不落入任何点击
-    // 分区，即该条带内的点击不触发任何动作）；默认值 0 与原版一致，
-    // 不影响既有左 30%/中 40%/右 30% 分区
-    // [fix Task#45 | 2026-08-09] 死区钳制到半屏以内（M2）：阈值最大
-    // 399，窄窗口下左右死区重叠会吞掉全部点击（含中央菜单唤出），
-    // 钳制后中央至少保留 2px 可点击区；默认 0 行为不变 — Qoder
+    // [fix Task#41 / Task#45] pageTouchClick 边缘死区（左右边缘 px 内不
+    // 落入任何分区）；钳制到半屏以内，中央至少保留 2px 可点击区。
     final deadZone = math.min(
       _advConfig.pageTouchClick.toDouble(),
       screenWidth / 2 - 1,
@@ -1299,28 +1333,45 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // [批1b-1 审查回修 P1-2] 主交互（点击正文）重挂保持亮屏计时
     _reprioritizeKeepLight();
 
-    TapAction action;
-    if (tapX < screenWidth * 0.3) {
-      action = _advConfig.leftAction;
-    } else if (tapX > screenWidth * 0.7) {
-      action = _advConfig.rightAction;
-    } else {
-      action = _advConfig.centerAction;
-    }
+    final zoneIndex = ReaderTapAction.zoneIndexAt(
+      x: position.dx,
+      y: position.dy,
+      width: size.width,
+      height: size.height,
+    );
+    if (zoneIndex < 0) return;
+    final action = _advConfig.tapActionAt(zoneIndex);
 
-    switch (action) {
-      case TapAction.none:
-        break;
-      case TapAction.prevPage:
-        // [UI-fix v2.0.3 | 2026-08-06] 直接驱动 PageView 翻页（见下方根因说明）— Qoder
-        pageView?.prevPageOrChapter();
-      case TapAction.nextPage:
-        pageView?.nextPageOrChapter();
-      case TapAction.toggleControls:
-        notifier.toggleControls();
-      case TapAction.openCatalog:
-        unawaited(_openToc());
-    }
+    final readerState = ref.read(readerNotifierProvider);
+    final audioNotifier = ref.read(audioNotifierProvider.notifier);
+    dispatchReaderTapAction(
+      action,
+      ReaderTapActionDelegate(
+        toggleControls: notifier.toggleControls,
+        nextPage: () => pageView?.nextPageOrChapter(),
+        previousPage: () => pageView?.prevPageOrChapter(),
+        nextChapter: () => unawaited(notifier.nextChapter()),
+        previousChapter: () => unawaited(notifier.prevChapter()),
+        previousParagraph: () =>
+            unawaited(audioNotifier.prevParagraph()),
+        nextParagraph: () => unawaited(audioNotifier.nextParagraph()),
+        addBookmark: () => _addBookmark(readerState),
+        editContent: () =>
+            unawaited(showReaderEditContentDialog(context, ref)),
+        toggleReplace: () => toggleReaderReplaceRule(context, ref),
+        catalog: () => unawaited(_openToc()),
+        search: () => _openContentSearch(readerState),
+        syncProgress: () => unawaited(syncReaderProgress(context, ref)),
+        toggleReadAloud: () {
+          final audio = ref.read(audioNotifierProvider);
+          if (audio.isPlaying) {
+            audioNotifier.pause();
+          } else {
+            unawaited(audioNotifier.resumeOrPlay());
+          }
+        },
+      ),
+    );
   }
 
   // [UI-fix v2.0.3 | 2026-08-06] 修复点击翻页失效回归 —— Qoder

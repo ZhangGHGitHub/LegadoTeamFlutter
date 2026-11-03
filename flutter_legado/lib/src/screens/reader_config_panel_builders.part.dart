@@ -111,50 +111,24 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     );
   }
 
-  // ===== 点击区域 =====
+  // ===== 点击区域（[批4a] 九宫格单行入口）=====
 
-  Widget _buildTapZones() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionTitle('点击区域', Icons.touch_app_outlined),
-        _tapZoneRow('左侧区域', _config.leftAction, (a) {
-          _config.leftAction = a;
+  Widget _buildClickActionEntry() {
+    return ListTile(
+      key: const ValueKey('reader-click-action-entry'),
+      // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
+      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      leading: const Icon(Icons.touch_app_outlined),
+      title: const Text('点击区域设置'),
+      subtitle: const Text('9 个区域（3×3 九宫格）'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => ClickActionConfigSheet.show(
+        context,
+        config: _config.copy(),
+        onChanged: (cfg) {
+          _config = cfg.copy();
           _commit();
-        }),
-        _tapZoneRow('中间区域', _config.centerAction, (a) {
-          _config.centerAction = a;
-          _commit();
-        }),
-        _tapZoneRow('右侧区域', _config.rightAction, (a) {
-          _config.rightAction = a;
-          _commit();
-        }),
-      ],
-    );
-  }
-
-  Widget _tapZoneRow(String label, TapAction current, ValueChanged<TapAction> onPick) {
-    // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      child: Row(
-        children: [
-          SizedBox(width: 72, child: Text(label, style: Theme.of(context).textTheme.bodyMedium)),
-          Expanded(
-            child: DropdownButton<TapAction>(
-              value: current,
-              isExpanded: true,
-              onChanged: (a) {
-                if (a != null) onPick(a);
-              },
-              items: [
-                for (final a in TapAction.values)
-                  DropdownMenuItem(value: a, child: Text(a.label)),
-              ],
-            ),
-          ),
-        ],
+        },
       ),
     );
   }
