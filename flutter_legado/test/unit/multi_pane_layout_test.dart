@@ -115,6 +115,82 @@ void main() {
     });
   });
 
+  group('窗口尺寸 vs 窗格尺寸（含 Rail 场景）', () {
+    test('auto 阈值按窗口宽：窗格 760 + 窗口 840 启用，窗口 839 不启用', () {
+      // 默认 auto 下 840dp 窗口扣 Rail（约 80dp）后窗格仅 760dp；
+      // 若拿窗格宽比 840 会永远不分栏，故阈值必须用窗口宽。
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.auto,
+          const Size(760, 620),
+          windowSize: const Size(840, 700),
+        ),
+        isTrue,
+      );
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.auto,
+          const Size(759, 620),
+          windowSize: const Size(839, 700),
+        ),
+        isFalse,
+      );
+    });
+
+    test('always 阈值用窗口宽，最小窗格仍按扣 Rail 后宽度', () {
+      // 窗口 839 ≥744 且窗格 759 ≥744 → 启用
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.always,
+          const Size(759, 620),
+          windowSize: const Size(839, 700),
+        ),
+        isTrue,
+      );
+      // 窗口 900 很宽，但窗格 700 放不下左 360 + 间距 24 + 右 360 → 不启用
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.always,
+          const Size(700, 620),
+          windowSize: const Size(900, 700),
+        ),
+        isFalse,
+      );
+    });
+
+    test('landscape 方向按窗口宽高，不看扣 Rail 后的窗格', () {
+      // 窗格近似正方形，但完整窗口是横屏 → 启用
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.landscape,
+          const Size(760, 760),
+          windowSize: const Size(900, 600),
+        ),
+        isTrue,
+      );
+      // 完整窗口是竖屏 → 不启用
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.landscape,
+          const Size(760, 760),
+          windowSize: const Size(900, 1000),
+        ),
+        isFalse,
+      );
+    });
+
+    test('窗口尺寸无限时安全返回 false', () {
+      expect(
+        resolveMultiPane(
+          MultiPaneMode.auto,
+          const Size(760, 620),
+          windowSize: const Size(double.infinity, 700),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('off 与最小窗格约束', () {
     test('off 任意宽高均不启用', () {
       expect(

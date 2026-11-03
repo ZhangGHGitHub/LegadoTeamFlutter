@@ -528,8 +528,9 @@ class IosListTile extends StatelessWidget {
       onTap: onTap,
       enabled: enabled,
       selected: selected,
-      // [设置批2b-2b] 双栏左栏选中高亮：容器行卡自带底色，选中只叠一层
-      // 低透明度 secondaryContainer，不改变行高/分隔线布局。
+      // [设置批2b-2b] 选中只做底色高亮，显式保持文字/图标为常规 onSurface，
+      // 不因 ListTile.selected 默认切换成 primary。
+      selectedColor: scheme.onSurface,
       selectedTileColor: selected
           ? scheme.secondaryContainer.withValues(alpha: 0.45)
           : null,

@@ -160,8 +160,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
   Future<void> _handleBack(List<MainTab> tabs) async {
-    // [设置批2b-2b] 「我的」双栏：先 pop 右栏 nested Navigator，
-    // 空栈后继续走原有「切回书架 / 双击退出」逻辑。
+    // [设置批2b-2b] 「我的」容器：先 pop 容器 nested Navigator（双栏/单栏
+    // 都保留同一栈），空栈后继续走原有「切回书架 / 双击退出」逻辑。
     if (_currentTab == MainTab.my) {
       final myPane = _myPaneNavigatorKey.currentState;
       if (myPane != null && myPane.canPop()) {

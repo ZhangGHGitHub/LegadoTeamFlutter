@@ -670,19 +670,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     );
   }
 
-  /// [设置批2b-2b] 我的页入口导航：双栏时推进右栏 nested Navigator，
-  /// 单栏/独立页时保持既有 root push。
+  /// [设置批2b-2b] 我的页入口导航：容器内（双栏/单栏）统一推进同一个
+  /// nested Navigator；仅独立打开的 SettingsScreen（无 scope）走 root push。
   void _openMyEntry(String route) {
     final scope = context.getInheritedWidgetOfExactType<MyPaneScope>();
-    if (scope != null &&
-        scope.isMultiPane &&
-        scope.controller.pushNamed(route)) {
+    if (scope != null && scope.controller.pushNamed(route)) {
       return;
     }
     Navigator.pushNamed(context, route);
   }
 
-  /// 我的页可导航行（双栏时按右栏栈顶路由高亮）
+  /// 我的页可导航行（容器内按当前入口高亮）
   Widget _myEntry({
     IconData? icon,
     required String title,
@@ -690,9 +688,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     required String route,
   }) {
     final scope = MyPaneScope.maybeOf(context);
-    final selected = scope != null &&
-        scope.isMultiPane &&
-        scope.controller.selectedRoute == route;
+    final selected =
+        scope != null && scope.controller.selectedRoute == route;
     return IosListTile(
       icon: icon,
       title: title,

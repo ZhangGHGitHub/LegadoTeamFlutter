@@ -56,9 +56,15 @@ const double kMultiPaneMinHeight = 320;
 /// - 可用高度 < [minHeight]：false；
 /// - 可用宽度 < leftWidth + gap + rightWidth：false（两栏都放不下，
 ///   即使模式为 always 也不启用）；
-/// - auto：宽 ≥840；
-/// - landscape：宽 > 高且宽 ≥840；
-/// - always：宽 ≥744。
+/// - auto：窗口宽 ≥840；
+/// - landscape：窗口宽 > 高且宽 ≥840；
+/// - always：窗口宽 ≥744。
+///
+/// [available] 是**扣掉导航 Rail 后**的实际窗格区域（LayoutBuilder 约束），
+/// 用于左右最小宽度/高度判定；[windowSize] 是完整窗口尺寸（不扣 Rail），
+/// 用于模式阈值与横屏方向。两者分开是必须的：默认 auto 下 840dp 窗口
+/// 扣掉 Rail 后窗格约 760dp，若拿窗格宽比 840 会永远不分栏。
+/// [windowSize] 为空时回落 [available]（无 Rail 场景/纯函数单测）。
 ///
 /// [leftWidth]/[rightWidth]/[gap]/[minHeight] 可覆盖：参考版容器左栏
 /// （含导航栏）按 420dp 计算时，744dp 的「始终」下限会被最小尺寸检查
@@ -66,6 +72,7 @@ const double kMultiPaneMinHeight = 320;
 bool resolveMultiPane(
   MultiPaneMode mode,
   Size available, {
+  Size? windowSize,
   double leftWidth = kMultiPaneLeftWidth,
   double rightWidth = kMultiPaneRightWidth,
   double gap = kMultiPaneGap,
@@ -73,14 +80,16 @@ bool resolveMultiPane(
 }) {
   if (mode == MultiPaneMode.off) return false;
   if (!available.width.isFinite || !available.height.isFinite) return false;
+  final window = windowSize ?? available;
+  if (!window.width.isFinite || !window.height.isFinite) return false;
   if (available.height < minHeight) return false;
   if (available.width < leftWidth + gap + rightWidth) return false;
   return switch (mode) {
-    MultiPaneMode.auto => available.width >= kMultiPaneExpandedBreakpoint,
+    MultiPaneMode.auto => window.width >= kMultiPaneExpandedBreakpoint,
     MultiPaneMode.landscape =>
-      available.width > available.height &&
-          available.width >= kMultiPaneExpandedBreakpoint,
-    MultiPaneMode.always => available.width >= kMultiPaneAlwaysBreakpoint,
+      window.width > window.height &&
+          window.width >= kMultiPaneExpandedBreakpoint,
+    MultiPaneMode.always => window.width >= kMultiPaneAlwaysBreakpoint,
     MultiPaneMode.off => false,
   };
 }
