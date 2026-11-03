@@ -176,7 +176,7 @@ void main() {
         pageBackgroundColor: const Color(0xFF000000),
         pageTextColor: const Color(0xFFFFFFFF),
       );
-      expect(colors.background, scheme.surface);
+      expect(colors.background, scheme.surfaceContainerHigh);
       expect(colors.container, scheme.surfaceContainerLow);
       expect(colors.accent, scheme.primary);
       expect(colors.text, scheme.onSurface);
@@ -196,10 +196,46 @@ void main() {
         pageTextColor: pageText,
       );
       expect(colors.background, pageBg);
-      expect(colors.container, pageBg);
+      expect(
+        colors.container,
+        Color.alphaBlend(pageText.withValues(alpha: 0.08), pageBg),
+        reason: '跟随阅读背景档容器 = 文字色 8% 混入背景（让色调底衬可见）',
+      );
       expect(colors.text, pageText);
       expect(colors.onSurface, pageText);
       expect(colors.accent, scheme.primary);
+    });
+
+    test('readBarStyle=1 文字与背景同属暗色时改用白字（对比度修复）', () {
+      const text = Color(0xFF333333);
+      for (final argb in [0xFF263238, 0xFF37474F, 0xFF616161]) {
+        final background = Color(argb);
+        final colors = resolveReaderMenuColors(
+          style: ReaderMenuStyle(readBarStyle: 1),
+          isDark: true,
+          scheme: scheme,
+          pageBackgroundColor: background,
+          pageTextColor: text,
+        );
+        expect(colors.text, const Color(0xFFFFFFFF), reason: '$background');
+        final ratio = _contrastRatio(colors.text, background);
+        expect(ratio, greaterThan(4.5), reason: '$background 对比度 $ratio');
+      }
+    });
+
+    test('readBarStyle=1 亮底亮字同样改用黑字', () {
+      final colors = resolveReaderMenuColors(
+        style: ReaderMenuStyle(readBarStyle: 1),
+        isDark: false,
+        scheme: scheme,
+        pageBackgroundColor: const Color(0xFFF5F5DC),
+        pageTextColor: const Color(0xFFFFF9C4),
+      );
+      expect(colors.text, const Color(0xFF000000));
+      expect(
+        _contrastRatio(colors.text, const Color(0xFFF5F5DC)),
+        greaterThan(4.5),
+      );
     });
 
     test('readBarStyle=1 无阅读页色时回落系统样式', () {
@@ -208,7 +244,7 @@ void main() {
         isDark: false,
         scheme: scheme,
       );
-      expect(colors.background, scheme.surface);
+      expect(colors.background, scheme.surfaceContainerHigh);
       expect(colors.text, scheme.onSurface);
     });
 
@@ -315,4 +351,13 @@ void main() {
       expect(colors.background, const Color(0xFFF5F5DC));
     });
   });
+}
+
+/// WCAG 对比度（1.0..21.0）
+double _contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  final lighter = la > lb ? la : lb;
+  final darker = la > lb ? lb : la;
+  return (lighter + 0.05) / (darker + 0.05);
 }

@@ -30,10 +30,12 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/eye_protection.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/reader/reader_menu_style_notifier.dart';
 import 'package:flutter_legado/src/providers/theme/eye_protection_notifier.dart';
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import 'package:flutter_legado/src/services/local_backup_service.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_menu_style.dart';
 
 import '../mocks/mocks.dart';
 
@@ -424,6 +426,65 @@ void main() {
       wroteFlags,
       everyElement(isTrue),
       reason: 'provider 更新必须晚于 mock restore 写盘',
+    );
+  });
+
+  testWidgets('恢复 appPrefs 后菜单样式 provider 同会话重读（批3a）', (tester) async {
+    // 备份恢复会覆盖 readBarStyle/底栏布局/标题模式等键；若 webdav 恢复
+    // 完成只 invalidate 旧顶栏配置而漏掉 readerMenuStyleProvider，本会话
+    // 会继续用恢复前的样式直到重启。
+    final backupPath = fakeBackupPath('legado_backup_menu_style.zip');
+    var restoreWrotePrefs = false;
+    when(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    ).thenAnswer((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(PrefKeys.readBarStyle, 2);
+      await prefs.setInt(PrefKeys.readMenuIconItemsPerRow, 3);
+      await prefs.setString(PrefKeys.titleBarMode, '2');
+      restoreWrotePrefs = true;
+    });
+
+    final container = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(mockApi)],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    expect(container.read(readerMenuStyleProvider).readBarStyle, 1);
+
+    final postRestoreUpdates = <ReaderMenuStyle>[];
+    final subscription = container.listen<ReaderMenuStyle>(
+      readerMenuStyleProvider,
+      (previous, next) {
+        if (restoreWrotePrefs) postRestoreUpdates.add(next);
+      },
+      fireImmediately: false,
+    );
+    addTearDown(subscription.close);
+
+    stubPasswordNotRequired();
+    await startLocalRestore(
+      tester,
+      backupPath: backupPath,
+      container: container,
+    );
+    await tester.pumpAndSettle();
+
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+    final restored = container.read(readerMenuStyleProvider);
+    expect(restored.readBarStyle, 2, reason: '恢复后同会话立即生效');
+    expect(restored.itemsPerRow, 3);
+    expect(restored.titleBarMode, '2');
+    expect(postRestoreUpdates, isNotEmpty, reason: '恢复后必须触发重读');
+    expect(
+      postRestoreUpdates.last.readBarStyle,
+      2,
+      reason: 'provider 更新必须晚于 mock restore 写盘并使用新值',
     );
   });
 

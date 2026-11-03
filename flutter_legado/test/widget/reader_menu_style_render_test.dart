@@ -17,6 +17,7 @@ import 'package:flutter_legado/src/providers/reader/reader_menu_style_notifier.d
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_menu_panel.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_top_bar_actions.dart';
 
 import '../mocks/mocks.dart';
 
@@ -53,29 +54,45 @@ void main() {
     return container;
   }
 
-  Widget wrapMenu(ProviderContainer container) => UncontrolledProviderScope(
+  Widget wrapMenu(
+    ProviderContainer container, {
+    EdgeInsets padding = EdgeInsets.zero,
+    EdgeInsets viewPadding = EdgeInsets.zero,
+    TextScaler? textScaler,
+    bool parentHandlesBottomInset = false,
+  }) => UncontrolledProviderScope(
     container: container,
     child: MaterialApp(
       routes: {
         AppRoutes.bookInfo: (_) => const Scaffold(body: Text('书籍详情页')),
         AppRoutes.offlineCache: (_) => const Scaffold(body: Text('缓存管理页')),
       },
-      home: Scaffold(
-        body: Stack(
-          children: [
-            ReaderMenuPanel(
-              visible: true,
-              onBack: () {},
-              onAddBookmark: () {},
-              onOpenCatalog: () {},
-              onOpenSettings: () {},
-              onOpenAdvancedConfig: () {},
-              onOpenContentSearch: () {},
-              onReadAloud: () {},
-              onToggleAutoPage: () {},
-              onOpenReplaceRules: () {},
+      home: Builder(
+        builder: (context) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            padding: padding,
+            viewPadding: viewPadding,
+            textScaler: textScaler,
+          ),
+          child: Scaffold(
+            body: Stack(
+              children: [
+                ReaderMenuPanel(
+                  visible: true,
+                  onBack: () {},
+                  onAddBookmark: () {},
+                  onOpenCatalog: () {},
+                  onOpenSettings: () {},
+                  onOpenAdvancedConfig: () {},
+                  onOpenContentSearch: () {},
+                  onReadAloud: () {},
+                  onToggleAutoPage: () {},
+                  onOpenReplaceRules: () {},
+                  parentHandlesBottomInset: parentHandlesBottomInset,
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     ),
@@ -98,10 +115,22 @@ void main() {
   Future<ProviderContainer> pumpMenu(
     WidgetTester tester, {
     Book? currentBook,
+    EdgeInsets padding = EdgeInsets.zero,
+    EdgeInsets viewPadding = EdgeInsets.zero,
+    TextScaler? textScaler,
+    bool parentHandlesBottomInset = false,
   }) async {
     final container = makeContainer();
     if (currentBook != null) stubOpenBook();
-    await tester.pumpWidget(wrapMenu(container));
+    await tester.pumpWidget(
+      wrapMenu(
+        container,
+        padding: padding,
+        viewPadding: viewPadding,
+        textScaler: textScaler,
+        parentHandlesBottomInset: parentHandlesBottomInset,
+      ),
+    );
     if (currentBook != null) {
       await container
           .read(readerNotifierProvider.notifier)
@@ -237,6 +266,37 @@ void main() {
       expect(find.text('自动翻页'), findsOneWidget);
     });
 
+    for (final scale in [1.3, 1.5, 2.0]) {
+      testWidgets('showIconText + textScale $scale：无纵向 RenderFlex 溢出', (
+        tester,
+      ) async {
+        SharedPreferences.setMockInitialValues({
+          PrefKeys.readMenuIconShowText: true,
+        });
+        await pumpMenu(
+          tester,
+          currentBook: book,
+          textScaler: TextScaler.linear(scale),
+        );
+        expect(tester.takeException(), isNull);
+        expect(action('设置'), findsOneWidget);
+      });
+    }
+
+    testWidgets('图标文字不锁 40dp 定宽：全文搜索不被截断', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readMenuIconShowText: true,
+      });
+      await pumpMenu(tester, currentBook: book);
+      final label = tester.widget<Text>(find.text('全文搜索'));
+      expect(label.maxLines, 1);
+      expect(
+        tester.getSize(find.text('全文搜索')).width,
+        greaterThan(40),
+        reason: 'OverflowBox 自然绘制，不做 ellipsis 截断',
+      );
+    });
+
     testWidgets('图标容器三态：无底衬 / 色调 / 描边', (tester) async {
       // style 0：透明 + 无描边
       await pumpMenu(tester, currentBook: book);
@@ -369,6 +429,96 @@ void main() {
         const BorderRadius.vertical(top: Radius.circular(8)),
       );
     });
+
+    testWidgets('浮动 + 底部导航栏 34：外边距=16+34，面板内不双计', (tester) async {
+      const navBottom = 34.0;
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        padding: const EdgeInsets.only(bottom: navBottom),
+        viewPadding: const EdgeInsets.only(bottom: navBottom),
+      );
+
+      final screen = tester.getSize(find.byType(Scaffold));
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('reader-bottom-panel-surface')),
+      );
+      expect(
+        surface.bottom,
+        closeTo(screen.height - navBottom - 16, 0.01),
+        reason: '浮动外边距 16 + 导航栏 34',
+      );
+      expect(
+        tester.getRect(action('设置')).bottom,
+        closeTo(surface.bottom - 16, 0.01),
+        reason: '面板内 SafeArea(bottom:false)，只保留网格 16dp 内边距',
+      );
+    });
+
+    testWidgets('父级已处理底部 inset：浮动面板只加 16dp（不叠导航栏）', (
+      tester,
+    ) async {
+      const navBottom = 34.0;
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        padding: const EdgeInsets.only(bottom: navBottom),
+        viewPadding: const EdgeInsets.only(bottom: navBottom),
+        parentHandlesBottomInset: true,
+      );
+      final screen = tester.getSize(find.byType(Scaffold));
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('reader-bottom-panel-surface')),
+      );
+      expect(surface.bottom, closeTo(screen.height - 16, 0.01));
+      expect(
+        tester.getRect(action('设置')).bottom,
+        closeTo(surface.bottom - 16, 0.01),
+      );
+    });
+
+    testWidgets('父级已处理底部 inset：贴底形态内部不再 SafeArea', (tester) async {
+      const navBottom = 34.0;
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readMenuFloatingBottomBar: false,
+      });
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        padding: const EdgeInsets.only(bottom: navBottom),
+        viewPadding: const EdgeInsets.only(bottom: navBottom),
+        parentHandlesBottomInset: true,
+      );
+      final screen = tester.getSize(find.byType(Scaffold));
+      expect(
+        tester.getRect(action('设置')).bottom,
+        closeTo(screen.height - 16, 0.01),
+      );
+    });
+
+    testWidgets('贴底 + 底部导航栏 34：面板贴屏底，SafeArea 只计一次', (tester) async {
+      const navBottom = 34.0;
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readMenuFloatingBottomBar: false,
+      });
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        padding: const EdgeInsets.only(bottom: navBottom),
+        viewPadding: const EdgeInsets.only(bottom: navBottom),
+      );
+
+      final screen = tester.getSize(find.byType(Scaffold));
+      final surface = tester.getRect(
+        find.byKey(const ValueKey('reader-bottom-panel-surface')),
+      );
+      expect(surface.bottom, closeTo(screen.height, 0.01));
+      expect(
+        tester.getRect(action('设置')).bottom,
+        closeTo(screen.height - navBottom - 16, 0.01),
+        reason: 'SafeArea 导航栏 + 网格 16dp，各一次',
+      );
+    });
   });
 
   group('顶栏标题模式 / 胶囊 / 合并 / 图标样式', () {
@@ -458,6 +608,7 @@ void main() {
       SharedPreferences.setMockInitialValues({
         PrefKeys.readMenuTopBarMergeButtons: true,
         PrefKeys.readBarStyle: 0,
+        PrefKeys.titleBarIconStyle: 1,
       });
       await pumpMenu(tester, currentBook: book);
 
@@ -490,6 +641,71 @@ void main() {
         find.byKey(const ValueKey('reader-topbar-action-refresh')),
       );
       expect(refresh.dx - download.dx, 46, reason: '40dp + 6dp');
+    });
+
+    testWidgets('合并按钮 + titleIconStyle=0：胶囊透明（不再恒有底色）', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readMenuTopBarMergeButtons: true,
+        PrefKeys.readBarStyle: 0,
+        PrefKeys.titleBarIconStyle: 0,
+      });
+      await pumpMenu(tester, currentBook: book);
+      final merged = find.byKey(const ValueKey('reader-topbar-merged-actions'));
+      final deco = tester.widget<Container>(merged).decoration as BoxDecoration;
+      expect(deco.color, Colors.transparent);
+    });
+
+    for (final merge in [false, true]) {
+      testWidgets('320dp + 6 个动作（merge=$merge）：全部可见可点且无溢出', (
+        tester,
+      ) async {
+        await tester.binding.setSurfaceSize(const Size(320, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        SharedPreferences.setMockInitialValues({
+          PrefKeys.readMenuTopBarMergeButtons: merge,
+          PrefKeys.readerTopBarActions: [
+            for (final def in readerTopBarActionPool) '${def.id},true',
+          ].join(';'),
+        });
+        await pumpMenu(tester, currentBook: book);
+
+        expect(tester.takeException(), isNull);
+        for (final id in [
+          'download',
+          'refresh',
+          'change_source',
+          'catalog',
+          'search',
+        ]) {
+          final finder = find.byKey(ValueKey('reader-topbar-action-$id'));
+          expect(finder, findsOneWidget, reason: id);
+          expect(finder.hitTestable(), findsOneWidget, reason: '$id 可点');
+        }
+        expect(find.byTooltip('更多').hitTestable(), findsOneWidget);
+      });
+    }
+
+    testWidgets('标题胶囊 textScale 1.5：随字体增高且无溢出', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readMenuTopBarTitleCapsule: true,
+      });
+      await pumpMenu(
+        tester,
+        currentBook: book,
+        textScaler: const TextScaler.linear(1.5),
+      );
+      expect(tester.takeException(), isNull);
+      final capsule = find.byKey(
+        const ValueKey('reader-topbar-title-capsule'),
+      );
+      expect(capsule, findsOneWidget);
+      expect(
+        tester.getSize(capsule).height,
+        greaterThan(40),
+        reason: '两行文本随系统字体缩放，minHeight=40 不固定高度',
+      );
     });
 
     testWidgets('顶栏图标三态独立于底栏（titleBarIconStyle）', (tester) async {
@@ -564,10 +780,10 @@ void main() {
             )
             .first,
       );
-      expect(sliderTheme.data.thumbColor, const Color(0xFFEEEEEE));
+      expect(sliderTheme.data.thumbColor, const Color(0xFF00AA00));
       expect(
         sliderTheme.data.activeTrackColor,
-        const Color(0xFFEEEEEE).withValues(alpha: 0.25),
+        const Color(0xFF00AA00).withValues(alpha: 0.25),
       );
     });
   });

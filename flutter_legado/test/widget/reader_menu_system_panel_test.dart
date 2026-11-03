@@ -54,14 +54,15 @@ void main() {
     expect(find.text('底栏布局'), findsOneWidget);
     expect(find.text('顶栏布局'), findsOneWidget);
 
-    // 全局默认（readBarStyle=1 跟随阅读背景）：显示调色板，不显示颜色来源
+    // [批3a P2-8] 全局默认（readBarStyle=1 跟随阅读背景）：不显示调色板
+    // （1 档取种映射留 3b），也不显示颜色来源
     expect(
       find.byKey(const ValueKey('reader-menu-style-dropdown')),
       findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('reader-menu-palette-dropdown')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey('reader-menu-color-mode-dropdown')),
