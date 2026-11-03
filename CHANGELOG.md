@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.451] - 2026-11-04
+
+### Added
+- [UI] 阅读器菜单模糊与边框：顶/底栏独立模糊开关（Haze）、Solid/Progressive 风格、浮动底栏液态玻璃与按钮玻璃近似、边框开关/宽度（1–4）/日夜色、模糊半径/透明度/底色。
+- [UI] 顶栏紧凑标题：动作收敛为「更多」，窄屏 6 动作时书名不再被压到 0。
+### Changed
+- [UI] 「跟随阅读背景」改为按阅读底色取种生成 M3 菜单配色（surfaceContainerHigh/surfaceContainerLow/primary），默认 85% 半透明并显示 1dp 边框；亮度模式/位置入口回到菜单系统「全局」页。
+### Fixed
+- [UI] 边框层移到内容之上（默认配置真实可见）；模糊模式取值对齐参考（None/LiquidGlass/Haze）；None 档按透明度半透明；Progressive 改为单层渐变；进出场动画期间模糊不再失效；菜单配色 roles 增加 LRU 缓存避免翻页重复计算。
+
 ## [2.0.450] - 2026-11-04
 
 ### Fixed
