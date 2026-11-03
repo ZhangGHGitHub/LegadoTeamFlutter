@@ -49,6 +49,20 @@ class ReaderTapActionDelegate {
   });
 }
 
+/// 朗读暂停/继续：空闲态不启动朗读（对齐参考 isRun no-op）
+void toggleReaderReadAloud({
+  required bool isPlaying,
+  required bool isIdle,
+  required VoidCallback pause,
+  required VoidCallback resume,
+}) {
+  if (isPlaying) {
+    pause();
+    return;
+  }
+  if (!isIdle) resume();
+}
+
 /// 执行九宫格动作（批4a）；none 为空操作。
 void dispatchReaderTapAction(
   ReaderTapAction action,

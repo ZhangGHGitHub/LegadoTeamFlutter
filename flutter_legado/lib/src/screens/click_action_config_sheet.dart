@@ -132,7 +132,12 @@ class _ClickActionConfigSheetState extends State<ClickActionConfigSheet> {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  0,
+                  12,
+                  16 + MediaQuery.viewPaddingOf(context).bottom,
+                ),
                 child: Column(
                   children: [
                     for (var row = 0; row < 3; row++)

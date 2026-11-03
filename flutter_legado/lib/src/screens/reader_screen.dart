@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -63,6 +64,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   ReaderAdvancedConfig _advConfig = ReaderAdvancedConfig();
 
   /// [批4a] 点击 DOWN 坐标（九宫格分区用）与长按抑制标记
+  ///
+  /// 实测外层无竞争长按识别器时，长按释放仍会走 onTapUp；按审查允许的
+  /// 兜底方案使用 kLongPressTimeout(500ms) 抑制九宫格分发。
   Offset? _tapDownPosition;
   Timer? _tapHoldTimer;
   bool _tapWasLong = false;
@@ -998,7 +1002,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                   _tapWasLong = false;
                   _tapHoldTimer?.cancel();
                   _tapHoldTimer = Timer(
-                    const Duration(milliseconds: 450),
+                    kLongPressTimeout,
                     () => _tapWasLong = true,
                   );
                 },
@@ -1311,7 +1315,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final wasLong = _tapWasLong;
     _tapDownPosition = null;
     _tapWasLong = false;
-    // 长按（DOWN 后 >450ms）不触发九宫格动作，保留选区/长按手势语义
     if (wasLong) return;
     final position = down ?? details.globalPosition;
     final size = MediaQuery.of(context).size;
@@ -1319,6 +1322,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final tapX = position.dx;
     final notifier = ref.read(readerNotifierProvider.notifier);
     final pageView = _pageViewKey.currentState;
+    final menuState = ref.read(readerNotifierProvider);
+
+    // [批4a P2-1] 菜单展开时空白区点击只收起菜单（等价参考
+    // ReaderMenuDismissLayer）；面板按钮 InkWell 已先消费，不影响。
+    if (menuState.showControls) {
+      notifier.hideControls();
+      return;
+    }
 
     // [fix Task#41 / Task#45] pageTouchClick 边缘死区（左右边缘 px 内不
     // 落入任何分区）；钳制到半屏以内，中央至少保留 2px 可点击区。
@@ -1364,11 +1375,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         syncProgress: () => unawaited(syncReaderProgress(context, ref)),
         toggleReadAloud: () {
           final audio = ref.read(audioNotifierProvider);
-          if (audio.isPlaying) {
-            audioNotifier.pause();
-          } else {
-            unawaited(audioNotifier.resumeOrPlay());
-          }
+          toggleReaderReadAloud(
+            isPlaying: audio.isPlaying,
+            isIdle: audio.state == PlayerState.idle,
+            pause: audioNotifier.pause,
+            resume: () => unawaited(audioNotifier.resumeOrPlay()),
+          );
         },
       ),
     );

@@ -100,6 +100,11 @@ class RestoreIgnorePrefs {
     PrefKeys.clickActionBottomLeft,
     PrefKeys.clickActionBottomCenter,
     PrefKeys.clickActionBottomRight,
+    // [批4a] 旧三区迁移源键（reader_adv_ 内部键）：勾选「忽略阅读配置」
+    // 恢复备份时不覆盖本机旧值，保证迁移幂等
+    'reader_adv_left_action',
+    'reader_adv_center_action',
+    'reader_adv_right_action',
     'reader_font_size',
     'reader_line_height',
     'reader_bg_color_index',
