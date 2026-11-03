@@ -36,6 +36,21 @@ class ThemeBackgroundImageStore {
   /// 相对应用 Support 目录的根子目录
   static const String subDir = 'theme_backgrounds';
 
+  /// 槽位名（大容器 / 项目卡面，日夜各一）。
+  /// [设置批2b-1b-2b] 新增项目图槽位；`.9.png` 与普通图共用同一槽位。
+  static const String largeLightSlot = 'large_light';
+  static const String largeDarkSlot = 'large_dark';
+  static const String itemLightSlot = 'item_light';
+  static const String itemDarkSlot = 'item_dark';
+
+  /// 孤儿清理扫描的槽位（顺序固定）
+  static const List<String> slotDirs = <String>[
+    largeLightSlot,
+    largeDarkSlot,
+    itemLightSlot,
+    itemDarkSlot,
+  ];
+
   /// 单张图大小上限（32MB）：超过直接拒绝，避免异常大图拖垮内存/磁盘
   static const int maxBytes = 32 * 1024 * 1024;
 
@@ -296,9 +311,11 @@ class ThemeBackgroundImageStore {
   }
 
   /// 低成本孤儿清理（设置页加载时调用）：删除槽位目录中未被引用的自有图片
-  /// 与**超过 [tmpOrphanMinAge] 的**中断残留临时文件；非自有命名/其他槽位
-  /// （如 2b-1b 的 item_*）不动。
+  /// 与**超过 [tmpOrphanMinAge] 的**中断残留临时文件；非自有命名不动。
   ///
+  /// [设置批2b-1b-2b] 扫描 [slotDirs] 四个槽位
+  /// （large_light/large_dark/item_light/item_dark），因此调用方 [keep]
+  /// 必须同时包含大容器图与项目图的当前值（日/夜共四项）。
   /// [keep] 为当前仍被引用的偏好值（绝对路径或相对标识均可）。
   /// 返回删除数量。基目录未预热时直接返回 0（不触发平台通道）。
   static int cleanupOrphansSync({required Iterable<String> keep}) {
@@ -314,7 +331,7 @@ class ThemeBackgroundImageStore {
       keepPaths.add(File(resolved).absolute.path);
     }
     var removed = 0;
-    for (final slot in const <String>['large_light', 'large_dark']) {
+    for (final slot in slotDirs) {
       final dir = Directory('$root$sep$subDir$sep$slot');
       if (!dir.existsSync()) continue;
       for (final entity in dir.listSync(followLinks: false)) {

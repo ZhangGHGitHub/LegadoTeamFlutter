@@ -113,6 +113,32 @@ class PrefKeys {
   static const largeContainerBackgroundImageDark =
       'largeContainerBackgroundImageDark';
 
+  /// 日间项目（卡片）背景图（参考版 itemBackgroundImageLight，默认 null）
+  ///
+  /// [设置批2b-1b-2b] 参考版 `ThemeSettings.kt:58-59`：
+  /// `itemBackgroundImageLight/Dark` 用于 GlassCard（含设置行 SettingCard）
+  /// 卡面图片，值同样为 ThemeBackgroundImageStore 的相对可迁移标识
+  /// （槽位 `item_light`/`item_dark`）。
+  /// 参考版 `AppContainerBackground.kt:51-63` 与 Large 图共用
+  /// `enableContainerBackgroundImage` 总开关；Alpha 取
+  /// `glassCardBackgroundOpacity / 100f`。
+  /// 备份归组已核对 `BackupConfig.kt:263-317`：该键**不在** themePrefKeys
+  /// 内 → 任何忽略组合下都随 appPrefs 往返。
+  static const itemBackgroundImageLight = 'itemBackgroundImageLight';
+
+  /// 夜间项目（卡片）背景图（参考版 itemBackgroundImageDark，默认 null）
+  static const itemBackgroundImageDark = 'itemBackgroundImageDark';
+
+  /// 项目（卡片）背景图自身不透明度 0..100（参考版
+  /// glassCardBackgroundOpacity，默认 100）
+  ///
+  /// [设置批2b-1b-2b] 参考版 `ThemeSettings.kt:62` 默认 100，
+  /// `AppContainerBackground.kt:61-63` 对 Item 图取 `value / 100f` 作为
+  /// 绘制 alpha。与 [containerOpacity]（卡面底色 alpha）、
+  /// [appColumnBackgroundOpacity]（大容器图 alpha）三者相互独立。
+  /// 参考版 BackupConfig.themePrefKeys 未收录此键 → 随 appPrefs 往返。
+  static const glassCardBackgroundOpacity = 'glassCardBackgroundOpacity';
+
   /// 日间全局背景图虚化半径 0..100（参考版 bgImageBlurring="backgroundImageBlurring"，
   /// 默认 0；仅作用于全局壁纸，不影响内容/文字）
   static const bgImageBlurring = 'backgroundImageBlurring';

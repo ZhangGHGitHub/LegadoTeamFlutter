@@ -225,6 +225,19 @@ class AppTheme {
       brightness: brightness,
     ) ?? BorderSide.none;
 
+    // [设置批2b-1b-2b] 全局卡片不透明度（参考版 containerOpacity）：
+    // CardThemeData.color 乘 `containerOpacity / 100`，未显式 color 的 Card
+    // 生效（参考 GlassCard.kt:74-75 `it.copy(alpha = it.alpha * alpha)`）。
+    // 解析集中到 [resolveCardThemeColor]：**乘**而非替换 alpha，透明调色板
+    // 的卡面 role 自带 alpha 时不会被洗成实色（否则会盖住容器图/壁纸）。
+    // 作用范围：使用 CardTheme 默认色的 Card；IosGroup 行卡/设置首页手写
+    // 卡片在外观页另行乘同一 alpha；18 处显式 shape/自定义色卡片不在覆盖内
+    //（沿用 2b-1b-1 登记，2b-1b-2c 迁移）。
+    final cardSurfaceColor = resolveCardThemeColor(
+      cardColor,
+      uiSettingsListenable.value.containerOpacity,
+    );
+
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
@@ -292,8 +305,9 @@ class AppTheme {
       ),
 
       // 卡片主题 —— tonal 分组容器（亮面用最低层容器，暗面抬一层）
+      // [设置批2b-1b-2b] color 已乘 containerOpacity（见上方 cardSurfaceColor）
       cardTheme: CardThemeData(
-        color: cardColor,
+        color: cardSurfaceColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         margin: EdgeInsets.zero,

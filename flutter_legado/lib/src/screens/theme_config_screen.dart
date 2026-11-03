@@ -130,20 +130,33 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       PrefKeys.transparentNavBarNight,
       defaultValue: false,
     );
-    // [P2.4] 低成本孤儿清理：删除 theme_backgrounds/{large_light,large_dark}
-    // 下未被引用的自有图片与中断残留 tmp（仅同步扫描两个槽位，其他槽位/
-    // 非自有命名不动）。基目录未预热时直接跳过，不触发平台通道。
+    // [P2.4] 低成本孤儿清理：删除 theme_backgrounds 四个槽位
+    // （large_light/large_dark/item_light/item_dark）下未被引用的自有图片与
+    // 中断残留 tmp（[设置批2b-1b-2b] 起包含项目图槽位）；非自有命名不动。
+    // 基目录未预热时直接跳过，不触发平台通道。
     final containerImageLight = await _settings.getStringPref(
       PrefKeys.largeContainerBackgroundImageLight,
     );
     final containerImageDark = await _settings.getStringPref(
       PrefKeys.largeContainerBackgroundImageDark,
     );
+    // [设置批2b-1b-2b] 项目图必须加入 keep，否则刚选好的项目图会被当孤儿删除
+    final itemImageLight = await _settings.getStringPref(
+      PrefKeys.itemBackgroundImageLight,
+    );
+    final itemImageDark = await _settings.getStringPref(
+      PrefKeys.itemBackgroundImageDark,
+    );
     if (ThemeBackgroundImageStore.isWarm) {
       // best effort：清理失败（权限/IO）不得阻断外观页加载
       try {
         ThemeBackgroundImageStore.cleanupOrphansSync(
-          keep: [containerImageLight, containerImageDark],
+          keep: [
+            containerImageLight,
+            containerImageDark,
+            itemImageLight,
+            itemImageDark,
+          ],
         );
       } catch (e) {
         debugPrint('ThemeConfigScreen 容器背景图孤儿清理失败（不阻断）：$e');
@@ -586,6 +599,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
             ThemeBackgroundImageStore.isUsableSync(
               containerBgForCurrentBrightness,
             );
+    // [设置批2b-1b-2b] 项目背景图透明度行：与 Large 图同口径，仅总开关开
+    // 且当前亮暗项目图可用时显示（参考版滑杆在图片管理面板内、随图片出现）。
+    final itemBgForCurrentBrightness =
+        Theme.of(context).brightness == Brightness.dark
+            ? ui.itemBackgroundImageDark
+            : ui.itemBackgroundImageLight;
+    final showGlassCardBackgroundOpacity =
+        ui.enableContainerBackgroundImage &&
+            ThemeBackgroundImageStore.isUsableSync(
+              itemBgForCurrentBrightness,
+            );
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
@@ -947,8 +971,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   按当前亮暗绘制；文件缺失回落纯主题底色。
                   // - 容器不透明度 containerOpacity 0..100（默认 100），乘调色板
                   //   alpha（参考 GlassCard.kt:74-75），作用于分组卡面与行小卡面；
-                  //   覆盖 IosGroup 与设置首页手写卡片，其余书架/详情/对话框等
-                  //   全局 GlassCard 登记 2b-1b-2b。
+                  //   [设置批2b-1b-2b] 起同时作用于全局 CardTheme 默认色
+                  //   （未显式 color 的 Card）、IosGroup 与设置首页手写卡片；
+                  //   书架/详情/对话框等剩余 GlassCard 卡面登记 2b-1b-2c。
                   // - 大容器背景图自身不透明度 appColumnBackgroundOpacity
                   //   0..100（默认 100；参考 ThemeSettings.kt:61，
                   //   AppContainerBackground.kt:61 对 Large 图 alpha=value/100），
@@ -964,26 +989,31 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   baseCardCornerRadius 0..40；作用于 IosGroup 与全局
                   //   CardTheme（参考版 BaseCard/GlassCard 同源分支）。
                   //   范围：仅未显式 shape 的 Card；18 处显式 shape 的卡片
-                  //   （字典/首页/阅读器内面板等）不在覆盖内，登记 2b-1b-2b。
+                  //   （字典/首页/阅读器内面板等）不在覆盖内，登记 2b-1b-2c。
                   // - 覆盖卡片边框 overrideBaseCardBorder + 宽度 0..5 + 日夜色
                   //   （0=outlineVariant）；IosGroup 用 foregroundDecoration
                   //   绘制，不改变布局/不裁剪内容。
                   // - 显示分隔线 enableItemDivider + 宽度 0..5 + 长度 30..100%
                   //   + 颜色（0=灰色 30%）；行之间插入胶囊线，行间距保持 2dp
                   //   （参考 SplicedColumnGroup + SettingItemDivider）。
-                  // - 登记（2b-1b-2b）：glassCardBackgroundOpacity（项目图不透明度）、
-                  //   itemBackgroundImage 日夜图、.9 九宫格渲染、书架/详情/对话框
-                  //   等其余全局 GlassCard 卡面覆盖；设置首页手写卡片只应用
-                  //   containerOpacity 卡面 alpha，不渲染大容器图（appColumn 在
-                  //   该页无视觉作用）；IosGroup(flat) 扁平模式无卡片面，不参与
-                  //   容器背景/不透明度/圆角/边框/分隔线开关；虚化行常显。
+                  // [设置批2b-1b-2b] 项目（卡片）背景图：
+                  // - itemBackgroundImageLight/Dark（默认 null，槽位
+                  //   item_light/item_dark）+ glassCardBackgroundOpacity
+                  //   0..100（默认 100）；与 Large 图共用本组总开关
+                  //   （参考 AppContainerBackground.kt:51-63）。
+                  // - 渲染范围：IosGroup 行卡 + 设置首页手写卡片；图片层在卡面
+                  //   色之上、内容之下，`.9.png` 按 centerSlice 拉伸。
+                  // - 登记（2b-1b-2c）：书架/详情/对话框等其余 GlassCard 卡面；
+                  //   设置首页仍不渲染大容器图（appColumn 在该页无视觉作用）；
+                  //   IosGroup(flat) 扁平模式无卡片面，不参与容器背景/不透明度/
+                  //   圆角/边框/分隔线开关；虚化行常显。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
                       children: [
                     // 参考 容器背景图 总开关（enableContainerBackgroundImage）
                     SettingSwitchRow(
                       title: '容器背景图',
-                      subtitle: '大容器使用独立的日间/夜间图片',
+                      subtitle: '大容器和项目卡面分别使用独立的日间/夜间图片',
                       value: ui.enableContainerBackgroundImage,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -1006,6 +1036,22 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                             ui.largeContainerBackgroundImageDark),
                         onTap: () => _showContainerBgImageDialog(night: true),
                       ),
+                      // [设置批2b-1b-2b] 项目（卡片）背景图日/夜行：槽位
+                      // item_light/item_dark，渲染于设置页行卡与设置首页卡片。
+                      IosListTile(
+                        icon: Symbols.wallpaper_rounded,
+                        title: '项目背景图片（日间）',
+                        subtitle: _containerBgLabel(
+                            ui.itemBackgroundImageLight),
+                        onTap: () => _showItemBgImageDialog(night: false),
+                      ),
+                      IosListTile(
+                        icon: Symbols.wallpaper_rounded,
+                        title: '项目背景图片（夜间）',
+                        subtitle:
+                            _containerBgLabel(ui.itemBackgroundImageDark),
+                        onTap: () => _showItemBgImageDialog(night: true),
+                      ),
                     ],
                     // 参考 appColumnBackgroundOpacity：大容器背景图自身透明度
                     // 0..100，默认 100；仅乘图片 alpha，与行卡 scrim 独立叠加。
@@ -1021,6 +1067,21 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
                             .setAppColumnBackgroundOpacity(v),
+                      ),
+                    // [设置批2b-1b-2b] 参考 glassCardBackgroundOpacity：项目图
+                    // 自身透明度 0..100，默认 100；仅乘项目图 alpha，与
+                    // containerOpacity/大容器图透明度三者独立叠加。
+                    if (showGlassCardBackgroundOpacity)
+                      SettingSliderRow(
+                        title: '项目背景图透明度',
+                        subtitle: '0-100；仅作用于设置页项目卡面图片自身，'
+                            '与容器不透明度独立叠加（0=图片完全透明）',
+                        value: ui.glassCardBackgroundOpacity,
+                        min: 0,
+                        max: 100,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setGlassCardBackgroundOpacity(v),
                       ),
                     // 参考 container_opacity 滑杆：0..100，默认 100
                     SettingSliderRow(
@@ -1971,20 +2032,68 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         : '$name（文件缺失，已回落）';
   }
 
-  /// 容器背景图选择/清除（日/夜独立）
+  /// 大容器背景图选择/清除（日/夜独立）
   ///
   /// 对齐参考版 `ThemeConfigViewModel.setContainerBackground`：
   /// 选图后复制到应用目录（内容哈希命名，自动去重），偏好存可迁移标识；
   /// 替换/清除时删除上一张自有图片（外部/参考版路径不删）。
-  Future<void> _showContainerBgImageDialog({required bool night}) async {
+  Future<void> _showContainerBgImageDialog({required bool night}) {
     final ui = ref.read(uiSettingsProvider);
-    final current = night
-        ? ui.largeContainerBackgroundImageDark
-        : ui.largeContainerBackgroundImageLight;
+    return _showBackgroundImageDialog(
+      title: night ? '容器背景图片（夜间）' : '容器背景图片（日间）',
+      current: night
+          ? ui.largeContainerBackgroundImageDark
+          : ui.largeContainerBackgroundImageLight,
+      slot: night
+          ? ThemeBackgroundImageStore.largeDarkSlot
+          : ThemeBackgroundImageStore.largeLightSlot,
+      pickerTitle: '选择容器背景图片',
+      failurePrefix: '设置容器背景图失败',
+      apply: (stored) => ref
+          .read(uiSettingsProvider.notifier)
+          .setLargeContainerBackgroundImage(night: night, storedPath: stored),
+    );
+  }
+
+  /// 项目（卡片）背景图选择/清除（日/夜独立）
+  ///
+  /// [设置批2b-1b-2b] 槽位 item_light/item_dark；存储/校验/原子写/去重
+  /// 与大容器图完全同口径（[ThemeBackgroundImageStore.storeBytes]）。
+  Future<void> _showItemBgImageDialog({required bool night}) {
+    final ui = ref.read(uiSettingsProvider);
+    return _showBackgroundImageDialog(
+      title: night ? '项目背景图片（夜间）' : '项目背景图片（日间）',
+      current:
+          night ? ui.itemBackgroundImageDark : ui.itemBackgroundImageLight,
+      slot: night
+          ? ThemeBackgroundImageStore.itemDarkSlot
+          : ThemeBackgroundImageStore.itemLightSlot,
+      pickerTitle: '选择项目背景图片',
+      failurePrefix: '设置项目背景图失败',
+      apply: (stored) => ref
+          .read(uiSettingsProvider.notifier)
+          .setItemBackgroundImage(night: night, storedPath: stored),
+    );
+  }
+
+  /// 通用背景图选择/清除对话框（大容器图与项目图共用）
+  ///
+  /// [current] 为当前偏好值（非空才显示「清除图片」）；[slot] 为
+  /// ThemeBackgroundImageStore 槽位；[apply] 负责持久化对应键。
+  /// Android 走 SAF 字节流（规避 file_picker MediaStore 陈旧缩略图 FATAL）；
+  /// iOS/桌面仍由 picker 内部走 file_picker。
+  Future<void> _showBackgroundImageDialog({
+    required String title,
+    required String current,
+    required String slot,
+    required String pickerTitle,
+    required String failurePrefix,
+    required Future<void> Function(String storedPath) apply,
+  }) async {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: Text(night ? '容器背景图片（夜间）' : '容器背景图片（日间）'),
+        title: Text(title),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 'select'),
@@ -2005,44 +2114,35 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       ),
     );
     if (!mounted || action == null) return;
-    final notifier = ref.read(uiSettingsProvider.notifier);
     if (action == 'select') {
-      // [设置批2b-1b-2a] Android 走 SAF 字节流（规避 file_picker MediaStore
-      // 陈旧缩略图 FATAL）；iOS/桌面仍由 picker 内部走 file_picker。
       try {
-        final picked = await ContainerImagePicker.pick();
+        final picked = await ContainerImagePicker.pick(
+          dialogTitle: pickerTitle,
+        );
         if (picked == null || !mounted) return;
         final stored = await ThemeBackgroundImageStore.storeBytes(
           picked.bytes,
           originalName: picked.name,
-          slot: night ? 'large_dark' : 'large_light',
+          slot: slot,
         );
-        await notifier.setLargeContainerBackgroundImage(
-          night: night,
-          storedPath: stored,
-        );
+        await apply(stored);
         // 仅删除自有旧图；参考版/外部绝对路径不动
         if (current.isNotEmpty && current != stored) {
           await ThemeBackgroundImageStore.deleteOwned(current);
         }
       } on ContainerImagePickException catch (e) {
-        debugPrint(
-          'ThemeConfigScreen._showContainerBgImageDialog 选择失败: $e',
-        );
+        debugPrint('ThemeConfigScreen.$title 选择失败: $e');
         if (mounted) _toast(e.message);
       } catch (e) {
-        debugPrint('ThemeConfigScreen._showContainerBgImageDialog 设置异常: $e');
+        debugPrint('ThemeConfigScreen.$title 设置异常: $e');
         if (mounted) {
           // 非图片/超大图（FormatException）直接给中文原因，避免包一层异常名
           final detail = e is FormatException ? e.message : errorMessage(e);
-          _toast('设置容器背景图失败：$detail');
+          _toast('$failurePrefix：$detail');
         }
       }
     } else if (action == 'delete') {
-      await notifier.setLargeContainerBackgroundImage(
-        night: night,
-        storedPath: '',
-      );
+      await apply('');
       await ThemeBackgroundImageStore.deleteOwned(current);
     }
   }

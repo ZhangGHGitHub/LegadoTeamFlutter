@@ -3,6 +3,8 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
+import '../services/theme_background_image_store.dart';
+import '../widgets/glass_card_background.dart';
 
 /// 设置主页（集中化分组入口）
 ///
@@ -14,8 +16,12 @@ import '../routes.dart';
 /// [设置批2b-1b-2a] 本页入口卡为手写 Material（16dp 圆角、10dp 行距），
 /// 不在 IosGroup/CardTheme 覆盖范围内；此处按同一口径乘 containerOpacity
 /// 卡面 alpha（文字/图标保持不透明），使容器不透明度在该页生效。
-/// 登记（2b-1b-2b）：本页不渲染大容器背景图（无 IosGroup 图片层），
-/// 因此 appColumnBackgroundOpacity 在该页无视觉作用；仅卡面 alpha 生效。
+/// [设置批2b-1b-2b] 入口卡按 GlassCard 语义叠加项目背景图
+/// （itemBackgroundImageLight/Dark，总开关 enableContainerBackgroundImage，
+/// alpha=glassCardBackgroundOpacity/100）：图片层位于卡面底色之上、内容
+/// 之下，圆角 16dp 裁剪，IgnorePointer 不拦截点击。
+/// 登记（2b-1b-2c）：本页仍不渲染大容器背景图（appColumnBackgroundOpacity
+/// 在该页无视觉作用）；书架/详情/对话框等其余 GlassCard 卡面待迁移。
 class SettingsHomeScreen extends StatelessWidget {
   const SettingsHomeScreen({super.key});
 
@@ -35,6 +41,14 @@ class SettingsHomeScreen extends StatelessWidget {
     final cardColor = cs.surfaceContainerLow.withValues(
       alpha: cs.surfaceContainerLow.a * opacity,
     );
+    const cardRadius = BorderRadius.all(Radius.circular(16));
+    // [设置批2b-1b-2b] 项目背景图（GlassCard Item 语义）
+    final brightness = Theme.of(context).brightness;
+    final itemStored = itemBackgroundStoredValue(ui, brightness);
+    final hasItemImage = hasUsableItemBackground(ui, brightness);
+    final itemImagePath = hasItemImage
+        ? ThemeBackgroundImageStore.resolveSync(itemStored)
+        : '';
     final entries = [
       (Symbols.palette_rounded, '外观', '主题配色与显示模式',
           () => Navigator.pushNamed(context, AppRoutes.themeConfig)),
@@ -81,45 +95,65 @@ class SettingsHomeScreen extends StatelessWidget {
                 final (icon, title, subtitle, onTap) = entries[i];
                 return Material(
                   color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: onTap,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(icon, size: 22, color: cs.onSurfaceVariant),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleSmall),
-                                const SizedBox(height: 2),
-                                Text(
-                                  subtitle,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                            ),
+                  borderRadius: cardRadius,
+                  // 项目图与卡片同 16dp 圆角裁剪（参考 GlassCard clip(shape)）
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    children: [
+                      // 项目图在卡面底色之上、入口内容之下；无图时整层不建
+                      if (hasItemImage)
+                        Positioned.fill(
+                          child: GlassCardBackground(
+                            key: ValueKey('settings-home-item-background-$i'),
+                            path: itemImagePath,
+                            opacityPercent: ui.glassCardBackgroundOpacity,
+                            borderRadius: cardRadius,
+                            opacityKey: ValueKey(
+                                'settings-home-item-background-opacity-$i'),
+                            imageKey: ValueKey(
+                                'settings-home-item-background-image-$i'),
                           ),
-                          Icon(Symbols.chevron_right_rounded,
-                              size: 20, color: cs.onSurfaceVariant),
-                        ],
+                        ),
+                      InkWell(
+                        borderRadius: cardRadius,
+                        onTap: onTap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(icon, size: 22, color: cs.onSurfaceVariant),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(title,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      subtitle,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(Symbols.chevron_right_rounded,
+                                  size: 20, color: cs.onSurfaceVariant),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 );
               },

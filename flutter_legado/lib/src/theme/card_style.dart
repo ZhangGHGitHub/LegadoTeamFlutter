@@ -65,6 +65,17 @@ BorderSide? resolveBaseCardBorderSide(
   );
 }
 
+/// 全局 CardTheme 卡面颜色：乘 `containerOpacity`（0..100）
+///
+/// [设置批2b-1b-2b] 与参考版 `GlassCard.kt:74-75`
+/// （`it.copy(alpha = it.alpha * alpha)`）同口径：**乘**原 alpha 而非
+/// 替换，透明调色板的卡面 role（如 `0x33FFFFFF`）不会被洗成实色。
+/// 100% 保持原 alpha；0 完全透明（露出壁纸/容器图）；越界按 0..100 钳制。
+Color resolveCardThemeColor(Color cardColor, int containerOpacityPercent) {
+  final opacity = (containerOpacityPercent / 100).clamp(0.0, 1.0);
+  return cardColor.withValues(alpha: cardColor.a * opacity);
+}
+
 /// 分隔线颜色：0 色回落灰色 30%（参考版 `Color.Gray.copy(alpha = 0.3f)`）
 Color resolveItemDividerColor(int configured) {
   return configured != 0

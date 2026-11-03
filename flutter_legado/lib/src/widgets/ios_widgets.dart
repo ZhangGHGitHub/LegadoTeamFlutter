@@ -6,7 +6,8 @@ import '../theme/card_style.dart';
 
 import 'pill_divider.dart';
 import 'setting_cards.dart';
-import 'theme_background_layer.dart';
+import 'glass_card_background.dart';
+import 'nine_patch.dart';
 
 /// MD3 风格分组列表组件库（Batch 0 集中改造，UI_MD3_PLAN.md 第八节）
 ///
@@ -259,6 +260,20 @@ class IosGroup extends StatelessWidget {
             ThemeBackgroundImageStore.isUsableSync(stored);
         final imagePath =
             hasImage ? ThemeBackgroundImageStore.resolveSync(stored) : '';
+        // [设置批2b-1b-2b] 项目（卡片）背景图（参考 GlassCard.kt:36-53,
+        // 128-160；SettingCard 复用 GlassCard → 设置行卡即 Item 卡面）：
+        // - 当前亮暗取 itemBackgroundImageLight/Dark，与 Large 图共用
+        //   enableContainerBackgroundImage 总开关（AppContainerBackground
+        //   .kt:51-63）；
+        // - 图片层位于**行卡底色之上、行内容之下**，圆角与行卡一致；
+        // - alpha 只受 glassCardBackgroundOpacity 控制，与 containerOpacity
+        //   独立叠加：100% 图片覆盖行卡底色，0 完全透明。
+        final itemStored = itemBackgroundStoredValue(ui, theme.brightness);
+        final hasItemImage = hasUsableItemBackground(ui, theme.brightness);
+        final itemImagePath = hasItemImage
+            ? ThemeBackgroundImageStore.resolveSync(itemStored)
+            : '';
+        final rowRadius = BorderRadius.circular(4);
         return Padding(
           padding: margin,
           child: Container(
@@ -282,18 +297,13 @@ class IosGroup extends StatelessWidget {
                           key: const ValueKey(
                               'ios-group-container-background-opacity'),
                           opacity: imageOpacity,
-                          child: Image(
+                          // [设置批2b-1b-2b] 统一图片构建：`.9.png` 走
+                          // centerSlice + BoxFit.fill，普通图 cover
+                          child: buildBackgroundImage(
                             key: const ValueKey(
                                 'ios-group-container-background'),
-                            image: themeBackgroundImageProvider(
-                              imagePath,
-                              context,
-                            ),
-                            fit: BoxFit.cover,
-                            alignment: Alignment.center,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, _, _) =>
-                                const SizedBox.shrink(),
+                            context: context,
+                            path: imagePath,
                           ),
                         ),
                       ),
@@ -316,9 +326,32 @@ class IosGroup extends StatelessWidget {
                             color: rowSurface.withValues(
                               alpha: rowSurface.a * opacity,
                             ),
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: rowRadius,
                             clipBehavior: Clip.antiAlias,
-                            child: children[i],
+                            // [设置批2b-1b-2b] 项目图在行卡底色之上、行内容
+                            // 之下（参考 BaseCardContent 的 Spacer + Column）；
+                            // 无项目图时保持原树（children[i] 直接作为 child）。
+                            child: hasItemImage
+                                ? Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: GlassCardBackground(
+                                          key: ValueKey(
+                                              'ios-group-item-background-$i'),
+                                          path: itemImagePath,
+                                          opacityPercent:
+                                              ui.glassCardBackgroundOpacity,
+                                          borderRadius: rowRadius,
+                                          opacityKey: ValueKey(
+                                              'ios-group-item-background-opacity-$i'),
+                                          imageKey: ValueKey(
+                                              'ios-group-item-background-image-$i'),
+                                        ),
+                                      ),
+                                      children[i],
+                                    ],
+                                  )
+                                : children[i],
                           ),
                           if (i != children.length - 1) ...[
                             const SizedBox(height: 2),

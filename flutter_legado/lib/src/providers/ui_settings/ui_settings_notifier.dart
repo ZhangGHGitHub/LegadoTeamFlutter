@@ -221,6 +221,24 @@ class UiSettingsState {
   /// 夜间全局背景图虚化半径 0-100（参考版 bgImageNBlurring，默认 0）
   final int bgImageDarkBlurring;
 
+  // ===== [设置批2b-1b-2b] 项目（卡片）背景图（对齐参考版 ThemeSettings）=====
+
+  /// 日间项目背景图偏好值（相对 Support 目录的可迁移标识；空=未设置）
+  ///
+  /// 槽位 `item_light`；是否渲染同时受 [enableContainerBackgroundImage]
+  /// 总开关约束（参考 `AppContainerBackground.kt:51-63` 的 Item 分支）。
+  final String itemBackgroundImageLight;
+
+  /// 夜间项目背景图偏好值（相对 Support 目录的可迁移标识；空=未设置）
+  final String itemBackgroundImageDark;
+
+  /// 项目背景图自身不透明度 0-100（参考版 glassCardBackgroundOpacity，
+  /// 默认 100）
+  ///
+  /// 只乘在项目图绘制 alpha 上：100% 时图片完全覆盖行卡底色，0 时图片
+  /// 完全透明；与 [containerOpacity]（卡面 alpha）独立叠加。
+  final int glassCardBackgroundOpacity;
+
   /// 大屏侧栏展开态（持久化）
   final bool railExtended;
 
@@ -278,6 +296,9 @@ class UiSettingsState {
     this.largeContainerBackgroundImageDark = '',
     this.bgImageBlurring = 0,
     this.bgImageDarkBlurring = 0,
+    this.itemBackgroundImageLight = '',
+    this.itemBackgroundImageDark = '',
+    this.glassCardBackgroundOpacity = 100,
     this.railExtended = false,
     this.readMenuBrightnessVertical = false,
     this.readMenuBrightnessPos = 'right',
@@ -325,6 +346,9 @@ class UiSettingsState {
     String? largeContainerBackgroundImageDark,
     int? bgImageBlurring,
     int? bgImageDarkBlurring,
+    String? itemBackgroundImageLight,
+    String? itemBackgroundImageDark,
+    int? glassCardBackgroundOpacity,
     bool? railExtended,
     bool? readMenuBrightnessVertical,
     String? readMenuBrightnessPos,
@@ -383,6 +407,12 @@ class UiSettingsState {
           this.largeContainerBackgroundImageDark,
       bgImageBlurring: bgImageBlurring ?? this.bgImageBlurring,
       bgImageDarkBlurring: bgImageDarkBlurring ?? this.bgImageDarkBlurring,
+      itemBackgroundImageLight:
+          itemBackgroundImageLight ?? this.itemBackgroundImageLight,
+      itemBackgroundImageDark:
+          itemBackgroundImageDark ?? this.itemBackgroundImageDark,
+      glassCardBackgroundOpacity:
+          glassCardBackgroundOpacity ?? this.glassCardBackgroundOpacity,
       railExtended: railExtended ?? this.railExtended,
       readMenuBrightnessVertical:
           readMenuBrightnessVertical ?? this.readMenuBrightnessVertical,
@@ -573,6 +603,17 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       bgImageDarkBlurring: await _settings.getIntPref(
         PrefKeys.bgImageNBlurring,
         defaultValue: 0,
+      ).then(_clampOpacity),
+      // [设置批2b-1b-2b] 项目（卡片）背景图与自身不透明度
+      itemBackgroundImageLight: await _settings.getStringPref(
+        PrefKeys.itemBackgroundImageLight,
+      ),
+      itemBackgroundImageDark: await _settings.getStringPref(
+        PrefKeys.itemBackgroundImageDark,
+      ),
+      glassCardBackgroundOpacity: await _settings.getIntPref(
+        PrefKeys.glassCardBackgroundOpacity,
+        defaultValue: 100,
       ).then(_clampOpacity),
       railExtended: await _settings.getBoolPref(
         PrefKeys.railExtended,
@@ -1009,6 +1050,55 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     } else {
       await _settings.setStringPref(
         PrefKeys.largeContainerBackgroundImageLight,
+        storedPath,
+      );
+    }
+  }
+
+  // ===== [设置批2b-1b-2b] 项目（卡片）背景图 =====
+
+  /// 项目背景图自身不透明度（0-100，默认 100；0=图片完全透明）
+  Future<void> setGlassCardBackgroundOpacity(int value) async {
+    final v = _clampOpacity(value);
+    if (state.glassCardBackgroundOpacity == v) return;
+    state = state.copyWith(glassCardBackgroundOpacity: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.glassCardBackgroundOpacity, v);
+  }
+
+  /// 项目（卡片）背景图（日/夜；空串 = 清除/恢复默认）
+  ///
+  /// [storedPath] 为 ThemeBackgroundImageStore 返回的相对可迁移标识
+  /// （槽位 `item_light`/`item_dark`）。清除时移除偏好键（参考版置 null）；
+  /// 旧图文件清理由调用方负责。渲染另受
+  /// [enableContainerBackgroundImage] 总开关约束（参考
+  /// `AppContainerBackground.kt:51-63`），本 setter 不改变总开关。
+  Future<void> setItemBackgroundImage({
+    required bool night,
+    required String storedPath,
+  }) async {
+    if (night) {
+      if (state.itemBackgroundImageDark == storedPath) return;
+      state = state.copyWith(itemBackgroundImageDark: storedPath);
+      _sync();
+      if (storedPath.isEmpty) {
+        await _settings.removePref(PrefKeys.itemBackgroundImageDark);
+      } else {
+        await _settings.setStringPref(
+          PrefKeys.itemBackgroundImageDark,
+          storedPath,
+        );
+      }
+      return;
+    }
+    if (state.itemBackgroundImageLight == storedPath) return;
+    state = state.copyWith(itemBackgroundImageLight: storedPath);
+    _sync();
+    if (storedPath.isEmpty) {
+      await _settings.removePref(PrefKeys.itemBackgroundImageLight);
+    } else {
+      await _settings.setStringPref(
+        PrefKeys.itemBackgroundImageLight,
         storedPath,
       );
     }
