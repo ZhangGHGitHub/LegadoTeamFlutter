@@ -417,7 +417,8 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _onMethodCall(MethodCall call) async {    if (call.method != 'onMediaButton') return;
+  Future<void> _onMethodCall(MethodCall call) async {
+    if (call.method != 'onMediaButton') return;
     final args = call.arguments;
     if (args is! Map) return;
     final int keyCode;
