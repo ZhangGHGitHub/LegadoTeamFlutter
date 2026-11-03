@@ -109,7 +109,7 @@ void main() {
     expect(find.text('共用布局'), findsOneWidget);
     // [批3a] 原「菜单」页三卡移入 more 页，功能不丢失
     expect(find.text('自动翻页'), findsWidgets);
-    expect(find.text('点击区域'), findsOneWidget);
+    expect(find.text('点击区域设置'), findsOneWidget);
     expect(find.text('亮度控制'), findsOneWidget);
     // 全高几何：弹层高度 ≈ 屏高 92%
     final sheetHeight = tester
