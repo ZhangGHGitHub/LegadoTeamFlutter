@@ -94,6 +94,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final GlobalKey<NavigatorState> _detailPaneNavigatorKey =
       GlobalKey<NavigatorState>();
 
+  /// 右栏独立 PrimaryScrollController
+  ///
+  /// 右栏页面与主 Tab 同属 HomeScreen 路由；若共享路由级 primary controller，
+  /// 两侧 ScrollView 会挂到同一 ScrollController（多 position）。这里给右栏
+  /// 子树独立 controller，左右滚动互不共享。
+  final ScrollController _detailPanePrimaryScrollController =
+      ScrollController();
+
   final MainDetailPaneController _detailPaneController =
       MainDetailPaneController();
 
@@ -127,6 +135,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    _detailPanePrimaryScrollController.dispose();
     _detailPaneController.dispose();
     _pageController.dispose();
     _bookshelfScrollTopSignal.dispose();
@@ -574,20 +583,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 右侧详情 nested Navigator（路由表与 root 一致）
+  ///
+  /// 外层包独立 [PrimaryScrollController]：右栏滚动不继承主 Tab 的
+  /// primary controller（同一 controller 挂多个 position 会触发
+  /// Md3FastScroller 的 `position` 断言）。
   Widget _buildDetailNavigator() {
-    return Navigator(
-      key: _detailPaneNavigatorKey,
-      initialRoute: kMainDetailEmptyRoute,
-      // 只生成一个空态路由：默认 initialRoutes 会把哨兵路径拆成
-      // `/` + 目标两页，导致初始栈深 2（canPop 为真）。
-      onGenerateInitialRoutes: (_, _) => [
-        MaterialPageRoute<void>(
-          settings: const RouteSettings(name: kMainDetailEmptyRoute),
-          builder: (_) => const SizedBox.shrink(),
-        ),
-      ],
-      onGenerateRoute: widget.detailRouteGenerator ?? AppRoutes.generateRoute,
-      observers: [_detailPaneObserver],
+    return PrimaryScrollController(
+      controller: _detailPanePrimaryScrollController,
+      child: Navigator(
+        key: _detailPaneNavigatorKey,
+        initialRoute: kMainDetailEmptyRoute,
+        // 只生成一个空态路由：默认 initialRoutes 会把哨兵路径拆成
+        // `/` + 目标两页，导致初始栈深 2（canPop 为真）。
+        onGenerateInitialRoutes: (_, _) => [
+          MaterialPageRoute<void>(
+            settings: const RouteSettings(name: kMainDetailEmptyRoute),
+            builder: (_) => const SizedBox.shrink(),
+          ),
+        ],
+        onGenerateRoute: widget.detailRouteGenerator ?? AppRoutes.generateRoute,
+        observers: [_detailPaneObserver],
+      ),
     );
   }
 

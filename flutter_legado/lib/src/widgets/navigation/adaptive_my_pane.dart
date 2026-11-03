@@ -89,6 +89,13 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
 
   late final StateController<bool> _fullscreenController;
 
+  /// 容器右栏独立 PrimaryScrollController
+  ///
+  /// 「我的」右栏与主 Tab 同属首页路由；共享路由级 primary controller 会让
+  /// 两侧 ScrollView 挂到同一 controller（多 position）。这里给右栏子树
+  /// 独立 controller，左右滚动互不共享。
+  final ScrollController _primaryScrollController = ScrollController();
+
   /// State 已销毁（防止 Navigator 卸载期间 observer 回调再触发通知）
   bool _disposed = false;
 
@@ -116,6 +123,7 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
       }
     }
     _controller.dispose();
+    _primaryScrollController.dispose();
     super.dispose();
   }
 
@@ -331,20 +339,26 @@ class AdaptiveMyPaneState extends ConsumerState<AdaptiveMyPane> {
   }
 
   Widget _buildNavigator() {
-    return Navigator(
-      key: _navigatorKey,
-      initialRoute: kMyPaneEmptyRoute,
-      // 显式只生成一个空态路由：默认的 initialRoutes 会把
-      // `/__my_pane_empty__` 拆成 `/` + 目标两页，导致初始栈深 2
-      //（canPop 为真、back 会退到一份根首页副本）。
-      onGenerateInitialRoutes: (_, _) => [
-        MaterialPageRoute<void>(
-          settings: const RouteSettings(name: kMyPaneEmptyRoute),
-          builder: (_) => const MyPaneEmptyState(),
-        ),
-      ],
-      onGenerateRoute: _generateRoute,
-      observers: [_observer],
+    // 外层包独立 PrimaryScrollController：右栏页面滚动不继承主 Tab 的
+    // primary controller（同一 controller 多 position 会触发
+    // Md3FastScroller 的 position 断言）。
+    return PrimaryScrollController(
+      controller: _primaryScrollController,
+      child: Navigator(
+        key: _navigatorKey,
+        initialRoute: kMyPaneEmptyRoute,
+        // 显式只生成一个空态路由：默认的 initialRoutes 会把
+        // `/__my_pane_empty__` 拆成 `/` + 目标两页，导致初始栈深 2
+        //（canPop 为真、back 会退到一份根首页副本）。
+        onGenerateInitialRoutes: (_, _) => [
+          MaterialPageRoute<void>(
+            settings: const RouteSettings(name: kMyPaneEmptyRoute),
+            builder: (_) => const MyPaneEmptyState(),
+          ),
+        ],
+        onGenerateRoute: _generateRoute,
+        observers: [_observer],
+      ),
     );
   }
 }

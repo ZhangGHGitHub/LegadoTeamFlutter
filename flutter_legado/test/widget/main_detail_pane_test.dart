@@ -32,6 +32,7 @@ import 'package:flutter_legado/src/providers/rss/rss_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
+import 'package:flutter_legado/src/screens/explore_screen.dart';
 import 'package:flutter_legado/src/screens/home_screen.dart';
 import 'package:flutter_legado/src/screens/rss_article_detail_screen.dart';
 import 'package:flutter_legado/src/screens/rss_articles_screen.dart';
@@ -91,11 +92,39 @@ class _AnonEditorPageState extends State<_AnonEditorPage> {
   }
 }
 
+/// 右栏长列表页：验证左右滚动独立（各自 controller/position）
+class _DetailListPage extends StatelessWidget {
+  const _DetailListPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: ListView.builder(
+        key: const ValueKey('detail-long-list'),
+        itemCount: 50,
+        itemBuilder: (_, index) =>
+            SizedBox(height: 48, child: Text('右栏行$index')),
+      ),
+    );
+  }
+}
+
 Route<dynamic> _stubRoute(RouteSettings settings) {
   return MaterialPageRoute<void>(
     settings: settings,
     builder: (_) => _StubPage('stub:${settings.name}'),
   );
+}
+
+/// 详情栏桩路由：book_info 返回长列表页（滚动独立用例）
+Route<dynamic> _stubDetailListRoute(RouteSettings settings) {
+  if (settings.name == AppRoutes.bookInfo) {
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (_) => const _DetailListPage(),
+    );
+  }
+  return _stubRoute(settings);
 }
 
 /// 详情栏桩路由：`book_info` 返回带输入框的匿名页（宽度保留用例）
@@ -761,6 +790,60 @@ void main() {
     );
   });
 
+  testWidgets('宽屏发现「源列表+分类书单」双栏点书：左发现无 ErrorWidget', (tester) async {
+    const source = BookSource(
+      bookSourceUrl: 'https://e.test',
+      bookSourceName: '发现源',
+      exploreUrl: 'https://e.test/explore',
+    );
+    when(() => api.getBookSources()).thenAnswer((_) async => const [source]);
+    when(
+      () => api.exploreParseUrl(any(), sourceJson: any(named: 'sourceJson')),
+    ).thenAnswer(
+      (_) async => const [
+        ExploreCategory(title: '推荐', url: 'https://e.test/list'),
+      ],
+    );
+    when(() => api.exploreFetchBooks(any(), any(), any())).thenAnswer(
+      (_) async => [
+        for (var i = 0; i < 20; i++)
+          SearchBook(
+            bookUrl: 'https://e.test/book/$i',
+            name: '书$i',
+            author: '作者$i',
+          ),
+      ],
+    );
+
+    await pumpHome(
+      tester,
+      mode: MultiPaneMode.always,
+      size: const Size(1200, 800),
+    );
+
+    // 发现 Tab，展开源并选择分类 → 内部双栏（左源列表 + 右书单）
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('发现源'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('推荐'));
+    await tester.pumpAndSettle();
+    expect(find.text('书0'), findsOneWidget);
+
+    // 点书：主右栏打开 BookInfo，发现页宽度跌破 840 → 内部双栏收成源列表
+    await tester.tap(find.text('书0'));
+    await tester.pumpAndSettle();
+
+    expect(inRightPane(find.byType(BookInfoScreen)), findsOneWidget);
+    expect(find.byType(ExploreScreen), findsOneWidget);
+    expect(find.byType(ErrorWidget), findsNothing);
+    expect(tester.takeException(), isNull);
+    expect(detailSlotWidth(tester), greaterThanOrEqualTo(360));
+
+    // 左发现仍可交互（源列表行仍在）
+    expect(find.text('发现源'), findsOneWidget);
+  });
+
   testWidgets('最小双栏宽度 + 2x 字体：右栏 360dp 不溢出', (tester) async {
     await pumpHome(
       tester,
@@ -795,6 +878,68 @@ void main() {
     expect(tester.state(find.byType(BookshelfScreen)), same(shelfState));
     expect(tester.state(find.byType(PageView)), same(pageViewState));
     expect(tester.widget<PageView>(find.byType(PageView)).controller!.page, 1);
+  });
+
+  testWidgets('左右滚动独立：右栏长列表滚动不影响左书架', (tester) async {
+    when(() => api.getBooks()).thenAnswer(
+      (_) async => [
+        for (var i = 0; i < 20; i++)
+          Book(bookUrl: 'b$i', name: '书$i', author: '作者'),
+      ],
+    );
+
+    await pumpHome(
+      tester,
+      mode: MultiPaneMode.always,
+      size: const Size(1000, 700),
+      detailRouteGenerator: _stubDetailListRoute,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BookshelfScreen),
+        matching: find.text('书0'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(inRightPane(find.byType(_DetailListPage)), findsOneWidget);
+
+    ScrollPosition verticalPosition(Finder scope) {
+      return tester
+          .stateList<ScrollableState>(
+            find.descendant(of: scope, matching: find.byType(Scrollable)),
+          )
+          .map((s) => s.position)
+          .firstWhere(
+            (p) =>
+                p.axis == Axis.vertical &&
+                p.hasContentDimensions &&
+                p.maxScrollExtent > 0,
+          );
+    }
+
+    final left = verticalPosition(find.byType(BookshelfScreen));
+    final right = verticalPosition(
+      find.byKey(const ValueKey('main-detail-right')),
+    );
+
+    left.jumpTo(left.maxScrollExtent >= 150 ? 150 : left.maxScrollExtent);
+    await tester.pumpAndSettle();
+    final leftAfter = left.pixels;
+    expect(leftAfter, greaterThan(0));
+    expect(right.pixels, 0);
+
+    await tester.drag(
+      find.byKey(const ValueKey('detail-long-list')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    expect(right.pixels, greaterThan(0));
+    expect(left.pixels, leftAfter);
+
+    right.jumpTo(right.maxScrollExtent >= 300 ? 300 : right.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(left.pixels, leftAfter);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('窄窗口（模式开但宽度不足）：点书 root 全屏', (tester) async {

@@ -77,6 +77,23 @@ class _AnonEditorPageState extends State<_AnonEditorPage> {
 }
 
 /// 右栏 nested 弹层页（360x320 窗格内验证不溢出）
+/// 右栏长列表页（验证左右滚动独立 / 多 position 防御）
+class _LongListPage extends StatelessWidget {
+  const _LongListPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: ListView.builder(
+        key: const ValueKey('my-long-list'),
+        itemCount: 50,
+        itemBuilder: (_, index) =>
+            SizedBox(height: 48, child: Text('右栏行$index')),
+      ),
+    );
+  }
+}
+
 class _SheetStubPage extends StatelessWidget {
   const _SheetStubPage();
 
@@ -288,6 +305,59 @@ void main() {
           .selected,
       isFalse,
     );
+  });
+
+  testWidgets('双栏右栏长列表滚动与左菜单独立（多 position 防御）', (tester) async {
+    final navigatorKey = await pumpPane(
+      tester,
+      mode: MultiPaneMode.always,
+      size: const Size(900, 700),
+    );
+    unawaited(
+      navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => const _LongListPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(_LongListPage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ErrorWidget), findsNothing);
+
+    ScrollPosition verticalPosition(Finder scope) {
+      return tester
+          .stateList<ScrollableState>(
+            find.descendant(of: scope, matching: find.byType(Scrollable)),
+          )
+          .map((s) => s.position)
+          .firstWhere(
+            (p) =>
+                p.axis == Axis.vertical &&
+                p.hasContentDimensions &&
+                p.maxScrollExtent > 0,
+          );
+    }
+
+    final left = verticalPosition(
+      find.byKey(const ValueKey('my-pane-left-menu')),
+    );
+    final right = verticalPosition(find.byKey(const ValueKey('my-pane-right')));
+
+    left.jumpTo(left.maxScrollExtent >= 120 ? 120 : left.maxScrollExtent);
+    await tester.pumpAndSettle();
+    final leftAfter = left.pixels;
+    expect(leftAfter, greaterThan(0));
+    expect(right.pixels, 0);
+
+    await tester.drag(
+      find.byKey(const ValueKey('my-long-list')),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+
+    expect(right.pixels, greaterThan(0));
+    expect(left.pixels, leftAfter);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('单栏（off）：命名入口 root push 全屏，容器栈不变，返回回菜单', (tester) async {
