@@ -92,6 +92,47 @@ void main() {
     expect(container.read(readerNotifierProvider).currentChapterIndex, 0);
   });
 
+  testWidgets('菜单展开时顶栏/底栏/章节行空白点击只收起菜单', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.clickActionMiddleCenter: 0,
+    });
+    final container = await _pumpReader(tester);
+    Future<void> openMenu() async {
+      await tester.tapAt(const Offset(400, 600));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(container.read(readerNotifierProvider).showControls, isTrue);
+    }
+
+    Future<void> assertClosed() async {
+      await tester.pump();
+      expect(container.read(readerNotifierProvider).showControls, isFalse);
+      expect(container.read(readerNotifierProvider).currentChapterIndex, 0);
+    }
+
+    await openMenu();
+    final topBar = tester.getRect(
+      find.byKey(const ValueKey('reader-topbar-surface')),
+    );
+    await tester.tapAt(topBar.topLeft + const Offset(4, 4));
+    await assertClosed();
+
+    await openMenu();
+    final bottom = tester.getRect(
+      find.byKey(const ValueKey('reader-bottom-panel-surface')),
+    );
+    // 底栏中列下缘空白（BC 默认下一页）；若穿透会翻页
+    await tester.tapAt(Offset(bottom.center.dx, bottom.bottom - 4));
+    await assertClosed();
+
+    await openMenu();
+    await tester.tapAt(Offset(topBar.center.dx, topBar.bottom - 6));
+    await assertClosed();
+
+    // 收起后九宫格仍正常
+    await openMenu();
+  });
+
   testWidgets('pageTouchClick 边缘死区仍吞点击', (tester) async {
     SharedPreferences.setMockInitialValues({
       'pageTouchClick': 120,

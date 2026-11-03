@@ -112,42 +112,60 @@ void main() {
   });
 
   group('旧三区整列迁移', () {
-    const mapping = {
-      TapAction.none: -1,
-      TapAction.prevPage: 2,
-      TapAction.nextPage: 1,
-      TapAction.toggleControls: 0,
-      TapAction.openCatalog: 10,
-    };
-
-    for (final entry in mapping.entries) {
-      test('旧 ${entry.key.name} → ${entry.value}（三列整列）', () async {
-        SharedPreferences.setMockInitialValues({
-          'reader_adv_left_action': entry.key.index,
-          'reader_adv_center_action': entry.key.index,
-          'reader_adv_right_action': entry.key.index,
-        });
-        final cfg = await ReaderAdvancedConfig.load();
-        for (var i = 0; i < 9; i++) {
-          expect(cfg.tapActionAt(i).code, entry.value, reason: 'zone $i');
-        }
-        final prefs = await SharedPreferences.getInstance();
-        expect(prefs.getBool(PrefKeys.clickActionMigratedV2), isTrue);
-        for (final key in [
-          PrefKeys.clickActionTopLeft,
-          PrefKeys.clickActionTopCenter,
-          PrefKeys.clickActionTopRight,
-          PrefKeys.clickActionMiddleLeft,
-          PrefKeys.clickActionMiddleCenter,
-          PrefKeys.clickActionMiddleRight,
-          PrefKeys.clickActionBottomLeft,
-          PrefKeys.clickActionBottomCenter,
-          PrefKeys.clickActionBottomRight,
-        ]) {
-          expect(prefs.getInt(key), entry.value, reason: key);
-        }
+    test('三列不同旧值：left/center/right 各归各列', () async {
+      SharedPreferences.setMockInitialValues({
+        'reader_adv_left_action': TapAction.none.index,
+        'reader_adv_center_action': TapAction.toggleControls.index,
+        'reader_adv_right_action': TapAction.nextPage.index,
       });
-    }
+      final cfg = await ReaderAdvancedConfig.load();
+      expect(cfg.tapTopLeft, ReaderTapAction.none);
+      expect(cfg.tapMiddleLeft, ReaderTapAction.none);
+      expect(cfg.tapBottomLeft, ReaderTapAction.none);
+      expect(cfg.tapTopCenter, ReaderTapAction.menu);
+      expect(cfg.tapMiddleCenter, ReaderTapAction.menu);
+      expect(cfg.tapBottomCenter, ReaderTapAction.menu);
+      expect(cfg.tapTopRight, ReaderTapAction.nextPage);
+      expect(cfg.tapMiddleRight, ReaderTapAction.nextPage);
+      expect(cfg.tapBottomRight, ReaderTapAction.nextPage);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(PrefKeys.clickActionMigratedV2), isTrue);
+      expect(prefs.getInt(PrefKeys.clickActionTopLeft), -1);
+      expect(prefs.getInt(PrefKeys.clickActionMiddleCenter), 0);
+      expect(prefs.getInt(PrefKeys.clickActionBottomRight), 1);
+    });
+
+    test('openCatalog 只落所在列（左列 10，其余按各自旧值）', () async {
+      SharedPreferences.setMockInitialValues({
+        'reader_adv_left_action': TapAction.openCatalog.index,
+        'reader_adv_center_action': TapAction.none.index,
+        'reader_adv_right_action': TapAction.nextPage.index,
+      });
+      final cfg = await ReaderAdvancedConfig.load();
+      for (final index in [0, 3, 6]) {
+        expect(cfg.tapActionAt(index).code, 10, reason: '左列 zone $index');
+      }
+      for (final index in [1, 4, 7]) {
+        expect(cfg.tapActionAt(index).code, -1, reason: '中列 zone $index');
+      }
+      for (final index in [2, 5, 8]) {
+        expect(cfg.tapActionAt(index).code, 1, reason: '右列 zone $index');
+      }
+    });
+
+    test('prevPage 只落所在列（左列 2）', () async {
+      SharedPreferences.setMockInitialValues({
+        'reader_adv_left_action': TapAction.prevPage.index,
+        'reader_adv_center_action': TapAction.none.index,
+        'reader_adv_right_action': TapAction.nextPage.index,
+      });
+      final cfg = await ReaderAdvancedConfig.load();
+      expect(cfg.tapTopLeft.code, 2);
+      expect(cfg.tapMiddleLeft.code, 2);
+      expect(cfg.tapBottomLeft.code, 2);
+      expect(cfg.tapMiddleCenter.code, -1);
+      expect(cfg.tapMiddleRight.code, 1);
+    });
 
     test('迁移幂等：标记存在后不再读取旧三区', () async {
       SharedPreferences.setMockInitialValues({
@@ -218,6 +236,26 @@ void main() {
     ];
     for (final key in keys) {
       expect(RestoreIgnorePrefs.readPrefKeys, contains(key));
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(key, const {'readConfig': true}),
+        isFalse,
+        reason: '$key 勾选忽略时不应恢复',
+      );
+      expect(RestoreIgnorePrefs.keyIsNotIgnore(key, const {}), isTrue);
+    }
+    // 旧三区迁移源键同样受「忽略阅读配置」过滤
+    for (final key in [
+      'reader_adv_left_action',
+      'reader_adv_center_action',
+      'reader_adv_right_action',
+    ]) {
+      expect(RestoreIgnorePrefs.readPrefKeys, contains(key));
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(key, const {'readConfig': true}),
+        isFalse,
+        reason: '$key 勾选忽略时不应恢复',
+      );
+      expect(RestoreIgnorePrefs.keyIsNotIgnore(key, const {}), isTrue);
     }
     expect(
       RestoreIgnorePrefs.backupExcludedKeys,
