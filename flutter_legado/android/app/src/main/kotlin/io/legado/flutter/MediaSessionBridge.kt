@@ -61,6 +61,18 @@ class MediaSessionBridge {
         @JvmStatic
         internal fun longFromArgument(raw: Any?): Long =
             (raw as? Number)?.toLong() ?: 0L
+
+        /**
+         * [批9b-5] 当前是否存在活跃媒体会话。
+         *
+         * 静态耳机键接收器据此避免与会话回调双处理：会话活跃时系统会优先把
+         * `ACTION_MEDIA_BUTTON` 投递给会话，静态接收器只消费不转发。
+         * 注意 `active` 是进程级引用；引擎销毁时若未经 `release` 清理，
+         * [MediaButtonReceiver] 最多表现为「按键交会话处理但无响应」，
+         * 不会崩溃。
+         */
+        @JvmStatic
+        fun hasActiveSession(): Boolean = active?.mediaSession?.isActive == true
     }
 
     private var mediaSession: MediaSessionCompat? = null

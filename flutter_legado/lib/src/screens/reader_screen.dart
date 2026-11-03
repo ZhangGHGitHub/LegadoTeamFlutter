@@ -17,6 +17,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../services/headset_media_button_service.dart';
 import '../services/platform_bridge_service.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
@@ -73,6 +74,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// HardwareKeyboard 路径。此标记与原生侧真实开关同步，dispose/切书/
   /// 菜单/子路由按需关闭，避免误拦截系统音量。
   bool _nativeVolumeKeyCaptureActive = false;
+
+  /// [批9b-5] 耳机媒体键服务（阅读器挂载期间登记前台处理器：
+  /// 无播放会话时按键按「活动内处理」语义交本页切换朗读）
+  HeadsetMediaButtonService? _headsetMediaButtonService;
 
   /// [设备验收 P1] 是否注册了桌面键盘 handler（Android 不注册，防双触发）
   bool _hardwareKeyboardHandlerRegistered = false;
@@ -207,6 +212,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // [批1b-1 审查回修 P1-2] 翻页成功 → 保持亮屏计时重挂（集中接线：
     // ReaderPageView 所有翻页成功路径回调至此；dispose 还原默认实现）
     ReaderPageView.onPageTurnInteraction = _reprioritizeKeepLight;
+    // [批9b-5] 耳机媒体键：阅读页存在时按原版「活动内处理」语义
+    //（MediaButtonReceiver → EventBus → ReadBookActivity.onClickReadAloud），
+    // 由本页切换朗读，而不是由服务直接启动另一份朗读
+    _headsetMediaButtonService = ref.read(headsetMediaButtonServiceProvider);
+    _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
   }
 
   @override
@@ -246,6 +256,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     ReaderPageView.onPageTurnInteraction = () {};
     // [C3-hunt | 2026-09-24] 注销生命周期观察者（与 initState 配对）
     WidgetsBinding.instance.removeObserver(this);
+    // [批9b-5] 注销耳机媒体键前台处理器（与 initState 配对；owner 校验
+    // 防止下一阅读器实例已接管后被旧实例误清）
+    _headsetMediaButtonService?.detachActivityHandler(this);
     // [批31b P1-1] 注销路由观察（与 didChangeDependencies 配对，
     // 防销毁后回调泄漏）
     appRouteObserver.unsubscribe(this);
@@ -1170,6 +1183,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (result is int) {
       await ref.read(readerNotifierProvider.notifier).goToChapter(result);
     }
+  }
+
+  /// [批9b-5] 耳机媒体键前台事件
+  ///
+  /// 对齐原版 `ReadBookActivity.observeLiveBus`（EventBus.MEDIA_BUTTON →
+  /// onClickReadAloud）：播放会话存在时决策层已直接暂停/恢复，不会走到这里；
+  /// 仅在无播放会话时由本页启动/切换朗读。
+  void _onHeadsetMediaKey(HeadsetMediaKey key) {
+    if (!mounted) return;
+    if (key != HeadsetMediaKey.toggle) return;
+    _onReadAloudTap();
   }
 
   /// 底栏朗读按钮点击处理

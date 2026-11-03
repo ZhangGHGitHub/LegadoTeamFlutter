@@ -312,6 +312,18 @@
                 android:value="Local web server for LAN access" />
         </service>
 
+        <!-- [批9b-5] 静态耳机媒体键接收器：对齐原版 manifest:497-503
+             （exported=true、无 priority）。MediaSession 活跃时系统优先投递
+             给会话回调，接收器检测到活跃会话即只消费不转发（避免双处理）；
+             进程/引擎不存活时安全消费并日志（详见 MediaButtonReceiver 注释）。 -->
+        <receiver
+            android:name=".MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- [V-B3] 视频悬浮窗服务：全局 overlay 承载原生 Media3 ExoPlayer
              （对齐原版 VideoPlayService.kt + manifest:555-557；与听书服务
              并行、互不共用 session——原版音频 AudioPlayService 与视频

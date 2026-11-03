@@ -15,6 +15,7 @@ import '../providers/providers.dart';
 import '../utils/audio_skip_policy.dart';
 import '../routes.dart';
 import '../services/audio_cache_events.dart';
+import '../services/headset_media_button_service.dart';
 import 'source_edit_screen.dart';
 import 'source_login_screen.dart';
 
@@ -56,6 +57,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   bool _showSettings = false;
   bool _wakeLock = false;
 
+  /// [批9b-5] 耳机媒体键服务（听书页挂载期间按「活动内处理」语义接管
+  /// 空闲态播放键，对齐原版 AudioPlayActivity.playButton）
+  HeadsetMediaButtonService? _headsetMediaButtonService;
+
   // ===== 音频章节预下载批量状态（契约 §2.48，对齐原版 AudioCacheService 计数）=====
   //
   // 原版为前台服务（ArrayDeque 队列 + 通知 + START_NOT_STICKY，服务编排不上
@@ -86,6 +91,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   @override
   void initState() {
     super.initState();
+    // [批9b-5] 听书页存在时，空闲态耳机播放键交由本页播放（对齐原版
+    // AudioPlayActivity.observeLiveBus → playButton），而不是从最近书启动
+    _headsetMediaButtonService = ref.read(headsetMediaButtonServiceProvider);
+    _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final notifier = ref.read(audioNotifierProvider.notifier);
       // 音频书 → 流媒体；否则保持 TTS（阅读器朗读入口会强制 TTS）
@@ -108,6 +117,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
 
   @override
   void dispose() {
+    // [批9b-5] 注销耳机媒体键前台处理器（owner 校验防误清上层页面）
+    _headsetMediaButtonService?.detachActivityHandler(this);
     // 页面销毁只清理输入控制器；定时停止计时归 Notifier 所有
     // （[A4] 退出听书页后倒计时/按章停止继续生效）
     _customMinutesController.dispose();
@@ -628,6 +639,21 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         ],
       ),
     );
+  }
+
+  /// [批9b-5] 耳机媒体键前台事件（仅空闲态会分派到这里）
+  ///
+  /// 对齐原版 `AudioPlayActivity.observeLiveBus`（EventBus.MEDIA_BUTTON →
+  /// playButton）：播放中/暂停中的切换由决策层直接处理，不会到本方法。
+  void _onHeadsetMediaKey(HeadsetMediaKey key) {
+    if (!mounted || key != HeadsetMediaKey.toggle) return;
+    final notifier = ref.read(audioNotifierProvider.notifier);
+    final state = ref.read(audioNotifierProvider);
+    if (state.isPlaying) {
+      notifier.pause();
+    } else {
+      unawaited(notifier.resumeOrPlay());
+    }
   }
 
   Widget _buildPlayPauseButton(AudioState provider) {

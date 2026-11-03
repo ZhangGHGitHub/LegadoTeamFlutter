@@ -16,6 +16,7 @@ import 'src/services/auto_task_scheduler.dart';
 import 'src/services/auto_backup_scheduler.dart';
 import 'src/services/app_update_service.dart';
 import 'src/services/deep_link_service.dart';
+import 'src/services/headset_media_button_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/services/settings_service.dart';
 import 'src/services/video_float_window.dart';
@@ -264,6 +265,15 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // 构建直接跳过；失败静默不弹任何提示；有更新且未忽略才弹 UpdateDialog。
     // 不实现 updateToVariant 通道（待裁决，见 AppUpdateService.checkDailyOnStartup）。
     unawaited(_maybeAutoCheckUpdate());
+    // [批9b-5] 耳机媒体键服务：注册 `legado/headset_media_button` 通道与
+    // 生命周期观察者（后台会话释放/前后台判定），阅读器挂载时再 attach
+    // 前台处理器。任何失败静默，不阻塞启动。
+    unawaited(
+      ref
+          .read(headsetMediaButtonServiceProvider)
+          .start()
+          .catchError((Object e) => debugPrint('[耳机按键] 初始化失败（忽略）：$e')),
+    );
   }
 
   /// 启动自动检查更新（批9a 项5）

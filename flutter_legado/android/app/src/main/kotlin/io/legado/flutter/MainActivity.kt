@@ -267,6 +267,30 @@ open class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             WebServiceForegroundBridge.handleMethodCall(call, result, this)
         }
+
+        // 批9b-5：静态耳机媒体键通道（MediaButtonReceiver → Dart 决策）。
+        // Dart 注册处理器后调用 ready 握手，桥据此清空启动窗口内的积压事件；
+        // 引擎销毁时 cleanUpFlutterEngine 解除绑定（见下方 override）。
+        val headsetChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            HeadsetMediaButtonBridge.CHANNEL,
+        )
+        HeadsetMediaButtonBridge.attach(headsetChannel)
+        headsetChannel.setMethodCallHandler { call, result ->
+            HeadsetMediaButtonBridge.handleMethodCall(call, result)
+        }
+    }
+
+    /**
+     * 批9b-5：引擎销毁时解除耳机键通道绑定。
+     *
+     * 不清理会留下指向已销毁引擎的 MethodChannel，后续媒体键投递到死通道
+     * （Dart 侧无响应但日志显示已发送）。新引擎在 configureFlutterEngine
+     * 重新 attach 并重新握手。
+     */
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        HeadsetMediaButtonBridge.detach()
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
