@@ -1,9 +1,9 @@
 // [批1a | 2026-10-31] 独立「阅读设置」页行为测试（非仅渲染）— 全栈工程师
 //
 // 覆盖：
-// 1. 三组渲染 + 行数（屏幕 10 / 页面控制 13 / 其他 4；[批1b-1] 屏幕组增
+// 1. 三组渲染 + 行数（屏幕 10 / 页面控制 14 / 其他 4；[批1b-1] 屏幕组增
 //    「保持亮屏」「亮度条模式」，亮度条位置行仅模式=竖排时渲染；
-//    [批1b-2a] 页面控制组增「按键长按翻页」）
+//    [批1b-2a] 页面控制组增「按键长按翻页」；[批1b-2b] 增「点击图片方式」）
 // 2. 页面默认值与 ReaderAdvancedConfig.load() 一致（空存储）
 // 3. 改值生效：开关切换 → save 落盘 → 共享 provider 推送
 // 4. 下拉/滑块/步进行改值生效（含值域钳制）
@@ -50,7 +50,7 @@ void main() {
   });
 
   group('阅读设置页：结构与默认值', () {
-    testWidgets('三组标题与行数齐备（屏幕10/页面控制13/其他4）', (tester) async {
+    testWidgets('三组标题与行数齐备（屏幕10/页面控制14/其他4）', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
 
@@ -72,7 +72,8 @@ void main() {
       expect(find.text('平板/横屏双页'), findsOneWidget);
       expect(find.text('进度条行为'), findsOneWidget);
 
-      // 页面控制组 13 行（随滚动分批可见；[批1b-2a] +按键长按翻页）
+      // 页面控制组 14 行（随滚动分批可见；[批1b-2a] +按键长按翻页；
+      // [批1b-2b] +点击图片方式）
       expect(find.text('使用自定义中文分行'), findsOneWidget);
       expect(find.text('文字两端对齐'), findsOneWidget);
       expect(find.text('段首标点悬挂'), findsOneWidget);
@@ -83,6 +84,7 @@ void main() {
       expect(find.text('朗读时音量键翻页'), findsOneWidget);
       expect(find.text('按键长按翻页'), findsOneWidget);
       expect(find.text('禁用滚动点击动画'), findsOneWidget);
+      expect(find.text('点击图片方式'), findsOneWidget);
       expect(find.text('自动换源'), findsOneWidget);
       expect(find.text('长按选择文本'), findsOneWidget);
       expect(find.text('展示顶部工具栏附加区域'), findsOneWidget);
@@ -131,7 +133,8 @@ void main() {
           .whereType<SettingDropdownRow>()
           .toList();
       // [批1b-1] 屏幕组下拉 +2（保持亮屏 / 亮度条模式）
-      expect(dropdowns, hasLength(5));
+      // [批1b-2b] 页面控制组 +1（点击图片方式）
+      expect(dropdowns, hasLength(6));
       final orientationRow = dropdowns.firstWhere((d) => d.title == '屏幕方向');
       expect(orientationRow.value, expected.screenOrientation, reason: '默认 0');
       final keepLightRow = dropdowns.firstWhere((d) => d.title == '保持亮屏');
@@ -144,6 +147,11 @@ void main() {
       expect(doubleRow.value, expected.doubleHorizontalPage, reason: '默认 0');
       final progressRow = dropdowns.firstWhere((d) => d.title == '进度条行为');
       expect(progressRow.value, expected.progressBarBehavior, reason: "默认 'page'");
+      final clickImgRow = dropdowns.firstWhere((d) => d.title == '点击图片方式');
+      expect(clickImgRow.value, expected.clickImgWay,
+          reason: "默认 '2'=兼容旧版（参考版口径）");
+      expect(clickImgRow.options.keys, ['0', '1', '2', '3', '4'],
+          reason: '五档对齐原版 click_image_way_value');
 
       // 步进/滑块默认值
       final steppers = tester
@@ -257,6 +265,34 @@ void main() {
       await tester.pumpAndSettle();
 
       expect((await ReaderAdvancedConfig.load()).progressBarBehavior, 'chapter');
+    });
+
+    testWidgets('[批1b-2b] 点击图片方式下拉 → 持久化 + 共享 provider 推送',
+        (tester) async {
+      useTallViewport(tester);
+      await _pump(tester);
+      final container = ProviderScope.containerOf(
+          tester.element(find.byType(ReadConfigScreen)));
+
+      // 默认 "2" → 选 "4"=双击生效
+      expect(container.read(readerAdvConfigProvider)?.clickImgWay, '2');
+      await tester.tap(find.text('点击图片方式'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('双击生效'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(readerAdvConfigProvider)?.clickImgWay, '4',
+          reason: '改值即推送共享 provider（阅读器即时生效）');
+      expect((await ReaderAdvancedConfig.load()).clickImgWay, '4',
+          reason: 'save 落盘可读回');
+
+      // 选回默认 "0"=默认行为
+      await tester.tap(find.text('点击图片方式'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('默认行为'));
+      await tester.pumpAndSettle();
+      expect(container.read(readerAdvConfigProvider)?.clickImgWay, '0');
+      expect((await ReaderAdvancedConfig.load()).clickImgWay, '0');
     });
 
     testWidgets('步进行 +/- 钳制在值域内（边缘点击阈值 0..399）', (tester) async {
