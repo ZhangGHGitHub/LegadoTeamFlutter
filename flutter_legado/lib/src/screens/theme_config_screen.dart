@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
+import '../widgets/container_color_dialog.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -69,15 +70,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   String _bgImageNight = '';
   bool _transparentNavBar = false;
   bool _transparentNavBarNight = false;
-
-  /// 颜色选择器预设色板（对齐原版 ColorPreference cpv_dialogType="preset"）
-  static const _presetColors = [
-    0xFFD32F2F, 0xFFF44336, 0xFFE91E63, 0xFF9C27B0, 0xFF673AB7,
-    0xFF3F51B5, 0xFF2196F3, 0xFF03A9F4, 0xFF00BCD4, 0xFF009688,
-    0xFF4CAF50, 0xFF8BC34A, 0xFFCDDC39, 0xFFFFEB3B, 0xFFFFC107,
-    0xFFFF9800, 0xFFFF5722, 0xFF795548, 0xFF9E9E9E, 0xFF607D8B,
-    0xFF000000, 0xFF212121, 0xFF424242, 0xFFFAFAFA, 0xFFFFFFFF,
-  ];
 
   /// 启动图标可选值（对齐原版 arrays.xml icon_names）
   static const _launcherIcons = [
@@ -1521,11 +1513,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }) async {
     final selected = await showDialog<int>(
       context: context,
-      builder: (ctx) => _ContainerColorDialog(
+      builder: (ctx) => ContainerColorDialog(
         title: title,
         initialColor: initialColor,
         defaultHint: defaultHint,
-        presetColors: _presetColors,
+        presetColors: kContainerColorPresets,
       ),
     );
     if (selected == null || !mounted) return;
@@ -1549,7 +1541,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              for (final c in _presetColors)
+              for (final c in kContainerColorPresets)
                 InkWell(
                   onTap: () => Navigator.pop(ctx, c),
                   borderRadius: BorderRadius.circular(20),
@@ -2962,123 +2954,6 @@ class _PaletteDots extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// 卡片边框/分隔线颜色对话框（预设色板 + HEX 输入 + 恢复默认）
-///
-/// [设置批2b-1b-1-b] 参考版 `ColorPickerSheet` 支持任意 HEX；本对话框在
-/// 既有预设色板基础上补 `#RRGGBB`/`#AARRGGBB` 输入，非法时禁用确定并
-/// 内联提示。0 由「恢复默认」返回，表示跟随主题/默认色。
-class _ContainerColorDialog extends StatefulWidget {
-  final String title;
-  final int initialColor;
-  final String defaultHint;
-  final List<int> presetColors;
-
-  const _ContainerColorDialog({
-    required this.title,
-    required this.initialColor,
-    required this.defaultHint,
-    required this.presetColors,
-  });
-
-  @override
-  State<_ContainerColorDialog> createState() => _ContainerColorDialogState();
-}
-
-class _ContainerColorDialogState extends State<_ContainerColorDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(
-      text: widget.initialColor == 0 ? '' : argbToHex(widget.initialColor),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  int? get _parsed => parseArgbHexColor(_controller.text);
-
-  void _submit() {
-    final parsed = _parsed;
-    if (parsed == null) return;
-    Navigator.pop(context, parsed);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final trimmed = _controller.text.trim();
-    final invalid = trimmed.isNotEmpty && _parsed == null;
-    return AlertDialog(
-      scrollable: true,
-      title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _controller,
-            textCapitalization: TextCapitalization.characters,
-            textInputAction: TextInputAction.done,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
-              LengthLimitingTextInputFormatter(9),
-            ],
-            decoration: InputDecoration(
-              labelText: 'HEX',
-              hintText: '#AARRGGBB 或 #RRGGBB',
-              errorText: invalid ? '请输入 6/8 位十六进制颜色' : null,
-            ),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final c in widget.presetColors)
-                InkWell(
-                  onTap: () => Navigator.pop(context, c),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Color(c),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, 0),
-          child: Text(widget.defaultHint),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _parsed == null ? null : _submit,
-          child: const Text('确定'),
-        ),
-      ],
     );
   }
 }
