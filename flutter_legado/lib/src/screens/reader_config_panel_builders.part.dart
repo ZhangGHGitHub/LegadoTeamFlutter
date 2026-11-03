@@ -298,7 +298,9 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
 
   // ===== 更多配置（对标原版 MoreConfigDialog） =====
 
-  Widget _buildMoreConfig() {
+  /// [批3a] 「更多配置」构建；[includeToolbarFollowPage] 仅 all 页保留旧
+  /// 「工具栏跟随页面」开关（all 页保持原样），more 页由菜单系统新配置替代。
+  Widget _buildMoreConfig({bool includeToolbarFollowPage = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -531,21 +533,25 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
             _commit();
           },
         ),
-        // 工具栏跟随页面（原版 readBarStyleFollowPage：顶/底栏背景与文字色
-        // 跟随当前阅读页配色，对标 ReadMenu immersiveMenu）
-        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
-        SwitchListTile(
-          dense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-          title: const Text('工具栏跟随页面'),
-          subtitle: const Text('顶/底栏配色跟随阅读页背景'),
-          value: _config.readBarStyleFollowPage,
-          onChanged: (v) {
-            _config.readBarStyleFollowPage = v;
-            _commit();
-          },
-        ),
+        // [批3a] more 页由菜单系统「全局 → 工具栏样式」承载；all 页
+        // 保持原样保留旧开关（旧键仍参与一次性迁移）。
+        if (includeToolbarFollowPage) ...[
+          // 工具栏跟随页面（原版 readBarStyleFollowPage：顶/底栏背景与文字色
+          // 跟随当前阅读页配色，对标 ReadMenu immersiveMenu）
+          // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
+          SwitchListTile(
+            dense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            title: const Text('工具栏跟随页面'),
+            subtitle: const Text('顶/底栏配色跟随阅读页背景'),
+            value: _config.readBarStyleFollowPage,
+            onChanged: (v) {
+              _config.readBarStyleFollowPage = v;
+              _commit();
+            },
+          ),
+        ],
         // [UI-fix v2.0.4 | 2026-08-08] MoreConfig 第②批：按原版
         // pref_config_read.xml 项序与文案补齐，平台受限项以副标题
         // 灰字诚实标注（不引入新依赖）— Qoder

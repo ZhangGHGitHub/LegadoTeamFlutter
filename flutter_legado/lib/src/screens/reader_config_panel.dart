@@ -218,12 +218,20 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
       case ReaderConfigSection.more:
         // [UI_SYNC_REFACTOR S5 修] 阅读界面弹层「更多」页（排版与
         // 更多配置 + 页面边距入口）— Qoder
+        // [批3a] 原「菜单」页的自动翻页/点击区域/亮度三卡移入本页，
+        // 功能不丢失；「菜单」页改为菜单系统三子页（ReaderMenuSystemPanel）。
         children = [
+          _groupCard(_buildAutoPageTurn()),
+          const SizedBox(height: 12),
+          _groupCard(_buildTapZones()),
+          const SizedBox(height: 12),
+          _groupCard(_buildBrightnessControl()),
+          const SizedBox(height: 12),
           _groupCard(_buildTypography()),
           const SizedBox(height: 12),
           _groupCard(_buildParagraphSpacing()),
           const SizedBox(height: 12),
-          _groupCard(_buildMoreConfig()),
+          _groupCard(_buildMoreConfig(includeToolbarFollowPage: false)),
           const SizedBox(height: 12),
           _groupCard(
             ListTile(

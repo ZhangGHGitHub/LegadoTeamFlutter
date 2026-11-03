@@ -9,31 +9,35 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../models/models.dart';
 import '../../providers/providers.dart' show bookApiProvider;
+import '../../providers/reader/reader_menu_style_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/reader/reader_top_bar_actions_notifier.dart';
 import '../../providers/theme/theme_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
-import '../../screens/reader_config_panel.dart';
+import '../../screens/reader_config_panel.dart' show readerAdvConfigProvider;
 import '../../services/system_brightness.dart';
 import '../../utils/txt_toc_rule.dart' show isLocalTxtBook;
 import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
 import 'reader_charset_dialog.dart';
 import 'reader_download_dialog.dart';
+import 'reader_menu_style.dart';
 import 'reader_toc_rule_dialog.dart';
 import 'reader_top_bar_actions.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
-/// 结构：屏幕顶栏（返回/书名/换源/刷新正文/下载（离线缓存）/更多溢出 +
-/// 章节信息块与中部快捷钮）→ 底部 Surface（进度滑条行 + 单行五键行动作行）。
+/// 结构：屏幕顶栏（返回/标题模式或胶囊/换源/刷新正文/下载/更多溢出 +
+/// 章节信息块）→ 底部 Surface（进度滑条行 + 可配置五键图标网格）。
+/// [批3a] 菜单配色/底栏布局/顶栏标题模式由 ReaderMenuStyle 驱动。
 /// [PARITY A5] 键集收敛对齐参考版默认键集：动作行 = 全文搜索/自动翻页/
 /// 目录/朗读/设置（参考 ReadButtonConfigDelegate.kt:197-203
 /// DEFAULT_ENABLED_BUTTON_IDS = search/auto_page/catalog/read_aloud/setting，
-/// 显示顺序 ReadBookContract.kt:404+ ReadBookButtonIds；无第二页、无字号/
-/// 亮度键；参考 showBrightnessView 默认 "0" 亮度隐藏，字号/亮度保留在读内
-/// 入口 ReaderSettingsSheet / ReaderConfigPanel）。
+/// 显示顺序 ReadBookContract.kt:404+ ReadBookButtonIds；批3a 起按
+/// 每行图标数/行数溢出分页；无字号/亮度键（参考 showBrightnessView 默认
+/// "0" 亮度隐藏，字号/亮度保留在读内入口 ReaderSettingsSheet /
+/// ReaderConfigPanel）。
 /// 常挂载+双向动画（visible 驱动）。
 class ReaderMenuPanel extends ConsumerStatefulWidget {
   final bool visible;
@@ -56,6 +60,12 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
   final String brightnessVwPos;
   final String progressBehavior;
   final ValueChanged<int>? onSeekPage;
+
+  /// 旧「工具栏跟随页面」布尔参数（兼容既有调用方）
+  ///
+  /// [批3a] 配色已由 `readBarStyle`（0 系统 / 1 跟随阅读背景 / 2 自定义）
+  /// 统一承载；本参数保留签名兼容，但不再参与渲染。旧持久化键
+  /// `readBarStyleFollowPage` 仅在 `readBarStyle` 缺失时迁移。
   final bool styleFollowPage;
 
   const ReaderMenuPanel({
@@ -148,18 +158,35 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         ? state.chapters[state.currentChapterIndex]
         : null;
     final cs = Theme.of(context).colorScheme;
-    final followColor = widget.styleFollowPage ? state.backgroundColor : null;
-    final foreground = widget.styleFollowPage ? state.textColor : null;
+    // [批3a] 菜单配色由 readBarStyle 统一定源：
+    // 0 系统 / 1 跟随阅读背景 / 2 自定义（种子或自定义主题色）。
+    // 旧参数 widget.styleFollowPage 保留兼容，但 readBarStyle 优先。
+    final menuStyle = ref.watch(readerMenuStyleProvider);
+    final menuColors = resolveReaderMenuColors(
+      style: menuStyle,
+      isDark: Theme.of(context).brightness == Brightness.dark,
+      scheme: cs,
+      pageBackgroundColor: state.backgroundColor,
+      pageTextColor: state.textColor,
+    );
     final adv = ref.watch(readerAdvConfigProvider);
     final autoPageActive = adv?.autoPageTurn ?? false;
-    var barColor = followColor ?? cs.surface;
+    var barColor = menuColors.background;
     // [UI_SYNC_REFACTOR S2-2] 表面 Haze 档（实色等效）：enableBlur 时
-    // 半透明底（α 85/255，参考 readMenuBlurAlpha 默认）+ BackdropFilter(24)
+    // 半透明底（α 85/255，参考 readMenuBlurAlpha 默认）+ BackdropFilter(24)。
+    // [批3a] 跟随阅读背景（readBarStyle=1）不使用模糊，与旧
+    // styleFollowPage 语义一致。
     final ui = uiSettingsListenable.value;
-    final useSurfaceBlur = ui.enableBlur && followColor == null;
+    final useSurfaceBlur =
+        ui.enableBlur &&
+        menuStyle.readBarStyle != ReaderMenuBarStyle.followPage;
     if (useSurfaceBlur) {
       barColor = barColor.withValues(alpha: 85 / 255);
     }
+    final radius = menuStyle.bottomCornerRadius.toDouble();
+    final panelRadius = menuStyle.floatingBottomBar
+        ? BorderRadius.circular(radius)
+        : BorderRadius.vertical(top: Radius.circular(radius));
 
     return Positioned.fill(
       child: AnimatedBuilder(
@@ -183,40 +210,20 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏置屏幕顶部（用户
-                // 反馈①：此前误置于底部面板首行；对齐原版布局——← 居左，
-                // 换源/刷新/缓存/更多 居右）— Qoder
-                _buildTopBar(context, barColor, book, chapter, notifier),
+                // [批3a] 顶栏风格/标题模式/胶囊/合并按钮由菜单配置驱动。
+                _buildTopBar(context, menuStyle, menuColors, book, chapter),
                 const Spacer(),
-                useSurfaceBlur
-                    ? ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(32),
-                        ),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                          child: _panelSurface(
-                            context,
-                            barColor,
-                            foreground,
-                            book,
-                            chapter,
-                            notifier,
-                            state,
-                            autoPageActive,
-                          ),
-                        ),
-                      )
-                    : _panelSurface(
-                        context,
-                        barColor,
-                        foreground,
-                        book,
-                        chapter,
-                        notifier,
-                        state,
-                        autoPageActive,
-                      ),
+                _buildBottomPanel(
+                  context,
+                  style: menuStyle,
+                  colors: menuColors,
+                  barColor: barColor,
+                  panelRadius: panelRadius,
+                  useSurfaceBlur: useSurfaceBlur,
+                  notifier: notifier,
+                  state: state,
+                  autoPageActive: autoPageActive,
+                ),
               ],
             ),
             // [批1b-1] 亮度竖条（模式='2'）：贴左/右缘居中（对齐参考版
@@ -224,33 +231,73 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             // 胶囊形态）；与底部面板/顶部栏不重叠，滑动手势区域独立，
             // 不遮挡翻页点击区（菜单展开时翻页手势本已停用）— 全栈工程师
             if (widget.brightnessMode == '2')
-              _buildVerticalBrightnessBar(context, foreground),
+              _buildVerticalBrightnessBar(context, menuColors.text),
           ],
         ),
       ),
     );
   }
 
+  /// [批3a] 底部面板外壳：浮动（16dp 边距/四角圆角）或贴底全宽（仅上圆角）
+  Widget _buildBottomPanel(
+    BuildContext context, {
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required Color barColor,
+    required BorderRadius panelRadius,
+    required bool useSurfaceBlur,
+    required ReaderNotifier notifier,
+    required ReaderState state,
+    required bool autoPageActive,
+  }) {
+    Widget surface = _panelSurface(
+      context,
+      style: style,
+      colors: colors,
+      barColor: barColor,
+      panelRadius: panelRadius,
+      notifier: notifier,
+      state: state,
+      autoPageActive: autoPageActive,
+    );
+    if (useSurfaceBlur) {
+      surface = ClipRRect(
+        borderRadius: panelRadius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: surface,
+        ),
+      );
+    }
+    if (!style.floatingBottomBar) return surface;
+    return Padding(
+      key: const ValueKey('reader-bottom-panel-floating'),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: surface,
+    );
+  }
+
   Widget _panelSurface(
-    BuildContext context,
-    Color barColor,
-    Color? foreground,
-    Book? book,
-    BookChapter? chapter,
-    ReaderNotifier notifier,
-    ReaderState state,
-    bool autoPageActive,
-  ) {
-    // [PARITY A5] 面板键集对齐参考版：进度行 + 单行五键行动作行
-    //（参考版菜单无亮度/字号键与亮度竖条；亮度/字号保留在读内入口
-    // ReaderSettingsSheet / ReaderConfigPanel）。
+    BuildContext context, {
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required Color barColor,
+    required BorderRadius panelRadius,
+    required ReaderNotifier notifier,
+    required ReaderState state,
+    required bool autoPageActive,
+  }) {
+    // [批3a] 面板键集对齐参考版：进度行 + 可配置 5 键图标网格
+    //（全文搜索/自动翻页/目录/朗读/设置）。
     return Material(
+      key: const ValueKey('reader-bottom-panel-surface'),
       color: barColor,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      borderRadius: panelRadius,
+      clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
         child: IconTheme(
-          data: IconThemeData(color: foreground),
+          data: IconThemeData(color: colors.text),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -261,9 +308,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               // ReaderBottomBar 已被本面板取代、生产不再挂载，横条消费点
               // 收敛到唯一生产路径 — 全栈工程师
               if (widget.brightnessMode == '1')
-                _buildHorizontalBrightnessRow(context, foreground),
-              _buildProgressRow(context, notifier, state, foreground),
-              _buildActionRow(context, foreground, autoPageActive),
+                _buildHorizontalBrightnessRow(context, colors.text),
+              _buildProgressRow(context, notifier, state, colors),
+              _buildActionRow(
+                context,
+                style: style,
+                colors: colors,
+                autoPageActive: autoPageActive,
+              ),
             ],
           ),
         ),
@@ -365,11 +417,17 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   /// IconButton 自带 tooltip 在移动端默认「长按显示」，会与二级菜单抢手势，
   /// 故改用外层手动触发 Tooltip（find.byTooltip/无障碍语义仍可用），长按
   /// 交给 GestureDetector。
+  ///
+  /// [批3a] 图标容器三态由 `titleBarIconStyle` 独立控制（0 透明 / 1 圆底 /
+  /// 2 描边）；合并模式下按钮不再各自包容器，由外层胶囊统一承载。
   Widget _buildTopBarActionButton(
-    BuildContext context,
-    Book? book,
-    ReaderTopBarActionDef def,
-  ) {
+    BuildContext context, {
+    required Book? book,
+    required ReaderTopBarActionDef def,
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required bool merged,
+  }) {
     return Tooltip(
       message: def.label,
       triggerMode: TooltipTriggerMode.manual,
@@ -378,13 +436,73 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         onLongPress: def.longPress == null
             ? null
             : () => _performTopBarLongPress(context, book, def.longPress!),
-        child: IconButton(
-          icon: Icon(def.icon, size: 22, semanticLabel: def.label),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-          visualDensity: VisualDensity.compact,
-          onPressed: () =>
-              unawaited(_performTopBarAction(context, book, def.id)),
+        child: _topBarIconSurface(
+          context,
+          icon: def.icon,
+          label: def.label,
+          style: style,
+          colors: colors,
+          merged: merged,
+          onTap: () => unawaited(_performTopBarAction(context, book, def.id)),
+        ),
+      ),
+    );
+  }
+
+  /// [批3a] 顶栏图标按钮表面（40dp 圆形热区，图标 20dp）
+  ///
+  /// [merged] 为 true 时由外层合并胶囊提供底色/描边，本按钮只画图标；
+  /// 独立按钮按 `titleBarIconStyle` 画三态容器。非选中图标用
+  /// onSurfaceVariant（参考 `ReadMenuGlassButtonSurface`）。
+  Widget _topBarIconSurface(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required bool merged,
+    required VoidCallback onTap,
+    bool selected = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final tint = selected ? colors.accent : colors.onSurfaceVariant;
+    Color? containerColor;
+    Border? border;
+    if (merged) {
+      containerColor = null;
+    } else {
+      switch (style.titleIconStyle) {
+        case ReaderMenuIconStyle.tonal:
+          containerColor = colors.container;
+        case ReaderMenuIconStyle.outlined:
+          containerColor = Colors.transparent;
+          border = Border.all(
+            color: colors.onSurfaceVariant.withValues(alpha: 0.45),
+          );
+        default:
+          containerColor = Colors.transparent;
+      }
+    }
+    if (selected) {
+      containerColor = scheme.secondaryContainer;
+      border = Border.all(color: scheme.secondary, width: 1.5);
+    }
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          key: ValueKey('reader-topbar-icon-surface-$label'),
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: containerColor,
+            border: border,
+          ),
+          child: Icon(icon, size: 20, color: tint),
         ),
       ),
     );
@@ -511,41 +629,30 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
-  // ── 分区 1：屏幕顶部工具栏（对齐原版：← 居左；⇄ ↻ ⬇ ⋮ 居右）──
+  // ── 分区 1：屏幕顶部工具栏（[批3a] 标题模式/胶囊/合并按钮）──
   //
-  // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：顶栏按参考版改造——
-  // 移除书名/章名胶囊（章名在正文区与页脚已有呈现），改为参考版五钮
-  //（返回/换源/刷新正文/下载当前章/更多溢出）— Qoder
-  // [批37] 右侧动作改为动作池按配置渲染（默认投影 = 换源/刷新/缓存/更多）。
+  // 参考版 `ReadBookMenuBarTitle.kt`：
+  // - titleBarMode '0' 书名在顶栏行内 / '1' 书名另起一行 / '2' 仅章节 /
+  //   '3' 不显示标题与章节；
+  // - 标题胶囊（readMenuTopBarTitleCapsule）显示书名 + 章名，点击进书籍详情；
+  // - 合并按钮（readMenuTopBarMergeButtons）把右侧动作塞进一个 20 圆角胶囊；
+  // - 图标容器三态由 titleBarIconStyle 独立控制（0 透明 / 1 圆底 / 2 描边）。
   Widget _buildTopBar(
     BuildContext context,
-    Color barColor,
+    ReaderMenuStyle style,
+    ResolvedReaderMenuColors colors,
     Book? book,
     BookChapter? chapter,
-    ReaderNotifier notifier,
   ) {
-    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：头部信息（章节名/
-    // 章节链接/书源名）应在顶栏菜单中而非正文——工具行下方补信息块
-    //（章名+书源徽标 / 章节链接），对齐参考版顶栏布局 — Qoder
-    // [PARITY C2 M2] 移除来源 URL 全文行：参考版顶栏信息块只保留
-    // 章节名 + 书源小字徽标，不再渲染章节链接全文（来源名并入小字行）。
     final sourceName = book?.originName ?? '';
-    // [批1a | 2026-10-31] showReadTitleAddition 接线（对标原版
-    // showReadTitleAddition / 参考版 ReadConfigScreen #42）：关闭后
-    // 顶栏信息块（章节名 + 书源徽标）整体不渲染 — 全栈工程师
-    final showTitleAddition =
-        ref.watch(readerAdvConfigProvider.select((v) => v?.showReadTitleAddition ?? true));
-    // [P2-9 | 2026-09-24] 在线书判定（对齐顶栏 isOnline 语义，WebDAV 视作
-    // 本地）：本地书（loc_book/webDav::/存量 dav:）不显示换源/刷新正文（原版 ReadMenu
-    // 对本地书隐藏这两项入口）；notifier 侧守卫兜底
-    // （refreshChapterContent 对本地书返回原因、不触网）
-    // [批37b P2-3] origin 为空同样按本地处理；其余走类型感知的
-    // BookType.isLocalBook（仅 origin 判定会漏掉 type 位标记的本地书）
+    // [批1a] showReadTitleAddition：关闭后章节/书源信息块整体不渲染
+    final showTitleAddition = ref.watch(
+      readerAdvConfigProvider.select((v) => v?.showReadTitleAddition ?? true),
+    );
+    // [P2-9 / 批37b] 在线书判定（origin 为空与类型位本地书均按本地处理）
     final isOnline = book != null && !_isLocalBook(book);
-    // [批37] 顶栏动作可配置（参考版 ReadMenuActionDefs.kt）：
-    // 顺序/开关来自用户配置，按当前书型过滤，最多 6 个（含末尾固定的
-    // 「更多」）。旧版写死的换源/刷新/缓存/更多正是默认配置在在线书上的
-    // 投影（参考版 DEFAULT_TITLE_BAR_ACTION_IDS），默认行为不变。
+    // [批37] 顶栏动作可配置：顺序/开关来自用户配置，按书型过滤，
+    // 最多 6 个（含末尾固定的「更多」）。
     final actionConfig = ref.watch(readerTopBarActionsProvider);
     final traits = ReaderBookTraits(
       isLocal: book != null && !isOnline,
@@ -555,9 +662,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         ? <ReaderTopBarActionDef>[readerTopBarActionById[kReaderMoreActionsId]!]
         : buildReaderTopBarActions(actionConfig, traits: traits);
     final visibleActionIds = {for (final def in topBarActions) def.id};
-    // 「更多」菜单兜底：被移出顶栏（或本就不在顶栏）的动作仍从这里可达，
-    // 确保换源/刷新/缓存/编码等入口不会因配置丢失。菜单里已有同义项
-    // （目录/界面设置/添加书签/替换规则）不重复列出。
+    // 「更多」菜单兜底：被移出顶栏的动作仍从这里可达。
     final hiddenActions = book == null
         ? const <ReaderTopBarActionDef>[]
         : hiddenReaderTopBarActions(
@@ -566,203 +671,205 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             visibleIds: visibleActionIds,
             excludeIds: _moreMenuOwnActionIds,
           );
+
+    final mode = style.titleBarMode;
+    final showCapsule =
+        style.titleCapsule &&
+        book != null &&
+        mode != ReaderMenuTitleBarMode.hidden;
+    final showBookInRow =
+        !showCapsule && book != null && mode == ReaderMenuTitleBarMode.inTopBar;
+    final showBookOwnLine =
+        !showCapsule && book != null && mode == ReaderMenuTitleBarMode.ownLine;
+    final showChapterRow =
+        !showCapsule &&
+        showTitleAddition &&
+        mode != ReaderMenuTitleBarMode.hidden &&
+        (chapter != null || sourceName.isNotEmpty);
+
     return Material(
-      color: barColor,
+      color: colors.background,
       child: SafeArea(
         bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              height: 48,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(
+                    icon: Icon(
                       Symbols.arrow_back_rounded,
+                      size: 20,
                       semanticLabel: '退出阅读',
+                      color: colors.onSurfaceVariant,
                     ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 40,
+                      height: 40,
+                    ),
+                    visualDensity: VisualDensity.compact,
                     tooltip: '退出阅读',
                     onPressed: widget.onBack,
                   ),
+                  const SizedBox(width: 16),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(
-                        book?.name ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
+                    child: showCapsule
+                        ? _buildTitleCapsule(
+                            context,
+                            style: style,
+                            colors: colors,
+                            book: book,
+                            chapter: chapter,
+                          )
+                        : showBookInRow
+                        ? InkWell(
+                            key: const ValueKey('reader-topbar-book-name'),
+                            onTap: () => _openBookInfo(context, book),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: Text(
+                                book.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(color: colors.text),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
-                  // [批37] 顶栏动作按配置渲染：旧版写死的换源/刷新/缓存
-                  // 改为动作池投影（默认配置 = 参考版默认项），新增的
-                  // 目录/设置等动作也由用户配置决定；「更多」固定末尾。
-                  for (final def in topBarActions)
-                    if (def.id == kReaderMoreActionsId)
-                      PopupMenuButton<String>(
-                        tooltip: '更多',
-                        position: PopupMenuPosition.under,
-                        onSelected: (value) {
-                          if (value.startsWith(_moreActionValuePrefix)) {
-                            unawaited(
-                              _performTopBarAction(
-                                context,
-                                book,
-                                value.substring(_moreActionValuePrefix.length),
-                              ),
-                            );
-                            return;
-                          }
-                          switch (value) {
-                            case 'addBookmark':
-                              widget.onAddBookmark();
-                            case 'highlightRule':
-                              Navigator.pushNamed(
-                                context,
-                                AppRoutes.highlightRules,
-                              );
-                            case 'replace':
-                              widget.onOpenReplaceRules();
-                            case 'settings':
-                              widget.onOpenSettings();
-                            case 'toc':
-                              widget.onOpenCatalog();
-                            case 'reverseTocDisplay':
-                              // [批31] 目录显示反转（对齐原版
-                              // ReadConfig.reverseTocDisplay）：仅展示层反序，
-                              // 数据顺序/章节身份不变，无需重载正文
-                              if (book != null) {
-                                unawaited(_toggleReverseTocDisplay(book));
-                              }
-                          }
-                        },
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(
-                            value: 'addBookmark',
-                            child: Text('添加书签'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'highlightRule',
-                            child: Text('高亮规则'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'replace',
-                            child: Text('替换规则'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'toc',
-                            child: Text('查看目录'),
-                          ),
-                          CheckedPopupMenuItem(
-                            value: 'reverseTocDisplay',
-                            checked:
-                                book?.readConfig?.reverseTocDisplay ?? false,
-                            child: const Text('目录显示反转'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'settings',
-                            child: Text('界面设置'),
-                          ),
-                          // [批37] 顶栏未显示的动作兜底（换源/刷新/缓存/
-                          // 编码等），保证配置后功能入口不丢失。
-                          if (hiddenActions.isNotEmpty) ...[
-                            const PopupMenuDivider(),
-                            for (final def in hiddenActions)
-                              PopupMenuItem(
-                                value: '$_moreActionValuePrefix${def.id}',
-                                child: Text(def.label),
-                              ),
-                          ],
+                  const SizedBox(width: 16),
+                  if (style.mergeButtons)
+                    _buildMergedTopBarActions(
+                      context,
+                      style: style,
+                      colors: colors,
+                      book: book,
+                      topBarActions: topBarActions,
+                      hiddenActions: hiddenActions,
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < topBarActions.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 6),
+                          if (topBarActions[i].id == kReaderMoreActionsId)
+                            _buildMoreMenuButton(
+                              context,
+                              book: book,
+                              hiddenActions: hiddenActions,
+                              style: style,
+                              colors: colors,
+                              merged: false,
+                            )
+                          else
+                            _buildTopBarActionButton(
+                              context,
+                              book: book,
+                              def: topBarActions[i],
+                              style: style,
+                              colors: colors,
+                              merged: false,
+                            ),
                         ],
-                      )
-                    else
-                      _buildTopBarActionButton(context, book, def),
+                      ],
+                    ),
                 ],
               ),
             ),
-            // [批1a] showReadTitleAddition：关闭时顶栏信息块不渲染
-            if (showTitleAddition &&
-                (chapter != null || sourceName.isNotEmpty))
+            // titleBarMode '1'：书名另起一行（胶囊开启时隐藏）
+            if (showBookOwnLine)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            chapter?.title ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                        ),
-                        if (sourceName.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              sourceName,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).colorScheme.onPrimary,
-                              ),
-                            ),
-                          ),
-                      ],
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: InkWell(
+                  key: const ValueKey('reader-topbar-book-name-own-line'),
+                  onTap: () => _openBookInfo(context, book),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      book.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleMedium?.copyWith(color: colors.text),
                     ),
-                    // [PARITY C2 M3] 中部快捷钮去圆底：参考版中部为小图标形态
-                    //（无圆形底衬），对齐后保留全部五项功能入口。
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _shortcutButton(
-                          context,
-                          Symbols.search_rounded,
-                          '搜索',
-                          widget.onOpenContentSearch,
-                        ),
-                        _shortcutButton(
-                          context,
-                          Symbols.format_list_bulleted_rounded,
-                          '目录',
-                          widget.onOpenCatalog,
-                        ),
-                        _shortcutButton(
-                          context,
-                          Symbols.headphones_rounded,
-                          '朗读',
-                          widget.onReadAloud,
-                        ),
-                        _shortcutButton(
-                          context,
-                          Symbols.settings_rounded,
-                          '设置',
-                          widget.onOpenSettings,
-                        ),
-                        // [P2-9 fix | 2026-09-24] 本地书不渲染换源快捷钮
-                        // （隐藏而非置灰，同顶栏行）；换源 = await 导航，
-                        // 成功后重载，取消不做任何事
-                        if (isOnline)
-                          _shortcutButton(
-                            context,
-                            Symbols.swap_horiz_rounded,
-                            '换源',
-                            () => unawaited(_changeSourceFlow(context, book)),
-                          ),
-                      ],
-                    ),
-                  ],
+                  ),
+                ),
+              ),
+            // titleBarMode '0'/'1'/'2'：章节名 + 书源徽标（mode 3 整体隐藏）
+            if (showChapterRow)
+              _buildChapterInfoRow(
+                context,
+                chapter: chapter,
+                sourceName: sourceName,
+                colors: colors,
+              ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 书名/胶囊点击进入书籍详情（沿用现有 BookInfo 路由参数约定：Book）
+  void _openBookInfo(BuildContext context, Book book) {
+    Navigator.pushNamed(context, AppRoutes.bookInfo, arguments: book);
+  }
+
+  /// 顶栏标题胶囊：书名 labelMedium + 章名 labelSmall@0.7（圆角 50/高 40）
+  Widget _buildTitleCapsule(
+    BuildContext context, {
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required Book book,
+    BookChapter? chapter,
+  }) {
+    final textTheme = Theme.of(context).textTheme;
+    final chapterTitle = chapter?.title ?? '';
+    return InkWell(
+      key: const ValueKey('reader-topbar-title-capsule'),
+      onTap: () => _openBookInfo(context, book),
+      borderRadius: BorderRadius.circular(50),
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(50),
+          color: style.titleIconStyle == ReaderMenuIconStyle.tonal
+              ? colors.container
+              : Colors.transparent,
+          border: style.titleIconStyle == ReaderMenuIconStyle.outlined
+              ? Border.all(
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.45),
+                )
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              book.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.text,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (chapterTitle.isNotEmpty)
+              Text(
+                chapterTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.text.withValues(alpha: 0.7),
                 ),
               ),
           ],
@@ -771,113 +878,418 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
-  /// [PARITY C2 M3] 小图标快捷钮（搜索/目录/朗读/设置/换源五项保留）：
-  /// 对齐参考版中部小图标形态——去除圆形底衬，仅保留小图标 + 圆形点击热区。
-  Widget _shortcutButton(
-    BuildContext context,
-    IconData icon,
-    String tip,
-    VoidCallback? onTap,
-  ) {
-    final cs = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: SizedBox(
-          width: 34,
-          height: 34,
-          child: Icon(
-            icon,
-            size: 22,
-            semanticLabel: tip,
-            color: onTap == null
-                ? cs.onSurface.withValues(alpha: 0.35)
-                : cs.onSurface,
+  /// 章节信息行：章节名 + 书源小字徽标（替代旧中部快捷钮行）
+  Widget _buildChapterInfoRow(
+    BuildContext context, {
+    required BookChapter? chapter,
+    required String sourceName,
+    required ResolvedReaderMenuColors colors,
+  }) {
+    final onAccent = colors.accent.computeLuminance() > 0.5
+        ? Colors.black
+        : Colors.white;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              chapter?.title ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.text,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-        ),
+          if (sourceName.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: colors.accent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                sourceName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: onAccent),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  // ── 分区：单行五键行动作行（[PARITY A5] 键集对齐参考版默认键集）──
+  /// 合并态顶栏动作：单个 20 圆角胶囊容器，按钮间无 6dp 间距
+  Widget _buildMergedTopBarActions(
+    BuildContext context, {
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required Book? book,
+    required List<ReaderTopBarActionDef> topBarActions,
+    required List<ReaderTopBarActionDef> hiddenActions,
+  }) {
+    return Container(
+      key: const ValueKey('reader-topbar-merged-actions'),
+      height: 40,
+      decoration: BoxDecoration(
+        color: colors.container,
+        borderRadius: BorderRadius.circular(20),
+        border: style.titleIconStyle == ReaderMenuIconStyle.outlined
+            ? Border.all(color: colors.onSurfaceVariant.withValues(alpha: 0.45))
+            : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final def in topBarActions)
+            if (def.id == kReaderMoreActionsId)
+              _buildMoreMenuButton(
+                context,
+                book: book,
+                hiddenActions: hiddenActions,
+                style: style,
+                colors: colors,
+                merged: true,
+              )
+            else
+              _buildTopBarActionButton(
+                context,
+                book: book,
+                def: def,
+                style: style,
+                colors: colors,
+                merged: true,
+              ),
+        ],
+      ),
+    );
+  }
+
+  /// 「更多」溢出按钮（独立 40dp 圆形或合并胶囊内的纯图标）
+  Widget _buildMoreMenuButton(
+    BuildContext context, {
+    required Book? book,
+    required List<ReaderTopBarActionDef> hiddenActions,
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required bool merged,
+  }) {
+    return PopupMenuButton<String>(
+      tooltip: '更多',
+      position: PopupMenuPosition.under,
+      padding: EdgeInsets.zero,
+      onSelected: (value) {
+        if (value.startsWith(_moreActionValuePrefix)) {
+          unawaited(
+            _performTopBarAction(
+              context,
+              book,
+              value.substring(_moreActionValuePrefix.length),
+            ),
+          );
+          return;
+        }
+        switch (value) {
+          case 'addBookmark':
+            widget.onAddBookmark();
+          case 'highlightRule':
+            Navigator.pushNamed(context, AppRoutes.highlightRules);
+          case 'replace':
+            widget.onOpenReplaceRules();
+          case 'settings':
+            widget.onOpenSettings();
+          case 'toc':
+            widget.onOpenCatalog();
+          case 'reverseTocDisplay':
+            // [批31] 目录显示反转（对齐原版 ReadConfig.reverseTocDisplay）：
+            // 仅展示层反序，数据顺序/章节身份不变，无需重载正文
+            if (book != null) {
+              unawaited(_toggleReverseTocDisplay(book));
+            }
+        }
+      },
+      child: _topBarIconVisual(
+        icon: Symbols.more_vert_rounded,
+        label: '更多',
+        style: style,
+        colors: colors,
+        merged: merged,
+      ),
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
+        const PopupMenuItem(value: 'highlightRule', child: Text('高亮规则')),
+        const PopupMenuItem(value: 'replace', child: Text('替换规则')),
+        const PopupMenuItem(value: 'toc', child: Text('查看目录')),
+        CheckedPopupMenuItem(
+          value: 'reverseTocDisplay',
+          checked: book?.readConfig?.reverseTocDisplay ?? false,
+          child: const Text('目录显示反转'),
+        ),
+        const PopupMenuItem(value: 'settings', child: Text('界面设置')),
+        // [批37] 顶栏未显示的动作兜底（换源/刷新/缓存/编码等）
+        if (hiddenActions.isNotEmpty) ...[
+          const PopupMenuDivider(),
+          for (final def in hiddenActions)
+            PopupMenuItem(
+              value: '$_moreActionValuePrefix${def.id}',
+              child: Text(def.label),
+            ),
+        ],
+      ],
+    );
+  }
+
+  /// 顶栏按钮的纯视觉（不含点击层）：供 PopupMenuButton / 普通按钮复用
+  Widget _topBarIconVisual({
+    required IconData icon,
+    required String label,
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required bool merged,
+  }) {
+    Color? containerColor;
+    Border? border;
+    if (!merged) {
+      switch (style.titleIconStyle) {
+        case ReaderMenuIconStyle.tonal:
+          containerColor = colors.container;
+        case ReaderMenuIconStyle.outlined:
+          containerColor = Colors.transparent;
+          border = Border.all(
+            color: colors.onSurfaceVariant.withValues(alpha: 0.45),
+          );
+        default:
+          containerColor = Colors.transparent;
+      }
+    }
+    return Semantics(
+      button: true,
+      label: label,
+      child: Container(
+        key: ValueKey('reader-topbar-icon-surface-$label'),
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: containerColor,
+          border: border,
+        ),
+        child: Icon(icon, size: 20, color: colors.onSurfaceVariant),
+      ),
+    );
+  }
+
+  // ── 分区：五键图标网格（[批3a] 参考 ReadBookMenuBarBottom.kt:200-290）──
   //
-  // [PARITY A5 | 深色对齐裁决"以参考版为准"] 参考版阅读菜单默认五键：
-  // 全文搜索/自动翻页/目录/朗读/设置。依据（参考源码 D:\tmp\md3_ref_legado）：
-  // ① 默认开启键集 ReadButtonConfigDelegate.kt:197-203
-  //   DEFAULT_ENABLED_BUTTON_IDS = {search, auto_page, catalog, read_aloud, setting}
-  //   （loadButtonConfig :148-154：用户未配置时按 ReadBookButtonIds 显示序取此五键）；
-  //   ② 键位定义 SystemMenuPage.kt:898-903：search→Icons.Search/search_content、
-  //   auto_page→Icons.PlayArrow/auto_next_page、catalog→Icons.List/chapter_list、
-  //   read_aloud→Icons.RecordVoiceOver/read_aloud、setting→Icons.Settings/setting；
-  //   ③ 文案 values-zh-rCN/strings.xml：search_content=全文搜索(:1036)、
-  //   auto_next_page=自动翻页(:465)、chapter_list=目录(:184)、
-  //   read_aloud=朗读(:189)、setting=设置(:97)；
-  //   ④ 布局 ReadBookContract.kt:359-360 readMenuIconItemsPerRow=5、
-  //   readMenuIconRowCount=1（单行五键，无第二页、无字号/亮度键；亮度
-  //   showBrightnessView 默认 "0" 隐藏，:390）。
-  // 注：在途版曾按 MuMu 定制实例截图放 章节梗概/AI改写 占位键，但参考源码默认
-  // 键集不含 ai_summary/ai_rewrite（ReadBookButtonIds 成员但默认 enabled=false，
-  // ReadButtonConfigDelegate.kt:172-190 normalizeButtonConfig），故按源码移除；
-  // 如需保留 AI 占位请主代理另立裁决。替换/更多入口保留于顶栏更多溢出菜单，
-  // 亮度/字号保留在读内（ReaderSettingsSheet / ReaderConfigPanel）。
+  // 键集固定为参考默认五键：全文搜索/自动翻页/目录/朗读/设置
+  //（ReadButtonConfigDelegate DEFAULT_ENABLED_BUTTON_IDS）。
+  // 布局：每行 itemsPerRow（2..8）、共 rowCount（1..2）行、溢出用 PageView；
+  // 行距 12dp、每行 SpaceBetween、按钮 40dp 圆形、图标 20dp；
+  // showIconText 时图标下 2dp + labelSmall（maxLines 1）。
   Widget _buildActionRow(
-    BuildContext context,
-    Color? foreground,
-    bool autoPageActive,
-  ) {
-    final cs = Theme.of(context).colorScheme;
-    Widget item(
-      IconData icon,
-      String label,
-      VoidCallback onTap, {
-      bool active = false,
-    }) {
-      final color = active ? cs.primary : (foreground ?? cs.onSurfaceVariant);
-      return Expanded(
+    BuildContext context, {
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+    required bool autoPageActive,
+  }) {
+    final items = <_ReaderMenuAction>[
+      _ReaderMenuAction(
+        icon: Symbols.search_rounded,
+        label: '全文搜索',
+        onTap: widget.onOpenContentSearch,
+      ),
+      _ReaderMenuAction(
+        icon: autoPageActive
+            ? Symbols.pause_rounded
+            : Symbols.play_arrow_rounded,
+        label: '自动翻页',
+        onTap: widget.onToggleAutoPage,
+        active: autoPageActive,
+      ),
+      _ReaderMenuAction(
+        icon: Symbols.format_list_bulleted_rounded,
+        label: '目录',
+        onTap: widget.onOpenCatalog,
+      ),
+      _ReaderMenuAction(
+        icon: Symbols.headphones_rounded,
+        label: '朗读',
+        onTap: widget.onReadAloud,
+      ),
+      _ReaderMenuAction(
+        icon: Symbols.settings_rounded,
+        label: '设置',
+        onTap: widget.onOpenSettings,
+      ),
+    ];
+    final pageSize = style.pageSize;
+    final pageCount = (items.length + pageSize - 1) ~/ pageSize;
+    final itemHeight = style.showIconText ? 58.0 : 40.0;
+    final gridHeight =
+        style.rowCount * itemHeight + (style.rowCount - 1) * 12.0;
+
+    Widget pageBuilder(int page) {
+      final pageItems = items.skip(page * pageSize).take(pageSize).toList();
+      final rows = <Widget>[];
+      for (
+        var start = 0;
+        start < pageItems.length;
+        start += style.itemsPerRow
+      ) {
+        final rowItems = pageItems
+            .skip(start)
+            .take(style.itemsPerRow)
+            .toList(growable: false);
+        if (rows.isNotEmpty) rows.add(const SizedBox(height: 12));
+        rows.add(
+          _buildBottomActionRow(
+            context,
+            rowItems: rowItems,
+            itemHeight: itemHeight,
+            style: style,
+            colors: colors,
+          ),
+        );
+      }
+      return Column(mainAxisSize: MainAxisSize.min, children: rows);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: SizedBox(
+        height: gridHeight,
+        child: pageCount > 1
+            ? _BottomActionPager(pageCount: pageCount, pageBuilder: pageBuilder)
+            : pageBuilder(0),
+      ),
+    );
+  }
+
+  /// [批3a] 单行图标：常规宽度按 SpaceBetween 铺满；
+  /// 窄屏 + 每行 8 个（8×40dp 超过浮动面板可用宽度）时整体等比缩放兜底，
+  /// 避免 RenderFlex 横向溢出，同时保持参考版 40dp 按钮的视觉比例。
+  Widget _buildBottomActionRow(
+    BuildContext context, {
+    required List<_ReaderMenuAction> rowItems,
+    required double itemHeight,
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+  }) {
+    final children = [
+      for (final item in rowItems)
+        _buildBottomActionItem(
+          context,
+          action: item,
+          style: style,
+          colors: colors,
+        ),
+    ];
+    return SizedBox(
+      height: itemHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final naturalWidth = rowItems.length * 40.0;
+          if (naturalWidth <= constraints.maxWidth) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: children,
+            );
+          }
+          return Align(
+            alignment: Alignment.center,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: SizedBox(
+                width: naturalWidth,
+                height: itemHeight,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: children,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 底栏单个图标按钮（三态容器 + 选中态，语义 label=文案）
+  Widget _buildBottomActionItem(
+    BuildContext context, {
+    required _ReaderMenuAction action,
+    required ReaderMenuStyle style,
+    required ResolvedReaderMenuColors colors,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    Color? containerColor;
+    Border? border;
+    if (action.active) {
+      containerColor = scheme.secondaryContainer;
+      border = Border.all(color: scheme.secondary, width: 1.5);
+    } else {
+      switch (style.iconStyle) {
+        case ReaderMenuIconStyle.tonal:
+          containerColor = colors.container;
+        case ReaderMenuIconStyle.outlined:
+          containerColor = Colors.transparent;
+          border = Border.all(
+            color: colors.onSurfaceVariant.withValues(alpha: 0.45),
+          );
+        default:
+          containerColor = Colors.transparent;
+      }
+    }
+    final tint = action.active ? colors.accent : colors.onSurfaceVariant;
+    return Tooltip(
+      key: ValueKey('reader-menu-action-${action.label}'),
+      message: action.label,
+      child: Semantics(
+        button: true,
+        container: true,
+        label: action.label,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+          onTap: action.onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: SizedBox(
+            width: 40,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 24, color: color),
-                const SizedBox(height: 6),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelMedium?.copyWith(color: color),
+                Container(
+                  key: ValueKey('reader-menu-action-surface-${action.label}'),
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: containerColor,
+                    border: border,
+                  ),
+                  child: Icon(action.icon, size: 20, color: tint),
                 ),
+                if (style.showIconText) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    action.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelSmall?.copyWith(color: colors.text),
+                  ),
+                ],
               ],
             ),
           ),
         ),
-      );
-    }
-
-    // [PARITY A5] 键集/顺序/文案 = 参考默认五键（见本分区头部注释依据）：
-    // search / auto_page / catalog / read_aloud / setting。
-    // 图标随中部快捷钮既有 Symbols 形态；auto_page 运行中切 pause 图标 +
-    // primary 色（参考 active 态以颜色标记）。
-    final items = <Widget>[
-      item(Symbols.search_rounded, '全文搜索', widget.onOpenContentSearch),
-      item(
-        autoPageActive ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
-        '自动翻页',
-        widget.onToggleAutoPage,
-        active: autoPageActive,
       ),
-      item(Symbols.format_list_bulleted_rounded, '目录', widget.onOpenCatalog),
-      item(Symbols.headphones_rounded, '朗读', widget.onReadAloud),
-      item(Symbols.settings_rounded, '设置', widget.onOpenSettings),
-    ];
-    return SizedBox(height: 76, child: Row(children: items));
+    );
   }
 
   // ── 分区：进度滑条行（page=调章内页 / chapter=调章节）──
@@ -885,7 +1297,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     BuildContext context,
     ReaderNotifier notifier,
     ReaderState state,
-    Color? foreground,
+    ResolvedReaderMenuColors colors,
   ) {
     final chapterPageCount = notifier.paginator.pageCountForChapter(
       state.currentChapterIndex,
@@ -907,24 +1319,18 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final positionText = usePageSeek
         ? '${currentPage + 1}/$chapterPageCount'
         : '${state.currentChapterIndex + 1}/${state.chapters.length}';
-    final cs = Theme.of(context).colorScheme;
-    final progressColor = foreground ?? cs.onSurface;
+    // [批3a] 进度条 thumb/activeTrack/文字统一使用解析后的菜单文字色
+    final progressColor = colors.text;
     final sliderTheme = SliderTheme.of(context).copyWith(
       trackHeight: 8,
       year2023: false,
-      thumbColor: foreground ?? cs.onSurface,
-      activeTrackColor: (foreground ?? cs.onSurface).withValues(alpha: 0.25),
-      inactiveTrackColor: (foreground ?? cs.onSurface).withValues(alpha: 0.12),
-      disabledActiveTrackColor: (foreground ?? cs.onSurface).withValues(
-        alpha: 0.15,
-      ),
-      disabledInactiveTrackColor: (foreground ?? cs.onSurface).withValues(
-        alpha: 0.08,
-      ),
+      thumbColor: colors.text,
+      activeTrackColor: colors.text.withValues(alpha: 0.25),
+      inactiveTrackColor: colors.text.withValues(alpha: 0.12),
+      disabledActiveTrackColor: colors.text.withValues(alpha: 0.15),
+      disabledInactiveTrackColor: colors.text.withValues(alpha: 0.08),
       activeTickMarkColor: Colors.transparent,
-      inactiveTickMarkColor: (foreground ?? cs.onSurface).withValues(
-        alpha: 0.35,
-      ),
+      inactiveTickMarkColor: colors.text.withValues(alpha: 0.35),
       overlayShape: SliderComponentShape.noOverlay,
     );
     // [PARITY C2 M4] 参考底行形态：「X/Y + 目录%」文字行 + 全宽滑条。
@@ -1179,6 +1585,66 @@ class _VerticalBrightnessBarState extends State<_VerticalBrightnessBar> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// [批3a] 底栏五键动作定义
+class _ReaderMenuAction {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool active;
+
+  const _ReaderMenuAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
+}
+
+/// [批3a] 底栏溢出分页：页数变化时把当前页收敛到有效范围
+class _BottomActionPager extends StatefulWidget {
+  final int pageCount;
+  final Widget Function(int page) pageBuilder;
+
+  const _BottomActionPager({
+    required this.pageCount,
+    required this.pageBuilder,
+  });
+
+  @override
+  State<_BottomActionPager> createState() => _BottomActionPagerState();
+}
+
+class _BottomActionPagerState extends State<_BottomActionPager> {
+  final PageController _controller = PageController();
+
+  @override
+  void didUpdateWidget(covariant _BottomActionPager oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pageCount == widget.pageCount) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final current = _controller.page?.round() ?? 0;
+      final target = current.clamp(0, widget.pageCount - 1);
+      if (current != target) _controller.jumpToPage(target);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PageView.builder(
+      controller: _controller,
+      itemCount: widget.pageCount,
+      itemBuilder: (context, page) => widget.pageBuilder(page),
     );
   }
 }

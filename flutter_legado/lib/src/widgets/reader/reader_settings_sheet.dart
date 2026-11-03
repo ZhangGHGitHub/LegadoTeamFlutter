@@ -10,6 +10,7 @@ import '../../providers/reader/reader_notifier.dart';
 import '../../providers/reader/reader_theme_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../screens/reader_menu_system_panel.dart';
 import '../../screens/reader_theme_screen.dart';
 import 'reader_tip_config_sheet.dart';
 
@@ -26,7 +27,7 @@ part 'reader_settings_sheet_font_panel.part.dart';
 /// - 全局页（参考版实证布局）：字号步进器（- 24 +）+ 独立 Tt 字体小卡；
 ///   背景卡（长按自定义 + 月亮夜间切换 + 自定义/预设 chips）；翻页动画行
 ///   （当前值 + 独立图标小卡）
-/// - 菜单页：自动翻页 / 点击区域 / 亮度控制
+/// - 菜单页：菜单系统三子页（全局 / 底栏布局 / 顶栏布局；批3a）
 /// - 信息页：阅读提示信息（页眉页脚提示项与标题样式）
 /// - 更多页：行距 / 字重 / 字体字距缩进段距 / 更多配置 / 页面边距 / 共用布局
 class ReaderSettingsSheet extends ConsumerStatefulWidget {
@@ -145,11 +146,9 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             const SizedBox(height: 16),
             switch (_tab) {
               0 => _buildGlobalTab(state, notifier, adv),
-              1 => ReaderConfigPanel(
-                  config: adv.copy(),
-                  onChanged: _commitAdv,
-                  section: ReaderConfigSection.menu,
-                ),
+              // [批3a] 「菜单」页改为菜单系统三子页（全局/底栏布局/顶栏布局）；
+              // 原自动翻页/点击区域/亮度三卡移入「更多」弹层。
+              1 => const ReaderMenuSystemPanel(),
               2 => ReaderTipConfigSheet(
                   config: adv.copy(),
                   onChanged: _commitAdv,
