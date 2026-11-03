@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/screens/theme_config_screen.dart';
 
@@ -31,6 +32,37 @@ void main() {
       child: const MaterialApp(home: ThemeConfigScreen()),
     );
   }
+
+  testWidgets('主界面组提供多栏布局入口并写入偏好（设置批2b-2b）',
+      (tester) async {
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.dragUntilVisible(
+      find.text('大屏导航形态'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('多栏布局'), findsOneWidget);
+    expect(find.text('自动（宽窗口）'), findsOneWidget);
+
+    await tester.tap(find.text('多栏布局'));
+    await tester.pumpAndSettle();
+    // 四档条目（参考版 multi_pane_layout_entries 中文文案）
+    expect(find.text('自动（宽窗口）'), findsWidgets);
+    expect(find.text('横屏开启（宽窗口）'), findsOneWidget);
+    expect(find.text('始终开启（空间足够时）'), findsOneWidget);
+    expect(find.text('关闭'), findsOneWidget);
+
+    await tester.tap(find.text('横屏开启（宽窗口）'));
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(PrefKeys.multiPaneMode), 'landscape');
+    expect(find.text('横屏开启（宽窗口）'), findsOneWidget);
+  });
 
   testWidgets('渲染关键分组标题与自定义主题分组（IA 对齐参考版）',
       (tester) async {

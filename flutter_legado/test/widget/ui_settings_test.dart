@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
+import 'package:flutter_legado/src/utils/multi_pane_layout.dart';
 
 void main() {
   test('BottomBarLabelMode 解析：合法直取/未知回退 auto', () {
@@ -33,5 +34,7 @@ void main() {
     expect(state.topBarOpacity, 100);
     expect(state.labelVisibilityMode, BottomBarLabelMode.auto);
     expect(state.tabletInterface, TabletInterfaceMode.auto);
+    // [设置批2b-2b] 多栏布局默认 auto（参考版 AppShellSettings:18）
+    expect(state.multiPaneMode, MultiPaneMode.auto);
   });
 }
