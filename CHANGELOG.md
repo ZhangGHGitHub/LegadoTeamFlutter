@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.456] - 2026-11-04
+
+### Fixed
+- [UI] 从文本选择浮条「管理选择菜单」进入配置页后保存报「ref after disposed」且配置不落盘：配置页改用稳定 ProviderContainer，浮条关闭后仍可正常保存并回显。
+
 ## [2.0.455] - 2026-11-04
 
 ### Added

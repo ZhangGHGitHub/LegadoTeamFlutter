@@ -1,0 +1,46 @@
+=== Impeller Vulkan OOM 与原生崩溃摘录（2026-11-04 12:50:30-12:50:50）===
+
+11-04 12:50:32.333 F/libc    (29597): Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x794e9fcaed80 in tid 29597 (Shutdown thread), pid 29597 (Shutdown thread)
+11-04 12:50:32.362 F/DEBUG   (29613): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000794e9fcaed80
+11-04 12:50:32.362 F/DEBUG   (29613): backtrace:
+11-04 12:50:32.496 E/flutter (28646): [ERROR:flutter/impeller/renderer/backend/vulkan/allocator_vk.cc(361)] Impeller validation: Unable to allocate Vulkan Image: ErrorOutOfDeviceMemory Type: Texture2DMultisample Mode: DeviceTransient Usage: { RenderTarget } [V
+11-04 12:50:32.496 E/flutter (28646): [ERROR:flutter/impeller/entity/inline_pass_context.cc(121)] Impeller validation: Depth attachment unexpectedly missing from the EntityPass render target.
+11-04 12:50:32.496 E/flutter (28646): [ERROR:flutter/impeller/entity/inline_pass_context.cc(121)] Impeller validation: Depth attachment unexpectedly missing from the EntityPass render target.
+11-04 12:50:32.496 E/flutter (28646): [ERROR:flutter/impeller/entity/inline_pass_context.cc(121)] Impeller validation: Depth attachment unexpectedly missing from the EntityPass render target.
+11-04 12:50:32.497 F/libc    (28646): Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x20 in tid 28680 (1.raster), pid 28646 (.flutter_legado)
+11-04 12:50:32.498 I/SIGNAL_LOG(28646): signal pid 28646 uid 10066 signal_num 11 si_code 1 si_errno 0 si_val 0
+11-04 12:50:32.502 I/SIGNAL_LOG(28646): houdini base 0x79b97c09f000
+11-04 12:50:32.502 I/SIGNAL_LOG(28646): houdini arm64 regs base 0x0
+11-04 12:50:32.507 I/SIGNAL_LOG(28646):   invalid arm reg
+11-04 12:50:32.882 F/DEBUG   (29628): Cmdline: io.legado.flutter_legado
+11-04 12:50:32.882 F/DEBUG   (29628): pid: 28646, tid: 28680, name: 1.raster  >>> io.legado.flutter_legado <<<
+11-04 12:50:32.882 F/DEBUG   (29628): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000000000000020
+11-04 12:50:32.882 F/DEBUG   (29628): Cause: null pointer dereference
+11-04 12:50:32.882 F/DEBUG   (29628): backtrace:
+11-04 12:50:32.924 I/ActivityManager(  837): Process io.legado.flutter_legado (pid 28646) has died: fg  TOP 
+11-04 12:50:32.951 I/Zygote  (  661): Process 28646 exited due to signal 11 (Segmentation fault)
+11-04 12:50:37.650 F/libc    (29654): Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x79d8a7ee0d80 in tid 29654 (Shutdown thread), pid 29654 (Shutdown thread)
+11-04 12:50:37.683 F/DEBUG   (29671): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000079d8a7ee0d80
+11-04 12:50:37.683 F/DEBUG   (29671): backtrace:
+11-04 12:50:43.816 F/libc    (29678): Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x777095d19d80 in tid 29678 (Shutdown thread), pid 29678 (Shutdown thread)
+11-04 12:50:43.846 F/DEBUG   (29694): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000777095d19d80
+11-04 12:50:43.846 F/DEBUG   (29694): backtrace:
+11-04 12:50:48.712 I/ActivityManager(  837): Start proc 29715:io.legado.flutter_legado/u0a66 for next-top-activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}
+11-04 12:50:48.966 E/flutter (29715): [ERROR:flutter/impeller/renderer/backend/vulkan/swapchain/khr/khr_swapchain_impl_vk.cc(207)] Impeller validation: Could not create swapchain: ErrorOutOfDeviceMemory
+11-04 12:50:48.966 E/flutter (29715): [ERROR:flutter/impeller/renderer/backend/vulkan/swapchain/khr/khr_swapchain_vk.cc(25)] Impeller validation: Failed to create SwapchainVK implementation.
+11-04 12:50:48.966 E/flutter (29715): [ERROR:flutter/impeller/renderer/backend/vulkan/swapchain/swapchain_vk.cc(26)] Impeller validation: Could not create valid swapchain.
+11-04 12:50:48.966 E/flutter (29715): [ERROR:flutter/impeller/renderer/backend/vulkan/surface_context_vk.cc(84)] Impeller validation: Invalid swapchain.
+11-04 12:50:48.966 E/flutter (29715): [ERROR:flutter/shell/common/platform_view.cc(76)] Failed to create platform view rendering surface
+11-04 12:50:48.966 F/libc    (29715): Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 29740 (1.raster), pid 29715 (.flutter_legado)
+11-04 12:50:48.966 I/SIGNAL_LOG(29715): signal pid 29715 uid 10066 signal_num 11 si_code 1 si_errno 0 si_val 0
+11-04 12:50:48.969 I/SIGNAL_LOG(29715): houdini base 0x79b979e1c000
+11-04 12:50:48.969 I/SIGNAL_LOG(29715): houdini arm64 regs base 0x0
+11-04 12:50:48.969 I/SIGNAL_LOG(29715):   invalid arm reg
+11-04 12:50:49.099 F/DEBUG   (29776): Cmdline: io.legado.flutter_legado
+11-04 12:50:49.099 F/DEBUG   (29776): pid: 29715, tid: 29740, name: 1.raster  >>> io.legado.flutter_legado <<<
+11-04 12:50:49.099 F/DEBUG   (29776): signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000000000000000
+11-04 12:50:49.099 F/DEBUG   (29776): Cause: null pointer dereference
+11-04 12:50:49.099 F/DEBUG   (29776): backtrace:
+11-04 12:50:49.109 I/ActivityManager(  837): Showing crash dialog for package io.legado.flutter_legado u0
+11-04 12:50:49.116 I/ActivityManager(  837): Process io.legado.flutter_legado (pid 29715) has died: fg  TOP 
+11-04 12:50:49.120 I/Zygote  (  661): Process 29715 exited due to signal 11 (Segmentation fault)
