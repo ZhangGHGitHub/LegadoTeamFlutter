@@ -440,6 +440,17 @@ class PrefKeys {
   /// 下一页自定义 keyCode 串（逗号分隔，默认 ''）
   static const nextKeyCodes = 'nextKeyCodes';
 
+  // ===== [批4c] 正文选择菜单（键名逐字对齐参考 PreferKey）=====
+
+  /// 选择菜单 JSON 配置（空=全部一级）
+  static const textSelectMenuConfig = 'textSelectMenuConfig';
+
+  /// 多行展示（默认 false）
+  static const expandTextMenu = 'expandTextMenu';
+
+  /// 展示图标（默认 true）
+  static const showSelectMenuIcon = 'showSelectMenuIcon';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

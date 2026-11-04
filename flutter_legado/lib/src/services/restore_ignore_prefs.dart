@@ -108,6 +108,10 @@ class RestoreIgnorePrefs {
     // [批4b] 自定义翻页键（参考 prevKeyCodes/nextKeyCodes）
     PrefKeys.prevKeyCodes,
     PrefKeys.nextKeyCodes,
+    // [批4c] 正文选择菜单配置/多行/图标
+    PrefKeys.textSelectMenuConfig,
+    PrefKeys.expandTextMenu,
+    PrefKeys.showSelectMenuIcon,
     'reader_font_size',
     'reader_line_height',
     'reader_bg_color_index',

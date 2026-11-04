@@ -236,6 +236,13 @@ class ReaderAdvancedConfig {
   String prevKeyCodes;
   String nextKeyCodes;
 
+  /// [批4c] 正文选择菜单 JSON（空=全部一级；保存时 normalize）
+  String textSelectMenuConfig;
+
+  /// [批4c] 选择菜单多行展示 / 展示图标
+  bool expandTextMenu;
+  bool showSelectMenuIcon;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -338,6 +345,9 @@ class ReaderAdvancedConfig {
     this.clickImgWay = kDefaultClickImgWay,
     this.prevKeyCodes = '',
     this.nextKeyCodes = '',
+    this.textSelectMenuConfig = '',
+    this.expandTextMenu = false,
+    this.showSelectMenuIcon = true,
   });
 
   /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
@@ -711,6 +721,10 @@ class ReaderAdvancedConfig {
       nextKeyCodes: PageKeyCodes.normalize(
         prefs.getString(PrefKeys.nextKeyCodes),
       ),
+      textSelectMenuConfig:
+          prefs.getString(PrefKeys.textSelectMenuConfig) ?? '',
+      expandTextMenu: prefs.getBool(PrefKeys.expandTextMenu) ?? false,
+      showSelectMenuIcon: prefs.getBool(PrefKeys.showSelectMenuIcon) ?? true,
     );
   }
 
@@ -846,6 +860,10 @@ class ReaderAdvancedConfig {
     await prefs.setString('clickImgWay', clampClickImgWay(clickImgWay));
     await prefs.setString(PrefKeys.prevKeyCodes, prevKeyCodes);
     await prefs.setString(PrefKeys.nextKeyCodes, nextKeyCodes);
+    textSelectMenuConfig = SelectionMenuConfig.normalize(textSelectMenuConfig);
+    await prefs.setString(PrefKeys.textSelectMenuConfig, textSelectMenuConfig);
+    await prefs.setBool(PrefKeys.expandTextMenu, expandTextMenu);
+    await prefs.setBool(PrefKeys.showSelectMenuIcon, showSelectMenuIcon);
   }
 
   /// 应用阅读主题快照中的排版字段（批38）
@@ -1019,6 +1037,9 @@ class ReaderAdvancedConfig {
         clickImgWay: clickImgWay,
         prevKeyCodes: prevKeyCodes,
         nextKeyCodes: nextKeyCodes,
+        textSelectMenuConfig: textSelectMenuConfig,
+        expandTextMenu: expandTextMenu,
+        showSelectMenuIcon: showSelectMenuIcon,
       );
 }
 
