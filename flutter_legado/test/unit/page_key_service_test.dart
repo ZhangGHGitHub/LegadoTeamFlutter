@@ -149,6 +149,47 @@ void main() {
     expect(received.single.direction, 'up');
   });
 
+  test('page 租约清空但 volume owner 仍在：复位 native 且清除录制标记', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('legado/reader_keys'),
+          (call) async {
+            calls.add(call);
+            return true;
+          },
+        );
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('legado/reader_keys'),
+            null,
+          );
+    });
+    final volumeOwner = Object();
+    addTearDown(() => bridge.releaseVolumeKeyCapture(volumeOwner));
+    await bridge.acquirePageKeyCapture(
+      owner,
+      prevKeys: '24',
+      nextKeys: '25',
+      volumeEnabled: false,
+      hardcodedEnabled: true,
+      onEvent: (_) {},
+    );
+    await bridge.acquireVolumeKeyCapture(
+      volumeOwner,
+      (_, _) async {},
+    );
+    bridge.keyRecording.value = true;
+    await bridge.releasePageKeyCapture(owner);
+    expect(
+      calls.any((c) => c.method == 'resetPageKeyConfig'),
+      isTrue,
+      reason: 'volume 租约仍在也要复位 custom/volumeEnabled 残留',
+    );
+    expect(bridge.keyRecording.value, isFalse);
+  });
+
   test('setKeyRecording 更新 notifier；非 Android 不抛', () async {
     await bridge.setKeyRecording(true);
     expect(bridge.keyRecording.value, isTrue);
