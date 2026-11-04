@@ -112,6 +112,10 @@ class RestoreIgnorePrefs {
     PrefKeys.textSelectMenuConfig,
     PrefKeys.expandTextMenu,
     PrefKeys.showSelectMenuIcon,
+    // [批4d] 滑动书签/角标大小/角标图
+    PrefKeys.swipeToAddBookmark,
+    PrefKeys.bookmarkBadgeImage,
+    PrefKeys.bookmarkBadgeSize,
     'reader_font_size',
     'reader_line_height',
     'reader_bg_color_index',
@@ -409,7 +413,8 @@ class RestoreIgnorePrefs {
         localPasswordsByEndpoint ?? const <String, String>{};
     if (localPasswordsById == null && localPasswordsByEndpoint == null) {
       final prefs = await SharedPreferences.getInstance();
-      final localServers = _decodeRemoteServers(
+      final localServers =
+          _decodeRemoteServers(
             prefs.getString(SettingsService.remoteServersKey) ?? '',
           ) ??
           const [];
@@ -428,9 +433,9 @@ class RestoreIgnorePrefs {
     final merged = backupServers.map((server) {
       final out = _stripServerSecrets(server);
       final id = out['id'];
-      final localPassword = (id is int ? passwordsById[id] : null) ??
-          passwordsByEndpoint[
-              _endpointKeyOf(out['url'], out['username'])];
+      final localPassword =
+          (id is int ? passwordsById[id] : null) ??
+          passwordsByEndpoint[_endpointKeyOf(out['url'], out['username'])];
       if (localPassword != null && localPassword.isNotEmpty) {
         out['password'] = localPassword;
       }
@@ -505,10 +510,7 @@ class RestoreIgnorePrefs {
         } else if (value is String) {
           await prefs.setString(key, value);
         } else if (value is List) {
-          await prefs.setStringList(
-            key,
-            value.map((e) => '$e').toList(),
-          );
+          await prefs.setStringList(key, value.map((e) => '$e').toList());
         } else if (value is num) {
           if (value == value.roundToDouble()) {
             await prefs.setInt(key, value.toInt());
@@ -532,9 +534,9 @@ class RestoreIgnorePrefs {
       final file = await _readJsonMap(backupPath);
       if (file == null) return;
       file[kBackupAppPrefsKey] = await collectForBackup(ignore);
-      await File(backupPath).writeAsString(
-        const JsonEncoder.withIndent('  ').convert(file),
-      );
+      await File(
+        backupPath,
+      ).writeAsString(const JsonEncoder.withIndent('  ').convert(file));
     } catch (e) {
       debugPrint('RestoreIgnorePrefs.injectAppPrefsIntoBackupFile 异常: $e');
     }

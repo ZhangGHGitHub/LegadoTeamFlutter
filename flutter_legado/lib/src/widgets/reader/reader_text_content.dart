@@ -4,6 +4,7 @@ import '../../l10n/app_strings.dart';
 import '../../models/highlight_style.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import 'highlight_span_builder.dart';
+import 'reader_bookmark_badge.dart';
 import 'review_column.dart';
 import 'reader_page_chrome.dart';
 import 'text_selection_panel.dart';
@@ -64,6 +65,15 @@ class ReaderTypographicPage extends StatelessWidget {
   /// [批34] 本章高亮命中区间（UTF-16 章节全局偏移，互不重叠）
   final List<HighlightMatch> highlightMatches;
 
+  /// [批4d] 本页是否有书签（角标不参与滚动模式，由调用方只在分页页传入）
+  final bool showBookmarkBadge;
+
+  /// [批4d] 角标自定义图相对标识（空/缺失回落默认琥珀）
+  final String bookmarkBadgeImage;
+
+  /// [批4d] 角标大小 dp（<=0 隐藏）
+  final int bookmarkBadgeSize;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -92,6 +102,9 @@ class ReaderTypographicPage extends StatelessWidget {
     this.reviewCounts,
     this.onReviewTap,
     this.highlightMatches = const [],
+    this.showBookmarkBadge = false,
+    this.bookmarkBadgeImage = '',
+    this.bookmarkBadgeSize = 10,
   });
 
   @override
@@ -122,7 +135,7 @@ class ReaderTypographicPage extends StatelessWidget {
       _ => TextAlign.start,
     };
 
-    return Container(
+    final pageContent = Container(
       color: backgroundColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -233,6 +246,23 @@ class ReaderTypographicPage extends StatelessWidget {
             ),
         ],
       ),
+    );
+    // [批4d] 角标叠在整页内容上：顶部=正文 contentTop+2dp，
+    // 右侧=正文 right padding+6dp；尺寸/图由配置与页范围决定。
+    if (!showBookmarkBadge || bookmarkBadgeSize <= 0) return pageContent;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        pageContent,
+        Positioned(
+          top: contentPadding.top + ReaderBookmarkBadgeGeometry.topInset,
+          right: contentPadding.right + ReaderBookmarkBadgeGeometry.rightInset,
+          child: ReaderBookmarkBadge(
+            size: bookmarkBadgeSize,
+            image: bookmarkBadgeImage,
+          ),
+        ),
+      ],
     );
   }
 
@@ -365,8 +395,7 @@ class ReaderTextContent extends StatelessWidget {
 
             // [批34] 命中行改 Text.rich：按章节全局偏移切分 span，只应用
             // 不影响字体度量的样式（颜色/背景/下划线/删除线）— full-stack-engineer
-            final lineText =
-                highlightMatches.isEmpty || !line.highlightMapped
+            final lineText = highlightMatches.isEmpty || !line.highlightMapped
                 ? Text(
                     text,
                     style: lineTextStyle,

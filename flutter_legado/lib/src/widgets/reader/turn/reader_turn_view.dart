@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../../providers/reader/reader_state.dart';
+import '../reader_bookmark_policy.dart';
 import 'page_direction.dart';
 import 'page_snapshot.dart';
 import 'page_snapshot_cache.dart';
@@ -30,6 +31,10 @@ class ReaderTurnView extends StatefulWidget {
     this.backPageColor = const Color(0xFFECECEC),
     this.chapterPrevPage,
     this.chapterNextPage,
+    this.pullBookmarkEnabled = false,
+    this.hasBookmarkOnPage = false,
+    this.onToggleBookmark,
+    this.bookmarkHintTop = 0,
   });
 
   final PageTurnMode mode;
@@ -53,6 +58,18 @@ class ReaderTurnView extends StatefulWidget {
   /// 用户反馈：章末翻页无动画直接闪现 → 章边界参与快照与画笔）— Qoder
   final Widget? chapterPrevPage;
   final Widget? chapterNextPage;
+
+  /// [批4d] 下滑书签手势开关（分页模式且菜单收起时由父级置 true）
+  final bool pullBookmarkEnabled;
+
+  /// [批4d] 当前屏是否已有书签（提示文案：删除/添加）
+  final bool hasBookmarkOnPage;
+
+  /// [批4d] 达到 80dp 后松手：添加或删除本屏书签
+  final VoidCallback? onToggleBookmark;
+
+  /// [批4d] 提示条距屏幕顶部距离（正文 contentTop；内部再 +8dp）
+  final double bookmarkHintTop;
 
   @override
   State<ReaderTurnView> createState() => ReaderTurnViewState();
@@ -78,6 +95,24 @@ class ReaderTurnViewState extends State<ReaderTurnView>
 
   bool _overlayVisible = false;
   int _warmGeneration = 0;
+
+  // ===== [批4d] 下滑书签手势状态 =====
+
+  /// 当前页纵向位移（正=向下，最大 0.6 页高）
+  double _pullOffset = 0;
+  bool _pullDragging = false;
+  bool _pullArmed = false;
+
+  /// 一旦首次越过阈值判定为横滑/滚动即锁定，后续斜向移动不再抢占
+  bool _pullReleased = false;
+  Offset _pullDown = Offset.zero;
+
+  /// 回弹动画（参考 180ms）
+  ///
+  /// 必须在 initState 创建：`late final` 惰性初始化会在未发生下拉的页面
+  /// 于 dispose 首次触碰字段时、在已失活 Element 上建 Ticker 而抛错。
+  late final AnimationController _pullReturnController;
+  double _pullReturnFrom = 0;
 
   /// [批1b-2a P1] 程序化翻页在途标记：对齐参考版
   /// `ReaderProgrammaticTurnPolicy.shouldAccept(!animationRunning)`——
@@ -127,6 +162,13 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   void initState() {
     super.initState();
     _controller.addListener(_onControllerTick);
+    _pullReturnController =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(
+            milliseconds: ReaderBookmarkPullGesture.returnDurationMillis,
+          ),
+        )..addListener(_onPullReturnTick);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _scheduleWarmSnapshots(),
     );
@@ -135,7 +177,8 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   @override
   void didUpdateWidget(covariant ReaderTurnView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final chapterLanded = oldWidget.pageIndex != widget.pageIndex ||
+    final chapterLanded =
+        oldWidget.pageIndex != widget.pageIndex ||
         oldWidget.pageCount != widget.pageCount ||
         oldWidget.chapterPrevPage != widget.chapterPrevPage ||
         oldWidget.chapterNextPage != widget.chapterNextPage;
@@ -174,6 +217,7 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   void dispose() {
     _controller.removeListener(_onControllerTick);
     _controller.dispose();
+    _pullReturnController.dispose();
     _cache.invalidate();
     _chapPrevImg?.dispose();
     _chapNextImg?.dispose();
@@ -340,8 +384,47 @@ class ReaderTurnViewState extends State<ReaderTurnView>
     }
   }
 
+  ReaderBookmarkPullDrag _pullDrag(Offset delta, Size size) {
+    return ReaderBookmarkPullGesture.drag(
+      delta: delta,
+      pageHeight: size.height,
+      enabled: widget.pullBookmarkEnabled,
+      pagedMode: widget.mode != PageTurnMode.scroll,
+      // 选区浮层/底部面板为模态路由，手势事件不会到达本层
+      selectionActive: false,
+    );
+  }
+
+  void _resetPullState() {
+    if (_pullReturnController.isAnimating) _pullReturnController.stop();
+    _pullReturnController.reset();
+    _pullOffset = 0;
+    _pullDragging = false;
+    _pullArmed = false;
+    _pullReleased = false;
+  }
+
+  void _onPullReturnTick() {
+    if (!mounted) return;
+    setState(() {
+      _pullOffset = _pullReturnFrom * (1 - _pullReturnController.value);
+    });
+  }
+
+  void _startPullReturn() {
+    if (!mounted) return;
+    _pullReturnFrom = _pullOffset;
+    if (_pullReturnFrom <= 0) {
+      _pullOffset = 0;
+      return;
+    }
+    _pullReturnController.forward(from: 0);
+  }
+
   void _onPointerDown(PointerDownEvent e) {
     final size = context.size;
+    _resetPullState();
+    _pullDown = e.localPosition;
     _controller.onPointerDown(
       e.localPosition,
       viewWidth: size?.width,
@@ -354,6 +437,35 @@ class ReaderTurnViewState extends State<ReaderTurnView>
     if (size == null) return;
     final slop =
         MediaQuery.maybeGestureSettingsOf(context)?.touchSlop ?? kTouchSlop;
+    final delta = e.localPosition - _pullDown;
+
+    // [批4d] 首次过 slop 只判定一次：纵向优势成立则本手势归书签，
+    // 否则锁定给横滑翻页，后续斜向移动不得重新抢占。
+    if (!_pullDragging && !_pullReleased && delta.distance >= slop) {
+      final pull = _pullDrag(delta, size);
+      if (pull.isCandidate) {
+        _pullDragging = true;
+      } else {
+        _pullReleased = true;
+      }
+    }
+    if (_pullDragging) {
+      final pull = _pullDrag(delta, size);
+      if (pull.isCandidate) {
+        setState(() {
+          _pullOffset = pull.pageOffset;
+          _pullArmed = pull.isArmed;
+        });
+        return;
+      }
+      // 书签候选失效：清位移并把当前指针交还翻页控制器（参考同语义）
+      setState(() {
+        _pullDragging = false;
+        _pullArmed = false;
+        _pullOffset = 0;
+      });
+      _pullReleased = true;
+    }
 
     final wasNone = _controller.direction == PageTurnDirection.none;
     final locked = _controller.onPointerMove(
@@ -381,7 +493,8 @@ class ReaderTurnViewState extends State<ReaderTurnView>
               widget.hasChapterNext);
 
       // Neighbor page bitmap required for in-chapter anim; chapter edge → instant.
-      final bmpOk = _cache.hasCur &&
+      final bmpOk =
+          _cache.hasCur &&
           (dir != PageTurnDirection.prev || _effPrev != null) &&
           (dir != PageTurnDirection.next || _effNext != null);
 
@@ -413,10 +526,47 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   }
 
   Future<void> _onPointerUp(PointerUpEvent e) async {
+    if (_pullDragging) {
+      final size = context.size;
+      if (size != null) {
+        // 参考：抬手判定必须使用指针最终位移，而非最后一个 MOVE 采样
+        final pull = _pullDrag(e.localPosition - _pullDown, size);
+        if (pull.isCandidate) {
+          setState(() => _pullOffset = pull.pageOffset);
+        }
+        final toggle = ReaderBookmarkPullGesture.shouldToggleOnRelease(
+          wasDragging: true,
+          finalDrag: pull,
+        );
+        setState(() {
+          _pullDragging = false;
+          _pullArmed = false;
+        });
+        if (toggle) widget.onToggleBookmark?.call();
+      } else {
+        setState(() {
+          _pullDragging = false;
+          _pullArmed = false;
+        });
+      }
+      _controller.resetGesture();
+      _startPullReturn();
+      return;
+    }
     await _finishGesture();
   }
 
   Future<void> _onPointerCancel(PointerCancelEvent e) async {
+    if (_pullDragging) {
+      // 取消同样走 180ms 回弹（参考仅取消切换动作，位移平滑归零）
+      setState(() {
+        _pullDragging = false;
+        _pullArmed = false;
+      });
+      _controller.resetGesture();
+      _startPullReturn();
+      return;
+    }
     _controller.isCancel = true;
     await _finishGesture();
   }
@@ -584,10 +734,14 @@ class ReaderTurnViewState extends State<ReaderTurnView>
                       _boundaryPage(_nextBoundaryKey, nextIndex),
                       if (widget.chapterPrevPage != null)
                         _boundaryWidget(
-                            _chapPrevBoundaryKey, widget.chapterPrevPage!),
+                          _chapPrevBoundaryKey,
+                          widget.chapterPrevPage!,
+                        ),
                       if (widget.chapterNextPage != null)
                         _boundaryWidget(
-                            _chapNextBoundaryKey, widget.chapterNextPage!),
+                          _chapNextBoundaryKey,
+                          widget.chapterNextPage!,
+                        ),
                     ],
                   ),
                 ),
@@ -601,7 +755,10 @@ class ReaderTurnViewState extends State<ReaderTurnView>
                       : (widget.chapterPrevPage ?? const SizedBox.shrink()),
                 )
               else if (!_overlayVisible || keepLiveUnderlay)
-                _livePage(pageIndex)
+                Transform.translate(
+                  offset: Offset(0, _pullOffset),
+                  child: _livePage(pageIndex),
+                )
               else
                 ColoredBox(color: widget.backPageColor),
               if (widget.overlay != null) widget.overlay!,
@@ -611,6 +768,46 @@ class ReaderTurnViewState extends State<ReaderTurnView>
                   painter: painter,
                   child: const SizedBox.expand(),
                 ),
+              // [批4d] 下滑达 80dp 后显示提示；120ms 淡入、松手立即隐藏
+              Positioned(
+                top:
+                    widget.bookmarkHintTop +
+                    ReaderBookmarkPullGesture.hintContentTopMargin,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  child: Center(
+                    child: AnimatedOpacity(
+                      opacity: _pullArmed ? 1 : 0,
+                      duration: _pullArmed
+                          ? const Duration(
+                              milliseconds:
+                                  ReaderBookmarkPullGesture.hintFadeMillis,
+                            )
+                          : Duration.zero,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xA0000000),
+                          borderRadius: BorderRadius.circular(
+                            ReaderBookmarkPullGesture.hintCornerRadius,
+                          ),
+                        ),
+                        child: Text(
+                          widget.hasBookmarkOnPage ? '松手以取消书签' : '松手以添加书签',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         );

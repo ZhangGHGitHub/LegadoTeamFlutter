@@ -411,8 +411,10 @@ class PrefKeys {
   static const readMenuBottomBarBlurStyle = 'readMenuBottomBarBlurStyle';
 
   /// 顶/底栏图标液态玻璃（参考默认 false）
-  static const readMenuTopBarLiquidGlassButtons = 'readMenuTopBarLiquidGlassButtons';
-  static const readMenuBottomBarLiquidGlassButtons = 'readMenuBottomBarLiquidGlassButtons';
+  static const readMenuTopBarLiquidGlassButtons =
+      'readMenuTopBarLiquidGlassButtons';
+  static const readMenuBottomBarLiquidGlassButtons =
+      'readMenuBottomBarLiquidGlassButtons';
 
   /// 顶栏紧凑模式：仅保留「更多」动作（参考 titleBarCompact，默认 false）
   static const titleBarCompact = 'titleBarCompact';
@@ -450,6 +452,17 @@ class PrefKeys {
 
   /// 展示图标（默认 true）
   static const showSelectMenuIcon = 'showSelectMenuIcon';
+
+  // ===== [批4d] 滑动书签/角标（键名逐字对齐参考 PreferKey）=====
+
+  /// 下滑添加/取消书签（默认 false）
+  static const swipeToAddBookmark = 'swipeToAddBookmark';
+
+  /// 书签角标自定义图（应用内相对标识，空=默认琥珀书签带）
+  static const bookmarkBadgeImage = 'bookmarkBadgeImage';
+
+  /// 书签角标大小（dp，参考默认 10，范围 0..50）
+  static const bookmarkBadgeSize = 'bookmarkBadgeSize';
 
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 

@@ -243,6 +243,15 @@ class ReaderAdvancedConfig {
   bool expandTextMenu;
   bool showSelectMenuIcon;
 
+  /// [批4d] 下滑添加/取消书签（参考 swipeToAddBookmark，默认 false）
+  bool swipeToAddBookmark;
+
+  /// [批4d] 书签角标自定义图（应用内相对标识，空=默认琥珀）
+  String bookmarkBadgeImage;
+
+  /// [批4d] 书签角标大小（dp，参考默认 10，保存时夹逼 0..50）
+  int bookmarkBadgeSize;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -348,36 +357,27 @@ class ReaderAdvancedConfig {
     this.textSelectMenuConfig = '',
     this.expandTextMenu = false,
     this.showSelectMenuIcon = true,
+    this.swipeToAddBookmark = false,
+    this.bookmarkBadgeImage = '',
+    this.bookmarkBadgeSize = 10,
   });
 
   /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
   /// shareLayout=true → 共用；否则按日/夜分桶。
-  static String layoutPrefix({required bool shareLayout, required bool isNight}) {
+  static String layoutPrefix({
+    required bool shareLayout,
+    required bool isNight,
+  }) {
     if (shareLayout) return 'reader_layout_share_';
     return isNight ? 'reader_layout_night_' : 'reader_layout_day_';
   }
 
   /// 各区域默认边距（对标 ReadBookConfig.Config 默认值）
   static Map<PaddingRegion, Map<String, double>> regionDefaultPaddings() => {
-        PaddingRegion.header: {
-          'top': 0,
-          'bottom': 0,
-          'left': 16,
-          'right': 16,
-        },
-        PaddingRegion.body: {
-          'top': 6,
-          'bottom': 6,
-          'left': 16,
-          'right': 16,
-        },
-        PaddingRegion.footer: {
-          'top': 6,
-          'bottom': 6,
-          'left': 16,
-          'right': 16,
-        },
-      };
+    PaddingRegion.header: {'top': 0, 'bottom': 0, 'left': 16, 'right': 16},
+    PaddingRegion.body: {'top': 6, 'bottom': 6, 'left': 16, 'right': 16},
+    PaddingRegion.footer: {'top': 6, 'bottom': 6, 'left': 16, 'right': 16},
+  };
 
   static double defaultPaddingFor(PaddingRegion region, String side) =>
       regionDefaultPaddings()[region]![side]!;
@@ -526,7 +526,8 @@ class ReaderAdvancedConfig {
     // [UI-fix v2.0.4 | 2026-08-08] 缩进档位兼容：新 int 键缺失时读取
     // 旧 bool 键（true→2 字符 / false→0），默认 2 字符 — Qoder
     int indentChars() {
-      final v = prefs.getInt('${lp}paragraph_indent_chars') ??
+      final v =
+          prefs.getInt('${lp}paragraph_indent_chars') ??
           prefs.getInt('${_prefix}paragraph_indent_chars');
       if (v != null) return v.clamp(0, 3);
       final legacy = prefs.getBool('${_prefix}paragraph_indent');
@@ -544,8 +545,7 @@ class ReaderAdvancedConfig {
     // 经新键表达）— 全栈工程师
     const brightnessModeMigratedKey = 'brightness_mode_migrated_v1b1';
     if (!(prefs.getBool(brightnessModeMigratedKey) ?? false)) {
-      final legacyVertical =
-          prefs.getBool(PrefKeys.readMenuBrightnessVertical);
+      final legacyVertical = prefs.getBool(PrefKeys.readMenuBrightnessVertical);
       if (legacyVertical == true &&
           prefs.getString('readBrightnessMode') == null) {
         await prefs.setString('readBrightnessMode', '2');
@@ -553,14 +553,15 @@ class ReaderAdvancedConfig {
         final legacyMode = prefs.getBool('showBrightnessView');
         if (legacyMode != null &&
             prefs.getString('readBrightnessMode') == null) {
-          await prefs.setString(
-              'readBrightnessMode', legacyMode ? '1' : '0');
+          await prefs.setString('readBrightnessMode', legacyMode ? '1' : '0');
         }
       }
       final legacyPos = prefs.getString(PrefKeys.readMenuBrightnessPos);
       if (legacyPos != null && prefs.getString('readBrightnessVwPos') == null) {
-        await prefs.setString('readBrightnessVwPos',
-            legacyPos == 'left' ? '0' : '1');
+        await prefs.setString(
+          'readBrightnessVwPos',
+          legacyPos == 'left' ? '0' : '1',
+        );
       }
       await prefs.setBool(brightnessModeMigratedKey, true);
     }
@@ -613,9 +614,7 @@ class ReaderAdvancedConfig {
       letterSpacing: letterSpacingEm(),
       paragraphIndent: indentChars(),
       textFullJustify: prefs.getBool('${_prefix}text_full_justify') ?? true,
-      textBold: (prefs.getInt('${lp}textBold') ??
-              prefs.getInt('textBold') ??
-              0)
+      textBold: (prefs.getInt('${lp}textBold') ?? prefs.getInt('textBold') ?? 0)
           .clamp(0, 2),
       // [C3 斜体 | Qoder UI] 斜体（参考版行内面板开关；双基准补齐）
       italic: prefs.getBool('${_prefix}italic') ?? false,
@@ -626,24 +625,39 @@ class ReaderAdvancedConfig {
       pageMarginLeft: layoutDouble('margin_left', 20).clamp(0.0, 100.0),
       pageMarginRight: layoutDouble('margin_right', 20).clamp(0.0, 100.0),
       // [批33 | 边距上下联动] 原版字段名直取（全局开关，不分日夜桶）
-      paddingTopBottomLinked:
-          prefs.getBool('paddingTopBottomLinked') ?? false,
+      paddingTopBottomLinked: prefs.getBool('paddingTopBottomLinked') ?? false,
       headerPaddingTop: layoutDouble('header_padding_top', 0).clamp(0.0, 400.0),
-      headerPaddingBottom:
-          layoutDouble('header_padding_bottom', 0).clamp(0.0, 400.0),
-      headerPaddingLeft: layoutDouble('header_padding_left', 16).clamp(0.0, 100.0),
-      headerPaddingRight:
-          layoutDouble('header_padding_right', 16).clamp(0.0, 100.0),
+      headerPaddingBottom: layoutDouble(
+        'header_padding_bottom',
+        0,
+      ).clamp(0.0, 400.0),
+      headerPaddingLeft: layoutDouble(
+        'header_padding_left',
+        16,
+      ).clamp(0.0, 100.0),
+      headerPaddingRight: layoutDouble(
+        'header_padding_right',
+        16,
+      ).clamp(0.0, 100.0),
       footerPaddingTop: layoutDouble('footer_padding_top', 6).clamp(0.0, 400.0),
-      footerPaddingBottom:
-          layoutDouble('footer_padding_bottom', 6).clamp(0.0, 400.0),
-      footerPaddingLeft: layoutDouble('footer_padding_left', 16).clamp(0.0, 100.0),
-      footerPaddingRight:
-          layoutDouble('footer_padding_right', 16).clamp(0.0, 100.0),
-      showHeaderLine: prefs.getBool('${lp}show_header_line') ??
+      footerPaddingBottom: layoutDouble(
+        'footer_padding_bottom',
+        6,
+      ).clamp(0.0, 400.0),
+      footerPaddingLeft: layoutDouble(
+        'footer_padding_left',
+        16,
+      ).clamp(0.0, 100.0),
+      footerPaddingRight: layoutDouble(
+        'footer_padding_right',
+        16,
+      ).clamp(0.0, 100.0),
+      showHeaderLine:
+          prefs.getBool('${lp}show_header_line') ??
           prefs.getBool('showHeaderLine') ??
           false,
-      showFooterLine: prefs.getBool('${lp}show_footer_line') ??
+      showFooterLine:
+          prefs.getBool('${lp}show_footer_line') ??
           prefs.getBool('showFooterLine') ??
           true,
       headerMode: (prefs.getInt('headerMode') ?? 0).clamp(0, 2),
@@ -658,7 +672,10 @@ class ReaderAdvancedConfig {
       titleMode: (prefs.getInt('titleMode') ?? 0).clamp(0, 2),
       titleSize: (prefs.getInt('titleSize') ?? 0).clamp(0, 20),
       titleTopSpacing: (prefs.getInt('titleTopSpacing') ?? 0).clamp(0, 100),
-      titleBottomSpacing: (prefs.getInt('titleBottomSpacing') ?? 0).clamp(0, 100),
+      titleBottomSpacing: (prefs.getInt('titleBottomSpacing') ?? 0).clamp(
+        0,
+        100,
+      ),
       titleFont: prefs.getString('titleFont') ?? '',
       // [C2 R4] 状态行四开关 load 缺省对齐构造器默认（关闭），参考该态无此信息行
       showBattery: prefs.getBool('${_prefix}show_battery') ?? false,
@@ -669,8 +686,7 @@ class ReaderAdvancedConfig {
         layoutInt('flip_mode', FlipMode.slide.index),
       ),
       // [UI-fix v2.0.3 | 2026-08-08] 第①批 MoreConfig 项读取（键名=原版键）— Qoder
-      screenOrientation:
-          (prefs.getInt('screenOrientation') ?? 0).clamp(0, 5),
+      screenOrientation: (prefs.getInt('screenOrientation') ?? 0).clamp(0, 5),
       keepLight: prefs.getInt('keep_light') ?? 0,
       hideStatusBar: prefs.getBool('hideStatusBar') ?? false,
       hideNavigationBar: prefs.getBool('hideNavigationBar') ?? false,
@@ -684,10 +700,12 @@ class ReaderAdvancedConfig {
       // [批1b-1] 旧布尔键停止消费：显隐语义由 readBrightnessMode 三档承载；
       // 本字段保留模型兼容（弹层旧行读取处随本批移除）。
       showBrightnessView: prefs.getBool('showBrightnessView') ?? false,
-      readBrightnessMode:
-          _clampBrightnessMode(prefs.getString('readBrightnessMode')),
-      readBrightnessVwPos:
-          _clampBrightnessPos(prefs.getString('readBrightnessVwPos')),
+      readBrightnessMode: _clampBrightnessMode(
+        prefs.getString('readBrightnessMode'),
+      ),
+      readBrightnessVwPos: _clampBrightnessPos(
+        prefs.getString('readBrightnessVwPos'),
+      ),
       showReadTitleAddition: prefs.getBool('showReadTitleAddition') ?? true,
       readBarStyleFollowPage: prefs.getBool('readBarStyleFollowPage') ?? false,
       // [UI-fix v2.0.4 | 2026-08-08] 第②批 MoreConfig 项读取（键名=原版键，
@@ -696,8 +714,10 @@ class ReaderAdvancedConfig {
       volumeKeyPageOnPlay: prefs.getBool('volumeKeyPageOnPlay') ?? false,
       keyPageOnLongPress: prefs.getBool('keyPageOnLongPress') ?? false,
       mouseWheelPage: prefs.getBool('mouseWheelPage') ?? true,
-      doubleHorizontalPage:
-          (prefs.getInt('doubleHorizontalPage') ?? 0).clamp(0, 3),
+      doubleHorizontalPage: (prefs.getInt('doubleHorizontalPage') ?? 0).clamp(
+        0,
+        3,
+      ),
       useZhLayout: prefs.getBool('useZhLayout') ?? false,
       hangingPunctuation: prefs.getBool('hangingPunctuation') ?? false,
       pageTouchSlop: (prefs.getInt('pageTouchSlop') ?? 0).clamp(0, 9999),
@@ -710,8 +730,10 @@ class ReaderAdvancedConfig {
       disableReturnKey: prefs.getBool('disableReturnKey') ?? false,
       // [批1b-3] 读取并夹逼（越界/非法回落 3000..100000 区间，对齐参考版
       // ReadConfigViewModel coerceIn；缺省 3000）
-      maxLengthWithNoToc:
-          (prefs.getInt('maxLengthWithNoToc') ?? 3000).clamp(3000, 100000),
+      maxLengthWithNoToc: (prefs.getInt('maxLengthWithNoToc') ?? 3000).clamp(
+        3000,
+        100000,
+      ),
       // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey.clickImgWay；
       // 缺省/非法回落参考版默认 "2"=兼容旧版）
       clickImgWay: clampClickImgWay(prefs.getString('clickImgWay')),
@@ -725,6 +747,13 @@ class ReaderAdvancedConfig {
           prefs.getString(PrefKeys.textSelectMenuConfig) ?? '',
       expandTextMenu: prefs.getBool(PrefKeys.expandTextMenu) ?? false,
       showSelectMenuIcon: prefs.getBool(PrefKeys.showSelectMenuIcon) ?? true,
+      // [批4d] 滑动书签/角标：大小夹逼 0..50，非法回落参考默认 10
+      swipeToAddBookmark: prefs.getBool(PrefKeys.swipeToAddBookmark) ?? false,
+      bookmarkBadgeImage: prefs.getString(PrefKeys.bookmarkBadgeImage) ?? '',
+      bookmarkBadgeSize: (prefs.getInt(PrefKeys.bookmarkBadgeSize) ?? 10).clamp(
+        0,
+        50,
+      ),
     );
   }
 
@@ -864,6 +893,11 @@ class ReaderAdvancedConfig {
     await prefs.setString(PrefKeys.textSelectMenuConfig, textSelectMenuConfig);
     await prefs.setBool(PrefKeys.expandTextMenu, expandTextMenu);
     await prefs.setBool(PrefKeys.showSelectMenuIcon, showSelectMenuIcon);
+    // [批4d] 滑动书签/角标：大小写入前夹逼，避免滑块外非法值落盘
+    bookmarkBadgeSize = bookmarkBadgeSize.clamp(0, 50);
+    await prefs.setBool(PrefKeys.swipeToAddBookmark, swipeToAddBookmark);
+    await prefs.setString(PrefKeys.bookmarkBadgeImage, bookmarkBadgeImage);
+    await prefs.setInt(PrefKeys.bookmarkBadgeSize, bookmarkBadgeSize);
   }
 
   /// 应用阅读主题快照中的排版字段（批38）
@@ -950,97 +984,100 @@ class ReaderAdvancedConfig {
   }
 
   ReaderAdvancedConfig copy() => ReaderAdvancedConfig(
-        autoPageTurn: autoPageTurn,
-        autoPageTurnInterval: autoPageTurnInterval,
-        autoPageTurnForward: autoPageTurnForward,
-        leftAction: leftAction,
-        centerAction: centerAction,
-        rightAction: rightAction,
-        tapTopLeft: tapTopLeft,
-        tapTopCenter: tapTopCenter,
-        tapTopRight: tapTopRight,
-        tapMiddleLeft: tapMiddleLeft,
-        tapMiddleCenter: tapMiddleCenter,
-        tapMiddleRight: tapMiddleRight,
-        tapBottomLeft: tapBottomLeft,
-        tapBottomCenter: tapBottomCenter,
-        tapBottomRight: tapBottomRight,
-        paragraphSpacing: paragraphSpacing,
-        letterSpacing: letterSpacing,
-        paragraphIndent: paragraphIndent,
-        textFullJustify: textFullJustify,
-        textBold: textBold,
-        italic: italic,
-        shareLayout: shareLayout,
-        customTextColor: customTextColor,
-        pageMarginTop: pageMarginTop,
-        pageMarginBottom: pageMarginBottom,
-        pageMarginLeft: pageMarginLeft,
-        pageMarginRight: pageMarginRight,
-        paddingTopBottomLinked: paddingTopBottomLinked,
-        headerPaddingTop: headerPaddingTop,
-        headerPaddingBottom: headerPaddingBottom,
-        headerPaddingLeft: headerPaddingLeft,
-        headerPaddingRight: headerPaddingRight,
-        footerPaddingTop: footerPaddingTop,
-        footerPaddingBottom: footerPaddingBottom,
-        footerPaddingLeft: footerPaddingLeft,
-        footerPaddingRight: footerPaddingRight,
-        showHeaderLine: showHeaderLine,
-        showFooterLine: showFooterLine,
-        headerMode: headerMode,
-        footerMode: footerMode,
-        tipHeaderLeft: tipHeaderLeft,
-        tipHeaderMiddle: tipHeaderMiddle,
-        tipHeaderRight: tipHeaderRight,
-        tipFooterLeft: tipFooterLeft,
-        tipFooterMiddle: tipFooterMiddle,
-        tipFooterRight: tipFooterRight,
-        titleMode: titleMode,
-        titleSize: titleSize,
-        titleTopSpacing: titleTopSpacing,
-        titleBottomSpacing: titleBottomSpacing,
-        titleFont: titleFont,
-        showBattery: showBattery,
-        showTime: showTime,
-        showProgress: showProgress,
-        showChapterName: showChapterName,
-        flipMode: flipMode,
-        screenOrientation: screenOrientation,
-        keepLight: keepLight,
-        hideStatusBar: hideStatusBar,
-        hideNavigationBar: hideNavigationBar,
-        progressBarBehavior: progressBarBehavior,
-        noAnimScrollPage: noAnimScrollPage,
-        autoChangeSource: autoChangeSource,
-        selectText: selectText,
-        showBrightnessView: showBrightnessView,
-        readBrightnessMode: readBrightnessMode,
-        readBrightnessVwPos: readBrightnessVwPos,
-        showReadTitleAddition: showReadTitleAddition,
-        readBarStyleFollowPage: readBarStyleFollowPage,
-        volumeKeyPage: volumeKeyPage,
-        volumeKeyPageOnPlay: volumeKeyPageOnPlay,
-        keyPageOnLongPress: keyPageOnLongPress,
-        mouseWheelPage: mouseWheelPage,
-        doubleHorizontalPage: doubleHorizontalPage,
-        useZhLayout: useZhLayout,
-        hangingPunctuation: hangingPunctuation,
-        pageTouchSlop: pageTouchSlop,
-        pageTouchClick: pageTouchClick,
-        readBodyToLh: readBodyToLh,
-        paddingDisplayCutouts: paddingDisplayCutouts,
-        sliderVibrator: sliderVibrator,
-        selectVibrator: selectVibrator,
-        disableReturnKey: disableReturnKey,
-        maxLengthWithNoToc: maxLengthWithNoToc,
-        clickImgWay: clickImgWay,
-        prevKeyCodes: prevKeyCodes,
-        nextKeyCodes: nextKeyCodes,
-        textSelectMenuConfig: textSelectMenuConfig,
-        expandTextMenu: expandTextMenu,
-        showSelectMenuIcon: showSelectMenuIcon,
-      );
+    autoPageTurn: autoPageTurn,
+    autoPageTurnInterval: autoPageTurnInterval,
+    autoPageTurnForward: autoPageTurnForward,
+    leftAction: leftAction,
+    centerAction: centerAction,
+    rightAction: rightAction,
+    tapTopLeft: tapTopLeft,
+    tapTopCenter: tapTopCenter,
+    tapTopRight: tapTopRight,
+    tapMiddleLeft: tapMiddleLeft,
+    tapMiddleCenter: tapMiddleCenter,
+    tapMiddleRight: tapMiddleRight,
+    tapBottomLeft: tapBottomLeft,
+    tapBottomCenter: tapBottomCenter,
+    tapBottomRight: tapBottomRight,
+    paragraphSpacing: paragraphSpacing,
+    letterSpacing: letterSpacing,
+    paragraphIndent: paragraphIndent,
+    textFullJustify: textFullJustify,
+    textBold: textBold,
+    italic: italic,
+    shareLayout: shareLayout,
+    customTextColor: customTextColor,
+    pageMarginTop: pageMarginTop,
+    pageMarginBottom: pageMarginBottom,
+    pageMarginLeft: pageMarginLeft,
+    pageMarginRight: pageMarginRight,
+    paddingTopBottomLinked: paddingTopBottomLinked,
+    headerPaddingTop: headerPaddingTop,
+    headerPaddingBottom: headerPaddingBottom,
+    headerPaddingLeft: headerPaddingLeft,
+    headerPaddingRight: headerPaddingRight,
+    footerPaddingTop: footerPaddingTop,
+    footerPaddingBottom: footerPaddingBottom,
+    footerPaddingLeft: footerPaddingLeft,
+    footerPaddingRight: footerPaddingRight,
+    showHeaderLine: showHeaderLine,
+    showFooterLine: showFooterLine,
+    headerMode: headerMode,
+    footerMode: footerMode,
+    tipHeaderLeft: tipHeaderLeft,
+    tipHeaderMiddle: tipHeaderMiddle,
+    tipHeaderRight: tipHeaderRight,
+    tipFooterLeft: tipFooterLeft,
+    tipFooterMiddle: tipFooterMiddle,
+    tipFooterRight: tipFooterRight,
+    titleMode: titleMode,
+    titleSize: titleSize,
+    titleTopSpacing: titleTopSpacing,
+    titleBottomSpacing: titleBottomSpacing,
+    titleFont: titleFont,
+    showBattery: showBattery,
+    showTime: showTime,
+    showProgress: showProgress,
+    showChapterName: showChapterName,
+    flipMode: flipMode,
+    screenOrientation: screenOrientation,
+    keepLight: keepLight,
+    hideStatusBar: hideStatusBar,
+    hideNavigationBar: hideNavigationBar,
+    progressBarBehavior: progressBarBehavior,
+    noAnimScrollPage: noAnimScrollPage,
+    autoChangeSource: autoChangeSource,
+    selectText: selectText,
+    showBrightnessView: showBrightnessView,
+    readBrightnessMode: readBrightnessMode,
+    readBrightnessVwPos: readBrightnessVwPos,
+    showReadTitleAddition: showReadTitleAddition,
+    readBarStyleFollowPage: readBarStyleFollowPage,
+    volumeKeyPage: volumeKeyPage,
+    volumeKeyPageOnPlay: volumeKeyPageOnPlay,
+    keyPageOnLongPress: keyPageOnLongPress,
+    mouseWheelPage: mouseWheelPage,
+    doubleHorizontalPage: doubleHorizontalPage,
+    useZhLayout: useZhLayout,
+    hangingPunctuation: hangingPunctuation,
+    pageTouchSlop: pageTouchSlop,
+    pageTouchClick: pageTouchClick,
+    readBodyToLh: readBodyToLh,
+    paddingDisplayCutouts: paddingDisplayCutouts,
+    sliderVibrator: sliderVibrator,
+    selectVibrator: selectVibrator,
+    disableReturnKey: disableReturnKey,
+    maxLengthWithNoToc: maxLengthWithNoToc,
+    clickImgWay: clickImgWay,
+    prevKeyCodes: prevKeyCodes,
+    nextKeyCodes: nextKeyCodes,
+    textSelectMenuConfig: textSelectMenuConfig,
+    expandTextMenu: expandTextMenu,
+    showSelectMenuIcon: showSelectMenuIcon,
+    swipeToAddBookmark: swipeToAddBookmark,
+    bookmarkBadgeImage: bookmarkBadgeImage,
+    bookmarkBadgeSize: bookmarkBadgeSize,
+  );
 }
 
 // [UI-fix v2.0.4 | 2026-08-08] 高级配置共享 Provider：界面 Sheet
@@ -1071,5 +1108,5 @@ class ReaderAdvConfigNotifier extends Notifier<ReaderAdvancedConfig?> {
 /// 阅读器高级配置共享 Provider（null 表示尚未完成首次加载）
 final readerAdvConfigProvider =
     NotifierProvider<ReaderAdvConfigNotifier, ReaderAdvancedConfig?>(
-  ReaderAdvConfigNotifier.new,
-);
+      ReaderAdvConfigNotifier.new,
+    );

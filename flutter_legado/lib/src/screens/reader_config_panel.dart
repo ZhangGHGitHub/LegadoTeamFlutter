@@ -15,6 +15,8 @@ import '../models/selection_menu_config.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../services/bookmark_badge_image_store.dart';
+import '../services/container_image_picker.dart';
 import '../services/system_brightness.dart';
 import '../utils/click_img_way.dart';
 import '../widgets/app_progress_indicator.dart'; // [STAGE-UI-P43UNIFY2 B3] part 文件内裸环换接统一封装
@@ -98,7 +100,8 @@ class ReaderConfigPanel extends ConsumerStatefulWidget {
     ValueChanged<ReaderAdvancedConfig>? onChanged,
     ReaderConfigSection section = ReaderConfigSection.all,
   }) {
-    return showModalBottomSheet<void>(      showDragHandle: false,
+    return showModalBottomSheet<void>(
+      showDragHandle: false,
 
       context: context,
       isScrollControlled: true,
@@ -174,13 +177,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
   /// 组内行统一 vertical12/horizontal8（见 builders part）。
   Card _groupCard(Widget child) {
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: child,
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }
 
@@ -237,6 +235,10 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           const SizedBox(height: 12),
           _groupCard(_buildSelectionMenuEntry()),
           const SizedBox(height: 12),
+          _groupCard(_buildSwipeBookmarkConfig()),
+          const SizedBox(height: 12),
+          _groupCard(_buildVibratorConfig()),
+          const SizedBox(height: 12),
           _groupCard(_buildBrightnessControl()),
           const SizedBox(height: 12),
           _groupCard(_buildTypography()),
@@ -247,8 +249,10 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           const SizedBox(height: 12),
           _groupCard(
             ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                vertical: 12,
+                horizontal: 8,
+              ),
               leading: const Icon(Icons.crop_free),
               title: const Text('页面边距'),
               subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
@@ -293,8 +297,10 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
               children: [
                 ListTile(
                   // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   leading: const Icon(Icons.crop_free),
                   title: const Text('页面边距'),
                   subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
@@ -310,8 +316,10 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
                 ),
                 ListTile(
                   // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   leading: const Icon(Icons.info_outline),
                   title: const Text('阅读提示信息'),
                   subtitle: const Text('页眉页脚提示项与标题样式'),
@@ -356,10 +364,9 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withValues(alpha: 0.4),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),

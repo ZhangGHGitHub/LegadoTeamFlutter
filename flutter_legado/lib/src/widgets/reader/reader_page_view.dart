@@ -11,14 +11,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../../providers/bookmark/bookmark_notifier.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../services/bookmark_badge_image_store.dart';
 import '../../services/highlight_match_sync.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/paragraph_layout_engine.dart';
+import 'reader_bookmark_policy.dart';
 import 'reader_page_chrome.dart';
 import 'turn/page_direction.dart';
 import 'turn/reader_turn_view.dart';
@@ -70,7 +73,6 @@ class ReaderPageView extends ConsumerStatefulWidget {
 
   /// 长按选择文本开关（对标原版 selectText，关闭后长按不弹选区面板）
   final bool selectText;
-
 
   /// 滚动翻页无动画（对标原版 noAnimScrollPage：程序化翻页去除动画）
   final bool noAnimScroll;
@@ -141,13 +143,18 @@ class ReaderPageView extends ConsumerStatefulWidget {
 }
 
 class ReaderPageViewState extends ConsumerState<ReaderPageView> {
+  /// [批4d] 翻页成功观测点（测试注入；生产为 null）。
+  ///
+  /// sliderVibrator 改接进度条拖动后，既有「翻页成功」用例改用本观测点
+  /// 计数，避免把振动语义与翻页语义耦合。
+  @visibleForTesting
+  static void Function()? debugOnPageTurn;
 
   /// 相邻章预载预览页（章边界动画与承接显示；[UI_SYNC_REFACTOR S6 修]）
   Widget? _nextChapterPreview;
   Widget? _prevChapterPreview;
   bool _preloadingNext = false;
   bool _preloadingPrev = false;
-
 
   /// 最近一次分页参数（相邻章预载复用同参；翻页回调触发预载时也需读取）
   ParagraphConfig? _pagedConfig;
@@ -171,7 +178,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// 分页对应的章节索引（用于检测章节切换后重新分页）
   int _paginatedChapterIndex = -1;
-
 
   /// 分页对应的字号（设置变化时重新分页）
   double _paginatedFontSize = -1;
@@ -242,10 +248,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 当前页索引（屏级分页）
   int _currentPageIndex = 0;
 
-
-
-
-
   /// 当前分页数据对应的章节标题（与 _paginatedChapterIndex 同帧写入，
   /// 章节切换加载中冻结渲染时标题与正文保持同章，避免新标题配旧正文）
   String? _paginatedChapterTitle;
@@ -257,36 +259,130 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // 对标原版 ReadView 滚轮事件单次翻页语义）— Qoder
   DateTime _lastWheelTurn = DateTime.fromMillisecondsSinceEpoch(0);
 
-  /// [批1a | 2026-10-31] 翻页成功振动（sliderVibrator）注入点 — 全栈工程师
+  /// 翻页成功统一收敛点：重挂保持亮屏。
   ///
-  /// 默认走 HapticFeedback.selectionClick；测试可覆写为收集器断言
-  /// （Flutter 测试内 HapticFeedback 走 platform channel，默认消息被
-  /// TestDefaultBinaryMessenger 吞掉、不可直接断言，故留注入开关）。
-  static void Function() onPageTurnedHaptic =
-      HapticFeedback.selectionClick;
-
-  /// 翻页成功振动（sliderVibrator=true 时触发；对标参考版 sliderVibrator
-  /// 语义：翻页动作成功落地后短振反馈。原版无此键，默认 false）
-  void _maybeVibrateOnPageTurn() {
-    final cfg = ref.read(readerAdvConfigProvider);
-    if (cfg?.sliderVibrator ?? false) {
-      onPageTurnedHaptic();
-    }
-    // [批1b-1 审查回修 P1-2] 翻页成功即视为用户主交互：重挂保持亮屏
-    //（所有翻页路径——直设索引/滚动/手势/跨章——统一收敛于此）
+  /// [批4d] sliderVibrator 已改接底部进度条拖动，翻页不再振动；
+  /// 本方法只保留既有 keepLight 交互语义。
+  void _notifyPageTurn() {
     ReaderPageView.onPageTurnInteraction();
+    ReaderPageViewState.debugOnPageTurn?.call();
   }
 
   /// 当前章分页总数（进度条「调章内页」行为消费）
   int get pageCount => _paginatedPages.length;
+
+  // ===== [批4d] 页范围 → 书签判定 =====
+
+  /// 当前屏字符区间（双页为左右并集；无段落 0）
+  ReaderBookmarkRange get currentPageRange => readerBookmarkRangeForScreen(
+    _paginatedPages,
+    _currentPageIndex,
+    doublePage: _isDoublePage,
+  );
+
+  /// 顶栏添加书签使用的章内页首偏移
+  int get currentPageStartPos => currentPageRange.start;
+
+  /// 当前屏首页首段正文（书签摘要/内容）
+  String get currentPageStartText {
+    if (_paginatedPages.isEmpty) return '';
+    final index = _currentPageIndex.clamp(0, _paginatedPages.length - 1);
+    final content = _paginatedContent.isNotEmpty
+        ? _paginatedContent
+        : ref.read(readerNotifierProvider).chapterContent;
+    return readerBookmarkPageStartText(
+      page: _paginatedPages[index],
+      chapterContent: content,
+    );
+  }
+
+  int get _displayChapterIndex {
+    if (_paginatedChapterIndex >= 0) return _paginatedChapterIndex;
+    return ref.read(readerNotifierProvider).currentChapterIndex;
+  }
+
+  Bookmark? _bookmarkOnPage(
+    ReaderState state,
+    List<Bookmark> bookmarks,
+    int pageIndex,
+  ) {
+    final book = state.currentBook;
+    if (book == null || pageIndex < 0 || pageIndex >= _paginatedPages.length) {
+      return null;
+    }
+    return readerBookmarkInRange(
+      bookmarks,
+      bookName: book.name,
+      bookAuthor: book.author,
+      chapterIndex: _displayChapterIndex,
+      range: readerBookmarkRangeForPage(_paginatedPages[pageIndex]),
+    );
+  }
+
+  Bookmark? _bookmarkOnCurrentScreen(
+    ReaderState state,
+    List<Bookmark> bookmarks,
+  ) {
+    final book = state.currentBook;
+    if (book == null || _paginatedPages.isEmpty) return null;
+    return readerBookmarkInRange(
+      bookmarks,
+      bookName: book.name,
+      bookAuthor: book.author,
+      chapterIndex: _displayChapterIndex,
+      range: currentPageRange,
+    );
+  }
+
+  /// 下滑手势触发：本屏已有书签 → 删除；否则按页首添加
+  Future<void> _toggleBookmarkOnCurrentPage() async {
+    final state = ref.read(readerNotifierProvider);
+    final book = state.currentBook;
+    if (book == null) return;
+    // 分页未就绪时页范围为 0：不得把书签误加到章首
+    final range = currentPageRange;
+    if (range.isEmpty) return;
+    final notifier = ref.read(bookmarkNotifierProvider.notifier);
+    final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
+    final existing = _bookmarkOnCurrentScreen(state, bookmarks);
+    if (existing != null) {
+      await notifier.deleteBookmark(existing.id);
+      return;
+    }
+    final chapterIndex = _displayChapterIndex;
+    final chapterName =
+        _paginatedChapterTitle ?? state.currentChapter?.title ?? '';
+    final content = _paginatedContent.isNotEmpty
+        ? _paginatedContent
+        : state.chapterContent;
+    final page = _paginatedPages.isEmpty
+        ? null
+        : _paginatedPages[_currentPageIndex.clamp(
+            0,
+            _paginatedPages.length - 1,
+          )];
+    final text = readerBookmarkPageStartText(
+      page: page,
+      chapterContent: content,
+    );
+    await notifier.addBookmark(
+      bookName: book.name,
+      bookAuthor: book.author,
+      chapterIndex: chapterIndex,
+      chapterPos: range.start,
+      chapterName: chapterName,
+      bookText: text,
+      content: text,
+    );
+  }
 
   /// 程序化跳页（进度条拖动/目录跳转等；直设索引=瞬时切换，
   /// 相邻步进翻页走 _turnViewKey.turnByAnim 保持动画）
   void _navigateToPage(int index) {
     setState(() => _currentPageIndex = index);
     ref.read(readerNotifierProvider.notifier).updatePosition(index);
-    // [批1a] sliderVibrator：翻页成功振动（直设索引路径）
-    _maybeVibrateOnPageTurn();
+    // [批4d] 翻页成功只重挂 keepLight，不再振动（sliderVibrator 改进度条）
+    _notifyPageTurn();
     // 跳页同样驱动相邻章预载
     _maybePreloadAdjacent(ref.read(readerNotifierProvider));
   }
@@ -301,9 +397,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       pos.minScrollExtent,
       pos.maxScrollExtent,
     );
-    // [批1a] sliderVibrator：滚动翻页成功振动（到边界不再滚动则不触发）
+    // [批4d] 滚动翻页成功重挂 keepLight（sliderVibrator 改进度条）
     if (target != pos.pixels) {
-      _maybeVibrateOnPageTurn();
+      _notifyPageTurn();
     }
     if (widget.noAnimScroll) {
       _scrollController.jumpTo(target);
@@ -334,14 +430,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       if (_scrollController.hasClients) {
         final pos = _scrollController.position;
         if (pos.hasViewportDimension && pos.pixels >= pos.maxScrollExtent - 1) {
-          // [批1a] sliderVibrator：滚动模式跨章振动
-          _maybeVibrateOnPageTurn();
+          // [批4d] 滚动模式跨章重挂 keepLight
+          _notifyPageTurn();
           notifier.nextChapter();
         } else {
           _scrollByViewport(true);
         }
       } else {
-        _maybeVibrateOnPageTurn();
+        _notifyPageTurn();
         notifier.nextChapter();
       }
       return;
@@ -358,7 +454,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (_currentPageIndex + step < _paginatedPages.length) {
       _navigateToPage(_currentPageIndex + step);
     } else {
-      _maybeVibrateOnPageTurn();
+      _notifyPageTurn();
       notifier.nextChapter();
     }
   }
@@ -373,14 +469,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       if (_scrollController.hasClients) {
         final pos = _scrollController.position;
         if (pos.hasViewportDimension && pos.pixels <= pos.minScrollExtent + 1) {
-          // [批1a] sliderVibrator：滚动模式跨章振动
-          _maybeVibrateOnPageTurn();
+          // [批4d] 滚动模式跨章重挂 keepLight
+          _notifyPageTurn();
           notifier.prevChapter();
         } else {
           _scrollByViewport(false);
         }
       } else {
-        _maybeVibrateOnPageTurn();
+        _notifyPageTurn();
         notifier.prevChapter();
       }
       return;
@@ -395,7 +491,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (_currentPageIndex - step >= 0) {
       _navigateToPage(_currentPageIndex - step);
     } else {
-      _maybeVibrateOnPageTurn();
+      _notifyPageTurn();
       notifier.prevChapter();
     }
   }
@@ -404,6 +500,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   void initState() {
     super.initState();
     unawaited(_refreshFontFamily());
+    // [批4d] 预热 Support 目录，供角标自定义图同步解析；失败回落默认
+    unawaited(
+      BookmarkBadgeImageStore.ensureWarm().then((_) {
+        if (mounted) setState(() {});
+      }),
+    );
   }
 
   @override
@@ -426,7 +528,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         if (family != null && family.startsWith('Custom_')) family,
         if (titleFamily.isNotEmpty &&
             titleFamily.startsWith('Custom_') &&
-            titleFamily != family) titleFamily,
+            titleFamily != family)
+          titleFamily,
       };
       // 自定义字体（Custom_* 前缀）应用重启后需重新加载字体文件
       if (customFamilies.isNotEmpty) {
@@ -619,8 +722,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // [换源预览修复 | 2026-09-26] 换源后同章号内容被整章替换（index 不变），
     // 仅按章号判变会让章边界承接页残留旧源文本——内容变化同样清相邻章
     // 预览与在途标记，eager 预载随后以新源 bookUrl 重建 — Qoder
-    final chapterChanged = _paginatedChapterIndex != chapterIndex ||
-        content != _paginatedContent;
+    final chapterChanged =
+        _paginatedChapterIndex != chapterIndex || content != _paginatedContent;
     _pagedConfig = config;
     _pagedWidth = availableWidth;
     _pagedHeight = availableHeight;
@@ -683,7 +786,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
     // 章边界预载（页末预载下一章首屏 / 页首预载上一章末屏）
     _maybePreloadAdjacent(state, eager: true);
-
   }
 
   @override
@@ -718,8 +820,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       final book = state.currentBook;
       // [fix Task#24 | 2026-08-08] 正文/章节加载失败（如「正文为空」，多由换源
       // 匹配错书导致）时，除「重试」外引导用户「换源」逃离坏书源（对齐原版）— Qoder
-      final isOnline =
-          book != null && !BookType.isLocalOrigin(book.origin);
+      final isOnline = book != null && !BookType.isLocalOrigin(book.origin);
       return ErrorView(
         message: state.error!,
         onRetry: () {
@@ -778,6 +879,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     }
     // [批34] 高亮匹配：与分页解耦，命中到达后仅重建渲染层
     _syncHighlightMatches(state);
+    // [批4d] 书签增删/加载完成后重建页内角标与手势状态
+    ref.watch(bookmarkNotifierProvider.select((s) => s.bookmarks));
 
     final Widget content;
     // [UI_SYNC_REFACTOR S6 重构 | 2026-09-08] 翻页动画层整体替换为重构版
@@ -919,8 +1022,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// textBold 档位 → FontWeight（0中/1粗/2细，对标原版
   /// TextFontWeightConverter 的 normal/bold/light）
   /// [C3 斜体 | Qoder UI] 斜体样式映射（测量/渲染同源调用）
-  FontStyle? _fontStyleFor(bool italic) =>
-      italic ? FontStyle.italic : null;
+  FontStyle? _fontStyleFor(bool italic) => italic ? FontStyle.italic : null;
 
   FontWeight? _fontWeightFor(int bold) {
     switch (bold) {
@@ -995,7 +1097,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         textDirection: TextDirection.ltr,
         textScaler: textScaler,
       )..layout(maxWidth: availableWidth);
-      firstPageHeight = availableHeight -
+      firstPageHeight =
+          availableHeight -
           titlePainter.height -
           chrome.titleTopSpacing -
           chrome.titleBottomSpacing;
@@ -1010,8 +1113,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 章边界预载触发：末屏预载下一章首屏、首屏预载上一章末屏
   void _maybePreloadAdjacent(ReaderState state, {bool eager = false}) {
     if (_paginatedPages.isEmpty || state.currentBook == null) return;
-    final screenIndex =
-        _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
+    final screenIndex = _isDoublePage
+        ? _currentPageIndex ~/ 2
+        : _currentPageIndex;
     final screenCount = _isDoublePage
         ? (_paginatedPages.length + 1) ~/ 2
         : _paginatedPages.length;
@@ -1085,7 +1189,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       final pageIndex = delta > 0 ? 0 : pages.length - 1;
       final title = state.chapters[target].title;
       final page = _buildPreviewPage(
-          state, info, pageIndex, pages.length, title);
+        state,
+        info,
+        pageIndex,
+        pages.length,
+        title,
+      );
       if (!mounted) return;
       setState(() {
         if (delta > 0) {
@@ -1110,8 +1219,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// [批34b P3-6] 预览**不传** `highlightMatches`：`_highlightMatches` 是
   /// 当前章的命中区间，偏移口径不同（章节全局偏移），套到相邻章正文会
   /// 染错位置。相邻章高亮需在预载时按目标章单独匹配（登记为后续专项）。
-  Widget _buildPreviewPage(ReaderState state, PageInfo info, int pageIndex,
-      int totalPages, String title) {
+  Widget _buildPreviewPage(
+    ReaderState state,
+    PageInfo info,
+    int pageIndex,
+    int totalPages,
+    String title,
+  ) {
     final page = ReaderTypographicPage(
       pageInfo: info,
       pageIndex: pageIndex,
@@ -1151,11 +1265,24 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 重构版翻页视图（滑动/仿真/覆盖/无动画统一入口）
   Widget _buildTurnContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
-    final screenIndex =
-        _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
+    final screenIndex = _isDoublePage
+        ? _currentPageIndex ~/ 2
+        : _currentPageIndex;
     final screenCount = _isDoublePage
         ? (_paginatedPages.length + 1) ~/ 2
         : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1);
+    // [批4d] 下滑书签：仅菜单收起时可触发；选区浮层/底部面板是模态路由，
+    // 手势不会到达正文。提示条顶部对齐正文 contentTop + 8dp（由 TurnView 加）。
+    final advCfg = ref.read(readerAdvConfigProvider);
+    final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
+    final currentBookmark = _bookmarkOnCurrentScreen(state, bookmarks);
+    final hintTop =
+        readerContentStatusBarInset(
+          context,
+          hideStatusBar: widget.pageChrome.hideStatusBar,
+          readBodyToLh: widget.readBodyToLh,
+        ) +
+        widget.marginTop;
     return _contentViewport(
       context,
       ReaderTurnView(
@@ -1164,6 +1291,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         pageIndex: screenIndex,
         pageCount: screenCount,
         backPageColor: state.backgroundColor,
+        pullBookmarkEnabled:
+            (advCfg?.swipeToAddBookmark ?? false) && !state.showControls,
+        hasBookmarkOnPage: currentBookmark != null,
+        onToggleBookmark: () => unawaited(_toggleBookmarkOnCurrentPage()),
+        bookmarkHintTop: hintTop,
         buildPage: (i) => _isDoublePage
             ? _buildSpread(state, i)
             : _buildTypographicPage(state, i),
@@ -1171,21 +1303,21 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           final page = _isDoublePage ? i * 2 : i;
           setState(() => _currentPageIndex = page);
           notifier.updatePosition(page);
-          // [批1a] sliderVibrator：翻页成功振动
-          _maybeVibrateOnPageTurn();
+          // [批4d] 翻页成功重挂 keepLight
+          _notifyPageTurn();
           // 翻页不触发重分页 → 此处驱动相邻章预载（原仅分页触发导致章末无预载）
           _maybePreloadAdjacent(ref.read(readerNotifierProvider));
         },
         chapterPrevPage: _prevChapterPreview,
         chapterNextPage: _nextChapterPreview,
         onTurnChapterPrev: () {
-          // [批1a] sliderVibrator：跨章翻页成功振动
-          _maybeVibrateOnPageTurn();
+          // [批4d] 跨章翻页重挂 keepLight
+          _notifyPageTurn();
           notifier.prevChapter();
         },
         onTurnChapterNext: () {
-          // [批1a] sliderVibrator：跨章翻页成功振动
-          _maybeVibrateOnPageTurn();
+          // [批4d] 跨章翻页重挂 keepLight
+          _notifyPageTurn();
           notifier.nextChapter();
         },
         hasChapterPrev: state.hasPreviousChapter,
@@ -1246,7 +1378,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   letterSpacing: widget.letterSpacing * state.fontSize,
                   fontFamily: _fontFamily,
                   fontWeight: _fontWeightFor(widget.textBold),
-      fontStyle: _fontStyleFor(widget.italic),
+                  fontStyle: _fontStyleFor(widget.italic),
                   justify: widget.textFullJustify,
                   // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入长按选择 — Qoder
                   selectText: widget.selectText,
@@ -1264,7 +1396,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 letterSpacing: widget.letterSpacing * state.fontSize,
                 fontFamily: _fontFamily,
                 fontWeight: _fontWeightFor(widget.textBold),
-      fontStyle: _fontStyleFor(widget.italic),
+                fontStyle: _fontStyleFor(widget.italic),
                 // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
                 selectText: widget.selectText,
               )
@@ -1310,6 +1442,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       state.currentChapterIndex,
     );
     final globalIndex = chapterStart >= 0 ? chapterStart + safeIndex : null;
+    final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
+    final pageBookmark = _bookmarkOnPage(state, bookmarks, safeIndex);
+    final advCfg = ref.read(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
 
     return ReaderTypographicPage(
       pageInfo: pageInfo,
@@ -1357,6 +1492,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       onReviewTap: widget.onReviewTap,
       // [批34] 正文高亮命中（章节全局 UTF-16 区间）
       highlightMatches: _highlightMatches,
+      // [批4d] 每页右上角书签角标（滚动模式不构建本页，故天然隐藏）
+      showBookmarkBadge: pageBookmark != null,
+      bookmarkBadgeImage: advCfg.bookmarkBadgeImage,
+      bookmarkBadgeSize: advCfg.bookmarkBadgeSize,
     );
   }
 

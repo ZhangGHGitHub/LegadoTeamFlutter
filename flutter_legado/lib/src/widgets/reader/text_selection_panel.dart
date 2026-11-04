@@ -109,6 +109,23 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   /// 上次使用的高亮颜色（会话内记忆，对齐原版 highlightLastStyle 的简化版）
   static Color _lastHighlightColor = kHighlightColors.first;
 
+  /// [批4d] 拖选振动节流（避免每个字符都触发马达）
+  DateTime _lastSelectHapticAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 起选/拖选手柄触发 selectVibrator；参考 LongPress/TextHandleMove
+  void _maybeSelectHaptic(SelectionChangedCause? cause) {
+    if (cause != SelectionChangedCause.drag &&
+        cause != SelectionChangedCause.longPress) {
+      return;
+    }
+    final cfg = ref.read(readerAdvConfigProvider);
+    if (!(cfg?.selectVibrator ?? false)) return;
+    final now = DateTime.now();
+    if (now.difference(_lastSelectHapticAt).inMilliseconds < 60) return;
+    _lastSelectHapticAt = now;
+    HapticFeedback.selectionClick();
+  }
+
   /// 当前操作文本：优先取用户选区，未选择时为整段
   String get _selectedText {
     final selected = _userSelected.trim();
@@ -179,6 +196,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                     widget.text,
                     style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
                     onSelectionChanged: (selection, cause) {
+                      _maybeSelectHaptic(cause);
                       final text = widget.text;
                       if (!selection.isValid || selection.isCollapsed) {
                         if (_userSelected.isNotEmpty) {

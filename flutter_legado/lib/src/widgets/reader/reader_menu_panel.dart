@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -74,6 +75,9 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
   /// `readBarStyleFollowPage` 仅在 `readBarStyle` 缺失时迁移。
   final bool styleFollowPage;
 
+  /// [批4d] 进度条拖动振动注入点（测试可替换为计数器）
+  static void Function() onSeekHaptic = HapticFeedback.selectionClick;
+
   const ReaderMenuPanel({
     super.key,
     required this.visible,
@@ -100,6 +104,20 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
 
 class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     with SingleTickerProviderStateMixin {
+  /// [批4d] 进度条振动按整数档去重：拖动跨页/跨章才短振一次
+  int? _lastSeekHapticValue;
+
+  void _maybeSliderHaptic({double? value, bool force = false}) {
+    final cfg = ref.read(readerAdvConfigProvider);
+    if (!(cfg?.sliderVibrator ?? false)) return;
+    if (value != null) {
+      final rounded = value.round();
+      if (!force && rounded == _lastSeekHapticValue) return;
+      _lastSeekHapticValue = rounded;
+    }
+    ReaderMenuPanel.onSeekHaptic();
+  }
+
   // 进出场：进 220（fadeIn180 内含）/ 出 180（对齐参考 0.88 缩放族）
   late final AnimationController _menuController = AnimationController(
     vsync: this,
@@ -251,9 +269,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
 
   /// [批3b] 有效模糊模式：非浮动底栏不支持 LiquidGlass，回落 Haze
   int _effectiveBlurMode(ReaderMenuStyle style, {required bool isTopBar}) {
-    final mode = isTopBar
-        ? style.topBarBlurMode
-        : style.bottomBarBlurMode;
+    final mode = isTopBar ? style.topBarBlurMode : style.bottomBarBlurMode;
     if (!isTopBar &&
         !style.floatingBottomBar &&
         mode == ReaderMenuBlurMode.liquidGlass) {
@@ -322,9 +338,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   begin: isTopBar
                       ? Alignment.topCenter
                       : Alignment.bottomCenter,
-                  end: isTopBar
-                      ? Alignment.bottomCenter
-                      : Alignment.topCenter,
+                  end: isTopBar ? Alignment.bottomCenter : Alignment.topCenter,
                   colors: [surfaceColor, surfaceColor.withValues(alpha: 0)],
                 ),
               ),
@@ -354,9 +368,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               key: ValueKey('reader-$scope-liquid-glass'),
               decoration: BoxDecoration(
                 borderRadius: borderRadius,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.22),
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -953,9 +965,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                               )
                             : showBookInRow
                             ? InkWell(
-                                key: const ValueKey(
-                                  'reader-topbar-book-name',
-                                ),
+                                key: const ValueKey('reader-topbar-book-name'),
                                 onTap: () => _openBookInfo(context, book),
                                 child: SizedBox(
                                   width: double.infinity,
@@ -1655,14 +1665,21 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             data: sliderTheme,
             child: usePageSeek
                 ? Slider(
+                    key: const ValueKey('reader-progress-slider'),
                     value: currentPage.toDouble(),
                     min: 0,
                     max: (chapterPageCount - 1).toDouble(),
                     divisions: chapterPageCount - 1,
                     label: positionText,
-                    onChanged: (value) => widget.onSeekPage!(value.toInt()),
+                    onChangeStart: (value) =>
+                        _maybeSliderHaptic(value: value, force: true),
+                    onChanged: (value) {
+                      _maybeSliderHaptic(value: value);
+                      widget.onSeekPage!(value.toInt());
+                    },
                   )
                 : Slider(
+                    key: const ValueKey('reader-progress-slider'),
                     value: state.chapters.isNotEmpty
                         ? state.currentChapterIndex.toDouble()
                         : 0,
@@ -1674,7 +1691,12 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                         ? state.chapters.length - 1
                         : null,
                     label: positionText,
-                    onChanged: (value) => notifier.goToChapter(value.toInt()),
+                    onChangeStart: (value) =>
+                        _maybeSliderHaptic(value: value, force: true),
+                    onChanged: (value) {
+                      _maybeSliderHaptic(value: value);
+                      notifier.goToChapter(value.toInt());
+                    },
                   ),
           ),
         ],
@@ -1753,17 +1775,15 @@ class _HorizontalBrightnessRowState extends State<_HorizontalBrightnessRow> {
   @override
   Widget build(BuildContext context) {
     if (!_supported) return const SizedBox.shrink();
-    final fg = widget.foreground ??
-        Theme.of(context).colorScheme.onSurfaceVariant;
+    final fg =
+        widget.foreground ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
           IconButton(
             icon: Icon(
-              _auto
-                  ? Icons.brightness_auto
-                  : Icons.brightness_auto_outlined,
+              _auto ? Icons.brightness_auto : Icons.brightness_auto_outlined,
               color: fg,
             ),
             tooltip: _auto ? '关闭自动亮度' : '自动亮度',
@@ -1837,8 +1857,8 @@ class _VerticalBrightnessBarState extends State<_VerticalBrightnessBar> {
   @override
   Widget build(BuildContext context) {
     if (!_supported) return const SizedBox.shrink();
-    final fg = widget.foreground ??
-        Theme.of(context).colorScheme.onSurfaceVariant;
+    final fg =
+        widget.foreground ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return Material(
       color: widget.fallbackColor.withValues(alpha: 0.9),
       borderRadius: BorderRadius.circular(40),
@@ -1854,7 +1874,9 @@ class _VerticalBrightnessBarState extends State<_VerticalBrightnessBar> {
               IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: Icon(
-                  _auto ? Icons.brightness_auto : Icons.brightness_auto_outlined,
+                  _auto
+                      ? Icons.brightness_auto
+                      : Icons.brightness_auto_outlined,
                   color: fg,
                 ),
                 tooltip: _auto ? '关闭自动亮度' : '自动亮度',
