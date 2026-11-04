@@ -25,7 +25,10 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../models/selection_menu_config.dart';
 import '../dict_dialog.dart';
+import 'selection_menu_actions.dart';
+import 'text_select_menu_config_sheet.dart';
 
 /// 高亮配色（对齐原版 HighlightStyle 多色能力，颜色写入 BookHighlight.style JSON）
 const List<Color> kHighlightColors = [
@@ -68,10 +71,14 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
   /// 批34 起为章节全局偏移，不再是恒 0）
   final int chapterPos;
 
+  /// [批4c] menu_mark 从浮条进入时直接展开高亮颜色行
+  final bool initialHighlight;
+
   const TextSelectionPanel({
     super.key,
     required this.text,
     this.chapterPos = 0,
+    this.initialHighlight = false,
   });
 
   /// 弹出面板
@@ -79,13 +86,18 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
     BuildContext context, {
     required String text,
     int chapterPos = 0,
+    bool initialHighlight = false,
   }) {
     if (text.trim().isEmpty) return Future.value();
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (_) => TextSelectionPanel(text: text, chapterPos: chapterPos),
+      builder: (_) => TextSelectionPanel(
+        text: text,
+        chapterPos: chapterPos,
+        initialHighlight: initialHighlight,
+      ),
     );
   }
 
@@ -99,7 +111,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   String _userSelected = '';
 
   /// 是否展开高亮配色行
-  bool _showHighlightColors = false;
+  late bool _showHighlightColors = widget.initialHighlight;
 
   /// 上次使用的高亮颜色（会话内记忆，对齐原版 highlightLastStyle 的简化版）
   static Color _lastHighlightColor = kHighlightColors.first;
@@ -113,6 +125,10 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cfg = ref.watch(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
+    final menuView = SelectionMenuConfig.decode(
+      cfg.textSelectMenuConfig,
+    ).view;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -191,27 +207,27 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                   ?.copyWith(color: theme.colorScheme.outline),
             ),
             const SizedBox(height: 8),
-            // 操作菜单（顺序对齐原版 content_select_action.xml）
+            // 操作菜单（批4c：按选择菜单配置排序/分区）
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _actionItem(Icons.swap_horiz, '替换', _openReplace),
-                  _actionItem(Icons.copy_outlined, '复制', _copy),
-                  _actionItem(Icons.bookmark_border, '书签', _addBookmark),
-                  _actionItem(
-                    Icons.highlight_outlined,
-                    '高亮',
-                    () => setState(
-                      () => _showHighlightColors = !_showHighlightColors,
+                  for (final def in menuView.active)
+                    _actionItem(
+                      def,
+                      showIcon: cfg.showSelectMenuIcon,
+                      onTap: _panelAction(def.id),
                     ),
+                  IconButton(
+                    key: const ValueKey('selection-panel-manage'),
+                    tooltip: '管理选择菜单',
+                    icon: const Icon(Icons.settings_outlined, size: 20),
+                    onPressed: () =>
+                        unawaited(TextSelectMenuConfigSheet.showForReader(
+                          context,
+                          ref,
+                        )),
                   ),
-                  _actionItem(Icons.record_voice_over_outlined, '朗读', _readAloud),
-                  _actionItem(Icons.menu_book_outlined, '词典', _lookupDict),
-                  _actionItem(Icons.search, '搜正文', _searchContent),
-                  _actionItem(
-                      Icons.open_in_browser_outlined, '浏览器', _openInBrowser),
-                  _actionItem(Icons.share_outlined, '分享', _share),
                 ],
               ),
             ),
@@ -269,9 +285,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     );
   }
 
-  Widget _actionItem(IconData icon, String label, VoidCallback onTap) {
+  Widget _actionItem(
+    SelectionMenuItemDef def, {
+    required bool showIcon,
+    required VoidCallback onTap,
+  }) {
     final theme = Theme.of(context);
     return InkWell(
+      key: ValueKey('selection-panel-action-${def.id}'),
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
@@ -279,13 +300,44 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: theme.colorScheme.primary),
-            const SizedBox(height: 4),
-            Text(label, style: theme.textTheme.labelSmall),
+            if (showIcon) ...[
+              Icon(def.icon, size: 22, color: theme.colorScheme.primary),
+              const SizedBox(height: 4),
+            ],
+            Text(def.label, style: theme.textTheme.labelSmall),
           ],
         ),
       ),
     );
+  }
+
+  VoidCallback _panelAction(String id) {
+    switch (id) {
+      case SelectionMenuIds.copy:
+        return () => unawaited(_copy());
+      case SelectionMenuIds.share:
+        return () => unawaited(_share());
+      case SelectionMenuIds.browser:
+        return () => unawaited(_openInBrowser());
+      case SelectionMenuIds.aloud:
+        return _readAloud;
+      case SelectionMenuIds.bookmark:
+        return () => unawaited(_addBookmark());
+      case SelectionMenuIds.mark:
+        return () => setState(
+          () => _showHighlightColors = !_showHighlightColors,
+        );
+      case SelectionMenuIds.dict:
+        return _lookupDict;
+      case SelectionMenuIds.replace:
+        return _openReplace;
+      case SelectionMenuIds.edit:
+        return () => selectionEdit(ref, context, _close);
+      case SelectionMenuIds.search:
+        return _searchContent;
+      default:
+        return () {};
+    }
   }
 
   void _close() {
@@ -627,8 +679,12 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             ),
           ),
           Positioned(
-            left: (anchor.dx - 150).clamp(12.0,
-                MediaQuery.of(context).size.width - 342),
+            left: container.read(readerAdvConfigProvider)?.expandTextMenu == true
+                ? 12
+                : (anchor.dx - 150).clamp(
+                    12.0,
+                    MediaQuery.of(context).size.width - 342,
+                  ),
             top: (anchor.dy - 64).clamp(12.0, double.infinity),
             child: Material(
               elevation: 6,
@@ -650,125 +706,174 @@ class ReaderSelectionToolbar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final actions = [
-      (Icons.copy_outlined, '复制', () async {
-        await Clipboard.setData(ClipboardData(text: text));
-        onDismiss();
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-            ..hideCurrentSnackBar()
-            ..showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
-        }
-      }),
-      (Icons.share_outlined, '分享', () async {
-        onDismiss();
-        try {
-          await Share.share(text);
-        } catch (_) {}
-      }),
-      (Icons.open_in_browser_outlined, '浏览器', () async {
-        onDismiss();
-        final navigator = Navigator.of(context, rootNavigator: true);
-        if (RegExp(r'^https?://\S+$').hasMatch(text)) {
-          navigator.pushNamed(AppRoutes.browser, arguments: text);
-          return;
-        }
-        final uri = Uri.https('www.bing.com', '/search', {'q': text});
-        try {
-          if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('无法打开浏览器')));
-            }
-          }
-        } catch (e) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context)
-                .showSnackBar(SnackBar(content: Text('打开浏览器失败：\$e')));
-          }
-        }
-      }),
-      (Icons.record_voice_over_outlined, '朗读', () {
-        final state = ref.read(readerNotifierProvider);
-        final book = state.currentBook;
-        onDismiss();
-        if (book == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('无法启动朗读：未打开书籍')));
-          return;
-        }
-        unawaited(ref.read(audioNotifierProvider.notifier).startReadAloud(
-          bookUrl: book.bookUrl,
-          bookName: book.name,
-          chapterIndex: state.currentChapterIndex,
-          startChapterPos: chapterPos,
-          startParagraphText: text,
-        ));
-      }),
-      (Icons.bookmark_border, '书签', () async {
-        final state = ref.read(readerNotifierProvider);
-        final book = state.currentBook;
-        onDismiss();
-        if (book == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('无法添加书签：未打开书籍')));
-          return;
-        }
-        try {
-          await ref.read(bookmarkNotifierProvider.notifier).addBookmark(
-                bookName: book.name,
-                bookAuthor: book.author,
-                chapterIndex: state.currentChapterIndex,
-                chapterPos: chapterPos,
-                chapterName: state.currentChapter?.title ?? '',
-                bookText: text,
-                content: text,
-              );
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已添加书签')));
-          }
-        } catch (e) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context)
-                .showSnackBar(SnackBar(content: Text('添加书签失败：\$e')));
-          }
-        }
-      }),
-      (Icons.settings_rounded, '更多', () {
-        onDismiss();
-        final navigator = Navigator.of(context, rootNavigator: true);
-        TextSelectionPanel.show(
-          navigator.context,
-          text: text,
-          chapterPos: chapterPos,
-        );
-      }),
+    final cfg = ref.watch(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
+    final view = SelectionMenuConfig.decode(cfg.textSelectMenuConfig).view;
+    final items = cfg.expandTextMenu ? view.active : view.primary;
+    final buttons = [
+      for (final def in items)
+        _buildActionButton(
+          context,
+          def,
+          showIcon: cfg.showSelectMenuIcon,
+          onTap: _actionFor(context, ref, def.id),
+        ),
     ];
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < actions.length; i++) ...[
-          if (i > 0)
-            SizedBox(
-              height: 24,
-              child: VerticalDivider(
-                  width: 1, color: Theme.of(context).colorScheme.outlineVariant),
-            ),
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: actions[i].$3,
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Text(
-                actions[i].$2,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
+    final manage = IconButton(
+      key: const ValueKey('selection-menu-manage'),
+      tooltip: '管理选择菜单',
+      visualDensity: VisualDensity.compact,
+      icon: const Icon(Icons.settings_outlined, size: 20),
+      onPressed: () {
+        onDismiss();
+        unawaited(TextSelectMenuConfigSheet.showForReader(context, ref));
+      },
+    );
+    if (cfg.expandTextMenu) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width - 24,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [...buttons, manage],
           ),
-        ],
-      ],
+        ),
+      );
+    }
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 24,
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < buttons.length; i++) ...[
+              if (i > 0)
+                SizedBox(
+                  height: 24,
+                  child: VerticalDivider(
+                    width: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+              buttons[i],
+            ],
+            if (buttons.isNotEmpty)
+              SizedBox(
+                height: 24,
+                child: VerticalDivider(
+                  width: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
+            _buildActionButton(
+              context,
+              const SelectionMenuItemDef(
+                id: 'menu_more',
+                label: '更多',
+                icon: Icons.more_horiz,
+                implemented: true,
+              ),
+              showIcon: cfg.showSelectMenuIcon,
+              onTap: () {
+                onDismiss();
+                TextSelectionPanel.show(
+                  context,
+                  text: text,
+                  chapterPos: chapterPos,
+                );
+              },
+            ),
+            manage,
+          ],
+        ),
+      ),
+    );
+  }
+
+  VoidCallback _actionFor(BuildContext context, WidgetRef ref, String id) {
+    switch (id) {
+      case SelectionMenuIds.copy:
+        return () => unawaited(selectionCopy(context, text, onDismiss));
+      case SelectionMenuIds.share:
+        return () => unawaited(selectionShare(context, text, onDismiss));
+      case SelectionMenuIds.browser:
+        return () => unawaited(selectionOpenBrowser(context, text, onDismiss));
+      case SelectionMenuIds.aloud:
+        return () => unawaited(
+          selectionReadAloud(
+            ref,
+            context,
+            selectedText: text,
+            paragraphText: text,
+            chapterPos: chapterPos,
+            onDone: onDismiss,
+          ),
+        );
+      case SelectionMenuIds.bookmark:
+        return () => unawaited(
+          selectionAddBookmark(
+            ref,
+            context,
+            selectedText: text,
+            chapterPos: chapterPos,
+            onDone: onDismiss,
+          ),
+        );
+      case SelectionMenuIds.mark:
+        return () {
+          onDismiss();
+          TextSelectionPanel.show(
+            context,
+            text: text,
+            chapterPos: chapterPos,
+            initialHighlight: true,
+          );
+        };
+      case SelectionMenuIds.dict:
+        return () => selectionLookupDict(context, text, onDismiss);
+      case SelectionMenuIds.replace:
+        return () => selectionReplace(context, text, onDismiss);
+      case SelectionMenuIds.edit:
+        return () => selectionEdit(ref, context, onDismiss);
+      case SelectionMenuIds.search:
+        return () => selectionSearchContent(ref, context, text, onDismiss);
+      default:
+        return () {};
+    }
+  }
+
+  Widget _buildActionButton(
+    BuildContext context,
+    SelectionMenuItemDef def, {
+    required bool showIcon,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      key: ValueKey('selection-action-${def.id}'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showIcon) ...[
+              Icon(
+                def.icon,
+                size: 22,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(height: 4),
+            ],
+            Text(def.label, style: Theme.of(context).textTheme.labelSmall),
+          ],
+        ),
+      ),
     );
   }
 }

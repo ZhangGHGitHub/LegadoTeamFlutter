@@ -178,6 +178,27 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     );
   }
 
+  // ===== 选择菜单配置（[批4c]） =====
+
+  Widget _buildSelectionMenuEntry() {
+    return ListTile(
+      key: const ValueKey('reader-select-menu-entry'),
+      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      leading: const Icon(Icons.format_list_bulleted),
+      title: const Text('选择菜单'),
+      subtitle: const Text('一级 / 折叠 / 隐藏项、多行展示与图标'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => TextSelectMenuConfigSheet.show(
+        context,
+        config: _config.copy(),
+        onChanged: (cfg) {
+          _config = cfg.copy();
+          _commit();
+        },
+      ),
+    );
+  }
+
   // ===== 段落间距 =====
 
   Widget _buildParagraphSpacing() {
