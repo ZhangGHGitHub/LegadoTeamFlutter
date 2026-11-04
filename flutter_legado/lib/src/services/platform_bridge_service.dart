@@ -1217,6 +1217,7 @@ class PlatformBridgeService {
   /// 全部租约释放后关闭原生 capture / 清理 handler
   Future<void> _releaseReaderCaptureIfIdle() async {
     if (_volumeKeyOwners.isNotEmpty || _pageKeyOwners.isNotEmpty) return;
+    keyRecording.value = false;
     _volumeKeyDispatchRegistered = false;
     PlatformChannel.clearVolumeKeyHandler();
     if (_volumeKeyCaptureEnabled) {
@@ -1268,6 +1269,7 @@ class PlatformBridgeService {
     final remaining = _pageKeyOwners.keys.toList(growable: false);
     if (remaining.isEmpty) {
       _activePageKeyOwner = null;
+      keyRecording.value = false;
       await PlatformChannel.setKeyRecording(false);
       // 若仍有 volume 租约（漫画压栈），capture 不会关闭；先复位 native
       // custom/volumeEnabled，避免文本阅读器残留污染漫画音量键。
