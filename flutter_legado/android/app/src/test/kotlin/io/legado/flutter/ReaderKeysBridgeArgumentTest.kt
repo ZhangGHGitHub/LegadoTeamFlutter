@@ -210,6 +210,57 @@ class ReaderKeysBridgeArgumentTest {
     }
 
     @Test
+    fun `consumed down swallows matching up only`() {
+        val state = ReaderKeysBridge.ConsumedKeyState()
+        assertTrue(state.onDown(92, true))
+        assertTrue(state.snapshot().contains(92))
+        assertTrue(state.onUp(92))
+        assertFalse(state.snapshot().contains(92))
+        assertFalse(state.onUp(92))
+
+        assertFalse(state.onDown(93, false))
+        assertFalse(state.onUp(93))
+    }
+
+    @Test
+    fun `transition state handles down up multiple back and clear`() {
+        val state = ReaderKeysBridge.ConsumedKeyState()
+        // ACTION_DOWN=0 / ACTION_UP=1 / ACTION_MULTIPLE=2
+        assertTrue(
+            ReaderKeysBridge.transitionKeyState(0, 92, true, state),
+        )
+        assertTrue(
+            ReaderKeysBridge.transitionKeyState(1, 92, false, state),
+        )
+        assertFalse(
+            ReaderKeysBridge.transitionKeyState(2, 92, true, state),
+        )
+        // BACK(4) 录制/非录制都不拦截
+        assertFalse(
+            ReaderKeysBridge.transitionKeyState(0, 4, false, state),
+        )
+        assertFalse(
+            ReaderKeysBridge.transitionKeyState(1, 4, false, state),
+        )
+        // 录制态 92：down 消费 → up 吞掉
+        val recording = ReaderKeysBridge.ConsumedKeyState()
+        assertTrue(
+            ReaderKeysBridge.transitionKeyState(0, 92, true, recording),
+        )
+        assertTrue(
+            ReaderKeysBridge.transitionKeyState(1, 92, false, recording),
+        )
+        // 捕获关闭/录制关闭清空后，up 透传
+        assertTrue(
+            ReaderKeysBridge.transitionKeyState(0, 93, true, state),
+        )
+        state.clear()
+        assertFalse(
+            ReaderKeysBridge.transitionKeyState(1, 93, false, state),
+        )
+    }
+
+    @Test
     fun `recording only sends first keydown`() {
         assertTrue(ReaderKeysBridge.shouldSendRecordKey(0))
         assertFalse(ReaderKeysBridge.shouldSendRecordKey(1))
