@@ -5,49 +5,43 @@ import io.flutter.plugin.common.MethodChannel
 import android.view.KeyEvent
 
 /**
- * 阅读器按键桥接 — [M5] 音量键翻页
+ * 阅读器按键桥接 — 音量键 + 自定义/硬编码翻页键（批4b）
  *
- * 原版语义（`app/src/main/java/io/legado/app/ui/book/manga/
- * ReadMangaActivity.kt` L894-902）：阅读器 `onKeyDown` 拦截
- * `KEYCODE_VOLUME_UP` → 上一页、`KEYCODE_VOLUME_DOWN` → 下一页，
- * 并 `return true` 消费（不调系统音量）。Flutter 层无按键拦截
- * 通道，本桥接承载：
+ * 协议兼容：
+ * - 旧：Dart `setVolumeKeyCapture(enabled)`，原生 `volumeKey` 事件。
+ *   未调用 `setPageKeyConfig` 时保持该协议（漫画阅读器继续可用）。
+ * - 新：Dart `setPageKeyConfig{prevKeys,nextKeys,volumeEnabled,
+ *   hardcodedEnabled}` + `setKeyRecording(bool)`；捕获开启后按
+ *   custom > volume > hardcoded 优先级发送 `pageKey{direction,
+ *   longPress,source}`；录制态发送 `recordKey{keyCode}`。
  *
- * - Dart 经 `setVolumeKeyCapture(enabled)` 开关捕获——仅漫画阅读器
- *   活跃且设置开启时启用，退出阅读器立即关闭，防拦截范围外泄到
- *   其它页面（回归系统音量键默认行为）；
- * - `MainActivity.onKeyDown` 在捕获开启且为音量键时经本通道通知
- *   Dart 翻页并消费按键；方向反转（reverseVolumeKeyPage）在 Dart
- *   侧处理。
+ * 参考 `ReadBookController.kt:2698-2762`（自定义键优先于音量、
+ * PAGE_UP/PAGE_DOWN/SPACE/DPAD 硬编码）与 `PageKeySheet.kt`
+ * （BACK/DEL 不录制）。
  *
- * 事件形状（批1b-2a）：
- * - 旧：`invokeMethod("volumeKey", "up"/"down")`；
- * - 新：`invokeMethod("volumeKey", {"direction": "up"/"down",
- *   "longPress": Boolean})`。
- * `longPress` 取 `KeyEvent.repeatCount > 0`（对齐原版
- * ReadBookActivity.onKeyDown 的 `val longPress = event.repeatCount > 0`），
- * 供 Dart 侧按 `keyPageOnLongPress` 语义消费。注意当前通道路径的消费方
- * 是漫画阅读器（原版 ReadMangaActivity 不区分长按，仍每个 keydown
- * 翻页）；文本阅读器主路径经 Flutter KeyRepeatEvent 取得同一 repeat
- * 信息。Dart 解析侧同时兼容旧 String 形态（向后兼容）。
- *
- * 全部异常捕获后经 `result.error` / 不消费降级返回，绝不向 Flutter
- * 引擎抛未捕获异常（对照 D2 教训：插件原生层异常会 FATAL 强杀）。
- *
- * 支持方法：
- * - `setVolumeKeyCapture`: 参数 Boolean；成功返回 true。
- * 信道事件（原生 → Dart）：
- * - `volumeKey`: `{direction: "up"/"down", longPress: Boolean}`（旧版 String）。
+ * 异常全部 fail-open：channel 未注册/通知异常一律 return false，不吞键。
  */
 class ReaderKeysBridge {
 
     companion object {
         const val CHANNEL = "legado/reader_keys"
 
-        /** 音量键 keyCode → 方向；非音量键返回 null（纯函数，Kotlin 单测覆盖） */
+        private const val KEYCODE_BACK = 4
+        private const val KEYCODE_DEL = 67
+        private const val KEYCODE_SPACE = 62
+        private const val KEYCODE_PAGE_UP = 92
+        private const val KEYCODE_PAGE_DOWN = 93
+        private const val KEYCODE_DPAD_UP = 19
+        private const val KEYCODE_DPAD_DOWN = 20
+        private const val KEYCODE_DPAD_LEFT = 21
+        private const val KEYCODE_DPAD_RIGHT = 22
+        private const val KEYCODE_VOLUME_UP = 24
+        private const val KEYCODE_VOLUME_DOWN = 25
+
+        /** 音量键 keyCode → 方向；非音量键返回 null（旧协议单测沿用） */
         internal fun volumeDirection(keyCode: Int): String? = when (keyCode) {
-            KeyEvent.KEYCODE_VOLUME_UP -> "up"
-            KeyEvent.KEYCODE_VOLUME_DOWN -> "down"
+            KEYCODE_VOLUME_UP -> "up"
+            KEYCODE_VOLUME_DOWN -> "down"
             else -> null
         }
 
@@ -55,7 +49,7 @@ class ReaderKeysBridge {
         internal fun longPressFromRepeatCount(repeatCount: Int): Boolean =
             repeatCount > 0
 
-        /** Dart 侧事件负载（批1b-2a 新协议；旧 String 形态由 Dart 兼容） */
+        /** 旧音量事件负载（Dart 兼容 String 形态） */
         internal fun volumeKeyPayload(
             direction: String,
             longPress: Boolean,
@@ -63,13 +57,106 @@ class ReaderKeysBridge {
             "direction" to direction,
             "longPress" to longPress,
         )
+
+        /** 新翻页事件负载 */
+        internal fun pageKeyPayload(
+            direction: String,
+            longPress: Boolean,
+            source: String,
+        ): Map<String, Any> = mapOf(
+            "direction" to direction,
+            "longPress" to longPress,
+            "source" to source,
+        )
+
+        /** 录制事件负载 */
+        internal fun recordKeyPayload(keyCode: Int): Map<String, Any> =
+            mapOf("keyCode" to keyCode)
+
+        /** 解析逗号/空白分隔 keyCode；非法/BACK/DEL 忽略（fail-safe 空集） */
+        internal fun parseKeyCodes(raw: String?): Set<Int> {
+            if (raw.isNullOrBlank()) return emptySet()
+            return try {
+                raw.split(Regex("[,\\s]+"))
+                    .mapNotNull { it.toIntOrNull() }
+                    .filter { it > 0 && it != KEYCODE_BACK && it != KEYCODE_DEL }
+                    .toSet()
+            } catch (_: Exception) {
+                emptySet()
+            }
+        }
+
+        /**
+         * keyCode 解析（纯函数，JVM 单测覆盖）：
+         * custom prev/next 优先；其次 volumeEnabled 音量键；
+         * 最后 hardcodedEnabled 的 PAGE_UP/DPAD_UP/LEFT、
+         * PAGE_DOWN/SPACE/DPAD_DOWN/RIGHT。
+         *
+         * @return (direction "up"/"down", source "custom"/"volume"/"hardcoded")
+         */
+        internal fun directionForKey(
+            keyCode: Int,
+            prevKeys: Set<Int>,
+            nextKeys: Set<Int>,
+            volumeEnabled: Boolean,
+            hardcodedEnabled: Boolean,
+        ): Pair<String, String>? {
+            if (keyCode <= 0) return null
+            if (prevKeys.contains(keyCode)) return "up" to "custom"
+            if (nextKeys.contains(keyCode)) return "down" to "custom"
+            if (volumeEnabled) {
+                when (keyCode) {
+                    KEYCODE_VOLUME_UP -> return "up" to "volume"
+                    KEYCODE_VOLUME_DOWN -> return "down" to "volume"
+                }
+            }
+            if (hardcodedEnabled) {
+                when (keyCode) {
+                    KEYCODE_PAGE_UP,
+                    KEYCODE_DPAD_UP,
+                    KEYCODE_DPAD_LEFT -> return "up" to "hardcoded"
+                    KEYCODE_PAGE_DOWN,
+                    KEYCODE_SPACE,
+                    KEYCODE_DPAD_DOWN,
+                    KEYCODE_DPAD_RIGHT -> return "down" to "hardcoded"
+                }
+            }
+            return null
+        }
+
+        /** 录制可接受的 keyCode（BACK/DEL 交还系统） */
+        internal fun isRecordableKey(keyCode: Int): Boolean =
+            keyCode > 0 && keyCode != KEYCODE_BACK && keyCode != KEYCODE_DEL
+
+        /** 未配置 page 协议时，音量键继续走旧 volumeKey 通道（漫画兼容） */
+        internal fun useLegacyVolumeChannel(
+            pageKeyConfigActive: Boolean,
+            source: String,
+        ): Boolean = !pageKeyConfigActive && source == "volume"
     }
 
     private var channel: MethodChannel? = null
 
-    /** 捕获开关（仅 UI 线程读写的简单标记，@Volatile 保可见性） */
     @Volatile
     private var captureEnabled = false
+
+    @Volatile
+    private var recordingEnabled = false
+
+    @Volatile
+    private var pageKeyConfigActive = false
+
+    @Volatile
+    private var prevKeys: Set<Int> = emptySet()
+
+    @Volatile
+    private var nextKeys: Set<Int> = emptySet()
+
+    @Volatile
+    private var volumeEnabled = true
+
+    @Volatile
+    private var hardcodedEnabled = false
 
     fun setMethodChannel(channel: MethodChannel) {
         this.channel = channel
@@ -80,43 +167,74 @@ class ReaderKeysBridge {
             when (call.method) {
                 "setVolumeKeyCapture" -> {
                     captureEnabled = call.arguments as? Boolean ?: false
+                    if (!captureEnabled) {
+                        // 捕获关闭时恢复旧 volume 协议（漫画/直接调用方）；
+                        // 重新开启后由 setPageKeyConfig 再切到 pageKey。
+                        pageKeyConfigActive = false
+                        recordingEnabled = false
+                    }
+                    result.success(true)
+                }
+                "setPageKeyConfig" -> {
+                    val args = call.arguments as? Map<*, *>
+                    prevKeys = parseKeyCodes(args?.get("prevKeys") as? String)
+                    nextKeys = parseKeyCodes(args?.get("nextKeys") as? String)
+                    volumeEnabled = args?.get("volumeEnabled") as? Boolean ?: true
+                    hardcodedEnabled =
+                        args?.get("hardcodedEnabled") as? Boolean ?: false
+                    pageKeyConfigActive = true
+                    result.success(true)
+                }
+                "setKeyRecording" -> {
+                    recordingEnabled = call.arguments as? Boolean ?: false
                     result.success(true)
                 }
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
-            // 绝不外抛（D2 教训：未捕获异常主线程 FATAL）
             result.error("READER_KEYS_ERROR", e.message, null)
         }
     }
 
     /**
-     * `MainActivity.onKeyDown` 调用：捕获开启且为音量键时通知 Dart
-     * 翻页并消费按键。
+     * `MainActivity.onKeyDown` 调用。
      *
-     * @param keyCode `KeyEvent.keyCode`
-     * @param event 原始按键事件（取 `repeatCount` 判定长按 repeat；
-     *              允许 null 兼容旧调用方，此时按非长按处理）
-     * @return true = 已消费（不调系统音量）；false = 交还系统处理
-     *         （捕获未开 / 非音量键 / channel 未注册 / 通知失败的安全降级）
+     * @return true = 已消费；false = 交还系统
      */
     fun handleKeyDown(keyCode: Int, event: KeyEvent? = null): Boolean {
         if (!captureEnabled) return false
-        val direction = volumeDirection(keyCode) ?: return false
-        // [审查回修 P3-3] channel 未注册时 fail-open：不得消费按键
-        //（修前 `channel?.invokeMethod` 空安全调用后仍 return true，
-        // 会把音量键吞掉且无任何翻页效果）
         val activeChannel = channel ?: return false
-        // repeatCount > 0 即系统长按自动重复（原版 onKeyDown 同一判定）
         val longPress = longPressFromRepeatCount(event?.repeatCount ?: 0)
         return try {
-            activeChannel.invokeMethod(
-                "volumeKey",
-                volumeKeyPayload(direction, longPress)
-            )
+            if (recordingEnabled) {
+                if (!isRecordableKey(keyCode)) return false
+                activeChannel.invokeMethod("recordKey", recordKeyPayload(keyCode))
+                return true
+            }
+            val resolved = directionForKey(
+                keyCode = keyCode,
+                prevKeys = prevKeys,
+                nextKeys = nextKeys,
+                volumeEnabled = volumeEnabled,
+                hardcodedEnabled = hardcodedEnabled,
+            ) ?: return false
+            val direction = resolved.first
+            val source = resolved.second
+            if (pageKeyConfigActive) {
+                activeChannel.invokeMethod(
+                    "pageKey",
+                    pageKeyPayload(direction, longPress, source),
+                )
+            } else if (useLegacyVolumeChannel(pageKeyConfigActive, source)) {
+                activeChannel.invokeMethod(
+                    "volumeKey",
+                    volumeKeyPayload(direction, longPress),
+                )
+            } else {
+                return false
+            }
             true
         } catch (e: Exception) {
-            // 通知失败则不消费（安全降级，让系统处理音量）
             false
         }
     }
