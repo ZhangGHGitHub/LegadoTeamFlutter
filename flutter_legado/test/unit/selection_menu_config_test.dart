@@ -19,10 +19,7 @@ void main() {
   test('空配置默认全 14 顺序 state0', () {
     final config = SelectionMenuConfig.decode('');
     expect(config.items, hasLength(14));
-    expect(
-      config.items.map((e) => e.id).toList(),
-      SelectionMenuIds.all,
-    );
+    expect(config.items.map((e) => e.id).toList(), SelectionMenuIds.all);
     expect(config.items.every((e) => e.showState == 0), isTrue);
   });
 
@@ -52,6 +49,25 @@ void main() {
     expect(config.stateOf(SelectionMenuIds.mark), 0);
   });
 
+  test('宽松解析：showState/enabled 兼容字符串', () {
+    final config = SelectionMenuConfig.decode(
+      jsonEncode([
+        {'id': SelectionMenuIds.copy, 'showState': '1'},
+        {'id': SelectionMenuIds.share, 'showState': '2'},
+        {'id': SelectionMenuIds.browser, 'showState': ' 0 '},
+        {'id': SelectionMenuIds.aloud, 'enabled': 'false'},
+        {'id': SelectionMenuIds.bookmark, 'enabled': '0'},
+        {'id': SelectionMenuIds.mark, 'enabled': 'true'},
+      ]),
+    );
+    expect(config.stateOf(SelectionMenuIds.copy), 1);
+    expect(config.stateOf(SelectionMenuIds.share), 2);
+    expect(config.stateOf(SelectionMenuIds.browser), 0);
+    expect(config.stateOf(SelectionMenuIds.aloud), 1);
+    expect(config.stateOf(SelectionMenuIds.bookmark), 1);
+    expect(config.stateOf(SelectionMenuIds.mark), 0);
+  });
+
   test('非法 JSON/空列表回落默认；未知 id 保留；重复去重', () {
     expect(
       SelectionMenuConfig.decode('bad-json').items.map((e) => e.id).toList(),
@@ -70,7 +86,10 @@ void main() {
       ]),
     );
     expect(config.itemFor('menu_unknown')?.showState, 1);
-    expect(config.items.where((e) => e.id == SelectionMenuIds.copy), hasLength(1));
+    expect(
+      config.items.where((e) => e.id == SelectionMenuIds.copy),
+      hasLength(1),
+    );
     expect(config.stateOf(SelectionMenuIds.copy), 0, reason: '首次出现优先');
   });
 
@@ -85,8 +104,14 @@ void main() {
     expect(view.primary.map((e) => e.id), contains(SelectionMenuIds.copy));
     expect(view.collapsed.map((e) => e.id), contains(SelectionMenuIds.share));
     expect(view.hidden.map((e) => e.id), contains(SelectionMenuIds.browser));
-    expect(view.active.map((e) => e.id), isNot(contains(SelectionMenuIds.browser)));
-    expect(view.active.map((e) => e.id), isNot(contains(SelectionMenuIds.aiClean)));
+    expect(
+      view.active.map((e) => e.id),
+      isNot(contains(SelectionMenuIds.browser)),
+    );
+    expect(
+      view.active.map((e) => e.id),
+      isNot(contains(SelectionMenuIds.aiClean)),
+    );
     expect(
       view.active.map((e) => e.id),
       isNot(contains(SelectionMenuIds.insertBgmBefore)),
@@ -103,13 +128,16 @@ void main() {
       SelectionMenuIds.browser,
     );
     final primary = moved.view.primary.map((e) => e.id).toList();
-    expect(primary.indexOf(SelectionMenuIds.copy), greaterThan(primary.indexOf(SelectionMenuIds.share)));
+    expect(
+      primary.indexOf(SelectionMenuIds.copy),
+      greaterThan(primary.indexOf(SelectionMenuIds.share)),
+    );
 
     final down = config.moveBy(SelectionMenuIds.copy, 1);
-    expect(
-      down.view.primary.map((e) => e.id).take(2),
-      [SelectionMenuIds.share, SelectionMenuIds.copy],
-    );
+    expect(down.view.primary.map((e) => e.id).take(2), [
+      SelectionMenuIds.share,
+      SelectionMenuIds.copy,
+    ]);
     // 越界忽略
     expect(config.moveBy(SelectionMenuIds.copy, -1).encode(), config.encode());
   });

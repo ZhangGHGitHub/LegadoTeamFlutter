@@ -53,6 +53,40 @@ Widget _toolbar(ProviderContainer container) => UncontrolledProviderScope(
   ),
 );
 
+Widget _overlayHost(ProviderContainer container, Offset anchor) =>
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: TextButton(
+                key: const ValueKey('open-selection-toolbar'),
+                onPressed: () => ReaderSelectionToolbar.show(
+                  context,
+                  anchor: anchor,
+                  text: '选中文本',
+                  chapterPos: 0,
+                ),
+                child: const Text('打开浮条'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+Future<void> _openOverlayToolbar(
+  WidgetTester tester,
+  ProviderContainer container,
+  Offset anchor,
+) async {
+  await tester.pumpWidget(_overlayHost(container, anchor));
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('open-selection-toolbar')));
+  await tester.pump();
+}
+
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
@@ -92,16 +126,102 @@ void main() {
         find.byKey(const ValueKey('selection-action-menu_ai_clean')),
         findsNothing,
       );
-      final xCopy = tester.getTopLeft(
-        find.byKey(const ValueKey('selection-action-menu_copy')),
-      ).dx;
-      final xShare = tester.getTopLeft(
-        find.byKey(const ValueKey('selection-action-menu_share_str')),
-      ).dx;
-      final xBrowser = tester.getTopLeft(
-        find.byKey(const ValueKey('selection-action-menu_browser')),
-      ).dx;
+      final xCopy = tester
+          .getTopLeft(find.byKey(const ValueKey('selection-action-menu_copy')))
+          .dx;
+      final xShare = tester
+          .getTopLeft(
+            find.byKey(const ValueKey('selection-action-menu_share_str')),
+          )
+          .dx;
+      final xBrowser = tester
+          .getTopLeft(
+            find.byKey(const ValueKey('selection-action-menu_browser')),
+          )
+          .dx;
       expect(xCopy < xShare && xShare < xBrowser, isTrue, reason: '参考默认顺序');
+    });
+
+    testWidgets('360dp 默认 10 项：更多/管理固定在滚动区外且可点', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await _openOverlayToolbar(
+        tester,
+        _container(_config()),
+        const Offset(180, 300),
+      );
+
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_copy')).hitTestable(),
+        findsOneWidget,
+        reason: '首个动作仍可见',
+      );
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_more')).hitTestable(),
+        findsOneWidget,
+        reason: '更多不得被横向滚动挤出屏幕',
+      );
+      expect(
+        find.byKey(const ValueKey('selection-menu-manage')).hitTestable(),
+        findsOneWidget,
+        reason: '管理不得被横向滚动挤出屏幕',
+      );
+      final moreRect = tester.getRect(
+        find.byKey(const ValueKey('selection-action-menu_more')),
+      );
+      final manageRect = tester.getRect(
+        find.byKey(const ValueKey('selection-menu-manage')),
+      );
+      expect(moreRect.right, lessThanOrEqualTo(360));
+      expect(manageRect.right, lessThanOrEqualTo(360));
+    });
+
+    testWidgets('展开模式屏底锚点 + 1.6 倍字号：菜单不越界且管理可点', (tester) async {
+      tester.view.physicalSize = const Size(576, 1024);
+      tester.view.devicePixelRatio = 1.6;
+      tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await _openOverlayToolbar(
+        tester,
+        _container(_config(expand: true)),
+        const Offset(180, 620),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_copy')).hitTestable(),
+        findsOneWidget,
+        reason: '首行仍可见',
+      );
+      expect(
+        find.byKey(const ValueKey('selection-menu-manage')).hitTestable(),
+        findsOneWidget,
+        reason: '管理按钮仍可点',
+      );
+      final manageRect = tester.getRect(
+        find.byKey(const ValueKey('selection-menu-manage')),
+      );
+      expect(manageRect.top, greaterThanOrEqualTo(0));
+      expect(manageRect.bottom, lessThanOrEqualTo(640));
+    });
+
+    testWidgets('320dp 打开浮条不抛 clamp 参数错误且复制可见', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await _openOverlayToolbar(
+        tester,
+        _container(_config()),
+        const Offset(160, 300),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_copy')).hitTestable(),
+        findsOneWidget,
+      );
     });
 
     testWidgets('折叠项进更多；隐藏项不渲染', (tester) async {
@@ -109,19 +229,24 @@ void main() {
         _toolbar(
           _container(
             _config(
-              states: {
-                SelectionMenuIds.copy: 1,
-                SelectionMenuIds.mark: 2,
-              },
+              states: {SelectionMenuIds.copy: 1, SelectionMenuIds.mark: 2},
             ),
           ),
         ),
       );
       await tester.pump();
-      expect(find.byKey(const ValueKey('selection-action-menu_copy')), findsNothing);
-      expect(find.byKey(const ValueKey('selection-action-menu_mark')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_copy')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_mark')),
+        findsNothing,
+      );
 
-      await tester.tap(find.byKey(const ValueKey('selection-action-menu_more')));
+      await tester.tap(
+        find.byKey(const ValueKey('selection-action-menu_more')),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(TextSelectionPanel), findsOneWidget);
       expect(
@@ -142,17 +267,20 @@ void main() {
           _container(
             _config(
               expand: true,
-              states: {
-                SelectionMenuIds.copy: 1,
-                SelectionMenuIds.mark: 2,
-              },
+              states: {SelectionMenuIds.copy: 1, SelectionMenuIds.mark: 2},
             ),
           ),
         ),
       );
       await tester.pump();
-      expect(find.byKey(const ValueKey('selection-action-menu_copy')), findsOneWidget);
-      expect(find.byKey(const ValueKey('selection-action-menu_mark')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_copy')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('selection-action-menu_mark')),
+        findsNothing,
+      );
       expect(
         find.byKey(const ValueKey('selection-action-menu_more')),
         findsNothing,
@@ -161,9 +289,7 @@ void main() {
     });
 
     testWidgets('showSelectMenuIcon=false 隐藏动作图标；默认显示', (tester) async {
-      await tester.pumpWidget(
-        _toolbar(_container(_config(showIcon: false))),
-      );
+      await tester.pumpWidget(_toolbar(_container(_config(showIcon: false))));
       await tester.pump();
       expect(
         find.descendant(
@@ -173,9 +299,7 @@ void main() {
         findsNothing,
       );
 
-      await tester.pumpWidget(
-        _toolbar(_container(_config(showIcon: true))),
-      );
+      await tester.pumpWidget(_toolbar(_container(_config(showIcon: true))));
       await tester.pump();
       expect(
         find.descendant(
@@ -189,7 +313,9 @@ void main() {
     testWidgets('menu_mark 打开面板并展开高亮颜色；管理打开配置 Sheet', (tester) async {
       await tester.pumpWidget(_toolbar(_container(_config())));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('selection-action-menu_mark')));
+      await tester.tap(
+        find.byKey(const ValueKey('selection-action-menu_mark')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('高亮颜色'), findsOneWidget);
       await tester.tap(find.text('关闭'));
@@ -215,15 +341,35 @@ void main() {
       ),
     );
 
+    testWidgets('360dp 默认 10 项：管理固定在滚动区外且可点', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(panel(_container(_config())));
+      await tester.pump();
+
+      expect(
+        find
+            .byKey(const ValueKey('selection-panel-action-menu_copy'))
+            .hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('selection-panel-manage')).hitTestable(),
+        findsOneWidget,
+      );
+      final manageRect = tester.getRect(
+        find.byKey(const ValueKey('selection-panel-manage')),
+      );
+      expect(manageRect.right, lessThanOrEqualTo(360));
+    });
+
     testWidgets('按配置渲染、隐藏过滤、mark 展开颜色、管理入口', (tester) async {
       await tester.pumpWidget(
         panel(
           _container(
             _config(
-              states: {
-                SelectionMenuIds.mark: 0,
-                SelectionMenuIds.copy: 2,
-              },
+              states: {SelectionMenuIds.mark: 0, SelectionMenuIds.copy: 2},
             ),
           ),
         ),
@@ -243,9 +389,7 @@ void main() {
       await tester.pump();
       expect(find.text('高亮颜色'), findsOneWidget);
 
-      await tester.tap(
-        find.byKey(const ValueKey('selection-panel-manage')),
-      );
+      await tester.tap(find.byKey(const ValueKey('selection-panel-manage')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(
@@ -266,15 +410,28 @@ void main() {
   });
 
   group('配置 Sheet', () {
-    Widget sheet(ReaderAdvancedConfig cfg, ValueChanged<ReaderAdvancedConfig> changed) =>
-        MaterialApp(
-          home: Scaffold(
-            body: TextSelectMenuConfigSheet(
-              config: cfg,
-              onChanged: changed,
-            ),
-          ),
-        );
+    Widget sheet(
+      ReaderAdvancedConfig cfg,
+      ValueChanged<ReaderAdvancedConfig> changed,
+    ) => MaterialApp(
+      home: Scaffold(
+        body: TextSelectMenuConfigSheet(config: cfg, onChanged: changed),
+      ),
+    );
+
+    testWidgets('320×480@1.3 窄屏无横向溢出', (tester) async {
+      tester.view.physicalSize = const Size(320, 480);
+      tester.view.devicePixelRatio = 1.3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(sheet(_config(), (_) {}));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('select-menu-config-sheet')),
+        findsOneWidget,
+      );
+    });
 
     testWidgets('三组渲染、组间移动、上下移、保存 JSON', (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
@@ -285,14 +442,24 @@ void main() {
       await tester.pump();
 
       expect(find.text('一级菜单（10）'), findsOneWidget);
-      expect(find.byKey(const ValueKey('select-menu-item-menu_copy')), findsOneWidget);
-      expect(find.byKey(const ValueKey('select-menu-item-menu_ai_clean')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('select-menu-item-menu_copy')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('select-menu-item-menu_ai_clean')),
+        findsNothing,
+      );
 
       // 下移 copy
-      await tester.tap(find.byKey(const ValueKey('select-menu-down-menu_copy')));
+      await tester.tap(
+        find.byKey(const ValueKey('select-menu-down-menu_copy')),
+      );
       await tester.pump();
       // 将 share 移到隐藏
-      await tester.tap(find.byKey(const ValueKey('select-menu-move-menu_share_str')));
+      await tester.tap(
+        find.byKey(const ValueKey('select-menu-move-menu_share_str')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('移至隐藏'));
       await tester.pumpAndSettle();
@@ -319,19 +486,16 @@ void main() {
       ReaderAdvancedConfig? updated;
       await tester.pumpWidget(sheet(_config(), (v) => updated = v));
       await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('select-menu-down-menu_copy')));
+      await tester.tap(
+        find.byKey(const ValueKey('select-menu-down-menu_copy')),
+      );
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('select-menu-save')));
       await tester.pumpAndSettle();
-      final primary = SelectionMenuConfig.decode(updated!.textSelectMenuConfig)
-          .view
-          .primary
-          .map((e) => e.id)
-          .toList();
-      expect(primary.take(2), [
-        SelectionMenuIds.share,
-        SelectionMenuIds.copy,
-      ]);
+      final primary = SelectionMenuConfig.decode(
+        updated!.textSelectMenuConfig,
+      ).view.primary.map((e) => e.id).toList();
+      expect(primary.take(2), [SelectionMenuIds.share, SelectionMenuIds.copy]);
     });
 
     testWidgets('组内拖拽 onReorderItem 生效', (tester) async {
@@ -348,11 +512,9 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('select-menu-save')));
       await tester.pumpAndSettle();
-      final primary = SelectionMenuConfig.decode(updated!.textSelectMenuConfig)
-          .view
-          .primary
-          .map((e) => e.id)
-          .toList();
+      final primary = SelectionMenuConfig.decode(
+        updated!.textSelectMenuConfig,
+      ).view.primary.map((e) => e.id).toList();
       expect(primary.take(3), [
         SelectionMenuIds.share,
         SelectionMenuIds.browser,
