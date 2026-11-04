@@ -133,6 +133,51 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     );
   }
 
+  // ===== 自定义翻页键 / 按键长按（[批4b] 阅读器 more 页） =====
+
+  Widget _buildKeyPageControls() {
+    return Column(
+      children: [
+        ListTile(
+          key: const ValueKey('reader-page-key-entry'),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          leading: const Icon(Icons.keyboard_outlined),
+          title: const Text('自定义翻页键'),
+          subtitle: Text(
+            _config.prevKeyCodes.isEmpty && _config.nextKeyCodes.isEmpty
+                ? '未设置（仅 Android 生效）'
+                : '上一页 ${_config.prevKeyCodes} / 下一页 ${_config.nextKeyCodes}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => PageKeyConfigSheet.show(
+            context,
+            config: _config.copy(),
+            onChanged: (cfg) {
+              _config = cfg.copy();
+              _commit();
+            },
+          ),
+        ),
+        SwitchListTile(
+          key: const ValueKey('reader-key-page-longpress-switch'),
+          dense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          title: const Text('按键长按翻页'),
+          subtitle: const Text('关闭时长按不连续翻页，且 600 毫秒内只翻一页'),
+          value: _config.keyPageOnLongPress,
+          onChanged: (v) {
+            _config.keyPageOnLongPress = v;
+            _commit();
+          },
+        ),
+      ],
+    );
+  }
+
   // ===== 段落间距 =====
 
   Widget _buildParagraphSpacing() {

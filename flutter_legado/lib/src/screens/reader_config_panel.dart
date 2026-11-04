@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/pref_keys.dart' show PrefKeys;
 import '../models/flip_mode.dart';
 import '../models/reader_tap_action.dart';
+import '../utils/page_key_codes.dart';
 import '../models/reader_theme.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
@@ -20,6 +21,7 @@ import '../widgets/reader/reader_padding_config_sheet.dart';
 import '../widgets/reader/reader_tip_config_sheet.dart';
 import '../widgets/reader/reader_top_bar_config_sheet.dart';
 import 'click_action_config_sheet.dart';
+import 'page_key_config_sheet.dart';
 part 'reader_config_panel_data.part.dart';
 part 'reader_config_panel_builders.part.dart';
 
@@ -214,6 +216,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           const SizedBox(height: 12),
           _groupCard(_buildClickActionEntry()),
           const SizedBox(height: 12),
+          _groupCard(_buildKeyPageControls()),
+          const SizedBox(height: 12),
           _groupCard(_buildBrightnessControl()),
         ];
         break;
@@ -226,6 +230,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           _groupCard(_buildAutoPageTurn()),
           const SizedBox(height: 12),
           _groupCard(_buildClickActionEntry()),
+          const SizedBox(height: 12),
+          _groupCard(_buildKeyPageControls()),
           const SizedBox(height: 12),
           _groupCard(_buildBrightnessControl()),
           const SizedBox(height: 12),

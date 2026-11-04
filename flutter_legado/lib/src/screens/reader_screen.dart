@@ -228,6 +228,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // 由本页切换朗读，而不是由服务直接启动另一份朗读
     _headsetMediaButtonService = ref.read(headsetMediaButtonServiceProvider);
     _attachHeadsetHandler();
+    // [批4b] 录制态变化 → 重算 page 键捕获（Sheet 打开时路由不 current
+    // 也要保持捕获以接收 recordKey）
+    PlatformBridgeService.instance.keyRecording.addListener(
+      _syncVolumeKeyCapture,
+    );
   }
 
   @override
@@ -258,6 +263,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void dispose() {
     _tapHoldTimer?.cancel();
+    PlatformBridgeService.instance.keyRecording.removeListener(
+      _syncVolumeKeyCapture,
+    );
     if (_hardwareKeyboardHandlerRegistered) {
       HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     }
@@ -459,12 +467,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   bool get _nativeVolumeKeySupported =>
       PlatformBridgeService.instance.volumeKeyCaptureSupported;
 
-  /// 当前上下文是否允许音量键翻页（原生 capture 与桌面键盘共用门控）
+  /// 当前上下文是否允许音量键翻页（桌面键盘/旧协议共用）
   ///
-  /// - 阅读菜单展开：交还系统（对齐原版 ReadBookActivity.onKeyDown
-  ///   L1042-1044 `if (menuLayoutIsVisible) return super.onKeyDown`）；
-  /// - 目录/设置等子路由压栈（阅读器非当前路由）：不生效；
-  /// - volumeKeyPage 关闭，或朗读中且 volumeKeyPageOnPlay 关闭：交还系统。
+  /// - 阅读菜单展开：交还系统；
+  /// - 目录/设置等子路由压栈：不生效；
+  /// - volumeKeyPage 关闭，或朗读中且 volumeKeyPageOnPlay 关闭。
   bool get _volumeKeyContextAllows {
     if (ref.read(readerNotifierProvider).showControls) return false;
     final route = ModalRoute.of(context);
@@ -474,41 +481,80 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return cfg.volumeKeyPage && (!aloud || cfg.volumeKeyPageOnPlay);
   }
 
-  /// [设备验收 P1] 同步 Android 原生 capture 开关（与门控状态去重）
+  /// [批4b] page 键捕获门控：录制态不受菜单/路由限制；否则需菜单收起
+  /// 且阅读器为当前路由（自定义/硬编码不依赖 volumeKeyPage）
+  bool get _pageKeyContextAllows {
+    final bridge = PlatformBridgeService.instance;
+    if (bridge.keyRecording.value) return true;
+    if (ref.read(readerNotifierProvider).showControls) return false;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return false;
+    return true;
+  }
+
+  /// [批4b] 同步 Android 原生 page 键捕获（含音量/自定义/硬编码）
   ///
-  /// 冷启动直达阅读器时 FlutterView 可能未聚焦，HardwareKeyboard 收不到
-  /// 音量键；原生 ReaderKeysBridge 由 MainActivity.onKeyDown 拦截，与
-  /// 焦点无关。仅在文本阅读器活跃且门控通过时开启；菜单展开/子路由/
-  /// 退出/切书时关闭，交还系统音量。桌面/iOS 无通道直接 no-op。
+  /// 自定义键始终可用；音量键由原生按 volumeEnabled 分流（Dart 侧
+  /// volumeKeyPage/朗读开关只影响 volume source）。
   void _syncVolumeKeyCapture() {
     if (!mounted) return;
     final bridge = PlatformBridgeService.instance;
-    if (!bridge.volumeKeyCaptureSupported) return;
-    final shouldCapture = _volumeKeyContextAllows;
-    if (shouldCapture == _nativeVolumeKeyCaptureActive) return;
-    _nativeVolumeKeyCaptureActive = shouldCapture;
-    if (shouldCapture) {
-      unawaited(bridge.acquireVolumeKeyCapture(this, _handleNativeVolumeKey));
-    } else {
-      unawaited(bridge.releaseVolumeKeyCapture(this));
+    if (!bridge.pageKeyCaptureSupported) return;
+    final shouldCapture = _pageKeyContextAllows;
+    if (!shouldCapture) {
+      if (!_nativeVolumeKeyCaptureActive) return;
+      _nativeVolumeKeyCaptureActive = false;
+      unawaited(bridge.releasePageKeyCapture(this));
+      return;
     }
+    _nativeVolumeKeyCaptureActive = true;
+    final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
+    final aloud = ref.read(audioNotifierProvider).isPlaying;
+    unawaited(
+      bridge.acquirePageKeyCapture(
+        this,
+        prevKeys: cfg.prevKeyCodes,
+        nextKeys: cfg.nextKeyCodes,
+        volumeEnabled: cfg.volumeKeyPage && (!aloud || cfg.volumeKeyPageOnPlay),
+        hardcodedEnabled: true,
+        onEvent: _handleNativePageKey,
+      ),
+    );
   }
 
-  /// [设备验收 P1] 强制关闭原生 capture（dispose/切书路径）
-  ///
-  /// 仅在本页确实开启过时关闭：若子路由（含漫画阅读器）已接管捕获，
-  /// 本页不得重复 unregister/disable，避免误关上层阅读器。
+  /// [设备验收 P1 / 批4b] 强制关闭原生 capture（dispose/切书路径）
   void _disableNativeVolumeKeyCapture() {
     if (!_nativeVolumeKeyCaptureActive) return;
     final bridge = PlatformBridgeService.instance;
-    if (!bridge.volumeKeyCaptureSupported) return;
+    if (!bridge.pageKeyCaptureSupported) return;
     _nativeVolumeKeyCaptureActive = false;
-    unawaited(bridge.releaseVolumeKeyCapture(this));
+    unawaited(bridge.releasePageKeyCapture(this));
   }
 
-  /// [设备验收 P1] 原生 `volumeKey` 事件入口（Map {direction,longPress}）
-  Future<void> _handleNativeVolumeKey(String direction, bool longPress) async {
-    _handleVolumeKey(direction, longPress);
+  /// [批4b] 原生 pageKey 事件入口
+  Future<void> _handleNativePageKey(PageKeyEvent event) async {
+    if (!mounted) return;
+    if (event.source == 'volume') {
+      // 音量 source 维持原 volumeKeyPage/播放中开关语义
+      if (!_volumeKeyContextAllows) return;
+    } else if (!_pageKeyContextAllows) {
+      return;
+    }
+    final pageView = _pageViewKey.currentState;
+    if (pageView == null) return;
+    final cfg = ref.read(readerAdvConfigProvider) ?? _advConfig;
+    if (!_volumeKeyPageGate.shouldTurnPage(
+      direction: event.direction,
+      longPress: event.longPress,
+      keyPageOnLongPress: cfg.keyPageOnLongPress,
+    )) {
+      return;
+    }
+    if (event.direction == 'down') {
+      pageView.nextPageOrChapter();
+    } else {
+      pageView.prevPageOrChapter();
+    }
   }
 
   /// 统一音量键翻页处理（原生事件与桌面 Keyboard 共用）
@@ -923,7 +969,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // [设备验收 P1] volumeKeyPage / 朗读时翻页开关变化 → 重算原生捕获
     ref.listen(
       readerAdvConfigProvider.select(
-        (c) => (c?.volumeKeyPage, c?.volumeKeyPageOnPlay),
+        (c) => (
+          c?.volumeKeyPage,
+          c?.volumeKeyPageOnPlay,
+          c?.prevKeyCodes,
+          c?.nextKeyCodes,
+        ),
       ),
       (prev, next) {
         if (prev != next) _syncVolumeKeyCapture();

@@ -38,6 +38,7 @@ import '../widgets/legado_app_bar.dart';
 import '../widgets/setting_cards.dart' show LabelMediumEmphasized;
 import '../widgets/setting_slider_row.dart';
 import 'click_action_config_sheet.dart';
+import 'page_key_config_sheet.dart';
 import 'reader_config_panel.dart';
 
 // 既有调用方/测试从本文件导入 SettingSliderRow（批1a 时定义在本文件）；
@@ -234,6 +235,22 @@ class _ReadConfigScreenState extends ConsumerState<ReadConfigScreen> {
           title: '点击区域设置',
           subtitle: '9 个区域（3×3 九宫格）',
           onTap: () => ClickActionConfigSheet.show(
+            context,
+            config: cfg.copy(),
+            onChanged: (updated) {
+              _config = updated.copy();
+              setState(() {});
+              unawaited(_persist());
+            },
+          ),
+        ),
+        IosListTile(
+          key: const ValueKey('read-config-page-key-entry'),
+          title: '自定义翻页键',
+          subtitle: cfg.prevKeyCodes.isEmpty && cfg.nextKeyCodes.isEmpty
+              ? '未设置（仅 Android 生效）'
+              : '上一页 ${cfg.prevKeyCodes} / 下一页 ${cfg.nextKeyCodes}',
+          onTap: () => PageKeyConfigSheet.show(
             context,
             config: cfg.copy(),
             onChanged: (updated) {
