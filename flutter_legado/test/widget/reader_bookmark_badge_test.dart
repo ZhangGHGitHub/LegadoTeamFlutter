@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_legado/src/services/bookmark_badge_image_store.dart';
 import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_bookmark_badge.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_page_chrome.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 
 /// 1×1 透明 PNG（自定义图渲染路径用，避免解码失败走 errorBuilder）
@@ -45,6 +46,7 @@ Widget _page({
   String image = '',
   int size = 10,
   EdgeInsets padding = const EdgeInsets.fromLTRB(20, 24, 20, 24),
+  ReaderPageChromeConfig pageChrome = const ReaderPageChromeConfig(),
 }) => _host(
   SizedBox(
     width: 300,
@@ -60,6 +62,7 @@ Widget _page({
       backgroundColor: Colors.white,
       textColor: Colors.black,
       contentPadding: padding,
+      pageChrome: pageChrome,
       showBookmarkBadge: showBadge,
       bookmarkBadgeImage: image,
       bookmarkBadgeSize: size,
@@ -69,12 +72,37 @@ Widget _page({
 
 void main() {
   group('默认角标', () {
-    test('几何常量对齐参考（宽=size、高=2×size、内缩 2/6dp）', () {
+    test('几何常量对齐参考（12×24 视口、可见 2/3×5/6、缺口 25%）', () {
       expect(ReaderBookmarkBadgeGeometry.width(10), 10);
       expect(ReaderBookmarkBadgeGeometry.height(10), 20);
       expect(ReaderBookmarkBadgeGeometry.width(0), 0);
-      expect(ReaderBookmarkBadgeGeometry.topInset, 2);
+      expect(ReaderBookmarkBadgeGeometry.topInset, 0, reason: 'path 自带顶部内缩');
       expect(ReaderBookmarkBadgeGeometry.rightInset, 6);
+      expect(ReaderBookmarkBadgeGeometry.referenceWidth, 12);
+      expect(ReaderBookmarkBadgeGeometry.referenceHeight, 24);
+      expect(
+        (
+          ReaderBookmarkBadgeGeometry.ribbonLeft,
+          ReaderBookmarkBadgeGeometry.ribbonRight,
+        ),
+        (2, 10),
+      );
+      expect(
+        (
+          ReaderBookmarkBadgeGeometry.ribbonTop,
+          ReaderBookmarkBadgeGeometry.ribbonBottom,
+        ),
+        (2, 22),
+      );
+      expect(
+        ReaderBookmarkBadgeGeometry.visibleWidth(10),
+        closeTo(20 / 3, 1e-9),
+      );
+      expect(
+        ReaderBookmarkBadgeGeometry.visibleHeight(10),
+        closeTo(50 / 3, 1e-9),
+      );
+      expect(ReaderBookmarkBadgeGeometry.notchDepthRatio, 0.25);
       expect(kBookmarkBadgeDefaultColor, const Color(0xFFFFC107));
     });
 
@@ -84,7 +112,10 @@ void main() {
         find.byKey(const ValueKey('bookmark-badge-default')),
         findsOneWidget,
       );
-      expect(tester.getSize(find.byType(ReaderBookmarkBadge)), const Size(10, 20));
+      expect(
+        tester.getSize(find.byType(ReaderBookmarkBadge)),
+        const Size(10, 20),
+      );
     });
 
     testWidgets('size<=0 → 不渲染任何内容', (tester) async {
@@ -160,7 +191,7 @@ void main() {
         findsNothing,
       );
       final image = tester.widget<Image>(find.byType(Image));
-      expect(image.fit, BoxFit.cover);
+      expect(image.fit, BoxFit.contain, reason: '参考 min(w/bw,h/bh) 居中留白');
       expect(
         tester.getSize(find.byType(ReaderBookmarkBadge)),
         const Size(12, 24),
@@ -179,7 +210,9 @@ void main() {
       expect(find.byType(ReaderBookmarkBadge), findsNothing);
     });
 
-    testWidgets('几何：top=contentTop+2，right=contentRight+6', (tester) async {
+    testWidgets('几何：top=contentTop+topInset，right=contentRight+6', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _page(
           showBadge: true,
@@ -200,6 +233,39 @@ void main() {
       expect(positioned.right, 37 + ReaderBookmarkBadgeGeometry.rightInset);
       expect(positioned.left, isNull);
       expect(positioned.bottom, isNull);
+    });
+
+    testWidgets('页眉启用时 top 叠加页眉块高（不被页眉覆盖）', (tester) async {
+      const chrome = ReaderPageChromeConfig(
+        headerMode: 1,
+        headerPaddingTop: 4,
+        headerPaddingBottom: 6,
+        showHeaderLine: true,
+        tipHeaderLeft: 2,
+      );
+      const padding = EdgeInsets.fromLTRB(11, 23, 37, 19);
+      await tester.pumpWidget(
+        _page(showBadge: true, padding: padding, pageChrome: chrome),
+      );
+
+      final headerHeight = ReaderPageLayoutMetrics.headerBlockHeight(
+        tester.element(find.byType(ReaderTypographicPage)),
+        chrome,
+      );
+      expect(headerHeight, greaterThan(0), reason: '页眉启用应有块高');
+
+      final positioned = tester
+          .widgetList<Positioned>(
+            find.ancestor(
+              of: find.byType(ReaderBookmarkBadge),
+              matching: find.byType(Positioned),
+            ),
+          )
+          .last;
+      expect(
+        positioned.top,
+        headerHeight + padding.top + ReaderBookmarkBadgeGeometry.topInset,
+      );
     });
   });
 }

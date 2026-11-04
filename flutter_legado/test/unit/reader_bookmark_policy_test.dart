@@ -28,13 +28,54 @@ PageInfo _page(int start, int end) => PageInfo(
   totalHeight: 20,
 );
 
+LineInfo _line({
+  required int startIndex,
+  required int endIndex,
+  required int chapterStartIndex,
+  int highlightSkip = 0,
+  bool mapped = true,
+}) => LineInfo(
+  words: const [],
+  width: 0,
+  height: 10,
+  startIndex: startIndex,
+  endIndex: endIndex,
+  chapterStartIndex: chapterStartIndex,
+  highlightSkip: highlightSkip,
+  highlightMapped: mapped,
+);
+
+/// 跨页长段落分片：段落 start/end 恒为整段 0..6600，仅 lines 不同
+PageInfo _longParagraphSlice({
+  required int lineStart,
+  required int lineEnd,
+  required int chapterStart,
+}) => PageInfo(
+  paragraphs: [
+    ParagraphInfo(
+      lines: [
+        _line(
+          startIndex: lineStart,
+          endIndex: lineEnd,
+          chapterStartIndex: chapterStart,
+        ),
+      ],
+      totalHeight: 20,
+      startIndex: 0,
+      endIndex: 6600,
+    ),
+  ],
+  totalHeight: 20,
+);
+
 Bookmark _bookmark({
+  int id = 1,
   String bookName = '书',
   String bookAuthor = '作者',
   int chapterIndex = 0,
   int chapterPos = 0,
 }) => Bookmark(
-  id: 1,
+  id: id,
   bookName: bookName,
   bookAuthor: bookAuthor,
   chapterIndex: chapterIndex,
@@ -83,22 +124,18 @@ void main() {
 
     test('双页屏取左右并集；右页缺失/空时回落左页', () {
       final pages = [_page(0, 100), _page(100, 180)];
-      final merged = readerBookmarkRangeForScreen(
-        pages,
-        0,
-        doublePage: true,
-      );
+      final merged = readerBookmarkRangeForScreen(pages, 0, doublePage: true);
       expect((merged.start, merged.end), (0, 180));
 
       final single = readerBookmarkRangeForScreen(pages, 0);
       expect((single.start, single.end), (0, 100));
 
-      final lastLeft = readerBookmarkRangeForScreen(
-        pages,
-        1,
-        doublePage: true,
+      final lastLeft = readerBookmarkRangeForScreen(pages, 1, doublePage: true);
+      expect(
+        (lastLeft.start, lastLeft.end),
+        (0, 180),
+        reason: '奇数索引按屏首左页 0 对齐（双页恒偶数起）',
       );
-      expect((lastLeft.start, lastLeft.end), (100, 180));
 
       final emptyRight = readerBookmarkRangeForScreen(
         [_page(0, 100), const PageInfo(paragraphs: [], totalHeight: 0)],
@@ -108,6 +145,101 @@ void main() {
       expect((emptyRight.start, emptyRight.end), (0, 100));
     });
 
+    test('超长段落跨页：每页 range 取可见行区间且互不重叠', () {
+      // 模拟 29 页长段：段落 start/end 恒为 0..6600，仅行切片推进
+      const pageSize = 200;
+      final pages = [
+        for (var i = 0; i < 29; i++)
+          _longParagraphSlice(
+            lineStart: i * pageSize,
+            lineEnd: (i + 1) * pageSize,
+            chapterStart: i * pageSize,
+          ),
+      ];
+
+      final ranges = [
+        for (final page in pages) readerBookmarkRangeForPage(page),
+      ];
+      for (var i = 0; i < ranges.length; i++) {
+        expect(
+          (ranges[i].start, ranges[i].end),
+          (i * pageSize, (i + 1) * pageSize),
+          reason: '第 $i 页必须等于本页可见行区间，而非整段 0..6600',
+        );
+      }
+      for (var i = 1; i < ranges.length; i++) {
+        expect(ranges[i].start, ranges[i - 1].end, reason: '相邻页首尾相接且不重叠（右开区间）');
+        expect(
+          ranges[i - 1].contains(ranges[i].start),
+          isFalse,
+          reason: '上一页不得包含下一页起点',
+        );
+      }
+      expect(ranges.first.contains(0), isTrue, reason: '仅第 0 页包含章首偏移 0');
+      for (var i = 1; i < ranges.length; i++) {
+        expect(ranges[i].contains(0), isFalse);
+      }
+    });
+
+    test('跨页长段页首正文只取可见行，不返回整段', () {
+      final content = List.filled(6600, 'a').join();
+      final text = readerBookmarkPageStartText(
+        page: _longParagraphSlice(
+          lineStart: 4000,
+          lineEnd: 4100,
+          chapterStart: 4000,
+        ),
+        chapterContent: content,
+      );
+      expect(text.length, 100, reason: '页首只取本页首行可见字符');
+      expect(text, content.substring(4000, 4100));
+    });
+
+    test('首行含缩进/未映射时回落段落偏移', () {
+      final withIndent = PageInfo(
+        paragraphs: [
+          ParagraphInfo(
+            lines: [
+              _line(
+                startIndex: 0,
+                endIndex: 20,
+                chapterStartIndex: 10,
+                highlightSkip: 2,
+              ),
+            ],
+            totalHeight: 10,
+            startIndex: 10,
+            endIndex: 30,
+          ),
+        ],
+        totalHeight: 10,
+      );
+      final range = readerBookmarkRangeForPage(withIndent);
+      expect(range.start, 10, reason: '行起点跳过缩进后映射到章节偏移 10');
+      expect(range.end, 28, reason: '可见长度 20-0-2=18');
+
+      final unmapped = PageInfo(
+        paragraphs: [
+          ParagraphInfo(
+            lines: [
+              _line(
+                startIndex: 0,
+                endIndex: 20,
+                chapterStartIndex: 999,
+                mapped: false,
+              ),
+            ],
+            totalHeight: 10,
+            startIndex: 10,
+            endIndex: 30,
+          ),
+        ],
+        totalHeight: 10,
+      );
+      final fallback = readerBookmarkRangeForPage(unmapped);
+      expect((fallback.start, fallback.end), (10, 30), reason: '未映射回落段落');
+    });
+
     test('越界页索引夹逼；空列表空区间', () {
       final pages = [_page(0, 100)];
       expect(
@@ -115,10 +247,7 @@ void main() {
         0,
         reason: '索引夹逼到末页',
       );
-      expect(
-        readerBookmarkRangeForScreen(const [], 0).isEmpty,
-        isTrue,
-      );
+      expect(readerBookmarkRangeForScreen(const [], 0).isEmpty, isTrue);
     });
   });
 
@@ -167,6 +296,46 @@ void main() {
         ),
         isNull,
         reason: '章节不一致不命中',
+      );
+    });
+
+    test('区间内多条按 referencePos 取最近，不取列表第一条', () {
+      final bookmarks = [
+        _bookmark(id: 1, chapterPos: 110),
+        _bookmark(id: 2, chapterPos: 190),
+      ];
+      expect(
+        readerBookmarkInRange(
+          bookmarks,
+          bookName: '书',
+          bookAuthor: '作者',
+          chapterIndex: 0,
+          range: range,
+          referencePos: 180,
+        )?.id,
+        2,
+      );
+      expect(
+        readerBookmarkInRange(
+          bookmarks,
+          bookName: '书',
+          bookAuthor: '作者',
+          chapterIndex: 0,
+          range: range,
+          referencePos: 120,
+        )?.id,
+        1,
+      );
+      expect(
+        readerBookmarkInRange(
+          bookmarks,
+          bookName: '书',
+          bookAuthor: '作者',
+          chapterIndex: 0,
+          range: range,
+        )?.id,
+        1,
+        reason: '缺省 referencePos=range.start',
       );
     });
 

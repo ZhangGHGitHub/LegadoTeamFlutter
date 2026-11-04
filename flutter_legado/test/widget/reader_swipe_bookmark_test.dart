@@ -73,8 +73,10 @@ class _BookmarkApi extends MockRustApi {
   Future<List<BookChapter>> getChapters(String bookUrl) async => _chapters;
 
   @override
-  Future<String> getChapterContentFull(String bookUrl, int chapterIndex) async =>
-      _longContent;
+  Future<String> getChapterContentFull(
+    String bookUrl,
+    int chapterIndex,
+  ) async => _longContent;
 
   @override
   Future<String> getChapterContent(String bookUrl, int chapterIndex) async =>
@@ -100,7 +102,9 @@ _BookmarkApi _stubApi(List<Bookmark> stored) {
   when(() => api.getBookSources()).thenAnswer((_) async => const []);
   when(() => api.getConfig(any())).thenAnswer((_) async => '');
   when(() => api.getBook(any())).thenAnswer((_) async => _book);
-  when(() => api.getBookmarksByBook(any(), any())).thenAnswer((invocation) async {
+  when(() => api.getBookmarksByBook(any(), any())).thenAnswer((
+    invocation,
+  ) async {
     final name = invocation.positionalArguments[0] as String;
     final author = invocation.positionalArguments[1] as String;
     return stored
@@ -210,7 +214,8 @@ void main() {
     expect(added.bookAuthor, '作者B');
     expect(added.chapterIndex, 0);
     expect(added.chapterPos, expectedPos, reason: '书签落在当前屏页首');
-    expect(added.bookText, expectedText, reason: '摘要取页首段落正文');
+    expect(added.bookText, expectedText, reason: '摘要取页首可见行正文');
+    expect(added.content, '', reason: 'content 是用户备注，不得写正文');
     expect(
       find.byKey(const ValueKey('bookmark-badge-default')),
       findsWidgets,
@@ -349,7 +354,8 @@ void main() {
     // 改回 10dp + 缺失的自定义图标识 → 默认书签带
     await tester.pumpWidget(const SizedBox());
     _mockPrefs(
-      bookmarkBadgeImage: 'bookmark_badges/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+      bookmarkBadgeImage:
+          'bookmark_badges/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
     );
     final (container2, _) = await _pumpReader(tester, stored: stored);
     addTearDown(container2.dispose);
@@ -367,7 +373,8 @@ void main() {
     addTearDown(container.dispose);
 
     await _turnToNextPage(tester);
-    final expectedPos = _pageState(tester).currentPageStartPos;
+    final pageState = _pageState(tester);
+    final expectedPos = pageState.currentPageStartPos;
     expect(expectedPos, greaterThan(0));
 
     final panel = tester.widget<ReaderMenuPanel>(find.byType(ReaderMenuPanel));
@@ -375,7 +382,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(api.added, hasLength(1));
-    expect(api.added.single.chapterPos, expectedPos);
+    final added = api.added.single;
+    expect(added.chapterPos, expectedPos);
+    expect(
+      added.chapterIndex,
+      pageState.currentPageChapterIndex,
+      reason: '章号与页偏移同源（PageView 页上下文）',
+    );
+    expect(
+      added.chapterName,
+      pageState.currentPageChapterTitle,
+      reason: '章名与页偏移同源（PageView 页上下文）',
+    );
+    expect(added.content, '', reason: 'content 不得写入正文');
   });
 
   testWidgets('同页切书按新书键重新加载书签', (tester) async {

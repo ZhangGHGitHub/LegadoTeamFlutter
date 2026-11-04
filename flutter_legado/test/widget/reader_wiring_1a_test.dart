@@ -44,8 +44,9 @@ const _chapters = [
 MockRustApi _stubApi() {
   final api = MockRustApi();
   when(() => api.getChapters(any())).thenAnswer((_) async => _chapters);
-  when(() => api.getChapterContentFull(any(), any()))
-      .thenAnswer((i) async => 'CH${i.positionalArguments[1]}');
+  when(
+    () => api.getChapterContentFull(any(), any()),
+  ).thenAnswer((i) async => 'CH${i.positionalArguments[1]}');
   when(() => api.getChapterContent(any(), any())).thenAnswer((_) async => '');
   when(() => api.getBookSources()).thenAnswer((_) async => const []);
   when(() => api.getConfig(any())).thenAnswer((_) async => '');
@@ -114,8 +115,9 @@ Future<ProviderContainer> _pumpReader(WidgetTester tester) async {
   await tester.tap(find.text('进入阅读'));
   await tester.pumpAndSettle();
 
-  final container =
-      ProviderScope.containerOf(tester.element(find.byType(ReaderScreen)));
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(ReaderScreen)),
+  );
   await container.read(readerNotifierProvider.notifier).openBook(_shelfBook);
   await tester.pumpAndSettle();
   return container;
@@ -123,9 +125,7 @@ Future<ProviderContainer> _pumpReader(WidgetTester tester) async {
 
 /// 触发系统返回（maybePop → canPop=false 的 PopScope 拦截）
 void _popReader(WidgetTester tester) {
-  tester
-      .state<NavigatorState>(find.byType(Navigator))
-      .maybePop();
+  tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
 }
 
 void main() {
@@ -163,12 +163,11 @@ void main() {
       expect(find.text('第一章'), findsOneWidget);
 
       // 推送 showReadTitleAddition=false（等价阅读设置页改值路径）
-      final cfg = container.read(readerAdvConfigProvider) ??
+      final cfg =
+          container.read(readerAdvConfigProvider) ??
           (await ReaderAdvancedConfig.load());
       cfg.showReadTitleAddition = false;
-      container
-          .read(readerAdvConfigProvider.notifier)
-          .apply(cfg.copy());
+      container.read(readerAdvConfigProvider.notifier).apply(cfg.copy());
       await tester.pumpAndSettle();
 
       expect(
@@ -195,12 +194,13 @@ void main() {
   });
 
   group('disableReturnKey 返回拦截', () {
-    testWidgets('默认关闭：返回走原退出判定（弹「放入书架」— 已入架书则直接退）',
-        (tester) async {
+    testWidgets('默认关闭：返回走原退出判定（弹「放入书架」— 已入架书则直接退）', (tester) async {
       final container = await _pumpReader(tester);
       addTearDown(container.dispose);
-      expect(container.read(readerAdvConfigProvider)?.disableReturnKey,
-          isFalse);
+      expect(
+        container.read(readerAdvConfigProvider)?.disableReturnKey,
+        isFalse,
+      );
 
       _popReader(tester);
       await tester.pumpAndSettle();
@@ -214,9 +214,10 @@ void main() {
       addTearDown(container.dispose);
 
       // 开启 disableReturnKey（等价阅读设置页改值路径：save + 推 provider）
-      final cfg = (container.read(readerAdvConfigProvider) ??
-              await ReaderAdvancedConfig.load())
-          .copy();
+      final cfg =
+          (container.read(readerAdvConfigProvider) ??
+                  await ReaderAdvancedConfig.load())
+              .copy();
       cfg.disableReturnKey = true;
       await cfg.save();
       container.read(readerAdvConfigProvider.notifier).apply(cfg);
@@ -233,14 +234,14 @@ void main() {
       expect(find.text('放入书架'), findsNothing);
     });
 
-    testWidgets('开启且菜单展开：返回放行走既有退出判定（不吞）',
-        (tester) async {
+    testWidgets('开启且菜单展开：返回放行走既有退出判定（不吞）', (tester) async {
       final container = await _pumpReader(tester);
       addTearDown(container.dispose);
 
-      final cfg = (container.read(readerAdvConfigProvider) ??
-              await ReaderAdvancedConfig.load())
-          .copy();
+      final cfg =
+          (container.read(readerAdvConfigProvider) ??
+                  await ReaderAdvancedConfig.load())
+              .copy();
       cfg.disableReturnKey = true;
       await cfg.save();
       container.read(readerAdvConfigProvider.notifier).apply(cfg);
@@ -267,9 +268,10 @@ void main() {
       final container = await _pumpReader(tester);
       addTearDown(container.dispose);
 
-      final cfg = (container.read(readerAdvConfigProvider) ??
-              await ReaderAdvancedConfig.load())
-          .copy();
+      final cfg =
+          (container.read(readerAdvConfigProvider) ??
+                  await ReaderAdvancedConfig.load())
+              .copy();
       cfg.disableReturnKey = true;
       await cfg.save();
       container.read(readerAdvConfigProvider.notifier).apply(cfg);
@@ -277,15 +279,17 @@ void main() {
       // 连续两次：菜单关 → 吞返回保持；再展开菜单 → 返回退出
       _popReader(tester);
       await tester.pumpAndSettle();
-      expect(find.byType(ReaderScreen), findsOneWidget,
-          reason: '菜单关吞返回（第一路）');
+      expect(find.byType(ReaderScreen), findsOneWidget, reason: '菜单关吞返回（第一路）');
 
       container.read(readerNotifierProvider.notifier).toggleControls();
       await tester.pumpAndSettle();
       _popReader(tester);
       await tester.pumpAndSettle();
-      expect(find.byType(ReaderScreen), findsNothing,
-          reason: '开启 disableReturnKey 后菜单展开路径仍可退出（无死锁）');
+      expect(
+        find.byType(ReaderScreen),
+        findsNothing,
+        reason: '开启 disableReturnKey 后菜单展开路径仍可退出（无死锁）',
+      );
     });
   });
 
@@ -300,9 +304,10 @@ void main() {
       final container = await _pumpReader(tester);
       addTearDown(container.dispose);
 
-      final cfg = (container.read(readerAdvConfigProvider) ??
-              await ReaderAdvancedConfig.load())
-          .copy();
+      final cfg =
+          (container.read(readerAdvConfigProvider) ??
+                  await ReaderAdvancedConfig.load())
+              .copy();
       cfg.sliderVibrator = true;
       await cfg.save();
       container.read(readerAdvConfigProvider.notifier).apply(cfg);
@@ -323,15 +328,22 @@ void main() {
       await tester.drag(slider, Offset(sliderSize.width / 2, 0));
       await tester.pumpAndSettle();
 
-      expect(
-        calls,
-        isNotEmpty,
-        reason: 'sliderVibrator=true 拖动进度条必须触发振动',
-      );
+      expect(calls, isNotEmpty, reason: 'sliderVibrator=true 拖动进度条必须触发振动');
+
+      // [批4d P3] onChanged 按整数档去重：同档多次回调只短振一次
+      final sliderWidget = tester.widget<Slider>(slider);
+      final base = calls.length;
+      sliderWidget.onChangeStart!(0);
+      expect(calls, hasLength(base + 1), reason: 'onChangeStart 强制短振一次');
+      sliderWidget.onChanged!(0.4);
+      expect(calls, hasLength(base + 1), reason: 'round(0.4)=0 与起始同档，不重复');
+      sliderWidget.onChanged!(0.6);
+      expect(calls, hasLength(base + 2), reason: 'round(0.6)=1 跨档，短振一次');
+      sliderWidget.onChanged!(1.0);
+      expect(calls, hasLength(base + 2), reason: 'round(1.0)=1 同档，不重复');
     });
 
-    testWidgets('sliderVibrator=false 拖进度条/翻页均不触发振动（默认行为不变）',
-        (tester) async {
+    testWidgets('sliderVibrator=false 拖进度条/翻页均不触发振动（默认行为不变）', (tester) async {
       final calls = <String>[];
       ReaderMenuPanel.onSeekHaptic = () => calls.add('seek');
       addTearDown(() {
@@ -358,8 +370,9 @@ void main() {
       expect(calls, isEmpty, reason: '默认关闭不振动（对齐参考版默认 false）');
     });
 
-    testWidgets('selectVibrator=true 长按选词触发 HapticFeedback 通道消息',
-        (tester) async {
+    testWidgets('selectVibrator=true 长按选词触发 HapticFeedback 通道消息', (
+      tester,
+    ) async {
       // [批1a 审查回修] mock flutter/platform 通道捕获 HapticFeedback.vibrate
       // 消息（HapticFeedback.selectionClick 发送
       // ('HapticFeedback.vibrate', 'HapticFeedbackType.selectionClick')，
@@ -375,16 +388,19 @@ void main() {
         },
       );
       addTearDown(() {
-        tester.binding.defaultBinaryMessenger
-            .setMockMethodCallHandler(SystemChannels.platform, null);
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
       });
 
       final container = await _pumpReader(tester);
       addTearDown(container.dispose);
 
-      final cfg = (container.read(readerAdvConfigProvider) ??
-              await ReaderAdvancedConfig.load())
-          .copy();
+      final cfg =
+          (container.read(readerAdvConfigProvider) ??
+                  await ReaderAdvancedConfig.load())
+              .copy();
       cfg.selectVibrator = true;
       await cfg.save();
       container.read(readerAdvConfigProvider.notifier).apply(cfg);
@@ -403,8 +419,7 @@ void main() {
       );
     });
 
-    testWidgets('selectVibrator=false 长按选词不发送振动消息（默认）',
-        (tester) async {
+    testWidgets('selectVibrator=false 长按选词不发送振动消息（默认）', (tester) async {
       final haptics = <String>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
@@ -416,8 +431,10 @@ void main() {
         },
       );
       addTearDown(() {
-        tester.binding.defaultBinaryMessenger
-            .setMockMethodCallHandler(SystemChannels.platform, null);
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
       });
 
       final container = await _pumpReader(tester);

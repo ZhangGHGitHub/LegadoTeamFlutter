@@ -105,7 +105,7 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getInt(PrefKeys.bookmarkBadgeSize), 50, reason: '拖到最右为上限 50');
-    expect(find.text('50 dp'), findsWidgets);
+    expect(find.text('50dp'), findsWidgets);
   });
 
   testWidgets('自定义角标图存在时可恢复默认', (tester) async {

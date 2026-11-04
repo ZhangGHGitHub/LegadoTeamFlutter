@@ -67,8 +67,11 @@ void main() {
       expect(find.text('填充刘海区域'), findsOneWidget);
       expect(find.text('扩展到刘海'), findsOneWidget);
       expect(find.text('亮度条模式'), findsOneWidget);
-      expect(find.text('亮度条位置'), findsNothing,
-          reason: '默认模式 0=不显示时位置行不渲染（对齐参考版条件渲染）');
+      expect(
+        find.text('亮度条位置'),
+        findsNothing,
+        reason: '默认模式 0=不显示时位置行不渲染（对齐参考版条件渲染）',
+      );
       expect(find.text('平板/横屏双页'), findsOneWidget);
       expect(find.text('进度条行为'), findsOneWidget);
 
@@ -115,23 +118,30 @@ void main() {
       expect(rowValue('扩展到刘海'), expected.readBodyToLh, reason: '默认 true');
       expect(rowValue('鼠标滚轮翻页'), expected.mouseWheelPage, reason: '默认 true');
       expect(rowValue('音量键翻页'), expected.volumeKeyPage, reason: '默认 true');
-      expect(rowValue('朗读时音量键翻页'), expected.volumeKeyPageOnPlay,
-          reason: '默认 false（原版口径）');
-      expect(rowValue('按键长按翻页'), expected.keyPageOnLongPress,
-          reason: '默认 false（原版 AppConfig / pref_config_read.xml）');
+      expect(
+        rowValue('朗读时音量键翻页'),
+        expected.volumeKeyPageOnPlay,
+        reason: '默认 false（原版口径）',
+      );
+      expect(
+        rowValue('按键长按翻页'),
+        expected.keyPageOnLongPress,
+        reason: '默认 false（原版 AppConfig / pref_config_read.xml）',
+      );
       expect(rowValue('自动换源'), expected.autoChangeSource, reason: '默认 true');
       expect(rowValue('长按选择文本'), expected.selectText, reason: '默认 true');
-      expect(rowValue('展示顶部工具栏附加区域'), expected.showReadTitleAddition,
-          reason: '默认 true');
+      expect(
+        rowValue('展示顶部工具栏附加区域'),
+        expected.showReadTitleAddition,
+        reason: '默认 true',
+      );
       expect(rowValue('滑动进度条时震动'), expected.sliderVibrator, reason: '默认 false');
       expect(rowValue('选择文本时震动'), expected.selectVibrator, reason: '默认 false');
       expect(rowValue('禁用返回键'), expected.disableReturnKey, reason: '默认 false');
 
       // 下拉默认值（泛型行用 is 判定匹配全部实例化后转回具体类型）
       final dropdowns = tester
-          .widgetList(find.byWidgetPredicate(
-            (w) => w is SettingDropdownRow,
-          ))
+          .widgetList(find.byWidgetPredicate((w) => w is SettingDropdownRow))
           .whereType<SettingDropdownRow>()
           .toList();
       // [批1b-1] 屏幕组下拉 +2（保持亮屏 / 亮度条模式）
@@ -141,19 +151,33 @@ void main() {
       expect(orientationRow.value, expected.screenOrientation, reason: '默认 0');
       final keepLightRow = dropdowns.firstWhere((d) => d.title == '保持亮屏');
       expect(keepLightRow.value, expected.keepLight, reason: '默认 0（系统策略）');
-      final brightnessModeRow =
-          dropdowns.firstWhere((d) => d.title == '亮度条模式');
-      expect(brightnessModeRow.value, expected.readBrightnessMode,
-          reason: "默认 '0'（参考版 ReadSettings）");
+      final brightnessModeRow = dropdowns.firstWhere((d) => d.title == '亮度条模式');
+      expect(
+        brightnessModeRow.value,
+        expected.readBrightnessMode,
+        reason: "默认 '0'（参考版 ReadSettings）",
+      );
       final doubleRow = dropdowns.firstWhere((d) => d.title == '平板/横屏双页');
       expect(doubleRow.value, expected.doubleHorizontalPage, reason: '默认 0');
       final progressRow = dropdowns.firstWhere((d) => d.title == '进度条行为');
-      expect(progressRow.value, expected.progressBarBehavior, reason: "默认 'page'");
+      expect(
+        progressRow.value,
+        expected.progressBarBehavior,
+        reason: "默认 'page'",
+      );
       final clickImgRow = dropdowns.firstWhere((d) => d.title == '点击图片方式');
-      expect(clickImgRow.value, expected.clickImgWay,
-          reason: "默认 '2'=兼容旧版（参考版口径）");
-      expect(clickImgRow.options.keys, ['0', '1', '2', '3', '4'],
-          reason: '五档对齐原版 click_image_way_value');
+      expect(
+        clickImgRow.value,
+        expected.clickImgWay,
+        reason: "默认 '2'=兼容旧版（参考版口径）",
+      );
+      expect(clickImgRow.options.keys, [
+        '0',
+        '1',
+        '2',
+        '3',
+        '4',
+      ], reason: '五档对齐原版 click_image_way_value');
 
       // 步进/滑块默认值
       final steppers = tester
@@ -165,11 +189,9 @@ void main() {
           .toList();
       // [批1b-3] 其他组 +1 滑块（无目录时每章字数）
       expect(sliders, hasLength(2));
-      final slopRow =
-          sliders.firstWhere((s) => s.title == '滑动翻页阈值');
+      final slopRow = sliders.firstWhere((s) => s.title == '滑动翻页阈值');
       expect(slopRow.value, expected.pageTouchSlop, reason: '默认 0');
-      final maxLenRow =
-          sliders.firstWhere((s) => s.title == '无目录时每章字数');
+      final maxLenRow = sliders.firstWhere((s) => s.title == '无目录时每章字数');
       expect(maxLenRow.value, expected.maxLengthWithNoToc, reason: '默认 3000');
       expect(maxLenRow.min, 3000, reason: '对齐参考版 valueRange 下限');
       expect(maxLenRow.max, 100000, reason: '对齐参考版 valueRange 上限');
@@ -188,8 +210,9 @@ void main() {
     testWidgets('开关切换 → 持久化 + 共享 provider 推送', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
-      final container =
-          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       // 关 → 开：禁用返回键
       await tester.tap(find.text('禁用返回键'));
@@ -208,16 +231,18 @@ void main() {
       expect((await ReaderAdvancedConfig.load()).selectText, isFalse);
     });
 
-    testWidgets('[批1b-2a] 按键长按翻页开关 → 持久化 + 共享 provider 推送',
-        (tester) async {
+    testWidgets('[批1b-2a] 按键长按翻页开关 → 持久化 + 共享 provider 推送', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
       final container = ProviderScope.containerOf(
-          tester.element(find.byType(ReadConfigScreen)));
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       // 默认 false → 开
-      expect(container.read(readerAdvConfigProvider)?.keyPageOnLongPress,
-          isFalse);
+      expect(
+        container.read(readerAdvConfigProvider)?.keyPageOnLongPress,
+        isFalse,
+      );
       await tester.tap(find.text('按键长按翻页'));
       await tester.pumpAndSettle();
 
@@ -226,8 +251,11 @@ void main() {
         isTrue,
         reason: '改值即推送共享 provider（阅读器即时生效）',
       );
-      expect((await ReaderAdvancedConfig.load()).keyPageOnLongPress, isTrue,
-          reason: 'save 落盘可读回');
+      expect(
+        (await ReaderAdvancedConfig.load()).keyPageOnLongPress,
+        isTrue,
+        reason: 'save 落盘可读回',
+      );
 
       // 再点回 false
       await tester.tap(find.text('按键长按翻页'));
@@ -236,16 +264,14 @@ void main() {
         container.read(readerAdvConfigProvider)?.keyPageOnLongPress,
         isFalse,
       );
-      expect(
-        (await ReaderAdvancedConfig.load()).keyPageOnLongPress,
-        isFalse,
-      );
+      expect((await ReaderAdvancedConfig.load()).keyPageOnLongPress, isFalse);
     });
 
     testWidgets('下拉选择 → 持久化生效（屏幕方向 1=竖屏）', (tester) async {
       await _pump(tester);
-      final container =
-          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       // 点行弹 SimpleDialog（可达性兜底路径）
       await tester.tap(find.text('屏幕方向'));
@@ -266,15 +292,18 @@ void main() {
       await tester.tap(find.text('调整章节位置'));
       await tester.pumpAndSettle();
 
-      expect((await ReaderAdvancedConfig.load()).progressBarBehavior, 'chapter');
+      expect(
+        (await ReaderAdvancedConfig.load()).progressBarBehavior,
+        'chapter',
+      );
     });
 
-    testWidgets('[批1b-2b] 点击图片方式下拉 → 持久化 + 共享 provider 推送',
-        (tester) async {
+    testWidgets('[批1b-2b] 点击图片方式下拉 → 持久化 + 共享 provider 推送', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
       final container = ProviderScope.containerOf(
-          tester.element(find.byType(ReadConfigScreen)));
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       // 默认 "2" → 选 "4"=双击生效
       expect(container.read(readerAdvConfigProvider)?.clickImgWay, '2');
@@ -283,10 +312,16 @@ void main() {
       await tester.tap(find.text('双击生效'));
       await tester.pumpAndSettle();
 
-      expect(container.read(readerAdvConfigProvider)?.clickImgWay, '4',
-          reason: '改值即推送共享 provider（阅读器即时生效）');
-      expect((await ReaderAdvancedConfig.load()).clickImgWay, '4',
-          reason: 'save 落盘可读回');
+      expect(
+        container.read(readerAdvConfigProvider)?.clickImgWay,
+        '4',
+        reason: '改值即推送共享 provider（阅读器即时生效）',
+      );
+      expect(
+        (await ReaderAdvancedConfig.load()).clickImgWay,
+        '4',
+        reason: 'save 落盘可读回',
+      );
 
       // 选回默认 "0"=默认行为
       await tester.tap(find.text('点击图片方式'));
@@ -317,23 +352,22 @@ void main() {
       await tester.tap(find.byTooltip('减少'));
       await tester.pumpAndSettle();
       final decBtn = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byTooltip('减少'),
-          matching: find.byType(IconButton),
-        ).first,
+        find
+            .ancestor(
+              of: find.byTooltip('减少'),
+              matching: find.byType(IconButton),
+            )
+            .first,
       );
-      expect(
-        decBtn.onPressed,
-        isNull,
-        reason: '到下界 0 后减少按钮禁用',
-      );
+      expect(decBtn.onPressed, isNull, reason: '到下界 0 后减少按钮禁用');
     });
 
     testWidgets('滑块拖动 → 持久化生效（滑动翻页阈值）', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
-      final container =
-          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       // [批1b-3] 页面现有两个滑块行，取「滑动翻页阈值」行内的 Slider
       final slopSliderFinder = find.descendant(
@@ -353,12 +387,12 @@ void main() {
       expect((await ReaderAdvancedConfig.load()).pageTouchSlop, 1000);
     });
 
-    testWidgets('[批1b-3] 无目录时每章字数滑块 → 持久化 + Rust config 真源同步',
-        (tester) async {
+    testWidgets('[批1b-3] 无目录时每章字数滑块 → 持久化 + Rust config 真源同步', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
-      final container =
-          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       final maxLenSliderFinder = find.descendant(
         of: find.widgetWithText(Column, '无目录时每章字数'),
@@ -373,24 +407,23 @@ void main() {
       await tester.dragFrom(sliderCenter, const Offset(400, 0));
       await tester.pumpAndSettle();
 
-      expect(container.read(readerAdvConfigProvider)?.maxLengthWithNoToc,
-          100000);
       expect(
-        (await ReaderAdvancedConfig.load()).maxLengthWithNoToc,
+        container.read(readerAdvConfigProvider)?.maxLengthWithNoToc,
         100000,
       );
+      expect((await ReaderAdvancedConfig.load()).maxLengthWithNoToc, 100000);
       // Rust 真源（caches config:maxLengthWithNoToc）的联动语义由
       // _updateMaxLengthWithNoToc 经 bookApiProvider.setConfig 落库，
       // 真实链路由 FFI 层用例（local_txt_no_rule_length_split_follows_config）
       // 覆盖——widget 测试无 Rust 运行时，仅锁定 UI 持久化面。
     });
 
-    testWidgets('滑块拖动中只预览不落盘，松手才提交一次（审查回修 P2-2）',
-        (tester) async {
+    testWidgets('滑块拖动中只预览不落盘，松手才提交一次（审查回修 P2-2）', (tester) async {
       useTallViewport(tester);
       await _pump(tester);
-      final container =
-          ProviderScope.containerOf(tester.element(find.byType(ReadConfigScreen)));
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReadConfigScreen)),
+      );
 
       // [批1b-3] 取「滑动翻页阈值」行内的 Slider（页面现有两个滑块行）
       final slopSliderFinder = find.descendant(
@@ -404,8 +437,11 @@ void main() {
       await tester.pump();
 
       // 拖动中：持久值未变（仍 0），页面显示本地预览值
-      expect(container.read(readerAdvConfigProvider)?.pageTouchSlop, 0,
-          reason: '拖动中不得写盘/推送（逐帧 save 回修点）');
+      expect(
+        container.read(readerAdvConfigProvider)?.pageTouchSlop,
+        0,
+        reason: '拖动中不得写盘/推送（逐帧 save 回修点）',
+      );
       expect((await ReaderAdvancedConfig.load()).pageTouchSlop, 0);
 
       // 松手提交
@@ -437,7 +473,9 @@ void main() {
 
       // 重进页面：回显持久化值（_load 读取）
       await tester.pumpWidget(
-        const ProviderScope(child: MaterialApp(home: Scaffold(body: SizedBox()))),
+        const ProviderScope(
+          child: MaterialApp(home: Scaffold(body: SizedBox())),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.pumpWidget(

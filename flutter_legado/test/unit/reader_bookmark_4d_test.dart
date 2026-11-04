@@ -43,7 +43,10 @@ void main() {
 
       final reloaded = await ReaderAdvancedConfig.load();
       expect(reloaded.swipeToAddBookmark, isTrue);
-      expect(reloaded.bookmarkBadgeImage, 'bookmark_badges/${'a'.padRight(32, 'a')}.png');
+      expect(
+        reloaded.bookmarkBadgeImage,
+        'bookmark_badges/${'a'.padRight(32, 'a')}.png',
+      );
       expect(reloaded.bookmarkBadgeSize, 28);
 
       // 键名逐字对齐参考 PreferKey
@@ -78,7 +81,10 @@ void main() {
         ..bookmarkBadgeSize = 20;
       final copied = cfg.copy()..bookmarkBadgeSize = 5;
       expect(copied.swipeToAddBookmark, isTrue);
-      expect(copied.bookmarkBadgeImage, 'bookmark_badges/${'b'.padRight(32, 'b')}.jpg');
+      expect(
+        copied.bookmarkBadgeImage,
+        'bookmark_badges/${'b'.padRight(32, 'b')}.jpg',
+      );
       expect(copied.bookmarkBadgeSize, 5);
       expect(cfg.bookmarkBadgeSize, 20, reason: '副本修改不影响原实例');
     });
@@ -88,7 +94,8 @@ void main() {
     setUp(() {
       SharedPreferences.setMockInitialValues({
         PrefKeys.swipeToAddBookmark: true,
-        PrefKeys.bookmarkBadgeImage: 'bookmark_badges/${'c'.padRight(32, 'c')}.png',
+        PrefKeys.bookmarkBadgeImage:
+            'bookmark_badges/${'c'.padRight(32, 'c')}.png',
         PrefKeys.bookmarkBadgeSize: 12,
         'unrelatedKey': 'x',
       });
@@ -152,9 +159,7 @@ void main() {
         originalName: 'badge.PNG',
       );
       expect(
-        RegExp(
-          r'^bookmark_badges/[0-9a-f]{32}\.png$',
-        ).hasMatch(id),
+        RegExp(r'^bookmark_badges/[0-9a-f]{32}\.png$').hasMatch(id),
         isTrue,
         reason: '扩展名小写归一，标识只含相对路径',
       );
