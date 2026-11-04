@@ -23,6 +23,16 @@ import android.view.KeyEvent
  */
 class ReaderKeysBridge {
 
+    /** 原生按键状态快照（复位纯函数/JVM 断言用） */
+    internal data class KeyRoutingState(
+        val prevKeys: Set<Int> = emptySet(),
+        val nextKeys: Set<Int> = emptySet(),
+        val volumeEnabled: Boolean = true,
+        val hardcodedEnabled: Boolean = false,
+        val pageKeyConfigActive: Boolean = false,
+        val recordingEnabled: Boolean = false,
+    )
+
     companion object {
         const val CHANNEL = "legado/reader_keys"
 
@@ -133,6 +143,13 @@ class ReaderKeysBridge {
             pageKeyConfigActive: Boolean,
             source: String,
         ): Boolean = !pageKeyConfigActive && source == "volume"
+
+        /** setVolumeKeyCapture(false) 的 legacy 默认态（漫画音量键） */
+        internal fun resetLegacyState(): KeyRoutingState = KeyRoutingState()
+
+        /** 录制只处理首次 keydown，长按 repeat 消费但不重复追加 */
+        internal fun shouldSendRecordKey(repeatCount: Int): Boolean =
+            repeatCount == 0
     }
 
     private var channel: MethodChannel? = null
@@ -141,22 +158,7 @@ class ReaderKeysBridge {
     private var captureEnabled = false
 
     @Volatile
-    private var recordingEnabled = false
-
-    @Volatile
-    private var pageKeyConfigActive = false
-
-    @Volatile
-    private var prevKeys: Set<Int> = emptySet()
-
-    @Volatile
-    private var nextKeys: Set<Int> = emptySet()
-
-    @Volatile
-    private var volumeEnabled = true
-
-    @Volatile
-    private var hardcodedEnabled = false
+    private var keyState = KeyRoutingState()
 
     fun setMethodChannel(channel: MethodChannel) {
         this.channel = channel
@@ -168,25 +170,39 @@ class ReaderKeysBridge {
                 "setVolumeKeyCapture" -> {
                     captureEnabled = call.arguments as? Boolean ?: false
                     if (!captureEnabled) {
-                        // 捕获关闭时恢复旧 volume 协议（漫画/直接调用方）；
-                        // 重新开启后由 setPageKeyConfig 再切到 pageKey。
-                        pageKeyConfigActive = false
-                        recordingEnabled = false
+                        // P1-2 捕获关闭：完整复位 legacy 默认态，避免文本
+                        // 阅读器的 volumeEnabled=false/自定义键残留污染漫画。
+                        keyState = resetLegacyState()
                     }
                     result.success(true)
                 }
                 "setPageKeyConfig" -> {
                     val args = call.arguments as? Map<*, *>
-                    prevKeys = parseKeyCodes(args?.get("prevKeys") as? String)
-                    nextKeys = parseKeyCodes(args?.get("nextKeys") as? String)
-                    volumeEnabled = args?.get("volumeEnabled") as? Boolean ?: true
-                    hardcodedEnabled =
-                        args?.get("hardcodedEnabled") as? Boolean ?: false
-                    pageKeyConfigActive = true
+                    keyState = keyState.copy(
+                        prevKeys = parseKeyCodes(
+                            args?.get("prevKeys") as? String,
+                        ),
+                        nextKeys = parseKeyCodes(
+                            args?.get("nextKeys") as? String,
+                        ),
+                        volumeEnabled =
+                            args?.get("volumeEnabled") as? Boolean ?: true,
+                        hardcodedEnabled =
+                            args?.get("hardcodedEnabled") as? Boolean ?: false,
+                        pageKeyConfigActive = true,
+                    )
                     result.success(true)
                 }
                 "setKeyRecording" -> {
-                    recordingEnabled = call.arguments as? Boolean ?: false
+                    keyState = keyState.copy(
+                        recordingEnabled = call.arguments as? Boolean ?: false,
+                    )
+                    result.success(true)
+                }
+                "resetPageKeyConfig" -> {
+                    // page 租约清空但音量租约仍在（漫画压栈）时复位
+                    // custom/volumeEnabled 残留，保持 capture 不变。
+                    keyState = resetLegacyState()
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -204,28 +220,33 @@ class ReaderKeysBridge {
     fun handleKeyDown(keyCode: Int, event: KeyEvent? = null): Boolean {
         if (!captureEnabled) return false
         val activeChannel = channel ?: return false
-        val longPress = longPressFromRepeatCount(event?.repeatCount ?: 0)
+        val repeatCount = event?.repeatCount ?: 0
+        val longPress = longPressFromRepeatCount(repeatCount)
+        val state = keyState
         return try {
-            if (recordingEnabled) {
+            if (state.recordingEnabled) {
                 if (!isRecordableKey(keyCode)) return false
+                if (!shouldSendRecordKey(repeatCount)) return true
                 activeChannel.invokeMethod("recordKey", recordKeyPayload(keyCode))
                 return true
             }
             val resolved = directionForKey(
                 keyCode = keyCode,
-                prevKeys = prevKeys,
-                nextKeys = nextKeys,
-                volumeEnabled = volumeEnabled,
-                hardcodedEnabled = hardcodedEnabled,
+                prevKeys = state.prevKeys,
+                nextKeys = state.nextKeys,
+                volumeEnabled = state.volumeEnabled,
+                hardcodedEnabled = state.hardcodedEnabled,
             ) ?: return false
             val direction = resolved.first
             val source = resolved.second
-            if (pageKeyConfigActive) {
+            if (state.pageKeyConfigActive) {
                 activeChannel.invokeMethod(
                     "pageKey",
                     pageKeyPayload(direction, longPress, source),
                 )
-            } else if (useLegacyVolumeChannel(pageKeyConfigActive, source)) {
+            } else if (
+                useLegacyVolumeChannel(state.pageKeyConfigActive, source)
+            ) {
                 activeChannel.invokeMethod(
                     "volumeKey",
                     volumeKeyPayload(direction, longPress),

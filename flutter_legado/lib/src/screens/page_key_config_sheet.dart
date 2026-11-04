@@ -126,14 +126,16 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                   ],
                 ),
               ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  0,
-                  16,
-                  16 + MediaQuery.viewPaddingOf(context).bottom,
-                ),
-                child: Column(
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      0,
+                      16,
+                      16 + MediaQuery.viewPaddingOf(context).bottom,
+                    ),
+                    child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -179,7 +181,9 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                         ),
                       ],
                     ),
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -249,7 +253,7 @@ class _PageKeyConfigSheetState extends State<PageKeyConfigSheet> {
                 children: [
                   for (final code in codes)
                     InputChip(
-                      key: ValueKey('page-key-chip-$code'),
+                      key: ValueKey('page-key-chip-$index-$code'),
                       label: Text('$code'),
                       visualDensity: VisualDensity.compact,
                       onDeleted: () => setState(() {

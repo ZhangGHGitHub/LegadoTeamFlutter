@@ -160,6 +160,63 @@ class ReaderKeysBridgeArgumentTest {
     }
 
     @Test
+    fun `capture off resets legacy state for manga volume keys`() {
+        val stale = ReaderKeysBridge.KeyRoutingState(
+            prevKeys = setOf(24),
+            nextKeys = setOf(25),
+            volumeEnabled = false,
+            hardcodedEnabled = true,
+            pageKeyConfigActive = true,
+            recordingEnabled = true,
+        )
+        // 先证明残留状态会错误命中 custom/关闭 volume
+        assertEquals(
+            "up" to "custom",
+            ReaderKeysBridge.directionForKey(
+                keyCode = 24,
+                prevKeys = stale.prevKeys,
+                nextKeys = stale.nextKeys,
+                volumeEnabled = stale.volumeEnabled,
+                hardcodedEnabled = stale.hardcodedEnabled,
+            ),
+        )
+
+        val reset = ReaderKeysBridge.resetLegacyState()
+        assertTrue(reset.prevKeys.isEmpty())
+        assertTrue(reset.nextKeys.isEmpty())
+        assertTrue(reset.volumeEnabled)
+        assertFalse(reset.hardcodedEnabled)
+        assertFalse(reset.pageKeyConfigActive)
+        assertFalse(reset.recordingEnabled)
+        assertEquals(
+            "up" to "volume",
+            ReaderKeysBridge.directionForKey(
+                keyCode = 24,
+                prevKeys = reset.prevKeys,
+                nextKeys = reset.nextKeys,
+                volumeEnabled = reset.volumeEnabled,
+                hardcodedEnabled = reset.hardcodedEnabled,
+            ),
+        )
+        assertNull(
+            ReaderKeysBridge.directionForKey(
+                keyCode = 24,
+                prevKeys = reset.prevKeys,
+                nextKeys = reset.nextKeys,
+                volumeEnabled = reset.volumeEnabled,
+                hardcodedEnabled = reset.hardcodedEnabled,
+            )?.takeIf { it.second == "custom" },
+        )
+    }
+
+    @Test
+    fun `recording only sends first keydown`() {
+        assertTrue(ReaderKeysBridge.shouldSendRecordKey(0))
+        assertFalse(ReaderKeysBridge.shouldSendRecordKey(1))
+        assertFalse(ReaderKeysBridge.shouldSendRecordKey(9))
+    }
+
+    @Test
     fun `legacy volume channel only before page config`() {
         assertTrue(ReaderKeysBridge.useLegacyVolumeChannel(false, "volume"))
         assertFalse(ReaderKeysBridge.useLegacyVolumeChannel(true, "volume"))

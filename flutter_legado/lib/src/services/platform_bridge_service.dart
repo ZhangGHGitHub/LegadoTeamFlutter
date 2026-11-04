@@ -1269,6 +1269,9 @@ class PlatformBridgeService {
     if (remaining.isEmpty) {
       _activePageKeyOwner = null;
       await PlatformChannel.setKeyRecording(false);
+      // 若仍有 volume 租约（漫画压栈），capture 不会关闭；先复位 native
+      // custom/volumeEnabled，避免文本阅读器残留污染漫画音量键。
+      await PlatformChannel.resetPageKeyConfig();
       await _releaseReaderCaptureIfIdle();
       return;
     }
@@ -1283,10 +1286,25 @@ class PlatformBridgeService {
   }
 
   /// [批4b] 录制态（PageKeyConfigSheet 打开/关闭）
+  ///
+  /// P1-1：录制可能发生在阅读器未挂载时（独立设置页），因此录制开启
+  /// 必须自给自足：注册统一分发 + 若无租约则临时开启原生 capture。
+  /// 关闭时先下发 false，再在无任何租约时释放 capture；阅读器/漫画
+  /// 租约存在时 `_releaseReaderCaptureIfIdle` 会早退，不影响它们。
   Future<void> setKeyRecording(bool enabled) async {
     keyRecording.value = enabled;
     if (!pageKeyCaptureSupported) return;
-    await PlatformChannel.setKeyRecording(enabled);
+    if (enabled) {
+      _ensureReaderKeyDispatch();
+      if (!_volumeKeyCaptureEnabled) {
+        _volumeKeyCaptureEnabled = true;
+        await PlatformChannel.setVolumeKeyCapture(true);
+      }
+      await PlatformChannel.setKeyRecording(true);
+      return;
+    }
+    await PlatformChannel.setKeyRecording(false);
+    await _releaseReaderCaptureIfIdle();
   }
 
   /// 单一通道分发：按当前活动 owner 取回调（事件动态跟随栈顶）

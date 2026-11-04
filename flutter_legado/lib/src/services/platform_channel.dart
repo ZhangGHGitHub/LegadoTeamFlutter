@@ -271,6 +271,15 @@ class PlatformChannel {
     }
   }
 
+  /// [批4b] 复位 page 键配置为 legacy 默认态（保留 capture）
+  static Future<void> resetPageKeyConfig() async {
+    try {
+      await readerKeys.invokeMethod<void>('resetPageKeyConfig');
+    } catch (_) {
+      // 通道未注册 → 静默降级
+    }
+  }
+
   /// [批4b] 录制态开关（BACK/DEL 由原生交还系统）
   static Future<void> setKeyRecording(bool enabled) async {
     try {
