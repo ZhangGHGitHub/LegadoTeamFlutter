@@ -1229,7 +1229,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                     ReaderMenuPanel(
                       visible: state.showControls,
                       onBack: () => Navigator.of(context).maybePop(),
-                      onAddBookmark: () => _addBookmark(state),
+                      onAddBookmark: () => unawaited(_addBookmark(state)),
                       onOpenCatalog: () => unawaited(_openToc()),
                       onOpenSettings: () => ReaderSettingsSheet.show(context),
                       onOpenAdvancedConfig: () => _openAdvancedConfig(context),
@@ -1440,7 +1440,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         previousChapter: () => unawaited(notifier.prevChapter()),
         previousParagraph: () => unawaited(audioNotifier.prevParagraph()),
         nextParagraph: () => unawaited(audioNotifier.nextParagraph()),
-        addBookmark: () => _addBookmark(readerState),
+        addBookmark: () => unawaited(_addBookmark(readerState)),
         editContent: () => unawaited(showReaderEditContentDialog(context, ref)),
         toggleReplace: () => toggleReaderReplaceRule(context, ref),
         catalog: () => unawaited(_openToc()),
@@ -1486,8 +1486,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
   }
 
-  /// 添加书签（chapterPos=当前屏页首；摘要取页首段落正文）
-  void _addBookmark(ReaderState state) {
+  /// 添加书签（chapterPos=当前屏页首；摘要取页首可见行正文）
+  Future<void> _addBookmark(ReaderState state) async {
     final book = state.currentBook;
     final chapter = state.currentChapter;
     if (book == null || chapter == null) {
@@ -1498,26 +1498,31 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     final content = state.chapterContent;
     final summary = content.length > 100 ? content.substring(0, 100) : content;
-    // [批4d] 顶栏书签从章首改为当前屏页首；书签列表/跳转仍消费 chapterPos
+    // [批4d] 顶栏书签从章首改为当前屏页首；章号/章名与 pos/text 统一取
+    // PageView 页上下文，避免章切换窗口出现「新章号 + 旧页偏移」。
     final pageView = _pageViewKey.currentState;
+    final chapterIndex =
+        pageView?.currentPageChapterIndex ?? state.currentChapterIndex;
+    final chapterName = pageView?.currentPageChapterTitle ?? chapter.title;
     final chapterPos = pageView?.currentPageStartPos ?? 0;
     final pageText = pageView?.currentPageStartText ?? '';
     final bookmarkText = pageText.trim().isEmpty ? summary : pageText;
-
-    ref
-        .read(bookmarkNotifierProvider.notifier)
-        .addBookmark(
-          bookName: book.name,
-          bookAuthor: book.author,
-          chapterIndex: state.currentChapterIndex,
-          chapterPos: chapterPos,
-          chapterName: chapter.title,
-          bookText: bookmarkText,
-          content: bookmarkText,
-        );
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('已添加书签：${chapter.title}')));
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await ref
+          .read(bookmarkNotifierProvider.notifier)
+          .addBookmark(
+            bookName: book.name,
+            bookAuthor: book.author,
+            chapterIndex: chapterIndex,
+            chapterPos: chapterPos,
+            chapterName: chapterName,
+            bookText: bookmarkText,
+          );
+      messenger?.showSnackBar(SnackBar(content: Text('已添加书签：$chapterName')));
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(content: Text('添加书签失败：$e')));
+    }
   }
 
   /// 打开正文搜索页面

@@ -232,7 +232,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           key: const ValueKey('reader-bookmark-badge-size'),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           title: const Text('角标大小'),
-          trailing: Text('$badgeSize dp'),
+          trailing: Text('${badgeSize}dp'),
         ),
         Slider(
           key: const ValueKey('reader-bookmark-badge-size-slider'),
@@ -240,7 +240,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           min: 0,
           max: 50,
           divisions: 50,
-          label: '$badgeSize dp',
+          label: '${badgeSize}dp',
           onChanged: (v) =>
               setState(() => _config.bookmarkBadgeSize = v.round()),
           onChangeEnd: (_) => _commit(),

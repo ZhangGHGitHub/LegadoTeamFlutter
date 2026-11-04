@@ -76,6 +76,7 @@ class ReaderMenuPanel extends ConsumerStatefulWidget {
   final bool styleFollowPage;
 
   /// [批4d] 进度条拖动振动注入点（测试可替换为计数器）
+  @visibleForTesting
   static void Function() onSeekHaptic = HapticFeedback.selectionClick;
 
   const ReaderMenuPanel({

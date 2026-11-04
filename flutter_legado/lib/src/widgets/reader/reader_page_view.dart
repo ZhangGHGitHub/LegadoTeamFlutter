@@ -273,20 +273,37 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   // ===== [批4d] 页范围 → 书签判定 =====
 
+  /// 下滑书签增删在途互斥：防连点/动画重入造成重复添加
+  bool _bookmarkToggleInFlight = false;
+
+  /// 当前屏首页索引（双页固定对齐屏首左页；奇数索引来自历史进度/恢复）
+  int get _screenStartPageIndex =>
+      _isDoublePage ? (_currentPageIndex ~/ 2) * 2 : _currentPageIndex;
+
   /// 当前屏字符区间（双页为左右并集；无段落 0）
   ReaderBookmarkRange get currentPageRange => readerBookmarkRangeForScreen(
     _paginatedPages,
-    _currentPageIndex,
+    _screenStartPageIndex,
     doublePage: _isDoublePage,
   );
 
   /// 顶栏添加书签使用的章内页首偏移
   int get currentPageStartPos => currentPageRange.start;
 
+  /// [批4d] 顶栏书签使用的页上下文章节（与 pos/text 同源，避免章切换
+  /// 窗口出现「新章号 + 旧页偏移」）
+  int get currentPageChapterIndex => _displayChapterIndex;
+
+  /// [批4d] 顶栏书签使用的页上下文章节名
+  String get currentPageChapterTitle =>
+      _paginatedChapterTitle ??
+      ref.read(readerNotifierProvider).currentChapter?.title ??
+      '';
+
   /// 当前屏首页首段正文（书签摘要/内容）
   String get currentPageStartText {
     if (_paginatedPages.isEmpty) return '';
-    final index = _currentPageIndex.clamp(0, _paginatedPages.length - 1);
+    final index = _screenStartPageIndex.clamp(0, _paginatedPages.length - 1);
     final content = _paginatedContent.isNotEmpty
         ? _paginatedContent
         : ref.read(readerNotifierProvider).chapterContent;
@@ -325,55 +342,65 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   ) {
     final book = state.currentBook;
     if (book == null || _paginatedPages.isEmpty) return null;
+    final range = currentPageRange;
     return readerBookmarkInRange(
       bookmarks,
       bookName: book.name,
       bookAuthor: book.author,
       chapterIndex: _displayChapterIndex,
-      range: currentPageRange,
+      range: range,
+      referencePos: range.start,
     );
   }
 
   /// 下滑手势触发：本屏已有书签 → 删除；否则按页首添加
   Future<void> _toggleBookmarkOnCurrentPage() async {
+    if (_bookmarkToggleInFlight) return;
     final state = ref.read(readerNotifierProvider);
     final book = state.currentBook;
     if (book == null) return;
     // 分页未就绪时页范围为 0：不得把书签误加到章首
     final range = currentPageRange;
     if (range.isEmpty) return;
-    final notifier = ref.read(bookmarkNotifierProvider.notifier);
-    final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
-    final existing = _bookmarkOnCurrentScreen(state, bookmarks);
-    if (existing != null) {
-      await notifier.deleteBookmark(existing.id);
-      return;
+    _bookmarkToggleInFlight = true;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final notifier = ref.read(bookmarkNotifierProvider.notifier);
+      final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
+      final existing = _bookmarkOnCurrentScreen(state, bookmarks);
+      if (existing != null) {
+        await notifier.deleteBookmark(existing.id);
+        return;
+      }
+      final chapterIndex = _displayChapterIndex;
+      final chapterName =
+          _paginatedChapterTitle ?? state.currentChapter?.title ?? '';
+      final content = _paginatedContent.isNotEmpty
+          ? _paginatedContent
+          : state.chapterContent;
+      final page = _paginatedPages.isEmpty
+          ? null
+          : _paginatedPages[_screenStartPageIndex.clamp(
+              0,
+              _paginatedPages.length - 1,
+            )];
+      final text = readerBookmarkPageStartText(
+        page: page,
+        chapterContent: content,
+      );
+      await notifier.addBookmark(
+        bookName: book.name,
+        bookAuthor: book.author,
+        chapterIndex: chapterIndex,
+        chapterPos: range.start,
+        chapterName: chapterName,
+        bookText: text,
+      );
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(content: Text('书签操作失败：$e')));
+    } finally {
+      _bookmarkToggleInFlight = false;
     }
-    final chapterIndex = _displayChapterIndex;
-    final chapterName =
-        _paginatedChapterTitle ?? state.currentChapter?.title ?? '';
-    final content = _paginatedContent.isNotEmpty
-        ? _paginatedContent
-        : state.chapterContent;
-    final page = _paginatedPages.isEmpty
-        ? null
-        : _paginatedPages[_currentPageIndex.clamp(
-            0,
-            _paginatedPages.length - 1,
-          )];
-    final text = readerBookmarkPageStartText(
-      page: page,
-      chapterContent: content,
-    );
-    await notifier.addBookmark(
-      bookName: book.name,
-      bookAuthor: book.author,
-      chapterIndex: chapterIndex,
-      chapterPos: range.start,
-      chapterName: chapterName,
-      bookText: text,
-      content: text,
-    );
   }
 
   /// 程序化跳页（进度条拖动/目录跳转等；直设索引=瞬时切换，
@@ -1272,17 +1299,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         ? (_paginatedPages.length + 1) ~/ 2
         : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1);
     // [批4d] 下滑书签：仅菜单收起时可触发；选区浮层/底部面板是模态路由，
-    // 手势不会到达正文。提示条顶部对齐正文 contentTop + 8dp（由 TurnView 加）。
+    // 手势不会到达正文。提示条相对翻页视图顶部（viewport 已 Padding 状态栏
+    // inset，故此处只加正文上边距，避免重复叠加）。
     final advCfg = ref.read(readerAdvConfigProvider);
     final bookmarks = ref.read(bookmarkNotifierProvider).bookmarks;
     final currentBookmark = _bookmarkOnCurrentScreen(state, bookmarks);
-    final hintTop =
-        readerContentStatusBarInset(
-          context,
-          hideStatusBar: widget.pageChrome.hideStatusBar,
-          readBodyToLh: widget.readBodyToLh,
-        ) +
-        widget.marginTop;
+    final hintTop = widget.marginTop;
     return _contentViewport(
       context,
       ReaderTurnView(

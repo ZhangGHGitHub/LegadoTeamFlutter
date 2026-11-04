@@ -28,23 +28,48 @@ class ReaderBookmarkRange {
       !isEmpty && chapterPos >= start && chapterPos < end;
 }
 
-/// 单页字符区间：取首个段落起点到末个段落终点；无段落回落 0
+/// 单页字符区间：行级可见区间（跨页长段落不得退化为整段）。
+///
+/// 排版引擎刻意保留整段 [ParagraphInfo.startIndex]/[endIndex]（跨页长段
+/// 的每个分片都指向整段），故页范围必须取首行/末行的章节全局偏移：
+/// start = 首行 [LineInfo.chapterStartIndex]；
+/// end = 末行 chapterStartIndex + 末行可见长度（剔除缩进 [highlightSkip]）。
+/// 行缺失或未建立映射时回落段落偏移（手工构造/旧路径）。
 ReaderBookmarkRange readerBookmarkRangeForPage(PageInfo? page) {
   if (page == null || page.paragraphs.isEmpty) return ReaderBookmarkRange.empty;
-  return ReaderBookmarkRange(
-    page.paragraphs.first.startIndex,
-    page.paragraphs.last.endIndex,
-  );
+  final firstPara = page.paragraphs.first;
+  final lastPara = page.paragraphs.last;
+
+  var start = firstPara.startIndex;
+  if (firstPara.lines.isNotEmpty && firstPara.lines.first.highlightMapped) {
+    start = firstPara.lines.first.chapterStartIndex;
+  }
+
+  var end = lastPara.endIndex;
+  if (lastPara.lines.isNotEmpty && lastPara.lines.last.highlightMapped) {
+    final lastLine = lastPara.lines.last;
+    final visibleLength =
+        lastLine.endIndex - lastLine.startIndex - lastLine.highlightSkip;
+    if (visibleLength > 0) {
+      end = lastLine.chapterStartIndex + visibleLength;
+    }
+  }
+
+  if (end <= start) return ReaderBookmarkRange.empty;
+  return ReaderBookmarkRange(start, end);
 }
 
-/// 当前屏字符区间（双页取左右两页并集；单页同 [readerBookmarkRangeForPage]）
+/// 当前屏字符区间（双页按屏首左页对齐后取并集；单页同单页区间）
 ReaderBookmarkRange readerBookmarkRangeForScreen(
   List<PageInfo> pages,
   int pageIndex, {
   bool doublePage = false,
 }) {
   if (pages.isEmpty) return ReaderBookmarkRange.empty;
-  final left = pageIndex.clamp(0, pages.length - 1);
+  // 双页一屏固定从偶数页起（_buildSpread = screenIndex*2），奇数索引
+  // 可能来自历史进度/恢复路径，先对齐屏首再合并，避免只算右页。
+  final screenStart = doublePage ? (pageIndex ~/ 2) * 2 : pageIndex;
+  final left = screenStart.clamp(0, pages.length - 1);
   final leftRange = readerBookmarkRangeForPage(pages[left]);
   if (!doublePage || left + 1 >= pages.length) return leftRange;
   final rightRange = readerBookmarkRangeForPage(pages[left + 1]);
@@ -56,36 +81,57 @@ ReaderBookmarkRange readerBookmarkRangeForScreen(
 /// 在指定章节区间内查找书签（书键不一致视为无书签）
 ///
 /// 参考快照按 bookName + bookAuthor + chapterIndex 过滤，避免同名书/换书
-/// 后旧列表误供给当前页。
+/// 后旧列表误供给当前页。区间内可能有多条（历史书签/页内新增），按
+/// [referencePos]（默认页首）取最近一条，对齐参考 minBy(abs) 语义；
+/// 不再依赖列表顺序返回第一条。
 Bookmark? readerBookmarkInRange(
   List<Bookmark> bookmarks, {
   required String bookName,
   required String bookAuthor,
   required int chapterIndex,
   required ReaderBookmarkRange range,
+  int? referencePos,
 }) {
   if (range.isEmpty) return null;
+  final reference = referencePos ?? range.start;
+  Bookmark? best;
+  var bestDistance = 1 << 62;
   for (final bookmark in bookmarks) {
     if (bookmark.bookName != bookName ||
         bookmark.bookAuthor != bookAuthor ||
         bookmark.chapterIndex != chapterIndex) {
       continue;
     }
-    if (range.contains(bookmark.chapterPos)) return bookmark;
+    if (!range.contains(bookmark.chapterPos)) continue;
+    final distance = (bookmark.chapterPos - reference).abs();
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = bookmark;
+    }
   }
-  return null;
+  return best;
 }
 
-/// 页首段落正文：章节全局偏移区间映射回章节文本；无段落返回空串
+/// 页首可见正文：行级区间映射回章节文本；行缺失/未映射回落段落；无段落空串
 String readerBookmarkPageStartText({
   required PageInfo? page,
   required String chapterContent,
 }) {
   if (page == null || page.paragraphs.isEmpty) return '';
   final first = page.paragraphs.first;
-  final start = first.startIndex.clamp(0, chapterContent.length);
-  final end = first.endIndex.clamp(start, chapterContent.length);
-  return chapterContent.substring(start, end);
+  var start = first.startIndex;
+  var end = first.endIndex;
+  if (first.lines.isNotEmpty && first.lines.first.highlightMapped) {
+    final line = first.lines.first;
+    final visibleLength = line.endIndex - line.startIndex - line.highlightSkip;
+    if (visibleLength > 0) {
+      start = line.chapterStartIndex;
+      end = start + visibleLength;
+    }
+  }
+  final safeStart = start.clamp(0, chapterContent.length);
+  final safeEnd = end.clamp(safeStart, chapterContent.length);
+  return chapterContent.substring(safeStart, safeEnd);
 }
 
 /// 下滑书签手势单帧结果

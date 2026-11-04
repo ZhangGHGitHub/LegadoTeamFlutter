@@ -162,13 +162,12 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   void initState() {
     super.initState();
     _controller.addListener(_onControllerTick);
-    _pullReturnController =
-        AnimationController(
-          vsync: this,
-          duration: const Duration(
-            milliseconds: ReaderBookmarkPullGesture.returnDurationMillis,
-          ),
-        )..addListener(_onPullReturnTick);
+    _pullReturnController = AnimationController(
+      vsync: this,
+      duration: const Duration(
+        milliseconds: ReaderBookmarkPullGesture.returnDurationMillis,
+      ),
+    )..addListener(_onPullReturnTick);
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _scheduleWarmSnapshots(),
     );
@@ -398,10 +397,21 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   void _resetPullState() {
     if (_pullReturnController.isAnimating) _pullReturnController.stop();
     _pullReturnController.reset();
-    _pullOffset = 0;
-    _pullDragging = false;
-    _pullArmed = false;
-    _pullReleased = false;
+    final hadPullState = _pullOffset != 0 || _pullDragging || _pullArmed;
+    if (hadPullState) {
+      // 回弹/拖动中点按：清零必须触发重绘，否则页面停在偏移位置
+      setState(() {
+        _pullOffset = 0;
+        _pullDragging = false;
+        _pullArmed = false;
+        _pullReleased = false;
+      });
+    } else {
+      _pullOffset = 0;
+      _pullDragging = false;
+      _pullArmed = false;
+      _pullReleased = false;
+    }
   }
 
   void _onPullReturnTick() {

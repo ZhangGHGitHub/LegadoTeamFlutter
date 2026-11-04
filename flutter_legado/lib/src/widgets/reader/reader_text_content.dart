@@ -247,15 +247,19 @@ class ReaderTypographicPage extends StatelessWidget {
         ],
       ),
     );
-    // [批4d] 角标叠在整页内容上：顶部=正文 contentTop+2dp，
-    // 右侧=正文 right padding+6dp；尺寸/图由配置与页范围决定。
+    // [批4d] 角标叠在整页内容上：顶部 = 页眉块高 + 正文 contentTop + 内缩
+    // （path 自带顶部内缩，topInset 现为 0）；右侧 = 正文 right padding+6dp。
     if (!showBookmarkBadge || bookmarkBadgeSize <= 0) return pageContent;
+    final badgeTop =
+        ReaderPageLayoutMetrics.headerBlockHeight(context, chrome) +
+        contentPadding.top +
+        ReaderBookmarkBadgeGeometry.topInset;
     return Stack(
       fit: StackFit.expand,
       children: [
         pageContent,
         Positioned(
-          top: contentPadding.top + ReaderBookmarkBadgeGeometry.topInset,
+          top: badgeTop,
           right: contentPadding.right + ReaderBookmarkBadgeGeometry.rightInset,
           child: ReaderBookmarkBadge(
             size: bookmarkBadgeSize,
