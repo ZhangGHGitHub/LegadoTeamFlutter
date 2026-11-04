@@ -16,8 +16,8 @@
 // 4. volumeKeyPage=false：按键不消费、不翻页；
 // 5. 音量键抬起消费但不翻页（对齐原版 onKeyUp volumeKeyPage(NONE)）。
 //
-// 观测点：ReaderPageViewState.onPageTurnedHaptic（sliderVibrator=true 时
-// 每次翻页成功调用；既有 1a 振动测试同款注入范式，避免依赖动画中间态）。
+// 观测点：ReaderPageViewState.debugOnPageTurn（每次翻页成功调用；批4d
+// 起 sliderVibrator 改接进度条拖动，翻页观测点与振动语义解耦）。
 library;
 
 import 'dart:async';
@@ -87,11 +87,10 @@ MockRustApi _stubApi() {
   return api;
 }
 
-/// 准备偏好：sliderVibrator=true 使翻页成功可经注入点计数
+/// 准备偏好：翻页计数走 debugOnPageTurn，无需振动开关
 void _mockPrefs({bool keyPageOnLongPress = false, bool volumeKeyPage = true}) {
   SharedPreferences.setMockInitialValues({
     'enableReadRecord': false,
-    'sliderVibrator': true,
     'volumeKeyPage': volumeKeyPage,
     'keyPageOnLongPress': keyPageOnLongPress,
   });
@@ -234,11 +233,11 @@ void main() {
 
   setUp(() {
     turns = 0;
-    ReaderPageViewState.onPageTurnedHaptic = () => turns++;
+    ReaderPageViewState.debugOnPageTurn = () => turns++;
   });
 
   tearDown(() {
-    ReaderPageViewState.onPageTurnedHaptic = HapticFeedback.selectionClick;
+    ReaderPageViewState.debugOnPageTurn = null;
   });
 
   group('[批1b-2a] 文本阅读器音量键长按语义', () {

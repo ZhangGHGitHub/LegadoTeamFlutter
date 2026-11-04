@@ -123,12 +123,12 @@ void main() {
 
   setUp(() {
     turns = 0;
-    ReaderPageViewState.onPageTurnedHaptic = () => turns++;
+    ReaderPageViewState.debugOnPageTurn = () => turns++;
     PlatformBridgeService.instance.volumeKeyCaptureOverride = true;
   });
 
   tearDown(() {
-    ReaderPageViewState.onPageTurnedHaptic = HapticFeedback.selectionClick;
+    ReaderPageViewState.debugOnPageTurn = null;
     PlatformBridgeService.instance.volumeKeyCaptureOverride = null;
   });
 

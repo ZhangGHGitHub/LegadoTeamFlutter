@@ -92,8 +92,8 @@ void main() {
       expect(find.text('展示顶部工具栏附加区域'), findsOneWidget);
 
       // 其他组 4 行（[批1b-3] +无目录时每章字数）
-      expect(find.text('翻页成功振动'), findsOneWidget);
-      expect(find.text('选词振动'), findsOneWidget);
+      expect(find.text('滑动进度条时震动'), findsOneWidget);
+      expect(find.text('选择文本时震动'), findsOneWidget);
       expect(find.text('禁用返回键'), findsOneWidget);
       expect(find.text('无目录时每章字数'), findsOneWidget);
     });
@@ -123,8 +123,8 @@ void main() {
       expect(rowValue('长按选择文本'), expected.selectText, reason: '默认 true');
       expect(rowValue('展示顶部工具栏附加区域'), expected.showReadTitleAddition,
           reason: '默认 true');
-      expect(rowValue('翻页成功振动'), expected.sliderVibrator, reason: '默认 false');
-      expect(rowValue('选词振动'), expected.selectVibrator, reason: '默认 false');
+      expect(rowValue('滑动进度条时震动'), expected.sliderVibrator, reason: '默认 false');
+      expect(rowValue('选择文本时震动'), expected.selectVibrator, reason: '默认 false');
       expect(rowValue('禁用返回键'), expected.disableReturnKey, reason: '默认 false');
 
       // 下拉默认值（泛型行用 is 判定匹配全部实例化后转回具体类型）
@@ -426,7 +426,7 @@ void main() {
       useTallViewport(tester);
       await _pump(tester);
 
-      await tester.tap(find.text('选词振动'));
+      await tester.tap(find.text('选择文本时震动'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('使用自定义中文分行'));
       await tester.pumpAndSettle();
@@ -456,7 +456,7 @@ void main() {
           .widgetList<SettingSwitchRow>(find.byType(SettingSwitchRow))
           .firstWhere((r) => r.title == title)
           .value;
-      expect(rowValue('选词振动'), isTrue);
+      expect(rowValue('选择文本时震动'), isTrue);
       expect(rowValue('使用自定义中文分行'), isTrue);
     });
   });

@@ -6,8 +6,9 @@
 // 2. disableReturnKey：开启且菜单未展开 → 系统返回不放行（阅读器不退出、
 //    无「放入书架」弹窗）；菜单展开 → 先关菜单不退出；未开启 → 原退出路径
 //    不变（弹「放入书架」提示）
-// 3. 振动接线：翻页成功 / 选词触发 HapticFeedback（经注入收集器断言，
-//    platform channel 在测试环境不可直接断言）
+// 3. 振动接线：[批4d] sliderVibrator=拖动进度条振动（经
+//    ReaderMenuPanel.onSeekHaptic 注入收集器断言）、selectVibrator=起选
+//    振动（platform channel 捕获）
 library;
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,6 @@ import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_screen.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_menu_panel.dart';
-import 'package:flutter_legado/src/widgets/reader/reader_page_view.dart';
 
 import '../mocks/mocks.dart';
 
@@ -290,12 +290,11 @@ void main() {
   });
 
   group('振动接线（sliderVibrator / selectVibrator）', () {
-    testWidgets('翻页成功且 sliderVibrator=true → 触发振动注入点',
-        (tester) async {
+    testWidgets('sliderVibrator=true 拖动进度条触发振动注入点', (tester) async {
       final calls = <String>[];
-      ReaderPageViewState.onPageTurnedHaptic = () => calls.add('turn');
+      ReaderMenuPanel.onSeekHaptic = () => calls.add('seek');
       addTearDown(() {
-        ReaderPageViewState.onPageTurnedHaptic = HapticFeedback.selectionClick;
+        ReaderMenuPanel.onSeekHaptic = HapticFeedback.selectionClick;
       });
 
       final container = await _pumpReader(tester);
@@ -308,25 +307,35 @@ void main() {
       await cfg.save();
       container.read(readerAdvConfigProvider.notifier).apply(cfg);
 
-      // 点击右侧翻页区（nextPage 动作 → nextPageOrChapter → 翻页成功）
+      // [批4d] 语义迁移：翻页不再振动（原 1a 接线点已改接进度条）
       final size = tester.getSize(find.byType(ReaderScreen));
       final origin = tester.getTopLeft(find.byType(ReaderScreen));
       await tester.tapAt(origin + Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pumpAndSettle();
+      expect(calls, isEmpty, reason: 'sliderVibrator 不再接翻页振动');
+
+      // 展开菜单 → 拖动进度条 → 触发注入点
+      container.read(readerNotifierProvider.notifier).toggleControls();
+      await tester.pumpAndSettle();
+      final slider = find.byKey(const ValueKey('reader-progress-slider'));
+      expect(slider, findsOneWidget, reason: '底栏进度滑条应渲染');
+      final sliderSize = tester.getSize(slider);
+      await tester.drag(slider, Offset(sliderSize.width / 2, 0));
       await tester.pumpAndSettle();
 
       expect(
         calls,
         isNotEmpty,
-        reason: 'sliderVibrator=true 翻页成功必须触发振动',
+        reason: 'sliderVibrator=true 拖动进度条必须触发振动',
       );
     });
 
-    testWidgets('sliderVibrator=false 翻页不触发振动（默认行为不变）',
+    testWidgets('sliderVibrator=false 拖进度条/翻页均不触发振动（默认行为不变）',
         (tester) async {
       final calls = <String>[];
-      ReaderPageViewState.onPageTurnedHaptic = () => calls.add('turn');
+      ReaderMenuPanel.onSeekHaptic = () => calls.add('seek');
       addTearDown(() {
-        ReaderPageViewState.onPageTurnedHaptic = HapticFeedback.selectionClick;
+        ReaderMenuPanel.onSeekHaptic = HapticFeedback.selectionClick;
       });
 
       final container = await _pumpReader(tester);
@@ -336,6 +345,14 @@ void main() {
       final size = tester.getSize(find.byType(ReaderScreen));
       final origin = tester.getTopLeft(find.byType(ReaderScreen));
       await tester.tapAt(origin + Offset(size.width * 0.85, size.height * 0.5));
+      await tester.pumpAndSettle();
+
+      container.read(readerNotifierProvider.notifier).toggleControls();
+      await tester.pumpAndSettle();
+      final slider = find.byKey(const ValueKey('reader-progress-slider'));
+      expect(slider, findsOneWidget, reason: '底栏进度滑条应渲染');
+      final sliderSize = tester.getSize(slider);
+      await tester.drag(slider, Offset(sliderSize.width / 2, 0));
       await tester.pumpAndSettle();
 
       expect(calls, isEmpty, reason: '默认关闭不振动（对齐参考版默认 false）');
