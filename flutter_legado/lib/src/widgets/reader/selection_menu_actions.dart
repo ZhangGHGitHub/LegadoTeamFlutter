@@ -111,6 +111,10 @@ Future<void> selectionAddBookmark(
     selectionToast(context, '无法添加书签：未打开书籍');
     return;
   }
+  // [审查 P3] 与浮条其他动作一致，先收起菜单再落库，避免等待期间
+  // 浮条/面板残留；先捕获 ScaffoldMessenger，收起后仍能提示成功/失败。
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  onDone();
   try {
     await ref
         .read(bookmarkNotifierProvider.notifier)
@@ -123,18 +127,20 @@ Future<void> selectionAddBookmark(
           bookText: selectedText,
           content: selectedText,
         );
-    if (context.mounted) selectionToast(context, '已添加书签');
-    onDone();
+    messenger?.showSnackBar(
+      const SnackBar(content: Text('已添加书签'), duration: Duration(seconds: 2)),
+    );
   } catch (e) {
-    if (context.mounted) selectionToast(context, '添加书签失败：$e');
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('添加书签失败：$e'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 
-void selectionReplace(
-  BuildContext context,
-  String text,
-  VoidCallback onDone,
-) {
+void selectionReplace(BuildContext context, String text, VoidCallback onDone) {
   onDone();
   Navigator.of(
     context,
@@ -174,11 +180,7 @@ void selectionSearchContent(
   );
 }
 
-void selectionEdit(
-  WidgetRef ref,
-  BuildContext context,
-  VoidCallback onDone,
-) {
+void selectionEdit(WidgetRef ref, BuildContext context, VoidCallback onDone) {
   onDone();
   unawaited(showReaderEditContentDialog(context, ref));
 }

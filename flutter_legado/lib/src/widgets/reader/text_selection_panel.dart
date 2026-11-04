@@ -10,23 +10,17 @@
 // 拖拽手柄精细调整选区）+ 操作菜单。默认操作文本为整段，选区变化后以选区为准。
 import 'dart:async';
 import 'dart:convert';
-
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../providers/audio/audio_notifier.dart';
-import '../../providers/bookmark/bookmark_notifier.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
-import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
 import '../../models/selection_menu_config.dart';
-import '../dict_dialog.dart';
 import 'selection_menu_actions.dart';
 import 'text_select_menu_config_sheet.dart';
 
@@ -102,8 +96,7 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
   }
 
   @override
-  ConsumerState<TextSelectionPanel> createState() =>
-      _TextSelectionPanelState();
+  ConsumerState<TextSelectionPanel> createState() => _TextSelectionPanelState();
 }
 
 class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
@@ -126,9 +119,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cfg = ref.watch(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
-    final menuView = SelectionMenuConfig.decode(
-      cfg.textSelectMenuConfig,
-    ).view;
+    final menuView = SelectionMenuConfig.decode(cfg.textSelectMenuConfig).view;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
@@ -151,14 +142,16 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               children: [
                 Text(
                   '已选文本',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   '${_selectedText.length} 字',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.outline),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                  ),
                 ),
                 const Spacer(),
                 TextButton(
@@ -172,8 +165,9 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.5),
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: ConstrainedBox(
@@ -194,7 +188,9 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                       }
                       final start = selection.start.clamp(0, text.length);
                       final end = selection.end.clamp(0, text.length);
-                      setState(() => _userSelected = text.substring(start, end));
+                      setState(
+                        () => _userSelected = text.substring(start, end),
+                      );
                     },
                   ),
                 ),
@@ -203,33 +199,49 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             const SizedBox(height: 4),
             Text(
               '提示：长按上方文本可精细调整选区，未选择时默认操作整段',
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.outline),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
             ),
             const SizedBox(height: 8),
             // 操作菜单（批4c：按选择菜单配置排序/分区）
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (final def in menuView.active)
-                    _actionItem(
-                      def,
-                      showIcon: cfg.showSelectMenuIcon,
-                      onTap: _panelAction(def.id),
+            // [审查 P2-1] 动作可横向滚动，管理按钮固定在滚动区外，
+            // 避免 360dp 下被挤出屏幕后折叠组不可达。
+            Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    key: const ValueKey('selection-panel-actions-scroll'),
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final def in menuView.active)
+                          _actionItem(
+                            def,
+                            showIcon: cfg.showSelectMenuIcon,
+                            onTap: _panelAction(def.id),
+                          ),
+                      ],
                     ),
-                  IconButton(
-                    key: const ValueKey('selection-panel-manage'),
-                    tooltip: '管理选择菜单',
-                    icon: const Icon(Icons.settings_outlined, size: 20),
-                    onPressed: () =>
-                        unawaited(TextSelectMenuConfigSheet.showForReader(
-                          context,
-                          ref,
-                        )),
                   ),
-                ],
-              ),
+                ),
+                SizedBox(
+                  height: 24,
+                  child: VerticalDivider(
+                    width: 1,
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('selection-panel-manage'),
+                  tooltip: '管理选择菜单',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.settings_outlined, size: 20),
+                  onPressed: () => unawaited(
+                    TextSelectMenuConfigSheet.showForReader(context, ref),
+                  ),
+                ),
+              ],
             ),
             // 高亮配色行（多色高亮，对齐原版 HighlightStyle）
             AnimatedSize(
@@ -241,8 +253,9 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                         children: [
                           Text(
                             '高亮颜色',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: theme.colorScheme.outline),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           for (final color in kHighlightColors)
@@ -261,7 +274,9 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                                       color: color == _lastHighlightColor
                                           ? theme.colorScheme.primary
                                           : theme.dividerColor,
-                                      width: color == _lastHighlightColor ? 2.5 : 1,
+                                      width: color == _lastHighlightColor
+                                          ? 2.5
+                                          : 1,
                                     ),
                                   ),
                                   child: color == _lastHighlightColor
@@ -312,29 +327,49 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   }
 
   VoidCallback _panelAction(String id) {
+    // [审查 P3] 面板动作统一走 selection_menu_actions，避免与浮条
+    // 各维护一份实现（书签也在此统一为先收起面板再落库）。
     switch (id) {
       case SelectionMenuIds.copy:
-        return () => unawaited(_copy());
+        return () => unawaited(selectionCopy(context, _selectedText, _close));
       case SelectionMenuIds.share:
-        return () => unawaited(_share());
+        return () => unawaited(selectionShare(context, _selectedText, _close));
       case SelectionMenuIds.browser:
-        return () => unawaited(_openInBrowser());
+        return () =>
+            unawaited(selectionOpenBrowser(context, _selectedText, _close));
       case SelectionMenuIds.aloud:
-        return _readAloud;
-      case SelectionMenuIds.bookmark:
-        return () => unawaited(_addBookmark());
-      case SelectionMenuIds.mark:
-        return () => setState(
-          () => _showHighlightColors = !_showHighlightColors,
+        return () => unawaited(
+          selectionReadAloud(
+            ref,
+            context,
+            selectedText: _selectedText,
+            paragraphText: widget.text,
+            chapterPos: widget.chapterPos,
+            onDone: _close,
+          ),
         );
+      case SelectionMenuIds.bookmark:
+        return () => unawaited(
+          selectionAddBookmark(
+            ref,
+            context,
+            selectedText: _selectedText,
+            chapterPos: widget.chapterPos,
+            onDone: _close,
+          ),
+        );
+      case SelectionMenuIds.mark:
+        return () =>
+            setState(() => _showHighlightColors = !_showHighlightColors);
       case SelectionMenuIds.dict:
-        return _lookupDict;
+        return () => selectionLookupDict(context, _selectedText, _close);
       case SelectionMenuIds.replace:
-        return _openReplace;
+        return () => selectionReplace(context, _selectedText, _close);
       case SelectionMenuIds.edit:
         return () => selectionEdit(ref, context, _close);
       case SelectionMenuIds.search:
-        return _searchContent;
+        return () =>
+            selectionSearchContent(ref, context, _selectedText, _close);
       default:
         return () {};
     }
@@ -352,47 +387,6 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   }
 
   // ===== 菜单动作（顺序对齐原版 TextSelectMenuItem） =====
-
-  /// 替换：原版以选中文本为替换 pattern 打开 ReplaceEditActivity
-  void _openReplace() {
-    // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：选中文本作为替换规则
-    // pattern 预填传入规则管理页（对标原版 ReplaceEditActivity 预填） — Qoder
-    _close();
-    final navigator = Navigator.of(context, rootNavigator: true);
-    navigator.pushNamed(AppRoutes.replaceRules, arguments: _selectedText);
-  }
-
-  /// 复制：对齐原版 menu_copy → sendToClip
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: _selectedText));
-    _toast('已复制到剪贴板');
-    _close();
-  }
-
-  /// 书签：对齐原版 menu_bookmark → createBookmark + BookmarkDialog
-  Future<void> _addBookmark() async {
-    final state = ref.read(readerNotifierProvider);
-    final book = state.currentBook;
-    if (book == null) {
-      _toast('无法添加书签：未打开书籍');
-      return;
-    }
-    try {
-      await ref.read(bookmarkNotifierProvider.notifier).addBookmark(
-            bookName: book.name,
-            bookAuthor: book.author,
-            chapterIndex: state.currentChapterIndex,
-            chapterPos: widget.chapterPos,
-            chapterName: state.currentChapter?.title ?? '',
-            bookText: _selectedText,
-            content: _selectedText,
-          );
-      _toast('已添加书签');
-      _close();
-    } catch (e) {
-      _toast('添加书签失败：$e');
-    }
-  }
 
   /// 高亮样式/笔记 Dialog（对齐 HighlightStyleDialog 配色 + HighlightNoteDialog 笔记）
   Future<void> _openHighlightDialog(Color color) async {
@@ -447,9 +441,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
               TextField(
                 controller: noteCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '笔记（可选）',
-                ),
+                decoration: const InputDecoration(labelText: '笔记（可选）'),
               ),
               const SizedBox(height: 16),
               Row(
@@ -526,94 +518,6 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       _toast('添加高亮失败：$e');
     }
   }
-
-  /// 朗读所选：对齐原版 menu_aloud → speak(selectedText)
-  void _readAloud() {
-    // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：接朗读链路
-    // （AudioNotifier.startReadAloud → audioSpeak FFI）。
-    // [UI-fix v2.0.3 | 2026-08-08] 留项4 闭合：传入选区起始 chapterPos，
-    // 由 AudioNotifier 映射段落索引实现段落级起播（对标原版从选中文本
-    // 位置起读的行为） — Qoder
-    final state = ref.read(readerNotifierProvider);
-    final book = state.currentBook;
-    if (book == null) {
-      _toast('无法启动朗读：未打开书籍');
-      return;
-    }
-    final chapterIndex = state.currentChapterIndex;
-    _close();
-    unawaited(
-      ref.read(audioNotifierProvider.notifier).startReadAloud(
-            bookUrl: book.bookUrl,
-            bookName: book.name,
-            chapterIndex: chapterIndex,
-            startChapterPos: widget.chapterPos,
-            // [批34] ParagraphInfo.startIndex 已改为章节全局偏移（不再是
-            // 恒 0），段落文本仍作等值校验/兜底定位 — full-stack-engineer
-            startParagraphText: widget.text,
-          ),
-    );
-  }
-
-  /// 词典：对齐原版 menu_dict → DictDialog(selectedText)
-  void _lookupDict() {
-    final word = _selectedText.trim();
-    if (word.isEmpty) return;
-    final navigator = Navigator.of(context, rootNavigator: true);
-    final ctx = navigator.context;
-    _close();
-    unawaited(showDictDialog(ctx, word: word));
-  }
-
-  /// 搜正文：对齐原版 menu_search_content → openSearchActivity(selectedText)
-  void _searchContent() {
-    final book = ref.read(readerNotifierProvider).currentBook;
-    if (book == null) {
-      _toast('无法搜正文：未打开书籍');
-      return;
-    }
-    // [UI-fix v2.0.2 | 2026-08-06] 闭合留批次项：选中文本作为初始查询词
-    // 传入正文搜索页（对标原版 viewModel.searchContentQuery） — Qoder
-    final navigator = Navigator.of(context, rootNavigator: true);
-    _close();
-    navigator.pushNamed(
-      AppRoutes.searchContent,
-      arguments: {'book': book, 'query': _selectedText},
-    );
-  }
-
-  /// 浏览器：对齐原版 menu_browser（绝对 URL 直接打开，否则网页搜索）
-  Future<void> _openInBrowser() async {
-    final text = _selectedText.trim();
-    if (text.isEmpty) return;
-    final navigator = Navigator.of(context, rootNavigator: true);
-    _close();
-    if (RegExp(r'^https?://\S+$').hasMatch(text)) {
-      // 应用内置浏览器（对齐原版 ACTION_VIEW）
-      navigator.pushNamed(AppRoutes.browser, arguments: text);
-      return;
-    }
-    // 网页搜索（对齐原版 ACTION_WEB_SEARCH）
-    final uri = Uri.https('www.bing.com', '/search', {'q': text});
-    try {
-      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        _toast('无法打开浏览器');
-      }
-    } catch (e) {
-      _toast('打开浏览器失败：$e');
-    }
-  }
-
-  /// 分享：对齐原版 menu_share_str → share(selectedText)
-  Future<void> _share() async {
-    final text = _selectedText;
-    _close();
-    try {
-      await Share.share(text);
-    } catch (e) {
-      _toast('分享失败：$e');
-    }
-  }
 }
 
 /// 正文长按浮出工具条（对齐参考版浮窗形态）
@@ -668,38 +572,45 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     }
 
     entry = OverlayEntry(
-      builder: (_) => Stack(
-        children: [
-          // 点击屏障：任意点按收起浮条
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: dismiss,
-              child: const SizedBox.expand(),
-            ),
-          ),
-          Positioned(
-            left: container.read(readerAdvConfigProvider)?.expandTextMenu == true
-                ? 12
-                : (anchor.dx - 150).clamp(
-                    12.0,
-                    MediaQuery.of(context).size.width - 342,
-                  ),
-            top: (anchor.dy - 64).clamp(12.0, double.infinity),
-            child: Material(
-              elevation: 6,
-              borderRadius: BorderRadius.circular(12),
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: ReaderSelectionToolbar(
-                anchor: anchor,
-                text: text,
-                chapterPos: chapterPos,
-                onDismiss: dismiss,
+      builder: (overlayContext) {
+        final expanded =
+            container.read(readerAdvConfigProvider)?.expandTextMenu ?? false;
+        final screen = MediaQuery.sizeOf(overlayContext);
+        return Stack(
+          children: [
+            // 点击屏障：任意点按收起浮条
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: dismiss,
+                child: const SizedBox.expand(),
               ),
             ),
-          ),
-        ],
-      ),
+            // [审查 P2-2/P2-3] 统一由布局代理双向 clamp：窄屏下
+            // `width-342` 可能小于 12，底部锚点也可能让菜单越界。
+            CustomSingleChildLayout(
+              delegate: _ReaderToolbarLayoutDelegate(
+                anchor: anchor,
+                expanded: expanded,
+                screenSize: screen,
+              ),
+              child: Material(
+                elevation: 6,
+                borderRadius: BorderRadius.circular(12),
+                color: Theme.of(
+                  overlayContext,
+                ).colorScheme.surfaceContainerHighest,
+                child: ReaderSelectionToolbar(
+                  anchor: anchor,
+                  text: text,
+                  chapterPos: chapterPos,
+                  onDismiss: dismiss,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
     overlay.insert(entry);
   }
@@ -728,12 +639,25 @@ class ReaderSelectionToolbar extends ConsumerWidget {
         unawaited(TextSelectMenuConfigSheet.showForReader(context, ref));
       },
     );
+    final screen = MediaQuery.sizeOf(context);
+    final divider = SizedBox(
+      height: 24,
+      child: VerticalDivider(
+        width: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+    );
     if (cfg.expandTextMenu) {
+      // [审查 P2-2] 参考 MultiLineMenuView 的 heightIn(max=300) +
+      // verticalScroll；这里按窗口高度封顶并允许纵向滚动，屏底锚点
+      // 由布局代理上移，首行与管理按钮仍可达。
       return ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width - 24,
+          maxWidth: math.max(0, screen.width - 24),
+          maxHeight: math.max(0, screen.height - 24),
         ),
-        child: Padding(
+        child: SingleChildScrollView(
+          key: const ValueKey('selection-expanded-scroll'),
           padding: const EdgeInsets.all(4),
           child: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
@@ -742,55 +666,49 @@ class ReaderSelectionToolbar extends ConsumerWidget {
         ),
       );
     }
+    // [审查 P2-1] 一级动作可横向滚动；分隔线、更多、管理固定在
+    // 滚动区外，360dp 默认 10 项时仍可点击并进入折叠组。
     return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.sizeOf(context).width - 24,
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < buttons.length; i++) ...[
-              if (i > 0)
-                SizedBox(
-                  height: 24,
-                  child: VerticalDivider(
-                    width: 1,
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-              buttons[i],
-            ],
-            if (buttons.isNotEmpty)
-              SizedBox(
-                height: 24,
-                child: VerticalDivider(
-                  width: 1,
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
+      constraints: BoxConstraints(maxWidth: math.max(0, screen.width - 24)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: SingleChildScrollView(
+              key: const ValueKey('selection-actions-scroll'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < buttons.length; i++) ...[
+                    if (i > 0) divider,
+                    buttons[i],
+                  ],
+                ],
               ),
-            _buildActionButton(
-              context,
-              const SelectionMenuItemDef(
-                id: 'menu_more',
-                label: '更多',
-                icon: Icons.more_horiz,
-                implemented: true,
-              ),
-              showIcon: cfg.showSelectMenuIcon,
-              onTap: () {
-                onDismiss();
-                TextSelectionPanel.show(
-                  context,
-                  text: text,
-                  chapterPos: chapterPos,
-                );
-              },
             ),
-            manage,
-          ],
-        ),
+          ),
+          divider,
+          _buildActionButton(
+            context,
+            const SelectionMenuItemDef(
+              id: 'menu_more',
+              label: '更多',
+              icon: Icons.more_horiz,
+              implemented: true,
+            ),
+            showIcon: cfg.showSelectMenuIcon,
+            onTap: () {
+              onDismiss();
+              TextSelectionPanel.show(
+                context,
+                text: text,
+                chapterPos: chapterPos,
+              );
+            },
+          ),
+          manage,
+        ],
       ),
     );
   }
@@ -876,4 +794,45 @@ class ReaderSelectionToolbar extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 浮条定位：水平方向贴近锚点并限制在 12dp 安全边距内，
+/// 垂直方向在屏底时整体上移，避免多行菜单或大字号越界。
+class _ReaderToolbarLayoutDelegate extends SingleChildLayoutDelegate {
+  final Offset anchor;
+  final bool expanded;
+  final Size screenSize;
+
+  const _ReaderToolbarLayoutDelegate({
+    required this.anchor,
+    required this.expanded,
+    required this.screenSize,
+  });
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final width = math.min(screenSize.width, constraints.maxWidth);
+    return BoxConstraints(
+      maxWidth: math.max(0, width - 24),
+      maxHeight: math.max(0, screenSize.height - 24),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final maxLeft = math.max(12.0, size.width - childSize.width - 12);
+    final left = expanded
+        ? 12.0
+        // [审查 P2-3] 320dp 下 width-342 小于下界，先保证上界不小于 12。
+        : (anchor.dx - 150).clamp(12.0, maxLeft).toDouble();
+    final maxTop = math.max(12.0, size.height - childSize.height - 12);
+    final top = (anchor.dy - 64).clamp(12.0, maxTop).toDouble();
+    return Offset(left, top);
+  }
+
+  @override
+  bool shouldRelayout(covariant _ReaderToolbarLayoutDelegate oldDelegate) =>
+      anchor != oldDelegate.anchor ||
+      expanded != oldDelegate.expanded ||
+      screenSize != oldDelegate.screenSize;
 }

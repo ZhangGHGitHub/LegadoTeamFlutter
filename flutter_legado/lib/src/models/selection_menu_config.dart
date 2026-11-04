@@ -170,9 +170,35 @@ class SelectionMenuConfig {
   SelectionMenuConfig(this.items);
 
   static SelectionMenuConfig defaults() => SelectionMenuConfig([
-    for (final id in SelectionMenuIds.all)
-      SelectionMenuConfigItem(id: id),
+    for (final id in SelectionMenuIds.all) SelectionMenuConfigItem(id: id),
   ]);
+
+  /// 宽松解析 showState：Gson 可把 `"1"` 转为 Int，这里同样兼容字符串
+  static int? _parseShowState(Object? raw) {
+    if (raw is num) return raw.toInt().clamp(0, 2);
+    if (raw is String) {
+      final parsed = int.tryParse(raw.trim());
+      if (parsed != null) return parsed.clamp(0, 2);
+    }
+    return null;
+  }
+
+  /// 宽松解析 enabled：兼容 `"false"` / `"0"` 等历史字符串写法
+  static bool? _parseEnabled(Object? raw) {
+    if (raw is bool) return raw;
+    if (raw is num) return raw != 0;
+    if (raw is String) {
+      switch (raw.trim().toLowerCase()) {
+        case 'true':
+        case '1':
+          return true;
+        case 'false':
+        case '0':
+          return false;
+      }
+    }
+    return null;
+  }
 
   /// 空/非法回落默认；去重保序；缺失内置项按参考顺序补齐
   static SelectionMenuConfig decode(String? raw) {
@@ -187,16 +213,10 @@ class SelectionMenuConfig {
         final id = entry['id'];
         if (id is! String || id.trim().isEmpty) continue;
         if (!seen.add(id)) continue;
-        final rawState = entry['showState'];
-        int state;
-        if (rawState is int) {
-          state = rawState.clamp(0, 2);
-        } else if (rawState is num) {
-          state = rawState.toInt().clamp(0, 2);
-        } else {
-          // 参考兼容：无 showState 时 enabled=false → 折叠，否则一级
-          state = entry['enabled'] == false ? 1 : 0;
-        }
+        // 宽松兼容：showState 优先，缺失时用 enabled=false 表示折叠
+        final state =
+            _parseShowState(entry['showState']) ??
+            (_parseEnabled(entry['enabled']) == false ? 1 : 0);
         out.add(SelectionMenuConfigItem(id: id, showState: state));
       }
       for (final id in SelectionMenuIds.all) {

@@ -40,10 +40,7 @@ class TextSelectMenuConfigSheet extends StatefulWidget {
   }
 
   /// 阅读器内管理按钮入口：保存后落盘并推送共享 Provider
-  static Future<void> showForReader(
-    BuildContext context,
-    WidgetRef ref,
-  ) {
+  static Future<void> showForReader(BuildContext context, WidgetRef ref) {
     final cfg = ref.read(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
     return show(
       context,
@@ -101,6 +98,8 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
   }
 
   void _restoreDefaults() {
+    // 参考实现没有「恢复默认」入口；本批只恢复菜单顺序/分区，
+    // 不重置「多行展示」「展示图标」两个全局开关。
     setState(() => _draft = SelectionMenuConfig.defaults());
   }
 
@@ -134,13 +133,15 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                 children: [
                   const Icon(Icons.format_list_bulleted),
                   const SizedBox(width: 10),
-                  Text(
-                    '编辑选择菜单',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  Expanded(
+                    child: Text(
+                      '编辑选择菜单',
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   IconButton(
                     tooltip: '关闭',
                     icon: const Icon(Icons.close),
@@ -180,26 +181,44 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
                     _buildGroup('折叠菜单', collapsed, 1),
                     _buildGroup('已隐藏项目', hidden, 2),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        TextButton(
+                    // [审查 P3] 320dp/1.3 下三个按钮的最小宽度超出可用
+                    // 宽度；窄屏改为 Wrap，避免底部操作行横向溢出。
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final restore = TextButton(
                           key: const ValueKey('select-menu-restore'),
                           onPressed: _restoreDefaults,
                           child: const Text('恢复默认'),
-                        ),
-                        const Spacer(),
-                        TextButton(
+                        );
+                        final cancel = TextButton(
                           key: const ValueKey('select-menu-cancel'),
                           onPressed: () => Navigator.pop(context),
                           child: const Text('取消'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton(
+                        );
+                        final save = FilledButton(
                           key: const ValueKey('select-menu-save'),
                           onPressed: _confirm,
                           child: const Text('保存'),
-                        ),
-                      ],
+                        );
+                        if (constraints.maxWidth < 300) {
+                          return Wrap(
+                            alignment: WrapAlignment.end,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [restore, cancel, save],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            restore,
+                            const Spacer(),
+                            cancel,
+                            const SizedBox(width: 8),
+                            save,
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -211,7 +230,11 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
     );
   }
 
-  Widget _buildGroup(String title, List<SelectionMenuConfigItem> items, int state) {
+  Widget _buildGroup(
+    String title,
+    List<SelectionMenuConfigItem> items,
+    int state,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(
@@ -243,12 +266,8 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
               physics: const NeverScrollableScrollPhysics(),
               buildDefaultDragHandles: false,
               itemCount: items.length,
-              onReorderItem: (oldIndex, newIndex) => _moveWithin(
-                state,
-                oldIndex,
-                newIndex,
-                adjust: false,
-              ),
+              onReorderItem: (oldIndex, newIndex) =>
+                  _moveWithin(state, oldIndex, newIndex, adjust: false),
               itemBuilder: (context, index) {
                 final item = items[index];
                 final def = selectionMenuDefById(item.id)!;
@@ -271,13 +290,23 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
     required int index,
     required int state,
   }) {
+    // [审查 P3] 320dp/1.3 下默认 48dp 三连按钮会横向溢出；
+    // 收紧到 32dp 让标题用 Flexible 省略，保证窄屏无 RenderFlex 溢出。
+    final compact = IconButton.styleFrom(
+      minimumSize: const Size(32, 32),
+      maximumSize: const Size(32, 32),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
     return ListTile(
       key: key,
       dense: true,
       contentPadding: EdgeInsets.zero,
+      minLeadingWidth: 24,
+      horizontalTitleGap: 8,
       leading: ReorderableDragStartListener(
         index: index,
-        child: const Icon(Icons.drag_handle),
+        child: const Icon(Icons.drag_handle, size: 20),
       ),
       title: Row(
         children: [
@@ -285,7 +314,7 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
             Icon(def.icon, size: 18),
             const SizedBox(width: 8),
           ],
-          Text(def.label),
+          Flexible(child: Text(def.label, overflow: TextOverflow.ellipsis)),
         ],
       ),
       trailing: Row(
@@ -294,18 +323,24 @@ class _TextSelectMenuConfigSheetState extends State<TextSelectMenuConfigSheet> {
           IconButton(
             key: ValueKey('select-menu-up-${def.id}'),
             tooltip: '上移',
+            style: compact,
+            iconSize: 18,
             icon: const Icon(Icons.keyboard_arrow_up),
             onPressed: () => _moveBy(def.id, -1),
           ),
           IconButton(
             key: ValueKey('select-menu-down-${def.id}'),
             tooltip: '下移',
+            style: compact,
+            iconSize: 18,
             icon: const Icon(Icons.keyboard_arrow_down),
             onPressed: () => _moveBy(def.id, 1),
           ),
           PopupMenuButton<int>(
             key: ValueKey('select-menu-move-${def.id}'),
             tooltip: '移动到',
+            style: compact,
+            iconSize: 18,
             icon: const Icon(Icons.swap_horiz),
             onSelected: (value) => _moveToState(def.id, value),
             itemBuilder: (_) => const [
