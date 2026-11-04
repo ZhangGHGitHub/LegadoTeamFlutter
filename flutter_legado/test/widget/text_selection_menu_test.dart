@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/selection_menu_config.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
@@ -328,6 +329,62 @@ void main() {
         find.byKey(const ValueKey('select-menu-config-sheet')),
         findsOneWidget,
       );
+    });
+
+    testWidgets('浮条管理→保存：Sheet 关闭、配置落盘、重开回显且无异常', (tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final container = _container(_config());
+      await _openOverlayToolbar(tester, container, const Offset(200, 300));
+
+      // 真实 Overlay 路径：浮条先 dismiss，再打开配置 Sheet
+      await tester.tap(find.byKey(const ValueKey('selection-menu-manage')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('select-menu-config-sheet')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('select-menu-move-menu_share_str')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('移至隐藏'));
+      await tester.pumpAndSettle();
+      expect(find.text('已隐藏项目（1）'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('select-menu-save')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('select-menu-config-sheet')),
+        findsNothing,
+        reason: '保存后 Sheet 必须关闭',
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(PrefKeys.textSelectMenuConfig);
+      expect(raw, isNotNull, reason: '配置必须落盘');
+      expect(
+        SelectionMenuConfig.decode(raw).stateOf(SelectionMenuIds.share),
+        2,
+      );
+      expect(
+        container.read(readerAdvConfigProvider)?.textSelectMenuConfig,
+        isNotNull,
+      );
+
+      // 再次从浮条打开，回显已保存的隐藏分区
+      await tester.tap(find.byKey(const ValueKey('open-selection-toolbar')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('selection-menu-manage')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('select-menu-config-sheet')),
+        findsOneWidget,
+      );
+      expect(find.text('已隐藏项目（1）'), findsOneWidget);
     });
   });
 
