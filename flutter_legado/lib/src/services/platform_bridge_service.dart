@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1112,7 +1112,7 @@ class PlatformBridgeService {
     return PlatformChannel.saveImageToDownloads(fileName: fileName, bytes: bytes);
   }
 
-  // ========== [M5] 音量键翻页（阅读器按键通道） ==========
+  // ========== [M5/批4b] 阅读器按键（音量/自定义/硬编码） ==========
 
   /// [M5] 「是否支持音量键捕获」的分派决策覆写（测试性，同
   /// [saveViaDownloadsOverride] 范式）：默认 `Platform.isAndroid`。
@@ -1149,6 +1149,27 @@ class PlatformBridgeService {
   bool _volumeKeyCaptureEnabled = false;
   bool _volumeKeyDispatchRegistered = false;
 
+  /// [批4b] page 键租约（与 volume 共用 owner 仲裁，负载不同）
+  final Map<Object, _PageKeyLease> _pageKeyOwners = <Object, _PageKeyLease>{};
+  Object? _activePageKeyOwner;
+
+  /// 录制态（UI 打开 PageKeyConfigSheet 时 true；ReaderScreen 监听）
+  final ValueNotifier<bool> keyRecording = ValueNotifier<bool>(false);
+
+  /// 原生 recordKey 流（广播）
+  final StreamController<int> _pageKeyRecordController =
+      StreamController<int>.broadcast(sync: true);
+
+  Stream<int> get pageKeyRecordStream => _pageKeyRecordController.stream;
+
+  /// [批4b] 测试钩子：模拟原生 recordKey 事件
+  @visibleForTesting
+  void debugEmitPageKeyRecord(int keyCode) {
+    _pageKeyRecordController.add(keyCode);
+  }
+
+  bool get pageKeyCaptureSupported => volumeKeyCaptureSupported;
+
   /// 兼容旧 [registerVolumeKeyHandler] 的保留 owner
   static final Object _legacyVolumeKeyOwner = Object();
 
@@ -1162,10 +1183,7 @@ class PlatformBridgeService {
     if (!volumeKeyCaptureSupported) return;
     _volumeKeyOwners[owner] = onVolumeKey;
     _activeVolumeKeyOwner = owner;
-    if (!_volumeKeyDispatchRegistered) {
-      _volumeKeyDispatchRegistered = true;
-      PlatformChannel.setVolumeKeyHandler(_dispatchVolumeKeyEvent);
-    }
+    _ensureReaderKeyDispatch();
     if (!_volumeKeyCaptureEnabled) {
       _volumeKeyCaptureEnabled = true;
       await PlatformChannel.setVolumeKeyCapture(true);
@@ -1184,28 +1202,166 @@ class PlatformBridgeService {
     final remaining = _volumeKeyOwners.keys.toList(growable: false);
     if (remaining.isEmpty) {
       _activeVolumeKeyOwner = null;
-      _volumeKeyDispatchRegistered = false;
-      PlatformChannel.clearVolumeKeyHandler();
-      if (_volumeKeyCaptureEnabled) {
-        _volumeKeyCaptureEnabled = false;
-        await PlatformChannel.setVolumeKeyCapture(false);
-      }
+      await _releaseReaderCaptureIfIdle();
       return;
     }
     _activeVolumeKeyOwner = remaining.last;
   }
 
-  /// 单一通道分发：按当前活动 owner 取回调（事件会动态跟随栈顶）
-  Future<dynamic> _dispatchVolumeKeyEvent(MethodCall call) async {
-    if (call.method != 'volumeKey') return null;
-    final parsed = _parseVolumeKeyArguments(call.arguments);
-    if (parsed == null) return null;
+  void _ensureReaderKeyDispatch() {
+    if (_volumeKeyDispatchRegistered) return;
+    _volumeKeyDispatchRegistered = true;
+    PlatformChannel.setVolumeKeyHandler(_dispatchReaderKeyEvent);
+  }
+
+  /// 全部租约释放后关闭原生 capture / 清理 handler
+  Future<void> _releaseReaderCaptureIfIdle() async {
+    if (_volumeKeyOwners.isNotEmpty || _pageKeyOwners.isNotEmpty) return;
+    _volumeKeyDispatchRegistered = false;
+    PlatformChannel.clearVolumeKeyHandler();
+    if (_volumeKeyCaptureEnabled) {
+      _volumeKeyCaptureEnabled = false;
+      await PlatformChannel.setVolumeKeyCapture(false);
+    }
+    await PlatformChannel.setKeyRecording(false);
+  }
+
+  /// [批4b] 获取 page 键捕获租约（Android 壳；非 Android no-op）
+  Future<void> acquirePageKeyCapture(
+    Object owner, {
+    required String prevKeys,
+    required String nextKeys,
+    required bool volumeEnabled,
+    required bool hardcodedEnabled,
+    required FutureOr<void> Function(PageKeyEvent event) onEvent,
+  }) async {
+    if (!pageKeyCaptureSupported) return;
+    final lease = _PageKeyLease(
+      onEvent: onEvent,
+      prevKeys: prevKeys,
+      nextKeys: nextKeys,
+      volumeEnabled: volumeEnabled,
+      hardcodedEnabled: hardcodedEnabled,
+    );
+    _pageKeyOwners[owner] = lease;
+    _activePageKeyOwner = owner;
+    _ensureReaderKeyDispatch();
+    await PlatformChannel.setPageKeyConfig(
+      prevKeys: lease.prevKeys,
+      nextKeys: lease.nextKeys,
+      volumeEnabled: lease.volumeEnabled,
+      hardcodedEnabled: lease.hardcodedEnabled,
+    );
+    if (!_volumeKeyCaptureEnabled) {
+      _volumeKeyCaptureEnabled = true;
+      await PlatformChannel.setVolumeKeyCapture(true);
+    }
+  }
+
+  /// [批4b] 释放 page 键租约；活动 owner 变化时下发新配置
+  Future<void> releasePageKeyCapture(Object owner) async {
+    if (!pageKeyCaptureSupported) return;
+    final wasActive = identical(_activePageKeyOwner, owner);
+    final removed = _pageKeyOwners.remove(owner);
+    if (removed == null) return;
+    if (!wasActive) return;
+    final remaining = _pageKeyOwners.keys.toList(growable: false);
+    if (remaining.isEmpty) {
+      _activePageKeyOwner = null;
+      await PlatformChannel.setKeyRecording(false);
+      await _releaseReaderCaptureIfIdle();
+      return;
+    }
+    _activePageKeyOwner = remaining.last;
+    final lease = _pageKeyOwners[_activePageKeyOwner]!;
+    await PlatformChannel.setPageKeyConfig(
+      prevKeys: lease.prevKeys,
+      nextKeys: lease.nextKeys,
+      volumeEnabled: lease.volumeEnabled,
+      hardcodedEnabled: lease.hardcodedEnabled,
+    );
+  }
+
+  /// [批4b] 录制态（PageKeyConfigSheet 打开/关闭）
+  Future<void> setKeyRecording(bool enabled) async {
+    keyRecording.value = enabled;
+    if (!pageKeyCaptureSupported) return;
+    await PlatformChannel.setKeyRecording(enabled);
+  }
+
+  /// 单一通道分发：按当前活动 owner 取回调（事件动态跟随栈顶）
+  Future<dynamic> _dispatchReaderKeyEvent(MethodCall call) async {
+    switch (call.method) {
+      case 'volumeKey':
+        final parsed = _parseVolumeKeyArguments(call.arguments);
+        if (parsed == null) return null;
+        final handled = await _dispatchToVolumeOwner(parsed.$1, parsed.$2);
+        if (!handled) {
+          // 旧 volume 协议与 page 租约混装：转交 page owner（source=volume）
+          final pageOwner = _activePageKeyOwner;
+          final pageHandler = pageOwner == null
+              ? null
+              : _pageKeyOwners[pageOwner]?.onEvent;
+          if (pageHandler != null) {
+            await pageHandler(
+              PageKeyEvent(
+                direction: parsed.$1,
+                longPress: parsed.$2,
+                source: 'volume',
+              ),
+            );
+          }
+        }
+        return null;
+      case 'pageKey':
+        final event = _parsePageKeyArguments(call.arguments);
+        if (event == null) return null;
+        final pageOwner = _activePageKeyOwner;
+        final pageHandler = pageOwner == null
+            ? null
+            : _pageKeyOwners[pageOwner]?.onEvent;
+        if (pageHandler != null) {
+          await pageHandler(event);
+        } else if (event.source == 'volume') {
+          await _dispatchToVolumeOwner(event.direction, event.longPress);
+        }
+        return null;
+      case 'recordKey':
+        final args = call.arguments;
+        if (args is Map && args['keyCode'] is int) {
+          _pageKeyRecordController.add(args['keyCode'] as int);
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  Future<bool> _dispatchToVolumeOwner(String direction, bool longPress) async {
     final owner = _activeVolumeKeyOwner;
     final handler = owner == null ? null : _volumeKeyOwners[owner];
-    if (handler != null) {
-      await handler(parsed.$1, parsed.$2);
+    if (handler == null) return false;
+    await handler(direction, longPress);
+    return true;
+  }
+
+  PageKeyEvent? _parsePageKeyArguments(Object? arguments) {
+    if (arguments is! Map) return null;
+    final direction = arguments['direction'];
+    final longPress = arguments['longPress'];
+    final source = arguments['source'];
+    if (direction is! String || longPress is! bool || source is! String) {
+      return null;
     }
-    return null;
+    if (direction != 'up' && direction != 'down') return null;
+    if (source != 'custom' && source != 'volume' && source != 'hardcoded') {
+      return null;
+    }
+    return PageKeyEvent(
+      direction: direction,
+      longPress: longPress,
+      source: source,
+    );
   }
 
   /// 解析原生音量键事件参数（旧 String / 新 Map / 畸形 → null）
@@ -1276,4 +1432,36 @@ class PlatformBridgeService {
     }
     await PlatformChannel.setKeepScreenOn(enabled);
   }
+}
+
+
+/// [批4b] 原生翻页键事件
+class PageKeyEvent {
+  const PageKeyEvent({
+    required this.direction,
+    required this.longPress,
+    required this.source,
+  });
+
+  final String direction;
+  final bool longPress;
+
+  /// custom / volume / hardcoded
+  final String source;
+}
+
+class _PageKeyLease {
+  const _PageKeyLease({
+    required this.onEvent,
+    required this.prevKeys,
+    required this.nextKeys,
+    required this.volumeEnabled,
+    required this.hardcodedEnabled,
+  });
+
+  final FutureOr<void> Function(PageKeyEvent event) onEvent;
+  final String prevKeys;
+  final String nextKeys;
+  final bool volumeEnabled;
+  final bool hardcodedEnabled;
 }

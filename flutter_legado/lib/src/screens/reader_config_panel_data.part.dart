@@ -232,6 +232,10 @@ class ReaderAdvancedConfig {
   /// [批1b-2b] 全栈工程师
   String clickImgWay;
 
+  /// [批4b] 自定义翻页键（逗号分隔 keyCode；空=未设置）
+  String prevKeyCodes;
+  String nextKeyCodes;
+
   ReaderAdvancedConfig({
     this.autoPageTurn = false,
     this.autoPageTurnInterval = 10,
@@ -332,6 +336,8 @@ class ReaderAdvancedConfig {
     // [批1b-2b] 参考版默认 "2"=兼容旧版（原版 pref default 为 "0"，
     // 按任务裁决取参考版默认）
     this.clickImgWay = kDefaultClickImgWay,
+    this.prevKeyCodes = '',
+    this.nextKeyCodes = '',
   });
 
   /// F6：布局字段前缀（对齐原版 shareConfig / durConfig）
@@ -699,6 +705,12 @@ class ReaderAdvancedConfig {
       // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey.clickImgWay；
       // 缺省/非法回落参考版默认 "2"=兼容旧版）
       clickImgWay: clampClickImgWay(prefs.getString('clickImgWay')),
+      prevKeyCodes: PageKeyCodes.normalize(
+        prefs.getString(PrefKeys.prevKeyCodes),
+      ),
+      nextKeyCodes: PageKeyCodes.normalize(
+        prefs.getString(PrefKeys.nextKeyCodes),
+      ),
     );
   }
 
@@ -832,6 +844,8 @@ class ReaderAdvancedConfig {
     // [批1b-2b] 正文图片点击方式（键名=原版 PreferKey.clickImgWay，
     // 写入前钳制，避免非法值落盘）
     await prefs.setString('clickImgWay', clampClickImgWay(clickImgWay));
+    await prefs.setString(PrefKeys.prevKeyCodes, prevKeyCodes);
+    await prefs.setString(PrefKeys.nextKeyCodes, nextKeyCodes);
   }
 
   /// 应用阅读主题快照中的排版字段（批38）
@@ -1003,6 +1017,8 @@ class ReaderAdvancedConfig {
         disableReturnKey: disableReturnKey,
         maxLengthWithNoToc: maxLengthWithNoToc,
         clickImgWay: clickImgWay,
+        prevKeyCodes: prevKeyCodes,
+        nextKeyCodes: nextKeyCodes,
       );
 }
 

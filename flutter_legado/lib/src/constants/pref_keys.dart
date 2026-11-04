@@ -432,6 +432,14 @@ class PrefKeys {
   /// 旧三区 → 九宫格一次性迁移标记（设备级，仅备份排除、恢复侧不拦截）
   static const clickActionMigratedV2 = 'clickActionMigratedV2';
 
+  // ===== [批4b] 自定义翻页键（键名逐字对齐参考 PreferKey）=====
+
+  /// 上一页自定义 keyCode 串（逗号分隔，默认 ''）
+  static const prevKeyCodes = 'prevKeyCodes';
+
+  /// 下一页自定义 keyCode 串（逗号分隔，默认 ''）
+  static const nextKeyCodes = 'nextKeyCodes';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

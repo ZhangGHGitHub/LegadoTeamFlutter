@@ -105,6 +105,9 @@ class RestoreIgnorePrefs {
     'reader_adv_left_action',
     'reader_adv_center_action',
     'reader_adv_right_action',
+    // [批4b] 自定义翻页键（参考 prevKeyCodes/nextKeyCodes）
+    PrefKeys.prevKeyCodes,
+    PrefKeys.nextKeyCodes,
     'reader_font_size',
     'reader_line_height',
     'reader_bg_color_index',

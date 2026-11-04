@@ -240,16 +240,44 @@ class PlatformChannel {
     }
   }
 
-  /// 注册音量键事件回调（原生端 `invokeMethod('volumeKey', 'up'/'down')`）。
+  /// 注册阅读器按键事件回调（volumeKey / pageKey / recordKey）。
   static void setVolumeKeyHandler(
     Future<dynamic> Function(MethodCall call) handler,
   ) {
     readerKeys.setMethodCallHandler(handler);
   }
 
-  /// 注销音量键事件回调（退出阅读器时调用，防回调泄漏）。
+  /// 注销阅读器按键事件回调（退出阅读器时调用，防回调泄漏）。
   static void clearVolumeKeyHandler() {
     readerKeys.setMethodCallHandler(null);
+  }
+
+  /// [批4b] 下发自定义/硬编码翻页键配置（Android 原生桥）
+  static Future<void> setPageKeyConfig({
+    required String prevKeys,
+    required String nextKeys,
+    required bool volumeEnabled,
+    required bool hardcodedEnabled,
+  }) async {
+    try {
+      await readerKeys.invokeMethod<void>('setPageKeyConfig', {
+        'prevKeys': prevKeys,
+        'nextKeys': nextKeys,
+        'volumeEnabled': volumeEnabled,
+        'hardcodedEnabled': hardcodedEnabled,
+      });
+    } catch (_) {
+      // 通道未注册/非 Android → 静默降级
+    }
+  }
+
+  /// [批4b] 录制态开关（BACK/DEL 由原生交还系统）
+  static Future<void> setKeyRecording(bool enabled) async {
+    try {
+      await readerKeys.invokeMethod<void>('setKeyRecording', enabled);
+    } catch (_) {
+      // 通道未注册 → 静默降级
+    }
   }
 
   // ─── 保持亮屏方法（[批1b-1] keepLight） ──────────────────────
