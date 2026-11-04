@@ -238,7 +238,10 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Icons.settings_outlined, size: 20),
                   onPressed: () => unawaited(
-                    TextSelectMenuConfigSheet.showForReader(context, ref),
+                    TextSelectMenuConfigSheet.showForReader(
+                      context,
+                      ProviderScope.containerOf(context, listen: false),
+                    ),
                   ),
                 ),
               ],
@@ -635,8 +638,14 @@ class ReaderSelectionToolbar extends ConsumerWidget {
       visualDensity: VisualDensity.compact,
       icon: const Icon(Icons.settings_outlined, size: 20),
       onPressed: () {
+        // [设备验收 P2] 不能在 onDismiss 后继续使用浮条的 WidgetRef；
+        // 先取稳定 Navigator 与 ProviderContainer，再关闭浮条并打开 Sheet。
+        final navigator = Navigator.of(context, rootNavigator: true);
+        final container = ProviderScope.containerOf(context, listen: false);
         onDismiss();
-        unawaited(TextSelectMenuConfigSheet.showForReader(context, ref));
+        unawaited(
+          TextSelectMenuConfigSheet.showForReader(navigator.context, container),
+        );
       },
     );
     final screen = MediaQuery.sizeOf(context);

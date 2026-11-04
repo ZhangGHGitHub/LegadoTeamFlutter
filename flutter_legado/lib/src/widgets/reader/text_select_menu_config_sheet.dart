@@ -39,16 +39,24 @@ class TextSelectMenuConfigSheet extends StatefulWidget {
     );
   }
 
-  /// 阅读器内管理按钮入口：保存后落盘并推送共享 Provider
-  static Future<void> showForReader(BuildContext context, WidgetRef ref) {
-    final cfg = ref.read(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
+  /// 阅读器内管理按钮入口：保存后落盘并推送共享 Provider。
+  ///
+  /// [审查 P2] 浮条管理按钮会先 dismiss 再打开 Sheet，此时原 WidgetRef
+  /// 已随 Overlay 卸载；这里改用稳定的 ProviderContainer，避免保存时
+  /// 命中 `Cannot use "ref" after the widget was disposed`。
+  static Future<void> showForReader(
+    BuildContext context,
+    ProviderContainer container,
+  ) {
+    final cfg =
+        container.read(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
+    final isNight = Theme.of(context).brightness == Brightness.dark;
     return show(
       context,
       config: cfg.copy(),
       onChanged: (updated) {
-        final isNight = Theme.of(context).brightness == Brightness.dark;
         unawaited(updated.save(isNight: isNight));
-        ref.read(readerAdvConfigProvider.notifier).apply(updated.copy());
+        container.read(readerAdvConfigProvider.notifier).apply(updated.copy());
       },
     );
   }
