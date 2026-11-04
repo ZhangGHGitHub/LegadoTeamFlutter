@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.454] - 2026-11-04
+
+### Fixed
+- [Android] 自定义翻页键/设置页录制在 PageUp、PageDown、方向键上失效：改为在 `dispatchKeyEvent` 阶段拦截并成对消费 DOWN/UP，避免 FlutterView 的滚动/焦点系统先吃掉按键；BACK/音量/未命中键完整透传，漫画音量键回归不受影响。
+
 ## [2.0.453] - 2026-11-04
 
 ### Added
