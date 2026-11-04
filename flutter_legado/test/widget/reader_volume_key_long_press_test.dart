@@ -660,7 +660,7 @@ void main() {
       );
     });
 
-    testWidgets('volumeKeyPage=false：最终关闭捕获', (tester) async {
+    testWidgets('volumeKeyPage=false：保留 page 捕获但音量分流关闭', (tester) async {
       _mockPrefs(volumeKeyPage: false);
       final calls = _recordReaderKeyCalls(tester);
       final container = await _pumpReader(tester);
@@ -670,11 +670,16 @@ void main() {
         volumeKeyPage: false,
       );
 
-      expect(
-        _captureCalls(calls).last.arguments,
-        isFalse,
-        reason: '开关关闭时不得拦截系统音量键',
-      );
+      // [批4b] 自定义/硬编码键始终可用 → capture 保持开启；音量由
+      // 原生 volumeEnabled=false 分流，不拦截系统音量。
+      expect(_captureCalls(calls).last.arguments, isTrue);
+      final configs = calls
+          .where((c) => c.method == 'setPageKeyConfig')
+          .toList(growable: false);
+      expect(configs, isNotEmpty);
+      final args = configs.last.arguments as Map;
+      expect(args['volumeEnabled'], isFalse);
+      expect(args['hardcodedEnabled'], isTrue);
     });
 
     testWidgets('桌面（未启用原生捕获）：HardwareKeyboard 仍翻页', (tester) async {

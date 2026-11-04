@@ -79,6 +79,7 @@ void main() {
       expect(find.text('段首标点悬挂'), findsOneWidget);
       expect(find.text('边缘点击阈值'), findsOneWidget);
       expect(find.text('点击区域设置'), findsOneWidget);
+      expect(find.text('自定义翻页键'), findsOneWidget);
       expect(find.text('滑动翻页阈值'), findsOneWidget);
       expect(find.text('鼠标滚轮翻页'), findsOneWidget);
       expect(find.text('音量键翻页'), findsOneWidget);
