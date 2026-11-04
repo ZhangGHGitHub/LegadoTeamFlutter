@@ -23,6 +23,30 @@ import android.view.KeyEvent
  */
 class ReaderKeysBridge {
 
+    /** DOWN 被消费时记录 keyCode；UP 仅吞掉已记录的 keyCode */
+    internal class ConsumedKeyState {
+        @Volatile
+        private var keys: Set<Int> = emptySet()
+
+        fun onDown(keyCode: Int, consumed: Boolean): Boolean {
+            if (!consumed) return false
+            synchronized(this) { keys = keys + keyCode }
+            return true
+        }
+
+        fun onUp(keyCode: Int): Boolean {
+            if (!keys.contains(keyCode)) return false
+            synchronized(this) { keys = keys - keyCode }
+            return true
+        }
+
+        fun clear() {
+            synchronized(this) { keys = emptySet() }
+        }
+
+        internal fun snapshot(): Set<Int> = keys
+    }
+
     /** 原生按键状态快照（复位纯函数/JVM 断言用） */
     internal data class KeyRoutingState(
         val prevKeys: Set<Int> = emptySet(),
@@ -150,6 +174,23 @@ class ReaderKeysBridge {
         /** 录制只处理首次 keydown，长按 repeat 消费但不重复追加 */
         internal fun shouldSendRecordKey(repeatCount: Int): Boolean =
             repeatCount == 0
+
+        /**
+         * KeyEvent action 状态机（纯函数，JVM 单测覆盖）：
+         * ACTION_DOWN 由 [downConsumed] 决定是否记录；ACTION_UP 命中记录则吞掉。
+         */
+        internal fun transitionKeyState(
+            action: Int,
+            keyCode: Int,
+            downConsumed: Boolean,
+            state: ConsumedKeyState,
+        ): Boolean {
+            return when (action) {
+                KeyEvent.ACTION_DOWN -> state.onDown(keyCode, downConsumed)
+                KeyEvent.ACTION_UP -> state.onUp(keyCode)
+                else -> false
+            }
+        }
     }
 
     private var channel: MethodChannel? = null
@@ -159,6 +200,8 @@ class ReaderKeysBridge {
 
     @Volatile
     private var keyState = KeyRoutingState()
+
+    private val consumedKeys = ConsumedKeyState()
 
     fun setMethodChannel(channel: MethodChannel) {
         this.channel = channel
@@ -173,6 +216,7 @@ class ReaderKeysBridge {
                         // P1-2 捕获关闭：完整复位 legacy 默认态，避免文本
                         // 阅读器的 volumeEnabled=false/自定义键残留污染漫画。
                         keyState = resetLegacyState()
+                        consumedKeys.clear()
                     }
                     result.success(true)
                 }
@@ -194,9 +238,9 @@ class ReaderKeysBridge {
                     result.success(true)
                 }
                 "setKeyRecording" -> {
-                    keyState = keyState.copy(
-                        recordingEnabled = call.arguments as? Boolean ?: false,
-                    )
+                    val enabled = call.arguments as? Boolean ?: false
+                    keyState = keyState.copy(recordingEnabled = enabled)
+                    if (!enabled) consumedKeys.clear()
                     result.success(true)
                 }
                 "resetPageKeyConfig" -> {
@@ -213,10 +257,29 @@ class ReaderKeysBridge {
     }
 
     /**
-     * `MainActivity.onKeyDown` 调用。
-     *
-     * @return true = 已消费；false = 交还系统
+     * `MainActivity.dispatchKeyEvent` 唯一入口：
+     * ACTION_DOWN 复用 handleKeyDown；被消费的 keyCode 记录后吞掉对应 UP，
+     * 避免 FlutterView 在 Activity.onKeyDown 之前消费 PAGE_UP/SPACE/DPAD。
      */
+    fun handleKeyEvent(event: KeyEvent): Boolean {
+        val action = event.action
+        if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP) {
+            return false
+        }
+        val downConsumed = if (action == KeyEvent.ACTION_DOWN) {
+            handleKeyDown(event.keyCode, event)
+        } else {
+            false
+        }
+        return transitionKeyState(
+            action = action,
+            keyCode = event.keyCode,
+            downConsumed = downConsumed,
+            state = consumedKeys,
+        )
+    }
+
+    /** 兼容旧调用方（MainActivity 已改走 dispatchKeyEvent） */
     fun handleKeyDown(keyCode: Int, event: KeyEvent? = null): Boolean {
         if (!captureEnabled) return false
         val activeChannel = channel ?: return false

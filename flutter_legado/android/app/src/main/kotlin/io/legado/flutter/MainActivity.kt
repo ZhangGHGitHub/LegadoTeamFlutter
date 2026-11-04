@@ -122,9 +122,9 @@ open class MainActivity : FlutterActivity() {
                 storageBridge.handleMethodCall(call, result, this)
             }
 
-        // 注册阅读器按键通道（[M5] 音量键翻页：捕获开启时 onKeyDown
-        // 拦截音量键通知 Dart 翻页并消费，不调系统音量；对齐原版
-        // ReadMangaActivity.onKeyDown L894-902）
+        // 注册阅读器按键通道（[M5/批4b] 捕获开启时 dispatchKeyEvent
+        // 拦截音量/自定义/硬编码翻页键通知 Dart 并消费；对齐原版
+        // ReadMangaActivity/ReadBookController 的 keydown 语义）
         val readerKeysChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger, ReaderKeysBridge.CHANNEL
         )
@@ -686,16 +686,15 @@ open class MainActivity : FlutterActivity() {
     }
 
     /**
-     * [M5] 音量键翻页：漫画阅读器活跃且捕获开启时消费音量键并通知
-     * Dart 翻页（对齐原版 ReadMangaActivity.onKeyDown L894-902）；
-     * 其余情况交还系统（全局音量键行为不变）。
-     *
-     * 批1b-2a：把原始 [KeyEvent] 传给桥接层，以 `repeatCount > 0`
-     * 标记长按 repeat（Dart 侧 `keyPageOnLongPress` 语义消费）。
+     * [M5/批4b] 阅读器按键统一入口：FlutterView 在 Activity.onKeyDown
+     * 之前消费 PAGE_UP/DPAD，因此必须在 dispatchKeyEvent 拦截；捕获关闭/
+     * 未命中时完整透传（系统音量/返回/Flutter 焦点行为不变）。
      */
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (readerKeysBridge.handleKeyDown(keyCode, event)) return true
-        return super.onKeyDown(keyCode, event)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // 批4b：FlutterView 在 Activity.onKeyDown 之前消费 PAGE_UP/DPAD
+        // （ScrollIntent/DirectionalFocus），故必须在 dispatch 阶段拦截。
+        if (readerKeysBridge.handleKeyEvent(event)) return true
+        return super.dispatchKeyEvent(event)
     }
 
     /**
