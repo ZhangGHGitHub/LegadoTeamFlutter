@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -13,6 +13,7 @@ import '../providers/providers.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/cover_aspect_ratio.dart';
 import '../services/cover_decode_loader.dart';
+import '../services/cover_disk_cache.dart';
 import '../services/network_status_service.dart';
 import '../utils/comic_image_utils.dart';
 import 'cover_text_painter.dart';
@@ -357,6 +358,9 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
   bool _wifiBlocked = false;
   Timer? _wifiRetryTimer;
 
+  /// 有效磁盘缓存命中（审查 R-P2-1）：直接渲染该文件，跳过网络/FFI
+  String? _directCachePath;
+
   /// 阻塞期间的重试间隔（恢复 WiFi 后自动加载）
   static const Duration _wifiRetryInterval = Duration(seconds: 5);
 
@@ -388,6 +392,7 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       _wifiRetryTimer?.cancel();
       _wifiRetryTimer = null;
       _wifiBlocked = false;
+      _directCachePath = null;
       _decodedBytes = null;
       _decodeFailed = false;
       _useDirect = false;
@@ -404,28 +409,11 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     });
   }
 
-  /// 直连图片是否已有磁盘缓存（CachedNetworkImage 默认缓存管理器）
-  ///
-  /// [审查 P2-1] 仅 WiFi 门控在缓存命中时必须让路：蜂窝网络下已缓存
-  /// 封面照常显示，不因网络状态变成占位。
-  Future<bool> _hasDirectDiskCache(String url) async {
-    try {
-      final info = await DefaultCacheManager()
-          .getFileFromCache(stripCompositeImageUrl(url))
-          // 缓存库未就绪/平台通道无响应时不让封面无限等待：
-          // 500ms 内无结果按未命中处理（随后进入仅 WiFi 判定或正常加载）
-          .timeout(const Duration(milliseconds: 500));
-      return info?.file != null;
-    } catch (_) {
-      // 缓存管理器不可用/磁盘异常：按未命中处理（随后进入仅 WiFi 判定）
-      return false;
-    }
-  }
-
   Future<void> _startLoad({bool forceRefreshNetwork = false}) async {
     final gen = ++_loadGen;
     final origin = widget.sourceOrigin?.trim() ?? '';
     final url = widget.coverUrl;
+    _directCachePath = null;
 
     // 1) 内存缓存命中：立即显示，不占并发槽（[审查 P2-1] 必须在仅 WiFi
     // 门控之前：蜂窝下已解密/已加载的封面应继续显示，不能因网络状态变空）
@@ -434,6 +422,7 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       if (!mounted || gen != _loadGen) return;
       setState(() {
         _decodedBytes = cached;
+        _directCachePath = null;
         _loadingDecode = false;
         _useDirect = false;
         _decodeFailed = false;
@@ -442,27 +431,39 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       return;
     }
 
-    // 2) 仅 WiFi：直连封面先查磁盘缓存，命中则照常显示；未命中且为
-    // 蜂窝网络才占位（不进入解密/缓存链路），恢复 WiFi 后 5s 重试。
+    // 2) 仅 WiFi：直连封面先查「有效」磁盘缓存（validTill 未过期且文件
+    // 存在）。命中直接用 Image.file 渲染并 return——不查询 WiFi、不进 FFI，
+    // 避免过期/删除缓存绕过后由 CachedNetworkImage 重新下载。
     if (widget.loadOnlyOnWifi) {
-      final diskHit = await _hasDirectDiskCache(url);
+      final cachedFile =
+          await CoverDiskCache.validFile(stripCompositeImageUrl(url));
       if (!mounted || gen != _loadGen) return;
-      if (!diskHit) {
-        final wifi = await NetworkStatusService.instance.isWifi(
-          forceRefresh: forceRefreshNetwork,
-        );
-        if (!mounted || gen != _loadGen) return;
-        if (!wifi) {
-          setState(() {
-            _wifiBlocked = true;
-            _loadingDecode = false;
-            _useDirect = false;
-            _decodeFailed = false;
-            _decodedBytes = null;
-          });
-          _scheduleWifiRetry();
-          return;
-        }
+      if (cachedFile != null) {
+        setState(() {
+          _directCachePath = cachedFile.path;
+          _decodedBytes = null;
+          _loadingDecode = false;
+          _useDirect = false;
+          _decodeFailed = false;
+          _wifiBlocked = false;
+        });
+        return;
+      }
+      final wifi = await NetworkStatusService.instance.isWifi(
+        forceRefresh: forceRefreshNetwork,
+      );
+      if (!mounted || gen != _loadGen) return;
+      if (!wifi) {
+        setState(() {
+          _wifiBlocked = true;
+          _directCachePath = null;
+          _loadingDecode = false;
+          _useDirect = false;
+          _decodeFailed = false;
+          _decodedBytes = null;
+        });
+        _scheduleWifiRetry();
+        return;
       }
     }
     if (_wifiBlocked) {
@@ -505,6 +506,24 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
           _useDirect = true;
         });
         return;
+      }
+
+      // [审查 R-P2-1] FFI 解密会发起网络请求：进入前按最新网络状态重查
+      // 仅 WiFi（书源解析期间网络可能已从 WiFi 切到蜂窝）。
+      if (widget.loadOnlyOnWifi) {
+        final wifi = await NetworkStatusService.instance.isWifi(
+          forceRefresh: true,
+        );
+        if (!mounted || gen != _loadGen) return;
+        if (!wifi) {
+          setState(() {
+            _wifiBlocked = true;
+            _loadingDecode = false;
+            _decodeFailed = false;
+          });
+          _scheduleWifiRetry();
+          return;
+        }
       }
 
       final bytes = await CoverDecodeLoader.load(
@@ -584,6 +603,18 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
 
   @override
   Widget build(BuildContext context) {
+    final directCachePath = _directCachePath;
+    if (directCachePath != null) {
+      // [审查 R-P2-1] 有效磁盘缓存直接渲染：不查询 WiFi、不走 FFI/网络
+      return Image.file(
+        File(directCachePath),
+        fit: BoxFit.cover,
+        width: widget.width,
+        cacheWidth: _thumbWidth(context),
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => widget.placeholder,
+      );
+    }
     if (_decodedBytes != null) {
       final thumb = _thumbWidth(context);
       return Image.memory(

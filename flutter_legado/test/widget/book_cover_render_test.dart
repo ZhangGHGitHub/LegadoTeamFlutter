@@ -4,6 +4,7 @@
 // 成功不绘字、日夜叠层、竖排/横排/拉丁强制、描边阴影开关、限制比例、
 // 仅 WiFi 蜂窝阻塞（不写缓存）与恢复 WiFi 后重试。
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -18,6 +19,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/services/cover_aspect_ratio.dart';
 import 'package:flutter_legado/src/services/cover_decode_loader.dart';
+import 'package:flutter_legado/src/services/cover_disk_cache.dart';
 import 'package:flutter_legado/src/services/network_status_service.dart';
 import 'package:flutter_legado/src/widgets/book_cover.dart';
 import 'package:flutter_legado/src/widgets/cover_text_painter.dart';
@@ -28,14 +30,18 @@ import '../mocks/mocks.dart';
 const String _kPng2x1 =
     'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4z8AARAAI/gH/xp559wAAAABJRU5ErkJggg==';
 
-/// 可注入的网络状态假实现
+/// 可注入的网络状态假实现（记录调用次数，证明缓存命中不查 WiFi）
 class _FakeNetworkStatus extends NetworkStatusService {
   bool wifi;
+  int calls = 0;
 
   _FakeNetworkStatus(this.wifi);
 
   @override
-  Future<bool> isWifi({bool forceRefresh = false}) async => wifi;
+  Future<bool> isWifi({bool forceRefresh = false}) async {
+    calls++;
+    return wifi;
+  }
 }
 
 void main() {
@@ -49,11 +55,15 @@ void main() {
     uiSettingsListenable.value = const UiSettingsState();
     CoverAspectRatio.clear();
     CoverDecodeLoader.clearForTest();
+    // 默认注入未命中，避免 DefaultCacheManager 在测试环境等待平台通道；
+    // 命中/过期用例在各自 test 内覆盖 debugLoader
+    CoverDiskCache.debugLoader = (_) async => null;
     NetworkStatusService.instance = NetworkStatusService();
   });
 
   tearDown(() {
     NetworkStatusService.instance = NetworkStatusService();
+    CoverDiskCache.reset();
   });
 
   Widget host(
@@ -271,6 +281,73 @@ void main() {
 
     expect(find.byType(Image), findsOneWidget);
     expect(find.byKey(const ValueKey('bookCoverText')), findsNothing);
+  });
+
+  testWidgets('仅 WiFi + 蜂窝但有效磁盘缓存：直接渲染，不查 WiFi/不走网络', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('cover_disk_hit');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/cover.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+    CoverDiskCache.debugLoader = (_) async => CoverDiskCacheEntry(
+      file: file,
+      validTill: DateTime.now().add(const Duration(hours: 1)),
+    );
+    final fake = _FakeNetworkStatus(false);
+    NetworkStatusService.instance = fake;
+    coverSettingsListenable.value = CoverSettings.defaults.copyWith(
+      loadOnlyOnWifi: true,
+    );
+
+    await tester.pumpWidget(
+      host(
+        const BookCover(
+          coverUrl: url,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byKey(const ValueKey('bookCoverText')), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(fake.calls, 0, reason: '有效缓存命中不得查询 WiFi');
+  });
+
+  testWidgets('仅 WiFi + 蜂窝且磁盘缓存已过期：按未命中占位（仍查 WiFi）', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('cover_disk_stale');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/cover.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+    CoverDiskCache.debugLoader = (_) async => CoverDiskCacheEntry(
+      file: file,
+      validTill: DateTime.now().subtract(const Duration(minutes: 1)),
+    );
+    final fake = _FakeNetworkStatus(false);
+    NetworkStatusService.instance = fake;
+    coverSettingsListenable.value = CoverSettings.defaults.copyWith(
+      loadOnlyOnWifi: true,
+    );
+
+    await tester.pumpWidget(
+      host(
+        const BookCover(
+          coverUrl: url,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('bookCoverText')), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(fake.calls, greaterThan(0), reason: '过期缓存必须进入仅 WiFi 判定');
   });
 
   testWidgets('阴影开关：封面外 4dp 阴影随设置显示/隐藏', (tester) async {
