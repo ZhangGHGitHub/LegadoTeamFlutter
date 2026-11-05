@@ -1,0 +1,30 @@
+批5b 设备验收关键测量证据
+日期: 2026-11-05
+HEAD: 35a12562a8985f2e31a1a80a836270a23a3cddae
+APK sha256: f3c0b62aa6ccbeb3a6d8402a3ac806455539a816132f5136bcf5b5805d66b665
+APK size: 201,928,992 bytes
+设备: 192.168.100.62:5555 Android 15 SM-G9900 1080x1920/480 rotation0
+
+[D1] 段落间隔 A/B 书 5 段估算推进总时长（uiautomator 轮询 ·段x/y）
+interval=0ms:
+t=2.4 seg=('2', '5')
+t=5.6 seg=('4', '5')
+t=8.8 seg=None
+t=8.8 no panel (session ended?)
+done
+interval=2000ms:
+t=2.0 seg=('1', '5')
+t=4.4 seg=('2', '5')
+t=9.0 seg=('3', '5')
+t=11.7 seg=('4', '5')
+t=16.8 seg=None
+t=16.8 no panel (session ended?)
+done
+
+[D1] 暂停/恢复（A 书，段1 估算 7.0s + 2000ms 间隔，t=7.9s 暂停）
+after pause seg=(1,3); after 3s seg=(1,3); after resume seg=(2,3); +1s seg=(2,3)
+
+[E2] keep=false 退出阅读器
+before exit: PLAYING(3) + NotificationRecord id=7776
+after exit 2s: STOPPED(1), no NotificationRecord
+after 20s: STOPPED(1), no NotificationRecord

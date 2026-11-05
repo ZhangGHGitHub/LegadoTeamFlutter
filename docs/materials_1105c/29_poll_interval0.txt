@@ -1,0 +1,5 @@
+t=2.4 seg=('2', '5')
+t=5.6 seg=('4', '5')
+t=8.8 seg=None
+t=8.8 no panel (session ended?)
+done
