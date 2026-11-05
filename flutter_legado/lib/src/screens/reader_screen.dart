@@ -1420,15 +1420,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // 并用章号校验避免章节切换窗口把旧章页首带到新章；无分页/章号不一致
     // 时传 null，AudioNotifier 内回退整段。
     final pageView = _pageViewKey.currentState;
-    final pageStarts =
+    final pageChapterMatches =
         pageView != null &&
-            pageView.currentPageChapterIndex == state.currentChapterIndex
+        pageView.currentPageChapterIndex == state.currentChapterIndex;
+    final pageStarts = pageChapterMatches
         ? pageView.currentChapterPageStarts
+        : null;
+    // [审查回修 P3] 从当前页起读（0 由 startChapterPos>0 守卫忽略）；
+    // 按页模式配合 pageStarts 从当前页单元开始，其它模式定位到所在段落。
+    final startChapterPos = pageChapterMatches
+        ? pageView.currentPageStartPos
         : null;
     await notifier.startReadAloud(
       bookUrl: book.bookUrl,
       bookName: book.name,
       chapterIndex: state.currentChapterIndex,
+      startChapterPos: startChapterPos,
       pageStarts: pageStarts,
       fromReader: true,
     );

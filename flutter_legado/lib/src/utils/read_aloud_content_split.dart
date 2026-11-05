@@ -9,8 +9,9 @@
 //
 // 口径（与参考版一致）：
 // - `default` 运行时归一为 `paragraph`（整段），不是句级；
-// - `paragraph` 按空行分段，段内换行保留；
-// - `symbols` 按选中标点切分，连续标点归入同一单元，标点保留；
+// - `paragraph` 有空白行时按空行分段（段内换行保留），无空白行时逐行切分
+//   （TXT/在线书单换行正文），CRLF 同样覆盖；
+// - `symbols` 先按行、再逐行按选中标点切分，连续标点归入同一单元，标点保留；
 //   未选择标点时回退句末标点 `。！？…`；
 // - `page` 按阅读器提供的页首字符偏移切分；无分页信息回退 `paragraph`。
 //
@@ -107,6 +108,23 @@ String resolveReadAloudSymbols(String? stored) {
 Set<String> readAloudSymbolSet(String? stored) =>
     resolveReadAloudSymbols(stored).split('').toSet();
 
+/// 兼容读取「String 存储串」与参考版 `StringSet` / `List<String>` 两种形态。
+///
+/// 参考版 DataStore 存 `Set<String>`，JSON 备份经 appPrefs 往返为数组；
+/// 本实现批5b 早期写 String。两种形态都接受，非法元素忽略；坏值不抛出，
+/// 由调用方按空串（回退句末标点）处理，避免拖累同批其它偏好读回。
+String decodeReadAloudSymbols(Object? stored) {
+  if (stored is String) return stored;
+  if (stored is Iterable) {
+    final buffer = StringBuffer();
+    for (final item in stored) {
+      if (item is String) buffer.write(item);
+    }
+    return buffer.toString();
+  }
+  return '';
+}
+
 /// 把选中标点编码为存储串（过滤非法字符、按展示顺序去重）。
 ///
 /// 集合为空返回空串——存储层约定「空 = 回退句末标点」，与参考版一致。
@@ -154,9 +172,14 @@ List<ReadAloudUnit> splitReadAloudUnits(
 }
 
 /// 空行分段（整段单元，保留段内换行）
+///
+/// 分隔符选择恢复批5b前行为：正文存在空行时只按空行切（段内单换行保留），
+/// 否则按每个换行切。没有这条回退，无空行 TXT/在线书整章会变成 1 个单元，
+/// 段落切换失效且长章一次合成易失败。CRLF 空行与换行同样覆盖。
 List<ReadAloudUnit> _splitParagraphs(String content) {
   final result = <ReadAloudUnit>[];
-  final separator = RegExp(r'\n\s*\n');
+  final hasBlankLine = RegExp(r'\n[ \t]*\r?\n').hasMatch(content);
+  final separator = hasBlankLine ? RegExp(r'\n\s*\n') : RegExp(r'\r?\n');
   var start = 0;
   for (final match in separator.allMatches(content)) {
     _emitRange(content, start, match.start, result);
@@ -166,42 +189,77 @@ List<ReadAloudUnit> _splitParagraphs(String content) {
   return result;
 }
 
-/// 按选中标点切分（连续标点归入同一单元，标点保留在单元末尾）
+/// 按选中标点切分（先按行、再逐行按标点；连续标点归入同一单元）
+///
+/// 对齐参考版 `ReadAloudContentSplitter.splitLines`（`lineParagraphs` 后
+/// `splitParagraphs`）：行与行之间即使没有标点也不会合并成一个长单元；
+/// 每行内标点保留在单元末尾，绝对偏移直接取原正文位置。
 List<ReadAloudUnit> _splitAtSymbols(String content, String symbols) {
   final result = <ReadAloudUnit>[];
   final splitUnits = symbols.codeUnits.toSet();
-  var start = 0;
-  var index = 0;
-  while (index < content.length) {
+  var lineStart = 0;
+  for (var index = 0; index <= content.length; index++) {
+    final atEnd = index == content.length;
+    if (!atEnd && content.codeUnitAt(index) != 0x0A) continue;
+    if (index > lineStart) {
+      _splitRangeAtSymbols(content, lineStart, index, splitUnits, result);
+    }
+    lineStart = index + 1;
+  }
+  return result;
+}
+
+/// 在 [rawStart, rawEnd) 内按标点切分（标点及连续标点归入前一单元）
+void _splitRangeAtSymbols(
+  String content,
+  int rawStart,
+  int rawEnd,
+  Set<int> splitUnits,
+  List<ReadAloudUnit> out,
+) {
+  var start = rawStart;
+  var index = rawStart;
+  while (index < rawEnd) {
     if (!splitUnits.contains(content.codeUnitAt(index))) {
       index++;
       continue;
     }
     var end = index + 1;
     // 连续标点视为一个整体（如「……」「！？」），切在同一单元末尾
-    while (end < content.length &&
-        splitUnits.contains(content.codeUnitAt(end))) {
+    while (end < rawEnd && splitUnits.contains(content.codeUnitAt(end))) {
       end++;
     }
-    _emitRange(content, start, end, result);
+    _emitRange(content, start, end, out);
     start = end;
     index = end;
   }
-  _emitRange(content, start, content.length, result);
-  return result;
+  _emitRange(content, start, rawEnd, out);
 }
 
-/// 页首偏移归一：补齐 0/章末、过滤越界、去重排序。
+/// 页首偏移归一：补齐 0/章末、过滤越界、代理对边界对齐、去重排序。
 ///
 /// 没有任何分页信息（null/空）返回 null，由调用方回退整段划分。
+/// 页首若落在 UTF-16 代理对中间（低代理项位置），向前对齐到高代理项，
+/// 避免 `substring` 切开 emoji 等补充平面字符。
 List<int>? _normalizePageStarts(String content, List<int>? pageStarts) {
   if (pageStarts == null || pageStarts.isEmpty) return null;
   final boundaries = <int>{0, content.length};
   for (final value in pageStarts) {
-    if (value > 0 && value < content.length) boundaries.add(value);
+    final aligned = _alignToCodeUnitBoundary(content, value);
+    if (aligned > 0 && aligned < content.length) boundaries.add(aligned);
   }
   final sorted = boundaries.toList()..sort();
   return sorted;
+}
+
+/// 把可能落在代理对中间的偏移向前对齐到合法 UTF-16 边界
+int _alignToCodeUnitBoundary(String content, int index) {
+  if (index <= 0 || index >= content.length) return index;
+  final unit = content.codeUnitAt(index);
+  if (unit < 0xDC00 || unit > 0xDFFF) return index;
+  final previous = content.codeUnitAt(index - 1);
+  if (previous >= 0xD800 && previous <= 0xDBFF) return index - 1;
+  return index;
 }
 
 /// 按页边界切分；整页文本保留页内换行，仅剔除首尾空白

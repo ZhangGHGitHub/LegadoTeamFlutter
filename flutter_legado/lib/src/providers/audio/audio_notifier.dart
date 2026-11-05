@@ -174,6 +174,13 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// stop/切章/手动切段/暂停都会取消，回调内再校验 token 防迟到推进。
   Timer? _paragraphIntervalTimer;
 
+  /// 段间隔等待期间的目标段索引（设置批5b 审查回修 P2-1）
+  ///
+  /// 调度等待时 `_paragraphIndex` 仍是已播完的旧段；若用户暂停后恢复，
+  /// [play] 优先消费该目标，避免把上一段重播一遍。stop/切章/手动切段/
+  /// 显式起播位置均清空。
+  int? _pendingAdvanceIndex;
+
   /// 当前朗读会话的内容划分偏好（设置批5b）
   ReadAloudContentSplitMode _contentSplitMode =
       ReadAloudContentSplitMode.defaultMode;
@@ -505,6 +512,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // [设置批5b] 换书/重建目录：上一本书的页首偏移立即失效
     _pageStarts = null;
     _paragraphIntervalTimer?.cancel();
+    _pendingAdvanceIndex = null;
     state = state.copyWith(
       bookUrl: bookUrl,
       state: PlayerState.loading,
@@ -611,6 +619,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         ? List<int>.unmodifiable(pageStarts)
         : null;
     _pendingParagraphIndex = null;
+    _pendingAdvanceIndex = null;
     // [P0 | 2026-10-03] 在线书首次取正文可能联网（getChapterContentFull）：
     // 复用既有 loading 状态提前给出「加载中」反馈（不新增 UI；原版朗读读的是
     // 阅读器已加载的 curTextChapter，无此等待，故原版无对应 loading 可对齐）
@@ -947,9 +956,14 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       _paragraphs = paragraphs;
       final pending = _pendingParagraphIndex;
       _pendingParagraphIndex = null;
+      // [审查回修 P2-1] 段间隔等待中暂停后恢复：优先消费等待目标，
+      // 不重播已播完的旧段；显式 paragraphIndex 仍最优先。
+      final pendingAdvance = _pendingAdvanceIndex;
+      _pendingAdvanceIndex = null;
       final target =
           paragraphIndex ??
           pending ??
+          pendingAdvance ??
           (_paragraphs.isNotEmpty
               ? _paragraphIndex.clamp(0, _paragraphs.length - 1)
               : 0);
@@ -1238,15 +1252,19 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _paragraphIntervalTimer?.cancel();
     final interval = _ttsParagraphIntervalMs;
     if (interval <= 0) {
+      _pendingAdvanceIndex = null;
       _paragraphIndex = targetIndex;
       notifyListeners();
       unawaited(_speakCurrentParagraph(_playToken));
       return;
     }
+    // [审查回修 P2-1] 先记目标：暂停只取消定时器，恢复 play 时消费目标
+    _pendingAdvanceIndex = targetIndex;
     final token = _playToken;
     _paragraphIntervalTimer = Timer(Duration(milliseconds: interval), () {
       if (_disposed || token != _playToken) return;
       if (state.isStreamMode || state.state != PlayerState.playing) return;
+      _pendingAdvanceIndex = null;
       _paragraphIndex = targetIndex;
       notifyListeners();
       unawaited(_speakCurrentParagraph(token));
@@ -1256,6 +1274,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Future<void> nextParagraph() async {
     if (state.isStreamMode) return;
     _paragraphIntervalTimer?.cancel();
+    _pendingAdvanceIndex = null;
     if (_paragraphs.isEmpty || state.state == PlayerState.idle) return;
     if (_paragraphIndex < _paragraphs.length - 1) {
       _paragraphIndex++;
@@ -1273,6 +1292,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Future<void> prevParagraph() async {
     if (state.isStreamMode) return;
     _paragraphIntervalTimer?.cancel();
+    _pendingAdvanceIndex = null;
     if (_paragraphs.isEmpty || state.state == PlayerState.idle) return;
     if (_paragraphIndex > 0) {
       _paragraphIndex--;
@@ -1363,21 +1383,37 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       _ignoreAudioFocus = prefs.getBool(PrefKeys.ignoreAudioFocus) ?? false;
       _readAloudWakeLock = prefs.getBool(PrefKeys.readAloudWakeLock) ?? false;
       _mediaButtonPerNext = prefs.getBool(PrefKeys.mediaButtonPerNext) ?? false;
-      // [设置批5b] 内容划分与段落间隔：每次朗读入口读一次；未知模式回退
-      // default（运行时归一整段），标点空串在切分函数内回退句末标点。
-      _contentSplitMode = ReadAloudContentSplitMode.fromStorage(
-        prefs.getString(PrefKeys.readAloudContentSplitMode),
-      );
-      _contentSplitSymbols =
-          prefs.getString(PrefKeys.readAloudContentSplitSymbols) ?? '';
-      final storedInterval =
-          prefs.getInt(PrefKeys.ttsParagraphInterval) ??
-          kDefaultTtsParagraphIntervalMs;
-      _ttsParagraphIntervalMs = storedInterval < 0
-          ? 0
-          : (storedInterval > kMaxTtsParagraphIntervalMs
-                ? kMaxTtsParagraphIntervalMs
-                : storedInterval);
+      // [设置批5b / 审查回修 P2-2] 内容划分与段落间隔每次朗读入口读一次。
+      // 五个键各自独立 try：外部备份可能把 symbols 写成 StringSet 数组，
+      // 任一键类型异常都不得中断后续语速/音调/音量读回。
+      try {
+        final raw = prefs.get(PrefKeys.readAloudContentSplitMode);
+        _contentSplitMode = ReadAloudContentSplitMode.fromStorage(
+          raw is String ? raw : null,
+        );
+      } catch (e) {
+        debugPrint('读取内容划分方式失败（使用默认）: $e');
+      }
+      try {
+        _contentSplitSymbols = decodeReadAloudSymbols(
+          prefs.get(PrefKeys.readAloudContentSplitSymbols),
+        );
+      } catch (e) {
+        debugPrint('读取内容划分标点失败（回退句末标点）: $e');
+      }
+      try {
+        final raw = prefs.get(PrefKeys.ttsParagraphInterval);
+        final storedInterval = raw is int
+            ? raw
+            : kDefaultTtsParagraphIntervalMs;
+        _ttsParagraphIntervalMs = storedInterval < 0
+            ? 0
+            : (storedInterval > kMaxTtsParagraphIntervalMs
+                  ? kMaxTtsParagraphIntervalMs
+                  : storedInterval);
+      } catch (e) {
+        debugPrint('读取段落间隔失败（使用 0）: $e');
+      }
       final rate = prefs.getInt(PrefKeys.ttsSpeechRate);
       final pitch = prefs.getInt(PrefKeys.ttsPitch);
       final volume = prefs.getInt(PrefKeys.ttsVolume);
@@ -1734,6 +1770,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _playToken++;
     _paragraphs = [];
     _paragraphIndex = 0;
+    _pendingAdvanceIndex = null;
     // [设置批5b] 朗读会话结束：页首偏移不跨会话保留（下次按当前入口重取）
     _pageStarts = null;
     unawaited(_streamPlayer.stop());
@@ -1760,6 +1797,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     await _persistStreamPosition(force: true);
     _paragraphTimer?.cancel();
     _paragraphIntervalTimer?.cancel();
+    _pendingAdvanceIndex = null;
     _paragraphIndex = 0;
     if (state.mode == AudioPlayMode.singleLoop) {
       // 单章循环重播同一章：保留页首偏移（未切章）
@@ -1778,6 +1816,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     await _persistStreamPosition(force: true);
     _paragraphTimer?.cancel();
     _paragraphIntervalTimer?.cancel();
+    _pendingAdvanceIndex = null;
     _paragraphIndex = 0;
     // [设置批5b] 切章后回退整段（页首偏移只属于入口章）
     _pageStarts = null;
@@ -1791,6 +1830,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     await _persistStreamPosition(force: true);
     _paragraphTimer?.cancel();
     _paragraphIntervalTimer?.cancel();
+    _pendingAdvanceIndex = null;
     _paragraphIndex = 0;
     // [设置批5b] 目录跳转同样清空页首偏移
     _pageStarts = null;

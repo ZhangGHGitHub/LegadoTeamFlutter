@@ -406,7 +406,8 @@ class SettingsService {
   Future<bool> getBookshelfLayout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_keyBookshelfLayout) ?? false; // 默认列表（对齐 AppConfig.bookshelfLayout=0）
+      return prefs.getBool(_keyBookshelfLayout) ??
+          false; // 默认列表（对齐 AppConfig.bookshelfLayout=0）
     } catch (e) {
       debugPrint('SettingsService.getBookshelfLayout 异常: $e');
       return true;
@@ -598,6 +599,7 @@ class SettingsService {
   static const remoteServersKey = 'remote_servers';
   static const _keyRemoteServers = remoteServersKey;
   static const _keyRemoteServerId = 'remote_server_id';
+
   /// 默认 WebDAV（同步设置），对齐原版 DEFAULT_WEBDAV_ID = -1
   static const int defaultRemoteServerId = -1;
 
@@ -726,12 +728,12 @@ class SettingsService {
   Future<void> setWebDavBackupKeepCount(int value) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final normalized =
-          value < 0 ? 0 : (value > webDavBackupKeepCountMax ? webDavBackupKeepCountMax : value);
-      await prefs.setString(
-        PrefKeys.webDavBackupKeepCount,
-        '$normalized',
-      );
+      final normalized = value < 0
+          ? 0
+          : (value > webDavBackupKeepCountMax
+                ? webDavBackupKeepCountMax
+                : value);
+      await prefs.setString(PrefKeys.webDavBackupKeepCount, '$normalized');
     } catch (e) {
       debugPrint('SettingsService.setWebDavBackupKeepCount 异常: $e');
     }
@@ -948,7 +950,9 @@ class SettingsService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final millis = prefs.getInt(_keyLastSyncTime);
-      return millis != null ? DateTime.fromMillisecondsSinceEpoch(millis) : null;
+      return millis != null
+          ? DateTime.fromMillisecondsSinceEpoch(millis)
+          : null;
     } catch (e) {
       debugPrint('SettingsService.getLastSyncTime 异常: $e');
       return null;
@@ -1090,6 +1094,44 @@ class SettingsService {
     }
   }
 
+  /// 读取「字符串 / 字符串列表」双形态偏好并拼接为字符串。
+  ///
+  /// [设置批5b 审查回修 P2-2] 参考版内容划分标点以 StringSet 持久化，
+  /// 外部备份经 appPrefs 往返为 `List<String>`；本实现早期写入 String。
+  /// 两种形态都接受，非法元素忽略；类型异常回退 [defaultValue]，不向
+  /// 调用方抛出，避免拖累同批其它偏好读回。
+  Future<String> getStringOrStringListPref(
+    String key, {
+    String defaultValue = '',
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.get(key);
+      if (raw is String) return raw;
+      if (raw is Iterable) {
+        final buffer = StringBuffer();
+        for (final item in raw) {
+          if (item is String) buffer.write(item);
+        }
+        return buffer.toString();
+      }
+      return defaultValue;
+    } catch (e) {
+      debugPrint('SettingsService.getStringOrStringListPref($key) 异常: $e');
+      return defaultValue;
+    }
+  }
+
+  /// 写入字符串列表偏好（参考版 StringSet 存储形态，设置批5b）
+  Future<void> setStringListPref(String key, List<String> value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(key, value);
+    } catch (e) {
+      debugPrint('SettingsService.setStringListPref($key) 异常: $e');
+    }
+  }
+
   // ===== 阅读记录（对齐 ReadRecordActivity） =====
 
   /// 是否启用阅读时长记录（默认 true）
@@ -1175,10 +1217,7 @@ class SettingsService {
       if (decoded is! Map) {
         return {for (final k in restoreIgnoreKeys) k: false};
       }
-      return {
-        for (final k in restoreIgnoreKeys)
-          k: decoded[k] == true,
-      };
+      return {for (final k in restoreIgnoreKeys) k: decoded[k] == true};
     } catch (e) {
       debugPrint('SettingsService.getRestoreIgnoreConfig 异常: $e');
       return {for (final k in restoreIgnoreKeys) k: false};

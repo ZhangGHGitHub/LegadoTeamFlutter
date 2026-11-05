@@ -226,7 +226,7 @@ class _ReadAloudSettingsScreenState
           defaultValue: ReadAloudContentSplitMode.defaultMode.storageValue,
         ),
       );
-      final splitSymbols = await s.getStringPref(
+      final splitSymbols = await s.getStringOrStringListPref(
         PrefKeys.readAloudContentSplitSymbols,
         defaultValue: '',
       );
@@ -373,6 +373,7 @@ class _ReadAloudSettingsScreenState
       PrefKeys.readAloudContentSplitMode,
       selected.storageValue,
     );
+    if (!mounted) return;
     // 即时更新内存镜像：下一次起播/切章生效，不打断当前朗读队列
     ref
         .read(audioNotifierProvider.notifier)
@@ -392,7 +393,13 @@ class _ReadAloudSettingsScreenState
     }
     final encoded = encodeReadAloudSymbols(next);
     setState(() => _contentSplitSymbols = encoded);
-    await _setStringPref(PrefKeys.readAloudContentSplitSymbols, encoded);
+    // [审查回修 P2-2] 参考版 StringSet 形态：按字符写入 StringList；
+    // 读取侧 getStringOrStringListPref 同时兼容历史 String 与外部数组。
+    await _settings.setStringListPref(
+      PrefKeys.readAloudContentSplitSymbols,
+      encoded.split(''),
+    );
+    if (!mounted) return;
     ref
         .read(audioNotifierProvider.notifier)
         .setContentSplitPreferences(mode: _contentSplitMode, symbols: encoded);

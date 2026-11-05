@@ -321,6 +321,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 始终含 0；章末由切分函数补齐。无分页/空正文返回空列表。
   List<int> get currentChapterPageStarts {
     if (_paginatedPages.isEmpty) return const [];
+    // [审查回修 P3] 滚动模式没有稳定页边界：返回空，朗读按页回退整段
+    if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
+      return const [];
+    }
     final content = _paginatedContent.isNotEmpty
         ? _paginatedContent
         : ref.read(readerNotifierProvider).chapterContent;
