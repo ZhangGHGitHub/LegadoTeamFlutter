@@ -42,14 +42,13 @@ pub fn get_book_groups() -> LegadoResult<Vec<BookGroupDto>> {
 }
 
 /// 添加书籍分组，返回新分组 ID
+///
+/// group_id 为最小未占用 2 的幂（1,2,4,…，上限 1<<30），作为
+/// `books.group` 位掩码；存量任意 ID（含旧时间戳组）不迁移。
 pub fn add_book_group(group_name: &str, cover: &str, order: i32) -> LegadoResult<i64> {
     with_database(|db| {
         let repo = BookGroupRepository::new(db.connection());
-        // 使用当前时间戳作为 group_id
-        let id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as i64;
+        let id = repo.get_unused_id()?;
         let group = BookGroup {
             group_id: id,
             group_name: group_name.to_string(),
@@ -151,6 +150,22 @@ mod tests {
         assert!(delete_book_group(id).unwrap());
         let groups = get_book_groups().unwrap();
         assert!(!groups.iter().any(|g| g.group_id == id));
+    }
+
+    /// 新建分组 ID 必须是 2 的幂（books.group 位掩码语义，2026-11-06 修复）
+    #[test]
+    fn test_add_group_uses_power_of_two_ids() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let id1 = add_book_group("位掩码组A", "", 10).unwrap();
+        let id2 = add_book_group("位掩码组B", "", 11).unwrap();
+        assert!(id1 > 0 && id1.count_ones() == 1, "id1={id1}");
+        assert!(id2 > 0 && id2.count_ones() == 1, "id2={id2}");
+        assert_ne!(id1, id2);
+        assert_eq!(id1 & id2, 0, "两个新分组位不应重叠");
+
+        assert!(delete_book_group(id1).unwrap());
+        assert!(delete_book_group(id2).unwrap());
     }
 
     /// setShow 生效验证：设置后通过 get_book_groups 读回，

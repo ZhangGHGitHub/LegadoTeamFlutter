@@ -164,6 +164,36 @@ impl<'a> BookGroupRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("计数查询失败: {e}")))?;
         Ok(count)
     }
+
+    /// 返回最小未占用的 2 的幂分组 ID（1, 2, 4, …, 上限 1<<30）
+    ///
+    /// 对齐原版 `BookGroupDao.getUnusedId()`：`books.group` 是位掩码，新
+    /// 分组必须使用 2 的幂才能表达「一本书属于多个分组」。只跳过已存在的
+    /// 合法 2^n ID；存量时间戳/任意 ID 不参与碰撞判断（Dart 侧按 exact
+    /// 语义兼容旧组）。
+    pub fn get_unused_id(&self) -> LegadoResult<i64> {
+        const MAX_GROUP_BIT: i64 = 1 << 30;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT groupId FROM book_groups")
+            .map_err(|e| LegadoError::Database(format!("准备分组 ID 查询失败: {e}")))?;
+        let ids: Vec<i64> = stmt
+            .query_map([], |row| row.get::<_, i64>(0))
+            .map_err(|e| LegadoError::Database(format!("查询分组 ID 失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut id = 1_i64;
+        while id <= MAX_GROUP_BIT && ids.contains(&id) {
+            id <<= 1;
+        }
+        if id > MAX_GROUP_BIT {
+            return Err(LegadoError::Database(
+                "分组 ID 已用尽（上限 2^30）".to_string(),
+            ));
+        }
+        Ok(id)
+    }
 }
 
 fn row_to_book_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookGroup> {
@@ -325,5 +355,46 @@ mod tests {
         repo.upsert(&again).unwrap();
         assert_eq!(repo.count().unwrap(), 1);
         assert_eq!(repo.find_by_id(42).unwrap().unwrap().group_name, "改后");
+    }
+
+    #[test]
+    fn test_get_unused_id_starts_at_one_and_skips_powers_of_two() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        assert_eq!(repo.get_unused_id().unwrap(), 1);
+
+        repo.insert(&make_group(1, "A", 0)).unwrap();
+        assert_eq!(repo.get_unused_id().unwrap(), 2);
+        repo.insert(&make_group(2, "B", 1)).unwrap();
+        repo.insert(&make_group(4, "C", 2)).unwrap();
+        assert_eq!(repo.get_unused_id().unwrap(), 8);
+
+        // 释放 2 后应优先复用最小空洞
+        repo.delete(2).unwrap();
+        assert_eq!(repo.get_unused_id().unwrap(), 2);
+    }
+
+    #[test]
+    fn test_get_unused_id_ignores_legacy_timestamp_ids() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        repo.insert(&make_group(1_793_904_884_364, "旧组A", 0))
+            .unwrap();
+        repo.insert(&make_group(1_793_904_908_173, "旧组B", 1))
+            .unwrap();
+
+        // 旧时间戳 ID 非 2 的幂，不应占用位掩码 ID
+        assert_eq!(repo.get_unused_id().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_get_unused_id_rejects_when_all_bits_used() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        for i in 0..=30 {
+            repo.insert(&make_group(1_i64 << i, &format!("组{i}"), i))
+                .unwrap();
+        }
+        assert!(repo.get_unused_id().is_err());
     }
 }
