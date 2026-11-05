@@ -292,7 +292,10 @@ class CoverTextPainter extends CustomPainter {
     required bool stroke,
   }) {
     final cache = stroke ? _strokeCache : _fillCache;
-    final key = '${text}_${style.fontSize}_${style.fontWeight}';
+    final key =
+        '${text}_${style.fontSize}_${style.fontWeight}_'
+        '${style.color}_${style.foreground != null}_'
+        '${style.shadows?.length ?? 0}';
     return cache.putIfAbsent(
       key,
       () => TextPainter(
@@ -314,6 +317,7 @@ class CoverTextPainter extends CustomPainter {
     required bool center,
     required double strokeWidth,
     required Offset shadowOffset,
+    required bool fromBaseline,
   }) {
     TextPainter buildTextPainter({TextStyle? style}) {
       return TextPainter(
@@ -325,16 +329,6 @@ class CoverTextPainter extends CustomPainter {
       )..layout(maxWidth: maxWidth);
     }
 
-    if (layout.showStroke) {
-      final stroke = buildTextPainter(
-        style: _style(
-          fontSize: fontSize,
-          weight: weight,
-          foreground: _strokePaint(strokeWidth),
-        ),
-      );
-      stroke.paint(canvas, Offset(left, top));
-    }
     final fill = buildTextPainter(
       style: _style(
         fontSize: fontSize,
@@ -343,7 +337,22 @@ class CoverTextPainter extends CustomPainter {
         shadows: layout.showShadow ? _shadows(shadowOffset) : null,
       ),
     );
-    fill.paint(canvas, Offset(left, top));
+    // [审查] 横排作者按参考版 drawText baseline 定位（0.75h 为基线）；
+    // 横排书名仍按 StaticLayout 顶部定位（0.08h）。
+    final paintTop = fromBaseline
+        ? top - fill.computeDistanceToActualBaseline(TextBaseline.alphabetic)
+        : top;
+    if (layout.showStroke) {
+      final stroke = buildTextPainter(
+        style: _style(
+          fontSize: fontSize,
+          weight: weight,
+          foreground: _strokePaint(strokeWidth),
+        ),
+      );
+      stroke.paint(canvas, Offset(left, paintTop));
+    }
+    fill.paint(canvas, Offset(left, paintTop));
   }
 
   void _paintVerticalGlyphs(
@@ -400,6 +409,7 @@ class CoverTextPainter extends CustomPainter {
           center: true,
           strokeWidth: layout.nameFontSize / 12,
           shadowOffset: layout.nameShadowOffset,
+          fromBaseline: false,
         );
       }
       final author = layout.horizontalAuthor;
@@ -416,6 +426,7 @@ class CoverTextPainter extends CustomPainter {
           center: true,
           strokeWidth: layout.authorFontSize / 10,
           shadowOffset: layout.authorShadowOffset,
+          fromBaseline: true,
         );
       }
       return;
@@ -436,7 +447,7 @@ class CoverTextPainter extends CustomPainter {
         layout.authorGlyphs,
         fontSize: layout.authorFontSize,
         weight: FontWeight.normal,
-        drawStroke: false,
+        drawStroke: layout.authorVerticalStroke,
         shadowOffset: layout.authorShadowOffset,
       );
     }

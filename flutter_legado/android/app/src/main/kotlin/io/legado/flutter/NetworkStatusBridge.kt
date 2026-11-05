@@ -56,10 +56,13 @@ object NetworkStatusBridge {
                 return true
             }
             // VPN/非默认网络：activeNetwork 可能是 VPN transport，但底层仍是
-            // Wi-Fi；遍历当前所有网络，任一具备 WIFI transport 即视为 Wi-Fi。
+            // Wi-Fi；遍历当前所有网络，任一「已连接（有 LinkProperties）」且
+            // 具备 WIFI transport 即视为 Wi-Fi。
             return manager.allNetworks.any { network ->
-                manager.getNetworkCapabilities(network)
-                    ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                val caps = manager.getNetworkCapabilities(network) ?: return@any false
+                val link = manager.getLinkProperties(network)
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                    link?.interfaceName != null
             }
         }
         @Suppress("DEPRECATION")
