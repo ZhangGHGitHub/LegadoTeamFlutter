@@ -170,6 +170,23 @@ Future<void> _turnToNextPage(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('[设置批5b] 当前章页首偏移：含 0、按页递增且与翻页后页首一致', (tester) async {
+    _mockPrefs();
+    final (container, _) = await _pumpReader(tester);
+    addTearDown(container.dispose);
+
+    final pageState = _pageState(tester);
+    expect(pageState.pageCount, greaterThan(1));
+    final starts = pageState.currentChapterPageStarts;
+    expect(starts.first, 0, reason: '始终包含章首');
+    expect(starts, orderedEquals([...starts]..sort()), reason: '页首必须递增');
+    expect(starts.toSet().length, starts.length, reason: '页首不得重复');
+    expect(pageState.currentPageStartPos, starts.first);
+
+    await _turnToNextPage(tester);
+    expect(pageState.currentPageStartPos, starts[1], reason: '第 2 页页首与页首偏移表一致');
+  });
+
   testWidgets('进入阅读器按书名+作者加载既有书签并显示角标', (tester) async {
     _mockPrefs();
     final stored = [

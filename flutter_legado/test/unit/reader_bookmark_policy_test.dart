@@ -470,4 +470,32 @@ void main() {
       );
     });
   });
+
+  group('[设置批5b] 当前章页首偏移（朗读按页）', () {
+    test('按页区间的行级 start 返回页首，始终含 0', () {
+      final pages = [_page(0, 20), _page(20, 40), _page(40, 60)];
+      expect(readerPageStartsForPages(pages, 60), [0, 20, 40]);
+    });
+
+    test('跨页长段落取首行 chapterStartIndex，不退化为整段偏移', () {
+      final pages = [
+        _longParagraphSlice(lineStart: 0, lineEnd: 200, chapterStart: 0),
+        _longParagraphSlice(lineStart: 200, lineEnd: 400, chapterStart: 300),
+      ];
+      expect(readerPageStartsForPages(pages, 6600), [0, 300]);
+    });
+
+    test('空页跳过；越界/重复页首过滤；空分页/空正文返回空', () {
+      final pages = [
+        const PageInfo(paragraphs: [], totalHeight: 20),
+        _page(0, 10),
+        _page(10, 20),
+      ];
+      expect(readerPageStartsForPages(pages, 20), [0, 10]);
+      expect(readerPageStartsForPages(const [], 20), isEmpty);
+      expect(readerPageStartsForPages(pages, 0), isEmpty);
+      // 页首等于章末不是有效页首（章末由朗读切分函数补齐）
+      expect(readerPageStartsForPages([_page(20, 20)], 20), [0]);
+    });
+  });
 }

@@ -27,6 +27,7 @@ import 'package:flutter_legado/src/screens/read_aloud_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/services/platform_channel.dart';
 import 'package:flutter_legado/src/services/system_tts_service.dart';
+import 'package:flutter_legado/src/utils/read_aloud_content_split.dart';
 
 import '../mocks/mocks.dart';
 
@@ -153,12 +154,8 @@ void main() {
     tempDir = Directory.systemTemp.createTempSync('read_aloud_page_test');
     mockApi = MockRustApi();
     fakePlatform = _PageFakePlatform(
-      engines: const [
-        SystemTtsEngine(name: 'com.example.tts', label: '示例引擎'),
-      ],
-      voices: const [
-        SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN'),
-      ],
+      engines: const [SystemTtsEngine(name: 'com.example.tts', label: '示例引擎')],
+      voices: const [SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN')],
     );
     systemTts = SystemTtsService(
       platform: fakePlatform,
@@ -169,7 +166,9 @@ void main() {
     when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
     when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
     when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
-    when(() => mockApi.setHttpLogRecording(any())).thenAnswer((_) async => true);
+    when(
+      () => mockApi.setHttpLogRecording(any()),
+    ).thenAnswer((_) async => true);
 
     container = ProviderContainer(
       overrides: [
@@ -182,9 +181,9 @@ void main() {
     // 系统设置通道：电池优化查询固定「未豁免」，跳转固定成功
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(PlatformChannel.systemSettings, (call) async {
-      if (call.method == 'isIgnoringBatteryOptimizations') return false;
-      return true;
-    });
+          if (call.method == 'isIgnoringBatteryOptimizations') return false;
+          return true;
+        });
   });
 
   tearDown(() {
@@ -246,12 +245,7 @@ void main() {
       addTearDown(tester.view.reset);
       final routes = Map<String, WidgetBuilder>.from(AppRoutes.routes)
         ..remove(AppRoutes.home);
-      await tester.pumpWidget(
-        wrap(
-          const SettingsHomeScreen(),
-          routes: routes,
-        ),
-      );
+      await tester.pumpWidget(wrap(const SettingsHomeScreen(), routes: routes));
       await tester.pumpAndSettle();
 
       expect(find.text('朗读设置'), findsOneWidget);
@@ -361,23 +355,21 @@ void main() {
       }
     });
 
-    testOnPlatform(
-      TargetPlatform.windows,
-      '非 Android：唤醒锁/媒体键/电池优化置灰',
-      (tester) async {
-        await pumpPage(tester);
-        expect(tileOf(tester, '朗读唤醒锁').enabled, isFalse);
-        expect(tileOf(tester, '媒体键上一首/下一首翻章').enabled, isFalse);
-        expect(tileOf(tester, '后台保活 / 电池优化').enabled, isFalse);
+    testOnPlatform(TargetPlatform.windows, '非 Android：唤醒锁/媒体键/电池优化置灰', (
+      tester,
+    ) async {
+      await pumpPage(tester);
+      expect(tileOf(tester, '朗读唤醒锁').enabled, isFalse);
+      expect(tileOf(tester, '媒体键上一首/下一首翻章').enabled, isFalse);
+      expect(tileOf(tester, '后台保活 / 电池优化').enabled, isFalse);
 
-        // P2-1：Windows 无 synthesizeToFile → 系统 TTS/音色置灰并注明平台
-        await tester.tap(find.text('引擎与音色'));
-        await tester.pumpAndSettle();
-        expect(tileOf(tester, '系统 TTS').enabled, isFalse);
-        expect(tileOf(tester, '音色').enabled, isFalse);
-        expect(find.text('仅 Android/iOS/macOS 支持'), findsWidgets);
-      },
-    );
+      // P2-1：Windows 无 synthesizeToFile → 系统 TTS/音色置灰并注明平台
+      await tester.tap(find.text('引擎与音色'));
+      await tester.pumpAndSettle();
+      expect(tileOf(tester, '系统 TTS').enabled, isFalse);
+      expect(tileOf(tester, '音色').enabled, isFalse);
+      expect(find.text('仅 Android/iOS/macOS 支持'), findsWidgets);
+    });
   });
 
   group('引擎与音色页', () {
@@ -405,10 +397,7 @@ void main() {
       await tapText(tester, '音色');
       await tapText(tester, 'zh-cn-x（zh-CN）');
       expect((await prefs()).getString(PrefKeys.systemTtsVoice), 'zh-cn-x');
-      expect(
-        (await prefs()).getString(PrefKeys.systemTtsVoiceLocale),
-        'zh-CN',
-      );
+      expect((await prefs()).getString(PrefKeys.systemTtsVoiceLocale), 'zh-CN');
     });
 
     testAndroid('系统引擎/音色空态：置灰且提示', (tester) async {
@@ -450,11 +439,11 @@ void main() {
       await tester.pumpAndSettle();
 
       Slider sliderOf(String key) => tester.widget<Slider>(
-            find.descendant(
-              of: find.byKey(ValueKey(key)),
-              matching: find.byType(Slider),
-            ),
-          );
+        find.descendant(
+          of: find.byKey(ValueKey(key)),
+          matching: find.byType(Slider),
+        ),
+      );
 
       final speed = sliderOf('read-aloud-speed-slider');
       expect(speed.min, kMinTtsSpeed);
@@ -489,12 +478,13 @@ void main() {
     testAndroid('系统 TTS 设置/电池优化跳转（Android 可点并调用原生）', (tester) async {
       final calls = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(PlatformChannel.systemSettings,
-              (call) async {
-        calls.add(call.method);
-        if (call.method == 'isIgnoringBatteryOptimizations') return false;
-        return true;
-      });
+          .setMockMethodCallHandler(PlatformChannel.systemSettings, (
+            call,
+          ) async {
+            calls.add(call.method);
+            if (call.method == 'isIgnoringBatteryOptimizations') return false;
+            return true;
+          });
       await pumpPage(tester);
       await tester.tap(find.text('引擎与音色'));
       await tester.pumpAndSettle();
@@ -508,14 +498,13 @@ void main() {
     });
   });
 
-
   group('审查回修 P2-4 滑块落盘', () {
     Slider sliderOf(WidgetTester tester, String key) => tester.widget<Slider>(
-          find.descendant(
-            of: find.byKey(ValueKey(key)),
-            matching: find.byType(Slider),
-          ),
-        );
+      find.descendant(
+        of: find.byKey(ValueKey(key)),
+        matching: find.byType(Slider),
+      ),
+    );
 
     testAndroid('仅拖音量只写音量键，不改语速/音调', (tester) async {
       await pumpPage(tester);
@@ -544,8 +533,11 @@ void main() {
       final speed = sliderOf(tester, 'read-aloud-speed-slider');
       speed.onChanged!(2.0);
       await tester.pump();
-      expect(container.read(audioNotifierProvider).config.speed, before,
-          reason: '流媒体语速归书级 playSpeed，不得被设置页改写');
+      expect(
+        container.read(audioNotifierProvider).config.speed,
+        before,
+        reason: '流媒体语速归书级 playSpeed，不得被设置页改写',
+      );
       speed.onChangeEnd!(2.0);
       await tester.pumpAndSettle();
       expect(
@@ -577,18 +569,18 @@ void main() {
       await tapText(tester, '系统引擎');
       await tapText(tester, '引擎B');
       await waitFor(tester, () => systemTts.selectedVoice == null);
-      expect(
-        (await prefs()).getString(PrefKeys.systemTtsEngine),
-        'engine-b',
-      );
+      expect((await prefs()).getString(PrefKeys.systemTtsEngine), 'engine-b');
       expect(systemTts.selectedVoice, isNull, reason: 'service 应清除失效音色');
       expect(
         (await prefs()).getString(PrefKeys.systemTtsVoice),
         isNull,
         reason: '原音色不在新引擎列表，应清除持久化',
       );
-      expect(systemTts.takeNotice(), isNull,
-          reason: '页面 toast 已提示，服务一次性提示应被消费，避免播放时重复');
+      expect(
+        systemTts.takeNotice(),
+        isNull,
+        reason: '页面 toast 已提示，服务一次性提示应被消费，避免播放时重复',
+      );
 
       await tapText(tester, '音色');
       expect(find.text('b（zh-CN）'), findsOneWidget);
@@ -615,10 +607,7 @@ void main() {
       fakePlatform.setEngineGate = Completer<void>();
       await tapText(tester, '系统引擎');
       await tapText(tester, '引擎B');
-      await waitFor(
-        tester,
-        () => find.text('引擎初始化失败').evaluate().isNotEmpty,
-      );
+      await waitFor(tester, () => find.text('引擎初始化失败').evaluate().isNotEmpty);
 
       expect(find.text('引擎初始化失败'), findsOneWidget);
       expect(
@@ -651,6 +640,157 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('忽略音频焦点'), findsNothing);
       expect(find.text('自动清除过期搜索数据'), findsOneWidget);
+    });
+  });
+
+  group('内容分析（设置批5b）', () {
+    FilterChip chipOf(WidgetTester tester, String symbol) =>
+        tester.widget<FilterChip>(
+          find.byKey(ValueKey('read-aloud-split-symbol-$symbol')),
+        );
+
+    Slider intervalSlider(WidgetTester tester) => tester.widget<Slider>(
+      find.descendant(
+        of: find.byKey(const ValueKey('read-aloud-paragraph-interval-slider')),
+        matching: find.byType(Slider),
+      ),
+    );
+
+    testAndroid('渲染内容分析组与默认值，推理级别置灰', (tester) async {
+      await pumpPage(tester);
+      expect(find.text('内容分析'), findsOneWidget);
+      expect(find.text('章节分片方式'), findsOneWidget);
+      expect(find.text('推理级别'), findsOneWidget);
+      expect(find.text('内容划分方式'), findsOneWidget);
+      expect(find.text('段落间隔'), findsOneWidget);
+
+      // 默认值
+      expect(find.text('规则'), findsOneWidget);
+      expect(find.text('关闭'), findsOneWidget);
+      expect(find.text('默认'), findsOneWidget);
+      expect(find.text('0 ms'), findsOneWidget);
+      expect(tileOf(tester, '推理级别').enabled, isFalse);
+
+      // 默认非 symbols 模式不展开标点
+      expect(find.byType(FilterChip), findsNothing);
+    });
+
+    testAndroid('章节分片方式：AI 两项置灰，仅规则可写入', (tester) async {
+      await pumpPage(tester);
+      await tapText(tester, '章节分片方式');
+      expect(find.text('规则+AI'), findsOneWidget);
+      expect(find.text('AI 理解'), findsOneWidget);
+
+      // 置灰项点击不关闭对话框、不写偏好
+      await tapText(tester, '规则+AI');
+      expect(find.text('AI 理解'), findsOneWidget, reason: '对话框不应关闭');
+      expect((await prefs()).getString(PrefKeys.speechAnalysisMode), isNull);
+
+      // 行尾值也显示「规则」，点击需限定在对话框内
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('规则'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect((await prefs()).getString(PrefKeys.speechAnalysisMode), 'rule');
+    });
+
+    testAndroid('内容划分方式切到「按符号」：展开 14 个 chip，空存储回显句末标点', (tester) async {
+      await pumpPage(tester);
+      await tapText(tester, '内容划分方式');
+      await tapText(tester, '按符号');
+
+      expect(
+        (await prefs()).getString(PrefKeys.readAloudContentSplitMode),
+        'symbols',
+      );
+      expect(find.byType(FilterChip), findsNWidgets(14));
+      for (final symbol in ['。', '！', '？', '…']) {
+        expect(
+          chipOf(tester, symbol).selected,
+          isTrue,
+          reason: '空存储时 $symbol 应显示为选中',
+        );
+      }
+      expect(chipOf(tester, '，').selected, isFalse);
+      expect(find.textContaining('未选择时按句末标点'), findsOneWidget);
+    });
+
+    testAndroid('标点多选：切换写入存储串，已在句末集合上追加', (tester) async {
+      await pumpPage(tester);
+      await tapText(tester, '内容划分方式');
+      await tapText(tester, '按符号');
+
+      await tester.tap(find.byKey(const ValueKey('read-aloud-split-symbol-，')));
+      await tester.pumpAndSettle();
+
+      expect(chipOf(tester, '，').selected, isTrue);
+      expect(
+        (await prefs()).getString(PrefKeys.readAloudContentSplitSymbols),
+        '。！？…，',
+      );
+      expect(find.textContaining('已选 5 个标点'), findsOneWidget);
+    });
+
+    testAndroid('标点至少保留一个：取消最后一个时不写入', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readAloudContentSplitMode: 'symbols',
+        PrefKeys.readAloudContentSplitSymbols: '。',
+      });
+      await pumpPage(tester);
+      expect(chipOf(tester, '。').selected, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey('read-aloud-split-symbol-。')));
+      await tester.pumpAndSettle();
+
+      expect(chipOf(tester, '。').selected, isTrue, reason: '最后一个标点不可取消');
+      expect(
+        (await prefs()).getString(PrefKeys.readAloudContentSplitSymbols),
+        '。',
+      );
+      expect(find.text('至少保留一个标点'), findsOneWidget);
+    });
+
+    testAndroid('段落间隔滑块范围 0–5000ms，拖动后持久化并同步 Notifier', (tester) async {
+      await pumpPage(tester);
+      final slider = intervalSlider(tester);
+      expect(slider.min, 0);
+      expect(slider.max, kMaxTtsParagraphIntervalMs.toDouble());
+
+      slider.onChanged!(1500);
+      await tester.pump();
+      expect(find.text('1500 ms'), findsOneWidget);
+      expect(
+        container.read(audioNotifierProvider.notifier).ttsParagraphIntervalMs,
+        1500,
+      );
+
+      slider.onChangeEnd!(1500);
+      await tester.pumpAndSettle();
+      expect((await prefs()).getInt(PrefKeys.ttsParagraphInterval), 1500);
+    });
+
+    testAndroid('重启回显：模式/标点/间隔/分片方式/推理级别', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.readAloudContentSplitMode: 'symbols',
+        PrefKeys.readAloudContentSplitSymbols: '。！',
+        PrefKeys.ttsParagraphInterval: 1500,
+        PrefKeys.speechAnalysisMode: 'ai_understanding',
+        PrefKeys.speechAnalysisReasoningLevel: 'high',
+      });
+      await pumpPage(tester);
+
+      expect(find.text('按符号'), findsOneWidget);
+      expect(find.text('AI 理解'), findsOneWidget);
+      expect(find.textContaining('AI 分片暂未支持，实际按规则分片'), findsOneWidget);
+      expect(find.text('高'), findsOneWidget);
+      expect(find.text('1500 ms'), findsOneWidget);
+      expect(find.byType(FilterChip), findsNWidgets(14));
+      expect(chipOf(tester, '。').selected, isTrue);
+      expect(chipOf(tester, '！').selected, isTrue);
+      expect(chipOf(tester, '？').selected, isFalse);
     });
   });
 }
