@@ -30,6 +30,9 @@ class _NoopPlatform implements SystemTtsPlatform {
   bool get supportsEngineSelection => false;
 
   @override
+  bool get supportsSynthesis => true;
+
+  @override
   Future<void> init() async {}
 
   @override
@@ -84,6 +87,24 @@ class FakeSystemTtsService extends SystemTtsService {
   Completer<void>? gate;
 
   String Function(int call)? pathFor;
+
+  /// 停止次数（P2-6 stop 透传断言）
+  int stopCount = 0;
+
+  /// 一次性提示（P2-7 音色回退提示透传断言）
+  String? notice;
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+  }
+
+  @override
+  String? takeNotice() {
+    final n = notice;
+    notice = null;
+    return n;
+  }
 
   @override
   Future<String> synthesizeToFile({
@@ -390,17 +411,83 @@ void main() {
     });
   });
 
+
+  group('审查回修 P2 回归', () {
+    testWidgets('P2-5 暂停释放朗读唤醒锁', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'httpTtsSeedVersion': 1,
+        PrefKeys.readAloudWakeLock: true,
+      });
+      await startTts();
+      verify(() => mockAudio.setWakeLock(true)).called(1);
+      clearInteractions(mockAudio);
+
+      readNotifier().pause();
+      await tester.pump();
+      verify(() => mockAudio.setWakeLock(false)).called(1);
+    });
+
+    testWidgets('P2-6 stop 透传 SystemTts.stop', (tester) async {
+      await startTts();
+      final before = fakeSystemTts.stopCount;
+      readNotifier().stop();
+      await tester.pump();
+      expect(fakeSystemTts.stopCount, before + 1);
+    });
+
+    testWidgets('P2-6 停止后立即重播不被旧合成阻塞', (tester) async {
+      await startTts();
+      final before = fakeSystemTts.calls.length;
+      readNotifier().stop();
+      await tester.pump();
+
+      await readNotifier().play();
+      expect(fakeSystemTts.calls.length, before + 1);
+      expect(readState().state, PlayerState.playing);
+      readNotifier().stop();
+      await tester.pump();
+    });
+
+    testWidgets('P2-2 startReadAloud 重读全局语速（覆盖已有 config）',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'httpTtsSeedVersion': 1,
+        PrefKeys.ttsSpeechRate: 5, // (5+5)/10 = 1.0x
+      });
+      readNotifier().updateConfig(speed: 2.0);
+
+      await readNotifier().startReadAloud(bookUrl: 'url', bookName: '书');
+      expect(readState().config.speed, closeTo(1.0, 0.001));
+      readNotifier().stop();
+      await tester.pump();
+    });
+
+    testWidgets('P2-7 音色回退提示只出现一次', (tester) async {
+      fakeSystemTts.notice = '音色不可用，已回退系统默认音色';
+      await startTts();
+      expect(readState().errorMessage, contains('回退'));
+
+      // 下一段成功播放后提示自然清除（不逐段重复）
+      fakePlayer.completePlayback();
+      await tester.pump();
+      await tester.pump();
+      expect(readState().errorMessage, isNull);
+      readNotifier().stop();
+      await tester.pump();
+    });
+  });
+
   group('语速/音调/音量持久化读回', () {
     testWidgets('initMediaSession 读回参考刻度并写入 state.config', (tester) async {
       SharedPreferences.setMockInitialValues({
         'httpTtsSeedVersion': 1,
-        PrefKeys.ttsSpeechRate: 40,
+        PrefKeys.ttsSpeechRate: 7,
         PrefKeys.ttsPitch: 12,
         PrefKeys.ttsVolume: 50,
       });
       await readNotifier().initMediaSession();
       final config = readState().config;
-      expect(config.speed, closeTo(1.75, 0.001));
+      expect(config.speed, closeTo(1.2, 0.001));
       expect(config.pitch, closeTo(1.2, 0.001));
       expect(config.volume, closeTo(0.5, 0.001));
     });

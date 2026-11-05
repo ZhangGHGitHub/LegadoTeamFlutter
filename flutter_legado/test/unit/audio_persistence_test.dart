@@ -134,7 +134,8 @@ void main() {
       expect(savedBook?.readConfig?.playSpeed, 2.0);
     });
 
-    test('applyBookPreferences 读回播放模式与语速', () async {
+    test('applyBookPreferences 读回播放模式与语速（流媒体）', () async {
+      readNotifier().setAudioBookMode(true);
       await readNotifier().applyBookPreferences(const Book(
         bookUrl: 'url',
         name: '测试书',
@@ -145,7 +146,8 @@ void main() {
       expect(readState().config.speed, 1.5);
     });
 
-    test('applyBookPreferences 无 Book 对象时经 getBook 读回', () async {
+    test('applyBookPreferences 无 Book 对象时经 getBook 读回（流媒体）', () async {
+      readNotifier().setAudioBookMode(true);
       when(() => mockApi.getBook('url')).thenAnswer(
         (_) async => const Book(
           bookUrl: 'url',
@@ -158,6 +160,20 @@ void main() {
 
       expect(readState().mode, AudioPlayMode.singleLoop);
       expect(readState().config.speed, 2.0);
+    });
+
+    test('applyBookPreferences TTS 模式不应用书级 playSpeed（审查回修 P2-2）',
+        () async {
+      readNotifier().updateConfig(speed: 1.2);
+      await readNotifier().applyBookPreferences(const Book(
+        bookUrl: 'url',
+        name: '测试书',
+        readConfig: ReadConfig(playMode: 2, playSpeed: 2.0),
+      ));
+
+      // 播放模式仍读回；语速保持全局 TTS 值（不被书级 playSpeed 覆盖）
+      expect(readState().mode, AudioPlayMode.shuffle);
+      expect(readState().config.speed, 1.2);
     });
 
     test('applyBookPreferences 越界 playMode 回退 sequential（兼容原版 LIST_LOOP=3）', () async {

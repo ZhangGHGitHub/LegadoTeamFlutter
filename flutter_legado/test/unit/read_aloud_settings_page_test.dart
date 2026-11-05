@@ -36,6 +36,10 @@ class _PageFakePlatform implements SystemTtsPlatform {
   List<SystemTtsEngine> engines;
   List<SystemTtsVoice> voices;
 
+  /// 按引擎返回不同音色（key=引擎包名；未配置时用 [voices]）
+  Map<String, List<SystemTtsVoice>> voicesByEngine = const {};
+  String? _currentEngine;
+
   final List<String> selectedEngines = [];
   final List<SystemTtsVoice> selectedVoices = [];
   int clearVoiceCount = 0;
@@ -45,17 +49,23 @@ class _PageFakePlatform implements SystemTtsPlatform {
   bool get supportsEngineSelection => true;
 
   @override
+  bool get supportsSynthesis => true;
+
+  @override
   Future<void> init() async {}
 
   @override
   Future<List<SystemTtsEngine>> getEngines() async => engines;
 
   @override
-  Future<List<SystemTtsVoice>> getVoices() async => voices;
+  Future<List<SystemTtsVoice>> getVoices() async =>
+      voicesByEngine[_currentEngine] ?? voices;
 
   @override
-  Future<void> setEngine(String engineName) async =>
-      selectedEngines.add(engineName);
+  Future<void> setEngine(String engineName) async {
+    selectedEngines.add(engineName);
+    _currentEngine = engineName;
+  }
 
   @override
   Future<void> resetEngine() async => resetEngineCount++;
@@ -340,6 +350,13 @@ void main() {
         expect(tileOf(tester, '朗读唤醒锁').enabled, isFalse);
         expect(tileOf(tester, '媒体键上一首/下一首翻章').enabled, isFalse);
         expect(tileOf(tester, '后台保活 / 电池优化').enabled, isFalse);
+
+        // P2-1：Windows 无 synthesizeToFile → 系统 TTS/音色置灰并注明平台
+        await tester.tap(find.text('引擎与音色'));
+        await tester.pumpAndSettle();
+        expect(tileOf(tester, '系统 TTS').enabled, isFalse);
+        expect(tileOf(tester, '音色').enabled, isFalse);
+        expect(find.text('仅 Android/iOS/macOS 支持'), findsWidgets);
       },
     );
   });
@@ -469,6 +486,91 @@ void main() {
       await tester.pumpAndSettle();
       await tapText(tester, '后台保活 / 电池优化');
       expect(calls, contains('openBatteryOptimizationSettings'));
+    });
+  });
+
+
+  group('审查回修 P2-4 滑块落盘', () {
+    Slider sliderOf(WidgetTester tester, String key) => tester.widget<Slider>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(Slider),
+          ),
+        );
+
+    testAndroid('仅拖音量只写音量键，不改语速/音调', (tester) async {
+      await pumpPage(tester);
+      await tester.tap(find.text('引擎与音色'));
+      await tester.pumpAndSettle();
+
+      final volume = sliderOf(tester, 'read-aloud-volume-slider');
+      volume.onChanged!(0.4);
+      await tester.pump();
+      volume.onChangeEnd!(0.4);
+      await tester.pumpAndSettle();
+
+      final p = await prefs();
+      expect(p.getInt(PrefKeys.ttsVolume), ttsVolumeToStored(0.4));
+      expect(p.getInt(PrefKeys.ttsSpeechRate), isNull);
+      expect(p.getInt(PrefKeys.ttsPitch), isNull);
+    });
+
+    testAndroid('流媒体模式下语速滑块不改音频书语速', (tester) async {
+      container.read(audioNotifierProvider.notifier).setAudioBookMode(true);
+      await pumpPage(tester);
+      await tester.tap(find.text('引擎与音色'));
+      await tester.pumpAndSettle();
+
+      final before = container.read(audioNotifierProvider).config.speed;
+      final speed = sliderOf(tester, 'read-aloud-speed-slider');
+      speed.onChanged!(2.0);
+      await tester.pump();
+      expect(container.read(audioNotifierProvider).config.speed, before,
+          reason: '流媒体语速归书级 playSpeed，不得被设置页改写');
+      speed.onChangeEnd!(2.0);
+      await tester.pumpAndSettle();
+      expect(
+        (await prefs()).getInt(PrefKeys.ttsSpeechRate),
+        ttsSpeechRateFromSpeed(2.0),
+        reason: '全局 TTS 偏好仍应落盘',
+      );
+    });
+
+    testAndroid('切引擎刷新音色列表并清除新引擎不可用的音色', (tester) async {
+      const voiceA = SystemTtsVoice(name: 'a', locale: 'zh-CN');
+      const voiceB = SystemTtsVoice(name: 'b', locale: 'zh-CN');
+      fakePlatform.engines = const [
+        SystemTtsEngine(name: 'engine-a', label: '引擎A'),
+        SystemTtsEngine(name: 'engine-b', label: '引擎B'),
+      ];
+      fakePlatform.voicesByEngine = const {
+        'engine-a': [voiceA],
+        'engine-b': [voiceB],
+      };
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.systemTtsVoice: 'a',
+        PrefKeys.systemTtsVoiceLocale: 'zh-CN',
+      });
+      await pumpPage(tester);
+      await tester.tap(find.text('引擎与音色'));
+      await tester.pumpAndSettle();
+
+      await tapText(tester, '系统引擎');
+      await tapText(tester, '引擎B');
+      expect(
+        (await prefs()).getString(PrefKeys.systemTtsEngine),
+        'engine-b',
+      );
+      expect(
+        (await prefs()).getString(PrefKeys.systemTtsVoice),
+        isNull,
+        reason: '原音色不在新引擎列表，应清除持久化',
+      );
+
+      await tapText(tester, '音色');
+      expect(find.text('b（zh-CN）'), findsOneWidget);
+      expect(find.text('a（zh-CN）'), findsNothing);
+      await tapText(tester, '取消');
     });
   });
 

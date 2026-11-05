@@ -8,8 +8,11 @@
 // 5) 无可用引擎 → SystemTtsUnavailableException；
 // 6) 引擎/音色/语速/音调/音量真实下发到平台抽象（含 clearVoice/resetEngine）；
 // 7) 参考刻度 ↔ UI 倍速/音调/音量换算（兼容旧 playSpeed 的读回口径）。
+import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,6 +29,7 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
       SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN'),
     ],
     this.supportsEngineSelection = true,
+    this.supportsSynthesis = true,
   });
 
   List<SystemTtsEngine> engines;
@@ -33,8 +37,12 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   @override
   bool supportsEngineSelection;
 
+  @override
+  bool supportsSynthesis;
+
   int initCount = 0;
   int synthCount = 0;
+  int stopCount = 0;
   int clearVoiceCount = 0;
   int resetEngineCount = 0;
   final List<String> setEngines = [];
@@ -47,8 +55,22 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   /// 非空时 synthesizeToFile 抛出该异常
   Object? synthError;
 
+  /// 非空时 setVoice 抛出该异常（模拟音色失效）
+  Object? setVoiceError;
+
   /// false 时只创建空文件（模拟合成失败产物）
   bool writeBytes = true;
+
+  /// 非空时 synthesizeToFile 等待该闸门（模拟 flutter_tts 永不完成）
+  Completer<void>? synthGate;
+
+  /// 并发合成计数（串行队列断言）
+  int _running = 0;
+  int maxConcurrent = 0;
+
+  /// 按引擎返回不同音色（key=引擎包名；未配置时用 [voices]）
+  Map<String, List<SystemTtsVoice>> voicesByEngine = const {};
+  String? _currentEngine;
 
   @override
   Future<void> init() async {
@@ -59,11 +81,15 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   Future<List<SystemTtsEngine>> getEngines() async => engines;
 
   @override
-  Future<List<SystemTtsVoice>> getVoices() async => voices;
+  Future<List<SystemTtsVoice>> getVoices() async {
+    final perEngine = voicesByEngine[_currentEngine];
+    return perEngine ?? voices;
+  }
 
   @override
   Future<void> setEngine(String engineName) async {
     setEngines.add(engineName);
+    _currentEngine = engineName;
   }
 
   @override
@@ -73,6 +99,8 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
 
   @override
   Future<void> setVoice(SystemTtsVoice voice) async {
+    final err = setVoiceError;
+    if (err != null) throw err;
     setVoices.add(voice);
   }
 
@@ -94,15 +122,28 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   Future<void> synthesizeToFile(String text, String fullPath) async {
     synthCount++;
     synthTexts.add(text);
-    final err = synthError;
-    if (err != null) throw err;
-    final file = File(fullPath);
-    file.parent.createSync(recursive: true);
-    file.writeAsBytesSync(writeBytes ? [1, 2, 3, 4] : const []);
+    _running++;
+    if (_running > maxConcurrent) maxConcurrent = _running;
+    try {
+      final gate = synthGate;
+      if (gate != null) await gate.future;
+      final err = synthError;
+      if (err != null) throw err;
+      final file = File(fullPath);
+      file.parent.createSync(recursive: true);
+      file.writeAsBytesSync(writeBytes ? [1, 2, 3, 4] : const []);
+    } finally {
+      _running--;
+    }
   }
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    stopCount++;
+    // 模拟 flutter_tts stop 取消合成：唤醒等待中的合成
+    final gate = synthGate;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
 }
 
 void main() {
@@ -125,11 +166,14 @@ void main() {
     int maxCacheFiles = 50,
     Duration maxCacheAge = const Duration(hours: 48),
     SystemTtsPlatform? fake,
+    Duration synthesisTimeout = const Duration(seconds: 45),
   }) {
     return SystemTtsService(
-      platform: fake ?? platform,      baseDirectoryProvider: () async => tempDir,
+      platform: fake ?? platform,
+      baseDirectoryProvider: () async => tempDir,
       maxCacheFiles: maxCacheFiles,
       maxCacheAge: maxCacheAge,
+      synthesisTimeout: synthesisTimeout,
     );
   }
 
@@ -390,7 +434,21 @@ void main() {
       await service.selectEngine(null);
       await service.selectVoice(null);
       await synth(service, text: '切换默认后');
+      // 引擎重建后音色已随新实例回默认，无需再 clearVoice
       expect(platform.resetEngineCount, 1);
+      expect(platform.clearVoiceCount, 0);
+    });
+
+    test('仅切回默认音色（不改引擎）：clearVoice 恢复默认', () async {
+      final service = buildService();
+      await service.selectVoice(
+        const SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN'),
+      );
+      await synth(service, text: '音色A');
+      expect(platform.setVoices, hasLength(1));
+
+      await service.selectVoice(null);
+      await synth(service, text: '默认音色');
       expect(platform.clearVoiceCount, 1);
     });
 
@@ -427,15 +485,184 @@ void main() {
     });
   });
 
+
+  group('审查回修 P1/P2 回归', () {
+    test('P1-1 合成永不完成 → 超时 + stop 复位 + 抛 SystemTtsException', () async {
+      platform.synthGate = Completer<void>();
+      final service = buildService(
+        synthesisTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        synth(service),
+        throwsA(
+          isA<SystemTtsException>().having(
+            (e) => e.message,
+            'message',
+            contains('超时'),
+          ),
+        ),
+      );
+      expect(platform.stopCount, greaterThanOrEqualTo(1),
+          reason: '超时必须 stop 复位 flutter_tts busy');
+      final dir = Directory(
+        '${tempDir.path}${Platform.pathSeparator}${SystemTtsService.cacheDirName}',
+      );
+      expect(
+        dir.existsSync() ? dir.listSync().whereType<File>() : const <File>[],
+        isEmpty,
+      );
+      // 释放挂起的 fake 合成，避免遗留 future
+      if (!platform.synthGate!.isCompleted) platform.synthGate!.complete();
+    });
+
+    test('P1-2 切引擎后重新下发音色/语速/音调/音量', () async {
+      final service = buildService();
+      await service.selectEngine('com.example.tts');
+      await service.selectVoice(
+        const SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN'),
+      );
+      await synth(service, text: 'A', speed: 2.0, pitch: 1.2, volume: 0.5);
+      expect(platform.rates, [2.0]);
+      expect(platform.pitches, [1.2]);
+      expect(platform.volumes, [0.5]);
+      expect(platform.setVoices, hasLength(1));
+
+      // 切引擎：新 TextToSpeech 实例参数归默认，必须全部重新下发
+      await service.selectEngine('com.other.tts');
+      await synth(service, text: 'B', speed: 2.0, pitch: 1.2, volume: 0.5);
+      expect(platform.rates, [2.0, 2.0]);
+      expect(platform.pitches, [1.2, 1.2]);
+      expect(platform.volumes, [0.5, 0.5]);
+      expect(platform.setVoices, hasLength(2));
+    });
+
+    test('P2-1 平台不支持合成（Windows）→ 不可用且不初始化', () async {
+      platform.supportsSynthesis = false;
+      final service = buildService();
+      expect(await service.isAvailable(), isFalse);
+      expect(platform.initCount, 0);
+      await expectLater(
+        synth(service),
+        throwsA(isA<SystemTtsUnavailableException>()),
+      );
+    });
+
+    test('P2-1 FlutterTts 平台合成支持判定（Windows/Linux 不支持）', () {
+      final p = FlutterTtsSystemTtsPlatform();
+      for (final entry in <TargetPlatform, bool>{
+        TargetPlatform.android: true,
+        TargetPlatform.iOS: true,
+        TargetPlatform.macOS: true,
+        TargetPlatform.windows: false,
+        TargetPlatform.linux: false,
+      }.entries) {
+        debugDefaultTargetPlatformOverride = entry.key;
+        try {
+          expect(p.supportsSynthesis, entry.value, reason: '${entry.key}');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test('P2-1 init 失败复位 _initDone，允许重试', () async {
+      final fakeTts = _FakeFlutterTts();
+      final p = FlutterTtsSystemTtsPlatform(tts: fakeTts);
+      await expectLater(p.init(), throwsStateError);
+      await p.init();
+      expect(fakeTts.synthCompletionCalls, 2, reason: '第二次必须真正重试');
+    });
+
+    test('P2-6 跨 key 合成串行（同 key 仍去重）', () async {
+      platform.synthGate = Completer<void>();
+      final service = buildService();
+      final first = synth(service, text: 'A');
+      final second = synth(service, text: 'B');
+      final duplicate = synth(service, text: 'A');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(platform.maxConcurrent, 1, reason: '任意时刻只允许一次平台合成');
+      platform.synthGate!.complete();
+      await Future.wait([first, second, duplicate]);
+      expect(platform.synthCount, 2, reason: 'A 的重复请求合并');
+    });
+
+    test('P2-6 stop 复位 busy：停止后立即重播不被旧合成阻塞', () async {
+      platform.synthGate = Completer<void>();
+      final service = buildService(
+        synthesisTimeout: const Duration(seconds: 5),
+      );
+      final first = synth(service, text: 'A');
+      await Future<void>.delayed(Duration.zero);
+      await service.stop();
+      final second = synth(service, text: 'B');
+      await Future.wait([first, second]);
+      expect(platform.synthCount, 2);
+    });
+
+    test('P2-7 切引擎刷新音色；已选音色不在新列表则清除并提示一次', () async {
+      const voiceA = SystemTtsVoice(name: 'a', locale: 'zh-CN');
+      const voiceB = SystemTtsVoice(name: 'b', locale: 'zh-CN');
+      platform.voicesByEngine = const {
+        'engine-a': [voiceA],
+        'engine-b': [voiceB],
+      };
+      final service = buildService();
+      await service.selectEngine('engine-a');
+      await service.selectVoice(voiceA);
+      await synth(service, text: 'A');
+
+      final voices = await service.selectEngine('engine-b');
+      expect(voices, [voiceB]);
+      expect(service.selectedVoice, isNull);
+      expect(service.takeNotice(), contains('回退'));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(PrefKeys.systemTtsVoice), isNull);
+      expect(service.takeNotice(), isNull, reason: '提示只消费一次');
+    });
+
+    test('P2-7 setVoice 失败回落默认，不逐段失败且只提示一次', () async {
+      platform.setVoiceError = const SystemTtsException('音色不可用');
+      final service = buildService();
+      await service.selectVoice(
+        const SystemTtsVoice(name: 'a', locale: 'zh-CN'),
+      );
+      final path = await synth(service, text: 'A');
+      expect(path, isNotEmpty, reason: '音色失败不得让整段合成失败');
+      expect(platform.clearVoiceCount, greaterThanOrEqualTo(1));
+      expect(service.selectedVoice, isNull);
+      expect(service.takeNotice(), contains('回退'));
+
+      final setVoiceCalls = platform.setVoices.length;
+      await synth(service, text: 'B');
+      expect(platform.setVoices.length, setVoiceCalls,
+          reason: '已回落默认后不再重试 setVoice');
+      expect(service.takeNotice(), isNull, reason: '提示只出现一次');
+    });
+
+    test('P3 缓存文件为 0 字节时重新合成而非误命中', () async {
+      final service = buildService();
+      final path = await synth(service, text: 'A');
+      File(path).writeAsBytesSync(const []);
+      final again = await synth(service, text: 'A');
+      expect(again, path);
+      expect(File(path).lengthSync(), 4);
+      expect(platform.synthCount, 2);
+    });
+  });
+
   group('刻度换算（兼容旧 playSpeed）', () {
-    test('语速 0.5–3.0x ↔ 参考刻度 0–80', () {
+    test('语速 0.5–3.0x ↔ 参考刻度 (rate+5)/10 口径', () {
+      // 审查回修 P2-3：参考版 1.0x=5、2.0x=15、3.0x=25
       expect(ttsSpeechRateFromSpeed(0.5), 0);
-      expect(ttsSpeechRateFromSpeed(1.0), 16);
-      expect(ttsSpeechRateFromSpeed(3.0), 80);
-      expect(ttsSpeechRateFromSpeed(9.0), 80, reason: '越界收敛');
+      expect(ttsSpeechRateFromSpeed(1.0), 5);
+      expect(ttsSpeechRateFromSpeed(2.0), 15);
+      expect(ttsSpeechRateFromSpeed(3.0), 25);
+      expect(ttsSpeechRateFromSpeed(9.0), 25, reason: 'UI 越界先收敛到 3.0x（25）');
       expect(ttsSpeedFromSpeechRate(0), 0.5);
-      expect(ttsSpeedFromSpeechRate(16), closeTo(1.0, 0.001));
-      expect(ttsSpeedFromSpeechRate(80), 3.0);
+      expect(ttsSpeedFromSpeechRate(5), closeTo(1.0, 0.001));
+      expect(ttsSpeedFromSpeechRate(15), closeTo(2.0, 0.001));
+      expect(ttsSpeedFromSpeechRate(25), 3.0);
+      expect(ttsSpeedFromSpeechRate(80), 3.0, reason: '超出 UI 上限收敛到 3.0');
       expect(ttsSpeedFromSpeechRate(null), 1.0, reason: '缺失回退默认');
       expect(ttsSpeedFromSpeechRate(-5), 0.5, reason: '脏值收敛');
     });
@@ -462,10 +689,30 @@ void main() {
   });
 }
 
+/// FlutterTts 假实现：首次 awaitSynthCompletion 失败，用于验证 init 重试
+class _FakeFlutterTts extends FlutterTts {
+  int synthCompletionCalls = 0;
+
+  @override
+  Future<dynamic> awaitSynthCompletion(bool awaitCompletion) async {
+    synthCompletionCalls++;
+    if (synthCompletionCalls == 1) {
+      throw StateError('plugin not ready');
+    }
+    return 1;
+  }
+
+  @override
+  Future<dynamic> setLanguage(String language) async => 1;
+}
+
 /// 所有方法抛异常的平台（探测失败路径）
 class _ThrowingPlatform implements SystemTtsPlatform {
   @override
   bool get supportsEngineSelection => true;
+
+  @override
+  bool get supportsSynthesis => true;
 
   @override
   Future<void> init() async => throw StateError('init failed');
