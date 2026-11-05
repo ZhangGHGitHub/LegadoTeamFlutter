@@ -1,4 +1,4 @@
-﻿// 书架布局配置 Sheet（设置批6a-1）
+// 书架布局配置 Sheet（设置批6a-1）
 //
 // 覆盖：五段结构、参考版默认值、横竖屏条件、网格/列表条件显隐、
 // 更多信息/简介/标签子项、滑块范围、禁用项、文件夹 8 项隐藏、即时持久化。
@@ -178,6 +178,27 @@ void main() {
     final introLines = slider(tester, 'bookshelfIntroMaxLinesSlider');
     expect(introLines.min, 0);
     expect(introLines.max, 10);
+  });
+
+  testWidgets('网格模式同样提供显示标签/标签内容开关（审查 P2）',
+      (tester) async {
+    await pumpSheet(tester, prefs: {
+      BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
+    });
+    expect(find.text('显示标签'), findsOneWidget);
+    expect(find.byKey(const ValueKey('bookshelfShowTagSwitch')),
+        findsOneWidget);
+    expect(find.text('标签显示内容'), findsOneWidget);
+  });
+
+  testWidgets('窄屏列表列数超出可读范围时给出收敛提示（审查 P1-1）',
+      (tester) async {
+    await pumpSheet(tester, prefs: {
+      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+      BookshelfSettings.keyBookshelfLayoutListPortrait: 5,
+    });
+    expect(find.textContaining('最多 2 列'), findsOneWidget);
+    expect(find.textContaining('超出将按 2 列显示'), findsOneWidget);
   });
 
   testWidgets('文件夹 8 项隐藏（6a-2）', (tester) async {

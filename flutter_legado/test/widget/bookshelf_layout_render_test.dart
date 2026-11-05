@@ -1,9 +1,10 @@
-﻿// 书架核心渲染接线（设置批6a-1）
+// 书架核心渲染接线（设置批6a-1）
 //
 // 覆盖：网格/列表切换、网格样式、标题设置、标签/角标/新章圆点、
 // 分隔线/卡片色、快速滚动条、分组样式 0/1、隐藏空分组、手动排序拖拽、
 // 更多信息子项、更新数量限制。
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -14,12 +15,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/bookshelf_settings.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
 import 'package:flutter_legado/src/widgets/book_display_tags_row.dart';
 import 'package:flutter_legado/src/widgets/book_grid_item.dart';
 import 'package:flutter_legado/src/widgets/book_list_item.dart';
 import 'package:flutter_legado/src/widgets/md3_fast_scroller.dart';
+import 'package:flutter_legado/src/widgets/skeleton.dart';
 
 import '../mocks/mocks.dart';
 
@@ -57,20 +60,22 @@ void main() {
     List<Book>? books,
     List<BookGroup> groups = const [],
     Size size = const Size(400, 900),
+    MockRustApi? api,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = size * 3;
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
-    final api = MockRustApi();
-    when(() => api.getBooks()).thenAnswer((_) async => books ?? defaultBooks);
-    when(() => api.getBookGroups()).thenAnswer((_) async => groups);
-    when(() => api.refreshToc(any(), any())).thenAnswer((_) async => []);
+    final mockApi = api ?? MockRustApi();
+    when(() => mockApi.getBooks())
+        .thenAnswer((_) async => books ?? defaultBooks);
+    when(() => mockApi.getBookGroups()).thenAnswer((_) async => groups);
+    when(() => mockApi.refreshToc(any(), any())).thenAnswer((_) async => []);
     await tester.pumpWidget(
       ProviderScope(
         // 同一用例内多次 pumpShelf 时强制重建容器（否则沿用旧设置状态）
         key: UniqueKey(),
-        overrides: [bookApiProvider.overrideWithValue(api)],
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
         child: const MaterialApp(home: BookshelfScreen()),
       ),
     );
@@ -327,6 +332,148 @@ void main() {
     expect(find.byType(SliverReorderableList), findsOneWidget);
   });
 
+  /// 长按拖拽第一个列表项到第二项位置（ReorderableDelayedDragStartListener）
+  Future<void> dragFirstItemDown(WidgetTester tester) async {
+    final firstItem = find.byType(BookListItem).first;
+    final gesture = await tester.startGesture(tester.getCenter(firstItem));
+    // 延迟拖拽：先保持不动超过 kLongPressTimeout，再分步移动到第二项
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 300));
+    await gesture.moveBy(const Offset(0, 30));
+    await tester.pump(const Duration(milliseconds: 100));
+    final secondItem = find.byType(BookListItem).at(1);
+    await gesture.moveTo(tester.getCenter(secondItem));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> expectReorderWorked(
+    WidgetTester tester,
+    ProviderContainer container,
+    MockRustApi api,
+  ) async {
+    await dragFirstItemDown(tester);
+    verify(() => api.reorderBooks(any())).called(1);
+    final books = container.read(bookshelfNotifierProvider).books;
+    final first = books.firstWhere((b) => b.bookUrl == 'u1');
+    final second = books.firstWhere((b) => b.bookUrl == 'u2');
+    expect(first.order, greaterThan(second.order),
+        reason: '拖到第二项后 order 应大于原第二项');
+  }
+
+  testWidgets('手动排序：真实长按拖拽触发 reorderBooks 并更新 order（列表）',
+      (tester) async {
+    final api = MockRustApi();
+    when(() => api.reorderBooks(any())).thenAnswer((_) async {});
+    final books = [
+      const Book(bookUrl: 'u1', name: '书一', order: 0, totalChapterNum: 1),
+      const Book(bookUrl: 'u2', name: '书二', order: 1, totalChapterNum: 1),
+      const Book(bookUrl: 'u3', name: '书三', order: 2, totalChapterNum: 1),
+    ];
+    final container = await pumpShelf(
+      tester,
+      api: api,
+      books: books,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfSort: 3,
+        BookshelfSettings.keyBookshelfSortOrder: 0,
+      },
+    );
+    expect(find.byType(SliverReorderableList), findsOneWidget);
+    await expectReorderWorked(tester, container, api);
+  });
+
+  testWidgets('手动排序 + 网格：提示并临时切列表，拖拽仍可用（审查 P1-2）',
+      (tester) async {
+    final api = MockRustApi();
+    when(() => api.reorderBooks(any())).thenAnswer((_) async {});
+    final books = [
+      const Book(bookUrl: 'u1', name: '书一', order: 0, totalChapterNum: 1),
+      const Book(bookUrl: 'u2', name: '书二', order: 1, totalChapterNum: 1),
+      const Book(bookUrl: 'u3', name: '书三', order: 2, totalChapterNum: 1),
+    ];
+    final container = await pumpShelf(
+      tester,
+      api: api,
+      books: books,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
+        BookshelfSettings.keyBookshelfSort: 3,
+        BookshelfSettings.keyBookshelfSortOrder: 0,
+      },
+    );
+    expect(
+      find.byKey(const ValueKey('bookshelf_manual_sort_notice')),
+      findsOneWidget,
+    );
+    expect(find.byType(SliverReorderableList), findsOneWidget);
+    expect(find.byType(BookGridItem), findsNothing,
+        reason: '手动排序时网格临时回落列表');
+    await expectReorderWorked(tester, container, api);
+  });
+
+  testWidgets('隐藏空分组导致选中组不可见时回退「全部」（审查 P2）',
+      (tester) async {
+    final groups = const [
+      BookGroup(groupId: 1, groupName: '有书组', show: true, order: 1),
+      BookGroup(groupId: 2, groupName: '空组', show: true, order: 2),
+    ];
+    final books = [
+      const Book(
+          bookUrl: 'g1', name: '组一书', group: 1, totalChapterNum: 1),
+    ];
+    final container = await pumpShelf(tester, books: books, groups: groups, prefs: {
+      BookshelfSettings.keyHideEmptyGroups: true,
+      // 数据源索引：0=全部, 1=有书组, 2=空组（空组被隐藏）
+      'bookshelf_tab_position': 2,
+    });
+    await tester.pumpAndSettle();
+    expect(container.read(bookshelfNotifierProvider).selectedGroupIndex, 0);
+    expect(find.text('有书组'), findsOneWidget);
+    expect(find.text('空组'), findsNothing);
+    expect(find.text('组一书'), findsOneWidget);
+  });
+
+  testWidgets('15 列加载骨架 × 三种网格样式不溢出（审查 P2）', (tester) async {
+    for (final style in [0, 1, 2]) {
+      final pending = Completer<List<Book>>();
+      final api = MockRustApi();
+      when(() => api.getBooks()).thenAnswer((_) => pending.future);
+      when(() => api.getBookGroups()).thenAnswer((_) async => []);
+      SharedPreferences.setMockInitialValues({
+        BookshelfSettings.keyBookshelfLayoutGridPortrait: 15,
+        BookshelfSettings.keyBookshelfGridLayout: style,
+      });
+      tester.view.physicalSize = const Size(360 * 3, 900 * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          key: UniqueKey(),
+          overrides: [bookApiProvider.overrideWithValue(api)],
+          child: const MaterialApp(home: BookshelfScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final skeletons = tester
+          .widgetList<GridSkeletonItem>(find.byType(GridSkeletonItem))
+          .toList();
+      expect(skeletons, isNotEmpty, reason: '样式 $style 应显示网格骨架');
+      expect(
+        skeletons.every((s) => s.showText == (style == 0)),
+        isTrue,
+        reason: '样式 $style 的骨架文字渲染与网格样式一致',
+      );
+      expect(tester.takeException(), isNull,
+          reason: '样式 $style / 15 列骨架不应溢出');
+      pending.complete(const []);
+      await tester.pump();
+    }
+  });
+
   testWidgets('更多信息：最新章节/简介显隐与精简详情', (tester) async {
     await pumpShelf(tester, prefs: {
       BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
@@ -519,6 +666,128 @@ void main() {
       });
       expect(tester.takeException(), isNull,
           reason: '字号 $scale 多列列表不应溢出');
+    }
+  });
+
+  testWidgets('列表书籍类型标签单列/多列/批量均渲染（审查 P2）',
+      (tester) async {
+    final books = [
+      for (var i = 0; i < 2; i++)
+        Book(
+          bookUrl: 'type$i',
+          name: '类型书$i',
+          author: '作者',
+          origin: 'https://example.com',
+          totalChapterNum: 1,
+        ),
+    ];
+    var container = await pumpShelf(
+      tester,
+      books: books,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyShowTip: true,
+      },
+    );
+    expect(find.text('小说'), findsNWidgets(2));
+
+    container = await pumpShelf(
+      tester,
+      books: books,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfLayoutListPortrait: 2,
+        BookshelfSettings.keyShowTip: true,
+      },
+    );
+    expect(find.text('小说'), findsNWidgets(2));
+
+    container.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+    await tester.pumpAndSettle();
+    expect(find.text('小说'), findsNWidgets(2));
+  });
+
+  testWidgets('P1-1 列表 1–5 列 × 360/400dp × 1.0/1.3/1.6 × 普通/批量无溢出',
+      (tester) async {
+    final books = [
+      const Book(
+        bookUrl: 'p1',
+        name: '很长很长的书籍名称一',
+        author: '作者甲',
+        customTag: '仙侠',
+        intro: '用于验证窄列多列布局的简介文字，包含足够多的字符。',
+        totalChapterNum: 100,
+        durChapterIndex: 30,
+        durChapterPos: 10,
+        durChapterTitle: '第三十一章 很长章节名',
+        latestChapterTitle: '第一百章 大结局',
+        latestChapterTime: 1000,
+      ),
+      const Book(
+        bookUrl: 'p2',
+        name: '很长很长的书籍名称二',
+        author: '作者乙',
+        totalChapterNum: 80,
+        durChapterIndex: 20,
+        durChapterPos: 5,
+        durChapterTitle: '第二十一章',
+        latestChapterTitle: '第八十章 终章',
+        latestChapterTime: 2000,
+      ),
+      const Book(
+        bookUrl: 'p3',
+        name: '很长很长的书籍名称三',
+        author: '作者丙',
+        totalChapterNum: 60,
+        durChapterIndex: 0,
+        durChapterPos: 0,
+        latestChapterTitle: '第六十章',
+        latestChapterTime: 3000,
+      ),
+    ];
+    addTearDown(
+        tester.platformDispatcher.clearTextScaleFactorTestValue);
+    for (final width in [360.0, 400.0]) {
+      for (final columns in [1, 2, 3, 4, 5]) {
+        for (final scale in [1.0, 1.3, 1.6]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          final container = await pumpShelf(
+            tester,
+            books: books,
+            size: Size(width, 900),
+            prefs: {
+              BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+              BookshelfSettings.keyBookshelfLayoutListPortrait: columns,
+              BookshelfSettings.keyShowBookIntro: true,
+              BookshelfSettings.keyBookshelfShowIntro: true,
+              BookshelfSettings.keyBookshelfShowTag: true,
+            },
+          );
+          final reason =
+              'width=$width columns=$columns scale=$scale';
+          expect(tester.takeException(), isNull,
+              reason: '$reason 普通模式横向溢出');
+
+          final expected = math.min(
+            columns,
+            BookshelfSettings.maxReadableListColumns(width),
+          );
+          final delegate = gridDelegate(tester);
+          if (expected <= 1) {
+            expect(delegate, isNull, reason: '$reason 应为单列 SliverList');
+          } else {
+            expect(delegate?.crossAxisCount, expected,
+                reason: '$reason 实际列数应夹取到 $expected');
+          }
+
+          container
+              .read(bookshelfNotifierProvider.notifier)
+              .toggleBatchMode();
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull,
+              reason: '$reason 批量模式横向溢出');
+        }
+      }
     }
   });
 }

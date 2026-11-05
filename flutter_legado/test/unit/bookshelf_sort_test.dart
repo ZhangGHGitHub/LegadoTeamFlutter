@@ -1,4 +1,4 @@
-﻿// 书架 6 种排序 × 升降序（设置批6a-1）
+// 书架 6 种排序 × 升降序（设置批6a-1）
 //
 // 对齐参考版 BookshelfRepository.sortBooks：阅读时间 / 更新时间 / 书名 /
 // 手动 / 综合 / 作者；书名与作者用 pinyin（中文全拼 + 非中文 Unicode），
@@ -179,5 +179,56 @@ void main() {
           sortOrder: BookshelfSortOrder.ascending);
       expect(namesOf(books), namesOf(copy));
     });
+  });
+
+  test('拼音键每本书只生成一次（审查 P2 性能）', () {
+    final list = [
+      for (var i = 0; i < 200; i++)
+        Book(
+          bookUrl: 'p$i',
+          name: '书${i % 50}',
+          author: '作者${i % 20}',
+        ),
+    ];
+    var nameCalls = 0;
+    sortBookshelfBooks(
+      list,
+      sort: BookshelfSortMode.name,
+      sortOrder: BookshelfSortOrder.ascending,
+      pinyinKeyBuilder: (text) {
+        nameCalls++;
+        return bookshelfPinyinKey(text);
+      },
+    );
+    expect(nameCalls, list.length, reason: '每本书只生成一次书名拼音键');
+
+    var authorCalls = 0;
+    sortBookshelfBooks(
+      list,
+      sort: BookshelfSortMode.author,
+      sortOrder: BookshelfSortOrder.descending,
+      pinyinKeyBuilder: (text) {
+        authorCalls++;
+        return bookshelfPinyinKey(text);
+      },
+    );
+    expect(authorCalls, list.length, reason: '每本书只生成一次作者拼音键');
+  });
+
+  test('大列表（2000 本）书名排序耗时可接受', () {
+    final list = [
+      for (var i = 0; i < 2000; i++)
+        Book(bookUrl: 'b$i', name: '测试书籍${2000 - i}'),
+    ];
+    final watch = Stopwatch()..start();
+    final sorted = sortBookshelfBooks(
+      list,
+      sort: BookshelfSortMode.name,
+      sortOrder: BookshelfSortOrder.ascending,
+    );
+    watch.stop();
+    expect(sorted, hasLength(2000));
+    expect(sorted.first.name, '测试书籍1');
+    expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
   });
 }

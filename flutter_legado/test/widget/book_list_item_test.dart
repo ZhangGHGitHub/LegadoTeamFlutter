@@ -122,11 +122,21 @@ void main() {
 
   // ===== [批35] 展示标签行 =====
 
-  Widget wrapWithTags(Book book, List<String> tags) {
+  Widget wrapWithTags(
+    Book book,
+    List<String> tags, {
+    bool showBookIntro = true,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: ListView(
-          children: [BookListItem(book: book, tags: tags)],
+          children: [
+            BookListItem(
+              book: book,
+              tags: tags,
+              settings: BookshelfSettings(showBookIntro: showBookIntro),
+            ),
+          ],
         ),
       ),
     );
@@ -145,6 +155,16 @@ void main() {
     expect(find.text('玄幻'), findsOneWidget);
     expect(find.text('12万字'), findsOneWidget);
     expect(find.byType(BookDisplayTagsRow), findsOneWidget);
+  });
+
+  testWidgets('未开启「更多信息」时列表标签不渲染（审查 P2）', (tester) async {
+    final book = Book(bookUrl: 'u5b', name: '标签书');
+    await tester.pumpWidget(wrapWithTags(
+      book,
+      const ['仙侠'],
+      showBookIntro: false,
+    ));
+    expect(find.byType(BookDisplayTagsRow), findsNothing);
   });
 
   testWidgets('空标签列表不渲染标签行（空值不占位）', (tester) async {
@@ -254,5 +274,53 @@ void main() {
       ),
     ));
     expect(find.text(timeAgo(millis)), findsNothing);
+  });
+
+  testWidgets('列表书籍类型标签显示在封面左下（审查 P2）', (tester) async {
+    final book = Book(bookUrl: 'u10', name: '类型书', author: '作者');
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ListView(
+          children: [
+            BookListItem(
+              book: book,
+              typeLabel: '本地',
+              settings: const BookshelfSettings(),
+            ),
+          ],
+        ),
+      ),
+    ));
+    expect(find.text('本地'), findsOneWidget);
+  });
+
+  testWidgets('暗色卡片背景色取 bookshelfCardColorDark（审查 P2）', (tester) async {
+    final book = Book(bookUrl: 'u11', name: '暗色书', author: '作者');
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData.dark(),
+      home: Scaffold(
+        body: ListView(
+          children: [
+            BookListItem(
+              book: book,
+              settings: const BookshelfSettings(
+                bookshelfCardColor: 0xFF112233,
+                bookshelfCardColorDark: 0xFF445566,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ));
+    expect(
+      find.byWidgetPredicate(
+          (w) => w is Material && w.color == const Color(0xFF445566)),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+          (w) => w is Material && w.color == const Color(0xFF112233)),
+      findsNothing,
+    );
   });
 }

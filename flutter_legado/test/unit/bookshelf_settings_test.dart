@@ -1,4 +1,4 @@
-﻿// 书架布局配置模型/持久化（设置批6a-1）
+// 书架布局配置模型/持久化（设置批6a-1）
 //
 // 覆盖：参考版默认值逐项、越界收敛、键名、旧 bookshelf_layout 一次性迁移、
 // 变更键增量写盘、「忽略书架布局」备份过滤。
@@ -185,6 +185,66 @@ void main() {
       expect(s.bookshelfLayoutModeLandscape, 1);
     });
 
+    test('旧 Android 键 bookshelfLayout 同样迁移（bool）', () async {
+      SharedPreferences.setMockInitialValues({'bookshelfLayout': false});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      await container
+          .read(bookshelfSettingsProvider.notifier)
+          .waitForLoad();
+
+      final s = container.read(bookshelfSettingsProvider);
+      expect(s.bookshelfLayoutModePortrait, 0);
+      expect(s.bookshelfLayoutModeLandscape, 0);
+    });
+
+    test('旧键兼容 int / string 类型（不因类型不同抛错/跳过）', () async {
+      SharedPreferences.setMockInitialValues({
+        'bookshelfLayout': 'false',
+        'bookshelf_layout': 1,
+      });
+      var container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container
+          .read(bookshelfSettingsProvider.notifier)
+          .waitForLoad();
+      // 优先读取我方历史键 bookshelf_layout=1
+      expect(container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
+          1);
+
+      container.dispose();
+      SharedPreferences.setMockInitialValues({
+        'bookshelfLayout': 0,
+      });
+      container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container
+          .read(bookshelfSettingsProvider.notifier)
+          .waitForLoad();
+      expect(container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
+          0);
+    });
+
+    test('单方向新键已存在时只迁移缺失方向', () async {
+      SharedPreferences.setMockInitialValues({
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        'bookshelfLayout': true,
+      });
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container
+          .read(bookshelfSettingsProvider.notifier)
+          .waitForLoad();
+
+      final s = container.read(bookshelfSettingsProvider);
+      expect(s.bookshelfLayoutModePortrait, 0, reason: '已显式设置保留');
+      expect(s.bookshelfLayoutModeLandscape, 1, reason: '缺失方向按旧键补网格');
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+          prefs.getInt(BookshelfSettings.keyBookshelfLayoutModeLandscape), 1);
+    });
+
     test('update 只写发生变化的键并即时更新状态', () async {
       SharedPreferences.setMockInitialValues({});
       final container = ProviderContainer();
@@ -225,6 +285,24 @@ void main() {
       expect(s.bookshelfSort, 5);
       expect(s.bookshelfTitleMaxLines, 4);
       expect(s.bookshelfShowDivider, isFalse);
+    });
+
+    test('reload 重新读取持久化值（备份恢复同会话生效）', () async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(bookshelfSettingsProvider.notifier);
+      await notifier.waitForLoad();
+      expect(container.read(bookshelfSettingsProvider).bookshelfSort, 0);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(BookshelfSettings.keyBookshelfSort, 4);
+      await prefs.setInt(BookshelfSettings.keyBookshelfTitleMaxLines, 5);
+      await notifier.reload();
+
+      final s = container.read(bookshelfSettingsProvider);
+      expect(s.bookshelfSort, 4);
+      expect(s.bookshelfTitleMaxLines, 5);
     });
   });
 
