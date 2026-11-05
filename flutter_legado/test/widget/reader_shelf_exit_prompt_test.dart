@@ -15,6 +15,8 @@
 // 在架判定数据源：DB 记录（api.getBook + BookOpenUtils.isInBookshelf 判
 // notShelf 位）——路由带入的内存 Book 是瘦壳，不可作为在架依据。
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -22,10 +24,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_screen.dart';
+import 'package:flutter_legado/src/services/system_tts_service.dart';
 
 import '../mocks/mocks.dart';
 
@@ -58,6 +63,34 @@ const _chapters = [
   BookChapter(url: 'https://book.com/shelf-exit/c2', title: '第二章', index: 1),
 ];
 
+/// 系统 TTS 假服务：合成立即返回本地路径，记录 stop 次数
+class _ReaderFakeSystemTts extends SystemTtsService {
+  _ReaderFakeSystemTts()
+      : super(
+          platform: FlutterTtsSystemTtsPlatform(),
+          baseDirectoryProvider: () async => Directory.systemTemp,
+        );
+
+  int synthCount = 0;
+  int stopCount = 0;
+
+  @override
+  Future<String> synthesizeToFile({
+    required String text,
+    required double speed,
+    required double pitch,
+    required double volume,
+  }) async {
+    synthCount++;
+    return '/tmp/reader_exit_$synthCount.wav';
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+  }
+}
+
 void main() {
   setUpAll(registerFallbacks);
 
@@ -85,10 +118,17 @@ void main() {
   }
 
   /// 启动 App（首页按钮 push 真实 ReaderScreen，使 PopScope 可被触发）
-  Future<ProviderContainer> pumpReader(WidgetTester tester, MockRustApi api) async {
+  Future<ProviderContainer> pumpReader(
+    WidgetTester tester,
+    MockRustApi api, {
+    List<Override> extraOverrides = const [],
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [bookApiProvider.overrideWithValue(api)],
+        overrides: [
+          bookApiProvider.overrideWithValue(api),
+          ...extraOverrides,
+        ],
         child: MaterialApp(
           home: Builder(
             builder: (context) => Scaffold(
@@ -126,6 +166,58 @@ void main() {
     final navigator = tester.state<NavigatorState>(find.byType(Navigator));
     navigator.maybePop();
     await tester.pumpAndSettle();
+  }
+
+  /// 等待异步退出链路完成（tap/pop 的 async handler 不阻塞 pumpAndSettle）
+  Future<void> waitFor(WidgetTester tester, bool Function() condition) async {
+    for (var i = 0; i < 200 && !condition(); i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+  }
+
+  /// 带音频依赖的阅读器：返回容器与系统 TTS 假服务
+  Future<({ProviderContainer container, _ReaderFakeSystemTts tts})>
+      pumpReaderWithAudio(WidgetTester tester, MockRustApi api) async {
+    final mockAudio = MockAudioService();
+    final fakePlayer = FakeStreamAudioPlayer();
+    final tts = _ReaderFakeSystemTts();
+    when(() => mockAudio.init()).thenAnswer((_) async {});
+    when(() => mockAudio.isInitialized).thenReturn(true);
+    when(() => mockAudio.mediaButtonStream)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => mockAudio.audioFocusStream)
+        .thenAnswer((_) => const Stream.empty());
+    when(() => mockAudio.requestAudioFocus()).thenAnswer((_) async => true);
+    when(() => mockAudio.updateMetadata(
+          title: any(named: 'title'),
+          artist: any(named: 'artist'),
+          album: any(named: 'album'),
+        )).thenAnswer((_) async {});
+    when(() => mockAudio.notifyPlaying(position: any(named: 'position')))
+        .thenAnswer((_) async {});
+    when(() => mockAudio.notifyPaused(position: any(named: 'position')))
+        .thenAnswer((_) async {});
+    when(() => mockAudio.notifyStopped()).thenAnswer((_) async {});
+    when(() => mockAudio.setPlaying(any())).thenAnswer((_) async {});
+    when(() => mockAudio.updatePlaybackState(
+          state: any(named: 'state'),
+          position: any(named: 'position'),
+        )).thenAnswer((_) async {});
+    when(() => mockAudio.abandonAudioFocus()).thenAnswer((_) async {});
+    when(() => mockAudio.dispose()).thenAnswer((_) async {});
+    when(() => mockAudio.setWakeLock(any())).thenAnswer((_) async {});
+    when(() => api.getHttpTts()).thenAnswer((_) async => []);
+
+    final container = await pumpReader(
+      tester,
+      api,
+      extraOverrides: [
+        audioServiceProvider.overrideWithValue(mockAudio),
+        streamAudioPlayerProvider.overrideWithValue(fakePlayer),
+        systemTtsServiceProvider.overrideWithValue(tts),
+      ],
+    );
+    return (container: container, tts: tts);
   }
 
   group('P2-30 未入架书退出阅读「放入书架」提示', () {
@@ -295,6 +387,131 @@ void main() {
       // 不退出、不删除（留给用户重试或再次退出）
       expect(find.byType(ReaderScreen), findsOneWidget);
       verifyNever(() => api.deleteBook(any()));
+    });
+  });
+
+  group('设备验收 P1：退出阅读器停止朗读', () {
+    Future<void> startAloud(
+      WidgetTester tester,
+      ProviderContainer container, {
+      bool fromReader = true,
+    }) async {
+      await container.read(audioNotifierProvider.notifier).startReadAloud(
+            bookUrl: _sessionBook.bookUrl,
+            bookName: _sessionBook.name,
+            fromReader: fromReader,
+          );
+      await tester.pumpAndSettle();
+      expect(
+        container.read(audioNotifierProvider).state,
+        PlayerState.playing,
+      );
+    }
+
+    testWidgets('默认 false：退出阅读器 stop 被调用一次', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'enableReadRecord': false,
+        'httpTtsSeedVersion': 1,
+      });
+      final api = stubReaderApi();
+      when(() => api.getBook(any())).thenAnswer((_) async => _shelfDbBook);
+      final audio = await pumpReaderWithAudio(tester, api);
+      addTearDown(audio.container.dispose);
+      await startAloud(tester, audio.container);
+
+      await popReader(tester);
+      await waitFor(
+        tester,
+        () => find.byType(ReaderScreen).evaluate().isEmpty,
+      );
+      await waitFor(
+        tester,
+        () =>
+            audio.container.read(audioNotifierProvider).state ==
+            PlayerState.idle,
+      );
+
+      expect(
+        audio.container.read(audioNotifierProvider).state,
+        PlayerState.idle,
+      );
+      expect(audio.tts.stopCount, 1, reason: '退出阅读器必须停止朗读');
+    });
+
+    testWidgets('keepReadAloudOnExit=true：退出阅读器不 stop', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'enableReadRecord': false,
+        'httpTtsSeedVersion': 1,
+        PrefKeys.keepReadAloudOnExit: true,
+      });
+      final api = stubReaderApi();
+      when(() => api.getBook(any())).thenAnswer((_) async => _shelfDbBook);
+      final audio = await pumpReaderWithAudio(tester, api);
+      addTearDown(audio.container.dispose);
+      await startAloud(tester, audio.container);
+
+      await popReader(tester);
+      await waitFor(
+        tester,
+        () => find.byType(ReaderScreen).evaluate().isEmpty,
+      );
+      await tester.pump();
+
+      expect(
+        audio.container.read(audioNotifierProvider).state,
+        PlayerState.playing,
+      );
+      expect(audio.tts.stopCount, 0, reason: '退出继续朗读不得停止');
+      audio.container.read(audioNotifierProvider.notifier).stop();
+    });
+
+    testWidgets('非阅读器来源（听书页/耳机）：退出阅读器不 stop', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'enableReadRecord': false,
+        'httpTtsSeedVersion': 1,
+      });
+      final api = stubReaderApi();
+      when(() => api.getBook(any())).thenAnswer((_) async => _shelfDbBook);
+      final audio = await pumpReaderWithAudio(tester, api);
+      addTearDown(audio.container.dispose);
+      await startAloud(tester, audio.container, fromReader: false);
+
+      await popReader(tester);
+      await waitFor(
+        tester,
+        () => find.byType(ReaderScreen).evaluate().isEmpty,
+      );
+      await tester.pump();
+
+      expect(
+        audio.container.read(audioNotifierProvider).state,
+        PlayerState.playing,
+      );
+      expect(audio.tts.stopCount, 0, reason: '后台/听书页会话不得被误停');
+      audio.container.read(audioNotifierProvider.notifier).stop();
+    });
+
+    testWidgets('onReaderExit 幂等：重复调用只 stop 一次', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'enableReadRecord': false,
+        'httpTtsSeedVersion': 1,
+      });
+      final api = stubReaderApi();
+      when(() => api.getBook(any())).thenAnswer((_) async => _shelfDbBook);
+      final audio = await pumpReaderWithAudio(tester, api);
+      addTearDown(audio.container.dispose);
+      await startAloud(tester, audio.container);
+
+      final notifier = audio.container.read(audioNotifierProvider.notifier);
+      await notifier.onReaderExit();
+      await notifier.onReaderExit();
+      await tester.pump();
+
+      expect(audio.tts.stopCount, 1, reason: '重复退出只停止一次');
+      expect(
+        audio.container.read(audioNotifierProvider).state,
+        PlayerState.idle,
+      );
     });
   });
 }

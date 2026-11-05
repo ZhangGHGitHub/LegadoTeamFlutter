@@ -29,6 +29,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/widgets/reader/read_aloud_bar.dart';
 
 import '../mocks/mocks.dart';
@@ -89,11 +90,15 @@ void main() {
     await readNotifier().play();
   }
 
-  Future<void> pumpBar(WidgetTester tester) async {
+  Future<void> pumpBar(
+    WidgetTester tester, {
+    Map<String, WidgetBuilder>? routes,
+  }) async {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          routes: routes ?? const {},
           home: Scaffold(
             body: Stack(
               children: [
@@ -278,5 +283,18 @@ void main() {
 
     // 清理在途 ticker（测试结束前不遗留 pending timer）
     readNotifier().cancelSleepTimer();
+  });
+
+  testWidgets('朗读设置入口跳转新三页签页（设备验收 P1）', (tester) async {
+    await pumpBar(
+      tester,
+      routes: {
+        AppRoutes.readAloudSettings: (_) =>
+            const Scaffold(body: Text('新朗读设置页')),
+      },
+    );
+    await tester.tap(find.text('朗读设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('新朗读设置页'), findsOneWidget);
   });
 }
