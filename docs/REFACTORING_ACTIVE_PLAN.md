@@ -1088,6 +1088,9 @@
 
 修订：ZCode 主代理 ｜ 2026-11-05（**批5a-1 设备验收 + 5a-1b 回修——版本收尾 2.0.459+460**：报告 `docs/DEVICE_ACCEPTANCE_20261105_BATCH5A1.md`，证据 `docs/materials_1105a/`（63 截图 + logcat + 备份 JSON）。设备 2.0.458+459（APK sha256 `704c3276…`）：**19 PASS / 1 FAIL（P1）**。**通过**：A1-A3 三页签/入口/置灰不可点/旧忽略焦点行移除；B1-B3/B5-B6 默认界面/播放器背景纯透明/唤醒锁/媒体键 gate/系统设置按钮；C1-C4 系统 TTS 与 HTTP 引擎/空态/滑块边界/只拖音量不改语速/缓存；D1-D2 无 TTS 引擎朗读提示+估算推进、快速停止/重启不卡死；D3/E1-E2/F1 持久化/备份 7 键/清理；FATAL/ANR/E.flutter/overflow=0。**P1**：`keepReadAloudOnExit=false` 退出阅读器朗读不停止（通知/media_session 仍 PLAYING、后台段位推进）；根因 `dispose()` 内 `ref.read` 可能失效且异常被吞。**回修** `e86babc679`/`d57df03835`（退出五条 pop 路径前 + PopScope 兜底 + dispose 最后兜底调幂等 `onReaderExit`；失败 debugPrint；朗读条/听书页设置入口改新三页签页；4 项退出/来源/幂等测试）。**门禁**：analyze 0；flutter test **4537 通过 + 1 skipped**；Kotlin 136。**P2/P3 登记**：①`readAloudWakeLock` 在 alwaysIgnoreKeys（设备级，与 audioPlayWakeLock 同类）不入备份，属设计；②百度引擎失败每段重复提示；③引擎列表两行未进语义树；④`crash_last_crash` 旧标记；⑤`mediaButtonPerNext` 无 TTS 无法验证；⑥系统 TTS 出声/音色/音调/唤醒锁/设置跳转 BLOCKED（无引擎）。**待复验**：默认/开启退出停止、听书页/耳机来源不误停、朗读条/听书页设置入口。
 
+修订：ZCode 主代理 ｜ 2026-11-05（**批5a-1 设备 P1 复验：7/7 PASS，P1 关闭；批5a-1 工程验收通过**：报告 `docs/DEVICE_ACCEPTANCE_20261105_BATCH5A1.md` 追加「P1 回修复验（2.0.459+460）」，证据 `docs/materials_1105b/`（12-52 截图 + logcat）。复验 APK sha256 `a1825ea5…`、设备 2.0.459/460。**通过**：①keep=false 顶栏返回退出后 media_session STOPPED、通知/前台服务 0，45s 采样不变，重进阅读器段位仍 1/10；②系统返回退出同样 STOPPED/0，45s 后无推进；③keep=true 退出后 PLAYING/通知在，45s 后段位 14→19/20 推进，清理后 STOPPED；④听书页来源（播放器内重新 play）返回阅读器退出后仍 PLAYING，不被误停；⑤阅读器朗读条/听书页「朗读设置」均进入新三页签页；⑥连续进出 3 次每轮只 stop 一次、无残留通知/崩溃；⑦设备复位（经典/纯色/唤醒锁关/退出保持关/媒体键关/1.0x/1.0/100%、空书架、竖屏）。FATAL/ANR/E.flutter/overflow=0。**观察**：dispose 兜底仍打印 `Bad state: Cannot use "ref" after the widget was disposed.`（pre-pop 路径已成功停止，仅兜底日志，登记）。**P2/P3 保持原登记**（唤醒锁设备级不入备份、百度引擎每段重复提示、引擎行语义树、crash 旧标记、mediaButtonPerNext 无 TTS BLOCKED）。**下一步：批5a-2（播放器背景模糊/流光、缓存保留/预加载等剩余常规项）或直接 5b 内容划分；建议先 5b（更独立）。随后 5c、批6~8、隐私、cast。**
+
+
 
 
 

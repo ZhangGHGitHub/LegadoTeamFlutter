@@ -1,0 +1,1511 @@
+--------- beginning of main
+11-05 19:48:36.993 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:48:36.993   837  1206 I MediaFocusControl: abandonAudioFocus() from uid/pid 10066/11174 clientId=android.media.AudioManager@bc600daX0.b@a2cf90b callingPack=io.legado.flutter_legado
+11-05 19:48:36.995   837  1206 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=6494193, actions=3670015, custom actions=[], active item id=-1, error=null}
+--------- beginning of system
+11-05 19:48:36.995   837  1206 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10066 in package io.legado.flutter_legado
+11-05 19:48:36.995   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:48:36.996   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:48:36.998  1090  1349 D MediaDataManager: State updated outside of notification
+11-05 19:48:37.003  1090  1090 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10066 because it was removed by the system
+11-05 19:48:37.322 11174 11174 I flutter : 阅读器 dispose 停止朗读失败（忽略）: Bad state: Cannot use "ref" after the widget was disposed.
+11-05 19:48:40.069 16846 16846 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:48:40.069 16846 16846 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:48:40.069 16846 16846 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:48:40.069   698   733 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:48:40.072 16846 16847 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:48:40.073 16846 16847 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:48:40.188 16850 16850 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:48:40.240 16854 16854 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:48:40.271 16857 16857 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:48:40.306 16860 16860 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:48:40.345 16863 16863 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:48:50.764 16879 16879 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:48:50.764 16879 16879 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:48:50.765 16879 16879 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:48:50.765   698   733 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:48:50.768 16879 16880 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:48:50.769 16879 16880 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:48:50.936 16881 16881 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:48:50.938 16881 16881 I AndroidRuntime: Using default boot image
+11-05 19:48:50.938 16881 16881 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:48:50.940 16881 16881 W app_process: ART APEX data files are untrusted.
+11-05 19:48:50.940 16881 16881 I app_process: Using CollectorTypeCMC GC.
+11-05 19:48:50.967 16881 16881 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:48:50.972 16881 16881 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:48:50.972 16881 16881 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:48:50.972 16881 16881 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:48:50.973 16881 16881 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:48:50.973 16881 16881 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:48:50.974 16881 16881 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:48:50.974 16881 16881 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:48:50.974 16881 16881 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:48:50.975 16881 16881 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:48:50.975 16881 16881 W app_process: Could not create mount namespace.
+11-05 19:48:50.975 16881 16881 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:48:50.975 16881 16881 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:48:50.975 16881 16881 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:48:50.975 16881 16881 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:48:50.975 16881 16881 E libnb   : The translator implementation library has not been set.
+11-05 19:48:50.980 16881 16881 E libnb   : get_callbacks native_handle 0xb77438160b852849: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:48:50.980 16881 16881 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:48:50.989 16881 16881 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:48:50.989 16881 16881 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:48:50.991 16881 16881 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:48:50.991 16881 16881 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:48:50.991 16881 16881 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:48:50.991   837   854 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:48:50.991   837   854 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:48:50.992   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:48:50.993   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:48:50.993   837  1192 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:48:52.008 16881 16881 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:48:52.009   837  1722 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:48:52.009   837  1722 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:48:52.009   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:48:52.010 16881 16881 D AndroidRuntime: Shutting down VM
+--------- beginning of crash
+11-05 19:48:52.815 16881 16881 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7126d58e1d80 in tid 16881 (Shutdown thread), pid 16881 (Shutdown thread)
+11-05 19:48:52.821 16897 16897 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:48:52.821   513   513 I tombstoned: received crash request for pid 16881
+11-05 19:48:52.821 16897 16897 I crash_dump64: performing dump of process 16881 (target tid = 16881)
+11-05 19:48:52.844 16897 16897 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:48:52.844 16897 16897 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:48:52.844 16897 16897 F DEBUG   : Revision: '0'
+11-05 19:48:52.844 16897 16897 F DEBUG   : ABI: 'x86_64'
+11-05 19:48:52.844 16897 16897 F DEBUG   : Timestamp: 2026-11-05 19:48:52.823197046+0800
+11-05 19:48:52.844 16897 16897 F DEBUG   : Process uptime: 3s
+11-05 19:48:52.844 16897 16897 F DEBUG   : Cmdline: uiautomator
+11-05 19:48:52.844 16897 16897 F DEBUG   : pid: 16881, tid: 16881, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:48:52.844 16897 16897 F DEBUG   : uid: 2000
+11-05 19:48:52.844 16897 16897 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007126d58e1d80
+11-05 19:48:52.844 16897 16897 F DEBUG   :     rax 0000000000000000  rbx 00007129cad7389c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:48:52.844 16897 16897 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:48:52.844 16897 16897 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007126d58e1d80  r15 0000000000008928
+11-05 19:48:52.844 16897 16897 F DEBUG   :     rdi 00007126d5ca8c08  rsi 0000000000001000
+11-05 19:48:52.844 16897 16897 F DEBUG   :     rbp 00007ffe3ccad610  rsp 00007ffe3ccad5a8  rip 00007126d58e1d80
+11-05 19:48:52.844 16897 16897 F DEBUG   : 4 total frames
+11-05 19:48:52.844 16897 16897 F DEBUG   : backtrace:
+11-05 19:48:52.844 16897 16897 F DEBUG   :       #00 pc 00007126d58e1d80  <unknown>
+11-05 19:48:52.844 16897 16897 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:48:52.844 16897 16897 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:48:52.844 16897 16897 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:48:52.846   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 16881
+11-05 19:48:52.846   513   513 E tombstoned: Tombstone written to: tombstone_24
+11-05 19:48:52.847   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:48:52.847   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:49:03.282   837   853 I MediaFocusControl: requestAudioFocus() from uid/pid 10066/11174 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@bc600daX0.b@a2cf90b callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-05 19:49:03.282   837   853 I AS.FadeOutManager: unfadeOutUid() uid:10066
+11-05 19:49:03.283   837   853 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/5 (userId=0)
+11-05 19:49:03.283   837   853 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=6520481, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:49:03.283   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:03.283   837   853 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10066; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-05 19:49:03.286   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:03.490   837   837 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-05 19:49:03.493   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:03.703  1090  1090 W HWUI    : Image decoding logging dropped!
+11-05 19:49:03.893  1090  1284 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-05 19:49:03.900  1090  1090 W HWUI    : Image decoding logging dropped!
+11-05 19:49:03.900  1090  1090 W HWUI    : Image decoding logging dropped!
+11-05 19:49:03.901  1090  1090 W HWUI    : Image decoding logging dropped!
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:03.903  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:03.904  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:03.905  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:03.905  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:03.905  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:03.905  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:03.905  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:03.906  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:03.920  1090  1090 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-05 19:49:03.921  1090  1090 W HWUI    : Image decoding logging dropped!
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:04.019  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:04.020  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:04.020  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:04.020  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:04.020  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:04.336  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:07.347 16917 16917 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:49:07.349   837  1782 I system_server: AssetManager2(0x75645b8918b8) locale list changing from [] to [zh-Hans-CN]
+11-05 19:49:07.388 16921 16921 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:07.424 16924 16924 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:07.463 16927 16927 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:49:07.534 16930 16930 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:49:07.627 16933 16933 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:49:07.629 16933 16933 I AndroidRuntime: Using default boot image
+11-05 19:49:07.629 16933 16933 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:49:07.630 16933 16933 W app_process: ART APEX data files are untrusted.
+11-05 19:49:07.630 16933 16933 I app_process: Using CollectorTypeCMC GC.
+11-05 19:49:07.658 16933 16933 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:49:07.663 16933 16933 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:49:07.663 16933 16933 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:49:07.663 16933 16933 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:49:07.663 16933 16933 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:49:07.664 16933 16933 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:49:07.664 16933 16933 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:49:07.664 16933 16933 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:49:07.665 16933 16933 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:49:07.665 16933 16933 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:49:07.665 16933 16933 W app_process: Could not create mount namespace.
+11-05 19:49:07.665 16933 16933 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:49:07.665 16933 16933 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:49:07.665 16933 16933 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:49:07.665 16933 16933 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:49:07.665 16933 16933 E libnb   : The translator implementation library has not been set.
+11-05 19:49:07.671 16933 16933 E libnb   : get_callbacks native_handle 0x758891e795930c45: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:49:07.671 16933 16933 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:49:07.679 16933 16933 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:49:07.679 16933 16933 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:49:07.680 16933 16933 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:49:07.680 16933 16933 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:49:07.680 16933 16933 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:49:07.681   837  1782 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:49:07.681   837  1782 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:49:07.682   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:49:07.682   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:49:07.683   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:49:08.691 16933 16933 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:49:08.692   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:49:08.692   837  1206 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:49:08.692   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:49:08.692 16933 16933 D AndroidRuntime: Shutting down VM
+11-05 19:49:09.505 16933 16933 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7be0606c3d80 in tid 16933 (Shutdown thread), pid 16933 (Shutdown thread)
+11-05 19:49:09.526 16950 16950 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:49:09.527   513   513 I tombstoned: received crash request for pid 16933
+11-05 19:49:09.527 16950 16950 I crash_dump64: performing dump of process 16933 (target tid = 16933)
+11-05 19:49:09.558 16950 16950 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:49:09.558 16950 16950 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:49:09.558 16950 16950 F DEBUG   : Revision: '0'
+11-05 19:49:09.558 16950 16950 F DEBUG   : ABI: 'x86_64'
+11-05 19:49:09.558 16950 16950 F DEBUG   : Timestamp: 2026-11-05 19:49:09.530027485+0800
+11-05 19:49:09.558 16950 16950 F DEBUG   : Process uptime: 3s
+11-05 19:49:09.558 16950 16950 F DEBUG   : Cmdline: uiautomator
+11-05 19:49:09.558 16950 16950 F DEBUG   : pid: 16933, tid: 16933, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:49:09.558 16950 16950 F DEBUG   : uid: 2000
+11-05 19:49:09.558 16950 16950 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007be0606c3d80
+11-05 19:49:09.558 16950 16950 F DEBUG   :     rax 0000000000000000  rbx 00007be33d4f189c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:49:09.558 16950 16950 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:49:09.558 16950 16950 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007be0606c3d80  r15 0000000000008928
+11-05 19:49:09.558 16950 16950 F DEBUG   :     rdi 00007be060a8ac08  rsi 0000000000001000
+11-05 19:49:09.558 16950 16950 F DEBUG   :     rbp 00007fff3a3395c0  rsp 00007fff3a339558  rip 00007be0606c3d80
+11-05 19:49:09.558 16950 16950 F DEBUG   : 4 total frames
+11-05 19:49:09.558 16950 16950 F DEBUG   : backtrace:
+11-05 19:49:09.558 16950 16950 F DEBUG   :       #00 pc 00007be0606c3d80  <unknown>
+11-05 19:49:09.558 16950 16950 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:49:09.558 16950 16950 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:49:09.558 16950 16950 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:49:09.560   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 16933
+11-05 19:49:09.560   513   513 E tombstoned: Tombstone written to: tombstone_25
+11-05 19:49:09.560   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:49:09.560   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:49:17.087 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:49:17.088   837   854 I MediaFocusControl: abandonAudioFocus() from uid/pid 10066/11174 clientId=android.media.AudioManager@bc600daX0.b@a2cf90b callingPack=io.legado.flutter_legado
+11-05 19:49:17.088   837   854 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=6534286, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:49:17.089   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:17.089   837   854 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10066 in package io.legado.flutter_legado
+11-05 19:49:17.090   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:17.090  1090  1349 D MediaDataManager: State updated outside of notification
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:17.091  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:17.105  1090  1090 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10066 because it was removed by the system
+11-05 19:49:17.422 11174 11174 I flutter : 阅读器 dispose 停止朗读失败（忽略）: Bad state: Cannot use "ref" after the widget was disposed.
+11-05 19:49:20.158 16969 16969 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:49:20.158 16969 16969 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:49:20.159 16969 16969 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:49:20.159   698   733 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:49:20.161 16969 16970 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:49:20.162 16969 16970 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:49:20.289 16973 16973 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:49:20.331 16977 16977 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:20.364 16980 16980 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:20.396 16983 16983 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:49:20.433 16986 16986 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:49:27.936  1090  3056 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-05 19:49:29.211   837  1188 I MediaFocusControl: requestAudioFocus() from uid/pid 10066/11174 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@bc600daX0.b@a2cf90b callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-05 19:49:29.211   837  1188 I AS.FadeOutManager: unfadeOutUid() uid:10066
+11-05 19:49:29.212   837  1188 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/5 (userId=0)
+11-05 19:49:29.212   837  1188 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=6546410, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:49:29.212   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:29.212   837  1188 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10066; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-05 19:49:29.214   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:29.417   837   837 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-05 19:49:29.417   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:29.820  1090  1284 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:29.829  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:29.830  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:29.830  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:29.830  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:29.831  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:29.832  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:29.853  1090  1090 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-05 19:49:29.855  1090  1090 W HWUI    : Image decoding logging dropped!
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:29.936  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:30.252  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:33.286 17012 17012 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:49:33.321 17016 17016 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:33.352 17019 17019 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:33.382 17022 17022 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:49:33.418 17025 17025 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:49:33.759   837   854 D WifiNl80211Manager: Scan result ready event
+11-05 19:49:33.759   837   854 D WifiNative: Scan result ready event
+11-05 19:49:35.512 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:49:35.512   837   854 I MediaFocusControl: abandonAudioFocus() from uid/pid 10066/11174 clientId=android.media.AudioManager@bc600daX0.b@a2cf90b callingPack=io.legado.flutter_legado
+11-05 19:49:35.513   837   854 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=6552711, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:49:35.513   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:35.514   837   854 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10066 in package io.legado.flutter_legado
+11-05 19:49:35.514   837  1039 D BackgroundInstallControlService: Package event received: 0
+11-05 19:49:35.516  1090  1349 D MediaDataManager: State updated outside of notification
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown center_vertical_guideline
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown action_button_guideline
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown icon
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown media_seamless
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown media_action_barrier_start
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown media_action_barrier_end
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown media_action_barrier_top
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown remove_text
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown settings
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown dismiss
+11-05 19:49:35.520  1090  1090 W ConstraintSet: id unknown cancel
+11-05 19:49:35.521  1090  1090 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10066 because it was removed by the system
+11-05 19:49:35.838 11174 11174 I flutter : 阅读器 dispose 停止朗读失败（忽略）: Bad state: Cannot use "ref" after the widget was disposed.
+11-05 19:49:38.587 17043 17043 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:49:38.587 17043 17043 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:49:38.587 17043 17043 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:49:38.587   698   736 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:49:38.590 17043 17044 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:49:38.591 17043 17044 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:49:38.706 17047 17047 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:49:38.755 17051 17051 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:38.802 17054 17054 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:49:38.835 17057 17057 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:49:38.870 17060 17060 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:49:44.728 17072 17072 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:49:44.764 17077 17077 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:49:44.794 17082 17082 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:49:57.038 11174 11174 W TextToSpeech: getVoices failed: not bound to TTS engine
+11-05 19:49:59.134 17103 17103 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:49:59.136 17103 17103 I AndroidRuntime: Using default boot image
+11-05 19:49:59.136 17103 17103 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:49:59.138 17103 17103 W app_process: ART APEX data files are untrusted.
+11-05 19:49:59.139 17103 17103 I app_process: Using CollectorTypeCMC GC.
+11-05 19:49:59.201 17103 17103 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:49:59.206 17103 17103 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:49:59.207 17103 17103 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:49:59.207 17103 17103 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:49:59.207 17103 17103 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:49:59.208 17103 17103 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:49:59.209 17103 17103 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:49:59.209 17103 17103 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:49:59.209 17103 17103 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:49:59.210 17103 17103 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:49:59.210 17103 17103 W app_process: Could not create mount namespace.
+11-05 19:49:59.210 17103 17103 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:49:59.210 17103 17103 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:49:59.210 17103 17103 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:49:59.210 17103 17103 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:49:59.210 17103 17103 E libnb   : The translator implementation library has not been set.
+11-05 19:49:59.216 17103 17103 E libnb   : get_callbacks native_handle 0x809d5aba93c61dbf: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:49:59.216 17103 17103 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:49:59.228 17103 17103 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:49:59.228 17103 17103 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:49:59.230 17103 17103 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:49:59.230 17103 17103 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:49:59.230 17103 17103 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:49:59.231   837  1782 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:49:59.231   837  1782 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:49:59.232   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:49:59.233   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:49:59.233   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:00.243 17103 17103 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:50:00.244   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:00.244   837  1782 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:50:00.244   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:50:00.245 17103 17103 D AndroidRuntime: Shutting down VM
+11-05 19:50:01.051 17103 17103 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76361d48ed80 in tid 17103 (Shutdown thread), pid 17103 (Shutdown thread)
+11-05 19:50:01.059 17119 17119 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:50:01.059   513   513 I tombstoned: received crash request for pid 17103
+11-05 19:50:01.059 17119 17119 I crash_dump64: performing dump of process 17103 (target tid = 17103)
+11-05 19:50:01.086 17119 17119 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:50:01.086 17119 17119 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:50:01.086 17119 17119 F DEBUG   : Revision: '0'
+11-05 19:50:01.086 17119 17119 F DEBUG   : ABI: 'x86_64'
+11-05 19:50:01.086 17119 17119 F DEBUG   : Timestamp: 2026-11-05 19:50:01.061449942+0800
+11-05 19:50:01.086 17119 17119 F DEBUG   : Process uptime: 3s
+11-05 19:50:01.086 17119 17119 F DEBUG   : Cmdline: uiautomator
+11-05 19:50:01.086 17119 17119 F DEBUG   : pid: 17103, tid: 17103, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:50:01.086 17119 17119 F DEBUG   : uid: 2000
+11-05 19:50:01.086 17119 17119 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000076361d48ed80
+11-05 19:50:01.086 17119 17119 F DEBUG   :     rax 0000000000000000  rbx 00007638feb2789c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:50:01.086 17119 17119 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:50:01.086 17119 17119 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076361d48ed80  r15 0000000000008928
+11-05 19:50:01.086 17119 17119 F DEBUG   :     rdi 000076361d855c08  rsi 0000000000001000
+11-05 19:50:01.086 17119 17119 F DEBUG   :     rbp 00007ffcd85b4f30  rsp 00007ffcd85b4ec8  rip 000076361d48ed80
+11-05 19:50:01.086 17119 17119 F DEBUG   : 4 total frames
+11-05 19:50:01.086 17119 17119 F DEBUG   : backtrace:
+11-05 19:50:01.086 17119 17119 F DEBUG   :       #00 pc 000076361d48ed80  <unknown>
+11-05 19:50:01.086 17119 17119 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:01.086 17119 17119 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:01.086 17119 17119 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:01.088   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17103
+11-05 19:50:01.089   513   513 E tombstoned: Tombstone written to: tombstone_26
+11-05 19:50:01.089   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:01.089   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:03.125  1532  1554 I NemuSysOpt: Start compat memory
+11-05 19:50:03.131  1532  1554 I NemuSysOpt: Compat memory done
+11-05 19:50:11.011 17137 17137 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:50:11.013 17137 17137 I AndroidRuntime: Using default boot image
+11-05 19:50:11.013 17137 17137 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:50:11.014 17137 17137 W app_process: ART APEX data files are untrusted.
+11-05 19:50:11.014 17137 17137 I app_process: Using CollectorTypeCMC GC.
+11-05 19:50:11.042 17137 17137 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:50:11.046 17137 17137 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:11.046 17137 17137 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:50:11.046 17137 17137 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:50:11.046 17137 17137 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:11.047 17137 17137 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:11.048 17137 17137 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:50:11.048 17137 17137 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:50:11.048 17137 17137 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:50:11.048 17137 17137 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:50:11.049 17137 17137 W app_process: Could not create mount namespace.
+11-05 19:50:11.049 17137 17137 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:50:11.049 17137 17137 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:50:11.049 17137 17137 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:50:11.049 17137 17137 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:50:11.049 17137 17137 E libnb   : The translator implementation library has not been set.
+11-05 19:50:11.054 17137 17137 E libnb   : get_callbacks native_handle 0x289977d8ef7b22b: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:50:11.054 17137 17137 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:50:11.062 17137 17137 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:50:11.062 17137 17137 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:50:11.064 17137 17137 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:50:11.064 17137 17137 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:50:11.064 17137 17137 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:50:11.064   837  1206 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:50:11.064   837  1206 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:50:11.065   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:11.065   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:50:11.066   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:12.075 17137 17137 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:50:12.075   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:12.075   837   853 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:50:12.076   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:50:12.076 17137 17137 D AndroidRuntime: Shutting down VM
+11-05 19:50:12.882 17137 17137 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7718946e1d80 in tid 17137 (Shutdown thread), pid 17137 (Shutdown thread)
+11-05 19:50:12.888 17153 17153 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:50:12.888   513   513 I tombstoned: received crash request for pid 17137
+11-05 19:50:12.888 17153 17153 I crash_dump64: performing dump of process 17137 (target tid = 17137)
+11-05 19:50:12.909 17153 17153 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:50:12.909 17153 17153 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:50:12.910 17153 17153 F DEBUG   : Revision: '0'
+11-05 19:50:12.910 17153 17153 F DEBUG   : ABI: 'x86_64'
+11-05 19:50:12.910 17153 17153 F DEBUG   : Timestamp: 2026-11-05 19:50:12.890199644+0800
+11-05 19:50:12.910 17153 17153 F DEBUG   : Process uptime: 3s
+11-05 19:50:12.910 17153 17153 F DEBUG   : Cmdline: uiautomator
+11-05 19:50:12.910 17153 17153 F DEBUG   : pid: 17137, tid: 17137, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:50:12.910 17153 17153 F DEBUG   : uid: 2000
+11-05 19:50:12.910 17153 17153 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007718946e1d80
+11-05 19:50:12.910 17153 17153 F DEBUG   :     rax 0000000000000000  rbx 0000771b710f089c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:50:12.910 17153 17153 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:50:12.910 17153 17153 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007718946e1d80  r15 0000000000008928
+11-05 19:50:12.910 17153 17153 F DEBUG   :     rdi 0000771894aa8c08  rsi 0000000000001000
+11-05 19:50:12.910 17153 17153 F DEBUG   :     rbp 00007fff94b4bcf0  rsp 00007fff94b4bc88  rip 00007718946e1d80
+11-05 19:50:12.910 17153 17153 F DEBUG   : 4 total frames
+11-05 19:50:12.910 17153 17153 F DEBUG   : backtrace:
+11-05 19:50:12.910 17153 17153 F DEBUG   :       #00 pc 00007718946e1d80  <unknown>
+11-05 19:50:12.910 17153 17153 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:12.910 17153 17153 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:12.910 17153 17153 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:12.912   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17137
+11-05 19:50:12.912   513   513 E tombstoned: Tombstone written to: tombstone_27
+11-05 19:50:12.912   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:12.913   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:19.588 17164 17164 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:50:19.589 17164 17164 I AndroidRuntime: Using default boot image
+11-05 19:50:19.590 17164 17164 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:50:19.590 17164 17164 W app_process: ART APEX data files are untrusted.
+11-05 19:50:19.591 17164 17164 I app_process: Using CollectorTypeCMC GC.
+11-05 19:50:19.619 17164 17164 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:50:19.625 17164 17164 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:19.625 17164 17164 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:50:19.625 17164 17164 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:50:19.626 17164 17164 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:19.626 17164 17164 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:19.627 17164 17164 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:50:19.627 17164 17164 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:50:19.627 17164 17164 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:50:19.628 17164 17164 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:50:19.628 17164 17164 W app_process: Could not create mount namespace.
+11-05 19:50:19.628 17164 17164 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:50:19.628 17164 17164 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:50:19.628 17164 17164 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:50:19.628 17164 17164 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:50:19.628 17164 17164 E libnb   : The translator implementation library has not been set.
+11-05 19:50:19.634 17164 17164 E libnb   : get_callbacks native_handle 0xe1391b6b61f7f307: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:50:19.634 17164 17164 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:50:19.644 17164 17164 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:50:19.644 17164 17164 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:50:19.646 17164 17164 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:50:19.646 17164 17164 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:50:19.646 17164 17164 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:50:19.647   837  1782 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:50:19.647   837  1782 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:50:19.647   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:19.648   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:50:19.648   837  1188 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:21.793 17164 17164 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:50:21.794   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:21.794   837  1206 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:50:21.795 17164 17164 D AndroidRuntime: Shutting down VM
+11-05 19:50:21.795   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:50:22.599 17164 17164 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x74ed59e76d80 in tid 17164 (Shutdown thread), pid 17164 (Shutdown thread)
+11-05 19:50:22.605 17181 17181 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:50:22.605   513   513 I tombstoned: received crash request for pid 17164
+11-05 19:50:22.605 17181 17181 I crash_dump64: performing dump of process 17164 (target tid = 17164)
+11-05 19:50:22.629 17181 17181 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:50:22.629 17181 17181 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:50:22.629 17181 17181 F DEBUG   : Revision: '0'
+11-05 19:50:22.629 17181 17181 F DEBUG   : ABI: 'x86_64'
+11-05 19:50:22.629 17181 17181 F DEBUG   : Timestamp: 2026-11-05 19:50:22.607109812+0800
+11-05 19:50:22.629 17181 17181 F DEBUG   : Process uptime: 4s
+11-05 19:50:22.629 17181 17181 F DEBUG   : Cmdline: uiautomator
+11-05 19:50:22.629 17181 17181 F DEBUG   : pid: 17164, tid: 17164, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:50:22.629 17181 17181 F DEBUG   : uid: 2000
+11-05 19:50:22.629 17181 17181 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000074ed59e76d80
+11-05 19:50:22.629 17181 17181 F DEBUG   :     rax 0000000000000000  rbx 000074f053db689c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:50:22.629 17181 17181 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:50:22.629 17181 17181 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000074ed59e76d80  r15 0000000000008928
+11-05 19:50:22.629 17181 17181 F DEBUG   :     rdi 000074ed5a23dc08  rsi 0000000000001000
+11-05 19:50:22.629 17181 17181 F DEBUG   :     rbp 00007fff7521b670  rsp 00007fff7521b608  rip 000074ed59e76d80
+11-05 19:50:22.629 17181 17181 F DEBUG   : 4 total frames
+11-05 19:50:22.629 17181 17181 F DEBUG   : backtrace:
+11-05 19:50:22.629 17181 17181 F DEBUG   :       #00 pc 000074ed59e76d80  <unknown>
+11-05 19:50:22.629 17181 17181 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:22.630 17181 17181 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:22.630 17181 17181 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:22.631   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17164
+11-05 19:50:22.632   513   513 E tombstoned: Tombstone written to: tombstone_28
+11-05 19:50:22.632   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:22.632   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:31.352 11174 11198 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 16777216 Range: [0x75636bc13000 0x75636cc13000]
+11-05 19:50:33.389 17195 17195 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:50:33.391 17195 17195 I AndroidRuntime: Using default boot image
+11-05 19:50:33.391 17195 17195 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:50:33.392 17195 17195 W app_process: ART APEX data files are untrusted.
+11-05 19:50:33.392 17195 17195 I app_process: Using CollectorTypeCMC GC.
+11-05 19:50:33.418 17195 17195 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:50:33.423 17195 17195 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:33.423 17195 17195 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:50:33.423 17195 17195 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:50:33.423 17195 17195 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:33.424 17195 17195 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:33.424 17195 17195 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:50:33.424 17195 17195 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:50:33.425 17195 17195 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:50:33.425 17195 17195 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:50:33.426 17195 17195 W app_process: Could not create mount namespace.
+11-05 19:50:33.426 17195 17195 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:50:33.426 17195 17195 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:50:33.426 17195 17195 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:50:33.426 17195 17195 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:50:33.426 17195 17195 E libnb   : The translator implementation library has not been set.
+11-05 19:50:33.431 17195 17195 E libnb   : get_callbacks native_handle 0x562452dc57f55c59: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:50:33.431 17195 17195 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:50:33.440 17195 17195 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:50:33.440 17195 17195 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:50:33.441 17195 17195 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:50:33.442 17195 17195 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:50:33.442 17195 17195 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:50:33.442   837   853 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:50:33.442   837   853 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:50:33.442   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:33.444   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:50:33.445   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:34.458 17195 17195 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:50:34.459   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:34.459   837   854 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:50:34.459 17195 17195 D AndroidRuntime: Shutting down VM
+11-05 19:50:34.460   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:50:34.454 11174 11174 I .flutter_legado: type=1400 audit(0.0:829): avc:  denied  { call } for  scontext=u:r:zygote:s0 tcontext=u:r:shell:s0 tclass=binder permissive=1 app=io.legado.flutter_legado
+11-05 19:50:35.265 17195 17195 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7d2736851d80 in tid 17195 (Shutdown thread), pid 17195 (Shutdown thread)
+11-05 19:50:35.272 17211 17211 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:50:35.272   513   513 I tombstoned: received crash request for pid 17195
+11-05 19:50:35.272 17211 17211 I crash_dump64: performing dump of process 17195 (target tid = 17195)
+11-05 19:50:35.294 17211 17211 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:50:35.294 17211 17211 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:50:35.294 17211 17211 F DEBUG   : Revision: '0'
+11-05 19:50:35.294 17211 17211 F DEBUG   : ABI: 'x86_64'
+11-05 19:50:35.294 17211 17211 F DEBUG   : Timestamp: 2026-11-05 19:50:35.273909975+0800
+11-05 19:50:35.294 17211 17211 F DEBUG   : Process uptime: 3s
+11-05 19:50:35.294 17211 17211 F DEBUG   : Cmdline: uiautomator
+11-05 19:50:35.294 17211 17211 F DEBUG   : pid: 17195, tid: 17195, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:50:35.294 17211 17211 F DEBUG   : uid: 2000
+11-05 19:50:35.294 17211 17211 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007d2736851d80
+11-05 19:50:35.294 17211 17211 F DEBUG   :     rax 0000000000000000  rbx 00007d2a9edb189c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:50:35.294 17211 17211 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:50:35.294 17211 17211 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007d2736851d80  r15 0000000000008928
+11-05 19:50:35.294 17211 17211 F DEBUG   :     rdi 00007d2736c18c08  rsi 0000000000001000
+11-05 19:50:35.294 17211 17211 F DEBUG   :     rbp 00007fff76b26cd0  rsp 00007fff76b26c68  rip 00007d2736851d80
+11-05 19:50:35.294 17211 17211 F DEBUG   : 4 total frames
+11-05 19:50:35.294 17211 17211 F DEBUG   : backtrace:
+11-05 19:50:35.294 17211 17211 F DEBUG   :       #00 pc 00007d2736851d80  <unknown>
+11-05 19:50:35.294 17211 17211 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:35.294 17211 17211 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:35.294 17211 17211 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:35.296   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17195
+11-05 19:50:35.297   513   513 E tombstoned: Tombstone written to: tombstone_29
+11-05 19:50:35.297   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:35.297   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:36.494 17216 17216 I init    : type=1400 audit(0.0:830): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-05 19:50:36.494 17216 17216 I init    : type=1400 audit(0.0:831): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-05 19:50:36.494 17216 17216 I init    : type=1400 audit(0.0:832): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-05 19:50:36.498 17216 17216 I serial_console: type=1400 audit(0.0:833): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-05 19:50:36.498 17216 17216 I serial_console: type=1400 audit(0.0:834): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-05 19:50:36.498 17216 17216 I serial_console: type=1400 audit(0.0:835): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-05 19:50:36.498 17216 17216 I serial_console: type=1400 audit(0.0:836): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-05 19:50:47.793 17224 17224 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:50:47.796 17224 17224 I AndroidRuntime: Using default boot image
+11-05 19:50:47.796 17224 17224 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:50:47.798 17224 17224 W app_process: ART APEX data files are untrusted.
+11-05 19:50:47.798 17224 17224 I app_process: Using CollectorTypeCMC GC.
+11-05 19:50:47.831 17224 17224 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:50:47.836 17224 17224 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:47.836 17224 17224 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:50:47.836 17224 17224 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:50:47.837 17224 17224 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:47.837 17224 17224 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:47.838 17224 17224 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:50:47.838 17224 17224 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:50:47.838 17224 17224 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:50:47.839 17224 17224 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:50:47.839 17224 17224 W app_process: Could not create mount namespace.
+11-05 19:50:47.839 17224 17224 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:50:47.839 17224 17224 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:50:47.839 17224 17224 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:50:47.839 17224 17224 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:50:47.839 17224 17224 E libnb   : The translator implementation library has not been set.
+11-05 19:50:47.844 17224 17224 E libnb   : get_callbacks native_handle 0xea97cad851202349: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:50:47.844 17224 17224 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:50:47.852 17224 17224 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:50:47.852 17224 17224 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:50:47.854 17224 17224 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:50:47.854 17224 17224 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:50:47.854 17224 17224 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:50:47.855   837  1722 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:50:47.855   837  1722 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:50:47.855   837  1722 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:47.856   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:50:47.857   837  1722 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:48.875 17224 17224 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:50:48.876   837  1188 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:48.876   837  1188 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:50:48.876 17224 17224 D AndroidRuntime: Shutting down VM
+11-05 19:50:48.878   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:50:49.682 17224 17224 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7baaa9e6ed80 in tid 17224 (Shutdown thread), pid 17224 (Shutdown thread)
+11-05 19:50:49.688 17240 17240 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:50:49.688   513   513 I tombstoned: received crash request for pid 17224
+11-05 19:50:49.689 17240 17240 I crash_dump64: performing dump of process 17224 (target tid = 17224)
+11-05 19:50:49.710 17240 17240 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:50:49.710 17240 17240 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:50:49.710 17240 17240 F DEBUG   : Revision: '0'
+11-05 19:50:49.710 17240 17240 F DEBUG   : ABI: 'x86_64'
+11-05 19:50:49.710 17240 17240 F DEBUG   : Timestamp: 2026-11-05 19:50:49.690513799+0800
+11-05 19:50:49.710 17240 17240 F DEBUG   : Process uptime: 3s
+11-05 19:50:49.710 17240 17240 F DEBUG   : Cmdline: uiautomator
+11-05 19:50:49.710 17240 17240 F DEBUG   : pid: 17224, tid: 17224, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:50:49.710 17240 17240 F DEBUG   : uid: 2000
+11-05 19:50:49.710 17240 17240 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007baaa9e6ed80
+11-05 19:50:49.710 17240 17240 F DEBUG   :     rax 0000000000000000  rbx 00007bad9593089c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:50:49.710 17240 17240 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:50:49.710 17240 17240 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007baaa9e6ed80  r15 0000000000008928
+11-05 19:50:49.710 17240 17240 F DEBUG   :     rdi 00007baaaa235c08  rsi 0000000000001000
+11-05 19:50:49.710 17240 17240 F DEBUG   :     rbp 00007ffd9ec14a20  rsp 00007ffd9ec149b8  rip 00007baaa9e6ed80
+11-05 19:50:49.710 17240 17240 F DEBUG   : 4 total frames
+11-05 19:50:49.710 17240 17240 F DEBUG   : backtrace:
+11-05 19:50:49.710 17240 17240 F DEBUG   :       #00 pc 00007baaa9e6ed80  <unknown>
+11-05 19:50:49.710 17240 17240 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:49.710 17240 17240 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:49.710 17240 17240 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:50:49.712   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17224
+11-05 19:50:49.713   513   513 E tombstoned: Tombstone written to: tombstone_30
+11-05 19:50:49.713   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:49.713   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:50:55.290 11174 11198 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 8388608 Range: [0x75636cd19000 0x75636d519000]
+11-05 19:50:58.961 17262 17262 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:50:58.964 17262 17262 I AndroidRuntime: Using default boot image
+11-05 19:50:58.964 17262 17262 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:50:58.965 17262 17262 W app_process: ART APEX data files are untrusted.
+11-05 19:50:58.965 17262 17262 I app_process: Using CollectorTypeCMC GC.
+11-05 19:50:59.003 17262 17262 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:50:59.011 17262 17262 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:59.012 17262 17262 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:50:59.012 17262 17262 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:50:59.012 17262 17262 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:59.013 17262 17262 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:50:59.014 17262 17262 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:50:59.014 17262 17262 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:50:59.015 17262 17262 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:50:59.015 17262 17262 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:50:59.016 17262 17262 W app_process: Could not create mount namespace.
+11-05 19:50:59.016 17262 17262 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:50:59.016 17262 17262 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:50:59.016 17262 17262 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:50:59.016 17262 17262 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:50:59.016 17262 17262 E libnb   : The translator implementation library has not been set.
+11-05 19:50:59.021 17262 17262 E libnb   : get_callbacks native_handle 0x766ad5d933bdc5df: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:50:59.021 17262 17262 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:50:59.031 17262 17262 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:50:59.031 17262 17262 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:50:59.034 17262 17262 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:50:59.034 17262 17262 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:50:59.034 17262 17262 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:50:59.034   837   853 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:50:59.034   837   853 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:50:59.035   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:50:59.038   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:50:59.038   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:00.059 17262 17262 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:51:00.060   837  1722 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:00.060   837  1722 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:51:00.061   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:51:00.061 17262 17262 D AndroidRuntime: Shutting down VM
+11-05 19:51:00.867 17262 17262 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7614f5d15d80 in tid 17262 (Shutdown thread), pid 17262 (Shutdown thread)
+11-05 19:51:00.874 17277 17277 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:51:00.875   513   513 I tombstoned: received crash request for pid 17262
+11-05 19:51:00.875 17277 17277 I crash_dump64: performing dump of process 17262 (target tid = 17262)
+11-05 19:51:00.908 17277 17277 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:51:00.908 17277 17277 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:51:00.908 17277 17277 F DEBUG   : Revision: '0'
+11-05 19:51:00.908 17277 17277 F DEBUG   : ABI: 'x86_64'
+11-05 19:51:00.908 17277 17277 F DEBUG   : Timestamp: 2026-11-05 19:51:00.878338658+0800
+11-05 19:51:00.908 17277 17277 F DEBUG   : Process uptime: 3s
+11-05 19:51:00.908 17277 17277 F DEBUG   : Cmdline: uiautomator
+11-05 19:51:00.908 17277 17277 F DEBUG   : pid: 17262, tid: 17262, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:51:00.908 17277 17277 F DEBUG   : uid: 2000
+11-05 19:51:00.908 17277 17277 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007614f5d15d80
+11-05 19:51:00.908 17277 17277 F DEBUG   :     rax 0000000000000000  rbx 000076186bd2b89c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:51:00.908 17277 17277 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:51:00.908 17277 17277 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007614f5d15d80  r15 0000000000008928
+11-05 19:51:00.908 17277 17277 F DEBUG   :     rdi 00007614f60dcc08  rsi 0000000000001000
+11-05 19:51:00.908 17277 17277 F DEBUG   :     rbp 00007ffc4014b570  rsp 00007ffc4014b508  rip 00007614f5d15d80
+11-05 19:51:00.908 17277 17277 F DEBUG   : 4 total frames
+11-05 19:51:00.908 17277 17277 F DEBUG   : backtrace:
+11-05 19:51:00.908 17277 17277 F DEBUG   :       #00 pc 00007614f5d15d80  <unknown>
+11-05 19:51:00.908 17277 17277 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:00.908 17277 17277 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:00.908 17277 17277 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:00.910   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17262
+11-05 19:51:00.910   513   513 E tombstoned: Tombstone written to: tombstone_31
+11-05 19:51:00.910   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:00.910   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:09.279 17294 17294 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:51:09.281 17294 17294 I AndroidRuntime: Using default boot image
+11-05 19:51:09.281 17294 17294 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:51:09.283 17294 17294 W app_process: ART APEX data files are untrusted.
+11-05 19:51:09.284 17294 17294 I app_process: Using CollectorTypeCMC GC.
+11-05 19:51:09.317 17294 17294 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:51:09.323 17294 17294 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:09.323 17294 17294 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:51:09.323 17294 17294 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:51:09.323 17294 17294 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:09.324 17294 17294 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:09.324 17294 17294 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:51:09.324 17294 17294 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:51:09.325 17294 17294 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:51:09.326 17294 17294 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:51:09.326 17294 17294 W app_process: Could not create mount namespace.
+11-05 19:51:09.326 17294 17294 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:51:09.326 17294 17294 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:51:09.326 17294 17294 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:51:09.326 17294 17294 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:51:09.326 17294 17294 E libnb   : The translator implementation library has not been set.
+11-05 19:51:09.332 17294 17294 E libnb   : get_callbacks native_handle 0x85b4772cc82f442f: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:51:09.332 17294 17294 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:51:09.341 17294 17294 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:51:09.342 17294 17294 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:51:09.344 17294 17294 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:51:09.344 17294 17294 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:51:09.344 17294 17294 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:51:09.345   837   854 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:51:09.345   837   854 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:51:09.345   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:09.346   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:51:09.347   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:10.360 17294 17294 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:51:10.360   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:10.360   837  1206 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:51:10.361 17294 17294 D AndroidRuntime: Shutting down VM
+11-05 19:51:10.361   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:51:11.168 17294 17294 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x73e29aaa3d80 in tid 17294 (Shutdown thread), pid 17294 (Shutdown thread)
+11-05 19:51:11.175 17311 17311 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:51:11.175   513   513 I tombstoned: received crash request for pid 17294
+11-05 19:51:11.175 17311 17311 I crash_dump64: performing dump of process 17294 (target tid = 17294)
+11-05 19:51:11.207 17311 17311 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:51:11.207 17311 17311 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:51:11.207 17311 17311 F DEBUG   : Revision: '0'
+11-05 19:51:11.207 17311 17311 F DEBUG   : ABI: 'x86_64'
+11-05 19:51:11.207 17311 17311 F DEBUG   : Timestamp: 2026-11-05 19:51:11.177964125+0800
+11-05 19:51:11.207 17311 17311 F DEBUG   : Process uptime: 3s
+11-05 19:51:11.207 17311 17311 F DEBUG   : Cmdline: uiautomator
+11-05 19:51:11.207 17311 17311 F DEBUG   : pid: 17294, tid: 17294, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:51:11.207 17311 17311 F DEBUG   : uid: 2000
+11-05 19:51:11.207 17311 17311 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000073e29aaa3d80
+11-05 19:51:11.207 17311 17311 F DEBUG   :     rax 0000000000000000  rbx 000073e58550189c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:51:11.207 17311 17311 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:51:11.207 17311 17311 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000073e29aaa3d80  r15 0000000000008928
+11-05 19:51:11.207 17311 17311 F DEBUG   :     rdi 000073e29ae6ac08  rsi 0000000000001000
+11-05 19:51:11.207 17311 17311 F DEBUG   :     rbp 00007ffc699eb460  rsp 00007ffc699eb3f8  rip 000073e29aaa3d80
+11-05 19:51:11.207 17311 17311 F DEBUG   : 4 total frames
+11-05 19:51:11.207 17311 17311 F DEBUG   : backtrace:
+11-05 19:51:11.207 17311 17311 F DEBUG   :       #00 pc 000073e29aaa3d80  <unknown>
+11-05 19:51:11.207 17311 17311 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:11.207 17311 17311 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:11.207 17311 17311 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:11.210   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17294
+11-05 19:51:11.211   513   513 E tombstoned: Tombstone written to: tombstone_00
+11-05 19:51:11.211   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:11.211   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:17.978 17320 17320 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:51:17.978 17320 17320 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:51:17.978 17320 17320 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:51:17.978   698   736 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:51:17.986 17320 17321 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:51:17.987 17320 17321 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:51:21.574 17343 17343 I serial_console: type=1400 audit(0.0:837): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=770 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-05 19:51:21.574 17343 17343 I serial_console: type=1400 audit(0.0:838): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=770 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-05 19:51:23.647 17344 17344 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:51:23.650 17344 17344 I AndroidRuntime: Using default boot image
+11-05 19:51:23.650 17344 17344 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:51:23.652 17344 17344 W app_process: ART APEX data files are untrusted.
+11-05 19:51:23.652 17344 17344 I app_process: Using CollectorTypeCMC GC.
+11-05 19:51:23.698 17344 17344 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:51:23.704 17344 17344 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:23.705 17344 17344 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:51:23.705 17344 17344 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:51:23.705 17344 17344 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:23.706 17344 17344 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:23.707 17344 17344 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:51:23.707 17344 17344 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:51:23.707 17344 17344 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:51:23.708 17344 17344 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:51:23.708 17344 17344 W app_process: Could not create mount namespace.
+11-05 19:51:23.708 17344 17344 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:51:23.708 17344 17344 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:51:23.708 17344 17344 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:51:23.708 17344 17344 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:51:23.708 17344 17344 E libnb   : The translator implementation library has not been set.
+11-05 19:51:23.714 17344 17344 E libnb   : get_callbacks native_handle 0xe3440f0696eefb17: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:51:23.714 17344 17344 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:51:23.702 17344 17344 I main    : type=1400 audit(0.0:839): avc:  denied  { mounton } for  path="/proc/cpuinfo" dev="proc" ino=4026532022 scontext=u:r:shell:s0 tcontext=u:object_r:proc_cpuinfo:s0 tclass=file permissive=1
+11-05 19:51:23.729 17344 17344 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:51:23.729 17344 17344 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:51:23.738 17344 17344 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:51:23.738 17344 17344 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:51:23.738 17344 17344 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:51:23.739   837  1722 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:51:23.739   837  1722 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:51:23.740   837  1722 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:23.742   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:51:23.743   837  1188 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:24.759 17344 17344 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:51:24.760   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:24.760   837  1782 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:51:24.760   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:51:24.760 17344 17344 D AndroidRuntime: Shutting down VM
+11-05 19:51:25.565 17344 17344 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x79dcf66aed80 in tid 17344 (Shutdown thread), pid 17344 (Shutdown thread)
+11-05 19:51:25.570 17360 17360 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:51:25.571   513   513 I tombstoned: received crash request for pid 17344
+11-05 19:51:25.571 17360 17360 I crash_dump64: performing dump of process 17344 (target tid = 17344)
+11-05 19:51:25.590 17360 17360 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:51:25.590 17360 17360 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:51:25.590 17360 17360 F DEBUG   : Revision: '0'
+11-05 19:51:25.590 17360 17360 F DEBUG   : ABI: 'x86_64'
+11-05 19:51:25.590 17360 17360 F DEBUG   : Timestamp: 2026-11-05 19:51:25.572420896+0800
+11-05 19:51:25.590 17360 17360 F DEBUG   : Process uptime: 3s
+11-05 19:51:25.590 17360 17360 F DEBUG   : Cmdline: uiautomator
+11-05 19:51:25.590 17360 17360 F DEBUG   : pid: 17344, tid: 17344, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:51:25.590 17360 17360 F DEBUG   : uid: 2000
+11-05 19:51:25.590 17360 17360 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000079dcf66aed80
+11-05 19:51:25.590 17360 17360 F DEBUG   :     rax 0000000000000000  rbx 000079dfdcd7489c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:51:25.590 17360 17360 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:51:25.590 17360 17360 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000079dcf66aed80  r15 0000000000008928
+11-05 19:51:25.590 17360 17360 F DEBUG   :     rdi 000079dcf6a75c08  rsi 0000000000001000
+11-05 19:51:25.590 17360 17360 F DEBUG   :     rbp 00007ffe2b978c90  rsp 00007ffe2b978c28  rip 000079dcf66aed80
+11-05 19:51:25.590 17360 17360 F DEBUG   : 4 total frames
+11-05 19:51:25.590 17360 17360 F DEBUG   : backtrace:
+11-05 19:51:25.590 17360 17360 F DEBUG   :       #00 pc 000079dcf66aed80  <unknown>
+11-05 19:51:25.590 17360 17360 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:25.590 17360 17360 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:25.590 17360 17360 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:25.592   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17344
+11-05 19:51:25.592   513   513 E tombstoned: Tombstone written to: tombstone_01
+11-05 19:51:25.592   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:25.592   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:27.935  1090  3507 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-05 19:51:31.521 11174 11174 I flutter : 阅读器 dispose 停止朗读失败（忽略）: Bad state: Cannot use "ref" after the widget was disposed.
+11-05 19:51:34.857 11174 11174 I flutter : [BookInfo] 首屏就绪 4ms name=batch5a1b_test chapters=5 tocLoading=false
+11-05 19:51:34.857 11174 11174 I flutter : [BookInfo] 全量完成 4ms
+11-05 19:51:38.678 17388 17388 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:51:38.679 17388 17388 I AndroidRuntime: Using default boot image
+11-05 19:51:38.679 17388 17388 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:51:38.680 17388 17388 W app_process: ART APEX data files are untrusted.
+11-05 19:51:38.681 17388 17388 I app_process: Using CollectorTypeCMC GC.
+11-05 19:51:38.712 17388 17388 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:51:38.717 17388 17388 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:38.717 17388 17388 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:51:38.717 17388 17388 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:51:38.718 17388 17388 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:38.718 17388 17388 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:38.719 17388 17388 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:51:38.719 17388 17388 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:51:38.720 17388 17388 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:51:38.720 17388 17388 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:51:38.720 17388 17388 W app_process: Could not create mount namespace.
+11-05 19:51:38.720 17388 17388 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:51:38.720 17388 17388 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:51:38.720 17388 17388 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:51:38.720 17388 17388 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:51:38.720 17388 17388 E libnb   : The translator implementation library has not been set.
+11-05 19:51:38.726 17388 17388 E libnb   : get_callbacks native_handle 0xf8b2ad1b40d700bf: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:51:38.726 17388 17388 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:51:38.736 17388 17388 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:51:38.736 17388 17388 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:51:38.739 17388 17388 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:51:38.740 17388 17388 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:51:38.740 17388 17388 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:51:38.741   837  1206 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:51:38.741   837  1206 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:51:38.741   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:38.742   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:51:38.744   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:39.759 17388 17388 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:51:39.759   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:39.759   837  1782 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:51:39.760 17388 17388 D AndroidRuntime: Shutting down VM
+11-05 19:51:39.761   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:51:39.750 17388 17388 I uiautomator: type=1400 audit(0.0:840): avc:  denied  { read } for  name="u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=350 scontext=u:r:shell:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-05 19:51:39.750 17388 17388 I uiautomator: type=1400 audit(0.0:841): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=350 scontext=u:r:shell:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-05 19:51:39.750 17388 17388 I uiautomator: type=1400 audit(0.0:842): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=350 scontext=u:r:shell:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-05 19:51:39.750 17388 17388 I uiautomator: type=1400 audit(0.0:843): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=350 scontext=u:r:shell:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-05 19:51:40.565 17388 17388 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x77c57750bd80 in tid 17388 (Shutdown thread), pid 17388 (Shutdown thread)
+11-05 19:51:40.571 17403 17403 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:51:40.571   513   513 I tombstoned: received crash request for pid 17388
+11-05 19:51:40.571 17403 17403 I crash_dump64: performing dump of process 17388 (target tid = 17388)
+11-05 19:51:40.593 17403 17403 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:51:40.593 17403 17403 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:51:40.593 17403 17403 F DEBUG   : Revision: '0'
+11-05 19:51:40.593 17403 17403 F DEBUG   : ABI: 'x86_64'
+11-05 19:51:40.593 17403 17403 F DEBUG   : Timestamp: 2026-11-05 19:51:40.573061435+0800
+11-05 19:51:40.593 17403 17403 F DEBUG   : Process uptime: 3s
+11-05 19:51:40.593 17403 17403 F DEBUG   : Cmdline: uiautomator
+11-05 19:51:40.593 17403 17403 F DEBUG   : pid: 17388, tid: 17388, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:51:40.593 17403 17403 F DEBUG   : uid: 2000
+11-05 19:51:40.593 17403 17403 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000077c57750bd80
+11-05 19:51:40.593 17403 17403 F DEBUG   :     rax 0000000000000000  rbx 000077c8e9db089c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:51:40.593 17403 17403 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:51:40.593 17403 17403 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000077c57750bd80  r15 0000000000008928
+11-05 19:51:40.593 17403 17403 F DEBUG   :     rdi 000077c5778d2c08  rsi 0000000000001000
+11-05 19:51:40.593 17403 17403 F DEBUG   :     rbp 00007ffc1e27c120  rsp 00007ffc1e27c0b8  rip 000077c57750bd80
+11-05 19:51:40.593 17403 17403 F DEBUG   : 4 total frames
+11-05 19:51:40.593 17403 17403 F DEBUG   : backtrace:
+11-05 19:51:40.593 17403 17403 F DEBUG   :       #00 pc 000077c57750bd80  <unknown>
+11-05 19:51:40.593 17403 17403 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:40.593 17403 17403 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:40.593 17403 17403 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:40.595   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17388
+11-05 19:51:40.595   513   513 E tombstoned: Tombstone written to: tombstone_02
+11-05 19:51:40.596   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:40.596   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:47.771 17417 17417 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:51:47.774 17417 17417 I AndroidRuntime: Using default boot image
+11-05 19:51:47.774 17417 17417 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:51:47.776 17417 17417 W app_process: ART APEX data files are untrusted.
+11-05 19:51:47.776 17417 17417 I app_process: Using CollectorTypeCMC GC.
+11-05 19:51:47.828 17417 17417 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:51:47.836 17417 17417 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:47.836 17417 17417 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:51:47.837 17417 17417 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:51:47.837 17417 17417 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:47.838 17417 17417 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:47.839 17417 17417 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:51:47.839 17417 17417 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:51:47.842 17417 17417 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:51:47.843 17417 17417 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:51:47.843 17417 17417 W app_process: Could not create mount namespace.
+11-05 19:51:47.843 17417 17417 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:51:47.843 17417 17417 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:51:47.843 17417 17417 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:51:47.843 17417 17417 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:51:47.843 17417 17417 E libnb   : The translator implementation library has not been set.
+11-05 19:51:47.850 17417 17417 E libnb   : get_callbacks native_handle 0xe66ef0ef949e9a09: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:51:47.850 17417 17417 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:51:47.867 17417 17417 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:51:47.867 17417 17417 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:51:47.875 17417 17417 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:51:47.875 17417 17417 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:51:47.875 17417 17417 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:51:47.877   837   854 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:51:47.877   837   854 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:51:47.878   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:47.880   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:51:47.880   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:48.894 17417 17417 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:51:48.895   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:48.895   837   854 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:51:48.896 17417 17417 D AndroidRuntime: Shutting down VM
+11-05 19:51:48.897   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:51:49.702 17417 17417 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7a905090dd80 in tid 17417 (Shutdown thread), pid 17417 (Shutdown thread)
+11-05 19:51:49.711 17433 17433 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:51:49.711   513   513 I tombstoned: received crash request for pid 17417
+11-05 19:51:49.711 17433 17433 I crash_dump64: performing dump of process 17417 (target tid = 17417)
+11-05 19:51:49.737 17433 17433 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:51:49.737 17433 17433 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:51:49.737 17433 17433 F DEBUG   : Revision: '0'
+11-05 19:51:49.737 17433 17433 F DEBUG   : ABI: 'x86_64'
+11-05 19:51:49.737 17433 17433 F DEBUG   : Timestamp: 2026-11-05 19:51:49.713706073+0800
+11-05 19:51:49.737 17433 17433 F DEBUG   : Process uptime: 3s
+11-05 19:51:49.737 17433 17433 F DEBUG   : Cmdline: uiautomator
+11-05 19:51:49.737 17433 17433 F DEBUG   : pid: 17417, tid: 17417, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:51:49.737 17433 17433 F DEBUG   : uid: 2000
+11-05 19:51:49.737 17433 17433 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007a905090dd80
+11-05 19:51:49.737 17433 17433 F DEBUG   :     rax 0000000000000000  rbx 00007a931d3b589c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:51:49.737 17433 17433 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:51:49.737 17433 17433 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007a905090dd80  r15 0000000000008928
+11-05 19:51:49.737 17433 17433 F DEBUG   :     rdi 00007a9050cd4c08  rsi 0000000000001000
+11-05 19:51:49.737 17433 17433 F DEBUG   :     rbp 00007ffc87c07a30  rsp 00007ffc87c079c8  rip 00007a905090dd80
+11-05 19:51:49.737 17433 17433 F DEBUG   : 4 total frames
+11-05 19:51:49.737 17433 17433 F DEBUG   : backtrace:
+11-05 19:51:49.737 17433 17433 F DEBUG   :       #00 pc 00007a905090dd80  <unknown>
+11-05 19:51:49.737 17433 17433 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:49.737 17433 17433 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:49.737 17433 17433 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:51:49.743   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17417
+11-05 19:51:49.743   513   513 E tombstoned: Tombstone written to: tombstone_03
+11-05 19:51:49.744   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:49.744   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:51:59.807 17456 17456 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:51:59.810 17456 17456 I AndroidRuntime: Using default boot image
+11-05 19:51:59.810 17456 17456 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:51:59.811 17456 17456 W app_process: ART APEX data files are untrusted.
+11-05 19:51:59.811 17456 17456 I app_process: Using CollectorTypeCMC GC.
+11-05 19:51:59.853 17456 17456 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:51:59.863 17456 17456 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:59.863 17456 17456 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:51:59.863 17456 17456 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:51:59.865 17456 17456 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:59.868 17456 17456 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:51:59.869 17456 17456 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:51:59.869 17456 17456 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:51:59.870 17456 17456 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:51:59.870 17456 17456 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:51:59.870 17456 17456 W app_process: Could not create mount namespace.
+11-05 19:51:59.871 17456 17456 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:51:59.871 17456 17456 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:51:59.871 17456 17456 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:51:59.871 17456 17456 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:51:59.871 17456 17456 E libnb   : The translator implementation library has not been set.
+11-05 19:51:59.881 17456 17456 E libnb   : get_callbacks native_handle 0x9ebae70d6709a817: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:51:59.881 17456 17456 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:51:59.894 17456 17456 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:51:59.894 17456 17456 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:51:59.896 17456 17456 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:51:59.896 17456 17456 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:51:59.896 17456 17456 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:51:59.897   837   853 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:51:59.897   837   853 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:51:59.897   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:51:59.898   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:51:59.900   837   854 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:00.910 17456 17456 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:52:00.912   837  1188 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:00.912   837  1188 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:52:00.913 17456 17456 D AndroidRuntime: Shutting down VM
+11-05 19:52:00.915   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:52:01.719 17456 17456 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x70dcb22c5d80 in tid 17456 (Shutdown thread), pid 17456 (Shutdown thread)
+11-05 19:52:01.725 17472 17472 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:52:01.725   513   513 I tombstoned: received crash request for pid 17456
+11-05 19:52:01.725 17472 17472 I crash_dump64: performing dump of process 17456 (target tid = 17456)
+11-05 19:52:01.748 17472 17472 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:52:01.748 17472 17472 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:52:01.748 17472 17472 F DEBUG   : Revision: '0'
+11-05 19:52:01.748 17472 17472 F DEBUG   : ABI: 'x86_64'
+11-05 19:52:01.748 17472 17472 F DEBUG   : Timestamp: 2026-11-05 19:52:01.727174272+0800
+11-05 19:52:01.748 17472 17472 F DEBUG   : Process uptime: 3s
+11-05 19:52:01.748 17472 17472 F DEBUG   : Cmdline: uiautomator
+11-05 19:52:01.748 17472 17472 F DEBUG   : pid: 17456, tid: 17456, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:52:01.748 17472 17472 F DEBUG   : uid: 2000
+11-05 19:52:01.748 17472 17472 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000070dcb22c5d80
+11-05 19:52:01.748 17472 17472 F DEBUG   :     rax 0000000000000000  rbx 000070df9d57089c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:52:01.748 17472 17472 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:52:01.748 17472 17472 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000070dcb22c5d80  r15 0000000000008928
+11-05 19:52:01.748 17472 17472 F DEBUG   :     rdi 000070dcb268cc08  rsi 0000000000001000
+11-05 19:52:01.748 17472 17472 F DEBUG   :     rbp 00007ffc243e4f50  rsp 00007ffc243e4ee8  rip 000070dcb22c5d80
+11-05 19:52:01.748 17472 17472 F DEBUG   : 4 total frames
+11-05 19:52:01.748 17472 17472 F DEBUG   : backtrace:
+11-05 19:52:01.748 17472 17472 F DEBUG   :       #00 pc 000070dcb22c5d80  <unknown>
+11-05 19:52:01.748 17472 17472 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:01.748 17472 17472 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:01.748 17472 17472 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:01.751   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17456
+11-05 19:52:01.751   513   513 E tombstoned: Tombstone written to: tombstone_04
+11-05 19:52:01.751   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:01.751   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:08.947 17483 17483 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:52:08.949 17483 17483 I AndroidRuntime: Using default boot image
+11-05 19:52:08.949 17483 17483 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:52:08.951 17483 17483 W app_process: ART APEX data files are untrusted.
+11-05 19:52:08.951 17483 17483 I app_process: Using CollectorTypeCMC GC.
+11-05 19:52:08.980 17483 17483 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:52:08.986 17483 17483 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:08.986 17483 17483 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:52:08.986 17483 17483 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:52:08.986 17483 17483 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:08.987 17483 17483 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:08.988 17483 17483 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:52:08.988 17483 17483 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:52:08.988 17483 17483 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:52:08.988 17483 17483 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:52:08.989 17483 17483 W app_process: Could not create mount namespace.
+11-05 19:52:08.989 17483 17483 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:52:08.989 17483 17483 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:52:08.989 17483 17483 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:52:08.989 17483 17483 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:52:08.989 17483 17483 E libnb   : The translator implementation library has not been set.
+11-05 19:52:08.995 17483 17483 E libnb   : get_callbacks native_handle 0xefa5270a1d05c80d: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:52:08.995 17483 17483 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:52:09.004 17483 17483 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:52:09.004 17483 17483 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:52:09.006 17483 17483 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:52:09.006 17483 17483 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:52:09.007 17483 17483 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:52:09.007   837  1782 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:52:09.007   837  1782 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:52:09.008   837  1782 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:09.009   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:52:09.010   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:10.025 17483 17483 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:52:10.026   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:10.026   837  1206 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:52:10.027   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:52:10.027 17483 17483 D AndroidRuntime: Shutting down VM
+11-05 19:52:10.832 17483 17483 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7f711ae84d80 in tid 17483 (Shutdown thread), pid 17483 (Shutdown thread)
+11-05 19:52:10.841 17499 17499 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:52:10.841   513   513 I tombstoned: received crash request for pid 17483
+11-05 19:52:10.841 17499 17499 I crash_dump64: performing dump of process 17483 (target tid = 17483)
+11-05 19:52:10.864 17499 17499 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:52:10.864 17499 17499 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:52:10.864 17499 17499 F DEBUG   : Revision: '0'
+11-05 19:52:10.864 17499 17499 F DEBUG   : ABI: 'x86_64'
+11-05 19:52:10.864 17499 17499 F DEBUG   : Timestamp: 2026-11-05 19:52:10.843348811+0800
+11-05 19:52:10.865 17499 17499 F DEBUG   : Process uptime: 3s
+11-05 19:52:10.865 17499 17499 F DEBUG   : Cmdline: uiautomator
+11-05 19:52:10.865 17499 17499 F DEBUG   : pid: 17483, tid: 17483, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:52:10.865 17499 17499 F DEBUG   : uid: 2000
+11-05 19:52:10.865 17499 17499 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007f711ae84d80
+11-05 19:52:10.865 17499 17499 F DEBUG   :     rax 0000000000000000  rbx 00007f73f82f589c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:52:10.865 17499 17499 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:52:10.865 17499 17499 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007f711ae84d80  r15 0000000000008928
+11-05 19:52:10.865 17499 17499 F DEBUG   :     rdi 00007f711b24bc08  rsi 0000000000001000
+11-05 19:52:10.865 17499 17499 F DEBUG   :     rbp 00007ffd86af9bc0  rsp 00007ffd86af9b58  rip 00007f711ae84d80
+11-05 19:52:10.865 17499 17499 F DEBUG   : 4 total frames
+11-05 19:52:10.865 17499 17499 F DEBUG   : backtrace:
+11-05 19:52:10.865 17499 17499 F DEBUG   :       #00 pc 00007f711ae84d80  <unknown>
+11-05 19:52:10.865 17499 17499 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:10.865 17499 17499 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:10.865 17499 17499 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:10.867   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17483
+11-05 19:52:10.867   513   513 E tombstoned: Tombstone written to: tombstone_05
+11-05 19:52:10.867   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:10.867   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:13.761   837  1192 D WifiNl80211Manager: Scan result ready event
+11-05 19:52:13.761   837  1192 D WifiNative: Scan result ready event
+11-05 19:52:19.506 17516 17516 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:52:19.509 17516 17516 I AndroidRuntime: Using default boot image
+11-05 19:52:19.509 17516 17516 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:52:19.510 17516 17516 W app_process: ART APEX data files are untrusted.
+11-05 19:52:19.510 17516 17516 I app_process: Using CollectorTypeCMC GC.
+11-05 19:52:19.544 17516 17516 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:52:19.549 17516 17516 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:19.549 17516 17516 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:52:19.549 17516 17516 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:52:19.550 17516 17516 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:19.550 17516 17516 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:19.551 17516 17516 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:52:19.551 17516 17516 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:52:19.552 17516 17516 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:52:19.552 17516 17516 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:52:19.552 17516 17516 W app_process: Could not create mount namespace.
+11-05 19:52:19.552 17516 17516 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:52:19.552 17516 17516 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:52:19.552 17516 17516 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:52:19.552 17516 17516 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:52:19.552 17516 17516 E libnb   : The translator implementation library has not been set.
+11-05 19:52:19.558 17516 17516 E libnb   : get_callbacks native_handle 0xd7108f7f5d6ccc9: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:52:19.558 17516 17516 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:52:19.566 17516 17516 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:52:19.566 17516 17516 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:52:19.568 17516 17516 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:52:19.568 17516 17516 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:52:19.568 17516 17516 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:52:19.569   837  1192 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:52:19.569   837  1192 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:52:19.569   837  1192 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:19.570   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:52:19.571   837  1192 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:20.591 17516 17516 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:52:20.592   837  1722 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:20.592   837  1722 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:52:20.592   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:52:20.592 17516 17516 D AndroidRuntime: Shutting down VM
+11-05 19:52:21.398 17516 17516 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7fd82e511d80 in tid 17516 (Shutdown thread), pid 17516 (Shutdown thread)
+11-05 19:52:21.405 17531 17531 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:52:21.405   513   513 I tombstoned: received crash request for pid 17516
+11-05 19:52:21.406 17531 17531 I crash_dump64: performing dump of process 17516 (target tid = 17516)
+11-05 19:52:21.432 17531 17531 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:52:21.432 17531 17531 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:52:21.432 17531 17531 F DEBUG   : Revision: '0'
+11-05 19:52:21.432 17531 17531 F DEBUG   : ABI: 'x86_64'
+11-05 19:52:21.433 17531 17531 F DEBUG   : Timestamp: 2026-11-05 19:52:21.409019191+0800
+11-05 19:52:21.433 17531 17531 F DEBUG   : Process uptime: 3s
+11-05 19:52:21.433 17531 17531 F DEBUG   : Cmdline: uiautomator
+11-05 19:52:21.433 17531 17531 F DEBUG   : pid: 17516, tid: 17516, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:52:21.433 17531 17531 F DEBUG   : uid: 2000
+11-05 19:52:21.433 17531 17531 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007fd82e511d80
+11-05 19:52:21.433 17531 17531 F DEBUG   :     rax 0000000000000000  rbx 00007fdaf31aa89c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:52:21.433 17531 17531 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:52:21.433 17531 17531 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007fd82e511d80  r15 0000000000008928
+11-05 19:52:21.433 17531 17531 F DEBUG   :     rdi 00007fd82e8d8c08  rsi 0000000000001000
+11-05 19:52:21.433 17531 17531 F DEBUG   :     rbp 00007ffc7dc54210  rsp 00007ffc7dc541a8  rip 00007fd82e511d80
+11-05 19:52:21.433 17531 17531 F DEBUG   : 4 total frames
+11-05 19:52:21.433 17531 17531 F DEBUG   : backtrace:
+11-05 19:52:21.433 17531 17531 F DEBUG   :       #00 pc 00007fd82e511d80  <unknown>
+11-05 19:52:21.433 17531 17531 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:21.433 17531 17531 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:21.433 17531 17531 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:21.435   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17516
+11-05 19:52:21.435   513   513 E tombstoned: Tombstone written to: tombstone_06
+11-05 19:52:21.435   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:21.435   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:31.231 17550 17550 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:52:31.231 17550 17550 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:52:31.231 17550 17550 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:52:31.231   698  1467 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:52:31.234 17550 17551 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:52:31.235 17550 17551 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:52:31.437 17552 17552 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:52:31.441 17552 17552 I AndroidRuntime: Using default boot image
+11-05 19:52:31.441 17552 17552 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:52:31.442 17552 17552 W app_process: ART APEX data files are untrusted.
+11-05 19:52:31.442 17552 17552 I app_process: Using CollectorTypeCMC GC.
+11-05 19:52:31.484 17552 17552 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:52:31.491 17552 17552 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:31.491 17552 17552 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:52:31.491 17552 17552 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:52:31.491 17552 17552 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:31.492 17552 17552 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:31.493 17552 17552 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:52:31.493 17552 17552 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:52:31.494 17552 17552 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:52:31.494 17552 17552 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:52:31.494 17552 17552 W app_process: Could not create mount namespace.
+11-05 19:52:31.494 17552 17552 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:52:31.494 17552 17552 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:52:31.494 17552 17552 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:52:31.494 17552 17552 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:52:31.494 17552 17552 E libnb   : The translator implementation library has not been set.
+11-05 19:52:31.500 17552 17552 E libnb   : get_callbacks native_handle 0x791caca4e0e209fd: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:52:31.500 17552 17552 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:52:31.516 17552 17552 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:52:31.516 17552 17552 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:52:31.519 17552 17552 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:52:31.519 17552 17552 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:52:31.519 17552 17552 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:52:31.520   837  1192 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:52:31.520   837  1192 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:52:31.520   837  1192 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:31.522   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:52:31.523   837  1188 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:32.551 17552 17552 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:52:32.552   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:32.552   837   853 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:52:32.554 17552 17552 D AndroidRuntime: Shutting down VM
+11-05 19:52:32.558   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:52:33.131  1532  1554 I NemuSysOpt: Start compat memory
+11-05 19:52:33.141  1532  1554 I NemuSysOpt: Compat memory done
+11-05 19:52:33.367 17552 17552 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e7addeb6d80 in tid 17552 (Shutdown thread), pid 17552 (Shutdown thread)
+11-05 19:52:33.378 17571 17571 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:52:33.378   513   513 I tombstoned: received crash request for pid 17552
+11-05 19:52:33.378 17571 17571 I crash_dump64: performing dump of process 17552 (target tid = 17552)
+11-05 19:52:33.414 17571 17571 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:52:33.414 17571 17571 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:52:33.414 17571 17571 F DEBUG   : Revision: '0'
+11-05 19:52:33.414 17571 17571 F DEBUG   : ABI: 'x86_64'
+11-05 19:52:33.414 17571 17571 F DEBUG   : Timestamp: 2026-11-05 19:52:33.380351505+0800
+11-05 19:52:33.414 17571 17571 F DEBUG   : Process uptime: 3s
+11-05 19:52:33.414 17571 17571 F DEBUG   : Cmdline: uiautomator
+11-05 19:52:33.414 17571 17571 F DEBUG   : pid: 17552, tid: 17552, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:52:33.414 17571 17571 F DEBUG   : uid: 2000
+11-05 19:52:33.414 17571 17571 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e7addeb6d80
+11-05 19:52:33.414 17571 17571 F DEBUG   :     rax 0000000000000000  rbx 00007e7da2df489c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:52:33.414 17571 17571 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:52:33.414 17571 17571 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e7addeb6d80  r15 0000000000008928
+11-05 19:52:33.414 17571 17571 F DEBUG   :     rdi 00007e7ade27dc08  rsi 0000000000001000
+11-05 19:52:33.414 17571 17571 F DEBUG   :     rbp 00007ffc46693a60  rsp 00007ffc466939f8  rip 00007e7addeb6d80
+11-05 19:52:33.414 17571 17571 F DEBUG   : 4 total frames
+11-05 19:52:33.414 17571 17571 F DEBUG   : backtrace:
+11-05 19:52:33.414 17571 17571 F DEBUG   :       #00 pc 00007e7addeb6d80  <unknown>
+11-05 19:52:33.414 17571 17571 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:33.414 17571 17571 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:33.414 17571 17571 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:33.417   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17552
+11-05 19:52:33.418   513   513 E tombstoned: Tombstone written to: tombstone_07
+11-05 19:52:33.418   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:33.419   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:39.864 17594 17594 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: input
+11-05 19:52:39.878 17597 17597 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-05 19:52:39.881 17601 17601 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: notification
+11-05 19:52:39.888 17604 17604 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: activity
+11-05 19:52:39.892 17607 17607 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-05 19:52:39.894   837   907 I system_server: AssetManager2(0x75645b89cdf8) locale list changing from [] to [zh-Hans-CN]
+11-05 19:52:48.722 11174 11174 W TextToSpeech: getVoices failed: not bound to TTS engine
+11-05 19:52:52.251 17640 17640 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:52:52.251 17640 17640 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:52:52.251 17640 17640 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:52:52.252   698   736 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:52:52.255 17640 17641 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:52:52.256 17640 17641 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:52:52.423 17642 17642 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:52:52.425 17642 17642 I AndroidRuntime: Using default boot image
+11-05 19:52:52.425 17642 17642 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:52:52.426 17642 17642 W app_process: ART APEX data files are untrusted.
+11-05 19:52:52.427 17642 17642 I app_process: Using CollectorTypeCMC GC.
+11-05 19:52:52.458 17642 17642 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:52:52.464 17642 17642 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:52.464 17642 17642 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:52:52.464 17642 17642 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:52:52.464 17642 17642 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:52.465 17642 17642 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:52:52.465 17642 17642 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:52:52.465 17642 17642 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:52:52.466 17642 17642 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:52:52.466 17642 17642 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:52:52.467 17642 17642 W app_process: Could not create mount namespace.
+11-05 19:52:52.467 17642 17642 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:52:52.467 17642 17642 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:52:52.467 17642 17642 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:52:52.467 17642 17642 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:52:52.467 17642 17642 E libnb   : The translator implementation library has not been set.
+11-05 19:52:52.472 17642 17642 E libnb   : get_callbacks native_handle 0x9764e3d003528e1d: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:52:52.472 17642 17642 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:52:52.481 17642 17642 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:52:52.481 17642 17642 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:52:52.483 17642 17642 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:52:52.483 17642 17642 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:52:52.483 17642 17642 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:52:52.483   837  1206 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:52:52.483   837  1206 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:52:52.484   837  1206 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:52.485   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:52:52.485   837  1248 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:54.474 17642 17642 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-05 19:52:54.475   837  1248 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:52:54.475   837  1248 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:52:54.475   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:52:54.476 17642 17642 D AndroidRuntime: Shutting down VM
+11-05 19:52:55.281 17642 17642 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7ab96e47fd80 in tid 17642 (Shutdown thread), pid 17642 (Shutdown thread)
+11-05 19:52:55.287 17660 17660 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:52:55.287   513   513 I tombstoned: received crash request for pid 17642
+11-05 19:52:55.287 17660 17660 I crash_dump64: performing dump of process 17642 (target tid = 17642)
+11-05 19:52:55.311 17660 17660 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:52:55.311 17660 17660 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:52:55.311 17660 17660 F DEBUG   : Revision: '0'
+11-05 19:52:55.311 17660 17660 F DEBUG   : ABI: 'x86_64'
+11-05 19:52:55.311 17660 17660 F DEBUG   : Timestamp: 2026-11-05 19:52:55.289189551+0800
+11-05 19:52:55.311 17660 17660 F DEBUG   : Process uptime: 4s
+11-05 19:52:55.311 17660 17660 F DEBUG   : Cmdline: uiautomator
+11-05 19:52:55.311 17660 17660 F DEBUG   : pid: 17642, tid: 17642, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:52:55.311 17660 17660 F DEBUG   : uid: 2000
+11-05 19:52:55.311 17660 17660 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007ab96e47fd80
+11-05 19:52:55.311 17660 17660 F DEBUG   :     rax 0000000000000000  rbx 00007abc301f689c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:52:55.311 17660 17660 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-05 19:52:55.311 17660 17660 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007ab96e47fd80  r15 0000000000008928
+11-05 19:52:55.311 17660 17660 F DEBUG   :     rdi 00007ab96e846c08  rsi 0000000000001000
+11-05 19:52:55.311 17660 17660 F DEBUG   :     rbp 00007ffce00ae0e0  rsp 00007ffce00ae078  rip 00007ab96e47fd80
+11-05 19:52:55.311 17660 17660 F DEBUG   : 4 total frames
+11-05 19:52:55.311 17660 17660 F DEBUG   : backtrace:
+11-05 19:52:55.311 17660 17660 F DEBUG   :       #00 pc 00007ab96e47fd80  <unknown>
+11-05 19:52:55.311 17660 17660 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:55.311 17660 17660 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:55.311 17660 17660 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:52:55.312   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17642
+11-05 19:52:55.313   513   513 E tombstoned: Tombstone written to: tombstone_08
+11-05 19:52:55.313   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:52:55.313   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:53:02.124 17674 17674 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-05 19:53:02.125 17674 17674 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-05 19:53:02.125 17674 17674 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-05 19:53:02.125   698   733 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-05 19:53:02.131 17674 17675 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-05 19:53:02.131 17674 17675 W screencap: Cannot open renderer configuration file (nemuhotd pid=497)
+11-05 19:53:02.295 17676 17676 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-05 19:53:02.298 17676 17676 I AndroidRuntime: Using default boot image
+11-05 19:53:02.298 17676 17676 I AndroidRuntime: Leaving lock profiling enabled
+11-05 19:53:02.299 17676 17676 W app_process: ART APEX data files are untrusted.
+11-05 19:53:02.299 17676 17676 I app_process: Using CollectorTypeCMC GC.
+11-05 19:53:02.329 17676 17676 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-05 19:53:02.333 17676 17676 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:53:02.333 17676 17676 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-05 19:53:02.333 17676 17676 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-05 19:53:02.333 17676 17676 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:53:02.334 17676 17676 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-05 19:53:02.334 17676 17676 W app_process: Unexpected CPU variant for x86: x86_64.
+11-05 19:53:02.334 17676 17676 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-05 19:53:02.335 17676 17676 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-05 19:53:02.335 17676 17676 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-05 19:53:02.336 17676 17676 W app_process: Could not create mount namespace.
+11-05 19:53:02.336 17676 17676 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: Operation not permitted
+11-05 19:53:02.336 17676 17676 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: Operation not permitted
+11-05 19:53:02.336 17676 17676 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-05 19:53:02.336 17676 17676 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-05 19:53:02.336 17676 17676 E libnb   : The translator implementation library has not been set.
+11-05 19:53:02.341 17676 17676 E libnb   : get_callbacks native_handle 0x67a022b9ef22ece7: 1 libnb:/system/lib64/libhoudini.so
+11-05 19:53:02.341 17676 17676 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-05 19:53:02.349 17676 17676 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-05 19:53:02.349 17676 17676 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-05 19:53:02.351 17676 17676 D UiAutomationConnection: Created on user UserHandle{0}
+11-05 19:53:02.351 17676 17676 I UiAutomation: Initialized for user 0 on display 0
+11-05 19:53:02.351 17676 17676 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-05 19:53:02.352   837   853 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-05 19:53:02.352   837   853 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-05 19:53:02.352   837   853 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:53:02.353   837   837 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-05 19:53:02.354   837  1248 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:53:04.356 17676 17676 W AccessibilityNodeInfoDumper: Fetch time: 1ms
+11-05 19:53:04.357   837   907 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-05 19:53:04.357   837   907 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-05 19:53:04.357   837   837 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-05 19:53:04.357 17676 17676 D AndroidRuntime: Shutting down VM
+11-05 19:53:05.162 17676 17676 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x73ed8b0f2d80 in tid 17676 (Shutdown thread), pid 17676 (Shutdown thread)
+11-05 19:53:05.168 17694 17694 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-05 19:53:05.169   513   513 I tombstoned: received crash request for pid 17676
+11-05 19:53:05.169 17694 17694 I crash_dump64: performing dump of process 17676 (target tid = 17676)
+11-05 19:53:05.189 17694 17694 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-05 19:53:05.189 17694 17694 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-05 19:53:05.189 17694 17694 F DEBUG   : Revision: '0'
+11-05 19:53:05.189 17694 17694 F DEBUG   : ABI: 'x86_64'
+11-05 19:53:05.189 17694 17694 F DEBUG   : Timestamp: 2026-11-05 19:53:05.170474745+0800
+11-05 19:53:05.189 17694 17694 F DEBUG   : Process uptime: 4s
+11-05 19:53:05.189 17694 17694 F DEBUG   : Cmdline: uiautomator
+11-05 19:53:05.189 17694 17694 F DEBUG   : pid: 17676, tid: 17676, name: Shutdown thread  >>> uiautomator <<<
+11-05 19:53:05.189 17694 17694 F DEBUG   : uid: 2000
+11-05 19:53:05.189 17694 17694 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000073ed8b0f2d80
+11-05 19:53:05.189 17694 17694 F DEBUG   :     rax 0000000000000000  rbx 000073f051fbc89c  rcx 0000000000000001  rdx 0000000000000002
+11-05 19:53:05.189 17694 17694 F DEBUG   :     r8  000073f051fb3fa4  r9  00000000000032c1  r10 0000000000000000  r11 0000000000000206
+11-05 19:53:05.189 17694 17694 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000073ed8b0f2d80  r15 0000000000008928
+11-05 19:53:05.189 17694 17694 F DEBUG   :     rdi 000073ed8b4b9c08  rsi 0000000000001000
+11-05 19:53:05.189 17694 17694 F DEBUG   :     rbp 00007ffef08b0140  rsp 00007ffef08b00d8  rip 000073ed8b0f2d80
+11-05 19:53:05.189 17694 17694 F DEBUG   : 4 total frames
+11-05 19:53:05.189 17694 17694 F DEBUG   : backtrace:
+11-05 19:53:05.189 17694 17694 F DEBUG   :       #00 pc 000073ed8b0f2d80  <unknown>
+11-05 19:53:05.189 17694 17694 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:53:05.189 17694 17694 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:53:05.189 17694 17694 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-05 19:53:05.192   837  1089 W NativeCrashListener: Couldn't find ProcessRecord for pid 17676
+11-05 19:53:05.192   513   513 E tombstoned: Tombstone written to: tombstone_09
+11-05 19:53:05.192   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring
+11-05 19:53:05.192   837   927 E NativeTombstoneManager: Tombstone's UID (2000) not an app, ignoring

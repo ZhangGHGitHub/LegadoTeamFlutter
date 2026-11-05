@@ -1,0 +1,29 @@
+# env
+HEAD d3bcfcc2c2d868def619ece6197ecd81e813080d
+    versionCode=460 minSdk=24 targetSdk=36
+    versionName=2.0.459
+    lastUpdateTime=2026-11-05 18:58:36
+sha256_dev a1825ea58a31a90cdfdad44cdfb5918d16a0cf4e05771f96050fcb6166febc3e
+
+# P1 stop evidence (session1 logcat)
+11-05 19:25:02.286 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:25:02.290   837  1192 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=5079487, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:25:02.604 11174 11174 I flutter : 阅读器 dispose 停止朗读失败（忽略）: Bad state: Cannot use "ref" after the widget was disposed.
+11-05 19:26:57.143 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:26:57.144   837  1192 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=5194342, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:26:57.145 11174 11174 I flutter : [BookInfo] 首屏就绪 2ms name=batch5a1b_test chapters=5 tocLoading=false
+11-05 19:26:57.145 11174 11174 I flutter : [BookInfo] 全量完成 2ms
+11-05 19:26:57.471 11174 11174 I flutter : 阅读器 dispose 停止朗读失败（忽略）: Bad state: Cannot use "ref" after the widget was disposed.
+11-05 19:35:35.315 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:35:35.316   837  1248 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=5712514, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:45:33.346 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:45:33.347   837   854 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=6310545, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:45:55.974   837  1782 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=6333172, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:47:02.990 11174 11174 W TextToSpeech: getVoices failed: not bound to TTS engine
+11-05 19:47:24.470 11174 11174 W TextToSpeech: stop failed: not bound to TTS engine
+11-05 19:47:24.471   837  1188 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=STOPPED(1), position=0, buffered position=0, speed=1.0, updated=6421670, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:47:34.868   837  1188 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=6432066, actions=3670015, custom actions=[], active item id=-1, error=null}
+
+# keep=true transitions
+11-05 19:32:49.621   837  1188 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PAUSED(2), position=0, buffered position=0, speed=1.0, updated=5546819, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-05 19:33:34.415   837  1188 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/5 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=5591613, actions=3670015, custom actions=[], active item id=-1, error=null}
