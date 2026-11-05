@@ -219,6 +219,8 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                     height: 88,
                     child: BookCover(
                       coverUrl: recent.coverUrl,
+                      bookName: recent.name,
+                      bookAuthor: recent.author,
                       width: 64,
                       height: 88,
                     ),

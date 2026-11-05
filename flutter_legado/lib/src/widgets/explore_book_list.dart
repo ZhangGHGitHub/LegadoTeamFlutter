@@ -772,6 +772,8 @@ class _BookItem extends ConsumerWidget {
             children: [
               BookCover(
                 coverUrl: book.coverUrl,
+                bookName: book.name,
+                bookAuthor: book.author,
                 width: compact ? 36 : 45,
                 height: compact ? 48 : 60,
                 sourceOrigin: book.origin,
@@ -916,6 +918,8 @@ class _BookGridItem extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) => BookCover(
                 coverUrl: book.coverUrl,
+                bookName: book.name,
+                bookAuthor: book.author,
                 width: constraints.maxWidth,
                 height: constraints.maxHeight,
                 sourceOrigin: book.origin,

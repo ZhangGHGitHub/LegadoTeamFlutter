@@ -44,6 +44,9 @@ class ChangeCoverScreen extends ConsumerStatefulWidget {
   /// 获取有效的书名
   String get effectiveBookName => book?.name ?? bookName;
 
+  /// 获取有效的作者（设置批6b-1：默认封面绘制作者）
+  String get effectiveBookAuthor => book?.author ?? '';
+
   /// 获取有效的当前封面
   String? get effectiveCurrentCover =>
       book != null ? (book!.customCoverUrl ?? book!.coverUrl) : currentCover;
@@ -107,6 +110,8 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         fit: BoxFit.cover,
         // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
         errorBuilder: (_, _, _) => BookCover(
+          bookName: widget.effectiveBookName,
+          bookAuthor: widget.effectiveBookAuthor,
           width: 240,
           height: 320,
           heroTag: 'book-cover:${widget.effectiveBookUrl}',
@@ -123,6 +128,8 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
               (MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0))
           .round(),
       errorWidget: (_, _, _) => BookCover(
+        bookName: widget.effectiveBookName,
+        bookAuthor: widget.effectiveBookAuthor,
         // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
         width: 240,
         height: 320,
@@ -221,6 +228,8 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
                 ? _coverImage(previewUrl, width: 120, height: 160)
                 // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
                 : BookCover(
+                    bookName: widget.effectiveBookName,
+                    bookAuthor: widget.effectiveBookAuthor,
                     width: 120,
                     height: 160,
                     heroTag: 'book-cover:${widget.effectiveBookUrl}',

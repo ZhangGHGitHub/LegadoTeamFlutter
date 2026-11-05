@@ -1169,6 +1169,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final item = BookGridItem(
       key: ValueKey(book.bookUrl),
       title: book.name,
+      author: book.author,
       coverUrl: book.customCoverUrl ?? book.coverUrl,
       sourceOrigin: book.origin,
       tags: tags,
@@ -2150,6 +2151,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 child: BookGridItem(
                   key: ValueKey(book.bookUrl),
                   title: book.name,
+                  author: book.author,
                   coverUrl: book.customCoverUrl ?? book.coverUrl,
                   unreadNum:
                       settings.showUnread ? unreadChapterNum(book) : 0,

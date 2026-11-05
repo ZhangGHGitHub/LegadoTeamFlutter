@@ -6,11 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../models/cover_settings.dart';
+import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/cover_aspect_ratio.dart';
 import '../services/cover_decode_loader.dart';
+import '../services/network_status_service.dart';
 import '../utils/comic_image_utils.dart';
+import 'cover_text_painter.dart';
 
 /// 书籍封面组件 — 支持网络图片 + 默认封面 + coverDecodeJs 解密
 ///
@@ -56,6 +60,15 @@ class BookCover extends StatefulWidget {
   /// 自适应高度上限（null = [height] 的 160%）
   final double? adaptiveMaxHeight;
 
+  /// 书名（设置批6b-1：默认封面 / 加载占位 / 加载失败时绘制文字）
+  ///
+  /// 网络封面加载成功时不绘制；仅默认封面路径使用（对齐参考版
+  /// `CoilBookCover` 的 `CoverTextOverlay`）。
+  final String? bookName;
+
+  /// 作者（同一绘制条件；书名关闭时不绘制）
+  final String? bookAuthor;
+
   const BookCover({
     super.key,
     this.coverUrl,
@@ -68,6 +81,8 @@ class BookCover extends StatefulWidget {
     this.adaptAspectRatio = false,
     this.adaptiveMinHeight,
     this.adaptiveMaxHeight,
+    this.bookName,
+    this.bookAuthor,
   });
 
   @override
@@ -90,8 +105,12 @@ class _BookCoverState extends State<BookCover> {
   ///
   /// 直接读全局 [uiSettingsListenable]（非 Riverpod）：BookCover 在大量
   /// 列表/测试宿主中渲染，不要求外层存在 ProviderScope。
-  double _displayHeight(bool restrict) {
-    if (!widget.adaptAspectRatio || restrict) return widget.height;
+  /// [ignoreAspectRatio] 为 true 时（总是默认封面 / 无网络地址）不采用
+  /// 网络封面比例，保持调用方声明高度。
+  double _displayHeight(bool restrict, {bool ignoreAspectRatio = false}) {
+    if (ignoreAspectRatio || !widget.adaptAspectRatio || restrict) {
+      return widget.height;
+    }
     // [批39 审查回修] 比例未知（尚未解析/缓存未命中）时按调用方声明的
     // 宽高反推自身比例（width/height，等价于保持 height 不变），而不是
     // 固定 5:7——列表形态的封面尺寸（如 45×60）并不等于 5:7，硬套 5:7
@@ -140,49 +159,132 @@ class _BookCoverState extends State<BookCover> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.adaptAspectRatio) {
-      return _buildCover(widget.height);
-    }
+    // 封面设置（批6b-1）：默认封面文字/日夜/描边阴影/仅 WiFi/比例。
+    // 与批39 相同，经全局 ValueListenable 读取，不要求 ProviderScope。
     return ValueListenableBuilder<UiSettingsState>(
       valueListenable: uiSettingsListenable,
-      builder: (context, settings, _) =>
-          _buildCover(_displayHeight(settings.restrictCoverRatio)),
+      builder: (context, ui, _) {
+        return ValueListenableBuilder<CoverSettings>(
+          valueListenable: coverSettingsListenable,
+          builder: (context, cover, _) {
+            final hasUrl =
+                widget.coverUrl != null && widget.coverUrl!.isNotEmpty;
+            // 总是默认封面时忽略网络封面比例（保持调用方声明尺寸）
+            final defaultOnly = !hasUrl || cover.useDefaultCover;
+            final height = _displayHeight(
+              ui.restrictCoverRatio,
+              ignoreAspectRatio: defaultOnly,
+            );
+            return _buildCover(context, height, cover);
+          },
+        );
+      },
     );
   }
 
-  Widget _buildCover(double height) {
-    Widget cover = ClipRRect(
+  Widget _buildCover(
+    BuildContext context,
+    double height,
+    CoverSettings cover,
+  ) {
+    final hasUrl = widget.coverUrl != null && widget.coverUrl!.isNotEmpty;
+    final showNetwork = hasUrl && !cover.useDefaultCover;
+    final isNight = Theme.of(context).brightness == Brightness.dark;
+    final defaultCover = _buildDefaultCover(context, height, cover, isNight);
+
+    Widget inner = defaultCover;
+    if (showNetwork) {
+      inner = _CoverImage(
+        coverUrl: widget.coverUrl!,
+        width: widget.width,
+        sourceOrigin: widget.sourceOrigin,
+        sourceJson: widget.sourceJson,
+        placeholder: defaultCover,
+        loadOnlyOnWifi: cover.loadOnlyOnWifi,
+        onAspectRatio: _reportRatio,
+      );
+    }
+
+    Widget coverWidget = ClipRRect(
       borderRadius: BorderRadius.circular(widget.borderRadius),
       child: SizedBox(
         width: widget.width,
         height: height,
-        child: (widget.coverUrl != null && widget.coverUrl!.isNotEmpty)
-            ? _CoverImage(
-                coverUrl: widget.coverUrl!,
-                width: widget.width,
-                sourceOrigin: widget.sourceOrigin,
-                sourceJson: widget.sourceJson,
-                placeholder: _defaultCover(height),
-                onAspectRatio: _reportRatio,
-              )
-            : _defaultCover(height),
+        child: inner,
       ),
     );
+    if (cover.showShadow) {
+      // 参考版 CoilBookCover：Modifier.shadow(4.dp, shape)
+      coverWidget = DecoratedBox(
+        key: const ValueKey('bookCoverShadow'),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.borderRadius),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.32),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: coverWidget,
+      );
+    }
     final tag = widget.heroTag;
     if (tag != null && tag.isNotEmpty) {
       // [LAYOUT_PLAN P4] 内置 Hero 保持无 flightShuttle（防与外层 Hero 嵌套）。
-      cover = Hero(tag: tag, child: cover);
+      coverWidget = Hero(tag: tag, child: coverWidget);
     }
-    return cover;
+    return coverWidget;
   }
 
-  /// 默认封面（对标原版 image_cover_default.jpg）：无封面 / 加载中 / 加载失败时显示
-  Widget _defaultCover(double height) {
-    return Image.asset(
-      'assets/images/default_book_cover.jpg',
-      fit: BoxFit.cover,
-      width: widget.width,
-      height: height,
+  /// 默认封面（对标原版 image_cover_default.jpg）
+  ///
+  /// 无封面 / 加载中 / 加载失败 / 总是默认封面时显示：
+  /// - 日间：内置纸纹封面图；
+  /// - 夜间：同一图 + 暗色叠层（参考版独立的日/夜图集素材属 6b-2，
+  ///   本期无夜间素材，登记为色调占位）；
+  /// - 书名 / 作者：见 [CoverTextPainter]（竖排/横排/描边/阴影/日夜）。
+  Widget _buildDefaultCover(
+    BuildContext context,
+    double height,
+    CoverSettings cover,
+    bool isNight,
+  ) {
+    final layout = computeCoverTextLayout(
+      size: Size(widget.width, height),
+      name: widget.bookName,
+      author: widget.bookAuthor,
+      settings: cover,
+      isNight: isNight,
+      defaultColor: Theme.of(context).colorScheme.secondary.toARGB32(),
+    );
+    return Stack(
+      key: const ValueKey('bookCoverDefault'),
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/images/default_book_cover.jpg',
+          fit: BoxFit.cover,
+          width: widget.width,
+          height: height,
+        ),
+        if (isNight)
+          const Positioned.fill(
+            child: ColoredBox(
+              key: ValueKey('bookCoverDefaultNight'),
+              // 无独立夜间素材（登记）：暗色叠层压低纸面亮度、保留纹理
+              color: Color(0xCC15161A),
+            ),
+          ),
+        if (layout.hasText)
+          Positioned.fill(
+            child: CustomPaint(
+              key: const ValueKey('bookCoverText'),
+              painter: CoverTextPainter(layout),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -224,6 +326,10 @@ class _CoverImage extends ConsumerStatefulWidget {
   final String? sourceJson;
   final Widget placeholder;
 
+  /// 仅 WiFi 加载（封面设置批6b-1）：蜂窝网络时跳过加载并显示占位
+  ///（不写解密/图片缓存），恢复 WiFi 后定时重试。
+  final bool loadOnlyOnWifi;
+
   /// 图片加载完成后上报原图宽高比（宽/高；解析失败为 null）
   final ValueChanged<double>? onAspectRatio;
 
@@ -233,6 +339,7 @@ class _CoverImage extends ConsumerStatefulWidget {
     required this.placeholder,
     this.sourceOrigin,
     this.sourceJson,
+    this.loadOnlyOnWifi = false,
     this.onAspectRatio,
   });
 
@@ -248,6 +355,13 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
   int _loadGen = 0;
   CoverDecodeTicket? _ticket;
 
+  /// 蜂窝网络 + 仅 WiFi → 阻塞网络封面（显示占位，不写缓存）
+  bool _wifiBlocked = false;
+  Timer? _wifiRetryTimer;
+
+  /// 阻塞期间的重试间隔（恢复 WiFi 后自动加载）
+  static const Duration _wifiRetryInterval = Duration(seconds: 5);
+
   @override
   void initState() {
     super.initState();
@@ -257,6 +371,8 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
   @override
   void dispose() {
     _loadGen++;
+    _wifiRetryTimer?.cancel();
+    _wifiRetryTimer = null;
     _ticket?.cancel();
     _ticket = null;
     super.dispose();
@@ -267,9 +383,13 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.coverUrl != widget.coverUrl ||
         oldWidget.sourceOrigin != widget.sourceOrigin ||
-        oldWidget.sourceJson != widget.sourceJson) {
+        oldWidget.sourceJson != widget.sourceJson ||
+        oldWidget.loadOnlyOnWifi != widget.loadOnlyOnWifi) {
       _ticket?.cancel();
       _ticket = null;
+      _wifiRetryTimer?.cancel();
+      _wifiRetryTimer = null;
+      _wifiBlocked = false;
       _decodedBytes = null;
       _decodeFailed = false;
       _useDirect = false;
@@ -277,10 +397,43 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     }
   }
 
-  Future<void> _startLoad() async {
+  /// 蜂窝网络下延迟重试（forceRefresh 绕过服务端短时缓存）
+  void _scheduleWifiRetry() {
+    _wifiRetryTimer?.cancel();
+    _wifiRetryTimer = Timer(_wifiRetryInterval, () {
+      if (!mounted || !_wifiBlocked) return;
+      unawaited(_startLoad(forceRefreshNetwork: true));
+    });
+  }
+
+  Future<void> _startLoad({bool forceRefreshNetwork = false}) async {
     final gen = ++_loadGen;
     final origin = widget.sourceOrigin?.trim() ?? '';
     final url = widget.coverUrl;
+
+    // 0) 仅 WiFi：蜂窝网络下直接占位，不进入解密/缓存链路
+    if (widget.loadOnlyOnWifi) {
+      final wifi = await NetworkStatusService.instance.isWifi(
+        forceRefresh: forceRefreshNetwork,
+      );
+      if (!mounted || gen != _loadGen) return;
+      if (!wifi) {
+        setState(() {
+          _wifiBlocked = true;
+          _loadingDecode = false;
+          _useDirect = false;
+          _decodeFailed = false;
+          _decodedBytes = null;
+        });
+        _scheduleWifiRetry();
+        return;
+      }
+    }
+    if (_wifiBlocked) {
+      _wifiBlocked = false;
+      _wifiRetryTimer?.cancel();
+      _wifiRetryTimer = null;
+    }
 
     // 1) 内存缓存命中：立即显示，不占并发槽
     final cached = CoverDecodeLoader.getCached(origin, url);
@@ -427,6 +580,10 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       return widget.placeholder;
     }
     if (_decodeFailed) {
+      return widget.placeholder;
+    }
+    if (_wifiBlocked) {
+      // 蜂窝 + 仅 WiFi：显示占位（默认封面 + 书名/作者），不发起网络请求
       return widget.placeholder;
     }
     if (!_useDirect) {

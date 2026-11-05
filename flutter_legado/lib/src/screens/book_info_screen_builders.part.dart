@@ -901,45 +901,36 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // [G4 | 台账 0917 批六] 封面卡浮起观感：阴影保留（elevation 8），
-                // 补 1px 浅描边（outlineVariant 槽位；ref 08 PIL 实测卡缘 ~1-2px
-                // 浅灰线 L≈150-154）。G1 渐隐后卡下缘落在纯 surface 底色区，
-                // 描边+阴影的浮起感清晰，对齐参考
-                Material(
-                  elevation: 8,
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(3),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: cs.outlineVariant),
-                    ),
-                    child: GestureDetector(
-                      // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
-                      onTap: () => _openChangeCover(book),
-                      onLongPress: () => _previewCover(book),
-                      // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局
-                      // coverFlightShuttleBuilder（内层 heroTag 置空防嵌套），
-                      // tag 统一 book-cover:
-                      child: Hero(
-                        tag: 'book-cover:${book.bookUrl}',
-                        flightShuttleBuilder: coverFlightShuttleBuilder,
-                        child: BookCover(
-                          coverUrl: book.customCoverUrl ?? book.coverUrl,
-                          // [U2 | 台账 0917] 110×160dp 圆角 3（原版
-                          // activity_book_info.xml iv_cover 精确值 + ref PIL
-                          // 实测 112×156dp；2.0.276 的 120×260 偏大，回缩）
-                          width: 110,
-                          height: 160,
-                          borderRadius: 3,
-                          sourceOrigin: book.origin,
-                          // [批39] 跟随「限制封面比例」：关闭时按原图比例
-                          // 自适应高度（参考版 BookInfoScreen 同口径）
-                          adaptAspectRatio: true,
-                          adaptiveMinHeight: 110,
-                          adaptiveMaxHeight: 250,
-                        ),
-                      ),
+                // [设置批6b-1] 封面阴影/描边跟随「封面设置」：移除此前
+                // 硬编码的 elevation 8 与 1px 描边，改由 BookCover 按
+                // `showShadow` 绘制 4dp 阴影、按 `showStroke` 绘制文字描边
+                //（参考版 CoilBookCover 无固定封面边框）。
+                GestureDetector(
+                  // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
+                  onTap: () => _openChangeCover(book),
+                  onLongPress: () => _previewCover(book),
+                  // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局
+                  // coverFlightShuttleBuilder（内层 heroTag 置空防嵌套），
+                  // tag 统一 book-cover:
+                  child: Hero(
+                    tag: 'book-cover:${book.bookUrl}',
+                    flightShuttleBuilder: coverFlightShuttleBuilder,
+                    child: BookCover(
+                      coverUrl: book.customCoverUrl ?? book.coverUrl,
+                      bookName: book.name,
+                      bookAuthor: book.author,
+                      // [U2 | 台账 0917] 110×160dp 圆角 3（原版
+                      // activity_book_info.xml iv_cover 精确值 + ref PIL
+                      // 实测 112×156dp；2.0.276 的 120×260 偏大，回缩）
+                      width: 110,
+                      height: 160,
+                      borderRadius: 3,
+                      sourceOrigin: book.origin,
+                      // [批39] 跟随「限制封面比例」：关闭时按原图比例
+                      // 自适应高度（参考版 BookInfoScreen 同口径）
+                      adaptAspectRatio: true,
+                      adaptiveMinHeight: 110,
+                      adaptiveMaxHeight: 250,
                     ),
                   ),
                 ),

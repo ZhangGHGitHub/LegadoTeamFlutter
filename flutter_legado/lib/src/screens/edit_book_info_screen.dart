@@ -157,6 +157,9 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
       children: [
         BookCover(
           coverUrl: _coverCtrl.text.isNotEmpty ? _coverCtrl.text : null,
+          // 设置批6b-1：默认封面/加载失败时绘制当前编辑中的书名与作者
+          bookName: _nameCtrl.text,
+          bookAuthor: _authorCtrl.text,
           width: 90,
           height: 130,
           borderRadius: 8,

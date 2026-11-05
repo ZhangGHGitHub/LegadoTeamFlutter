@@ -635,6 +635,8 @@ extension _SearchBuilders on _SearchScreenState {
               children: [
                 BookCover(
                   coverUrl: book.coverUrl,
+                  bookName: book.name,
+                  bookAuthor: book.author,
                   // [2.0.275 视觉精修] 80x110 → 74x104（对齐参考 220x311px，5:7）
                   width: 74,
                   height: 104,
@@ -1141,6 +1143,8 @@ extension _SearchBuilders on _SearchScreenState {
               children: [
                 BookCover(
                   coverUrl: book.coverUrl,
+                  bookName: book.name,
+                  bookAuthor: book.author,
                   width: 40,
                   height: 56,
                   borderRadius: 6,

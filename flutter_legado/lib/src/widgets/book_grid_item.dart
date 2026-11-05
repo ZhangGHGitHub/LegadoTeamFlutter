@@ -22,6 +22,10 @@ class BookGridItem extends StatelessWidget {
   static const double coverCornerRadius = 4;
 
   final String title;
+
+  /// 作者（设置批6b-1：默认封面绘制作者用）
+  final String? author;
+
   final String? coverUrl;
 
   /// 书源 origin（封面 coverDecodeJs）
@@ -78,6 +82,7 @@ class BookGridItem extends StatelessWidget {
   const BookGridItem({
     super.key,
     required this.title,
+    this.author,
     this.coverUrl,
     this.sourceOrigin,
     this.heroTag,
@@ -152,6 +157,8 @@ class BookGridItem extends StatelessWidget {
                       children: [
                         BookCover(
                           coverUrl: coverUrl,
+                          bookName: title,
+                          bookAuthor: author,
                           width: constraints.maxWidth.isFinite
                               ? constraints.maxWidth
                               : 80,

@@ -262,6 +262,8 @@ class BookListItem extends StatelessWidget {
                           children: [
                             BookCover(
                               coverUrl: book.customCoverUrl ?? book.coverUrl,
+                              bookName: book.name,
+                              bookAuthor: book.author,
                               width: coverWidth,
                               height: coverHeight,
                               borderRadius: 4,

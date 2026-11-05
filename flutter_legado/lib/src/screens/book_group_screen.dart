@@ -320,6 +320,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                 index: _sortedGroups.indexOf(group),
                 child: BookCover(
                   coverUrl: group.cover,
+                  bookName: group.groupName,
                   width: 40,
                   height: 54,
                   borderRadius: 4,
@@ -329,6 +330,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
               )
             : BookCover(
                 coverUrl: group.cover,
+                bookName: group.groupName,
                 width: 40,
                 height: 54,
                 borderRadius: 4,
