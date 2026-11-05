@@ -1,0 +1,35 @@
+批5c 定时行为计时日志（设备 192.168.100.62:5555，APK 2.0.461+462 sha256 61ed499f478d8ea8396568bc688c9c8492aef81e790f9e84c4bd70aec6e17609）
+时间均为宿主 epoch 秒（date +%s），通过 dumpsys media_session / dumpsys notification 采样。
+
+B1 1 分钟定时（5c_long_chapter，不勾读完本章）
+- t0 = 1793894707.9 开始（点击 Sheet「开始」）
+- 1793894724（t0+16s）Sheet 活动状态「剩余 00:44」；通知「正在朗读(剩余 1 分钟)」
+- 1793894768（t0+60.1s）media_session state=STOPPED(1)，通知记录消失
+- 结论：到点停止，误差 ≤1s（采样间隔）
+
+B2 1 分钟 + 读完本章（5c_long_chapter，开关开）
+- t0 = 1793894872 开始；通知「正在朗读(剩余 1 分钟)」
+- t0+59s：PLAYING，通知「剩余 1 分钟」
+- t0+64s：PLAYING，通知「正在朗读(读完本章后停止): 5c_long_chapter」（60s 到点转章末等待）
+- t0+90s：PLAYING（继续读完当前章）
+- t0+95s：STOPPED，通知消失（章末停止，距到点约 30s）
+
+B3 按章 1 章（5c_multi_chapter，第 1/3 章）
+- t0 = 1793895020 开始；通知「正在朗读(剩余 1 章): 5c_multi_chapter」
+- t0+16s：STOPPED；界面仍为「第一章 初见 1/3」，未进入第二章
+- 说明：开始计时前已朗读约 28s，第 1 章自然播完即停
+
+B4 暂停冻结（5c_long_chapter，不勾读完本章）
+- t0 = 1793895079 开始 1 分钟
+- 1793895092（t0+13s）暂停：media_session PAUSED(2)
+- 1793895163（暂停约 65s 后）仍 PAUSED(2)；Sheet「剩余 00:47」（仅扣除 13s）
+- 1793895180 恢复：PLAYING
+- 1793895232（恢复后约 52s）STOPPED，通知消失（累计播放约 60s，暂停期间不计时）
+
+B5 停止/取消
+- 「停止定时」：Sheet 关闭，通知标题恢复「正在朗读: 5c_long_chapter」，media_session PLAYING（朗读继续，计时清空）
+- 「取消」：Sheet 关闭，通知仍「正在朗读(剩余 1 分钟)」，计时未被清空（朗读继续）
+
+A3 窄屏 + 1.6 字体
+- wm size 720x1280、wm density 360（320dp）、settings system font_scale 1.6
+- 分钟/章节 Sheet 均可滚动；滚动后「取消 / 开始」可见；章节页全部预设/滑块/说明/按钮同屏；logcat RenderFlex overflow=0

@@ -1,0 +1,10 @@
+批5c 设备验收 APK 指纹
+- 仓库 HEAD: a29cc75816dd9e8c5428de004b80a8e96f1899ca
+- 构建命令: cd flutter_legado && flutter build apk --release
+- Gradle assembleRelease: 91.3s（2026-11-05 23:55 完成；无 Rust 改动，未重建 .so）
+- 产物: flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+- 大小: 202,010,908 bytes
+- sha256: 61ed499f478d8ea8396568bc688c9c8492aef81e790f9e84c4bd70aec6e17609
+- aapt badging: package=io.legado.flutter_legado versionCode=462 versionName=2.0.461
+- 安装: adb install -r → Success；随后 pm clear 清空应用数据后开始验收
+- 设备: MuMu「Test测试」index 1，192.168.100.62:5555，Android 15（SM-G9900 伪装），1080x1920 / 480dpi
