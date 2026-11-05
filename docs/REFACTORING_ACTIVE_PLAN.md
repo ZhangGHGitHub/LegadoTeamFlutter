@@ -1092,6 +1092,12 @@
 
 修订：ZCode 主代理 ｜ 2026-11-05（**设置批5b 启动登记：朗读内容划分与段落间隔**。参考 `ReadAloudConfigContent.kt:340-442`（章节分片方式/AI 推理级别/内容划分 default·paragraph·page·symbols/14 标点多选）、`ReadAloudSettings.kt:47-108`（speechAnalysisMode=rule、speechAnalysisReasoningLevel=OFF、contentSplitMode=default、contentSplitSymbols 空）+ `BaseReadAloudService.kt:462-490,631-660,706-724`。我方现状：`audio_notifier.dart:963-988` 仅按空行/换行切段；无内容划分字段/UI；替换/净化已在 Rust 正文链生效。**本批交付**：①字段 `speechAnalysisMode`（rule 可选，AI 选项置灰）、`speechAnalysisReasoningLevel`（OFF 固定，AI 时置灰）、`contentSplitMode`（default/paragraph/page/symbols）、`contentSplitSymbols`（14 标点多选，至少 1）、`ttsParagraphInterval`（0..5000ms）；②纯函数 `read_aloud_content_split.dart`：default=现有空行/换行；paragraph=按段落；symbols=按选中标点（空=默认句末标点）切分并保留标点；page=按阅读器分页边界切分，朗读入口传入页首字符区间，听书页无分页时回退 paragraph；③`AudioNotifier` 接入划分与段间延迟（估算/真实播放两条路径都遵守）；④朗读设置页「常规」页新增「内容分析」组：章节分片方式（仅规则，AI 置灰）、推理级别（AI 置灰）、内容划分方式、标点多选（仅 symbols 时展开）、段落间隔滑块；⑤替换/净化链路回归（确保读正文而非 JSON）；⑥测试与设备验收。**程序默认（用户未答复）**：AI 分片/推理不实现（置灰）；按页朗读以阅读器分页为源，听书页回退段落；标点空=参考默认句末标点；段落间隔默认 0。**不在本批**：多角色/BGM/AI 场景/云 TTS/流式/胶囊。
 
+修订：ZCode 主代理 ｜ 2026-11-05（**设置批5b（朗读内容划分与段落间隔）工程关闭——版本收尾 2.0.460+461**：`97619bd35d`（splitter 四模式/标点/页首偏移；AudioNotifier pageStarts/间隔/切章回退）、`f402fc0477`（朗读设置页内容分析组 14 chip/置灰/滑块）、`0649e94196`（测试）。**独立审查 needs changes（P1 default/paragraph 只按空行切，单换行 TXT 整章 1 单元、选区恒章首；P2 间隔等待中暂停恢复重播上一段；P2 标点 String 与参考 StringSet 不互通）→ 回修** `82687d37ab`/`da3646ea9e`（空行检测 `
+[ 	]*?
+`/无空行 `?
+`；`_pendingAdvanceIndex` 供恢复消费；`decodeReadAloudSymbols` 双形态+setStringList+单键 try；当前页首起读/symbols 先按行/mounted/滚动模式页首空/UTF-16 对齐）。**最终定向复核 pass，无残留 P1/P2**（单换行/CRLF 3 单元、startChapterPos 定位、间隔 pause→resume 播第 2 段、List/String 双读、pageStarts+startChapterPos 不双定位）。**门禁（终态）**：flutter analyze 0；flutter test **4591 通过 + 1 skipped**（基线 4537，净增 54）；dart format 干净；未改 Rust/FFI/依赖。**登记**：①滚动模式 startChapterPos 仍取分页快照页首（滚动不监听偏移，建议后续传 null/按实际偏移）；②间隔等待中手动翻段到边界会静默停滞（既有）；③CRLF 空行分段单元内保留 ``；④`_pendingAdvanceIndex` 跨划分方式/流模式切换未清（模式变更建议清）；⑤空白偏移映射取前一段（风险低）；⑥注释漂移（pref_keys 仍写存储串、测试注释 play 重读）；⑦新版本 symbols 写 StringList，旧版本 getString 不兼容（降级风险）；⑧阅读器 startChapterPos 接线/双页 pageStarts 无直接用例；⑨五个 TTS 键与参考 BackupConfig 分组不同、OFF 大小写；⑩TTS onCompleted 无 tag/token 校验（既有，间隔中重复完成会延长停顿）。**下一步：5b 设备验收（无 TTS 引擎下验切段数量/文本/设置持久化/页模式回退），随后 5c 定时/缓存、批6~8。**
+
+
 
 
 
