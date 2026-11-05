@@ -18,6 +18,7 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		384E7CD32C0400318E89BFE2 /* LauncherIconBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B913AF9475EAC9655614311C /* LauncherIconBridge.swift */; };
+		A17B6C6B2F0C0000000000C2 /* NetworkStatusBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17B6C6B2F0C0000000000C1 /* NetworkStatusBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B913AF9475EAC9655614311C /* LauncherIconBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherIconBridge.swift; sourceTree = "<group>"; };
+		A17B6C6B2F0C0000000000C1 /* NetworkStatusBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkStatusBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +129,7 @@
 			7485A0BA2F0A0000000000A1 /* NowPlayingBridge.swift */,
 			7485A0BB2F0B0000000000A2 /* WebKeepAlive.swift */,
 			B913AF9475EAC9655614311C /* LauncherIconBridge.swift */,
+			A17B6C6B2F0C0000000000C1 /* NetworkStatusBridge.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
@@ -286,6 +289,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				384E7CD32C0400318E89BFE2 /* LauncherIconBridge.swift in Sources */,
+				A17B6C6B2F0C0000000000C2 /* NetworkStatusBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -245,6 +245,12 @@ open class MainActivity : FlutterActivity() {
                 LauncherIconBridge.handleMethodCall(call, result, this)
             }
 
+        // [设置批6b-1] 网络状态：仅 WiFi 加载封面（ConnectivityManager）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NetworkStatusBridge.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                NetworkStatusBridge.handleMethodCall(call, result, this)
+            }
+
         // [V-B3] 视频悬浮窗通道（原生服务承载 overlay + Media3 ExoPlayer；
         // 回全屏经 MainActivity Intent → onReturnToFullscreen）
         videoFloatBridge.register(flutterEngine, this)
