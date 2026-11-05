@@ -15,6 +15,7 @@ void main() {
     bool coverShadow = false,
     String? typeLabel,
     bool showNewBadge = false,
+    int cardColor = 0,
     VoidCallback? onTap,
     VoidCallback? onCoverLongPress,
     VoidCallback? onInfoLongPress,
@@ -35,6 +36,7 @@ void main() {
             coverShadow: coverShadow,
             typeLabel: typeLabel,
             showNewBadge: showNewBadge,
+            cardColor: cardColor,
             onTap: onTap,
             onCoverLongPress: onCoverLongPress,
             onInfoLongPress: onInfoLongPress,
@@ -238,5 +240,29 @@ void main() {
   testWidgets('仅封面样式不渲染书名', (tester) async {
     await tester.pumpWidget(buildTestWidget(gridStyle: 2, title: '隐藏书名'));
     expect(find.text('隐藏书名'), findsNothing);
+  });
+
+  testWidgets('卡片背景色非 0 时按传入日夜色渲染（审查 P2-1）', (tester) async {
+    await tester.pumpWidget(buildTestWidget(cardColor: 0xFF112233));
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).color == const Color(0xFF112233),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(buildTestWidget(cardColor: 0));
+    expect(
+      find.byWidgetPredicate(
+        (w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).color == const Color(0xFF112233),
+      ),
+      findsNothing,
+    );
   });
 }

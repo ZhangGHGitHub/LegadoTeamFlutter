@@ -64,6 +64,7 @@ void main() {
     Size size = const Size(400, 900),
     MockRustApi? api,
     double? paneWidth,
+    ThemeData? theme,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = size * 3;
@@ -85,7 +86,7 @@ void main() {
         // 同一用例内多次 pumpShelf 时强制重建容器（否则沿用旧设置状态）
         key: UniqueKey(),
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
-        child: MaterialApp(home: screen),
+        child: MaterialApp(theme: theme, home: screen),
       ),
     );
     await tester.pump();
@@ -786,6 +787,30 @@ void main() {
     );
     expect(sheet.viewportWidth, closeTo(600, 0.1),
         reason: '多栏/窄 pane 下必须传书架 pane 宽，而非窗口 1000dp');
+  });
+
+  testWidgets('网格卡片按日夜设置取色（审查 P2-1）', (tester) async {
+    Finder colorBox(Color color) => find.byWidgetPredicate(
+          (w) =>
+              w is DecoratedBox &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color == color,
+        );
+    const day = Color(0xFF112233);
+    const night = Color(0xFF445566);
+    final prefs = {
+      BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
+      BookshelfSettings.keyBookshelfCardColor: day.toARGB32(),
+      BookshelfSettings.keyBookshelfCardColorDark: night.toARGB32(),
+    };
+
+    await pumpShelf(tester, prefs: prefs);
+    expect(colorBox(day), findsWidgets);
+    expect(colorBox(night), findsNothing);
+
+    await pumpShelf(tester, prefs: prefs, theme: ThemeData.dark());
+    expect(colorBox(night), findsWidgets);
+    expect(colorBox(day), findsNothing);
   });
 
   testWidgets('P1-1 列表 1–5 列 × 360/400dp × 1.0/1.3/1.6 × 普通/批量无溢出',
