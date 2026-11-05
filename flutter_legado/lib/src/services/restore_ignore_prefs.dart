@@ -222,6 +222,14 @@ class RestoreIgnorePrefs {
     PrefKeys.readMenuTopBarLiquidGlassButtons,
     PrefKeys.readMenuBottomBarLiquidGlassButtons,
     PrefKeys.titleBarCompact,
+    // [设置批5b] 朗读内容分析（键名逐字对齐参考版 PreferKey）：
+    // 内容划分方式/标点集合/段落间隔/章节分片方式/推理级别均属阅读界面
+    // 偏好，随「忽略阅读配置」开关一并过滤；未勾选时随 appPrefs 备份往返。
+    PrefKeys.readAloudContentSplitMode,
+    PrefKeys.readAloudContentSplitSymbols,
+    PrefKeys.ttsParagraphInterval,
+    PrefKeys.speechAnalysisMode,
+    PrefKeys.speechAnalysisReasoningLevel,
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

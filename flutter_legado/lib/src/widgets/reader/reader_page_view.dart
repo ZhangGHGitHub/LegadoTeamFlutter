@@ -313,6 +313,20 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
   }
 
+  /// 当前章各页页首字符偏移（按页划分朗读用，设置批5b）
+  ///
+  /// 复用 [readerBookmarkRangeForPage] 的行级可见区间：页首 = 首行
+  /// `chapterStartIndex`，跨页长段落不会被退化为整段偏移。返回值为当前
+  /// 分页快照对应的章节（调用方用 [currentPageChapterIndex] 校验章号），
+  /// 始终含 0；章末由切分函数补齐。无分页/空正文返回空列表。
+  List<int> get currentChapterPageStarts {
+    if (_paginatedPages.isEmpty) return const [];
+    final content = _paginatedContent.isNotEmpty
+        ? _paginatedContent
+        : ref.read(readerNotifierProvider).chapterContent;
+    return readerPageStartsForPages(_paginatedPages, content.length);
+  }
+
   int get _displayChapterIndex {
     if (_paginatedChapterIndex >= 0) return _paginatedChapterIndex;
     return ref.read(readerNotifierProvider).currentChapterIndex;

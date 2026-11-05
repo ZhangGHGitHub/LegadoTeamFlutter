@@ -1416,10 +1416,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
     setState(() => _aloudBarHidden = false);
     final notifier = ref.read(audioNotifierProvider.notifier);
+    // [设置批5b] 「按页」划分需要当前章分页信息：取分页快照的页首偏移，
+    // 并用章号校验避免章节切换窗口把旧章页首带到新章；无分页/章号不一致
+    // 时传 null，AudioNotifier 内回退整段。
+    final pageView = _pageViewKey.currentState;
+    final pageStarts =
+        pageView != null &&
+            pageView.currentPageChapterIndex == state.currentChapterIndex
+        ? pageView.currentChapterPageStarts
+        : null;
     await notifier.startReadAloud(
       bookUrl: book.bookUrl,
       bookName: book.name,
       chapterIndex: state.currentChapterIndex,
+      pageStarts: pageStarts,
       fromReader: true,
     );
     if (!mounted) return;

@@ -59,6 +59,25 @@ ReaderBookmarkRange readerBookmarkRangeForPage(PageInfo? page) {
   return ReaderBookmarkRange(start, end);
 }
 
+/// 当前章各页页首字符偏移（朗读按页划分，设置批5b）
+///
+/// 复用 [readerBookmarkRangeForPage] 的行级可见区间：跨页长段落的页首取
+/// 首行 `chapterStartIndex`，不会退化为整段偏移。始终包含 0，章末由朗读
+/// 切分函数补齐；空分页/空正文返回空列表。
+List<int> readerPageStartsForPages(List<PageInfo> pages, int contentLength) {
+  if (pages.isEmpty || contentLength <= 0) return const [];
+  final starts = <int>{0};
+  for (final page in pages) {
+    final range = readerBookmarkRangeForPage(page);
+    if (range.isEmpty) continue;
+    if (range.start > 0 && range.start < contentLength) {
+      starts.add(range.start);
+    }
+  }
+  final sorted = starts.toList()..sort();
+  return List<int>.unmodifiable(sorted);
+}
+
 /// 当前屏字符区间（双页按屏首左页对齐后取并集；单页同单页区间）
 ReaderBookmarkRange readerBookmarkRangeForScreen(
   List<PageInfo> pages,

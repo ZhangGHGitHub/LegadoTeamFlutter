@@ -627,6 +627,31 @@ class PrefKeys {
   /// 听书播放器背景：`solid`（纯色，默认）/ `transparent`（透明，露出壁纸）
   static const readAloudPlayerBackground = 'readAloudPlayerBackground';
 
+  // ===== 朗读内容分析（设置批5b，对齐参考版 ReadAloudSettings）=====
+
+  /// 内容划分方式：`default`（默认，运行时归一为整段）/ `paragraph`（整段）/
+  /// `page`（按阅读器分页）/ `symbols`（按选中标点）。键名对齐参考版
+  /// `PreferKey.readAloudContentSplitMode`。
+  static const readAloudContentSplitMode = 'readAloudContentSplitMode';
+
+  /// 「按符号」划分选中的标点（存储串，按展示顺序拼接）。
+  ///
+  /// 空串表示未显式选择 → 运行时回退句末标点 `。！？…`（对齐参考版
+  /// `ReadAloudSplitSymbol.sentenceEnds`）。键名对齐参考版
+  /// `PreferKey.readAloudContentSplitSymbols`。
+  static const readAloudContentSplitSymbols = 'readAloudContentSplitSymbols';
+
+  /// 段落间隔毫秒（0–5000，默认 0；对齐参考版 `ttsParagraphInterval`）
+  static const ttsParagraphInterval = 'ttsParagraphInterval';
+
+  /// 章节分片方式：`rule`（规则，默认）/ `rule_with_ai` / `ai_understanding`。
+  ///
+  /// 本批仅实现规则分片；AI 取值只保留/展示置灰，不参与运行时。
+  static const speechAnalysisMode = 'speechAnalysisMode';
+
+  /// AI 推理级别（默认 `OFF`；仅 AI 分片时有意义，本批固定不参与运行时）
+  static const speechAnalysisReasoningLevel = 'speechAnalysisReasoningLevel';
+
   /// 系统 TTS 语速（参考刻度 0–80；1.0x = 5、2.0x = 15、3.0x = 25，
   /// 映射见 `system_tts_service.dart` 的 [ttsSpeechRateFromSpeed]）
   static const ttsSpeechRate = 'ttsSpeechRate';
