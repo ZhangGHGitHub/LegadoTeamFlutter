@@ -668,6 +668,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         if (index >= 0) {
           ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
         }
+        _pendingVisibleGroupId = null;
       });
     }
     final shelfBooks = sortBookshelfBooks(
