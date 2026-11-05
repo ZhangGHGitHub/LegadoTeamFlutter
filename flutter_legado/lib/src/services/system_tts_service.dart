@@ -180,6 +180,16 @@ abstract class SystemTtsPlatform {
   Future<void> stop();
 }
 
+/// 当前平台是否支持系统 TTS 合成（Android/iOS/macOS）
+///
+/// [审查回修 P2-A/P3] 平台实现与设置页共用同一判定，避免两处 switch 漂移。
+bool platformSupportsSystemTts([TargetPlatform? platform]) {
+  final target = platform ?? defaultTargetPlatform;
+  return target == TargetPlatform.android ||
+      target == TargetPlatform.iOS ||
+      target == TargetPlatform.macOS;
+}
+
 /// flutter_tts 实现
 ///
 /// 刻度差异（见 flutter_tts Android 插件 setSpeechRate 注释）：
@@ -202,13 +212,7 @@ class FlutterTtsSystemTtsPlatform implements SystemTtsPlatform {
       defaultTargetPlatform == TargetPlatform.android;
 
   @override
-  bool get supportsSynthesis => switch (defaultTargetPlatform) {
-        TargetPlatform.android ||
-        TargetPlatform.iOS ||
-        TargetPlatform.macOS =>
-          true,
-        _ => false,
-      };
+  bool get supportsSynthesis => platformSupportsSystemTts();
 
   @override
   Future<void> init() async {
@@ -422,7 +426,21 @@ class SystemTtsService {
   /// flutter_tts 是单实例：跨 key 并发合成会互相打断/排队在插件内部，
   /// 表现为「切段/停止后立即重播 busy」。本队列保证任意时刻只有一次
   /// 平台合成在跑；同 key 请求仍由 [_inFlight] 合并。
-  Future<void> _synthQueue = Future<void>.value();
+  ///
+  /// 延迟创建（null = 空闲）：若在构造时创建 `Future.value()`，其 microtask
+  /// 会绑定到构造 zone（如测试 setUp 的真实 zone），widget 测试的
+  /// FakeAsync pump 无法推进队列；首次入队时在当前调用 zone 创建。
+  Future<void>? _synthQueue;
+
+  /// 合成代际（审查回修 P2-B）
+  ///
+  /// stop() 自增；旧任务失败/超时只允许在代际未变时复位平台、删除文件，
+  /// 避免打断 stop 后刚发起的新合成。
+  int _epoch = 0;
+
+  /// stop 屏障：stop 进行中（平台 stop 最多 2s）时新合成等待，避免被
+  /// 平台 stop 打断；stop 完成后放行。
+  Completer<void>? _stopBarrier;
 
   /// 待展示的一次性提示（如音色失效回退默认），由调用方消费
   String? _pendingNotice;
@@ -519,25 +537,33 @@ class SystemTtsService {
   /// [审查回修 P2-7] 切换后立即应用引擎（先 setEngine/resetEngine 再
   /// getVoices）并刷新音色列表；已选音色不在新引擎列表时清除并回落默认，
   /// 返回刷新后的音色列表供设置页即时更新。
-  Future<List<SystemTtsVoice>> selectEngine(String? engineName) async {
+  ///
+  /// [审查回修 P2-A] 引擎初始化（setEngine/resetEngine）加超时；失败/超时
+  /// 回滚到切换前的引擎并持久化，返回 null 供页面提示「引擎初始化失败」。
+  /// [审查回修 P3] 引擎切换进 [_synthQueue] 串行，避免替换 TTS 实例打断
+  /// 在途合成。
+  Future<List<SystemTtsVoice>?> selectEngine(String? engineName) async {
+    final previousEngine = _selectedEngine;
     final name = engineName?.trim();
     _selectedEngine = (name == null || name.isEmpty) ? null : name;
-    // 不清空 _appliedEngine：下次合成据此判定是否需要 resetEngine 恢复默认
     _selectionLoaded = true;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (_selectedEngine == null) {
-        await prefs.remove(PrefKeys.systemTtsEngine);
-      } else {
-        await prefs.setString(PrefKeys.systemTtsEngine, _selectedEngine!);
-      }
-    } catch (e) {
-      debugPrint('保存系统 TTS 引擎失败: $e');
-    }
+    await _persistEngineSelection();
     if (!_platform.supportsSynthesis) return const [];
+    var taskEpoch = _epoch;
     try {
-      await _applyEngineOnly();
-      final voices = await _platform.getVoices();
+      // stop 进行中先等待（最多 2s），避免切换被平台 stop 打断
+      while (_stopBarrier != null) {
+        await _stopBarrier!.future;
+      }
+      final epoch = _epoch;
+      taskEpoch = epoch;
+      final voices = await _enqueue(() async {
+        if (epoch != _epoch) {
+          throw const SystemTtsException('系统 TTS 引擎切换已取消');
+        }
+        await _applyEngineOnly();
+        return _platform.getVoices();
+      });
       final selected = _selectedVoice;
       if (selected != null &&
           !voices.any(
@@ -548,8 +574,29 @@ class SystemTtsService {
       }
       return voices;
     } catch (e) {
-      debugPrint('切换系统 TTS 引擎后刷新音色失败: $e');
-      return const [];
+      debugPrint('切换系统 TTS 引擎失败: $e');
+      // 回滚选择并持久化：下次合成/重启仍使用切换前引擎
+      _selectedEngine = previousEngine;
+      await _persistEngineSelection();
+      _appliedEngine = null;
+      // [审查回修 P2-B] stop 已推进代际时不复位平台，避免打断新合成
+      if (taskEpoch == _epoch) await _resetPlatformBusy();
+      return null;
+    }
+  }
+
+  /// 持久化当前引擎选择（null = 系统默认，移除键）
+  Future<void> _persistEngineSelection() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final engine = _selectedEngine;
+      if (engine == null) {
+        await prefs.remove(PrefKeys.systemTtsEngine);
+      } else {
+        await prefs.setString(PrefKeys.systemTtsEngine, engine);
+      }
+    } catch (e) {
+      debugPrint('保存系统 TTS 引擎失败: $e');
     }
   }
 
@@ -606,31 +653,49 @@ class SystemTtsService {
     }
     final pending = _inFlight[key];
     if (pending != null) return pending;
+    // [审查回修 P2-B] stop 进行中先等待平台 stop 完成（最多 2s），
+    // 避免新合成被 stop 打断；循环保证等待期间再次 stop 也能正确排队。
+    while (_stopBarrier != null) {
+      await _stopBarrier!.future;
+    }
+    final epoch = _epoch;
     final future = _enqueue(
-      () => _synthesizeAndVerify(trimmed, path, speed, pitch, volume),
+      () => _synthesizeAndVerify(trimmed, path, speed, pitch, volume, epoch),
     );
     _inFlight[key] = future;
     try {
       return await future;
     } finally {
-      _inFlight.remove(key);
+      // [审查回修 P2-B] 仅移除自己注册的 future：stop 清表后同 key 的
+      // 新任务可能已注册，旧任务的 finally 不得误删新任务。
+      if (identical(_inFlight[key], future)) {
+        _inFlight.remove(key);
+      }
     }
   }
 
-  /// 停止系统 TTS 并放弃当前排队链（审查回修 P1-1/P2-6）
+  /// 停止系统 TTS 并放弃当前排队链（审查回修 P1-1/P2-6/P2-B）
   ///
-  /// - 平台 stop 让 flutter_tts 从 busy 状态复位（Android 合成错误后
-  ///   插件状态不复位，必须显式 stop）；
-  /// - 重置串行队列与去重表：旧合成即使永不完成，也不会阻塞切段/停止后
-  ///   立即发起的新合成。
+  /// - 自增代际并清空一次性提示；
+  /// - 立即放弃旧队列/去重表（旧任务由代际守卫，不再复位平台/删文件）；
+  /// - 平台 stop 让 flutter_tts 从 busy 状态复位；期间新合成经
+  ///   [_stopBarrier] 等待，避免被 stop 打断。
   Future<void> stop() async {
-    _synthQueue = Future<void>.value();
+    _epoch++;
+    _pendingNotice = null;
+    final barrier = Completer<void>();
+    _stopBarrier = barrier;
+    _synthQueue = null;
     _inFlight.clear();
     try {
       await _platform.stop().timeout(const Duration(seconds: 2));
     } catch (_) {
       // 平台 stop 失败/超时不影响调用方（停止是尽力而为）
     }
+    if (identical(_stopBarrier, barrier)) {
+      _stopBarrier = null;
+    }
+    if (!barrier.isCompleted) barrier.complete();
   }
 
   /// 缓存统计（目录不可用/平台异常时返回空统计）
@@ -727,7 +792,8 @@ class SystemTtsService {
   /// 串行执行合成任务；错误只回传给对应调用方，不打断后续队列
   Future<T> _enqueue<T>(Future<T> Function() task) {
     final completer = Completer<T>();
-    _synthQueue = _synthQueue.then((_) async {
+    final previous = _synthQueue ?? Future<void>.value();
+    _synthQueue = previous.then((_) async {
       try {
         completer.complete(await task());
       } catch (e, st) {
@@ -771,15 +837,23 @@ class SystemTtsService {
     double speed,
     double pitch,
     double volume,
+    int epoch,
   ) async {
+    // [审查回修 P2-B] 旧代际任务直接取消：不得再触碰缓存文件（否则可能
+    // 删除 stop 后新代际同 key 的产物）。
+    if (epoch != _epoch) {
+      throw const SystemTtsException('系统 TTS 合成已取消');
+    }
     // [审查回修 P3] 上次崩溃可能留下半截文件：合成前先删除，避免
     // 插件跳过写入后被误判为「已有有效产物」。
     try {
       final stale = File(path);
       if (stale.existsSync()) stale.deleteSync();
     } catch (_) {}
-    await _applyPlatformState(speed, pitch, volume);
     try {
+      // [审查回修 P2-A] 引擎初始化也在超时保护内（_applyEngineOnly 自带
+      // synthesisTimeout）；此处整体 try 保证失败时按代际复位/清理。
+      await _applyPlatformState(speed, pitch, volume);
       // [审查回修 P1-1] flutter_tts 的 onError/ERROR 不完成 Future，
       // 必须超时兜底；超时后 stop 复位 busy 再抛，段落链继续估算推进。
       await _platform
@@ -789,15 +863,20 @@ class SystemTtsService {
       if (!file.existsSync() || file.lengthSync() <= 0) {
         throw const SystemTtsException('系统 TTS 未生成音频文件');
       }
-      await pruneCache();
+      // [审查回修 P2-B] 旧代际任务不得清理新代际的缓存
+      if (epoch == _epoch) await pruneCache();
       return path;
     } catch (e) {
-      await _resetPlatformBusy();
-      // 失败产物（空文件/半文件）不得留在缓存目录被下次误命中
-      try {
-        final file = File(path);
-        if (file.existsSync()) file.deleteSync();
-      } catch (_) {}
+      // [审查回修 P2-B] 仅当前代际允许复位平台/删除文件；stop 后旧任务
+      // 的失败清理不得打断刚发起的新合成。
+      if (epoch == _epoch) {
+        await _resetPlatformBusy();
+        // 失败产物（空文件/半文件）不得留在缓存目录被下次误命中
+        try {
+          final file = File(path);
+          if (file.existsSync()) file.deleteSync();
+        } catch (_) {}
+      }
       if (e is TimeoutException) {
         throw SystemTtsException(
           '系统 TTS 合成超时（${synthesisTimeout.inSeconds}s）',
@@ -819,7 +898,12 @@ class SystemTtsService {
       // 从「已选引擎」切回「系统默认」：查询系统默认引擎并重新应用
       if (_appliedEngine != null) {
         try {
-          await _platform.resetEngine();
+          // [审查回修 P2-A] setEngine/resetEngine 永不返回时不得永久挂起
+          await _platform.resetEngine().timeout(synthesisTimeout);
+        } on TimeoutException {
+          _appliedEngine = null;
+          _clearAppliedParams();
+          throw const SystemTtsException('系统 TTS 引擎初始化超时');
         } catch (e) {
           debugPrint('恢复系统默认 TTS 引擎失败（忽略）: $e');
         }
@@ -827,7 +911,13 @@ class SystemTtsService {
         _clearAppliedParams();
       }
     } else if (engine != _appliedEngine) {
-      await _platform.setEngine(engine);
+      try {
+        await _platform.setEngine(engine).timeout(synthesisTimeout);
+      } on TimeoutException {
+        _appliedEngine = null;
+        _clearAppliedParams();
+        throw const SystemTtsException('系统 TTS 引擎初始化超时');
+      }
       _appliedEngine = engine;
       _clearAppliedParams();
     }

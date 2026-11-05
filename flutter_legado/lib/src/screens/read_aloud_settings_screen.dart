@@ -76,15 +76,9 @@ class _ReadAloudSettingsScreenState
 
   /// 当前平台是否支持系统 TTS 合成（Android/iOS/macOS）
   ///
-  /// [审查回修 P2-1] Windows/Linux 的 flutter_tts 无 synthesizeToFile 实现，
-  /// 「系统 TTS」与音色项必须置灰，避免可点但永远失败。
-  bool get _supportsSystemTts => switch (defaultTargetPlatform) {
-        TargetPlatform.android ||
-        TargetPlatform.iOS ||
-        TargetPlatform.macOS =>
-          true,
-        _ => false,
-      };
+  /// [审查回修 P2-1/P3] 与平台实现共用 [platformSupportsSystemTts]，
+  /// 避免两处 switch 漂移；Windows/Linux 的系统 TTS 与音色项置灰。
+  bool get _supportsSystemTts => platformSupportsSystemTts();
 
   SystemTtsService get _systemTts => ref.read(systemTtsServiceProvider);
 
@@ -284,12 +278,27 @@ class _ReadAloudSettingsScreenState
     // null 既可能是「取消」也可能是「系统默认」：由结果对象区分
     if (result.cancelled) return;
     final engineName = result.value;
-    final hadVoice = _selectedSystemVoice != null;
+    final previousEngine = _selectedSystemEngine;
+    final previousVoice = _selectedSystemVoice;
+    final hadVoice = previousVoice != null;
     // [审查回修 P2-7] 切引擎后立即刷新音色列表；原音色在新引擎不可用时
     // 服务已清除选择并回落默认（返回列表同步到页面）。
     final voices = await _systemTts.selectEngine(engineName);
     if (!mounted) return;
+    if (voices == null) {
+      // [审查回修 P2-A] 引擎初始化失败/超时：服务已回滚持久化选择，
+      // 页面同步回滚选中态，不提示「已切换」。
+      setState(() {
+        _selectedSystemEngine = previousEngine;
+        _selectedSystemVoice = previousVoice;
+      });
+      _toast('引擎初始化失败');
+      return;
+    }
     final voiceCleared = hadVoice && _systemTts.selectedVoice == null;
+    // [审查回修 P3] 页面已用 toast 告知音色回退，消费服务一次性提示，
+    // 避免播放时再次弹出同一条提示。
+    if (voiceCleared) _systemTts.takeNotice();
     setState(() {
       _selectedSystemEngine = _systemTts.selectedEngineName;
       _systemVoices = voices;
