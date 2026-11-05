@@ -10,6 +10,7 @@ import '../../models/book.dart';
 import '../../services/audio_service.dart';
 import '../../services/book_api.dart';
 import '../../services/stream_audio_player.dart';
+import '../../services/system_tts_service.dart';
 import '../../utils/audio_skip_policy.dart';
 import '../providers.dart';
 import 'audio_state.dart';
@@ -140,6 +141,9 @@ bool isLocalBookUrl(String bookUrl) {
 class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   late final AudioService _audioService;
   late final StreamAudioPlayer _streamPlayer;
+
+  /// [设置批5a-1] 系统 TTS 服务（flutter_tts 合成到文件后复用本地播放链）
+  late final SystemTtsService _systemTts;
 
   StreamSubscription<MediaButtonEvent>? _mediaButtonSub;
   StreamSubscription<AudioFocusEvent>? _audioFocusSub;
@@ -281,6 +285,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   AudioState build() {
     _audioService = ref.read(audioServiceProvider);
     _streamPlayer = ref.read(streamAudioPlayerProvider);
+    _systemTts = ref.read(systemTtsServiceProvider);
     // 完成回调按当前模式分发：音频书 → 下一章；TTS → 下一段
     _streamPlayer.onCompleted = (tag) {
       if (_disposed) return;
@@ -337,7 +342,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
     // 批9a 项6：会话入口读取「忽略音频焦点」偏好（流模式听书与 TTS 朗读
     // 两条路径都经此初始化，一处读取两路生效）
-    await _loadIgnoreAudioFocus();
+    // [设置批5a-1] 同一入口补齐朗读设置批次的偏好：唤醒锁 / 媒体键翻章 /
+    // 系统 TTS 语速音调音量（一次读取，两条播放路径共享）。
+    await _loadReadAloudPreferences();
     await _audioService.init();
 
     _mediaButtonSub = _audioService.mediaButtonStream.listen((event) {
@@ -357,17 +364,17 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         case MediaButtonEvent.skipToNext:
           // [批9b-5 回修] 按当前模式分流：音频书切章，TTS 切段
           //（对齐原版 ReadAloud.nextParagraph；不得整章切换 TTS）。
-          // 空闲态不启动播放（非运行态段落移动为 no-op）。
-          // 未实现原版 `mediaButtonPerNext`（TTS 上一/下一首翻章偏好）。
+          // [设置批5a-1] `mediaButtonPerNext=true` 时 TTS 也切章（对齐原版
+          // PreferKey.mediaButtonPerNext 语义）；空闲态不启动播放。
           if (state.state == PlayerState.idle) break;
-          if (state.isStreamMode) {
+          if (state.isStreamMode || _mediaButtonPerNext) {
             unawaited(next());
           } else {
             unawaited(nextParagraph());
           }
         case MediaButtonEvent.skipToPrevious:
           if (state.state == PlayerState.idle) break;
-          if (state.isStreamMode) {
+          if (state.isStreamMode || _mediaButtonPerNext) {
             unawaited(previous());
           } else {
             unawaited(prevParagraph());
@@ -505,13 +512,19 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   }
 
   /// 阅读器朗读入口（固定 TTS，不走音频书流媒体）
+  ///
+  /// [fromReader] 标记本次朗读由阅读器发起：阅读器退出时据此判定是否
+  /// 按 `keepReadAloudOnExit` 偏好停止（见 [onReaderExit]）。听书页/耳机
+  /// 媒体键/后台路径传 false，不会被阅读器退出误停。
   Future<void> startReadAloud({
     required String bookUrl,
     required String bookName,
     int chapterIndex = 0,
     int? startChapterPos,
     String? startParagraphText,
+    bool fromReader = false,
   }) async {
+    _startedFromReader = fromReader;
     // A4：新的朗读会话，允许无可用引擎提示再次出现
     _noEngineHintShown = false;
     setAudioBookMode(false);
@@ -1019,11 +1032,11 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // （对齐原版 ReadAloud.kt:41）；归一仍在此完成，历史「名称,URL」复合形态
     // 不会破坏解析（见 normalizeTtsEngineUrl）。
     final engineUrl = resolveTtsEngineUrl();
-    if (engineUrl.isEmpty) {
-      // [A4] 无可用引擎：温和一次性提示（复用 errorMessage 展示面）后按
-      // 估算节奏朗读；不视为失败，无正文时前面的空段落判定已提前返回。
-      _showNoEngineHintOnce();
-      _scheduleEstimateAdvance(text, config.speed, token, gen);
+    // [设置批5a-1] 系统 TTS 分支：显式哨兵或「书级/全局均空」时默认系统 TTS
+    //（对齐参考版 `ttsEngine == null` → 系统引擎）；系统不可用/合成失败再
+    // 回落既有「一次性提示 + 估算推进」语义。
+    if (engineUrl.isEmpty || engineUrl == kSystemTtsEngineUrl) {
+      await _speakWithSystemTts(text, config, token, gen);
       return;
     }
     String? audioPath;
@@ -1065,10 +1078,65 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (_isSpeakStale(token, gen)) return;
 
     // 降级：合成/播放失败 → 估算时长推进 + 用户可见提示
-    // （无引擎配置时已在上面的空判定提前返回，保持既有静默估算行为）
+    // （系统 TTS 分支见 [_speakWithSystemTts]，同一降级语义）
     if (failure != null) {
       state = state.copyWith(
         errorMessage: '朗读音频不可用，本段按估算时长继续：$failure',
+      );
+    }
+    _scheduleEstimateAdvance(text, config.speed, token, gen);
+  }
+
+  /// 系统 TTS 合成并播放当前段（设置批5a-1）
+  ///
+  /// 链路：flutter_tts `synthesizeToFile`（缓存键 md5(text|引擎|音色|参数)）
+  /// → [StreamAudioPlayer.playLocalFile] → 完成回调驱动段落推进，与 HTTP
+  /// 引擎路径完全同源。失败语义：
+  /// - [SystemTtsUnavailableException]（未安装引擎）→ 复用既有「无可用引擎」
+  ///   一次性提示 + 估算推进；
+  /// - 其它合成/播放失败 → 可见错误提示 + 估算推进（不静默）。
+  Future<void> _speakWithSystemTts(
+    String text,
+    TtsConfig config,
+    int token,
+    int gen,
+  ) async {
+    String? audioPath;
+    Object? failure;
+    try {
+      audioPath = await _systemTts.synthesizeToFile(
+        text: text,
+        speed: config.speed,
+        pitch: config.pitch,
+        volume: config.volume,
+      );
+    } catch (e) {
+      failure = e;
+    }
+    if (_isSpeakStale(token, gen)) return;
+    if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
+      failure = StateError('系统 TTS 未返回音频文件');
+    }
+    if (failure == null) {
+      try {
+        // 语速/音调/音量已由系统 TTS 合成参数应用，播放侧固定 1.0
+        await _streamPlayer.playLocalFile(audioPath!.trim(), speed: 1.0);
+        if (_isSpeakStale(token, gen)) return;
+        _noEngineHintShown = false;
+        if (state.errorMessage != null) {
+          state = state.copyWith(errorMessage: null);
+        }
+        return;
+      } catch (e) {
+        failure = e;
+      }
+    }
+    if (_isSpeakStale(token, gen)) return;
+    if (failure is SystemTtsUnavailableException) {
+      _showNoEngineHintOnce();
+    } else {
+      state = state.copyWith(
+        errorMessage: '系统 TTS 朗读失败，本段按估算时长继续：$failure',
       );
     }
     _scheduleEstimateAdvance(text, config.speed, token, gen);
@@ -1179,6 +1247,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     }
     await _pushMediaSessionMetadata();
     await _audioService.notifyPlaying();
+    // [设置批5a-1] TTS 朗读唤醒锁：按偏好启用（流媒体路径由听书页开关负责）
+    await _applyReadAloudWakeLock();
   }
 
   /// 忽略音频焦点偏好镜像（批9a 项6）
@@ -1188,15 +1258,130 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 默认 false（请求焦点、被抢占即暂停）。
   bool _ignoreAudioFocus = false;
 
-  /// 读取 ignoreAudioFocus 偏好（失败保持默认 false）
-  Future<void> _loadIgnoreAudioFocus() async {
+  /// 朗读唤醒锁偏好（设置批5a-1；默认 false，对齐原版
+  /// `PreferKey.readAloudWakeLock`）。仅 TTS 朗读路径生效——流媒体听书的
+  /// 唤醒锁由听书页「唤醒锁定」菜单独立控制，二者互不覆盖。
+  bool _readAloudWakeLock = false;
+
+  /// 耳机上一首/下一首键翻章（设置批5a-1；默认 false = TTS 切段）
+  bool _mediaButtonPerNext = false;
+
+  /// 本次朗读是否由阅读器发起（设置批5a-1）
+  ///
+  /// 仅用于「退出阅读器时继续朗读」判定：听书页/耳机媒体键/后台启动的
+  /// 会话置 false，阅读器退出不得误停。
+  bool _startedFromReader = false;
+
+  /// 本次朗读是否由阅读器发起（测试/UI 判定用）
+  bool get readAloudStartedFromReader => _startedFromReader;
+
+  /// 退出阅读器钩子（设置批5a-1）
+  ///
+  /// 语义对齐参考版 `keepReadAloudOnExit`：
+  /// - 仅处理「由阅读器发起」的会话（听书页/后台会话不误停）；
+  /// - 偏好 true（退出继续朗读）→ 保持播放；
+  /// - 偏好 false（默认）→ 停止本次朗读（释放媒体会话/唤醒锁）。
+  Future<void> onReaderExit() async {
+    if (!_startedFromReader) return;
+    _startedFromReader = false;
+    if (state.state == PlayerState.idle) return;
+    var keep = false;
     try {
       final prefs = await SharedPreferences.getInstance();
-      _ignoreAudioFocus =
-          prefs.getBool(PrefKeys.ignoreAudioFocus) ?? false;
+      keep = prefs.getBool(PrefKeys.keepReadAloudOnExit) ?? false;
     } catch (_) {
-      // prefs 读取失败保持默认：请求焦点（安全侧）
+      // 读取失败按默认 false（退出即停止，安全侧）
     }
+    if (keep) return;
+    stop();
+  }
+
+  /// 读取朗读相关偏好（忽略焦点 / 唤醒锁 / 媒体键翻章 / 系统 TTS 参数）
+  ///
+  /// 失败保持默认值（安全侧：请求焦点、不持锁、按段落移动）。
+  /// 语速/音调/音量：持久化键为参考刻度（[PrefKeys.ttsSpeechRate] 等），
+  /// 未写入时保留当前值（兼容旧书级 `readConfig.playSpeed` 读回结果）。
+  Future<void> _loadReadAloudPreferences() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _ignoreAudioFocus = prefs.getBool(PrefKeys.ignoreAudioFocus) ?? false;
+      _readAloudWakeLock =
+          prefs.getBool(PrefKeys.readAloudWakeLock) ?? false;
+      _mediaButtonPerNext =
+          prefs.getBool(PrefKeys.mediaButtonPerNext) ?? false;
+      final rate = prefs.getInt(PrefKeys.ttsSpeechRate);
+      final pitch = prefs.getInt(PrefKeys.ttsPitch);
+      final volume = prefs.getInt(PrefKeys.ttsVolume);
+      final cfg = state.config;
+      // 流媒体（音频书）语速走书级 playSpeed（applyBookPreferences），
+      // 不被全局 TTS 语速覆盖；音调/音量仅系统 TTS 使用，同样跳过。
+      if (state.isStreamMode) return;
+      final speed = rate == null ? cfg.speed : ttsSpeedFromSpeechRate(rate);
+      final nextPitch =
+          pitch == null ? cfg.pitch : ttsPitchFromStored(pitch, fallback: cfg.pitch);
+      final nextVolume = volume == null
+          ? cfg.volume
+          : ttsVolumeFromStored(volume, fallback: cfg.volume);
+      if (speed != cfg.speed ||
+          nextPitch != cfg.pitch ||
+          nextVolume != cfg.volume) {
+        // 直接改 state：避免 updateConfig 触发书级语速回写（读回偏好不等于
+        // 用户调整书级语速）
+        state = state.copyWith(
+          config: TtsConfig(
+            engineUrl: cfg.engineUrl,
+            voiceName: cfg.voiceName,
+            speed: speed,
+            pitch: nextPitch,
+            volume: nextVolume,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('读取朗读偏好失败（使用默认值）: $e');
+    }
+  }
+
+  /// 按偏好应用/释放 TTS 朗读唤醒锁
+  ///
+  /// 流媒体模式跳过（听书页自己的唤醒锁开关负责），避免两条偏好互相踩停。
+  Future<void> _applyReadAloudWakeLock() async {
+    if (state.isStreamMode) return;
+    try {
+      await _audioService.setWakeLock(_readAloudWakeLock);
+    } catch (e) {
+      debugPrint('应用朗读唤醒锁失败（忽略）: $e');
+    }
+  }
+
+  Future<void> _releaseReadAloudWakeLock() async {
+    if (state.isStreamMode) return;
+    try {
+      await _audioService.setWakeLock(false);
+    } catch (e) {
+      debugPrint('释放朗读唤醒锁失败（忽略）: $e');
+    }
+  }
+
+  /// 设置页即时切换「朗读唤醒锁」（设置批5a-1）
+  ///
+  /// 写入镜像并立即应用：开启且正在朗读 → 立刻持锁；关闭 → 立刻释放。
+  /// 流媒体模式下由听书页的独立开关负责，本方法不干预。
+  Future<void> setReadAloudWakeLock(bool enabled) async {
+    _readAloudWakeLock = enabled;
+    if (state.isStreamMode) return;
+    if (!enabled) {
+      await _releaseReadAloudWakeLock();
+      return;
+    }
+    if (state.state == PlayerState.playing) {
+      await _applyReadAloudWakeLock();
+    }
+  }
+
+  /// 设置页即时切换「媒体键上一首/下一首翻章」（设置批5a-1）
+  void setMediaButtonPerNext(bool enabled) {
+    _mediaButtonPerNext = enabled;
   }
 
   /// 组装并推送媒体元数据（通知标题/锁屏副标题）
@@ -1441,6 +1626,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     unawaited(_persistStreamPosition(force: true));
     // A4：停止视为朗读会话结束，下次朗读允许再次提示无引擎
     _noEngineHintShown = false;
+    // [设置批5a-1] 会话结束：清除「阅读器发起」标记（下次朗读重新判定）
+    _startedFromReader = false;
     _playToken++;
     _paragraphs = [];
     _paragraphIndex = 0;
@@ -1455,6 +1642,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     );
     _audioService.notifyStopped();
     _audioService.abandonAudioFocus();
+    // [设置批5a-1] TTS 朗读停止即释放唤醒锁（幂等；流模式跳过）
+    unawaited(_releaseReadAloudWakeLock());
   }
 
   Future<void> next() async {
@@ -1774,4 +1963,12 @@ final audioServiceProvider = Provider<AudioService>(
 /// 生产环境单实例，TTS 与音频书路径共用）
 final streamAudioPlayerProvider = Provider<StreamAudioPlayer>(
   (ref) => StreamAudioPlayer(),
+);
+
+/// 系统 TTS 服务注入点（设置批5a-1）
+///
+/// 生产环境单实例：设置页选择引擎/音色与播放链共享同一服务实例，
+/// 选择态即时生效；单元测试 override 为 fake platform 构造的服务。
+final systemTtsServiceProvider = Provider<SystemTtsService>(
+  (ref) => SystemTtsService(),
 );

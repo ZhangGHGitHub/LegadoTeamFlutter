@@ -95,6 +95,8 @@ Future<void> selectionReadAloud(
         chapterIndex: state.currentChapterIndex,
         startChapterPos: chapterPos,
         startParagraphText: paragraphText,
+        // [设置批5a-1] 选区朗读同属阅读器发起：退出阅读器按偏好停止
+        fromReader: true,
       );
 }
 

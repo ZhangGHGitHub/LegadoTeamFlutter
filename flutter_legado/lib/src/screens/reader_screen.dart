@@ -298,6 +298,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // restoreActivityWindowState → keepScreenOn(originalKeepScreenOn)）—
     // 全栈工程师
     _teardownKeepLight();
+    // [设置批5a-1] 退出阅读器：keepReadAloudOnExit=false 时停止由阅读器
+    // 发起的朗读（听书页/后台会话由 Notifier 内的来源标记排除）。
+    // ref 在 super.dispose() 前仍可用；异常吞掉，退出流程不因朗读清理失败中断。
+    try {
+      unawaited(ref.read(audioNotifierProvider.notifier).onReaderExit());
+    } catch (_) {
+      // 忽略：阅读器退出不因朗读清理失败而中断
+    }
     super.dispose();
   }
 
@@ -1363,6 +1371,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   /// 启动当前书的朗读（链路：AudioNotifier.startReadAloud → play → audioSpeak）
+  ///
+  /// [设置批5a-1] `defaultReadAloudInterface=player` 时启动成功后进入听书
+  /// 播放器（对齐参考版「默认朗读界面：播放器」）；经典模式下保持阅读器
+  /// 内朗读条，不跳页。
   Future<void> _startReadAloud(ReaderState state) async {
     final book = state.currentBook;
     if (book == null) {
@@ -1372,13 +1384,30 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return;
     }
     setState(() => _aloudBarHidden = false);
-    await ref
-        .read(audioNotifierProvider.notifier)
-        .startReadAloud(
-          bookUrl: book.bookUrl,
-          bookName: book.name,
-          chapterIndex: state.currentChapterIndex,
+    final notifier = ref.read(audioNotifierProvider.notifier);
+    await notifier.startReadAloud(
+      bookUrl: book.bookUrl,
+      bookName: book.name,
+      chapterIndex: state.currentChapterIndex,
+      fromReader: true,
+    );
+    if (!mounted) return;
+    // 启动失败（无章节/加载失败）不跳页，避免进入空白播放器
+    final audio = ref.read(audioNotifierProvider);
+    if (!audio.hasChapters ||
+        audio.state == PlayerState.idle ||
+        audio.state == PlayerState.error ||
+        audio.bookUrl != book.bookUrl) {
+      return;
+    }
+    final interface = await ref
+        .read(settingsProvider)
+        .getStringPref(
+          PrefKeys.defaultReadAloudInterface,
+          defaultValue: 'classic',
         );
+    if (!mounted || interface != 'player') return;
+    await Navigator.pushNamed(context, AppRoutes.audio, arguments: book);
   }
 
   /// 根据九宫格点击配置执行对应功能（批4a）

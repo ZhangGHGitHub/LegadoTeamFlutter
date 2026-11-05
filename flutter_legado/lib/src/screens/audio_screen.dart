@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../constants/pref_keys.dart';
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/providers.dart';
@@ -58,6 +59,12 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   bool _showSettings = false;
   bool _wakeLock = false;
 
+  /// 播放器背景是否透明（设置批5a-1）
+  ///
+  /// 偏好 `readAloudPlayerBackground`：`solid`（默认，跟随主题）/ `transparent`
+  /// （透明露出全局背景图/壁纸）。模糊/流光在设置页置灰未实现。
+  bool _transparentBackground = false;
+
   /// [批9b-5] 耳机媒体键服务（听书页挂载期间按「活动内处理」语义接管
   /// 空闲态播放键，对齐原版 AudioPlayActivity.playButton）
   HeadsetMediaButtonService? _headsetMediaButtonService;
@@ -98,6 +105,19 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final notifier = ref.read(audioNotifierProvider.notifier);
+      // [设置批5a-1] 播放器背景偏好（纯色/透明）
+      unawaited(
+        ref
+            .read(settingsProvider)
+            .getStringPref(
+              PrefKeys.readAloudPlayerBackground,
+              defaultValue: 'solid',
+            )
+            .then((value) {
+          if (!mounted) return;
+          setState(() => _transparentBackground = value == 'transparent');
+        }),
+      );
       // 音频书 → 流媒体；否则保持 TTS（阅读器朗读入口会强制 TTS）
       notifier.setAudioBookMode(_canCopyPlayUrl);
       notifier.bindBook(widget.book);
@@ -295,6 +315,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       listenable: notifier,
       builder: (context, _) => AppScaffold(
       // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+      // [设置批5a-1] 播放器背景：透明时露出全局背景图/壁纸层
+      backgroundColor: _transparentBackground ? Colors.transparent : null,
       topBar: LegadoAppBar(
         title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
         actions: [

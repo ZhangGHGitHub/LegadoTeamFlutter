@@ -241,8 +241,11 @@ class AudioNotifierHeadsetController implements HeadsetMediaAudioController {
 /// 限制：进程被系统杀死后无法拉起 Flutter 引擎（未做 headless engine），
 /// 冷启动按键只在系统把广播投递到静态接收器且引擎可建立时生效。
 /// 未纳入：视频悬浮窗 `VideoPlayService` 的独立 MediaSession（其媒体键由
-/// 视频自身会话处理）、原版 `mediaButtonPerNext` 偏好、iOS/桌面（无静态
-/// 媒体键接收器）。会话/静态接收器的 250ms 去抖见 [debounceWindow]。
+/// 视频自身会话处理）、iOS/桌面（无静态媒体键接收器）。会话/静态接收器的
+/// 250ms 去抖见 [debounceWindow]。
+///
+/// [设置批5a-1] `mediaButtonPerNext=true` 时 TTS 的上一首/下一首键改为
+/// 整章切换（默认按段落移动），偏好经 [SettingsService] 读取。
 ///
 /// — 全栈工程师 ｜ 2026-11-04
 class HeadsetMediaButtonService with WidgetsBindingObserver {
@@ -355,6 +358,11 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
         PrefKeys.readAloudByMediaButton,
         defaultValue: false,
       );
+      // [设置批5a-1] 上一首/下一首键翻章（默认 false = TTS 切段）
+      final perNext = await _settings.getBoolPref(
+        PrefKeys.mediaButtonPerNext,
+        defaultValue: false,
+      );
       final audio = _audio();
       final action = decideHeadsetMediaAction(
         key: key,
@@ -366,7 +374,7 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
         activityHandlerAttached: hasActivityHandler,
         appForeground: _isAppForeground(),
       );
-      await _execute(action, audio, key);
+      await _execute(action, audio, key, mediaButtonPerNext: perNext);
     } catch (e) {
       // 媒体键是用户随手操作：任何失败静默，不影响阅读/播放主流程
       debugPrint('[耳机按键] 处理失败（忽略）：$e');
@@ -376,21 +384,25 @@ class HeadsetMediaButtonService with WidgetsBindingObserver {
   Future<void> _execute(
     HeadsetMediaAction action,
     HeadsetMediaAudioController audio,
-    HeadsetMediaKey key,
-  ) async {
+    HeadsetMediaKey key, {
+    bool mediaButtonPerNext = false,
+  }) async {
     switch (action) {
       case HeadsetMediaAction.pausePlayback:
         audio.pause();
       case HeadsetMediaAction.resumePlayback:
         await audio.resume();
       case HeadsetMediaAction.nextItem:
-        if (audio.isStreamMode) {
+        // [设置批5a-1] TTS 默认按段落移动；`mediaButtonPerNext=true` 时
+        // 改为整章切换（对齐原版 PreferKey.mediaButtonPerNext）。音频书
+        // 无段落概念，始终切章。
+        if (audio.isStreamMode || mediaButtonPerNext) {
           await audio.skipNext();
         } else {
           await audio.nextParagraph();
         }
       case HeadsetMediaAction.previousItem:
-        if (audio.isStreamMode) {
+        if (audio.isStreamMode || mediaButtonPerNext) {
           await audio.skipPrevious();
         } else {
           await audio.prevParagraph();

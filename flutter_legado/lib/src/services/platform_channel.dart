@@ -43,6 +43,11 @@ class PlatformChannel {
   static const MethodChannel keepScreenOn =
       MethodChannel('io.legado.app/brightness');
 
+  /// [设置批5a-1] 系统设置跳转通道（Kotlin `SystemSettingsBridge`）：
+  /// 系统 TTS 设置页 / 电池优化列表 / 电池优化豁免查询
+  static const MethodChannel systemSettings =
+      MethodChannel('legado/system_settings');
+
   /// 事件通道：用于接收原生层的流式事件
   static const EventChannel eventChannel =
       EventChannel('io.legado.app/events');
@@ -305,6 +310,47 @@ class PlatformChannel {
       // （原生端 error）→ 统一降级 no-op，绝不向上抛（语义同
       // setVolumeKeyCapture）；debugPrint 留痕便于排障 — 审查回修 P3-6
       debugPrint('setKeepScreenOn($enabled) 通道不可用，降级 no-op: $e');
+    }
+  }
+
+  // ─── 系统设置跳转（设置批5a-1） ─────────────────────────────
+
+  /// 打开系统「文字转语音（TTS）输出」设置页
+  ///
+  /// 仅 Android 有效；通道未注册（非 Android / 测试）或原生端失败返回
+  /// false，由调用方决定是否提示（不抛异常）。
+  static Future<bool> openTtsSettings() async {
+    try {
+      return await systemSettings.invokeMethod<bool>('openTtsSettings') ??
+          false;
+    } catch (e) {
+      debugPrint('openTtsSettings 通道不可用，降级 false: $e');
+      return false;
+    }
+  }
+
+  /// 打开系统「电池优化」列表页（用户手动为本应用关闭优化）
+  ///
+  /// 使用 ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS（无需
+  /// REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 权限）；失败返回 false。
+  static Future<bool> openBatteryOptimizationSettings() async {
+    try {
+      return await systemSettings
+              .invokeMethod<bool>('openBatteryOptimizationSettings') ??
+          false;
+    } catch (e) {
+      debugPrint('openBatteryOptimizationSettings 通道不可用，降级 false: $e');
+      return false;
+    }
+  }
+
+  /// 查询本应用是否已在电池优化豁免名单（null = 无法查询/非 Android）
+  static Future<bool?> isIgnoringBatteryOptimizations() async {
+    try {
+      return await systemSettings
+          .invokeMethod<bool>('isIgnoringBatteryOptimizations');
+    } catch (_) {
+      return null;
     }
   }
 
