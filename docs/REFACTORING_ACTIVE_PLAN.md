@@ -1090,6 +1090,9 @@
 
 修订：ZCode 主代理 ｜ 2026-11-05（**批5a-1 设备 P1 复验：7/7 PASS，P1 关闭；批5a-1 工程验收通过**：报告 `docs/DEVICE_ACCEPTANCE_20261105_BATCH5A1.md` 追加「P1 回修复验（2.0.459+460）」，证据 `docs/materials_1105b/`（12-52 截图 + logcat）。复验 APK sha256 `a1825ea5…`、设备 2.0.459/460。**通过**：①keep=false 顶栏返回退出后 media_session STOPPED、通知/前台服务 0，45s 采样不变，重进阅读器段位仍 1/10；②系统返回退出同样 STOPPED/0，45s 后无推进；③keep=true 退出后 PLAYING/通知在，45s 后段位 14→19/20 推进，清理后 STOPPED；④听书页来源（播放器内重新 play）返回阅读器退出后仍 PLAYING，不被误停；⑤阅读器朗读条/听书页「朗读设置」均进入新三页签页；⑥连续进出 3 次每轮只 stop 一次、无残留通知/崩溃；⑦设备复位（经典/纯色/唤醒锁关/退出保持关/媒体键关/1.0x/1.0/100%、空书架、竖屏）。FATAL/ANR/E.flutter/overflow=0。**观察**：dispose 兜底仍打印 `Bad state: Cannot use "ref" after the widget was disposed.`（pre-pop 路径已成功停止，仅兜底日志，登记）。**P2/P3 保持原登记**（唤醒锁设备级不入备份、百度引擎每段重复提示、引擎行语义树、crash 旧标记、mediaButtonPerNext 无 TTS BLOCKED）。**下一步：批5a-2（播放器背景模糊/流光、缓存保留/预加载等剩余常规项）或直接 5b 内容划分；建议先 5b（更独立）。随后 5c、批6~8、隐私、cast。**
 
+修订：ZCode 主代理 ｜ 2026-11-05（**设置批5b 启动登记：朗读内容划分与段落间隔**。参考 `ReadAloudConfigContent.kt:340-442`（章节分片方式/AI 推理级别/内容划分 default·paragraph·page·symbols/14 标点多选）、`ReadAloudSettings.kt:47-108`（speechAnalysisMode=rule、speechAnalysisReasoningLevel=OFF、contentSplitMode=default、contentSplitSymbols 空）+ `BaseReadAloudService.kt:462-490,631-660,706-724`。我方现状：`audio_notifier.dart:963-988` 仅按空行/换行切段；无内容划分字段/UI；替换/净化已在 Rust 正文链生效。**本批交付**：①字段 `speechAnalysisMode`（rule 可选，AI 选项置灰）、`speechAnalysisReasoningLevel`（OFF 固定，AI 时置灰）、`contentSplitMode`（default/paragraph/page/symbols）、`contentSplitSymbols`（14 标点多选，至少 1）、`ttsParagraphInterval`（0..5000ms）；②纯函数 `read_aloud_content_split.dart`：default=现有空行/换行；paragraph=按段落；symbols=按选中标点（空=默认句末标点）切分并保留标点；page=按阅读器分页边界切分，朗读入口传入页首字符区间，听书页无分页时回退 paragraph；③`AudioNotifier` 接入划分与段间延迟（估算/真实播放两条路径都遵守）；④朗读设置页「常规」页新增「内容分析」组：章节分片方式（仅规则，AI 置灰）、推理级别（AI 置灰）、内容划分方式、标点多选（仅 symbols 时展开）、段落间隔滑块；⑤替换/净化链路回归（确保读正文而非 JSON）；⑥测试与设备验收。**程序默认（用户未答复）**：AI 分片/推理不实现（置灰）；按页朗读以阅读器分页为源，听书页回退段落；标点空=参考默认句末标点；段落间隔默认 0。**不在本批**：多角色/BGM/AI 场景/云 TTS/流式/胶囊。
+
+
 
 
 
