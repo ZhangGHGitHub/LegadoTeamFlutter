@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use legado_core::{LegadoError, LegadoResult};
 
+/// 新分组位掩码最大组合值（1<<30 及以下所有位全开）
+const MAX_GROUP_MASK: i64 = (1 << 31) - 1;
+
 /// 书籍分组
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BookGroup {
@@ -135,12 +138,40 @@ impl<'a> BookGroupRepository<'a> {
         Ok(affected > 0)
     }
 
-    /// 删除分组
+    /// 删除分组（同事务清理 `books.group`）
+    ///
+    /// 对齐参考 `BookGroupMutationRepository.kt:85-93`：先清书的分组位再删组。
+    /// - 2^n 新组：只清位掩码值（`0 < group <= 1<<31-1`）的对应位，避免
+    ///   误清旧时间戳高位；
+    /// - 非 2^n/高位旧组：exact 命中清 0；
+    /// - `id <= 0` 特殊组：不动书籍。
     pub fn delete(&self, id: i64) -> LegadoResult<bool> {
-        let affected = self
+        let tx = self
             .conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("删除分组事务失败: {e}")))?;
+        if id > 0 {
+            let is_bit = id <= MAX_GROUP_MASK && id.count_ones() == 1;
+            if is_bit {
+                tx.execute(
+                    "UPDATE books SET \"group\" = \"group\" - ?1
+                     WHERE \"group\" > 0 AND \"group\" <= ?2 AND (\"group\" & ?1) > 0",
+                    params![id, MAX_GROUP_MASK],
+                )
+                .map_err(|e| LegadoError::Database(format!("清理分组成员失败: {e}")))?;
+            } else {
+                tx.execute(
+                    "UPDATE books SET \"group\" = 0 WHERE \"group\" = ?1",
+                    params![id],
+                )
+                .map_err(|e| LegadoError::Database(format!("清理旧分组成员失败: {e}")))?;
+            }
+        }
+        let affected = tx
             .execute("DELETE FROM book_groups WHERE groupId = ?1", params![id])
             .map_err(|e| LegadoError::Database(format!("删除分组失败: {e}")))?;
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("删除分组提交失败: {e}")))?;
         Ok(affected > 0)
     }
 
@@ -396,5 +427,94 @@ mod tests {
                 .unwrap();
         }
         assert!(repo.get_unused_id().is_err());
+    }
+
+    fn insert_book(db: &crate::Database, url: &str, group: i64) {
+        db.connection()
+            .execute(
+                "INSERT INTO books (bookUrl, name, \"group\") VALUES (?1, ?2, ?3)",
+                params![url, url, group],
+            )
+            .unwrap();
+    }
+
+    fn book_group(db: &crate::Database, url: &str) -> i64 {
+        db.connection()
+            .query_row(
+                "SELECT \"group\" FROM books WHERE bookUrl = ?1",
+                params![url],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_delete_power_of_two_clears_bit_and_id_not_inherited() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        repo.insert(&make_group(1, "组1", 0)).unwrap();
+        repo.insert(&make_group(4, "组4", 1)).unwrap();
+        insert_book(&db, "book://bit", 1 | 4);
+
+        assert!(repo.delete(1).unwrap());
+        assert_eq!(book_group(&db, "book://bit"), 4, "删除组1只清对应位");
+
+        // 释放的位可复用，但书已不再带该位，不会继承新组
+        assert_eq!(repo.get_unused_id().unwrap(), 1);
+        assert_eq!(book_group(&db, "book://bit") & 1, 0);
+    }
+
+    #[test]
+    fn test_delete_legacy_group_exact_only() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        let legacy = 12_345_i64; // 非 2^n
+        repo.insert(&make_group(legacy, "旧组", 0)).unwrap();
+        insert_book(&db, "book://exact", legacy);
+        insert_book(&db, "book://other", legacy | 4);
+
+        assert!(repo.delete(legacy).unwrap());
+        assert_eq!(book_group(&db, "book://exact"), 0);
+        assert_eq!(book_group(&db, "book://other"), legacy | 4);
+    }
+
+    #[test]
+    fn test_delete_new_bit_does_not_touch_legacy_high_value() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        repo.insert(&make_group(4, "组4", 0)).unwrap();
+        let legacy = 1_793_904_884_364_i64 | 4; // 高位旧时间戳且含 bit2
+        insert_book(&db, "book://legacy", legacy);
+
+        assert!(repo.delete(4).unwrap());
+        assert_eq!(book_group(&db, "book://legacy"), legacy);
+    }
+
+    #[test]
+    fn test_delete_special_group_does_not_touch_books() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        insert_book(&db, "book://special", 3);
+
+        assert!(!repo.delete(-1).unwrap());
+        assert_eq!(book_group(&db, "book://special"), 3);
+    }
+
+    #[test]
+    fn test_delete_rolls_back_when_group_delete_fails() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        repo.insert(&make_group(1, "组1", 0)).unwrap();
+        insert_book(&db, "book://rollback", 3);
+        db.connection()
+            .execute_batch(
+                "CREATE TRIGGER prevent_group_delete BEFORE DELETE ON book_groups
+                 BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+            )
+            .unwrap();
+
+        assert!(repo.delete(1).is_err());
+        assert_eq!(book_group(&db, "book://rollback"), 3, "删除失败应回滚清位");
+        assert!(repo.find_by_id(1).unwrap().is_some(), "分组不应被删除");
     }
 }

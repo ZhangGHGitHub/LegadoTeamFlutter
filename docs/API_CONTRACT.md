@@ -857,6 +857,9 @@
 > - **新组 ID**：`addBookGroup` 由 Rust `BookGroupRepository::get_unused_id` 返回最小未占用 `2^n`（`1,2,4,…`，上限 `1<<30`），对齐原版 `BookGroupDao.getUnusedId`；不再使用时间戳。
 > - **存量兼容**：历史时间戳/任意非 `2^n` ID 不迁移、不重排；Dart 过滤按混合语义——`groupId` 为 2 的幂 → `(book.group & groupId) != 0`；非 2 的幂 → `book.group == groupId`。`BookGroup.IdAll=-1` 及 `-2..-6` 特殊组沿用既有分支。
 > - **位域边界**：`groupId <= 0` 不参与自定义组掩码匹配（特殊组除外）；`1<<30` 用尽后 `addBookGroup` 返回错误，不生成重叠位。
+> - **删除分组（2026-11-06 复核）**：`deleteBookGroup` 必须在同一事务内先清书成员再删组——2^n 组只清 `0 < books.group <= 1<<31-1` 的对应位，避免误清旧时间戳高位；非 2^n/高位旧组按 exact 清 0；`groupId<=0` 特殊组不动书。
+> - **外部数据边界**：小整数（如 1、2）若被外部工具直接写入 `books.group`，会被视为新 2^n 位掩码而非旧组；外部/旧客户端按 exact 写入的值不保证与新版位掩码语义一致，需要用户重新分配。
+> - **并发边界（登记）**：`get_unused_id` 为 SELECT + INSERT 两步，非原子；当前 FFI 单进程/单 DB 连接使用。若未来多进程并发创建分组，可能发生唯一键冲突，届时改为 `BEGIN IMMEDIATE` + 冲突重试。
 > - **旧客户端**：读新组 ID 时按 exact 匹配只命中自身，位掩码多组语义仅在升级后生效。
 
 ### 2.15 搜索历史（6 个方法）
