@@ -278,19 +278,17 @@ class _ReadAloudSettingsScreenState
     // null 既可能是「取消」也可能是「系统默认」：由结果对象区分
     if (result.cancelled) return;
     final engineName = result.value;
-    final previousEngine = _selectedSystemEngine;
-    final previousVoice = _selectedSystemVoice;
-    final hadVoice = previousVoice != null;
+    final hadVoice = _selectedSystemVoice != null;
     // [审查回修 P2-7] 切引擎后立即刷新音色列表；原音色在新引擎不可用时
     // 服务已清除选择并回落默认（返回列表同步到页面）。
     final voices = await _systemTts.selectEngine(engineName);
     if (!mounted) return;
     if (voices == null) {
-      // [审查回修 P2-A] 引擎初始化失败/超时：服务已回滚持久化选择，
-      // 页面同步回滚选中态，不提示「已切换」。
+      // [审查回修 P2-A/P3] 引擎初始化失败/超时：以服务回滚后的选择为准
+      // （含持久化），页面同步选中态，不提示「已切换」。
       setState(() {
-        _selectedSystemEngine = previousEngine;
-        _selectedSystemVoice = previousVoice;
+        _selectedSystemEngine = _systemTts.selectedEngineName;
+        _selectedSystemVoice = _systemTts.selectedVoice;
       });
       _toast('引擎初始化失败');
       return;

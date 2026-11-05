@@ -178,6 +178,13 @@ abstract class SystemTtsPlatform {
   Future<void> synthesizeToFile(String text, String fullPath);
 
   Future<void> stop();
+
+  /// 丢弃当前平台客户端并重置初始化状态（尽力 stop 旧客户端）
+  ///
+  /// [审查回修 P2] 引擎初始化超时后，迟到的 setEngine 仍可能落在旧实例上；
+  /// 调用本方法丢弃旧客户端（下次使用重新创建），避免后续合成继续使用
+  /// 失败的引擎实例。
+  Future<void> resetClient();
 }
 
 /// 当前平台是否支持系统 TTS 合成（Android/iOS/macOS）
@@ -359,6 +366,20 @@ class FlutterTtsSystemTtsPlatform implements SystemTtsPlatform {
     if (_tts == null) return;
     await _client.stop();
   }
+
+  @override
+  Future<void> resetClient() async {
+    final client = _tts;
+    // 先丢弃引用：即使旧客户端的 init 迟到完成，也不会再被使用
+    _tts = null;
+    _initDone = false;
+    if (client == null) return;
+    try {
+      await client.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 尽力而为：旧客户端 stop 失败不影响新客户端重建
+    }
+  }
 }
 
 /// 系统 TTS 服务（设置批5a-1）
@@ -417,6 +438,13 @@ class SystemTtsService {
   double? _appliedSpeed;
   double? _appliedPitch;
   double? _appliedVolume;
+
+  /// 引擎层状态可疑（审查回修 P2）
+  ///
+  /// setEngine/resetEngine 超时或失败后，平台可能已切到失败引擎/停在中间态；
+  /// 即使 _appliedEngine 已回滚为 null，也必须强制 reset/set 一次，不能
+  /// 因「看起来已应用」而跳过。
+  bool _engineDirty = false;
 
   /// 同文本/参数的并发合成去重
   final Map<String, Future<String>> _inFlight = {};
@@ -564,6 +592,8 @@ class SystemTtsService {
         await _applyEngineOnly();
         return _platform.getVoices();
       });
+      // [审查回修 P3] 成功切换后清除旧一次性提示（音色失效提示在下方重设）
+      _pendingNotice = null;
       final selected = _selectedVoice;
       if (selected != null &&
           !voices.any(
@@ -579,6 +609,7 @@ class SystemTtsService {
       _selectedEngine = previousEngine;
       await _persistEngineSelection();
       _appliedEngine = null;
+      _engineDirty = true;
       // [审查回修 P2-B] stop 已推进代际时不复位平台，避免打断新合成
       if (taskEpoch == _epoch) await _resetPlatformBusy();
       return null;
@@ -895,30 +926,48 @@ class SystemTtsService {
   Future<void> _applyEngineOnly() async {
     final engine = _selectedEngine;
     if (engine == null) {
-      // 从「已选引擎」切回「系统默认」：查询系统默认引擎并重新应用
-      if (_appliedEngine != null) {
+      // 从「已选引擎」切回「系统默认」：查询系统默认引擎并重新应用。
+      // [审查回修 P2] _engineDirty 时即使 _appliedEngine 为 null 也必须
+      // reset：迟到的 setEngine 可能已把平台实际停在失败引擎。
+      if (_appliedEngine != null || _engineDirty) {
+        var ok = false;
         try {
           // [审查回修 P2-A] setEngine/resetEngine 永不返回时不得永久挂起
           await _platform.resetEngine().timeout(synthesisTimeout);
+          ok = true;
         } on TimeoutException {
           _appliedEngine = null;
+          _engineDirty = true;
           _clearAppliedParams();
+          // 丢弃迟到的引擎 init（可能落在失败引擎上）
+          try {
+            await _platform.resetClient();
+          } catch (_) {}
           throw const SystemTtsException('系统 TTS 引擎初始化超时');
         } catch (e) {
-          debugPrint('恢复系统默认 TTS 引擎失败（忽略）: $e');
+          debugPrint('恢复系统默认 TTS 引擎失败: $e');
         }
         _appliedEngine = null;
         _clearAppliedParams();
+        _engineDirty = !ok;
       }
-    } else if (engine != _appliedEngine) {
+    } else if (engine != _appliedEngine || _engineDirty) {
       try {
         await _platform.setEngine(engine).timeout(synthesisTimeout);
       } on TimeoutException {
         _appliedEngine = null;
+        _engineDirty = true;
         _clearAppliedParams();
+        try {
+          await _platform.resetClient();
+        } catch (_) {}
         throw const SystemTtsException('系统 TTS 引擎初始化超时');
+      } catch (e) {
+        _engineDirty = true;
+        rethrow;
       }
       _appliedEngine = engine;
+      _engineDirty = false;
       _clearAppliedParams();
     }
   }
