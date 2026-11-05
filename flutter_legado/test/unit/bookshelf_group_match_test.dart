@@ -119,6 +119,27 @@ void main() {
     });
   });
 
+  group('bookGroupNames（管理页/详情页组名）', () {
+    const newGroup = BookGroup(groupId: 1, groupName: '新组1', order: 1);
+    const legacyBook = Book(bookUrl: 'n1', group: legacyId);
+    const bitBook = Book(bookUrl: 'n2', group: 3);
+
+    test('旧时间戳书不会命中新 2^n 组，只显示真实旧组名', () {
+      expect(
+        bookGroupNames(legacyBook, const [newGroup, legacy]),
+        ['旧组'],
+      );
+      expect(bookGroupNames(legacyBook, const [newGroup]), isEmpty);
+    });
+
+    test('2^n 多组书显示多个组名', () {
+      expect(
+        bookGroupNames(bitBook, const [sciFi, fantasy]),
+        ['科幻', '玄幻'],
+      );
+    });
+  });
+
   group('按分组显示标题使用组名', () {
     final state = BookshelfState(
       groups: const [all, sciFi, fantasy, legacy],
