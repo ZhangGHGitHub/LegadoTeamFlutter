@@ -10,6 +10,7 @@ import '../../providers/audio/audio_notifier.dart';
 import '../../providers/providers.dart';
 import '../../routes.dart';
 import '../app_progress_indicator.dart';
+import '../read_aloud_timer_sheet.dart';
 
 /// 阅读器朗读控制条
 ///
@@ -47,9 +48,6 @@ class ReadAloudBar extends ConsumerStatefulWidget {
 }
 
 class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
-  /// 定时停止预设（分钟），复用听书页 SleepTimer 模式
-  static const _kPresetMinutes = [10, 20, 30, 60];
-
   /// 语速跟随系统开关持久化键（对齐原版 PreferKey / AppConfig.ttsFlowSys）
   static const _keyFollowSystem = 'ttsFollowSys';
 
@@ -62,12 +60,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   // ===== 定时停止状态 =====
   //
   // [A4 下沉 | 2026-10-04] 计时归 AudioNotifier（startSleepTimer /
-  // startChapterStop / cancelSleepTimer，audio_notifier.dart:1040-1075），
-  // 朗读条只做入口与显示。原本地 Timer 与 _chapterStopTarget 已删除：二者
-  // 与 Notifier 计时互不感知，导致双倒计时并行、幽灵暂停、收起阅读器即
-  // 静默失效。到点动作对齐原版 doDs 的 ReadAloud.stop
-  // （BaseReadAloudService.kt:594）。
-  final TextEditingController _customMinutesCtrl = TextEditingController();
+  // startChapterStop / cancelSleepTimer），朗读条只做入口与显示。
+  // [设置批5c | 2026-11-05] 定时入口统一为共享 Sheet
+  // （read_aloud_timer_sheet.dart），本条不再复制预设/自定义输入 UI；
+  // 剩余量仍直接订阅 Notifier（同一数据源）。
 
   // ===== 语速跟随系统（原版默认 true） =====
   bool _followSystemSpeed = true;
@@ -83,12 +79,6 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _entered = true);
     });
-  }
-
-  @override
-  void dispose() {
-    _customMinutesCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _loadFollowSystem() async {
@@ -136,7 +126,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
     } catch (_) {}
   }
 
-  /// 定时按钮 tooltip：剩余量/按章剩余均取 Notifier 单一数据源
+  /// 定时按钮 tooltip：剩余量/按章剩余/读完本章均取 Notifier 单一数据源
   String _timerTooltip(AudioNotifier notifier) {
     switch (notifier.sleepTimerMode) {
       case SleepTimerMode.duration:
@@ -144,6 +134,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
             '${_formatCountdown(notifier.sleepRemainingSeconds)}';
       case SleepTimerMode.chapters:
         return '定时停止：读完 ${notifier.chaptersToStopRemaining} 章后停止';
+      case SleepTimerMode.finishChapter:
+        return '定时停止：读完本章后停止';
       case SleepTimerMode.off:
         return '定时停止';
     }
@@ -155,99 +147,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
-  /// 定时停止选择面板（预设时长 + 自定义 + 按章停 + 取消）
+  /// 打开统一朗读定时 Sheet（设置批5c）
   ///
-  /// [A4 下沉 | 2026-10-04] 设定/取消直接调 AudioNotifier 既有计时入口
-  /// （startSleepTimer / startChapterStop / cancelSleepTimer），朗读条不再持有
-  /// 任何计时状态；面板状态与剩余量取自 Notifier，与听书页/通知栏同一份。
-  void _showTimerPicker() {
-    final notifier = ref.read(audioNotifierProvider.notifier);
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: false,
-      builder: (sheetContext) {
-        return SafeArea(
-          // [2026-10-04] 面板内容超过弹窗默认最大高度（9/16 屏高）时
-          // RenderFlex 溢出：与听书页定时面板同型包 SingleChildScrollView，
-          // 小屏/窄高窗口下可滚动（原实现缺此包裹，为既有溢出问题）
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    '定时停止',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                ..._kPresetMinutes.map(
-                  (minutes) => ListTile(
-                    leading: const Icon(Icons.timer_outlined),
-                    title: Text('$minutes 分钟'),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      notifier.startSleepTimer(minutes);
-                    },
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.edit_outlined),
-                  title: Row(
-                    children: [
-                      const Text('自定义'),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 60,
-                        child: TextField(
-                          controller: _customMinutesCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            hintText: '分钟',
-                            isDense: true,
-                            border: UnderlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('分钟'),
-                    ],
-                  ),
-                  onTap: () {
-                    final value = int.tryParse(_customMinutesCtrl.text) ?? 0;
-                    if (value > 0 && value <= kMaxSleepTimerMinutes) {
-                      Navigator.pop(sheetContext);
-                      notifier.startSleepTimer(value);
-                    }
-                  },
-                ),
-                // 按章停：当前章自然读完即停（对标原版按章定时；Notifier 在章末
-                // 完成边界计数，到点 stop —— BaseReadAloudService.kt:886-892）
-                ListTile(
-                  leading: const Icon(Icons.menu_book_outlined),
-                  title: const Text('读完本章后停止'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    notifier.startChapterStop(1);
-                  },
-                ),
-                if (notifier.isSleepTimerActive)
-                  ListTile(
-                    leading: const Icon(Icons.timer_off_outlined),
-                    title: const Text('取消定时'),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      notifier.cancelSleepTimer();
-                    },
-                  ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+  /// 计时/持久化均由 AudioNotifier + ReadAloudTimerSettings 承担；朗读条
+  /// 只保留入口与剩余量展示，不再复制预设/自定义输入 UI。
+  Future<void> _showTimerPicker() => showReadAloudTimerSheet(context);
 
   /// 引擎选择对话框（getHttpTts 列表，对标原版引擎下拉）
   Future<void> _showEngineDialog() async {
@@ -517,6 +421,13 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           if (notifier.sleepTimerMode == SleepTimerMode.duration)
             Text(
               _formatCountdown(notifier.sleepRemainingSeconds),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            )
+          else if (notifier.sleepTimerMode == SleepTimerMode.finishChapter)
+            Text(
+              '读完本章',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.primary,
               ),

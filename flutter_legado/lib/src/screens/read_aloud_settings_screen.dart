@@ -11,6 +11,7 @@ import '../providers/audio/audio_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
 import '../services/platform_channel.dart';
+import '../services/read_aloud_timer_settings.dart';
 import '../services/settings_service.dart';
 import '../services/system_tts_service.dart';
 import '../utils/read_aloud_content_split.dart';
@@ -78,6 +79,10 @@ class _ReadAloudSettingsScreenState
 
   // ===== 缓存/电池优化 =====
   SystemTtsCacheStats _cacheStats = SystemTtsCacheStats.empty;
+
+  /// 系统 TTS 缓存保留时间（分钟，0 = 即听即焚；设置批5c）
+  int _cacheRetentionMinutes = kDefaultReadAloudCacheRetentionMinutes;
+
   bool? _batteryOptimizationIgnored;
 
   /// 当前是否 Android（仅 Android 动作的可用性判定；测试可经
@@ -236,6 +241,10 @@ class _ReadAloudSettingsScreenState
       final rate = await s.getIntPrefOrNull(PrefKeys.ttsSpeechRate);
       final pitch = await s.getIntPrefOrNull(PrefKeys.ttsPitch);
       final volume = await s.getIntPrefOrNull(PrefKeys.ttsVolume);
+      final cacheRetention = normalizeReadAloudCacheRetentionMinutes(
+        await s.getIntPrefOrNull(PrefKeys.readAloudCacheRetentionMinutes) ??
+            kDefaultReadAloudCacheRetentionMinutes,
+      );
       // [审查回修 P2-4] 偏好缺失时取当前有效 config（可能是书级读回/播放
       // 会话值），不要直接回落 1.0 造成设置页与播放值不一致。
       final cfg = ref.read(audioNotifierProvider).config;
@@ -249,6 +258,7 @@ class _ReadAloudSettingsScreenState
         _selectedSystemEngine = systemTts.selectedEngineName;
         _selectedSystemVoice = systemTts.selectedVoice;
         _cacheStats = stats;
+        _cacheRetentionMinutes = cacheRetention;
         _batteryOptimizationIgnored = batteryIgnored;
         _defaultInterface = defaultInterface == 'player' ? 'player' : 'classic';
         _playerBackground = playerBackground == 'transparent'
@@ -557,32 +567,197 @@ class _ReadAloudSettingsScreenState
     setState(() => _cacheStats = stats);
   }
 
+  /// 保存缓存保留时间并即时同步 Notifier（设置批5c）
+  Future<void> _persistCacheRetention(int minutes) async {
+    final normalized = normalizeReadAloudCacheRetentionMinutes(minutes);
+    if (mounted) {
+      setState(() => _cacheRetentionMinutes = normalized);
+    }
+    ref
+        .read(audioNotifierProvider.notifier)
+        .setCacheRetentionMinutes(normalized);
+    await _settings.setIntPref(
+      PrefKeys.readAloudCacheRetentionMinutes,
+      normalized,
+    );
+  }
+
+  /// 缓存保留时间选择对话框（设置批5c 设置页行）
+  ///
+  /// 0 = 即听即焚；其余值在朗读入口/进入缓存行时按 mtime 清理过期文件。
+  /// 选择即时持久化并同步 Notifier；本对话框只做设置，不立即删缓存。
+  Future<void> _showCacheRetentionDialog() async {
+    var draftMinutes = _cacheRetentionMinutes;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('缓存保留时间'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '当前：${readAloudCacheRetentionLabel(draftMinutes)}',
+                  key: const ValueKey('cache-retention-dialog-label'),
+                ),
+                Slider(
+                  key: const ValueKey('cache-retention-dialog-slider'),
+                  value: draftMinutes
+                      .clamp(
+                        kMinReadAloudCacheRetentionMinutes,
+                        kMaxReadAloudCacheRetentionMinutes,
+                      )
+                      .toDouble(),
+                  min: kMinReadAloudCacheRetentionMinutes.toDouble(),
+                  max: kMaxReadAloudCacheRetentionMinutes.toDouble(),
+                  label: readAloudCacheRetentionLabel(draftMinutes),
+                  onChanged: (value) {
+                    setDialogState(() => draftMinutes = value.round());
+                  },
+                  onChangeEnd: (value) {
+                    final minutes = value.round();
+                    setDialogState(() => draftMinutes = minutes);
+                    unawaited(_persistCacheRetention(minutes));
+                  },
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final preset in const [0, 10, 60, 1440, 10080])
+                      ChoiceChip(
+                        label: Text(readAloudCacheRetentionLabel(preset)),
+                        selected: draftMinutes == preset,
+                        onSelected: (_) {
+                          setDialogState(() => draftMinutes = preset);
+                          unawaited(_persistCacheRetention(preset));
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '0 表示即听即焚：每段系统 TTS 播放完成/失败后立即删除；'
+                  '其余值在朗读开始时按修改时间清理过期缓存，正在播放的文件'
+                  '始终保留。HTTP 引擎（Rust）缓存不在此策略内。',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('完成'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showCacheDialog() async {
+    final notifier = ref.read(audioNotifierProvider.notifier);
+    // [设置批5c] 进入缓存行即按保留时间清理一次（失败静默，服务内 debugPrint）
+    try {
+      await _systemTts.pruneByRetention(
+        _cacheRetentionMinutes,
+        keepPath: notifier.currentPlaybackFilePath,
+      );
+    } catch (e) {
+      debugPrint('进入缓存设置时清理系统 TTS 缓存失败（忽略）: $e');
+    }
     await _reloadCacheStats();
     if (!mounted) return;
+    var draftMinutes = _cacheRetentionMinutes;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('TTS 缓存'),
-        content: Text(
-          '系统 TTS 合成缓存：${_cacheStats.fileCount} 个文件，'
-          '共 ${_formatBytes(_cacheStats.totalBytes)}。\n'
-          '缓存仅用于加速重复段落朗读，清理后可随时重新生成。',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('TTS 缓存'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '系统 TTS 合成缓存：${_cacheStats.fileCount} 个文件，'
+                  '共 ${_formatBytes(_cacheStats.totalBytes)}。\n'
+                  '缓存仅用于加速重复段落朗读，清理后可随时重新生成。',
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '保留时间：${readAloudCacheRetentionLabel(draftMinutes)}',
+                  key: const ValueKey('tts-cache-retention-label'),
+                ),
+                Slider(
+                  key: const ValueKey('tts-cache-retention-slider'),
+                  value: draftMinutes
+                      .clamp(
+                        kMinReadAloudCacheRetentionMinutes,
+                        kMaxReadAloudCacheRetentionMinutes,
+                      )
+                      .toDouble(),
+                  min: kMinReadAloudCacheRetentionMinutes.toDouble(),
+                  max: kMaxReadAloudCacheRetentionMinutes.toDouble(),
+                  label: readAloudCacheRetentionLabel(draftMinutes),
+                  onChanged: (value) {
+                    setDialogState(() => draftMinutes = value.round());
+                  },
+                  onChangeEnd: (value) {
+                    final minutes = value.round();
+                    setDialogState(() => draftMinutes = minutes);
+                    unawaited(_persistCacheRetention(minutes));
+                  },
+                ),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final preset in const [0, 10, 60, 1440, 10080])
+                      ChoiceChip(
+                        label: Text(readAloudCacheRetentionLabel(preset)),
+                        selected: draftMinutes == preset,
+                        onSelected: (_) {
+                          setDialogState(() => draftMinutes = preset);
+                          unawaited(_persistCacheRetention(preset));
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '0 表示即听即焚：每段系统 TTS 播放完成/失败后立即删除；'
+                  'HTTP 引擎（Rust）缓存不在此策略内。',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('清理'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清理'),
-          ),
-        ],
       ),
     );
     if (confirmed != true) return;
-    final deleted = await _systemTts.clearCache();
+    // [设置批5c] 清理不得删除正在播放的文件
+    final deleted = await _systemTts.clearCache(
+      keepPath: ref
+          .read(audioNotifierProvider.notifier)
+          .currentPlaybackFilePath,
+    );
     await _reloadCacheStats();
     if (!mounted) return;
     _toast('已清理 $deleted 个缓存文件');
@@ -925,10 +1100,18 @@ class _GeneralTab extends StatelessWidget {
           flat: true,
           children: [
             IosListTile(
+              key: const ValueKey('read-aloud-cache-retention'),
+              title: '缓存保留时间',
+              subtitle: '0 = 即听即焚；超时缓存在朗读开始时清理',
+              value: readAloudCacheRetentionLabel(state._cacheRetentionMinutes),
+              onTap: state._showCacheRetentionDialog,
+            ),
+            IosListTile(
               title: 'TTS 缓存',
               subtitle:
                   '${state._cacheStats.fileCount} 个文件 · '
-                  '${_ReadAloudSettingsScreenState._formatBytes(state._cacheStats.totalBytes)}',
+                  '${_ReadAloudSettingsScreenState._formatBytes(state._cacheStats.totalBytes)} · '
+                  '保留 ${readAloudCacheRetentionLabel(state._cacheRetentionMinutes)}',
               onTap: state._showCacheDialog,
             ),
           ],

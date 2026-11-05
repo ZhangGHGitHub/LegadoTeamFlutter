@@ -28,6 +28,9 @@ enum SleepTimerMode {
 
   /// 按章停止（自然播完 N 章后停止）
   chapters,
+
+  /// 分钟已到点，但勾选了「读完本章再停」：等待当前章自然结束
+  finishChapter,
 }
 
 /// TTS 配置

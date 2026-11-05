@@ -672,6 +672,34 @@ class PrefKeys {
   /// 系统 TTS 音色 locale（与 [systemTtsVoice] 成对，供 setVoice 精确定位）
   static const systemTtsVoiceLocale = 'systemTtsVoiceLocale';
 
+  // ===== 朗读定时（设置批5c，对齐参考版 ReadAloudTimerSheet）=====
+
+  /// 定时模式：`minute`（分钟倒计时，默认）/ `chapter`（按章停止）
+  ///
+  /// 键名对齐参考版 `PreferKey.readAloudTimerMode`。两模式互斥；仅保存
+  /// 用户设置值用于 Sheet 回显，**不在启动时恢复运行中的倒计时**。
+  static const readAloudTimerMode = 'readAloudTimerMode';
+
+  /// 分钟定时预设值（0–180，0 = 关闭）。键名对齐参考版
+  /// `PreferKey.ttsTimer`。
+  static const readAloudTimerMinutes = 'ttsTimer';
+
+  /// 按章停止预设值（0–50，0 = 关闭；对齐参考版
+  /// `PreferKey.readAloudTimerChapters`）
+  static const readAloudTimerChapters = 'readAloudTimerChapters';
+
+  /// 分钟到点后是否读完本章再停（默认 false；对齐参考版
+  /// `PreferKey.finishCurrentChapterAfterTimer`）
+  static const finishCurrentChapterAfterTimer =
+      'finishCurrentChapterAfterTimer';
+
+  /// 系统 TTS 合成缓存保留时间（分钟，0–10080，默认 10；0 = 即听即焚）
+  ///
+  /// 仅作用于 Flutter 侧系统 TTS 缓存目录（`system_tts/*.wav`）；
+  /// Rust HTTP TTS 缓存不在本策略内（登记为既有边界）。键名对齐参考版
+  /// `PreferKey.audioCacheCleanTime`。
+  static const readAloudCacheRetentionMinutes = 'audioCacheCleanTime';
+
   /// 自动清除过期搜索数据（默认 true）
   static const autoClearExpired = 'autoClearExpired';
 

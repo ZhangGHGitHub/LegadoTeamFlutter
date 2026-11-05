@@ -18,14 +18,9 @@ import '../utils/audio_skip_policy.dart';
 import '../routes.dart';
 import '../services/audio_cache_events.dart';
 import '../services/headset_media_button_service.dart';
+import '../widgets/read_aloud_timer_sheet.dart';
 import 'source_edit_screen.dart';
 import 'source_login_screen.dart';
-
-/// 预设定时时长（分钟）
-const List<int> _kPresetMinutes = [5, 10, 15, 30];
-
-/// 预设按章停止章数（对齐原版 SleepTimerDialog.CHAPTER_PRESETS = [1,2,3,5]）
-const List<int> _kPresetChapters = [1, 2, 3, 5];
 
 /// 听书播放页面
 class AudioScreen extends ConsumerStatefulWidget {
@@ -87,14 +82,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   //
   // [A4 | 2026-10-03] 计时已下沉 AudioNotifier（不随听书页销毁而失效），
   // 本页只订阅展示剩余时间/开关状态；不再持有本地 Timer。
-
-  /// 自定义分钟输入控制器
-  final TextEditingController _customMinutesController =
-      TextEditingController();
-
-  /// 自定义按章数输入控制器
-  final TextEditingController _customChaptersController =
-      TextEditingController();
+  // [设置批5c | 2026-11-05] 定时入参统一由共享 Sheet 承担，
+  // 本页删除重复的预设/自定义输入与控制器。
 
   @override
   void initState() {
@@ -164,8 +153,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     _headsetMediaButtonService?.detachActivityHandler(this);
     // 页面销毁只清理输入控制器；定时停止计时归 Notifier 所有
     // （[A4] 退出听书页后倒计时/按章停止继续生效）
-    _customMinutesController.dispose();
-    _customChaptersController.dispose();
     // 释放媒体会话资源（后台播放/焦点）
     // [UI-fix v2.0.11 | 2026-08-10] 防御卸载时序边界：element 已 dispose
     // 时（快速连续导航/测试环境树卸载）ref.read 会抛
@@ -185,126 +172,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
-  /// 显示定时选择底部弹窗（分钟倒计时 + 按章停止，对齐原版 SleepTimerDialog）
-  void _showTimerPicker() {
-    final notifier = ref.read(audioNotifierProvider.notifier);
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Text(
-                    '定时停止',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                // 预设时间选项
-                ..._kPresetMinutes.map(
-                  (minutes) => ListTile(
-                    leading: const Icon(Symbols.timer_rounded),
-                    title: Text('$minutes 分钟'),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      notifier.startSleepTimer(minutes);
-                    },
-                  ),
-                ),
-                // 自定义时长（1~180 分钟）
-                ListTile(
-                  leading: const Icon(Symbols.edit_rounded),
-                  title: Row(
-                    children: [
-                      const Text('自定义'),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 60,
-                        child: TextField(
-                          controller: _customMinutesController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            hintText: '分钟',
-                            isDense: true,
-                            border: UnderlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('分钟'),
-                    ],
-                  ),
-                  onTap: () {
-                    final value =
-                        int.tryParse(_customMinutesController.text) ?? 0;
-                    if (value > 0 && value <= kMaxSleepTimerMinutes) {
-                      Navigator.pop(sheetContext);
-                      notifier.startSleepTimer(value);
-                    }
-                  },
-                ),
-                const Divider(height: 1),
-                // 按章停止（对齐原版：自然播完 N 章后于章末停止）
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('按章停止'),
-                  ),
-                ),
-                ..._kPresetChapters.map(
-                  (chapters) => ListTile(
-                    leading: const Icon(Symbols.menu_book_rounded),
-                    title: Text('$chapters 章'),
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      notifier.startChapterStop(chapters);
-                    },
-                  ),
-                ),
-                // 自定义按章数（1~99 章）
-                ListTile(
-                  leading: const Icon(Symbols.edit_rounded),
-                  title: Row(
-                    children: [
-                      const Text('自定义'),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 60,
-                        child: TextField(
-                          controller: _customChaptersController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            hintText: '章数',
-                            isDense: true,
-                            border: UnderlineInputBorder(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text('章'),
-                    ],
-                  ),
-                  onTap: () {
-                    final value =
-                        int.tryParse(_customChaptersController.text) ?? 0;
-                    if (value > 0 && value <= kMaxChapterStopCount) {
-                      Navigator.pop(sheetContext);
-                      notifier.startChapterStop(value);
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
+  /// 打开统一朗读定时 Sheet（设置批5c）
+  ///
+  /// 分钟/章节互斥、预设/滑块/「读完本章再停」与持久化统一在
+  /// `read_aloud_timer_sheet.dart`；本页只保留入口与剩余量展示。
+  Future<void> _showTimerPicker() => showReadAloudTimerSheet(context);
 
   @override
   Widget build(BuildContext context) {
@@ -437,6 +309,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   }
 
   /// 定时停止按钮（AppBar 中）
+  ///
+  /// [设置批5c] 无论是否已设定时都打开共享 Sheet：取消/停止动作在 Sheet
+  /// 内完成，与朗读条入口一致（不再直接 cancel，避免两套交互）。
   Widget _buildTimerButton(AudioNotifier notifier) {
     final active = notifier.isSleepTimerActive;
     return IconButton(
@@ -444,22 +319,20 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
         Symbols.timer_rounded,
         color: active ? Theme.of(context).colorScheme.error : null,
       ),
-      tooltip: active ? '取消定时' : '定时停止',
-      onPressed: () {
-        if (active) {
-          notifier.cancelSleepTimer();
-        } else {
-          _showTimerPicker();
-        }
-      },
+      tooltip: active ? '定时停止（已设置）' : '定时停止',
+      onPressed: _showTimerPicker,
     );
   }
 
   /// 定时停止显示条（控制区域下方，红色文字突出）
   Widget _buildCountdownBar(AudioNotifier notifier) {
-    final text = notifier.sleepTimerMode == SleepTimerMode.chapters
-        ? '按章停止 剩余 ${notifier.chaptersToStopRemaining} 章'
-        : '定时停止 ${_formatCountdown(notifier.sleepRemainingSeconds)}';
+    final text = switch (notifier.sleepTimerMode) {
+      SleepTimerMode.chapters => '按章停止 剩余 ${notifier.chaptersToStopRemaining} 章',
+      SleepTimerMode.duration =>
+        '定时停止 ${_formatCountdown(notifier.sleepRemainingSeconds)}',
+      SleepTimerMode.finishChapter => '定时停止 读完本章后停止',
+      SleepTimerMode.off => '',
+    };
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(

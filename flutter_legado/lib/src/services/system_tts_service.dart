@@ -751,7 +751,10 @@ class SystemTtsService {
   }
 
   /// 清空系统 TTS 缓存，返回删除文件数
-  Future<int> clearCache() async {
+  ///
+  /// [keepPath] 非空时保留该文件（正在播放/即将播放的文件不得删除，
+  /// 设置批5c）。路径不在缓存目录内时不会误删（[deleteCacheFile] 校验）。
+  Future<int> clearCache({String? keepPath}) async {
     try {
       final dir = await _cacheDirectory();
       if (!dir.existsSync()) return 0;
@@ -759,20 +762,101 @@ class SystemTtsService {
       for (final entity in dir.listSync()) {
         if (entity is! File) continue;
         if (!entity.path.endsWith('.wav')) continue;
+        if (keepPath != null && _isSamePath(entity.path, keepPath)) continue;
         try {
           entity.deleteSync();
           deleted++;
         } catch (_) {}
       }
       return deleted;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('清空系统 TTS 缓存失败: $e');
       return 0;
     }
   }
 
-  /// LRU 清理：删除超过 [maxCacheAge] 的文件，再按 mtime 保留最新
-  /// [maxCacheFiles] 个；返回删除数。
-  Future<int> pruneCache() async {
+  /// 按保留时间清理系统 TTS 缓存（设置批5c）
+  ///
+  /// - [retentionMinutes] <= 0（即听即焚）不在此清理：0 模式按段删除，
+  ///   避免开播时把用户尚未消费的缓存一次性清空；
+  /// - 超过保留时长的 `*.wav` 按 mtime 删除；[keepPath] 指向的文件保留
+  ///   （正在播放）；
+  /// - 失败静默（debugPrint），返回实际删除数。
+  Future<int> pruneByRetention(
+    int retentionMinutes, {
+    String? keepPath,
+  }) async {
+    if (retentionMinutes <= 0) return 0;
+    try {
+      final dir = await _cacheDirectory();
+      if (!dir.existsSync()) return 0;
+      final cutoff = DateTime.now().subtract(
+        Duration(minutes: retentionMinutes),
+      );
+      var deleted = 0;
+      for (final entity in dir.listSync()) {
+        if (entity is! File || !entity.path.endsWith('.wav')) continue;
+        if (keepPath != null && _isSamePath(entity.path, keepPath)) continue;
+        try {
+          if (entity.statSync().modified.isBefore(cutoff)) {
+            entity.deleteSync();
+            deleted++;
+          }
+        } catch (e) {
+          debugPrint('清理过期系统 TTS 缓存失败（跳过）: $e');
+        }
+      }
+      return deleted;
+    } catch (e) {
+      debugPrint('按保留时间清理系统 TTS 缓存失败: $e');
+      return 0;
+    }
+  }
+
+  /// 删除单个系统 TTS 缓存文件（0 模式即听即焚 / stop 清理）
+  ///
+  /// 只允许删除缓存目录内的 `*.wav`，避免调用方传入任意路径误删文件；
+  /// [keepPath] 指向的文件保留（正在播放）。返回是否实际删除。
+  Future<bool> deleteCacheFile(String path, {String? keepPath}) async {
+    try {
+      final dir = await _cacheDirectory();
+      if (!_isInsideDirectory(dir.path, path)) return false;
+      if (!path.endsWith('.wav')) return false;
+      if (keepPath != null && _isSamePath(path, keepPath)) return false;
+      final file = File(path);
+      if (!file.existsSync()) return false;
+      file.deleteSync();
+      return true;
+    } catch (e) {
+      debugPrint('删除系统 TTS 缓存文件失败（忽略）: $e');
+      return false;
+    }
+  }
+
+  /// 路径归一（跨平台分隔符；Windows 大小写不敏感）
+  String _normalizePath(String path) {
+    var normalized = path.replaceAll('\\', '/');
+    if (Platform.isWindows) normalized = normalized.toLowerCase();
+    return normalized;
+  }
+
+  bool _isSamePath(String a, String b) =>
+      _normalizePath(a) == _normalizePath(b);
+
+  /// [path] 是否位于 [dirPath] 内（归一化后按目录前缀判定）
+  bool _isInsideDirectory(String dirPath, String path) {
+    final dir = _normalizePath(dirPath);
+    final file = _normalizePath(path);
+    if (file == dir) return false;
+    return file.startsWith(dir.endsWith('/') ? dir : '$dir/');
+  }
+
+  /// LRU 清理：可选删除超过 [maxCacheAge] 的文件（[pruneAge]），再按 mtime
+  /// 保留最新 [maxCacheFiles] 个；返回删除数。
+  ///
+  /// [pruneAge] 为 false 时只执行数量上限清理——保留时间策略由
+  /// [pruneByRetention] 统一负责，避免 48h 旧默认与用户 7 天设置冲突。
+  Future<int> pruneCache({bool pruneAge = true}) async {
     try {
       final dir = await _cacheDirectory();
       if (!dir.existsSync()) return 0;
@@ -788,7 +872,7 @@ class SystemTtsService {
       for (final file in files) {
         try {
           final modified = file.statSync().modified;
-          if (now.difference(modified) > maxCacheAge) {
+          if (pruneAge && now.difference(modified) > maxCacheAge) {
             file.deleteSync();
             deleted++;
           } else {
@@ -894,8 +978,9 @@ class SystemTtsService {
       if (!file.existsSync() || file.lengthSync() <= 0) {
         throw const SystemTtsException('系统 TTS 未生成音频文件');
       }
-      // [审查回修 P2-B] 旧代际任务不得清理新代际的缓存
-      if (epoch == _epoch) await pruneCache();
+      // [设置批5c] 只做数量上限清理；保留时间由用户设置
+      // （pruneByRetention）统一负责，避免旧的 48h 默认提前删除 7 天缓存。
+      if (epoch == _epoch) await pruneCache(pruneAge: false);
       return path;
     } catch (e) {
       // [审查回修 P2-B] 仅当前代际允许复位平台/删除文件；stop 后旧任务
