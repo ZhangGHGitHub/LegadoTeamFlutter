@@ -5,8 +5,14 @@
 // - 作者：宽/12；竖排位于右侧（右下角收尾），横排居中在 0.75 高度；
 // - 拉丁字母为主的文本强制横排（参考版阈值 > 30% 拉丁字母）；
 // - 描边：白色 STROKE（竖排粗 1/10 字号、横排书名 1/12），先描边后填充；
-// - 阴影：4px 模糊、偏移 (2,2)/(1,1)，仅填充层，描边层不带阴影；
+//   作者竖排不描边（参考版 authorCharDraws 无 stroke 层）；
+// - 阴影：4px 模糊，书名偏移 (2,2)、作者 (1,1)，仅填充层；
 // - 正文色：`useDefaultColor` 时取主题 secondary，否则取日/夜自定义色。
+//
+// [审查 P2-3] 竖排坐标以「基线」为单位：用 TextPainter 的
+// computeDistanceToActualBaseline 取得真实基线距离（约 1.16em 行高），
+// 绘制时按基线回算 top，避免此前 top + fontSize*1.05 的估算导致首字
+// 下移/每列字数偏差。
 //
 // 布局逻辑抽为纯函数 [computeCoverTextLayout]，供 widget 绘制与单测共用
 //（竖排/横排/拉丁强制横排/日夜显隐/描边阴影均可直接断言）。
@@ -16,10 +22,12 @@ import 'package:flutter/material.dart';
 
 import '../models/cover_settings.dart';
 
-/// 竖排单字位置（x 为字符中心，y 为字符顶部）
+/// 竖排单字位置（x 为字符中心，y 为字符基线 baseline）
 class CoverTextGlyph {
   final String text;
   final double x;
+
+  /// 基线位置（TextPainter.drawText 的 y 语义）
   final double y;
 
   const CoverTextGlyph(this.text, this.x, this.y);
@@ -38,12 +46,16 @@ class CoverTextLayout {
   final double nameFontSize;
   final double authorFontSize;
 
+  /// 竖排行高（参考版 fontMetrics.bottom - top，约 1.16em）
+  final double nameLineHeight;
+  final double authorLineHeight;
+
   /// 横排书名区域（左起点 / 顶起点 / 最大宽）
   final double nameX;
   final double nameY;
   final double nameMaxWidth;
 
-  /// 横排作者基线区域（水平居中、顶起点、最大宽）
+  /// 横排作者区域（水平居中、顶起点、最大宽）
   final double authorY;
   final double authorMaxWidth;
 
@@ -54,6 +66,13 @@ class CoverTextLayout {
   /// 竖排逐字（横排时为空）
   final List<CoverTextGlyph> nameGlyphs;
   final List<CoverTextGlyph> authorGlyphs;
+
+  /// 作者竖排不描边（参考版仅横排作者描边）
+  final bool authorVerticalStroke;
+
+  /// 字体阴影偏移（书名 (2,2) / 作者 (1,1)，参考版 setShadowLayer）
+  final Offset nameShadowOffset;
+  final Offset authorShadowOffset;
 
   const CoverTextLayout({
     required this.size,
@@ -66,6 +85,8 @@ class CoverTextLayout {
     required this.shadowColor,
     required this.nameFontSize,
     required this.authorFontSize,
+    required this.nameLineHeight,
+    required this.authorLineHeight,
     required this.nameX,
     required this.nameY,
     required this.nameMaxWidth,
@@ -75,6 +96,9 @@ class CoverTextLayout {
     required this.horizontalAuthor,
     required this.nameGlyphs,
     required this.authorGlyphs,
+    this.authorVerticalStroke = false,
+    this.nameShadowOffset = const Offset(2, 2),
+    this.authorShadowOffset = const Offset(1, 1),
   });
 
   /// 是否需要绘制（书名/作者都隐藏或文本为空时为 false）
@@ -83,6 +107,23 @@ class CoverTextLayout {
       (showAuthor && (horizontalAuthor ?? '').isNotEmpty) ||
       nameGlyphs.isNotEmpty ||
       authorGlyphs.isNotEmpty;
+}
+
+/// 与绘制同源的字体度量（行高 + 基线距离）
+({double lineHeight, double baseline}) _verticalMetrics(
+  double fontSize,
+  FontWeight weight,
+) {
+  final tp = TextPainter(
+    text: TextSpan(
+      text: '国',
+      style: TextStyle(fontSize: fontSize, fontWeight: weight),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  final lineHeight = tp.height;
+  final baseline = tp.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+  return (lineHeight: lineHeight, baseline: baseline);
 }
 
 /// 计算默认封面文字布局
@@ -118,6 +159,12 @@ CoverTextLayout computeCoverTextLayout({
   final nameY = height * 0.08;
   final authorY = height * 0.75;
   final authorMaxWidth = (width * 0.9).clamp(1.0, double.infinity).toDouble();
+  final nameMetrics = width > 0
+      ? _verticalMetrics(nameFontSize, FontWeight.bold)
+      : (lineHeight: 0.0, baseline: 0.0);
+  final authorMetrics = width > 0
+      ? _verticalMetrics(authorFontSize, FontWeight.normal)
+      : (lineHeight: 0.0, baseline: 0.0);
 
   if (width <= 0 || height <= 0) {
     return CoverTextLayout(
@@ -131,6 +178,8 @@ CoverTextLayout computeCoverTextLayout({
       shadowColor: shadowColor,
       nameFontSize: nameFontSize,
       authorFontSize: authorFontSize,
+      nameLineHeight: nameMetrics.lineHeight,
+      authorLineHeight: authorMetrics.lineHeight,
       nameX: nameX,
       nameY: nameY,
       nameMaxWidth: nameMaxWidth,
@@ -147,30 +196,31 @@ CoverTextLayout computeCoverTextLayout({
   final authorGlyphs = <CoverTextGlyph>[];
   if (!horizontal) {
     if (showName) {
-      // 参考版：首列 x=0.16w / y=0.16h；超出 0.8h 换到下一列，y 回到 0.2h
-      final charHeight = nameFontSize * 1.05;
+      // 参考版：首列 x=0.16w / 基线 y=0.16h；超出 0.8h 换到下一列，
+      // 基线回到 0.2h。行高取真实 font metrics（不再用 fontSize*1.05）。
       var x = width * 0.16;
-      var y = height * 0.16;
+      var baseline = height * 0.16;
       for (final rune in safeName.runes) {
-        nameGlyphs.add(CoverTextGlyph(String.fromCharCode(rune), x, y));
-        y += charHeight;
-        if (y > height * 0.8) {
+        nameGlyphs.add(CoverTextGlyph(String.fromCharCode(rune), x, baseline));
+        baseline += nameMetrics.lineHeight;
+        if (baseline > height * 0.8) {
           x += nameFontSize * 1.2;
-          y = height * 0.2;
+          baseline = height * 0.2;
         }
       }
     }
     if (showAuthor) {
-      // 参考版：右列 x=0.84w；起始 y 从 0.16h 向上回退作者长度，
+      // 参考版：右列 x=0.84w；首字基线从 0.16h 向上回退作者长度，
       // 最低不小于 0.2h（右下角收尾）
-      final charHeight = authorFontSize * 1.05;
       final x = width * 0.84;
       final runes = safeAuthor.runes.toList();
-      var y = height * 0.16 - runes.length * charHeight;
-      if (y < height * 0.2) y = height * 0.2;
+      var baseline = height * 0.16 - runes.length * authorMetrics.lineHeight;
+      if (baseline < height * 0.2) baseline = height * 0.2;
       for (final rune in runes) {
-        authorGlyphs.add(CoverTextGlyph(String.fromCharCode(rune), x, y));
-        y += charHeight;
+        authorGlyphs.add(
+          CoverTextGlyph(String.fromCharCode(rune), x, baseline),
+        );
+        baseline += authorMetrics.lineHeight;
       }
     }
   }
@@ -186,6 +236,8 @@ CoverTextLayout computeCoverTextLayout({
     shadowColor: shadowColor,
     nameFontSize: nameFontSize,
     authorFontSize: authorFontSize,
+    nameLineHeight: nameMetrics.lineHeight,
+    authorLineHeight: authorMetrics.lineHeight,
     nameX: nameX,
     nameY: nameY,
     nameMaxWidth: nameMaxWidth,
@@ -202,7 +254,12 @@ CoverTextLayout computeCoverTextLayout({
 class CoverTextPainter extends CustomPainter {
   final CoverTextLayout layout;
 
-  const CoverTextPainter(this.layout);
+  // [审查 P3] 每字 TextPainter 缓存：painter 实例随 build 创建、paint 可能
+  // 多次调用（滚动/动画），缓存避免逐帧重复 layout。
+  final Map<String, TextPainter> _fillCache = {};
+  final Map<String, TextPainter> _strokeCache = {};
+
+  CoverTextPainter(this.layout);
 
   TextStyle _style({
     required double fontSize,
@@ -214,27 +271,36 @@ class CoverTextPainter extends CustomPainter {
     return TextStyle(
       fontSize: fontSize,
       fontWeight: weight,
-      height: 1.15,
       color: foreground == null ? color : null,
       foreground: foreground,
       shadows: shadows,
     );
   }
 
-  List<Shadow>? get _fillShadows => layout.showShadow
-      ? [
-          Shadow(
-            color: Color(layout.shadowColor),
-            blurRadius: 4,
-            offset: const Offset(2, 2),
-          ),
-        ]
-      : null;
+  List<Shadow> _shadows(Offset offset) => [
+    Shadow(color: Color(layout.shadowColor), blurRadius: 4, offset: offset),
+  ];
 
   Paint _strokePaint(double strokeWidth) => Paint()
     ..style = PaintingStyle.stroke
     ..strokeWidth = strokeWidth
     ..color = Colors.white;
+
+  TextPainter _glyphPainter(
+    String text,
+    TextStyle style, {
+    required bool stroke,
+  }) {
+    final cache = stroke ? _strokeCache : _fillCache;
+    final key = '${text}_${style.fontSize}_${style.fontWeight}';
+    return cache.putIfAbsent(
+      key,
+      () => TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+      )..layout(),
+    );
+  }
 
   void _paintHorizontal(
     Canvas canvas,
@@ -247,6 +313,7 @@ class CoverTextPainter extends CustomPainter {
     required int maxLines,
     required bool center,
     required double strokeWidth,
+    required Offset shadowOffset,
   }) {
     TextPainter buildTextPainter({TextStyle? style}) {
       return TextPainter(
@@ -273,7 +340,7 @@ class CoverTextPainter extends CustomPainter {
         fontSize: fontSize,
         weight: weight,
         color: Color(layout.textColor),
-        shadows: _fillShadows,
+        shadows: layout.showShadow ? _shadows(shadowOffset) : null,
       ),
     );
     fill.paint(canvas, Offset(left, top));
@@ -284,33 +351,35 @@ class CoverTextPainter extends CustomPainter {
     List<CoverTextGlyph> glyphs, {
     required double fontSize,
     required FontWeight weight,
+    required bool drawStroke,
+    required Offset shadowOffset,
   }) {
-    final stroke = layout.showStroke
+    final strokeStyle = layout.showStroke && drawStroke
         ? _style(
             fontSize: fontSize,
             weight: weight,
             foreground: _strokePaint(fontSize / 10),
           )
         : null;
-    final fill = _style(
+    final fillStyle = _style(
       fontSize: fontSize,
       weight: weight,
       color: Color(layout.textColor),
-      shadows: _fillShadows,
+      shadows: layout.showShadow ? _shadows(shadowOffset) : null,
     );
     for (final glyph in glyphs) {
-      if (stroke != null) {
-        final tp = TextPainter(
-          text: TextSpan(text: glyph.text, style: stroke),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, Offset(glyph.x - tp.width / 2, glyph.y));
+      if (strokeStyle != null) {
+        final tp = _glyphPainter(glyph.text, strokeStyle, stroke: true);
+        final baseline = tp.computeDistanceToActualBaseline(
+          TextBaseline.alphabetic,
+        );
+        tp.paint(canvas, Offset(glyph.x - tp.width / 2, glyph.y - baseline));
       }
-      final tp = TextPainter(
-        text: TextSpan(text: glyph.text, style: fill),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(glyph.x - tp.width / 2, glyph.y));
+      final tp = _glyphPainter(glyph.text, fillStyle, stroke: false);
+      final baseline = tp.computeDistanceToActualBaseline(
+        TextBaseline.alphabetic,
+      );
+      tp.paint(canvas, Offset(glyph.x - tp.width / 2, glyph.y - baseline));
     }
   }
 
@@ -330,6 +399,7 @@ class CoverTextPainter extends CustomPainter {
           maxLines: 3,
           center: true,
           strokeWidth: layout.nameFontSize / 12,
+          shadowOffset: layout.nameShadowOffset,
         );
       }
       final author = layout.horizontalAuthor;
@@ -345,6 +415,7 @@ class CoverTextPainter extends CustomPainter {
           maxLines: 1,
           center: true,
           strokeWidth: layout.authorFontSize / 10,
+          shadowOffset: layout.authorShadowOffset,
         );
       }
       return;
@@ -355,6 +426,8 @@ class CoverTextPainter extends CustomPainter {
         layout.nameGlyphs,
         fontSize: layout.nameFontSize,
         weight: FontWeight.bold,
+        drawStroke: true,
+        shadowOffset: layout.nameShadowOffset,
       );
     }
     if (layout.authorGlyphs.isNotEmpty) {
@@ -363,6 +436,8 @@ class CoverTextPainter extends CustomPainter {
         layout.authorGlyphs,
         fontSize: layout.authorFontSize,
         weight: FontWeight.normal,
+        drawStroke: false,
+        shadowOffset: layout.authorShadowOffset,
       );
     }
   }

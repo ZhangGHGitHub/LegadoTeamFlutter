@@ -24,6 +24,10 @@ dependencies:
   webview_flutter: ^4.10.0
   flutter_svg: ^2.0.10+1
   cached_network_image: ^3.4.0
+  # [设置批6b-1 审查 P2-1] 仅 WiFi 判定前查询封面磁盘缓存（缓存命中不阻塞）。
+  # 原为 cached_network_image 的传递依赖（pubspec.lock 已锁定 3.4.1），
+  # 此处提升为直接依赖以便 import DefaultCacheManager，不新增包。
+  flutter_cache_manager: ^3.4.1
   flutter_riverpod: ^2.5.0
   riverpod_annotation: ^2.3.0
   mobile_scanner: ^7.0.0

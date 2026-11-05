@@ -25,6 +25,9 @@ class CoverSettings {
 
   /// 默认封面图集 ID（参考版同名键 `defaultCover`；6b-2 相册接入）
   static const keyDefaultAlbumId = 'defaultCover';
+
+  /// 默认夜间封面图集 ID（参考版同名键 `defaultCoverDark`；6b-2 相册接入）
+  static const keyDefaultAlbumIdDark = 'defaultCoverDark';
   static const keyShowShadow = 'coverShowShadow';
   static const keyShowStroke = 'coverShowStroke';
   static const keyUseDefaultColor = 'coverDefaultColor';
@@ -49,6 +52,7 @@ class CoverSettings {
     keyLoadOnlyOnWifi,
     keyUseDefaultCover,
     keyDefaultAlbumId,
+    keyDefaultAlbumIdDark,
     keyShowShadow,
     keyShowStroke,
     keyUseDefaultColor,
@@ -77,6 +81,9 @@ class CoverSettings {
 
   /// 默认封面图集 ID（null = 应用内置封面；6b-2 相册）
   final String? defaultAlbumId;
+
+  /// 默认夜间封面图集 ID（null = 与日间一致/应用内置封面；6b-2）
+  final String? defaultAlbumIdDark;
 
   /// 封面外阴影 + 字体阴影（默认 false）
   final bool showShadow;
@@ -124,6 +131,7 @@ class CoverSettings {
     this.loadOnlyOnWifi = false,
     this.useDefaultCover = false,
     this.defaultAlbumId,
+    this.defaultAlbumIdDark,
     this.showShadow = false,
     this.showStroke = true,
     this.useDefaultColor = true,
@@ -143,13 +151,14 @@ class CoverSettings {
   /// 参考版默认值（字段顺序/取值同 `CoverSettings.kt`）
   static const defaults = CoverSettings();
 
-  /// copyWith 的「未传参」哨兵：`defaultAlbumId` 需要支持显式清空（null）
+  /// copyWith 的「未传参」哨兵：图集 ID 需要支持显式清空（null）
   static const _unset = Object();
 
   CoverSettings copyWith({
     bool? loadOnlyOnWifi,
     bool? useDefaultCover,
     Object? defaultAlbumId = _unset,
+    Object? defaultAlbumIdDark = _unset,
     bool? showShadow,
     bool? showStroke,
     bool? useDefaultColor,
@@ -171,6 +180,9 @@ class CoverSettings {
       defaultAlbumId: identical(defaultAlbumId, _unset)
           ? this.defaultAlbumId
           : defaultAlbumId as String?,
+      defaultAlbumIdDark: identical(defaultAlbumIdDark, _unset)
+          ? this.defaultAlbumIdDark
+          : defaultAlbumIdDark as String?,
       showShadow: showShadow ?? this.showShadow,
       showStroke: showStroke ?? this.showStroke,
       useDefaultColor: useDefaultColor ?? this.useDefaultColor,
@@ -238,6 +250,7 @@ class CoverSettings {
       loadOnlyOnWifi: readBool(keyLoadOnlyOnWifi, d.loadOnlyOnWifi),
       useDefaultCover: readBool(keyUseDefaultCover, d.useDefaultCover),
       defaultAlbumId: readOptionalString(keyDefaultAlbumId),
+      defaultAlbumIdDark: readOptionalString(keyDefaultAlbumIdDark),
       showShadow: readBool(keyShowShadow, d.showShadow),
       showStroke: readBool(keyShowStroke, d.showStroke),
       useDefaultColor: readBool(keyUseDefaultColor, d.useDefaultColor),
@@ -260,6 +273,7 @@ class CoverSettings {
     keyLoadOnlyOnWifi: loadOnlyOnWifi,
     keyUseDefaultCover: useDefaultCover,
     keyDefaultAlbumId: defaultAlbumId ?? '',
+    keyDefaultAlbumIdDark: defaultAlbumIdDark ?? '',
     keyShowShadow: showShadow,
     keyShowStroke: showStroke,
     keyUseDefaultColor: useDefaultColor,
@@ -283,6 +297,10 @@ class CoverSettings {
       defaultAlbumId: (defaultAlbumId == null || defaultAlbumId!.trim().isEmpty)
           ? null
           : defaultAlbumId!.trim(),
+      defaultAlbumIdDark:
+          (defaultAlbumIdDark == null || defaultAlbumIdDark!.trim().isEmpty)
+          ? null
+          : defaultAlbumIdDark!.trim(),
       infoOrientation: infoOrientation == infoOrientationLandscape ? '1' : '0',
       exploreFilterState: math.min(math.max(exploreFilterState, 0), 3),
       textColor: argb(textColor),
@@ -338,6 +356,7 @@ class CoverSettings {
         other.loadOnlyOnWifi == loadOnlyOnWifi &&
         other.useDefaultCover == useDefaultCover &&
         other.defaultAlbumId == defaultAlbumId &&
+        other.defaultAlbumIdDark == defaultAlbumIdDark &&
         other.showShadow == showShadow &&
         other.showStroke == showStroke &&
         other.useDefaultColor == useDefaultColor &&
@@ -359,6 +378,7 @@ class CoverSettings {
     loadOnlyOnWifi,
     useDefaultCover,
     defaultAlbumId,
+    defaultAlbumIdDark,
     showShadow,
     showStroke,
     useDefaultColor,

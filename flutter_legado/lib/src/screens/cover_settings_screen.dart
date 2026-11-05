@@ -316,9 +316,6 @@ class _OrientationRow extends StatelessWidget {
           },
         ),
       ),
-      onTap: () => onChanged(
-        value == CoverSettings.infoOrientationLandscape ? '0' : '1',
-      ),
     );
   }
 }
