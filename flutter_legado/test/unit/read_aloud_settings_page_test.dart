@@ -97,6 +97,11 @@ class _PageFakePlatform implements SystemTtsPlatform {
 
   @override
   Future<void> stop() async {}
+
+  @override
+  Future<void> resetClient() async {
+    _currentEngine = null;
+  }
 }
 
 void main() {

@@ -45,6 +45,7 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   int stopCount = 0;
   int clearVoiceCount = 0;
   int resetEngineCount = 0;
+  int resetClientCount = 0;
   final List<String> setEngines = [];
   final List<SystemTtsVoice> setVoices = [];
   final List<double> rates = [];
@@ -67,6 +68,12 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
 
   /// 非空时 setEngine 等待该闸门（模拟引擎初始化永不返回）
   Completer<void>? setEngineGate;
+
+  /// 非空时 resetEngine 等待该闸门（模拟恢复默认引擎永不返回）
+  Completer<void>? resetEngineGate;
+
+  /// 平台当前实际引擎（null = 系统默认）
+  String? get currentEngine => _currentEngine;
 
   /// 仅第一次合成抛出的异常（模拟 stop 后旧任务失败）
   Object? firstSynthError;
@@ -104,6 +111,9 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   @override
   Future<void> resetEngine() async {
     resetEngineCount++;
+    final gate = resetEngineGate;
+    if (gate != null) await gate.future;
+    _currentEngine = null;
   }
 
   @override
@@ -151,6 +161,13 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   Future<void> stop() async {
     // 审查回修 P3：stop 不完成合成闸门，模拟「stop 无法取消挂起合成」
     stopCount++;
+  }
+
+  @override
+  Future<void> resetClient() async {
+    resetClientCount++;
+    // 丢弃旧客户端：迟到的 setEngine 不再被视为当前平台状态
+    _currentEngine = null;
   }
 }
 
@@ -704,6 +721,56 @@ void main() {
       expect(service.takeNotice(), isNull);
     });
 
+
+    test('P2 引擎超时后迟到 setEngine 完成 → 下次合成 reset 回默认', () async {
+      platform.setEngineGate = Completer<void>();
+      final service = buildService(
+        synthesisTimeout: const Duration(milliseconds: 50),
+      );
+      final voices = await service.selectEngine('com.hang.tts');
+      expect(voices, isNull);
+      expect(service.selectedEngineName, isNull);
+      expect(platform.resetClientCount, greaterThanOrEqualTo(1),
+          reason: '引擎初始化超时必须丢弃旧客户端');
+      expect(platform.currentEngine, isNull);
+
+      // 迟到 init 完成：平台实际停在失败引擎
+      platform.setEngineGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(platform.currentEngine, 'com.hang.tts');
+
+      // 下次合成：selected/applied 均为 null，但 dirty 必须强制 reset
+      await synth(service, text: 'A');
+      expect(platform.resetEngineCount, greaterThanOrEqualTo(1));
+      expect(platform.currentEngine, isNull, reason: '平台引擎应回到系统默认');
+    });
+
+    test('P2 resetEngine 超时 → dirty 强制重新 setEngine', () async {
+      final service = buildService(
+        synthesisTimeout: const Duration(milliseconds: 50),
+      );
+      await service.selectEngine('engine-a');
+      await synth(service, text: 'A');
+      expect(platform.currentEngine, 'engine-a');
+
+      platform.resetEngineGate = Completer<void>();
+      final voices = await service.selectEngine(null);
+      expect(voices, isNull);
+      expect(service.selectedEngineName, 'engine-a', reason: '失败回滚到原引擎');
+      expect(platform.resetClientCount, greaterThanOrEqualTo(1));
+
+      // 迟到的 reset 完成（平台可能停在默认/中间态）
+      platform.resetEngineGate!.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final before = platform.setEngines.length;
+      await synth(service, text: 'B');
+      expect(platform.setEngines.length, before + 1,
+          reason: 'dirty 必须强制重新 setEngine');
+      expect(platform.setEngines.last, 'engine-a');
+      expect(platform.currentEngine, 'engine-a');
+    });
+
     test('P2-7 切引擎刷新音色；已选音色不在新列表则清除并提示一次', () async {
       const voiceA = SystemTtsVoice(name: 'a', locale: 'zh-CN');
       const voiceB = SystemTtsVoice(name: 'b', locale: 'zh-CN');
@@ -861,4 +928,7 @@ class _ThrowingPlatform implements SystemTtsPlatform {
 
   @override
   Future<void> stop() async {}
+
+  @override
+  Future<void> resetClient() async => throw StateError('resetClient failed');
 }

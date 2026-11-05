@@ -67,6 +67,9 @@ class _NoopPlatform implements SystemTtsPlatform {
 
   @override
   Future<void> stop() async {}
+
+  @override
+  Future<void> resetClient() async {}
 }
 
 /// 系统 TTS 服务 Fake：记录入参、按调用序返回路径、可注入失败/延迟
