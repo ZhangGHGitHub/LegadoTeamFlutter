@@ -72,6 +72,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// [设置批6a-1] 更新全部时的待更新数量（`showWaitUpCount` 顶栏角标）
   final ValueNotifier<int> _waitUpCount = ValueNotifier<int>(0);
 
+  /// 书架内容实际宽度（多栏/窄 pane 小于窗口宽；配置面板列数提示用）
+  double? _lastViewportWidth;
+
   @override
   void initState() {
     super.initState();
@@ -164,7 +167,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: plainAppBar ? _buildAppBar(context, ref) : null,
-      body: _buildBody(context, ref),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // 记录书架栏实际宽度（配置面板列数提示与入口夹取同口径）
+          _lastViewportWidth = constraints.maxWidth;
+          return _buildBody(context, ref);
+        },
+      ),
     );
   }
 
@@ -909,7 +918,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             ),
           ),
           TextButton(
-            onPressed: () => showBookshelfConfigSheet(context),
+            onPressed: () => showBookshelfConfigSheet(
+              context,
+              viewportWidth: _lastViewportWidth,
+            ),
             child: const Text('布局设置'),
           ),
         ],
@@ -918,7 +930,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// 分组样式 1：顶部组标题 + 组菜单（可横向 chip/下拉；此处用组菜单）
-  Widget _buildGroupStyleHeader(    BuildContext context,
+  Widget _buildGroupStyleHeader(
+    BuildContext context,
     WidgetRef ref,
     BookshelfSettings settings,
     List<BookGroup> visibleGroups,
@@ -1270,6 +1283,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final compact = settings.bookshelfLayoutCompact;
     final showMore = settings.showBookIntro && !compact;
     final hasTags = !compact &&
+        settings.showBookIntro &&
         settings.bookshelfShowTag &&
         books.any((b) => state.displayTagsOf(b, showTag: settings.bookshelfShowTag).isNotEmpty);
     final introLines = settings.bookshelfIntroMaxLines == 0
@@ -1681,7 +1695,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'layout':
         // [设置批6a-1] 布局设置升级为完整配置 Sheet（分组/排序/布局/
         // 角标/其他五段，对齐参考版 BookshelfConfigSheet）
-        showBookshelfConfigSheet(context);
+        showBookshelfConfigSheet(
+          context,
+          viewportWidth: _lastViewportWidth,
+        );
       case 'group_none':
         ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.none);
       case 'group_source':
@@ -2196,9 +2213,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           .read(bookshelfNotifierProvider.notifier)
           .toggleSelect(book.bookUrl),
     );
-    // [审查 P1-1] 多列批量：勾选图标叠放在封面右上，不再占用 Row 尾部
-    // 22+16dp，避免窄单元格（≤2 列）被批量图标进一步挤压。
+    // [审查 P1-1] 多列批量：勾选图标叠放在**封面右上角**，不再占用 Row
+    // 尾部 22+16dp；位置按实际封面宽计算（BookListItem 窄列 padding 4/8，
+    // 封面起点 x=4、y=8，图标 22dp 内缩 4dp）。
     if (maxCoverWidth != null) {
+      final coverWidth = math.min(
+        settings.bookshelfListCoverWidth.toDouble(),
+        maxCoverWidth,
+      );
+      final left = math.max(0.0, coverWidth - 22);
       return Material(
         key: ValueKey(book.bookUrl),
         color: selected
@@ -2208,20 +2231,24 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           children: [
             item,
             Positioned(
-              top: 4,
-              right: 4,
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: cs.surface.withValues(alpha: 0.85),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  selected
-                      ? Icons.check_circle_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: 18,
-                  color: selected ? cs.primary : cs.onSurfaceVariant,
+              left: left,
+              top: 12,
+              // 图标只做展示，点击穿透到 BookListItem 的 InkWell 切换选中
+              child: IgnorePointer(
+                child: Container(
+                  key: ValueKey('bookshelf-batch-check-${book.bookUrl}'),
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: cs.surface.withValues(alpha: 0.85),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    size: 18,
+                    color: selected ? cs.primary : cs.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
@@ -2237,14 +2264,21 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       child: Row(
         children: [
           Expanded(child: item),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Icon(
-              selected
-                  ? Icons.check_circle_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              size: 22,
-              color: selected ? cs.primary : cs.onSurfaceVariant,
+          GestureDetector(
+            key: ValueKey('bookshelf-batch-check-${book.bookUrl}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => ref
+                .read(bookshelfNotifierProvider.notifier)
+                .toggleSelect(book.bookUrl),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 22,
+                color: selected ? cs.primary : cs.onSurfaceVariant,
+              ),
             ),
           ),
         ],

@@ -21,19 +21,28 @@ import '../../widgets/container_color_dialog.dart';
 import '../../widgets/setting_slider_row.dart';
 
 /// 打开书架布局配置 Sheet
-Future<void> showBookshelfConfigSheet(BuildContext context) {
+///
+/// [viewportWidth] 为书架内容实际宽度（多栏/窄 pane 时小于窗口宽）；
+/// 传入后「列表列数」提示按真实可用宽度计算，与书架入口夹取一致。
+Future<void> showBookshelfConfigSheet(
+  BuildContext context, {
+  double? viewportWidth,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (_) => const BookshelfConfigSheet(),
+    builder: (_) => BookshelfConfigSheet(viewportWidth: viewportWidth),
   );
 }
 
 /// 书架布局配置 Sheet
 class BookshelfConfigSheet extends ConsumerWidget {
-  const BookshelfConfigSheet({super.key});
+  /// 书架内容实际宽度（null = 回退窗口宽，仅独立使用/测试时）
+  final double? viewportWidth;
+
+  const BookshelfConfigSheet({super.key, this.viewportWidth});
 
   /// 6a-2 文件夹模式才启用的 8 个配置键（本期隐藏，仅保留模型默认值）
   static const hiddenFolderPrefKeys = <String>{
@@ -55,7 +64,7 @@ class BookshelfConfigSheet extends ConsumerWidget {
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final layoutMode = settings.layoutModeFor(isLandscape: isLandscape);
     final maxReadableListColumns = BookshelfSettings.maxReadableListColumns(
-      MediaQuery.sizeOf(context).width,
+      viewportWidth ?? MediaQuery.sizeOf(context).width,
     );
     final configuredListColumns =
         settings.listColumnsFor(isLandscape: isLandscape);
@@ -106,6 +115,12 @@ class BookshelfConfigSheet extends ConsumerWidget {
                 _DropdownRow<int>(
                   key: const ValueKey('bookshelfSortDropdown'),
                   title: '排序',
+                  // 手动排序：UI 明确说明拖拽范围（网格自动回落列表；
+                  // 分组展示模式暂无组内拖拽）
+                  subtitle: settings.bookshelfSort ==
+                          BookshelfSortMode.manual
+                      ? '仅列表布局支持拖拽；网格会自动切换为列表，分组展示暂不支持'
+                      : null,
                   value: settings.bookshelfSort,
                   items: [
                     for (var i = 0; i < BookshelfSortMode.labels.length; i++)
@@ -260,7 +275,7 @@ class BookshelfConfigSheet extends ConsumerWidget {
                     max: 5,
                     subtitle: configuredListColumns > maxReadableListColumns
                         ? '${isLandscape ? '横屏' : '竖屏'}列表列数；'
-                            '当前屏宽最多 $maxReadableListColumns 列，'
+                            '当前书架宽度最多 $maxReadableListColumns 列，'
                             '超出将按 $maxReadableListColumns 列显示'
                         : '${isLandscape ? '横屏' : '竖屏'}列表列数',
                     onChanged: (value) => update(
