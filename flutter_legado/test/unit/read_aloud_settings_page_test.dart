@@ -6,6 +6,7 @@
 // 3) 置灰项不可点（胶囊/来电暂停/安卓媒体控制/流式/角色与配乐 8 项）；
 // 4) 引擎与音色页：系统引擎/音色选择、空态、语速/音调/音量滑块范围与持久化；
 // 5) 「其他设置」旧「忽略音频焦点」行已移除（唯一入口迁移）。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -40,6 +41,9 @@ class _PageFakePlatform implements SystemTtsPlatform {
   Map<String, List<SystemTtsVoice>> voicesByEngine = const {};
   String? _currentEngine;
 
+  /// 非空时 setEngine 等待该闸门（模拟引擎初始化永不返回）
+  Completer<void>? setEngineGate;
+
   final List<String> selectedEngines = [];
   final List<SystemTtsVoice> selectedVoices = [];
   int clearVoiceCount = 0;
@@ -63,6 +67,8 @@ class _PageFakePlatform implements SystemTtsPlatform {
 
   @override
   Future<void> setEngine(String engineName) async {
+    final gate = setEngineGate;
+    if (gate != null) await gate.future;
     selectedEngines.add(engineName);
     _currentEngine = engineName;
   }
@@ -152,6 +158,7 @@ void main() {
     systemTts = SystemTtsService(
       platform: fakePlatform,
       baseDirectoryProvider: () async => tempDir,
+      synthesisTimeout: const Duration(milliseconds: 50),
     );
     when(() => mockApi.getHttpTts()).thenAnswer((_) async => []);
     when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
@@ -202,6 +209,13 @@ void main() {
   Future<void> tapText(WidgetTester tester, String text) async {
     await tester.tap(find.text(text));
     await tester.pumpAndSettle();
+  }
+
+  /// 等待异步回调完成（tap 的 async handler 不阻塞 pumpAndSettle）
+  Future<void> waitFor(WidgetTester tester, bool Function() condition) async {
+    for (var i = 0; i < 200 && !condition(); i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
   }
 
   /// 取某标题所在行的 ListTile（判定置灰/可点）
@@ -557,20 +571,60 @@ void main() {
 
       await tapText(tester, '系统引擎');
       await tapText(tester, '引擎B');
+      await waitFor(tester, () => systemTts.selectedVoice == null);
       expect(
         (await prefs()).getString(PrefKeys.systemTtsEngine),
         'engine-b',
       );
+      expect(systemTts.selectedVoice, isNull, reason: 'service 应清除失效音色');
       expect(
         (await prefs()).getString(PrefKeys.systemTtsVoice),
         isNull,
         reason: '原音色不在新引擎列表，应清除持久化',
       );
+      expect(systemTts.takeNotice(), isNull,
+          reason: '页面 toast 已提示，服务一次性提示应被消费，避免播放时重复');
 
       await tapText(tester, '音色');
       expect(find.text('b（zh-CN）'), findsOneWidget);
       expect(find.text('a（zh-CN）'), findsNothing);
       await tapText(tester, '取消');
+    });
+
+    testAndroid('P2-A 引擎初始化超时：回滚选中态并提示失败', (tester) async {
+      fakePlatform.engines = const [
+        SystemTtsEngine(name: 'engine-a', label: '引擎A'),
+        SystemTtsEngine(name: 'engine-b', label: '引擎B'),
+      ];
+      fakePlatform.voicesByEngine = const {
+        'engine-a': [SystemTtsVoice(name: 'a', locale: 'zh-CN')],
+        'engine-b': [SystemTtsVoice(name: 'b', locale: 'zh-CN')],
+      };
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.systemTtsEngine: 'engine-a',
+      });
+      await pumpPage(tester);
+      await tester.tap(find.text('引擎与音色'));
+      await tester.pumpAndSettle();
+
+      fakePlatform.setEngineGate = Completer<void>();
+      await tapText(tester, '系统引擎');
+      await tapText(tester, '引擎B');
+      await waitFor(
+        tester,
+        () => find.text('引擎初始化失败').evaluate().isNotEmpty,
+      );
+
+      expect(find.text('引擎初始化失败'), findsOneWidget);
+      expect(
+        (await prefs()).getString(PrefKeys.systemTtsEngine),
+        'engine-a',
+        reason: '失败需回滚持久化选择',
+      );
+      expect(find.text('引擎A'), findsWidgets, reason: '选中态回滚到引擎A');
+      if (!fakePlatform.setEngineGate!.isCompleted) {
+        fakePlatform.setEngineGate!.complete();
+      }
     });
   });
 

@@ -61,8 +61,15 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   /// false 时只创建空文件（模拟合成失败产物）
   bool writeBytes = true;
 
-  /// 非空时 synthesizeToFile 等待该闸门（模拟 flutter_tts 永不完成）
+  /// 非空时仅第一次 synthesizeToFile 等待该闸门（模拟 flutter_tts
+  /// 永不完成；后续调用立即完成，便于验证 stop 后新合成）
   Completer<void>? synthGate;
+
+  /// 非空时 setEngine 等待该闸门（模拟引擎初始化永不返回）
+  Completer<void>? setEngineGate;
+
+  /// 仅第一次合成抛出的异常（模拟 stop 后旧任务失败）
+  Object? firstSynthError;
 
   /// 并发合成计数（串行队列断言）
   int _running = 0;
@@ -89,6 +96,8 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
   @override
   Future<void> setEngine(String engineName) async {
     setEngines.add(engineName);
+    final gate = setEngineGate;
+    if (gate != null) await gate.future;
     _currentEngine = engineName;
   }
 
@@ -126,8 +135,9 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
     if (_running > maxConcurrent) maxConcurrent = _running;
     try {
       final gate = synthGate;
-      if (gate != null) await gate.future;
-      final err = synthError;
+      // 仅第一次合成挂起：stop 后新合成必须真实可完成
+      if (gate != null && synthCount == 1) await gate.future;
+      final err = (synthCount == 1 ? firstSynthError : null) ?? synthError;
       if (err != null) throw err;
       final file = File(fullPath);
       file.parent.createSync(recursive: true);
@@ -139,10 +149,8 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
 
   @override
   Future<void> stop() async {
+    // 审查回修 P3：stop 不完成合成闸门，模拟「stop 无法取消挂起合成」
     stopCount++;
-    // 模拟 flutter_tts stop 取消合成：唤醒等待中的合成
-    final gate = synthGate;
-    if (gate != null && !gate.isCompleted) gate.complete();
   }
 }
 
@@ -586,17 +594,114 @@ void main() {
       expect(platform.synthCount, 2, reason: 'A 的重复请求合并');
     });
 
-    test('P2-6 stop 复位 busy：停止后立即重播不被旧合成阻塞', () async {
+    test('P2-B stop 不完成挂起合成 → 新合成成功且旧任务清理不误删', () async {
       platform.synthGate = Completer<void>();
+      platform.firstSynthError = StateError('old synth failed');
       final service = buildService(
         synthesisTimeout: const Duration(seconds: 5),
       );
-      final first = synth(service, text: 'A');
-      await Future<void>.delayed(Duration.zero);
+      // 旧任务挂起（fake stop 不完成闸门），错误由 catchError 吞掉
+      final first = synth(service, text: 'A').catchError((Object _) => '');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
       await service.stop();
-      final second = synth(service, text: 'B');
-      await Future.wait([first, second]);
+
+      final second = await synth(service, text: 'B');
+      expect(second, isNotEmpty);
+      expect(File(second).existsSync(), isTrue);
       expect(platform.synthCount, 2);
+
+      // 释放旧任务：其失败清理发生在旧代际，不得删除新代际文件
+      platform.synthGate!.complete();
+      await first;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        File(second).existsSync(),
+        isTrue,
+        reason: '旧代际失败清理不得删除新合成产物',
+      );
+    });
+
+
+    test('P2-A setEngine 永不返回 → selectEngine 超时回滚并返回 null', () async {
+      platform.setEngineGate = Completer<void>();
+      final service = buildService(
+        synthesisTimeout: const Duration(milliseconds: 50),
+      );
+      final voices = await service.selectEngine('com.hang.tts');
+      expect(voices, isNull);
+      expect(service.selectedEngineName, isNull, reason: '失败需回滚选择');
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(PrefKeys.systemTtsEngine), isNull);
+      expect(platform.stopCount, greaterThanOrEqualTo(1),
+          reason: '引擎初始化超时需 stop 复位');
+      if (!platform.setEngineGate!.isCompleted) {
+        platform.setEngineGate!.complete();
+      }
+    });
+
+    test('P2-A 合成路径 setEngine 永不返回 → 引擎初始化超时', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.systemTtsEngine: 'com.hang.tts',
+      });
+      platform.setEngineGate = Completer<void>();
+      final service = buildService(
+        synthesisTimeout: const Duration(milliseconds: 50),
+      );
+      await service.loadSelection();
+      await expectLater(
+        synth(service),
+        throwsA(
+          isA<SystemTtsException>().having(
+            (e) => e.message,
+            'message',
+            contains('引擎初始化超时'),
+          ),
+        ),
+      );
+      expect(platform.stopCount, greaterThanOrEqualTo(1));
+      if (!platform.setEngineGate!.isCompleted) {
+        platform.setEngineGate!.complete();
+      }
+    });
+
+    test('P3 引擎切换进串行队列，不打断在途合成', () async {
+      platform.synthGate = Completer<void>();
+      final service = buildService();
+      final synthFuture = synth(service, text: 'A');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final selectFuture = service.selectEngine('com.other.tts');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(platform.setEngines, isEmpty,
+          reason: '在途合成未完成前不得替换 TTS 实例');
+
+      platform.synthGate!.complete();
+      await synthFuture;
+      final voices = await selectFuture;
+      expect(voices, isNotNull);
+      expect(platform.setEngines, ['com.other.tts']);
+    });
+
+    test('P3 stop 清空一次性提示，避免跨会话迟到提示', () async {
+      const voiceA = SystemTtsVoice(name: 'a', locale: 'zh-CN');
+      platform.voicesByEngine = const {
+        'engine-a': [voiceA],
+        'engine-b': <SystemTtsVoice>[],
+      };
+      final service = buildService();
+      await service.selectEngine('engine-a');
+      await service.selectVoice(voiceA);
+      await synth(service, text: 'A');
+      await service.selectEngine('engine-b');
+      expect(service.takeNotice(), isNotNull);
+
+      // 再制造一条提示后 stop 清空
+      await service.selectEngine('engine-a');
+      await service.selectVoice(voiceA);
+      await synth(service, text: 'B');
+      await service.selectEngine('engine-b');
+      expect(service.takeNotice(), isNotNull);
+      await service.stop();
+      expect(service.takeNotice(), isNull);
     });
 
     test('P2-7 切引擎刷新音色；已选音色不在新列表则清除并提示一次', () async {
