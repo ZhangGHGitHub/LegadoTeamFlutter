@@ -311,13 +311,66 @@ void main() {
       );
     });
 
-    testAndroid('TTS 缓存行展示统计并可打开清理对话框', (tester) async {
+    testAndroid('TTS 缓存行展示统计/保留时间并可清理', (tester) async {
       await pumpPage(tester);
       expect(find.text('TTS 缓存'), findsOneWidget);
+      expect(find.textContaining('保留 10 分钟'), findsOneWidget);
       await tapText(tester, 'TTS 缓存');
       expect(find.textContaining('系统 TTS 合成缓存'), findsOneWidget);
+      expect(find.textContaining('保留时间：10 分钟'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('tts-cache-retention-slider')),
+        findsOneWidget,
+      );
       expect(find.text('清理'), findsOneWidget);
+
+      // 保留时间滑块持久化（30 分钟）
+      final slider = tester.widget<Slider>(
+        find.byKey(const ValueKey('tts-cache-retention-slider')),
+      );
+      slider.onChangeEnd!(30);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(
+        (await prefs()).getInt(PrefKeys.readAloudCacheRetentionMinutes),
+        30,
+      );
+
+      // 0 = 即听即焚快捷选择
+      await tapText(tester, '即听即焚');
+      expect(
+        (await prefs()).getInt(PrefKeys.readAloudCacheRetentionMinutes),
+        0,
+      );
       await tapText(tester, '取消');
+    });
+
+    testAndroid('缓存保留时间行：0 即听即焚写入偏好并回显', (tester) async {
+      await pumpPage(tester);
+      expect(tileOf(tester, '缓存保留时间').enabled, isTrue);
+      expect(
+        find.byKey(const ValueKey('read-aloud-cache-retention')),
+        findsOneWidget,
+      );
+
+      await tapText(tester, '缓存保留时间');
+      expect(find.text('缓存保留时间'), findsWidgets);
+      expect(find.textContaining('0 表示即听即焚'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, '即听即焚'));
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(
+        (await prefs()).getInt(PrefKeys.readAloudCacheRetentionMinutes),
+        0,
+      );
+      expect(
+        container
+            .read(audioNotifierProvider.notifier)
+            .readAloudCacheRetentionMinutes,
+        0,
+      );
+
+      await tapText(tester, '完成');
+      expect(find.text('即听即焚'), findsOneWidget, reason: '行尾值回显');
     });
   });
 

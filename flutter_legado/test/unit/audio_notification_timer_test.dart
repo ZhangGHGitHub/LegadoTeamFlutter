@@ -255,6 +255,24 @@ void main() {
     verify(() => mockAudio.notifyStopped()).called(1);
   });
 
+  testWidgets('e4) 分钟到点读完本章：标题体现「读完本章后停止」', (tester) async {
+    await startStreamPlayback();
+    readNotifier().setFinishCurrentChapterAfterTimer(true);
+    readNotifier().startSleepTimer(1);
+    expect(metadataCalls.last.artist, '正在播放(剩余 1 分钟): 测试书');
+
+    // 到点后仍在播放（本章未播完），标题改为「读完本章后停止」
+    await tester.pump(const Duration(seconds: 60));
+    await tester.pump();
+    expect(readState().state, PlayerState.playing);
+    expect(readNotifier().sleepTimerMode, SleepTimerMode.finishChapter);
+    expect(metadataCalls.last.artist, '正在播放(读完本章后停止): 测试书');
+
+    // 清理在途状态（测试结束不得残留计时）
+    readNotifier().cancelSleepTimer();
+    expect(metadataCalls.last.artist, '正在播放: 测试书');
+  });
+
   testWidgets('e2) 取消定时：标题恢复原形态', (tester) async {
     await startStreamPlayback();
     readNotifier().startChapterStop(2);

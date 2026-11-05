@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
@@ -36,6 +37,9 @@ void main() {
   });
 
   setUp(() {
+    // [设置批5c] 定时设置/缓存保留时间在起播入口读 SharedPreferences：
+    // 测试 zone 必须先装 mock，否则 getInstance 的 Future 永不完成。
+    SharedPreferences.setMockInitialValues({});
     mockApi = MockRustApi();
     fakePlayer = FakeStreamAudioPlayer();
     container = ProviderContainer(
@@ -60,18 +64,21 @@ void main() {
       ),
     );
     when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
-    when(() => mockApi.getAudioChapterMedia(any(), any()))
-        .thenAnswer((invocation) async {
+    when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer((
+      invocation,
+    ) async {
       final index = invocation.positionalArguments[1] as int;
       return {
         'mediaUrl': 'https://cdn.example.com/$index.mp3',
         'isVolume': false,
       };
     });
-    when(() => mockApi.getAudioProgress(any(), any()))
-        .thenAnswer((_) async => null);
-    when(() => mockApi.saveAudioProgress(any(), any(), any()))
-        .thenAnswer((_) async {});
+    when(
+      () => mockApi.getAudioProgress(any(), any()),
+    ).thenAnswer((_) async => null);
+    when(
+      () => mockApi.saveAudioProgress(any(), any(), any()),
+    ).thenAnswer((_) async {});
 
     await readNotifier().loadChapters('url');
     readNotifier().setAudioBookMode(true);
@@ -151,19 +158,24 @@ void main() {
         ],
       );
       when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
-      when(() => mockApi.getChapterContentFull(any(), any()))
-          .thenAnswer((_) async => '第一段文本内容。');
-      when(() => mockApi.audioSpeak(
-            text: any(named: 'text'),
-            engineUrl: any(named: 'engineUrl'),
-            speed: any(named: 'speed'),
-            pitch: any(named: 'pitch'),
-            volume: any(named: 'volume'),
-            voiceName: any(named: 'voiceName'),
-          )).thenAnswer((_) async => '/tmp/tts/para.mp3');
+      when(
+        () => mockApi.getChapterContentFull(any(), any()),
+      ).thenAnswer((_) async => '第一段文本内容。');
+      when(
+        () => mockApi.audioSpeak(
+          text: any(named: 'text'),
+          engineUrl: any(named: 'engineUrl'),
+          speed: any(named: 'speed'),
+          pitch: any(named: 'pitch'),
+          volume: any(named: 'volume'),
+          voiceName: any(named: 'voiceName'),
+        ),
+      ).thenAnswer((_) async => '/tmp/tts/para.mp3');
 
       await readNotifier().loadChapters('url');
-      readNotifier().updateConfig(engineUrl: 'https://tts.example.com/{{text}}');
+      readNotifier().updateConfig(
+        engineUrl: 'https://tts.example.com/{{text}}',
+      );
       await readNotifier().play();
       expect(readState().isStreamMode, isFalse);
       readNotifier().startChapterStop(1);
@@ -189,18 +201,21 @@ void main() {
       );
       when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
-      when(() => mockApi.getAudioChapterMedia(any(), any()))
-          .thenAnswer((invocation) async {
+      when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer((
+        invocation,
+      ) async {
         final index = invocation.positionalArguments[1] as int;
         return {
           'mediaUrl': 'https://cdn.example.com/$index.mp3',
           'isVolume': false,
         };
       });
-      when(() => mockApi.getAudioProgress(any(), any()))
-          .thenAnswer((_) async => null);
-      when(() => mockApi.saveAudioProgress(any(), any(), any()))
-          .thenAnswer((_) async {});
+      when(
+        () => mockApi.getAudioProgress(any(), any()),
+      ).thenAnswer((_) async => null);
+      when(
+        () => mockApi.saveAudioProgress(any(), any(), any()),
+      ).thenAnswer((_) async {});
 
       // 预载章节，保证页面 initState 不重复 load（渲染路径确定性）
       await readNotifier().loadChapters('url');
@@ -323,18 +338,116 @@ void main() {
       expect(readNotifier().sleepTimerMode, SleepTimerMode.off);
     });
 
-    testWidgets('上限对齐原版：分钟 ≤180、章 ≤99；0 视为关闭', (tester) async {
+    testWidgets('上限对齐参考版：分钟 ≤180、章 ≤50；0 视为关闭', (tester) async {
       readNotifier().startSleepTimer(181);
       expect(readNotifier().sleepRemainingSeconds, 180 * 60);
 
       readNotifier().startChapterStop(100);
-      expect(readNotifier().chaptersToStopRemaining, 99);
+      expect(readNotifier().chaptersToStopRemaining, 50);
 
       readNotifier().startSleepTimer(0);
       expect(readNotifier().isSleepTimerActive, isFalse);
 
       readNotifier().startChapterStop(0);
       expect(readNotifier().isSleepTimerActive, isFalse);
+    });
+  });
+
+  group('f) 读完本章再停（设置批5c）', () {
+    /// TTS 起播（HTTP 合成桩；正文 paragraph 数由 [content] 决定）
+    Future<void> startTts(String content) async {
+      when(() => mockApi.getChapters(any())).thenAnswer(
+        (_) async => [
+          const BookChapter(title: '第一章', index: 0),
+          const BookChapter(title: '第二章', index: 1),
+        ],
+      );
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      when(
+        () => mockApi.getChapterContentFull(any(), any()),
+      ).thenAnswer((_) async => content);
+      when(
+        () => mockApi.audioSpeak(
+          text: any(named: 'text'),
+          engineUrl: any(named: 'engineUrl'),
+          speed: any(named: 'speed'),
+          pitch: any(named: 'pitch'),
+          volume: any(named: 'volume'),
+          voiceName: any(named: 'voiceName'),
+        ),
+      ).thenAnswer((_) async => '/tmp/tts/para.mp3');
+
+      await readNotifier().loadChapters('url');
+      readNotifier().updateConfig(
+        engineUrl: 'https://tts.example.com/{{text}}',
+      );
+      await readNotifier().play();
+      expect(readState().isStreamMode, isFalse);
+    }
+
+    testWidgets('分钟到点当前章未播完：保留播放，章末 stop 并清空标志', (tester) async {
+      await startTts('第一段内容。\n\n第二段内容。');
+      final notifier = readNotifier();
+      notifier.setFinishCurrentChapterAfterTimer(true);
+      notifier.startSleepTimer(1);
+      expect(notifier.paragraphCount, 2);
+
+      // 到点：当前是首段，装臂标并继续播放
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+      expect(readState().state, PlayerState.playing);
+      expect(notifier.sleepTimerMode, SleepTimerMode.finishChapter);
+      expect(notifier.isFinishChapterAfterTimerArmed, isTrue);
+      expect(notifier.sleepTimerRemainingLabel, '读完本章后停止');
+
+      // 首段播完 → 继续第二段（不因定时到点立即停）
+      fakePlayer.completePlayback();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(readState().state, PlayerState.playing);
+      expect(notifier.currentParagraphIndex, 1);
+      expect(notifier.isFinishChapterAfterTimerArmed, isTrue);
+
+      // 末段播完 → 章末 stop（不进入第二章）
+      fakePlayer.completePlayback();
+      await tester.pump();
+      await tester.pump();
+      expect(readState().state, PlayerState.idle);
+      expect(readState().currentIndex, 0);
+      expect(notifier.isFinishChapterAfterTimerArmed, isFalse);
+      expect(notifier.isSleepTimerActive, isFalse);
+    });
+
+    testWidgets('分钟到点已在章末：立即 stop，不进入等待', (tester) async {
+      await startTts('只有一段内容。');
+      final notifier = readNotifier();
+      notifier.setFinishCurrentChapterAfterTimer(true);
+      notifier.startSleepTimer(1);
+      // 模拟末段音频已经结束但完成回调尚未送达（仍在章末）
+      fakePlayer.isPlaying = false;
+
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+
+      expect(readState().state, PlayerState.idle);
+      expect(notifier.sleepTimerMode, SleepTimerMode.off);
+      expect(notifier.isSleepTimerActive, isFalse);
+    });
+
+    testWidgets('手动切章清除章末等待臂标', (tester) async {
+      await startTts('第一段内容。\n\n第二段内容。');
+      final notifier = readNotifier();
+      notifier.setFinishCurrentChapterAfterTimer(true);
+      notifier.startSleepTimer(1);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+      expect(notifier.sleepTimerMode, SleepTimerMode.finishChapter);
+
+      await notifier.next();
+      await tester.pump();
+      expect(notifier.sleepTimerMode, SleepTimerMode.off);
+      expect(readState().currentIndex, 1);
     });
   });
 }

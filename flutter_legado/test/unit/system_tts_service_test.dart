@@ -423,6 +423,72 @@ void main() {
       final stats = await service.cacheStats();
       expect(stats.fileCount, 2);
     });
+
+    test('pruneByRetention：按保留分钟删旧留新，keepPath 不删', () async {
+      final creator = buildService(
+        maxCacheFiles: 100,
+        maxCacheAge: const Duration(days: 365),
+      );
+      final oldPath = await synth(creator, text: '旧段落');
+      File(oldPath).setLastModifiedSync(
+        DateTime.now().subtract(const Duration(minutes: 11)),
+      );
+      final freshPath = await synth(creator, text: '新段落');
+      File(freshPath).setLastModifiedSync(
+        DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+      final playingPath = await synth(creator, text: '播放中段落');
+      File(playingPath).setLastModifiedSync(
+        DateTime.now().subtract(const Duration(minutes: 30)),
+      );
+
+      final service = buildService(
+        maxCacheFiles: 100,
+        maxCacheAge: const Duration(days: 365),
+      );
+      final deleted = await service.pruneByRetention(
+        10,
+        keepPath: playingPath,
+      );
+      expect(deleted, 1);
+      expect(File(oldPath).existsSync(), isFalse);
+      expect(File(freshPath).existsSync(), isTrue);
+      expect(File(playingPath).existsSync(), isTrue, reason: '正在播放文件不得删除');
+    });
+
+    test('pruneByRetention 0：即听即焚模式不在启动时全量清理', () async {
+      final service = buildService();
+      final path = await synth(service, text: '缓存段落');
+      File(path).setLastModifiedSync(
+        DateTime.now().subtract(const Duration(days: 1)),
+      );
+      expect(await service.pruneByRetention(0), 0);
+      expect(File(path).existsSync(), isTrue);
+    });
+
+    test('clearCache keepPath 保留正在播放的文件', () async {
+      final service = buildService();
+      final keep = await synth(service, text: '播放中');
+      final other = await synth(service, text: '其它');
+      final deleted = await service.clearCache(keepPath: keep);
+      expect(deleted, 1);
+      expect(File(keep).existsSync(), isTrue);
+      expect(File(other).existsSync(), isFalse);
+    });
+
+    test('deleteCacheFile 仅删缓存目录内 wav；keepPath 保护', () async {
+      final service = buildService();
+      final path = await synth(service, text: '单文件');
+      expect(await service.deleteCacheFile(path, keepPath: path), isFalse);
+      expect(File(path).existsSync(), isTrue);
+      expect(await service.deleteCacheFile(path), isTrue);
+      expect(File(path).existsSync(), isFalse);
+      // 目录外/非 wav 不允许删除
+      final outside = File('${tempDir.path}${Platform.pathSeparator}outside.wav')
+        ..writeAsBytesSync(const [1, 2, 3]);
+      expect(await service.deleteCacheFile(outside.path), isFalse);
+      expect(outside.existsSync(), isTrue);
+    });
   });
 
   group('平台参数下发与选择持久化', () {

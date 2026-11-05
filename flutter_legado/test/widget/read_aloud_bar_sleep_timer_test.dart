@@ -116,22 +116,39 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 打开定时面板（Notifier ticker 运行期不用 pumpAndSettle，避免 1s 周期
-  /// tick 持续排帧导致超时）
-  Future<void> openTimerPicker(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('定时停止'));
+  /// 打开统一朗读定时 Sheet（Notifier ticker 运行期不用 pumpAndSettle，
+  /// 避免 1s 周期 tick 持续排帧导致超时）
+  Future<void> openTimerPicker(
+    WidgetTester tester, {
+    String tooltip = '定时停止',
+  }) async {
+    await tester.tap(find.byTooltip(tooltip));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    // Sheet 打开前会先异步读取持久化设置（模式/分钟/章节），多 pump 一帧
+    await tester.pump();
   }
 
-  Future<void> tapSheetOption(WidgetTester tester, String label) async {
-    // 面板内容超出弹窗高度时先滚动到可见区（小屏实测底部项会被折叠）
-    final target = find.text(label);
+  /// 选择预设 Chip（Slider 右侧也有同文案 Text，必须限定 ChoiceChip）
+  Future<void> tapChip(WidgetTester tester, String label) async {
+    final target = find.widgetWithText(ChoiceChip, label);
     await tester.ensureVisible(target);
     await tester.pump();
     await tester.tap(target);
     await tester.pump();
+  }
+
+  /// 点击 Sheet「开始」并等待弹窗收起
+  Future<void> startTimer(WidgetTester tester) async {
+    await tester.tap(find.widgetWithText(FilledButton, '开始'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+  }
+
+  /// 切换到章节页签（未起计时，可安全 pumpAndSettle 等 Tab 动画结束）
+  Future<void> openChapterTab(WidgetTester tester) async {
+    await tester.tap(find.widgetWithText(Tab, '章节'));
+    await tester.pumpAndSettle();
   }
 
   testWidgets('朗读条设 20 分钟即 Notifier 单一计时源；第 10 分钟不 pause，'
@@ -139,7 +156,8 @@ void main() {
     await startStream();
     await pumpBar(tester);
     await openTimerPicker(tester);
-    await tapSheetOption(tester, '20 分钟');
+    await tapChip(tester, '20 分钟');
+    await startTimer(tester);
 
     final notifier = readNotifier();
     // 旧实现：朗读条只改本地 _remainingSeconds，Notifier 计时为 off（红）
@@ -171,7 +189,8 @@ void main() {
     await startStream();
     await pumpBar(tester);
     await openTimerPicker(tester);
-    await tapSheetOption(tester, '10 分钟');
+    await tapChip(tester, '10 分钟');
+    await startTimer(tester);
     expect(readNotifier().sleepRemainingSeconds, 600);
     expect(find.text('10:00'), findsOneWidget);
 
@@ -192,7 +211,8 @@ void main() {
     await startStream();
     await pumpBar(tester);
     await openTimerPicker(tester);
-    await tapSheetOption(tester, '10 分钟');
+    await tapChip(tester, '10 分钟');
+    await startTimer(tester);
 
     // 播放 1 分钟 → 剩余 540s
     await tester.pump(const Duration(minutes: 1));
@@ -223,7 +243,8 @@ void main() {
     await startStream();
     await pumpBar(tester);
     await openTimerPicker(tester);
-    await tapSheetOption(tester, '10 分钟');
+    await tapChip(tester, '10 分钟');
+    await startTimer(tester);
 
     await tester.pump(const Duration(minutes: 10));
     await tester.pump();
@@ -238,7 +259,9 @@ void main() {
     await startStream();
     await pumpBar(tester);
     await openTimerPicker(tester);
-    await tapSheetOption(tester, '读完本章后停止');
+    await openChapterTab(tester);
+    await tapChip(tester, '1 章');
+    await startTimer(tester);
 
     final notifier = readNotifier();
     // 旧实现只记本地 _chapterStopTarget，Notifier 无按章计时（红）
@@ -258,16 +281,20 @@ void main() {
     await startStream();
     await pumpBar(tester);
     await openTimerPicker(tester);
-    await tapSheetOption(tester, '10 分钟');
+    await tapChip(tester, '10 分钟');
+    await startTimer(tester);
     expect(readNotifier().isSleepTimerActive, isTrue);
 
-    // 计时中重开面板：tooltip 剩余量取自 Notifier，且出现取消项
+    // 计时中重开面板：tooltip 剩余量取自 Notifier，且出现停止按钮
     await tester.tap(find.byTooltip('定时停止：剩余 10:00'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('取消定时'), findsOneWidget);
+    await tester.pump();
+    expect(find.text('停止定时'), findsOneWidget);
 
-    await tapSheetOption(tester, '取消定时');
+    await tester.tap(find.text('停止定时'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(readNotifier().isSleepTimerActive, isFalse);
     expect(readNotifier().sleepRemainingSeconds, 0);
   });
