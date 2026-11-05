@@ -28,7 +28,7 @@ void main() {
     );
   }
 
-  test('竖排逐字：首列 x=0.16w、首字 y=0.16h，超 0.8h 换列', () {
+  test('竖排逐字：首列 x=0.16w、首字基线 y=0.16h，超 0.8h 换列', () {
     final layout = layoutFor(name: '一二三四五六七八九十');
     expect(layout.horizontal, isFalse);
     expect(layout.showName, isTrue);
@@ -36,11 +36,30 @@ void main() {
     expect(layout.nameGlyphs.first.text, '一');
     expect(layout.nameGlyphs.first.x, closeTo(80 * 0.16, 0.001));
     expect(layout.nameGlyphs.first.y, closeTo(110 * 0.16, 0.001));
-    // 宽度 80 → 字号 10，字高 10.5：第 8 个字（index 7）已换到第二列
+    // 逐字按真实行高递增（baseline 差值 = nameLineHeight）
+    expect(
+      layout.nameGlyphs[1].y - layout.nameGlyphs[0].y,
+      closeTo(layout.nameLineHeight, 0.001),
+    );
+    // 换列后 x 增大、基线回到 0.2h（不绑定具体第几个字，字体度量可能变化）
     final firstColumnX = layout.nameGlyphs.first.x;
-    expect(layout.nameGlyphs[6].x, firstColumnX);
-    expect(layout.nameGlyphs[7].x, greaterThan(firstColumnX));
-    expect(layout.nameGlyphs[7].y, closeTo(110 * 0.2, 0.001));
+    final secondColumnIndex = layout.nameGlyphs.indexWhere(
+      (g) => g.x > firstColumnX,
+    );
+    expect(secondColumnIndex, greaterThan(0));
+    expect(layout.nameGlyphs[secondColumnIndex].x, greaterThan(firstColumnX));
+    expect(layout.nameGlyphs[secondColumnIndex].y, closeTo(110 * 0.2, 0.001));
+  });
+
+  test('竖排使用真实 font metrics（行高 ≈ 1.0–1.4em）与参考阴影/描边策略', () {
+    final layout = layoutFor(name: '一二三', author: '甲乙');
+    expect(layout.nameLineHeight, greaterThanOrEqualTo(10 - 0.001));
+    expect(layout.nameLineHeight, lessThan(10 * 1.4));
+    expect(layout.authorLineHeight, greaterThan(0));
+    // 作者竖排不描边；书名/作者阴影偏移 (2,2)/(1,1)
+    expect(layout.authorVerticalStroke, isFalse);
+    expect(layout.nameShadowOffset, const Offset(2, 2));
+    expect(layout.authorShadowOffset, const Offset(1, 1));
   });
 
   test('竖排作者位于右列（x=0.84w），起始不低于 0.2h', () {

@@ -48,6 +48,10 @@ void main() {
       expect(CoverSettings.keyLoadOnlyOnWifi, PrefKeys.loadCoverOnlyWifi);
       expect(CoverSettings.keyUseDefaultCover, PrefKeys.useDefaultCover);
       expect(CoverSettings.keyDefaultAlbumId, PrefKeys.coverDefaultAlbumId);
+      expect(
+        CoverSettings.keyDefaultAlbumIdDark,
+        PrefKeys.coverDefaultAlbumIdDark,
+      );
       expect(CoverSettings.keyShowShadow, PrefKeys.coverShowShadow);
       expect(CoverSettings.keyShowStroke, PrefKeys.coverShowStroke);
       expect(CoverSettings.keyUseDefaultColor, PrefKeys.coverDefaultColor);
@@ -64,8 +68,8 @@ void main() {
       expect(CoverSettings.keyShowAuthorDark, PrefKeys.coverShowAuthorN);
     });
 
-    test('prefKeys 覆盖 17 个持久化键', () {
-      expect(CoverSettings.prefKeys.length, 17);
+    test('prefKeys 覆盖 18 个持久化键', () {
+      expect(CoverSettings.prefKeys.length, 18);
       expect(
         CoverSettings.prefKeys,
         containsAll(CoverSettings.defaults.toPrefMap().keys),
@@ -115,6 +119,7 @@ void main() {
       final source = CoverSettings.defaults.copyWith(
         loadOnlyOnWifi: true,
         defaultAlbumId: 'album-1',
+        defaultAlbumIdDark: 'album-dark',
         showShadow: true,
         textColor: 0xFF112233,
         infoOrientation: '1',

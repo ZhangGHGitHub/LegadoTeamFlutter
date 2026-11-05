@@ -233,18 +233,44 @@ void main() {
       ),
     );
     await tester.pump();
-    await tester.pump();
+    // 磁盘缓存探测有 500ms 超时，先推进到超时后再断言蜂窝阻塞
+    await tester.pump(const Duration(seconds: 1));
 
     expect(find.byType(CachedNetworkImage), findsNothing);
     expect(find.byKey(const ValueKey('bookCoverText')), findsOneWidget);
     expect(CoverDecodeLoader.getCached('', url), isNull);
 
-    // 恢复 WiFi：5s 后定时重试 → 进入直连链路（CachedNetworkImage 出现）
+    // 恢复 WiFi：5s 定时重试 + 500ms 缓存探测超时 → 直连链路
     fake.wifi = true;
     await tester.pump(const Duration(seconds: 5));
-    await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
     expect(find.byType(CachedNetworkImage), findsOneWidget);
+  });
+
+  testWidgets('仅 WiFi + 蜂窝但内存缓存命中：照常显示封面，不占位', (tester) async {
+    // [审查 P2-1] 缓存检查先于网络门控：蜂窝下已解密封面继续显示
+    CoverDecodeLoader.putCached('', url, base64Decode(_kPng2x1));
+    NetworkStatusService.instance = _FakeNetworkStatus(false);
+    coverSettingsListenable.value = CoverSettings.defaults.copyWith(
+      loadOnlyOnWifi: true,
+    );
+
+    await tester.pumpWidget(
+      host(
+        const BookCover(
+          coverUrl: url,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byKey(const ValueKey('bookCoverText')), findsNothing);
   });
 
   testWidgets('阴影开关：封面外 4dp 阴影随设置显示/隐藏', (tester) async {
@@ -252,13 +278,17 @@ void main() {
       host(const BookCover(bookName: '凡人修仙传', width: 80, height: 110)),
     );
     await tester.pump();
-    expect(find.byKey(const ValueKey('bookCoverShadow')), findsNothing);
+    // [审查 P3] 根节点固定存在，仅 boxShadow 条件变化（不重建网络封面）
+    var shadowBox = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('bookCoverShadow')),
+    );
+    expect((shadowBox.decoration as BoxDecoration).boxShadow, isNull);
 
     coverSettingsListenable.value = CoverSettings.defaults.copyWith(
       showShadow: true,
     );
     await tester.pump();
-    final shadowBox = tester.widget<DecoratedBox>(
+    shadowBox = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('bookCoverShadow')),
     );
     final decoration = shadowBox.decoration as BoxDecoration;
