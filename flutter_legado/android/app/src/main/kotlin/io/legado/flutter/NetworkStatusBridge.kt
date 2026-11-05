@@ -43,13 +43,24 @@ object NetworkStatusBridge {
             context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
                 ?: return true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val network = manager.activeNetwork ?: return false
-            val capabilities = manager.getNetworkCapabilities(network) ?: return false
-            return isWifiCapability(
-                hasWifiTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
-                validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
-                hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
-            )
+            // [审查 P2-2] 不再要求 VALIDATED/INTERNET：局域网 Wi-Fi、未完成
+            // 联网校验的热点也属于 Wi-Fi，应允许加载封面。
+            val activeCaps = manager.activeNetwork?.let {
+                manager.getNetworkCapabilities(it)
+            }
+            if (activeCaps != null &&
+                isWifiCapability(
+                    activeCaps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                )
+            ) {
+                return true
+            }
+            // VPN/非默认网络：activeNetwork 可能是 VPN transport，但底层仍是
+            // Wi-Fi；遍历当前所有网络，任一具备 WIFI transport 即视为 Wi-Fi。
+            return manager.allNetworks.any { network ->
+                manager.getNetworkCapabilities(network)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            }
         }
         @Suppress("DEPRECATION")
         val info = manager.activeNetworkInfo ?: return false
@@ -58,15 +69,13 @@ object NetworkStatusBridge {
     }
 
     /**
-     * 纯函数（JVM 单测可覆盖）：Wi-Fi 传输能力优先；
-     * 未验证但具备 Internet 能力的 Wi-Fi 也算（部分局域网/热点场景），
-     * 避免刚连上尚未完成验证时被误判为蜂窝。
+     * 纯函数（JVM 单测可覆盖）：具备 Wi-Fi transport 即为 Wi-Fi。
+     *
+     * 不叠加 NET_CAPABILITY_VALIDATED/INTERNET：参考版「仅 Wi-Fi」语义是
+     * 省流（蜂窝不加载），局域网/内网 Wi-Fi 无外网也应放行。
      */
-    internal fun isWifiCapability(
-        hasWifiTransport: Boolean,
-        validated: Boolean,
-        hasInternet: Boolean,
-    ): Boolean = hasWifiTransport && (validated || hasInternet)
+    internal fun isWifiCapability(hasWifiTransport: Boolean): Boolean =
+        hasWifiTransport
 
     /** 纯函数（JVM 单测可覆盖）：旧 API 的 Wi-Fi 类型 + 已连接判定 */
     @Suppress("DEPRECATION")

@@ -8,8 +8,8 @@ import org.junit.Test
 /**
  * [设置批6b-1] NetworkStatusBridge 纯逻辑单测（JVM，不触 Android 框架实例）。
  *
- * 覆盖：通道名与 Dart 侧一致；Wi-Fi 能力判定（已验证/有 Internet 能力）；
- * 旧 API 的 Wi-Fi 类型 + 已连接判定；蜂窝/无网不误判为 Wi-Fi。
+ * 覆盖：通道名与 Dart 侧一致；Wi-Fi transport 判定（局域网/未验证 Wi-Fi 也
+ * 放行，[审查 P2-2]）；旧 API 的 Wi-Fi 类型 + 已连接判定；蜂窝不误判为 Wi-Fi。
  */
 class NetworkStatusBridgeTest {
 
@@ -19,20 +19,14 @@ class NetworkStatusBridgeTest {
     }
 
     @Test
-    fun `wifi transport with validated or internet counts as wifi`() {
-        assertTrue(NetworkStatusBridge.isWifiCapability(true, true, true))
-        assertTrue("刚连上尚未验证但具备 Internet 能力也算", NetworkStatusBridge.isWifiCapability(true, false, true))
+    fun `wifi transport counts as wifi even without internet validation`() {
+        // 局域网/未完成联网校验的 Wi-Fi（无 VALIDATED/INTERNET）仍应放行
+        assertTrue("局域网 Wi-Fi 也属于 Wi-Fi", NetworkStatusBridge.isWifiCapability(true))
     }
 
     @Test
     fun `cellular transport is not wifi`() {
-        assertFalse(NetworkStatusBridge.isWifiCapability(false, true, true))
-        assertFalse(NetworkStatusBridge.isWifiCapability(false, false, false))
-    }
-
-    @Test
-    fun `wifi transport without internet capability is not wifi`() {
-        assertFalse(NetworkStatusBridge.isWifiCapability(true, false, false))
+        assertFalse(NetworkStatusBridge.isWifiCapability(false))
     }
 
     @Test
