@@ -279,6 +279,15 @@ open class MainActivity : FlutterActivity() {
         headsetChannel.setMethodCallHandler { call, result ->
             HeadsetMediaButtonBridge.handleMethodCall(call, result)
         }
+
+        // [设置批5a-1] 系统设置跳转通道：系统 TTS 设置页 / 电池优化列表 /
+        // 电池优化豁免查询（「朗读设置」页使用）
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            SystemSettingsBridge.CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            SystemSettingsBridge.handleMethodCall(call, result, this)
+        }
     }
 
     /**
