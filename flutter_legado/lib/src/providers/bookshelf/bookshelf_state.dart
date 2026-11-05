@@ -21,13 +21,17 @@ class BookGroupId {
 /// 书架 UI 状态（immutable）
 ///
 /// 职责边界说明（对齐 UI_RESTRUCTURE_PLAN.md §0.3）：
-/// - [books]：Rust API 返回的原始数据（已排序），Notifier 不做任何业务处理
+/// - [books]：Rust API 返回的原始数据，Notifier 不做业务处理；
+///   展示层排序见 `utils/bookshelf_sort.dart`（设置批6a-1）
 /// - [isLoading] / [error]：API 调用状态
-/// - [isGridView] / [groupMode]：展示层变换，仅改变呈现形式
+/// - [groupMode]：展示层变换（溢出菜单的「不分组/按来源/按分组」）
+///
+/// [设置批6a-1] 网格/列表与显示标签总开关迁移至
+/// `BookshelfSettings`（参考版同名设置面板），本状态不再保存布局偏好。
 @freezed
 class BookshelfState with _$BookshelfState {
   const factory BookshelfState({
-    /// Rust 返回的书籍列表（已排序，UI 层不做排序）
+    /// Rust 返回的书籍列表（原始顺序；展示层按设置排序）
     @Default([]) List<Book> books,
 
     /// 是否正在加载
@@ -35,9 +39,6 @@ class BookshelfState with _$BookshelfState {
 
     /// 错误信息（null 表示无错误）
     String? error,
-
-    /// 展示层：网格/列表视图模式
-    @Default(false) bool isGridView,
 
     /// 展示层：分组显示模式
     @Default(GroupMode.none) GroupMode groupMode,
@@ -53,9 +54,6 @@ class BookshelfState with _$BookshelfState {
 
     /// 批量选中的书籍 URL 集合
     @Default({}) Set<String> selectedUrls,
-
-    /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
-    @Default(true) bool showTag,
 
     /// [批35] 标签内容 - 用户标签（`Book.customTag`）
     @Default(true) bool showCustomTags,
@@ -80,7 +78,10 @@ extension BookshelfStateGrouping on BookshelfState {
   ///
   /// 纯展示层计算（对齐参考版 `BookShelfItem.getDisplayTags`）：不改
   /// `Book` 数据，空值/空白项不产生标签；书卡与列表行共用此入口。
-  List<String> displayTagsOf(Book book) {
+  ///
+  /// [设置批6a-1] 总开关改由 `BookshelfSettings.bookshelfShowTag` 传入
+  /// （书架页 watch 设置后调用），本扩展不再保存重复的 `showTag` 字段。
+  List<String> displayTagsOf(Book book, {bool showTag = true}) {
     if (!showTag) return const [];
     return bookDisplayTags(
       book,
@@ -94,11 +95,14 @@ extension BookshelfStateGrouping on BookshelfState {
   BookGroup? get selectedGroup =>
       groups.isEmpty ? null : groups[selectedGroupIndex.clamp(0, groups.length - 1)];
 
-  /// 当前分组 Tab 下的书籍（纯展示层过滤，对标原版 BooksFragment 按 groupId 查询）
-  List<Book> get currentGroupBooks {
-    if (!hasGroupTabs) return books;
-    final groupId = selectedGroup?.groupId;
-    if (groupId == null || groupId == BookGroupId.all) return books;
+  /// 分组内书籍（[group] 为空 = 全部）
+  ///
+  /// [设置批6a-1] 从 [currentGroupBooks] 抽出，供「隐藏空分组」计数与
+  /// 组菜单切换复用；语义与原 switch 完全一致。
+  List<Book> booksInGroup(BookGroup? group) {
+    if (groups.isEmpty || group == null) return books;
+    final groupId = group.groupId;
+    if (groupId == BookGroupId.all) return books;
     switch (groupId) {
       case BookGroupId.local:
         return books.where((b) => _isLocal(b)).toList();
@@ -117,6 +121,30 @@ extension BookshelfStateGrouping on BookshelfState {
     }
   }
 
+  /// 当前分组 Tab 下的书籍（纯展示层过滤，对标原版 BooksFragment 按 groupId 查询）
+  List<Book> get currentGroupBooks => booksInGroup(selectedGroup);
+
+  /// 隐藏空分组后的可见分组列表（「全部」始终保留，空书架保留空态骨架）
+  ///
+  /// [设置批6a-1] 对齐参考版 `hideEmptyGroups`：只影响顶部 Tab/组菜单，
+  /// 不改数据源；选中组被隐藏时由调用方回退索引 0。
+  List<BookGroup> visibleGroups({bool hideEmpty = true}) {
+    if (groups.isEmpty) {
+      return const [BookGroup(groupId: BookGroupId.all, groupName: '全部')];
+    }
+    if (!hideEmpty) return groups;
+    final visible = groups
+        .where((g) =>
+            g.groupId == BookGroupId.all || booksInGroup(g).isNotEmpty)
+        .toList();
+    return visible.isEmpty
+        ? const [BookGroup(groupId: BookGroupId.all, groupName: '全部')]
+        : visible;
+  }
+
+  /// 指定分组书籍数（对齐参考版 showBookCount 计数口径）
+  int bookCountOf(BookGroup group) => booksInGroup(group).length;
+
   /// 本地书判定（对齐 Kotlin `Book.isLocal`：type == 0 时看 origin，
   /// 否则看 local 位；WebDAV origin 新 `webDav::` 与存量 `dav:` 均识别）
   bool _isLocal(Book b) => BookType.isLocalBook(b);
@@ -124,8 +152,10 @@ extension BookshelfStateGrouping on BookshelfState {
   /// 分组后的书籍，用于展示分组头
   ///
   /// 仅改变呈现形式（按来源/分组分块显示），不改变数据本身
-  Map<String, List<Book>> get groupedBooks {
-    final source = currentGroupBooks;
+  Map<String, List<Book>> get groupedBooks => groupedBooksOf(currentGroupBooks);
+
+  /// 对指定书籍列表分组（[设置批6a-1] 供排序后的可见列表复用）
+  Map<String, List<Book>> groupedBooksOf(List<Book> source) {
     if (groupMode == GroupMode.none) {
       return {'全部': source};
     }

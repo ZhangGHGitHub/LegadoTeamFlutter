@@ -60,10 +60,11 @@ class _SkeletonBoxState extends State<SkeletonBox>
   }
 }
 
-/// 书架/发现网格骨架项（图 180dp 圆角 16 + 文两行）
+/// 书架网格骨架项（封面铺满可用高度 + 文两行）
 ///
-/// 对齐 HapeLee WaterfallSkeletonItem（GlassCard surfaceContainerLow，
-/// 图高 180dp corner16，文 padding h8/v8 高 14dp 宽 0.8）。
+/// [设置批6a-1] 书架网格 cell 高随列数/封面宽/书名行数变化，骨架改为
+/// 自适应：封面区 Expanded 填充剩余高度，底部两行文字固定约 48dp，
+/// 任意 cell 高（360dp 三列 ≈193dp / 横屏七列 ≈207dp）不溢出。
 class GridSkeletonItem extends StatelessWidget {
   const GridSkeletonItem({super.key});
 
@@ -78,9 +79,8 @@ class GridSkeletonItem extends StatelessWidget {
       child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SkeletonBox(
-            height: 180,
-            borderRadius: 16,
+          Expanded(
+            child: SkeletonBox(borderRadius: 16),
           ),
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),

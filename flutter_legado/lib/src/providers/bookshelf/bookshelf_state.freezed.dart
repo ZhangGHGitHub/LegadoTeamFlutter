@@ -16,7 +16,7 @@ final _privateConstructorUsedError = UnsupportedError(
 
 /// @nodoc
 mixin _$BookshelfState {
-  /// Rust 返回的书籍列表（已排序，UI 层不做排序）
+  /// Rust 返回的书籍列表（原始顺序；展示层按设置排序）
   List<Book> get books => throw _privateConstructorUsedError;
 
   /// 是否正在加载
@@ -24,9 +24,6 @@ mixin _$BookshelfState {
 
   /// 错误信息（null 表示无错误）
   String? get error => throw _privateConstructorUsedError;
-
-  /// 展示层：网格/列表视图模式
-  bool get isGridView => throw _privateConstructorUsedError;
 
   /// 展示层：分组显示模式
   GroupMode get groupMode => throw _privateConstructorUsedError;
@@ -42,9 +39,6 @@ mixin _$BookshelfState {
 
   /// 批量选中的书籍 URL 集合
   Set<String> get selectedUrls => throw _privateConstructorUsedError;
-
-  /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
-  bool get showTag => throw _privateConstructorUsedError;
 
   /// [批35] 标签内容 - 用户标签（`Book.customTag`）
   bool get showCustomTags => throw _privateConstructorUsedError;
@@ -70,13 +64,11 @@ abstract class $BookshelfStateCopyWith<$Res> {
       {List<Book> books,
       bool isLoading,
       String? error,
-      bool isGridView,
       GroupMode groupMode,
       List<BookGroup> groups,
       int selectedGroupIndex,
       bool isBatchMode,
       Set<String> selectedUrls,
-      bool showTag,
       bool showCustomTags,
       bool showSourceTags,
       bool showWordCount});
@@ -98,13 +90,11 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? books = null,
     Object? isLoading = null,
     Object? error = freezed,
-    Object? isGridView = null,
     Object? groupMode = null,
     Object? groups = null,
     Object? selectedGroupIndex = null,
     Object? isBatchMode = null,
     Object? selectedUrls = null,
-    Object? showTag = null,
     Object? showCustomTags = null,
     Object? showSourceTags = null,
     Object? showWordCount = null,
@@ -122,10 +112,6 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
               as String?,
-      isGridView: null == isGridView
-          ? _value.isGridView
-          : isGridView // ignore: cast_nullable_to_non_nullable
-              as bool,
       groupMode: null == groupMode
           ? _value.groupMode
           : groupMode // ignore: cast_nullable_to_non_nullable
@@ -146,10 +132,6 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.selectedUrls
           : selectedUrls // ignore: cast_nullable_to_non_nullable
               as Set<String>,
-      showTag: null == showTag
-          ? _value.showTag
-          : showTag // ignore: cast_nullable_to_non_nullable
-              as bool,
       showCustomTags: null == showCustomTags
           ? _value.showCustomTags
           : showCustomTags // ignore: cast_nullable_to_non_nullable
@@ -178,13 +160,11 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       {List<Book> books,
       bool isLoading,
       String? error,
-      bool isGridView,
       GroupMode groupMode,
       List<BookGroup> groups,
       int selectedGroupIndex,
       bool isBatchMode,
       Set<String> selectedUrls,
-      bool showTag,
       bool showCustomTags,
       bool showSourceTags,
       bool showWordCount});
@@ -204,13 +184,11 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? books = null,
     Object? isLoading = null,
     Object? error = freezed,
-    Object? isGridView = null,
     Object? groupMode = null,
     Object? groups = null,
     Object? selectedGroupIndex = null,
     Object? isBatchMode = null,
     Object? selectedUrls = null,
-    Object? showTag = null,
     Object? showCustomTags = null,
     Object? showSourceTags = null,
     Object? showWordCount = null,
@@ -228,10 +206,6 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
               as String?,
-      isGridView: null == isGridView
-          ? _value.isGridView
-          : isGridView // ignore: cast_nullable_to_non_nullable
-              as bool,
       groupMode: null == groupMode
           ? _value.groupMode
           : groupMode // ignore: cast_nullable_to_non_nullable
@@ -252,10 +226,6 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value._selectedUrls
           : selectedUrls // ignore: cast_nullable_to_non_nullable
               as Set<String>,
-      showTag: null == showTag
-          ? _value.showTag
-          : showTag // ignore: cast_nullable_to_non_nullable
-              as bool,
       showCustomTags: null == showCustomTags
           ? _value.showCustomTags
           : showCustomTags // ignore: cast_nullable_to_non_nullable
@@ -279,13 +249,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
       {final List<Book> books = const [],
       this.isLoading = false,
       this.error,
-      this.isGridView = false,
       this.groupMode = GroupMode.none,
       final List<BookGroup> groups = const [],
       this.selectedGroupIndex = 0,
       this.isBatchMode = false,
       final Set<String> selectedUrls = const {},
-      this.showTag = true,
       this.showCustomTags = true,
       this.showSourceTags = true,
       this.showWordCount = true})
@@ -293,10 +261,10 @@ class _$BookshelfStateImpl implements _BookshelfState {
         _groups = groups,
         _selectedUrls = selectedUrls;
 
-  /// Rust 返回的书籍列表（已排序，UI 层不做排序）
+  /// Rust 返回的书籍列表（原始顺序；展示层按设置排序）
   final List<Book> _books;
 
-  /// Rust 返回的书籍列表（已排序，UI 层不做排序）
+  /// Rust 返回的书籍列表（原始顺序；展示层按设置排序）
   @override
   @JsonKey()
   List<Book> get books {
@@ -313,11 +281,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
   /// 错误信息（null 表示无错误）
   @override
   final String? error;
-
-  /// 展示层：网格/列表视图模式
-  @override
-  @JsonKey()
-  final bool isGridView;
 
   /// 展示层：分组显示模式
   @override
@@ -358,11 +321,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
     return EqualUnmodifiableSetView(_selectedUrls);
   }
 
-  /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
-  @override
-  @JsonKey()
-  final bool showTag;
-
   /// [批35] 标签内容 - 用户标签（`Book.customTag`）
   @override
   @JsonKey()
@@ -380,7 +338,7 @@ class _$BookshelfStateImpl implements _BookshelfState {
 
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showTag: $showTag, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount)';
   }
 
   @override
@@ -392,8 +350,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
             (identical(other.isLoading, isLoading) ||
                 other.isLoading == isLoading) &&
             (identical(other.error, error) || other.error == error) &&
-            (identical(other.isGridView, isGridView) ||
-                other.isGridView == isGridView) &&
             (identical(other.groupMode, groupMode) ||
                 other.groupMode == groupMode) &&
             const DeepCollectionEquality().equals(other._groups, _groups) &&
@@ -403,7 +359,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
                 other.isBatchMode == isBatchMode) &&
             const DeepCollectionEquality()
                 .equals(other._selectedUrls, _selectedUrls) &&
-            (identical(other.showTag, showTag) || other.showTag == showTag) &&
             (identical(other.showCustomTags, showCustomTags) ||
                 other.showCustomTags == showCustomTags) &&
             (identical(other.showSourceTags, showSourceTags) ||
@@ -418,13 +373,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
       const DeepCollectionEquality().hash(_books),
       isLoading,
       error,
-      isGridView,
       groupMode,
       const DeepCollectionEquality().hash(_groups),
       selectedGroupIndex,
       isBatchMode,
       const DeepCollectionEquality().hash(_selectedUrls),
-      showTag,
       showCustomTags,
       showSourceTags,
       showWordCount);
@@ -442,20 +395,18 @@ abstract class _BookshelfState implements BookshelfState {
       {final List<Book> books,
       final bool isLoading,
       final String? error,
-      final bool isGridView,
       final GroupMode groupMode,
       final List<BookGroup> groups,
       final int selectedGroupIndex,
       final bool isBatchMode,
       final Set<String> selectedUrls,
-      final bool showTag,
       final bool showCustomTags,
       final bool showSourceTags,
       final bool showWordCount}) = _$BookshelfStateImpl;
 
   @override
 
-  /// Rust 返回的书籍列表（已排序，UI 层不做排序）
+  /// Rust 返回的书籍列表（原始顺序；展示层按设置排序）
   List<Book> get books;
   @override
 
@@ -465,10 +416,6 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// 错误信息（null 表示无错误）
   String? get error;
-  @override
-
-  /// 展示层：网格/列表视图模式
-  bool get isGridView;
   @override
 
   /// 展示层：分组显示模式
@@ -489,10 +436,6 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// 批量选中的书籍 URL 集合
   Set<String> get selectedUrls;
-  @override
-
-  /// [批35] 是否显示书架标签（总开关；对齐参考版 `bookshelfShowTag`）
-  bool get showTag;
   @override
 
   /// [批35] 标签内容 - 用户标签（`Book.customTag`）

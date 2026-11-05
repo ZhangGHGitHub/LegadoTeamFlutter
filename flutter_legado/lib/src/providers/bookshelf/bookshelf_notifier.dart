@@ -35,23 +35,21 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     return const BookshelfState();
   }
 
-  /// 加载持久化的书架偏好设置（网格/列表布局 + 展示标签四键）
+  /// 加载持久化的书架偏好设置（标签内容三键）
   // [红线清理 2.0.260 | 台账 1-3] 统计行/最近阅读行移除后，偏好仅剩布局
-  // [批35] 标签四键：键名对齐参考版 `BookshelfSettings`，默认均 true
+  // [批35] 标签内容三键：键名对齐参考版标签内容对话框
+  // [设置批6a-1] 布局/显示标签总开关等迁至 BookshelfSettingsNotifier；
+  // 本通知器只保留不属于参考版 BookshelfSettings 的我方标签内容扩展。
   Future<void> _loadSettings() async {
     final results = await Future.wait<Object>([
-      _settings.getBookshelfLayout(),
-      _settings.getBookshelfShowTag(),
       _settings.getBookshelfShowCustomTags(),
       _settings.getBookshelfShowSourceTags(),
       _settings.getBookshelfShowWordCount(),
     ]);
     state = state.copyWith(
-      isGridView: results[0] as bool,
-      showTag: results[1] as bool,
-      showCustomTags: results[2] as bool,
-      showSourceTags: results[3] as bool,
-      showWordCount: results[4] as bool,
+      showCustomTags: results[0] as bool,
+      showSourceTags: results[1] as bool,
+      showWordCount: results[2] as bool,
     );
   }
 
@@ -271,19 +269,6 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   // ===== 展示层状态切换（不涉及数据内容变更） =====
 
-  /// 切换网格/列表视图（对标原版书架布局切换，持久化到 AppConfig.bookshelfLayout）
-  Future<void> toggleViewMode() async {
-    final newValue = !state.isGridView;
-    state = state.copyWith(isGridView: newValue);
-    await _settings.setBookshelfLayout(newValue);
-  }
-
-  /// [批35] 显示标签总开关（对齐参考版 `bookshelfShowTag`）
-  Future<void> setShowTag(bool value) async {
-    state = state.copyWith(showTag: value);
-    await _settings.setBookshelfShowTag(value);
-  }
-
   /// [批35] 标签内容三项（对齐参考版 `BookshelfTagContentDialog` 确认语义：
   /// 一次性写回三项并持久化）
   Future<void> setTagContent({
@@ -379,22 +364,33 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(error: null);
   }
 
-  /// 拖拽排序：将书籍从 oldIndex 移动到 newIndex 并持久化 order
-  Future<void> reorderBook(int oldIndex, int newIndex) async {
-    if (oldIndex < 0 || oldIndex >= state.books.length) return;
-    if (newIndex < 0 || newIndex > state.books.length) return;
-    if (newIndex > oldIndex) newIndex--;
-
-    final books = List<Book>.from(state.books);
-    final book = books.removeAt(oldIndex);
-    books.insert(newIndex, book);
-    final reordered = [
-      for (var i = 0; i < books.length; i++) books[i].copyWith(order: i),
-    ];
-    state = state.copyWith(books: reordered);
+  /// 保存拖拽后的手动排序（仅「手动排序」模式可触发）
+  ///
+  /// [设置批6a-1] 对齐参考版 `saveBookOrder`：升序按视觉顺序写
+  /// `order = index`，降序写 `order = n - index`（刷新后仍保持同一
+  /// 视觉顺序）。入参为**当前排序后的可见列表**，避免用原始
+  /// `state.books` 顺序覆盖用户拖动结果。
+  Future<void> saveBookOrder(
+    List<Book> reordered, {
+    bool descending = false,
+  }) async {
+    if (reordered.isEmpty) return;
+    final total = reordered.length;
+    final byUrl = <String, Book>{
+      for (var i = 0; i < reordered.length; i++)
+        reordered[i].bookUrl: reordered[i].copyWith(
+              order: descending ? total - i : i,
+            ),
+    };
+    state = state.copyWith(
+      books: [
+        for (final book in state.books) byUrl[book.bookUrl] ?? book,
+      ],
+    );
     try {
       await ref.read(bookApiProvider).reorderBooks([
-        for (final b in reordered) {'bookUrl': b.bookUrl, 'order': b.order},
+        for (final entry in byUrl.entries)
+          {'bookUrl': entry.key, 'order': entry.value.order},
       ]);
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
