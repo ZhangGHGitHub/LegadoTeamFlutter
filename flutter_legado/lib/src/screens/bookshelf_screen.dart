@@ -1184,6 +1184,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           settings.showUnreadNew &&
           book.lastCheckCount > 0,
       typeLabel: _bookTypeLabel(settings, book),
+      cardColor: settings.cardColorFor(
+        isDark: Theme.of(context).brightness == Brightness.dark,
+      ),
       // Hero 封面过渡（书架↔详情，key=book url）
       // [LAYOUT_MOTION_AUDIT M1] tag 统一 book-cover:（HapeLee 同义键）
       heroTag: 'book-cover:${book.bookUrl}',
@@ -2154,6 +2157,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                       settings.showUnreadNew &&
                       book.lastCheckCount > 0,
                   typeLabel: _bookTypeLabel(settings, book),
+                  cardColor: settings.cardColorFor(
+                    isDark: Theme.of(context).brightness == Brightness.dark,
+                  ),
                   sourceOrigin: book.origin,
                   tags: tags,
                   reserveTagRow: reserveTagRow,

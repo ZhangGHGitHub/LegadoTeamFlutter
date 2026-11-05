@@ -62,10 +62,10 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     }
   }
 
-  /// 某分组内的书籍数量
+  /// 某分组内的书籍数量（2^n 位掩码 / 旧时间戳 exact 混合语义）
   int _bookCountOf(int groupId) {
     final books = ref.read(bookshelfNotifierProvider).books;
-    return books.where((b) => b.group == groupId).length;
+    return books.where((b) => bookBelongsToCustomGroup(b, groupId)).length;
   }
 
   List<BookGroup> get _sortedGroups {
@@ -392,7 +392,8 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       return;
     }
     final selected = <String>{
-      for (final b in books.where((b) => b.group == group.groupId)) b.bookUrl,
+      for (final b in books)
+        if (bookBelongsToCustomGroup(b, group.groupId)) b.bookUrl,
     };
 
     final confirmed = await showDialog<bool>(
@@ -447,11 +448,17 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     try {
       for (final book in books) {
         final shouldIn = selected.contains(book.bookUrl);
-        final isIn = book.group == group.groupId;
+        final isIn = bookBelongsToCustomGroup(book, group.groupId);
         if (shouldIn && !isIn) {
-          await api.setBookGroup(book.bookUrl, group.groupId);
+          await api.setBookGroup(
+            book.bookUrl,
+            nextGroupMaskOnAssign(book, group.groupId),
+          );
         } else if (!shouldIn && isIn) {
-          await api.setBookGroup(book.bookUrl, 0);
+          await api.setBookGroup(
+            book.bookUrl,
+            nextGroupMaskOnRemove(book, group.groupId),
+          );
         }
       }
       await ref.read(bookshelfNotifierProvider.notifier).refresh();

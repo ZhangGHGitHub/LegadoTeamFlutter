@@ -72,6 +72,9 @@ class BookGridItem extends StatelessWidget {
   /// 书籍类型标签（`showTip` 开启时的「音频/漫画/本地/文件/小说」）
   final String? typeLabel;
 
+  /// 卡片背景色（0 = 跟随主题；由调用方按日夜解析）
+  final int cardColor;
+
   const BookGridItem({
     super.key,
     required this.title,
@@ -89,6 +92,7 @@ class BookGridItem extends StatelessWidget {
     this.coverShadow = false,
     this.showNewBadge = false,
     this.typeLabel,
+    this.cardColor = 0,
     this.onTap,
     this.onCoverLongPress,
     this.onInfoLongPress,
@@ -118,7 +122,7 @@ class BookGridItem extends StatelessWidget {
     final showTags = gridStyle != 2 && tags.isNotEmpty;
     final reserveTags = gridStyle != 2 && reserveTagRow;
 
-    return Column(
+    final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
@@ -336,6 +340,14 @@ class BookGridItem extends StatelessWidget {
         else if (reserveTags)
           SizedBox(height: effectiveTagRowHeight),
       ],
+    );
+    if (cardColor == 0) return content;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Color(cardColor),
+        borderRadius: BorderRadius.circular(coverCornerRadius),
+      ),
+      child: content,
     );
   }
 }

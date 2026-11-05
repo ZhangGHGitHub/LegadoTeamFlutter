@@ -18,6 +18,64 @@ class BookGroupId {
   static const int video = -6; // 视频
 }
 
+/// 新分组位上限（Rust `get_unused_id` 同口径）：1<<30
+const int kMaxCustomGroupBit = 1 << 30;
+
+/// 新分组位掩码最大组合值（1<<30 及以下所有位全开）
+const int kMaxCustomGroupMask = (1 << 31) - 1;
+
+/// 是否为 2 的幂（1,2,4,…；0/负数返回 false）
+bool isPowerOfTwoGroupId(int groupId) =>
+    groupId > 0 && (groupId & (groupId - 1)) == 0;
+
+/// 书籍是否属于自定义分组（混合语义，2026-11-06 设备修复）
+///
+/// - [groupId] 为 2 的幂（新分组）→ `book.group` 位掩码匹配；
+/// - [groupId] 为非 2 的幂（旧时间戳/任意 ID）→ `book.group == groupId`；
+/// - `book.group` 仍是旧时间戳（> 位掩码最大值）→ 只做 exact 匹配，
+///   避免旧书的低位 bit 误命中新 2^n 分组；
+/// - `groupId <= 0`（特殊组）不走本 helper。
+bool bookBelongsToCustomGroup(Book book, int groupId) {
+  if (groupId <= 0) return false;
+  if (!isPowerOfTwoGroupId(groupId)) {
+    return book.group == groupId;
+  }
+  // 旧时间戳/任意超大值不是位掩码，只按 exact 兼容
+  if (book.group <= 0 || book.group > kMaxCustomGroupMask) {
+    return book.group == groupId;
+  }
+  return (book.group & groupId) != 0;
+}
+
+/// 分组分配后的新 `books.group` 值
+///
+/// - 新 2^n 组：旧位掩码值 OR 新位（保留其它组）；
+/// - 旧时间戳组/书籍仍为旧时间戳值：整体改为该组（旧值不做位运算）；
+int nextGroupMaskOnAssign(Book book, int groupId) {
+  if (groupId <= 0) return book.group;
+  if (!isPowerOfTwoGroupId(groupId) ||
+      book.group < 0 ||
+      book.group > kMaxCustomGroupMask) {
+    return groupId;
+  }
+  return book.group | groupId;
+}
+
+/// 从分组移除后的新 `books.group` 值
+///
+/// - 新 2^n 组：清对应位，保留其它组；
+/// - 旧时间戳组：仅当 exact 命中时清 0（不做位运算）；
+int nextGroupMaskOnRemove(Book book, int groupId) {
+  if (groupId <= 0) return book.group;
+  if (!isPowerOfTwoGroupId(groupId)) {
+    return book.group == groupId ? 0 : book.group;
+  }
+  if (book.group < 0 || book.group > kMaxCustomGroupMask) {
+    return book.group;
+  }
+  return book.group & ~groupId;
+}
+
 /// 书架 UI 状态（immutable）
 ///
 /// 职责边界说明（对齐 UI_RESTRUCTURE_PLAN.md §0.3）：
@@ -116,8 +174,10 @@ extension BookshelfStateGrouping on BookshelfState {
       case BookGroupId.localNone:
         return books.where((b) => _isLocal(b) && b.group == 0).toList();
       default:
-        // 自定义分组：book.group 为位掩码，包含该分组位即属于该组
-        return books.where((b) => b.group & groupId != 0).toList();
+        // 自定义分组：2^n 按位掩码，旧时间戳/任意 ID 按 exact 兼容
+        return books
+            .where((b) => bookBelongsToCustomGroup(b, groupId))
+            .toList();
     }
   }
 
@@ -172,7 +232,17 @@ extension BookshelfStateGrouping on BookshelfState {
       case GroupMode.bySource:
         return book.originName.isNotEmpty ? book.originName : '本地';
       case GroupMode.byGroup:
-        return book.group > 0 ? '分组 ${book.group}' : '默认';
+        // 展示组名而不是 groupId 数字：位掩码可能命中多个组，按组顺序
+        // 「、」连接；无匹配组名时回落「分组」，未分组回落「默认」。
+        final names = <String>[
+          for (final group in groups)
+            if (group.groupId > 0 &&
+                bookBelongsToCustomGroup(book, group.groupId) &&
+                group.groupName.trim().isNotEmpty)
+              group.groupName.trim(),
+        ];
+        if (names.isNotEmpty) return names.join('、');
+        return book.group > 0 ? '分组' : '默认';
       default:
         return '全部';
     }
