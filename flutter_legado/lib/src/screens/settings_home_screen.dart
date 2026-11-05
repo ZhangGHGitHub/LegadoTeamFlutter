@@ -63,6 +63,10 @@ class SettingsHomeScreen extends StatelessWidget {
       // 四页签弹层（ReaderSettingsSheet）入口保留不动 — 全栈工程师
       (Symbols.style_rounded, '阅读界面', '屏幕/页面控制/阅读偏好',
           () => Navigator.pushNamed(context, AppRoutes.readConfig)),
+      // [设置批5a-1 | 2026-11-04] 朗读设置独立入口（对齐参考版朗读配置：
+      // 常规/引擎与音色/角色与配乐三页签）；忽略音频焦点已自「高级」迁入
+      (Symbols.record_voice_over_rounded, '朗读设置', '朗读引擎、音色与播放行为',
+          () => Navigator.pushNamed(context, AppRoutes.readAloudSettings)),
       (Symbols.backup_rounded, '备份与恢复', 'WebDav 设置/导入旧版本数据',
           () => Navigator.pushNamed(context, AppRoutes.webdavSettings)),
       (Symbols.download_rounded, '缓存管理', '书籍下载任务与缓存进度',

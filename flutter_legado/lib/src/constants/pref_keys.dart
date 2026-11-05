@@ -598,7 +598,54 @@ class PrefKeys {
   static const readAloudByMediaButton = 'readAloudByMediaButton';
 
   /// 朗读时忽略音频焦点（仅 Android 生效，默认 false）
+  ///
+  /// [设置批5a-1 | 2026-11-04] 入口由「其他设置」迁入「朗读设置 → 常规」，
+  /// 键名与消费端（[AudioNotifier]）保持不变。
   static const ignoreAudioFocus = 'ignoreAudioFocus';
+
+  // ===== 朗读设置（设置批5a-1，对齐参考版 ReadAloudConfigContent）=====
+
+  /// 默认朗读界面：`classic`（阅读器经典朗读条）/ `player`（听书播放器）
+  ///
+  /// 默认 `classic`（对齐参考版默认「经典」）。从阅读器启动朗读时按该值
+  /// 决定是否自动进入听书页。
+  static const defaultReadAloudInterface = 'defaultReadAloudInterface';
+
+  /// 朗读唤醒锁（仅 Android 生效，默认 false；对齐原版
+  /// `PreferKey.readAloudWakeLock` / `AppConfig`，TTS 朗读期间持
+  /// PARTIAL_WAKE_LOCK）
+  static const readAloudWakeLock = 'readAloudWakeLock';
+
+  /// 退出阅读时继续朗读（默认 false；对齐参考版
+  /// `keepReadAloudOnExit`——关闭时退出阅读器即停止本次朗读）
+  static const keepReadAloudOnExit = 'keepReadAloudOnExit';
+
+  /// 耳机上一首/下一首键翻章（仅 Android 生效，默认 false；对齐原版
+  /// `PreferKey.mediaButtonPerNext`——false 时 TTS 按段落移动）
+  static const mediaButtonPerNext = 'mediaButtonPerNext';
+
+  /// 听书播放器背景：`solid`（纯色，默认）/ `transparent`（透明，露出壁纸）
+  static const readAloudPlayerBackground = 'readAloudPlayerBackground';
+
+  /// 系统 TTS 语速（参考刻度 0–80；1.0x = 16，映射见
+  /// `system_tts_service.dart` 的 [ttsSpeechRateFromSpeed]）
+  static const ttsSpeechRate = 'ttsSpeechRate';
+
+  /// 系统 TTS 音调（参考刻度 5–20，即 0.5–2.0；默认 10 = 1.0）
+  static const ttsPitch = 'ttsPitch';
+
+  /// 系统 TTS 音量（参考刻度 0–100，即 0–1；默认 100）
+  static const ttsVolume = 'ttsVolume';
+
+  /// 系统 TTS 引擎包名（空 = 系统默认引擎）
+  static const systemTtsEngine = 'systemTtsEngine';
+
+  /// 系统 TTS 音色名（空 = 系统默认音色；完整 locale 经
+  /// [systemTtsVoiceLocale] 配套保存）
+  static const systemTtsVoice = 'systemTtsVoice';
+
+  /// 系统 TTS 音色 locale（与 [systemTtsVoice] 成对，供 setVoice 精确定位）
+  static const systemTtsVoiceLocale = 'systemTtsVoiceLocale';
 
   /// 自动清除过期搜索数据（默认 true）
   static const autoClearExpired = 'autoClearExpired';

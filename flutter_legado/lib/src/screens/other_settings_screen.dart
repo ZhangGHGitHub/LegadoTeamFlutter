@@ -2,7 +2,7 @@
 // OtherConfigFragment：语言 + 主界面分组（自动刷新/仅更新已读/
 // 默认进入阅读）+ 其他分组（本地密码/UserAgent/
 // Web 服务唤醒锁/默认书籍保存位置/源编辑最大行数/抗锯齿/图片缓存/图片保留/
-// 预下载/替换净化默认/媒体按钮 ×3/自动清除过期/加书架提示/变种更新/漫画界面/
+// 预下载/替换净化默认/媒体按钮 ×2/自动清除过期/加书架提示/变种更新/漫画界面/
 // Web 端口/缓存管理/线程数/文本菜单/记录日志 ×3）。
 // [复核 P3 | 2026-11-02] 显示发现/显示订阅/默认主页已迁至外观页
 // 「首页与导航」Sheet（参考版唯一入口），本页不再重复；
@@ -82,7 +82,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   bool _replaceEnableDefault = true;
   bool _mediaButtonOnExit = true;
   bool _readAloudByMediaButton = false;
-  bool _ignoreAudioFocus = false;
   bool _autoClearExpired = true;
   bool _showAddToShelfAlert = true;
   bool _autoUpdateVariant = true;
@@ -159,8 +158,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       PrefKeys.readAloudByMediaButton,
       defaultValue: false,
     );
-    _ignoreAudioFocus =
-        await s.getBoolPref(PrefKeys.ignoreAudioFocus, defaultValue: false);
     _autoClearExpired =
         await s.getBoolPref(PrefKeys.autoClearExpired, defaultValue: true);
     _showAddToShelfAlert =
@@ -431,15 +428,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   setState(() => _readAloudByMediaButton = v);
                   _settingsService.setBoolPref(
                       PrefKeys.readAloudByMediaButton, v);
-                },
-              ),
-              SettingSwitchRow(
-                title: '忽略音频焦点',
-                subtitle: '允许与其他应用同时播放音频',
-                value: _ignoreAudioFocus,
-                onChanged: (v) {
-                  setState(() => _ignoreAudioFocus = v);
-                  _settingsService.setBoolPref(PrefKeys.ignoreAudioFocus, v);
                 },
               ),
               SettingSwitchRow(

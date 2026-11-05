@@ -49,6 +49,8 @@ import 'screens/source_edit_screen.dart';
 import 'screens/rss_source_edit_screen.dart';
 import 'screens/source_debug_screen.dart';
 import 'screens/read_aloud_config_screen.dart';
+// [设置批5a-1 | 2026-11-04] 朗读设置页（常规/引擎与音色/角色与配乐三页签）
+import 'screens/read_aloud_settings_screen.dart';
 // [批1a | 2026-10-31] 独立「阅读设置」页（对齐参考版 ReadConfigScreen）
 import 'screens/read_config_screen.dart';
 import 'screens/theme_config_screen.dart';
@@ -117,6 +119,8 @@ class AppRoutes {
   static const sourceDebug = '/sources/debug';
   static const rssSourceEdit = '/rss/edit';
   static const readAloudConfig = '/read_aloud_config';
+  // [设置批5a-1 | 2026-11-04] 朗读设置（三页签：常规/引擎与音色/角色与配乐）
+  static const readAloudSettings = '/read_aloud_settings';
   // [批1a | 2026-10-31] 独立「阅读设置」页（设置主页「阅读界面」入口）
   static const readConfig = '/read_config';
   static const themeConfig = '/theme_config';
@@ -325,6 +329,8 @@ class AppRoutes {
       return RssSourceEditScreen(source: source);
     },
     readAloudConfig: (_) => const ReadAloudConfigScreen(),
+    // [设置批5a-1] 朗读设置页（常规/引擎与音色/角色与配乐）
+    readAloudSettings: (_) => const ReadAloudSettingsScreen(),
     // [批1a | 2026-10-31] 独立「阅读设置」页（三组：屏幕/页面控制/其他）
     readConfig: (_) => const ReadConfigScreen(),
     themeConfig: (_) => const ThemeConfigScreen(),
