@@ -1,4 +1,4 @@
-// 书架布局配置模型（设置批6a-1）
+﻿// 书架布局配置模型（设置批6a-1）
 //
 // 字段名 / 默认值逐字对齐参考版 `BookshelfSettings.kt:5-57`
 // （`legado-with-MD3`），持久化键名对齐 `PreferKey.kt`（真实偏好键，
@@ -696,6 +696,25 @@ class BookshelfSettings {
   int listColumnsFor({required bool isLandscape}) => isLandscape
       ? bookshelfLayoutListLandscape
       : bookshelfLayoutListPortrait;
+
+  /// 列表多列时的最小可读单元格宽（低于该宽度会横向挤压文字/角标）
+  static const double minReadableListCellWidth = 150;
+
+  /// 当前视口最多可用的列表列数（入口按此夹取配置列数）
+  ///
+  /// 列表多列由 SliverGrid 承载，单元格过窄会导致未读角标/摘要行溢出；
+  /// 360dp 屏最多 2 列、400dp 屏最多 2 列、约 482dp 起才允许 3 列。
+  static int maxReadableListColumns(
+    double viewportWidth, {
+    double horizontalPadding = 8,
+    double spacing = 8,
+  }) {
+    final available = math.max(0.0, viewportWidth - horizontalPadding * 2);
+    final count =
+        ((available + spacing) / (minReadableListCellWidth + spacing))
+            .floor();
+    return math.max(1, count);
+  }
 
   /// 当前明暗卡片色（0 = 跟随主题）
   int cardColorFor({required bool isDark}) =>

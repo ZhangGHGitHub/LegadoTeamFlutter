@@ -66,7 +66,10 @@ class _SkeletonBoxState extends State<SkeletonBox>
 /// 自适应：封面区 Expanded 填充剩余高度，底部两行文字固定约 48dp，
 /// 任意 cell 高（360dp 三列 ≈193dp / 横屏七列 ≈207dp）不溢出。
 class GridSkeletonItem extends StatelessWidget {
-  const GridSkeletonItem({super.key});
+  /// 是否渲染底部书名骨架（网格样式 1 紧凑/2 仅封面不需要）
+  final bool showText;
+
+  const GridSkeletonItem({super.key, this.showText = true});
 
   @override
   Widget build(BuildContext context) {
@@ -76,26 +79,27 @@ class GridSkeletonItem extends StatelessWidget {
         color: cs.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          const Expanded(
             child: SkeletonBox(borderRadius: 16),
           ),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SkeletonBox(height: 14),
-                SizedBox(height: 4),
-                FractionallySizedBox(
-                  widthFactor: 0.8,
-                  child: SkeletonBox(height: 14),
-                ),
-              ],
+          if (showText)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(height: 14),
+                  SizedBox(height: 4),
+                  FractionallySizedBox(
+                    widthFactor: 0.8,
+                    child: SkeletonBox(height: 14),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

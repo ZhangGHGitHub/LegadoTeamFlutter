@@ -54,6 +54,11 @@ class BookshelfConfigSheet extends ConsumerWidget {
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final layoutMode = settings.layoutModeFor(isLandscape: isLandscape);
+    final maxReadableListColumns = BookshelfSettings.maxReadableListColumns(
+      MediaQuery.sizeOf(context).width,
+    );
+    final configuredListColumns =
+        settings.listColumnsFor(isLandscape: isLandscape);
     final theme = Theme.of(context);
 
     void update(BookshelfSettings Function(BookshelfSettings) transform) {
@@ -253,7 +258,11 @@ class BookshelfConfigSheet extends ConsumerWidget {
                         settings.listColumnsFor(isLandscape: isLandscape),
                     min: 1,
                     max: 5,
-                    subtitle: isLandscape ? '横屏列表列数' : '竖屏列表列数',
+                    subtitle: configuredListColumns > maxReadableListColumns
+                        ? '${isLandscape ? '横屏' : '竖屏'}列表列数；'
+                            '当前屏宽最多 $maxReadableListColumns 列，'
+                            '超出将按 $maxReadableListColumns 列显示'
+                        : '${isLandscape ? '横屏' : '竖屏'}列表列数',
                     onChanged: (value) => update(
                       (s) => isLandscape
                           ? s.copyWith(bookshelfLayoutListLandscape: value)
@@ -324,21 +333,22 @@ class BookshelfConfigSheet extends ConsumerWidget {
                               s.copyWith(bookshelfIntroMaxLines: value),
                         ),
                       ),
-                    _SwitchRow(
-                      key: const ValueKey('bookshelfShowTagSwitch'),
-                      title: '显示标签',
-                      value: settings.bookshelfShowTag,
-                      onChanged: (value) => update(
-                        (s) => s.copyWith(bookshelfShowTag: value),
-                      ),
-                    ),
-                    // 我方扩展（批35）：标签内容勾选，随「显示标签」显隐
-                    if (settings.bookshelfShowTag)
-                      _TagContentRow(
-                        key: const ValueKey('bookshelfTagContentRow'),
-                      ),
                   ],
                 ],
+                // [审查 P2] 标签开关同时作用于网格与列表，移出列表分支
+                _SwitchRow(
+                  key: const ValueKey('bookshelfShowTagSwitch'),
+                  title: '显示标签',
+                  value: settings.bookshelfShowTag,
+                  onChanged: (value) => update(
+                    (s) => s.copyWith(bookshelfShowTag: value),
+                  ),
+                ),
+                // 我方扩展（批35）：标签内容勾选，随「显示标签」显隐
+                if (settings.bookshelfShowTag)
+                  _TagContentRow(
+                    key: const ValueKey('bookshelfTagContentRow'),
+                  ),
                 SettingSliderRow(
                   key: const ValueKey('bookshelfTitleMaxLinesSlider'),
                   title: '书名最大行数',

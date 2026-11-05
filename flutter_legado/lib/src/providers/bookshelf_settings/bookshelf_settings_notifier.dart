@@ -1,4 +1,4 @@
-﻿// 书架布局配置 Notifier（设置批6a-1）
+// 书架布局配置 Notifier（设置批6a-1）
 //
 // 单一数据源：书架页面与配置 Sheet 均 watch 本 Provider；写入即持久化
 // 到 SharedPreferences（键名逐字对齐参考版 PreferKey），随既有 JSON
@@ -9,6 +9,7 @@
 // true → 网格 / false → 列表，横竖屏同时写入，随后不再读取旧键。
 //
 // 编写：全栈工程师（设置批6a-1） ｜ 2026-11-06
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,35 +30,69 @@ class BookshelfSettingsNotifier extends Notifier<BookshelfSettings> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stored = <String, Object?>{
-      for (final key in BookshelfSettings.prefKeys)
-        if (prefs.containsKey(key)) key: prefs.get(key),
-    };
-    var loaded = BookshelfSettings.fromPrefMap(stored);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = <String, Object?>{
+        for (final key in BookshelfSettings.prefKeys)
+          if (prefs.containsKey(key)) key: prefs.get(key),
+      };
+      var loaded = BookshelfSettings.fromPrefMap(stored);
 
-    // 旧 bool 键一次性迁移：两个新方向键都不存在才执行
-    final hasNewDirectionKeys =
-        prefs.containsKey(BookshelfSettings.keyBookshelfLayoutModePortrait) ||
-            prefs.containsKey(
-                BookshelfSettings.keyBookshelfLayoutModeLandscape);
-    if (!hasNewDirectionKeys) {
-      final legacy = prefs.getBool(BookshelfSettings.legacyLayoutKey) ??
-          prefs.getBool(BookshelfSettings.legacyAndroidLayoutKey);
+      // [审查 P2] 旧键按方向逐一迁移（仅该方向新键缺失时）：
+      // 兼容历史 bool / 0-1 int / "true"/"false" 字符串，避免旧备份
+      // 类型不同导致 getBool 抛错或迁移被静默跳过。
+      final legacy = _legacyBool(
+            prefs.get(BookshelfSettings.legacyLayoutKey),
+          ) ??
+          _legacyBool(
+            prefs.get(BookshelfSettings.legacyAndroidLayoutKey),
+          );
       if (legacy != null) {
         final mode = legacy ? 1 : 0;
-        loaded = loaded.copyWith(
-          bookshelfLayoutModePortrait: mode,
-          bookshelfLayoutModeLandscape: mode,
-        );
-        // 横竖两套都写，之后用户再改任一方向互不影响
-        await prefs.setInt(
-            BookshelfSettings.keyBookshelfLayoutModePortrait, mode);
-        await prefs.setInt(
-            BookshelfSettings.keyBookshelfLayoutModeLandscape, mode);
+        final writes = <String, int>{};
+        if (!prefs.containsKey(
+            BookshelfSettings.keyBookshelfLayoutModePortrait)) {
+          writes[BookshelfSettings.keyBookshelfLayoutModePortrait] = mode;
+        }
+        if (!prefs.containsKey(
+            BookshelfSettings.keyBookshelfLayoutModeLandscape)) {
+          writes[BookshelfSettings.keyBookshelfLayoutModeLandscape] = mode;
+        }
+        if (writes.containsKey(
+            BookshelfSettings.keyBookshelfLayoutModePortrait)) {
+          loaded = loaded.copyWith(bookshelfLayoutModePortrait: mode);
+        }
+        if (writes.containsKey(
+            BookshelfSettings.keyBookshelfLayoutModeLandscape)) {
+          loaded = loaded.copyWith(bookshelfLayoutModeLandscape: mode);
+        }
+        for (final entry in writes.entries) {
+          await prefs.setInt(entry.key, entry.value);
+        }
+      }
+      state = loaded;
+    } catch (e) {
+      // 偏好损坏/平台插件异常 → 回落参考默认值，保证书架可渲染
+      debugPrint('[BookshelfSettingsNotifier] 加载失败，回落默认值: $e');
+      state = BookshelfSettings.defaults;
+    }
+  }
+
+  /// 旧布局键宽松布尔解析（bool / int / string，无法识别返回 null）
+  static bool? _legacyBool(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      switch (value.trim().toLowerCase()) {
+        case 'true':
+        case '1':
+          return true;
+        case 'false':
+        case '0':
+          return false;
       }
     }
-    state = loaded;
+    return null;
   }
 
   /// 等待持久化值加载完成（写入门控/测试用）

@@ -32,6 +32,9 @@ class BookListItem extends StatelessWidget {
   /// [批35] 展示标签（用户标签/书源分类/字数，空列表不渲染）
   final List<String> tags;
 
+  /// 书籍类型标签（`showTip` 开启时的「音频/漫画/本地/文件/小说」）
+  final String? typeLabel;
+
   /// 多列列表时的封面宽度上限（避免窄列里封面吃掉全部文字区）
   final double? maxCoverWidth;
 
@@ -43,6 +46,7 @@ class BookListItem extends StatelessWidget {
     required this.book,
     this.settings = BookshelfSettings.defaults,
     this.tags = const [],
+    this.typeLabel,
     this.maxCoverWidth,
     this.introMaxLinesOverride,
     this.onTap,
@@ -64,6 +68,9 @@ class BookListItem extends StatelessWidget {
     final progress = bookReadProgress(book);
     final compact = settings.bookshelfLayoutCompact;
     final showDetails = settings.showBookIntro && !compact;
+    // [审查 P1-1] 多列（窄单元格）模式：缩小内边距、隐藏摘要图标、
+    // 收紧角标，避免窄列 + 大字号 + 批量勾选时横向溢出。
+    final dense = maxCoverWidth != null;
 
     final configuredCoverWidth =
         settings.bookshelfListCoverWidth.toDouble();
@@ -113,7 +120,11 @@ class BookListItem extends StatelessWidget {
               ),
             ),
             if (unread > 0)
-              _UnreadBadge(count: unread, showUpdate: isNew),
+              _UnreadBadge(
+                count: unread,
+                showUpdate: isNew,
+                dense: dense,
+              ),
           ],
         ),
         // 作者（精简模式附加未读数，对齐参考版 author_read）
@@ -123,15 +134,17 @@ class BookListItem extends StatelessWidget {
               ? '${book.author.isEmpty ? '未知作者' : book.author} · $unread 章未读'
               : book.author,
           style: subtitleStyle,
+          dense: dense,
         ),
         if (!compact && (book.durChapterTitle ?? '').isNotEmpty)
           _SummaryRow(
             icon: Symbols.history_rounded,
             text: book.durChapterTitle!,
             style: subtitleStyle,
+            dense: dense,
           ),
-        // 标签（我方扩展批35；精简模式隐藏）
-        if (!compact && tags.isNotEmpty)
+        // 标签（我方扩展批35；精简/未开启更多信息时隐藏）
+        if (!compact && showDetails && tags.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 3),
             child: BookDisplayTagsRow(tags: tags),
@@ -159,6 +172,7 @@ class BookListItem extends StatelessWidget {
             icon: Symbols.last_page_rounded,
             text: book.latestChapterTitle!,
             style: subtitleStyle,
+            dense: dense,
             trailing: settings.showLastUpdateTime &&
                     !BookType.isLocalBook(book) &&
                     book.latestChapterTime > 0
@@ -209,12 +223,14 @@ class BookListItem extends StatelessWidget {
             onTap: onTap,
             onLongPress: onLongPress,
             child: Padding(
-              padding: const EdgeInsets.only(
-                left: 8,
-                right: 16,
-                top: 12,
-                bottom: 12,
-              ),
+              padding: dense
+                  ? const EdgeInsets.fromLTRB(4, 8, 4, 8)
+                  : const EdgeInsets.only(
+                      left: 8,
+                      right: 16,
+                      top: 12,
+                      bottom: 12,
+                    ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -237,18 +253,46 @@ class BookListItem extends StatelessWidget {
                                 ]
                               : null,
                         ),
-                        child: BookCover(
-                          coverUrl: book.customCoverUrl ?? book.coverUrl,
-                          width: coverWidth,
-                          height: coverHeight,
-                          borderRadius: 4,
-                          sourceOrigin: book.origin,
-                          // 单列走全局「限制封面比例」（批39 既有能力）；多列
-                          // 固定 cell 高度，避免自适应高度撑破网格。
-                          adaptAspectRatio: maxCoverWidth == null,
-                          adaptiveMinHeight: math.min(66, coverHeight),
-                          adaptiveMaxHeight: coverHeight,
-                          heroTag: 'book-cover:${book.bookUrl}',
+                        child: Stack(
+                          children: [
+                            BookCover(
+                              coverUrl: book.customCoverUrl ?? book.coverUrl,
+                              width: coverWidth,
+                              height: coverHeight,
+                              borderRadius: 4,
+                              sourceOrigin: book.origin,
+                              // 单列走全局「限制封面比例」（批39 既有能力）；
+                              // 多列固定 cell 高度，避免自适应高度撑破网格。
+                              adaptAspectRatio: maxCoverWidth == null,
+                              adaptiveMinHeight: math.min(66, coverHeight),
+                              adaptiveMaxHeight: coverHeight,
+                              heroTag: 'book-cover:${book.bookUrl}',
+                            ),
+                            // 书籍类型标签（左下，对齐参考 leftBottomText）
+                            if (typeLabel != null && typeLabel!.isNotEmpty)
+                              Positioned(
+                                left: 4,
+                                bottom: 4,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x99000000),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    typeLabel!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.white,
+                                      height: 1.2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -302,21 +346,27 @@ class _SummaryRow extends StatelessWidget {
   final TextStyle style;
   final Widget? trailing;
 
+  /// 窄列模式：隐藏前导图标，为文字/角标让出横向空间
+  final bool dense;
+
   const _SummaryRow({
     required this.icon,
     required this.text,
     required this.style,
     this.trailing,
+    this.dense = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(left: 2, top: 1),
+      padding: EdgeInsets.only(left: dense ? 0 : 2, top: 1),
       child: Row(
         children: [
-          Icon(icon, size: 13, color: style.color),
-          const SizedBox(width: 4),
+          if (!dense) ...[
+            Icon(icon, size: 13, color: style.color),
+            const SizedBox(width: 4),
+          ],
           Expanded(
             child: Text(
               text,
@@ -344,15 +394,21 @@ class _SummaryRow extends StatelessWidget {
 class _UnreadBadge extends StatelessWidget {
   final int count;
   final bool showUpdate;
+  final bool dense;
 
-  const _UnreadBadge({required this.count, this.showUpdate = false});
+  const _UnreadBadge({
+    required this.count,
+    this.showUpdate = false,
+    this.dense = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      margin: const EdgeInsets.all(5),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      margin: EdgeInsets.all(dense ? 2 : 5),
+      padding: EdgeInsets.symmetric(
+          horizontal: dense ? 3 : 5, vertical: 1),
       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
       decoration: BoxDecoration(
         color: colorScheme.error,

@@ -1,4 +1,4 @@
-// 书架排序（设置批6a-1）
+﻿// 书架排序（设置批6a-1）
 //
 // 对齐参考版 `BookshelfRepository.sortBooks`（`BookshelfRepository.kt:9-50`）：
 // 6 种模式 + 升降序，在 Dart 列表层完成（不改 Rust/SQL）。
@@ -77,24 +77,51 @@ int bookshelfCnCompare(String a, String b) {
 /// [sortOrder] 0 = 升序，1 = 降序；相同主键按原始顺序稳定排列
 /// （Dart `List.sort` 不稳定，显式用原始下标兜底，语义对齐 Kotlin
 /// 稳定排序）。
+/// 拼音键生成器（测试可注入计数包装，生产默认 [bookshelfPinyinKey]）
+typedef BookshelfPinyinKeyBuilder = String Function(String text);
+
 List<Book> sortBookshelfBooks(
   List<Book> books, {
   required int sort,
   required int sortOrder,
+  BookshelfPinyinKeyBuilder pinyinKeyBuilder = bookshelfPinyinKey,
 }) {
   final indexed = <({int index, Book book})>[
     for (var i = 0; i < books.length; i++) (index: i, book: books[i]),
   ];
 
   int compareValues(int a, int b) => a.compareTo(b);
-  int compareStrings(String a, String b) => bookshelfCnCompare(a, b);
+  final descending = sortOrder == BookshelfSortOrder.descending;
+
+  // [审查 P2] 书名/作者模式先一次性生成 (原始下标 → 拼音键) 装饰表，
+  // 排序比较只做字符串 compareTo；避免每次比较都重复转换整串拼音。
+  if (sort == BookshelfSortMode.name || sort == BookshelfSortMode.author) {
+    final keys = <int, String>{
+      for (final item in indexed)
+        item.index: pinyinKeyBuilder(
+          sort == BookshelfSortMode.name ? item.book.name : item.book.author,
+        ),
+    };
+    indexed.sort((x, y) {
+      final keyX = keys[x.index]!;
+      final keyY = keys[y.index]!;
+      var byPrimary = keyX.compareTo(keyY);
+      if (byPrimary == 0) {
+        // 拼音键相同回落原始 Unicode，保证确定性
+        byPrimary = sort == BookshelfSortMode.name
+            ? x.book.name.compareTo(y.book.name)
+            : x.book.author.compareTo(y.book.author);
+      }
+      if (byPrimary != 0) return descending ? -byPrimary : byPrimary;
+      return x.index.compareTo(y.index);
+    });
+    return [for (final item in indexed) item.book];
+  }
 
   int Function(Book a, Book b) primary;
   switch (sort) {
     case BookshelfSortMode.updateTime:
       primary = (a, b) => compareValues(a.latestChapterTime, b.latestChapterTime);
-    case BookshelfSortMode.name:
-      primary = (a, b) => compareStrings(a.name, b.name);
     case BookshelfSortMode.manual:
       primary = (a, b) => compareValues(a.order, b.order);
     case BookshelfSortMode.comprehensive:
@@ -102,14 +129,11 @@ List<Book> sortBookshelfBooks(
             math.max(a.latestChapterTime, a.durChapterTime),
             math.max(b.latestChapterTime, b.durChapterTime),
           );
-    case BookshelfSortMode.author:
-      primary = (a, b) => compareStrings(a.author, b.author);
     case BookshelfSortMode.readTime:
     default:
       primary = (a, b) => compareValues(a.durChapterTime, b.durChapterTime);
   }
 
-  final descending = sortOrder == BookshelfSortOrder.descending;
   indexed.sort((x, y) {
     final byPrimary = primary(x.book, y.book);
     if (byPrimary != 0) return descending ? -byPrimary : byPrimary;
