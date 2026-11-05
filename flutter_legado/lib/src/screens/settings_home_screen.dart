@@ -10,8 +10,9 @@ import '../widgets/glass_card_background.dart';
 ///
 /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 差异清单批八：对齐参考版「设置主页
 /// 集中化」结构——参考版 8 组（外观/高级/阅读界面/封面设置/下载与缓存/
-/// 备份与恢复/AI 设置/翻译设置）；我方按真实功能映射为入口列表，封面设置
-/// 暂缺（登记）。
+/// 备份与恢复/AI 设置/翻译设置）；我方按真实功能映射为入口列表。
+/// [设置批6b-1 | 2026-11-06] 补齐「封面设置」一级入口（独立页），外观页
+/// 旧「封面设置」行同步移除。
 ///
 /// [设置批10a | 2026-11-04 用户裁决] 参考版「AI 设置/翻译设置/实验室」
 /// 三入口以占位形态补齐（副题「暂未支持」），点击进入只说明暂未支持的
@@ -63,6 +64,10 @@ class SettingsHomeScreen extends StatelessWidget {
       // 四页签弹层（ReaderSettingsSheet）入口保留不动 — 全栈工程师
       (Symbols.style_rounded, '阅读界面', '屏幕/页面控制/阅读偏好',
           () => Navigator.pushNamed(context, AppRoutes.readConfig)),
+      // [设置批6b-1 | 2026-11-06] 封面设置一级入口（对齐参考版设置主页
+      // 8 组中的「封面设置」；原外观页「封面设置」行已移除）
+      (Symbols.image_rounded, '封面设置', '默认封面、书名作者、描边与阴影',
+          () => Navigator.pushNamed(context, AppRoutes.coverSettings)),
       // [设置批5a-1 | 2026-11-04] 朗读设置独立入口（对齐参考版朗读配置：
       // 常规/引擎与音色/角色与配乐三页签）；忽略音频焦点已自「高级」迁入
       (Symbols.record_voice_over_rounded, '朗读设置', '朗读引擎、音色与播放行为',
