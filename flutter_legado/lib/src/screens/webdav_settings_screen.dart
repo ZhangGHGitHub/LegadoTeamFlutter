@@ -16,6 +16,7 @@ import '../l10n/app_strings.dart';
 import '../models/backup_inspect_info.dart';
 import '../models/book.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/bookshelf_settings/bookshelf_settings_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_menu_style_notifier.dart';
@@ -827,6 +828,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await ref.read(uiSettingsProvider.notifier).reload();
     ref.invalidate(mainPrefsProvider);
     ref.invalidate(bookshelfNotifierProvider);
+    // [设置批6a-1] 书架布局配置随 appPrefs 恢复后 await 重读，避免继续用
+    // 旧布局/排序渲染（reload 而非 invalidate，防止默认值中间帧）。
+    await ref.read(bookshelfSettingsProvider.notifier).reload();
     // [批37] 顶栏动作配置随 appPrefs 恢复后重读，避免继续用旧配置
     ref.invalidate(readerTopBarActionsProvider);
     // [批3a] 阅读器菜单样式（配色/底栏布局/顶栏标题）同样随 appPrefs

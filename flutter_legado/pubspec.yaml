@@ -55,6 +55,8 @@ dependencies:
   palette_generator: ^0.3.3+7
   dynamic_color: ^2.1.0
   material_color_utilities: ^0.13.0
+  # [设置批6a-1] 书架书名/作者排序：中文全拼（纯 Dart，无平台通道）
+  pinyin: ^3.3.0
 
 dev_dependencies:
   flutter_test:

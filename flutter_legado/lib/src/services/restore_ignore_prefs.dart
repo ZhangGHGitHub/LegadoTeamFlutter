@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../models/bookshelf_settings.dart';
 import 'reader_theme_service.dart';
 import 'settings_service.dart';
 
@@ -330,9 +331,12 @@ class RestoreIgnorePrefs {
     }
     // [批35] 书架展示标签四键同属「书架布局」忽略项（参考版将标签内容
     // 放在书架配置面板内，恢复备份时不覆盖本机书架展示策略）。
+    // [设置批6a-1] 新增书架布局配置全部键同属该忽略项；旧 Android 键
+    // `bookshelfLayout`、我方历史键 `bookshelf_layout` 一并覆盖。
     if (ignore['bookshelfLayout'] == true &&
         (key == 'bookshelfLayout' ||
             key == bookshelfLayoutStorageKey ||
+            BookshelfSettings.prefKeys.contains(key) ||
             SettingsService.bookshelfTagPrefKeys.contains(key))) {
       return false;
     }
