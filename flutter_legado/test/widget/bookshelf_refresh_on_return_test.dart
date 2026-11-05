@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -89,7 +89,12 @@ void main() {
   testWidgets(
       '未读书：详情+自动开读返回书架后，条目显示新进度（A4 链路 dci=0→1）',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    // [设置批6a-1] 默认网格不再展示当前章节行；本套件验证列表行进度，
+    // 显式选择列表布局（横竖屏）。
+    SharedPreferences.setMockInitialValues({
+      'bookshelfLayoutPortrait': 0,
+      'bookshelf_layout_landscape': 0,
+    });
     when(() => mockApi.getBooks()).thenAnswer((_) async => [bookUnread]);
     when(() => mockApi.getBookGroups()).thenAnswer((_) async => []);
     // 「数据源进度已更新」：书架重新拉取该书时返回 dci=1 + 进度标题
@@ -127,7 +132,12 @@ void main() {
 
   testWidgets('已读书：直开阅读器返回书架后，条目显示新进度（dci=5→6）',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    // [设置批6a-1] 默认网格不再展示当前章节行；本套件验证列表行进度，
+    // 显式选择列表布局（横竖屏）。
+    SharedPreferences.setMockInitialValues({
+      'bookshelfLayoutPortrait': 0,
+      'bookshelf_layout_landscape': 0,
+    });
     when(() => mockApi.getBooks()).thenAnswer((_) async => [bookRead]);
     when(() => mockApi.getBookGroups()).thenAnswer((_) async => []);
     when(() => mockApi.getBook('book://b'))

@@ -34,7 +34,9 @@ void main() {
     MockRustApi mockApi,
     List<BookGroup> groups,
   ) async {
-    SharedPreferences.setMockInitialValues({'bookshelf_layout': true});
+    // [设置批6a-1] 默认「隐藏空分组」开启会隐藏无书的用户组；本套件
+    // 验证 tab 排布，显式关闭该开关保持全部分组可见。
+    SharedPreferences.setMockInitialValues({'hideEmptyGroups': false});
     when(() => mockApi.getBooks()).thenAnswer(
       (_) async => const [
         Book(bookUrl: 'u1', name: '书一'),

@@ -5,8 +5,10 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
+import 'package:flutter_legado/src/models/bookshelf_settings.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
+import 'package:flutter_legado/src/providers/bookshelf_settings/bookshelf_settings_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/book_api.dart' show DeleteBooksResult;
 
@@ -69,12 +71,11 @@ void main() {
       verify(() => mockApi.getBooks()).called(1);
     });
 
-    test('初始状态：列表视图 + 不分组（对齐原版 bookshelfLayout=0）', () async {
+    test('初始状态：不分组（布局偏好已迁移至 BookshelfSettings）', () async {
       when(() => mockApi.getBooks()).thenAnswer((_) async => []);
       container.read(bookshelfNotifierProvider);
       await pumpInit();
 
-      expect(readState().isGridView, isFalse);
       expect(readState().groupMode, equals(GroupMode.none));
     });
 
@@ -202,32 +203,39 @@ void main() {
       container.read(bookshelfNotifierProvider);
     });
 
-    test('toggleViewMode 切换列表/网格并持久化', () async {
+    test('书架布局默认网格，方向键写入持久化', () async {
       await pumpInit();
-      expect(readState().isGridView, isFalse);
+      final settingsNotifier =
+          container.read(bookshelfSettingsProvider.notifier);
+      await settingsNotifier.waitForLoad();
+      expect(
+          container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
+          equals(1));
 
-      await readNotifier().toggleViewMode();
-      expect(readState().isGridView, isTrue);
-      var prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('bookshelf_layout'), isTrue);
-
-      await readNotifier().toggleViewMode();
-      expect(readState().isGridView, isFalse);
-      prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('bookshelf_layout'), isFalse);
+      await settingsNotifier.update(
+        (s) => s.copyWith(bookshelfLayoutModePortrait: 0),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+          prefs.getInt(BookshelfSettings.keyBookshelfLayoutModePortrait), 0);
     });
 
-    test('布局偏好重启后恢复（对标原版 bookshelfLayout 持久化）', () async {
-      // 预置上次选择：列表视图
-      SharedPreferences.setMockInitialValues({'bookshelf_layout': false});
+    test('布局方向键重启后恢复', () async {
+      SharedPreferences.setMockInitialValues({
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfLayoutModeLandscape: 0,
+      });
       container.dispose();
       container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
       );
-      container.read(bookshelfNotifierProvider);
-      await pumpInit();
+      final settingsNotifier =
+          container.read(bookshelfSettingsProvider.notifier);
+      await settingsNotifier.waitForLoad();
 
-      expect(readState().isGridView, isFalse);
+      expect(
+          container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
+          equals(0));
     });
 
     test('setGroupMode 切换分组模式', () async {
@@ -252,27 +260,48 @@ void main() {
       expect(readState().error, isNull);
     });
 
-    test('reorderBook 拖拽排序', () async {
+    test('saveBookOrder 升序按视觉顺序写 order', () async {
       await pumpInit();
-      expect(readState().books[0].name, equals('斗破苍穹'));
-      expect(readState().books[1].name, equals('完美世界'));
+      final reordered = [testBooks[1], testBooks[0], testBooks[2]];
 
-      // 将第 0 本移到第 2 位
-      await readNotifier().reorderBook(0, 2);
+      await readNotifier().saveBookOrder(reordered);
 
-      expect(readState().books[0].name, equals('完美世界'));
-      expect(readState().books[1].name, equals('斗破苍穹'));
-      // order 字段已更新
-      expect(readState().books[0].order, equals(0));
-      expect(readState().books[1].order, equals(1));
+      expect(
+        readState().books.firstWhere((b) => b.bookUrl == 'book://2').order,
+        equals(0),
+      );
+      expect(
+        readState().books.firstWhere((b) => b.bookUrl == 'book://1').order,
+        equals(1),
+      );
+      verify(() => mockApi.reorderBooks(any())).called(1);
     });
 
-    test('reorderBook 越界索引不生效', () async {
+    test('saveBookOrder 降序按 n-index 写 order（视觉顺序刷新后稳定）', () async {
+      await pumpInit();
+      final reordered = [testBooks[1], testBooks[0], testBooks[2]];
+
+      await readNotifier().saveBookOrder(reordered, descending: true);
+
+      expect(
+        readState().books.firstWhere((b) => b.bookUrl == 'book://2').order,
+        equals(3),
+      );
+      expect(
+        readState().books.firstWhere((b) => b.bookUrl == 'book://1').order,
+        equals(2),
+      );
+      expect(
+        readState().books.firstWhere((b) => b.bookUrl == 'book://3').order,
+        equals(1),
+      );
+    });
+
+    test('saveBookOrder 空列表不生效', () async {
       await pumpInit();
       final before = readState().books;
 
-      await readNotifier().reorderBook(-1, 0);
-      await readNotifier().reorderBook(0, 100);
+      await readNotifier().saveBookOrder(const []);
 
       expect(readState().books, equals(before));
     });
@@ -549,9 +578,10 @@ void main() {
     test('默认四键均为 true（对齐参考版 BookshelfSettings）', () async {
       when(() => mockApi.getBooks()).thenAnswer((_) async => testBooks);
       container.read(bookshelfNotifierProvider);
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
       await pumpInit();
 
-      expect(readState().showTag, isTrue);
+      expect(container.read(bookshelfSettingsProvider).bookshelfShowTag, isTrue);
       expect(readState().showCustomTags, isTrue);
       expect(readState().showSourceTags, isTrue);
       expect(readState().showWordCount, isTrue);
@@ -559,28 +589,34 @@ void main() {
 
     test('初始化读取已持久化偏好（键名对齐参考版）', () async {
       SharedPreferences.setMockInitialValues({
-        'bookshelfShowTag': true,
+        'bookshelfShowTag': false,
         'bookshelfShowCustomTags': false,
         'bookshelfShowSourceTags': true,
         'bookshelfShowWordCount': false,
       });
       when(() => mockApi.getBooks()).thenAnswer((_) async => []);
       container.read(bookshelfNotifierProvider);
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
       await pumpInit();
 
-      expect(readState().showTag, isTrue);
+      expect(container.read(bookshelfSettingsProvider).bookshelfShowTag, isFalse);
       expect(readState().showCustomTags, isFalse);
       expect(readState().showSourceTags, isTrue);
       expect(readState().showWordCount, isFalse);
     });
 
-    test('setShowTag 持久化 bookshelfShowTag', () async {
+    test('显示标签总开关持久化 bookshelfShowTag', () async {
       when(() => mockApi.getBooks()).thenAnswer((_) async => []);
       container.read(bookshelfNotifierProvider);
+      final settingsNotifier =
+          container.read(bookshelfSettingsProvider.notifier);
+      await settingsNotifier.waitForLoad();
       await pumpInit();
-      await readNotifier().setShowTag(false);
+      await settingsNotifier.update(
+        (s) => s.copyWith(bookshelfShowTag: false),
+      );
 
-      expect(readState().showTag, isFalse);
+      expect(container.read(bookshelfSettingsProvider).bookshelfShowTag, isFalse);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool('bookshelfShowTag'), isFalse);
     });
@@ -627,8 +663,8 @@ void main() {
       );
       expect(readState().displayTagsOf(book), ['玄幻', '仙侠']);
 
-      await readNotifier().setShowTag(false);
-      expect(readState().displayTagsOf(book), isEmpty, reason: '总开关关闭 = 不展示');
+      expect(readState().displayTagsOf(book, showTag: false), isEmpty,
+          reason: '总开关关闭 = 不展示');
     });
   });
 }

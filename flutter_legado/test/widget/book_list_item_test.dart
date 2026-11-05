@@ -1,19 +1,28 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_legado/src/models/bookshelf_settings.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/utils/time_utils.dart';
+import 'package:flutter_legado/src/widgets/book_cover.dart';
 import 'package:flutter_legado/src/widgets/book_display_tags_row.dart';
 import 'package:flutter_legado/src/widgets/book_list_item.dart';
 
 /// BookListItem 结构与角标验证（对标 item_bookshelf_list.xml）
 void main() {
-  Widget wrap(Book book, {VoidCallback? onTap, VoidCallback? onLongPress}) {
+  Widget wrap(
+    Book book, {
+    VoidCallback? onTap,
+    VoidCallback? onLongPress,
+    BookshelfSettings settings = BookshelfSettings.defaults,
+  }) {
     return MaterialApp(
       home: Scaffold(
         body: ListView(
           children: [
             BookListItem(
               book: book,
+              settings: settings,
               onTap: onTap,
               onLongPress: onLongPress,
             ),
@@ -35,7 +44,11 @@ void main() {
       latestChapterTitle: '第一百零一章 大结局',
       latestChapterTime: DateTime.now().millisecondsSinceEpoch - 3600 * 1000,
     );
-    await tester.pumpWidget(wrap(book));
+    // [设置批6a-1] 最新章节属「更多信息」子项，显式开启后验证
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(showBookIntro: true),
+    ));
 
     // 书名 / 作者 / 阅读章节 / 最新章节
     expect(find.text('斗破苍穹'), findsOneWidget);
@@ -61,7 +74,10 @@ void main() {
       latestChapterTitle: '第十章 终章',
       latestChapterTime: DateTime.now().millisecondsSinceEpoch - 86400 * 1000,
     );
-    await tester.pumpWidget(wrap(book));
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(showBookIntro: true),
+    ));
 
     expect(find.text('未读书籍'), findsOneWidget);
     expect(find.text('第十章 终章'), findsOneWidget);
@@ -136,5 +152,107 @@ void main() {
     await tester.pumpWidget(wrapWithTags(book, const []));
 
     expect(find.byType(BookDisplayTagsRow), findsNothing);
+  });
+
+  testWidgets('列表封面宽/分隔线/卡片色按设置渲染', (tester) async {
+    final book = Book(bookUrl: 'u7', name: '设置书', author: '作者');
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(
+        bookshelfListCoverWidth: 100,
+        bookshelfShowDivider: false,
+        bookshelfCardColor: 0xFF112233,
+      ),
+    ));
+
+    final cover = tester.widget<BookCover>(find.byType(BookCover));
+    expect(cover.width, 100);
+    expect(find.byType(Divider), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+          (w) => w is Material && w.color == const Color(0xFF112233)),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(bookshelfShowDivider: true),
+    ));
+    expect(find.byType(Divider), findsOneWidget);
+  });
+
+  testWidgets('简介显示位置与行数（内容内 / 内容下方）', (tester) async {
+    final book = Book(
+      bookUrl: 'u8',
+      name: '简介书',
+      author: '作者',
+      intro: '<p>第一段简介</p><p>第二段</p>',
+    );
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(
+        showBookIntro: true,
+        bookshelfShowIntro: true,
+        bookshelfIntroMaxLines: 1,
+      ),
+    ));
+    final intro = tester.widget<Text>(find.textContaining('第一段简介'));
+    expect(intro.maxLines, 1);
+
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(
+        showBookIntro: true,
+        bookshelfShowIntro: true,
+        bookshelfListIntroBelowContent: true,
+      ),
+    ));
+    expect(find.textContaining('第一段简介'), findsOneWidget);
+  });
+
+  testWidgets('列表封面垂直居中可关闭', (tester) async {
+    final book = Book(bookUrl: 'u9', name: '对齐书', author: '作者');
+    await tester.pumpWidget(wrap(book));
+    var row = tester.widget<Row>(find.byType(Row).first);
+    expect(row.crossAxisAlignment, CrossAxisAlignment.center);
+
+    await tester.pumpWidget(wrap(
+      book,
+      settings: const BookshelfSettings(bookshelfListCoverCenter: false),
+    ));
+    row = tester.widget<Row>(find.byType(Row).first);
+    expect(row.crossAxisAlignment, CrossAxisAlignment.start);
+  });
+
+  testWidgets('上次更新时间仅在开启且非本地书时显示', (tester) async {
+    final millis = DateTime.now().millisecondsSinceEpoch - 3600 * 1000;
+    final online = Book(
+      bookUrl: 'https://example.com/book',
+      name: '在线书',
+      author: '作者',
+      origin: 'https://example.com',
+      latestChapterTitle: '最新章',
+      latestChapterTime: millis,
+    );
+    await tester.pumpWidget(wrap(
+      online,
+      settings: const BookshelfSettings(
+        showBookIntro: true,
+        bookshelfShowLatestChapter: true,
+        showLastUpdateTime: true,
+      ),
+    ));
+    expect(find.text(timeAgo(millis)), findsOneWidget);
+
+    final local = online.copyWith(origin: 'loc_book');
+    await tester.pumpWidget(wrap(
+      local,
+      settings: const BookshelfSettings(
+        showBookIntro: true,
+        bookshelfShowLatestChapter: true,
+        showLastUpdateTime: true,
+      ),
+    ));
+    expect(find.text(timeAgo(millis)), findsNothing);
   });
 }

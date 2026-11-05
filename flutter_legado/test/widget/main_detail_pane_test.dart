@@ -893,6 +893,12 @@ void main() {
       mode: MultiPaneMode.always,
       size: const Size(1000, 700),
       detailRouteGenerator: _stubDetailListRoute,
+      // [设置批6a-1] 默认网格 7 列时 20 本书不足以产生滚动；本用例验证
+      // 左右滚动互不影响，显式选择列表布局（横竖屏）。
+      extraPrefs: const {
+        'bookshelfLayoutPortrait': 0,
+        'bookshelf_layout_landscape': 0,
+      },
     );
     await tester.tap(
       find.descendant(

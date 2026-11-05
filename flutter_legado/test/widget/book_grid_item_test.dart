@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_legado/src/widgets/book_display_tags_row.dart';
 import 'package:flutter_legado/src/widgets/book_grid_item.dart';
@@ -11,6 +11,10 @@ void main() {
     double? progress,
     List<String> tags = const [],
     bool reserveTagRow = false,
+    int gridStyle = 0,
+    bool coverShadow = false,
+    String? typeLabel,
+    bool showNewBadge = false,
     VoidCallback? onTap,
     VoidCallback? onCoverLongPress,
     VoidCallback? onInfoLongPress,
@@ -27,6 +31,10 @@ void main() {
             progress: progress,
             tags: tags,
             reserveTagRow: reserveTagRow,
+            gridStyle: gridStyle,
+            coverShadow: coverShadow,
+            typeLabel: typeLabel,
+            showNewBadge: showNewBadge,
             onTap: onTap,
             onCoverLongPress: onCoverLongPress,
             onInfoLongPress: onInfoLongPress,
@@ -183,5 +191,52 @@ void main() {
       BookGridItem.tagRowHeight,
       reason: '默认字号不改变既有视觉行高',
     );
+  });
+
+  testWidgets('封面圆角 4dp（参考当前口径）', (tester) async {
+    await tester.pumpWidget(buildTestWidget());
+    final clips = tester.widgetList<ClipRRect>(
+      find.descendant(
+          of: find.byType(BookGridItem), matching: find.byType(ClipRRect)),
+    );
+    expect(
+      clips.any((c) => c.borderRadius == BorderRadius.circular(4)),
+      isTrue,
+    );
+  });
+
+  testWidgets('封面阴影默认关，开关打开后绘制阴影', (tester) async {
+    bool hasShadow() => find
+        .descendant(
+          of: find.byType(BookGridItem),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is DecoratedBox &&
+                w.decoration is BoxDecoration &&
+                ((w.decoration as BoxDecoration).boxShadow?.isNotEmpty ??
+                    false),
+          ),
+        )
+        .evaluate()
+        .isNotEmpty;
+
+    await tester.pumpWidget(buildTestWidget(coverShadow: false));
+    expect(hasShadow(), isFalse);
+
+    await tester.pumpWidget(buildTestWidget(coverShadow: true));
+    expect(hasShadow(), isTrue);
+  });
+
+  testWidgets('书籍类型标签与紧凑样式书名叠加', (tester) async {
+    await tester.pumpWidget(buildTestWidget(typeLabel: '本地'));
+    expect(find.text('本地'), findsOneWidget);
+
+    await tester.pumpWidget(buildTestWidget(gridStyle: 1, title: '紧凑书名'));
+    expect(find.text('紧凑书名'), findsOneWidget);
+  });
+
+  testWidgets('仅封面样式不渲染书名', (tester) async {
+    await tester.pumpWidget(buildTestWidget(gridStyle: 2, title: '隐藏书名'));
+    expect(find.text('隐藏书名'), findsNothing);
   });
 }

@@ -52,10 +52,8 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    // 切到网格视图
-    container
-        .read(bookshelfNotifierProvider.notifier)
-        .toggleViewMode();
+    // [设置批6a-1] 默认布局即网格（参考版 bookshelfLayoutModePortrait=1），
+    // 无需再调用已移除的 toggleViewMode。
     await tester.pumpAndSettle();
     expect(find.text('示例书籍 01'), findsOneWidget,
         reason: '网格视图书名可见');
