@@ -627,8 +627,8 @@ class PrefKeys {
   /// 听书播放器背景：`solid`（纯色，默认）/ `transparent`（透明，露出壁纸）
   static const readAloudPlayerBackground = 'readAloudPlayerBackground';
 
-  /// 系统 TTS 语速（参考刻度 0–80；1.0x = 16，映射见
-  /// `system_tts_service.dart` 的 [ttsSpeechRateFromSpeed]）
+  /// 系统 TTS 语速（参考刻度 0–80；1.0x = 5、2.0x = 15、3.0x = 25，
+  /// 映射见 `system_tts_service.dart` 的 [ttsSpeechRateFromSpeed]）
   static const ttsSpeechRate = 'ttsSpeechRate';
 
   /// 系统 TTS 音调（参考刻度 5–20，即 0.5–2.0；默认 10 = 1.0）

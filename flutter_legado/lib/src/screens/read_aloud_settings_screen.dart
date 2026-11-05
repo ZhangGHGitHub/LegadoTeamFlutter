@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -38,7 +40,7 @@ class ReadAloudSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _ReadAloudSettingsScreenState
-    extends ConsumerState<ReadAloudSettingsScreen> {
+    extends ConsumerState<ReadAloudSettingsScreen> with WidgetsBindingObserver {
   SettingsService get _settings => ref.read(settingsProvider);
 
   bool _loading = true;
@@ -72,6 +74,18 @@ class _ReadAloudSettingsScreenState
   /// `debugDefaultTargetPlatformOverride` 覆盖）
   bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
+  /// 当前平台是否支持系统 TTS 合成（Android/iOS/macOS）
+  ///
+  /// [审查回修 P2-1] Windows/Linux 的 flutter_tts 无 synthesizeToFile 实现，
+  /// 「系统 TTS」与音色项必须置灰，避免可点但永远失败。
+  bool get _supportsSystemTts => switch (defaultTargetPlatform) {
+        TargetPlatform.android ||
+        TargetPlatform.iOS ||
+        TargetPlatform.macOS =>
+          true,
+        _ => false,
+      };
+
   SystemTtsService get _systemTts => ref.read(systemTtsServiceProvider);
 
   /// 系统引擎展示名（未选择/已卸载时回退原始值）
@@ -90,7 +104,22 @@ class _ReadAloudSettingsScreenState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// [审查回修 P3] 从系统 TTS 设置页/电池优化页返回时刷新引擎与音色列表
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_load());
+    }
   }
 
   Future<void> _load() async {
@@ -138,6 +167,9 @@ class _ReadAloudSettingsScreenState
       final rate = await s.getIntPrefOrNull(PrefKeys.ttsSpeechRate);
       final pitch = await s.getIntPrefOrNull(PrefKeys.ttsPitch);
       final volume = await s.getIntPrefOrNull(PrefKeys.ttsVolume);
+      // [审查回修 P2-4] 偏好缺失时取当前有效 config（可能是书级读回/播放
+      // 会话值），不要直接回落 1.0 造成设置页与播放值不一致。
+      final cfg = ref.read(audioNotifierProvider).config;
 
       if (!mounted) return;
       setState(() {
@@ -156,9 +188,13 @@ class _ReadAloudSettingsScreenState
         _readAloudWakeLock = wakeLock;
         _keepReadAloudOnExit = keepOnExit;
         _mediaButtonPerNext = perNext;
-        _speed = ttsSpeedFromSpeechRate(rate);
-        _pitch = ttsPitchFromStored(pitch);
-        _volume = ttsVolumeFromStored(volume);
+        _speed = rate == null ? cfg.speed : ttsSpeedFromSpeechRate(rate);
+        _pitch = pitch == null
+            ? cfg.pitch
+            : ttsPitchFromStored(pitch, fallback: cfg.pitch);
+        _volume = volume == null
+            ? cfg.volume
+            : ttsVolumeFromStored(volume, fallback: cfg.volume);
         _loading = false;
       });
     } catch (e) {
@@ -248,10 +284,22 @@ class _ReadAloudSettingsScreenState
     // null 既可能是「取消」也可能是「系统默认」：由结果对象区分
     if (result.cancelled) return;
     final engineName = result.value;
-    await _systemTts.selectEngine(engineName);
+    final hadVoice = _selectedSystemVoice != null;
+    // [审查回修 P2-7] 切引擎后立即刷新音色列表；原音色在新引擎不可用时
+    // 服务已清除选择并回落默认（返回列表同步到页面）。
+    final voices = await _systemTts.selectEngine(engineName);
     if (!mounted) return;
-    setState(() => _selectedSystemEngine = engineName);
-    _toast(engineName == null ? '已使用系统默认引擎' : '已切换系统引擎');
+    final voiceCleared = hadVoice && _systemTts.selectedVoice == null;
+    setState(() {
+      _selectedSystemEngine = _systemTts.selectedEngineName;
+      _systemVoices = voices;
+      _selectedSystemVoice = _systemTts.selectedVoice;
+    });
+    _toast(
+      voiceCleared
+          ? '已切换系统引擎；原音色不可用，已回退系统默认'
+          : (engineName == null ? '已使用系统默认引擎' : '已切换系统引擎'),
+    );
   }
 
   Future<void> _pickSystemVoice() async {
@@ -261,23 +309,30 @@ class _ReadAloudSettingsScreenState
         if (aZh != bZh) return aZh ? -1 : 1;
         return a.displayName.compareTo(b.displayName);
       });
+    // [审查回修 P3] 同名不同 locale 的音色必须可区分：选项值用
+    // name+locale 复合键，不用裸 name。
+    String voiceKey(SystemTtsVoice voice) =>
+        '${voice.name}\u0001${voice.locale}';
     final options = <(String?, String, String)>[
       (null, '系统默认', '跟随系统 TTS 设置'),
-      for (final voice in sorted) (voice.name, voice.displayName, voice.locale),
+      for (final voice in sorted)
+        (voiceKey(voice), voice.displayName, voice.locale),
     ];
+    final currentVoice = _selectedSystemVoice;
     final result = await _showChoiceDialog<String?>(
       title: '系统 TTS 音色',
       options: options,
-      current: _selectedSystemVoice?.name,
+      current: currentVoice == null ? null : voiceKey(currentVoice),
     );
     if (result.cancelled) return;
-    final name = result.value;
+    final key = result.value;
     SystemTtsVoice? voice;
-    if (name != null) {
+    if (key != null) {
       voice = sorted.firstWhere(
-        (v) => v.name == name,
-        orElse: () => SystemTtsVoice(name: name, locale: ''),
+        (v) => voiceKey(v) == key,
+        orElse: () => const SystemTtsVoice(name: '', locale: ''),
       );
+      if (voice.name.isEmpty && voice.locale.isEmpty) voice = null;
     }
     await _systemTts.selectVoice(voice);
     if (!mounted) return;
@@ -306,15 +361,23 @@ class _ReadAloudSettingsScreenState
     setState(() => _batteryOptimizationIgnored = ignored);
   }
 
-  /// 语速/音调/音量：本地即时生效 + 持久化（参考刻度）
-  Future<void> _persistVoiceParams() async {
-    await _settings.setIntPref(
-      PrefKeys.ttsSpeechRate,
-      ttsSpeechRateFromSpeed(_speed),
-    );
-    await _settings.setIntPref(PrefKeys.ttsPitch, ttsPitchToStored(_pitch));
-    await _settings.setIntPref(PrefKeys.ttsVolume, ttsVolumeToStored(_volume));
-  }
+  /// 语速/音调/音量：各滑块只落自身键（审查回修 P2-4）
+  ///
+  /// 拖动音量不应顺带改写语速偏好；参考刻度换算统一走 service 纯函数。
+  Future<void> _persistSpeed() => _settings.setIntPref(
+        PrefKeys.ttsSpeechRate,
+        ttsSpeechRateFromSpeed(_speed),
+      );
+
+  Future<void> _persistPitch() => _settings.setIntPref(
+        PrefKeys.ttsPitch,
+        ttsPitchToStored(_pitch),
+      );
+
+  Future<void> _persistVolume() => _settings.setIntPref(
+        PrefKeys.ttsVolume,
+        ttsVolumeToStored(_volume),
+      );
 
   // ===== 缓存 =====
 
@@ -637,6 +700,7 @@ class _EngineTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = _stateOf(context);
     final isAndroid = state._isAndroid;
+    final supportsSystemTts = state._supportsSystemTts;
     final systemSelected = state._systemSelected;
     final selectedEngineLabel = state.systemEngineLabel;
     final selectedVoiceLabel =
@@ -652,7 +716,9 @@ class _EngineTab extends StatelessWidget {
             IosListTile(
               key: const ValueKey('read-aloud-engine-system'),
               title: '系统 TTS',
-              subtitle: '使用系统内置语音引擎（无需网络）',
+              subtitle: supportsSystemTts
+                  ? '使用系统内置语音引擎（无需网络）'
+                  : '仅 Android/iOS/macOS 支持',
               trailing: Icon(
                 systemSelected
                     ? Icons.radio_button_checked
@@ -661,7 +727,10 @@ class _EngineTab extends StatelessWidget {
                     ? Theme.of(context).colorScheme.primary
                     : null,
               ),
-              onTap: () => state._selectGlobalEngine(kSystemTtsEngineUrl),
+              enabled: supportsSystemTts,
+              onTap: supportsSystemTts
+                  ? () => state._selectGlobalEngine(kSystemTtsEngineUrl)
+                  : null,
             ),
             for (final engine in state._httpEngines)
               Builder(builder: (context) {
@@ -712,12 +781,14 @@ class _EngineTab extends StatelessWidget {
             IosListTile(
               key: const ValueKey('read-aloud-system-voice'),
               title: '音色',
-              subtitle: state._systemVoices.isEmpty
-                  ? '无可用音色'
-                  : '选择系统 TTS 音色',
+              subtitle: !supportsSystemTts
+                  ? '仅 Android/iOS/macOS 支持'
+                  : (state._systemVoices.isEmpty
+                      ? '无可用音色'
+                      : '选择系统 TTS 音色'),
               value: selectedVoiceLabel,
-              enabled: state._systemVoices.isNotEmpty,
-              onTap: state._systemVoices.isNotEmpty
+              enabled: supportsSystemTts && state._systemVoices.isNotEmpty,
+              onTap: supportsSystemTts && state._systemVoices.isNotEmpty
                   ? state._pickSystemVoice
                   : null,
             ),
@@ -749,11 +820,14 @@ class _EngineTab extends StatelessWidget {
               divisions: 25,
               onChanged: (v) {
                 state.apply(() => state._speed = v);
-                state.ref
-                    .read(audioNotifierProvider.notifier)
-                    .updateConfig(speed: v);
+                // [审查回修 P2-4] 流媒体听书语速由书级 playSpeed 管理，
+                // 此处只落 TTS 全局偏好，不把正在播放的音频书变速。
+                final notifier = state.ref.read(audioNotifierProvider.notifier);
+                if (!state.ref.read(audioNotifierProvider).isStreamMode) {
+                  notifier.updateConfig(speed: v);
+                }
               },
-              onChangeEnd: state._persistVoiceParams,
+              onChangeEnd: state._persistSpeed,
             ),
             _SliderRow(
               key: const ValueKey('read-aloud-pitch-slider'),
@@ -769,7 +843,7 @@ class _EngineTab extends StatelessWidget {
                     .read(audioNotifierProvider.notifier)
                     .updateConfig(pitch: v);
               },
-              onChangeEnd: state._persistVoiceParams,
+              onChangeEnd: state._persistPitch,
             ),
             _SliderRow(
               key: const ValueKey('read-aloud-volume-slider'),
@@ -785,7 +859,7 @@ class _EngineTab extends StatelessWidget {
                     .read(audioNotifierProvider.notifier)
                     .updateConfig(volume: v);
               },
-              onChangeEnd: state._persistVoiceParams,
+              onChangeEnd: state._persistVolume,
             ),
           ],
         ),

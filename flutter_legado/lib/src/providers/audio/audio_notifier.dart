@@ -528,6 +528,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // A4：新的朗读会话，允许无可用引擎提示再次出现
     _noEngineHintShown = false;
     setAudioBookMode(false);
+    // [审查回修 P2-2] 朗读入口重读全局 TTS 偏好：不依赖会话/媒体会话
+    // 是否就绪，确保播放器默认界面下书级 playSpeed 不会覆盖全局语速。
+    await _loadReadAloudPreferences();
     await _streamPlayer.stop();
     final needReload = state.chapters.isEmpty || state.bookUrl != bookUrl;
     state = state.copyWith(
@@ -1123,7 +1126,12 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         await _streamPlayer.playLocalFile(audioPath!.trim(), speed: 1.0);
         if (_isSpeakStale(token, gen)) return;
         _noEngineHintShown = false;
-        if (state.errorMessage != null) {
+        // [审查回修 P2-7] 音色失效回退等一次性提示：展示一段后由下次
+        // 成功播放自然清除（不逐段刷错误）。
+        final notice = _systemTts.takeNotice();
+        if (notice != null) {
+          state = state.copyWith(errorMessage: notice);
+        } else if (state.errorMessage != null) {
           state = state.copyWith(errorMessage: null);
         }
         return;
@@ -1600,6 +1608,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       }
       state = state.copyWith(state: PlayerState.paused);
       _audioService.notifyPaused();
+      // [审查回修 P2-5] 暂停即释放朗读唤醒锁（流模式由媒体会话自行
+      // 随播放状态释放；恢复播放时 _syncMediaSession 会重新按偏好持锁）。
+      unawaited(_releaseReadAloudWakeLock());
     }
   }
 
@@ -1632,6 +1643,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _paragraphs = [];
     _paragraphIndex = 0;
     unawaited(_streamPlayer.stop());
+    // [审查回修 P2-6] 停止同时复位系统 TTS（flutter_tts busy/排队链），
+    // 保证停止后立即重播不被旧合成阻塞。
+    unawaited(_systemTts.stop());
     notifyListeners();
     state = state.copyWith(
       state: PlayerState.idle,
@@ -1754,6 +1768,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (mode != state.mode) {
       state = state.copyWith(mode: mode);
     }
+    // [审查回修 P2-2] 书级 playSpeed 仅用于流媒体听书（音频书）；TTS 朗读
+    // 使用全局 ttsSpeechRate，避免播放器默认界面打开时把书级语速误套到
+    // 系统 TTS 上（并与 _loadReadAloudPreferences 形成竞态）。
+    if (!state.isStreamMode) return;
     final speed = cfg.playSpeed;
     if (speed >= 0.5 && speed <= 3.0) {
       // 记录库内值：读回不触发回写（避免打开听书页即写库）
@@ -1947,6 +1965,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _disposed = true;
     _paragraphTimer?.cancel();
     unawaited(_streamPlayer.dispose());
+    // [审查回修 P2-6] 释放系统 TTS 平台资源（尽力而为，失败忽略）
+    unawaited(_systemTts.stop());
     super.dispose();
   }
 }
