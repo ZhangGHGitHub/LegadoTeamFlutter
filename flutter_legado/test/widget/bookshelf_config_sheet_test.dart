@@ -1,4 +1,4 @@
-// 书架布局配置 Sheet（设置批6a-1）
+﻿// 书架布局配置 Sheet（设置批6a-1）
 //
 // 覆盖：五段结构、参考版默认值、横竖屏条件、网格/列表条件显隐、
 // 更多信息/简介/标签子项、滑块范围、禁用项、文件夹 8 项隐藏、即时持久化。
@@ -17,6 +17,7 @@ void main() {
     WidgetTester tester, {
     Map<String, Object> prefs = const {},
     Size size = const Size(400, 6000),
+    double? viewportWidth,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = size * 3;
@@ -27,8 +28,10 @@ void main() {
         // 同一用例内多次 pumpSheet 时强制重建容器，避免沿用上一次的
         // 设置状态（ProviderScope 为 const 时会复用 Element/Container）。
         key: UniqueKey(),
-        child: const MaterialApp(
-          home: Scaffold(body: BookshelfConfigSheet()),
+        child: MaterialApp(
+          home: Scaffold(
+            body: BookshelfConfigSheet(viewportWidth: viewportWidth),
+          ),
         ),
       ),
     );
@@ -199,6 +202,23 @@ void main() {
     });
     expect(find.textContaining('最多 2 列'), findsOneWidget);
     expect(find.textContaining('超出将按 2 列显示'), findsOneWidget);
+  });
+
+  testWidgets('列表列数提示使用书架实际 pane 宽（审查 P2-2）',
+      (tester) async {
+    // 窗口 1000dp，但书架 pane 只有 600dp（多栏/窄 pane）：
+    // 600dp 最多 3 列，不能按窗口宽提示 6 列。
+    await pumpSheet(
+      tester,
+      size: const Size(1000, 6000),
+      viewportWidth: 600,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfLayoutListPortrait: 5,
+      },
+    );
+    expect(find.textContaining('当前书架宽度最多 3 列'), findsOneWidget);
+    expect(find.textContaining('最多 6 列'), findsNothing);
   });
 
   testWidgets('文件夹 8 项隐藏（6a-2）', (tester) async {

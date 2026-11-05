@@ -1,4 +1,4 @@
-// 书架核心渲染接线（设置批6a-1）
+﻿// 书架核心渲染接线（设置批6a-1）
 //
 // 覆盖：网格/列表切换、网格样式、标题设置、标签/角标/新章圆点、
 // 分隔线/卡片色、快速滚动条、分组样式 0/1、隐藏空分组、手动排序拖拽、
@@ -18,6 +18,8 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
+import 'package:flutter_legado/src/widgets/book_cover.dart';
+import 'package:flutter_legado/src/widgets/bookshelf/bookshelf_config_sheet.dart';
 import 'package:flutter_legado/src/widgets/book_display_tags_row.dart';
 import 'package:flutter_legado/src/widgets/book_grid_item.dart';
 import 'package:flutter_legado/src/widgets/book_list_item.dart';
@@ -61,6 +63,7 @@ void main() {
     List<BookGroup> groups = const [],
     Size size = const Size(400, 900),
     MockRustApi? api,
+    double? paneWidth,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = size * 3;
@@ -71,12 +74,18 @@ void main() {
         .thenAnswer((_) async => books ?? defaultBooks);
     when(() => mockApi.getBookGroups()).thenAnswer((_) async => groups);
     when(() => mockApi.refreshToc(any(), any())).thenAnswer((_) async => []);
+    final screen = paneWidth == null
+        ? const BookshelfScreen()
+        : Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(width: paneWidth, child: const BookshelfScreen()),
+          );
     await tester.pumpWidget(
       ProviderScope(
         // 同一用例内多次 pumpShelf 时强制重建容器（否则沿用旧设置状态）
         key: UniqueKey(),
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
-        child: const MaterialApp(home: BookshelfScreen()),
+        child: MaterialApp(home: screen),
       ),
     );
     await tester.pump();
@@ -669,6 +678,56 @@ void main() {
     }
   });
 
+  testWidgets('批量多列勾选图标位于封面内且点击可切换（审查 P2-1）',
+      (tester) async {
+    final container = await pumpShelf(tester, prefs: {
+      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+      BookshelfSettings.keyBookshelfLayoutListPortrait: 2,
+    });
+    container.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+    await tester.pumpAndSettle();
+
+    final checkFinder =
+        find.byKey(const ValueKey('bookshelf-batch-check-u1'));
+    expect(checkFinder, findsOneWidget);
+    final coverRect = tester.getRect(find.descendant(
+      of: find.byType(BookListItem).first,
+      matching: find.byType(BookCover),
+    ));
+    expect(
+      coverRect.contains(tester.getRect(checkFinder).center),
+      isTrue,
+      reason: '勾选图标应落在封面矩形内（当前 ${tester.getRect(checkFinder)}）',
+    );
+
+    // IgnorePointer 让点击穿透到 BookListItem，切换选中
+    await tester.tapAt(tester.getCenter(checkFinder));
+    await tester.pumpAndSettle();
+    expect(container.read(bookshelfNotifierProvider).selectedUrls,
+        contains('u1'));
+    expect(
+      coverRect.contains(tester.getRect(checkFinder).center),
+      isTrue,
+      reason: '选中态图标仍应位于封面内',
+    );
+  });
+
+  testWidgets('批量单列尾部勾选可点击切换（审查 P2-1）', (tester) async {
+    final container = await pumpShelf(tester, prefs: {
+      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+    });
+    container.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+    await tester.pumpAndSettle();
+
+    final checkFinder =
+        find.byKey(const ValueKey('bookshelf-batch-check-u1'));
+    expect(checkFinder, findsOneWidget);
+    await tester.tap(checkFinder);
+    await tester.pumpAndSettle();
+    expect(container.read(bookshelfNotifierProvider).selectedUrls,
+        contains('u1'));
+  });
+
   testWidgets('列表书籍类型标签单列/多列/批量均渲染（审查 P2）',
       (tester) async {
     final books = [
@@ -705,6 +764,28 @@ void main() {
     container.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
     await tester.pumpAndSettle();
     expect(find.text('小说'), findsNWidgets(2));
+  });
+
+  testWidgets('配置面板使用书架 pane 实际宽度（审查 P2-2）', (tester) async {
+    await pumpShelf(
+      tester,
+      paneWidth: 600,
+      size: const Size(1000, 900),
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfLayoutListPortrait: 5,
+      },
+    );
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('布局设置'));
+    await tester.pumpAndSettle();
+
+    final sheet = tester.widget<BookshelfConfigSheet>(
+      find.byType(BookshelfConfigSheet),
+    );
+    expect(sheet.viewportWidth, closeTo(600, 0.1),
+        reason: '多栏/窄 pane 下必须传书架 pane 宽，而非窗口 1000dp');
   });
 
   testWidgets('P1-1 列表 1–5 列 × 360/400dp × 1.0/1.3/1.6 × 普通/批量无溢出',
