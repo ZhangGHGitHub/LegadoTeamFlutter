@@ -2,7 +2,7 @@
 //
 // 设置首页入口卡为手写 Material（16dp 圆角、10dp 行距），不经过 IosGroup/
 // CardTheme；本文件验证其卡面 alpha 按 containerOpacity 乘 alpha（文字不受
-// 影响），并保持 11 个入口结构不变。
+// 影响），并保持 12 个入口结构不变（设置批5a-1 新增「朗读设置」）。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -29,7 +29,7 @@ void main() {
   }
 
   Future<void> pumpPage(WidgetTester tester, {ColorScheme? scheme}) async {
-    // 放得下 11 个入口（SliverList 懒构建，小视口会少建）
+    // 放得下 12 个入口（SliverList 懒构建，小视口会少建）
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -47,15 +47,15 @@ void main() {
       .where((m) => m.borderRadius == BorderRadius.circular(16))
       .toList();
 
-  testWidgets('默认 100%：卡面保持主题 surfaceContainerLow alpha，11 个入口', (tester) async {
+  testWidgets('默认 100%：卡面保持主题 surfaceContainerLow alpha，12 个入口', (tester) async {
     await pumpPage(tester);
 
-    expect(cardMaterials(tester).length, 11);
+    expect(cardMaterials(tester).length, 12);
     final scheme = Theme.of(
       tester.element(find.byType(SettingsHomeScreen)),
     ).colorScheme;
     final materials = cardMaterials(tester);
-    expect(materials.length, 11);
+    expect(materials.length, 12);
     for (final material in materials) {
       expect(
         material.color!.a,
@@ -63,22 +63,22 @@ void main() {
         reason: '100% 时不得改变主题卡面 alpha',
       );
     }
-    // 手写结构保留：11 个入口之间 10 条 10dp 分隔
+    // 手写结构保留：12 个入口之间 11 条 10dp 分隔
     expect(
       find.byWidgetPredicate(
         (w) => w is SizedBox && w.height == 10,
         skipOffstage: false,
       ),
-      findsNWidgets(10),
+      findsNWidgets(11),
     );
   });
 
-  testWidgets('容器不透明度 50%：11 张手写卡片 alpha=0.5，文字仍不透明', (tester) async {
+  testWidgets('容器不透明度 50%：12 张手写卡片 alpha=0.5，文字仍不透明', (tester) async {
     uiSettingsListenable.value = const UiSettingsState(containerOpacity: 50);
     await pumpPage(tester);
 
     final items = cardMaterials(tester);
-    expect(items.length, 11);
+    expect(items.length, 12);
     for (final material in items) {
       expect(material.color!.a, closeTo(0.5, 0.001));
     }

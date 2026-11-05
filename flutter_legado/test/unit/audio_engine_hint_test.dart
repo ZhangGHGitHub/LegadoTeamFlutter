@@ -12,11 +12,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'dart:io';
+
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/services/system_tts_service.dart';
 
 import '../mocks/mocks.dart';
+
+/// [设置批5a-1] 系统 TTS 不可用 Fake：
+/// 空引擎配置现在默认走系统 TTS，本文件语义是「无可用引擎」，
+/// 故系统 TTS 恒抛 Unavailable（等价系统未安装引擎）。
+class _UnavailableSystemTts extends SystemTtsService {
+  _UnavailableSystemTts()
+      : super(
+          platform: FlutterTtsSystemTtsPlatform(),
+          baseDirectoryProvider: () async => Directory.systemTemp,
+        );
+
+  @override
+  Future<String> synthesizeToFile({
+    required String text,
+    required double speed,
+    required double pitch,
+    required double volume,
+  }) async {
+    throw const SystemTtsUnavailableException('系统未安装可用的 TTS 引擎');
+  }
+}
 
 void main() {
   late MockRustApi mockApi;
@@ -36,6 +60,7 @@ void main() {
       overrides: [
         bookApiProvider.overrideWithValue(mockApi),
         streamAudioPlayerProvider.overrideWithValue(fakePlayer),
+        systemTtsServiceProvider.overrideWithValue(_UnavailableSystemTts()),
       ],
     );
     addTearDown(container.dispose);
@@ -124,6 +149,7 @@ void main() {
           bookApiProvider.overrideWithValue(mockApi),
           streamAudioPlayerProvider.overrideWithValue(fakePlayer),
           audioServiceProvider.overrideWithValue(audioService),
+          systemTtsServiceProvider.overrideWithValue(_UnavailableSystemTts()),
         ],
       );
       addTearDown(localContainer.dispose);
