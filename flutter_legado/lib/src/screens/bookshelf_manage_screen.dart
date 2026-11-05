@@ -566,14 +566,11 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     );
   }
 
-  /// 分组显示名（book.group 为位掩码，解析书架分组列表）
+  /// 分组显示名（2^n 位掩码 / 旧时间戳 exact 混合语义）
   String _groupNames(Book book) {
     if (book.group == 0) return '未分组';
     final groups = ref.watch(bookshelfNotifierProvider).groups;
-    final names = groups
-        .where((g) => g.groupId > 0 && (book.group & g.groupId) != 0)
-        .map((g) => g.groupName)
-        .toList();
+    final names = bookGroupNames(book, groups);
     return names.isEmpty ? '未分组' : names.join('，');
   }
 

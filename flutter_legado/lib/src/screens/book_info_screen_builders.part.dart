@@ -1155,14 +1155,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
-  /// 分组名（book.group 位掩码 ∩ 书架分组）——原 `_groupText` 的取值逻辑
-  /// 抽出复用；空列表 = 无分组（chips 行不渲染分组 chip，不显示「未分组」）
+  /// 分组名（2^n 位掩码 / 旧时间戳 exact 混合语义）——原 `_groupText`
+  /// 的取值逻辑抽出复用；空列表 = 无分组（chips 行不渲染分组 chip）
   List<String> _groupNamesFor(Book book) {
     final groups = ref.read(bookshelfNotifierProvider).groups;
-    return groups
-        .where((g) => g.groupId > 0 && (book.group & g.groupId) != 0)
-        .map((g) => g.groupName)
-        .toList();
+    return bookGroupNames(book, groups);
   }
 
   /// [U9 | 台账 0917 批二][P2-21] 在读/最新两行（对齐参考 08

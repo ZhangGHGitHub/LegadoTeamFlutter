@@ -34,6 +34,9 @@ mixin MockBookApiStore {
   /// 字典规则自增 ID（独立于 `_nextId`，避免与其他 mock 实体串号）
   int _nextDictRuleId = 1;
 
+  /// 分组位掩码 ID 游标（2^n，独立于通用实体自增 ID）
+  int _nextGroupBit = 1;
+
   /// 备份探测结果（Mock 默认：JSON 备份、无需密码）
   ///
   /// 可通过 `api.mockBackupInspect = ...` 注入以模拟原版加密 zip 备份，

@@ -2157,9 +2157,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                       settings.showUnreadNew &&
                       book.lastCheckCount > 0,
                   typeLabel: _bookTypeLabel(settings, book),
-                  cardColor: settings.cardColorFor(
-                    isDark: Theme.of(context).brightness == Brightness.dark,
-                  ),
+                  // 选中态由外层 secondaryContainer 承载，卡片自绘色需让位，
+                  // 否则会遮盖批量选中高亮。
+                  cardColor: selected
+                      ? 0
+                      : settings.cardColorFor(
+                          isDark:
+                              Theme.of(context).brightness == Brightness.dark,
+                        ),
                   sourceOrigin: book.origin,
                   tags: tags,
                   reserveTagRow: reserveTagRow,
@@ -2207,10 +2212,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     double? maxCoverWidth,
   }) {
     final cs = Theme.of(context).colorScheme;
+    // 选中态高亮由外层 Material 承载；卡片色需让位，避免遮盖选择态
+    final itemSettings = selected
+        ? settings.copyWith(
+            bookshelfCardColor: 0,
+            bookshelfCardColorDark: 0,
+          )
+        : settings;
     final item = BookListItem(
       key: ValueKey(book.bookUrl),
       book: book,
-      settings: settings,
+      settings: itemSettings,
       tags: state.displayTagsOf(book, showTag: settings.bookshelfShowTag),
       typeLabel: _bookTypeLabel(settings, book),
       maxCoverWidth: maxCoverWidth,

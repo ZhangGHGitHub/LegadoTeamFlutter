@@ -216,6 +216,11 @@ class BookListItem extends StatelessWidget {
       color: cardColorValue == 0
           ? Colors.transparent
           : Color(cardColorValue),
+      // 非 0 卡色时给列表卡 8dp 圆角并裁剪，避免直角色块；0 保持透明
+      borderRadius:
+          cardColorValue == 0 ? null : BorderRadius.circular(8),
+      clipBehavior:
+          cardColorValue == 0 ? Clip.none : Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -18,9 +18,6 @@ class BookGroupId {
   static const int video = -6; // 视频
 }
 
-/// 新分组位上限（Rust `get_unused_id` 同口径）：1<<30
-const int kMaxCustomGroupBit = 1 << 30;
-
 /// 新分组位掩码最大组合值（1<<30 及以下所有位全开）
 const int kMaxCustomGroupMask = (1 << 31) - 1;
 
@@ -46,6 +43,15 @@ bool bookBelongsToCustomGroup(Book book, int groupId) {
   }
   return (book.group & groupId) != 0;
 }
+
+/// 书籍命中的自定义分组名（按传入组顺序；空名过滤，旧时间戳 exact）
+List<String> bookGroupNames(Book book, Iterable<BookGroup> groups) => [
+      for (final group in groups)
+        if (group.groupId > 0 &&
+            bookBelongsToCustomGroup(book, group.groupId) &&
+            group.groupName.trim().isNotEmpty)
+          group.groupName.trim(),
+    ];
 
 /// 分组分配后的新 `books.group` 值
 ///
@@ -234,13 +240,7 @@ extension BookshelfStateGrouping on BookshelfState {
       case GroupMode.byGroup:
         // 展示组名而不是 groupId 数字：位掩码可能命中多个组，按组顺序
         // 「、」连接；无匹配组名时回落「分组」，未分组回落「默认」。
-        final names = <String>[
-          for (final group in groups)
-            if (group.groupId > 0 &&
-                bookBelongsToCustomGroup(book, group.groupId) &&
-                group.groupName.trim().isNotEmpty)
-              group.groupName.trim(),
-        ];
+        final names = bookGroupNames(book, groups);
         if (names.isNotEmpty) return names.join('、');
         return book.group > 0 ? '分组' : '默认';
       default:

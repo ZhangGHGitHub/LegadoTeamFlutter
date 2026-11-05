@@ -168,6 +168,9 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       final api = ref.read(bookApiProvider);
       await api.deleteBookGroup(group.groupId);
       await _loadGroups();
+      // [审查 P2-2] Rust 删除分组会同步清 books.group 位；刷新书架通知器，
+      // 让书架列表/分组计数立即反映（不回退到已删除组）。
+      await ref.read(bookshelfNotifierProvider.notifier).refresh();
     } catch (e) {
       _showError('删除失败：$e');
     }

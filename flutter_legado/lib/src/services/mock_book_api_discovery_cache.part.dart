@@ -32,7 +32,12 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
 
   @override
   Future<BookGroup> addBookGroup(BookGroup group) async {
-    final g = group.copyWith(groupId: _nextId++);
+    // [审查] Mock 分组 ID 同样必须是 2^n，跳过已占用位
+    while (_bookGroups.any((g) => g.groupId == _nextGroupBit)) {
+      _nextGroupBit <<= 1;
+    }
+    final g = group.copyWith(groupId: _nextGroupBit);
+    _nextGroupBit <<= 1;
     _bookGroups.add(g);
     return g;
   }
@@ -46,6 +51,21 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   @override
   Future<void> deleteBookGroup(int groupId) async {
     _bookGroups.removeWhere((g) => g.groupId == groupId);
+    // [审查 P1] 与 Rust 同语义：删除分组同时清 books.group 对应位/exact
+    const maxMask = (1 << 31) - 1;
+    final isBit = groupId > 0 &&
+        groupId <= (1 << 30) &&
+        (groupId & (groupId - 1)) == 0;
+    for (var i = 0; i < _books.length; i++) {
+      final book = _books[i];
+      if (isBit) {
+        if (book.group > 0 && book.group <= maxMask) {
+          _books[i] = book.copyWith(group: book.group & ~groupId);
+        }
+      } else if (groupId > 0 && book.group == groupId) {
+        _books[i] = book.copyWith(group: 0);
+      }
+    }
   }
 
   @override
