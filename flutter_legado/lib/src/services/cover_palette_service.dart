@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:palette_generator/palette_generator.dart';
 
@@ -12,8 +13,14 @@ import 'package:palette_generator/palette_generator.dart';
 class CoverPaletteService {
   CoverPaletteService._();
 
+  /// 测试注入：覆盖真实取色（返回 null 表示失败），便于断言调用次数
+  @visibleForTesting
+  static Future<Color?> Function(String url)? debugExtractor;
+
   /// 提取封面 seed 主色；失败返回 null（调用方回退默认配色）
   static Future<Color?> extractSeed(String coverUrl) async {
+    final extractor = debugExtractor;
+    if (extractor != null) return extractor(coverUrl);
     ImageProvider? provider;
     final url = coverUrl.trim();
     if (url.isEmpty) return null;

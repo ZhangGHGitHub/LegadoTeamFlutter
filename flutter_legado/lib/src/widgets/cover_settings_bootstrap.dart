@@ -1,0 +1,39 @@
+// 封面设置冷启动预热（设置批6b-1 审查 R-P2-2）
+//
+// LegadoApp 以本 Widget 包裹应用树：initState 仅 ref.read
+// (coverSettingsProvider)（不 watch、不重建），Provider 异步加载完成后
+// 把持久化值写入 coverSettingsListenable，首屏书架/搜索/发现/详情由该
+// listenable 通知刷新。抽成独立 Widget 便于直接回归测试「根节点预热」
+// 契约，避免测试复制一份假 initState。
+//
+// 编写：全栈工程师（设置批6b-1 审查） ｜ 2026-11-06
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
+
+import '../providers/cover_settings/cover_settings_notifier.dart';
+
+/// 应用根预热壳：只读一次 Provider，渲染子节点
+class CoverSettingsBootstrap extends ConsumerStatefulWidget {
+  final Widget child;
+
+  const CoverSettingsBootstrap({super.key, required this.child});
+
+  @override
+  ConsumerState<CoverSettingsBootstrap> createState() =>
+      _CoverSettingsBootstrapState();
+}
+
+class _CoverSettingsBootstrapState
+    extends ConsumerState<CoverSettingsBootstrap> {
+  @override
+  void initState() {
+    super.initState();
+    // 只 read（不 watch MaterialApp build）：加载完成后由
+    // coverSettingsListenable 通知 BookCover/详情页重建，不触发整树重建。
+    ref.read(coverSettingsProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}

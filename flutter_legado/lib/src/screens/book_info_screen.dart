@@ -91,10 +91,11 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   final ValueNotifier<double> _topCollapse = ValueNotifier<double>(0);
   /// [UI_SYNC_REFACTOR B4] 封面取色 seed（null=未取/关闭开关）
   Color? _coverSeed;
-  /// [设置批6b-1 审查 P1-2] 「仅 WiFi」网络门控：蜂窝/未知网络时背景
-  /// 退纯 surface 且不取色；设置变化时重新探测。
-  bool _wifiAllowed = true;
+  /// [设置批6b-1 审查] 「仅 WiFi」网络门控三态：null=探测中（按不可用
+  /// 处理，避免蜂窝首帧闪网络背景）/ true=可用 / false=蜂窝阻塞。
+  bool? _wifiAllowed;
   int _wifiGateGen = 0;
+  Timer? _wifiRetryTimer;
   /// 封面取色代次（防止旧 URL/旧设置的回调覆盖新结果）
   int _coverSeedGen = 0;
   bool _isLoading = false;
@@ -147,10 +148,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         _topCollapse.value = fraction;
       }
     });
-    if (_loadedBook != null) {
-      unawaited(_extractCoverSeed(_loadedBook!));
-    }
-    // [设置批6b-1 审查 P1-2] 仅 WiFi + 封面设置变化时重查网络与取色
+    // [设置批6b-1 审查] 仅 WiFi + 封面设置变化时重查网络与取色；
+    // 首次探测在下方 _refreshWifiGate 内完成（不再单独取色，避免重复）
     coverSettingsListenable.addListener(_onCoverSettingsChanged);
     unawaited(_refreshWifiGate());
   }
@@ -158,37 +157,52 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   @override
   void dispose() {
     coverSettingsListenable.removeListener(_onCoverSettingsChanged);
+    _wifiRetryTimer?.cancel();
+    _wifiRetryTimer = null;
     PlatformBridgeService.refreshSignal.removeListener(_onBridgeRefresh);
     _scrollController.dispose();
     _topCollapse.dispose();
     super.dispose();
   }
 
-  /// 封面设置变化：重查网络门控并重新取色（默认封面/蜂窝时清空 seed）
+  /// 封面设置变化：只重查网络门控（取色由门控结果统一驱动，避免重复）
   void _onCoverSettingsChanged() {
-    final book = _loadedBook;
-    if (book == null) return;
     unawaited(_refreshWifiGate());
-    unawaited(_extractCoverSeed(book));
     if (mounted) setState(() {});
   }
 
   /// 探测「仅 WiFi」门控（关闭时恒允许；开启时查询平台通道）
+  ///
+  /// 三态：探测中 null → 背景按 surface；蜂窝 false → 纯 surface + 5s
+  /// 重试（恢复 WiFi 自动加载）；WiFi true → 加载背景并取色。
   Future<void> _refreshWifiGate() async {
     final cover = coverSettingsListenable.value;
     final gen = ++_wifiGateGen;
+    final book = _loadedBook;
     if (!cover.loadOnlyOnWifi) {
+      _wifiRetryTimer?.cancel();
+      _wifiRetryTimer = null;
       if (!mounted || gen != _wifiGateGen) return;
-      if (!_wifiAllowed) setState(() => _wifiAllowed = true);
+      if (_wifiAllowed != true) setState(() => _wifiAllowed = true);
+      if (book != null) unawaited(_extractCoverSeed(book));
       return;
     }
     final wifi = await NetworkStatusService.instance.isWifi();
     if (!mounted || gen != _wifiGateGen) return;
-    if (_wifiAllowed != wifi) setState(() => _wifiAllowed = wifi);
-    if (wifi) {
-      final book = _loadedBook;
-      if (book != null) unawaited(_extractCoverSeed(book));
+    if (!wifi) {
+      _wifiRetryTimer?.cancel();
+      _wifiRetryTimer = Timer(const Duration(seconds: 5), () {
+        if (!mounted) return;
+        unawaited(_refreshWifiGate());
+      });
+      if (_wifiAllowed != false) setState(() => _wifiAllowed = false);
+      if (_coverSeed != null) setState(() => _coverSeed = null);
+      return;
     }
+    _wifiRetryTimer?.cancel();
+    _wifiRetryTimer = null;
+    if (_wifiAllowed != true) setState(() => _wifiAllowed = true);
+    if (book != null) unawaited(_extractCoverSeed(book));
   }
 
   /// [UI_SYNC_REFACTOR B4] 封面取色（跟随封面换肤开关开启时生效）

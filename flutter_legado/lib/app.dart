@@ -6,9 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import 'src/models/models.dart';
 import 'src/providers/bookshelf/bookshelf_notifier.dart';
-// [设置批6b-1 审查 P1-1] 冷启动预热封面设置（首屏书架/搜索/发现/详情
-// 的默认封面文字/描边阴影/仅 WiFi 不能等到打开设置页才加载）
-import 'src/providers/cover_settings/cover_settings_notifier.dart';
 import 'src/providers/providers.dart';
 import 'src/providers/ui_settings/ui_settings_notifier.dart';
 import 'src/providers/theme/theme_colors_notifier.dart';
@@ -31,6 +28,7 @@ import 'src/theme/md3_colors.dart';
 import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
 import 'src/widgets/system_bar_binder.dart';
+import 'src/widgets/cover_settings_bootstrap.dart';
 import 'src/widgets/eye_protection_layer.dart';
 import 'src/widgets/theme_background_layer.dart';
 import 'src/widgets/crash_log_dialog.dart';
@@ -218,12 +216,6 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   @override
   void initState() {
     super.initState();
-    // [设置批6b-1 审查 P1-1] 冷启动预热封面设置：CoverSettings 只在
-    // `_load()` 完成后把持久化值写入 coverSettingsListenable；若不在此
-    // 初始化，书架/搜索/发现/详情会先按默认值渲染，直到用户打开设置页
-    // 或 WebDAV 恢复才加载。此处只 read（不 watch MaterialApp build），
-    // 加载完成后由 listenable 通知 BookCover/详情页重建，不触发整树重建。
-    ref.read(coverSettingsProvider);
     // 系统栏样式由 [SystemBarBinder] 按偏好与主题统一驱动
     // 首帧渲染后检查上次崩溃日志并弹窗提示
     // [P2-13 2026-09-18] 弹窗上下文改用全局 Navigator（见
@@ -423,7 +415,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       themeColors.bgImageNight,
     );
 
-    return MaterialApp(
+    return CoverSettingsBootstrap(
+      child: MaterialApp(
       title: 'Legado',
       // [UI-FIX v2.0.2 | 2026-08-06] 平台桥接服务经此 Key 分发页面跳转 / SnackBar
       //（Task #114，服务层无 BuildContext） — QoderCN
@@ -483,7 +476,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       // [UI-fix v2.0.167] routes map → onGenerateRoute：命名路由统经
       // AppRoutes.generateRoute 构建，Android 上按分档覆盖转场时长
       onGenerateRoute: AppRoutes.generateRoute,
-        );
+      ),
+    );
       },
     );
   }

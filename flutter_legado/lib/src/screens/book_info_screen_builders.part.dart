@@ -79,7 +79,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final hasCover = hasCoverUrl && !coverSettings.useDefaultCover;
     final isDefaultCover = !hasCover;
     final wifiBlocked =
-        hasCover && coverSettings.loadOnlyOnWifi && !_wifiAllowed;
+        hasCover && coverSettings.loadOnlyOnWifi && _wifiAllowed != true;
     final showNetworkBackdrop = hasCover && !wifiBlocked;
     final ui = uiSettingsListenable.value;
     final mode = isDefaultCover
