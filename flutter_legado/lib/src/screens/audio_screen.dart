@@ -816,10 +816,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Symbols.tune_rounded, size: 20),
-              title: const Text('朗读引擎'),
-              subtitle: const Text('管理 HTTP TTS 朗读引擎'),
+              title: const Text('朗读设置'),
+              subtitle: const Text('引擎/音色/语速与朗读行为'),
+              // [设备验收 P1] 指向新三页签页；HTTP 引擎管理在页内可达
               onTap: () =>
-                  Navigator.pushNamed(context, AppRoutes.readAloudConfig),
+                  Navigator.pushNamed(context, AppRoutes.readAloudSettings),
             ),
           ],
         ],

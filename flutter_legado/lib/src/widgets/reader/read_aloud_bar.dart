@@ -706,8 +706,9 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               icon: const Icon(Icons.tune, size: 18),
               label: const Text('朗读设置'),
               style: _compactButtonStyle,
+              // [设备验收 P1] 指向新「朗读设置」三页签页（旧页仅 HTTP 引擎 CRUD）
               onPressed: () =>
-                  Navigator.pushNamed(context, AppRoutes.readAloudConfig),
+                  Navigator.pushNamed(context, AppRoutes.readAloudSettings),
             ),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（显式入口）。

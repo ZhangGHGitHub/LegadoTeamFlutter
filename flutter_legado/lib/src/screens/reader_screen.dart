@@ -303,8 +303,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // ref 在 super.dispose() 前仍可用；异常吞掉，退出流程不因朗读清理失败中断。
     try {
       unawaited(ref.read(audioNotifierProvider.notifier).onReaderExit());
-    } catch (_) {
-      // 忽略：阅读器退出不因朗读清理失败而中断
+    } catch (e) {
+      // [设备验收 P1] 不再静默：记录原因，但不改变退出流程
+      debugPrint('阅读器 dispose 停止朗读失败（忽略）: $e');
     }
     super.dispose();
   }
@@ -816,6 +817,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   // 路由带入的内存 Book 是瘦壳（openBook 只回写媒体类型位，不带 notShelf 位），
   // 不可作为在架依据——与 book_info_screen 的判定数据源一致。
 
+  /// 通知朗读会话「阅读器即将退出」（设备验收 P1）
+  ///
+  /// `keepReadAloudOnExit=false`（默认）时停止由阅读器发起的朗读。必须在
+  /// 真正 `Navigator.pop` 之前调用：dispose 阶段 ref 可能已失效，不能作为
+  /// 唯一时机。onReaderExit 幂等，重复调用安全。
+  void _notifyReadAloudExit() {
+    try {
+      unawaited(ref.read(audioNotifierProvider.notifier).onReaderExit());
+    } catch (e) {
+      debugPrint('退出阅读器停止朗读失败（忽略）: $e');
+    }
+  }
+
   /// 退出判定入口（PopScope 拦截所有 pop 尝试后调用）
   Future<void> _onExitPop(BuildContext context) async {
     // [批1a 审查回修 | 2026-10-31] disableReturnKey 语义对齐原版
@@ -834,7 +848,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     try {
       final book = ref.read(readerNotifierProvider).currentBook;
       if (book == null) {
-        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) {
+          _notifyReadAloudExit();
+          Navigator.pop(context);
+        }
         return;
       }
       // 在架判定：DB 记录权威（查询失败按未入架处理，对齐原版默认
@@ -850,7 +867,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (inShelf) {
         // 已入架 → 直接退出（现状不变：进度落库 + pop）
         await notifier.saveProgress();
-        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) {
+          _notifyReadAloudExit();
+          Navigator.pop(context);
+        }
         return;
       }
       // 未入架：读「返回时提示放入书架」开关（既有设置项，默认开启）
@@ -861,7 +881,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (!showAlert) {
         // 开关关 → 静默退出且书不残留（对齐原版第二路）
         await _removeNotShelfBook(book);
-        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) {
+          _notifyReadAloudExit();
+          Navigator.pop(context);
+        }
         return;
       }
       // 默认路 → 弹「放入书架」提示
@@ -885,11 +908,17 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           return;
         }
         await notifier.saveProgress();
-        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) {
+          _notifyReadAloudExit();
+          Navigator.pop(context);
+        }
       } else {
         // 取消 → 退出且未入架书不残留（对齐原版第三路 noButton 分支）
         await _removeNotShelfBook(book);
-        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) {
+          _notifyReadAloudExit();
+          Navigator.pop(context);
+        }
       }
     } finally {
       _exitPending = false;
@@ -1052,6 +1081,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           unawaited(notifier.saveProgress());
+          // [设备验收 P1] 裸 pop 兜底：同样通知朗读退出（幂等）
+          _notifyReadAloudExit();
         } else {
           unawaited(_onExitPop(context));
         }
