@@ -2,7 +2,8 @@
 //
 // 覆盖：
 // 1) default 运行时归一整段（不是句级）、未知存储值回退 default；
-// 2) paragraph：空行分段、单换行保留在同一单元、段内换行不丢；
+// 2) paragraph：有空行时空行分段并保留段内单换行；无空行（TXT/在线书）
+//    逐行切分，CRLF 同样覆盖；
 // 3) symbols：选中标点切分、连续标点同单元、保留标点、非法字符过滤、
 //    空集合回退句末标点；
 // 4) page：按页首偏移切分、补齐 0/章末、越界过滤、空页跳过、
@@ -89,6 +90,14 @@ void main() {
         kReadAloudDefaultSentenceEndSymbols.split('').toSet(),
       );
     });
+
+    test('decode：兼容历史 String 与参考版 List<String>/StringSet 形态', () {
+      expect(decodeReadAloudSymbols('。！'), '。！');
+      expect(decodeReadAloudSymbols(<String>['。', '！']), '。！');
+      expect(decodeReadAloudSymbols(<Object?>['。', 1, '！']), '。！');
+      expect(decodeReadAloudSymbols(null), '');
+      expect(decodeReadAloudSymbols(42), '');
+    });
   });
 
   group('paragraph（整段）', () {
@@ -105,7 +114,7 @@ void main() {
       expect(units[1].end, content.length);
     });
 
-    test('default 与 paragraph 结果一致（整段，不按单换行拆）', () {
+    test('存在空行时 default 与 paragraph 一致（段内单换行保留）', () {
       const content = '甲\n乙\n\n丙\n丁';
       final byDefault = splitReadAloudUnits(
         content,
@@ -117,6 +126,37 @@ void main() {
       );
       expect(byDefault, byParagraph);
       expect(byDefault.map((u) => u.text).toList(), ['甲\n乙', '丙\n丁']);
+    });
+
+    test('无空行（TXT/在线书单换行）：按每个换行切，不整章合成一个单元', () {
+      const content = '第一行\n第二行\n第三行';
+      for (final mode in [
+        ReadAloudContentSplitMode.defaultMode,
+        ReadAloudContentSplitMode.paragraph,
+      ]) {
+        final units = splitReadAloudUnits(content, mode);
+        expect(units.map((u) => u.text).toList(), ['第一行', '第二行', '第三行']);
+        expect(units[1].start, content.indexOf('第二行'));
+      }
+    });
+
+    test('CRLF：空行分段优先；无空行时按 CRLF 逐行切', () {
+      const blankLine = '甲\r\n乙\r\n\r\n丙';
+      expect(
+        splitReadAloudUnits(
+          blankLine,
+          ReadAloudContentSplitMode.paragraph,
+        ).map((u) => u.text).toList(),
+        ['甲\r\n乙', '丙'],
+      );
+      const singleLines = '第一行\r\n第二行\r\n第三行';
+      expect(
+        splitReadAloudUnits(
+          singleLines,
+          ReadAloudContentSplitMode.paragraph,
+        ).map((u) => u.text).toList(),
+        ['第一行', '第二行', '第三行'],
+      );
     });
 
     test('首尾空白剔除，纯空白段不产生单元', () {
@@ -162,6 +202,23 @@ void main() {
         symbols: '…！？',
       );
       expect(units.map((u) => u.text).toList(), ['甲……', '乙！？', '丙']);
+    });
+
+    test('先按行再逐行按标点：无标点行不跨行合并（参考 lineParagraphs）', () {
+      const content = '无标点第一行\n无标点第二行\n带标点。结尾';
+      final units = splitReadAloudUnits(
+        content,
+        ReadAloudContentSplitMode.symbols,
+        symbols: '。',
+      );
+      expect(units.map((u) => u.text).toList(), [
+        '无标点第一行',
+        '无标点第二行',
+        '带标点。',
+        '结尾',
+      ]);
+      expect(units[1].start, content.indexOf('无标点第二行'));
+      expect(units[3].start, content.indexOf('结尾'));
     });
 
     test('未选择标点 → 回退句末标点，不按逗号切分', () {
@@ -228,6 +285,21 @@ void main() {
       );
       expect(units.map((u) => u.text).toList(), ['甲', '乙']);
       expect(units[1].start, content.indexOf('乙'));
+    });
+
+    test('页首落在代理对中间：向前对齐，substring 不切开 emoji', () {
+      const content = '甲😀乙';
+      // 😀 占 UTF-16 两个 code unit（索引 1-2），页首 2 落在代理对中间
+      final units = splitReadAloudUnits(
+        content,
+        ReadAloudContentSplitMode.page,
+        pageStarts: const [2],
+      );
+      expect(units.map((u) => u.text).toList(), ['甲', '😀乙']);
+      for (final unit in units) {
+        expect(content.substring(unit.start, unit.end), unit.text);
+      }
+      expect(units[1].start, 1, reason: '低代理项位置向前对齐到高代理项');
     });
 
     test('无分页信息（null/空）回退整段', () {

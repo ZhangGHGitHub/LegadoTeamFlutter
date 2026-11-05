@@ -155,6 +155,40 @@ void main() {
       readNotifier().stop();
     });
 
+    testWidgets('paragraph：无空行单换行逐行切分（TXT/在线书回归）', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'httpTtsSeedVersion': 1,
+        PrefKeys.readAloudContentSplitMode: 'paragraph',
+      });
+      await startWith(chapter0: '第一行\n第二行\n第三行');
+
+      expect(readNotifier().paragraphCount, 3, reason: '不得整章合成 1 个单元');
+      expect(speakTexts, ['第一行']);
+
+      fakePlayer.completePlayback();
+      await tester.pump();
+      await tester.pump();
+      expect(readNotifier().currentParagraphIndex, 1);
+      expect(speakTexts, ['第一行', '第二行']);
+      readNotifier().stop();
+    });
+
+    testWidgets('paragraph：startChapterPos 按单换行行偏移定位', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'httpTtsSeedVersion': 1,
+        PrefKeys.readAloudContentSplitMode: 'paragraph',
+      });
+      const content = '第一行\n第二行\n第三行';
+      await startWith(
+        chapter0: content,
+        startChapterPos: content.indexOf('第三行'),
+      );
+
+      expect(readNotifier().currentParagraphIndex, 2);
+      expect(speakTexts, ['第三行']);
+      readNotifier().stop();
+    });
+
     testWidgets('default：运行时按整段（与 paragraph 一致）', (tester) async {
       SharedPreferences.setMockInitialValues({
         'httpTtsSeedVersion': 1,
@@ -195,6 +229,23 @@ void main() {
 
       expect(readNotifier().paragraphCount, 3);
       expect(speakTexts, ['甲，乙。']);
+      readNotifier().stop();
+    });
+
+    testWidgets('symbols：参考版 List<String> 存储可读，且不拖累语速读回', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'httpTtsSeedVersion': 1,
+        PrefKeys.readAloudContentSplitMode: 'symbols',
+        // 参考版 StringSet / 外部备份数组形态
+        PrefKeys.readAloudContentSplitSymbols: <String>['。', '！'],
+        PrefKeys.ttsSpeechRate: 15,
+      });
+      await startWith(chapter0: '第一句。第二句！第三句');
+
+      expect(readNotifier().paragraphCount, 3);
+      expect(readNotifier().contentSplitSymbols, '。！');
+      expect(readNotifier().ttsParagraphIntervalMs, 0);
+      expect(readState().config.speed, 2.0, reason: '标点数组不得中断语速读回');
       readNotifier().stop();
     });
 
@@ -348,6 +399,33 @@ void main() {
       expect(readState().state, PlayerState.idle);
       expect(readNotifier().currentParagraphIndex, 0);
       expect(speakTexts, ['第一段']);
+    });
+
+    testWidgets('等待中暂停再恢复：从下一段继续，不重播上一段', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'httpTtsSeedVersion': 1,
+        PrefKeys.ttsParagraphInterval: 500,
+      });
+      await startWith(chapter0: '第一段\n\n第二段');
+      expect(speakTexts, ['第一段']);
+
+      fakePlayer.completePlayback();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      readNotifier().pause();
+      expect(readState().state, PlayerState.paused);
+
+      // 取消定时器后超过原间隔也不得自行推进
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(readNotifier().currentParagraphIndex, 0);
+      expect(speakTexts, ['第一段']);
+
+      await readNotifier().play();
+      await tester.pump();
+
+      expect(readNotifier().currentParagraphIndex, 1);
+      expect(speakTexts, ['第一段', '第二段']);
+      readNotifier().stop();
     });
   });
 

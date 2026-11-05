@@ -187,6 +187,19 @@ void main() {
     expect(pageState.currentPageStartPos, starts[1], reason: '第 2 页页首与页首偏移表一致');
   });
 
+  testWidgets('[设置批5b] 滚动模式不提供页首偏移（按页朗读回退整段）', (tester) async {
+    _mockPrefs();
+    final (container, _) = await _pumpReader(tester);
+    addTearDown(container.dispose);
+
+    container
+        .read(readerNotifierProvider.notifier)
+        .updatePageTurnMode(PageTurnMode.scroll);
+    await tester.pumpAndSettle();
+
+    expect(_pageState(tester).currentChapterPageStarts, isEmpty);
+  });
+
   testWidgets('进入阅读器按书名+作者加载既有书签并显示角标', (tester) async {
     _mockPrefs();
     final stored = [

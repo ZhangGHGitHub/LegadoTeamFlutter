@@ -718,7 +718,7 @@ void main() {
       expect(find.textContaining('未选择时按句末标点'), findsOneWidget);
     });
 
-    testAndroid('标点多选：切换写入存储串，已在句末集合上追加', (tester) async {
+    testAndroid('标点多选：切换按参考版 StringList 写入，已在句末集合上追加', (tester) async {
       await pumpPage(tester);
       await tapText(tester, '内容划分方式');
       await tapText(tester, '按符号');
@@ -728,8 +728,8 @@ void main() {
 
       expect(chipOf(tester, '，').selected, isTrue);
       expect(
-        (await prefs()).getString(PrefKeys.readAloudContentSplitSymbols),
-        '。！？…，',
+        (await prefs()).getStringList(PrefKeys.readAloudContentSplitSymbols),
+        ['。', '！', '？', '…', '，'],
       );
       expect(find.textContaining('已选 5 个标点'), findsOneWidget);
     });
@@ -775,7 +775,8 @@ void main() {
     testAndroid('重启回显：模式/标点/间隔/分片方式/推理级别', (tester) async {
       SharedPreferences.setMockInitialValues({
         PrefKeys.readAloudContentSplitMode: 'symbols',
-        PrefKeys.readAloudContentSplitSymbols: '。！',
+        // 参考版 StringSet/外部备份数组形态
+        PrefKeys.readAloudContentSplitSymbols: <String>['。', '！'],
         PrefKeys.ttsParagraphInterval: 1500,
         PrefKeys.speechAnalysisMode: 'ai_understanding',
         PrefKeys.speechAnalysisReasoningLevel: 'high',
