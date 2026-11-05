@@ -69,9 +69,18 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   ///   切换 Crossfade 800ms。
   Widget _buildPage(BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
+    // [设置批6b-1 审查 P1-2] 背景封面统一受封面设置约束：
+    // - useDefaultCover：按默认封面处理（走默认背景档，不加载网络封面）；
+    // - 仅 WiFi + 蜂窝：背景退纯 surface、跳过封面取色；
+    // - 网络封面加载成功后才叠加 seed。
+    final coverSettings = coverSettingsListenable.value;
     final coverUrl = book.customCoverUrl ?? book.coverUrl;
-    final hasCover = coverUrl != null && coverUrl.isNotEmpty;
+    final hasCoverUrl = coverUrl != null && coverUrl.isNotEmpty;
+    final hasCover = hasCoverUrl && !coverSettings.useDefaultCover;
     final isDefaultCover = !hasCover;
+    final wifiBlocked =
+        hasCover && coverSettings.loadOnlyOnWifi && !_wifiAllowed;
+    final showNetworkBackdrop = hasCover && !wifiBlocked;
     final ui = uiSettingsListenable.value;
     final mode = isDefaultCover
         ? ui.bookInfoDefaultCoverBackground
@@ -80,19 +89,23 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // 解码+滤波开销降一个量级（进详情转场掉帧根因之一）
     final blurWidth =
         (MediaQuery.sizeOf(context).width / 3).round().clamp(120, 480);
-    final seed = _coverSeed;
+    final seed = showNetworkBackdrop ? _coverSeed : null;
     final seedOverlay = seed == null
         ? cs.secondaryContainer
         : Color.lerp(cs.secondaryContainer, seed, 0.42)!;
     // [UI_SYNC_REFACTOR R1] enableBlur 关闭时 on 档退化为不模糊显示（对齐参考仓全局开关语义）
-    final useBlur = mode == 'on' && hasCover && ui.enableBlur;
-    final showBackdrop = !(mode == 'off_for_default' && isDefaultCover);
+    final useBlur = mode == 'on' && showNetworkBackdrop && ui.enableBlur;
+    final showBackdrop =
+        !wifiBlocked && !(mode == 'off_for_default' && isDefaultCover);
 
     final Widget backdrop = !showBackdrop
-        ? ColoredBox(color: cs.surface)
+        ? ColoredBox(
+            key: const ValueKey('bookInfoBackdropSurface'),
+            color: cs.surface,
+          )
         : Stack(
             children: [
-              if (hasCover)
+              if (showNetworkBackdrop)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -120,7 +133,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                 )
               else
                 ColoredBox(color: cs.surfaceContainerHighest),
-              if (hasCover)
+              if (showNetworkBackdrop)
                 Positioned.fill(
                   child: ColoredBox(
                     color: seedOverlay.withValues(alpha: 0.34),

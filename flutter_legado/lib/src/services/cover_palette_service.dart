@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/painting.dart';
 import 'package:palette_generator/palette_generator.dart';
 
@@ -17,7 +18,9 @@ class CoverPaletteService {
     final url = coverUrl.trim();
     if (url.isEmpty) return null;
     if (url.startsWith('http://') || url.startsWith('https://')) {
-      provider = NetworkImage(url);
+      // [设置批6b-1 审查 P1-2] 复用封面图片缓存（CachedNetworkImageProvider），
+      // 避免详情页取色再发一次全尺寸网络请求；缓存命中时直接解码缩略图。
+      provider = CachedNetworkImageProvider(url);
     } else {
       // 本地文件路径（import_local_book 落库约定）
       final file = File(url);

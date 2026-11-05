@@ -13,9 +13,11 @@ import 'package:share_plus/share_plus.dart';
 
 import '../bridge/ffi.dart' show BridgeError;
 import '../l10n/app_strings.dart';
+import '../models/cover_settings.dart';
 import '../models/models.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
@@ -27,6 +29,7 @@ import '../services/cover_palette_service.dart';
 import '../services/book_api.dart';
 import '../services/cache_service.dart';
 import '../services/local_book_store.dart'; // [iOS 视角F C1] 本地书相对标识解析
+import '../services/network_status_service.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_book_upload_service.dart';
@@ -88,6 +91,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   final ValueNotifier<double> _topCollapse = ValueNotifier<double>(0);
   /// [UI_SYNC_REFACTOR B4] 封面取色 seed（null=未取/关闭开关）
   Color? _coverSeed;
+  /// [设置批6b-1 审查 P1-2] 「仅 WiFi」网络门控：蜂窝/未知网络时背景
+  /// 退纯 surface 且不取色；设置变化时重新探测。
+  bool _wifiAllowed = true;
+  int _wifiGateGen = 0;
+  /// 封面取色代次（防止旧 URL/旧设置的回调覆盖新结果）
+  int _coverSeedGen = 0;
   bool _isLoading = false;
   /// 整页首屏：仅在连 Book 壳都没有时显示（对齐原版先 post bookData）
   bool _pageLoading = true;
@@ -141,24 +150,78 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     if (_loadedBook != null) {
       unawaited(_extractCoverSeed(_loadedBook!));
     }
+    // [设置批6b-1 审查 P1-2] 仅 WiFi + 封面设置变化时重查网络与取色
+    coverSettingsListenable.addListener(_onCoverSettingsChanged);
+    unawaited(_refreshWifiGate());
   }
 
   @override
   void dispose() {
+    coverSettingsListenable.removeListener(_onCoverSettingsChanged);
     PlatformBridgeService.refreshSignal.removeListener(_onBridgeRefresh);
     _scrollController.dispose();
     _topCollapse.dispose();
     super.dispose();
   }
 
+  /// 封面设置变化：重查网络门控并重新取色（默认封面/蜂窝时清空 seed）
+  void _onCoverSettingsChanged() {
+    final book = _loadedBook;
+    if (book == null) return;
+    unawaited(_refreshWifiGate());
+    unawaited(_extractCoverSeed(book));
+    if (mounted) setState(() {});
+  }
+
+  /// 探测「仅 WiFi」门控（关闭时恒允许；开启时查询平台通道）
+  Future<void> _refreshWifiGate() async {
+    final cover = coverSettingsListenable.value;
+    final gen = ++_wifiGateGen;
+    if (!cover.loadOnlyOnWifi) {
+      if (!mounted || gen != _wifiGateGen) return;
+      if (!_wifiAllowed) setState(() => _wifiAllowed = true);
+      return;
+    }
+    final wifi = await NetworkStatusService.instance.isWifi();
+    if (!mounted || gen != _wifiGateGen) return;
+    if (_wifiAllowed != wifi) setState(() => _wifiAllowed = wifi);
+    if (wifi) {
+      final book = _loadedBook;
+      if (book != null) unawaited(_extractCoverSeed(book));
+    }
+  }
+
   /// [UI_SYNC_REFACTOR B4] 封面取色（跟随封面换肤开关开启时生效）
+  ///
+  /// [设置批6b-1 审查 P1-2] 总是默认封面时不取色；仅 WiFi 开启且当前
+  /// 为蜂窝网络时跳过取色（背景已退纯 surface）。
   Future<void> _extractCoverSeed(Book book) async {
+    final gen = ++_coverSeedGen;
     final ui = uiSettingsListenable.value;
-    if (!ui.bookInfoFollowCoverColor) return;
+    final cover = coverSettingsListenable.value;
+    if (!ui.bookInfoFollowCoverColor || cover.useDefaultCover) {
+      if (mounted && _coverSeed != null) {
+        setState(() => _coverSeed = null);
+      }
+      return;
+    }
     final coverUrl = book.customCoverUrl ?? book.coverUrl;
-    if (coverUrl == null || coverUrl.isEmpty) return;
+    if (coverUrl == null || coverUrl.isEmpty) {
+      if (mounted && _coverSeed != null) {
+        setState(() => _coverSeed = null);
+      }
+      return;
+    }
+    if (cover.loadOnlyOnWifi) {
+      final wifi = await NetworkStatusService.instance.isWifi();
+      if (!mounted || gen != _coverSeedGen) return;
+      if (!wifi) {
+        if (_coverSeed != null) setState(() => _coverSeed = null);
+        return;
+      }
+    }
     final seed = await CoverPaletteService.extractSeed(coverUrl);
-    if (!mounted) return;
+    if (!mounted || gen != _coverSeedGen) return;
     setState(() => _coverSeed = seed);
   }
 
@@ -418,7 +481,16 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 )
               : _loadedBook == null
                   ? const ErrorView(message: '书籍不存在')
-                  : _buildPage(context, _loadedBook!, _chapters),
+                  // [设置批6b-1 审查 P1-2] 封面设置变化（总是默认封面/
+                  // 仅 WiFi/描边阴影）即时刷新详情背景与封面
+                  : ValueListenableBuilder<CoverSettings>(
+                      valueListenable: coverSettingsListenable,
+                      builder: (context, _, _) => _buildPage(
+                        context,
+                        _loadedBook!,
+                        _chapters,
+                      ),
+                    ),
         // [B1 形态对齐 | full-stack-engineer + UI] 底部固定双按钮栏已移除：
         // 阅读入口改右下浮动胶囊（floatingActionButton 在位），
         // 加书架/移出书架入口保留在四宫格第一格，功能不丢失
