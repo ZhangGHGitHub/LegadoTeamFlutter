@@ -13,6 +13,7 @@ import '../routes.dart';
 import '../services/platform_channel.dart';
 import '../services/settings_service.dart';
 import '../services/system_tts_service.dart';
+import '../utils/read_aloud_content_split.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
@@ -40,7 +41,8 @@ class ReadAloudSettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _ReadAloudSettingsScreenState
-    extends ConsumerState<ReadAloudSettingsScreen> with WidgetsBindingObserver {
+    extends ConsumerState<ReadAloudSettingsScreen>
+    with WidgetsBindingObserver {
   SettingsService get _settings => ref.read(settingsProvider);
 
   bool _loading = true;
@@ -52,6 +54,14 @@ class _ReadAloudSettingsScreenState
   bool _readAloudWakeLock = false;
   bool _keepReadAloudOnExit = false;
   bool _mediaButtonPerNext = false;
+
+  // ===== 内容分析（设置批5b）=====
+  String _speechAnalysisMode = 'rule';
+  String _speechAnalysisReasoningLevel = 'OFF';
+  ReadAloudContentSplitMode _contentSplitMode =
+      ReadAloudContentSplitMode.defaultMode;
+  String _contentSplitSymbols = '';
+  int _ttsParagraphInterval = kDefaultTtsParagraphIntervalMs;
 
   // ===== 引擎与音色 =====
   String _effectiveEngine = '';
@@ -81,6 +91,49 @@ class _ReadAloudSettingsScreenState
   bool get _supportsSystemTts => platformSupportsSystemTts();
 
   SystemTtsService get _systemTts => ref.read(systemTtsServiceProvider);
+
+  // ===== 内容分析展示（设置批5b）=====
+
+  /// 当前生效标点集合：存储空串按句末标点展示（与朗读实际行为一致）
+  Set<String> get _effectiveSplitSymbols =>
+      readAloudSymbolSet(_contentSplitSymbols);
+
+  String get _speechAnalysisModeLabel => switch (_speechAnalysisMode) {
+    'rule_with_ai' => '规则+AI',
+    'ai_understanding' => 'AI 理解',
+    _ => '规则',
+  };
+
+  String get _speechAnalysisModeSummary => switch (_speechAnalysisMode) {
+    'rule_with_ai' || 'ai_understanding' => 'AI 分片暂未支持，实际按规则分片',
+    _ => '按标点/段落规则分片',
+  };
+
+  String get _reasoningLevelLabel =>
+      switch (_speechAnalysisReasoningLevel.toLowerCase()) {
+        'off' => '关闭',
+        'auto' => '自动',
+        'low' => '低',
+        'medium' => '中',
+        'high' => '高',
+        'xhigh' => '极高',
+        'max' => '最高',
+        _ => _speechAnalysisReasoningLevel,
+      };
+
+  String get _contentSplitModeLabel => switch (_contentSplitMode) {
+    ReadAloudContentSplitMode.paragraph => '整段',
+    ReadAloudContentSplitMode.page => '整页',
+    ReadAloudContentSplitMode.symbols => '按符号',
+    ReadAloudContentSplitMode.defaultMode => '默认',
+  };
+
+  String get _contentSplitModeSummary => switch (_contentSplitMode) {
+    ReadAloudContentSplitMode.paragraph => '按空行分段落朗读（保留段内换行）',
+    ReadAloudContentSplitMode.page => '按阅读器当前章分页朗读；切章回退整段',
+    ReadAloudContentSplitMode.symbols => '按选中标点切分，连续标点同一单元',
+    ReadAloudContentSplitMode.defaultMode => '跟随规则分片，当前按整段朗读',
+  };
 
   /// 系统引擎展示名（未选择/已卸载时回退原始值）
   String get systemEngineLabel {
@@ -158,6 +211,28 @@ class _ReadAloudSettingsScreenState
         PrefKeys.mediaButtonPerNext,
         defaultValue: false,
       );
+      // [设置批5b] 内容分析偏好：AI 取值只保留展示（选项置灰），未知值归一
+      final analysisMode = await s.getStringPref(
+        PrefKeys.speechAnalysisMode,
+        defaultValue: 'rule',
+      );
+      final reasoningLevel = await s.getStringPref(
+        PrefKeys.speechAnalysisReasoningLevel,
+        defaultValue: 'OFF',
+      );
+      final splitMode = ReadAloudContentSplitMode.fromStorage(
+        await s.getStringPref(
+          PrefKeys.readAloudContentSplitMode,
+          defaultValue: ReadAloudContentSplitMode.defaultMode.storageValue,
+        ),
+      );
+      final splitSymbols = await s.getStringPref(
+        PrefKeys.readAloudContentSplitSymbols,
+        defaultValue: '',
+      );
+      final paragraphInterval =
+          await s.getIntPrefOrNull(PrefKeys.ttsParagraphInterval) ??
+          kDefaultTtsParagraphIntervalMs;
       final rate = await s.getIntPrefOrNull(PrefKeys.ttsSpeechRate);
       final pitch = await s.getIntPrefOrNull(PrefKeys.ttsPitch);
       final volume = await s.getIntPrefOrNull(PrefKeys.ttsVolume);
@@ -176,12 +251,27 @@ class _ReadAloudSettingsScreenState
         _cacheStats = stats;
         _batteryOptimizationIgnored = batteryIgnored;
         _defaultInterface = defaultInterface == 'player' ? 'player' : 'classic';
-        _playerBackground =
-            playerBackground == 'transparent' ? 'transparent' : 'solid';
+        _playerBackground = playerBackground == 'transparent'
+            ? 'transparent'
+            : 'solid';
         _ignoreAudioFocus = ignoreAudioFocus;
         _readAloudWakeLock = wakeLock;
         _keepReadAloudOnExit = keepOnExit;
         _mediaButtonPerNext = perNext;
+        _speechAnalysisMode = switch (analysisMode) {
+          'rule_with_ai' || 'ai_understanding' => analysisMode,
+          _ => 'rule',
+        };
+        _speechAnalysisReasoningLevel = reasoningLevel.trim().isEmpty
+            ? 'OFF'
+            : reasoningLevel;
+        _contentSplitMode = splitMode;
+        _contentSplitSymbols = splitSymbols;
+        _ttsParagraphInterval = paragraphInterval < 0
+            ? 0
+            : (paragraphInterval > kMaxTtsParagraphIntervalMs
+                  ? kMaxTtsParagraphIntervalMs
+                  : paragraphInterval);
         _speed = rate == null ? cfg.speed : ttsSpeedFromSpeechRate(rate);
         _pitch = pitch == null
             ? cfg.pitch
@@ -243,6 +333,75 @@ class _ReadAloudSettingsScreenState
     setState(() => _playerBackground = selected);
     await _setStringPref(PrefKeys.readAloudPlayerBackground, selected);
   }
+
+  // ===== 内容分析（设置批5b）=====
+
+  /// 章节分片方式：仅「规则」可选；AI 两项保留展示但置灰
+  Future<void> _pickSpeechAnalysisMode() async {
+    final result = await _showChoiceDialog<String>(
+      title: '章节分片方式',
+      options: const [
+        ('rule', '规则', '按标点/段落规则分片（当前唯一可用）'),
+        ('rule_with_ai', '规则+AI', '暂未支持'),
+        ('ai_understanding', 'AI 理解', '暂未支持'),
+      ],
+      current: _speechAnalysisMode,
+      disabledValues: const {'rule_with_ai', 'ai_understanding'},
+    );
+    if (result.cancelled) return;
+    final selected = result.value!;
+    setState(() => _speechAnalysisMode = selected);
+    await _setStringPref(PrefKeys.speechAnalysisMode, selected);
+  }
+
+  /// 内容划分方式：default/paragraph/page/symbols
+  Future<void> _pickContentSplitMode() async {
+    final result = await _showChoiceDialog<ReadAloudContentSplitMode>(
+      title: '内容划分方式',
+      options: const [
+        (ReadAloudContentSplitMode.defaultMode, '默认', '跟随规则分片，当前按整段朗读'),
+        (ReadAloudContentSplitMode.paragraph, '整段', '按空行分段落朗读'),
+        (ReadAloudContentSplitMode.page, '整页', '按阅读器当前章分页朗读'),
+        (ReadAloudContentSplitMode.symbols, '按符号', '按选中标点切分'),
+      ],
+      current: _contentSplitMode,
+    );
+    if (result.cancelled) return;
+    final selected = result.value!;
+    setState(() => _contentSplitMode = selected);
+    await _setStringPref(
+      PrefKeys.readAloudContentSplitMode,
+      selected.storageValue,
+    );
+    // 即时更新内存镜像：下一次起播/切章生效，不打断当前朗读队列
+    ref
+        .read(audioNotifierProvider.notifier)
+        .setContentSplitPreferences(
+          mode: selected,
+          symbols: _contentSplitSymbols,
+        );
+  }
+
+  /// 标点多选：至少保留一个；空存储展示句末默认集合
+  Future<void> _toggleSplitSymbol(String symbol) async {
+    final next = {..._effectiveSplitSymbols};
+    if (!next.remove(symbol)) next.add(symbol);
+    if (next.isEmpty) {
+      _toast('至少保留一个标点');
+      return;
+    }
+    final encoded = encodeReadAloudSymbols(next);
+    setState(() => _contentSplitSymbols = encoded);
+    await _setStringPref(PrefKeys.readAloudContentSplitSymbols, encoded);
+    ref
+        .read(audioNotifierProvider.notifier)
+        .setContentSplitPreferences(mode: _contentSplitMode, symbols: encoded);
+  }
+
+  Future<void> _persistParagraphInterval() => _settings.setIntPref(
+    PrefKeys.ttsParagraphInterval,
+    _ttsParagraphInterval,
+  );
 
   // ===== 引擎与音色 =====
 
@@ -310,7 +469,8 @@ class _ReadAloudSettingsScreenState
   }
 
   Future<void> _pickSystemVoice() async {
-    final sorted = [..._systemVoices]..sort((a, b) {
+    final sorted = [..._systemVoices]
+      ..sort((a, b) {
         final aZh = a.locale.toLowerCase().startsWith('zh');
         final bZh = b.locale.toLowerCase().startsWith('zh');
         if (aZh != bZh) return aZh ? -1 : 1;
@@ -372,19 +532,15 @@ class _ReadAloudSettingsScreenState
   ///
   /// 拖动音量不应顺带改写语速偏好；参考刻度换算统一走 service 纯函数。
   Future<void> _persistSpeed() => _settings.setIntPref(
-        PrefKeys.ttsSpeechRate,
-        ttsSpeechRateFromSpeed(_speed),
-      );
+    PrefKeys.ttsSpeechRate,
+    ttsSpeechRateFromSpeed(_speed),
+  );
 
-  Future<void> _persistPitch() => _settings.setIntPref(
-        PrefKeys.ttsPitch,
-        ttsPitchToStored(_pitch),
-      );
+  Future<void> _persistPitch() =>
+      _settings.setIntPref(PrefKeys.ttsPitch, ttsPitchToStored(_pitch));
 
-  Future<void> _persistVolume() => _settings.setIntPref(
-        PrefKeys.ttsVolume,
-        ttsVolumeToStored(_volume),
-      );
+  Future<void> _persistVolume() =>
+      _settings.setIntPref(PrefKeys.ttsVolume, ttsVolumeToStored(_volume));
 
   // ===== 缓存 =====
 
@@ -455,13 +611,7 @@ class _ReadAloudSettingsScreenState
             // 页签视图每次重建都新建实例：页签以 `findAncestorStateOfType`
             // 读取本页 State，若沿用 const 实例，Element 会因 widget 全等
             // 跳过 rebuild，开关/选择结果不即时刷新（批5a-1 自测发现）。
-            : TabBarView(
-                children: [
-                  _GeneralTab(),
-                  _EngineTab(),
-                  _RoleTab(),
-                ],
-              ),
+            : TabBarView(children: [_GeneralTab(), _EngineTab(), _RoleTab()]),
       ),
     );
   }
@@ -497,9 +647,9 @@ class _ReadAloudSettingsScreenState
                   onTap: disabledValues.contains(option.$1)
                       ? null
                       : () => Navigator.pop(
-                            ctx,
-                            _ChoiceResult<T>.selected(option.$1),
-                          ),
+                          ctx,
+                          _ChoiceResult<T>.selected(option.$1),
+                        ),
                 ),
             ],
           ),
@@ -521,9 +671,7 @@ class _ReadAloudSettingsScreenState
 class _ChoiceResult<T> {
   const _ChoiceResult.selected(this.value) : cancelled = false;
 
-  _ChoiceResult.cancelled()
-      : value = null,
-        cancelled = true;
+  _ChoiceResult.cancelled() : value = null, cancelled = true;
 
   final T? value;
   final bool cancelled;
@@ -535,8 +683,8 @@ class _ChoiceResult<T> {
 // 状态，避免把十余个回调逐个下传（页面私有，不对外复用）。
 
 _ReadAloudSettingsScreenState _stateOf(BuildContext context) {
-  final state =
-      context.findAncestorStateOfType<_ReadAloudSettingsScreenState>();
+  final state = context
+      .findAncestorStateOfType<_ReadAloudSettingsScreenState>();
   assert(state != null, '朗读设置页签必须在 ReadAloudSettingsScreen 内使用');
   return state!;
 }
@@ -637,10 +785,7 @@ class _GeneralTab extends StatelessWidget {
               value: state._keepReadAloudOnExit,
               onChanged: (v) {
                 state.apply(() => state._keepReadAloudOnExit = v);
-                state._settings.setBoolPref(
-                  PrefKeys.keepReadAloudOnExit,
-                  v,
-                );
+                state._settings.setBoolPref(PrefKeys.keepReadAloudOnExit, v);
               },
             ),
             SettingSwitchRow(
@@ -678,6 +823,93 @@ class _GeneralTab extends StatelessWidget {
               subtitle: batterySubtitle,
               enabled: isAndroid,
               onTap: isAndroid ? state._openBatteryOptimizationSettings : null,
+            ),
+          ],
+        ),
+        const IosSectionHeader('内容分析'),
+        IosGroup(
+          flat: true,
+          children: [
+            IosListTile(
+              key: const ValueKey('read-aloud-analysis-mode'),
+              title: '章节分片方式',
+              subtitle: state._speechAnalysisModeSummary,
+              value: state._speechAnalysisModeLabel,
+              onTap: state._pickSpeechAnalysisMode,
+            ),
+            IosListTile(
+              key: const ValueKey('read-aloud-reasoning-level'),
+              title: '推理级别',
+              subtitle: '仅 AI 分片时生效（暂未支持）',
+              value: state._reasoningLevelLabel,
+              enabled: false,
+            ),
+            IosListTile(
+              key: const ValueKey('read-aloud-content-split-mode'),
+              title: '内容划分方式',
+              subtitle: state._contentSplitModeSummary,
+              value: state._contentSplitModeLabel,
+              onTap: state._pickContentSplitMode,
+            ),
+          ],
+        ),
+        if (state._contentSplitMode == ReadAloudContentSplitMode.symbols)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '切分标点（可多选）',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final symbol in kReadAloudSplitSymbols.split(''))
+                      FilterChip(
+                        key: ValueKey('read-aloud-split-symbol-$symbol'),
+                        label: Text(symbol),
+                        selected: state._effectiveSplitSymbols.contains(symbol),
+                        onSelected: (_) => state._toggleSplitSymbol(symbol),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  state._contentSplitSymbols.trim().isEmpty
+                      ? '未选择时按句末标点 。！？… 划分'
+                      : '已选 ${state._effectiveSplitSymbols.length} 个标点；'
+                            '连续标点归入同一单元',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        IosGroup(
+          flat: true,
+          footer: const IosSectionFooter('0 表示段间不额外等待；调整后下一次段落推进生效。'),
+          children: [
+            _SliderRow(
+              key: const ValueKey('read-aloud-paragraph-interval-slider'),
+              title: '段落间隔',
+              valueLabel: '${state._ttsParagraphInterval} ms',
+              value: state._ttsParagraphInterval.toDouble(),
+              min: 0,
+              max: kMaxTtsParagraphIntervalMs.toDouble(),
+              divisions: 50,
+              onChanged: (v) {
+                final ms = v.round();
+                state.apply(() => state._ttsParagraphInterval = ms);
+                state.ref
+                    .read(audioNotifierProvider.notifier)
+                    .setTtsParagraphInterval(ms);
+              },
+              onChangeEnd: state._persistParagraphInterval,
             ),
           ],
         ),
@@ -740,24 +972,27 @@ class _EngineTab extends StatelessWidget {
                   : null,
             ),
             for (final engine in state._httpEngines)
-              Builder(builder: (context) {
-                final url = normalizeTtsEngineUrl(engine.url);
-                final selected = !systemSelected && state._effectiveEngine == url;
-                return IosListTile(
-                  key: ValueKey('read-aloud-engine-$url'),
-                  title: engine.name,
-                  subtitle: engine.url,
-                  trailing: Icon(
-                    selected
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                  onTap: () => state._selectGlobalEngine(url),
-                );
-              }),
+              Builder(
+                builder: (context) {
+                  final url = normalizeTtsEngineUrl(engine.url);
+                  final selected =
+                      !systemSelected && state._effectiveEngine == url;
+                  return IosListTile(
+                    key: ValueKey('read-aloud-engine-$url'),
+                    title: engine.name,
+                    subtitle: engine.url,
+                    trailing: Icon(
+                      selected
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: selected
+                          ? Theme.of(context).colorScheme.primary
+                          : null,
+                    ),
+                    onTap: () => state._selectGlobalEngine(url),
+                  );
+                },
+              ),
             IosListTile(
               title: '管理朗读引擎',
               subtitle: state._httpEngines.isEmpty
@@ -777,8 +1012,8 @@ class _EngineTab extends StatelessWidget {
               subtitle: !isAndroid
                   ? '仅 Android 支持'
                   : (state._systemEngines.isEmpty
-                      ? '系统未安装 TTS 引擎'
-                      : '选择系统 TTS 引擎'),
+                        ? '系统未安装 TTS 引擎'
+                        : '选择系统 TTS 引擎'),
               value: selectedEngineLabel,
               enabled: isAndroid && state._systemEngines.isNotEmpty,
               onTap: isAndroid && state._systemEngines.isNotEmpty
@@ -790,9 +1025,7 @@ class _EngineTab extends StatelessWidget {
               title: '音色',
               subtitle: !supportsSystemTts
                   ? '仅 Android/iOS/macOS 支持'
-                  : (state._systemVoices.isEmpty
-                      ? '无可用音色'
-                      : '选择系统 TTS 音色'),
+                  : (state._systemVoices.isEmpty ? '无可用音色' : '选择系统 TTS 音色'),
               value: selectedVoiceLabel,
               enabled: supportsSystemTts && state._systemVoices.isNotEmpty,
               onTap: supportsSystemTts && state._systemVoices.isNotEmpty
@@ -801,9 +1034,7 @@ class _EngineTab extends StatelessWidget {
             ),
             IosListTile(
               title: '系统 TTS 设置',
-              subtitle: isAndroid
-                  ? '打开系统「文字转语音」设置'
-                  : '仅 Android 支持',
+              subtitle: isAndroid ? '打开系统「文字转语音」设置' : '仅 Android 支持',
               enabled: isAndroid,
               onTap: isAndroid ? state._openSystemTtsSettings : null,
             ),
@@ -950,8 +1181,8 @@ class _SliderRow extends StatelessWidget {
               Text(
                 valueLabel,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ],
           ),
