@@ -6,6 +6,7 @@
 // 3) 播放失败/估算推进：已合成但未播出的产物同样删除；
 // 4) stop：清理本次会话尚未删除的临时文件；
 // 5) 设置页/服务清理不得删除正在播放的文件（由 keepPath 语义单测覆盖）。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -81,6 +82,16 @@ class _FakeCacheTtsService extends SystemTtsService {
   final List<String> synthesized = [];
   final List<String> deleted = [];
   final List<({int minutes, String? keepPath})> prunes = [];
+  final List<String?> clearKeepPaths = [];
+
+  /// 非空时所有合成返回同一路径（模拟缓存复用）
+  String? fixedPath;
+
+  @override
+  Future<int> clearCache({String? keepPath}) async {
+    clearKeepPaths.add(keepPath);
+    return 0;
+  }
 
   @override
   Future<String> synthesizeToFile({
@@ -89,8 +100,9 @@ class _FakeCacheTtsService extends SystemTtsService {
     required double pitch,
     required double volume,
   }) async {
-    final path = '/cache/system_tts/seg_${synthesized.length + 1}.wav';
-    synthesized.add(path);
+    final path =
+        fixedPath ?? '/cache/system_tts/seg_${synthesized.length + 1}.wav';
+    if (!synthesized.contains(path)) synthesized.add(path);
     return path;
   }
 
@@ -241,6 +253,43 @@ void main() {
       container.read(audioNotifierProvider).errorMessage,
       contains('系统 TTS 朗读失败'),
     );
+
+    readNotifier().stop();
+    await tester.pump();
+  });
+
+  testWidgets('0 模式会话起手清理旧残留，同进程只执行一次', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.readAloudCacheRetentionMinutes: 0,
+    });
+    await readNotifier().initMediaSession(bookName: '测试书');
+    await tester.pump();
+
+    expect(fakeTts.clearKeepPaths, hasLength(1));
+    // 第二次初始化不得重复全量清空
+    await readNotifier().initMediaSession(bookName: '测试书');
+    await tester.pump();
+    expect(fakeTts.clearKeepPaths, hasLength(1));
+  });
+
+  testWidgets('0 模式 stop→立即 play 复用同路径：旧清理不删新会话文件', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.readAloudCacheRetentionMinutes: 0,
+    });
+    fakeTts.fixedPath = '/cache/system_tts/shared.wav';
+    await startTts('第一段内容。');
+
+    // 卡住 stop，让旧清理尚未执行时新会话立即 play（同路径复用）
+    fakePlayer.stopGate = Completer<void>();
+    readNotifier().stop();
+    final playFuture = readNotifier().play();
+    fakePlayer.stopGate!.complete();
+    await playFuture;
+    await tester.pump();
+    await tester.pump();
+
+    expect(fakeTts.deleted, isNot(contains(fakeTts.fixedPath)));
+    expect(readNotifier().paragraphCount, 1);
 
     readNotifier().stop();
     await tester.pump();

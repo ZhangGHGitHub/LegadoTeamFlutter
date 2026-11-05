@@ -317,30 +317,13 @@ void main() {
       expect(find.textContaining('保留 10 分钟'), findsOneWidget);
       await tapText(tester, 'TTS 缓存');
       expect(find.textContaining('系统 TTS 合成缓存'), findsOneWidget);
-      expect(find.textContaining('保留时间：10 分钟'), findsOneWidget);
+      // 保留时间入口已收敛到独立行；对话框只展示当前值 + 清理
+      expect(find.textContaining('当前保留：10 分钟'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('tts-cache-retention-slider')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.text('清理'), findsOneWidget);
-
-      // 保留时间滑块持久化（30 分钟）
-      final slider = tester.widget<Slider>(
-        find.byKey(const ValueKey('tts-cache-retention-slider')),
-      );
-      slider.onChangeEnd!(30);
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(
-        (await prefs()).getInt(PrefKeys.readAloudCacheRetentionMinutes),
-        30,
-      );
-
-      // 0 = 即听即焚快捷选择
-      await tapText(tester, '即听即焚');
-      expect(
-        (await prefs()).getInt(PrefKeys.readAloudCacheRetentionMinutes),
-        0,
-      );
       await tapText(tester, '取消');
     });
 

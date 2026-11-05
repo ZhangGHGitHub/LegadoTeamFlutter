@@ -4,6 +4,7 @@
 /// 供 Providers / Services 层测试使用。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -24,7 +25,8 @@ import 'package:flutter_legado/src/models/models.dart';
 class MockRustApi extends Mock implements RustApi {
   @override
   Future<ChapterListMeta> getChaptersWithMeta(String bookUrl) async {
-    final chapters = await (this as dynamic).getChapters(bookUrl) as List<BookChapter>;
+    final chapters =
+        await (this as dynamic).getChapters(bookUrl) as List<BookChapter>;
     return (chapters: chapters, usedCustomRule: false);
   }
 }
@@ -39,12 +41,15 @@ class FakeServersRustApi extends MockRustApi {
 
   @override
   Future<String> webdavServersList() async {
-    final sorted = [...servers]..sort((a, b) {
-        final bySort = ((a['sortNumber'] as num?)?.toInt() ?? 0)
-            .compareTo((b['sortNumber'] as num?)?.toInt() ?? 0);
+    final sorted = [...servers]
+      ..sort((a, b) {
+        final bySort = ((a['sortNumber'] as num?)?.toInt() ?? 0).compareTo(
+          (b['sortNumber'] as num?)?.toInt() ?? 0,
+        );
         if (bySort != 0) return bySort;
-        return ((a['id'] as num?)?.toInt() ?? 0)
-            .compareTo((b['id'] as num?)?.toInt() ?? 0);
+        return ((a['id'] as num?)?.toInt() ?? 0).compareTo(
+          (b['id'] as num?)?.toInt() ?? 0,
+        );
       });
     return jsonEncode(sorted);
   }
@@ -207,8 +212,13 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
     this.position = position;
   }
 
+  /// 非空时 [stop] 等待该闸门（模拟 stop 与立即 play 的竞态窗口）
+  Completer<void>? stopGate;
+
   @override
   Future<void> stop() async {
+    final gate = stopGate;
+    if (gate != null) await gate.future;
     stopCount++;
     isPlaying = false;
     isInitialized = false;

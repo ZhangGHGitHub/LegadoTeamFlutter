@@ -58,32 +58,40 @@ void main() {
 
     when(() => mockAudio.init()).thenAnswer((_) async {});
     when(() => mockAudio.isInitialized).thenReturn(true);
-    when(() => mockAudio.audioFocusStream)
-        .thenAnswer((_) => focusController.stream);
-    when(() => mockAudio.mediaButtonStream)
-        .thenAnswer((_) => buttonController.stream);
+    when(
+      () => mockAudio.audioFocusStream,
+    ).thenAnswer((_) => focusController.stream);
+    when(
+      () => mockAudio.mediaButtonStream,
+    ).thenAnswer((_) => buttonController.stream);
     when(() => mockAudio.requestAudioFocus()).thenAnswer((_) async => true);
-    when(() => mockAudio.updateMetadata(
-          title: any(named: 'title'),
-          artist: any(named: 'artist'),
-          album: any(named: 'album'),
-        )).thenAnswer((invocation) async {
+    when(
+      () => mockAudio.updateMetadata(
+        title: any(named: 'title'),
+        artist: any(named: 'artist'),
+        album: any(named: 'album'),
+      ),
+    ).thenAnswer((invocation) async {
       metadataCalls.add((
         title: invocation.namedArguments[#title] as String,
         artist: invocation.namedArguments[#artist] as String,
         album: invocation.namedArguments[#album] as String,
       ));
     });
-    when(() => mockAudio.notifyPlaying(position: any(named: 'position')))
-        .thenAnswer((_) async {});
-    when(() => mockAudio.notifyPaused(position: any(named: 'position')))
-        .thenAnswer((_) async {});
+    when(
+      () => mockAudio.notifyPlaying(position: any(named: 'position')),
+    ).thenAnswer((_) async {});
+    when(
+      () => mockAudio.notifyPaused(position: any(named: 'position')),
+    ).thenAnswer((_) async {});
     when(() => mockAudio.notifyStopped()).thenAnswer((_) async {});
     when(() => mockAudio.setPlaying(any())).thenAnswer((_) async {});
-    when(() => mockAudio.updatePlaybackState(
-          state: any(named: 'state'),
-          position: any(named: 'position'),
-        )).thenAnswer((_) async {});
+    when(
+      () => mockAudio.updatePlaybackState(
+        state: any(named: 'state'),
+        position: any(named: 'position'),
+      ),
+    ).thenAnswer((_) async {});
     when(() => mockAudio.abandonAudioFocus()).thenAnswer((_) async {});
     when(() => mockAudio.dispose()).thenAnswer((_) async {});
 
@@ -117,18 +125,21 @@ void main() {
       ),
     );
     when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
-    when(() => mockApi.getAudioChapterMedia(any(), any()))
-        .thenAnswer((invocation) async {
+    when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer((
+      invocation,
+    ) async {
       final index = invocation.positionalArguments[1] as int;
       return {
         'mediaUrl': 'https://cdn.example.com/$index.mp3',
         'isVolume': false,
       };
     });
-    when(() => mockApi.getAudioProgress(any(), any()))
-        .thenAnswer((_) async => null);
-    when(() => mockApi.saveAudioProgress(any(), any(), any()))
-        .thenAnswer((_) async {});
+    when(
+      () => mockApi.getAudioProgress(any(), any()),
+    ).thenAnswer((_) async => null);
+    when(
+      () => mockApi.saveAudioProgress(any(), any(), any()),
+    ).thenAnswer((_) async {});
 
     await readNotifier().initMediaSession(bookName: bookName);
     await readNotifier().loadChapters('url');
@@ -138,20 +149,23 @@ void main() {
 
   /// 进入「TTS 朗读播放中」
   Future<void> startTtsPlayback({String bookName = '测试书'}) async {
-    when(() => mockApi.getChapters(any())).thenAnswer(
-      (_) async => [const BookChapter(title: '第一章', index: 0)],
-    );
+    when(
+      () => mockApi.getChapters(any()),
+    ).thenAnswer((_) async => [const BookChapter(title: '第一章', index: 0)]);
     when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
-    when(() => mockApi.getChapterContentFull(any(), any()))
-        .thenAnswer((_) async => '第一段文本内容。');
-    when(() => mockApi.audioSpeak(
-          text: any(named: 'text'),
-          engineUrl: any(named: 'engineUrl'),
-          speed: any(named: 'speed'),
-          pitch: any(named: 'pitch'),
-          volume: any(named: 'volume'),
-          voiceName: any(named: 'voiceName'),
-        )).thenAnswer((_) async => '/tmp/tts/para.mp3');
+    when(
+      () => mockApi.getChapterContentFull(any(), any()),
+    ).thenAnswer((_) async => '第一段文本内容。');
+    when(
+      () => mockApi.audioSpeak(
+        text: any(named: 'text'),
+        engineUrl: any(named: 'engineUrl'),
+        speed: any(named: 'speed'),
+        pitch: any(named: 'pitch'),
+        volume: any(named: 'volume'),
+        voiceName: any(named: 'voiceName'),
+      ),
+    ).thenAnswer((_) async => '/tmp/tts/para.mp3');
 
     await readNotifier().initMediaSession(bookName: bookName);
     await readNotifier().loadChapters('url');

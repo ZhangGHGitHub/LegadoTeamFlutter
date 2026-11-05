@@ -73,10 +73,16 @@ void main() {
   }
 
   /// 打开 Sheet：helper 先异步读取持久化设置，再弹 bottom sheet。
-  Future<void> openSheet(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1000, 1800);
+  Future<void> openSheet(
+    WidgetTester tester, {
+    Size size = const Size(1000, 1800),
+    double textScale = 1.0,
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
+    tester.platformDispatcher.textScaleFactorTestValue = textScale;
     addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     await tester.pumpWidget(host());
     await tester.tap(find.text('打开定时'));
     await tester.pump();
@@ -96,8 +102,10 @@ void main() {
 
   testWidgets('分钟/章节页签互斥；章节模式隐藏「读完本章再停」并说明', (tester) async {
     await openSheet(tester);
-    expect(find.byKey(const ValueKey('read-aloud-timer-minute-panel')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('read-aloud-timer-minute-panel')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('read-aloud-timer-finish-chapter-switch')),
       findsOneWidget,
@@ -113,10 +121,7 @@ void main() {
       find.byKey(const ValueKey('read-aloud-timer-finish-chapter-switch')),
       findsNothing,
     );
-    expect(
-      find.text('章节模式会在读完设定章数后的章末停止，无需「读完本章再停」。'),
-      findsOneWidget,
-    );
+    expect(find.text('章节模式会在读完设定章数后的章末停止，无需「读完本章再停」。'), findsOneWidget);
     expect(
       (await prefs()).getString(PrefKeys.readAloudTimerMode),
       ReadAloudTimerMode.chapter.storageValue,
@@ -171,8 +176,10 @@ void main() {
     await tester.tap(switchFinder);
     await tester.pump();
     expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
-    expect((await prefs()).getBool(PrefKeys.finishCurrentChapterAfterTimer),
-        isTrue);
+    expect(
+      (await prefs()).getBool(PrefKeys.finishCurrentChapterAfterTimer),
+      isTrue,
+    );
     expect(readNotifier().finishCurrentChapterAfterTimer, isTrue);
 
     await tester.tap(find.widgetWithText(FilledButton, '开始'));
@@ -263,5 +270,15 @@ void main() {
       const ValueKey('read-aloud-timer-finish-chapter-switch'),
     );
     expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
+  });
+
+  testWidgets('320dp + 1.6 字体：底部按钮换行不溢出', (tester) async {
+    await openSheet(tester, size: const Size(320, 1800), textScale: 1.6);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey('read-aloud-timer-start-button')),
+      findsOneWidget,
+    );
+    expect(find.text('取消'), findsOneWidget);
   });
 }

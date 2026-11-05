@@ -25,9 +25,7 @@ class FakeSystemTtsPlatform implements SystemTtsPlatform {
     this.engines = const [
       SystemTtsEngine(name: 'com.example.tts', label: '示例引擎'),
     ],
-    this.voices = const [
-      SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN'),
-    ],
+    this.voices = const [SystemTtsVoice(name: 'zh-cn-x', locale: 'zh-CN')],
     this.supportsEngineSelection = true,
     this.supportsSynthesis = true,
   });
@@ -385,9 +383,9 @@ void main() {
         maxCacheAge: const Duration(days: 365),
       );
       final oldPath = await synth(creator, text: '旧段落');
-      File(oldPath).setLastModifiedSync(
-        DateTime.now().subtract(const Duration(hours: 3)),
-      );
+      File(
+        oldPath,
+      ).setLastModifiedSync(DateTime.now().subtract(const Duration(hours: 3)));
       final freshPath = await synth(creator, text: '新段落');
 
       final service = buildService(maxCacheAge: const Duration(hours: 1));
@@ -446,10 +444,7 @@ void main() {
         maxCacheFiles: 100,
         maxCacheAge: const Duration(days: 365),
       );
-      final deleted = await service.pruneByRetention(
-        10,
-        keepPath: playingPath,
-      );
+      final deleted = await service.pruneByRetention(10, keepPath: playingPath);
       expect(deleted, 1);
       expect(File(oldPath).existsSync(), isFalse);
       expect(File(freshPath).existsSync(), isTrue);
@@ -459,9 +454,9 @@ void main() {
     test('pruneByRetention 0：即听即焚模式不在启动时全量清理', () async {
       final service = buildService();
       final path = await synth(service, text: '缓存段落');
-      File(path).setLastModifiedSync(
-        DateTime.now().subtract(const Duration(days: 1)),
-      );
+      File(
+        path,
+      ).setLastModifiedSync(DateTime.now().subtract(const Duration(days: 1)));
       expect(await service.pruneByRetention(0), 0);
       expect(File(path).existsSync(), isTrue);
     });
@@ -484,8 +479,9 @@ void main() {
       expect(await service.deleteCacheFile(path), isTrue);
       expect(File(path).existsSync(), isFalse);
       // 目录外/非 wav 不允许删除
-      final outside = File('${tempDir.path}${Platform.pathSeparator}outside.wav')
-        ..writeAsBytesSync(const [1, 2, 3]);
+      final outside = File(
+        '${tempDir.path}${Platform.pathSeparator}outside.wav',
+      )..writeAsBytesSync(const [1, 2, 3]);
       expect(await service.deleteCacheFile(outside.path), isFalse);
       expect(outside.existsSync(), isTrue);
     });
@@ -576,7 +572,6 @@ void main() {
     });
   });
 
-
   group('审查回修 P1/P2 回归', () {
     test('P1-1 合成永不完成 → 超时 + stop 复位 + 抛 SystemTtsException', () async {
       platform.synthGate = Completer<void>();
@@ -593,8 +588,11 @@ void main() {
           ),
         ),
       );
-      expect(platform.stopCount, greaterThanOrEqualTo(1),
-          reason: '超时必须 stop 复位 flutter_tts busy');
+      expect(
+        platform.stopCount,
+        greaterThanOrEqualTo(1),
+        reason: '超时必须 stop 复位 flutter_tts busy',
+      );
       final dir = Directory(
         '${tempDir.path}${Platform.pathSeparator}${SystemTtsService.cacheDirName}',
       );
@@ -697,13 +695,8 @@ void main() {
       platform.synthGate!.complete();
       await first;
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(
-        File(second).existsSync(),
-        isTrue,
-        reason: '旧代际失败清理不得删除新合成产物',
-      );
+      expect(File(second).existsSync(), isTrue, reason: '旧代际失败清理不得删除新合成产物');
     });
-
 
     test('P2-A setEngine 永不返回 → selectEngine 超时回滚并返回 null', () async {
       platform.setEngineGate = Completer<void>();
@@ -715,8 +708,11 @@ void main() {
       expect(service.selectedEngineName, isNull, reason: '失败需回滚选择');
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString(PrefKeys.systemTtsEngine), isNull);
-      expect(platform.stopCount, greaterThanOrEqualTo(1),
-          reason: '引擎初始化超时需 stop 复位');
+      expect(
+        platform.stopCount,
+        greaterThanOrEqualTo(1),
+        reason: '引擎初始化超时需 stop 复位',
+      );
       if (!platform.setEngineGate!.isCompleted) {
         platform.setEngineGate!.complete();
       }
@@ -754,8 +750,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       final selectFuture = service.selectEngine('com.other.tts');
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(platform.setEngines, isEmpty,
-          reason: '在途合成未完成前不得替换 TTS 实例');
+      expect(platform.setEngines, isEmpty, reason: '在途合成未完成前不得替换 TTS 实例');
 
       platform.synthGate!.complete();
       await synthFuture;
@@ -787,7 +782,6 @@ void main() {
       expect(service.takeNotice(), isNull);
     });
 
-
     test('P2 引擎超时后迟到 setEngine 完成 → 下次合成 reset 回默认', () async {
       platform.setEngineGate = Completer<void>();
       final service = buildService(
@@ -796,8 +790,11 @@ void main() {
       final voices = await service.selectEngine('com.hang.tts');
       expect(voices, isNull);
       expect(service.selectedEngineName, isNull);
-      expect(platform.resetClientCount, greaterThanOrEqualTo(1),
-          reason: '引擎初始化超时必须丢弃旧客户端');
+      expect(
+        platform.resetClientCount,
+        greaterThanOrEqualTo(1),
+        reason: '引擎初始化超时必须丢弃旧客户端',
+      );
       expect(platform.currentEngine, isNull);
 
       // 迟到 init 完成：平台实际停在失败引擎
@@ -831,8 +828,11 @@ void main() {
 
       final before = platform.setEngines.length;
       await synth(service, text: 'B');
-      expect(platform.setEngines.length, before + 1,
-          reason: 'dirty 必须强制重新 setEngine');
+      expect(
+        platform.setEngines.length,
+        before + 1,
+        reason: 'dirty 必须强制重新 setEngine',
+      );
       expect(platform.setEngines.last, 'engine-a');
       expect(platform.currentEngine, 'engine-a');
     });
@@ -872,8 +872,11 @@ void main() {
 
       final setVoiceCalls = platform.setVoices.length;
       await synth(service, text: 'B');
-      expect(platform.setVoices.length, setVoiceCalls,
-          reason: '已回落默认后不再重试 setVoice');
+      expect(
+        platform.setVoices.length,
+        setVoiceCalls,
+        reason: '已回落默认后不再重试 setVoice',
+      );
       expect(service.takeNotice(), isNull, reason: '提示只出现一次');
     });
 

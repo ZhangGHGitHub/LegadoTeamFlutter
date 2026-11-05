@@ -355,7 +355,7 @@ void main() {
 
   group('f) 读完本章再停（设置批5c）', () {
     /// TTS 起播（HTTP 合成桩；正文 paragraph 数由 [content] 决定）
-    Future<void> startTts(String content) async {
+    Future<void> startTts(String content, {bool failSynth = false}) async {
       when(() => mockApi.getChapters(any())).thenAnswer(
         (_) async => [
           const BookChapter(title: '第一章', index: 0),
@@ -366,16 +366,29 @@ void main() {
       when(
         () => mockApi.getChapterContentFull(any(), any()),
       ).thenAnswer((_) async => content);
-      when(
-        () => mockApi.audioSpeak(
-          text: any(named: 'text'),
-          engineUrl: any(named: 'engineUrl'),
-          speed: any(named: 'speed'),
-          pitch: any(named: 'pitch'),
-          volume: any(named: 'volume'),
-          voiceName: any(named: 'voiceName'),
-        ),
-      ).thenAnswer((_) async => '/tmp/tts/para.mp3');
+      if (failSynth) {
+        when(
+          () => mockApi.audioSpeak(
+            text: any(named: 'text'),
+            engineUrl: any(named: 'engineUrl'),
+            speed: any(named: 'speed'),
+            pitch: any(named: 'pitch'),
+            volume: any(named: 'volume'),
+            voiceName: any(named: 'voiceName'),
+          ),
+        ).thenThrow(StateError('引擎不可达'));
+      } else {
+        when(
+          () => mockApi.audioSpeak(
+            text: any(named: 'text'),
+            engineUrl: any(named: 'engineUrl'),
+            speed: any(named: 'speed'),
+            pitch: any(named: 'pitch'),
+            volume: any(named: 'volume'),
+            voiceName: any(named: 'voiceName'),
+          ),
+        ).thenAnswer((_) async => '/tmp/tts/para.mp3');
+      }
 
       await readNotifier().loadChapters('url');
       readNotifier().updateConfig(
@@ -419,14 +432,60 @@ void main() {
       expect(notifier.isSleepTimerActive, isFalse);
     });
 
-    testWidgets('分钟到点已在章末：立即 stop，不进入等待', (tester) async {
+    testWidgets('TTS 末段合成中到点：装臂标，不提前 stop', (tester) async {
       await startTts('只有一段内容。');
       final notifier = readNotifier();
       notifier.setFinishCurrentChapterAfterTimer(true);
       notifier.startSleepTimer(1);
-      // 模拟末段音频已经结束但完成回调尚未送达（仍在章末）
+      // 模拟末段仍在合成/尚未开始播放（isPlaying=false 不代表章末）
       fakePlayer.isPlaying = false;
 
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+
+      expect(readState().state, PlayerState.playing);
+      expect(notifier.sleepTimerMode, SleepTimerMode.finishChapter);
+      expect(notifier.isFinishChapterAfterTimerArmed, isTrue);
+
+      // 真正的章末完成回调才停止
+      fakePlayer.completePlayback();
+      await tester.pump();
+      await tester.pump();
+      expect(readState().state, PlayerState.idle);
+      expect(notifier.isFinishChapterAfterTimerArmed, isFalse);
+    });
+
+    testWidgets('TTS 估算降级中到点：装臂标，估算推进到章末才 stop', (tester) async {
+      // 400 字单段：估算约 80s，分钟定时在 60s 到点时仍在估算窗口
+      await startTts(List.filled(400, '字').join(), failSynth: true);
+      final notifier = readNotifier();
+      notifier.setFinishCurrentChapterAfterTimer(true);
+      notifier.startSleepTimer(1);
+
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+      expect(readState().state, PlayerState.playing);
+      expect(notifier.sleepTimerMode, SleepTimerMode.finishChapter);
+
+      // 估算到点 → 末段完成 → 章末停止
+      await tester.pump(const Duration(seconds: 25));
+      await tester.pump();
+      expect(readState().state, PlayerState.idle);
+      expect(notifier.isFinishChapterAfterTimerArmed, isFalse);
+    });
+
+    testWidgets('流媒体已在章末：分钟到点立即 stop', (tester) async {
+      await startStream();
+      // 播放位置进入章尾 1s 容差
+      fakePlayer.emitProgress(
+        const Duration(seconds: 179),
+        const Duration(seconds: 180),
+      );
+      await tester.pump();
+
+      final notifier = readNotifier();
+      notifier.setFinishCurrentChapterAfterTimer(true);
+      notifier.startSleepTimer(1);
       await tester.pump(const Duration(minutes: 1));
       await tester.pump();
 
@@ -448,6 +507,22 @@ void main() {
       await tester.pump();
       expect(notifier.sleepTimerMode, SleepTimerMode.off);
       expect(readState().currentIndex, 1);
+    });
+
+    testWidgets('跨书/换目录清除旧章末臂标', (tester) async {
+      await startTts('第一段内容。\n\n第二段内容。');
+      final notifier = readNotifier();
+      notifier.setFinishCurrentChapterAfterTimer(true);
+      notifier.startSleepTimer(1);
+      await tester.pump(const Duration(minutes: 1));
+      await tester.pump();
+      expect(notifier.isFinishChapterAfterTimerArmed, isTrue);
+
+      await notifier.loadChapters('other-book');
+      await tester.pump();
+
+      expect(notifier.isFinishChapterAfterTimerArmed, isFalse);
+      expect(notifier.sleepTimerMode, SleepTimerMode.off);
     });
   });
 }
