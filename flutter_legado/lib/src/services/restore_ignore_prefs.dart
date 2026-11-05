@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
 import '../models/bookshelf_settings.dart';
+import '../models/cover_settings.dart';
 import 'reader_theme_service.dart';
 import 'settings_service.dart';
 
@@ -295,16 +296,12 @@ class RestoreIgnorePrefs {
   };
 
   /// 封面规则相关键（对齐 BackupConfig.coverPrefKeys）
+  ///
+  /// [设置批6b-1] 封面设置 18 项全部纳入本忽略组：勾选「忽略封面配置」
+  /// 恢复备份时不覆盖本机任何封面展示/加载策略（含相册 ID 与网络角标
+  /// 状态；后两者本期未在 UI 生效，但同属封面配置，需随组过滤）。
   static const coverPrefKeys = <String>{
-    PrefKeys.useDefaultCover,
-    PrefKeys.loadCoverOnlyWifi,
-    PrefKeys.coverShowName,
-    PrefKeys.coverShowAuthor,
-    // [批39] 限制封面比例：属封面配置，勾选「忽略封面配置」时恢复备份
-    // 不覆盖本机设置（键名对齐参考版 coverRestrictRatio）
-    PrefKeys.coverRestrictRatio,
-    'coverShowNameN',
-    'coverShowAuthorN',
+    ...CoverSettings.prefKeys,
   };
 
   /// Flutter 侧主题模式存储键（SettingsService）

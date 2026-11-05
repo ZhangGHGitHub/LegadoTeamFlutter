@@ -512,6 +512,44 @@ class PrefKeys {
   /// （RestoreIgnorePrefs.coverPrefKeys）。
   static const coverRestrictRatio = 'coverRestrictRatio';
 
+  // ===== [设置批6b-1] 封面设置补充键（键名逐字对齐参考版 PreferKey）=====
+
+  /// 封面外阴影 + 字体阴影（默认 false）
+  static const coverShowShadow = 'coverShowShadow';
+
+  /// 字体描边（默认 true）
+  static const coverShowStroke = 'coverShowStroke';
+
+  /// 使用默认字体颜色（主题 secondary，默认 true）
+  static const coverDefaultColor = 'coverDefaultColor';
+
+  /// 日间正文色（默认 0xFF000000）
+  static const coverTextColor = 'coverTextColor';
+
+  /// 夜间正文色（参考版键名 coverTextColorN，默认 0xFFFFFFFF）
+  static const coverTextColorN = 'coverTextColorN';
+
+  /// 日间阴影色（默认 0xFF000000）
+  static const coverShadowColor = 'coverShadowColor';
+
+  /// 夜间阴影色（参考版键名 coverShadowColorN，默认 0xFFFFFFFF）
+  static const coverShadowColorN = 'coverShadowColorN';
+
+  /// 夜间显示书名（默认 true）
+  static const coverShowNameN = 'coverShowNameN';
+
+  /// 夜间显示作者（默认 true）
+  static const coverShowAuthorN = 'coverShowAuthorN';
+
+  /// 封面信息方向：0 竖排 / 1 横排（默认 "0"）
+  static const coverInfoOrientation = 'coverInfoOrientation';
+
+  /// 默认封面图集 ID（参考版键名 defaultCover；6b-2 相册接入）
+  static const coverDefaultAlbumId = 'defaultCover';
+
+  /// 网络书籍角标过滤状态（参考版键名 explore_filter_state；本批只持久化）
+  static const exploreFilterState = 'explore_filter_state';
+
   // ===== 其他设置页（pref_config_other.xml）=====
 
   /// 启动时自动刷新书架（默认 false）
