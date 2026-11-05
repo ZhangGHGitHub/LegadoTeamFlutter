@@ -250,11 +250,11 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// [setFinishCurrentChapterAfterTimer] 即时同步。仅分钟模式使用。
   bool _finishCurrentChapterAfterTimer = false;
 
-  /// 分钟已到点、等待当前章自然结束的章末臂标（设置批5c）
+  /// 分钟已到点、等待自然播完的章号（null = 未等待）
   ///
-  /// 到点且当前章未播完时置 true；[_onParagraphFinished] / 流媒体
-  /// [_onStreamCompleted] 在章末消费并停止。手动切章会清除（避免停错章）。
-  bool _finishChapterAfterTimerArmed = false;
+  /// [审查回修 P2-1/P3] 记录章号而非 bool：自动切章期间到点/回调迟到时，
+  /// 只有当前章号匹配才消费，避免把新章误停。手动切章/新会话清除。
+  int? _finishChapterAfterTimerArmedChapter;
 
   /// 系统 TTS 缓存保留时间（分钟，0 = 即听即焚；设置批5c）
   int _cacheRetentionMinutes = kDefaultReadAloudCacheRetentionMinutes;
@@ -265,8 +265,17 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 本次朗读会话使用过的系统 TTS 缓存文件（0 模式 stop 时清理）
   final Set<String> _ttsSessionFiles = <String>{};
 
+  /// 系统 TTS 产物 → 合成代数（0 模式 stale 清理归属校验）
+  ///
+  /// 同一缓存路径可能被新段/新会话复用；只有代数仍属于本次合成时才允许
+  /// stale 清理，避免旧任务迟到删除新段正在使用/待播放的文件。
+  final Map<String, int> _ttsPathGenerations = <String, int>{};
+
   /// 当前段系统 TTS 产物（播放失败/估算推进时按 0 模式删除）
   String? _lastTtsAudioPath;
+
+  /// 0 模式跨进程残留是否已在本进程首次会话清理
+  bool _zeroRetentionSwept = false;
 
   /// 分钟倒计时 ticker：1s 粒度仅用于 UI 展示；递减语义对齐原版
   /// doDs 的 60s 循环（`if (!pause)` 守卫，暂停期间冻结）
@@ -274,7 +283,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   /// 定时停止模式（分钟与按章互斥；分钟到点等待章末时单独一态）
   SleepTimerMode get sleepTimerMode {
-    if (_finishChapterAfterTimerArmed) return SleepTimerMode.finishChapter;
+    if (_finishChapterAfterTimerArmedChapter != null) {
+      return SleepTimerMode.finishChapter;
+    }
     if (_chaptersToStopRemaining > 0) return SleepTimerMode.chapters;
     if (_sleepRemainingSeconds > 0) return SleepTimerMode.duration;
     return SleepTimerMode.off;
@@ -293,7 +304,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   bool get finishCurrentChapterAfterTimer => _finishCurrentChapterAfterTimer;
 
   /// 是否处于「分钟到点后等待本章结束」状态
-  bool get isFinishChapterAfterTimerArmed => _finishChapterAfterTimerArmed;
+  bool get isFinishChapterAfterTimerArmed =>
+      _finishChapterAfterTimerArmedChapter != null;
 
   /// 当前生效的系统 TTS 缓存保留分钟数
   int get readAloudCacheRetentionMinutes => _cacheRetentionMinutes;
@@ -431,6 +443,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // [设置批5a-1] 同一入口补齐朗读设置批次的偏好：唤醒锁 / 媒体键翻章 /
     // 系统 TTS 语速音调音量（一次读取，两条播放路径共享）。
     await _loadReadAloudPreferences();
+    // [审查回修 P2-3] 0 模式跨进程残留：会话起手清空一次旧缓存
+    await _sweepZeroRetentionCacheOnce();
     await _audioService.init();
 
     _mediaButtonSub = _audioService.mediaButtonStream.listen((event) {
@@ -553,6 +567,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (state.bookUrl != bookUrl) {
       // A4：切换书籍视为新朗读会话，重置无引擎提示的一次性标记
       _noEngineHintShown = false;
+      // [审查回修 P3] 跨书新会话不得继承上一本的章末等待臂标
+      _clearFinishChapterArm();
     }
     // [设置批5b] 换书/重建目录：上一本书的页首偏移立即失效
     _pageStarts = null;
@@ -612,12 +628,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     bool fromReader = false,
   }) async {
     _startedFromReader = fromReader;
+    // [审查回修 P3] 新朗读会话清除上一会话的章末等待臂标（含跨书/重开）
+    _clearFinishChapterArm();
     // A4：新的朗读会话，允许无可用引擎提示再次出现
     _noEngineHintShown = false;
     setAudioBookMode(false);
     // [审查回修 P2-2] 朗读入口重读全局 TTS 偏好：不依赖会话/媒体会话
     // 是否就绪，确保播放器默认界面下书级 playSpeed 不会覆盖全局语速。
     await _loadReadAloudPreferences();
+    await _sweepZeroRetentionCacheOnce();
     await _streamPlayer.stop();
     final needReload = state.chapters.isEmpty || state.bookUrl != bookUrl;
     state = state.copyWith(
@@ -992,6 +1011,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Future<void> _playTtsParagraphs({int? paragraphIndex}) async {
     state = state.copyWith(state: PlayerState.loading);
     final token = ++_playToken;
+    // [审查回修 P2-3] 0 模式首次会话清理必须先于本段合成，避免误删新产物
+    await _sweepZeroRetentionCacheOnce();
     // 切章/重播入口先停掉上一段残留音频：新段合成期间保持静默而非叠音
     _paragraphIntervalTimer?.cancel();
     await _streamPlayer.stop();
@@ -1225,10 +1246,12 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       // [设置批5c] 记录本次会话产物（0 模式 stop 时兜底清理）
       _ttsSessionFiles.add(resolvedPath);
       _lastTtsAudioPath = resolvedPath;
+      // [审查回修 P2-2] 归属代数：同一路径被新段复用时旧 stale 分支不得删
+      _ttsPathGenerations[resolvedPath] = gen;
     }
     if (_isSpeakStale(token, gen)) {
-      // 停止/切段后迟到的产物：0 模式立即清理，避免残留
-      await _burnTtsFileIfNeeded(_lastTtsAudioPath);
+      // 停止/切段后迟到的产物：只用本次 resolvedPath，且校验归属代数
+      await _burnTtsFileIfOwned(resolvedPath, gen);
       return;
     }
     if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
@@ -1238,7 +1261,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       try {
         // 语速/音调/音量已由系统 TTS 合成参数应用，播放侧固定 1.0
         await _streamPlayer.playLocalFile(audioPath!.trim(), speed: 1.0);
-        if (_isSpeakStale(token, gen)) return;
+        if (_isSpeakStale(token, gen)) {
+          await _burnTtsFileIfOwned(resolvedPath, gen);
+          return;
+        }
         _noEngineHintShown = false;
         // [审查回修 P2-7] 音色失效回退等一次性提示：展示一段后由下次
         // 成功播放自然清除（不逐段刷错误）。
@@ -1254,7 +1280,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       }
     }
     if (_isSpeakStale(token, gen)) {
-      await _burnTtsFileIfNeeded(_lastTtsAudioPath);
+      await _burnTtsFileIfOwned(resolvedPath, gen);
       return;
     }
     if (failure is SystemTtsUnavailableException) {
@@ -1263,7 +1289,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       state = state.copyWith(errorMessage: '系统 TTS 朗读失败，本段按估算时长继续：$failure');
     }
     // [设置批5c] 0 模式：合成产物播放失败/进入估算推进即删除
-    await _burnTtsFileIfNeeded(_lastTtsAudioPath);
+    await _burnTtsFileIfOwned(resolvedPath, gen);
     _scheduleEstimateAdvance(text, config.speed, token, gen);
   }
 
@@ -1276,6 +1302,20 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       );
     } catch (e) {
       debugPrint('清理系统 TTS 缓存失败（忽略）: $e');
+    }
+  }
+
+  /// 0 模式跨进程残留清理（每个进程首次会话执行一次）
+  ///
+  /// 进程被杀时 per-segment 清理来不及执行，旧缓存会在下次会话命中；
+  /// 首次会话起手按保留时间 0 全量清空系统 TTS 缓存，正在播放文件保留。
+  Future<void> _sweepZeroRetentionCacheOnce() async {
+    if (_zeroRetentionSwept || _cacheRetentionMinutes > 0) return;
+    _zeroRetentionSwept = true;
+    try {
+      await _systemTts.clearCache(keepPath: currentPlaybackFilePath);
+    } catch (e) {
+      debugPrint('清理 0 模式系统 TTS 旧缓存失败（忽略）: $e');
     }
   }
 
@@ -1296,14 +1336,34 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (deleted) _ttsSessionFiles.remove(target);
   }
 
+  /// 仅当 [path] 仍属于本次合成代数 [gen] 时删除（[审查回修 P2-2]）
+  ///
+  /// stale 分支专用：同一缓存路径可能已被新段/新会话复用，代数不匹配时
+  /// 保持文件不动；真正的会话结束清理由 [_stopPlayerAndBurnSessionFiles]
+  /// 在 token 校验后处理。
+  Future<void> _burnTtsFileIfOwned(String? path, int gen) async {
+    final target = path?.trim();
+    if (target == null || target.isEmpty) return;
+    if (_ttsPathGenerations[target] != gen) return;
+    await _burnTtsFileIfNeeded(target);
+    _ttsPathGenerations.remove(target);
+  }
+
   /// 停止播放器并按 0 模式清理本次会话临时文件
   Future<void> _stopPlayerAndBurnSessionFiles() async {
+    // [审查回修 P2-2] 清理归属校验：stop 后立即 play 时旧清理不得删除
+    // 新会话复用/正在播放的路径。
+    final token = _playToken;
     final sessionFiles = List<String>.of(_ttsSessionFiles);
     _ttsSessionFiles.clear();
+    _ttsPathGenerations.clear();
     await _streamPlayer.stop();
     if (_cacheRetentionMinutes > 0) return;
     for (final path in sessionFiles) {
-      await _systemTts.deleteCacheFile(path);
+      if (_disposed || token != _playToken) return;
+      // 新会话已登记同一路径（复用）时跳过
+      if (_ttsSessionFiles.contains(path)) continue;
+      await _systemTts.deleteCacheFile(path, keepPath: currentPlaybackFilePath);
     }
   }
 
@@ -1338,6 +1398,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       if (finishedPath != null && finishedPath.isNotEmpty) {
         await _streamPlayer.stop();
         await _burnTtsFileIfNeeded(finishedPath);
+        _ttsPathGenerations.remove(finishedPath);
       }
     }
     await _onParagraphFinished();
@@ -1795,7 +1856,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _sleepTicker = null;
     _sleepRemainingSeconds = 0;
     _chaptersToStopRemaining = 0;
-    _finishChapterAfterTimerArmed = false;
+    _finishChapterAfterTimerArmedChapter = null;
     if (normalized > 0) {
       _sleepRemainingSeconds = normalized * 60;
       _ensureSleepTicker();
@@ -1844,8 +1905,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     unawaited(
       ReadAloudTimerSettings.saveFinishCurrentChapterAfterTimer(enabled),
     );
-    if (!enabled && _finishChapterAfterTimerArmed) {
-      _finishChapterAfterTimerArmed = false;
+    if (!enabled && _finishChapterAfterTimerArmedChapter != null) {
+      _finishChapterAfterTimerArmedChapter = null;
       notifyListeners();
       unawaited(_pushMediaSessionMetadata());
     }
@@ -1855,6 +1916,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   void setCacheRetentionMinutes(int minutes) {
     _cacheRetentionMinutes = normalizeReadAloudCacheRetentionMinutes(minutes);
     _cacheRetentionLoaded = true;
+    // 切到 0：下一次会话起手重新执行跨进程残留清理
+    if (_cacheRetentionMinutes <= 0) _zeroRetentionSwept = false;
   }
 
   void _clearSleepTimerState() {
@@ -1862,22 +1925,26 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _sleepTicker = null;
     _sleepRemainingSeconds = 0;
     _chaptersToStopRemaining = 0;
-    _finishChapterAfterTimerArmed = false;
+    _finishChapterAfterTimerArmedChapter = null;
   }
 
   /// 章末臂标消费：分钟到点后当前章自然结束 → 返回 true（调用方停止）
+  ///
+  /// 只消费与当前章号一致的臂标；自动切章期间到点/迟到的旧章边界不会
+  /// 误停新章（[审查回修 P3] 锚定章号）。
   bool _consumeFinishChapterArmAtBoundary() {
-    if (!_finishChapterAfterTimerArmed) return false;
-    _finishChapterAfterTimerArmed = false;
+    final armedChapter = _finishChapterAfterTimerArmedChapter;
+    if (armedChapter == null) return false;
+    _finishChapterAfterTimerArmedChapter = null;
     notifyListeners();
     unawaited(_pushMediaSessionMetadata());
-    return true;
+    return armedChapter == state.currentIndex;
   }
 
-  /// 清除章末臂标（手动切章时调用；不触碰按章配额）
+  /// 清除章末臂标（手动切章/新会话时调用；不触碰按章配额）
   void _clearFinishChapterArm() {
-    if (!_finishChapterAfterTimerArmed) return;
-    _finishChapterAfterTimerArmed = false;
+    if (_finishChapterAfterTimerArmedChapter == null) return;
+    _finishChapterAfterTimerArmedChapter = null;
     notifyListeners();
     unawaited(_pushMediaSessionMetadata());
   }
@@ -1885,18 +1952,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 当前是否已在章末（分钟到点时用于「已在章末直接停」判定）
   ///
   /// - 流媒体：已知时长且位置已到章尾容差内；
-  /// - TTS：当前是末段且该段音频已结束（播放中仍算「本章未播完」，
-  ///   由章末回调停止）。
+  /// - TTS：不做提前判断（末段可能仍在合成/估算窗口，`isPlaying` 不代表
+  ///   章末），一律由分钟到点装章末臂标、`_onParagraphFinished` 在真正章末
+  ///   消费；仅无段落（无内容可读）视为章末。
   bool _isAtChapterEnd() {
-    if (state.isStreamMode) {
-      final durationMs = _streamPlayer.duration.inMilliseconds;
-      if (durationMs <= 0) return false;
-      return _streamPlayer.position.inMilliseconds >=
-          durationMs - kStreamRestoreNearEndToleranceMs;
-    }
-    if (_paragraphs.isEmpty) return true;
-    return _paragraphIndex >= _paragraphs.length - 1 &&
-        !_streamPlayer.isPlaying;
+    if (!state.isStreamMode) return _paragraphs.isEmpty;
+    final durationMs = _streamPlayer.duration.inMilliseconds;
+    if (durationMs <= 0) return false;
+    return _streamPlayer.position.inMilliseconds >=
+        durationMs - kStreamRestoreNearEndToleranceMs;
   }
 
   /// 分钟倒计时到点：能读完本章则装章末臂标，否则立即停止
@@ -1906,7 +1970,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _sleepRemainingSeconds = 0;
     if (_finishCurrentChapterAfterTimer && !_isAtChapterEnd()) {
       // 当前章未播完：保留播放，等章末回调消费臂标
-      _finishChapterAfterTimerArmed = true;
+      _finishChapterAfterTimerArmedChapter = state.currentIndex;
       notifyListeners();
       unawaited(_pushMediaSessionMetadata());
       return;

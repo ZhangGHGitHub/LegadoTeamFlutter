@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -103,22 +103,26 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
               defaultValue: 'solid',
             )
             .then((value) {
-          if (!mounted) return;
-          setState(() => _transparentBackground = value == 'transparent');
-        }),
+              if (!mounted) return;
+              setState(() => _transparentBackground = value == 'transparent');
+            }),
       );
       // 音频书 → 流媒体；否则保持 TTS（阅读器朗读入口会强制 TTS）
       notifier.setAudioBookMode(_canCopyPlayUrl);
       notifier.bindBook(widget.book);
       // [A2] 读回并应用书级播放模式/语速（打开听书页/切换书籍）
-      unawaited(notifier.applyBookPreferences(
-        widget.book,
-        fallbackBookUrl: widget.effectiveBookUrl,
-      ));
+      unawaited(
+        notifier.applyBookPreferences(
+          widget.book,
+          fallbackBookUrl: widget.effectiveBookUrl,
+        ),
+      );
       notifier.initMediaSession(bookName: widget.effectiveBookName);
-      unawaited(notifier.isWakeLockEnabled().then((v) {
-        if (mounted) setState(() => _wakeLock = v);
-      }));
+      unawaited(
+        notifier.isWakeLockEnabled().then((v) {
+          if (mounted) setState(() => _wakeLock = v);
+        }),
+      );
       if (!ref.read(audioNotifierProvider).hasChapters) {
         notifier.loadChapters(widget.effectiveBookUrl);
       }
@@ -186,75 +190,82 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     return ListenableBuilder(
       listenable: notifier,
       builder: (context, _) => AppScaffold(
-      // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
-      // [设置批5a-1] 播放器背景：透明时露出全局背景图/壁纸层
-      backgroundColor: _transparentBackground ? Colors.transparent : null,
-      topBar: LegadoAppBar(
-        title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
-        actions: [
-          // 定时停止按钮（状态来自 Notifier，退出页面后仍生效）
-          _buildTimerButton(notifier),
-          IconButton(
-            icon: const Icon(Symbols.settings_rounded),
-            // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：补 tooltip（本体不动）
-            tooltip: '设置',
-            onPressed: () => setState(() => _showSettings = !_showSettings),
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        // [设置批5a-1] 播放器背景：透明时露出全局背景图/壁纸层
+        backgroundColor: _transparentBackground ? Colors.transparent : null,
+        topBar: LegadoAppBar(
+          title: Text(
+            widget.effectiveBookName.isNotEmpty
+                ? widget.effectiveBookName
+                : '听书',
           ),
-          // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml）。
-          // [B1 P1 收口 | 2026-10-04] 预下载入口曾下线（旧页面内循环写旧孤儿键，
-          // 与新读面目录/键/标记三重不匹配）。
-          // [B2 | 2026-10-03] 按契约 §2.48 恢复「缓存章节范围」「清除本章缓存」
-          // 两入口（对齐原版 audio_play.xml menu_audio_cache_range /
-          // menu_clear_current_audio_cache，AudioPlayActivity.kt:235-237,281-349）：
-          // 批量循环逐章调 audioCacheDownload（写入在 Rust、字节零穿越 FFI），
-          // 进度计 done/total/fail（对齐原版通知计数 AudioCacheService.kt:275-301），
-          // 「停止」调 audioCacheCancel。旧孤儿键写入路径保持删除、不迁移。
-          // 「缓存目录」（原版 SAF 目录选择）**不在本批**：契约 §2.47/§2.48 已冻结
-          // 缓存根为 set_audio_cache_dir 注入的应用私有 cache/audio_cache，SAF
-          // content:// 树无法作为 Rust std::fs 路径，选择结果对读写面均无效果——
-          // 加回入口会误导用户（详见本批报告「SAF 目录与私有缓存根不一致」）。
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：菜单在顶栏下方展开（本体不动）
-            position: PopupMenuPosition.under,
-            onSelected: _handleOverflowMenu,
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'changeSource', child: Text('换源')),
-              if (_origin.isNotEmpty)
-                const PopupMenuItem(value: 'login', child: Text('登录')),
-              if (_canCopyPlayUrl)
-                const PopupMenuItem(
-                  value: 'copyAudioUrl',
-                  child: Text('复制播放地址'),
-                ),
-              // 原版菜单顺序：copy_audio_url → cache_range → clear_current_audio_cache
-              if (_canCopyPlayUrl)
-                const PopupMenuItem(
-                  value: 'cacheRange',
-                  child: Text('缓存章节范围'),
-                ),
-              if (_canCopyPlayUrl)
-                const PopupMenuItem(
-                  value: 'clearCurrentCache',
-                  child: Text('清除本章缓存'),
-                ),
-              if (_canCopyPlayUrl)
-                CheckedPopupMenuItem(
-                  value: 'wakeLock',
-                  checked: _wakeLock,
-                  child: const Text('唤醒锁定'),
-                ),
-              if (_canCopyPlayUrl)
-                const PopupMenuItem(value: 'skipCredits', child: Text('跳过片头片尾')),
-              if (_origin.isNotEmpty)
-                const PopupMenuItem(value: 'editSource', child: Text('编辑书源')),
-              const PopupMenuItem(value: 'log', child: Text('日志')),
-            ],
-          ),
-        ],
+          actions: [
+            // 定时停止按钮（状态来自 Notifier，退出页面后仍生效）
+            _buildTimerButton(notifier),
+            IconButton(
+              icon: const Icon(Symbols.settings_rounded),
+              // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：补 tooltip（本体不动）
+              tooltip: '设置',
+              onPressed: () => setState(() => _showSettings = !_showSettings),
+            ),
+            // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml）。
+            // [B1 P1 收口 | 2026-10-04] 预下载入口曾下线（旧页面内循环写旧孤儿键，
+            // 与新读面目录/键/标记三重不匹配）。
+            // [B2 | 2026-10-03] 按契约 §2.48 恢复「缓存章节范围」「清除本章缓存」
+            // 两入口（对齐原版 audio_play.xml menu_audio_cache_range /
+            // menu_clear_current_audio_cache，AudioPlayActivity.kt:235-237,281-349）：
+            // 批量循环逐章调 audioCacheDownload（写入在 Rust、字节零穿越 FFI），
+            // 进度计 done/total/fail（对齐原版通知计数 AudioCacheService.kt:275-301），
+            // 「停止」调 audioCacheCancel。旧孤儿键写入路径保持删除、不迁移。
+            // 「缓存目录」（原版 SAF 目录选择）**不在本批**：契约 §2.47/§2.48 已冻结
+            // 缓存根为 set_audio_cache_dir 注入的应用私有 cache/audio_cache，SAF
+            // content:// 树无法作为 Rust std::fs 路径，选择结果对读写面均无效果——
+            // 加回入口会误导用户（详见本批报告「SAF 目录与私有缓存根不一致」）。
+            PopupMenuButton<String>(
+              tooltip: '更多',
+              // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：菜单在顶栏下方展开（本体不动）
+              position: PopupMenuPosition.under,
+              onSelected: _handleOverflowMenu,
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'changeSource', child: Text('换源')),
+                if (_origin.isNotEmpty)
+                  const PopupMenuItem(value: 'login', child: Text('登录')),
+                if (_canCopyPlayUrl)
+                  const PopupMenuItem(
+                    value: 'copyAudioUrl',
+                    child: Text('复制播放地址'),
+                  ),
+                // 原版菜单顺序：copy_audio_url → cache_range → clear_current_audio_cache
+                if (_canCopyPlayUrl)
+                  const PopupMenuItem(
+                    value: 'cacheRange',
+                    child: Text('缓存章节范围'),
+                  ),
+                if (_canCopyPlayUrl)
+                  const PopupMenuItem(
+                    value: 'clearCurrentCache',
+                    child: Text('清除本章缓存'),
+                  ),
+                if (_canCopyPlayUrl)
+                  CheckedPopupMenuItem(
+                    value: 'wakeLock',
+                    checked: _wakeLock,
+                    child: const Text('唤醒锁定'),
+                  ),
+                if (_canCopyPlayUrl)
+                  const PopupMenuItem(
+                    value: 'skipCredits',
+                    child: Text('跳过片头片尾'),
+                  ),
+                if (_origin.isNotEmpty)
+                  const PopupMenuItem(value: 'editSource', child: Text('编辑书源')),
+                const PopupMenuItem(value: 'log', child: Text('日志')),
+              ],
+            ),
+          ],
+        ),
+        body: _buildBody(provider, notifier),
       ),
-      body: _buildBody(provider, notifier),
-    ),
     );
   }
 
@@ -269,7 +280,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Symbols.error_rounded, size: 64, color: Theme.of(context).colorScheme.error),
+            Icon(
+              Symbols.error_rounded,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(height: 16),
             Text(provider.errorMessage ?? '加载失败'),
             const SizedBox(height: 16),
@@ -327,7 +342,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   /// 定时停止显示条（控制区域下方，红色文字突出）
   Widget _buildCountdownBar(AudioNotifier notifier) {
     final text = switch (notifier.sleepTimerMode) {
-      SleepTimerMode.chapters => '按章停止 剩余 ${notifier.chaptersToStopRemaining} 章',
+      SleepTimerMode.chapters =>
+        '按章停止 剩余 ${notifier.chaptersToStopRemaining} 章',
       SleepTimerMode.duration =>
         '定时停止 ${_formatCountdown(notifier.sleepRemainingSeconds)}',
       SleepTimerMode.finishChapter => '定时停止 读完本章后停止',
@@ -338,7 +354,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Symbols.timer_rounded, size: 18, color: Theme.of(context).colorScheme.error),
+          Icon(
+            Symbols.timer_rounded,
+            size: 18,
+            color: Theme.of(context).colorScheme.error,
+          ),
           const SizedBox(width: 6),
           Text(
             text,
@@ -351,7 +371,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
           const SizedBox(width: 12),
           GestureDetector(
             onTap: notifier.cancelSleepTimer,
-            child: Icon(Symbols.close_rounded, size: 18, color: Theme.of(context).colorScheme.error),
+            child: Icon(
+              Symbols.close_rounded,
+              size: 18,
+              color: Theme.of(context).colorScheme.error,
+            ),
           ),
         ],
       ),
@@ -365,8 +389,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   /// 契约 §2.48 已知边界：不做常驻通知/保活（进程死即停，已装文件保留）。
   Widget _buildAudioCacheProgressBar() {
     final scheme = Theme.of(context).colorScheme;
-    final progress =
-        _audioCacheTotal <= 0 ? null : _audioCacheDone / _audioCacheTotal;
+    final progress = _audioCacheTotal <= 0
+        ? null
+        : _audioCacheDone / _audioCacheTotal;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       color: scheme.surfaceContainerHighest,
@@ -406,16 +431,18 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       child: Column(
         children: [
           Icon(
-            provider.isPlaying ? Symbols.graphic_eq_rounded : Symbols.headphones_rounded,
+            provider.isPlaying
+                ? Symbols.graphic_eq_rounded
+                : Symbols.headphones_rounded,
             size: 44,
             color: scheme.primary,
           ),
           const SizedBox(height: 12),
           Text(
             chapter?.title ?? '未选择章节',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -423,16 +450,16 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
           const SizedBox(height: 6),
           Text(
             provider.isStreamMode ? '音频书' : '朗读',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 4),
           Text(
             '${provider.currentIndex + 1} / ${provider.totalChapters}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
           // [A1 批 2026-10-03] TTS 合成/播放失败降级提示（播放中可见，不静默）
           if (provider.errorMessage != null &&
@@ -440,9 +467,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
             const SizedBox(height: 8),
             Text(
               provider.errorMessage!,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: scheme.error,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: scheme.error),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -453,9 +480,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
             const SizedBox(height: 10),
             Text(
               provider.lyric!.trim(),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: scheme.secondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.secondary),
               textAlign: TextAlign.center,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
@@ -470,8 +497,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     final isStream = provider.isStreamMode;
     final dur = provider.durationMs;
     final pos = provider.positionMs;
-    final streamValue =
-        (isStream && dur > 0) ? (pos / dur).clamp(0.0, 1.0) : null;
+    final streamValue = (isStream && dur > 0)
+        ? (pos / dur).clamp(0.0, 1.0)
+        : null;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -481,10 +509,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
             child: LinearProgressIndicator(
               value: streamValue ?? provider.progress,
               minHeight: 3,
-              backgroundColor: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.6),
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(height: 8),
@@ -496,16 +523,16 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                     ? _formatMs(pos)
                     : '第 ${provider.currentIndex + 1} 章',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
               Text(
                 isStream && dur > 0
                     ? _formatMs(dur)
                     : '共 ${provider.totalChapters} 章',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -599,7 +626,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                 ),
               )
             : Icon(
-                provider.isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
+                provider.isPlaying
+                    ? Symbols.pause_rounded
+                    : Symbols.play_arrow_rounded,
                 size: 32,
               ),
       ),
@@ -615,9 +644,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
         children: [
           Text(
             isStream ? '播放设置' : '朗读设置',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Row(
@@ -712,7 +741,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
         final isCurrent = index == provider.currentIndex;
         return ListTile(
           leading: isCurrent
-              ? Icon(Symbols.play_circle_rounded, color: Theme.of(context).primaryColor)
+              ? Icon(
+                  Symbols.play_circle_rounded,
+                  color: Theme.of(context).primaryColor,
+                )
               : Text('${index + 1}'),
           title: Text(
             chapter.title,
@@ -740,16 +772,18 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
           Icon(
             mediaReady ? Symbols.headphones_rounded : Symbols.info_rounded,
             size: 16,
-            color: mediaReady ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.onSurfaceVariant,
+            color: mediaReady
+                ? Theme.of(context).primaryColor
+                : Theme.of(context).colorScheme.onSurfaceVariant,
           ),
           const SizedBox(width: 8),
           Text(
-            mediaReady
-                ? '后台播放已启用，支持媒体按钮控制'
-                : '支持后台播放，切换应用后音频将继续播放',
+            mediaReady ? '后台播放已启用，支持媒体按钮控制' : '支持后台播放，切换应用后音频将继续播放',
             style: TextStyle(
               fontSize: 12,
-              color: mediaReady ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.onSurfaceVariant,
+              color: mediaReady
+                  ? Theme.of(context).primaryColor
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
         ],
@@ -831,11 +865,15 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       Navigator.pushNamed(context, AppRoutes.changeSource, arguments: book);
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.changeSource, arguments: {
-      'bookUrl': widget.effectiveBookUrl,
-      'bookName': widget.effectiveBookName,
-      'currentSourceUrl': _origin,
-    });
+    Navigator.pushNamed(
+      context,
+      AppRoutes.changeSource,
+      arguments: {
+        'bookUrl': widget.effectiveBookUrl,
+        'bookName': widget.effectiveBookName,
+        'currentSourceUrl': _origin,
+      },
+    );
   }
 
   /// 登录（按 book.origin 定位书源后打开登录页）
@@ -847,8 +885,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     BookSource? source;
     try {
       final sources = await ref.read(bookApiProvider).getBookSources();
-      source =
-          sources.where((s) => s.bookSourceUrl == _origin).firstOrNull;
+      source = sources.where((s) => s.bookSourceUrl == _origin).firstOrNull;
     } catch (_) {}
     if (!mounted) return;
     if (source == null) {
@@ -880,8 +917,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       // 优先当前已解析的播放地址，避免重复取址
       var url = audio.mediaUrl.trim();
       if (url.isEmpty) {
-        final media =
-            await api.getAudioChapterMedia(bookUrl, audio.currentIndex);
+        final media = await api.getAudioChapterMedia(
+          bookUrl,
+          audio.currentIndex,
+        );
         url = (media['mediaUrl'] as String?)?.trim() ?? '';
         if (url.isEmpty) {
           final resource = (media['resourceUrl'] as String?)?.trim() ?? '';
@@ -908,12 +947,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     }
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => SourceEditScreen(sourceUrl: _origin),
-      ),
+      MaterialPageRoute(builder: (_) => SourceEditScreen(sourceUrl: _origin)),
     );
   }
-
 
   // ===== 音频章节预下载（契约 §2.48，对齐原版 AudioCacheService 批量循环）=====
   //
@@ -954,8 +990,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     final chapterCount = chapters.length;
     // 原版 chapterCount <= 0 直接 return（AudioPlayActivity.kt:285）
     if (chapterCount <= 0 || !mounted) return;
-    final fromIndex =
-        (ref.read(audioNotifierProvider).currentIndex + 1).clamp(1, chapterCount);
+    final fromIndex = (ref.read(audioNotifierProvider).currentIndex + 1).clamp(
+      1,
+      chapterCount,
+    );
     final startCtrl = TextEditingController(text: '$fromIndex');
     final endCtrl = TextEditingController(text: '$chapterCount');
     final ok = await showDialog<bool>(
@@ -1041,7 +1079,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     int chapterCount,
   ) {
     if (start < 0 || endInclusive < start || start >= chapterCount) return null;
-    final end = endInclusive < chapterCount - 1 ? endInclusive : chapterCount - 1;
+    final end = endInclusive < chapterCount - 1
+        ? endInclusive
+        : chapterCount - 1;
     return (start, end);
   }
 
@@ -1187,8 +1227,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     var globalOpen =
         int.tryParse(await api.getConfig(kAudioSkipOpenCreditsKey) ?? '0') ?? 0;
     var globalClose =
-        int.tryParse(await api.getConfig(kAudioSkipCloseCreditsKey) ?? '0') ?? 0;
-    var useGlobal = (book?.readConfig?.openCredits ?? 0) == 0 &&
+        int.tryParse(await api.getConfig(kAudioSkipCloseCreditsKey) ?? '0') ??
+        0;
+    var useGlobal =
+        (book?.readConfig?.openCredits ?? 0) == 0 &&
         (book?.readConfig?.closeCredits ?? 0) == 0;
     var open = useGlobal ? globalOpen : (book?.readConfig?.openCredits ?? 0);
     var close = useGlobal ? globalClose : (book?.readConfig?.closeCredits ?? 0);
@@ -1212,8 +1254,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('跳过片头片尾',
-                      style: Theme.of(ctx).textTheme.titleMedium),
+                  Text('跳过片头片尾', style: Theme.of(ctx).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   SegmentedButton<bool>(
                     segments: const [
@@ -1254,33 +1295,36 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                   FilledButton(
                     onPressed: () async {
                       if (useGlobal) {
+                        await api.setConfig(kAudioSkipOpenCreditsKey, '$open');
                         await api.setConfig(
-                            kAudioSkipOpenCreditsKey, '$open');
-                        await api.setConfig(
-                            kAudioSkipCloseCreditsKey, '$close');
+                          kAudioSkipCloseCreditsKey,
+                          '$close',
+                        );
                         if (book != null) {
                           final cfg = book.readConfig ?? const ReadConfig();
-                          await api.updateBook(book.copyWith(
-                            readConfig: cfg.copyWith(
-                              openCredits: 0,
-                              closeCredits: 0,
+                          await api.updateBook(
+                            book.copyWith(
+                              readConfig: cfg.copyWith(
+                                openCredits: 0,
+                                closeCredits: 0,
+                              ),
                             ),
-                          ));
+                          );
                         }
                       } else if (book != null) {
                         final cfg = book.readConfig ?? const ReadConfig();
-                        await api.updateBook(book.copyWith(
-                          readConfig: cfg.copyWith(
-                            openCredits: open,
-                            closeCredits: close,
+                        await api.updateBook(
+                          book.copyWith(
+                            readConfig: cfg.copyWith(
+                              openCredits: open,
+                              closeCredits: close,
+                            ),
                           ),
-                        ));
+                        );
                       }
                       if (ctx.mounted) Navigator.pop(ctx);
                       if (mounted) {
-                        ref
-                            .read(audioNotifierProvider.notifier)
-                            .bindBook(book);
+                        ref.read(audioNotifierProvider.notifier).bindBook(book);
                         _snack('已保存片头片尾设置');
                       }
                     },
@@ -1294,11 +1338,12 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       },
     );
   }
+
   /// 统一 snackbar 提示
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }

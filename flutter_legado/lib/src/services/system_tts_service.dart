@@ -43,9 +43,9 @@ const int kTtsVolumeStoredMax = 100;
 int ttsSpeechRateFromSpeed(double speed) {
   final clamped = speed.clamp(kMinTtsSpeed, kMaxTtsSpeed);
   return ((clamped * 10) - 5).round().clamp(
-        kTtsSpeechRateMin,
-        kTtsSpeechRateMax,
-      );
+    kTtsSpeechRateMin,
+    kTtsSpeechRateMax,
+  );
 }
 
 /// 参考刻度语速 → UI 倍速（`(rate + 5) / 10`；UI 收敛到 0.5–3.0）
@@ -115,7 +115,10 @@ class SystemTtsVoice {
 
 /// 系统 TTS 缓存统计（文件数 + 总字节）
 class SystemTtsCacheStats {
-  const SystemTtsCacheStats({required this.fileCount, required this.totalBytes});
+  const SystemTtsCacheStats({
+    required this.fileCount,
+    required this.totalBytes,
+  });
 
   static const empty = SystemTtsCacheStats(fileCount: 0, totalBytes: 0);
 
@@ -253,10 +256,12 @@ class FlutterTtsSystemTtsPlatform implements SystemTtsPlatform {
         if (item is Map) {
           final name = (item['name'] ?? '').toString().trim();
           if (name.isEmpty) continue;
-          result.add(SystemTtsEngine(
-            name: name,
-            label: (item['label'] ?? name).toString(),
-          ));
+          result.add(
+            SystemTtsEngine(
+              name: name,
+              label: (item['label'] ?? name).toString(),
+            ),
+          );
         } else {
           final name = item.toString().trim();
           if (name.isEmpty) continue;
@@ -400,9 +405,8 @@ class SystemTtsService {
     this.maxCacheFiles = 50,
     this.maxCacheAge = const Duration(hours: 48),
     this.synthesisTimeout = const Duration(seconds: 45),
-  })  : _platform = platform ?? FlutterTtsSystemTtsPlatform(),
-        _baseDirectoryProvider =
-            baseDirectoryProvider ?? getTemporaryDirectory;
+  }) : _platform = platform ?? FlutterTtsSystemTtsPlatform(),
+       _baseDirectoryProvider = baseDirectoryProvider ?? getTemporaryDirectory;
 
   /// 缓存子目录名（位于应用临时目录下）
   static const String cacheDirName = 'system_tts';
@@ -782,10 +786,7 @@ class SystemTtsService {
   /// - 超过保留时长的 `*.wav` 按 mtime 删除；[keepPath] 指向的文件保留
   ///   （正在播放）；
   /// - 失败静默（debugPrint），返回实际删除数。
-  Future<int> pruneByRetention(
-    int retentionMinutes, {
-    String? keepPath,
-  }) async {
+  Future<int> pruneByRetention(int retentionMinutes, {String? keepPath}) async {
     if (retentionMinutes <= 0) return 0;
     try {
       final dir = await _cacheDirectory();
@@ -971,9 +972,7 @@ class SystemTtsService {
       await _applyPlatformState(speed, pitch, volume);
       // [审查回修 P1-1] flutter_tts 的 onError/ERROR 不完成 Future，
       // 必须超时兜底；超时后 stop 复位 busy 再抛，段落链继续估算推进。
-      await _platform
-          .synthesizeToFile(text, path)
-          .timeout(synthesisTimeout);
+      await _platform.synthesizeToFile(text, path).timeout(synthesisTimeout);
       final file = File(path);
       if (!file.existsSync() || file.lengthSync() <= 0) {
         throw const SystemTtsException('系统 TTS 未生成音频文件');
@@ -994,9 +993,7 @@ class SystemTtsService {
         } catch (_) {}
       }
       if (e is TimeoutException) {
-        throw SystemTtsException(
-          '系统 TTS 合成超时（${synthesisTimeout.inSeconds}s）',
-        );
+        throw SystemTtsException('系统 TTS 合成超时（${synthesisTimeout.inSeconds}s）');
       }
       if (e is SystemTtsException) rethrow;
       throw SystemTtsException('系统 TTS 合成失败：$e');

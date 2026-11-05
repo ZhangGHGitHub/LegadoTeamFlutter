@@ -672,83 +672,47 @@ class _ReadAloudSettingsScreenState
     }
     await _reloadCacheStats();
     if (!mounted) return;
-    var draftMinutes = _cacheRetentionMinutes;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('TTS 缓存'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '系统 TTS 合成缓存：${_cacheStats.fileCount} 个文件，'
-                  '共 ${_formatBytes(_cacheStats.totalBytes)}。\n'
-                  '缓存仅用于加速重复段落朗读，清理后可随时重新生成。',
+      builder: (ctx) => AlertDialog(
+        title: const Text('TTS 缓存'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '系统 TTS 合成缓存：${_cacheStats.fileCount} 个文件，'
+                '共 ${_formatBytes(_cacheStats.totalBytes)}。\n'
+                '缓存仅用于加速重复段落朗读，清理后可随时重新生成。',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '当前保留：${readAloudCacheRetentionLabel(_cacheRetentionMinutes)}'
+                '（在「缓存保留时间」行设置）',
+                key: const ValueKey('tts-cache-retention-label'),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '清理不会删除正在播放的文件；HTTP 引擎（Rust）缓存'
+                '不在此策略内。',
+                style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  '保留时间：${readAloudCacheRetentionLabel(draftMinutes)}',
-                  key: const ValueKey('tts-cache-retention-label'),
-                ),
-                Slider(
-                  key: const ValueKey('tts-cache-retention-slider'),
-                  value: draftMinutes
-                      .clamp(
-                        kMinReadAloudCacheRetentionMinutes,
-                        kMaxReadAloudCacheRetentionMinutes,
-                      )
-                      .toDouble(),
-                  min: kMinReadAloudCacheRetentionMinutes.toDouble(),
-                  max: kMaxReadAloudCacheRetentionMinutes.toDouble(),
-                  label: readAloudCacheRetentionLabel(draftMinutes),
-                  onChanged: (value) {
-                    setDialogState(() => draftMinutes = value.round());
-                  },
-                  onChangeEnd: (value) {
-                    final minutes = value.round();
-                    setDialogState(() => draftMinutes = minutes);
-                    unawaited(_persistCacheRetention(minutes));
-                  },
-                ),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final preset in const [0, 10, 60, 1440, 10080])
-                      ChoiceChip(
-                        label: Text(readAloudCacheRetentionLabel(preset)),
-                        selected: draftMinutes == preset,
-                        onSelected: (_) {
-                          setDialogState(() => draftMinutes = preset);
-                          unawaited(_persistCacheRetention(preset));
-                        },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '0 表示即听即焚：每段系统 TTS 播放完成/失败后立即删除；'
-                  'HTTP 引擎（Rust）缓存不在此策略内。',
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('清理'),
-            ),
-          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清理'),
+          ),
+        ],
       ),
     );
     if (confirmed != true) return;

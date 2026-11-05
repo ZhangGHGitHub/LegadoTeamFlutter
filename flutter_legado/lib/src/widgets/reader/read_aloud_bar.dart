@@ -119,10 +119,9 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
 
   Future<void> _persistFollowSystem(bool follow) async {
     try {
-      await ref.read(bookApiProvider).setConfig(
-            _keyFollowSystem,
-            follow ? 'true' : 'false',
-          );
+      await ref
+          .read(bookApiProvider)
+          .setConfig(_keyFollowSystem, follow ? 'true' : 'false');
     } catch (_) {}
   }
 
@@ -206,9 +205,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               // [引擎双持久化 | 2026-10-04] 快捷切换按原版「全局」语义落库
               // （先清书级覆盖再写全局，SpeakEngineDialog.kt:171-177）：书级
               // 优先下若只写全局内存值，该书仍会继续用书级引擎，切换不生效。
-              unawaited(
-                notifier.setGlobalTtsEngine(engine.url),
-              );
+              unawaited(notifier.setGlobalTtsEngine(engine.url));
               _snack('已切换引擎：${engine.name}');
             },
             child: Column(
@@ -241,10 +238,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                   onPressed: selectedEngine == null
                       ? null
                       : () => _applyEngine(
-                            dialogContext,
-                            selectedEngine,
-                            bookLevel: true,
-                          ),
+                          dialogContext,
+                          selectedEngine,
+                          bookLevel: true,
+                        ),
                   child: const Text('书'),
                 ),
                 const Spacer(),
@@ -256,10 +253,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                   onPressed: selectedEngine == null
                       ? null
                       : () => _applyEngine(
-                            dialogContext,
-                            selectedEngine,
-                            bookLevel: false,
-                          ),
+                          dialogContext,
+                          selectedEngine,
+                          bookLevel: false,
+                        ),
                   child: const Text('全局'),
                 ),
               ],
@@ -368,10 +365,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
             audio.isPlaying
                 ? Icons.graphic_eq
                 : audio.isLoading
-                    ? Icons.hourglass_top
-                    : audio.state == PlayerState.error
-                        ? Icons.error_outline
-                        : Icons.pause_circle_outline,
+                ? Icons.hourglass_top
+                : audio.state == PlayerState.error
+                ? Icons.error_outline
+                : Icons.pause_circle_outline,
             size: 18,
             color: theme.colorScheme.primary,
           ),
@@ -408,9 +405,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           // （单一数据源，与听书页/通知栏展示同一份剩余量）
           IconButton(
             icon: Icon(
-              notifier.isSleepTimerActive
-                  ? Icons.timer
-                  : Icons.timer_outlined,
+              notifier.isSleepTimerActive ? Icons.timer : Icons.timer_outlined,
               color: notifier.isSleepTimerActive
                   ? theme.colorScheme.primary
                   : null,
@@ -490,8 +485,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           IconButton(
             icon: const Icon(Icons.chevron_left),
             tooltip: '上一段',
-            onPressed: audio.state != PlayerState.idle &&
-                    notifier.paragraphCount > 0
+            onPressed:
+                audio.state != PlayerState.idle && notifier.paragraphCount > 0
                 ? notifier.prevParagraph
                 : null,
           ),
@@ -526,8 +521,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           IconButton(
             icon: const Icon(Icons.chevron_right),
             tooltip: '下一段',
-            onPressed: audio.state != PlayerState.idle &&
-                    notifier.paragraphCount > 0
+            onPressed:
+                audio.state != PlayerState.idle && notifier.paragraphCount > 0
                 ? notifier.nextParagraph
                 : null,
           ),
@@ -630,9 +625,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           Expanded(
             child: TextButton.icon(
               icon: Icon(
-                _followSystemSpeed
-                    ? Icons.speed
-                    : Icons.speed_outlined,
+                _followSystemSpeed ? Icons.speed : Icons.speed_outlined,
                 size: 18,
               ),
               label: Text(_followSystemSpeed ? '语速:跟随系统' : '语速:手动'),
@@ -666,10 +659,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
 
   /// 紧凑按钮样式：缩小内边距，窄屏下四按钮可均分不溢出
   ButtonStyle get _compactButtonStyle => TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    minimumSize: Size.zero,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
 
   String _statusText(AudioState audio) {
     switch (audio.state) {

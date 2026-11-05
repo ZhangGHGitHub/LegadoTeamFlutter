@@ -137,7 +137,7 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
     final theme = Theme.of(context);
     final notifier = ref.read(audioNotifierProvider.notifier);
     return SafeArea(
-      top: false,
+      top: true,
       child: Padding(
         padding: EdgeInsets.only(
           left: 16,
@@ -349,7 +349,11 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
     final isOff = _mode == ReadAloudTimerMode.minute
         ? _minutes.round() <= 0
         : _chapters.round() <= 0;
-    return Row(
+    // 窄屏/大字体下按钮自动换行，避免 Row 溢出
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         TextButton(
           onPressed: () => Navigator.pop(context),
@@ -361,7 +365,6 @@ class _ReadAloudTimerSheetState extends ConsumerState<ReadAloudTimerSheet>
             onPressed: _stop,
             child: const Text('停止定时'),
           ),
-        const Spacer(),
         FilledButton(
           key: const ValueKey('read-aloud-timer-start-button'),
           onPressed: _start,
