@@ -1,9 +1,11 @@
-﻿import 'dart:io';
+﻿import 'dart:convert';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:path_provider/path_provider.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -11,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/change_cover/change_cover_notifier.dart';
+import '../services/container_image_picker.dart';
+import '../utils/cover_local_path.dart';
 import '../widgets/book_cover.dart';
 
 /// 更换封面页面
@@ -81,17 +85,76 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
   }
 
   /// 从本地相册 / 文件选择封面
+  ///
+  /// [设备回归 P2-2] Android 改走 SAF（ContainerImagePicker），只读字节、
+  /// 不经过 file_picker 的 Bitmap.compress 路径（陈旧缩略图 NPE/FATAL）；
+  /// 选中后复制到应用支持目录 `custom_covers/`，DB 只保存稳定绝对路径。
+  /// iOS/桌面仍由 ContainerImagePicker 内部走 file_picker（allowCompression
+  /// = false）。
   Future<void> _pickLocal() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image);
-    final path = result?.files.single.path;
-    if (path == null || !mounted) return;
-    setState(() => _selectedUrl = path);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已选择本地图片，点击底部按钮确认'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    try {
+      final pick = await ContainerImagePicker.pick(
+        dialogTitle: '选择封面图片',
+      );
+      if (pick == null || !mounted) return;
+      final path = await _storePickedCover(pick);
+      if (!mounted) return;
+      if (path == null) {
+        _showToast('保存封面失败，请重试');
+        return;
+      }
+      setState(() => _selectedUrl = path);
+      _showToast('已选择本地图片，点击底部按钮确认');
+    } on ContainerImagePickException catch (e) {
+      if (mounted) _showToast(e.message);
+    } catch (e) {
+      debugPrint('ChangeCoverScreen._pickLocal 异常: $e');
+      if (mounted) _showToast('选择封面失败，请重试');
+    }
+  }
+
+  /// 写入应用支持目录 `custom_covers/cover_<book 哈希>.<ext>`
+  ///
+  /// 固定文件名避免重复选择累积垃圾文件；覆盖写（writeAsBytes 截断）。
+  /// 返回绝对路径；IO 异常返回 null（调用方 toast，不崩溃）。
+  Future<String?> _storePickedCover(ContainerImagePick pick) async {
+    try {
+      final base = await getApplicationSupportDirectory();
+      final dir = Directory(
+        '${base.path}${Platform.pathSeparator}custom_covers',
+      );
+      await dir.create(recursive: true);
+      final key = widget.effectiveBookUrl.isNotEmpty
+          ? widget.effectiveBookUrl
+          : widget.effectiveBookName;
+      final digest =
+          sha1.convert(utf8.encode(key)).toString().substring(0, 16);
+      final file = File(
+        '${dir.path}${Platform.pathSeparator}cover_$digest'
+        '${_coverExtension(pick.name)}',
+      );
+      await file.writeAsBytes(pick.bytes, flush: true);
+      return file.path;
+    } catch (e) {
+      debugPrint('ChangeCoverScreen._storePickedCover 异常: $e');
+      return null;
+    }
+  }
+
+  static String _coverExtension(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return '.jpg';
+    final ext = name.substring(dot).toLowerCase();
+    const allowed = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'};
+    return allowed.contains(ext) ? ext : '.jpg';
+  }
+
+  void _showToast(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 1)),
+      );
   }
 
   void _confirm() {
@@ -99,12 +162,11 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
     Navigator.pop(context, _selectedUrl);
   }
 
-  bool _isLocal(String url) => !url.startsWith('http');
-
   Widget _coverImage(String url, {double? width, double? height}) {
-    if (_isLocal(url)) {
+    final localPath = localCoverFilePath(url);
+    if (localPath != null) {
       return Image.file(
-        File(url),
+        File(localPath),
         width: width,
         height: height,
         fit: BoxFit.cover,
