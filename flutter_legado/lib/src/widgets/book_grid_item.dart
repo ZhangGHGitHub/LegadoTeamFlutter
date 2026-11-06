@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../providers/cover_settings/cover_settings_notifier.dart';
 import 'book_cover.dart';
 import 'book_display_tags_row.dart';
 
@@ -118,6 +119,10 @@ class BookGridItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // [设备回归] 全局「显示字体阴影」需在书架可见：卡片外层 DecoratedBox
+    // 绘制阴影（BookCover 内部阴影被 Stack 裁剪）；保留书架独立开关。
+    final effectiveCoverShadow =
+        coverShadow || coverSettingsListenable.value.showShadow;
     final effectiveTagRowHeight = BookDisplayTagsRow.heightFor(
       context,
       compact: true,
@@ -137,7 +142,7 @@ class BookGridItem extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(coverCornerRadius),
-                boxShadow: coverShadow
+                boxShadow: effectiveCoverShadow
                     ? [
                         BoxShadow(
                           color:

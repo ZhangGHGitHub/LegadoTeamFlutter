@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../models/book.dart';
 import '../models/bookshelf_settings.dart';
+import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../utils/book_intro_utils.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/time_utils.dart';
@@ -62,6 +63,10 @@ class BookListItem extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final cardColorValue = settings.cardColorFor(isDark: isDark);
+    // [设备回归] 全局阴影在列表卡片外层绘制（内层 BookCover 阴影被 Stack 裁剪）
+    final effectiveCoverShadow =
+        settings.bookshelfCoverShadow ||
+            coverSettingsListenable.value.showShadow;
 
     final unread = settings.showUnread ? unreadChapterNum(book) : 0;
     final isNew = settings.showUnreadNew && book.lastCheckCount > 0;
@@ -247,7 +252,7 @@ class BookListItem extends StatelessWidget {
                       DecoratedBox(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(4),
-                          boxShadow: settings.bookshelfCoverShadow
+                          boxShadow: effectiveCoverShadow
                               ? [
                                   BoxShadow(
                                     color: colorScheme.shadow
