@@ -350,6 +350,78 @@ void main() {
     expect(fake.calls, greaterThan(0), reason: '过期缓存必须进入仅 WiFi 判定');
   });
 
+  testWidgets('本地封面文件存在：Image.file 直接显示，仅 WiFi 不拦截、不查网络', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('cover_local_hit');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/custom_cover.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+    final fake = _FakeNetworkStatus(false);
+    NetworkStatusService.instance = fake;
+    coverSettingsListenable.value = CoverSettings.defaults.copyWith(
+      loadOnlyOnWifi: true,
+    );
+
+    await tester.pumpWidget(
+      host(
+        BookCover(
+          coverUrl: file.path,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byKey(const ValueKey('bookCoverText')), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(fake.calls, 0);
+  });
+
+  testWidgets('file:// 本地封面 URI 同样显示', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('cover_local_uri');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/custom_cover.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+
+    await tester.pumpWidget(
+      host(
+        BookCover(
+          coverUrl: Uri.file(file.path).toString(),
+          width: 80,
+          height: 110,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+  });
+
+  testWidgets('本地封面文件缺失：回落默认封面文字，不发网络请求', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('cover_local_missing');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final missing = File('${dir.path}/deleted.png');
+
+    await tester.pumpWidget(
+      host(
+        BookCover(
+          coverUrl: missing.path,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('bookCoverDefault')), findsOneWidget);
+    expect(find.byKey(const ValueKey('bookCoverText')), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+  });
+
   testWidgets('阴影开关：封面外 4dp 阴影随设置显示/隐藏', (tester) async {
     await tester.pumpWidget(
       host(const BookCover(bookName: '凡人修仙传', width: 80, height: 110)),

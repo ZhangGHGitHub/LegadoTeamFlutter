@@ -35,6 +35,7 @@ import '../services/settings_service.dart';
 import '../services/webdav_book_upload_service.dart';
 import '../utils/book_info_utils.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/cover_local_path.dart';
 import '../utils/meaningful_text_guard.dart'; // [U4 | 台账 0917] 详情页渲染层模板残留守卫
 // [08 元信息区对齐 | 台账 0922 修订] book_progress_utils 导入已随「目录：已读 X%」
 // 行移除而不再使用（工具本身保留：book_list_item 仍用，单测保留）
@@ -179,7 +180,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     final cover = coverSettingsListenable.value;
     final gen = ++_wifiGateGen;
     final book = _loadedBook;
-    if (!cover.loadOnlyOnWifi) {
+    // 本地封面不访问网络：无需查询 WiFi（设备回归 P2-1）
+    final coverUrl = book?.customCoverUrl ?? book?.coverUrl;
+    final isLocalCover = isLocalCoverUrl(coverUrl);
+    if (!cover.loadOnlyOnWifi || isLocalCover) {
       _wifiRetryTimer?.cancel();
       _wifiRetryTimer = null;
       if (!mounted || gen != _wifiGateGen) return;
@@ -226,7 +230,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       }
       return;
     }
-    if (cover.loadOnlyOnWifi) {
+    if (cover.loadOnlyOnWifi && !isLocalCoverUrl(coverUrl)) {
       final wifi = await NetworkStatusService.instance.isWifi();
       if (!mounted || gen != _coverSeedGen) return;
       if (!wifi) {

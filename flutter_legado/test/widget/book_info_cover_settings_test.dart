@@ -6,6 +6,7 @@
 // - [审查 P1-2] 仅 WiFi + 蜂窝：背景退纯 surface、不加载网络封面、不取色；
 // - [审查 P1-2] WiFi 允许：背景加载网络封面；useDefaultCover 后背景不再
 //   加载网络封面。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -30,14 +31,22 @@ import 'package:flutter_legado/src/widgets/cover_text_painter.dart';
 
 import '../mocks/mocks.dart';
 
+/// 真实 2×1 PNG（本地封面文件内容）
+const String _kPng2x1 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4z8AARAAI/gH/xp559wAAAABJRU5ErkJggg==';
+
 /// 可注入的网络状态假实现
 class _FakeNetworkStatus extends NetworkStatusService {
   bool wifi;
+  int calls = 0;
 
   _FakeNetworkStatus(this.wifi);
 
   @override
-  Future<bool> isWifi({bool forceRefresh = false}) async => wifi;
+  Future<bool> isWifi({bool forceRefresh = false}) async {
+    calls++;
+    return wifi;
+  }
 }
 
 /// 测试 HTTP 客户端：openUrl 计数后抛错（图片走 errorWidget，避免真实 DNS）
@@ -229,5 +238,27 @@ void main() {
     expect(find.byKey(const ValueKey('bookCoverText')), findsOneWidget);
     expect(_httpOpenCalls, 0);
     expect(paletteCalls, 0);
+  });
+
+  testWidgets('本地封面：详情背景/封面走 Image.file，仅 WiFi 不拦截', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('detail_local_cover');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/cover.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+    final book = stubBook(coverUrl: file.path);
+    final fake = _FakeNetworkStatus(false);
+    NetworkStatusService.instance = fake;
+    CoverPaletteService.debugExtractor = (_) async => Colors.red;
+    coverSettingsListenable.value = CoverSettings.defaults.copyWith(
+      loadOnlyOnWifi: true,
+    );
+
+    await tester.pumpWidget(wrap(BookInfoScreen(book: book)));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(find.byKey(const ValueKey('bookInfoBackdropSurface')), findsNothing);
+    expect(find.byType(Image), findsWidgets);
+    expect(fake.calls, 0, reason: '本地封面不查询 WiFi');
   });
 }

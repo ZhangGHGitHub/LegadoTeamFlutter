@@ -16,6 +16,7 @@ import '../services/cover_decode_loader.dart';
 import '../services/cover_disk_cache.dart';
 import '../services/network_status_service.dart';
 import '../utils/comic_image_utils.dart';
+import '../utils/cover_local_path.dart';
 import 'cover_text_painter.dart';
 
 /// 书籍封面组件 — 支持网络图片 + 默认封面 + coverDecodeJs 解密
@@ -175,8 +176,10 @@ class _BookCoverState extends State<BookCover> {
           builder: (context, ui, _) {
             final hasUrl =
                 widget.coverUrl != null && widget.coverUrl!.isNotEmpty;
-            // 总是默认封面时忽略网络封面比例（保持调用方声明尺寸）
-            final defaultOnly = !hasUrl || cover.useDefaultCover;
+            // 总是默认封面/本地文件时忽略网络封面比例（保持调用方声明尺寸）
+            final defaultOnly = !hasUrl ||
+                cover.useDefaultCover ||
+                isLocalCoverUrl(widget.coverUrl);
             final height = _displayHeight(
               ui.restrictCoverRatio,
               ignoreAspectRatio: defaultOnly,
@@ -188,14 +191,36 @@ class _BookCoverState extends State<BookCover> {
     );
   }
 
+  /// 本地封面解码宽度（与网络封面缩略策略一致）
+  int _thumbWidth(BuildContext context) {
+    final ratio = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
+    return (widget.width * ratio).round().clamp(1, 512);
+  }
+
   Widget _buildCover(BuildContext context, double height, CoverSettings cover) {
     final hasUrl = widget.coverUrl != null && widget.coverUrl!.isNotEmpty;
-    final showNetwork = hasUrl && !cover.useDefaultCover;
+    // [设备回归 P2-1] 本地换封面：识别绝对路径/file://，直接 Image.file；
+    // 文件缺失回落默认封面；不查仅 WiFi、不写网络缓存。
+    final localPath = localCoverFilePath(widget.coverUrl);
+    final localFile = localPath == null ? null : File(localPath);
+    final hasLocalFile = localFile != null && localFile.existsSync();
+    final showLocal = hasLocalFile && !cover.useDefaultCover;
+    final showNetwork =
+        localPath == null && hasUrl && !cover.useDefaultCover;
     final isNight = Theme.of(context).brightness == Brightness.dark;
     final defaultCover = _buildDefaultCover(context, height, cover, isNight);
 
     Widget inner = defaultCover;
-    if (showNetwork) {
+    if (showLocal) {
+      inner = Image.file(
+        localFile,
+        fit: BoxFit.cover,
+        width: widget.width,
+        cacheWidth: _thumbWidth(context),
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => defaultCover,
+      );
+    } else if (showNetwork) {
       inner = _CoverImage(
         coverUrl: widget.coverUrl!,
         width: widget.width,

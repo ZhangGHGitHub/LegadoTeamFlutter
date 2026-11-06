@@ -76,11 +76,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final coverSettings = coverSettingsListenable.value;
     final coverUrl = book.customCoverUrl ?? book.coverUrl;
     final hasCoverUrl = coverUrl != null && coverUrl.isNotEmpty;
-    final hasCover = hasCoverUrl && !coverSettings.useDefaultCover;
+    // [设备回归 P2-1] 本地换封面：详情背景同样走 Image.file；仅网络封面
+    // 才受仅 WiFi 门控约束，本地文件不被网络状态拦截。
+    final localPath = localCoverFilePath(coverUrl);
+    final hasLocalCover = localPath != null && File(localPath).existsSync();
+    final hasNetworkCover = hasCoverUrl && localPath == null;
+    final hasCover =
+        (hasNetworkCover || hasLocalCover) && !coverSettings.useDefaultCover;
     final isDefaultCover = !hasCover;
-    final wifiBlocked =
-        hasCover && coverSettings.loadOnlyOnWifi && _wifiAllowed != true;
-    final showNetworkBackdrop = hasCover && !wifiBlocked;
+    final wifiBlocked = hasNetworkCover &&
+        coverSettings.loadOnlyOnWifi &&
+        _wifiAllowed != true;
+    final showCoverBackdrop = hasCover && !wifiBlocked;
+    final showNetworkBackdrop = hasNetworkCover && !wifiBlocked;
     final ui = uiSettingsListenable.value;
     final mode = isDefaultCover
         ? ui.bookInfoDefaultCoverBackground
@@ -89,14 +97,28 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // 解码+滤波开销降一个量级（进详情转场掉帧根因之一）
     final blurWidth =
         (MediaQuery.sizeOf(context).width / 3).round().clamp(120, 480);
-    final seed = showNetworkBackdrop ? _coverSeed : null;
+    final seed = showCoverBackdrop ? _coverSeed : null;
     final seedOverlay = seed == null
         ? cs.secondaryContainer
         : Color.lerp(cs.secondaryContainer, seed, 0.42)!;
     // [UI_SYNC_REFACTOR R1] enableBlur 关闭时 on 档退化为不模糊显示（对齐参考仓全局开关语义）
-    final useBlur = mode == 'on' && showNetworkBackdrop && ui.enableBlur;
+    final useBlur = mode == 'on' && showCoverBackdrop && ui.enableBlur;
     final showBackdrop =
         !wifiBlocked && !(mode == 'off_for_default' && isDefaultCover);
+
+    final Widget? coverBackdropImage = !showCoverBackdrop
+        ? null
+        : showNetworkBackdrop
+            ? CachedNetworkImage(
+                imageUrl: coverUrl,
+                fit: BoxFit.cover,
+                memCacheWidth: blurWidth,
+              )
+            : Image.file(
+                File(localPath!),
+                fit: BoxFit.cover,
+                cacheWidth: blurWidth,
+              );
 
     final Widget backdrop = !showBackdrop
         ? ColoredBox(
@@ -105,7 +127,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           )
         : Stack(
             children: [
-              if (showNetworkBackdrop)
+              if (showCoverBackdrop)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -118,22 +140,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                               sigmaX: 24,
                               sigmaY: 24,
                             ),
-                            child: CachedNetworkImage(
-                              imageUrl: coverUrl,
-                              fit: BoxFit.cover,
-                              memCacheWidth: blurWidth,
-                            ),
+                            child: coverBackdropImage!,
                           )
-                        : CachedNetworkImage(
-                            imageUrl: coverUrl,
-                            fit: BoxFit.cover,
-                            memCacheWidth: blurWidth,
-                          ),
+                        : coverBackdropImage!,
                   ),
                 )
               else
                 ColoredBox(color: cs.surfaceContainerHighest),
-              if (showNetworkBackdrop)
+              if (showCoverBackdrop)
                 Positioned.fill(
                   child: ColoredBox(
                     color: seedOverlay.withValues(alpha: 0.34),
@@ -1597,14 +1611,15 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final url = book.customCoverUrl ?? book.coverUrl;
     if (url == null || url.isEmpty) return;
     if (!mounted) return;
+    final localPath = localCoverFilePath(url);
     await showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
         insetPadding: const EdgeInsets.all(16),
         child: InteractiveViewer(
-          child: url.startsWith('http')
-              ? CachedNetworkImage(imageUrl: url, fit: BoxFit.contain)
-              : Image.file(File(url), fit: BoxFit.contain),
+          child: localPath != null
+              ? Image.file(File(localPath), fit: BoxFit.contain)
+              : CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
         ),
       ),
     );
