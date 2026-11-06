@@ -1,0 +1,26 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.coverShadowColor" value="4278190080" />
+    <long name="flutter.coverTextColorN" value="4294967295" />
+    <long name="flutter.coverShadowColorN" value="4294967295" />
+    <long name="flutter.lastBackup" value="1793922760692" />
+    <boolean name="flutter.coverShowStroke" value="true" />
+    <long name="flutter.bookshelfLayoutPortrait" value="1" />
+    <boolean name="flutter.coverShowNameN" value="true" />
+    <boolean name="flutter.reader_layout_is_night" value="false" />
+    <long name="flutter.lastCheckUpdate" value="1793920620382" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <boolean name="flutter.brightness_mode_migrated_v1b1" value="true" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <boolean name="flutter.coverShowShadow" value="false" />
+    <boolean name="flutter.loadCoverOnlyWifi" value="false" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <boolean name="flutter.useDefaultCover" value="false" />
+    <boolean name="flutter.coverDefaultColor" value="true" />
+    <boolean name="flutter.coverShowName" value="true" />
+    <boolean name="flutter.coverRestrictRatio" value="true" />
+    <string name="flutter.coverInfoOrientation">0</string>
+    <boolean name="flutter.coverShowAuthor" value="true" />
+    <long name="flutter.coverTextColor" value="4278190080" />
+    <string name="flutter.restoreIgnore">{&quot;readConfig&quot;:false,&quot;themeMode&quot;:false,&quot;themeConfig&quot;:false,&quot;coverConfig&quot;:false,&quot;bookshelfLayout&quot;:false,&quot;showRss&quot;:false,&quot;threadCount&quot;:false,&quot;localBook&quot;:false}</string>
+</map>

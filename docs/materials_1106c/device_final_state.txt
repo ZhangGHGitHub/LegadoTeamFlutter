@@ -1,0 +1,7 @@
+== 设备终态 ==
+1.0
+0
+Physical size: 1080x1920
+Physical density: 480
+    versionCode=465 minSdk=24 targetSdk=36
+    versionName=2.0.464

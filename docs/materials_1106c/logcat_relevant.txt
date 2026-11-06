@@ -1,0 +1,7 @@
+11-06 07:39:17.709 E/AndroidRuntime(57370): FATAL EXCEPTION: Thread-7
+11-06 07:39:17.709 E/AndroidRuntime(57370): Process: io.legado.flutter_legado, PID: 57370
+11-06 07:39:17.709 E/AndroidRuntime(57370): java.lang.NullPointerException: Attempt to invoke virtual method 'boolean android.graphics.Bitmap.compress(android.graphics.Bitmap$CompressFormat, int, java.io.OutputStream)' on a null object reference
+11-06 07:39:17.709 E/AndroidRuntime(57370): 	at t3.z0.a(SourceFile:56)
+11-06 07:39:17.709 E/AndroidRuntime(57370): 	at P.e.run(SourceFile:389)
+11-06 07:39:17.709 E/AndroidRuntime(57370): 	at java.lang.Thread.run(Thread.java:1119)
+11-06 07:40:02.235 F/DEBUG   (58959): Cmdline: app_process /system/bin com.android.commands.content.Content query --uri content://media/external/images/media --projection _id:_display_name --where _display_name LIKE '%square%' OR _display_name LIKE '%cover%'
