@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.465] - 2026-11-06
+
+### Fixed
+- [UI] 本地换封面后封面不显示：BookCover 识别本地路径/file URI 并用文件渲染，缺失回落默认封面；详情背景/长按预览同步支持本地封面。
+- [Android] 更换封面选择未进入 MediaStore 的图片时不再崩溃：Android 改走 SAF 读取字节并复制到应用封面目录，取消/失败仅提示。
+- [UI] 书架网格/列表外层绘制封面阴影，避免全局阴影被卡片裁剪。
+
 ## [2.0.464] - 2026-11-06
 
 ### Added

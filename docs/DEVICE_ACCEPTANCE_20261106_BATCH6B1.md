@@ -219,3 +219,21 @@
 ---
 
 编写：QA 子代理 ｜ 2026-11-06
+
+
+---
+
+## 九、P2 回修复验（2.0.465+466，主代理执行）
+
+> 子代理配额未重置（19:20），本轮设备复验由主代理直接执行；仅验收，未改代码。
+
+- 版本/APK：2.0.464+465（versionCode 465），当前 HEAD `5218191a28` + 版本收尾为 2.0.465+466；release 198.4MB，sha256 `656df12d31f2f961446389ad9b297440042874317e97018723a68ffe1cbce977`。
+- **本地换封面（P2-1，PASS）**：SAF 选择刚 push 到 Download、未进入 MediaStore 的 `qa6b1b_cover.png` → 预览显示「已选择新封面」→「使用该封面」不崩溃；详情封面立即显示该图（`03_detail_local_cover.png`）；返回书架同会话显示（`04`）；force-stop 重启后书架仍显示（`05`）。
+- **file_picker NPE（P2-2，PASS）**：同一未扫描图片走 Android SAF 路径，全程无 `FATAL EXCEPTION`、无应用崩溃记录；取消 SAF 不崩。
+- **仅 WiFi 本地封面（PASS）**：设备仅 WiFi，开启仅 WiFi 时本地封面仍显示（不触发网络门控）；蜂窝场景此前已 BLOCKED。
+- **书架阴影**：外层阴影代码已接；本轮未单独截图量测（设备清理前未切换该开关），保留为 P3 视觉复核项。
+- **稳定性**：本轮 logcat FATAL/ANR/E.flutter/overflow=0（uiautomator 自身 SIGSEGV 不计）。
+- 证据：`docs/materials_1106d/01..05`。
+- 设备清理：删除测试书/图片、`pm clear io.legado.flutter_legado`、logcat 清空；应用恢复空书架默认态。
+
+编写：ZCode 主代理 ｜ 2026-11-06
