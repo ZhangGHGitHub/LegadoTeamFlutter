@@ -109,4 +109,103 @@ void main() {
       );
     });
   });
+
+  group('mergeHighlightStyleFields 富样式补丁（批7a）', () {
+    test('写入 fill/underline/strike，未知键与 underline.distance 原样保留', () {
+      const raw = '{"fill":-1,"textColor":-65536,"bold":true,'
+          '"underline":{"kind":"SOLID","color":0,"width":1.0,"distance":2.5,'
+          '"futureUnderlineKey":1},'
+          '"strike":{"color":-1,"futureStrikeKey":2},'
+          '"futureUnknownKey":{"nested":true}}';
+      final merged = jsonDecode(mergeHighlightStyleFields(
+        raw,
+        fill: 0,
+        underline: {
+          'kind': 'DASHED',
+          'color': 123,
+          'width': 3.5,
+          'distance': 2.5,
+          'futureUnderlineKey': 1,
+        },
+        strike: {'color': 456, 'futureStrikeKey': 2},
+      )) as Map<String, dynamic>;
+
+      expect(merged['fill'], 0);
+      expect(merged['textColor'], -65536, reason: '未传 textColor 不得改写');
+      expect(merged['bold'], true);
+      expect(merged['underline'], {
+        'kind': 'DASHED',
+        'color': 123,
+        'width': 3.5,
+        'distance': 2.5,
+        'futureUnderlineKey': 1,
+      });
+      expect(merged['strike'], {'color': 456, 'futureStrikeKey': 2});
+      expect(merged['futureUnknownKey'], {'nested': true});
+    });
+
+    test('关闭下划线/删除线时移除对应键', () {
+      const raw = '{"textColor":1,'
+          '"underline":{"kind":"WAVY","distance":4.0},'
+          '"strike":{"color":-1},"fill":9}';
+      final merged = jsonDecode(mergeHighlightStyleFields(
+        raw,
+        removeUnderline: true,
+        removeStrike: true,
+      )) as Map<String, dynamic>;
+
+      expect(merged.containsKey('underline'), isFalse);
+      expect(merged.containsKey('strike'), isFalse);
+      expect(merged['textColor'], 1);
+      expect(merged['fill'], 9);
+    });
+
+    test('textColor 未触碰保真（含 0）；显式 removeTextColor 才删除', () {
+      const raw = '{"textColor":0,"fill":5}';
+      final untouched = jsonDecode(mergeHighlightStyleFields(raw))
+          as Map<String, dynamic>;
+      expect(untouched['textColor'], 0);
+      expect(untouched['fill'], 5);
+
+      final removed = jsonDecode(
+        mergeHighlightStyleFields(raw, removeTextColor: true),
+      ) as Map<String, dynamic>;
+      expect(removed.containsKey('textColor'), isFalse);
+      expect(removed['fill'], 5);
+    });
+
+    test('空/非法 style 从空对象开始，只写本次显式属性', () {
+      expect(
+        jsonDecode(mergeHighlightStyleFields(null, fill: 0)),
+        {'fill': 0},
+      );
+      expect(
+        jsonDecode(mergeHighlightStyleFields('', fill: 0)),
+        {'fill': 0},
+      );
+      expect(
+        jsonDecode(mergeHighlightStyleFields('broken{', fill: 0)),
+        {'fill': 0},
+      );
+      expect(
+        jsonDecode(mergeHighlightStyleFields('[1]', underline: {'kind': 'SOLID'})),
+        {
+          'underline': {'kind': 'SOLID'}
+        },
+      );
+    });
+
+    test('删除标志优先于同组写入值', () {
+      final merged = jsonDecode(mergeHighlightStyleFields(
+        '{"textColor":1,"underline":{"kind":"SOLID"},"strike":{"color":2}}',
+        textColor: 99,
+        removeTextColor: true,
+        removeUnderline: true,
+        removeStrike: true,
+      )) as Map<String, dynamic>;
+      expect(merged.containsKey('textColor'), isFalse);
+      expect(merged.containsKey('underline'), isFalse);
+      expect(merged.containsKey('strike'), isFalse);
+    });
+  });
 }

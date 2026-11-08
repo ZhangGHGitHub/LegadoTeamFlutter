@@ -57,6 +57,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 批7a 起编辑面板内容变长（富样式分组），点击前先滚动到可见区域
+  Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
+  /// 按色板区域 Key 取圆形色块（批7a 起弹窗内多组色板）
+  Finder paletteSwatches(String paletteKey) => find.descendant(
+        of: find.byKey(Key(paletteKey)),
+        matching: find.byWidgetPredicate((w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            (w.decoration! as BoxDecoration).shape == BoxShape.circle),
+      );
+
   testWidgets('空列表显示空状态', (tester) async {
     await pumpScreen(tester);
     expect(find.text('暂无高亮规则'), findsOneWidget);
@@ -104,8 +121,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(0), '测试规则');
     await tester.enterText(find.byType(TextField).at(1), '关键词');
 
-    await tester.tap(find.text('保存'));
-    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('保存'));
 
     final captured = verify(
       () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
@@ -153,8 +169,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('编辑高亮规则'), findsOneWidget);
 
-    await tester.tap(find.text('保存'));
-    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('保存'));
 
     final captured = verify(
       () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
@@ -193,9 +208,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('编辑高亮规则'), findsOneWidget);
 
-    // 选第二个预设色块（改色）
+    // 选第二个预设色块（改色）——批7a 起弹窗多组色板，按区域 Key 限定
     final swatches = find.descendant(
-      of: find.byType(BottomSheet),
+      of: find.byKey(const Key('highlight-text-colors')),
       matching: find.byWidgetPredicate((w) =>
           w is Container &&
           w.decoration is BoxDecoration &&
@@ -204,8 +219,7 @@ void main() {
     await tester.tap(swatches.at(1));
     await tester.pump();
 
-    await tester.tap(find.text('保存'));
-    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('保存'));
 
     final captured = verify(
       () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
@@ -243,8 +257,7 @@ void main() {
     expect(find.text('编辑高亮规则'), findsOneWidget);
 
     // 不做任何颜色选择，直接保存
-    await tester.tap(find.text('保存'));
-    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('保存'));
 
     final captured = verify(
       () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
@@ -267,8 +280,7 @@ void main() {
     await tester.tap(find.byIcon(Symbols.add_rounded));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).at(1), '关键词');
-    await tester.tap(find.text('保存'));
-    await tester.pumpAndSettle();
+    await tapVisible(tester, find.text('保存'));
 
     final captured = verify(
       () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
@@ -278,5 +290,195 @@ void main() {
         jsonDecode(saved['style'] as String) as Map<String, dynamic>;
     expect(savedStyle['textColor'], isA<int>());
     expect(savedStyle['textColor'], isNot(0));
+  });
+
+  /// [批7a] 富样式编辑：修改填充/下划线线型+线宽/删除线颜色并保存。
+  ///
+  /// 断言全部已渲染字段与未知键保真：textColor 未触碰保真、fillShape/bold/
+  /// italic/fontSize/顶层未知键保留、underline.distance 与嵌套未知键保留。
+  testWidgets('编辑富样式：填充/下划线/删除线保存并保留未知键与 distance',
+      (tester) async {
+    final richStyle = jsonEncode({
+      'fill': -16711936,
+      'fillShape': 'ROUNDED',
+      'textColor': -65536,
+      'bold': true,
+      'italic': true,
+      'underline': {
+        'kind': 'WAVY',
+        'color': -65536,
+        'width': 2.0,
+        'distance': 2.5,
+        'futureUnderlineKey': 'keep',
+      },
+      'strike': {'color': -1, 'futureStrikeKey': 9},
+      'fontSize': 22.5,
+      'futureUnknownKey': 42,
+    });
+    final richRule = <String, dynamic>{
+      ...sampleRule,
+      'style': richStyle,
+      'uuid': '22222222-2222-4222-8222-222222222222',
+      'group': '分组A',
+      'timeoutMillisecond': 2500,
+      'applyToBody': false,
+    };
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([richRule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    final cs = Theme.of(tester.element(find.text('背景填充'))).colorScheme;
+
+    // 填充：选第 3 个主题色（tertiaryContainer）
+    await tapVisible(tester, paletteSwatches('highlight-fill-colors').at(2));
+
+    // 下划线线型：波浪 → 虚线
+    await tapVisible(tester, find.byType(DropdownButton<String>));
+    await tester.tap(find.text('虚线').last);
+    await tester.pumpAndSettle();
+
+    // 线宽：2.0 → 3.5（直接驱动 Slider.onChanged，避免像素拖拽抖动）
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(3.5);
+    await tester.pump();
+
+    // 删除线颜色：errorContainer
+    await tapVisible(
+      tester,
+      paletteSwatches('highlight-strike-colors').at(3),
+    );
+
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final style = jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+
+    expect(style['fill'], cs.tertiaryContainer.toARGB32());
+    expect(style['textColor'], -65536, reason: '未触碰文字色应保真');
+    expect(style['fillShape'], 'ROUNDED');
+    expect(style['bold'], true);
+    expect(style['italic'], true);
+    expect(style['fontSize'], 22.5);
+    expect(style['futureUnknownKey'], 42);
+
+    final underline = style['underline'] as Map<String, dynamic>;
+    expect(underline['kind'], 'DASHED');
+    expect(underline['color'], -65536);
+    expect(underline['width'], 3.5);
+    expect(underline['distance'], 2.5, reason: 'distance 不在 UI 编辑但必须保留');
+    expect(underline['futureUnderlineKey'], 'keep');
+
+    final strike = style['strike'] as Map<String, dynamic>;
+    expect(strike['color'], cs.errorContainer.toARGB32());
+    expect(strike['futureStrikeKey'], 9);
+
+    // 既有保真逻辑不回退
+    expect(saved['uuid'], '22222222-2222-4222-8222-222222222222');
+    expect(saved['group'], '分组A');
+    expect(saved['timeoutMillisecond'], 2500);
+    expect(saved['applyToBody'], false);
+  });
+
+  /// [批7a] 关闭富样式开关：fill 写 0，underline/strike 键被移除
+  testWidgets('关闭填充/下划线/删除线：fill=0 且移除 underline/strike',
+      (tester) async {
+    final richStyle = jsonEncode({
+      'fill': -16711936,
+      'textColor': -65536,
+      'underline': {'kind': 'WAVY', 'color': -1, 'width': 2.0},
+      'strike': {'color': -1},
+      'futureUnknownKey': 42,
+    });
+    final richRule = {...sampleRule, 'style': richStyle};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([richRule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+
+    await tapVisible(tester, find.text('背景填充'));
+    await tapVisible(tester, find.text('下划线'));
+    await tapVisible(tester, find.text('删除线'));
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final style = jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+
+    expect(style['fill'], 0, reason: '关闭填充必须写 fill=0');
+    expect(style.containsKey('underline'), isFalse, reason: '关闭下划线应移除键');
+    expect(style.containsKey('strike'), isFalse, reason: '关闭删除线应移除键');
+    expect(style['textColor'], -65536);
+    expect(style['futureUnknownKey'], 42);
+  });
+
+  /// [批7a] 预览实时使用本地编辑态（填充/下划线线型/删除线开关）
+  testWidgets('富样式预览随本地编辑实时变化', (tester) async {
+    final richStyle = jsonEncode({
+      'fill': -16711936,
+      'textColor': -65536,
+      'underline': {
+        'kind': 'WAVY',
+        'color': -65536,
+        'width': 2.0,
+        'distance': 1.5,
+      },
+      'strike': {'color': -1},
+    });
+    final richRule = {...sampleRule, 'style': richStyle};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([richRule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    final cs = Theme.of(tester.element(find.text('背景填充'))).colorScheme;
+
+    Text previewText() => tester.widget<Text>(find.text('高亮效果预览'));
+    BoxDecoration previewDeco() => tester
+        .widget<Container>(find.byKey(const Key('highlight-style-preview')))
+        .decoration! as BoxDecoration;
+
+    // 初始态来自原 rule
+    expect(previewDeco().color, const Color(-16711936));
+    expect(previewText().style!.color, const Color(-65536));
+    expect(
+      previewText().style!.decoration!.contains(TextDecoration.underline),
+      isTrue,
+    );
+    expect(
+      previewText().style!.decoration!.contains(TextDecoration.lineThrough),
+      isTrue,
+    );
+    expect(previewText().style!.decorationStyle, TextDecorationStyle.wavy);
+    expect(previewText().style!.decorationThickness, 2.0);
+
+    // 关闭删除线：预览立即移除 lineThrough，下划线保留
+    await tapVisible(tester, find.text('删除线'));
+    expect(
+      previewText().style!.decoration!.contains(TextDecoration.lineThrough),
+      isFalse,
+    );
+    expect(
+      previewText().style!.decoration!.contains(TextDecoration.underline),
+      isTrue,
+    );
+
+    // 下划线线型改为点线
+    await tapVisible(tester, find.byType(DropdownButton<String>));
+    await tester.tap(find.text('点线').last);
+    await tester.pumpAndSettle();
+    expect(previewText().style!.decorationStyle, TextDecorationStyle.dotted);
+
+    // 填充改色：预览背景立即使用新填充色
+    await tapVisible(tester, paletteSwatches('highlight-fill-colors').at(2));
+    expect(previewDeco().color, cs.tertiaryContainer);
   });
 }

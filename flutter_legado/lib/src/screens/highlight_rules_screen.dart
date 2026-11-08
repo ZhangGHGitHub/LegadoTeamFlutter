@@ -337,6 +337,29 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   /// 时原样保留，只有用户选色才写入新值。
   bool _colorTouched = false;
 
+  // ─── [批7a] 富样式本地编辑态（只覆盖渲染层已支持的属性） ───────────────
+  //
+  // fill / underline / strike 的初值取自原 style；distance 不在 UI 编辑，
+  // 保存时从原 underline 对象继承（见 _save）。bold/italic/fillShape
+  // 会改字体度量或尚未渲染，本批不提供控件、保存时原样保留。
+  late int _fill;
+  bool _fillTouched = false;
+  late bool _underlineEnabled;
+  late String _underlineKind;
+  late int _underlineColor;
+  late double _underlineWidth;
+  late bool _strikeEnabled;
+  late int _strikeColor;
+
+  /// 下划线可选线型（与渲染层 highlight_span_builder 的 5 种映射一致）
+  static const List<String> _underlineKinds = [
+    'SOLID',
+    'WAVY',
+    'DASHED',
+    'DOTTED',
+    'DOUBLE',
+  ];
+
   /// 预设高亮色（M3 语义色板，对标原版 HighlightColors 预设集）
   ///
   /// [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 由 iOS 静态命名色改为随主题
@@ -365,7 +388,51 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 默认色延后至 build 由主题派生
     //（initState 无 context），0 表未初始化
     _color = rule?.styleTextColor ?? 0;
+
+    // [批7a] 富样式初值（非法/缺省按关闭/默认值处理）
+    final styleMap = rule?.styleMap;
+    _fill = rule?.styleFill ?? 0;
+    _underlineEnabled = rule?.styleUnderline ?? false;
+    final underlineRaw = styleMap?['underline'];
+    final underlineMap = underlineRaw is Map
+        ? underlineRaw.map((k, v) => MapEntry(k.toString(), v))
+        : const <String, dynamic>{};
+    _underlineKind = _normalizeUnderlineKind(underlineMap['kind']);
+    _underlineColor = _asArgb(underlineMap['color']);
+    final rawWidth = underlineMap['width'];
+    _underlineWidth =
+        (rawWidth is num ? rawWidth.toDouble() : 1.0).clamp(0.5, 5.0);
+    final strikeRaw = styleMap?['strike'];
+    _strikeEnabled = strikeRaw is Map;
+    _strikeColor = strikeRaw is Map ? _asArgb(strikeRaw['color']) : 0;
   }
+
+  static int _asArgb(Object? value) => value is num ? value.toInt() : 0;
+
+  static String _normalizeUnderlineKind(Object? raw) {
+    if (raw is String) {
+      final upper = raw.toUpperCase();
+      if (_underlineKinds.contains(upper)) return upper;
+    }
+    return 'SOLID';
+  }
+
+  static String _underlineKindLabel(String kind) => switch (kind) {
+        'WAVY' => '波浪',
+        'DASHED' => '虚线',
+        'DOTTED' => '点线',
+        'DOUBLE' => '双线',
+        _ => '实线',
+      };
+
+  static TextDecorationStyle _underlineDecorationStyle(String kind) =>
+      switch (kind) {
+        'WAVY' => TextDecorationStyle.wavy,
+        'DASHED' => TextDecorationStyle.dashed,
+        'DOTTED' => TextDecorationStyle.dotted,
+        'DOUBLE' => TextDecorationStyle.double,
+        _ => TextDecorationStyle.solid,
+      };
 
   @override
   void dispose() {
@@ -396,15 +463,42 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     }
     final scope = _scopeCtrl.text.trim();
     final base = widget.rule;
+    final baseStyle = base?.styleMap;
     // [批16e 回修 | P1-1] 编辑保存保留 uuid/order/超时/正文开关：
     // 缺失 uuid 会让 Rust 每次保存都重新生成身份，导入去重随之失效。
     // [批28] 同时保留 group：编辑表单无分组输入，不得因重建规则对象丢分组。
-    // [批33 | 高亮字段保真] style 走「原 JSON 补丁」：表单只编辑 textColor，
-    // 直接重建会丢掉 fill/underline/bold/stroke 等未渲染键（渲染专项后续批）。
     // [批33b | 未触碰保真] 未主动选色且原 style 已含 textColor（含 0=关闭）
     // 时原样保留，避免「打开编辑再保存」把用户/原版设置改写成主题色。
     final keepOriginalTextColor = !_colorTouched &&
-        (base?.styleMap?.containsKey('textColor') ?? false);
+        (baseStyle?.containsKey('textColor') ?? false);
+    // [批7a] 富样式补丁：只写本地编辑态覆盖的属性，其余键（fillShape/bold/
+    // italic/font* etc.）由补丁函数原样保留；distance 从原 underline 对象继承。
+    final baseUnderline = _baseObjectField(baseStyle, 'underline');
+    final baseStrike = _baseObjectField(baseStyle, 'strike');
+    final underline = _underlineEnabled
+        ? (<String, dynamic>{
+            ...?baseUnderline,
+            'kind': _underlineKind,
+            'color': _underlineColor,
+            'width': _underlineWidth,
+          })
+        : null;
+    final strike = _strikeEnabled
+        ? (<String, dynamic>{
+            ...?baseStrike,
+            'color': _strikeColor,
+          })
+        : null;
+    final style = mergeHighlightStyleFields(
+      base?.style,
+      // 未触碰填充时不写键（保留原缺省/原值）；关闭开关会置 touched 并写 fill=0
+      fill: _fillTouched ? _fill : null,
+      textColor: keepOriginalTextColor ? null : _effectiveColor,
+      underline: underline,
+      removeUnderline: !_underlineEnabled,
+      strike: strike,
+      removeStrike: !_strikeEnabled,
+    );
     final rule = HighlightRule(
       id: base?.id ?? 0,
       uuid: base?.uuid ?? '',
@@ -414,9 +508,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       applyToTitle: _applyToTitle,
       scope: scope.isEmpty ? null : scope,
       isEnabled: base?.isEnabled ?? true,
-      style: keepOriginalTextColor
-          ? base!.style
-          : mergeHighlightStyleTextColor(base?.style, _effectiveColor),
+      style: style,
       sortOrder: base?.sortOrder ?? 0,
       timeoutMillisecond:
           base?.timeoutMillisecond ?? HighlightRule.defaultTimeoutMilliseconds,
@@ -426,10 +518,78 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     Navigator.pop(context, rule);
   }
 
+  /// 取 style 中某个嵌套对象字段的浅拷贝（非对象/缺省返回 null）
+  static Map<String, dynamic>? _baseObjectField(
+    Map<String, dynamic>? style,
+    String key,
+  ) {
+    final raw = style?[key];
+    if (raw is! Map) return null;
+    return raw.map((k, v) => MapEntry(k.toString(), v));
+  }
+
   /// 当前生效的高亮色：未选色时用主题默认色（仅预览/新规则落库使用）
   int get _effectiveColor => _color != 0
       ? _color
       : _presetColors(Theme.of(context).colorScheme).first.toARGB32();
+
+  /// 通用色板（批7a）：8 个主题色块 + 可选「跟随文字色」(0)
+  ///
+  /// 统一走 Wrap 适配窄屏（沿用批33b 的 360dp 溢出修复形态）；[key] 供
+  /// widget 测试按区域定位色板，避免多组色板互相干扰。
+  Widget _buildColorPalette({
+    required Key key,
+    required ColorScheme cs,
+    required List<Color> colors,
+    required int selected,
+    required ValueChanged<int> onSelected,
+    bool includeFollowTextColor = false,
+  }) {
+    return Wrap(
+      key: key,
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (includeFollowTextColor)
+          ChoiceChip(
+            label: const Text('跟随文字色'),
+            selected: selected == 0,
+            onSelected: (_) => onSelected(0),
+          ),
+        for (final color in colors)
+          GestureDetector(
+            onTap: () => onSelected(color.toARGB32()),
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected == color.toARGB32()
+                      ? cs.primary
+                      : Colors.transparent,
+                  width: 3,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 「背景填充」开关：关闭写 fill=0；从无填充开启时默认主题 primaryContainer
+  void _toggleFill(bool enabled, ColorScheme cs) {
+    setState(() {
+      _fillTouched = true;
+      if (!enabled) {
+        _fill = 0;
+      } else if (_fill == 0) {
+        _fill = cs.primaryContainer.toARGB32();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -443,13 +603,24 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     final effectiveColor = _color != 0
         ? _color
         : presetColors.first.toARGB32();
-    // [批33 | 高亮字段保真] 预览回放 style 基础字段（填充/粗体/斜体/下划线），
-    // 编辑表单不改这些键（保存走补丁保留），此处仅用于展示保真
+    // [批33 | 高亮字段保真] bold/italic 无编辑控件且渲染层不改字体度量，
+    // 预览仅回放原值；fill/underline/strike 改用本地编辑态实时预览（批7a）。
     final baseStyle = widget.rule;
-    final fillColor = baseStyle?.styleFill ?? 0;
     final bold = baseStyle?.styleBold ?? false;
     final italic = baseStyle?.styleItalic ?? false;
-    final underline = baseStyle?.styleUnderline ?? false;
+    final underlineDecorationStyle =
+        _underlineDecorationStyle(_underlineKind);
+    final previewLineColor = _underlineEnabled
+        ? (_underlineColor != 0 ? Color(_underlineColor) : Color(effectiveColor))
+        : (_strikeEnabled
+            ? (_strikeColor != 0
+                ? Color(_strikeColor)
+                : Color(effectiveColor))
+            : null);
+    final previewDecorations = <TextDecoration>[
+      if (_underlineEnabled) TextDecoration.underline,
+      if (_strikeEnabled) TextDecoration.lineThrough,
+    ];
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -525,41 +696,129 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             // 色板先例（theme_config_screen.dart _showColorPicker、
             // reader_settings_sheet.dart 自定义配色）：色块与间距等宽 =
             // 8×32 + 7×8 = 312dp ≤ 320dp，360dp 上仍单行，更窄时自动换行。
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final color in presetColors)
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _color = color.toARGB32();
-                      _colorTouched = true;
-                    }),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _color == color.toARGB32()
-                              ? cs.primary
-                              : Colors.transparent,
-                          width: 3,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+            _buildColorPalette(
+              key: const Key('highlight-text-colors'),
+              cs: cs,
+              colors: presetColors,
+              selected: _color,
+              onSelected: (value) => setState(() {
+                _color = value;
+                _colorTouched = true;
+              }),
             ),
             const SizedBox(height: 8),
-            // 预览（对标原版 tvStylePreview：回放 fill/bold/italic/underline）
+            // ─── [批7a] 背景填充（fill，0=关闭） ─────────────────────────
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('背景填充'),
+              value: _fill != 0,
+              onChanged: (v) => _toggleFill(v, cs),
+            ),
+            if (_fill != 0)
+              _buildColorPalette(
+                key: const Key('highlight-fill-colors'),
+                cs: cs,
+                colors: presetColors,
+                selected: _fill,
+                onSelected: (value) => setState(() {
+                  _fill = value;
+                  _fillTouched = true;
+                }),
+              ),
+            const SizedBox(height: 4),
+            // ─── [批7a] 下划线（kind/color/width；distance 保留不编辑） ──
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('下划线'),
+              value: _underlineEnabled,
+              onChanged: (v) => setState(() => _underlineEnabled = v),
+            ),
+            if (_underlineEnabled) ...[
+              Row(
+                children: [
+                  Text('线型', style: theme.textTheme.bodySmall),
+                  const SizedBox(width: 12),
+                  DropdownButton<String>(
+                    value: _underlineKind,
+                    isDense: true,
+                    items: [
+                      for (final kind in _underlineKinds)
+                        DropdownMenuItem(
+                          value: kind,
+                          child: Text(_underlineKindLabel(kind)),
+                        ),
+                    ],
+                    onChanged: (kind) {
+                      if (kind == null) return;
+                      setState(() => _underlineKind = kind);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildColorPalette(
+                key: const Key('highlight-underline-colors'),
+                cs: cs,
+                colors: presetColors,
+                selected: _underlineColor,
+                includeFollowTextColor: true,
+                onSelected: (value) =>
+                    setState(() => _underlineColor = value),
+              ),
+              Row(
+                children: [
+                  Text('线宽', style: theme.textTheme.bodySmall),
+                  Expanded(
+                    child: Slider(
+                      value: _underlineWidth,
+                      min: 0.5,
+                      max: 5.0,
+                      divisions: 9,
+                      label: _underlineWidth.toStringAsFixed(1),
+                      onChanged: (v) =>
+                          setState(() => _underlineWidth = v),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      '${_underlineWidth.toStringAsFixed(1)} dp',
+                      textAlign: TextAlign.end,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 4),
+            // ─── [批7a] 删除线（strike.color；0=跟随文字色） ────────────
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('删除线'),
+              value: _strikeEnabled,
+              onChanged: (v) => setState(() => _strikeEnabled = v),
+            ),
+            if (_strikeEnabled)
+              _buildColorPalette(
+                key: const Key('highlight-strike-colors'),
+                cs: cs,
+                colors: presetColors,
+                selected: _strikeColor,
+                includeFollowTextColor: true,
+                onSelected: (value) => setState(() => _strikeColor = value),
+              ),
+            const SizedBox(height: 12),
+            // 预览（批7a：实时使用本地编辑态，而非只回放旧 rule）
             Container(
+              key: const Key('highlight-style-preview'),
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: fillColor != 0
-                    ? Color(fillColor)
+                color: _fill != 0
+                    ? Color(_fill)
                     : Color(effectiveColor).withValues(alpha: 0.25),
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -569,9 +828,15 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                   color: Color(effectiveColor),
                   fontWeight: bold ? FontWeight.bold : null,
                   fontStyle: italic ? FontStyle.italic : null,
-                  decoration:
-                      underline ? TextDecoration.underline : null,
-                  decorationColor: underline ? Color(effectiveColor) : null,
+                  decoration: previewDecorations.isEmpty
+                      ? null
+                      : TextDecoration.combine(previewDecorations),
+                  decorationColor: previewLineColor,
+                  // 下划线线型/线宽实时联动（删除线保持默认线型）
+                  decorationStyle:
+                      _underlineEnabled ? underlineDecorationStyle : null,
+                  decorationThickness:
+                      _underlineEnabled ? _underlineWidth : null,
                 ),
               ),
             ),

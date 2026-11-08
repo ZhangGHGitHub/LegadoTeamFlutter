@@ -6,6 +6,8 @@
 // 而弹窗内容可用宽仅 360 - 20*2 = 320dp → 溢出 16dp。
 // 本测试固定 360dp（QA 取证机 1080px / dpr3 的逻辑宽）复现：
 // 修复前 takeException 非空（RenderFlex 溢出），颜色行改 Wrap 换行后为空。
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -28,10 +30,10 @@ void main() {
 
   /// 弹窗内圆形色块（ColorScheme 预设色板）
   ///
-  /// 限定在 modal BottomSheet 子树内：顶栏 action 按钮（TopBarButton）
-  /// 同样是圆形 Container，不限定作用域会误计入。
+  /// 批7a 起弹窗内有多组色板（文字色/填充/下划线/删除线）；本测试只校验
+  /// 文字色色板，按区域 Key 限定，避免把其他色板计入数量。
   Finder circleSwatches() => find.descendant(
-        of: find.byType(BottomSheet),
+        of: find.byKey(const Key('highlight-text-colors')),
         matching: find.byWidgetPredicate((w) =>
             w is Container &&
             w.decoration is BoxDecoration &&
@@ -83,5 +85,49 @@ void main() {
     expect(isSelected(containers.last, cs), isTrue);
     expect(isSelected(containers.first, cs), isFalse);
     expect(tester.takeException(), isNull);
+  });
+
+  /// [批7a] 富样式全开（填充 + 下划线 + 删除线）时，编辑面板在 360dp
+  /// 窄屏同样不得出现横向溢出；多组色板均应可见。
+  testWidgets('360dp 窄屏：富样式编辑（填充/下划线/删除线）不溢出', (tester) async {
+    const richStyle = '{"fill":-16711936,"textColor":-65536,'
+        '"underline":{"kind":"DASHED","color":-1,"width":3.0,"distance":2.0},'
+        '"strike":{"color":-1}}';
+    when(
+      () => mockApi.highlightRuleList(),
+    ).thenAnswer(
+      (_) async => jsonEncode([
+        {
+          'id': 1,
+          'name': '富样式',
+          'pattern': '修炼',
+          'isEnabled': true,
+          'style': richStyle,
+        }
+      ]),
+    );
+
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: const MaterialApp(home: HighlightRulesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('富样式'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('highlight-text-colors')), findsOneWidget);
+    expect(find.byKey(const Key('highlight-fill-colors')), findsOneWidget);
+    expect(find.byKey(const Key('highlight-underline-colors')), findsOneWidget);
+    expect(find.byKey(const Key('highlight-strike-colors')), findsOneWidget);
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '富样式控件在 360dp 下不应出现横向溢出',
+    );
   });
 }

@@ -201,27 +201,67 @@ class HighlightRule {
 
 /// 仅覆盖 style JSON 的 textColor，保留其余键（批33 高亮字段保真）
 ///
-/// 缺陷背景：编辑表单没有 fill/underline/bold/stroke 等输入控件，旧实现
-/// 保存时直接 `jsonEncode({'textColor': color})` 重建 style，一次改色即把
-/// 用户从原版导入的完整 `HighlightStyle` 打成只剩文字色。
-///
-/// 语义（对齐批28「原 JSON 补丁」先例）：
-/// - 原 style 合法对象 → 深拷贝后只替换 `textColor`，未知键原样保留；
-/// - 原 style 为空/非法/非对象 → 退化为 `{"textColor": ...}`（不抛错）；
-/// - 输出为紧凑 JSON 字符串（与既有存储形态一致）。
+/// 兼容入口：委托 [mergeHighlightStyleFields]，既有调用与测试语义不变。
 String mergeHighlightStyleTextColor(String? rawStyle, int textColor) {
+  return mergeHighlightStyleFields(rawStyle, textColor: textColor);
+}
+
+/// 通用 style JSON 补丁（批7a：富样式编辑，保留未知键）
+///
+/// 语义：
+/// - 原 style 合法对象 → 以解码结果为底（jsonDecode 天然产生独立深拷贝，
+///   嵌套键不会与入参共享引用）后按参数增删；未知键原样保留；
+/// - 原 style 为空/非法/非对象 → 从空对象开始（不抛错）；
+/// - 输出紧凑 JSON 字符串（与既有存储形态一致）。
+///
+/// 参数优先级（删除标志优先于同组写入值）：
+/// - `removeTextColor=true` 删除 `textColor`；否则 `textColor!=null` 时写入；
+/// - `fill!=null` 写入 `fill`（调用方传 0 表示关闭填充）；
+/// - `removeUnderline=true` 删除 `underline`；否则 `underline!=null` 时写入；
+/// - `removeStrike=true` 删除 `strike`；否则 `strike!=null` 时写入。
+///
+/// 未触碰的属性不要传参（保留原键/原缺省）——例如编辑面板未选文字色时
+/// 不传 `textColor`，原 style 的 `textColor:0` 不会被改写（批33b 语义）。
+String mergeHighlightStyleFields(
+  String? rawStyle, {
+  int? fill,
+  int? textColor,
+  bool removeTextColor = false,
+  Map<String, dynamic>? underline,
+  bool removeUnderline = false,
+  Map<String, dynamic>? strike,
+  bool removeStrike = false,
+}) {
   final merged = <String, dynamic>{};
   if (rawStyle != null && rawStyle.trim().isNotEmpty) {
     try {
       final decoded = jsonDecode(rawStyle);
       if (decoded is Map<String, dynamic>) {
+        // jsonDecode 已返回独立对象树，addAll 不会与入参共享可变引用
         merged.addAll(decoded);
       }
     } catch (_) {
-      // 非法 style：按无样式处理，只写本次编辑的颜色
+      // 非法 style：按无样式处理，只写本次编辑的属性
     }
   }
-  merged['textColor'] = textColor;
+  if (fill != null) {
+    merged['fill'] = fill;
+  }
+  if (removeTextColor) {
+    merged.remove('textColor');
+  } else if (textColor != null) {
+    merged['textColor'] = textColor;
+  }
+  if (removeUnderline) {
+    merged.remove('underline');
+  } else if (underline != null) {
+    merged['underline'] = underline;
+  }
+  if (removeStrike) {
+    merged.remove('strike');
+  } else if (strike != null) {
+    merged['strike'] = strike;
+  }
   return jsonEncode(merged);
 }
 
