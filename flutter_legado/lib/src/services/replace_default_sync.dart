@@ -28,12 +28,41 @@ bool parseReplaceEnableDefaultConfig(String? raw) {
 ///
 /// prefs 写失败由 [SettingsService] 内部吞掉；config 写失败向上抛，由调用方
 /// 提示（UI 真源已保存，不回滚）。
-Future<void> saveReplaceEnableDefault(BookApi api, bool value) async {
+///
+/// [onPrefsWritten] 在 prefs 写入之后、config 写入之前调用：调用方借此让
+/// 缓存 provider 失效，不受 config 成败影响（审查 P3）。
+Future<void> saveReplaceEnableDefault(
+  BookApi api,
+  bool value, {
+  VoidCallback? onPrefsWritten,
+}) async {
   await SettingsService().setBoolPref(PrefKeys.replaceEnableDefault, value);
+  onPrefsWritten?.call();
   await api.setConfig(
     PrefKeys.replaceEnableDefault,
     value ? 'true' : 'false',
   );
+}
+
+/// 备份恢复后：把恢复的 prefs 总开关值同步到 Rust config（失败静默）
+///
+/// 与 UserAgent / threadCount 恢复后同步同口径：备份 appPrefs 可能替换该键，
+/// 不同步会让同会话 Rust 阅读链继续按旧默认；失败只记 AppLog，不阻断恢复。
+/// 调用方在恢复偏好写回后执行本函数，并随后 invalidate
+/// `replaceEnableDefaultProvider`（provider 缓存失效与 config 成败无关）。
+Future<void> syncReplaceEnableDefaultAfterRestore(BookApi api) async {
+  try {
+    final enabled = await SettingsService().getBoolPref(
+      PrefKeys.replaceEnableDefault,
+      defaultValue: true,
+    );
+    await api.setConfig(
+      PrefKeys.replaceEnableDefault,
+      enabled ? 'true' : 'false',
+    );
+  } catch (e) {
+    debugPrint('恢复后同步替换净化默认开关失败（不阻断恢复）：$e');
+  }
 }
 
 /// 冷启动：把存量 prefs 总开关值幂等同步到 Rust config

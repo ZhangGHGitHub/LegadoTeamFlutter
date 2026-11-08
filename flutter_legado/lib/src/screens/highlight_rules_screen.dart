@@ -416,9 +416,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     _underlineKind = _normalizeUnderlineKind(underlineMap['kind']);
     _underlineColor = normalizeArgb(underlineMap['color']);
     final rawWidth = underlineMap['width'];
-    // 上游 HighlightStyle width 范围 0..10（step 0.5）；当前渲染层仅在
-    // width>0 时设置 thickness，width=0 会退化为默认厚度——该「0=不画线
-    // vs 默认厚度」差异按审查要求登记于此，不静默改用户原值。
+    // 上游 HighlightStyle.width 是连续 Float（MIN 0 / MAX 10），不是 0.5
+    // 步进；Slider 仅提供 0.5 的输入粒度，读取/写回不做量化。上游语义
+    // width=0 = 不画线（渲染层已对齐：width<=0 不加下划线装饰）。
     _underlineWidth =
         (rawWidth is num ? rawWidth.toDouble() : 1.0).clamp(0.0, 10.0);
     final strikeRaw = styleMap?['strike'];
@@ -492,7 +492,8 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // italic/font* etc.）由补丁函数原样保留；distance 从原 underline 对象继承。
     // [审查 P2-2/P3] 未触碰的 underline/strike 键不写不删（保留原值形态，
     // 含 false/数组/true）；width/kind/color 各自按 touched 写，未触碰的
-    // width（如 8 或 0）不会被 clamp 后的本地值静默覆盖。
+    // width（如 8 或 0）不会被 clamp 后的本地值静默覆盖。若用户编辑了该组
+    // 但原对象缺少子键，则补全必要默认子键（kind/color/width）。
     final baseUnderline = _baseObjectField(baseStyle, 'underline');
     final baseStrike = _baseObjectField(baseStyle, 'strike');
     final underline = _underlineEnabled
@@ -641,7 +642,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     final italic = baseStyle?.styleItalic ?? false;
     final underlineDecorationStyle =
         _underlineDecorationStyle(_underlineKind);
-    final previewLineColor = _underlineEnabled
+    // [审查 P3] 预览与渲染层同口径：width=0 视为不画线
+    final previewUnderlineActive = _underlineEnabled && _underlineWidth > 0;
+    final previewLineColor = previewUnderlineActive
         ? (_underlineColor != 0 ? Color(_underlineColor) : Color(effectiveColor))
         : (_strikeEnabled
             ? (_strikeColor != 0
@@ -649,7 +652,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                 : Color(effectiveColor))
             : null);
     final previewDecorations = <TextDecoration>[
-      if (_underlineEnabled) TextDecoration.underline,
+      if (previewUnderlineActive) TextDecoration.underline,
       if (_strikeEnabled) TextDecoration.lineThrough,
     ];
     return SafeArea(
@@ -815,8 +818,8 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                   Expanded(
                     child: Slider(
                       value: _underlineWidth,
-                      // 上游 HighlightStyle width 范围 0..10，step 0.5；
-                      // 0 在当前渲染层退化为默认厚度（差异见 initState 注释）
+                      // 上游 width 为连续 Float 0..10（0=不画线）；
+                      // 0.5 仅作 Slider 输入粒度，读取/写回不量化
                       min: 0.0,
                       max: 10.0,
                       divisions: 20,
@@ -888,9 +891,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                   decorationColor: previewLineColor,
                   // 下划线线型/线宽实时联动（删除线保持默认线型）
                   decorationStyle:
-                      _underlineEnabled ? underlineDecorationStyle : null,
+                      previewUnderlineActive ? underlineDecorationStyle : null,
                   decorationThickness:
-                      _underlineEnabled ? _underlineWidth : null,
+                      previewUnderlineActive ? _underlineWidth : null,
                 ),
               ),
             ),

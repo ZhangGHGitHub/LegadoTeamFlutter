@@ -122,9 +122,13 @@ class HighlightStyle {
 
   /// 是否有 MVP 可渲染的效果（颜色/背景/下划线/删除线）
   ///
-  /// 注意：bold/italic 不算——本批明确不渲染字体度量变更。
+  /// 注意：bold/italic 不算——本批明确不渲染字体度量变更；
+  /// 下划线 width<=0 对齐上游「0=不画线」，也不算可渲染效果。
   bool get hasRenderableEffect =>
-      textColor != 0 || fill != 0 || underline != null || strike;
+      textColor != 0 ||
+      fill != 0 ||
+      (underline != null && underline!.width > 0) ||
+      strike;
 
   /// 解析 style JSON 字符串；空/非法/非对象返回 [empty]（不抛错）
   factory HighlightStyle.parse(String? rawStyle) {

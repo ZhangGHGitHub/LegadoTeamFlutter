@@ -8,10 +8,12 @@
 // 2. 开关切换同时写 prefs 与 config（"true"/"false"）；
 // 3. 启动同步：prefs false 且 Rust 缺省 → 写 "false"；值相同不写库；
 //    默认 true 且 Rust 缺省 → 不写库且不抛错；USE_MOCK 跳过；失败静默。
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/book_api.dart';
 import 'package:flutter_legado/src/services/replace_default_sync.dart';
 
@@ -107,6 +109,24 @@ void main() {
       expect(api.setCalls, hasLength(1));
       expect(api.setCalls.single.key, PrefKeys.replaceEnableDefault);
       expect(api.setCalls.single.value, 'true');
+    });
+
+    test('onPrefsWritten 在 config 写入前调用（config 失败也执行）', () async {
+      SharedPreferences.setMockInitialValues({});
+      final api = _RecordingApi(setThrows: true);
+      var prefsWritten = 0;
+
+      await expectLater(
+        saveReplaceEnableDefault(
+          api,
+          false,
+          onPrefsWritten: () => prefsWritten++,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(prefsWritten, 1, reason: 'provider 失效回调不受 config 成败影响');
+      expect(api.setCalls, hasLength(1));
     });
   });
 
@@ -207,6 +227,46 @@ void main() {
         syncReplaceEnableDefaultOnStartup(api, useMock: false),
         completes,
         reason: 'FFI/DB 失败不得阻断启动',
+      );
+      expect(api.setCalls, hasLength(1));
+    });
+  });
+
+  group('备份恢复后同步（syncReplaceEnableDefaultAfterRestore）', () {
+    test('恢复 prefs=false → 写 config false；provider 失效后重读 false', () async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      expect(await container.read(replaceEnableDefaultProvider.future), isTrue);
+
+      // 模拟备份恢复：appPrefs 被替换为 false
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(PrefKeys.replaceEnableDefault, false);
+      final api = _RecordingApi();
+
+      await syncReplaceEnableDefaultAfterRestore(api);
+
+      expect(api.setCalls, hasLength(1));
+      expect(api.setCalls.single.key, PrefKeys.replaceEnableDefault);
+      expect(api.setCalls.single.value, 'false');
+      container.invalidate(replaceEnableDefaultProvider);
+      expect(
+        await container.read(replaceEnableDefaultProvider.future),
+        isFalse,
+        reason: '恢复后 invalidate 应让 provider 重读到 prefs=false',
+      );
+    });
+
+    test('config 写入失败 → 静默不阻断恢复', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.replaceEnableDefault: false,
+      });
+      final api = _RecordingApi(setThrows: true);
+
+      await expectLater(
+        syncReplaceEnableDefaultAfterRestore(api),
+        completes,
+        reason: '恢复后同步失败不得阻断恢复流程',
       );
       expect(api.setCalls, hasLength(1));
     });

@@ -109,7 +109,11 @@ TextStyle? highlightTextStyle(HighlightStyle style) {
       : null;
 
   final decorations = <TextDecoration>[];
-  if (style.underline != null) decorations.add(TextDecoration.underline);
+  final underline = style.underline;
+  // [审查 P3] 对齐上游「width=0 = 不画线」：只有 width > 0 才加下划线装饰；
+  // 此前 width=0 仍会加装饰并落到 Flutter 默认厚度，与用户设置不符。
+  final underlineVisible = underline != null && underline.width > 0;
+  if (underlineVisible) decorations.add(TextDecoration.underline);
   if (style.strike) decorations.add(TextDecoration.lineThrough);
   final decoration = decorations.isEmpty
       ? null
@@ -118,15 +122,12 @@ TextStyle? highlightTextStyle(HighlightStyle style) {
   TextDecorationStyle? decorationStyle;
   Color? decorationColor;
   double? decorationThickness;
-  final underline = style.underline;
-  if (underline != null) {
+  if (underline != null && underline.width > 0) {
     decorationStyle = _decorationStyle(underline.kind);
     decorationColor = underline.color != 0
         ? Color(underline.color)
         : lineFallbackColor;
-    if (underline.width > 0) {
-      decorationThickness = underline.width;
-    }
+    decorationThickness = underline.width;
   }
   if (decorationColor == null && style.strike) {
     // 删除线同款回退：自身颜色 → 规则 textColor → 正文色

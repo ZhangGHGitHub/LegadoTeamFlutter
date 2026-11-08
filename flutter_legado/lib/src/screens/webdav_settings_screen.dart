@@ -31,6 +31,7 @@ import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/local_backup_service.dart';
+import '../services/replace_default_sync.dart';
 import '../services/restore_ignore_prefs.dart';
 import '../services/server_service.dart';
 import '../services/settings_service.dart';
@@ -883,6 +884,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     } catch (e) {
       debugPrint('恢复后同步线程数失败（不阻断恢复）：$e');
     }
+    // [批7a 复核 P2-N1] 备份 appPrefs 可能替换 replaceEnableDefault：恢复后
+    // 同步 Rust caches config:replaceEnableDefault，否则同会话阅读链仍按旧
+    // 默认（重启前不生效）；失败静默不阻断恢复。无论 config 写入成败，
+    // 随后都让缓存 provider 失效，下次菜单 watch 重读 prefs。
+    await syncReplaceEnableDefaultAfterRestore(ref.read(bookApiProvider));
+    ref.invalidate(replaceEnableDefaultProvider);
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
     setState(() {

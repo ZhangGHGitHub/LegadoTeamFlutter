@@ -342,4 +342,34 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('全局默认 false：目录菜单「使用替换规则」不勾选', (tester) async {
+    final localContainer = ProviderContainer(
+      overrides: [
+        bookApiProvider.overrideWithValue(mockApi),
+        replaceEnableDefaultProvider.overrideWith((ref) async => false),
+      ],
+    );
+    addTearDown(localContainer.dispose);
+    final book = makeBook(useReplaceRule: null);
+    dbBook = book;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: localContainer,
+        child: MaterialApp(home: TocScreen(book: book)),
+      ),
+    );
+    await settleInitial(tester);
+    await tester.pump();
+    await openMenu(tester);
+
+    expect(
+      checkedOf(tester, '使用替换规则'),
+      isFalse,
+      reason: '全局默认 false 时普通书（useReplaceRule=null）不得勾选',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

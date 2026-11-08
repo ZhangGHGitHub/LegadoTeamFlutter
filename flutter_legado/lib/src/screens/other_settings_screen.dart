@@ -629,13 +629,17 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   void _setReplaceEnableDefault(bool value) {
     setState(() => _replaceEnableDefault = value);
     final api = ref.read(bookApiProvider);
+    // 捕获 app 级 ProviderContainer：prefs 写入后立即失效 provider，
+    // 不受 config 成败与页面后续 mounted 状态影响（审查 P3）。
+    final container = ProviderScope.containerOf(context, listen: false);
     _replaceSaveChain = _replaceSaveChain.then((_) async {
       try {
-        await saveReplaceEnableDefault(api, value);
-        // 让已缓存的全局默认 provider 失效，阅读菜单下次 watch 重新读值
-        if (mounted) {
-          ref.invalidate(replaceEnableDefaultProvider);
-        }
+        await saveReplaceEnableDefault(
+          api,
+          value,
+          onPrefsWritten: () =>
+              container.invalidate(replaceEnableDefaultProvider),
+        );
       } catch (e) {
         if (mounted) {
           _toast('替换净化配置同步失败：$e');

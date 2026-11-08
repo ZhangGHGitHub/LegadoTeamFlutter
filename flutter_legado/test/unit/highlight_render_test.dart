@@ -192,6 +192,22 @@ void main() {
       expect(textStyle.decorationColor, const Color(0xFF0000FF));
     });
 
+    /// [审查 P3] 上游 width=0 = 不画线；无其它可渲染效果时整体返回 null，
+    /// 有文字色时只保留文字色、不加 underline 装饰。
+    test('下划线 width=0 视为不画线', () {
+      expect(
+        highlightTextStyle(
+          HighlightStyle.parse('{"underline":{"kind":"solid","width":0}}'),
+        ),
+        isNull,
+      );
+      final withColor = highlightTextStyle(
+        HighlightStyle.parse('{"textColor":-65536,"underline":{"width":0}}'),
+      )!;
+      expect(withColor.color, const Color(0xFFFF0000));
+      expect(withColor.decoration, isNull);
+    });
+
     test('下划线与规则均无颜色 → decorationColor 保持 null（正文色兜底）', () {
       final style = HighlightStyle.parse('{"underline":{"kind":"wavy"}}');
       final textStyle = highlightTextStyle(style)!;

@@ -79,14 +79,18 @@ void main() {
       expect(effectiveReplaceRuleEnabled(epub, true), isFalse);
     });
 
-    test('本地书 originName 为空时回退 bookUrl 判定 epub', () {
+    test('本地书 originName 为空即使 bookUrl 以 .epub 结尾也不判定 epub', () {
       final epub = Book(
         bookUrl: 'books/a.EPUB',
         origin: BookType.localTag,
         originName: '',
         bookType: BookType.local,
       );
-      expect(effectiveReplaceRuleEnabled(epub, true), isFalse);
+      expect(
+        effectiveReplaceRuleEnabled(epub, true),
+        isTrue,
+        reason: '与 Rust/Kotlin 一致只看 originName，不回退 bookUrl',
+      );
     });
 
     test('在线书 bookUrl 以 .epub 结尾不算本地 epub', () {

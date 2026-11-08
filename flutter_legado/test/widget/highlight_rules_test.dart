@@ -605,4 +605,31 @@ void main() {
     expect(savedStyle['underline'], false, reason: '未触碰 false 不得被删除');
     expect(savedStyle['strike'], false, reason: '未触碰 false 不得被删除');
   });
+
+  /// [审查 P3] underline=true / strike=数组 等非对象原值，只改名称时保真。
+  testWidgets('未触碰 underline=true / strike 数组原样保留', (tester) async {
+    final style = jsonEncode({
+      'textColor': -65536,
+      'underline': true,
+      'strike': ['keep'],
+    });
+    final rule = {...sampleRule, 'style': style};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([rule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '改名后');
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+    expect(savedStyle['underline'], true);
+    expect(savedStyle['strike'], ['keep']);
+  });
 }

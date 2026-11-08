@@ -198,8 +198,7 @@ Future<void> updateReaderBookConfig(
 /// 三级优先级（与 `Book.getUseReplaceRule()`，Book.kt:232-242 一致）：
 /// 1. `readConfig.useReplaceRule` 显式非空 → 取该值（false 也尊重）；
 /// 2. 图片类书（`bookType & BookType.image`）或本地 epub
-///    （`BookType.isLocalBook` + `originName`（为空回退 `bookUrl`）小写
-///    `.epub` 结尾）→ false；
+///    （`BookType.isLocalBook` + `originName` 小写 `.epub` 结尾）→ false；
 /// 3. 其余回退全局 `replaceEnableDefault`。
 ///
 /// 菜单勾选态与切换取反必须使用本函数，避免「显示 true 但 Rust 实际
@@ -209,10 +208,10 @@ bool effectiveReplaceRuleEnabled(Book? book, bool globalDefault) {
   final explicit = book.readConfig?.useReplaceRule;
   if (explicit != null) return explicit;
   if ((book.bookType & BookType.image) != 0) return false;
-  final originName =
-      book.originName.isNotEmpty ? book.originName : book.bookUrl;
+  // 与 Rust/Kotlin 一致只看 originName：bookUrl 在本地书场景可能是无后缀
+  // 的存储标识，在线书也可能是 .epub URL，不能作为 epub 判定依据。
   if (BookType.isLocalBook(book) &&
-      originName.toLowerCase().endsWith('.epub')) {
+      book.originName.toLowerCase().endsWith('.epub')) {
     return false;
   }
   return globalDefault;
