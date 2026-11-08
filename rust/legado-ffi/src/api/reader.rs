@@ -68,8 +68,7 @@ fn current_chinese_convert_direction() -> Option<String> {
 
 // ─── 替换净化默认开关（批7a，对齐 Kotlin AppConfig.replaceEnableDefault）────────
 
-/// 配置键：默认启用替换净化（与 Kotlin `PreferKey.replaceEnableDefault`
-/// 同名，备份恢复时可跨端互通）
+/// 配置键：默认启用替换净化（与 Kotlin `PreferKey.replaceEnableDefault` 同名）
 const REPLACE_ENABLE_DEFAULT_CONFIG_KEY: &str = "replaceEnableDefault";
 
 /// 读取「默认启用替换净化」（缺省/非法 → true）
@@ -90,6 +89,28 @@ fn get_replace_enable_default() -> bool {
     }
 }
 
+/// 书籍实体是否为本地书（对齐 Kotlin `Book.isLocal`，与
+/// `legado-server/src/legacy/book_api.rs` 的 `is_local_book(&Book)` 同口径）
+///
+/// - `bookType == 0`（历史数据未写类型）→ 按 origin 判定
+///   （`loc_book` 或 `webDav::`/存量 `dav:`）；
+/// - `bookType != 0` → 只看 local 位（Rust 域 0x1000 与原版 0x100 双标准）。
+fn is_local_book_entity(book: &Book) -> bool {
+    if book.book_type == 0 {
+        return book.origin == book_type::LOCAL_TAG || book_type::is_web_dav_origin(&book.origin);
+    }
+    book_type::is_local_type(book.book_type)
+}
+
+/// 是否本地 epub（对齐 Kotlin `Book.isEpub`：`isLocal &&
+/// originName.endsWith(".epub", true)`，BookExtensions.kt:61-62）
+///
+/// 注意：只看书籍实体的本地类型 + `originName`，**不能**用 `bookUrl` 后缀
+/// 白名单判定——在线书籍的 `bookUrl` 也可能以 `.epub` 结尾。
+fn is_local_epub_book(book: &Book) -> bool {
+    is_local_book_entity(book) && book.origin_name.to_lowercase().ends_with(".epub")
+}
+
 /// 该书是否启用替换规则（对齐 Kotlin `Book.getUseReplaceRule()`，
 /// `app/src/main/java/io/legado/app/data/entities/Book.kt:232-242`）
 ///
@@ -97,7 +118,7 @@ fn get_replace_enable_default() -> bool {
 /// 1. `readConfig.useReplaceRule` 显式非空 → 取该值（`false` 也尊重；
 ///    图片/epub 书显式 `Some(true)` 同样开启）；
 /// 2. 图片类书（`book.bookType & BookType.image != 0`）或本地 epub
-///    （`bookUrl` 为本地书路径且小写以 `.epub` 结尾）→ 默认关闭；
+///    （书籍实体为本地书且 `originName` 小写以 `.epub` 结尾）→ 默认关闭；
 /// 3. 其余回退全局 [`get_replace_enable_default`]。
 ///
 /// 无书籍行（`None`）→ 按全局默认处理（保持既有行为默认 `true`）。
@@ -113,9 +134,7 @@ fn use_replace_rule_for_book(book: Option<&Book>) -> bool {
         return value;
     }
     let is_image_book = book.book_type & book_type::IMAGE_BIT != 0;
-    let book_url_lower = book.book_url.to_lowercase();
-    let is_local_epub = is_local_book(&book.book_url) && book_url_lower.ends_with(".epub");
-    if is_image_book || is_local_epub {
+    if is_image_book || is_local_epub_book(book) {
         return false;
     }
     get_replace_enable_default()
@@ -1368,11 +1387,14 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
 /// 与 Android 原版 ContentProcessor 对等：DB 缓存继续存储原始正文，
 /// 在正文返回给上层前应用净化，从而避免「规则变更后缓存陈旧」的问题。
 ///
-/// 处理范围（与 Android 默认行为一致）：
-/// - 去除重复标题（正文开头与章节标题相同的文本）
-/// - 应用启用的替换规则（按 scope 过滤后）
+/// 处理范围（批7a 起与上游 `ContentProcessor.getContent` 对齐）：
+/// - 去除重复标题（正文开头与章节标题相同的文本，受章级开关控制）；
+/// - 简繁转换（由持久化 `chineseConverterType` 决定，独立于替换开关）；
+/// - 正文重新分段（仅当该书 `readConfig.reSegment=true`）；
+/// - 应用启用的替换规则（路径语义 && 书级/全局开关，按 scope 过滤后）。
 ///
-/// 不在此处做段落重排/简繁转换/缩进/空行修剪，以免改变原始正文排版。
+/// 缩进/空行修剪仍不在此处做（`indent_spaces=0`、`trim_empty_lines=false`），
+/// 以免改变原始正文排版。
 pub fn apply_content_processing(book_url: &str, raw_content: &str, chapter_title: &str) -> String {
     apply_content_processing_inner(book_url, raw_content, chapter_title, true, None)
 }
@@ -4112,11 +4134,13 @@ mod tests {
             "图片类书显式 useReplaceRule=true 时必须生效"
         );
 
-        // 本地 epub（无 IMAGE_BIT）同样默认关闭
-        let epub_url = "books/batch7a_local.epub";
+        // 本地 epub（无 IMAGE_BIT）同样默认关闭；判定看实体 originName
+        // （bookUrl 不带 .epub 后缀，避免旧的后缀白名单误判路径）
+        let epub_url = "books/batch7a_local";
         insert_batch7a_book(Book {
             book_url: epub_url.to_string(),
             origin: book_type::LOCAL_TAG.to_string(),
+            origin_name: "batch7a_local.epub".to_string(),
             name: "批7a本地epub".to_string(),
             book_type: book_type::LOCAL,
             ..Book::default()
@@ -4131,6 +4155,50 @@ mod tests {
         delete_batch7a_book(image_null_url);
         delete_batch7a_book(image_true_url);
         delete_batch7a_book(epub_url);
+    }
+
+    /// [P2-3] 本地 epub 判定必须看书籍实体（本地类型 + originName），
+    /// 不能只看 `bookUrl` 后缀：在线 `.epub` URL 不应按本地 epub 关闭。
+    #[test]
+    fn test_use_replace_rule_epub_entity_detection() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _replace_default = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+
+        // 在线书：bookUrl 以 .epub 结尾，但 originName 不是 → 不关闭
+        let online = Book {
+            book_url: "https://online.example.com/book.epub".to_string(),
+            origin: "https://online.example.com".to_string(),
+            origin_name: "book.txt".to_string(),
+            book_type: book_type::TEXT,
+            ..Book::default()
+        };
+        assert!(
+            use_replace_rule_for_book(Some(&online)),
+            "在线书 bookUrl 的 .epub 后缀不得误判为本地 epub"
+        );
+
+        // 本地书：originName="x.epub"，bookUrl 不带后缀 → 关闭
+        let local_epub = Book {
+            book_url: "books/x".to_string(),
+            origin: book_type::LOCAL_TAG.to_string(),
+            origin_name: "x.epub".to_string(),
+            book_type: book_type::LOCAL,
+            ..Book::default()
+        };
+        assert!(
+            !use_replace_rule_for_book(Some(&local_epub)),
+            "本地书 originName 为 .epub 时应默认关闭替换"
+        );
+
+        // 在线书 originName 为 .epub 但非本地类型 → 仍按全局默认（开启）
+        let online_named_epub = Book {
+            book_url: "https://online.example.com/book".to_string(),
+            origin: "https://online.example.com".to_string(),
+            origin_name: "book.epub".to_string(),
+            book_type: book_type::TEXT,
+            ..Book::default()
+        };
+        assert!(use_replace_rule_for_book(Some(&online_named_epub)));
     }
 
     /// c) 普通文字书 `useReplaceRule=null`：跟随 `replaceEnableDefault`
