@@ -55,6 +55,8 @@ import 'screens/read_aloud_settings_screen.dart';
 import 'screens/read_config_screen.dart';
 // [设置批6b-1] 封面设置独立页（对齐参考版 CoverConfigScreen）
 import 'screens/cover_settings_screen.dart';
+// [设置批6b-2] 封面相册管理页（对齐参考版 CoverAlbumManageScreen）
+import 'screens/cover_album_manage_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/bottom_bar_skin_screen.dart';
 import 'screens/toc_screen.dart';
@@ -127,6 +129,9 @@ class AppRoutes {
   static const readConfig = '/read_config';
   // [设置批6b-1] 封面设置独立页（设置主页一级入口）
   static const coverSettings = '/cover_settings';
+
+  // [设置批6b-2] 封面相册管理（封面设置「默认封面」选择 Sheet 内的入口）
+  static const coverAlbums = '/cover_albums';
   static const themeConfig = '/theme_config';
   static const bottomBarSkin = '/bottom_bar_skin';
   static const importBooks = '/import_books';
@@ -339,6 +344,8 @@ class AppRoutes {
     readConfig: (_) => const ReadConfigScreen(),
     // [设置批6b-1] 封面设置（默认封面/书名作者/描边阴影/仅 WiFi）
     coverSettings: (_) => const CoverSettingsScreen(),
+    // [设置批6b-2] 封面相册管理（新建/重命名/删除/日夜间图片）
+    coverAlbums: (_) => const CoverAlbumManageScreen(),
     themeConfig: (_) => const ThemeConfigScreen(),
     bottomBarSkin: (_) => const BottomBarSkinScreen(),
     importBooks: (_) => const ImportScreen(),

@@ -20,12 +20,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/cover_settings.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../providers/providers.dart';
+import '../routes.dart';
+import '../services/cover_album_store.dart';
 import '../utils/color_hex.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/container_color_dialog.dart';
 import '../widgets/cover_rule_config_dialog.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
+import 'cover_album_select_sheet.dart';
 
 /// 封面设置页（参考版 CoverConfigScreen 1:1 分组）
 class CoverSettingsScreen extends ConsumerWidget {
@@ -93,14 +96,23 @@ class CoverSettingsScreen extends ConsumerWidget {
                 onChanged: (value) =>
                     update((s) => s.copyWith(useDefaultCover: value)),
               ),
-              // 相册选择（6b-2）：本期只展示内置封面，入口灰置
-              IosListTile(
-                key: const ValueKey('coverDefaultAlbumRow'),
-                title: '默认封面',
-                subtitle: '应用内置封面（相册选择将在后续版本提供）',
-                value: '应用内置封面',
-                showChevron: false,
-                enabled: false,
+              // 相册选择（6b-2）：内置封面 / 相册列表 Sheet + 管理入口
+              ValueListenableBuilder<int>(
+                valueListenable: CoverAlbumStore.instance.revision,
+                builder: (context, _, _) {
+                  final album = CoverAlbumStore.instance.albumById(
+                    settings.defaultAlbumId,
+                  );
+                  return IosListTile(
+                    key: const ValueKey('coverDefaultAlbumRow'),
+                    title: '默认封面',
+                    subtitle: album == null
+                        ? '应用内置封面'
+                        : '${album.name} · 日间 ${album.lightCount} · '
+                              '夜间 ${album.darkCount}',
+                    onTap: () => _openDefaultAlbum(context, ref),
+                  );
+                },
               ),
               SettingSwitchRow(
                 key: const ValueKey('coverShadowSwitch'),
@@ -274,6 +286,28 @@ class CoverSettingsScreen extends ConsumerWidget {
             : null,
       ),
     ];
+  }
+
+  /// 默认封面选择：应用内置封面（null）或相册；选择后写 defaultAlbumId
+  Future<void> _openDefaultAlbum(BuildContext context, WidgetRef ref) async {
+    await CoverAlbumStore.instance.ensureLoaded();
+    if (!context.mounted) return;
+    final selection = await CoverAlbumSelectSheet.show(
+      context,
+      onManage: () {
+        Navigator.pushNamed(context, AppRoutes.coverAlbums);
+      },
+    );
+    if (selection == null) return;
+    await ref
+        .read(coverSettingsProvider.notifier)
+        .update(
+          (current) => current.copyWith(
+            defaultAlbumId: selection.albumId,
+            // 单行「默认封面」同时决定日/夜：清空遗留的夜间独立相册选择
+            defaultAlbumIdDark: null,
+          ),
+        );
   }
 
   Future<void> _openCoverRule(BuildContext context, WidgetRef ref) async {
