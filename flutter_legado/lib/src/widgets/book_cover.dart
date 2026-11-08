@@ -11,6 +11,7 @@ import '../models/cover_settings.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
+import '../services/cover_album_store.dart';
 import '../services/cover_aspect_ratio.dart';
 import '../services/cover_decode_loader.dart';
 import '../services/cover_disk_cache.dart';
@@ -105,6 +106,14 @@ class _BookCoverState extends State<BookCover> {
   double? _ratio;
 
   @override
+  void initState() {
+    super.initState();
+    // [设置批6b-2] 相册索引按需加载（幂等）：列表页首帧即可用已加载
+    // 列表；加载完成经 revision 通知本组件重建。失败保持空相册回落。
+    unawaited(CoverAlbumStore.instance.ensureLoaded());
+  }
+
+  @override
   void didUpdateWidget(covariant BookCover oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.coverUrl != widget.coverUrl) {
@@ -173,26 +182,33 @@ class _BookCoverState extends State<BookCover> {
     // 与批39 相同，经全局 ValueListenable 读取，不要求 ProviderScope。
     // [审查 P3] 仅在需要自适应比例时才订阅 UiSettings，避免任意 UI 设置
     // 变化重建全部封面；封面设置订阅始终存在（文字/描边/仅 WiFi）。
-    return ValueListenableBuilder<CoverSettings>(
-      valueListenable: coverSettingsListenable,
-      builder: (context, cover, _) {
-        if (!widget.adaptAspectRatio) {
-          return _buildCover(context, widget.height, cover);
-        }
-        return ValueListenableBuilder<UiSettingsState>(
-          valueListenable: uiSettingsListenable,
-          builder: (context, ui, _) {
-            final hasUrl =
-                widget.coverUrl != null && widget.coverUrl!.isNotEmpty;
-            // 总是默认封面/本地文件时忽略网络封面比例（保持调用方声明尺寸）
-            final defaultOnly = !hasUrl ||
-                cover.useDefaultCover ||
-                isLocalCoverUrl(widget.coverUrl);
-            final height = _displayHeight(
-              ui.restrictCoverRatio,
-              ignoreAspectRatio: defaultOnly,
+    // [设置批6b-2] 相册增删图片/新建删除后经 revision 重建默认封面。
+    return ValueListenableBuilder<int>(
+      valueListenable: CoverAlbumStore.instance.revision,
+      builder: (context, _, _) {
+        return ValueListenableBuilder<CoverSettings>(
+          valueListenable: coverSettingsListenable,
+          builder: (context, cover, _) {
+            if (!widget.adaptAspectRatio) {
+              return _buildCover(context, widget.height, cover);
+            }
+            return ValueListenableBuilder<UiSettingsState>(
+              valueListenable: uiSettingsListenable,
+              builder: (context, ui, _) {
+                final hasUrl =
+                    widget.coverUrl != null && widget.coverUrl!.isNotEmpty;
+                // 总是默认封面/本地文件时忽略网络封面比例（保持调用方声明尺寸）
+                final defaultOnly =
+                    !hasUrl ||
+                    cover.useDefaultCover ||
+                    isLocalCoverUrl(widget.coverUrl);
+                final height = _displayHeight(
+                  ui.restrictCoverRatio,
+                  ignoreAspectRatio: defaultOnly,
+                );
+                return _buildCover(context, height, cover);
+              },
             );
-            return _buildCover(context, height, cover);
           },
         );
       },
@@ -271,12 +287,14 @@ class _BookCoverState extends State<BookCover> {
     return coverWidget;
   }
 
-  /// 默认封面（对标原版 image_cover_default.jpg）
+  /// 默认封面（对标参考版 `CoilBookCover` 自定义默认封面 + 文字叠层）
   ///
   /// 无封面 / 加载中 / 加载失败 / 总是默认封面时显示：
-  /// - 日间：内置纸纹封面图；
-  /// - 夜间：同一图 + 暗色叠层（参考版独立的日/夜图集素材属 6b-2，
-  ///   本期无夜间素材，登记为色调占位）；
+  /// - `defaultAlbumId`（夜间取 `defaultAlbumIdDark ?? defaultAlbumId`）有效
+  ///   且对应日/夜列表非空：按书名种子确定性取一张本地相册图（`Image.file`
+  ///   + cacheWidth 缩略，不联网）；
+  /// - 相册缺失/列表为空/文件不可读：回落内置纸纹封面图；夜间叠加暗色
+  ///   层（相册图本身即日/夜素材，不加夜间叠层）；
   /// - 书名 / 作者：见 [CoverTextPainter]（竖排/横排/描边/阴影/日夜）。
   Widget _buildDefaultCover(
     BuildContext context,
@@ -292,8 +310,9 @@ class _BookCoverState extends State<BookCover> {
       isNight: isNight,
       defaultColor: Theme.of(context).colorScheme.secondary.toARGB32(),
     );
-    return Stack(
-      key: const ValueKey('bookCoverDefault'),
+
+    /// 内置默认封面（夜间暗色叠层压低纸面亮度、保留纹理）
+    Widget builtIn() => Stack(
       fit: StackFit.expand,
       children: [
         Image.asset(
@@ -306,10 +325,41 @@ class _BookCoverState extends State<BookCover> {
           const Positioned.fill(
             child: ColoredBox(
               key: ValueKey('bookCoverDefaultNight'),
-              // 无独立夜间素材（登记）：暗色叠层压低纸面亮度、保留纹理
               color: Color(0xCC15161A),
             ),
           ),
+      ],
+    );
+
+    final albumId = isNight
+        ? (cover.defaultAlbumIdDark ?? cover.defaultAlbumId)
+        : cover.defaultAlbumId;
+    final albumPath = CoverAlbumStore.instance.imagePathForAlbum(
+      albumId,
+      isDark: isNight,
+      seed: widget.bookName,
+    );
+
+    Widget background = builtIn();
+    if (albumPath != null && File(albumPath).existsSync()) {
+      background = Image.file(
+        File(albumPath),
+        key: const ValueKey('bookCoverAlbumImage'),
+        fit: BoxFit.cover,
+        width: widget.width,
+        height: height,
+        cacheWidth: _thumbWidth(context),
+        gaplessPlayback: true,
+        // 索引记录后文件被外部删除/损坏：回落内置默认封面
+        errorBuilder: (_, _, _) => builtIn(),
+      );
+    }
+
+    return Stack(
+      key: const ValueKey('bookCoverDefault'),
+      fit: StackFit.expand,
+      children: [
+        background,
         if (layout.hasText)
           Positioned.fill(
             child: CustomPaint(
