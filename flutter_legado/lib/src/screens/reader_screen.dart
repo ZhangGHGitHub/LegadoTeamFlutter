@@ -38,6 +38,58 @@ import '../utils/source_login_prompt.dart';
 import '../utils/volume_key_page_gate.dart';
 import 'reader_config_panel.dart';
 
+/// 目录页返回后重读 DB 书籍快照，并在替换/重分段配置变化时重载正文
+///
+/// 背景（批7a 设备验收 P1-A）：目录页可直接写 `ReadConfig.useReplaceRule`，
+/// 返回阅读器仅刷新 `currentBook` 快照不会让已渲染正文重新净化；用户需切章
+/// 才生效。此处比较 DB 新快照与内存快照，配置变化则 await
+/// [ReaderNotifier.reloadChapterContent]（内部失败写入 ReaderState.error，
+/// 沿用既有错误态，不吞掉）。
+///
+/// [isMounted] 由页面注入 `mounted`；测试可省略（默认恒 true）。
+/// 返回是否触发正文重载（便于单测断言）。
+@visibleForTesting
+Future<bool> refreshReaderBookAfterToc(
+  WidgetRef ref, {
+  bool Function()? isMounted,
+}) async {
+  final current = ref.read(readerNotifierProvider).currentBook;
+  if (current == null) return false;
+  try {
+    final fresh = await ref.read(bookApiProvider).getBook(current.bookUrl);
+    if (!(isMounted?.call() ?? true) || fresh == null) return false;
+    final latest = ref.read(readerNotifierProvider).currentBook;
+    // 重读期间已换书/退出：丢弃迟到结果
+    if (latest == null || latest.bookUrl != fresh.bookUrl) return false;
+    // null 语义：useReplaceRule 的 null 表示「无书级覆盖」，与显式 false
+    // 不等价（全局默认关闭时 null 生效为 false、显式 true 才开启），故按
+    // 可空值直接比较；reSegment 为非空字段，readConfig 缺失按默认 false。
+    final replaceChanged =
+        fresh.readConfig?.useReplaceRule != latest.readConfig?.useReplaceRule;
+    final reSegmentChanged =
+        (fresh.readConfig?.reSegment ?? false) !=
+            (latest.readConfig?.reSegment ?? false);
+    ref
+        .read(readerNotifierProvider.notifier)
+        .updateCurrentBook(
+          fresh.copyWith(
+            durChapterIndex: latest.durChapterIndex,
+            durChapterTitle: latest.durChapterTitle,
+            durChapterPos: latest.durChapterPos,
+            durChapterTime: latest.durChapterTime,
+          ),
+        );
+    if (!replaceChanged && !reSegmentChanged) return false;
+    // 正文重载失败由 ReaderNotifier 写入 error（不抛出）；此处保留该状态，
+    // 不做 try/catch 抑制。
+    await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
+    return true;
+  } catch (_) {
+    // getBook 读取失败保留内存快照（不阻断阅读）
+    return false;
+  }
+}
+
 /// 阅读器页面（Riverpod ConsumerStatefulWidget 薄壳）
 ///
 /// 状态由 [ReaderNotifier] 管理；分页/翻页渲染由 [ReaderPageView] 承担；
@@ -388,27 +440,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _refreshCurrentBookFromDb() async {
-    final current = ref.read(readerNotifierProvider).currentBook;
-    if (current == null) return;
-    try {
-      final fresh = await ref.read(bookApiProvider).getBook(current.bookUrl);
-      if (!mounted || fresh == null) return;
-      final latest = ref.read(readerNotifierProvider).currentBook;
-      // 重读期间已换书/退出：丢弃迟到结果
-      if (latest == null || latest.bookUrl != fresh.bookUrl) return;
-      ref
-          .read(readerNotifierProvider.notifier)
-          .updateCurrentBook(
-            fresh.copyWith(
-              durChapterIndex: latest.durChapterIndex,
-              durChapterTitle: latest.durChapterTitle,
-              durChapterPos: latest.durChapterPos,
-              durChapterTime: latest.durChapterTime,
-            ),
-          );
-    } catch (_) {
-      // 读取失败保留内存快照（不阻断阅读）
-    }
+    await refreshReaderBookAfterToc(
+      ref,
+      isMounted: () => mounted,
+    );
   }
 
   // ===== [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批系统级生效 =====

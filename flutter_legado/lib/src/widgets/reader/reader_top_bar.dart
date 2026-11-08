@@ -1,3 +1,6 @@
+// [批7a P1-B] 当前无 `ReaderTopBar(` 生产实例化点（活跃顶栏为
+// widgets/reader/reader_menu_panel.dart）；本文件保留待清理，新功能请勿
+// 继续在此堆叠。
 import 'dart:async';
 
 import 'package:flutter/material.dart';

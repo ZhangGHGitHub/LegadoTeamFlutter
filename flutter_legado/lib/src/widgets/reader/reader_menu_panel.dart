@@ -9,7 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../models/models.dart';
-import '../../providers/providers.dart' show bookApiProvider;
+import '../../providers/providers.dart'
+    show bookApiProvider, replaceEnableDefaultProvider;
 import '../../providers/reader/reader_menu_style_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/reader/reader_top_bar_actions_notifier.dart';
@@ -23,6 +24,7 @@ import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
 import 'reader_charset_dialog.dart';
 import 'reader_download_dialog.dart';
+import 'reader_action_helpers.dart';
 import 'reader_menu_style.dart';
 import 'reader_toc_rule_dialog.dart';
 import 'reader_top_bar_actions.dart';
@@ -1263,6 +1265,15 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     required ResolvedReaderMenuColors colors,
     required bool merged,
   }) {
+    // 本方法在 build 期间调用，watch 合法；菜单 itemBuilder 是延迟回调，
+    // 故在进入 PopupMenuButton 前取定勾选态。
+    final globalReplaceDefault =
+        ref.watch(replaceEnableDefaultProvider).value ?? true;
+    final replaceEnabled = effectiveReplaceRuleEnabled(
+      book,
+      globalReplaceDefault,
+    );
+    final reSegmentEnabled = book?.readConfig?.reSegment ?? false;
     return PopupMenuButton<String>(
       tooltip: '更多',
       position: PopupMenuPosition.under,
@@ -1283,7 +1294,23 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             widget.onAddBookmark();
           case 'highlightRule':
             Navigator.pushNamed(context, AppRoutes.highlightRules);
-          case 'replace':
+          case 'enableReplace':
+            // [批7a P1-B] 书级替换开关：helper 已含生效值取反 + 配置写回 +
+            // 正文重载；PopupMenu 已在 onSelected 前关闭，ref/context 仍有效。
+            unawaited(toggleReaderReplaceRule(context, ref));
+          case 'reSegment':
+            // 重新分段开关：updateReaderBookConfig 落库后重载当前章正文
+            if (book != null) {
+              final next = !(book.readConfig?.reSegment ?? false);
+              unawaited(
+                updateReaderBookConfig(
+                  context,
+                  ref,
+                  (c) => c.copyWith(reSegment: next),
+                ),
+              );
+            }
+          case 'manageReplace':
             widget.onOpenReplaceRules();
           case 'settings':
             widget.onOpenSettings();
@@ -1307,7 +1334,20 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
         const PopupMenuItem(value: 'highlightRule', child: Text('高亮规则')),
-        const PopupMenuItem(value: 'replace', child: Text('替换规则')),
+        CheckedPopupMenuItem(
+          value: 'enableReplace',
+          checked: replaceEnabled,
+          child: const Text('使用替换规则'),
+        ),
+        CheckedPopupMenuItem(
+          value: 'reSegment',
+          checked: reSegmentEnabled,
+          child: const Text('重新分段'),
+        ),
+        const PopupMenuItem(
+          value: 'manageReplace',
+          child: Text('管理替换规则'),
+        ),
         const PopupMenuItem(value: 'toc', child: Text('查看目录')),
         CheckedPopupMenuItem(
           value: 'reverseTocDisplay',
