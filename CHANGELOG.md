@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.467] - 2026-11-09
+
+### Added
+- [UI] 封面相册：相册列表/新建/重命名/删除、日/夜图片管理、多选导入、单图删除、当前使用标记、空态；默认封面选择 Sheet（应用内置封面或相册）。
+- [UI] 默认封面按书名/作者种子确定性随机取日/夜相册图；封面设置「默认封面」行显示「名称 · 日间 X · 夜间 Y」并进入选择/管理。
+- [UI] 旧 `defaultCover/defaultCoverDark` 路径自动迁移为内置「default-cover」相册。
+### Fixed
+- [UI] 相册写操作串行化，导入中删除相册/图片不再回写旧索引或产生孤儿文件；批量导入逐张读取并限制单张 32MB/单批 20 张/64MB，哈希与写盘移入后台 isolate；导入/跳过/失败原因在编辑弹层内可见。
+
 ## [2.0.466] - 2026-11-08
 
 ### Added
