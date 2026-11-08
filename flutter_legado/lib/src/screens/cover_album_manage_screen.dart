@@ -455,12 +455,34 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
 
   Future<void> _removeImage(CoverAlbumImage image, bool isDark) async {
     if (_busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除图片'),
+        content: const Text('确定从相册中删除这张图片吗？'),
+        actions: [
+          TextButton(
+            key: const ValueKey('coverAlbumRemoveImageCancel'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const ValueKey('coverAlbumRemoveImageConfirm'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
       await CoverAlbumStore.instance.removeImage(
         widget.albumId,
         isDark: isDark,
         fileName: image.fileName,
       );
+      // 删除成功后刷新状态行，避免残留上一次导入的文案
+      _showMessage('已删除 1 张图片');
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
@@ -543,6 +565,10 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
               ),
               TabBar(
                 controller: _tabs,
+                // 全局 tabBarTheme.tabAlignment=start 仅可滚动 TabBar 合法；
+                // 非 scrollable 必须显式 fill，否则 debug 断言 + 布局溢出
+                //（先例 app_log_screen.dart:127 / toc_screen.dart:1070）。
+                tabAlignment: TabAlignment.fill,
                 tabs: const [
                   Tab(key: ValueKey('coverAlbumDayTab'), text: '日间'),
                   Tab(key: ValueKey('coverAlbumNightTab'), text: '夜间'),
