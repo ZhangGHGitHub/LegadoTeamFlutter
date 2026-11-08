@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.cover_album_migrated" value="true" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <string name="flutter.defaultCover">default-cover</string>
+    <long name="flutter.lastBackup" value="1794167798967" />
+    <string name="flutter.defaultCoverDark"></string>
+</map>

@@ -1,0 +1,11 @@
+date=2026-11-09 04:15:20
+SM-G9900
+Physical size: 1080x1920
+Physical density: 480
+1.0
+0
+0
+    versionCode=468 minSdk=24 targetSdk=36
+    versionName=2.0.467
+qa6b2 dirs:
+none

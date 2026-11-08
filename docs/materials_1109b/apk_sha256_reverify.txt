@@ -1,0 +1,2 @@
+9b5b7581e7a1737c90c5c587bd8ce9d2babd34434f96252ace2fc050d90fdc93 *build/app/outputs/flutter-apk/app-release.apk
+8bbb7b65df0e6f0c3d4792463db89ad26b4b5acf1c208849478f9e27f5f1edef *build/app/outputs/flutter-apk/app-debug.apk

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.468] - 2026-11-09
+
+### Fixed
+- [UI] 封面相册图片管理弹层在 debug/断言构建下因全局 `TabAlignment.start` 与非滚动 TabBar 冲突出现红屏/超大 overflow：该 TabBar 显式使用 `TabAlignment.fill`。
+- [UI] 单图删除增加二次确认；取消保留、确认后状态行与计数更新；导入成功/跳过/重复/失败状态行不再残留旧文案。
+
 ## [2.0.467] - 2026-11-09
 
 ### Added

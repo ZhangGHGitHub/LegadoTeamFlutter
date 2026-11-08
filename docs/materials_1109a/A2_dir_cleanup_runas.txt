@@ -1,0 +1,7 @@
+CMD: adb shell run-as io.legado.flutter_legado ls -la files/cover_albums
+total 12
+drwx------ 2 u0_a67 u0_a67 4096 2026-11-09 04:15 .
+drwxrwx--x 5 u0_a67 u0_a67 4096 2026-11-09 04:13 ..
+-rw------- 1 u0_a67 u0_a67   31 2026-11-09 04:15 albums.json
+CMD: cat albums.json
+{"formatVersion":2,"albums":[]}

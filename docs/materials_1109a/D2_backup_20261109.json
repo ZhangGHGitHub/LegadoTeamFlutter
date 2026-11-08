@@ -1,0 +1,26 @@
+{
+  "version": 5,
+  "backupTime": 1794168049610,
+  "books": [],
+  "bookmarks": [],
+  "replaceRules": [],
+  "bookSources": [],
+  "rssSources": [],
+  "readRecords": [],
+  "bookMemos": [],
+  "bookGroups": [],
+  "rssStars": [],
+  "highlights": [],
+  "highlightRules": [],
+  "searchHistory": [],
+  "ruleSubs": [],
+  "txtTocRules": [],
+  "httpTTS": [],
+  "dictRules": [],
+  "keyboardAssists": [],
+  "servers": [],
+  "appPrefs": {
+    "remote_servers_migrated": true,
+    "app_backup_path": "/storage/emulated/0/Download/legado_backup"
+  }
+}
