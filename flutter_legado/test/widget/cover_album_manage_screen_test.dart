@@ -66,12 +66,14 @@ void main() {
 
   CoverAlbumStore store() => CoverAlbumStore.instance;
 
-  Future<void> pumpManage(WidgetTester tester) async {
+  Future<void> pumpManage(WidgetTester tester, {ThemeData? theme}) async {
     tester.view.physicalSize = const Size(900, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      const ProviderScope(child: MaterialApp(home: CoverAlbumManageScreen())),
+      ProviderScope(
+        child: MaterialApp(theme: theme, home: const CoverAlbumManageScreen()),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -242,6 +244,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(ValueKey('coverAlbumRemoveImage_$fileName')));
+    await tester.pumpAndSettle();
+    expect(find.text('确定从相册中删除这张图片吗？'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('coverAlbumRemoveImageConfirm')),
+    );
+    await tester.pumpAndSettle();
     await settleAsync(tester);
     expect(store().albumById(id)!.lightCount, 0);
     expect(store().albumById(id)!.darkCount, 1, reason: '夜间仍引用同一文件');
@@ -249,6 +257,43 @@ void main() {
       find.byKey(const ValueKey('coverAlbumImagesEmpty_light')),
       findsOneWidget,
     );
+    expect(find.text('已删除 1 张图片'), findsOneWidget);
+  });
+
+  testWidgets('单图删除取消：保留图片', (tester) async {
+    final id = await store().createAlbum('相册');
+    await store().importImages(
+      id,
+      isDark: false,
+      inputs: [CoverAlbumImageInput(displayName: 'a.png', bytes: _png(r: 41))],
+    );
+    final fileName = store().albumById(id)!.lightImages.single.fileName;
+    await pumpManage(tester);
+    await tester.tap(find.byKey(ValueKey('coverAlbumTile_$id')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(ValueKey('coverAlbumRemoveImage_$fileName')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('coverAlbumRemoveImageCancel')));
+    await tester.pumpAndSettle();
+    expect(store().albumById(id)!.lightCount, 1);
+    expect(find.text('确定从相册中删除这张图片吗？'), findsNothing);
+  });
+
+  testWidgets('全局 tabAlignment=start 下打开图片管理 Sheet 无断言/溢出', (tester) async {
+    final id = await store().createAlbum('相册');
+    await pumpManage(
+      tester,
+      theme: ThemeData(
+        tabBarTheme: const TabBarThemeData(tabAlignment: TabAlignment.start),
+      ),
+    );
+    await tester.tap(find.byKey(ValueKey('coverAlbumTile_$id')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(TabBar), findsOneWidget);
+    expect(find.text('日间'), findsOneWidget);
+    expect(find.text('夜间'), findsOneWidget);
   });
 
   testWidgets('设为默认封面写 defaultAlbumId 并显示当前使用', (tester) async {
