@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use legado_core::cache_book::CachedChapter;
 use legado_core::content_processor::{ContentProcessor, ProcessorConfig, ReplaceRuleEntry};
-use legado_core::models::{BookChapter, ReplaceRule};
+use legado_core::models::{book_type, Book, BookChapter, ReplaceRule};
 use legado_core::web_book::{BookSourceFetcher, WebBookEngine, WebChapter};
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
@@ -64,6 +64,61 @@ fn chinese_convert_direction(convert_type: i32) -> Option<String> {
 /// 当前配置的管线转换方向（读取持久化配置）
 fn current_chinese_convert_direction() -> Option<String> {
     chinese_convert_direction(get_chinese_convert_type())
+}
+
+// ─── 替换净化默认开关（批7a，对齐 Kotlin AppConfig.replaceEnableDefault）────────
+
+/// 配置键：默认启用替换净化（与 Kotlin `PreferKey.replaceEnableDefault`
+/// 同名，备份恢复时可跨端互通）
+const REPLACE_ENABLE_DEFAULT_CONFIG_KEY: &str = "replaceEnableDefault";
+
+/// 读取「默认启用替换净化」（缺省/非法 → true）
+///
+/// 语义对齐 Kotlin `AppConfig.replaceEnableDefault`
+/// （`app/src/main/java/io/legado/app/help/config/AppConfig.kt:774`
+/// `getPrefBoolean(PreferKey.replaceEnableDefault, true)`）：
+/// - 缺省 / 空串 / 非法 → `true`；
+/// - `"false"` / `"0"`（忽略大小写与首尾空白）→ `false`；
+/// - 其余 → `true`。
+///
+/// 参考同文件 [`get_chinese_convert_type`] 的 config_api 用法：读取失败
+/// （DB 不可用等）同样回落 `true`，不阻断正文读取。
+fn get_replace_enable_default() -> bool {
+    match crate::api::config_api::get_config(REPLACE_ENABLE_DEFAULT_CONFIG_KEY) {
+        Ok(raw) => !matches!(raw.trim().to_lowercase().as_str(), "false" | "0"),
+        Err(_) => true,
+    }
+}
+
+/// 该书是否启用替换规则（对齐 Kotlin `Book.getUseReplaceRule()`，
+/// `app/src/main/java/io/legado/app/data/entities/Book.kt:232-242`）
+///
+/// 优先级（逐条对齐上游）：
+/// 1. `readConfig.useReplaceRule` 显式非空 → 取该值（`false` 也尊重；
+///    图片/epub 书显式 `Some(true)` 同样开启）；
+/// 2. 图片类书（`book.bookType & BookType.image != 0`）或本地 epub
+///    （`bookUrl` 为本地书路径且小写以 `.epub` 结尾）→ 默认关闭；
+/// 3. 其余回退全局 [`get_replace_enable_default`]。
+///
+/// 无书籍行（`None`）→ 按全局默认处理（保持既有行为默认 `true`）。
+fn use_replace_rule_for_book(book: Option<&Book>) -> bool {
+    let Some(book) = book else {
+        return get_replace_enable_default();
+    };
+    if let Some(value) = book
+        .read_config
+        .as_ref()
+        .and_then(|config| config.use_replace_rule)
+    {
+        return value;
+    }
+    let is_image_book = book.book_type & book_type::IMAGE_BIT != 0;
+    let book_url_lower = book.book_url.to_lowercase();
+    let is_local_epub = is_local_book(&book.book_url) && book_url_lower.ends_with(".epub");
+    if is_image_book || is_local_epub {
+        return false;
+    }
+    get_replace_enable_default()
 }
 
 // ─── 无目录规则时每章最大字数（批1b-3，对齐参考版 PreferKey.maxLengthWithNoToc）───
@@ -1359,8 +1414,21 @@ pub fn apply_content_processing_raw(
     apply_content_processing_inner(book_url, raw_content, chapter_title, false, chapter_index)
 }
 
-/// apply_content_processing 的内部实现：`apply_replace_rules` 控制是否应用替换规则；
-/// `chapter_index` 非 None 时按章读取「删除重复标题」开关（缺省全局默认去除）
+/// apply_content_processing 的内部实现：`apply_replace_rules` 表示路径语义
+/// （阅读器/导出 = true，内容搜索 raw = false）；
+/// `chapter_index` 非 None 时按章读取「删除重复标题」开关（缺省全局默认去除）。
+///
+/// [批7a] 参数语义变化：`apply_replace_rules` 不再是「无条件应用替换规则」，
+/// 而是与书级/全局开关叠加——
+/// `replace_rules_enabled = apply_replace_rules && use_replace_rule_for_book(book)`，
+/// 对齐 Kotlin `ContentProcessor.getContent`（ContentProcessor.kt:140-142
+/// `replaceEnabled = useReplace && book.getUseReplaceRule()`）。
+/// 简繁转换与重新分段仍各自独立：
+/// - `chinese_convert` 只由路径参数决定（ContentProcessor.kt:182-191，独立于
+///   useReplace，禁止与替换开关绑定）；
+/// - `re_segment = apply_replace_rules && book.readConfig.reSegment`
+///   （ContentProcessor.kt:176-179 `if (reSegment && book.getReSegment())`；
+///   搜索 raw 路径保持不重分段）。
 fn apply_content_processing_inner(
     book_url: &str,
     raw_content: &str,
@@ -1368,32 +1436,46 @@ fn apply_content_processing_inner(
     apply_replace_rules: bool,
     chapter_index: Option<i32>,
 ) -> String {
-    // 1. 加载启用的替换规则 + 查询书籍名称（用于 scope 过滤）
+    // 1. 一次开库同时取出启用替换规则与书籍行（name/readConfig/bookType 均来自
+    //    同一行，避免多次查询落在不同版本上）
     let loaded = with_database(|db| {
         let rule_repo = ReplaceRuleRepository::new(db.connection());
         let rules = rule_repo.get_enabled_rules()?;
         let book_repo = BookRepository::new(db.connection());
-        let book_name = book_repo
-            .find_by_url(book_url)?
-            .map(|b| b.name)
-            .unwrap_or_default();
-        Ok((rules, book_name))
+        let book = book_repo.find_by_url(book_url)?;
+        Ok((rules, book))
     });
 
-    let (rules, book_name) = match loaded {
+    let (rules, book) = match loaded {
         Ok(v) => v,
         // 数据库不可用或查询失败时，退化为不净化（与无规则时行为一致）
         Err(_) => return raw_content.to_string(),
     };
+    let book_name = book.as_ref().map(|b| b.name.as_str()).unwrap_or_default();
+
+    // [批7a] 替换规则开关 = 路径语义 && 书级/全局开关（对齐 Kotlin
+    // ContentProcessor.kt:140-142；图片类/epub 默认关、显式 readConfig 覆盖优先）
+    let replace_rules_enabled = apply_replace_rules && use_replace_rule_for_book(book.as_ref());
 
     // 繁简转换仅作用于阅读器/导出正文路径（apply_replace_rules=true）；
     // 内容搜索 raw 路径保持原文，避免搜不到被转换的词
     // （对齐 Kotlin BookHelp.getContent 的 replaceEnabled=false 路径）。
+    // 注意：此处只看路径参数，不看 useReplaceRule（上游 ContentProcessor.kt:182-191
+    // 的 chineseConvert 独立于替换开关）。
     let chinese_convert = if apply_replace_rules {
         current_chinese_convert_direction()
     } else {
         None
     };
+
+    // [批7a] 正文重新分段：阅读/导出路径且该书 readConfig.reSegment=true 才启用
+    // （对齐 ContentProcessor.kt:176-179）；搜索 raw 路径保持原文排版。
+    let re_segment = apply_replace_rules
+        && book
+            .as_ref()
+            .and_then(|b| b.read_config.as_ref())
+            .map(|config| config.re_segment)
+            .unwrap_or(false);
 
     // 章级「删除重复标题」开关（Task #51）：无章节上下文时维持全局默认 true；
     // 带 chapter_index 的路径（阅读器/导出，以及 apply_content_processing_raw
@@ -1407,14 +1489,18 @@ fn apply_content_processing_inner(
         raw_content,
         chapter_title,
         &rules,
-        &book_name,
-        apply_replace_rules,
+        book_name,
+        replace_rules_enabled,
+        re_segment,
         chinese_convert,
         remove_duplicate_title,
     )
 }
 
 /// 净化核心逻辑（应用替换规则）：保留 4 参签名供既有测试调用
+///
+/// 默认语义：应用替换规则（`replace_rules_enabled=true`）、关闭重新分段
+/// （`re_segment=false`），与批7a 前的输出行为一致。
 #[cfg(test)]
 fn process_content_with_rules(
     raw_content: &str,
@@ -1428,21 +1514,28 @@ fn process_content_with_rules(
         rules,
         book_name,
         true,
+        false,
         None,
         true,
     )
 }
 
 /// 净化核心逻辑（纯函数，便于单元测试）：
-/// - `apply_replace_rules` 控制是否应用替换规则
+/// - `replace_rules_enabled` 控制是否应用替换规则（路径语义 && 书级/全局开关）
+/// - `re_segment` 控制是否重新分段（阅读/导出路径 && 书级 reSegment）
 /// - `chinese_convert` 控制简繁转换方向（None / "t2s" / "s2t"，由调用方从持久化配置读取）
 /// - `remove_duplicate_title` 控制是否去除重复标题（章级开关由调用方预先读取）
+// 参数集对应上游 ContentProcessor.getContent 的四个独立开关（useReplace /
+// reSegment / chineseConvert / removeSameTitle），拆结构体会增加所有测试调用点
+// 噪声，暂不拆（与仓库既有 allow 处理一致）。
+#[allow(clippy::too_many_arguments)]
 fn process_content_with_rules_inner(
     raw_content: &str,
     chapter_title: &str,
     rules: &[ReplaceRule],
     book_name: &str,
-    apply_replace_rules: bool,
+    replace_rules_enabled: bool,
+    re_segment: bool,
     chinese_convert: Option<String>,
     remove_duplicate_title: bool,
 ) -> String {
@@ -1471,14 +1564,15 @@ fn process_content_with_rules_inner(
         .collect();
 
     // 3. 构造处理器：启用「去重复标题 + 替换规则 + 简繁转换」，与 Android 净化行为对等
-    //    apply_replace_rules 由调用方控制（阅读器/导出=true，内容搜索=false）
-    //    chinese_convert 来自持久化配置 chineseConverterType（0/1/2 → None/t2s/s2t）
+    //    replace_rules_enabled 已由调用方叠加路径语义与书级/全局开关（批7a）；
+    //    re_segment 由阅读/导出路径与该书 readConfig.reSegment 共同决定；
+    //    chinese_convert 来自持久化配置 chineseConverterType（0/1/2 → None/t2s/s2t）；
     //    remove_duplicate_title 来自章级开关（Task #51，全局默认 true）
     let config = ProcessorConfig {
         remove_duplicate_title,
-        re_segment: false,
+        re_segment,
         chinese_convert,
-        apply_replace_rules,
+        apply_replace_rules: replace_rules_enabled,
         indent_spaces: 0,
         trim_empty_lines: false,
     };
@@ -3558,12 +3652,28 @@ mod tests {
     fn test_content_processing_raw_keeps_replaced_words() {
         let rules = vec![make_test_rule("去广告", "广告", "", false, true)];
         // apply_replace_rules=false：即使有启用规则，"广告" 仍保留
-        let result =
-            process_content_with_rules_inner("这是广告内容", "", &rules, "", false, None, true);
+        let result = process_content_with_rules_inner(
+            "这是广告内容",
+            "",
+            &rules,
+            "",
+            false,
+            false,
+            None,
+            true,
+        );
         assert_eq!(result, "这是广告内容");
         // apply_replace_rules=true：规则生效，"广告" 被删除
-        let result =
-            process_content_with_rules_inner("这是广告内容", "", &rules, "", true, None, true);
+        let result = process_content_with_rules_inner(
+            "这是广告内容",
+            "",
+            &rules,
+            "",
+            true,
+            false,
+            None,
+            true,
+        );
         assert_eq!(result, "这是内容");
     }
 
@@ -3576,6 +3686,7 @@ mod tests {
             "第一章 开始",
             &rules,
             "",
+            false,
             false,
             None,
             true,
@@ -3595,6 +3706,7 @@ mod tests {
             &rules,
             "",
             true,
+            false,
             Some("t2s".to_string()),
             true,
         );
@@ -3611,6 +3723,7 @@ mod tests {
             &rules,
             "",
             true,
+            false,
             Some("s2t".to_string()),
             true,
         );
@@ -3621,8 +3734,16 @@ mod tests {
     #[test]
     fn test_content_processing_chinese_convert_none() {
         let rules: Vec<ReplaceRule> = vec![];
-        let result =
-            process_content_with_rules_inner("測試內容abc", "", &rules, "", true, None, true);
+        let result = process_content_with_rules_inner(
+            "測試內容abc",
+            "",
+            &rules,
+            "",
+            true,
+            false,
+            None,
+            true,
+        );
         assert_eq!(result, "測試內容abc");
     }
 
@@ -3820,6 +3941,308 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    // ─── [批7a] 替换净化开关 / 重新分段接线测试 ─────────────────────────────
+
+    /// 配置隔离守卫：保存 `config:<key>` 原值，Drop 时还原（原本不存在则删除）
+    ///
+    /// 共享测试库的 caches 配置会跨用例存活，批7a 用例读写全局开关时
+    /// 必须显式隔离，避免污染其他用例（守卫在 DB 串行锁仍持有时 Drop）。
+    struct ConfigValueGuard {
+        full_key: String,
+        previous: Option<String>,
+    }
+
+    impl ConfigValueGuard {
+        /// 捕获当前值但不修改（配合测试内多次 set_config 使用）
+        fn capture(key: &str) -> Self {
+            let full_key = format!("{}{}", crate::api::config_api::CONFIG_PREFIX, key);
+            let previous =
+                with_database(|db| CacheRepository::new(db.connection()).get(&full_key)).unwrap();
+            Self { full_key, previous }
+        }
+
+        /// 捕获当前值并写入测试值
+        fn set(key: &str, value: &str) -> Self {
+            let guard = Self::capture(key);
+            crate::api::config_api::set_config(key, value).expect("写入测试配置失败");
+            guard
+        }
+    }
+
+    impl Drop for ConfigValueGuard {
+        fn drop(&mut self) {
+            let _ = with_database(|db| {
+                let repo = CacheRepository::new(db.connection());
+                match &self.previous {
+                    Some(value) => repo.put(&self.full_key, value, 0)?,
+                    None => repo.delete(&self.full_key)?,
+                }
+                Ok(())
+            });
+        }
+    }
+
+    /// 插入批7a 测试书行（调用方负责唯一 bookUrl 与收尾删除）
+    fn insert_batch7a_book(book: Book) {
+        with_database(|db| BookRepository::new(db.connection()).insert(&book))
+            .expect("批7a 测试书行写入失败");
+    }
+
+    /// 删除批7a 测试书行
+    fn delete_batch7a_book(book_url: &str) {
+        let _ = with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url));
+    }
+
+    /// 插入唯一命名的启用替换规则（返回 id，调用方负责删除）
+    fn insert_batch7a_rule(name: &str, pattern: &str, replacement: &str) -> i64 {
+        with_database(|db| {
+            ReplaceRuleRepository::new(db.connection()).insert(&ReplaceRule {
+                name: name.to_string(),
+                pattern: pattern.to_string(),
+                replacement: replacement.to_string(),
+                is_regex: false,
+                is_enabled: true,
+                ..ReplaceRule::default()
+            })
+        })
+        .expect("批7a 测试规则写入失败")
+    }
+
+    /// 删除批7a 测试规则
+    fn delete_batch7a_rule(rule_id: i64) {
+        let _ = with_database(|db| ReplaceRuleRepository::new(db.connection()).delete(rule_id));
+    }
+
+    /// `replaceEnableDefault` 解析口径：缺省/非法 → true；"false"/"0"（忽略
+    /// 大小写与首尾空白）→ false
+    #[test]
+    fn test_replace_enable_default_parsing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _cfg = ConfigValueGuard::capture(REPLACE_ENABLE_DEFAULT_CONFIG_KEY);
+
+        for raw in ["false", "FALSE", "  False  ", "0", " 0 "] {
+            crate::api::config_api::set_config(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, raw).unwrap();
+            assert!(!get_replace_enable_default(), "raw={raw:?} 应解析为 false");
+        }
+        for raw in ["true", "TRUE", "1", "", "anything", "2"] {
+            crate::api::config_api::set_config(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, raw).unwrap();
+            assert!(get_replace_enable_default(), "raw={raw:?} 应回落 true");
+        }
+    }
+
+    /// a) `useReplaceRule=false`：命中的替换规则不生效，但繁简转换（t2s）仍生效
+    ///
+    /// 上游管线顺序（ContentProcessor.kt:182-211）：简繁转换在替换规则之前，
+    /// 因此用繁体正文验证「转换已发生、规则未执行」两个独立事实。
+    #[test]
+    fn test_use_replace_rule_false_keeps_chinese_convert() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        // 全局默认置 true，证明关闭来自书级显式 false（而非全局默认）
+        let _replace_default = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+        let _chinese = ConfigValueGuard::set(CHINESE_CONVERT_CONFIG_KEY, "1");
+        let book_url = "https://batch7a.example.com/use-replace-false";
+        insert_batch7a_book(Book {
+            book_url: book_url.to_string(),
+            origin: "https://batch7a.example.com".to_string(),
+            name: "批7a关替换".to_string(),
+            read_config: Some(legado_core::models::ReadConfig {
+                use_replace_rule: Some(false),
+                ..Default::default()
+            }),
+            ..Book::default()
+        });
+        let rule_id = insert_batch7a_rule("批7a_use_replace_false_unique", "测试", "");
+
+        // 规则模式为简体「测试」；t2s 先把繁体转成简体，若规则生效则「测试」会被删
+        let got = apply_content_processing(book_url, "繁體測試正文", "");
+        assert_eq!(
+            got, "繁体测试正文",
+            "useReplaceRule=false 时替换规则不得生效"
+        );
+        assert_ne!(got, "繁體測試正文", "简繁转换不应被替换开关关闭");
+
+        delete_batch7a_rule(rule_id);
+        delete_batch7a_book(book_url);
+    }
+
+    /// b) 图片类书 `useReplaceRule=null` → 规则默认不生效；显式 `Some(true)` → 生效
+    ///
+    /// 同批附带本地 epub 默认关闭回归（上游 Book.kt:232-242 与 Kotlin
+    /// `Book.isEpub` 同为「图片类别 / 本地 epub 默认关净化」）。
+    #[test]
+    fn test_image_book_replace_default_off_explicit_on() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _replace_default = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+        let rule_id = insert_batch7a_rule("批7a_image_gate_unique", "广告", "");
+        let content = "图片广告正文";
+
+        // 图片类书（位域 IMAGE_BIT），未显式设置 → 默认关闭替换
+        let image_null_url = "books/batch7a_image_null.cbz";
+        insert_batch7a_book(Book {
+            book_url: image_null_url.to_string(),
+            origin: book_type::LOCAL_TAG.to_string(),
+            name: "批7a图片书默认".to_string(),
+            book_type: book_type::LOCAL | book_type::IMAGE_BIT,
+            ..Book::default()
+        });
+        assert_eq!(
+            apply_content_processing(image_null_url, content, ""),
+            content,
+            "图片类书 useReplaceRule=null 时替换规则必须默认关闭"
+        );
+
+        // 同一图片类书显式 Some(true) → 显式覆盖优先，规则生效
+        let image_true_url = "books/batch7a_image_true.cbz";
+        insert_batch7a_book(Book {
+            book_url: image_true_url.to_string(),
+            origin: book_type::LOCAL_TAG.to_string(),
+            name: "批7a图片书显式".to_string(),
+            book_type: book_type::LOCAL | book_type::IMAGE_BIT,
+            read_config: Some(legado_core::models::ReadConfig {
+                use_replace_rule: Some(true),
+                ..Default::default()
+            }),
+            ..Book::default()
+        });
+        assert_eq!(
+            apply_content_processing(image_true_url, content, ""),
+            "图片正文",
+            "图片类书显式 useReplaceRule=true 时必须生效"
+        );
+
+        // 本地 epub（无 IMAGE_BIT）同样默认关闭
+        let epub_url = "books/batch7a_local.epub";
+        insert_batch7a_book(Book {
+            book_url: epub_url.to_string(),
+            origin: book_type::LOCAL_TAG.to_string(),
+            name: "批7a本地epub".to_string(),
+            book_type: book_type::LOCAL,
+            ..Book::default()
+        });
+        assert_eq!(
+            apply_content_processing(epub_url, content, ""),
+            content,
+            "本地 epub 默认关闭替换规则"
+        );
+
+        delete_batch7a_rule(rule_id);
+        delete_batch7a_book(image_null_url);
+        delete_batch7a_book(image_true_url);
+        delete_batch7a_book(epub_url);
+    }
+
+    /// c) 普通文字书 `useReplaceRule=null`：跟随 `replaceEnableDefault`
+    #[test]
+    fn test_text_book_replace_follows_replace_enable_default() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let rule_id = insert_batch7a_rule("批7a_text_default_unique", "广告", "");
+        let book_url = "https://batch7a.example.com/text-default";
+        insert_batch7a_book(Book {
+            book_url: book_url.to_string(),
+            origin: "https://batch7a.example.com".to_string(),
+            name: "批7a文字书".to_string(),
+            book_type: book_type::TEXT,
+            ..Book::default()
+        });
+        let content = "普通广告正文";
+
+        {
+            let _cfg = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "false");
+            assert_eq!(
+                apply_content_processing(book_url, content, ""),
+                content,
+                "replaceEnableDefault=false 时普通文字书默认关闭替换"
+            );
+        }
+        {
+            let _cfg = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+            assert_eq!(
+                apply_content_processing(book_url, content, ""),
+                "普通正文",
+                "replaceEnableDefault=true 时普通文字书默认启用替换"
+            );
+        }
+
+        delete_batch7a_rule(rule_id);
+        delete_batch7a_book(book_url);
+    }
+
+    /// d) `readConfig.reSegment=true` 时正文重新分段生效（与 false 输出不同）
+    ///
+    /// 构造稳定断言：两行各 6 字的短段落，`re_segment` 会把第二段
+    /// （<10 字、非引号开头）并入第一段并以单段输出（content_help.rs
+    /// `merge_short_paragraphs`）——关闭时保留原始换行。
+    #[test]
+    fn test_re_segment_applies_when_book_config_enabled() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let raw = "第一段内容。\n第二段内容。";
+        let expected_segmented = "第一段内容。第二段内容。";
+
+        // 关闭（默认）：保持原始排版
+        let off_url = "https://batch7a.example.com/re-segment-off";
+        insert_batch7a_book(Book {
+            book_url: off_url.to_string(),
+            origin: "https://batch7a.example.com".to_string(),
+            name: "批7a不重分段".to_string(),
+            read_config: Some(legado_core::models::ReadConfig {
+                re_segment: false,
+                use_replace_rule: Some(false),
+                ..Default::default()
+            }),
+            ..Book::default()
+        });
+        assert_eq!(apply_content_processing(off_url, raw, ""), raw);
+
+        // 开启：重新分段；替换规则仍关闭（证明 reSegment 独立于替换开关）
+        let on_url = "https://batch7a.example.com/re-segment-on";
+        insert_batch7a_book(Book {
+            book_url: on_url.to_string(),
+            origin: "https://batch7a.example.com".to_string(),
+            name: "批7a重分段".to_string(),
+            read_config: Some(legado_core::models::ReadConfig {
+                re_segment: true,
+                use_replace_rule: Some(false),
+                ..Default::default()
+            }),
+            ..Book::default()
+        });
+        let got = apply_content_processing(on_url, raw, "");
+        assert_eq!(got, expected_segmented);
+        assert_ne!(got, raw, "重新分段后的输出必须与关闭时不同");
+
+        delete_batch7a_book(off_url);
+        delete_batch7a_book(on_url);
+    }
+
+    /// e) 搜索 raw 路径即使书 `reSegment=true` 也不重分段
+    #[test]
+    fn test_raw_search_path_does_not_re_segment() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let raw = "第一段内容。\n第二段内容。";
+        let book_url = "https://batch7a.example.com/re-segment-raw";
+        insert_batch7a_book(Book {
+            book_url: book_url.to_string(),
+            origin: "https://batch7a.example.com".to_string(),
+            name: "批7a搜索原文".to_string(),
+            read_config: Some(legado_core::models::ReadConfig {
+                re_segment: true,
+                use_replace_rule: Some(true),
+                ..Default::default()
+            }),
+            ..Book::default()
+        });
+
+        // raw（内容搜索）：保留原始排版，不重分段
+        assert_eq!(apply_content_processing_raw(book_url, raw, "", None), raw);
+        // 对照：同一本书阅读路径会重分段，证明 reSegment 配置本身生效
+        assert_eq!(
+            apply_content_processing(book_url, raw, ""),
+            "第一段内容。第二段内容。"
+        );
+
+        delete_batch7a_book(book_url);
     }
 
     // ─── toggle_same_title_removed 测试（Task #51，契约 §2.9.10） ─────────────
