@@ -1445,8 +1445,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       1.0,
       (availableWidth - spacing * (columns - 1)) / columns,
     );
-    // [审查 P1-1] 3 列以上/窄格隐藏箭头、计数允许省略，避免 header 横向溢出
-    final dense = columns > 2 || cellWidth < 110;
+    // [审查 P2] 3 列以上/窄格（<150dp）隐藏箭头；书籍数在卡片内无条件
+    // Flexible 省略，保证 280–320dp 宽 2 列也不横向溢出。
+    final dense = columns > 2 || cellWidth < 150;
     final coverCount = settings.bookshelfGroupCoverCount.clamp(1, 10);
     Widget buildCard(BookGroup group) => FolderGroupHorizontalCard(
       group: group,

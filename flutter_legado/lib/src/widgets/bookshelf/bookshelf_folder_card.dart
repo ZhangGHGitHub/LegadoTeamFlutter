@@ -413,12 +413,12 @@ class FolderGroupHorizontalCard extends StatelessWidget {
     return Material(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),
       color: cardColorValue == 0 ? Colors.transparent : Color(cardColorValue),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
           child: Column(
@@ -443,29 +443,20 @@ class FolderGroupHorizontalCard extends StatelessWidget {
                     ),
                     if (countText != null) ...[
                       const SizedBox(width: 8),
-                      // 窄格（2–5 列）下计数允许收缩省略，避免横向溢出
-                      if (dense)
-                        Flexible(
-                          child: Text(
-                            countText,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              height: 1.25,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        )
-                      else
-                        Text(
+                      // [审查 P2] 书籍数无条件 Flexible + ellipsis：2 列窄
+                      // 面板（280–320dp）大字号/千本书名也不横向溢出。
+                      Flexible(
+                        child: Text(
                           countText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12,
                             height: 1.25,
                             color: colorScheme.onSurfaceVariant,
                           ),
                         ),
+                      ),
                     ],
                     if (!dense)
                       Padding(
