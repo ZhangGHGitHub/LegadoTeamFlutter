@@ -6,10 +6,11 @@
 // 接口），其余 17 项全部在本模型内；「网络书籍角标」只保存
 // `exploreFilterState`（默认 0），过滤逻辑另立项，本批不在 UI 生效。
 //
-// 相册（`defaultAlbumId`）本期只保留字段与键 `defaultCover`（参考版同名
-// 键），设置页显示「应用内置封面」并置灰；相册管理与日/夜图集选择在
-// 设置批 6b-2 接入。为避免与参考版 `defaultCoverDark` 语义错位，本期
-// 不写入该键（登记见交付说明）。
+// [设置批6b-2] 相册已接入：`defaultAlbumId` 保存相册 ID（null=应用内置
+// 封面），键 `defaultCover` 与参考版同名；`defaultAlbumIdDark` 为夜间
+// 独立相册 ID（当前 UI 只做单行选择，选择时清空该键，夜间回落日间）。
+// 旧版 `defaultCover`/`defaultCoverDark` 的逗号绝对路径由
+// `CoverAlbumStore` 在首次加载时迁移到 `default-cover` 相册的日/夜列表。
 //
 // 颜色在 Dart 内统一使用 32 位无符号 ARGB（0xAARRGGBB），读取旧备份时
 // 兼容参考版 Kotlin 写入的负 int（按 32 位截断归一）。

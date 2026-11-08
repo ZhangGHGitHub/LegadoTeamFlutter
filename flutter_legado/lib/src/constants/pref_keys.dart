@@ -550,6 +550,10 @@ class PrefKeys {
   /// 默认夜间封面图集 ID（参考版键名 defaultCoverDark；6b-2 相册接入）
   static const coverDefaultAlbumIdDark = 'defaultCoverDark';
 
+  /// 封面相册旧路径迁移完成标记（参考版 LocalPreferencesKeys
+  /// `cover_album_migrated`；设置批6b-2，设备级一次性状态，不随备份往返）
+  static const coverAlbumMigrated = 'cover_album_migrated';
+
   /// 网络书籍角标过滤状态（参考版键名 explore_filter_state；本批只持久化）
   static const exploreFilterState = 'explore_filter_state';
 

@@ -25,8 +25,11 @@ class RestoreIgnorePrefs {
     PrefKeys.webServiceWakeLock,
     PrefKeys.defaultBookTreeUri,
     PrefKeys.bitmapCacheSize,
-    'defaultCover',
-    'defaultCoverDark',
+    // [设置批6b-2] 封面相册选择为设备级（相册图片文件在应用 Support
+    // 目录，不随 JSON 备份/跨设备迁移）；恢复备份时保留本机选择，
+    // 指向缺失相册的 ID 由 Notifier 加载时清理为内置封面。
+    PrefKeys.coverDefaultAlbumId,
+    PrefKeys.coverDefaultAlbumIdDark,
     'backupPath',
     'webDavDeviceName',
     'jsSourceApiToken',
@@ -73,6 +76,10 @@ class RestoreIgnorePrefs {
     'brightness_mode_migrated_v1b1',
     // [批4a] 九宫格迁移标记：设备级一次性状态，随备份携带会跳过迁移
     PrefKeys.clickActionMigratedV2,
+    // [设置批6b-2] 封面相册旧路径迁移标记：设备级一次性状态；相册文件
+    // 本身不随备份（defaultCover/defaultCoverDark 已在 alwaysIgnoreKeys），
+    // 标记随备份带到新设备会让旧路径迁移被跳过。
+    PrefKeys.coverAlbumMigrated,
   };
 
   /// 阅读界面相关键（对齐 BackupConfig.readPrefKeys + Flutter 阅读偏好）

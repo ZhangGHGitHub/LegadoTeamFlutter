@@ -12,13 +12,19 @@
 // [uiSettingsListenable]，保证无 ProviderScope 的通用组件（BookCover）
 // 也能立即拿到正确值。
 //
-// 编写：全栈工程师（设置批6b-1） ｜ 2026-11-06
+// [设置批6b-2] 加载前先确保 `CoverAlbumStore` 索引就绪并接收旧
+// `defaultCover`/`defaultCoverDark` 路径迁移结果（写入相册 ID）；指向
+// 不存在相册的 ID 回落内置封面（相册文件不随备份/跨设备）。reload()
+// 同时刷新相册索引，供备份恢复后同会话生效。
+//
+// 编写：全栈工程师（设置批6b-1） ｜ 2026-11-06（6b-2 增补 2026-11-09）
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/cover_settings.dart';
+import '../../services/cover_album_store.dart';
 import '../ui_settings/ui_settings_notifier.dart';
 
 /// 全局封面设置监听通道
@@ -43,14 +49,65 @@ class CoverSettingsNotifier extends Notifier<CoverSettings> {
 
   Future<void> _load() async {
     try {
+      // [设置批6b-2] 先确保相册索引加载/旧路径迁移完成：迁移会把
+      // `defaultCover`/`defaultCoverDark` 从逗号路径改写为相册 ID，
+      // 必须在读取偏好前完成，否则首帧会把旧路径当相册 ID。
+      final albums = CoverAlbumStore.instance;
+      await albums.ensureLoaded();
+      final migration = albums.takePendingMigration();
+
       final prefs = await SharedPreferences.getInstance();
       final stored = <String, Object?>{
         for (final key in CoverSettings.prefKeys)
           if (prefs.containsKey(key)) key: prefs.get(key),
       };
-      final loaded = CoverSettings.fromPrefMap(stored);
+      var loaded = CoverSettings.fromPrefMap(stored);
+      var persistSelection = false;
+
+      if (migration != null) {
+        loaded = loaded.copyWith(
+          defaultAlbumId: migration.albumId,
+          // 旧 defaultCoverDark 若是路径列表，其内容已并入同一相册的
+          // 夜间列表；清空该键，避免被误当成相册 ID 覆盖夜间选择。
+          defaultAlbumIdDark: migration.clearDarkSelection
+              ? null
+              : loaded.defaultAlbumIdDark,
+        );
+        persistSelection = true;
+      } else if (albums.isLoaded && albums.hasRoot) {
+        // 相册文件不随备份/跨设备：指向不存在相册的 ID 回落「应用内置
+        // 封面」，避免 BookCover 永远查不到图（目录不可用时不清理，
+        // 防止平台目录临时失败误删有效选择）。
+        final dayId = loaded.defaultAlbumId;
+        final darkId = loaded.defaultAlbumIdDark;
+        final cleanDay = dayId != null && albums.albumById(dayId) == null
+            ? null
+            : dayId;
+        final cleanDark = darkId != null && albums.albumById(darkId) == null
+            ? null
+            : darkId;
+        if (cleanDay != dayId || cleanDark != darkId) {
+          loaded = loaded.copyWith(
+            defaultAlbumId: cleanDay,
+            defaultAlbumIdDark: cleanDark,
+          );
+          persistSelection = true;
+        }
+      }
+
       state = loaded;
       _sync();
+
+      if (persistSelection) {
+        await prefs.setString(
+          CoverSettings.keyDefaultAlbumId,
+          loaded.defaultAlbumId ?? '',
+        );
+        await prefs.setString(
+          CoverSettings.keyDefaultAlbumIdDark,
+          loaded.defaultAlbumIdDark ?? '',
+        );
+      }
     } catch (e) {
       // 偏好损坏/平台插件异常 → 回落参考默认值，保证书架可渲染
       debugPrint('[CoverSettingsNotifier] 加载失败，回落默认值: $e');
@@ -78,7 +135,12 @@ class CoverSettingsNotifier extends Notifier<CoverSettings> {
   }
 
   /// 重新读取持久化值（备份恢复后同会话生效）
+  ///
+  /// [设置批6b-2] 同时重读相册索引：相册文件不随备份往返，恢复后仍需
+  /// 以当前设备的索引为准；索引刷新后再读偏好，保证 ID 有效性校验基于
+  /// 最新列表。
   Future<void> reload() async {
+    await CoverAlbumStore.instance.reload();
     _loading = _load();
     await _loading;
   }
