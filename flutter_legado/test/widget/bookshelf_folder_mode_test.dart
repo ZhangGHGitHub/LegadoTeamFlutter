@@ -351,6 +351,51 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('横排 2 列窄面板 280/300/320dp × 123/1000 本 × 1.0/1.6 无溢出',
+      (tester) async {
+    const longName = '一个非常长的分组名称用于窄面板压力测试';
+    final longGroups = [
+      const BookGroup(groupId: 1, groupName: longName, show: true, order: 1),
+    ];
+    final allBooks = [
+      for (var i = 0; i < 1000; i++)
+        Book(
+          bookUrl: 'p$i',
+          name: '第$i本书非常长的书名用于压力测试',
+          group: 1,
+          totalChapterNum: 1,
+        ),
+    ];
+    for (final width in [280.0, 300.0, 320.0]) {
+      for (final bookCount in [123, 1000]) {
+        for (final scale in [1.0, 1.6]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(
+            tester.platformDispatcher.clearTextScaleFactorTestValue,
+          );
+          await pumpShelf(
+            tester,
+            shelfBooks: allBooks.take(bookCount).toList(),
+            shelfGroups: longGroups,
+            size: Size(width, 900),
+            prefs: folderPrefs(
+              folderModePortrait: 0,
+              folderListPortrait: 2,
+              groupListStyle: 2,
+              coverCount: 4,
+            ),
+          );
+          expect(find.byType(FolderGroupHorizontalCard), findsWidgets);
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: '${width}dp / 2 列 / $bookCount 本 / 字号 $scale 溢出',
+          );
+        }
+      }
+    }
+  });
+
   testWidgets('文件夹预览只读缓存：不创建网络图片/不触发缓存探测外请求', (tester) async {
     var cacheLookups = 0;
     CoverDiskCache.debugLoader = (url) async {
