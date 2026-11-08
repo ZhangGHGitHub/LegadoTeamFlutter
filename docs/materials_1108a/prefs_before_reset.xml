@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.lastBackup" value="1794153541734" />
+    <long name="flutter.lastCheckUpdate" value="1794153546685" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <long name="flutter.bookGroupStyle" value="2" />
+    <long name="flutter.bookshelfFolderLayoutModePortrait" value="0" />
+    <long name="flutter.bookshelfFolderLayoutGridPortrait" value="7" />
+    <long name="flutter.bookshelfFolderLayoutListPortrait" value="5" />
+    <long name="flutter.bookshelfGroupListStyle" value="2" />
+    <long name="flutter.bookshelfGroupCoverCount" value="10" />
+    <long name="flutter.bookshelfListCoverWidth" value="120" />
+    <boolean name="flutter.showBookCount" value="false" />
+    <boolean name="flutter.bookshelfShowTag" value="false" />
+    <boolean name="flutter.hideEmptyGroups" value="true" />
+</map>

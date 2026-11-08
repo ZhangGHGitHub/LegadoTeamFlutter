@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="flutter.lastBackup" value="1794153541734" />
+    <long name="flutter.bookshelfListCoverWidth" value="84" />
+    <long name="flutter.bookGroupStyle" value="2" />
+    <long name="flutter.bookshelfGroupListStyle" value="0" />
+    <boolean name="flutter.reader_layout_is_night" value="false" />
+    <long name="flutter.bookshelfFolderLayoutListPortrait" value="1" />
+    <long name="flutter.lastCheckUpdate" value="1794153546685" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <boolean name="flutter.brightness_mode_migrated_v1b1" value="true" />
+    <long name="flutter.bookshelfFolderLayoutModePortrait" value="1" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <boolean name="flutter.coverShowShadow" value="false" />
+    <long name="flutter.bookshelfGroupCoverCount" value="4" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <boolean name="flutter.hideEmptyGroups" value="true" />
+    <long name="flutter.bookshelf_tab_position" value="2" />
+    <boolean name="flutter.showBookCount" value="true" />
+    <boolean name="flutter.bookshelfCoverShadow" value="false" />
+    <long name="flutter.bookshelfFolderLayoutGridPortrait" value="3" />
+</map>
