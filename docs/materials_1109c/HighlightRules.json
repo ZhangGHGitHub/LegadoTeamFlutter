@@ -1,0 +1,20 @@
+{
+  "type": "highlightRule",
+  "rules": [
+    {
+      "id": 1,
+      "uuid": "0690c49f-d3d6-4b4f-9975-7970e5faebee",
+      "name": "批7a富样式",
+      "pattern": "测试",
+      "isRegex": false,
+      "applyToTitle": false,
+      "scope": null,
+      "isEnabled": true,
+      "style": "{\"fill\":4293970317,\"textColor\":4294630099,\"underline\":{\"kind\":\"WAVY\",\"color\":0,\"width\":1.0},\"strike\":{\"color\":0}}",
+      "timeoutMillisecond": 3000,
+      "group": null,
+      "applyToBody": true,
+      "order": 0
+    }
+  ]
+}
