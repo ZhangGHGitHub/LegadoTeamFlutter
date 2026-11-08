@@ -271,6 +271,85 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('列表样式 0/1 × 4/5 列窄面板：组名可见、计数不截断',
+      (tester) async {
+    const longName = '一个非常长的分组名称用于极窄列压力测试';
+    final longGroups = [
+      const BookGroup(groupId: 1, groupName: longName, show: true, order: 1),
+    ];
+    final allBooks = [
+      for (var i = 0; i < 1000; i++)
+        Book(
+          bookUrl: 'v$i',
+          name: '第$i本书非常长的书名用于压力测试',
+          group: 1,
+          totalChapterNum: 1,
+        ),
+    ];
+    for (final style in [0, 1]) {
+      for (final columns in [4, 5]) {
+        for (final width in [320.0, 360.0]) {
+          for (final scale in [1.0, 1.6]) {
+            for (final bookCount in [123, 1000]) {
+              tester.platformDispatcher.textScaleFactorTestValue = scale;
+              addTearDown(
+                tester.platformDispatcher.clearTextScaleFactorTestValue,
+              );
+              await pumpShelf(
+                tester,
+                shelfBooks: allBooks.take(bookCount).toList(),
+                shelfGroups: longGroups,
+                size: Size(width, 900),
+                prefs: folderPrefs(
+                  folderModePortrait: 0,
+                  folderListPortrait: columns,
+                  groupListStyle: style,
+                ),
+              );
+              expect(
+                tester.takeException(),
+                isNull,
+                reason: '样式$style / $columns 列 / ${width}dp / '
+                    '$bookCount 本 / 字号 $scale 溢出',
+              );
+              expect(gridDelegate(tester)?.crossAxisCount, columns);
+              final nameFinder = find.byKey(
+                const ValueKey('folderGroupName_1'),
+              );
+              expect(nameFinder, findsOneWidget);
+              expect(
+                tester.getSize(nameFinder).width,
+                greaterThan(10),
+                reason: '样式$style / $columns 列 / ${width}dp 组名不可见',
+              );
+              final countFinder = find.byKey(
+                const ValueKey('folderGroupCount_1'),
+              );
+              expect(countFinder, findsOneWidget);
+              expect(
+                tester.widget<Text>(countFinder).data,
+                '$bookCount 本',
+              );
+              expect(
+                tester.getSize(countFinder).width,
+                greaterThan(20),
+                reason: '计数不可被裁成「13…」',
+              );
+              // 计数外包 FittedBox(scaleDown)：窄列保持完整文本
+              expect(
+                find.ancestor(
+                  of: countFinder,
+                  matching: find.byType(FittedBox),
+                ),
+                findsOneWidget,
+              );
+            }
+          }
+        }
+      }
+    }
+  });
+
   testWidgets('横排封面样式：数量 3/1 控制预览封面数', (tester) async {
     await pumpShelf(
       tester,
