@@ -1377,18 +1377,36 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       1.0,
       (availableWidth - spacing * (columns - 1)) / columns,
     );
-    final coverWidth = math.min(
-      settings.bookshelfListCoverWidth.toDouble(),
-      cellWidth * 0.42,
-    );
+    // [设备验收 P2] 极窄列（4–5 列/格宽 <100dp）Row 无法容纳组名：改竖向
+    // 紧凑卡（封面在上、组名/计数在下），并按竖向高度重算格高。
+    final vertical = columns >= 4 || cellWidth < 100;
+    final coverWidth = vertical
+        ? math.min(
+            settings.bookshelfListCoverWidth.toDouble(),
+            math.max(1.0, cellWidth - 4),
+          )
+        : math.min(
+            settings.bookshelfListCoverWidth.toDouble(),
+            cellWidth * 0.42,
+          );
     final coverHeight = coverWidth * 7 / 5;
     final scaler = MediaQuery.textScalerOf(context);
-    final titleHeight = scaler.scale(16) * 1.25 + 4;
-    final countHeight = settings.showBookCount
-        ? scaler.scale(12) * 1.25 + 2
-        : 0.0;
-    final contentHeight = titleHeight + countHeight + 12;
-    final cardHeight = math.max(coverHeight + 12, contentHeight);
+    final double cardHeight;
+    if (vertical) {
+      final nameHeight = scaler.scale(13) * 1.25;
+      final countHeight = settings.showBookCount
+          ? scaler.scale(11) * 1.25 + 1
+          : 0.0;
+      // 上下 4×2 内边距 + 封面/文字间距 3 + 计数上间距 1 + 余量 4
+      cardHeight = 8 + 3 + 4 + coverHeight + nameHeight + countHeight;
+    } else {
+      final titleHeight = scaler.scale(16) * 1.25 + 4;
+      final countHeight = settings.showBookCount
+          ? scaler.scale(12) * 1.25 + 2
+          : 0.0;
+      final contentHeight = titleHeight + countHeight + 12;
+      cardHeight = math.max(coverHeight + 12, contentHeight);
+    }
     final aspectRatio = cellWidth / math.max(1.0, cardHeight);
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
@@ -1409,6 +1427,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             settings: settings,
             maxCoverWidth: coverWidth,
             dense: true,
+            vertical: vertical,
             coverShadow: coverShadow,
             onTap: () => _enterFolderGroup(group),
             onLongPress: () => _showGroupMenu(

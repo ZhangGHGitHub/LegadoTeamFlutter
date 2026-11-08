@@ -248,6 +248,9 @@ class FolderGroupListCard extends StatelessWidget {
   final BookshelfSettings settings;
   final double? maxCoverWidth;
   final bool dense;
+
+  /// 极窄列（4–5 列/格宽 <100dp）竖向紧凑卡：封面在上、组名/计数在下
+  final bool vertical;
   final bool coverShadow;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
@@ -260,6 +263,7 @@ class FolderGroupListCard extends StatelessWidget {
     required this.settings,
     this.maxCoverWidth,
     this.dense = false,
+    this.vertical = false,
     this.coverShadow = false,
     required this.onTap,
     this.onLongPress,
@@ -291,70 +295,128 @@ class FolderGroupListCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            dense ? 4 : 16,
-            compact ? 6 : 10,
-            dense ? 4 : 16,
-            compact ? 6 : 10,
-          ),
-          child: Row(
-            crossAxisAlignment: settings.bookshelfListCoverCenter
-                ? CrossAxisAlignment.center
-                : CrossAxisAlignment.start,
-            children: [
-              FolderGroupCover(
-                previews: previews.take(4).toList(),
-                width: coverWidth,
-                groupCoverUrl: group.cover,
-                coverShadow: coverShadow,
-              ),
-              SizedBox(width: dense ? 6 : 12),
-              Expanded(
+        child: vertical
+            ? Padding(
+                padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: FolderGroupCover(
+                        previews: previews.take(4).toList(),
+                        width: coverWidth,
+                        groupCoverUrl: group.cover,
+                        coverShadow: coverShadow,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
                     Text(
                       group.groupName,
-                      maxLines: compact ? 1 : settings.bookshelfTitleMaxLines,
+                      key: ValueKey('folderGroupName_${group.groupId}'),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      textAlign: settings.bookshelfTitleCenter
+                          ? TextAlign.center
+                          : TextAlign.start,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 13,
                         height: 1.25,
                         color: colorScheme.onSurface,
                       ),
                     ),
-                    if (countText != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        countText,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurfaceVariant,
+                    if (countText != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Align(
+                          alignment: settings.bookshelfTitleCenter
+                              ? Alignment.center
+                              : Alignment.centerLeft,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              countText,
+                              key: ValueKey(
+                                  'folderGroupCount_${group.groupId}'),
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ],
-                    if (!compact && firstBook != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '最近阅读：${firstBook.name}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                  ],
+                ),
+              )
+            : Padding(
+                padding: EdgeInsets.fromLTRB(
+                  dense ? 4 : 16,
+                  compact ? 6 : 10,
+                  dense ? 4 : 16,
+                  compact ? 6 : 10,
+                ),
+                child: Row(
+                  crossAxisAlignment: settings.bookshelfListCoverCenter
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.start,
+                  children: [
+                    FolderGroupCover(
+                      previews: previews.take(4).toList(),
+                      width: coverWidth,
+                      groupCoverUrl: group.cover,
+                      coverShadow: coverShadow,
+                    ),
+                    SizedBox(width: dense ? 6 : 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            group.groupName,
+                            maxLines:
+                                compact ? 1 : settings.bookshelfTitleMaxLines,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              height: 1.25,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                          if (countText != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              countText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                          if (!compact && firstBook != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '最近阅读：${firstBook.name}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
       ),
     );
 
@@ -362,7 +424,7 @@ class FolderGroupListCard extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         card,
-        if (settings.bookshelfShowDivider && !dense)
+        if (settings.bookshelfShowDivider && !dense && !vertical)
           Divider(
             height: 0.5,
             thickness: 0.5,
