@@ -1009,6 +1009,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
       final readerState = ref.read(readerNotifierProvider);
       if (readerState.currentBook?.bookUrl == updated.bookUrl) {
         ref.read(readerNotifierProvider.notifier).updateCurrentBook(updated);
+        // [批7a P1-A 设备复验] 上面的 eager 快照同步会让阅读器 didPopNext
+        // 的 fresh/latest 对比无差异，返回时不会自动重载正文。这两个键
+        // 直接改变正文净化/分段，必须在目录页内立即重载；失败由
+        // ReaderNotifier 写入 error 态（不抛出），pop 后正文即为新配置结果。
+        // mounted=false 的提前返回分支不同步快照，仍由 didPopNext 兜底。
+        if (key == 'useReplaceRule' || key == 'reSegment') {
+          await ref
+              .read(readerNotifierProvider.notifier)
+              .reloadChapterContent();
+        }
       }
     } catch (e) {
       if (mounted) {

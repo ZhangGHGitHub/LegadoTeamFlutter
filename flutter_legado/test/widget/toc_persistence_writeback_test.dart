@@ -372,4 +372,46 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  /// [批7a P1-A 设备复验] 目录页写 useReplaceRule 后会 eager 同步
+  /// currentBook，阅读器 didPopNext 的 fresh/latest 对比因此无差异；
+  /// 必须在目录页内显式重载正文（不能依赖返回对比）。
+  testWidgets('目录切换使用替换规则：同步快照后仍重载正文', (tester) async {
+    final book = makeBook(useReplaceRule: true);
+    dbBook = book;
+    when(
+      () => mockApi.getChapterContentFull(any(), any()),
+    ).thenAnswer((_) async => '正文');
+    // 模拟阅读器已打开本书：currentBook 有快照且 chapters 非空
+    await container.read(readerNotifierProvider.notifier).openBook(book);
+
+    await tester.pumpWidget(wrap(TocScreen(book: book)));
+    await settleInitial(tester);
+    clearInteractions(mockApi);
+
+    await toggleMenuItem(tester, '使用替换规则');
+
+    expect(
+      container
+          .read(readerNotifierProvider)
+          .currentBook
+          ?.readConfig
+          ?.useReplaceRule,
+      isFalse,
+      reason: '写后 eager 同步仍应保留',
+    );
+    verify(
+      () => mockApi.updateReadConfigField(bookUrl, 'useReplaceRule', 'false'),
+    ).called(1);
+    verify(
+      () => mockApi.getChapterContentFull(bookUrl, any()),
+    ).called(1);
+    expect(
+      container.read(readerNotifierProvider).chapterContent,
+      '正文',
+      reason: '目录页内已完成正文重载，pop 后即为新配置结果',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }
