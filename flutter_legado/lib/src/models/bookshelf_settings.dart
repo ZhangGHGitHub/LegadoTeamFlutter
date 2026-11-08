@@ -2,8 +2,8 @@
 //
 // 字段名 / 默认值逐字对齐参考版 `BookshelfSettings.kt:5-57`
 // （`legado-with-MD3`），持久化键名对齐 `PreferKey.kt`（真实偏好键，
-// 非常量名）。文件夹模式（6a-2）的 8 个字段本期只在模型中保留默认值，
-// 配置面板不渲染；组内排序覆盖（`BookGroup.bookSort`）另立项。
+// 非常量名）。文件夹模式（6a-2）字段由配置面板「分组样式=文件夹」时
+// 显示并即时持久化；组内排序覆盖（`BookGroup.bookSort`）另立项。
 //
 // 编写：全栈工程师（设置批6a-1） ｜ 2026-11-06
 import 'dart:math' as math;
@@ -142,7 +142,7 @@ class BookshelfSettings {
   };
 
   /// 分组样式：0 = 顶部 Tab（默认），1 = 隐藏 Tab + 顶部组标题/组菜单，
-  /// 2 = 文件夹（6a-2，暂不可选）
+  /// 2 = 文件夹根目录（分组卡片）
   final int bookGroupStyle;
 
   /// 隐藏空分组（默认开）
@@ -163,7 +163,7 @@ class BookshelfSettings {
   /// 显示书籍类型提示（音频/漫画/本地/文件/小说）
   final bool showTip;
 
-  /// 显示分组书籍数（文件夹模式延后，本期仅存储）
+  /// 显示分组书籍数（文件夹卡片 / 组菜单 / 组标题）
   final bool showBookCount;
 
   /// 显示上次更新时间（列表）
@@ -214,12 +214,23 @@ class BookshelfSettings {
   /// 横屏列表列数（1–5，默认 1）
   final int bookshelfLayoutListLandscape;
 
-  // ===== 文件夹模式字段（6a-2 才启用；本期仅持久化默认值）=====
+  // ===== 文件夹模式字段（设置批6a-2）=====
+  /// 竖屏文件夹根布局：0 列表 / 1 网格（默认网格）
   final int bookshelfFolderLayoutModePortrait;
+
+  /// 竖屏文件夹根网格列数（1–15，默认 3）
   final int bookshelfFolderLayoutGridPortrait;
+
+  /// 横屏文件夹根布局：0 列表 / 1 网格（默认网格）
   final int bookshelfFolderLayoutModeLandscape;
+
+  /// 横屏文件夹根网格列数（1–15，默认 7）
   final int bookshelfFolderLayoutGridLandscape;
+
+  /// 竖屏文件夹根列表列数（1–5，默认 1）
   final int bookshelfFolderLayoutListPortrait;
+
+  /// 横屏文件夹根列表列数（1–5，默认 1）
   final int bookshelfFolderLayoutListLandscape;
 
   /// 网格样式：0 标准（封面下书名）/ 1 紧凑（书名叠封面）/ 2 仅封面
@@ -255,8 +266,11 @@ class BookshelfSettings {
   /// 夜间卡片背景色（0 = 跟随主题）
   final int bookshelfCardColorDark;
 
-  // ===== 文件夹列表样式字段（6a-2 才启用）=====
+  // ===== 文件夹列表样式字段（设置批6a-2）=====
+  /// 文件夹列表样式：0 分组 / 1 紧凑列表 / 2 横排封面
   final int bookshelfGroupListStyle;
+
+  /// 横排封面数量（1–10，默认 4；仅列表样式 2 生效）
   final int bookshelfGroupCoverCount;
 
   /// 列表封面宽（40–120，默认 84）
@@ -696,6 +710,21 @@ class BookshelfSettings {
   int listColumnsFor({required bool isLandscape}) => isLandscape
       ? bookshelfLayoutListLandscape
       : bookshelfLayoutListPortrait;
+
+  /// 当前方向文件夹根布局模式：0 列表 / 1 网格
+  int folderLayoutModeFor({required bool isLandscape}) => isLandscape
+      ? bookshelfFolderLayoutModeLandscape
+      : bookshelfFolderLayoutModePortrait;
+
+  /// 当前方向文件夹根网格列数
+  int folderGridColumnsFor({required bool isLandscape}) => isLandscape
+      ? bookshelfFolderLayoutGridLandscape
+      : bookshelfFolderLayoutGridPortrait;
+
+  /// 当前方向文件夹根列表列数
+  int folderListColumnsFor({required bool isLandscape}) => isLandscape
+      ? bookshelfFolderLayoutListLandscape
+      : bookshelfFolderLayoutListPortrait;
 
   /// 列表多列时的最小可读单元格宽（低于该宽度会横向挤压文字/角标）
   static const double minReadableListCellWidth = 150;

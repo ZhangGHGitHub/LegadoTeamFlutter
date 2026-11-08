@@ -1,14 +1,14 @@
-// 书架布局配置 Sheet（设置批6a-1）
+// 书架布局配置 Sheet（设置批6a-1 / 6a-2）
 //
 // 对齐参考版 `BookshelfConfigSheet.kt`：五段（分组 / 排序 / 布局 / 角标 /
-// 其他）+ 按当前横竖屏与布局模式条件显隐。参考版的 8 个文件夹字段
-// （`bookshelfFolderLayout*` / `bookshelfGroupListStyle` /
-// `bookshelfGroupCoverCount`）属 6a-2，本批只保留默认值、不渲染。
+// 其他）+ 按当前横竖屏与布局模式条件显隐。分组样式=文件夹（2）时，
+// 「布局」段内追加文件夹根目录的 8 个配置键（文件夹布局模式 / 网格列数 /
+// 列表列数 / 列表封面宽 / 列表样式 / 横排封面数量 + 重置入口）。
 //
 // 取色复用公共 `ContainerColorDialog`（HEX + 预设色板，返回 0 = 跟随
 // 主题）。所有改动即时写入 `BookshelfSettingsNotifier`（滑块松手提交）。
 //
-// 编写：全栈工程师（设置批6a-1） ｜ 2026-11-06
+// 编写：全栈工程师（设置批6a-1 / 6a-2） ｜ 2026-11-08
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -44,8 +44,11 @@ class BookshelfConfigSheet extends ConsumerWidget {
 
   const BookshelfConfigSheet({super.key, this.viewportWidth});
 
-  /// 6a-2 文件夹模式才启用的 8 个配置键（本期隐藏，仅保留模型默认值）
-  static const hiddenFolderPrefKeys = <String>{
+  /// 文件夹根目录独立配置键（6a-2；分组样式=文件夹时显示）
+  ///
+  /// 「重置文件夹布局」只恢复这 8 个键，不改共享的列表封面宽
+  /// （`bookshelfListCoverWidth`）与「显示分组书籍数」开关。
+  static const folderPrefKeys = <String>{
     BookshelfSettings.keyBookshelfFolderLayoutModePortrait,
     BookshelfSettings.keyBookshelfFolderLayoutGridPortrait,
     BookshelfSettings.keyBookshelfFolderLayoutModeLandscape,
@@ -63,11 +66,15 @@ class BookshelfConfigSheet extends ConsumerWidget {
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final layoutMode = settings.layoutModeFor(isLandscape: isLandscape);
+    final folderLayoutMode = settings.folderLayoutModeFor(
+      isLandscape: isLandscape,
+    );
     final maxReadableListColumns = BookshelfSettings.maxReadableListColumns(
       viewportWidth ?? MediaQuery.sizeOf(context).width,
     );
-    final configuredListColumns =
-        settings.listColumnsFor(isLandscape: isLandscape);
+    final configuredListColumns = settings.listColumnsFor(
+      isLandscape: isLandscape,
+    );
     final theme = Theme.of(context);
 
     void update(BookshelfSettings Function(BookshelfSettings) transform) {
@@ -92,22 +99,21 @@ class BookshelfConfigSheet extends ConsumerWidget {
                 _DropdownRow<int>(
                   key: const ValueKey('bookshelfGroupStyleDropdown'),
                   title: '分组样式',
-                  value: settings.bookGroupStyle.clamp(0, 1),
+                  value: settings.bookGroupStyle.clamp(0, 2),
                   items: const [
                     DropdownMenuItem(value: 0, child: Text('顶部标签')),
                     DropdownMenuItem(value: 1, child: Text('隐藏标签')),
+                    DropdownMenuItem(value: 2, child: Text('文件夹')),
                   ],
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(bookGroupStyle: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(bookGroupStyle: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfHideEmptyGroupsSwitch'),
                   title: '隐藏空分组',
                   value: settings.hideEmptyGroups,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(hideEmptyGroups: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(hideEmptyGroups: value)),
                 ),
 
                 // ===== 排序 =====
@@ -117,8 +123,7 @@ class BookshelfConfigSheet extends ConsumerWidget {
                   title: '排序',
                   // 手动排序：UI 明确说明拖拽范围（网格自动回落列表；
                   // 分组展示模式暂无组内拖拽）
-                  subtitle: settings.bookshelfSort ==
-                          BookshelfSortMode.manual
+                  subtitle: settings.bookshelfSort == BookshelfSortMode.manual
                       ? '仅列表布局支持拖拽；网格会自动切换为列表，分组展示暂不支持'
                       : null,
                   value: settings.bookshelfSort,
@@ -129,9 +134,8 @@ class BookshelfConfigSheet extends ConsumerWidget {
                         child: Text(BookshelfSortMode.labels[i]),
                       ),
                   ],
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(bookshelfSort: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(bookshelfSort: value)),
                 ),
                 _DropdownRow<int>(
                   key: const ValueKey('bookshelfSortOrderDropdown'),
@@ -144,13 +148,139 @@ class BookshelfConfigSheet extends ConsumerWidget {
                         child: Text(BookshelfSortOrder.labels[i]),
                       ),
                   ],
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(bookshelfSortOrder: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(bookshelfSortOrder: value)),
                 ),
 
                 // ===== 布局 =====
                 const _SectionHeader('布局'),
+                // [设置批6a-2] 文件夹根目录独立布局（分组样式=文件夹时显示）
+                if (settings.bookGroupStyle == 2) ...[
+                  const _SubSectionHeader('文件夹根目录'),
+                  _DropdownRow<int>(
+                    key: const ValueKey('bookshelfFolderLayoutModeDropdown'),
+                    title: '文件夹布局模式',
+                    subtitle: isLandscape ? '横屏' : '竖屏',
+                    value: folderLayoutMode,
+                    items: const [
+                      DropdownMenuItem(value: 0, child: Text('列表')),
+                      DropdownMenuItem(value: 1, child: Text('网格')),
+                    ],
+                    onChanged: (value) => update(
+                      (s) => isLandscape
+                          ? s.copyWith(
+                              bookshelfFolderLayoutModeLandscape: value,
+                            )
+                          : s.copyWith(
+                              bookshelfFolderLayoutModePortrait: value,
+                            ),
+                    ),
+                  ),
+                  if (folderLayoutMode == 1)
+                    SettingSliderRow(
+                      key: const ValueKey('bookshelfFolderGridColumnsSlider'),
+                      title: '行列数',
+                      value: settings.folderGridColumnsFor(
+                        isLandscape: isLandscape,
+                      ),
+                      min: 1,
+                      max: 15,
+                      subtitle: '${isLandscape ? '横屏' : '竖屏'}文件夹网格列数',
+                      onChanged: (value) => update(
+                        (s) => isLandscape
+                            ? s.copyWith(
+                                bookshelfFolderLayoutGridLandscape: value,
+                              )
+                            : s.copyWith(
+                                bookshelfFolderLayoutGridPortrait: value,
+                              ),
+                      ),
+                    )
+                  else ...[
+                    SettingSliderRow(
+                      key: const ValueKey('bookshelfFolderListColumnsSlider'),
+                      title: '行列数',
+                      value: settings.folderListColumnsFor(
+                        isLandscape: isLandscape,
+                      ),
+                      min: 1,
+                      max: 5,
+                      subtitle: '${isLandscape ? '横屏' : '竖屏'}文件夹列表列数',
+                      onChanged: (value) => update(
+                        (s) => isLandscape
+                            ? s.copyWith(
+                                bookshelfFolderLayoutListLandscape: value,
+                              )
+                            : s.copyWith(
+                                bookshelfFolderLayoutListPortrait: value,
+                              ),
+                      ),
+                    ),
+                    SettingSliderRow(
+                      key: const ValueKey(
+                        'bookshelfFolderListCoverWidthSlider',
+                      ),
+                      title: '列表封面宽',
+                      value: settings.bookshelfListCoverWidth,
+                      min: 40,
+                      max: 120,
+                      valueSuffix: 'dp',
+                      subtitle: '文件夹列表模式封面宽度（与书架列表共用）',
+                      onChanged: (value) => update(
+                        (s) => s.copyWith(bookshelfListCoverWidth: value),
+                      ),
+                    ),
+                    _DropdownRow<int>(
+                      key: const ValueKey('bookshelfFolderListStyleDropdown'),
+                      title: '文件夹列表样式',
+                      value: settings.bookshelfGroupListStyle.clamp(0, 2),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('分组')),
+                        DropdownMenuItem(value: 1, child: Text('紧凑列表')),
+                        DropdownMenuItem(value: 2, child: Text('横排封面')),
+                      ],
+                      onChanged: (value) => update(
+                        (s) => s.copyWith(bookshelfGroupListStyle: value),
+                      ),
+                    ),
+                    if (settings.bookshelfGroupListStyle == 2)
+                      SettingSliderRow(
+                        key: const ValueKey('bookshelfFolderCoverCountSlider'),
+                        title: '横排封面数量',
+                        value: settings.bookshelfGroupCoverCount,
+                        min: 1,
+                        max: 10,
+                        onChanged: (value) => update(
+                          (s) => s.copyWith(bookshelfGroupCoverCount: value),
+                        ),
+                      ),
+                  ],
+                  _FolderHintRow(
+                    onReset: () {
+                      const defaults = BookshelfSettings.defaults;
+                      update(
+                        (s) => s.copyWith(
+                          bookshelfFolderLayoutModePortrait:
+                              defaults.bookshelfFolderLayoutModePortrait,
+                          bookshelfFolderLayoutGridPortrait:
+                              defaults.bookshelfFolderLayoutGridPortrait,
+                          bookshelfFolderLayoutModeLandscape:
+                              defaults.bookshelfFolderLayoutModeLandscape,
+                          bookshelfFolderLayoutGridLandscape:
+                              defaults.bookshelfFolderLayoutGridLandscape,
+                          bookshelfFolderLayoutListPortrait:
+                              defaults.bookshelfFolderLayoutListPortrait,
+                          bookshelfFolderLayoutListLandscape:
+                              defaults.bookshelfFolderLayoutListLandscape,
+                          bookshelfGroupListStyle:
+                              defaults.bookshelfGroupListStyle,
+                          bookshelfGroupCoverCount:
+                              defaults.bookshelfGroupCoverCount,
+                        ),
+                      );
+                    },
+                  ),
+                ],
                 _DropdownRow<int>(
                   key: const ValueKey('bookshelfLayoutModeDropdown'),
                   title: '布局模式',
@@ -176,15 +306,13 @@ class BookshelfConfigSheet extends ConsumerWidget {
                       DropdownMenuItem(value: 1, child: Text('紧凑')),
                       DropdownMenuItem(value: 2, child: Text('仅封面')),
                     ],
-                    onChanged: (value) => update(
-                      (s) => s.copyWith(bookshelfGridLayout: value),
-                    ),
+                    onChanged: (value) =>
+                        update((s) => s.copyWith(bookshelfGridLayout: value)),
                   ),
                   SettingSliderRow(
                     key: const ValueKey('bookshelfGridColumnsSlider'),
                     title: '行列数',
-                    value:
-                        settings.gridColumnsFor(isLandscape: isLandscape),
+                    value: settings.gridColumnsFor(isLandscape: isLandscape),
                     min: 1,
                     max: 15,
                     subtitle: isLandscape ? '横屏网格列数' : '竖屏网格列数',
@@ -206,9 +334,8 @@ class BookshelfConfigSheet extends ConsumerWidget {
                     key: const ValueKey('bookshelfTitleCenterSwitch'),
                     title: '书名居中',
                     value: settings.bookshelfTitleCenter,
-                    onChanged: (value) => update(
-                      (s) => s.copyWith(bookshelfTitleCenter: value),
-                    ),
+                    onChanged: (value) =>
+                        update((s) => s.copyWith(bookshelfTitleCenter: value)),
                   ),
                   SettingSliderRow(
                     key: const ValueKey('bookshelfGridCoverWidthSlider'),
@@ -226,17 +353,15 @@ class BookshelfConfigSheet extends ConsumerWidget {
                     key: const ValueKey('bookshelfShowDividerSwitch'),
                     title: '显示分隔线',
                     value: settings.bookshelfShowDivider,
-                    onChanged: (value) => update(
-                      (s) => s.copyWith(bookshelfShowDivider: value),
-                    ),
+                    onChanged: (value) =>
+                        update((s) => s.copyWith(bookshelfShowDivider: value)),
                   ),
                   _ColorRow(
                     key: const ValueKey('bookshelfDayCardColorRow'),
                     title: '日间卡片背景色',
                     color: settings.bookshelfCardColor,
-                    onChanged: (value) => update(
-                      (s) => s.copyWith(bookshelfCardColor: value),
-                    ),
+                    onChanged: (value) =>
+                        update((s) => s.copyWith(bookshelfCardColor: value)),
                   ),
                   _ColorRow(
                     key: const ValueKey('bookshelfNightCardColorRow'),
@@ -269,14 +394,13 @@ class BookshelfConfigSheet extends ConsumerWidget {
                   SettingSliderRow(
                     key: const ValueKey('bookshelfListColumnsSlider'),
                     title: '行列数',
-                    value:
-                        settings.listColumnsFor(isLandscape: isLandscape),
+                    value: settings.listColumnsFor(isLandscape: isLandscape),
                     min: 1,
                     max: 5,
                     subtitle: configuredListColumns > maxReadableListColumns
                         ? '${isLandscape ? '横屏' : '竖屏'}列表列数；'
-                            '当前书架宽度最多 $maxReadableListColumns 列，'
-                            '超出将按 $maxReadableListColumns 列显示'
+                              '当前书架宽度最多 $maxReadableListColumns 列，'
+                              '超出将按 $maxReadableListColumns 列显示'
                         : '${isLandscape ? '横屏' : '竖屏'}列表列数',
                     onChanged: (value) => update(
                       (s) => isLandscape
@@ -288,9 +412,8 @@ class BookshelfConfigSheet extends ConsumerWidget {
                     key: const ValueKey('bookshelfMoreInfoSwitch'),
                     title: '更多信息',
                     value: settings.showBookIntro,
-                    onChanged: (value) => update(
-                      (s) => s.copyWith(showBookIntro: value),
-                    ),
+                    onChanged: (value) =>
+                        update((s) => s.copyWith(showBookIntro: value)),
                   ),
                   if (settings.showBookIntro) ...[
                     _SwitchRow(
@@ -303,39 +426,33 @@ class BookshelfConfigSheet extends ConsumerWidget {
                       ),
                     ),
                     _SwitchRow(
-                      key: const ValueKey(
-                          'bookshelfShowLatestChapterSwitch'),
+                      key: const ValueKey('bookshelfShowLatestChapterSwitch'),
                       title: '显示最新章节',
                       value: settings.bookshelfShowLatestChapter,
                       onChanged: (value) => update(
-                        (s) =>
-                            s.copyWith(bookshelfShowLatestChapter: value),
+                        (s) => s.copyWith(bookshelfShowLatestChapter: value),
                       ),
                     ),
                     _SwitchRow(
                       key: const ValueKey('bookshelfShowIntroSwitch'),
                       title: '显示简介',
                       value: settings.bookshelfShowIntro,
-                      onChanged: (value) => update(
-                        (s) => s.copyWith(bookshelfShowIntro: value),
-                      ),
+                      onChanged: (value) =>
+                          update((s) => s.copyWith(bookshelfShowIntro: value)),
                     ),
                     if (settings.bookshelfShowIntro && layoutMode == 0)
                       _SwitchRow(
-                        key:
-                            const ValueKey('bookshelfIntroBelowSwitch'),
+                        key: const ValueKey('bookshelfIntroBelowSwitch'),
                         title: '简介显示在内容下方',
                         value: settings.bookshelfListIntroBelowContent,
                         onChanged: (value) => update(
-                          (s) => s.copyWith(
-                            bookshelfListIntroBelowContent: value,
-                          ),
+                          (s) =>
+                              s.copyWith(bookshelfListIntroBelowContent: value),
                         ),
                       ),
                     if (settings.bookshelfShowIntro)
                       SettingSliderRow(
-                        key: const ValueKey(
-                            'bookshelfIntroMaxLinesSlider'),
+                        key: const ValueKey('bookshelfIntroMaxLinesSlider'),
                         title: '简介行数',
                         value: settings.bookshelfIntroMaxLines,
                         min: 0,
@@ -344,8 +461,7 @@ class BookshelfConfigSheet extends ConsumerWidget {
                             ? '显示全部简介'
                             : '显示 ${settings.bookshelfIntroMaxLines} 行',
                         onChanged: (value) => update(
-                          (s) =>
-                              s.copyWith(bookshelfIntroMaxLines: value),
+                          (s) => s.copyWith(bookshelfIntroMaxLines: value),
                         ),
                       ),
                   ],
@@ -355,32 +471,27 @@ class BookshelfConfigSheet extends ConsumerWidget {
                   key: const ValueKey('bookshelfShowTagSwitch'),
                   title: '显示标签',
                   value: settings.bookshelfShowTag,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(bookshelfShowTag: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(bookshelfShowTag: value)),
                 ),
                 // 我方扩展（批35）：标签内容勾选，随「显示标签」显隐
                 if (settings.bookshelfShowTag)
-                  _TagContentRow(
-                    key: const ValueKey('bookshelfTagContentRow'),
-                  ),
+                  _TagContentRow(key: const ValueKey('bookshelfTagContentRow')),
                 SettingSliderRow(
                   key: const ValueKey('bookshelfTitleMaxLinesSlider'),
                   title: '书名最大行数',
                   value: settings.bookshelfTitleMaxLines,
                   min: 1,
                   max: 5,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(bookshelfTitleMaxLines: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(bookshelfTitleMaxLines: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfCoverShadowSwitch'),
                   title: '封面阴影',
                   value: settings.bookshelfCoverShadow,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(bookshelfCoverShadow: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(bookshelfCoverShadow: value)),
                 ),
 
                 // ===== 角标 =====
@@ -389,50 +500,46 @@ class BookshelfConfigSheet extends ConsumerWidget {
                   key: const ValueKey('bookshelfShowUnreadSwitch'),
                   title: '显示未读标志',
                   value: settings.showUnread,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(showUnread: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(showUnread: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfShowUnreadNewSwitch'),
                   title: '显示新章节标志',
                   value: settings.showUnreadNew,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(showUnreadNew: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(showUnreadNew: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfShowWaitUpCountSwitch'),
                   title: '显示等待更新数量',
                   value: settings.showWaitUpCount,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(showWaitUpCount: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(showWaitUpCount: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfShowBookCountSwitch'),
                   title: '显示分组书籍数',
-                  subtitle: '文件夹模式上线后生效',
+                  subtitle: settings.bookGroupStyle == 2
+                      ? '在文件夹卡片、组菜单与组标题显示书籍数'
+                      : '文件夹模式下在分组卡片/组菜单显示书籍数',
                   value: settings.showBookCount,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(showBookCount: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(showBookCount: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfShowLastUpdateTimeSwitch'),
                   title: '显示上次更新时间',
                   value: settings.showLastUpdateTime,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(showLastUpdateTime: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(showLastUpdateTime: value)),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfShowTipSwitch'),
                   title: '显示书籍类型',
                   value: settings.showTip,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(showTip: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(showTip: value)),
                 ),
 
                 // ===== 其他 =====
@@ -459,9 +566,8 @@ class BookshelfConfigSheet extends ConsumerWidget {
                   title: '显示更多分组',
                   subtitle: '在分组标签行尾显示组菜单按钮',
                   value: settings.shouldShowExpandButton,
-                  onChanged: (value) => update(
-                    (s) => s.copyWith(shouldShowExpandButton: value),
-                  ),
+                  onChanged: (value) =>
+                      update((s) => s.copyWith(shouldShowExpandButton: value)),
                 ),
                 SettingSliderRow(
                   key: const ValueKey('bookshelfRefreshLimitSlider'),
@@ -507,6 +613,81 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+/// 子分段标题（文件夹根目录独立配置）
+class _SubSectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SubSectionHeader(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 2),
+      child: Row(
+        children: [
+          Icon(
+            Icons.folder_outlined,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 文件夹根目录说明 + 重置入口（6a-2）
+class _FolderHintRow extends StatelessWidget {
+  final VoidCallback onReset;
+
+  const _FolderHintRow({required this.onReset});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 12, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(
+              Icons.info_outline,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '文件夹根目录使用独立布局；点按分组卡片进入分组，'
+              '返回先回到根目录。长按卡片可打开分组菜单。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('bookshelfFolderResetButton'),
+            onPressed: onReset,
+            child: const Text('重置'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 开关行（对齐参考 CompactSwitchSettingItem：整行可点）
 class _SwitchRow extends StatelessWidget {
   final String title;
@@ -530,10 +711,7 @@ class _SwitchRow extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 20),
       title: Text(title),
       subtitle: subtitle == null ? null : Text(subtitle!),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-      ),
+      trailing: Switch(value: value, onChanged: onChanged),
       onTap: onChanged == null ? null : () => onChanged(!value),
     );
   }
@@ -643,7 +821,9 @@ class _TagContentRow extends ConsumerWidget {
   }
 
   Future<void> _showTagContentDialog(
-      BuildContext context, WidgetRef ref) async {
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final state = ref.read(bookshelfNotifierProvider);
     var showCustomTags = state.showCustomTags;
     var showSourceTags = state.showSourceTags;
@@ -696,7 +876,9 @@ class _TagContentRow extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(bookshelfNotifierProvider.notifier).setTagContent(
+    await ref
+        .read(bookshelfNotifierProvider.notifier)
+        .setTagContent(
           showCustomTags: showCustomTags,
           showSourceTags: showSourceTags,
           showWordCount: showWordCount,

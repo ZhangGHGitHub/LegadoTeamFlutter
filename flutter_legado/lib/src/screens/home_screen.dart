@@ -80,6 +80,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 书架页回滚顶部信号（双击书架底栏项时自增）
   final ValueNotifier<int> _bookshelfScrollTopSignal = ValueNotifier(0);
 
+  /// [设置批6a-2] 书架文件夹模式返回控制器（组内 → 组根）
+  final BookshelfFolderBackController _bookshelfFolderBack =
+      BookshelfFolderBackController();
+
   /// 发现页收起展开项信号（双击发现底栏项时自增）
   final ValueNotifier<int> _exploreCollapseSignal = ValueNotifier(0);
 
@@ -263,6 +267,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         return;
       }
     }
+    // [设置批6a-2] 文件夹模式：组内返回先回组根（消费本次返回），
+    // 根目录返回继续走既有「切回书架 / 双击退出」。书架页与主页同属
+    // 一个 ModalRoute，必须由主页统一消费才能避免回组根后又退出。
+    if (_currentTab == MainTab.bookshelf &&
+        _bookshelfFolderBack.handleBack()) {
+      return;
+    }
     // [批36c 源内容模式返回键归属] 内容模式的返回由宿主统一消费：
     // 发现页与首页根节点同属一个 ModalRoute，Flutter 返回处理会依次通知
     // 该路由上所有 PopScope（didPop=false），内层 PopScope 无法「消费」本次
@@ -332,7 +343,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ? const HomeTabScreen()
             : const SizedBox.shrink();
       case MainTab.bookshelf:
-        return BookshelfScreen(scrollTopSignal: _bookshelfScrollTopSignal);
+        return BookshelfScreen(
+          scrollTopSignal: _bookshelfScrollTopSignal,
+          folderBackController: _bookshelfFolderBack,
+        );
       case MainTab.explore:
         return _visitedTabs.contains(tab)
             ? ExploreScreen(collapseSignal: _exploreCollapseSignal)

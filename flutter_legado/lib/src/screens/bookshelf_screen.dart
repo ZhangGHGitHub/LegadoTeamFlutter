@@ -33,6 +33,7 @@ import '../widgets/book_display_tags_row.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_list_item.dart';
 import '../widgets/bookshelf/bookshelf_config_sheet.dart';
+import '../widgets/bookshelf/bookshelf_folder_card.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -54,10 +55,42 @@ class BookshelfScreen extends ConsumerStatefulWidget {
   /// 回滚顶部信号（主页双击底栏书架项时自增，对标原版 gotoTop）
   final ValueNotifier<int>? scrollTopSignal;
 
-  const BookshelfScreen({super.key, this.scrollTopSignal});
+  /// 文件夹模式返回控制器（设置批6a-2）
+  ///
+  /// 主页（[HomeScreen]）传入后，系统返回键由主页统一分发：组内返回先
+  /// 回组根并消费本次返回，根级返回继续走既有「切回书架 / 双击退出」。
+  /// 测试或独立宿主不传时，书架页内用 [PopScope] 自行消费。
+  final BookshelfFolderBackController? folderBackController;
+
+  const BookshelfScreen({
+    super.key,
+    this.scrollTopSignal,
+    this.folderBackController,
+  });
 
   @override
   ConsumerState<BookshelfScreen> createState() => _BookshelfScreenState();
+}
+
+/// 文件夹模式两段式返回控制器（设置批6a-2）
+///
+/// 主页持有并传给书架页；[handleBack] 返回 true 表示本次返回已被消费
+/// （组内 → 组根）。根级返回返回 false，交给主页既有返回逻辑。
+class BookshelfFolderBackController {
+  bool Function()? _handler;
+
+  /// 书架页挂载时注册返回处理（只允许一个书架实例）
+  void attach(bool Function() handler) {
+    _handler = handler;
+  }
+
+  /// 书架页卸载时移除处理（避免持有已销毁 State）
+  void detach(bool Function() handler) {
+    if (identical(_handler, handler)) _handler = null;
+  }
+
+  /// 尝试消费一次返回（true = 已从组内回到组根）
+  bool handleBack() => _handler?.call() ?? false;
 }
 
 // [骨架对齐 2.0.260 | 台账 1-3] 分组数变化时 _ensureTabController 会重建
@@ -69,6 +102,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   int _tabControllerLen = 0;
   final ScrollController _scrollController = ScrollController();
 
+  /// 文件夹根目录滚动位置（与组内容分开，返回根目录时保留浏览位置）
+  final ScrollController _folderScrollController = ScrollController();
+
+  /// 文件夹模式是否停留在根目录（仅 groupStyle=2 生效）
+  bool _inFolderRoot = true;
+
+  /// 记录上一次分组样式，切换样式时把文件夹状态复位到根目录
+  int? _lastGroupStyle;
+
   /// [设置批6a-1] 更新全部时的待更新数量（`showWaitUpCount` 顶栏角标）
   final ValueNotifier<int> _waitUpCount = ValueNotifier<int>(0);
 
@@ -79,6 +121,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   void initState() {
     super.initState();
     widget.scrollTopSignal?.addListener(_onScrollTopSignal);
+    // [设置批6a-2] 主页统一分发返回键：组内 → 组根
+    widget.folderBackController?.attach(_handleFolderBack);
     // [批39] 封面比例设置/新解析比例 → 网格行高重算
     uiSettingsListenable.addListener(_onCoverLayoutChanged);
     coverAspectRatioRevision.addListener(_onCoverLayoutChanged);
@@ -86,14 +130,76 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   @override
   void dispose() {
+    widget.folderBackController?.detach(_handleFolderBack);
     uiSettingsListenable.removeListener(_onCoverLayoutChanged);
     coverAspectRatioRevision.removeListener(_onCoverLayoutChanged);
     widget.scrollTopSignal?.removeListener(_onScrollTopSignal);
     _scrollController.dispose();
+    _folderScrollController.dispose();
     _waitUpCount.dispose();
     _tabController?.removeListener(_onTabControllerChanged);
     _tabController?.dispose();
     super.dispose();
+  }
+
+  /// 文件夹模式系统返回：组内先回组根（返回 true = 已消费本次返回）
+  ///
+  /// 批量选择中先退出批量（对齐参考 BackHandler 优先级），再回组根。
+  /// 根目录返回 false，交给主页既有逻辑（切回书架 / 双击退出）。
+  bool _handleFolderBack() {
+    if (!mounted) return false;
+    final settings = ref.read(bookshelfSettingsProvider);
+    if (settings.bookGroupStyle != 2) return false;
+    final state = ref.read(bookshelfNotifierProvider);
+    if (state.isBatchMode) {
+      ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+      return true;
+    }
+    if (_inFolderRoot) return false;
+    _exitFolderToRoot();
+    return true;
+  }
+
+  /// 从组内容返回文件夹根目录
+  void _exitFolderToRoot() {
+    if (!mounted || _inFolderRoot) return;
+    final state = ref.read(bookshelfNotifierProvider);
+    if (state.isBatchMode) {
+      ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+    }
+    setState(() => _inFolderRoot = true);
+  }
+
+  /// 点按文件夹卡片进入组内容（同时持久化选中分组）
+  Future<void> _enterFolderGroup(BookGroup group) async {
+    final state = ref.read(bookshelfNotifierProvider);
+    final index = state.groups.indexWhere((g) => g.groupId == group.groupId);
+    if (index < 0) return;
+    if (state.isBatchMode) {
+      ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+    }
+    await ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
+    if (!mounted) return;
+    setState(() => _inFolderRoot = false);
+    // 进入另一分组时从内容顶部开始（组内滚动位置不跨组串用）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    });
+  }
+
+  /// 分组样式切换（含进入/离开文件夹模式）→ 文件夹状态复位根目录
+  void _syncFolderStateForStyle(BookshelfSettings settings) {
+    final style = settings.bookGroupStyle;
+    if (_lastGroupStyle == style) return;
+    _lastGroupStyle = style;
+    if (_inFolderRoot) return;
+    // 不能在 build 期间 setState：帧后复位（样式已变化时本帧按非文件夹
+    // 路径渲染，下一帧回到根目录，不会闪回组内容）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_inFolderRoot) {
+        setState(() => _inFolderRoot = true);
+      }
+    });
   }
 
   /// 封面比例设置变化 / 新比例解析 → 重算网格行高
@@ -103,8 +209,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// 双击底栏书架项 → 列表回滚顶部（对标 BaseBookshelfFragment.gotoTop）
   void _onScrollTopSignal() {
-    if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(
+    // 文件夹根目录使用独立滚动控制器（组内容返回根目录时位置保留）
+    final controller = _inFolderRoot &&
+            ref.read(bookshelfSettingsProvider).bookGroupStyle == 2
+        ? _folderScrollController
+        : _scrollController;
+    if (!controller.hasClients) return;
+    controller.animateTo(
       0,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
@@ -165,7 +276,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final plainAppBar = (state.isLoading && state.books.isEmpty) ||
         (state.error != null && state.books.isEmpty);
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
-    return AppScaffold(
+    final scaffold = AppScaffold(
       topBar: plainAppBar ? _buildAppBar(context, ref) : null,
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -174,6 +285,18 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           return _buildBody(context, ref);
         },
       ),
+    );
+    // [设置批6a-2] 独立宿主（无主页控制器）时由书架页自行消费返回：
+    // 组内 PopScope → 先回组根；根级 canPop=false 维持既有行为。
+    // 主页宿主由 HomeScreen 的 PopScope 统一分发（避免同路由多个 PopScope
+    // 同时收到回调导致「回组根 + 退出」双动作）。
+    if (widget.folderBackController != null) return scaffold;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleFolderBack();
+      },
+      child: scaffold,
     );
   }
 
@@ -399,12 +522,23 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     return index < 0 ? 0 : index;
   }
 
-  /// 分组选择菜单（style 1 顶部组菜单 / `shouldShowExpandButton` 行尾按钮）
-  Future<void> _showGroupMenu(BuildContext context, WidgetRef ref,
-      List<BookGroup> groups) async {
+  /// 分组选择菜单（style 1 顶部组菜单 / `shouldShowExpandButton` 行尾按钮
+  /// / 文件夹组内容组菜单）
+  ///
+  /// [allowManage] 为 true 时在底部追加「管理分组」入口（设置批6a-2）。
+  /// [enterContent] 为 true 时（文件夹根目录）选中分组后直接进入组内容。
+  Future<void> _showGroupMenu(
+    BuildContext context,
+    WidgetRef ref,
+    List<BookGroup> groups, {
+    bool allowManage = false,
+    bool enterContent = false,
+  }) async {
+    const manageAction = '__bookshelf_manage_groups__';
     final state = ref.read(bookshelfNotifierProvider);
+    final settings = ref.read(bookshelfSettingsProvider);
     final selectedId = state.selectedGroup?.groupId;
-    final picked = await showModalBottomSheet<BookGroup>(
+    final picked = await showModalBottomSheet<Object>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -418,22 +552,46 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             ),
             for (final group in groups)
               ListTile(
+                key: ValueKey('bookshelf_group_menu_${group.groupId}'),
                 title: Text(group.groupName),
+                subtitle: settings.showBookCount
+                    ? Text('${state.bookCountOf(group)} 本')
+                    : null,
                 trailing: group.groupId == selectedId
                     ? Icon(Icons.check,
                         color: Theme.of(sheetContext).colorScheme.primary)
                     : null,
                 onTap: () => Navigator.pop(sheetContext, group),
               ),
+            if (allowManage) ...[
+              const Divider(height: 1),
+              ListTile(
+                key: const ValueKey('bookshelf_group_manage_action'),
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('管理分组'),
+                onTap: () => Navigator.pop(sheetContext, manageAction),
+              ),
+            ],
           ],
         ),
       ),
     );
     if (picked == null) return;
+    if (picked == manageAction) {
+      if (!context.mounted) return;
+      Navigator.pushNamed(context, AppRoutes.bookGroups);
+      return;
+    }
+    final group = picked as BookGroup;
     final index =
-        state.groups.indexWhere((g) => g.groupId == picked.groupId);
-    if (index >= 0) {
-      await ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
+        state.groups.indexWhere((g) => g.groupId == group.groupId);
+    if (index < 0) return;
+    await ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
+    if (enterContent && mounted) {
+      setState(() => _inFolderRoot = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      });
     }
   }
 
@@ -664,33 +822,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final manualGridFallback =
         settings.bookshelfSort == BookshelfSortMode.manual && isGridMode;
     final effectiveGridMode = isGridMode && !manualGridFallback;
-
-    // 可见分组（隐藏空分组；「全部」始终保留）
-    final visibleGroups =
-        state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
-    final selectedVisibleIndex = _visibleGroupIndex(state, visibleGroups);
-    final effectiveGroup = visibleGroups[selectedVisibleIndex];
-    // 选中组被「隐藏空分组」隐藏时，帧后回写「全部」保持数据源一致
-    if (effectiveGroup.groupId != state.selectedGroup?.groupId &&
-        _pendingVisibleGroupId != effectiveGroup.groupId) {
-      _pendingVisibleGroupId = effectiveGroup.groupId;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final current = ref.read(bookshelfNotifierProvider);
-        final index = current.groups
-            .indexWhere((g) => g.groupId == effectiveGroup.groupId);
-        if (index >= 0) {
-          ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
-        }
-        _pendingVisibleGroupId = null;
-      });
-    }
-    final shelfBooks = sortBookshelfBooks(
-      state.booksInGroup(effectiveGroup),
-      sort: settings.bookshelfSort,
-      sortOrder: settings.bookshelfSortOrder,
-    );
-    final isEmpty = shelfBooks.isEmpty && !state.isLoading;
+    _syncFolderStateForStyle(settings);
 
     if (state.isLoading && state.books.isEmpty) {
       // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：按当前布局模式渲染网格/列表骨架
@@ -735,13 +867,62 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       );
     }
 
+    // [设置批6a-2] 文件夹根目录：分组卡片（独立于组内容布局）
+    if (settings.bookGroupStyle == 2 && _inFolderRoot) {
+      return LayoutBuilder(
+        builder: (layoutContext, layoutConstraints) => _buildFolderRoot(
+          context,
+          ref,
+          state,
+          settings,
+          layoutConstraints.maxWidth,
+        ),
+      );
+    }
+
+    // 可见分组（隐藏空分组；「全部」始终保留）
+    final visibleGroups =
+        state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
+    final selectedVisibleIndex = _visibleGroupIndex(state, visibleGroups);
+    final effectiveGroup = visibleGroups[selectedVisibleIndex];
+    // 选中组被「隐藏空分组」隐藏时，帧后回写「全部」保持数据源一致
+    if (effectiveGroup.groupId != state.selectedGroup?.groupId &&
+        _pendingVisibleGroupId != effectiveGroup.groupId) {
+      _pendingVisibleGroupId = effectiveGroup.groupId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final current = ref.read(bookshelfNotifierProvider);
+        final index = current.groups
+            .indexWhere((g) => g.groupId == effectiveGroup.groupId);
+        if (index >= 0) {
+          ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
+        }
+        _pendingVisibleGroupId = null;
+      });
+    }
+    final shelfBooks = sortBookshelfBooks(
+      state.booksInGroup(effectiveGroup),
+      sort: settings.bookshelfSort,
+      sortOrder: settings.bookshelfSortOrder,
+    );
+    final isEmpty = shelfBooks.isEmpty && !state.isLoading;
+    // 文件夹组内容：顶部返回组根 + 组标题（无 TabBar）
+    final folderGroup =
+        settings.bookGroupStyle == 2 ? effectiveGroup : null;
+
     if (isEmpty) {
       // [骨架对齐 2.0.260 | 台账 1-3] 空态对齐参考 03 截图：大标题「书架」
       // + 分组 tab 行常驻，正文区居中颜文字彩蛋（kaomoji 模式为 2026-08-29
       // 用户授权彩蛋，点击换颜文字）
       return CustomScrollView(
         slivers: [
-          _buildHeaderSliver(context, ref, state, settings),
+          _buildHeaderSliver(
+            context,
+            ref,
+            state,
+            settings,
+            folderGroup: folderGroup,
+          ),
           // [设置批6a-1] 分组样式 1 隐藏 TabBar：空分组/空书架也保留顶部
           // 组标题与组菜单，避免无法切换分组
           if (settings.bookGroupStyle == 1)
@@ -800,8 +981,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           final viewportWidth = layoutConstraints.maxWidth;
           final slivers = <Widget>[
             // [骨架对齐 2.0.260 | 台账 1-3] 头部 = 可折叠大标题「书架」 +
-            // 分组 tab 行（bottom）；style 1 改为顶部组标题 + 组菜单
-            _buildHeaderSliver(context, ref, state, settings),
+            // 分组 tab 行（bottom）；style 1 改为顶部组标题 + 组菜单；
+            // style 2 组内容显示返回钮 + 组名 + 组菜单。
+            _buildHeaderSliver(
+              context,
+              ref,
+              state,
+              settings,
+              folderGroup: folderGroup,
+            ),
             if (settings.bookGroupStyle == 1)
               _buildGroupStyleHeader(
                 context,
@@ -862,23 +1050,80 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   ///
   /// [设置批6a-1] 分组样式 1 隐藏 TabBar（顶部组标题 + 组菜单替代），
   /// 展开高度同步减去 TabBar 56dp。
-  Widget _buildHeaderSliver(BuildContext context, WidgetRef ref,
-      BookshelfState state, BookshelfSettings settings) {
-    final showTabs = settings.bookGroupStyle != 1;
+  /// [设置批6a-2] 文件夹根目录无 TabBar；组内容顶部显示返回钮 + 组名 +
+  /// 书籍数 + 组菜单（切换/管理）。
+  Widget _buildHeaderSliver(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    BookshelfSettings settings, {
+    BookGroup? folderGroup,
+  }) {
+    final showTabs = settings.bookGroupStyle == 0;
+    final visibleGroups =
+        state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
+    final Widget title;
+    if (folderGroup == null) {
+      title = Text(AppStrings.bookshelf);
+    } else {
+      final count = state.booksInGroup(folderGroup).length;
+      title = Row(
+        children: [
+          Flexible(
+            child: Text(
+              folderGroup.groupName,
+              key: const ValueKey('bookshelf_folder_group_title'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (settings.showBookCount) ...[
+            const SizedBox(width: 8),
+            Text(
+              '$count 本',
+              key: const ValueKey('bookshelf_folder_group_count'),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ],
+      );
+    }
     return LegadoTabRootHeaderSliver(
       large: true,
       // [骨架对齐 2.0.260 | 台账 1-3] 大标题 28sp：参考 03b 截图量测字高
       // 79px（480dpi 下 ≈28sp，与首页 2.0.259 大标题先例一致）
       largeTitleFontSize: 28,
       // [骨架对齐 2.0.260 | 台账 1-3] 展开态 164dp = 顶行 64 + 标题区 44 +
-      // TabBar 56（对齐参考 03b 量测 188dp - 状态栏 24）；style 1 无 TabBar
-      // 时收敛为 108dp（64 + 44），保持同一标题带节距。
+      // TabBar 56（对齐参考 03b 量测 188dp - 状态栏 24）；无 TabBar 时
+      // 收敛为 108dp（64 + 44），保持同一标题带节距。
       expandedHeight: showTabs ? 164 : 108,
-      title: Text(AppStrings.bookshelf),
+      title: title,
+      // [设置批6a-2] 组内容顶部返回组根（桌面/iOS 普通返回入口）
+      leading: folderGroup == null
+          ? null
+          : IconButton(
+              key: const ValueKey('bookshelf_folder_back'),
+              icon: const Icon(Icons.arrow_back_rounded),
+              tooltip: '返回分组',
+              onPressed: _exitFolderToRoot,
+            ),
       // [UI-fix 2.0.258] 选择模式顶栏切换为批量动作集（全选/反选/删除/取消）
       actions: state.isBatchMode
           ? _buildBatchAppBarActions(context, ref)
-          : _buildAppBarActions(context, ref),
+          : [
+              if (folderGroup != null)
+                IconButton(
+                  key: const ValueKey('bookshelf_folder_group_menu'),
+                  icon: const Icon(Symbols.format_list_bulleted_rounded),
+                  tooltip: '分组菜单',
+                  onPressed: () =>
+                      _showGroupMenu(context, ref, visibleGroups,
+                          allowManage: true),
+                ),
+              ..._buildAppBarActions(context, ref),
+            ],
       // 分组 tab 行（TabBar 默认高 kToolbarHeight，Tab 高度 40dp）
       bottom: showTabs
           ? PreferredSize(
@@ -890,6 +1135,317 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // 圆底；选择模式 05 批量钮同为裸图标），不随全局 topBarButtonStyle
       // 档位（全局档位仍作用于搜索等圆底屏）
       actionsStyle: TopBarButtonStyle.plain,
+    );
+  }
+
+  // ===== [设置批6a-2] 文件夹根目录 =====
+
+  /// 文件夹根目录：头部（无 TabBar）+ 分组卡片（网格/列表按横竖布局）
+  Widget _buildFolderRoot(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    BookshelfSettings settings,
+    double viewportWidth,
+  ) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final groups = state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
+    final isGrid = settings.folderLayoutModeFor(isLandscape: isLandscape) == 1;
+    final listStyle = settings.bookshelfGroupListStyle;
+    // 预览数量：网格/列表样式 0/1 取 2×2 拼图 4 本；横排样式取配置 N。
+    final previewLimit = isGrid || listStyle != 2
+        ? 4
+        : settings.bookshelfGroupCoverCount.clamp(1, 10);
+    final previewsByGroupId = <int, List<Book>>{
+      for (final group in groups)
+        group.groupId: sortBookshelfBooks(
+          state.booksInGroup(group),
+          sort: settings.bookshelfSort,
+          sortOrder: settings.bookshelfSortOrder,
+        ).take(previewLimit).toList(),
+    };
+
+    final slivers = <Widget>[
+      _buildHeaderSliver(context, ref, state, settings),
+      if (isGrid)
+        _buildFolderGridSliver(
+          context,
+          ref,
+          state,
+          settings,
+          groups,
+          previewsByGroupId,
+          viewportWidth,
+        )
+      else if (listStyle == 2)
+        _buildFolderHorizontalSliver(
+          context,
+          ref,
+          state,
+          settings,
+          groups,
+          previewsByGroupId,
+          viewportWidth,
+        )
+      else
+        _buildFolderListSliver(
+          context,
+          ref,
+          state,
+          settings,
+          groups,
+          previewsByGroupId,
+          viewportWidth,
+        ),
+      const SliverToBoxAdapter(child: SizedBox(height: 8)),
+    ];
+    final scrollView = CustomScrollView(
+      controller: _folderScrollController,
+      slivers: slivers,
+    );
+    final withFastScroller = settings.showBookshelfFastScroller
+        ? Md3FastScroller(
+            controller: _folderScrollController,
+            child: scrollView,
+          )
+        : scrollView;
+    return CustomRefreshIndicator(
+      onRefresh: () => ref.read(bookshelfNotifierProvider.notifier).refresh(),
+      child: withFastScroller,
+    );
+  }
+
+  /// 文件夹根网格（列数 1–15，封面 2×2 拼图 + 组名）
+  Widget _buildFolderGridSliver(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    BookshelfSettings settings,
+    List<BookGroup> groups,
+    Map<int, List<Book>> previewsByGroupId,
+    double viewportWidth,
+  ) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final columns = settings
+        .folderGridColumnsFor(isLandscape: isLandscape)
+        .clamp(1, 15);
+    const padding = 8.0;
+    const spacing = 8.0;
+    final availableWidth = math.max(0.0, viewportWidth - padding * 2);
+    final cellWidth = math.max(
+      1.0,
+      (availableWidth - spacing * (columns - 1)) / columns,
+    );
+    final coverWidth = math.min(
+      settings.bookshelfGridCoverWidth.toDouble(),
+      cellWidth,
+    );
+    final coverHeight = coverWidth * 7 / 5;
+    final titleHeight = BookGridItem.titleAreaHeightFor(
+      context,
+      maxLines: settings.bookshelfTitleMaxLines,
+      smallFont: settings.bookshelfTitleSmallFont,
+    );
+    final cardHeight = coverHeight + titleHeight;
+    final aspectRatio = cellWidth / math.max(1.0, cardHeight);
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      sliver: SliverGrid.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: aspectRatio,
+        ),
+        itemCount: groups.length,
+        itemBuilder: (context, index) {
+          final group = groups[index];
+          return Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              width: coverWidth,
+              height: cardHeight,
+              child: FolderGroupGridCard(
+                group: group,
+                previews: previewsByGroupId[group.groupId] ?? const [],
+                bookCount: state.bookCountOf(group),
+                settings: settings,
+                coverWidth: coverWidth,
+                onTap: () => _enterFolderGroup(group),
+                onLongPress: () => _showGroupMenu(
+                  context,
+                  ref,
+                  groups,
+                  allowManage: true,
+                  enterContent: true,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 文件夹根列表样式 0 分组 / 1 紧凑列表（列数 1–5）
+  Widget _buildFolderListSliver(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    BookshelfSettings settings,
+    List<BookGroup> groups,
+    Map<int, List<Book>> previewsByGroupId,
+    double viewportWidth,
+  ) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final columns = settings
+        .folderListColumnsFor(isLandscape: isLandscape)
+        .clamp(1, 5);
+    if (columns <= 1) {
+      return SliverList.builder(
+        itemCount: groups.length,
+        itemBuilder: (context, index) {
+          final group = groups[index];
+          return FolderGroupListCard(
+            group: group,
+            previews: previewsByGroupId[group.groupId] ?? const [],
+            bookCount: state.bookCountOf(group),
+            settings: settings,
+            onTap: () => _enterFolderGroup(group),
+            onLongPress: () => _showGroupMenu(
+              context,
+              ref,
+              groups,
+              allowManage: true,
+              enterContent: true,
+            ),
+          );
+        },
+      );
+    }
+    const padding = 8.0;
+    const spacing = 8.0;
+    final availableWidth = math.max(0.0, viewportWidth - padding * 2);
+    final cellWidth = math.max(
+      1.0,
+      (availableWidth - spacing * (columns - 1)) / columns,
+    );
+    final coverWidth = math.min(
+      settings.bookshelfListCoverWidth.toDouble(),
+      cellWidth * 0.42,
+    );
+    final coverHeight = coverWidth * 7 / 5;
+    final scaler = MediaQuery.textScalerOf(context);
+    final titleHeight = scaler.scale(16) * 1.25 + 4;
+    final countHeight = settings.showBookCount
+        ? scaler.scale(12) * 1.25 + 2
+        : 0.0;
+    final contentHeight = titleHeight + countHeight + 12;
+    final cardHeight = math.max(coverHeight + 12, contentHeight);
+    final aspectRatio = cellWidth / math.max(1.0, cardHeight);
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      sliver: SliverGrid.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: aspectRatio,
+        ),
+        itemCount: groups.length,
+        itemBuilder: (context, index) {
+          final group = groups[index];
+          return FolderGroupListCard(
+            group: group,
+            previews: previewsByGroupId[group.groupId] ?? const [],
+            bookCount: state.bookCountOf(group),
+            settings: settings,
+            maxCoverWidth: coverWidth,
+            dense: true,
+            onTap: () => _enterFolderGroup(group),
+            onLongPress: () => _showGroupMenu(
+              context,
+              ref,
+              groups,
+              allowManage: true,
+              enterContent: true,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 文件夹根列表样式 2：横排封面（列数 1–5，封面数量 1–10）
+  Widget _buildFolderHorizontalSliver(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    BookshelfSettings settings,
+    List<BookGroup> groups,
+    Map<int, List<Book>> previewsByGroupId,
+    double viewportWidth,
+  ) {
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final columns = settings
+        .folderListColumnsFor(isLandscape: isLandscape)
+        .clamp(1, 5);
+    Widget buildCard(BookGroup group) => FolderGroupHorizontalCard(
+      group: group,
+      previews: previewsByGroupId[group.groupId] ?? const [],
+      bookCount: state.bookCountOf(group),
+      settings: settings,
+      onTap: () => _enterFolderGroup(group),
+      onLongPress: () => _showGroupMenu(
+        context,
+        ref,
+        groups,
+        allowManage: true,
+        enterContent: true,
+      ),
+      onBookTap: (book) => _openBook(context, ref, book),
+    );
+    if (columns <= 1) {
+      return SliverList.builder(
+        itemCount: groups.length,
+        itemBuilder: (context, index) => buildCard(groups[index]),
+      );
+    }
+    const padding = 8.0;
+    const spacing = 8.0;
+    final availableWidth = math.max(0.0, viewportWidth - padding * 2);
+    final cellWidth = math.max(
+      1.0,
+      (availableWidth - spacing * (columns - 1)) / columns,
+    );
+    final coverCount = settings.bookshelfGroupCoverCount.clamp(1, 10);
+    final slotSpacing = 4.0;
+    final innerWidth = math.max(1.0, cellWidth - 8);
+    final slotWidth = math.max(
+      1.0,
+      (innerWidth - slotSpacing * (coverCount - 1)) / coverCount,
+    );
+    final slotHeight = slotWidth * 7 / 5;
+    final scaler = MediaQuery.textScalerOf(context);
+    final headerHeight = scaler.scale(15) * 1.25 + 8;
+    final cardHeight = 16 + headerHeight + slotHeight;
+    final aspectRatio = cellWidth / math.max(1.0, cardHeight);
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+      sliver: SliverGrid.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: aspectRatio,
+        ),
+        itemCount: groups.length,
+        itemBuilder: (context, index) => buildCard(groups[index]),
+      ),
     );
   }
 
