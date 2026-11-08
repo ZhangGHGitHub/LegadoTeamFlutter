@@ -34,6 +34,9 @@ class FolderGroupCover extends StatelessWidget {
   /// 组自定义封面 URL（非空时优先于书籍拼图，对齐参考 BookGroupCover）
   final String? groupCoverUrl;
 
+  /// 组名（作为组封面缺省图的书名种子，保证同组封面稳定）
+  final String? groupName;
+
   /// 左下角书籍数文本（null = 不显示）
   final String? countText;
 
@@ -48,6 +51,7 @@ class FolderGroupCover extends StatelessWidget {
     required this.previews,
     required this.width,
     this.groupCoverUrl,
+    this.groupName,
     this.countText,
     this.borderRadius = BookGridItem.coverCornerRadius,
     this.coverShadow = false,
@@ -73,6 +77,7 @@ class FolderGroupCover extends StatelessWidget {
                       coverUrl: groupCoverUrl,
                       width: width,
                       height: height,
+                      bookName: groupName,
                     )
                   : ColoredBox(
                       color: colorScheme.surfaceContainerHighest,
@@ -199,6 +204,7 @@ class FolderGroupGridCard extends StatelessWidget {
             previews: previews.take(4).toList(),
             width: coverWidth,
             groupCoverUrl: group.cover,
+            groupName: group.groupName,
             countText: countText,
             coverShadow: coverShadow,
           ),
@@ -308,6 +314,7 @@ class FolderGroupListCard extends StatelessWidget {
                         previews: previews.take(4).toList(),
                         width: coverWidth,
                         groupCoverUrl: group.cover,
+                        groupName: group.groupName,
                         coverShadow: coverShadow,
                       ),
                     ),
@@ -368,6 +375,7 @@ class FolderGroupListCard extends StatelessWidget {
                       previews: previews.take(4).toList(),
                       width: coverWidth,
                       groupCoverUrl: group.cover,
+                      groupName: group.groupName,
                       coverShadow: coverShadow,
                     ),
                     SizedBox(width: dense ? 6 : 12),

@@ -19,8 +19,10 @@
 //   单张失败不阻断同批其他图片，返回可读失败原因。
 //
 // 编写：全栈工程师（设置批6b-2） ｜ 2026-11-09
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -106,12 +108,17 @@ class CoverAlbumImportResult {
   final List<CoverAlbumImage> imported;
   final List<CoverAlbumImportFailure> failures;
 
+  /// 同内容已存在（或本批重复）而跳过的张数
+  final int duplicateCount;
+
   const CoverAlbumImportResult({
     this.imported = const <CoverAlbumImage>[],
     this.failures = const <CoverAlbumImportFailure>[],
+    this.duplicateCount = 0,
   });
 
-  bool get isEmpty => imported.isEmpty && failures.isEmpty;
+  bool get isEmpty =>
+      imported.isEmpty && failures.isEmpty && duplicateCount == 0;
 }
 
 /// 旧偏好迁移结果（供 Notifier 写入选中的相册 ID）
@@ -161,6 +168,10 @@ class CoverAlbumStore {
   /// 单张图大小上限（32MB）
   static const int maxBytes = 32 * 1024 * 1024;
 
+  /// 单次批量导入上限（张数 / 总字节）：防止多选大图一次性占满内存
+  static const int maxBatchCount = 20;
+  static const int maxBatchBytes = 64 * 1024 * 1024;
+
   /// 允许的图片扩展名（小写无点）；其余回落 `img`（参考版同口径）
   static const Set<String> _imageExts = <String>{
     'jpg',
@@ -200,8 +211,28 @@ class CoverAlbumStore {
   @visibleForTesting
   static Future<bool> Function(Uint8List bytes)? decodeOverride;
 
+  /// 测试 seam：后台任务执行器（null 走 [Isolate.run]）
+  ///
+  /// widget 测试 FakeAsync 不便驱动真实 isolate；单测保留真实 Isolate.run
+  /// 覆盖哈希/写盘路径，UI 测试注入同步执行器只验证链路。
+  @visibleForTesting
+  static Future<T> Function<T>(T Function() action)? isolateOverride;
+
+  /// 测试 seam：下一次索引落盘失败（验证内存不先于落盘）
+  @visibleForTesting
+  static bool failNextIndexWrite = false;
+
+  /// 测试 seam：跳过串行队列（widget 测试的 FakeAsync 不便驱动跨 await
+  /// 链；并发串行性由纯 Dart 单测覆盖）
+  @visibleForTesting
+  static bool bypassSerialization = false;
+
   static bool get _isFlutterTest =>
       Platform.environment['FLUTTER_TEST'] == 'true';
+
+  /// 变更操作串行队列：所有写操作按调用顺序执行，避免 await 期间旧索引
+  /// 回写/删除相册后仍按旧下标写入（P2-1）。
+  Future<void> _opTail = Future<void>.value();
 
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
@@ -216,6 +247,39 @@ class CoverAlbumStore {
 
   /// 索引根目录是否可用（平台目录获取失败时为 null）
   bool get hasRoot => _rootPath != null;
+
+  /// 串行执行变更操作（action 内部异常原样返回给调用方，队列继续）
+  ///
+  /// 每个调用方在自己的 zone 内 await 前一个操作的完成信号，再执行
+  /// action 并完成自己的信号；避免跨 zone 的 `.then` 链在 widget 测试
+  /// FakeAsync 下无法推进。
+  Future<T> _serialize<T>(Future<T> Function() action) async {
+    // 无真实相册目录的测试宿主（未注入 seam）不需要串行队列：FakeAsync
+    // 下跨 await 队列会让恢复流程的 reload 悬挂。
+    if (bypassSerialization || (_isFlutterTest && supportDirOverride == null)) {
+      return action();
+    }
+    final previous = _opTail;
+    final done = Completer<void>();
+    _opTail = done.future;
+    try {
+      await previous;
+      return await action();
+    } finally {
+      done.complete();
+    }
+  }
+
+  /// 后台执行 CPU/IO 任务（默认 Isolate.run；测试可注入同步执行器）
+  static Future<T> _runBackground<T>(T Function() action) {
+    final override = isolateOverride;
+    if (override != null) return override(action);
+    return Isolate.run(action);
+  }
+
+  static void _ensureNotWeb() {
+    if (kIsWeb) throw UnsupportedError('Web 端不支持封面相册');
+  }
 
   List<CoverAlbum> get albums => List<CoverAlbum>.unmodifiable(_albums);
 
@@ -247,17 +311,31 @@ class CoverAlbumStore {
   }
 
   /// 备份恢复后重读索引与迁移状态（文件不变，仅刷新内存）
-  Future<void> reload() async {
+  ///
+  /// 走变更队列：等待进行中的首次加载/写操作完成后再重置，避免并发
+  /// 加载把旧结果写回（P3 reload 并发登记）。
+  Future<void> reload() => _serialize(() async {
+    final running = _loading;
+    // loaded=true 时无需等待（completed future 可能来自其他 zone）；
+    // loaded=false 才是真正的首次加载在途，必须等它结束。
+    if (running != null && !_loaded) {
+      try {
+        await running;
+      } catch (_) {
+        // 首次加载失败不阻断重读
+      }
+    }
     _loaded = false;
     _loading = null;
     _albums = const <CoverAlbum>[];
     _pendingMigration = null;
     await ensureLoaded();
-  }
+  });
 
   Future<void> _load({required bool migrate}) async {
     if (kIsWeb) {
       _loaded = true;
+      _loading = null;
       revision.value++;
       return;
     }
@@ -266,6 +344,7 @@ class CoverAlbumStore {
       // 测试环境未注入目录：跳过平台通道（FakeAsync 下可能永不完成）
       debugPrint('[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载');
       _loaded = true;
+      _loading = null;
       revision.value++;
       return;
     }
@@ -275,9 +354,16 @@ class CoverAlbumStore {
         '${support.absolute.path}${Platform.pathSeparator}$rootSubDir',
       );
       _rootPath = root.path;
-      _albums = _readIndex(root);
+      _cleanupStaleIndexTemps(root);
+      _albums = await _readIndex(root);
       if (migrate) {
-        _pendingMigration = await _migrateLegacyCovers(root);
+        try {
+          _pendingMigration = await _migrateLegacyCovers(root);
+        } catch (e) {
+          // 迁移失败不回滚已读取索引；下次启动重试（marker 未写入）
+          debugPrint('[CoverAlbumStore] 旧封面迁移失败，保留现有索引: $e');
+          _pendingMigration = null;
+        }
       }
     } catch (e) {
       // 平台目录不可得/索引读取异常：保持空列表，封面回落内置默认图
@@ -293,8 +379,9 @@ class CoverAlbumStore {
   }
 
   /// 创建相册（名称去首尾空白；重名允许，对齐参考版）
-  Future<String> createAlbum(String name) async {
-    await ensureLoaded();
+  Future<String> createAlbum(String name) => _serialize(() async {
+    _ensureNotWeb();
+    if (!_loaded) await ensureLoaded();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       throw const CoverAlbumException('相册名称不能为空');
@@ -302,16 +389,24 @@ class CoverAlbumStore {
     final root = _requireRoot();
     final id = _generateAlbumId();
     final album = CoverAlbum(id: id, name: trimmed);
-    Directory(_albumDirPath(root, id)).createSync(recursive: true);
-    _albums = <CoverAlbum>[..._albums, album];
-    _persistIndex(root);
+    final dir = Directory(_albumDirPath(root, id));
+    dir.createSync(recursive: true);
+    final next = <CoverAlbum>[..._albums, album];
+    try {
+      _persistIndex(root, next);
+    } catch (_) {
+      _deleteDirectoryQuietlySync(dir);
+      rethrow;
+    }
+    _albums = next;
     revision.value++;
     return id;
-  }
+  });
 
   /// 重命名相册
-  Future<void> renameAlbum(String albumId, String name) async {
-    await ensureLoaded();
+  Future<void> renameAlbum(String albumId, String name) => _serialize(() async {
+    _ensureNotWeb();
+    if (!_loaded) await ensureLoaded();
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       throw const CoverAlbumException('相册名称不能为空');
@@ -323,14 +418,16 @@ class CoverAlbumStore {
     final root = _requireRoot();
     final next = List<CoverAlbum>.of(_albums);
     next[index] = next[index].copyWith(name: trimmed);
+    // 先落盘成功再更新内存，避免“内存先于落盘”
+    _persistIndex(root, next);
     _albums = next;
-    _persistIndex(root);
     revision.value++;
-  }
+  });
 
   /// 删除相册（索引移除 + 目录递归清理）
-  Future<void> deleteAlbum(String albumId) async {
-    await ensureLoaded();
+  Future<void> deleteAlbum(String albumId) => _serialize(() async {
+    _ensureNotWeb();
+    if (!_loaded) await ensureLoaded();
     if (!_albumIdPattern.hasMatch(albumId)) {
       throw const CoverAlbumException('相册标识非法');
     }
@@ -339,26 +436,29 @@ class CoverAlbumStore {
       throw const CoverAlbumException('相册不存在或已删除');
     }
     final root = _requireRoot();
-    _albums = <CoverAlbum>[
+    final next = <CoverAlbum>[
       for (final album in _albums)
         if (album.id != albumId) album,
     ];
-    _persistIndex(root);
+    _persistIndex(root, next);
+    _albums = next;
     _deleteDirectoryQuietlySync(Directory(_albumDirPath(root, albumId)));
     revision.value++;
-  }
+  });
 
   /// 批量导入图片（按内容 SHA-256 命名；同一内容不重复写盘）
   ///
   /// 单张校验失败（空/超限/非图/IO）记入 [CoverAlbumImportResult.failures]，
-  /// 不阻断同批其他图片。
+  /// 不阻断同批其他图片；同内容重复计入 [CoverAlbumImportResult.duplicateCount]。
   Future<CoverAlbumImportResult> importImages(
     String albumId, {
     required bool isDark,
     required List<CoverAlbumImageInput> inputs,
-  }) async {
-    await ensureLoaded();
+  }) => _serialize(() async {
+    _ensureNotWeb();
+    if (!_loaded) await ensureLoaded();
     if (inputs.isEmpty) return const CoverAlbumImportResult();
+    _validateBatch(inputs);
     final index = _albums.indexWhere((album) => album.id == albumId);
     if (index < 0) {
       throw const CoverAlbumException('相册不存在或已删除');
@@ -371,21 +471,36 @@ class CoverAlbumStore {
       existing: isDark ? album.darkImages : album.lightImages,
       inputs: inputs,
     );
+
+    // await 后按 id 重定位：相册被删除（外部/异常路径）时清理已复制文件，
+    // 绝不按旧下标回写索引（P2-1）。
+    final latestIndex = _albums.indexWhere((item) => item.id == albumId);
+    if (latestIndex < 0) {
+      _deleteUnreferencedFiles(result.imported);
+      throw const CoverAlbumException('相册已删除');
+    }
     if (result.imported.isNotEmpty) {
+      final latest = _albums[latestIndex];
       final merged = _mergeImages(
-        isDark ? album.darkImages : album.lightImages,
+        isDark ? latest.darkImages : latest.lightImages,
         result.imported,
       );
       final next = List<CoverAlbum>.of(_albums);
-      next[index] = isDark
-          ? album.copyWith(darkImages: merged)
-          : album.copyWith(lightImages: merged);
+      next[latestIndex] = isDark
+          ? latest.copyWith(darkImages: merged)
+          : latest.copyWith(lightImages: merged);
+      try {
+        _persistIndex(root, next);
+      } catch (_) {
+        // 索引未落盘：内存保持旧列表，删除本次新增的孤儿文件
+        _deleteUnreferencedFiles(result.imported);
+        rethrow;
+      }
       _albums = next;
-      _persistIndex(root);
       revision.value++;
     }
     return result;
-  }
+  });
 
   /// 删除单张图片
   ///
@@ -395,8 +510,9 @@ class CoverAlbumStore {
     String albumId, {
     required bool isDark,
     required String fileName,
-  }) async {
-    await ensureLoaded();
+  }) => _serialize(() async {
+    _ensureNotWeb();
+    if (!_loaded) await ensureLoaded();
     final index = _albums.indexWhere((album) => album.id == albumId);
     if (index < 0) {
       throw const CoverAlbumException('相册不存在或已删除');
@@ -417,8 +533,8 @@ class CoverAlbumStore {
     final root = _requireRoot();
     final next = List<CoverAlbum>.of(_albums);
     next[index] = updated;
+    _persistIndex(root, next);
     _albums = next;
-    _persistIndex(root);
 
     final stillUsed =
         updated.lightImages.any((image) => image.fileName == fileName) ||
@@ -431,6 +547,38 @@ class CoverAlbumStore {
       _deleteEmptyDirectoryQuietlySync(dir);
     }
     revision.value++;
+  });
+
+  void _validateBatch(List<CoverAlbumImageInput> inputs) {
+    if (inputs.length > maxBatchCount) {
+      throw CoverAlbumException('单次最多导入 $maxBatchCount 张图片');
+    }
+    var total = 0;
+    for (final input in inputs) {
+      total += input.bytes.length;
+      if (total > maxBatchBytes) {
+        throw CoverAlbumException(
+          '本次选择图片总大小超过 ${maxBatchBytes ~/ (1024 * 1024)}MB',
+        );
+      }
+    }
+  }
+
+  /// 删除索引未引用的新文件（落盘失败/相册消失时回收）
+  void _deleteUnreferencedFiles(List<CoverAlbumImage> images) {
+    if (images.isEmpty) return;
+    final referenced = <String>{
+      for (final album in _albums)
+        for (final image in <CoverAlbumImage>[
+          ...album.lightImages,
+          ...album.darkImages,
+        ])
+          image.path,
+    };
+    for (final image in images) {
+      if (referenced.contains(image.path)) continue;
+      _deleteFileQuietlySync(File(image.path));
+    }
   }
 
   /// 按书名种子确定性选择相册图（日/夜列表独立）
@@ -449,17 +597,17 @@ class CoverAlbumStore {
     return images[coverAlbumSeedIndex(seed, images.length)].path;
   }
 
-  /// 书名种子 → 图片下标（稳定、跨平台一致）
+  /// 书名种子 → 图片下标（对齐参考版 `Random(seed.hashCode).nextInt(n)`）
   ///
-  /// 与 Kotlin `String.hashCode()` 同构：32 位溢出累加
-  /// `h = h * 31 + codeUnit`；空种子固定取第 0 张。
+  /// [seed] 由调用方按 `name ?? author ?? coverUrl ?? ''` 解析；同一书名
+  /// 每次取同一张，空种子也稳定（Random(0) 的结果由 Dart 固定实现）。
   static int coverAlbumSeedIndex(String? seed, int count) {
     if (count <= 0) return 0;
     var hash = 0;
     for (final unit in (seed ?? '').codeUnits) {
       hash = (hash * 31 + unit) & 0xFFFFFFFF;
     }
-    return hash % count;
+    return math.Random(hash).nextInt(count);
   }
 
   /// 测试隔离：恢复默认 seam 并清空内存状态
@@ -467,6 +615,9 @@ class CoverAlbumStore {
   static void resetForTest() {
     supportDirOverride = null;
     decodeOverride = null;
+    isolateOverride = null;
+    failNextIndexWrite = false;
+    bypassSerialization = false;
     instance._resetState();
   }
 
@@ -479,6 +630,7 @@ class CoverAlbumStore {
     _loading = null;
     _rootPath = null;
     _pendingMigration = null;
+    _opTail = Future<void>.value();
   }
 
   // ===== 内部实现 =====
@@ -504,18 +656,46 @@ class CoverAlbumStore {
     return 'album-$now-$suffix';
   }
 
-  List<CoverAlbum> _readIndex(Directory root) {
-    final indexFile = File(
-      '${root.path}${Platform.pathSeparator}$indexFileName',
-    );
-    if (!indexFile.existsSync()) return const <CoverAlbum>[];
+  Future<List<CoverAlbum>> _readIndex(Directory root) async {
+    // 整个索引读取 + 文件存在性校验放到后台 isolate；大索引/大量图片
+    // 不会同步阻塞 UI isolate（测试 seam 内同步执行）。
+    ({List<CoverAlbum> albums, bool needsUpgrade}) result;
+    try {
+      result = await _runBackground(() => _readIndexSync(root.path));
+    } catch (e) {
+      // isolate 不可用（受限平台/测试宿主）→ 同代码同步兜底
+      debugPrint('[CoverAlbumStore] 后台索引读取失败，同步兜底: $e');
+      result = _readIndexSync(root.path);
+    }
+    if (result.needsUpgrade && result.albums.isNotEmpty) {
+      try {
+        // 旧格式升级写回（小索引，主 isolate 即可）
+        _persistIndex(root.path, result.albums);
+      } catch (e) {
+        debugPrint('[CoverAlbumStore] 旧索引升级写回失败: $e');
+      }
+    }
+    return result.albums;
+  }
+
+  static ({List<CoverAlbum> albums, bool needsUpgrade}) _readIndexSync(
+    String rootPath,
+  ) {
+    final indexFile = File('$rootPath${Platform.pathSeparator}$indexFileName');
+    if (!indexFile.existsSync()) {
+      return (albums: const <CoverAlbum>[], needsUpgrade: false);
+    }
     try {
       final decoded = jsonDecode(indexFile.readAsStringSync());
-      if (decoded is! Map) return const <CoverAlbum>[];
+      if (decoded is! Map) {
+        return (albums: const <CoverAlbum>[], needsUpgrade: false);
+      }
       final rawVersion = decoded['formatVersion'];
       final version = rawVersion is int ? rawVersion : 1;
       final rawAlbums = decoded['albums'];
-      if (rawAlbums is! List) return const <CoverAlbum>[];
+      if (rawAlbums is! List) {
+        return (albums: const <CoverAlbum>[], needsUpgrade: false);
+      }
       final albums = <CoverAlbum>[];
       final seenIds = <String>{};
       for (final raw in rawAlbums) {
@@ -537,34 +717,25 @@ class CoverAlbumStore {
           CoverAlbum(
             id: id,
             name: name,
-            lightImages: _mapExistingImages(root, id, lightRaw),
-            darkImages: _mapExistingImages(root, id, darkRaw),
+            lightImages: _mapExistingImagesSync(rootPath, id, lightRaw),
+            darkImages: _mapExistingImagesSync(rootPath, id, darkRaw),
           ),
         );
       }
-      if (version < formatVersion && albums.isNotEmpty) {
-        // 旧格式升级：立即以 v2 原子写回（失败不阻断读取）
-        try {
-          _albums = albums;
-          _persistIndex(root.path);
-        } catch (e) {
-          debugPrint('[CoverAlbumStore] 旧索引升级写回失败: $e');
-        }
-      }
-      return albums;
+      return (albums: albums, needsUpgrade: version < formatVersion);
     } catch (e) {
       debugPrint('[CoverAlbumStore] 索引损坏，按空相册处理: $e');
-      return const <CoverAlbum>[];
+      return (albums: const <CoverAlbum>[], needsUpgrade: false);
     }
   }
 
-  List<CoverAlbumImage> _mapExistingImages(
-    Directory root,
+  static List<CoverAlbumImage> _mapExistingImagesSync(
+    String rootPath,
     String albumId,
     Object? raw,
   ) {
     if (raw is! List) return const <CoverAlbumImage>[];
-    final dirPath = _albumDirPath(root.path, albumId);
+    final dirPath = _albumDirPath(rootPath, albumId);
     final seen = <String>{};
     final out = <CoverAlbumImage>[];
     for (final item in raw) {
@@ -579,6 +750,22 @@ class CoverAlbumStore {
     return out;
   }
 
+  /// 清理索引落盘中断残留（仅自有 `.albums.json.tmp-*`）
+  void _cleanupStaleIndexTemps(Directory root) {
+    try {
+      if (!root.existsSync()) return;
+      for (final entity in root.listSync()) {
+        if (entity is! File) continue;
+        final name = _baseName(entity.path);
+        if (name.startsWith('.$indexFileName.tmp-')) {
+          _deleteFileQuietlySync(entity);
+        }
+      }
+    } catch (_) {
+      // 清理失败不阻断加载
+    }
+  }
+
   Future<CoverAlbumLegacyMigration?> _migrateLegacyCovers(
     Directory root,
   ) async {
@@ -586,12 +773,10 @@ class CoverAlbumStore {
     final migrated = prefs.getBool(PrefKeys.coverAlbumMigrated) ?? false;
     // 已迁移且相册非空：无需再扫描旧路径（含缺失文件的日志噪声）
     if (migrated && _albums.isNotEmpty) return null;
-    final lightPaths = _existingLegacyPaths(
-      prefs.getString(PrefKeys.coverDefaultAlbumId),
-    );
-    final darkPaths = _existingLegacyPaths(
-      prefs.getString(PrefKeys.coverDefaultAlbumIdDark),
-    );
+    final lightRaw = prefs.getString(PrefKeys.coverDefaultAlbumId);
+    final darkRaw = prefs.getString(PrefKeys.coverDefaultAlbumIdDark);
+    final lightPaths = _existingLegacyPaths(lightRaw);
+    final darkPaths = _existingLegacyPaths(darkRaw);
     final needsRecovery =
         migrated &&
         _albums.isEmpty &&
@@ -630,12 +815,13 @@ class CoverAlbumStore {
       lightImages: _mergeImages(base.lightImages, lightResult.imported),
       darkImages: _mergeImages(base.darkImages, darkResult.imported),
     );
-    _albums = <CoverAlbum>[
+    final next = <CoverAlbum>[
       for (final item in _albums)
         if (item.id != legacyAlbumId) item,
       album,
     ];
-    _persistIndex(root.path);
+    _persistIndex(root.path, next);
+    _albums = next;
     await prefs.setBool(PrefKeys.coverAlbumMigrated, true);
     revision.value++;
     debugPrint(
@@ -644,7 +830,9 @@ class CoverAlbumStore {
     );
     return CoverAlbumLegacyMigration(
       albumId: legacyAlbumId,
-      clearDarkSelection: darkPaths.isNotEmpty,
+      // 用原始值形态判断（即使夜间文件全部缺失，也要清掉旧路径字符串，
+      // 避免后续被当成相册 ID）
+      clearDarkSelection: _looksLikeLegacyPaths(darkRaw),
     );
   }
 
@@ -713,23 +901,34 @@ class CoverAlbumStore {
     final seenNames = existing.map((image) => image.fileName).toSet();
     final added = <CoverAlbumImage>[];
     final failures = <CoverAlbumImportFailure>[];
+    var duplicates = 0;
     final dir = Directory(_albumDirPath(root, albumId));
     dir.createSync(recursive: true);
 
     for (final input in inputs) {
       try {
         await _validateInput(input);
-        final digest = sha256.convert(input.bytes).toString();
+        // 哈希在后台 isolate 计算：大图不占主 isolate
+        final hash = await _runBackground(() {
+          final digest = sha256.convert(input.bytes).toString();
+          return (digest, _extensionOf(input.displayName));
+        });
+        final digest = hash.$1;
         final existingFile = _findExistingHashFile(dir, digest);
         final fileName = existingFile == null
-            ? '$digest.${_extensionOf(input.displayName)}'
+            ? '$digest.${hash.$2}'
             : _baseName(existingFile.path);
-        final target = File('${dir.path}${Platform.pathSeparator}$fileName');
-        if (!target.existsSync()) {
-          _writeAtomically(dir, target, input.bytes);
+        final targetPath = '${dir.path}${Platform.pathSeparator}$fileName';
+        if (!File(targetPath).existsSync()) {
+          // 写临时文件 + rename 也在后台 isolate 完成
+          await _runBackground(
+            () => _writeAtomicFileSync(dir.path, targetPath, input.bytes),
+          );
         }
         if (seenNames.add(fileName)) {
-          added.add(CoverAlbumImage(fileName: fileName, path: target.path));
+          added.add(CoverAlbumImage(fileName: fileName, path: targetPath));
+        } else {
+          duplicates++;
         }
       } on CoverAlbumException catch (e) {
         failures.add(
@@ -747,7 +946,11 @@ class CoverAlbumStore {
         );
       }
     }
-    return CoverAlbumImportResult(imported: added, failures: failures);
+    return CoverAlbumImportResult(
+      imported: added,
+      failures: failures,
+      duplicateCount: duplicates,
+    );
   }
 
   /// 合并图片列表（按文件名去重，保留原顺序）
@@ -803,7 +1006,7 @@ class CoverAlbumStore {
     }
   }
 
-  /// 按内容哈希查找相册目录内已有文件（扩展名可能不同）
+  /// 按内容哈希查找相册目录内已有文件（扩展名可能不同；目录很小，同步扫描）
   File? _findExistingHashFile(Directory dir, String digest) {
     try {
       for (final entity in dir.listSync(followLinks: false)) {
@@ -820,33 +1023,42 @@ class CoverAlbumStore {
     return null;
   }
 
-  void _writeAtomically(Directory dir, File target, Uint8List bytes) {
-    final fileName = _baseName(target.path);
+  /// 同上临时文件 + rename 原子写（在后台 isolate 内同步执行）
+  static void _writeAtomicFileSync(
+    String dirPath,
+    String targetPath,
+    Uint8List bytes,
+  ) {
+    final fileName = _baseName(targetPath);
     final tmp = File(
-      '${dir.path}${Platform.pathSeparator}.$fileName'
+      '$dirPath${Platform.pathSeparator}.$fileName'
       '.tmp-${DateTime.now().microsecondsSinceEpoch}',
     );
     try {
       tmp.writeAsBytesSync(bytes, flush: true);
-      if (target.existsSync()) {
+      if (File(targetPath).existsSync()) {
         _deleteFileQuietlySync(tmp);
       } else {
-        tmp.renameSync(target.path);
+        tmp.renameSync(targetPath);
       }
     } on FileSystemException {
       _deleteFileQuietlySync(tmp);
       // rename 竞态：另一写入方已落正式文件 → 视为成功
-      if (!target.existsSync()) {
+      if (!File(targetPath).existsSync()) {
         throw const CoverAlbumException('保存图片失败');
       }
     }
   }
 
-  void _persistIndex(String root) {
+  void _persistIndex(String root, List<CoverAlbum> albums) {
+    if (failNextIndexWrite) {
+      failNextIndexWrite = false;
+      throw const CoverAlbumException('保存封面相册失败（测试注入）');
+    }
     final decoded = <String, Object?>{
       'formatVersion': formatVersion,
       'albums': <Map<String, Object?>>[
-        for (final album in _albums)
+        for (final album in albums)
           <String, Object?>{
             'id': album.id,
             'name': album.name,
@@ -860,10 +1072,11 @@ class CoverAlbumStore {
       ],
     };
     final dir = Directory(root);
+    File? temp;
     try {
       dir.createSync(recursive: true);
       final target = File('$root${Platform.pathSeparator}$indexFileName');
-      final temp = File(
+      temp = File(
         '$root${Platform.pathSeparator}.$indexFileName'
         '.tmp-${DateTime.now().microsecondsSinceEpoch}',
       );
@@ -877,6 +1090,9 @@ class CoverAlbumStore {
         temp.renameSync(target.path);
       }
     } catch (e) {
+      // 失败时不留下半成品 tmp（成功路径已 rename 为正式索引）
+      final pending = temp;
+      if (pending != null) _deleteFileQuietlySync(pending);
       throw CoverAlbumException('保存封面相册失败：$e');
     }
   }

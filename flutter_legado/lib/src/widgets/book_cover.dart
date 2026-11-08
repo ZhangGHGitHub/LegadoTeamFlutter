@@ -312,7 +312,8 @@ class _BookCoverState extends State<BookCover> {
     );
 
     /// 内置默认封面（夜间暗色叠层压低纸面亮度、保留纹理）
-    Widget builtIn() => Stack(
+    Widget builtIn({Key? key}) => Stack(
+      key: key,
       fit: StackFit.expand,
       children: [
         Image.asset(
@@ -334,10 +335,12 @@ class _BookCoverState extends State<BookCover> {
     final albumId = isNight
         ? (cover.defaultAlbumIdDark ?? cover.defaultAlbumId)
         : cover.defaultAlbumId;
+    // 参考版 seed 回退顺序：书名 → 作者 → 封面地址 → 空串
+    final seed = widget.bookName ?? widget.bookAuthor ?? widget.coverUrl ?? '';
     final albumPath = CoverAlbumStore.instance.imagePathForAlbum(
       albumId,
       isDark: isNight,
-      seed: widget.bookName,
+      seed: seed,
     );
 
     Widget background = builtIn();
@@ -350,8 +353,9 @@ class _BookCoverState extends State<BookCover> {
         height: height,
         cacheWidth: _thumbWidth(context),
         gaplessPlayback: true,
-        // 索引记录后文件被外部删除/损坏：回落内置默认封面
-        errorBuilder: (_, _, _) => builtIn(),
+        // 索引记录后文件被外部删除/损坏：回落内置默认封面（可测试键）
+        errorBuilder: (_, _, _) =>
+            builtIn(key: const ValueKey('bookCoverAlbumFallback')),
       );
     }
 

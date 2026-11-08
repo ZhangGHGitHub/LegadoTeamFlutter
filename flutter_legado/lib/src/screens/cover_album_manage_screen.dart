@@ -11,6 +11,7 @@
 //
 // 编写：全栈工程师（设置批6b-2） ｜ 2026-11-09
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -370,6 +371,10 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
   late final TabController _tabs = TabController(length: 2, vsync: this);
   bool _busy = false;
 
+  /// [审查回修 P2-3] Sheet 高度 78% 会遮挡根 ScaffoldMessenger 的 SnackBar；
+  /// 改用 Sheet 内状态行展示导入/删除结果与失败原因。
+  String? _statusMessage;
+
   bool get _isDark => _tabs.index == 1;
 
   @override
@@ -392,34 +397,49 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    setState(() => _statusMessage = message);
   }
 
   Future<void> _importImages() async {
     if (_busy) return;
     final isDark = _isDark;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _statusMessage = null;
+    });
+    var imported = 0;
+    var duplicates = 0;
+    final failures = <String>[];
     try {
-      final picks = await CoverAlbumImagePicker.pickImages();
-      if (picks.isEmpty) return;
-      final result = await CoverAlbumStore.instance.importImages(
-        widget.albumId,
-        isDark: isDark,
-        inputs: [
-          for (final pick in picks)
-            CoverAlbumImageInput(displayName: pick.name, bytes: pick.bytes),
-        ],
-      );
-      final parts = <String>[];
-      if (result.imported.isNotEmpty) {
-        parts.add('已导入 ${result.imported.length} 张');
+      // 惰性句柄：逐张 readBytes → import → 释放，避免整批字节常驻内存
+      final batch = await CoverAlbumImagePicker.pickImages();
+      for (final failure in batch.failures) {
+        failures.add('${failure.name}：${failure.message}');
       }
-      if (result.failures.isNotEmpty) {
-        parts.add(
-          '${result.failures.length} 张跳过：${result.failures.first.message}',
+      for (final pick in batch.picks) {
+        Uint8List bytes;
+        try {
+          bytes = await pick.readBytes();
+        } catch (e) {
+          failures.add('${pick.name}：读取失败（$e）');
+          continue;
+        }
+        final result = await CoverAlbumStore.instance.importImages(
+          widget.albumId,
+          isDark: isDark,
+          inputs: [CoverAlbumImageInput(displayName: pick.name, bytes: bytes)],
         );
+        imported += result.imported.length;
+        duplicates += result.duplicateCount;
+        for (final failure in result.failures) {
+          failures.add('${failure.displayName}：${failure.message}');
+        }
+      }
+      final parts = <String>[];
+      if (imported > 0) parts.add('已导入 $imported 张');
+      if (duplicates > 0) parts.add('$duplicates 张图片已存在，未重复导入');
+      if (failures.isNotEmpty) {
+        parts.add('${failures.length} 张跳过：${failures.first}');
       }
       if (parts.isNotEmpty) _showMessage(parts.join('；'));
     } on CoverAlbumImagePickerException catch (e) {
@@ -434,6 +454,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
   }
 
   Future<void> _removeImage(CoverAlbumImage image, bool isDark) async {
+    if (_busy) return;
     try {
       await CoverAlbumStore.instance.removeImage(
         widget.albumId,
@@ -528,6 +549,22 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
                 ],
               ),
               if (_busy) const LinearProgressIndicator(minHeight: 2),
+              if (_statusMessage != null)
+                Container(
+                  key: const ValueKey('coverAlbumStatus'),
+                  width: double.infinity,
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    _statusMessage!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               Expanded(
                 child: TabBarView(
                   controller: _tabs,
@@ -535,12 +572,16 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
                     _AlbumImageGrid(
                       images: album.lightImages,
                       isDark: false,
-                      onRemove: (image) => _removeImage(image, false),
+                      onRemove: _busy
+                          ? null
+                          : (image) => _removeImage(image, false),
                     ),
                     _AlbumImageGrid(
                       images: album.darkImages,
                       isDark: true,
-                      onRemove: (image) => _removeImage(image, true),
+                      onRemove: _busy
+                          ? null
+                          : (image) => _removeImage(image, true),
                     ),
                   ],
                 ),
@@ -557,7 +598,9 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
 class _AlbumImageGrid extends StatelessWidget {
   final List<CoverAlbumImage> images;
   final bool isDark;
-  final ValueChanged<CoverAlbumImage> onRemove;
+
+  /// null = 导入忙态，禁用单图删除（P2-1）
+  final ValueChanged<CoverAlbumImage>? onRemove;
 
   const _AlbumImageGrid({
     required this.images,
@@ -620,7 +663,7 @@ class _AlbumImageGrid extends StatelessWidget {
                 child: InkWell(
                   key: ValueKey('coverAlbumRemoveImage_${image.fileName}'),
                   customBorder: const CircleBorder(),
-                  onTap: () => onRemove(image),
+                  onTap: onRemove == null ? null : () => onRemove!(image),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: Icon(

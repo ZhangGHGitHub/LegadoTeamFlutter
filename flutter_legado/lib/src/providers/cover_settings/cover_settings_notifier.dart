@@ -99,14 +99,25 @@ class CoverSettingsNotifier extends Notifier<CoverSettings> {
       _sync();
 
       if (persistSelection) {
-        await prefs.setString(
-          CoverSettings.keyDefaultAlbumId,
-          loaded.defaultAlbumId ?? '',
-        );
-        await prefs.setString(
-          CoverSettings.keyDefaultAlbumIdDark,
-          loaded.defaultAlbumIdDark ?? '',
-        );
+        try {
+          await prefs.setString(
+            CoverSettings.keyDefaultAlbumId,
+            loaded.defaultAlbumId ?? '',
+          );
+          await prefs.setString(
+            CoverSettings.keyDefaultAlbumIdDark,
+            loaded.defaultAlbumIdDark ?? '',
+          );
+        } catch (e) {
+          // 写盘失败：内存同步回落内置封面，避免会话内使用未持久化的 ID
+          debugPrint('[CoverSettingsNotifier] 写入相册选择失败，回落内置封面: $e');
+          loaded = loaded.copyWith(
+            defaultAlbumId: null,
+            defaultAlbumIdDark: null,
+          );
+          state = loaded;
+          _sync();
+        }
       }
     } catch (e) {
       // 偏好损坏/平台插件异常 → 回落参考默认值，保证书架可渲染
