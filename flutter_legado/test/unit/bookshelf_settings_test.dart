@@ -57,6 +57,15 @@ void main() {
       expect(s.bookshelfCardColorDark, 0);
       expect(s.bookshelfListCoverWidth, 84);
       expect(s.bookshelfGridCoverWidth, 120);
+      // 文件夹模式默认值（6a-2，对齐参考 BookshelfSettings.kt）
+      expect(s.bookshelfFolderLayoutModePortrait, 1);
+      expect(s.bookshelfFolderLayoutGridPortrait, 3);
+      expect(s.bookshelfFolderLayoutModeLandscape, 1);
+      expect(s.bookshelfFolderLayoutGridLandscape, 7);
+      expect(s.bookshelfFolderLayoutListPortrait, 1);
+      expect(s.bookshelfFolderLayoutListLandscape, 1);
+      expect(s.bookshelfGroupListStyle, 0);
+      expect(s.bookshelfGroupCoverCount, 4);
       expect(s.bookshelfSearchActionDirectToSearch, isTrue);
       expect(s.autoRefreshBook, isFalse);
       expect(s.saveTabPosition, -1);
@@ -70,6 +79,12 @@ void main() {
         bookshelfLayoutGridLandscape: 9,
         bookshelfLayoutListPortrait: 2,
         bookshelfLayoutListLandscape: 3,
+        bookshelfFolderLayoutModePortrait: 0,
+        bookshelfFolderLayoutModeLandscape: 1,
+        bookshelfFolderLayoutGridPortrait: 5,
+        bookshelfFolderLayoutGridLandscape: 11,
+        bookshelfFolderLayoutListPortrait: 2,
+        bookshelfFolderLayoutListLandscape: 4,
       );
       expect(s.layoutModeFor(isLandscape: false), 0);
       expect(s.layoutModeFor(isLandscape: true), 1);
@@ -77,6 +92,12 @@ void main() {
       expect(s.gridColumnsFor(isLandscape: true), 9);
       expect(s.listColumnsFor(isLandscape: false), 2);
       expect(s.listColumnsFor(isLandscape: true), 3);
+      expect(s.folderLayoutModeFor(isLandscape: false), 0);
+      expect(s.folderLayoutModeFor(isLandscape: true), 1);
+      expect(s.folderGridColumnsFor(isLandscape: false), 5);
+      expect(s.folderGridColumnsFor(isLandscape: true), 11);
+      expect(s.folderListColumnsFor(isLandscape: false), 2);
+      expect(s.folderListColumnsFor(isLandscape: true), 4);
       expect(s.cardColorFor(isDark: true), 0);
     });
   });
@@ -147,10 +168,11 @@ void main() {
       expect(s.bookshelfLayoutModePortrait, 1);
       expect(s.bookshelfLayoutModeLandscape, 1);
       final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(BookshelfSettings.keyBookshelfLayoutModePortrait), 1);
       expect(
-          prefs.getInt(BookshelfSettings.keyBookshelfLayoutModePortrait), 1);
-      expect(
-          prefs.getInt(BookshelfSettings.keyBookshelfLayoutModeLandscape), 1);
+        prefs.getInt(BookshelfSettings.keyBookshelfLayoutModeLandscape),
+        1,
+      );
     });
 
     test('旧 bookshelf_layout=false → 横竖屏都写列表', () async {
@@ -158,9 +180,7 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
 
       final s = container.read(bookshelfSettingsProvider);
       expect(s.bookshelfLayoutModePortrait, 0);
@@ -176,9 +196,7 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
 
       final s = container.read(bookshelfSettingsProvider);
       expect(s.bookshelfLayoutModePortrait, 1);
@@ -190,9 +208,7 @@ void main() {
       final container = ProviderContainer();
       addTearDown(container.dispose);
 
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
 
       final s = container.read(bookshelfSettingsProvider);
       expect(s.bookshelfLayoutModePortrait, 0);
@@ -206,24 +222,22 @@ void main() {
       });
       var container = ProviderContainer();
       addTearDown(container.dispose);
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
       // 优先读取我方历史键 bookshelf_layout=1
-      expect(container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
-          1);
+      expect(
+        container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
+        1,
+      );
 
       container.dispose();
-      SharedPreferences.setMockInitialValues({
-        'bookshelfLayout': 0,
-      });
+      SharedPreferences.setMockInitialValues({'bookshelfLayout': 0});
       container = ProviderContainer();
       addTearDown(container.dispose);
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
-      expect(container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
-          0);
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
+      expect(
+        container.read(bookshelfSettingsProvider).bookshelfLayoutModePortrait,
+        0,
+      );
     });
 
     test('单方向新键已存在时只迁移缺失方向', () async {
@@ -233,16 +247,16 @@ void main() {
       });
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
 
       final s = container.read(bookshelfSettingsProvider);
       expect(s.bookshelfLayoutModePortrait, 0, reason: '已显式设置保留');
       expect(s.bookshelfLayoutModeLandscape, 1, reason: '缺失方向按旧键补网格');
       final prefs = await SharedPreferences.getInstance();
       expect(
-          prefs.getInt(BookshelfSettings.keyBookshelfLayoutModeLandscape), 1);
+        prefs.getInt(BookshelfSettings.keyBookshelfLayoutModeLandscape),
+        1,
+      );
     });
 
     test('update 只写发生变化的键并即时更新状态', () async {
@@ -264,8 +278,11 @@ void main() {
       expect(prefs.getInt(BookshelfSettings.keyBookshelfSort), 2);
       expect(prefs.getInt(BookshelfSettings.keyBookshelfSortOrder), 0);
       expect(prefs.getInt(BookshelfSettings.keyBookshelfGridCoverWidth), 100);
-      expect(prefs.containsKey(BookshelfSettings.keyShowUnread), isFalse,
-          reason: '未变化键不写盘');
+      expect(
+        prefs.containsKey(BookshelfSettings.keyShowUnread),
+        isFalse,
+        reason: '未变化键不写盘',
+      );
       expect(container.read(bookshelfSettingsProvider).bookshelfSort, 2);
     });
 
@@ -277,9 +294,7 @@ void main() {
       });
       final container = ProviderContainer();
       addTearDown(container.dispose);
-      await container
-          .read(bookshelfSettingsProvider.notifier)
-          .waitForLoad();
+      await container.read(bookshelfSettingsProvider.notifier).waitForLoad();
 
       final s = container.read(bookshelfSettingsProvider);
       expect(s.bookshelfSort, 5);
@@ -324,14 +339,19 @@ void main() {
         );
       }
       expect(
-        RestoreIgnorePrefs.keyIsNotIgnore(
-            'bookshelf_layout', {'bookshelfLayout': true}),
+        RestoreIgnorePrefs.keyIsNotIgnore('bookshelf_layout', {
+          'bookshelfLayout': true,
+        }),
         isFalse,
       );
 
-      final collected =
-          await RestoreIgnorePrefs.collectForBackup({'bookshelfLayout': true});
-      expect(collected.containsKey(BookshelfSettings.keyBookshelfSort), isFalse);
+      final collected = await RestoreIgnorePrefs.collectForBackup({
+        'bookshelfLayout': true,
+      });
+      expect(
+        collected.containsKey(BookshelfSettings.keyBookshelfSort),
+        isFalse,
+      );
       expect(collected.containsKey('bookshelfShowTag'), isFalse);
       expect(collected['unrelated_key'], 'keep');
 

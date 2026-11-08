@@ -77,9 +77,10 @@ void main() {
   });
 
   testWidgets('列表/网格布局条件显隐', (tester) async {
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {BookshelfSettings.keyBookshelfLayoutModePortrait: 0},
+    );
     expect(find.text('列表'), findsOneWidget);
     expect(find.text('显示分隔线'), findsOneWidget);
     expect(find.text('日间卡片背景色'), findsOneWidget);
@@ -88,47 +89,60 @@ void main() {
     expect(find.text('网格样式'), findsNothing);
     expect(find.text('网格封面宽'), findsNothing);
 
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {BookshelfSettings.keyBookshelfLayoutModePortrait: 1},
+    );
     expect(find.text('网格样式'), findsOneWidget);
     expect(find.text('网格封面宽'), findsOneWidget);
     expect(find.text('显示分隔线'), findsNothing);
   });
 
   testWidgets('「更多信息」子项条件显隐（简介/位置/行数/标签）', (tester) async {
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-      BookshelfSettings.keyShowBookIntro: false,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyShowBookIntro: false,
+      },
+    );
     expect(find.text('更多信息'), findsOneWidget);
     expect(find.text('显示简介'), findsNothing);
     expect(find.text('显示最新章节'), findsNothing);
 
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-      BookshelfSettings.keyShowBookIntro: true,
-      BookshelfSettings.keyBookshelfShowIntro: false,
-      BookshelfSettings.keyBookshelfIntroMaxLines: 3,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyShowBookIntro: true,
+        BookshelfSettings.keyBookshelfShowIntro: false,
+        BookshelfSettings.keyBookshelfIntroMaxLines: 3,
+      },
+    );
     await scrollTo(tester, find.text('显示简介'));
     expect(find.text('显示简介'), findsOneWidget);
     // 简介关闭 → 位置/行数不显示
     expect(find.text('简介显示在内容下方'), findsNothing);
     expect(find.text('简介行数'), findsNothing);
 
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-      BookshelfSettings.keyShowBookIntro: true,
-      BookshelfSettings.keyBookshelfShowIntro: true,
-      BookshelfSettings.keyBookshelfShowTag: false,
-      BookshelfSettings.keyBookshelfIntroMaxLines: 3,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyShowBookIntro: true,
+        BookshelfSettings.keyBookshelfShowIntro: true,
+        BookshelfSettings.keyBookshelfShowTag: false,
+        BookshelfSettings.keyBookshelfIntroMaxLines: 3,
+      },
+    );
     expect(find.text('简介显示在内容下方'), findsOneWidget);
     expect(find.text('简介行数'), findsOneWidget);
     expect(
-      tester.widget<SettingSliderRow>(find.byKey(
-          const ValueKey('bookshelfIntroMaxLinesSlider'))).value,
+      tester
+          .widget<SettingSliderRow>(
+            find.byKey(const ValueKey('bookshelfIntroMaxLinesSlider')),
+          )
+          .value,
       3,
     );
     // 标签关闭 → 标签内容入口隐藏
@@ -137,18 +151,20 @@ void main() {
   });
 
   testWidgets('网格模式不显示列表专属「更多信息」子项', (tester) async {
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
-      BookshelfSettings.keyShowBookIntro: true,
-      BookshelfSettings.keyBookshelfShowIntro: true,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
+        BookshelfSettings.keyShowBookIntro: true,
+        BookshelfSettings.keyBookshelfShowIntro: true,
+      },
+    );
     expect(find.text('更多信息'), findsNothing);
     expect(find.text('简介显示在内容下方'), findsNothing);
     expect(find.text('简介行数'), findsNothing);
   });
 
-  testWidgets('滑块范围对齐参考（网格 1–15 / 列表 1–5 / 封面宽 40–150/120）',
-      (tester) async {
+  testWidgets('滑块范围对齐参考（网格 1–15 / 列表 1–5 / 封面宽 40–150/120）', (tester) async {
     await pumpSheet(tester);
     final gridCols = slider(tester, 'bookshelfGridColumnsSlider');
     expect(gridCols.min, 1);
@@ -163,13 +179,18 @@ void main() {
     expect(refresh.min, 0);
     expect(refresh.max, 100);
 
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-      BookshelfSettings.keyShowBookIntro: true,
-      BookshelfSettings.keyBookshelfShowIntro: true,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyShowBookIntro: true,
+        BookshelfSettings.keyBookshelfShowIntro: true,
+      },
+    );
     await scrollTo(
-        tester, find.byKey(const ValueKey('bookshelfListColumnsSlider')));
+      tester,
+      find.byKey(const ValueKey('bookshelfListColumnsSlider')),
+    );
     final listCols = slider(tester, 'bookshelfListColumnsSlider');
     expect(listCols.min, 1);
     expect(listCols.max, 5);
@@ -177,35 +198,40 @@ void main() {
     expect(listCover.min, 40);
     expect(listCover.max, 120);
     await scrollTo(
-        tester, find.byKey(const ValueKey('bookshelfIntroMaxLinesSlider')));
+      tester,
+      find.byKey(const ValueKey('bookshelfIntroMaxLinesSlider')),
+    );
     final introLines = slider(tester, 'bookshelfIntroMaxLinesSlider');
     expect(introLines.min, 0);
     expect(introLines.max, 10);
   });
 
-  testWidgets('网格模式同样提供显示标签/标签内容开关（审查 P2）',
-      (tester) async {
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 1,
-    });
+  testWidgets('网格模式同样提供显示标签/标签内容开关（审查 P2）', (tester) async {
+    await pumpSheet(
+      tester,
+      prefs: {BookshelfSettings.keyBookshelfLayoutModePortrait: 1},
+    );
     expect(find.text('显示标签'), findsOneWidget);
-    expect(find.byKey(const ValueKey('bookshelfShowTagSwitch')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('bookshelfShowTagSwitch')),
+      findsOneWidget,
+    );
     expect(find.text('标签显示内容'), findsOneWidget);
   });
 
-  testWidgets('窄屏列表列数超出可读范围时给出收敛提示（审查 P1-1）',
-      (tester) async {
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-      BookshelfSettings.keyBookshelfLayoutListPortrait: 5,
-    });
+  testWidgets('窄屏列表列数超出可读范围时给出收敛提示（审查 P1-1）', (tester) async {
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfLayoutListPortrait: 5,
+      },
+    );
     expect(find.textContaining('最多 2 列'), findsOneWidget);
     expect(find.textContaining('超出将按 2 列显示'), findsOneWidget);
   });
 
-  testWidgets('列表列数提示使用书架实际 pane 宽（审查 P2-2）',
-      (tester) async {
+  testWidgets('列表列数提示使用书架实际 pane 宽（审查 P2-2）', (tester) async {
     // 窗口 1000dp，但书架 pane 只有 600dp（多栏/窄 pane）：
     // 600dp 最多 3 列，不能按窗口宽提示 6 列。
     await pumpSheet(
@@ -221,12 +247,157 @@ void main() {
     expect(find.textContaining('最多 6 列'), findsNothing);
   });
 
-  testWidgets('文件夹 8 项隐藏（6a-2）', (tester) async {
+  testWidgets('文件夹 8 项仅分组样式=文件夹时显示（6a-2）', (tester) async {
     await pumpSheet(tester);
-    expect(BookshelfConfigSheet.hiddenFolderPrefKeys, hasLength(8));
+    // 默认（顶部标签）：文件夹配置与重置入口全部隐藏
+    expect(BookshelfConfigSheet.folderPrefKeys, hasLength(8));
+    expect(find.text('文件夹根目录'), findsNothing);
     expect(find.text('文件夹布局模式'), findsNothing);
     expect(find.text('文件夹列表样式'), findsNothing);
-    expect(find.text('横向封面数'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('bookshelfFolderResetButton')),
+      findsNothing,
+    );
+
+    // 分组样式=文件夹 → 文件夹根目录段出现
+    await pumpSheet(tester, prefs: {BookshelfSettings.keyBookGroupStyle: 2});
+    expect(find.text('文件夹'), findsOneWidget); // 下拉当前值
+    expect(find.text('文件夹根目录'), findsOneWidget);
+    expect(find.text('文件夹布局模式'), findsOneWidget);
+    // 默认竖屏文件夹网格 3 列（参考默认）
+    expect(slider(tester, 'bookshelfFolderGridColumnsSlider').value, 3);
+    expect(find.text('文件夹列表样式'), findsNothing, reason: '网格模式不显示列表样式');
+    expect(
+      find.byKey(const ValueKey('bookshelfFolderResetButton')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('文件夹列表模式：列数/封面宽/列表样式/横排封面数量', (tester) async {
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookGroupStyle: 2,
+        BookshelfSettings.keyBookshelfFolderLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfGroupListStyle: 0,
+      },
+    );
+    expect(find.text('文件夹列表样式'), findsOneWidget);
+    final listColumns = slider(tester, 'bookshelfFolderListColumnsSlider');
+    expect(listColumns.value, 1);
+    expect(listColumns.min, 1);
+    expect(listColumns.max, 5);
+    final coverWidth = slider(tester, 'bookshelfFolderListCoverWidthSlider');
+    expect(coverWidth.value, 84);
+    expect(coverWidth.min, 40);
+    expect(coverWidth.max, 120);
+    // 列表样式 0 分组：横排封面数量隐藏
+    expect(
+      find.byKey(const ValueKey('bookshelfFolderCoverCountSlider')),
+      findsNothing,
+    );
+
+    // 列表样式 2 横排封面 → 数量滑块 1–10
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookGroupStyle: 2,
+        BookshelfSettings.keyBookshelfFolderLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfGroupListStyle: 2,
+        BookshelfSettings.keyBookshelfGroupCoverCount: 6,
+      },
+    );
+    final coverCount = slider(tester, 'bookshelfFolderCoverCountSlider');
+    expect(coverCount.value, 6);
+    expect(coverCount.min, 1);
+    expect(coverCount.max, 10);
+  });
+
+  testWidgets('文件夹网格列数滑块 1–15（横竖屏独立）', (tester) async {
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookGroupStyle: 2,
+        BookshelfSettings.keyBookshelfFolderLayoutGridPortrait: 9,
+      },
+    );
+    final portrait = slider(tester, 'bookshelfFolderGridColumnsSlider');
+    expect(portrait.value, 9);
+    expect(portrait.min, 1);
+    expect(portrait.max, 15);
+
+    await pumpSheet(
+      tester,
+      size: const Size(3000, 2400),
+      prefs: {
+        BookshelfSettings.keyBookGroupStyle: 2,
+        BookshelfSettings.keyBookshelfFolderLayoutGridLandscape: 11,
+      },
+    );
+    final landscape = slider(tester, 'bookshelfFolderGridColumnsSlider');
+    expect(landscape.value, 11);
+    expect(landscape.min, 1);
+    expect(landscape.max, 15);
+  });
+
+  testWidgets('文件夹布局与重置：写盘并恢复 8 项默认', (tester) async {
+    await pumpSheet(
+      tester,
+      prefs: {
+        BookshelfSettings.keyBookGroupStyle: 2,
+        BookshelfSettings.keyBookshelfFolderLayoutModePortrait: 0,
+        BookshelfSettings.keyBookshelfFolderLayoutGridPortrait: 9,
+        BookshelfSettings.keyBookshelfFolderLayoutModeLandscape: 0,
+        BookshelfSettings.keyBookshelfFolderLayoutGridLandscape: 11,
+        BookshelfSettings.keyBookshelfFolderLayoutListPortrait: 4,
+        BookshelfSettings.keyBookshelfFolderLayoutListLandscape: 5,
+        BookshelfSettings.keyBookshelfGroupListStyle: 2,
+        BookshelfSettings.keyBookshelfGroupCoverCount: 8,
+      },
+    );
+    await tester.tap(find.byKey(const ValueKey('bookshelfFolderResetButton')));
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getInt(BookshelfSettings.keyBookshelfFolderLayoutModePortrait),
+      1,
+    );
+    expect(
+      prefs.getInt(BookshelfSettings.keyBookshelfFolderLayoutGridPortrait),
+      3,
+    );
+    expect(
+      prefs.getInt(BookshelfSettings.keyBookshelfFolderLayoutModeLandscape),
+      1,
+    );
+    expect(
+      prefs.getInt(BookshelfSettings.keyBookshelfFolderLayoutGridLandscape),
+      7,
+    );
+    expect(
+      prefs.getInt(BookshelfSettings.keyBookshelfFolderLayoutListPortrait),
+      1,
+    );
+    expect(
+      prefs.getInt(BookshelfSettings.keyBookshelfFolderLayoutListLandscape),
+      1,
+    );
+    expect(prefs.getInt(BookshelfSettings.keyBookshelfGroupListStyle), 0);
+    expect(prefs.getInt(BookshelfSettings.keyBookshelfGroupCoverCount), 4);
+    // 重置后竖屏默认网格 3 列
+    expect(slider(tester, 'bookshelfFolderGridColumnsSlider').value, 3);
+  });
+
+  testWidgets('分组样式选择文件夹并持久化（即时写盘）', (tester) async {
+    await pumpSheet(tester);
+    // 点击下拉当前值（ListTile 本体不触发 DropdownButton）
+    await tester.tap(find.text('顶部标签'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('文件夹').last);
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt(BookshelfSettings.keyBookGroupStyle), 2);
+    expect(find.text('文件夹根目录'), findsOneWidget);
   });
 
   testWidgets('搜索直达（书架内搜索过滤延期）保持默认且禁用', (tester) async {
@@ -244,23 +415,26 @@ void main() {
     await pumpSheet(tester);
 
     await tester.tap(
-        find.byKey(const ValueKey('bookshelfHideEmptyGroupsSwitch')));
+      find.byKey(const ValueKey('bookshelfHideEmptyGroupsSwitch')),
+    );
     await tester.pumpAndSettle();
     var prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(BookshelfSettings.keyHideEmptyGroups), isFalse);
 
-    await tester.tap(
-        find.byKey(const ValueKey('bookshelfFastScrollerSwitch')));
+    await tester.tap(find.byKey(const ValueKey('bookshelfFastScrollerSwitch')));
     await tester.pumpAndSettle();
     prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool(BookshelfSettings.keyShowBookshelfFastScroller),
-        isTrue);
+    expect(
+      prefs.getBool(BookshelfSettings.keyShowBookshelfFastScroller),
+      isTrue,
+    );
   });
 
   testWidgets('取色器复用 ContainerColorDialog', (tester) async {
-    await pumpSheet(tester, prefs: {
-      BookshelfSettings.keyBookshelfLayoutModePortrait: 0,
-    });
+    await pumpSheet(
+      tester,
+      prefs: {BookshelfSettings.keyBookshelfLayoutModePortrait: 0},
+    );
 
     await tester.tap(find.byKey(const ValueKey('bookshelfDayCardColorRow')));
     await tester.pumpAndSettle();
