@@ -353,6 +353,9 @@ void main() {
         BookshelfSettings.keyBookshelfFolderLayoutListLandscape: 5,
         BookshelfSettings.keyBookshelfGroupListStyle: 2,
         BookshelfSettings.keyBookshelfGroupCoverCount: 8,
+        // 共享键：重置文件夹布局不得修改
+        BookshelfSettings.keyBookshelfListCoverWidth: 100,
+        BookshelfSettings.keyShowBookCount: false,
       },
     );
     await tester.tap(find.byKey(const ValueKey('bookshelfFolderResetButton')));
@@ -384,6 +387,9 @@ void main() {
     );
     expect(prefs.getInt(BookshelfSettings.keyBookshelfGroupListStyle), 0);
     expect(prefs.getInt(BookshelfSettings.keyBookshelfGroupCoverCount), 4);
+    // 共享键保持不变
+    expect(prefs.getInt(BookshelfSettings.keyBookshelfListCoverWidth), 100);
+    expect(prefs.getBool(BookshelfSettings.keyShowBookCount), isFalse);
     // 重置后竖屏默认网格 3 列
     expect(slider(tester, 'bookshelfFolderGridColumnsSlider').value, 3);
   });

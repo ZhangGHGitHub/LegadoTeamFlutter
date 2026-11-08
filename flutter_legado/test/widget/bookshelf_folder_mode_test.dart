@@ -3,6 +3,10 @@
 // 覆盖：文件夹根网格/列表布局与列数、组卡片封面预览/书籍数/空组、
 // 点入组内容与返回组根（含系统返回/主页两段式返回）、隐藏空组、
 // 组菜单（切换/管理）、特殊组（视频）、组内排序/批量/拖拽。
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -11,13 +15,16 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/bookshelf_settings.dart';
+import 'package:flutter_legado/src/models/cover_settings.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
+import 'package:flutter_legado/src/providers/cover_settings/cover_settings_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/book_group_screen.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
 import 'package:flutter_legado/src/screens/home_screen.dart';
+import 'package:flutter_legado/src/services/cover_disk_cache.dart';
 import 'package:flutter_legado/src/widgets/book_cover.dart';
 import 'package:flutter_legado/src/widgets/book_grid_item.dart';
 import 'package:flutter_legado/src/widgets/book_list_item.dart';
@@ -25,8 +32,20 @@ import 'package:flutter_legado/src/widgets/bookshelf/bookshelf_folder_card.dart'
 
 import '../mocks/mocks.dart';
 
+/// 真实 2×1 PNG（组自定义封面本地文件用例）
+const String _kPng2x1 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4z8AARAAI/gH/xp559wAAAABJRU5ErkJggg==';
+
 void main() {
   setUpAll(registerFallbacks);
+
+  setUp(() {
+    coverSettingsListenable.value = CoverSettings.defaults;
+    // 文件夹预览只读缓存：测试统一注入未命中，避免平台通道等待
+    CoverDiskCache.debugLoader = (_) async => null;
+  });
+
+  tearDown(CoverDiskCache.reset);
 
   const groups = [
     BookGroup(groupId: 1, groupName: '组一', show: true, order: 1),
@@ -50,6 +69,7 @@ void main() {
     Size size = const Size(400, 900),
     MockRustApi? api,
     BookshelfFolderBackController? controller,
+    bool groupsFail = false,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = size * 3;
@@ -57,7 +77,13 @@ void main() {
     addTearDown(tester.view.reset);
     final mockApi = api ?? MockRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => shelfBooks ?? books);
-    when(() => mockApi.getBookGroups()).thenAnswer((_) async => shelfGroups);
+    if (groupsFail) {
+      when(
+        () => mockApi.getBookGroups(),
+      ).thenThrow(StateError('getBookGroups failed'));
+    } else {
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => shelfGroups);
+    }
     when(() => mockApi.refreshToc(any(), any())).thenAnswer((_) async => []);
     await tester.pumpWidget(
       ProviderScope(
@@ -271,10 +297,268 @@ void main() {
     expect(find.byType(BookCover), findsNWidgets(2));
   });
 
+  testWidgets('横排封面 2–5 列 × 4/123 本 × 1.0/1.6 无溢出', (tester) async {
+    const longName = '一个非常长的分组名称用于布局压力测试';
+    final longGroups = [
+      const BookGroup(groupId: 1, groupName: longName, show: true, order: 1),
+    ];
+    for (final bookCount in [4, 123]) {
+      final manyBooks = [
+        for (var i = 0; i < bookCount; i++)
+          Book(bookUrl: 'm$i', name: '书$i', group: 1, totalChapterNum: 1),
+      ];
+      for (final columns in [2, 3, 4, 5]) {
+        for (final scale in [1.0, 1.6]) {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpShelf(
+            tester,
+            shelfBooks: manyBooks,
+            shelfGroups: longGroups,
+            prefs: folderPrefs(
+              folderModePortrait: 0,
+              folderListPortrait: columns,
+              groupListStyle: 2,
+              coverCount: 4,
+            ),
+          );
+          expect(find.byType(FolderGroupHorizontalCard), findsWidgets);
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: '$columns 列 / $bookCount 本 / 字号 $scale 不应溢出',
+          );
+        }
+      }
+    }
+    // 5 列 + 10 张封面 + 123 本 + 1.6 字号（最窄组合）
+    final manyBooks = [
+      for (var i = 0; i < 123; i++)
+        Book(bookUrl: 'n$i', name: '书$i', group: 1, totalChapterNum: 1),
+    ];
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    await pumpShelf(
+      tester,
+      shelfBooks: manyBooks,
+      shelfGroups: longGroups,
+      prefs: folderPrefs(
+        folderModePortrait: 0,
+        folderListPortrait: 5,
+        groupListStyle: 2,
+        coverCount: 10,
+      ),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('文件夹预览只读缓存：不创建网络图片/不触发缓存探测外请求', (tester) async {
+    var cacheLookups = 0;
+    CoverDiskCache.debugLoader = (url) async {
+      cacheLookups++;
+      return null;
+    };
+    final onlineBooks = [
+      const Book(
+        bookUrl: 'c1',
+        name: '缓存一',
+        group: 1,
+        coverUrl: 'https://cover.test/c1.jpg',
+        totalChapterNum: 1,
+      ),
+      const Book(
+        bookUrl: 'c2',
+        name: '缓存二',
+        group: 1,
+        coverUrl: 'https://cover.test/c2.jpg',
+        totalChapterNum: 1,
+      ),
+    ];
+    await pumpShelf(tester, shelfBooks: onlineBooks, prefs: folderPrefs());
+    expect(find.byType(FolderGroupGridCard), findsNWidgets(2));
+    // 预览封面全部走 cacheOnly：不得构造 CachedNetworkImage
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(cacheLookups, greaterThan(0), reason: '仍应查询内存/磁盘缓存，只是未命中时不联网');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('组卡片预览固定按最近阅读倒序（不跟随书架排序）', (tester) async {
+    final readOrderBooks = [
+      const Book(
+        bookUrl: 'a',
+        name: 'A书',
+        group: 1,
+        totalChapterNum: 1,
+        durChapterTime: 100,
+      ),
+      const Book(
+        bookUrl: 'b',
+        name: 'B书',
+        group: 1,
+        totalChapterNum: 1,
+        durChapterTime: 300,
+      ),
+    ];
+    await pumpShelf(
+      tester,
+      shelfBooks: readOrderBooks,
+      prefs: {
+        ...folderPrefs(folderModePortrait: 0, groupListStyle: 0),
+        BookshelfSettings.keyBookshelfSort: 2,
+        BookshelfSettings.keyBookshelfSortOrder: 0,
+      },
+    );
+    // 书架按书名升序时 A 在前，但预览应取最近阅读的 B
+    expect(find.text('最近阅读：B书'), findsWidgets);
+    expect(find.text('最近阅读：A书'), findsNothing);
+  });
+
+  testWidgets('组自定义封面优先于 2×2 拼图（本地文件）', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('folder_group_cover');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final coverFile = File('${dir.path}/group.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+    final coverGroups = [
+      BookGroup(
+        groupId: 1,
+        groupName: '组一',
+        show: true,
+        order: 1,
+        cover: coverFile.path,
+      ),
+    ];
+    await pumpShelf(tester, shelfGroups: coverGroups, prefs: folderPrefs());
+    // 全部组 4 张拼图 + 组一 1 张自定义封面
+    expect(find.byType(BookCover), findsNWidgets(5));
+  });
+
+  testWidgets('空槽占位：组内仅 1 本时 2×2 其余 3 格留空', (tester) async {
+    final oneBook = [
+      const Book(bookUrl: 'only', name: '唯一', group: 1, totalChapterNum: 1),
+    ];
+    await pumpShelf(
+      tester,
+      shelfBooks: oneBook,
+      shelfGroups: const [
+        BookGroup(groupId: 1, groupName: '组一', show: true, order: 1),
+      ],
+      prefs: folderPrefs(),
+    );
+    expect(find.byType(BookCover), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey('folderCoverEmptySlot_1')),
+      findsNWidgets(2),
+    );
+    expect(
+      find.byKey(const ValueKey('folderCoverEmptySlot_3')),
+      findsNWidgets(2),
+    );
+  });
+
   testWidgets('显示分组书籍数关闭：卡片不显示 N 本', (tester) async {
     await pumpShelf(tester, prefs: folderPrefs(showBookCount: false));
     expect(find.byType(FolderGroupGridCard), findsNWidgets(2));
     expect(find.textContaining(' 本'), findsNothing);
+  });
+
+  testWidgets('文件夹卡片接入封面阴影（书架开关 / 全局封面阴影）', (tester) async {
+    await pumpShelf(tester, prefs: folderPrefs());
+    expect(find.byKey(const ValueKey('folderCoverShadow')), findsNothing);
+
+    await pumpShelf(
+      tester,
+      prefs: {
+        ...folderPrefs(),
+        BookshelfSettings.keyBookshelfCoverShadow: true,
+      },
+    );
+    expect(find.byKey(const ValueKey('folderCoverShadow')), findsNWidgets(2));
+
+    // 全局封面阴影开关（封面设置页）同样生效
+    coverSettingsListenable.value = CoverSettings.defaults.copyWith(
+      showShadow: true,
+    );
+    await pumpShelf(tester, prefs: folderPrefs());
+    expect(find.byKey(const ValueKey('folderCoverShadow')), findsNWidgets(2));
+  });
+
+  testWidgets('根目录选择模式：先进入组内容再开启批量（可勾选/摘要正确）', (tester) async {
+    final container = await pumpShelf(tester, prefs: folderPrefs());
+    expect(find.byType(FolderGroupGridCard), findsNWidgets(2));
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择模式'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FolderGroupGridCard), findsNothing);
+    expect(find.byType(BookGridItem), findsNWidgets(5));
+    expect(find.textContaining('已选 0 本'), findsOneWidget);
+    expect(container.read(bookshelfNotifierProvider).isBatchMode, isTrue);
+    expect(
+      container.read(bookshelfNotifierProvider).currentGroupBooks,
+      hasLength(5),
+    );
+
+    await tester.tap(find.byType(BookGridItem).first);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已选 1 本'), findsOneWidget);
+  });
+
+  testWidgets('分组加载失败：仍可点「全部」卡片/菜单进入组内容', (tester) async {
+    await pumpShelf(tester, prefs: folderPrefs(), groupsFail: true);
+    expect(find.byType(FolderGroupGridCard), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('bookshelf_folder_group_-1')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_group_-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BookGridItem), findsNWidgets(5));
+
+    // 返回根目录后，长按组卡片 → 组菜单选择「全部」同样可进入
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_back')));
+    await tester.pumpAndSettle();
+    await tester.longPress(
+      find.byKey(const ValueKey('bookshelf_folder_group_-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('bookshelf_group_menu_-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BookGridItem), findsNWidgets(5));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('组菜单切换分组：全部 → 组一标题与内容同步', (tester) async {
+    await pumpShelf(tester, prefs: folderPrefs());
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_group_-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BookGridItem), findsNWidgets(5));
+
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_group_menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('bookshelf_group_menu_1')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('bookshelf_folder_group_title')).first,
+          )
+          .data,
+      '组一',
+    );
+    expect(find.byType(BookGridItem), findsNWidgets(4));
+  });
+
+  testWidgets('组内沿用 6a-1 网格样式（仅封面不显示书名）', (tester) async {
+    await pumpShelf(
+      tester,
+      prefs: {...folderPrefs(), BookshelfSettings.keyBookshelfGridLayout: 2},
+    );
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_group_1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BookGridItem), findsNWidgets(4));
+    expect(find.text('书一'), findsNothing);
   });
 
   testWidgets('空组开关：隐藏空分组关闭后显示 0 本卡片', (tester) async {

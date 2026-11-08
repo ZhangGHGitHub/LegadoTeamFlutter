@@ -317,6 +317,64 @@ void main() {
     expect(fake.calls, 0, reason: '有效缓存命中不得查询 WiFi');
   });
 
+  testWidgets('cacheOnly 命中磁盘缓存：直接渲染，不查网络状态/不建网络图',
+      (tester) async {
+    final dir = Directory.systemTemp.createTempSync('cover_cache_only_hit');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/cover.png')
+      ..writeAsBytesSync(base64Decode(_kPng2x1));
+    CoverDiskCache.debugLoader = (_) async => CoverDiskCacheEntry(
+          file: file,
+          validTill: DateTime.now().add(const Duration(hours: 1)),
+        );
+    final fake = _FakeNetworkStatus(false);
+    NetworkStatusService.instance = fake;
+
+    await tester.pumpWidget(
+      host(
+        const BookCover(
+          coverUrl: url,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+          cacheOnly: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byKey(const ValueKey('bookCoverText')), findsNothing);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(fake.calls, 0, reason: 'cacheOnly 不得查询网络状态');
+  });
+
+  testWidgets('cacheOnly 未命中：直接默认封面，不联网/不查网络状态',
+      (tester) async {
+    CoverDiskCache.debugLoader = (_) async => null;
+    final fake = _FakeNetworkStatus(true);
+    NetworkStatusService.instance = fake;
+
+    await tester.pumpWidget(
+      host(
+        const BookCover(
+          coverUrl: url,
+          bookName: '凡人修仙传',
+          width: 80,
+          height: 110,
+          cacheOnly: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('bookCoverText')), findsOneWidget);
+    expect(find.byType(CachedNetworkImage), findsNothing);
+    expect(fake.calls, 0, reason: 'cacheOnly 未命中不得进入网络/FFI 加载');
+  });
+
   testWidgets('仅 WiFi + 蜂窝且磁盘缓存已过期：按未命中占位（仍查 WiFi）', (tester) async {
     final dir = Directory.systemTemp.createTempSync('cover_disk_stale');
     addTearDown(() => dir.deleteSync(recursive: true));

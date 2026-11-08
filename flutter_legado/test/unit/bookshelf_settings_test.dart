@@ -120,6 +120,13 @@ void main() {
         bookshelfListCoverWidth: 10,
         bookshelfGridCoverWidth: 300,
         bookshelfGroupCoverCount: 0,
+        bookshelfFolderLayoutModePortrait: 3,
+        bookshelfFolderLayoutGridPortrait: 0,
+        bookshelfFolderLayoutModeLandscape: -1,
+        bookshelfFolderLayoutGridLandscape: 99,
+        bookshelfFolderLayoutListPortrait: 0,
+        bookshelfFolderLayoutListLandscape: 9,
+        bookshelfGroupListStyle: 8,
       );
       final s = raw.normalized();
       expect(s.bookGroupStyle, 2);
@@ -137,6 +144,13 @@ void main() {
       expect(s.bookshelfListCoverWidth, 40);
       expect(s.bookshelfGridCoverWidth, 150);
       expect(s.bookshelfGroupCoverCount, 1);
+      expect(s.bookshelfFolderLayoutModePortrait, 1);
+      expect(s.bookshelfFolderLayoutGridPortrait, 1);
+      expect(s.bookshelfFolderLayoutModeLandscape, 0);
+      expect(s.bookshelfFolderLayoutGridLandscape, 15);
+      expect(s.bookshelfFolderLayoutListPortrait, 1);
+      expect(s.bookshelfFolderLayoutListLandscape, 5);
+      expect(s.bookshelfGroupListStyle, 2);
     });
 
     test('fromPrefMap 兼容数字字符串/浮点并收敛', () {
