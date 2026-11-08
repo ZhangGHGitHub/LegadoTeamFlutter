@@ -217,6 +217,9 @@ void main() {
     final temp = Directory.systemTemp.createTempSync('legado_cover_settings_');
     CoverAlbumStore.resetForTest();
     CoverAlbumStore.supportDirOverride = () async => temp;
+    CoverAlbumStore.isolateOverride = <T>(T Function() action) async =>
+        action();
+    CoverAlbumStore.bypassSerialization = true;
     await CoverAlbumStore.instance.ensureLoaded();
     final albumId = await CoverAlbumStore.instance.createAlbum('日间相册');
     addTearDown(() async {

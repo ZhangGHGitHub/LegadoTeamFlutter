@@ -36,6 +36,9 @@ void main() {
     temp = await Directory.systemTemp.createTemp('legado_book_cover_album_');
     CoverAlbumStore.supportDirOverride = () async => temp;
     CoverAlbumStore.decodeOverride = (_) async => true;
+    CoverAlbumStore.isolateOverride = <T>(T Function() action) async =>
+        action();
+    CoverAlbumStore.bypassSerialization = true;
     await CoverAlbumStore.instance.ensureLoaded();
     albumId = await CoverAlbumStore.instance.createAlbum('相册');
     // 日间两张（颜色不同 → 哈希不同），夜间一张
@@ -75,13 +78,16 @@ void main() {
   Future<void> pumpCover(
     WidgetTester tester, {
     String? bookName,
+    String? bookAuthor,
     String? coverUrl,
     bool dark = false,
     bool useDefaultCover = false,
     String? albumIdOverride,
+    String? darkAlbumId,
   }) async {
     coverSettingsListenable.value = CoverSettings.defaults.copyWith(
       defaultAlbumId: albumIdOverride ?? albumId,
+      defaultAlbumIdDark: darkAlbumId,
       useDefaultCover: useDefaultCover,
     );
     await tester.pumpWidget(
@@ -94,6 +100,7 @@ void main() {
             child: BookCover(
               coverUrl: coverUrl,
               bookName: bookName,
+              bookAuthor: bookAuthor,
               width: 80,
               height: 110,
             ),
@@ -151,24 +158,27 @@ void main() {
     expect(find.byKey(const ValueKey('bookCoverDefaultNight')), findsNothing);
   });
 
-  testWidgets('不同书名按哈希取不同图；空书名取第 0 张', (tester) async {
+  testWidgets('不同书名按哈希取不同图；空书名稳定', (tester) async {
     await pumpCover(tester, bookName: 'a');
     final aPath = albumImagePath(tester);
-    await pumpCover(tester, bookName: 'b');
+    final aIndex = CoverAlbumStore.coverAlbumSeedIndex('a', 2);
+    final otherSeed = <String>['b', 'c', 'd', 'e', 'f'].firstWhere(
+      (seed) => CoverAlbumStore.coverAlbumSeedIndex(seed, 2) != aIndex,
+    );
+    await pumpCover(tester, bookName: otherSeed);
     final bPath = albumImagePath(tester);
-    expect(aPath, isNot(bPath), reason: '97/98 奇数偶数落在不同下标');
+    expect(bPath, isNot(aPath), reason: '不同 seed 落不同下标');
     expect(aPath, isNot(store().albumById(albumId)!.lightImages.first.path));
 
+    final lightImages = store().albumById(albumId)!.lightImages;
+    final emptyIndex = CoverAlbumStore.coverAlbumSeedIndex(
+      '',
+      lightImages.length,
+    );
     await pumpCover(tester, bookName: null);
-    expect(
-      albumImagePath(tester),
-      store().albumById(albumId)!.lightImages.first.path,
-    );
+    expect(albumImagePath(tester), lightImages[emptyIndex].path);
     await pumpCover(tester, bookName: '');
-    expect(
-      albumImagePath(tester),
-      store().albumById(albumId)!.lightImages.first.path,
-    );
+    expect(albumImagePath(tester), lightImages[emptyIndex].path);
   });
 
   testWidgets('相册不存在/夜间列表为空：回落内置默认封面 + 夜间叠层', (tester) async {
@@ -194,6 +204,69 @@ void main() {
     expect(find.byKey(const ValueKey('bookCoverAlbumImage')), findsNothing);
     expect(find.byKey(const ValueKey('bookCoverDefault')), findsOneWidget);
     expect(find.byKey(const ValueKey('bookCoverText')), findsOneWidget);
+  });
+
+  testWidgets('书名为空时以作者作为种子（参考 name ?? author）', (tester) async {
+    await pumpCover(tester, bookName: null, bookAuthor: '作者甲');
+    expect(
+      albumImagePath(tester),
+      store().imagePathForAlbum(albumId, isDark: false, seed: '作者甲'),
+    );
+  });
+
+  testWidgets('defaultAlbumIdDark 优先于 defaultAlbumId（夜间）', (tester) async {
+    final otherId = await store().createAlbum('夜间相册');
+    await store().importImages(
+      otherId,
+      isDark: true,
+      inputs: [CoverAlbumImageInput(displayName: 'n.png', bytes: _png(r: 99))],
+    );
+    await pumpCover(tester, bookName: 'a', dark: true, darkAlbumId: otherId);
+    expect(
+      albumImagePath(tester),
+      store().imagePathForAlbum(otherId, isDark: true, seed: 'a'),
+    );
+  });
+
+  testWidgets('相册图片变化后 revision 触发默认封面重建', (tester) async {
+    await pumpCover(tester, bookName: 'a');
+    final before = albumImagePath(tester);
+    final fileName = store()
+        .albumById(albumId)!
+        .lightImages
+        .firstWhere((image) => image.path == before)
+        .fileName;
+    await store().removeImage(albumId, isDark: false, fileName: fileName);
+    await tester.pump();
+    final after = albumImagePath(tester);
+    expect(after, isNot(before), reason: '列表变化后换用剩余图片');
+    expect(after, store().albumById(albumId)!.lightImages.single.path);
+  });
+
+  testWidgets('图片内容损坏：errorBuilder 回落内置默认封面', (tester) async {
+    final path = store().imagePathForAlbum(albumId, isDark: false, seed: 'a')!;
+    File(path).writeAsBytesSync(<int>[0, 1, 2, 3, 4]);
+    await pumpCover(tester, bookName: 'a');
+    // 直接调用 Image.file 装配的 errorBuilder（引擎解码失败的真实回落路径）
+    final imageWidget = tester.widget<Image>(
+      find.byKey(const ValueKey('bookCoverAlbumImage')),
+    );
+    expect(imageWidget.errorBuilder, isNotNull);
+    final fallback = imageWidget.errorBuilder!(
+      tester.element(find.byKey(const ValueKey('bookCoverAlbumImage'))),
+      'decode error',
+      StackTrace.empty,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: Center(child: fallback)),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('bookCoverAlbumFallback')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('bookCoverText')), findsNothing);
   });
 
   testWidgets('总是使用默认封面：相册图生效且不创建网络封面', (tester) async {

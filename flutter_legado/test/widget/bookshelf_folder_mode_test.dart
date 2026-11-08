@@ -39,6 +39,23 @@ const String _kPng2x1 =
 void main() {
   setUpAll(registerFallbacks);
 
+  testWidgets('组自定义封面 BookCover 以组名作为默认封面种子', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FolderGroupCover(
+            previews: const <Book>[],
+            width: 80,
+            groupCoverUrl: '/tmp/legado-missing-group-cover.png',
+            groupName: '我的分组',
+          ),
+        ),
+      ),
+    );
+    final cover = tester.widget<BookCover>(find.byType(BookCover));
+    expect(cover.bookName, '我的分组');
+  });
+
   setUp(() {
     coverSettingsListenable.value = CoverSettings.defaults;
     // 文件夹预览只读缓存：测试统一注入未命中，避免平台通道等待
@@ -271,8 +288,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('列表样式 0/1 × 4/5 列窄面板：组名可见、计数不截断',
-      (tester) async {
+  testWidgets('列表样式 0/1 × 4/5 列窄面板：组名可见、计数不截断', (tester) async {
     const longName = '一个非常长的分组名称用于极窄列压力测试';
     final longGroups = [
       const BookGroup(groupId: 1, groupName: longName, show: true, order: 1),
@@ -309,7 +325,8 @@ void main() {
               expect(
                 tester.takeException(),
                 isNull,
-                reason: '样式$style / $columns 列 / ${width}dp / '
+                reason:
+                    '样式$style / $columns 列 / ${width}dp / '
                     '$bookCount 本 / 字号 $scale 溢出',
               );
               expect(gridDelegate(tester)?.crossAxisCount, columns);
@@ -326,10 +343,7 @@ void main() {
                 const ValueKey('folderGroupCount_1'),
               );
               expect(countFinder, findsOneWidget);
-              expect(
-                tester.widget<Text>(countFinder).data,
-                '$bookCount 本',
-              );
+              expect(tester.widget<Text>(countFinder).data, '$bookCount 本');
               expect(
                 tester.getSize(countFinder).width,
                 greaterThan(20),
@@ -430,8 +444,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('横排 2 列窄面板 280/300/320dp × 123/1000 本 × 1.0/1.6 无溢出',
-      (tester) async {
+  testWidgets('横排 2 列窄面板 280/300/320dp × 123/1000 本 × 1.0/1.6 无溢出', (
+    tester,
+  ) async {
     const longName = '一个非常长的分组名称用于窄面板压力测试';
     final longGroups = [
       const BookGroup(groupId: 1, groupName: longName, show: true, order: 1),
@@ -449,9 +464,7 @@ void main() {
       for (final bookCount in [123, 1000]) {
         for (final scale in [1.0, 1.6]) {
           tester.platformDispatcher.textScaleFactorTestValue = scale;
-          addTearDown(
-            tester.platformDispatcher.clearTextScaleFactorTestValue,
-          );
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
           await pumpShelf(
             tester,
             shelfBooks: allBooks.take(bookCount).toList(),

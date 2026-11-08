@@ -419,12 +419,18 @@ void main() {
   });
 
   group('种子与备份', () {
-    test('书名种子稳定、空种子取第 0 张、中日/夜间独立', () async {
-      expect(CoverAlbumStore.coverAlbumSeedIndex(null, 5), 0);
-      expect(CoverAlbumStore.coverAlbumSeedIndex('', 5), 0);
-      // Kotlin String.hashCode('a')=97 → 97%10=7
-      expect(CoverAlbumStore.coverAlbumSeedIndex('a', 10), 7);
-      expect(CoverAlbumStore.coverAlbumSeedIndex('a', 10), 7);
+    test('书名种子稳定（Random(hashCode)）、空种子稳定、日/夜间独立', () async {
+      expect(
+        CoverAlbumStore.coverAlbumSeedIndex(null, 5),
+        CoverAlbumStore.coverAlbumSeedIndex('', 5),
+      );
+      expect(
+        CoverAlbumStore.coverAlbumSeedIndex(null, 5),
+        inInclusiveRange(0, 4),
+      );
+      // 对齐参考版 Random(seed.hashCode).nextInt(n)：'a' hashCode=97
+      expect(CoverAlbumStore.coverAlbumSeedIndex('a', 10), 9);
+      expect(CoverAlbumStore.coverAlbumSeedIndex('a', 10), 9);
 
       final id = await store().createAlbum('相册');
       await importBytes(id, isDark: false, bytes: _png(r: 1, g: 1));
@@ -444,7 +450,7 @@ void main() {
       );
       expect(
         store().imagePathForAlbum(id, isDark: false, seed: ''),
-        album.lightImages.first.path,
+        album.lightImages[CoverAlbumStore.coverAlbumSeedIndex('', 2)].path,
       );
       expect(
         store().imagePathForAlbum(id, isDark: true, seed: 'a'),
@@ -455,6 +461,14 @@ void main() {
         store().imagePathForAlbum('missing', isDark: false, seed: 'a'),
         isNull,
       );
+    });
+
+    test('中文 / emoji / 空种子稳定且落在范围内', () {
+      for (final seed in <String?>['斗破苍穹', '📚📖', '', null, 'a']) {
+        final first = CoverAlbumStore.coverAlbumSeedIndex(seed, 7);
+        expect(first, inInclusiveRange(0, 6), reason: '$seed');
+        expect(CoverAlbumStore.coverAlbumSeedIndex(seed, 7), first);
+      }
     });
 
     test('备份排除 defaultCover/defaultCoverDark 与迁移标记', () async {

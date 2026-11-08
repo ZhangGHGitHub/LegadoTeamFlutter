@@ -3,6 +3,7 @@
 // 覆盖：空态、新建、重命名、删除二次确认（目录清理）、日/夜 Tab、
 // 多选导入（注入选择器）、单图删除、当前使用标记、设为默认封面、
 // 选择 Sheet 的内置封面/相册/管理入口与返回结果。
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -40,6 +41,9 @@ void main() {
     temp = await Directory.systemTemp.createTemp('legado_cover_manage_');
     CoverAlbumStore.supportDirOverride = () async => temp;
     CoverAlbumStore.decodeOverride = (_) async => true;
+    CoverAlbumStore.isolateOverride = <T>(T Function() action) async =>
+        action();
+    CoverAlbumStore.bypassSerialization = true;
     await CoverAlbumStore.instance.ensureLoaded();
     coverSettingsListenable.value = CoverSettings.defaults;
     uiSettingsListenable.value = const UiSettingsState();
@@ -187,9 +191,15 @@ void main() {
     );
 
     // 夜间导入
-    CoverAlbumImagePicker.pickOverride = (maxBytes) async => [
-      CoverAlbumImagePick(name: 'night.png', bytes: _png(r: 30)),
-    ];
+    CoverAlbumImagePicker.pickOverride = (maxBytes) async =>
+        CoverAlbumImagePickBatch(
+          picks: [
+            CoverAlbumImagePick.fromBytes(
+              name: 'night.png',
+              bytes: _png(r: 30),
+            ),
+          ],
+        );
     await tester.tap(find.byKey(const ValueKey('coverAlbumAddImages')));
     await settleAsync(tester);
     expect(store().albumById(id)!.darkCount, 1);
@@ -199,10 +209,13 @@ void main() {
     // 日间导入（多选两张）
     await tester.tap(find.byKey(const ValueKey('coverAlbumDayTab')));
     await tester.pumpAndSettle();
-    CoverAlbumImagePicker.pickOverride = (maxBytes) async => [
-      CoverAlbumImagePick(name: 'day1.png', bytes: _png(r: 31)),
-      CoverAlbumImagePick(name: 'day2.png', bytes: _png(r: 32)),
-    ];
+    CoverAlbumImagePicker.pickOverride = (maxBytes) async =>
+        CoverAlbumImagePickBatch(
+          picks: [
+            CoverAlbumImagePick.fromBytes(name: 'day1.png', bytes: _png(r: 31)),
+            CoverAlbumImagePick.fromBytes(name: 'day2.png', bytes: _png(r: 32)),
+          ],
+        );
     await tester.tap(find.byKey(const ValueKey('coverAlbumAddImages')));
     await settleAsync(tester);
     expect(store().albumById(id)!.lightCount, 2);
@@ -269,6 +282,112 @@ void main() {
     });
     await pumpManage(tester);
     expect(find.text('当前使用'), findsOneWidget);
+  });
+
+  testWidgets('删除当前默认相册：回落内置封面并清空偏好', (tester) async {
+    final id = await store().createAlbum('当前相册');
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      PrefKeys.coverDefaultAlbumId: id,
+    });
+    await pumpManage(tester);
+    expect(find.text('当前使用'), findsOneWidget);
+
+    await tester.tap(find.byKey(ValueKey('coverAlbumMenu_$id')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('coverAlbumDelete_$id')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('coverAlbumDeleteConfirm')));
+    await tester.pumpAndSettle();
+    await settleAsync(tester);
+
+    expect(store().albums, isEmpty);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(PrefKeys.coverDefaultAlbumId), '');
+    expect(find.byKey(const ValueKey('coverAlbumEmpty')), findsOneWidget);
+  });
+
+  testWidgets('导入失败在 Sheet 内状态行可见（不被 Sheet 遮挡）', (tester) async {
+    final id = await store().createAlbum('相册');
+    await pumpManage(tester);
+    await tester.tap(find.byKey(ValueKey('coverAlbumTile_$id')));
+    await tester.pumpAndSettle();
+
+    CoverAlbumStore.decodeOverride = (_) async => false;
+    CoverAlbumImagePicker.pickOverride = (maxBytes) async =>
+        CoverAlbumImagePickBatch(
+          picks: [
+            CoverAlbumImagePick.fromBytes(name: 'bad.png', bytes: _png(r: 77)),
+          ],
+        );
+    await tester.tap(find.byKey(const ValueKey('coverAlbumAddImages')));
+    await settleAsync(tester);
+
+    expect(find.byKey(const ValueKey('coverAlbumStatus')), findsOneWidget);
+    expect(find.textContaining('1 张跳过'), findsOneWidget);
+    expect(find.textContaining('不是可解码的图片'), findsOneWidget);
+  });
+
+  testWidgets('导入忙态禁用单图删除，完成后恢复', (tester) async {
+    final id = await store().createAlbum('相册');
+    final existing = _png(r: 88);
+    await store().importImages(
+      id,
+      isDark: false,
+      inputs: [CoverAlbumImageInput(displayName: 'a.png', bytes: existing)],
+    );
+    final fileName = store().albumById(id)!.lightImages.single.fileName;
+    await pumpManage(tester);
+    await tester.tap(find.byKey(ValueKey('coverAlbumTile_$id')));
+    await tester.pumpAndSettle();
+
+    final gate = Completer<Uint8List>();
+    CoverAlbumImagePicker.pickOverride = (maxBytes) async =>
+        CoverAlbumImagePickBatch(
+          picks: [
+            CoverAlbumImagePick(
+              name: 'b.png',
+              size: existing.length,
+              read: () => gate.future,
+            ),
+          ],
+        );
+    await tester.tap(find.byKey(const ValueKey('coverAlbumAddImages')));
+    await tester.pump();
+    InkWell removeButton() => tester.widget<InkWell>(
+      find.byKey(ValueKey('coverAlbumRemoveImage_$fileName')),
+    );
+    expect(removeButton().onTap, isNull, reason: '忙态禁止删除');
+
+    gate.complete(_png(r: 89));
+    await settleAsync(tester);
+    expect(removeButton().onTap, isNotNull);
+    expect(store().albumById(id)!.lightCount, 2);
+  });
+
+  testWidgets('重复导入同图提示已存在', (tester) async {
+    final id = await store().createAlbum('相册');
+    final bytes = _png(r: 90);
+    await store().importImages(
+      id,
+      isDark: false,
+      inputs: [CoverAlbumImageInput(displayName: 'a.png', bytes: bytes)],
+    );
+    await pumpManage(tester);
+    await tester.tap(find.byKey(ValueKey('coverAlbumTile_$id')));
+    await tester.pumpAndSettle();
+
+    CoverAlbumImagePicker.pickOverride = (maxBytes) async =>
+        CoverAlbumImagePickBatch(
+          picks: [
+            CoverAlbumImagePick.fromBytes(name: 'same.png', bytes: bytes),
+          ],
+        );
+    await tester.tap(find.byKey(const ValueKey('coverAlbumAddImages')));
+    await settleAsync(tester);
+
+    expect(find.byKey(const ValueKey('coverAlbumStatus')), findsOneWidget);
+    expect(find.textContaining('已存在'), findsOneWidget);
+    expect(store().albumById(id)!.lightCount, 1);
   });
 
   testWidgets('选择 Sheet：内置封面 + 相册数量 + 管理入口', (tester) async {
