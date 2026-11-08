@@ -72,6 +72,13 @@ class BookCover extends StatefulWidget {
   /// 作者（同一绘制条件；书名关闭时不绘制）
   final String? bookAuthor;
 
+  /// 仅缓存模式（设置批6a-2 文件夹预览）
+  ///
+  /// true 时只查内存缓存与有效磁盘缓存，全部未命中则直接渲染默认封面：
+  /// 不解析书源、不走 FFI 解密、不发起网络请求。用于书架文件夹组卡片
+  /// 的 2×2/横排预览，避免首屏数百张封面同时联网。
+  final bool cacheOnly;
+
   const BookCover({
     super.key,
     this.coverUrl,
@@ -86,6 +93,7 @@ class BookCover extends StatefulWidget {
     this.adaptiveMaxHeight,
     this.bookName,
     this.bookAuthor,
+    this.cacheOnly = false,
   });
 
   @override
@@ -228,6 +236,7 @@ class _BookCoverState extends State<BookCover> {
         sourceJson: widget.sourceJson,
         placeholder: defaultCover,
         loadOnlyOnWifi: cover.loadOnlyOnWifi,
+        cacheOnly: widget.cacheOnly,
         onAspectRatio: _reportRatio,
       );
     }
@@ -354,6 +363,9 @@ class _CoverImage extends ConsumerStatefulWidget {
   ///（不写解密/图片缓存），恢复 WiFi 后定时重试。
   final bool loadOnlyOnWifi;
 
+  /// 仅缓存模式（文件夹预览）：内存/磁盘缓存未命中直接占位，不联网/FFI
+  final bool cacheOnly;
+
   /// 图片加载完成后上报原图宽高比（宽/高；解析失败为 null）
   final ValueChanged<double>? onAspectRatio;
 
@@ -364,6 +376,7 @@ class _CoverImage extends ConsumerStatefulWidget {
     this.sourceOrigin,
     this.sourceJson,
     this.loadOnlyOnWifi = false,
+    this.cacheOnly = false,
     this.onAspectRatio,
   });
 
@@ -411,7 +424,8 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
     if (oldWidget.coverUrl != widget.coverUrl ||
         oldWidget.sourceOrigin != widget.sourceOrigin ||
         oldWidget.sourceJson != widget.sourceJson ||
-        oldWidget.loadOnlyOnWifi != widget.loadOnlyOnWifi) {
+        oldWidget.loadOnlyOnWifi != widget.loadOnlyOnWifi ||
+        oldWidget.cacheOnly != widget.cacheOnly) {
       _ticket?.cancel();
       _ticket = null;
       _wifiRetryTimer?.cancel();
@@ -456,7 +470,35 @@ class _CoverImageState extends ConsumerState<_CoverImage> {
       return;
     }
 
-    // 2) 仅 WiFi：直连封面先查「有效」磁盘缓存（validTill 未过期且文件
+    // 2) 仅缓存模式（文件夹组卡片预览）：只认内存/有效磁盘缓存，
+    // 未命中直接渲染默认封面——不解析书源、不进 FFI、不发起网络请求。
+    if (widget.cacheOnly) {
+      final cachedFile =
+          await CoverDiskCache.validFile(stripCompositeImageUrl(url));
+      if (!mounted || gen != _loadGen) return;
+      if (cachedFile != null) {
+        setState(() {
+          _directCachePath = cachedFile.path;
+          _decodedBytes = null;
+          _loadingDecode = false;
+          _useDirect = false;
+          _decodeFailed = false;
+          _wifiBlocked = false;
+        });
+      } else {
+        setState(() {
+          _directCachePath = null;
+          _decodedBytes = null;
+          _loadingDecode = false;
+          _useDirect = false;
+          _decodeFailed = true;
+          _wifiBlocked = false;
+        });
+      }
+      return;
+    }
+
+    // 3) 仅 WiFi：直连封面先查「有效」磁盘缓存（validTill 未过期且文件
     // 存在）。命中直接用 Image.file 渲染并 return——不查询 WiFi、不进 FFI，
     // 避免过期/删除缓存绕过后由 CachedNetworkImage 重新下载。
     if (widget.loadOnlyOnWifi) {

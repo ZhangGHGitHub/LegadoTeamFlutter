@@ -40,6 +40,9 @@ class FolderGroupCover extends StatelessWidget {
   /// 圆角（对齐书架封面 4dp）
   final double borderRadius;
 
+  /// 是否绘制封面阴影（书架独立开关或全局封面阴影）
+  final bool coverShadow;
+
   const FolderGroupCover({
     super.key,
     required this.previews,
@@ -47,6 +50,7 @@ class FolderGroupCover extends StatelessWidget {
     this.groupCoverUrl,
     this.countText,
     this.borderRadius = BookGridItem.coverCornerRadius,
+    this.coverShadow = false,
   });
 
   @override
@@ -56,7 +60,7 @@ class FolderGroupCover extends StatelessWidget {
     // 2×2 布局：每格 1dp 内边距（参考 BookGroupCover）
     final cellWidth = math.max(1.0, width / 2 - 2);
     final cellHeight = math.max(1.0, height / 2 - 2);
-    return SizedBox(
+    final content = SizedBox(
       width: width,
       height: height,
       child: Stack(
@@ -104,6 +108,21 @@ class FolderGroupCover extends StatelessWidget {
         ],
       ),
     );
+    if (!coverShadow) return content;
+    return DecoratedBox(
+      key: const ValueKey('folderCoverShadow'),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.18),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: content,
+    );
   }
 
   Widget _buildSlot(
@@ -126,8 +145,11 @@ class FolderGroupCover extends StatelessWidget {
                 bookName: previews[index].name,
                 bookAuthor: previews[index].author,
                 borderRadius: 2,
+                // 组卡片预览只读缓存：未命中显示默认封面，不联网/FFI
+                cacheOnly: true,
               )
             : ColoredBox(
+                key: ValueKey('folderCoverEmptySlot_$index'),
                 // 空槽占位：保持 2×2 拼图尺寸稳定（无书组可见空白格）
                 color: colorScheme.surfaceContainerHighest,
               ),
@@ -143,6 +165,7 @@ class FolderGroupGridCard extends StatelessWidget {
   final int bookCount;
   final BookshelfSettings settings;
   final double coverWidth;
+  final bool coverShadow;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -154,6 +177,7 @@ class FolderGroupGridCard extends StatelessWidget {
     required this.settings,
     required this.coverWidth,
     required this.onTap,
+    this.coverShadow = false,
     this.onLongPress,
   });
 
@@ -176,35 +200,37 @@ class FolderGroupGridCard extends StatelessWidget {
             width: coverWidth,
             groupCoverUrl: group.cover,
             countText: countText,
+            coverShadow: coverShadow,
           ),
-          SizedBox(
-            height: BookGridItem.titleAreaHeightFor(
-              context,
-              maxLines: settings.bookshelfTitleMaxLines,
-              smallFont: settings.bookshelfTitleSmallFont,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
-              child: Align(
-                alignment: settings.bookshelfTitleCenter
-                    ? Alignment.topCenter
-                    : Alignment.topLeft,
-                child: Text(
-                  group.groupName,
-                  maxLines: settings.bookshelfTitleMaxLines,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: settings.bookshelfTitleCenter
-                      ? TextAlign.center
-                      : TextAlign.start,
-                  style: TextStyle(
-                    fontSize: settings.gridTitleFontSize,
-                    height: 1.25,
-                    color: colorScheme.onSurface,
+          if (settings.bookshelfGridLayout != 2)
+            SizedBox(
+              height: BookGridItem.titleAreaHeightFor(
+                context,
+                maxLines: settings.bookshelfTitleMaxLines,
+                smallFont: settings.bookshelfTitleSmallFont,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
+                child: Align(
+                  alignment: settings.bookshelfTitleCenter
+                      ? Alignment.topCenter
+                      : Alignment.topLeft,
+                  child: Text(
+                    group.groupName,
+                    maxLines: settings.bookshelfTitleMaxLines,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: settings.bookshelfTitleCenter
+                        ? TextAlign.center
+                        : TextAlign.start,
+                    style: TextStyle(
+                      fontSize: settings.gridTitleFontSize,
+                      height: 1.25,
+                      color: colorScheme.onSurface,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -222,6 +248,7 @@ class FolderGroupListCard extends StatelessWidget {
   final BookshelfSettings settings;
   final double? maxCoverWidth;
   final bool dense;
+  final bool coverShadow;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -233,6 +260,7 @@ class FolderGroupListCard extends StatelessWidget {
     required this.settings,
     this.maxCoverWidth,
     this.dense = false,
+    this.coverShadow = false,
     required this.onTap,
     this.onLongPress,
   });
@@ -241,7 +269,10 @@ class FolderGroupListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final compact = settings.bookshelfGroupListStyle == 1 || dense;
+    final compact =
+        settings.bookshelfGroupListStyle == 1 ||
+        settings.bookshelfLayoutCompact ||
+        dense;
     final configuredCoverWidth = settings.bookshelfListCoverWidth.toDouble();
     final coverWidth = maxCoverWidth == null
         ? configuredCoverWidth
@@ -255,6 +286,8 @@ class FolderGroupListCard extends StatelessWidget {
     final card = Material(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),
       color: cardColorValue == 0 ? Colors.transparent : Color(cardColorValue),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -266,12 +299,15 @@ class FolderGroupListCard extends StatelessWidget {
             compact ? 6 : 10,
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: settings.bookshelfListCoverCenter
+                ? CrossAxisAlignment.center
+                : CrossAxisAlignment.start,
             children: [
               FolderGroupCover(
                 previews: previews.take(4).toList(),
                 width: coverWidth,
                 groupCoverUrl: group.cover,
+                coverShadow: coverShadow,
               ),
               SizedBox(width: dense ? 6 : 12),
               Expanded(
@@ -345,6 +381,7 @@ class FolderGroupHorizontalCard extends StatelessWidget {
   final List<Book> previews;
   final int bookCount;
   final BookshelfSettings settings;
+  final bool dense;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -358,6 +395,7 @@ class FolderGroupHorizontalCard extends StatelessWidget {
     required this.bookCount,
     required this.settings,
     required this.onTap,
+    this.dense = false,
     this.onLongPress,
     this.onBookTap,
   });
@@ -375,11 +413,12 @@ class FolderGroupHorizontalCard extends StatelessWidget {
     return Material(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),
       color: cardColorValue == 0 ? Colors.transparent : Color(cardColorValue),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
           child: Column(
@@ -396,6 +435,7 @@ class FolderGroupHorizontalCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 15,
+                          height: 1.25,
                           fontWeight: FontWeight.w500,
                           color: colorScheme.onSurface,
                         ),
@@ -403,22 +443,39 @@ class FolderGroupHorizontalCard extends StatelessWidget {
                     ),
                     if (countText != null) ...[
                       const SizedBox(width: 8),
-                      Text(
-                        countText,
-                        style: TextStyle(
-                          fontSize: 12,
+                      // 窄格（2–5 列）下计数允许收缩省略，避免横向溢出
+                      if (dense)
+                        Flexible(
+                          child: Text(
+                            countText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.25,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      else
+                        Text(
+                          countText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.25,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                    if (!dense)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4, right: 4),
+                        child: Icon(
+                          Symbols.keyboard_arrow_right_rounded,
+                          size: 20,
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    ],
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4, right: 4),
-                      child: Icon(
-                        Symbols.keyboard_arrow_right_rounded,
-                        size: 20,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -455,10 +512,12 @@ class FolderGroupHorizontalCard extends StatelessWidget {
                                       height: slotHeight,
                                       bookName: previews[i].name,
                                       bookAuthor: previews[i].author,
+                                      cacheOnly: true,
                                     ),
                                   ),
                                 )
                               : DecoratedBox(
+                                  key: ValueKey('folderHorizontalEmptySlot_$i'),
                                   // 空槽占位：保持横排高度稳定
                                   decoration: BoxDecoration(
                                     color: colorScheme.surfaceContainerHighest,
