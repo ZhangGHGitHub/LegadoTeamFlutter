@@ -2,7 +2,9 @@
 //
 // 覆盖：18 项全量渲染（参考版 CoverConfigScreen 分组）、默认值、
 // 作者随书名禁用、仅 WiFi/描边/阴影/限制比例写偏好、信息方向下拉、
-// 取色复用 ContainerColorDialog、相册与网络角标灰置。
+// 取色复用 ContainerColorDialog、默认封面入口（内置/相册）、网络角标灰置。
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -12,7 +14,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/models/cover_settings.dart';
 import 'package:flutter_legado/src/providers/cover_settings/cover_settings_notifier.dart';
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
+import 'package:flutter_legado/src/routes.dart';
+import 'package:flutter_legado/src/screens/cover_album_manage_screen.dart';
 import 'package:flutter_legado/src/screens/cover_settings_screen.dart';
+import 'package:flutter_legado/src/services/cover_album_store.dart';
 import 'package:flutter_legado/src/widgets/container_color_dialog.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
@@ -91,12 +96,14 @@ void main() {
     expect(row('coverShowNameDarkSwitch').value, isTrue);
     expect(row('coverShowAuthorDarkSwitch').onChanged, isNotNull);
 
-    // 相册（6b-2）与网络角标（另立项）灰置
+    // 相册（6b-2）已启用；无相册时副标题「应用内置封面」
     final album = tester.widget<IosListTile>(
       find.byKey(const ValueKey('coverDefaultAlbumRow')),
     );
-    expect(album.enabled, isFalse);
-    expect(album.value, '应用内置封面');
+    expect(album.enabled, isTrue);
+    expect(album.onTap, isNotNull);
+    expect(album.subtitle, '应用内置封面');
+    // 网络角标（另立项）仍灰置
     final badge = tester.widget<IosListTile>(
       find.byKey(const ValueKey('coverNetworkBadgeRow')),
     );
@@ -204,5 +211,59 @@ void main() {
     // 初值即默认白色：ContainerColorDialog 返回 0 时回落 0xFFFFFFFF，
     // 内存态保持非透明（不得写入 0 = 透明文字）
     expect(coverSettingsListenable.value.textColorDark, 0xFFFFFFFF);
+  });
+
+  testWidgets('默认封面行显示相册副标题，选择 Sheet 可切回内置封面', (tester) async {
+    final temp = Directory.systemTemp.createTempSync('legado_cover_settings_');
+    CoverAlbumStore.resetForTest();
+    CoverAlbumStore.supportDirOverride = () async => temp;
+    await CoverAlbumStore.instance.ensureLoaded();
+    final albumId = await CoverAlbumStore.instance.createAlbum('日间相册');
+    addTearDown(() async {
+      CoverAlbumStore.resetForTest();
+      if (await temp.exists()) await temp.delete(recursive: true);
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      CoverSettings.keyDefaultAlbumId: albumId,
+    });
+
+    await pumpScreen(tester);
+    expect(find.text('日间相册 · 日间 0 · 夜间 0'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('coverDefaultAlbumRow')));
+    await tester.pumpAndSettle();
+    expect(find.text('选择封面相册'), findsOneWidget);
+    expect(find.byKey(ValueKey('coverAlbumOption_$albumId')), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('coverAlbumOptionCheck_$albumId')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('coverAlbumBuiltinOption')));
+    await tester.pumpAndSettle();
+    expect(find.text('选择封面相册'), findsNothing);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(CoverSettings.keyDefaultAlbumId), '');
+  });
+
+  testWidgets('默认封面 → 管理相册入口进入封面相册管理页', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          routes: AppRoutes.routes,
+          initialRoute: AppRoutes.coverSettings,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('coverDefaultAlbumRow')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('coverAlbumManageAction')));
+    await tester.pumpAndSettle();
+    expect(find.byType(CoverAlbumManageScreen), findsOneWidget);
   });
 }
