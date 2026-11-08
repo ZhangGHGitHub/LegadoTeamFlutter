@@ -14,6 +14,7 @@ import 'src/routes.dart';
 import 'src/services/book_api.dart';
 import 'src/services/crash_log_service.dart';
 import 'src/services/mock_book_api.dart';
+import 'src/services/replace_default_sync.dart';
 import 'src/services/rust_api.dart';
 import 'src/services/server_service.dart';
 import 'src/services/settings_service.dart';
@@ -122,6 +123,14 @@ void main() {
     sw = Stopwatch()..start();
     await syncThreadCountOnStartup(startupApi, useMock: useMock);
     debugPrint('[启动] 线程数同步耗时：${sw.elapsedMilliseconds}ms');
+
+    // 5f. 替换净化总开关同步到 Rust（批7a 闭环）：该开关此前只写 prefs，
+    // Rust 阅读链读 caches config:replaceEnableDefault 恒缺省 true；启动时
+    // 把存量 prefs 值幂等补写（老用户已设 false 时写 "false"），默认 true
+    // 且 Rust 缺省时不产生写入；USE_MOCK 跳过；失败静默不阻断启动。
+    sw = Stopwatch()..start();
+    await syncReplaceEnableDefaultOnStartup(startupApi, useMock: useMock);
+    debugPrint('[启动] 替换净化默认开关同步耗时：${sw.elapsedMilliseconds}ms');
 
     // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
     const initialRoute = AppRoutes.welcome;

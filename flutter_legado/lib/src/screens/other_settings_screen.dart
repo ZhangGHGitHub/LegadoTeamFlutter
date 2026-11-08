@@ -37,6 +37,7 @@ import '../providers/providers.dart';
 import '../providers/source_check/check_source_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/crash_log_service.dart';
+import '../services/replace_default_sync.dart';
 import '../services/settings_service.dart';
 import '../services/web_service_wake_lock_service.dart';
 import '../utils/book_open_utils.dart';
@@ -405,11 +406,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 title: '默认启用替换净化',
                 subtitle: '新加入书架的书是否启用替换净化',
                 value: _replaceEnableDefault,
-                onChanged: (v) {
-                  setState(() => _replaceEnableDefault = v);
-                  _settingsService.setBoolPref(
-                      PrefKeys.replaceEnableDefault, v);
-                },
+                onChanged: _setReplaceEnableDefault,
               ),
               SettingSwitchRow(
                 title: '全程响应耳机按键',
@@ -616,6 +613,23 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await _settingsService.removePref(PrefKeys.localPassword);
     } else {
       await _settingsService.setStringPref(PrefKeys.localPassword, value);
+    }
+  }
+
+  /// 「默认启用替换净化」开关（批7a 闭环）
+  ///
+  /// 此前只写 SharedPreferences，Rust 阅读链读 caches
+  /// `config:replaceEnableDefault` 恒缺省 true；现切换时同步写 config
+  /// （键名同名，值 "true"/"false"），保存即影响阅读净化判定。config 写
+  /// 失败不回滚偏好，仅提示（同 UserAgent 同步口径）。
+  Future<void> _setReplaceEnableDefault(bool value) async {
+    setState(() => _replaceEnableDefault = value);
+    try {
+      await saveReplaceEnableDefault(ref.read(bookApiProvider), value);
+    } catch (e) {
+      if (mounted) {
+        _toast('已保存偏好，但同步阅读净化配置失败：$e');
+      }
     }
   }
 
