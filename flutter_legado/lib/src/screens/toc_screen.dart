@@ -24,6 +24,7 @@ import '../utils/book_open_utils.dart';
 import '../utils/toc_cache_state.dart';
 import '../utils/txt_toc_rule.dart'
     show buildReparseRuleJson, isLocalTxtBook;
+import '../widgets/reader/reader_action_helpers.dart';
 import '../widgets/reader/reader_toc_rule_dialog.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
@@ -672,7 +673,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
 
   // ===== 溢出菜单（对齐 book_toc.xml 顺序 + TocActivity.onMenuOpened 条件显隐） =====
 
-  List<PopupMenuEntry<String>> _buildMenuItems() {
+  List<PopupMenuEntry<String>> _buildMenuItems(
+    bool globalReplaceDefault,
+  ) {
     final tab = _tabController.index;
     final items = <PopupMenuEntry<String>>[];
     if (tab == 0) {
@@ -709,8 +712,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
       ));
       items.add(CheckedPopupMenuItem(
         value: 'useReplace',
-        // useReplaceRule 存于 ReadConfig（对齐原版 Book.ReadConfig.useReplaceRule）
-        checked: _book.readConfig?.useReplaceRule ?? true,
+        // useReplaceRule 存于 ReadConfig（对齐原版 Book.ReadConfig.useReplaceRule）；
+        // [批7a P2-1] 勾选态按书级/图片/epub/全局默认的生效值展示
+        checked: effectiveReplaceRuleEnabled(_book, globalReplaceDefault),
         child: const Text('使用替换规则'),
       ));
       items.add(CheckedPopupMenuItem(
@@ -812,8 +816,27 @@ class _TocScreenState extends ConsumerState<TocScreen>
       case 'useReplace':
         // 接 ReadConfig.useReplaceRule 字段经 BookApi 更新（对齐原版 menu_use_replace）
         // [批32b P2-2] 同 splitLongChapter：单键持久化，保留未建模 readConfig 键
-        final rc = _book.readConfig ?? const ReadConfig();
-        final nextReplace = !(rc.useReplaceRule ?? true);
+        // [批7a P2-1] 取反基于生效值：图片书/本地 epub/全局默认关闭时
+        // 首次点击写入显式 true。provider 尚在加载时等待一次，避免把
+        // 全局 false 误读为 fallback true 后写成显式 false。
+        final cachedDefault =
+            ref.read(replaceEnableDefaultProvider).value;
+        bool globalReplaceDefault;
+        if (cachedDefault != null) {
+          globalReplaceDefault = cachedDefault;
+        } else {
+          try {
+            globalReplaceDefault =
+                await ref.read(replaceEnableDefaultProvider.future);
+          } catch (_) {
+            globalReplaceDefault = true;
+          }
+          if (!mounted) return;
+        }
+        final nextReplace = !effectiveReplaceRuleEnabled(
+          _book,
+          globalReplaceDefault,
+        );
         await _updateReadConfigField(
           'useReplaceRule',
           nextReplace,
@@ -1001,6 +1024,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // [批7a P2-1] 全局默认替换净化开关（provider 未就绪回落 true）
+    final globalReplaceDefault =
+        ref.watch(replaceEnableDefaultProvider).value ?? true;
     // [PARITY C2 T3] 头部对齐参考版：章名大标题与「N / M」页码同行（参考为
     // 「章节名 + 页码」整体大标题，与右侧 🔍/⋮ 分离；此前为两行 Column 堆叠）。
     final currentChapterTitle =
@@ -1058,7 +1084,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: _handleMenu,
-            itemBuilder: (_) => _buildMenuItems(),
+            itemBuilder: (_) => _buildMenuItems(globalReplaceDefault),
           ),
         ],
         // AppBar 内 TabBar 显式指定前景色，避免白底白字（项目规范）

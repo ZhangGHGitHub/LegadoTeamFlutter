@@ -8,6 +8,7 @@ import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../models/highlight_style.dart' show normalizeArgb;
 import '../providers/highlight_rules/highlight_rules_notifier.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/export_file_sheet.dart';
@@ -342,13 +343,24 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   // fill / underline / strike 的初值取自原 style；distance 不在 UI 编辑，
   // 保存时从原 underline 对象继承（见 _save）。bold/italic/fillShape
   // 会改字体度量或尚未渲染，本批不提供控件、保存时原样保留。
+  //
+  // [审查 P2-2/P3] 全部字段带 touched 标记：未触碰的 width/kind/color 与
+  // underline/strike 键（含 `false`/数组/`true` 等非对象原值）不得因
+  // 「只改名称/文字色」被重写或删除；只有用户主动编辑的属性才写回。
   late int _fill;
   bool _fillTouched = false;
+  int _lastFillColor = 0;
   late bool _underlineEnabled;
+  bool _underlineTouched = false;
+  bool _underlineKindTouched = false;
+  bool _underlineColorTouched = false;
+  bool _underlineWidthTouched = false;
   late String _underlineKind;
   late int _underlineColor;
   late double _underlineWidth;
   late bool _strikeEnabled;
+  bool _strikeTouched = false;
+  bool _strikeColorTouched = false;
   late int _strikeColor;
 
   /// 下划线可选线型（与渲染层 highlight_span_builder 的 5 种映射一致）
@@ -387,27 +399,32 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [审计修复 §4.1] style 非法时模型层回退 null，此处取默认色 — Qoder
     // [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 默认色延后至 build 由主题派生
     //（initState 无 context），0 表未初始化
-    _color = rule?.styleTextColor ?? 0;
+    // [审查 P3] 统一归一化无符号 ARGB：原版 JSON 半透明色可能为负值，
+    // 不归一化会导致色板选中态与 Color 比较失配（仅影响本地态，原值
+    // 未触碰时仍按原 JSON 保留）。
+    _color = normalizeArgb(rule?.styleTextColor);
 
     // [批7a] 富样式初值（非法/缺省按关闭/默认值处理）
     final styleMap = rule?.styleMap;
-    _fill = rule?.styleFill ?? 0;
+    _fill = normalizeArgb(rule?.styleFill);
+    _lastFillColor = _fill;
     _underlineEnabled = rule?.styleUnderline ?? false;
     final underlineRaw = styleMap?['underline'];
     final underlineMap = underlineRaw is Map
         ? underlineRaw.map((k, v) => MapEntry(k.toString(), v))
         : const <String, dynamic>{};
     _underlineKind = _normalizeUnderlineKind(underlineMap['kind']);
-    _underlineColor = _asArgb(underlineMap['color']);
+    _underlineColor = normalizeArgb(underlineMap['color']);
     final rawWidth = underlineMap['width'];
+    // 上游 HighlightStyle width 范围 0..10（step 0.5）；当前渲染层仅在
+    // width>0 时设置 thickness，width=0 会退化为默认厚度——该「0=不画线
+    // vs 默认厚度」差异按审查要求登记于此，不静默改用户原值。
     _underlineWidth =
-        (rawWidth is num ? rawWidth.toDouble() : 1.0).clamp(0.5, 5.0);
+        (rawWidth is num ? rawWidth.toDouble() : 1.0).clamp(0.0, 10.0);
     final strikeRaw = styleMap?['strike'];
     _strikeEnabled = strikeRaw is Map;
-    _strikeColor = strikeRaw is Map ? _asArgb(strikeRaw['color']) : 0;
+    _strikeColor = strikeRaw is Map ? normalizeArgb(strikeRaw['color']) : 0;
   }
-
-  static int _asArgb(Object? value) => value is num ? value.toInt() : 0;
 
   static String _normalizeUnderlineKind(Object? raw) {
     if (raw is String) {
@@ -473,20 +490,27 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
         (baseStyle?.containsKey('textColor') ?? false);
     // [批7a] 富样式补丁：只写本地编辑态覆盖的属性，其余键（fillShape/bold/
     // italic/font* etc.）由补丁函数原样保留；distance 从原 underline 对象继承。
+    // [审查 P2-2/P3] 未触碰的 underline/strike 键不写不删（保留原值形态，
+    // 含 false/数组/true）；width/kind/color 各自按 touched 写，未触碰的
+    // width（如 8 或 0）不会被 clamp 后的本地值静默覆盖。
     final baseUnderline = _baseObjectField(baseStyle, 'underline');
     final baseStrike = _baseObjectField(baseStyle, 'strike');
     final underline = _underlineEnabled
         ? (<String, dynamic>{
             ...?baseUnderline,
-            'kind': _underlineKind,
-            'color': _underlineColor,
-            'width': _underlineWidth,
+            if (_underlineKindTouched || baseUnderline?['kind'] == null)
+              'kind': _underlineKind,
+            if (_underlineColorTouched || baseUnderline?['color'] == null)
+              'color': _underlineColor,
+            if (_underlineWidthTouched || baseUnderline?['width'] == null)
+              'width': _underlineWidth,
           })
         : null;
     final strike = _strikeEnabled
         ? (<String, dynamic>{
             ...?baseStrike,
-            'color': _strikeColor,
+            if (_strikeColorTouched || baseStrike?['color'] == null)
+              'color': _strikeColor,
           })
         : null;
     final style = mergeHighlightStyleFields(
@@ -495,9 +519,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       fill: _fillTouched ? _fill : null,
       textColor: keepOriginalTextColor ? null : _effectiveColor,
       underline: underline,
-      removeUnderline: !_underlineEnabled,
+      removeUnderline: _underlineTouched && !_underlineEnabled,
       strike: strike,
-      removeStrike: !_strikeEnabled,
+      removeStrike: _strikeTouched && !_strikeEnabled,
     );
     final rule = HighlightRule(
       id: base?.id ?? 0,
@@ -579,14 +603,21 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     );
   }
 
-  /// 「背景填充」开关：关闭写 fill=0；从无填充开启时默认主题 primaryContainer
+  /// 「背景填充」开关：关闭写 fill=0；再次开启恢复上次自定义色
+  ///
+  /// [审查 P3] 关-开保留 `_lastFillColor`（此前会回落到 primaryContainer，
+  /// 用户刚选的颜色被丢弃）；首次开启且无历史色时才用主题 primaryContainer。
   void _toggleFill(bool enabled, ColorScheme cs) {
     setState(() {
       _fillTouched = true;
       if (!enabled) {
+        if (_fill != 0) _lastFillColor = _fill;
         _fill = 0;
-      } else if (_fill == 0) {
-        _fill = cs.primaryContainer.toARGB32();
+      } else {
+        _fill = _lastFillColor != 0
+            ? _lastFillColor
+            : cs.primaryContainer.toARGB32();
+        _lastFillColor = _fill;
       }
     });
   }
@@ -724,6 +755,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                 onSelected: (value) => setState(() {
                   _fill = value;
                   _fillTouched = true;
+                  _lastFillColor = value;
                 }),
               ),
             const SizedBox(height: 4),
@@ -733,7 +765,10 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               dense: true,
               title: const Text('下划线'),
               value: _underlineEnabled,
-              onChanged: (v) => setState(() => _underlineEnabled = v),
+              onChanged: (v) => setState(() {
+                _underlineEnabled = v;
+                _underlineTouched = true;
+              }),
             ),
             if (_underlineEnabled) ...[
               Row(
@@ -752,7 +787,11 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                     ],
                     onChanged: (kind) {
                       if (kind == null) return;
-                      setState(() => _underlineKind = kind);
+                      setState(() {
+                        _underlineKind = kind;
+                        _underlineTouched = true;
+                        _underlineKindTouched = true;
+                      });
                     },
                   ),
                 ],
@@ -764,8 +803,11 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                 colors: presetColors,
                 selected: _underlineColor,
                 includeFollowTextColor: true,
-                onSelected: (value) =>
-                    setState(() => _underlineColor = value),
+                onSelected: (value) => setState(() {
+                  _underlineColor = value;
+                  _underlineTouched = true;
+                  _underlineColorTouched = true;
+                }),
               ),
               Row(
                 children: [
@@ -773,12 +815,17 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                   Expanded(
                     child: Slider(
                       value: _underlineWidth,
-                      min: 0.5,
-                      max: 5.0,
-                      divisions: 9,
+                      // 上游 HighlightStyle width 范围 0..10，step 0.5；
+                      // 0 在当前渲染层退化为默认厚度（差异见 initState 注释）
+                      min: 0.0,
+                      max: 10.0,
+                      divisions: 20,
                       label: _underlineWidth.toStringAsFixed(1),
-                      onChanged: (v) =>
-                          setState(() => _underlineWidth = v),
+                      onChanged: (v) => setState(() {
+                        _underlineWidth = v;
+                        _underlineTouched = true;
+                        _underlineWidthTouched = true;
+                      }),
                     ),
                   ),
                   SizedBox(
@@ -799,7 +846,10 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               dense: true,
               title: const Text('删除线'),
               value: _strikeEnabled,
-              onChanged: (v) => setState(() => _strikeEnabled = v),
+              onChanged: (v) => setState(() {
+                _strikeEnabled = v;
+                _strikeTouched = true;
+              }),
             ),
             if (_strikeEnabled)
               _buildColorPalette(
@@ -808,7 +858,11 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                 colors: presetColors,
                 selected: _strikeColor,
                 includeFollowTextColor: true,
-                onSelected: (value) => setState(() => _strikeColor = value),
+                onSelected: (value) => setState(() {
+                  _strikeColor = value;
+                  _strikeTouched = true;
+                  _strikeColorTouched = true;
+                }),
               ),
             const SizedBox(height: 12),
             // 预览（批7a：实时使用本地编辑态，而非只回放旧 rule）

@@ -481,4 +481,128 @@ void main() {
     await tapVisible(tester, paletteSwatches('highlight-fill-colors').at(2));
     expect(previewDeco().color, cs.tertiaryContainer);
   });
+
+  /// [审查 P2-2] 未触碰 width 不得被 clamp 后的本地值静默重写：
+  /// 原 width=8 只改名称保存后仍为 8。
+  testWidgets('只改名称：原 underline width=8 原样保留', (tester) async {
+    final style = jsonEncode({
+      'textColor': -65536,
+      'underline': {'kind': 'SOLID', 'color': 0, 'width': 8.0},
+    });
+    final rule = {...sampleRule, 'style': style};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([rule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '改名后');
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+    final underline = savedStyle['underline'] as Map<String, dynamic>;
+    expect(saved['name'], '改名后');
+    expect(underline['width'], 8.0, reason: '未触碰 width 不得被 clamp 成 5');
+  });
+
+  /// [审查 P2-2] width=0（上游=不画线）只改文字色保存后仍为 0。
+  testWidgets('只改文字色：原 underline width=0 原样保留', (tester) async {
+    final style = jsonEncode({
+      'textColor': -65536,
+      'underline': {'kind': 'SOLID', 'color': 0, 'width': 0.0},
+    });
+    final rule = {...sampleRule, 'style': style};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([rule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    await tapVisible(tester, paletteSwatches('highlight-text-colors').at(1));
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+    final underline = savedStyle['underline'] as Map<String, dynamic>;
+    expect(underline['width'], 0.0, reason: '未触碰 width 不得被改成 0.5');
+  });
+
+  /// [审查 P2-2] 用户拖动 Slider 到 3.5 后才写入新宽度。
+  testWidgets('拖动线宽到 3.5：仅 width 更新，其余下划线字段保真',
+      (tester) async {
+    final style = jsonEncode({
+      'textColor': -65536,
+      'underline': {
+        'kind': 'WAVY',
+        'color': -1,
+        'width': 2.0,
+        'distance': 1.5,
+      },
+    });
+    final rule = {...sampleRule, 'style': style};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([rule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(3.5);
+    await tester.pump();
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+    final underline = savedStyle['underline'] as Map<String, dynamic>;
+    expect(underline['width'], 3.5);
+    expect(underline['kind'], 'WAVY');
+    expect(underline['color'], -1);
+    expect(underline['distance'], 1.5);
+  });
+
+  /// [审查 P3] 未触碰的 underline:false/strike:false 不因只改其它字段被删除；
+  /// 填充关-开恢复上次自定义色（不回落到主题色）。
+  testWidgets('未触碰的非对象 underline/strike 保真，填充关-开保留上次色',
+      (tester) async {
+    final style = jsonEncode({
+      'fill': -16711936,
+      'textColor': -65536,
+      'underline': false,
+      'strike': false,
+    });
+    final rule = {...sampleRule, 'style': style};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([rule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    // 关闭再开启填充：应恢复原自定义色（0xFF00FF00）
+    await tapVisible(tester, find.text('背景填充'));
+    await tapVisible(tester, find.text('背景填充'));
+    await tapVisible(tester, find.text('保存'));
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final savedStyle =
+        jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+    expect(savedStyle['fill'], 0xFF00FF00,
+        reason: '关-开应恢复上次自定义填充色');
+    expect(savedStyle['underline'], false, reason: '未触碰 false 不得被删除');
+    expect(savedStyle['strike'], false, reason: '未触碰 false 不得被删除');
+  });
 }

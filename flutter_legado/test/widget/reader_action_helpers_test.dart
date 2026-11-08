@@ -144,4 +144,60 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.byType(SnackBar), findsOneWidget);
   });
+
+  /// [批7a P2-1] 全局默认 false 时普通书（readConfig.useReplaceRule=null）
+  /// 菜单不勾选；首次点击写入显式 true 并提示开启。
+  testWidgets('全局默认 false：替换菜单不勾选，首次点击写显式 true',
+      (tester) async {
+    final localContainer = ProviderContainer(
+      overrides: [
+        bookApiProvider.overrideWithValue(api),
+        replaceEnableDefaultProvider.overrideWith((ref) async => false),
+      ],
+    );
+    addTearDown(localContainer.dispose);
+    localContainer.read(readerNotifierProvider.notifier).updateCurrentBook(
+          const Book(
+            bookUrl: 'https://book.com/global-default-false',
+            origin: 'https://source.example.com',
+            originName: 'book.txt',
+            name: '全局默认关闭书',
+            bookType: BookType.text,
+            readConfig: ReadConfig(),
+          ),
+        );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: localContainer,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Stack(children: [ReaderTopBar(onAddBookmark: () {})]),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    final replaceItem =
+        find.widgetWithText(PopupMenuItem<String>, '替换规则');
+    expect(
+      find.descendant(of: replaceItem, matching: find.byIcon(Icons.check)),
+      findsNothing,
+      reason: '全局默认 false 时菜单不得勾选',
+    );
+
+    await tester.tap(replaceItem);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final captured = verify(() => api.updateBook(captureAny())).captured;
+    expect(
+      (captured.last as Book).readConfig?.useReplaceRule,
+      isTrue,
+      reason: '首次点击应写入显式 true（覆盖全局默认关闭）',
+    );
+    expect(find.text('已开启替换规则'), findsOneWidget);
+  });
 }

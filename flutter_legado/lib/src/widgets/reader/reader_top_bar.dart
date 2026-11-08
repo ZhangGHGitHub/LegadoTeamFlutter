@@ -800,6 +800,10 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     final notifier = ref.read(readerNotifierProvider.notifier);
     final progressPct = (state.readingProgress * 100).toStringAsFixed(1);
     final book = state.currentBook;
+    // [批7a P2-1] 全局默认替换净化开关：勾选态必须按三级优先级的生效值
+    // 展示（provider 未就绪时回落 true，与 Rust 缺省一致）
+    final replaceDefault =
+        ref.watch(replaceEnableDefaultProvider).value ?? true;
 
     // [Task #52 | 2026-08-10] §5.11-7：删重标题开关改章级，换书/换章后
     // 重新加载辅助显示态（顶栏仅在 showControls 时挂载） — Qoder
@@ -1052,7 +1056,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               _showSimulatedReadingDialog(context, ref);
                               break;
                             case 'enableReplace':
-                              toggleReaderReplaceRule(context, ref);
+                              unawaited(toggleReaderReplaceRule(context, ref));
                               break;
                             case 'sameTitleRemoved':
                               unawaited(_toggleSameTitleRemoved(context));
@@ -1088,8 +1092,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                         itemBuilder: (_) {
                           // [UI-fix v2.0.2 | 2026-08-06] checkable 菜单项以
                           // 勾选样式展示当前启用状态 — Qoder
-                          final replaceOn =
-                              book?.readConfig?.useReplaceRule ?? true;
+                          // [批7a P2-1] 按书级/图片/epub/全局默认的生效值
+                          final replaceOn = effectiveReplaceRuleEnabled(
+                            book,
+                            replaceDefault,
+                          );
                           final segmentOn =
                               book?.readConfig?.reSegment ?? false;
                           final isEpub = _isEpub(book);

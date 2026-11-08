@@ -128,6 +128,17 @@ void main() {
       expect(api.setCalls.single.value, 'false');
     });
 
+    test('prefs=false 且 Rust "false" → 不写库', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.replaceEnableDefault: false,
+      });
+      final api = _RecordingApi(rustValue: 'false');
+
+      await syncReplaceEnableDefaultOnStartup(api, useMock: false);
+
+      expect(api.setCalls, isEmpty, reason: '有效值相同不应产生无谓 DB 写');
+    });
+
     test('prefs=false 且 Rust "true" → 覆盖为 "false"', () async {
       SharedPreferences.setMockInitialValues({
         PrefKeys.replaceEnableDefault: false,

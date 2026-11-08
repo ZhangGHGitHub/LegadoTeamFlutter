@@ -81,6 +81,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   int _imageRetainNum = 0;
   int _preDownloadNum = 10;
   bool _replaceEnableDefault = true;
+  /// 替换净化总开关写库串行链（审查 P3：连点防 prefs/config 落库乱序）
+  Future<void> _replaceSaveChain = Future<void>.value();
   bool _mediaButtonOnExit = true;
   bool _readAloudByMediaButton = false;
   bool _autoClearExpired = true;
@@ -620,17 +622,26 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   ///
   /// 此前只写 SharedPreferences，Rust 阅读链读 caches
   /// `config:replaceEnableDefault` 恒缺省 true；现切换时同步写 config
-  /// （键名同名，值 "true"/"false"），保存即影响阅读净化判定。config 写
-  /// 失败不回滚偏好，仅提示（同 UserAgent 同步口径）。
-  Future<void> _setReplaceEnableDefault(bool value) async {
+  /// （键名同名，值 "true"/"false"），保存即影响阅读净化判定。
+  ///
+  /// [审查 P3] 快速连点时经 [_replaceSaveChain] 串行化，保证 prefs/config
+  /// 都按点击顺序落库；写失败不回滚偏好，仅中性提示（不声称「已保存」）。
+  void _setReplaceEnableDefault(bool value) {
     setState(() => _replaceEnableDefault = value);
-    try {
-      await saveReplaceEnableDefault(ref.read(bookApiProvider), value);
-    } catch (e) {
-      if (mounted) {
-        _toast('已保存偏好，但同步阅读净化配置失败：$e');
+    final api = ref.read(bookApiProvider);
+    _replaceSaveChain = _replaceSaveChain.then((_) async {
+      try {
+        await saveReplaceEnableDefault(api, value);
+        // 让已缓存的全局默认 provider 失效，阅读菜单下次 watch 重新读值
+        if (mounted) {
+          ref.invalidate(replaceEnableDefaultProvider);
+        }
+      } catch (e) {
+        if (mounted) {
+          _toast('替换净化配置同步失败：$e');
+        }
       }
-    }
+    });
   }
 
   /// UserAgent 编辑（对齐原版 userAgent 对话框，留空恢复默认）

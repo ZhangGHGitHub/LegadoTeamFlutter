@@ -10,7 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/models.dart';
-import '../../providers/providers.dart' show bookApiProvider;
+import '../../providers/providers.dart'
+    show bookApiProvider, replaceEnableDefaultProvider;
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/sync/sync_notifier.dart';
 
@@ -192,16 +193,60 @@ Future<void> updateReaderBookConfig(
   }
 }
 
+/// 替换净化是否生效（Dart 侧对齐 Rust `use_replace_rule_for_book`）
+///
+/// 三级优先级（与 `Book.getUseReplaceRule()`，Book.kt:232-242 一致）：
+/// 1. `readConfig.useReplaceRule` 显式非空 → 取该值（false 也尊重）；
+/// 2. 图片类书（`bookType & BookType.image`）或本地 epub
+///    （`BookType.isLocalBook` + `originName`（为空回退 `bookUrl`）小写
+///    `.epub` 结尾）→ false；
+/// 3. 其余回退全局 `replaceEnableDefault`。
+///
+/// 菜单勾选态与切换取反必须使用本函数，避免「显示 true 但 Rust 实际
+/// 按图片/epub/全局默认关闭」的不一致。
+bool effectiveReplaceRuleEnabled(Book? book, bool globalDefault) {
+  if (book == null) return globalDefault;
+  final explicit = book.readConfig?.useReplaceRule;
+  if (explicit != null) return explicit;
+  if ((book.bookType & BookType.image) != 0) return false;
+  final originName =
+      book.originName.isNotEmpty ? book.originName : book.bookUrl;
+  if (BookType.isLocalBook(book) &&
+      originName.toLowerCase().endsWith('.epub')) {
+    return false;
+  }
+  return globalDefault;
+}
+
+/// 读取全局默认值（provider 未就绪/读取失败回落 true，与 Rust 缺省一致）
+Future<bool> _readGlobalReplaceDefault(WidgetRef ref) async {
+  try {
+    return await ref.read(replaceEnableDefaultProvider.future);
+  } catch (_) {
+    return true;
+  }
+}
+
 /// 替换规则开关（对标原版 menu_enable_replace）
-void toggleReaderReplaceRule(BuildContext context, WidgetRef ref) {
+///
+/// 取反基于 [effectiveReplaceRuleEnabled]（而非仅 readConfig 值）：图片书/
+/// 本地 epub/全局默认关闭时，首次点击写入显式 true 即开启。
+Future<void> toggleReaderReplaceRule(BuildContext context, WidgetRef ref) async {
   final book = ref.read(readerNotifierProvider).currentBook;
-  final enabled = book?.readConfig?.useReplaceRule ?? true;
-  unawaited(
-    updateReaderBookConfig(
-      context,
-      ref,
-      (c) => c.copyWith(useReplaceRule: !enabled),
-    ),
+  // 显式书级值无需等待全局 provider（也避免无谓异步跳变）；仅在 null 时读取
+  final explicit = book?.readConfig?.useReplaceRule;
+  final bool enabled;
+  if (explicit != null) {
+    enabled = explicit;
+  } else {
+    final globalDefault = await _readGlobalReplaceDefault(ref);
+    enabled = effectiveReplaceRuleEnabled(book, globalDefault);
+    if (!context.mounted) return;
+  }
+  await updateReaderBookConfig(
+    context,
+    ref,
+    (c) => c.copyWith(useReplaceRule: !enabled),
   );
   if (context.mounted) {
     readerActionSnack(context, enabled ? '已关闭替换规则' : '已开启替换规则');

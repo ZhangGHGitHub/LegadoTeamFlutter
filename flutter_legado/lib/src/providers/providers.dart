@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../constants/pref_keys.dart';
 import '../services/book_api.dart';
 import '../services/mock_book_api.dart';
 import '../services/rust_api.dart';
@@ -20,6 +21,23 @@ final bookApiProvider = Provider<BookApi>((ref) {
 
 /// SettingsService 全局 Provider（F3-18：统一注入，禁止 UI 直接 new）
 final settingsProvider = Provider<SettingsService>((ref) => SettingsService());
+
+/// 全局「默认启用替换净化」开关（批7a 闭环）
+///
+/// 与书级 `ReadConfig.useReplaceRule` 配合决定阅读链是否应用替换规则，
+/// 对齐 Rust `reader.rs::get_replace_enable_default`：配置缺省/非法 → true，
+/// 显式 `"false"`/`"0"` → false。SharedPreferences 为 UI 真源，Rust caches
+/// `config:replaceEnableDefault` 由设置页与启动同步写入。
+///
+/// USE_MOCK 模式无 Rust DB，直接返回 true（与 MockBookApi 行为一致）。
+final replaceEnableDefaultProvider = FutureProvider<bool>((ref) async {
+  const useMock = bool.fromEnvironment('USE_MOCK', defaultValue: false);
+  if (useMock) return true;
+  return ref.read(settingsProvider).getBoolPref(
+        PrefKeys.replaceEnableDefault,
+        defaultValue: true,
+      );
+});
 
 /// 高亮规则修订号（批34）
 ///
