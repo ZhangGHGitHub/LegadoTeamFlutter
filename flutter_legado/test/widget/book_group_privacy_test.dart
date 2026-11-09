@@ -30,9 +30,10 @@ void main() {
     List<BookGroup> groups, {
     List<Book> books = const [],
     bool hasPassword = true,
+    bool enabled = true,
   }) async {
     SharedPreferences.setMockInitialValues({
-      PrefKeys.privateEnabled: true,
+      PrefKeys.privateEnabled: enabled,
       PrefKeys.privateVerifyOnOpenBook: true,
       PrefKeys.privateVerifyOnEnterGroup: true,
       PrefKeys.privateUnlockScope: PrivacyUnlockScope.everyTime.storageValue,
@@ -154,6 +155,24 @@ void main() {
     expect(find.descendant(of: tile, matching: find.text('—')), findsOneWidget);
   });
 
+  testWidgets('私密组计数：隐私未启用时不隐藏（与书架 locked 同口径）', (tester) async {
+    await boot(
+      tester,
+      [const BookGroup(groupId: 4, groupName: '私密旧组', isPrivate: true)],
+      books: [const Book(bookUrl: 'u1', name: '组内书', author: '作者', group: 4)],
+      enabled: false,
+    );
+    final tile = find.ancestor(
+      of: find.text('私密旧组'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      find.descendant(of: tile, matching: find.text('1 本书')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: tile, matching: find.text('—')), findsNothing);
+  });
+
   testWidgets('分配书籍列表剔除私密书并提示隐藏数量', (tester) async {
     const privateBook = Book(
       bookUrl: 'u-private',
@@ -224,7 +243,7 @@ void main() {
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('组内书籍将回到公开书架'), findsOneWidget);
+    expect(find.textContaining('组内非私密书籍将回到公开书架'), findsOneWidget);
     await tester.tap(find.text('取消').last);
     await tester.pumpAndSettle();
   });

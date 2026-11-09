@@ -16,9 +16,11 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/read_record/read_record_notifier.dart';
 import 'package:flutter_legado/src/screens/bookmark_screen.dart';
 import 'package:flutter_legado/src/screens/offline_cache_screen.dart';
 import 'package:flutter_legado/src/screens/read_record_screen.dart';
+import 'package:flutter_legado/src/screens/search_screen.dart';
 
 import '../mocks/privacy_mock_book_api.dart';
 
@@ -51,6 +53,17 @@ final _privateBookmark = Bookmark(
   content: '秘密备注',
 );
 
+/// 记录 findBookByName 调用（锁定行点击不应触发）
+class _SpyReadRecordNotifier extends ReadRecordNotifier {
+  int findBookByNameCalls = 0;
+
+  @override
+  Future<Book?> findBookByName(String bookName) async {
+    findBookByNameCalls++;
+    return null;
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -62,6 +75,7 @@ void main() {
     Widget screen, {
     Set<String> grantedBookUrls = const {},
     bool settle = true,
+    ReadRecordNotifier Function()? readRecordFactory,
   }) async {
     SharedPreferences.setMockInitialValues({
       PrefKeys.privateEnabled: true,
@@ -75,7 +89,11 @@ void main() {
     );
     await api.privacySetPassword('pw');
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(api)],
+      overrides: [
+        bookApiProvider.overrideWithValue(api),
+        if (readRecordFactory != null)
+          readRecordNotifierProvider.overrideWith(readRecordFactory),
+      ],
     );
     addTearDown(container.dispose);
     await container.read(privacyNotifierProvider.notifier).ensureLoaded();
@@ -191,6 +209,17 @@ void main() {
     expect(api.deleteBookmarkCalls, 1);
     expect(find.textContaining('删除失败'), findsOneWidget);
     expect(find.text('书签已删除'), findsNothing);
+  });
+
+  testWidgets('锁定阅读记录行点击不触发书籍查找/搜索跳转', (tester) async {
+    final spy = _SpyReadRecordNotifier();
+    await boot(tester, const ReadRecordScreen(), readRecordFactory: () => spy);
+    await tester.tap(find.byKey(const ValueKey('readRecordLockedTile')));
+    await tester.pumpAndSettle();
+
+    expect(spy.findBookByNameCalls, 0, reason: '锁定行 onTap 必须禁用，不得进入打开书籍/搜索链路');
+    expect(find.byType(SearchScreen), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('缓存管理：私密书书名/作者置空，缓存进度保留', (tester) async {

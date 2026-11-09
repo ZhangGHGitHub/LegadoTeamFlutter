@@ -20,6 +20,7 @@ import 'package:flutter_legado/src/providers/privacy/privacy_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
+import 'package:flutter_legado/src/utils/app_route_observer.dart';
 
 import '../mocks/privacy_mock_book_api.dart';
 
@@ -105,7 +106,10 @@ void main() {
     addTearDown(tester.view.reset);
     final app = UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: BookshelfScreen()),
+      child: MaterialApp(
+        home: const BookshelfScreen(),
+        navigatorObservers: [opaquePageRouteObserver],
+      ),
     );
     await tester.pumpWidget(
       MediaQuery(
@@ -316,6 +320,113 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('private-locked-page')), findsOneWidget);
     expect(find.text('私密组'), findsWidgets);
+  });
+
+  testWidgets('不透明页面路由压栈撤销分组授权；卡片菜单不撤销', (tester) async {
+    await boot(tester);
+    await tester.tap(find.text('私密组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('private-locked-action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+
+    // 负例：_CardMenuRoute（opaque=false）不触发 didPushNext
+    spyPrivacy.revokedGroups.clear();
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('bookshelf_menu_scrim')), findsOneWidget);
+    expect(spyPrivacy.revokedGroups, isEmpty, reason: '打开溢出浮层菜单不得撤销分组授权');
+    Navigator.of(tester.element(find.byType(BookshelfScreen))).pop();
+    await tester.pumpAndSettle();
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+
+    // 正例：不透明 PageRoute 压栈触发撤销
+    final navContext = tester.element(find.byType(BookshelfScreen));
+    final nav = Navigator.of(navContext);
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('DETAIL_PAGE')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('DETAIL_PAGE'), findsOneWidget);
+    expect(spyPrivacy.revokedGroups, contains(4), reason: '不透明页面路由压栈必须撤销分组授权');
+    expect(container.read(privacyNotifierProvider).grantedGroupIds, isEmpty);
+    nav.pop();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('文件夹模式：解锁→返回根撤销→重进需验证', (tester) async {
+    await boot(tester, groupStyle: 2);
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_group_4')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('private-locked-page')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('private-locked-action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(find.text('私密组书'), findsOneWidget);
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+
+    // 文件夹头返回组根（与系统返回同入口 _exitFolderToRoot）
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_back')));
+    await tester.pumpAndSettle();
+    expect(spyPrivacy.revokedGroups, contains(4), reason: '返回组根必须撤销分组授权');
+    expect(container.read(privacyNotifierProvider).grantedGroupIds, isEmpty);
+
+    // 从根重进同一分组：不得复用旧授权
+    await tester.tap(find.byKey(const ValueKey('bookshelf_folder_group_4')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('private-locked-page')), findsOneWidget);
+    expect(find.text('私密组书'), findsNothing, reason: '重进必须重新验证，不能直接显示组内书');
+  });
+
+  testWidgets('文件夹根 select_mode 进入内容同样先撤销授权', (tester) async {
+    await boot(tester, groupStyle: 2);
+    // select_mode 进入的是当前选中组：先选中私密组（仍在根目录），
+    // 再直接授权，验证 select_mode 分支会撤销该组授权。
+    final shelf = container.read(bookshelfNotifierProvider);
+    final index = shelf.groups.indexWhere((g) => g.groupId == 4);
+    expect(index, greaterThanOrEqualTo(0));
+    await container.read(bookshelfNotifierProvider.notifier).selectGroup(index);
+    await tester.pumpAndSettle();
+    await container
+        .read(privacyNotifierProvider.notifier)
+        .verifyForTarget('pw', groupId: 4);
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+    spyPrivacy.revokedGroups.clear();
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择模式'));
+    await tester.pumpAndSettle();
+
+    expect(spyPrivacy.revokedGroups, contains(4));
+    expect(container.read(privacyNotifierProvider).grantedGroupIds, isEmpty);
+    expect(find.byKey(const ValueKey('private-locked-page')), findsOneWidget);
+    expect(find.text('私密组书'), findsNothing);
   });
 
   testWidgets('360dp + 1.8 倍字号：书架与锁定页无溢出', (tester) async {

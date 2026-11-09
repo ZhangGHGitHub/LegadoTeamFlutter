@@ -456,7 +456,12 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
             // [P2-13b 2026-09-19] _topRouteWatcher：崩溃弹窗调度器（见
             // [LegadoApp.scheduleCrashLogDialog]）监听 didChangeTop，确认冷启动
             // 闪屏 /welcome 退出（pushReplacementNamed 换栈顶）后才弹窗
-            navigatorObservers: [appRouteObserver, _topRouteWatcher],
+            navigatorObservers: [
+              appRouteObserver,
+              // [批9c 复审 P2] 书架只看不透明页面路由，浮层菜单/弹窗不撤销
+              opaquePageRouteObserver,
+              _topRouteWatcher,
+            ],
             debugShowCheckedModeBanner: false,
             theme: lightTheme,
             darkTheme: darkTheme,

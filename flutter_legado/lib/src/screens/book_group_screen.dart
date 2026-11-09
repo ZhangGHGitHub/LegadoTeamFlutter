@@ -218,7 +218,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       context,
       title: '删除分组',
       content: group.isPrivate
-          ? '确定要删除分组「${group.groupName}」吗？组内书籍将回到公开书架。'
+          ? '确定要删除分组「${group.groupName}」吗？组内非私密书籍将回到公开书架。'
           : '确定要删除分组「${group.groupName}」吗？分组内的书籍不会被删除。',
       confirmText: AppStrings.delete,
       isDestructive: true,
@@ -374,6 +374,12 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
 
   Widget _buildGroupTile(BookGroup group, {required bool draggable}) {
     final count = _bookCountOf(group.groupId);
+    final privacy = ref.watch(privacyNotifierProvider);
+    // 与书架 locked 同口径：仅“已启用 + 有密码 + 开启进入分组验证”时隐藏
+    final hideCount =
+        group.isPrivate &&
+        privacy.hasPassword &&
+        privacy.isGroupContentLocked(group.groupId, isPrivate: true);
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     // [LAYOUT_PLAN P3] 分组卡圆角16dp + 组内行 vertical12/horizontal8 + 字级走 M3 Type Scale
@@ -413,8 +419,8 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
           ),
         ),
         subtitle: Text(
-          // [批9c 回修 P2-2] 私密组不展示书籍数（规模也是信息）
-          group.isPrivate ? '—' : '$count 本书',
+          // [批9c 回修 P2-2] 私密组锁定口径下不展示书籍数（规模也是信息）
+          hideCount ? '—' : '$count 本书',
           style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
         trailing: Row(

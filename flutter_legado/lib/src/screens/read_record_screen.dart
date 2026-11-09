@@ -452,7 +452,9 @@ class _ReadRecordTile extends StatelessWidget {
         child: ExcludeSemantics(
           child: InkWell(
             key: const ValueKey('readRecordLockedTile'),
-            onTap: onTap,
+            // P2 复审：锁定行不得经 onTap 打开书籍/跳搜索（书名会经搜索框
+            // 自动填入而泄漏）；删除入口保留在右侧「清空」。
+            onTap: null,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(

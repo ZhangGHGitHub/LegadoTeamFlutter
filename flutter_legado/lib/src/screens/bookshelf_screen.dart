@@ -159,10 +159,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final route = ModalRoute.of(context);
     if (route != null && !identical(route, _subscribedRoute)) {
       if (_subscribedRoute != null) {
-        appRouteObserver.unsubscribe(this);
+        opaquePageRouteObserver.unsubscribe(this);
       }
       _subscribedRoute = route;
-      appRouteObserver.subscribe(this, route);
+      opaquePageRouteObserver.subscribe(this, route);
     }
     // P0-1：主页 PageView 用 TickerMode 表达页签可见性；切走当前书架页
     // 时同样视为离开（不会触发路由回调，也不会 dispose）。
@@ -177,6 +177,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   void didPushNext() {
     // 有页面压栈到书架之上：撤销当前分组授权（EveryTime 下离开即失效）
     _revokeGroupDeferred(_lastGroupId);
+  }
+
+  /// 撤销当前选中分组的授权（用户主动离开分组场景）
+  void _revokeSelectedGroupDeferred() {
+    if (!mounted) return;
+    _revokeGroupDeferred(
+      ref.read(bookshelfNotifierProvider).selectedGroup?.groupId,
+    );
   }
 
   /// 延迟撤销指定分组授权（避免在 build/didChangeDependencies 同步改 provider）
@@ -198,7 +206,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // P0-1：书架销毁同样撤销当前分组授权
     _revokeGroupDeferred(_lastGroupId);
     if (_subscribedRoute != null) {
-      appRouteObserver.unsubscribe(this);
+      opaquePageRouteObserver.unsubscribe(this);
       _subscribedRoute = null;
     }
     uiSettingsListenable.removeListener(_onCoverLayoutChanged);
@@ -238,6 +246,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (state.isBatchMode) {
       ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
     }
+    // P0 复审：返回组根即离开分组，撤销 EveryTime 分组授权；
+    // 根卡片据此重新显示锁定态，重进需再次验证。
+    _revokeSelectedGroupDeferred();
     setState(() => _inFolderRoot = true);
   }
 
@@ -268,6 +279,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (state.isBatchMode) {
       ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
     }
+    // P0 复审：从根重进（含 select_mode 路径）不允许复用旧分组授权，
+    // 先撤销再进入，锁定页/验证闸门据此重新出现。
+    _revokeSelectedGroupDeferred();
     setState(() => _inFolderRoot = false);
     // 进入分组时从内容顶部开始（组内滚动位置不跨组串用）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -285,6 +299,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // 路径渲染，下一帧回到根目录，不会闪回组内容）
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_inFolderRoot) {
+        // 样式切换导致返回组根：同样撤销分组授权
+        _revokeSelectedGroupDeferred();
         setState(() => _inFolderRoot = true);
       }
     });
