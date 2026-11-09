@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-11-10 | **批9d：生物识别快捷解锁（契约先行，加法式 +4 方法）**：§2.53 新增 `privacyBiometricStateGet` / `privacyBiometricSet` / `privacyBiometricVerify` / `privacyBiometricClear`（Rust `legado-ffi/src/api/privacy_api.rs` + `ffi::privacy_biometric_*`）。**安全设计（偏离参考版并登记）**：平台 Keystore/Keychain 只封装 **32B 随机解锁令牌**（`SecureRandom`/`SecRandomCopyBytes`，Base64），**不封装明文密码**（参考版 `PrivatePasswordCipher.kt` 封密码）；令牌摘要（SHA-256，Base64）存 caches `config:private_biometric_token_hash`，信封/IV 存 `config:private_biometric_envelope` / `config:private_biometric_iv`；`stateGet` 只返回 `configured/envelope/iv`，**绝不返回摘要或令牌**；`set` 要求已有密码、token Base64 恰 32B、iv 恰 12B、envelope 1..4096B，单事务覆盖三键；`verify` 常量时间比较摘要；`clear` 删除三键。`privacySetPassword` 成功改密与 `privacyClearPassword` 在同一事务内清空三键（改密即失效生物快捷；参考版「同密码保留信封」不适用令牌模型，登记差异）。方法模块保持 **50**，附录合计 334→**338**，BookApi 332→**336**，§1.7 表 B 168→**172**（等价对总数 184→**188**）。 |
 | 2026-11-09 | **批9a：隐私与私密标记数据层（契约先行，加法式 +8 方法）**：新增 §2.53 8 方法 `privacyHasPassword` / `privacySetPassword` / `privacyVerifyPassword` / `privacyClearPassword` / `setBooksPrivate` / `getPrivateBookUrls` / `setBookGroupPrivate` / `getPrivateGroupIds`（Rust `legado-ffi/src/api/privacy_api.rs` + `ffi::privacy_*`，密码凭据落 caches `config:private_password_salt` / `config:private_password_verifier`，DB `SCHEMA_VERSION` 118→119 为 `books` / `book_groups` 增 `isPrivate` 列）。**语义按参考版** `PrivatePasswordCipher.kt`（PBKDF2WithHmacSHA256 210000 次 / 32B verifier / 16B salt，**不存明文**）与 `BookDao.kt:1191-1213`、`BookGroup.kt:27`；`privacySetPassword` 已有凭据时必须校验旧密码，`privacyVerifyPassword` 常量时间比较；`setBooksPrivate` 入参为 JSON 数组并事务批量 `UPDATE`，返回实际更新行数；列表类返回裸 JSON 数组（书 URL 稳定排序 / 分组 ID 升序）。本批仅数据层/FFI/Dart API/Mock，**不做 UI、路由与平台生物识别**。方法模块 49→**50**，附录合计 326→**334**，BookApi 324→**332**，§1.7 表 B 160→**168**（等价对总数 176→**184**）。 |
 | 2026-11-09 | **批7b-1：书签标记（book_marks）数据层（契约先行，加法式 +5 方法）**：§2.52 新增 5 方法 `getBookMarkingsByBook` / `getBookMarkingsForChapter` / `saveBookMarking` / `deleteBookMarking` / `setBookMarkingEnabled`（Rust `legado-ffi/src/api/book_marking_api.rs` + `ffi::book_marking_*`，数据落新增 `book_marks` 表，DB `SCHEMA_VERSION` 117→118）。**语义按参考版** `BookMarking.kt:21-46` / `BookMarkingDao.kt:13-87`：`id` 为 String 主键（空则 Rust 生成 UUID v4）、`bookName`+`bookAuthor` 跨源关联、`chapterIndex` 可空、`anchorJson` 必填、`styleJson` 可空；按 `bookUrl` 查章时 SQL 同时允许 `chapterIndex IS NULL`；`enabled` 默认 true，`save` 恒写 `updatedAt` 为当前毫秒。**与参考版一致不纳入备份**（§2.52 注登记）。本批仅数据层/FFI，划词卡、编辑 Sheet、目录笔记页与正文渲染属 7b-2。方法模块 48→**49**，附录合计 321→**326**，BookApi 319→**324**，§1.7 表 B 155→**160**（等价对总数 171→**176**）。**审查 P3 注记**：`book_marks` **无外键**（参考版 `BookMarking` 实体未声明 ForeignKey，本实现同）；FFI 仅校验 `anchorJson` 非空，`anchorJson`/`styleJson` 的内容解析属 7b-2 渲染层。 |
 | 2026-11-06 | **批6a-1 设备修复：BookGroup.group_id 位掩码语义（零签名/方法计数变化；契约先于代码）**：① `addBookGroup` 新建 ID 改为**最小未占用 2 的幂**（`1,2,4,…`，上限 `1<<30`；Rust `BookGroupRepository::get_unused_id`，对齐原版 `BookGroupDao.getUnusedId`），不再使用 SystemTime 毫秒；`books.group` 以位掩码表达一本书属于多个分组，ID 必须是 2^n。② **兼容层**：存量时间戳/任意非 2^n ID **不迁移**；Dart 过滤按混合语义——`groupId` 为 2 的幂时 `(book.group & groupId) != 0`，非 2 的幂时 `book.group == groupId`（exact），`BookGroup.IdAll=-1` 等特殊组保持既有分支。③ 旧客户端/旧备份仍可读写 groupId；新建组在旧客户端按 exact 匹配只命中自身（位掩码多组语义仅在升级后生效）。 |
@@ -220,7 +221,7 @@
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
-以下 **16 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **168 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **184 对**，语义等价，计数时勿重复：
+以下 **16 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **172 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **188 对**，语义等价，计数时勿重复：
 
 | BookApi（Dart） | 契约 §2.x / FFI 登记名 |
 |-----------------|------------------------|
@@ -241,7 +242,7 @@
 | `putLoginHeader` | `sourcePutLoginHeader`（§2.3） |
 | `putLoginInfo` | `sourcePutLoginInfo`（§2.3） |
 
-**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对；批8 增 10 对（WebDAV 云同步全量 + servers CRUD）→ 134 对；批11 增 1 对（HTTP 日志采集开关 `setHttpLogRecording` ↔ `set_http_log_recording`）→ 135 对；批15b 增 4 对（RSS 列表四方法 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`）→ 139 对；批15c 增 1 对（RSS 正文 `rssFetchContent` ↔ `rss_fetch_content`）→ 140 对；批15f 增 1 对（RSS 只读缓存 `rssListCachedArticles` ↔ `rss_list_cached_articles`）→ 141 对；批16a 增 1 对（直链上传 `directLinkUpload` ↔ `direct_link_upload`）→ 142 对；批17a 增 1 对（备份探测 `backupInspect` ↔ `backup_inspect`，契约先行）→ 143 对；批21a 增 1 对（RSS WebView 宿主桥 `rssWebViewHostCall` ↔ `rss_web_view_host_call`）→ 144 对；批24 增 2 对（7z 导入 `archiveImport7z` ↔ `archive_import_7z`、7z 列表 `archiveList7zFiles` ↔ `archive_list_7z_files`）→ 146 对；批32 增 1 对（readConfig 单键写 `updateReadConfigField` ↔ `book_update_read_config_field`）→ 147 对；批34 增 1 对（高亮规则正文匹配 `highlightRuleMatch` ↔ `highlight_rule_match`）→ 148 对；批35 增 2 对（批量删除 `deleteBooks` ↔ `bookshelf_delete_books`、阅读记录开关 `setReadRecordDisabled` ↔ `book_set_read_record_disabled`）→ 150 对；批37b 增 1 对（设置编码 `setBookCharset` ↔ `book_set_charset`）→ 151 对；批40 增 1 对（备份保留清理 `webdavPruneBackups` ↔ `webdav_prune_backups`）→ 152 对；批43 增 1 对（TXT 目录规则 `setBookTocRule` ↔ `book_set_toc_rule`）→ 153 对；批9b-1 增 1 对（过期搜索清理 `clearExpiredSearchBooks` ↔ `search_books_clear_expired`）→ 154 对；批9b-3 增 1 对（漫画图片保留清理 `retainComicImages` ↔ `retain_comic_images`）→ 155 对；批7b-1 增 5 对（书签标记 `getBookMarkingsByBook` ↔ `book_marking_list_by_book`、`getBookMarkingsForChapter` ↔ `book_marking_list_for_chapter`、`saveBookMarking` ↔ `book_marking_save`、`deleteBookMarking` ↔ `book_marking_delete`、`setBookMarkingEnabled` ↔ `book_marking_set_enabled`）→ 160 对；批9a 增 8 对（隐私与私密标记 `privacyHasPassword` ↔ `privacy_has_password`、`privacySetPassword` ↔ `privacy_set_password`、`privacyVerifyPassword` ↔ `privacy_verify_password`、`privacyClearPassword` ↔ `privacy_clear_password`、`setBooksPrivate` ↔ `set_books_private`、`getPrivateBookUrls` ↔ `get_private_book_urls`、`setBookGroupPrivate` ↔ `set_book_group_private`、`getPrivateGroupIds` ↔ `get_private_group_ids`）→ 168 对）**
+**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对；批8 增 10 对（WebDAV 云同步全量 + servers CRUD）→ 134 对；批11 增 1 对（HTTP 日志采集开关 `setHttpLogRecording` ↔ `set_http_log_recording`）→ 135 对；批15b 增 4 对（RSS 列表四方法 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`）→ 139 对；批15c 增 1 对（RSS 正文 `rssFetchContent` ↔ `rss_fetch_content`）→ 140 对；批15f 增 1 对（RSS 只读缓存 `rssListCachedArticles` ↔ `rss_list_cached_articles`）→ 141 对；批16a 增 1 对（直链上传 `directLinkUpload` ↔ `direct_link_upload`）→ 142 对；批17a 增 1 对（备份探测 `backupInspect` ↔ `backup_inspect`，契约先行）→ 143 对；批21a 增 1 对（RSS WebView 宿主桥 `rssWebViewHostCall` ↔ `rss_web_view_host_call`）→ 144 对；批24 增 2 对（7z 导入 `archiveImport7z` ↔ `archive_import_7z`、7z 列表 `archiveList7zFiles` ↔ `archive_list_7z_files`）→ 146 对；批32 增 1 对（readConfig 单键写 `updateReadConfigField` ↔ `book_update_read_config_field`）→ 147 对；批34 增 1 对（高亮规则正文匹配 `highlightRuleMatch` ↔ `highlight_rule_match`）→ 148 对；批35 增 2 对（批量删除 `deleteBooks` ↔ `bookshelf_delete_books`、阅读记录开关 `setReadRecordDisabled` ↔ `book_set_read_record_disabled`）→ 150 对；批37b 增 1 对（设置编码 `setBookCharset` ↔ `book_set_charset`）→ 151 对；批40 增 1 对（备份保留清理 `webdavPruneBackups` ↔ `webdav_prune_backups`）→ 152 对；批43 增 1 对（TXT 目录规则 `setBookTocRule` ↔ `book_set_toc_rule`）→ 153 对；批9b-1 增 1 对（过期搜索清理 `clearExpiredSearchBooks` ↔ `search_books_clear_expired`）→ 154 对；批9b-3 增 1 对（漫画图片保留清理 `retainComicImages` ↔ `retain_comic_images`）→ 155 对；批7b-1 增 5 对（书签标记 `getBookMarkingsByBook` ↔ `book_marking_list_by_book`、`getBookMarkingsForChapter` ↔ `book_marking_list_for_chapter`、`saveBookMarking` ↔ `book_marking_save`、`deleteBookMarking` ↔ `book_marking_delete`、`setBookMarkingEnabled` ↔ `book_marking_set_enabled`）→ 160 对；批9a 增 8 对（隐私与私密标记 `privacyHasPassword` ↔ `privacy_has_password`、`privacySetPassword` ↔ `privacy_set_password`、`privacyVerifyPassword` ↔ `privacy_verify_password`、`privacyClearPassword` ↔ `privacy_clear_password`、`setBooksPrivate` ↔ `set_books_private`、`getPrivateBookUrls` ↔ `get_private_book_urls`、`setBookGroupPrivate` ↔ `set_book_group_private`、`getPrivateGroupIds` ↔ `get_private_group_ids`）→ 168 对；批9d 增 4 对（生物识别 `privacyBiometricStateGet` ↔ `privacy_biometric_state_get`、`privacyBiometricSet` ↔ `privacy_biometric_set`、`privacyBiometricVerify` ↔ `privacy_biometric_verify`、`privacyBiometricClear` ↔ `privacy_biometric_clear`）→ 172 对）**
 
 > 生成口径：以 `rust/legado-ffi/src/ffi.rs` 的 `pub fn` 导出面与本仓 `rust_api*.dart` 实现中的 `bridge.<fn>` 调用点为源，取「BookApi 方法名 ≠ Rust FFI 导出名」且未在表 A 登记的对。一个 FFI 导出可被多个 BookApi 方法复用（如 `bookshelf_update`），复合实现列出全部调用；`initialize`/`getVersion` 无模块前缀但同属命名差异，一并登记。本表为纯登记（不新增方法、不改 §2.x 计数口径）。
 
@@ -279,6 +280,10 @@
 | `getPrivateBookUrls` | `getPrivateBookUrls`（§2.53） | `get_private_book_urls` |
 | `setBookGroupPrivate` | `setBookGroupPrivate`（§2.53） | `set_book_group_private` |
 | `getPrivateGroupIds` | `getPrivateGroupIds`（§2.53） | `get_private_group_ids` |
+| `privacyBiometricStateGet` | `privacyBiometricStateGet`（§2.53） | `privacy_biometric_state_get` |
+| `privacyBiometricSet` | `privacyBiometricSet`（§2.53） | `privacy_biometric_set` |
+| `privacyBiometricVerify` | `privacyBiometricVerify`（§2.53） | `privacy_biometric_verify` |
+| `privacyBiometricClear` | `privacyBiometricClear`（§2.53） | `privacy_biometric_clear` |
 | `addBook` | `addBook`（§2.2） | `bookshelf_add` |
 | `deleteBook` | `deleteBook`（§2.2） | `bookshelf_delete` |
 | `deleteBooks` | `deleteBooks`（§2.2） | `bookshelf_delete_books` |
@@ -1615,7 +1620,7 @@
 
 ---
 
-### 2.53 隐私与私密标记（privacy FFI，8 个方法）
+### 2.53 隐私与私密标记（privacy FFI，12 个方法）
 
 > [批9a | 2026-11-09] 加法式新增（不改既有签名/行为）：**隐私密码凭据与私密标记数据层**。语义按参考版 `help/security/PrivatePasswordCipher.kt`（PBKDF2WithHmacSHA256 / 210000 次 / 32B verifier / 16B salt / 定长比较）、`data/repository/PrivateAccessRepository.kt`、`data/dao/BookDao.kt:1191-1213`（`isPrivate` 批量写与私密 URL 查询）与 `data/entities/BookGroup.kt:27`（分组 `isPrivate`）。**本批不做 UI、路由与平台生物识别**；生物识别与解锁状态机属后续批次。
 >
@@ -1637,6 +1642,16 @@
 > - **批量写分块**：`setBooksPrivate` 按 **900** 个 URL 分块执行（SQLite 变量上限防御），单事务累计行数；跨分块重复 URL 去重。
 > - **groupId 位宽**：`setBookGroupPrivate` 全链 **i64**（与既有 `bookGroup*` CRUD 一致），兼容原版时间戳分组 ID（如 `1793904884364`），禁止 i32 截断。
 > - **salt 长度**：`privacyVerifyPassword` 要求 salt 解码后恰为 16 字节、verifier 恰为 32 字节，否则 false。
+>
+> [批9d | 2026-11-10] **生物识别快捷解锁（随机令牌信封，非明文密码）**：平台层（Android `BiometricPrompt` + Keystore auth-per-use；iOS `LAContext` + Keychain `kSecAccessControlBiometryCurrentSet`）只负责**认证并解封 32B 随机令牌**；令牌本身由 Rust/Dart 生成（`SecureRandom`/`SecRandomCopyBytes` → 标准 Base64），**平台层与配置表都不存明文密码**。Rust 将令牌 SHA-256 摘要以标准 Base64 存 `config:private_biometric_token_hash`，密文与 IV（Base64）存 `config:private_biometric_envelope` / `config:private_biometric_iv`。
+>
+> - `privacyBiometricStateGet` 返回 `{"configured": bool, "envelope": String?, "iv": String?}` 裸 JSON（无摘要、无令牌）；`configured` 为三键齐备且摘要可解码为 32 字节。
+> - `privacyBiometricSet(token, envelope, iv)`：**必须已有隐私密码**；token Base64 解码后恰 32B、iv 恰 12B、envelope 解码后 1..4096B，否则参数错误返回 false 不落库；单事务覆盖三键。
+> - `privacyBiometricVerify(token)`：无摘要或 token 非法返回 false；对 SHA-256 摘要做常量时间比较。**校验通过只代表生物凭据有效**，授权范围由 Dart `PrivacyNotifier` 按 `unlockScope` 决定（启动闸门置会话/启动验证；EveryTime 仅目标；设置页只验不授权）。
+> - `privacyBiometricClear()`：删除三键，键不存在为 no-op。
+> - **改密/清密联动**：`privacySetPassword` 成功（含新密码与原密码相同）与 `privacyClearPassword` 在**同一事务内**清空三键——改密即失效生物快捷（比参考版「同密码保留信封」更严格，登记差异）；Dart 随后调用原生 `deleteKey` 销毁 Keystore/Keychain 密钥。
+> - **失效与降级**：原生返回 `key_invalidated`（新增/变更指纹）时，Dart 调 `privacyBiometricClear` 并关闭开关，回退密码；无硬件/未录入/系统锁定（`no_hardware`/`not_enrolled`/`locked_out`/`permanently_locked_out`）只隐藏或禁用快捷入口，不清除已配置信封（登记差异：参考版不主动清）。
+> - **安全边界**：摘要、令牌、信封均不得写入日志；三键均属敏感配置，`getAllConfigs` 过滤且 `getConfig/setConfig` 拒绝；`cache_clear` 保留 `config:` 前缀；三键不纳入备份。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -1648,6 +1663,10 @@
 | `getPrivateBookUrls()` | 无 | `Future<List<String>>` | 返回 `isPrivate = 1` 的 bookUrl，按 bookUrl 升序（Rust `ffi::get_private_book_urls`） |
 | `setBookGroupPrivate(int groupId, bool isPrivate)` | groupId：i64 全链（兼容旧时间戳分组 ID）；isPrivate | `Future<bool>` | 更新 `book_groups.isPrivate`，返回是否命中行（Rust `ffi::set_book_group_private`） |
 | `getPrivateGroupIds()` | 无 | `Future<List<int>>` | 返回 `isPrivate = 1` 的 groupId，升序（Rust `ffi::get_private_group_ids`） |
+| `privacyBiometricStateGet()` | 无 | `Future<String>` | 裸 JSON `{"configured": bool, "envelope": String?, "iv": String?}`；不返回摘要/令牌（Rust `ffi::privacy_biometric_state_get`） |
+| `privacyBiometricSet(String token, String envelope, String iv)` | token：32B Base64；envelope/iv：Base64 | `Future<bool>` | 需已有密码；长度校验通过后单事务写三键，否则 false 不落库（Rust `ffi::privacy_biometric_set`） |
+| `privacyBiometricVerify(String token)` | token：32B Base64 | `Future<bool>` | 无摘要/非法 token 返回 false；摘要常量时间比较（Rust `ffi::privacy_biometric_verify`） |
+| `privacyBiometricClear()` | 无 | `Future<void>` | 删除摘要/信封/IV 三键；不存在为 no-op（Rust `ffi::privacy_biometric_clear`） |
 
 ---
 
@@ -1905,13 +1924,13 @@
 | 50 | 视频弹幕解析 | 1 |
 | 51 | 直链上传 | 1 |
 | 52 | 书签标记 | 5 |
-| 53 | 隐私与私密标记 | 8 |
-| | **合计（§2.x 附录行合计）** | **334** |
+| 53 | 隐私与私密标记 | 12 |
+| | **合计（§2.x 附录行合计）** | **338** |
 
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法、2026-10-03 B2 增 §2.48 音频章节预下载写入 2 方法 `audioCacheDownload`/`audioCacheCancel`，取代人工统计）：
-> - 附录行合计 **334** = §2.x 实际方法行总数；其中与 BookApi 同名行 **317**（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 3 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1 + 直链上传 1 + 备份探测 1 + RSS WebView 宿主桥 1 + 7z 导入 2 + readConfig 单键写 1 + 高亮规则正文匹配 1 + 批量删除 1 + 阅读记录开关 1 + 设置编码 1 + WebDAV 备份保留清理 1 + TXT 目录规则 1 + 过期搜索清理 1（批9b-1）+ 书签标记 5（批7b-1）+ 隐私与私密标记 8（批9a）；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对侧的不同名 FFI 行 **14**（3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）、`cacheGetChapter` 独立行 1（§2.41；BookApi `getCachedChapter` 另在 §2.16 同名登记，不重复计数）、
+> - 附录行合计 **338** = §2.x 实际方法行总数；其中与 BookApi 同名行 **321**（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 3 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1 + 直链上传 1 + 备份探测 1 + RSS WebView 宿主桥 1 + 7z 导入 2 + readConfig 单键写 1 + 高亮规则正文匹配 1 + 批量删除 1 + 阅读记录开关 1 + 设置编码 1 + WebDAV 备份保留清理 1 + TXT 目录规则 1 + 过期搜索清理 1（批9b-1）+ 书签标记 5（批7b-1）+ 隐私与私密标记 12（批9a + 批9d 生物识别 4）；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对侧的不同名 FFI 行 **14**（3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）、`cacheGetChapter` 独立行 1（§2.41；BookApi `getCachedChapter` 另在 §2.16 同名登记，不重复计数）、
 >   尚未封装进 BookApi 的纯 FFI **1**（`chapterPayAction`；`backup_inspect` 已由批17b Dart 封装计入 BookApi）；`rssUpdateSource` 独立行 1（已由 BookApi `updateRssSource` 封装接通，`rust_api_search_rss.part.dart:246-247`，2026-10-26 审查批5 勘误：原记「纯 FFI 2」过时）。
-> - BookApi 代码计数 **332** = 317 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 3 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1 + 直链上传 1 + 备份探测 1 + RSS WebView 宿主桥 1 + 7z 导入 2 + readConfig 单键写 1 + 高亮规则正文匹配 1 + 批量删除 1 + 阅读记录开关 1 + 设置编码 1 + WebDAV 备份保留清理 1 + TXT 目录规则 1 + 过期搜索清理 1（批9b-1）+ 书签标记 5（批7b-1）+ 隐私与私密标记 8（批9a）；失败章查询经 §1.7 命名等价对登记）+ 14 命名等价（§1.7：3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）+ 1 BookApi 别名（`getChaptersWithMeta` → `getChapters`，复用同一 FFI，不新增 §2.x 行）。测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
+> - BookApi 代码计数 **336** = 321 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 3 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1 + 直链上传 1 + 备份探测 1 + RSS WebView 宿主桥 1 + 7z 导入 2 + readConfig 单键写 1 + 高亮规则正文匹配 1 + 批量删除 1 + 阅读记录开关 1 + 设置编码 1 + WebDAV 备份保留清理 1 + TXT 目录规则 1 + 过期搜索清理 1（批9b-1）+ 书签标记 5（批7b-1）+ 隐私与私密标记 12（批9a + 批9d 生物识别 4）；失败章查询经 §1.7 命名等价对登记）+ 14 命名等价（§1.7：3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）+ 1 BookApi 别名（`getChaptersWithMeta` → `getChapters`，复用同一 FFI，不新增 §2.x 行）。测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
 > - 2026-10-26 审查批5：§1.7 表 B 新增 **123 条**「Rust FFI 导出 ↔ BookApi 同名方法」机械映射（`ffi.rs` pub fn 面 × `rust_api*.dart` 调用面程序化提取，含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）；§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）。该表不改变 §2.x 行数与 BookApi 计数，仅补齐命名等价登记债。审查批6 再 +1 对（`rssSourceSetEnabled`，并更正 `enableRssSource` / `disableRssSource` 两对的 FFI 列）：同名 FFI 映射 **124**、总数 **139**。批8 再 +10 对（WebDAV 云同步既有 7 方法补登记 + servers CRUD 新增 3 方法）：同名 FFI 映射 **134**、总数 **149**。批11 再 +1 对（`setHttpLogRecording` ↔ `set_http_log_recording`）：同名 FFI 映射 **135**、总数 **150**。批15b 再 +4 对（`rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`）：同名 FFI 映射 **139**、总数 **154**。批15c 再 +1 对（`rssFetchContent` ↔ `rss_fetch_content`）：同名 FFI 映射 **140**、总数 **155**。批15f 再 +1 对（`rssListCachedArticles` ↔ `rss_list_cached_articles`）：同名 FFI 映射 **141**、总数 **156**。
 > - 2026-10-26 批11（HTTP 采集接线 + `/refreshToc`）：FFI 加法式新增 `setHttpLogRecording`（§2.10），§2.10 4→**5**、附录合计 300→**301**、BookApi 297→**298**、§1.7 表 B 134→**135**（总数 149→**150**）；`legado-net` 新增采集 trait/开关/单槽（`http_log` 模块，不依赖 server），`legado-server` 注册 ring 存储实现并删除段评链手工记录（防双记录）；脱敏补齐「敏感名路径段的下一段」规则（审查批4 P2-4）；Web 端新增 GET `/refreshToc`（复用既有刷新链）。**采集范围登记**：`LegadoClient` 统一出口（含重试/followRedirects 变体/流式）为唯一采集点；`legado-net` 内 `webdav.rs`/`remote_book.rs` 与 `legado-server` handler 内裸 reqwest（TTS/音频/源更新下载）不在采集面内。
 > - 2026-10-27 批16a（直链上传）：§2.51 新增 1 方法 `directLinkUpload`（`legado-net::direct_link_upload` + `legado-ffi/src/api/direct_link_upload_api.rs`）；附录合计 307→**308**、BookApi 304→**305**、§1.7 表 B 141→**142**（等价对总数 156→**157**）；方法模块 47→**48**。参考版字段集裁决：仅 4 字段（无口令/无 `expiryDate`）。
