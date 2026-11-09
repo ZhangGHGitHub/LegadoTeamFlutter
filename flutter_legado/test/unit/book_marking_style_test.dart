@@ -171,6 +171,100 @@ void main() {
     });
   });
 
+  group('BookMarkingStyle.toHighlightStyle（批7b-2b 渲染映射）', () {
+    test('mode 1/3/2 → underline SOLID/WAVY/DASHED（宽/距保留）', () {
+      final solid = const BookMarkingStyle(
+        underlineMode: 1,
+        underlineColor: 0xFF112233,
+        underlineWidth: 2.5,
+        underlineOffset: 3,
+      ).toHighlightStyle();
+      expect(solid.underline?.kind, 'SOLID');
+      expect(solid.underline?.color, 0xFF112233);
+      expect(solid.underline?.width, 2.5);
+      expect(solid.underline?.distance, 3);
+      expect(solid.strike, isFalse);
+      expect(solid.hasRenderableEffect, isTrue);
+
+      expect(
+        const BookMarkingStyle(underlineMode: 3).toHighlightStyle().underline?.kind,
+        'WAVY',
+      );
+      expect(
+        const BookMarkingStyle(underlineMode: 2).toHighlightStyle().underline?.kind,
+        'DASHED',
+      );
+    });
+
+    test('mode 6 → strike，不加上划线', () {
+      final style = const BookMarkingStyle(
+        underlineMode: 6,
+        underlineColor: 0xFF00FF00,
+      ).toHighlightStyle();
+      expect(style.strike, isTrue);
+      expect(style.strikeColor, 0xFF00FF00);
+      expect(style.underline, isNull);
+    });
+
+    test('mode 7 → 荧光 fill（20% alpha），不加上划线', () {
+      final style = const BookMarkingStyle(
+        underlineMode: 7,
+        underlineColor: 0xFF123456,
+      ).toHighlightStyle();
+      expect(style.fill, (0xFF123456 & 0x00FFFFFF) | 0x33000000);
+      expect(style.underline, isNull);
+      expect(style.strike, isFalse);
+    });
+
+    test('BG → fill=bgColor；TEXT → textColor', () {
+      final bg = const BookMarkingStyle(bgColor: 0x33FF0000).toHighlightStyle();
+      expect(bg.fill, 0x33FF0000);
+      expect(bg.textColor, 0);
+
+      final text = const BookMarkingStyle(textColor: 0xFF0000FF)
+          .toHighlightStyle();
+      expect(text.textColor, 0xFF0000FF);
+      expect(text.fill, 0);
+    });
+
+    test('mode 5（SVG）回退 SOLID；mode 0/未知无效果', () {
+      final svg = const BookMarkingStyle(
+        underlineMode: 5,
+        underlineColor: 0xFFABCDEF,
+      ).toHighlightStyle();
+      expect(svg.underline?.kind, 'SOLID');
+
+      final none = const BookMarkingStyle(underlineMode: 0).toHighlightStyle();
+      expect(none.hasRenderableEffect, isFalse);
+      final unknown = const BookMarkingStyle(underlineMode: 9)
+          .toHighlightStyle();
+      expect(unknown.hasRenderableEffect, isFalse);
+    });
+
+    test('线色为空/0 回退展示色（含 BG/TEXT 展示色与默认色）', () {
+      // 无任何颜色 → 默认色
+      final fallback = const BookMarkingStyle(underlineMode: 1)
+          .toHighlightStyle();
+      expect(fallback.underline?.color, MarkingEffect.defaultColor);
+
+      // underlineColor=0，展示色取 textColor
+      final withText = const BookMarkingStyle(
+        underlineMode: 1,
+        underlineColor: 0,
+        textColor: 0xFF00AA00,
+      ).toHighlightStyle();
+      expect(withText.underline?.color, 0xFF00AA00);
+
+      // 删除线同样回退展示色
+      final strike = const BookMarkingStyle(
+        underlineMode: 6,
+        underlineColor: 0,
+        bgColor: 0x33FF0000,
+      ).toHighlightStyle();
+      expect(strike.strikeColor, 0xFFFF0000);
+    });
+  });
+
   group('normalizeMarkingText / buildBookMarkingAnchor', () {
     test('逐行 trim 空格/制表/全角空格，保留行内空格与换行', () {
       expect(normalizeMarkingText('  第一行  \n\t第二行　\n'), '第一行\n第二行');
