@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import 'src/models/models.dart';
+import 'src/providers/backup_restore_refresh.dart';
 import 'src/providers/bookshelf/bookshelf_notifier.dart';
 import 'src/providers/privacy/privacy_notifier.dart';
 import 'src/providers/providers.dart';
@@ -15,6 +16,7 @@ import 'src/routes.dart';
 import 'src/screens/video_screen.dart';
 import 'src/services/auto_task_scheduler.dart';
 import 'src/services/auto_backup_scheduler.dart';
+import 'src/services/auto_check_new_backup_scheduler.dart';
 import 'src/services/app_update_service.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/headset_media_button_service.dart';
@@ -223,6 +225,12 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   /// [initState]（本 State 先于 build 出的 WidgetsApp 执行）。
   late final PrivacyBackGuard _privacyBackGuard;
 
+  /// [批10] 隐私闸门是否阻止交互（true = 未放行/加载中/读取失败）
+  ///
+  /// 由 build 中的 `ref.listen(privacyNotifierProvider)` 同步；启动自动检查
+  /// 新备份据此在闸门放行后才弹窗，解锁时若已过 5s 延迟会立即补检查。
+  final ValueNotifier<bool> _privacyGateBlocked = ValueNotifier<bool>(true);
+
   @override
   void initState() {
     super.initState();
@@ -230,6 +238,12 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       () => ref.read(privacyNotifierProvider),
     );
     WidgetsBinding.instance.addObserver(_privacyBackGuard);
+    // [批10] 隐私闸门状态同步：listenManual 可在 initState 使用，订阅随
+    // State 自动释放；fireImmediately 保证首帧（隐私加载可能早于 build
+    // 完成）也能拿到真实闸门状态，避免自动检查永久停在「已锁定」。
+    ref.listenManual(privacyNotifierProvider, (previous, next) {
+      _privacyGateBlocked.value = privacyGateBlocksApp(next);
+    }, fireImmediately: true);
     // 系统栏样式由 [SystemBarBinder] 按偏好与主题统一驱动
     // 首帧渲染后检查上次崩溃日志并弹窗提示
     // [P2-13 2026-09-18] 弹窗上下文改用全局 Navigator（见
@@ -256,6 +270,18 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // [批40] 自动备份调度：启动首帧后判定一次，之后回前台（resumed）再判定
     //（对齐原版 MainActivity.onResume → Backup.autoBack）
     AutoBackupScheduler.attach(ref.read(bookApiProvider));
+    // [批10] autoCheckNewBackup 启动检查：冷启动、隐私闸门放行后延迟 5s
+    // 检查一次 WebDAV 远端是否有比本地新的备份；进程内只查一次，不挂
+    // resumed。弹窗前已写去重键（取消=永久忽略该备份），确认后走共享恢复链
+    // 并刷新全局 provider（与设置页恢复同一实现）。
+    AutoCheckNewBackupScheduler.attach(
+      api: ref.read(bookApiProvider),
+      privacyLocked: _privacyGateBlocked,
+      refreshAfterRestore: () async {
+        if (!mounted) return;
+        await reloadAppStateAfterBackupRestore(ref);
+      },
+    );
     // P1-11：监听系统 legado:// / yuedu:// 深链 → Association；
     // P1-4：注入本地书籍导入器，消费外部书籍文件 VIEW intent（content://）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -358,6 +384,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(_privacyBackGuard);
+    // [批10] 先解除调度器对隐私 notifier 的监听，再释放 notifier
+    AutoCheckNewBackupScheduler.instance?.dispose();
+    _privacyGateBlocked.dispose();
     super.dispose();
   }
 

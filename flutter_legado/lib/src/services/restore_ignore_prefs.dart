@@ -51,6 +51,9 @@ class RestoreIgnorePrefs {
     // [批40] 上次备份时间：对齐原版 LocalConfig（独立 `local` 偏好文件，
     // 不随备份往返）；随备份恢复会让自动备份判定基于旧时间
     PrefKeys.lastBackup,
+    // [批10] 已提示过的远端最新备份时间：设备级去重基准，随备份恢复会让
+    // 「WebDAV 备份比本地新」判定重复弹出已忽略的备份
+    PrefKeys.lastSeenRemoteBackupMtime,
     // [批9a 项5] 上次自动检查更新时间戳：对齐原版 LocalConfig.lastCheckUpdate
     //（设备级，不随备份往返）；随备份恢复会让「每日最多一次」判定基于
     // 旧设备的时间戳，可能重复弹窗或长时间不检查

@@ -832,6 +832,12 @@ class PrefKeys {
   /// 打开软件时自动检查新备份（默认 true）
   static const autoCheckNewBackup = 'autoCheckNewBackup';
 
+  /// 已提示过的远端最新备份时间（毫秒时间戳，批10）。
+  ///
+  /// **设备级状态**：加入 `RestoreIgnorePrefs.alwaysIgnoreKeys`，不随备份
+  /// 往返——随旧备份恢复会让去重基准失真，重新弹出已忽略的远端备份。
+  static const lastSeenRemoteBackupMtime = 'lastSeenRemoteBackupMtime';
+
   // ===== WebDAV 备份族（批40，键名逐字对齐原版 PreferKey）=====
 
   /// WebDAV 上保留的备份份数（**字符串**偏好；默认 "0" = 不自动清理，

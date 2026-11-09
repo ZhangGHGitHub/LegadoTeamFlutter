@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -14,28 +13,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../l10n/app_strings.dart';
 import '../models/backup_inspect_info.dart';
-import '../models/book.dart';
+import '../providers/backup_restore_refresh.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
-import '../providers/bookshelf_settings/bookshelf_settings_notifier.dart';
-import '../providers/cover_settings/cover_settings_notifier.dart';
-import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
-import '../providers/reader/reader_menu_style_notifier.dart';
-import '../providers/reader/reader_theme_notifier.dart';
-import '../providers/reader/reader_top_bar_actions_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
-import '../providers/theme/eye_protection_notifier.dart';
-import '../providers/theme/theme_colors_notifier.dart';
-import '../providers/theme/theme_notifier.dart';
-import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/local_backup_service.dart';
-import '../services/replace_default_sync.dart';
-import '../services/restore_ignore_prefs.dart';
-import '../services/server_service.dart';
 import '../services/settings_service.dart';
-import '../services/webdav_server_service.dart';
+import '../services/webdav_restore_service.dart';
 import '../utils/error_message.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
@@ -50,13 +36,12 @@ enum _WebDavTestStatus { notTested, testing, success, failed }
 
 /// 备份密码错误码前缀（契约 §2.11 批17a）
 ///
-/// 后端以 `LegadoError::Internal` 返回，Display 形如
-/// `Internal error: BACKUP_PASSWORD_INVALID: ...`，Dart 侧必须按「包含」
-/// 前缀识别，不能按字符串起始位置判断。
-const String _kBackupPasswordRequired = 'BACKUP_PASSWORD_REQUIRED';
-const String _kBackupPasswordInvalid = 'BACKUP_PASSWORD_INVALID';
+/// 实际常量在 [WebDavRestoreService]（批10 恢复链抽取，自动检查共用），
+/// 此处保留页面内别名以兼容既有引用。
+const String _kBackupPasswordRequired = kBackupPasswordRequiredCode;
+const String _kBackupPasswordInvalid = kBackupPasswordInvalidCode;
 const String _kBackupEncryptedContentCorrupt =
-    'BACKUP_ENCRYPTED_CONTENT_CORRUPT';
+    kBackupEncryptedContentCorruptCode;
 
 /// 进度框执行结果（三态，批17c P3-6）
 ///
@@ -75,37 +60,11 @@ class _ProgressResult {
   final Object? error;
 }
 
-/// 判定备份文件是不是原版 zip 备份（扩展名快判 + **文件魔数**）
+/// 判定备份文件是不是原版 zip 备份（批10 移入恢复服务，设置页共用）
 ///
-/// [批17c P3-5] 只看扩展名会把「zip 改名 `.json`」误判为自有 JSON 备份：
-/// 不探测密码 → 直接恢复 → 后端因加密内容要求密码 → 用户看不到密码框。
-/// 魔数口径与 Rust `is_zip_backup` 完全一致（`PK\x03\x04` 普通条目 /
-/// `PK\x05\x06` 空 zip）；读取失败（文件不存在/权限）按非 zip 处理，
-/// 由后续恢复流程给出统一错误。
-///
-/// 同步读 4 字节（不整文件入内存）：文件打开/读取是本地小操作，避免把
-/// 「选择备份文件」链路的异步时序复杂化（恢复链其余步骤均为异步）。
-bool _isZipBackupFile(String path) {
-  if (path.toLowerCase().endsWith('.zip')) return true;
-  RandomAccessFile? file;
-  try {
-    file = File(path).openSync();
-    final head = file.readSync(4);
-    if (head.length < 4) return false;
-    return head[0] == 0x50 &&
-        head[1] == 0x4B &&
-        ((head[2] == 0x03 && head[3] == 0x04) ||
-            (head[2] == 0x05 && head[3] == 0x06));
-  } catch (_) {
-    return false;
-  } finally {
-    try {
-      file?.closeSync();
-    } catch (_) {
-      // 关闭失败不影响判定结果
-    }
-  }
-}
+/// 扩展名快判 + 文件魔数（口径见 [WebDavRestoreService.isZipBackupFile]）。
+bool _isZipBackupFile(String path) =>
+    WebDavRestoreService.isZipBackupFile(path);
 
 /// 备份与恢复（对齐 BackupConfigFragment + pref_config_backup.xml）
 ///
@@ -564,11 +523,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 执行本地恢复全链（偏好回填 + 业务表恢复 + 页面刷新）
   ///
   /// [password] 仅对原版 zip 备份生效；JSON 备份传 null。
-  /// [isZipContainer] 容器判定结果（调用方已按文件魔数算好）；缺省时此处
-  /// 现算。zip 容器**不做** JSON 偏好/账号回读（zip 备份没有 `appPrefs`
-  /// 段，按 `.json` 扩展名硬读会把压缩字节当 JSON 解析——`.json` 命名的
-  /// zip 会在这里抛异常或卡住恢复链）。
+  /// [isZipContainer] 容器判定结果（调用方已按文件魔数算好）；缺省时由
+  /// [WebDavRestoreService] 现算。zip 容器**不做** JSON 偏好/账号回读。
   ///
+  /// 批10：实际恢复步骤（applyPrefs → restore → 服务器迁移 → 刷新）已
+  /// 抽取到 [WebDavRestoreService]，与启动自动检查共用同一实现。
   /// 批40 回修 P2-2：整条恢复链跑在 `LocalBackupService.runExclusiveRestore`
   /// 内（与手动/自动备份共用互斥）；返回 false = 已有备份/恢复执行中，
   /// 本次未执行（调用方提示稍候，不得提示成功）。
@@ -579,75 +538,22 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   }) async {
     final acquired = await LocalBackupService.instance.runExclusiveRestore(
       () async {
-        await _performLocalRestoreLocked(
+        await WebDavRestoreService(
+          api: ref.read(bookApiProvider),
+          settings: _settings,
+        ).restoreBackupFile(
           backupPath,
           password: password,
           isZipContainer: isZipContainer,
+          refresh: () async {
+            if (!mounted) return;
+            await _reloadPrefsAfterRestore();
+          },
         );
         return true;
       },
     );
     return acquired ?? false;
-  }
-
-  /// 本地恢复实际执行体（调用方须已持有备份/恢复互斥锁）
-  Future<void> _performLocalRestoreLocked(
-    String backupPath, {
-    String? password,
-    bool? isZipContainer,
-  }) async {
-    final api = ref.read(bookApiProvider);
-    final isZip = isZipContainer ?? _isZipBackupFile(backupPath);
-    var pathToRestore = backupPath;
-    // 批8 审查回修 P1-1：先判定备份账号来源——v1/v2 备份的 WebDAV 账号
-    // 只在 appPrefs 里，恢复后须回填 DB（原版 prefs 生效语义）；v3 含
-    // servers 段以 DB 为准；无法判定/备份未带账号则不回填。
-    final accountSource = isZip
-        ? WebDavBackupAccountSource.none
-        : await WebDavServerService.backupAccountSource(backupPath);
-    final ignore = await _settings.getRestoreIgnoreConfig();
-    if (ignore['localBook'] == true && !isZip) {
-      pathToRestore = await _backupPathSkippingLocalBooks(backupPath);
-    }
-
-    final serverService = ServerService(api: api, settings: _settings);
-    // 批18a：远程书库服务器密码以 servers 表为准；恢复旧备份时按 DB 既有
-    // id / url+username 保留本机密码（读失败退回旧偏好，不阻断恢复）
-    LocalServerPasswordIndex? localPasswords;
-    if (!isZip) {
-      try {
-        localPasswords = await serverService.localPasswordIndex();
-      } catch (e) {
-        debugPrint('读取本机服务器密码索引失败（退回旧偏好）：$e');
-      }
-    }
-
-    if (!isZip) {
-      await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(
-        backupPath,
-        ignore,
-        localPasswordsById: localPasswords?.byId,
-        localPasswordsByEndpoint: localPasswords?.byEndpoint,
-      );
-    }
-    await api.restore(pathToRestore, password: password);
-    // 偏好已由上面写回本地；v1/v2 备份把恢复所得账号显式覆盖到 DB
-    // （v3 交由恢复器写入的 servers 行，不回读偏好）
-    await ref
-        .read(syncNotifierProvider.notifier)
-        .applyLegacyWebDavPrefsAfterRestore(source: accountSource);
-    // 批18a：旧格式备份（无 servers 段或仅 id=-1）携带 remote_servers 时，
-    // 恢复后强制重跑一次 prefs → servers 表迁移。失败由
-    // [ServerService.forceMigrateAfterRestore] 记崩溃日志并复位迁移标记
-    //（下次启动重试）；取舍说明见该方法注释（可能复活旧偏好中已删除的服务器）
-    if (!isZip &&
-        await ServerService.backupNeedsLegacyRemoteServerMigration(
-          backupPath,
-        )) {
-      await serverService.forceMigrateAfterRestore();
-    }
-    if (!mounted) return;
-    await _reloadPrefsAfterRestore();
   }
 
   /// 备份密码重试循环（批17b）
@@ -836,33 +742,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   ///
   /// 批8 审查回修 P2-1：`loadConfig()` 从 DB 重读账号（P1-1 的偏好回填已在
   /// 调用方完成，此处读取回填后的权威值），并同步刷新本页行文案。
+  /// 批10：全局 provider/Rust caches 刷新已抽取到
+  /// [reloadAppStateAfterBackupRestore]（启动自动检查共用），本方法只保留
+  /// 页面局部状态回填。
   Future<void> _reloadPrefsAfterRestore() async {
-    await ref.read(syncNotifierProvider.notifier).loadConfig();
-    await ref.read(themeNotifierProvider.notifier).load();
-    ref.invalidate(themeColorsProvider);
-    // [设置批2a-1] 备份 appPrefs 可能替换护眼模式六键：恢复后 await 重读，
-    // 让全局叠加层与外观设置页在同一会话即时生效；用 reload 而非 invalidate
-    // 避免 provider 重建时先以默认值渲染一帧（护眼会闪一下关闭）
-    await ref.read(eyeProtectionProvider.notifier).reload();
-    // [设置批2b-1a] 备份 appPrefs 可能替换容器不透明度/容器背景图路径/
-    // 背景图虚化半径；恢复后 await 重读，保证同会话即时生效（不透明度与
-    // 虚化会立即反映到 IosGroup/全局背景层） — 全栈工程师
-    await ref.read(uiSettingsProvider.notifier).reload();
-    ref.invalidate(mainPrefsProvider);
-    ref.invalidate(bookshelfNotifierProvider);
-    // [设置批6a-1] 书架布局配置随 appPrefs 恢复后 await 重读，避免继续用
-    // 旧布局/排序渲染（reload 而非 invalidate，防止默认值中间帧）。
-    await ref.read(bookshelfSettingsProvider.notifier).reload();
-    // [设置批6b-1] 封面设置随 appPrefs 恢复后 await 重读，保证封面文字/
-    // 描边阴影/仅 WiFi 在同一会话即时生效（reload 而非 invalidate）。
-    await ref.read(coverSettingsProvider.notifier).reload();
-    // [批37] 顶栏动作配置随 appPrefs 恢复后重读，避免继续用旧配置
-    ref.invalidate(readerTopBarActionsProvider);
-    // [批3a] 阅读器菜单样式（配色/底栏布局/顶栏标题）同样随 appPrefs
-    // 恢复，必须 invalidate 让本会话立即重读
-    ref.invalidate(readerMenuStyleProvider);
-    // [批38] 阅读主题库/当前 id/列数随 appPrefs 恢复后重读
-    ref.invalidate(readerThemeProvider);
+    await reloadAppStateAfterBackupRestore(ref);
     // [批40 回修 P3-4] 备份 appPrefs 会覆盖 WebDAV 备份族偏好；恢复后必须
     // 重读新增设置行（保留数量/导入后自动上传/自动备份三键）与既有两开关，
     // 否则页面继续显示恢复前的旧值。
@@ -879,37 +763,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       PrefKeys.autoCheckNewBackup,
       defaultValue: true,
     );
-    // 批9b-4 审查回修 P2-2：备份 appPrefs 可能替换 userAgent，恢复完成后
-    // 必须同步到 Rust（caches config:userAgent + 运行期默认 UA），否则同
-    // 会话内 prefs 与 Rust 分叉，重启前网络请求仍用旧 UA。失败不阻断恢复。
-    try {
-      final userAgent = (await _settings.getStringPref(
-        PrefKeys.userAgent,
-      )).trim();
-      await ref.read(bookApiProvider).setConfig(PrefKeys.userAgent, userAgent);
-    } catch (e) {
-      debugPrint('恢复后同步 UserAgent 失败（不阻断恢复）：$e');
-    }
-    // 批9b-2 审查回修：备份 appPrefs 同样可能替换 threadCount，恢复后与
-    // UserAgent 同口径同步 Rust（caches config:threadCount），避免同会话
-    // prefs/Rust 分叉；存量 >256 夹逼到 UI 上限。失败不阻断恢复。
-    try {
-      final threadCount = (await _settings.getIntPref(
-        PrefKeys.threadCount,
-        defaultValue: 16,
-      )).clamp(1, 256);
-      await ref
-          .read(bookApiProvider)
-          .setConfig(PrefKeys.threadCount, '$threadCount');
-    } catch (e) {
-      debugPrint('恢复后同步线程数失败（不阻断恢复）：$e');
-    }
-    // [批7a 复核 P2-N1] 备份 appPrefs 可能替换 replaceEnableDefault：恢复后
-    // 同步 Rust caches config:replaceEnableDefault，否则同会话阅读链仍按旧
-    // 默认（重启前不生效）；失败静默不阻断恢复。无论 config 写入成败，
-    // 随后都让缓存 provider 失效，下次菜单 watch 重读 prefs。
-    await syncReplaceEnableDefaultAfterRestore(ref.read(bookApiProvider));
-    ref.invalidate(replaceEnableDefaultProvider);
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
     setState(() {
@@ -926,31 +779,6 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       _onlyLatestBackup = onlyLatest;
       _autoCheckNewBackup = autoCheck;
     });
-  }
-
-  Future<String> _backupPathSkippingLocalBooks(String backupPath) async {
-    final raw = await File(backupPath).readAsString();
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) return backupPath;
-    final books = decoded['books'];
-    if (books is! List) return backupPath;
-
-    decoded['books'] = books.where((item) {
-      if (item is! Map) return true;
-      final origin = item['origin']?.toString() ?? '';
-      final type = item['type'];
-      final typeInt = type is int ? type : int.tryParse('$type') ?? 0;
-      final isLocal =
-          BookType.isLocalOrigin(origin) || (typeInt & BookType.local) != 0;
-      return !isLocal;
-    }).toList();
-
-    final dir = Directory.systemTemp;
-    final out = File(
-      '${dir.path}${Platform.pathSeparator}legado_restore_no_local_${DateTime.now().millisecondsSinceEpoch}.json',
-    );
-    await out.writeAsString(jsonEncode(decoded));
-    return out.path;
   }
 
   /// 在模态进度框内执行 [task]
