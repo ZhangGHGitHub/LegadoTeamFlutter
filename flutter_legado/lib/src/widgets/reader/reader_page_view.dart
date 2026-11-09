@@ -16,6 +16,7 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../services/book_marking_render.dart';
 import '../../services/bookmark_badge_image_store.dart';
 import '../../services/highlight_match_sync.dart';
 import '../../widgets/error_view.dart';
@@ -241,6 +242,24 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// 当前章节命中区间（渲染直接读取；异步到达后 setState 重建）
   List<HighlightMatch> _highlightMatches = const [];
+
+  // ===== [批7b-2b] 书签标记正文渲染状态 =====
+
+  /// 当前章用户笔记（book_marks）转换后的命中区间
+  List<HighlightMatch> _markingMatches = const [];
+
+  /// 规则命中 + 笔记命中的合并结果（传给正文渲染）
+  List<HighlightMatch> _combinedHighlightMatches = const [];
+
+  /// 当前笔记命中对应的键（书 + 章 + 正文 + 修订号）
+  String _markingKey = '';
+
+  /// 在途笔记加载键（去重）
+  String _markingLoadingKey = '';
+
+  /// 失败退避键与截止时间（失败清空并允许下次重试）
+  String _markingFailedKey = '';
+  DateTime _markingRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -1018,6 +1037,102 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       load: _loadHighlightMatches,
       onLoaded: _onHighlightLoaded,
     );
+    // [批7b-2b] 用户笔记：watch 修订号，保存/启停/删除后即时重算
+    _syncMarkingMatches(
+      enabled: book != null && state.pageTurnMode != PageTurnMode.scroll,
+      content: content,
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+      revision: ref.watch(bookMarkingsRevisionProvider),
+    );
+    _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+      rules: _highlightMatches,
+      marks: _markingMatches,
+    );
+  }
+
+  /// 同步当前章笔记命中（批7b-2b）
+  ///
+  /// 键 = 书 + 章 + 已分页正文（长度/hash）+ 笔记修订号；键变化先清空旧
+  /// 命中再异步加载，避免新章/换书短暂套用上一章区间。失败清空并按 1.5s
+  /// 退避，退避结束后下一次 build 重试。滚动模式不加载（与规则同边界，
+  /// 正文走 ReaderParagraphs 尚未接线渲染）。
+  void _syncMarkingMatches({
+    required bool enabled,
+    required String content,
+    required String bookUrl,
+    required int chapterIndex,
+    required int revision,
+  }) {
+    if (!enabled || content.isEmpty || bookUrl.isEmpty) {
+      _markingMatches = const [];
+      _markingKey = '';
+      _markingLoadingKey = '';
+      return;
+    }
+    final key = '$bookUrl\u0000$chapterIndex\u0000${content.length}'
+        '\u0000${content.hashCode}\u0000$revision';
+    if (key == _markingKey) return;
+
+    // 换章/换书/正文或修订号变化：先清旧命中
+    _markingMatches = const [];
+    if (_markingLoadingKey == key) {
+      _markingKey = key;
+      return;
+    }
+    if (_markingFailedKey == key && DateTime.now().isBefore(_markingRetryAfter)) {
+      // 退避中：不记 key，退避结束后下一次 build 重试
+      _markingKey = '';
+      return;
+    }
+    _markingKey = key;
+    _markingLoadingKey = key;
+    unawaited(_loadMarkingMatches(key, content, bookUrl, chapterIndex));
+  }
+
+  /// 异步加载当前章笔记并解析为命中区间
+  Future<void> _loadMarkingMatches(
+    String key,
+    String content,
+    String bookUrl,
+    int chapterIndex,
+  ) async {
+    try {
+      final markings = await ref
+          .read(bookApiProvider)
+          .getBookMarkingsForChapter(bookUrl, chapterIndex);
+      if (!mounted || _markingKey != key) return;
+      final matches = buildMarkingMatches(
+        content: content,
+        markings: markings,
+      );
+      _markingFailedKey = '';
+      setState(() {
+        _markingMatches = matches;
+        _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+          rules: _highlightMatches,
+          marks: _markingMatches,
+        );
+      });
+    } catch (e) {
+      // 笔记是增益能力：失败降级为无标记，1.5s 后允许重试
+      _markingFailedKey = key;
+      _markingRetryAfter = DateTime.now().add(
+        const Duration(milliseconds: 1500),
+      );
+      if (_markingKey == key) _markingKey = '';
+      if (!mounted) return;
+      setState(() {
+        _markingMatches = const [];
+        _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+          rules: _highlightMatches,
+          marks: _markingMatches,
+        );
+      });
+      debugPrint('[book-marking] 笔记正文匹配失败（已降级为无标记；1.5s 后重试）: $e');
+    } finally {
+      if (_markingLoadingKey == key) _markingLoadingKey = '';
+    }
   }
 
   /// 跨 FFI 匹配正文（失败由 [HighlightMatchSync] 降级为无高亮，不影响阅读）
@@ -1034,7 +1149,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 异步命中被采纳：仅重建渲染层，不触发重分页
   void _onHighlightLoaded() {
     if (!mounted) return;
-    setState(() => _highlightMatches = _highlightSync.matches);
+    setState(() {
+      _highlightMatches = _highlightSync.matches;
+      // 规则先/后到都重算合并（笔记先到时不丢）
+      _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+        rules: _highlightMatches,
+        marks: _markingMatches,
+      );
+    });
   }
 
   /// 按 pageTouchSlop 包裹自定义滑动阈值（0=系统默认值，不包裹）
@@ -1261,9 +1383,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// 相邻章预览页构建（与 _buildTypographicPage 同参；selectText 关闭）
   ///
-  /// [批34b P3-6] 预览**不传** `highlightMatches`：`_highlightMatches` 是
-  /// 当前章的命中区间，偏移口径不同（章节全局偏移），套到相邻章正文会
-  /// 染错位置。相邻章高亮需在预载时按目标章单独匹配（登记为后续专项）。
+  /// [批34b P3-6] 预览**不传** `highlightMatches`：`_combinedHighlightMatches`
+  /// 是当前章的命中区间，偏移口径不同（章节全局偏移），套到相邻章正文会
+  /// 染错位置。相邻章高亮/笔记需在预载时按目标章单独匹配（登记为后续专项）。
   Widget _buildPreviewPage(
     ReaderState state,
     PageInfo info,
@@ -1530,8 +1652,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
       reviewCounts: widget.reviewCounts,
       onReviewTap: widget.onReviewTap,
-      // [批34] 正文高亮命中（章节全局 UTF-16 区间）
-      highlightMatches: _highlightMatches,
+      // [批34] 正文高亮命中；[批7b-2b] 合并用户笔记（笔记优先）
+      highlightMatches: _combinedHighlightMatches,
       // [批4d] 每页右上角书签角标（滚动模式不构建本页，故天然隐藏）
       showBookmarkBadge: pageBookmark != null,
       bookmarkBadgeImage: advCfg.bookmarkBadgeImage,

@@ -15,6 +15,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'highlight_style.dart';
+
 /// 标记锚点（章节内定位 + 归一化文本哈希）
 class BookMarkingAnchor {
   const BookMarkingAnchor({
@@ -169,6 +171,52 @@ class BookMarkingStyle {
 
   String encode() => jsonEncode(toJson());
 
+  /// 转换为正文渲染使用的 `HighlightStyle`（批7b-2b）
+  ///
+  /// 映射约定（对齐参考版 `MarkingEffect.toStyle` 的渲染语义）：
+  /// - mode 1/3/2（单实线/波浪/虚线）→ `underline`；
+  /// - mode 6（删除线）→ `strike`，**不加上划线**；
+  /// - mode 7（荧光）→ `fill=(显示色 & 0x00FFFFFF) | 0x33000000`
+  ///   （**整行 20% 背景近似**，参考版荧光笔的半高绘制未复刻，登记差异）；
+  /// - BG → `fill=bgColor`（无 bgColor 则不产生效果）；
+  /// - TEXT → `textColor`；
+  /// - mode 5（SVG 下划线）→ 回退单实线 SOLID（SVG 路径本批不渲染，登记）；
+  /// - mode 0/未知 → 无效果。
+  ///
+  /// 线色为空/0 时回退展示色（`MarkingEffect.colorOf`）。
+  HighlightStyle toHighlightStyle() {
+    final fallbackColor = MarkingEffect.colorOf(this);
+    final lineColor = (underlineColor == null || underlineColor == 0)
+        ? fallbackColor
+        : underlineColor!;
+    const kindByMode = {1: 'SOLID', 3: 'WAVY', 2: 'DASHED'};
+    final kind =
+        kindByMode[underlineMode] ?? (underlineMode == 5 ? 'SOLID' : null);
+    if (kind != null) {
+      return HighlightStyle(
+        underline: HighlightUnderline(
+          kind: kind,
+          color: lineColor,
+          width: underlineWidth,
+          distance: underlineOffset,
+        ),
+      );
+    }
+    if (underlineMode == 6) {
+      return HighlightStyle(strike: true, strikeColor: lineColor);
+    }
+    if (underlineMode == 7) {
+      return HighlightStyle(fill: (lineColor & 0x00FFFFFF) | 0x33000000);
+    }
+    if (bgColor != null && bgColor != 0) {
+      return HighlightStyle(fill: bgColor!);
+    }
+    if (textColor != null && textColor != 0) {
+      return HighlightStyle(textColor: textColor!);
+    }
+    return HighlightStyle.empty;
+  }
+
   BookMarkingStyle copyWith({
     Object? textColor = _unset,
     Object? bgColor = _unset,
@@ -272,12 +320,15 @@ enum MarkingEffect {
   }
 
   /// 取样式的展示色：下划线取线色，背景剥掉 alpha 取底色，字体取字色
+  ///
+  /// 0 视为「未设置」（ARGB 全透明），继续按下一优先级回退。
   static int colorOf(BookMarkingStyle? style) {
-    if (style?.underlineColor != null) return style!.underlineColor!;
-    if (style?.bgColor != null) {
-      return (style!.bgColor! & 0x00FFFFFF) | 0xFF000000;
-    }
-    if (style?.textColor != null) return style!.textColor!;
+    final underline = style?.underlineColor;
+    if (underline != null && underline != 0) return underline;
+    final bg = style?.bgColor;
+    if (bg != null && bg != 0) return (bg & 0x00FFFFFF) | 0xFF000000;
+    final text = style?.textColor;
+    if (text != null && text != 0) return text;
     return defaultColor;
   }
 }
