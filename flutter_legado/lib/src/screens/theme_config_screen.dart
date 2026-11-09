@@ -1731,6 +1731,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         builder: (ctx, setDialogState) => AlertDialog(
           // [队列⑦c A3] 对话框标题与入口行一致（主题管理）
           title: const Text('主题管理'),
+          // [设备验收 8b] 收紧内容内边距，把宽度留给标题
+          contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           content: SizedBox(
             width: 320,
             child: list.isEmpty
@@ -1744,50 +1746,105 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     itemBuilder: (ctx2, index) {
                       final item = list[index];
                       final isNight = item['isNight'] == true;
-                      return ListTile(
+                      // [设备验收 8b] 不用 ListTile 默认 leading/trailing 宽度：
+                      // 两个 48dp 按钮会把 320dp 标题挤成「测…」。自定义 Row
+                      // 给标题 Expanded，按钮紧凑 36dp，保证短标题/副标题单行。
+                      final titleStyle = Theme.of(context).textTheme.bodyLarge;
+                      final subtitleStyle = Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          );
+                      return InkWell(
                         key: ValueKey('theme-config-item-$index'),
-                        leading: Icon(
-                          isNight
-                              ? Symbols.dark_mode_rounded
-                              : Symbols.light_mode_rounded,
-                        ),
-                        title: Text(
-                          '${item['name'] ?? '未命名'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(isNight ? '夜间主题' : '白天主题'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              key: ValueKey('theme-config-rename-$index'),
-                              icon: const Icon(Symbols.edit_rounded),
-                              tooltip: '重命名',
-                              onPressed: () => _renameThemeConfig(
-                                list,
-                                index,
-                                setDialogState,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Symbols.delete_rounded),
-                              tooltip: '删除',
-                              onPressed: () async {
-                                list = List.of(list)..removeAt(index);
-                                await _settings.setStringPref(
-                                  _themeListKey,
-                                  jsonEncode(list),
-                                );
-                                setDialogState(() {});
-                              },
-                            ),
-                          ],
-                        ),
                         onTap: () async {
                           await _applyThemeConfig(item);
                           if (ctx.mounted) Navigator.pop(ctx);
                         },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isNight
+                                    ? Symbols.dark_mode_rounded
+                                    : Symbols.light_mode_rounded,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${item['name'] ?? '未命名'}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: titleStyle,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      isNight ? '夜间主题' : '白天主题',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: subtitleStyle,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                key: ValueKey('theme-config-rename-$index'),
+                                icon: const Icon(
+                                  Symbols.edit_rounded,
+                                  size: 20,
+                                ),
+                                tooltip: '重命名',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 36,
+                                  height: 36,
+                                ),
+                                onPressed: () => _renameThemeConfig(
+                                  list,
+                                  index,
+                                  setDialogState,
+                                ),
+                              ),
+                              IconButton(
+                                key: ValueKey('theme-config-delete-$index'),
+                                icon: const Icon(
+                                  Symbols.delete_rounded,
+                                  size: 20,
+                                ),
+                                tooltip: '删除',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 36,
+                                  height: 36,
+                                ),
+                                onPressed: () async {
+                                  list = List.of(list)..removeAt(index);
+                                  await _settings.setStringPref(
+                                    _themeListKey,
+                                    jsonEncode(list),
+                                  );
+                                  setDialogState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     },
                   ),
