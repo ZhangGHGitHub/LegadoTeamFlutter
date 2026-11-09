@@ -10,6 +10,11 @@
 //!
 //! 书签标记与 `bookmarks`（页面导航）和 `highlights`（正文高亮记录）独立，
 //! 不纳入备份（与参考版一致）。
+//!
+//! 查询口径（批7b-1 审查 P3-1）：列表查询统一走
+//! [`super::collect_rows_logged`]——坏行（列类型漂移/损坏）跳过但记 stderr
+//! 日志（含前 3 条错误与总条数），不再用 `filter_map(|r| r.ok())` 静默吞错，
+//! 避免标记「凭空消失」无从定位（同 `book_source_repository.rs` 批30b 先例）。
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -46,11 +51,11 @@ impl<'a> BookMarkingRepository<'a> {
                  ORDER BY chapterIndex ASC, createdAt ASC, id ASC"
             ))
             .map_err(|e| LegadoError::Database(format!("准备书签标记查询失败: {e}")))?;
-        let rows = stmt
-            .query_map(params![book_name, book_author], row_to_marking)
-            .map_err(|e| LegadoError::Database(format!("查询书签标记失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let rows = super::collect_rows_logged(
+            stmt.query_map(params![book_name, book_author], row_to_marking)
+                .map_err(|e| LegadoError::Database(format!("查询书签标记失败: {e}")))?,
+            "book_marks list_by_book",
+        );
         Ok(rows)
     }
 
@@ -72,11 +77,11 @@ impl<'a> BookMarkingRepository<'a> {
                  ORDER BY createdAt ASC, id ASC"
             ))
             .map_err(|e| LegadoError::Database(format!("准备书签标记章节查询失败: {e}")))?;
-        let rows = stmt
-            .query_map(params![book_url, chapter_index], row_to_marking)
-            .map_err(|e| LegadoError::Database(format!("查询书签标记失败: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let rows = super::collect_rows_logged(
+            stmt.query_map(params![book_url, chapter_index], row_to_marking)
+                .map_err(|e| LegadoError::Database(format!("查询书签标记失败: {e}")))?,
+            "book_marks list_for_chapter",
+        );
         Ok(rows)
     }
 
@@ -389,5 +394,47 @@ mod tests {
             "不存在 id 为 no-op"
         );
         assert!(!repo.delete("missing").unwrap());
+    }
+
+    /// P3-1：损坏行（列类型漂移）不得导致整查 panic；坏行跳过、好行保留，
+    /// 且走 `collect_rows_logged` 的日志路径（stderr 可见，测试不便捕获时
+    /// 以「不 panic + 只返回好行」验证可达性）。
+    #[test]
+    fn test_damaged_row_is_skipped_without_panic() {
+        let db = init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookMarkingRepository::new(conn);
+
+        repo.upsert(&make_marking(
+            "good",
+            "https://a/1",
+            "坏行书",
+            "作者",
+            Some(1),
+            100,
+        ))
+        .unwrap();
+        // `enabled` 声明为 INTEGER，但 SQLite 动态类型允许写入非数字文本；
+        // 读回 `row.get::<i64>` 将失败，触发 collect_rows_logged 的坏行分支。
+        conn.execute(
+            "INSERT INTO book_marks (id, bookUrl, bookName, bookAuthor, anchorJson, enabled)
+             VALUES ('bad', 'https://a/1', '坏行书', '作者', '{}', 'not-a-number')",
+            [],
+        )
+        .unwrap();
+
+        let by_book = repo.list_by_book("坏行书", "作者").unwrap();
+        assert_eq!(by_book.len(), 1, "坏行应跳过，不得整查失败");
+        assert_eq!(by_book[0].id, "good");
+
+        let by_chapter = repo.list_for_chapter("https://a/1", None).unwrap();
+        assert_eq!(by_chapter.len(), 1, "章节查询同样跳过坏行");
+        assert_eq!(by_chapter[0].id, "good");
+
+        // 坏行仍在库内（只跳过不回写/删除），确认不是误删数据
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_marks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 2);
     }
 }

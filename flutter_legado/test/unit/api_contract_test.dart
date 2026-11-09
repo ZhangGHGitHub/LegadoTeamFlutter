@@ -287,6 +287,70 @@ void main() {
       expect(bad, isEmpty, reason: '章节标题计数与实际行不一致：$bad');
     });
 
+    // [批7b-1 审查 P3-6] §2.52 书签标记：冻结 5 个方法的完整签名（参数名/
+    // 类型/返回），防止仅计数通过而签名被悄悄改写。改签名须同步改本测试
+    // 并走契约评审。
+    test('§2.52 书签标记 5 方法签名冻结（参数名/类型/返回）', () {
+      int start = -1;
+      for (int i = 0; i < dlines.length; i++) {
+        if (dlines[i].startsWith('### 2.52')) {
+          start = i;
+          break;
+        }
+      }
+      expect(start, greaterThanOrEqualTo(0), reason: '缺少 §2.52 章节');
+
+      final signatures = <String, String>{};
+      final returns = <String, String>{};
+      for (int i = start + 1; i < dlines.length; i++) {
+        final l = dlines[i];
+        if (l.startsWith('### ') || l.startsWith('## ')) break;
+        if (!_isRow(l)) continue;
+        final cells = _cells(l);
+        final name = _rowName(l);
+        signatures[name] = _strip(cells[0]);
+        returns[name] = cells.length > 2 ? _strip(cells[2]) : '';
+      }
+
+      const expectedSignatures = <String, String>{
+        'getBookMarkingsByBook':
+            'getBookMarkingsByBook(String bookName, String bookAuthor)',
+        'getBookMarkingsForChapter':
+            'getBookMarkingsForChapter(String bookUrl, int? chapterIndex)',
+        'saveBookMarking': 'saveBookMarking(BookMarking marking)',
+        'deleteBookMarking': 'deleteBookMarking(String id)',
+        'setBookMarkingEnabled':
+            'setBookMarkingEnabled(String id, bool enabled)',
+      };
+      const expectedReturns = <String, String>{
+        'getBookMarkingsByBook': 'Future<List<BookMarking>>',
+        'getBookMarkingsForChapter': 'Future<List<BookMarking>>',
+        'saveBookMarking': 'Future<BookMarking>',
+        'deleteBookMarking': 'Future<void>',
+        'setBookMarkingEnabled': 'Future<void>',
+      };
+
+      expect(
+        signatures.keys.toList(),
+        expectedSignatures.keys.toList(),
+        reason: '§2.52 方法集合/顺序漂移',
+      );
+      for (final entry in expectedSignatures.entries) {
+        expect(
+          signatures[entry.key],
+          entry.value,
+          reason: '${entry.key} 签名漂移（参数名/类型）',
+        );
+      }
+      for (final entry in expectedReturns.entries) {
+        expect(
+          returns[entry.key],
+          entry.value,
+          reason: '${entry.key} 返回类型漂移',
+        );
+      }
+    });
+
     test('附录与 §2.x 按标题双射镜像，合计行 = 各行之和', () {
       final secTitles = methodSections.map((s) => s.title).toList();
       expect(

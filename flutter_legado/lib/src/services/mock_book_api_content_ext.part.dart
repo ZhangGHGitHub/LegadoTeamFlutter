@@ -146,7 +146,8 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
   /// 内存书签标记（key = id；Mock 每次实例独立，测试可新建实例或逐条删除清空）
   final Map<String, BookMarking> _mockBookMarkings = {};
 
-  /// Mock 标记 ID 序列（Mock 无需真实 UUID，仅需唯一稳定标识）
+  /// Mock 标记 ID 序列：生成的 id **仅测试占位，不是 UUID**（形如
+  /// `mock-marking-<n>-<micros>`）；真实 UUID v4 由 Rust `saveBookMarking` 生成。
   int _nextMockMarkingSeq = 1;
 
   /// 章节索引比较：NULL 在前（对齐 SQLite `ORDER BY chapterIndex ASC`）

@@ -540,8 +540,15 @@ CREATE TABLE IF NOT EXISTS book_memos (
 ///   `styleJson` 可空（样式即类型，无 kind 列）；
 /// - `enabled` 默认 1，`createdAt`/`updatedAt` 为 Unix 毫秒。
 ///
+/// **DEFAULT 宽容口径**：参考版 Room schema **133** 的 `BookMarking` 建表语句
+/// 未写 DEFAULT（列默认值由 Kotlin 实体构造器提供）；本 DDL 保留
+/// `DEFAULT ''`/`DEFAULT 1`/`DEFAULT 0` 作为**宽容兜底**。经 FFI 写入恒为
+/// 全列参数（`BookMarkingRepository::upsert` 显式绑定全部 12 列），无行为差异；
+/// 保留 DEFAULT 仅便于手工/测试插入缺列数据。
+///
 /// 与既有 `bookmarks`（页面导航书签）和 `highlights`（正文高亮记录）独立，
-/// 与参考版一致**不纳入备份**。
+/// **无外键**（参考版 `BookMarking` 未声明 `ForeignKey`），与参考版一致
+/// **不纳入备份**。
 pub const CREATE_BOOK_MARKS: &str = "
 CREATE TABLE IF NOT EXISTS book_marks (
     id TEXT PRIMARY KEY NOT NULL,
