@@ -210,7 +210,8 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
 
     // [批9d] 生物识别是可选增强：读取失败只隐藏快捷入口、回退密码，
     // 不参与 fail-closed（否则平台通道异常会把用户锁在应用外）。
-    PrivacyBiometricStatus? biometricStatus;
+    // 无密码时只清空 configured，**保留**已加载的平台能力——否则首次设密
+    // 后的 `_reload` 会把刚拿到的状态清空，整会话都开不了快捷解锁。
     var biometricConfigured = false;
     if (next.hasPassword) {
       try {
@@ -224,10 +225,7 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
       // 平台能力查询不阻塞启动闸门：通道异常/桌面端只影响快捷入口
       unawaited(_loadBiometricStatus());
     }
-    next = next.copyWith(
-      biometricConfigured: biometricConfigured,
-      biometricStatus: biometricStatus,
-    );
+    next = next.copyWith(biometricConfigured: biometricConfigured);
 
     _set(
       next.copyWith(
@@ -236,6 +234,25 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
         loaded: true,
       ),
     );
+  }
+
+  /// 刷新生物识别配置与平台能力（设置页进入/恢复时调用）
+  ///
+  /// 外部改动（改密/清密/其他入口清除信封）后重新对齐 Rust 状态；
+  /// 平台能力单独查询，失败只隐藏/置灰入口，不影响已配置信封。
+  Future<void> refreshBiometricStatus() async {
+    if (state.hasPassword) {
+      var configured = state.biometricConfigured;
+      try {
+        final raw = await ref.read(bookApiProvider).privacyBiometricStateGet();
+        configured = PrivacyApiJson.decodeBiometricState(raw).configured;
+      } catch (e) {
+        debugPrint('[隐私] 刷新生物识别凭据失败（保留原状态）：$e');
+      }
+      if (_disposed) return;
+      _set(state.copyWith(biometricConfigured: configured));
+    }
+    await _loadBiometricStatus();
   }
 
   /// 异步刷新平台生物识别能力（不阻塞 `loaded`）
@@ -557,6 +574,8 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
         grantedGroupIds: const <int>{},
       ),
     );
+    // 首次设密（或改密）后补拉平台能力：否则开关要等下次 `_reload` 才可用
+    unawaited(refreshBiometricStatus());
     return PrivacyPasswordChangeResult.success;
   }
 

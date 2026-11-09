@@ -6,6 +6,7 @@
 /// fail-closed 与重试、策略写入失败回滚、备份口径。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/widgets.dart' show AppLifecycleState;
@@ -84,6 +85,9 @@ class _FakeBiometricService implements PrivacyBiometricService {
   int enableCalls = 0;
   int deleteCalls = 0;
   String? lastEnabledToken;
+  String? lastUnlockEnvelope;
+  String? lastUnlockIv;
+  Completer<String>? unlockCompleter;
 
   @override
   Future<PrivacyBiometricStatus> getStatus() async => status;
@@ -103,6 +107,9 @@ class _FakeBiometricService implements PrivacyBiometricService {
 
   @override
   Future<String> unlock({required String envelope, required String iv}) async {
+    lastUnlockEnvelope = envelope;
+    lastUnlockIv = iv;
+    if (unlockCompleter != null) return unlockCompleter!.future;
     if (unlockError != null) {
       throw PrivacyBiometricException(unlockError!);
     }
@@ -563,6 +570,72 @@ void main() {
       expect(s.biometricUsable, isTrue);
     });
 
+    test('无密码冷启动→设密：平台能力加载，开关可用', () async {
+      final fake = _FakeBiometricService();
+      final notifier = await boot(biometricService: fake);
+      expect(state().hasPassword, isFalse);
+      expect(state().biometricStatus, isNull, reason: '无密码时不需要查询平台能力');
+
+      expect(
+        await notifier.setPassword('pw'),
+        PrivacyPasswordChangeResult.success,
+      );
+      await Future<void>.delayed(Duration.zero);
+      final s = state();
+      expect(s.hasPassword, isTrue);
+      expect(s.biometricStatus?.available, isTrue);
+      expect(s.biometricConfigured, isFalse);
+      // 开关可用性判据：有密码 + 平台可用 + 未配置时允许开启
+      expect(s.biometricStatus != null && s.biometricStatus!.available, isTrue);
+    });
+
+    test('无密码时 re-reload 不清空已加载的平台能力', () async {
+      final fake = _FakeBiometricService();
+      final notifier = await boot(biometricService: fake);
+      await notifier.refreshBiometricStatus();
+      expect(state().biometricStatus?.available, isTrue);
+
+      await notifier.retryCredentialCheck();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        state().biometricStatus?.available,
+        isTrue,
+        reason: '无密码的 _reload 不得把已加载状态置空（首次设密后仍要可用）',
+      );
+    });
+
+    test('平台不可用时仍可关闭已配置的快捷解锁', () async {
+      final fake = _FakeBiometricService()
+        ..status = const PrivacyBiometricStatus(
+          available: false,
+          reason: PrivacyBiometricErrorCode.noHardware,
+        );
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+      expect(state().biometricConfigured, isTrue);
+      expect(state().biometricUsable, isFalse);
+
+      expect(await notifier.disableBiometric(), isTrue);
+      expect(state().biometricConfigured, isFalse);
+      expect(
+        await api.privacyBiometricVerify(_FakeBiometricService.defaultToken),
+        isFalse,
+      );
+    });
+
+    test('外部清空 Rust 三键：解锁返回 notConfigured 并关闭开关', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+      expect(state().biometricConfigured, isTrue);
+
+      await api.privacyBiometricClear();
+      final outcome = await notifier.unlockWithBiometric(appStart: true);
+      expect(outcome.error, PrivacyBiometricCommandError.notConfigured);
+      expect(state().biometricConfigured, isFalse);
+      expect(state().sessionUnlocked, isFalse);
+    });
+
     test('enable 成功：生成 32B 令牌、写 Rust、状态点亮', () async {
       final fake = _FakeBiometricService();
       await api.privacySetPassword('pw');
@@ -757,6 +830,16 @@ void main() {
       expect(state().appStartVerified, isTrue);
       expect(state().contentSessionUnlocked, isTrue);
       expect(state().isTargetGranted(bookUrl: 'https://any'), isTrue);
+      expect(
+        fake.lastUnlockEnvelope,
+        _FakeBiometricService.defaultEnvelope,
+        reason: '平台解锁必须收到 Rust stateGet 返回的同一信封',
+      );
+      expect(
+        fake.lastUnlockIv,
+        _FakeBiometricService.defaultIv,
+        reason: '平台解锁必须收到 Rust stateGet 返回的同一 IV',
+      );
     });
 
     test('启动闸门 appStart：EveryTime 也置会话/启动标记（仅证明进得来）', () async {

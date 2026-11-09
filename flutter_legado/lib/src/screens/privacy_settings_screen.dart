@@ -42,7 +42,8 @@ class PrivacySettingsScreen extends ConsumerStatefulWidget {
       _PrivacySettingsScreenState();
 }
 
-class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
+class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _verifyController = TextEditingController();
   bool _verified = false;
   bool _verifying = false;
@@ -50,9 +51,35 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
   String? _verifyError;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // [批9d] 进入设置页刷新生物状态：首次设密后无需重启即可开启开关
+    final notifier = ref.read(privacyNotifierProvider.notifier);
+    unawaited(
+      notifier.ensureLoaded().then((_) {
+        if (mounted) return notifier.refreshBiometricStatus();
+      }),
+    );
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _verifyController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    // 认证/通道异常导致 busy 常驻时，回到前台允许重试
+    if (_biometricBusy && mounted) {
+      setState(() => _biometricBusy = false);
+    }
+    unawaited(
+      ref.read(privacyNotifierProvider.notifier).refreshBiometricStatus(),
+    );
   }
 
   @override
@@ -495,17 +522,28 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
 
   /// [批9d] 生物开关副标题：按密码/平台能力给出具体原因
   String _biometricSubtitle(PrivacyState privacy) {
+    if (privacy.biometricConfigured) {
+      final status = privacy.biometricStatus;
+      if (status != null && !status.available) {
+        return '已开启；当前生物识别不可用，可关闭';
+      }
+      return '已开启，解锁时可使用指纹或面容';
+    }
     if (!privacy.hasPassword) return '请先设置隐私密码';
     final status = privacy.biometricStatus;
     if (status == null) return '正在读取生物识别状态';
     if (!status.available) return status.unavailableMessage;
-    if (privacy.biometricConfigured) return '已开启，解锁时可使用指纹或面容';
     return '使用指纹或面容快速解锁';
   }
 
-  /// [批9d] 生物开关是否可操作：需有密码、平台可用且无并发命令
+  /// [批9d] 生物开关是否可操作
+  ///
+  /// 关闭方向（已配置）始终可操作——平台能力暂时不可用/读取失败时，用户
+  /// 仍需能主动清除信封与原生密钥；只有开启方向受密码与平台可用性限制。
   bool _biometricSwitchEnabled(PrivacyState privacy) {
-    if (_biometricBusy || !privacy.hasPassword) return false;
+    if (_biometricBusy) return false;
+    if (privacy.biometricConfigured) return true;
+    if (!privacy.hasPassword) return false;
     final status = privacy.biometricStatus;
     return status != null && status.available;
   }

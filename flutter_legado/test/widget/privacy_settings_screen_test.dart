@@ -650,6 +650,79 @@ void main() {
     expect(row.onChanged, isNull);
   });
 
+  testWidgets('无密码冷启动→设密后生物开关可用', (tester) async {
+    final fake = _FakeBiometricService();
+    final container = await pumpScreen(tester, biometricService: fake);
+
+    SettingSwitchRow row() => tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyBiometricSwitch')),
+    );
+    expect(row().onChanged, isNull, reason: '无密码时开关不可操作');
+
+    expect(
+      await container.read(privacyNotifierProvider.notifier).setPassword('pw'),
+      PrivacyPasswordChangeResult.success,
+    );
+    await tester.pumpAndSettle();
+
+    expect(row().onChanged, isNotNull, reason: '设密后应补拉平台能力');
+    expect(find.text('使用指纹或面容快速解锁'), findsOneWidget);
+  });
+
+  testWidgets('平台不可用时已开启的快捷解锁仍可关闭', (tester) async {
+    final fake = _FakeBiometricService()
+      ..status = const PrivacyBiometricStatus(
+        available: false,
+        reason: PrivacyBiometricErrorCode.noHardware,
+      );
+    await api.privacySetPassword('pw');
+    await api.privacyBiometricSet(
+      _FakeBiometricService.token,
+      _FakeBiometricService.envelope,
+      _FakeBiometricService.iv,
+    );
+    final container = await pumpScreen(tester, biometricService: fake);
+
+    SettingSwitchRow row() => tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyBiometricSwitch')),
+    );
+    expect(row().value, isTrue);
+    expect(row().onChanged, isNotNull, reason: '关闭方向必须始终可操作');
+    expect(find.text('已开启；当前生物识别不可用，可关闭'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('privacyBiometricSwitch')));
+    await tester.pumpAndSettle();
+    expect(row().value, isFalse);
+    expect(stateOf(container).biometricConfigured, isFalse);
+    expect(
+      await api.privacyBiometricVerify(_FakeBiometricService.token),
+      isFalse,
+    );
+  });
+
+  testWidgets('回到前台刷新生物能力（不可用→可用后开关解禁）', (tester) async {
+    final fake = _FakeBiometricService()
+      ..status = const PrivacyBiometricStatus(
+        available: false,
+        reason: PrivacyBiometricErrorCode.lockedOut,
+      );
+    await api.privacySetPassword('pw');
+    await pumpScreen(tester, biometricService: fake);
+
+    SettingSwitchRow row() => tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyBiometricSwitch')),
+    );
+    expect(row().onChanged, isNull);
+
+    fake.status = const PrivacyBiometricStatus(available: true);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(row().onChanged, isNotNull);
+    expect(find.text('使用指纹或面容快速解锁'), findsOneWidget);
+  });
+
   testWidgets('生物关闭：清信封、销毁原生密钥并回到关闭态', (tester) async {
     final fake = _FakeBiometricService();
     await api.privacySetPassword('pw');
