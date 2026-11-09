@@ -29,9 +29,13 @@ class TextProcessingSheet extends ConsumerStatefulWidget {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (_) => const FractionallySizedBox(
-        heightFactor: 0.85,
-        child: TextProcessingSheet(),
+      builder: (ctx) => AnimatedPadding(
+        duration: const Duration(milliseconds: 120),
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: const FractionallySizedBox(
+          heightFactor: 0.85,
+          child: TextProcessingSheet(),
+        ),
       ),
     );
   }
@@ -51,10 +55,13 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
   bool _globalReplaceDefault = true;
   bool _busy = false;
   Book? _book;
+  String? _inlineMessage;
+  late final ReaderNotifier _readerNotifier;
 
   @override
   void initState() {
     super.initState();
+    _readerNotifier = ref.read(readerNotifierProvider.notifier);
     _book = ref.read(readerNotifierProvider).currentBook;
     _init();
   }
@@ -73,10 +80,12 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
     } catch (_) {
       _globalReplaceDefault = true;
     }
+    if (!mounted) return;
     await _loadRules();
   }
 
   Future<void> _loadRules() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -123,26 +132,28 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
   }
 
   bool _isRuleEffective(ReplaceRule rule) {
-    return rule.isEnabled &&
-        rule.scopeContent &&
-        replaceRuleScopeMatchesBook(rule.scope, _book?.name ?? '');
+    return isReplaceRuleEffectiveForBook(
+      rule: rule,
+      book: _book,
+      globalReplaceDefault: _globalReplaceDefault,
+    );
   }
 
   bool get _replaceEnabled =>
       effectiveReplaceRuleEnabled(_book, _globalReplaceDefault);
 
-  void _snack(String message) {
+  void _showInline(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
+    setState(() => _inlineMessage = message);
   }
 
+  /// 成功操作后重载当前章；ReaderNotifier 在 initState 捕获，
+  /// Sheet 已关闭时仍完成重载，mounted 只约束 UI 状态更新。
   Future<void> _reloadChapter() async {
     try {
-      await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
+      await _readerNotifier.reloadChapterContent();
     } catch (e) {
-      _snack('重新加载正文失败：${errorMessage(e)}');
+      _showInline('重新加载正文失败：${errorMessage(e)}');
     }
   }
 
@@ -150,11 +161,20 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
     if (_busy) return;
     _busy = true;
     try {
-      await toggleReaderReplaceRule(context, ref);
+      final ok = await toggleReaderReplaceRule(
+        context,
+        ref,
+        showMessages: false,
+      );
       if (!mounted) return;
-      setState(() {
-        _book = ref.read(readerNotifierProvider).currentBook;
-      });
+      if (ok) {
+        setState(() {
+          _book = ref.read(readerNotifierProvider).currentBook;
+          _inlineMessage = null;
+        });
+      } else {
+        _showInline('切换替换净化失败，请重试');
+      }
     } finally {
       _busy = false;
     }
@@ -163,16 +183,17 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
   Future<void> _setRuleEnabled(ReplaceRule rule, bool enabled) async {
     try {
       await ref.read(bookApiProvider).setReplaceRuleEnabled(rule.id, enabled);
-      if (!mounted) return;
-      setState(() {
-        _rules = [
-          for (final item in _rules)
-            item.id == rule.id ? item.copyWith(isEnabled: enabled) : item,
-        ];
-      });
+      if (mounted) {
+        setState(() {
+          _rules = [
+            for (final item in _rules)
+              item.id == rule.id ? item.copyWith(isEnabled: enabled) : item,
+          ];
+        });
+      }
       await _reloadChapter();
     } catch (e) {
-      _snack('更新替换规则失败：${errorMessage(e)}');
+      _showInline('更新替换规则失败：${errorMessage(e)}');
     }
   }
 
@@ -199,13 +220,14 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
     if (confirmed != true || !mounted) return;
     try {
       await ref.read(bookApiProvider).deleteReplaceRule(rule.id);
-      if (!mounted) return;
-      setState(() {
-        _rules = _rules.where((item) => item.id != rule.id).toList();
-      });
+      if (mounted) {
+        setState(() {
+          _rules = _rules.where((item) => item.id != rule.id).toList();
+        });
+      }
       await _reloadChapter();
     } catch (e) {
-      _snack('删除替换规则失败：${errorMessage(e)}');
+      _showInline('删除替换规则失败：${errorMessage(e)}');
     }
   }
 
@@ -221,53 +243,6 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
     if (!mounted) return;
     await _loadRules();
     await _reloadChapter();
-  }
-
-  /// 拖动落位：只在 drop 时写一次 order，避免逐帧写库
-  Future<void> _onReorder(int oldIndex, int newIndex) async {
-    final visible = _filteredRules;
-    if (oldIndex < 0 || oldIndex >= visible.length) return;
-    final moved = visible.removeAt(oldIndex);
-    final target = newIndex.clamp(0, visible.length);
-    visible.insert(target, moved);
-    final visibleIds = visible.map((r) => r.id).toSet();
-    if (visibleIds.length == _rules.length) {
-      setState(() => _rules = visible);
-    } else {
-      // 过滤视图内排序：替换可见项占据的槽位，隐藏项位置保持不变
-      final slots = <int>[];
-      for (var i = 0; i < _rules.length; i++) {
-        if (visibleIds.contains(_rules[i].id)) slots.add(i);
-      }
-      final full = [..._rules];
-      for (var i = 0; i < slots.length; i++) {
-        full[slots[i]] = visible[i];
-      }
-      setState(() => _rules = full);
-    }
-    await _persistOrder();
-  }
-
-  Future<void> _persistOrder() async {
-    try {
-      final api = ref.read(bookApiProvider);
-      final updated = <ReplaceRule>[];
-      var changed = false;
-      for (var i = 0; i < _rules.length; i++) {
-        final rule = _rules[i];
-        final next = rule.copyWith(order: i);
-        if (next.order != rule.order) {
-          changed = true;
-          await api.updateReplaceRule(next);
-        }
-        updated.add(next);
-      }
-      if (!mounted) return;
-      setState(() => _rules = updated);
-      if (changed) await _reloadChapter();
-    } catch (e) {
-      _snack('保存排序失败：${errorMessage(e)}');
-    }
   }
 
   @override
@@ -296,6 +271,21 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
               ],
             ),
           ),
+          if (_inlineMessage != null)
+            Container(
+              key: const ValueKey('text-processing-inline-message'),
+              width: double.infinity,
+              color: theme.colorScheme.errorContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                _inlineMessage!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
         ],
       ),
     );
@@ -382,25 +372,33 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
           value: _replaceEnabled,
           onChanged: _busy ? null : _toggleMaster,
         ),
-        SizedBox(
-          height: 40,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
               for (final filter in _ReplaceFilter.values)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: ChoiceChip(
-                    key: ValueKey('text-processing-filter-${filter.name}'),
-                    label: Text(_filterLabel(filter)),
-                    selected: _filter == filter,
-                    onSelected: (_) => setState(() => _filter = filter),
-                  ),
+                ChoiceChip(
+                  key: ValueKey('text-processing-filter-${filter.name}'),
+                  label: Text(_filterLabel(filter)),
+                  selected: _filter == filter,
+                  onSelected: (_) => setState(() => _filter = filter),
                 ),
             ],
           ),
         ),
+        if (_filter == _ReplaceFilter.effective && !_replaceEnabled)
+          Padding(
+            key: const ValueKey('text-processing-master-off'),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              '本书替换净化已关闭',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         Expanded(child: _buildRuleList()),
         const Divider(height: 1),
         Align(
@@ -430,19 +428,17 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
         ),
       );
     }
-    return ReorderableListView.builder(
-      buildDefaultDragHandles: false,
+    return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       itemCount: rules.length,
-      onReorderItem: _onReorder,
       itemBuilder: (context, index) {
         final rule = rules[index];
-        return _buildRuleTile(rule, index);
+        return _buildRuleTile(rule);
       },
     );
   }
 
-  Widget _buildRuleTile(ReplaceRule rule, int index) {
+  Widget _buildRuleTile(ReplaceRule rule) {
     final theme = Theme.of(context);
     final group = rule.group?.trim() ?? '';
     return Card(
@@ -455,13 +451,6 @@ class _TextProcessingSheetState extends ConsumerState<TextProcessingSheet> {
           padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
           child: Row(
             children: [
-              ReorderableDragStartListener(
-                index: index,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Icon(Icons.drag_handle, size: 20),
-                ),
-              ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

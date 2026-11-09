@@ -28,9 +28,13 @@ class EffectiveReplacesSheet extends ConsumerStatefulWidget {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (_) => const FractionallySizedBox(
-        heightFactor: 0.75,
-        child: EffectiveReplacesSheet(),
+      builder: (ctx) => AnimatedPadding(
+        duration: const Duration(milliseconds: 120),
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+        child: const FractionallySizedBox(
+          heightFactor: 0.75,
+          child: EffectiveReplacesSheet(),
+        ),
       ),
     );
   }
@@ -46,21 +50,33 @@ class _EffectiveReplacesSheetState
   bool _loading = true;
   String? _error;
   int _convertType = 0;
+  bool _globalReplaceDefault = true;
   Book? _book;
+  String? _inlineMessage;
+  late final ReaderNotifier _readerNotifier;
 
   @override
   void initState() {
     super.initState();
+    _readerNotifier = ref.read(readerNotifierProvider.notifier);
     _book = ref.read(readerNotifierProvider).currentBook;
     _load();
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
+      bool globalDefault;
+      try {
+        globalDefault = await ref.read(replaceEnableDefaultProvider.future);
+      } catch (_) {
+        globalDefault = true;
+      }
+      if (!mounted) return;
       final api = ref.read(bookApiProvider);
       final results = await Future.wait<Object>([
         api.getReplaceRules(),
@@ -71,6 +87,7 @@ class _EffectiveReplacesSheetState
       setState(() {
         _rules = [...rules]..sort(_compareRule);
         _convertType = results[1] as int;
+        _globalReplaceDefault = globalDefault;
         _book = ref.read(readerNotifierProvider).currentBook;
         _loading = false;
       });
@@ -88,76 +105,88 @@ class _EffectiveReplacesSheetState
     return byOrder != 0 ? byOrder : a.id.compareTo(b.id);
   }
 
-  List<ReplaceRule> get _effectiveRules => _rules
-      .where(
-        (rule) =>
-            rule.isEnabled &&
-            rule.scopeContent &&
-            replaceRuleScopeMatchesBook(rule.scope, _book?.name ?? ''),
-      )
-      .toList();
+  bool get _masterEnabled =>
+      effectiveReplaceRuleEnabled(_book, _globalReplaceDefault);
+
+  List<ReplaceRule> get _effectiveRules => _masterEnabled
+      ? _rules
+            .where(
+              (rule) => isReplaceRuleEffectiveForBook(
+                rule: rule,
+                book: _book,
+                globalReplaceDefault: _globalReplaceDefault,
+              ),
+            )
+            .toList()
+      : const [];
 
   bool get _reSegmentEnabled => _book?.readConfig?.reSegment ?? false;
 
-  int get _entryCount =>
-      _effectiveRules.length +
-      (_convertType > 0 ? 1 : 0) +
-      (_reSegmentEnabled ? 1 : 0);
+  int get _entryCount => _masterEnabled
+      ? _effectiveRules.length +
+            (_convertType > 0 ? 1 : 0) +
+            (_reSegmentEnabled ? 1 : 0)
+      : 0;
 
   String get _convertLabel => _convertType == 2 ? '繁简转换（简转繁）' : '繁简转换（繁转简）';
 
-  void _snack(String message) {
+  void _showInline(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-    );
+    setState(() => _inlineMessage = message);
   }
 
+  /// ReaderNotifier 在 initState 捕获：Sheet 关闭后仍完成正文重载
   Future<void> _reloadChapter() async {
     try {
-      await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
+      await _readerNotifier.reloadChapterContent();
     } catch (e) {
-      _snack('重新加载正文失败：${errorMessage(e)}');
+      _showInline('重新加载正文失败：${errorMessage(e)}');
     }
   }
 
   Future<void> _disableRule(ReplaceRule rule) async {
     try {
       await ref.read(bookApiProvider).setReplaceRuleEnabled(rule.id, false);
-      if (!mounted) return;
-      setState(() {
-        _rules = [
-          for (final item in _rules)
-            item.id == rule.id ? item.copyWith(isEnabled: false) : item,
-        ];
-      });
+      if (mounted) {
+        setState(() {
+          _rules = [
+            for (final item in _rules)
+              item.id == rule.id ? item.copyWith(isEnabled: false) : item,
+          ];
+        });
+      }
       await _reloadChapter();
     } catch (e) {
-      _snack('关闭替换规则失败：${errorMessage(e)}');
+      _showInline('关闭替换规则失败：${errorMessage(e)}');
     }
   }
 
   Future<void> _disableConverter() async {
     try {
       await ref.read(bookApiProvider).setChineseConvertType(0);
-      if (!mounted) return;
-      setState(() => _convertType = 0);
+      if (mounted) setState(() => _convertType = 0);
       await _reloadChapter();
     } catch (e) {
-      _snack('关闭繁简转换失败：${errorMessage(e)}');
+      _showInline('关闭繁简转换失败：${errorMessage(e)}');
     }
   }
 
   Future<void> _disableReSegment() async {
-    await updateReaderBookConfig(
+    final ok = await updateReaderBookConfig(
       context,
       ref,
       (config) => config.copyWith(reSegment: false),
+      showError: false,
     );
     if (!mounted) return;
-    setState(() {
-      _book = ref.read(readerNotifierProvider).currentBook;
-    });
+    if (ok) {
+      setState(() {
+        _book = ref.read(readerNotifierProvider).currentBook;
+        _inlineMessage = null;
+      });
+    } else {
+      _showInline('关闭重新分段失败，请重试');
+    }
   }
 
   Future<void> _editRule(ReplaceRule rule) async {
@@ -187,14 +216,25 @@ class _EffectiveReplacesSheetState
                     color: theme.colorScheme.primary,
                   ),
                   const SizedBox(width: 8),
-                  Text('有效替换规则', style: theme.textTheme.titleMedium),
-                  const Spacer(),
+                  Expanded(
+                    child: Text(
+                      '有效替换规则',
+                      style: theme.textTheme.titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   if (!_loading && _error == null)
-                    Text(
-                      '本章生效 $_entryCount 条',
-                      key: const ValueKey('effective-replaces-count'),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                    Flexible(
+                      child: Text(
+                        '本章生效 $_entryCount 条',
+                        key: const ValueKey('effective-replaces-count'),
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
                       ),
                     ),
                 ],
@@ -216,6 +256,21 @@ class _EffectiveReplacesSheetState
         ),
         const Divider(height: 1),
         Expanded(child: _buildBody(theme)),
+        if (_inlineMessage != null)
+          Container(
+            key: const ValueKey('effective-replaces-inline-message'),
+            width: double.infinity,
+            color: theme.colorScheme.errorContainer,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              _inlineMessage!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onErrorContainer,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
       ],
     );
   }
@@ -231,6 +286,17 @@ class _EffectiveReplacesSheetState
             const SizedBox(height: 12),
             ElevatedButton(onPressed: _load, child: const Text('重试')),
           ],
+        ),
+      );
+    }
+    if (!_masterEnabled) {
+      return Center(
+        child: Text(
+          '本书替换净化已关闭',
+          key: const ValueKey('effective-replaces-master-off'),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -323,7 +389,7 @@ class _EffectiveReplacesSheetState
       child: ListTile(
         dense: true,
         title: Text(label),
-        onTap: () => _snack('请在阅读设置中调整'),
+        onTap: () => _showInline('请在阅读设置中调整'),
         trailing: IconButton(
           key: ValueKey(
             converter

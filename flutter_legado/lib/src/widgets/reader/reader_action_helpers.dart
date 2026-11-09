@@ -175,23 +175,29 @@ Future<void> _saveEditedContent(
 }
 
 /// 更新当前书 ReadConfig 字段并持久化，随后重载当前章正文
-Future<void> updateReaderBookConfig(
+Future<bool> updateReaderBookConfig(
   BuildContext context,
   WidgetRef ref,
-  ReadConfig Function(ReadConfig config) transform,
-) async {
+  ReadConfig Function(ReadConfig config) transform, {
+  bool showError = true,
+}) async {
   final book = ref.read(readerNotifierProvider).currentBook;
-  if (book == null) return;
+  if (book == null) return false;
   final updated = book.copyWith(
     readConfig: transform(book.readConfig ?? const ReadConfig()),
   );
+  final api = ref.read(bookApiProvider);
+  final notifier = ref.read(readerNotifierProvider.notifier);
   try {
-    await ref.read(bookApiProvider).updateBook(updated);
-    final notifier = ref.read(readerNotifierProvider.notifier);
+    await api.updateBook(updated);
     notifier.updateCurrentBook(updated);
     await notifier.reloadChapterContent();
+    return true;
   } catch (e) {
-    if (context.mounted) readerActionSnack(context, '设置保存失败: $e');
+    if (showError && context.mounted) {
+      readerActionSnack(context, '设置保存失败: $e');
+    }
+    return false;
   }
 }
 
@@ -199,16 +205,34 @@ Future<void> updateReaderBookConfig(
 ///
 /// - scope 为 null/空/`global`（大小写不敏感）→ 全局生效；
 /// - 否则按 `,`/`;`/`，`/`；` 拆分并 trim，任一项等于书名才生效；
-/// - 书名为空时，非全局 scope 一律不生效（对齐「作用域书」语义）。
+/// - scope 不整体 trim：仅空串算全局；`global` 仅精确小写；
+/// - 书名为空时 scoped 规则不生效（避免 `contains('')` 恒真）；
+/// - 按 `,`/`;`/`，`/`；` 拆分后 trim，任一项精确等于书名（书名不 trim）。
 bool replaceRuleScopeMatchesBook(String? scope, String bookName) {
-  final raw = scope?.trim() ?? '';
-  if (raw.isEmpty || raw.toLowerCase() == 'global') return true;
-  final name = bookName.trim();
-  if (name.isEmpty) return false;
+  final raw = scope;
+  if (raw == null || raw.isEmpty || raw == 'global') return true;
+  if (bookName.isEmpty) return false;
   for (final part in raw.split(RegExp(r'[,;，；]'))) {
-    if (part.trim() == name) return true;
+    if (part.trim() == bookName) return true;
   }
   return false;
+}
+
+/// 替换规则是否对当前书生效（批7c-1 审查 P1-2）
+///
+/// 对齐 Rust `replace_rules_enabled = 路径语义 && use_replace_rule_for_book`：
+/// 总开关（书级/图片书/epub/全局默认）关闭时任何规则都不生效。
+bool isReplaceRuleEffectiveForBook({
+  required ReplaceRule rule,
+  required Book? book,
+  required bool globalReplaceDefault,
+}) {
+  if (book == null) return false;
+  if (!effectiveReplaceRuleEnabled(book, globalReplaceDefault)) return false;
+  return rule.isEnabled &&
+      rule.scopeContent &&
+      rule.pattern.isNotEmpty &&
+      replaceRuleScopeMatchesBook(rule.scope, book.name);
 }
 
 /// 替换净化是否生效（Dart 侧对齐 Rust `use_replace_rule_for_book`）
@@ -248,10 +272,11 @@ Future<bool> _readGlobalReplaceDefault(WidgetRef ref) async {
 ///
 /// 取反基于 [effectiveReplaceRuleEnabled]（而非仅 readConfig 值）：图片书/
 /// 本地 epub/全局默认关闭时，首次点击写入显式 true 即开启。
-Future<void> toggleReaderReplaceRule(
+Future<bool> toggleReaderReplaceRule(
   BuildContext context,
-  WidgetRef ref,
-) async {
+  WidgetRef ref, {
+  bool showMessages = true,
+}) async {
   final book = ref.read(readerNotifierProvider).currentBook;
   // 显式书级值无需等待全局 provider（也避免无谓异步跳变）；仅在 null 时读取
   final explicit = book?.readConfig?.useReplaceRule;
@@ -261,16 +286,18 @@ Future<void> toggleReaderReplaceRule(
   } else {
     final globalDefault = await _readGlobalReplaceDefault(ref);
     enabled = effectiveReplaceRuleEnabled(book, globalDefault);
-    if (!context.mounted) return;
+    if (!context.mounted) return false;
   }
-  await updateReaderBookConfig(
+  final ok = await updateReaderBookConfig(
     context,
     ref,
     (c) => c.copyWith(useReplaceRule: !enabled),
+    showError: showMessages,
   );
-  if (context.mounted) {
+  if (ok && showMessages && context.mounted) {
     readerActionSnack(context, enabled ? '已关闭替换规则' : '已开启替换规则');
   }
+  return ok;
 }
 
 /// 拉取/同步云端进度（对齐 menu_get_progress → syncBookProgress）
