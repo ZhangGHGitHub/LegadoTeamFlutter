@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import 'src/models/models.dart';
 import 'src/providers/bookshelf/bookshelf_notifier.dart';
+import 'src/providers/privacy/privacy_notifier.dart';
 import 'src/providers/providers.dart';
 import 'src/providers/ui_settings/ui_settings_notifier.dart';
 import 'src/providers/theme/theme_colors_notifier.dart';
@@ -215,9 +216,20 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   ///   确认闪屏 /welcome 已被替换出栈顶后才压入 /video。
   final TopRouteWatcher _topRouteWatcher = TopRouteWatcher();
 
+  /// 根级隐私返回键守卫（P2-1 审查回修）
+  ///
+  /// 必须在 MaterialApp/WidgetsApp 之前注册，才能先于其
+  /// `didPopRoute → navigator.maybePop()` 消费返回键；注册顺序在
+  /// [initState]（本 State 先于 build 出的 WidgetsApp 执行）。
+  late final PrivacyBackGuard _privacyBackGuard;
+
   @override
   void initState() {
     super.initState();
+    _privacyBackGuard = PrivacyBackGuard(
+      () => ref.read(privacyNotifierProvider),
+    );
+    WidgetsBinding.instance.addObserver(_privacyBackGuard);
     // 系统栏样式由 [SystemBarBinder] 按偏好与主题统一驱动
     // 首帧渲染后检查上次崩溃日志并弹窗提示
     // [P2-13 2026-09-18] 弹窗上下文改用全局 Navigator（见
@@ -341,6 +353,12 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_privacyBackGuard);
+    super.dispose();
   }
 
   @override

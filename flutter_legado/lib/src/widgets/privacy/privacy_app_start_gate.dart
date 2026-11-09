@@ -1,19 +1,21 @@
-// 隐私启动闸门（设置批9b）
+// 隐私启动闸门（设置批9b；审查回修 P1-1/P2-1/P2-2/P2-4）
 //
 // 语义对齐参考版 `PrivateAppStartGate.kt:64-137`：
 // - 条件：enabled && hasPassword && verifyOnAppStart &&
 //   !appStartVerified && !sessionUnlocked → 全屏锁；
 // - 取消/退出 = 关闭应用（SystemNavigator.pop）；
 // - 输错密码留在锁页重试；回车提交；连续提交防抖；
-// - 凭据读取失败（fail-closed）只显示「无法读取隐私凭据」+ 重试，
-//   绝不显示应用内容；
+// - 策略/凭据读取失败（fail-closed）只显示错误 + 重试，绝不显示应用内容；
 // - 异步加载期间只显示纯色占位，不得先闪现主页；
-// - 应用回后台按 Notifier 的 unlockScope/宽限策略失效后，锁页重新出现。
+// - 应用回后台按 Notifier 的 unlockScope/宽限策略失效后，锁页重新出现；
+// - 锁页存在时消费系统返回键（gate 在 Navigator 之外，否则会 pop 隐藏路由）；
+// - 隐藏内容用 ExcludeFocus 禁止焦点；锁页出现后显式聚焦密码框；
+// - 不透明页按 viewInsets.bottom 抬升，避免软键盘遮挡解锁/退出按钮。
 //
 // 挂载点：`app.dart` MaterialApp.builder 最内层（直接包住 Navigator child），
 // 保证任何路由/弹层都位于闸门之后。
 //
-// 编写：全栈工程师（设置批9b） ｜ 2026-11-09
+// 编写：全栈工程师（设置批9b） ｜ 2026-11-09（审查回修同日）
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -21,12 +23,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../providers/privacy/privacy_notifier.dart';
+import '../../providers/privacy/privacy_state.dart';
+
+/// 闸门是否应阻止应用交互（占位/读取错误/锁页）
+///
+/// 供启动闸门与根级返回键守卫共用。
+bool privacyGateBlocksApp(PrivacyState privacy) =>
+    !privacy.loaded ||
+    privacy.policyError != null ||
+    privacy.credentialError != null ||
+    privacy.needsAppStartLock;
+
+/// 根级返回键守卫
+///
+/// `WidgetsBinding.handlePopRoute` 按 observer 注册顺序派发，
+/// `WidgetsApp` 自身在 MaterialApp 构建时先注册并直接
+/// `navigator.maybePop()`；闸门位于 builder 内、注册更晚，单靠闸门的
+/// didPopRoute 无法阻止隐藏路由被 pop。因此在 LegadoApp（MaterialApp
+/// 之上）用本守卫提前注册，锁页存在时返回 true 消费返回键。
+class PrivacyBackGuard with WidgetsBindingObserver {
+  PrivacyBackGuard(this.readPrivacy);
+
+  /// 读取当前隐私状态（由宿主注入，避免守卫持有 WidgetRef）
+  final PrivacyState Function() readPrivacy;
+
+  @override
+  Future<bool> didPopRoute() async => privacyGateBlocksApp(readPrivacy());
+}
 
 /// 应用启动隐私闸门
 class PrivacyAppStartGate extends ConsumerStatefulWidget {
   const PrivacyAppStartGate({super.key, required this.child});
 
-  /// 应用内容（Navigator 子树）；锁定/加载/凭据错误时不构建显示
+  /// 应用内容（Navigator 子树）；锁定/加载/读取错误时不显示
   final Widget child;
 
   @override
@@ -41,6 +70,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
 
   bool _submitting = false;
   bool _retrying = false;
+  bool _focusScheduled = false;
   String? _error;
 
   @override
@@ -60,6 +90,15 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     ref.read(privacyNotifierProvider.notifier).handleLifecycleState(state);
+  }
+
+  /// 锁页/占位/错误页存在时消费系统返回键
+  ///
+  /// 闸门在 MaterialApp.builder 中位于 Navigator 之外，返回键默认会
+  /// pop 被 Offstage 的应用路由；这里返回 true 阻止穿透。
+  @override
+  Future<bool> didPopRoute() async {
+    return privacyGateBlocksApp(ref.read(privacyNotifierProvider));
   }
 
   Future<void> _submit() async {
@@ -87,7 +126,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     }
   }
 
-  Future<void> _retryCredentials() async {
+  Future<void> _retryLoad() async {
     if (_retrying) return;
     setState(() => _retrying = true);
     await ref.read(privacyNotifierProvider.notifier).retryCredentialCheck();
@@ -98,31 +137,73 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyNotifierProvider);
+    final lockVisible =
+        privacy.loaded &&
+        privacy.policyError == null &&
+        privacy.credentialError == null &&
+        privacy.needsAppStartLock;
+
+    // 锁页出现后 post-frame 显式聚焦密码框；隐藏子树由 ExcludeFocus
+    // 禁止焦点，避免 Offstage 下的 autofocus 抢走输入焦点。
+    if (!lockVisible) {
+      _focusScheduled = false;
+    } else if (!_focusScheduled) {
+      _focusScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final current = ref.read(privacyNotifierProvider);
+        if (current.needsAppStartLock &&
+            current.policyError == null &&
+            current.credentialError == null) {
+          _passwordFocusNode.requestFocus();
+        }
+      });
+    }
 
     Widget? overlay;
     if (!privacy.loaded) {
       // 加载未完成：纯色占位，绝不显示 child（避免主页/闪屏内容闪现）
       overlay = _SplashPlaceholder(key: const ValueKey('privacyGateSplash'));
+    } else if (privacy.policyError != null) {
+      // fail-closed：策略读取失败时只允许重试，不显示任何应用内容
+      overlay = _buildErrorPage(
+        context,
+        pageKey: const ValueKey('privacyPolicyErrorPage'),
+        retryKey: const ValueKey('privacyPolicyRetryButton'),
+        exitKey: const ValueKey('privacyPolicyExitButton'),
+        title: '无法读取隐私设置',
+        description: '为保护私密内容，隐私设置恢复前不会显示应用内容。请重试。',
+      );
     } else if (privacy.credentialError != null) {
       // fail-closed：凭据读取失败时只允许重试，不显示任何应用内容
       //（与 enabled 无关——读失败时无法判定是否启用了应用锁）
-      overlay = _buildCredentialError(context);
+      overlay = _buildErrorPage(
+        context,
+        pageKey: const ValueKey('privacyCredentialErrorPage'),
+        retryKey: const ValueKey('privacyCredentialRetryButton'),
+        exitKey: const ValueKey('privacyCredentialExitButton'),
+        title: '无法读取隐私凭据',
+        description: '为保护私密内容，凭据恢复前不会显示应用内容。请重试。',
+      );
     } else if (privacy.needsAppStartLock) {
       overlay = _buildLockScreen(context);
     }
 
     // 始终保留 child 挂载（Offstage 不显示/不参与语义/暂停动画），
     // 避免锁定与解锁之间重建 Navigator 导致路由栈与页面状态丢失
-    // （后台宽限失效后重新上锁时尤为重要）。未锁定时不建 overlay，
+    //（后台宽限失效后重新上锁时尤为重要）。未锁定时不建 overlay，
     // Stack 只承载唯一的可见 child。
     return Stack(
       fit: StackFit.expand,
       children: [
         Offstage(
           offstage: overlay != null,
-          child: ExcludeSemantics(
+          child: ExcludeFocus(
             excluding: overlay != null,
-            child: TickerMode(enabled: overlay == null, child: widget.child),
+            child: ExcludeSemantics(
+              excluding: overlay != null,
+              child: TickerMode(enabled: overlay == null, child: widget.child),
+            ),
           ),
         ),
         if (overlay != null)
@@ -131,10 +212,17 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     );
   }
 
-  Widget _buildCredentialError(BuildContext context) {
+  Widget _buildErrorPage(
+    BuildContext context, {
+    required Key pageKey,
+    required Key retryKey,
+    required Key exitKey,
+    required String title,
+    required String description,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return _OpaqueGatePage(
-      key: const ValueKey('privacyCredentialErrorPage'),
+      key: pageKey,
       child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -146,13 +234,13 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                 Icon(Symbols.lock_rounded, size: 48, color: scheme.error),
                 const SizedBox(height: 16),
                 Text(
-                  '无法读取隐私凭据',
+                  title,
                   style: Theme.of(context).textTheme.titleLarge,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '为保护私密内容，凭据恢复前不会显示应用内容。请重试。',
+                  description,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -160,8 +248,8 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                 ),
                 const SizedBox(height: 24),
                 FilledButton(
-                  key: const ValueKey('privacyCredentialRetryButton'),
-                  onPressed: _retrying ? null : _retryCredentials,
+                  key: retryKey,
+                  onPressed: _retrying ? null : _retryLoad,
                   child: _retrying
                       ? const SizedBox(
                           width: 18,
@@ -172,7 +260,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                 ),
                 const SizedBox(height: 8),
                 TextButton(
-                  key: const ValueKey('privacyCredentialExitButton'),
+                  key: exitKey,
                   onPressed: () => SystemNavigator.pop(),
                   child: const Text('退出应用'),
                 ),
@@ -216,7 +304,6 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                   key: const ValueKey('privacyUnlockPasswordField'),
                   controller: _passwordController,
                   focusNode: _passwordFocusNode,
-                  autofocus: true,
                   obscureText: true,
                   enabled: !_submitting,
                   enableSuggestions: false,
@@ -316,7 +403,7 @@ class _GateOverlayHostState extends State<_GateOverlayHost> {
   }
 }
 
-/// 不透明闸门页（遮挡下层壁纸/内容）
+/// 不透明闸门页（遮挡下层壁纸/内容；软键盘弹起时抬升内容）
 class _OpaqueGatePage extends StatelessWidget {
   const _OpaqueGatePage({super.key, required this.child});
 
@@ -324,9 +411,16 @@ class _OpaqueGatePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return Material(
       color: Theme.of(context).colorScheme.surface,
-      child: SafeArea(child: child),
+      child: AnimatedPadding(
+        key: const ValueKey('privacyGateKeyboardPadding'),
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SafeArea(child: child),
+      ),
     );
   }
 }

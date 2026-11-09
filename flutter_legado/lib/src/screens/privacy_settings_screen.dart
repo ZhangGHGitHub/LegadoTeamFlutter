@@ -1,6 +1,9 @@
-// 隐私设置页（设置批9b）
+// 隐私设置页（设置批9b；审查回修 P2-3/P3）
 //
 // 语义对齐参考版 `PrivateConfigScreen.kt:65-205`：
+// - 进入验证：enabled && hasPassword 时先要求输入当前密码（只校验、不授予
+//   会话解锁），通过后才显示设置项；取消返回上一页；未设密码直接进入
+//   （本身是设密码入口）；
 // - 凭据组：启用私密功能（默认 false）、设置/修改密码、清除密码、
 //   生物快捷解锁（本批置灰「暂未支持」，9d 接入）；
 // - 验证时机组：进入私密分组（默认 true）、打开私密书籍（默认 true）、
@@ -10,16 +13,17 @@
 // - 说明组：密码仅存本机、不随备份导出，忘记密码无法访问私密内容。
 //
 // 密码对话框：无密码时只填新密码+确认；已有密码时先验当前密码。改密失败
-// 的旧密错误内联提示「密码错误」。清除密码必须二次确认并输入当前密码；
-// 清除成功后若 enabled 仍为 true，提示「私密功能已关闭」并关闭开关，
-// 避免无凭据锁死。
+// 的旧密错误内联提示「密码错误」，其他失败提示重试。清除密码必须二次
+// 确认并输入当前密码；保存中禁止返回/点击遮罩；清除成功后无条件关闭
+// enabled（避免无凭据锁死）并提示「私密功能已关闭」。
 //
-// 编写：全栈工程师（设置批9b） ｜ 2026-11-09
+// 编写：全栈工程师（设置批9b） ｜ 2026-11-09（审查回修同日）
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../providers/privacy/privacy_notifier.dart';
 import '../providers/privacy/privacy_state.dart';
@@ -28,21 +32,191 @@ import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
 
 /// 隐私设置页（设置主页「隐私」入口）
-class PrivacySettingsScreen extends ConsumerWidget {
+class PrivacySettingsScreen extends ConsumerStatefulWidget {
   const PrivacySettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PrivacySettingsScreen> createState() =>
+      _PrivacySettingsScreenState();
+}
+
+class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
+  final TextEditingController _verifyController = TextEditingController();
+  bool _verified = false;
+  bool _verifying = false;
+  String? _verifyError;
+
+  @override
+  void dispose() {
+    _verifyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final privacy = ref.watch(privacyNotifierProvider);
+    final hasReadError =
+        privacy.policyError != null || privacy.credentialError != null;
+    final needsVerification =
+        !hasReadError && privacy.enabled && privacy.hasPassword && !_verified;
+
+    Widget body;
+    if (!privacy.loaded) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (hasReadError) {
+      body = _buildReadError(context);
+    } else if (needsVerification) {
+      body = _buildVerifyGate(context);
+    } else {
+      body = _buildBody(context, privacy);
+    }
     return AppScaffold(
       topBar: const LegadoAppBar(title: Text('隐私')),
-      body: privacy.loaded
-          ? _buildBody(context, ref, privacy)
-          : const Center(child: CircularProgressIndicator()),
+      body: body,
     );
   }
 
-  Widget _buildBody(BuildContext context, WidgetRef ref, PrivacyState privacy) {
+  /// 策略/凭据读取失败：设置页也不展示可编辑项，只允许重试
+  Widget _buildReadError(BuildContext context) {
+    return Center(
+      key: const ValueKey('privacySettingsReadError'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Symbols.lock_rounded,
+              size: 40,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 12),
+            const Text('无法读取隐私设置，请重试'),
+            const SizedBox(height: 12),
+            FilledButton(
+              key: const ValueKey('privacySettingsReadRetry'),
+              onPressed: () => unawaited(
+                ref
+                    .read(privacyNotifierProvider.notifier)
+                    .retryCredentialCheck(),
+              ),
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 进入设置页前的密码验证（只校验，不授予会话解锁）
+  Widget _buildVerifyGate(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      key: const ValueKey('privacySettingsVerifyGate'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Symbols.lock_rounded, size: 48, color: scheme.primary),
+              const SizedBox(height: 16),
+              Text(
+                '验证隐私密码',
+                style: Theme.of(context).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '输入当前隐私密码以进入隐私设置',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              TextField(
+                key: const ValueKey('privacySettingsVerifyField'),
+                controller: _verifyController,
+                obscureText: true,
+                enabled: !_verifying,
+                enableSuggestions: false,
+                autocorrect: false,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _verify(),
+                decoration: const InputDecoration(
+                  labelText: '隐私密码',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_verifyError != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _verifyError!,
+                  key: const ValueKey('privacySettingsVerifyError'),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: scheme.error),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const ValueKey('privacySettingsVerifyButton'),
+                  onPressed: _verifying ? null : _verify,
+                  child: _verifying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('验证'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                key: const ValueKey('privacySettingsVerifyCancel'),
+                onPressed: _verifying
+                    ? null
+                    : () => Navigator.of(context).maybePop(),
+                child: const Text('取消'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _verify() async {
+    if (_verifying) return;
+    final password = _verifyController.text;
+    if (password.isEmpty) {
+      setState(() => _verifyError = '请输入密码');
+      return;
+    }
+    setState(() {
+      _verifying = true;
+      _verifyError = null;
+    });
+    final ok = await ref
+        .read(privacyNotifierProvider.notifier)
+        .verifyPasswordOnly(password);
+    if (!mounted) return;
+    setState(() {
+      _verifying = false;
+      if (ok) {
+        _verified = true;
+        _verifyController.clear();
+      } else {
+        _verifyError = '密码错误';
+      }
+    });
+  }
+
+  Widget _buildBody(BuildContext context, PrivacyState privacy) {
     final notifier = ref.read(privacyNotifierProvider.notifier);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
@@ -71,7 +245,7 @@ class PrivacySettingsScreen extends ConsumerWidget {
               subtitle: '需验证当前密码',
               enabled: privacy.hasPassword,
               onTap: privacy.hasPassword
-                  ? () => unawaited(_clearPassword(context, notifier, privacy))
+                  ? () => unawaited(_clearPassword(context, notifier))
                   : null,
             ),
             SettingSwitchRow(
@@ -91,23 +265,35 @@ class PrivacySettingsScreen extends ConsumerWidget {
               key: const ValueKey('privacyVerifyEnterGroupSwitch'),
               title: '进入私密分组时验证',
               value: privacy.verifyOnEnterGroup,
-              onChanged: (value) =>
-                  unawaited(notifier.setVerifyOnEnterGroup(value)),
+              onChanged: (value) => unawaited(
+                _applyPolicy(
+                  context,
+                  () => notifier.setVerifyOnEnterGroup(value),
+                ),
+              ),
             ),
             SettingSwitchRow(
               key: const ValueKey('privacyVerifyOpenBookSwitch'),
               title: '打开私密书籍时验证',
               value: privacy.verifyOnOpenBook,
-              onChanged: (value) =>
-                  unawaited(notifier.setVerifyOnOpenBook(value)),
+              onChanged: (value) => unawaited(
+                _applyPolicy(
+                  context,
+                  () => notifier.setVerifyOnOpenBook(value),
+                ),
+              ),
             ),
             SettingSwitchRow(
               key: const ValueKey('privacyVerifyAppStartSwitch'),
               title: '启动应用时验证',
-              subtitle: '下次启动或离开后台后需要密码',
+              subtitle: '下次启动应用时需要密码',
               value: privacy.verifyOnAppStart,
-              onChanged: (value) =>
-                  unawaited(notifier.setVerifyOnAppStart(value)),
+              onChanged: (value) => unawaited(
+                _applyPolicy(
+                  context,
+                  () => notifier.setVerifyOnAppStart(value),
+                ),
+              ),
             ),
             IosListTile(
               key: const ValueKey('privacyUnlockScopeRow'),
@@ -125,7 +311,12 @@ class PrivacySettingsScreen extends ConsumerWidget {
                   ],
                   onChanged: (scope) {
                     if (scope != null) {
-                      unawaited(notifier.setUnlockScope(scope));
+                      unawaited(
+                        _applyPolicy(
+                          context,
+                          () => notifier.setUnlockScope(scope),
+                        ),
+                      );
                     }
                   },
                 ),
@@ -151,13 +342,22 @@ class PrivacySettingsScreen extends ConsumerWidget {
                     ],
                     onChanged: (seconds) {
                       if (seconds != null) {
-                        unawaited(notifier.setBackgroundGraceSeconds(seconds));
+                        unawaited(
+                          _applyPolicy(
+                            context,
+                            () => notifier.setBackgroundGraceSeconds(seconds),
+                          ),
+                        );
                       }
                     },
                   ),
                 ),
               ),
           ],
+        ),
+        const IosSectionFooter(
+          '「应用会话内」在本次应用运行期间只验证一次，离开后台不失效；'
+          '「离开后台后」离开超过宽限时间后才需要重新验证。',
         ),
         const IosSectionHeader('说明'),
         IosGroup(
@@ -166,8 +366,8 @@ class PrivacySettingsScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               child: Text(
                 '隐私密码仅保存在本机，不随备份导出。启用私密功能后，'
-                '忘记密码将无法访问私密内容。验证频率与宽限只影响本次'
-                '会话的解锁状态；私密内容的脱敏与入口拦截将在后续批次接入。',
+                '忘记密码将无法访问私密内容。启动应用验证只在下次启动'
+                '应用时触发；私密内容的脱敏与入口拦截将在后续批次接入。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   height: 1.5,
@@ -180,6 +380,17 @@ class PrivacySettingsScreen extends ConsumerWidget {
     );
   }
 
+  /// 策略写入失败时回滚并提示（setter 返回 false）
+  Future<void> _applyPolicy(
+    BuildContext context,
+    Future<bool> Function() action,
+  ) async {
+    final ok = await action();
+    if (!ok && context.mounted) {
+      _showMessage(context, '保存失败，请重试');
+    }
+  }
+
   Future<void> _toggleEnabled(
     BuildContext context,
     PrivacyNotifier notifier,
@@ -187,7 +398,10 @@ class PrivacySettingsScreen extends ConsumerWidget {
     bool value,
   ) async {
     if (!value) {
-      await notifier.setEnabled(false);
+      final ok = await notifier.setEnabled(false);
+      if (!ok && context.mounted) {
+        _showMessage(context, '保存失败，请重试');
+      }
       return;
     }
     if (!privacy.hasPassword) {
@@ -198,11 +412,17 @@ class PrivacySettingsScreen extends ConsumerWidget {
           onSubmit: (newPassword, _) => notifier.setPassword(newPassword),
         ),
       );
-      if (created != true) return;
+      if (created != true || !mounted) return;
+      // 用户刚设置了密码，等同已完成设置页验证，避免立即弹验证页
+      setState(() => _verified = true);
     }
     final enabled = await notifier.setEnabled(true);
-    if (!enabled && context.mounted) {
-      _showMessage(context, '请先设置隐私密码');
+    if (!mounted) return;
+    if (enabled) {
+      setState(() => _verified = true);
+    } else if (context.mounted) {
+      final hasPassword = ref.read(privacyNotifierProvider).hasPassword;
+      _showMessage(context, hasPassword ? '保存失败，请重试' : '请先设置隐私密码');
     }
   }
 
@@ -227,23 +447,24 @@ class PrivacySettingsScreen extends ConsumerWidget {
   Future<void> _clearPassword(
     BuildContext context,
     PrivacyNotifier notifier,
-    PrivacyState privacy,
   ) async {
-    final wasEnabled = privacy.enabled;
-    final cleared = await showDialog<bool>(
+    final result = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (_) => PrivacyClearPasswordDialog(
         onClear: (password) => notifier.clearPassword(password: password),
       ),
     );
-    if (cleared != true || !context.mounted) return;
-    if (wasEnabled) {
-      await notifier.setEnabled(false);
-      if (!context.mounted) return;
-      _showMessage(context, '私密功能已关闭');
-    } else {
-      _showMessage(context, '密码已清除');
+    if (result != true || !mounted || !context.mounted) return;
+    final wasEnabled = ref.read(privacyNotifierProvider).enabled;
+    // 清密成功后无条件关闭 enabled，不依赖对话框返回值/先前快照
+    final disabled = await notifier.setEnabled(false);
+    if (!mounted || !context.mounted) return;
+    if (!disabled) {
+      _showMessage(context, '保存失败，请重试');
+      return;
     }
+    _showMessage(context, wasEnabled ? '私密功能已关闭' : '密码已清除');
   }
 
   void _showMessage(BuildContext context, String message) {
@@ -424,12 +645,12 @@ class _PrivacyPasswordDialogState extends State<PrivacyPasswordDialog> {
   }
 }
 
-/// 清除隐私密码对话框（二次确认 + 当前密码）
+/// 清除隐私密码对话框（二次确认 + 当前密码；保存中禁止返回/遮罩关闭）
 class PrivacyClearPasswordDialog extends StatefulWidget {
   const PrivacyClearPasswordDialog({super.key, required this.onClear});
 
-  /// 验证并清除回调；返回 false 表示密码错误或清除失败
-  final Future<bool> Function(String password) onClear;
+  /// 验证并清除回调；区分密码错误与 API/写入失败
+  final Future<PrivacyClearPasswordResult> Function(String password) onClear;
 
   @override
   State<PrivacyClearPasswordDialog> createState() =>
@@ -459,72 +680,83 @@ class _PrivacyClearPasswordDialogState
       _clearing = true;
       _error = null;
     });
-    final ok = await widget.onClear(password);
+    final result = await widget.onClear(password);
     if (!mounted) return;
-    if (!ok) {
-      setState(() {
-        _clearing = false;
-        _error = '密码错误';
-      });
-      return;
+    switch (result) {
+      case PrivacyClearPasswordResult.success:
+        Navigator.of(context).pop(true);
+      case PrivacyClearPasswordResult.passwordWrong:
+        setState(() {
+          _clearing = false;
+          _error = '密码错误';
+        });
+      case PrivacyClearPasswordResult.failure:
+        setState(() {
+          _clearing = false;
+          _error = '清除失败，请重试';
+        });
     }
-    Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return AlertDialog(
-      key: const ValueKey('privacyClearPasswordDialog'),
-      scrollable: true,
-      title: const Text('清除密码'),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('清除后私密内容将不再要求密码。确定清除吗？'),
-            const SizedBox(height: 12),
-            TextField(
-              key: const ValueKey('privacyClearPasswordField'),
-              controller: _controller,
-              obscureText: true,
-              enabled: !_clearing,
-              enableSuggestions: false,
-              autocorrect: false,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _clear(),
-              decoration: const InputDecoration(labelText: '当前密码'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _error!,
-                key: const ValueKey('privacyClearPasswordError'),
-                style: TextStyle(color: scheme.error),
+    return PopScope(
+      canPop: !_clearing,
+      child: AlertDialog(
+        key: const ValueKey('privacyClearPasswordDialog'),
+        scrollable: true,
+        title: const Text('清除密码'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('清除后私密内容将不再要求密码。确定清除吗？'),
+              const SizedBox(height: 12),
+              TextField(
+                key: const ValueKey('privacyClearPasswordField'),
+                controller: _controller,
+                obscureText: true,
+                enabled: !_clearing,
+                enableSuggestions: false,
+                autocorrect: false,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _clear(),
+                decoration: const InputDecoration(labelText: '当前密码'),
               ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _error!,
+                  key: const ValueKey('privacyClearPasswordError'),
+                  style: TextStyle(color: scheme.error),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _clearing
+                ? null
+                : () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const ValueKey('privacyClearPasswordConfirmButton'),
+            onPressed: _clearing ? null : _clear,
+            child: _clearing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('清除'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _clearing ? null : () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          key: const ValueKey('privacyClearPasswordConfirmButton'),
-          onPressed: _clearing ? null : _clear,
-          child: _clearing
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('清除'),
-        ),
-      ],
     );
   }
 }

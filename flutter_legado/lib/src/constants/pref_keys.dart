@@ -874,9 +874,10 @@ class PrefKeys {
   //
   // 密码凭据（salt/verifier）由 Rust 存 caches `config:private_password_*`，
   // 不落 SharedPreferences、不随备份往返；本组仅保存策略与开关。
-  // 参考版把 `private_enabled` 视为设备级配置（BackupConfig alwaysIgnore），
-  // 我方同样加入 `RestoreIgnorePrefs.alwaysIgnoreKeys`：恢复旧备份不得
-  // 在目标设备上凭空开启应用锁或覆盖本机验证策略。
+  // 备份口径（批9b 审查回修，对齐参考版 BackupConfig）：仅 `private_enabled`
+  // 加入 `RestoreIgnorePrefs.alwaysIgnoreKeys`（防止旧备份凭空开启应用锁）；
+  // 其余验证时机/频率/宽限允许随 `appPrefs` 往返（恢复后本机无密码时由
+  // Notifier 读取自动关闭 enabled 兜底）。
 
   /// 启用私密功能（默认 false；开启前必须已有隐私密码）
   static const privateEnabled = 'private_enabled';

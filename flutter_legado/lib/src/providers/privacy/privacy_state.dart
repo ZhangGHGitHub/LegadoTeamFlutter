@@ -76,12 +76,25 @@ enum PrivacyPasswordChangeResult {
   failure,
 }
 
+/// 密码清除结果（UI 区分旧密错误与 API/写入失败）
+enum PrivacyClearPasswordResult {
+  /// 已删除凭据
+  success,
+
+  /// 当前密码为空或错误
+  passwordWrong,
+
+  /// 校验/删除异常
+  failure,
+}
+
 /// 隐私设置与解锁状态（不可变）
 @immutable
 class PrivacyState {
   const PrivacyState({
     this.enabled = false,
     this.hasPassword = false,
+    this.policyError,
     this.credentialError,
     this.verifyOnEnterGroup = true,
     this.verifyOnOpenBook = true,
@@ -98,6 +111,9 @@ class PrivacyState {
 
   /// 本机是否已有隐私密码（来自 Rust `privacyHasPassword`）
   final bool hasPassword;
+
+  /// 策略读取失败信息（非 null 时启动闸门必须 fail-closed，不放行）
+  final String? policyError;
 
   /// 凭据读取失败信息（非 null 时启动闸门必须 fail-closed，不放行）
   final String? credentialError;
@@ -141,6 +157,7 @@ class PrivacyState {
   PrivacyState copyWith({
     bool? enabled,
     bool? hasPassword,
+    Object? policyError = _unset,
     Object? credentialError = _unset,
     bool? verifyOnEnterGroup,
     bool? verifyOnOpenBook,
@@ -154,6 +171,9 @@ class PrivacyState {
     return PrivacyState(
       enabled: enabled ?? this.enabled,
       hasPassword: hasPassword ?? this.hasPassword,
+      policyError: identical(policyError, _unset)
+          ? this.policyError
+          : policyError as String?,
       credentialError: identical(credentialError, _unset)
           ? this.credentialError
           : credentialError as String?,

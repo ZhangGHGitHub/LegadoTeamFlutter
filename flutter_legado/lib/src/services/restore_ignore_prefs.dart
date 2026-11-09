@@ -55,11 +55,12 @@ class RestoreIgnorePrefs {
     //（设备级，不随备份往返）；随备份恢复会让「每日最多一次」判定基于
     // 旧设备的时间戳，可能重复弹窗或长时间不检查
     PrefKeys.lastCheckUpdate,
-    // [批9b] 隐私/应用锁策略全部设备级：密码凭据只在本机 caches
-    //（`config:private_password_*`，已经 getAllConfigs 隔离），若策略随
-    // 旧备份恢复，会在目标设备上凭空开启应用锁或覆盖本机验证时机；
-    // 参考版 BackupConfig 同样将 private_enabled 等归入 alwaysIgnore。
-    ...PrefKeys.privatePolicyKeys,
+    // [批9b 审查回修] 仅 private_enabled 设备级排除（对齐参考版
+    // BackupConfig alwaysIgnore）：旧备份不得在目标设备凭空开启应用锁。
+    // 密码凭据只在本机 caches（`config:private_password_*`，不写入
+    // appPrefs）；verify_on_* / unlock_scope / grace 允许随备份往返，
+    // 恢复后若本机无密码，Notifier 读取时会自动关闭 enabled 兜底。
+    PrefKeys.privateEnabled,
   };
 
   /// 需要**值净化**（而非整键排除）的偏好键 → 剥除其中敏感字段
