@@ -246,19 +246,30 @@ void main() {
       );
     });
 
-    test('公共额外方法钉死：RustApi={toString, refreshReadBookConfig}，MockBookApi=∅', () {
-      final rExtra =
-          rNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()
-            ..sort();
-      expect(rExtra, [
-        'refreshReadBookConfig',
-        'toString',
-      ], reason: 'RustApi 公共额外方法集合漂移（新增/删除了 BookApi 之外的公共方法）：$rExtra');
-      final mExtra =
-          mNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()
-            ..sort();
-      expect(mExtra, isEmpty, reason: 'MockBookApi 出现 BookApi 之外的公共方法：$mExtra');
-    });
+    test(
+      '公共额外方法钉死：RustApi={toString, refreshReadBookConfig}，MockBookApi=∅',
+      () {
+        final rExtra =
+            rNames
+                .where((n) => !n.startsWith('_') && !bSet.contains(n))
+                .toList()
+              ..sort();
+        expect(rExtra, [
+          'refreshReadBookConfig',
+          'toString',
+        ], reason: 'RustApi 公共额外方法集合漂移（新增/删除了 BookApi 之外的公共方法）：$rExtra');
+        final mExtra =
+            mNames
+                .where((n) => !n.startsWith('_') && !bSet.contains(n))
+                .toList()
+              ..sort();
+        expect(
+          mExtra,
+          isEmpty,
+          reason: 'MockBookApi 出现 BookApi 之外的公共方法：$mExtra',
+        );
+      },
+    );
 
     test('每个 BookApi 方法都在契约中登记（直接行或 §1.7 等价对）', () {
       final unregistered =
@@ -343,11 +354,72 @@ void main() {
         );
       }
       for (final entry in expectedReturns.entries) {
+        expect(returns[entry.key], entry.value, reason: '${entry.key} 返回类型漂移');
+      }
+    });
+
+    // [批9a] §2.53 隐私与私密标记：冻结 8 个方法的完整签名（参数名/类型/返回），
+    // 防止仅计数通过而签名被悄悄改写。改签名须同步改本测试并走契约评审。
+    test('§2.53 隐私与私密标记 8 方法签名冻结（参数名/类型/返回）', () {
+      int start = -1;
+      for (int i = 0; i < dlines.length; i++) {
+        if (dlines[i].startsWith('### 2.53')) {
+          start = i;
+          break;
+        }
+      }
+      expect(start, greaterThanOrEqualTo(0), reason: '缺少 §2.53 章节');
+
+      final signatures = <String, String>{};
+      final returns = <String, String>{};
+      for (int i = start + 1; i < dlines.length; i++) {
+        final l = dlines[i];
+        if (l.startsWith('### ') || l.startsWith('## ')) break;
+        if (!_isRow(l)) continue;
+        final cells = _cells(l);
+        final name = _rowName(l);
+        signatures[name] = _strip(cells[0]);
+        returns[name] = cells.length > 2 ? _strip(cells[2]) : '';
+      }
+
+      const expectedSignatures = <String, String>{
+        'privacyHasPassword': 'privacyHasPassword()',
+        'privacySetPassword':
+            'privacySetPassword(String password, {String? oldPassword})',
+        'privacyVerifyPassword': 'privacyVerifyPassword(String password)',
+        'privacyClearPassword': 'privacyClearPassword()',
+        'setBooksPrivate':
+            'setBooksPrivate(List<String> bookUrls, bool isPrivate)',
+        'getPrivateBookUrls': 'getPrivateBookUrls()',
+        'setBookGroupPrivate':
+            'setBookGroupPrivate(int groupId, bool isPrivate)',
+        'getPrivateGroupIds': 'getPrivateGroupIds()',
+      };
+      const expectedReturns = <String, String>{
+        'privacyHasPassword': 'Future<bool>',
+        'privacySetPassword': 'Future<bool>',
+        'privacyVerifyPassword': 'Future<bool>',
+        'privacyClearPassword': 'Future<void>',
+        'setBooksPrivate': 'Future<int>',
+        'getPrivateBookUrls': 'Future<List<String>>',
+        'setBookGroupPrivate': 'Future<bool>',
+        'getPrivateGroupIds': 'Future<List<int>>',
+      };
+
+      expect(
+        signatures.keys.toList(),
+        expectedSignatures.keys.toList(),
+        reason: '§2.53 方法集合/顺序漂移',
+      );
+      for (final entry in expectedSignatures.entries) {
         expect(
-          returns[entry.key],
+          signatures[entry.key],
           entry.value,
-          reason: '${entry.key} 返回类型漂移',
+          reason: '${entry.key} 签名漂移（参数名/类型）',
         );
+      }
+      for (final entry in expectedReturns.entries) {
+        expect(returns[entry.key], entry.value, reason: '${entry.key} 返回类型漂移');
       }
     });
 
