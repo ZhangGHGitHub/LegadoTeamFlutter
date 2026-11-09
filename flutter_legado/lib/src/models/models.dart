@@ -4,6 +4,8 @@ library;
 export 'backup_inspect_info.dart';
 export 'book.dart';
 export 'book_chapter.dart';
+// [批7b-1] 书签标记（契约 §2.52，book_marks）
+export 'book_marking.dart';
 export 'book_source.dart';
 export 'cover_candidate.dart';
 // [批34] 正文高亮样式与命中区间（Rust highlightRuleMatch JSON）

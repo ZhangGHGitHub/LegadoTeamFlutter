@@ -208,6 +208,59 @@ mixin RustApiContentExt on RustApiDecode implements BookApi {
     maxMatches: maxMatches,
   );
 
+  // ========== 书签标记（book_marking FFI，契约 §2.52，批7b-1） ==========
+
+  /// 按书名+作者取全部章节/全部源的标记（类型化解码）
+  @override
+  Future<List<BookMarking>> getBookMarkingsByBook(
+    String bookName,
+    String bookAuthor,
+  ) async {
+    final json = await bridge.bookMarkingListByBook(
+      bookName: bookName,
+      bookAuthor: bookAuthor,
+    );
+    return _decodeList(json, 'getBookMarkingsByBook')
+        .whereType<Map<String, dynamic>>()
+        .map(BookMarking.fromJson)
+        .toList();
+  }
+
+  /// 按源地址取标记（chapterIndex=null 取全书）
+  @override
+  Future<List<BookMarking>> getBookMarkingsForChapter(
+    String bookUrl,
+    int? chapterIndex,
+  ) async {
+    final json = await bridge.bookMarkingListForChapter(
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+    );
+    return _decodeList(json, 'getBookMarkingsForChapter')
+        .whereType<Map<String, dynamic>>()
+        .map(BookMarking.fromJson)
+        .toList();
+  }
+
+  /// 保存书签标记，返回落库后的对象（Rust 补 UUID/时间戳）
+  @override
+  Future<BookMarking> saveBookMarking(BookMarking marking) async {
+    final json = await bridge.bookMarkingSave(
+      markingJson: jsonEncode(marking.toJson()),
+    );
+    return BookMarking.fromJson(_decodeMap(json, 'saveBookMarking'));
+  }
+
+  /// 按主键删除标记（不存在为 no-op）
+  @override
+  Future<void> deleteBookMarking(String id) =>
+      bridge.bookMarkingDelete(id: id);
+
+  /// 更新启用状态与 updatedAt（不存在为 no-op）
+  @override
+  Future<void> setBookMarkingEnabled(String id, bool enabled) =>
+      bridge.bookMarkingSetEnabled(id: id, enabled: enabled);
+
   // ========== 规则订阅（rule_sub FFI，Task #89） ==========
 
   /// 获取规则订阅列表（按 customOrder 排序）

@@ -1865,6 +1865,35 @@ abstract class BookApi {
     int? maxMatches,
   });
 
+  // ========== 书签标记（book_marking FFI，契约 §2.52，批7b-1） ==========
+
+  /// 按书名+作者取全部章节/全部源的标记（chapterIndex 升序、createdAt 升序）
+  ///
+  /// 跨源关联键为 `bookName`+`bookAuthor`——换源后标记仍可见可管理。
+  Future<List<BookMarking>> getBookMarkingsByBook(
+    String bookName,
+    String bookAuthor,
+  );
+
+  /// 按源地址取标记；[chapterIndex] 非 null 时同时返回该章 `chapterIndex IS NULL`
+  /// 的全局标记（对齐参考版 `getForChapterSync`），null 取该书全部章节
+  Future<List<BookMarking>> getBookMarkingsForChapter(
+    String bookUrl,
+    int? chapterIndex,
+  );
+
+  /// 保存书签标记，返回落库后的完整对象
+  ///
+  /// `id` 为空串由 Rust 生成 UUID v4；`createdAt<=0` 补当前毫秒；
+  /// `updatedAt` 恒写当前毫秒；`anchorJson` 必填（空 → BridgeError）。
+  Future<BookMarking> saveBookMarking(BookMarking marking);
+
+  /// 按主键删除标记（不存在为 no-op）
+  Future<void> deleteBookMarking(String id);
+
+  /// 更新启用状态与 updatedAt（不存在为 no-op）
+  Future<void> setBookMarkingEnabled(String id, bool enabled);
+
   // ========== 应用日志（appLog FFI） ==========
   // [审计修复 §1.2] 补齐契约 §2.38 已交付但接口缺失的 appLog* 五方法 — QoderCN
 

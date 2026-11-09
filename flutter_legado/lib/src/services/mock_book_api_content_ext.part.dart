@@ -141,6 +141,22 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
   /// 内存高亮规则（key = id）
   final Map<int, Map<String, dynamic>> _mockHighlightRules = {};
 
+  // ========== 书签标记（book_marks，契约 §2.52，批7b-1） ==========
+
+  /// 内存书签标记（key = id；Mock 每次实例独立，测试可新建实例或逐条删除清空）
+  final Map<String, BookMarking> _mockBookMarkings = {};
+
+  /// Mock 标记 ID 序列（Mock 无需真实 UUID，仅需唯一稳定标识）
+  int _nextMockMarkingSeq = 1;
+
+  /// 章节索引比较：NULL 在前（对齐 SQLite `ORDER BY chapterIndex ASC`）
+  int _compareChapterIndex(int? a, int? b) {
+    if (a == null && b == null) return 0;
+    if (a == null) return -1;
+    if (b == null) return 1;
+    return a.compareTo(b);
+  }
+
   @override
   Future<int> highlightAdd({required String highlightJson}) async {
     final h = jsonDecode(highlightJson) as Map<String, dynamic>;
@@ -560,5 +576,83 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
       'totalItems': 0,
       'error': null,
     };
+  }
+
+  // ========== 书签标记（book_marking Mock，契约 §2.52） ==========
+
+  @override
+  Future<List<BookMarking>> getBookMarkingsByBook(
+    String bookName,
+    String bookAuthor,
+  ) async {
+    final items = _mockBookMarkings.values
+        .where((m) => m.bookName == bookName && m.bookAuthor == bookAuthor)
+        .toList()
+      ..sort((a, b) {
+        final byChapter = _compareChapterIndex(a.chapterIndex, b.chapterIndex);
+        if (byChapter != 0) return byChapter;
+        final byTime = a.createdAt.compareTo(b.createdAt);
+        if (byTime != 0) return byTime;
+        return a.id.compareTo(b.id);
+      });
+    return List.of(items);
+  }
+
+  @override
+  Future<List<BookMarking>> getBookMarkingsForChapter(
+    String bookUrl,
+    int? chapterIndex,
+  ) async {
+    final items = _mockBookMarkings.values
+        .where(
+          (m) =>
+              m.bookUrl == bookUrl &&
+              (chapterIndex == null ||
+                  m.chapterIndex == null ||
+                  m.chapterIndex == chapterIndex),
+        )
+        .toList()
+      ..sort((a, b) {
+        final byTime = a.createdAt.compareTo(b.createdAt);
+        if (byTime != 0) return byTime;
+        return a.id.compareTo(b.id);
+      });
+    return List.of(items);
+  }
+
+  @override
+  Future<BookMarking> saveBookMarking(BookMarking marking) async {
+    if (marking.anchorJson.trim().isEmpty) {
+      throw const BridgeError(message: '书签标记 anchorJson 不能为空');
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    var saved = marking;
+    if (saved.id.trim().isEmpty) {
+      saved = saved.copyWith(
+        id: 'mock-marking-${_nextMockMarkingSeq++}-'
+            '${DateTime.now().microsecondsSinceEpoch}',
+      );
+    }
+    if (saved.createdAt <= 0) {
+      saved = saved.copyWith(createdAt: now);
+    }
+    saved = saved.copyWith(updatedAt: now);
+    _mockBookMarkings[saved.id] = saved;
+    return saved;
+  }
+
+  @override
+  Future<void> deleteBookMarking(String id) async {
+    _mockBookMarkings.remove(id);
+  }
+
+  @override
+  Future<void> setBookMarkingEnabled(String id, bool enabled) async {
+    final current = _mockBookMarkings[id];
+    if (current == null) return; // 不存在为 no-op
+    _mockBookMarkings[id] = current.copyWith(
+      enabled: enabled,
+      updatedAt: DateTime.now().millisecondsSinceEpoch,
+    );
   }
 }
