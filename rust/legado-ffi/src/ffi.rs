@@ -2111,8 +2111,39 @@ pub mod ffi {
     }
 
     /// 清除隐私密码（删除 salt/verifier 两键；不存在为 no-op）
+    ///
+    /// [批9d] 同事务清空生物识别三键（摘要/信封/IV）。
     pub fn privacy_clear_password() -> Result<(), BridgeError> {
         crate::api::privacy_api::privacy_clear_password()?;
+        Ok(())
+    }
+
+    /// 生物识别快捷解锁状态（裸 JSON：configured/envelope/iv，不含摘要/令牌）
+    pub fn privacy_biometric_state_get() -> Result<String, BridgeError> {
+        Ok(crate::api::privacy_api::privacy_biometric_state_get()?)
+    }
+
+    /// 写入生物识别凭据（32B 令牌 / 1..4096B 信封 / 12B IV，Base64）
+    ///
+    /// 必须已有隐私密码；长度或编码非法返回 false 且不落库。
+    pub fn privacy_biometric_set(
+        token: String,
+        envelope: String,
+        iv: String,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::privacy_api::privacy_biometric_set(
+            &token, &envelope, &iv,
+        )?)
+    }
+
+    /// 校验生物识别令牌（摘要常量时间比较；无摘要/非法令牌 false）
+    pub fn privacy_biometric_verify(token: String) -> Result<bool, BridgeError> {
+        Ok(crate::api::privacy_api::privacy_biometric_verify(&token)?)
+    }
+
+    /// 清除生物识别凭据（删除摘要/信封/IV 三键；不存在为 no-op）
+    pub fn privacy_biometric_clear() -> Result<(), BridgeError> {
+        crate::api::privacy_api::privacy_biometric_clear()?;
         Ok(())
     }
 

@@ -7,10 +7,16 @@
 //! - salt / verifier 以标准 Base64 存储，**不存明文密码**；
 //! - 校验使用定长 XOR 比较（常量时间），salt/verifier 非法时返回 false。
 //!
+//! [批9d] 生物识别快捷解锁令牌：平台 Keystore/Keychain 只封装 **32 字节
+//! 随机令牌**（不封装密码），本模块提供令牌的 SHA-256 摘要与常量时间校验。
+//! 令牌摘要以标准 Base64 存 caches `config:private_biometric_token_hash`，
+//! 本模块不接触数据库/平台。
+//!
 //! 用户已授权实现隐私完整版（仅数据层；UI/生物识别属后续批次）。
 
 use base64::Engine;
 use rand::RngCore;
+use sha2::Digest;
 
 /// PBKDF2 迭代次数（对齐参考版 `PrivatePasswordCipher.PBKDF2_ITERATIONS`）
 pub const PBKDF2_ITERATIONS: u32 = 210_000;
@@ -18,6 +24,11 @@ pub const PBKDF2_ITERATIONS: u32 = 210_000;
 pub const VERIFIER_LEN: usize = 32;
 /// salt 长度（16 字节，对齐参考版 `SALT_LENGTH_BYTES`）
 pub const SALT_LEN: usize = 16;
+
+/// 生物识别快捷解锁令牌长度（32 字节随机令牌，契约 §2.53 批9d）
+pub const BIOMETRIC_TOKEN_LEN: usize = 32;
+/// 生物识别令牌摘要长度（SHA-256，32 字节）
+pub const BIOMETRIC_TOKEN_HASH_LEN: usize = 32;
 
 /// 生成 16 字节随机 salt（操作系统 CSPRNG）
 pub fn generate_salt() -> [u8; SALT_LEN] {
@@ -80,6 +91,44 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         diff |= a ^ b;
     }
     diff == 0
+}
+
+/// 生物识别令牌 SHA-256 摘要原始字节
+///
+/// 令牌由 Dart `Random.secure()` 生成（32 字节 → 标准 Base64），平台层只
+/// 负责认证后加密/解密该令牌；摘要留在 Rust 侧用于校验，避免配置表出现
+/// 可直接使用的令牌明文。
+pub fn hash_biometric_token(token: &[u8]) -> [u8; BIOMETRIC_TOKEN_HASH_LEN] {
+    let digest = sha2::Sha256::digest(token);
+    let mut output = [0u8; BIOMETRIC_TOKEN_HASH_LEN];
+    output.copy_from_slice(&digest);
+    output
+}
+
+/// 生物识别令牌摘要（标准 Base64，存 `config:private_biometric_token_hash`）
+pub fn hash_biometric_token_base64(token: &[u8]) -> String {
+    let engine = base64::engine::general_purpose::STANDARD;
+    engine.encode(hash_biometric_token(token))
+}
+
+/// 校验生物识别令牌与已存摘要
+///
+/// - 摘要为空、Base64 非法或解码后不是 32 字节 → false；
+/// - 正常路径对原始摘要做常量时间比较。
+///
+/// 令牌长度校验由调用方（FFI 层）负责；本函数只回答「摘要是否匹配」。
+pub fn verify_biometric_token(token: &[u8], token_hash_b64: &str) -> bool {
+    if token_hash_b64.trim().is_empty() {
+        return false;
+    }
+    let engine = base64::engine::general_purpose::STANDARD;
+    let Ok(expected) = engine.decode(token_hash_b64) else {
+        return false;
+    };
+    if expected.len() != BIOMETRIC_TOKEN_HASH_LEN {
+        return false;
+    }
+    constant_time_eq(&hash_biometric_token(token), &expected)
 }
 
 #[cfg(test)]
@@ -186,5 +235,33 @@ mod tests {
         assert!(constant_time_eq(&[1, 2, 3], &[1, 2, 3]));
         assert!(!constant_time_eq(&[1, 2, 3], &[1, 2, 4]));
         assert!(!constant_time_eq(&[1, 2], &[1, 2, 3]));
+    }
+
+    /// [批9d] 令牌摘要：已知 SHA-256 向量 + 往返 + 非法摘要一律 false
+    #[test]
+    fn test_biometric_token_hash_and_verify() {
+        assert_eq!(
+            hex(&hash_biometric_token(b"abc")),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "SHA-256(\"abc\") 标准向量"
+        );
+
+        let token = [7u8; BIOMETRIC_TOKEN_LEN];
+        let digest = hash_biometric_token_base64(&token);
+        assert!(verify_biometric_token(&token, &digest));
+        assert!(!verify_biometric_token(
+            &[8u8; BIOMETRIC_TOKEN_LEN],
+            &digest
+        ));
+
+        // 空/非法 Base64/长度不符（16/31/33 字节）摘要一律 false，不 panic
+        assert!(!verify_biometric_token(&token, ""));
+        assert!(!verify_biometric_token(&token, "  "));
+        assert!(!verify_biometric_token(&token, "not-base64!!"));
+        let engine = base64::engine::general_purpose::STANDARD;
+        for len in [0usize, 16, 31, 33] {
+            let bad = engine.encode(vec![0u8; len]);
+            assert!(!verify_biometric_token(&token, &bad), "hash_len={len}");
+        }
     }
 }

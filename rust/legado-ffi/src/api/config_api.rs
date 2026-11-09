@@ -288,23 +288,29 @@ mod tests {
             repo.put("config:private_password_salt", "salt-b64", 0)?;
             repo.put("config:private_password_verifier", "verifier-b64", 0)?;
             repo.put("config:private_biometric_envelope", "reserved-b64", 0)?;
+            repo.put("config:private_biometric_token_hash", "hash-b64", 0)?;
+            repo.put("config:private_biometric_iv", "iv-b64", 0)?;
             repo.put("config:theme", "dark", 0)?;
             Ok(())
         })
         .unwrap();
 
-        // 列表过滤：三个私有键均不出现
+        // 列表过滤：五个私有键均不出现
         let all = get_all_config().unwrap();
         assert!(all.contains_key("theme"));
         assert!(!all.contains_key("private_password_salt"));
         assert!(!all.contains_key("private_password_verifier"));
         assert!(!all.contains_key("private_biometric_envelope"));
+        assert!(!all.contains_key("private_biometric_token_hash"));
+        assert!(!all.contains_key("private_biometric_iv"));
 
         // 读取拒绝
         for key in [
             "private_password_salt",
             "private_password_verifier",
             "private_biometric_envelope",
+            "private_biometric_token_hash",
+            "private_biometric_iv",
         ] {
             let err = get_config(key).unwrap_err();
             assert!(
@@ -340,6 +346,8 @@ mod tests {
             repo.delete("config:private_password_salt")?;
             repo.delete("config:private_password_verifier")?;
             repo.delete("config:private_biometric_envelope")?;
+            repo.delete("config:private_biometric_token_hash")?;
+            repo.delete("config:private_biometric_iv")?;
             repo.delete("config:theme")?;
             Ok(())
         })

@@ -1,13 +1,17 @@
-//! 隐私密码与私密标记 FFI API（契约 §2.53，批9a）
+//! 隐私密码与私密标记 FFI API（契约 §2.53，批9a / 批9d）
 //!
 //! - 密码凭据：`legado-core::privacy` 派生 PBKDF2-HMAC-SHA256（210000 次 / 32B），
 //!   salt 与 verifier 以 Base64 存 caches 表 `config:private_password_salt` /
 //!   `config:private_password_verifier`，**不存明文密码**；
 //! - 私密标记：`books.isPrivate`（单本）与 `book_groups.isPrivate`（分组）；
+//! - [批9d] 生物识别快捷解锁：平台层只封装 32B 随机令牌，Rust 保存令牌
+//!   SHA-256 摘要与平台加密信封（`config:private_biometric_*`）；改密/清密
+//!   在同一事务内清空三键；
 //! - 本模块只做数据层，不做 UI/路由/平台生物识别。
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
+use base64::Engine;
 use legado_core::privacy as password_crypto;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{BookGroupRepository, BookRepository, CacheRepository};
@@ -19,16 +23,33 @@ use crate::db_state::with_database;
 const PASSWORD_SALT_KEY: &str = "private_password_salt";
 /// caches 键短名：密码 verifier（Base64）
 const PASSWORD_VERIFIER_KEY: &str = "private_password_verifier";
+/// caches 键短名：生物识别令牌摘要（SHA-256 标准 Base64）
+const BIOMETRIC_TOKEN_HASH_KEY: &str = "private_biometric_token_hash";
+/// caches 键短名：生物识别信封（平台 Keystore/Keychain 密文，Base64）
+const BIOMETRIC_ENVELOPE_KEY: &str = "private_biometric_envelope";
+/// caches 键短名：生物识别 IV（AES-GCM 12 字节，Base64）
+const BIOMETRIC_IV_KEY: &str = "private_biometric_iv";
 /// 新密码字符数上限（契约 §2.53）
 const MAX_PASSWORD_CHARS: usize = 128;
+/// 生物识别 IV 长度（AES-GCM 标准 96 bit，契约 §2.53 批9d）
+const BIOMETRIC_IV_LEN: usize = 12;
+/// 生物识别信封长度上限（解码后 1..=4096 字节）
+const MAX_BIOMETRIC_ENVELOPE_LEN: usize = 4096;
 
-/// 密码改写的进程内串行锁
+/// 密码/生物凭据改写的进程内串行锁
 ///
-/// 「读旧凭据 → 校验旧密码 → 生成新凭据 → 写两键」必须是原子步骤：两个并发
+/// 「读旧凭据 → 校验旧密码 → 生成新凭据 → 写键」必须是原子步骤：两个并发
 /// `privacySetPassword` 若交错执行，都会读到旧凭据并各自写入新密码，产生
-/// 丢失更新（后写覆盖先写且两次都返回 true）。锁覆盖整个读改写窗口；
-/// DB 写入本身另用事务保证两键同成同败。
+/// 丢失更新（后写覆盖先写且两次都返回 true）。生物识别的 set/clear 与改密/
+/// 清密共用同一把锁，保证「改密清空信封」与「写入新信封」不会交错。
+/// DB 写入本身另用事务保证多键同成同败。
 static PRIVACY_PASSWORD_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_password_mutations() -> MutexGuard<'static, ()> {
+    PRIVACY_PASSWORD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn config_key(short_key: &str) -> String {
     format!("{CONFIG_PREFIX}{short_key}")
@@ -37,6 +58,22 @@ fn config_key(short_key: &str) -> String {
 /// 读取 caches 配置值（缺失/空串返回空串）
 fn read_config(repo: &CacheRepository<'_>, short_key: &str) -> LegadoResult<String> {
     Ok(repo.get(&config_key(short_key))?.unwrap_or_default())
+}
+
+/// 严格 Base64 解码并要求长度恰为 [expected]（失败返回 None）
+fn decode_exact_len(value: &str, expected: usize) -> Option<Vec<u8>> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .ok()?;
+    (bytes.len() == expected).then_some(bytes)
+}
+
+/// 严格 Base64 解码并要求长度落在 [min_len]..=[max_len]（失败返回 None）
+fn decode_len_range(value: &str, min_len: usize, max_len: usize) -> Option<Vec<u8>> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(value)
+        .ok()?;
+    (bytes.len() >= min_len && bytes.len() <= max_len).then_some(bytes)
 }
 
 /// 是否已设置隐私密码：salt 与 verifier 均存在（非空）
@@ -62,9 +99,7 @@ pub fn privacy_set_password(password: &str, old_password: Option<&str>) -> Legad
         return Ok(false);
     }
 
-    let _guard = PRIVACY_PASSWORD_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = lock_password_mutations();
 
     with_database(|db| {
         let conn = db.connection();
@@ -99,6 +134,12 @@ pub fn privacy_set_password(password: &str, old_password: Option<&str>) -> Legad
             let repo = CacheRepository::new(&tx);
             repo.put(&config_key(PASSWORD_SALT_KEY), &salt_b64, 0)?;
             repo.put(&config_key(PASSWORD_VERIFIER_KEY), &verifier_b64, 0)?;
+            // [批9d] 改密即失效生物快捷：与密码写入同事务清空三键
+            //（含新密码与原密码相同的情况；令牌模型下「保留信封」会让旧
+            // 令牌继续可用，比参考版更严格属登记差异）。
+            repo.delete(&config_key(BIOMETRIC_TOKEN_HASH_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_ENVELOPE_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_IV_KEY))?;
         }
         tx.commit()
             .map_err(|e| LegadoError::Database(format!("提交隐私密码事务失败: {e}")))?;
@@ -125,7 +166,10 @@ pub fn privacy_verify_password(password: &str) -> LegadoResult<bool> {
 }
 
 /// 清除隐私密码：删除 salt 与 verifier 两键（不存在为 no-op）
+///
+/// [批9d] 同一事务内一并清空生物识别三键：清密后不能残留可用快捷入口。
 pub fn privacy_clear_password() -> LegadoResult<()> {
+    let _guard = lock_password_mutations();
     with_database(|db| {
         let conn = db.connection();
         let tx = conn
@@ -135,9 +179,133 @@ pub fn privacy_clear_password() -> LegadoResult<()> {
             let repo = CacheRepository::new(&tx);
             repo.delete(&config_key(PASSWORD_SALT_KEY))?;
             repo.delete(&config_key(PASSWORD_VERIFIER_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_TOKEN_HASH_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_ENVELOPE_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_IV_KEY))?;
         }
         tx.commit()
             .map_err(|e| LegadoError::Database(format!("提交清除隐私密码事务失败: {e}")))?;
+        Ok(())
+    })
+}
+
+/// 生物识别配置状态（不含摘要/令牌，契约 §2.53 批9d）
+///
+/// 返回裸 JSON `{"configured": bool, "envelope": String?, "iv": String?}`：
+/// - `configured` 为三键齐备且摘要可解码为 32 字节；
+/// - 仅在 configured 为 true 时返回信封/IV，避免未配置时泄露半套凭据。
+pub fn privacy_biometric_state_get() -> LegadoResult<String> {
+    with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        let token_hash = read_config(&repo, BIOMETRIC_TOKEN_HASH_KEY)?;
+        let envelope = read_config(&repo, BIOMETRIC_ENVELOPE_KEY)?;
+        let iv = read_config(&repo, BIOMETRIC_IV_KEY)?;
+        let configured = !token_hash.trim().is_empty()
+            && !envelope.trim().is_empty()
+            && !iv.trim().is_empty()
+            && decode_exact_len(&token_hash, password_crypto::BIOMETRIC_TOKEN_HASH_LEN).is_some();
+        let (envelope, iv) = if configured {
+            (Some(envelope), Some(iv))
+        } else {
+            (None, None)
+        };
+        serde_json::to_string(&serde_json::json!({
+            "configured": configured,
+            "envelope": envelope,
+            "iv": iv,
+        }))
+        .map_err(|e| LegadoError::Internal(format!("序列化生物识别状态失败: {e}")))
+    })
+}
+
+/// 写入生物识别凭据：要求已有隐私密码，长度校验失败返回 false 且不落库
+///
+/// - token Base64 解码后必须恰为 32 字节；
+/// - iv Base64 解码后必须恰为 12 字节；
+/// - envelope Base64 解码后必须为 1..=4096 字节；
+/// - 三键在同一事务内覆盖写入（均重编码为标准 Base64 后再存）。
+pub fn privacy_biometric_set(
+    token_b64: &str,
+    envelope_b64: &str,
+    iv_b64: &str,
+) -> LegadoResult<bool> {
+    let Some(token) = decode_exact_len(token_b64, password_crypto::BIOMETRIC_TOKEN_LEN) else {
+        return Ok(false);
+    };
+    let Some(envelope) = decode_len_range(envelope_b64, 1, MAX_BIOMETRIC_ENVELOPE_LEN) else {
+        return Ok(false);
+    };
+    let Some(iv) = decode_exact_len(iv_b64, BIOMETRIC_IV_LEN) else {
+        return Ok(false);
+    };
+
+    let _guard = lock_password_mutations();
+    let engine = base64::engine::general_purpose::STANDARD;
+    with_database(|db| {
+        let conn = db.connection();
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|e| LegadoError::Database(format!("开启生物识别事务失败: {e}")))?;
+        {
+            let repo = CacheRepository::new(&tx);
+            // 必须已有隐私密码：无凭据时快捷解锁会绕过锁语义
+            let salt = read_config(&repo, PASSWORD_SALT_KEY)?;
+            let verifier = read_config(&repo, PASSWORD_VERIFIER_KEY)?;
+            if salt.trim().is_empty() || verifier.trim().is_empty() {
+                return Ok(false);
+            }
+            repo.put(
+                &config_key(BIOMETRIC_TOKEN_HASH_KEY),
+                &password_crypto::hash_biometric_token_base64(&token),
+                0,
+            )?;
+            repo.put(
+                &config_key(BIOMETRIC_ENVELOPE_KEY),
+                &engine.encode(&envelope),
+                0,
+            )?;
+            repo.put(&config_key(BIOMETRIC_IV_KEY), &engine.encode(&iv), 0)?;
+        }
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交生物识别事务失败: {e}")))?;
+        Ok(true)
+    })
+}
+
+/// 校验生物识别令牌（摘要常量时间比较；无摘要/非法令牌返回 false）
+///
+/// 通过只代表「平台解封的令牌与登记一致」，授权范围由 Dart 按
+/// `unlockScope` 决定，本函数不改变任何解锁状态。
+pub fn privacy_biometric_verify(token_b64: &str) -> LegadoResult<bool> {
+    let Some(token) = decode_exact_len(token_b64, password_crypto::BIOMETRIC_TOKEN_LEN) else {
+        return Ok(false);
+    };
+    with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        let token_hash = read_config(&repo, BIOMETRIC_TOKEN_HASH_KEY)?;
+        if token_hash.trim().is_empty() {
+            return Ok(false);
+        }
+        Ok(password_crypto::verify_biometric_token(&token, &token_hash))
+    })
+}
+
+/// 清除生物识别凭据：删除摘要/信封/IV 三键（不存在为 no-op）
+pub fn privacy_biometric_clear() -> LegadoResult<()> {
+    let _guard = lock_password_mutations();
+    with_database(|db| {
+        let conn = db.connection();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启清除生物识别事务失败: {e}")))?;
+        {
+            let repo = CacheRepository::new(&tx);
+            repo.delete(&config_key(BIOMETRIC_TOKEN_HASH_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_ENVELOPE_KEY))?;
+            repo.delete(&config_key(BIOMETRIC_IV_KEY))?;
+        }
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交清除生物识别事务失败: {e}")))?;
         Ok(())
     })
 }
@@ -438,6 +606,211 @@ mod tests {
             privacy_verify_password("new-a").unwrap() || privacy_verify_password("new-b").unwrap(),
             "最终密码应为成功那一次写入的新密码"
         );
+        privacy_clear_password().unwrap();
+    }
+
+    // ===== [批9d] 生物识别快捷解锁（随机令牌信封） =====
+
+    use base64::Engine;
+
+    /// 构造测试用标准 Base64 令牌/信封/IV
+    fn b64(bytes: &[u8]) -> String {
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    fn biometric_state_json() -> serde_json::Value {
+        serde_json::from_str(&privacy_biometric_state_get().unwrap()).unwrap()
+    }
+
+    /// 状态往返：未配置 → 写入 → configured/envelope/iv（不含摘要/令牌）
+    /// → 正确令牌 true / 错误令牌 false → 清除 → no-op
+    #[test]
+    fn test_privacy_biometric_lifecycle() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        privacy_biometric_clear().unwrap();
+        assert!(privacy_set_password("bio-pass", None).unwrap());
+
+        let state = biometric_state_json();
+        assert_eq!(state["configured"], false);
+        assert!(state["envelope"].is_null());
+        assert!(state["iv"].is_null());
+        assert!(state.get("token_hash").is_none(), "状态不得返回摘要");
+
+        let token = b64(&[3u8; password_crypto::BIOMETRIC_TOKEN_LEN]);
+        let envelope = b64(&[9u8; 64]);
+        let iv = b64(&[5u8; BIOMETRIC_IV_LEN]);
+        assert!(privacy_biometric_set(&token, &envelope, &iv).unwrap());
+
+        let state = biometric_state_json();
+        assert_eq!(state["configured"], true);
+        assert_eq!(state["envelope"], envelope);
+        assert_eq!(state["iv"], iv);
+        assert!(state.get("token_hash").is_none(), "状态不得返回摘要");
+        assert!(
+            !privacy_biometric_state_get()
+                .unwrap()
+                .contains("token_hash"),
+            "状态 JSON 不得包含摘要字段"
+        );
+
+        assert!(privacy_biometric_verify(&token).unwrap());
+        assert!(!privacy_biometric_verify(&b64(&[4u8; 32])).unwrap());
+        assert!(!privacy_biometric_verify("not-base64!!").unwrap());
+        assert!(!privacy_biometric_verify(&b64(&[3u8; 31])).unwrap());
+
+        privacy_biometric_clear().unwrap();
+        assert_eq!(biometric_state_json()["configured"], false);
+        assert!(!privacy_biometric_verify(&token).unwrap());
+        privacy_biometric_clear().unwrap();
+
+        privacy_clear_password().unwrap();
+    }
+
+    /// 长度/编码校验：token 31/33B、iv 11/13B、envelope 空/>4096B、
+    /// 非 Base64 一律 false 且不落库；1B/4096B 为合法边界
+    #[test]
+    fn test_privacy_biometric_set_rejects_invalid_lengths() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        privacy_biometric_clear().unwrap();
+        assert!(privacy_set_password("bio-pass", None).unwrap());
+
+        let token = b64(&[3u8; password_crypto::BIOMETRIC_TOKEN_LEN]);
+        let envelope = b64(&[9u8; 32]);
+        let iv = b64(&[5u8; BIOMETRIC_IV_LEN]);
+
+        let invalid: Vec<(String, String, String)> = vec![
+            (b64(&[3u8; 31]), envelope.clone(), iv.clone()),
+            (b64(&[3u8; 33]), envelope.clone(), iv.clone()),
+            (token.clone(), envelope.clone(), b64(&[5u8; 11])),
+            (token.clone(), envelope.clone(), b64(&[5u8; 13])),
+            (token.clone(), String::new(), iv.clone()),
+            (
+                token.clone(),
+                b64(&[9u8; MAX_BIOMETRIC_ENVELOPE_LEN + 1]),
+                iv.clone(),
+            ),
+            (String::new(), envelope.clone(), iv.clone()),
+            ("not-base64!!".into(), envelope.clone(), iv.clone()),
+            (token.clone(), "not-base64!!".into(), iv.clone()),
+            (token.clone(), envelope.clone(), "not-base64!!".into()),
+        ];
+        for (token, envelope, iv) in invalid {
+            assert!(
+                !privacy_biometric_set(&token, &envelope, &iv).unwrap(),
+                "非法长度/编码必须返回 false: token={token} len(env)={}",
+                envelope.len()
+            );
+        }
+        assert_eq!(
+            biometric_state_json()["configured"],
+            false,
+            "校验失败不得落库"
+        );
+
+        // 边界合法：信封 1B / 4096B
+        assert!(privacy_biometric_set(&token, &b64(&[1u8]), &iv).unwrap());
+        assert!(
+            privacy_biometric_set(&token, &b64(&[9u8; MAX_BIOMETRIC_ENVELOPE_LEN]), &iv).unwrap()
+        );
+        assert_eq!(biometric_state_json()["configured"], true);
+
+        privacy_biometric_clear().unwrap();
+        privacy_clear_password().unwrap();
+    }
+
+    /// 必须已有隐私密码：无密码时 set 返回 false 且不落库
+    #[test]
+    fn test_privacy_biometric_set_requires_password() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        privacy_biometric_clear().unwrap();
+
+        let token = b64(&[3u8; password_crypto::BIOMETRIC_TOKEN_LEN]);
+        let envelope = b64(&[9u8; 32]);
+        let iv = b64(&[5u8; BIOMETRIC_IV_LEN]);
+        assert!(!privacy_biometric_set(&token, &envelope, &iv).unwrap());
+        assert!(!privacy_has_password().unwrap());
+        assert_eq!(biometric_state_json()["configured"], false);
+        assert!(!privacy_biometric_verify(&token).unwrap());
+    }
+
+    /// 改密/清密在同一事务内清空三键（改密即失效生物快捷）
+    #[test]
+    fn test_privacy_password_mutation_clears_biometric() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        privacy_biometric_clear().unwrap();
+        assert!(privacy_set_password("first-pass", None).unwrap());
+
+        let token = b64(&[3u8; password_crypto::BIOMETRIC_TOKEN_LEN]);
+        let envelope = b64(&[9u8; 32]);
+        let iv = b64(&[5u8; BIOMETRIC_IV_LEN]);
+        assert!(privacy_biometric_set(&token, &envelope, &iv).unwrap());
+        assert!(privacy_biometric_verify(&token).unwrap());
+
+        // 改密（旧密正确）→ 三键清空
+        assert!(privacy_set_password("second-pass", Some("first-pass")).unwrap());
+        assert_eq!(biometric_state_json()["configured"], false);
+        assert!(
+            !privacy_biometric_verify(&token).unwrap(),
+            "改密后旧令牌必须失效"
+        );
+        // 三键真的删除（不是仅 configured 判定为 false）
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            assert_eq!(repo.get("config:private_biometric_token_hash")?, None);
+            assert_eq!(repo.get("config:private_biometric_envelope")?, None);
+            assert_eq!(repo.get("config:private_biometric_iv")?, None);
+            Ok(())
+        })
+        .unwrap();
+
+        // 重新配置后清密 → 三键清空
+        assert!(privacy_biometric_set(&token, &envelope, &iv).unwrap());
+        privacy_clear_password().unwrap();
+        assert_eq!(biometric_state_json()["configured"], false);
+        assert!(!privacy_biometric_verify(&token).unwrap());
+    }
+
+    /// 失败改密（旧密错误）不得清空已配置的生物凭据
+    #[test]
+    fn test_privacy_failed_password_change_keeps_biometric() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        privacy_biometric_clear().unwrap();
+        assert!(privacy_set_password("first-pass", None).unwrap());
+
+        let token = b64(&[3u8; password_crypto::BIOMETRIC_TOKEN_LEN]);
+        assert!(privacy_biometric_set(&token, &b64(&[9u8; 32]), &b64(&[5u8; 12])).unwrap());
+
+        assert!(!privacy_set_password("second-pass", Some("wrong")).unwrap());
+        assert!(privacy_biometric_verify(&token).unwrap());
+        assert_eq!(biometric_state_json()["configured"], true);
+
+        privacy_biometric_clear().unwrap();
+        privacy_clear_password().unwrap();
+    }
+
+    /// 清缓存保留生物识别三键（与密码凭据同口径）
+    #[test]
+    fn test_cache_clear_preserves_private_biometric() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        privacy_biometric_clear().unwrap();
+        assert!(privacy_set_password("cache-pass", None).unwrap());
+        let token = b64(&[3u8; password_crypto::BIOMETRIC_TOKEN_LEN]);
+        let envelope = b64(&[9u8; 32]);
+        let iv = b64(&[5u8; BIOMETRIC_IV_LEN]);
+        assert!(privacy_biometric_set(&token, &envelope, &iv).unwrap());
+
+        assert!(crate::api::cache_api::clear_cache().unwrap());
+
+        assert_eq!(biometric_state_json()["configured"], true);
+        assert!(privacy_biometric_verify(&token).unwrap());
+
+        privacy_biometric_clear().unwrap();
         privacy_clear_password().unwrap();
     }
 }
