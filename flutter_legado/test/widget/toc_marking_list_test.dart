@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_legado/src/bridge/ffi.dart' show BridgeError;
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/toc_screen.dart';
@@ -85,7 +86,9 @@ void main() {
 
   void stubCommon({List<BookMarking> markings = const []}) {
     when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
-    when(() => mockApi.getChapters(bookUrl)).thenAnswer((_) async => chapters());
+    when(
+      () => mockApi.getChapters(bookUrl),
+    ).thenAnswer((_) async => chapters());
     when(
       () => mockApi.listCachedChapterUrls(bookUrl),
     ).thenAnswer((_) async => const <String>[]);
@@ -229,6 +232,21 @@ void main() {
 
     expect(find.byKey(const ValueKey('toc-section-笔记')), findsNothing);
     expect(find.text('暂无标注'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('P2-3 笔记加载失败：显示错误页而非「暂无标注」', (tester) async {
+    stubCommon(markings: const []);
+    when(
+      () => mockApi.getBookMarkingsByBook(bookName, bookAuthor),
+    ).thenAnswer((_) async => throw const BridgeError(message: '笔记加载失败'));
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook())));
+    await settleInitial(tester);
+    await openAnnotationsTab(tester);
+
+    expect(find.text('笔记加载失败'), findsOneWidget);
+    expect(find.text('暂无标注'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
   });

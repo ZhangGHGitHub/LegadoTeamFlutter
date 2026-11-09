@@ -4,6 +4,7 @@
 /// 合并、切换章节后旧 marks 清空、修订号变化后即时更新、360dp 无溢出。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -41,6 +42,25 @@ class _SwitchableReaderNotifier extends _FixedReaderNotifier {
   }
 }
 
+/// 第 1 章请求挂起、第 2 章立即返回（P2-1 旧失败不覆盖新章）
+class _FlakyMarkingApi extends MockBookApi {
+  _FlakyMarkingApi({required this.secondChapterMarkings});
+
+  final List<BookMarking> secondChapterMarkings;
+  final Completer<List<BookMarking>> firstChapter = Completer();
+  final List<int?> requestedChapters = [];
+
+  @override
+  Future<List<BookMarking>> getBookMarkingsForChapter(
+    String bookUrl,
+    int? chapterIndex,
+  ) {
+    requestedChapters.add(chapterIndex);
+    if (chapterIndex == 0) return firstChapter.future;
+    return Future.value(secondChapterMarkings);
+  }
+}
+
 ReaderState readerState({
   required String content,
   int chapterIndex = 0,
@@ -54,7 +74,11 @@ ReaderState readerState({
       origin: 'https://src.com',
     ),
     chapters: [
-      BookChapter(url: 'u$chapterIndex', title: chapterTitle, index: chapterIndex),
+      BookChapter(
+        url: 'u$chapterIndex',
+        title: chapterTitle,
+        index: chapterIndex,
+      ),
     ],
     currentChapterIndex: chapterIndex,
     chapterContent: content,
@@ -203,7 +227,11 @@ void main() {
       ),
     );
 
-    await pumpReader(tester, api: api, state: readerState(content: content));
+    await pumpReader(
+      tester,
+      api: api,
+      state: readerState(content: content),
+    );
 
     expect(
       hasSpan(tester, '背景文字', background: const Color(0x33FF0000)),
@@ -257,7 +285,11 @@ void main() {
       style: const BookMarkingStyle(bgColor: 0x33FF0000),
     );
 
-    await pumpReader(tester, api: api, state: readerState(content: content));
+    await pumpReader(
+      tester,
+      api: api,
+      state: readerState(content: content),
+    );
 
     expect(
       hasSpan(tester, '规则', background: const Color(0x330000FF)),
@@ -284,9 +316,7 @@ void main() {
       position: 0,
       style: const BookMarkingStyle(bgColor: 0x33FF0000),
     );
-    final notifier = _SwitchableReaderNotifier(
-      readerState(content: '背景文字在本章'),
-    );
+    final notifier = _SwitchableReaderNotifier(readerState(content: '背景文字在本章'));
     await pumpReader(
       tester,
       api: api,
@@ -353,6 +383,57 @@ void main() {
     );
   });
 
+  testWidgets('P2-1 旧章请求失败不覆盖新章已渲染标记', (tester) async {
+    final api = _FlakyMarkingApi(
+      secondChapterMarkings: [
+        BookMarking(
+          id: 'b-mark',
+          bookUrl: bookUrl,
+          bookName: bookName,
+          bookAuthor: bookAuthor,
+          chapterIndex: 1,
+          anchorJson: buildBookMarkingAnchor(
+            chapterIndex: 1,
+            chapterPosition: 0,
+            selectedText: 'B标记',
+          ).encode(),
+          styleJson: const BookMarkingStyle(bgColor: 0x3300FF00).encode(),
+          chapterName: '第二章',
+        ),
+      ],
+    );
+    final notifier = _SwitchableReaderNotifier(readerState(content: 'A章正文'));
+    await pumpReader(
+      tester,
+      api: api,
+      state: notifier.initial,
+      notifier: notifier,
+    );
+    expect(api.requestedChapters, contains(0), reason: 'A 章请求应已发出');
+
+    notifier.switchTo(
+      readerState(content: 'B标记', chapterIndex: 1, chapterTitle: '第二章'),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(
+      hasSpan(tester, 'B标记', background: const Color(0x3300FF00)),
+      isTrue,
+      reason: 'B 章标记应先渲染',
+    );
+
+    // A 章旧请求迟到失败：不得清空 B 章已采纳的标记
+    api.firstChapter.completeError(StateError('A 章加载失败'));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      hasSpan(tester, 'B标记', background: const Color(0x3300FF00)),
+      isTrue,
+      reason: '旧请求失败不得覆盖新章结果',
+    );
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('360dp 窄屏：带标记正文无 overflow', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -371,7 +452,11 @@ void main() {
       style: const BookMarkingStyle(textColor: 0xFF0000FF),
     );
 
-    await pumpReader(tester, api: api, state: readerState(content: content));
+    await pumpReader(
+      tester,
+      api: api,
+      state: readerState(content: content),
+    );
     expect(tester.takeException(), isNull);
   });
 }

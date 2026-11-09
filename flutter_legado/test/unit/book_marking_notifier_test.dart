@@ -7,10 +7,29 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_legado/src/bridge/ffi.dart' show BridgeError;
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/book_marking/book_marking_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+
+/// 指定书名的加载恒失败（P2-3 切书不残留测试）
+class _FailingBookApi extends MockBookApi {
+  _FailingBookApi({required this.failBookName});
+
+  final String failBookName;
+
+  @override
+  Future<List<BookMarking>> getBookMarkingsByBook(
+    String bookName,
+    String bookAuthor,
+  ) {
+    if (bookName == failBookName) {
+      throw const BridgeError(message: 'B 书加载失败');
+    }
+    return super.getBookMarkingsByBook(bookName, bookAuthor);
+  }
+}
 
 void main() {
   late MockBookApi api;
@@ -33,11 +52,14 @@ void main() {
     int chapterPosition = 10,
     String note = '',
     String chapterName = '第一章',
+    String bookName = '测试书',
+    String bookAuthor = '作者A',
+    String bookUrl = 'https://src.com/book/1',
   }) {
     return notifier().save(
-      bookName: '测试书',
-      bookAuthor: '作者A',
-      bookUrl: 'https://src.com/book/1',
+      bookName: bookName,
+      bookAuthor: bookAuthor,
+      bookUrl: bookUrl,
       chapterIndex: chapterIndex,
       chapterName: chapterName,
       chapterPosition: chapterPosition,
@@ -69,7 +91,7 @@ void main() {
     expect(style.underlineMode, 3);
     expect(style.underlineColor, 0xFF22C55E);
 
-    expect(container.read(bookMarkingNotifierProvider), hasLength(1));
+    expect(container.read(bookMarkingNotifierProvider).items, hasLength(1));
   });
 
   test('同锚点再次保存：原地更新，保留 id/createdAt，enabled=true', () async {
@@ -83,7 +105,7 @@ void main() {
     expect(second.updatedAt, greaterThanOrEqualTo(first.updatedAt));
     expect(second.note, '新备注');
     expect(second.enabled, isTrue);
-    expect(container.read(bookMarkingNotifierProvider), hasLength(1));
+    expect(container.read(bookMarkingNotifierProvider).items, hasLength(1));
 
     final listed = await api.getBookMarkingsByBook('测试书', '作者A');
     expect(listed, hasLength(1));
@@ -97,7 +119,7 @@ void main() {
     final d = await save(selectedText: '另一段文本');
 
     expect({a.id, b.id, c.id, d.id}, hasLength(4));
-    expect(container.read(bookMarkingNotifierProvider), hasLength(4));
+    expect(container.read(bookMarkingNotifierProvider).items, hasLength(4));
   });
 
   test('空选中文本（归一化后）拒绝保存', () async {
@@ -105,7 +127,7 @@ void main() {
       save(selectedText: ' \u3000 \n\t '),
       throwsA(isA<FormatException>()),
     );
-    expect(container.read(bookMarkingNotifierProvider), isEmpty);
+    expect(container.read(bookMarkingNotifierProvider).items, isEmpty);
   });
 
   test('loadByBook 加载并替换内存列表', () async {
@@ -119,7 +141,7 @@ void main() {
     await fresh
         .read(bookMarkingNotifierProvider.notifier)
         .loadByBook('测试书', '作者A');
-    expect(fresh.read(bookMarkingNotifierProvider), hasLength(2));
+    expect(fresh.read(bookMarkingNotifierProvider).items, hasLength(2));
   });
 
   test('setEnabled/delete 更新内存状态并自增修订号', () async {
@@ -127,12 +149,15 @@ void main() {
     final revisionBefore = container.read(bookMarkingsRevisionProvider);
 
     await notifier().setEnabled(saved.id, false);
-    expect(container.read(bookMarkingNotifierProvider).single.enabled, isFalse);
+    expect(
+      container.read(bookMarkingNotifierProvider).items.single.enabled,
+      isFalse,
+    );
     final revisionAfterEnable = container.read(bookMarkingsRevisionProvider);
     expect(revisionAfterEnable, greaterThan(revisionBefore));
 
     await notifier().delete(saved.id);
-    expect(container.read(bookMarkingNotifierProvider), isEmpty);
+    expect(container.read(bookMarkingNotifierProvider).items, isEmpty);
     expect(
       container.read(bookMarkingsRevisionProvider),
       greaterThan(revisionAfterEnable),
@@ -155,5 +180,79 @@ void main() {
     expect(ids.contains(c0.id), isTrue);
     expect(ids.contains(c1.id), isFalse);
     expect(list.any((m) => m.chapterIndex == null), isTrue);
+  });
+
+  test('P2-5 换源保存：既有行 bookUrl 不被改写', () async {
+    final first = await save(bookUrl: 'https://a.com/book/1');
+    final second = await save(bookUrl: 'https://b.com/book/2');
+    expect(second.id, first.id);
+    expect(second.bookUrl, 'https://a.com/book/1');
+    final listed = await api.getBookMarkingsByBook('测试书', '作者A');
+    expect(listed.single.bookUrl, 'https://a.com/book/1');
+  });
+
+  test('P2-6 findExisting 命中同锚点（归一化）', () async {
+    final saved = await save(note: '旧备注', selectedText: '选中文本');
+    final found = await notifier().findExisting(
+      bookName: '测试书',
+      bookAuthor: '作者A',
+      chapterIndex: 0,
+      chapterPosition: 10,
+      selectedText: '  选中文本  ',
+    );
+    expect(found?.id, saved.id);
+    expect(found?.note, '旧备注');
+
+    final miss = await notifier().findExisting(
+      bookName: '测试书',
+      bookAuthor: '作者A',
+      chapterIndex: 0,
+      chapterPosition: 11,
+      selectedText: '选中文本',
+    );
+    expect(miss, isNull);
+  });
+
+  test('P2-3 切书加载失败：清空旧书列表且状态标为失败', () async {
+    final failingApi = _FailingBookApi(failBookName: 'B书');
+    final failingContainer = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(failingApi)],
+    );
+    addTearDown(failingContainer.dispose);
+    final failingNotifier = failingContainer.read(
+      bookMarkingNotifierProvider.notifier,
+    );
+
+    // A 书先有数据
+    await failingApi.saveBookMarking(
+      BookMarking(
+        bookUrl: 'https://a.com/book/1',
+        bookName: 'A书',
+        bookAuthor: '作者A',
+        chapterIndex: 0,
+        anchorJson: buildBookMarkingAnchor(
+          chapterIndex: 0,
+          chapterPosition: 0,
+          selectedText: 'A 文本',
+        ).encode(),
+        styleJson: MarkingEffect.solid.toStyle(0xFF22C55E).encode(),
+      ),
+    );
+    await failingNotifier.loadByBook('A书', '作者A');
+    expect(
+      failingContainer.read(bookMarkingNotifierProvider).items,
+      hasLength(1),
+    );
+
+    await expectLater(
+      failingNotifier.loadByBook('B书', '作者A'),
+      throwsA(isA<BridgeError>()),
+    );
+    final state = failingContainer.read(bookMarkingNotifierProvider);
+    expect(state.items, isEmpty, reason: '不得残留 A 书标记');
+    expect(state.bookName, 'B书');
+    expect(state.loaded, isFalse);
+    expect(state.error, contains('B 书加载失败'));
+    expect(state.isFor('A书', '作者A'), isFalse);
   });
 }

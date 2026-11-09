@@ -25,7 +25,10 @@ void main() {
   group('精确匹配', () {
     test('唯一命中返回正确 UTF-16 半开区间', () {
       const content = '开头关键词结尾';
-      final range = resolveBookMarkingRange(content, anchor('关键词', position: 2));
+      final range = resolveBookMarkingRange(
+        content,
+        anchor('关键词', position: 2),
+      );
       expect(range, isNotNull);
       expect(content.substring(range!.start, range.end), '关键词');
       expect(range.start, 2);
@@ -57,10 +60,7 @@ void main() {
 
     test('chapterPosition 为 null 时按 0 就近', () {
       const content = 'x标记y标记';
-      final range = resolveBookMarkingRange(
-        content,
-        anchor('标记'),
-      );
+      final range = resolveBookMarkingRange(content, anchor('标记'));
       expect(range!.start, 1);
     });
 
@@ -68,12 +68,7 @@ void main() {
       const content = '完全无关的正文，目标文本在这里。';
       final range = resolveBookMarkingRange(
         content,
-        anchor(
-          '目标文本',
-          position: 99,
-          before: '错误前文',
-          after: '错误后文',
-        ),
+        anchor('目标文本', position: 99, before: '错误前文', after: '错误后文'),
       );
       expect(range, isNotNull);
       expect(content.substring(range!.start, range.end), '目标文本');
@@ -142,10 +137,7 @@ void main() {
 
   group('失败与边界', () {
     test('缺失文本返回 null', () {
-      expect(
-        resolveBookMarkingRange('这里是正文', anchor('不存在的文本')),
-        isNull,
-      );
+      expect(resolveBookMarkingRange('这里是正文', anchor('不存在的文本')), isNull);
     });
 
     test('空正文/空候选返回 null', () {

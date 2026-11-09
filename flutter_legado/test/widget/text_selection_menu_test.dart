@@ -11,6 +11,7 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
+import 'package:flutter_legado/src/services/book_api.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/reader/text_selection_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/text_select_menu_config_sheet.dart';
@@ -30,10 +31,14 @@ ReaderAdvancedConfig _config({
     ..showSelectMenuIcon = showIcon;
 }
 
-ProviderContainer _container(ReaderAdvancedConfig cfg, {ReaderState? readerState}) {
+ProviderContainer _container(
+  ReaderAdvancedConfig cfg, {
+  ReaderState? readerState,
+  BookApi? api,
+}) {
   final container = ProviderContainer(
     overrides: [
-      bookApiProvider.overrideWithValue(MockBookApi()),
+      bookApiProvider.overrideWithValue(api ?? MockBookApi()),
       if (readerState != null)
         readerNotifierProvider.overrideWith(
           () => _FixedReaderNotifier(readerState),
@@ -63,7 +68,12 @@ const _testReaderState = ReaderState(
     origin: 'https://src.com',
   ),
   chapters: [
-    BookChapter(url: 'u0', title: '第一章', index: 0, bookUrl: 'https://src.com/book/1'),
+    BookChapter(
+      url: 'u0',
+      title: '第一章',
+      index: 0,
+      bookUrl: 'https://src.com/book/1',
+    ),
   ],
   currentChapterIndex: 0,
   chapterContent: '选中文本',
@@ -426,11 +436,20 @@ void main() {
   });
 
   group('底部选择面板', () {
-    Widget panel(ProviderContainer container) => UncontrolledProviderScope(
+    Widget panel(
+      ProviderContainer container, {
+      int? chapterIndex,
+      String? chapterTitle,
+    }) => UncontrolledProviderScope(
       container: container,
       child: MaterialApp(
-        home: const Scaffold(
-          body: TextSelectionPanel(text: '选中文本', chapterPos: 0),
+        home: Scaffold(
+          body: TextSelectionPanel(
+            text: '选中文本',
+            chapterPos: 0,
+            chapterIndex: chapterIndex,
+            chapterTitle: chapterTitle,
+          ),
         ),
       ),
     );
@@ -493,11 +512,76 @@ void main() {
     testWidgets('「高亮」二级入口保留手工高亮配色行', (tester) async {
       await tester.pumpWidget(panel(_container(_config())));
       await tester.pump();
-      await tester.tap(
-        find.byKey(const ValueKey('selection-panel-highlight')),
-      );
+      await tester.tap(find.byKey(const ValueKey('selection-panel-highlight')));
       await tester.pump();
       expect(find.text('高亮颜色'), findsOneWidget);
+    });
+
+    testWidgets('P2-6 同段再次打开：编辑模式并预填旧备注', (tester) async {
+      final api = MockBookApi();
+      await api.saveBookMarking(
+        BookMarking(
+          bookUrl: 'https://src.com/book/1',
+          bookName: '测试书',
+          bookAuthor: '作者A',
+          chapterIndex: 0,
+          anchorJson: buildBookMarkingAnchor(
+            chapterIndex: 0,
+            chapterPosition: 0,
+            selectedText: '选中文本',
+          ).encode(),
+          styleJson: MarkingEffect.wave.toStyle(0xFF22C55E).encode(),
+          note: '旧备注',
+          chapterName: '第一章',
+        ),
+      );
+      await tester.pumpWidget(
+        panel(_container(_config(), readerState: _testReaderState, api: api)),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_mark')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('编辑笔记'), findsOneWidget);
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('marking-note-field')),
+      );
+      expect(field.controller?.text, '旧备注');
+    });
+
+    testWidgets('P2-2 分页快照章号/标题优先于实时阅读状态', (tester) async {
+      final api = MockBookApi();
+      await tester.pumpWidget(
+        panel(
+          _container(
+            _config(),
+            readerState: _testReaderState, // 实时状态：第 1 章
+            api: api,
+          ),
+          chapterIndex: 5,
+          chapterTitle: '第五章',
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_mark')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('笔记'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('marking-note-field')),
+        '快照章',
+      );
+      await tester.tap(find.byKey(const ValueKey('marking-save')));
+      await tester.pumpAndSettle();
+
+      final list = await api.getBookMarkingsByBook('测试书', '作者A');
+      expect(list, hasLength(1));
+      expect(list.single.chapterIndex, 5, reason: '应使用分页快照章号');
+      expect(list.single.chapterName, '第五章');
     });
 
     testWidgets('menu_edit 打开编辑内容对话框', (tester) async {

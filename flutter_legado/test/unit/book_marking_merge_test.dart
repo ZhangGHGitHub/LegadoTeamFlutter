@@ -76,10 +76,7 @@ void main() {
     });
 
     test('双空输入返回空列表', () {
-      expect(
-        mergeHighlightAndMarkingMatches(rules: [], marks: []),
-        isEmpty,
-      );
+      expect(mergeHighlightAndMarkingMatches(rules: [], marks: []), isEmpty);
     });
 
     test('mark 内嵌 rule：rule 被切成前后两段', () {
@@ -112,10 +109,7 @@ void main() {
     test('相邻同样式段合并（跨不同 ruleId）', () {
       final merged = mergeHighlightAndMarkingMatches(
         rules: const [],
-        marks: [
-          markMatch(0, 10, ruleId: -1),
-          markMatch(10, 20, ruleId: -2),
-        ],
+        marks: [markMatch(0, 10, ruleId: -1), markMatch(10, 20, ruleId: -2)],
       );
       expect(ranges(merged), [(0, 20, -1)]);
     });
@@ -128,10 +122,10 @@ void main() {
         ],
         marks: [markMatch(100, 110, ruleId: -1)],
       );
-      expect(
-        ranges(merged).where((r) => r.$1 < 100).toList(),
-        [(0, 20, 1), (20, 30, 2)],
-      );
+      expect(ranges(merged).where((r) => r.$1 < 100).toList(), [
+        (0, 20, 1),
+        (20, 30, 2),
+      ]);
     });
 
     test('mark 优先于高 order 规则', () {
@@ -182,10 +176,7 @@ void main() {
         ),
         marking(id: 'm5', anchorJson: 'not json', styleJson: '{}'),
       ];
-      final matches = buildMarkingMatches(
-        content: content,
-        markings: markings,
-      );
+      final matches = buildMarkingMatches(content: content, markings: markings);
       expect(matches, hasLength(1));
       final match = matches.single;
       expect(content.substring(match.start, match.end), '关键词');
@@ -206,9 +197,7 @@ void main() {
         marking(
           id: 'm2',
           anchorJson: anchorJson('第二段'),
-          styleJson: const BookMarkingStyle(
-            bgColor: 0x33FF0000,
-          ).encode(),
+          styleJson: const BookMarkingStyle(bgColor: 0x33FF0000).encode(),
         ),
       ];
       final matches = buildMarkingMatches(content: text, markings: markings);

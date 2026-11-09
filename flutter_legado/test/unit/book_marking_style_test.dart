@@ -187,11 +187,15 @@ void main() {
       expect(solid.hasRenderableEffect, isTrue);
 
       expect(
-        const BookMarkingStyle(underlineMode: 3).toHighlightStyle().underline?.kind,
+        const BookMarkingStyle(
+          underlineMode: 3,
+        ).toHighlightStyle().underline?.kind,
         'WAVY',
       );
       expect(
-        const BookMarkingStyle(underlineMode: 2).toHighlightStyle().underline?.kind,
+        const BookMarkingStyle(
+          underlineMode: 2,
+        ).toHighlightStyle().underline?.kind,
         'DASHED',
       );
     });
@@ -221,30 +225,39 @@ void main() {
       expect(bg.fill, 0x33FF0000);
       expect(bg.textColor, 0);
 
-      final text = const BookMarkingStyle(textColor: 0xFF0000FF)
-          .toHighlightStyle();
+      final text = const BookMarkingStyle(
+        textColor: 0xFF0000FF,
+      ).toHighlightStyle();
       expect(text.textColor, 0xFF0000FF);
       expect(text.fill, 0);
     });
 
-    test('mode 5（SVG）回退 SOLID；mode 0/未知无效果', () {
+    test('mode 5（SVG）回退 SOLID；mode 4 映射 DOUBLE；mode 0/未知无效果', () {
       final svg = const BookMarkingStyle(
         underlineMode: 5,
         underlineColor: 0xFFABCDEF,
       ).toHighlightStyle();
       expect(svg.underline?.kind, 'SOLID');
 
+      final doubleLine = const BookMarkingStyle(
+        underlineMode: 4,
+        underlineColor: 0xFFABCDEF,
+      ).toHighlightStyle();
+      expect(doubleLine.underline?.kind, 'DOUBLE');
+
       final none = const BookMarkingStyle(underlineMode: 0).toHighlightStyle();
       expect(none.hasRenderableEffect, isFalse);
-      final unknown = const BookMarkingStyle(underlineMode: 9)
-          .toHighlightStyle();
+      final unknown = const BookMarkingStyle(
+        underlineMode: 9,
+      ).toHighlightStyle();
       expect(unknown.hasRenderableEffect, isFalse);
     });
 
     test('线色为空/0 回退展示色（含 BG/TEXT 展示色与默认色）', () {
       // 无任何颜色 → 默认色
-      final fallback = const BookMarkingStyle(underlineMode: 1)
-          .toHighlightStyle();
+      final fallback = const BookMarkingStyle(
+        underlineMode: 1,
+      ).toHighlightStyle();
       expect(fallback.underline?.color, MarkingEffect.defaultColor);
 
       // underlineColor=0，展示色取 textColor

@@ -44,7 +44,11 @@ void main() {
 
   setUp(() => api = MockBookApi());
 
-  Widget host({BookMarking? existing, String selectedText = '选中文本'}) {
+  Widget host({
+    BookMarking? existing,
+    String selectedText = '选中文本',
+    String bookAuthor = '作者A',
+  }) {
     final anchor = BookMarkingAnchor.tryParse(existing?.anchorJson);
     return ProviderScope(
       overrides: [bookApiProvider.overrideWithValue(api)],
@@ -57,7 +61,7 @@ void main() {
                 MarkingSheet.show(
                   context,
                   bookName: '测试书',
-                  bookAuthor: '作者A',
+                  bookAuthor: bookAuthor,
                   bookUrl: 'https://src.com/book/1',
                   chapterIndex: 0,
                   chapterName: existing?.chapterName ?? '第一章',
@@ -76,8 +80,12 @@ void main() {
     );
   }
 
-  Future<void> open(WidgetTester tester, {BookMarking? existing}) async {
-    await tester.pumpWidget(host(existing: existing));
+  Future<void> open(
+    WidgetTester tester, {
+    BookMarking? existing,
+    String bookAuthor = '作者A',
+  }) async {
+    await tester.pumpWidget(host(existing: existing, bookAuthor: bookAuthor));
     await tester.tap(find.byKey(const ValueKey('open-marking-sheet')));
     await tester.pumpAndSettle();
   }
@@ -92,9 +100,7 @@ void main() {
   Finder colorSwatches() => find.byWidgetPredicate((w) {
     final key = w.key;
     if (key is! ValueKey<String>) return false;
-    return RegExp(
-      r'^marking-color-[0-9a-f]+$',
-    ).hasMatch(key.value);
+    return RegExp(r'^marking-color-[0-9a-f]+$').hasMatch(key.value);
   });
 
   testWidgets('新建：标题/预览/16 色板/7 效果格/备注输入', (tester) async {
@@ -136,10 +142,7 @@ void main() {
     final bg = tester.widget<Text>(
       find.byKey(const ValueKey('marking-preview')),
     );
-    expect(
-      bg.style?.backgroundColor,
-      isNotNull,
-    );
+    expect(bg.style?.backgroundColor, isNotNull);
     expect(bg.style?.decoration, isNot(TextDecoration.underline));
   });
 
@@ -227,5 +230,20 @@ void main() {
       isNull,
       reason: '360dp 下 MarkingSheet 不应出现 RenderFlex 溢出',
     );
+  });
+
+  testWidgets('P2-4 空作者照常保存（与书签同口径）', (tester) async {
+    await open(tester, bookAuthor: '');
+    await tester.enterText(
+      find.byKey(const ValueKey('marking-note-field')),
+      '无作者',
+    );
+    await tester.tap(find.byKey(const ValueKey('marking-save')));
+    await tester.pumpAndSettle();
+
+    final list = await api.getBookMarkingsByBook('测试书', '');
+    expect(list, hasLength(1));
+    expect(list.single.bookAuthor, '');
+    expect(list.single.note, '无作者');
   });
 }
