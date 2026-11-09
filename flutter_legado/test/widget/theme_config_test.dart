@@ -7,6 +7,8 @@
 // 「书籍详情页」+「容器设置」，「毛玻璃」改名「模糊效果」；
 // 「导出/导入」并入通用组（不再页首）；参考独有功能仅登记不实现。
 // 关键分组标题断言见各 test；惰性列表需滚动到可见区再断言。
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -33,8 +35,24 @@ void main() {
     );
   }
 
-  testWidgets('主界面组提供多栏布局入口并写入偏好（设置批2b-2b）',
-      (tester) async {
+  Future<void> openThemeManage(WidgetTester tester) async {
+    await tester.dragUntilVisible(
+      find.text('主题管理'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('主题管理'));
+    await tester.pumpAndSettle();
+  }
+
+  Future<List<Map<String, dynamic>>> readThemeList() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (jsonDecode(prefs.getString('themeConfigList')!) as List)
+        .cast<Map<String, dynamic>>();
+  }
+
+  testWidgets('主界面组提供多栏布局入口并写入偏好（设置批2b-2b）', (tester) async {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
@@ -64,8 +82,7 @@ void main() {
     expect(find.text('横屏开启（宽窗口）'), findsOneWidget);
   });
 
-  testWidgets('渲染关键分组标题与自定义主题分组（IA 对齐参考版）',
-      (tester) async {
+  testWidgets('渲染关键分组标题与自定义主题分组（IA 对齐参考版）', (tester) async {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
@@ -79,18 +96,22 @@ void main() {
     expect(find.text('外观预览'), findsNothing);
 
     // 13 色卡（默认 def「默认」选中；[队列⑦a A2] 显示名对齐参考 zh 名）
-    await tester
-        .dragUntilVisible(find.text('黑白'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('黑白'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('黑白'), findsOneWidget);
     expect(find.text('春'), findsOneWidget);
     expect(find.text('电子书'), findsOneWidget);
 
     // 通用组：纯黑深色模式 → 切换图标 → 字体大小 → 主题管理 → 导出/导入（并入）
-    await tester
-        .dragUntilVisible(find.text('纯黑深色模式'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('纯黑深色模式'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('纯黑深色模式'), findsOneWidget);
     expect(find.text('切换图标'), findsOneWidget);
@@ -101,25 +122,31 @@ void main() {
     expect(find.text('底栏图集'), findsOneWidget);
 
     // 「主界面」组（顶栏 + 底栏合并）
-    await tester
-        .dragUntilVisible(find.text('主界面'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('主界面'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('主界面'), findsOneWidget);
 
     // 「书籍详情页」组（原详情与圆角的封面三行）
-    await tester
-        .dragUntilVisible(find.text('书籍详情页'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('书籍详情页'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('书籍详情页'), findsOneWidget);
     expect(find.text('界面颜色跟随封面取色'), findsOneWidget);
 
     // 「护眼模式」组（[设置批2a-1] 对齐参考版 ThemeConfigScreen：书籍详情页
     // 之后、容器设置之前；默认两开关关闭，强度/定时行收起）
-    await tester
-        .dragUntilVisible(find.text('护眼模式'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('护眼模式'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('护眼模式'), findsOneWidget);
     expect(find.text('启用护眼模式'), findsOneWidget);
@@ -128,29 +155,37 @@ void main() {
     // 「容器设置」组（原详情与圆角的卡片圆角/分隔线两行）。注意页内顺序：
     // 容器设置 位于 模糊效果 之上（书籍详情页→护眼模式→容器设置→模糊效果），
     // 单向下滚的 dragUntilVisible 必须先断言靠上的组，否则滚过后再找上方组会失败
-    await tester
-        .dragUntilVisible(find.text('容器设置'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('容器设置'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('容器设置'), findsOneWidget);
     expect(find.text('显示分隔线'), findsOneWidget);
 
     // 「模糊效果」组（原"毛玻璃"改名，位于容器设置之后）
-    await tester
-        .dragUntilVisible(find.text('模糊效果'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('模糊效果'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('模糊效果'), findsOneWidget);
 
     // 自定义主题 · 白天 / 夜间（与内置主题并存的双区结构）
-    await tester
-        .dragUntilVisible(find.text(r'自定义主题 · 白天'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text(r'自定义主题 · 白天'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('自定义主题 · 白天'), findsOneWidget);
-    await tester
-        .dragUntilVisible(find.text(r'自定义主题 · 夜间'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text(r'自定义主题 · 夜间'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     expect(find.text('自定义主题 · 夜间'), findsOneWidget);
   });
@@ -164,18 +199,17 @@ void main() {
 
     // [队列⑦c A3] 色卡行位于页首「主题模式」分组，先滚动到可见区
     // [队列⑦a A2] koharu 显示名 小春→春（对齐参考 zh 名）
-    await tester
-        .dragUntilVisible(find.text('春'), find.byType(ListView),
-            const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text('春'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
 
     // 点按「春」（koharu）→ paletteId 更新并持久化
     await tester.tap(find.text('春'));
     await tester.pumpAndSettle();
-    expect(
-      container.read(themeNotifierProvider).paletteId,
-      equals('koharu'),
-    );
+    expect(container.read(themeNotifierProvider).paletteId, equals('koharu'));
   });
 
   testWidgets('字体大小对话框可设置倍数并跟随系统重置', (tester) async {
@@ -183,7 +217,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // 字体大小项在通用组，先滚动到可见区
-    await tester.dragUntilVisible(find.text(r'字体大小'), find.byType(ListView), const Offset(0, -120));
+    await tester.dragUntilVisible(
+      find.text(r'字体大小'),
+      find.byType(ListView),
+      const Offset(0, -120),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('字体大小'));
     await tester.pumpAndSettle();
@@ -191,10 +229,9 @@ void main() {
     // [队列⑦c A3] 对齐参考 font_scale_summary 半角冒号「当前字体大小: 1.0」
     expect(find.text('当前字体大小: 1.0'), findsOneWidget);
 
-    await tester.tap(find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.text('确定'),
-    ));
+    await tester.tap(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('确定')),
+    );
     await tester.pumpAndSettle();
     var state = container.read(themeNotifierProvider);
     expect(state.fontScaleRaw, equals(10));
@@ -204,13 +241,158 @@ void main() {
 
     await tester.tap(find.text('字体大小'));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.widgetWithText(TextButton, '跟随系统'),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(TextButton, '跟随系统'),
+      ),
+    );
     await tester.pumpAndSettle();
     state = container.read(themeNotifierProvider);
     expect(state.fontScaleRaw, equals(0));
     expect(state.fontScale, isNull);
+  });
+
+  group('主题管理重命名（批8b）', () {
+    const initialList = [
+      {
+        'name': '日间旧名',
+        'isNight': false,
+        'primary': 1,
+        'accent': 2,
+        'background': 3,
+        'bottomBackground': 4,
+      },
+      {
+        'name': '夜间旧名',
+        'isNight': true,
+        'primary': 5,
+        'accent': 6,
+        'background': 7,
+        'bottomBackground': 8,
+      },
+    ];
+
+    testWidgets('重命名白天主题：持久化 JSON 并刷新界面', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'themeConfigList': jsonEncode(initialList),
+      });
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      await openThemeManage(tester);
+
+      await tester.tap(find.byKey(const ValueKey('theme-config-rename-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('重命名主题'), findsOneWidget);
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('theme-config-rename-field')),
+      );
+      expect(field.controller?.text, '日间旧名');
+
+      await tester.enterText(
+        find.byKey(const ValueKey('theme-config-rename-field')),
+        '  新日间  ',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('theme-config-rename-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('新日间'), findsOneWidget);
+      expect(find.text('日间旧名'), findsNothing);
+      final stored = await readThemeList();
+      expect(stored[0]['name'], '新日间');
+      expect(stored[0]['isNight'], isFalse);
+      expect(stored[1]['name'], '夜间旧名');
+    });
+
+    testWidgets('取消或空名不修改主题名称与偏好', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'themeConfigList': jsonEncode(initialList),
+      });
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      await openThemeManage(tester);
+
+      await tester.tap(find.byKey(const ValueKey('theme-config-rename-0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('theme-config-rename-field')),
+        '取消名',
+      );
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('日间旧名'), findsOneWidget);
+      expect(find.text('取消名'), findsNothing);
+      expect((await readThemeList())[0]['name'], '日间旧名');
+
+      await tester.tap(find.byKey(const ValueKey('theme-config-rename-0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('theme-config-rename-field')),
+        '   ',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('theme-config-rename-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('日间旧名'), findsOneWidget);
+      expect((await readThemeList())[0]['name'], '日间旧名');
+    });
+
+    testWidgets('夜间主题同样支持重命名且保留 isNight', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'themeConfigList': jsonEncode(initialList),
+      });
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      await openThemeManage(tester);
+
+      await tester.tap(find.byKey(const ValueKey('theme-config-rename-1')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('theme-config-rename-field')),
+        '新夜间',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('theme-config-rename-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('新夜间'), findsOneWidget);
+      final stored = await readThemeList();
+      expect(stored[1]['name'], '新夜间');
+      expect(stored[1]['isNight'], isTrue);
+      expect(stored[0]['name'], '日间旧名');
+    });
+
+    testWidgets('360dp 长名称行不溢出且保留重命名/删除按钮', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({
+        'themeConfigList': jsonEncode([
+          {
+            'name': '这是一个非常非常非常长的主题名称用于验证窄屏列表行不会溢出',
+            'isNight': false,
+            'primary': 1,
+            'accent': 2,
+            'background': 3,
+            'bottomBackground': 4,
+          },
+        ]),
+      });
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      await openThemeManage(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey('theme-config-rename-0')),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('删除'), findsOneWidget);
+    });
   });
 }
