@@ -61,7 +61,7 @@ class HighlightRule {
 
   /// 规则分组（原版实体字段 `group`，DB 列 `"group" TEXT DEFAULT ''`）
   ///
-  /// 批28：只在编辑/导入/导出往返中透传，当前无分组 UI（列表仍平铺展示）；
+  /// 批28 透传；批7c-2 起列表支持分组筛选与分组管理，编辑表单可输入；
   /// 为空表示未分组（原版 `normalizeForRestore` 把空白规整为 null）。
   final String? group;
 

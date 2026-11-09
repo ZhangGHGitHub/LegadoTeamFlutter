@@ -91,7 +91,10 @@ class HighlightRulesNotifier extends Notifier<HighlightRulesState> {
     final api = ref.read(bookApiProvider);
     for (final rule in rules) {
       try {
-        await api.highlightRuleDelete(id: rule.id);
+        final deleted = await api.highlightRuleDelete(id: rule.id);
+        if (deleted != true) {
+          errors.add('${rule.displayName}: 删除未生效');
+        }
       } catch (e) {
         errors.add('${rule.displayName}: ${_mapError(e)}');
       }

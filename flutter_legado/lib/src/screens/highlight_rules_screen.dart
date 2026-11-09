@@ -14,6 +14,19 @@ import '../widgets/empty_state.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/loading_indicator.dart';
 
+/// 高亮分组「未分组」筛选哨兵（key 统一加前缀，避免与用户组名冲突）
+const String kHighlightUngroupedGroup = '__ungrouped__';
+
+/// 保留分组名（不得作为用户分组；避免与筛选项语义冲突）
+const Set<String> kHighlightReservedGroupNames = {
+  kHighlightUngroupedGroup,
+  'all',
+  '全部',
+};
+
+bool isReservedHighlightGroupName(String name) =>
+    kHighlightReservedGroupNames.contains(name);
+
 /// 高亮规则导出 JSON（批7c-2：批量导出选中项复用）
 ///
 /// 字段仍走 [HighlightRule.toExportJson]（uuid/order/timeout/applyToBody 保真）。
@@ -50,7 +63,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   bool _batchMode = false;
   final Set<int> _selected = <int>{};
   String? _groupFilter; // null=全部；_ungrouped=未分组；其它=分组名
-  static const String _ungrouped = '__ungrouped__';
+  static const String _ungrouped = kHighlightUngroupedGroup;
+  bool _batchBusy = false;
   String? _batchError;
 
   @override
@@ -74,8 +88,22 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     return list;
   }
 
-  List<HighlightRule> _filteredRules(List<HighlightRule> rules) {
+  /// 当前筛选值收敛：分组已不存在时按「全部」展示（不产生假空态）
+  String? _resolvedGroupFilter(List<HighlightRule> rules) {
     final filter = _groupFilter;
+    if (filter == null || filter == _ungrouped) return filter;
+    return _groupNames(rules).contains(filter) ? filter : null;
+  }
+
+  void _normalizeGroupFilter() {
+    final rules = ref.read(highlightRulesNotifierProvider).rules;
+    if (_groupFilter != null && _resolvedGroupFilter(rules) == null) {
+      setState(() => _groupFilter = null);
+    }
+  }
+
+  List<HighlightRule> _filteredRules(List<HighlightRule> rules) {
+    final filter = _resolvedGroupFilter(rules);
     if (filter == null) return rules;
     return rules.where((rule) {
       final group = _groupOf(rule);
@@ -106,12 +134,14 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
 
   void _toggleSelected(HighlightRule rule) {
     setState(() {
+      _batchError = null;
       if (!_selected.add(rule.id)) _selected.remove(rule.id);
     });
   }
 
   void _selectAllVisible(List<HighlightRule> rules) {
     setState(() {
+      _batchError = null;
       _selected
         ..clear()
         ..addAll(_filteredRules(rules).map((r) => r.id));
@@ -121,6 +151,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   void _invertVisible(List<HighlightRule> rules) {
     final visible = _filteredRules(rules).map((r) => r.id);
     setState(() {
+      _batchError = null;
       for (final id in visible) {
         if (!_selected.add(id)) _selected.remove(id);
       }
@@ -129,6 +160,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
 
   void _setGroupFilter(String? filter, List<HighlightRule> rules) {
     setState(() {
+      _batchError = null;
       _groupFilter = filter;
       final visibleIds = _filteredRules(rules).map((r) => r.id).toSet();
       _selected.retainAll(visibleIds);
@@ -157,23 +189,39 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   }
 
   Future<void> _batchSetEnabled(List<HighlightRule> rules, bool enabled) async {
+    if (_batchBusy) return;
     final selected = _selectedRules(rules);
     if (selected.isEmpty) {
       _showBatchError('请先选择规则');
       return;
     }
-    final errors = await ref
-        .read(highlightRulesNotifierProvider.notifier)
-        .batchSetEnabled(selected, enabled);
-    _showBatchErrors(errors, enabled ? '启用' : '停用');
+    setState(() => _batchBusy = true);
+    try {
+      final errors = await ref
+          .read(highlightRulesNotifierProvider.notifier)
+          .batchSetEnabled(selected, enabled);
+      _showBatchErrors(errors, enabled ? '启用' : '停用');
+    } finally {
+      if (mounted) setState(() => _batchBusy = false);
+    }
   }
 
   Future<void> _batchDelete(List<HighlightRule> rules) async {
+    if (_batchBusy) return;
     final selected = _selectedRules(rules);
     if (selected.isEmpty) {
       _showBatchError('请先选择规则');
       return;
     }
+    setState(() => _batchBusy = true);
+    try {
+      await _doBatchDelete(selected);
+    } finally {
+      if (mounted) setState(() => _batchBusy = false);
+    }
+  }
+
+  Future<void> _doBatchDelete(List<HighlightRule> selected) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -200,8 +248,17 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         .read(highlightRulesNotifierProvider.notifier)
         .batchDelete(selected);
     if (!mounted) return;
-    setState(() => _selected.clear());
+    final remaining = ref
+        .read(highlightRulesNotifierProvider)
+        .rules
+        .map((rule) => rule.id)
+        .toSet();
+    setState(() {
+      // 全成功 → 空；部分失败 → 仅保留仍存在的 id
+      _selected.retainAll(remaining);
+    });
     _showBatchErrors(errors, '删除');
+    _normalizeGroupFilter();
   }
 
   void _showBatchError(String message) {
@@ -210,10 +267,18 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   }
 
   Future<void> _showGroupManage() async {
-    await showDialog<void>(
+    final error = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (_) => const _HighlightGroupManageDialog(),
     );
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('分组操作失败：$error')));
+    }
+    _normalizeGroupFilter();
     _showErrorIfAny();
   }
 
@@ -241,6 +306,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     );
     if (ok != true) return;
     await ref.read(highlightRulesNotifierProvider.notifier).deleteRule(rule);
+    if (!mounted) return;
+    _normalizeGroupFilter();
     _showErrorIfAny();
   }
 
@@ -258,6 +325,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     );
     if (saved == null) return;
     await ref.read(highlightRulesNotifierProvider.notifier).saveRule(saved);
+    if (!mounted) return;
+    _normalizeGroupFilter();
     _showErrorIfAny();
   }
 
@@ -278,8 +347,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   /// `application/json`；`HighlightRuleFile.TYPE` 原版取 `"highlightRule"`
   /// （`data/entities/HighlightRule.kt:107`）。
   ///
-  /// 本页暂无原版的选择栏批量模式，菜单项导出当前全部规则；空列表按原版
-  /// `highlight_rule_empty` 语义提示。
+  /// 单条导出（`rules` 省略）导出当前全部规则；批量模式传入选中项。
+  /// 空列表按原版 `highlight_rule_empty` 语义提示。
   ///
   /// [批16e 回修 | P1-1] 导出必须保留完整字段（uuid / order /
   /// timeoutMillisecond / applyToBody）：原实现直接 `toJson()` 只输出
@@ -382,6 +451,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         actions: [
           PopupMenuButton<String>(
             key: const ValueKey('highlight-batch-menu'),
+            enabled: !_batchBusy,
             tooltip: '选择操作',
             icon: const Icon(Symbols.checklist_rounded),
             onSelected: (value) {
@@ -398,35 +468,41 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
             tooltip: '启用选中',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.check_circle_rounded, size: 20),
-            onPressed: () => _batchSetEnabled(state.rules, true),
+            onPressed: _batchBusy
+                ? null
+                : () => _batchSetEnabled(state.rules, true),
           ),
           IconButton(
             key: const ValueKey('highlight-batch-disable'),
             tooltip: '停用选中',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.remove_circle_outline_rounded, size: 20),
-            onPressed: () => _batchSetEnabled(state.rules, false),
+            onPressed: _batchBusy
+                ? null
+                : () => _batchSetEnabled(state.rules, false),
           ),
           IconButton(
             key: const ValueKey('highlight-batch-delete'),
             tooltip: '删除选中',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.delete_rounded, size: 20),
-            onPressed: () => _batchDelete(state.rules),
+            onPressed: _batchBusy ? null : () => _batchDelete(state.rules),
           ),
           IconButton(
             key: const ValueKey('highlight-batch-export'),
             tooltip: '导出选中',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Symbols.ios_share_rounded, size: 20),
-            onPressed: () {
-              final selected = _selectedRules(state.rules);
-              if (selected.isEmpty) {
-                _showBatchError('请先选择规则');
-                return;
-              }
-              _exportRules(rules: selected);
-            },
+            onPressed: _batchBusy
+                ? null
+                : () {
+                    final selected = _selectedRules(state.rules);
+                    if (selected.isEmpty) {
+                      _showBatchError('请先选择规则');
+                      return;
+                    }
+                    _exportRules(rules: selected);
+                  },
           ),
         ],
       );
@@ -472,7 +548,9 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
         child: Row(
           children: [
             Text(
-              '已选 ${_selected.length} 项',
+              _batchBusy
+                  ? '已选 ${_selected.length} 项 · 处理中…'
+                  : '已选 ${_selected.length} 项',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (_batchError != null) ...[
@@ -496,6 +574,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
 
   Widget _buildGroupFilterBar(List<HighlightRule> allRules) {
     final groups = _groupNames(allRules);
+    final resolved = _resolvedGroupFilter(allRules);
     final entries = <(String?, String)>[
       (null, '全部'),
       (_ungrouped, '未分组'),
@@ -511,9 +590,15 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: ChoiceChip(
-                key: ValueKey('highlight-group-filter-${entry.$1 ?? 'all'}'),
+                key: ValueKey(
+                  entry.$1 == null
+                      ? 'highlight-group-filter-all'
+                      : entry.$1 == _ungrouped
+                      ? 'highlight-group-filter-ungrouped'
+                      : 'highlight-group-filter-group-${entry.$1}',
+                ),
                 label: Text(entry.$2),
-                selected: _groupFilter == entry.$1,
+                selected: resolved == entry.$1,
                 onSelected: (_) => _setGroupFilter(entry.$1, allRules),
               ),
             ),
@@ -666,7 +751,10 @@ class _HighlightGroupManageDialog extends ConsumerStatefulWidget {
 class _HighlightGroupManageDialogState
     extends ConsumerState<_HighlightGroupManageDialog> {
   String? _error;
+  String? _lastError;
   bool _busy = false;
+
+  void _close() => Navigator.pop(context, _lastError);
 
   Map<String, List<HighlightRule>> _groupMap(List<HighlightRule> rules) {
     final map = <String, List<HighlightRule>>{};
@@ -680,13 +768,15 @@ class _HighlightGroupManageDialogState
 
   void _showErrors(List<String> errors, String action) {
     if (!mounted) return;
+    final message = errors.isEmpty
+        ? null
+        : errors.length > 3
+        ? '$action失败 ${errors.length} 条：${errors.take(3).join('；')}'
+        : '$action失败：${errors.join('；')}';
     setState(() {
       _busy = false;
-      _error = errors.isEmpty
-          ? null
-          : errors.length > 3
-          ? '$action失败 ${errors.length} 条：${errors.take(3).join('；')}'
-          : '$action失败：${errors.join('；')}';
+      _error = message;
+      _lastError = message;
     });
   }
 
@@ -727,6 +817,10 @@ class _HighlightGroupManageDialogState
     final next = input.trim();
     if (next.isEmpty) {
       setState(() => _error = '分组名称不能为空');
+      return;
+    }
+    if (isReservedHighlightGroupName(next)) {
+      setState(() => _error = '分组名称不可使用保留名');
       return;
     }
     if (next == oldName) return;
@@ -795,7 +889,7 @@ class _HighlightGroupManageDialogState
             key: const ValueKey('highlight-group-manage-close'),
             icon: const Icon(Icons.close),
             tooltip: '关闭',
-            onPressed: () => Navigator.pop(context),
+            onPressed: _busy ? null : _close,
           ),
         ],
       ),
@@ -871,10 +965,7 @@ class _HighlightGroupManageDialogState
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
-        ),
+        TextButton(onPressed: _busy ? null : _close, child: const Text('关闭')),
       ],
     );
   }
@@ -1058,11 +1149,17 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     }
     final scope = _scopeCtrl.text.trim();
     final group = _groupCtrl.text.trim();
+    if (group.isNotEmpty && isReservedHighlightGroupName(group)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('分组名称不可使用保留名')));
+      return;
+    }
     final base = widget.rule;
     final baseStyle = base?.styleMap;
     // [批16e 回修 | P1-1] 编辑保存保留 uuid/order/超时/正文开关：
     // 缺失 uuid 会让 Rust 每次保存都重新生成身份，导入去重随之失效。
-    // [批28] 同时保留 group：编辑表单无分组输入，不得因重建规则对象丢分组。
+    // [批28/7c-2] group 由编辑表单输入；空值转 null，其余 trim 后原样保存。
     // [批33b | 未触碰保真] 未主动选色且原 style 已含 textColor（含 0=关闭）
     // 时原样保留，避免「打开编辑再保存」把用户/原版设置改写成主题色。
     final keepOriginalTextColor =
