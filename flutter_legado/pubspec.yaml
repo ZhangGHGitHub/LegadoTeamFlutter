@@ -1,7 +1,7 @@
 name: flutter_legado
 description: "Legado - A reading app powered by Rust + Flutter"
 publish_to: 'none'
-version: 2.0.477+478
+version: 2.0.478+479
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
