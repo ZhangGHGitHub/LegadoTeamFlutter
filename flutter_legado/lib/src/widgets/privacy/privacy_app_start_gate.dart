@@ -90,6 +90,10 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     ref.read(privacyNotifierProvider.notifier).handleLifecycleState(state);
+    // [批9d] 认证通道异常/超时可能让 busy 常驻；回前台复位以便重试
+    if (state == AppLifecycleState.resumed && mounted && _submitting) {
+      setState(() => _submitting = false);
+    }
   }
 
   /// 锁页/占位/错误页存在时消费系统返回键

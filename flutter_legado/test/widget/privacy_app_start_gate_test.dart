@@ -58,6 +58,7 @@ class _FakeBiometricService implements PrivacyBiometricService {
   PrivacyBiometricStatus status = const PrivacyBiometricStatus(available: true);
   PrivacyBiometricErrorCode? unlockError;
   String? unlockTokenOverride;
+  Completer<String>? unlockCompleter;
 
   @override
   Future<PrivacyBiometricStatus> getStatus() async => status;
@@ -68,6 +69,7 @@ class _FakeBiometricService implements PrivacyBiometricService {
 
   @override
   Future<String> unlock({required String envelope, required String iv}) async {
+    if (unlockCompleter != null) return unlockCompleter!.future;
     if (unlockError != null) throw PrivacyBiometricException(unlockError!);
     return unlockTokenOverride ?? token;
   }
@@ -575,6 +577,33 @@ void main() {
 
     expect(find.text('隐私空间'), findsOneWidget);
     expect(find.text('生物识别失败，请重试或改用密码'), findsOneWidget);
+  });
+
+  testWidgets('认证请求悬挂时回到前台复位 busy，可重试', (tester) async {
+    final api = MockBookApi();
+    final fake = _FakeBiometricService()..unlockCompleter = Completer<String>();
+    await _seedBiometric(api);
+    await pumpGate(
+      tester,
+      api: api,
+      biometricService: fake,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('privacyLockBiometricButton')));
+    await tester.pump();
+    OutlinedButton button() => tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('privacyLockBiometricButton')),
+    );
+    expect(button().onPressed, isNull, reason: '认证中禁止重复提交');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(button().onPressed, isNotNull, reason: '回前台应复位 busy');
   });
 
   testWidgets('未配置生物识别时不显示生物按钮', (tester) async {

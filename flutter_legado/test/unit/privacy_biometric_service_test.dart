@@ -5,6 +5,7 @@
 /// 32B 令牌生成器。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
@@ -45,6 +46,10 @@ void main() {
       expect(
         PrivacyBiometricErrorCode.fromCode('key_invalidated'),
         PrivacyBiometricErrorCode.keyInvalidated,
+      );
+      expect(
+        PrivacyBiometricErrorCode.fromCode('timeout'),
+        PrivacyBiometricErrorCode.timeout,
       );
       expect(
         PrivacyBiometricErrorCode.fromCode('something_else'),
@@ -225,6 +230,55 @@ void main() {
             (e) => e.code,
             'code',
             PrivacyBiometricErrorCode.permanentlyLockedOut,
+          ),
+        ),
+      );
+    });
+  });
+
+  group('认证超时', () {
+    const shortTimeout = MethodChannelPrivacyBiometricService(
+      platformSupported: true,
+      authTimeout: Duration(milliseconds: 20),
+    );
+
+    test('enable 无响应 → timeout 异常', () async {
+      mockChannel((call) => Completer<Object?>().future);
+      await expectLater(
+        shortTimeout.enable(generatePrivacyBiometricToken()),
+        throwsA(
+          isA<PrivacyBiometricException>().having(
+            (e) => e.code,
+            'code',
+            PrivacyBiometricErrorCode.timeout,
+          ),
+        ),
+      );
+    });
+
+    test('unlock 无响应 → timeout 异常', () async {
+      mockChannel((call) => Completer<Object?>().future);
+      await expectLater(
+        shortTimeout.unlock(envelope: 'ZW52', iv: 'aXY='),
+        throwsA(
+          isA<PrivacyBiometricException>().having(
+            (e) => e.code,
+            'code',
+            PrivacyBiometricErrorCode.timeout,
+          ),
+        ),
+      );
+    });
+
+    test('deleteKey 无响应 → 1s 后 timeout 异常（不拖死改密/清密）', () async {
+      mockChannel((call) => Completer<Object?>().future);
+      await expectLater(
+        service.deleteKey(),
+        throwsA(
+          isA<PrivacyBiometricException>().having(
+            (e) => e.code,
+            'code',
+            PrivacyBiometricErrorCode.timeout,
           ),
         ),
       );

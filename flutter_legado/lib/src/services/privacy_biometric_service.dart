@@ -4,11 +4,13 @@
 // 令牌摘要由 Rust 保存，平台加密信封写入 Rust 配置表。通道协议：
 // - `getStatus` → `{available: bool, hasKey: bool, reason: String?}`；
 // - `enable(tokenBase64)` → `{envelope: String, iv: String}`；
-// - `unlock()` → `String`（令牌 Base64）；
+// - `unlock({envelope, iv})` → `String`（令牌 Base64）；
 // - `deleteKey()` → void。
+// enable/unlock 由 Dart 侧 45s 超时保护（可注入），超时映射 `timeout`。
 // 错误统一经 `PlatformException.code` 返回，取值与 Android/iOS 原生对齐。
 //
 // 编写：全栈工程师（批9d） ｜ 2026-11-10
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -48,6 +50,9 @@ enum PrivacyBiometricErrorCode {
   /// 用户取消认证
   cancelled('cancelled'),
 
+  /// 平台认证/通道超时（Dart 侧超时保护，原生不返回该码）
+  timeout('timeout'),
+
   /// 其他失败（认证失败/加解密失败/通道异常）
   failed('failed');
 
@@ -80,6 +85,7 @@ enum PrivacyBiometricCommandError {
   permanentlyLockedOut,
   keyInvalidated,
   cancelled,
+  timeout,
   failed;
 
   /// 从平台错误码映射
@@ -93,6 +99,7 @@ enum PrivacyBiometricCommandError {
     PrivacyBiometricErrorCode.permanentlyLockedOut => permanentlyLockedOut,
     PrivacyBiometricErrorCode.keyInvalidated => keyInvalidated,
     PrivacyBiometricErrorCode.cancelled => cancelled,
+    PrivacyBiometricErrorCode.timeout => timeout,
     PrivacyBiometricErrorCode.failed => failed,
   };
 
@@ -107,6 +114,7 @@ enum PrivacyBiometricCommandError {
     permanentlyLockedOut => '生物识别已被系统锁定，请改用密码，并在解锁后重新开启快捷解锁',
     keyInvalidated => '指纹或面容已变更，生物快捷解锁已关闭，请改用密码并重新开启',
     cancelled => '已取消生物识别',
+    timeout => '生物识别超时，请重试或改用密码',
     failed => '生物识别失败，请重试或改用密码',
   };
 }
@@ -236,8 +244,17 @@ abstract class PrivacyBiometricService {
 /// `unsupported`，不发起必然悬挂的通道调用。测试可显式传入
 /// [platformSupported] 以在任意宿主上验证通道协议。
 class MethodChannelPrivacyBiometricService implements PrivacyBiometricService {
-  const MethodChannelPrivacyBiometricService({bool? platformSupported})
-    : _platformSupported = platformSupported;
+  const MethodChannelPrivacyBiometricService({
+    bool? platformSupported,
+    this.authTimeout = defaultAuthTimeout,
+  }) : _platformSupported = platformSupported;
+
+  /// 认证类通道（enable/unlock）默认超时：覆盖用户输入指纹/面容的时间，
+  /// 避免启动锁或解锁弹窗的 busy 状态永久常驻。
+  static const Duration defaultAuthTimeout = Duration(seconds: 45);
+
+  /// enable/unlock 超时（测试可注入短时长）
+  final Duration authTimeout;
 
   /// null = 按运行平台判定（仅 Android/iOS 可用）
   final bool? _platformSupported;
@@ -303,10 +320,11 @@ class MethodChannelPrivacyBiometricService implements PrivacyBiometricService {
       );
     }
     try {
-      final raw = await _channel.invokeMapMethod<String, Object?>(
-        'enable',
-        <String, Object?>{'token': tokenBase64},
-      );
+      final raw = await _channel
+          .invokeMapMethod<String, Object?>('enable', <String, Object?>{
+            'token': tokenBase64,
+          })
+          .timeout(authTimeout);
       final envelope = raw?['envelope'];
       final iv = raw?['iv'];
       if (envelope is! String ||
@@ -319,6 +337,11 @@ class MethodChannelPrivacyBiometricService implements PrivacyBiometricService {
         );
       }
       return PrivacyBiometricEnvelope(envelope: envelope, iv: iv);
+    } on TimeoutException {
+      throw const PrivacyBiometricException(
+        PrivacyBiometricErrorCode.timeout,
+        '原生 enable 超时',
+      );
     } on MissingPluginException {
       throw const PrivacyBiometricException(
         PrivacyBiometricErrorCode.unsupported,
@@ -339,10 +362,12 @@ class MethodChannelPrivacyBiometricService implements PrivacyBiometricService {
       );
     }
     try {
-      final token = await _channel.invokeMethod<String>(
-        'unlock',
-        <String, Object?>{'envelope': envelope, 'iv': iv},
-      );
+      final token = await _channel
+          .invokeMethod<String>('unlock', <String, Object?>{
+            'envelope': envelope,
+            'iv': iv,
+          })
+          .timeout(authTimeout);
       if (token == null || token.isEmpty) {
         throw const PrivacyBiometricException(
           PrivacyBiometricErrorCode.failed,
@@ -350,6 +375,11 @@ class MethodChannelPrivacyBiometricService implements PrivacyBiometricService {
         );
       }
       return token;
+    } on TimeoutException {
+      throw const PrivacyBiometricException(
+        PrivacyBiometricErrorCode.timeout,
+        '原生 unlock 超时',
+      );
     } on MissingPluginException {
       throw const PrivacyBiometricException(
         PrivacyBiometricErrorCode.unsupported,
@@ -374,6 +404,11 @@ class MethodChannelPrivacyBiometricService implements PrivacyBiometricService {
       await _channel
           .invokeMethod<void>('deleteKey')
           .timeout(const Duration(seconds: 1));
+    } on TimeoutException {
+      throw const PrivacyBiometricException(
+        PrivacyBiometricErrorCode.timeout,
+        '原生 deleteKey 超时',
+      );
     } on MissingPluginException {
       throw const PrivacyBiometricException(
         PrivacyBiometricErrorCode.unsupported,

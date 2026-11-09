@@ -4,6 +4,7 @@
 /// 密码、PrivateLockedPage 次入口渲染与回调。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,7 @@ class _FakeBiometricService implements PrivacyBiometricService {
 
   PrivacyBiometricStatus status = const PrivacyBiometricStatus(available: true);
   PrivacyBiometricErrorCode? unlockError;
+  Completer<String>? unlockCompleter;
 
   @override
   Future<PrivacyBiometricStatus> getStatus() async => status;
@@ -37,6 +39,7 @@ class _FakeBiometricService implements PrivacyBiometricService {
 
   @override
   Future<String> unlock({required String envelope, required String iv}) async {
+    if (unlockCompleter != null) return unlockCompleter!.future;
     if (unlockError != null) throw PrivacyBiometricException(unlockError!);
     return token;
   }
@@ -151,6 +154,25 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
     await tester.pumpAndSettle();
     expect(result.value, isTrue);
+  });
+
+  testWidgets('弹窗认证悬挂时回到前台复位 busy，可重试', (tester) async {
+    final fake = _FakeBiometricService()..unlockCompleter = Completer<String>();
+    await pumpDialog(tester, fake: fake);
+
+    await tester.tap(find.byKey(const ValueKey('openUnlockDialog')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockBiometric')));
+    await tester.pump();
+    OutlinedButton button() => tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('privacyUnlockBiometric')),
+    );
+    expect(button().onPressed, isNull);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(button().onPressed, isNotNull, reason: '回前台应复位 busy');
   });
 
   testWidgets('弹窗未配置生物识别时不显示生物按钮', (tester) async {

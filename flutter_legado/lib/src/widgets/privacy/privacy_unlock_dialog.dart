@@ -83,16 +83,32 @@ class _PrivacyUnlockDialog extends ConsumerStatefulWidget {
       _PrivacyUnlockDialogState();
 }
 
-class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog> {
+class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog>
+    with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
   bool _busy = false;
   bool _biometricBusy = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // [批9d] 认证通道异常/超时可能让 busy 常驻；回前台复位以便重试
+    if (state == AppLifecycleState.resumed && mounted && _biometricBusy) {
+      setState(() => _biometricBusy = false);
+    }
   }
 
   Future<void> _submit() async {
