@@ -869,4 +869,41 @@ class PrefKeys {
   /// SharedPreferences 镜像 + caches `config:maxLengthWithNoToc` 真源
   /// （Rust 本地 TXT 无目录规则时按该字数分章，批1b-3）。
   static const maxLengthWithNoToc = 'maxLengthWithNoToc';
+
+  // ===== 隐私与应用锁（批9b，键名逐字对齐参考版 PreferKey）=====
+  //
+  // 密码凭据（salt/verifier）由 Rust 存 caches `config:private_password_*`，
+  // 不落 SharedPreferences、不随备份往返；本组仅保存策略与开关。
+  // 参考版把 `private_enabled` 视为设备级配置（BackupConfig alwaysIgnore），
+  // 我方同样加入 `RestoreIgnorePrefs.alwaysIgnoreKeys`：恢复旧备份不得
+  // 在目标设备上凭空开启应用锁或覆盖本机验证策略。
+
+  /// 启用私密功能（默认 false；开启前必须已有隐私密码）
+  static const privateEnabled = 'private_enabled';
+
+  /// 进入私密分组时验证（默认 true）
+  static const privateVerifyOnEnterGroup = 'private_verify_on_enter_group';
+
+  /// 打开私密书籍时验证（默认 true）
+  static const privateVerifyOnOpenBook = 'private_verify_on_open_book';
+
+  /// 启动应用时验证（默认 false）
+  static const privateVerifyOnAppStart = 'private_verify_on_app_start';
+
+  /// 解锁频率（every_time / app_session / until_background，默认 app_session）
+  static const privateUnlockScope = 'private_unlock_scope';
+
+  /// 离开后台宽限秒数（0/30/120/180/300，默认 0；仅 until_background 生效）
+  static const privateBackgroundGraceSeconds =
+      'private_background_grace_seconds';
+
+  /// 隐私策略键集合（备份恢复忽略与设置页持久化共用）
+  static const privatePolicyKeys = <String>{
+    privateEnabled,
+    privateVerifyOnEnterGroup,
+    privateVerifyOnOpenBook,
+    privateVerifyOnAppStart,
+    privateUnlockScope,
+    privateBackgroundGraceSeconds,
+  };
 }

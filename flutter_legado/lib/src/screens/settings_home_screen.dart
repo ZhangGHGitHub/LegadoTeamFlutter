@@ -55,47 +55,107 @@ class SettingsHomeScreen extends StatelessWidget {
         ? ThemeBackgroundImageStore.resolveSync(itemStored)
         : '';
     final entries = [
-      (Symbols.palette_rounded, '外观', '主题配色与显示模式',
-          () => Navigator.pushNamed(context, AppRoutes.themeConfig)),
-      (Symbols.tune_rounded, '高级', '功能相关的一些设置',
-          () => Navigator.pushNamed(context, AppRoutes.otherSettings)),
+      (
+        Symbols.palette_rounded,
+        '外观',
+        '主题配色与显示模式',
+        () => Navigator.pushNamed(context, AppRoutes.themeConfig),
+      ),
+      (
+        Symbols.tune_rounded,
+        '高级',
+        '功能相关的一些设置',
+        () => Navigator.pushNamed(context, AppRoutes.otherSettings),
+      ),
       // [批1a | 2026-10-31] 「阅读界面」改进独立「阅读设置」页（对齐参考版
       // ConfigNavScreen Reading Interface Settings 入口语义）；阅读器内
       // 四页签弹层（ReaderSettingsSheet）入口保留不动 — 全栈工程师
-      (Symbols.style_rounded, '阅读界面', '屏幕/页面控制/阅读偏好',
-          () => Navigator.pushNamed(context, AppRoutes.readConfig)),
+      (
+        Symbols.style_rounded,
+        '阅读界面',
+        '屏幕/页面控制/阅读偏好',
+        () => Navigator.pushNamed(context, AppRoutes.readConfig),
+      ),
       // [设置批6b-1 | 2026-11-06] 封面设置一级入口（对齐参考版设置主页
       // 8 组中的「封面设置」；原外观页「封面设置」行已移除）
-      (Symbols.image_rounded, '封面设置', '默认封面、书名作者、描边与阴影',
-          () => Navigator.pushNamed(context, AppRoutes.coverSettings)),
+      (
+        Symbols.image_rounded,
+        '封面设置',
+        '默认封面、书名作者、描边与阴影',
+        () => Navigator.pushNamed(context, AppRoutes.coverSettings),
+      ),
       // [设置批5a-1 | 2026-11-04] 朗读设置独立入口（对齐参考版朗读配置：
       // 常规/引擎与音色/角色与配乐三页签）；忽略音频焦点已自「高级」迁入
-      (Symbols.record_voice_over_rounded, '朗读设置', '朗读引擎、音色与播放行为',
-          () => Navigator.pushNamed(context, AppRoutes.readAloudSettings)),
-      (Symbols.backup_rounded, '备份与恢复', 'WebDav 设置/导入旧版本数据',
-          () => Navigator.pushNamed(context, AppRoutes.webdavSettings)),
-      (Symbols.download_rounded, '缓存管理', '书籍下载任务与缓存进度',
-          () => Navigator.pushNamed(context, AppRoutes.offlineCache)),
-      (Symbols.book_rounded, '书源管理', '新建、导入、编辑或管理书源',
-          () => Navigator.pushNamed(context, AppRoutes.sources)),
-      (Symbols.schedule_rounded, '定时任务', '管理按计划执行的 JavaScript 任务',
-          () => Navigator.pushNamed(context, AppRoutes.autoTasks)),
+      (
+        Symbols.record_voice_over_rounded,
+        '朗读设置',
+        '朗读引擎、音色与播放行为',
+        () => Navigator.pushNamed(context, AppRoutes.readAloudSettings),
+      ),
+      (
+        Symbols.backup_rounded,
+        '备份与恢复',
+        'WebDav 设置/导入旧版本数据',
+        () => Navigator.pushNamed(context, AppRoutes.webdavSettings),
+      ),
+      (
+        Symbols.download_rounded,
+        '缓存管理',
+        '书籍下载任务与缓存进度',
+        () => Navigator.pushNamed(context, AppRoutes.offlineCache),
+      ),
+      (
+        Symbols.book_rounded,
+        '书源管理',
+        '新建、导入、编辑或管理书源',
+        () => Navigator.pushNamed(context, AppRoutes.sources),
+      ),
+      (
+        Symbols.schedule_rounded,
+        '定时任务',
+        '管理按计划执行的 JavaScript 任务',
+        () => Navigator.pushNamed(context, AppRoutes.autoTasks),
+      ),
+      // [设置批9b | 2026-11-09] 隐私/应用锁一级入口（对齐参考版设置主页
+      // 「隐私」组；放在 AI 设置前，副标题说明应用锁与私密内容）
+      (
+        Symbols.lock_rounded,
+        '隐私',
+        '应用锁与私密内容',
+        () => Navigator.pushNamed(context, AppRoutes.privacy),
+      ),
       // [设置批10a | 2026-11-04 用户裁决] 三占位入口：明确「暂未支持」，
       // 页面无输入/网络/开关（不制造可用假象）
-      (Symbols.auto_awesome_rounded, 'AI 设置', '暂未支持',
-          () => Navigator.pushNamed(context, AppRoutes.aiSettings)),
-      (Symbols.translate_rounded, '翻译设置', '暂未支持',
-          () => Navigator.pushNamed(context, AppRoutes.translationSettings)),
-      (Symbols.science_rounded, '实验室', '暂未支持',
-          () => Navigator.pushNamed(context, AppRoutes.labSettings)),
+      (
+        Symbols.auto_awesome_rounded,
+        'AI 设置',
+        '暂未支持',
+        () => Navigator.pushNamed(context, AppRoutes.aiSettings),
+      ),
+      (
+        Symbols.translate_rounded,
+        '翻译设置',
+        '暂未支持',
+        () => Navigator.pushNamed(context, AppRoutes.translationSettings),
+      ),
+      (
+        Symbols.science_rounded,
+        '实验室',
+        '暂未支持',
+        () => Navigator.pushNamed(context, AppRoutes.labSettings),
+      ),
       // [N6 | 2026-09-20 用户裁决（授权偏离已登记，见
       // docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md 3-7/N6）]「字体管理」
       // 入口自设置可见列表收起：参考版字号/字体仅在阅读器内调整、无独立
       // 设置入口；字体页（font_screen / AppRoutes.fonts）与功能保留，仍经
       // 阅读器排版面板「阅读字体」行进入（reader_config_panel /
       // reader_settings_sheet_font_panel，与参考版阅读器内字体能力对齐）。
-      (Symbols.info_rounded, '关于', '版本、日志与开源许可',
-          () => Navigator.pushNamed(context, AppRoutes.about)),
+      (
+        Symbols.info_rounded,
+        '关于',
+        '版本、日志与开源许可',
+        () => Navigator.pushNamed(context, AppRoutes.about),
+      ),
     ];
     return Scaffold(
       body: CustomScrollView(
@@ -130,9 +190,11 @@ class SettingsHomeScreen extends StatelessWidget {
                             opacityPercent: ui.glassCardBackgroundOpacity,
                             borderRadius: cardRadius,
                             opacityKey: ValueKey(
-                                'settings-home-item-background-opacity-$i'),
+                              'settings-home-item-background-opacity-$i',
+                            ),
                             imageKey: ValueKey(
-                                'settings-home-item-background-image-$i'),
+                              'settings-home-item-background-image-$i',
+                            ),
                           ),
                         ),
                       // 内容层恒为透明 Material：InkWell 水波纹画在项目图
@@ -149,18 +211,23 @@ class SettingsHomeScreen extends StatelessWidget {
                             ),
                             child: Row(
                               children: [
-                                Icon(icon,
-                                    size: 22, color: cs.onSurfaceVariant),
+                                Icon(
+                                  icon,
+                                  size: 22,
+                                  color: cs.onSurfaceVariant,
+                                ),
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(title,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleSmall),
+                                      Text(
+                                        title,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.titleSmall,
+                                      ),
                                       const SizedBox(height: 2),
                                       Text(
                                         subtitle,
@@ -174,8 +241,11 @@ class SettingsHomeScreen extends StatelessWidget {
                                     ],
                                   ),
                                 ),
-                                Icon(Symbols.chevron_right_rounded,
-                                    size: 20, color: cs.onSurfaceVariant),
+                                Icon(
+                                  Symbols.chevron_right_rounded,
+                                  size: 20,
+                                  color: cs.onSurfaceVariant,
+                                ),
                               ],
                             ),
                           ),

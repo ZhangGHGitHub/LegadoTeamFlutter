@@ -53,6 +53,7 @@ import 'package:flutter_legado/src/screens/import_screen.dart';
 import 'package:flutter_legado/src/screens/js_source_edit_screen.dart';
 import 'package:flutter_legado/src/screens/offline_cache_screen.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
+import 'package:flutter_legado/src/screens/privacy_settings_screen.dart';
 import 'package:flutter_legado/src/screens/qrcode_screen.dart';
 import 'package:flutter_legado/src/screens/read_aloud_config_screen.dart';
 import 'package:flutter_legado/src/screens/read_record_screen.dart';
@@ -97,10 +98,12 @@ void main() {
     when(() => mockAudio.init()).thenAnswer((_) async {});
     when(() => mockAudio.isInitialized).thenReturn(false);
     when(() => mockAudio.dispose()).thenAnswer((_) async {});
-    when(() => mockAudio.mediaButtonStream)
-        .thenAnswer((_) => const Stream<MediaButtonEvent>.empty());
-    when(() => mockAudio.audioFocusStream)
-        .thenAnswer((_) => const Stream<AudioFocusEvent>.empty());
+    when(
+      () => mockAudio.mediaButtonStream,
+    ).thenAnswer((_) => const Stream<MediaButtonEvent>.empty());
+    when(
+      () => mockAudio.audioFocusStream,
+    ).thenAnswer((_) => const Stream<AudioFocusEvent>.empty());
     container = ProviderContainer(
       overrides: [
         bookApiProvider.overrideWithValue(api),
@@ -131,18 +134,12 @@ void main() {
   final screens = <(String, Widget)>[
     // ===== 主屏幕 =====
     ('HomeTabScreen', const HomeTabScreen()),
-    (
-      'BrowserScreen',
-      const BrowserScreen(initialUrl: 'https://example.com'),
-    ),
+    ('BrowserScreen', const BrowserScreen(initialUrl: 'https://example.com')),
     ('BookshelfScreen', const BookshelfScreen()),
     ('SearchScreen', const SearchScreen()),
     ('SourceScreen', const SourceScreen()),
     ('ReadRecordScreen', const ReadRecordScreen()),
-    (
-      'ChangeSourceScreen',
-      const ChangeSourceScreen(bookUrl: 'u'),
-    ),
+    ('ChangeSourceScreen', const ChangeSourceScreen(bookUrl: 'u')),
     ('WelcomeScreen', const WelcomeScreen()),
     ('AudioScreen', const AudioScreen()),
     ('BookshelfManageScreen', const BookshelfManageScreen()),
@@ -153,6 +150,7 @@ void main() {
     // ===== 设置各页 / 其它 =====
     ('SettingsScreen', const SettingsScreen()),
     ('SettingsHomeScreen', const SettingsHomeScreen()),
+    ('PrivacySettingsScreen', const PrivacySettingsScreen()),
     ('AboutScreen', const AboutScreen()),
     ('AppLogScreen', const AppLogScreen()),
     ('AutoTaskScreen', const AutoTaskScreen()),
@@ -171,7 +169,12 @@ void main() {
     ),
     ('CodeEditScreen', const CodeEditScreen(title: 't', initialText: '')),
     ('DictRuleScreen', const DictRuleScreen()),
-    ('EditBookInfoScreen', EditBookInfoScreen(book: Book(bookUrl: 'u', name: 'x'))),
+    (
+      'EditBookInfoScreen',
+      EditBookInfoScreen(
+        book: Book(bookUrl: 'u', name: 'x'),
+      ),
+    ),
     ('ExploreShowScreen', const ExploreShowScreen()),
     ('FileManageScreen', const FileManageScreen()),
     ('FontScreen', const FontScreen()),
@@ -218,7 +221,12 @@ void main() {
       ),
     ),
     ('RssFavoritesScreen', const RssFavoritesScreen()),
-    ('TocScreen', TocScreen(book: Book(bookUrl: 'u', name: 'x'))),
+    (
+      'TocScreen',
+      TocScreen(
+        book: Book(bookUrl: 'u', name: 'x'),
+      ),
+    ),
     // ===== 阅读器菜单类浮层（红线：命中先报告再改）=====
     // 红线核查结论（2026-09-20）：面板在应用内恒经 ReaderConfigPanel.show →
     // showModalBottomSheet(isScrollControlled) + DraggableScrollableSheet

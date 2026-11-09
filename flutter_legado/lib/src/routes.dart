@@ -57,6 +57,8 @@ import 'screens/read_config_screen.dart';
 import 'screens/cover_settings_screen.dart';
 // [设置批6b-2] 封面相册管理页（对齐参考版 CoverAlbumManageScreen）
 import 'screens/cover_album_manage_screen.dart';
+// [设置批9b] 隐私设置页（应用锁与私密内容，对齐参考版 PrivateConfigScreen）
+import 'screens/privacy_settings_screen.dart';
 import 'screens/theme_config_screen.dart';
 import 'screens/bottom_bar_skin_screen.dart';
 import 'screens/toc_screen.dart';
@@ -78,10 +80,7 @@ class BookInfoArgs {
   /// 目录就绪后自动跳转阅读器（默认 false）
   final bool openReaderImmediately;
 
-  const BookInfoArgs({
-    required this.book,
-    this.openReaderImmediately = false,
-  });
+  const BookInfoArgs({required this.book, this.openReaderImmediately = false});
 }
 
 /// 路由配置
@@ -104,6 +103,8 @@ class AppRoutes {
   static const aiSettings = '/ai_settings';
   static const translationSettings = '/translation_settings';
   static const labSettings = '/lab_settings';
+  // [设置批9b] 隐私设置页（应用锁与私密内容；扁平路径同上）
+  static const privacy = '/privacy';
   static const cacheDownloads = '/cache_downloads';
   // [UI-fix v2.0.17 | 2026-08-11] 离线缓存页（对齐原版 CacheActivity 书籍列表）— Reasonix
   static const offlineCache = '/offline_cache';
@@ -225,6 +226,8 @@ class AppRoutes {
     aiSettings: (_) => const SettingsPlaceholderScreen.ai(),
     translationSettings: (_) => const SettingsPlaceholderScreen.translation(),
     labSettings: (_) => const SettingsPlaceholderScreen.lab(),
+    // [设置批9b] 隐私设置页（应用锁与私密内容）
+    privacy: (_) => const PrivacySettingsScreen(),
     otherSettings: (_) => const OtherSettingsScreen(),
     cacheDownloads: (_) => const CacheDownloadScreen(),
     offlineCache: (_) => const OfflineCacheScreen(),

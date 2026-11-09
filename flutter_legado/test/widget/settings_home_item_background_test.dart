@@ -94,10 +94,10 @@ void main() {
       .where((m) => m.borderRadius == BorderRadius.circular(16))
       .toList();
 
-  testWidgets('默认：无项目图，13 张卡不建图片层', (tester) async {
+  testWidgets('默认：无项目图，14 张卡不建图片层', (tester) async {
     await pumpPage(tester);
     expect(find.byType(GlassCardBackground), findsNothing);
-    expect(cardMaterials(tester).length, 13);
+    expect(cardMaterials(tester).length, 14);
   });
 
   testWidgets('总开关关：有可用项目图也不渲染', (tester) async {
@@ -109,7 +109,7 @@ void main() {
     expect(find.byType(GlassCardBackground), findsNothing);
   });
 
-  testWidgets('层序：图片在卡面 Material 内、入口内容之下，13 卡各有图层', (tester) async {
+  testWidgets('层序：图片在卡面 Material 内、入口内容之下，14 卡各有图层', (tester) async {
     final light = await storeItem(tester);
     uiSettingsListenable.value = UiSettingsState(
       enableContainerBackgroundImage: true,
@@ -117,15 +117,18 @@ void main() {
     );
     await pumpPage(tester);
 
-    expect(find.byType(GlassCardBackground), findsNWidgets(13));
+    expect(find.byType(GlassCardBackground), findsNWidgets(14));
     final stack = tester.widget<Stack>(
       find.ancestor(of: itemBg(0), matching: find.byType(Stack)).first,
     );
     expect(stack.children.length, 2);
     expect(stack.children.first, isA<Positioned>());
     final contentMaterial = stack.children.last as Material;
-    expect(contentMaterial.type, MaterialType.transparency,
-        reason: '内容层透明 Material 在水波纹/图片之上（100% 仍可见）');
+    expect(
+      contentMaterial.type,
+      MaterialType.transparency,
+      reason: '内容层透明 Material 在水波纹/图片之上（100% 仍可见）',
+    );
 
     // InkWell 最近 Material 是透明内容层 → 水波纹画在项目图之上
     final inkWell = find

@@ -2,7 +2,7 @@
 //
 // 设置首页入口卡为手写 Material（16dp 圆角、10dp 行距），不经过 IosGroup/
 // CardTheme；本文件验证其卡面 alpha 按 containerOpacity 乘 alpha（文字不受
-// 影响），并保持 13 个入口结构不变（设置批5a-1 新增「朗读设置」，
+// 影响），并保持 14 个入口结构不变（设置批5a-1 新增「朗读设置」，
 // 设置批6b-1 新增「封面设置」）。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,7 +30,7 @@ void main() {
   }
 
   Future<void> pumpPage(WidgetTester tester, {ColorScheme? scheme}) async {
-    // 放得下 13 个入口（SliverList 懒构建，小视口会少建）
+    // 放得下 14 个入口（SliverList 懒构建，小视口会少建）
     tester.view.physicalSize = const Size(800, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -48,15 +48,17 @@ void main() {
       .where((m) => m.borderRadius == BorderRadius.circular(16))
       .toList();
 
-  testWidgets('默认 100%：卡面保持主题 surfaceContainerLow alpha，13 个入口', (tester) async {
+  testWidgets('默认 100%：卡面保持主题 surfaceContainerLow alpha，14 个入口', (
+    tester,
+  ) async {
     await pumpPage(tester);
 
-    expect(cardMaterials(tester).length, 13);
+    expect(cardMaterials(tester).length, 14);
     final scheme = Theme.of(
       tester.element(find.byType(SettingsHomeScreen)),
     ).colorScheme;
     final materials = cardMaterials(tester);
-    expect(materials.length, 13);
+    expect(materials.length, 14);
     for (final material in materials) {
       expect(
         material.color!.a,
@@ -64,22 +66,22 @@ void main() {
         reason: '100% 时不得改变主题卡面 alpha',
       );
     }
-    // 手写结构保留：13 个入口之间 12 条 10dp 分隔
+    // 手写结构保留：14 个入口之间 13 条 10dp 分隔
     expect(
       find.byWidgetPredicate(
         (w) => w is SizedBox && w.height == 10,
         skipOffstage: false,
       ),
-      findsNWidgets(12),
+      findsNWidgets(13),
     );
   });
 
-  testWidgets('容器不透明度 50%：13 张手写卡片 alpha=0.5，文字仍不透明', (tester) async {
+  testWidgets('容器不透明度 50%：14 张手写卡片 alpha=0.5，文字仍不透明', (tester) async {
     uiSettingsListenable.value = const UiSettingsState(containerOpacity: 50);
     await pumpPage(tester);
 
     final items = cardMaterials(tester);
-    expect(items.length, 13);
+    expect(items.length, 14);
     for (final material in items) {
       expect(material.color!.a, closeTo(0.5, 0.001));
     }
@@ -87,10 +89,7 @@ void main() {
     // [P2-1] 文字不得被任何 Opacity/RenderOpacity 包裹而整体变淡：
     // 只允许 Material.color 半透明，文字节点自身保持不透明。
     expect(
-      find.ancestor(
-        of: find.text('外观'),
-        matching: find.byType(Opacity),
-      ),
+      find.ancestor(of: find.text('外观'), matching: find.byType(Opacity)),
       findsNothing,
       reason: '卡面半透明不得通过 Opacity 祖先降低文字透明度',
     );
