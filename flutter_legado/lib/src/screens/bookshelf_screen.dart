@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -19,6 +19,7 @@ import '../providers/bookshelf_settings/bookshelf_settings_notifier.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart'
     show coverSettingsListenable;
 import '../providers/providers.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart'
     show TopBarButtonStyle, uiSettingsListenable;
@@ -42,6 +43,8 @@ import '../widgets/error_view.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/md3_fast_scroller.dart';
 import '../widgets/navigation/main_detail_pane_scope.dart';
+import '../widgets/privacy/private_locked_page.dart';
+import '../widgets/privacy/privacy_unlock_dialog.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
 /// 书架页面（Riverpod ConsumerStatefulWidget）
@@ -233,8 +236,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 双击底栏书架项 → 列表回滚顶部（对标 BaseBookshelfFragment.gotoTop）
   void _onScrollTopSignal() {
     // 文件夹根目录使用独立滚动控制器（组内容返回根目录时位置保留）
-    final controller = _inFolderRoot &&
-            ref.read(bookshelfSettingsProvider).bookGroupStyle == 2
+    final controller =
+        _inFolderRoot && ref.read(bookshelfSettingsProvider).bookGroupStyle == 2
         ? _folderScrollController
         : _scrollController;
     if (!controller.hasClients) return;
@@ -271,8 +274,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final visible = state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
     if (controller.index < 0 || controller.index >= visible.length) return;
     final group = visible[controller.index];
-    final allIndex =
-        state.groups.indexWhere((g) => g.groupId == group.groupId);
+    final allIndex = state.groups.indexWhere((g) => g.groupId == group.groupId);
     if (allIndex >= 0 && allIndex != state.selectedGroupIndex) {
       ref.read(bookshelfNotifierProvider.notifier).selectGroup(allIndex);
     }
@@ -297,7 +299,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // sliver 形式并入下方 CustomScrollView（对齐参考 03/03b 截图：空态
     // 同样保留「书架」大标题 + 分组 tab 行）；加载/错误态保留标准
     // LegadoAppBar。
-    final plainAppBar = (state.isLoading && state.books.isEmpty) ||
+    final plainAppBar =
+        (state.isLoading && state.books.isEmpty) ||
         (state.error != null && state.books.isEmpty);
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     final scaffold = AppScaffold(
@@ -315,8 +318,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // 主页宿主由 HomeScreen 的 PopScope 统一分发（避免同路由多个 PopScope
     // 同时收到回调导致「回组根 + 退出」双动作）。
     // 非文件夹模式不注册 PopScope，避免独立宿主回归原有返回语义。
-    if (widget.folderBackController != null ||
-        settings.bookGroupStyle != 2) {
+    if (widget.folderBackController != null || settings.bookGroupStyle != 2) {
       return scaffold;
     }
     return PopScope(
@@ -349,6 +351,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 保证 uiautomator dump 可检索到 全选/反选/删除/取消 关键词。
   List<Widget> _buildBatchAppBarActions(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(bookshelfNotifierProvider.notifier);
+    final state = ref.watch(bookshelfNotifierProvider);
+    final privacy = ref.watch(privacyNotifierProvider);
+    // [批9c] 对齐参考版 `BookshelfScreen.kt:641-666`：仅已设密码时显示锁图标；
+    // 选中集合“没有任何私密书” → 本次设为私密，否则取消私密。
+    final selectedBooks = state.books.where(
+      (b) => state.selectedUrls.contains(b.bookUrl),
+    );
+    final targetPrivate = selectedBooks.every(
+      (b) => !state.isBookPrivateContent(b),
+    );
     return [
       IconButton(
         icon: const Icon(Icons.select_all),
@@ -360,6 +372,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         tooltip: '反选',
         onPressed: notifier.invertSelection,
       ),
+      if (privacy.hasPassword)
+        IconButton(
+          key: const ValueKey('bookshelf-batch-private'),
+          icon: const Icon(Symbols.lock_rounded),
+          tooltip: targetPrivate ? '设为私密' : '取消私密',
+          onPressed: () => _toggleSelectedPrivate(context, ref),
+        ),
       IconButton(
         icon: const Icon(Icons.delete_rounded),
         tooltip: '删除',
@@ -373,6 +392,51 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     ];
   }
 
+  /// [批9c] 批量设置选中书籍的私密标记（对齐参考版 SetBooksPrivate）
+  ///
+  /// 目标值 = 选中集合里没有任何私密书（混合选择时统一设为私密）。
+  /// 成功 toast 用选中数（对齐参考版 `private_marked_books` 文案），失败
+  /// 提示可读原因，不假装成功。
+  Future<void> _toggleSelectedPrivate(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final state = ref.read(bookshelfNotifierProvider);
+    final urls = state.selectedUrls.toList();
+    if (urls.isEmpty) return;
+    final targetPrivate = state.books
+        .where((b) => state.selectedUrls.contains(b.bookUrl))
+        .every((b) => !state.isBookPrivateContent(b));
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(bookshelfNotifierProvider.notifier)
+          .setBooksPrivate(urls, targetPrivate);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('已更新 ${urls.length} 本书的私密状态')));
+    } catch (e) {
+      final reason = e is BridgeError ? e.message : '$e';
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('设置私密状态失败：$reason')));
+    }
+  }
+
+  /// [批9c] 请求解锁私密分组（锁定页「验证并查看」）
+  Future<void> _unlockGroup(
+    BuildContext context,
+    WidgetRef ref,
+    BookGroup group,
+  ) async {
+    await showPrivacyUnlockDialog(
+      context,
+      ref,
+      groupId: group.groupId,
+      title: '验证后查看「${group.groupName}」',
+    );
+  }
+
   /// [UI-fix 2.0.258] 选择模式删除确认（对齐原版批量删除前二次确认，
   /// 防误删；确认后批量删除并退出选择模式）
   ///
@@ -380,7 +444,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 书时才显示「删除源文件」勾选（每次打开重置为不勾选）；勾选后由 Rust
   /// 删除 `bookUrl` 指向的磁盘文件，文件删除失败的逐条提示随结果返回。
   Future<void> _confirmDeleteSelected(
-      BuildContext context, WidgetRef ref) async {
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final state = ref.read(bookshelfNotifierProvider);
     final count = state.selectedUrls.length;
     if (count == 0) return;
@@ -478,18 +544,20 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 始终保留）；`shouldShowExpandButton` 在行尾追加组菜单按钮，切换时
   /// 映射回完整分组索引持久化。
   Widget _buildGroupTabBar(
-      BuildContext context, WidgetRef ref, BookshelfState state,
-      BookshelfSettings settings) {
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    BookshelfSettings settings,
+  ) {
     final groups = state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
     final controller = _ensureTabController(groups.length);
     final selectedIndex = _visibleGroupIndex(state, groups);
     _syncTabControllerIndex(selectedIndex);
     final colorScheme = Theme.of(context).colorScheme;
     // [LAYOUT_MOTION_AUDIT L3] Tab 文案走 labelLargeEmphasized（M3 labelLarge + Medium 强调）
-    final labelStyle = Theme.of(context)
-        .textTheme
-        .labelLarge
-        ?.copyWith(fontWeight: FontWeight.w500);
+    final labelStyle = Theme.of(
+      context,
+    ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w500);
     // [parity C3 B1] 分组 tab 单组左对齐：根因——SliverAppBar.large 的 bottom 槽
     // 以「松约束」下发，M3 可滚动 TabBar 在松约束下收缩为内容宽度并被父级
     // 居中（单组「全部」时整行偏右，多组时首 tab 同样不贴左）。包一层
@@ -523,8 +591,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // [骨架对齐 2.0.260] 选中 tab = primary 字色 + 短下划线（对齐参考 03b）
       tabs: groups.map((g) => Tab(text: g.groupName)).toList(),
     );
-    final showMoreGroups =
-        settings.shouldShowExpandButton && groups.length > 1;
+    final showMoreGroups = settings.shouldShowExpandButton && groups.length > 1;
     return SizedBox(
       width: double.infinity,
       child: Row(
@@ -565,9 +632,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     const manageAction = '__bookshelf_manage_groups__';
     final state = ref.read(bookshelfNotifierProvider);
     final settings = ref.read(bookshelfSettingsProvider);
+    final privacy = ref.read(privacyNotifierProvider);
     // [审查 P3] 组菜单书籍数只在文件夹模式展示（style 0/1 菜单保持原样）
-    final showCounts =
-        settings.showBookCount && settings.bookGroupStyle == 2;
+    final showCounts = settings.showBookCount && settings.bookGroupStyle == 2;
     final selectedId = state.selectedGroup?.groupId;
     final picked = await showModalBottomSheet<Object>(
       context: context,
@@ -578,19 +645,25 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text('选择分组',
-                  style: Theme.of(sheetContext).textTheme.titleMedium),
+              child: Text(
+                '选择分组',
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+              ),
             ),
             for (final group in groups)
               ListTile(
                 key: ValueKey('bookshelf_group_menu_${group.groupId}'),
                 title: Text(group.groupName),
-                subtitle: showCounts
+                subtitle:
+                    showCounts &&
+                        !state.isGroupContentLocked(group.groupId, privacy)
                     ? Text('${state.bookCountOf(group)} 本')
                     : null,
                 trailing: group.groupId == selectedId
-                    ? Icon(Icons.check,
-                        color: Theme.of(sheetContext).colorScheme.primary)
+                    ? Icon(
+                        Icons.check,
+                        color: Theme.of(sheetContext).colorScheme.primary,
+                      )
                     : null,
                 onTap: () => Navigator.pop(sheetContext, group),
               ),
@@ -614,8 +687,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       return;
     }
     final group = picked as BookGroup;
-    final index =
-        state.groups.indexWhere((g) => g.groupId == group.groupId);
+    final index = state.groups.indexWhere((g) => g.groupId == group.groupId);
     if (index < 0) {
       // [审查 P2-2] groups 加载失败时展示层合成「全部」：菜单选择同样
       // 允许直接进入组内容（其书籍即全部书籍）。
@@ -699,12 +771,20 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // UploadFile/CloudDownload/History → 映射 material_symbols rounded）
       _CardMenuItem('remote', '远程书籍', Symbols.wifi_rounded),
       _CardMenuItem('import', AppStrings.addLocalBook, Symbols.save_rounded),
-      _CardMenuItem('update_all', AppStrings.updateAll, Symbols.refresh_rounded),
+      _CardMenuItem(
+        'update_all',
+        AppStrings.updateAll,
+        Symbols.refresh_rounded,
+      ),
       _CardMenuItem('layout', '布局设置', Symbols.grid_view_rounded),
       _CardMenuItem('groups', '分组管理', Symbols.view_carousel_rounded),
       _CardMenuItem('add_url', '添加网址', Symbols.link_rounded),
       _CardMenuItem('select_mode', '选择模式', Symbols.edit_rounded),
-      _CardMenuItem('manage', AppStrings.manageBookshelf, Symbols.bookmarks_rounded),
+      _CardMenuItem(
+        'manage',
+        AppStrings.manageBookshelf,
+        Symbols.bookmarks_rounded,
+      ),
       _CardMenuItem('export_list', '导出书单', Symbols.upload_file_rounded),
       _CardMenuItem('import_list', '导入书单', Symbols.cloud_download_rounded),
       _CardMenuItem('log', '日志', Symbols.history_rounded),
@@ -713,15 +793,25 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       _CardMenuItem('offline_cache', '离线缓存', Symbols.wifi_off_rounded),
       // 分组模式三项：图标列用单选钮勾选态（对标原 _buildGroupModeItem 语义）
       _CardMenuItem(
-          'group_none', '不分组',
-          _radioIcon(state.groupMode == GroupMode.none)),
+        'group_none',
+        '不分组',
+        _radioIcon(state.groupMode == GroupMode.none),
+      ),
       _CardMenuItem(
-          'group_source', '按来源分组',
-          _radioIcon(state.groupMode == GroupMode.bySource)),
+        'group_source',
+        '按来源分组',
+        _radioIcon(state.groupMode == GroupMode.bySource),
+      ),
       _CardMenuItem(
-          'group_group', '按分组显示',
-          _radioIcon(state.groupMode == GroupMode.byGroup)),
-      _CardMenuItem('sources', AppStrings.sourceManagement, Symbols.database_rounded),
+        'group_group',
+        '按分组显示',
+        _radioIcon(state.groupMode == GroupMode.byGroup),
+      ),
+      _CardMenuItem(
+        'sources',
+        AppStrings.sourceManagement,
+        Symbols.database_rounded,
+      ),
     ];
   }
 
@@ -840,8 +930,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// 分组模式项的单选钮图标（checked=当前选中模式）
-  static IconData _radioIcon(bool checked) =>
-      checked ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded;
+  static IconData _radioIcon(bool checked) => checked
+      ? Symbols.radio_button_checked_rounded
+      : Symbols.radio_button_unchecked_rounded;
 
   /// 原分割线位置（首屏 11 项后 / 分组模式三项后）→ 卡间 16dp 加宽
   /// （卡片分体形态下以间距替代 PopupMenuDivider）
@@ -851,6 +942,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   Widget _buildBody(BuildContext context, WidgetRef ref) {
     final state = ref.watch(bookshelfNotifierProvider);
     final settings = ref.watch(bookshelfSettingsProvider);
+    final privacy = ref.watch(privacyNotifierProvider);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final isGridMode = settings.layoutModeFor(isLandscape: isLandscape) == 1;
@@ -918,8 +1010,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     }
 
     // 可见分组（隐藏空分组；「全部」始终保留）
-    final visibleGroups =
-        state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
+    final visibleGroups = state.visibleGroups(
+      hideEmpty: settings.hideEmptyGroups,
+    );
     final selectedVisibleIndex = _visibleGroupIndex(state, visibleGroups);
     final effectiveGroup = visibleGroups[selectedVisibleIndex];
     // 选中组被「隐藏空分组」隐藏时，帧后回写「全部」保持数据源一致
@@ -929,8 +1022,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final current = ref.read(bookshelfNotifierProvider);
-        final index = current.groups
-            .indexWhere((g) => g.groupId == effectiveGroup.groupId);
+        final index = current.groups.indexWhere(
+          (g) => g.groupId == effectiveGroup.groupId,
+        );
         if (index >= 0) {
           ref.read(bookshelfNotifierProvider.notifier).selectGroup(index);
         }
@@ -942,10 +1036,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       sort: settings.bookshelfSort,
       sortOrder: settings.bookshelfSortOrder,
     );
-    final isEmpty = shelfBooks.isEmpty && !state.isLoading;
+    // [批9c] 私密分组内容区整页锁定：组名与 Tab 保持可见，只替换内容
+    // （对齐参考版 PrivateGroupLockedPage）；解锁后派生条件自动翻回。
+    final groupLocked = state.isGroupContentLocked(
+      effectiveGroup.groupId,
+      privacy,
+    );
+    final isEmpty = shelfBooks.isEmpty && !state.isLoading && !groupLocked;
     // 文件夹组内容：顶部返回组根 + 组标题（无 TabBar）
-    final folderGroup =
-        settings.bookGroupStyle == 2 ? effectiveGroup : null;
+    final folderGroup = settings.bookGroupStyle == 2 ? effectiveGroup : null;
 
     if (isEmpty) {
       // [骨架对齐 2.0.260 | 台账 1-3] 空态对齐参考 03 截图：大标题「书架」
@@ -1035,34 +1134,76 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 visibleGroups,
                 effectiveGroup,
               ),
-            // [UI-fix 2.0.258] 批量模式摘要卡位于头部之后（对齐参考版：
-            // 标题/Tab →「已选N本 · 共M本」胶囊 → 书列表）
-            if (state.isBatchMode)
-              SliverToBoxAdapter(
-                child: _buildBatchSummaryCard(context, ref, state),
-              ),
-            if (manualGridFallback)
-              SliverToBoxAdapter(
-                child: _buildManualSortListNotice(context),
-              ),
-            // 分组模式：渲染分组头 + 分组内容
-            if (state.groupMode != GroupMode.none)
-              ..._buildGroupedSlivers(
-                  context, ref, state, settings, shelfBooks, viewportWidth)
-            else if (effectiveGridMode)
-              _buildGridSliver(context, ref, state, settings, shelfBooks,
-                  viewportWidth)
-            else if (settings.bookshelfSort == BookshelfSortMode.manual)
-              _buildReorderableSliver(
-                  context, ref, state, settings, shelfBooks)
-            else
-              _buildListSliver(context, ref, state, settings, shelfBooks,
-                  viewportWidth),
-            // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
-            if (state.isBatchMode && state.selectedUrls.isNotEmpty)
-              SliverToBoxAdapter(
-                child: _buildBatchBottomBar(context, ref, state),
-              ),
+            // [批9c] 私密分组：只锁内容区，头部/Tab/相邻分组仍可交互；
+            // 批量摘要与底部工具条一并隐藏（避免通过“已选 N 本 / 共 M 本”
+            // 或批量操作泄露组内规模）。
+            if (groupLocked)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: PrivateLockedPage(
+                  title: '私密分组',
+                  description: privacyLockedDescription(
+                    privacy,
+                    fallback: '验证后查看分组内容',
+                  ),
+                  actionText: privacyLockedActionText(
+                    privacy,
+                    fallback: '验证并查看',
+                  ),
+                  onAction: () => _unlockGroup(context, ref, effectiveGroup),
+                ),
+              )
+            else ...[
+              // [UI-fix 2.0.258] 批量模式摘要卡位于头部之后（对齐参考版：
+              // 标题/Tab →「已选N本 · 共M本」胶囊 → 书列表）
+              if (state.isBatchMode)
+                SliverToBoxAdapter(
+                  child: _buildBatchSummaryCard(context, ref, state),
+                ),
+              if (manualGridFallback)
+                SliverToBoxAdapter(child: _buildManualSortListNotice(context)),
+              // 分组模式：渲染分组头 + 分组内容
+              if (state.groupMode != GroupMode.none)
+                ..._buildGroupedSlivers(
+                  context,
+                  ref,
+                  state,
+                  settings,
+                  shelfBooks,
+                  viewportWidth,
+                )
+              else if (effectiveGridMode)
+                _buildGridSliver(
+                  context,
+                  ref,
+                  state,
+                  settings,
+                  shelfBooks,
+                  viewportWidth,
+                )
+              else if (settings.bookshelfSort == BookshelfSortMode.manual)
+                _buildReorderableSliver(
+                  context,
+                  ref,
+                  state,
+                  settings,
+                  shelfBooks,
+                )
+              else
+                _buildListSliver(
+                  context,
+                  ref,
+                  state,
+                  settings,
+                  shelfBooks,
+                  viewportWidth,
+                ),
+              // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
+              if (state.isBatchMode && state.selectedUrls.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildBatchBottomBar(context, ref, state),
+                ),
+            ],
           ];
           final scrollView = CustomScrollView(
             controller: _scrollController,
@@ -1097,13 +1238,19 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     BookGroup? folderGroup,
   }) {
     final showTabs = settings.bookGroupStyle == 0;
-    final visibleGroups =
-        state.visibleGroups(hideEmpty: settings.hideEmptyGroups);
+    final visibleGroups = state.visibleGroups(
+      hideEmpty: settings.hideEmptyGroups,
+    );
     final Widget title;
     if (folderGroup == null) {
       title = Text(AppStrings.bookshelf);
     } else {
       final count = state.booksInGroup(folderGroup).length;
+      // [批9c] 私密分组锁定态不展示书籍数（规模也是信息）
+      final groupLocked = state.isGroupContentLocked(
+        folderGroup.groupId,
+        ref.watch(privacyNotifierProvider),
+      );
       title = Row(
         children: [
           Flexible(
@@ -1114,14 +1261,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (settings.showBookCount) ...[
+          if (settings.showBookCount && !groupLocked) ...[
             const SizedBox(width: 8),
             Text(
               '$count 本',
               key: const ValueKey('bookshelf_folder_group_count'),
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ],
@@ -1155,9 +1302,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                   key: const ValueKey('bookshelf_folder_group_menu'),
                   icon: const Icon(Symbols.format_list_bulleted_rounded),
                   tooltip: '分组菜单',
-                  onPressed: () =>
-                      _showGroupMenu(context, ref, visibleGroups,
-                          allowManage: true),
+                  onPressed: () => _showGroupMenu(
+                    context,
+                    ref,
+                    visibleGroups,
+                    allowManage: true,
+                  ),
                 ),
               ..._buildAppBarActions(context, ref),
             ],
@@ -1247,12 +1397,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     BookshelfState state,
     BookGroup group,
     int limit,
-  ) =>
-      sortBookshelfBooks(
-        state.booksInGroup(group),
-        sort: BookshelfSortMode.readTime,
-        sortOrder: BookshelfSortOrder.descending,
-      ).take(limit).toList();
+  ) => sortBookshelfBooks(
+    state.booksInGroup(group),
+    sort: BookshelfSortMode.readTime,
+    sortOrder: BookshelfSortOrder.descending,
+  ).take(limit).toList();
 
   /// 文件夹根网格（列数 1–15，封面 2×2 拼图 + 组名）
   Widget _buildFolderGridSliver(
@@ -1290,6 +1439,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           );
     final cardHeight = coverHeight + titleHeight;
     final aspectRatio = cellWidth / math.max(1.0, cardHeight);
+    final privacy = ref.watch(privacyNotifierProvider);
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       sliver: SliverGrid.builder(
@@ -1302,6 +1452,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         itemCount: groups.length,
         itemBuilder: (context, index) {
           final group = groups[index];
+          final locked = state.isGroupContentLocked(group.groupId, privacy);
           return Align(
             alignment: Alignment.topCenter,
             child: SizedBox(
@@ -1309,11 +1460,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               height: cardHeight,
               child: FolderGroupGridCard(
                 group: group,
-                previews: _folderPreviewBooks(state, group, 4),
+                locked: locked,
+                // [批9c] 私密分组在文件夹根不露出预览封面与书籍数
+                previews: locked
+                    ? const <Book>[]
+                    : _folderPreviewBooks(state, group, 4),
                 bookCount: state.bookCountOf(group),
                 settings: settings,
                 coverWidth: coverWidth,
-                coverShadow: settings.bookshelfCoverShadow ||
+                coverShadow:
+                    settings.bookshelfCoverShadow ||
                     coverSettingsListenable.value.showShadow,
                 onTap: () => _enterFolderGroup(group),
                 onLongPress: () => _showGroupMenu(
@@ -1345,16 +1501,22 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final columns = settings
         .folderListColumnsFor(isLandscape: isLandscape)
         .clamp(1, 5);
-    final coverShadow = settings.bookshelfCoverShadow ||
+    final coverShadow =
+        settings.bookshelfCoverShadow ||
         coverSettingsListenable.value.showShadow;
+    final privacy = ref.watch(privacyNotifierProvider);
     if (columns <= 1) {
       return SliverList.builder(
         itemCount: groups.length,
         itemBuilder: (context, index) {
           final group = groups[index];
+          final locked = state.isGroupContentLocked(group.groupId, privacy);
           return FolderGroupListCard(
             group: group,
-            previews: _folderPreviewBooks(state, group, 4),
+            locked: locked,
+            previews: locked
+                ? const <Book>[]
+                : _folderPreviewBooks(state, group, 4),
             bookCount: state.bookCountOf(group),
             settings: settings,
             coverShadow: coverShadow,
@@ -1420,9 +1582,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         itemCount: groups.length,
         itemBuilder: (context, index) {
           final group = groups[index];
+          final locked = state.isGroupContentLocked(group.groupId, privacy);
           return FolderGroupListCard(
             group: group,
-            previews: _folderPreviewBooks(state, group, 4),
+            locked: locked,
+            previews: locked
+                ? const <Book>[]
+                : _folderPreviewBooks(state, group, 4),
             bookCount: state.bookCountOf(group),
             settings: settings,
             maxCoverWidth: coverWidth,
@@ -1468,22 +1634,30 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // Flexible 省略，保证 280–320dp 宽 2 列也不横向溢出。
     final dense = columns > 2 || cellWidth < 150;
     final coverCount = settings.bookshelfGroupCoverCount.clamp(1, 10);
-    Widget buildCard(BookGroup group) => FolderGroupHorizontalCard(
-      group: group,
-      previews: _folderPreviewBooks(state, group, coverCount),
-      bookCount: state.bookCountOf(group),
-      settings: settings,
-      dense: dense,
-      onTap: () => _enterFolderGroup(group),
-      onLongPress: () => _showGroupMenu(
-        context,
-        ref,
-        groups,
-        allowManage: true,
-        enterContent: true,
-      ),
-      onBookTap: (book) => _openBook(context, ref, book),
-    );
+    final privacy = ref.watch(privacyNotifierProvider);
+    Widget buildCard(BookGroup group) {
+      final locked = state.isGroupContentLocked(group.groupId, privacy);
+      return FolderGroupHorizontalCard(
+        group: group,
+        locked: locked,
+        previews: locked
+            ? const <Book>[]
+            : _folderPreviewBooks(state, group, coverCount),
+        bookCount: state.bookCountOf(group),
+        settings: settings,
+        dense: dense,
+        onTap: () => _enterFolderGroup(group),
+        onLongPress: () => _showGroupMenu(
+          context,
+          ref,
+          groups,
+          allowManage: true,
+          enterContent: true,
+        ),
+        onBookTap: (book) => _onBookTap(context, ref, state, book),
+      );
+    }
+
     if (columns <= 1) {
       return SliverList.builder(
         itemCount: groups.length,
@@ -1531,15 +1705,18 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       ),
       child: Row(
         children: [
-          Icon(Icons.drag_indicator_rounded,
-              size: 20, color: cs.onSecondaryContainer),
+          Icon(
+            Icons.drag_indicator_rounded,
+            size: 20,
+            color: cs.onSecondaryContainer,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               '手动排序需使用列表布局，已临时切换为列表',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSecondaryContainer,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSecondaryContainer),
             ),
           ),
           TextButton(
@@ -1575,8 +1752,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 key: const ValueKey('bookshelf_group_style_title'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w600),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             if (count > 1)
@@ -1584,8 +1762,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 key: const ValueKey('bookshelf_group_style_menu'),
                 icon: const Icon(Symbols.format_list_bulleted_rounded),
                 tooltip: '分组菜单',
-                onPressed: () =>
-                    _showGroupMenu(context, ref, visibleGroups),
+                onPressed: () => _showGroupMenu(context, ref, visibleGroups),
               ),
           ],
         ),
@@ -1603,7 +1780,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   ///   宽屏下封面固定宽居中，窄屏下铺满列宽；
   /// - 单格高 = 封面高（按当前封面比例）+ 书名区 + 标签行。
   ({int columns, double aspectRatio, double coverWidth, double cellHeight})
-      _gridMetrics(
+  _gridMetrics(
     BuildContext context, {
     required BookshelfSettings settings,
     required List<Book> books,
@@ -1612,8 +1789,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }) {
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final columns =
-        math.max(1, settings.gridColumnsFor(isLandscape: isLandscape));
+    final columns = math.max(
+      1,
+      settings.gridColumnsFor(isLandscape: isLandscape),
+    );
     const padding = 8.0;
     const spacing = 8.0;
     final availableWidth = math.max(0.0, viewportWidth - padding * 2);
@@ -1626,8 +1805,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       cellWidth,
     );
     final coverRatio = _shelfCoverRatio(books);
-    final coverHeight =
-        coverWidth / (coverRatio <= 0 ? (5 / 7) : coverRatio);
+    final coverHeight = coverWidth / (coverRatio <= 0 ? (5 / 7) : coverRatio);
     final titleHeight = settings.bookshelfGridLayout == 0
         ? BookGridItem.titleAreaHeightFor(
             context,
@@ -1661,9 +1839,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   ) {
     // [设置批6a-1] 标签行按「当前网格内是否有任一本书带标签」预留高度：
     // 无标签时不改变既有 cell 比例（封面 5:7 不被挤压）
-    final hasTagRow = settings.bookshelfShowTag &&
+    final hasTagRow =
+        settings.bookshelfShowTag &&
         settings.bookshelfGridLayout != 2 &&
-        books.any((b) => state.displayTagsOf(b, showTag: settings.bookshelfShowTag).isNotEmpty);
+        books.any(
+          (b) => state
+              .displayTagsOf(b, showTag: settings.bookshelfShowTag)
+              .isNotEmpty,
+        );
     final metrics = _gridMetrics(
       context,
       settings: settings,
@@ -1741,22 +1924,32 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       itemBuilder: (context, index) {
         final book = shelfBooks[index];
         // [UI_SYNC_REFACTOR T3] 批量模式点击 = 切换选中
-        final batch = ref.watch(bookshelfNotifierProvider
-            .select((s) => s.isBatchMode));
+        final batch = ref.watch(
+          bookshelfNotifierProvider.select((s) => s.isBatchMode),
+        );
         final Widget child;
         if (batch) {
-          final selected = ref.watch(bookshelfNotifierProvider
-              .select((s) => s.selectedUrls.contains(book.bookUrl)));
+          final selected = ref.watch(
+            bookshelfNotifierProvider.select(
+              (s) => s.selectedUrls.contains(book.bookUrl),
+            ),
+          );
           child = _buildBatchListItem(
-              context, ref, state, settings, book, selected);
+            context,
+            ref,
+            state,
+            settings,
+            book,
+            selected,
+          );
         } else {
           child = BookListItem(
             book: book,
             settings: settings,
-            tags:
-                state.displayTagsOf(book, showTag: settings.bookshelfShowTag),
+            tags: state.displayTagsOf(book, showTag: settings.bookshelfShowTag),
             typeLabel: _bookTypeLabel(settings, book),
-            onTap: () => _openBook(context, ref, book),
+            locked: _isBookLocked(ref, state, book),
+            onTap: () => _onBookTap(context, ref, state, book),
             // [审查 P1-2] 手动排序时长按用于拖拽，不再打开书籍信息；
             // 信息入口仍可通过点击封面进入详情页后长按/菜单访问。
             onLongPress: null,
@@ -1784,13 +1977,22 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     bool reserveTagRow,
   ) {
     // [UI_SYNC_REFACTOR T3] 批量模式点击 = 切换选中
-    final batch = ref.watch(bookshelfNotifierProvider
-        .select((s) => s.isBatchMode));
+    final batch = ref.watch(
+      bookshelfNotifierProvider.select((s) => s.isBatchMode),
+    );
     if (batch) {
       return _buildBatchGridItem(
-          context, ref, settings, book, tags, reserveTagRow);
+        context,
+        ref,
+        state,
+        settings,
+        book,
+        tags,
+        reserveTagRow,
+      );
     }
     // 稳定 ValueKey（bookUrl）避免数据变化时整网格重建；RepaintBoundary 隔离重绘区域
+    final locked = _isBookLocked(ref, state, book);
     final item = BookGridItem(
       key: ValueKey(book.bookUrl),
       title: book.name,
@@ -1804,9 +2006,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       titleCenter: settings.bookshelfTitleCenter,
       titleMaxLines: settings.bookshelfTitleMaxLines,
       coverShadow: settings.bookshelfCoverShadow,
-      unreadNum:
-          settings.showUnread ? unreadChapterNum(book) : 0,
-      showNewBadge: settings.showUnread &&
+      unreadNum: settings.showUnread ? unreadChapterNum(book) : 0,
+      showNewBadge:
+          settings.showUnread &&
           settings.showUnreadNew &&
           book.lastCheckCount > 0,
       typeLabel: _bookTypeLabel(settings, book),
@@ -1816,7 +2018,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // Hero 封面过渡（书架↔详情，key=book url）
       // [LAYOUT_MOTION_AUDIT M1] tag 统一 book-cover:（HapeLee 同义键）
       heroTag: 'book-cover:${book.bookUrl}',
-      onTap: () => _openBook(context, ref, book),
+      locked: locked,
+      onTap: () => _onBookTap(context, ref, state, book),
       // 封面长按：打开书籍信息页（对齐安卓原版；未读/进度可达入口）
       onCoverLongPress: () => _openBookInfo(context, book),
       // 书名区长按：与封面一致直达书籍信息（对齐原版 U1）
@@ -1846,8 +2049,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   ) {
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final configuredColumns =
-        math.max(1, settings.listColumnsFor(isLandscape: isLandscape));
+    final configuredColumns = math.max(
+      1,
+      settings.listColumnsFor(isLandscape: isLandscape),
+    );
     // [审查 P1-1] 入口按最小可读 cell 宽（150dp）夹取实际列数：
     // 360/400dp 屏配置 3–5 列会收敛为 2 列，避免未读角标/摘要行横向溢出。
     final columns = math.min(
@@ -1859,13 +2064,23 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         itemCount: books.length,
         itemBuilder: (context, index) {
           final book = books[index];
-          final batch = ref.watch(bookshelfNotifierProvider
-              .select((s) => s.isBatchMode));
+          final batch = ref.watch(
+            bookshelfNotifierProvider.select((s) => s.isBatchMode),
+          );
           if (batch) {
-            final selected = ref.watch(bookshelfNotifierProvider
-                .select((s) => s.selectedUrls.contains(book.bookUrl)));
+            final selected = ref.watch(
+              bookshelfNotifierProvider.select(
+                (s) => s.selectedUrls.contains(book.bookUrl),
+              ),
+            );
             return _buildBatchListItem(
-                context, ref, state, settings, book, selected);
+              context,
+              ref,
+              state,
+              settings,
+              book,
+              selected,
+            );
           }
           return BookListItem(
             key: ValueKey(book.bookUrl),
@@ -1873,14 +2088,22 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             settings: settings,
             tags: state.displayTagsOf(book, showTag: settings.bookshelfShowTag),
             typeLabel: _bookTypeLabel(settings, book),
-            onTap: () => _openBook(context, ref, book),
+            locked: _isBookLocked(ref, state, book),
+            onTap: () => _onBookTap(context, ref, state, book),
             onLongPress: () => _openBookInfo(context, book),
           );
         },
       );
     }
     return _buildMultiColumnListSliver(
-        context, ref, state, settings, books, viewportWidth, columns);
+      context,
+      ref,
+      state,
+      settings,
+      books,
+      viewportWidth,
+      columns,
+    );
   }
 
   /// 多列列表（设置批6a-1：列表列数 1–5，SliverGrid 承载列表行）
@@ -1905,16 +2128,23 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       1.0,
       (availableWidth - spacing * (columns - 1)) / columns,
     );
-    final coverWidth =
-        math.min(settings.bookshelfListCoverWidth.toDouble(), cellWidth * 0.42);
+    final coverWidth = math.min(
+      settings.bookshelfListCoverWidth.toDouble(),
+      cellWidth * 0.42,
+    );
     final coverHeight = BookListItem.coverHeightFor(coverWidth);
     final scaler = MediaQuery.textScalerOf(context);
     final compact = settings.bookshelfLayoutCompact;
     final showMore = settings.showBookIntro && !compact;
-    final hasTags = !compact &&
+    final hasTags =
+        !compact &&
         settings.showBookIntro &&
         settings.bookshelfShowTag &&
-        books.any((b) => state.displayTagsOf(b, showTag: settings.bookshelfShowTag).isNotEmpty);
+        books.any(
+          (b) => state
+              .displayTagsOf(b, showTag: settings.bookshelfShowTag)
+              .isNotEmpty,
+        );
     final introLines = settings.bookshelfIntroMaxLines == 0
         ? 3
         : math.min(settings.bookshelfIntroMaxLines, 3);
@@ -1923,25 +2153,28 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final authorHeight = math.max(17.0, scaler.scale(13) * 1.3);
     final descHeight =
         (!compact && books.any((b) => (b.durChapterTitle ?? '').isNotEmpty))
-            ? authorHeight
-            : 0.0;
+        ? authorHeight
+        : 0.0;
     final tagsHeight = hasTags
         ? BookDisplayTagsRow.heightFor(context, minHeight: 20)
         : 0.0;
     final introHeight = showMore && settings.bookshelfShowIntro
         ? scaler.scale(12) * 1.35 * introLines + 4
         : 0.0;
-    final latestHeight = showMore &&
+    final latestHeight =
+        showMore &&
             settings.bookshelfShowLatestChapter &&
             books.any((b) => (b.latestChapterTitle ?? '').isNotEmpty)
         ? authorHeight
         : 0.0;
-    final progressHeight =
-        books.any((b) => bookReadProgress(b) != null) ? 6.0 : 0.0;
+    final progressHeight = books.any((b) => bookReadProgress(b) != null)
+        ? 6.0
+        : 0.0;
     // 内容列高 + 行上下 12×2 内边距 + 0.5 分隔线 + 文字行高安全余量
     // （固定格高无法按真实排版回流；实测 1.3 倍字号下 Text 行距比估算
     // 多约 11dp，按 textScaler 补 14dp 余量，1.6 倍字号同样不裁切）
-    final contentHeight = titleHeight +
+    final contentHeight =
+        titleHeight +
         authorHeight +
         descHeight +
         tagsHeight +
@@ -1965,14 +2198,24 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         itemCount: books.length,
         itemBuilder: (context, index) {
           final book = books[index];
-          final batch = ref.watch(bookshelfNotifierProvider
-              .select((s) => s.isBatchMode));
+          final batch = ref.watch(
+            bookshelfNotifierProvider.select((s) => s.isBatchMode),
+          );
           if (batch) {
-            final selected = ref.watch(bookshelfNotifierProvider
-                .select((s) => s.selectedUrls.contains(book.bookUrl)));
-            return _buildBatchListItem(context, ref, state, settings, book,
-                selected,
-                maxCoverWidth: coverWidth);
+            final selected = ref.watch(
+              bookshelfNotifierProvider.select(
+                (s) => s.selectedUrls.contains(book.bookUrl),
+              ),
+            );
+            return _buildBatchListItem(
+              context,
+              ref,
+              state,
+              settings,
+              book,
+              selected,
+              maxCoverWidth: coverWidth,
+            );
           }
           return BookListItem(
             key: ValueKey(book.bookUrl),
@@ -1982,7 +2225,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             typeLabel: _bookTypeLabel(settings, book),
             maxCoverWidth: coverWidth,
             introMaxLinesOverride: introLines,
-            onTap: () => _openBook(context, ref, book),
+            locked: _isBookLocked(ref, state, book),
+            onTap: () => _onBookTap(context, ref, state, book),
             onLongPress: () => _openBookInfo(context, book),
           );
         },
@@ -1992,11 +2236,36 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   // ===== 操作 =====
 
+  /// [批9c] 书籍此刻是否处于脱敏态
+  bool _isBookLocked(WidgetRef ref, BookshelfState state, Book book) =>
+      state.isBookContentLocked(book, ref.watch(privacyNotifierProvider));
+
+  /// [批9c] 点击书籍：锁定态先请求解锁，成功后再走既有 openBook 分流；
+  /// 取消则停在原地（长按入口仍直达详情页，由详情页自己的锁定态兜底）。
+  Future<void> _onBookTap(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+    Book book,
+  ) async {
+    if (!_isBookLocked(ref, state, book)) {
+      await _openBook(context, ref, book);
+      return;
+    }
+    final unlocked = await showPrivacyUnlockDialog(
+      context,
+      ref,
+      bookUrl: book.bookUrl,
+      title: '验证后打开',
+    );
+    if (!unlocked || !context.mounted) return;
+    await _openBook(context, ref, book);
+  }
+
   /// 对标原版 startActivityForBook：未读进书详页 + 立即自动开读（A4 对齐 B）；
   /// 已读按 BookType 分流到 video / audio / reader-comic / reader
   /// （勿固定文本阅读器）。— Reasonix + UI
-  Future<void> _openBook(
-      BuildContext context, WidgetRef ref, Book book) async {
+  Future<void> _openBook(BuildContext context, WidgetRef ref, Book book) async {
     if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
       // [A4 对齐 B | 2026-09-21 裁决] 未读书单击 = 详情页 + 立即自动开读
       // （等价重构版 BookInfoPage(openReaderImmediately: true)）：详情页
@@ -2035,8 +2304,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       } catch (_) {}
     }
     if (!context.mounted) return;
-    final bookToOpen =
-        typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
+    final bookToOpen = typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
     // 批9a 项4：分流前刷新漫画浏览开关镜像（showMangaUi=false 时在线
     // 图片书回落文本阅读器）
     await BookOpenUtils.refreshShowMangaUi();
@@ -2074,9 +2342,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 「刚读完的书」进度行/进度条随返回同步。不做整页重建、不新增 UI；
   /// 书若在阅读期间被移除，notifier 内部回退全量 refresh 保持一致。
   Future<void> _refreshBookOnReturn(
-      BuildContext context, WidgetRef ref, Book book) async {
+    BuildContext context,
+    WidgetRef ref,
+    Book book,
+  ) async {
     if (!context.mounted) return;
-    await ref.read(bookshelfNotifierProvider.notifier).refreshBook(book.bookUrl);
+    await ref
+        .read(bookshelfNotifierProvider.notifier)
+        .refreshBook(book.bookUrl);
   }
 
   /// 长按封面/书名直接打开书籍信息页（对齐安卓原版行为）
@@ -2120,7 +2393,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     //   不属于整本导入白名单。
     final result = Platform.isIOS
         ? await FilePicker.platform.pickFiles(
-            type: FileType.any, allowMultiple: true)
+            type: FileType.any,
+            allowMultiple: true,
+          )
         : await FilePicker.platform.pickFiles(
             type: FileType.custom,
             allowedExtensions: const [
@@ -2210,7 +2485,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           .toSet();
       if (pickedExts.difference(importable).isNotEmpty) {
         messages.add(
-            'iOS 选择器显示全部文件，仅电子书格式（epub/txt/mobi/azw3/azw/pdf/umd/cbz）可导入');
+          'iOS 选择器显示全部文件，仅电子书格式（epub/txt/mobi/azw3/azw/pdf/umd/cbz）可导入',
+        );
       }
     }
     if (messages.isEmpty) return;
@@ -2238,7 +2514,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   ) {
     final groups = state.groupedBooksOf(books);
     // 手动排序在分组展示下无重排入口，统一走列表（网格模式主列表已提示）
-    final isGridMode = settings.bookshelfSort != BookshelfSortMode.manual &&
+    final isGridMode =
+        settings.bookshelfSort != BookshelfSortMode.manual &&
         settings.layoutModeFor(
               isLandscape:
                   MediaQuery.orientationOf(context) == Orientation.landscape,
@@ -2267,9 +2544,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 const SizedBox(width: 8),
                 Text(
                   entry.key,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -2285,11 +2562,27 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       );
       // 分组内容
       if (isGridMode) {
-        slivers.add(_buildGridSliver(
-            context, ref, state, settings, sorted, viewportWidth));
+        slivers.add(
+          _buildGridSliver(
+            context,
+            ref,
+            state,
+            settings,
+            sorted,
+            viewportWidth,
+          ),
+        );
       } else {
-        slivers.add(_buildListSliver(
-            context, ref, state, settings, sorted, viewportWidth));
+        slivers.add(
+          _buildListSliver(
+            context,
+            ref,
+            state,
+            settings,
+            sorted,
+            viewportWidth,
+          ),
+        );
       }
     }
     return slivers;
@@ -2330,16 +2623,19 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'layout':
         // [设置批6a-1] 布局设置升级为完整配置 Sheet（分组/排序/布局/
         // 角标/其他五段，对齐参考版 BookshelfConfigSheet）
-        showBookshelfConfigSheet(
-          context,
-          viewportWidth: _lastViewportWidth,
-        );
+        showBookshelfConfigSheet(context, viewportWidth: _lastViewportWidth);
       case 'group_none':
-        ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.none);
+        ref
+            .read(bookshelfNotifierProvider.notifier)
+            .setGroupMode(GroupMode.none);
       case 'group_source':
-        ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.bySource);
+        ref
+            .read(bookshelfNotifierProvider.notifier)
+            .setGroupMode(GroupMode.bySource);
       case 'group_group':
-        ref.read(bookshelfNotifierProvider.notifier).setGroupMode(GroupMode.byGroup);
+        ref
+            .read(bookshelfNotifierProvider.notifier)
+            .setGroupMode(GroupMode.byGroup);
       case 'export_list':
         // [UI-fix v2.0.2 | 2026-08-06] 导出书单对齐 Kotlin exportBookshelf（JSON 数组文件） — Qoder
         _exportBookshelf();
@@ -2366,17 +2662,19 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   Future<void> _exportBookshelf() async {
     final books = ref.read(bookshelfNotifierProvider).books;
     if (books.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('书架为空，无可导出的书单')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('书架为空，无可导出的书单')));
       return;
     }
     final data = books
-        .map((b) => {
-              'name': b.name,
-              'author': b.author,
-              'intro': _displayIntro(b),
-            })
+        .map(
+          (b) => {
+            'name': b.name,
+            'author': b.author,
+            'intro': _displayIntro(b),
+          },
+        )
         .toList();
     final json = const JsonEncoder.withIndent('  ').convert(data);
     final result = await showExportFileSheet(
@@ -2386,9 +2684,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       subject: '导出书单',
     );
     if (!mounted || result == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 
   /// 显示简介（对齐 Kotlin `Book.getDisplayIntro()`）：
@@ -2412,9 +2710,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
     var targets = books.where(BookType.canUpdateToc).toList();
     if (targets.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有需要更新的书籍')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('没有需要更新的书籍')));
       return;
     }
     // [设置批6a-1] 更新数量限制（0 = 不限制；超出部分截断并提示）
@@ -2471,13 +2769,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     progress.dispose();
     ref.read(bookshelfNotifierProvider.notifier).refresh();
     final skipped = totalTargets - targets.length;
-    final limitNote =
-        truncated ? '，限制 $limit 本（已跳过 $skipped 本）' : '';
+    final limitNote = truncated ? '，限制 $limit 本（已跳过 $skipped 本）' : '';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            '目录更新完成：成功 $ok/${targets.length} 本$limitNote'),
-      ),
+      SnackBar(content: Text('目录更新完成：成功 $ok/${targets.length} 本$limitNote')),
     );
   }
 
@@ -2503,9 +2797,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               const SizedBox(height: 12),
               TextField(
                 controller: nameCtrl,
-                decoration: const InputDecoration(
-                  hintText: '书名（可选，无法获取详情时兑底）',
-                ),
+                decoration: const InputDecoration(hintText: '书名（可选，无法获取详情时兑底）'),
               ),
             ],
           ),
@@ -2539,8 +2831,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   Future<void> _addBooksByUrl(List<String> urls, String fallbackName) async {
     final api = ref.read(bookApiProvider);
     final messenger = ScaffoldMessenger.of(context);
-    final existingUrls =
-        ref.read(bookshelfNotifierProvider).books.map((b) => b.bookUrl).toSet();
+    final existingUrls = ref
+        .read(bookshelfNotifierProvider)
+        .books
+        .map((b) => b.bookUrl)
+        .toSet();
     List<BookSource> sources;
     try {
       sources = await api.getEnabledBookSources();
@@ -2559,10 +2854,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         final source = _matchSource(sources, url);
         Book? book;
         if (source != null) {
-          final json = await api.webbookInfo(
-            jsonEncode(source.toJson()),
-            url,
-          );
+          final json = await api.webbookInfo(jsonEncode(source.toJson()), url);
           book = Book.fromJson(jsonDecode(json) as Map<String, dynamic>);
         }
         // 无匹配书源时按输入书名创建裸 WebBook 入库（任务要求；
@@ -2623,9 +2915,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             TextField(
               controller: ctrl,
               maxLines: 4,
-              decoration: const InputDecoration(
-                hintText: '输入书单 URL 或 JSON 数组',
-              ),
+              decoration: const InputDecoration(hintText: '输入书单 URL 或 JSON 数组'),
             ),
             Align(
               alignment: Alignment.centerLeft,
@@ -2635,10 +2925,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     type: FileType.custom,
                     allowedExtensions: const ['txt', 'json'],
                   );
-                  final path =
-                      picked == null || picked.files.isEmpty
-                          ? null
-                          : picked.files.first.path;
+                  final path = picked == null || picked.files.isEmpty
+                      ? null
+                      : picked.files.first.path;
                   if (path != null) {
                     try {
                       ctrl.text = await File(path).readAsString();
@@ -2681,9 +2970,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         content = (await api.httpGet(content)).trim();
       } catch (e) {
         if (mounted) {
-          messenger.showSnackBar(
-            SnackBar(content: Text('拉取书单失败: $e')),
-          );
+          messenger.showSnackBar(SnackBar(content: Text('拉取书单失败: $e')));
         }
         return;
       }
@@ -2751,13 +3038,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   Widget _buildBatchGridItem(
     BuildContext context,
     WidgetRef ref,
+    BookshelfState state,
     BookshelfSettings settings,
     Book book,
     List<String> tags,
     bool reserveTagRow,
   ) {
-    final selected = ref.watch(bookshelfNotifierProvider
-        .select((s) => s.selectedUrls.contains(book.bookUrl)));
+    final selected = ref.watch(
+      bookshelfNotifierProvider.select(
+        (s) => s.selectedUrls.contains(book.bookUrl),
+      ),
+    );
     final cs = Theme.of(context).colorScheme;
     return GestureDetector(
       onTap: () => ref
@@ -2768,8 +3059,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             ? BoxDecoration(
                 color: cs.secondaryContainer.withValues(alpha: 0.3),
                 // [设置批6a-1] 与封面 4dp 圆角同口径
-                borderRadius:
-                    BorderRadius.circular(BookGridItem.coverCornerRadius),
+                borderRadius: BorderRadius.circular(
+                  BookGridItem.coverCornerRadius,
+                ),
               )
             : null,
         child: Stack(
@@ -2777,16 +3069,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             Padding(
               padding: EdgeInsets.zero,
               child: ClipRRect(
-                borderRadius:
-                    BorderRadius.circular(BookGridItem.coverCornerRadius),
+                borderRadius: BorderRadius.circular(
+                  BookGridItem.coverCornerRadius,
+                ),
                 child: BookGridItem(
                   key: ValueKey(book.bookUrl),
                   title: book.name,
                   author: book.author,
                   coverUrl: book.customCoverUrl ?? book.coverUrl,
-                  unreadNum:
-                      settings.showUnread ? unreadChapterNum(book) : 0,
-                  showNewBadge: settings.showUnread &&
+                  unreadNum: settings.showUnread ? unreadChapterNum(book) : 0,
+                  showNewBadge:
+                      settings.showUnread &&
                       settings.showUnreadNew &&
                       book.lastCheckCount > 0,
                   typeLabel: _bookTypeLabel(settings, book),
@@ -2806,6 +3099,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                   titleCenter: settings.bookshelfTitleCenter,
                   titleMaxLines: settings.bookshelfTitleMaxLines,
                   coverShadow: settings.bookshelfCoverShadow,
+                  locked: state.isBookContentLocked(
+                    book,
+                    ref.watch(privacyNotifierProvider),
+                  ),
                 ),
               ),
             ),
@@ -2847,10 +3144,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final cs = Theme.of(context).colorScheme;
     // 选中态高亮由外层 Material 承载；卡片色需让位，避免遮盖选择态
     final itemSettings = selected
-        ? settings.copyWith(
-            bookshelfCardColor: 0,
-            bookshelfCardColorDark: 0,
-          )
+        ? settings.copyWith(bookshelfCardColor: 0, bookshelfCardColorDark: 0)
         : settings;
     final item = BookListItem(
       key: ValueKey(book.bookUrl),
@@ -2860,6 +3154,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       typeLabel: _bookTypeLabel(settings, book),
       maxCoverWidth: maxCoverWidth,
       introMaxLinesOverride: maxCoverWidth == null ? null : 3,
+      locked: state.isBookContentLocked(
+        book,
+        ref.watch(privacyNotifierProvider),
+      ),
       onTap: () => ref
           .read(bookshelfNotifierProvider.notifier)
           .toggleSelect(book.bookUrl),
@@ -2945,7 +3243,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 帧渲染中断），导致选择模式整屏灰白空白（台账 1-5 P0）。
   /// 现改为常规 Center 布局，不再依赖 Stack 定位。
   Widget _buildBatchSummaryCard(
-      BuildContext context, WidgetRef ref, BookshelfState state) {
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+  ) {
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
@@ -2970,10 +3271,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     '已选 ${state.selectedUrls.length} 本',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 Flexible(
@@ -2994,7 +3294,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// [UI_SYNC_REFACTOR T3] 底部批量工具条（对齐参考 SelectionBottomBar）
   Widget _buildBatchBottomBar(
-      BuildContext context, WidgetRef ref, BookshelfState state) {
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+  ) {
     final cs = Theme.of(context).colorScheme;
     final count = state.selectedUrls.length;
     if (count == 0) return const SizedBox.shrink();
@@ -3064,12 +3367,12 @@ class _CardMenuItem {
 /// _buildCardMenuPage。
 class _CardMenuRoute extends PageRouteBuilder<String> {
   _CardMenuRoute(Widget page)
-      : super(
-          opaque: false,
-          transitionDuration: const Duration(milliseconds: 200),
-          reverseTransitionDuration: const Duration(milliseconds: 150),
-          pageBuilder: (_, _, _) => page,
-        );
+    : super(
+        opaque: false,
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (_, _, _) => page,
+      );
 
   @override
   Widget buildTransitions(

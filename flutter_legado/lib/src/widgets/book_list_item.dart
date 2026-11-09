@@ -1,4 +1,4 @@
-﻿import 'dart:math' as math;
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -11,6 +11,7 @@ import '../utils/book_progress_utils.dart';
 import '../utils/time_utils.dart';
 import 'book_cover.dart';
 import 'book_display_tags_row.dart';
+import 'privacy/private_locked_cover.dart';
 
 /// 书架列表项（对齐参考版 `BookItem.kt` BookshelfListItem）
 ///
@@ -42,6 +43,10 @@ class BookListItem extends StatelessWidget {
   /// 多列列表时简介行数覆盖（固定 cell 高，避免 0 = 全部时溢出）
   final int? introMaxLinesOverride;
 
+  /// [批9c] 私密且未授权：只渲染模糊封面 + 锁标，不渲染书名/作者/章节/
+  /// 标签/简介/进度等任何真实文本
+  final bool locked;
+
   const BookListItem({
     super.key,
     required this.book,
@@ -50,6 +55,7 @@ class BookListItem extends StatelessWidget {
     this.typeLabel,
     this.maxCoverWidth,
     this.introMaxLinesOverride,
+    this.locked = false,
     this.onTap,
     this.onLongPress,
   });
@@ -66,7 +72,7 @@ class BookListItem extends StatelessWidget {
     // [设备回归] 全局阴影在列表卡片外层绘制（内层 BookCover 阴影被 Stack 裁剪）
     final effectiveCoverShadow =
         settings.bookshelfCoverShadow ||
-            coverSettingsListenable.value.showShadow;
+        coverSettingsListenable.value.showShadow;
 
     final unread = settings.showUnread ? unreadChapterNum(book) : 0;
     final isNew = settings.showUnreadNew && book.lastCheckCount > 0;
@@ -77,20 +83,81 @@ class BookListItem extends StatelessWidget {
     // 收紧角标，避免窄列 + 大字号 + 批量勾选时横向溢出。
     final dense = maxCoverWidth != null;
 
-    final configuredCoverWidth =
-        settings.bookshelfListCoverWidth.toDouble();
+    final configuredCoverWidth = settings.bookshelfListCoverWidth.toDouble();
     final coverWidth = maxCoverWidth == null
         ? configuredCoverWidth
         : math.min(configuredCoverWidth, maxCoverWidth!);
     final coverHeight = coverHeightFor(coverWidth);
 
+    // [批9c] 锁定行：不渲染任何文本（书名/作者/章节/标签/简介/进度），
+    // 只保留模糊封面 + 锁标；高度与普通行一致，滚动不跳动。
+    if (locked) {
+      return Material(
+        color: cardColorValue == 0 ? Colors.transparent : Color(cardColorValue),
+        borderRadius: cardColorValue == 0 ? null : BorderRadius.circular(8),
+        clipBehavior: cardColorValue == 0 ? Clip.none : Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              container: true,
+              label: '已隐藏',
+              child: ExcludeSemantics(
+                child: InkWell(
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  child: Padding(
+                    padding: dense
+                        ? const EdgeInsets.fromLTRB(4, 8, 4, 8)
+                        : const EdgeInsets.only(
+                            left: 8,
+                            right: 16,
+                            top: 12,
+                            bottom: 12,
+                          ),
+                    child: Row(
+                      crossAxisAlignment: settings.bookshelfListCoverCenter
+                          ? CrossAxisAlignment.center
+                          : CrossAxisAlignment.start,
+                      children: [
+                        PrivateLockedCover(
+                          width: coverWidth,
+                          height: coverHeight,
+                          coverUrl: book.customCoverUrl ?? book.coverUrl,
+                          bookName: book.name,
+                          bookAuthor: book.author,
+                          sourceOrigin: book.origin,
+                          heroTag: 'book-cover:${book.bookUrl}',
+                          borderRadius: 4,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(child: SizedBox(height: coverHeight)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (settings.bookshelfShowDivider)
+              Divider(
+                height: 0.5,
+                thickness: 0.5,
+                indent: 16,
+                endIndent: 16,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+              ),
+          ],
+        ),
+      );
+    }
+
     final intro = settings.showBookIntro && settings.bookshelfShowIntro
         ? plainBookIntro(_displayIntro(book))
         : '';
     final showIntro = showDetails && intro.isNotEmpty;
-    final introBelow =
-        showIntro && settings.bookshelfListIntroBelowContent;
-    final introMaxLines = introMaxLinesOverride ??
+    final introBelow = showIntro && settings.bookshelfListIntroBelowContent;
+    final introMaxLines =
+        introMaxLinesOverride ??
         (settings.bookshelfIntroMaxLines == 0
             ? null
             : settings.bookshelfIntroMaxLines);
@@ -125,11 +192,7 @@ class BookListItem extends StatelessWidget {
               ),
             ),
             if (unread > 0)
-              _UnreadBadge(
-                count: unread,
-                showUpdate: isNew,
-                dense: dense,
-              ),
+              _UnreadBadge(count: unread, showUpdate: isNew, dense: dense),
           ],
         ),
         // 作者（精简模式附加未读数，对齐参考版 author_read）
@@ -178,7 +241,8 @@ class BookListItem extends StatelessWidget {
             text: book.latestChapterTitle!,
             style: subtitleStyle,
             dense: dense,
-            trailing: settings.showLastUpdateTime &&
+            trailing:
+                settings.showLastUpdateTime &&
                     !BookType.isLocalBook(book) &&
                     book.latestChapterTime > 0
                 ? Text(
@@ -190,15 +254,15 @@ class BookListItem extends StatelessWidget {
                     ),
                   )
                 : progress != null
-                    ? Text(
-                        '${(progress * 100).round()}%',
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      )
-                    : null,
+                ? Text(
+                    '${(progress * 100).round()}%',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                : null,
           ),
         // 阅读进度条
         if (progress != null) ...[
@@ -208,8 +272,7 @@ class BookListItem extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 2,
-              backgroundColor:
-                  colorScheme.primary.withValues(alpha: 0.2),
+              backgroundColor: colorScheme.primary.withValues(alpha: 0.2),
               valueColor: AlwaysStoppedAnimation(colorScheme.primary),
             ),
           ),
@@ -218,14 +281,10 @@ class BookListItem extends StatelessWidget {
     );
 
     return Material(
-      color: cardColorValue == 0
-          ? Colors.transparent
-          : Color(cardColorValue),
+      color: cardColorValue == 0 ? Colors.transparent : Color(cardColorValue),
       // 非 0 卡色时给列表卡 8dp 圆角并裁剪，避免直角色块；0 保持透明
-      borderRadius:
-          cardColorValue == 0 ? null : BorderRadius.circular(8),
-      clipBehavior:
-          cardColorValue == 0 ? Clip.none : Clip.antiAlias,
+      borderRadius: cardColorValue == 0 ? null : BorderRadius.circular(8),
+      clipBehavior: cardColorValue == 0 ? Clip.none : Clip.antiAlias,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -255,8 +314,9 @@ class BookListItem extends StatelessWidget {
                           boxShadow: effectiveCoverShadow
                               ? [
                                   BoxShadow(
-                                    color: colorScheme.shadow
-                                        .withValues(alpha: 0.18),
+                                    color: colorScheme.shadow.withValues(
+                                      alpha: 0.18,
+                                    ),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
                                   ),
@@ -287,7 +347,9 @@ class BookListItem extends StatelessWidget {
                                 bottom: 4,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 4, vertical: 1),
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: const Color(0x99000000),
                                     borderRadius: BorderRadius.circular(4),
@@ -391,10 +453,7 @@ class _SummaryRow extends StatelessWidget {
             const SizedBox(width: 6),
             // 窄列/大字号下尾随文本（进度百分比/相对时间）不得撑破 Row：
             // 允许收缩并按 ellipsis 截断，主文本仍优先占用剩余宽度。
-            Flexible(
-              fit: FlexFit.loose,
-              child: trailing!,
-            ),
+            Flexible(fit: FlexFit.loose, child: trailing!),
           ],
         ],
       ),
@@ -419,8 +478,7 @@ class _UnreadBadge extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       margin: EdgeInsets.all(dense ? 2 : 5),
-      padding: EdgeInsets.symmetric(
-          horizontal: dense ? 3 : 5, vertical: 1),
+      padding: EdgeInsets.symmetric(horizontal: dense ? 3 : 5, vertical: 1),
       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
       decoration: BoxDecoration(
         color: colorScheme.error,

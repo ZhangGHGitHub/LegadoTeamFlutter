@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/providers.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/confirm_dialog.dart';
@@ -76,7 +77,9 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       case _GroupSort.name:
         list.sort((a, b) => a.groupName.compareTo(b.groupName));
       case _GroupSort.bookCount:
-        list.sort((a, b) => _bookCountOf(b.groupId).compareTo(_bookCountOf(a.groupId)));
+        list.sort(
+          (a, b) => _bookCountOf(b.groupId).compareTo(_bookCountOf(a.groupId)),
+        );
     }
     return list;
   }
@@ -87,42 +90,67 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     final isEdit = group != null;
     final nameController = TextEditingController(text: group?.groupName ?? '');
     final coverController = TextEditingController(text: group?.cover ?? '');
+    // [批9c] 私密分组开关（对齐参考版 GroupEditSheet）：
+    // 新建/普通分组可设；关闭已打开的开关需二次确认。
+    var isPrivate = group?.isPrivate ?? false;
+    final canSetPrivate = !isEdit || group.groupId > 0;
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(isEdit ? '编辑分组' : '新建分组'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: '分组名称',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(isEdit ? '编辑分组' : '新建分组'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: '分组名称'),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: coverController,
-                decoration: const InputDecoration(
-                  labelText: '封面图片 URL（可选）',
+                const SizedBox(height: 12),
+                TextField(
+                  controller: coverController,
+                  decoration: const InputDecoration(labelText: '封面图片 URL（可选）'),
                 ),
-              ),
-            ],
+                if (canSetPrivate) ...[
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    key: const ValueKey('group-private-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('设为隐私分组'),
+                    subtitle: const Text('组内书籍在公开书架中隐藏，进入分组需验证'),
+                    value: isPrivate,
+                    onChanged: (checked) async {
+                      if (!checked && group?.isPrivate == true) {
+                        final ok = await showConfirmDialog(
+                          ctx,
+                          title: '关闭私密分组',
+                          content: '关闭后，本组书籍可能在公开书架中显示',
+                          confirmText: AppStrings.confirm,
+                        );
+                        if (!ok) return;
+                      }
+                      setDialogState(() => isPrivate = checked);
+                    },
+                  ),
+                ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              key: const ValueKey('group-private-save'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(AppStrings.save),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(AppStrings.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(AppStrings.save),
-          ),
-        ],
       ),
     );
 
@@ -134,20 +162,40 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     final api = ref.read(bookApiProvider);
     try {
       if (isEdit) {
-        await api.updateBookGroup(group.copyWith(
-          groupName: name,
-          cover: coverController.text.trim().isEmpty ? null : coverController.text.trim(),
-        ));
+        await api.updateBookGroup(
+          group.copyWith(
+            groupName: name,
+            cover: coverController.text.trim().isEmpty
+                ? null
+                : coverController.text.trim(),
+          ),
+        );
+        // [批9c] updateBookGroup 不带 isPrivate（Rust 保留旧值），
+        // 私密位单列落库；返回 false 说明分组行不存在，按失败处理。
+        final hit = await api.setBookGroupPrivate(group.groupId, isPrivate);
+        if (!hit) throw StateError('分组不存在，私密状态未保存');
       } else {
         final nextOrder = _groups.isEmpty
             ? 0
             : _groups.map((g) => g.order).reduce((a, b) => a > b ? a : b) + 1;
-        await api.addBookGroup(BookGroup(
-          groupName: name,
-          cover: coverController.text.trim().isEmpty ? null : coverController.text.trim(),
-          order: nextOrder,
-        ));
+        final created = await api.addBookGroup(
+          BookGroup(
+            groupName: name,
+            cover: coverController.text.trim().isEmpty
+                ? null
+                : coverController.text.trim(),
+            order: nextOrder,
+          ),
+        );
+        // [批9c] 新建分组固定非私密（Rust 语义），拿到 id 后再落私密位
+        if (isPrivate) {
+          final hit = await api.setBookGroupPrivate(created.groupId, true);
+          if (!hit) throw StateError('分组已创建，但私密状态保存失败');
+        }
       }
+      // [批9c] 私密标记变更 → 书架派生过滤/锁定页同步
+      await ref.read(privacyContentProvider.notifier).refresh();
+      await ref.read(bookshelfNotifierProvider.notifier).refresh();
       await _loadGroups();
     } catch (e) {
       _showError('保存失败：$e');
@@ -252,7 +300,9 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       child: Row(
         children: [
           Icon(
-            _sort == value ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
+            _sort == value
+                ? Symbols.radio_button_checked_rounded
+                : Symbols.radio_button_unchecked_rounded,
             size: 20,
           ),
           const SizedBox(width: 8),
@@ -269,7 +319,10 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
         icon: Symbols.error_rounded,
         title: AppStrings.error,
         subtitle: _error,
-        action: FilledButton(onPressed: _loadGroups, child: Text(AppStrings.retry)),
+        action: FilledButton(
+          onPressed: _loadGroups,
+          child: Text(AppStrings.retry),
+        ),
       );
     }
     if (_groups.isEmpty) {
@@ -293,14 +346,16 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
           list.insert(newIndex, item);
           _persistOrder(list);
         },
-        itemBuilder: (context, index) => _buildGroupTile(groups[index], draggable: true),
+        itemBuilder: (context, index) =>
+            _buildGroupTile(groups[index], draggable: true),
       );
     }
     return ListView.builder(
       // [LAYOUT_PLAN P3] 页面水平边距16dp
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
       itemCount: groups.length,
-      itemBuilder: (context, index) => _buildGroupTile(groups[index], draggable: false),
+      itemBuilder: (context, index) =>
+          _buildGroupTile(groups[index], draggable: false),
     );
   }
 
@@ -366,8 +421,12 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                 PopupMenuItem(value: 'edit', child: Text(AppStrings.edit)),
                 PopupMenuItem(
                   value: 'delete',
-                  child: Text(AppStrings.delete,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  child: Text(
+                    AppStrings.delete,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -417,8 +476,16 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                 return CheckboxListTile(
                   dense: true,
                   value: checked,
-                  title: Text(book.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(book.author, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  title: Text(
+                    book.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    book.author,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   onChanged: (on) {
                     setDialogState(() {
                       if (on == true) {
@@ -468,9 +535,9 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       }
       await ref.read(bookshelfNotifierProvider.notifier).refresh();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已更新「${group.groupName}」的书籍')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已更新「${group.groupName}」的书籍')));
       }
     } catch (e) {
       _showError('分配失败：$e');

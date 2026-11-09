@@ -10,10 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
 import '../models/models.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/platform_bridge_service.dart';
+import '../widgets/privacy/privacy_unlock_dialog.dart';
 
 /// 按 BookType 位标记打开阅读器（对齐原版 `startActivityForBook` /
 /// `BookInfoActivity.startReadActivity`）。
@@ -25,15 +28,20 @@ class BookOpenUtils {
 
   /// 文件类书源可整本导入的扩展名（对齐原版 AppPattern.bookFileRegex：
   /// txt/epub/umd/pdf/mobi/azw3/azw）
-  static final RegExp _bookFileRegex =
-      RegExp(r'\.(txt|epub|umd|pdf|mobi|azw3|azw)$', caseSensitive: false);
+  static final RegExp _bookFileRegex = RegExp(
+    r'\.(txt|epub|umd|pdf|mobi|azw3|azw)$',
+    caseSensitive: false,
+  );
 
   /// 压缩包扩展名（对齐原版 AppPattern.archiveFileRegex：zip/rar/7z）
-  static final RegExp _archiveFileRegex =
-      RegExp(r'\.(zip|rar|7z)$', caseSensitive: false);
+  static final RegExp _archiveFileRegex = RegExp(
+    r'\.(zip|rar|7z)$',
+    caseSensitive: false,
+  );
 
   /// 媒体/文本类型位掩码（不含 local / notShelf）
-  static const int typeMask = BookType.video |
+  static const int typeMask =
+      BookType.video |
       BookType.text |
       BookType.audio |
       BookType.image |
@@ -72,8 +80,7 @@ class BookOpenUtils {
   static Future<void> refreshShowMangaUi() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      showMangaUi =
-          prefs.getBool(PrefKeys.showMangaUi) ?? true;
+      showMangaUi = prefs.getBool(PrefKeys.showMangaUi) ?? true;
     } catch (_) {
       // prefs 读取失败保持当前镜像值（默认 true）
     }
@@ -87,9 +94,7 @@ class BookOpenUtils {
   /// 仅在线图片书受控（关闭 → 文本阅读器，正文为 <img> 时由文本阅读器
   /// 的 isImageDominantContent 分支兜底出图）。
   static bool shouldOpenMangaUi(int typeBits, {required bool isLocalBook}) =>
-      !isLocalBook &&
-      (typeBits & BookType.image) != 0 &&
-      showMangaUi;
+      !isLocalBook && (typeBits & BookType.image) != 0 && showMangaUi;
 
   /// 按类型位选择路由名（video→/video、audio→/audio、image→/reader-comic、
   /// 其余→/reader）
@@ -175,11 +180,11 @@ class BookOpenUtils {
       return true;
     }
 
-    final isVideoGroup = group.contains('影视') ||
-        group.contains('视频源') ||
-        group.contains('视频');
+    final isVideoGroup =
+        group.contains('影视') || group.contains('视频源') || group.contains('视频');
     // 源名/域名常见 MacCMS 资源站（红牛/非凡/量子/U酷等）
-    final isVideoName = (name.contains('资源') &&
+    final isVideoName =
+        (name.contains('资源') &&
             (name.contains('红牛') ||
                 name.contains('非凡') ||
                 name.contains('量子') ||
@@ -193,10 +198,14 @@ class BookOpenUtils {
         srcUrl.contains('ffzy') ||
         srcUrl.contains('lzizy') ||
         srcUrl.contains('zuidazy');
-    final playExt = RegExp(r'\.(m3u8|mp4|flv)', caseSensitive: false)
-        .hasMatch('$content\n$sourceRegex');
-    final hasStreamToken = RegExp(r'm3u8|mp4|flv|m3u', caseSensitive: false)
-        .hasMatch('$content\n$sourceRegex\n$tocList');
+    final playExt = RegExp(
+      r'\.(m3u8|mp4|flv)',
+      caseSensitive: false,
+    ).hasMatch('$content\n$sourceRegex');
+    final hasStreamToken = RegExp(
+      r'm3u8|mp4|flv|m3u',
+      caseSensitive: false,
+    ).hasMatch('$content\n$sourceRegex\n$tocList');
     // 非凡等：正文直接把章节 URL（m3u8）当作播放地址
     final returnsBaseUrl = RegExp(
       r'result\s*=\s*baseUrl',
@@ -242,8 +251,7 @@ class BookOpenUtils {
     if (source == null) return false;
     // 视频源（含 type=0 MacCMS 启发式）绝不以抽图规则升漫画
     if (looksLikeVideoSource(source)) return false;
-    final style =
-        (source.ruleContent?.imageStyle ?? '').trim().toUpperCase();
+    final style = (source.ruleContent?.imageStyle ?? '').trim().toUpperCase();
     // TEXT 表示按文字行内小图，仍走文本阅读器
     if (style == 'TEXT') return false;
     if (style.isNotEmpty && style != 'FULL' && style != 'SINGLE') {
@@ -276,8 +284,7 @@ class BookOpenUtils {
       }
       final srcType = source.bookSourceType;
       // 显式音频/图片/文件/视频：书源声明优先于书籍旧位
-      if (srcType >= BookSourceType.audio &&
-          srcType <= BookSourceType.video) {
+      if (srcType >= BookSourceType.audio && srcType <= BookSourceType.video) {
         return typeBitsForSource(srcType);
       }
       final base = existing == 0 ? BookType.text : existing;
@@ -302,6 +309,44 @@ class BookOpenUtils {
         return book.bookUrl;
       default:
         return null;
+    }
+  }
+
+  /// [批9c] 文本阅读器打开前的私密闸门
+  ///
+  /// 返回 true = 允许继续（非私密 / 未启用 / 已授权 / 验证通过）；
+  /// false = 用户取消或上下文已失效，调用方必须终止打开。
+  /// 漫画/音频/视频本批不接入（对齐参考版：仅文本阅读器有 gate）。
+  ///
+  /// 先等策略与标记就绪再判定，避免首帧按默认策略放行；加载失败按
+  /// 「非私密」处理（fail-open，不误锁全库）。
+  static Future<bool> ensurePrivateAccess(
+    BuildContext context,
+    WidgetRef ref,
+    Book book,
+  ) async {
+    try {
+      await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+      final content = await ref
+          .read(privacyContentProvider.notifier)
+          .ensureLoaded();
+      final privacy = ref.read(privacyNotifierProvider);
+      if (!content.loaded || !privacy.enabled) return true;
+      final facts = content.booksByUrl[book.bookUrl] ?? book;
+      if (!content.isBookPrivate(facts)) return true;
+      if (!privacy.verifyOnOpenBook) return true;
+      if (privacy.isBookTargetGranted(facts)) return true;
+      if (!context.mounted) return false;
+      return showPrivacyUnlockDialog(
+        context,
+        ref,
+        bookUrl: book.bookUrl,
+        title: '验证后阅读',
+      );
+    } catch (e) {
+      // 判定链异常不得把用户挡在书外（与内容判定 fail-open 同口径）
+      debugPrint('[开书] 私密闸门判定失败（放行）：$e');
+      return true;
     }
   }
 
@@ -369,6 +414,14 @@ class BookOpenUtils {
       isLocalBook: BookType.isLocalBook(book),
     );
     if (needsReaderNotifier(route)) {
+      // [批9c] 文本阅读器先过私密闸门：取消则不装载、不导航（路由层
+      // PrivateReadGate 另作深链兜底）。全局导航路径原 context 可能已卸载，
+      // 改用 Navigator 自己的 context 承载验证弹窗。
+      final gateContext = context.mounted ? context : navigator.context;
+      // mounted 已在上方三元判定；弹窗内部还有 context.mounted 复检
+      // ignore: use_build_context_synchronously
+      final allowed = await ensurePrivateAccess(gateContext, ref, bookToOpen);
+      if (!allowed) return;
       ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
       await navigator.pushNamed(route);
       return;
@@ -436,11 +489,12 @@ class BookOpenUtils {
       wordCount: (routeBook.wordCount?.isNotEmpty ?? false)
           ? routeBook.wordCount
           : dbBook.wordCount,
-      latestChapterTitle:
-          (routeBook.latestChapterTitle?.isNotEmpty ?? false)
-              ? routeBook.latestChapterTitle
-              : dbBook.latestChapterTitle,
-      kind: (routeBook.kind?.isNotEmpty ?? false) ? routeBook.kind : dbBook.kind,
+      latestChapterTitle: (routeBook.latestChapterTitle?.isNotEmpty ?? false)
+          ? routeBook.latestChapterTitle
+          : dbBook.latestChapterTitle,
+      kind: (routeBook.kind?.isNotEmpty ?? false)
+          ? routeBook.kind
+          : dbBook.kind,
       author: routeBook.author.isNotEmpty ? routeBook.author : dbBook.author,
       totalChapterNum: routeBook.totalChapterNum > 0
           ? routeBook.totalChapterNum
@@ -500,8 +554,9 @@ class BookOpenUtils {
         name: freshName,
         author: freshAuthor ?? book.author,
         bookType: mergeBookType(book.bookType, freshType),
-        downloadUrls:
-            freshUrls != null ? jsonEncode(freshUrls) : book.downloadUrls,
+        downloadUrls: freshUrls != null
+            ? jsonEncode(freshUrls)
+            : book.downloadUrls,
       );
     }
 
@@ -528,7 +583,9 @@ class BookOpenUtils {
       // book.tocUrl 默认=bookUrl，详情 qmBookInfo 生成真实 chapter-list URL）
       tocUrl: tocUrl ?? book.tocUrl,
       wordCount: hasWord ? book.wordCount : pick('word_count'),
-      latestChapterTitle: hasLast ? book.latestChapterTitle : pick('last_chapter'),
+      latestChapterTitle: hasLast
+          ? book.latestChapterTitle
+          : pick('last_chapter'),
       kind: hasKind ? book.kind : pick('kind'),
       name: book.name.isNotEmpty ? book.name : (name ?? book.name),
       author: book.author.isNotEmpty ? book.author : (author ?? book.author),
@@ -634,7 +691,7 @@ class BookOpenUtils {
 
   /// 文件类书源下载条目（对齐原版 BookInfoViewModel.WebFile(url, name)）
   static ({String url, String name, bool isSupported, bool isArchive})
-      buildWebFileEntry(Book book, String url) {
+  buildWebFileEntry(Book book, String url) {
     final urlFileName = fileNameFromUrl(url);
     // 原版 fallback：author 空取书名，否则「书名 作者：作者」
     final fallback = book.author.isEmpty
@@ -654,7 +711,7 @@ class BookOpenUtils {
   /// 详情页文件下载列表（对齐原版 loadWebFile：book.downloadUrls 逐条
   /// 建 WebFile(url, name)；空列表表示无文件可下载）
   static List<({String url, String name, bool isSupported, bool isArchive})>
-      buildWebFileList(Book book) {
+  buildWebFileList(Book book) {
     return [
       for (final url in parseDownloadUrls(book.downloadUrls))
         buildWebFileEntry(book, url),

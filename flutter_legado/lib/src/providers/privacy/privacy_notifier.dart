@@ -248,10 +248,104 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
     }
   }
 
+  // ===== [批9c] 按目标授权（EveryTime） =====
+
+  /// 验证密码并按当前频率授权某个目标
+  ///
+  /// - [PrivacyUnlockScope.everyTime]：只登记 [bookUrl] / [groupId] 这一
+  ///   个目标（不置 `sessionUnlocked`，避免启动闸门解锁被当成全部放行）；
+  /// - AppSession / UntilBackground：置会话级解锁（UntilBackground 的失效
+  ///   仍由 [handleLifecycleState] 负责）。
+  ///
+  /// 失败/异常返回 false，不改变既有授权状态。
+  Future<bool> verifyForTarget(
+    String password, {
+    String? bookUrl,
+    int? groupId,
+  }) async {
+    if (password.isEmpty) return false;
+    bool ok;
+    try {
+      ok = await ref.read(bookApiProvider).privacyVerifyPassword(password);
+    } catch (e) {
+      debugPrint('[隐私] 校验密码异常（保持锁定）：$e');
+      return false;
+    }
+    if (!ok) return false;
+    if (state.unlockScope == PrivacyUnlockScope.everyTime) {
+      var next = state;
+      if (bookUrl != null && bookUrl.isNotEmpty) {
+        next = next.copyWith(
+          grantedBookUrls: {...next.grantedBookUrls, bookUrl},
+        );
+      }
+      if (groupId != null) {
+        next = next.copyWith(
+          grantedGroupIds: {...next.grantedGroupIds, groupId},
+        );
+      }
+      _set(next);
+    } else {
+      _set(state.copyWith(sessionUnlocked: true, appStartVerified: true));
+    }
+    return true;
+  }
+
+  /// 撤销单本授权（EveryTime 离开详情/阅读器时调用）
+  ///
+  /// 非 EveryTime 频率下撤销无意义（会话级放行仍然有效），直接 no-op。
+  void revokeBook(String? bookUrl) {
+    if (bookUrl == null || bookUrl.isEmpty) return;
+    if (state.unlockScope != PrivacyUnlockScope.everyTime) return;
+    if (!state.grantedBookUrls.contains(bookUrl)) return;
+    _set(
+      state.copyWith(
+        grantedBookUrls: {...state.grantedBookUrls}..remove(bookUrl),
+      ),
+    );
+  }
+
+  /// 撤销分组授权（EveryTime 离开分组时调用）
+  void revokeGroup(int? groupId) {
+    if (groupId == null) return;
+    if (state.unlockScope != PrivacyUnlockScope.everyTime) return;
+    if (!state.grantedGroupIds.contains(groupId)) return;
+    _set(
+      state.copyWith(
+        grantedGroupIds: {...state.grantedGroupIds}..remove(groupId),
+      ),
+    );
+  }
+
+  /// 清空全部目标授权（锁定 / 改密 / 清密时调用）
+  void revokeAll() {
+    if (state.grantedBookUrls.isEmpty && state.grantedGroupIds.isEmpty) {
+      return;
+    }
+    _set(
+      state.copyWith(
+        grantedBookUrls: const <String>{},
+        grantedGroupIds: const <int>{},
+      ),
+    );
+  }
+
   /// 清除本次会话解锁状态（启动闸门后台失效、9c 离开阅读器时复用）
   void lock() {
-    if (!state.sessionUnlocked && !state.appStartVerified) return;
-    _set(state.copyWith(sessionUnlocked: false, appStartVerified: false));
+    if (!state.sessionUnlocked &&
+        !state.appStartVerified &&
+        state.grantedBookUrls.isEmpty &&
+        state.grantedGroupIds.isEmpty) {
+      return;
+    }
+    _set(
+      state.copyWith(
+        sessionUnlocked: false,
+        appStartVerified: false,
+        grantedBookUrls: const <String>{},
+        grantedGroupIds: const <int>{},
+      ),
+    );
   }
 
   /// 生命周期钩子（由启动闸门转发）
@@ -402,6 +496,8 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
         hasPassword: true,
         sessionUnlocked: false,
         appStartVerified: false,
+        grantedBookUrls: const <String>{},
+        grantedGroupIds: const <int>{},
       ),
     );
     return PrivacyPasswordChangeResult.success;
@@ -438,6 +534,8 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
         hasPassword: false,
         sessionUnlocked: false,
         appStartVerified: false,
+        grantedBookUrls: const <String>{},
+        grantedGroupIds: const <int>{},
       ),
     );
     return PrivacyClearPasswordResult.success;

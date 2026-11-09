@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart' show DeleteBooksResult;
+import '../../services/privacy_content_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/webdav_book_upload_service.dart';
+import '../privacy/privacy_content_notifier.dart';
 import '../providers.dart';
 import 'bookshelf_state.dart';
 
@@ -21,11 +23,18 @@ export 'bookshelf_state.dart';
 /// - 管理 UI 状态（loading/error/data 三态）
 /// - 管理展示层变换（网格/列表切换、分组模式）
 /// - 禁止包含业务计算（排序/过滤/规则解析由 Rust 完成）
+///
+/// [批9c] 私密标记（单本 / 分组）由 [privacyContentProvider] 统一加载，
+/// 本 Notifier 只把快照同步进状态供派生过滤与计数使用。
 class BookshelfNotifier extends Notifier<BookshelfState> {
   final SettingsService _settings = SettingsService();
 
   @override
   BookshelfState build() {
+    // 私密标记刷新（批量设私密 / 分组开关）后同步到书架派生过滤
+    ref.listen<PrivacyContentSnapshot>(privacyContentProvider, (_, next) {
+      _applyPrivacySnapshot(next);
+    });
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
     Future.microtask(() {
       _loadSettings();
@@ -33,6 +42,15 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       _loadGroups();
     });
     return const BookshelfState();
+  }
+
+  /// 私密标记快照 → 书架状态（保持不可变替换）
+  void _applyPrivacySnapshot(PrivacyContentSnapshot snapshot) {
+    state = state.copyWith(
+      privateBookUrls: snapshot.privateBookUrls,
+      privateGroupIds: snapshot.privateGroupIds,
+      privacyLoaded: snapshot.loaded,
+    );
   }
 
   /// 加载持久化的书架偏好设置（标签内容三键）
@@ -56,12 +74,27 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   /// 调用 Rust API 获取书籍列表
   ///
   /// Notifier 不做任何数据处理，Rust 负责排序/过滤
+  ///
+  /// [批9c] 先等私密标记就绪再发布书籍：避免首帧把私密书按公开卡片渲染
+  /// 一次再切锁定（闪露）。标记加载失败按空快照继续（fail-open）。
   Future<void> _loadBooks() async {
     state = state.copyWith(isLoading: true, error: null);
+    PrivacyContentSnapshot privacy = PrivacyContentSnapshot.empty;
+    try {
+      privacy = await ref.read(privacyContentProvider.notifier).ensureLoaded();
+    } catch (e) {
+      debugPrint('[书架] 私密标记加载失败（按无标记继续）：$e');
+    }
     try {
       final api = ref.read(bookApiProvider);
       final books = await api.getBooks();
-      state = state.copyWith(books: books, isLoading: false);
+      state = state.copyWith(
+        books: books,
+        isLoading: false,
+        privateBookUrls: privacy.privateBookUrls,
+        privateGroupIds: privacy.privateGroupIds,
+        privacyLoaded: privacy.loaded,
+      );
       // [P4-2b V4] 书籍就绪后重推视频聚合分组（对齐原版 IdVideo 动态显隐）
       _applyVideoGroup();
     } catch (e) {
@@ -70,7 +103,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   }
 
   /// 刷新书架
+  ///
+  /// [批9c] 先刷新私密标记，保证批量设私密/分组开关后列表与计数立即一致。
   Future<void> refresh() async {
+    await ref.read(privacyContentProvider.notifier).refresh();
     await Future.wait([_loadBooks(), _loadGroups()]);
   }
 
@@ -150,10 +186,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   /// （bookshelf_state.dart，`type & video != 0`，对齐原版 isVideo 判定）。
   void _applyVideoGroup() {
     final groups = state.groups;
-    final hasVideoBook =
-        state.books.any((b) => (b.bookType & BookType.video) != 0);
-    final hasVideoGroup =
-        groups.any((g) => g.groupId == BookGroupId.video);
+    final hasVideoBook = state.books.any(
+      (b) => (b.bookType & BookType.video) != 0,
+    );
+    final hasVideoGroup = groups.any((g) => g.groupId == BookGroupId.video);
     if (hasVideoBook == hasVideoGroup) return;
 
     // 组列表变化后按 groupId 保持当前选中 Tab 不动（防插入/移除导致索引
@@ -164,11 +200,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       // 合成组对齐原版种子：order=-5、show=1（AppDatabase.kt:241-244）
       next = [
         ...groups,
-        const BookGroup(
-          groupId: BookGroupId.video,
-          groupName: '视频',
-          order: -5,
-        ),
+        const BookGroup(groupId: BookGroupId.video, groupName: '视频', order: -5),
       ]..sort((a, b) => a.order.compareTo(b.order));
     } else {
       // 当前体系 DB 无 -6 行，列表中 -6 组必为合成组（见方法注释）
@@ -221,10 +253,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     final api = ref.read(bookApiProvider);
     final book = await api.importLocalBook(filePath);
     state = state.copyWith(
-      books: [
-        ...state.books.where((b) => b.bookUrl != book.bookUrl),
-        book,
-      ],
+      books: [...state.books.where((b) => b.bookUrl != book.bookUrl), book],
     );
     unawaited(_autoUploadImportedBook(book));
     return book;
@@ -267,6 +296,19 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     }
   }
 
+  /// 批量设置书籍私密标记（选择模式顶栏锁图标）
+  ///
+  /// 返回 Rust 实际更新行数；成功后刷新私密标记与书籍列表（`isPrivate`
+  /// 字段、公开书架过滤、分组计数同步），失败异常向上抛由 UI 提示。
+  Future<int> setBooksPrivate(List<String> bookUrls, bool isPrivate) async {
+    if (bookUrls.isEmpty) return 0;
+    final api = ref.read(bookApiProvider);
+    final updated = await api.setBooksPrivate(bookUrls, isPrivate);
+    await ref.read(privacyContentProvider.notifier).refresh();
+    await _loadBooks();
+    return updated;
+  }
+
   // ===== 展示层状态切换（不涉及数据内容变更） =====
 
   /// [批35] 标签内容三项（对齐参考版 `BookshelfTagContentDialog` 确认语义：
@@ -291,10 +333,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   /// 设置分组模式
   // [UI_SYNC_REFACTOR T3] 批量选择（对齐参考 SelectionBottomBar 态）
   void toggleBatchMode() {
-    state = state.copyWith(
-      isBatchMode: !state.isBatchMode,
-      selectedUrls: {},
-    );
+    state = state.copyWith(isBatchMode: !state.isBatchMode, selectedUrls: {});
   }
 
   void toggleSelect(String bookUrl) {
@@ -311,9 +350,7 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   void invertSelection() {
     final all = {for (final b in state.currentGroupBooks) b.bookUrl};
-    state = state.copyWith(
-      selectedUrls: all.difference(state.selectedUrls),
-    );
+    state = state.copyWith(selectedUrls: all.difference(state.selectedUrls));
   }
 
   void clearSelection() {
@@ -340,8 +377,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     }
     try {
       final api = ref.read(bookApiProvider);
-      final result =
-          await api.deleteBooks(urls, deleteOriginal: deleteOriginal);
+      final result = await api.deleteBooks(
+        urls,
+        deleteOriginal: deleteOriginal,
+      );
       state = state.copyWith(
         books: state.books.where((b) => !urls.contains(b.bookUrl)).toList(),
         isBatchMode: false,
@@ -379,13 +418,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     final byUrl = <String, Book>{
       for (var i = 0; i < reordered.length; i++)
         reordered[i].bookUrl: reordered[i].copyWith(
-              order: descending ? total - i : i,
-            ),
+          order: descending ? total - i : i,
+        ),
     };
     state = state.copyWith(
-      books: [
-        for (final book in state.books) byUrl[book.bookUrl] ?? book,
-      ],
+      books: [for (final book in state.books) byUrl[book.bookUrl] ?? book],
     );
     try {
       await ref.read(bookApiProvider).reorderBooks([
@@ -415,6 +452,4 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 /// ref.read(bookshelfNotifierProvider.notifier).refresh();
 /// ```
 final bookshelfNotifierProvider =
-    NotifierProvider<BookshelfNotifier, BookshelfState>(
-  BookshelfNotifier.new,
-);
+    NotifierProvider<BookshelfNotifier, BookshelfState>(BookshelfNotifier.new);

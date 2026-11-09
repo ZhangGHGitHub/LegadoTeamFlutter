@@ -33,6 +33,33 @@ extension _BookInfoLoad on _BookInfoScreenState {
     if (mounted) setState(() => _deleteBookAlert = v);
   }
 
+  /// [批9c] 私密详情进入后自动弹一次验证
+  ///
+  /// 只在“进入时私密 + 当前仍未授权”时弹；用户取消后不重复打扰（锁定页
+  /// 仍有验证入口）。postFrame 确保 provider 组合与首帧完成后再判定。
+  void _schedulePrivateAutoUnlock() {
+    if (_privateAutoUnlockRequested) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _privateAutoUnlockRequested) return;
+      final book = _loadedBook;
+      if (book == null || !_privateByEntry) return;
+      final privacy = ref.read(privacyNotifierProvider);
+      final content = ref.read(privacyContentProvider);
+      if (!content.loaded || !privacy.isBookLocked(book, isPrivate: true)) {
+        return;
+      }
+      _privateAutoUnlockRequested = true;
+      unawaited(
+        showPrivacyUnlockDialog(
+          context,
+          ref,
+          bookUrl: book.bookUrl,
+          title: '验证后查看',
+        ),
+      );
+    });
+  }
+
   Future<void> _loadData() async {
     final sw = Stopwatch()..start();
     final api = ref.read(bookApiProvider);
@@ -54,8 +81,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
       if (!inShelf && book != null && dbBook != null) {
         book = BookOpenUtils.mergeDbBook(book, dbBook);
       }
-      var chapters =
-          url.isEmpty ? <BookChapter>[] : await api.getChapters(url);
+      var chapters = url.isEmpty ? <BookChapter>[] : await api.getChapters(url);
       // 书源查询一次即复用：既供菜单条件项判定，也供下方联网补全传参
       BookSource? source;
       if (book != null && _isOnlineBook(book)) {
@@ -63,6 +89,19 @@ extension _BookInfoLoad on _BookInfoScreenState {
       }
 
       _bookSource = source;
+      // [批9c] 私密事实与书籍信息一次取回后再发布：先确定是否私密，
+      // 避免先渲染真实书名/封面再切成锁定态（闪烁 + 泄漏）。
+      PrivacyContentSnapshot privacyContent = PrivacyContentSnapshot.empty;
+      try {
+        await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+        privacyContent = await ref
+            .read(privacyContentProvider.notifier)
+            .ensureLoaded();
+      } catch (e) {
+        debugPrint('[BookInfo] 私密标记读取失败（按非私密继续）：$e');
+      }
+      final privateByEntry = book != null && privacyContent.isBookPrivate(book);
+      final bookPrivate = dbBook?.isPrivate ?? book?.isPrivate ?? false;
       if (mounted) {
         setState(() {
           _loadedBook = book;
@@ -70,11 +109,16 @@ extension _BookInfoLoad on _BookInfoScreenState {
           _inBookshelf = inShelf;
           _pageLoading = book == null;
           _loadError = null;
+          _privateByEntry = privateByEntry;
+          _bookPrivate = bookPrivate;
+          _privacyResolved = true;
           // 在线书无本地目录：先上屏信息，再后台补全（对齐原版章节 LiveData 后至）
-          _tocLoading =
-              book != null && chapters.isEmpty && _isOnlineBook(book);
+          _tocLoading = book != null && chapters.isEmpty && _isOnlineBook(book);
         });
       }
+      // [批9c] 私密书籍进入详情即自动弹一次验证；取消后停在锁定页，
+      // 锁定页仍有验证入口可重试。
+      _schedulePrivateAutoUnlock();
       // [UI_SYNC_REFACTOR B4] 封面取色（跟随封面换肤）
       if (book != null) {
         unawaited(_extractCoverSeed(book));
@@ -116,8 +160,10 @@ extension _BookInfoLoad on _BookInfoScreenState {
               final tParallel = Stopwatch()..start();
               // [P2-8] 取址：当前书源详情页地址（originBookUrl 优先、空回退
               // bookUrl），避免换源后「旧源地址 + 当前书源规则」错页解析
-              final infoFuture =
-                  api.webbookInfo(sourceJson, BookOpenUtils.bookFetchUrl(b));
+              final infoFuture = api.webbookInfo(
+                sourceJson,
+                BookOpenUtils.bookFetchUrl(b),
+              );
               final tocFuture = api.webbookChapters(
                 sourceJson,
                 BookOpenUtils.bookFetchUrl(b),
@@ -125,16 +171,15 @@ extension _BookInfoLoad on _BookInfoScreenState {
                 bookName: b.name,
               );
               final results = await Future.wait([infoFuture, tocFuture]);
-              debugPrint('[BookInfo] 并行 info+toc ${tParallel.elapsedMilliseconds}ms');
+              debugPrint(
+                '[BookInfo] 并行 info+toc ${tParallel.elapsedMilliseconds}ms',
+              );
               try {
                 b = BookOpenUtils.mergeWebInfo(b, results[0]);
               } catch (e) {
                 debugPrint('webbookInfo 补全失败: ${_errMsg(e)}');
               }
-              chapters = BookOpenUtils.parseWebChapters(
-                results[1],
-                b.bookUrl,
-              );
+              chapters = BookOpenUtils.parseWebChapters(results[1], b.bookUrl);
             } else {
               // tocUrl 缺失：先 info 补 tocUrl，再拉目录
               if (needInfo) {
@@ -151,9 +196,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
                   if (mounted) setState(() => _loadedBook = b);
                   unawaited(_extractCoverSeed(b));
                 } catch (e) {
-                  debugPrint(
-                    'webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}',
-                  );
+                  debugPrint('webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}');
                 }
               }
               final tToc = Stopwatch()..start();
@@ -220,9 +263,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
             sourceJson,
             BookOpenUtils.bookFetchUrl(b),
           );
-          debugPrint(
-            '[BookInfo] U7 后台 info 刷新 ${tInfo.elapsedMilliseconds}ms',
-          );
+          debugPrint('[BookInfo] U7 后台 info 刷新 ${tInfo.elapsedMilliseconds}ms');
           b = BookOpenUtils.mergeWebInfo(b, infoJson, refresh: true);
           // 已入库书：刷新字段回写 DB（对标原版 bookDao.replace / inBookshelf
           // update）；未入库仅展示不落库（对齐原版 loadChapter !inBookshelf）
@@ -260,8 +301,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
       // 此后 _reload / 桥接刷新 / 菜单刷新拿到目录，不再把用户拽进阅读器
       //（旧实现在「首个目录非空的加载」触发——手点刷新补齐目录即被拽入，
       // 与注释宣称的「仅首入触发」不符）。
-      final autoStartNow =
-          widget.openReaderImmediately && !_autoStartScheduled;
+      final autoStartNow = widget.openReaderImmediately && !_autoStartScheduled;
       _autoStartScheduled = true;
       if (autoStartNow && _chapters.isNotEmpty && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -291,6 +331,8 @@ extension _BookInfoLoad on _BookInfoScreenState {
           _pageLoading = false;
           _tocLoading = false;
           _loadError = _errMsg(e);
+          // 判定失败不再阻塞渲染（按非私密兜底，fail-open）
+          _privacyResolved = true;
         });
       }
     }
@@ -353,7 +395,8 @@ extension _BookInfoLoad on _BookInfoScreenState {
     Book book, {
     String? sourceJson,
   }) async {
-    final encoded = sourceJson ??
+    final encoded =
+        sourceJson ??
         jsonEncode((await _findSourceByOrigin(api, book.origin))?.toJson());
     if (encoded.isEmpty || encoded == 'null') return const [];
     // [P2-8] 取址同 webbookInfo：当前书源详情页（originBookUrl 优先）；

@@ -963,10 +963,28 @@ extension _SearchBuilders on _SearchScreenState {
     final suggestions = state.suggestions;
     // 书架实时搜索（原版 BookDao.flowSearch L83：name/author LIKE '%key%'）：
     // 输入为空或无匹配 → 隐藏本节（原版 tvBookShow/rvBookshelfSearch gone）
-    final shelfMatches = _shelfSuggest(
+    //
+    // [批9c] 私密且未获准的书从「书架」提示里剔除：能否搜到本身就是泄漏
+    // （对齐参考版 SearchSuggestionPanel 的 lockedUrls 过滤）。
+    final rawShelfMatches = _shelfSuggest(
       _searchController.text.trim(),
       shelfBooks,
     );
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
+    // 私密策略已启用但标记尚未就绪：先不展示「书架」提示，避免首帧
+    // 把私密书名露出来（加载很快，正常用户无感）。
+    final privacyPending = privacy.enabled && !privacyContent.loaded;
+    final lockedUrls = privacyPending
+        ? const <String>{}
+        : privacyContent.lockedBookUrls(rawShelfMatches, privacy);
+    final shelfMatches = privacyPending
+        ? const <Book>[]
+        : lockedUrls.isEmpty
+        ? rawShelfMatches
+        : rawShelfMatches
+              .where((b) => !lockedUrls.contains(b.bookUrl))
+              .toList();
 
     if (state.searchHistory.isEmpty && shelfMatches.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
@@ -1361,9 +1379,7 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
             minLines: 4,
             maxLines: 8,
             autofocus: true,
-            decoration: const InputDecoration(
-              hintText: '屏蔽词（每行一个）',
-            ),
+            decoration: const InputDecoration(hintText: '屏蔽词（每行一个）'),
           ),
         ],
       ),

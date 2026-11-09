@@ -44,6 +44,8 @@ import 'screens/settings_home_screen.dart';
 // [设置批10a | 2026-11-04] AI 设置/翻译设置/实验室占位页（明确暂未支持）
 import 'screens/settings_placeholder_screen.dart';
 import 'screens/settings_screen.dart';
+// [批9c] 文本阅读器私密闸门（深链兜底；openBook 正常路径已先行验证）
+import 'widgets/privacy/private_read_gate.dart';
 import 'screens/source_screen.dart';
 import 'screens/source_edit_screen.dart';
 import 'screens/rss_source_edit_screen.dart';
@@ -170,7 +172,9 @@ class AppRoutes {
 
   static Map<String, WidgetBuilder> get routes => {
     home: (_) => const HomeScreen(),
-    reader: (_) => const ReaderScreen(),
+    // [批9c] 深链/直接 push 的兜底：未授权时 gate 用全屏锁定页取代阅读器，
+    // 阅读器组件在该分支根本不会组合。
+    reader: (_) => const PrivateReadGate(child: ReaderScreen()),
     readerComic: (context) {
       final args = ModalRoute.of(context)?.settings.arguments;
       final bookUrl = args is String

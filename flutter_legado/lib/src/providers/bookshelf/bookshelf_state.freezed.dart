@@ -49,6 +49,21 @@ mixin _$BookshelfState {
   /// [批35] 标签内容 - 字数（`Book.wordCount`）
   bool get showWordCount => throw _privateConstructorUsedError;
 
+  /// [批9c] 单本私密 URL 快照（`privacyGetPrivateBookUrls`）
+  ///
+  /// 与 `Book.isPrivate` 取并集判定：列表接口可能滞后于刚写入的标记，
+  /// 隐私服务快照是私密判定的真源（Rust 侧同库同事务）。
+  Set<String> get privateBookUrls => throw _privateConstructorUsedError;
+
+  /// [批9c] 私密分组 ID 快照（`privacyGetPrivateGroupIds`）
+  Set<int> get privateGroupIds => throw _privateConstructorUsedError;
+
+  /// [批9c] 私密标记是否已加载完成
+  ///
+  /// false 时书架先不渲染锁定态（列表与标记并行加载，避免闪烁）；
+  /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
+  bool get privacyLoaded => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $BookshelfStateCopyWith<BookshelfState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -71,7 +86,10 @@ abstract class $BookshelfStateCopyWith<$Res> {
       Set<String> selectedUrls,
       bool showCustomTags,
       bool showSourceTags,
-      bool showWordCount});
+      bool showWordCount,
+      Set<String> privateBookUrls,
+      Set<int> privateGroupIds,
+      bool privacyLoaded});
 }
 
 /// @nodoc
@@ -98,6 +116,9 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? showCustomTags = null,
     Object? showSourceTags = null,
     Object? showWordCount = null,
+    Object? privateBookUrls = null,
+    Object? privateGroupIds = null,
+    Object? privacyLoaded = null,
   }) {
     return _then(_value.copyWith(
       books: null == books
@@ -144,6 +165,18 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.showWordCount
           : showWordCount // ignore: cast_nullable_to_non_nullable
               as bool,
+      privateBookUrls: null == privateBookUrls
+          ? _value.privateBookUrls
+          : privateBookUrls // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      privateGroupIds: null == privateGroupIds
+          ? _value.privateGroupIds
+          : privateGroupIds // ignore: cast_nullable_to_non_nullable
+              as Set<int>,
+      privacyLoaded: null == privacyLoaded
+          ? _value.privacyLoaded
+          : privacyLoaded // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -167,7 +200,10 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       Set<String> selectedUrls,
       bool showCustomTags,
       bool showSourceTags,
-      bool showWordCount});
+      bool showWordCount,
+      Set<String> privateBookUrls,
+      Set<int> privateGroupIds,
+      bool privacyLoaded});
 }
 
 /// @nodoc
@@ -192,6 +228,9 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? showCustomTags = null,
     Object? showSourceTags = null,
     Object? showWordCount = null,
+    Object? privateBookUrls = null,
+    Object? privateGroupIds = null,
+    Object? privacyLoaded = null,
   }) {
     return _then(_$BookshelfStateImpl(
       books: null == books
@@ -238,6 +277,18 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value.showWordCount
           : showWordCount // ignore: cast_nullable_to_non_nullable
               as bool,
+      privateBookUrls: null == privateBookUrls
+          ? _value._privateBookUrls
+          : privateBookUrls // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
+      privateGroupIds: null == privateGroupIds
+          ? _value._privateGroupIds
+          : privateGroupIds // ignore: cast_nullable_to_non_nullable
+              as Set<int>,
+      privacyLoaded: null == privacyLoaded
+          ? _value.privacyLoaded
+          : privacyLoaded // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -256,10 +307,15 @@ class _$BookshelfStateImpl implements _BookshelfState {
       final Set<String> selectedUrls = const {},
       this.showCustomTags = true,
       this.showSourceTags = true,
-      this.showWordCount = true})
+      this.showWordCount = true,
+      final Set<String> privateBookUrls = const <String>{},
+      final Set<int> privateGroupIds = const <int>{},
+      this.privacyLoaded = false})
       : _books = books,
         _groups = groups,
-        _selectedUrls = selectedUrls;
+        _selectedUrls = selectedUrls,
+        _privateBookUrls = privateBookUrls,
+        _privateGroupIds = privateGroupIds;
 
   /// Rust 返回的书籍列表（原始顺序；展示层按设置排序）
   final List<Book> _books;
@@ -336,9 +392,47 @@ class _$BookshelfStateImpl implements _BookshelfState {
   @JsonKey()
   final bool showWordCount;
 
+  /// [批9c] 单本私密 URL 快照（`privacyGetPrivateBookUrls`）
+  ///
+  /// 与 `Book.isPrivate` 取并集判定：列表接口可能滞后于刚写入的标记，
+  /// 隐私服务快照是私密判定的真源（Rust 侧同库同事务）。
+  final Set<String> _privateBookUrls;
+
+  /// [批9c] 单本私密 URL 快照（`privacyGetPrivateBookUrls`）
+  ///
+  /// 与 `Book.isPrivate` 取并集判定：列表接口可能滞后于刚写入的标记，
+  /// 隐私服务快照是私密判定的真源（Rust 侧同库同事务）。
+  @override
+  @JsonKey()
+  Set<String> get privateBookUrls {
+    if (_privateBookUrls is EqualUnmodifiableSetView) return _privateBookUrls;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_privateBookUrls);
+  }
+
+  /// [批9c] 私密分组 ID 快照（`privacyGetPrivateGroupIds`）
+  final Set<int> _privateGroupIds;
+
+  /// [批9c] 私密分组 ID 快照（`privacyGetPrivateGroupIds`）
+  @override
+  @JsonKey()
+  Set<int> get privateGroupIds {
+    if (_privateGroupIds is EqualUnmodifiableSetView) return _privateGroupIds;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_privateGroupIds);
+  }
+
+  /// [批9c] 私密标记是否已加载完成
+  ///
+  /// false 时书架先不渲染锁定态（列表与标记并行加载，避免闪烁）；
+  /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
+  @override
+  @JsonKey()
+  final bool privacyLoaded;
+
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount, privateBookUrls: $privateBookUrls, privateGroupIds: $privateGroupIds, privacyLoaded: $privacyLoaded)';
   }
 
   @override
@@ -364,7 +458,13 @@ class _$BookshelfStateImpl implements _BookshelfState {
             (identical(other.showSourceTags, showSourceTags) ||
                 other.showSourceTags == showSourceTags) &&
             (identical(other.showWordCount, showWordCount) ||
-                other.showWordCount == showWordCount));
+                other.showWordCount == showWordCount) &&
+            const DeepCollectionEquality()
+                .equals(other._privateBookUrls, _privateBookUrls) &&
+            const DeepCollectionEquality()
+                .equals(other._privateGroupIds, _privateGroupIds) &&
+            (identical(other.privacyLoaded, privacyLoaded) ||
+                other.privacyLoaded == privacyLoaded));
   }
 
   @override
@@ -380,7 +480,10 @@ class _$BookshelfStateImpl implements _BookshelfState {
       const DeepCollectionEquality().hash(_selectedUrls),
       showCustomTags,
       showSourceTags,
-      showWordCount);
+      showWordCount,
+      const DeepCollectionEquality().hash(_privateBookUrls),
+      const DeepCollectionEquality().hash(_privateGroupIds),
+      privacyLoaded);
 
   @JsonKey(ignore: true)
   @override
@@ -402,7 +505,10 @@ abstract class _BookshelfState implements BookshelfState {
       final Set<String> selectedUrls,
       final bool showCustomTags,
       final bool showSourceTags,
-      final bool showWordCount}) = _$BookshelfStateImpl;
+      final bool showWordCount,
+      final Set<String> privateBookUrls,
+      final Set<int> privateGroupIds,
+      final bool privacyLoaded}) = _$BookshelfStateImpl;
 
   @override
 
@@ -448,6 +554,24 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// [批35] 标签内容 - 字数（`Book.wordCount`）
   bool get showWordCount;
+  @override
+
+  /// [批9c] 单本私密 URL 快照（`privacyGetPrivateBookUrls`）
+  ///
+  /// 与 `Book.isPrivate` 取并集判定：列表接口可能滞后于刚写入的标记，
+  /// 隐私服务快照是私密判定的真源（Rust 侧同库同事务）。
+  Set<String> get privateBookUrls;
+  @override
+
+  /// [批9c] 私密分组 ID 快照（`privacyGetPrivateGroupIds`）
+  Set<int> get privateGroupIds;
+  @override
+
+  /// [批9c] 私密标记是否已加载完成
+  ///
+  /// false 时书架先不渲染锁定态（列表与标记并行加载，避免闪烁）；
+  /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
+  bool get privacyLoaded;
   @override
   @JsonKey(ignore: true)
   _$$BookshelfStateImplCopyWith<_$BookshelfStateImpl> get copyWith =>

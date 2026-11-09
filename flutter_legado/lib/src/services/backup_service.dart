@@ -4,6 +4,10 @@ import '../models/models.dart';
 import 'book_api.dart';
 
 /// 数据备份/恢复服务
+///
+/// [批9c 已知泄漏点] 备份按参考版行为保留全部书架数据（含私密标记书与
+/// 私密分组），不做脱敏/过滤——备份是用户主动的全量数据动作，过滤会破坏
+/// 恢复完整性。脱敏只在 Flutter UI 展示层生效。
 class BackupService {
   final BookApi _api;
 

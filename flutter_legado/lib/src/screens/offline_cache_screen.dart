@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
@@ -37,8 +39,7 @@ class OfflineCacheScreen extends ConsumerStatefulWidget {
   const OfflineCacheScreen({super.key});
 
   @override
-  ConsumerState<OfflineCacheScreen> createState() =>
-      _OfflineCacheScreenState();
+  ConsumerState<OfflineCacheScreen> createState() => _OfflineCacheScreenState();
 }
 
 /// 缓存下载任务快照（camelCase 对齐 Rust CacheDownloadTask）
@@ -58,12 +59,12 @@ class _DownloadTask {
   });
 
   factory _DownloadTask.fromJson(Map<String, dynamic> json) => _DownloadTask(
-        taskId: (json['taskId'] as num?)?.toInt() ?? 0,
-        bookUrl: json['bookUrl'] as String? ?? '',
-        status: json['status'] as String? ?? 'unknown',
-        total: (json['total'] as num?)?.toInt() ?? 0,
-        completed: (json['completed'] as num?)?.toInt() ?? 0,
-      );
+    taskId: (json['taskId'] as num?)?.toInt() ?? 0,
+    bookUrl: json['bookUrl'] as String? ?? '',
+    status: json['status'] as String? ?? 'unknown',
+    total: (json['total'] as num?)?.toInt() ?? 0,
+    completed: (json['completed'] as num?)?.toInt() ?? 0,
+  );
 
   bool get isRunning => status == 'running';
 }
@@ -108,8 +109,9 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       final api = ref.read(bookApiProvider);
       final books = await api.getBooks();
       // 原版 initBookData 过滤音频书（音频书缓存走听书链路）
-      final visible =
-          books.where((b) => (b.bookType & BookType.audio) == 0).toList();
+      final visible = books
+          .where((b) => (b.bookType & BookType.audio) == 0)
+          .toList();
 
       // 任务快照：bookUrl → 进行中任务（对齐原版 CacheBook.cacheBookMap）
       final tasks = <String, _DownloadTask>{};
@@ -150,30 +152,36 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
 
   void _snack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ===== 下载操作（对齐原版 CacheAdapter.registerListener / CacheActivity） =====
 
   /// 单本缓存下载：download_all（0..末章）或 download_after（当前章..末章）
-  Future<void> _startBookCache(_BookEntry entry,
-      {bool afterCurrent = false}) async {
+  Future<void> _startBookCache(
+    _BookEntry entry, {
+    bool afterCurrent = false,
+    bool locked = false,
+  }) async {
     final book = entry.book;
+    final label = locked ? '本书' : '《${book.name}》';
     final total = book.totalChapterNum;
     if (total <= 0) {
-      _snack('《${book.name}》章节数未知，无法缓存');
+      _snack('$label章节数未知，无法缓存');
       return;
     }
     final start = afterCurrent ? book.durChapterIndex : 0;
     final end = total - 1;
     if (start > end) {
-      _snack('《${book.name}》无可缓存的章节');
+      _snack('$label无可缓存的章节');
       return;
     }
     try {
       final api = ref.read(bookApiProvider);
       await api.cacheDownloadStart(book.bookUrl, start, end);
-      _snack('《${book.name}》已加入缓存队列');
+      _snack('$label已加入缓存队列');
       _refresh(silent: true);
     } catch (e) {
       _snack('缓存启动失败：$e');
@@ -181,12 +189,12 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
   }
 
   /// 停止该书正在进行的下载
-  Future<void> _stopBookCache(_BookEntry entry) async {
+  Future<void> _stopBookCache(_BookEntry entry, {bool locked = false}) async {
     final task = entry.task;
     if (task == null) return;
     try {
       await ref.read(bookApiProvider).cacheDownloadCancel(task.taskId);
-      _snack('已停止《${entry.book.name}》下载');
+      _snack('已停止${locked ? '本书' : '《${entry.book.name}》'}下载');
       _refresh(silent: true);
     } catch (e) {
       _snack('停止失败：$e');
@@ -206,7 +214,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       builder: (ctx) => AlertDialog(
         title: Text(afterCurrent ? '缓存所有书籍当前章节之后' : '缓存所有书籍'),
         content: Text(
-            '将缓存书架全部 ${targets.length} 本书${afterCurrent ? '（当前章节之后）' : ''}，是否继续？'),
+          '将缓存书架全部 ${targets.length} 本书${afterCurrent ? '（当前章节之后）' : ''}，是否继续？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -264,12 +273,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
     // 分流编排统一在 BookOpenUtils.openBook（未读进书详 + 类型位分流）
     // [设置批2b-2b P1-3] 缓存管理可位于「我的」容器 nested Navigator 内，
     // 阅读器/书详必须打开在根导航，不能关进右栏/My 页签。
-    await BookOpenUtils.openBook(
-      context,
-      ref,
-      book,
-      useGlobalNavigator: true,
-    );
+    await BookOpenUtils.openBook(context, ref, book, useGlobalNavigator: true);
   }
 
   // ===== 单本导出（对齐原版 CacheActivity → ExportBookService） =====
@@ -317,6 +321,10 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // [批9c] 私密且未获准的书：缓存条目保留（要能清缓存），但不显示
+    // 书名与作者（对齐参考版 BookCacheManageScreen.redactLocked）。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
@@ -332,8 +340,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
             onSelected: _handleMenu,
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'download_all', child: Text('全部缓存')),
-              PopupMenuItem(
-                  value: 'download_after', child: Text('缓存当前章节之后')),
+              PopupMenuItem(value: 'download_after', child: Text('缓存当前章节之后')),
               PopupMenuItem(value: 'stop_all', child: Text('停止全部下载')),
               PillMenuDivider(),
               PopupMenuItem(value: 'queue', child: Text('下载队列')),
@@ -344,25 +351,30 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       body: _loading
           ? const LoadingIndicator()
           : _entries.isEmpty
-              ? _buildEmpty(cs)
-              // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
-              : CustomRefreshIndicator(
-                  onRefresh: () async => _refresh(),
-                  child: ListView.separated(
-                    // [LAYOUT_PLAN P3] 页面水平边距16dp（行内 ListTile 默认 horizontal16）
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _entries.length,
-                    separatorBuilder: (_, _) => Divider(
-                      height: 1,
-                      // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant
-                      indent: 16,
-                      endIndent: 16,
-                      color: cs.outlineVariant.withValues(alpha: 0.3),
-                    ),
-                    itemBuilder: (context, index) =>
-                        _buildTile(_entries[index]),
-                  ),
+          ? _buildEmpty(cs)
+          // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+          : CustomRefreshIndicator(
+              onRefresh: () async => _refresh(),
+              child: ListView.separated(
+                // [LAYOUT_PLAN P3] 页面水平边距16dp（行内 ListTile 默认 horizontal16）
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: _entries.length,
+                separatorBuilder: (_, _) => Divider(
+                  height: 1,
+                  // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant
+                  indent: 16,
+                  endIndent: 16,
+                  color: cs.outlineVariant.withValues(alpha: 0.3),
                 ),
+                itemBuilder: (context, index) {
+                  final entry = _entries[index];
+                  return _buildTile(
+                    entry,
+                    locked: privacyContent.isBookLocked(entry.book, privacy),
+                  );
+                },
+              ),
+            ),
     );
   }
 
@@ -378,10 +390,9 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
           const SizedBox(height: 4),
           Text(
             '在书架添加书籍后，可在此缓存离线阅读',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: cs.onSurfaceVariant),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -389,7 +400,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
   }
 
   /// 列表项（对齐原版 item_download.xml 三行布局 + 下载/导出按钮）
-  Widget _buildTile(_BookEntry entry) {
+  Widget _buildTile(_BookEntry entry, {bool locked = false}) {
     final cs = Theme.of(context).colorScheme;
     final book = entry.book;
     final isLocal = book.bookType & BookType.local != 0;
@@ -413,7 +424,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       title: Text(
-        book.name,
+        // [批9c] 私密且未获准：书名/作者置空，不铺“已隐藏”字样
+        locked ? '' : book.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
@@ -424,14 +436,13 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
         children: [
           const SizedBox(height: 2),
           Text(
-            book.author.isEmpty ? '作者未知' : book.author,
+            locked ? '' : (book.author.isEmpty ? '作者未知' : book.author),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: cs.onSurfaceVariant),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 2),
           Text(
@@ -440,8 +451,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
             overflow: TextOverflow.ellipsis,
             // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale + 状态色走 tonal
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: entry.task != null ? cs.primary : cs.onSurfaceVariant,
-                ),
+              color: entry.task != null ? cs.primary : cs.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -460,8 +471,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
               ),
               color: entry.task != null ? cs.error : cs.primary,
               onPressed: () => entry.task != null
-                  ? _stopBookCache(entry)
-                  : _startBookCache(entry),
+                  ? _stopBookCache(entry, locked: locked)
+                  : _startBookCache(entry, locked: locked),
             ),
           // 原版 tv_export：单本导出
           TextButton(

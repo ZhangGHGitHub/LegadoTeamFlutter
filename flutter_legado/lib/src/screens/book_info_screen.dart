@@ -18,6 +18,9 @@ import '../models/models.dart';
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
+import '../providers/privacy/privacy_state.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
@@ -31,6 +34,7 @@ import '../services/cache_service.dart';
 import '../services/local_book_store.dart'; // [iOS 视角F C1] 本地书相对标识解析
 import '../services/network_status_service.dart';
 import '../services/platform_bridge_service.dart';
+import '../services/privacy_content_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_book_upload_service.dart';
 import '../utils/book_info_utils.dart';
@@ -48,6 +52,8 @@ import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4 收尾] �
 import '../widgets/error_view.dart';
 import '../widgets/navigation/main_detail_pane_scope.dart';
 import '../widgets/pill_divider.dart'; // [GLOBALCOMP B5] 弹窗菜单分隔统一
+import '../widgets/privacy/private_locked_page.dart';
+import '../widgets/privacy/privacy_unlock_dialog.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/list_footer.dart';
 part 'book_info_screen_load.part.dart';
@@ -87,23 +93,30 @@ class BookInfoScreen extends ConsumerStatefulWidget {
 
 class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   final ScrollController _scrollController = ScrollController();
+
   /// [UI_SYNC_REFACTOR B4] 顶栏折叠进度（对齐参考仓 collapsedFraction：
   /// 封面区滚动归一化，驱动透明→玻璃色插值）
   final ValueNotifier<double> _topCollapse = ValueNotifier<double>(0);
+
   /// [UI_SYNC_REFACTOR B4] 封面取色 seed（null=未取/关闭开关）
   Color? _coverSeed;
+
   /// [设置批6b-1 审查] 「仅 WiFi」网络门控三态：null=探测中（按不可用
   /// 处理，避免蜂窝首帧闪网络背景）/ true=可用 / false=蜂窝阻塞。
   bool? _wifiAllowed;
   int _wifiGateGen = 0;
   Timer? _wifiRetryTimer;
+
   /// 封面取色代次（防止旧 URL/旧设置的回调覆盖新结果）
   int _coverSeedGen = 0;
   bool _isLoading = false;
+
   /// 整页首屏：仅在连 Book 壳都没有时显示（对齐原版先 post bookData）
   bool _pageLoading = true;
+
   /// 目录联网补全中（信息区已可交互）
   bool _tocLoading = false;
+
   /// 顶栏网络加载（对标原版 refreshProgressBar.isAutoLoading）
   bool _networkLoading = false;
   String? _loadError;
@@ -125,13 +138,28 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   static final Map<String, BookSource?> _sourceByOriginCache = {};
   SettingsService get _settingsService => ref.read(settingsProvider);
   bool _deleteBookAlert = true;
+
   /// [批3 P1-3 余项] webFile 书下载导入进行中的条目 URL（null=空闲；
   /// 对齐原版 waitDialog「下载中」互斥）
   String? _webFileImportingUrl;
+  // [批9c] 详情页私密态：进入时是否私密（离页撤销用）、当前单本标记、
+  // 自动验证是否已弹过一次
+  bool _privateByEntry = false;
+  bool _privateAutoUnlockRequested = false;
+  bool _bookPrivate = false;
+  // [批9c] 私密事实是否已判定完成：未完成前不渲染详情正文，避免首帧
+  // 先露出真实书名/封面再切锁定（参考版同样先判定再发布书籍）。
+  bool _privacyResolved = false;
+
+  /// [批9c] dispose 阶段不能再用 ref（已随 widget 释放）；提前捕获
+  /// Notifier 用于离页撤销 EveryTime 授权。
+  PrivacyNotifier? _privacyNotifier;
 
   @override
   void initState() {
     super.initState();
+    // [批9c] 提前取 Notifier（dispose 时不能再读 ref）
+    _privacyNotifier = ref.read(privacyNotifierProvider.notifier);
     // 发现/搜索带入的 Book 立刻上屏（对齐原版 bookData.postValue 先于网络）
     _loadedBook = widget.book;
     _pageLoading = widget.book == null && widget.effectiveBookUrl.isEmpty;
@@ -157,6 +185,20 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
 
   @override
   void dispose() {
+    // [批9c] EveryTime 频率下离开详情页即撤销授权（下次进入重新验证）；
+    // 非 EveryTime 为 no-op。dispose 阶段不能同步改 provider 状态
+    // （会触发仍在卸载中的 listener 标记脏元素），延后到微任务。
+    final privacyNotifier = _privacyNotifier;
+    final url = _loadedBook?.bookUrl ?? widget.effectiveBookUrl;
+    if (privacyNotifier != null) {
+      Future.microtask(() {
+        try {
+          privacyNotifier.revokeBook(url);
+        } catch (e) {
+          debugPrint('详情页撤销私密授权失败（忽略）：$e');
+        }
+      });
+    }
     coverSettingsListenable.removeListener(_onCoverSettingsChanged);
     _wifiRetryTimer?.cancel();
     _wifiRetryTimer = null;
@@ -243,7 +285,6 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     setState(() => _coverSeed = seed);
   }
 
-
   /// [PARITY C1 D3] 右下绿色「阅读」胶囊 FAB（对齐参考 08 量化：
   /// 约 101×55dp 绿底 (175,242,196) / 深绿字 (11,81,48)，右 18dp / 底 17dp；
   /// 标签固定「阅读」（原「继续阅读」文案移除，参考即固定「阅读」）；
@@ -268,6 +309,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   /// [UI_SYNC_REFACTOR B4] 顶栏 actions（原 appBar actions 原样迁移，
   /// 由折叠 SliverAppBar 经 TopBarActionStyler 统一注入样式）
   List<Widget> _buildTopBarActions() {
+    // [批9c] 私密标记菜单项：未设置密码时置灰并提示（安全兜底，避免锁死）
+    final privacy = ref.watch(privacyNotifierProvider);
     return [
       // 编辑：仅在架书籍显示（对标原版 editMenuItem.isVisible = inBookshelf）
       if (_inBookshelf)
@@ -294,9 +337,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
               debugPrint('编辑书籍信息失败: $e');
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')));
               }
             }
           },
@@ -310,8 +353,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             if (book == null) return;
             // 对齐原版 menu_share_it：bookUrl#bookJson + SourceCallBack
             // — Cursor UI
-            final shareStr =
-                '${book.bookUrl}#${jsonEncode(book.toJson())}';
+            final shareStr = '${book.bookUrl}#${jsonEncode(book.toJson())}';
             final api = ref.read(bookApiProvider);
             final r = await api.sourceCallBackBtn(
               event: 'clickShareBook',
@@ -328,9 +370,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
             debugPrint('分享书籍失败: $e');
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')));
             }
           }
         },
@@ -357,7 +399,10 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           // [U1 | 台账 0917] 勾选项尾部化：CheckboxListTile 式右侧 ✓
           //（对齐参考 08 勾选项尾样式；原 CheckedPopupMenuItem 为 leading ✓）
           PopupMenuItem<String> checkedItem(
-              String value, String label, bool checked) {
+            String value,
+            String label,
+            bool checked,
+          ) {
             return PopupMenuItem<String>(
               value: value,
               child: Row(
@@ -394,14 +439,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 child: Text('设置源变量'),
               ),
             if (hasSource)
-              const PopupMenuItem(
-                value: 'bookVariable',
-                child: Text('设置书籍变量'),
-              ),
-            const PopupMenuItem(
-                value: 'copyBookUrl', child: Text('拷贝书籍URL')),
-            const PopupMenuItem(
-                value: 'copyTocUrl', child: Text('拷贝目录URL')),
+              const PopupMenuItem(value: 'bookVariable', child: Text('设置书籍变量')),
+            const PopupMenuItem(value: 'copyBookUrl', child: Text('拷贝书籍URL')),
+            const PopupMenuItem(value: 'copyTocUrl', child: Text('拷贝目录URL')),
             const PopupMenuItem(value: 'top', child: Text('置顶')),
             // 允许更新（书源存在；勾选态尾部 ✓）
             if (hasSource)
@@ -409,8 +449,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             // [UI-fix v2.0.3] 删除提醒接通本地持久化（对齐原版
             // LocalConfig.deleteBookAlert；勾选态尾部 ✓）
             checkedItem('deleteAlert', '删除提醒', _deleteBookAlert),
-            const PopupMenuItem(
-                value: 'clearCache', child: Text('清理缓存')),
+            const PopupMenuItem(value: 'clearCache', child: Text('清理缓存')),
             // ── 分隔线后：本端独有项（双基准 + 红线：功能不删除）──
             // [GLOBALCOMP B5] 自造 disabled PopupMenuItem+Divider 换统一
             // PillMenuDivider（对齐 B1 批 8 处弹窗菜单分隔形态）
@@ -422,10 +461,7 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
             // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
             if (_inBookshelf && hasSource && !isLocal && canUpd)
-              const PopupMenuItem(
-                value: 'updateTask',
-                child: Text('创建书籍更新任务'),
-              ),
+              const PopupMenuItem(value: 'updateTask', child: Text('创建书籍更新任务')),
             // 登录（书源支持登录时）
             if (hasLogin)
               const PopupMenuItem(value: 'login', child: Text('登录')),
@@ -435,12 +471,29 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             // isLocalTxt 已隐含 book != null，Dart 3 提升生效）
             if (isLocalTxt)
               checkedItem(
-                  'splitLongChapter',
-                  '拆分长章节',
-                  book.readConfig?.splitLongChapter ?? true),
-            const PopupMenuItem(
-                value: 'cacheDownloads', child: Text('缓存下载队列')),
+                'splitLongChapter',
+                '拆分长章节',
+                book.readConfig?.splitLongChapter ?? true,
+              ),
+            const PopupMenuItem(value: 'cacheDownloads', child: Text('缓存下载队列')),
             const PopupMenuItem(value: 'log', child: Text('日志')),
+            // [批9c] 标记/取消私密（对齐参考版 BookInfoMenuAction.TogglePrivate）
+            PopupMenuItem<String>(
+              value: 'togglePrivate',
+              enabled: privacy.hasPassword,
+              child: Row(
+                children: [
+                  Expanded(child: Text(_bookPrivate ? '取消私密' : '标记为私密')),
+                  if (!privacy.hasPassword)
+                    Text(
+                      '请先设置密码',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ];
         },
       ),
@@ -453,10 +506,21 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     // [UI_SYNC_REFACTOR B4] 封面取色换肤：ColorScheme 400ms 渐变
     //（对齐参考仓 rememberBookInfoColorTheme tween(400, FastOutSlowIn)；
     // bookInfoFollowCoverColor 开关关闭或未取到 seed 时保持原配色）
+    //
+    // [批9c] 私密且未授权：整页锁定（3 条占位条，不渲染书名/作者/来源/
+    // 标签/简介/操作区，FAB 隐藏）；解锁后 provider 变化自动重建为正常页。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
+    final currentBook = _loadedBook;
+    final privacyPending = !_privacyResolved;
+    final privateLocked =
+        currentBook != null &&
+        _privateByEntry &&
+        privacyContent.loaded &&
+        privacy.isBookLocked(currentBook, isPrivate: true);
     final baseTheme = Theme.of(context);
     final seed = _coverSeed;
-    final followCover =
-        uiSettingsListenable.value.bookInfoFollowCoverColor;
+    final followCover = uiSettingsListenable.value.bookInfoFollowCoverColor;
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: followCover && seed != null ? 1 : 0),
       duration: const Duration(milliseconds: 400),
@@ -478,41 +542,43 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       child: Scaffold(
         // [UI_SYNC_REFACTOR B4] appBar → 折叠 SliverAppBar（入 body 首位
         // sliver，collapsedFraction 驱动透明→surfaceContainer 插值）
-        floatingActionButton: _pageLoading || _loadedBook == null
+        // [批9c] 未验证时不提供“直接开始阅读”入口，避免绕过验证
+        floatingActionButton:
+            _pageLoading ||
+                privacyPending ||
+                _loadedBook == null ||
+                privateLocked
             ? null
             : _buildReadFab(),
         // [PARITY C1 D3] FAB 定位对齐参考 08 量化：右下角（slot 默认边距
         // 16dp ≈ 参考右 18dp / 底 17dp，误差 <2dp 在容差内）
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      body: _pageLoading
-          // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：详情骨架替代整页 LoadingIndicator
-          // （shimmer 1200ms 已在 skeleton.dart 实现）
-          ? ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: 4,
-              itemBuilder: (_, _) => const ListSkeletonItem(),
-            )
-          : _loadError != null && _loadedBook == null
-              ? ErrorView(
-                  message: _loadError!,
-                  onRetry: _reload,
-                )
-              : _loadedBook == null
-                  ? const ErrorView(message: '书籍不存在')
-                  // [设置批6b-1 审查 P1-2] 封面设置变化（总是默认封面/
-                  // 仅 WiFi/描边阴影）即时刷新详情背景与封面
-                  : ValueListenableBuilder<CoverSettings>(
-                      valueListenable: coverSettingsListenable,
-                      builder: (context, _, _) => _buildPage(
-                        context,
-                        _loadedBook!,
-                        _chapters,
-                      ),
-                    ),
+        body: _pageLoading || privacyPending
+            // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：详情骨架替代整页 LoadingIndicator
+            // （shimmer 1200ms 已在 skeleton.dart 实现）
+            ? ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: 4,
+                itemBuilder: (_, _) => const ListSkeletonItem(),
+              )
+            : _loadError != null && _loadedBook == null
+            ? ErrorView(message: _loadError!, onRetry: _reload)
+            : _loadedBook == null
+            ? const ErrorView(message: '书籍不存在')
+            : privateLocked
+            // [批9c] 锁定页不组合任何真实详情内容
+            ? _buildPrivateLockedPage(context, privacy)
+            // [设置批6b-1 审查 P1-2] 封面设置变化（总是默认封面/
+            // 仅 WiFi/描边阴影）即时刷新详情背景与封面
+            : ValueListenableBuilder<CoverSettings>(
+                valueListenable: coverSettingsListenable,
+                builder: (context, _, _) =>
+                    _buildPage(context, _loadedBook!, _chapters),
+              ),
         // [B1 形态对齐 | full-stack-engineer + UI] 底部固定双按钮栏已移除：
         // 阅读入口改右下浮动胶囊（floatingActionButton 在位），
         // 加书架/移出书架入口保留在四宫格第一格，功能不丢失
-        ),
-      );
+      ),
+    );
   }
 }

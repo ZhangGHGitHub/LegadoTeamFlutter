@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../providers/cover_settings/cover_settings_notifier.dart';
 import 'book_cover.dart';
 import 'book_display_tags_row.dart';
+import 'privacy/private_locked_cover.dart';
 
 /// 书架网格项（对齐参考版 `BookItem.kt` BookshelfGridItem）
 ///
@@ -80,6 +81,9 @@ class BookGridItem extends StatelessWidget {
   /// 卡片背景色（0 = 跟随主题；由调用方按日夜解析）
   final int cardColor;
 
+  /// [批9c] 私密且未授权：封面强模糊 + 遮罩 + 锁标，不渲染任何真实文本
+  final bool locked;
+
   const BookGridItem({
     super.key,
     required this.title,
@@ -99,6 +103,7 @@ class BookGridItem extends StatelessWidget {
     this.showNewBadge = false,
     this.typeLabel,
     this.cardColor = 0,
+    this.locked = false,
     this.onTap,
     this.onCoverLongPress,
     this.onInfoLongPress,
@@ -129,8 +134,13 @@ class BookGridItem extends StatelessWidget {
       minHeight: tagRowHeight,
     );
     final showTitleBelow = gridStyle == 0;
-    final showTags = gridStyle != 2 && tags.isNotEmpty;
-    final reserveTags = gridStyle != 2 && reserveTagRow;
+    final showTags = gridStyle != 2 && !locked && tags.isNotEmpty;
+    final reserveTags = gridStyle != 2 && !locked && reserveTagRow;
+    // [批9c] 锁定态不渲染任何真实信息：书名/作者/标签/未读/新章/类型/进度
+    final effectiveUnread = locked ? 0 : unreadNum;
+    final effectiveProgress = locked ? null : progress;
+    final effectiveShowNewBadge = locked ? false : showNewBadge;
+    final effectiveTypeLabel = locked ? null : typeLabel;
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -145,8 +155,7 @@ class BookGridItem extends StatelessWidget {
                 boxShadow: effectiveCoverShadow
                     ? [
                         BoxShadow(
-                          color:
-                              colorScheme.shadow.withValues(alpha: 0.18),
+                          color: colorScheme.shadow.withValues(alpha: 0.18),
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
@@ -157,6 +166,24 @@ class BookGridItem extends StatelessWidget {
                 borderRadius: BorderRadius.circular(coverCornerRadius),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
+                    final width = constraints.maxWidth.isFinite
+                        ? constraints.maxWidth
+                        : 80.0;
+                    final height = constraints.maxHeight.isFinite
+                        ? constraints.maxHeight
+                        : 110.0;
+                    if (locked) {
+                      return PrivateLockedCover(
+                        width: width,
+                        height: height,
+                        coverUrl: coverUrl,
+                        bookName: title,
+                        bookAuthor: author,
+                        sourceOrigin: sourceOrigin,
+                        heroTag: heroTag,
+                        borderRadius: 0,
+                      );
+                    }
                     return Stack(
                       fit: StackFit.expand,
                       children: [
@@ -164,12 +191,8 @@ class BookGridItem extends StatelessWidget {
                           coverUrl: coverUrl,
                           bookName: title,
                           bookAuthor: author,
-                          width: constraints.maxWidth.isFinite
-                              ? constraints.maxWidth
-                              : 80,
-                          height: constraints.maxHeight.isFinite
-                              ? constraints.maxHeight
-                              : 110,
+                          width: width,
+                          height: height,
                           borderRadius: 0,
                           sourceOrigin: sourceOrigin,
                           heroTag: heroTag,
@@ -200,8 +223,7 @@ class BookGridItem extends StatelessWidget {
                                     ? TextAlign.center
                                     : TextAlign.start,
                                 style: TextStyle(
-                                  fontSize:
-                                      titleSmallFont ? 11 : 12,
+                                  fontSize: titleSmallFont ? 11 : 12,
                                   color: Colors.white,
                                   height: 1.25,
                                   shadows: const [
@@ -215,15 +237,19 @@ class BookGridItem extends StatelessWidget {
                             ),
                           ),
                         // 未读角标（右上）
-                        if (unreadNum > 0)
+                        if (effectiveUnread > 0)
                           Positioned(
                             top: 0,
                             right: 0,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 5, vertical: 1),
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
                               constraints: const BoxConstraints(
-                                  minWidth: 18, minHeight: 18),
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
                               decoration: BoxDecoration(
                                 color: colorScheme.error,
                                 borderRadius: const BorderRadius.only(
@@ -232,7 +258,9 @@ class BookGridItem extends StatelessWidget {
                                 ),
                               ),
                               child: Text(
-                                unreadNum > 99 ? '99+' : '$unreadNum',
+                                effectiveUnread > 99
+                                    ? '99+'
+                                    : '$effectiveUnread',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: colorScheme.onError,
@@ -244,10 +272,9 @@ class BookGridItem extends StatelessWidget {
                             ),
                           ),
                         // 新章节圆点（右下，避开右上未读角标）
-                        if (showNewBadge)
+                        if (effectiveShowNewBadge)
                           Positioned(
-                            key: ValueKey<String>(
-                                'bookshelf-new-dot-$title'),
+                            key: ValueKey<String>('bookshelf-new-dot-$title'),
                             right: 5,
                             bottom: 6,
                             child: Container(
@@ -264,20 +291,23 @@ class BookGridItem extends StatelessWidget {
                             ),
                           ),
                         // 书籍类型（左下；紧凑样式让位给封面书名，改左上）
-                        if (typeLabel != null && typeLabel!.isNotEmpty)
+                        if (effectiveTypeLabel != null &&
+                            effectiveTypeLabel.isNotEmpty)
                           Positioned(
                             left: 4,
                             top: gridStyle == 1 ? 4 : null,
                             bottom: gridStyle == 1 ? null : 4,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 1),
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: const Color(0x99000000),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                typeLabel!,
+                                effectiveTypeLabel,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
@@ -289,18 +319,20 @@ class BookGridItem extends StatelessWidget {
                             ),
                           ),
                         // 封面底部阅读进度条（2dp）
-                        if (progress != null)
+                        if (effectiveProgress != null)
                           Positioned(
                             left: 0,
                             right: 0,
                             bottom: 0,
                             child: LinearProgressIndicator(
-                              value: progress!.clamp(0.0, 1.0),
+                              value: effectiveProgress.clamp(0.0, 1.0),
                               minHeight: 2,
-                              backgroundColor: colorScheme.primary
-                                  .withValues(alpha: 0.25),
+                              backgroundColor: colorScheme.primary.withValues(
+                                alpha: 0.25,
+                              ),
                               valueColor: AlwaysStoppedAnimation(
-                                  colorScheme.primary),
+                                colorScheme.primary,
+                              ),
                             ),
                           ),
                       ],
@@ -327,18 +359,22 @@ class BookGridItem extends StatelessWidget {
                   alignment: titleCenter
                       ? Alignment.topCenter
                       : Alignment.topLeft,
-                  child: Text(
-                    title,
-                    maxLines: titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign:
-                        titleCenter ? TextAlign.center : TextAlign.start,
-                    style: TextStyle(
-                      fontSize: titleSmallFont ? 11 : 12,
-                      color: colorScheme.onSurface,
-                      height: 1.25,
-                    ),
-                  ),
+                  // 锁定态不渲染书名（保留同高占位，网格行高不跳动）
+                  child: locked
+                      ? const SizedBox.shrink()
+                      : Text(
+                          title,
+                          maxLines: titleMaxLines,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: titleCenter
+                              ? TextAlign.center
+                              : TextAlign.start,
+                          style: TextStyle(
+                            fontSize: titleSmallFont ? 11 : 12,
+                            color: colorScheme.onSurface,
+                            height: 1.25,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -353,13 +389,21 @@ class BookGridItem extends StatelessWidget {
           SizedBox(height: effectiveTagRowHeight),
       ],
     );
-    if (cardColor == 0) return content;
+    final rendered = locked
+        // 读屏只说“已隐藏”，不暴露书名/作者/进度等任何语义
+        ? Semantics(
+            container: true,
+            label: '已隐藏',
+            child: ExcludeSemantics(child: content),
+          )
+        : content;
+    if (cardColor == 0) return rendered;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: Color(cardColor),
         borderRadius: BorderRadius.circular(coverCornerRadius),
       ),
-      child: content,
+      child: rendered,
     );
   }
 }

@@ -6,6 +6,11 @@ import 'book_api.dart';
 /// 导出服务
 ///
 /// 提供书籍导出功能，对接 Rust `bookExport` / `bookExportWithOptions`。
+///
+/// [批9c 已知泄漏点] 书籍导出与 Web 阅读按参考版行为**不过滤**私密内容：
+/// 私密书仍可从缓存管理/详情页导出，Web 端也可按 bookUrl 读取。脱敏只在
+/// Flutter UI 的书架/详情/阅读器/列表页生效。若后续需要收紧，应作为独立
+/// 需求裁决（参考版同样未覆盖导出/Web），不要把过滤逻辑塞进本服务。
 class ExportService {
   final BookApi _rustApi;
 
@@ -19,15 +24,15 @@ class ExportService {
 
   /// 支持的字符集列表（对齐 AppConst.charsets 常用项）
   List<String> get supportedEncodings => [
-        'UTF-8',
-        'GBK',
-        'GB2312',
-        'GB18030',
-        'Big5',
-        'UTF-16',
-        'UTF-16LE',
-        'ASCII',
-      ];
+    'UTF-8',
+    'GBK',
+    'GB2312',
+    'GB18030',
+    'Big5',
+    'UTF-16',
+    'UTF-16LE',
+    'ASCII',
+  ];
 
   /// 导出书籍（透传 options → bookExportWithOptions）
   Future<Map<String, dynamic>> export({
@@ -84,11 +89,7 @@ class ExportService {
   }
 
   /// 将导出的文件上传到 WebDAV（文本路径，兼容旧调用）
-  Future<bool> webdavUpload(
-    String configJson,
-    String path,
-    String data,
-  ) async {
+  Future<bool> webdavUpload(String configJson, String path, String data) async {
     try {
       await _rustApi.webdavUpload(configJson, path, data);
       return true;

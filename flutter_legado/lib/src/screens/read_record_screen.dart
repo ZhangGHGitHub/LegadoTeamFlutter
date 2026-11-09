@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/md3_heatmap_calendar.dart';
 import 'read_record_daily_view.dart';
@@ -8,9 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/read_record/read_record_notifier.dart';
 import '../routes.dart';
+import '../services/privacy_content_service.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/md3_fast_scroller.dart';
@@ -19,6 +22,7 @@ import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 import '../utils/error_message.dart';
 import '../widgets/pill_divider.dart';
+import '../widgets/privacy/private_locked_cover.dart';
 
 /// 阅读记录页（对齐原版 `ReadRecordActivity`）
 ///
@@ -195,6 +199,10 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         title: state.searchQuery.isEmpty ? '暂无阅读记录' : '未找到匹配的记录',
       );
     }
+    // [批9c] 私密且未获准的记录：书名/作者/时长/章节一律不渲染，
+    // 只留模糊封面（时间保留）；反查不到书籍按非私密处理（fail-open）。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
     // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
     // [UI_SYNC_REFACTOR R3] 千级记录快速滚动条
     return CustomRefreshIndicator(
@@ -206,50 +214,63 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
           // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           itemCount: state.records.length + 1,
-        separatorBuilder: (_, _) => const Divider(
-          height: 1,
-          // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
-          indent: 16,
-          endIndent: 16,
-        ),
-        itemBuilder: (context, index) {
-          // [阅读热力图] 默认收起的可选区块（用户授权新增，AGENTS 红线
-          // 2026-08-29 口径）：时长模式 = readRecordDailyList（Rust 契约
-          // 2026-08-29）；计数模式 = 记录 lastRead 落日去重
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
-                title: Text(
-                  '阅读热力图',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                subtitle: Text(
-                  '近一年每日阅读情况',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-                children: [
-                  _HeatmapSection(records: state.records),
-                ],
-              ),
-            );
-          }
-          final item = state.records[index - 1];
-          return _ReadRecordTile(
-            item: item,
-            lastReadText: _formatDate(item.lastRead),
-            durationText: formatDuring(item.readTime),
-            onTap: () => _openRecord(context, item),
-            onClear: () => _confirmDelete(context, item),
-          );
-        },
+          separatorBuilder: (_, _) => const Divider(
+            height: 1,
+            // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
+            indent: 16,
+            endIndent: 16,
           ),
+          itemBuilder: (context, index) {
+            // [阅读热力图] 默认收起的可选区块（用户授权新增，AGENTS 红线
+            // 2026-08-29 口径）：时长模式 = readRecordDailyList（Rust 契约
+            // 2026-08-29）；计数模式 = 记录 lastRead 落日去重
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+                  title: Text(
+                    '阅读热力图',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  subtitle: Text(
+                    '近一年每日阅读情况',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  children: [_HeatmapSection(records: state.records)],
+                ),
+              );
+            }
+            final item = state.records[index - 1];
+            final recordKey = PrivacyRecordKey(
+              item.physicalBookName.isNotEmpty
+                  ? item.physicalBookName
+                  : item.bookName,
+              item.author,
+            );
+            final locked = privacyContent.isRecordLocked(recordKey, privacy);
+            final lockedBook = locked
+                ? privacyContent.findBookByNameAuthor(
+                    recordKey.name,
+                    recordKey.author,
+                  )
+                : null;
+            return _ReadRecordTile(
+              item: item,
+              lastReadText: _formatDate(item.lastRead),
+              durationText: formatDuring(item.readTime),
+              locked: locked,
+              lockedCoverUrl:
+                  lockedBook?.customCoverUrl ?? lockedBook?.coverUrl,
+              onTap: () => _openRecord(context, item),
+              onClear: () => _confirmDelete(context, item),
+            );
+          },
         ),
+      ),
     );
   }
 
@@ -270,18 +291,19 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
   Future<void> _openRecord(BuildContext context, ReadRecordShow item) async {
     final notifier = ref.read(readRecordNotifierProvider.notifier);
     // v113：记录按显示名/作者聚合，打开书籍须用物理书名定位书架
-    final physicalName =
-        item.physicalBookName.isNotEmpty ? item.physicalBookName : item.bookName;
+    final physicalName = item.physicalBookName.isNotEmpty
+        ? item.physicalBookName
+        : item.bookName;
     final book = await notifier.findBookByName(physicalName);
     if (!context.mounted) return;
     if (book == null) {
       // 对齐原版：书架无书 → 带书名打开搜索
       // [设置批2b-2b P1-3] 阅读记录可位于「我的」容器 nested Navigator 内，
       // 搜索必须打开在根导航（全屏），不能关进右栏/My 页签。
-      await Navigator.of(context, rootNavigator: true).pushNamed(
-        AppRoutes.search,
-        arguments: item.bookName,
-      );
+      await Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamed(AppRoutes.search, arguments: item.bookName);
       return;
     }
     await _openBook(context, book);
@@ -293,18 +315,10 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
   /// 阅读器/书详必须走根导航；[BookOpenUtils.openBook] 的
   /// `useGlobalNavigator` 经 `PlatformBridgeService.navigatorKey` 落根栈。
   Future<void> _openBook(BuildContext context, Book book) async {
-    await BookOpenUtils.openBook(
-      context,
-      ref,
-      book,
-      useGlobalNavigator: true,
-    );
+    await BookOpenUtils.openBook(context, ref, book, useGlobalNavigator: true);
   }
 
-  Future<void> _confirmDelete(
-    BuildContext context,
-    ReadRecordShow item,
-  ) async {
+  Future<void> _confirmDelete(BuildContext context, ReadRecordShow item) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -382,18 +396,69 @@ class _ReadRecordTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
+  /// [批9c] 私密且未获准：不渲染书名/作者/时长，只留模糊封面与时间
+  final bool locked;
+  final String? lockedCoverUrl;
+
   const _ReadRecordTile({
     required this.item,
     required this.durationText,
     required this.lastReadText,
     required this.onTap,
     required this.onClear,
+    this.locked = false,
+    this.lockedCoverUrl,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final secondary = colorScheme.onSurfaceVariant;
+    if (locked) {
+      // 脱敏行：读屏也不给（描述里拼的正是书名/章节）；时间不是身份信息，保留
+      return Semantics(
+        container: true,
+        child: ExcludeSemantics(
+          child: InkWell(
+            key: const ValueKey('readRecordLockedTile'),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  PrivateLockedCover(
+                    width: 40,
+                    height: 56,
+                    coverUrl: lockedCoverUrl,
+                    bookName: item.bookName,
+                    bookAuthor: item.author,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 原书名列/作者列/时长列全部不渲染
+                        const SizedBox(height: 18),
+                        if (lastReadText.isNotEmpty)
+                          Text(
+                            '最后阅读：$lastReadText',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(color: secondary),
+                          ),
+                      ],
+                    ),
+                  ),
+                  TextButton(onPressed: onClear, child: const Text('清空')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -418,41 +483,37 @@ class _ReadRecordTile extends StatelessWidget {
                       item.author,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: secondary,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: secondary),
                     ),
                   ],
                   const SizedBox(height: 4),
                   Text(
                     '阅读时长：$durationText',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: secondary,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: secondary),
                   ),
                   if (lastReadText.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
                       '最后阅读：$lastReadText',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: secondary,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: secondary),
                     ),
                   ],
                 ],
               ),
             ),
-            TextButton(
-              onPressed: onClear,
-              child: const Text('清空'),
-            ),
+            TextButton(onPressed: onClear, child: const Text('清空')),
           ],
         ),
       ),
     );
   }
 }
-
 
 /// 热力图区块：懒加载每日时长（readRecordDailyList）+ 时长/本数双模式切换
 class _HeatmapSection extends ConsumerStatefulWidget {
@@ -489,10 +550,11 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
         final parts = date.split('-');
         if (parts.length != 3) continue;
         map[DateTime(
-          int.parse(parts[0]),
-          int.parse(parts[1]),
-          int.parse(parts[2]),
-        )] = seconds;
+              int.parse(parts[0]),
+              int.parse(parts[1]),
+              int.parse(parts[2]),
+            )] =
+            seconds;
       }
       setState(() => _dailySeconds = map);
     } catch (e) {
@@ -503,9 +565,7 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
   @override
   Widget build(BuildContext context) {
     final dailyCounts = Md3HeatmapCalendar.aggregateDailyBookCount(
-      widget.records.map(
-        (r) => (bookName: r.bookName, lastRead: r.lastRead),
-      ),
+      widget.records.map((r) => (bookName: r.bookName, lastRead: r.lastRead)),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -526,17 +586,15 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
           selected: {_mode},
           onSelectionChanged: (selection) =>
               setState(() => _mode = selection.first),
-          style: const ButtonStyle(
-            visualDensity: VisualDensity.compact,
-          ),
+          style: const ButtonStyle(visualDensity: VisualDensity.compact),
         ),
         const SizedBox(height: 12),
         if (_error != null)
           Text(
             '每日时长加载失败：$_error',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+              color: Theme.of(context).colorScheme.error,
+            ),
           )
         else
           Md3HeatmapCalendar(

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
@@ -8,6 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
+import '../services/privacy_content_service.dart';
+import '../widgets/privacy/private_locked_cover.dart';
 
 /// 书签管理页面
 class BookmarkScreen extends ConsumerStatefulWidget {
@@ -64,8 +68,11 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Symbols.error_rounded, size: 48,
-                color: Theme.of(context).colorScheme.error),
+            Icon(
+              Symbols.error_rounded,
+              size: 48,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(height: 16),
             Text(state.error!, textAlign: TextAlign.center),
             const SizedBox(height: 16),
@@ -82,8 +89,11 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Symbols.bookmark_border_rounded, size: 64,
-                color: Theme.of(context).colorScheme.outline),
+            Icon(
+              Symbols.bookmark_border_rounded,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
             const SizedBox(height: 16),
             Text(
               _searchQuery.isEmpty ? '暂无书签' : '未找到匹配的书签',
@@ -97,20 +107,34 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
   }
 
   Widget _buildBookmarkList(BuildContext context, BookmarkState state) {
+    // [批9c] 私密且未获准的书签：同一套「书名+作者反查」判定，行内文字
+    // 全不渲染，只留模糊封面与时间（对齐参考版 AllBookmarkScreen）。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
     // [UI_SYNC_REFACTOR R3] 书签列表快速滚动条
     return Md3FastScroller(
       controller: _fsController,
       child: ListView.builder(
-      controller: _fsController,
-      itemCount: state.bookmarks.length,
-      itemBuilder: (context, index) {
-        final bookmark = state.bookmarks[index];
-        return _BookmarkTile(
-          bookmark: bookmark,
-          onTap: () => _navigateToChapter(context, bookmark),
-          onDelete: () => _confirmDelete(context, bookmark),
-        );
-      },
+        controller: _fsController,
+        itemCount: state.bookmarks.length,
+        itemBuilder: (context, index) {
+          final bookmark = state.bookmarks[index];
+          final key = PrivacyRecordKey(bookmark.bookName, bookmark.bookAuthor);
+          final locked = privacyContent.isRecordLocked(key, privacy);
+          final lockedBook = locked
+              ? privacyContent.findBookByNameAuthor(
+                  bookmark.bookName,
+                  bookmark.bookAuthor,
+                )
+              : null;
+          return _BookmarkTile(
+            bookmark: bookmark,
+            locked: locked,
+            lockedCoverUrl: lockedBook?.customCoverUrl ?? lockedBook?.coverUrl,
+            onTap: () => _navigateToChapter(context, bookmark),
+            onDelete: () => _confirmDelete(context, bookmark),
+          );
+        },
       ),
     );
   }
@@ -141,9 +165,9 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
               ref
                   .read(bookmarkNotifierProvider.notifier)
                   .deleteBookmark(bookmark.id);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('书签已删除')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('书签已删除')));
             },
             child: const Text('删除'),
           ),
@@ -160,9 +184,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
         title: const Text('搜索书签'),
         content: TextField(
           controller: _searchController,
-          decoration: const InputDecoration(
-            hintText: '输入关键词搜索书签',
-          ),
+          decoration: const InputDecoration(hintText: '输入关键词搜索书签'),
           autofocus: true,
           onSubmitted: (value) {
             Navigator.of(ctx).pop();
@@ -199,10 +221,16 @@ class _BookmarkTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
+  /// [批9c] 私密且未获准：不渲染章节/书名/正文/备注，只留模糊封面与时间
+  final bool locked;
+  final String? lockedCoverUrl;
+
   const _BookmarkTile({
     required this.bookmark,
     required this.onTap,
     required this.onDelete,
+    this.locked = false,
+    this.lockedCoverUrl,
   });
 
   @override
@@ -214,6 +242,40 @@ class _BookmarkTile extends StatelessWidget {
     final timeStr =
         '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+    if (locked) {
+      return Card(
+        key: const ValueKey('bookmarkLockedTile'),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Semantics(
+          container: true,
+          child: ExcludeSemantics(
+            child: InkWell(
+              onTap: onTap,
+              onLongPress: onDelete,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    PrivateLockedCover(
+                      width: 40,
+                      height: 56,
+                      coverUrl: lockedCoverUrl,
+                      bookName: bookmark.bookName,
+                      bookAuthor: bookmark.bookAuthor,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: SizedBox(height: 56)),
+                    Text(timeStr, style: theme.textTheme.labelSmall),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Card(
       // [LAYOUT_PLAN P1] 卡片边距统一 horizontal16（全局标尺），纵向 4 保留密度
@@ -230,8 +292,11 @@ class _BookmarkTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Symbols.bookmark_rounded, size: 16,
-                      color: theme.colorScheme.primary),
+                  Icon(
+                    Symbols.bookmark_rounded,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -249,8 +314,11 @@ class _BookmarkTile extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
-                  Icon(Symbols.menu_book_rounded, size: 14,
-                      color: theme.colorScheme.outline),
+                  Icon(
+                    Symbols.menu_book_rounded,
+                    size: 14,
+                    color: theme.colorScheme.outline,
+                  ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(

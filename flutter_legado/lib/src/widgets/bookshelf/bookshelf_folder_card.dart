@@ -171,6 +171,9 @@ class FolderGroupGridCard extends StatelessWidget {
   final BookshelfSettings settings;
   final double coverWidth;
   final bool coverShadow;
+
+  /// [批9c] 私密分组锁定态：文件夹根不显示预览与书籍数
+  final bool locked;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -183,6 +186,7 @@ class FolderGroupGridCard extends StatelessWidget {
     required this.coverWidth,
     required this.onTap,
     this.coverShadow = false,
+    this.locked = false,
     this.onLongPress,
   });
 
@@ -190,7 +194,7 @@ class FolderGroupGridCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final countText = settings.showBookCount ? '$bookCount 本' : null;
+    final countText = settings.showBookCount && !locked ? '$bookCount 本' : null;
     return InkWell(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),
       onTap: onTap,
@@ -258,6 +262,9 @@ class FolderGroupListCard extends StatelessWidget {
   /// 极窄列（4–5 列/格宽 <100dp）竖向紧凑卡：封面在上、组名/计数在下
   final bool vertical;
   final bool coverShadow;
+
+  /// [批9c] 私密分组锁定态：文件夹根不显示预览与书籍数
+  final bool locked;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -271,6 +278,7 @@ class FolderGroupListCard extends StatelessWidget {
     this.dense = false,
     this.vertical = false,
     this.coverShadow = false,
+    this.locked = false,
     required this.onTap,
     this.onLongPress,
   });
@@ -290,7 +298,7 @@ class FolderGroupListCard extends StatelessWidget {
     final cardColorValue = settings.cardColorFor(
       isDark: theme.brightness == Brightness.dark,
     );
-    final countText = settings.showBookCount ? '$bookCount 本' : null;
+    final countText = settings.showBookCount && !locked ? '$bookCount 本' : null;
     final firstBook = previews.isEmpty ? null : previews.first;
 
     final card = Material(
@@ -345,7 +353,8 @@ class FolderGroupListCard extends StatelessWidget {
                             child: Text(
                               countText,
                               key: ValueKey(
-                                  'folderGroupCount_${group.groupId}'),
+                                'folderGroupCount_${group.groupId}',
+                              ),
                               maxLines: 1,
                               style: TextStyle(
                                 fontSize: 11,
@@ -386,8 +395,9 @@ class FolderGroupListCard extends StatelessWidget {
                         children: [
                           Text(
                             group.groupName,
-                            maxLines:
-                                compact ? 1 : settings.bookshelfTitleMaxLines,
+                            maxLines: compact
+                                ? 1
+                                : settings.bookshelfTitleMaxLines,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 16,
@@ -452,6 +462,9 @@ class FolderGroupHorizontalCard extends StatelessWidget {
   final int bookCount;
   final BookshelfSettings settings;
   final bool dense;
+
+  /// [批9c] 私密分组锁定态：文件夹根不显示预览与书籍数
+  final bool locked;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -466,6 +479,7 @@ class FolderGroupHorizontalCard extends StatelessWidget {
     required this.settings,
     required this.onTap,
     this.dense = false,
+    this.locked = false,
     this.onLongPress,
     this.onBookTap,
   });
@@ -478,7 +492,7 @@ class FolderGroupHorizontalCard extends StatelessWidget {
       isDark: theme.brightness == Brightness.dark,
     );
     final coverCount = settings.bookshelfGroupCoverCount.clamp(1, 10);
-    final countText = settings.showBookCount ? '$bookCount 本' : null;
+    final countText = settings.showBookCount && !locked ? '$bookCount 本' : null;
 
     return Material(
       key: ValueKey('bookshelf_folder_group_${group.groupId}'),

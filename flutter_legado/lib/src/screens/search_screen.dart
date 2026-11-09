@@ -13,6 +13,8 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/search/search_notifier.dart';
 import '../routes.dart';
 import '../widgets/book_cover.dart';
@@ -250,9 +252,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           next.failedSources.isNotEmpty &&
           _loginToastShownForSession != _searchSessionId) {
         final loginCount = next.failedSources
-            .where((f) =>
-                f.error.contains('Login required') ||
-                f.error.contains('需要登录'))
+            .where(
+              (f) =>
+                  f.error.contains('Login required') ||
+                  f.error.contains('需要登录'),
+            )
             .length;
         if (loginCount > 0 && mounted) {
           _loginToastShownForSession = _searchSessionId;

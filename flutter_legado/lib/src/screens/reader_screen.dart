@@ -16,6 +16,7 @@ import '../models/source_match.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
@@ -68,7 +69,7 @@ Future<bool> refreshReaderBookAfterToc(
         fresh.readConfig?.useReplaceRule != latest.readConfig?.useReplaceRule;
     final reSegmentChanged =
         (fresh.readConfig?.reSegment ?? false) !=
-            (latest.readConfig?.reSegment ?? false);
+        (latest.readConfig?.reSegment ?? false);
     ref
         .read(readerNotifierProvider.notifier)
         .updateCurrentBook(
@@ -114,6 +115,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// 阅读器高级配置（自动翻页/点击区域/段距/状态栏）
   ReaderAdvancedConfig _advConfig = ReaderAdvancedConfig();
+
+  /// [批9c] dispose 阶段不能读 ref；提前捕获用于离页撤销私密授权
+  PrivacyNotifier? _privacyNotifier;
+
+  /// 最近一次构建时的当前书 URL（dispose 撤销授权用）
+  String? _privateBookUrl;
 
   /// [批4d] 已加载书签的书键（bookName + bookAuthor），避免重复查库
   String? _bookmarkBookKey;
@@ -258,6 +265,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   @override
   void initState() {
     super.initState();
+    // [批9c] 提前取私密 Notifier（dispose 时不能再读 ref）
+    _privacyNotifier = ref.read(privacyNotifierProvider.notifier);
     // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
     // [设备验收 P1] Android 走原生 ReaderKeysBridge 捕获（不依赖
     // FlutterView 焦点）；桌面/iOS 无该通道，保留 HardwareKeyboard。
@@ -357,7 +366,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       unawaited(ref.read(audioNotifierProvider.notifier).onReaderExit());
     } catch (e) {
       // [设备验收 P1] 不再静默：记录原因，但不改变退出流程
-      debugPrint('阅读器 dispose 停止朗读失败（忽略）: $e');
+      debugPrint('阅读器 dispose 停止朗读失败（忽略）：$e');
+    }
+    // [批9c] 离开文本阅读器撤销 EveryTime 目标授权（路由层 PrivateReadGate
+    // 也会撤销，此处覆盖“gate 未被重建但阅读器被销毁”的边角路径）。
+    final privacyNotifier = _privacyNotifier;
+    final privateUrl = _privateBookUrl;
+    if (privacyNotifier != null) {
+      Future.microtask(() {
+        try {
+          privacyNotifier.revokeBook(privateUrl);
+        } catch (e) {
+          debugPrint('阅读器 dispose 撤销私密授权失败（忽略）：$e');
+        }
+      });
     }
     super.dispose();
   }
@@ -440,10 +462,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   Future<void> _refreshCurrentBookFromDb() async {
-    await refreshReaderBookAfterToc(
-      ref,
-      isMounted: () => mounted,
-    );
+    await refreshReaderBookAfterToc(ref, isMounted: () => mounted);
   }
 
   // ===== [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批系统级生效 =====
@@ -1002,6 +1021,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
+    // [批9c] 记录当前书供 dispose 撤销私密授权（dispose 时 ref 已不可用）
+    _privateBookUrl = state.currentBook?.bookUrl;
     // 朗读控制条显隐依赖全局朗读状态（朗读进行中时替代底部功能栏）
     final audio = ref.watch(audioNotifierProvider);
     final book = state.currentBook;

@@ -12,8 +12,17 @@
 // 本批（9b）只提供设置页与启动闸门；EveryTime 的实际消费方是 9c 的
 // 分组/书籍入口闸门，本批只持久化策略值。
 //
-// 编写：全栈工程师（设置批9b） ｜ 2026-11-09
+// [批9c] 追加按目标授权（EveryTime）与会话级授权的消费语义：
+// - [sessionUnlocked] 仅在 AppSession / UntilBackground 频率下代表
+//   “进程内放行全部私密内容”；
+// - [grantedBookUrls] / [grantedGroupIds] 仅在 EveryTime 下使用，记录
+//   “刚验证过的那一个目标”，离开即撤销（详见 PrivacyNotifier）。
+//
+// 编写：全栈工程师（设置批9b / 批9c） ｜ 2026-11-09
 import 'package:flutter/foundation.dart';
+
+import '../../models/models.dart';
+import '../../utils/book_group_match.dart';
 
 /// 隐私内容解锁频率（对齐参考版 `PrivateUnlockScope`）
 enum PrivacyUnlockScope {
@@ -103,6 +112,8 @@ class PrivacyState {
     this.backgroundGraceSeconds = 0,
     this.sessionUnlocked = false,
     this.appStartVerified = false,
+    this.grantedBookUrls = const <String>{},
+    this.grantedGroupIds = const <int>{},
     this.loaded = false,
   });
 
@@ -139,6 +150,12 @@ class PrivacyState {
   /// 启动闸门是否已通过（解锁成功或已锁定后重新解锁；[lock] 清除）
   final bool appStartVerified;
 
+  /// [批9c] EveryTime 频率下刚验证过的单本目标（离开即撤销）
+  final Set<String> grantedBookUrls;
+
+  /// [批9c] EveryTime 频率下刚验证过的分组目标（离开分组即撤销）
+  final Set<int> grantedGroupIds;
+
   /// 偏好/凭据异步加载是否完成（未完成时启动闸门只显示占位，避免闪现主页）
   final bool loaded;
 
@@ -154,6 +171,58 @@ class PrivacyState {
       !appStartVerified &&
       !sessionUnlocked;
 
+  // ===== [批9c] 内容授权判定 =====
+
+  /// 会话级是否放行全部私密内容
+  ///
+  /// 只有 AppSession / UntilBackground 两种频率把「会话解锁」当作内容放行；
+  /// EveryTime 下即使启动闸门解锁（`sessionUnlocked` 为 true）也只证明
+  /// “进得来”，不代表对任何分组/书籍的授权——否则单书/分组验证形同虚设。
+  bool get contentSessionUnlocked =>
+      enabled && sessionUnlocked && unlockScope != PrivacyUnlockScope.everyTime;
+
+  /// 指定目标是否已获准查看
+  ///
+  /// - 总开关关闭：恒真（不验证、不脱敏）；
+  /// - 会话级解锁：恒真；
+  /// - EveryTime：命中「刚验证过的单本 / 分组」才放行。
+  bool isTargetGranted({String? bookUrl, int? groupId}) {
+    if (!enabled) return true;
+    if (contentSessionUnlocked) return true;
+    if (bookUrl != null && grantedBookUrls.contains(bookUrl)) return true;
+    if (groupId != null && grantedGroupIds.contains(groupId)) return true;
+    return false;
+  }
+
+  /// 书籍是否已获准查看（所属分组已授权时组内书一并放行）
+  bool isBookTargetGranted(Book book) {
+    if (!enabled) return true;
+    if (contentSessionUnlocked) return true;
+    if (grantedBookUrls.contains(book.bookUrl)) return true;
+    // 进了私密分组还要逐本再验证会非常吵：任一已授权分组命中即放行。
+    // 复用混合语义（2^n 位掩码 / 旧时间戳 exact），不做裸位与。
+    for (final groupId in grantedGroupIds) {
+      if (bookBelongsToCustomGroup(book, groupId)) return true;
+    }
+    return false;
+  }
+
+  /// 单本是否应脱敏
+  ///
+  /// - [isPrivate] 由调用方按「单本标记 ∪ 私密分组」判定后传入；
+  /// - 「打开书籍时验证」关闭时不脱敏（对齐参考版 `verifyOnOpenBook`）；
+  /// - 总开关关闭时 [isBookTargetGranted] 恒真，同样不脱敏。
+  bool isBookLocked(Book book, {required bool isPrivate}) {
+    if (!enabled || !verifyOnOpenBook) return false;
+    return isPrivate && !isBookTargetGranted(book);
+  }
+
+  /// 分组内容区是否应整页锁定
+  bool isGroupContentLocked(int groupId, {required bool isPrivate}) {
+    if (!enabled || !verifyOnEnterGroup) return false;
+    return isPrivate && !isTargetGranted(groupId: groupId);
+  }
+
   PrivacyState copyWith({
     bool? enabled,
     bool? hasPassword,
@@ -166,6 +235,8 @@ class PrivacyState {
     int? backgroundGraceSeconds,
     bool? sessionUnlocked,
     bool? appStartVerified,
+    Set<String>? grantedBookUrls,
+    Set<int>? grantedGroupIds,
     bool? loaded,
   }) {
     return PrivacyState(
@@ -185,6 +256,8 @@ class PrivacyState {
           backgroundGraceSeconds ?? this.backgroundGraceSeconds,
       sessionUnlocked: sessionUnlocked ?? this.sessionUnlocked,
       appStartVerified: appStartVerified ?? this.appStartVerified,
+      grantedBookUrls: grantedBookUrls ?? this.grantedBookUrls,
+      grantedGroupIds: grantedGroupIds ?? this.grantedGroupIds,
       loaded: loaded ?? this.loaded,
     );
   }

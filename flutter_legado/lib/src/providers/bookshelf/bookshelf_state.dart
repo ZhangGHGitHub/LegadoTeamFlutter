@@ -1,7 +1,13 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../models/models.dart';
+import '../../providers/privacy/privacy_state.dart';
 import '../../utils/book_display_tags.dart';
+import '../../utils/book_group_match.dart';
+
+// [批9c] 分组匹配工具抽至 utils/book_group_match.dart（隐私判定共用），
+// 继续 re-export，既有 `import bookshelf_state.dart` 的调用方无需改动。
+export '../../utils/book_group_match.dart';
 
 part 'bookshelf_state.freezed.dart';
 
@@ -16,70 +22,6 @@ class BookGroupId {
   static const int netNone = -4; // 网络未分组
   static const int localNone = -5; // 本地未分组
   static const int video = -6; // 视频
-}
-
-/// 新分组位掩码最大组合值（1<<30 及以下所有位全开）
-const int kMaxCustomGroupMask = (1 << 31) - 1;
-
-/// 是否为 2 的幂（1,2,4,…；0/负数返回 false）
-bool isPowerOfTwoGroupId(int groupId) =>
-    groupId > 0 && (groupId & (groupId - 1)) == 0;
-
-/// 书籍是否属于自定义分组（混合语义，2026-11-06 设备修复）
-///
-/// - [groupId] 为 2 的幂（新分组）→ `book.group` 位掩码匹配；
-/// - [groupId] 为非 2 的幂（旧时间戳/任意 ID）→ `book.group == groupId`；
-/// - `book.group` 仍是旧时间戳（> 位掩码最大值）→ 只做 exact 匹配，
-///   避免旧书的低位 bit 误命中新 2^n 分组；
-/// - `groupId <= 0`（特殊组）不走本 helper。
-bool bookBelongsToCustomGroup(Book book, int groupId) {
-  if (groupId <= 0) return false;
-  if (!isPowerOfTwoGroupId(groupId)) {
-    return book.group == groupId;
-  }
-  // 旧时间戳/任意超大值不是位掩码，只按 exact 兼容
-  if (book.group <= 0 || book.group > kMaxCustomGroupMask) {
-    return book.group == groupId;
-  }
-  return (book.group & groupId) != 0;
-}
-
-/// 书籍命中的自定义分组名（按传入组顺序；空名过滤，旧时间戳 exact）
-List<String> bookGroupNames(Book book, Iterable<BookGroup> groups) => [
-      for (final group in groups)
-        if (group.groupId > 0 &&
-            bookBelongsToCustomGroup(book, group.groupId) &&
-            group.groupName.trim().isNotEmpty)
-          group.groupName.trim(),
-    ];
-
-/// 分组分配后的新 `books.group` 值
-///
-/// - 新 2^n 组：旧位掩码值 OR 新位（保留其它组）；
-/// - 旧时间戳组/书籍仍为旧时间戳值：整体改为该组（旧值不做位运算）；
-int nextGroupMaskOnAssign(Book book, int groupId) {
-  if (groupId <= 0) return book.group;
-  if (!isPowerOfTwoGroupId(groupId) ||
-      book.group < 0 ||
-      book.group > kMaxCustomGroupMask) {
-    return groupId;
-  }
-  return book.group | groupId;
-}
-
-/// 从分组移除后的新 `books.group` 值
-///
-/// - 新 2^n 组：清对应位，保留其它组；
-/// - 旧时间戳组：仅当 exact 命中时清 0（不做位运算）；
-int nextGroupMaskOnRemove(Book book, int groupId) {
-  if (groupId <= 0) return book.group;
-  if (!isPowerOfTwoGroupId(groupId)) {
-    return book.group == groupId ? 0 : book.group;
-  }
-  if (book.group < 0 || book.group > kMaxCustomGroupMask) {
-    return book.group;
-  }
-  return book.group & ~groupId;
 }
 
 /// 书架 UI 状态（immutable）
@@ -127,6 +69,21 @@ class BookshelfState with _$BookshelfState {
 
     /// [批35] 标签内容 - 字数（`Book.wordCount`）
     @Default(true) bool showWordCount,
+
+    /// [批9c] 单本私密 URL 快照（`privacyGetPrivateBookUrls`）
+    ///
+    /// 与 `Book.isPrivate` 取并集判定：列表接口可能滞后于刚写入的标记，
+    /// 隐私服务快照是私密判定的真源（Rust 侧同库同事务）。
+    @Default(<String>{}) Set<String> privateBookUrls,
+
+    /// [批9c] 私密分组 ID 快照（`privacyGetPrivateGroupIds`）
+    @Default(<int>{}) Set<int> privateGroupIds,
+
+    /// [批9c] 私密标记是否已加载完成
+    ///
+    /// false 时书架先不渲染锁定态（列表与标记并行加载，避免闪烁）；
+    /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
+    @Default(false) bool privacyLoaded,
   }) = _BookshelfState;
 }
 
@@ -156,33 +113,108 @@ extension BookshelfStateGrouping on BookshelfState {
   }
 
   /// 当前选中分组
-  BookGroup? get selectedGroup =>
-      groups.isEmpty ? null : groups[selectedGroupIndex.clamp(0, groups.length - 1)];
+  BookGroup? get selectedGroup => groups.isEmpty
+      ? null
+      : groups[selectedGroupIndex.clamp(0, groups.length - 1)];
+
+  /// [批9c] 该分组是否为私密分组
+  bool isGroupPrivate(int groupId) => privateGroupIds.contains(groupId);
+
+  /// [批9c] 书籍是否属于任一私密分组
+  ///
+  /// 复用 [bookBelongsToCustomGroup]（2^n 位掩码 / 旧时间戳 exact），
+  /// 不做裸位与：旧时间戳书籍的低位 bit 不能误命中新 2^n 分组。
+  bool isBookInPrivateGroup(Book book) =>
+      privateGroupIds.any((gid) => bookBelongsToCustomGroup(book, gid));
+
+  /// [批9c] 书籍是否为私密内容（单本标记 ∪ 私密分组）
+  ///
+  /// 单本标记取 `Book.isPrivate` 与隐私服务快照的并集：快照覆盖批量
+  /// 写入后列表尚未刷新的窗口。
+  bool isBookPrivateContent(Book book) =>
+      book.isPrivate ||
+      privateBookUrls.contains(book.bookUrl) ||
+      isBookInPrivateGroup(book);
+
+  /// [批9c] 书籍此刻是否应脱敏
+  ///
+  /// 与详情页/阅读闸门共用 [PrivacyState.isBookLocked] 同一套授权语义：
+  /// 总开关关闭或关闭「打开书籍时验证」时不脱敏；EveryTime 下仅刚验证过
+  /// 的目标（或已授权分组）放行。
+  bool isBookContentLocked(Book book, PrivacyState privacy) =>
+      privacyLoaded &&
+      privacy.isBookLocked(book, isPrivate: isBookPrivateContent(book));
+
+  /// [批9c] 分组内容区是否应整页锁定
+  bool isGroupContentLocked(int groupId, PrivacyState privacy) =>
+      privacyLoaded &&
+      privacy.isGroupContentLocked(groupId, isPrivate: isGroupPrivate(groupId));
+
+  /// UI 消费别名（对齐参考版 `BookshelfUiState.isGroupLocked`）
+  bool isGroupLocked(int groupId, PrivacyState privacy) =>
+      isGroupContentLocked(groupId, privacy);
 
   /// 分组内书籍（[group] 为空 = 全部）
   ///
   /// [设置批6a-1] 从 [currentGroupBooks] 抽出，供「隐藏空分组」计数与
   /// 组菜单切换复用；语义与原 switch 完全一致。
+  ///
+  /// [批9c] 公开视图剔除私密分组书（对齐参考版 SQL `PUBLIC_BOOK_FILTER`：
+  /// `group=0 or group & privateMask = 0`）：「全部/本地/音频/视频/未关联」
+  /// 与普通自定义分组都看不到私密组书；私密分组自己的 Tab 保留全部组内书，
+  /// 由 UI 渲染整页锁定。
   List<Book> booksInGroup(BookGroup? group) {
-    if (groups.isEmpty || group == null) return books;
+    if (groups.isEmpty || group == null) {
+      return books.where((b) => !isBookInPrivateGroup(b)).toList();
+    }
     final groupId = group.groupId;
-    if (groupId == BookGroupId.all) return books;
+    if (groupId == BookGroupId.all) {
+      return books.where((b) => !isBookInPrivateGroup(b)).toList();
+    }
     switch (groupId) {
       case BookGroupId.local:
-        return books.where((b) => _isLocal(b)).toList();
+        return books
+            .where((b) => _isLocal(b) && !isBookInPrivateGroup(b))
+            .toList();
       case BookGroupId.audio:
         // [UI-fix v2.0.11] bookType 为位标记，用位运算判定（对齐原版 isAudio）— Reasonix
-        return books.where((b) => (b.bookType & BookType.audio) != 0).toList();
-      case BookGroupId.video:
-        return books.where((b) => (b.bookType & BookType.video) != 0).toList();
-      case BookGroupId.netNone:
-        return books.where((b) => !_isLocal(b) && b.group == 0).toList();
-      case BookGroupId.localNone:
-        return books.where((b) => _isLocal(b) && b.group == 0).toList();
-      default:
-        // 自定义分组：2^n 按位掩码，旧时间戳/任意 ID 按 exact 兼容
         return books
-            .where((b) => bookBelongsToCustomGroup(b, groupId))
+            .where(
+              (b) =>
+                  (b.bookType & BookType.audio) != 0 &&
+                  !isBookInPrivateGroup(b),
+            )
+            .toList();
+      case BookGroupId.video:
+        return books
+            .where(
+              (b) =>
+                  (b.bookType & BookType.video) != 0 &&
+                  !isBookInPrivateGroup(b),
+            )
+            .toList();
+      case BookGroupId.netNone:
+        return books
+            .where(
+              (b) => !_isLocal(b) && b.group == 0 && !isBookInPrivateGroup(b),
+            )
+            .toList();
+      case BookGroupId.localNone:
+        return books
+            .where(
+              (b) => _isLocal(b) && b.group == 0 && !isBookInPrivateGroup(b),
+            )
+            .toList();
+      default:
+        // 自定义分组：2^n 按位掩码，旧时间戳/任意 ID 按 exact 兼容。
+        // 私密分组自己的 Tab 保留全部组内书（内容区整页锁定）。
+        final groupPrivate = isGroupPrivate(groupId);
+        return books
+            .where(
+              (b) =>
+                  bookBelongsToCustomGroup(b, groupId) &&
+                  (groupPrivate || !isBookInPrivateGroup(b)),
+            )
             .toList();
     }
   }
@@ -200,8 +232,9 @@ extension BookshelfStateGrouping on BookshelfState {
     }
     if (!hideEmpty) return groups;
     final visible = groups
-        .where((g) =>
-            g.groupId == BookGroupId.all || booksInGroup(g).isNotEmpty)
+        .where(
+          (g) => g.groupId == BookGroupId.all || booksInGroup(g).isNotEmpty,
+        )
         .toList();
     return visible.isEmpty
         ? const [BookGroup(groupId: BookGroupId.all, groupName: '全部')]
