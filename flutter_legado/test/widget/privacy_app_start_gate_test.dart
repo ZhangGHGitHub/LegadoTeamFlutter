@@ -1,8 +1,9 @@
-/// 隐私启动闸门 widget 测试（设置批9b）
+/// 隐私启动闸门 widget 测试（设置批9b；审查回修）
 ///
-/// 覆盖：未启用直通（加载期不闪现主页）、需要锁时不显示 child、错误密码
-/// 重试、正确解锁显示、回车提交、连续提交防抖、credentialError fail-closed
-/// 与重试、退出调用 SystemNavigator.pop、UntilBackground 后台超时重新锁定。
+/// 覆盖：未启用直通（加载期不闪现主页）、需要锁时不显示但保留 child、
+/// 错误密码重试、正确解锁显示、回车提交、连续提交防抖、策略/凭据读取
+/// 失败 fail-closed 与重试、退出调用 SystemNavigator.pop、返回键消费、
+/// 隐藏子树焦点隔离、软键盘 viewInsets 抬升、后台超时重新锁定。
 library;
 
 import 'dart:async';
@@ -34,6 +35,17 @@ class _FlakyCredentialApi extends MockBookApi {
   }
 }
 
+/// 策略读取可恢复失败（fail-closed 重试测试）
+class _FlakyPolicyStore extends PrivacyPolicyStore {
+  bool failRead = true;
+
+  @override
+  Future<PrivacyPolicy> read() {
+    if (failRead) throw const FormatException('策略存储不可读');
+    return super.read();
+  }
+}
+
 /// 解锁校验挂起（连续提交防抖测试）
 class _SlowVerifyApi extends MockBookApi {
   int verifyCalls = 0;
@@ -53,28 +65,43 @@ void main() {
     WidgetTester tester, {
     required MockBookApi api,
     Map<String, Object> prefs = const {},
+    PrivacyPolicyStore? store,
+    GlobalKey<NavigatorState>? navigatorKey,
+    Widget? home,
     double textScale = 1.0,
+    bool earlyBackGuard = false,
     bool settle = true,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
-    final container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(api)],
-    );
+    final overrides = <Override>[bookApiProvider.overrideWithValue(api)];
+    if (store != null) {
+      overrides.add(privacyPolicyStoreProvider.overrideWithValue(store));
+    }
+    final container = ProviderContainer(overrides: overrides);
     addTearDown(container.dispose);
+    if (earlyBackGuard) {
+      // 复刻 LegadoApp 根级守卫：先于 MaterialApp/WidgetsApp 注册
+      final guard = PrivacyBackGuard(
+        () => container.read(privacyNotifierProvider),
+      );
+      WidgetsBinding.instance.addObserver(guard);
+      addTearDown(() => WidgetsBinding.instance.removeObserver(guard));
+    }
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
+          navigatorKey: navigatorKey,
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(
               context,
             ).copyWith(textScaler: TextScaler.linear(textScale)),
             child: PrivacyAppStartGate(child: child ?? const SizedBox.shrink()),
           ),
-          home: const Scaffold(body: Center(child: Text('应用主页'))),
+          home: home ?? const Scaffold(body: Center(child: Text('应用主页'))),
         ),
       ),
     );
@@ -109,6 +136,8 @@ void main() {
 
     expect(find.text('隐私空间'), findsOneWidget);
     expect(find.text('应用主页'), findsNothing);
+    // child 仍挂载（Offstage），仅不可见
+    expect(find.text('应用主页', skipOffstage: false), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('privacyUnlockPasswordField')),
@@ -173,6 +202,131 @@ void main() {
     api.pending.complete(true);
     await tester.pumpAndSettle();
     expect(find.text('应用主页'), findsOneWidget);
+  });
+
+  testWidgets('策略 store 抛错 fail-closed，重试后进入锁页', (tester) async {
+    final api = MockBookApi();
+    await api.privacySetPassword('pw');
+    final store = _FlakyPolicyStore();
+    await pumpGate(
+      tester,
+      api: api,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+      store: store,
+    );
+
+    expect(find.text('无法读取隐私设置'), findsOneWidget);
+    expect(find.text('应用主页'), findsNothing);
+    expect(find.text('应用主页', skipOffstage: false), findsOneWidget);
+
+    store.failRead = false;
+    await tester.tap(find.byKey(const ValueKey('privacyPolicyRetryButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('无法读取隐私设置'), findsNothing);
+    expect(find.text('隐私空间'), findsOneWidget);
+    expect(find.text('应用主页'), findsNothing);
+  });
+
+  testWidgets('策略单键类型错误时不显示 child（fail-closed）', (tester) async {
+    await pumpGate(
+      tester,
+      api: MockBookApi(),
+      prefs: {PrefKeys.privateEnabled: 'yes'},
+    );
+
+    expect(find.text('无法读取隐私设置'), findsOneWidget);
+    expect(find.text('应用主页'), findsNothing);
+    expect(find.text('应用主页', skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('锁页消费系统返回键，不 pop 隐藏路由', (tester) async {
+    final api = MockBookApi();
+    await api.privacySetPassword('pw');
+    final navKey = GlobalKey<NavigatorState>();
+    await pumpGate(
+      tester,
+      api: api,
+      navigatorKey: navKey,
+      earlyBackGuard: true,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+    navKey.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('隐藏路由')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('隐藏路由', skipOffstage: false), findsOneWidget);
+    expect(navKey.currentState!.canPop(), isTrue);
+
+    final handled = await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(handled, isTrue);
+    expect(navKey.currentState!.canPop(), isTrue, reason: '返回键不得穿透闸门');
+    expect(find.text('隐藏路由', skipOffstage: false), findsOneWidget);
+    expect(find.text('隐私空间'), findsOneWidget);
+  });
+
+  testWidgets('隐藏子树不可聚焦，锁页显式聚焦密码框', (tester) async {
+    final api = MockBookApi();
+    await api.privacySetPassword('pw');
+    final hiddenFocus = FocusNode();
+    addTearDown(hiddenFocus.dispose);
+    await pumpGate(
+      tester,
+      api: api,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+      home: Scaffold(
+        body: Center(
+          child: TextField(
+            key: const ValueKey('gateHiddenInput'),
+            focusNode: hiddenFocus,
+            autofocus: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(hiddenFocus.hasFocus, isFalse, reason: 'Offstage 内容不得抢焦点');
+    final lockField = tester.widget<TextField>(
+      find.byKey(const ValueKey('privacyUnlockPasswordField')),
+    );
+    expect(lockField.focusNode?.hasFocus, isTrue, reason: '锁页密码框应显式聚焦');
+  });
+
+  testWidgets('软键盘 viewInsets 抬升闸门内容', (tester) async {
+    final api = MockBookApi();
+    await api.privacySetPassword('pw');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+    addTearDown(tester.view.resetViewInsets);
+    await pumpGate(
+      tester,
+      api: api,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+
+    expect(find.text('隐私空间'), findsOneWidget);
+    final padding =
+        tester
+                .widget<AnimatedPadding>(
+                  find.byKey(const ValueKey('privacyGateKeyboardPadding')),
+                )
+                .padding
+            as EdgeInsets;
+    expect(padding.bottom, 300, reason: '900 物理像素 / dpr 3');
+    expect(find.byKey(const ValueKey('privacyUnlockButton')), findsOneWidget);
   });
 
   testWidgets('credentialError fail-closed：不显示 child，重试后进入锁页', (tester) async {

@@ -1,9 +1,12 @@
-/// 隐私设置页 widget 测试（设置批9b）
+/// 隐私设置页 widget 测试（设置批9b；审查回修）
 ///
-/// 覆盖：设置主页入口与路由、三组与默认值、启用开关（无密码弹设密框、
-/// 取消不开启、成功后自动开启）、密码对话框校验、改密旧密错误、
-/// 清密二次确认与 enabled 回落、生物快捷置灰、360dp + 1.6 倍字体无溢出。
+/// 覆盖：设置主页入口与路由、进入验证闸门（取消/错误/通过/只验不授权）、
+/// 三组与默认值、启用开关（无密码弹设密框、取消不开启、成功后自动开启）、
+/// 密码对话框校验、改密旧密错误、清密二次确认/enabled 回落/保存中不可关闭、
+/// 策略写失败提示、生物快捷置灰、360dp + 1.6 倍字体无溢出。
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -21,6 +24,36 @@ import 'package:flutter_legado/src/screens/privacy_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
+
+/// 清除凭据挂起（保存中禁止关闭测试）
+class _SlowClearApi extends MockBookApi {
+  final Completer<void> pendingClear = Completer<void>();
+
+  @override
+  Future<void> privacyClearPassword() => pendingClear.future;
+}
+
+/// 删除凭据抛错（清密失败文案测试）
+class _FailingClearApi extends MockBookApi {
+  @override
+  Future<void> privacyClearPassword() async {
+    throw StateError('删除失败');
+  }
+}
+
+/// 策略写入恒失败（UI SnackBar 测试）
+class _FailingWriteStore extends PrivacyPolicyStore {
+  const _FailingWriteStore();
+
+  @override
+  Future<bool> writeBool(String key, bool value) async => false;
+
+  @override
+  Future<bool> writeString(String key, String value) async => false;
+
+  @override
+  Future<bool> writeInt(String key, int value) async => false;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -43,14 +76,17 @@ void main() {
     Size physicalSize = const Size(1080, 3000),
     double textScale = 1.0,
     Widget? home,
+    PrivacyPolicyStore? store,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = physicalSize;
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
-    final container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(api)],
-    );
+    final overrides = <Override>[bookApiProvider.overrideWithValue(api)];
+    if (store != null) {
+      overrides.add(privacyPolicyStoreProvider.overrideWithValue(store));
+    }
+    final container = ProviderContainer(overrides: overrides);
     addTearDown(container.dispose);
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -111,6 +147,72 @@ void main() {
 
     expect(find.byType(PrivacySettingsScreen), findsOneWidget);
     expect(find.text('隐私'), findsOneWidget);
+  });
+
+  testWidgets('进入验证：未验证看不到设置项、取消返回、验证通过且只验不授权', (tester) async {
+    await api.privacySetPassword('pw');
+    final container = await pumpScreen(
+      tester,
+      home: const SettingsHomeScreen(),
+      prefs: {PrefKeys.privateEnabled: true},
+      physicalSize: const Size(1080, 3600),
+    );
+
+    await tester.tap(find.text('隐私'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('privacySettingsVerifyGate')),
+      findsOneWidget,
+    );
+    expect(find.text('凭据'), findsNothing, reason: '未验证不得展示设置项');
+
+    await tester.enterText(
+      find.byKey(const ValueKey('privacySettingsVerifyField')),
+      'bad',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacySettingsVerifyButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('密码错误'), findsOneWidget);
+    expect(find.text('凭据'), findsNothing);
+
+    // 取消返回上一页
+    await tester.tap(find.byKey(const ValueKey('privacySettingsVerifyCancel')));
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsHomeScreen), findsOneWidget);
+    expect(find.byType(PrivacySettingsScreen), findsNothing);
+
+    // 重新进入并验证通过：只授予设置页访问，不置会话/启动解锁
+    await tester.tap(find.text('隐私'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacySettingsVerifyField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacySettingsVerifyButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('凭据'), findsOneWidget);
+    expect(stateOf(container).sessionUnlocked, isFalse);
+    expect(stateOf(container).appStartVerified, isFalse);
+  });
+
+  testWidgets('策略写入失败：提示保存失败且开关回滚', (tester) async {
+    final container = await pumpScreen(
+      tester,
+      store: const _FailingWriteStore(),
+    );
+    expect(stateOf(container).verifyOnEnterGroup, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey('privacyVerifyEnterGroupSwitch')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('保存失败，请重试'), findsOneWidget);
+    expect(stateOf(container).verifyOnEnterGroup, isTrue);
+    final row = tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyVerifyEnterGroupSwitch')),
+    );
+    expect(row.value, isTrue);
   });
 
   testWidgets('三组与默认值：凭据/验证时机/说明，生物快捷暂未支持', (tester) async {
@@ -261,6 +363,19 @@ void main() {
       prefs: {PrefKeys.privateEnabled: true},
     );
 
+    // enabled + 已有密码：先通过设置页验证闸门
+    expect(
+      find.byKey(const ValueKey('privacySettingsVerifyGate')),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('privacySettingsVerifyField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacySettingsVerifyButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('凭据'), findsOneWidget);
+
     await tester.tap(find.byKey(const ValueKey('privacyClearPasswordRow')));
     await tester.pumpAndSettle();
     expect(
@@ -299,6 +414,93 @@ void main() {
     expect(find.text('私密功能已关闭'), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(PrefKeys.privateEnabled), isFalse);
+  });
+
+  testWidgets('清密删除失败：提示清除失败且凭据保持有效', (tester) async {
+    final failing = _FailingClearApi();
+    api = failing;
+    await failing.privacySetPassword('pw');
+    final container = await pumpScreen(
+      tester,
+      prefs: {PrefKeys.privateEnabled: true},
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('privacySettingsVerifyField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacySettingsVerifyButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('privacyClearPasswordRow')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyClearPasswordField')),
+      'pw',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('privacyClearPasswordConfirmButton')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('清除失败，请重试'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('privacyClearPasswordDialog')),
+      findsOneWidget,
+    );
+    expect(stateOf(container).hasPassword, isTrue);
+    expect(await failing.privacyVerifyPassword('pw'), isTrue);
+  });
+
+  testWidgets('清密保存中：遮罩点击与系统返回都不能关闭对话框', (tester) async {
+    final slow = _SlowClearApi();
+    api = slow;
+    await slow.privacySetPassword('pw');
+    final container = await pumpScreen(
+      tester,
+      prefs: {PrefKeys.privateEnabled: true},
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('privacySettingsVerifyField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacySettingsVerifyButton')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('privacyClearPasswordRow')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyClearPasswordField')),
+      'pw',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('privacyClearPasswordConfirmButton')),
+    );
+    await tester.pump();
+
+    // 遮罩点击不关闭
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('privacyClearPasswordDialog')),
+      findsOneWidget,
+    );
+
+    // 系统返回被 PopScope 消费
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('privacyClearPasswordDialog')),
+      findsOneWidget,
+    );
+
+    slow.pendingClear.complete();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('privacyClearPasswordDialog')),
+      findsNothing,
+    );
+    expect(stateOf(container).hasPassword, isFalse);
+    expect(stateOf(container).enabled, isFalse);
   });
 
   testWidgets('验证频率下拉：切到 untilBackground 显示宽限，选 30 秒持久化', (tester) async {

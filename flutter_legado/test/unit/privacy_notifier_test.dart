@@ -1,8 +1,9 @@
-/// 隐私/应用锁 Notifier 测试（设置批9b）
+/// 隐私/应用锁 Notifier 测试（设置批9b；审查回修）
 ///
-/// 覆盖：默认策略与持久化、启用需密码、解锁成功/失败、改密验旧、
-/// 清密需验证、AppSession 后台不失效、UntilBackground 宽限 0/30s、
-/// 凭据读取失败 fail-closed 与重试、隐私策略键不随备份恢复。
+/// 覆盖：默认策略与持久化、启用需密码、解锁成功/失败、只验不授权、
+/// 改密验旧、清密需验证与错误分类、AppSession 后台不失效、
+/// UntilBackground 宽限 0/30s（paused/hidden）、策略/凭据读取失败
+/// fail-closed 与重试、策略写入失败回滚、备份口径。
 library;
 
 import 'package:flutter/widgets.dart' show AppLifecycleState;
@@ -32,6 +33,39 @@ class _FlakyCredentialApi extends MockBookApi {
   }
 }
 
+/// 策略读取可恢复失败（fail-closed 重试测试）
+class _FlakyPolicyStore extends PrivacyPolicyStore {
+  bool failRead = true;
+
+  @override
+  Future<PrivacyPolicy> read() {
+    if (failRead) throw const FormatException('策略存储不可读');
+    return super.read();
+  }
+}
+
+/// 策略写入恒失败（setter bool / UI SnackBar 测试）
+class _FailingWriteStore extends PrivacyPolicyStore {
+  const _FailingWriteStore();
+
+  @override
+  Future<bool> writeBool(String key, bool value) async => false;
+
+  @override
+  Future<bool> writeString(String key, String value) async => false;
+
+  @override
+  Future<bool> writeInt(String key, int value) async => false;
+}
+
+/// 删除凭据抛错（清密失败分类测试）
+class _FailingClearApi extends MockBookApi {
+  @override
+  Future<void> privacyClearPassword() async {
+    throw const BridgeError(message: '删除凭据失败');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -45,11 +79,16 @@ void main() {
   Future<PrivacyNotifier> boot({
     Map<String, Object> prefs = const {},
     MockBookApi? overrideApi,
+    PrivacyPolicyStore? store,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
-    container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(overrideApi ?? api)],
-    );
+    final overrides = <Override>[
+      bookApiProvider.overrideWithValue(overrideApi ?? api),
+    ];
+    if (store != null) {
+      overrides.add(privacyPolicyStoreProvider.overrideWithValue(store));
+    }
+    container = ProviderContainer(overrides: overrides);
     addTearDown(container.dispose);
     final notifier = container.read(privacyNotifierProvider.notifier);
     await notifier.ensureLoaded();
@@ -64,6 +103,7 @@ void main() {
     expect(s.loaded, isTrue);
     expect(s.enabled, isFalse);
     expect(s.hasPassword, isFalse);
+    expect(s.policyError, isNull);
     expect(s.credentialError, isNull);
     expect(s.verifyOnEnterGroup, isTrue);
     expect(s.verifyOnOpenBook, isTrue);
@@ -205,16 +245,47 @@ void main() {
     await notifier.setPassword('pw');
     await notifier.setEnabled(true);
     await notifier.unlock('pw');
-    expect(await notifier.clearPassword(password: 'bad'), isFalse);
+    expect(
+      await notifier.clearPassword(password: 'bad'),
+      PrivacyClearPasswordResult.passwordWrong,
+    );
+    expect(
+      await notifier.clearPassword(password: ''),
+      PrivacyClearPasswordResult.passwordWrong,
+    );
     expect(state().hasPassword, isTrue);
     expect(await api.privacyHasPassword(), isTrue);
 
-    expect(await notifier.clearPassword(password: 'pw'), isTrue);
+    expect(
+      await notifier.clearPassword(password: 'pw'),
+      PrivacyClearPasswordResult.success,
+    );
     expect(state().hasPassword, isFalse);
     expect(state().sessionUnlocked, isFalse);
     expect(state().appStartVerified, isFalse);
     expect(state().enabled, isTrue, reason: 'Notifier 保持 enabled，由设置页提示关闭');
     expect(await api.privacyHasPassword(), isFalse);
+  });
+
+  test('只验不授权：verifyPasswordOnly 成功不置会话/启动标记', () async {
+    await api.privacySetPassword('pw');
+    final notifier = await boot();
+    expect(await notifier.verifyPasswordOnly('bad'), isFalse);
+    expect(await notifier.verifyPasswordOnly('pw'), isTrue);
+    expect(state().sessionUnlocked, isFalse);
+    expect(state().appStartVerified, isFalse);
+  });
+
+  test('清密失败分类：API 删除异常归为 failure 且凭据保持不变', () async {
+    final failing = _FailingClearApi();
+    await failing.privacySetPassword('pw');
+    final notifier = await boot(overrideApi: failing);
+    expect(
+      await notifier.clearPassword(password: 'pw'),
+      PrivacyClearPasswordResult.failure,
+    );
+    expect(state().hasPassword, isTrue);
+    expect(await failing.privacyVerifyPassword('pw'), isTrue);
   });
 
   test('AppSession：后台任意时长不失效', () async {
@@ -309,14 +380,107 @@ void main() {
     expect(prefs.getBool(PrefKeys.privateEnabled), isFalse);
   });
 
-  test('隐私策略键始终不写入备份/不被恢复覆盖', () {
-    for (final key in PrefKeys.privatePolicyKeys) {
-      expect(RestoreIgnorePrefs.alwaysIgnoreKeys, contains(key), reason: key);
-      expect(
-        RestoreIgnorePrefs.keyIsNotIgnore(key, const {}),
-        isFalse,
-        reason: '$key 不得随备份往返',
-      );
-    }
+  test('UntilBackground hidden→resumed 同样按宽限失效', () async {
+    await api.privacySetPassword('pw');
+    final notifier = await boot(
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateUnlockScope: 'until_background',
+        PrefKeys.privateBackgroundGraceSeconds: 30,
+      },
+    );
+    await notifier.unlock('pw');
+    final base = DateTime(2026, 11, 9, 10);
+    notifier.handleLifecycleState(AppLifecycleState.hidden, now: base);
+    notifier.handleLifecycleState(
+      AppLifecycleState.resumed,
+      now: base.add(const Duration(seconds: 31)),
+    );
+    expect(state().sessionUnlocked, isFalse);
+  });
+
+  test('策略单键类型错误：policyError 非空，不按默认策略继续', () async {
+    await boot(prefs: {PrefKeys.privateVerifyOnEnterGroup: 'not-bool'});
+    expect(state().loaded, isTrue);
+    expect(state().policyError, '无法读取隐私设置');
+    expect(state().credentialError, isNull);
+  });
+
+  test('策略 store 抛错：policyError 非空，重试成功后恢复策略', () async {
+    await api.privacySetPassword('pw');
+    final store = _FlakyPolicyStore();
+    final notifier = await boot(
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+        PrefKeys.privateUnlockScope: 'until_background',
+        PrefKeys.privateBackgroundGraceSeconds: 120,
+      },
+      store: store,
+    );
+    expect(state().policyError, '无法读取隐私设置');
+    expect(state().credentialError, isNull);
+
+    store.failRead = false;
+    await notifier.retryCredentialCheck();
+    expect(state().policyError, isNull);
+    expect(state().enabled, isTrue);
+    expect(state().verifyOnAppStart, isTrue);
+    expect(state().unlockScope, PrivacyUnlockScope.untilBackground);
+    expect(state().backgroundGraceSeconds, 120);
+  });
+
+  test('策略写入失败：setter 返回 false 并回滚内存状态', () async {
+    final notifier = await boot(store: const _FailingWriteStore());
+    expect(await notifier.setVerifyOnEnterGroup(false), isFalse);
+    expect(state().verifyOnEnterGroup, isTrue);
+    expect(
+      await notifier.setUnlockScope(PrivacyUnlockScope.untilBackground),
+      isFalse,
+    );
+    expect(state().unlockScope, PrivacyUnlockScope.appSession);
+    expect(await notifier.setBackgroundGraceSeconds(30), isFalse);
+    expect(state().backgroundGraceSeconds, 0);
+
+    await notifier.setPassword('pw');
+    expect(await notifier.setEnabled(true), isFalse);
+    expect(state().enabled, isFalse);
+  });
+
+  test('备份口径：仅 private_enabled 排除，其余策略随 appPrefs 往返', () async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.privateEnabled: true,
+      PrefKeys.privateVerifyOnEnterGroup: false,
+      PrefKeys.privateVerifyOnOpenBook: false,
+      PrefKeys.privateVerifyOnAppStart: true,
+      PrefKeys.privateUnlockScope: 'until_background',
+      PrefKeys.privateBackgroundGraceSeconds: 120,
+    });
+    final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+    expect(collected.containsKey(PrefKeys.privateEnabled), isFalse);
+    expect(collected[PrefKeys.privateVerifyOnEnterGroup], isFalse);
+    expect(collected[PrefKeys.privateVerifyOnOpenBook], isFalse);
+    expect(collected[PrefKeys.privateVerifyOnAppStart], isTrue);
+    expect(collected[PrefKeys.privateUnlockScope], 'until_background');
+    expect(collected[PrefKeys.privateBackgroundGraceSeconds], 120);
+
+    expect(
+      RestoreIgnorePrefs.alwaysIgnoreKeys,
+      contains(PrefKeys.privateEnabled),
+    );
+    expect(
+      RestoreIgnorePrefs.alwaysIgnoreKeys,
+      isNot(contains(PrefKeys.privateVerifyOnEnterGroup)),
+    );
+
+    SharedPreferences.setMockInitialValues({});
+    await RestoreIgnorePrefs.applyFromBackup(collected, const {});
+    final restored = await SharedPreferences.getInstance();
+    expect(restored.containsKey(PrefKeys.privateEnabled), isFalse);
+    expect(restored.getBool(PrefKeys.privateVerifyOnEnterGroup), isFalse);
+    expect(restored.getBool(PrefKeys.privateVerifyOnOpenBook), isFalse);
+    expect(restored.getBool(PrefKeys.privateVerifyOnAppStart), isTrue);
+    expect(restored.getString(PrefKeys.privateUnlockScope), 'until_background');
+    expect(restored.getInt(PrefKeys.privateBackgroundGraceSeconds), 120);
   });
 }
