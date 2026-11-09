@@ -8,8 +8,11 @@
 //   直接跳过，不排队），对齐原版 `backupRestoreLocked`；
 // - 上传失败不回滚本地备份，也不阻止 `lastBackup` 更新（本地备份已成功），
 //   失败原因交由调用方提示/记日志。
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
+import '../constants/pref_keys.dart';
 import 'book_api.dart';
 import 'restore_ignore_prefs.dart';
 import 'settings_service.dart';
@@ -48,7 +51,11 @@ class LocalBackupResult {
 class LocalBackupService {
   /// 公共构造仅用于测试替身（互斥锁为**全局静态**，所有实例共享；
   /// 生产代码一律经 [instance] 使用单例）
-  LocalBackupService();
+  LocalBackupService({Future<void> Function(File file)? deleteFileForTest})
+    : _deleteFile = deleteFileForTest;
+
+  /// 测试注入：模拟旧备份删除失败（生产为 null，走 File.delete）
+  final Future<void> Function(File file)? _deleteFile;
 
   /// 全局单例（手动入口与自动调度必须共用同一把锁）
   static final LocalBackupService instance = LocalBackupService();
@@ -128,8 +135,10 @@ class LocalBackupService {
     final s = settings ?? SettingsService();
     final filePath = await api.backup(dirPath);
 
-    // 与手动入口一致：把 appPrefs 注入 JSON 备份（忽略项过滤）
-    final ignore = await s.getRestoreIgnoreConfig();
+    // 与手动入口一致：把 appPrefs 注入 JSON 备份（备份忽略项过滤）。
+    // [批8a] 备份忽略与恢复忽略为两份独立配置：备份侧只看 backupIgnore；
+    // 恢复侧仍用 restoreIgnore。
+    final ignore = await s.getBackupIgnoreConfig();
     await RestoreIgnorePrefs.injectAppPrefsIntoBackupFile(filePath, ignore);
 
     WebDavBackupUploadResult? upload;
@@ -148,6 +157,10 @@ class LocalBackupService {
       }
     }
 
+    // [批8a] 仅保留最新本地备份：上传完成后再清理，避免影响上传；
+    // 清理失败只记日志，不影响本次备份成功。
+    await _pruneOldLocalBackups(dirPath: dirPath, currentPath: filePath, s: s);
+
     await s.setLastBackupTime((now ?? DateTime.now()).millisecondsSinceEpoch);
     return LocalBackupResult(
       filePath: filePath,
@@ -155,5 +168,54 @@ class LocalBackupService {
       uploadError: uploadError,
       uploadSkipped: uploadSkipped,
     );
+  }
+
+  /// 本地备份命名（Dart `RustApi.backup` 生成：`legado_backup_<millis>.json`）
+  static final RegExp _localBackupName = RegExp(r'^legado_backup_.*\.json$');
+
+  /// 仅保留最新本地备份（对齐原版 `Backup.kt:316-320`）
+  ///
+  /// - 开关 `onlyLatestBackup` 默认 true；
+  /// - 只匹配本项目命名 `legado_backup_*.json`（大小写敏感、仅直接子文件、
+  ///   不递归），保留本次 [currentPath]，其余删除；
+  /// - 失败只 debugPrint，不影响备份成功。
+  Future<void> _pruneOldLocalBackups({
+    required String dirPath,
+    required String currentPath,
+    required SettingsService s,
+  }) async {
+    try {
+      final onlyLatest = await s.getBoolPref(
+        PrefKeys.onlyLatestBackup,
+        defaultValue: true,
+      );
+      if (!onlyLatest) return;
+      final dir = Directory(dirPath);
+      if (!await dir.exists()) return;
+      final current = File(currentPath).absolute.path;
+      final isWindows = Platform.isWindows;
+      bool isCurrent(String path) {
+        final p = File(path).absolute.path;
+        return isWindows
+            ? p.toLowerCase() == current.toLowerCase()
+            : p == current;
+      }
+
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.isEmpty
+            ? ''
+            : entity.uri.pathSegments.last;
+        if (!_localBackupName.hasMatch(name)) continue;
+        if (isCurrent(entity.path)) continue;
+        try {
+          await (_deleteFile ?? (file) => file.delete())(entity);
+        } catch (e) {
+          debugPrint('[LocalBackupService] 删除旧备份失败（忽略）: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('[LocalBackupService] 清理旧本地备份失败（忽略）: $e');
+    }
   }
 }

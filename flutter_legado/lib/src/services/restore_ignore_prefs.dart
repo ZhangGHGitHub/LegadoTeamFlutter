@@ -43,6 +43,8 @@ class RestoreIgnorePrefs {
     // config.xml 内以备份密码 AES 加密；我方 JSON 备份不加密），整键排除
     SettingsService.webDavPasswordKey,
     SettingsService.restoreIgnoreStorageKey,
+    // [批8a] 备份忽略策略：与恢复忽略独立，若随备份往返会被旧值覆盖本机设置
+    SettingsService.backupIgnoreStorageKey,
     // [批40] 上次备份时间：对齐原版 LocalConfig（独立 `local` 偏好文件，
     // 不随备份往返）；随备份恢复会让自动备份判定基于旧时间
     PrefKeys.lastBackup,
@@ -307,9 +309,7 @@ class RestoreIgnorePrefs {
   /// [设置批6b-1] 封面设置 18 项全部纳入本忽略组：勾选「忽略封面配置」
   /// 恢复备份时不覆盖本机任何封面展示/加载策略（含相册 ID 与网络角标
   /// 状态；后两者本期未在 UI 生效，但同属封面配置，需随组过滤）。
-  static const coverPrefKeys = <String>{
-    ...CoverSettings.prefKeys,
-  };
+  static const coverPrefKeys = <String>{...CoverSettings.prefKeys};
 
   /// Flutter 侧主题模式存储键（SettingsService）
   static const themeModeStorageKey = 'app_theme_mode';

@@ -1237,6 +1237,51 @@ class SettingsService {
     }
   }
 
+  // ===== 备份忽略项（对齐 BackupConfig.backupIgnore.json）=====
+
+  /// 备份忽略项与恢复忽略项共用同一组业务分类，但两份配置相互独立
+  static const backupIgnoreKeys = restoreIgnoreKeys;
+
+  /// 备份忽略项标题
+  static const backupIgnoreTitles = restoreIgnoreTitles;
+
+  static const _keyBackupIgnore = 'backupIgnore';
+
+  /// 备份忽略配置持久化键（加入 alwaysIgnoreKeys，策略本身不随备份往返）
+  static const backupIgnoreStorageKey = _keyBackupIgnore;
+
+  /// 读取备份忽略配置（缺省全 false，容错同恢复忽略）
+  Future<Map<String, bool>> getBackupIgnoreConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_keyBackupIgnore);
+      if (raw == null || raw.isEmpty) {
+        return {for (final k in backupIgnoreKeys) k: false};
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return {for (final k in backupIgnoreKeys) k: false};
+      }
+      return {for (final k in backupIgnoreKeys) k: decoded[k] == true};
+    } catch (e) {
+      debugPrint('SettingsService.getBackupIgnoreConfig 异常: $e');
+      return {for (final k in backupIgnoreKeys) k: false};
+    }
+  }
+
+  /// 持久化备份忽略配置（对齐 BackupConfig.saveIgnoreConfig）
+  Future<void> saveBackupIgnoreConfig(Map<String, bool> config) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final normalized = {
+        for (final k in backupIgnoreKeys) k: config[k] == true,
+      };
+      await prefs.setString(_keyBackupIgnore, jsonEncode(normalized));
+    } catch (e) {
+      debugPrint('SettingsService.saveBackupIgnoreConfig 异常: $e');
+    }
+  }
+
   /// 写入字符串偏好
   Future<void> setStringPref(String key, String value) async {
     try {

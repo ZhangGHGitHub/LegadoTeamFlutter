@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -55,7 +55,8 @@ enum _WebDavTestStatus { notTested, testing, success, failed }
 /// 前缀识别，不能按字符串起始位置判断。
 const String _kBackupPasswordRequired = 'BACKUP_PASSWORD_REQUIRED';
 const String _kBackupPasswordInvalid = 'BACKUP_PASSWORD_INVALID';
-const String _kBackupEncryptedContentCorrupt = 'BACKUP_ENCRYPTED_CONTENT_CORRUPT';
+const String _kBackupEncryptedContentCorrupt =
+    'BACKUP_ENCRYPTED_CONTENT_CORRUPT';
 
 /// 进度框执行结果（三态，批17c P3-6）
 ///
@@ -63,9 +64,7 @@ const String _kBackupEncryptedContentCorrupt = 'BACKUP_ENCRYPTED_CONTENT_CORRUPT
 /// 成功。`ran=false` 表示本次没有执行任务（另一操作进行中 / 页面已销毁），
 /// 调用方必须中止后续步骤且不提示成功。
 class _ProgressResult {
-  const _ProgressResult.busy()
-      : ran = false,
-        error = null;
+  const _ProgressResult.busy() : ran = false, error = null;
 
   const _ProgressResult.executed(this.error) : ran = true;
 
@@ -146,6 +145,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// WebDAV 备份保留数量（0 = 不清理）
   int _backupKeepCount = 0;
 
+  /// 备份忽略配置（与恢复忽略独立；默认全 false）
+  Map<String, bool> _backupIgnore = const {};
+
   /// 导入后自动上传本地书（默认关）
   bool _bookAutoUpload = false;
 
@@ -191,6 +193,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final autoBackup = await _settings.getAutoBackup();
       final autoBackupWebDav = await _settings.getAutoBackupWebDav();
       final autoBackupDays = await _settings.getAutoBackupIntervalDays();
+      final backupIgnore = await _settings.getBackupIgnoreConfig();
       if (!mounted) return;
       setState(() {
         _url = state.webDavUrl;
@@ -206,12 +209,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         _autoBackup = autoBackup;
         _autoBackupWebDav = autoBackupWebDav;
         _autoBackupIntervalDays = autoBackupDays;
+        _backupIgnore = backupIgnore;
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('加载 WebDAV 配置失败：$e')),
-      );
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(SnackBar(content: Text('加载 WebDAV 配置失败：$e')));
     }
   }
 
@@ -221,18 +225,14 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 先落库后改状态，失败时状态不前进）。
   Future<void> _saveWebDav() async {
     try {
-      await ref.read(syncNotifierProvider.notifier).saveConfig(
-            _url,
-            _user,
-            _pass,
-            _dir,
-            deviceName: _device,
-          );
+      await ref
+          .read(syncNotifierProvider.notifier)
+          .saveConfig(_url, _user, _pass, _dir, deviceName: _device);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存 WebDAV 配置失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('保存 WebDAV 配置失败：$e')));
     }
   }
 
@@ -364,9 +364,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       if (result == null) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('正在备份或恢复，请稍候')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('正在备份或恢复，请稍候')));
         return;
       }
       if (result.uploadError != null) {
@@ -387,7 +385,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
             upload == null
                 ? '${AppStrings.backupSuccess}：${result.filePath}'
                 : '${AppStrings.backupSuccess}：${result.filePath}\n'
-                    '已上传 WebDAV：${upload.remoteFileName}',
+                      '已上传 WebDAV：${upload.remoteFileName}',
           ),
         ),
       );
@@ -404,7 +402,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     return showConfirmDialog(
       context,
       title: '确认同步吗？',
-      content: '将上传本地书架并覆盖远端备份（bookshelf.json），同时回写远端书源；'
+      content:
+          '将上传本地书架并覆盖远端备份（bookshelf.json），同时回写远端书源；'
           '不会覆盖本地阅读进度。如需从备份覆盖本地，请使用长按本地恢复。',
       confirmText: '同步',
       cancelText: '取消',
@@ -454,9 +453,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('未配置 WebDAV，请长按「恢复」从本地恢复')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('未配置 WebDAV，请长按「恢复」从本地恢复')));
   }
 
   /// 本地恢复（长按「恢复」）
@@ -492,9 +491,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       if (!mounted) return;
       if (ignore.values.any((enabled) => enabled)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('zip 备份暂不支持忽略项过滤（将按备份内容恢复）'),
-          ),
+          const SnackBar(content: Text('zip 备份暂不支持忽略项过滤（将按备份内容恢复）')),
         );
       }
     }
@@ -507,13 +504,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     BackupInspectInfo? inspect;
     if (isZip) {
       final api = ref.read(bookApiProvider);
-      final inspectResult = await _runWithProgress(
-        '检查备份…',
-        () async {
-          inspect = await api.backupInspect(backupPath);
-        },
-        captureError: true,
-      );
+      final inspectResult = await _runWithProgress('检查备份…', () async {
+        inspect = await api.backupInspect(backupPath);
+      }, captureError: true);
       if (!mounted) return;
       if (!inspectResult.ran) return;
       if (inspectResult.error != null) {
@@ -531,17 +524,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     }
 
     var restoreBusy = false;
-    final restoreResult = await _runWithProgress(
-      '恢复中…',
-      () async {
-        restoreBusy = !await _performLocalRestore(
-          backupPath,
-          password: null,
-          isZipContainer: isZip,
-        );
-      },
-      captureError: true,
-    );
+    final restoreResult = await _runWithProgress('恢复中…', () async {
+      restoreBusy = !await _performLocalRestore(
+        backupPath,
+        password: null,
+        isZipContainer: isZip,
+      );
+    }, captureError: true);
     if (!mounted) return;
     // 忙（另一操作进行中）：不提示成功、不改任何状态
     if (!restoreResult.ran) return;
@@ -652,7 +641,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     // [ServerService.forceMigrateAfterRestore] 记崩溃日志并复位迁移标记
     //（下次启动重试）；取舍说明见该方法注释（可能复活旧偏好中已删除的服务器）
     if (!isZip &&
-        await ServerService.backupNeedsLegacyRemoteServerMigration(backupPath)) {
+        await ServerService.backupNeedsLegacyRemoteServerMigration(
+          backupPath,
+        )) {
       await serverService.forceMigrateAfterRestore();
     }
     if (!mounted) return;
@@ -689,17 +680,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       inlineError = null;
 
       var restoreBusy = false;
-      final error = await _runWithProgress(
-        '恢复中…',
-        () async {
-          restoreBusy = !await _performLocalRestore(
-            backupPath,
-            password: password,
-            isZipContainer: isZipContainer,
-          );
-        },
-        captureError: true,
-      );
+      final error = await _runWithProgress('恢复中…', () async {
+        restoreBusy = !await _performLocalRestore(
+          backupPath,
+          password: password,
+          isZipContainer: isZipContainer,
+        );
+      }, captureError: true);
       // 忙（另一操作进行中）或页面已销毁：中止循环，不提示成功
       if (!error.ran) return;
       // 备份/恢复互斥拒绝（批40 回修 P2-2）：中止循环（不重开密码框）
@@ -759,9 +746,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _showRestoreIgnore() async {
@@ -774,9 +761,36 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     if (result == null) return;
     await _settings.saveRestoreIgnoreConfig(result);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已保存恢复忽略项')),
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已保存恢复忽略项')));
+  }
+
+  Future<void> _showBackupIgnore() async {
+    final initial = await _settings.getBackupIgnoreConfig();
+    if (!mounted) return;
+    final result = await showDialog<Map<String, bool>>(
+      context: context,
+      builder: (ctx) => RestoreIgnoreDialog(
+        initial: initial,
+        title: '备份忽略',
+        subtitle: '勾选后备份时跳过对应项，不写入备份文件；恢复忽略请单独设置。',
+        keys: SettingsService.backupIgnoreKeys,
+        titles: SettingsService.backupIgnoreTitles,
+      ),
     );
+    if (result == null || !mounted) return;
+    await _settings.saveBackupIgnoreConfig(result);
+    if (!mounted) return;
+    setState(() => _backupIgnore = result);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已保存备份忽略项')));
+  }
+
+  String _backupIgnoreSummary() {
+    final count = _backupIgnore.values.where((v) => v).length;
+    return count == 0 ? '未设置' : '已勾选 $count 项';
   }
 
   Future<void> _doImportOldData() async {
@@ -806,9 +820,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
 
       ref.read(bookshelfNotifierProvider.notifier).refresh();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     });
   }
 
@@ -863,8 +877,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     // 必须同步到 Rust（caches config:userAgent + 运行期默认 UA），否则同
     // 会话内 prefs 与 Rust 分叉，重启前网络请求仍用旧 UA。失败不阻断恢复。
     try {
-      final userAgent =
-          (await _settings.getStringPref(PrefKeys.userAgent)).trim();
+      final userAgent = (await _settings.getStringPref(
+        PrefKeys.userAgent,
+      )).trim();
       await ref.read(bookApiProvider).setConfig(PrefKeys.userAgent, userAgent);
     } catch (e) {
       debugPrint('恢复后同步 UserAgent 失败（不阻断恢复）：$e');
@@ -876,8 +891,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final threadCount = (await _settings.getIntPref(
         PrefKeys.threadCount,
         defaultValue: 16,
-      ))
-          .clamp(1, 256);
+      )).clamp(1, 256);
       await ref
           .read(bookApiProvider)
           .setConfig(PrefKeys.threadCount, '$threadCount');
@@ -920,8 +934,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final origin = item['origin']?.toString() ?? '';
       final type = item['type'];
       final typeInt = type is int ? type : int.tryParse('$type') ?? 0;
-      final isLocal = BookType.isLocalOrigin(origin) ||
-          (typeInt & BookType.local) != 0;
+      final isLocal =
+          BookType.isLocalOrigin(origin) || (typeInt & BookType.local) != 0;
       return !isLocal;
     }).toList();
 
@@ -956,9 +970,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       builder: (ctx) => AlertDialog(
         // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
         backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         content: Row(
           children: [
             const CircularProgressIndicator(),
@@ -975,9 +987,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       if (captureError) {
         captured = e;
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage(e))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorMessage(e))));
       }
     } finally {
       if (mounted) {
@@ -1004,16 +1016,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final url = _url.trim();
     if (url.isEmpty) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('请先填写服务器地址')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('请先填写服务器地址')));
       return;
     }
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('服务器地址需要以 http(s):// 开头'),
-        ),
+        const SnackBar(content: Text('服务器地址需要以 http(s):// 开头')),
       );
       return;
     }
@@ -1024,39 +1032,33 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final request = http.Request('PROPFIND', Uri.parse(url));
       // Basic Auth 使用已填账号/密码（均为空时不带 Authorization 头，避免误触发 401）
       if (_user.isNotEmpty || _pass.isNotEmpty) {
-        request.headers['Authorization'] = 'Basic '
+        request.headers['Authorization'] =
+            'Basic '
             '${base64Encode(utf8.encode('$_user:$_pass'))}';
       }
       request.headers['Depth'] = '0';
-      final streamed = await client.send(request).timeout(const Duration(seconds: 5));
+      final streamed = await client
+          .send(request)
+          .timeout(const Duration(seconds: 5));
       final response = await http.Response.fromStream(streamed);
       // 探测期间已离开页面则不再更新 UI（client 由 finally 关闭）
       if (!mounted) return;
       final code = response.statusCode;
       final ok = code == 200 || code == 207;
       setState(() {
-        _testStatus =
-            ok ? _WebDavTestStatus.success : _WebDavTestStatus.failed;
+        _testStatus = ok ? _WebDavTestStatus.success : _WebDavTestStatus.failed;
       });
       if (ok) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('连接成功')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('连接成功')));
       } else if (code == 401 || code == 403) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('认证失败，请检查账号/密码')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('认证失败，请检查账号/密码')));
       } else {
-        messenger.showSnackBar(
-          SnackBar(content: Text('连接失败（HTTP $code）')),
-        );
+        messenger.showSnackBar(SnackBar(content: Text('连接失败（HTTP $code）')));
       }
     } on TimeoutException {
       if (!mounted) return;
       setState(() => _testStatus = _WebDavTestStatus.failed);
-      messenger.showSnackBar(
-        const SnackBar(content: Text('连接超时（5 秒内未响应）')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('连接超时（5 秒内未响应）')));
     } catch (e) {
       if (!mounted) return;
       setState(() => _testStatus = _WebDavTestStatus.failed);
@@ -1120,14 +1122,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
               }
             },
             itemBuilder: (ctx) => const [
-              PopupMenuItem(
-                value: 'import_old',
-                child: Text('导入旧版数据'),
-              ),
-              PopupMenuItem(
-                value: 'log',
-                child: Text('日志'),
-              ),
+              PopupMenuItem(value: 'import_old', child: Text('导入旧版数据')),
+              PopupMenuItem(value: 'log', child: Text('日志')),
             ],
           ),
         ],
@@ -1211,8 +1207,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 ),
                 SettingSwitchRow(
                   dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   title: '导入后自动上传本地书',
                   subtitle: '导入本地书后自动上传到 WebDAV 的 books 目录',
                   value: _bookAutoUpload,
@@ -1224,8 +1222,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   title: '同步书籍进度',
                   subtitle: '在多设备间同步书籍阅读进度',
                   value: syncState.syncBookProgress,
@@ -1234,8 +1234,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   title: '同步书籍进度增强',
                   subtitle: '同步更详细的阅读进度信息',
                   value: syncState.syncBookProgressPlus,
@@ -1252,8 +1254,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
               children: [
                 IosListTile(
                   title: '备份路径',
-                  subtitle:
-                      _backupPath.isEmpty ? '请选择备份路径' : _backupPath,
+                  subtitle: _backupPath.isEmpty ? '请选择备份路径' : _backupPath,
                   onTap: _busy ? null : _pickBackupPath,
                 ),
                 IosListTile(
@@ -1275,11 +1276,18 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   subtitle: '恢复时忽略一些内容不恢复，方便不同手机配置不同',
                   onTap: _busy ? null : _showRestoreIgnore,
                 ),
+                IosListTile(
+                  title: '备份忽略列表',
+                  subtitle: _backupIgnoreSummary(),
+                  onTap: _busy ? null : _showBackupIgnore,
+                ),
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   title: '仅保留最新备份',
                   subtitle: '本地备份仅保留最新备份文件',
                   value: _onlyLatestBackup,
@@ -1297,8 +1305,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                 SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 8,
+                  ),
                   title: '自动检查新备份',
                   subtitle: '打开软件时检查是否有新备份，有新备份时提示是否更新',
                   value: _autoCheckNewBackup,
@@ -1367,11 +1377,11 @@ class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
 
   /// 受保护文件 → 中文标签
   static String _labelFor(String file) => switch (file) {
-        'servers.json' => '服务器配置',
-        'cookies.json' => '登录信息',
-        'runtimeSourceCache.json' => '书源运行变量',
-        _ => file,
-      };
+    'servers.json' => '服务器配置',
+    'cookies.json' => '登录信息',
+    'runtimeSourceCache.json' => '书源运行变量',
+    _ => file,
+  };
 
   /// 提交校验（P2-2）：空/纯空白不得静默成功
   ///
@@ -1394,9 +1404,7 @@ class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
     return AlertDialog(
       // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺）
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
       title: const Text('输入备份密码'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1405,9 +1413,7 @@ class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
           const Text('该备份包含已加密的内容，请输入备份密码：'),
           if (files.isNotEmpty) ...[
             const SizedBox(height: 8),
-            ...files.map(
-              (file) => Text('· ${_labelFor(file)}（$file）'),
-            ),
+            ...files.map((file) => Text('· ${_labelFor(file)}（$file）')),
           ],
           const SizedBox(height: 12),
           TextField(
@@ -1446,10 +1452,7 @@ class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('确定'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('确定')),
       ],
     );
   }
@@ -1620,19 +1623,15 @@ class _AutoBackupDialogState extends State<_AutoBackupDialog> {
             ),
             RadioGroup<String>(
               groupValue: _destination,
-              onChanged: (v) => setState(
-                () => _destination = v ?? _destination,
-              ),
+              onChanged: (v) =>
+                  setState(() => _destination = v ?? _destination),
               child: IgnorePointer(
                 ignoring: !_enabled,
                 child: Opacity(
                   opacity: _enabled ? 1 : 0.5,
                   child: const Column(
                     children: [
-                      RadioListTile<String>(
-                        value: 'local',
-                        title: Text('仅本地'),
-                      ),
+                      RadioListTile<String>(value: 'local', title: Text('仅本地')),
                       RadioListTile<String>(
                         value: 'webdav',
                         title: Text('本地 + WebDAV'),
@@ -1660,10 +1659,7 @@ class _AutoBackupDialogState extends State<_AutoBackupDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('取消'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('确定'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('确定')),
       ],
     );
   }
