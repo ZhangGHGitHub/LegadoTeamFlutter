@@ -521,6 +521,11 @@ class ReaderTextContent extends StatelessWidget {
 /// 滚动模式下的段落渲染（未分页时使用，应用配置的段落间距）
 class ReaderParagraphs extends StatelessWidget {
   final String content;
+
+  /// [P2-2] 分页快照章节索引/标题（滚动模式长按选区使用，避免冻结帧错章）
+  final int? chapterIndex;
+  final String? chapterTitle;
+
   final double fontSize;
   final double lineHeight;
   final double paragraphSpacing;
@@ -542,6 +547,8 @@ class ReaderParagraphs extends StatelessWidget {
   const ReaderParagraphs({
     super.key,
     required this.content,
+    this.chapterIndex,
+    this.chapterTitle,
     required this.fontSize,
     required this.lineHeight,
     required this.paragraphSpacing,
@@ -574,6 +581,8 @@ class ReaderParagraphs extends StatelessWidget {
                   context,
                   text: p,
                   chapterPos: paragraphChapterPos,
+                  chapterIndex: chapterIndex,
+                  chapterTitle: chapterTitle,
                 ),
           child: Padding(
             padding: EdgeInsets.only(bottom: paragraphSpacing),

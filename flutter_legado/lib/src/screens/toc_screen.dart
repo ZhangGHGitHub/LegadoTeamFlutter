@@ -1801,7 +1801,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 bookText.contains(query) ||
                 note.contains(query);
           }).toList();
-    if (filteredMarkings.isEmpty && highlights.isEmpty) {
+    if (filteredMarkings.isEmpty &&
+        highlights.isEmpty &&
+        markingsError == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1818,6 +1820,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
       );
     }
     final children = <Widget>[];
+    if (markingsError != null) {
+      // 高亮非空时笔记加载失败不再静默：笔记区先显示错误行与重试
+      children.add(_buildMarkingErrorRow(context, markingsError));
+    }
     if (filteredMarkings.isNotEmpty) {
       children.add(_buildSectionHeader(context, '笔记'));
       children.addAll(
@@ -1843,6 +1849,43 @@ class _TocScreenState extends ConsumerState<TocScreen>
         style: theme.textTheme.titleSmall?.copyWith(
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+
+  /// 笔记加载失败行（高亮非空时仍可见，避免静默）
+  Widget _buildMarkingErrorRow(BuildContext context, String error) {
+    final theme = Theme.of(context);
+    return Card(
+      key: const ValueKey('toc-marking-error'),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              Symbols.error_rounded,
+              size: 18,
+              color: theme.colorScheme.error,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '笔记加载失败：$error',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              key: const ValueKey('toc-marking-retry'),
+              onPressed: _loadMarkings,
+              child: const Text('重试'),
+            ),
+          ],
         ),
       ),
     );

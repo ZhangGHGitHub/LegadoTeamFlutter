@@ -257,13 +257,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 在途笔记加载键（去重）
   String _markingLoadingKey = '';
 
-  /// 失败退避键与截止时间（失败清空并允许下次 build 重试）
-  String _markingFailedKey = '';
-  DateTime _markingRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
-
   /// 各 key 已发起的加载次数（单 key 最多 2 次，参考 HighlightMatchSync）
   final Map<String, int> _markingAttempts = {};
   static const int _maxMarkingAttempts = 2;
+
+  /// 重试预算所属的「书+章+正文」身份键（不含修订号）
+  ///
+  /// 切章/换书/正文变化时清空尝试次数与失败退避，避免 A→B→A 回到
+  /// 同一章时被上一轮迟到失败耗尽预算（修订号变化按新 key 独立计数）。
+  String _markingIdentityKey = '';
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -1058,8 +1060,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 同步当前章笔记命中（批7b-2b）
   ///
   /// 键 = 书 + 章 + 已分页正文（长度/hash）+ 笔记修订号；键变化先清空旧
-  /// 命中再异步加载，避免新章/换书短暂套用上一章区间。失败清空并按 1.5s
-  /// 退避，退避结束后下一次 build 重试。滚动模式不加载（与规则同边界，
+  /// 命中再异步加载，避免新章/换书短暂套用上一章区间。失败清空，下一次
+  /// build 重试（单 key 最多 2 次）。滚动模式不加载（与规则同边界，
   /// 正文走 ReaderParagraphs 尚未接线渲染）。
   void _syncMarkingMatches({
     required bool enabled,
@@ -1072,23 +1074,24 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       _markingMatches = const [];
       _markingKey = '';
       _markingLoadingKey = '';
+      _markingIdentityKey = '';
       return;
     }
-    final key =
+    final identityKey =
         '$bookUrl\u0000$chapterIndex\u0000${content.length}'
-        '\u0000${content.hashCode}\u0000$revision';
+        '\u0000${content.hashCode}';
+    if (identityKey != _markingIdentityKey) {
+      // 切章/换书/正文变化：重置重试预算与失败退避
+      _markingIdentityKey = identityKey;
+      _markingAttempts.clear();
+    }
+    final key = '$identityKey\u0000$revision';
     if (key == _markingKey) return;
 
     // 换章/换书/正文或修订号变化：先清旧命中
     _markingMatches = const [];
     if (_markingLoadingKey == key) {
       _markingKey = key;
-      return;
-    }
-    if (_markingFailedKey == key &&
-        DateTime.now().isBefore(_markingRetryAfter)) {
-      // 退避中：不记 key，退避结束后下一次 build 重试
-      _markingKey = '';
       return;
     }
     final attempts = _markingAttempts[key] ?? 0;
@@ -1116,7 +1119,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           .getBookMarkingsForChapter(bookUrl, chapterIndex);
       if (!mounted || _markingKey != key) return;
       final matches = buildMarkingMatches(content: content, markings: markings);
-      _markingFailedKey = '';
       _markingAttempts.remove(key);
       setState(() {
         _markingMatches = matches;
@@ -1128,11 +1130,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     } catch (e) {
       // 旧请求失败不得清空新章已采纳的标记（P2-1）
       if (!mounted || _markingKey != key) return;
-      // 笔记是增益能力：失败降级为无标记，1.5s 后允许下一次 build 重试
-      _markingFailedKey = key;
-      _markingRetryAfter = DateTime.now().add(
-        const Duration(milliseconds: 1500),
-      );
+      // 笔记是增益能力：失败降级为无标记；下一次 build 重试，
+      // 单 key 最多 2 次（attempts 在成功/换章/换书/正文变化时重置）
       _markingKey = '';
       setState(() {
         _markingMatches = const [];
@@ -1143,7 +1142,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       });
       debugPrint(
         '[book-marking] 笔记正文匹配失败（已降级为无标记；'
-        '单 key 最多 $_maxMarkingAttempts 次，退避后下一次 build 重试）: $e',
+        '单 key 最多 $_maxMarkingAttempts 次，下一次 build 重试）: $e',
       );
     } finally {
       if (_markingLoadingKey == key) _markingLoadingKey = '';
@@ -1546,6 +1545,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
               for (final pageInfo in _paginatedPages)
                 ReaderTextContent(
                   pageInfo: pageInfo,
+                  chapterIndex: _paginatedChapterIndex >= 0
+                      ? _paginatedChapterIndex
+                      : state.currentChapterIndex,
+                  chapterTitle:
+                      _paginatedChapterTitle ?? state.currentChapter?.title,
                   fontSize: state.fontSize,
                   lineHeight: state.lineHeight,
                   paragraphSpacing: widget.paragraphSpacing,
@@ -1565,6 +1569,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             else if (state.chapterContent.isNotEmpty)
               ReaderParagraphs(
                 content: state.chapterContent,
+                chapterIndex: _paginatedChapterIndex >= 0
+                    ? _paginatedChapterIndex
+                    : state.currentChapterIndex,
+                chapterTitle:
+                    _paginatedChapterTitle ?? state.currentChapter?.title,
                 fontSize: state.fontSize,
                 lineHeight: state.lineHeight,
                 paragraphSpacing: widget.paragraphSpacing,

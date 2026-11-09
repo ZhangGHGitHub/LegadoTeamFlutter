@@ -226,7 +226,7 @@ class BookMarkingNotifier extends Notifier<BookMarkingListState> {
         enabled: enabled,
         updatedAt: DateTime.now().millisecondsSinceEpoch,
       );
-      state = state.copyWith(items: List.unmodifiable(list));
+      state = state.copyWith(items: List.unmodifiable(list), error: null);
     }
     _bumpRevision();
   }
@@ -237,6 +237,7 @@ class BookMarkingNotifier extends Notifier<BookMarkingListState> {
     await api.deleteBookMarking(id);
     state = state.copyWith(
       items: List.unmodifiable(state.items.where((m) => m.id != id).toList()),
+      error: null,
     );
     _bumpRevision();
   }
@@ -269,6 +270,7 @@ class BookMarkingNotifier extends Notifier<BookMarkingListState> {
         bookName: bookName,
         bookAuthor: bookAuthor,
         items: List.unmodifiable([saved]),
+        error: null,
       );
     } else if (state.isFor(bookName, bookAuthor)) {
       final list = [...state.items];
@@ -278,7 +280,7 @@ class BookMarkingNotifier extends Notifier<BookMarkingListState> {
       } else {
         list.add(saved);
       }
-      state = state.copyWith(items: List.unmodifiable(list));
+      state = state.copyWith(items: List.unmodifiable(list), error: null);
     }
     _bumpRevision();
   }

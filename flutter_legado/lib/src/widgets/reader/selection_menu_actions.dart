@@ -78,6 +78,7 @@ Future<void> selectionReadAloud(
   required String selectedText,
   required String paragraphText,
   required int chapterPos,
+  int? chapterIndex,
   required VoidCallback onDone,
 }) async {
   final state = ref.read(readerNotifierProvider);
@@ -92,7 +93,8 @@ Future<void> selectionReadAloud(
       .startReadAloud(
         bookUrl: book.bookUrl,
         bookName: book.name,
-        chapterIndex: state.currentChapterIndex,
+        // [P2-2] 分页快照优先，未提供才回退实时阅读状态
+        chapterIndex: chapterIndex ?? state.currentChapterIndex,
         startChapterPos: chapterPos,
         startParagraphText: paragraphText,
         // [设置批5a-1] 选区朗读同属阅读器发起：退出阅读器按偏好停止
@@ -105,6 +107,8 @@ Future<void> selectionAddBookmark(
   BuildContext context, {
   required String selectedText,
   required int chapterPos,
+  int? chapterIndex,
+  String? chapterTitle,
   required VoidCallback onDone,
 }) async {
   final state = ref.read(readerNotifierProvider);
@@ -117,15 +121,22 @@ Future<void> selectionAddBookmark(
   // 浮条/面板残留；先捕获 ScaffoldMessenger，收起后仍能提示成功/失败。
   final messenger = ScaffoldMessenger.maybeOf(context);
   onDone();
+  final effectiveChapterIndex = chapterIndex ?? state.currentChapterIndex;
   try {
     await ref
         .read(bookmarkNotifierProvider.notifier)
         .addBookmark(
           bookName: book.name,
           bookAuthor: book.author,
-          chapterIndex: state.currentChapterIndex,
+          chapterIndex: effectiveChapterIndex,
           chapterPos: chapterPos,
-          chapterName: state.currentChapter?.title ?? '',
+          // [P2-2] 分页快照标题优先
+          chapterName:
+              chapterTitle ??
+              (effectiveChapterIndex >= 0 &&
+                      effectiveChapterIndex < state.chapters.length
+                  ? state.chapters[effectiveChapterIndex].title
+                  : state.currentChapter?.title ?? ''),
           bookText: selectedText,
           content: selectedText,
         );

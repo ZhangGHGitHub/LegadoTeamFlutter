@@ -132,6 +132,8 @@ Future<void> openMarkingForSelection(
   );
   final navigator = Navigator.of(context, rootNavigator: true);
   final navigatorContext = navigator.context;
+  // [P3-4] 先收起面板/浮条，再做可能较慢的锚点查询，避免慢查询期间双开
+  onBeforeOpen?.call();
   // [P2-6] 同锚点再次打开：直接进入编辑模式，预填样式/备注，避免空备注覆盖
   BookMarking? existing;
   try {
@@ -148,7 +150,6 @@ Future<void> openMarkingForSelection(
     // 查找失败按新建处理（保存仍可正常落库）
   }
   if (!navigatorContext.mounted) return;
-  onBeforeOpen?.call();
   await MarkingSheet.show(
     navigatorContext,
     bookName: book.name,
@@ -413,28 +414,35 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          for (final color in kHighlightColors)
+                          for (var i = 0; i < kHighlightColors.length; i++)
                             Padding(
                               padding: const EdgeInsets.only(right: 12),
                               child: InkWell(
-                                onTap: () => _openHighlightDialog(color),
+                                key: ValueKey('highlight-color-$i'),
+                                onTap: () =>
+                                    _openHighlightDialog(kHighlightColors[i]),
                                 customBorder: const CircleBorder(),
                                 child: Container(
                                   width: 32,
                                   height: 32,
                                   decoration: BoxDecoration(
-                                    color: color,
+                                    color: kHighlightColors[i],
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: color == _lastHighlightColor
+                                      color:
+                                          kHighlightColors[i] ==
+                                              _lastHighlightColor
                                           ? theme.colorScheme.primary
                                           : theme.dividerColor,
-                                      width: color == _lastHighlightColor
+                                      width:
+                                          kHighlightColors[i] ==
+                                              _lastHighlightColor
                                           ? 2.5
                                           : 1,
                                     ),
                                   ),
-                                  child: color == _lastHighlightColor
+                                  child:
+                                      kHighlightColors[i] == _lastHighlightColor
                                       ? Icon(
                                           Icons.check,
                                           size: 18,
@@ -500,6 +508,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             selectedText: _selectedText,
             paragraphText: widget.text,
             chapterPos: widget.chapterPos,
+            chapterIndex: widget.chapterIndex,
             onDone: _close,
           ),
         );
@@ -510,6 +519,8 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             context,
             selectedText: _selectedText,
             chapterPos: widget.chapterPos,
+            chapterIndex: widget.chapterIndex,
+            chapterTitle: widget.chapterTitle,
             onDone: _close,
           ),
         );
@@ -520,8 +531,8 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             ref,
             paragraphText: widget.text,
             chapterPos: widget.chapterPos,
-            // 精细选区传原文（保留前导空白），整段回退 trim 文本
-            selectedText: _userSelected.isNotEmpty
+            // 精细选区传原文（保留前导空白）；空白-only 回退整段 trim 文本
+            selectedText: _userSelected.trim().isNotEmpty
                 ? _userSelected
                 : _selectedText,
             fineSelection: _userSelected.trim().isNotEmpty,
@@ -649,6 +660,18 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       return;
     }
     final chapter = state.currentChapter;
+    // [P2-2] 分页快照章号/标题优先；chapterUrl 从目录按快照章号取
+    final effectiveChapterIndex =
+        widget.chapterIndex ?? state.currentChapterIndex;
+    var chapterUrl = chapter?.url ?? '';
+    var chapterName = chapter?.title ?? '';
+    if (effectiveChapterIndex >= 0 &&
+        effectiveChapterIndex < state.chapters.length) {
+      final snapshotChapter = state.chapters[effectiveChapterIndex];
+      chapterUrl = snapshotChapter.url;
+      chapterName = snapshotChapter.title;
+    }
+    chapterName = widget.chapterTitle ?? chapterName;
     final selected = _selectedText;
     // [批34b P3-2] 段落渲染文本含首行缩进全角空格（不在章节正文中），
     // 章节偏移须扣除缩进列，否则高亮区间整体右移 — full-stack-engineer
@@ -662,14 +685,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     final highlight = <String, dynamic>{
       'time': 0, // 0 时由 Rust 侧自动分配主键
       'bookUrl': book.bookUrl,
-      'chapterUrl': chapter?.url ?? '',
+      'chapterUrl': chapterUrl,
       'bookName': book.name,
       'bookAuthor': book.author,
-      'chapterIndex': state.currentChapterIndex,
+      'chapterIndex': effectiveChapterIndex,
       'chapterPos': chapterPos,
       'chapterPosEnd': chapterPos + selected.length,
       'layoutTitleLength': 0,
-      'chapterName': chapter?.title ?? '',
+      'chapterName': chapterName,
       'bookText': selected,
       'style': jsonEncode({
         'type': 'background',
@@ -918,6 +941,7 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             selectedText: text,
             paragraphText: text,
             chapterPos: chapterPos,
+            chapterIndex: chapterIndex,
             onDone: onDismiss,
           ),
         );
@@ -928,6 +952,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             context,
             selectedText: text,
             chapterPos: chapterPos,
+            chapterIndex: chapterIndex,
+            chapterTitle: chapterTitle,
             onDone: onDismiss,
           ),
         );
