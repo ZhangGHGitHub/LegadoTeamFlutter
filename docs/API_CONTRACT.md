@@ -1621,7 +1621,7 @@
 >
 > **密码凭据存储（不存明文）**：`legado-core::privacy` 生成 16 字节随机 salt，PBKDF2-HMAC-SHA256 迭代 **210000** 次派生 32 字节 verifier，两者均以标准 Base64 存入 caches 表固定键 `config:private_password_salt` 与 `config:private_password_verifier`（与既有 `config:` 前缀配置同表同前缀）。**绝不写入明文密码**；`privacyVerifyPassword` 用常量时间 XOR 比较，凭据缺失、Base64 非法或长度不符一律返回 false。
 >
-> **密码设置语义**：新密码按 `trim()` 后非空且字符数 **1..128** 校验，不满足返回 false（不落库、不抛错）；已有凭据（salt 与 verifier 均非空）时旧密码必须匹配——`oldPassword` 为 null 或错误均返回 false 且**不改动库**；无旧凭据时忽略 `oldPassword`。校验通过后重新生成 salt/verifier 并覆盖两键，返回 true。密码本身按用户输入原值参与派生（仅校验时 trim 判空，不修剪存储语义，对齐参考版 `PBEKeySpec(password.toCharArray())`）。
+> **密码设置语义**：新密码按 `trim()` 后非空且字符数 **1..128** 校验，不满足返回 false（不落库、不抛错）；已有凭据（salt 与 verifier 均非空）时旧密码必须匹配——`oldPassword` 为 null 或错误均返回 false 且**不改动库**；无旧凭据时忽略 `oldPassword`。校验通过后重新生成 salt/verifier 并覆盖两键，返回 true。密码本身按用户输入原值参与派生（仅新密码合法性校验按 `trim()` 判空与计数，派生/校验均不修剪，对齐参考版 `PBEKeySpec(password.toCharArray())`）。
 >
 > **私密标记语义**：`books.isPrivate` 与 `book_groups.isPrivate` 均为 `INTEGER NOT NULL DEFAULT 0`（DB `SCHEMA_VERSION` 118→119，加法式迁移 v119，幂等 `add_column` 并纳入开库自愈）。单本标记与「所属私密分组」是**并集**关系（参考版 `isPrivateBook`），判定合并属消费方（UI/后续批次），本批只提供事实数据。`setBooksPrivate` 在**单事务**内执行 `UPDATE books SET isPrivate = ? WHERE bookUrl IN (...)`，返回实际更新行数（输入重复 URL 按 SQL `IN` 去重；不存在的 URL 不计数）；空数组返回 0 且不开事务。`getPrivateBookUrls` 返回 `isPrivate = 1` 的全部 `bookUrl`，按 `bookUrl` 升序稳定排序。`setBookGroupPrivate` 单列 `UPDATE book_groups SET isPrivate = ? WHERE groupId = ?`，返回是否命中行；`getPrivateGroupIds` 返回 `isPrivate = 1` 的 `groupId` 升序数组。
 >
