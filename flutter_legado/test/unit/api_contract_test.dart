@@ -358,9 +358,10 @@ void main() {
       }
     });
 
-    // [批9a] §2.53 隐私与私密标记：冻结 8 个方法的完整签名（参数名/类型/返回），
-    // 防止仅计数通过而签名被悄悄改写。改签名须同步改本测试并走契约评审。
-    test('§2.53 隐私与私密标记 8 方法签名冻结（参数名/类型/返回）', () {
+    // [批9a/批9d] §2.53 隐私与私密标记：冻结 12 个方法的完整签名
+    //（参数名/类型/返回），防止仅计数通过而签名被悄悄改写。
+    // 改签名须同步改本测试并走契约评审。
+    test('§2.53 隐私与私密标记 12 方法签名冻结（参数名/类型/返回）', () {
       int start = -1;
       for (int i = 0; i < dlines.length; i++) {
         if (dlines[i].startsWith('### 2.53')) {
@@ -394,6 +395,11 @@ void main() {
         'setBookGroupPrivate':
             'setBookGroupPrivate(int groupId, bool isPrivate)',
         'getPrivateGroupIds': 'getPrivateGroupIds()',
+        'privacyBiometricStateGet': 'privacyBiometricStateGet()',
+        'privacyBiometricSet':
+            'privacyBiometricSet(String token, String envelope, String iv)',
+        'privacyBiometricVerify': 'privacyBiometricVerify(String token)',
+        'privacyBiometricClear': 'privacyBiometricClear()',
       };
       const expectedReturns = <String, String>{
         'privacyHasPassword': 'Future<bool>',
@@ -404,6 +410,10 @@ void main() {
         'getPrivateBookUrls': 'Future<List<String>>',
         'setBookGroupPrivate': 'Future<bool>',
         'getPrivateGroupIds': 'Future<List<int>>',
+        'privacyBiometricStateGet': 'Future<String>',
+        'privacyBiometricSet': 'Future<bool>',
+        'privacyBiometricVerify': 'Future<bool>',
+        'privacyBiometricClear': 'Future<void>',
       };
 
       expect(

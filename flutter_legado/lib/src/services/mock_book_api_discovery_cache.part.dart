@@ -114,6 +114,8 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     );
     _mockPasswordSalt = salt;
     _mockPasswordDigest = _mockPasswordHash(salt, password);
+    // 与 Rust 同语义：改密即失效生物快捷
+    _clearMockBiometric();
     return true;
   }
 
@@ -130,6 +132,7 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   Future<void> privacyClearPassword() async {
     _mockPasswordSalt = null;
     _mockPasswordDigest = null;
+    _clearMockBiometric();
   }
 
   @override
@@ -168,6 +171,87 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
           ..sort();
     return ids;
   }
+
+  // ========== 生物识别快捷解锁（契约 §2.53，批9d） ==========
+
+  void _clearMockBiometric() {
+    _mockBiometricTokenHash = null;
+    _mockBiometricEnvelope = null;
+    _mockBiometricIv = null;
+  }
+
+  /// 严格 Base64 解码并要求长度恰为 [expected]（失败 null）
+  List<int>? _mockDecodeExact(String value, int expected) {
+    try {
+      final bytes = base64Decode(value);
+      return bytes.length == expected ? bytes : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  @override
+  Future<String> privacyBiometricStateGet() async {
+    final configured =
+        _mockBiometricTokenHash != null &&
+        _mockBiometricEnvelope != null &&
+        _mockBiometricIv != null &&
+        _mockDecodeExact(_mockBiometricTokenHash!, 32) != null;
+    return jsonEncode({
+      'configured': configured,
+      'envelope': configured ? _mockBiometricEnvelope : null,
+      'iv': configured ? _mockBiometricIv : null,
+    });
+  }
+
+  @override
+  Future<bool> privacyBiometricSet(
+    String token,
+    String envelope,
+    String iv,
+  ) async {
+    final tokenBytes = _mockDecodeExact(token, 32);
+    final ivBytes = _mockDecodeExact(iv, 12);
+    List<int>? envelopeBytes;
+    try {
+      final decoded = base64Decode(envelope);
+      if (decoded.isNotEmpty && decoded.length <= 4096) {
+        envelopeBytes = decoded;
+      }
+    } on FormatException {
+      envelopeBytes = null;
+    }
+    if (tokenBytes == null || ivBytes == null || envelopeBytes == null) {
+      return false;
+    }
+    // 与 Rust 同语义：必须已有隐私密码
+    if (_mockPasswordSalt == null || _mockPasswordDigest == null) {
+      return false;
+    }
+    _mockBiometricTokenHash = base64Encode(sha256.convert(tokenBytes).bytes);
+    _mockBiometricEnvelope = base64Encode(envelopeBytes);
+    _mockBiometricIv = base64Encode(ivBytes);
+    return true;
+  }
+
+  @override
+  Future<bool> privacyBiometricVerify(String token) async {
+    final tokenBytes = _mockDecodeExact(token, 32);
+    final stored = _mockBiometricTokenHash;
+    if (tokenBytes == null || stored == null) return false;
+    final expected = _mockDecodeExact(stored, 32);
+    if (expected == null) return false;
+    final actual = sha256.convert(tokenBytes).bytes;
+    if (actual.length != expected.length) return false;
+    var diff = 0;
+    for (var i = 0; i < actual.length; i++) {
+      diff |= actual[i] ^ expected[i];
+    }
+    return diff == 0;
+  }
+
+  @override
+  Future<void> privacyBiometricClear() async => _clearMockBiometric();
 
   // ========== 搜索历史 ==========
 

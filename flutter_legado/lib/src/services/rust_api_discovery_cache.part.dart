@@ -122,6 +122,23 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     return PrivacyApiJson.decodeGroupIds(json);
   }
 
+  // ========== 生物识别快捷解锁（契约 §2.53，批9d） ==========
+
+  @override
+  Future<String> privacyBiometricStateGet() =>
+      bridge.privacyBiometricStateGet();
+
+  @override
+  Future<bool> privacyBiometricSet(String token, String envelope, String iv) =>
+      bridge.privacyBiometricSet(token: token, envelope: envelope, iv: iv);
+
+  @override
+  Future<bool> privacyBiometricVerify(String token) =>
+      bridge.privacyBiometricVerify(token: token);
+
+  @override
+  Future<void> privacyBiometricClear() => bridge.privacyBiometricClear();
+
   // ========== 搜索历史 ==========
 
   /// 获取搜索历史

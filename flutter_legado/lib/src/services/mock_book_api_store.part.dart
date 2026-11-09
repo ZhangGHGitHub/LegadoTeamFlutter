@@ -24,6 +24,11 @@ mixin MockBookApiStore {
   // 使用加盐 SHA-256 而非生产 PBKDF2，**不是生产安全实现**。
   String? _mockPasswordSalt;
   String? _mockPasswordDigest;
+  // 生物识别内存凭据（契约 §2.53 批9d）：摘要（SHA-256 Base64）+ 信封 + IV。
+  // 与 Rust 同语义但仅供 Mock 联调，**不涉及真实平台认证**。
+  String? _mockBiometricTokenHash;
+  String? _mockBiometricEnvelope;
+  String? _mockBiometricIv;
   final Map<String, List<BookChapter>> _chaptersCache = {};
   final Map<String, Map<int, String>> _contentCache = {};
   // 图片磁盘缓存内存模拟（契约 §2.46 saveImageCache/getImageCache；

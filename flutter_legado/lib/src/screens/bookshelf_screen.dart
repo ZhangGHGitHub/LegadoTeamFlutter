@@ -518,6 +518,24 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
+  /// [批9d] 生物快捷解锁私密分组（锁定页「使用生物识别」）
+  ///
+  /// 取消/失败留在锁定页并提示；成功后状态更新由 Provider 驱动重建。
+  Future<void> _unlockGroupWithBiometric(
+    BuildContext context,
+    WidgetRef ref,
+    BookGroup group,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final outcome = await ref
+        .read(privacyNotifierProvider.notifier)
+        .unlockWithBiometric(groupId: group.groupId);
+    if (!context.mounted || outcome.isSuccess) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(outcome.userMessage)));
+  }
+
   /// [UI-fix 2.0.258] 选择模式删除确认（对齐原版批量删除前二次确认，
   /// 防误删；确认后批量删除并退出选择模式）
   ///
@@ -1232,6 +1250,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     fallback: '验证并查看',
                   ),
                   onAction: () => _unlockGroup(context, ref, effectiveGroup),
+                  onBiometric: privacy.biometricUsable
+                      ? () => _unlockGroupWithBiometric(
+                          context,
+                          ref,
+                          effectiveGroup,
+                        )
+                      : null,
                 ),
               )
             else ...[

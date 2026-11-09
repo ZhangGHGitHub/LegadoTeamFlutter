@@ -5,6 +5,8 @@
 /// MockBookApi 密码生命周期、私密书/组 CRUD 与实例隔离。
 library;
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
@@ -86,6 +88,51 @@ void main() {
       expect(
         () => PrivacyApiJson.decodeGroupIds('[1,"2"]'),
         throwsFormatException,
+      );
+    });
+
+    // ===== [批9d] 生物识别状态 JSON =====
+
+    test('生物状态：configured true 带 envelope/iv', () {
+      final state = PrivacyApiJson.decodeBiometricState(
+        '{"configured":true,"envelope":"ZW52","iv":"aXY="}',
+      );
+      expect(state.configured, isTrue);
+      expect(state.envelope, 'ZW52');
+      expect(state.iv, 'aXY=');
+      expect(state.toString(), isNot(contains('ZW52')), reason: 'toString 脱敏');
+    });
+
+    test('生物状态：未配置时 envelope/iv 为 null', () {
+      final state = PrivacyApiJson.decodeBiometricState(
+        '{"configured":false,"envelope":null,"iv":null}',
+      );
+      expect(state.configured, isFalse);
+      expect(state.envelope, isNull);
+      expect(state.iv, isNull);
+    });
+
+    test('生物状态：形态/类型不符抛 FormatException', () {
+      expect(
+        () => PrivacyApiJson.decodeBiometricState('[]'),
+        throwsFormatException,
+      );
+      expect(
+        () => PrivacyApiJson.decodeBiometricState('{"configured":"yes"}'),
+        throwsFormatException,
+      );
+      expect(
+        () => PrivacyApiJson.decodeBiometricState(
+          '{"configured":false,"envelope":1,"iv":null}',
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => PrivacyApiJson.decodeBiometricState(
+          '{"configured":true,"envelope":null,"iv":null}',
+        ),
+        throwsFormatException,
+        reason: 'configured=true 必须同时有信封与 IV',
       );
     });
   });
@@ -247,6 +294,130 @@ void main() {
       final other = MockBookApi();
       expect(await other.privacyHasPassword(), isFalse);
       expect(await other.getPrivateGroupIds(), isEmpty);
+    });
+  });
+
+  // ===== [批9d] 生物识别快捷解锁（Mock 契约） =====
+
+  group('MockBookApi 生物识别', () {
+    late MockBookApi api;
+    final token = base64Encode(List<int>.filled(32, 3));
+    final otherToken = base64Encode(List<int>.filled(32, 4));
+    final envelope = base64Encode(List<int>.filled(64, 9));
+    final iv = base64Encode(List<int>.filled(12, 5));
+
+    setUp(() {
+      api = MockBookApi();
+    });
+
+    test('必须已有密码；无密码 set false 且状态未配置', () async {
+      expect(await api.privacyBiometricSet(token, envelope, iv), isFalse);
+      final state = PrivacyApiJson.decodeBiometricState(
+        await api.privacyBiometricStateGet(),
+      );
+      expect(state.configured, isFalse);
+      expect(state.envelope, isNull);
+      expect(state.iv, isNull);
+      expect(await api.privacyBiometricVerify(token), isFalse);
+    });
+
+    test('设置→状态→校验→清除 往返；状态 JSON 不含摘要', () async {
+      await api.privacySetPassword('pw');
+      expect(await api.privacyBiometricSet(token, envelope, iv), isTrue);
+
+      final raw = await api.privacyBiometricStateGet();
+      expect(raw, isNot(contains('token_hash')));
+      final state = PrivacyApiJson.decodeBiometricState(raw);
+      expect(state.configured, isTrue);
+      expect(state.envelope, envelope);
+      expect(state.iv, iv);
+
+      expect(await api.privacyBiometricVerify(token), isTrue);
+      expect(await api.privacyBiometricVerify(otherToken), isFalse);
+      expect(await api.privacyBiometricVerify('not-base64!!'), isFalse);
+
+      await api.privacyBiometricClear();
+      expect(
+        PrivacyApiJson.decodeBiometricState(
+          await api.privacyBiometricStateGet(),
+        ).configured,
+        isFalse,
+      );
+      expect(await api.privacyBiometricVerify(token), isFalse);
+      // 重复清除 no-op
+      await api.privacyBiometricClear();
+    });
+
+    test('长度/编码校验：token 31/33B、iv 11/13B、envelope 空/4097B', () async {
+      await api.privacySetPassword('pw');
+      final cases = <(String, String, String)>[
+        (base64Encode(List.filled(31, 3)), envelope, iv),
+        (base64Encode(List.filled(33, 3)), envelope, iv),
+        (token, envelope, base64Encode(List.filled(11, 5))),
+        (token, envelope, base64Encode(List.filled(13, 5))),
+        (token, '', iv),
+        (token, base64Encode(List.filled(4097, 9)), iv),
+        ('', envelope, iv),
+        ('not-base64!!', envelope, iv),
+        (token, 'not-base64!!', iv),
+        (token, envelope, 'not-base64!!'),
+      ];
+      for (final (t, e, i) in cases) {
+        expect(
+          await api.privacyBiometricSet(t, e, i),
+          isFalse,
+          reason: '非法长度/编码必须拒绝（env=${e.length}）',
+        );
+      }
+      expect(
+        PrivacyApiJson.decodeBiometricState(
+          await api.privacyBiometricStateGet(),
+        ).configured,
+        isFalse,
+      );
+      // 边界合法：1B / 4096B 信封
+      expect(
+        await api.privacyBiometricSet(token, base64Encode([1]), iv),
+        isTrue,
+      );
+      expect(
+        await api.privacyBiometricSet(
+          token,
+          base64Encode(List.filled(4096, 9)),
+          iv,
+        ),
+        isTrue,
+      );
+    });
+
+    test('改密/清密清空生物凭据', () async {
+      await api.privacySetPassword('first');
+      expect(await api.privacyBiometricSet(token, envelope, iv), isTrue);
+
+      // 失败改密不清空
+      expect(
+        await api.privacySetPassword('second', oldPassword: 'bad'),
+        isFalse,
+      );
+      expect(await api.privacyBiometricVerify(token), isTrue);
+
+      // 成功改密 → 清空
+      expect(
+        await api.privacySetPassword('second', oldPassword: 'first'),
+        isTrue,
+      );
+      expect(await api.privacyBiometricVerify(token), isFalse);
+      expect(
+        PrivacyApiJson.decodeBiometricState(
+          await api.privacyBiometricStateGet(),
+        ).configured,
+        isFalse,
+      );
+
+      // 重新配置后清密 → 清空
+      expect(await api.privacyBiometricSet(token, envelope, iv), isTrue);
+      await api.privacyClearPassword();
+      expect(await api.privacyBiometricVerify(token), isFalse);
     });
   });
 }

@@ -15,19 +15,28 @@
 //   闸门只显示「无法读取隐私凭据」+ 重试；
 // - 成功读到「无密码」时才回落关闭 enabled（避免无凭据锁死）。
 //
-// 编写：全栈工程师（设置批9b） ｜ 2026-11-09（审查回修同日）
+// 编写：全栈工程师（设置批9b / 批9c / 批9d） ｜ 2026-11-10
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants/pref_keys.dart';
+import '../../services/privacy_api_json.dart';
+import '../../services/privacy_biometric_service.dart';
 import '../providers.dart';
 import 'privacy_state.dart';
 
 /// 隐私设置 Provider
 final privacyNotifierProvider = NotifierProvider<PrivacyNotifier, PrivacyState>(
   PrivacyNotifier.new,
+);
+
+/// 生物识别平台通道 Provider（测试可覆写为 Fake）
+final privacyBiometricServiceProvider = Provider<PrivacyBiometricService>(
+  (ref) => const MethodChannelPrivacyBiometricService(),
 );
 
 /// 隐私策略持久化通道（可注入，便于测试写入/读取失败）
@@ -199,6 +208,27 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
       credentialError = '无法读取隐私凭据';
     }
 
+    // [批9d] 生物识别是可选增强：读取失败只隐藏快捷入口、回退密码，
+    // 不参与 fail-closed（否则平台通道异常会把用户锁在应用外）。
+    PrivacyBiometricStatus? biometricStatus;
+    var biometricConfigured = false;
+    if (next.hasPassword) {
+      try {
+        final raw = await ref.read(bookApiProvider).privacyBiometricStateGet();
+        biometricConfigured = PrivacyApiJson.decodeBiometricState(
+          raw,
+        ).configured;
+      } catch (e) {
+        debugPrint('[隐私] 读取生物识别凭据失败（回退密码）：$e');
+      }
+      // 平台能力查询不阻塞启动闸门：通道异常/桌面端只影响快捷入口
+      unawaited(_loadBiometricStatus());
+    }
+    next = next.copyWith(
+      biometricConfigured: biometricConfigured,
+      biometricStatus: biometricStatus,
+    );
+
     _set(
       next.copyWith(
         policyError: policyError,
@@ -206,6 +236,22 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
         loaded: true,
       ),
     );
+  }
+
+  /// 异步刷新平台生物识别能力（不阻塞 `loaded`）
+  Future<void> _loadBiometricStatus() async {
+    PrivacyBiometricStatus status;
+    try {
+      status = await ref.read(privacyBiometricServiceProvider).getStatus();
+    } catch (e) {
+      debugPrint('[隐私] 读取生物识别平台状态失败（回退密码）：$e');
+      status = const PrivacyBiometricStatus(
+        available: false,
+        reason: PrivacyBiometricErrorCode.failed,
+      );
+    }
+    if (_disposed) return;
+    _set(state.copyWith(biometricStatus: status));
   }
 
   /// 重读策略与凭据（启动闸门错误页的「重试」）
@@ -497,9 +543,14 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
     }
     if (!ok) return PrivacyPasswordChangeResult.failure;
 
+    // [批9d] 改密即失效生物快捷：Rust 已在同事务清空三键，这里销毁原生
+    // 密钥并同步内存状态（信封/摘要已不可用，残留密钥无害但应清理）。
+    await _deleteNativeBiometricKey();
     _set(
       state.copyWith(
         hasPassword: true,
+        biometricConfigured: false,
+        biometricStatus: state.biometricStatus?.copyWith(hasKey: false),
         sessionUnlocked: false,
         appStartVerified: false,
         grantedBookUrls: const <String>{},
@@ -535,9 +586,13 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
       debugPrint('[隐私] 清除密码异常：$e');
       return PrivacyClearPasswordResult.failure;
     }
+    // [批9d] 清密后生物快捷随之失效：Rust 已清三键，销毁原生密钥
+    await _deleteNativeBiometricKey();
     _set(
       state.copyWith(
         hasPassword: false,
+        biometricConfigured: false,
+        biometricStatus: state.biometricStatus?.copyWith(hasKey: false),
         sessionUnlocked: false,
         appStartVerified: false,
         grantedBookUrls: const <String>{},
@@ -545,5 +600,240 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
       ),
     );
     return PrivacyClearPasswordResult.success;
+  }
+
+  // ===== [批9d] 生物识别快捷解锁 =====
+
+  /// 开启生物快捷解锁
+  ///
+  /// 流程：Dart 生成 32B 随机令牌 → 平台认证并加密（native `enable`）→
+  /// Rust 写入摘要/信封/IV（`privacyBiometricSet`）→ 状态置为已配置。
+  /// 任一步失败都不点亮开关；Rust 写入失败时销毁原生密钥，避免残留
+  /// 一个无法解封的密文。
+  Future<PrivacyBiometricOutcome> enableBiometric() async {
+    if (!state.hasPassword) {
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.noPassword,
+      );
+    }
+    final service = ref.read(privacyBiometricServiceProvider);
+    final token = generatePrivacyBiometricToken();
+    PrivacyBiometricEnvelope envelope;
+    try {
+      envelope = await service.enable(token);
+    } on PrivacyBiometricException catch (e) {
+      if (e.code == PrivacyBiometricErrorCode.keyInvalidated) {
+        return _handleBiometricKeyInvalidated();
+      }
+      return _biometricFailure(e.code);
+    } catch (e) {
+      debugPrint('[隐私] 开启生物识别异常：$e');
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+      );
+    }
+
+    bool ok;
+    try {
+      ok = await ref
+          .read(bookApiProvider)
+          .privacyBiometricSet(token, envelope.envelope, envelope.iv);
+    } catch (e) {
+      debugPrint('[隐私] 写入生物识别凭据异常：$e');
+      await _deleteNativeBiometricKey();
+      _markBiometricKeyMissing();
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+      );
+    }
+    if (!ok) {
+      debugPrint('[隐私] Rust 拒绝写入生物识别凭据（长度校验失败）');
+      await _deleteNativeBiometricKey();
+      _markBiometricKeyMissing();
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+      );
+    }
+
+    _set(
+      state.copyWith(
+        biometricConfigured: true,
+        biometricStatus:
+            (state.biometricStatus ??
+                    const PrivacyBiometricStatus(available: true))
+                .copyWith(available: true, hasKey: true, clearReason: true),
+      ),
+    );
+    return const PrivacyBiometricOutcome.success();
+  }
+
+  /// 关闭生物快捷解锁（Rust 清三键 + 原生销毁密钥）
+  ///
+  /// 只在 Rust 清除成功后返回 true；原生 `deleteKey` 失败仅记录日志——
+  /// 摘要/信封已删，残留密钥无法解出可用令牌，不阻断关闭。
+  Future<bool> disableBiometric() async {
+    try {
+      await ref.read(bookApiProvider).privacyBiometricClear();
+    } catch (e) {
+      debugPrint('[隐私] 清除生物识别凭据异常：$e');
+      return false;
+    }
+    await _deleteNativeBiometricKey();
+    _set(
+      state.copyWith(
+        biometricConfigured: false,
+        biometricStatus: state.biometricStatus?.copyWith(hasKey: false),
+      ),
+    );
+    return true;
+  }
+
+  /// 使用生物识别解封令牌并按 [unlockScope] 授权
+  ///
+  /// - [verifyOnly]：只验证凭据有效，不改变任何授权状态（设置页专用）；
+  /// - [appStart]：启动闸门使用，成功后置 `sessionUnlocked/appStartVerified`
+  ///   （与密码 `unlock` 同权，EveryTime 下这两个标记只代表“进得来”）；
+  /// - 否则按 EveryTime 只授权 [bookUrl]/[groupId]，其他频率会话级放行。
+  ///
+  /// 原生返回 `key_invalidated` 时自动清除 Rust 三键并关闭开关，回退密码。
+  Future<PrivacyBiometricOutcome> unlockWithBiometric({
+    bool appStart = false,
+    bool verifyOnly = false,
+    String? bookUrl,
+    int? groupId,
+  }) async {
+    if (!state.biometricConfigured) {
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.notConfigured,
+      );
+    }
+    final api = ref.read(bookApiProvider);
+    // 解锁时现读信封/IV：内存状态只保留 configured，密文不进入 UI 状态
+    PrivacyBiometricState biometricState;
+    try {
+      biometricState = PrivacyApiJson.decodeBiometricState(
+        await api.privacyBiometricStateGet(),
+      );
+    } catch (e) {
+      debugPrint('[隐私] 读取生物识别信封异常（回退密码）：$e');
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+      );
+    }
+    final envelope = biometricState.envelope;
+    final iv = biometricState.iv;
+    if (!biometricState.configured || envelope == null || iv == null) {
+      // Rust 凭据已在外部被清（如改密/清密）：同步关闭快捷开关
+      _set(state.copyWith(biometricConfigured: false));
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.notConfigured,
+      );
+    }
+
+    final service = ref.read(privacyBiometricServiceProvider);
+    String token;
+    try {
+      token = await service.unlock(envelope: envelope, iv: iv);
+    } on PrivacyBiometricException catch (e) {
+      if (e.code == PrivacyBiometricErrorCode.keyInvalidated) {
+        return _handleBiometricKeyInvalidated();
+      }
+      return _biometricFailure(e.code);
+    } catch (e) {
+      debugPrint('[隐私] 生物识别解封异常：$e');
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+      );
+    }
+
+    bool verified;
+    try {
+      verified = await api.privacyBiometricVerify(token);
+    } catch (e) {
+      debugPrint('[隐私] 生物识别令牌校验异常（保持锁定）：$e');
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+      );
+    }
+    if (!verified) {
+      debugPrint('[隐私] 生物识别令牌与登记摘要不匹配（保持锁定）');
+      return const PrivacyBiometricOutcome.failure(
+        PrivacyBiometricCommandError.failed,
+        detail: '生物识别凭据无效',
+      );
+    }
+    if (verifyOnly) {
+      return const PrivacyBiometricOutcome.success();
+    }
+    if (appStart) {
+      _set(state.copyWith(sessionUnlocked: true, appStartVerified: true));
+      return const PrivacyBiometricOutcome.success();
+    }
+    if (state.unlockScope == PrivacyUnlockScope.everyTime) {
+      var next = state;
+      if (bookUrl != null && bookUrl.isNotEmpty) {
+        next = next.copyWith(
+          grantedBookUrls: {...next.grantedBookUrls, bookUrl},
+        );
+      }
+      if (groupId != null) {
+        next = next.copyWith(
+          grantedGroupIds: {...next.grantedGroupIds, groupId},
+        );
+      }
+      _set(next);
+    } else {
+      _set(state.copyWith(sessionUnlocked: true, appStartVerified: true));
+    }
+    return const PrivacyBiometricOutcome.success();
+  }
+
+  /// 原生 `key_invalidated`：清 Rust 三键、销毁原生密钥、关闭开关
+  Future<PrivacyBiometricOutcome> _handleBiometricKeyInvalidated() async {
+    await _deleteNativeBiometricKey();
+    try {
+      await ref.read(bookApiProvider).privacyBiometricClear();
+    } catch (e) {
+      debugPrint('[隐私] 清理失效生物凭据异常：$e');
+    }
+    _set(
+      state.copyWith(
+        biometricConfigured: false,
+        biometricStatus: state.biometricStatus?.copyWith(hasKey: false),
+      ),
+    );
+    return const PrivacyBiometricOutcome.failure(
+      PrivacyBiometricCommandError.keyInvalidated,
+    );
+  }
+
+  /// 平台错误 → 命令结果；能力类错误同步刷新 [PrivacyState.biometricStatus]
+  PrivacyBiometricOutcome _biometricFailure(PrivacyBiometricErrorCode code) {
+    final command = PrivacyBiometricCommandError.fromCode(code);
+    final status = state.biometricStatus;
+    if (status != null && command != PrivacyBiometricCommandError.cancelled) {
+      _set(
+        state.copyWith(
+          biometricStatus: status.copyWith(available: false, reason: code),
+        ),
+      );
+    }
+    return PrivacyBiometricOutcome.failure(command, detail: code.code);
+  }
+
+  /// 原生密钥已删除：同步状态标记（能力仍可用，仅无密钥）
+  void _markBiometricKeyMissing() {
+    final status = state.biometricStatus;
+    if (status == null || !status.hasKey) return;
+    _set(state.copyWith(biometricStatus: status.copyWith(hasKey: false)));
+  }
+
+  /// 销毁原生 Keystore/Keychain 密钥（失败只记录，不阻断主流程）
+  Future<void> _deleteNativeBiometricKey() async {
+    try {
+      await ref.read(privacyBiometricServiceProvider).deleteKey();
+    } catch (e) {
+      debugPrint('[隐私] 删除生物识别密钥失败（不影响已清除的凭据）：$e');
+    }
   }
 }

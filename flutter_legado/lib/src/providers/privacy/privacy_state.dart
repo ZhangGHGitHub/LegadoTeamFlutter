@@ -18,10 +18,17 @@
 // - [grantedBookUrls] / [grantedGroupIds] 仅在 EveryTime 下使用，记录
 //   “刚验证过的那一个目标”，离开即撤销（详见 PrivacyNotifier）。
 //
-// 编写：全栈工程师（设置批9b / 批9c） ｜ 2026-11-09
+// [批9d] 生物识别快捷解锁：
+// - [biometricConfigured] 来自 Rust（摘要/信封/IV 三键齐备），只有平台
+//   解封令牌并校验摘要通过才可能解锁；
+// - [biometricStatus] 来自平台通道（硬件/录入/锁定/密钥状态），null 表示
+//   尚未加载或读取失败，此时隐藏快捷入口。
+//
+// 编写：全栈工程师（设置批9b / 批9c / 批9d） ｜ 2026-11-10
 import 'package:flutter/foundation.dart';
 
 import '../../models/models.dart';
+import '../../services/privacy_biometric_service.dart';
 import '../../utils/book_group_match.dart';
 
 /// 隐私内容解锁频率（对齐参考版 `PrivateUnlockScope`）
@@ -114,6 +121,8 @@ class PrivacyState {
     this.appStartVerified = false,
     this.grantedBookUrls = const <String>{},
     this.grantedGroupIds = const <int>{},
+    this.biometricConfigured = false,
+    this.biometricStatus,
     this.loaded = false,
   });
 
@@ -155,6 +164,20 @@ class PrivacyState {
 
   /// [批9c] EveryTime 频率下刚验证过的分组目标（离开分组即撤销）
   final Set<int> grantedGroupIds;
+
+  /// [批9d] 生物快捷解锁是否已配置（Rust 三键齐备）
+  final bool biometricConfigured;
+
+  /// [批9d] 平台生物识别能力状态（null = 尚未加载或读取失败）
+  final PrivacyBiometricStatus? biometricStatus;
+
+  /// [批9d] 是否可提供生物快捷解锁入口
+  ///
+  /// 需要：已有密码 + Rust 已配置凭据 + 平台当前可用（硬件/录入/未锁定）。
+  bool get biometricUsable =>
+      hasPassword &&
+      biometricConfigured &&
+      (biometricStatus?.available ?? false);
 
   /// 偏好/凭据异步加载是否完成（未完成时启动闸门只显示占位，避免闪现主页）
   final bool loaded;
@@ -237,6 +260,8 @@ class PrivacyState {
     bool? appStartVerified,
     Set<String>? grantedBookUrls,
     Set<int>? grantedGroupIds,
+    bool? biometricConfigured,
+    Object? biometricStatus = _unset,
     bool? loaded,
   }) {
     return PrivacyState(
@@ -258,6 +283,10 @@ class PrivacyState {
       appStartVerified: appStartVerified ?? this.appStartVerified,
       grantedBookUrls: grantedBookUrls ?? this.grantedBookUrls,
       grantedGroupIds: grantedGroupIds ?? this.grantedGroupIds,
+      biometricConfigured: biometricConfigured ?? this.biometricConfigured,
+      biometricStatus: identical(biometricStatus, _unset)
+          ? this.biometricStatus
+          : biometricStatus as PrivacyBiometricStatus?,
       loaded: loaded ?? this.loaded,
     );
   }

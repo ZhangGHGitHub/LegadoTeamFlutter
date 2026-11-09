@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- [批9d] 生物快捷解锁：Face ID 使用说明（App Store 审核要求）。
+	     仅用于认证并解封 32B 随机令牌，不采集/不上传任何生物特征数据。 -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>用于验证身份并快速解锁隐私内容</string>
 	<!-- 运行时更换桌面图标（对齐原版 change_icon）：6 个变体经
 	     UIApplication.setAlternateIconName 切换，下次启动生效。
 	     CFBundleIconName = Assets.xcassets 中 appiconset 名（launcher1.appiconset…），

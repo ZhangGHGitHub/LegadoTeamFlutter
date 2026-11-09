@@ -134,6 +134,27 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     setState(() => _retrying = false);
   }
 
+  /// [批9d] 启动闸门生物快捷解锁：成功置会话/启动标记；取消/失败留在锁页
+  Future<void> _submitBiometric() async {
+    if (_submitting) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final outcome = await ref
+        .read(privacyNotifierProvider.notifier)
+        .unlockWithBiometric(appStart: true);
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      if (!outcome.isSuccess) _error = outcome.userMessage;
+    });
+    if (outcome.isSuccess) {
+      _passwordController.clear();
+      _passwordFocusNode.unfocus();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyNotifierProvider);
@@ -186,7 +207,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
         description: '为保护私密内容，凭据恢复前不会显示应用内容。请重试。',
       );
     } else if (privacy.needsAppStartLock) {
-      overlay = _buildLockScreen(context);
+      overlay = _buildLockScreen(context, privacy);
     }
 
     // 始终保留 child 挂载（Offstage 不显示/不参与语义/暂停动画），
@@ -272,7 +293,7 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     );
   }
 
-  Widget _buildLockScreen(BuildContext context) {
+  Widget _buildLockScreen(BuildContext context, PrivacyState privacy) {
     final scheme = Theme.of(context).colorScheme;
     return _OpaqueGatePage(
       key: const ValueKey('privacyLockScreen'),
@@ -341,6 +362,17 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
                         : const Text('解锁'),
                   ),
                 ),
+                const SizedBox(height: 8),
+                if (privacy.biometricUsable)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const ValueKey('privacyLockBiometricButton'),
+                      onPressed: _submitting ? null : _submitBiometric,
+                      icon: const Icon(Symbols.fingerprint_rounded, size: 18),
+                      label: const Text('使用生物识别'),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 TextButton(
                   key: const ValueKey('privacyExitAppButton'),

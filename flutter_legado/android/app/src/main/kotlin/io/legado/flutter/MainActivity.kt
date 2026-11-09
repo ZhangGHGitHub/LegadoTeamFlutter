@@ -31,6 +31,7 @@ open class MainActivity : FlutterActivity() {
     private val storageBridge = StorageBridge()
     private val readerKeysBridge = ReaderKeysBridge()
     private val videoFloatBridge = VideoFloatWindowBridge()
+    private val privacyBiometricBridge = PrivacyBiometricBridge()
 
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
@@ -250,6 +251,15 @@ open class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 NetworkStatusBridge.handleMethodCall(call, result, this)
             }
+
+        // [批9d] 生物识别快捷解锁：只封装 32B 随机令牌（不封装密码），
+        // 认证/加解密由 PrivacyBiometricBridge + Android Keystore 完成
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            PrivacyBiometricBridge.CHANNEL
+        ).setMethodCallHandler { call, result ->
+            privacyBiometricBridge.handleMethodCall(call, result, this)
+        }
 
         // [V-B3] 视频悬浮窗通道（原生服务承载 overlay + Media3 ExoPlayer；
         // 回全屏经 MainActivity Intent → onReturnToFullscreen）

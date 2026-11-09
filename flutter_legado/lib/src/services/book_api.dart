@@ -998,6 +998,30 @@ abstract class BookApi {
   /// 全部私密分组 ID（升序）
   Future<List<int>> getPrivateGroupIds();
 
+  // ========== 生物识别快捷解锁（契约 §2.53，批9d） ==========
+
+  /// 生物识别快捷解锁状态（裸 JSON）
+  ///
+  /// `{"configured": bool, "envelope": String?, "iv": String?}`；
+  /// 不返回令牌摘要或令牌本身。`configured` 为三键齐备且摘要可解码为
+  /// 32 字节。
+  Future<String> privacyBiometricStateGet();
+
+  /// 写入生物识别凭据（必须已有隐私密码）
+  ///
+  /// Base64 解码后：token 恰 32B、iv 恰 12B、envelope 1..4096B；否则
+  /// 返回 false 且不落库。三键单事务覆盖。
+  Future<bool> privacyBiometricSet(String token, String envelope, String iv);
+
+  /// 校验生物识别令牌（摘要常量时间比较；无摘要/非法令牌 false）
+  ///
+  /// 通过只代表生物凭据有效，授权范围由 `PrivacyNotifier` 按
+  /// `unlockScope` 决定。
+  Future<bool> privacyBiometricVerify(String token);
+
+  /// 清除生物识别凭据（删除摘要/信封/IV 三键；不存在为 no-op）
+  Future<void> privacyBiometricClear();
+
   // ========== 搜索历史 ==========
 
   /// 获取搜索历史

@@ -3,10 +3,12 @@
 /// 覆盖：未启用直通（加载期不闪现主页）、需要锁时不显示但保留 child、
 /// 错误密码重试、正确解锁显示、回车提交、连续提交防抖、策略/凭据读取
 /// 失败 fail-closed 与重试、退出调用 SystemNavigator.pop、返回键消费、
-/// 隐藏子树焦点隔离、软键盘 viewInsets 抬升、后台超时重新锁定。
+/// 隐藏子树焦点隔离、软键盘 viewInsets 抬升、后台超时重新锁定、
+/// 生物快捷解锁（成功/取消/失败回退密码）。
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +22,7 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/services/privacy_biometric_service.dart';
 import 'package:flutter_legado/src/widgets/privacy/privacy_app_start_gate.dart';
 
 /// 凭据读取可失败的 Mock（fail-closed 测试）
@@ -44,6 +47,43 @@ class _FlakyPolicyStore extends PrivacyPolicyStore {
     if (failRead) throw const FormatException('策略存储不可读');
     return super.read();
   }
+}
+
+/// 生物识别平台 Fake（批9d）
+class _FakeBiometricService implements PrivacyBiometricService {
+  static final String token = base64Encode(List<int>.filled(32, 7));
+  static final String envelope = base64Encode(List<int>.filled(64, 9));
+  static final String iv = base64Encode(List<int>.filled(12, 5));
+
+  PrivacyBiometricStatus status = const PrivacyBiometricStatus(available: true);
+  PrivacyBiometricErrorCode? unlockError;
+  String? unlockTokenOverride;
+
+  @override
+  Future<PrivacyBiometricStatus> getStatus() async => status;
+
+  @override
+  Future<PrivacyBiometricEnvelope> enable(String tokenBase64) async =>
+      PrivacyBiometricEnvelope(envelope: envelope, iv: iv);
+
+  @override
+  Future<String> unlock({required String envelope, required String iv}) async {
+    if (unlockError != null) throw PrivacyBiometricException(unlockError!);
+    return unlockTokenOverride ?? token;
+  }
+
+  @override
+  Future<void> deleteKey() async {}
+}
+
+/// 预置「密码 + 生物凭据」
+Future<void> _seedBiometric(MockBookApi api) async {
+  await api.privacySetPassword('pw');
+  await api.privacyBiometricSet(
+    _FakeBiometricService.token,
+    _FakeBiometricService.envelope,
+    _FakeBiometricService.iv,
+  );
 }
 
 /// 解锁校验挂起（连续提交防抖测试）
@@ -71,6 +111,7 @@ void main() {
     double textScale = 1.0,
     bool earlyBackGuard = false,
     bool settle = true,
+    PrivacyBiometricService? biometricService,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = const Size(1080, 1920);
@@ -79,6 +120,11 @@ void main() {
     final overrides = <Override>[bookApiProvider.overrideWithValue(api)];
     if (store != null) {
       overrides.add(privacyPolicyStoreProvider.overrideWithValue(store));
+    }
+    if (biometricService != null) {
+      overrides.add(
+        privacyBiometricServiceProvider.overrideWithValue(biometricService),
+      );
     }
     final container = ProviderContainer(overrides: overrides);
     addTearDown(container.dispose);
@@ -442,5 +488,110 @@ void main() {
 
     expect(find.text('隐私空间'), findsOneWidget);
     expect(find.text('应用主页'), findsNothing);
+  });
+
+  // ===== [批9d] 启动闸门生物快捷解锁 =====
+
+  testWidgets('生物按钮：已配置且可用时出现，认证成功解锁', (tester) async {
+    final api = MockBookApi();
+    final fake = _FakeBiometricService();
+    await _seedBiometric(api);
+    await pumpGate(
+      tester,
+      api: api,
+      biometricService: fake,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+
+    expect(find.text('隐私空间'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('privacyLockBiometricButton')),
+      findsOneWidget,
+    );
+    // 密码入口仍保留（回退路径）
+    expect(
+      find.byKey(const ValueKey('privacyUnlockPasswordField')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('privacyLockBiometricButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('应用主页'), findsOneWidget);
+    expect(find.text('隐私空间'), findsNothing);
+  });
+
+  testWidgets('生物取消：留在锁页并提示，仍可回退密码解锁', (tester) async {
+    final api = MockBookApi();
+    final fake = _FakeBiometricService()
+      ..unlockError = PrivacyBiometricErrorCode.cancelled;
+    await _seedBiometric(api);
+    await pumpGate(
+      tester,
+      api: api,
+      biometricService: fake,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('privacyLockBiometricButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('隐私空间'), findsOneWidget);
+    expect(find.text('应用主页'), findsNothing);
+    expect(find.text('已取消生物识别'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockPasswordField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('应用主页'), findsOneWidget);
+  });
+
+  testWidgets('生物令牌不匹配：保持锁定，回退密码可用', (tester) async {
+    final api = MockBookApi();
+    final fake = _FakeBiometricService()
+      ..unlockTokenOverride = base64Encode(List<int>.filled(32, 8));
+    await _seedBiometric(api);
+    await pumpGate(
+      tester,
+      api: api,
+      biometricService: fake,
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+
+    await tester.tap(find.byKey(const ValueKey('privacyLockBiometricButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('隐私空间'), findsOneWidget);
+    expect(find.text('生物识别失败，请重试或改用密码'), findsOneWidget);
+  });
+
+  testWidgets('未配置生物识别时不显示生物按钮', (tester) async {
+    final api = MockBookApi();
+    await api.privacySetPassword('pw');
+    await pumpGate(
+      tester,
+      api: api,
+      biometricService: _FakeBiometricService(),
+      prefs: {
+        PrefKeys.privateEnabled: true,
+        PrefKeys.privateVerifyOnAppStart: true,
+      },
+    );
+    expect(
+      find.byKey(const ValueKey('privacyLockBiometricButton')),
+      findsNothing,
+    );
   });
 }

@@ -6,6 +6,8 @@
 /// fail-closed 与重试、策略写入失败回滚、备份口径。
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -18,6 +20,7 @@ import 'package:flutter_legado/src/providers/privacy/privacy_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/services/privacy_biometric_service.dart';
 import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 
 /// 凭据读取可失败的 Mock（fail-closed 测试）
@@ -66,6 +69,50 @@ class _FailingClearApi extends MockBookApi {
   }
 }
 
+/// 生物识别平台 Fake（批9d）：默认可用，可逐项注入失败
+class _FakeBiometricService implements PrivacyBiometricService {
+  static final String defaultToken = base64Encode(List<int>.filled(32, 7));
+  static final String defaultEnvelope = base64Encode(List<int>.filled(64, 9));
+  static final String defaultIv = base64Encode(List<int>.filled(12, 5));
+
+  PrivacyBiometricStatus status = const PrivacyBiometricStatus(available: true);
+  PrivacyBiometricErrorCode? enableError;
+  PrivacyBiometricErrorCode? unlockError;
+  String? unlockTokenOverride;
+  String? envelopeOverride;
+  String? ivOverride;
+  int enableCalls = 0;
+  int deleteCalls = 0;
+  String? lastEnabledToken;
+
+  @override
+  Future<PrivacyBiometricStatus> getStatus() async => status;
+
+  @override
+  Future<PrivacyBiometricEnvelope> enable(String tokenBase64) async {
+    enableCalls++;
+    lastEnabledToken = tokenBase64;
+    if (enableError != null) {
+      throw PrivacyBiometricException(enableError!);
+    }
+    return PrivacyBiometricEnvelope(
+      envelope: envelopeOverride ?? defaultEnvelope,
+      iv: ivOverride ?? defaultIv,
+    );
+  }
+
+  @override
+  Future<String> unlock({required String envelope, required String iv}) async {
+    if (unlockError != null) {
+      throw PrivacyBiometricException(unlockError!);
+    }
+    return unlockTokenOverride ?? defaultToken;
+  }
+
+  @override
+  Future<void> deleteKey() async => deleteCalls++;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -80,6 +127,7 @@ void main() {
     Map<String, Object> prefs = const {},
     MockBookApi? overrideApi,
     PrivacyPolicyStore? store,
+    PrivacyBiometricService? biometricService,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     final overrides = <Override>[
@@ -88,11 +136,28 @@ void main() {
     if (store != null) {
       overrides.add(privacyPolicyStoreProvider.overrideWithValue(store));
     }
+    if (biometricService != null) {
+      overrides.add(
+        privacyBiometricServiceProvider.overrideWithValue(biometricService),
+      );
+    }
     container = ProviderContainer(overrides: overrides);
     addTearDown(container.dispose);
     final notifier = container.read(privacyNotifierProvider.notifier);
     await notifier.ensureLoaded();
+    // 平台能力为不阻塞的异步刷新，等它落到状态
+    await Future<void>.delayed(Duration.zero);
     return notifier;
+  }
+
+  /// 预置「已有密码 + 已配置生物凭据」
+  Future<void> seedBiometric({String password = 'pw'}) async {
+    await api.privacySetPassword(password);
+    await api.privacyBiometricSet(
+      _FakeBiometricService.defaultToken,
+      _FakeBiometricService.defaultEnvelope,
+      _FakeBiometricService.defaultIv,
+    );
   }
 
   PrivacyState state() => container.read(privacyNotifierProvider);
@@ -482,5 +547,258 @@ void main() {
     expect(restored.getBool(PrefKeys.privateVerifyOnAppStart), isTrue);
     expect(restored.getString(PrefKeys.privateUnlockScope), 'until_background');
     expect(restored.getInt(PrefKeys.privateBackgroundGraceSeconds), 120);
+  });
+
+  // ===== [批9d] 生物识别状态机 =====
+
+  group('批9d 生物识别', () {
+    test('启动加载：configured 与平台能力进入状态', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      await boot(biometricService: fake);
+      final s = state();
+      expect(s.hasPassword, isTrue);
+      expect(s.biometricConfigured, isTrue);
+      expect(s.biometricStatus?.available, isTrue);
+      expect(s.biometricUsable, isTrue);
+    });
+
+    test('enable 成功：生成 32B 令牌、写 Rust、状态点亮', () async {
+      final fake = _FakeBiometricService();
+      await api.privacySetPassword('pw');
+      final notifier = await boot(biometricService: fake);
+
+      final outcome = await notifier.enableBiometric();
+      expect(outcome.isSuccess, isTrue);
+      expect(fake.enableCalls, 1);
+      expect(base64Decode(fake.lastEnabledToken!).length, 32);
+      expect(state().biometricConfigured, isTrue);
+      expect(state().biometricUsable, isTrue);
+      expect(
+        await api.privacyBiometricVerify(fake.lastEnabledToken!),
+        isTrue,
+        reason: 'Rust/Mock 存入的摘要应能校验平台解封令牌',
+      );
+    });
+
+    test('enable 无密码 → noPassword，不触平台', () async {
+      final fake = _FakeBiometricService();
+      final notifier = await boot(biometricService: fake);
+      final outcome = await notifier.enableBiometric();
+      expect(outcome.error, PrivacyBiometricCommandError.noPassword);
+      expect(fake.enableCalls, 0);
+      expect(state().biometricConfigured, isFalse);
+    });
+
+    test('enable 取消：不点亮且能力仍可用', () async {
+      final fake = _FakeBiometricService()
+        ..enableError = PrivacyBiometricErrorCode.cancelled;
+      await api.privacySetPassword('pw');
+      final notifier = await boot(biometricService: fake);
+      final outcome = await notifier.enableBiometric();
+      expect(outcome.error, PrivacyBiometricCommandError.cancelled);
+      expect(state().biometricConfigured, isFalse);
+      expect(state().biometricStatus?.available, isTrue);
+    });
+
+    test('enable 无硬件：不点亮且开关置灰（状态记录原因）', () async {
+      final fake = _FakeBiometricService()
+        ..enableError = PrivacyBiometricErrorCode.noHardware;
+      await api.privacySetPassword('pw');
+      final notifier = await boot(biometricService: fake);
+      final outcome = await notifier.enableBiometric();
+      expect(outcome.error, PrivacyBiometricCommandError.noHardware);
+      expect(state().biometricConfigured, isFalse);
+      expect(state().biometricStatus?.available, isFalse);
+      expect(
+        state().biometricStatus?.reason,
+        PrivacyBiometricErrorCode.noHardware,
+      );
+      expect(state().biometricUsable, isFalse);
+    });
+
+    test('enable Rust 拒绝（IV 长度非法）：销毁原生密钥且不点亮', () async {
+      final fake = _FakeBiometricService()
+        ..ivOverride = base64Encode(List<int>.filled(11, 1));
+      await api.privacySetPassword('pw');
+      final notifier = await boot(biometricService: fake);
+      final outcome = await notifier.enableBiometric();
+      expect(outcome.error, PrivacyBiometricCommandError.failed);
+      expect(state().biometricConfigured, isFalse);
+      expect(fake.deleteCalls, 1);
+    });
+
+    test('disable：清 Rust 三键 + 销毁原生密钥 + 状态关闭', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+      expect(state().biometricConfigured, isTrue);
+
+      expect(await notifier.disableBiometric(), isTrue);
+      expect(state().biometricConfigured, isFalse);
+      expect(fake.deleteCalls, 1);
+      expect(
+        await api.privacyBiometricVerify(_FakeBiometricService.defaultToken),
+        isFalse,
+      );
+    });
+
+    test('key_invalidated：自动清 Rust 三键并关闭开关', () async {
+      final fake = _FakeBiometricService()
+        ..unlockError = PrivacyBiometricErrorCode.keyInvalidated;
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+
+      final outcome = await notifier.unlockWithBiometric(appStart: true);
+      expect(outcome.error, PrivacyBiometricCommandError.keyInvalidated);
+      expect(state().biometricConfigured, isFalse);
+      expect(state().sessionUnlocked, isFalse);
+      expect(
+        await api.privacyBiometricVerify(_FakeBiometricService.defaultToken),
+        isFalse,
+        reason: 'Rust 三键应被清除',
+      );
+    });
+
+    test('令牌不匹配：不授权且保持配置（可回退密码）', () async {
+      final fake = _FakeBiometricService()
+        ..unlockTokenOverride = base64Encode(List<int>.filled(32, 8));
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+
+      final outcome = await notifier.unlockWithBiometric(appStart: true);
+      expect(outcome.error, PrivacyBiometricCommandError.failed);
+      expect(state().sessionUnlocked, isFalse);
+      expect(state().appStartVerified, isFalse);
+      expect(state().biometricConfigured, isTrue);
+    });
+
+    test('verifyOnly：只验不授权（设置页语义）', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(
+        biometricService: fake,
+        prefs: {
+          PrefKeys.privateEnabled: true,
+          PrefKeys.privateUnlockScope: 'every_time',
+        },
+      );
+
+      final outcome = await notifier.unlockWithBiometric(
+        verifyOnly: true,
+        bookUrl: 'https://a/1',
+        groupId: 4,
+      );
+      expect(outcome.isSuccess, isTrue);
+      expect(state().sessionUnlocked, isFalse);
+      expect(state().appStartVerified, isFalse);
+      expect(state().grantedBookUrls, isEmpty);
+      expect(state().grantedGroupIds, isEmpty);
+    });
+
+    test('EveryTime：只授权目标书/分组，不置会话解锁', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(
+        biometricService: fake,
+        prefs: {
+          PrefKeys.privateEnabled: true,
+          PrefKeys.privateUnlockScope: 'every_time',
+        },
+      );
+
+      expect(state().unlockScope, PrivacyUnlockScope.everyTime);
+      final outcome = await notifier.unlockWithBiometric(
+        bookUrl: 'https://a/1',
+        groupId: 4,
+      );
+      expect(outcome.isSuccess, isTrue);
+      expect(state().sessionUnlocked, isFalse);
+      expect(state().grantedBookUrls, {'https://a/1'});
+      expect(state().grantedGroupIds, {4});
+      expect(
+        state().isTargetGranted(bookUrl: 'https://a/1', groupId: 4),
+        isTrue,
+      );
+      expect(state().isTargetGranted(bookUrl: 'https://a/2'), isFalse);
+    });
+
+    test('AppSession：会话级授权（书/分组全部放行）', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(
+        biometricService: fake,
+        prefs: {PrefKeys.privateEnabled: true},
+      );
+
+      final outcome = await notifier.unlockWithBiometric();
+      expect(outcome.isSuccess, isTrue);
+      expect(state().sessionUnlocked, isTrue);
+      expect(state().appStartVerified, isTrue);
+      expect(state().contentSessionUnlocked, isTrue);
+      expect(state().isTargetGranted(bookUrl: 'https://any'), isTrue);
+    });
+
+    test('启动闸门 appStart：EveryTime 也置会话/启动标记（仅证明进得来）', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(
+        biometricService: fake,
+        prefs: {
+          PrefKeys.privateEnabled: true,
+          PrefKeys.privateUnlockScope: 'every_time',
+        },
+      );
+
+      expect(state().unlockScope, PrivacyUnlockScope.everyTime);
+      final outcome = await notifier.unlockWithBiometric(appStart: true);
+      expect(outcome.isSuccess, isTrue);
+      expect(state().sessionUnlocked, isTrue);
+      expect(state().appStartVerified, isTrue);
+      expect(
+        state().contentSessionUnlocked,
+        isFalse,
+        reason: 'EveryTime 下启动解锁不代表内容授权',
+      );
+      expect(state().isTargetGranted(bookUrl: 'https://any'), isFalse);
+    });
+
+    test('未配置时解锁 → notConfigured，不发平台请求', () async {
+      final fake = _FakeBiometricService();
+      await api.privacySetPassword('pw');
+      final notifier = await boot(biometricService: fake);
+      final outcome = await notifier.unlockWithBiometric(appStart: true);
+      expect(outcome.error, PrivacyBiometricCommandError.notConfigured);
+      expect(fake.enableCalls, 0);
+    });
+
+    test('改密成功：清空生物状态并销毁原生密钥', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+      expect(state().biometricConfigured, isTrue);
+
+      expect(
+        await notifier.setPassword('new-pass', oldPassword: 'pw'),
+        PrivacyPasswordChangeResult.success,
+      );
+      expect(state().biometricConfigured, isFalse);
+      expect(fake.deleteCalls, 1);
+      expect(state().biometricStatus?.hasKey, isFalse);
+    });
+
+    test('清密成功：清空生物状态并销毁原生密钥', () async {
+      final fake = _FakeBiometricService();
+      await seedBiometric();
+      final notifier = await boot(biometricService: fake);
+
+      expect(
+        await notifier.clearPassword(password: 'pw'),
+        PrivacyClearPasswordResult.success,
+      );
+      expect(state().hasPassword, isFalse);
+      expect(state().biometricConfigured, isFalse);
+      expect(fake.deleteCalls, 1);
+    });
   });
 }

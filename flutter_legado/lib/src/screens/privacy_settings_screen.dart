@@ -5,7 +5,8 @@
 //   会话解锁），通过后才显示设置项；取消返回上一页；未设密码直接进入
 //   （本身是设密码入口）；
 // - 凭据组：启用私密功能（默认 false）、设置/修改密码、清除密码、
-//   生物快捷解锁（本批置灰「暂未支持」，9d 接入）；
+//   生物快捷解锁（批9d：需已有密码且平台可用；开启走系统认证并封装
+//   32B 随机令牌，关闭清除信封与原生密钥）；
 // - 验证时机组：进入私密分组（默认 true）、打开私密书籍（默认 true）、
 //   启动应用（默认 false）、验证频率（EveryTime/AppSession/UntilBackground，
 //   默认 AppSession）、离开后台宽限（0/30/120/180/300，默认 0，仅
@@ -45,6 +46,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
   final TextEditingController _verifyController = TextEditingController();
   bool _verified = false;
   bool _verifying = false;
+  bool _biometricBusy = false;
   String? _verifyError;
 
   @override
@@ -266,10 +268,12 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
             SettingSwitchRow(
               key: const ValueKey('privacyBiometricSwitch'),
               title: '生物快捷解锁',
-              subtitle: '暂未支持',
-              value: false,
-              // 9d 接入 BiometricPrompt/Keystore 信封前保持置灰
-              onChanged: null,
+              subtitle: _biometricSubtitle(privacy),
+              value: privacy.biometricConfigured,
+              onChanged: _biometricSwitchEnabled(privacy)
+                  ? (value) =>
+                        unawaited(_toggleBiometric(context, notifier, value))
+                  : null,
             ),
           ],
         ),
@@ -487,6 +491,51 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// [批9d] 生物开关副标题：按密码/平台能力给出具体原因
+  String _biometricSubtitle(PrivacyState privacy) {
+    if (!privacy.hasPassword) return '请先设置隐私密码';
+    final status = privacy.biometricStatus;
+    if (status == null) return '正在读取生物识别状态';
+    if (!status.available) return status.unavailableMessage;
+    if (privacy.biometricConfigured) return '已开启，解锁时可使用指纹或面容';
+    return '使用指纹或面容快速解锁';
+  }
+
+  /// [批9d] 生物开关是否可操作：需有密码、平台可用且无并发命令
+  bool _biometricSwitchEnabled(PrivacyState privacy) {
+    if (_biometricBusy || !privacy.hasPassword) return false;
+    final status = privacy.biometricStatus;
+    return status != null && status.available;
+  }
+
+  /// [批9d] 开关生物快捷解锁
+  ///
+  /// 开启：平台认证并封装新令牌 → Rust 写入；失败不点亮开关并提示原因。
+  /// 关闭：Rust 清除三键 → 原生销毁密钥；失败保持开关并提示重试。
+  Future<void> _toggleBiometric(
+    BuildContext context,
+    PrivacyNotifier notifier,
+    bool value,
+  ) async {
+    if (_biometricBusy) return;
+    setState(() => _biometricBusy = true);
+    if (value) {
+      final outcome = await notifier.enableBiometric();
+      if (!mounted) return;
+      setState(() => _biometricBusy = false);
+      if (!outcome.isSuccess && context.mounted) {
+        _showMessage(context, outcome.userMessage);
+      }
+    } else {
+      final ok = await notifier.disableBiometric();
+      if (!mounted) return;
+      setState(() => _biometricBusy = false);
+      if (!ok && context.mounted) {
+        _showMessage(context, '关闭失败，请重试');
+      }
+    }
   }
 }
 

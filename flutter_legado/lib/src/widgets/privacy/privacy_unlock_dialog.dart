@@ -1,14 +1,17 @@
-// 隐私密码验证弹窗（批9c）
+// 隐私密码验证弹窗（批9c / 批9d）
 //
 // 统一入口 `showPrivacyUnlockDialog`：书架锁定卡片、私密分组锁定页、
 // 数据详情页、阅读器闸门复用同一套「验证一次 → 按频率授权」流程。
 // - 已授权 / 总开关关闭 → 直接返回 true，不打扰；
 // - 未设置密码 → 引导去隐私设置，返回 false（安全兜底，不落锁死）；
-// - EveryTime → 只授权本次目标；AppSession/UntilBackground → 会话放行。
+// - EveryTime → 只授权本次目标；AppSession/UntilBackground → 会话放行；
+// - [批9d] 已配置且平台可用时提供「使用生物识别」；取消/失败留在弹窗，
+//   仍可回退密码验证。
 //
-// 编写：全栈工程师（批9c） ｜ 2026-11-09
+// 编写：全栈工程师（批9c / 批9d） ｜ 2026-11-10
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../../providers/privacy/privacy_notifier.dart';
 import '../../providers/privacy/privacy_state.dart';
@@ -83,6 +86,7 @@ class _PrivacyUnlockDialog extends ConsumerStatefulWidget {
 class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog> {
   final TextEditingController _controller = TextEditingController();
   bool _busy = false;
+  bool _biometricBusy = false;
   String? _error;
 
   @override
@@ -120,6 +124,27 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog> {
     });
   }
 
+  /// [批9d] 生物快捷解锁：取消/失败留在弹窗，密码输入仍可用
+  Future<void> _submitBiometric() async {
+    if (_busy || _biometricBusy) return;
+    setState(() {
+      _biometricBusy = true;
+      _error = null;
+    });
+    final outcome = await ref
+        .read(privacyNotifierProvider.notifier)
+        .unlockWithBiometric(bookUrl: widget.bookUrl, groupId: widget.groupId);
+    if (!mounted) return;
+    if (outcome.isSuccess) {
+      Navigator.pop(context, true);
+      return;
+    }
+    setState(() {
+      _biometricBusy = false;
+      _error = outcome.userMessage;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyNotifierProvider);
@@ -151,17 +176,37 @@ class _PrivacyUnlockDialogState extends ConsumerState<_PrivacyUnlockDialog> {
               border: const OutlineInputBorder(),
             ),
           ),
+          if (privacy.biometricUsable) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const ValueKey('privacyUnlockBiometric'),
+                onPressed: (_busy || _biometricBusy) ? null : _submitBiometric,
+                icon: _biometricBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Symbols.fingerprint_rounded, size: 18),
+                label: const Text('使用生物识别'),
+              ),
+            ),
+          ],
         ],
       ),
       actions: [
         TextButton(
           key: const ValueKey('privacyUnlockCancel'),
-          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          onPressed: (_busy || _biometricBusy)
+              ? null
+              : () => Navigator.pop(context, false),
           child: const Text('取消'),
         ),
         FilledButton(
           key: const ValueKey('privacyUnlockConfirm'),
-          onPressed: _busy ? null : _submit,
+          onPressed: (_busy || _biometricBusy) ? null : _submit,
           child: _busy
               ? const SizedBox(
                   width: 16,

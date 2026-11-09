@@ -3,10 +3,11 @@
 /// 覆盖：设置主页入口与路由、进入验证闸门（取消/错误/通过/只验不授权）、
 /// 三组与默认值、启用开关（无密码弹设密框、取消不开启、成功后自动开启）、
 /// 密码对话框校验、改密旧密错误、清密二次确认/enabled 回落/保存中不可关闭、
-/// 策略写失败提示、生物快捷置灰、360dp + 1.6 倍字体无溢出。
+/// 策略写失败提示、生物快捷开关（开启/失败/关闭）、360dp + 1.6 倍字体无溢出。
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -23,6 +24,7 @@ import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/privacy_settings_screen.dart';
 import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/services/privacy_biometric_service.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 
 /// 清除凭据挂起（保存中禁止关闭测试）
@@ -47,6 +49,33 @@ class _BrokenMarkersApi extends MockBookApi {
   Future<List<String>> getPrivateBookUrls() async {
     throw StateError('标记读取失败');
   }
+}
+
+/// 生物识别平台 Fake（批9d）
+class _FakeBiometricService implements PrivacyBiometricService {
+  static final String token = base64Encode(List<int>.filled(32, 7));
+  static final String envelope = base64Encode(List<int>.filled(64, 9));
+  static final String iv = base64Encode(List<int>.filled(12, 5));
+
+  PrivacyBiometricStatus status = const PrivacyBiometricStatus(available: true);
+  PrivacyBiometricErrorCode? enableError;
+  int deleteCalls = 0;
+
+  @override
+  Future<PrivacyBiometricStatus> getStatus() async => status;
+
+  @override
+  Future<PrivacyBiometricEnvelope> enable(String tokenBase64) async {
+    if (enableError != null) throw PrivacyBiometricException(enableError!);
+    return PrivacyBiometricEnvelope(envelope: envelope, iv: iv);
+  }
+
+  @override
+  Future<String> unlock({required String envelope, required String iv}) async =>
+      token;
+
+  @override
+  Future<void> deleteKey() async => deleteCalls++;
 }
 
 /// 策略写入恒失败（UI SnackBar 测试）
@@ -85,6 +114,7 @@ void main() {
     double textScale = 1.0,
     Widget? home,
     PrivacyPolicyStore? store,
+    PrivacyBiometricService? biometricService,
   }) async {
     SharedPreferences.setMockInitialValues(prefs);
     tester.view.physicalSize = physicalSize;
@@ -93,6 +123,11 @@ void main() {
     final overrides = <Override>[bookApiProvider.overrideWithValue(api)];
     if (store != null) {
       overrides.add(privacyPolicyStoreProvider.overrideWithValue(store));
+    }
+    if (biometricService != null) {
+      overrides.add(
+        privacyBiometricServiceProvider.overrideWithValue(biometricService),
+      );
     }
     final container = ProviderContainer(overrides: overrides);
     addTearDown(container.dispose);
@@ -223,7 +258,7 @@ void main() {
     expect(row.value, isTrue);
   });
 
-  testWidgets('三组与默认值：凭据/验证时机/说明，生物快捷暂未支持', (tester) async {
+  testWidgets('三组与默认值：凭据/验证时机/说明，生物快捷需先设密码', (tester) async {
     await pumpScreen(tester);
 
     expect(find.text('凭据'), findsOneWidget);
@@ -249,8 +284,8 @@ void main() {
 
     final biometric = row('privacyBiometricSwitch');
     expect(biometric.value, isFalse);
-    expect(biometric.onChanged, isNull, reason: '9d 生物识别前置灰');
-    expect(find.text('暂未支持'), findsOneWidget);
+    expect(biometric.onChanged, isNull, reason: '无密码/桌面平台不支持时生物开关置灰');
+    expect(find.text('请先设置隐私密码'), findsOneWidget);
 
     final clearRow = tester.widget<IosListTile>(
       find.byKey(const ValueKey('privacyClearPasswordRow')),
@@ -573,5 +608,71 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byType(PrivacyPasswordDialog), findsOneWidget);
+  });
+
+  // ===== [批9d] 生物快捷解锁开关 =====
+
+  testWidgets('生物开关：有密码且平台可用时可开启，成功后状态点亮', (tester) async {
+    final fake = _FakeBiometricService();
+    await api.privacySetPassword('pw');
+    final container = await pumpScreen(tester, biometricService: fake);
+
+    SettingSwitchRow row() => tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyBiometricSwitch')),
+    );
+    expect(row().value, isFalse);
+    expect(row().onChanged, isNotNull);
+    expect(find.text('使用指纹或面容快速解锁'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('privacyBiometricSwitch')));
+    await tester.pumpAndSettle();
+
+    expect(row().value, isTrue);
+    expect(stateOf(container).biometricConfigured, isTrue);
+    expect(find.text('已开启，解锁时可使用指纹或面容'), findsOneWidget);
+  });
+
+  testWidgets('生物开启失败：不点亮、提示中文原因并置灰', (tester) async {
+    final fake = _FakeBiometricService()
+      ..enableError = PrivacyBiometricErrorCode.noHardware;
+    await api.privacySetPassword('pw');
+    final container = await pumpScreen(tester, biometricService: fake);
+
+    await tester.tap(find.byKey(const ValueKey('privacyBiometricSwitch')));
+    await tester.pumpAndSettle();
+
+    expect(stateOf(container).biometricConfigured, isFalse);
+    expect(find.text('设备不支持指纹或面容识别'), findsWidgets);
+    final row = tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyBiometricSwitch')),
+    );
+    expect(row.value, isFalse);
+    expect(row.onChanged, isNull);
+  });
+
+  testWidgets('生物关闭：清信封、销毁原生密钥并回到关闭态', (tester) async {
+    final fake = _FakeBiometricService();
+    await api.privacySetPassword('pw');
+    await api.privacyBiometricSet(
+      _FakeBiometricService.token,
+      _FakeBiometricService.envelope,
+      _FakeBiometricService.iv,
+    );
+    final container = await pumpScreen(tester, biometricService: fake);
+
+    SettingSwitchRow row() => tester.widget<SettingSwitchRow>(
+      find.byKey(const ValueKey('privacyBiometricSwitch')),
+    );
+    expect(row().value, isTrue);
+    await tester.tap(find.byKey(const ValueKey('privacyBiometricSwitch')));
+    await tester.pumpAndSettle();
+
+    expect(row().value, isFalse);
+    expect(stateOf(container).biometricConfigured, isFalse);
+    expect(fake.deleteCalls, 1);
+    expect(
+      await api.privacyBiometricVerify(_FakeBiometricService.token),
+      isFalse,
+    );
   });
 }

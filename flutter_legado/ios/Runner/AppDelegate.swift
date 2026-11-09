@@ -42,5 +42,10 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "WebKeepAlive") {
       WebKeepAlive.shared.attach(messenger: registrar.messenger())
     }
+    // [批9d] 生物识别快捷解锁（legado/privacy_biometric）：LAContext 认证 +
+    // Keychain biometryCurrentSet 保护 32B 随机令牌（不封装密码）
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PrivacyBiometricBridge") {
+      PrivacyBiometricBridge.shared.attach(messenger: registrar.messenger())
+    }
   }
 }

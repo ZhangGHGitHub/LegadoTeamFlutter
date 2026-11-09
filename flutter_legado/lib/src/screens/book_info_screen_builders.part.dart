@@ -92,6 +92,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             actionText: privacyLockedActionText(privacy, fallback: '验证并查看'),
             header: const PrivateLockedPlaceholderBars(),
             onAction: _requestPrivateUnlock,
+            onBiometric: privacy.biometricUsable
+                ? _requestPrivateUnlockWithBiometric
+                : null,
           ),
         ),
       ],
@@ -108,6 +111,20 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       bookUrl: book.bookUrl,
       title: '验证后查看',
     );
+  }
+
+  /// [批9d] 生物快捷解锁当前私密详情（锁定页「使用生物识别」）
+  Future<void> _requestPrivateUnlockWithBiometric() async {
+    final book = _loadedBook;
+    if (book == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final outcome = await ref
+        .read(privacyNotifierProvider.notifier)
+        .unlockWithBiometric(bookUrl: book.bookUrl);
+    if (!mounted || outcome.isSuccess) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(outcome.userMessage)));
   }
 
   /// 页面主体：封面背景三档（off/off_for_default/on）+ seed 渐变 —— 内容叠层

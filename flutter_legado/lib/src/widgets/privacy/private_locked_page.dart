@@ -1,10 +1,13 @@
-// 私密内容整页锁定提示（批9c）
+// 私密内容整页锁定提示（批9c / 批9d）
 //
 // 对齐参考版 `PrivateLockedPage` / `PrivateLockedHint`：锁图标 + 标题 +
 // 说明 + 验证入口。用于私密分组内容区、数据详情页与阅读器闸门；
 // 页面上不渲染任何真实书名/作者/分组书列表。
 //
-// 编写：全栈工程师（批9c） ｜ 2026-11-09
+// [批9d] 已配置且平台可用时追加「使用生物识别」次入口；失败/取消留在
+// 本页，仍可走密码验证。
+//
+// 编写：全栈工程师（批9c / 批9d） ｜ 2026-11-10
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -38,6 +41,7 @@ class PrivateLockedPage extends StatelessWidget {
     required this.onAction,
     this.icon = Symbols.lock_rounded,
     this.header,
+    this.onBiometric,
   });
 
   final String title;
@@ -48,6 +52,9 @@ class PrivateLockedPage extends StatelessWidget {
 
   /// 额外头部（如详情页的 3 条占位条）
   final Widget? header;
+
+  /// [批9d] 生物快捷解锁入口（null = 隐藏；调用方按 `biometricUsable` 决定）
+  final VoidCallback? onBiometric;
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +99,15 @@ class PrivateLockedPage extends StatelessWidget {
               icon: const Icon(Symbols.lock_open_rounded, size: 18),
               label: Text(actionText),
             ),
+            if (onBiometric != null) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                key: const ValueKey('private-locked-biometric'),
+                onPressed: onBiometric,
+                icon: const Icon(Symbols.fingerprint_rounded, size: 18),
+                label: const Text('使用生物识别'),
+              ),
+            ],
           ],
         ),
       ),

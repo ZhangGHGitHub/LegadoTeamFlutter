@@ -1645,8 +1645,35 @@ Future<bool> privacyVerifyPassword({required String password}) =>
     RustLib.instance.api.crateFfiFfiPrivacyVerifyPassword(password: password);
 
 /// 清除隐私密码（删除 salt/verifier 两键；不存在为 no-op）
+///
+/// [批9d] 同事务清空生物识别三键（摘要/信封/IV）。
 Future<void> privacyClearPassword() =>
     RustLib.instance.api.crateFfiFfiPrivacyClearPassword();
+
+/// 生物识别快捷解锁状态（裸 JSON：configured/envelope/iv，不含摘要/令牌）
+Future<String> privacyBiometricStateGet() =>
+    RustLib.instance.api.crateFfiFfiPrivacyBiometricStateGet();
+
+/// 写入生物识别凭据（32B 令牌 / 1..4096B 信封 / 12B IV，Base64）
+///
+/// 必须已有隐私密码；长度或编码非法返回 false 且不落库。
+Future<bool> privacyBiometricSet({
+  required String token,
+  required String envelope,
+  required String iv,
+}) => RustLib.instance.api.crateFfiFfiPrivacyBiometricSet(
+  token: token,
+  envelope: envelope,
+  iv: iv,
+);
+
+/// 校验生物识别令牌（摘要常量时间比较；无摘要/非法令牌 false）
+Future<bool> privacyBiometricVerify({required String token}) =>
+    RustLib.instance.api.crateFfiFfiPrivacyBiometricVerify(token: token);
+
+/// 清除生物识别凭据（删除摘要/信封/IV 三键；不存在为 no-op）
+Future<void> privacyBiometricClear() =>
+    RustLib.instance.api.crateFfiFfiPrivacyBiometricClear();
 
 /// 批量设置书籍私密标记（JSON 字符串数组），返回实际更新行数
 Future<int> setBooksPrivate({
