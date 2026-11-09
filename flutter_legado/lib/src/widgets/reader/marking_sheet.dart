@@ -139,9 +139,8 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
 
   Future<void> _save() async {
     if (_saving) return;
-    if (widget.bookName.isEmpty ||
-        widget.bookAuthor.isEmpty ||
-        widget.bookUrl.isEmpty) {
+    // [P2-4] 空作者照常保存（与书签同口径），只要求书名/书源非空
+    if (widget.bookName.isEmpty || widget.bookUrl.isEmpty) {
       _toast('无法保存笔记：未打开书籍');
       return;
     }
@@ -195,9 +194,7 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await ref
-          .read(bookMarkingNotifierProvider.notifier)
-          .delete(existing.id);
+      await ref.read(bookMarkingNotifierProvider.notifier).delete(existing.id);
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
@@ -289,9 +286,8 @@ class _MarkingSheetState extends ConsumerState<MarkingSheet> {
                           ),
                           color: kMarkingPresetColors[i],
                           selected: kMarkingPresetColors[i] == _color,
-                          onTap: () => setState(
-                            () => _color = kMarkingPresetColors[i],
-                          ),
+                          onTap: () =>
+                              setState(() => _color = kMarkingPresetColors[i]),
                         ),
                       ),
                   ],

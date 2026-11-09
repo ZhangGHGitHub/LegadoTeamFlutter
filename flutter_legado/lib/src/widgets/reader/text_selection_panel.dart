@@ -18,7 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../models/models.dart';
-import '../../models/selection_menu_config.dart';
+import '../../providers/book_marking/book_marking_notifier.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../screens/reader_config_panel.dart';
@@ -35,21 +35,33 @@ const List<Color> kHighlightColors = [
   Color(0xFFFFCC80), // 橙
 ];
 
-/// 选区起点在章节正文中的 UTF-16 偏移（批34b P3-2）
+/// 选区起点在章节正文中的 UTF-16 偏移（批34b P3-2；批7b-2b P1-1 修正）
 ///
 /// [paragraphText] 为段落渲染文本（含首行缩进全角空格），[chapterPos] 为
 /// 段落正文（trim 后）在章节中的起始偏移。缩进列不在章节正文中，故精细
 /// 选区定位后须扣除缩进宽度；未精细选择（整段）时直接取段落起点。
+///
+/// [selectionStart] 为选区在 [paragraphText] 中的原始起点（相对段落），
+/// 优先使用——段落内重复词时 `indexOf` 只能取第一次出现，会错位；
+/// 未提供时回退 `indexOf`（兼容旧调用/测试）。
 int chapterOffsetOfSelection({
   required String paragraphText,
   required int chapterPos,
   required String selection,
   required bool fineSelection,
+  int? selectionStart,
 }) {
   final indent = paragraphText.length - paragraphText.trimLeft().length;
   if (!fineSelection || selection.isEmpty) return chapterPos;
-  final index = paragraphText.indexOf(selection);
-  if (index < 0) return chapterPos;
+  int index;
+  if (selectionStart != null) {
+    // 选区原文可能含前导空白（会被 _selectedText trim），偏移同步前移
+    final leading = selection.length - selection.trimLeft().length;
+    index = selectionStart + leading;
+  } else {
+    index = paragraphText.indexOf(selection);
+    if (index < 0) return chapterPos;
+  }
   final bodyLength = paragraphText.length - indent;
   final bodyIndex = (index - indent).clamp(0, bodyLength);
   return chapterPos + bodyIndex;
@@ -66,10 +78,7 @@ int chapterOffsetOfSelection({
   final start = position.clamp(0, content.length);
   final end = (start + selectedLength).clamp(0, content.length);
   return (
-    before: content.substring(
-      (start - span).clamp(0, content.length),
-      start,
-    ),
+    before: content.substring((start - span).clamp(0, content.length), start),
     after: content.substring(end, (end + span).clamp(0, content.length)),
   );
 }
@@ -85,6 +94,9 @@ Future<void> openMarkingForSelection(
   required int chapterPos,
   required String selectedText,
   required bool fineSelection,
+  int? selectionStart,
+  int? chapterIndex,
+  String? chapterTitle,
   VoidCallback? onBeforeOpen,
 }) async {
   final state = ref.read(readerNotifierProvider);
@@ -101,30 +113,54 @@ Future<void> openMarkingForSelection(
     return;
   }
   final chapter = state.currentChapter;
+  // [P2-2] 加载冻结帧：优先使用调用方传入的分页快照，避免慢源切章时
+  // 屏幕仍是旧章而 state 已是新章（章号/标题/正文错配）
+  final effectiveChapterIndex = chapterIndex ?? state.currentChapterIndex;
+  final effectiveChapterTitle = chapterTitle ?? chapter?.title ?? '';
   final position = chapterOffsetOfSelection(
     paragraphText: paragraphText,
     chapterPos: chapterPos,
-    selection: fineSelection ? selectedText : '',
+    selection: selectedText,
     fineSelection: fineSelection,
+    selectionStart: selectionStart,
   );
+  final trimmedSelected = selectedText.trim();
   final contextAround = markingContextAround(
     state.chapterContent,
     position,
-    selectedText.length,
+    trimmedSelected.length,
   );
   final navigator = Navigator.of(context, rootNavigator: true);
+  final navigatorContext = navigator.context;
+  // [P2-6] 同锚点再次打开：直接进入编辑模式，预填样式/备注，避免空备注覆盖
+  BookMarking? existing;
+  try {
+    existing = await ref
+        .read(bookMarkingNotifierProvider.notifier)
+        .findExisting(
+          bookName: book.name,
+          bookAuthor: book.author,
+          chapterIndex: effectiveChapterIndex,
+          chapterPosition: position,
+          selectedText: trimmedSelected,
+        );
+  } catch (_) {
+    // 查找失败按新建处理（保存仍可正常落库）
+  }
+  if (!navigatorContext.mounted) return;
   onBeforeOpen?.call();
   await MarkingSheet.show(
-    navigator.context,
+    navigatorContext,
     bookName: book.name,
     bookAuthor: book.author,
     bookUrl: book.bookUrl,
-    chapterIndex: state.currentChapterIndex,
-    chapterName: chapter?.title ?? '',
+    chapterIndex: effectiveChapterIndex,
+    chapterName: effectiveChapterTitle,
     chapterPosition: position,
-    selectedText: selectedText,
+    selectedText: trimmedSelected,
     contextBefore: contextAround.before,
     contextAfter: contextAround.after,
+    existing: existing,
   );
 }
 
@@ -140,10 +176,18 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
   /// 批34 起为章节全局偏移，不再是恒 0）
   final int chapterPos;
 
+  /// [P2-2] 分页快照章节索引（加载冻结帧时 state 可能已是新章）
+  final int? chapterIndex;
+
+  /// [P2-2] 分页快照章节标题
+  final String? chapterTitle;
+
   const TextSelectionPanel({
     super.key,
     required this.text,
     this.chapterPos = 0,
+    this.chapterIndex,
+    this.chapterTitle,
   });
 
   /// 弹出面板
@@ -151,6 +195,8 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
     BuildContext context, {
     required String text,
     int chapterPos = 0,
+    int? chapterIndex,
+    String? chapterTitle,
   }) {
     if (text.trim().isEmpty) return Future.value();
     return showModalBottomSheet<void>(
@@ -160,6 +206,8 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
       builder: (_) => TextSelectionPanel(
         text: text,
         chapterPos: chapterPos,
+        chapterIndex: chapterIndex,
+        chapterTitle: chapterTitle,
       ),
     );
   }
@@ -171,6 +219,9 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
 class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   /// 用户通过原生选区手柄选中的文本（空表示未精细选择，回退整段）
   String _userSelected = '';
+
+  /// 选区在段落文本中的原始起点（相对段落；P1-1 修复重复词错位）
+  int? _userSelectionStart;
 
   /// 是否展开高亮配色行（手工高亮二级入口，保留既有能力）
   bool _showHighlightColors = false;
@@ -277,16 +328,21 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                       _maybeSelectHaptic(cause);
                       final text = widget.text;
                       if (!selection.isValid || selection.isCollapsed) {
-                        if (_userSelected.isNotEmpty) {
-                          setState(() => _userSelected = '');
+                        if (_userSelected.isNotEmpty ||
+                            _userSelectionStart != null) {
+                          setState(() {
+                            _userSelected = '';
+                            _userSelectionStart = null;
+                          });
                         }
                         return;
                       }
                       final start = selection.start.clamp(0, text.length);
                       final end = selection.end.clamp(0, text.length);
-                      setState(
-                        () => _userSelected = text.substring(start, end),
-                      );
+                      setState(() {
+                        _userSelected = text.substring(start, end);
+                        _userSelectionStart = start;
+                      });
                     },
                   ),
                 ),
@@ -464,8 +520,14 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
             ref,
             paragraphText: widget.text,
             chapterPos: widget.chapterPos,
-            selectedText: _selectedText,
+            // 精细选区传原文（保留前导空白），整段回退 trim 文本
+            selectedText: _userSelected.isNotEmpty
+                ? _userSelected
+                : _selectedText,
             fineSelection: _userSelected.trim().isNotEmpty,
+            selectionStart: _userSelectionStart,
+            chapterIndex: widget.chapterIndex,
+            chapterTitle: widget.chapterTitle,
             onBeforeOpen: _close,
           ),
         );
@@ -595,6 +657,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       chapterPos: widget.chapterPos,
       selection: _userSelected,
       fineSelection: _userSelected.trim().isNotEmpty,
+      selectionStart: _userSelectionStart,
     );
     final highlight = <String, dynamic>{
       'time': 0, // 0 时由 Rust 侧自动分配主键
@@ -645,6 +708,10 @@ class ReaderSelectionToolbar extends ConsumerWidget {
   /// 选区起始段内位置（书签/朗读定位用，与段落面板同语义）
   final int chapterPos;
 
+  /// [P2-2] 分页快照章节索引/标题（加载冻结帧时优先于阅读状态）
+  final int? chapterIndex;
+  final String? chapterTitle;
+
   final VoidCallback onDismiss;
 
   const ReaderSelectionToolbar({
@@ -652,6 +719,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     required this.anchor,
     required this.text,
     required this.chapterPos,
+    this.chapterIndex,
+    this.chapterTitle,
     required this.onDismiss,
   });
 
@@ -661,6 +730,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
     required Offset anchor,
     required String text,
     required int chapterPos,
+    int? chapterIndex,
+    String? chapterTitle,
   }) {
     // [批1a | 2026-10-31] selectVibrator 接线（对标参考版
     // ReadBookRouteScreen selectionHapticsEnabled → ReaderCanvasSurface
@@ -712,6 +783,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
                   anchor: anchor,
                   text: text,
                   chapterPos: chapterPos,
+                  chapterIndex: chapterIndex,
+                  chapterTitle: chapterTitle,
                   onDismiss: dismiss,
                 ),
               ),
@@ -818,6 +891,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
                 context,
                 text: text,
                 chapterPos: chapterPos,
+                chapterIndex: chapterIndex,
+                chapterTitle: chapterTitle,
               );
             },
           ),
@@ -865,6 +940,8 @@ class ReaderSelectionToolbar extends ConsumerWidget {
             chapterPos: chapterPos,
             selectedText: text.trim(),
             fineSelection: false,
+            chapterIndex: chapterIndex,
+            chapterTitle: chapterTitle,
             onBeforeOpen: onDismiss,
           ),
         );

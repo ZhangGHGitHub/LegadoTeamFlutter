@@ -174,7 +174,7 @@ class BookMarkingStyle {
   /// 转换为正文渲染使用的 `HighlightStyle`（批7b-2b）
   ///
   /// 映射约定（对齐参考版 `MarkingEffect.toStyle` 的渲染语义）：
-  /// - mode 1/3/2（单实线/波浪/虚线）→ `underline`；
+  /// - mode 1/3/2/4（单实线/波浪/虚线/双下划线）→ `underline`；
   /// - mode 6（删除线）→ `strike`，**不加上划线**；
   /// - mode 7（荧光）→ `fill=(显示色 & 0x00FFFFFF) | 0x33000000`
   ///   （**整行 20% 背景近似**，参考版荧光笔的半高绘制未复刻，登记差异）；
@@ -183,13 +183,16 @@ class BookMarkingStyle {
   /// - mode 5（SVG 下划线）→ 回退单实线 SOLID（SVG 路径本批不渲染，登记）；
   /// - mode 0/未知 → 无效果。
   ///
+  /// mode 4 参考语义为「双下划线」（`HighlightRule.kt:90`），映射到
+  /// `HighlightUnderline.kind='DOUBLE'`；其余未使用模式（如 8+）跳过。
+  ///
   /// 线色为空/0 时回退展示色（`MarkingEffect.colorOf`）。
   HighlightStyle toHighlightStyle() {
     final fallbackColor = MarkingEffect.colorOf(this);
     final lineColor = (underlineColor == null || underlineColor == 0)
         ? fallbackColor
         : underlineColor!;
-    const kindByMode = {1: 'SOLID', 3: 'WAVY', 2: 'DASHED'};
+    const kindByMode = {1: 'SOLID', 3: 'WAVY', 2: 'DASHED', 4: 'DOUBLE'};
     final kind =
         kindByMode[underlineMode] ?? (underlineMode == 5 ? 'SOLID' : null);
     if (kind != null) {
@@ -266,8 +269,11 @@ enum MarkingEffect {
 
   /// 是否属于下划线类效果（对应 underlineMode != 0）
   bool get isUnderline =>
-      this == solid || this == wave || this == dashed ||
-      this == strike || this == highlight;
+      this == solid ||
+      this == wave ||
+      this == dashed ||
+      this == strike ||
+      this == highlight;
 
   /// 由效果 + 选中颜色生成样式
   ///

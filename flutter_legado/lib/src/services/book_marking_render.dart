@@ -37,7 +37,9 @@ List<HighlightMatch> buildMarkingMatches({
     if (anchor == null) continue;
     final range = resolveBookMarkingRange(content, anchor);
     if (range == null) continue;
-    final style = BookMarkingStyle.tryParse(marking.styleJson)?.toHighlightStyle();
+    final style = BookMarkingStyle.tryParse(
+      marking.styleJson,
+    )?.toHighlightStyle();
     if (style == null || !style.hasRenderableEffect) continue;
     matches.add(
       HighlightMatch(
@@ -58,10 +60,12 @@ List<HighlightMatch> buildMarkingMatches({
 ///
 /// 优先级：
 /// 1. 标记整体高于规则；
-/// 2. 标记之间列表靠后者优先（后创建/后更新者）；
+/// 2. 标记之间按列表顺序，靠后者优先（DB 查询为 `createdAt ASC`；
+///    编辑不会提升优先级，不使用 updatedAt）；
 /// 3. 规则之间保持既有语义：`order` 大者优先，同 order 先出现者优先。
 ///
-/// 输出互不重叠、按 `start` 升序；相邻且同样式段合并。
+/// 输出互不重叠、按 `start` 升序；相邻且同样式段合并（合并段继承前一段的
+/// `ruleId`/`order`/`styleJson` 元数据）。
 /// `marks` 为空时返回 `rules` 的副本（不改变原有结果）。
 List<HighlightMatch> mergeHighlightAndMarkingMatches({
   required List<HighlightMatch> rules,
@@ -157,10 +161,7 @@ class _Event {
 }
 
 /// 从活动区间集合中选优先级最高者
-_ArenaInterval? _pickWinner(
-  Set<int> active,
-  List<_ArenaInterval> intervals,
-) {
+_ArenaInterval? _pickWinner(Set<int> active, List<_ArenaInterval> intervals) {
   _ArenaInterval? best;
   for (final id in active) {
     final candidate = intervals[id];
@@ -190,6 +191,7 @@ void _emitSegment(
   if (out.isNotEmpty) {
     final last = out.last;
     if (last.end == start && _styleKey(last.style) == winner.styleKey) {
+      // 相邻同样式合并：保留前一段的 ruleId/order/styleJson 元数据
       out[out.length - 1] = HighlightMatch(
         ruleId: last.ruleId,
         start: last.start,

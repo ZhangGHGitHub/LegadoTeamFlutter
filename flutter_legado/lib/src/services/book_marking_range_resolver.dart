@@ -139,11 +139,7 @@ BookMarkingRange? _findClosestNormalizedOccurrence({
   while (true) {
     match = normalizedContent.text.indexOf(normalizedCandidate, match + 1);
     if (match < 0) break;
-    final distance = _distance(
-      normalizedContent,
-      match,
-      approximatePosition,
-    );
+    final distance = _distance(normalizedContent, match, approximatePosition);
     if (distance < closestDistance) {
       closestStart = match;
       closestDistance = distance;

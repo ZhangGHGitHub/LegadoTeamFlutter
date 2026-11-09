@@ -24,6 +24,9 @@ class ReaderTypographicPage extends StatelessWidget {
   final int totalPages;
   final String? chapterTitle;
 
+  /// [P2-2] 分页快照章节索引（加载冻结帧优先于阅读状态）
+  final int? chapterIndex;
+
   final double fontSize;
   final double lineHeight;
   final double paragraphSpacing;
@@ -80,6 +83,7 @@ class ReaderTypographicPage extends StatelessWidget {
     required this.pageIndex,
     required this.totalPages,
     required this.chapterTitle,
+    this.chapterIndex,
     required this.fontSize,
     required this.lineHeight,
     required this.paragraphSpacing,
@@ -208,6 +212,8 @@ class ReaderTypographicPage extends StatelessWidget {
                         reviewCounts: reviewCounts,
                         onReviewTap: onReviewTap,
                         highlightMatches: highlightMatches,
+                        chapterIndex: chapterIndex,
+                        chapterTitle: chapterTitle,
                       ),
                     ),
                   ),
@@ -322,6 +328,10 @@ class ReaderTextContent extends StatelessWidget {
   /// [批34] 本章高亮命中区间（UTF-16 章节全局偏移）
   final List<HighlightMatch> highlightMatches;
 
+  /// [P2-2] 分页快照章节索引/标题（长按选区时优先于实时阅读状态）
+  final int? chapterIndex;
+  final String? chapterTitle;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -338,6 +348,8 @@ class ReaderTextContent extends StatelessWidget {
     this.reviewCounts,
     this.onReviewTap,
     this.highlightMatches = const [],
+    this.chapterIndex,
+    this.chapterTitle,
   });
 
   @override
@@ -487,6 +499,8 @@ class ReaderTextContent extends StatelessWidget {
                   anchor: details.globalPosition,
                   text: paraText,
                   chapterPos: para.startIndex,
+                  chapterIndex: chapterIndex,
+                  chapterTitle: chapterTitle,
                 );
               },
               child: paragraphContent,
@@ -542,34 +556,48 @@ class ReaderParagraphs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paragraphs = content.split('\n');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final p in paragraphs)
-          // [UI-fix v2.0.1 | 2026-08-06] 滚动回退模式段落级长按入口
-          // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
-          GestureDetector(
-            onLongPress: (p.trim().isEmpty || !selectText)
-                ? null
-                : () => TextSelectionPanel.show(context, text: p),
-            child: Padding(
-              padding: EdgeInsets.only(bottom: paragraphSpacing),
-              child: Text(
-                p.isEmpty ? ' ' : p,
-                style: TextStyle(
-                  fontSize: fontSize,
-                  height: lineHeight,
-                  color: textColor,
-                  fontFamily: fontFamily,
-                  // [UI-fix v2.0.4 | 2026-08-08] 字重接线 — Qoder
-                  fontWeight: fontWeight,
-                  fontStyle: fontStyle,
-                  letterSpacing: letterSpacing != 0 ? letterSpacing : null,
+    // [P2-2 低成本] 滚动模式无分页 ParagraphInfo：按行累计段首偏移，
+    // 传给选区面板（此前恒 0，笔记/高亮锚点全落在章首）
+    var offset = 0;
+    final items = <Widget>[];
+    for (var index = 0; index < paragraphs.length; index++) {
+      final p = paragraphs[index];
+      final leading = p.length - p.trimLeft().length;
+      final paragraphChapterPos = offset + leading;
+      items.add(
+        // [UI-fix v2.0.1 | 2026-08-06] 滚动回退模式段落级长按入口
+        // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
+        GestureDetector(
+          onLongPress: (p.trim().isEmpty || !selectText)
+              ? null
+              : () => TextSelectionPanel.show(
+                  context,
+                  text: p,
+                  chapterPos: paragraphChapterPos,
                 ),
+          child: Padding(
+            padding: EdgeInsets.only(bottom: paragraphSpacing),
+            child: Text(
+              p.isEmpty ? ' ' : p,
+              style: TextStyle(
+                fontSize: fontSize,
+                height: lineHeight,
+                color: textColor,
+                fontFamily: fontFamily,
+                // [UI-fix v2.0.4 | 2026-08-08] 字重接线 — Qoder
+                fontWeight: fontWeight,
+                fontStyle: fontStyle,
+                letterSpacing: letterSpacing != 0 ? letterSpacing : null,
               ),
             ),
           ),
-      ],
+        ),
+      );
+      offset += p.length + 1; // + '\n'
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items,
     );
   }
 }

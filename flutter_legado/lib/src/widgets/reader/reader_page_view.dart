@@ -257,9 +257,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 在途笔记加载键（去重）
   String _markingLoadingKey = '';
 
-  /// 失败退避键与截止时间（失败清空并允许下次重试）
+  /// 失败退避键与截止时间（失败清空并允许下次 build 重试）
   String _markingFailedKey = '';
   DateTime _markingRetryAfter = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// 各 key 已发起的加载次数（单 key 最多 2 次，参考 HighlightMatchSync）
+  final Map<String, int> _markingAttempts = {};
+  static const int _maxMarkingAttempts = 2;
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -1070,7 +1074,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       _markingLoadingKey = '';
       return;
     }
-    final key = '$bookUrl\u0000$chapterIndex\u0000${content.length}'
+    final key =
+        '$bookUrl\u0000$chapterIndex\u0000${content.length}'
         '\u0000${content.hashCode}\u0000$revision';
     if (key == _markingKey) return;
 
@@ -1080,11 +1085,19 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       _markingKey = key;
       return;
     }
-    if (_markingFailedKey == key && DateTime.now().isBefore(_markingRetryAfter)) {
+    if (_markingFailedKey == key &&
+        DateTime.now().isBefore(_markingRetryAfter)) {
       // 退避中：不记 key，退避结束后下一次 build 重试
       _markingKey = '';
       return;
     }
+    final attempts = _markingAttempts[key] ?? 0;
+    if (attempts >= _maxMarkingAttempts) {
+      // 重试预算耗尽：记为当前 key，后续 build 不再重复请求
+      _markingKey = key;
+      return;
+    }
+    _markingAttempts[key] = attempts + 1;
     _markingKey = key;
     _markingLoadingKey = key;
     unawaited(_loadMarkingMatches(key, content, bookUrl, chapterIndex));
@@ -1102,11 +1115,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           .read(bookApiProvider)
           .getBookMarkingsForChapter(bookUrl, chapterIndex);
       if (!mounted || _markingKey != key) return;
-      final matches = buildMarkingMatches(
-        content: content,
-        markings: markings,
-      );
+      final matches = buildMarkingMatches(content: content, markings: markings);
       _markingFailedKey = '';
+      _markingAttempts.remove(key);
       setState(() {
         _markingMatches = matches;
         _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
@@ -1115,13 +1126,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         );
       });
     } catch (e) {
-      // 笔记是增益能力：失败降级为无标记，1.5s 后允许重试
+      // 旧请求失败不得清空新章已采纳的标记（P2-1）
+      if (!mounted || _markingKey != key) return;
+      // 笔记是增益能力：失败降级为无标记，1.5s 后允许下一次 build 重试
       _markingFailedKey = key;
       _markingRetryAfter = DateTime.now().add(
         const Duration(milliseconds: 1500),
       );
-      if (_markingKey == key) _markingKey = '';
-      if (!mounted) return;
+      _markingKey = '';
       setState(() {
         _markingMatches = const [];
         _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
@@ -1129,7 +1141,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           marks: _markingMatches,
         );
       });
-      debugPrint('[book-marking] 笔记正文匹配失败（已降级为无标记；1.5s 后重试）: $e');
+      debugPrint(
+        '[book-marking] 笔记正文匹配失败（已降级为无标记；'
+        '单 key 最多 $_maxMarkingAttempts 次，退避后下一次 build 重试）: $e',
+      );
     } finally {
       if (_markingLoadingKey == key) _markingLoadingKey = '';
     }
@@ -1613,6 +1628,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       pageIndex: safeIndex,
       totalPages: _paginatedPages.length,
       chapterTitle: _paginatedChapterTitle ?? state.currentChapter?.title,
+      // [P2-2] 分页快照章号：加载冻结帧时 state 可能已是新章
+      chapterIndex: _paginatedChapterIndex >= 0
+          ? _paginatedChapterIndex
+          : state.currentChapterIndex,
       pageChrome: widget.pageChrome,
       tipContext: _buildTipContext(
         state,
