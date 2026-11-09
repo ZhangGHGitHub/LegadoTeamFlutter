@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../constants/pref_keys.dart';
 import '../models/models.dart';
+import '../providers/book_marking/book_marking_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
@@ -24,6 +25,7 @@ import '../utils/book_open_utils.dart';
 import '../utils/toc_cache_state.dart';
 import '../utils/txt_toc_rule.dart'
     show buildReparseRuleJson, isLocalTxtBook;
+import '../widgets/reader/marking_sheet.dart';
 import '../widgets/reader/reader_action_helpers.dart';
 import '../widgets/reader/reader_toc_rule_dialog.dart';
 
@@ -193,6 +195,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
   bool _highlightsLoading = true;
   String? _highlightsError;
 
+  /// 笔记列表（书签标记，契约 §2.52；经 BookMarkingNotifier 加载）
+  bool _markingsLoading = true;
+  String? _markingsError;
+
   @override
   void initState() {
     super.initState();
@@ -205,6 +211,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _initBookshelfState();
     _loadSettings();
     _loadHighlights();
+    _loadMarkings();
     // [P2-28b] 页面打开期间每秒轮询缓存状态（本地书恒视为已缓存，免轮询）
     _startCachePolling();
     // [B2-EVT] 订阅进程内音频缓存变更事件（听书页每章缓存成功后立即重查，
@@ -541,6 +548,27 @@ class _TocScreenState extends ConsumerState<TocScreen>
       setState(() {
         _highlightsError = _errMsg(e);
         _highlightsLoading = false;
+      });
+    }
+  }
+
+  /// 加载笔记列表（书签标记，契约 §2.52；按书名+作者跨源）
+  Future<void> _loadMarkings() async {
+    setState(() {
+      _markingsLoading = true;
+      _markingsError = null;
+    });
+    try {
+      await ref
+          .read(bookMarkingNotifierProvider.notifier)
+          .loadByBook(_book.name, _book.author);
+      if (!mounted) return;
+      setState(() => _markingsLoading = false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _markingsError = _errMsg(e);
+        _markingsLoading = false;
       });
     }
   }
@@ -1712,10 +1740,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
   // ===== 标注 Tab（对齐原版 HighlightFragment） =====
 
   Widget _buildHighlightTab(BuildContext context) {
-    if (_highlightsLoading) {
+    if (_highlightsLoading || _markingsLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_highlightsError != null) {
+    final error = _highlightsError ?? _markingsError;
+    final markings = ref.watch(bookMarkingNotifierProvider);
+    if (error != null && _highlights.isEmpty && markings.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1723,15 +1753,28 @@ class _TocScreenState extends ConsumerState<TocScreen>
             Icon(Symbols.error_rounded,
                 size: 48, color: Theme.of(context).colorScheme.error),
             const SizedBox(height: 16),
-            Text(_highlightsError!, textAlign: TextAlign.center),
+            Text(error, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             ElevatedButton(
-                onPressed: _loadHighlights, child: const Text('重试')),
+              onPressed: () {
+                _loadHighlights();
+                _loadMarkings();
+              },
+              child: const Text('重试'),
+            ),
           ],
         ),
       );
     }
     final query = _searchKey.trim().toLowerCase();
+    final filteredMarkings = query.isEmpty
+        ? markings
+        : markings.where((m) {
+            final anchor = BookMarkingAnchor.tryParse(m.anchorJson);
+            return m.chapterName.toLowerCase().contains(query) ||
+                (anchor?.selectedText.toLowerCase().contains(query) ?? false) ||
+                m.note.toLowerCase().contains(query);
+          }).toList();
     final highlights = query.isEmpty
         ? _highlights
         : _highlights.where((h) {
@@ -1743,7 +1786,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 bookText.contains(query) ||
                 note.contains(query);
           }).toList();
-    if (highlights.isEmpty) {
+    if (filteredMarkings.isEmpty && highlights.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1756,11 +1799,186 @@ class _TocScreenState extends ConsumerState<TocScreen>
         ),
       );
     }
-    return ListView.builder(
-      itemCount: highlights.length,
-      itemBuilder: (context, index) =>
-          _buildHighlightTile(context, highlights[index]),
+    final children = <Widget>[];
+    if (filteredMarkings.isNotEmpty) {
+      children.add(_buildSectionHeader(context, '笔记'));
+      children.addAll(
+        filteredMarkings.map((m) => _buildMarkingTile(context, m)),
+      );
+    }
+    if (highlights.isNotEmpty) {
+      if (filteredMarkings.isNotEmpty) {
+        children.add(_buildSectionHeader(context, '标注'));
+      }
+      children.addAll(highlights.map((h) => _buildHighlightTile(context, h)));
+    }
+    return ListView(children: children);
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    final theme = Theme.of(context);
+    return Padding(
+      key: ValueKey('toc-section-$title'),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.primary,
+        ),
+      ),
     );
+  }
+
+  /// 笔记行（书签标记）：效果色/线型、选中文本、备注、章节名、时间、启停
+  Widget _buildMarkingTile(BuildContext context, BookMarking marking) {
+    final theme = Theme.of(context);
+    final anchor = BookMarkingAnchor.tryParse(marking.anchorJson);
+    final style = BookMarkingStyle.tryParse(marking.styleJson);
+    final effect = MarkingEffect.fromStyle(style);
+    final color = Color(MarkingEffect.colorOf(style));
+    final selectedText = anchor?.selectedText ?? '';
+    final chapterIndex = marking.chapterIndex ?? 0;
+    final chapterName = marking.chapterName.isEmpty
+        ? '第${chapterIndex + 1}章'
+        : marking.chapterName;
+    final time = marking.updatedAt > 0 ? marking.updatedAt : marking.createdAt;
+    return Card(
+      key: ValueKey('toc-marking-tile-${marking.id}'),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: InkWell(
+        onTap: () => _editMarking(marking, anchor),
+        onLongPress: () => Navigator.of(context).pop(chapterIndex),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 4,
+                height: 40,
+                margin: const EdgeInsets.only(top: 2, right: 10),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          effect.label,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            chapterName,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          _formatTime(time),
+                          style: theme.textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
+                    if (selectedText.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        selectedText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          decoration: switch (effect) {
+                            MarkingEffect.strike =>
+                              TextDecoration.lineThrough,
+                            MarkingEffect.solid ||
+                            MarkingEffect.wave ||
+                            MarkingEffect.dashed ||
+                            MarkingEffect.highlight =>
+                              TextDecoration.underline,
+                            _ => null,
+                          },
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (marking.note.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '备注: ${marking.note}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.secondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Switch(
+                key: ValueKey('toc-marking-switch-${marking.id}'),
+                value: marking.enabled,
+                onChanged: (value) => _toggleMarking(marking, value),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editMarking(
+    BookMarking marking,
+    BookMarkingAnchor? anchor,
+  ) async {
+    final saved = await MarkingSheet.show(
+      context,
+      bookName: _book.name,
+      bookAuthor: _book.author,
+      bookUrl: marking.bookUrl,
+      chapterIndex: marking.chapterIndex ?? 0,
+      chapterName: marking.chapterName,
+      chapterPosition: anchor?.chapterPosition ?? 0,
+      selectedText: anchor?.selectedText ?? '',
+      contextBefore: anchor?.contextBefore ?? '',
+      contextAfter: anchor?.contextAfter ?? '',
+      existing: marking,
+    );
+    if (!mounted || saved == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已保存笔记'), duration: Duration(seconds: 2)),
+    );
+  }
+
+  Future<void> _toggleMarking(BookMarking marking, bool enabled) async {
+    try {
+      await ref
+          .read(bookMarkingNotifierProvider.notifier)
+          .setEnabled(marking.id, enabled);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('更新笔记失败：${_errMsg(e)}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   /// 标注列表项：章节名/标注内容/时间，点击跳转对应章节

@@ -47,6 +47,12 @@ final replaceEnableDefaultProvider = FutureProvider<bool>((ref) async {
 /// （登记为 MVP 限制）。
 final highlightRulesRevisionProvider = StateProvider<int>((ref) => 0);
 
+/// 书签标记修订号（批7b-2a）
+///
+/// 标记保存/启停/删除成功后自增；7b-2b 正文渲染 watch 该值失效锚点命中缓存。
+/// 本批先建立，TOC 笔记列表直接 watch `bookMarkingNotifierProvider` 状态。
+final bookMarkingsRevisionProvider = StateProvider<int>((ref) => 0);
+
 /// Web 服务可访问地址解析 Provider（M1 我的页）
 ///
 /// 默认真实网卡枚举（[LanWebServiceAddressResolver]，局域网 IPv4 优先、

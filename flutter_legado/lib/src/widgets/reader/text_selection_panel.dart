@@ -17,10 +17,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../../models/models.dart';
+import '../../models/selection_menu_config.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../screens/reader_config_panel.dart';
-import '../../models/selection_menu_config.dart';
+import 'marking_sheet.dart';
 import 'selection_menu_actions.dart';
 import 'text_select_menu_config_sheet.dart';
 
@@ -53,6 +55,79 @@ int chapterOffsetOfSelection({
   return chapterPos + bodyIndex;
 }
 
+/// 选区前后文片段（锚点消歧用；各最多 24 个 UTF-16 单元）
+({String before, String after}) markingContextAround(
+  String content,
+  int position,
+  int selectedLength,
+) {
+  if (content.isEmpty) return (before: '', after: '');
+  const span = 24;
+  final start = position.clamp(0, content.length);
+  final end = (start + selectedLength).clamp(0, content.length);
+  return (
+    before: content.substring(
+      (start - span).clamp(0, content.length),
+      start,
+    ),
+    after: content.substring(end, (end + span).clamp(0, content.length)),
+  );
+}
+
+/// 打开「笔记」Sheet（划词菜单 menu_mark，对齐参考版 MarkingSheet）
+///
+/// [fineSelection] 为 true 时按选区文本在段落中的位置计算章节偏移；
+/// 否则按段落起点。书籍/章节信息取自当前阅读状态。
+Future<void> openMarkingForSelection(
+  BuildContext context,
+  WidgetRef ref, {
+  required String paragraphText,
+  required int chapterPos,
+  required String selectedText,
+  required bool fineSelection,
+  VoidCallback? onBeforeOpen,
+}) async {
+  final state = ref.read(readerNotifierProvider);
+  final book = state.currentBook;
+  if (book == null) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('无法添加笔记：未打开书籍'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    return;
+  }
+  final chapter = state.currentChapter;
+  final position = chapterOffsetOfSelection(
+    paragraphText: paragraphText,
+    chapterPos: chapterPos,
+    selection: fineSelection ? selectedText : '',
+    fineSelection: fineSelection,
+  );
+  final contextAround = markingContextAround(
+    state.chapterContent,
+    position,
+    selectedText.length,
+  );
+  final navigator = Navigator.of(context, rootNavigator: true);
+  onBeforeOpen?.call();
+  await MarkingSheet.show(
+    navigator.context,
+    bookName: book.name,
+    bookAuthor: book.author,
+    bookUrl: book.bookUrl,
+    chapterIndex: state.currentChapterIndex,
+    chapterName: chapter?.title ?? '',
+    chapterPosition: position,
+    selectedText: selectedText,
+    contextBefore: contextAround.before,
+    contextAfter: contextAround.after,
+  );
+}
+
 /// 正文长按选择操作面板
 ///
 /// 对标原版 TextActionMenu 的菜单项清单（顺序对齐 content_select_action.xml）。
@@ -65,14 +140,10 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
   /// 批34 起为章节全局偏移，不再是恒 0）
   final int chapterPos;
 
-  /// [批4c] menu_mark 从浮条进入时直接展开高亮颜色行
-  final bool initialHighlight;
-
   const TextSelectionPanel({
     super.key,
     required this.text,
     this.chapterPos = 0,
-    this.initialHighlight = false,
   });
 
   /// 弹出面板
@@ -80,7 +151,6 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
     BuildContext context, {
     required String text,
     int chapterPos = 0,
-    bool initialHighlight = false,
   }) {
     if (text.trim().isEmpty) return Future.value();
     return showModalBottomSheet<void>(
@@ -90,7 +160,6 @@ class TextSelectionPanel extends ConsumerStatefulWidget {
       builder: (_) => TextSelectionPanel(
         text: text,
         chapterPos: chapterPos,
-        initialHighlight: initialHighlight,
       ),
     );
   }
@@ -103,8 +172,8 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
   /// 用户通过原生选区手柄选中的文本（空表示未精细选择，回退整段）
   String _userSelected = '';
 
-  /// 是否展开高亮配色行
-  late bool _showHighlightColors = widget.initialHighlight;
+  /// 是否展开高亮配色行（手工高亮二级入口，保留既有能力）
+  bool _showHighlightColors = false;
 
   /// 上次使用的高亮颜色（会话内记忆，对齐原版 highlightLastStyle 的简化版）
   static Color _lastHighlightColor = kHighlightColors.first;
@@ -171,6 +240,15 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                   ),
                 ),
                 const Spacer(),
+                // [批7b-2a] menu_mark 改为「笔记」后，手工高亮保留为面板内
+                // 二级入口（参考版无独立高亮项；既有 highlightAdd 能力不删）
+                TextButton(
+                  key: const ValueKey('selection-panel-highlight'),
+                  onPressed: () => setState(
+                    () => _showHighlightColors = !_showHighlightColors,
+                  ),
+                  child: const Text('高亮'),
+                ),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('关闭'),
@@ -380,8 +458,17 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
           ),
         );
       case SelectionMenuIds.mark:
-        return () =>
-            setState(() => _showHighlightColors = !_showHighlightColors);
+        return () => unawaited(
+          openMarkingForSelection(
+            context,
+            ref,
+            paragraphText: widget.text,
+            chapterPos: widget.chapterPos,
+            selectedText: _selectedText,
+            fineSelection: _userSelected.trim().isNotEmpty,
+            onBeforeOpen: _close,
+          ),
+        );
       case SelectionMenuIds.dict:
         return () => selectionLookupDict(context, _selectedText, _close);
       case SelectionMenuIds.replace:
@@ -770,15 +857,17 @@ class ReaderSelectionToolbar extends ConsumerWidget {
           ),
         );
       case SelectionMenuIds.mark:
-        return () {
-          onDismiss();
-          TextSelectionPanel.show(
+        return () => unawaited(
+          openMarkingForSelection(
             context,
-            text: text,
+            ref,
+            paragraphText: text,
             chapterPos: chapterPos,
-            initialHighlight: true,
-          );
-        };
+            selectedText: text.trim(),
+            fineSelection: false,
+            onBeforeOpen: onDismiss,
+          ),
+        );
       case SelectionMenuIds.dict:
         return () => selectionLookupDict(context, text, onDismiss);
       case SelectionMenuIds.replace:

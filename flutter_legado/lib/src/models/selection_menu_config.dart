@@ -6,7 +6,8 @@
 // 的三组（一级/折叠/隐藏）。
 //
 // 批4c 未实现后端项（AI 净化/改写、插入 BGM）保留 id/配置但默认不渲染；
-// PROCESS_TEXT 第三方项本批不做。`menu_mark` 映射现有高亮能力，
+// PROCESS_TEXT 第三方项本批不做。`menu_mark` 对齐参考版「笔记」（书签标记
+// MarkingSheet）；手工高亮创建保留为面板内「高亮」二级入口。
 // `menu_edit` 映射编辑内容 helper。
 //
 // 编写：全栈工程师（批4c） ｜ 2026-11-04
@@ -62,14 +63,14 @@ abstract final class SelectionMenuIds {
     search,
   };
 
-  /// 参考文案（menu_mark 沿用现有「高亮」能力命名；其余对齐 zh-CN）
+  /// 参考文案（menu_mark 对齐参考版「笔记」；其余对齐 zh-CN）
   static const Map<String, String> labels = {
     copy: '复制',
     share: '分享',
     browser: '浏览器',
     aloud: '朗读',
     bookmark: '书签',
-    mark: '高亮',
+    mark: '笔记',
     dict: '字典',
     replace: '替换',
     edit: '编辑',
@@ -86,7 +87,7 @@ abstract final class SelectionMenuIds {
     browser: Icons.open_in_browser_outlined,
     aloud: Icons.record_voice_over_outlined,
     bookmark: Icons.bookmark_border,
-    mark: Icons.highlight_outlined,
+    mark: Icons.edit_note,
     dict: Icons.menu_book_outlined,
     replace: Icons.swap_horiz,
     edit: Icons.edit_outlined,

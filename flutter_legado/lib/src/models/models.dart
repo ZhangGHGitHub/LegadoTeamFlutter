@@ -6,6 +6,8 @@ export 'book.dart';
 export 'book_chapter.dart';
 // [批7b-1] 书签标记（契约 §2.52，book_marks）
 export 'book_marking.dart';
+// [批7b-2a] 标记锚点/样式/效果（参考版 TextProcessAnchor/TextProcessStyle）
+export 'book_marking_style.dart';
 export 'book_source.dart';
 export 'cover_candidate.dart';
 // [批34] 正文高亮样式与命中区间（Rust highlightRuleMatch JSON）
