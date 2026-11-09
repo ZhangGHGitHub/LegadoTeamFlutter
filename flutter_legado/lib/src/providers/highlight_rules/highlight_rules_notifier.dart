@@ -58,6 +58,48 @@ class HighlightRulesNotifier extends Notifier<HighlightRulesState> {
     await _save(rule);
   }
 
+  /// 批量保存（高亮 7c-2：批量启停 / 分组重命名 / 删除分组置 null）
+  ///
+  /// 串行逐条 save，失败收集为可读消息；全部结束后统一 load 一次。
+  Future<List<String>> batchSaveRules(Iterable<HighlightRule> rules) async {
+    final errors = <String>[];
+    final api = ref.read(bookApiProvider);
+    for (final rule in rules) {
+      try {
+        await api.highlightRuleSave(ruleJson: jsonEncode(rule.toJson()));
+      } catch (e) {
+        errors.add('${rule.displayName}: ${_mapError(e)}');
+      }
+    }
+    await load();
+    return errors;
+  }
+
+  /// 批量启停（串行 save，失败汇总）
+  Future<List<String>> batchSetEnabled(
+    Iterable<HighlightRule> rules,
+    bool enabled,
+  ) {
+    return batchSaveRules(
+      rules.map((rule) => rule.copyWith(isEnabled: enabled)),
+    );
+  }
+
+  /// 批量删除（串行 delete，失败汇总，结束后统一 load）
+  Future<List<String>> batchDelete(Iterable<HighlightRule> rules) async {
+    final errors = <String>[];
+    final api = ref.read(bookApiProvider);
+    for (final rule in rules) {
+      try {
+        await api.highlightRuleDelete(id: rule.id);
+      } catch (e) {
+        errors.add('${rule.displayName}: ${_mapError(e)}');
+      }
+    }
+    await load();
+    return errors;
+  }
+
   Future<void> _save(HighlightRule rule) async {
     try {
       await ref
@@ -96,5 +138,5 @@ class HighlightRulesNotifier extends Notifier<HighlightRulesState> {
 /// ```
 final highlightRulesNotifierProvider =
     NotifierProvider<HighlightRulesNotifier, HighlightRulesState>(
-  HighlightRulesNotifier.new,
-);
+      HighlightRulesNotifier.new,
+    );

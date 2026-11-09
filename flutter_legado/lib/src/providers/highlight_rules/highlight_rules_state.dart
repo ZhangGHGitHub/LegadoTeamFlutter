@@ -79,10 +79,12 @@ class HighlightRule {
       scope: json['scope'] as String?,
       isEnabled: (json['isEnabled'] as bool?) ?? true,
       style: (json['style'] as String?) ?? '',
-      sortOrder: (json['sortOrder'] as num?)?.toInt() ??
+      sortOrder:
+          (json['sortOrder'] as num?)?.toInt() ??
           (json['order'] as num?)?.toInt() ??
           0,
-      timeoutMillisecond: (json['timeoutMillisecond'] as num?)?.toInt() ??
+      timeoutMillisecond:
+          (json['timeoutMillisecond'] as num?)?.toInt() ??
           defaultTimeoutMilliseconds,
       group: json['group'] as String?,
       applyToBody: (json['applyToBody'] as bool?) ?? true,
@@ -93,21 +95,21 @@ class HighlightRule {
   ///
   /// uuid 为空时不写入，由 Rust serde 补随机 UUID（不在 Dart 侧凭空生成）。
   Map<String, dynamic> toJson() => {
-        if (id > 0) 'id': id,
-        if (uuid.isNotEmpty) 'uuid': uuid,
-        'name': name,
-        'pattern': pattern,
-        'isRegex': isRegex,
-        'applyToTitle': applyToTitle,
-        'scope': scope,
-        'isEnabled': isEnabled,
-        'style': style,
-        'sortOrder': sortOrder,
-        'timeoutMillisecond': timeoutMillisecond,
-        // 批28：分组随保存往返（原版实体字段 `group`）
-        'group': group,
-        'applyToBody': applyToBody,
-      };
+    if (id > 0) 'id': id,
+    if (uuid.isNotEmpty) 'uuid': uuid,
+    'name': name,
+    'pattern': pattern,
+    'isRegex': isRegex,
+    'applyToTitle': applyToTitle,
+    'scope': scope,
+    'isEnabled': isEnabled,
+    'style': style,
+    'sortOrder': sortOrder,
+    'timeoutMillisecond': timeoutMillisecond,
+    // 批28：分组随保存往返（原版实体字段 `group`）
+    'group': group,
+    'applyToBody': applyToBody,
+  };
 
   /// 序列化为导出/备份 JSON（字段名对齐原版实体）
   ///
@@ -195,6 +197,25 @@ class HighlightRule {
       timeoutMillisecond: timeoutMillisecond ?? this.timeoutMillisecond,
       group: group ?? this.group,
       applyToBody: applyToBody ?? this.applyToBody,
+    );
+  }
+
+  /// 显式设置分组（支持清空为 null；copyWith 的 nullable 字段无法置空）
+  HighlightRule withGroup(String? value) {
+    return HighlightRule(
+      id: id,
+      uuid: uuid,
+      name: name,
+      pattern: pattern,
+      isRegex: isRegex,
+      applyToTitle: applyToTitle,
+      scope: scope,
+      isEnabled: isEnabled,
+      style: style,
+      sortOrder: sortOrder,
+      timeoutMillisecond: timeoutMillisecond,
+      group: value,
+      applyToBody: applyToBody,
     );
   }
 }

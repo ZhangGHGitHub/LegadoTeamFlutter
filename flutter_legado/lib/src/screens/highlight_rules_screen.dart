@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -13,6 +13,16 @@ import '../providers/highlight_rules/highlight_rules_notifier.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/loading_indicator.dart';
+
+/// 高亮规则导出 JSON（批7c-2：批量导出选中项复用）
+///
+/// 字段仍走 [HighlightRule.toExportJson]（uuid/order/timeout/applyToBody 保真）。
+String buildHighlightRulesExportJson(List<HighlightRule> rules) {
+  return const JsonEncoder.withIndent('  ').convert({
+    'type': 'highlightRule',
+    'rules': rules.map((r) => r.toExportJson()).toList(),
+  });
+}
 
 /// 高亮规则管理页面
 ///
@@ -35,6 +45,14 @@ class HighlightRulesScreen extends ConsumerStatefulWidget {
 class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
   final ScrollController _fsController = ScrollController();
+
+  // ===== [批7c-2] 批量选择 / 分组筛选 =====
+  bool _batchMode = false;
+  final Set<int> _selected = <int>{};
+  String? _groupFilter; // null=全部；_ungrouped=未分组；其它=分组名
+  static const String _ungrouped = '__ungrouped__';
+  String? _batchError;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +60,161 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(highlightRulesNotifierProvider.notifier).load();
     });
+  }
+
+  String _groupOf(HighlightRule rule) => rule.group?.trim() ?? '';
+
+  List<String> _groupNames(List<HighlightRule> rules) {
+    final set = <String>{};
+    for (final rule in rules) {
+      final group = _groupOf(rule);
+      if (group.isNotEmpty) set.add(group);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  List<HighlightRule> _filteredRules(List<HighlightRule> rules) {
+    final filter = _groupFilter;
+    if (filter == null) return rules;
+    return rules.where((rule) {
+      final group = _groupOf(rule);
+      return filter == _ungrouped ? group.isEmpty : group == filter;
+    }).toList();
+  }
+
+  Set<int> _visibleSelection(List<HighlightRule> rules) {
+    final visible = _filteredRules(rules).map((r) => r.id).toSet();
+    return _selected.where(visible.contains).toSet();
+  }
+
+  void _enterBatch([HighlightRule? rule]) {
+    setState(() {
+      _batchMode = true;
+      _batchError = null;
+      if (rule != null) _selected.add(rule.id);
+    });
+  }
+
+  void _exitBatch() {
+    setState(() {
+      _batchMode = false;
+      _selected.clear();
+      _batchError = null;
+    });
+  }
+
+  void _toggleSelected(HighlightRule rule) {
+    setState(() {
+      if (!_selected.add(rule.id)) _selected.remove(rule.id);
+    });
+  }
+
+  void _selectAllVisible(List<HighlightRule> rules) {
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(_filteredRules(rules).map((r) => r.id));
+    });
+  }
+
+  void _invertVisible(List<HighlightRule> rules) {
+    final visible = _filteredRules(rules).map((r) => r.id);
+    setState(() {
+      for (final id in visible) {
+        if (!_selected.add(id)) _selected.remove(id);
+      }
+    });
+  }
+
+  void _setGroupFilter(String? filter, List<HighlightRule> rules) {
+    setState(() {
+      _groupFilter = filter;
+      final visibleIds = _filteredRules(rules).map((r) => r.id).toSet();
+      _selected.retainAll(visibleIds);
+    });
+  }
+
+  /// 批量操作范围 = 当前分组筛选后的可见项 ∩ 已选（隐藏项不参与）
+  List<HighlightRule> _selectedRules(List<HighlightRule> rules) {
+    final ids = _visibleSelection(rules);
+    return _filteredRules(rules).where((r) => ids.contains(r.id)).toList();
+  }
+
+  void _showBatchErrors(List<String> errors, String action) {
+    if (!mounted) return;
+    if (errors.isEmpty) {
+      setState(() => _batchError = null);
+      _showErrorIfAny();
+      return;
+    }
+    setState(() => _batchError = null);
+    final head = errors.take(3).join('；');
+    final suffix = errors.length > 3 ? ' 等 ${errors.length} 条' : '';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$action失败：$head$suffix')));
+  }
+
+  Future<void> _batchSetEnabled(List<HighlightRule> rules, bool enabled) async {
+    final selected = _selectedRules(rules);
+    if (selected.isEmpty) {
+      _showBatchError('请先选择规则');
+      return;
+    }
+    final errors = await ref
+        .read(highlightRulesNotifierProvider.notifier)
+        .batchSetEnabled(selected, enabled);
+    _showBatchErrors(errors, enabled ? '启用' : '停用');
+  }
+
+  Future<void> _batchDelete(List<HighlightRule> rules) async {
+    final selected = _selectedRules(rules);
+    if (selected.isEmpty) {
+      _showBatchError('请先选择规则');
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除高亮规则'),
+        content: Text('确定删除选中的 ${selected.length} 条规则吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            key: const ValueKey('highlight-batch-delete-confirm'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              '删除',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final errors = await ref
+        .read(highlightRulesNotifierProvider.notifier)
+        .batchDelete(selected);
+    if (!mounted) return;
+    setState(() => _selected.clear());
+    _showBatchErrors(errors, '删除');
+  }
+
+  void _showBatchError(String message) {
+    if (!mounted) return;
+    setState(() => _batchError = message);
+  }
+
+  Future<void> _showGroupManage() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const _HighlightGroupManageDialog(),
+    );
+    _showErrorIfAny();
   }
 
   /// 删除确认（对标原版 alert(sure_del + displayName)）
@@ -77,8 +250,9 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       isScrollControlled: true,
       builder: (_) => Padding(
         // 键盘弹起时 sheet 随动
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
         child: _HighlightRuleEditSheet(rule: rule),
       ),
     );
@@ -91,9 +265,9 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   void _showErrorIfAny() {
     final error = ref.read(highlightRulesNotifierProvider).error;
     if (error == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('操作失败: $error')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('操作失败: $error')));
   }
 
   /// 导出全部高亮规则（批16e：接入统一导出目标 Sheet）
@@ -112,18 +286,15 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   /// 8 个字段，本应用关联导入会因 uuid 缺失抛「uuid 非法」，且用户设置的
   /// 正文高亮开关/匹配超时全部丢失。现统一走 [HighlightRule.toExportJson]
   /// （字段名对齐原版实体，`order` 为原版排序字段名），不再凭空生成 uuid。
-  Future<void> _exportRules() async {
-    final rules = ref.read(highlightRulesNotifierProvider).rules;
-    if (rules.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无高亮规则')),
-      );
+  Future<void> _exportRules({List<HighlightRule>? rules}) async {
+    final target = rules ?? ref.read(highlightRulesNotifierProvider).rules;
+    if (target.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('暂无高亮规则')));
       return;
     }
-    final json = const JsonEncoder.withIndent('  ').convert({
-      'type': 'highlightRule',
-      'rules': rules.map((r) => r.toExportJson()).toList(),
-    });
+    final json = buildHighlightRulesExportJson(target);
     final result = await showExportFileSheet(
       context,
       content: json,
@@ -133,176 +304,578 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
       subject: '导出高亮规则',
     );
     if (!mounted || result == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(highlightRulesNotifierProvider);
+    return AppScaffold(
+      topBar: _buildAppBar(state),
+      bottomBar: _batchMode ? _buildBatchBottomBar() : null,
+      body: Builder(
+        builder: (context) {
+          if (state.isLoading) {
+            return const LoadingIndicator(message: '加载高亮规则...');
+          }
+          if (state.error != null) {
+            return Center(child: Text('加载失败: ${state.error}'));
+          }
+          if (state.rules.isEmpty) {
+            return const EmptyState(
+              icon: Symbols.format_paint_rounded,
+              title: '暂无高亮规则',
+              subtitle: '点击右上角「+」新增自动高亮规则',
+            );
+          }
+          final rules = _filteredRules(state.rules);
+          return Column(
+            children: [
+              _buildGroupFilterBar(state.rules),
+              Expanded(
+                child: rules.isEmpty
+                    ? const Center(child: Text('该分组暂无规则'))
+                    : Md3FastScroller(
+                        controller: _fsController,
+                        child: ListView(
+                          controller: _fsController,
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                          children: [
+                            Card(
+                              child: Column(
+                                children: [
+                                  for (var i = 0; i < rules.length; i++) ...[
+                                    if (i > 0)
+                                      const Divider(height: 1, indent: 16),
+                                    _buildRuleTile(context, rules[i]),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
     );
+  }
+
+  PreferredSizeWidget _buildAppBar(HighlightRulesState state) {
+    if (_batchMode) {
+      return LegadoAppBar(
+        leading: IconButton(
+          key: const ValueKey('highlight-batch-close'),
+          icon: const Icon(Icons.close),
+          tooltip: '退出批量',
+          onPressed: _exitBatch,
+        ),
+        title: Text(
+          '已选 ${_selected.length} 项',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            key: const ValueKey('highlight-batch-menu'),
+            tooltip: '选择操作',
+            icon: const Icon(Symbols.checklist_rounded),
+            onSelected: (value) {
+              if (value == 'selectAll') _selectAllVisible(state.rules);
+              if (value == 'invert') _invertVisible(state.rules);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'selectAll', child: Text('全选')),
+              PopupMenuItem(value: 'invert', child: Text('反选')),
+            ],
+          ),
+          IconButton(
+            key: const ValueKey('highlight-batch-enable'),
+            tooltip: '启用选中',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Symbols.check_circle_rounded, size: 20),
+            onPressed: () => _batchSetEnabled(state.rules, true),
+          ),
+          IconButton(
+            key: const ValueKey('highlight-batch-disable'),
+            tooltip: '停用选中',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Symbols.remove_circle_outline_rounded, size: 20),
+            onPressed: () => _batchSetEnabled(state.rules, false),
+          ),
+          IconButton(
+            key: const ValueKey('highlight-batch-delete'),
+            tooltip: '删除选中',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Symbols.delete_rounded, size: 20),
+            onPressed: () => _batchDelete(state.rules),
+          ),
+          IconButton(
+            key: const ValueKey('highlight-batch-export'),
+            tooltip: '导出选中',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Symbols.ios_share_rounded, size: 20),
+            onPressed: () {
+              final selected = _selectedRules(state.rules);
+              if (selected.isEmpty) {
+                _showBatchError('请先选择规则');
+                return;
+              }
+              _exportRules(rules: selected);
+            },
+          ),
+        ],
+      );
+    }
+    return LegadoAppBar(
+      title: const Text('高亮规则'),
+      actions: [
+        IconButton(
+          icon: const Icon(Symbols.add_rounded),
+          tooltip: '新增规则',
+          onPressed: () => _edit(null),
+        ),
+        PopupMenuButton<String>(
+          tooltip: '更多操作',
+          icon: const Icon(Symbols.more_vert_rounded),
+          onSelected: (value) {
+            switch (value) {
+              case 'export':
+                _exportRules();
+              case 'batch':
+                _enterBatch();
+              case 'groups':
+                _showGroupManage();
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'batch', child: Text('批量管理')),
+            PopupMenuItem(value: 'groups', child: Text('管理分组')),
+            PopupMenuItem(value: 'export', child: Text('导出规则')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBatchBottomBar() {
+    final cs = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Container(
+        key: const ValueKey('highlight-batch-count'),
+        color: cs.surfaceContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Text(
+              '已选 ${_selected.length} 项',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            if (_batchError != null) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _batchError!,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: cs.error),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupFilterBar(List<HighlightRule> allRules) {
+    final groups = _groupNames(allRules);
+    final entries = <(String?, String)>[
+      (null, '全部'),
+      (_ungrouped, '未分组'),
+      for (final group in groups) (group, group),
+    ];
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          for (final entry in entries)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ChoiceChip(
+                key: ValueKey('highlight-group-filter-${entry.$1 ?? 'all'}'),
+                label: Text(entry.$2),
+                selected: _groupFilter == entry.$1,
+                onSelected: (_) => _setGroupFilter(entry.$1, allRules),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRuleTile(BuildContext context, HighlightRule rule) {
+    final cs = Theme.of(context).colorScheme;
+    final scope = rule.scope ?? '';
+    final group = _groupOf(rule);
+    final selected = _selected.contains(rule.id);
+    return InkWell(
+      key: ValueKey('highlight-rule-tile-${rule.id}'),
+      onTap: () => _batchMode ? _toggleSelected(rule) : _edit(rule),
+      onLongPress: () => _batchMode ? _toggleSelected(rule) : _enterBatch(rule),
+      child: Container(
+        color: _batchMode && selected
+            ? cs.secondaryContainer.withValues(alpha: 0.35)
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              if (_batchMode)
+                Checkbox(
+                  key: ValueKey('highlight-select-${rule.id}'),
+                  value: selected,
+                  onChanged: (_) => _toggleSelected(rule),
+                ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      rule.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: rule.isEnabled
+                            ? cs.onSurface
+                            : cs.onSurfaceVariant,
+                      ),
+                    ),
+                    if (rule.name.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          rule.pattern,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(
+                        children: [
+                          if (rule.isRegex)
+                            Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.primaryContainer,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '正则',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: cs.onPrimaryContainer,
+                                ),
+                              ),
+                            ),
+                          Expanded(
+                            child: Text(
+                              scope.isNotEmpty ? '范围：$scope' : '全局生效',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (group.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '分组：$group',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelSmall?.copyWith(color: cs.secondary),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (!_batchMode) ...[
+                Switch(
+                  value: rule.isEnabled,
+                  onChanged: (v) async {
+                    await ref
+                        .read(highlightRulesNotifierProvider.notifier)
+                        .toggleEnabled(rule, v);
+                    _showErrorIfAny();
+                  },
+                ),
+                IconButton(
+                  icon: Icon(
+                    Symbols.delete_rounded,
+                    size: 20,
+                    color: cs.onSurfaceVariant,
+                  ),
+                  tooltip: '删除',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _confirmDelete(rule),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 高亮规则分组管理对话框（批7c-2）
+///
+/// - 分组由规则 `group` 聚合（空分组不出现）；
+/// - 重命名：批量把该组规则 group 改为新名；新名已存在时自然合并；
+/// - 删除：确认后把该组规则 group 置 null（规则保留）；
+/// - 操作逐条 save，失败在对话框内汇总展示。
+class _HighlightGroupManageDialog extends ConsumerStatefulWidget {
+  const _HighlightGroupManageDialog();
+
+  @override
+  ConsumerState<_HighlightGroupManageDialog> createState() =>
+      _HighlightGroupManageDialogState();
+}
+
+class _HighlightGroupManageDialogState
+    extends ConsumerState<_HighlightGroupManageDialog> {
+  String? _error;
+  bool _busy = false;
+
+  Map<String, List<HighlightRule>> _groupMap(List<HighlightRule> rules) {
+    final map = <String, List<HighlightRule>>{};
+    for (final rule in rules) {
+      final group = rule.group?.trim() ?? '';
+      if (group.isEmpty) continue;
+      map.putIfAbsent(group, () => []).add(rule);
+    }
+    return map;
+  }
+
+  void _showErrors(List<String> errors, String action) {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = errors.isEmpty
+          ? null
+          : errors.length > 3
+          ? '$action失败 ${errors.length} 条：${errors.take(3).join('；')}'
+          : '$action失败：${errors.join('；')}';
+    });
+  }
+
+  Future<String?> _askName(String initial) async {
+    final ctrl = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重命名分组'),
+        content: TextField(
+          key: const ValueKey('highlight-group-rename-field'),
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: '分组名称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            key: const ValueKey('highlight-group-rename-confirm'),
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    // 对话框退场动画期间 TextField 仍持有 controller，延后一帧再释放
+    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+    return result;
+  }
+
+  Future<void> _rename(String oldName, List<HighlightRule> rules) async {
+    if (_busy) return;
+    final input = await _askName(oldName);
+    if (input == null || !mounted) return;
+    final next = input.trim();
+    if (next.isEmpty) {
+      setState(() => _error = '分组名称不能为空');
+      return;
+    }
+    if (next == oldName) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final targets = rules
+        .where((rule) => (rule.group?.trim() ?? '') == oldName)
+        .map((rule) => rule.copyWith(group: next))
+        .toList();
+    final errors = await ref
+        .read(highlightRulesNotifierProvider.notifier)
+        .batchSaveRules(targets);
+    _showErrors(errors, '重命名分组');
+  }
+
+  Future<void> _delete(String group, List<HighlightRule> rules) async {
+    if (_busy) return;
+    final targets = rules
+        .where((rule) => (rule.group?.trim() ?? '') == group)
+        .toList();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除分组'),
+        content: Text('确定删除分组「$group」吗？\n${targets.length} 条规则将变为未分组（规则本身保留）。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            key: const ValueKey('highlight-group-delete-confirm'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              '删除',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final errors = await ref
+        .read(highlightRulesNotifierProvider.notifier)
+        .batchSaveRules(targets.map((rule) => rule.withGroup(null)));
+    _showErrors(errors, '删除分组');
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final state = ref.watch(highlightRulesNotifierProvider);
-    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
-    return AppScaffold(
-      topBar: LegadoAppBar(
-        title: const Text('高亮规则'),
-        actions: [
-          // 对标 menu_add_highlight_rule
+    final rules = ref.watch(highlightRulesNotifierProvider).rules;
+    final groups = _groupMap(rules);
+    final names = groups.keys.toList()..sort();
+    return AlertDialog(
+      title: Row(
+        children: [
+          const Expanded(child: Text('管理分组')),
           IconButton(
-            icon: const Icon(Symbols.add_rounded),
-            tooltip: '新增规则',
-            onPressed: () => _edit(null),
-          ),
-          // 批16e：导出规则（原版 HighlightRuleActivity 溢出/选择栏导出；
-          // 本页暂无批量选择模式，菜单导出全部规则）
-          PopupMenuButton<String>(
-            tooltip: '更多操作',
-            icon: const Icon(Symbols.more_vert_rounded),
-            onSelected: (value) {
-              if (value == 'export') _exportRules();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'export', child: Text('导出规则')),
-            ],
+            key: const ValueKey('highlight-group-manage-close'),
+            icon: const Icon(Icons.close),
+            tooltip: '关闭',
+            onPressed: () => Navigator.pop(context),
           ),
         ],
       ),
-      body: Builder(builder: (context) {
-        if (state.isLoading) {
-          return const LoadingIndicator(message: '加载高亮规则...');
-        }
-        if (state.error != null) {
-          return Center(child: Text('加载失败: ${state.error}'));
-        }
-        if (state.rules.isEmpty) {
-          return const EmptyState(
-            icon: Symbols.format_paint_rounded,
-            title: '暂无高亮规则',
-            subtitle: '点击右上角「+」新增自动高亮规则',
-          );
-        }
-        // iOS grouped list：规则卡片 + hairline 分隔
-        // [UI_SYNC_REFACTOR R3] 规则列表快速滚动条
-        return Md3FastScroller(
-          controller: _fsController,
-          child: ListView(
-            controller: _fsController,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            children: [
-              Card(
-                child: Column(
-                  children: [
-                    for (var i = 0; i < state.rules.length; i++) ...[
-                      if (i > 0) const Divider(height: 1, indent: 16),
-                      _buildRuleTile(context, state.rules[i], cs),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      }),
-    );
-  }
-
-  Widget _buildRuleTile(
-      BuildContext context, HighlightRule rule, ColorScheme cs) {
-    final scope = rule.scope ?? '';
-    return InkWell(
-      onTap: () => _edit(rule),
-      onLongPress: () => _confirmDelete(rule),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    rule.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          color: rule.isEnabled
-                              ? cs.onSurface
-                              : cs.onSurfaceVariant,
-                        ),
-                  ),
-                  if (rule.name.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        rule.pattern,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Row(
-                      children: [
-                        // 正则徽标
-                        if (rule.isRegex)
-                          Container(
-                            margin: const EdgeInsets.only(right: 6),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: cs.primaryContainer,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '正则',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: cs.onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                        Expanded(
-                          child: Text(
-                            scope.isNotEmpty ? '范围：$scope' : '全局生效',
+            if (names.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text('暂无分组')),
+              )
+            else
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final name in names)
+                        ListTile(
+                          key: ValueKey('highlight-group-row-$name'),
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style:
-                                Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                    ),
+                          ),
+                          subtitle: Text('${groups[name]!.length} 条规则'),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                key: ValueKey('highlight-group-rename-$name'),
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                tooltip: '重命名',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _rename(name, rules),
+                              ),
+                              IconButton(
+                                key: ValueKey('highlight-group-delete-$name'),
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                  color: cs.error,
+                                ),
+                                tooltip: '删除分组',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _delete(name, rules),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-            // 启用开关（对标原版列表项 Switch）
-            // [LAYOUT_PLAN P1] 开关行无 Chevron（等价 showChevron=false）；
-            // 标题/副标题/元信息走 M3 Type Scale（titleMedium/bodySmall/labelSmall）
-            Switch(
-              value: rule.isEnabled,
-              onChanged: (v) async {
-                await ref
-                    .read(highlightRulesNotifierProvider.notifier)
-                    .toggleEnabled(rule, v);
-                _showErrorIfAny();
-              },
-            ),
-            IconButton(
-              icon: Icon(Symbols.delete_rounded,
-                  size: 20, color: cs.onSurfaceVariant),
-              tooltip: '删除',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _confirmDelete(rule),
-            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                key: const ValueKey('highlight-group-error'),
+                style: TextStyle(color: cs.error),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ],
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
+      ],
     );
   }
 }
@@ -325,6 +898,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _patternCtrl;
   late final TextEditingController _scopeCtrl;
+  late final TextEditingController _groupCtrl;
   late bool _isRegex;
   late bool _applyToTitle;
   // 高亮颜色（ARGB int，写入 style JSON 的 textColor 通道）
@@ -377,15 +951,15 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   /// [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 由 iOS 静态命名色改为随主题
   /// 亮暗自适应的 8 色：4 container + 3 fixedDim + error，供色板与默认色共用
   static List<Color> _presetColors(ColorScheme cs) => [
-        cs.primaryContainer,
-        cs.secondaryContainer,
-        cs.tertiaryContainer,
-        cs.errorContainer,
-        cs.primaryFixedDim,
-        cs.secondaryFixedDim,
-        cs.tertiaryFixedDim,
-        cs.inversePrimary,
-      ];
+    cs.primaryContainer,
+    cs.secondaryContainer,
+    cs.tertiaryContainer,
+    cs.errorContainer,
+    cs.primaryFixedDim,
+    cs.secondaryFixedDim,
+    cs.tertiaryFixedDim,
+    cs.inversePrimary,
+  ];
 
   @override
   void initState() {
@@ -394,6 +968,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     _nameCtrl = TextEditingController(text: rule?.name ?? '');
     _patternCtrl = TextEditingController(text: rule?.pattern ?? '');
     _scopeCtrl = TextEditingController(text: rule?.scope ?? '');
+    _groupCtrl = TextEditingController(text: rule?.group ?? '');
     _isRegex = rule?.isRegex ?? false;
     _applyToTitle = rule?.applyToTitle ?? false;
     // [审计修复 §4.1] style 非法时模型层回退 null，此处取默认色 — Qoder
@@ -419,8 +994,10 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // 上游 HighlightStyle.width 是连续 Float（MIN 0 / MAX 10），不是 0.5
     // 步进；Slider 仅提供 0.5 的输入粒度，读取/写回不做量化。上游语义
     // width=0 = 不画线（渲染层已对齐：width<=0 不加下划线装饰）。
-    _underlineWidth =
-        (rawWidth is num ? rawWidth.toDouble() : 1.0).clamp(0.0, 10.0);
+    _underlineWidth = (rawWidth is num ? rawWidth.toDouble() : 1.0).clamp(
+      0.0,
+      10.0,
+    );
     final strikeRaw = styleMap?['strike'];
     _strikeEnabled = strikeRaw is Map;
     _strikeColor = strikeRaw is Map ? normalizeArgb(strikeRaw['color']) : 0;
@@ -435,12 +1012,12 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   }
 
   static String _underlineKindLabel(String kind) => switch (kind) {
-        'WAVY' => '波浪',
-        'DASHED' => '虚线',
-        'DOTTED' => '点线',
-        'DOUBLE' => '双线',
-        _ => '实线',
-      };
+    'WAVY' => '波浪',
+    'DASHED' => '虚线',
+    'DOTTED' => '点线',
+    'DOUBLE' => '双线',
+    _ => '实线',
+  };
 
   static TextDecorationStyle _underlineDecorationStyle(String kind) =>
       switch (kind) {
@@ -456,6 +1033,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     _nameCtrl.dispose();
     _patternCtrl.dispose();
     _scopeCtrl.dispose();
+    _groupCtrl.dispose();
     super.dispose();
   }
 
@@ -463,22 +1041,23 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   void _save() {
     final pattern = _patternCtrl.text.trim();
     if (pattern.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('匹配模式不能为空')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('匹配模式不能为空')));
       return;
     }
     if (_isRegex) {
       try {
         RegExp(pattern);
       } catch (_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('正则表达式无效，请检查')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('正则表达式无效，请检查')));
         return;
       }
     }
     final scope = _scopeCtrl.text.trim();
+    final group = _groupCtrl.text.trim();
     final base = widget.rule;
     final baseStyle = base?.styleMap;
     // [批16e 回修 | P1-1] 编辑保存保留 uuid/order/超时/正文开关：
@@ -486,8 +1065,8 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [批28] 同时保留 group：编辑表单无分组输入，不得因重建规则对象丢分组。
     // [批33b | 未触碰保真] 未主动选色且原 style 已含 textColor（含 0=关闭）
     // 时原样保留，避免「打开编辑再保存」把用户/原版设置改写成主题色。
-    final keepOriginalTextColor = !_colorTouched &&
-        (baseStyle?.containsKey('textColor') ?? false);
+    final keepOriginalTextColor =
+        !_colorTouched && (baseStyle?.containsKey('textColor') ?? false);
     // [批7a] 富样式补丁：只写本地编辑态覆盖的属性，其余键（fillShape/bold/
     // italic/font* etc.）由补丁函数原样保留；distance 从原 underline 对象继承。
     // [审查 P2-2/P3] 未触碰的 underline/strike 键不写不删（保留原值形态，
@@ -537,7 +1116,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       sortOrder: base?.sortOrder ?? 0,
       timeoutMillisecond:
           base?.timeoutMillisecond ?? HighlightRule.defaultTimeoutMilliseconds,
-      group: base?.group,
+      group: group.isEmpty ? null : group,
       applyToBody: base?.applyToBody ?? true,
     );
     Navigator.pop(context, rule);
@@ -632,25 +1211,24 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [批33b | 未触碰保真] 不再把 `_color == 0` 改写进字段（原实现会在
     // 保存时把 0 落成主题色）；预览与色块选中态改用「有效色」，字段值
     // 只在用户主动选色时变更。
-    final effectiveColor = _color != 0
-        ? _color
-        : presetColors.first.toARGB32();
+    final effectiveColor = _color != 0 ? _color : presetColors.first.toARGB32();
     // [批33 | 高亮字段保真] bold/italic 无编辑控件且渲染层不改字体度量，
     // 预览仅回放原值；fill/underline/strike 改用本地编辑态实时预览（批7a）。
     final baseStyle = widget.rule;
     final bold = baseStyle?.styleBold ?? false;
     final italic = baseStyle?.styleItalic ?? false;
-    final underlineDecorationStyle =
-        _underlineDecorationStyle(_underlineKind);
+    final underlineDecorationStyle = _underlineDecorationStyle(_underlineKind);
     // [审查 P3] 预览与渲染层同口径：width=0 视为不画线
     final previewUnderlineActive = _underlineEnabled && _underlineWidth > 0;
     final previewLineColor = previewUnderlineActive
-        ? (_underlineColor != 0 ? Color(_underlineColor) : Color(effectiveColor))
+        ? (_underlineColor != 0
+              ? Color(_underlineColor)
+              : Color(effectiveColor))
         : (_strikeEnabled
-            ? (_strikeColor != 0
-                ? Color(_strikeColor)
-                : Color(effectiveColor))
-            : null);
+              ? (_strikeColor != 0
+                    ? Color(_strikeColor)
+                    : Color(effectiveColor))
+              : null);
     final previewDecorations = <TextDecoration>[
       if (previewUnderlineActive) TextDecoration.underline,
       if (_strikeEnabled) TextDecoration.lineThrough,
@@ -717,6 +1295,16 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               decoration: const InputDecoration(
                 labelText: '生效范围（可选）',
                 hintText: '书名或书源名，留空为全局生效',
+                filled: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('highlight-rule-group'),
+              controller: _groupCtrl,
+              decoration: const InputDecoration(
+                labelText: '分组（可选）',
+                hintText: '留空为未分组',
                 filled: true,
               ),
             ),
@@ -890,10 +1478,12 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
                       : TextDecoration.combine(previewDecorations),
                   decorationColor: previewLineColor,
                   // 下划线线型/线宽实时联动（删除线保持默认线型）
-                  decorationStyle:
-                      previewUnderlineActive ? underlineDecorationStyle : null,
-                  decorationThickness:
-                      previewUnderlineActive ? _underlineWidth : null,
+                  decorationStyle: previewUnderlineActive
+                      ? underlineDecorationStyle
+                      : null,
+                  decorationThickness: previewUnderlineActive
+                      ? _underlineWidth
+                      : null,
                 ),
               ),
             ),
