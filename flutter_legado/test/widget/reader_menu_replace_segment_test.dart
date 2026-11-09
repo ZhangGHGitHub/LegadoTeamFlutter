@@ -44,6 +44,10 @@ void stubOpenBook(MockRustApi api) {
     ),
   ).thenAnswer((_) async {});
   when(() => api.updateBook(any())).thenAnswer((_) async {});
+  when(
+    () => api.getReplaceRules(),
+  ).thenAnswer((_) async => const <ReplaceRule>[]);
+  when(() => api.getChineseConvertType()).thenAnswer((_) async => 0);
 }
 
 void main() {
@@ -117,9 +121,39 @@ void main() {
     expect(find.text('重新分段'), findsOneWidget);
     expect(find.text('管理替换规则'), findsOneWidget);
     expect(find.text('替换规则'), findsNothing, reason: '旧文案应改为管理替换规则');
-    expect(checkedOf(tester, '使用替换规则'), isTrue,
-        reason: '书级 null + 全局默认 true → 生效开启');
+    expect(
+      checkedOf(tester, '使用替换规则'),
+      isTrue,
+      reason: '书级 null + 全局默认 true → 生效开启',
+    );
     expect(checkedOf(tester, '重新分段'), isFalse);
+  });
+
+  testWidgets('文字处理/有效替换规则入口打开对应 Sheet', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = MockRustApi();
+    await pumpMenu(tester, api: api, onManageReplace: () {});
+    await openMoreMenu(tester);
+    expect(find.text('文字处理'), findsOneWidget);
+    expect(find.text('有效替换规则'), findsOneWidget);
+
+    await tester.tap(find.text('文字处理'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('text-processing-sheet')), findsOneWidget);
+    Navigator.of(
+      tester.element(find.byKey(const ValueKey('text-processing-sheet'))),
+    ).pop();
+    await tester.pumpAndSettle();
+
+    await openMoreMenu(tester);
+    await tester.tap(find.text('有效替换规则'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('effective-replaces-sheet')),
+      findsOneWidget,
+    );
+    // 空规则 + 无合成项 → 空态
+    expect(find.text('本章暂无生效替换规则'), findsOneWidget);
   });
 
   testWidgets('全局默认 false 时使用替换规则不勾选', (tester) async {
@@ -157,11 +191,18 @@ void main() {
 
     final captured = verify(() => api.updateBook(captureAny())).captured;
     final updated = captured.last as Book;
-    expect(updated.readConfig?.useReplaceRule, isFalse,
-        reason: 'null 生效 true，首次点击应写显式 false');
+    expect(
+      updated.readConfig?.useReplaceRule,
+      isFalse,
+      reason: 'null 生效 true，首次点击应写显式 false',
+    );
     verify(() => api.getChapterContentFull(any(), any())).called(1);
     expect(
-      container.read(readerNotifierProvider).currentBook?.readConfig?.useReplaceRule,
+      container
+          .read(readerNotifierProvider)
+          .currentBook
+          ?.readConfig
+          ?.useReplaceRule,
       isFalse,
     );
   });
@@ -173,9 +214,7 @@ void main() {
     await openMoreMenu(tester);
     clearInteractions(api);
 
-    await tester.tap(
-      find.widgetWithText(CheckedPopupMenuItem<String>, '重新分段'),
-    );
+    await tester.tap(find.widgetWithText(CheckedPopupMenuItem<String>, '重新分段'));
     await tester.pumpAndSettle();
 
     final captured = verify(() => api.updateBook(captureAny())).captured;
@@ -192,16 +231,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final api = MockRustApi();
     var manageCount = 0;
-    await pumpMenu(
-      tester,
-      api: api,
-      onManageReplace: () => manageCount++,
-    );
+    await pumpMenu(tester, api: api, onManageReplace: () => manageCount++);
     await openMoreMenu(tester);
 
-    await tester.tap(
-      find.widgetWithText(PopupMenuItem<String>, '管理替换规则'),
-    );
+    await tester.tap(find.widgetWithText(PopupMenuItem<String>, '管理替换规则'));
     await tester.pumpAndSettle();
 
     expect(manageCount, 1);
