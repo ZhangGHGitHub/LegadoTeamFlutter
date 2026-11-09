@@ -11,6 +11,7 @@ pub mod disable_read_record_v117;
 pub mod highlight_rule_columns_v110;
 pub mod migrations;
 pub mod origin_book_url_v109;
+pub mod privacy_flags_v119;
 pub mod read_record_v113;
 pub mod reverse_toc_display_v116;
 pub mod room_align_v105;
@@ -87,6 +88,7 @@ impl MigrationRegistry {
         self.register(Box::new(reverse_toc_display_v116::Migration115To116));
         self.register(Box::new(disable_read_record_v117::Migration116To117));
         self.register(Box::new(book_marks_v118::Migration117To118));
+        self.register(Box::new(privacy_flags_v119::Migration118To119));
     }
 
     /// 注册单个迁移
@@ -321,8 +323,8 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        // 批7b-1：新增 Migration117To118（book_marks）→ 28
-        assert_eq!(list.len(), 28);
+        // 批9a：新增 Migration118To119（isPrivate）→ 29
+        assert_eq!(list.len(), 29);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }

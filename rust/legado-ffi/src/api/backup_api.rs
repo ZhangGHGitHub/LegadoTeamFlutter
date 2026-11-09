@@ -3530,6 +3530,7 @@ fn to_core_book_group(g: &BookGroup) -> legado_core::models::BookGroup {
         show: g.show,
         book_sort: g.book_sort,
         only_update_read: g.only_update_read,
+        is_private: g.is_private,
     }
 }
 
@@ -3544,6 +3545,7 @@ fn from_core_book_group(g: legado_core::models::BookGroup) -> BookGroup {
         show: g.show,
         book_sort: g.book_sort,
         only_update_read: g.only_update_read,
+        is_private: g.is_private,
     }
 }
 
@@ -4300,6 +4302,61 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// [批9a] 私密标记备份往返：books.isPrivate / book_groups.isPrivate
+    /// 必须随备份导出并在恢复后保留（参考版明确私密标记属书架结构）。
+    #[test]
+    fn test_private_flags_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_private_flags");
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("private_flags.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://privacy.example/book/backup";
+        let seed_group = BookGroup {
+            group_id: 8,
+            group_name: "私密备份分组".to_string(),
+            order: 1,
+            is_private: true,
+            ..BookGroup::default()
+        };
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "私密备份书".to_string(),
+                author: "批9a".to_string(),
+                is_private: true,
+                ..Book::default()
+            })?;
+            BookGroupRepository::new(conn).upsert(&seed_group)
+        })
+        .unwrap();
+
+        backup_create(path_str).unwrap();
+        clear_backup_tables();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            let book = BookRepository::new(conn)
+                .find_by_url(book_url)?
+                .expect("恢复后书籍应存在");
+            assert!(book.is_private, "books.isPrivate 应随备份往返保留");
+
+            let group = BookGroupRepository::new(conn)
+                .find_by_id(8)?
+                .expect("恢复后分组应存在");
+            assert!(group.is_private, "book_groups.isPrivate 应随备份往返保留");
+            Ok(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// [批7c 补向] 备份中的非零进度覆盖本地进度（与上一用例相反方向）
     ///
     /// 上一用例只验证「备份 0/0 → 本地 3/15」，无法排除恢复链把进度恒清 0
@@ -4451,6 +4508,7 @@ mod tests {
             show: false,
             book_sort: 2,
             only_update_read: true,
+            is_private: true,
         };
         let seed_star = legado_core::models::RssStar {
             origin: "https://rss.example.com".to_string(),

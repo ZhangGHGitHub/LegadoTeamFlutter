@@ -44,6 +44,8 @@ pub mod login_ui_v2;
 pub mod manga_state;
 pub mod models;
 pub mod passphrase;
+/// 隐私密码凭据（批9a，契约 §2.53）：PBKDF2-HMAC-SHA256 派生/校验，不碰数据库/UI
+pub mod privacy;
 pub mod read_aloud;
 pub mod read_state;
 pub mod reader_state;

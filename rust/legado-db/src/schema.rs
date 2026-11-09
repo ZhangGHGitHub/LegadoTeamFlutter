@@ -86,7 +86,11 @@ use legado_core::{LegadoError, LegadoResult};
 ///   既有 `bookmarks`（页面导航）、`highlights`（正文高亮记录）独立，
 ///   **不纳入备份**（与参考版一致）；Migration117To118 幂等建表 + 建索引，
 ///   并纳入开库自愈 `repair_legacy_columns`。
-pub const SCHEMA_VERSION: u32 = 118;
+/// - v119：`books` / `book_groups` 补 `isPrivate` 列（批9a 隐私与私密标记数据层，
+///   对齐参考版 `Book.kt:89` 与 `BookGroup.kt:27`）：`INTEGER NOT NULL DEFAULT 0`，
+///   单本私密标记与「所属私密分组」取并集（判定属消费方）；
+///   Migration118To119 幂等增列，并纳入开库自愈 `repair_legacy_columns`。
+pub const SCHEMA_VERSION: u32 = 119;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -208,6 +212,7 @@ CREATE TABLE IF NOT EXISTS books (
     downloadUrls TEXT DEFAULT '',
     coverOrigin TEXT DEFAULT '',
     originBookUrl TEXT NOT NULL DEFAULT '',
+    isPrivate INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(bookUrl)
 );
 ";
@@ -222,6 +227,7 @@ CREATE TABLE IF NOT EXISTS book_groups (
     show INTEGER NOT NULL DEFAULT 1,
     bookSort INTEGER NOT NULL DEFAULT -1,
     onlyUpdateRead INTEGER NOT NULL DEFAULT 0,
+    isPrivate INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(groupId)
 );
 ";

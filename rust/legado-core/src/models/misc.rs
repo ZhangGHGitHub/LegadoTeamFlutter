@@ -234,6 +234,7 @@ mod tests {
         assert!(bg.enable_refresh);
         assert!(bg.show);
         assert_eq!(bg.book_sort, -1);
+        assert!(!bg.is_private);
     }
 
     #[test]
@@ -241,12 +242,15 @@ mod tests {
         let bg = BookGroup {
             group_id: 42,
             group_name: "测试分组".to_string(),
+            is_private: true,
             ..BookGroup::default()
         };
         let json = serde_json::to_string(&bg).unwrap();
+        assert!(json.contains("\"isPrivate\":true"));
         let de: BookGroup = serde_json::from_str(&json).unwrap();
         assert_eq!(de.group_id, 42);
         assert_eq!(de.group_name, "测试分组");
+        assert!(de.is_private);
     }
 
     #[test]
@@ -441,6 +445,11 @@ pub struct BookGroup {
     /// 只更新已读
     #[serde(default, rename = "onlyUpdateRead")]
     pub only_update_read: bool,
+    /// 私密分组标记（批9a，对齐参考版 `BookGroup.isPrivate`，`BookGroup.kt:27`）：
+    /// 组内书籍与单本私密标记取并集；加法式字段，旧 JSON 缺键 → false，
+    /// 备份按本字段原样往返。
+    #[serde(default, rename = "isPrivate")]
+    pub is_private: bool,
 }
 
 impl Default for BookGroup {
@@ -454,6 +463,7 @@ impl Default for BookGroup {
             show: true,
             book_sort: -1,
             only_update_read: false,
+            is_private: false,
         }
     }
 }

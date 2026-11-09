@@ -1624,6 +1624,56 @@ Future<bool> bookGroupSetShow({
   required bool show_,
 }) => RustLib.instance.api.crateFfiFfiBookGroupSetShow(id: id, show_: show_);
 
+/// 是否已设置隐私密码（salt 与 verifier 均存在）
+Future<bool> privacyHasPassword() =>
+    RustLib.instance.api.crateFfiFfiPrivacyHasPassword();
+
+/// 设置/修改隐私密码
+///
+/// 已有凭据时须提供匹配的 oldPassword；新密码 trim 后须为 1..128 字符。
+/// 返回 false 表示旧密码不匹配或新密码非法（不落库）。
+Future<bool> privacySetPassword({
+  required String password,
+  String? oldPassword,
+}) => RustLib.instance.api.crateFfiFfiPrivacySetPassword(
+  password: password,
+  oldPassword: oldPassword,
+);
+
+/// 校验隐私密码（无凭据/空密码 false；常量时间比较）
+Future<bool> privacyVerifyPassword({required String password}) =>
+    RustLib.instance.api.crateFfiFfiPrivacyVerifyPassword(password: password);
+
+/// 清除隐私密码（删除 salt/verifier 两键；不存在为 no-op）
+Future<void> privacyClearPassword() =>
+    RustLib.instance.api.crateFfiFfiPrivacyClearPassword();
+
+/// 批量设置书籍私密标记（JSON 字符串数组），返回实际更新行数
+Future<int> setBooksPrivate({
+  required String bookUrlsJson,
+  required bool isPrivate,
+}) => RustLib.instance.api.crateFfiFfiSetBooksPrivate(
+  bookUrlsJson: bookUrlsJson,
+  isPrivate: isPrivate,
+);
+
+/// 全部私密书籍 URL（JSON 数组，按 bookUrl 升序）
+Future<String> getPrivateBookUrls() =>
+    RustLib.instance.api.crateFfiFfiGetPrivateBookUrls();
+
+/// 设置分组私密标记，返回是否命中行
+Future<bool> setBookGroupPrivate({
+  required int groupId,
+  required bool isPrivate,
+}) => RustLib.instance.api.crateFfiFfiSetBookGroupPrivate(
+  groupId: groupId,
+  isPrivate: isPrivate,
+);
+
+/// 全部私密分组 ID（JSON 数组，升序）
+Future<String> getPrivateGroupIds() =>
+    RustLib.instance.api.crateFfiFfiGetPrivateGroupIds();
+
 /// 获取缓存总大小（字节）
 Future<PlatformInt64> cacheGetSize() =>
     RustLib.instance.api.crateFfiFfiCacheGetSize();

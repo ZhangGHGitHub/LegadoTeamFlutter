@@ -2084,6 +2084,63 @@ pub mod ffi {
         Ok(ok)
     }
 
+    // ─── 隐私与私密标记（契约 §2.53，批9a）──────────────
+
+    /// 是否已设置隐私密码（salt 与 verifier 均存在）
+    pub fn privacy_has_password() -> Result<bool, BridgeError> {
+        Ok(crate::api::privacy_api::privacy_has_password()?)
+    }
+
+    /// 设置/修改隐私密码
+    ///
+    /// 已有凭据时须提供匹配的 oldPassword；新密码 trim 后须为 1..128 字符。
+    /// 返回 false 表示旧密码不匹配或新密码非法（不落库）。
+    pub fn privacy_set_password(
+        password: String,
+        old_password: Option<String>,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::privacy_api::privacy_set_password(
+            &password,
+            old_password.as_deref(),
+        )?)
+    }
+
+    /// 校验隐私密码（无凭据/空密码 false；常量时间比较）
+    pub fn privacy_verify_password(password: String) -> Result<bool, BridgeError> {
+        Ok(crate::api::privacy_api::privacy_verify_password(&password)?)
+    }
+
+    /// 清除隐私密码（删除 salt/verifier 两键；不存在为 no-op）
+    pub fn privacy_clear_password() -> Result<(), BridgeError> {
+        crate::api::privacy_api::privacy_clear_password()?;
+        Ok(())
+    }
+
+    /// 批量设置书籍私密标记（JSON 字符串数组），返回实际更新行数
+    pub fn set_books_private(book_urls_json: String, is_private: bool) -> Result<i32, BridgeError> {
+        let affected = crate::api::privacy_api::set_books_private(&book_urls_json, is_private)?;
+        Ok(affected as i32)
+    }
+
+    /// 全部私密书籍 URL（JSON 数组，按 bookUrl 升序）
+    pub fn get_private_book_urls() -> Result<String, BridgeError> {
+        let urls = crate::api::privacy_api::get_private_book_urls()?;
+        to_json(&urls)
+    }
+
+    /// 设置分组私密标记，返回是否命中行
+    pub fn set_book_group_private(group_id: i32, is_private: bool) -> Result<bool, BridgeError> {
+        Ok(crate::api::privacy_api::set_book_group_private(
+            group_id, is_private,
+        )?)
+    }
+
+    /// 全部私密分组 ID（JSON 数组，升序）
+    pub fn get_private_group_ids() -> Result<String, BridgeError> {
+        let ids = crate::api::privacy_api::get_private_group_ids()?;
+        to_json(&ids)
+    }
+
     // ─── 缓存管理 ─────────────────────────────────────
 
     /// 获取缓存总大小（字节）

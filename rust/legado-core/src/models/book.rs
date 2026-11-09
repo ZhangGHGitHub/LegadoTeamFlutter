@@ -268,6 +268,12 @@ pub struct Book {
     /// 旧数据库缺键 → `false`，既有行为不变；备份按本字段原样往返。
     #[serde(default, rename = "disableReadRecord")]
     pub disable_read_record: bool,
+    /// 私密标记（批9a，对齐参考版 `Book.isPrivate`，`Book.kt:85-89`）：
+    /// 单本书标记为私密；与「所属私密分组」取并集（判定属消费方）。
+    /// 加法式字段：旧 JSON / 旧数据库缺键 → `false`，既有行为不变；
+    /// 备份按本字段原样往返（私密标记属书架结构，参考版明确纳入备份）。
+    #[serde(default, rename = "isPrivate")]
+    pub is_private: bool,
     /// 手动排序
     #[serde(default)]
     pub order: i32,
@@ -330,6 +336,7 @@ impl Default for Book {
             word_count: None,
             can_update: true,
             disable_read_record: false,
+            is_private: false,
             order: 0,
             origin_order: 0,
             variable: None,
@@ -399,6 +406,7 @@ mod tests {
             "originBookUrl 默认应为空串"
         );
         assert_eq!(book.total_chapter_num, 0);
+        assert!(!book.is_private, "isPrivate 默认 false（旧数据兼容）");
     }
 
     #[test]
@@ -432,6 +440,7 @@ mod tests {
         assert!(obj.contains_key("originName"));
         assert!(obj.contains_key("type"));
         assert!(obj.contains_key("canUpdate"));
+        assert!(obj.contains_key("isPrivate"));
         assert!(obj.contains_key("durChapterIndex"));
     }
 

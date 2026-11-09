@@ -73,6 +73,19 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
             "disableReadRecord",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
+        // [批9a] 私密标记（v119）：版本号已到 119 但缺列时自愈
+        add_column_if_not_exists(conn, "books", "isPrivate", "INTEGER NOT NULL DEFAULT 0")?;
+    }
+
+    // book_groups 表补列（仅当表存在时）
+    if table_exists(conn, "book_groups")? {
+        // [批9a] 私密分组标记（v119）：版本号已到 119 但缺列时自愈
+        add_column_if_not_exists(
+            conn,
+            "book_groups",
+            "isPrivate",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
     }
 
     // rssSources 表补列（仅当表存在时）

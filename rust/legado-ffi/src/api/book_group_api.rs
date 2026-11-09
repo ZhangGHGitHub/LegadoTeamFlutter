@@ -21,6 +21,8 @@ pub struct BookGroupDto {
     pub cover: Option<String>,
     pub order: i32,
     pub show: bool,
+    /// 私密分组标记（批9a，契约 §2.53 `getPrivateGroupIds` 的列表侧透传）
+    pub is_private: bool,
 }
 
 /// 获取所有书籍分组（按 order 升序）
@@ -36,6 +38,7 @@ pub fn get_book_groups() -> LegadoResult<Vec<BookGroupDto>> {
                 cover: g.cover,
                 order: g.order,
                 show: g.show,
+                is_private: g.is_private,
             })
             .collect())
     })
@@ -62,6 +65,7 @@ pub fn add_book_group(group_name: &str, cover: &str, order: i32) -> LegadoResult
             show: true,
             book_sort: -1,
             only_update_read: false,
+            is_private: false,
         };
         repo.insert(&group)?;
         Ok(id)
@@ -118,10 +122,12 @@ mod tests {
             cover: None,
             order: 1,
             show: true,
+            is_private: true,
         };
         let json = serde_json::to_string(&dto).unwrap();
         assert!(json.contains("\"groupId\":42"));
         assert!(json.contains("\"groupName\":\"科幻\""));
+        assert!(json.contains("\"isPrivate\":true"));
         assert!(!json.contains("group_id"));
     }
 

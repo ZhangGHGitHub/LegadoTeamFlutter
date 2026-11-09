@@ -29,7 +29,7 @@ impl<'a> BookRepository<'a> {
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
                         infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
-                        disableReadRecord
+                        disableReadRecord, isPrivate
                  FROM books WHERE bookUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -64,7 +64,7 @@ impl<'a> BookRepository<'a> {
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
                         infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
-                        disableReadRecord
+                        disableReadRecord, isPrivate
                  FROM books WHERE originBookUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -92,7 +92,7 @@ impl<'a> BookRepository<'a> {
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
                         infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
-                        disableReadRecord
+                        disableReadRecord, isPrivate
                  FROM books WHERE name = ?1 AND author = ?2",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -123,7 +123,7 @@ impl<'a> BookRepository<'a> {
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
                         infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
-                        disableReadRecord
+                        disableReadRecord, isPrivate
                  FROM books WHERE (type & 1024) = 0 ORDER BY \"order\" ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -166,6 +166,61 @@ impl<'a> BookRepository<'a> {
             return Ok(None);
         }
         self.find_by_url(book_url)
+    }
+
+    /// 批量设置书籍私密标记（批9a，契约 §2.53 `setBooksPrivate`）
+    ///
+    /// 单事务 `UPDATE books SET isPrivate = ? WHERE bookUrl IN (...)`，返回实际
+    /// 更新行数：输入重复 URL 按 SQL `IN` 去重、不存在的 URL 不计数；空列表
+    /// 直接返回 0（不开事务）。SQL 全参数化，禁止拼接 URL。
+    pub fn set_private(&self, book_urls: &[String], is_private: bool) -> LegadoResult<usize> {
+        if book_urls.is_empty() {
+            return Ok(0);
+        }
+        let placeholders = (2..=book_urls.len() + 1)
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!("UPDATE books SET isPrivate = ?1 WHERE bookUrl IN ({placeholders})");
+
+        let mut values = Vec::with_capacity(book_urls.len() + 1);
+        values.push(rusqlite::types::Value::Integer(if is_private {
+            1
+        } else {
+            0
+        }));
+        values.extend(
+            book_urls
+                .iter()
+                .map(|url| rusqlite::types::Value::Text(url.clone())),
+        );
+
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启私密标记事务失败: {e}")))?;
+        let affected = tx
+            .execute(&sql, rusqlite::params_from_iter(values))
+            .map_err(|e| LegadoError::Database(format!("更新书籍私密标记失败: {e}")))?;
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交私密标记事务失败: {e}")))?;
+        Ok(affected)
+    }
+
+    /// 全部私密书籍 URL（批9a，契约 §2.53 `getPrivateBookUrls`）
+    ///
+    /// 按 `bookUrl` 升序稳定输出。
+    pub fn private_book_urls(&self) -> LegadoResult<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT bookUrl FROM books WHERE isPrivate = 1 ORDER BY bookUrl ASC")
+            .map_err(|e| LegadoError::Database(format!("准备私密书籍查询失败: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| LegadoError::Database(format!("查询私密书籍失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     /// 书籍编码（批37b P1-1，单列写）
@@ -533,10 +588,10 @@ impl<'a> BookRepository<'a> {
               durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
               wordCount, canUpdate, disableReadRecord, \"order\", originOrder, variable,
               readConfig, syncTime, infoHtml, tocHtml, downloadUrls, coverOrigin,
-              originBookUrl)
+              originBookUrl, isPrivate)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,
                      ?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,
-                     ?34,?35,?36,?37,?38,?39)",
+                     ?34,?35,?36,?37,?38,?39,?40)",
                 params![
                     item.book_url,
                     item.toc_url,
@@ -579,6 +634,8 @@ impl<'a> BookRepository<'a> {
                     item.cover_origin,
                     // [P2-8] 当前书源详情页地址（空=未换源，回退 book_url）
                     item.origin_book_url,
+                    // [批9a] 私密标记（单本；分组私密另存 book_groups.isPrivate）
+                    item.is_private,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
@@ -663,7 +720,7 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                         durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
                         wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
                         infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl,
-                        disableReadRecord
+                        disableReadRecord, isPrivate
                  FROM books ORDER BY \"order\" ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -742,8 +799,8 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     wordCount=?22, canUpdate=?23, disableReadRecord=?24, \"order\"=?25,
                     originOrder=?26, variable=?27, readConfig=?28, syncTime=?29,
                     infoHtml=?30, tocHtml=?31, downloadUrls=?32, coverOrigin=?33,
-                    originBookUrl=?34
-                 WHERE bookUrl=?35",
+                    originBookUrl=?34, isPrivate=?35
+                 WHERE bookUrl=?36",
                 params![
                     item.toc_url,
                     item.origin,
@@ -781,6 +838,8 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     item.cover_origin,
                     // [P2-8] 当前书源详情页地址（换源事务写入）
                     item.origin_book_url,
+                    // [批9a] 私密标记（单列写入口见 set_private/私有批量写）
+                    item.is_private,
                     item.book_url,
                 ],
             )
@@ -847,6 +906,8 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
         origin_book_url: row.get(37)?,
         // [批35] 书籍级阅读记录开关（SELECT 末尾追加，列顺序与旧版兼容）
         disable_read_record: row.get(38)?,
+        // [批9a] 私密标记（SELECT 末尾追加）
+        is_private: row.get(39)?,
     })
 }
 
@@ -1160,6 +1221,69 @@ mod tests {
         assert!(raw.contains("dailyChapters"), "raw={raw}");
         assert!(!raw.contains("mangaScrollMode"), "raw={raw}");
         assert!(!raw.contains("webtoonSidePaddingDp"), "raw={raw}");
+    }
+
+    /// [批9a] 批量私密标记：多本命中、不存在的 URL 不计数、空数组返回 0、
+    /// 重复 URL 按 SQL IN 去重；私密 URL 列表稳定升序
+    #[test]
+    fn test_set_private_and_private_book_urls() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        for (url, name) in [("u2", "书2"), ("u1", "书1"), ("u3", "书3")] {
+            repo.insert(&make_book(url, name, "作者")).unwrap();
+        }
+
+        // 空数组：0，不报错
+        assert_eq!(repo.set_private(&[], true).unwrap(), 0);
+
+        // 多本 + 不存在 + 重复 URL：实际更新 2 行（IN 去重）
+        let updated = repo
+            .set_private(
+                &[
+                    "u1".to_string(),
+                    "u3".to_string(),
+                    "u1".to_string(),
+                    "missing".to_string(),
+                ],
+                true,
+            )
+            .unwrap();
+        assert_eq!(updated, 2);
+        assert_eq!(
+            repo.private_book_urls().unwrap(),
+            vec!["u1".to_string(), "u3".to_string()],
+            "私密 URL 应按 bookUrl 升序"
+        );
+        assert!(repo.find_by_url("u1").unwrap().unwrap().is_private);
+        assert!(!repo.find_by_url("u2").unwrap().unwrap().is_private);
+        assert!(repo.find_by_url("u3").unwrap().unwrap().is_private);
+
+        // 取消标记：命中 1 行，列表随之收缩
+        assert_eq!(repo.set_private(&["u3".to_string()], false).unwrap(), 1);
+        assert_eq!(repo.private_book_urls().unwrap(), vec!["u1".to_string()]);
+        assert!(!repo.find_by_url("u3").unwrap().unwrap().is_private);
+    }
+
+    /// [批9a] isPrivate 随整书 insert/update 全列往返，不因旧快照回写丢失
+    #[test]
+    fn test_book_private_flag_roundtrip_via_update() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let mut book = make_book("u1", "私密书", "作者");
+        book.is_private = true;
+        repo.insert(&book).unwrap();
+        assert!(repo.find_by_url("u1").unwrap().unwrap().is_private);
+
+        // 快照回写保留私密位
+        let mut snapshot = repo.find_by_url("u1").unwrap().unwrap();
+        snapshot.name = "改名".to_string();
+        repo.update(&snapshot).unwrap();
+        assert!(repo.find_by_url("u1").unwrap().unwrap().is_private);
+
+        // 显式取消后回写为 false
+        snapshot.is_private = false;
+        repo.update(&snapshot).unwrap();
+        assert!(!repo.find_by_url("u1").unwrap().unwrap().is_private);
     }
 
     #[test]

@@ -38,6 +38,8 @@ pub mod log_api;
 pub mod net_api;
 pub mod pay_action_api;
 pub mod pre_update;
+/// [批9a | 2026-11-09] 隐私密码与私密标记数据层（契约 §2.53）
+pub mod privacy_api;
 pub mod read_record_api;
 pub mod reader;
 pub mod replace_rule_api;

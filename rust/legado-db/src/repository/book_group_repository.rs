@@ -19,6 +19,8 @@ pub struct BookGroup {
     pub show: bool,
     pub book_sort: i32,
     pub only_update_read: bool,
+    /// 私密分组标记（批9a，对齐参考版 `BookGroup.isPrivate`，`BookGroup.kt:27`）
+    pub is_private: bool,
 }
 
 /// 书籍分组数据访问层
@@ -36,8 +38,8 @@ impl<'a> BookGroupRepository<'a> {
         self.conn
             .execute(
                 "INSERT INTO book_groups (groupId, groupName, cover, \"order\",
-                 enableRefresh, show, bookSort, onlyUpdateRead)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 enableRefresh, show, bookSort, onlyUpdateRead, isPrivate)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     group.group_id,
                     group.group_name,
@@ -47,6 +49,7 @@ impl<'a> BookGroupRepository<'a> {
                     group.show as i32,
                     group.book_sort,
                     group.only_update_read as i32,
+                    group.is_private as i32,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入分组失败: {e}")))?;
@@ -61,8 +64,8 @@ impl<'a> BookGroupRepository<'a> {
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO book_groups (groupId, groupName, cover, \"order\",
-                 enableRefresh, show, bookSort, onlyUpdateRead)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 enableRefresh, show, bookSort, onlyUpdateRead, isPrivate)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     group.group_id,
                     group.group_name,
@@ -72,6 +75,7 @@ impl<'a> BookGroupRepository<'a> {
                     group.show as i32,
                     group.book_sort,
                     group.only_update_read as i32,
+                    group.is_private as i32,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("恢复分组失败: {e}")))?;
@@ -84,7 +88,7 @@ impl<'a> BookGroupRepository<'a> {
             .conn
             .prepare(
                 "SELECT groupId, groupName, cover, \"order\", enableRefresh,
-                        show, bookSort, onlyUpdateRead
+                        show, bookSort, onlyUpdateRead, isPrivate
                  FROM book_groups ORDER BY \"order\" ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -103,7 +107,7 @@ impl<'a> BookGroupRepository<'a> {
             .conn
             .prepare(
                 "SELECT groupId, groupName, cover, \"order\", enableRefresh,
-                        show, bookSort, onlyUpdateRead
+                        show, bookSort, onlyUpdateRead, isPrivate
                  FROM book_groups WHERE groupId = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -121,8 +125,8 @@ impl<'a> BookGroupRepository<'a> {
             .conn
             .execute(
                 "UPDATE book_groups SET groupName=?1, cover=?2, \"order\"=?3,
-                 enableRefresh=?4, show=?5, bookSort=?6, onlyUpdateRead=?7
-                 WHERE groupId=?8",
+                 enableRefresh=?4, show=?5, bookSort=?6, onlyUpdateRead=?7, isPrivate=?8
+                 WHERE groupId=?9",
                 params![
                     group.group_name,
                     group.cover,
@@ -131,6 +135,7 @@ impl<'a> BookGroupRepository<'a> {
                     group.show as i32,
                     group.book_sort,
                     group.only_update_read as i32,
+                    group.is_private as i32,
                     group.group_id,
                 ],
             )
@@ -187,6 +192,37 @@ impl<'a> BookGroupRepository<'a> {
         Ok(affected > 0)
     }
 
+    /// 设置分组私密标记（批9a，契约 §2.53 `setBookGroupPrivate`）
+    ///
+    /// 单列 UPDATE，返回是否命中行。组内书籍的私密判定由消费方与
+    /// `books.isPrivate` 取并集，不在本方法内级联改写书籍。
+    pub fn set_private(&self, group_id: i64, is_private: bool) -> LegadoResult<bool> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE book_groups SET isPrivate = ?1 WHERE groupId = ?2",
+                params![is_private as i32, group_id],
+            )
+            .map_err(|e| LegadoError::Database(format!("设置分组私密标记失败: {e}")))?;
+        Ok(affected > 0)
+    }
+
+    /// 全部私密分组 ID（批9a，契约 §2.53 `getPrivateGroupIds`）
+    ///
+    /// 按 `groupId` 升序稳定输出。
+    pub fn private_group_ids(&self) -> LegadoResult<Vec<i64>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT groupId FROM book_groups WHERE isPrivate = 1 ORDER BY groupId ASC")
+            .map_err(|e| LegadoError::Database(format!("准备私密分组查询失败: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, i64>(0))
+            .map_err(|e| LegadoError::Database(format!("查询私密分组失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
     /// 获取分组总数
     pub fn count(&self) -> LegadoResult<i64> {
         let count: i64 = self
@@ -231,6 +267,7 @@ fn row_to_book_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookGroup> {
     let enable_refresh: i32 = row.get(4)?;
     let show: i32 = row.get(5)?;
     let only_update_read: i32 = row.get(7)?;
+    let is_private: i32 = row.get(8)?;
     Ok(BookGroup {
         group_id: row.get(0)?,
         group_name: row.get(1)?,
@@ -240,6 +277,7 @@ fn row_to_book_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookGroup> {
         show: show != 0,
         book_sort: row.get(6)?,
         only_update_read: only_update_read != 0,
+        is_private: is_private != 0,
     })
 }
 
@@ -259,6 +297,7 @@ mod tests {
             show: true,
             book_sort: -1,
             only_update_read: false,
+            is_private: false,
         }
     }
 
@@ -368,6 +407,7 @@ mod tests {
             show: false,
             book_sort: 3,
             only_update_read: true,
+            is_private: true,
         };
         repo.upsert(&group).unwrap();
 
@@ -379,6 +419,7 @@ mod tests {
         assert!(!found.show);
         assert_eq!(found.book_sort, 3);
         assert!(found.only_update_read);
+        assert!(found.is_private);
 
         // 同 id 重复恢复：整行替换不重复
         let mut again = group.clone();
@@ -386,6 +427,27 @@ mod tests {
         repo.upsert(&again).unwrap();
         assert_eq!(repo.count().unwrap(), 1);
         assert_eq!(repo.find_by_id(42).unwrap().unwrap().group_name, "改后");
+    }
+
+    /// [批9a] 分组私密标记：命中返回 true / 未命中 false；
+    /// 私密分组 ID 升序，取消后从列表移除
+    #[test]
+    fn test_set_private_and_private_group_ids() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+        repo.insert(&make_group(4, "组4", 0)).unwrap();
+        repo.insert(&make_group(1, "组1", 1)).unwrap();
+        repo.insert(&make_group(2, "组2", 2)).unwrap();
+
+        assert!(repo.set_private(4, true).unwrap());
+        assert!(repo.set_private(1, true).unwrap());
+        assert!(!repo.set_private(999, true).unwrap());
+        assert_eq!(repo.private_group_ids().unwrap(), vec![1, 4]);
+
+        assert!(repo.set_private(1, false).unwrap());
+        assert_eq!(repo.private_group_ids().unwrap(), vec![4]);
+        assert!(!repo.find_by_id(1).unwrap().unwrap().is_private);
+        assert!(repo.find_by_id(4).unwrap().unwrap().is_private);
     }
 
     #[test]

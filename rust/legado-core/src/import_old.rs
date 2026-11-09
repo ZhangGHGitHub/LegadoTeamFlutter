@@ -288,6 +288,8 @@ pub fn from_old_books(json: &str, existing: &std::collections::HashSet<String>) 
             // [批35] 旧版 Backups 的 bookshelf 条目可能带 disableReadRecord
             // （参考版字段），缺省 false；不识别时保持旧行为。
             disable_read_record: json_bool(&item, "disableReadRecord").unwrap_or(false),
+            // [批9a] 旧版 Backups 可能带 isPrivate（参考版字段），缺省 false
+            is_private: json_bool(&item, "isPrivate").unwrap_or(false),
             total_chapter_num: json_i32(&item, "chapterListSize").unwrap_or(0),
             dur_chapter_index: json_i32(&item, "durChapter").unwrap_or(0),
             dur_chapter_title: json_str(&item, "durChapterName"),
