@@ -1,6 +1,7 @@
 /// 高亮规则批量选择 + 分组管理测试（批7c-2）
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,11 @@ import '../mocks/mocks.dart';
 class _FakeHighlightRuleApi extends MockRustApi {
   final List<HighlightRule> rules = [];
   final Set<int> failSaveIds = {};
+  final Set<int> falseDeleteIds = {};
+  Completer<void>? saveGate;
+  Completer<void>? deleteGate;
+  int saveCalls = 0;
+  int deleteCalls = 0;
   int _nextId = 1;
 
   @override
@@ -29,6 +35,8 @@ class _FakeHighlightRuleApi extends MockRustApi {
     final parsed = HighlightRule.fromJson(
       jsonDecode(ruleJson) as Map<String, dynamic>,
     );
+    saveCalls++;
+    if (saveGate != null) await saveGate!.future;
     if (failSaveIds.contains(parsed.id)) {
       throw Exception('save failed ${parsed.id}');
     }
@@ -48,6 +56,9 @@ class _FakeHighlightRuleApi extends MockRustApi {
 
   @override
   Future<bool> highlightRuleDelete({required int id}) async {
+    deleteCalls++;
+    if (deleteGate != null) await deleteGate!.future;
+    if (falseDeleteIds.contains(id)) return false;
     final before = rules.length;
     rules.removeWhere((rule) => rule.id == id);
     return rules.length != before;
@@ -147,6 +158,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('已选 1 项'), findsWidgets);
     expect(find.byType(Checkbox), findsOneWidget);
+    expect(api.rules, hasLength(1), reason: '长按不再直接删除');
   });
 
   testWidgets('批量停用/启用串行保存，选择保留', (tester) async {
@@ -205,7 +217,9 @@ void main() {
     ]);
     await pumpScreen(tester);
     await enterBatch(tester);
-    await tester.tap(find.byKey(const ValueKey('highlight-group-filter-分组A')));
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组A')),
+    );
     await tester.pump();
     await selectAll(tester);
 
@@ -225,14 +239,16 @@ void main() {
     await pumpScreen(tester);
 
     expect(find.text('分组：分组A'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('highlight-group-filter-分组A')));
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组A')),
+    );
     await tester.pump();
     expect(find.byKey(const ValueKey('highlight-rule-tile-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('highlight-rule-tile-2')), findsNothing);
     expect(find.byKey(const ValueKey('highlight-rule-tile-3')), findsNothing);
 
     await tester.tap(
-      find.byKey(const ValueKey('highlight-group-filter-__ungrouped__')),
+      find.byKey(const ValueKey('highlight-group-filter-ungrouped')),
     );
     await tester.pump();
     expect(find.byKey(const ValueKey('highlight-rule-tile-3')), findsOneWidget);
@@ -345,6 +361,12 @@ void main() {
     expect(find.byKey(const ValueKey('highlight-group-error')), findsOneWidget);
     expect(find.textContaining('重命名分组失败'), findsOneWidget);
     expect(api.rules.single.group, '分组A');
+
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-manage-close')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('分组操作失败'), findsWidgets, reason: '失败汇总冒泡到页面');
   });
 
   testWidgets('360dp 分组管理对话框不溢出', (tester) async {
@@ -357,6 +379,262 @@ void main() {
     await tester.tap(find.text('管理分组'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('P2-1 筛选 A 时重命名 A：失效筛选重置为全部', (tester) async {
+    api.rules.addAll([
+      _rule(id: 1, name: 'A1', group: '分组A'),
+      _rule(id: 2, name: 'B1', group: '分组B'),
+    ]);
+    await pumpScreen(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组A')),
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('highlight-rule-tile-2')), findsNothing);
+
+    await openMore(tester);
+    await tester.tap(find.text('管理分组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('highlight-group-rename-分组A')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('highlight-group-rename-field')),
+      '分组C',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-rename-confirm')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-manage-close')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('该分组暂无规则'), findsNothing);
+    expect(find.byKey(const ValueKey('highlight-rule-tile-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('highlight-rule-tile-2')), findsOneWidget);
+  });
+
+  testWidgets('P2-1 筛选 A 时删除 A：失效筛选重置为全部', (tester) async {
+    api.rules.addAll([
+      _rule(id: 1, name: 'A1', group: '分组A'),
+      _rule(id: 2, name: 'B1', group: '分组B'),
+    ]);
+    await pumpScreen(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组A')),
+    );
+    await tester.pump();
+    await openMore(tester);
+    await tester.tap(find.text('管理分组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('highlight-group-delete-分组A')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-delete-confirm')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-manage-close')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('highlight-rule-tile-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('highlight-rule-tile-2')), findsOneWidget);
+  });
+
+  testWidgets('P2-1 筛选 A 时把最后一条移到别组：筛选重置为全部', (tester) async {
+    api.rules.addAll([
+      _rule(id: 1, name: 'A1', group: '分组A'),
+      _rule(id: 2, name: 'B1', group: '分组B'),
+    ]);
+    await pumpScreen(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组A')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('highlight-rule-tile-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('highlight-rule-group')),
+      '分组B',
+    );
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('highlight-rule-tile-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('highlight-rule-tile-2')), findsOneWidget);
+  });
+
+  testWidgets('P2-2 删除在途时批量动作禁用，不触发第二次批量', (tester) async {
+    api.rules.addAll([_rule(id: 1, name: '规则一'), _rule(id: 2, name: '规则二')]);
+    api.deleteGate = Completer<void>();
+    await pumpScreen(tester);
+    await enterBatch(tester);
+    await selectAll(tester);
+    await tester.tap(find.byKey(const ValueKey('highlight-batch-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-batch-delete-confirm')),
+    );
+    await tester.pump();
+
+    final enable = tester.widget<IconButton>(
+      find.byKey(const ValueKey('highlight-batch-enable')),
+    );
+    expect(enable.onPressed, isNull, reason: '删除在途时启用按钮禁用');
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-batch-enable')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+    expect(api.saveCalls, 0, reason: '不得触发第二次批量');
+
+    api.deleteGate!.complete();
+    await tester.pumpAndSettle();
+    expect(api.rules, isEmpty);
+  });
+
+  testWidgets('P2-2 分组对话框在途时禁止关闭', (tester) async {
+    api.rules.add(_rule(id: 1, name: 'A1', group: '分组A'));
+    api.saveGate = Completer<void>();
+    await pumpScreen(tester);
+    await openMore(tester);
+    await tester.tap(find.text('管理分组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('highlight-group-rename-分组A')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('highlight-group-rename-field')),
+      '分组B',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-rename-confirm')),
+    );
+    await tester.pump();
+
+    final close = tester.widget<IconButton>(
+      find.byKey(const ValueKey('highlight-group-manage-close')),
+    );
+    expect(close.onPressed, isNull, reason: '忙时禁用关闭');
+
+    api.saveGate!.complete();
+    await tester.pumpAndSettle();
+    expect(api.rules.single.group, '分组B');
+  });
+
+  testWidgets('P3 删除分组部分失败：成功项置 null、失败项保留', (tester) async {
+    api.rules.addAll([
+      _rule(id: 1, name: 'A1', group: '分组A'),
+      _rule(id: 2, name: 'A2', group: '分组A'),
+    ]);
+    api.failSaveIds.add(1);
+    await pumpScreen(tester);
+    await openMore(tester);
+    await tester.tap(find.text('管理分组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('highlight-group-delete-分组A')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-delete-confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('highlight-group-error')), findsOneWidget);
+    expect(api.rules.firstWhere((r) => r.id == 1).group, '分组A');
+    expect(api.rules.firstWhere((r) => r.id == 2).group, isNull);
+  });
+
+  testWidgets('P3 选中变化清除底部错误提示', (tester) async {
+    api.rules.add(_rule(id: 1, name: '规则一'));
+    await pumpScreen(tester);
+    await enterBatch(tester);
+    await tester.tap(find.byKey(const ValueKey('highlight-batch-enable')));
+    await tester.pump();
+    expect(find.text('请先选择规则'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('highlight-rule-tile-1')));
+    await tester.pump();
+    expect(find.text('请先选择规则'), findsNothing);
+  });
+
+  testWidgets('P3 筛选切换 retainAll 裁剪选择', (tester) async {
+    api.rules.addAll([
+      _rule(id: 1, name: 'A1', group: '分组A'),
+      _rule(id: 2, name: 'B1', group: '分组B'),
+    ]);
+    await pumpScreen(tester);
+    await enterBatch(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组A')),
+    );
+    await tester.pump();
+    await selectAll(tester);
+    expect(find.text('已选 1 项'), findsWidgets);
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-filter-group-分组B')),
+    );
+    await tester.pump();
+    expect(find.text('已选 0 项'), findsWidgets);
+  });
+
+  testWidgets('P3 删除返回 false 计入失败并裁剪选择', (tester) async {
+    api.rules.addAll([_rule(id: 1, name: '失败删除'), _rule(id: 2, name: '成功删除')]);
+    api.falseDeleteIds.add(1);
+    await pumpScreen(tester);
+    await enterBatch(tester);
+    await selectAll(tester);
+    await tester.tap(find.byKey(const ValueKey('highlight-batch-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-batch-delete-confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('删除失败'), findsOneWidget);
+    expect(api.rules.single.id, 1);
+    expect(find.text('已选 1 项'), findsWidgets, reason: '仅保留仍存在的 id');
+  });
+
+  testWidgets('P3 保留分组名拒绝（重命名）', (tester) async {
+    api.rules.add(_rule(id: 1, name: 'A1', group: '分组A'));
+    await pumpScreen(tester);
+    await openMore(tester);
+    await tester.tap(find.text('管理分组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('highlight-group-rename-分组A')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('highlight-group-rename-field')),
+      '__ungrouped__',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('highlight-group-rename-confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('highlight-group-error')), findsOneWidget);
+    expect(find.text('分组名称不可使用保留名'), findsOneWidget);
+    expect(api.rules.single.group, '分组A');
+  });
+
+  testWidgets('P3 保留分组名拒绝（编辑）', (tester) async {
+    api.rules.add(_rule(id: 1, name: 'A1', group: '分组A'));
+    await pumpScreen(tester);
+    await tester.tap(find.byKey(const ValueKey('highlight-rule-tile-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('highlight-rule-group')),
+      '全部',
+    );
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('分组名称不可使用保留名'), findsOneWidget);
+    expect(api.rules.single.group, '分组A');
   });
 
   testWidgets('批量失败汇总 SnackBar', (tester) async {

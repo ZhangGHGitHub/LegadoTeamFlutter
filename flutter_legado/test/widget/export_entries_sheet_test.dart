@@ -109,13 +109,11 @@ void main() {
   setUpAll(registerFallbacks);
 
   setUp(() {
-    SharedPreferences.setMockInitialValues(
-      <String, Object>{
-        // 跳过首启种子导入（各页有版本门控）
-        kHttpTtsSeedVersionKey: kHttpTtsSeedVersion,
-        kTxtTocRuleVersionKey: kTxtTocRuleVersion,
-      },
-    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      // 跳过首启种子导入（各页有版本门控）
+      kHttpTtsSeedVersionKey: kHttpTtsSeedVersion,
+      kTxtTocRuleVersionKey: kTxtTocRuleVersion,
+    });
     // rootBundle 缓存跨 FakeAsync 复用会永不完成 → 逐用例清除
     rootBundle.evict(DirectLinkUploadRuleService.defaultRulesAsset);
     upload.reset();
@@ -181,10 +179,7 @@ void main() {
 
   Widget wrap(Widget child, {List<Override> overrides = const []}) {
     return ProviderScope(
-      overrides: [
-        bookApiProvider.overrideWithValue(mockApi),
-        ...overrides,
-      ],
+      overrides: [bookApiProvider.overrideWithValue(mockApi), ...overrides],
       child: MaterialApp(home: child),
     );
   }
@@ -304,10 +299,7 @@ void main() {
       final title = tester.widget<Text>(
         find.textContaining('导出文件：bookSource_'),
       );
-      expect(
-        title.data,
-        matches(RegExp(r'^导出文件：bookSource_\d{12}\.json$')),
-      );
+      expect(title.data, matches(RegExp(r'^导出文件：bookSource_\d{12}\.json$')));
 
       await tapUpload(tester);
       final payload =
@@ -461,8 +453,8 @@ void main() {
       await tapUpload(tester);
       final payload =
           jsonDecode(upload.call!['content'] as String) as Map<String, dynamic>;
-      final rule = (payload['rules'] as List<dynamic>).single
-          as Map<String, dynamic>;
+      final rule =
+          (payload['rules'] as List<dynamic>).single as Map<String, dynamic>;
 
       // 字段名对齐原版实体：order（Rust 契约名为 sortOrder）
       expect(rule['uuid'], uuid);
@@ -472,18 +464,57 @@ void main() {
       expect(rule['applyToBody'], isTrue);
 
       // P1 回归：导出内容喂给关联导入归一必须不抛（缺 uuid 曾抛「uuid 非法」）
-      final normalized =
-          AssociationNotifier.normalizeHighlightRuleForImport(rule);
+      final normalized = AssociationNotifier.normalizeHighlightRuleForImport(
+        rule,
+      );
       expect(normalized['uuid'], uuid);
       expect(normalized['timeoutMillisecond'], 1500);
       expect(normalized['applyToBody'], isTrue);
       expect(normalized.containsKey('order'), isFalse);
     });
+
+    testWidgets('批量导出选中：点击入口仅导出选中项', (tester) async {
+      when(() => mockApi.highlightRuleList()).thenAnswer(
+        (_) async => jsonEncode([
+          for (final id in [1, 2, 3])
+            {
+              'id': id,
+              'uuid': '00000000-0000-4000-8000-00000000000$id',
+              'name': '规则$id',
+              'pattern': 'p$id',
+              'isRegex': false,
+              'isEnabled': true,
+              'style': '{"textColor":-65536}',
+              'sortOrder': id,
+            },
+        ]),
+      );
+
+      await tester.pumpWidget(wrap(const HighlightRulesScreen()));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('批量管理'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('highlight-rule-tile-2')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('highlight-batch-export')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('导出文件：HighlightRules.json'), findsOneWidget);
+      await tapUpload(tester);
+      final payload =
+          jsonDecode(upload.call!['content'] as String) as Map<String, dynamic>;
+      final rules = (payload['rules'] as List).cast<Map<String, dynamic>>();
+      expect(rules, hasLength(1), reason: '仅导出选中项');
+      expect(rules.single['id'], 2);
+      expect(rules.single['pattern'], 'p2');
+    });
   });
 
   group('TXT 目录规则导出', () {
-    testWidgets('菜单「导出规则」触发 Sheet（exportTxtTocRule.json，数组内容）',
-        (tester) async {
+    testWidgets('菜单「导出规则」触发 Sheet（exportTxtTocRule.json，数组内容）', (tester) async {
       when(() => mockApi.getConfig('txt_toc_rules')).thenAnswer(
         (_) async => jsonEncode([
           {
@@ -612,12 +643,7 @@ void main() {
       when(() => mockApi.getBooks()).thenAnswer(
         (_) async => const [
           // customIntro 为 null → 回退 intro
-          Book(
-            bookUrl: 'u1',
-            name: '书一',
-            author: '作者一',
-            intro: '原始简介一',
-          ),
+          Book(bookUrl: 'u1', name: '书一', author: '作者一', intro: '原始简介一'),
           // customIntro 为空串 → 同样回退 intro（对齐 isNullOrEmpty）
           Book(
             bookUrl: 'u2',
@@ -636,7 +662,9 @@ void main() {
           ),
         ],
       );
-      when(() => mockApi.getBookGroups()).thenAnswer((_) async => <BookGroup>[]);
+      when(
+        () => mockApi.getBookGroups(),
+      ).thenAnswer((_) async => <BookGroup>[]);
 
       await tester.pumpWidget(wrap(const BookshelfScreen()));
       await tester.pumpAndSettle();
@@ -673,7 +701,9 @@ void main() {
           ),
         ],
       );
-      when(() => mockApi.getBookGroups()).thenAnswer((_) async => <BookGroup>[]);
+      when(
+        () => mockApi.getBookGroups(),
+      ).thenAnswer((_) async => <BookGroup>[]);
 
       await tester.pumpWidget(wrap(const BookshelfManageScreen()));
       await tester.pumpAndSettle();
@@ -689,10 +719,7 @@ void main() {
       final payload =
           jsonDecode(upload.call!['content'] as String) as List<dynamic>;
       expect(payload, hasLength(1));
-      expect(
-        (payload.single as Map<String, dynamic>)['bookSourceName'],
-        '在用源',
-      );
+      expect((payload.single as Map<String, dynamic>)['bookSourceName'], '在用源');
     });
 
     testWidgets('定时任务「导出任务」：exportAutoTask.json', (tester) async {
@@ -725,10 +752,7 @@ void main() {
       final payload =
           jsonDecode(upload.call!['content'] as String) as List<dynamic>;
       expect(payload, hasLength(1));
-      expect(
-        (payload.single as Map<String, dynamic>)['name'],
-        '每日刷新目录',
-      );
+      expect((payload.single as Map<String, dynamic>)['name'], '每日刷新目录');
     });
   });
 
