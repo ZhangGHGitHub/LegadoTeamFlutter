@@ -27,6 +27,7 @@ import '../routes.dart';
 import '../services/book_api.dart' show DeleteBooksResult;
 import '../services/cover_aspect_ratio.dart';
 import '../services/local_book_store.dart';
+import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/book_progress_utils.dart';
 import '../utils/bookshelf_sort.dart';
@@ -103,10 +104,22 @@ class BookshelfFolderBackController {
 // TabController（生命周期内多个 ticker），故用 TickerProviderStateMixin
 // 而非 SingleTickerProviderStateMixin（后者对第二个 ticker 抛断言）
 class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, RouteAware {
   TabController? _tabController;
   int _tabControllerLen = 0;
   final ScrollController _scrollController = ScrollController();
+
+  /// [批9c 回修 P0-1] dispose 阶段不能读 ref；提前捕获用于撤销分组授权
+  PrivacyNotifier? _privacyNotifier;
+
+  /// 页面 TickerMode 上一帧状态（主页 PageView 用它表达当前页可见性）
+  bool? _tickerEnabled;
+
+  /// 已订阅的路由（didChangeDependencies 可能多次调用，避免重复退订）
+  ModalRoute<void>? _subscribedRoute;
+
+  /// 最近一帧选中的分组 ID（dispose 时 ref 不可用，用它撤销授权）
+  int? _lastGroupId;
 
   /// 文件夹根目录滚动位置（与组内容分开，返回根目录时保留浏览位置）
   final ScrollController _folderScrollController = ScrollController();
@@ -126,6 +139,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   @override
   void initState() {
     super.initState();
+    // [批9c 回修 P0-1] 提前取 Notifier（dispose 时不能再读 ref）
+    _privacyNotifier = ref.read(privacyNotifierProvider.notifier);
     widget.scrollTopSignal?.addListener(_onScrollTopSignal);
     // [设置批6a-2] 主页统一分发返回键：组内 → 组根
     widget.folderBackController?.attach(_handleFolderBack);
@@ -137,8 +152,55 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // P0-1：路由被压在书架上（详情/阅读器/搜索等）视为「离开书架」，
+    // EveryTime 下撤销当前分组授权，返回后需重新验证。
+    final route = ModalRoute.of(context);
+    if (route != null && !identical(route, _subscribedRoute)) {
+      if (_subscribedRoute != null) {
+        appRouteObserver.unsubscribe(this);
+      }
+      _subscribedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+    // P0-1：主页 PageView 用 TickerMode 表达页签可见性；切走当前书架页
+    // 时同样视为离开（不会触发路由回调，也不会 dispose）。
+    final tickerEnabled = TickerMode.valuesOf(context).enabled;
+    if (_tickerEnabled == true && !tickerEnabled) {
+      _revokeGroupDeferred(_lastGroupId);
+    }
+    _tickerEnabled = tickerEnabled;
+  }
+
+  @override
+  void didPushNext() {
+    // 有页面压栈到书架之上：撤销当前分组授权（EveryTime 下离开即失效）
+    _revokeGroupDeferred(_lastGroupId);
+  }
+
+  /// 延迟撤销指定分组授权（避免在 build/didChangeDependencies 同步改 provider）
+  void _revokeGroupDeferred(int? groupId) {
+    final notifier = _privacyNotifier;
+    if (notifier == null || groupId == null || groupId <= 0) return;
+    Future.microtask(() {
+      try {
+        notifier.revokeGroup(groupId);
+      } catch (e) {
+        debugPrint('[书架] 撤销分组私密授权失败（忽略）：$e');
+      }
+    });
+  }
+
+  @override
   void dispose() {
     widget.folderBackController?.detach(_handleFolderBack);
+    // P0-1：书架销毁同样撤销当前分组授权
+    _revokeGroupDeferred(_lastGroupId);
+    if (_subscribedRoute != null) {
+      appRouteObserver.unsubscribe(this);
+      _subscribedRoute = null;
+    }
     uiSettingsListenable.removeListener(_onCoverLayoutChanged);
     coverAspectRatioRevision.removeListener(_onCoverLayoutChanged);
     coverSettingsListenable.removeListener(_onCoverLayoutChanged);
@@ -295,6 +357,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   Widget build(BuildContext context) {
     final state = ref.watch(bookshelfNotifierProvider);
     final settings = ref.watch(bookshelfSettingsProvider);
+    // P0-1：缓存当前分组 ID 供页面离开/dispose 撤销授权
+    _lastGroupId = state.selectedGroup?.groupId;
     // [骨架对齐 2.0.260 | 台账 1-3] 主内容/空态：大标题 + 分组 tab 行以
     // sliver 形式并入下方 CustomScrollView（对齐参考 03/03b 截图：空态
     // 同样保留「书架」大标题 + 分组 tab 行）；加载/错误态保留标准
@@ -409,12 +473,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         .every((b) => !state.isBookPrivateContent(b));
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref
+      // [批9c 回修 P2-4] toast 用 Rust 实际更新行数，不用请求 URL 数
+      final updated = await ref
           .read(bookshelfNotifierProvider.notifier)
           .setBooksPrivate(urls, targetPrivate);
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('已更新 ${urls.length} 本书的私密状态')));
+        ..showSnackBar(SnackBar(content: Text('已更新 $updated 本书的私密状态')));
     } catch (e) {
       final reason = e is BridgeError ? e.message : '$e';
       messenger

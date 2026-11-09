@@ -46,6 +46,7 @@ class PrivacyContentSnapshot {
     this.booksByRecordKey = const <PrivacyRecordKey, Book>{},
     this.groupsById = const <int, BookGroup>{},
     this.loaded = false,
+    this.markersUnavailable = false,
   });
 
   /// 空快照（未加载 / 加载失败；一切按非私密处理）
@@ -68,6 +69,9 @@ class PrivacyContentSnapshot {
 
   /// 是否已完成一次加载（失败也算完成，避免 UI 永久等待）
   final bool loaded;
+
+  /// 私密标记读取是否失败（失败时按未锁定处理，UI 可提示“标记暂不可用”）
+  final bool markersUnavailable;
 
   /// 分组是否私密
   bool isGroupPrivate(int groupId) => privateGroupIds.contains(groupId);
@@ -141,21 +145,27 @@ class PrivacyContentService {
     Set<int> privateGroupIds = const <int>{};
     List<Book> books = const <Book>[];
     List<BookGroup> groups = const <BookGroup>[];
+    var markersUnavailable = false;
 
     try {
       privateBookUrls = (await _api.getPrivateBookUrls()).toSet();
     } catch (e) {
+      markersUnavailable = true;
       debugPrint('[隐私] 读取私密书籍标记失败（按无标记处理）：$e');
     }
     try {
       privateGroupIds = (await _api.getPrivateGroupIds()).toSet();
     } catch (e) {
+      markersUnavailable = true;
       debugPrint('[隐私] 读取私密分组标记失败（按无标记处理）：$e');
     }
     // 无任何私密标记（绝大多数用户）：不必再拉全量书籍/分组做反查，
     // 既省一次 IO，也避免只读场景无谓的数据往返。
     if (privateBookUrls.isEmpty && privateGroupIds.isEmpty) {
-      return const PrivacyContentSnapshot(loaded: true);
+      return PrivacyContentSnapshot(
+        loaded: true,
+        markersUnavailable: markersUnavailable,
+      );
     }
     try {
       books = await _api.getBooks();
@@ -190,6 +200,7 @@ class PrivacyContentService {
       booksByRecordKey: booksByRecordKey,
       groupsById: groupsById,
       loaded: true,
+      markersUnavailable: markersUnavailable,
     );
   }
 }

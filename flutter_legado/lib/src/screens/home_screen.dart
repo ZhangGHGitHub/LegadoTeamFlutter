@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -270,8 +269,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // [设置批6a-2] 文件夹模式：组内返回先回组根（消费本次返回），
     // 根目录返回继续走既有「切回书架 / 双击退出」。书架页与主页同属
     // 一个 ModalRoute，必须由主页统一消费才能避免回组根后又退出。
-    if (_currentTab == MainTab.bookshelf &&
-        _bookshelfFolderBack.handleBack()) {
+    if (_currentTab == MainTab.bookshelf && _bookshelfFolderBack.handleBack()) {
       return;
     }
     // [批36c 源内容模式返回键归属] 内容模式的返回由宿主统一消费：
@@ -328,7 +326,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!main.showContent) return false;
     final url = main.selectedSourceUrl;
     final explore = ref.read(exploreNotifierProvider);
-    final hasSource = url.isNotEmpty &&
+    final hasSource =
+        url.isNotEmpty &&
         explore.bookSources.any((s) => s.bookSourceUrl == url);
     if (!hasSource) return false;
     ref.read(exploreMainNotifierProvider.notifier).setShowContent(false);
@@ -437,8 +436,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           );
           // 单页配置：NavigationBar/Rail 均要求 ≥2 项，隐藏导航容器，
           // 仅保留单页内容（PageView 由 post-frame 收敛到索引 0）。
-          final showRail =
-              useRail && tabs.length >= 2 && !myPaneFullscreen;
+          final showRail = useRail && tabs.length >= 2 && !myPaneFullscreen;
           final pageArea = PageView.builder(
             controller: _pageController,
             // [UI_SYNC_REFACTOR S1] 滑动切页（对齐参考 HorizontalPager
@@ -460,9 +458,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPageChanged: (index) => _onPageChanged(tabs, index),
             itemBuilder: (context, index) {
               final tab = tabs[index];
-              return _KeepAlivePage(
+              // [批9c 回修 P0-1] 用 TickerMode 表达「当前页签可见」：
+              // 离屏页签动画暂停，同时书架据此在切走后撤销私密分组授权。
+              return TickerMode(
+                // key 留在 TickerMode：PageView 的 findChildIndexCallback
+                // 依赖直接子级 key 找回页签 State（滚动位置等）
                 key: ValueKey(tab),
-                child: _pageOf(tab),
+                enabled: index == currentIndex,
+                child: _KeepAlivePage(child: _pageOf(tab)),
               );
             },
           );
@@ -493,10 +496,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   else
                     const SizedBox.shrink(),
                   Expanded(
-                    child: _buildPageAreaWithDetail(
-                      pageArea,
-                      ui.multiPaneMode,
-                    ),
+                    child: _buildPageAreaWithDetail(pageArea, ui.multiPaneMode),
                   ),
                 ],
               ),
@@ -550,8 +550,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: ListenableBuilder(
             listenable: _detailPaneController,
             builder: (context, _) {
-              final rightWidth =
-                  enabled && _detailPaneController.hasStack
+              final rightWidth = enabled && _detailPaneController.hasStack
                   ? resolveListDetailRightWidth(paneSize.width)
                   : 0.0;
               final showDetail = rightWidth > 0;
@@ -622,18 +621,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 导航项规格（三态底栏统一消费源）
-  List<AppNavSpec> _specsFor(
-    List<MainTab> tabs,
-    MainPrefsState prefs,
-  ) =>
-      [
-        for (final tab in tabs)
-          mainTabNavSpec(
-            tab,
-            customIconPath: prefs.navIconPath(tab),
-            customSelectedIconPath: prefs.navIconPath(tab, selected: true),
-          ),
-      ];
+  List<AppNavSpec> _specsFor(List<MainTab> tabs, MainPrefsState prefs) => [
+    for (final tab in tabs)
+      mainTabNavSpec(
+        tab,
+        customIconPath: prefs.navIconPath(tab),
+        customSelectedIconPath: prefs.navIconPath(tab, selected: true),
+      ),
+  ];
 
   /// Rail 激活判定（对齐参考仓 tabletInterface：auto/always/landscape/off）
   bool _railActive(UiSettingsState ui, double width, Orientation orientation) {
@@ -668,9 +663,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           .read(uiSettingsProvider.notifier)
           .setRailExtended(!ui.railExtended),
       onSearch: () => Navigator.of(context).pushNamed(AppRoutes.search),
-      groups: [
-        for (final g in bookshelf.groups) g.groupName,
-      ],
+      groups: [for (final g in bookshelf.groups) g.groupName],
       selectedGroupIndex: bookshelf.selectedGroupIndex,
       onGroupSelected: (index) =>
           ref.read(bookshelfNotifierProvider.notifier).selectGroup(index),
@@ -715,17 +708,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 底栏文字档位 → Flutter NavigationBar 标签行为
   NavigationDestinationLabelBehavior _labelBehaviorOf(
     BottomBarLabelMode mode,
-  ) =>
-      switch (mode) {
-        // 参考版 auto 与 selected 都映射 IconWithSelectedLabel
-        BottomBarLabelMode.auto ||
-        BottomBarLabelMode.selected =>
-          NavigationDestinationLabelBehavior.onlyShowSelected,
-        BottomBarLabelMode.labeled =>
-          NavigationDestinationLabelBehavior.alwaysShow,
-        BottomBarLabelMode.unlabeled =>
-          NavigationDestinationLabelBehavior.alwaysHide,
-      };
+  ) => switch (mode) {
+    // 参考版 auto 与 selected 都映射 IconWithSelectedLabel
+    BottomBarLabelMode.auto || BottomBarLabelMode.selected =>
+      NavigationDestinationLabelBehavior.onlyShowSelected,
+    BottomBarLabelMode.labeled => NavigationDestinationLabelBehavior.alwaysShow,
+    BottomBarLabelMode.unlabeled =>
+      NavigationDestinationLabelBehavior.alwaysHide,
+  };
 }
 
 /// [UI_SYNC_REFACTOR S1] 页保活（对齐参考 HorizontalPager
@@ -733,7 +723,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _KeepAlivePage extends StatefulWidget {
   final Widget child;
 
-  const _KeepAlivePage({super.key, required this.child});
+  const _KeepAlivePage({required this.child});
 
   @override
   State<_KeepAlivePage> createState() => _KeepAlivePageState();

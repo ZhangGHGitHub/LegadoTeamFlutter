@@ -29,6 +29,18 @@ class PrivacyMockBookApi extends MockBookApi {
       [];
   final List<({int groupId, bool isPrivate})> setBookGroupPrivateCalls = [];
 
+  /// 覆盖 setBooksPrivate 返回的更新行数（toast 用实际返回值测试）
+  int? forcedSetBooksPrivateCount;
+
+  /// 单本标记覆盖（即使 URL 不在 books 列表也能被隐私服务识别）
+  final Set<String> privateUrlOverrides = <String>{};
+
+  int addBookCalls = 0;
+  int deleteReadRecordCalls = 0;
+  int deleteBookmarkCalls = 0;
+  bool failDeleteReadRecord = false;
+  bool failDeleteBookmark = false;
+
   @override
   Future<List<Book>> getBooks() async => List<Book>.of(books);
 
@@ -41,13 +53,21 @@ class PrivacyMockBookApi extends MockBookApi {
   }
 
   @override
+  Future<Book> addBook(Book book) async {
+    addBookCalls++;
+    if (!books.any((b) => b.bookUrl == book.bookUrl)) books.add(book);
+    return book;
+  }
+
+  @override
   Future<List<BookGroup>> getBookGroups() async => List<BookGroup>.of(groups);
 
   @override
-  Future<List<String>> getPrivateBookUrls() async => [
+  Future<List<String>> getPrivateBookUrls() async => {
     for (final b in books)
       if (b.isPrivate) b.bookUrl,
-  ];
+    ...privateUrlOverrides,
+  }.toList();
 
   @override
   Future<List<int>> getPrivateGroupIds() async => [
@@ -67,7 +87,12 @@ class PrivacyMockBookApi extends MockBookApi {
       books[i] = books[i].copyWith(isPrivate: isPrivate);
       updated++;
     }
-    return updated;
+    if (isPrivate) {
+      privateUrlOverrides.addAll(bookUrls);
+    } else {
+      privateUrlOverrides.removeAll(bookUrls);
+    }
+    return forcedSetBooksPrivateCount ?? updated;
   }
 
   @override
@@ -114,8 +139,22 @@ class PrivacyMockBookApi extends MockBookApi {
       const [];
 
   @override
+  Future<void> deleteReadRecord(String bookName) async {
+    deleteReadRecordCalls++;
+    if (failDeleteReadRecord) throw StateError('删除阅读记录失败');
+    readRecords.removeWhere((r) => r.bookName == bookName);
+  }
+
+  @override
   Future<List<Bookmark>> getAllBookmarks() async =>
       List<Bookmark>.of(bookmarks);
+
+  @override
+  Future<void> deleteBookmark(int id) async {
+    deleteBookmarkCalls++;
+    if (failDeleteBookmark) throw StateError('删除书签失败');
+    bookmarks.removeWhere((b) => b.id == id);
+  }
 
   @override
   Future<String> cacheDownloadList() async => '[]';

@@ -10,7 +10,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
+import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/book_group_screen.dart';
 
@@ -22,9 +25,20 @@ void main() {
   late PrivacyMockBookApi api;
   late ProviderContainer container;
 
-  Future<void> boot(WidgetTester tester, List<BookGroup> groups) async {
-    SharedPreferences.setMockInitialValues({});
-    api = PrivacyMockBookApi(groups: groups);
+  Future<void> boot(
+    WidgetTester tester,
+    List<BookGroup> groups, {
+    List<Book> books = const [],
+    bool hasPassword = true,
+  }) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.privateEnabled: true,
+      PrefKeys.privateVerifyOnOpenBook: true,
+      PrefKeys.privateVerifyOnEnterGroup: true,
+      PrefKeys.privateUnlockScope: PrivacyUnlockScope.everyTime.storageValue,
+    });
+    api = PrivacyMockBookApi(groups: groups, books: books);
+    if (hasPassword) await api.privacySetPassword('pw');
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(api)],
     );
@@ -120,5 +134,98 @@ void main() {
 
     expect(api.setBookGroupPrivateCalls.last.isPrivate, isFalse);
     expect(api.groups.single.isPrivate, isFalse);
+  });
+
+  testWidgets('私密组计数以占位符隐藏', (tester) async {
+    await boot(
+      tester,
+      [const BookGroup(groupId: 4, groupName: '私密旧组', isPrivate: true)],
+      books: [const Book(bookUrl: 'u1', name: '组内书', author: '作者', group: 4)],
+    );
+    final tile = find.ancestor(
+      of: find.text('私密旧组'),
+      matching: find.byType(ListTile),
+    );
+    expect(
+      find.descendant(of: tile, matching: find.text('1 本书')),
+      findsNothing,
+      reason: '私密组不展示真实书籍数',
+    );
+    expect(find.descendant(of: tile, matching: find.text('—')), findsOneWidget);
+  });
+
+  testWidgets('分配书籍列表剔除私密书并提示隐藏数量', (tester) async {
+    const privateBook = Book(
+      bookUrl: 'u-private',
+      name: '私密书',
+      author: '私密作者',
+      isPrivate: true,
+      group: 4,
+    );
+    const publicBook = Book(
+      bookUrl: 'u-public',
+      name: '公开书',
+      author: '公开作者',
+      group: 4,
+    );
+    await boot(
+      tester,
+      [const BookGroup(groupId: 4, groupName: '目标组')],
+      books: [privateBook, publicBook],
+    );
+    await container.read(bookshelfNotifierProvider.notifier).refresh();
+    await tester.pumpAndSettle();
+
+    final tile = find.ancestor(
+      of: find.text('目标组'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(
+      find.descendant(of: tile, matching: find.byType(PopupMenuButton<String>)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('分配书籍'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('私密书'), findsNothing);
+    expect(find.text('私密作者'), findsNothing);
+    expect(find.text('公开书'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('group-assign-hidden-hint')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('已隐藏 1 本私密书籍'), findsOneWidget);
+  });
+
+  testWidgets('未设置密码：私密开关置灰并提示', (tester) async {
+    await boot(tester, [
+      const BookGroup(groupId: 4, groupName: '旧组'),
+    ], hasPassword: false);
+    await openEdit(tester, '旧组');
+    final switchTile = tester.widget<SwitchListTile>(
+      find.byKey(const ValueKey('group-private-switch')),
+    );
+    expect(switchTile.onChanged, isNull, reason: '无密码时禁止开启私密分组');
+    expect(find.text('请先在隐私设置中设置密码'), findsOneWidget);
+  });
+
+  testWidgets('删除私密分组提示组内书籍回到公开书架', (tester) async {
+    await boot(tester, [
+      const BookGroup(groupId: 4, groupName: '私密旧组', isPrivate: true),
+    ]);
+    final tile = find.ancestor(
+      of: find.text('私密旧组'),
+      matching: find.byType(ListTile),
+    );
+    await tester.tap(
+      find.descendant(of: tile, matching: find.byType(PopupMenuButton<String>)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('组内书籍将回到公开书架'), findsOneWidget);
+    await tester.tap(find.text('取消').last);
+    await tester.pumpAndSettle();
   });
 }

@@ -11,6 +11,7 @@ import '../../services/privacy_content_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/webdav_book_upload_service.dart';
 import '../privacy/privacy_content_notifier.dart';
+import '../privacy/privacy_notifier.dart';
 import '../providers.dart';
 import 'bookshelf_state.dart';
 
@@ -157,10 +158,10 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       final hasAll = visible.any((g) => g.groupId == BookGroupId.all);
       final list = hasAll ? visible : [allGroup, ...visible];
       final lastIndex = await _settings.getBookshelfTabPosition();
-      state = state.copyWith(
-        groups: list,
-        selectedGroupIndex: lastIndex.clamp(0, list.length - 1),
-      );
+      final nextIndex = lastIndex.clamp(0, list.length - 1);
+      // P0-1：刷新后选中组变化（组被删除/重排）也要撤销旧组授权
+      _revokeGroupIfChanged(state.selectedGroup, list[nextIndex]);
+      state = state.copyWith(groups: list, selectedGroupIndex: nextIndex);
       // [P4-2b V4] 分组就绪后重推视频聚合分组（books 可能已先于 groups 加载）
       _applyVideoGroup();
     } catch (e) {
@@ -211,14 +212,27 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       index = next.indexWhere((g) => g.groupId == BookGroupId.all);
       if (index < 0) index = 0;
     }
+    // P0-1：视频组合成/移除导致选中组被动变化时同样撤销旧组授权
+    _revokeGroupIfChanged(state.selectedGroup, next[index]);
     state = state.copyWith(groups: next, selectedGroupIndex: index);
   }
 
   /// 切换分组 Tab（对标原版 onTabSelected → AppConfig.saveTabPosition）
+  ///
+  /// [批9c 回修 P0-1] EveryTime 频率下离开分组即撤销该分组授权，下次进入
+  /// 重新验证（对齐参考版 `changeGroup` 的 revoke 语义）。
   Future<void> selectGroup(int index) async {
     if (index < 0 || index >= state.groups.length) return;
+    _revokeGroupIfChanged(state.selectedGroup, state.groups[index]);
     state = state.copyWith(selectedGroupIndex: index);
     await _settings.setBookshelfTabPosition(index);
+  }
+
+  /// 选中组变化时撤销旧分组的 EveryTime 授权（groupId 相同不动）
+  void _revokeGroupIfChanged(BookGroup? previous, BookGroup? next) {
+    if (previous == null || next == null) return;
+    if (previous.groupId == next.groupId) return;
+    ref.read(privacyNotifierProvider.notifier).revokeGroup(previous.groupId);
   }
 
   /// 添加书籍到书架

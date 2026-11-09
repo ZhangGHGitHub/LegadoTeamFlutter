@@ -87,11 +87,7 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
       final raw = await api.getReadRecords();
       _all = _toShowList(raw);
       final total = _all.fold<int>(0, (sum, r) => sum + r.readTime);
-      final filtered = _applyFilterAndSort(
-        _all,
-        state.searchQuery,
-        sort,
-      );
+      final filtered = _applyFilterAndSort(_all, state.searchQuery, sort);
       state = state.copyWith(
         records: filtered,
         totalReadTimeMs: total,
@@ -100,10 +96,7 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
         isLoading: false,
       );
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: _mapError(e),
-      );
+      state = state.copyWith(isLoading: false, error: _mapError(e));
     }
   }
 
@@ -136,12 +129,16 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
   ///
   /// `bookName` 为**物理书名**：v113 起 FFI `deleteReadRecord` 删除该书
   /// 全部作者的行（契约 §2.12 已登记该差异）。
-  Future<void> deleteByName(String bookName) async {
+  ///
+  /// [批9c 回修 P1-1] 返回是否成功，供 UI 区分成功/失败提示（失败不静默）。
+  Future<bool> deleteByName(String bookName) async {
     try {
       await ref.read(bookApiProvider).deleteReadRecord(bookName);
       await load();
+      return true;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
+      return false;
     }
   }
 
@@ -200,8 +197,9 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
   static List<ReadRecordShow> _toShowList(List<ReadRecord> raw) {
     final map = <String, ReadRecordShow>{};
     for (final r in raw) {
-      final displayName =
-          r.displayBookName.isNotEmpty ? r.displayBookName : r.bookName;
+      final displayName = r.displayBookName.isNotEmpty
+          ? r.displayBookName
+          : r.bookName;
       final rawAuthor = r.displayAuthor.isNotEmpty
           ? r.displayAuthor
           : (r.author.isNotEmpty ? r.author : (r.resolvedAuthor ?? ''));
@@ -235,9 +233,11 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
     if (query.isNotEmpty) {
       final lower = query.toLowerCase();
       list = list
-          .where((r) =>
-              r.bookName.toLowerCase().contains(lower) ||
-              r.author.toLowerCase().contains(lower))
+          .where(
+            (r) =>
+                r.bookName.toLowerCase().contains(lower) ||
+                r.author.toLowerCase().contains(lower),
+          )
           .toList();
     } else {
       list = List<ReadRecordShow>.from(source);
@@ -261,5 +261,5 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
 
 final readRecordNotifierProvider =
     NotifierProvider<ReadRecordNotifier, ReadRecordState>(
-  ReadRecordNotifier.new,
-);
+      ReadRecordNotifier.new,
+    );

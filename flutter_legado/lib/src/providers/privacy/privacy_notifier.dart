@@ -351,6 +351,7 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
   /// 生命周期钩子（由启动闸门转发）
   ///
   /// - paused/hidden：记录进入后台时间（多次事件保留最早时间）；
+  ///   EveryTime 频率下同时清空全部目标授权（「每次进入」语义，回来需重验）；
   /// - resumed：仅 untilBackground 模式且已解锁时判定；宽限 0 立即锁定，
   ///   否则离台时长达到宽限后锁定；AppSession 模式后台不失效。
   ///
@@ -361,6 +362,11 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
         _backgroundedAt ??= at;
+        // P0-1：EveryTime 下切后台即视为离开目标，清空单本/分组授权，
+        // 避免解锁一次后永久放行（会话级频率仍由 resumed 宽限逻辑处理）。
+        if (state.unlockScope == PrivacyUnlockScope.everyTime) {
+          revokeAll();
+        }
       case AppLifecycleState.resumed:
         final backgroundedAt = _backgroundedAt;
         _backgroundedAt = null;

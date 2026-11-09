@@ -6,6 +6,7 @@ import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../bridge/ffi.dart' show BridgeError;
 import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
@@ -148,26 +149,46 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
     });
   }
 
-  void _confirmDelete(BuildContext context, Bookmark bookmark) {
-    showDialog(
+  Future<void> _confirmDelete(BuildContext context, Bookmark bookmark) async {
+    // [批9c 回修 P1-1] 锁定态删除确认文案不得出现真实章节/书名
+    final privacy = ref.read(privacyNotifierProvider);
+    final privacyContent = ref.read(privacyContentProvider);
+    final locked = privacyContent.isRecordLocked(
+      PrivacyRecordKey(bookmark.bookName, bookmark.bookAuthor),
+      privacy,
+    );
+    await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除书签'),
-        content: Text('确定删除「${bookmark.chapterName}」的书签吗？'),
+        content: Text(
+          locked ? '确定删除本书的书签吗？' : '确定删除「${bookmark.chapterName}」的书签吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('取消'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              ref
-                  .read(bookmarkNotifierProvider.notifier)
-                  .deleteBookmark(bookmark.id);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('书签已删除')));
+              // [批9c 回修 P1-1] 删除失败不再静默（此前未 await，异常成
+              // 未处理异步错误且仍提示“已删除”）
+              try {
+                await ref
+                    .read(bookmarkNotifierProvider.notifier)
+                    .deleteBookmark(bookmark.id);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('书签已删除')));
+              } catch (e) {
+                if (!context.mounted) return;
+                final reason = e is BridgeError ? e.message : '$e';
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('删除失败：$reason')));
+              }
             },
             child: const Text('删除'),
           ),

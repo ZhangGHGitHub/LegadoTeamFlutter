@@ -16,11 +16,23 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/bookshelf_settings.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
+import 'package:flutter_legado/src/providers/privacy/privacy_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
 
 import '../mocks/privacy_mock_book_api.dart';
+
+/// 记录 revokeGroup 调用（P0-1 UI 级断言）
+class _SpyPrivacyNotifier extends PrivacyNotifier {
+  final List<int> revokedGroups = [];
+
+  @override
+  void revokeGroup(int? groupId) {
+    if (groupId != null) revokedGroups.add(groupId);
+    super.revokeGroup(groupId);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +64,7 @@ void main() {
 
   late PrivacyMockBookApi api;
   late ProviderContainer container;
+  late _SpyPrivacyNotifier spyPrivacy;
 
   Future<void> boot(
     WidgetTester tester, {
@@ -60,6 +73,7 @@ void main() {
     double textScale = 1.0,
     Size size = const Size(1080, 1920),
     double dpr = 3.0,
+    ValueNotifier<bool>? tickerMode,
   }) async {
     SharedPreferences.setMockInitialValues({
       PrefKeys.privateEnabled: true,
@@ -77,22 +91,36 @@ void main() {
     );
     if (hasPassword) await api.privacySetPassword('pw');
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(api)],
+      overrides: [
+        bookApiProvider.overrideWithValue(api),
+        privacyNotifierProvider.overrideWith(() {
+          spyPrivacy = _SpyPrivacyNotifier();
+          return spyPrivacy;
+        }),
+      ],
     );
     addTearDown(container.dispose);
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = dpr;
     addTearDown(tester.view.reset);
+    final app = UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: BookshelfScreen()),
+    );
     await tester.pumpWidget(
       MediaQuery(
         data: MediaQueryData(
           size: Size(size.width / dpr, size.height / dpr),
           textScaler: TextScaler.linear(textScale),
         ),
-        child: UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(home: BookshelfScreen()),
-        ),
+        child: tickerMode == null
+            ? app
+            : ValueListenableBuilder<bool>(
+                valueListenable: tickerMode,
+                builder: (context, enabled, child) =>
+                    TickerMode(enabled: enabled, child: child!),
+                child: app,
+              ),
       ),
     );
     await tester.pump();
@@ -137,6 +165,26 @@ void main() {
     expect(find.text('已更新 1 本书的私密状态'), findsOneWidget);
   });
 
+  testWidgets('批量 toast 使用 Rust 实际更新行数而非请求数', (tester) async {
+    await boot(tester);
+    api.forcedSetBooksPrivateCount = 1;
+    final notifier = container.read(bookshelfNotifierProvider.notifier);
+    notifier.toggleBatchMode();
+    await tester.pumpAndSettle();
+    notifier.toggleSelect(singlePrivateBook.bookUrl);
+    notifier.toggleSelect(publicBook.bookUrl);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('bookshelf-batch-private')));
+    await tester.pumpAndSettle();
+    expect(api.setBooksPrivateCalls.single.bookUrls, hasLength(2));
+    expect(
+      find.text('已更新 1 本书的私密状态'),
+      findsOneWidget,
+      reason: 'toast 必须用 setBooksPrivate 返回值（1），不能用请求 2 本',
+    );
+  });
+
   testWidgets('未设置密码时批量模式不显示锁图标', (tester) async {
     await boot(tester, hasPassword: false);
     if (!container.read(bookshelfNotifierProvider).isBatchMode) {
@@ -166,6 +214,82 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('私密组书'), findsOneWidget);
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+
+    // P0-1：切到其它分组即撤销该分组授权
+    await tester.tap(find.text('全部'));
+    await tester.pumpAndSettle();
+    expect(
+      spyPrivacy.revokedGroups,
+      contains(4),
+      reason: '切分组必须调用 revokeGroup(4)',
+    );
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      isEmpty,
+      reason: 'EveryTime 离开分组后不得继续放行',
+    );
+  });
+
+  testWidgets('书架 dispose：撤销当前分组 EveryTime 授权', (tester) async {
+    await boot(tester);
+    await tester.tap(find.text('私密组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('private-locked-action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pump();
+    expect(
+      spyPrivacy.revokedGroups,
+      contains(4),
+      reason: '书架 dispose 必须调用 revokeGroup(4)',
+    );
+    expect(container.read(privacyNotifierProvider).grantedGroupIds, isEmpty);
+  });
+
+  testWidgets('切走书架页签（TickerMode=false）撤销分组授权', (tester) async {
+    final ticker = ValueNotifier<bool>(true);
+    addTearDown(ticker.dispose);
+    await boot(tester, tickerMode: ticker);
+    await tester.tap(find.text('私密组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('private-locked-action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(privacyNotifierProvider).grantedGroupIds,
+      contains(4),
+    );
+
+    ticker.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(
+      spyPrivacy.revokedGroups,
+      contains(4),
+      reason: '切走书架 PageView 页签必须撤销分组授权',
+    );
+    expect(container.read(privacyNotifierProvider).grantedGroupIds, isEmpty);
   });
 
   testWidgets('文件夹根：私密组不显示预览与书籍数', (tester) async {

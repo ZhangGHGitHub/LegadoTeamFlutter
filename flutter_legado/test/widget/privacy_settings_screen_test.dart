@@ -41,6 +41,14 @@ class _FailingClearApi extends MockBookApi {
   }
 }
 
+/// 私密标记读取失败（设置页“暂不可用”提示测试）
+class _BrokenMarkersApi extends MockBookApi {
+  @override
+  Future<List<String>> getPrivateBookUrls() async {
+    throw StateError('标记读取失败');
+  }
+}
+
 /// 策略写入恒失败（UI SnackBar 测试）
 class _FailingWriteStore extends PrivacyPolicyStore {
   const _FailingWriteStore();
@@ -537,6 +545,16 @@ void main() {
       find.byKey(const ValueKey('privacyBackgroundGraceRow')),
       findsNothing,
     );
+  });
+
+  testWidgets('私密标记读取失败：设置页提示暂不可用（仍 fail-open）', (tester) async {
+    api = _BrokenMarkersApi();
+    await pumpScreen(tester);
+    expect(
+      find.byKey(const ValueKey('privacyMarkersUnavailable')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('私密标记暂不可用'), findsOneWidget);
   });
 
   testWidgets('360dp + 1.6 倍字体：页面与密码对话框无溢出', (tester) async {

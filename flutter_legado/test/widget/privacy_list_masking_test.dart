@@ -137,6 +137,62 @@ void main() {
     expect(find.textContaining('2026-11-08'), findsOneWidget);
   });
 
+  testWidgets('锁定阅读记录删除确认不泄漏书名；取消不删除', (tester) async {
+    await boot(tester, const ReadRecordScreen());
+    await tester.ensureVisible(find.text('清空').last);
+    await tester.tap(find.text('清空').last);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('本书'), findsOneWidget);
+    expect(
+      find.textContaining('秘密书名'),
+      findsNothing,
+      reason: '锁定态删除确认不得出现真实书名',
+    );
+    await tester.tap(find.text('取消').last);
+    await tester.pumpAndSettle();
+    expect(api.deleteReadRecordCalls, 0);
+  });
+
+  testWidgets('阅读记录删除失败提示失败（不静默/不假成功）', (tester) async {
+    await boot(tester, const ReadRecordScreen());
+    api.failDeleteReadRecord = true;
+    await tester.ensureVisible(find.text('清空').last);
+    await tester.tap(find.text('清空').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(api.deleteReadRecordCalls, 1);
+    expect(find.textContaining('删除失败'), findsOneWidget);
+    expect(find.text('已删除阅读记录'), findsNothing);
+  });
+
+  testWidgets('锁定书签删除确认不泄漏章节；取消不删除', (tester) async {
+    await boot(tester, const BookmarkScreen());
+    await tester.longPress(find.byKey(const ValueKey('bookmarkLockedTile')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('本书'), findsOneWidget);
+    expect(find.textContaining('秘密书签章节'), findsNothing);
+    await tester.tap(find.text('取消').last);
+    await tester.pumpAndSettle();
+    expect(api.deleteBookmarkCalls, 0);
+  });
+
+  testWidgets('书签删除失败提示失败（不静默/不假成功）', (tester) async {
+    await boot(tester, const BookmarkScreen());
+    api.failDeleteBookmark = true;
+    await tester.longPress(find.byKey(const ValueKey('bookmarkLockedTile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(api.deleteBookmarkCalls, 1);
+    expect(find.textContaining('删除失败'), findsOneWidget);
+    expect(find.text('书签已删除'), findsNothing);
+  });
+
   testWidgets('缓存管理：私密书书名/作者置空，缓存进度保留', (tester) async {
     await boot(tester, const OfflineCacheScreen(), settle: false);
 

@@ -207,7 +207,7 @@ class FolderGroupGridCard extends StatelessWidget {
           FolderGroupCover(
             previews: previews.take(4).toList(),
             width: coverWidth,
-            groupCoverUrl: group.cover,
+            groupCoverUrl: locked ? null : group.cover,
             groupName: group.groupName,
             countText: countText,
             coverShadow: coverShadow,
@@ -321,7 +321,7 @@ class FolderGroupListCard extends StatelessWidget {
                       child: FolderGroupCover(
                         previews: previews.take(4).toList(),
                         width: coverWidth,
-                        groupCoverUrl: group.cover,
+                        groupCoverUrl: locked ? null : group.cover,
                         groupName: group.groupName,
                         coverShadow: coverShadow,
                       ),
@@ -383,7 +383,7 @@ class FolderGroupListCard extends StatelessWidget {
                     FolderGroupCover(
                       previews: previews.take(4).toList(),
                       width: coverWidth,
-                      groupCoverUrl: group.cover,
+                      groupCoverUrl: locked ? null : group.cover,
                       groupName: group.groupName,
                       coverShadow: coverShadow,
                     ),

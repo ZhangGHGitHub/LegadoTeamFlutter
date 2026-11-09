@@ -2085,6 +2085,26 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       // — Reasonix + UI
       typeBits = BookOpenUtils.resolveTypeBits(typeBits, matchedSource);
     }
+    // [批9c 回修 P2-1] 文本阅读器先过私密闸门，且必须在任何落库/目录刷新
+    // 之前：取消后不得留下「正文已加载/进度已落库」的副作用。
+    await BookOpenUtils.refreshShowMangaUi();
+    var route = BookOpenUtils.routeForTypeBits(
+      typeBits,
+      isLocalBook: BookType.isLocalBook(book),
+    );
+    var textGatePassed = false;
+    if (BookOpenUtils.needsReaderNotifier(route)) {
+      // mounted 已由 ensurePrivateAccess 内部复检
+      final allowed = await BookOpenUtils.ensurePrivateAccess(
+        // ignore: use_build_context_synchronously
+        context,
+        ref,
+        book,
+      );
+      if (!allowed) return;
+      textGatePassed = true;
+    }
+    if (!context.mounted) return;
     try {
       if (_isOnlineBook(book)) {
         final existing = await api.getBook(book.bookUrl);
@@ -2135,10 +2155,22 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // 批9a 项4：镜像已在上方阅读前落库分支刷新（本函数 _isOnlineBook 时）；
     // 本地书/离线再进时镜像可能过期，这里兜底再刷一次（幂等）
     await BookOpenUtils.refreshShowMangaUi();
-    final route = BookOpenUtils.routeForTypeBits(
+    route = BookOpenUtils.routeForTypeBits(
       typeBits,
       isLocalBook: BookType.isLocalBook(book),
     );
+    // 镜像二次刷新后可能从漫画回落文本：补一次闸门（初始已过则不重复弹）
+    if (BookOpenUtils.needsReaderNotifier(route) && !textGatePassed) {
+      final allowed = await BookOpenUtils.ensurePrivateAccess(
+        // ignore: use_build_context_synchronously
+        context,
+        ref,
+        book,
+      );
+      if (!allowed) return;
+      textGatePassed = true;
+    }
+    if (!context.mounted) return;
     debugPrint(
       '[BookOpen] name=${book.name} origin=${book.origin} '
       'typeBits=$typeBits route=$route '

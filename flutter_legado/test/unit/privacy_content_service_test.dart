@@ -188,6 +188,11 @@ void main() {
     expect(snapshot.loaded, isTrue);
     expect(snapshot.privateBookUrls, isEmpty);
     expect(
+      snapshot.markersUnavailable,
+      isTrue,
+      reason: '标记读取失败应上报“暂不可用”，UI 据此提示',
+    );
+    expect(
       snapshot.lockedBookUrls([
         const Book(bookUrl: 'u1', name: '私密', author: '作者'),
       ], _privacy()),

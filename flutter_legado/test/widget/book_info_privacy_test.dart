@@ -13,12 +13,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/privacy/privacy_content_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
+import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/book_info_screen.dart';
 
 import '../mocks/privacy_mock_book_api.dart';
+
+/// 记录 openBook 调用（P2-1 顺序断言）
+class _SpyReaderNotifier extends ReaderNotifier {
+  int openBookCalls = 0;
+
+  @override
+  ReaderState build() => const ReaderState();
+
+  @override
+  Future<void> openBook(Book book) async {
+    openBookCalls++;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -37,10 +53,11 @@ void main() {
   late PrivacyMockBookApi api;
   late ProviderContainer container;
 
-  Widget wrap(Widget child) => UncontrolledProviderScope(
-    container: container,
-    child: MaterialApp(home: child),
-  );
+  Widget wrap(Widget child, {Map<String, WidgetBuilder>? routes}) =>
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: child, routes: routes ?? const {}),
+      );
 
   Future<void> boot(
     WidgetTester tester, {
@@ -48,6 +65,10 @@ void main() {
     bool enabled = true,
     bool hasPassword = true,
     PrivacyUnlockScope scope = PrivacyUnlockScope.everyTime,
+    List<Book>? apiBooks,
+    List<BookGroup> groups = const [],
+    ReaderNotifier Function()? readerFactory,
+    Map<String, WidgetBuilder>? routes,
   }) async {
     SharedPreferences.setMockInitialValues({
       PrefKeys.privateEnabled: enabled,
@@ -55,13 +76,17 @@ void main() {
       PrefKeys.privateVerifyOnEnterGroup: true,
       PrefKeys.privateUnlockScope: scope.storageValue,
     });
-    api = PrivacyMockBookApi(books: [book]);
+    api = PrivacyMockBookApi(books: apiBooks ?? [book], groups: groups);
     if (hasPassword) await api.privacySetPassword('pw');
     container = ProviderContainer(
-      overrides: [bookApiProvider.overrideWithValue(api)],
+      overrides: [
+        bookApiProvider.overrideWithValue(api),
+        if (readerFactory != null)
+          readerNotifierProvider.overrideWith(readerFactory),
+      ],
     );
     addTearDown(container.dispose);
-    await tester.pumpWidget(wrap(BookInfoScreen(book: book)));
+    await tester.pumpWidget(wrap(BookInfoScreen(book: book), routes: routes));
     await tester.pump();
     await tester.pumpAndSettle();
   }
@@ -189,6 +214,55 @@ void main() {
     await tester.ensureVisible(find.text('取消私密'));
     await tester.pumpAndSettle();
     expect(find.text('取消私密'), findsOneWidget, reason: '菜单当前态应来自最新书籍记录');
+  });
+
+  testWidgets('P2-1 详情开书顺序：gate 先于落库与 openBook', (tester) async {
+    final gateBook = Book(
+      bookUrl: 'https://a.com/gate-order',
+      name: '组私密待开书',
+      author: '作者',
+      origin: 'https://a.com',
+      bookType: BookType.text,
+      group: 4,
+    );
+    final spyReader = _SpyReaderNotifier();
+    // 书不在库（getBook=null）：若 gate 晚于落库，取消后会留下 addBook 副作用
+    await boot(
+      tester,
+      book: gateBook,
+      apiBooks: const [],
+      groups: const [BookGroup(groupId: 4, groupName: '组')],
+      readerFactory: () => spyReader,
+      routes: {AppRoutes.reader: (_) => const Text('READER')},
+    );
+    expect(find.text('阅读'), findsOneWidget, reason: '进页时组尚未私密');
+
+    // 详情页打开后把所属组设为私密（页面仍保持已解锁的布局/FAB）
+    api.groups[0] = api.groups[0].copyWith(isPrivate: true);
+    await container.read(privacyContentProvider.notifier).refresh();
+    await tester.pumpAndSettle();
+    expect(find.text('阅读'), findsOneWidget);
+
+    await tester.tap(find.text('阅读'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('privacyUnlockDialog')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockCancel')));
+    await tester.pumpAndSettle();
+
+    expect(spyReader.openBookCalls, 0, reason: '取消后不得调用 reader.openBook');
+    expect(api.addBookCalls, 0, reason: 'gate 必须在阅读前落库之前');
+
+    // 验证通过后按原链路继续：先落库，再 openBook
+    await tester.tap(find.text('阅读'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(api.addBookCalls, 1);
+    expect(spyReader.openBookCalls, 1);
   });
 
   testWidgets('360dp + 1.8 倍字号：锁定页无溢出', (tester) async {

@@ -8,6 +8,7 @@
 /// - 关闭「打开书籍时验证」与总开关关闭时不脱敏。
 library;
 
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -161,6 +162,30 @@ void main() {
       expect(state().isGroupContentLocked(8, isPrivate: true), isFalse);
       // 会话级不登记目标集合（避免误以为 EveryTime 语义）
       expect(state().grantedBookUrls, isEmpty);
+    });
+
+    test('EveryTime：切后台（paused）即清空单本/分组目标授权', () async {
+      final notifier = await boot();
+      await notifier.verifyForTarget('pw', bookUrl: _bookA.bookUrl, groupId: 4);
+      expect(state().grantedBookUrls, contains(_bookA.bookUrl));
+      expect(state().grantedGroupIds, contains(4));
+
+      notifier.handleLifecycleState(AppLifecycleState.paused);
+      expect(state().grantedBookUrls, isEmpty);
+      expect(
+        state().grantedGroupIds,
+        isEmpty,
+        reason: 'EveryTime 离开应用即失效，回来必须重新验证',
+      );
+      expect(state().isBookLocked(_bookA, isPrivate: true), isTrue);
+    });
+
+    test('AppSession：切后台不清会话放行', () async {
+      final notifier = await boot(scope: PrivacyUnlockScope.appSession);
+      await notifier.verifyForTarget('pw', bookUrl: _bookA.bookUrl);
+      notifier.handleLifecycleState(AppLifecycleState.paused);
+      expect(state().sessionUnlocked, isTrue);
+      expect(state().isBookLocked(_bookA, isPrivate: true), isFalse);
     });
 
     test('UntilBackground：验证后放行，lock() 后全部重新锁定', () async {

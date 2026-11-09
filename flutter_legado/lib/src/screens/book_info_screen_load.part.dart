@@ -319,6 +319,15 @@ extension _BookInfoLoad on _BookInfoScreenState {
           }
           final b = _loadedBook;
           if (b == null) return;
+          // [批9c 回修 P2-1] 私密且未授权的详情不自动开读：先由锁定页
+          // 完成验证，否则会与自动验证弹窗叠加、且前置闸门必然取消。
+          if (_privateByEntry) {
+            final privacy = ref.read(privacyNotifierProvider);
+            final content = ref.read(privacyContentProvider);
+            if (content.loaded && privacy.isBookLocked(b, isPrivate: true)) {
+              return;
+            }
+          }
           // 续读位置仍取 durChapterIndex（未读书=0，即首章）；落库/分流
           // 逻辑与「阅读」FAB 完全一致（_openReader）。
           unawaited(_openReader(context, b, b.durChapterIndex));

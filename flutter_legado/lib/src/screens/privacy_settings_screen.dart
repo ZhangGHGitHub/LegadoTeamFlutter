@@ -25,6 +25,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/privacy/privacy_notifier.dart';
 import '../providers/privacy/privacy_state.dart';
 import '../widgets/app_scaffold.dart';
@@ -218,9 +219,23 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
 
   Widget _buildBody(BuildContext context, PrivacyState privacy) {
     final notifier = ref.read(privacyNotifierProvider.notifier);
+    final markersUnavailable = ref
+        .watch(privacyContentProvider)
+        .markersUnavailable;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
       children: [
+        if (markersUnavailable)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              '私密标记暂不可用，当前按未锁定显示；请稍后重试或检查数据库。',
+              key: const ValueKey('privacyMarkersUnavailable'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
         const IosSectionHeader('凭据'),
         IosGroup(
           children: [

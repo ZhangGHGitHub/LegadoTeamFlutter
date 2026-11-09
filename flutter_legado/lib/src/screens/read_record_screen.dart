@@ -319,13 +319,34 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
   }
 
   Future<void> _confirmDelete(BuildContext context, ReadRecordShow item) async {
+    // [批9c 回修 P1-1] 锁定态删除确认文案不得出现真实书名
+    final privacy = ref.read(privacyNotifierProvider);
+    final privacyContent = ref.read(privacyContentProvider);
+    final physicalName = item.physicalBookName.isNotEmpty
+        ? item.physicalBookName
+        : item.bookName;
+    final locked =
+        privacyContent.isRecordLocked(
+          PrivacyRecordKey(physicalName, item.author),
+          privacy,
+        ) ||
+        // 显示名被用户改过时物理名反查会失败；再用显示名兜底，避免 fail-open
+        // 在锁定态露出真实显示书名。
+        privacyContent.isRecordLocked(
+          PrivacyRecordKey(item.bookName, item.author),
+          privacy,
+        );
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除'),
         // [批27b P2-2] FFI 按物理书名删除该书**全部作者**的记录（契约 §2.12），
         // 文案须明示范围，避免用户误以为只删当前作者行
-        content: Text('将删除「${item.bookName}」该书全部作者的阅读记录，确定吗？'),
+        content: Text(
+          locked
+              ? '将删除本书全部作者的阅读记录，确定吗？'
+              : '将删除「${item.bookName}」该书全部作者的阅读记录，确定吗？',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -340,12 +361,22 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     );
     if (ok == true && context.mounted) {
       // v113：FFI 按物理书名删除该书全部作者记录（契约 §2.12）
-      final physicalName = item.physicalBookName.isNotEmpty
-          ? item.physicalBookName
-          : item.bookName;
-      await ref
+      final success = await ref
           .read(readRecordNotifierProvider.notifier)
           .deleteByName(physicalName);
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? '已删除阅读记录'
+                  : '删除失败：${ref.read(readRecordNotifierProvider).error ?? '未知错误'}',
+            ),
+          ),
+        );
     }
   }
 

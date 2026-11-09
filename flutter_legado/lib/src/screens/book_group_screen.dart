@@ -9,6 +9,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
 import '../providers/providers.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/confirm_dialog.dart';
@@ -87,11 +88,16 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
   // ===== 增删改 =====
 
   Future<void> _showEditDialog({BookGroup? group}) async {
+    // 先等隐私策略/凭据就绪，避免首帧把「设为隐私分组」误置灰
+    await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+    if (!mounted) return;
     final isEdit = group != null;
     final nameController = TextEditingController(text: group?.groupName ?? '');
     final coverController = TextEditingController(text: group?.cover ?? '');
     // [批9c] 私密分组开关（对齐参考版 GroupEditSheet）：
     // 新建/普通分组可设；关闭已打开的开关需二次确认。
+    // [批9c 回修 P2-3] 未设置隐私密码时置灰并提示，避免无凭据锁死分组。
+    final hasPassword = ref.read(privacyNotifierProvider).hasPassword;
     var isPrivate = group?.isPrivate ?? false;
     final canSetPrivate = !isEdit || group.groupId > 0;
 
@@ -120,20 +126,25 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                     key: const ValueKey('group-private-switch'),
                     contentPadding: EdgeInsets.zero,
                     title: const Text('设为隐私分组'),
-                    subtitle: const Text('组内书籍在公开书架中隐藏，进入分组需验证'),
+                    subtitle: Text(
+                      hasPassword ? '组内书籍在公开书架中隐藏，进入分组需验证' : '请先在隐私设置中设置密码',
+                      key: const ValueKey('group-private-hint'),
+                    ),
                     value: isPrivate,
-                    onChanged: (checked) async {
-                      if (!checked && group?.isPrivate == true) {
-                        final ok = await showConfirmDialog(
-                          ctx,
-                          title: '关闭私密分组',
-                          content: '关闭后，本组书籍可能在公开书架中显示',
-                          confirmText: AppStrings.confirm,
-                        );
-                        if (!ok) return;
-                      }
-                      setDialogState(() => isPrivate = checked);
-                    },
+                    onChanged: !hasPassword
+                        ? null
+                        : (checked) async {
+                            if (!checked && group?.isPrivate == true) {
+                              final ok = await showConfirmDialog(
+                                ctx,
+                                title: '关闭私密分组',
+                                content: '关闭后，本组书籍可能在公开书架中显示',
+                                confirmText: AppStrings.confirm,
+                              );
+                              if (!ok) return;
+                            }
+                            setDialogState(() => isPrivate = checked);
+                          },
                   ),
                 ],
               ],
@@ -206,7 +217,9 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     final confirmed = await showConfirmDialog(
       context,
       title: '删除分组',
-      content: '确定要删除分组「${group.groupName}」吗？分组内的书籍不会被删除。',
+      content: group.isPrivate
+          ? '确定要删除分组「${group.groupName}」吗？组内书籍将回到公开书架。'
+          : '确定要删除分组「${group.groupName}」吗？分组内的书籍不会被删除。',
       confirmText: AppStrings.delete,
       isDestructive: true,
     );
@@ -400,7 +413,8 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
           ),
         ),
         subtitle: Text(
-          '$count 本书',
+          // [批9c 回修 P2-2] 私密组不展示书籍数（规模也是信息）
+          group.isPrivate ? '—' : '$count 本书',
           style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
         trailing: Row(
@@ -450,11 +464,23 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
 
   /// 将书籍分配到分组（多选）
   Future<void> _assignBooks(BookGroup group) async {
-    final books = ref.read(bookshelfNotifierProvider).books;
-    if (books.isEmpty) {
+    // 先等策略/标记就绪，否则首次读取会拿到 enabled=false 的默认态而漏脱敏
+    await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+    await ref.read(privacyContentProvider.notifier).ensureLoaded();
+    if (!mounted) return;
+    // [批9c 回修 P2-2] 分配列表剔除私密且未获准的书：书名/作者与勾选态
+    // 都可能是身份/归属信息；已隐藏的书籍保持原分组不变。
+    final privacy = ref.read(privacyNotifierProvider);
+    final privacyContent = ref.read(privacyContentProvider);
+    final allBooks = ref.read(bookshelfNotifierProvider).books;
+    if (allBooks.isEmpty) {
       _showError('书架暂无书籍');
       return;
     }
+    final books = allBooks
+        .where((b) => !privacyContent.isBookLocked(b, privacy))
+        .toList();
+    final hiddenCount = allBooks.length - books.length;
     final selected = <String>{
       for (final b in books)
         if (bookBelongsToCustomGroup(b, group.groupId)) b.bookUrl,
@@ -467,36 +493,54 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
           title: Text('分配书籍到「${group.groupName}」'),
           content: SizedBox(
             width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: books.length,
-              itemBuilder: (_, i) {
-                final book = books[i];
-                final checked = selected.contains(book.bookUrl);
-                return CheckboxListTile(
-                  dense: true,
-                  value: checked,
-                  title: Text(
-                    book.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hiddenCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      '已隐藏 $hiddenCount 本私密书籍',
+                      key: const ValueKey('group-assign-hidden-hint'),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
-                  subtitle: Text(
-                    book.author,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: books.length,
+                    itemBuilder: (_, i) {
+                      final book = books[i];
+                      final checked = selected.contains(book.bookUrl);
+                      return CheckboxListTile(
+                        dense: true,
+                        value: checked,
+                        title: Text(
+                          book.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          book.author,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onChanged: (on) {
+                          setDialogState(() {
+                            if (on == true) {
+                              selected.add(book.bookUrl);
+                            } else {
+                              selected.remove(book.bookUrl);
+                            }
+                          });
+                        },
+                      );
+                    },
                   ),
-                  onChanged: (on) {
-                    setDialogState(() {
-                      if (on == true) {
-                        selected.add(book.bookUrl);
-                      } else {
-                        selected.remove(book.bookUrl);
-                      }
-                    });
-                  },
-                );
-              },
+                ),
+              ],
             ),
           ),
           actions: [
