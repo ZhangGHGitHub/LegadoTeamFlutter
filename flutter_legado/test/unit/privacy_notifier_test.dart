@@ -617,6 +617,26 @@ void main() {
       expect(state().biometricUsable, isFalse);
     });
 
+    test('单次失败不置灰；锁定类错误才反映到能力状态', () async {
+      final fake = _FakeBiometricService()
+        ..enableError = PrivacyBiometricErrorCode.failed;
+      await api.privacySetPassword('pw');
+      final notifier = await boot(biometricService: fake);
+
+      var outcome = await notifier.enableBiometric();
+      expect(outcome.error, PrivacyBiometricCommandError.failed);
+      expect(state().biometricStatus?.available, isTrue);
+
+      fake.enableError = PrivacyBiometricErrorCode.lockedOut;
+      outcome = await notifier.enableBiometric();
+      expect(outcome.error, PrivacyBiometricCommandError.lockedOut);
+      expect(state().biometricStatus?.available, isFalse);
+      expect(
+        state().biometricStatus?.reason,
+        PrivacyBiometricErrorCode.lockedOut,
+      );
+    });
+
     test('enable Rust 拒绝（IV 长度非法）：销毁原生密钥且不点亮', () async {
       final fake = _FakeBiometricService()
         ..ivOverride = base64Encode(List<int>.filled(11, 1));

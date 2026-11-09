@@ -807,11 +807,21 @@ class PrivacyNotifier extends Notifier<PrivacyState> {
     );
   }
 
-  /// 平台错误 → 命令结果；能力类错误同步刷新 [PrivacyState.biometricStatus]
+  /// 平台错误 → 命令结果；仅能力类错误刷新 [PrivacyState.biometricStatus]
+  ///
+  /// 取消/单次失败（`cancelled`/`failed`）不改变能力状态，避免一次认证
+  /// 失败就把快捷入口永久置灰；无硬件/未录入/锁定等才反映到开关。
   PrivacyBiometricOutcome _biometricFailure(PrivacyBiometricErrorCode code) {
     final command = PrivacyBiometricCommandError.fromCode(code);
     final status = state.biometricStatus;
-    if (status != null && command != PrivacyBiometricCommandError.cancelled) {
+    const capabilityErrors = {
+      PrivacyBiometricErrorCode.unsupported,
+      PrivacyBiometricErrorCode.noHardware,
+      PrivacyBiometricErrorCode.notEnrolled,
+      PrivacyBiometricErrorCode.lockedOut,
+      PrivacyBiometricErrorCode.permanentlyLockedOut,
+    };
+    if (status != null && capabilityErrors.contains(code)) {
       _set(
         state.copyWith(
           biometricStatus: status.copyWith(available: false, reason: code),
