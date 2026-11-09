@@ -144,8 +144,12 @@ class PrivacyBiometricBridge {
 
         val key = try {
             getOrCreateKey()
-        } catch (e: Exception) {
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            // 仅明确的密钥失效才销毁并让 Dart 清信封；其他创建失败不得误清
             deleteKey()
+            result.error(CODE_KEY_INVALIDATED, "生物识别密钥已失效", null)
+            return
+        } catch (e: Exception) {
             result.error(CODE_FAILED, "创建生物识别密钥失败：${e.message}", null)
             return
         }
@@ -211,9 +215,12 @@ class PrivacyBiometricBridge {
         val key = try {
             loadKey()
         } catch (e: Exception) {
-            null
+            // 非「密钥缺失/不可恢复」的读取失败（如 Keystore 临时异常）不得
+            // 误报 key_invalidated，避免 Dart 清掉仍可用的信封
+            result.error(CODE_FAILED, "读取生物识别密钥失败：${e.message}", null)
+            return
         } ?: run {
-            // 密钥不存在（卸载重装/系统清密钥）：按失效处理，Dart 会清理信封
+            // alias 缺失或 UnrecoverableKeyException：按密钥失效处理
             result.error(CODE_KEY_INVALIDATED, "生物识别密钥不存在", null)
             return
         }
@@ -260,6 +267,7 @@ class PrivacyBiometricBridge {
         try {
             BiometricPrompt.Builder(activity)
                 .setTitle(title)
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                 .setNegativeButton("取消", activity.mainExecutor) { _, _ ->
                     completeError(CODE_CANCELLED, "用户取消")
                 }

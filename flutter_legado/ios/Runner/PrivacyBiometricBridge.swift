@@ -258,6 +258,9 @@ import Security
       return "not_enrolled"
     case .biometryLockout:
       return "locked_out"
+    case .biometryDisallowed:
+      // 策略禁用生物识别：系统层面不可恢复，明确按 failed 处理
+      return "failed"
     case .userCancel, .appCancel, .systemCancel:
       return "cancelled"
     case .authenticationFailed:
