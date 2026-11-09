@@ -10,6 +10,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -366,8 +367,95 @@ void main() {
       expect(stored[0]['name'], '日间旧名');
     });
 
-    testWidgets('360dp 长名称行不溢出且保留重命名/删除按钮', (tester) async {
+    testWidgets('320dp 下「测试夜间」完整显示、副标题单行且按钮可点', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({
+        'themeConfigList': jsonEncode([
+          {
+            'name': '测试夜间',
+            'isNight': true,
+            'primary': 1,
+            'accent': 2,
+            'background': 3,
+            'bottomBackground': 4,
+          },
+        ]),
+      });
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      await openThemeManage(tester);
+
+      final item = find.byKey(const ValueKey('theme-config-item-0'));
+      final title = find.descendant(of: item, matching: find.text('测试夜间'));
+      final subtitle = find.descendant(of: item, matching: find.text('夜间主题'));
+      expect(title, findsOneWidget);
+      expect(subtitle, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(title).didExceedMaxLines,
+        isFalse,
+        reason: '「测试夜间」不得截断',
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(subtitle).didExceedMaxLines,
+        isFalse,
+        reason: '副标题必须单行',
+      );
+      expect(tester.takeException(), isNull);
+
+      // 重命名按钮可点
+      await tester.tap(find.byKey(const ValueKey('theme-config-rename-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('重命名主题'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      // 删除按钮可点，且不会误触行点击应用
+      await tester.tap(find.byKey(const ValueKey('theme-config-delete-0')));
+      await tester.pumpAndSettle();
+      expect(item, findsNothing);
+      expect((await readThemeList()), isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('360dp 8 个中文字符标题完整显示', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({
+        'themeConfigList': jsonEncode([
+          {
+            'name': '测试夜间主题名称',
+            'isNight': true,
+            'primary': 1,
+            'accent': 2,
+            'background': 3,
+            'bottomBackground': 4,
+          },
+        ]),
+      });
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      await openThemeManage(tester);
+
+      final title = find.descendant(
+        of: find.byKey(const ValueKey('theme-config-item-0')),
+        matching: find.text('测试夜间主题名称'),
+      );
+      expect(title, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(title).didExceedMaxLines,
+        isFalse,
+        reason: '8 个中文字符不得截断',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('320dp 长名称省略且无 overflow', (tester) async {
+      tester.view.physicalSize = const Size(320, 640);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -387,12 +475,31 @@ void main() {
       await tester.pumpAndSettle();
       await openThemeManage(tester);
 
+      final item = find.byKey(const ValueKey('theme-config-item-0'));
+      final title = find.descendant(
+        of: item,
+        matching: find.text('这是一个非常非常非常长的主题名称用于验证窄屏列表行不会溢出'),
+      );
+      final subtitle = find.descendant(of: item, matching: find.text('白天主题'));
+      expect(title, findsOneWidget);
+      expect(
+        tester.renderObject<RenderParagraph>(title).didExceedMaxLines,
+        isTrue,
+        reason: '超长名称才省略',
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(subtitle).didExceedMaxLines,
+        isFalse,
+      );
       expect(tester.takeException(), isNull);
       expect(
         find.byKey(const ValueKey('theme-config-rename-0')),
         findsOneWidget,
       );
-      expect(find.byTooltip('删除'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('theme-config-delete-0')),
+        findsOneWidget,
+      );
     });
   });
 }
