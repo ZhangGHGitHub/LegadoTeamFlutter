@@ -1390,6 +1390,44 @@ Future<String> bookmarkSearch({required String keyword}) =>
 /// 获取所有书签（JSON 数组）
 Future<String> bookmarkList() => RustLib.instance.api.crateFfiFfiBookmarkList();
 
+/// 按书名+作者取全部章节/全部源的书签标记（JSON 数组）
+Future<String> bookMarkingListByBook({
+  required String bookName,
+  required String bookAuthor,
+}) => RustLib.instance.api.crateFfiFfiBookMarkingListByBook(
+  bookName: bookName,
+  bookAuthor: bookAuthor,
+);
+
+/// 按源地址取书签标记（JSON 数组；chapterIndex=null 取全书）
+Future<String> bookMarkingListForChapter({
+  required String bookUrl,
+  int? chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiBookMarkingListForChapter(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
+/// 保存书签标记，返回落库后的对象 JSON
+///
+/// 空 id 生成 UUID v4；createdAt<=0 补当前毫秒；updatedAt 恒写当前毫秒；
+/// anchorJson 必填。
+Future<String> bookMarkingSave({required String markingJson}) =>
+    RustLib.instance.api.crateFfiFfiBookMarkingSave(markingJson: markingJson);
+
+/// 按主键删除书签标记（不存在为 no-op）
+Future<void> bookMarkingDelete({required String id}) =>
+    RustLib.instance.api.crateFfiFfiBookMarkingDelete(id: id);
+
+/// 更新书签标记启用状态与 updatedAt（不存在为 no-op）
+Future<void> bookMarkingSetEnabled({
+  required String id,
+  required bool enabled,
+}) => RustLib.instance.api.crateFfiFfiBookMarkingSetEnabled(
+  id: id,
+  enabled: enabled,
+);
+
 /// 获取所有替换规则（JSON 数组）
 Future<String> replaceRuleList() =>
     RustLib.instance.api.crateFfiFfiReplaceRuleList();

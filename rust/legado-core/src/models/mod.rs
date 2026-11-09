@@ -2,6 +2,7 @@
 
 pub mod book;
 pub mod book_chapter;
+pub mod book_marking;
 pub mod book_source;
 pub mod book_source_check_state;
 pub mod download_task;
@@ -14,6 +15,7 @@ pub(crate) mod serde_utils;
 pub use book::book_type;
 pub use book::{Book, ReadConfig};
 pub use book_chapter::BookChapter;
+pub use book_marking::BookMarking;
 pub use book_source::book_source_type;
 pub use book_source::BookSource;
 pub use book_source_check_state::{check_status as book_source_check_status, BookSourceCheckState};

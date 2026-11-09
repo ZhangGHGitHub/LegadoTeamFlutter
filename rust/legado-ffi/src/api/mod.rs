@@ -11,6 +11,8 @@ pub mod backup_api;
 pub mod book_export;
 pub mod book_group_api;
 pub mod book_import;
+/// [批7b-1 | 2026-11-09] 书签标记数据层（契约 §2.52，book_marks）
+pub mod book_marking_api;
 pub mod bookmark_api;
 pub mod bookshelf;
 pub mod cache_api;

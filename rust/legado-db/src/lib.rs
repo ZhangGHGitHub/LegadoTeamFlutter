@@ -39,6 +39,7 @@ pub use migration::MigrationRegistry;
 pub use repository::auto_task_repository::AutoTaskRepository;
 pub use repository::book_chapter_repository::BookChapterRepository;
 pub use repository::book_group_repository::{BookGroup, BookGroupRepository};
+pub use repository::book_marking_repository::BookMarkingRepository;
 pub use repository::book_memo_repository::{BookMemo, BookMemoRepository};
 pub use repository::book_repository::BookRepository;
 pub use repository::book_source_check_state_repository::{

@@ -1809,6 +1809,49 @@ pub mod ffi {
         to_json(&bookmarks)
     }
 
+    // ─── 书签标记（book_marks，契约 §2.52，批7b-1）────────────────
+
+    /// 按书名+作者取全部章节/全部源的书签标记（JSON 数组）
+    pub fn book_marking_list_by_book(
+        book_name: String,
+        book_author: String,
+    ) -> Result<String, BridgeError> {
+        let markings =
+            crate::api::book_marking_api::book_marking_list_by_book(&book_name, &book_author)?;
+        to_json(&markings)
+    }
+
+    /// 按源地址取书签标记（JSON 数组；chapterIndex=null 取全书）
+    pub fn book_marking_list_for_chapter(
+        book_url: String,
+        chapter_index: Option<i32>,
+    ) -> Result<String, BridgeError> {
+        let markings =
+            crate::api::book_marking_api::book_marking_list_for_chapter(&book_url, chapter_index)?;
+        to_json(&markings)
+    }
+
+    /// 保存书签标记，返回落库后的对象 JSON
+    ///
+    /// 空 id 生成 UUID v4；createdAt<=0 补当前毫秒；updatedAt 恒写当前毫秒；
+    /// anchorJson 必填。
+    pub fn book_marking_save(marking_json: String) -> Result<String, BridgeError> {
+        let marking = crate::api::book_marking_api::book_marking_save(&marking_json)?;
+        to_json(&marking)
+    }
+
+    /// 按主键删除书签标记（不存在为 no-op）
+    pub fn book_marking_delete(id: String) -> Result<(), BridgeError> {
+        crate::api::book_marking_api::book_marking_delete(&id)?;
+        Ok(())
+    }
+
+    /// 更新书签标记启用状态与 updatedAt（不存在为 no-op）
+    pub fn book_marking_set_enabled(id: String, enabled: bool) -> Result<(), BridgeError> {
+        crate::api::book_marking_api::book_marking_set_enabled(&id, enabled)?;
+        Ok(())
+    }
+
     // ─── 替换规则管理 ─────────────────────────────────────────
 
     /// 获取所有替换规则（JSON 数组）

@@ -78,7 +78,15 @@ use legado_core::{LegadoError, LegadoResult};
 ///   `INTEGER NOT NULL DEFAULT 0`（旧库/旧备份缺键 = false，既有行为不变）；
 ///   写入侧只在阅读记录写路径按书级开关跳过，不删除既有历史记录。
 ///   Migration116To117 幂等增列，并纳入开库自愈 `repair_legacy_columns`。
-pub const SCHEMA_VERSION: u32 = 117;
+/// - v118：新增 `book_marks` 表（批7b-1 书签标记数据层，对齐参考版
+///   `BookMarking.kt:21-46` 与 `BookMarkingDao.kt:13-87`）：`id` TEXT 主键 +
+///   `bookUrl`/`bookName`/`bookAuthor`/`chapterIndex`（可空）/`anchorJson`
+///   （NOT NULL）/`styleJson`（可空）/`note`/`chapterName`/`enabled`/
+///   `createdAt`/`updatedAt`，索引 `(bookUrl, chapterIndex)`。书签标记与
+///   既有 `bookmarks`（页面导航）、`highlights`（正文高亮记录）独立，
+///   **不纳入备份**（与参考版一致）；Migration117To118 幂等建表 + 建索引，
+///   并纳入开库自愈 `repair_legacy_columns`。
+pub const SCHEMA_VERSION: u32 = 118;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -142,10 +150,15 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 book_memos 表失败：{e}")))?;
     conn.execute_batch(CREATE_BOOK_SOURCE_CHECK_STATES)
         .map_err(|e| LegadoError::Database(format!("创建 book_source_check_states 表失败：{e}")))?;
+    conn.execute_batch(CREATE_BOOK_MARKS)
+        .map_err(|e| LegadoError::Database(format!("创建 book_marks 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
         .map_err(|e| LegadoError::Database(format!("创建索引失败: {e}")))?;
+    // book_marks 索引单列常量（迁移/开库自愈复用同一 DDL）
+    conn.execute_batch(CREATE_BOOK_MARKS_INDEX)
+        .map_err(|e| LegadoError::Database(format!("创建 book_marks 索引失败: {e}")))?;
 
     Ok(())
 }
@@ -517,6 +530,39 @@ CREATE TABLE IF NOT EXISTS book_memos (
     PRIMARY KEY(bookUrl)
 );
 ";
+
+/// book_marks 表（v118，逐列对齐参考版 `BookMarking.kt:21-46`）
+///
+/// 用户划线/高亮笔记（标记）：
+/// - `id` TEXT 主键（参考版 UUID；FFI 保存空 id 时生成 UUID v4）；
+/// - `bookUrl` 为创建时源地址，`bookName`+`bookAuthor` 为跨源关联键；
+/// - `chapterIndex` 可空（参考版 `Int?`）；`anchorJson` 必填（定位锚点），
+///   `styleJson` 可空（样式即类型，无 kind 列）；
+/// - `enabled` 默认 1，`createdAt`/`updatedAt` 为 Unix 毫秒。
+///
+/// 与既有 `bookmarks`（页面导航书签）和 `highlights`（正文高亮记录）独立，
+/// 与参考版一致**不纳入备份**。
+pub const CREATE_BOOK_MARKS: &str = "
+CREATE TABLE IF NOT EXISTS book_marks (
+    id TEXT PRIMARY KEY NOT NULL,
+    bookUrl TEXT NOT NULL,
+    bookName TEXT NOT NULL DEFAULT '',
+    bookAuthor TEXT NOT NULL DEFAULT '',
+    chapterIndex INTEGER,
+    anchorJson TEXT NOT NULL,
+    styleJson TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    chapterName TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    createdAt INTEGER NOT NULL DEFAULT 0,
+    updatedAt INTEGER NOT NULL DEFAULT 0
+);
+";
+
+/// book_marks 渲染/管理查询索引（对齐参考版 `Index(value = [\"bookUrl\", \"chapterIndex\"])`）
+pub const CREATE_BOOK_MARKS_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS index_book_marks_bookUrl_chapterIndex
+     ON book_marks(bookUrl, chapterIndex);";
 
 /// book_source_check_states 表（v115，逐列对齐原版 `BookSourceCheckState.kt`
 /// 与 `DatabaseMigrations.kt:108-121` 的 `migration_105_106` DDL）

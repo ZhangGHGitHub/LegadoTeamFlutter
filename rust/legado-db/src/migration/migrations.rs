@@ -137,6 +137,10 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
     // 注意必须在 readRecord 自愈之后、且书源表存在时执行（函数内部自检）。
     super::source_check_state_v115::ensure_book_source_check_states(conn)?;
 
+    // [批7b-1] book_marks 建表 + 建索引（幂等）：兜住
+    // 「user_version 已到 118 但缺表/缺索引」场景（v118 迁移同用该函数）。
+    super::book_marks_v118::ensure_book_marks_v118(conn)?;
+
     Ok(())
 }
 

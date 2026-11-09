@@ -35,6 +35,9 @@ quick-xml = "0.42"
 # 该 crate 已由其生产依赖编译进产物——本次仅新增 legado-ffi 的直接依赖边，
 # 无新增 crate、无许可变更（Cargo.lock 版本不变）
 zip = "2"
+# [批7b-1 | 2026-11-09] 书签标记保存：空 id 生成 UUID v4（契约 §2.52；
+# workspace 既有依赖，零新增 crate）
+uuid = { workspace = true }
 flutter_rust_bridge = "=2.11.1"
 
 [dev-dependencies]
