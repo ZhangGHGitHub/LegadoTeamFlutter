@@ -7,8 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
-import 'package:flutter_legado/src/models/selection_menu_config.dart';
+import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/reader/text_selection_panel.dart';
@@ -29,14 +30,44 @@ ReaderAdvancedConfig _config({
     ..showSelectMenuIcon = showIcon;
 }
 
-ProviderContainer _container(ReaderAdvancedConfig cfg) {
+ProviderContainer _container(ReaderAdvancedConfig cfg, {ReaderState? readerState}) {
   final container = ProviderContainer(
-    overrides: [bookApiProvider.overrideWithValue(MockBookApi())],
+    overrides: [
+      bookApiProvider.overrideWithValue(MockBookApi()),
+      if (readerState != null)
+        readerNotifierProvider.overrideWith(
+          () => _FixedReaderNotifier(readerState),
+        ),
+    ],
   );
   container.read(readerAdvConfigProvider.notifier).apply(cfg);
   addTearDown(container.dispose);
   return container;
 }
+
+/// 固定阅读状态（menu_mark 打开笔记 Sheet 需要书籍/章节上下文）
+class _FixedReaderNotifier extends ReaderNotifier {
+  _FixedReaderNotifier(this._state);
+
+  final ReaderState _state;
+
+  @override
+  ReaderState build() => _state;
+}
+
+const _testReaderState = ReaderState(
+  currentBook: Book(
+    bookUrl: 'https://src.com/book/1',
+    name: '测试书',
+    author: '作者A',
+    origin: 'https://src.com',
+  ),
+  chapters: [
+    BookChapter(url: 'u0', title: '第一章', index: 0, bookUrl: 'https://src.com/book/1'),
+  ],
+  currentChapterIndex: 0,
+  chapterContent: '选中文本',
+);
 
 Widget _toolbar(ProviderContainer container) => UncontrolledProviderScope(
   container: container,
@@ -311,15 +342,21 @@ void main() {
       );
     });
 
-    testWidgets('menu_mark 打开面板并展开高亮颜色；管理打开配置 Sheet', (tester) async {
-      await tester.pumpWidget(_toolbar(_container(_config())));
+    testWidgets('menu_mark 打开笔记 Sheet；管理打开配置 Sheet', (tester) async {
+      await tester.pumpWidget(
+        _toolbar(_container(_config(), readerState: _testReaderState)),
+      );
       await tester.pump();
+      expect(find.text('笔记'), findsOneWidget, reason: 'menu_mark 文案对齐参考版');
       await tester.tap(
         find.byKey(const ValueKey('selection-action-menu_mark')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('高亮颜色'), findsOneWidget);
-      await tester.tap(find.text('关闭'));
+      expect(find.byKey(const ValueKey('marking-sheet')), findsOneWidget);
+      expect(find.text('编辑笔记'), findsNothing);
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('marking-sheet'))),
+      ).pop();
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const ValueKey('selection-menu-manage')));
@@ -421,13 +458,14 @@ void main() {
       expect(manageRect.right, lessThanOrEqualTo(360));
     });
 
-    testWidgets('按配置渲染、隐藏过滤、mark 展开颜色、管理入口', (tester) async {
+    testWidgets('按配置渲染、隐藏过滤、mark 打开笔记 Sheet', (tester) async {
       await tester.pumpWidget(
         panel(
           _container(
             _config(
               states: {SelectionMenuIds.mark: 0, SelectionMenuIds.copy: 2},
             ),
+            readerState: _testReaderState,
           ),
         ),
       );
@@ -443,16 +481,23 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('selection-panel-action-menu_mark')),
       );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('marking-sheet')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('selection-panel-manage')),
+        findsNothing,
+        reason: '打开笔记 Sheet 前先收起段落面板（对齐参考版替换式 Sheet）',
+      );
+    });
+
+    testWidgets('「高亮」二级入口保留手工高亮配色行', (tester) async {
+      await tester.pumpWidget(panel(_container(_config())));
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-highlight')),
+      );
       await tester.pump();
       expect(find.text('高亮颜色'), findsOneWidget);
-
-      await tester.tap(find.byKey(const ValueKey('selection-panel-manage')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(
-        find.byKey(const ValueKey('select-menu-config-sheet')),
-        findsOneWidget,
-      );
     });
 
     testWidgets('menu_edit 打开编辑内容对话框', (tester) async {
