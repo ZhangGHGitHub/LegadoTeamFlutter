@@ -237,7 +237,9 @@ void main() {
       );
     });
 
-    test('lastSeen 在未来同样按 0 处理', () {
+    test('lastSeen 在未来不归零：应抑制同一未来备份重复提示', () {
+      // 服务器时钟超前：seen 记录的远端 mtime 本身就在未来，归零会导致
+      // 每次启动重复提示同一备份。
       expect(
         AutoCheckNewBackupScheduler.shouldPrompt(
           remoteMillis: 1000000,
@@ -245,7 +247,7 @@ void main() {
           lastSeenMillis: 10000000,
           nowMillis: 100000,
         ),
-        isTrue,
+        isFalse,
       );
     });
   });
@@ -597,6 +599,48 @@ void main() {
       seedNewerRemote();
       expect(await build().checkNow(), AutoCheckNewBackupDecision.noNewBackup);
       expect(confirmCalls, 0);
+    });
+
+    test('未来 mtime 首次提示写 seen；新进程再次检查不再提示', () async {
+      // 模拟服务器时钟超前：远端 mtime 比本机 now 晚 1 天。
+      final futureMillis = DateTime(2026, 11, 11, 12).millisecondsSinceEpoch;
+      api.listJson = _listJson(
+        name: 'backup_20261111_120000_000.json',
+        lastModified: HttpDate.format(
+          DateTime.fromMillisecondsSinceEpoch(futureMillis),
+        ),
+      );
+      confirmAnswer = true;
+
+      expect(
+        await build().checkNow(),
+        AutoCheckNewBackupDecision.restored,
+        reason: '未来 lastBackup 不应抑制首次提示',
+      );
+      expect(
+        await settings.getIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          defaultValue: 0,
+        ),
+        futureMillis,
+      );
+
+      // 模拟重启：同一 prefs，新调度器实例；seen 是未来值也必须抑制同一备份
+      expect(await build().checkNow(), AutoCheckNewBackupDecision.noNewBackup);
+      expect(confirmCalls, 1, reason: '同一未来备份不得每次启动重复提示');
+    });
+
+    test('lastBackup 在未来仍视为到期并提示', () async {
+      await settings.setLastBackupTime(
+        DateTime(2026, 11, 20).millisecondsSinceEpoch,
+      );
+      seedNewerRemote();
+      confirmAnswer = false;
+      expect(
+        await build().checkNow(),
+        AutoCheckNewBackupDecision.promptDeclined,
+      );
+      expect(confirmCalls, 1);
     });
 
     test('需密码备份：确认后不恢复、提示手动处理、seen 已消费', () async {

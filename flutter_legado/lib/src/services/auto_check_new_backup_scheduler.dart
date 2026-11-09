@@ -502,9 +502,14 @@ class AutoCheckNewBackupScheduler {
   /// 是否提示恢复
   ///
   /// `remote > max(lastBackup, seen) + 60s`，严格大于：差值正好 60s 不提示。
-  /// 负数基线按 0 处理；[nowMillis] 非空时，落在未来的 lastBackup/seen
-  /// （时钟回拨、恢复他机偏好）按 0 处理，对齐 [AutoBackupScheduler]
-  /// 「未来时间视为到期」口径，避免永久抑制提示。
+  /// 负数基线按 0 处理。
+  ///
+  /// 未来时间处理（批10 设备验收回修）：
+  /// - 仅 `lastBackup` 落在未来（时钟回拨/恢复他机偏好）时按 0 处理，
+  ///   对齐 [AutoBackupScheduler]「未来时间视为到期」口径，避免永久抑制
+  ///   提示；
+  /// - `lastSeen` **不**做未来归零：它记录的正是远端 mtime，服务器时钟
+  ///   超前时 seen 天然是未来值；归零会导致同一备份每次启动重复提示。
   static bool shouldPrompt({
     required int remoteMillis,
     required int lastBackupMillis,
@@ -515,8 +520,9 @@ class AutoCheckNewBackupScheduler {
     final lastBackup = (now != null && lastBackupMillis > now)
         ? 0
         : lastBackupMillis;
-    final lastSeen = (now != null && lastSeenMillis > now) ? 0 : lastSeenMillis;
-    final rawBaseline = lastBackup > lastSeen ? lastBackup : lastSeen;
+    final rawBaseline = lastBackup > lastSeenMillis
+        ? lastBackup
+        : lastSeenMillis;
     final baseline = rawBaseline < 0 ? 0 : rawBaseline;
     return remoteMillis - baseline >
         kAutoCheckNewBackupThreshold.inMilliseconds;
