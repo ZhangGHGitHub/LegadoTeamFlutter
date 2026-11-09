@@ -12,7 +12,7 @@
 // 与参考版的差异（本批 MVP 范围，见交付说明）：
 // - 参考版「列表」是名字 chip 流式布局、网格是背景图预览卡；我方无背景图
 //   能力，网格卡改为「背景色 + 文字色样张」，列表保持 chip 形态；
-// - 搜索框/日夜切换钮/长按进背景文字配置不在本批范围，未实现；
+// - 搜索框已实现（批8b）；日夜切换钮/长按进背景文字配置未实现；
 // - 内置主题不可重命名/删除/排序（与参考版预设钉死一致）。
 //
 // 编写：全栈工程师（批38） ｜ 2026-10-29
@@ -47,6 +47,10 @@ class ReaderThemeScreen extends ConsumerStatefulWidget {
 
 class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+
+  /// 规范化后的搜索词（trim + 小写；空 = 不过滤）
+  String _searchQuery = '';
 
   /// 每个主题一个 GlobalKey，供「定位当前」做 ensureVisible
   final Map<String, GlobalKey> _itemKeys = <String, GlobalKey>{};
@@ -72,7 +76,40 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  // ===== 搜索过滤 =====
+
+  /// 主题名不区分大小写匹配；内置与自建主题均参与
+  bool _matchesQuery(ReaderTheme theme, String query) =>
+      query.isEmpty || theme.name.toLowerCase().contains(query);
+
+  List<ReaderTheme> _filteredThemes(List<ReaderTheme> themes) {
+    if (_searchQuery.isEmpty) return themes;
+    return <ReaderTheme>[
+      for (final theme in themes)
+        if (_matchesQuery(theme, _searchQuery)) theme,
+    ];
+  }
+
+  /// 搜索变化：先算可见自建 id，再裁剪已选（与高亮批量先例一致）
+  void _onSearchChanged(String value) {
+    final query = value.trim().toLowerCase();
+    final visibleCustomIds = <String>{
+      for (final theme in ref.read(readerThemeProvider).themes)
+        if (!theme.builtIn && _matchesQuery(theme, query)) theme.id,
+    };
+    setState(() {
+      _searchQuery = query;
+      _selectedIds.retainAll(visibleCustomIds);
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _onSearchChanged('');
   }
 
   /// 主题页可能先于阅读页打开：排版配置未加载时兜底自加载
@@ -127,10 +164,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
   ///
   /// [showMessage] 为 false 时不弹「已应用」提示（「恢复默认」等复合操作自己
   /// 汇总一条提示，避免连续两条 SnackBar 互相覆盖）。
-  Future<void> _applyTheme(
-    ReaderTheme theme, {
-    bool showMessage = true,
-  }) async {
+  Future<void> _applyTheme(ReaderTheme theme, {bool showMessage = true}) async {
     if (_applying) return;
     setState(() => _applying = true);
     try {
@@ -211,9 +245,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         .read(readerThemeProvider.notifier)
         .renameTheme(theme.id, newName);
     if (!mounted) return;
-    _showSnack(
-      actualName == null ? '重命名失败' : '已重命名为「$actualName」',
-    );
+    _showSnack(actualName == null ? '重命名失败' : '已重命名为「$actualName」');
   }
 
   Future<void> _confirmDelete(Set<String> ids) async {
@@ -410,6 +442,10 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     final themeState = ref.read(readerThemeProvider);
     final id = themeState.currentId;
     if (id.isEmpty) return;
+    // 过滤后当前主题不可见：直接不动（不报错），也不按全量下标滚错位置
+    final visibleThemes = _filteredThemes(themeState.themes);
+    final index = visibleThemes.indexWhere((theme) => theme.id == id);
+    if (index < 0) return;
     final itemContext = _itemKeys[id]?.currentContext;
     if (itemContext != null) {
       await Scrollable.ensureVisible(
@@ -423,8 +459,6 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     // 网格是惰性构建：目标卡未构建时没有 context，先按网格代理自身几何
     // 精确算出目标行偏移滚到附近，等目标卡构建出 context 后再居中
     if (!_gridMode || !_scrollController.hasClients) return;
-    final index = themeState.themes.indexWhere((theme) => theme.id == id);
-    if (index < 0) return;
     final position = _scrollController.position;
     final target = _gridItemCenterOffset(
       index: index,
@@ -660,19 +694,22 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           if (_selectedIds.contains(theme.id)) theme,
       ];
 
-  void _selectAll(ReaderThemeState themeState) {
+  void _selectAll(List<ReaderTheme> visibleThemes) {
     setState(() {
       _selectedIds
         ..clear()
-        ..addAll(themeState.customThemes.map((theme) => theme.id));
+        ..addAll(<String>[
+          for (final theme in visibleThemes)
+            if (!theme.builtIn) theme.id,
+        ]);
     });
   }
 
-  void _invertSelection(ReaderThemeState themeState) {
+  void _invertSelection(List<ReaderTheme> visibleThemes) {
     setState(() {
       final inverted = <String>{
-        for (final theme in themeState.customThemes)
-          if (!_selectedIds.contains(theme.id)) theme.id,
+        for (final theme in visibleThemes)
+          if (!theme.builtIn && !_selectedIds.contains(theme.id)) theme.id,
       };
       _selectedIds
         ..clear()
@@ -696,6 +733,8 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     // 不撤销「正在使用」标记，重新应用同一主题即再次对齐）
     final currentId = themeState.currentId;
     final colorScheme = Theme.of(context).colorScheme;
+    final visibleThemes = _filteredThemes(themeState.themes);
+    final searchEmpty = _searchQuery.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -748,7 +787,9 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
             IconButton(
               tooltip: '管理主题',
               icon: const Icon(Icons.checklist_rounded),
-              onPressed: loaded ? () => setState(() => _manageMode = true) : null,
+              onPressed: loaded
+                  ? () => setState(() => _manageMode = true)
+                  : null,
             ),
           PopupMenuButton<String>(
             tooltip: '更多',
@@ -783,11 +824,19 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
               children: <Widget>[
                 Column(
                   children: <Widget>[
-                    if (_manageMode) _buildManageHeader(themeState),
+                    _buildSearchField(themeState),
+                    if (_manageMode) _buildManageHeader(visibleThemes),
                     Expanded(
-                      child: _gridMode
+                      child: visibleThemes.isEmpty && !searchEmpty
+                          ? const Center(
+                              child: Text(
+                                '没有匹配的主题',
+                                key: ValueKey('reader-theme-search-empty'),
+                              ),
+                            )
+                          : _gridMode
                           ? ReaderThemeGrid(
-                              themes: themeState.themes,
+                              themes: visibleThemes,
                               columns: themeState.gridColumns,
                               currentId: currentId,
                               manageMode: _manageMode,
@@ -797,10 +846,10 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                                   _itemKeys.putIfAbsent(id, GlobalKey.new),
                               onTap: _onThemeTap,
                               onLongPress: _onThemeLongPress,
-                              showAddTile: !_manageMode,
+                              showAddTile: searchEmpty && !_manageMode,
                               onAdd: () => unawaited(_createTheme()),
                             )
-                          : _buildList(themeState, currentId),
+                          : _buildList(visibleThemes, currentId, searchEmpty),
                     ),
                   ],
                 ),
@@ -820,8 +869,49 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     );
   }
 
+  /// 常驻搜索框（AppBar 下方；管理态同样可用，不占底栏）
+  Widget _buildSearchField(ReaderThemeState themeState) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: TextField(
+        key: const ValueKey('reader-theme-search'),
+        controller: _searchController,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: colorScheme.surfaceContainerLow,
+          hintText: '搜索主题（共 ${themeState.themes.length} 个）',
+          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  key: const ValueKey('reader-theme-search-clear'),
+                  tooltip: '清除搜索',
+                  icon: const Icon(Icons.close_rounded, size: 20),
+                  onPressed: _clearSearch,
+                ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(24),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 列表布局：名字 chip（背景色圆点 + 名称），对齐参考版流式形态
-  Widget _buildList(ReaderThemeState themeState, String currentId) {
+  Widget _buildList(
+    List<ReaderTheme> visibleThemes,
+    String currentId,
+    bool showAdd,
+  ) {
     return SingleChildScrollView(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
@@ -829,7 +919,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         spacing: 8,
         runSpacing: 8,
         children: <Widget>[
-          for (final theme in themeState.themes)
+          for (final theme in visibleThemes)
             KeyedSubtree(
               key: _itemKeys.putIfAbsent(theme.id, GlobalKey.new),
               child: ReaderThemeChip(
@@ -841,14 +931,14 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
                 onLongPress: () => _onThemeLongPress(theme),
               ),
             ),
-          if (!_manageMode)
+          if (showAdd)
             ReaderThemeAddChip(onTap: () => unawaited(_createTheme())),
         ],
       ),
     );
   }
 
-  Widget _buildManageHeader(ReaderThemeState themeState) {
+  Widget _buildManageHeader(List<ReaderTheme> visibleThemes) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
@@ -862,11 +952,11 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
           ),
           const Spacer(),
           TextButton(
-            onPressed: () => _selectAll(themeState),
+            onPressed: () => _selectAll(visibleThemes),
             child: const Text('全选'),
           ),
           TextButton(
-            onPressed: () => _invertSelection(themeState),
+            onPressed: () => _invertSelection(visibleThemes),
             child: const Text('反选'),
           ),
         ],
@@ -1278,9 +1368,7 @@ class ReaderThemeCard extends StatelessWidget {
                           right: 0,
                           bottom: 0,
                           child: Container(
-                            key: ValueKey<String>(
-                              'theme-current-${theme.id}',
-                            ),
+                            key: ValueKey<String>('theme-current-${theme.id}'),
                             height: 3,
                             color: colorScheme.primary,
                           ),

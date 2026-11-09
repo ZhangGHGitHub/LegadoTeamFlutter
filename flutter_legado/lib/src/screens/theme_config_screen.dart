@@ -1,4 +1,4 @@
-﻿// [UI-fix v2.0.5 | 2026-08-08] 主题设置页对齐原版 pref_config_theme.xml +
+// [UI-fix v2.0.5 | 2026-08-08] 主题设置页对齐原版 pref_config_theme.xml +
 // ThemeConfigFragment（23 项，封面设置已于设置批6b-1 迁至独立页）：启动图标/
 // 欢迎页样式/沉浸式状态栏/沉浸式导航栏/导航栏阴影/字体缩放/主题列表/底栏皮肤/
 // 壁纸取色 ×2 + 白天/夜间 主色调/强调色/背景色/底栏色/背景图片/透明导航栏/保存主题。
@@ -71,11 +71,23 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   /// 启动图标可选值（对齐原版 arrays.xml icon_names）
   static const _launcherIcons = [
-    'iconMain', 'icon1', 'icon2', 'icon3', 'icon4', 'icon5', 'icon6',
+    'iconMain',
+    'icon1',
+    'icon2',
+    'icon3',
+    'icon4',
+    'icon5',
+    'icon6',
   ];
 
   static const _launcherIconLabels = [
-    '默认', '图标 1', '图标 2', '图标 3', '图标 4', '图标 5', '图标 6',
+    '默认',
+    '图标 1',
+    '图标 2',
+    '图标 3',
+    '图标 4',
+    '图标 5',
+    '图标 6',
   ];
 
   /// Android 专属项统一灰字标注（与阅读设置面板刘海项先例一致）
@@ -106,8 +118,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       PrefKeys.immNavigationBar,
       defaultValue: true,
     );
-    final barElevation =
-        await _settings.getIntPref(PrefKeys.barElevation, defaultValue: 0);
+    final barElevation = await _settings.getIntPref(
+      PrefKeys.barElevation,
+      defaultValue: 0,
+    );
     final wallpaperColorFollow = await _settings.getBoolPref(
       PrefKeys.wallpaperColorFollow,
       defaultValue: false,
@@ -196,12 +210,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   // ===== [UI_SYNC_REFACTOR B2] 顶栏与布局开关 =====
 
   String _topBarStyleLabel(TopBarButtonStyle s) => switch (s) {
-        TopBarButtonStyle.plain => '平面',
-        TopBarButtonStyle.tonal => 'Tonal（默认）',
-        TopBarButtonStyle.outlined => '描边',
-        TopBarButtonStyle.glass => '玻璃',
-        TopBarButtonStyle.liquidGlass => '液态玻璃',
-      };
+    TopBarButtonStyle.plain => '平面',
+    TopBarButtonStyle.tonal => 'Tonal（默认）',
+    TopBarButtonStyle.outlined => '描边',
+    TopBarButtonStyle.glass => '玻璃',
+    TopBarButtonStyle.liquidGlass => '液态玻璃',
+  };
 
   Future<void> _showTopBarStylePicker() async {
     final current = ref.read(uiSettingsProvider).topBarButtonStyle;
@@ -319,11 +333,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _tabletLabel(TabletInterfaceMode m) => switch (m) {
-        TabletInterfaceMode.auto => '自动（宽屏 ≥600dp）',
-        TabletInterfaceMode.always => '始终启用侧栏',
-        TabletInterfaceMode.landscape => '仅横屏启用',
-        TabletInterfaceMode.off => '不启用',
-      };
+    TabletInterfaceMode.auto => '自动（宽屏 ≥600dp）',
+    TabletInterfaceMode.always => '始终启用侧栏',
+    TabletInterfaceMode.landscape => '仅横屏启用',
+    TabletInterfaceMode.off => '不启用',
+  };
 
   Future<void> _showTabletModePicker() async {
     final current = ref.read(uiSettingsProvider).tabletInterface;
@@ -352,19 +366,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       ),
     );
     if (selected != null) {
-      await ref
-          .read(uiSettingsProvider.notifier)
-          .setTabletInterface(selected);
+      await ref.read(uiSettingsProvider.notifier).setTabletInterface(selected);
     }
   }
 
   /// [设置批2b-2b] 多栏布局档位文案（对齐参考版 multi_pane.xml 中文条目）
   String _multiPaneLabel(MultiPaneMode m) => switch (m) {
-        MultiPaneMode.auto => '自动（宽窗口）',
-        MultiPaneMode.landscape => '横屏开启（宽窗口）',
-        MultiPaneMode.always => '始终开启（空间足够时）',
-        MultiPaneMode.off => '关闭',
-      };
+    MultiPaneMode.auto => '自动（宽窗口）',
+    MultiPaneMode.landscape => '横屏开启（宽窗口）',
+    MultiPaneMode.always => '始终开启（空间足够时）',
+    MultiPaneMode.off => '关闭',
+  };
 
   Future<void> _showMultiPanePicker() async {
     final current = ref.read(uiSettingsProvider).multiPaneMode;
@@ -393,25 +405,23 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       ),
     );
     if (selected != null) {
-      await ref
-          .read(uiSettingsProvider.notifier)
-          .setMultiPaneMode(selected);
+      await ref.read(uiSettingsProvider.notifier).setMultiPaneMode(selected);
     }
   }
 
   String _styleLabel(String v) => switch (v) {
-        'none' => '关闭（内置色板）',
-        'tonalSpot' => 'Tonal Spot（默认）',
-        'neutral' => 'Neutral',
-        'vibrant' => 'Vibrant',
-        'expressive' => 'Expressive',
-        'fidelity' => 'Fidelity',
-        'content' => 'Content',
-        'rainbow' => 'Rainbow',
-        'fruitSalad' => 'Fruit Salad',
-        'monochrome' => 'Monochrome',
-        _ => v,
-      };
+    'none' => '关闭（内置色板）',
+    'tonalSpot' => 'Tonal Spot（默认）',
+    'neutral' => 'Neutral',
+    'vibrant' => 'Vibrant',
+    'expressive' => 'Expressive',
+    'fidelity' => 'Fidelity',
+    'content' => 'Content',
+    'rainbow' => 'Rainbow',
+    'fruitSalad' => 'Fruit Salad',
+    'monochrome' => 'Monochrome',
+    _ => v,
+  };
 
   Future<void> _showThemeStylePicker() async {
     final current = ref.read(uiSettingsProvider).themeStyle;
@@ -457,10 +467,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _contrastLabel(String v) => switch (v) {
-        '0.5' => 'Medium（中）',
-        '1.0' => 'High（高）',
-        _ => 'Default（默认）',
-      };
+    '0.5' => 'Medium（中）',
+    '1.0' => 'High（高）',
+    _ => 'Default（默认）',
+  };
 
   Future<void> _showContrastPicker() async {
     final current = ref.read(uiSettingsProvider).themeContrastLevel;
@@ -501,10 +511,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _coverBgLabel(String v) => switch (v) {
-        'off' => '显示封面（不模糊）',
-        'off_for_default' => '隐藏（仅默认封面档）',
-        _ => '模糊显示（默认）',
-      };
+    'off' => '显示封面（不模糊）',
+    'off_for_default' => '隐藏（仅默认封面档）',
+    _ => '模糊显示（默认）',
+  };
 
   Future<void> _showCoverBgPicker(bool isDefaultCover) async {
     final uiNow = ref.read(uiSettingsProvider);
@@ -641,23 +651,23 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     // 图片可用」时显示（参考版该滑杆在图片管理面板内、随图片出现）。
     final containerBgForCurrentBrightness =
         Theme.of(context).brightness == Brightness.dark
-            ? ui.largeContainerBackgroundImageDark
-            : ui.largeContainerBackgroundImageLight;
+        ? ui.largeContainerBackgroundImageDark
+        : ui.largeContainerBackgroundImageLight;
     final showAppColumnBackgroundOpacity =
         ui.enableContainerBackgroundImage &&
-            ThemeBackgroundImageStore.isUsableSync(
-              containerBgForCurrentBrightness,
-            );
+        ThemeBackgroundImageStore.isUsableSync(containerBgForCurrentBrightness);
     // [设置批2b-1b-2b] 项目背景图透明度行：与 Large 图同口径，仅总开关开
     // 且**任一日/夜**项目图可用时显示（[P3] 不在切换亮暗时隐藏，便于统一
     // 调整；参考版滑杆在图片管理面板内、随图片出现）。
-    final hasUsableItemBgLight =
-        ThemeBackgroundImageStore.isUsableSync(ui.itemBackgroundImageLight);
-    final hasUsableItemBgDark =
-        ThemeBackgroundImageStore.isUsableSync(ui.itemBackgroundImageDark);
+    final hasUsableItemBgLight = ThemeBackgroundImageStore.isUsableSync(
+      ui.itemBackgroundImageLight,
+    );
+    final hasUsableItemBgDark = ThemeBackgroundImageStore.isUsableSync(
+      ui.itemBackgroundImageDark,
+    );
     final showGlassCardBackgroundOpacity =
         ui.enableContainerBackgroundImage &&
-            (hasUsableItemBgLight || hasUsableItemBgDark);
+        (hasUsableItemBgLight || hasUsableItemBgDark);
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
@@ -684,40 +694,42 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // 同簇）；[B3-C1 A3] 导出/导入能力保留不动。
                   const IosSectionHeader('主题模式'),
                   IosGroup(
-                      children: [
-                        // 参考 ThemeModeSelector（:974-1012）material 引擎分支：
-                        // 跟随系统 / 浅色 / 深色（flow_sys/light_mode/dark_mode）
-                        _ThemeModeSelector(
-                          selected: themeState.themeMode,
-                          onChanged: themeNotifier.setThemeMode,
-                        ),
-                        // 13 套内置 MD3 preset 选择器（UI_MD3_PLAN.md Batch 1，
-                        // [队列⑦a A2] 13 色卡横滑一行形态；paletteId 持久化，
-                        // 与自定义主题并存——第九节并存模型）
-                        _BuiltinPaletteGrid(
-                          selectedId: themeState.paletteId,
-                          onSelected: themeNotifier.setPaletteId,
-                        ),
-                      ]),
+                    children: [
+                      // 参考 ThemeModeSelector（:974-1012）material 引擎分支：
+                      // 跟随系统 / 浅色 / 深色（flow_sys/light_mode/dark_mode）
+                      _ThemeModeSelector(
+                        selected: themeState.themeMode,
+                        onChanged: themeNotifier.setThemeMode,
+                      ),
+                      // 13 套内置 MD3 preset 选择器（UI_MD3_PLAN.md Batch 1，
+                      // [队列⑦a A2] 13 色卡横滑一行形态；paletteId 持久化，
+                      // 与自定义主题并存——第九节并存模型）
+                      _BuiltinPaletteGrid(
+                        selectedId: themeState.paletteId,
+                        onSelected: themeNotifier.setPaletteId,
+                      ),
+                    ],
+                  ),
                   // === 分组 2「主题引擎」（我方 MD3 参数化：paletteStyle +
                   // 对比度；参考版无对应分组——参考"主题风格"=compose 引擎
                   // 开关，属参考独有，仅登记不实现）。[队列⑦c A3] AMOLED 纯黑
                   // 移出本组，改入通用组首位（对齐参考 纯黑深色模式 首位） ===
                   const IosSectionHeader('主题引擎'),
                   IosGroup(
-                      children: [
-                    IosListTile(
-                      title: '配色风格',
-                      subtitle: _styleLabel(ui.themeStyle),
-                      onTap: _showThemeStylePicker,
-                    ),
-                    if (ui.themeStyle != 'none')
+                    children: [
                       IosListTile(
-                        title: '对比度',
-                        subtitle: _contrastLabel(ui.themeContrastLevel),
-                        onTap: _showContrastPicker,
+                        title: '配色风格',
+                        subtitle: _styleLabel(ui.themeStyle),
+                        onTap: _showThemeStylePicker,
                       ),
-                  ]),
+                      if (ui.themeStyle != 'none')
+                        IosListTile(
+                          title: '对比度',
+                          subtitle: _contrastLabel(ui.themeContrastLevel),
+                          onTap: _showContrastPicker,
+                        ),
+                    ],
+                  ),
 
                   // === 分组 3 通用（无分组标题，对齐参考版未分组通用组；
                   // 参考顺序 纯黑→切换图标→字体大小→主题管理→背景图片；
@@ -728,125 +740,137 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // （原主题列表改名）→ 导出/导入主题（原顶部分区并入）→ 其余
                   // 我方项保持原有相对顺序
                   IosGroup(
-                      children: [
-                    // 纯黑深色模式（参考 pure_black=纯黑深色模式；原"AMOLED
-                    // 纯黑"，标题对齐参考，副标题保留）
-                    SettingSwitchRow(
-                      title: '纯黑深色模式',
-                      subtitle: '暗色模式背景纯黑（省电护屏）',
-                      value: ui.themeAmoled,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setThemeAmoled(v),
-                    ),
-                    // 切换图标（参考 change_icon=切换图标，摘要
-                    // change_icon_summary=切换软件显示在桌面的图标；
-                    // Android/iOS 支持，Windows 等桌面端整项隐藏）
-                    if (LauncherIconService.isSupported)
-                      IosListTile(
-                        title: '切换图标',
-                        subtitle: '切换软件显示在桌面的图标',
-                        value: _launcherIconLabels[
-                            _launcherIcons.indexOf(_launcherIcon).clamp(0, 6)],
-                        onTap: _showLauncherIconPicker,
-                      ),
-                    // 字体大小（参考 font_scale=字体大小；摘要半角冒号对齐
-                    // font_scale_summary「当前字体大小: %.1f」，见 theme_state）
-                    IosListTile(
-                      title: '字体大小',
-                      subtitle: themeState.fontScaleLabel,
-                      onTap: () => _showFontScalePicker(
-                          context, themeState, themeNotifier),
-                    ),
-                    // 主题管理（参考 theme_pack=主题管理；原"主题列表"改名，
-                    // 副标题保留；参考完整主题包管理屏属参考独有，仅登记）
-                    IosListTile(
-                      title: '主题管理',
-                      subtitle: '使用、保存、导入或分享主题',
-                      onTap: _showThemeListDialog,
-                    ),
-                    // 导出/导入主题（[B3-C1 A3] 复用 ThemeColorsNotifier +
-                    // ThemeNotifier，全部经主题槽位，无硬编码色值）
-                    IosListTile(
-                      icon: Symbols.ios_share_rounded,
-                      title: '导出主题',
-                      subtitle: '将当前配色导出为 JSON 文件',
-                      onTap: _exportTheme,
-                    ),
-                    IosListTile(
-                      icon: Symbols.download_rounded,
-                      title: '导入主题',
-                      subtitle: '导入主题 JSON 文件并应用',
-                      onTap: _importTheme,
-                    ),
-                    IosListTile(
-                      title: '启动界面样式',
-                      subtitle: '设定显示时间，更改背景图片，是否显示文字等',
-                      onTap: () {
-                        Navigator.of(context)
-                            .pushNamed(AppRoutes.welcomeConfig);
-                      },
-                    ),
-                    SettingSwitchRow(
-                      title: '沉浸式状态栏',
-                      subtitle: '状态栏颜色透明',
-                      value: _transparentStatusBar,
-                      onChanged: (v) async {
-                        setState(() => _transparentStatusBar = v);
-                        await ref
-                            .read(systemBarProvider.notifier)
-                            .setTransparentStatusBar(v);
-                      },
-                    ),
-                    SettingSwitchRow(
-                      title: '沉浸式导航栏',
-                      subtitle: '导航栏颜色透明',
-                      value: _immNavigationBar,
-                      onChanged: (v) async {
-                        setState(() => _immNavigationBar = v);
-                        await ref
-                            .read(systemBarProvider.notifier)
-                            .setImmNavigationBar(v);
-                      },
-                    ),
-                    IosListTile(
-                      title: '导航栏阴影',
-                      subtitle: '当前阴影大小（elevation）：$_barElevation',
-                      onTap: _showBarElevationDialog,
-                    ),
-                    IosListTile(
-                      title: '底栏图集',
-                      subtitle: '导入 zip 自定义底栏图标',
-                      onTap: () => Navigator.pushNamed(
-                        context,
-                        AppRoutes.bottomBarSkin,
-                      ),
-                    ),
-                    SettingSwitchRow(
-                      title: '跟随壁纸配色',
-                      subtitle: '使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）',
-                      value: _wallpaperColorFollow,
-                      onChanged: (v) {
-                        setState(() => _wallpaperColorFollow = v);
-                        _settings.setBoolPref(PrefKeys.wallpaperColorFollow, v);
-                        // [UI_SYNC_REFACTOR R1] 同步 uiSettings（dynamic_color 接线读取）
-                        ref
-                            .read(uiSettingsProvider.notifier)
-                            .setWallpaperColorFollow(v);
-                      },
-                    ),
-                    if (_wallpaperColorFollow)
+                    children: [
+                      // 纯黑深色模式（参考 pure_black=纯黑深色模式；原"AMOLED
+                      // 纯黑"，标题对齐参考，副标题保留）
                       SettingSwitchRow(
-                        title: '壁纸变化时自动更新',
-                        subtitle: '系统壁纸变化后自动应用新色板',
-                        value: _wallpaperColorAutoUpdate,
-                        onChanged: (v) {
-                          setState(() => _wallpaperColorAutoUpdate = v);
-                          _settings.setBoolPref(
-                              PrefKeys.wallpaperColorAutoUpdate, v);
+                        title: '纯黑深色模式',
+                        subtitle: '暗色模式背景纯黑（省电护屏）',
+                        value: ui.themeAmoled,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setThemeAmoled(v),
+                      ),
+                      // 切换图标（参考 change_icon=切换图标，摘要
+                      // change_icon_summary=切换软件显示在桌面的图标；
+                      // Android/iOS 支持，Windows 等桌面端整项隐藏）
+                      if (LauncherIconService.isSupported)
+                        IosListTile(
+                          title: '切换图标',
+                          subtitle: '切换软件显示在桌面的图标',
+                          value:
+                              _launcherIconLabels[_launcherIcons
+                                  .indexOf(_launcherIcon)
+                                  .clamp(0, 6)],
+                          onTap: _showLauncherIconPicker,
+                        ),
+                      // 字体大小（参考 font_scale=字体大小；摘要半角冒号对齐
+                      // font_scale_summary「当前字体大小: %.1f」，见 theme_state）
+                      IosListTile(
+                        title: '字体大小',
+                        subtitle: themeState.fontScaleLabel,
+                        onTap: () => _showFontScalePicker(
+                          context,
+                          themeState,
+                          themeNotifier,
+                        ),
+                      ),
+                      // 主题管理（参考 theme_pack=主题管理；原"主题列表"改名，
+                      // 副标题保留；参考完整主题包管理屏属参考独有，仅登记）
+                      IosListTile(
+                        title: '主题管理',
+                        subtitle: '使用、保存、导入或分享主题',
+                        onTap: _showThemeListDialog,
+                      ),
+                      // 导出/导入主题（[B3-C1 A3] 复用 ThemeColorsNotifier +
+                      // ThemeNotifier，全部经主题槽位，无硬编码色值）
+                      IosListTile(
+                        icon: Symbols.ios_share_rounded,
+                        title: '导出主题',
+                        subtitle: '将当前配色导出为 JSON 文件',
+                        onTap: _exportTheme,
+                      ),
+                      IosListTile(
+                        icon: Symbols.download_rounded,
+                        title: '导入主题',
+                        subtitle: '导入主题 JSON 文件并应用',
+                        onTap: _importTheme,
+                      ),
+                      IosListTile(
+                        title: '启动界面样式',
+                        subtitle: '设定显示时间，更改背景图片，是否显示文字等',
+                        onTap: () {
+                          Navigator.of(
+                            context,
+                          ).pushNamed(AppRoutes.welcomeConfig);
                         },
                       ),
-                  ]),
+                      SettingSwitchRow(
+                        title: '沉浸式状态栏',
+                        subtitle: '状态栏颜色透明',
+                        value: _transparentStatusBar,
+                        onChanged: (v) async {
+                          setState(() => _transparentStatusBar = v);
+                          await ref
+                              .read(systemBarProvider.notifier)
+                              .setTransparentStatusBar(v);
+                        },
+                      ),
+                      SettingSwitchRow(
+                        title: '沉浸式导航栏',
+                        subtitle: '导航栏颜色透明',
+                        value: _immNavigationBar,
+                        onChanged: (v) async {
+                          setState(() => _immNavigationBar = v);
+                          await ref
+                              .read(systemBarProvider.notifier)
+                              .setImmNavigationBar(v);
+                        },
+                      ),
+                      IosListTile(
+                        title: '导航栏阴影',
+                        subtitle: '当前阴影大小（elevation）：$_barElevation',
+                        onTap: _showBarElevationDialog,
+                      ),
+                      IosListTile(
+                        title: '底栏图集',
+                        subtitle: '导入 zip 自定义底栏图标',
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          AppRoutes.bottomBarSkin,
+                        ),
+                      ),
+                      SettingSwitchRow(
+                        title: '跟随壁纸配色',
+                        subtitle: '使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）',
+                        value: _wallpaperColorFollow,
+                        onChanged: (v) {
+                          setState(() => _wallpaperColorFollow = v);
+                          _settings.setBoolPref(
+                            PrefKeys.wallpaperColorFollow,
+                            v,
+                          );
+                          // [UI_SYNC_REFACTOR R1] 同步 uiSettings（dynamic_color 接线读取）
+                          ref
+                              .read(uiSettingsProvider.notifier)
+                              .setWallpaperColorFollow(v);
+                        },
+                      ),
+                      if (_wallpaperColorFollow)
+                        SettingSwitchRow(
+                          title: '壁纸变化时自动更新',
+                          subtitle: '系统壁纸变化后自动应用新色板',
+                          value: _wallpaperColorAutoUpdate,
+                          onChanged: (v) {
+                            setState(() => _wallpaperColorAutoUpdate = v);
+                            _settings.setBoolPref(
+                              PrefKeys.wallpaperColorAutoUpdate,
+                              v,
+                            );
+                          },
+                        ),
+                    ],
+                  ),
 
                   // === 分组 4「主界面」（参考 R.string.main_activity=主界面；
                   // [队列⑦c A3] 合并原"顶栏与布局"+"底栏与导航"两组为参考的单
@@ -854,109 +878,115 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // 显示状态栏/启用滑动时动画 属参考独有，仅登记不实现） ===
                   const IosSectionHeader('主界面'),
                   IosGroup(
-                      children: [
-                    // [设置批2b-2a] 参考版「首页与导航」独立设置项
-                    //（MainNavigationSettingsSheet）：显隐首页/发现/订阅、
-                    // 排序、默认首页、底栏文字、导航图标。参考版将其放在
-                    // 外观页「主界面」组首位，本项同位置对齐 — 全栈工程师
-                    IosListTile(
-                      icon: Symbols.explore_rounded,
-                      title: '首页与导航',
-                      subtitle: '设置首页、发现、订阅、默认主页和导航栏图标',
-                      onTap: () => MainNavigationSettingsSheet.show(context),
-                    ),
-                    IosListTile(
-                      title: '顶栏按钮样式',
-                      subtitle: _topBarStyleLabel(ui.topBarButtonStyle),
-                      onTap: _showTopBarStylePicker,
-                    ),
-                    SettingSwitchRow(
-                      title: '合并顶栏按钮',
-                      subtitle: '顶栏按钮收进胶囊容器',
-                      value: ui.mergeTopBarActions,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setMergeTopBarActions(v),
-                    ),
-                    SettingSwitchRow(
-                      title: '大顶栏形态',
-                      subtitle: '书架/我的等根页使用可折叠大标题',
-                      value: ui.useFlexibleTopAppBar,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setUseFlexibleTopAppBar(v),
-                    ),
-                    IosListTile(
-                      title: '顶栏不透明度',
-                      subtitle: '当前 ${ui.topBarOpacity}%',
-                      onTap: _showTopBarOpacityDialog,
-                    ),
-                    SettingSwitchRow(
-                      title: '显示底栏',
-                      subtitle: '隐藏后仅侧栏/手势切页',
-                      value: ui.showBottomView,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setShowBottomView(v),
-                    ),
-                    SettingSwitchRow(
-                      title: '悬浮底栏',
-                      subtitle: '64dp 胶囊悬浮形态（ Experimental）',
-                      value: ui.useFloatingBottomBar,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setUseFloatingBottomBar(v),
-                    ),
-                    IosListTile(
-                      title: '底栏不透明度',
-                      subtitle: '当前 ${ui.bottomBarOpacity}%',
-                      onTap: _showBottomBarOpacityDialog,
-                    ),
-                    // 大屏导航形态（参考 main_activity 组 tabletInterface=平板界面；
-                    // 四档 自动/始终/仅横屏/关闭）
-                    IosListTile(
-                      title: '大屏导航形态',
-                      subtitle: _tabletLabel(ui.tabletInterface),
-                      onTap: _showTabletModePicker,
-                    ),
-                    // [设置批2b-2b] 多栏布局（参考版主界面组 multiPaneMode
-                    // 紧随 tabletInterface：四档 auto/landscape/always/off）
-                    IosListTile(
-                      title: '多栏布局',
-                      subtitle: _multiPaneLabel(ui.multiPaneMode),
-                      onTap: _showMultiPanePicker,
-                    ),
-                  ]),
+                    children: [
+                      // [设置批2b-2a] 参考版「首页与导航」独立设置项
+                      //（MainNavigationSettingsSheet）：显隐首页/发现/订阅、
+                      // 排序、默认首页、底栏文字、导航图标。参考版将其放在
+                      // 外观页「主界面」组首位，本项同位置对齐 — 全栈工程师
+                      IosListTile(
+                        icon: Symbols.explore_rounded,
+                        title: '首页与导航',
+                        subtitle: '设置首页、发现、订阅、默认主页和导航栏图标',
+                        onTap: () => MainNavigationSettingsSheet.show(context),
+                      ),
+                      IosListTile(
+                        title: '顶栏按钮样式',
+                        subtitle: _topBarStyleLabel(ui.topBarButtonStyle),
+                        onTap: _showTopBarStylePicker,
+                      ),
+                      SettingSwitchRow(
+                        title: '合并顶栏按钮',
+                        subtitle: '顶栏按钮收进胶囊容器',
+                        value: ui.mergeTopBarActions,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setMergeTopBarActions(v),
+                      ),
+                      SettingSwitchRow(
+                        title: '大顶栏形态',
+                        subtitle: '书架/我的等根页使用可折叠大标题',
+                        value: ui.useFlexibleTopAppBar,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setUseFlexibleTopAppBar(v),
+                      ),
+                      IosListTile(
+                        title: '顶栏不透明度',
+                        subtitle: '当前 ${ui.topBarOpacity}%',
+                        onTap: _showTopBarOpacityDialog,
+                      ),
+                      SettingSwitchRow(
+                        title: '显示底栏',
+                        subtitle: '隐藏后仅侧栏/手势切页',
+                        value: ui.showBottomView,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setShowBottomView(v),
+                      ),
+                      SettingSwitchRow(
+                        title: '悬浮底栏',
+                        subtitle: '64dp 胶囊悬浮形态（ Experimental）',
+                        value: ui.useFloatingBottomBar,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setUseFloatingBottomBar(v),
+                      ),
+                      IosListTile(
+                        title: '底栏不透明度',
+                        subtitle: '当前 ${ui.bottomBarOpacity}%',
+                        onTap: _showBottomBarOpacityDialog,
+                      ),
+                      // 大屏导航形态（参考 main_activity 组 tabletInterface=平板界面；
+                      // 四档 自动/始终/仅横屏/关闭）
+                      IosListTile(
+                        title: '大屏导航形态',
+                        subtitle: _tabletLabel(ui.tabletInterface),
+                        onTap: _showTabletModePicker,
+                      ),
+                      // [设置批2b-2b] 多栏布局（参考版主界面组 multiPaneMode
+                      // 紧随 tabletInterface：四档 auto/landscape/always/off）
+                      IosListTile(
+                        title: '多栏布局',
+                        subtitle: _multiPaneLabel(ui.multiPaneMode),
+                        onTap: _showMultiPanePicker,
+                      ),
+                    ],
+                  ),
 
                   // === 分组 5「书籍详情页」（参考 R.string.book_info_page=
                   // 书籍详情页；原"详情与圆角"的封面三行；卡片圆角/分隔线移入
                   // 下方"容器设置"组） ===
                   const IosSectionHeader('书籍详情页'),
                   IosGroup(
-                      children: [
-                    // 参考 book_info_follow_cover_color=界面颜色跟随封面取色，
-                    // 摘要 book_info_follow_cover_color_s=仅在显示背景封面时生效
-                    SettingSwitchRow(
-                      title: '界面颜色跟随封面取色',
-                      subtitle: '仅在显示背景封面时生效',
-                      value: ui.bookInfoFollowCoverColor,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setBookInfoFollowCoverColor(v),
-                    ),
-                    // 参考 book_info_network_cover_background=网络封面背景设置
-                    IosListTile(
-                      title: '网络封面背景设置',
-                      subtitle: _coverBgLabel(ui.bookInfoNetworkCoverBackground),
-                      onTap: () => _showCoverBgPicker(false),
-                    ),
-                    // 参考 book_info_default_cover_background=默认封面背景设置
-                    IosListTile(
-                      title: '默认封面背景设置',
-                      subtitle: _coverBgLabel(ui.bookInfoDefaultCoverBackground),
-                      onTap: () => _showCoverBgPicker(true),
-                    ),
-                  ]),
+                    children: [
+                      // 参考 book_info_follow_cover_color=界面颜色跟随封面取色，
+                      // 摘要 book_info_follow_cover_color_s=仅在显示背景封面时生效
+                      SettingSwitchRow(
+                        title: '界面颜色跟随封面取色',
+                        subtitle: '仅在显示背景封面时生效',
+                        value: ui.bookInfoFollowCoverColor,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setBookInfoFollowCoverColor(v),
+                      ),
+                      // 参考 book_info_network_cover_background=网络封面背景设置
+                      IosListTile(
+                        title: '网络封面背景设置',
+                        subtitle: _coverBgLabel(
+                          ui.bookInfoNetworkCoverBackground,
+                        ),
+                        onTap: () => _showCoverBgPicker(false),
+                      ),
+                      // 参考 book_info_default_cover_background=默认封面背景设置
+                      IosListTile(
+                        title: '默认封面背景设置',
+                        subtitle: _coverBgLabel(
+                          ui.bookInfoDefaultCoverBackground,
+                        ),
+                        onTap: () => _showCoverBgPicker(true),
+                      ),
+                    ],
+                  ),
 
                   // === 分组「护眼模式」（设置批2a-1；对齐参考版
                   // ThemeConfigScreen.kt:433-521 同名分组：启用护眼模式 →
@@ -965,48 +995,55 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // EyeProtectionLayer） ===
                   const IosSectionHeader('护眼模式'),
                   IosGroup(
-                      children: [
-                    SettingSwitchRow(
-                      title: '启用护眼模式',
-                      subtitle: '使用暖色调降低蓝光',
-                      value: eyeProtection.enabled,
-                      onChanged: eyeProtectionNotifier.setEnabled,
-                    ),
-                    SettingSwitchRow(
-                      title: '深色模式时自动开启',
-                      subtitle: '跟随阅读界面的深色/浅色模式自动切换',
-                      value: eyeProtection.autoNight,
-                      onChanged: eyeProtectionNotifier.setAutoNight,
-                    ),
-                    // 参考版 AnimatedVisibility(theme.isEyeProtectionConfigured)：
-                    // 未启用（总开关与自动夜间均关）时不显示强度/定时行
-                    if (eyeProtection.isConfigured) ...[
-                      EyeProtectionIntensityRow(
-                        value: eyeProtection.intensity,
-                        onChanged: eyeProtectionNotifier.setIntensity,
+                    children: [
+                      SettingSwitchRow(
+                        title: '启用护眼模式',
+                        subtitle: '使用暖色调降低蓝光',
+                        value: eyeProtection.enabled,
+                        onChanged: eyeProtectionNotifier.setEnabled,
                       ),
                       SettingSwitchRow(
-                        title: '定时开启',
-                        subtitle: '仅在设定的时间段内生效',
-                        value: eyeProtection.schedule,
-                        onChanged: eyeProtectionNotifier.setSchedule,
+                        title: '深色模式时自动开启',
+                        subtitle: '跟随阅读界面的深色/浅色模式自动切换',
+                        value: eyeProtection.autoNight,
+                        onChanged: eyeProtectionNotifier.setAutoNight,
                       ),
-                      if (eyeProtection.schedule) ...[
-                        IosListTile(
-                          title: '开始时间',
-                          value: eyeProtection.startTime,
-                          onTap: () =>
-                              pickEyeProtectionTime(context, ref, start: true),
+                      // 参考版 AnimatedVisibility(theme.isEyeProtectionConfigured)：
+                      // 未启用（总开关与自动夜间均关）时不显示强度/定时行
+                      if (eyeProtection.isConfigured) ...[
+                        EyeProtectionIntensityRow(
+                          value: eyeProtection.intensity,
+                          onChanged: eyeProtectionNotifier.setIntensity,
                         ),
-                        IosListTile(
-                          title: '结束时间',
-                          value: eyeProtection.endTime,
-                          onTap: () =>
-                              pickEyeProtectionTime(context, ref, start: false),
+                        SettingSwitchRow(
+                          title: '定时开启',
+                          subtitle: '仅在设定的时间段内生效',
+                          value: eyeProtection.schedule,
+                          onChanged: eyeProtectionNotifier.setSchedule,
                         ),
+                        if (eyeProtection.schedule) ...[
+                          IosListTile(
+                            title: '开始时间',
+                            value: eyeProtection.startTime,
+                            onTap: () => pickEyeProtectionTime(
+                              context,
+                              ref,
+                              start: true,
+                            ),
+                          ),
+                          IosListTile(
+                            title: '结束时间',
+                            value: eyeProtection.endTime,
+                            onTap: () => pickEyeProtectionTime(
+                              context,
+                              ref,
+                              start: false,
+                            ),
+                          ),
+                        ],
                       ],
                     ],
-                  ]),
+                  ),
 
                   // === 分组 8「容器设置」（参考 R.string
                   // .theme_manage_section_container=容器设置）
@@ -1066,247 +1103,258 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   圆角/边框/分隔线开关；虚化行常显。
                   const IosSectionHeader('容器设置'),
                   IosGroup(
-                      children: [
-                    // 参考 容器背景图 总开关（enableContainerBackgroundImage）
-                    SettingSwitchRow(
-                      title: '容器背景图',
-                      subtitle: '大容器和项目卡面分别使用独立的日间/夜间图片',
-                      value: ui.enableContainerBackgroundImage,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setEnableContainerBackgroundImage(v),
-                    ),
-                    // 参考 AnimatedVisibility(enableContainerBackgroundImage)：
-                    // 关闭时隐藏图片行但保留已选路径（再次开启即恢复）
-                    if (ui.enableContainerBackgroundImage) ...[
-                      IosListTile(
-                        icon: Symbols.wallpaper_rounded,
-                        title: '容器背景图片（日间）',
-                        subtitle: _containerBgLabel(
-                            ui.largeContainerBackgroundImageLight),
-                        onTap: () => _showContainerBgImageDialog(night: false),
+                    children: [
+                      // 参考 容器背景图 总开关（enableContainerBackgroundImage）
+                      SettingSwitchRow(
+                        title: '容器背景图',
+                        subtitle: '大容器和项目卡面分别使用独立的日间/夜间图片',
+                        value: ui.enableContainerBackgroundImage,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setEnableContainerBackgroundImage(v),
                       ),
-                      IosListTile(
-                        icon: Symbols.wallpaper_rounded,
-                        title: '容器背景图片（夜间）',
-                        subtitle: _containerBgLabel(
-                            ui.largeContainerBackgroundImageDark),
-                        onTap: () => _showContainerBgImageDialog(night: true),
-                      ),
-                      // [设置批2b-1b-2b] 项目（卡片）背景图日/夜行：槽位
-                      // item_light/item_dark，渲染于设置页行卡与设置首页卡片。
-                      IosListTile(
-                        icon: Symbols.wallpaper_rounded,
-                        title: '项目背景图片（日间）',
-                        subtitle: _containerBgLabel(
-                            ui.itemBackgroundImageLight),
-                        onTap: () => _showItemBgImageDialog(night: false),
-                      ),
-                      IosListTile(
-                        icon: Symbols.wallpaper_rounded,
-                        title: '项目背景图片（夜间）',
+                      // 参考 AnimatedVisibility(enableContainerBackgroundImage)：
+                      // 关闭时隐藏图片行但保留已选路径（再次开启即恢复）
+                      if (ui.enableContainerBackgroundImage) ...[
+                        IosListTile(
+                          icon: Symbols.wallpaper_rounded,
+                          title: '容器背景图片（日间）',
+                          subtitle: _containerBgLabel(
+                            ui.largeContainerBackgroundImageLight,
+                          ),
+                          onTap: () =>
+                              _showContainerBgImageDialog(night: false),
+                        ),
+                        IosListTile(
+                          icon: Symbols.wallpaper_rounded,
+                          title: '容器背景图片（夜间）',
+                          subtitle: _containerBgLabel(
+                            ui.largeContainerBackgroundImageDark,
+                          ),
+                          onTap: () => _showContainerBgImageDialog(night: true),
+                        ),
+                        // [设置批2b-1b-2b] 项目（卡片）背景图日/夜行：槽位
+                        // item_light/item_dark，渲染于设置页行卡与设置首页卡片。
+                        IosListTile(
+                          icon: Symbols.wallpaper_rounded,
+                          title: '项目背景图片（日间）',
+                          subtitle: _containerBgLabel(
+                            ui.itemBackgroundImageLight,
+                          ),
+                          onTap: () => _showItemBgImageDialog(night: false),
+                        ),
+                        IosListTile(
+                          icon: Symbols.wallpaper_rounded,
+                          title: '项目背景图片（夜间）',
+                          subtitle: _containerBgLabel(
+                            ui.itemBackgroundImageDark,
+                          ),
+                          onTap: () => _showItemBgImageDialog(night: true),
+                        ),
+                      ],
+                      // 参考 appColumnBackgroundOpacity：大容器背景图自身透明度
+                      // 0..100，默认 100；仅乘图片 alpha，与行卡 scrim 独立叠加。
+                      // [P2-3] 参考版该滑杆位于图片管理面板内，仅图片存在时可见。
+                      if (showAppColumnBackgroundOpacity)
+                        SettingSliderRow(
+                          title: '大容器背景图透明度',
+                          subtitle:
+                              '0-100；仅作用于大容器背景图自身，'
+                              '与容器不透明度独立叠加（0=图片完全透明）',
+                          value: ui.appColumnBackgroundOpacity,
+                          min: 0,
+                          max: 100,
+                          onChanged: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setAppColumnBackgroundOpacity(v),
+                        ),
+                      // [设置批2b-1b-2b] 参考 glassCardBackgroundOpacity：项目图
+                      // 自身透明度 0..100，默认 100；仅乘项目图 alpha，与
+                      // containerOpacity/大容器图透明度三者独立叠加。
+                      if (showGlassCardBackgroundOpacity)
+                        SettingSliderRow(
+                          title: '项目背景图透明度',
+                          subtitle:
+                              '0-100；仅作用于设置页项目卡面图片自身，'
+                              '与容器不透明度独立叠加（0=图片完全透明）',
+                          value: ui.glassCardBackgroundOpacity,
+                          min: 0,
+                          max: 100,
+                          onChanged: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setGlassCardBackgroundOpacity(v),
+                        ),
+                      // 参考 container_opacity 滑杆：0..100，默认 100
+                      SettingSliderRow(
+                        title: '容器不透明度',
                         subtitle:
-                            _containerBgLabel(ui.itemBackgroundImageDark),
-                        onTap: () => _showItemBgImageDialog(night: true),
-                      ),
-                    ],
-                    // 参考 appColumnBackgroundOpacity：大容器背景图自身透明度
-                    // 0..100，默认 100；仅乘图片 alpha，与行卡 scrim 独立叠加。
-                    // [P2-3] 参考版该滑杆位于图片管理面板内，仅图片存在时可见。
-                    if (showAppColumnBackgroundOpacity)
-                      SettingSliderRow(
-                        title: '大容器背景图透明度',
-                        subtitle: '0-100；仅作用于大容器背景图自身，'
-                            '与容器不透明度独立叠加（0=图片完全透明）',
-                        value: ui.appColumnBackgroundOpacity,
+                            '0-100；作用于默认卡片（含自定义形状但未设色）'
+                            '与设置分组/设置首页卡面，越低底色越透（文字不受影响）',
+                        value: ui.containerOpacity,
                         min: 0,
                         max: 100,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
-                            .setAppColumnBackgroundOpacity(v),
+                            .setContainerOpacity(v),
                       ),
-                    // [设置批2b-1b-2b] 参考 glassCardBackgroundOpacity：项目图
-                    // 自身透明度 0..100，默认 100；仅乘项目图 alpha，与
-                    // containerOpacity/大容器图透明度三者独立叠加。
-                    if (showGlassCardBackgroundOpacity)
+                      // 参考版虚化在「背景图片」面板内（日/夜各一条 0..100）；
+                      // 我方按用户指令并入「容器设置」分组，仅影响全局壁纸。
+                      // 登记：虚化行常显（无背景图时调值不产生视觉变化）。
                       SettingSliderRow(
-                        title: '项目背景图透明度',
-                        subtitle: '0-100；仅作用于设置页项目卡面图片自身，'
-                            '与容器不透明度独立叠加（0=图片完全透明）',
-                        value: ui.glassCardBackgroundOpacity,
+                        title: '背景图虚化（日间）',
+                        subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
+                        value: ui.bgImageBlurring,
                         min: 0,
                         max: 100,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
-                            .setGlassCardBackgroundOpacity(v),
+                            .setBgImageBlurring(night: false, value: v),
                       ),
-                    // 参考 container_opacity 滑杆：0..100，默认 100
-                    SettingSliderRow(
-                      title: '容器不透明度',
-                      subtitle: '0-100；作用于默认卡片（含自定义形状但未设色）'
-                          '与设置分组/设置首页卡面，越低底色越透（文字不受影响）',
-                      value: ui.containerOpacity,
-                      min: 0,
-                      max: 100,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setContainerOpacity(v),
-                    ),
-                    // 参考版虚化在「背景图片」面板内（日/夜各一条 0..100）；
-                    // 我方按用户指令并入「容器设置」分组，仅影响全局壁纸。
-                    // 登记：虚化行常显（无背景图时调值不产生视觉变化）。
-                    SettingSliderRow(
-                      title: '背景图虚化（日间）',
-                      subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
-                      value: ui.bgImageBlurring,
-                      min: 0,
-                      max: 100,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setBgImageBlurring(night: false, value: v),
-                    ),
-                    SettingSliderRow(
-                      title: '背景图虚化（夜间）',
-                      subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
-                      value: ui.bgImageDarkBlurring,
-                      min: 0,
-                      max: 100,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setBgImageBlurring(night: true, value: v),
-                    ),
-                    // 参考 disable_spliced_group_corner_radius：分组外角 0，
-                    // 优先级高于下方圆角覆盖（参考 SplicedColumnGroup.kt:50-53）
-                    SettingSwitchRow(
-                      title: '关闭设置分组圆角',
-                      subtitle: '分组卡片外角置 0；优先于卡片圆角覆盖',
-                      value: ui.disableSplicedColumnGroupCornerRadius,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setDisableSplicedColumnGroupCornerRadius(v),
-                    ),
-                    // 参考 覆盖卡片圆角 开关 + 卡片圆角滑杆（0..40dp）
-                    SettingSwitchRow(
-                      title: '覆盖卡片圆角',
-                      subtitle: '覆盖使用默认卡片样式的卡片；'
-                          '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
-                      value: ui.overrideBaseCardCornerRadius,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setOverrideBaseCardCornerRadius(v),
-                    ),
-                    if (ui.overrideBaseCardCornerRadius)
                       SettingSliderRow(
-                        title: '卡片圆角',
-                        subtitle: '0-40dp；0 = 直角（参考版滑杆 0..40）',
-                        value: ui.baseCardCornerRadius,
+                        title: '背景图虚化（夜间）',
+                        subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
+                        value: ui.bgImageDarkBlurring,
                         min: 0,
-                        max: 40,
-                        valueSuffix: 'dp',
+                        max: 100,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
-                            .setBaseCardCornerRadius(v),
+                            .setBgImageBlurring(night: true, value: v),
                       ),
-                    // 参考 覆盖卡片边框 开关 + 宽度 + 日/夜颜色
-                    SettingSwitchRow(
-                      title: '覆盖卡片边框',
-                      subtitle: '覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；'
-                          '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
-                      value: ui.overrideBaseCardBorder,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setOverrideBaseCardBorder(v),
-                    ),
-                    if (ui.overrideBaseCardBorder) ...[
-                      SettingSliderRow(
-                        title: '边框宽度',
-                        subtitle: '0-5dp；0 = 不绘制（不改变卡片尺寸）',
-                        value: ui.baseCardBorderWidth,
-                        min: 0,
-                        max: 5,
-                        valueSuffix: 'dp',
+                      // 参考 disable_spliced_group_corner_radius：分组外角 0，
+                      // 优先级高于下方圆角覆盖（参考 SplicedColumnGroup.kt:50-53）
+                      SettingSwitchRow(
+                        title: '关闭设置分组圆角',
+                        subtitle: '分组卡片外角置 0；优先于卡片圆角覆盖',
+                        value: ui.disableSplicedColumnGroupCornerRadius,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
-                            .setBaseCardBorderWidth(v),
+                            .setDisableSplicedColumnGroupCornerRadius(v),
                       ),
-                      _containerColorTile(
-                        title: '日间边框颜色',
-                        color: ui.baseCardBorderColor,
-                        defaultHint: '默认（跟随主题描边）',
-                        showDotWhenZero: true,
-                        onTap: () => _showContainerColorPicker(
+                      // 参考 覆盖卡片圆角 开关 + 卡片圆角滑杆（0..40dp）
+                      SettingSwitchRow(
+                        title: '覆盖卡片圆角',
+                        subtitle:
+                            '覆盖使用默认卡片样式的卡片；'
+                            '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
+                        value: ui.overrideBaseCardCornerRadius,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setOverrideBaseCardCornerRadius(v),
+                      ),
+                      if (ui.overrideBaseCardCornerRadius)
+                        SettingSliderRow(
+                          title: '卡片圆角',
+                          subtitle: '0-40dp；0 = 直角（参考版滑杆 0..40）',
+                          value: ui.baseCardCornerRadius,
+                          min: 0,
+                          max: 40,
+                          valueSuffix: 'dp',
+                          onChanged: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setBaseCardCornerRadius(v),
+                        ),
+                      // 参考 覆盖卡片边框 开关 + 宽度 + 日/夜颜色
+                      SettingSwitchRow(
+                        title: '覆盖卡片边框',
+                        subtitle:
+                            '覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；'
+                            '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
+                        value: ui.overrideBaseCardBorder,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setOverrideBaseCardBorder(v),
+                      ),
+                      if (ui.overrideBaseCardBorder) ...[
+                        SettingSliderRow(
+                          title: '边框宽度',
+                          subtitle: '0-5dp；0 = 不绘制（不改变卡片尺寸）',
+                          value: ui.baseCardBorderWidth,
+                          min: 0,
+                          max: 5,
+                          valueSuffix: 'dp',
+                          onChanged: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setBaseCardBorderWidth(v),
+                        ),
+                        _containerColorTile(
                           title: '日间边框颜色',
-                          initialColor: ui.baseCardBorderColor,
-                          defaultHint: '恢复默认',
-                          onSelected: (v) => ref
-                              .read(uiSettingsProvider.notifier)
-                              .setBaseCardBorderColor(v),
+                          color: ui.baseCardBorderColor,
+                          defaultHint: '默认（跟随主题描边）',
+                          showDotWhenZero: true,
+                          onTap: () => _showContainerColorPicker(
+                            title: '日间边框颜色',
+                            initialColor: ui.baseCardBorderColor,
+                            defaultHint: '恢复默认',
+                            onSelected: (v) => ref
+                                .read(uiSettingsProvider.notifier)
+                                .setBaseCardBorderColor(v),
+                          ),
                         ),
-                      ),
-                      _containerColorTile(
-                        title: '夜间边框颜色',
-                        color: ui.baseCardBorderColorNight,
-                        defaultHint: '默认（跟随主题描边）',
-                        showDotWhenZero: true,
-                        onTap: () => _showContainerColorPicker(
+                        _containerColorTile(
                           title: '夜间边框颜色',
-                          initialColor: ui.baseCardBorderColorNight,
-                          defaultHint: '恢复默认',
-                          onSelected: (v) => ref
-                              .read(uiSettingsProvider.notifier)
-                              .setBaseCardBorderColorNight(v),
+                          color: ui.baseCardBorderColorNight,
+                          defaultHint: '默认（跟随主题描边）',
+                          showDotWhenZero: true,
+                          onTap: () => _showContainerColorPicker(
+                            title: '夜间边框颜色',
+                            initialColor: ui.baseCardBorderColorNight,
+                            defaultHint: '恢复默认',
+                            onSelected: (v) => ref
+                                .read(uiSettingsProvider.notifier)
+                                .setBaseCardBorderColorNight(v),
+                          ),
                         ),
-                      ),
-                    ],
-                    // 参考 show_divider_line：行之间显示分隔线
-                    SettingSwitchRow(
-                      title: '显示分隔线',
-                      subtitle: '在分组行之间绘制；关闭保持 2dp 间距',
-                      value: ui.enableItemDivider,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setEnableItemDivider(v),
-                    ),
-                    if (ui.enableItemDivider) ...[
-                      SettingSliderRow(
-                        title: '分隔线宽度',
-                        subtitle: '0-5dp；0 = 不绘制',
-                        value: ui.itemDividerWidth,
-                        min: 0,
-                        max: 5,
-                        valueSuffix: 'dp',
+                      ],
+                      // 参考 show_divider_line：行之间显示分隔线
+                      SettingSwitchRow(
+                        title: '显示分隔线',
+                        subtitle: '在分组行之间绘制；关闭保持 2dp 间距',
+                        value: ui.enableItemDivider,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
-                            .setItemDividerWidth(v),
+                            .setEnableItemDivider(v),
                       ),
-                      SettingSliderRow(
-                        title: '分隔线长度',
-                        subtitle: '占分组可用宽度的百分比（30-100%）',
-                        value: ui.itemDividerLength,
-                        min: 30,
-                        max: 100,
-                        valueSuffix: '%',
-                        onChanged: (v) => ref
-                            .read(uiSettingsProvider.notifier)
-                            .setItemDividerLength(v),
-                      ),
-                      _containerColorTile(
-                        title: '分隔线颜色',
-                        color: ui.itemDividerColor,
-                        defaultHint: '默认（灰色半透明）',
-                        showDotWhenZero: false,
-                        showChevron: ui.itemDividerColor != 0,
-                        onTap: () => _showContainerColorPicker(
+                      if (ui.enableItemDivider) ...[
+                        SettingSliderRow(
+                          title: '分隔线宽度',
+                          subtitle: '0-5dp；0 = 不绘制',
+                          value: ui.itemDividerWidth,
+                          min: 0,
+                          max: 5,
+                          valueSuffix: 'dp',
+                          onChanged: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setItemDividerWidth(v),
+                        ),
+                        SettingSliderRow(
+                          title: '分隔线长度',
+                          subtitle: '占分组可用宽度的百分比（30-100%）',
+                          value: ui.itemDividerLength,
+                          min: 30,
+                          max: 100,
+                          valueSuffix: '%',
+                          onChanged: (v) => ref
+                              .read(uiSettingsProvider.notifier)
+                              .setItemDividerLength(v),
+                        ),
+                        _containerColorTile(
                           title: '分隔线颜色',
-                          initialColor: ui.itemDividerColor,
-                          defaultHint: '恢复默认',
-                          onSelected: (v) => ref
-                              .read(uiSettingsProvider.notifier)
-                              .setItemDividerColor(v),
+                          color: ui.itemDividerColor,
+                          defaultHint: '默认（灰色半透明）',
+                          showDotWhenZero: false,
+                          showChevron: ui.itemDividerColor != 0,
+                          onTap: () => _showContainerColorPicker(
+                            title: '分隔线颜色',
+                            initialColor: ui.itemDividerColor,
+                            defaultHint: '恢复默认',
+                            onSelected: (v) => ref
+                                .read(uiSettingsProvider.notifier)
+                                .setItemDividerColor(v),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ]),
+                  ),
 
                   // === 分组 7「模糊效果」（参考 R.string.blur_effects=模糊效果；
                   // [队列⑦c A3] 原"毛玻璃"改组名对齐参考；我方 启用毛玻璃 +
@@ -1315,104 +1363,128 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   const IosSectionHeader('模糊效果'),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      children: [
-                    SettingSwitchRow(
-                      title: '启用毛玻璃',
-                      subtitle: '低端设备开启可能掉帧',
-                      value: ui.enableBlur,
-                      onChanged: (v) => ref
-                          .read(uiSettingsProvider.notifier)
-                          .setEnableBlur(v),
-                    ),
-                    IosListTile(
-                      title: '顶栏模糊',
-                      subtitle: ui.enableBlur
-                          ? '半径 ${ui.topBarBlurRadius}dp · 底色 ${ui.topBarBlurAlpha}/255'
-                          : '需先启用毛玻璃',
-                      onTap: ui.enableBlur ? _showTopBarBlurDialog : null,
-                    ),
-                    IosListTile(
-                      title: '悬浮底栏模糊',
-                      subtitle: ui.enableBlur
-                          ? '半径 ${ui.bottomBarBlurRadius}dp · 底色 ${ui.bottomBarBlurAlpha}/255'
-                          : '需先启用毛玻璃',
-                      onTap:
-                          ui.enableBlur ? _showBottomBarBlurDialog : null,
-                    ),
-                  ]),
+                    children: [
+                      SettingSwitchRow(
+                        title: '启用毛玻璃',
+                        subtitle: '低端设备开启可能掉帧',
+                        value: ui.enableBlur,
+                        onChanged: (v) => ref
+                            .read(uiSettingsProvider.notifier)
+                            .setEnableBlur(v),
+                      ),
+                      IosListTile(
+                        title: '顶栏模糊',
+                        subtitle: ui.enableBlur
+                            ? '半径 ${ui.topBarBlurRadius}dp · 底色 ${ui.topBarBlurAlpha}/255'
+                            : '需先启用毛玻璃',
+                        onTap: ui.enableBlur ? _showTopBarBlurDialog : null,
+                      ),
+                      IosListTile(
+                        title: '悬浮底栏模糊',
+                        subtitle: ui.enableBlur
+                            ? '半径 ${ui.bottomBarBlurRadius}dp · 底色 ${ui.bottomBarBlurAlpha}/255'
+                            : '需先启用毛玻璃',
+                        onTap: ui.enableBlur ? _showBottomBarBlurDialog : null,
+                      ),
+                    ],
+                  ),
 
                   // === 自定义主题·白天（对齐原版 day category，themeConfigList
                   // 功能完整保留——UI_MD3_PLAN.md 第九节） ===
                   const IosSectionHeader('自定义主题 · 白天'),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      children: [
-                    _colorTile(PrefKeys.cPrimary, '主色调', colors),
-                    _colorTile(PrefKeys.cAccent, '强调色', colors),
-                    _colorTile(PrefKeys.cBackground, '背景色', colors,
-                        isBackground: true),
-                    _colorTile(PrefKeys.cBBackground, '底部操作栏颜色', colors),
-                    IosListTile(
-                      icon: Symbols.wallpaper_rounded,
-                      title: '背景图片',
-                      subtitle: _bgImage.isEmpty ? '未设置' : _bgImage,
-                      onTap: () => _showBgImageDialog(PrefKeys.bgImage),
-                    ),
-                    SettingSwitchRow(
-                      title: '透明导航栏',
-                      subtitle: _androidOnly,
-                      value: _transparentNavBar,
-                      onChanged: (v) {
-                        setState(() => _transparentNavBar = v);
-                        _settings.setBoolPref(PrefKeys.transparentNavBar, v);
-                      },
-                    ),
-                    IosListTile(
-                      icon: Symbols.save_rounded,
-                      title: '保存白天主题',
-                      subtitle: '将当前白天颜色保存到主题列表',
-                      onTap: () => _saveTheme(isNight: false),
-                    ),
-                  ]),
+                    children: [
+                      _colorTile(PrefKeys.cPrimary, '主色调', colors),
+                      _colorTile(PrefKeys.cAccent, '强调色', colors),
+                      _colorTile(
+                        PrefKeys.cBackground,
+                        '背景色',
+                        colors,
+                        isBackground: true,
+                      ),
+                      _colorTile(PrefKeys.cBBackground, '底部操作栏颜色', colors),
+                      IosListTile(
+                        icon: Symbols.wallpaper_rounded,
+                        title: '背景图片',
+                        subtitle: _bgImage.isEmpty ? '未设置' : _bgImage,
+                        onTap: () => _showBgImageDialog(PrefKeys.bgImage),
+                      ),
+                      SettingSwitchRow(
+                        title: '透明导航栏',
+                        subtitle: _androidOnly,
+                        value: _transparentNavBar,
+                        onChanged: (v) {
+                          setState(() => _transparentNavBar = v);
+                          _settings.setBoolPref(PrefKeys.transparentNavBar, v);
+                        },
+                      ),
+                      IosListTile(
+                        icon: Symbols.save_rounded,
+                        title: '保存白天主题',
+                        subtitle: '将当前白天颜色保存到主题列表',
+                        onTap: () => _saveTheme(isNight: false),
+                      ),
+                    ],
+                  ),
 
                   // === 自定义主题·夜间（对齐原版 night category）===
                   const IosSectionHeader('自定义主题 · 夜间'),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      children: [
-                    _colorTile(PrefKeys.cNPrimary, '主色调', colors,
-                        isNight: true),
-                    _colorTile(PrefKeys.cNAccent, '强调色', colors,
-                        isNight: true),
-                    _colorTile(PrefKeys.cNBackground, '背景色', colors,
-                        isNight: true, isBackground: true),
-                    _colorTile(PrefKeys.cNBBackground, '底部操作栏颜色', colors,
-                        isNight: true),
-                    IosListTile(
-                      icon: Symbols.wallpaper_rounded,
-                      title: '背景图片',
-                      subtitle: _bgImageNight.isEmpty ? '未设置' : _bgImageNight,
-                      onTap: () => _showBgImageDialog(PrefKeys.bgImageN),
-                    ),
-                    SettingSwitchRow(
-                      title: '透明导航栏',
-                      subtitle: _androidOnly,
-                      value: _transparentNavBarNight,
-                      onChanged: (v) {
-                        setState(() => _transparentNavBarNight = v);
-                        _settings.setBoolPref(
-                            PrefKeys.transparentNavBarNight, v);
-                      },
-                    ),
-                    IosListTile(
-                      icon: Symbols.save_rounded,
-                      title: '保存夜间主题',
-                      subtitle: '将当前夜间颜色保存到主题列表',
-                      onTap: () => _saveTheme(isNight: true),
-                    ),
-                  ]),
-                  const IosSectionFooter(
-                      '背景图片将作为全局窗口壁纸显示（分组列表卡片保持不透明底）'),
+                    children: [
+                      _colorTile(
+                        PrefKeys.cNPrimary,
+                        '主色调',
+                        colors,
+                        isNight: true,
+                      ),
+                      _colorTile(
+                        PrefKeys.cNAccent,
+                        '强调色',
+                        colors,
+                        isNight: true,
+                      ),
+                      _colorTile(
+                        PrefKeys.cNBackground,
+                        '背景色',
+                        colors,
+                        isNight: true,
+                        isBackground: true,
+                      ),
+                      _colorTile(
+                        PrefKeys.cNBBackground,
+                        '底部操作栏颜色',
+                        colors,
+                        isNight: true,
+                      ),
+                      IosListTile(
+                        icon: Symbols.wallpaper_rounded,
+                        title: '背景图片',
+                        subtitle: _bgImageNight.isEmpty ? '未设置' : _bgImageNight,
+                        onTap: () => _showBgImageDialog(PrefKeys.bgImageN),
+                      ),
+                      SettingSwitchRow(
+                        title: '透明导航栏',
+                        subtitle: _androidOnly,
+                        value: _transparentNavBarNight,
+                        onChanged: (v) {
+                          setState(() => _transparentNavBarNight = v);
+                          _settings.setBoolPref(
+                            PrefKeys.transparentNavBarNight,
+                            v,
+                          );
+                        },
+                      ),
+                      IosListTile(
+                        icon: Symbols.save_rounded,
+                        title: '保存夜间主题',
+                        subtitle: '将当前夜间颜色保存到主题列表',
+                        onTap: () => _saveTheme(isNight: true),
+                      ),
+                    ],
+                  ),
+                  const IosSectionFooter('背景图片将作为全局窗口壁纸显示（分组列表卡片保持不透明底）'),
                 ],
               ),
             ),
@@ -1557,9 +1629,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           // 对齐原版长按恢复默认：清除自定义值
           TextButton(
             onPressed: () {
-              ref
-                  .read(themeColorsProvider.notifier)
-                  .setColor(key, null);
+              ref.read(themeColorsProvider.notifier).setColor(key, null);
               Navigator.pop(ctx);
             },
             child: const Text('恢复默认'),
@@ -1576,7 +1646,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (selected == null || !mounted) return;
     // 对齐原版 onColorSelected 背景明暗校验（白天背景过暗/夜间背景过亮拒绝）
     if (isBackground) {
-      final isLight = ThemeData.estimateBrightnessForColor(Color(selected)) ==
+      final isLight =
+          ThemeData.estimateBrightnessForColor(Color(selected)) ==
           Brightness.light;
       if (!isNight && !isLight) {
         _toast('白天背景不能太暗');
@@ -1650,7 +1721,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   /// 主题管理对话框（[队列⑦c A3] 原"主题列表"改名对齐参考 theme_pack=主题管理）：
-  /// 点击应用、删除按钮移除
+  /// 点击应用，行内支持重命名/删除
   Future<void> _showThemeListDialog() async {
     var list = await _loadThemeList();
     if (!mounted) return;
@@ -1674,19 +1745,44 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       final item = list[index];
                       final isNight = item['isNight'] == true;
                       return ListTile(
+                        key: ValueKey('theme-config-item-$index'),
                         leading: Icon(
-                          isNight ? Symbols.dark_mode_rounded : Symbols.light_mode_rounded,
+                          isNight
+                              ? Symbols.dark_mode_rounded
+                              : Symbols.light_mode_rounded,
                         ),
-                        title: Text('${item['name'] ?? '未命名'}'),
+                        title: Text(
+                          '${item['name'] ?? '未命名'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         subtitle: Text(isNight ? '夜间主题' : '白天主题'),
-                        trailing: IconButton(
-                          icon: const Icon(Symbols.delete_rounded),
-                          onPressed: () async {
-                            list = List.of(list)..removeAt(index);
-                            await _settings.setStringPref(
-                                _themeListKey, jsonEncode(list));
-                            setDialogState(() {});
-                          },
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              key: ValueKey('theme-config-rename-$index'),
+                              icon: const Icon(Symbols.edit_rounded),
+                              tooltip: '重命名',
+                              onPressed: () => _renameThemeConfig(
+                                list,
+                                index,
+                                setDialogState,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Symbols.delete_rounded),
+                              tooltip: '删除',
+                              onPressed: () async {
+                                list = List.of(list)..removeAt(index);
+                                await _settings.setStringPref(
+                                  _themeListKey,
+                                  jsonEncode(list),
+                                );
+                                setDialogState(() {});
+                              },
+                            ),
+                          ],
                         ),
                         onTap: () async {
                           await _applyThemeConfig(item);
@@ -1705,6 +1801,26 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         ),
       ),
     );
+  }
+
+  /// 重命名主题管理列表项：trim 后为空/取消不改；持久化并刷新对话框
+  Future<void> _renameThemeConfig(
+    List<Map<String, dynamic>> list,
+    int index,
+    StateSetter setDialogState,
+  ) async {
+    final current = '${list[index]['name'] ?? '未命名'}';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _ThemeConfigRenameDialog(initialValue: current),
+    );
+    if (!mounted) return;
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) return;
+    list[index] = Map<String, dynamic>.of(list[index])..['name'] = trimmed;
+    await _settings.setStringPref(_themeListKey, jsonEncode(list));
+    if (!mounted) return;
+    setDialogState(() {});
   }
 
   /// 应用一份已保存的主题配置（按日/夜写入对应颜色组）
@@ -1759,8 +1875,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       'primary': isNight ? colors.primaryNight : colors.primary,
       'accent': isNight ? colors.accentNight : colors.accent,
       'background': isNight ? colors.backgroundNight : colors.background,
-      'bottomBackground':
-          isNight ? colors.bottomBackgroundNight : colors.bottomBackground,
+      'bottomBackground': isNight
+          ? colors.bottomBackgroundNight
+          : colors.bottomBackground,
     });
     await _settings.setStringPref(_themeListKey, jsonEncode(list));
     _toast('已保存主题「$name」');
@@ -1774,10 +1891,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   /// ThemeMode → JSON 名称
   static String _themeModeName(ThemeMode mode) => switch (mode) {
-        ThemeMode.light => 'light',
-        ThemeMode.dark => 'dark',
-        _ => 'system',
-      };
+    ThemeMode.light => 'light',
+    ThemeMode.dark => 'dark',
+    _ => 'system',
+  };
 
   /// 导出当前配色为 JSON 文件（paletteId + 主题模式 + 日/夜 4 色组）
   Future<void> _exportTheme() async {
@@ -1876,17 +1993,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     // 主题模式（未知值忽略）
     switch (decoded['themeMode']) {
       case 'light':
-        await ref.read(themeNotifierProvider.notifier).setThemeMode(
-              ThemeMode.light,
-            );
+        await ref
+            .read(themeNotifierProvider.notifier)
+            .setThemeMode(ThemeMode.light);
       case 'dark':
-        await ref.read(themeNotifierProvider.notifier).setThemeMode(
-              ThemeMode.dark,
-            );
+        await ref
+            .read(themeNotifierProvider.notifier)
+            .setThemeMode(ThemeMode.dark);
       case 'system':
-        await ref.read(themeNotifierProvider.notifier).setThemeMode(
-              ThemeMode.system,
-            );
+        await ref
+            .read(themeNotifierProvider.notifier)
+            .setThemeMode(ThemeMode.system);
       default:
         break;
     }
@@ -2007,8 +2124,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final ui = ref.read(uiSettingsProvider);
     return _showBackgroundImageDialog(
       title: night ? '项目背景图片（夜间）' : '项目背景图片（日间）',
-      current:
-          night ? ui.itemBackgroundImageDark : ui.itemBackgroundImageLight,
+      current: night ? ui.itemBackgroundImageDark : ui.itemBackgroundImageLight,
       slot: night
           ? ThemeBackgroundImageStore.itemDarkSlot
           : ThemeBackgroundImageStore.itemLightSlot,
@@ -2220,10 +2336,7 @@ class _ThemeModeSelector extends StatelessWidget {
   final ThemeMode selected;
   final ValueChanged<ThemeMode> onChanged;
 
-  const _ThemeModeSelector({
-    required this.selected,
-    required this.onChanged,
-  });
+  const _ThemeModeSelector({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -2447,8 +2560,8 @@ class _PaletteCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: selected ? primary : scheme.onSurface,
-                  ),
+                color: selected ? primary : scheme.onSurface,
+              ),
             ),
           ],
         ),
@@ -2484,14 +2597,62 @@ class _PaletteDots extends StatelessWidget {
               width: 10,
               height: 10,
               margin: const EdgeInsets.symmetric(horizontal: 1.5),
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// 主题配置重命名对话框（自带 controller 生命周期）
+class _ThemeConfigRenameDialog extends StatefulWidget {
+  const _ThemeConfigRenameDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_ThemeConfigRenameDialog> createState() =>
+      _ThemeConfigRenameDialogState();
+}
+
+class _ThemeConfigRenameDialogState extends State<_ThemeConfigRenameDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialValue,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _confirm() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('重命名主题'),
+      content: TextField(
+        key: const ValueKey('theme-config-rename-field'),
+        controller: _controller,
+        autofocus: true,
+        maxLength: 40,
+        decoration: const InputDecoration(hintText: '主题名称'),
+        onSubmitted: (_) => _confirm(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const ValueKey('theme-config-rename-confirm'),
+          onPressed: _confirm,
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }
