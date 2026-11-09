@@ -154,12 +154,14 @@ Future<void> _saveEditedContent(
   final book = state.currentBook;
   if (book == null) return;
   try {
-    final ok = await ref.read(bookApiProvider).saveChapterContent(
-      bookUrl: book.bookUrl,
-      chapterIndex: state.currentChapterIndex,
-      title: state.currentChapter?.title ?? '',
-      content: content,
-    );
+    final ok = await ref
+        .read(bookApiProvider)
+        .saveChapterContent(
+          bookUrl: book.bookUrl,
+          chapterIndex: state.currentChapterIndex,
+          title: state.currentChapter?.title ?? '',
+          content: content,
+        );
     if (!context.mounted) return;
     if (ok) {
       await ref.read(readerNotifierProvider.notifier).reloadChapterContent();
@@ -191,6 +193,22 @@ Future<void> updateReaderBookConfig(
   } catch (e) {
     if (context.mounted) readerActionSnack(context, '设置保存失败: $e');
   }
+}
+
+/// 替换规则 scope 是否匹配当前书（批7c-1）
+///
+/// - scope 为 null/空/`global`（大小写不敏感）→ 全局生效；
+/// - 否则按 `,`/`;`/`，`/`；` 拆分并 trim，任一项等于书名才生效；
+/// - 书名为空时，非全局 scope 一律不生效（对齐「作用域书」语义）。
+bool replaceRuleScopeMatchesBook(String? scope, String bookName) {
+  final raw = scope?.trim() ?? '';
+  if (raw.isEmpty || raw.toLowerCase() == 'global') return true;
+  final name = bookName.trim();
+  if (name.isEmpty) return false;
+  for (final part in raw.split(RegExp(r'[,;，；]'))) {
+    if (part.trim() == name) return true;
+  }
+  return false;
 }
 
 /// 替换净化是否生效（Dart 侧对齐 Rust `use_replace_rule_for_book`）
@@ -230,7 +248,10 @@ Future<bool> _readGlobalReplaceDefault(WidgetRef ref) async {
 ///
 /// 取反基于 [effectiveReplaceRuleEnabled]（而非仅 readConfig 值）：图片书/
 /// 本地 epub/全局默认关闭时，首次点击写入显式 true 即开启。
-Future<void> toggleReaderReplaceRule(BuildContext context, WidgetRef ref) async {
+Future<void> toggleReaderReplaceRule(
+  BuildContext context,
+  WidgetRef ref,
+) async {
   final book = ref.read(readerNotifierProvider).currentBook;
   // 显式书级值无需等待全局 provider（也避免无谓异步跳变）；仅在 null 时读取
   final explicit = book?.readConfig?.useReplaceRule;
@@ -305,13 +326,9 @@ Future<void> syncReaderProgress(BuildContext context, WidgetRef ref) async {
     if (!context.mounted) return;
     switch (result) {
       case 'uploaded':
-        messenger.showSnackBar(
-          const SnackBar(content: Text('本地进度较新，已上传到云端')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('本地进度较新，已上传到云端')));
       case 'same':
-        messenger.showSnackBar(
-          const SnackBar(content: Text('进度已与云端一致')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('进度已与云端一致')));
       case 'skipped':
         messenger.showSnackBar(
           const SnackBar(content: Text('请先在 WebDAV 设置中开启「同步书籍进度」')),

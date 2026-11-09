@@ -22,12 +22,14 @@ import '../../services/system_brightness.dart';
 import '../../utils/txt_toc_rule.dart' show isLocalTxtBook;
 import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
+import 'effective_replaces_sheet.dart';
 import 'reader_charset_dialog.dart';
 import 'reader_download_dialog.dart';
 import 'reader_action_helpers.dart';
 import 'reader_menu_style.dart';
 import 'reader_toc_rule_dialog.dart';
 import 'reader_top_bar_actions.dart';
+import 'text_processing_sheet.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
@@ -1312,6 +1314,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             }
           case 'manageReplace':
             widget.onOpenReplaceRules();
+          case 'textProcessing':
+            unawaited(TextProcessingSheet.show(context, ref));
+          case 'effectiveReplaces':
+            unawaited(EffectiveReplacesSheet.show(context, ref));
           case 'settings':
             widget.onOpenSettings();
           case 'toc':
@@ -1344,10 +1350,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
           checked: reSegmentEnabled,
           child: const Text('重新分段'),
         ),
-        const PopupMenuItem(
-          value: 'manageReplace',
-          child: Text('管理替换规则'),
-        ),
+        const PopupMenuItem(value: 'manageReplace', child: Text('管理替换规则')),
+        const PopupMenuItem(value: 'textProcessing', child: Text('文字处理')),
+        const PopupMenuItem(value: 'effectiveReplaces', child: Text('有效替换规则')),
         const PopupMenuItem(value: 'toc', child: Text('查看目录')),
         CheckedPopupMenuItem(
           value: 'reverseTocDisplay',
