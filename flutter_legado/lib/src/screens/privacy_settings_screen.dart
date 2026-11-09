@@ -382,7 +382,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
               child: Text(
                 '隐私密码仅保存在本机，不随备份导出。启用私密功能后，'
                 '忘记密码将无法访问私密内容。启动应用验证只在下次启动'
-                '应用时触发；私密内容的脱敏与入口拦截将在后续批次接入。',
+                '应用时触发；私密书籍与分组在书架、详情与阅读器中均按'
+                '验证状态脱敏或放行。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                   height: 1.5,
