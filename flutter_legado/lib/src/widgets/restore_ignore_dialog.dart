@@ -2,16 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../services/settings_service.dart';
 
-/// 恢复忽略项多选 Dialog（对齐原版 BackupConfigFragment.backupIgnore）
+/// 忽略项多选 Dialog（恢复忽略默认；备份忽略复用同一 UI）
 ///
-/// 勾选项在备份/恢复时经 [RestoreIgnorePrefs] 过滤偏好；
+/// 恢复忽略勾选项经 [RestoreIgnorePrefs] 在恢复时过滤偏好；
 /// 「本地书籍」在调用 restore 前预过滤备份 JSON 中的本地书。
+/// 备份忽略仅在备份侧生效，两者配置相互独立。
 class RestoreIgnoreDialog extends StatefulWidget {
   const RestoreIgnoreDialog({
     super.key,
     required this.initial,
     this.title = '恢复忽略',
-    this.subtitle = '勾选后备份与恢复时跳过对应项（对齐原版）。',
+    this.subtitle = '恢复时跳过对应项；备份忽略请单独设置。',
     this.keys = SettingsService.restoreIgnoreKeys,
     this.titles = SettingsService.restoreIgnoreTitles,
   });

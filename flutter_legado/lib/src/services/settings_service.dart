@@ -1270,15 +1270,18 @@ class SettingsService {
   }
 
   /// 持久化备份忽略配置（对齐 BackupConfig.saveIgnoreConfig）
-  Future<void> saveBackupIgnoreConfig(Map<String, bool> config) async {
+  ///
+  /// 返回是否写入成功；调用方失败时不得提示「已保存」。
+  Future<bool> saveBackupIgnoreConfig(Map<String, bool> config) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final normalized = {
         for (final k in backupIgnoreKeys) k: config[k] == true,
       };
-      await prefs.setString(_keyBackupIgnore, jsonEncode(normalized));
+      return await prefs.setString(_keyBackupIgnore, jsonEncode(normalized));
     } catch (e) {
       debugPrint('SettingsService.saveBackupIgnoreConfig 异常: $e');
+      return false;
     }
   }
 

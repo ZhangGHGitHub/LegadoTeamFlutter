@@ -2,17 +2,20 @@
 // autoBackupLocked 共用的 backupRestoreMutex）
 //
 // 职责：
-// - 统一「创建本地 JSON 备份 → 注入 appPrefs → 可选上传 WebDAV → 写
-//   lastBackup」链路，手动备份与自动备份共用，避免两套实现漂移；
+// - 统一「创建本地 JSON 备份 → 注入 appPrefs → 过滤本地书（可选）→
+//   可选上传 WebDAV → 写 lastBackup」链路，手动备份与自动备份共用，
+//   避免两套实现漂移；
 // - 进程内互斥锁：同一时刻只允许一次备份（手动点击与自动调度并发时后者
 //   直接跳过，不排队），对齐原版 `backupRestoreLocked`；
 // - 上传失败不回滚本地备份，也不阻止 `lastBackup` 更新（本地备份已成功），
 //   失败原因交由调用方提示/记日志。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import '../constants/pref_keys.dart';
+import '../models/book.dart';
 import 'book_api.dart';
 import 'restore_ignore_prefs.dart';
 import 'settings_service.dart';
@@ -140,6 +143,10 @@ class LocalBackupService {
     // 恢复侧仍用 restoreIgnore。
     final ignore = await s.getBackupIgnoreConfig();
     await RestoreIgnorePrefs.injectAppPrefsIntoBackupFile(filePath, ignore);
+    // [批8a 回修 P2-1] 「本地书籍」在恢复侧由 UI 预过滤备份 JSON；备份侧
+    // 同样需在上传前剔除，否则本地路径会随 WebDAV 备份外泄。失败必须
+    // fail-closed：删除未过滤文件并上抛，UI 显示备份失败。
+    await _filterLocalBooksIfNeeded(filePath: filePath, ignore: ignore);
 
     WebDavBackupUploadResult? upload;
     Object? uploadError;
@@ -157,8 +164,8 @@ class LocalBackupService {
       }
     }
 
-    // [批8a] 仅保留最新本地备份：上传完成后再清理，避免影响上传；
-    // 清理失败只记日志，不影响本次备份成功。
+    // [批8a] 仅保留最新本地备份：上传尝试结束后再清理（上传失败也已
+    // catch，仍执行），避免影响上传；清理失败只记日志，不影响备份成功。
     await _pruneOldLocalBackups(dirPath: dirPath, currentPath: filePath, s: s);
 
     await s.setLastBackupTime((now ?? DateTime.now()).millisecondsSinceEpoch);
@@ -170,14 +177,70 @@ class LocalBackupService {
     );
   }
 
-  /// 本地备份命名（Dart `RustApi.backup` 生成：`legado_backup_<millis>.json`）
-  static final RegExp _localBackupName = RegExp(r'^legado_backup_.*\.json$');
+  /// 备份忽略「本地书籍」：剔除 JSON `books` 中的本地书
+  ///
+  /// 判定与恢复侧 `_backupPathSkippingLocalBooks` 一致。启用时失败必须
+  /// fail-closed：删除未过滤备份并上抛，避免本地路径随上传外泄。
+  Future<void> _filterLocalBooksIfNeeded({
+    required String filePath,
+    required Map<String, bool> ignore,
+  }) async {
+    if (ignore['localBook'] != true) return;
+    if (!filePath.toLowerCase().endsWith('.json')) return;
 
-  /// 仅保留最新本地备份（对齐原版 `Backup.kt:316-320`）
+    final file = File(filePath);
+    final tmp = File('$filePath.filtering.tmp');
+    try {
+      final raw = await file.readAsString();
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('备份 JSON 顶层不是对象');
+      }
+      final books = decoded['books'];
+      if (books is List) {
+        decoded['books'] = books.where((item) {
+          if (item is! Map) return true;
+          final origin = item['origin']?.toString() ?? '';
+          final type = item['type'];
+          final typeInt = type is int ? type : int.tryParse('$type') ?? 0;
+          final isLocal =
+              BookType.isLocalOrigin(origin) || (typeInt & BookType.local) != 0;
+          return !isLocal;
+        }).toList();
+        await tmp.writeAsString(
+          const JsonEncoder.withIndent('  ').convert(decoded),
+          flush: true,
+        );
+        try {
+          await tmp.rename(filePath);
+        } on FileSystemException {
+          // Windows 部分文件系统不允许 rename 覆盖既有文件；先删再改名。
+          if (await file.exists()) await file.delete();
+          await tmp.rename(filePath);
+        }
+      }
+    } catch (e) {
+      debugPrint('[LocalBackupService] 备份本地书过滤失败，删除未过滤文件: $e');
+      for (final f in [tmp, file]) {
+        try {
+          if (await f.exists()) await f.delete();
+        } catch (_) {
+          // fail-closed 清理由后续错误提示兜底，删除失败不掩盖原异常
+        }
+      }
+      throw StateError('备份本地书过滤失败，已取消本次备份');
+    }
+  }
+
+  /// 本地备份命名（Dart `RustApi.backup` 生成：`legado_backup_<millis>.json`）
+  static final RegExp _localBackupName = RegExp(r'^legado_backup_\d+\.json$');
+
+  /// 仅保留最新本地备份（对齐原版 `Backup.kt:435-439`）
   ///
   /// - 开关 `onlyLatestBackup` 默认 true；
-  /// - 只匹配本项目命名 `legado_backup_*.json`（大小写敏感、仅直接子文件、
-  ///   不递归），保留本次 [currentPath]，其余删除；
+  /// - 只匹配本项目命名 `legado_backup_<数字>.json`（大小写敏感、仅直接
+  ///   子文件、不递归），保留本次 [currentPath]，其余删除；
+  /// - 按文件名比较，避免目录尾分隔符导致路径字符串不等而误删本次备份；
   /// - 失败只 debugPrint，不影响备份成功。
   Future<void> _pruneOldLocalBackups({
     required String dirPath,
@@ -192,14 +255,9 @@ class LocalBackupService {
       if (!onlyLatest) return;
       final dir = Directory(dirPath);
       if (!await dir.exists()) return;
-      final current = File(currentPath).absolute.path;
-      final isWindows = Platform.isWindows;
-      bool isCurrent(String path) {
-        final p = File(path).absolute.path;
-        return isWindows
-            ? p.toLowerCase() == current.toLowerCase()
-            : p == current;
-      }
+      final currentName = File(currentPath).uri.pathSegments.isEmpty
+          ? ''
+          : File(currentPath).uri.pathSegments.last;
 
       await for (final entity in dir.list(followLinks: false)) {
         if (entity is! File) continue;
@@ -207,7 +265,7 @@ class LocalBackupService {
             ? ''
             : entity.uri.pathSegments.last;
         if (!_localBackupName.hasMatch(name)) continue;
-        if (isCurrent(entity.path)) continue;
+        if (name == currentName) continue;
         try {
           await (_deleteFile ?? (file) => file.delete())(entity);
         } catch (e) {

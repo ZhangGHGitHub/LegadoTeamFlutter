@@ -111,7 +111,7 @@ bool _isZipBackupFile(String path) {
 ///
 /// 结构：
 /// 1. WebDav 设置：地址/账号/密码/子目录/设备名/同步进度（含增强）
-/// 2. 备份与恢复：备份路径/备份/恢复/恢复忽略/仅保留最新/自动检查
+/// 2. 备份与恢复：备份路径/备份/恢复/恢复忽略/备份忽略/仅保留最新/自动检查
 ///
 /// 顶栏菜单对标 backup_restore.xml：帮助、导入旧版数据、日志。
 /// 恢复项长按 → 本地恢复（对标 web_dav_restore.onLongClick）。
@@ -780,8 +780,14 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       ),
     );
     if (result == null || !mounted) return;
-    await _settings.saveBackupIgnoreConfig(result);
+    final saved = await _settings.saveBackupIgnoreConfig(result);
     if (!mounted) return;
+    if (!saved) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('保存备份忽略项失败')));
+      return;
+    }
     setState(() => _backupIgnore = result);
     ScaffoldMessenger.of(
       context,
@@ -1293,7 +1299,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   value: _onlyLatestBackup,
                   onChanged: (v) {
                     setState(() => _onlyLatestBackup = v);
-                    _settings.setBoolPref(PrefKeys.onlyLatestBackup, v);
+                    // 尽力持久化：写失败不回滚本次会话状态，下次进入页面重读
+                    unawaited(
+                      _settings.setBoolPref(PrefKeys.onlyLatestBackup, v),
+                    );
                   },
                 ),
                 // [批40] 对齐原版 autoBackup Preference（点击弹配置对话框）
