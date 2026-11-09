@@ -228,6 +228,41 @@ void main() {
       expect(tempBase.listSync(), isEmpty);
     });
 
+    test('恢复成功但 refresh 抛异常：结果仍为 success', () async {
+      final remoteName = 'backup_20261110_120000_123.json';
+      api.downloadText = '{"appPrefs":{}}';
+
+      final result = await build().restoreRemoteBackupExclusive(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+        refresh: () async => throw Exception('refresh boom'),
+      );
+
+      expect(
+        result.status,
+        WebDavRestoreStatus.success,
+        reason: 'refresh 是恢复后的 UI 重读，失败不得改写恢复结果',
+      );
+      expect(api.restoreCalls, 1);
+      expect(File(api.downloadedPath!).existsSync(), isFalse);
+    });
+
+    test('远端名含路径分隔符或 ..：拒绝下载', () async {
+      for (final remoteName in [
+        '../evil.json',
+        'backup_a\\b.json',
+        'backup_..json',
+      ]) {
+        final result = await build().restoreRemoteBackupExclusive(
+          remoteName: remoteName,
+          configJson: '{"url":"x"}',
+        );
+        expect(result.status, WebDavRestoreStatus.failed);
+        expect(result.error, isA<FormatException>());
+      }
+      expect(api.downloadedPath, isNull, reason: '非法名不得发起下载');
+    });
+
     test('下载失败：failed 且清理刚创建的临时目录', () async {
       final boom = Exception('download boom');
       api.downloadError = boom;

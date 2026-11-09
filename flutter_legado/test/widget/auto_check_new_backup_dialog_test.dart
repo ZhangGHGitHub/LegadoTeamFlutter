@@ -75,7 +75,7 @@ void main() {
   /// 打开对话框并把结果写入 [onResult]
   Future<void> openDialog(
     WidgetTester tester, {
-    required void Function(Future<bool>) onResult,
+    required void Function(Future<bool?>) onResult,
     String fileName = 'backup_20261110_120000_123.json',
     double textScale = 1.0,
   }) async {
@@ -104,7 +104,7 @@ void main() {
   }
 
   testWidgets('内容与按钮文案：标题「恢复」、正文提示 + 文件名', (tester) async {
-    late Future<bool> result;
+    late Future<bool?> result;
     await openDialog(tester, onResult: (future) => result = future);
 
     expect(find.text('恢复'), findsOneWidget);
@@ -119,12 +119,22 @@ void main() {
   });
 
   testWidgets('点「确定」返回 true', (tester) async {
-    late Future<bool> result;
+    late Future<bool?> result;
     await openDialog(tester, onResult: (future) => result = future);
 
     await tester.tap(find.text('确定'));
     await tester.pumpAndSettle();
     expect(await result, isTrue);
+  });
+
+  testWidgets('点遮罩关闭返回 null（未明确选择）', (tester) async {
+    late Future<bool?> result;
+    await openDialog(tester, onResult: (future) => result = future);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(await result, isNull);
+    expect(find.byType(AutoCheckNewBackupDialog), findsNothing);
   });
 
   testWidgets('取消不调用恢复；确认调用恢复并显示「恢复成功」SnackBar', (tester) async {
@@ -187,7 +197,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    late Future<bool> result;
+    late Future<bool?> result;
     await openDialog(
       tester,
       textScale: 2.0,

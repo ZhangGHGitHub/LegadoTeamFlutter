@@ -550,6 +550,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
             await _reloadPrefsAfterRestore();
           },
         );
+        // 审查回修 P2：本地恢复成功意味着当前数据已是用户认可的最新状态，
+        // 记录 seen=now（不改 lastBackup），避免下次启动又提示恢复更旧的
+        // 远端备份。
+        await _settings.setIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          DateTime.now().millisecondsSinceEpoch,
+        );
         return true;
       },
     );

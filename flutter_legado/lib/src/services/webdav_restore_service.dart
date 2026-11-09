@@ -127,11 +127,18 @@ class WebDavRestoreService {
 
   /// 下载远端备份到独立临时目录，文件名保留远端名（含 `.json`/`.zip`）
   ///
-  /// 失败时删除刚创建的临时目录后原样上抛，避免残留半截文件。
+  /// 远端名必须是**单段文件名**：含 `/`、`\` 或 `..` 的 displayname 直接
+  /// 拒绝（防目录穿越），不做静默截断。失败时删除刚创建的临时目录后原样
+  /// 上抛，避免残留半截文件。
   Future<String> downloadRemoteBackup({
     required String configJson,
     required String remoteName,
   }) async {
+    if (remoteName.contains('/') ||
+        remoteName.contains('\\') ||
+        remoteName.contains('..')) {
+      throw const FormatException('远端备份文件名无效');
+    }
     final safeName = _sanitizeFileName(remoteName);
     if (safeName.isEmpty || safeName == '.' || safeName == '..') {
       throw const FormatException('远端备份文件名无效');
@@ -278,7 +285,16 @@ class WebDavRestoreService {
           )) {
         await serverService.forceMigrateAfterRestore();
       }
-      if (refresh != null) await refresh();
+      // 批10 审查回修 P1：refresh（provider 重读）发生在恢复成功之后，
+      // 其失败不得把已落库的恢复改判为失败——否则用户看到「恢复失败」，
+      // 且自动检查已写入 seen、本次进程不会再提示。这里只记日志。
+      if (refresh != null) {
+        try {
+          await refresh();
+        } catch (e, stack) {
+          debugPrint('[WebDavRestoreService] 恢复成功但刷新失败（不改变结果）：$e\n$stack');
+        }
+      }
     } finally {
       // 恢复忽略「本地书籍」时写入的临时 JSON 必须清理，避免路径泄露与
       // 磁盘残留；删除失败不影响恢复结果。

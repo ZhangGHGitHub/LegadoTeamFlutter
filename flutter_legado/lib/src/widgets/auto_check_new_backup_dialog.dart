@@ -11,16 +11,19 @@
 // 按钮由 AlertDialog 的 OverflowBar 自动堆叠，避免横向溢出。
 import 'package:flutter/material.dart';
 
-/// 显示「恢复」确认框；关闭/取消返回 false
-Future<bool> showAutoCheckNewBackupDialog(
+/// 显示「恢复」确认框
+///
+/// 返回 `true`=确定、`false`=取消、`null`=未明确选择（点遮罩/返回键或
+/// 未能展示）。调用方据 null 区分「用户已看到并取消」与「根本没选」：
+/// 前者写去重键永久忽略，后者不写、下次启动可再提示。
+Future<bool?> showAutoCheckNewBackupDialog(
   BuildContext context, {
   required String fileName,
-}) async {
-  final result = await showDialog<bool>(
+}) {
+  return showDialog<bool>(
     context: context,
     builder: (ctx) => AutoCheckNewBackupDialog(fileName: fileName),
   );
-  return result ?? false;
 }
 
 /// 新备份恢复确认框

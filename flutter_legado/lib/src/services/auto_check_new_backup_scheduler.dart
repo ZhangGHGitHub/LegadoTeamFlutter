@@ -8,12 +8,14 @@
 //   解析，失败按文件名 `backup_yyyyMMdd_HHmmss[_SSS].(json|zip)` 回退；
 // - 判定：`mtime > max(lastBackup, lastSeenRemoteBackupMtime) + 60s`
 //   （严格大于；正好 60s 不提示）；
-// - 去重：`lastSeenRemoteBackupMtime`（设备级，不随备份往返）在**弹窗前**
-//   写入——用户取消即永久忽略该备份（对齐 MD3）；不写 `lastBackup`，避免
-//   推迟自动备份周期；
+// - 去重：`lastSeenRemoteBackupMtime`（设备级，不随备份往返）在用户明确
+//   选择（取消/确定）后写入——取消即永久忽略该备份（对齐 MD3）；点遮罩/
+//   返回键（null）或主路由未稳定（未真正展示）不写；不写 `lastBackup`，
+//   避免推迟自动备份周期；
+// - 弹窗前等待主路由稳定（闪屏 /welcome 期间弹窗会被 replace 丢弃）；
+// - 备份/恢复 busy 不消费「一次」配额，延迟 30s 重试（最多 3 次）；
 // - 需密码的 zip 不自动恢复，提示前往备份恢复页手动处理（差异已登记）；
-// - 异常/未配置/开关关闭/备份恢复 busy 一律静默（仅调试日志，不打印
-//   URL/凭据）。
+// - 异常/未配置/开关关闭一律静默（仅调试日志，不打印 URL/凭据）。
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -72,6 +74,12 @@ enum AutoCheckNewBackupDecision {
   /// 有更新但用户取消（已写入去重键，本次启动不再提示）
   promptDeclined,
 
+  /// 确认框未得到明确选择（点遮罩/返回键）：不写去重键，下次启动可再提示
+  promptDismissed,
+
+  /// 主路由未稳定（如仍在闪屏）且等待超时：未弹窗、未写去重键
+  promptDeferred,
+
   /// 备份需要密码，未自动恢复（已提示手动处理）
   passwordRequired,
 
@@ -104,6 +112,11 @@ List<RemoteBackupCandidate> parseRemoteBackupCandidates(String rawJson) {
     if (item['is_dir'] == true) continue;
     final name = item['name']?.toString().trim() ?? '';
     if (!name.startsWith('backup')) continue;
+    // 审查回修 P3：displayname 含路径分隔符或 `..` 直接跳过（目录穿越/
+    // 非单段文件名），不能进入候选；下载侧还有第二道校验。
+    if (name.contains('/') || name.contains('\\') || name.contains('..')) {
+      continue;
+    }
     final millis = parseRemoteBackupModified(item['last_modified'], name);
     if (millis == null) continue;
     candidates.add(
@@ -186,10 +199,15 @@ class AutoCheckNewBackupScheduler {
     WebDavBackupService? webDavBackupService,
     WebDavRestoreService? restoreService,
     ValueListenable<bool>? privacyLocked,
-    Future<bool> Function(String fileName)? confirmRestore,
+    Future<bool?> Function(String fileName)? confirmRestore,
     Future<void> Function(String message)? notify,
     Future<void> Function()? refreshAfterRestore,
+    bool Function()? canPresentPrompt,
     Duration startupDelay = const Duration(seconds: 5),
+    Duration busyRetryDelay = const Duration(seconds: 30),
+    int maxBusyRetries = 3,
+    Duration promptReadyRetryDelay = const Duration(seconds: 1),
+    int maxPromptReadyChecks = 30,
     Future<void> Function(Duration duration)? delay,
     DateTime Function()? clock,
   }) : _api = api,
@@ -203,7 +221,12 @@ class AutoCheckNewBackupScheduler {
        _confirmRestore = confirmRestore ?? _defaultConfirmRestore,
        _notify = notify ?? _defaultNotify,
        _refreshAfterRestore = refreshAfterRestore,
+       _canPresentPrompt = canPresentPrompt,
        _startupDelay = startupDelay,
+       _busyRetryDelay = busyRetryDelay,
+       _maxBusyRetries = maxBusyRetries,
+       _promptReadyRetryDelay = promptReadyRetryDelay,
+       _maxPromptReadyChecks = maxPromptReadyChecks,
        _delay = delay ?? Future<void>.delayed,
        _clock = clock ?? DateTime.now {
     _privacyLocked?.addListener(_handlePrivacyChanged);
@@ -214,10 +237,15 @@ class AutoCheckNewBackupScheduler {
   final WebDavBackupService _webDavBackup;
   final WebDavRestoreService _restoreService;
   final ValueListenable<bool>? _privacyLocked;
-  final Future<bool> Function(String fileName) _confirmRestore;
+  final Future<bool?> Function(String fileName) _confirmRestore;
   final Future<void> Function(String message) _notify;
   final Future<void> Function()? _refreshAfterRestore;
+  final bool Function()? _canPresentPrompt;
   final Duration _startupDelay;
+  final Duration _busyRetryDelay;
+  final int _maxBusyRetries;
+  final Duration _promptReadyRetryDelay;
+  final int _maxPromptReadyChecks;
   final Future<void> Function(Duration duration) _delay;
   final DateTime Function() _clock;
 
@@ -227,6 +255,7 @@ class AutoCheckNewBackupScheduler {
   bool _delayElapsed = false;
   bool _completed = false;
   bool _disposed = false;
+  int _busyRetries = 0;
   Future<AutoCheckNewBackupDecision>? _inFlight;
 
   /// 装配入口（app.dart initState）
@@ -238,6 +267,7 @@ class AutoCheckNewBackupScheduler {
     required BookApi api,
     ValueListenable<bool>? privacyLocked,
     Future<void> Function()? refreshAfterRestore,
+    bool Function()? canPresentPrompt,
   }) {
     final existing = _instance;
     if (existing != null) return existing;
@@ -245,6 +275,7 @@ class AutoCheckNewBackupScheduler {
       api: api,
       privacyLocked: privacyLocked,
       refreshAfterRestore: refreshAfterRestore,
+      canPresentPrompt: canPresentPrompt,
     );
     _instance = instance;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -285,6 +316,7 @@ class AutoCheckNewBackupScheduler {
   /// - 进程内只真正执行一次（[AutoCheckNewBackupDecision.skipped] 表示已执行）；
   /// - 隐私闸门未放行时返回 [AutoCheckNewBackupDecision.privacyLocked] 且
   ///   不消费「一次」配额，解锁后仍可检查；
+  /// - 备份/恢复 busy 同样不消费配额（延迟重试，见 [_scheduleBusyRetry]）；
   /// - 并发调用共享同一 Future，不重复列目录/弹窗。
   Future<AutoCheckNewBackupDecision> checkNow() {
     if (_completed) {
@@ -303,26 +335,32 @@ class AutoCheckNewBackupScheduler {
     if (_privacyLocked?.value ?? false) {
       return AutoCheckNewBackupDecision.privacyLocked;
     }
-    // 闸门已放行：本进程只尝试一次（失败/未配置/busy 均不再重试）
-    _completed = true;
     try {
       final enabled = await _settings.getBoolPref(
         PrefKeys.autoCheckNewBackup,
         defaultValue: true,
       );
-      if (!enabled) return AutoCheckNewBackupDecision.disabled;
+      if (!enabled) {
+        // 审查回修 P3：开关关闭不算「完成一次检查」，不置 _completed；
+        // 用户本会话内再开启时，隐私解锁/显式触发仍可补查。
+        return AutoCheckNewBackupDecision.disabled;
+      }
+      // 审查回修 P2：备份/恢复 busy 不消费本次进程的「一次」配额——
+      // 新配置 WebDAV 后首次启动常与自动备份撞车，直接跳过会让最需要
+      // 恢复的会话永远不提示。改为延迟重试，重试用尽才收口。
       if (LocalBackupService.isBusy) {
+        _scheduleBusyRetry();
         return AutoCheckNewBackupDecision.busy;
       }
       final configJson = await _webDavBackup.resolveConfigJson();
       if (configJson == null) {
-        return AutoCheckNewBackupDecision.notConfigured;
+        return _finish(AutoCheckNewBackupDecision.notConfigured);
       }
 
       final raw = await _api.webdavListDir(configJson, '');
       final candidate = latestRemoteBackupCandidate(raw);
       if (candidate == null) {
-        return AutoCheckNewBackupDecision.noRemoteBackup;
+        return _finish(AutoCheckNewBackupDecision.noRemoteBackup);
       }
 
       final lastBackupMillis = await _settings.getLastBackupTime();
@@ -340,18 +378,33 @@ class AutoCheckNewBackupScheduler {
         remoteMillis: candidate.lastModifiedMillis,
         lastBackupMillis: lastBackupMillis,
         lastSeenMillis: lastSeenMillis,
+        nowMillis: nowMillis,
       )) {
-        return AutoCheckNewBackupDecision.noNewBackup;
+        return _finish(AutoCheckNewBackupDecision.noNewBackup);
       }
 
-      // 弹窗前写入去重键：用户取消即永久忽略该备份（对齐 MD3 口径），
-      // 且不得写 lastBackup（避免推迟自动备份周期）。
+      // 审查回修 P2：闪屏（/welcome）期间弹窗会被 pushReplacement 连带
+      // 替换，showDialog 返回 null。必须先等主路由稳定；等待期间不写
+      // 去重键，避免「没看到弹窗却永久忽略」。
+      if (!await _waitForPromptReady()) {
+        return _finish(AutoCheckNewBackupDecision.promptDeferred);
+      }
+
+      final confirmed = await _confirmRestore(candidate.name);
+      // 未得到明确选择（点遮罩/返回键）：不写 seen，下次启动可再提示。
+      if (confirmed == null) {
+        debugPrint('[AutoCheckNewBackupScheduler] 确认框未明确选择，不写去重键');
+        return _finish(AutoCheckNewBackupDecision.promptDismissed);
+      }
+      // 用户已看到提示：取消也永久忽略该备份（对齐 MD3 口径）；确定则
+      // 进入恢复链。不得写 lastBackup（避免推迟自动备份周期）。
       await _settings.setIntPref(
         PrefKeys.lastSeenRemoteBackupMtime,
         candidate.lastModifiedMillis,
       );
-      final confirmed = await _confirmRestore(candidate.name);
-      if (!confirmed) return AutoCheckNewBackupDecision.promptDeclined;
+      if (!confirmed) {
+        return _finish(AutoCheckNewBackupDecision.promptDeclined);
+      }
 
       final result = await _restoreService.restoreRemoteBackupExclusive(
         remoteName: candidate.name,
@@ -361,17 +414,21 @@ class AutoCheckNewBackupScheduler {
       switch (result.status) {
         case WebDavRestoreStatus.success:
           await _notify('恢复成功');
-          return AutoCheckNewBackupDecision.restored;
+          return _finish(AutoCheckNewBackupDecision.restored);
         case WebDavRestoreStatus.passwordRequired:
+          // 已写 seen：同一远端备份本进程/下次启动不再重复弹窗；用户需
+          // 前往备份恢复页手动输入密码（差异已登记）。
           await _notify('该备份需要密码，请在备份恢复页手动恢复');
-          return AutoCheckNewBackupDecision.passwordRequired;
+          return _finish(AutoCheckNewBackupDecision.passwordRequired);
         case WebDavRestoreStatus.busy:
+          // 用户确认后撞上并发备份/恢复：seen 已写入，不重试弹窗，
+          // 只如实提示稍候（不得提示成功）。
           await _notify('正在备份或恢复，请稍候');
-          return AutoCheckNewBackupDecision.busy;
+          return _finish(AutoCheckNewBackupDecision.busy);
         case WebDavRestoreStatus.failed:
           final error = result.error;
           await _notify(error == null ? '恢复失败' : '恢复失败：${errorMessage(error)}');
-          return AutoCheckNewBackupDecision.restoreFailed;
+          return _finish(AutoCheckNewBackupDecision.restoreFailed);
       }
     } catch (e, stack) {
       // 静默：仅调试日志，不打印 URL/凭据等敏感信息（异常 message 可能
@@ -380,22 +437,86 @@ class AutoCheckNewBackupScheduler {
         '[AutoCheckNewBackupScheduler] 自动检查失败（静默，'
         '${e.runtimeType}）:\n$stack',
       );
-      return AutoCheckNewBackupDecision.failed;
+      return _finish(AutoCheckNewBackupDecision.failed);
     }
+  }
+
+  /// 记录「本次进程已完成检查」并返回结果
+  ///
+  /// 只有真正得到确定结论（未配置/无远端/未到期/已提示/恢复结束/异常）
+  /// 才置位；开关关闭、隐私锁定与备份 busy 不置位，以便后续补检查/重试。
+  AutoCheckNewBackupDecision _finish(AutoCheckNewBackupDecision decision) {
+    _completed = true;
+    return decision;
+  }
+
+  /// 备份/恢复 busy 的延迟重试（不排队、不阻塞调用方）
+  void _scheduleBusyRetry() {
+    if (_disposed || _completed) return;
+    if (_busyRetries >= _maxBusyRetries) {
+      // 重试次数用尽：接受本次跳过，本进程不再检查（与「进程内一次」一致）
+      debugPrint('[AutoCheckNewBackupScheduler] busy 重试 $_busyRetries 次后放弃');
+      _completed = true;
+      return;
+    }
+    _busyRetries++;
+    unawaited(_retryAfterBusy());
+  }
+
+  Future<void> _retryAfterBusy() async {
+    await _delay(_busyRetryDelay);
+    if (_disposed || _completed) return;
+    // 当前这次检查可能尚未收尾（_inFlight 未清空），先等它完成再发起
+    // 重试，避免重试被 single-flight 当成并发调用直接返回。
+    final running = _inFlight;
+    if (running != null) {
+      try {
+        await running;
+      } catch (_) {
+        // 原检查内部已捕获异常，这里只需等待收尾
+      }
+    }
+    if (_disposed || _completed) return;
+    await checkNow();
+  }
+
+  /// 等待主路由稳定（不在闪屏/弹层上）再弹确认框
+  ///
+  /// 返回 false = 等待超时或已销毁（未弹窗，调用方不得写去重键）。
+  Future<bool> _waitForPromptReady() async {
+    final canPresent = _canPresentPrompt;
+    if (canPresent == null) return true;
+    var checks = 0;
+    while (!canPresent()) {
+      if (_disposed || _completed) return false;
+      if (checks >= _maxPromptReadyChecks) {
+        debugPrint('[AutoCheckNewBackupScheduler] 主路由未稳定，放弃本次提示');
+        return false;
+      }
+      checks++;
+      await _delay(_promptReadyRetryDelay);
+    }
+    return true;
   }
 
   /// 是否提示恢复
   ///
   /// `remote > max(lastBackup, seen) + 60s`，严格大于：差值正好 60s 不提示。
-  /// 负数基线按 0 处理。
+  /// 负数基线按 0 处理；[nowMillis] 非空时，落在未来的 lastBackup/seen
+  /// （时钟回拨、恢复他机偏好）按 0 处理，对齐 [AutoBackupScheduler]
+  /// 「未来时间视为到期」口径，避免永久抑制提示。
   static bool shouldPrompt({
     required int remoteMillis,
     required int lastBackupMillis,
     required int lastSeenMillis,
+    int? nowMillis,
   }) {
-    final rawBaseline = lastBackupMillis > lastSeenMillis
-        ? lastBackupMillis
-        : lastSeenMillis;
+    final now = nowMillis;
+    final lastBackup = (now != null && lastBackupMillis > now)
+        ? 0
+        : lastBackupMillis;
+    final lastSeen = (now != null && lastSeenMillis > now) ? 0 : lastSeenMillis;
+    final rawBaseline = lastBackup > lastSeen ? lastBackup : lastSeen;
     final baseline = rawBaseline < 0 ? 0 : rawBaseline;
     return remoteMillis - baseline >
         kAutoCheckNewBackupThreshold.inMilliseconds;
@@ -413,9 +534,12 @@ class AutoCheckNewBackupScheduler {
   }
 
   /// 默认确认框（经全局 Navigator context）
-  static Future<bool> _defaultConfirmRestore(String fileName) async {
+  ///
+  /// 返回 null = 未能展示/未明确选择（无 Navigator、点遮罩或返回键），
+  /// 调用方不写去重键。
+  static Future<bool?> _defaultConfirmRestore(String fileName) async {
     final context = PlatformBridgeService.navigatorKey.currentContext;
-    if (context == null || !context.mounted) return false;
+    if (context == null || !context.mounted) return null;
     return showAutoCheckNewBackupDialog(context, fileName: fileName);
   }
 

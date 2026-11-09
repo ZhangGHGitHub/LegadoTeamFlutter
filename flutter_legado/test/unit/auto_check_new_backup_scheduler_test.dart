@@ -9,7 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -94,7 +94,7 @@ void main() {
   late _FakeRestoreService restoreService;
   late int confirmCalls;
   late String? lastConfirmName;
-  late bool confirmAnswer;
+  late bool? confirmAnswer;
   late List<String> messages;
 
   final remoteMillis = DateTime(2026, 11, 10, 12).millisecondsSinceEpoch;
@@ -120,6 +120,11 @@ void main() {
   AutoCheckNewBackupScheduler build({
     ValueNotifier<bool>? gate,
     Duration startupDelay = Duration.zero,
+    Duration busyRetryDelay = const Duration(seconds: 30),
+    int maxBusyRetries = 3,
+    Duration promptReadyRetryDelay = Duration.zero,
+    int maxPromptReadyChecks = 30,
+    bool Function()? canPresentPrompt,
     Future<void> Function(Duration duration)? delay,
   }) {
     return AutoCheckNewBackupScheduler(
@@ -135,7 +140,12 @@ void main() {
       },
       notify: (message) async => messages.add(message),
       refreshAfterRestore: () async {},
+      canPresentPrompt: canPresentPrompt,
       startupDelay: startupDelay,
+      busyRetryDelay: busyRetryDelay,
+      maxBusyRetries: maxBusyRetries,
+      promptReadyRetryDelay: promptReadyRetryDelay,
+      maxPromptReadyChecks: maxPromptReadyChecks,
       delay: delay ?? (_) async {},
       clock: () => DateTime(2026, 11, 10, 12),
     );
@@ -212,6 +222,32 @@ void main() {
         isTrue,
       );
     });
+
+    test('lastBackup 在未来（时钟回拨/跨机）视为到期，不永久抑制', () {
+      // now=100000、lastBackup=10000000（未来）、远端=1000000：
+      // 不处理未来时间会得到负差值而不提示。
+      expect(
+        AutoCheckNewBackupScheduler.shouldPrompt(
+          remoteMillis: 1000000,
+          lastBackupMillis: 10000000,
+          lastSeenMillis: 0,
+          nowMillis: 100000,
+        ),
+        isTrue,
+      );
+    });
+
+    test('lastSeen 在未来同样按 0 处理', () {
+      expect(
+        AutoCheckNewBackupScheduler.shouldPrompt(
+          remoteMillis: 1000000,
+          lastBackupMillis: 0,
+          lastSeenMillis: 10000000,
+          nowMillis: 100000,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('列表解析', () {
@@ -223,6 +259,21 @@ void main() {
           'name': 'backup_bad_name.json',
           'is_dir': false,
           'last_modified': 'not-a-date',
+        },
+        {
+          'name': 'backup_../evil.json',
+          'is_dir': false,
+          'last_modified': 'Wed, 21 Oct 2015 07:28:00 GMT',
+        },
+        {
+          'name': 'backup_..json',
+          'is_dir': false,
+          'last_modified': 'Wed, 21 Oct 2015 07:28:00 GMT',
+        },
+        {
+          'name': 'backup_a\\b.json',
+          'is_dir': false,
+          'last_modified': 'Wed, 21 Oct 2015 07:28:00 GMT',
         },
         {
           'name': 'backup_20260101_120000_000.json',
@@ -303,6 +354,21 @@ void main() {
       expect(confirmCalls, 0);
     });
 
+    test('开关关闭不消费配额：本会话再次开启后仍可检查', () async {
+      await settings.setBoolPref(PrefKeys.autoCheckNewBackup, false);
+      final scheduler = build();
+      expect(await scheduler.checkNow(), AutoCheckNewBackupDecision.disabled);
+      expect(api.listCalls, 0);
+
+      await settings.setBoolPref(PrefKeys.autoCheckNewBackup, true);
+      api.listJson = '[]';
+      expect(
+        await scheduler.checkNow(),
+        AutoCheckNewBackupDecision.noRemoteBackup,
+      );
+      expect(api.listCalls, 1);
+    });
+
     test('WebDAV 未配置 → notConfigured，不列目录', () async {
       webDav.configJson = null;
       seedNewerRemote();
@@ -322,12 +388,60 @@ void main() {
       });
       await Future<void>.delayed(Duration.zero);
 
-      expect(await build().checkNow(), AutoCheckNewBackupDecision.busy);
+      // maxBusyRetries=0：本用例只验证首次 busy 判定，不产生延迟重试
+      expect(
+        await build(maxBusyRetries: 0).checkNow(),
+        AutoCheckNewBackupDecision.busy,
+      );
       expect(api.listCalls, 0);
       expect(confirmCalls, 0);
 
       gate.complete();
       await running;
+    });
+
+    test('busy 不消费配额：锁释放后延迟重试并完成检查', () async {
+      seedNewerRemote();
+      final lockGate = Completer<void>();
+      final running = LocalBackupService.instance.runExclusive(() async {
+        await lockGate.future;
+        return null;
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      final retryGate = Completer<void>();
+      final promptReached = Completer<void>();
+      var delayCalls = 0;
+      final scheduler = AutoCheckNewBackupScheduler(
+        api: api,
+        settings: settings,
+        webDavBackupService: webDav,
+        restoreService: restoreService,
+        confirmRestore: (fileName) async {
+          if (!promptReached.isCompleted) promptReached.complete();
+          return false;
+        },
+        notify: (message) async => messages.add(message),
+        startupDelay: Duration.zero,
+        busyRetryDelay: const Duration(seconds: 30),
+        delay: (duration) async {
+          delayCalls++;
+          await retryGate.future;
+        },
+        clock: () => DateTime(2026, 11, 10, 12),
+      );
+
+      expect(await scheduler.checkNow(), AutoCheckNewBackupDecision.busy);
+      expect(delayCalls, 1, reason: 'busy 必须安排延迟重试');
+      expect(api.listCalls, 0);
+
+      lockGate.complete();
+      await running;
+      retryGate.complete();
+      await promptReached.future;
+      await pumpEventQueue();
+      expect(api.listCalls, 1, reason: '锁释放后重试应真正检查');
+      expect(await scheduler.checkNow(), AutoCheckNewBackupDecision.skipped);
     });
 
     test('列表异常 → 静默 failed，不弹窗不提示', () async {
@@ -409,6 +523,72 @@ void main() {
       );
     });
 
+    test('点遮罩/返回（null）：不恢复、不写 seen、下次可再提示', () async {
+      seedNewerRemote();
+      confirmAnswer = null;
+      expect(
+        await build().checkNow(),
+        AutoCheckNewBackupDecision.promptDismissed,
+      );
+      expect(restoreService.calls, 0);
+      expect(messages, isEmpty);
+      expect(
+        await settings.getIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          defaultValue: 0,
+        ),
+        0,
+        reason: '未明确选择不得写去重键',
+      );
+    });
+
+    test('主路由未稳定（闪屏）：不弹窗、不写 seen', () async {
+      seedNewerRemote();
+      var checks = 0;
+      final scheduler = build(
+        canPresentPrompt: () {
+          checks++;
+          return false;
+        },
+        maxPromptReadyChecks: 2,
+      );
+      expect(
+        await scheduler.checkNow(),
+        AutoCheckNewBackupDecision.promptDeferred,
+      );
+      expect(checks, 3, reason: '初始判定 + 2 次延迟复检');
+      expect(confirmCalls, 0);
+      expect(
+        await settings.getIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          defaultValue: 0,
+        ),
+        0,
+      );
+    });
+
+    test('主路由延迟就绪：等待后弹窗并写 seen', () async {
+      seedNewerRemote();
+      confirmAnswer = false;
+      var checks = 0;
+      final scheduler = build(
+        canPresentPrompt: () => ++checks >= 3,
+        maxPromptReadyChecks: 5,
+      );
+      expect(
+        await scheduler.checkNow(),
+        AutoCheckNewBackupDecision.promptDeclined,
+      );
+      expect(confirmCalls, 1);
+      expect(
+        await settings.getIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          defaultValue: 0,
+        ),
+        remoteMillis,
+      );
+    });
+
     test('seen 已覆盖远端 → noNewBackup，不弹窗', () async {
       await settings.setIntPref(
         PrefKeys.lastSeenRemoteBackupMtime,
@@ -419,16 +599,26 @@ void main() {
       expect(confirmCalls, 0);
     });
 
-    test('需密码备份：确认后不恢复并提示手动处理', () async {
+    test('需密码备份：确认后不恢复、提示手动处理、seen 已消费', () async {
       seedNewerRemote();
       confirmAnswer = true;
       restoreService.result = const WebDavRestoreRunResult.passwordRequired();
+      final scheduler = build();
       expect(
-        await build().checkNow(),
+        await scheduler.checkNow(),
         AutoCheckNewBackupDecision.passwordRequired,
       );
       expect(restoreService.calls, 1);
       expect(messages, ['该备份需要密码，请在备份恢复页手动恢复']);
+      expect(
+        await settings.getIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          defaultValue: 0,
+        ),
+        remoteMillis,
+        reason: '用户已看到提示，同备份不再重复弹窗',
+      );
+      expect(await scheduler.checkNow(), AutoCheckNewBackupDecision.skipped);
     });
 
     test('恢复失败：提示失败且不出现「恢复成功」', () async {
@@ -497,6 +687,38 @@ void main() {
       await started;
       expect(api.listCalls, 1);
       expect(confirmCalls, 1);
+    });
+  });
+
+  group('attach', () {
+    testWidgets('首帧后延迟 5s 检查一次', (tester) async {
+      api.listJson = '[]';
+      await api.webdavServerSave(
+        jsonEncode({
+          'id': -1,
+          'name': '默认 WebDAV',
+          'type': 'WEBDAV',
+          'config': jsonEncode({
+            'url': 'https://dav.example.com',
+            'username': '',
+            'password': '',
+          }),
+          'sortNumber': 0,
+        }),
+      );
+      final gate = ValueNotifier<bool>(false);
+      addTearDown(gate.dispose);
+
+      AutoCheckNewBackupScheduler.attach(api: api, privacyLocked: gate);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(api.listCalls, 0, reason: '5s 延迟未到不得检查');
+
+      await tester.pump(const Duration(seconds: 4));
+      expect(api.listCalls, 0);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      expect(api.listCalls, 1, reason: '延迟 5s 后应检查一次');
     });
   });
 }

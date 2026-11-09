@@ -272,8 +272,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     AutoBackupScheduler.attach(ref.read(bookApiProvider));
     // [批10] autoCheckNewBackup 启动检查：冷启动、隐私闸门放行后延迟 5s
     // 检查一次 WebDAV 远端是否有比本地新的备份；进程内只查一次，不挂
-    // resumed。弹窗前已写去重键（取消=永久忽略该备份），确认后走共享恢复链
-    // 并刷新全局 provider（与设置页恢复同一实现）。
+    // resumed。确认后走共享恢复链并刷新全局 provider（与设置页恢复同一实现）。
     AutoCheckNewBackupScheduler.attach(
       api: ref.read(bookApiProvider),
       privacyLocked: _privacyGateBlocked,
@@ -281,6 +280,11 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
         if (!mounted) return;
         await reloadAppStateAfterBackupRestore(ref);
       },
+      // 审查回修 P2：闪屏 /welcome 期间弹窗会被后续 replace 连带丢弃；
+      // 等 TopRouteWatcher 确认栈顶已是主路由（书架）后再弹。
+      canPresentPrompt: () =>
+          _topRouteWatcher.didObserveTopChange &&
+          _topRouteWatcher.topRouteName == AppRoutes.home,
     );
     // P1-11：监听系统 legado:// / yuedu:// 深链 → Association；
     // P1-4：注入本地书籍导入器，消费外部书籍文件 VIEW intent（content://）
