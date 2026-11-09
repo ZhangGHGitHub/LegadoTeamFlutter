@@ -456,13 +456,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           await api.setBooksPrivate([b.bookUrl], target);
           // 私密标记 → 书架过滤/卡片锁定同步
           await ref.read(privacyContentProvider.notifier).refresh();
-          final refreshed = await api.getBook(b.bookUrl);
+          // 最新记录可能为空（未入库/并发删除）：用本地目标态兜底合并，
+          // 避免菜单文案与锁态读陈旧 isPrivate 快照而分叉。
+          final refreshed = await api.getBook(b.bookUrl) ?? latest;
           if (!mounted) break;
           setState(() {
+            _loadedBook = refreshed.copyWith(isPrivate: target);
             _bookPrivate = target;
-            // 取消私密后当前页立即解除进入时的锁定态
-            if (!target) _privateByEntry = false;
-            if (refreshed != null) _loadedBook = refreshed;
+            // 标记私密后当前页立即按「未授权」锁定（若 verifyOnOpenBook
+            // 开启且本页无授权）；取消私密立即恢复详情。这里只同步
+            // _privateByEntry，不触发自动验证弹窗——标记动作本身不再弹；
+            // 同时消费本页自动验证机会，避免后续 reload 再弹一次。
+            _privateByEntry = target;
+            if (target) _privateAutoUnlockRequested = true;
           });
           await ref.read(bookshelfNotifierProvider.notifier).refresh();
           if (mounted) _snack(target ? '已标记为私密' : '已取消私密');

@@ -193,9 +193,19 @@ void main() {
     expect(api.setBooksPrivateCalls, isEmpty);
   });
 
-  testWidgets('菜单标记私密：当前态取最新 getBook，写入后菜单变取消私密', (tester) async {
-    final publicBook = privateBook.copyWith(isPrivate: false);
+  testWidgets('标记私密后立即锁定当前详情页；取消私密立即恢复', (tester) async {
+    final publicBook = privateBook.copyWith(
+      isPrivate: false,
+      durChapterTitle: '第三章 秘密章节',
+      intro: '秘密简介',
+    );
     await boot(tester, book: publicBook);
+
+    // 标记前：真实内容完整可见
+    expect(find.text(publicBook.name), findsOneWidget);
+    expect(find.text(publicBook.author), findsOneWidget);
+    expect(find.textContaining('秘密章节'), findsOneWidget);
+    expect(find.text('阅读'), findsOneWidget);
 
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
@@ -208,12 +218,75 @@ void main() {
     expect(api.setBooksPrivateCalls.single.bookUrls, [publicBook.bookUrl]);
     expect(api.setBooksPrivateCalls.single.isPrivate, isTrue);
     expect(find.text('已标记为私密'), findsOneWidget);
+    // 标记动作本身不再自动弹验证；当前页立即按未授权锁定
+    expect(find.byKey(const ValueKey('privacyUnlockDialog')), findsNothing);
+    expect(find.byKey(const ValueKey('private-locked-page')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('private-locked-placeholders')),
+      findsOneWidget,
+    );
+    expect(find.text(publicBook.name), findsNothing);
+    expect(find.text(publicBook.author), findsNothing);
+    expect(find.textContaining('秘密章节'), findsNothing);
+    expect(find.text('阅读'), findsNothing);
+
+    // 通过锁定页验证入口继续查看
+    await tester.tap(find.byKey(const ValueKey('private-locked-action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(find.text(publicBook.name), findsOneWidget);
+    expect(find.byKey(const ValueKey('private-locked-page')), findsNothing);
+
+    // 取消私密：立即恢复正常详情展示
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('取消私密'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消私密'));
+    await tester.pumpAndSettle();
+    expect(api.setBooksPrivateCalls, hasLength(2));
+    expect(api.setBooksPrivateCalls.last.isPrivate, isFalse);
+    expect(find.byKey(const ValueKey('private-locked-page')), findsNothing);
+    expect(find.text(publicBook.name), findsOneWidget);
+    expect(find.text(publicBook.author), findsOneWidget);
+    expect(find.textContaining('秘密章节'), findsOneWidget);
+    expect(find.text('阅读'), findsOneWidget);
+  });
+
+  testWidgets('取消私密后立即恢复真实详情，不残留锁定页', (tester) async {
+    // 从已私密详情进入：先通过锁定页验证，再取消私密
+    await boot(tester, book: privateBook);
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockCancel')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('private-locked-page')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('private-locked-action')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('privacyUnlockField')),
+      'pw',
+    );
+    await tester.tap(find.byKey(const ValueKey('privacyUnlockConfirm')));
+    await tester.pumpAndSettle();
+    expect(find.text(privateBook.name), findsOneWidget);
 
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('取消私密'));
     await tester.pumpAndSettle();
-    expect(find.text('取消私密'), findsOneWidget, reason: '菜单当前态应来自最新书籍记录');
+    await tester.tap(find.text('取消私密'));
+    await tester.pumpAndSettle();
+
+    expect(api.setBooksPrivateCalls.last.isPrivate, isFalse);
+    expect(find.byKey(const ValueKey('private-locked-page')), findsNothing);
+    expect(find.text(privateBook.name), findsOneWidget);
+    expect(find.text(privateBook.author), findsOneWidget);
+    expect(find.text('阅读'), findsOneWidget);
   });
 
   testWidgets('P2-1 详情开书顺序：gate 先于落库与 openBook', (tester) async {
