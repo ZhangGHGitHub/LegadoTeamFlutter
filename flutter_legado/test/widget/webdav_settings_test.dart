@@ -60,6 +60,8 @@ void main() {
     expect(find.text('备份'), findsOneWidget);
     expect(find.text('恢复'), findsOneWidget);
     expect(find.text('恢复忽略列表'), findsOneWidget);
+    expect(find.text('备份忽略列表'), findsOneWidget);
+    expect(find.text('未设置'), findsOneWidget);
     expect(find.text('仅保留最新备份'), findsOneWidget);
   });
 
@@ -99,7 +101,10 @@ void main() {
     expect(row, findsOneWidget);
     expect(find.byType(SwitchListTile), findsNothing);
 
-    final switchFinder = find.descendant(of: row, matching: find.byType(Switch));
+    final switchFinder = find.descendant(
+      of: row,
+      matching: find.byType(Switch),
+    );
     final before = tester.widget<Switch>(switchFinder).value;
 
     // 点标题（非开关本体）即切换：等价原 SwitchListTile 整行语义
@@ -121,9 +126,47 @@ void main() {
     await tester.tap(find.text('恢复'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('未配置 WebDAV，请长按「恢复」从本地恢复'),
-      findsOneWidget,
-    );
+    expect(find.text('未配置 WebDAV，请长按「恢复」从本地恢复'), findsOneWidget);
+  });
+
+  testWidgets('备份忽略列表：打开独立对话框并保存勾选项', (tester) async {
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('备份忽略列表'), 80);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('备份忽略列表'));
+    await tester.pumpAndSettle();
+
+    // 复用恢复忽略 UI，但标题/说明/保存目标为备份忽略
+    expect(find.text('备份忽略'), findsOneWidget);
+    expect(find.text('恢复忽略'), findsNothing);
+    expect(find.text('勾选后备份时跳过对应项，不写入备份文件；恢复忽略请单独设置。'), findsOneWidget);
+
+    await tester.tap(find.text('阅读界面配置'));
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已保存备份忽略项'), findsOneWidget);
+    expect(find.text('已勾选 1 项'), findsOneWidget);
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('backupIgnore');
+    expect(saved, isNotNull);
+    expect(saved, contains('"readConfig":true'));
+    // 恢复忽略策略不被写入
+    expect(prefs.getString('restoreIgnore'), isNull);
+  });
+
+  testWidgets('备份忽略列表：已保存配置加载后显示勾选数', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'backupIgnore': '{"readConfig":true,"themeMode":true}',
+    });
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('备份忽略列表'), 80);
+    await tester.pumpAndSettle();
+    expect(find.text('已勾选 2 项'), findsOneWidget);
   });
 }

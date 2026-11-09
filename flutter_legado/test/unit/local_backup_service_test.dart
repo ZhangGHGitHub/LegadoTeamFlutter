@@ -4,12 +4,15 @@
 // 上传成功/失败（失败不影响本地备份成功）、未开启上传时跳过、本地备份
 // 失败不写 lastBackup。
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/services/local_backup_service.dart';
+import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 import 'package:flutter_legado/src/services/settings_service.dart';
 import 'package:flutter_legado/src/services/webdav_backup_service.dart';
 
@@ -45,6 +48,7 @@ void main() {
 
   late FakeServersRustApi api;
   late SettingsService settings;
+  late Directory tempDir;
 
   setUpAll(registerFallbacks);
 
@@ -53,11 +57,16 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     api = FakeServersRustApi();
     settings = SettingsService();
-    when(() => api.backup(any()))
-        .thenAnswer((_) async => '/tmp/legado_backup_1.json');
+    tempDir = Directory.systemTemp.createTempSync('local_backup_8a');
+    when(
+      () => api.backup(any()),
+    ).thenAnswer((_) async => '/tmp/legado_backup_1.json');
   });
 
-  tearDown(LocalBackupService.resetForTest);
+  tearDown(() {
+    LocalBackupService.resetForTest();
+    if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+  });
 
   group('互斥锁', () {
     test('已有任务执行中 → 新触发直接返回 null（不排队）', () async {
@@ -123,7 +132,10 @@ void main() {
 
       gate.complete();
       expect(await backup, 'backup');
-      expect(await service.runExclusiveRestore(() async => 'restore'), 'restore');
+      expect(
+        await service.runExclusiveRestore(() async => 'restore'),
+        'restore',
+      );
     });
 
     test('恢复重入 → 直接返回 null 且不排队', () async {
@@ -225,6 +237,166 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(await settings.getLastBackupTime(), 0);
+    });
+  });
+
+  group('备份忽略列表（批8a）', () {
+    test('createBackup 使用 backupIgnore 注入 appPrefs，与恢复忽略独立', () async {
+      SharedPreferences.setMockInitialValues({
+        'themeMode': 'dark',
+        'reader_font_size': 20,
+        'showRss': false,
+        'customFoo': 'bar',
+        SettingsService.backupIgnoreStorageKey: jsonEncode({
+          'themeMode': true,
+          'readConfig': false,
+        }),
+        SettingsService.restoreIgnoreStorageKey: jsonEncode({
+          'readConfig': true,
+        }),
+      });
+      final current =
+          '${tempDir.path}${Platform.pathSeparator}legado_backup_test.json';
+      when(() => api.backup(any())).thenAnswer((_) async {
+        await File(current).writeAsString('{}');
+        return current;
+      });
+
+      final restoreBefore = await settings.getRestoreIgnoreConfig();
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      final file = jsonDecode(await File(current).readAsString()) as Map;
+      final prefs = (file['appPrefs'] as Map).cast<String, dynamic>();
+      expect(prefs.containsKey('themeMode'), isFalse, reason: '备份忽略 themeMode');
+      expect(prefs['reader_font_size'], 20, reason: '备份忽略 readConfig=false');
+      expect(prefs['showRss'], false);
+      expect(prefs['customFoo'], 'bar');
+      expect(
+        prefs.containsKey(SettingsService.backupIgnoreStorageKey),
+        isFalse,
+      );
+      expect(
+        prefs.containsKey(SettingsService.restoreIgnoreStorageKey),
+        isFalse,
+      );
+      expect(await settings.getRestoreIgnoreConfig(), restoreBefore);
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(
+          'reader_font_size',
+          await settings.getRestoreIgnoreConfig(),
+        ),
+        isFalse,
+        reason: '恢复忽略仍独立生效（readConfig=true 时恢复侧忽略）',
+      );
+    });
+  });
+
+  group('仅保留最新本地备份（批8a）', () {
+    Future<String> stubBackupFile(String name) async {
+      final path = '${tempDir.path}${Platform.pathSeparator}$name';
+      when(() => api.backup(any())).thenAnswer((_) async {
+        await File(path).writeAsString('{}');
+        return path;
+      });
+      return path;
+    }
+
+    test('默认开启：只保留本次备份，删除旧本地备份', () async {
+      final old1 = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_100.json',
+      )..writeAsStringSync('old');
+      final old2 = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_200.json',
+      )..writeAsStringSync('old');
+      final current = await stubBackupFile('legado_backup_300.json');
+
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      expect(File(current).existsSync(), isTrue);
+      expect(old1.existsSync(), isFalse);
+      expect(old2.existsSync(), isFalse);
+    });
+
+    test('开关 false：保留全部本地备份', () async {
+      SharedPreferences.setMockInitialValues({'onlyLatestBackup': false});
+      final old = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_100.json',
+      )..writeAsStringSync('old');
+      final current = await stubBackupFile('legado_backup_300.json');
+
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      expect(old.existsSync(), isTrue);
+      expect(File(current).existsSync(), isTrue);
+    });
+
+    test('非本项目命名/子目录不删除', () async {
+      final otherJson = File(
+        '${tempDir.path}${Platform.pathSeparator}other.json',
+      )..writeAsStringSync('x');
+      final webdavName = File(
+        '${tempDir.path}${Platform.pathSeparator}backup_20261029.json',
+      )..writeAsStringSync('x');
+      final txt = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_1.txt',
+      )..writeAsStringSync('x');
+      final subdir = Directory(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_dir.json',
+      )..createSync();
+      final nested = File(
+        '${subdir.path}${Platform.pathSeparator}legado_backup_nested.json',
+      )..writeAsStringSync('x');
+      final current = await stubBackupFile('legado_backup_300.json');
+
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      expect(File(current).existsSync(), isTrue);
+      expect(otherJson.existsSync(), isTrue);
+      expect(webdavName.existsSync(), isTrue);
+      expect(txt.existsSync(), isTrue);
+      expect(subdir.existsSync(), isTrue);
+      expect(nested.existsSync(), isTrue);
+    });
+
+    test('旧备份删除失败不抛出，备份仍成功', () async {
+      final old = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_100.json',
+      )..writeAsStringSync('old');
+      final current = await stubBackupFile('legado_backup_300.json');
+      final service = LocalBackupService(
+        deleteFileForTest: (_) async =>
+            throw const FileSystemException('denied'),
+      );
+
+      final result = await service.createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      expect(result.filePath, current);
+      expect(old.existsSync(), isTrue, reason: '删除失败保留旧文件');
     });
   });
 }

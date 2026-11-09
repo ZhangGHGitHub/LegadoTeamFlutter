@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/services/restore_ignore_prefs.dart';
 import 'package:flutter_legado/src/services/settings_service.dart';
 
 void main() {
@@ -242,7 +243,10 @@ void main() {
       final result = await service.getLastSyncTime();
       expect(result, isNotNull);
       // 毫秒精度比较
-      expect(result!.millisecondsSinceEpoch, equals(now.millisecondsSinceEpoch));
+      expect(
+        result!.millisecondsSinceEpoch,
+        equals(now.millisecondsSinceEpoch),
+      );
     });
   });
 
@@ -260,6 +264,58 @@ void main() {
       await service.setPaletteId('sora');
       await service.setPaletteId('gr');
       expect(await service.getPaletteId(), equals('gr'));
+    });
+  });
+
+  group('SettingsService 备份忽略（批8a）', () {
+    test('缺省全 false，与恢复忽略同项', () async {
+      final config = await service.getBackupIgnoreConfig();
+      expect(config, hasLength(SettingsService.backupIgnoreKeys.length));
+      expect(config.values.every((v) => v == false), isTrue);
+      expect(
+        SettingsService.backupIgnoreKeys,
+        SettingsService.restoreIgnoreKeys,
+      );
+    });
+
+    test('保存/读取，与恢复忽略互不影响', () async {
+      await service.saveBackupIgnoreConfig({
+        'themeMode': true,
+        'readConfig': true,
+        'unknown': true,
+      });
+      final backup = await service.getBackupIgnoreConfig();
+      expect(backup['themeMode'], isTrue);
+      expect(backup['readConfig'], isTrue);
+      expect(backup.containsKey('unknown'), isFalse);
+      final restore = await service.getRestoreIgnoreConfig();
+      expect(
+        restore.values.every((v) => v == false),
+        isTrue,
+        reason: '备份忽略不影响恢复忽略',
+      );
+    });
+
+    test('非法 JSON 回落全 false', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsService.backupIgnoreStorageKey: 'not json',
+      });
+      final config = await service.getBackupIgnoreConfig();
+      expect(config.values.every((v) => v == false), isTrue);
+    });
+
+    test('策略键始终不备份/不恢复', () {
+      expect(
+        RestoreIgnorePrefs.alwaysIgnoreKeys,
+        contains(SettingsService.backupIgnoreStorageKey),
+      );
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(
+          SettingsService.backupIgnoreStorageKey,
+          const {},
+        ),
+        isFalse,
+      );
     });
   });
 }
