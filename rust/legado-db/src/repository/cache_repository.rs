@@ -190,10 +190,20 @@ impl<'a> CacheRepository<'a> {
         Ok(count)
     }
 
-    /// 清空所有缓存
+    /// 清空所有缓存（保留 `config:` 前缀的持久配置）
+    ///
+    /// `caches` 表同时承载用户配置（`config:*`）与隐私密码凭据
+    /// （`config:private_password_salt` / `config:private_password_verifier`，契约 §2.53）。
+    /// 无差别 `DELETE FROM caches` 会把凭据一起删掉：清缓存后
+    /// `privacyHasPassword` 退化为 false，用户可在不知旧密码的情况下重设密码。
+    /// 配置属用户设置而非可丢弃缓存，故本方法只清非 `config:` 键；
+    /// 凭据的删除唯一入口是 `privacy_clear_password`。
     pub fn clear(&self) -> LegadoResult<()> {
         self.conn
-            .execute("DELETE FROM caches", [])
+            .execute(
+                "DELETE FROM caches WHERE substr(key, 1, 7) <> 'config:'",
+                [],
+            )
             .map_err(|e| LegadoError::Database(format!("清空缓存失败: {e}")))?;
         Ok(())
     }
@@ -402,6 +412,43 @@ mod tests {
         repo.put("c", "3", 0).unwrap();
         repo.clear().unwrap();
         assert_eq!(repo.count().unwrap(), 0);
+    }
+
+    /// [批9a 审查 P1-1] 清缓存必须保留 `config:*`：
+    /// 隐私凭据（config:private_password_*）与用户配置不得被当作缓存删除
+    #[test]
+    fn test_clear_preserves_config_keys() {
+        let conn = setup_db();
+        let repo = CacheRepository::new(&conn);
+        repo.put("config:private_password_salt", "salt-b64", 0)
+            .unwrap();
+        repo.put("config:private_password_verifier", "verifier-b64", 0)
+            .unwrap();
+        repo.put("config:theme", "dark", 0).unwrap();
+        repo.put("plain_cache", "v", 0).unwrap();
+        repo.put("audio:progress:x", "1", 0).unwrap();
+
+        repo.clear().unwrap();
+
+        assert_eq!(
+            repo.get("config:private_password_salt").unwrap().as_deref(),
+            Some("salt-b64"),
+            "隐私 salt 不得被清缓存删除"
+        );
+        assert_eq!(
+            repo.get("config:private_password_verifier")
+                .unwrap()
+                .as_deref(),
+            Some("verifier-b64"),
+            "隐私 verifier 不得被清缓存删除"
+        );
+        assert_eq!(
+            repo.get("config:theme").unwrap().as_deref(),
+            Some("dark"),
+            "普通 config 同为用户设置，应保留"
+        );
+        assert_eq!(repo.get("plain_cache").unwrap(), None);
+        assert_eq!(repo.get("audio:progress:x").unwrap(), None);
     }
 
     #[test]

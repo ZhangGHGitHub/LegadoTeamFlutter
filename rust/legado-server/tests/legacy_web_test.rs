@@ -264,6 +264,7 @@ const KOTLIN_BOOK_KEYS: &[&str] = &[
     "durChapterTime",
     "wordCount",
     "canUpdate",
+    "isPrivate",
     "order",
     "originOrder",
     "variable",
@@ -296,6 +297,7 @@ const KOTLIN_BOOK_REQUIRED_KEYS: &[&str] = &[
     "durChapterPos",
     "durChapterTime",
     "canUpdate",
+    "isPrivate",
     "order",
     "originOrder",
     "syncTime",
@@ -1441,6 +1443,84 @@ fn make_test_state_with_paths(
         legacy_review: Default::default(),
         source_check: Default::default(),
     })
+}
+
+/// [批9a 审查 P2-4] Web `/saveBook` 缺 `isPrivate` 键时保留库内旧值：
+/// vue 只改书名不得解除私密；显式 `isPrivate:false` 才清除。
+#[tokio::test]
+async fn test_save_book_without_is_private_preserves_flag() {
+    let state = make_test_state();
+    let app = create_router(state.clone());
+    let book_url = "https://src.example.com/book/private";
+
+    // 首次保存：显式标记私密
+    let body = json!({
+        "bookUrl": book_url,
+        "origin": "https://src.example.com",
+        "originName": "测试书源",
+        "name": "私密书",
+        "author": "作者甲",
+        "isPrivate": true
+    })
+    .to_string();
+    let (_, rd) = post_bytes(
+        app.clone(),
+        "/saveBook",
+        "application/json",
+        body.into_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+
+    // Web 读取侧一致：LegacyBook 投影透出 isPrivate
+    let (_, shelf) = get_json(app.clone(), "/getBookshelf").await;
+    let arr = shelf["data"].as_array().unwrap();
+    let row = arr.iter().find(|b| b["bookUrl"] == book_url).unwrap();
+    assert_eq!(row["isPrivate"], true, "getBookshelf 应透出 isPrivate");
+
+    // 只改书名、不带 isPrivate：库内私密标记必须保留
+    let body2 = json!({
+        "bookUrl": book_url,
+        "name": "改名后的私密书",
+        "author": "作者甲"
+    })
+    .to_string();
+    let (_, rd2) = post_bytes(
+        app.clone(),
+        "/saveBook",
+        "application/json",
+        body2.into_bytes(),
+    )
+    .await;
+    assert_eq!(rd2["isSuccess"], true, "rd2={rd2}");
+    {
+        let db = state.db.lock().await;
+        let book = BookRepository::new(db.connection())
+            .find_by_url(book_url)
+            .unwrap()
+            .unwrap();
+        assert_eq!(book.name, "改名后的私密书");
+        assert!(book.is_private, "缺 isPrivate 键不得清除私密标记");
+    }
+
+    // 显式 isPrivate:false 才解除私密
+    let body3 = json!({
+        "bookUrl": book_url,
+        "name": "改名后的私密书",
+        "author": "作者甲",
+        "isPrivate": false
+    })
+    .to_string();
+    let (_, rd3) = post_bytes(app, "/saveBook", "application/json", body3.into_bytes()).await;
+    assert_eq!(rd3["isSuccess"], true, "rd3={rd3}");
+    {
+        let db = state.db.lock().await;
+        let book = BookRepository::new(db.connection())
+            .find_by_url(book_url)
+            .unwrap()
+            .unwrap();
+        assert!(!book.is_private, "显式 false 应解除私密");
+    }
 }
 
 /// vue 书架页保存书的正例 + upsert：整 Book 对象载荷（含 Book 未知的

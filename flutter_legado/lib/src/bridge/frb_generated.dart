@@ -1025,7 +1025,7 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateFfiFfiSetAudioCacheDir({required String dir});
 
   Future<bool> crateFfiFfiSetBookGroupPrivate({
-    required int groupId,
+    required PlatformInt64 groupId,
     required bool isPrivate,
   });
 
@@ -9531,14 +9531,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @override
   Future<bool> crateFfiFfiSetBookGroupPrivate({
-    required int groupId,
+    required PlatformInt64 groupId,
     required bool isPrivate,
   }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_i_32(groupId, serializer);
+          sse_encode_i_64(groupId, serializer);
           sse_encode_bool(isPrivate, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,

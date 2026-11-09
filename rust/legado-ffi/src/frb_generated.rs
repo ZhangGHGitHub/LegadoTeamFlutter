@@ -8866,7 +8866,7 @@ fn wire__crate__ffi__ffi__set_book_group_private_impl(
             };
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
-            let api_group_id = <i32>::sse_decode(&mut deserializer);
+            let api_group_id = <i64>::sse_decode(&mut deserializer);
             let api_is_private = <bool>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {

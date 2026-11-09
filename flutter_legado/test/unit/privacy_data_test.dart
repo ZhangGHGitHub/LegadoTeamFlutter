@@ -213,6 +213,33 @@ void main() {
       expect(await api.getPrivateGroupIds(), const [2]);
     });
 
+    test('新建分组强制非私密；更新分组保留旧私密标记', () async {
+      final created = await api.addBookGroup(
+        const BookGroup(groupId: 99, groupName: '新组', isPrivate: true),
+      );
+      expect(created.isPrivate, isFalse, reason: '新分组 isPrivate 只能经单独接口设置');
+      expect(
+        (await api.getBookGroups())
+            .firstWhere((g) => g.groupId == created.groupId)
+            .isPrivate,
+        isFalse,
+      );
+
+      expect(await api.setBookGroupPrivate(1, true), isTrue);
+      final current = (await api.getBookGroups()).firstWhere(
+        (g) => g.groupId == 1,
+      );
+      // 模拟 UI 持陈旧快照（isPrivate=false）更新名称
+      await api.updateBookGroup(
+        current.copyWith(groupName: '科幻改名', isPrivate: false),
+      );
+      final updated = (await api.getBookGroups()).firstWhere(
+        (g) => g.groupId == 1,
+      );
+      expect(updated.groupName, '科幻改名');
+      expect(updated.isPrivate, isTrue, reason: '更新分组不得清除私密标记');
+    });
+
     test('实例隔离：两个 MockBookApi 的私密状态互不影响', () async {
       await api.privacySetPassword('p1');
       await api.setBookGroupPrivate(1, true);

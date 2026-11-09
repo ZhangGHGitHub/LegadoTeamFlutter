@@ -1662,8 +1662,11 @@ Future<String> getPrivateBookUrls() =>
     RustLib.instance.api.crateFfiFfiGetPrivateBookUrls();
 
 /// 设置分组私密标记，返回是否命中行
+///
+/// groupId 为 i64（与 `book_group_*` 全部接口一致）：存量时间戳分组 ID
+/// 超出 i32 范围，不得截断。
 Future<bool> setBookGroupPrivate({
-  required int groupId,
+  required PlatformInt64 groupId,
   required bool isPrivate,
 }) => RustLib.instance.api.crateFfiFfiSetBookGroupPrivate(
   groupId: groupId,

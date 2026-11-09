@@ -532,6 +532,7 @@ mod tests {
             "newChapters": 1,
             "serialNumber": 3,
             "useReplaceRule": true,
+            "isPrivate": true,
             "bookInfoBean": {
                 "name": "测试书",
                 "author": "作者",
@@ -550,6 +551,7 @@ mod tests {
         assert_eq!(b.book_type, book_type::AUDIO);
         assert_eq!(b.toc_url, "https://ex.com/toc");
         assert_eq!(b.dur_chapter_index, 2);
+        assert!(b.is_private, "旧版 Backups 的 isPrivate 应导入保留");
         assert_eq!(
             b.read_config.as_ref().and_then(|c| c.use_replace_rule),
             Some(true)

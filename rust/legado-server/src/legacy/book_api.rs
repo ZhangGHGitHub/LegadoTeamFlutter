@@ -1262,13 +1262,35 @@ pub async fn save_book(
     body: Bytes,
 ) -> Response {
     let origin = origin_of(&headers);
-    let parsed: Option<Book> = serde_json::from_slice(&body).ok();
+    // 先保留原始 JSON：`Book` 的 isPrivate 缺键时 serde 默认 false，而本端点
+    // 是整行 upsert（isPrivate 属全列 UPDATE），直接落库会把库内私密标记清掉。
+    // 故缺键时必须回读库内旧值保留（Web 只改书名/作者不得解除私密）。
+    let raw: Option<Value> = serde_json::from_slice(&body).ok();
+    let parsed: Option<Book> = raw
+        .as_ref()
+        .and_then(|value| serde_json::from_value(value.clone()).ok());
     let result: Result<Value, String> = match parsed {
         None => Err("格式不对".to_string()),
         Some(book) => {
+            let has_is_private = raw
+                .as_ref()
+                .and_then(Value::as_object)
+                .map(|obj| obj.contains_key("isPrivate"))
+                .unwrap_or(false);
+            let mut book = book;
             let db = state.db.lock().await;
-            BookRepository::new(db.connection())
-                .insert(&book)
+            let repo = BookRepository::new(db.connection());
+            if !has_is_private {
+                match repo.find_by_url(&book.book_url) {
+                    Ok(Some(existing)) => book.is_private = existing.is_private,
+                    Ok(None) => {}
+                    Err(e) => {
+                        let rd = ReturnData::error(format!("读取书籍失败：{e}"));
+                        return to_response(&rd, "/saveBook", origin.as_deref());
+                    }
+                }
+            }
+            repo.insert(&book)
                 .map(|_| Value::String(String::new()))
                 .map_err(|e| e.to_string())
         }

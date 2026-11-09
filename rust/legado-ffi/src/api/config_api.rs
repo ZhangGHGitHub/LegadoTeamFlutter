@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use legado_core::LegadoResult;
+use legado_core::{LegadoError, LegadoResult};
 use legado_db::CacheRepository;
 
 use crate::db_state::with_database;
@@ -14,6 +14,30 @@ use crate::db_state::with_database;
 /// `pub(crate)`：备份模块（`backup_api`）读写 `directLinkUploadRule` 配置时复用
 /// 同一前缀，避免键格式在两处漂移。
 pub(crate) const CONFIG_PREFIX: &str = "config:";
+
+/// 隐私凭据键前缀（契约 §2.53）
+///
+/// 密码 salt/verifier 与预留的生物识别凭据只允许 `privacy_api` 直接经
+/// `CacheRepository` 读写：通用 config 接口既不返回（getAllConfigs），
+/// 也拒绝读写，防止绕过旧密码校验重置密码或读取校验值。
+pub(crate) const PRIVATE_CONFIG_PREFIXES: &[&str] = &["private_password_", "private_biometric_"];
+
+/// 短路名是否为隐私凭据键
+pub(crate) fn is_private_config_key(short_key: &str) -> bool {
+    PRIVATE_CONFIG_PREFIXES
+        .iter()
+        .any(|prefix| short_key.starts_with(prefix))
+}
+
+/// 通用 config 接口的私有键闸门（中文错误，明确拒绝而非静默）
+fn ensure_public_config_key(short_key: &str) -> LegadoResult<()> {
+    if is_private_config_key(short_key) {
+        return Err(LegadoError::Internal(format!(
+            "配置键「{short_key}」属于隐私凭据，禁止通过通用配置接口访问"
+        )));
+    }
+    Ok(())
+}
 
 /// 全局 User-Agent 配置短键（批9b-4）
 ///
@@ -81,6 +105,7 @@ static CONFIG_ROW_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// 获取指定配置项的值（不存在返回空字符串）
 pub fn get_config(key: &str) -> LegadoResult<String> {
+    ensure_public_config_key(key)?;
     with_database(|db| {
         let repo = CacheRepository::new(db.connection());
         let full_key = format!("{}{}", CONFIG_PREFIX, key);
@@ -95,6 +120,7 @@ pub fn get_config(key: &str) -> LegadoResult<String> {
 /// 清除覆盖并回落内置默认。落库失败时**不改变**运行期值（避免 UI 显示
 /// 与运行期分叉，同 `set_http_log_recording` 口径）。
 pub fn set_config(key: &str, value: &str) -> LegadoResult<bool> {
+    ensure_public_config_key(key)?;
     with_database(|db| {
         let repo = CacheRepository::new(db.connection());
         let full_key = format!("{}{}", CONFIG_PREFIX, key);
@@ -157,6 +183,10 @@ pub fn get_all_config() -> LegadoResult<std::collections::HashMap<String, String
                 Ok(row) => {
                     // 去掉前缀
                     let short_key = row.0.strip_prefix(CONFIG_PREFIX).unwrap_or(&row.0);
+                    // [批9a 审查 P2-6] 隐私凭据不得出现在通用配置列表
+                    if is_private_config_key(short_key) {
+                        continue;
+                    }
                     map.insert(short_key.to_string(), row.1);
                 }
                 Err(e) => {
@@ -244,6 +274,76 @@ mod tests {
         let all = get_all_config().unwrap();
         assert!(all.contains_key("theme"));
         assert!(all.contains_key("font_size"));
+    }
+
+    /// [批9a 审查 P2-6] 隐私凭据键：getAllConfigs 过滤、getConfig/setConfig
+    /// 明确拒绝；直接经 CacheRepository 写入的凭据仍可被 privacy_api 使用。
+    #[test]
+    fn test_private_config_keys_are_guarded() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 直接落库（模拟 privacy_api 写入路径），并放一个普通公开配置
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            repo.put("config:private_password_salt", "salt-b64", 0)?;
+            repo.put("config:private_password_verifier", "verifier-b64", 0)?;
+            repo.put("config:private_biometric_envelope", "reserved-b64", 0)?;
+            repo.put("config:theme", "dark", 0)?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 列表过滤：三个私有键均不出现
+        let all = get_all_config().unwrap();
+        assert!(all.contains_key("theme"));
+        assert!(!all.contains_key("private_password_salt"));
+        assert!(!all.contains_key("private_password_verifier"));
+        assert!(!all.contains_key("private_biometric_envelope"));
+
+        // 读取拒绝
+        for key in [
+            "private_password_salt",
+            "private_password_verifier",
+            "private_biometric_envelope",
+        ] {
+            let err = get_config(key).unwrap_err();
+            assert!(
+                err.to_string().contains("属于隐私凭据"),
+                "get_config({key}) 应拒绝: {err}"
+            );
+        }
+
+        // 写入拒绝（含 Dart deleteConfig 的空串删除路径），原值不被覆盖
+        let err = set_config("private_password_salt", "attacker").unwrap_err();
+        assert!(err.to_string().contains("属于隐私凭据"), "{err}");
+        let err = set_config("private_password_verifier", "").unwrap_err();
+        assert!(err.to_string().contains("属于隐私凭据"), "{err}");
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            assert_eq!(
+                repo.get("config:private_password_salt")?.as_deref(),
+                Some("salt-b64"),
+                "被拒绝的写入不得修改凭据"
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        // privacy_api 自己的读写路径不受影响：清掉模拟凭据后设置→校验→清除
+        crate::api::privacy_api::privacy_clear_password().unwrap();
+        crate::api::privacy_api::privacy_set_password("guard-pass", None).unwrap();
+        assert!(crate::api::privacy_api::privacy_verify_password("guard-pass").unwrap());
+        // 清除后恢复上面直接写入的测试值，避免污染其他用例
+        crate::api::privacy_api::privacy_clear_password().unwrap();
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            repo.delete("config:private_password_salt")?;
+            repo.delete("config:private_password_verifier")?;
+            repo.delete("config:private_biometric_envelope")?;
+            repo.delete("config:theme")?;
+            Ok(())
+        })
+        .unwrap();
     }
 
     /// 批9b-4：`setConfig("userAgent", v)` 落库后即时更新运行期默认 UA；

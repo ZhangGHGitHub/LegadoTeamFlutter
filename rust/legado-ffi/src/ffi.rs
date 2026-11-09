@@ -2129,7 +2129,10 @@ pub mod ffi {
     }
 
     /// 设置分组私密标记，返回是否命中行
-    pub fn set_book_group_private(group_id: i32, is_private: bool) -> Result<bool, BridgeError> {
+    ///
+    /// groupId 为 i64（与 `book_group_*` 全部接口一致）：存量时间戳分组 ID
+    /// 超出 i32 范围，不得截断。
+    pub fn set_book_group_private(group_id: i64, is_private: bool) -> Result<bool, BridgeError> {
         Ok(crate::api::privacy_api::set_book_group_private(
             group_id, is_private,
         )?)

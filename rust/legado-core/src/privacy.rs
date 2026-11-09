@@ -49,7 +49,7 @@ pub fn hash_password(password: &str) -> (String, String) {
 /// 校验密码
 ///
 /// - salt/verifier 为空、Base64 非法或长度不符 → false；
-/// - verifier 长度不是 32 字节 → false；
+/// - salt 长度必须为 16 字节、verifier 长度必须为 32 字节，否则 false；
 /// - 正常路径派生后做定长 XOR 比较，避免按字节提前返回的时间差。
 pub fn verify_password(password: &str, salt_b64: &str, verifier_b64: &str) -> bool {
     if salt_b64.is_empty() || verifier_b64.is_empty() {
@@ -62,7 +62,7 @@ pub fn verify_password(password: &str, salt_b64: &str, verifier_b64: &str) -> bo
     let Ok(expected) = engine.decode(verifier_b64) else {
         return false;
     };
-    if expected.len() != VERIFIER_LEN {
+    if salt.len() != SALT_LEN || expected.len() != VERIFIER_LEN {
         return false;
     }
 
@@ -96,22 +96,30 @@ mod tests {
         out
     }
 
-    /// 已知 PBKDF2-HMAC-SHA256 向量：password="password", salt="salt",
-    /// iterations=1, dkLen=32 → 120fb6cf...
+    /// 已知 PBKDF2-HMAC-SHA256 向量（RFC 7914 附录 / 常见测试向量）：
+    /// password="password", salt="salt", iterations=1, dkLen=32 → 120fb6cf...
     ///
-    /// 这里直接调用单次派生做固定向量校验；生产参数常量单独断言，
-    /// 防止有人误改迭代次数而不自知。
+    /// 另钉死生产参数的 210000 次向量（来源：Python `hashlib.pbkdf2_hmac`，
+    /// 与 OpenSSL PBKDF2 同实现，password="password", salt="salt",
+    /// iterations=210000, dkLen=32），防止迭代次数被悄悄改动。
     #[test]
     fn test_pbkdf2_known_vector() {
         assert_eq!(PBKDF2_ITERATIONS, 210_000);
         assert_eq!(VERIFIER_LEN, 32);
         assert_eq!(SALT_LEN, 16);
 
-        let mut output = [0u8; VERIFIER_LEN];
-        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(b"password", b"salt", 1, &mut output);
+        let mut one_iter = [0u8; VERIFIER_LEN];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha256>(b"password", b"salt", 1, &mut one_iter);
         assert_eq!(
-            hex(&output),
+            hex(&one_iter),
             "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"
+        );
+
+        let production = derive_verifier("password", b"salt");
+        assert_eq!(
+            hex(&production),
+            "9d5f68774306eaee6c79c5b4d3a263907f81c55d4daa1c50585e1e849065e090",
+            "210000 次 PBKDF2-HMAC-SHA256 固定向量"
         );
     }
 
@@ -150,12 +158,25 @@ mod tests {
         assert!(!verify_password("p", "not-base64!!", "also-not"));
         let (salt, _) = hash_password("p");
         assert!(!verify_password("p", &salt, "AAAA"));
+
+        let engine = base64::engine::general_purpose::STANDARD;
         // 合法 Base64 但 verifier 长度不是 32 字节
-        let short = base64::engine::general_purpose::STANDARD.encode([0u8; 16]);
+        let short = engine.encode([0u8; 16]);
         assert!(!verify_password("p", &salt, &short));
-        // salt 长度不固定也能正常派生；错误 salt 必然校验失败
+
+        // salt 必须恰好 16 字节：15/17 字节即使 verifier 能对上也不接受
+        for salt_len in [15usize, 17] {
+            let bad_salt = engine.encode(vec![3u8; salt_len]);
+            let matching_verifier = engine.encode(derive_verifier("p", &vec![3u8; salt_len]));
+            assert!(
+                !verify_password("p", &bad_salt, &matching_verifier),
+                "salt_len={salt_len} 应拒绝"
+            );
+        }
+
+        // 正确长度的错误 salt 必然校验失败
         let (_, verifier) = hash_password("p");
-        let other_salt = base64::engine::general_purpose::STANDARD.encode([9u8; 16]);
+        let other_salt = engine.encode([9u8; SALT_LEN]);
         assert!(!verify_password("p", &other_salt, &verifier));
     }
 

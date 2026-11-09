@@ -170,41 +170,57 @@ impl<'a> BookRepository<'a> {
 
     /// 批量设置书籍私密标记（批9a，契约 §2.53 `setBooksPrivate`）
     ///
-    /// 单事务 `UPDATE books SET isPrivate = ? WHERE bookUrl IN (...)`，返回实际
-    /// 更新行数：输入重复 URL 按 SQL `IN` 去重、不存在的 URL 不计数；空列表
-    /// 直接返回 0（不开事务）。SQL 全参数化，禁止拼接 URL。
+    /// 单事务分批 `UPDATE books SET isPrivate = ? WHERE bookUrl IN (...)`，返回
+    /// 实际更新行数：输入重复 URL 去重、不存在的 URL 不计数；空列表直接返回 0。
+    /// SQLite 单语句变量上限默认 999（旧版）/32766（3.32+），本方法按
+    /// `IN` 参数 **900** 分块（对齐 `auto_task_repository` 先例），避免大书单
+    /// 触发 `too many SQL variables`。SQL 全参数化，禁止拼接 URL。
     pub fn set_private(&self, book_urls: &[String], is_private: bool) -> LegadoResult<usize> {
         if book_urls.is_empty() {
             return Ok(0);
         }
-        let placeholders = (2..=book_urls.len() + 1)
-            .map(|i| format!("?{i}"))
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!("UPDATE books SET isPrivate = ?1 WHERE bookUrl IN ({placeholders})");
 
-        let mut values = Vec::with_capacity(book_urls.len() + 1);
-        values.push(rusqlite::types::Value::Integer(if is_private {
-            1
-        } else {
-            0
-        }));
-        values.extend(
-            book_urls
-                .iter()
-                .map(|url| rusqlite::types::Value::Text(url.clone())),
-        );
+        // 去重（保持首次出现顺序）：跨分块重复 URL 不得重复计数/重复更新
+        let mut seen = std::collections::HashSet::with_capacity(book_urls.len());
+        let mut unique: Vec<&String> = Vec::with_capacity(book_urls.len());
+        for url in book_urls {
+            if seen.insert(url.as_str()) {
+                unique.push(url);
+            }
+        }
 
+        const MAX_IN_PARAMS: usize = 900;
         let tx = self
             .conn
             .unchecked_transaction()
             .map_err(|e| LegadoError::Database(format!("开启私密标记事务失败: {e}")))?;
-        let affected = tx
-            .execute(&sql, rusqlite::params_from_iter(values))
-            .map_err(|e| LegadoError::Database(format!("更新书籍私密标记失败: {e}")))?;
+        let mut affecting = 0usize;
+        for chunk in unique.chunks(MAX_IN_PARAMS) {
+            let placeholders = (2..=chunk.len() + 1)
+                .map(|i| format!("?{i}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!("UPDATE books SET isPrivate = ?1 WHERE bookUrl IN ({placeholders})");
+
+            let mut values = Vec::with_capacity(chunk.len() + 1);
+            values.push(rusqlite::types::Value::Integer(if is_private {
+                1
+            } else {
+                0
+            }));
+            values.extend(
+                chunk
+                    .iter()
+                    .map(|url| rusqlite::types::Value::Text((*url).clone())),
+            );
+
+            affecting += tx
+                .execute(&sql, rusqlite::params_from_iter(values))
+                .map_err(|e| LegadoError::Database(format!("更新书籍私密标记失败: {e}")))?;
+        }
         tx.commit()
             .map_err(|e| LegadoError::Database(format!("提交私密标记事务失败: {e}")))?;
-        Ok(affected)
+        Ok(affecting)
     }
 
     /// 全部私密书籍 URL（批9a，契约 §2.53 `getPrivateBookUrls`）
@@ -1262,6 +1278,30 @@ mod tests {
         assert_eq!(repo.set_private(&["u3".to_string()], false).unwrap(), 1);
         assert_eq!(repo.private_book_urls().unwrap(), vec!["u1".to_string()]);
         assert!(!repo.find_by_url("u3").unwrap().unwrap().is_private);
+    }
+
+    /// [批9a 审查 P3] 大书单按 900 参数分块：950 本全部命中且合计行数正确，
+    /// 跨分块重复 URL 不重复计数
+    #[test]
+    fn test_set_private_chunks_large_batch() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let urls: Vec<String> = (0..950)
+            .map(|i| format!("https://chunk.example/book/{i}"))
+            .collect();
+        for (i, url) in urls.iter().enumerate() {
+            repo.insert(&make_book(url, &format!("批量书{i}"), "批9a分块"))
+                .unwrap();
+        }
+
+        // 末尾追加重复 URL：跨分块重复不应重复计数
+        let mut input = urls.clone();
+        input.push(urls[0].clone());
+        assert_eq!(repo.set_private(&input, true).unwrap(), 950);
+        assert_eq!(repo.private_book_urls().unwrap().len(), 950);
+
+        assert_eq!(repo.set_private(&urls, false).unwrap(), 950);
+        assert!(repo.private_book_urls().unwrap().is_empty());
     }
 
     /// [批9a] isPrivate 随整书 insert/update 全列往返，不因旧快照回写丢失

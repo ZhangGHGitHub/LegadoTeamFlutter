@@ -6,6 +6,8 @@
 //! - 私密标记：`books.isPrivate`（单本）与 `book_groups.isPrivate`（分组）；
 //! - 本模块只做数据层，不做 UI/路由/平台生物识别。
 
+use std::sync::Mutex;
+
 use legado_core::privacy as password_crypto;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{BookGroupRepository, BookRepository, CacheRepository};
@@ -19,6 +21,14 @@ const PASSWORD_SALT_KEY: &str = "private_password_salt";
 const PASSWORD_VERIFIER_KEY: &str = "private_password_verifier";
 /// 新密码字符数上限（契约 §2.53）
 const MAX_PASSWORD_CHARS: usize = 128;
+
+/// 密码改写的进程内串行锁
+///
+/// 「读旧凭据 → 校验旧密码 → 生成新凭据 → 写两键」必须是原子步骤：两个并发
+/// `privacySetPassword` 若交错执行，都会读到旧凭据并各自写入新密码，产生
+/// 丢失更新（后写覆盖先写且两次都返回 true）。锁覆盖整个读改写窗口；
+/// DB 写入本身另用事务保证两键同成同败。
+static PRIVACY_PASSWORD_LOCK: Mutex<()> = Mutex::new(());
 
 fn config_key(short_key: &str) -> String {
     format!("{CONFIG_PREFIX}{short_key}")
@@ -44,6 +54,7 @@ pub fn privacy_has_password() -> LegadoResult<bool> {
 /// - 新密码 `trim()` 后必须非空且字符数 1..=128，否则返回 false（不落库）；
 /// - 已有凭据时旧密码必须匹配（`old_password` 为 None 或错误 → false，不改库）；
 /// - 无旧凭据时忽略 `old_password`；
+/// - 读取旧凭据、校验与写入在同一进程内互斥窗口内完成；
 /// - 成功生成新 16B salt + 32B verifier，事务内覆盖两键后返回 true。
 pub fn privacy_set_password(password: &str, old_password: Option<&str>) -> LegadoResult<bool> {
     let trimmed = password.trim();
@@ -51,15 +62,23 @@ pub fn privacy_set_password(password: &str, old_password: Option<&str>) -> Legad
         return Ok(false);
     }
 
+    let _guard = PRIVACY_PASSWORD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     with_database(|db| {
         let conn = db.connection();
-        let existing_salt = {
-            let repo = CacheRepository::new(conn);
-            read_config(&repo, PASSWORD_SALT_KEY)?
-        };
-        let existing_verifier = {
-            let repo = CacheRepository::new(conn);
-            read_config(&repo, PASSWORD_VERIFIER_KEY)?
+        // BEGIN IMMEDIATE：先拿写锁再读旧凭据，避免 DEFERRED 事务「先读后写」
+        // 的 snapshot 升级冲突（SQLITE_BUSY_SNAPSHOT 不走 busy_timeout）。
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|e| LegadoError::Database(format!("开启隐私密码事务失败: {e}")))?;
+        let (existing_salt, existing_verifier) = {
+            let repo = CacheRepository::new(&tx);
+            (
+                read_config(&repo, PASSWORD_SALT_KEY)?,
+                read_config(&repo, PASSWORD_VERIFIER_KEY)?,
+            )
         };
         let has_credentials =
             !existing_salt.trim().is_empty() && !existing_verifier.trim().is_empty();
@@ -71,13 +90,11 @@ pub fn privacy_set_password(password: &str, old_password: Option<&str>) -> Legad
                 })
                 .unwrap_or(false)
         {
+            // tx 随作用域 drop 回滚；凭据保持原值
             return Ok(false);
         }
 
         let (salt_b64, verifier_b64) = password_crypto::hash_password(password);
-        let tx = conn
-            .unchecked_transaction()
-            .map_err(|e| LegadoError::Database(format!("开启隐私密码事务失败: {e}")))?;
         {
             let repo = CacheRepository::new(&tx);
             repo.put(&config_key(PASSWORD_SALT_KEY), &salt_b64, 0)?;
@@ -160,10 +177,13 @@ pub fn get_private_book_urls() -> LegadoResult<Vec<String>> {
 }
 
 /// 设置分组私密标记，返回是否命中行
-pub fn set_book_group_private(group_id: i32, is_private: bool) -> LegadoResult<bool> {
+///
+/// `group_id` 使用 i64：存量分组可能是原版时间戳 ID（如 `1793904884364`），
+/// 必须与既有分组 CRUD（`book_group_*` 均为 i64）保持一致，避免截断。
+pub fn set_book_group_private(group_id: i64, is_private: bool) -> LegadoResult<bool> {
     with_database(|db| {
         let repo = BookGroupRepository::new(db.connection());
-        repo.set_private(i64::from(group_id), is_private)
+        repo.set_private(group_id, is_private)
     })
 }
 
@@ -270,16 +290,23 @@ mod tests {
             unique("books", "missing")
         );
         assert_eq!(set_books_private(&json, true).unwrap(), 2);
-        assert_eq!(
-            get_private_book_urls().unwrap(),
-            vec![urls[0].clone(), urls[2].clone()],
-            "私密 URL 升序"
-        );
+        // 只断言本用例自己的 URL：共享测试库可能残留其他用例的私密行
+        let private_own: Vec<String> = get_private_book_urls()
+            .unwrap()
+            .into_iter()
+            .filter(|url| urls.contains(url))
+            .collect();
+        assert_eq!(private_own, vec![urls[0].clone(), urls[2].clone()]);
 
         // 取消一本
         let one = format!(r#"["{}"]"#, urls[2]);
         assert_eq!(set_books_private(&one, false).unwrap(), 1);
-        assert_eq!(get_private_book_urls().unwrap(), vec![urls[0].clone()]);
+        let private_own: Vec<String> = get_private_book_urls()
+            .unwrap()
+            .into_iter()
+            .filter(|url| urls.contains(url))
+            .collect();
+        assert_eq!(private_own, vec![urls[0].clone()]);
 
         // 空数组
         assert_eq!(set_books_private("[]", true).unwrap(), 0);
@@ -312,34 +339,105 @@ mod tests {
         assert!(err.to_string().contains("元素必须是字符串"), "{err}");
     }
 
-    /// 分组私密：命中 true / 未命中 false；私密 ID 升序
+    /// 分组私密：命中 true / 未命中 false；私密 ID 升序；
+    /// 存量时间戳 ID（超出 i32）不得截断
     #[test]
     fn test_set_book_group_private_and_get_private_group_ids() {
         let _db_guard = crate::db_state::ensure_test_db();
+        /// 原版/参考版存量时间戳分组 ID（39 位，超出 i32 范围）
+        const LEGACY_TIMESTAMP_ID: i64 = 1_793_904_884_364;
+        let ids = [16_i64, LEGACY_TIMESTAMP_ID];
         let db = crate::db_state::database_from_pool().unwrap();
         let repo = BookGroupRepository::new(db.connection());
-        for id in [1_i64, 4, 16] {
+        for id in ids {
             repo.delete(id).unwrap();
             repo.insert(&legado_db::BookGroup {
                 group_id: id,
                 group_name: format!("隐私分组{id}"),
-                order: id as i32,
+                order: 0,
+                is_private: false,
                 ..legado_db::BookGroup::default()
             })
             .unwrap();
         }
 
-        assert!(set_book_group_private(4, true).unwrap());
         assert!(set_book_group_private(16, true).unwrap());
+        assert!(
+            set_book_group_private(LEGACY_TIMESTAMP_ID, true).unwrap(),
+            "i64 旧时间戳分组 ID 必须完整命中，不得截断"
+        );
         assert!(!set_book_group_private(999_999, true).unwrap());
-        assert_eq!(get_private_group_ids().unwrap(), vec![4, 16]);
 
-        assert!(set_book_group_private(4, false).unwrap());
-        assert_eq!(get_private_group_ids().unwrap(), vec![16]);
+        let private_own: Vec<i64> = get_private_group_ids()
+            .unwrap()
+            .into_iter()
+            .filter(|id| ids.contains(id))
+            .collect();
+        assert_eq!(private_own, vec![16, LEGACY_TIMESTAMP_ID]);
+
+        assert!(set_book_group_private(LEGACY_TIMESTAMP_ID, false).unwrap());
+        let private_own: Vec<i64> = get_private_group_ids()
+            .unwrap()
+            .into_iter()
+            .filter(|id| ids.contains(id))
+            .collect();
+        assert_eq!(private_own, vec![16]);
+
+        // 读回确认旧时间戳组确已取消
+        let legacy = repo.find_by_id(LEGACY_TIMESTAMP_ID).unwrap().unwrap();
+        assert!(!legacy.is_private);
 
         // 清理
-        for id in [1_i64, 4, 16] {
+        for id in ids {
             repo.delete(id).unwrap();
         }
+    }
+
+    /// [批9a 审查 P1-1] 清缓存不得删除隐私密码凭据
+    #[test]
+    fn test_cache_clear_preserves_private_password() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        assert!(privacy_set_password("cache-pass", None).unwrap());
+
+        assert!(crate::api::cache_api::clear_cache().unwrap());
+
+        assert!(
+            privacy_has_password().unwrap(),
+            "清缓存后仍应识别为已设置密码"
+        );
+        assert!(
+            privacy_verify_password("cache-pass").unwrap(),
+            "清缓存后原密码仍应校验通过（不得退化为可重设）"
+        );
+        privacy_clear_password().unwrap();
+    }
+
+    /// [批9a 审查 P3] 并发改密：进程内互斥 + 事务保证只有一次成功，
+    /// 不出现「两次都 true 且后写覆盖先写」的丢失更新
+    #[test]
+    fn test_privacy_set_password_concurrent_serialized() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        privacy_clear_password().unwrap();
+        assert!(privacy_set_password("initial-pass", None).unwrap());
+
+        let results = std::thread::scope(|scope| {
+            let a = scope.spawn(|| privacy_set_password("new-a", Some("initial-pass")).unwrap());
+            let b = scope.spawn(|| privacy_set_password("new-b", Some("initial-pass")).unwrap());
+            (a.join().unwrap(), b.join().unwrap())
+        });
+        assert_eq!(
+            [results.0, results.1]
+                .iter()
+                .filter(|succeeded| **succeeded)
+                .count(),
+            1,
+            "并发改密只允许一次成功"
+        );
+        assert!(
+            privacy_verify_password("new-a").unwrap() || privacy_verify_password("new-b").unwrap(),
+            "最终密码应为成功那一次写入的新密码"
+        );
+        privacy_clear_password().unwrap();
     }
 }

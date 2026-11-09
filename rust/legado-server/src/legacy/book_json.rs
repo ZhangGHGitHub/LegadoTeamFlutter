@@ -99,6 +99,9 @@ pub struct LegacyBook {
     pub word_count: Option<String>,
     #[serde(rename = "canUpdate")]
     pub can_update: bool,
+    /// 私密标记（批9a，契约 §2.53）：Web 端读写一致，避免 saveBook 缺键清标记
+    #[serde(rename = "isPrivate")]
+    pub is_private: bool,
     pub order: i32,
     #[serde(rename = "originOrder")]
     pub origin_order: i32,
@@ -154,6 +157,7 @@ impl From<&Book> for LegacyBook {
             dur_chapter_time: book.dur_chapter_time,
             word_count: book.word_count.clone(),
             can_update: book.can_update,
+            is_private: book.is_private,
             order: book.order,
             origin_order: book.origin_order,
             variable: book.variable.clone(),
@@ -329,6 +333,7 @@ const BOOK_REQUIRED_KEYS: &[&str] = &[
     "durChapterPos",
     "durChapterTime",
     "canUpdate",
+    "isPrivate",
     "order",
     "originOrder",
     "syncTime",

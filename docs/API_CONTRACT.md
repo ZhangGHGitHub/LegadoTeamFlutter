@@ -1628,16 +1628,25 @@
 > **备份口径（登记差异）**：`Book.isPrivate` / `BookGroup.isPrivate` **纳入**备份与导入导出（参考版 `Book.kt` 注释明确私密标记属于书架结构，剔除会让恢复后私密属性丢失）；密码 salt/verifier 属敏感凭据，**不纳入**备份（`BackupConfig` 排除口径）。
 >
 > **JSON 入参与错误口径**：`set_books_private` 的 `book_urls_json` 必须是 JSON 字符串数组（元素均为字符串）；非数组、元素非字符串或 JSON 非法 → 参数错误（不静默降级）。DB 未初始化沿用既有「数据库尚未初始化，请先调用 db_open」错误。列表类 FFI 返回**裸 JSON 数组**（遵守 §1.4 铁律），Dart 侧返回类型化 `List<String>` / `List<int>`。
+>
+> **安全边界与失败语义（2026-11-09 审查回修）**：
+> - **fail-closed**：`privacyHasPassword` / `privacyVerifyPassword` 的 DB 读取失败一律向上抛错（BridgeError），**不得**把读失败当作「无密码」返回 false；调用方遇错必须按锁定处理。
+> - **清缓存保留凭据**：`cache_clear` 只删除非 `config:` 键，`config:private_password_*` 与用户配置均保留（否则清缓存会退化为「无密码」并可绕过旧密重设）；凭据删除唯一入口是 `privacyClearPassword`，9b UI 必须先验证旧密码（或当前已解锁）再提供清除入口。
+> - **通用配置接口隔离**：`getAllConfigs` 过滤 `private_password_*` / `private_biometric_*`（后者为生物识别预留）；`getConfig` / `setConfig`（Dart `deleteConfig` 实为空串 `setConfig`）对这些键明确报中文错误，不得读写。
+> - **并发**：`privacySetPassword` 的「读旧凭据 → 校验旧密码 → 写两键」在进程内互斥窗口内串行，写入以事务原子覆盖；并发改密只有一次成功，不产生丢失更新。
+> - **批量写分块**：`setBooksPrivate` 按 **900** 个 URL 分块执行（SQLite 变量上限防御），单事务累计行数；跨分块重复 URL 去重。
+> - **groupId 位宽**：`setBookGroupPrivate` 全链 **i64**（与既有 `bookGroup*` CRUD 一致），兼容原版时间戳分组 ID（如 `1793904884364`），禁止 i32 截断。
+> - **salt 长度**：`privacyVerifyPassword` 要求 salt 解码后恰为 16 字节、verifier 恰为 32 字节，否则 false。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `privacyHasPassword()` | 无 | `Future<bool>` | salt 与 verifier 均存在（非空）时为 true（Rust `ffi::privacy_has_password`） |
-| `privacySetPassword(String password, {String? oldPassword})` | password：新密码（trim 后 1..128 字符）；oldPassword：已有凭据时的旧密码，无旧凭据可空 | `Future<bool>` | 旧密码不匹配/新密码非法返回 false 且不落库；成功生成 16B salt + 210k 次 PBKDF2 verifier 覆盖两键后返回 true（Rust `ffi::privacy_set_password`） |
+| `privacySetPassword(String password, {String? oldPassword})` | password：新密码（trim 后 1..128 字符）；oldPassword：已有凭据时的旧密码，无旧凭据可空 | `Future<bool>` | 旧密码不匹配/新密码非法返回 false 且不落库；读校写进程内串行（并发只有一次成功）；成功生成 16B salt + 210k 次 PBKDF2 verifier 覆盖两键后返回 true（Rust `ffi::privacy_set_password`） |
 | `privacyVerifyPassword(String password)` | password | `Future<bool>` | 无凭据或空密码返回 false；PBKDF2 派生后常量时间比较（Rust `ffi::privacy_verify_password`） |
 | `privacyClearPassword()` | 无 | `Future<void>` | 删除 salt 与 verifier 两键；键不存在为 no-op（Rust `ffi::privacy_clear_password`） |
-| `setBooksPrivate(List<String> bookUrls, bool isPrivate)` | bookUrls：书籍 URL 列表；isPrivate：目标标记 | `Future<int>` | 单事务批量更新 `books.isPrivate`，返回实际更新行数；空列表返回 0（Rust `ffi::set_books_private`） |
+| `setBooksPrivate(List<String> bookUrls, bool isPrivate)` | bookUrls：书籍 URL 列表；isPrivate：目标标记 | `Future<int>` | 单事务分批（每批 900 URL）更新 `books.isPrivate`，返回实际更新行数；空列表返回 0，重复 URL 去重（Rust `ffi::set_books_private`） |
 | `getPrivateBookUrls()` | 无 | `Future<List<String>>` | 返回 `isPrivate = 1` 的 bookUrl，按 bookUrl 升序（Rust `ffi::get_private_book_urls`） |
-| `setBookGroupPrivate(int groupId, bool isPrivate)` | groupId / isPrivate | `Future<bool>` | 更新 `book_groups.isPrivate`，返回是否命中行（Rust `ffi::set_book_group_private`） |
+| `setBookGroupPrivate(int groupId, bool isPrivate)` | groupId：i64 全链（兼容旧时间戳分组 ID）；isPrivate | `Future<bool>` | 更新 `book_groups.isPrivate`，返回是否命中行（Rust `ffi::set_book_group_private`） |
 | `getPrivateGroupIds()` | 无 | `Future<List<int>>` | 返回 `isPrivate = 1` 的 groupId，升序（Rust `ffi::get_private_group_ids`） |
 
 ---

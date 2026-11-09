@@ -4354,6 +4354,16 @@ mod tests {
         })
         .unwrap();
 
+        // [审查 P2-3] 收尾清理本用例的私密行，避免污染共享测试库中
+        // privacy 用例的全局集合断言（DB 用例经 ensure_test_db 串行）。
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).delete_by_url(book_url)?;
+            BookGroupRepository::new(conn).delete(8)?;
+            Ok(())
+        })
+        .unwrap();
+
         let _ = fs::remove_dir_all(&dir);
     }
 

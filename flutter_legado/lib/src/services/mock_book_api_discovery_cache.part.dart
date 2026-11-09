@@ -36,7 +36,9 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     while (_bookGroups.any((g) => g.groupId == _nextGroupBit)) {
       _nextGroupBit <<= 1;
     }
-    final g = group.copyWith(groupId: _nextGroupBit);
+    // 与 Rust add_book_group 一致：新建分组固定非私密（isPrivate 只能经
+    // setBookGroupPrivate 单独设置）
+    final g = group.copyWith(groupId: _nextGroupBit, isPrivate: false);
     _nextGroupBit <<= 1;
     _bookGroups.add(g);
     return g;
@@ -45,7 +47,11 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   @override
   Future<void> updateBookGroup(BookGroup group) async {
     final idx = _bookGroups.indexWhere((g) => g.groupId == group.groupId);
-    if (idx >= 0) _bookGroups[idx] = group;
+    // 与 Rust update_book_group 一致：只更新 name/cover/order，私密标记
+    // 保留库内旧值，不得被陈旧快照的 isPrivate=false 清除
+    if (idx >= 0) {
+      _bookGroups[idx] = group.copyWith(isPrivate: _bookGroups[idx].isPrivate);
+    }
   }
 
   @override
