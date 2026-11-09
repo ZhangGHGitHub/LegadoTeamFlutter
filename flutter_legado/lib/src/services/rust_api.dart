@@ -18,6 +18,7 @@ import 'book_api.dart';
 import 'cover_decode_loader.dart';
 import 'local_book_store.dart';
 import 'platform_bridge_service.dart';
+import 'privacy_api_json.dart';
 import 'settings_service.dart';
 
 part 'rust_api_decode.part.dart';
@@ -37,7 +38,8 @@ part 'rust_api_content_ext.part.dart';
 /// 所有数据库操作通过 flutter_rust_bridge 生成的桥接函数调用 Rust 侧。
 /// 尚未在 Rust FFI 中暴露的方法使用 Dart 侧 fallback 实现。
 class RustApi
-    with RustApiDecode,
+    with
+        RustApiDecode,
         RustApiSources,
         RustApiSearchRss,
         RustApiReaderData,
@@ -166,8 +168,7 @@ class RustApi
         ThemeMode.system => '0',
       };
       await bridge.setThemeMode(mode: modeValue);
-      debugPrint(
-          '[RustApi] 主题注入完成（palette=${palette.id} mode=$modeValue）');
+      debugPrint('[RustApi] 主题注入完成（palette=${palette.id} mode=$modeValue）');
     } catch (e) {
       debugPrint('[RustApi] 主题注入失败，Rust 侧回退 wh 默认值：$e');
     }
@@ -188,15 +189,10 @@ class RustApi
         SettingsService.maxFontSize,
       );
       final bgIndex = await settings.getBgColorIndex();
-      const bgStrs = [
-        '#FFFFFF',
-        '#CCEBCC',
-        '#D4A574',
-        '#E8E0C8',
-        '#1A1A1A',
-      ];
-      final bgStr =
-          (bgIndex >= 0 && bgIndex < bgStrs.length) ? bgStrs[bgIndex] : '#FFFFFF';
+      const bgStrs = ['#FFFFFF', '#CCEBCC', '#D4A574', '#E8E0C8', '#1A1A1A'];
+      final bgStr = (bgIndex >= 0 && bgIndex < bgStrs.length)
+          ? bgStrs[bgIndex]
+          : '#FFFFFF';
       final isDark = bgIndex == 4;
       String hex(Color c) =>
           '#${c.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
@@ -225,9 +221,9 @@ class RustApi
         'tipFooterMiddle': '',
         'tipFooterRight': 'page',
         'tipColor': '#99999900',
-        '_bgColorHex': hex(isDark
-            ? const Color(0xFF1A1A1A)
-            : const Color(0xFFFFFFFF)),
+        '_bgColorHex': hex(
+          isDark ? const Color(0xFF1A1A1A) : const Color(0xFFFFFFFF),
+        ),
       });
       await bridge.setReadBookConfig(readJson: readJson);
       debugPrint('[RustApi] 阅读配置注入完成（bgIndex=$bgIndex）');
@@ -240,7 +236,8 @@ class RustApi
   ///
   /// Rust 默认落系统临时目录（Android 可能不可写），改指向应用支持目录
   /// 下的 tts_cache 子目录；取不到路径时保留默认并仅记日志，不阻断初始化。
-  Future<void> _initTtsCacheDir() async {    try {
+  Future<void> _initTtsCacheDir() async {
+    try {
       final base = await getApplicationSupportDirectory();
       final dir = Directory('${base.path}${Platform.pathSeparator}tts_cache');
       if (!dir.existsSync()) {

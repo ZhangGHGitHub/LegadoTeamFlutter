@@ -20,6 +20,10 @@ mixin MockBookApiStore {
   // servers 表内存态（契约 §2.28：webdavServers* 三方法；REPLACE by id 语义）
   final List<Map<String, dynamic>> _servers = [];
   final Map<String, String> _configs = {};
+  // 隐私密码内存凭据（契约 §2.53 批9a）：仅 Mock 会话内模拟，
+  // 使用加盐 SHA-256 而非生产 PBKDF2，**不是生产安全实现**。
+  String? _mockPasswordSalt;
+  String? _mockPasswordDigest;
   final Map<String, List<BookChapter>> _chaptersCache = {};
   final Map<String, Map<int, String>> _contentCache = {};
   // 图片磁盘缓存内存模拟（契约 §2.46 saveImageCache/getImageCache；
@@ -58,7 +62,6 @@ mixin MockBookApiStore {
 
   /// [替换规则预览 | 2026-09-13] `previewReplaceRule` 调用次数（测试断言用）
   int get previewReplaceRuleCalls => _previewReplaceRuleCalls;
-
 
   /// 初始化 Mock 数据
   ///
@@ -239,10 +242,7 @@ mixin MockBookApiStore {
       },
     ];
     for (final rule in defaults) {
-      _dictRules.add({
-        'id': _nextDictRuleId++,
-        ...rule,
-      });
+      _dictRules.add({'id': _nextDictRuleId++, ...rule});
     }
   }
 
@@ -256,8 +256,7 @@ mixin MockBookApiStore {
   /// 书架样例惰性加载守卫：首次调用时从资产读取 bookshelf_sample.json，
   /// 填充 _books 与章节/正文缓存；之后各书架相关方法 await 本守卫即可
   /// （同一 Future 记忆化，并发调用只加载一次）。
-  Future<void> _ensureBooksLoaded() =>
-      _booksLoad ??= _loadBookshelfSample();
+  Future<void> _ensureBooksLoaded() => _booksLoad ??= _loadBookshelfSample();
 
   /// 从资产加载书架样例并填充 _books 与章节/正文缓存
   Future<void> _loadBookshelfSample() async {

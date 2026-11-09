@@ -17,11 +17,13 @@ part 'book.g.dart';
 class BookType {
   static const int video = 4;
   static const int text = 8;
+
   /// 更新失败（对齐 Kotlin `BookType.updateError`；书架「更新失败」分组与错误态标记）
   static const int updateError = 16;
   static const int audio = 32;
   static const int image = 64;
   static const int webFile = 128;
+
   /// 本地书位（本仓库 Rust 域：`legado-core` `book_type::LOCAL = 0x1000`）
   static const int local = 0x1000;
 
@@ -31,6 +33,7 @@ class BookType {
   /// 本仓库 Rust 域写入 [local]（0x1000），两套位域并存；
   /// [isLocalBook] 读取时双位兼容（批22b P1-1）。
   static const int kotlinLocal = 0x100;
+
   /// 未入书架的临时书（对齐 Kotlin `BookType.notShelf`；搜索/发现打开在线书阅读时临时落库）
   static const int notShelf = 0x400;
   static const String localTag = 'loc_book';
@@ -221,9 +224,9 @@ class BookType {
     String remoteDir,
   ) {
     final base = _trimTrailingSlashes(collapseSlashes(url.trim()));
-    final dir = collapseSlashes(remoteDir.trim())
-        .replaceAll(RegExp(r'^/+'), '')
-        .replaceAll(RegExp(r'/+$'), '');
+    final dir = collapseSlashes(
+      remoteDir.trim(),
+    ).replaceAll(RegExp(r'^/+'), '').replaceAll(RegExp(r'/+$'), '');
     return (url: base, remoteDir: dir.isEmpty ? '/' : '/$dir/');
   }
 }
@@ -233,6 +236,7 @@ class BookType {
 class ReadConfig with _$ReadConfig {
   const factory ReadConfig({
     @Default(false) @JsonKey(name: 'reverseToc') bool reverseToc,
+
     /// [批31] 目录显示反转（对齐原版 `Book.ReadConfig.reverseTocDisplay`，
     /// `Book.kt:502`）：仅展示层反序，章节数据顺序与 `index` 身份不变。
     /// 与 [reverseToc]（数据反转）组合 = 先数据反转、再显示反转。
@@ -252,10 +256,12 @@ class ReadConfig with _$ReadConfig {
     @Default(0) @JsonKey(name: 'closeCredits') int closeCredits,
     @Default(0) @JsonKey(name: 'playMode') int playMode,
     @Default(1.0) @JsonKey(name: 'playSpeed') double playSpeed,
+
     /// [漫画设置作用域 2026-10-01] 书级翻页模式覆盖（null = 未覆盖，跟随
     /// 全局 [MangaConfigKeys.scrollMode]）。对齐参考版 `Book.ReadConfig.mangaScrollMode`
     /// 与 MangaReaderViewModel 有效值优先级 `book?.scrollMode ?: settings.scrollMode`。
     @JsonKey(name: 'mangaScrollMode') int? mangaScrollMode,
+
     /// [漫画设置作用域 2026-10-01] 书级条漫侧边留白覆盖（null = 未覆盖，
     /// 跟随全局 [MangaConfigKeys.sidePadding]）。
     ///
@@ -301,19 +307,27 @@ class Book with _$Book {
     @Default(0) @JsonKey(name: 'durChapterTime') int durChapterTime,
     @JsonKey(name: 'wordCount') String? wordCount,
     @Default(true) @JsonKey(name: 'canUpdate') bool canUpdate,
+
     /// [批35] 单独为本书关闭阅读记录（对齐原版 `Book.disableReadRecord`，
     /// `Book.kt:120-122`）：为 true 时只有这本书不写入阅读会话（全局开关
     /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
     @Default(false) @JsonKey(name: 'disableReadRecord') bool disableReadRecord,
+
+    /// [批9a] 单本私密标记（对齐参考版 `Book.isPrivate`，`Book.kt:85-89`）。
+    /// 与「所属私密分组」（[BookGroup.isPrivate]）取并集判定；缺键默认 false
+    /// = 既有行为不变。私密标记属书架结构，随备份/导入导出原样往返。
+    @Default(false) @JsonKey(name: 'isPrivate') bool isPrivate,
     @Default(0) int order,
     @Default(0) @JsonKey(name: 'originOrder') int originOrder,
     String? variable,
     @JsonKey(name: 'readConfig') ReadConfig? readConfig,
     @Default(0) @JsonKey(name: 'syncTime') int syncTime,
+
     /// [P2-8] 当前书源下该书的详情页地址（换源事务写入；bookUrl 保持
     /// 稳定主键不变，换源后可能仍是旧源地址）。为空时「抓取书籍页」
     /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
     @Default('') @JsonKey(name: 'originBookUrl') String originBookUrl,
+
     /// [批3 P1-3 UI 余项] 文件类书源（type=3）下载地址列表，JSON 数组
     /// 字符串形态。对齐 Kotlin `Book.downloadUrls: List<String>`，本轨
     /// 落库/往返形态对齐 Rust Book serde（`downloadUrls: Option<String>`，

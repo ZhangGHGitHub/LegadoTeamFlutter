@@ -717,6 +717,12 @@ mixin _$Book {
   /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
   @JsonKey(name: 'disableReadRecord')
   bool get disableReadRecord => throw _privateConstructorUsedError;
+
+  /// [批9a] 单本私密标记（对齐参考版 `Book.isPrivate`，`Book.kt:85-89`）。
+  /// 与「所属私密分组」（[BookGroup.isPrivate]）取并集判定；缺键默认 false
+  /// = 既有行为不变。私密标记属书架结构，随备份/导入导出原样往返。
+  @JsonKey(name: 'isPrivate')
+  bool get isPrivate => throw _privateConstructorUsedError;
   int get order => throw _privateConstructorUsedError;
   @JsonKey(name: 'originOrder')
   int get originOrder => throw _privateConstructorUsedError;
@@ -780,6 +786,7 @@ abstract class $BookCopyWith<$Res> {
       @JsonKey(name: 'wordCount') String? wordCount,
       @JsonKey(name: 'canUpdate') bool canUpdate,
       @JsonKey(name: 'disableReadRecord') bool disableReadRecord,
+      @JsonKey(name: 'isPrivate') bool isPrivate,
       int order,
       @JsonKey(name: 'originOrder') int originOrder,
       String? variable,
@@ -833,6 +840,7 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
     Object? wordCount = freezed,
     Object? canUpdate = null,
     Object? disableReadRecord = null,
+    Object? isPrivate = null,
     Object? order = null,
     Object? originOrder = null,
     Object? variable = freezed,
@@ -958,6 +966,10 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
           ? _value.disableReadRecord
           : disableReadRecord // ignore: cast_nullable_to_non_nullable
               as bool,
+      isPrivate: null == isPrivate
+          ? _value.isPrivate
+          : isPrivate // ignore: cast_nullable_to_non_nullable
+              as bool,
       order: null == order
           ? _value.order
           : order // ignore: cast_nullable_to_non_nullable
@@ -1039,6 +1051,7 @@ abstract class _$$BookImplCopyWith<$Res> implements $BookCopyWith<$Res> {
       @JsonKey(name: 'wordCount') String? wordCount,
       @JsonKey(name: 'canUpdate') bool canUpdate,
       @JsonKey(name: 'disableReadRecord') bool disableReadRecord,
+      @JsonKey(name: 'isPrivate') bool isPrivate,
       int order,
       @JsonKey(name: 'originOrder') int originOrder,
       String? variable,
@@ -1090,6 +1103,7 @@ class __$$BookImplCopyWithImpl<$Res>
     Object? wordCount = freezed,
     Object? canUpdate = null,
     Object? disableReadRecord = null,
+    Object? isPrivate = null,
     Object? order = null,
     Object? originOrder = null,
     Object? variable = freezed,
@@ -1215,6 +1229,10 @@ class __$$BookImplCopyWithImpl<$Res>
           ? _value.disableReadRecord
           : disableReadRecord // ignore: cast_nullable_to_non_nullable
               as bool,
+      isPrivate: null == isPrivate
+          ? _value.isPrivate
+          : isPrivate // ignore: cast_nullable_to_non_nullable
+              as bool,
       order: null == order
           ? _value.order
           : order // ignore: cast_nullable_to_non_nullable
@@ -1280,6 +1298,7 @@ class _$BookImpl implements _Book {
       @JsonKey(name: 'wordCount') this.wordCount,
       @JsonKey(name: 'canUpdate') this.canUpdate = true,
       @JsonKey(name: 'disableReadRecord') this.disableReadRecord = false,
+      @JsonKey(name: 'isPrivate') this.isPrivate = false,
       this.order = 0,
       @JsonKey(name: 'originOrder') this.originOrder = 0,
       this.variable,
@@ -1379,6 +1398,13 @@ class _$BookImpl implements _Book {
   @override
   @JsonKey(name: 'disableReadRecord')
   final bool disableReadRecord;
+
+  /// [批9a] 单本私密标记（对齐参考版 `Book.isPrivate`，`Book.kt:85-89`）。
+  /// 与「所属私密分组」（[BookGroup.isPrivate]）取并集判定；缺键默认 false
+  /// = 既有行为不变。私密标记属书架结构，随备份/导入导出原样往返。
+  @override
+  @JsonKey(name: 'isPrivate')
+  final bool isPrivate;
   @override
   @JsonKey()
   final int order;
@@ -1412,7 +1438,7 @@ class _$BookImpl implements _Book {
 
   @override
   String toString() {
-    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, disableReadRecord: $disableReadRecord, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl, downloadUrls: $downloadUrls)';
+    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, disableReadRecord: $disableReadRecord, isPrivate: $isPrivate, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl, downloadUrls: $downloadUrls)';
   }
 
   @override
@@ -1469,6 +1495,8 @@ class _$BookImpl implements _Book {
                 other.canUpdate == canUpdate) &&
             (identical(other.disableReadRecord, disableReadRecord) ||
                 other.disableReadRecord == disableReadRecord) &&
+            (identical(other.isPrivate, isPrivate) ||
+                other.isPrivate == isPrivate) &&
             (identical(other.order, order) || other.order == order) &&
             (identical(other.originOrder, originOrder) ||
                 other.originOrder == originOrder) &&
@@ -1517,6 +1545,7 @@ class _$BookImpl implements _Book {
         wordCount,
         canUpdate,
         disableReadRecord,
+        isPrivate,
         order,
         originOrder,
         variable,
@@ -1571,6 +1600,7 @@ abstract class _Book implements Book {
       @JsonKey(name: 'wordCount') final String? wordCount,
       @JsonKey(name: 'canUpdate') final bool canUpdate,
       @JsonKey(name: 'disableReadRecord') final bool disableReadRecord,
+      @JsonKey(name: 'isPrivate') final bool isPrivate,
       final int order,
       @JsonKey(name: 'originOrder') final int originOrder,
       final String? variable,
@@ -1665,6 +1695,13 @@ abstract class _Book implements Book {
   /// 见 `enableReadRecord` 偏好）。缺键默认 false = 既有行为不变。
   @JsonKey(name: 'disableReadRecord')
   bool get disableReadRecord;
+  @override
+
+  /// [批9a] 单本私密标记（对齐参考版 `Book.isPrivate`，`Book.kt:85-89`）。
+  /// 与「所属私密分组」（[BookGroup.isPrivate]）取并集判定；缺键默认 false
+  /// = 既有行为不变。私密标记属书架结构，随备份/导入导出原样往返。
+  @JsonKey(name: 'isPrivate')
+  bool get isPrivate;
   @override
   int get order;
   @override

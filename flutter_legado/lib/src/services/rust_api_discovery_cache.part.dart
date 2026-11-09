@@ -83,6 +83,45 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
   Future<bool> bookGroupSetShow(int groupId, bool show) =>
       bridge.bookGroupSetShow(id: groupId, show_: show);
 
+  // ========== 隐私与私密标记（契约 §2.53，批9a） ==========
+
+  @override
+  Future<bool> privacyHasPassword() => bridge.privacyHasPassword();
+
+  @override
+  Future<bool> privacySetPassword(String password, {String? oldPassword}) =>
+      bridge.privacySetPassword(password: password, oldPassword: oldPassword);
+
+  @override
+  Future<bool> privacyVerifyPassword(String password) =>
+      bridge.privacyVerifyPassword(password: password);
+
+  @override
+  Future<void> privacyClearPassword() => bridge.privacyClearPassword();
+
+  @override
+  Future<int> setBooksPrivate(List<String> bookUrls, bool isPrivate) =>
+      bridge.setBooksPrivate(
+        bookUrlsJson: jsonEncode(bookUrls),
+        isPrivate: isPrivate,
+      );
+
+  @override
+  Future<List<String>> getPrivateBookUrls() async {
+    final json = await bridge.getPrivateBookUrls();
+    return PrivacyApiJson.decodeBookUrls(json);
+  }
+
+  @override
+  Future<bool> setBookGroupPrivate(int groupId, bool isPrivate) =>
+      bridge.setBookGroupPrivate(groupId: groupId, isPrivate: isPrivate);
+
+  @override
+  Future<List<int>> getPrivateGroupIds() async {
+    final json = await bridge.getPrivateGroupIds();
+    return PrivacyApiJson.decodeGroupIds(json);
+  }
+
   // ========== 搜索历史 ==========
 
   /// 获取搜索历史
@@ -285,8 +324,7 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
   /// `List<int>`（非数组/非整型条目跳过，降级空集合）。
   @override
   Future<List<int>> listDownloadingChapters(String bookUrl) async {
-    final json =
-        await bridge.cacheDownloadRunningChapters(bookUrl: bookUrl);
+    final json = await bridge.cacheDownloadRunningChapters(bookUrl: bookUrl);
     final decoded = jsonDecode(json);
     final list = <int>[];
     if (decoded is List) {

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/models.dart';
@@ -47,7 +49,8 @@ part 'mock_book_api_content_ext.part.dart';
 ///   仅 example.com，不指向任何真实站点）；
 ///   来源与脱敏口径见 assets/mock_data/README.md。
 class MockBookApi
-    with MockBookApiStore,
+    with
+        MockBookApiStore,
         MockBookApiSources,
         MockBookApiSearchRss,
         MockBookApiReaderData,

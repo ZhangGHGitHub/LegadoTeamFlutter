@@ -29,6 +29,7 @@ class SearchBook with _$SearchBook {
     @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
     @Default(-1) @JsonKey(name: 'chapterWordCount') int chapterWordCount,
     @Default(-1) @JsonKey(name: 'respondTime') int respondTime,
+
     /// 跨源聚合 origins 集合（队列⑩a P1-1 项2，2026-09-22 加法式字段）
     ///
     /// Rust 侧 `CoreSearchBook.origins`（serde default + 空时省略序列化）：
@@ -109,15 +110,15 @@ class ExploreCategory {
   }
 
   Map<String, dynamic> toJson() => {
-        'title': title,
-        if (url != null) 'url': url,
-        if (type != 'url') 'type': type,
-        if (action != null) 'action': action,
-        if (chars != null) 'chars': chars,
-        if (defaultValue != null) 'default': defaultValue,
-        if (viewName != null) 'viewName': viewName,
-        if (style != null) 'style': style!.toJson(),
-      };
+    'title': title,
+    if (url != null) 'url': url,
+    if (type != 'url') 'type': type,
+    if (action != null) 'action': action,
+    if (chars != null) 'chars': chars,
+    if (defaultValue != null) 'default': defaultValue,
+    if (viewName != null) 'viewName': viewName,
+    if (style != null) 'style': style!.toJson(),
+  };
 
   static String? _parseOptionalString(Object? value) {
     if (value == null) return null;
@@ -144,6 +145,7 @@ class ReplaceRule with _$ReplaceRule {
     String? scope,
     @Default(false) @JsonKey(name: 'scopeTitle') bool scopeTitle,
     @Default(true) @JsonKey(name: 'scopeContent') bool scopeContent,
+
     /// 书源作用域开关（对齐原版 `ReplaceRule.scopeSource`，默认 false）：
     /// 书源导入时按源名/源 URL 匹配 scope 后对整源 JSON 应用替换
     @Default(false) @JsonKey(name: 'scopeSource') bool scopeSource,
@@ -218,6 +220,11 @@ class BookGroup with _$BookGroup {
     @Default(true) bool show,
     @Default(-1) @JsonKey(name: 'bookSort') int bookSort,
     @Default(false) @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead,
+
+    /// [批9a] 分组私密标记（对齐参考版 `BookGroup.isPrivate`，
+    /// `BookGroup.kt:27`）。组内书籍与单本私密标记取并集判定；
+    /// 缺键默认 false = 既有行为不变，随备份/导入导出原样往返。
+    @Default(false) @JsonKey(name: 'isPrivate') bool isPrivate,
   }) = _BookGroup;
 
   factory BookGroup.fromJson(Map<String, dynamic> json) =>
@@ -310,13 +317,10 @@ class RssStar with _$RssStar {
 /// Cookie存储
 @freezed
 class Cookie with _$Cookie {
-  const factory Cookie({
-    @Default('') String url,
-    @Default('') String cookie,
-  }) = _Cookie;
+  const factory Cookie({@Default('') String url, @Default('') String cookie}) =
+      _Cookie;
 
-  factory Cookie.fromJson(Map<String, dynamic> json) =>
-      _$CookieFromJson(json);
+  factory Cookie.fromJson(Map<String, dynamic> json) => _$CookieFromJson(json);
 }
 
 // ─── Cache ────────────────────────────────────────────────
@@ -369,8 +373,7 @@ class Server with _$Server {
     @Default(0) @JsonKey(name: 'sortNumber') int sortNumber,
   }) = _Server;
 
-  factory Server.fromJson(Map<String, dynamic> json) =>
-      _$ServerFromJson(json);
+  factory Server.fromJson(Map<String, dynamic> json) => _$ServerFromJson(json);
 }
 
 /// WebDav配置

@@ -1857,6 +1857,12 @@ mixin _$BookGroup {
   @JsonKey(name: 'onlyUpdateRead')
   bool get onlyUpdateRead => throw _privateConstructorUsedError;
 
+  /// [批9a] 分组私密标记（对齐参考版 `BookGroup.isPrivate`，
+  /// `BookGroup.kt:27`）。组内书籍与单本私密标记取并集判定；
+  /// 缺键默认 false = 既有行为不变，随备份/导入导出原样往返。
+  @JsonKey(name: 'isPrivate')
+  bool get isPrivate => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $BookGroupCopyWith<BookGroup> get copyWith =>
@@ -1876,7 +1882,8 @@ abstract class $BookGroupCopyWith<$Res> {
       @JsonKey(name: 'enableRefresh') bool enableRefresh,
       bool show,
       @JsonKey(name: 'bookSort') int bookSort,
-      @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead});
+      @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead,
+      @JsonKey(name: 'isPrivate') bool isPrivate});
 }
 
 /// @nodoc
@@ -1900,6 +1907,7 @@ class _$BookGroupCopyWithImpl<$Res, $Val extends BookGroup>
     Object? show = null,
     Object? bookSort = null,
     Object? onlyUpdateRead = null,
+    Object? isPrivate = null,
   }) {
     return _then(_value.copyWith(
       groupId: null == groupId
@@ -1934,6 +1942,10 @@ class _$BookGroupCopyWithImpl<$Res, $Val extends BookGroup>
           ? _value.onlyUpdateRead
           : onlyUpdateRead // ignore: cast_nullable_to_non_nullable
               as bool,
+      isPrivate: null == isPrivate
+          ? _value.isPrivate
+          : isPrivate // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -1954,7 +1966,8 @@ abstract class _$$BookGroupImplCopyWith<$Res>
       @JsonKey(name: 'enableRefresh') bool enableRefresh,
       bool show,
       @JsonKey(name: 'bookSort') int bookSort,
-      @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead});
+      @JsonKey(name: 'onlyUpdateRead') bool onlyUpdateRead,
+      @JsonKey(name: 'isPrivate') bool isPrivate});
 }
 
 /// @nodoc
@@ -1976,6 +1989,7 @@ class __$$BookGroupImplCopyWithImpl<$Res>
     Object? show = null,
     Object? bookSort = null,
     Object? onlyUpdateRead = null,
+    Object? isPrivate = null,
   }) {
     return _then(_$BookGroupImpl(
       groupId: null == groupId
@@ -2010,6 +2024,10 @@ class __$$BookGroupImplCopyWithImpl<$Res>
           ? _value.onlyUpdateRead
           : onlyUpdateRead // ignore: cast_nullable_to_non_nullable
               as bool,
+      isPrivate: null == isPrivate
+          ? _value.isPrivate
+          : isPrivate // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -2025,7 +2043,8 @@ class _$BookGroupImpl implements _BookGroup {
       @JsonKey(name: 'enableRefresh') this.enableRefresh = true,
       this.show = true,
       @JsonKey(name: 'bookSort') this.bookSort = -1,
-      @JsonKey(name: 'onlyUpdateRead') this.onlyUpdateRead = false});
+      @JsonKey(name: 'onlyUpdateRead') this.onlyUpdateRead = false,
+      @JsonKey(name: 'isPrivate') this.isPrivate = false});
 
   factory _$BookGroupImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookGroupImplFromJson(json);
@@ -2054,9 +2073,16 @@ class _$BookGroupImpl implements _BookGroup {
   @JsonKey(name: 'onlyUpdateRead')
   final bool onlyUpdateRead;
 
+  /// [批9a] 分组私密标记（对齐参考版 `BookGroup.isPrivate`，
+  /// `BookGroup.kt:27`）。组内书籍与单本私密标记取并集判定；
+  /// 缺键默认 false = 既有行为不变，随备份/导入导出原样往返。
+  @override
+  @JsonKey(name: 'isPrivate')
+  final bool isPrivate;
+
   @override
   String toString() {
-    return 'BookGroup(groupId: $groupId, groupName: $groupName, cover: $cover, order: $order, enableRefresh: $enableRefresh, show: $show, bookSort: $bookSort, onlyUpdateRead: $onlyUpdateRead)';
+    return 'BookGroup(groupId: $groupId, groupName: $groupName, cover: $cover, order: $order, enableRefresh: $enableRefresh, show: $show, bookSort: $bookSort, onlyUpdateRead: $onlyUpdateRead, isPrivate: $isPrivate)';
   }
 
   @override
@@ -2075,13 +2101,15 @@ class _$BookGroupImpl implements _BookGroup {
             (identical(other.bookSort, bookSort) ||
                 other.bookSort == bookSort) &&
             (identical(other.onlyUpdateRead, onlyUpdateRead) ||
-                other.onlyUpdateRead == onlyUpdateRead));
+                other.onlyUpdateRead == onlyUpdateRead) &&
+            (identical(other.isPrivate, isPrivate) ||
+                other.isPrivate == isPrivate));
   }
 
   @JsonKey(ignore: true)
   @override
   int get hashCode => Object.hash(runtimeType, groupId, groupName, cover, order,
-      enableRefresh, show, bookSort, onlyUpdateRead);
+      enableRefresh, show, bookSort, onlyUpdateRead, isPrivate);
 
   @JsonKey(ignore: true)
   @override
@@ -2099,15 +2127,15 @@ class _$BookGroupImpl implements _BookGroup {
 
 abstract class _BookGroup implements BookGroup {
   const factory _BookGroup(
-          {@JsonKey(name: 'groupId') final int groupId,
-          @JsonKey(name: 'groupName') final String groupName,
-          final String? cover,
-          final int order,
-          @JsonKey(name: 'enableRefresh') final bool enableRefresh,
-          final bool show,
-          @JsonKey(name: 'bookSort') final int bookSort,
-          @JsonKey(name: 'onlyUpdateRead') final bool onlyUpdateRead}) =
-      _$BookGroupImpl;
+      {@JsonKey(name: 'groupId') final int groupId,
+      @JsonKey(name: 'groupName') final String groupName,
+      final String? cover,
+      final int order,
+      @JsonKey(name: 'enableRefresh') final bool enableRefresh,
+      final bool show,
+      @JsonKey(name: 'bookSort') final int bookSort,
+      @JsonKey(name: 'onlyUpdateRead') final bool onlyUpdateRead,
+      @JsonKey(name: 'isPrivate') final bool isPrivate}) = _$BookGroupImpl;
 
   factory _BookGroup.fromJson(Map<String, dynamic> json) =
       _$BookGroupImpl.fromJson;
@@ -2133,6 +2161,13 @@ abstract class _BookGroup implements BookGroup {
   @override
   @JsonKey(name: 'onlyUpdateRead')
   bool get onlyUpdateRead;
+  @override
+
+  /// [批9a] 分组私密标记（对齐参考版 `BookGroup.isPrivate`，
+  /// `BookGroup.kt:27`）。组内书籍与单本私密标记取并集判定；
+  /// 缺键默认 false = 既有行为不变，随备份/导入导出原样往返。
+  @JsonKey(name: 'isPrivate')
+  bool get isPrivate;
   @override
   @JsonKey(ignore: true)
   _$$BookGroupImplCopyWith<_$BookGroupImpl> get copyWith =>

@@ -53,9 +53,8 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     _bookGroups.removeWhere((g) => g.groupId == groupId);
     // [审查 P1] 与 Rust 同语义：删除分组同时清 books.group 对应位/exact
     const maxMask = (1 << 31) - 1;
-    final isBit = groupId > 0 &&
-        groupId <= (1 << 30) &&
-        (groupId & (groupId - 1)) == 0;
+    final isBit =
+        groupId > 0 && groupId <= (1 << 30) && (groupId & (groupId - 1)) == 0;
     for (var i = 0; i < _books.length; i++) {
       final book = _books[i];
       if (isBit) {
@@ -70,6 +69,99 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
 
   @override
   Future<bool> bookGroupSetShow(int groupId, bool show) async => true;
+
+  // ========== 隐私与私密标记（契约 §2.53，批9a） ==========
+  //
+  // Mock 仅用于开发联调：凭据用**加盐 SHA-256** 模拟，不是生产安全实现
+  // （生产走 Rust PBKDF2-HMAC-SHA256 210000 次）。
+
+  static const int _mockMaxPasswordChars = 128;
+
+  String _mockPasswordHash(String salt, String password) =>
+      sha256.convert(utf8.encode('$salt:$password')).toString();
+
+  @override
+  Future<bool> privacyHasPassword() async =>
+      _mockPasswordSalt != null && _mockPasswordDigest != null;
+
+  @override
+  Future<bool> privacySetPassword(
+    String password, {
+    String? oldPassword,
+  }) async {
+    final trimmed = password.trim();
+    if (trimmed.isEmpty || trimmed.runes.length > _mockMaxPasswordChars) {
+      return false;
+    }
+    final hasExisting =
+        _mockPasswordSalt != null && _mockPasswordDigest != null;
+    if (hasExisting) {
+      final old = oldPassword;
+      if (old == null ||
+          _mockPasswordHash(_mockPasswordSalt!, old) != _mockPasswordDigest) {
+        return false;
+      }
+    }
+    final random = Random.secure();
+    final salt = base64Encode(
+      List<int>.generate(16, (_) => random.nextInt(256)),
+    );
+    _mockPasswordSalt = salt;
+    _mockPasswordDigest = _mockPasswordHash(salt, password);
+    return true;
+  }
+
+  @override
+  Future<bool> privacyVerifyPassword(String password) async {
+    if (password.isEmpty) return false;
+    final salt = _mockPasswordSalt;
+    final digest = _mockPasswordDigest;
+    if (salt == null || digest == null) return false;
+    return _mockPasswordHash(salt, password) == digest;
+  }
+
+  @override
+  Future<void> privacyClearPassword() async {
+    _mockPasswordSalt = null;
+    _mockPasswordDigest = null;
+  }
+
+  @override
+  Future<int> setBooksPrivate(List<String> bookUrls, bool isPrivate) async {
+    await _ensureBooksLoaded();
+    final targets = bookUrls.toSet();
+    var affected = 0;
+    for (var i = 0; i < _books.length; i++) {
+      if (!targets.contains(_books[i].bookUrl)) continue;
+      affected++;
+      _books[i] = _books[i].copyWith(isPrivate: isPrivate);
+    }
+    return affected;
+  }
+
+  @override
+  Future<List<String>> getPrivateBookUrls() async {
+    await _ensureBooksLoaded();
+    final urls = _books.where((b) => b.isPrivate).map((b) => b.bookUrl).toList()
+      ..sort();
+    return urls;
+  }
+
+  @override
+  Future<bool> setBookGroupPrivate(int groupId, bool isPrivate) async {
+    final idx = _bookGroups.indexWhere((g) => g.groupId == groupId);
+    if (idx < 0) return false;
+    _bookGroups[idx] = _bookGroups[idx].copyWith(isPrivate: isPrivate);
+    return true;
+  }
+
+  @override
+  Future<List<int>> getPrivateGroupIds() async {
+    final ids =
+        _bookGroups.where((g) => g.isPrivate).map((g) => g.groupId).toList()
+          ..sort();
+    return ids;
+  }
 
   // ========== 搜索历史 ==========
 
@@ -214,8 +306,7 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     required int durIndex,
     required int retain,
     required int preDownload,
-  }) async =>
-      0;
+  }) async => 0;
 
   // ========== 音频章节文件缓存（契约 §2.47 读面 + §2.48 写入面，Mock 内存态） ==========
 
@@ -273,8 +364,10 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     required String playUrl,
   }) async {
     final indexes = _audioCacheIndexes.putIfAbsent(bookUrl, () => <int>{});
-    final playUrls =
-        _audioCachePlayUrls.putIfAbsent(bookUrl, () => <int, String>{});
+    final playUrls = _audioCachePlayUrls.putIfAbsent(
+      bookUrl,
+      () => <int, String>{},
+    );
     if (indexes.contains(chapterIndex)) {
       return jsonEncode({
         'status': 'already_cached',
@@ -320,8 +413,18 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     if (dot >= 0) {
       final ext = path.substring(dot + 1).toLowerCase();
       const whitelist = {
-        'mp3', 'm4a', 'm4b', 'aac', 'ogg', 'oga', 'opus',
-        'wav', 'flac', 'webm', 'amr', '3gp',
+        'mp3',
+        'm4a',
+        'm4b',
+        'aac',
+        'ogg',
+        'oga',
+        'opus',
+        'wav',
+        'flac',
+        'webm',
+        'amr',
+        '3gp',
       };
       if (whitelist.contains(ext)) return ext;
     }

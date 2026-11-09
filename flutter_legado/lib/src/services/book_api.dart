@@ -969,6 +969,35 @@ abstract class BookApi {
   /// 设置分组显示状态（FFI bookGroupSetShow，F3-20）
   Future<bool> bookGroupSetShow(int groupId, bool show);
 
+  // ========== 隐私与私密标记（privacy FFI，契约 §2.53） ==========
+
+  /// 是否已设置隐私密码（salt 与 verifier 均存在）
+  Future<bool> privacyHasPassword();
+
+  /// 设置/修改隐私密码
+  ///
+  /// 已有凭据时 [oldPassword] 必须匹配（null/错误返回 false 且不落库）；
+  /// 新密码 trim 后须为 1..128 字符。成功返回 true。
+  Future<bool> privacySetPassword(String password, {String? oldPassword});
+
+  /// 校验隐私密码（无凭据/空密码 false；常量时间比较）
+  Future<bool> privacyVerifyPassword(String password);
+
+  /// 清除隐私密码（删除 salt/verifier 两键；不存在为 no-op）
+  Future<void> privacyClearPassword();
+
+  /// 批量设置书籍私密标记，返回实际更新行数（空列表 0）
+  Future<int> setBooksPrivate(List<String> bookUrls, bool isPrivate);
+
+  /// 全部私密书籍 URL（按 bookUrl 升序）
+  Future<List<String>> getPrivateBookUrls();
+
+  /// 设置分组私密标记，返回是否命中行
+  Future<bool> setBookGroupPrivate(int groupId, bool isPrivate);
+
+  /// 全部私密分组 ID（升序）
+  Future<List<int>> getPrivateGroupIds();
+
   // ========== 搜索历史 ==========
 
   /// 获取搜索历史

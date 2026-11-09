@@ -161,6 +161,7 @@ _$BookGroupImpl _$$BookGroupImplFromJson(Map<String, dynamic> json) =>
       show: json['show'] as bool? ?? true,
       bookSort: (json['bookSort'] as num?)?.toInt() ?? -1,
       onlyUpdateRead: json['onlyUpdateRead'] as bool? ?? false,
+      isPrivate: json['isPrivate'] as bool? ?? false,
     );
 
 Map<String, dynamic> _$$BookGroupImplToJson(_$BookGroupImpl instance) =>
@@ -173,6 +174,7 @@ Map<String, dynamic> _$$BookGroupImplToJson(_$BookGroupImpl instance) =>
       'show': instance.show,
       'bookSort': instance.bookSort,
       'onlyUpdateRead': instance.onlyUpdateRead,
+      'isPrivate': instance.isPrivate,
     };
 
 _$AutoTaskRuleImpl _$$AutoTaskRuleImplFromJson(Map<String, dynamic> json) =>
