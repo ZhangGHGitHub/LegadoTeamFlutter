@@ -31,6 +31,9 @@ class RestoreIgnorePrefs {
     PrefKeys.coverDefaultAlbumId,
     PrefKeys.coverDefaultAlbumIdDark,
     'backupPath',
+    // [设备验收 P2] CrashLogService._keyBackupPath：本机备份目录绝对路径，
+    // 属设备级配置；随备份往返会改写目标机的本地备份目录
+    'app_backup_path',
     'webDavDeviceName',
     'jsSourceApiToken',
     PrefKeys.launcherIcon,
@@ -82,6 +85,9 @@ class RestoreIgnorePrefs {
     // 本身不随备份（defaultCover/defaultCoverDark 已在 alwaysIgnoreKeys），
     // 标记随备份带到新设备会让旧路径迁移被跳过。
     PrefKeys.coverAlbumMigrated,
+    // [设备验收 P2] ServerService.migratedPrefKey：远程书库一次性迁移标记；
+    // 仅备份侧排除，旧备份仍可读取并应用，避免新设备误跳过迁移
+    'remote_servers_migrated',
   };
 
   /// 阅读界面相关键（对齐 BackupConfig.readPrefKeys + Flutter 阅读偏好）

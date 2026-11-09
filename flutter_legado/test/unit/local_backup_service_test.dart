@@ -254,6 +254,8 @@ void main() {
         'reader_font_size': 20,
         'showRss': false,
         'customFoo': 'bar',
+        'app_backup_path': 'D:/device-backup',
+        'remote_servers_migrated': true,
         SettingsService.backupIgnoreStorageKey: jsonEncode({
           'themeMode': true,
           'readConfig': false,
@@ -283,6 +285,16 @@ void main() {
       expect(prefs['reader_font_size'], 20, reason: '备份忽略 readConfig=false');
       expect(prefs['showRss'], false);
       expect(prefs['customFoo'], 'bar');
+      expect(
+        prefs.containsKey('app_backup_path'),
+        isFalse,
+        reason: '设备级备份目录不得写入备份 JSON',
+      );
+      expect(
+        prefs.containsKey('remote_servers_migrated'),
+        isFalse,
+        reason: '远程书库迁移标记仅备份侧排除',
+      );
       expect(
         prefs.containsKey(SettingsService.backupIgnoreStorageKey),
         isFalse,

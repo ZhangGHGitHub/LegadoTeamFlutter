@@ -33,6 +33,12 @@ void main() {
         RestoreIgnorePrefs.keyIsNotIgnore(PrefKeys.localPassword, const {}),
         isFalse,
       );
+      // [设备验收 P2] 本机备份目录绝对路径属设备级，任何 ignore 组合下
+      // 都不得写入备份或被备份值覆盖
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore('app_backup_path', const {}),
+        isFalse,
+      );
     });
 
     test('勾选 readConfig 跳过阅读键', () {
@@ -417,6 +423,67 @@ void main() {
         RestoreIgnorePrefs.alwaysIgnoreKeys,
         isNot(contains('remote_servers')),
         reason: '旧备份仍需可读：不得塞进 alwaysIgnoreKeys',
+      );
+    });
+
+    test('新备份排除本机备份目录与远程书库迁移标记', () async {
+      SharedPreferences.setMockInitialValues({
+        'app_backup_path': 'D:/legado-backup',
+        'remote_servers_migrated': true,
+        'themeMode': 'dark',
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+
+      expect(
+        collected.containsKey('app_backup_path'),
+        isFalse,
+        reason: '本机备份目录绝对路径不得随备份外带',
+      );
+      expect(
+        collected.containsKey('remote_servers_migrated'),
+        isFalse,
+        reason: '迁移标记属设备级一次性状态，新备份不写',
+      );
+      expect(collected['themeMode'], 'dark', reason: '普通偏好照常备份');
+      expect(
+        RestoreIgnorePrefs.alwaysIgnoreKeys,
+        contains('app_backup_path'),
+      );
+      expect(
+        RestoreIgnorePrefs.backupExcludedKeys,
+        contains('remote_servers_migrated'),
+      );
+      expect(
+        RestoreIgnorePrefs.alwaysIgnoreKeys,
+        isNot(contains('remote_servers_migrated')),
+        reason: '旧备份仍需可读取/应用，不能整键忽略',
+      );
+    });
+
+    test('恢复不覆盖本机 app_backup_path；旧备份迁移标记仍可应用', () async {
+      SharedPreferences.setMockInitialValues({
+        'app_backup_path': 'D:/local-backup',
+        'remote_servers_migrated': false,
+      });
+
+      await RestoreIgnorePrefs.applyFromBackup(
+        {
+          'app_backup_path': 'E:/remote-backup',
+          'remote_servers_migrated': true,
+        },
+        const {},
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getString('app_backup_path'),
+        'D:/local-backup',
+        reason: '设备级备份目录必须保留本机值',
+      );
+      expect(
+        prefs.getBool('remote_servers_migrated'),
+        isTrue,
+        reason: '旧备份含迁移标记时仍应用于目标设备（仅新备份不写）',
       );
     });
 
