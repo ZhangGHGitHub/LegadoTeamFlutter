@@ -279,11 +279,12 @@ void main() {
     });
 
     test('保存/读取，与恢复忽略互不影响', () async {
-      await service.saveBackupIgnoreConfig({
+      final saved = await service.saveBackupIgnoreConfig({
         'themeMode': true,
         'readConfig': true,
         'unknown': true,
       });
+      expect(saved, isTrue, reason: '成功写入返回 true');
       final backup = await service.getBackupIgnoreConfig();
       expect(backup['themeMode'], isTrue);
       expect(backup['readConfig'], isTrue);

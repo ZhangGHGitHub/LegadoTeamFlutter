@@ -10,9 +10,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
+import 'package:flutter_legado/src/services/settings_service.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
+import 'package:flutter_legado/src/widgets/restore_ignore_dialog.dart';
 
 import '../mocks/mocks.dart';
+
+class _FailingSaveSettings extends SettingsService {
+  @override
+  Future<bool> saveBackupIgnoreConfig(Map<String, bool> config) async => false;
+}
 
 void main() {
   late FakeServersRustApi mockApi;
@@ -168,5 +175,86 @@ void main() {
     await tester.scrollUntilVisible(find.text('备份忽略列表'), 80);
     await tester.pumpAndSettle();
     expect(find.text('已勾选 2 项'), findsOneWidget);
+  });
+
+  testWidgets('恢复忽略对话框默认副标题提示备份忽略需单独设置', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RestoreIgnoreDialog(
+            initial: {
+              for (final k in SettingsService.restoreIgnoreKeys) k: false,
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('恢复忽略'), findsOneWidget);
+    expect(find.text('恢复时跳过对应项；备份忽略请单独设置。'), findsOneWidget);
+  });
+
+  testWidgets('备份忽略对话框 360dp 大字体不溢出', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(360, 640),
+            textScaler: TextScaler.linear(2.0),
+          ),
+          child: Scaffold(
+            body: RestoreIgnoreDialog(
+              initial: {
+                for (final k in SettingsService.backupIgnoreKeys) k: false,
+              },
+              title: '备份忽略',
+              subtitle: '勾选后备份时跳过对应项，不写入备份文件；恢复忽略请单独设置。',
+              keys: SettingsService.backupIgnoreKeys,
+              titles: SettingsService.backupIgnoreTitles,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('备份忽略'), findsOneWidget);
+  });
+
+  testWidgets('备份忽略保存失败：提示失败且不更新勾选数', (tester) async {
+    final failingContainer = ProviderContainer(
+      overrides: [
+        bookApiProvider.overrideWithValue(mockApi),
+        settingsProvider.overrideWithValue(_FailingSaveSettings()),
+      ],
+    );
+    addTearDown(failingContainer.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: failingContainer,
+        child: const MaterialApp(home: WebDavSettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('备份忽略列表'), 80);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('备份忽略列表'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('阅读界面配置'));
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('保存备份忽略项失败'), findsOneWidget);
+    expect(find.text('已保存备份忽略项'), findsNothing);
+    expect(find.text('未设置'), findsOneWidget, reason: '保存失败不更新页面状态');
   });
 }

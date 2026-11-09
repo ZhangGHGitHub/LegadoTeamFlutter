@@ -58,9 +58,10 @@ void main() {
     api = FakeServersRustApi();
     settings = SettingsService();
     tempDir = Directory.systemTemp.createTempSync('local_backup_8a');
-    when(
-      () => api.backup(any()),
-    ).thenAnswer((_) async => '/tmp/legado_backup_1.json');
+    when(() => api.backup(any())).thenAnswer(
+      (_) async =>
+          '${tempDir.path}${Platform.pathSeparator}legado_backup_1.json',
+    );
   });
 
   tearDown(() {
@@ -161,13 +162,16 @@ void main() {
       final result = await LocalBackupService().createBackup(
         api: api,
         settings: settings,
-        dirPath: '/tmp',
+        dirPath: tempDir.path,
         uploadWebDav: true,
         webDavBackupService: webDav,
         now: DateTime(2026, 10, 29, 12),
       );
 
-      expect(result.filePath, '/tmp/legado_backup_1.json');
+      expect(
+        result.filePath,
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_1.json',
+      );
       expect(result.uploaded, isTrue);
       expect(result.uploadError, isNull);
       expect(webDav.calls, 1);
@@ -183,12 +187,15 @@ void main() {
       final result = await LocalBackupService().createBackup(
         api: api,
         settings: settings,
-        dirPath: '/tmp',
+        dirPath: tempDir.path,
         uploadWebDav: true,
         webDavBackupService: webDav,
       );
 
-      expect(result.filePath, '/tmp/legado_backup_1.json');
+      expect(
+        result.filePath,
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_1.json',
+      );
       expect(result.uploaded, isFalse);
       expect(result.uploadError, isNotNull);
       expect(await settings.getLastBackupTime(), greaterThan(0));
@@ -199,7 +206,7 @@ void main() {
       final result = await LocalBackupService().createBackup(
         api: api,
         settings: settings,
-        dirPath: '/tmp',
+        dirPath: tempDir.path,
         uploadWebDav: false,
         webDavBackupService: webDav,
       );
@@ -215,7 +222,7 @@ void main() {
       final result = await LocalBackupService().createBackup(
         api: api,
         settings: settings,
-        dirPath: '/tmp',
+        dirPath: tempDir.path,
         uploadWebDav: true,
         webDavBackupService: webDav,
       );
@@ -231,7 +238,7 @@ void main() {
         LocalBackupService().createBackup(
           api: api,
           settings: settings,
-          dirPath: '/tmp',
+          dirPath: tempDir.path,
           uploadWebDav: false,
         ),
         throwsA(isA<Exception>()),
@@ -355,6 +362,9 @@ void main() {
       final txt = File(
         '${tempDir.path}${Platform.pathSeparator}legado_backup_1.txt',
       )..writeAsStringSync('x');
+      final nonNumericJson = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_abc.json',
+      )..writeAsStringSync('x');
       final subdir = Directory(
         '${tempDir.path}${Platform.pathSeparator}legado_backup_dir.json',
       )..createSync();
@@ -374,6 +384,7 @@ void main() {
       expect(otherJson.existsSync(), isTrue);
       expect(webdavName.existsSync(), isTrue);
       expect(txt.existsSync(), isTrue);
+      expect(nonNumericJson.existsSync(), isTrue, reason: '文件名非纯数字不匹配');
       expect(subdir.existsSync(), isTrue);
       expect(nested.existsSync(), isTrue);
     });
@@ -397,6 +408,152 @@ void main() {
 
       expect(result.filePath, current);
       expect(old.existsSync(), isTrue, reason: '删除失败保留旧文件');
+    });
+
+    test('上传失败仍清理旧备份（上传尝试结束后清理）', () async {
+      final old = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_100.json',
+      )..writeAsStringSync('old');
+      final current = await stubBackupFile('legado_backup_300.json');
+      final webDav = _FakeWebDavBackupService(api: api)
+        ..error = Exception('网络不可用');
+
+      final result = await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: true,
+        webDavBackupService: webDav,
+      );
+
+      expect(result.uploadError, isNotNull);
+      expect(old.existsSync(), isFalse);
+      expect(File(current).existsSync(), isTrue);
+    });
+
+    test('dirPath 末尾带分隔符：本次备份不被误删', () async {
+      final dirPath = '${tempDir.path}${Platform.pathSeparator}';
+      final old = File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_100.json',
+      )..writeAsStringSync('old');
+      // 模拟 Windows 盘根拼接：dirPath 尾分隔符 + 文件名 → 双分隔符路径
+      final current = '${dirPath}legado_backup_300.json';
+      when(() => api.backup(any())).thenAnswer((_) async {
+        await File(current).writeAsString('{}');
+        return current;
+      });
+
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: dirPath,
+        uploadWebDav: false,
+      );
+
+      expect(File(current).existsSync(), isTrue, reason: '本次备份必须保留');
+      expect(old.existsSync(), isFalse, reason: '旧备份仍应清理');
+    });
+  });
+
+  group('备份忽略本地书（批8a 回修 P2-1）', () {
+    Future<String> stubBackupJson(Map<String, dynamic> data) async {
+      final path =
+          '${tempDir.path}${Platform.pathSeparator}legado_backup_500.json';
+      when(() => api.backup(any())).thenAnswer((_) async {
+        await File(path).writeAsString(jsonEncode(data));
+        return path;
+      });
+      return path;
+    }
+
+    Map<String, dynamic> backupWithLocalBooks() => {
+      'books': [
+        {'name': 'originLocal', 'origin': 'loc_book', 'type': 8},
+        {
+          'name': 'webDavLocal',
+          'origin': 'webDav::https://host/a.epub',
+          'type': 8,
+        },
+        {'name': 'bitLocal', 'origin': '', 'type': 0x1000 | 8},
+        {'name': 'online', 'origin': 'https://host/b', 'type': 8},
+        {'name': 'noTypeLocal', 'origin': 'loc_book'},
+      ],
+    };
+
+    test('backupIgnore.localBook=true：备份 JSON books 不含本地书', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsService.backupIgnoreStorageKey: jsonEncode({'localBook': true}),
+      });
+      final path = await stubBackupJson(backupWithLocalBooks());
+
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      final decoded =
+          jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
+      final names = (decoded['books'] as List)
+          .map((item) => (item as Map)['name'])
+          .toList();
+      expect(names, ['online']);
+    });
+
+    test('仅 restoreIgnore.localBook=true：备份侧不过滤', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsService.restoreIgnoreStorageKey: jsonEncode({
+          'localBook': true,
+        }),
+      });
+      final path = await stubBackupJson(backupWithLocalBooks());
+
+      await LocalBackupService().createBackup(
+        api: api,
+        settings: settings,
+        dirPath: tempDir.path,
+        uploadWebDav: false,
+      );
+
+      final decoded =
+          jsonDecode(await File(path).readAsString()) as Map<String, dynamic>;
+      expect((decoded['books'] as List), hasLength(5));
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(
+          'localBook',
+          await settings.getRestoreIgnoreConfig(),
+        ),
+        isTrue,
+      );
+    });
+
+    test('过滤失败 fail-closed：删除未过滤文件且不写 lastBackup', () async {
+      SharedPreferences.setMockInitialValues({
+        SettingsService.backupIgnoreStorageKey: jsonEncode({'localBook': true}),
+      });
+      final path =
+          '${tempDir.path}${Platform.pathSeparator}legado_backup_600.json';
+      when(() => api.backup(any())).thenAnswer((_) async {
+        await File(path).writeAsString('{not json');
+        return path;
+      });
+      final webDav = _FakeWebDavBackupService(api: api);
+
+      await expectLater(
+        LocalBackupService().createBackup(
+          api: api,
+          settings: settings,
+          dirPath: tempDir.path,
+          uploadWebDav: true,
+          webDavBackupService: webDav,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(File(path).existsSync(), isFalse, reason: '不得保留未过滤备份');
+      expect(webDav.calls, 0, reason: '过滤失败不得上传');
+      expect(await settings.getLastBackupTime(), 0);
     });
   });
 }
