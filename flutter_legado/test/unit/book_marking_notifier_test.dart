@@ -4,6 +4,8 @@
 /// 列表加载、启停/删除、修订号自增、空文本拒绝。
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -18,16 +20,34 @@ class _FailingBookApi extends MockBookApi {
   _FailingBookApi({required this.failBookName});
 
   final String failBookName;
+  bool fail = true;
 
   @override
   Future<List<BookMarking>> getBookMarkingsByBook(
     String bookName,
     String bookAuthor,
   ) {
-    if (bookName == failBookName) {
+    if (fail && bookName == failBookName) {
       throw const BridgeError(message: 'B 书加载失败');
     }
     return super.getBookMarkingsByBook(bookName, bookAuthor);
+  }
+}
+
+/// A 书请求挂起、B 书立即返回（P2-3 乱序完成测试）
+class _OutOfOrderBookApi extends MockBookApi {
+  _OutOfOrderBookApi({required this.bookBMarkings});
+
+  final List<BookMarking> bookBMarkings;
+  final Completer<List<BookMarking>> bookA = Completer();
+
+  @override
+  Future<List<BookMarking>> getBookMarkingsByBook(
+    String bookName,
+    String bookAuthor,
+  ) {
+    if (bookName == 'A书') return bookA.future;
+    return Future.value(bookBMarkings);
   }
 }
 
@@ -254,5 +274,67 @@ void main() {
     expect(state.loaded, isFalse);
     expect(state.error, contains('B 书加载失败'));
     expect(state.isFor('A书', '作者A'), isFalse);
+
+    // 重试成功清除陈旧 error（避免错误页残留）
+    failingApi.fail = false;
+    await failingNotifier.loadByBook('B书', '作者A');
+    final recovered = failingContainer.read(bookMarkingNotifierProvider);
+    expect(recovered.error, isNull);
+    expect(recovered.loaded, isTrue);
+  });
+
+  test('P2-3 乱序：A 慢、B 先完成、A 迟到不覆盖 B', () async {
+    final outOfOrderApi = _OutOfOrderBookApi(
+      bookBMarkings: [
+        BookMarking(
+          id: 'b1',
+          bookUrl: 'https://b.com/book/1',
+          bookName: 'B书',
+          bookAuthor: '作者A',
+          chapterIndex: 0,
+          anchorJson: buildBookMarkingAnchor(
+            chapterIndex: 0,
+            chapterPosition: 0,
+            selectedText: 'B 文本',
+          ).encode(),
+          styleJson: MarkingEffect.solid.toStyle(0xFF22C55E).encode(),
+        ),
+      ],
+    );
+    final outOfOrderContainer = ProviderContainer(
+      overrides: [bookApiProvider.overrideWithValue(outOfOrderApi)],
+    );
+    addTearDown(outOfOrderContainer.dispose);
+    final outOfOrderNotifier = outOfOrderContainer.read(
+      bookMarkingNotifierProvider.notifier,
+    );
+
+    final slowA = outOfOrderNotifier.loadByBook('A书', '作者A');
+    await outOfOrderNotifier.loadByBook('B书', '作者A');
+    expect(
+      outOfOrderContainer.read(bookMarkingNotifierProvider).items,
+      hasLength(1),
+    );
+
+    outOfOrderApi.bookA.complete([
+      BookMarking(
+        id: 'a1',
+        bookUrl: 'https://a.com/book/1',
+        bookName: 'A书',
+        bookAuthor: '作者A',
+        chapterIndex: 0,
+        anchorJson: buildBookMarkingAnchor(
+          chapterIndex: 0,
+          chapterPosition: 0,
+          selectedText: 'A 文本',
+        ).encode(),
+        styleJson: MarkingEffect.solid.toStyle(0xFF22C55E).encode(),
+      ),
+    ]);
+    await slowA;
+
+    final state = outOfOrderContainer.read(bookMarkingNotifierProvider);
+    expect(state.bookName, 'B书');
+    expect(state.items.single.id, 'b1', reason: 'A 迟到结果不得覆盖 B');
   });
 }

@@ -251,6 +251,28 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('P2-3 高亮非空时笔记失败仍显示错误行与重试', (tester) async {
+    stubCommon(markings: const []);
+    when(() => mockApi.highlightListByBook(bookUrl: bookUrl)).thenAnswer(
+      (_) async =>
+          '[{"time":1,"bookUrl":"$bookUrl","chapterIndex":0,'
+          '"chapterName":"第一章","bookText":"高亮文本","note":""}]',
+    );
+    when(
+      () => mockApi.getBookMarkingsByBook(bookName, bookAuthor),
+    ).thenAnswer((_) async => throw const BridgeError(message: '笔记加载失败'));
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook())));
+    await settleInitial(tester);
+    await openAnnotationsTab(tester);
+
+    expect(find.byKey(const ValueKey('toc-marking-error')), findsOneWidget);
+    expect(find.byKey(const ValueKey('toc-marking-retry')), findsOneWidget);
+    expect(find.textContaining('笔记加载失败'), findsOneWidget);
+    expect(find.text('高亮文本'), findsOneWidget, reason: '高亮列表不受影响');
+
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('长按笔记行返回对应章节索引', (tester) async {
     stubCommon(
       markings: [

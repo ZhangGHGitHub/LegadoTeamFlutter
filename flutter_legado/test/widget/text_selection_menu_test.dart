@@ -1,6 +1,8 @@
 // [批4c] 选择菜单浮条/面板/配置 Sheet 测试
 //
 // 编写：全栈工程师（批4c） ｜ 2026-11-04
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,11 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/services/book_api.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 import 'package:flutter_legado/src/widgets/reader/text_selection_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/text_select_menu_config_sheet.dart';
 
@@ -35,6 +39,7 @@ ProviderContainer _container(
   ReaderAdvancedConfig cfg, {
   ReaderState? readerState,
   BookApi? api,
+  AudioNotifier Function()? audioNotifier,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -43,6 +48,8 @@ ProviderContainer _container(
         readerNotifierProvider.overrideWith(
           () => _FixedReaderNotifier(readerState),
         ),
+      if (audioNotifier != null)
+        audioNotifierProvider.overrideWith(audioNotifier),
     ],
   );
   container.read(readerAdvConfigProvider.notifier).apply(cfg);
@@ -58,6 +65,27 @@ class _FixedReaderNotifier extends ReaderNotifier {
 
   @override
   ReaderState build() => _state;
+}
+
+/// 捕获朗读起始章号（P2-2 冻结帧快照测试）
+class _CapturingAudioNotifier extends AudioNotifier {
+  int? capturedChapterIndex;
+
+  @override
+  AudioState build() => AudioState(config: TtsConfig());
+
+  @override
+  Future<void> startReadAloud({
+    required String bookUrl,
+    required String bookName,
+    int chapterIndex = 0,
+    int? startChapterPos,
+    String? startParagraphText,
+    List<int>? pageStarts,
+    bool fromReader = false,
+  }) async {
+    capturedChapterIndex = chapterIndex;
+  }
 }
 
 const _testReaderState = ReaderState(
@@ -438,6 +466,8 @@ void main() {
   group('底部选择面板', () {
     Widget panel(
       ProviderContainer container, {
+      String text = '选中文本',
+      int chapterPos = 0,
       int? chapterIndex,
       String? chapterTitle,
     }) => UncontrolledProviderScope(
@@ -445,8 +475,8 @@ void main() {
       child: MaterialApp(
         home: Scaffold(
           body: TextSelectionPanel(
-            text: '选中文本',
-            chapterPos: 0,
+            text: text,
+            chapterPos: chapterPos,
             chapterIndex: chapterIndex,
             chapterTitle: chapterTitle,
           ),
@@ -581,6 +611,186 @@ void main() {
       final list = await api.getBookMarkingsByBook('测试书', '作者A');
       expect(list, hasLength(1));
       expect(list.single.chapterIndex, 5, reason: '应使用分页快照章号');
+      expect(list.single.chapterName, '第五章');
+    });
+
+    testWidgets('P1-1 组件级：selection.start 捕获重复词第二次出现', (tester) async {
+      final api = MockBookApi();
+      await tester.pumpWidget(
+        panel(
+          _container(_config(), readerState: _testReaderState, api: api),
+          text: '　　重复词和重复词',
+          chapterPos: 100,
+        ),
+      );
+      await tester.pump();
+      final selectable = tester.widget<SelectableText>(
+        find.byType(SelectableText),
+      );
+      selectable.onSelectionChanged!(
+        const TextSelection(baseOffset: 6, extentOffset: 9),
+        SelectionChangedCause.longPress,
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_mark')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('marking-save')));
+      await tester.pumpAndSettle();
+
+      final list = await api.getBookMarkingsByBook('测试书', '作者A');
+      expect(list, hasLength(1));
+      final anchor = BookMarkingAnchor.tryParse(list.single.anchorJson)!;
+      expect(anchor.selectedText, '重复词');
+      expect(anchor.chapterPosition, 104, reason: '100 + (6 - 缩进2)');
+    });
+
+    testWidgets('P3-3 空白-only 选区回退整段文本', (tester) async {
+      final api = MockBookApi();
+      await tester.pumpWidget(
+        panel(
+          _container(_config(), readerState: _testReaderState, api: api),
+          text: '　　重复词和重复词',
+          chapterPos: 100,
+        ),
+      );
+      await tester.pump();
+      final selectable = tester.widget<SelectableText>(
+        find.byType(SelectableText),
+      );
+      selectable.onSelectionChanged!(
+        const TextSelection(baseOffset: 0, extentOffset: 2),
+        SelectionChangedCause.longPress,
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_mark')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('marking-save')));
+      await tester.pumpAndSettle();
+
+      final list = await api.getBookMarkingsByBook('测试书', '作者A');
+      expect(list, hasLength(1));
+      final anchor = BookMarkingAnchor.tryParse(list.single.anchorJson)!;
+      expect(anchor.selectedText, '重复词和重复词');
+      expect(anchor.chapterPosition, 100);
+    });
+
+    testWidgets('P2-2 高亮保存使用分页快照章号/标题', (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final api = MockBookApi();
+      await tester.pumpWidget(
+        panel(
+          _container(_config(), readerState: _testReaderState, api: api),
+          chapterIndex: 5,
+          chapterTitle: '第五章',
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('selection-panel-highlight')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.byKey(const ValueKey('highlight-color-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存高亮'));
+      await tester.pumpAndSettle();
+
+      final raw = await api.highlightListByBook(
+        bookUrl: 'https://src.com/book/1',
+      );
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      expect(list, hasLength(1));
+      expect(list.single['chapterIndex'], 5);
+      expect(list.single['chapterName'], '第五章');
+    });
+
+    testWidgets('P2-2 书签使用分页快照章号/标题', (tester) async {
+      final api = MockBookApi();
+      await tester.pumpWidget(
+        panel(
+          _container(_config(), readerState: _testReaderState, api: api),
+          chapterIndex: 5,
+          chapterTitle: '第五章',
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_bookmark')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final list = await api.getAllBookmarks();
+      expect(list, hasLength(1));
+      expect(list.single.chapterIndex, 5);
+      expect(list.single.chapterName, '第五章');
+    });
+
+    testWidgets('P2-2 朗读使用分页快照章号', (tester) async {
+      final audio = _CapturingAudioNotifier();
+      await tester.pumpWidget(
+        panel(
+          _container(
+            _config(),
+            readerState: _testReaderState,
+            audioNotifier: () => audio,
+          ),
+          chapterIndex: 5,
+          chapterTitle: '第五章',
+        ),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_aloud')),
+      );
+      await tester.pump();
+      expect(audio.capturedChapterIndex, 5);
+    });
+
+    testWidgets('P2-2 滚动模式 ReaderParagraphs 使用快照章号/标题', (tester) async {
+      final api = MockBookApi();
+      final container = _container(
+        _config(),
+        readerState: _testReaderState,
+        api: api,
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: ReaderParagraphs(
+                  content: '选中文本',
+                  chapterIndex: 5,
+                  chapterTitle: '第五章',
+                  fontSize: 16,
+                  lineHeight: 1.5,
+                  paragraphSpacing: 0,
+                  textColor: Colors.black,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.longPress(find.text('选中文本'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('selection-panel-action-menu_mark')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('marking-save')));
+      await tester.pumpAndSettle();
+
+      final list = await api.getBookMarkingsByBook('测试书', '作者A');
+      expect(list, hasLength(1));
+      expect(list.single.chapterIndex, 5);
       expect(list.single.chapterName, '第五章');
     });
 

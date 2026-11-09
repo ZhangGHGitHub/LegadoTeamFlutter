@@ -61,6 +61,20 @@ class _FlakyMarkingApi extends MockBookApi {
   }
 }
 
+/// 恒失败并计数的 marks API（重试预算测试）
+class _FailingMarkingApi extends MockBookApi {
+  int calls = 0;
+
+  @override
+  Future<List<BookMarking>> getBookMarkingsForChapter(
+    String bookUrl,
+    int? chapterIndex,
+  ) async {
+    calls++;
+    throw StateError('marks 加载失败');
+  }
+}
+
 ReaderState readerState({
   required String content,
   int chapterIndex = 0,
@@ -431,6 +445,54 @@ void main() {
       isTrue,
       reason: '旧请求失败不得覆盖新章结果',
     );
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('单 key 失败最多请求 2 次；revision 变化重新获得预算', (tester) async {
+    final api = _FailingMarkingApi();
+    final container = await pumpReader(
+      tester,
+      api: api,
+      state: readerState(content: '失败正文'),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(api.calls, 2, reason: '单 key 最多尝试 2 次');
+
+    await tester.pump();
+    await tester.pump();
+    expect(api.calls, 2, reason: '预算耗尽后不再请求');
+
+    container.read(bookMarkingsRevisionProvider.notifier).state++;
+    await tester.pump();
+    expect(api.calls, 3, reason: '修订号变化对应新 key，应重新尝试');
+    await tester.pump();
+  });
+
+  testWidgets('切章后重试预算重置：A→B→A 可再次请求', (tester) async {
+    final api = _FailingMarkingApi();
+    final notifier = _SwitchableReaderNotifier(readerState(content: 'A 正文'));
+    await pumpReader(
+      tester,
+      api: api,
+      state: notifier.initial,
+      notifier: notifier,
+    );
+    await tester.pump();
+    await tester.pump();
+    final aCapped = api.calls;
+    expect(aCapped, 2, reason: 'A 章预算用尽');
+
+    notifier.switchTo(readerState(content: 'B 正文'));
+    await tester.pump();
+    await tester.pump();
+    final afterB = api.calls;
+    expect(afterB, greaterThan(aCapped), reason: '切章后新身份重新请求');
+
+    notifier.switchTo(readerState(content: 'A 正文'));
+    await tester.pump();
+    await tester.pump();
+    expect(api.calls, greaterThan(afterB), reason: '回到同章应重置预算再次请求');
     await tester.pump(const Duration(seconds: 1));
   });
 
