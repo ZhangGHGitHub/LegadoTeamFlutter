@@ -63,7 +63,11 @@ void main() {
     );
   }
 
-  Future<void> openSheet(WidgetTester tester, {required Book book}) async {
+  Future<void> openSheet(
+    WidgetTester tester, {
+    required Book book,
+    bool globalReplaceDefault = true,
+  }) async {
     reader = _FakeReaderNotifier(
       ReaderState(
         currentBook: book,
@@ -79,6 +83,9 @@ void main() {
         overrides: [
           bookApiProvider.overrideWithValue(api),
           readerNotifierProvider.overrideWith(() => reader),
+          replaceEnableDefaultProvider.overrideWith(
+            (ref) async => globalReplaceDefault,
+          ),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -206,6 +213,10 @@ void main() {
     await openSheet(tester, book: makeBook(reSegment: false));
     await tester.tap(find.text('繁简转换（繁转简）'));
     await tester.pump();
+    expect(
+      find.byKey(const ValueKey('effective-replaces-inline-message')),
+      findsOneWidget,
+    );
     expect(find.text('请在阅读设置中调整'), findsOneWidget);
   });
 
@@ -217,6 +228,60 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(ReplaceRuleEditScreen), findsOneWidget);
+  });
+
+  testWidgets('P1-2 全局默认关闭：0 条并提示本书替换净化已关闭', (tester) async {
+    await api.setChineseConvertType(1);
+    await addRule(name: '规则', pattern: 'a', scope: '测试书');
+    await openSheet(
+      tester,
+      book: makeBook(reSegment: true, useReplaceRule: null),
+      globalReplaceDefault: false,
+    );
+    expect(
+      find.byKey(const ValueKey('effective-replaces-master-off')),
+      findsOneWidget,
+    );
+    expect(find.text('本书替换净化已关闭'), findsOneWidget);
+    expect(find.text('本章生效 0 条'), findsOneWidget);
+    expect(find.text('繁简转换（繁转简）'), findsNothing);
+    expect(find.text('重新分段'), findsNothing);
+  });
+
+  testWidgets('P1-2 图片书总开关视为关闭：0 条并提示', (tester) async {
+    await addRule(name: '规则', pattern: 'a', scope: '测试书');
+    final imageBook = Book(
+      bookUrl: 'https://book.com/er',
+      name: '测试书',
+      author: '作者A',
+      bookType: BookType.image,
+      readConfig: const ReadConfig(),
+    );
+    await openSheet(tester, book: imageBook);
+    expect(
+      find.byKey(const ValueKey('effective-replaces-master-off')),
+      findsOneWidget,
+    );
+    expect(find.text('本章生效 0 条'), findsOneWidget);
+  });
+
+  testWidgets('空 pattern 规则不进入生效列表', (tester) async {
+    await addRule(name: '空规则', pattern: '', scope: '测试书');
+    await openSheet(tester, book: makeBook(reSegment: false));
+    expect(find.text('本章暂无生效替换规则'), findsOneWidget);
+  });
+
+  testWidgets('360dp + textScale 2.0 不溢出', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(() {
+      tester.binding.setSurfaceSize(null);
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+    });
+    await api.setChineseConvertType(1);
+    await addRule(name: '很长的生效规则名称用于文本缩放溢出检查', pattern: '非常长的模式', scope: '测试书');
+    await openSheet(tester, book: makeBook(reSegment: true));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('360dp 不溢出', (tester) async {

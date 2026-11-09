@@ -156,6 +156,21 @@ void main() {
     expect(find.text('本章暂无生效替换规则'), findsOneWidget);
   });
 
+  testWidgets('替换开关写库失败：不显示成功提示', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final api = MockRustApi();
+    await pumpMenu(tester, api: api, onManageReplace: () {});
+    when(() => api.updateBook(any())).thenThrow(Exception('db error'));
+
+    await openMoreMenu(tester);
+    await tester.tap(find.text('使用替换规则'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已关闭替换规则'), findsNothing);
+    expect(find.text('已开启替换规则'), findsNothing);
+    expect(find.textContaining('设置保存失败'), findsOneWidget);
+  });
+
   testWidgets('全局默认 false 时使用替换规则不勾选', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final api = MockRustApi();

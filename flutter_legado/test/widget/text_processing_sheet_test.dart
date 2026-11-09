@@ -4,6 +4,8 @@
 /// 内容处理空态/360dp 无溢出。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +25,13 @@ const _book = Book(
   origin: 'https://source.example.com',
   readConfig: ReadConfig(useReplaceRule: true),
 );
+
+class _FailingUpdateBookApi extends MockBookApi {
+  @override
+  Future<void> updateBook(Book book) async {
+    throw Exception('db error');
+  }
+}
 
 class _FakeReaderNotifier extends ReaderNotifier {
   _FakeReaderNotifier(this.initial);
@@ -86,13 +95,23 @@ void main() {
     );
   }
 
-  Future<void> openSheet(WidgetTester tester) async {
+  Future<void> openSheet(
+    WidgetTester tester, {
+    Future<bool>? replaceDefault,
+    bool settle = true,
+    ReaderState? readerState,
+  }) async {
+    if (readerState != null) {
+      reader = _FakeReaderNotifier(readerState);
+    }
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           bookApiProvider.overrideWithValue(api),
           readerNotifierProvider.overrideWith(() => reader),
-          replaceEnableDefaultProvider.overrideWith((ref) async => true),
+          replaceEnableDefaultProvider.overrideWith(
+            (ref) => replaceDefault ?? Future.value(true),
+          ),
         ],
         child: MaterialApp(
           routes: {
@@ -112,7 +131,12 @@ void main() {
       ),
     );
     await tester.tap(find.byKey(const ValueKey('open-text-processing')));
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump();
+    }
   }
 
   Future<Map<String, ReplaceRule>> rulesById() async {
@@ -239,25 +263,19 @@ void main() {
     expect(reader.reloads, 1);
   });
 
-  testWidgets('拖动排序写回 order 并重载', (tester) async {
+  testWidgets('排序入口已撤回：无拖动排序（order FFI 未支持）', (tester) async {
     await addRule(name: 'A', pattern: 'a', scope: '测试书');
     await addRule(name: 'B', pattern: 'b', scope: '测试书');
-    await addRule(name: 'C', pattern: 'c', scope: '测试书');
     await openSheet(tester);
     await tester.tap(find.byKey(const ValueKey('text-processing-filter-all')));
     await tester.pump();
 
-    final list = tester.widget<ReorderableListView>(
-      find.byType(ReorderableListView),
-    );
-    list.onReorderItem!(0, 2);
-    await tester.pumpAndSettle();
-
+    expect(find.byType(ReorderableListView), findsNothing);
+    expect(find.byIcon(Icons.drag_handle), findsNothing);
     final stored = await rulesById();
-    expect(stored['b']!.order, 0);
-    expect(stored['c']!.order, 1);
-    expect(stored['a']!.order, 2);
-    expect(reader.reloads, 1);
+    expect(stored['a']!.order, 0);
+    expect(stored['b']!.order, 0, reason: '未发生 order 写回');
+    expect(reader.reloads, 0);
   });
 
   testWidgets('删除规则：确认后移除并重载', (tester) async {
@@ -294,6 +312,92 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('暂无 AI 处理记录'), findsOneWidget);
     expect(find.text('AI 内容处理暂未支持'), findsOneWidget);
+  });
+
+  ReaderState stateFor(Book book) => ReaderState(
+    currentBook: book,
+    chapters: [
+      BookChapter(url: 'u0', title: '第一章', index: 0, bookUrl: book.bookUrl),
+    ],
+    currentChapterIndex: 0,
+    chapterContent: '正文',
+  );
+
+  testWidgets('P1-2 全局默认关闭：生效筛选 0 条并提示', (tester) async {
+    await addRule(name: '规则', pattern: '词', scope: '测试书');
+    await openSheet(
+      tester,
+      replaceDefault: Future.value(false),
+      readerState: stateFor(_book.copyWith(readConfig: const ReadConfig())),
+    );
+    expect(
+      find.byKey(const ValueKey('text-processing-master-off')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('text-processing-rule-1')), findsNothing);
+  });
+
+  testWidgets('P1-2 图片书：生效筛选 0 条并提示', (tester) async {
+    await addRule(name: '规则', pattern: '词', scope: '测试书');
+    await openSheet(
+      tester,
+      readerState: stateFor(
+        _book.copyWith(
+          bookType: BookType.image,
+          readConfig: const ReadConfig(),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('text-processing-master-off')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('text-processing-rule-1')), findsNothing);
+  });
+
+  testWidgets('P2-1 总开关失败：内联错误、无成功提示', (tester) async {
+    api = _FailingUpdateBookApi();
+    await openSheet(tester);
+    await tester.tap(
+      find.byKey(const ValueKey('text-processing-master-switch')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('text-processing-inline-message')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('切换替换净化失败'), findsOneWidget);
+    expect(find.text('已关闭替换规则'), findsNothing);
+    expect(find.text('已开启替换规则'), findsNothing);
+  });
+
+  testWidgets('P2-2 provider 未完成时关闭 Sheet 不抛错', (tester) async {
+    final completer = Completer<bool>();
+    await openSheet(tester, replaceDefault: completer.future, settle: false);
+    expect(find.byKey(const ValueKey('text-processing-sheet')), findsOneWidget);
+    Navigator.of(
+      tester.element(find.byKey(const ValueKey('text-processing-sheet'))),
+    ).pop();
+    await tester.pumpAndSettle();
+    completer.complete(true);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('360dp + textScale 2.0 不溢出', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+    addTearDown(() {
+      tester.binding.setSurfaceSize(null);
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+    });
+    await addRule(
+      name: '很长很长的规则名称用于检查文本缩放溢出',
+      pattern: '非常长的正则或文本模式',
+      scope: '测试书',
+    );
+    await openSheet(tester);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('360dp 不溢出', (tester) async {
