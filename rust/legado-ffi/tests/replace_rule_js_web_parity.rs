@@ -13,7 +13,9 @@
 //! 6. [批17 回修 P2] origin-only `scope` 的既有语义差异快照。
 //!
 //! **修复前红/覆盖性口径**：
-//! - 区分性用例（父提交必红）：执行/绑定断言、`/testReplaceRule` 预览；
+//! - 批15 回归用例：执行/绑定断言（相对批15 修复前为红；相对本回修父提交
+//!   为绿，仅防回归，不计入本回修的红证据）；
+//! - 本回修区分性用例（父提交必红）：`/testReplaceRule` 预览；
 //! - 覆盖性用例（父提交亦绿，仅防回归）：抛错、超时、无 quickjs ——
 //!   父提交 Web 端跳过 `@js:` 同样保留原文，故不能作为修复证据。
 //!
@@ -305,6 +307,52 @@ async fn test_web_test_replace_rule_executes_js_in_app_build() {
     assert_eq!(
         rd["data"], "a!",
         "App 内嵌 Web 的 /testReplaceRule 必须真实执行 @js:（rd={rd}）"
+    );
+}
+
+/// [批17 复审 P3] `legado-server/quickjs` 透传钉住：走 server 独有
+/// `#[cfg(feature = "quickjs")]` 路径 `/mcp/call` 的 `eval_js` 工具
+///
+/// `/testReplaceRule` 与正文 `@js:` 已改由 `legado-js` 共享执行器门控，
+/// 无法证明 server feature 透传；MCP `eval_js` 仍由 `legado-server` 自身
+/// 的 `quickjs` feature 分支实现。若 ffi 未透传，本用例返回
+/// 「当前构建未启用 quickjs feature」→ 红；透传后返回求值结果 `2`。
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_app_build_enables_server_only_quickjs_path() {
+    let app = create_router(make_web_state());
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "eval_js", "arguments": {"js": "1+1"}}
+    })
+    .to_string();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp/call")
+                .header("Content-Type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let rd: Value = serde_json::from_slice(&bytes).unwrap();
+    let text = rd["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        !text.contains("未启用 quickjs feature"),
+        "App 构建未透传 legado-server/quickjs（server 独有 JS 路径降级）: {rd}"
+    );
+    assert!(
+        text.contains("2"),
+        "MCP eval_js 应返回 2（server quickjs 路径已启用）: {rd}"
     );
 }
 

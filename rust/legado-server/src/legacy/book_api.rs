@@ -29,7 +29,7 @@ use legado_core::content_processor::{
     ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry, ScopeContext,
 };
 use legado_core::models::book_type;
-use legado_core::models::{Book, BookChapter, ReplaceRule};
+use legado_core::models::{Book, BookChapter};
 use legado_core::web_book::{WebBookEngine, WebChapter};
 use legado_db::repository::book_chapter_repository::BookChapterRepository;
 use legado_db::repository::book_repository::BookRepository;
@@ -112,6 +112,24 @@ fn use_replace_rule(book: &Book) -> bool {
 
 /// `AppConfig.replaceEnableDefault` 的 Kotlin 默认值（AppConfig.kt:680 第二参 true）
 const REPLACE_ENABLE_DEFAULT: bool = true;
+
+/// Web 正文净化 `@js:` 并发上限（进程级，同时最多 4 条含 JS 的净化任务）
+///
+/// `/getBookContent` 无鉴权，`@js:` 在 blocking 线程内逐规则执行（单规则
+/// 超时上限 60s）；不设上限时并发请求可同时占满 blocking 池与其内部规则
+/// 线程。取 4 与 server runtime 的 `max_blocking_threads(8)` 配合：极端情况
+/// 下仍给 `/testReplaceRule`、MCP eval_js 等其他 blocking 调用留出槽位。
+const PURIFY_JS_MAX_CONCURRENCY: usize = 4;
+
+/// `@js:` 净化并发闸门（惰性初始化；进程级共享，跨请求生效）
+static PURIFY_JS_SEMAPHORE: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
+
+/// 取 `@js:` 净化信号量（首次调用创建）
+fn purify_js_semaphore() -> Arc<tokio::sync::Semaphore> {
+    PURIFY_JS_SEMAPHORE
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(PURIFY_JS_MAX_CONCURRENCY)))
+        .clone()
+}
 
 fn is_local_path(path: &str) -> bool {
     let lower = path.to_lowercase();
@@ -613,6 +631,11 @@ async fn get_book_content_inner(
 /// `recv_timeout` 等待）是 CPU 密集阻塞操作，`/getBookContent` 又无鉴权：
 /// 先异步读规则，再把纯计算经 `spawn_blocking` 移交 blocking 线程池，
 /// 避免并发请求占满 tokio worker（与 `testReplaceRule` 的 P1-3 同款）。
+///
+/// [批17 复审 P2] 含 `@js:` 的净化再经进程级信号量限流（见
+/// [`PURIFY_JS_MAX_CONCURRENCY`]）：`try_acquire` 失败**不排队**，直接跳过
+/// 本条净化并保留原文；与 server runtime 的 `max_blocking_threads(8)` 共同
+/// 约束无鉴权端点的 blocking 池消耗。
 async fn purify_content(
     state: &Arc<AppState>,
     book: &Book,
@@ -628,11 +651,32 @@ async fn purify_content(
         Ok(rules) => rules,
         Err(_) => return raw_content.to_string(),
     };
+    let entries = ReplaceRuleEntry::from_replace_rules(&rules);
+    let needs_js = replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution);
+    // [批17 复审 P2] 非阻塞限流：超限请求不等待 `@js:` 任务完成、不放大
+    // 延迟，直接返回原文（普通规则同样不执行，保持单一「跳过净化」语义）。
+    let js_permit = if needs_js {
+        match purify_js_semaphore().try_acquire_owned() {
+            Ok(permit) => Some(permit),
+            Err(_) => {
+                tracing::warn!(
+                    "正文净化 @js: 并发已达上限 {}，跳过本条净化并保留原文（book={}）",
+                    PURIFY_JS_MAX_CONCURRENCY,
+                    book.name
+                );
+                return raw_content.to_string();
+            }
+        }
+    } else {
+        None
+    };
     let book = book.clone();
     let chapter = chapter.clone();
     let raw = raw_content.to_string();
     match tokio::task::spawn_blocking(move || {
-        purify_content_blocking(&book, &chapter, &raw, &rules, replace_enabled)
+        // permit 随闭包持有到净化结束（panic 时由 Drop 释放）
+        let _js_permit = js_permit;
+        purify_content_blocking(&book, &chapter, &raw, &entries, replace_enabled)
     })
     .await
     {
@@ -649,10 +693,9 @@ fn purify_content_blocking(
     book: &Book,
     chapter: &BookChapter,
     raw_content: &str,
-    rules: &[ReplaceRule],
+    entries: &[ReplaceRuleEntry],
     replace_enabled: bool,
 ) -> String {
-    let entries = ReplaceRuleEntry::from_replace_rules(rules);
     let config = ProcessorConfig {
         remove_duplicate_title: true,
         re_segment: false,
@@ -674,7 +717,7 @@ fn purify_content_blocking(
         };
     ContentProcessor::new(config)
         .with_scope_context(ScopeContext::new(book.name.clone(), book.origin.clone()))
-        .process_with_js(raw_content, &chapter.title, &entries, js_executor)
+        .process_with_js(raw_content, &chapter.title, entries, js_executor)
 }
 
 /// 构建 Web 正文净化 `@js:` 的章节/书籍绑定（对齐 App 端口径）
