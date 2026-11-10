@@ -251,12 +251,13 @@ void main() {
       await pumpScreen(tester);
       await openBackupSheet(tester);
 
-      expect(find.text('请先配置 WebDAV'), findsOneWidget);
+      // 批11 回修 P2-2：「备份至网络」与「备份至本地与网络」均置灰
+      expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
       await tester.tap(find.text('备份至网络'));
       await tester.pumpAndSettle();
 
       // 禁用原因只保留行内副标题（无 SnackBar），点按不执行
-      expect(find.text('请先配置 WebDAV'), findsOneWidget);
+      expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
       verifyNever(() => api.backup(any()));
       verifyNever(() => api.webdavUploadFile(any(), any(), any()));
     });

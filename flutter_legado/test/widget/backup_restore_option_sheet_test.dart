@@ -98,7 +98,7 @@ void main() {
     expect(find.text('备份至本地'), findsNothing);
   });
 
-  testWidgets('WebDAV 未配置：备份至网络禁用，点按不执行且不关闭 Sheet', (tester) async {
+  testWidgets('WebDAV 未配置：两项含网络的备份均禁用，点按不执行且不关闭 Sheet', (tester) async {
     BackupOption? result;
     await tester.pumpWidget(
       _host((context) async {
@@ -111,16 +111,26 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('请先配置 WebDAV'), findsOneWidget);
+    // 批11 回修 P2-2：「备份至网络」与「备份至本地与网络」都要置灰并给出
+    // 同一原因，避免后者可点却静默跳过网络
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
     expect(result, isNull);
 
     await tester.tap(find.text('备份至网络'));
     await tester.pumpAndSettle();
 
     // 禁用原因只保留行内副标题（不弹 SnackBar），Sheet 不关闭、不返回选择
-    expect(find.text('请先配置 WebDAV'), findsOneWidget);
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
     expect(find.byType(SnackBar), findsNothing);
     expect(find.text('备份至网络'), findsOneWidget);
+    expect(result, isNull);
+
+    await tester.tap(find.text('备份至本地与网络'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
+    expect(find.byType(SnackBar), findsNothing);
+    expect(find.text('备份至本地与网络'), findsOneWidget);
     expect(result, isNull);
   });
 

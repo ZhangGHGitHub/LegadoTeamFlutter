@@ -122,6 +122,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 「测试配置」行连接测试状态（差异清单 C7）
   _WebDavTestStatus _testStatus = _WebDavTestStatus.notTested;
 
+  /// 「测试配置」探测代号（批11 回修 P3-2）
+  ///
+  /// 地址/账号/密码任一变更（含恢复后回填）时自增：在途探测返回后若代号
+  /// 已变，丢弃其结果与提示，避免旧配置的「✓ 连接成功」在复位后重新出现。
+  int _testProbeGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -205,6 +211,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     required ValueChanged<String> onSaved,
     bool obscure = false,
     String? hint,
+    bool affectsConnection = false,
   }) async {
     // 批40 回修 P3-9：controller 由对话框自身持有并在 dispose 中释放
     // （直接在 showDialog 返回后 dispose 会在退场动画重建 TextField 时
@@ -219,7 +226,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       ),
     );
     if (result == null) return;
-    setState(() => onSaved(result));
+    setState(() {
+      onSaved(result);
+      // 批11 回修 P3-2：地址/账号/密码变更即复位「测试配置」为「未测试」，
+      // 并作废在途探测。旧实现保留上一次的「✓ 连接成功」，清空地址后仍
+      // 显示成功，用户会误以为当前配置可用。
+      if (affectsConnection) {
+        _testProbeGeneration++;
+        _testStatus = _WebDavTestStatus.notTested;
+      }
+    });
     await _saveWebDav();
   }
 
@@ -428,8 +444,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// - 与自动备份共用 `LocalBackupService` 互斥锁：已有备份在执行时
   ///   提示稍候，不排队；
   /// - 上传失败不影响本地备份成功，SnackBar 分开提示；
-  /// - 未配置 WebDAV 时仅本地备份（与既有行为一致）。
+  /// - 批11 回修 P2-2：未配置 WebDAV 时**明确中止并提示**
+  ///   [kWebDavNotConfiguredAbortHint]，不再静默降级为「仅本地」——
+  ///   长按快捷入口绕过 Sheet 的禁用态，若不在此拦截，用户会以为网络
+  ///   也备份成功。
   Future<void> _doLocalBackup() async {
+    if (!await _hasWebDavConfig()) {
+      _showSnack(kWebDavNotConfiguredAbortHint);
+      return;
+    }
+    if (!mounted) return;
     final dirPath = await _resolveBackupDir();
     if (dirPath == null || !mounted) return;
     LocalBackupResult? result;
@@ -1121,6 +1145,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     );
     if (!mounted) return;
     final state = ref.read(syncNotifierProvider);
+    // 批11 回修 P3-2：恢复可能回填 WebDAV 三要素，与手动编辑同样复位
+    // 「测试配置」，否则旧配置的「✓ 连接成功」会残留。
+    final connectionChanged =
+        state.webDavUrl != _url ||
+        state.webDavUsername != _user ||
+        state.webDavPassword != _pass;
     setState(() {
       _url = state.webDavUrl;
       _user = state.webDavUsername;
@@ -1134,6 +1164,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       _autoBackupIntervalDays = autoBackupDays;
       _onlyLatestBackup = onlyLatest;
       _autoCheckNewBackup = autoCheck;
+      if (connectionChanged) {
+        _testProbeGeneration++;
+        _testStatus = _WebDavTestStatus.notTested;
+      }
     });
   }
 
@@ -1216,6 +1250,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       return;
     }
 
+    // 批11 回修 P3-2：记录本次探测代号；探测期间地址/账号/密码被改写时
+    // 代号自增，旧探测的结果与提示一律丢弃（不能把旧配置的「连接成功」
+    // 写回复位后的「未测试」）。
+    final generation = ++_testProbeGeneration;
     setState(() => _testStatus = _WebDavTestStatus.testing);
     final client = http.Client();
     try {
@@ -1231,8 +1269,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
           .send(request)
           .timeout(const Duration(seconds: 5));
       final response = await http.Response.fromStream(streamed);
-      // 探测期间已离开页面则不再更新 UI（client 由 finally 关闭）
-      if (!mounted) return;
+      // 探测期间已离开页面或配置已变更则不再更新 UI（client 由 finally 关闭）
+      if (!mounted || generation != _testProbeGeneration) return;
       final code = response.statusCode;
       final ok = code == 200 || code == 207;
       setState(() {
@@ -1246,11 +1284,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         messenger.showSnackBar(SnackBar(content: Text('连接失败（HTTP $code）')));
       }
     } on TimeoutException {
-      if (!mounted) return;
+      if (!mounted || generation != _testProbeGeneration) return;
       setState(() => _testStatus = _WebDavTestStatus.failed);
       messenger.showSnackBar(const SnackBar(content: Text('连接超时（5 秒内未响应）')));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _testProbeGeneration) return;
       setState(() => _testStatus = _WebDavTestStatus.failed);
       messenger.showSnackBar(
         SnackBar(content: Text('连接失败：${_summarizeProbeError(e)}')),
@@ -1340,6 +1378,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                     initial: _url,
                     hint: 'https://dav.example.com/',
                     onSaved: (v) => _url = v,
+                    affectsConnection: true,
                   ),
                 ),
                 IosListTile(
@@ -1349,6 +1388,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                     title: 'WebDAV 账号',
                     initial: _user,
                     onSaved: (v) => _user = v,
+                    affectsConnection: true,
                   ),
                 ),
                 IosListTile(
@@ -1359,6 +1399,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                     initial: _pass,
                     obscure: true,
                     onSaved: (v) => _pass = v,
+                    affectsConnection: true,
                   ),
                 ),
                 IosListTile(

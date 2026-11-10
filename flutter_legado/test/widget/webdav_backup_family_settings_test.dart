@@ -156,11 +156,13 @@ void main() {
     await scrollTo(tester, '备份');
     await tester.tap(find.text('备份'));
     await tester.pumpAndSettle();
-    // 批11：点按备份行弹三选 Sheet，选「本地与网络」链路
+    // 批11：点按备份行弹三选 Sheet；未配置 WebDAV 时两项含网络的选项禁用
+    // （批11 回修 P2-2），本地备份链路改由第一项验证
     expect(find.text('备份至本地'), findsOneWidget);
     expect(find.text('备份至网络'), findsOneWidget);
     expect(find.text('备份至本地与网络'), findsOneWidget);
-    await tester.tap(find.text('备份至本地与网络'));
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
+    await tester.tap(find.text('备份至本地'));
     // 进度框含无限动画且备份链路有真实文件 IO：不能用 pumpAndSettle；
     // 用 runAsync 推进真实事件循环，等待完成提示出现。
     for (var i = 0; i < 200; i++) {
@@ -175,5 +177,17 @@ void main() {
     expect(find.textContaining('备份成功'), findsOneWidget);
     expect(await settings.getLastBackupTime(), greaterThan(0));
     verifyNever(() => mockApi.webdavUploadFile(any(), any(), any()));
+  });
+
+  testWidgets('未配置 WebDAV：长按备份行明确中止，不静默降级为本地备份（批11 回修 P2-2）', (tester) async {
+    await pumpScreen(tester);
+
+    await scrollTo(tester, '备份');
+    await tester.longPress(find.text('备份'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('未配置 WebDAV，已取消备份'), findsOneWidget);
+    expect(find.textContaining('备份成功'), findsNothing);
+    verifyNever(() => mockApi.backup(any()));
   });
 }

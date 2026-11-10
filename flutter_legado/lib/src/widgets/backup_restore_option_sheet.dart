@@ -10,6 +10,9 @@
 // 交互约定：
 // - 选项禁用时灰显，原因只显示在行内副标题（不弹 SnackBar：Sheet 打开时
 //   SnackBar 会被弹层遮挡）；
+// - 依赖 WebDAV 的选项（备份「备份至网络」「备份至本地与网络」，恢复
+//   「网络恢复」「远端最新」）在未配置时**全部**置灰并给出同一原因：
+//   语义上用户选的是「本地与网络」，只做本地等于静默降级；
 // - 备份/恢复进行中（`isBusy` 回调）在点按瞬间再次判定，避免 Sheet 打开后
 //   自动备份/恢复启动导致并发写库；命中忙碌时刷新为禁用态且不关闭 Sheet。
 import 'package:flutter/material.dart';
@@ -49,6 +52,12 @@ const String kBackupRestoreBusyHint = '正在备份或恢复，请稍候';
 /// WebDAV 未配置提示
 const String kWebDavNotConfiguredHint = '请先配置 WebDAV';
 
+/// WebDAV 未配置时备份请求被明确中止的提示
+///
+/// 批11 回修 P2-2：长按「备份」行直接走「本地 + 网络」快捷入口，未配置时
+/// 必须明确告知中止，不能再静默只备份本地（用户会误以为网络也已备份）。
+const String kWebDavNotConfiguredAbortHint = '未配置 WebDAV，已取消备份';
+
 /// 备份选项 Sheet
 ///
 /// 返回用户选择；点遮罩/返回键返回 null（不执行任何操作）。
@@ -58,6 +67,11 @@ Future<BackupOption?> showBackupOptionSheet({
   bool busy = false,
   bool Function()? isBusy,
 }) {
+  // 批11 回修 P2-2：两项含网络的备份选项共用同一禁用原因，避免
+  // 「备份至网络」置灰而「备份至本地与网络」仍可点、静默跳过网络。
+  final remoteDisabledReason = webDavConfigured
+      ? null
+      : kWebDavNotConfiguredHint;
   return _showOptionSheet<BackupOption>(
     context: context,
     title: '备份',
@@ -73,12 +87,13 @@ Future<BackupOption?> showBackupOptionSheet({
         value: BackupOption.webDav,
         icon: Icons.cloud_outlined,
         label: '备份至网络',
-        disabledReason: webDavConfigured ? null : kWebDavNotConfiguredHint,
+        disabledReason: remoteDisabledReason,
       ),
-      const _OptionEntry(
+      _OptionEntry(
         value: BackupOption.localAndWebDav,
         icon: Icons.lan_outlined,
         label: '备份至本地与网络',
+        disabledReason: remoteDisabledReason,
       ),
     ],
   );
