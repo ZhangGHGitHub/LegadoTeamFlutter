@@ -456,6 +456,14 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
             bottomBackground: followWallpaper
                 ? null
                 : c(themeColors.bottomBackground),
+            // [批13] 字体色不随壁纸取色关闭：参考版深色个性化槽位独立于
+            // 动态取色；未设置（null）时 AppTheme 保留内置 palette role
+            primaryTextColor: c(
+              themeColors.primaryTextColorFor(Brightness.light),
+            ),
+            secondaryTextColor: c(
+              themeColors.secondaryTextColorFor(Brightness.light),
+            ),
           ),
           themeColors.bgImage,
         );
@@ -473,6 +481,13 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
             bottomBackground: followWallpaper
                 ? null
                 : c(themeColors.bottomBackgroundNight),
+            // 夜间为 0 时逐字段继承日间（ThemeColorsState 内解析）
+            primaryTextColor: c(
+              themeColors.primaryTextColorFor(Brightness.dark),
+            ),
+            secondaryTextColor: c(
+              themeColors.secondaryTextColorFor(Brightness.dark),
+            ),
           ),
           themeColors.bgImageNight,
         );

@@ -56,6 +56,27 @@ class PrefKeys {
   /// 夜间底部操作栏颜色（ARGB int）
   static const cNBBackground = 'colorBottomBackgroundNight';
 
+  // ===== 批13：App 主题 12 色槽（补齐主要/次要字体色）=====
+  //
+  // 键名逐字对齐参考版 `PreferKey.kt:258-267`（常量名 → 真实偏好键）：
+  // `primaryTextColor` → `colorMD3OnSurface`、
+  // `secondaryTextColor` → `colorMD3OnPrimaryContainer`（参考版历史命名，
+  // 语义为「次要字体色」，不要按键名望文生义）。
+  // 值语义：0 = 未设置（不是黑色），对齐参考 `ThemeSettings.kt:18-29`
+  // 全部默认 0 与色盘「重置」写透明 `#00000000`。
+
+  /// 日间主要字体色（ARGB int，0=未设置；→ onSurface/onPrimary）
+  static const cPrimaryText = 'colorMD3OnSurface';
+
+  /// 日间次要字体色（ARGB int，0=未设置；→ onSurfaceVariant）
+  static const cSecondaryText = 'colorMD3OnPrimaryContainer';
+
+  /// 夜间主要字体色（ARGB int，0=未设置 → 逐字段继承日间）
+  static const cNPrimaryText = 'colorMD3OnSurfaceNight';
+
+  /// 夜间次要字体色（ARGB int，0=未设置 → 逐字段继承日间）
+  static const cNSecondaryText = 'colorMD3OnPrimaryContainerNight';
+
   /// 日间背景图片路径
   static const bgImage = 'backgroundImage';
 
