@@ -1,0 +1,26 @@
+{
+  "formatVersion": 1,
+  "name": "QA14",
+  "appVersion": "2.0.483",
+  "config": {
+    "isNight": false,
+    "paletteId": null,
+    "colors": {
+      "primary": 4280391411,
+      "accent": 0,
+      "background": 0,
+      "bottomBackground": 0,
+      "primaryText": 4292030255,
+      "secondaryText": 0,
+      "primaryNight": 0,
+      "accentNight": 0,
+      "backgroundNight": 0,
+      "bottomBackgroundNight": 0,
+      "primaryTextNight": 0,
+      "secondaryTextNight": 0
+    }
+  },
+  "assets": {
+    "background": {}
+  }
+}
