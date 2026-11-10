@@ -1904,6 +1904,9 @@ pub mod ffi {
     ///
     /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参：
     /// scopeSource=None→保留既有值；Some(b)=覆盖
+    ///
+    /// [特定范围写链路 | 2026-11-10 批12 加法式扩参] 末尾第 7 个可选参：
+    /// scope=None→保留既有值；Some("")=清除；Some(s)=覆盖
     pub fn replace_rule_update(
         rule_id: i64,
         name: String,
@@ -1917,6 +1920,7 @@ pub mod ffi {
         exclude_scope: Option<String>,
         timeout_millisecond: Option<i64>,
         scope_source: Option<bool>,
+        scope: Option<String>,
     ) -> Result<(), BridgeError> {
         crate::api::replace_rule_api::update_replace_rule(
             rule_id,
@@ -1931,6 +1935,7 @@ pub mod ffi {
             exclude_scope.as_deref(),
             timeout_millisecond,
             scope_source,
+            scope.as_deref(),
         )?;
         Ok(())
     }
@@ -1951,6 +1956,17 @@ pub mod ffi {
     pub fn replace_rule_set_enabled(rule_id: i64, enabled: bool) -> Result<(), BridgeError> {
         crate::api::replace_rule_api::set_rule_enabled(rule_id, enabled)?;
         Ok(())
+    }
+
+    /// 按给定 ID 顺序全量重编号替换规则 sortOrder（契约 §2.8 `reorderReplaceRules`）
+    ///
+    /// [批12 | 2026-11-10] `ids_json` 为 JSON 数组（规则 id 全量顺序），单事务
+    /// 重编号 0..n-1 并返回重排条数；重复/缺失/未知 id 一律参数错误且零写入；
+    /// 空数组返回 0（不开事务）。
+    pub fn replace_rule_reorder(ids_json: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::replace_rule_api::replace_rule_reorder(
+            &ids_json,
+        )?)
     }
 
     /// 书源导入时应用「书源作用域」替换规则（契约 §2.8 `applyReplaceRulesToSource`）

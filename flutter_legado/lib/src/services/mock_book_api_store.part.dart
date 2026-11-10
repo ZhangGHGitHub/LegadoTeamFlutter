@@ -68,6 +68,22 @@ mixin MockBookApiStore {
   /// [替换规则预览 | 2026-09-13] `previewReplaceRule` 调用次数（测试断言用）
   int get previewReplaceRuleCalls => _previewReplaceRuleCalls;
 
+  // [批12 | 2026-11-10] 替换规则全量重排：调用计数 + 末次 idsJson（测试断言用）
+  int _reorderReplaceRulesCalls = 0;
+
+  /// [批12] `reorderReplaceRules` 调用次数（断言「一次全量调用」）
+  int get reorderReplaceRulesCalls => _reorderReplaceRulesCalls;
+
+  String? _lastReorderReplaceRulesIdsJson;
+
+  /// [批12] `reorderReplaceRules` 末次入参 JSON（断言 id 顺序）
+  String? get lastReorderReplaceRulesIdsJson => _lastReorderReplaceRulesIdsJson;
+
+  ReplaceRule? _lastUpdatedReplaceRule;
+
+  /// [批12] 最近一次 `updateReplaceRule` 收到的完整对象（断言 scope 落库）
+  ReplaceRule? get lastUpdatedReplaceRule => _lastUpdatedReplaceRule;
+
   /// 初始化 Mock 数据
   ///
   /// 数据来源见文件头注释。书源/RSS/TTS 取自

@@ -1050,8 +1050,9 @@ pub unsafe extern "C" fn ffi_replace_rule_update(
         // [A3 写链路补齐 | 2026-09-11] C-ABI 签名冻结，新增可选参一律 None
         // （保留既有值，向后兼容）
         // [书源作用域 | 2026-09-13] 第 6 个可选参 scopeSource=None→保留既有值
+        // [批12 | 2026-11-10] 第 7 个可选参 scope=None→保留既有值
         crate::api::replace_rule_api::update_replace_rule(
-            rule_id, n, p, r, is_regex, is_enabled, None, None, None, None, None, None,
+            rule_id, n, p, r, is_regex, is_enabled, None, None, None, None, None, None, None,
         )?;
         Ok::<_, LegadoError>("ok".to_string())
     }))

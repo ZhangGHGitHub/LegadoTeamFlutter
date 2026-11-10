@@ -30,6 +30,9 @@ pub fn get_replace_rules() -> LegadoResult<Vec<ReplaceRule>> {
 ///
 /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参数：
 /// - `scope_source`：None=false（默认不作用于书源，对齐原版 `ReplaceRule.scopeSource` 默认 0）
+///
+/// [排序值 | 2026-11-10 批12] `sortOrder` 由硬编码 0 改为 `max(sortOrder)+1`
+/// （追加到列表末尾；重排后新增规则不再顶到最前）。
 #[allow(clippy::too_many_arguments)] // 书源作用域加法式扩参后参数 >7，属对外 API 表面（对齐原版字段集）
 pub fn add_replace_rule(
     name: &str,
@@ -64,11 +67,16 @@ pub fn add_replace_rule(
         is_enabled: true,
         is_regex,
         timeout_millisecond: timeout_millisecond.unwrap_or(3000),
-        order: 0,
+        order: 0, // 占位，落库前按 max(sortOrder)+1 覆盖（批12）
     };
 
     with_database(|db| {
         let repo = ReplaceRuleRepository::new(db.connection());
+        let next = repo.next_order()?;
+        let rule = ReplaceRule {
+            order: next,
+            ..rule
+        };
         repo.insert(&rule)
     })
 }
@@ -80,6 +88,10 @@ pub fn add_replace_rule(
 ///
 /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参数：
 /// - `scope_source`：None=保留既有值；Some(b)=覆盖
+///
+/// [特定范围写链路 | 2026-11-10 批12 加法式扩参] 末尾第 7 个可选参数：
+/// - `scope`：None=保留既有值；Some("")=清除；Some(s)=覆盖
+///   （修复「特定范围编辑不落库」：原实现强制沿用 `existing.scope`）
 #[allow(clippy::too_many_arguments)] // 同 add_replace_rule：对外 API 表面参数 >7
 pub fn update_replace_rule(
     rule_id: i64,
@@ -94,6 +106,7 @@ pub fn update_replace_rule(
     exclude_scope: Option<&str>,
     timeout_millisecond: Option<i64>,
     scope_source: Option<bool>,
+    scope: Option<&str>,
 ) -> LegadoResult<()> {
     with_database(|db| {
         let repo = ReplaceRuleRepository::new(db.connection());
@@ -115,6 +128,12 @@ pub fn update_replace_rule(
             Some(_) => None,
             None => existing.exclude_scope.clone(),
         };
+        // [批12] scope 与 group/exclude_scope 同语义：None=保留、Some("")=清除
+        let merged_scope = match scope {
+            Some(s) if !s.is_empty() => Some(s.to_string()),
+            Some(_) => None,
+            None => existing.scope.clone(),
+        };
 
         let updated = ReplaceRule {
             id: rule_id,
@@ -122,7 +141,7 @@ pub fn update_replace_rule(
             group: merged_group,
             pattern: pattern.to_string(),
             replacement: replacement.to_string(),
-            scope: existing.scope.clone(),
+            scope: merged_scope,
             scope_title: scope_title.unwrap_or(existing.scope_title),
             scope_content: scope_content.unwrap_or(existing.scope_content),
             scope_source: scope_source.unwrap_or(existing.scope_source),
@@ -157,6 +176,20 @@ pub fn set_rule_enabled(rule_id: i64, enabled: bool) -> LegadoResult<()> {
     with_database(|db| {
         let repo = ReplaceRuleRepository::new(db.connection());
         repo.set_enabled(rule_id, enabled)
+    })
+}
+
+/// 按给定 ID 顺序全量重编号替换规则 `sortOrder`（0..n-1），返回重排条数
+///
+/// 契约 §2.8 `reorderReplaceRules`（批12）：`ids_json` 为 JSON 数组，表示
+/// **全量**规则 id 顺序（如 `[3,1,2]`）。重复 id / 未知 id / 缺失 id 一律
+/// 参数错误且零写入；空数组返回 0（不开事务）。
+pub fn replace_rule_reorder(ids_json: &str) -> LegadoResult<i32> {
+    let ids: Vec<i64> = serde_json::from_str(ids_json)
+        .map_err(|e| LegadoError::Database(format!("解析 reorder IDs 失败: {e}")))?;
+    with_database(|db| {
+        let repo = ReplaceRuleRepository::new(db.connection());
+        repo.reorder(&ids)
     })
 }
 
@@ -347,6 +380,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -513,6 +547,7 @@ mod tests {
             Some("新排除_9"),
             Some(8000),
             None,
+            None,
         )
         .unwrap();
         let rule = get_replace_rules()
@@ -535,6 +570,7 @@ mod tests {
             "r3",
             true,
             true,
+            None,
             None,
             None,
             None,
@@ -567,6 +603,7 @@ mod tests {
             None,
             None,
             Some(""),
+            None,
             None,
             None,
         )
@@ -653,7 +690,7 @@ mod tests {
 
         // None → 保留 true
         update_replace_rule(
-            id, "rr_ss_11", "a2", "b2", false, true, None, None, None, None, None, None,
+            id, "rr_ss_11", "a2", "b2", false, true, None, None, None, None, None, None, None,
         )
         .unwrap();
         let rule = get_replace_rules()
@@ -677,6 +714,7 @@ mod tests {
             None,
             None,
             Some(false),
+            None,
         )
         .unwrap();
         let rule = get_replace_rules()
@@ -864,5 +902,300 @@ mod tests {
             msg.contains("替换规则 JSON 解析失败"),
             "非法 JSON 应上抛解析错误，实际: {msg}"
         );
+    }
+
+    // ─── 批12：排序与 scope 写链路 ───
+
+    /// add：新规则 sortOrder = 既有 max+1（重排后不再顶到最前）
+    #[test]
+    fn test_add_rule_order_is_max_plus_one() {
+        let _db_guard = setup_test_db();
+        let expected = get_replace_rules()
+            .unwrap()
+            .iter()
+            .map(|r| r.order)
+            .max()
+            .map_or(0, |max| max + 1);
+
+        let id = add_replace_rule(
+            "rr_order_14",
+            "a",
+            "b",
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let rule = get_replace_rules()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == id)
+            .unwrap();
+        assert_eq!(rule.order, expected, "add 的 sortOrder 应为 max+1");
+    }
+
+    /// update 扩参 scope：None=保留既有值；Some(s)=覆盖；Some("")=清除
+    #[test]
+    fn test_update_rule_scope_semantics() {
+        let _db_guard = setup_test_db();
+        let id = add_replace_rule(
+            "rr_scope_15",
+            "a",
+            "b",
+            false,
+            "旧范围_15",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        // None → 保留既有 scope
+        update_replace_rule(
+            id,
+            "rr_scope_15",
+            "a2",
+            "b2",
+            false,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let rule = get_replace_rules()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == id)
+            .unwrap();
+        assert_eq!(
+            rule.scope.as_deref(),
+            Some("旧范围_15"),
+            "None 应保留既有 scope"
+        );
+
+        // Some(非空) → 覆盖
+        update_replace_rule(
+            id,
+            "rr_scope_15",
+            "a3",
+            "b3",
+            false,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("新范围_15"),
+        )
+        .unwrap();
+        let rule = get_replace_rules()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == id)
+            .unwrap();
+        assert_eq!(
+            rule.scope.as_deref(),
+            Some("新范围_15"),
+            "Some(非空) 应覆盖 scope"
+        );
+
+        // Some("") → 清除
+        update_replace_rule(
+            id,
+            "rr_scope_15",
+            "a4",
+            "b4",
+            false,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(""),
+        )
+        .unwrap();
+        let rule = get_replace_rules()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == id)
+            .unwrap();
+        assert!(rule.scope.is_none(), "Some(\"\") 应清除 scope");
+    }
+
+    /// reorder：全量逆序 → find_all 按新顺序返回且 sortOrder=0..n-1；连续两次幂等
+    #[test]
+    fn test_replace_rule_reorder_full_sequence() {
+        let _db_guard = setup_test_db();
+        // 共享测试库可能已有其他用例的规则：直接对全量 id 逆序（仍满足全量约束）
+        add_replace_rule(
+            "rr_reorder_16a",
+            "a",
+            "b",
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        add_replace_rule(
+            "rr_reorder_16b",
+            "c",
+            "d",
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let mut target: Vec<i64> = get_replace_rules().unwrap().iter().map(|r| r.id).collect();
+        assert!(target.len() >= 2, "共享库应至少包含两条规则");
+        target.reverse();
+
+        let ids_json = serde_json::to_string(&target).unwrap();
+        let count = replace_rule_reorder(&ids_json).unwrap();
+        assert_eq!(count as usize, target.len());
+
+        let rules = get_replace_rules().unwrap();
+        assert_eq!(
+            rules.iter().map(|r| r.id).collect::<Vec<_>>(),
+            target,
+            "find_all 应按传入顺序返回"
+        );
+        assert_eq!(
+            rules.iter().map(|r| r.order).collect::<Vec<_>>(),
+            (0..target.len() as i32).collect::<Vec<_>>(),
+            "sortOrder 应重编号为 0..n-1"
+        );
+
+        // 连续两次相同重排幂等
+        assert_eq!(
+            replace_rule_reorder(&ids_json).unwrap() as usize,
+            target.len()
+        );
+        let rules_again = get_replace_rules().unwrap();
+        assert_eq!(rules_again.iter().map(|r| r.id).collect::<Vec<_>>(), target);
+    }
+
+    /// reorder：重复/未知/缺失 id → Err 且零写入；空数组返回 0 不改动；非法 JSON Err
+    #[test]
+    fn test_replace_rule_reorder_rejects_illegal_sets() {
+        let _db_guard = setup_test_db();
+        add_replace_rule(
+            "rr_reorder_17a",
+            "a",
+            "b",
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        add_replace_rule(
+            "rr_reorder_17b",
+            "c",
+            "d",
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        add_replace_rule(
+            "rr_reorder_17c",
+            "e",
+            "f",
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        let snapshot = |rules: Vec<ReplaceRule>| {
+            let mut rows: Vec<(i64, i32)> = rules.iter().map(|r| (r.id, r.order)).collect();
+            rows.sort_unstable_by_key(|(id, _)| *id);
+            rows
+        };
+        let before = snapshot(get_replace_rules().unwrap());
+        let ids: Vec<i64> = before.iter().map(|(id, _)| *id).collect();
+        assert!(ids.len() >= 3);
+
+        // 重复 id
+        let dup = serde_json::to_string(&[ids[0], ids[0], ids[1]]).unwrap();
+        let err = replace_rule_reorder(&dup).unwrap_err();
+        assert!(
+            err.to_string().contains("重复 id"),
+            "重复 id 应报参数错误，实际: {err}"
+        );
+
+        // 未知 id
+        let mut unknown = ids.clone();
+        unknown.push(9_999_999);
+        let err = replace_rule_reorder(&serde_json::to_string(&unknown).unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("未知 id"),
+            "未知 id 应报参数错误，实际: {err}"
+        );
+
+        // 缺失 id（少提交最后一条）
+        let missing = serde_json::to_string(&ids[..ids.len() - 1]).unwrap();
+        let err = replace_rule_reorder(&missing).unwrap_err();
+        assert!(
+            err.to_string().contains("缺失 id"),
+            "缺失 id 应报参数错误，实际: {err}"
+        );
+
+        // 非法 JSON
+        assert!(replace_rule_reorder("not a json array").is_err());
+
+        // 以上非法调用均零写入
+        assert_eq!(
+            snapshot(get_replace_rules().unwrap()),
+            before,
+            "非法集必须零写入"
+        );
+
+        // 空数组：返回 0 且不改动
+        assert_eq!(replace_rule_reorder("[]").unwrap(), 0);
+        assert_eq!(snapshot(get_replace_rules().unwrap()), before);
     }
 }

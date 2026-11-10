@@ -721,6 +721,15 @@ abstract class BookApi {
     String sourceUrl,
   );
 
+  /// 按给定 ID 顺序全量重编号替换规则的 `sortOrder`（契约 §2.8 `reorderReplaceRules`）
+  ///
+  /// [批12 | 2026-11-10] [ids] 必须是当前规则列表的**全量** id 顺序
+  /// （拖拽 / 置顶 / 置底后的完整列表）。Rust 侧单事务重编号
+  /// `sortOrder = 0..n-1` 并返回重排条数；重复 / 缺失 / 未知 id 一律
+  /// 参数错误且零写入（筛选态子集不得提交，避免打乱隐藏规则）；
+  /// 空列表返回 0。
+  Future<int> reorderReplaceRules(List<int> ids);
+
   /// 替换规则编辑器预览：对单条规则在示例文本上执行真实替换管线（契约 §2.8 `previewReplaceRule`）
   ///
   /// [替换规则预览 | 2026-09-13] [ruleJson] 为单条 [ReplaceRule] 模型 JSON

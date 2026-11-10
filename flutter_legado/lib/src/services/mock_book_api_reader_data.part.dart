@@ -54,22 +54,38 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
 
   // ========== 替换规则操作 ==========
 
+  /// [批12 | 2026-11-10] 按 `order` 升序返回（同 Rust `find_all` 的
+  /// `ORDER BY sortOrder ASC`）。此前按插入序返回，拖拽后重新 `load()`
+  /// 会「退回」原顺序，是拖拽假通过的根因之一。
   @override
-  Future<List<ReplaceRule>> getReplaceRules() async => List.from(_replaceRules);
+  Future<List<ReplaceRule>> getReplaceRules() async {
+    final rules = List<ReplaceRule>.from(_replaceRules)
+      ..sort((a, b) {
+        final byOrder = a.order.compareTo(b.order);
+        return byOrder != 0 ? byOrder : a.id.compareTo(b.id);
+      });
+    return rules;
+  }
 
   @override
   Future<List<ReplaceRule>> getEnabledReplaceRules() async =>
-      _replaceRules.where((r) => r.isEnabled).toList();
+      (await getReplaceRules()).where((r) => r.isEnabled).toList();
 
+  /// 新增规则追加到列表末尾（`order = max+1`，对齐批12 Rust 侧语义）
   @override
   Future<ReplaceRule> addReplaceRule(ReplaceRule rule) async {
-    final r = rule.copyWith(id: _nextId++);
+    final nextOrder = _replaceRules.fold<int>(
+      -1,
+      (maxOrder, r) => r.order > maxOrder ? r.order : maxOrder,
+    );
+    final r = rule.copyWith(id: _nextId++, order: nextOrder + 1);
     _replaceRules.add(r);
     return r;
   }
 
   @override
   Future<void> updateReplaceRule(ReplaceRule rule) async {
+    _lastUpdatedReplaceRule = rule;
     final idx = _replaceRules.indexWhere((r) => r.id == rule.id);
     if (idx >= 0) _replaceRules[idx] = rule;
   }
@@ -85,6 +101,42 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     if (idx >= 0) {
       _replaceRules[idx] = _replaceRules[idx].copyWith(isEnabled: enabled);
     }
+  }
+
+  /// [批12 | 2026-11-10] 全量重排（Mock 对齐 Rust 契约语义）
+  ///
+  /// - 重复 / 未知 / 缺失 id 一律抛错且**零写入**；
+  /// - 空列表返回 0；
+  /// - 合法集按传入顺序重编号 `order = 0..n-1`，返回重排条数。
+  /// 同时记录调用计数与末次 idsJson（`reorderReplaceRulesCalls` /
+  /// `lastReorderReplaceRulesIdsJson`）供测试断言「一次全量调用」。
+  @override
+  Future<int> reorderReplaceRules(List<int> ids) async {
+    _reorderReplaceRulesCalls++;
+    _lastReorderReplaceRulesIdsJson = jsonEncode(ids);
+    if (ids.isEmpty) return 0;
+
+    final unique = ids.toSet();
+    if (unique.length != ids.length) {
+      throw Exception('重排替换规则参数错误: 重复 id');
+    }
+    final existing = _replaceRules.map((r) => r.id).toSet();
+    for (final id in ids) {
+      if (!existing.contains(id)) {
+        throw Exception('重排替换规则参数错误: 未知 id $id');
+      }
+    }
+    if (existing.length != ids.length) {
+      final missing = existing.where((id) => !unique.contains(id)).toList()
+        ..sort();
+      throw Exception('重排替换规则参数错误: 缺失 id $missing');
+    }
+
+    for (var i = 0; i < ids.length; i++) {
+      final idx = _replaceRules.indexWhere((r) => r.id == ids[i]);
+      _replaceRules[idx] = _replaceRules[idx].copyWith(order: i);
+    }
+    return ids.length;
   }
 
   /// [书源作用域 | 2026-09-13] 书源导入时应用「书源作用域」替换规则
@@ -203,10 +255,7 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   }
 
   @override
-  Future<List<BookChapter>> refreshToc(
-    String bookUrl,
-    String sourceUrl,
-  ) async {
+  Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async {
     await _ensureBooksLoaded();
     return _chaptersCache[bookUrl] ?? [];
   }
@@ -330,7 +379,9 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     if (_dictRules.isEmpty) _seedDefaultDictRules();
     final ordered = List<Map<String, dynamic>>.from(_dictRules)
       ..sort((a, b) {
-        final bySort = (a['sortNumber'] as int).compareTo(b['sortNumber'] as int);
+        final bySort = (a['sortNumber'] as int).compareTo(
+          b['sortNumber'] as int,
+        );
         if (bySort != 0) return bySort;
         return (a['id'] as int).compareTo(b['id'] as int);
       });
@@ -386,7 +437,10 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
 
   /// 设置字典规则启用/禁用（按 id；不存在返回 false）
   @override
-  Future<bool> dictRuleSetEnabled({required int id, required bool enabled}) async {
+  Future<bool> dictRuleSetEnabled({
+    required int id,
+    required bool enabled,
+  }) async {
     if (!_dictRules.any((r) => r['id'] == id)) return false;
     for (final r in _dictRules) {
       if (r['id'] == id) r['enabled'] = enabled;
@@ -464,7 +518,9 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
         'showRule': (m['showRule'] ?? '').toString(),
         'enabled': m['enabled'] is bool ? m['enabled'] : true,
         // JSON decode 的整数可能为 num（double 字面量场景），统一归一为 int
-        'sortNumber': m['sortNumber'] is num ? (m['sortNumber'] as num).toInt() : 0,
+        'sortNumber': m['sortNumber'] is num
+            ? (m['sortNumber'] as num).toInt()
+            : 0,
       });
     }
     return rules.where((r) => (r['name'] as String).isNotEmpty).toList();
@@ -474,11 +530,10 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   /// 异名插入）
   void _upsertDictRuleByName(Map<String, dynamic> rule) {
     final name = rule['name'] as String;
-    final existing =
-        _dictRules.cast<Map<String, dynamic>>().firstWhere(
-              (r) => r['name'] == name,
-              orElse: () => const {},
-            );
+    final existing = _dictRules.cast<Map<String, dynamic>>().firstWhere(
+      (r) => r['name'] == name,
+      orElse: () => const {},
+    );
     if (existing.isNotEmpty) {
       existing['urlRule'] = rule['urlRule'];
       existing['showRule'] = rule['showRule'];
@@ -534,8 +589,9 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
       if (disabled) return false;
     }
     // v113 主键 (deviceId, bookName, author)：同名不同作者各自保留
-    _readRecords.removeWhere((r) =>
-        r.bookName == record.bookName && r.author == record.author);
+    _readRecords.removeWhere(
+      (r) => r.bookName == record.bookName && r.author == record.author,
+    );
     _readRecords.add(record);
     return true;
   }
@@ -551,5 +607,6 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> readRecordDailyList(int year) async => const [];
+  Future<List<Map<String, dynamic>>> readRecordDailyList(int year) async =>
+      const [];
 }

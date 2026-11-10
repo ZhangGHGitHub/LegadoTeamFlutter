@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -684895305;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1953209700;
 
 // Section: executor
 
@@ -6894,6 +6894,39 @@ fn wire__crate__ffi__ffi__replace_rule_preview_impl(
         },
     )
 }
+fn wire__crate__ffi__ffi__replace_rule_reorder_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "replace_rule_reorder",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ids_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::replace_rule_reorder(api_ids_json)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__ffi__replace_rule_set_enabled_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -6963,6 +6996,7 @@ fn wire__crate__ffi__ffi__replace_rule_update_impl(
             let api_exclude_scope = <Option<String>>::sse_decode(&mut deserializer);
             let api_timeout_millisecond = <Option<i64>>::sse_decode(&mut deserializer);
             let api_scope_source = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_scope = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
@@ -6979,6 +7013,7 @@ fn wire__crate__ffi__ffi__replace_rule_update_impl(
                         api_exclude_scope,
                         api_timeout_millisecond,
                         api_scope_source,
+                        api_scope,
                     )?;
                     Ok(output_ok)
                 })())
@@ -12045,193 +12080,194 @@ fn pde_ffi_dispatcher_primary_impl(
         195 => wire__crate__ffi__ffi__replace_rule_enabled_impl(port, ptr, rust_vec_len, data_len),
         196 => wire__crate__ffi__ffi__replace_rule_list_impl(port, ptr, rust_vec_len, data_len),
         197 => wire__crate__ffi__ffi__replace_rule_preview_impl(port, ptr, rust_vec_len, data_len),
-        198 => {
+        198 => wire__crate__ffi__ffi__replace_rule_reorder_impl(port, ptr, rust_vec_len, data_len),
+        199 => {
             wire__crate__ffi__ffi__replace_rule_set_enabled_impl(port, ptr, rust_vec_len, data_len)
         }
-        199 => wire__crate__ffi__ffi__replace_rule_update_impl(port, ptr, rust_vec_len, data_len),
-        200 => wire__crate__ffi__ffi__retain_comic_images_impl(port, ptr, rust_vec_len, data_len),
-        201 => wire__crate__ffi__ffi__review_get_detail_impl(port, ptr, rust_vec_len, data_len),
-        202 => wire__crate__ffi__ffi__review_get_replies_impl(port, ptr, rust_vec_len, data_len),
-        203 => wire__crate__ffi__ffi__review_get_summary_impl(port, ptr, rust_vec_len, data_len),
-        204 => wire__crate__ffi__ffi__rss_add_source_impl(port, ptr, rust_vec_len, data_len),
-        205 => wire__crate__ffi__ffi__rss_clear_articles_impl(port, ptr, rust_vec_len, data_len),
-        206 => {
+        200 => wire__crate__ffi__ffi__replace_rule_update_impl(port, ptr, rust_vec_len, data_len),
+        201 => wire__crate__ffi__ffi__retain_comic_images_impl(port, ptr, rust_vec_len, data_len),
+        202 => wire__crate__ffi__ffi__review_get_detail_impl(port, ptr, rust_vec_len, data_len),
+        203 => wire__crate__ffi__ffi__review_get_replies_impl(port, ptr, rust_vec_len, data_len),
+        204 => wire__crate__ffi__ffi__review_get_summary_impl(port, ptr, rust_vec_len, data_len),
+        205 => wire__crate__ffi__ffi__rss_add_source_impl(port, ptr, rust_vec_len, data_len),
+        206 => wire__crate__ffi__ffi__rss_clear_articles_impl(port, ptr, rust_vec_len, data_len),
+        207 => {
             wire__crate__ffi__ffi__rss_clear_read_records_impl(port, ptr, rust_vec_len, data_len)
         }
-        207 => wire__crate__ffi__ffi__rss_clear_sort_cache_impl(port, ptr, rust_vec_len, data_len),
-        208 => wire__crate__ffi__ffi__rss_delete_source_impl(port, ptr, rust_vec_len, data_len),
-        209 => wire__crate__ffi__ffi__rss_fetch_articles_impl(port, ptr, rust_vec_len, data_len),
-        210 => wire__crate__ffi__ffi__rss_fetch_content_impl(port, ptr, rust_vec_len, data_len),
-        211 => wire__crate__ffi__ffi__rss_is_read_impl(port, ptr, rust_vec_len, data_len),
-        212 => wire__crate__ffi__ffi__rss_is_read_by_title_impl(port, ptr, rust_vec_len, data_len),
-        213 => {
+        208 => wire__crate__ffi__ffi__rss_clear_sort_cache_impl(port, ptr, rust_vec_len, data_len),
+        209 => wire__crate__ffi__ffi__rss_delete_source_impl(port, ptr, rust_vec_len, data_len),
+        210 => wire__crate__ffi__ffi__rss_fetch_articles_impl(port, ptr, rust_vec_len, data_len),
+        211 => wire__crate__ffi__ffi__rss_fetch_content_impl(port, ptr, rust_vec_len, data_len),
+        212 => wire__crate__ffi__ffi__rss_is_read_impl(port, ptr, rust_vec_len, data_len),
+        213 => wire__crate__ffi__ffi__rss_is_read_by_title_impl(port, ptr, rust_vec_len, data_len),
+        214 => {
             wire__crate__ffi__ffi__rss_list_cached_articles_impl(port, ptr, rust_vec_len, data_len)
         }
-        214 => wire__crate__ffi__ffi__rss_list_read_records_impl(port, ptr, rust_vec_len, data_len),
-        215 => wire__crate__ffi__ffi__rss_list_read_records_by_origin_impl(
+        215 => wire__crate__ffi__ffi__rss_list_read_records_impl(port, ptr, rust_vec_len, data_len),
+        216 => wire__crate__ffi__ffi__rss_list_read_records_by_origin_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        216 => wire__crate__ffi__ffi__rss_list_sources_impl(port, ptr, rust_vec_len, data_len),
-        217 => {
+        217 => wire__crate__ffi__ffi__rss_list_sources_impl(port, ptr, rust_vec_len, data_len),
+        218 => {
             wire__crate__ffi__ffi__rss_load_more_articles_impl(port, ptr, rust_vec_len, data_len)
         }
-        218 => wire__crate__ffi__ffi__rss_mark_read_impl(port, ptr, rust_vec_len, data_len),
-        219 => wire__crate__ffi__ffi__rss_read_record_count_impl(port, ptr, rust_vec_len, data_len),
-        220 => wire__crate__ffi__ffi__rss_refresh_articles_impl(port, ptr, rust_vec_len, data_len),
-        221 => wire__crate__ffi__ffi__rss_sort_urls_impl(port, ptr, rust_vec_len, data_len),
-        222 => {
+        219 => wire__crate__ffi__ffi__rss_mark_read_impl(port, ptr, rust_vec_len, data_len),
+        220 => wire__crate__ffi__ffi__rss_read_record_count_impl(port, ptr, rust_vec_len, data_len),
+        221 => wire__crate__ffi__ffi__rss_refresh_articles_impl(port, ptr, rust_vec_len, data_len),
+        222 => wire__crate__ffi__ffi__rss_sort_urls_impl(port, ptr, rust_vec_len, data_len),
+        223 => {
             wire__crate__ffi__ffi__rss_source_set_enabled_impl(port, ptr, rust_vec_len, data_len)
         }
-        223 => wire__crate__ffi__ffi__rss_star_add_impl(port, ptr, rust_vec_len, data_len),
-        224 => wire__crate__ffi__ffi__rss_star_delete_impl(port, ptr, rust_vec_len, data_len),
-        225 => wire__crate__ffi__ffi__rss_star_is_starred_impl(port, ptr, rust_vec_len, data_len),
-        226 => wire__crate__ffi__ffi__rss_star_list_impl(port, ptr, rust_vec_len, data_len),
-        227 => wire__crate__ffi__ffi__rss_update_source_impl(port, ptr, rust_vec_len, data_len),
-        228 => {
+        224 => wire__crate__ffi__ffi__rss_star_add_impl(port, ptr, rust_vec_len, data_len),
+        225 => wire__crate__ffi__ffi__rss_star_delete_impl(port, ptr, rust_vec_len, data_len),
+        226 => wire__crate__ffi__ffi__rss_star_is_starred_impl(port, ptr, rust_vec_len, data_len),
+        227 => wire__crate__ffi__ffi__rss_star_list_impl(port, ptr, rust_vec_len, data_len),
+        228 => wire__crate__ffi__ffi__rss_update_source_impl(port, ptr, rust_vec_len, data_len),
+        229 => {
             wire__crate__ffi__ffi__rss_web_view_host_call_impl(port, ptr, rust_vec_len, data_len)
         }
-        229 => wire__crate__ffi__ffi__rule_sub_apply_update_impl(port, ptr, rust_vec_len, data_len),
-        230 => wire__crate__ffi__ffi__rule_sub_check_update_impl(port, ptr, rust_vec_len, data_len),
-        231 => wire__crate__ffi__ffi__rule_sub_delete_impl(port, ptr, rust_vec_len, data_len),
-        232 => wire__crate__ffi__ffi__rule_sub_list_impl(port, ptr, rust_vec_len, data_len),
-        233 => wire__crate__ffi__ffi__rule_sub_save_impl(port, ptr, rust_vec_len, data_len),
-        234 => wire__crate__ffi__ffi__rule_sub_set_enabled_impl(port, ptr, rust_vec_len, data_len),
-        235 => wire__crate__ffi__ffi__rule_sub_update_order_impl(port, ptr, rust_vec_len, data_len),
-        236 => wire__crate__ffi__ffi__save_chapter_content_impl(port, ptr, rust_vec_len, data_len),
-        237 => wire__crate__ffi__ffi__save_cover_rule_impl(port, ptr, rust_vec_len, data_len),
-        238 => wire__crate__ffi__ffi__save_image_cache_impl(port, ptr, rust_vec_len, data_len),
-        239 => wire__crate__ffi__ffi__search_books_impl(port, ptr, rust_vec_len, data_len),
-        240 => wire__crate__ffi__ffi__search_books_clear_expired_impl(
+        230 => wire__crate__ffi__ffi__rule_sub_apply_update_impl(port, ptr, rust_vec_len, data_len),
+        231 => wire__crate__ffi__ffi__rule_sub_check_update_impl(port, ptr, rust_vec_len, data_len),
+        232 => wire__crate__ffi__ffi__rule_sub_delete_impl(port, ptr, rust_vec_len, data_len),
+        233 => wire__crate__ffi__ffi__rule_sub_list_impl(port, ptr, rust_vec_len, data_len),
+        234 => wire__crate__ffi__ffi__rule_sub_save_impl(port, ptr, rust_vec_len, data_len),
+        235 => wire__crate__ffi__ffi__rule_sub_set_enabled_impl(port, ptr, rust_vec_len, data_len),
+        236 => wire__crate__ffi__ffi__rule_sub_update_order_impl(port, ptr, rust_vec_len, data_len),
+        237 => wire__crate__ffi__ffi__save_chapter_content_impl(port, ptr, rust_vec_len, data_len),
+        238 => wire__crate__ffi__ffi__save_cover_rule_impl(port, ptr, rust_vec_len, data_len),
+        239 => wire__crate__ffi__ffi__save_image_cache_impl(port, ptr, rust_vec_len, data_len),
+        240 => wire__crate__ffi__ffi__search_books_impl(port, ptr, rust_vec_len, data_len),
+        241 => wire__crate__ffi__ffi__search_books_clear_expired_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        241 => wire__crate__ffi__ffi__search_cancel_impl(port, ptr, rust_vec_len, data_len),
-        242 => wire__crate__ffi__ffi__search_cover_impl(port, ptr, rust_vec_len, data_len),
-        243 => wire__crate__ffi__ffi__search_cover_rules_impl(port, ptr, rust_vec_len, data_len),
-        244 => wire__crate__ffi__ffi__search_history_add_impl(port, ptr, rust_vec_len, data_len),
-        245 => {
+        242 => wire__crate__ffi__ffi__search_cancel_impl(port, ptr, rust_vec_len, data_len),
+        243 => wire__crate__ffi__ffi__search_cover_impl(port, ptr, rust_vec_len, data_len),
+        244 => wire__crate__ffi__ffi__search_cover_rules_impl(port, ptr, rust_vec_len, data_len),
+        245 => wire__crate__ffi__ffi__search_history_add_impl(port, ptr, rust_vec_len, data_len),
+        246 => {
             wire__crate__ffi__ffi__search_history_by_prefix_impl(port, ptr, rust_vec_len, data_len)
         }
-        246 => wire__crate__ffi__ffi__search_history_clear_impl(port, ptr, rust_vec_len, data_len),
-        247 => wire__crate__ffi__ffi__search_history_delete_impl(port, ptr, rust_vec_len, data_len),
-        248 => wire__crate__ffi__ffi__search_history_list_impl(port, ptr, rust_vec_len, data_len),
-        249 => wire__crate__ffi__ffi__search_multi_impl(port, ptr, rust_vec_len, data_len),
-        250 => wire__crate__ffi__ffi__search_multi_stream_impl(port, ptr, rust_vec_len, data_len),
-        251 => wire__crate__ffi__ffi__search_pause_impl(port, ptr, rust_vec_len, data_len),
-        252 => wire__crate__ffi__ffi__search_resume_impl(port, ptr, rust_vec_len, data_len),
-        253 => wire__crate__ffi__ffi__server_start_impl(port, ptr, rust_vec_len, data_len),
-        254 => wire__crate__ffi__ffi__server_status_impl(port, ptr, rust_vec_len, data_len),
-        255 => wire__crate__ffi__ffi__server_stop_impl(port, ptr, rust_vec_len, data_len),
-        256 => wire__crate__ffi__ffi__set_audio_cache_dir_impl(port, ptr, rust_vec_len, data_len),
-        257 => {
+        247 => wire__crate__ffi__ffi__search_history_clear_impl(port, ptr, rust_vec_len, data_len),
+        248 => wire__crate__ffi__ffi__search_history_delete_impl(port, ptr, rust_vec_len, data_len),
+        249 => wire__crate__ffi__ffi__search_history_list_impl(port, ptr, rust_vec_len, data_len),
+        250 => wire__crate__ffi__ffi__search_multi_impl(port, ptr, rust_vec_len, data_len),
+        251 => wire__crate__ffi__ffi__search_multi_stream_impl(port, ptr, rust_vec_len, data_len),
+        252 => wire__crate__ffi__ffi__search_pause_impl(port, ptr, rust_vec_len, data_len),
+        253 => wire__crate__ffi__ffi__search_resume_impl(port, ptr, rust_vec_len, data_len),
+        254 => wire__crate__ffi__ffi__server_start_impl(port, ptr, rust_vec_len, data_len),
+        255 => wire__crate__ffi__ffi__server_status_impl(port, ptr, rust_vec_len, data_len),
+        256 => wire__crate__ffi__ffi__server_stop_impl(port, ptr, rust_vec_len, data_len),
+        257 => wire__crate__ffi__ffi__set_audio_cache_dir_impl(port, ptr, rust_vec_len, data_len),
+        258 => {
             wire__crate__ffi__ffi__set_book_group_private_impl(port, ptr, rust_vec_len, data_len)
         }
-        258 => wire__crate__ffi__ffi__set_books_private_impl(port, ptr, rust_vec_len, data_len),
-        259 => wire__crate__ffi__ffi__set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
-        260 => wire__crate__ffi__ffi__set_custom_hosts_impl(port, ptr, rust_vec_len, data_len),
-        261 => wire__crate__ffi__ffi__set_device_id_impl(port, ptr, rust_vec_len, data_len),
-        262 => {
+        259 => wire__crate__ffi__ffi__set_books_private_impl(port, ptr, rust_vec_len, data_len),
+        260 => wire__crate__ffi__ffi__set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
+        261 => wire__crate__ffi__ffi__set_custom_hosts_impl(port, ptr, rust_vec_len, data_len),
+        262 => wire__crate__ffi__ffi__set_device_id_impl(port, ptr, rust_vec_len, data_len),
+        263 => {
             wire__crate__ffi__ffi__set_http_log_recording_impl(port, ptr, rust_vec_len, data_len)
         }
-        263 => wire__crate__ffi__ffi__set_image_cache_dir_impl(port, ptr, rust_vec_len, data_len),
-        264 => wire__crate__ffi__ffi__set_mcp_port_impl(port, ptr, rust_vec_len, data_len),
-        265 => wire__crate__ffi__ffi__set_read_book_config_impl(port, ptr, rust_vec_len, data_len),
-        266 => wire__crate__ffi__ffi__set_source_variable_impl(port, ptr, rust_vec_len, data_len),
-        267 => wire__crate__ffi__ffi__set_theme_config_impl(port, ptr, rust_vec_len, data_len),
-        268 => wire__crate__ffi__ffi__set_theme_mode_impl(port, ptr, rust_vec_len, data_len),
-        269 => wire__crate__ffi__ffi__source_add_impl(port, ptr, rust_vec_len, data_len),
-        270 => wire__crate__ffi__ffi__source_call_back_btn_impl(port, ptr, rust_vec_len, data_len),
-        271 => wire__crate__ffi__ffi__source_check_impl(port, ptr, rust_vec_len, data_len),
-        272 => wire__crate__ffi__ffi__source_check_cancel_impl(port, ptr, rust_vec_len, data_len),
-        273 => wire__crate__ffi__ffi__source_check_stream_impl(port, ptr, rust_vec_len, data_len),
-        274 => wire__crate__ffi__ffi__source_delete_impl(port, ptr, rust_vec_len, data_len),
-        275 => wire__crate__ffi__ffi__source_disable_impl(port, ptr, rust_vec_len, data_len),
-        276 => wire__crate__ffi__ffi__source_enable_impl(port, ptr, rust_vec_len, data_len),
-        277 => wire__crate__ffi__ffi__source_export_impl(port, ptr, rust_vec_len, data_len),
-        278 => {
+        264 => wire__crate__ffi__ffi__set_image_cache_dir_impl(port, ptr, rust_vec_len, data_len),
+        265 => wire__crate__ffi__ffi__set_mcp_port_impl(port, ptr, rust_vec_len, data_len),
+        266 => wire__crate__ffi__ffi__set_read_book_config_impl(port, ptr, rust_vec_len, data_len),
+        267 => wire__crate__ffi__ffi__set_source_variable_impl(port, ptr, rust_vec_len, data_len),
+        268 => wire__crate__ffi__ffi__set_theme_config_impl(port, ptr, rust_vec_len, data_len),
+        269 => wire__crate__ffi__ffi__set_theme_mode_impl(port, ptr, rust_vec_len, data_len),
+        270 => wire__crate__ffi__ffi__source_add_impl(port, ptr, rust_vec_len, data_len),
+        271 => wire__crate__ffi__ffi__source_call_back_btn_impl(port, ptr, rust_vec_len, data_len),
+        272 => wire__crate__ffi__ffi__source_check_impl(port, ptr, rust_vec_len, data_len),
+        273 => wire__crate__ffi__ffi__source_check_cancel_impl(port, ptr, rust_vec_len, data_len),
+        274 => wire__crate__ffi__ffi__source_check_stream_impl(port, ptr, rust_vec_len, data_len),
+        275 => wire__crate__ffi__ffi__source_delete_impl(port, ptr, rust_vec_len, data_len),
+        276 => wire__crate__ffi__ffi__source_disable_impl(port, ptr, rust_vec_len, data_len),
+        277 => wire__crate__ffi__ffi__source_enable_impl(port, ptr, rust_vec_len, data_len),
+        278 => wire__crate__ffi__ffi__source_export_impl(port, ptr, rust_vec_len, data_len),
+        279 => {
             wire__crate__ffi__ffi__source_get_login_header_impl(port, ptr, rust_vec_len, data_len)
         }
-        279 => wire__crate__ffi__ffi__source_get_login_info_impl(port, ptr, rust_vec_len, data_len),
-        280 => wire__crate__ffi__ffi__source_import_impl(port, ptr, rust_vec_len, data_len),
-        281 => wire__crate__ffi__ffi__source_is_login_ui_v2_impl(port, ptr, rust_vec_len, data_len),
-        282 => wire__crate__ffi__ffi__source_list_impl(port, ptr, rust_vec_len, data_len),
-        283 => wire__crate__ffi__ffi__source_list_enabled_impl(port, ptr, rust_vec_len, data_len),
-        284 => {
+        280 => wire__crate__ffi__ffi__source_get_login_info_impl(port, ptr, rust_vec_len, data_len),
+        281 => wire__crate__ffi__ffi__source_import_impl(port, ptr, rust_vec_len, data_len),
+        282 => wire__crate__ffi__ffi__source_is_login_ui_v2_impl(port, ptr, rust_vec_len, data_len),
+        283 => wire__crate__ffi__ffi__source_list_impl(port, ptr, rust_vec_len, data_len),
+        284 => wire__crate__ffi__ffi__source_list_enabled_impl(port, ptr, rust_vec_len, data_len),
+        285 => {
             wire__crate__ffi__ffi__source_login_action_v2_impl(port, ptr, rust_vec_len, data_len)
         }
-        285 => wire__crate__ffi__ffi__source_login_ui_v2_impl(port, ptr, rust_vec_len, data_len),
-        286 => wire__crate__ffi__ffi__source_login_v1_impl(port, ptr, rust_vec_len, data_len),
-        287 => {
+        286 => wire__crate__ffi__ffi__source_login_ui_v2_impl(port, ptr, rust_vec_len, data_len),
+        287 => wire__crate__ffi__ffi__source_login_v1_impl(port, ptr, rust_vec_len, data_len),
+        288 => {
             wire__crate__ffi__ffi__source_put_login_header_impl(port, ptr, rust_vec_len, data_len)
         }
-        288 => wire__crate__ffi__ffi__source_put_login_info_impl(port, ptr, rust_vec_len, data_len),
-        289 => wire__crate__ffi__ffi__source_switch_apply_impl(port, ptr, rust_vec_len, data_len),
-        290 => wire__crate__ffi__ffi__source_switch_apply_cancel_impl(
+        289 => wire__crate__ffi__ffi__source_put_login_info_impl(port, ptr, rust_vec_len, data_len),
+        290 => wire__crate__ffi__ffi__source_switch_apply_impl(port, ptr, rust_vec_len, data_len),
+        291 => wire__crate__ffi__ffi__source_switch_apply_cancel_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        291 => wire__crate__ffi__ffi__source_switch_apply_prefetch_impl(
+        292 => wire__crate__ffi__ffi__source_switch_apply_prefetch_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        292 => wire__crate__ffi__ffi__source_switch_search_impl(port, ptr, rust_vec_len, data_len),
-        293 => wire__crate__ffi__ffi__source_switch_search_stream_impl(
+        293 => wire__crate__ffi__ffi__source_switch_search_impl(port, ptr, rust_vec_len, data_len),
+        294 => wire__crate__ffi__ffi__source_switch_search_stream_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        294 => wire__crate__ffi__ffi__source_update_impl(port, ptr, rust_vec_len, data_len),
-        295 => wire__crate__ffi__ffi__tts_set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
-        296 => wire__crate__ffi__ffi__tts_speak_impl(port, ptr, rust_vec_len, data_len),
-        297 => wire__crate__ffi__ffi__txt_search_impl(port, ptr, rust_vec_len, data_len),
-        298 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
-        299 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
-        300 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
-        301 => {
+        295 => wire__crate__ffi__ffi__source_update_impl(port, ptr, rust_vec_len, data_len),
+        296 => wire__crate__ffi__ffi__tts_set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
+        297 => wire__crate__ffi__ffi__tts_speak_impl(port, ptr, rust_vec_len, data_len),
+        298 => wire__crate__ffi__ffi__txt_search_impl(port, ptr, rust_vec_len, data_len),
+        299 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
+        300 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
+        301 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
+        302 => {
             wire__crate__ffi__ffi__update_search_book_score_impl(port, ptr, rust_vec_len, data_len)
         }
-        302 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
-        303 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
-        304 => wire__crate__ffi__ffi__verification_request_stream_impl(
+        303 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
+        304 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
+        305 => wire__crate__ffi__ffi__verification_request_stream_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        305 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
-        306 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
-        307 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
-        308 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
-        309 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
-        310 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
-        311 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
-        312 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
-        313 => wire__crate__ffi__ffi__webdav_download_file_impl(port, ptr, rust_vec_len, data_len),
-        314 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
-        315 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
-        316 => wire__crate__ffi__ffi__webdav_prune_backups_impl(port, ptr, rust_vec_len, data_len),
-        317 => wire__crate__ffi__ffi__webdav_server_delete_impl(port, ptr, rust_vec_len, data_len),
-        318 => wire__crate__ffi__ffi__webdav_server_save_impl(port, ptr, rust_vec_len, data_len),
-        319 => wire__crate__ffi__ffi__webdav_servers_list_impl(port, ptr, rust_vec_len, data_len),
-        320 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
-        321 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
-        322 => wire__crate__ffi__ffi__webview_cancel_impl(port, ptr, rust_vec_len, data_len),
-        323 => wire__crate__ffi__ffi__webview_pending_impl(port, ptr, rust_vec_len, data_len),
-        324 => {
+        306 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
+        307 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
+        308 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
+        309 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
+        310 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
+        311 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
+        312 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
+        313 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
+        314 => wire__crate__ffi__ffi__webdav_download_file_impl(port, ptr, rust_vec_len, data_len),
+        315 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
+        316 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
+        317 => wire__crate__ffi__ffi__webdav_prune_backups_impl(port, ptr, rust_vec_len, data_len),
+        318 => wire__crate__ffi__ffi__webdav_server_delete_impl(port, ptr, rust_vec_len, data_len),
+        319 => wire__crate__ffi__ffi__webdav_server_save_impl(port, ptr, rust_vec_len, data_len),
+        320 => wire__crate__ffi__ffi__webdav_servers_list_impl(port, ptr, rust_vec_len, data_len),
+        321 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
+        322 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
+        323 => wire__crate__ffi__ffi__webview_cancel_impl(port, ptr, rust_vec_len, data_len),
+        324 => wire__crate__ffi__ffi__webview_pending_impl(port, ptr, rust_vec_len, data_len),
+        325 => {
             wire__crate__ffi__ffi__webview_request_stream_impl(port, ptr, rust_vec_len, data_len)
         }
-        325 => wire__crate__ffi__ffi__webview_submit_impl(port, ptr, rust_vec_len, data_len),
-        326 => wire__crate__ffi__ffi__webview_submit_result_with_cookies_impl(
+        326 => wire__crate__ffi__ffi__webview_submit_impl(port, ptr, rust_vec_len, data_len),
+        327 => wire__crate__ffi__ffi__webview_submit_result_with_cookies_impl(
             port,
             ptr,
             rust_vec_len,

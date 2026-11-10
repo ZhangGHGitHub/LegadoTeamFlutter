@@ -148,6 +148,10 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   ///
   /// [书源作用域 | 2026-09-13] 新增 scopeSource 全字段透传；
   /// Rust 侧 None=保留既有值，Some(b)=覆盖。
+  ///
+  /// [批12 | 2026-11-10] 新增 scope 全字段透传（原 FFI 无 scope 参数，
+  /// Rust 强制沿用 `existing.scope` → 编辑特定范围不落库）；与 group/
+  /// excludeScope 同语义：null 以空串透传 = 清除该字段。
   @override
   Future<void> updateReplaceRule(ReplaceRule rule) => bridge.replaceRuleUpdate(
     ruleId: rule.id,
@@ -163,6 +167,8 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     timeoutMillisecond: rule.timeoutMillisecond,
     // [书源作用域 | 2026-09-13] 全字段透传；Rust 侧 None=保留既有值
     scopeSource: rule.scopeSource,
+    // [批12] 特定范围全字段透传；空串=清除
+    scope: rule.scope ?? '',
   );
 
   /// 删除替换规则
@@ -192,6 +198,14 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     sourceUrl: sourceUrl,
   );
 
+  /// 按给定 ID 顺序全量重编号替换规则 sortOrder（契约 §2.8 `reorderReplaceRules`）
+  ///
+  /// [批12 | 2026-11-10] [ids] 为全量规则 id 顺序，序列化为 JSON 数组后透传
+  /// FFI（Rust 单事务重编号 0..n-1；非法集零写入）。
+  @override
+  Future<int> reorderReplaceRules(List<int> ids) =>
+      bridge.replaceRuleReorder(idsJson: jsonEncode(ids));
+
   /// 替换规则编辑器预览：对单条规则在示例文本上执行真实替换管线（契约 §2.8 `previewReplaceRule`）
   ///
   /// [替换规则预览 | 2026-09-13] 透传 FFI：成功=返回替换后文本；
@@ -199,10 +213,7 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   /// 错误文本（不上抛 FFI）；非法输入（JSON 解析失败）MAY Err。
   @override
   Future<String> previewReplaceRule(String ruleJson, String sampleContent) =>
-      bridge.replaceRulePreview(
-        ruleJson: ruleJson,
-        sample: sampleContent,
-      );
+      bridge.replaceRulePreview(ruleJson: ruleJson, sample: sampleContent);
 
   // ========== 阅读器操作 ==========
 
@@ -435,8 +446,7 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     required String name,
     required String urlRule,
     required String showRule,
-  }) =>
-      bridge.dictRuleAdd(name: name, urlRule: urlRule, showRule: showRule);
+  }) => bridge.dictRuleAdd(name: name, urlRule: urlRule, showRule: showRule);
 
   @override
   Future<bool> dictRuleUpdate({
@@ -444,17 +454,15 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     required String name,
     required String urlRule,
     required String showRule,
-  }) =>
-      bridge.dictRuleUpdate(
-        id: id,
-        name: name,
-        urlRule: urlRule,
-        showRule: showRule,
-      );
+  }) => bridge.dictRuleUpdate(
+    id: id,
+    name: name,
+    urlRule: urlRule,
+    showRule: showRule,
+  );
 
   @override
-  Future<bool> dictRuleDelete(int id) =>
-      bridge.dictRuleDelete(id: id);
+  Future<bool> dictRuleDelete(int id) => bridge.dictRuleDelete(id: id);
 
   @override
   Future<bool> dictRuleSetEnabled({required int id, required bool enabled}) =>
@@ -465,8 +473,10 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
       bridge.dictRuleReorder(idsJson: idsJson);
 
   @override
-  Future<int> dictRuleImport({required String jsonOrUrl, required String kind}) =>
-      bridge.dictRuleImport(jsonOrUrl: jsonOrUrl, kind: kind);
+  Future<int> dictRuleImport({
+    required String jsonOrUrl,
+    required String kind,
+  }) => bridge.dictRuleImport(jsonOrUrl: jsonOrUrl, kind: kind);
 
   // ========== 应用日志（appLog FFI） ==========
   // [审计修复 §1.2] 接通契约 §2.38 appLog* 五方法（frb 绑定已生成） — QoderCN

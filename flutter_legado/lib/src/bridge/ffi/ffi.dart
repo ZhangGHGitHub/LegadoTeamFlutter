@@ -1473,6 +1473,9 @@ Future<PlatformInt64> replaceRuleAdd({
 ///
 /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参：
 /// scopeSource=None→保留既有值；Some(b)=覆盖
+///
+/// [特定范围写链路 | 2026-11-10 批12 加法式扩参] 末尾第 7 个可选参：
+/// scope=None→保留既有值；Some("")=清除；Some(s)=覆盖
 Future<void> replaceRuleUpdate({
   required PlatformInt64 ruleId,
   required String name,
@@ -1486,6 +1489,7 @@ Future<void> replaceRuleUpdate({
   String? excludeScope,
   PlatformInt64? timeoutMillisecond,
   bool? scopeSource,
+  String? scope,
 }) => RustLib.instance.api.crateFfiFfiReplaceRuleUpdate(
   ruleId: ruleId,
   name: name,
@@ -1499,6 +1503,7 @@ Future<void> replaceRuleUpdate({
   excludeScope: excludeScope,
   timeoutMillisecond: timeoutMillisecond,
   scopeSource: scopeSource,
+  scope: scope,
 );
 
 /// 删除替换规则
@@ -1517,6 +1522,14 @@ Future<void> replaceRuleSetEnabled({
   ruleId: ruleId,
   enabled: enabled,
 );
+
+/// 按给定 ID 顺序全量重编号替换规则 sortOrder（契约 §2.8 `reorderReplaceRules`）
+///
+/// [批12 | 2026-11-10] `ids_json` 为 JSON 数组（规则 id 全量顺序），单事务
+/// 重编号 0..n-1 并返回重排条数；重复/缺失/未知 id 一律参数错误且零写入；
+/// 空数组返回 0（不开事务）。
+Future<int> replaceRuleReorder({required String idsJson}) =>
+    RustLib.instance.api.crateFfiFfiReplaceRuleReorder(idsJson: idsJson);
 
 /// 书源导入时应用「书源作用域」替换规则（契约 §2.8 `applyReplaceRulesToSource`）
 ///
