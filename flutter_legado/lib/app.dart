@@ -400,7 +400,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // [UI-FIX v2.0.5 | 2026-08-08] 自定义主题颜色接入 MaterialApp（对齐原版
     // ThemeConfigFragment 日间/夜间颜色配置，设置页修改后全局即时生效） — Qoder
     final themeColors = ref.watch(themeColorsProvider);
-    Color? c(int? argb) => argb != null ? Color(argb) : null;
+    // [审查 P2-1] 0 = 未设置（参考版重置/未设置槽写透明 0）：兜底不生成
+    // Color(0x00000000)，否则 AppBar/Scaffold 会变透明、前景按暗色取白。
+    Color? c(int? argb) => argb != null && argb != 0 ? Color(argb) : null;
 
     // [MD3 Batch 0 | 2026-08-28] 按 paletteId 装配内置 MD3 调色板
     //（阶段D 2.0.270 起默认 def「默认」；自定义 themeConfigList 4 色仍可叠加，

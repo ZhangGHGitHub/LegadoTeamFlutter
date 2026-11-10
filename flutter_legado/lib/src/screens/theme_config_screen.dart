@@ -7,7 +7,8 @@
 // 视觉保持 iOS 分组卡片风格（IosGroup/IosListTile） — Qoder
 //
 // [批13 | 2026-11-10] 白天/夜间各补「主要字体色」「次要字体色」两行
-// （12 色槽的字体色两槽），复用既有预设色盘 + 恢复默认（清除=0）；
+// （12 槽中的字体色两槽；第 6 槽我方为底栏色、参考为标签容器色），
+// 复用既有预设色盘 + 恢复默认（清除=0）；
 // 保存/应用 themeConfigList 与导入/导出主题 JSON 同步携带字体色字段，
 // 旧数据缺字段按 0（未设置）处理。— 全栈工程师 + UI
 import 'dart:convert';
@@ -35,6 +36,7 @@ import '../services/export_file_service.dart';
 import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
 import '../services/theme_background_image_store.dart';
+import '../services/theme_config_json.dart';
 import '../theme/md3_colors.dart';
 import '../utils/color_hex.dart';
 import '../utils/error_message.dart';
@@ -97,6 +99,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   /// Android 专属项统一灰字标注（与阅读设置面板刘海项先例一致）
   static const _androidOnly = '仅 Android 生效';
+
+  /// [批13] 字体色行副标题：提示与动态取色叠加时的对比度风险（不改映射）
+  static const _fontColorHint = '与动态取色同时使用时可能影响对比度';
 
   @override
   void initState() {
@@ -1404,9 +1409,20 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       _colorTile(PrefKeys.cAccent, '强调色', colors),
                       // [批13] 字体色两行：顺序对齐参考 CustomThemeScreen
                       // CustomColorSettings（主题色→次要主题色→主要字体色→
-                      // 次要字体色→背景色→标签容器色）
-                      _colorTile(PrefKeys.cPrimaryText, '主要字体色', colors),
-                      _colorTile(PrefKeys.cSecondaryText, '次要字体色', colors),
+                      // 次要字体色→背景色→标签容器色）。第 6 槽我方是底部
+                      // 操作栏色、参考是标签容器色，构成不同见状态类注释。
+                      _colorTile(
+                        PrefKeys.cPrimaryText,
+                        '主要字体色',
+                        colors,
+                        subtitle: _fontColorHint,
+                      ),
+                      _colorTile(
+                        PrefKeys.cSecondaryText,
+                        '次要字体色',
+                        colors,
+                        subtitle: _fontColorHint,
+                      ),
                       _colorTile(
                         PrefKeys.cBackground,
                         '背景色',
@@ -1463,12 +1479,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         '主要字体色',
                         colors,
                         isNight: true,
+                        subtitle: _fontColorHint,
                       ),
                       _colorTile(
                         PrefKeys.cNSecondaryText,
                         '次要字体色',
                         colors,
                         isNight: true,
+                        subtitle: _fontColorHint,
                       ),
                       _colorTile(
                         PrefKeys.cNBackground,
@@ -1527,6 +1545,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     ThemeColorsState colors, {
     bool isNight = false,
     bool isBackground = false,
+    String? subtitle,
   }) {
     final value = colors.valueOf(key);
     final isUnset = value == null || value == 0;
@@ -1534,6 +1553,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       key: ValueKey('theme-color-$key'),
       icon: Symbols.palette_rounded,
       title: title,
+      subtitle: subtitle,
       value: isUnset ? '默认' : null,
       trailing: isUnset
           ? null
@@ -1917,32 +1937,35 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   ///
   /// [批13] 旧版 `themeConfigList` 条目没有 `primaryText`/`secondaryText`
   /// 字段：按未设置（0 → 清除）处理，不抛异常。类型容错统一走
-  /// [_intOrNull]（旧 JSON 缺字段/数值被序列化为 double 均安全）。
+  /// [ThemeConfigJson.asInt]（与导入 JSON 同一实现，旧 JSON 缺字段/数值被
+  /// 序列化为 double 均安全）。
   Future<void> _applyThemeConfig(Map<String, dynamic> config) async {
     final isNight = config['isNight'] == true;
     await ref.read(themeColorsProvider.notifier).applyColors({
       if (isNight) ...{
-        PrefKeys.cNPrimary: _intOrNull(config['primary']),
-        PrefKeys.cNAccent: _intOrNull(config['accent']),
-        PrefKeys.cNBackground: _intOrNull(config['background']),
-        PrefKeys.cNBBackground: _intOrNull(config['bottomBackground']),
-        PrefKeys.cNPrimaryText: _intOrNull(config['primaryText']),
-        PrefKeys.cNSecondaryText: _intOrNull(config['secondaryText']),
+        PrefKeys.cNPrimary: ThemeConfigJson.asInt(config['primary']),
+        PrefKeys.cNAccent: ThemeConfigJson.asInt(config['accent']),
+        PrefKeys.cNBackground: ThemeConfigJson.asInt(config['background']),
+        PrefKeys.cNBBackground: ThemeConfigJson.asInt(
+          config['bottomBackground'],
+        ),
+        PrefKeys.cNPrimaryText: ThemeConfigJson.asInt(config['primaryText']),
+        PrefKeys.cNSecondaryText: ThemeConfigJson.asInt(
+          config['secondaryText'],
+        ),
       } else ...{
-        PrefKeys.cPrimary: _intOrNull(config['primary']),
-        PrefKeys.cAccent: _intOrNull(config['accent']),
-        PrefKeys.cBackground: _intOrNull(config['background']),
-        PrefKeys.cBBackground: _intOrNull(config['bottomBackground']),
-        PrefKeys.cPrimaryText: _intOrNull(config['primaryText']),
-        PrefKeys.cSecondaryText: _intOrNull(config['secondaryText']),
+        PrefKeys.cPrimary: ThemeConfigJson.asInt(config['primary']),
+        PrefKeys.cAccent: ThemeConfigJson.asInt(config['accent']),
+        PrefKeys.cBackground: ThemeConfigJson.asInt(config['background']),
+        PrefKeys.cBBackground: ThemeConfigJson.asInt(
+          config['bottomBackground'],
+        ),
+        PrefKeys.cPrimaryText: ThemeConfigJson.asInt(config['primaryText']),
+        PrefKeys.cSecondaryText: ThemeConfigJson.asInt(config['secondaryText']),
       },
     });
     _toast('已应用主题「${config['name'] ?? '未命名'}」');
   }
-
-  /// JSON 数值容错转换：非数值/缺字段返回 null（= 未设置，按 0 处理）
-  static int? _intOrNull(dynamic value) =>
-      value is int ? value : (value is num ? value.toInt() : null);
 
   /// 保存当前日/夜颜色为命名主题（对齐原版 saveDayTheme/saveNightTheme）
   Future<void> _saveTheme({required bool isNight}) async {
@@ -1998,41 +2021,18 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   // 导出当前配色 JSON / 导入应用。颜色值全部来自主题槽位
   // （ThemeColorsState 的 ARGB int + paletteId + themeMode），无硬编码色值。
 
-  /// ThemeMode → JSON 名称
-  static String _themeModeName(ThemeMode mode) => switch (mode) {
-    ThemeMode.light => 'light',
-    ThemeMode.dark => 'dark',
-    _ => 'system',
-  };
-
   /// 导出当前配色为 JSON 文件（paletteId + 主题模式 + 日/夜 6 色组）
+  ///
+  /// [批13] 配色字段构造抽到 [ThemeConfigJson.buildExportPayload]，与导入
+  /// 解码共用同一实现并可做往返测试。
   Future<void> _exportTheme() async {
     final colors = ref.read(themeColorsProvider);
     final themeState = ref.read(themeNotifierProvider);
-    final payload = <String, dynamic>{
-      'app': 'legado',
-      'type': 'theme',
-      'version': 1,
-      'paletteId': themeState.paletteId,
-      'themeMode': _themeModeName(themeState.themeMode),
-      'day': <String, int?>{
-        'primary': colors.primary,
-        'accent': colors.accent,
-        'background': colors.background,
-        'bottomBackground': colors.bottomBackground,
-        // [批13] 字体色：0 表示未设置（旧版导入端缺字段同样按 0 处理）
-        'primaryText': colors.primaryTextColor,
-        'secondaryText': colors.secondaryTextColor,
-      },
-      'night': <String, int?>{
-        'primary': colors.primaryNight,
-        'accent': colors.accentNight,
-        'background': colors.backgroundNight,
-        'bottomBackground': colors.bottomBackgroundNight,
-        'primaryText': colors.primaryTextColorNight,
-        'secondaryText': colors.secondaryTextColorNight,
-      },
-    };
+    final payload = ThemeConfigJson.buildExportPayload(
+      colors: colors,
+      paletteId: themeState.paletteId,
+      themeMode: themeState.themeMode,
+    );
     final content = const JsonEncoder.withIndent('  ').convert(payload);
     // [D1 回修 P2-4] 迁移到统一系统另存服务：Android 走自建 SAF 通道
     //（原生写字节 + 异常捕获 + DownloadsProvider 回退），iOS 由插件写
@@ -2076,55 +2076,24 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
 
     final notifier = ref.read(themeColorsProvider.notifier);
-    // 日/夜颜色组：缺省组整组恢复默认（null 清除），保证导入结果确定
-    final dayMap = decoded['day'] is Map<String, dynamic>
-        ? (decoded['day'] as Map<String, dynamic>)
-        : const <String, dynamic>{};
-    final nightMap = decoded['night'] is Map<String, dynamic>
-        ? (decoded['night'] as Map<String, dynamic>)
-        : const <String, dynamic>{};
-    int? intOf(Map<String, dynamic> m, String k) {
-      final v = m[k];
-      return v is int ? v : (v is num ? v.toInt() : null);
-    }
-
-    await notifier.applyColors({
-      PrefKeys.cPrimary: intOf(dayMap, 'primary'),
-      PrefKeys.cAccent: intOf(dayMap, 'accent'),
-      PrefKeys.cBackground: intOf(dayMap, 'background'),
-      PrefKeys.cBBackground: intOf(dayMap, 'bottomBackground'),
-      PrefKeys.cNPrimary: intOf(nightMap, 'primary'),
-      PrefKeys.cNAccent: intOf(nightMap, 'accent'),
-      PrefKeys.cNBackground: intOf(nightMap, 'background'),
-      PrefKeys.cNBBackground: intOf(nightMap, 'bottomBackground'),
-      // [批13] 旧版主题 JSON 无字体色字段 → intOf 返回 null → 清除（按 0）
-      PrefKeys.cPrimaryText: intOf(dayMap, 'primaryText'),
-      PrefKeys.cSecondaryText: intOf(dayMap, 'secondaryText'),
-      PrefKeys.cNPrimaryText: intOf(nightMap, 'primaryText'),
-      PrefKeys.cNSecondaryText: intOf(nightMap, 'secondaryText'),
-    });
+    // 日/夜颜色组：缺省组/缺字段 → null 清除，保证导入结果确定
+    // [批13] 解码与导出共用 [ThemeConfigJson]，旧版主题 JSON 无字体色字段
+    // 时同样按 0（未设置）处理，不报错。
+    await notifier.applyColors(ThemeConfigJson.decodeColors(decoded));
 
     // paletteId（未知 id 经 Md3Palettes.byId 回退默认 def，安全）
     final paletteId = decoded['paletteId'];
     if (paletteId is String && paletteId.isNotEmpty) {
       await ref.read(themeNotifierProvider.notifier).setPaletteId(paletteId);
     }
-    // 主题模式（未知值忽略）
-    switch (decoded['themeMode']) {
-      case 'light':
-        await ref
-            .read(themeNotifierProvider.notifier)
-            .setThemeMode(ThemeMode.light);
-      case 'dark':
-        await ref
-            .read(themeNotifierProvider.notifier)
-            .setThemeMode(ThemeMode.dark);
-      case 'system':
-        await ref
-            .read(themeNotifierProvider.notifier)
-            .setThemeMode(ThemeMode.system);
-      default:
-        break;
+    // 主题模式（未知/缺省值忽略，保持当前模式）
+    final importedThemeMode = ThemeConfigJson.themeModeFromName(
+      decoded['themeMode'],
+    );
+    if (importedThemeMode != null) {
+      await ref
+          .read(themeNotifierProvider.notifier)
+          .setThemeMode(importedThemeMode);
     }
     if (mounted) _toast('主题已导入');
   }

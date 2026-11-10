@@ -56,9 +56,11 @@ class PrefKeys {
   /// 夜间底部操作栏颜色（ARGB int）
   static const cNBBackground = 'colorBottomBackgroundNight';
 
-  // ===== 批13：App 主题 12 色槽（补齐主要/次要字体色）=====
+  // ===== 批13：App 主题 12 槽（补齐主要/次要字体色；槽位构成差异
+  // 见 ThemeColorsState 类注释，勿表述为与参考完全一致）=====
   //
-  // 键名逐字对齐参考版 `PreferKey.kt:258-267`（常量名 → 真实偏好键）：
+  // 键名逐字对齐参考版 `PreferKey.kt:256-267`（参考仓 main@bba5c64；
+  // 行号会随参考仓同步漂移，以常量名核对为准）：
   // `primaryTextColor` → `colorMD3OnSurface`、
   // `secondaryTextColor` → `colorMD3OnPrimaryContainer`（参考版历史命名，
   // 语义为「次要字体色」，不要按键名望文生义）。

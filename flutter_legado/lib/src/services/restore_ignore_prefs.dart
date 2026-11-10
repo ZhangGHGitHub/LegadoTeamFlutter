@@ -271,7 +271,8 @@ class RestoreIgnorePrefs {
     PrefKeys.cNBackground,
     PrefKeys.cNBBackground,
     // [批13] 字体色 4 槽：参考版 BackupConfig.themePrefKeys
-    // （`help/storage/BackupConfig.kt:303-307`）明确收录
+    // （`help/storage/BackupConfig.kt:303-310`，themePrefKeys 263-317；
+    // 参考仓 main@bba5c64）明确收录
     // primaryTextColor/secondaryTextColor 及 Night 变体，勾选「忽略主题配置」
     // 恢复备份时不覆盖本机字体色 — 全栈工程师
     PrefKeys.cPrimaryText,

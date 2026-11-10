@@ -137,7 +137,7 @@ class AppTheme {
   /// 四参数全为 null 时直接使用内置 palette scheme。
   ///
   /// [批13 | 2026-11-10] 新增 [primaryTextColor]/[secondaryTextColor]：
-  /// 已设置（非 null）时按参考版 `UserCustomTheme.kt:8-120` 口径映射——
+  /// 已设置（非 null）时按参考版 `UserCustomTheme.kt:18-128` 口径映射——
   /// 主要字体色 → onSurface/onPrimary/onPrimaryContainer，次要字体色 →
   /// onSurfaceVariant/onSecondary/onSecondaryContainer/onTertiary。
   /// 未设置（null）时一个 role 都不写，保持既有 palette 视觉不变；参考版

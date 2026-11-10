@@ -1,12 +1,15 @@
 // [批13 | 2026-11-10] App 主题 12 色槽（主要/次要字体色）单测 — 全栈工程师 + UI
 //
 // 覆盖任务书测试项：
-// - 键名逐字对齐参考版 PreferKey.kt:258-267（含 secondaryText 历史键名
+// - 键名逐字对齐参考版 PreferKey.kt:256-267（含 secondaryText 历史键名
 //   colorMD3OnPrimaryContainer）；
 // - 默认值（未设置 → 0xFF1C1B1F/0xFF49454F）；
 // - 夜间 0 逐字段继承日间；日间 0 回落默认常量；
 // - 清除（设值 → 恢复默认 → 0，偏好键移除）；
 // - 旧 JSON/旧 themeConfigList 缺字段按 0 处理不抛异常；
+// - [审查 P2-1] 旧 8 槽的 0 在内存层同样归一为 null（含加载/withValue/
+//   applyColors），ColorScheme 回落 palette 默认色而非透明；
+// - 清除夜间字体色后逐字段继承日间；
 // - 备份 themePrefKeys 收录 4 新键并受「忽略主题配置」过滤；
 // - AppTheme.palette 把字体色接入 ColorScheme 且未设置时不改变既有 role。
 import 'package:flutter/material.dart';
@@ -41,7 +44,7 @@ void main() {
   }
 
   group('偏好键与默认值', () {
-    test('键名逐字对齐参考版 PreferKey.kt:258-267', () {
+    test('键名逐字对齐参考版 PreferKey.kt:256-267（main@bba5c64）', () {
       expect(PrefKeys.cPrimaryText, 'colorMD3OnSurface');
       expect(PrefKeys.cSecondaryText, 'colorMD3OnPrimaryContainer');
       expect(PrefKeys.cNPrimaryText, 'colorMD3OnSurfaceNight');
@@ -184,6 +187,117 @@ void main() {
       expect(state.secondaryTextColor, 0);
       expect(state.primaryTextColorNight, 0);
       expect(state.secondaryTextColorNight, 0);
+    });
+
+    // ===== [审查 P2-1] 0 必须在内存层也归一，不能落到 Color(0x00000000) =====
+
+    test('withValue(旧槽, 0) 归一为 null，ColorScheme 回落 palette 默认色', () {
+      const state = ThemeColorsState(
+        primary: 0xFF112233,
+        background: 0xFFF5F5F5,
+        bottomBackgroundNight: 0xFF333333,
+      );
+      final next = state.withValue(PrefKeys.cPrimary, 0);
+      expect(next.primary, isNull, reason: '0 = 未设置，不得存透明黑色');
+      expect(next.background, 0xFFF5F5F5, reason: '其它槽位不受影响');
+      expect(
+        state.withValue(PrefKeys.cNBBackground, 0).bottomBackgroundNight,
+        isNull,
+      );
+
+      // app.dart 的 c() 同口径（0 → null）→ AppTheme 用内置 palette role
+      final theme = AppTheme.palette(
+        brightness: Brightness.light,
+        palette: Md3Palettes.def,
+        primary: next.primary == null ? null : Color(next.primary!),
+        background: next.background == null ? null : Color(next.background!),
+      );
+      final base = md3LightScheme(Md3Palettes.def);
+      expect(theme.colorScheme.primary, base.primary);
+      expect(theme.scaffoldBackgroundColor, base.surface);
+      expect(
+        theme.colorScheme.primary,
+        isNot(const Color(0x00000000)),
+        reason: '不得出现透明主色',
+      );
+    });
+
+    test('applyColors(旧槽, 0) 清除内存与偏好，ColorScheme 回落 palette', () async {
+      final container = await loadedContainer();
+      final notifier = container.read(themeColorsProvider.notifier);
+      final prefs = await SharedPreferences.getInstance();
+
+      await notifier.applyColors(<String, int?>{
+        PrefKeys.cPrimary: 0xFF112233,
+        PrefKeys.cBackground: 0xFFF5F5F5,
+        PrefKeys.cNBBackground: 0xFF333333,
+      });
+      expect(container.read(themeColorsProvider).primary, 0xFF112233);
+
+      // 导入含 "primary":0 的 JSON / 恢复参考版备份（未设置槽写 0）
+      await notifier.applyColors(<String, int?>{
+        PrefKeys.cPrimary: 0,
+        PrefKeys.cNBBackground: 0,
+      });
+      final state = container.read(themeColorsProvider);
+      expect(state.primary, isNull);
+      expect(state.bottomBackgroundNight, isNull);
+      expect(state.background, 0xFFF5F5F5, reason: '未涉及的槽位保持原值');
+      expect(prefs.containsKey(PrefKeys.cPrimary), isFalse);
+      expect(prefs.containsKey(PrefKeys.cNBBackground), isFalse);
+
+      final base = md3LightScheme(Md3Palettes.def);
+      final theme = AppTheme.palette(
+        brightness: Brightness.light,
+        palette: Md3Palettes.def,
+        primary: state.primary == null ? null : Color(state.primary!),
+      );
+      expect(theme.colorScheme.primary, base.primary);
+    });
+
+    test('加载时旧槽存储 0 归一为 null（参考版备份未设置槽）', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        PrefKeys.cPrimary: 0,
+        PrefKeys.cAccent: 0xFF00FF00,
+        PrefKeys.cNBBackground: 0,
+      });
+      final container = await loadedContainer();
+      final state = container.read(themeColorsProvider);
+      expect(state.primary, isNull);
+      expect(state.bottomBackgroundNight, isNull);
+      expect(state.accent, 0xFF00FF00);
+      // app.dart 里 c(0) 被兜底为 null；此处同时验证 effective 语义不受影响
+      expect(
+        state.effectivePrimaryTextColor(Brightness.dark),
+        ThemeColorsState.defaultPrimaryTextColor,
+      );
+    });
+
+    test('清除夜间字体色 → 夜间回落继承日间', () async {
+      final container = await loadedContainer();
+      final notifier = container.read(themeColorsProvider.notifier);
+      await notifier.applyColors(<String, int?>{
+        PrefKeys.cPrimaryText: _dayPrimary,
+        PrefKeys.cNPrimaryText: _nightPrimary,
+      });
+      expect(
+        container
+            .read(themeColorsProvider)
+            .effectivePrimaryTextColor(Brightness.dark),
+        _nightPrimary,
+      );
+
+      await notifier.setColor(PrefKeys.cNPrimaryText, null);
+      final state = container.read(themeColorsProvider);
+      expect(state.primaryTextColorNight, 0);
+      expect(state.primaryTextColor, _dayPrimary);
+      expect(state.primaryTextColorFor(Brightness.light), _dayPrimary);
+      expect(state.primaryTextColorFor(Brightness.dark), _dayPrimary);
+      expect(
+        state.effectivePrimaryTextColor(Brightness.dark),
+        _dayPrimary,
+        reason: '夜间清除后逐字段继承日间，而非回落默认常量',
+      );
     });
 
     test('withValue 对字体色 null 归一化为 0，且不污染其它槽位', () {
