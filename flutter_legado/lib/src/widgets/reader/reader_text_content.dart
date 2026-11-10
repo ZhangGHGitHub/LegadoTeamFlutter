@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../models/highlight_style.dart';
+import '../../utils/reader_inline_image.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import 'highlight_span_builder.dart';
 import 'reader_bookmark_badge.dart';
+import 'reader_inline_image_widget.dart';
 import 'review_column.dart';
 import 'reader_page_chrome.dart';
 import 'text_selection_panel.dart';
@@ -77,6 +79,11 @@ class ReaderTypographicPage extends StatelessWidget {
   /// [批4d] 角标大小 dp（<=0 隐藏）
   final int bookmarkBadgeSize;
 
+  // [批16] 正文图片渲染配置（字节加载/点击档位/预览回调）与章节标题图
+  // 布局（首屏标题下方，高度已计入首页分页容量）。
+  final ReaderImageRenderConfig imageConfig;
+  final ReaderImageLayout? titleImageLayout;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -109,6 +116,8 @@ class ReaderTypographicPage extends StatelessWidget {
     this.showBookmarkBadge = false,
     this.bookmarkBadgeImage = '',
     this.bookmarkBadgeSize = 10,
+    this.imageConfig = const ReaderImageRenderConfig(),
+    this.titleImageLayout,
   });
 
   @override
@@ -172,26 +181,42 @@ class ReaderTypographicPage extends StatelessWidget {
                         top: chrome.titleTopSpacing.toDouble(),
                         bottom: chrome.titleBottomSpacing.toDouble(),
                       ),
-                      child: Align(
-                        alignment: titleAlign == TextAlign.center
-                            ? Alignment.center
-                            : Alignment.centerLeft,
-                        child: Text(
-                          chapterTitle!,
-                          textAlign: titleAlign,
-                          style: TextStyle(
-                            fontSize: fontSize + chrome.titleSize,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
-                            // [C3 标题字体] 与测量侧同参（effectiveTitleFontFamily
-                            // 单源）；同时修复既有偏差：空=跟随正文字体，标题
-                            // 随自定义正文自定义字体生效 — full-stack-engineer
-                            fontFamily: effectiveTitleFontFamily(
-                              chrome,
-                              fontFamily,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Align(
+                            alignment: titleAlign == TextAlign.center
+                                ? Alignment.center
+                                : Alignment.centerLeft,
+                            child: Text(
+                              chapterTitle!,
+                              textAlign: titleAlign,
+                              style: TextStyle(
+                                fontSize: fontSize + chrome.titleSize,
+                                fontWeight: FontWeight.bold,
+                                color: textColor,
+                                // [C3 标题字体] 与测量侧同参（effectiveTitleFontFamily
+                                // 单源）；同时修复既有偏差：空=跟随正文字体，标题
+                                // 随自定义正文自定义字体生效 — full-stack-engineer
+                                fontFamily: effectiveTitleFontFamily(
+                                  chrome,
+                                  fontFamily,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          // [批16] 章节标题图（`BookChapter.imgUrl`）：对齐上游
+                          // TextChapterLayout.kt:326-380，首屏标题下方展示；
+                          // 高度已由阅读页计入首页分页容量（同一布局单源）。
+                          if (titleImageLayout != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: ReaderImageLineWidget(
+                                layout: titleImageLayout!,
+                                config: imageConfig,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   Expanded(
@@ -214,6 +239,7 @@ class ReaderTypographicPage extends StatelessWidget {
                         highlightMatches: highlightMatches,
                         chapterIndex: chapterIndex,
                         chapterTitle: chapterTitle,
+                        imageConfig: imageConfig,
                       ),
                     ),
                   ),
@@ -332,6 +358,9 @@ class ReaderTextContent extends StatelessWidget {
   final int? chapterIndex;
   final String? chapterTitle;
 
+  /// [批16] 正文图片渲染配置
+  final ReaderImageRenderConfig imageConfig;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -350,6 +379,7 @@ class ReaderTextContent extends StatelessWidget {
     this.highlightMatches = const [],
     this.chapterIndex,
     this.chapterTitle,
+    this.imageConfig = const ReaderImageRenderConfig(),
   });
 
   @override
@@ -374,10 +404,21 @@ class ReaderTextContent extends StatelessWidget {
           final lineWidgets = <Widget>[];
           for (var lineIdx = 0; lineIdx < para.lines.length; lineIdx++) {
             final line = para.lines[lineIdx];
-            final text = line.words.join('');
             final isLastLine = lineIdx == para.lines.length - 1;
             final isSingleLine = para.lines.length == 1;
 
+            // [批16] 独立图片行：不参与文字对齐/字距，按图片布局渲染
+            if (line.imageLayout != null) {
+              lineWidgets.add(
+                ReaderImageLineWidget(
+                  layout: line.imageLayout!,
+                  config: imageConfig,
+                ),
+              );
+              continue;
+            }
+
+            final text = line.words.join('');
             // 两端对齐：非最后一行且非单行时分配额外字间距
             double extraLetterSpacing = 0.0;
             // [UI-fix v2.0.2 | 2026-08-06] 关闭两端对齐时不再拉伸字距
@@ -409,9 +450,13 @@ class ReaderTextContent extends StatelessWidget {
                   : null,
             );
 
-            // [批34] 命中行改 Text.rich：按章节全局偏移切分 span，只应用
-            // 不影响字体度量的样式（颜色/背景/下划线/删除线）— full-stack-engineer
-            final lineText = highlightMatches.isEmpty || !line.highlightMapped
+            // [批16] 含行内图片的行：占位符替换为 WidgetSpan，文字分段
+            // 继承同一行样式/高亮
+            final lineText = line.inlineImages.isNotEmpty
+                ? _buildInlineImageLine(line, text, lineTextStyle)
+                // [批34] 命中行改 Text.rich：按章节全局偏移切分 span，只应用
+                // 不影响字体度量的样式（颜色/背景/下划线/删除线）— full-stack-engineer
+                : highlightMatches.isEmpty || !line.highlightMapped
                 ? Text(
                     text,
                     style: lineTextStyle,
@@ -434,7 +479,9 @@ class ReaderTextContent extends StatelessWidget {
 
             lineWidgets.add(
               SizedBox(
-                height: fontSize * lineHeight,
+                // [批16] 行高取排版结果（纯文本恒为 fontSize*lineHeight；
+                // 行内小图行按图片显示高度抬升）
+                height: line.height,
                 // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂行：放宽宽度约束至
                 // availableWidth + hangingWidth 避免裁剪，行起点左移 hangingWidth
                 // 使起始引号悬挂进缩进区（对齐原版 TextLine.hangingPunctuation
@@ -456,7 +503,12 @@ class ReaderTextContent extends StatelessWidget {
           // [UI-fix v2.0.1 | 2026-08-06] 段落级长按入口：弹出选区操作面板
           // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）
           // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
-          final paraText = para.lines.map((l) => l.words.join('')).join();
+          final paraText = para.lines
+              .map(
+                (l) =>
+                    l.words.join('').replaceAll(readerImagePlaceholderChar, ''),
+              )
+              .join();
           final reviewCount =
               (para.isParagraphEnd &&
                   para.chapterParagraphIndex > 0 &&
@@ -514,6 +566,70 @@ class ReaderTextContent extends StatelessWidget {
           children: widgets,
         );
       },
+    );
+  }
+
+  /// 构建含行内图片的文本行（占位符 → WidgetSpan）
+  ///
+  /// 排版按占位符宽度断行，渲染用同宽 WidgetSpan 替换，保证行宽与分页
+  /// 结果一致；文字分段沿用同一行样式，高亮按分段偏移映射。
+  Widget _buildInlineImageLine(LineInfo line, String text, TextStyle style) {
+    final spans = <InlineSpan>[];
+    var segmentStart = 0;
+    var imageIndex = 0;
+    for (var i = 0; i < text.length; i++) {
+      if (text.codeUnitAt(i) != 0xFFFC) continue;
+      if (i > segmentStart) {
+        spans.addAll(
+          _inlineTextSpans(line, text.substring(segmentStart, i), segmentStart),
+        );
+      }
+      if (imageIndex < line.inlineImages.length) {
+        final layout = line.inlineImages[imageIndex];
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: ReaderInlineImageWidget(
+              image: layout.image,
+              width: layout.width,
+              height: layout.height,
+              config: imageConfig,
+            ),
+          ),
+        );
+      }
+      imageIndex++;
+      segmentStart = i + 1;
+    }
+    if (segmentStart < text.length) {
+      spans.addAll(
+        _inlineTextSpans(line, text.substring(segmentStart), segmentStart),
+      );
+    }
+    return Text.rich(
+      TextSpan(children: spans),
+      style: style,
+      maxLines: 1,
+      overflow: TextOverflow.clip,
+    );
+  }
+
+  /// 行内图片行的文字分段 span（高亮偏移按分段起点换算）
+  List<InlineSpan> _inlineTextSpans(
+    LineInfo line,
+    String segment,
+    int offsetInLine,
+  ) {
+    if (highlightMatches.isEmpty || !line.highlightMapped) {
+      return [TextSpan(text: segment)];
+    }
+    final chapterStart =
+        line.chapterStartIndex + (offsetInLine - line.highlightSkip);
+    return buildHighlightedLineSpans(
+      text: segment,
+      chapterStart: chapterStart < 0 ? 0 : chapterStart,
+      highlightSkip: 0,
+      matches: highlightMatches,
     );
   }
 }

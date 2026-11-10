@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_strings.dart';
@@ -16,13 +18,17 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../screens/rss_articles_screen.dart' show showRssPhotoViewer;
 import '../../services/book_marking_render.dart';
 import '../../services/bookmark_badge_image_store.dart';
 import '../../services/highlight_match_sync.dart';
+import '../../utils/comic_image_utils.dart';
+import '../../utils/reader_inline_image.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import 'reader_bookmark_policy.dart';
+import 'reader_inline_image_widget.dart';
 import 'reader_page_chrome.dart';
 import 'turn/page_direction.dart';
 import 'turn/reader_turn_view.dart';
@@ -114,6 +120,13 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 段评角标点击
   final ReviewTapCallback? onReviewTap;
 
+  /// [批16] 正文图片样式（书级 `ReadConfig.imageStyle`：
+  /// FULL/TEXT/SINGLE/DEFAULT；空=默认）
+  final String? imageStyle;
+
+  /// [批16] 正文图片点击方式（clickImgWay 五档，默认 "2"=兼容旧版）
+  final String clickImgWay;
+
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
@@ -137,6 +150,8 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.hangingPunctuation = false,
     this.reviewCounts,
     this.onReviewTap,
+    this.imageStyle,
+    this.clickImgWay = '2',
   });
 
   @override
@@ -276,6 +291,25 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 当前分页数据对应的章节标题（与 _paginatedChapterIndex 同帧写入，
   /// 章节切换加载中冻结渲染时标题与正文保持同章，避免新标题配旧正文）
   String? _paginatedChapterTitle;
+
+  // ===== [批16] 正文行内图片混排状态 =====
+
+  /// 分页对应的图片尺寸缓存修订号（异步预测量完成后触发一次重排）
+  int _paginatedImageRevision = -1;
+
+  /// 分页对应的书级 imageStyle（设置变化时重排）
+  String? _paginatedImageStyle;
+
+  /// 首屏标题图布局（与首页容量同参；仅首屏渲染）
+  ReaderImageLayout? _paginatedTitleImageLayout;
+
+  /// 已加载书源缓存（原图下载/imageDecode 用）
+  BookSource? _readerImageSource;
+  String? _readerImageSourceOrigin;
+  Future<void>? _readerImageSourceLoading;
+
+  /// 图片字节加载在途去重
+  final Map<String, Future<Uint8List?>> _imageLoads = {};
 
   /// 当前页索引
   int get currentPageIndex => _currentPageIndex;
@@ -702,9 +736,37 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             sysPaddingKey != _paginatedSysPadding ||
             doublePage != _paginatedDoublePage ||
             widget.useZhLayout != _paginatedUseZhLayout ||
-            widget.hangingPunctuation != _paginatedHangingPunctuation);
+            widget.hangingPunctuation != _paginatedHangingPunctuation ||
+            // [批16] 图片尺寸预测量完成/失败后触发一次重排；书级图片样式
+            // 变化同样重排（纯文本章节两者不变 → 维持既有分页）
+            ReaderImageSizeCache.revision != _paginatedImageRevision ||
+            widget.imageStyle != _paginatedImageStyle);
 
     if (!needRepaginate) return;
+
+    // [批16] 图片尺寸修订号变化且无其它排版变化时，保留当前阅读页
+    // （避免异步测量完成后跳回章首）；其它重排仍沿用既有 currentChapterPos
+    // 定位逻辑，保证纯文本行为零回归。
+    final bool imageOnlyChange =
+        ReaderImageSizeCache.revision != _paginatedImageRevision &&
+        content == _paginatedContent &&
+        chapterIndex == _paginatedChapterIndex &&
+        fontSize == _paginatedFontSize &&
+        lineHeight == _paginatedLineHeight &&
+        spacing == _paginatedParagraphSpacing &&
+        letterSpacing == _paginatedLetterSpacing &&
+        indent == _paginatedIndent &&
+        textBold == _paginatedTextBold &&
+        italic == _paginatedItalic &&
+        justify == _paginatedJustify &&
+        fontFamily == _paginatedFontFamily &&
+        margins == _paginatedMargins &&
+        widget.pageChrome.layoutKey == _paginatedPageChrome &&
+        sysPaddingKey == _paginatedSysPadding &&
+        doublePage == _paginatedDoublePage &&
+        widget.useZhLayout == _paginatedUseZhLayout &&
+        widget.hangingPunctuation == _paginatedHangingPunctuation &&
+        widget.imageStyle == _paginatedImageStyle;
 
     // 计算可用尺寸（减去配置的页面边距）
     // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 去掉 ×0.95 缩减：测量已与渲染
@@ -755,11 +817,16 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // [UI_SYNC_REFACTOR S6 修] 抽为 _computeFirstPageHeight：相邻章预载需按
     // 「目标章标题」计算首页容量（与落地实际分页一致，防切换重排闪动）— Qoder
     final chapterTitle = state.currentChapter?.title;
+    // [批16] 章节基址：图片相对地址绝对化（chapter.baseUrl → url → bookUrl）
+    final chapter = state.currentChapter;
+    final imageBaseUrl = _chapterImageBaseUrl(state, chapter);
     final firstPageHeight = _computeFirstPageHeight(
       state,
       availableHeight,
       availableWidth,
       chapterTitle,
+      titleImageUrl: chapter?.imgUrl,
+      titleImageBaseUrl: imageBaseUrl,
     );
 
     final config = ParagraphConfig(
@@ -785,6 +852,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       // 继承 DefaultTextStyle 并应用系统文字缩放，测量侧同参注入 — Qoder
       baseStyle: baseStyle,
       textScaler: textScaler,
+      // [批16] 正文行内图片：书级样式与章节基址传入排版引擎
+      imageStyle: widget.imageStyle,
+      imageBaseUrl: imageBaseUrl,
     );
 
     // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 记录分页参数（相邻章预载复用
@@ -835,11 +905,29 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedDoublePage = doublePage;
     _paginatedUseZhLayout = widget.useZhLayout;
     _paginatedHangingPunctuation = widget.hangingPunctuation;
+    // [批16] 记录图片尺寸修订号/图片样式/首屏标题图布局（渲染与首页容量
+    // 同源；纯文本章节 titleImage=null、不产生额外占位）
+    _paginatedImageRevision = ReaderImageSizeCache.revision;
+    _paginatedImageStyle = widget.imageStyle;
+    _paginatedTitleImageLayout = _buildTitleImageLayout(
+      imgUrl: chapter?.imgUrl,
+      baseUrl: imageBaseUrl,
+      availableWidth: availableWidth,
+      availableHeight: availableHeight,
+      fontSize: fontSize,
+      lineHeight: lineHeight,
+    );
     // [UI_SYNC_REFACTOR T3 修] 分页后按 currentChapterPos 定位：
     // -1 = 哨兵跳末页（prevChapter 场景）；其他值 = 跳到对应页
     final notifier = ref.read(readerNotifierProvider.notifier);
     final chapterPos = ref.read(readerNotifierProvider).currentChapterPos;
-    if (chapterPos == -1 && _paginatedPages.isNotEmpty) {
+    if (imageOnlyChange && _paginatedPages.isNotEmpty) {
+      // 图片尺寸异步就绪：保留当前页（clamp 到新页数）
+      _currentPageIndex = _currentPageIndex.clamp(
+        0,
+        _paginatedPages.length - 1,
+      );
+    } else if (chapterPos == -1 && _paginatedPages.isNotEmpty) {
       // 哨兵：跳到本章最后一页
       _currentPageIndex = _paginatedPages.length - 1;
       Future(() => notifier.resetChapterPos());
@@ -853,6 +941,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 注：本方法在 build 阶段调用，不可同步修改 provider（会触发
     // "modify a provider while the widget tree was building" 断言），延迟到下一帧
     Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
+
+    // [批16] 图片尺寸异步预测量：未命中尺寸缓存时发起下载/解码，完成后
+    // revision 变化触发一次重排（测量失败写占位标记，不重试）。
+    _measureReaderImages(content, chapter, imageBaseUrl, state.currentBook);
 
     // 章边界预载（页末预载下一章首屏 / 页首预载上一章末屏）
     _maybePreloadAdjacent(state, eager: true);
@@ -1253,8 +1345,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     ReaderState state,
     double availableHeight,
     double availableWidth,
-    String? chapterTitle,
-  ) {
+    String? chapterTitle, {
+    String? titleImageUrl,
+    String titleImageBaseUrl = '',
+  }) {
     var firstPageHeight = availableHeight;
     if (chapterTitle == null) return firstPageHeight;
     final chrome = widget.pageChrome;
@@ -1284,11 +1378,240 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           chrome.titleTopSpacing -
           chrome.titleBottomSpacing;
       titlePainter.dispose();
+      // [批16] 章节标题图高度（与渲染侧同一布局函数；未知尺寸用占位）
+      final titleImageLayout = _buildTitleImageLayout(
+        imgUrl: titleImageUrl,
+        baseUrl: titleImageBaseUrl,
+        availableWidth: availableWidth,
+        availableHeight: availableHeight,
+        fontSize: state.fontSize,
+        lineHeight: state.lineHeight,
+      );
+      if (titleImageLayout != null) {
+        firstPageHeight -= titleImageLayout.height + 6;
+      }
     }
     // 极端小窗口兼底：首页至少容纳一行正文
     final minHeight = state.fontSize * state.lineHeight;
     if (firstPageHeight < minHeight) firstPageHeight = minHeight;
     return firstPageHeight;
+  }
+
+  /// [批16] 章节图片绝对化基址：chapter.baseUrl → chapter.url → bookUrl
+  String _chapterImageBaseUrl(ReaderState state, BookChapter? chapter) {
+    final base = chapter?.baseUrl.trim() ?? '';
+    if (base.isNotEmpty) return base;
+    final url = chapter?.url.trim() ?? '';
+    if (url.isNotEmpty) return url;
+    return state.currentBook?.bookUrl ?? '';
+  }
+
+  /// [批16] 章节标题图布局（首屏容量计算与渲染共用，尺寸未知用占位高度）
+  ReaderImageLayout? _buildTitleImageLayout({
+    required String? imgUrl,
+    required String baseUrl,
+    required double availableWidth,
+    required double availableHeight,
+    required double fontSize,
+    required double lineHeight,
+  }) {
+    final image = readerChapterTitleImage(
+      imgUrl: imgUrl,
+      chapterBaseUrl: baseUrl,
+      bookUrl: ref.read(readerNotifierProvider).currentBook?.bookUrl ?? '',
+    );
+    if (image == null) return null;
+    return resolveReaderImageLayout(
+      image: image,
+      availableWidth: availableWidth,
+      maxHeight: availableHeight,
+      textLineHeight: fontSize * lineHeight,
+      inlineSlotWidth: fontSize * 0.5,
+      bookImageStyle: widget.imageStyle,
+      // 标题图始终按独立块渲染（标题行不做行内 WidgetSpan 混排）
+      forceStandalone: true,
+    );
+  }
+
+  /// [批16] 正文图片渲染配置（字节加载/点击档位/预览回调）
+  ReaderImageRenderConfig _imageRenderConfig(ReaderState state) {
+    final book = state.currentBook;
+    final onlineText =
+        book != null &&
+        !BookType.isLocalBook(book) &&
+        (book.bookType & BookType.text) != 0;
+    return ReaderImageRenderConfig(
+      loader: _loadReaderImageBytes,
+      clickImgWay: widget.clickImgWay,
+      onlineText: onlineText,
+      onPreview: _previewReaderImage,
+    );
+  }
+
+  /// [批16] 打开正文图片预览（复用既有全屏查看器，复合 headers 透传）
+  void _previewReaderImage(ReaderInlineImage image) {
+    if (!mounted) return;
+    showRssPhotoViewer(
+      context,
+      url: stripCompositeImageUrl(image.options.url),
+      headers: image.options.headers,
+    );
+  }
+
+  /// [批16] 下载/解码正文图片字节（书源 imageDecode 走 FFI，本地/无源走
+  /// HTTP；结果进 LRU 缓存供渲染与尺寸测量共用）。
+  Future<Uint8List?> _loadReaderImageBytes(ReaderInlineImage image) {
+    final book = ref.read(readerNotifierProvider).currentBook;
+    final origin = book?.origin ?? '';
+    final cacheKey = ReaderImageBytesCache.keyOf(origin, image.rawSrc);
+    final cacheHit = ReaderImageBytesCache.get(origin, image.rawSrc);
+    if (cacheHit != null) return Future.value(cacheHit);
+    final inflight = _imageLoads[cacheKey];
+    if (inflight != null) return inflight;
+    final future = _fetchReaderImageBytes(image, origin);
+    _imageLoads[cacheKey] = future;
+    return future.whenComplete(() {
+      _imageLoads.remove(cacheKey);
+    });
+  }
+
+  Future<Uint8List?> _fetchReaderImageBytes(
+    ReaderInlineImage image,
+    String origin,
+  ) async {
+    try {
+      final uri = Uri.tryParse(image.options.url);
+      if (uri == null) return null;
+      // 本地文件（file:// / Windows 盘符 / POSIX 绝对路径）直接读盘
+      final isWindowsPath = RegExp(
+        r'^[A-Za-z]:[\\/]',
+      ).hasMatch(image.options.url);
+      final isLocalPath =
+          uri.scheme == 'file' ||
+          isWindowsPath ||
+          (uri.scheme.isEmpty && image.options.url.startsWith('/'));
+      if (isLocalPath) {
+        final path = uri.scheme == 'file'
+            ? uri.toFilePath()
+            : image.options.url;
+        final file = File(path);
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
+          return bytes;
+        }
+        return null;
+      }
+      // 在线书：优先书源 FFI（含 imageDecode / Referer / Cookie 链路）
+      if (origin.trim().isNotEmpty) {
+        await _ensureReaderImageSource(origin);
+        final source = _readerImageSource;
+        if (source != null) {
+          final json = await ref
+              .read(bookApiProvider)
+              .fetchImageWithDecode(image.rawSrc, jsonEncode(source.toJson()));
+          final decoded = jsonDecode(json);
+          final b64 = decoded is Map ? decoded['base64'] as String? ?? '' : '';
+          if (b64.isNotEmpty) {
+            final bytes = base64Decode(b64);
+            if (looksLikeImageBytes(bytes)) {
+              ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
+              return bytes;
+            }
+          }
+          return null;
+        }
+      }
+      // 无书源/本地书兜底：普通 HTTP GET（复合 headers 透传）
+      final response = await http.get(uri, headers: image.options.headers);
+      if (response.statusCode != 200) return null;
+      final bytes = response.bodyBytes;
+      if (!looksLikeImageBytes(bytes)) return null;
+      ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _ensureReaderImageSource(String origin) {
+    if (_readerImageSourceOrigin == origin) {
+      return _readerImageSourceLoading ?? Future.value();
+    }
+    _readerImageSourceOrigin = origin;
+    _readerImageSource = null;
+    final loading = () async {
+      try {
+        final sources = await ref.read(bookApiProvider).getBookSources();
+        for (final source in sources) {
+          if (source.bookSourceUrl == origin) {
+            _readerImageSource = source;
+            return;
+          }
+        }
+      } catch (_) {
+        // 书源不可用：回落 HTTP 直连
+      }
+    }();
+    _readerImageSourceLoading = loading;
+    return loading;
+  }
+
+  /// [批16] 异步预测量本章图片尺寸（含标题图）
+  ///
+  /// 未命中缓存才发起；失败写占位标记（revision 递增一次）避免重复
+  /// 下载与重排。完成后 setState 触发一次重排（渲染期间保留占位行高）。
+  void _measureReaderImages(
+    String content,
+    BookChapter? chapter,
+    String baseUrl,
+    Book? book,
+  ) {
+    final images = <ReaderInlineImage>[
+      ...collectReaderInlineImages(content, baseUrl: baseUrl),
+    ];
+    final titleImage = readerChapterTitleImage(
+      imgUrl: chapter?.imgUrl,
+      chapterBaseUrl: baseUrl,
+      bookUrl: book?.bookUrl ?? '',
+    );
+    if (titleImage != null) images.add(titleImage);
+
+    final pending = <ReaderInlineImage>[];
+    final seen = <String>{};
+    for (final image in images) {
+      if (!seen.add(image.rawSrc)) continue;
+      if (ReaderImageSizeCache.wasAttempted(image.rawSrc)) continue;
+      ReaderImageSizeCache.markAttempted(image.rawSrc);
+      pending.add(image);
+    }
+    if (pending.isEmpty) return;
+
+    final bookUrl = book?.bookUrl ?? '';
+    final origin = book?.origin ?? '';
+    unawaited(() async {
+      var changed = false;
+      // 串行测量：避免一章多图同时触发大量下载（首屏优先，后续逐个补）
+      for (final image in pending) {
+        if (!mounted) return;
+        final live = ref.read(readerNotifierProvider);
+        if ((live.currentBook?.bookUrl ?? '') != bookUrl ||
+            (live.currentBook?.origin ?? '') != origin) {
+          return; // 已换书/换源，作废
+        }
+        final bytes = await _loadReaderImageBytes(image);
+        final size = bytes == null ? null : await decodeReaderImageSize(bytes);
+        if (size == null) {
+          ReaderImageSizeCache.putFailure(image.rawSrc);
+        } else {
+          ReaderImageSizeCache.put(image.rawSrc, size);
+        }
+        changed = true;
+      }
+      if (changed && mounted) {
+        setState(() {});
+      }
+    }());
   }
 
   /// 章边界预载触发：末屏预载下一章首屏、首屏预载上一章末屏
@@ -1349,15 +1672,22 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       if (content.trim().isEmpty) {
         return;
       }
-      final engine = ParagraphLayoutEngine(config: config, context: context);
-      // 按「目标章标题」计算首页容量，与落地实际分页严格同参
+      final targetChapter = state.chapters[target];
+      final targetBaseUrl = _chapterImageBaseUrl(state, targetChapter);
       final previewFirstPageHeight = _computeFirstPageHeight(
         state,
         availableHeight,
         availableWidth,
-        state.chapters[target].title,
+        targetChapter.title,
+        titleImageUrl: targetChapter.imgUrl,
+        titleImageBaseUrl: targetBaseUrl,
       );
-      final pages = engine.paginateChapter(
+      // 邻章正文图片须按目标章基址绝对化（当前章基址可能不同）
+      final previewEngine = ParagraphLayoutEngine(
+        config: config.copyWith(imageBaseUrl: targetBaseUrl),
+        context: context,
+      );
+      final pages = previewEngine.paginateChapter(
         content,
         availableWidth,
         availableHeight,
@@ -1368,13 +1698,22 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       }
       final info = delta > 0 ? pages.first : pages.last;
       final pageIndex = delta > 0 ? 0 : pages.length - 1;
-      final title = state.chapters[target].title;
+      final title = targetChapter.title;
+      final previewTitleImageLayout = _buildTitleImageLayout(
+        imgUrl: targetChapter.imgUrl,
+        baseUrl: targetBaseUrl,
+        availableWidth: availableWidth,
+        availableHeight: availableHeight,
+        fontSize: state.fontSize,
+        lineHeight: state.lineHeight,
+      );
       final page = _buildPreviewPage(
         state,
         info,
         pageIndex,
         pages.length,
         title,
+        titleImageLayout: previewTitleImageLayout,
       );
       if (!mounted) return;
       setState(() {
@@ -1405,8 +1744,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     PageInfo info,
     int pageIndex,
     int totalPages,
-    String title,
-  ) {
+    String title, {
+    ReaderImageLayout? titleImageLayout,
+  }) {
     final page = ReaderTypographicPage(
       pageInfo: info,
       pageIndex: pageIndex,
@@ -1425,6 +1765,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       fontWeight: _fontWeightFor(widget.textBold),
       fontStyle: _fontStyleFor(widget.italic),
       selectText: false,
+      imageConfig: _imageRenderConfig(state),
+      titleImageLayout: titleImageLayout,
       contentPadding: EdgeInsets.only(
         left: widget.marginLeft,
         right: widget.marginRight,
@@ -1505,6 +1847,20 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   Widget _buildScrollContent(ReaderState state) {
     // [UI-fix v2.0.4 | 2026-08-08] 文字色经自定义配色解析 — Qoder
     final textColor = _resolveTextColor(state);
+    final imageConfig = _imageRenderConfig(state);
+    // [批16] 滚动模式标题图：按正文可用宽解析（无分页容量约束）
+    final scrollBodyWidth =
+        MediaQuery.of(context).size.width -
+        widget.marginLeft -
+        widget.marginRight;
+    final scrollTitleImageLayout = _buildTitleImageLayout(
+      imgUrl: state.currentChapter?.imgUrl,
+      baseUrl: _chapterImageBaseUrl(state, state.currentChapter),
+      availableWidth: scrollBodyWidth,
+      availableHeight: MediaQuery.of(context).size.height,
+      fontSize: state.fontSize,
+      lineHeight: state.lineHeight,
+    );
 
     return _contentViewport(
       context,
@@ -1523,21 +1879,34 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             if (state.currentChapter != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 20),
-                child: Text(
-                  state.currentChapter!.title,
-                  style: TextStyle(
-                    fontSize: state.fontSize + 4,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                    // [A4 滚动模式标题字体 | full-stack-engineer] 标题
-                    // fontFamily 接 effectiveTitleFontFamily 单源（与
-                    // 分页模式渲染侧同参；空=跟随正文字体）。滚动模式
-                    // 不分页、无测量侧，故仅渲染侧取值。
-                    fontFamily: effectiveTitleFontFamily(
-                      widget.pageChrome,
-                      _fontFamily,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      state.currentChapter!.title,
+                      style: TextStyle(
+                        fontSize: state.fontSize + 4,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                        // [A4 滚动模式标题字体 | full-stack-engineer] 标题
+                        // fontFamily 接 effectiveTitleFontFamily 单源（与
+                        // 分页模式渲染侧同参；空=跟随正文字体）。滚动模式
+                        // 不分页、无测量侧，故仅渲染侧取值。
+                        fontFamily: effectiveTitleFontFamily(
+                          widget.pageChrome,
+                          _fontFamily,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (scrollTitleImageLayout != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: ReaderImageLineWidget(
+                          layout: scrollTitleImageLayout,
+                          config: imageConfig,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             // 滚动模式：渲染所有分页内容（使用排版引擎的分行结果）
@@ -1565,6 +1934,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   selectText: widget.selectText,
                   reviewCounts: widget.reviewCounts,
                   onReviewTap: widget.onReviewTap,
+                  imageConfig: imageConfig,
                 )
             else if (state.chapterContent.isNotEmpty)
               ReaderParagraphs(
@@ -1686,6 +2056,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       showBookmarkBadge: pageBookmark != null,
       bookmarkBadgeImage: advCfg.bookmarkBadgeImage,
       bookmarkBadgeSize: advCfg.bookmarkBadgeSize,
+      // [批16] 正文行内图片与章节标题图（仅首屏）
+      imageConfig: _imageRenderConfig(state),
+      titleImageLayout: safeIndex == 0 ? _paginatedTitleImageLayout : null,
     );
   }
 

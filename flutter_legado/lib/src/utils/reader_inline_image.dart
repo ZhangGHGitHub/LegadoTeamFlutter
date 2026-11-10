@@ -1,0 +1,566 @@
+// 正文行内图片混排（批16）——纯逻辑层
+//
+// 对齐上游/参考版语义：
+// - 上游 `HtmlFormatter.kt:53-87`：正文净化只保留 `<img>`，懒加载属性转
+//   src，相对地址按抓取页 URL 绝对化，复合 `,{json}` 参数原样保留；
+// - 上游 `TextChapterLayout.kt:456-600`：逐段匹配 img，读 `style`/`width`/
+//   `click`；`:630-712` 大图独立变高 ImageColumn；`:1573-1585` <80px 小图
+//   落行内占位符；`:510-528` 宽度支持 %/px、居中/左右；`:326-380` 标题图；
+// - 参考版 `ReaderChapterSource.kt:132`（拆 inline Image）、
+//   `ReaderChapterBlockMeasurer.kt:221-266`（inline/standalone 与尺寸失败
+//   行高占位）、`ReaderPaginator.kt:349-391`（缩放/居中/单页）、
+//   `LegacyReaderImageOptionsResolver.kt:20-45`（click/width/style）。
+//
+// 本文件只做分段、URL 绝对化、宽度/尺寸解析与显示布局决策，不依赖渲染，
+// 供排版引擎与阅读器渲染层共用，便于单测覆盖。— 全栈工程师 + UI
+
+import 'dart:collection';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+
+import 'click_img_way.dart';
+import 'comic_image_utils.dart';
+
+/// 行内图片占位字符（U+FFFC OBJECT REPLACEMENT CHARACTER）
+///
+/// 与上游 `srcReplaceChar` 等价：排版按该字符宽度占位，渲染时替换为
+/// WidgetSpan 图片。必须是单个 UTF-16 code unit，便于行内偏移映射。
+const String readerImagePlaceholderChar = '\uFFFC';
+
+/// 小于该尺寸（宽与高同时）按行内小图处理（对齐上游 `imgSize.width < 80
+/// && imgSize.height < 80`）。
+const double readerImageInlineThreshold = 80.0;
+
+/// 图片在行内的显示对齐方式
+enum ReaderImageAlignment { left, center, right }
+
+/// 图片行的排版位置
+enum ReaderImagePlacement {
+  /// 行内：与文字同一行，渲染为 WidgetSpan 占位
+  inline,
+
+  /// 独立变高行：独占一行（可多段文字之间）
+  standalone,
+}
+
+/// 图片固有尺寸（解码像素），或失败标记
+@immutable
+class ReaderImageSize {
+  final double width;
+  final double height;
+
+  /// 测量失败/图片不可用（布局仍按占位高度，避免分页丢字）
+  final bool failed;
+
+  const ReaderImageSize(this.width, this.height) : failed = false;
+
+  const ReaderImageSize.failed() : width = 0, height = 0, failed = true;
+
+  bool get isValid => !failed && width > 0 && height > 0;
+}
+
+/// 图片尺寸缓存（异步预测量结果，按图片原始 src 去重）
+///
+/// [revision] 在每次写入后递增，阅读页据此触发一次重排；测量失败也写入
+/// 失败标记（同样递增一次），避免对同一 URL 反复重试与无限重排。
+class ReaderImageSizeCache {
+  ReaderImageSizeCache._();
+
+  static final Map<String, ReaderImageSize> _sizes = {};
+  static final Set<String> _attempted = {};
+  static int _revision = 0;
+
+  /// 缓存修订号（每次 put 递增）
+  static int get revision => _revision;
+
+  static String keyOf(String rawSrc) => rawSrc.trim();
+
+  static ReaderImageSize? lookup(String rawSrc) => _sizes[keyOf(rawSrc)];
+
+  static bool wasAttempted(String rawSrc) => _attempted.contains(keyOf(rawSrc));
+
+  /// 标记已发起过测量（失败不重试；换书场景由阅读页生命周期自然隔离）
+  static void markAttempted(String rawSrc) => _attempted.add(keyOf(rawSrc));
+
+  static void put(String rawSrc, ReaderImageSize size) {
+    _sizes[keyOf(rawSrc)] = size;
+    _revision++;
+  }
+
+  static void putFailure(String rawSrc) =>
+      put(rawSrc, const ReaderImageSize.failed());
+
+  @visibleForTesting
+  static void clearForTest() {
+    _sizes.clear();
+    _attempted.clear();
+    _revision = 0;
+  }
+}
+
+/// 正文图片字节缓存（LRU，渲染与尺寸预测量共用）
+///
+/// 键 = 书源地址 + 原始 src（复合 `,{json}` 保留），避免不同书源同 URL
+/// 但 imageDecode 不同的密文串用。上限控制内存占用，超限淘汰最久未用。
+class ReaderImageBytesCache {
+  ReaderImageBytesCache._();
+
+  static const int maxEntries = 32;
+  static final LinkedHashMap<String, Uint8List> _cache =
+      LinkedHashMap<String, Uint8List>();
+
+  static String keyOf(String origin, String rawSrc) =>
+      '$origin\u0000${rawSrc.trim()}';
+
+  static Uint8List? get(String origin, String rawSrc) {
+    final key = keyOf(origin, rawSrc);
+    final hit = _cache.remove(key);
+    if (hit == null) return null;
+    _cache[key] = hit; // 命中移到队尾（LRU）
+    return hit;
+  }
+
+  static void put(String origin, String rawSrc, Uint8List bytes) {
+    if (bytes.isEmpty) return;
+    final key = keyOf(origin, rawSrc);
+    _cache.remove(key);
+    _cache[key] = bytes;
+    while (_cache.length > maxEntries) {
+      _cache.remove(_cache.keys.first);
+    }
+  }
+
+  @visibleForTesting
+  static void clearForTest() => _cache.clear();
+}
+
+/// 正文图片节点（URL 已绝对化，保留 `,{json}` 复合参数）
+@immutable
+class ReaderInlineImage {
+  /// 绝对化后的完整 src（含 `,{json}` 后缀；FFI 下载需完整串）
+  final String rawSrc;
+
+  /// 复合参数解析结果（[ClickImgUrlOptions.url] 为绝对化后的纯 URL）
+  final ClickImgUrlOptions options;
+
+  const ReaderInlineImage({required this.rawSrc, required this.options});
+
+  String get url => options.url;
+
+  String? get style => options.style;
+
+  String? get widthSpec => options.width;
+
+  String? get click => options.click;
+
+  Map<String, String> get headers => options.headers;
+
+  @override
+  String toString() => 'ReaderInlineImage(url: $url, style: $style)';
+}
+
+/// 一个段落的排版 run
+sealed class ReaderParagraphRun {
+  const ReaderParagraphRun();
+}
+
+/// 纯文本 run
+@immutable
+class ReaderTextRun extends ReaderParagraphRun {
+  final String text;
+
+  /// run 在原始段落文本中的起止偏移（供高亮/选区映射）
+  final int start;
+  final int end;
+
+  const ReaderTextRun(this.text, {this.start = 0, this.end = 0});
+
+  @override
+  String toString() => 'ReaderTextRun(${text.length} chars)';
+}
+
+/// 图片 run
+@immutable
+class ReaderImageRun extends ReaderParagraphRun {
+  final ReaderInlineImage image;
+
+  /// 整个 `<img ...>` 标签在原始段落文本中的起止偏移
+  final int start;
+  final int end;
+
+  const ReaderImageRun(this.image, {this.start = 0, this.end = 0});
+
+  @override
+  String toString() => 'ReaderImageRun(${image.url})';
+}
+
+/// 图片显示布局（排版/渲染共用的确定结果）
+@immutable
+class ReaderImageLayout {
+  final ReaderInlineImage image;
+  final ReaderImagePlacement placement;
+
+  /// 显示宽高（已按可用宽/页高缩放，宽高比与固有尺寸一致）
+  final double width;
+  final double height;
+
+  final ReaderImageAlignment alignment;
+
+  /// 该图片行是否强制另起一页（SINGLE 样式，对齐上游 prepareNextPageIfNeed）
+  final bool pageBreakBefore;
+  final bool pageBreakAfter;
+
+  /// 固有尺寸未知或测量失败：行高为占位高度
+  final bool placeholder;
+
+  /// 是否为行内小图（渲染为 WidgetSpan 占位）
+  bool get isInline => placement == ReaderImagePlacement.inline;
+
+  const ReaderImageLayout({
+    required this.image,
+    required this.placement,
+    required this.width,
+    required this.height,
+    this.alignment = ReaderImageAlignment.center,
+    this.pageBreakBefore = false,
+    this.pageBreakAfter = false,
+    this.placeholder = false,
+  });
+
+  ReaderImageLayout copyWith({
+    ReaderImagePlacement? placement,
+    double? width,
+    double? height,
+    ReaderImageAlignment? alignment,
+    bool? pageBreakBefore,
+    bool? pageBreakAfter,
+    bool? placeholder,
+  }) {
+    return ReaderImageLayout(
+      image: image,
+      placement: placement ?? this.placement,
+      width: width ?? this.width,
+      height: height ?? this.height,
+      alignment: alignment ?? this.alignment,
+      pageBreakBefore: pageBreakBefore ?? this.pageBreakBefore,
+      pageBreakAfter: pageBreakAfter ?? this.pageBreakAfter,
+      placeholder: placeholder ?? this.placeholder,
+    );
+  }
+}
+
+/// URL 绝对化（对齐上游 `NetworkUtils.getAbsoluteURL`）：
+/// - 已带协议（http/https/data/file/content/cbz）原样返回；
+/// - `//host/path` 继承 baseUrl 协议；
+/// - `/path`、`../`、相对路径用 baseUrl resolve。
+///
+/// baseUrl 为空或非法时保持相对地址（fail-open，不阻断排版）。
+String resolveReaderImageUrl(String url, String baseUrl) {
+  final raw = url.trim();
+  if (raw.isEmpty) return raw;
+  final lower = raw.toLowerCase();
+  if (lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('data:') ||
+      lower.startsWith('file:') ||
+      lower.startsWith('content:') ||
+      lower.startsWith('cbz://')) {
+    return raw;
+  }
+  final base = baseUrl.trim();
+  if (base.isEmpty) return raw;
+  // 本地文件路径基址（Windows 盘符 / POSIX 绝对路径）：按目录拼接
+  final isWindowsPath = RegExp(r'^[A-Za-z]:[\\/]').hasMatch(base);
+  if (isWindowsPath || base.startsWith('/')) {
+    if (raw.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(raw)) {
+      return raw;
+    }
+    final sep = math.max(base.lastIndexOf('/'), base.lastIndexOf('\\'));
+    if (sep >= 0) return '${base.substring(0, sep + 1)}$raw';
+    return raw;
+  }
+  final baseUri = Uri.tryParse(base);
+  if (baseUri == null || baseUri.scheme.isEmpty) return raw;
+  try {
+    if (raw.startsWith('//')) return '${baseUri.scheme}:$raw';
+    return baseUri.resolve(raw).toString();
+  } catch (_) {
+    return raw;
+  }
+}
+
+/// 把复合 src 中的纯 URL 替换为绝对化结果，保留 `,{json}` 后缀
+String rebuildReaderImageSrc(String original, String resolvedUrl) {
+  final raw = original.trim();
+  if (raw.isEmpty) return resolvedUrl;
+  final separator = RegExp(r'\s*,\s*(?=\{)').firstMatch(raw);
+  final originalUrl = separator == null
+      ? raw
+      : raw.substring(0, separator.start).trim();
+  if (originalUrl == resolvedUrl) return raw;
+  final idx = raw.indexOf(originalUrl);
+  if (idx < 0) return resolvedUrl;
+  return raw.replaceRange(idx, idx + originalUrl.length, resolvedUrl);
+}
+
+/// 解析正文中的图片 src 为 [ReaderInlineImage]
+///
+/// [rawSrc] 可以是 `<img>` 的 src 值（含 `,{json}`）或章节 `imgUrl`。
+/// [baseUrl] 为正文抓取页/章节地址，用于相对地址绝对化。
+ReaderInlineImage? parseReaderInlineImage(
+  String? rawSrc, {
+  String baseUrl = '',
+}) {
+  final raw = rawSrc?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  final options = parseClickImgUrlOptions(raw);
+  if (options.url.trim().isEmpty) return null;
+  final resolvedUrl = resolveReaderImageUrl(options.url, baseUrl);
+  return ReaderInlineImage(
+    rawSrc: rebuildReaderImageSrc(raw, resolvedUrl),
+    options: ClickImgUrlOptions(
+      url: resolvedUrl,
+      click: options.click,
+      js: options.js,
+      headers: options.headers,
+      style: options.style,
+      width: options.width,
+    ),
+  );
+}
+
+/// 解析图片显式宽度（`50%` / `120px` / 裸数值 `120`）
+///
+/// 返回 null 表示未指定或非法（调用方回落默认布局）。
+double? parseReaderImageWidth(String? spec, double availableWidth) {
+  final raw = spec?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  if (raw.endsWith('%')) {
+    final percent = double.tryParse(raw.substring(0, raw.length - 1).trim());
+    if (percent == null || percent <= 0) return null;
+    return availableWidth * percent / 100.0;
+  }
+  final numeric = raw.toLowerCase().endsWith('px')
+      ? raw.substring(0, raw.length - 2).trim()
+      : raw;
+  final value = double.tryParse(numeric);
+  if (value == null || value <= 0) return null;
+  return value;
+}
+
+/// 单张图片的占位高度（测量未完成/失败时用）
+///
+/// 按 16:9 估计并限制在页面高度内：既不让占位过矮导致加载后大幅跳动，
+/// 也保证分页不会因占位过高丢字。
+double readerImagePlaceholderHeight(double availableWidth, double maxHeight) {
+  final byWidth = availableWidth * 9.0 / 16.0;
+  if (maxHeight.isFinite && maxHeight > 0) {
+    return math.min(byWidth, maxHeight);
+  }
+  return byWidth;
+}
+
+/// 解析并决定图片的显示布局
+///
+/// 规则对齐上游：
+/// 1. 显式 `style` 优先：`text`/`TEXT` 行内；`FULL`/`SINGLE`/`LEFT`/
+///    `RIGHT`/`CENTER` 独立行；
+/// 2. 无显式 style 时：固有宽高均 <80px → 行内（上游小图占位符）；
+/// 3. 否则按书级 `imageStyle`：`TEXT` 全部行内，其余独立行；
+/// 4. 宽度：显式 `width`（%/px/裸数值）优先；`FULL`/`SINGLE` 铺满可用宽；
+///    默认样式保留固有宽度（不超过可用宽）；
+/// 5. 高度按宽高比缩放，独立图片不超过 [maxHeight]；
+/// 6. 固有尺寸未知/失败 → 占位尺寸，[ReaderImageLayout.placeholder]=true。
+ReaderImageLayout resolveReaderImageLayout({
+  required ReaderInlineImage image,
+  required double availableWidth,
+  required double maxHeight,
+  required double textLineHeight,
+  required double inlineSlotWidth,
+  String? bookImageStyle,
+  bool forceStandalone = false,
+}) {
+  final widthLimit = math.max(1.0, availableWidth);
+  final heightLimit = maxHeight.isFinite && maxHeight > 0
+      ? maxHeight
+      : double.infinity;
+  final explicitStyle = (image.style ?? '').trim().toUpperCase();
+  final bookStyle = (bookImageStyle ?? '').trim().toUpperCase();
+  final size = ReaderImageSizeCache.lookup(image.rawSrc);
+  final known = size != null && size.isValid;
+  final failed = size != null && size.failed;
+
+  var inline = false;
+  if (!forceStandalone) {
+    if (explicitStyle.isEmpty) {
+      if (known &&
+          size.width < readerImageInlineThreshold &&
+          size.height < readerImageInlineThreshold) {
+        inline = true;
+      } else if (bookStyle == 'TEXT') {
+        inline = true;
+      }
+    } else if (explicitStyle == 'TEXT') {
+      inline = true;
+    }
+  }
+
+  if (inline) {
+    final slot = inlineSlotWidth > 0 ? inlineSlotWidth : textLineHeight;
+    // 行内图只占一个占位符宽度（与上游 ImageColumn 以字符列宽绘制一致），
+    // 显式 width 仅允许在小于占位宽时收窄，绝不超宽破坏断行结果。
+    final explicitWidth = parseReaderImageWidth(image.widthSpec, widthLimit);
+    var width = explicitWidth != null && explicitWidth < slot
+        ? explicitWidth
+        : slot;
+    width = width.clamp(1.0, widthLimit);
+    var height = known ? width * size.height / size.width : textLineHeight;
+    if (known && height > heightLimit) {
+      height = heightLimit;
+      width = height * size.width / size.height;
+    }
+    // 行内图不独占：最大不超过可用宽；高度随宽高比（行高由排版侧取
+    // max(文字行高, 图片高)），不额外做单页裁切。
+    return ReaderImageLayout(
+      image: image,
+      placement: ReaderImagePlacement.inline,
+      width: width,
+      height: math.max(1.0, height),
+      placeholder: !known || failed,
+    );
+  }
+
+  final explicitWidth = parseReaderImageWidth(image.widthSpec, widthLimit);
+  double preferredWidth;
+  if (explicitWidth != null) {
+    preferredWidth = explicitWidth;
+  } else if (explicitStyle == 'FULL' ||
+      explicitStyle == 'SINGLE' ||
+      explicitStyle == 'LEFT' ||
+      explicitStyle == 'RIGHT' ||
+      explicitStyle == 'CENTER' ||
+      bookStyle == 'FULL' ||
+      bookStyle == 'SINGLE') {
+    preferredWidth = widthLimit;
+  } else if (known) {
+    preferredWidth = math.min(size.width, widthLimit);
+  } else {
+    preferredWidth = widthLimit;
+  }
+  var width = preferredWidth.clamp(1.0, widthLimit);
+  var height = known
+      ? width * size.height / size.width
+      : readerImagePlaceholderHeight(widthLimit, heightLimit);
+  if (known && height > heightLimit) {
+    height = heightLimit;
+    width = height * size.width / size.height;
+  }
+  // 防止除零后宽度异常
+  if (!width.isFinite || width <= 0) width = widthLimit;
+  if (!height.isFinite || height <= 0) {
+    height = readerImagePlaceholderHeight(widthLimit, heightLimit);
+  }
+
+  final align = switch (explicitStyle) {
+    'LEFT' => ReaderImageAlignment.left,
+    'RIGHT' => ReaderImageAlignment.right,
+    _ => ReaderImageAlignment.center,
+  };
+  final single =
+      explicitStyle == 'SINGLE' ||
+      (explicitStyle.isEmpty && bookStyle == 'SINGLE');
+
+  return ReaderImageLayout(
+    image: image,
+    placement: ReaderImagePlacement.standalone,
+    width: width,
+    height: height,
+    alignment: align,
+    pageBreakBefore: single,
+    pageBreakAfter: single,
+    placeholder: !known || failed,
+  );
+}
+
+/// 把段落拆成 text/image run（img 正则与 `comic_image_utils.dart:56-59`
+/// 完全一致，保留复合 `,{json}` 参数）
+///
+/// 文本 run 按原文顺序拼接后 = 原段落移除全部 `<img>` 标签后的文本（不
+/// 插入/吞掉任何非标签字符），该性质由单测钉住。
+List<ReaderParagraphRun> splitReaderParagraphRuns(
+  String paragraph, {
+  String baseUrl = '',
+}) {
+  if (paragraph.isEmpty) return const [];
+  final runs = <ReaderParagraphRun>[];
+  var last = 0;
+  for (final match in comicImgSrcRegex.allMatches(paragraph)) {
+    final src =
+        match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4);
+    if (match.start > last) {
+      runs.add(
+        ReaderTextRun(
+          paragraph.substring(last, match.start),
+          start: last,
+          end: match.start,
+        ),
+      );
+    }
+    final image = parseReaderInlineImage(src, baseUrl: baseUrl);
+    if (image != null) {
+      runs.add(ReaderImageRun(image, start: match.start, end: match.end));
+    }
+    last = match.end;
+  }
+  if (last < paragraph.length) {
+    runs.add(
+      ReaderTextRun(
+        paragraph.substring(last),
+        start: last,
+        end: paragraph.length,
+      ),
+    );
+  }
+  if (runs.isEmpty) {
+    runs.add(ReaderTextRun(paragraph, start: 0, end: paragraph.length));
+  }
+  return runs;
+}
+
+/// 收集正文中的全部图片（供阅读页预测量；按 rawSrc 去重保序）
+List<ReaderInlineImage> collectReaderInlineImages(
+  String content, {
+  String baseUrl = '',
+}) {
+  if (content.isEmpty || !content.toLowerCase().contains('<img')) {
+    return const [];
+  }
+  final seen = <String>{};
+  final result = <ReaderInlineImage>[];
+  for (final match in comicImgSrcRegex.allMatches(content)) {
+    final src =
+        match.group(1) ?? match.group(2) ?? match.group(3) ?? match.group(4);
+    final image = parseReaderInlineImage(src, baseUrl: baseUrl);
+    if (image == null) continue;
+    if (seen.add(image.rawSrc)) result.add(image);
+  }
+  return result;
+}
+
+/// 章节标题图（`BookChapter.imgUrl`，对齐上游 `TextChapterLayout.kt:326-380`）
+///
+/// 基址优先 `chapter.baseUrl`，其次 `chapter.url`，最后书籍地址。
+ReaderInlineImage? readerChapterTitleImage({
+  String? imgUrl,
+  String chapterBaseUrl = '',
+  String chapterUrl = '',
+  String bookUrl = '',
+}) {
+  final raw = imgUrl?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  final base = chapterBaseUrl.trim().isNotEmpty
+      ? chapterBaseUrl
+      : (chapterUrl.trim().isNotEmpty ? chapterUrl : bookUrl);
+  return parseReaderInlineImage(raw, baseUrl: base);
+}

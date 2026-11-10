@@ -1240,6 +1240,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       hangingPunctuation: _advConfig.hangingPunctuation,
                       reviewCounts: _reviewCounts,
                       onReviewTap: _onReviewTap,
+                      // [批16] 正文行内图片：书级 imageStyle 与点击五档接入
+                      imageStyle: book?.readConfig?.imageStyle,
+                      clickImgWay: cfg.clickImgWay,
                     ),
                   if (!state.showControls)
                     ReaderStatusStrip(

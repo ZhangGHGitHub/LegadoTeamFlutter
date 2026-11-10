@@ -48,7 +48,8 @@ String clampClickImgWay(String? raw) =>
     kClickImgWayOptions.containsKey(raw) ? raw! : kDefaultClickImgWay;
 
 /// 档位显示文案（非法值按钳制后的默认档显示）
-String clickImgWayLabel(String? way) => kClickImgWayOptions[clampClickImgWay(way)]!;
+String clickImgWayLabel(String? way) =>
+    kClickImgWayOptions[clampClickImgWay(way)]!;
 
 /// 复合图片 URL 参数分隔符，对齐原版 `AnalyzeUrl.paramPattern`
 /// `\s*,\s*(?=\{)`（URL 与 JSON 属性之间允许空白）
@@ -71,11 +72,21 @@ class ClickImgUrlOptions {
   /// 请求头（复合 JSON 的 `headers`，供预览器复用）
   final Map<String, String> headers;
 
+  /// [批16] 正文行内图片显式样式（复合 JSON 的 `style`，对齐原版
+  /// `TextChapterLayout` 逐图读取：text/TEXT/FULL/SINGLE/LEFT/RIGHT/CENTER）
+  final String? style;
+
+  /// [批16] 正文行内图片显式宽度（复合 JSON 的 `width`；支持 `%` 与 `px`
+  /// 或裸数值，对齐原版 `width.endsWith("%")` 分支）
+  final String? width;
+
   const ClickImgUrlOptions({
     required this.url,
     this.click,
     this.js,
     this.headers = const <String, String>{},
+    this.style,
+    this.width,
   });
 
   bool get hasClick => click != null;
@@ -105,12 +116,16 @@ ClickImgUrlOptions parseClickImgUrlOptions(String src) {
   final jsonPart = raw.substring(separator.end);
   String? click;
   String? js;
+  String? style;
+  String? width;
   var headers = const <String, String>{};
   try {
     final decoded = jsonDecode(jsonPart);
     if (decoded is Map<String, dynamic>) {
       click = _nonBlank(decoded['click']) ?? _nonBlank(decoded['action']);
       js = _nonBlank(decoded['js']);
+      style = _nonBlank(decoded['style']);
+      width = _nonBlank(decoded['width']);
       final rawHeaders = decoded['headers'];
       if (rawHeaders is Map) {
         headers = <String, String>{
@@ -127,6 +142,8 @@ ClickImgUrlOptions parseClickImgUrlOptions(String src) {
     click: click,
     js: js,
     headers: headers,
+    style: style,
+    width: width,
   );
 }
 
@@ -181,9 +198,8 @@ ClickImgTapEffect resolveClickImgTap({
   required bool doubleTap,
   bool actionAvailable = kClickImgActionSupported,
 }) {
-  ClickImgTapEffect actionOrPreview() => actionAvailable
-      ? ClickImgTapEffect.runAction
-      : ClickImgTapEffect.preview;
+  ClickImgTapEffect actionOrPreview() =>
+      actionAvailable ? ClickImgTapEffect.runAction : ClickImgTapEffect.preview;
 
   switch (clampClickImgWay(way)) {
     case '1':

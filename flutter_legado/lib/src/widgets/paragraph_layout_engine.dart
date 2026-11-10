@@ -9,8 +9,11 @@
 /// - 字符宽度缓存（移植自 TextMeasure.kt）
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
+import '../utils/reader_inline_image.dart';
 import 'zh_layout.dart';
 
 /// 中文标点悬挂规则
@@ -167,6 +170,12 @@ class ParagraphConfig {
   final TextStyle? baseStyle;
   final TextScaler? textScaler;
 
+  // [批16] 正文行内图片混排：书级 imageStyle（FULL/TEXT/SINGLE/DEFAULT，
+  // 对齐原版 Book.getImageStyle）与章节基址（相对图片地址绝对化）。
+  // 纯文本章节不使用这两个字段，行为与既有完全一致。
+  final String? imageStyle;
+  final String imageBaseUrl;
+
   const ParagraphConfig({
     this.fontSize = 16.0,
     this.lineHeight = 1.6,
@@ -187,6 +196,8 @@ class ParagraphConfig {
     this.hangingPunctuation = false,
     this.baseStyle,
     this.textScaler,
+    this.imageStyle,
+    this.imageBaseUrl = '',
   });
 
   ParagraphConfig copyWith({
@@ -206,6 +217,8 @@ class ParagraphConfig {
     bool? hangingPunctuation,
     TextStyle? baseStyle,
     TextScaler? textScaler,
+    String? imageStyle,
+    String? imageBaseUrl,
   }) {
     return ParagraphConfig(
       fontSize: fontSize ?? this.fontSize,
@@ -224,6 +237,8 @@ class ParagraphConfig {
       hangingPunctuation: hangingPunctuation ?? this.hangingPunctuation,
       baseStyle: baseStyle ?? this.baseStyle,
       textScaler: textScaler ?? this.textScaler,
+      imageStyle: imageStyle ?? this.imageStyle,
+      imageBaseUrl: imageBaseUrl ?? this.imageBaseUrl,
     );
   }
 }
@@ -252,6 +267,14 @@ class LineInfo {
   final int highlightSkip;
   final bool highlightMapped;
 
+  // [批16] 独立图片行：非空时该行不渲染文字，按图片布局绘制（行高=
+  // 图片显示高度或占位高度）。
+  final ReaderImageLayout? imageLayout;
+
+  // [批16] 行内图片：与行内占位符一一对应（顺序即占位符出现顺序），
+  // 渲染侧把占位符替换为 WidgetSpan。纯文本行为空。
+  final List<ReaderImageLayout> inlineImages;
+
   const LineInfo({
     required this.words,
     required this.width,
@@ -262,7 +285,15 @@ class LineInfo {
     this.chapterStartIndex = 0,
     this.highlightSkip = 0,
     this.highlightMapped = false,
+    this.imageLayout,
+    this.inlineImages = const [],
   });
+
+  /// 该行是否含独立图片
+  bool get hasImage => imageLayout != null;
+
+  /// 该行是否含行内图片占位符
+  bool get hasInlineImage => inlineImages.isNotEmpty;
 }
 
 /// 段落信息
@@ -435,6 +466,7 @@ class ParagraphLayoutEngine {
         availableWidth,
         isFirst: i == 0,
         chapterStart: para.start,
+        maxPageHeight: pageHeight,
       );
       final chapterParaIndex = i + 1; // 1-based，对齐原版段评 paraIndex
 
@@ -443,12 +475,20 @@ class ParagraphLayoutEngine {
           ? config.paragraphSpacing
           : 0.0;
 
+      // [批16] SINGLE 图片行带强制分页标记（大图独占一页）；即使未超出
+      // 当前页容量也要走按行拆分，保证分页边界与图片语义一致。
+      final hasForcedBreak = paraInfo.lines.any(
+        (line) =>
+            line.imageLayout?.pageBreakBefore == true ||
+            line.imageLayout?.pageBreakAfter == true,
+      );
+
       // 单段超出其起始页容量时，按行拆分到多页（当前页已有内容则
       // 段落从下一页起排，按整页容量判断）
       final startCapacity = currentPageParagraphs.isEmpty
           ? capacityFor(pages.length)
           : pageHeight;
-      if (paraInfo.totalHeight > startCapacity) {
+      if (paraInfo.totalHeight > startCapacity || hasForcedBreak) {
         // 先把之前累积的段落存为一页
         if (currentPageParagraphs.isNotEmpty) {
           pages.add(
@@ -523,6 +563,80 @@ class ParagraphLayoutEngine {
     final pages = <PageInfo>[];
     final textHeight = config.fontSize * config.lineHeight;
 
+    // [批16] 含图片/行内图片的段落行高不等：按实际行高累积分页，
+    // 并对 SINGLE 图片/强制分页标记在行边界换页。纯文本行高恒等，
+    // 继续走既有 floor 分页路径，保证零回归。
+    final hasVariableLineHeight = paraInfo.lines.any(
+      (line) =>
+          line.imageLayout != null ||
+          line.inlineImages.isNotEmpty ||
+          (line.height - textHeight).abs() > 0.01,
+    );
+    if (hasVariableLineHeight) {
+      var lineIdx = 0;
+      var subPageNo = 0;
+      while (lineIdx < paraInfo.lines.length) {
+        var capacity = subPageNo == 0
+            ? (firstPageCapacity ?? pageHeight)
+            : pageHeight;
+        final pageLines = <LineInfo>[];
+        var height = 0.0;
+        while (lineIdx < paraInfo.lines.length) {
+          final line = paraInfo.lines[lineIdx];
+          // 强制分页（SINGLE 图片）：当前页已有内容则在此行前换页
+          if (line.imageLayout?.pageBreakBefore == true &&
+              pageLines.isNotEmpty) {
+            break;
+          }
+          if (pageLines.isNotEmpty && height + line.height > capacity) {
+            break;
+          }
+          // 首屏容量（扣标题）放不下首行图片：先落一个空首屏（仅标题，
+          // 对齐上游 prepareNextPageIfNeed），图片独占后续整页。
+          if (pageLines.isEmpty &&
+              height <= 0 &&
+              line.height > capacity &&
+              subPageNo == 0 &&
+              capacity < pageHeight) {
+            pages.add(const PageInfo(paragraphs: [], totalHeight: 0));
+            subPageNo++;
+            capacity = pageHeight;
+            continue;
+          }
+          pageLines.add(line);
+          height += line.height;
+          lineIdx++;
+          if (line.imageLayout?.pageBreakAfter == true) break;
+        }
+        if (pageLines.isEmpty) {
+          // 防御：剩余行高超过整页时至少落一行，避免死循环
+          final line = paraInfo.lines[lineIdx];
+          pageLines.add(line);
+          height = line.height;
+          lineIdx++;
+        }
+        final isLast = lineIdx >= paraInfo.lines.length;
+        pages.add(
+          PageInfo(
+            paragraphs: [
+              ParagraphInfo(
+                lines: pageLines,
+                totalHeight: height,
+                // [批34] 段落的章节全局偏移不随分页切片变化
+                startIndex: paraInfo.startIndex,
+                endIndex: paraInfo.endIndex,
+                chapterParagraphIndex: chapterParagraphIndex,
+                isParagraphEnd: isLast,
+              ),
+            ],
+            totalHeight: height,
+          ),
+        );
+        subPageNo++;
+      }
+      return pages;
+    }
+
     var lineIdx = 0;
     var subPageNo = 0;
     while (lineIdx < paraInfo.lines.length) {
@@ -564,9 +678,7 @@ class ParagraphLayoutEngine {
   /// [批34] 返回 `(text, start)`：`text` 为 trim 后的段落文本，`start` 为
   /// 该文本首字符在原始 `content` 中的 UTF-16 偏移（跳过前导空白），
   /// 供高亮区间映射与段落选择定位使用。
-  List<({String text, int start})> _splitParagraphsWithOffsets(
-    String content,
-  ) {
+  List<({String text, int start})> _splitParagraphsWithOffsets(String content) {
     if (content.trim().isEmpty) return [];
     final separator = content.contains('\n\n')
         ? RegExp(r'\n\s*\n')
@@ -604,6 +716,7 @@ class ParagraphLayoutEngine {
     double availableWidth, {
     bool isFirst = false,
     int chapterStart = 0,
+    double maxPageHeight = double.infinity,
   }) {
     final trimmedPara = paragraph.trim();
     if (trimmedPara.isEmpty) {
@@ -612,6 +725,22 @@ class ParagraphLayoutEngine {
         totalHeight: 0,
         startIndex: 0,
         endIndex: 0,
+      );
+    }
+
+    // [批16] 纯文本段落走既有路径（零回归）；仅含 `<img>` 才进入混排。
+    // 正则/复合 URL 语义与 comic_image_utils 一致（Rust 净化后恒为
+    // `<img src="URL,{json}">`，此处兜底 data-src/srcset 等历史形态）。
+    final runs = trimmedPara.toLowerCase().contains('<img')
+        ? splitReaderParagraphRuns(trimmedPara, baseUrl: config.imageBaseUrl)
+        : const <ReaderParagraphRun>[];
+    if (runs.any((run) => run is ReaderImageRun)) {
+      return _layoutMixedParagraph(
+        trimmedPara,
+        runs,
+        availableWidth,
+        chapterStart: chapterStart,
+        maxPageHeight: maxPageHeight,
       );
     }
 
@@ -681,6 +810,158 @@ class ParagraphLayoutEngine {
     );
   }
 
+  /// 混排段落排版（文本 run + 图片 run）
+  ///
+  /// 语义对齐上游 `TextChapterLayout.kt:456-600`：
+  /// - 行内小图写占位符参与断行，渲染侧替换为 WidgetSpan；
+  /// - 大图先 flush 前置文本，再落独立变高图片行；
+  /// - 图片行高 = 显示高度（缩放后），尺寸未知/失败用占位高度。
+  ParagraphInfo _layoutMixedParagraph(
+    String trimmedPara,
+    List<ReaderParagraphRun> runs,
+    double availableWidth, {
+    required int chapterStart,
+    required double maxPageHeight,
+  }) {
+    final textHeight = config.fontSize * config.lineHeight;
+    final lines = <LineInfo>[];
+    final buffer = StringBuffer();
+    final bufferInlines = <ReaderImageLayout>[];
+    var bufferParaStart = -1;
+    var indentDone = false;
+    double? inlineSlotWidth;
+
+    double resolveInlineSlotWidth() {
+      if (inlineSlotWidth != null) return inlineSlotWidth!;
+      final measured = _measureSingleChar(readerImagePlaceholderChar);
+      inlineSlotWidth = measured > 0 ? measured : config.fontSize * 0.5;
+      return inlineSlotWidth!;
+    }
+
+    void flushTextBuffer() {
+      if (buffer.isEmpty) return;
+      final chunk = buffer.toString();
+      final isFirstChunk = lines.isEmpty;
+      var text = chunk;
+      var indentLen = 0;
+      if (!indentDone && isFirstChunk && config.indent > 0) {
+        text = '${'\u3000' * config.indentCount}$text';
+        indentLen = config.indentCount;
+      }
+      indentDone = true;
+
+      final hangingWidth =
+          isFirstChunk &&
+              config.hangingPunctuation &&
+              config.indent > 0 &&
+              ChinesePunctuationRule.shouldHang(text, config.indentCount)
+          ? config.indent
+          : 0.0;
+      final rawLines = _breakLines(
+        text,
+        availableWidth,
+        hangingWidth: hangingWidth,
+        indentSize: indentLen > 0 ? config.indentCount : 0,
+      );
+
+      // 行内图片占位符位置 → 按出现顺序与 bufferInlines 对齐
+      final placeholderIndices = <int>[
+        for (var i = 0; i < text.length; i++)
+          if (text[i] == readerImagePlaceholderChar) i,
+      ];
+      var inlineCursor = 0;
+      final sourceStart = bufferParaStart < 0 ? 0 : bufferParaStart;
+      for (final raw in rawLines) {
+        while (inlineCursor < placeholderIndices.length &&
+            placeholderIndices[inlineCursor] < raw.startIndex) {
+          inlineCursor++;
+        }
+        final lineInlines = <ReaderImageLayout>[];
+        var probe = inlineCursor;
+        while (probe < placeholderIndices.length &&
+            placeholderIndices[probe] < raw.endIndex) {
+          if (probe < bufferInlines.length) {
+            lineInlines.add(bufferInlines[probe]);
+          }
+          probe++;
+        }
+        var lineHeight = textHeight;
+        for (final layout in lineInlines) {
+          lineHeight = math.max(lineHeight, layout.height);
+        }
+        lines.add(
+          LineInfo(
+            words: raw.words,
+            width: raw.width,
+            height: lineHeight,
+            startIndex: raw.startIndex,
+            endIndex: raw.endIndex,
+            hangingWidth: raw.hangingWidth,
+            chapterStartIndex:
+                chapterStart +
+                sourceStart +
+                (raw.startIndex - indentLen)
+                    .clamp(0, trimmedPara.length)
+                    .toInt(),
+            highlightSkip: (indentLen - raw.startIndex)
+                .clamp(0, text.length)
+                .toInt(),
+            highlightMapped: true,
+            inlineImages: List.unmodifiable(lineInlines),
+          ),
+        );
+      }
+      buffer.clear();
+      bufferInlines.clear();
+      bufferParaStart = -1;
+    }
+
+    for (final run in runs) {
+      switch (run) {
+        case ReaderTextRun(:final text, :final start):
+          if (text.isEmpty) continue;
+          if (buffer.isEmpty) bufferParaStart = start;
+          buffer.write(text);
+        case ReaderImageRun(:final image):
+          final layout = resolveReaderImageLayout(
+            image: image,
+            availableWidth: availableWidth,
+            maxHeight: maxPageHeight,
+            textLineHeight: textHeight,
+            inlineSlotWidth: resolveInlineSlotWidth(),
+            bookImageStyle: config.imageStyle,
+          );
+          if (layout.isInline) {
+            buffer.write(readerImagePlaceholderChar);
+            bufferInlines.add(layout);
+          } else {
+            flushTextBuffer();
+            // 段首缩进只作用于段落首段文字；图片后文字不再缩进
+            indentDone = true;
+            lines.add(
+              LineInfo(
+                words: const [],
+                width: layout.width,
+                height: layout.height,
+                startIndex: 0,
+                endIndex: 0,
+                imageLayout: layout,
+              ),
+            );
+          }
+      }
+    }
+    flushTextBuffer();
+
+    final totalHeight = lines.fold<double>(0, (sum, line) => sum + line.height);
+    return ParagraphInfo(
+      lines: lines,
+      totalHeight: totalHeight,
+      startIndex: chapterStart,
+      endIndex: chapterStart + trimmedPara.length,
+    );
+  }
+
   /// 分行算法（使用 ZhLayout 中文断行引擎）
   ///
   /// 移植自 TextChapterLayout.kt 第 940-948 行：
@@ -695,6 +976,7 @@ class ParagraphLayoutEngine {
     String text,
     double availableWidth, {
     double hangingWidth = 0,
+    int? indentSize,
   }) {
     if (text.isEmpty) return [];
 
@@ -709,7 +991,13 @@ class ParagraphLayoutEngine {
     // [UI-fix v2.0.5 | 2026-08-10] useZhLayout=false：朴素按宽断行
     //（无中文避头尾，对齐原版 useZhLayout=false 走 StaticLayout 语义）— Reasonix
     final lines = config.useZhLayout
-        ? _breakZhLayout(words, widths, availableWidth, hangingWidth)
+        ? _breakZhLayout(
+            words,
+            widths,
+            availableWidth,
+            hangingWidth,
+            indentSize: indentSize,
+          )
         : _breakPlain(words, widths, availableWidth, hangingWidth);
 
     // 步骤6：行宽安全网（ZhLayout 压缩模式行宽可超限，渲染端无字形压缩
@@ -780,8 +1068,9 @@ class ParagraphLayoutEngine {
     List<String> words,
     List<double> widths,
     double availableWidth,
-    double hangingWidth,
-  ) {
+    double hangingWidth, {
+    int? indentSize,
+  }) {
     // 中文字符参考宽度（对应 Kotlin cnCharWidthCache）
     final cnCharWidth = _measureSingleChar('我');
 
@@ -791,7 +1080,7 @@ class ParagraphLayoutEngine {
       widths: widths,
       availableWidth: availableWidth,
       // [UI-fix v2.0.4 | 2026-08-08] 缩进档位接入断行引擎 — Qoder
-      indentSize: config.indent > 0 ? config.indentCount : 0,
+      indentSize: indentSize ?? (config.indent > 0 ? config.indentCount : 0),
       cnCharWidth: cnCharWidth,
       // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂：首行宽度上限放宽 — Reasonix
       hangingWidth: hangingWidth,
@@ -993,6 +1282,14 @@ class ParagraphLayoutEngine {
     );
     painter.layout(maxWidth: maxWidth);
 
+    // [批16] 行内图片占位符宽度与 `resolveReaderImageLayout` 的
+    // inlineSlotWidth 必须完全一致（否则 WidgetSpan 比预留宽更宽/更窄，
+    // 行宽与分页结果错位）。占位符字形缺失时 getBoxesForSelection 会落
+    // fallback 分支，这里显式用同一单字测量值兜底。
+    final placeholderWidth = text.contains(readerImagePlaceholderChar)
+        ? _measureSingleChar(readerImagePlaceholderChar)
+        : 0.0;
+
     for (var i = 0; i < text.length; i++) {
       final boxes = painter.getBoxesForSelection(
         TextSelection(baseOffset: i, extentOffset: i + 1),
@@ -1000,6 +1297,8 @@ class ParagraphLayoutEngine {
       if (boxes.isNotEmpty) {
         final box = boxes.first;
         widths[i] = box.right - box.left;
+      } else if (text.codeUnitAt(i) == 0xFFFC && placeholderWidth > 0) {
+        widths[i] = placeholderWidth;
       } else {
         // 零宽字符/组合字符 fallback：沿用前一字符宽度。保持 >0 避免
         // splitByWidths 产生零宽簇（行索引与文本偏移的对应依赖逐字簇）
@@ -1029,7 +1328,7 @@ class ParagraphLayoutEngine {
                 : null,
             fontFamily: config.fontFamily,
             fontWeight: config.fontWeight,
-        fontStyle: config.fontStyle,
+            fontStyle: config.fontStyle,
           ),
         ),
       ),
