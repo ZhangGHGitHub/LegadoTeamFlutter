@@ -753,6 +753,12 @@
 | `reorderReplaceRules(List<int> ids)` | ids: 全量规则 id 顺序（Dart 序列化为 JSON 数组经 FFI `idsJson` 传输） | `Future<int>` | **2026-11-10 批12 加法式新增**：按给定 ID 顺序**全量**重编号 `replace_rules.sortOrder = 0..n-1`（单事务），返回重排条数；重复/缺失/未知 ID 一律参数错误且零写入（防筛选态子集重排打乱隐藏规则）；对齐 `dictRuleReorder` 语义（Rust `ffi::replace_rule_reorder`） |
 | `previewReplaceRule(String ruleJson, String sampleContent)` | ruleJson: 单条 `ReplaceRule` 模型 JSON（camelCase 字段，Dart 侧 `ReplaceRule.toJson()` 产物）；sampleContent: 预览输入文本 | `Future<String>` | **2026-09-13 加法式新增（替换规则编辑器预览，`@js:` 补齐）**：对单条规则在示例文本上执行真实替换管线（正则编译 regex 优先 / fancy-regex 回退、`@js:` 走 QuickJS 执行器、逐规则超时保护）；成功=返回替换后文本；规则级错误（非法正则 / `@js:` JS 异常 / 执行超时）=返回 `⚠️ ` 前缀错误文本（可直接展示于预览区，不上抛异常）；非法输入（JSON 解析失败）MAY Err。编辑器预览改由本方法单一语义源承接（原 Dart 侧纯 Dart 近似分支删除，`@js:` 不再降级为「不可用」提示）。**2026-11-10 批15 回修登记**：预览无书籍/章节上下文，`chapter`/`book` 以空对象绑定（字段为空串/0，而非 `undefined`）；正文净化生产路径绑定真实 `chapter`（title/index/url/bookUrl）与 `book`（name/author/bookUrl），两处共用同一执行器与绑定构造点。差异口径：引用 `chapter`/`book` 的规则在预览中看到空值，实际阅读时看到真实值；以 `result` 为主的规则预览与生产输出一致 |
 
+> **[批17 回修登记 | 2026-11-11] Web 阅读端与 App 正文净化的配置/作用域差异（零方法数变化）**：两轨已共用 `legado-js::replace_rule_js` 执行器与绑定构造（Web `/testReplaceRule` 预览亦复用同一执行器，已删除第二份 QuickJS 适配；`legado-ffi` 的 `quickjs` feature 透传 `legado-server/quickjs`，App 内嵌 Web 与独立 server 行为一致）。但「同一规则同一输入逐字相等」仅在**默认配置 + 全局作用域**下成立：
+> - **配置面**：Web `purify_content` 固定 `remove_duplicate_title=true`、`chinese_convert=None`、`re_segment=false`；App 正文净化取章级 `sameTitleRemoved` 开关、持久化 `chineseConverterType` 与 `readConfig.reSegment`。
+> - **作用域面**：App 正文路径先按 `[,;，；]` 拆分 `scope` 与**书名**精确匹配，不看 `origin`、不处理 `excludeScope`；Web 走 `ContentProcessor` 的 `ScopeContext`（`scope` 按「含书名或书籍来源」子串匹配 + `excludeScope` 排除，对齐原版 `ReplaceRuleDao` 的 LIKE 判定）。
+>
+> 因此：开启简繁转换/章级去重/reSegment，或 `scope` 仅命中书籍来源、使用 `excludeScope` 时，两端输出可不同；`@js:` 本身的执行/绑定/错误与超时口径已统一。统一上述配置与 scope 语义需另立批次并做设备验收。回归用例：`legado-ffi/tests/replace_rule_js_web_parity.rs`（默认配置逐字相等 + origin-only scope 差异快照）与 `legado-server/tests/legacy_web_test.rs`（Web 侧执行/绑定/抛错/超时/无 quickjs）。
+
 ### 2.9 阅读器操作（12 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |

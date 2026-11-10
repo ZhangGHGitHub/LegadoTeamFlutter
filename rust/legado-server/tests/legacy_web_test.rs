@@ -916,6 +916,9 @@ async fn test_get_book_content_js_bindings_chapter_and_book_visible() {
 }
 
 /// 批17：`@js:` 抛错保留原文，且不阻断后续普通规则（与 App 端一致）
+///
+/// **覆盖性用例**：父提交（Web 跳过 `@js:`）同样保留原文，本用例防回归，
+/// 不计入「修复前红」证据。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_get_book_content_js_rule_error_keeps_original_and_continues() {
@@ -974,6 +977,9 @@ async fn test_get_book_content_js_rule_error_keeps_original_and_continues() {
 }
 
 /// 批17：`@js:` 超时保留原文（规则级 timeoutMillisecond 生效）
+///
+/// **覆盖性用例**：父提交（Web 跳过 `@js:`）同样保留原文，本用例防回归，
+/// 不计入「修复前红」证据。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_get_book_content_js_rule_timeout_keeps_original() {
@@ -1020,6 +1026,9 @@ async fn test_get_book_content_js_rule_timeout_keeps_original() {
 }
 
 /// 批17：无 quickjs feature 时 Web 端明确不执行 `@js:`，其他规则仍生效
+///
+/// **覆盖性用例**：父提交旧管线同样不执行 `@js:`，本用例防回归，
+/// 不计入「修复前红」证据。
 #[cfg(not(feature = "quickjs"))]
 #[tokio::test]
 async fn test_get_book_content_js_rule_skipped_without_quickjs() {

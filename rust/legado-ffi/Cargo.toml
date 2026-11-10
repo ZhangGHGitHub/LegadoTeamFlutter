@@ -57,8 +57,15 @@ libc = "0.2"
 [features]
 default = []
 # quickjs 透传 legado-js 与 legado-fetcher：两 crate 的 JS 构造档必须一致，
-# 否则 ffi 侧 re-export 会取到 fetcher 的非 quickjs 降级实现
-quickjs = ["legado-js/quickjs", "legado-fetcher/quickjs"]
+# 否则 ffi 侧 re-export 会取到 fetcher 的非 quickjs 降级实现。
+# [批17 回修 P1] 同步透传 legado-server/quickjs：App 内嵌 Web（/testReplaceRule
+# 等 server 侧 quickjs 门控路径）必须与独立 server 构建行为一致，否则 App
+# 构建下 server 侧 `#[cfg(feature = "quickjs")]` 关闭、预览 `@js:` 不执行。
+quickjs = [
+    "legado-js/quickjs",
+    "legado-fetcher/quickjs",
+    "legado-server/quickjs",
+]
 
 # 调试 example 依赖 quickjs 路径的 QuickJsExecutor：无 quickjs 构建时跳过编译
 [[example]]

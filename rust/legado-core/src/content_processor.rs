@@ -1695,6 +1695,97 @@ mod tests {
         assert_eq!(result, "正文<广告1>结束");
     }
 
+    /// [批17 回修 P3] `needs_js_execution` 与管线真实执行条件一致（防漂移）
+    ///
+    /// 该判定用于决定是否向正文管线注入 `ReplaceJsExecutor`；本用例用计数
+    /// 执行器逐条跑真实 `ContentProcessor::process_with_js`，断言
+    /// 「判定为 true ⇔ 执行器被调用」，覆盖 enabled / is_regex /
+    /// scope_content / pattern 空 / replacement 前缀五个开关。
+    #[test]
+    fn test_needs_js_execution_matches_pipeline_execution() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CountingJs {
+            calls: Arc<AtomicUsize>,
+        }
+
+        impl ReplaceJsExecutor for CountingJs {
+            fn eval(&self, _code: &str, _result: &str) -> Result<String, String> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok("JS".to_string())
+            }
+        }
+
+        fn rule_with(
+            is_enabled: bool,
+            is_regex: bool,
+            scope_content: bool,
+            pattern: &str,
+            replacement: &str,
+        ) -> ReplaceRuleEntry {
+            ReplaceRuleEntry {
+                pattern: pattern.to_string(),
+                replacement: replacement.to_string(),
+                is_enabled,
+                is_regex,
+                scope_content,
+                ..ReplaceRuleEntry::default()
+            }
+        }
+
+        let cases = [
+            ("全开", rule_with(true, true, true, "a", "@js:result"), true),
+            (
+                "禁用",
+                rule_with(false, true, true, "a", "@js:result"),
+                false,
+            ),
+            (
+                "非正则",
+                rule_with(true, false, true, "a", "@js:result"),
+                false,
+            ),
+            (
+                "仅标题",
+                rule_with(true, true, false, "a", "@js:result"),
+                false,
+            ),
+            (
+                "空 pattern",
+                rule_with(true, true, true, "", "@js:result"),
+                false,
+            ),
+            ("非 @js", rule_with(true, true, true, "a", "X"), false),
+            ("空 JS 代码", rule_with(true, true, true, "a", "@js:"), true),
+        ];
+        for (name, rule, expected) in cases {
+            assert_eq!(
+                rule.needs_js_execution(),
+                expected,
+                "{name}: 判定与预期不符"
+            );
+            let calls = Arc::new(AtomicUsize::new(0));
+            let executor: Arc<dyn ReplaceJsExecutor> = Arc::new(CountingJs {
+                calls: Arc::clone(&calls),
+            });
+            let config = ProcessorConfig {
+                apply_replace_rules: true,
+                ..noop_config()
+            };
+            let _ = ContentProcessor::new(config).process_with_js(
+                "a",
+                "",
+                std::slice::from_ref(&rule),
+                Some(executor),
+            );
+            assert_eq!(
+                calls.load(Ordering::SeqCst) > 0,
+                expected,
+                "{name}: 管线执行与判定不一致（漂移）"
+            );
+        }
+    }
+
     #[test]
     fn test_js_prefix_only_on_replacement() {
         // @js: 判定在 replacement 上（与 Kotlin 一致），pattern 中的 @js: 是普通正则文本

@@ -29,7 +29,7 @@ use legado_core::content_processor::{
     ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry, ScopeContext,
 };
 use legado_core::models::book_type;
-use legado_core::models::{Book, BookChapter};
+use legado_core::models::{Book, BookChapter, ReplaceRule};
 use legado_core::web_book::{WebBookEngine, WebChapter};
 use legado_db::repository::book_chapter_repository::BookChapterRepository;
 use legado_db::repository::book_repository::BookRepository;
@@ -608,6 +608,11 @@ async fn get_book_content_inner(
 /// 章节/书籍绑定取自本节已查出的章节行与书籍行（见
 /// [`build_replace_js_bindings`]）；JS 抛错/超时由 `ContentProcessor`
 /// 规则级保护保留原文，无 quickjs 时执行器返回 Err 同样保留原文、不 panic。
+///
+/// [批17 回修 P2] 规则执行（Java 方言正则编译、`@js:` QuickJS、逐规则
+/// `recv_timeout` 等待）是 CPU 密集阻塞操作，`/getBookContent` 又无鉴权：
+/// 先异步读规则，再把纯计算经 `spawn_blocking` 移交 blocking 线程池，
+/// 避免并发请求占满 tokio worker（与 `testReplaceRule` 的 P1-3 同款）。
 async fn purify_content(
     state: &Arc<AppState>,
     book: &Book,
@@ -623,7 +628,31 @@ async fn purify_content(
         Ok(rules) => rules,
         Err(_) => return raw_content.to_string(),
     };
-    let entries = ReplaceRuleEntry::from_replace_rules(&rules);
+    let book = book.clone();
+    let chapter = chapter.clone();
+    let raw = raw_content.to_string();
+    match tokio::task::spawn_blocking(move || {
+        purify_content_blocking(&book, &chapter, &raw, &rules, replace_enabled)
+    })
+    .await
+    {
+        Ok(output) => output,
+        Err(error) => {
+            tracing::warn!("正文净化阻塞任务失败（返回原文）: {error}");
+            raw_content.to_string()
+        }
+    }
+}
+
+/// 正文净化同步核心（仅在 blocking 线程池执行，禁止在 async 上下文直调）
+fn purify_content_blocking(
+    book: &Book,
+    chapter: &BookChapter,
+    raw_content: &str,
+    rules: &[ReplaceRule],
+    replace_enabled: bool,
+) -> String {
+    let entries = ReplaceRuleEntry::from_replace_rules(rules);
     let config = ProcessorConfig {
         remove_duplicate_title: true,
         re_segment: false,
@@ -638,7 +667,7 @@ async fn purify_content(
     let js_executor: Option<Arc<dyn ReplaceJsExecutor>> =
         if replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution) {
             Some(Arc::new(ReplaceRuleJsExecutor::new(
-                build_replace_js_bindings(book, Some(chapter)),
+                build_replace_js_bindings(book, chapter),
             )))
         } else {
             None
@@ -653,26 +682,24 @@ async fn purify_content(
 /// 数据全部来自 [`purify_content`] 调用方已查出的行，不额外查库：
 /// - 章节：`title`/`index`/`url` 取章节行，`bookUrl` 取解析后的书籍地址；
 /// - 书籍：`name`/`author` 取书籍行，`bookUrl` 优先书籍主键、为空时回退
-///   章节行的 `bookUrl`（与 App 端 `book ?: chapter.bookUrl` 兜底语义一致）；
-/// - 章节行缺失（防御分支）时章节绑定整体留空（空串/0），对齐 App 端
-///   `known_chapter=false` 口径，**不把其他章节的值绑进当前章节**。
-fn build_replace_js_bindings(book: &Book, chapter: Option<&BookChapter>) -> ReplaceJsBindings {
+///   章节行的 `bookUrl`（与 App 端 `book ?: chapter.bookUrl` 兜底语义一致）。
+///
+/// 不变式：`get_book_content_inner` 在章节行缺失时已提前返回「未找到」，
+/// 故本函数恒持有真实章节行，不构造 `Option` 防御分支；「章节不在目录」
+/// 的 `known_chapter=false` 口径只属于 App 端回退路径（Web 不存在该入口）。
+fn build_replace_js_bindings(book: &Book, chapter: &BookChapter) -> ReplaceJsBindings {
     let book_url = if book.book_url.is_empty() {
-        chapter.map(|c| c.book_url.clone()).unwrap_or_default()
+        chapter.book_url.clone()
     } else {
         book.book_url.clone()
     };
-    let chapter_binding = match chapter {
-        Some(chapter) => ReplaceJsChapter {
+    ReplaceJsBindings::new(
+        ReplaceJsChapter {
             title: chapter.title.clone(),
             index: chapter.index,
             url: chapter.url.clone(),
             book_url: book_url.clone(),
         },
-        None => ReplaceJsChapter::default(),
-    };
-    ReplaceJsBindings::new(
-        chapter_binding,
         ReplaceJsBook {
             name: book.name.clone(),
             author: book.author.clone(),
@@ -2543,24 +2570,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// [批17] Web `@js:` 绑定：章节行缺失时整体留空（不绑错章），书籍字段
-    /// 仍来自书籍行；书籍主键为空时 `bookUrl` 回退章节行的 `bookUrl`。
+    /// [批17] Web `@js:` 绑定：章节字段全部取真实章节行；书籍主键为空时
+    /// `bookUrl` 回退章节行的 `bookUrl`，不得凭空编造章节值。
     #[test]
-    fn test_build_replace_js_bindings_never_invents_chapter_values() {
+    fn test_build_replace_js_bindings_uses_real_rows_only() {
         let book = Book {
             book_url: String::new(),
             name: "绑定书".to_string(),
             author: "绑定作者".to_string(),
             ..Book::default()
         };
-        // 章节行缺失：章节绑定整体留空，不给出任何章节值
-        let bindings = build_replace_js_bindings(&book, None);
-        assert_eq!(bindings.chapter, ReplaceJsChapter::default());
-        assert_eq!(bindings.book.name, "绑定书");
-        assert_eq!(bindings.book.author, "绑定作者");
-        assert_eq!(bindings.book.book_url, "");
-
-        // 章节行存在但书籍主键为空 → bookUrl 回退章节行的 bookUrl
         let chapter = BookChapter {
             book_url: "https://b17.example.com/book/1".to_string(),
             title: "第一章".to_string(),
@@ -2568,11 +2587,29 @@ mod tests {
             url: "https://b17.example.com/ch/1".to_string(),
             ..BookChapter::default()
         };
-        let bindings = build_replace_js_bindings(&book, Some(&chapter));
+        // 书籍主键为空 → bookUrl 回退章节行的 bookUrl
+        let bindings = build_replace_js_bindings(&book, &chapter);
         assert_eq!(bindings.chapter.title, "第一章");
         assert_eq!(bindings.chapter.index, 1);
         assert_eq!(bindings.chapter.url, "https://b17.example.com/ch/1");
         assert_eq!(bindings.chapter.book_url, "https://b17.example.com/book/1");
+        assert_eq!(bindings.book.name, "绑定书");
+        assert_eq!(bindings.book.author, "绑定作者");
         assert_eq!(bindings.book.book_url, "https://b17.example.com/book/1");
+
+        // 书籍主键非空 → 使用书籍主键（与 App 端 book.bookUrl 优先一致）
+        let book = Book {
+            book_url: "https://b17.example.com/book/primary".to_string(),
+            ..book
+        };
+        let bindings = build_replace_js_bindings(&book, &chapter);
+        assert_eq!(
+            bindings.chapter.book_url,
+            "https://b17.example.com/book/primary"
+        );
+        assert_eq!(
+            bindings.book.book_url,
+            "https://b17.example.com/book/primary"
+        );
     }
 }

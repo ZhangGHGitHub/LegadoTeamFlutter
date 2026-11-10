@@ -8,7 +8,19 @@
 //! 1. `@js:` 真实执行（含 `chapter`/`book` 全字段绑定）；
 //! 2. `@js:` 抛错 → 两端保留原文，后续普通规则仍生效；
 //! 3. `@js:` 超时 → 两端保留原文；
-//! 4. 无 quickjs feature → 两端都不执行 `@js:`，普通规则仍生效。
+//! 4. 无 quickjs feature → 两端都不执行 `@js:`，普通规则仍生效；
+//! 5. [批17 回修 P1] App 构建下 Web `/testReplaceRule` 预览真实执行 `@js:`；
+//! 6. [批17 回修 P2] origin-only `scope` 的既有语义差异快照。
+//!
+//! **修复前红/覆盖性口径**：
+//! - 区分性用例（父提交必红）：执行/绑定断言、`/testReplaceRule` 预览；
+//! - 覆盖性用例（父提交亦绿，仅防回归）：抛错、超时、无 quickjs ——
+//!   父提交 Web 端跳过 `@js:` 同样保留原文，故不能作为修复证据。
+//!
+//! **parity 前提（P2-3）**：App 端与 Web 端均使用**默认正文净化配置**
+//! （`chineseConverterType=0`、`replaceEnableDefault=true`、章级去重开启、
+//! `reSegment=false`）且规则为全局作用域；非默认配置/scope 的差异见
+//! `docs/API_CONTRACT.md` §2.8 批17 回修登记。
 //!
 //! 修复前（批15 产物）：Web 端 `purify_content` 调用无执行器管线，`@js:`
 //! 被静默跳过，输出原文 → 本文件在 `--features quickjs` 下红。
@@ -37,6 +49,7 @@ use legado_ffi::db_state::with_database;
 use legado_ffi::legado_core::cache_book::CachedChapter;
 use legado_ffi::legado_core::download_manager::DownloadManager;
 use legado_ffi::legado_core::models::{Book, BookChapter, ReplaceRule};
+use legado_ffi::legado_db::repository::cache_repository::CacheRepository;
 use legado_ffi::legado_db::repository::Repository;
 use legado_ffi::legado_db::{
     BookChapterRepository, BookRepository, CacheBookRepository, ReplaceRuleRepository,
@@ -137,8 +150,25 @@ async fn seed_web(
 /// 向 App 端全局 DB 写入书籍/章节/替换规则（App 不读 `cached_chapters`：
 /// 净化入口直接接收原始正文）
 ///
+/// **parity 前提（显式 seed）**：App 端正文净化会读取
+/// `config:chineseConverterType`（默认 0=不转换）、`config:replaceEnableDefault`
+/// （默认 true）、章级 `sameTitleRemoved:{bookUrl}:{index}`（无键=去除，显式
+/// 写 `"0"` 锁定）与 `readConfig.reSegment`（Book 行为空=关闭）。Web 端对应
+/// 值固定为 None/true/true/false；仅当两端均为默认配置时「逐字相等」成立。
+///
 /// 各用例使用唯一 bookUrl，且 DB 文件按进程号隔离，无需清理历史行。
 fn seed_app(book: &Book, chapter: &BookChapter, rules: &[ReplaceRule]) {
+    with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        repo.put("config:chineseConverterType", "0", 0)?;
+        repo.put("config:replaceEnableDefault", "true", 0)?;
+        repo.put(
+            &format!("sameTitleRemoved:{}:{}", book.book_url, chapter.index),
+            "0",
+            0,
+        )
+    })
+    .unwrap();
     with_database(|db| BookRepository::new(db.connection()).insert(book)).unwrap();
     with_database(|db| BookChapterRepository::new(db.connection()).insert(chapter)).unwrap();
     for rule in rules {
@@ -232,7 +262,126 @@ async fn test_js_rule_parity_app_and_web_with_chapter_book_bindings() {
     assert_eq!(app, web, "App 与 Web 对同一规则同一输入必须输出完全一致");
 }
 
+/// [批17 回修 P1] App 构建（`--features quickjs`）下 Web 预览
+/// `/testReplaceRule` 必须真实执行 `@js:`
+///
+/// 修复前：`legado-ffi` 未透传 `legado-server/quickjs`，server 侧预览
+/// 执行器缺失（返回「需要 JS 执行器」）；且 server 另有一份只绑 `result`
+/// 的私有执行器。修复后预览与正文共用 `legado-js` 同一执行器，返回 `a!`。
+/// 本用例是**区分性**用例：父提交下必红。
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_web_test_replace_rule_executes_js_in_app_build() {
+    let state = make_web_state();
+    {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:jsSourceApiToken", "secret", 0)
+            .unwrap();
+    }
+    let app = create_router(state);
+    let body = serde_json::json!({
+        "rule": {"pattern": "a", "replacement": "@js:result + '!'", "isRegex": true},
+        "text": "a"
+    })
+    .to_string();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/testReplaceRule")
+                .header("Content-Type", "application/json")
+                .header("x-legado-token", "secret")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let rd: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(
+        rd["data"], "a!",
+        "App 内嵌 Web 的 /testReplaceRule 必须真实执行 @js:（rd={rd}）"
+    );
+}
+
+/// [批17 回修 P2-3] `scope` 语义差异快照（已登记，非本批统一项）
+///
+/// - 书名精确命中（`scope` 恰为书名）：两端一致生效；
+/// - **仅命中书籍来源**（`scope` 为完整 `origin`）：Web 走
+///   `ContentProcessor` 的 `ScopeContext`（`scope.contains(book_name) ||
+///   scope.contains(book_origin)`）→ 生效；App 正文路径先把 `scope` 按
+///   `[,;，；]` 拆分后与**书名**精确比较（不看 origin、不处理
+///   `excludeScope`）→ 不生效。
+///
+/// 该分叉为批前既有语义，已在 `docs/API_CONTRACT.md` §2.8 批17 回修登记；
+/// 统一 scope 语义需另立批次并做设备验收，本用例锁定当前口径（改动时
+/// 必须同步更新登记）。
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_js_rule_scope_origin_only_known_divergence() {
+    let _app_guard = ensure_app_db().await;
+    let book_url = "https://batch17.example.com/book/parity-scope";
+    let title = "第一章";
+    let chapter_url = "https://batch17.example.com/ch/scope-0";
+    let raw = "前A标记中B标记后";
+    let rules = [
+        // 书名精确命中：两端都生效
+        ReplaceRule {
+            name: "批17_书名作用域".to_string(),
+            pattern: "A标记".to_string(),
+            replacement: "A已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("批十七作用域书".to_string()),
+            ..Default::default()
+        },
+        // 仅书籍来源命中：Web 生效、App 不生效（既有差异）
+        ReplaceRule {
+            name: "批17_来源作用域".to_string(),
+            pattern: "B标记".to_string(),
+            replacement: r#"@js: result + "!""#.to_string(),
+            is_regex: true,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("https://batch17.example.com".to_string()),
+            ..Default::default()
+        },
+    ];
+
+    let book = test_book(book_url, "批十七作用域书");
+    let chapter = test_chapter(book_url, 0, title, chapter_url);
+    let web_state = make_web_state();
+    seed_web(&web_state, &book, &chapter, raw, &rules).await;
+    seed_app(&book, &chapter, &rules);
+
+    let web = web_content(web_state, book_url, 0).await;
+    assert_eq!(web["isSuccess"], true, "web={web}");
+    let web = web["data"]
+        .as_str()
+        .expect("Web 正文应为字符串")
+        .to_string();
+    let app = app_content(book_url, raw, title, 0, chapter_url);
+
+    assert_eq!(
+        app, "前A已换中B标记后",
+        "App：书名 scope 生效、origin-only scope 不生效（既有口径）"
+    );
+    assert_eq!(
+        web, "前A已换中B标记!后",
+        "Web：书名与 origin-only scope 均生效（原版 DAO 口径）"
+    );
+    assert_ne!(app, web, "该差异已登记，非本批修复范围");
+}
+
 /// 批17：`@js:` 抛错两端都保留原文，且后续普通规则继续生效
+///
+/// **覆盖性用例**：父提交（Web 跳过 `@js:`）同样保留原文，本用例防回归，
+/// 不计入「修复前红」证据。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_js_rule_error_parity_app_and_web_keep_original() {
@@ -283,6 +432,9 @@ async fn test_js_rule_error_parity_app_and_web_keep_original() {
 }
 
 /// 批17：`@js:` 超时两端都保留原文
+///
+/// **覆盖性用例**：父提交（Web 跳过 `@js:`）同样保留原文，本用例防回归，
+/// 不计入「修复前红」证据。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_js_rule_timeout_parity_app_and_web_keep_original() {
@@ -329,6 +481,9 @@ async fn test_js_rule_timeout_parity_app_and_web_keep_original() {
 }
 
 /// 批17：无 quickjs feature 两端都不执行 `@js:`，普通规则仍生效
+///
+/// **覆盖性用例**：父提交同样不执行（Web 旧管线直接跳过），本用例防回归，
+/// 不计入「修复前红」证据。
 #[cfg(not(feature = "quickjs"))]
 #[tokio::test]
 async fn test_js_rule_parity_without_quickjs_keeps_original() {

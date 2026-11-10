@@ -128,7 +128,7 @@
 ## 六、门禁引用
 
 ### 代码路径（本批实现，只读核对）
-- `rust/legado-ffi/src/api/replace_rule_js.rs`：替换规则 `@js:` 执行器；`build_script` 为 `result` / `chapter` / `book` 唯一绑定构造点；线程内复用 QuickJS 引擎；逐匹配 IIFE + `eval`；单次执行预算与规则剩余预算取小。
+- `rust/legado-js/src/replace_rule_js.rs`（批17 由 `rust/legado-ffi/src/api/replace_rule_js.rs` 下沉，App/Web 共用）：替换规则 `@js:` 执行器；`build_script` 为 `result` / `chapter` / `book` 唯一绑定构造点；线程内复用 QuickJS 引擎；逐匹配 IIFE + `eval`；单次执行预算与规则剩余预算取小。
 - `rust/legado-ffi/src/api/reader.rs`：`apply_content_processing_inner` 在正文净化生产路径构造 `ReplaceJsBindings` 并注入执行器（`build_replace_js_bindings`），`re_segment` / `remove_duplicate_title` 等步骤顺序未变。
 - `rust/legado-core/src/content_processor.rs`：`run_replace_rules` / `apply_replace_rules` 对 `@js:` 逐匹配执行、规则级异常/超时保留原文。
 - `flutter_legado/lib/src/screens/replace_rule_edit_screen.dart:395-420`：编辑页预览走 `previewReplaceRule`，规则级错误以 `⚠️` 前缀展示。

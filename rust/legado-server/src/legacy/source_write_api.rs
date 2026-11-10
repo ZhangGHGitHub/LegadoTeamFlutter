@@ -85,9 +85,10 @@
 //! - **P2-3** 令牌比较改常量时间（`crate::server::matches_js_source_api_token`）。
 //!
 //! 批10 审查登记（P2，暂不修，均为已知边界）：
-//! - **P2-5** `@js:` 替换执行器（quickjs）只注入 `result` 绑定，未提供原版
-//!   Rhino 的 `java.*` 宿主对象；依赖 `java.*` 的替换脚本会报
-//!   「未定义」而非原版可执行。属 JS 宿主面能力缺口，需先定绑定白名单；
+//! - **P2-5** `@js:` 替换执行器已统一为 `legado-js` 共享实现（批17 回修：
+//!   绑定 `result`/`chapter`/`book`，预览上下文下 chapter/book 为空对象），
+//!   但仍未提供原版 Rhino 的 `java.*` 宿主对象；依赖 `java.*` 的替换脚本
+//!   会报「未定义」而非原版可执行。属 JS 宿主面能力缺口，需先定绑定白名单；
 //! - **P2-6** 单条写库失败（如 SQLITE 约束）本实现返回 HTTP 200 +
 //!   `errorMsg`，原版未捕获异常 → HTTP 500（批量面已按防复发「批量原子性」
 //!   统一为 200 + errorMsg；单条面沿用同一信封以便 vue 展示）；
@@ -131,6 +132,8 @@ use legado_db::repository::rss_article_repository::RssArticleRepository;
 use legado_db::repository::rss_source_repository::RssSourceRepository;
 use legado_db::repository::Repository;
 use legado_db::BookSourceRepository;
+// [批17 回修 P1] 预览/正文共用 legado-js 单一 `@js:` 执行器（禁止第二份适配）
+use legado_js::replace_rule_js::ReplaceRuleJsExecutor;
 
 use super::source_api::{load_js_source_api_config, token_error_response};
 use super::{origin_of, to_response, ReturnData};
@@ -1085,34 +1088,18 @@ fn apply_test_replace_rule(text: &str, rule: &ReplaceRule) -> String {
     }
 }
 
-/// `@js:` 替换执行器（quickjs 构建下真实执行；否则返回错误文本）
+/// `@js:` 替换执行器（与 App 预览/正文共用 `legado-js` 单一实现）
+///
+/// [批17 回修 P1] 行为由 `legado-js` 的 `quickjs` feature 决定（不再按
+/// `legado-server` 自身 feature 分支）：
+/// - 启用：真实执行，绑定 `result`（预览无章节/书籍上下文，`chapter`/`book`
+///   为空对象，字段为空串/0）；
+/// - 未启用：`eval` 返回可读 `Err`，预览按规则级错误展示 `⚠️` 文本，不 panic。
+///
+/// 原 `QuickJsReplaceExecutor`（只绑 `result`、3s 独立沙箱、每次新建引擎）
+/// 已删除——App 内嵌 Web 与独立 server 必须与正文净化共用同一执行器。
 fn test_rule_js_executor() -> Option<Arc<dyn legado_core::content_processor::ReplaceJsExecutor>> {
-    #[cfg(feature = "quickjs")]
-    {
-        Some(Arc::new(QuickJsReplaceExecutor))
-    }
-    #[cfg(not(feature = "quickjs"))]
-    {
-        None
-    }
-}
-
-/// 替换规则 `@js:` 执行器适配（对齐 `ReplaceJsExecutor` 契约）
-#[cfg(feature = "quickjs")]
-struct QuickJsReplaceExecutor;
-
-#[cfg(feature = "quickjs")]
-impl legado_core::content_processor::ReplaceJsExecutor for QuickJsReplaceExecutor {
-    fn eval(&self, js_code: &str, result: &str) -> Result<String, String> {
-        use legado_js::engine::JsEngine;
-
-        let sandbox = legado_js::sandbox::SandboxConfig::default()
-            .with_timeout(std::time::Duration::from_secs(3));
-        let engine = legado_js::QuickJsEngine::new(sandbox).map_err(|e| e.to_string())?;
-        engine
-            .eval_with_bindings(js_code, &[("result", legado_js::JsValue::from(result))])
-            .map_err(|e| e.to_string())
-    }
+    Some(Arc::new(ReplaceRuleJsExecutor::without_context()))
 }
 
 #[cfg(test)]
