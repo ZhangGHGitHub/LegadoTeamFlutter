@@ -1,0 +1,53 @@
+# 批11 回修复验证据清单（2026-11-10）
+
+## 1. 构建与安装
+APK: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+APK 大小/时间: 210440576 bytes, Nov 10 12:36
+APK sha256: b1479dcefaf72f326c39e4a113ac09afb42646fddb0ad78c42d1654153bd6d2f
+aapt2 badging: name='io.legado.flutter_legado' versionCode='481' versionName='2.0.480'
+设备 dumpsys: versionCode=481 minSdk=24 targetSdk=36 / versionName=2.0.480
+安装: adb -s 192.168.100.62:5555 install -r ... -> Success (streamed 210440576 bytes)
+
+## 2. 本地备份目录（前）
+$ adb shell ls -l /sdcard/Download/legado_b11
+total 4
+-rwxrwxrwx 1 root root 720 2026-11-10 12:18 legado_backup_1794284348193.json
+
+## 3. 宿主 WebDAV 远端目录（前）
+$ ls -l /c/Users/admin/AppData/Local/Temp/legado_dav/legado
+total 25
+-rw-r--r-- 1 admin 197608  59 Nov 10 03:20 backup_20260101_120000_000.json
+-rw-r--r-- 1 admin 197608 775 Nov 10 03:43 backup_20261110_032628_168.json
+-rw-r--r-- 1 admin 197608 775 Nov 10 03:40 backup_20261110_034000_000.json
+-rw-r--r-- 1 admin 197608 775 Nov 10 03:51 backup_20261110_035000_000.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:12 backup_20261110_121211_429.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:12 backup_20261110_121229_900.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:12 backup_20261110_121250_663.json
+
+## 4. 本地备份目录（后）
+$ adb shell ls -l /sdcard/Download/legado_b11
+total 4
+-rwxrwxrwx 1 root root 747 2026-11-10 12:41 legado_backup_1794285677151.json
+
+## 5. 宿主 WebDAV 远端目录（后）
+$ ls -l /c/Users/admin/AppData/Local/Temp/legado_dav/legado
+total 29
+-rw-r--r-- 1 admin 197608  59 Nov 10 03:20 backup_20260101_120000_000.json
+-rw-r--r-- 1 admin 197608 775 Nov 10 03:43 backup_20261110_032628_168.json
+-rw-r--r-- 1 admin 197608 775 Nov 10 03:40 backup_20261110_034000_000.json
+-rw-r--r-- 1 admin 197608 775 Nov 10 03:51 backup_20261110_035000_000.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:12 backup_20261110_121211_429.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:12 backup_20261110_121229_900.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:12 backup_20261110_121250_663.json
+-rw-r--r-- 1 admin 197608 747 Nov 10 12:41 backup_20261110_124117_161.json
+
+## 6. wsgidav 访问日志（关键行）
+12:38:52.963 - 192.168.100.62 - (anonymous) - "PROPFIND /" length=0, depth=0 -> 207 Multi-Status
+12:41:06.681 - 192.168.100.62 - (anonymous) - "PUT /legado/backup_20261110_124117_161.json" length=747 -> 201 Created
+
+## 7. logcat 崩溃计数（logcat_b11_fix.txt，18,115 行）
+FATAL EXCEPTION = 0
+ANR in = 0
+E/flutter = 0
+overflowed = 0
+E AndroidRuntime = 0

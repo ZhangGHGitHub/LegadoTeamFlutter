@@ -1,0 +1,26 @@
+Running without configuration file.
+12:07:33.257 - WARNING : App wsgidav.mw.cors.Cors(None).is_disabled() returned True: skipping.
+12:07:33.272 - INFO    : WsgiDAV/4.4.0 Python/3.11.9 Windows-10-10.0.26200-SP0
+12:07:33.272 - INFO    : Lock manager:      LockManager(LockStorageDict)
+12:07:33.272 - INFO    : Property manager:  None
+12:07:33.272 - INFO    : Domain controller: SimpleDomainController()
+12:07:33.272 - INFO    : Registered DAV providers by route:
+12:07:33.272 - INFO    :   - '/:dir_browser': FilesystemProvider for path 'C:\\Users\\admin\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\wsgidav\\dir_browser\\htdocs' (Read-Only) (anonymous)
+12:07:33.292 - INFO    :   - '/': FilesystemProvider for path 'C:\\Users\\admin\\AppData\\Local\\Temp\\legado_dav' (Read-Write) (anonymous)
+12:07:33.292 - WARNING : Basic authentication is enabled: It is highly recommended to enable SSL.
+12:07:33.292 - WARNING : Share '/' will allow anonymous write access.
+12:07:33.292 - WARNING : Share '/:dir_browser' will allow anonymous write access.
+12:07:33.292 - WARNING : Could not import lxml: using xml instead (up to 10% slower). Consider `pip install lxml`(see https://pypi.python.org/pypi/lxml).
+12:07:33.334 - INFO    : Running WsgiDAV/4.4.0 Cheroot/11.1.2 Python/3.11.9
+12:07:33.335 - INFO    : Serving on http://0.0.0.0:8090 ...
+12:07:35.990 - INFO    : 127.0.0.1 - (anonymous) - [2026-11-10 04:07:35] "GET /" elap=0.001sec -> 200 OK
+12:10:40.901 - INFO    : Got OPTIONS '/' request
+12:10:40.902 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:10:40] "PROPFIND /" length=0, depth=0, elap=0.001sec -> 207 Multi-Status
+12:12:00.948 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:12:00] "PUT /legado/backup_20261110_121211_429.json" length=747, elap=0.002sec -> 201 Created
+12:12:19.417 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:12:19] "PUT /legado/backup_20261110_121229_900.json" length=747, elap=0.001sec -> 201 Created
+12:12:40.180 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:12:40] "PUT /legado/backup_20261110_121250_663.json" length=747, elap=0.002sec -> 201 Created
+12:13:51.014 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:13:51] "PROPFIND /legado/" length=214, depth=1, elap=0.003sec -> 207 Multi-Status
+12:14:19.520 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:14:19] "GET /legado/backup_20261110_121250_663.json" depth=0, elap=0.033sec -> 200 OK
+12:15:16.559 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:15:16] "PROPFIND /legado/" length=214, depth=1, elap=0.003sec -> 207 Multi-Status
+12:15:30.841 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:15:30] "GET /legado/backup_20261110_121250_663.json" depth=0, elap=0.001sec -> 200 OK
+12:22:32.861 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:22:32] "PROPFIND /legado/" length=214, depth=1, elap=0.002sec -> 207 Multi-Status

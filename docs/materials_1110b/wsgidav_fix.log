@@ -1,0 +1,18 @@
+Running without configuration file.
+12:37:27.963 - WARNING : App wsgidav.mw.cors.Cors(None).is_disabled() returned True: skipping.
+12:37:27.976 - INFO    : WsgiDAV/4.4.0 Python/3.11.9 Windows-10-10.0.26200-SP0
+12:37:27.976 - INFO    : Lock manager:      LockManager(LockStorageDict)
+12:37:27.976 - INFO    : Property manager:  None
+12:37:27.976 - INFO    : Domain controller: SimpleDomainController()
+12:37:27.976 - INFO    : Registered DAV providers by route:
+12:37:27.976 - INFO    :   - '/:dir_browser': FilesystemProvider for path 'C:\\Users\\admin\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\wsgidav\\dir_browser\\htdocs' (Read-Only) (anonymous)
+12:37:27.976 - INFO    :   - '/': FilesystemProvider for path 'C:\\Users\\admin\\AppData\\Local\\Temp\\legado_dav' (Read-Write) (anonymous)
+12:37:27.976 - WARNING : Basic authentication is enabled: It is highly recommended to enable SSL.
+12:37:27.976 - WARNING : Share '/' will allow anonymous write access.
+12:37:27.976 - WARNING : Share '/:dir_browser' will allow anonymous write access.
+12:37:27.976 - WARNING : Could not import lxml: using xml instead (up to 10% slower). Consider `pip install lxml`(see https://pypi.python.org/pypi/lxml).
+12:37:27.996 - INFO    : Running WsgiDAV/4.4.0 Cheroot/11.1.2 Python/3.11.9
+12:37:27.996 - INFO    : Serving on http://0.0.0.0:8090 ...
+12:38:52.962 - INFO    : Got OPTIONS '/' request
+12:38:52.963 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:38:52] "PROPFIND /" length=0, depth=0, elap=0.000sec -> 207 Multi-Status
+12:41:06.681 - INFO    : 192.168.100.62 - (anonymous) - [2026-11-10 04:41:06] "PUT /legado/backup_20261110_124117_161.json" length=747, elap=0.001sec -> 201 Created

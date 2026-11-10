@@ -1,0 +1,61 @@
+批11 备份/恢复选择式 Sheet — 设备验收命令行证据记录
+设备：192.168.100.62:5555（MuMu「Test测试」，SM-G9900 / Android 15 / 1080x1920 @480dpi）
+APK：D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+APK sha256：d3674b01dcb3e7b4ef8196217d67416be3ceeb52eaa96fcafa0a9b8bb32e1aac
+APK badging：versionCode='480' versionName='2.0.479'（pubspec.yaml 为 2.0.480+481，不一致）
+设备安装后 dumpsys：versionCode=480 versionName=2.0.479
+
+一、本地备份目录 /storage/emulated/0/Download/legado_b11/
+- 基线（12:10）：total 0（空）
+- 项2 备份至本地后（12:11）：
+  -rwxrwxrwx 1 root root 747 2026-11-10 12:11 legado_backup_1794283914123.json
+- 项3 备份至网络后（12:12）：无新增文件（与项2相同）
+- 项4 备份至本地与网络后（12:12）：
+  -rwxrwxrwx 1 root root 747 2026-11-10 12:12 legado_backup_1794283949895.json
+  （因「仅保留最新备份」开启，旧文件被替换，目录恒为 1 个文件）
+- 项5 长按备份行后（12:12）：
+  -rwxrwxrwx 1 root root 747 2026-11-10 12:12 legado_backup_1794283970658.json
+- 项12 附加验证「备份至本地与网络（无 WebDAV）」后（12:18）：
+  -rwxrwxrwx 1 root root 720 2026-11-10 12:18 legado_backup_1794284348193.json
+
+二、WebDAV 服务器目录 C:/Users/admin/AppData/Local/Temp/legado_dav/legado/
+- 基线（12:10）：
+  backup_20260101_120000_000.json  59B  03:20
+  backup_20261110_032628_168.json 775B  03:43
+  backup_20261110_034000_000.json 775B  03:40
+  backup_20261110_035000_000.json 775B  03:51
+- 项3 备份至网络后（12:12）：新增 backup_20261110_121211_429.json 747B
+- 项4 备份至本地与网络后（12:12）：新增 backup_20261110_121229_900.json 747B
+- 项5 长按备份行后（12:12）：新增 backup_20261110_121250_663.json 747B
+- 项12 无 WebDAV 时执行「备份至本地与网络」后：服务器无新增文件
+- 终态（7 个文件）：
+  backup_20260101_120000_000.json  59B
+  backup_20261110_032628_168.json 775B
+  backup_20261110_034000_000.json 775B
+  backup_20261110_035000_000.json 775B
+  backup_20261110_121211_429.json 747B
+  backup_20261110_121229_900.json 747B
+  backup_20261110_121250_663.json 747B
+
+三、wsgidav 访问日志（见 wsgidav_b11.log，关键行）
+12:10:40  PROPFIND / 207（测试配置/连接）
+12:12:00  PUT /legado/backup_20261110_121211_429.json 747 -> 201
+12:12:19  PUT /legado/backup_20261110_121229_900.json 747 -> 201
+12:12:40  PUT /legado/backup_20261110_121250_663.json 747 -> 201
+12:13:51  PROPFIND /legado/ 207（打开远端恢复列表）
+12:14:19  GET /legado/backup_20261110_121250_663.json 200（项7 网络恢复）
+12:15:16  PROPFIND /legado/ 207（项9 远端最新列表）
+12:15:30  GET /legado/backup_20261110_121250_663.json 200（项9 远端最新恢复）
+12:22:32  PROPFIND /legado/ 207（项13 重配后网络恢复列表）
+
+四、logcat 稳定性统计
+- logcat_b11.txt（验收结束，pm clear 前）：19317 行
+  FATAL EXCEPTION=0, ANR in=0, E/flutter=0, overflowed=0, E AndroidRuntime=0
+- logcat_b11_after_clear.txt（pm clear + 冷启动后）：19231 行
+  同上五项均=0
+
+五、清理与终态
+- adb shell pm clear io.legado.flutter_legado -> Success
+- am start -W -> Status: ok, LaunchState: COLD, TotalTime: 392ms
+- 空书架界面截图 tmp_qb11_72_after_clear_empty_shelf.png
+- wsgidav 已停止（taskkill PID 88848，端口 8090 不再监听）
