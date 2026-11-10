@@ -1,0 +1,23 @@
+{
+  "app": "legado",
+  "type": "theme",
+  "version": 1,
+  "paletteId": "def",
+  "themeMode": "light",
+  "day": {
+    "primary": null,
+    "accent": null,
+    "primaryText": 4280391411,
+    "secondaryText": 0,
+    "background": null,
+    "bottomBackground": null
+  },
+  "night": {
+    "primary": null,
+    "accent": null,
+    "primaryText": 0,
+    "secondaryText": 0,
+    "background": null,
+    "bottomBackground": null
+  }
+}
