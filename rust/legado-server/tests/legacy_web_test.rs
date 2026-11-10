@@ -3586,6 +3586,59 @@ async fn test_b6_all_write_routes_require_token() {
     assert_ne!(header_str(&headers, "connection"), "close");
 }
 
+/// [批17 三审 P2] Web 端口 `/mcp/call` 与源写端点同级：无令牌必须被拒
+///
+/// `/mcp/call` 的 `eval_js` 可执行任意 JS（timeout 5..600s），此前未挂令牌
+/// 守卫，可占满 server runtime 的 blocking 池；现纳入
+/// `PROTECTED_SOURCE_WRITE_ROUTES`，生产入口
+/// [`legado_server::server::attach_source_write_token_guard`] 在 body 提取前
+/// 直接拒绝（此处按生产入口显式挂载；`create_router` 本体保持无状态）。
+#[tokio::test]
+async fn test_web_mcp_call_requires_source_write_token() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = legado_server::server::attach_source_write_token_guard(
+        create_router(Arc::clone(&state)),
+        state,
+    );
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "eval_js", "arguments": {"js": "1+1"}}
+    })
+    .to_string();
+
+    // 无令牌：前置守卫拒绝（原版失败信封 + Connection: close）
+    let (status, headers, rd) = post_write_json(
+        app.clone(),
+        "/mcp/call",
+        Some("application/json"),
+        &[],
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "rd={rd}");
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "rd={rd}");
+    assert_eq!(
+        header_str(&headers, "connection"),
+        "close",
+        "令牌失败应关闭连接（原版 shouldCloseConnection）"
+    );
+
+    // 正确令牌：进入 MCP handler（不再是令牌错误；quickjs 档/默认档均成立）
+    let (_, _, rd) = post_write_json(
+        app,
+        "/mcp/call",
+        Some("application/json"),
+        &[(B6_TOKEN, "secret")],
+        body.as_bytes(),
+    )
+    .await;
+    assert_ne!(rd["errorMsg"], B4_TOKEN_ERROR, "rd={rd}");
+}
+
 #[tokio::test]
 async fn test_b6_save_book_source_upsert_and_errors() {
     let state = make_test_state();

@@ -12,12 +12,12 @@
 //! 5. [批17 回修 P1] App 构建下 Web `/testReplaceRule` 预览真实执行 `@js:`；
 //! 6. [批17 回修 P2] origin-only `scope` 的既有语义差异快照。
 //!
-//! **修复前红/覆盖性口径**：
-//! - 批15 回归用例：执行/绑定断言（相对批15 修复前为红；相对本回修父提交
-//!   为绿，仅防回归，不计入本回修的红证据）；
-//! - 本回修区分性用例（父提交必红）：`/testReplaceRule` 预览；
-//! - 覆盖性用例（父提交亦绿，仅防回归）：抛错、超时、无 quickjs ——
-//!   父提交 Web 端跳过 `@js:` 同样保留原文，故不能作为修复证据。
+//! **修复前红/覆盖性口径（按基线版本）**：
+//! - 批17 前基线 `217e2c3dcb` 红：Web 正文执行/绑定断言（旧 Web 跳过 `@js:`）；
+//! - `feebd44f41` 起为绿：`/testReplaceRule` 预览用例（修复随该提交落地，
+//!   当前仅防回归，不再标「父提交必红」）；
+//! - 覆盖性（父提交亦绿）：抛错、超时、无 quickjs —— 旧 Web 跳过 `@js:`
+//!   同样保留原文，故不能作为修复证据。
 //!
 //! **parity 前提（P2-3）**：App 端与 Web 端均使用**默认正文净化配置**
 //! （`chineseConverterType=0`、`replaceEnableDefault=true`、章级去重开启、
@@ -267,10 +267,10 @@ async fn test_js_rule_parity_app_and_web_with_chapter_book_bindings() {
 /// [批17 回修 P1] App 构建（`--features quickjs`）下 Web 预览
 /// `/testReplaceRule` 必须真实执行 `@js:`
 ///
-/// 修复前：`legado-ffi` 未透传 `legado-server/quickjs`，server 侧预览
-/// 执行器缺失（返回「需要 JS 执行器」）；且 server 另有一份只绑 `result`
-/// 的私有执行器。修复后预览与正文共用 `legado-js` 同一执行器，返回 `a!`。
-/// 本用例是**区分性**用例：父提交下必红。
+/// 修复前：批17 前基线 `217e2c3dcb` 上 `legado-ffi` 未透传
+/// `legado-server/quickjs`，server 侧预览执行器缺失（返回「需要 JS 执行器」）；
+/// `feebd44f41` 起修复并转绿，当前仅防回归。注意预览已改由 `legado-js`
+/// 共享执行器门控，feature 透传只影响 server 独有 JS 路径（另有用例钉住）。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_web_test_replace_rule_executes_js_in_app_build() {
@@ -310,8 +310,9 @@ async fn test_web_test_replace_rule_executes_js_in_app_build() {
     );
 }
 
-/// [批17 复审 P3] `legado-server/quickjs` 透传钉住：走 server 独有
-/// `#[cfg(feature = "quickjs")]` 路径 `/mcp/call` 的 `eval_js` 工具
+/// [批17 三审 P2/P3] `legado-server/quickjs` 透传钉住 + `/mcp/call` 令牌守卫：
+/// 走 server 独有 `#[cfg(feature = "quickjs")]` 路径的 `eval_js` 工具，
+/// 同时按生产入口挂上写源令牌守卫。
 ///
 /// `/testReplaceRule` 与正文 `@js:` 已改由 `legado-js` 共享执行器门控，
 /// 无法证明 server feature 透传；MCP `eval_js` 仍由 `legado-server` 自身
@@ -320,7 +321,18 @@ async fn test_web_test_replace_rule_executes_js_in_app_build() {
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_app_build_enables_server_only_quickjs_path() {
-    let app = create_router(make_web_state());
+    let state = make_web_state();
+    {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:jsSourceApiToken", "secret", 0)
+            .unwrap();
+    }
+    // 与生产入口一致：Web 路由挂写源令牌守卫
+    let app = legado_ffi::legado_server::server::attach_source_write_token_guard(
+        create_router(Arc::clone(&state)),
+        state,
+    );
     let body = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -334,6 +346,7 @@ async fn test_app_build_enables_server_only_quickjs_path() {
                 .method("POST")
                 .uri("/mcp/call")
                 .header("Content-Type", "application/json")
+                .header("x-legado-token", "secret")
                 .body(Body::from(body))
                 .unwrap(),
         )
@@ -351,7 +364,7 @@ async fn test_app_build_enables_server_only_quickjs_path() {
         "App 构建未透传 legado-server/quickjs（server 独有 JS 路径降级）: {rd}"
     );
     assert!(
-        text.contains("2"),
+        text.contains("-- 结果 --\n2"),
         "MCP eval_js 应返回 2（server quickjs 路径已启用）: {rd}"
     );
 }

@@ -84,10 +84,12 @@ fn get_server_runtime() -> LegadoResult<&'static Runtime> {
                 .unwrap_or(2)
                 .clamp(2, 8),
         )
-        // [批17 复审 P2] blocking 池上限：Web `/getBookContent` 无鉴权，正文
-        // 净化（正则/`@js:`）经 spawn_blocking 执行；默认 512 线程会让并发
-        // 请求把进程线程数拉满。8 与 `purify_content` 的 `@js:` 信号量（4）
-        // 配合，既保留并发度又给 `/testReplaceRule`、MCP eval_js 留槽位。
+        // [批17 三审 P2] blocking 池上限：Web `/getBookContent` 与 `/mcp/call`
+        // eval_js 等共享本 runtime 的 blocking 池；默认 512 线程会被并发请求
+        // 拉满。设 8 槽，并给 Web 端口 `/mcp/call` 挂写源令牌守卫（未授权不能
+        // 占用）；`/getBookContent` 内 `@js:` 另有信号量（4）限制。注意：本上限
+        // 仅适用于 FFI `server_start` 创建的内嵌 runtime；独立 `start_server`
+        // 使用调用方 runtime，需自行配置 blocking 上限。
         .max_blocking_threads(8)
         .thread_name("legado-server")
         .thread_stack_size(8 * 1024 * 1024)

@@ -26,7 +26,8 @@
 //!
 //! 本轨 [`PROTECTED_SOURCE_WRITE_ROUTES`] 常量把上述 9 条 + `saveJsSource` +
 //! 批30 检验会话两条（`/startBookSourceCheck`、`/stopBookSourceCheck`）合并为
-//! 12 条，供路由级前置中间件统一使用（原版集合本就包含检验两条）。
+//! 12 条，供路由级前置中间件统一使用（原版集合本就包含检验两条）；批17 三审
+//! 再追加 Web 端口 `/mcp/call`（可执行任意 JS 的 MCP 工具调用面）为第 13 条。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -156,7 +157,11 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 的 9 条 + 独立链保护的 `/saveJsSource`（HttpServer.kt:60-62）一致；
 /// 批30 追加检验会话两条 `/startBookSourceCheck`、`/stopBookSourceCheck`
 /// （同属原版集合，HttpServer.kt:251-254）。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 12] = [
+///
+/// [批17 三审 P2] 追加 `/mcp/call`：Web 端口该路由可执行任意 JS
+/// （`eval_js`，timeout 5..600s），与源写端点同为高成本副作用面，纳入同一
+/// 令牌前置守卫；独立 MCP 端口（`serve_mcp`）已有自己的 token 中间件。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 13] = [
     "/startBookSourceCheck",
     "/stopBookSourceCheck",
     "/saveBookSource",
@@ -169,6 +174,7 @@ pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 12] = [
     "/saveReplaceRule",
     "/deleteReplaceRule",
     "/testReplaceRule",
+    "/mcp/call",
 ];
 
 /// 路径是否属于受保护源写端点
@@ -1303,10 +1309,11 @@ mod tests {
         );
     }
 
-    /// P2-2：受保护路由清单与中间件判定一致（12 条，批30 含检验会话两条）
+    /// P2-2：受保护路由清单与中间件判定一致（13 条：批30 检验会话两条 +
+    /// 批17 三审 `/mcp/call`）
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 12);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 13);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1320,12 +1327,15 @@ mod tests {
             "/saveReplaceRule",
             "/deleteReplaceRule",
             "/testReplaceRule",
+            "/mcp/call",
         ] {
             assert!(is_protected_source_write_route(path), "{path}");
         }
         assert!(!is_protected_source_write_route("/getBookshelf"));
         assert!(!is_protected_source_write_route("/saveBook"));
         assert!(!is_protected_source_write_route("/openLegacyReview"));
+        // 只保护可执行 JS 的 call；tools 列表无副作用，保持免令牌
+        assert!(!is_protected_source_write_route("/mcp/tools"));
     }
 
     /// 用户态保留：enabled/enabledExplore/customOrder/weight/respondTime

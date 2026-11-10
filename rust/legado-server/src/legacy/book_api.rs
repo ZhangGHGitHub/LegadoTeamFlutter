@@ -117,8 +117,8 @@ const REPLACE_ENABLE_DEFAULT: bool = true;
 ///
 /// `/getBookContent` 无鉴权，`@js:` 在 blocking 线程内逐规则执行（单规则
 /// 超时上限 60s）；不设上限时并发请求可同时占满 blocking 池与其内部规则
-/// 线程。取 4 与 server runtime 的 `max_blocking_threads(8)` 配合：极端情况
-/// 下仍给 `/testReplaceRule`、MCP eval_js 等其他 blocking 调用留出槽位。
+/// 线程。取 4 与 server runtime 的 `max_blocking_threads(8)` 配合，限制
+/// `@js:` 并发；超限请求仍跑普通规则管线（只禁用 JS 执行器），不整条跳过。
 const PURIFY_JS_MAX_CONCURRENCY: usize = 4;
 
 /// `@js:` 净化并发闸门（惰性初始化；进程级共享，跨请求生效）
@@ -632,10 +632,11 @@ async fn get_book_content_inner(
 /// 先异步读规则，再把纯计算经 `spawn_blocking` 移交 blocking 线程池，
 /// 避免并发请求占满 tokio worker（与 `testReplaceRule` 的 P1-3 同款）。
 ///
-/// [批17 复审 P2] 含 `@js:` 的净化再经进程级信号量限流（见
-/// [`PURIFY_JS_MAX_CONCURRENCY`]）：`try_acquire` 失败**不排队**，直接跳过
-/// 本条净化并保留原文；与 server runtime 的 `max_blocking_threads(8)` 共同
-/// 约束无鉴权端点的 blocking 池消耗。
+/// [批17 三审 P2] 含 `@js:` 的净化再经进程级信号量限流（见
+/// [`PURIFY_JS_MAX_CONCURRENCY`]）：`try_acquire` 失败**不排队**，但仍执行
+/// 完整净化管线（去重标题/普通规则照常），只禁用 `@js:` 执行器、保留其
+/// 匹配原文；与 server runtime 的 `max_blocking_threads(8)` 共同约束
+/// 无鉴权端点的 blocking 池消耗。
 async fn purify_content(
     state: &Arc<AppState>,
     book: &Book,
@@ -653,22 +654,24 @@ async fn purify_content(
     };
     let entries = ReplaceRuleEntry::from_replace_rules(&rules);
     let needs_js = replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution);
-    // [批17 复审 P2] 非阻塞限流：超限请求不等待 `@js:` 任务完成、不放大
-    // 延迟，直接返回原文（普通规则同样不执行，保持单一「跳过净化」语义）。
-    let js_permit = if needs_js {
+    // [批17 三审 P2] 非阻塞限流：超限请求不等待 `@js:` 任务完成、不放大
+    // 延迟；但**仍执行完整净化管线**，只把 `js_executor` 置 None——去重复
+    // 标题与普通替换规则照常生效，`@js:` 按「缺执行器」语义保留原文
+    // （与 no-quickjs 构建一致），不再整条跳过造成用户可见回退。
+    let (js_permit, allow_js) = if needs_js {
         match purify_js_semaphore().try_acquire_owned() {
-            Ok(permit) => Some(permit),
+            Ok(permit) => (Some(permit), true),
             Err(_) => {
                 tracing::warn!(
-                    "正文净化 @js: 并发已达上限 {}，跳过本条净化并保留原文（book={}）",
+                    "正文净化 @js: 并发已达上限 {}，本条仅跳过 @js: 执行（普通规则继续，book={}）",
                     PURIFY_JS_MAX_CONCURRENCY,
                     book.name
                 );
-                return raw_content.to_string();
+                (None, false)
             }
         }
     } else {
-        None
+        (None, true)
     };
     let book = book.clone();
     let chapter = chapter.clone();
@@ -676,7 +679,7 @@ async fn purify_content(
     match tokio::task::spawn_blocking(move || {
         // permit 随闭包持有到净化结束（panic 时由 Drop 释放）
         let _js_permit = js_permit;
-        purify_content_blocking(&book, &chapter, &raw, &entries, replace_enabled)
+        purify_content_blocking(&book, &chapter, &raw, &entries, replace_enabled, allow_js)
     })
     .await
     {
@@ -689,12 +692,16 @@ async fn purify_content(
 }
 
 /// 正文净化同步核心（仅在 blocking 线程池执行，禁止在 async 上下文直调）
+///
+/// `allow_js=false` 表示并发闸门已满：仍跑完整管线，仅不注入 `@js:` 执行器
+/// （`ContentProcessor` 对缺执行器的 `@js:` 保留原文，普通规则继续）。
 fn purify_content_blocking(
     book: &Book,
     chapter: &BookChapter,
     raw_content: &str,
     entries: &[ReplaceRuleEntry],
     replace_enabled: bool,
+    allow_js: bool,
 ) -> String {
     let config = ProcessorConfig {
         remove_duplicate_title: true,
@@ -706,15 +713,18 @@ fn purify_content_blocking(
     };
     // [批17] 与 App 端正文净化同款注入条件：规则生效且确有 `@js:` 正文规则
     // 才构造执行器；非 quickjs 构建执行器 eval 返回 Err，管线按既有口径
-    // 保留原文（后续规则不受影响）
-    let js_executor: Option<Arc<dyn ReplaceJsExecutor>> =
-        if replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution) {
-            Some(Arc::new(ReplaceRuleJsExecutor::new(
-                build_replace_js_bindings(book, chapter),
-            )))
-        } else {
-            None
-        };
+    // 保留原文（后续规则不受影响）。[批17 三审 P2] `allow_js=false`（并发
+    // 超限）时不注入执行器，普通规则与去重标题仍由同一管线执行。
+    let js_executor: Option<Arc<dyn ReplaceJsExecutor>> = if allow_js
+        && replace_enabled
+        && entries.iter().any(ReplaceRuleEntry::needs_js_execution)
+    {
+        Some(Arc::new(ReplaceRuleJsExecutor::new(
+            build_replace_js_bindings(book, chapter),
+        )))
+    } else {
+        None
+    };
     ContentProcessor::new(config)
         .with_scope_context(ScopeContext::new(book.name.clone(), book.origin.clone()))
         .process_with_js(raw_content, &chapter.title, entries, js_executor)

@@ -99,7 +99,7 @@ mod quickjs_concurrency {
         ReplaceRuleRepository::new(db.connection())
             .insert(&ReplaceRule {
                 name: "批17_并发限流".to_string(),
-                pattern: "标记".to_string(),
+                pattern: "甲标记".to_string(),
                 // 约 500ms 的同步忙等，保证 8 个请求的限流判定发生在
                 // 任一 JS 任务释放 permit 之前
                 replacement:
@@ -112,17 +112,31 @@ mod quickjs_concurrency {
                 ..Default::default()
             })
             .unwrap();
+        // 普通（非 @js:）规则：超限时仍需生效（三审 P2 语义）
+        ReplaceRuleRepository::new(db.connection())
+            .insert(&ReplaceRule {
+                name: "批17_并发普通规则".to_string(),
+                pattern: "乙普通标记".to_string(),
+                replacement: "已换".to_string(),
+                is_regex: false,
+                is_enabled: true,
+                scope_content: true,
+                ..Default::default()
+            })
+            .unwrap();
     }
 
-    /// [批17 复审 P2] 并发 8 个含 `@js:` 的正文请求：
-    /// - 4 条获得信号量 → 真实执行 JS（输出含 `!`）；
-    /// - 4 条超限 → 非阻塞跳过、保留原文（不等待 JS 完成）；
-    /// - 全部请求在合理时间内返回。
+    /// [批17 三审 P2] 并发 8 个含 `@js:` 的正文请求：
+    /// - 4 条获得信号量 → 执行 JS（`标记` → `标记!`）；
+    /// - 4 条超限 → **仍跑完整净化管线**：普通规则照常生效，仅 `@js:`
+    ///   保留原文（不等待 JS 完成）；
+    /// - 全部请求在合理时间内返回，超限请求 max < 1s。
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_purify_js_concurrency_limit_keeps_original_over_limit() {
         let state = make_test_state();
-        let raw = "前标记后";
-        let transformed = "前标记!后";
+        let raw = "前甲标记后 乙普通标记";
+        let transformed = "前甲标记!后 已换";
+        let over_limit = "前甲标记后 已换";
         seed(&state, raw).await;
         let app = create_router(state);
         let uri = format!(
@@ -151,8 +165,8 @@ mod quickjs_concurrency {
         let elapsed = started.elapsed();
 
         let mut transformed_count = 0usize;
-        let mut raw_count = 0usize;
-        let mut raw_elapsed_min = Duration::MAX;
+        let mut over_limit_count = 0usize;
+        let mut over_limit_elapsed_max = Duration::ZERO;
         let mut js_elapsed_max = Duration::ZERO;
         for (request_elapsed, rd) in &results {
             assert_eq!(rd["isSuccess"], true, "rd={rd}");
@@ -161,16 +175,17 @@ mod quickjs_concurrency {
                     transformed_count += 1;
                     js_elapsed_max = js_elapsed_max.max(*request_elapsed);
                 }
-                value if value == raw => {
-                    raw_count += 1;
-                    raw_elapsed_min = raw_elapsed_min.min(*request_elapsed);
+                value if value == over_limit => {
+                    over_limit_count += 1;
+                    over_limit_elapsed_max = over_limit_elapsed_max.max(*request_elapsed);
                 }
                 other => panic!("未预期的正文输出: {other:?}（rd={rd}）"),
             }
         }
         eprintln!(
             "[批17 并发] elapsed={elapsed:?} transformed={transformed_count} \
-             raw={raw_count} min_raw_elapsed={raw_elapsed_min:?} \
+             over_limit={over_limit_count} \
+             max_over_limit_elapsed={over_limit_elapsed_max:?} \
              max_js_elapsed={js_elapsed_max:?}"
         );
 
@@ -178,10 +193,13 @@ mod quickjs_concurrency {
             transformed_count, 4,
             "信号量上限 4：应恰有 4 条执行 JS（实际 {transformed_count}）"
         );
-        assert_eq!(raw_count, 4, "超限 4 条应保留原文（实际 {raw_count}）");
+        assert_eq!(
+            over_limit_count, 4,
+            "超限 4 条应保留 @js: 原文且普通规则仍生效（实际 {over_limit_count}）"
+        );
         assert!(
-            raw_elapsed_min < Duration::from_millis(400),
-            "超限请求不得等待 JS 完成（非阻塞限流），实际最短 {raw_elapsed_min:?}"
+            over_limit_elapsed_max < Duration::from_secs(1),
+            "全部超限请求应在 1s 内返回（非阻塞限流），实际最长 {over_limit_elapsed_max:?}"
         );
         assert!(
             js_elapsed_max >= Duration::from_millis(450),

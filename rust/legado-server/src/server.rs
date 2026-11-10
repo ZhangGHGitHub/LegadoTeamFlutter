@@ -181,11 +181,11 @@ pub async fn serve_web_with_injected_paths(
 /// 为 Web 路由挂上源写端点令牌前置中间件（P2-2，批10 审查）
 ///
 /// 中间件实现见 [`crate::legacy::source_write_api::source_write_token_guard`]：
-/// 仅对 12 条受保护源写路由（本模块 10 条 + 批30 检验会话 2 条）生效，
-/// 未授权时直接返回原版失败信封 + `Connection: close`，**不读取请求体**。
-/// 挂载点选在 [`serve_web_with_injected_paths`]（FFI / 独立二进制共用的
-/// 生产入口），`create_router` 本体保持无状态可测；handler 内令牌校验保留
-/// 为纵深防御。
+/// 仅对 13 条受保护路由（本模块 10 条 + 批30 检验会话 2 条 + 批17 三审
+/// `/mcp/call`）生效，未授权时直接返回原版失败信封 + `Connection: close`，
+/// **不读取请求体**。挂载点选在 [`serve_web_with_injected_paths`]（FFI /
+/// 独立二进制共用的生产入口），`create_router` 本体保持无状态可测；handler
+/// 内令牌校验保留为纵深防御。
 pub fn attach_source_write_token_guard(router: Router, state: Arc<AppState>) -> Router {
     router.layer(from_fn_with_state(
         state,

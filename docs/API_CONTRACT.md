@@ -759,7 +759,7 @@
 >
 > 因此：开启简繁转换/章级去重/reSegment、`replaceEnableDefault=false`，或 `scope` 仅命中书籍来源、使用 `excludeScope` 时，两端输出可不同；`@js:` 本身的执行/绑定/错误与超时口径已统一。统一上述配置与 scope 语义需另立批次并做设备验收。回归用例：`legado-ffi/tests/replace_rule_js_web_parity.rs`（默认配置逐字相等 + origin-only scope 差异快照）与 `legado-server/tests/legacy_web_test.rs`（Web 侧执行/绑定/抛错/超时/无 quickjs）。
 >
-> **并发保护与耗尽风险（批17 复审登记）**：`/getBookContent` 无鉴权。正文净化经 `spawn_blocking` 执行，server runtime 设 `max_blocking_threads(8)`；含 `@js:` 的净化另有进程级信号量上限 **4**（`try_acquire` 非阻塞，超限直接跳过该条净化并保留原文 + warn 日志）。因此高并发下 Web 端可能返回未净化原文（Web 独有安全取舍，App 端无此闸门，不属语义回归）；极端并发仍可能占满 blocking 池（8 槽），后续请求排队等待，需通过限流/鉴权另行收敛。
+> **并发保护与耗尽风险（批17 三审登记）**：`/getBookContent` 无鉴权。正文净化经 `spawn_blocking` 执行；**仅 FFI 内嵌 `server_start` 创建的 runtime** 设 `max_blocking_threads(8)`（独立 `start_server` 使用调用方 runtime，无此上限，需自行配置）。含 `@js:` 的净化另有进程级信号量上限 **4**：`try_acquire` 非阻塞，超限时**仍执行完整净化管线**（去重标题/普通规则照常生效），只禁用 `@js:` 执行器、其匹配保留原文（与 no-quickjs 语义一致）。Web 端口 `/mcp/call` 的 `eval_js` 可执行任意 JS（timeout 5..600s），会把共享 blocking 池（8 槽）占满、导致净化排队；该路由已纳入写源令牌守卫（生产入口 `attach_source_write_token_guard`），未配置/未携带令牌一律拒绝；独立 MCP 端口沿用自身 token 中间件。剩余风险：持有令牌的客户端仍可占满 8 槽，需通过限流另行收敛。
 
 ### 2.9 阅读器操作（12 个方法）
 
