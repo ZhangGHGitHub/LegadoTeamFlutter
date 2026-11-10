@@ -9,6 +9,7 @@
 // 6. 纯文本页无图片组件（零回归）。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -38,6 +39,13 @@ final Uint8List _pngBytes = base64Decode(
 
 const _bigImg = 'https://cdn.example.com/big.png';
 const _smallImg = 'https://cdn.example.com/small.png';
+const _img1 = 'https://cdn.example.com/1.png';
+const _img2 = 'https://cdn.example.com/2.png';
+const _img3 = 'https://cdn.example.com/3.png';
+const _imgB = 'https://cdn.example.com/book-b.png';
+// 不预置字节缓存：用于验证「测量在途/失败」不依赖渲染成功回填
+const _imgA = 'https://cdn.example.com/inflight-a.png';
+const _failImg = 'https://cdn.example.com/fail.png';
 
 class _FixedReaderNotifier extends ReaderNotifier {
   _FixedReaderNotifier(this.initial);
@@ -57,20 +65,27 @@ class _SwitchableReaderNotifier extends _FixedReaderNotifier {
   }
 }
 
-ReaderState _readerState(String content, {double fontSize = 16}) {
+ReaderState _readerState(
+  String content, {
+  double fontSize = 16,
+  String bookUrl = 'https://book.example.com/1',
+  String origin = 'https://source.example.com',
+  String? chapterImgUrl,
+}) {
   return ReaderState(
-    currentBook: const Book(
-      bookUrl: 'https://book.example.com/1',
+    currentBook: Book(
+      bookUrl: bookUrl,
       name: '混排测试书',
       author: '作者',
-      origin: 'https://source.example.com',
+      origin: origin,
       bookType: BookType.text,
     ),
-    chapters: const [
+    chapters: [
       BookChapter(
-        url: 'https://book.example.com/1/c1',
+        url: '$bookUrl/c1',
         title: '第一章 混排',
         index: 0,
+        imgUrl: chapterImgUrl,
       ),
     ],
     currentChapterIndex: 0,
@@ -93,11 +108,15 @@ ParagraphConfig _paragraphConfig({double fontSize = 16}) => ParagraphConfig(
 
 ReaderImageRenderConfig _renderConfig({
   void Function(ReaderInlineImage)? onPreview,
+  String cacheOrigin = '',
+  VoidCallback? onSizeResolved,
 }) {
   return ReaderImageRenderConfig(
     loader: (image) async => _pngBytes,
     clickImgWay: '1',
     onPreview: onPreview ?? (_) {},
+    cacheOrigin: cacheOrigin,
+    onSizeResolved: onSizeResolved,
   );
 }
 
@@ -171,6 +190,10 @@ void main() {
       _smallImg,
       _pngBytes,
     );
+    for (final url in [_img1, _img2, _img3, _imgB]) {
+      ReaderImageBytesCache.put('https://source.example.com', url, _pngBytes);
+      ReaderImageBytesCache.put('https://source-b.example.com', url, _pngBytes);
+    }
   });
 
   testWidgets('大图独立变高行：图片渲染且前后文字未丢', (tester) async {
@@ -249,7 +272,15 @@ void main() {
       WidgetTester tester, {
       required ReaderState state,
       _SwitchableReaderNotifier? notifier,
+      ReaderImageSizeMeasurer? measurer,
+      Size size = const Size(360, 640),
     }) async {
+      // 视口与 MediaQuery 尺寸一致（ReaderTypographicPage 用真实布局约束，
+      // 只改 MediaQuery 会让分页宽度/高度与渲染约束错位）
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final container = ProviderContainer(
         overrides: [
           bookApiProvider.overrideWithValue(MockBookApi()),
@@ -263,9 +294,9 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: MediaQuery(
-            data: const MediaQueryData(
-              size: Size(360, 640),
-              textScaler: TextScaler.linear(1.3),
+            data: MediaQueryData(
+              size: size,
+              textScaler: const TextScaler.linear(1.3),
             ),
             child: MaterialApp(
               home: ReaderPageView(
@@ -278,6 +309,7 @@ void main() {
                 readBodyToLh: false,
                 imageStyle: 'FULL',
                 clickImgWay: '1',
+                imageMeasurer: measurer,
               ),
             ),
           ),
@@ -293,7 +325,6 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(400, 300));
-      ReaderImageSizeCache.markAttempted(_bigImg);
       final content =
           '${'混排正文测试文字，用于验证 360dp 与系统字体缩放下的排版。' * 8}'
           '<img src="$_bigImg">'
@@ -308,7 +339,6 @@ void main() {
 
     testWidgets('字号变更重排后仍不溢出且文本保留', (tester) async {
       ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(400, 300));
-      ReaderImageSizeCache.markAttempted(_bigImg);
       final notifier = _SwitchableReaderNotifier(
         _readerState('字号重排前文字。<img src="$_bigImg">字号重排后文字。'),
       );
@@ -328,7 +358,6 @@ void main() {
 
     testWidgets('前后翻页不抛异常且页面仍渲染正文', (tester) async {
       ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(400, 300));
-      ReaderImageSizeCache.markAttempted(_bigImg);
       final content = List.generate(
         6,
         (i) =>
@@ -351,6 +380,198 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.textContaining('翻页测试文字'), findsWidgets);
+    });
+
+    testWidgets('第 3 图挂起时前两张尺寸仍立即生效（P1-1）', (tester) async {
+      tester.view.physicalSize = const Size(400, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final c1 = Completer<ReaderImageSize?>();
+      final c2 = Completer<ReaderImageSize?>();
+      final c3 = Completer<ReaderImageSize?>();
+      Future<ReaderImageSize?> measurer(ReaderInlineImage image) {
+        return switch (image.url) {
+          _img1 => c1.future,
+          _img2 => c2.future,
+          _ => c3.future,
+        };
+      }
+
+      final content =
+          '图一<img src="$_img1">文字<img src="$_img2">'
+          '文字<img src="$_img3">结尾';
+      await pumpReader(
+        tester,
+        state: _readerState(content),
+        measurer: measurer,
+        size: const Size(400, 1400),
+      );
+      expect(ReaderImageSizeCache.isMeasuring(_img1), isTrue);
+
+      c1.complete(const ReaderImageSize(200, 100));
+      await tester.pump(const Duration(milliseconds: 20));
+      c2.complete(const ReaderImageSize(200, 100));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(ReaderImageSizeCache.lookup(_img1)?.width, 200);
+      expect(ReaderImageSizeCache.lookup(_img2)?.width, 200);
+      expect(ReaderImageSizeCache.hasResult(_img3), isFalse);
+      final layouts = tester
+          .widgetList<ReaderImageLineWidget>(find.byType(ReaderImageLineWidget))
+          .map((w) => w.layout)
+          .where((l) => l.image.url == _img1 || l.image.url == _img2)
+          .toList();
+      expect(layouts.length, greaterThanOrEqualTo(2));
+      for (final layout in layouts) {
+        expect(layout.placeholder, isFalse);
+        expect(layout.height, closeTo(100 * 376 / 200, 1));
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('换书后取消在途测量，新章图片正常测量（P1-1）', (tester) async {
+      final pendingA = Completer<ReaderImageSize?>();
+      Future<ReaderImageSize?> measurer(ReaderInlineImage image) {
+        if (image.url == _imgA) return pendingA.future;
+        return Future.value(const ReaderImageSize(120, 60));
+      }
+
+      final notifier = _SwitchableReaderNotifier(
+        _readerState('甲<img src="$_imgA">乙'),
+      );
+      await pumpReader(
+        tester,
+        state: notifier.initial,
+        notifier: notifier,
+        measurer: measurer,
+      );
+      expect(ReaderImageSizeCache.isMeasuring(_imgA), isTrue);
+
+      notifier.switchTo(
+        _readerState(
+          '新书<img src="$_imgB">正文',
+          bookUrl: 'https://book.example.com/b',
+          origin: 'https://source-b.example.com',
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(ReaderImageSizeCache.isMeasuring(_imgA), isFalse);
+      expect(ReaderImageSizeCache.lookup(_imgA), isNull);
+      expect(ReaderImageSizeCache.lookup(_imgB)?.width, 120);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('测量失败不重复下载（P2-8）', (tester) async {
+      var calls = 0;
+      Future<ReaderImageSize?> measurer(ReaderInlineImage image) async {
+        calls++;
+        return null;
+      }
+
+      final notifier = _SwitchableReaderNotifier(
+        _readerState('失败图<img src="$_failImg">正文'),
+      );
+      await pumpReader(
+        tester,
+        state: notifier.initial,
+        notifier: notifier,
+        measurer: measurer,
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(calls, 1);
+      expect(ReaderImageSizeCache.lookup(_failImg)?.failed, isTrue);
+
+      // 触发同章重排（字号变化），不得再次测量
+      notifier.switchTo(
+        _readerState('失败图<img src="$_failImg">正文', fontSize: 18),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('渲染成功回填失败尺寸并触发重排（P2-8）', (tester) async {
+      ReaderImageSizeCache.putFailure(_img1);
+      final state = _readerState('回填图<img src="$_img1">正文');
+      await pumpReader(tester, state: state);
+
+      // Image 解码/帧回调在真实时间维度完成
+      await tester.runAsync(() async {
+        for (var i = 0; i < 40; i++) {
+          if (ReaderImageSizeCache.lookup(_img1)?.isValid == true) break;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(ReaderImageSizeCache.lookup(_img1)?.isValid, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('data URI 本地解码渲染，不走 HTTP（P3-10）', (tester) async {
+      final raw = 'data:image/png;base64,${base64Encode(_pngBytes)}';
+      ReaderImageSizeCache.put(raw, const ReaderImageSize(1, 1));
+      final content = '数据图<img src="$raw">正文';
+
+      await pumpReader(tester, state: _readerState(content));
+      expect(find.byType(Image), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('标题图容量扣除标题块与间距，不溢出（P2-7）', (tester) async {
+      ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(300, 1200));
+      await pumpReader(
+        tester,
+        state: _readerState('正文内容。', chapterImgUrl: _bigImg),
+      );
+
+      expect(find.byType(ReaderImageLineWidget), findsWidgets);
+      final titleImageLayout = tester
+          .widgetList<ReaderImageLineWidget>(find.byType(ReaderImageLineWidget))
+          .first
+          .layout;
+      expect(titleImageLayout.height, lessThan(640));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('异步 revision 重排保留当前页（P2-9）', (tester) async {
+      final pending = Completer<ReaderImageSize?>();
+      final content = List.generate(
+        8,
+        (i) =>
+            '${'递增重排第$i段。' * 12}'
+            '${i == 0 ? '<img src="$_img1">' : ''}',
+      ).join('\n\n');
+      await pumpReader(
+        tester,
+        state: _readerState(content),
+        measurer: (image) => pending.future,
+      );
+      final pageView = tester.state<ReaderPageViewState>(
+        find.byType(ReaderPageView),
+      );
+      expect(pageView.pageCount, greaterThan(2));
+      pageView.nextPageOrChapter();
+      await tester.pumpAndSettle();
+      final pageBefore = pageView.currentPageIndex;
+      expect(pageBefore, 1);
+
+      pending.complete(const ReaderImageSize(300, 150));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(pageView.currentPageIndex, pageBefore);
+      expect(tester.takeException(), isNull);
     });
   });
 }

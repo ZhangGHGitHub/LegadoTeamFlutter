@@ -124,8 +124,10 @@ ClickImgUrlOptions parseClickImgUrlOptions(String src) {
     if (decoded is Map<String, dynamic>) {
       click = _nonBlank(decoded['click']) ?? _nonBlank(decoded['action']);
       js = _nonBlank(decoded['js']);
-      style = _nonBlank(decoded['style']);
-      width = _nonBlank(decoded['width']);
+      // [批16 回修 P3-11] style/width 兼容数字型（书源规则可能把
+      // `"width": 120` / `"style": 1` 写成 JSON number）
+      style = _nonBlankScalar(decoded['style']);
+      width = _nonBlankScalar(decoded['width']);
       final rawHeaders = decoded['headers'];
       if (rawHeaders is Map) {
         headers = <String, String>{
@@ -151,6 +153,12 @@ String? _nonBlank(Object? value) {
   if (value is! String) return null;
   final trimmed = value.trim();
   return trimmed.isEmpty ? null : trimmed;
+}
+
+/// 字符串化后去空白（数字型 JSON 值同样接受）
+String? _nonBlankScalar(Object? value) {
+  if (value is num) return value.toString();
+  return _nonBlank(value);
 }
 
 /// 单次点击的处置结果

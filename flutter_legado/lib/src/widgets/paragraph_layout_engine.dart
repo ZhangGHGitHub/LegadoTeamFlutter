@@ -458,6 +458,67 @@ class ParagraphLayoutEngine {
     double capacityFor(int pageIndex) =>
         pageIndex == 0 ? (firstPageHeight ?? pageHeight) : pageHeight;
 
+    // [批16 回修 P2-7] 首页容量不足以放下一行正文（典型：标题图占满首页）
+    // 时先落一个空首页（仅标题/标题图），正文从下一页开始——否则
+    // _splitTallParagraph 的「至少一行」兜底会把一行正文塞进剩余几像素，
+    // 渲染必然溢出。
+    final textHeight = config.fontSize * config.lineHeight;
+    if (textHeight > 0 && (firstPageHeight ?? pageHeight) < textHeight) {
+      pages.add(const PageInfo(paragraphs: [], totalHeight: 0));
+    }
+
+    void flushCurrentPage() {
+      if (currentPageParagraphs.isEmpty) return;
+      pages.add(
+        PageInfo(
+          paragraphs: List.from(currentPageParagraphs),
+          totalHeight: currentHeight,
+        ),
+      );
+      currentPageParagraphs = [];
+      currentHeight = 0.0;
+    }
+
+    // 追加一个段落分片：沿用既有「放入当前页 / 当前页满则换页 / 超高按行
+    // 拆分」逻辑；[forceNewPage] 仅用于 SINGLE 图片语义的强制分页。
+    void appendParagraph(ParagraphInfo tagged, {required bool forceNewPage}) {
+      if (forceNewPage) flushCurrentPage();
+      final spacingHeight = currentPageParagraphs.isNotEmpty
+          ? config.paragraphSpacing
+          : 0.0;
+      final startCapacity = currentPageParagraphs.isEmpty
+          ? capacityFor(pages.length)
+          : pageHeight;
+      if (tagged.totalHeight > startCapacity) {
+        // 先把之前累积的段落存为一页
+        flushCurrentPage();
+        // 按行拆分超长段落（首张子页若落在章首页则按首页容量）
+        final subPages = _splitTallParagraph(
+          tagged,
+          pageHeight,
+          firstPageCapacity: capacityFor(pages.length),
+          chapterParagraphIndex: tagged.chapterParagraphIndex,
+        );
+        pages.addAll(subPages);
+        return;
+      }
+      // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
+      if (currentPageParagraphs.isNotEmpty &&
+          (currentHeight + spacingHeight + tagged.totalHeight >
+              capacityFor(pages.length))) {
+        flushCurrentPage();
+        currentPageParagraphs = [tagged];
+        currentHeight = tagged.totalHeight;
+      } else {
+        currentPageParagraphs.add(tagged);
+        currentHeight += spacingHeight + tagged.totalHeight;
+      }
+    }
+
+    // [批16 回修 P2-6] SINGLE 图片只在图片行前分页：先把段落按
+    // pageBreakBefore/After 切成若干段，文本段照常填满当前页，图片段
+    // 独占一页。纯文本段落恒为单段，走与原实现完全相同的路径。
+    var forceNextPage = false;
     for (var i = 0; i < paragraphs.length; i++) {
       final para = paragraphs[i];
       // [批34] 传入章节全局起点，供高亮区间映射（缩进列不计入）
@@ -469,84 +530,82 @@ class ParagraphLayoutEngine {
         maxPageHeight: pageHeight,
       );
       final chapterParaIndex = i + 1; // 1-based，对齐原版段评 paraIndex
+      final segments = _splitParagraphSegments(paraInfo.lines);
+      if (segments.isEmpty) continue;
 
-      // 段落间距（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
-      double spacingHeight = currentPageParagraphs.isNotEmpty
-          ? config.paragraphSpacing
-          : 0.0;
+      final forced =
+          segments.length > 1 ||
+          segments.first.first.imageLayout?.pageBreakBefore == true ||
+          segments.last.last.imageLayout?.pageBreakAfter == true;
 
-      // [批16] SINGLE 图片行带强制分页标记（大图独占一页）；即使未超出
-      // 当前页容量也要走按行拆分，保证分页边界与图片语义一致。
-      final hasForcedBreak = paraInfo.lines.any(
-        (line) =>
-            line.imageLayout?.pageBreakBefore == true ||
-            line.imageLayout?.pageBreakAfter == true,
-      );
-
-      // 单段超出其起始页容量时，按行拆分到多页（当前页已有内容则
-      // 段落从下一页起排，按整页容量判断）
-      final startCapacity = currentPageParagraphs.isEmpty
-          ? capacityFor(pages.length)
-          : pageHeight;
-      if (paraInfo.totalHeight > startCapacity || hasForcedBreak) {
-        // 先把之前累积的段落存为一页
-        if (currentPageParagraphs.isNotEmpty) {
-          pages.add(
-            PageInfo(
-              paragraphs: List.from(currentPageParagraphs),
-              totalHeight: currentHeight,
-            ),
-          );
-          currentPageParagraphs = [];
-          currentHeight = 0.0;
-        }
-        // 按行拆分超长段落（首张子页若落在章首页则按首页容量）
-        final subPages = _splitTallParagraph(
-          paraInfo,
-          pageHeight,
-          firstPageCapacity: capacityFor(pages.length),
-          chapterParagraphIndex: chapterParaIndex,
+      if (!forced) {
+        appendParagraph(
+          ParagraphInfo(
+            lines: paraInfo.lines,
+            totalHeight: paraInfo.totalHeight,
+            startIndex: paraInfo.startIndex,
+            endIndex: paraInfo.endIndex,
+            chapterParagraphIndex: chapterParaIndex,
+            isParagraphEnd: true,
+          ),
+          forceNewPage: forceNextPage,
         );
-        pages.addAll(subPages);
+        forceNextPage = false;
         continue;
       }
 
-      final tagged = ParagraphInfo(
-        lines: paraInfo.lines,
-        totalHeight: paraInfo.totalHeight,
-        startIndex: paraInfo.startIndex,
-        endIndex: paraInfo.endIndex,
-        chapterParagraphIndex: chapterParaIndex,
-        isParagraphEnd: true,
-      );
-
-      // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
-      if (currentPageParagraphs.isNotEmpty &&
-          (currentHeight + spacingHeight + tagged.totalHeight >
-              capacityFor(pages.length))) {
-        // 当前页已满，保存并开始新页
-        pages.add(
-          PageInfo(
-            paragraphs: List.from(currentPageParagraphs),
-            totalHeight: currentHeight,
-          ),
+      for (var s = 0; s < segments.length; s++) {
+        final segmentLines = segments[s];
+        final segmentHeight = segmentLines.fold<double>(
+          0,
+          (sum, line) => sum + line.height,
         );
-        currentPageParagraphs = [tagged];
-        currentHeight = tagged.totalHeight;
-      } else {
-        currentPageParagraphs.add(tagged);
-        currentHeight += spacingHeight + tagged.totalHeight;
+        final segment = ParagraphInfo(
+          lines: segmentLines,
+          totalHeight: segmentHeight,
+          startIndex: paraInfo.startIndex,
+          endIndex: paraInfo.endIndex,
+          chapterParagraphIndex: chapterParaIndex,
+          isParagraphEnd: s == segments.length - 1,
+        );
+        final forceNew =
+            (s > 0 || forceNextPage) ||
+            segmentLines.first.imageLayout?.pageBreakBefore == true;
+        appendParagraph(segment, forceNewPage: forceNew);
       }
+      forceNextPage = segments.last.last.imageLayout?.pageBreakAfter == true;
     }
 
     // 最后一页
-    if (currentPageParagraphs.isNotEmpty) {
-      pages.add(
-        PageInfo(paragraphs: currentPageParagraphs, totalHeight: currentHeight),
-      );
-    }
+    flushCurrentPage();
 
     return pages;
+  }
+
+  /// 按图片强制分页标记把段落行切成若干段
+  ///
+  /// - `pageBreakBefore`：在该行前断开（行本身进入新段）；
+  /// - `pageBreakAfter`：在该行后断开（行本身结束当前段）。
+  ///
+  /// 无标记时返回单段（调用方走既有分页路径，纯文本零回归）。
+  List<List<LineInfo>> _splitParagraphSegments(List<LineInfo> lines) {
+    if (lines.isEmpty) return const [];
+    final segments = <List<LineInfo>>[];
+    var current = <LineInfo>[];
+    for (final line in lines) {
+      final breakBefore = line.imageLayout?.pageBreakBefore == true;
+      if (breakBefore && current.isNotEmpty) {
+        segments.add(current);
+        current = [];
+      }
+      current.add(line);
+      if (line.imageLayout?.pageBreakAfter == true) {
+        segments.add(current);
+        current = [];
+      }
+    }
+    if (current.isNotEmpty) segments.add(current);
+    return segments;
   }
 
   /// 将超出单页高度的段落按行拆分到多页
@@ -922,7 +981,7 @@ class ParagraphLayoutEngine {
           if (text.isEmpty) continue;
           if (buffer.isEmpty) bufferParaStart = start;
           buffer.write(text);
-        case ReaderImageRun(:final image):
+        case ReaderImageRun(:final image, :final start, :final end):
           final layout = resolveReaderImageLayout(
             image: image,
             availableWidth: availableWidth,
@@ -938,13 +997,21 @@ class ParagraphLayoutEngine {
             flushTextBuffer();
             // 段首缩进只作用于段落首段文字；图片后文字不再缩进
             indentDone = true;
+            // [批16 回修 P2-5] 图片行建立章节偏移映射：start/end 指向
+            // `<img>` 标签在段落文本中的位置，书签/朗读页首区间不会回落
+            // 到整段（避免与上一页区间重叠）。
+            final imageChapterStart = (chapterStart + start)
+                .clamp(0, chapterStart + trimmedPara.length)
+                .toInt();
             lines.add(
               LineInfo(
                 words: const [],
                 width: layout.width,
                 height: layout.height,
-                startIndex: 0,
-                endIndex: 0,
+                startIndex: start,
+                endIndex: end,
+                chapterStartIndex: imageChapterStart,
+                highlightMapped: true,
                 imageLayout: layout,
               ),
             );

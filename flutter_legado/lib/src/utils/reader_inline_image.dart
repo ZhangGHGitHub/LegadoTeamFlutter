@@ -15,10 +15,13 @@
 // 供排版引擎与阅读器渲染层共用，便于单测覆盖。— 全栈工程师 + UI
 
 import 'dart:collection';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../models/book.dart' show BookType;
 import 'click_img_way.dart';
 import 'comic_image_utils.dart';
 
@@ -62,13 +65,20 @@ class ReaderImageSize {
 
 /// 图片尺寸缓存（异步预测量结果，按图片原始 src 去重）
 ///
-/// [revision] 在每次写入后递增，阅读页据此触发一次重排；测量失败也写入
-/// 失败标记（同样递增一次），避免对同一 URL 反复重试与无限重排。
+/// [revision] 在每次写入后递增，阅读页据此触发一次合并重排；测量失败也
+/// 写入失败标记（同样递增一次），避免对同一 URL 反复重试与无限重排。
+///
+/// [beginMeasure]/[completeMeasure]/[cancelMeasure] 为在途测量生命周期：
+/// - 同一 URL 同时只允许一次测量（[beginMeasure] 返回 false 表示已在途或
+///   已有结果）；
+/// - 换书/切章取消（[cancelMeasure]）只清在途标记、不写失败，允许新章
+///   重新测量；
+/// - 失败结果保留（失败不重复下载），但渲染成功可经 [put] 覆盖。
 class ReaderImageSizeCache {
   ReaderImageSizeCache._();
 
   static final Map<String, ReaderImageSize> _sizes = {};
-  static final Set<String> _attempted = {};
+  static final Set<String> _inFlight = {};
   static int _revision = 0;
 
   /// 缓存修订号（每次 put 递增）
@@ -78,10 +88,34 @@ class ReaderImageSizeCache {
 
   static ReaderImageSize? lookup(String rawSrc) => _sizes[keyOf(rawSrc)];
 
-  static bool wasAttempted(String rawSrc) => _attempted.contains(keyOf(rawSrc));
+  /// 是否已有结果（成功或失败）
+  static bool hasResult(String rawSrc) => _sizes.containsKey(keyOf(rawSrc));
 
-  /// 标记已发起过测量（失败不重试；换书场景由阅读页生命周期自然隔离）
-  static void markAttempted(String rawSrc) => _attempted.add(keyOf(rawSrc));
+  /// 是否正在测量
+  static bool isMeasuring(String rawSrc) => _inFlight.contains(keyOf(rawSrc));
+
+  /// 尝试开始一次测量：已有结果/已在途返回 false
+  static bool beginMeasure(String rawSrc) {
+    final key = keyOf(rawSrc);
+    if (_sizes.containsKey(key)) return false;
+    return _inFlight.add(key);
+  }
+
+  /// 完成测量：写回结果并清在途标记；返回是否写入
+  ///
+  /// 若期间渲染层已成功写回真实尺寸，则保留已有成功结果（避免覆盖与
+  /// 多余 revision）。
+  static bool completeMeasure(String rawSrc, ReaderImageSize? size) {
+    final key = keyOf(rawSrc);
+    _inFlight.remove(key);
+    final existing = _sizes[key];
+    if (existing != null && existing.isValid) return false;
+    put(key, size ?? const ReaderImageSize.failed());
+    return true;
+  }
+
+  /// 取消测量：只清在途标记（不写失败，允许换章后重试）
+  static void cancelMeasure(String rawSrc) => _inFlight.remove(keyOf(rawSrc));
 
   static void put(String rawSrc, ReaderImageSize size) {
     _sizes[keyOf(rawSrc)] = size;
@@ -92,9 +126,12 @@ class ReaderImageSizeCache {
       put(rawSrc, const ReaderImageSize.failed());
 
   @visibleForTesting
+  static int get inFlightCount => _inFlight.length;
+
+  @visibleForTesting
   static void clearForTest() {
     _sizes.clear();
-    _attempted.clear();
+    _inFlight.clear();
     _revision = 0;
   }
 }
@@ -102,13 +139,19 @@ class ReaderImageSizeCache {
 /// 正文图片字节缓存（LRU，渲染与尺寸预测量共用）
 ///
 /// 键 = 书源地址 + 原始 src（复合 `,{json}` 保留），避免不同书源同 URL
-/// 但 imageDecode 不同的密文串用。上限控制内存占用，超限淘汰最久未用。
+/// 但 imageDecode 不同的密文串用。同时受条数与总字节预算约束（默认
+/// 16MiB），超限淘汰最久未用；单张超过预算的图片不缓存（仍可当次渲染）。
 class ReaderImageBytesCache {
   ReaderImageBytesCache._();
 
   static const int maxEntries = 32;
+
+  /// 总字节预算（16MiB）
+  static const int maxTotalBytes = 16 * 1024 * 1024;
+
   static final LinkedHashMap<String, Uint8List> _cache =
       LinkedHashMap<String, Uint8List>();
+  static int _totalBytes = 0;
 
   static String keyOf(String origin, String rawSrc) =>
       '$origin\u0000${rawSrc.trim()}';
@@ -122,17 +165,30 @@ class ReaderImageBytesCache {
   }
 
   static void put(String origin, String rawSrc, Uint8List bytes) {
-    if (bytes.isEmpty) return;
+    if (bytes.isEmpty || bytes.length > maxTotalBytes) return;
     final key = keyOf(origin, rawSrc);
-    _cache.remove(key);
+    final old = _cache.remove(key);
+    if (old != null) _totalBytes -= old.length;
     _cache[key] = bytes;
-    while (_cache.length > maxEntries) {
-      _cache.remove(_cache.keys.first);
+    _totalBytes += bytes.length;
+    while (_cache.length > 1 &&
+        (_cache.length > maxEntries || _totalBytes > maxTotalBytes)) {
+      final evicted = _cache.remove(_cache.keys.first);
+      if (evicted != null) _totalBytes -= evicted.length;
     }
   }
 
   @visibleForTesting
-  static void clearForTest() => _cache.clear();
+  static int get totalBytes => _totalBytes;
+
+  @visibleForTesting
+  static int get entryCount => _cache.length;
+
+  @visibleForTesting
+  static void clearForTest() {
+    _cache.clear();
+    _totalBytes = 0;
+  }
 }
 
 /// 正文图片节点（URL 已绝对化，保留 `,{json}` 复合参数）
@@ -369,7 +425,8 @@ double readerImagePlaceholderHeight(double availableWidth, double maxHeight) {
 /// 2. 无显式 style 时：固有宽高均 <80px → 行内（上游小图占位符）；
 /// 3. 否则按书级 `imageStyle`：`TEXT` 全部行内，其余独立行；
 /// 4. 宽度：显式 `width`（%/px/裸数值）优先；`FULL`/`SINGLE` 铺满可用宽；
-///    默认样式保留固有宽度（不超过可用宽）；
+///    `LEFT`/`RIGHT`/`CENTER` 只决定对齐，尺寸仍取固有宽；默认样式保留
+///    固有宽度（不超过可用宽）；
 /// 5. 高度按宽高比缩放，独立图片不超过 [maxHeight]；
 /// 6. 固有尺寸未知/失败 → 占位尺寸，[ReaderImageLayout.placeholder]=true。
 ReaderImageLayout resolveReaderImageLayout({
@@ -437,11 +494,10 @@ ReaderImageLayout resolveReaderImageLayout({
     preferredWidth = explicitWidth;
   } else if (explicitStyle == 'FULL' ||
       explicitStyle == 'SINGLE' ||
-      explicitStyle == 'LEFT' ||
-      explicitStyle == 'RIGHT' ||
-      explicitStyle == 'CENTER' ||
       bookStyle == 'FULL' ||
       bookStyle == 'SINGLE') {
+    // FULL/SINGLE 铺满可用宽；LEFT/RIGHT/CENTER 仅决定对齐，尺寸仍按
+    // 固有宽（或显式 width）等比缩放（对齐上游 TextChapterLayout）。
     preferredWidth = widthLimit;
   } else if (known) {
     preferredWidth = math.min(size.width, widthLimit);
@@ -481,6 +537,143 @@ ReaderImageLayout resolveReaderImageLayout({
     pageBreakAfter: single,
     placeholder: !known || failed,
   );
+}
+
+/// 是否本地书（正文图片允许读取本地文件的安全准入）
+///
+/// 对齐审查口径：`origin == loc_book` / local 位（双位域）视为本地书；
+/// **WebDAV 虽在 [BookType.isLocalOrigin] 内，但内容在远端，禁止读本地
+/// 磁盘**，故显式排除。
+bool isLocalBookForReaderImages({
+  required String origin,
+  required int bookType,
+}) {
+  final byBit = (bookType & (BookType.local | BookType.kotlinLocal)) != 0;
+  final normOrigin = origin.trim();
+  final byOrigin =
+      BookType.isLocalOrigin(normOrigin) &&
+      !BookType.isWebDavOrigin(normOrigin);
+  return byBit || byOrigin;
+}
+
+/// 远端图片地址是否允许 HTTP 兜底（仅 http/https，收紧 SSRF 面）
+bool isReaderHttpImageUrl(String url) {
+  final lower = url.trim().toLowerCase();
+  return lower.startsWith('http://') || lower.startsWith('https://');
+}
+
+/// 是否本地文件路径（file:// / Windows 盘符 / POSIX 绝对路径 / UNC）
+///
+/// 仅用于「进入本地读盘安全校验」的分流；在线书即使命中该判定也会被
+/// [isLocalBookForReaderImages] 拒绝。
+bool isReaderLocalFilePath(String url) {
+  final raw = url.trim();
+  if (raw.isEmpty) return false;
+  final lower = raw.toLowerCase();
+  if (lower.startsWith('file:')) return true;
+  if (lower.startsWith('content:') || lower.startsWith('cbz://')) {
+    return false;
+  }
+  if (raw.startsWith('\\\\') || raw.startsWith('//')) return true; // UNC
+  if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(raw)) return true;
+  return raw.startsWith('/');
+}
+
+String _normalizeFsPath(String path) {
+  final unified = path.replaceAll('\\', '/');
+  final isAbsolute =
+      unified.startsWith('/') || RegExp(r'^[A-Za-z]:/').hasMatch(unified);
+  final parts = unified.split('/');
+  final out = <String>[];
+  for (final part in parts) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      if (out.isNotEmpty && out.last != '..') {
+        out.removeLast();
+      } else if (!isAbsolute) {
+        out.add('..');
+      }
+      continue;
+    }
+    out.add(part);
+  }
+  final body = out.join('/');
+  if (isAbsolute) {
+    if (RegExp(r'^[A-Za-z]:$').hasMatch(out.isNotEmpty ? out.first : '')) {
+      return body; // Windows 盘符相对
+    }
+    return '/$body';
+  }
+  return body;
+}
+
+/// 路径是否位于目录内（含目录本身；按平台大小写语义比较）
+bool isPathInsideDirectory(String candidate, String directory) {
+  final c = _normalizeFsPath(candidate);
+  final d = _normalizeFsPath(directory);
+  if (c.isEmpty || d.isEmpty) return false;
+  final caseSensitive = !Platform.isWindows && !Platform.isMacOS;
+  final cc = caseSensitive ? c : c.toLowerCase();
+  final dd = caseSensitive ? d : d.toLowerCase();
+  if (cc == dd) return true;
+  return cc.startsWith(dd.endsWith('/') ? dd : '$dd/');
+}
+
+/// 解析并校验本地书正文图片文件（安全围栏）
+///
+/// 仅允许读取**书文件所在目录（含子目录）**内的图片；拒绝 UNC、路径
+/// 穿越与符号链接逃逸。调用方还须先满足 [isLocalBookForReaderImages]。
+/// 返回 null 表示拒绝/不存在。
+Future<File?> resolveReaderLocalImageFile({
+  required String url,
+  required String bookFilePath,
+}) async {
+  if (!isReaderLocalFilePath(url)) return null;
+  final raw = url.trim();
+  String path;
+  final uri = Uri.tryParse(raw);
+  if (uri != null && uri.scheme.toLowerCase() == 'file') {
+    try {
+      path = uri.toFilePath();
+    } catch (_) {
+      return null;
+    }
+  } else {
+    path = raw;
+  }
+  if (path.contains('\u0000')) return null;
+  // UNC/网络共享在 canonical 化前直接拒绝（避免触发网络路径访问）
+  if (path.startsWith('\\\\') || path.startsWith('//')) return null;
+  try {
+    final book = File(bookFilePath);
+    final bookDir = book.parent.path;
+    // 先做纯文本前缀校验（不触碰候选路径），再做 canonical 校验防符号链接
+    if (!isPathInsideDirectory(path, bookDir)) return null;
+    final canonicalDir = await book.parent.resolveSymbolicLinks();
+    final canonicalFile = await File(path).resolveSymbolicLinks();
+    if (!isPathInsideDirectory(canonicalFile, canonicalDir)) return null;
+    final file = File(canonicalFile);
+    if (!await file.exists()) return null;
+    return file;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 解析 base64 data URI（本地解码，不走 HTTP）；失败返回 null
+Uint8List? decodeReaderDataUriImage(String url) {
+  final raw = url.trim();
+  if (!raw.toLowerCase().startsWith('data:')) return null;
+  final comma = raw.indexOf(',');
+  if (comma < 0) return null;
+  final meta = raw.substring(5, comma).toLowerCase();
+  if (!meta.contains(';base64')) return null;
+  try {
+    final bytes = base64Decode(raw.substring(comma + 1));
+    return bytes.isEmpty ? null : bytes;
+  } catch (_) {
+    return null;
+  }
 }
 
 /// 把段落拆成 text/image run（img 正则与 `comic_image_utils.dart:56-59`

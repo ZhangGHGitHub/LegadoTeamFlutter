@@ -10,11 +10,15 @@
 // 5. 排版引擎混排分页：图片行高、不丢字、失败占位、纯文本零变化。
 library;
 
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/utils/reader_inline_image.dart';
 import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
+import 'package:flutter_legado/src/widgets/reader/reader_bookmark_policy.dart';
 
 const _defaultConfig = ParagraphConfig(
   fontSize: 16,
@@ -67,6 +71,14 @@ void main() {
       expect(image.rawSrc, raw);
       expect(image.url, 'https://cdn.example.com/a.webp');
       expect(image.headers, {'Referer': 'https://x/'});
+    });
+
+    test('复合 JSON 的数字型 style/width 不被丢弃（P3-11）', () {
+      final image = parseReaderInlineImage(
+        'https://c.com/a.png,{"width":120,"style":1}',
+      )!;
+      expect(image.widthSpec, '120');
+      expect(image.style, '1');
     });
 
     test('单引号 src 与 data-src 懒加载属性均可解析', () {
@@ -157,6 +169,167 @@ void main() {
     });
   });
 
+  group('本地读盘安全（P1-2）', () {
+    test('本地书判定：本地 origin/位通过，在线与 WebDAV 拒绝', () {
+      expect(
+        isLocalBookForReaderImages(origin: 'loc_book', bookType: 0),
+        isTrue,
+      );
+      expect(isLocalBookForReaderImages(origin: '', bookType: 0x1000), isTrue);
+      expect(isLocalBookForReaderImages(origin: '', bookType: 0x100), isTrue);
+      expect(
+        isLocalBookForReaderImages(
+          origin: 'https://source.example.com',
+          bookType: 8,
+        ),
+        isFalse,
+      );
+      expect(
+        isLocalBookForReaderImages(
+          origin: 'webDav::https://dav.example.com/book.epub',
+          bookType: 0x1000,
+        ),
+        isTrue,
+        reason: '显式 local 位优先（离线缓存场景）',
+      );
+      expect(
+        isLocalBookForReaderImages(
+          origin: 'webDav::https://dav.example.com/book.epub',
+          bookType: 0,
+        ),
+        isFalse,
+        reason: 'WebDAV 内容在远端，不得读本地磁盘',
+      );
+    });
+
+    test('本地路径识别：file/盘符/绝对路径/UNC', () {
+      for (final url in [
+        'file:///data/local/tmp/a.jpg',
+        'C:\\books\\a.jpg',
+        '/data/books/a.jpg',
+        '\\\\host\\share\\a.jpg',
+        '//host/share/a.jpg',
+      ]) {
+        expect(isReaderLocalFilePath(url), isTrue, reason: url);
+      }
+      expect(isReaderLocalFilePath('https://c.com/a.jpg'), isFalse);
+      expect(isReaderLocalFilePath('content://media/a.jpg'), isFalse);
+      expect(isReaderLocalFilePath('cbz://page1.jpg'), isFalse);
+    });
+
+    test('路径围栏：子目录允许，穿越/外部/UNC 拒绝', () async {
+      final root = await Directory.systemTemp.createTemp('reader_img_fence_');
+      addTearDown(() => root.delete(recursive: true));
+      final book = File('${root.path}${Platform.pathSeparator}book.txt');
+      await book.writeAsString('book');
+      final insideDir = Directory(
+        '${root.path}${Platform.pathSeparator}images',
+      );
+      await insideDir.create();
+      final inside = File('${insideDir.path}${Platform.pathSeparator}ok.png');
+      await inside.writeAsBytes([1, 2, 3]);
+      final outsideDir = await Directory.systemTemp.createTemp(
+        'reader_img_outside_',
+      );
+      addTearDown(() => outsideDir.delete(recursive: true));
+      final outside = File(
+        '${outsideDir.path}${Platform.pathSeparator}evil.png',
+      );
+      await outside.writeAsBytes([1, 2, 3]);
+
+      final allowed = await resolveReaderLocalImageFile(
+        url: inside.path,
+        bookFilePath: book.path,
+      );
+      expect(allowed, isNotNull);
+      expect(allowed!.path, inside.path);
+
+      final traversal = await resolveReaderLocalImageFile(
+        url: '../${outside.parent.uri.pathSegments.last}/evil.png',
+        bookFilePath: book.path,
+      );
+      expect(traversal, isNull);
+
+      final absoluteOutside = await resolveReaderLocalImageFile(
+        url: 'file:///${outside.path.replaceAll('\\', '/')}',
+        bookFilePath: book.path,
+      );
+      expect(absoluteOutside, isNull);
+
+      for (final unc in ['//host/share/a.png', '\\\\host\\share\\a.png']) {
+        expect(
+          await resolveReaderLocalImageFile(url: unc, bookFilePath: book.path),
+          isNull,
+        );
+      }
+    });
+
+    test('data URI 本地解码（P3-10）与非法输入', () {
+      expect(decodeReaderDataUriImage('data:image/png;base64,AAEC'), [0, 1, 2]);
+      expect(decodeReaderDataUriImage('data:image/png,AAEC'), isNull);
+      expect(decodeReaderDataUriImage('data:image/png;base64,%%%'), isNull);
+      expect(decodeReaderDataUriImage('https://c.com/a.png'), isNull);
+    });
+
+    test('HTTP 兜底仅 http/https（P3-12）', () {
+      expect(isReaderHttpImageUrl('http://c.com/a.png'), isTrue);
+      expect(isReaderHttpImageUrl('https://c.com/a.png'), isTrue);
+      expect(isReaderHttpImageUrl('content://media/a.png'), isFalse);
+      expect(isReaderHttpImageUrl('ftp://c.com/a.png'), isFalse);
+      expect(isReaderHttpImageUrl('data:image/png;base64,AA'), isFalse);
+    });
+  });
+
+  group('图片字节缓存预算（P1-3）', () {
+    test('超总字节预算按 LRU 淘汰且单张超预算不缓存', () {
+      ReaderImageBytesCache.clearForTest();
+      final sevenMb = Uint8List(7 * 1024 * 1024);
+      ReaderImageBytesCache.put('o', 'a', sevenMb);
+      ReaderImageBytesCache.put('o', 'b', sevenMb);
+      expect(ReaderImageBytesCache.entryCount, 2);
+      ReaderImageBytesCache.put('o', 'c', sevenMb);
+      expect(ReaderImageBytesCache.entryCount, 2);
+      expect(ReaderImageBytesCache.totalBytes, 14 * 1024 * 1024);
+      expect(ReaderImageBytesCache.get('o', 'a'), isNull);
+      expect(ReaderImageBytesCache.get('o', 'c'), isNotNull);
+
+      ReaderImageBytesCache.put(
+        'o',
+        'huge',
+        Uint8List(ReaderImageBytesCache.maxTotalBytes + 1),
+      );
+      expect(ReaderImageBytesCache.get('o', 'huge'), isNull);
+    });
+
+    test('尺寸在途生命周期：start/complete/cancel', () {
+      expect(ReaderImageSizeCache.beginMeasure('u'), isTrue);
+      expect(ReaderImageSizeCache.isMeasuring('u'), isTrue);
+      expect(ReaderImageSizeCache.beginMeasure('u'), isFalse);
+      ReaderImageSizeCache.cancelMeasure('u');
+      expect(ReaderImageSizeCache.isMeasuring('u'), isFalse);
+      expect(ReaderImageSizeCache.hasResult('u'), isFalse);
+
+      expect(ReaderImageSizeCache.beginMeasure('u'), isTrue);
+      expect(
+        ReaderImageSizeCache.completeMeasure(
+          'u',
+          const ReaderImageSize(10, 20),
+        ),
+        isTrue,
+      );
+      expect(ReaderImageSizeCache.lookup('u')!.width, 10);
+      expect(ReaderImageSizeCache.beginMeasure('u'), isFalse);
+      expect(
+        ReaderImageSizeCache.completeMeasure(
+          'u',
+          const ReaderImageSize(99, 99),
+        ),
+        isFalse,
+        reason: '已有成功结果不被覆盖',
+      );
+    });
+  });
+
   group('宽度解析（parseReaderImageWidth）', () {
     test('% 按可用宽换算', () {
       expect(parseReaderImageWidth('50%', 400), 200);
@@ -243,6 +416,25 @@ void main() {
       expect(result.placement, ReaderImagePlacement.standalone);
       expect(result.width, 300);
       expect(result.height, 300);
+    });
+
+    test('LEFT/RIGHT/CENTER 只决定对齐，不铺满可用宽（P2-4）', () {
+      for (final entry in {
+        'LEFT': ReaderImageAlignment.left,
+        'RIGHT': ReaderImageAlignment.right,
+        'CENTER': ReaderImageAlignment.center,
+      }.entries) {
+        final img = image(
+          'https://c.com/${entry.key.toLowerCase()}.png',
+          style: entry.key,
+        );
+        ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(100, 50));
+        final result = layout(img, availableWidth: 300);
+        expect(result.placement, ReaderImagePlacement.standalone);
+        expect(result.width, 100, reason: entry.key);
+        expect(result.height, 50, reason: entry.key);
+        expect(result.alignment, entry.value, reason: entry.key);
+      }
     });
 
     test('书级 imageStyle=TEXT 时全部行内', () {
@@ -419,6 +611,75 @@ void main() {
           .expand((para) => para.lines)
           .any((line) => line.imageLayout != null);
       expect(secondPageHasImage, isTrue);
+    });
+
+    test('SINGLE 仅图片前分页：图片前文本填满当前页（P2-6）', () {
+      // 同一段落内「长文本 + SINGLE 图片」：旧实现会让整段先换页，
+      // 首页只剩空白；回修后文本段留在当前页，图片独占下一页。
+      final text = '甲' * 240;
+      final content =
+          '$text<img src="https://c.com/single2.png,{"style":"SINGLE"}">'
+          '乙乙乙';
+      final img = parseReaderInlineImage(
+        'https://c.com/single2.png,{"style":"SINGLE"}',
+      )!;
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(300, 200));
+
+      final pages = engine().paginateChapter(content, 300, 600);
+      final firstPageLines = pages.first.paragraphs
+          .expand((para) => para.lines)
+          .toList();
+      final firstPageText = firstPageLines
+          .map((line) => line.words.join(''))
+          .join();
+      expect(firstPageText, isNotEmpty, reason: '图片前文本应填当前页');
+      expect(firstPageText.replaceAll(RegExp(r'\s'), ''), text);
+      expect(firstPageLines.any((line) => line.imageLayout != null), isFalse);
+      // 图片页应只有图片行（SINGLE 独占一页）
+      final imagePage = pages.firstWhere(
+        (page) => page.paragraphs
+            .expand((para) => para.lines)
+            .any((line) => line.imageLayout != null),
+      );
+      final imagePageLines = imagePage.paragraphs
+          .expand((para) => para.lines)
+          .toList();
+      expect(imagePageLines.length, 1);
+      expect(imagePageLines.single.imageLayout, isNotNull);
+    });
+
+    test('图片行建立章节偏移映射，不回落整段（P2-5）', () {
+      const content = '前文<img src="https://c.com/map.png">后文';
+      final img = parseReaderInlineImage('https://c.com/map.png')!;
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(300, 200));
+
+      final pages = engine().paginateChapter(content, 300, 600);
+      final line = pages
+          .expand((page) => page.paragraphs)
+          .expand((para) => para.lines)
+          .firstWhere((line) => line.imageLayout != null);
+      final tagStart = content.indexOf('<img');
+      expect(line.highlightMapped, isTrue);
+      expect(line.chapterStartIndex, tagStart);
+      expect(line.startIndex, tagStart);
+      expect(line.endIndex, content.indexOf('>') + 1);
+
+      final range = readerBookmarkRangeForPage(
+        PageInfo(
+          paragraphs: [
+            ParagraphInfo(
+              lines: [line],
+              totalHeight: line.height,
+              startIndex: 0,
+              endIndex: content.length,
+            ),
+          ],
+          totalHeight: line.height,
+        ),
+      );
+      expect(range.start, tagStart);
+      expect(range.end, content.indexOf('>') + 1);
+      expect(range.isEmpty, isFalse);
     });
 
     test('纯文本段落不产生图片字段且行高与既有公式一致', () {
