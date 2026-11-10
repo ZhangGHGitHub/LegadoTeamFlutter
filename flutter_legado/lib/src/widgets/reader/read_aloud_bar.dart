@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../constants/pref_keys.dart';
 import '../../models/misc.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/providers.dart';
 import '../../routes.dart';
+import '../../services/system_tts_service.dart';
 import '../app_progress_indicator.dart';
 import '../read_aloud_timer_sheet.dart';
 
@@ -50,12 +52,6 @@ class ReadAloudBar extends ConsumerStatefulWidget {
 class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   /// 语速跟随系统开关持久化键（对齐原版 PreferKey / AppConfig.ttsFlowSys）
   static const _keyFollowSystem = 'ttsFollowSys';
-
-  /// [UI-fix v2.0.3 | 2026-08-08] 留项5：语速跟随系统时使用的默认语速常量
-  /// （对标原版 AppConfig.speechRatePlay = if (ttsFlowSys) defaultSpeechRate(=5)）：
-  /// 原版并非实时读系统语速，而是回落到默认语速常量；Flutter 侧默认倍速 1.0x
-  /// 即原版 defaultSpeechRate=5（0-10 刻度中位）的等价映射 — Qoder
-  static const double _kFollowSystemDefaultSpeed = 1.0;
 
   // ===== 定时停止状态 =====
   //
@@ -101,20 +97,33 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           ? true
           : raw == 'true' || raw == '1';
       setState(() => _followSystemSpeed = follow);
-      if (follow) {
-        ref
-            .read(audioNotifierProvider.notifier)
-            .updateConfig(speed: _kFollowSystemDefaultSpeed);
-      }
+      // 语速解析统一交给 Notifier：有用户设定值（prefs ttsSpeechRate）时
+      // 跟随/手动都用该值；从未设置过的跟随系统才回落到引擎默认 1.0x。
+      // 修复前 follow=true 时此处 updateConfig(speed: 1.0)，覆盖了会话入口
+      // 刚读回的设置页语速（设备验收 P2：设置 1.5x 实测 1.0x）。
+      await ref
+          .read(audioNotifierProvider.notifier)
+          .applyTtsSpeedPreference(followSystem: follow);
     } catch (_) {
       // 读取失败保持原版默认开启
       if (mounted) {
         setState(() => _followSystemSpeed = true);
-        ref
+        await ref
             .read(audioNotifierProvider.notifier)
-            .updateConfig(speed: _kFollowSystemDefaultSpeed);
+            .applyTtsSpeedPreference(followSystem: true);
       }
     }
+  }
+
+  /// 手动语速落库：与朗读设置页同键（[PrefKeys.ttsSpeechRate]）
+  ///
+  /// 对齐原版 seekTtsSpeechRate → `AppConfig.ttsSpeechRate` 语义：手动调整
+  /// 后冷启动、停止重播、切章、切引擎均保持用户设定。
+  Future<void> _persistSpeed(double speed) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(PrefKeys.ttsSpeechRate, ttsSpeechRateFromSpeed(speed));
+    } catch (_) {}
   }
 
   Future<void> _persistFollowSystem(bool follow) async {
@@ -558,8 +567,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           Expanded(
             // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（对标原版
             // cbTtsFollowSystem）：开启时禁用手动滑条。
-            // [UI-fix v2.0.3 | 2026-08-08] 留项5 语义对齐原版 speechRatePlay：
-            // 跟随系统 = 使用默认语速常量（非实时读系统语速） — Qoder
+            // [设备验收 P2 回修] 跟随系统不再强制 1.0：滑条始终展示
+            // Notifier 的有效语速（与听书页同源），手动调整即落库。
             child: Slider(
               value: audio.config.speed,
               min: 0.5,
@@ -569,15 +578,16 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               onChanged: _followSystemSpeed
                   ? null
                   : (v) => notifier.updateConfig(speed: v),
+              onChangeEnd: _followSystemSpeed
+                  ? null
+                  : (v) => unawaited(_persistSpeed(v)),
             ),
           ),
           SizedBox(
             width: 40,
-            child: Text(
-              _followSystemSpeed
-                  ? '默认'
-                  : '${audio.config.speed.toStringAsFixed(1)}x',
-            ),
+            // 始终显示有效语速：跟随系统在用户设过语速时并非 1.0x，
+            // 旧文案「默认」会与滑条位置矛盾。
+            child: Text('${audio.config.speed.toStringAsFixed(1)}x'),
           ),
           // 引擎选择（对标原版引擎下拉）
           IconButton(
@@ -618,9 +628,8 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
             ),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 语速跟随系统开关（显式入口）。
-          // [UI-fix v2.0.3 | 2026-08-08] 留项5 闭合：勾选→应用默认语速常量
-          // （对标原版 ttsFlowSys 时 speechRatePlay=defaultSpeechRate，
-          // 无需系统语速读取通道）。
+          // [设备验收 P2 回修] 切换开关只改解析来源，绝不重置已设语速：
+          // 勾选 → 用户设置过的语速优先、否则引擎默认；取消 → 保持当前值。
           // [UI-fix v2.0.41 | 2026-08-13] 默认 true + 持久化迁 config 键 ttsFollowSys — Auto
           Expanded(
             child: TextButton.icon(
@@ -635,12 +644,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                 await _persistFollowSystem(next);
                 if (!mounted) return;
                 setState(() => _followSystemSpeed = next);
-                if (next) {
-                  // 开启跟随：即刻回落到默认语速常量（原版语义）
-                  ref
-                      .read(audioNotifierProvider.notifier)
-                      .updateConfig(speed: _kFollowSystemDefaultSpeed);
-                }
+                // 切换只改解析来源，不重置语速：跟随 → 用户设定值/引擎默认；
+                // 手动 → 保持当前有效语速（修复前开启跟随会回落 1.0）。
+                await ref
+                    .read(audioNotifierProvider.notifier)
+                    .applyTtsSpeedPreference(followSystem: next);
               },
             ),
           ),

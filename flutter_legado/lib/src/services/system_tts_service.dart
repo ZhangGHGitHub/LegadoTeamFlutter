@@ -22,6 +22,13 @@ const String kSystemTtsEngineUrl = 'system://tts';
 const double kMinTtsSpeed = 0.5;
 const double kMaxTtsSpeed = 3.0;
 
+/// 引擎默认语速（常速 1.0x）
+///
+/// 「跟随系统」且用户从未在朗读设置页改过语速时使用：系统 TTS 平台层按
+/// `speed / 2` 映射到 speechRate（见 `SystemTtsPlatform.setSpeechRate`），
+/// 1.0x 即引擎缺省常速。
+const double kEngineDefaultTtsSpeed = 1.0;
+
 /// 参考刻度语速范围（0–80，参考版内部刻度；UI 0.5–3.0x 对应 0–25）
 const int kTtsSpeechRateMin = 0;
 const int kTtsSpeechRateMax = 80;
@@ -56,6 +63,19 @@ double ttsSpeedFromSpeechRate(int? rate, {double fallback = 1.0}) {
   if (rate == null) return fallback;
   final clamped = rate.clamp(kTtsSpeechRateMin, kTtsSpeechRateMax);
   return ((clamped + 5) / 10.0).clamp(kMinTtsSpeed, kMaxTtsSpeed);
+}
+
+/// 解析「跟随系统」下的有效朗读语速（单一解析点）
+///
+/// [storedSpeechRate] 为 prefs `ttsSpeechRate` 的参考刻度值：
+/// - 用户显式设置过 → 使用该值（否则设置页 1.5x 对新朗读会话无效）；
+/// - 从未设置（null）→ 引擎默认常速 [kEngineDefaultTtsSpeed]。
+double resolveFollowSystemTtsSpeed(
+  int? storedSpeechRate, {
+  double engineDefault = kEngineDefaultTtsSpeed,
+}) {
+  if (storedSpeechRate == null) return engineDefault;
+  return ttsSpeedFromSpeechRate(storedSpeechRate, fallback: engineDefault);
 }
 
 /// UI 音调 → 参考刻度（0.5–2.0 → 5–20）

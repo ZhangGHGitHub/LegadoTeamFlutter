@@ -28,6 +28,7 @@ import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/services/platform_channel.dart';
 import 'package:flutter_legado/src/services/system_tts_service.dart';
 import 'package:flutter_legado/src/utils/read_aloud_content_split.dart';
+import 'package:flutter_legado/src/widgets/reader/read_aloud_bar.dart';
 
 import '../mocks/mocks.dart';
 
@@ -509,6 +510,52 @@ void main() {
       expect(p.getInt(PrefKeys.ttsSpeechRate), ttsSpeechRateFromSpeed(2.0));
       expect(p.getInt(PrefKeys.ttsPitch), ttsPitchToStored(1.2));
       expect(p.getInt(PrefKeys.ttsVolume), ttsVolumeToStored(0.5));
+    });
+
+    testAndroid('设置页语速 1.5x → 朗读条显示 1.5x（跟随系统不覆盖，停止重播保持）', (tester) async {
+      // 设备验收 P2 缺陷回归：设置页 1.5x，朗读条挂载后曾被强制回 1.0x
+      await pumpPage(tester);
+      await tester.tap(find.text('引擎与音色'));
+      await tester.pumpAndSettle();
+
+      final speed = tester.widget<Slider>(
+        find.descendant(
+          of: find.byKey(const ValueKey('read-aloud-speed-slider')),
+          matching: find.byType(Slider),
+        ),
+      );
+      speed.onChanged!(1.5);
+      speed.onChangeEnd!(1.5);
+      await tester.pumpAndSettle();
+      expect(container.read(audioNotifierProvider).config.speed, 1.5);
+
+      Widget barHost() => Scaffold(
+        body: Stack(
+          children: [
+            ReadAloudBar(
+              onDismiss: () {},
+              onOpenCatalog: () {},
+              onBackstage: () {},
+            ),
+          ],
+        ),
+      );
+
+      // 进入朗读条：同一 config 为唯一数据源，follow 缺省 true 也不得覆盖
+      await pumpPage(tester, child: barHost());
+      expect(
+        container.read(audioNotifierProvider).config.speed,
+        1.5,
+        reason: '朗读条挂载后不得覆盖设置页语速',
+      );
+      expect(find.text('1.5x'), findsOneWidget);
+
+      // 停止后重播（重建朗读条）仍保持 1.5
+      container.read(audioNotifierProvider.notifier).stop();
+      await tester.pumpWidget(wrap(barHost()));
+      await tester.pumpAndSettle();
+      expect(container.read(audioNotifierProvider).config.speed, 1.5);
+      expect(find.text('1.5x'), findsOneWidget);
     });
 
     testAndroid('系统 TTS 设置/电池优化跳转（Android 可点并调用原生）', (tester) async {

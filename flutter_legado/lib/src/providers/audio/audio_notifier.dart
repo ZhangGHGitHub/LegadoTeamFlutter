@@ -1656,6 +1656,45 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     }
   }
 
+  /// 应用全局朗读语速偏好（朗读条「跟随系统/手动」单一解析点）
+  ///
+  /// 设备验收 P2 缺陷回修：语速被「跟随系统」默认值覆盖。
+  /// - [followSystem] true：跟随系统 = 语速由系统 TTS 引擎默认值决定；但用户
+  ///   在朗读设置页显式设置过语速（prefs [PrefKeys.ttsSpeechRate]）时必须
+  ///   使用该值，否则「设置页 1.5x、新朗读会话实测 1.0x」；
+  /// - [followSystem] false（手动）：使用用户设定值；从未设置过则保持当前
+  ///   语速，切换开关不得把语速重置为 1.0；
+  /// - 直接改 state（不经 updateConfig）：读回/应用偏好不等于用户调整书级
+  ///   语速，避免触发 readConfig.playSpeed 回写。
+  Future<void> applyTtsSpeedPreference({required bool followSystem}) async {
+    if (state.isStreamMode) return;
+    final int? stored;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      stored = prefs.getInt(PrefKeys.ttsSpeechRate);
+    } catch (e) {
+      // 读取失败保持当前语速（不擅自回落到引擎默认）
+      debugPrint('读取全局朗读语速失败（保持当前值）: $e');
+      return;
+    }
+    final cfg = state.config;
+    // 用户设置过 → 用户值；未设置过：跟随系统→引擎默认，手动→保持当前值
+    final target = resolveFollowSystemTtsSpeed(
+      stored,
+      engineDefault: followSystem ? kEngineDefaultTtsSpeed : cfg.speed,
+    );
+    if ((target - cfg.speed).abs() <= 0.001) return;
+    state = state.copyWith(
+      config: TtsConfig(
+        engineUrl: cfg.engineUrl,
+        voiceName: cfg.voiceName,
+        speed: target,
+        pitch: cfg.pitch,
+        volume: cfg.volume,
+      ),
+    );
+  }
+
   /// 按偏好应用/释放 TTS 朗读唤醒锁
   ///
   /// 流媒体模式跳过（听书页自己的唤醒锁开关负责），避免两条偏好互相踩停。
