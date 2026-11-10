@@ -817,6 +817,22 @@ class _ReplaceRuleTile extends StatelessWidget {
     this.onEnterBatch,
   });
 
+  /// [批12 P3] 48×48 拖拽手柄命中层（图标居中 24dp）
+  ///
+  /// 原实现只包裸 24dp `Icon`，真实手指容错偏小（y 偏移 19px 即被滚动手势
+  /// 接管）；扩到 Material 建议的最小触控目标。行高由 Switch/IconButton
+  /// 的 48dp 决定，48dp 手柄不改变行高。
+  Widget _buildDragHandleIcon(Color color) {
+    return SizedBox(
+      key: ValueKey('replace-rule-drag-handle-${rule.id}'),
+      width: 48,
+      height: 48,
+      child: Center(
+        child: Icon(Symbols.drag_handle_rounded, size: 24, color: color),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -837,20 +853,19 @@ class _ReplaceRuleTile extends StatelessWidget {
               if (batchMode)
                 Checkbox(value: selected, onChanged: (_) => onSelect?.call())
               else if (showDragHandle)
-                // 排序手柄
-                ReorderableDragStartListener(
-                  index: index,
-                  child: Icon(
-                    Symbols.drag_handle_rounded,
-                    color: theme.colorScheme.outline,
+                // [批12 P3] 排序手柄：48×48 透明命中层（Material 最小触控目标），
+                // 图标仍居中 24dp；监听器包住整个命中区域
+                Semantics(
+                  label: '拖动排序',
+                  button: true,
+                  child: ReorderableDragStartListener(
+                    index: index,
+                    child: _buildDragHandleIcon(theme.colorScheme.outline),
                   ),
                 )
               else
-                // [批12] 子集筛选态：手柄置灰且不挂拖拽监听
-                Icon(
-                  Symbols.drag_handle_rounded,
-                  color: theme.colorScheme.outlineVariant,
-                ),
+                // [批12] 子集筛选态：手柄置灰且不挂拖拽监听（保持同尺寸不跳动）
+                _buildDragHandleIcon(theme.colorScheme.outlineVariant),
               const SizedBox(width: 8),
               // 规则信息
               Expanded(

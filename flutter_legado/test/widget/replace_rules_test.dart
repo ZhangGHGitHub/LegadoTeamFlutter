@@ -216,10 +216,39 @@ void main() {
       expect(dyOf('C'), lessThan(dyOf('A')));
     });
 
+    testWidgets('拖拽手柄触控区 48×48 且带无障碍标签', (tester) async {
+      const rule = ReplaceRule(id: 7, name: '去广告', pattern: '广告');
+      await pumpScreen(tester, rules: [rule]);
+
+      final handle = find.byKey(const ValueKey('replace-rule-drag-handle-7'));
+      expect(handle, findsOneWidget);
+      expect(
+        tester.getSize(handle),
+        const Size(48, 48),
+        reason: '手柄命中区应达 Material 最小触控目标 48dp',
+      );
+
+      final semantics = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == '拖动排序',
+      );
+      expect(semantics, findsOneWidget);
+      expect(
+        tester.widget<Semantics>(semantics).properties.button,
+        isTrue,
+        reason: '手柄应作为按钮暴露给无障碍服务',
+      );
+    });
+
     testWidgets('搜索筛选态禁用拖拽手柄并显示说明', (tester) async {
       const rule = ReplaceRule(id: 1, name: '去广告', pattern: '广告');
       await pumpScreen(tester, rules: [rule]);
       expect(find.byType(ReorderableDragStartListener), findsOneWidget);
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('replace-rule-drag-handle-1')),
+        ),
+        const Size(48, 48),
+      );
 
       await tester.enterText(
         find.byWidgetPredicate(
@@ -235,6 +264,13 @@ void main() {
         find.byType(ReorderableDragStartListener),
         findsNothing,
         reason: '子集态不应挂拖拽监听',
+      );
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('replace-rule-drag-handle-1')),
+        ),
+        const Size(48, 48),
+        reason: '禁用态手柄保持同尺寸，切换筛选不引起布局跳动',
       );
     });
 
