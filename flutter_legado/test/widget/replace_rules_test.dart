@@ -6,6 +6,8 @@
 // - 路由预填 pattern 时首帧后直接打开整页编辑器（pattern 已预填）
 // - 整页保存新规则后返回列表且规则出现在列表
 // 整页编辑器字段/保存/剪贴板等用例见 replace_rule_edit_test.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -15,7 +17,10 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/replace_rule/replace_rule_notifier.dart';
 import 'package:flutter_legado/src/screens/replace_rules_screen.dart';
+import 'package:flutter_legado/src/services/book_api.dart';
+import 'package:flutter_legado/src/services/mock_book_api.dart';
 
 import '../mocks/mocks.dart';
 
@@ -49,6 +54,19 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: const MaterialApp(home: ReplaceRulesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  /// 以指定 BookApi 实现挂载页面（批12：排序链路用真实 MockBookApi）
+  Future<void> pumpScreenWithApi(WidgetTester tester, BookApi api) async {
+    await tester.binding.setSurfaceSize(const Size(800, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(api)],
         child: const MaterialApp(home: ReplaceRulesScreen()),
       ),
     );
@@ -92,10 +110,10 @@ void main() {
       expect(scopeField.controller?.text, '某书');
     });
 
-    testWidgets('整页保存新规则后返回列表且规则出现在列表',
-        (tester) async {
+    testWidgets('整页保存新规则后返回列表且规则出现在列表', (tester) async {
       when(() => mockApi.addReplaceRule(any())).thenAnswer(
-        (inv) async => (inv.positionalArguments[0] as ReplaceRule).copyWith(id: 1),
+        (inv) async =>
+            (inv.positionalArguments[0] as ReplaceRule).copyWith(id: 1),
       );
       await pumpScreen(tester);
 
@@ -111,16 +129,13 @@ void main() {
       // 返回列表，新规则已入列表（notifier addRule 追加）
       expect(find.text('添加替换规则'), findsNothing);
       expect(find.text('去广告'), findsOneWidget);
-      expect(
-        find.text('正则: 广告 → 【广告】'),
-        findsOneWidget,
-      );
+      expect(find.text('正则: 广告 → 【广告】'), findsOneWidget);
     });
 
-    testWidgets('路由预填 pattern 时首帧后直接打开整页编辑器',
-        (tester) async {
-      when(() => mockApi.addReplaceRule(any()))
-          .thenAnswer((inv) async => const ReplaceRule());
+    testWidgets('路由预填 pattern 时首帧后直接打开整页编辑器', (tester) async {
+      when(
+        () => mockApi.addReplaceRule(any()),
+      ).thenAnswer((inv) async => const ReplaceRule());
       await tester.binding.setSurfaceSize(const Size(800, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -135,9 +150,125 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('添加替换规则'), findsOneWidget);
-      final patternField =
-          tester.widget<TextField>(byLabel('匹配规则'));
+      final patternField = tester.widget<TextField>(byLabel('匹配规则'));
       expect(patternField.controller?.text, '选中词');
     });
+
+    testWidgets('编辑「特定范围」后保存：update 收到新 scope（批12）', (tester) async {
+      const rule = ReplaceRule(
+        id: 1,
+        name: '去广告',
+        pattern: '广告',
+        replacement: '【广告】',
+        scope: '旧范围',
+      );
+      ReplaceRule? captured;
+      when(() => mockApi.updateReplaceRule(any())).thenAnswer((inv) async {
+        captured = inv.positionalArguments[0] as ReplaceRule;
+      });
+      await pumpScreen(tester, rules: [rule]);
+
+      await tester.tap(find.byTooltip('编辑'));
+      await tester.pumpAndSettle();
+      await tester.enterText(byLabel('特定范围'), '新范围');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(captured, isNotNull);
+      expect(captured!.scope, '新范围', reason: '特定范围编辑应随保存透传');
+    });
   });
+
+  // ===== [批12 | 2026-11-10] 排序写链路与子集态禁用 =====
+  group('ReplaceRulesScreen 排序写链路（批12）', () {
+    testWidgets('拖拽 0→2 只调一次全量重排，load 后顺序保持', (tester) async {
+      final api = MockBookApi();
+      await api.addReplaceRule(const ReplaceRule(name: 'A', pattern: 'a'));
+      await api.addReplaceRule(const ReplaceRule(name: 'B', pattern: 'b'));
+      await api.addReplaceRule(const ReplaceRule(name: 'C', pattern: 'c'));
+      final ids = (await api.getReplaceRules()).map((r) => r.id).toList();
+      await pumpScreenWithApi(tester, api);
+
+      final list = tester.widget<ReorderableListView>(
+        find.byType(ReorderableListView),
+      );
+      // onReorderItem 的 newIndex 已按移除项调整：A(0) 拖到末位
+      list.onReorderItem!(0, 2);
+      await tester.pumpAndSettle();
+
+      expect(api.reorderReplaceRulesCalls, 1, reason: '一次全量调用');
+      expect(
+        api.lastReorderReplaceRulesIdsJson,
+        equals(jsonEncode([ids[1], ids[2], ids[0]])),
+        reason: '应提交全量 id 的新顺序',
+      );
+      double dyOf(String name) => tester.getTopLeft(find.text(name)).dy;
+      expect(dyOf('B'), lessThan(dyOf('C')));
+      expect(dyOf('C'), lessThan(dyOf('A')));
+
+      // 模拟退出再进入：load() 后顺序由 DB/Mock 的 order 决定，不应退回原序
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReplaceRulesScreen)),
+      );
+      await container.read(replaceRuleNotifierProvider.notifier).load();
+      await tester.pumpAndSettle();
+      expect(dyOf('B'), lessThan(dyOf('C')));
+      expect(dyOf('C'), lessThan(dyOf('A')));
+    });
+
+    testWidgets('搜索筛选态禁用拖拽手柄并显示说明', (tester) async {
+      const rule = ReplaceRule(id: 1, name: '去广告', pattern: '广告');
+      await pumpScreen(tester, rules: [rule]);
+      expect(find.byType(ReorderableDragStartListener), findsOneWidget);
+
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.hintText == '搜索规则',
+        ),
+        '广告',
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('筛选/搜索状态下暂不支持拖拽排序'), findsOneWidget);
+      expect(find.byType(ReorderableListView), findsNothing);
+      expect(
+        find.byType(ReorderableDragStartListener),
+        findsNothing,
+        reason: '子集态不应挂拖拽监听',
+      );
+    });
+
+    testWidgets('排序落库失败：回滚原顺序并提示', (tester) async {
+      final api = _FailingReorderApi();
+      await api.addReplaceRule(const ReplaceRule(name: 'A', pattern: 'a'));
+      await api.addReplaceRule(const ReplaceRule(name: 'B', pattern: 'b'));
+      await api.addReplaceRule(const ReplaceRule(name: 'C', pattern: 'c'));
+      await pumpScreenWithApi(tester, api);
+
+      final list = tester.widget<ReorderableListView>(
+        find.byType(ReorderableListView),
+      );
+      list.onReorderItem!(0, 2);
+      await tester.pumpAndSettle();
+
+      // FFI 抛错 → notifier.load() 回滚 → 页面提示
+      expect(api.reorderAttempts, 1, reason: '失败只尝试一次，不逐条写入');
+      expect(find.text('排序保存失败，已恢复原顺序'), findsOneWidget);
+
+      double dyOf(String name) => tester.getTopLeft(find.text(name)).dy;
+      expect(dyOf('A'), lessThan(dyOf('B')));
+      expect(dyOf('B'), lessThan(dyOf('C')), reason: '顺序应回滚为原序');
+    });
+  });
+}
+
+/// [批12] reorder 恒失败的 BookApi（模拟 FFI 参数错误/落库失败）
+class _FailingReorderApi extends MockBookApi {
+  int reorderAttempts = 0;
+
+  @override
+  Future<int> reorderReplaceRules(List<int> ids) async {
+    reorderAttempts++;
+    throw Exception('重排替换规则参数错误: 缺失 id');
+  }
 }

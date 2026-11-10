@@ -263,18 +263,20 @@ void main() {
     expect(reader.reloads, 1);
   });
 
-  testWidgets('排序入口已撤回：无拖动排序（order FFI 未支持）', (tester) async {
+  testWidgets('有效规则列表不提供拖动排序（按 order 展示）', (tester) async {
     await addRule(name: 'A', pattern: 'a', scope: '测试书');
     await addRule(name: 'B', pattern: 'b', scope: '测试书');
     await openSheet(tester);
     await tester.tap(find.byKey(const ValueKey('text-processing-filter-all')));
     await tester.pump();
 
+    // [批12] 排序写链路只在替换规则管理页提供；本 Sheet 保持只读展示。
     expect(find.byType(ReorderableListView), findsNothing);
     expect(find.byIcon(Icons.drag_handle), findsNothing);
+    // [批12] addReplaceRule 的 order 改为 max+1（追加末尾），A=0、B=1
     final stored = await rulesById();
     expect(stored['a']!.order, 0);
-    expect(stored['b']!.order, 0, reason: '未发生 order 写回');
+    expect(stored['b']!.order, 1, reason: '新增规则追加到末尾');
     expect(reader.reloads, 0);
   });
 

@@ -34,8 +34,7 @@ class ReplaceRulesScreen extends ConsumerStatefulWidget {
   const ReplaceRulesScreen({super.key, this.initialPattern});
 
   @override
-  ConsumerState<ReplaceRulesScreen> createState() =>
-      _ReplaceRulesScreenState();
+  ConsumerState<ReplaceRulesScreen> createState() => _ReplaceRulesScreenState();
 }
 
 class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
@@ -81,113 +80,127 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       // 对齐原版 activity_replace_rule.xml：TitleBar 内嵌 view_search 搜索框
-      topBar: _batchMode ? _buildBatchAppBar() : LegadoAppBar(
-        titleSpacing: 0,
-        title: SizedBox(
-          height: 36,
-          child: TextField(
-            controller: _searchCtrl,
-            onChanged: (v) => setState(() => _filter = v.trim()),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onPrimary,
+      topBar: _batchMode
+          ? _buildBatchAppBar()
+          : LegadoAppBar(
+              titleSpacing: 0,
+              title: SizedBox(
+                height: 36,
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: (v) => setState(() => _filter = v.trim()),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '搜索规则',
+                    hintStyle: TextStyle(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary.withValues(alpha: 0.6),
+                    ),
+                    prefixIcon: Icon(
+                      Symbols.search_rounded,
+                      size: 20,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary.withValues(alpha: 0.8),
+                    ),
+                    filled: true,
+                    // [深色主题 Batch A-2] 白色 0.2 填充 → surfaceContainerHighest：
+                    // 亮/暗两态下均为「AppBar surface 之上的一级 tonal 抬升」，
+                    // 消除亮态近不可见、暗态呈灰白填充的双态不一致
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide.none,
+                    ),
+                    // [B3] 搜索胶囊：无描边无底线、聚焦零变化
+                    // （显式声明防主题底部指示线渗入）
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(18),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
-            decoration: InputDecoration(
-              hintText: '搜索规则',
-              hintStyle: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.6),
               ),
-              prefixIcon: Icon(
-                Symbols.search_rounded,
-                size: 20,
-                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
-              ),
-              filled: true,
-              // [深色主题 Batch A-2] 白色 0.2 填充 → surfaceContainerHighest：
-              // 亮/暗两态下均为「AppBar surface 之上的一级 tonal 抬升」，
-              // 消除亮态近不可见、暗态呈灰白填充的双态不一致
-              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 8),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
-              // [B3] 搜索胶囊：无描边无底线、聚焦零变化
-              // （显式声明防主题底部指示线渗入）
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
+              actions: [
+                // [UI-fix v2.0.2 | 2026-08-06] 分组筛选入口（对标原版 menu_group）— Qoder
+                PopupMenuButton<String?>(
+                  tooltip: '分组筛选',
+                  icon: Icon(
+                    _groupFilter == null
+                        ? Symbols.filter_list_rounded
+                        : Symbols.filter_alt_rounded,
+                  ),
+                  onSelected: (v) => setState(() => _groupFilter = v),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem<String?>(
+                      value: null,
+                      child: Text('全部'),
+                    ),
+                    const PopupMenuItem<String?>(
+                      value: '__enabled__',
+                      child: Text('启用'),
+                    ),
+                    const PopupMenuItem<String?>(
+                      value: '__disabled__',
+                      child: Text('禁用'),
+                    ),
+                    const PopupMenuItem<String?>(
+                      value: '__null__',
+                      child: Text('无分组'),
+                    ),
+                    for (final g in _collectGroups(state.rules))
+                      PopupMenuItem<String?>(value: g, child: Text('分组：$g')),
+                  ],
+                ),
+                // P2-12：分组管理（对标原版 menu_group_manage → GroupManageDialog）
+                IconButton(
+                  icon: const Icon(Symbols.folder_rounded),
+                  tooltip: '分组管理',
+                  onPressed: () => _showGroupManage(context, state.rules),
+                ),
+                // [UI-fix v2.0.2 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
+                // （对标原版 ReplaceRuleActivity menu_import：本地/网络/二维码均已接通） — Qoder
+                PopupMenuButton<String>(
+                  tooltip: '导入',
+                  icon: const Icon(Symbols.file_download_rounded),
+                  onSelected: _handleImportMenu,
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'local', child: Text('本地导入')),
+                    PopupMenuItem(value: 'online', child: Text('网络导入')),
+                    PopupMenuItem(value: 'qrcode', child: Text('二维码导入')),
+                    PopupMenuItem(value: 'passphrase', child: Text('口令导入')),
+                  ],
+                ),
+                // [UI-fix v2.0.2 | 2026-08-06] 批量模式入口 — Qoder
+                IconButton(
+                  icon: const Icon(Symbols.checklist_rounded),
+                  tooltip: '批量操作',
+                  onPressed: () => setState(() => _batchMode = true),
+                ),
+                IconButton(
+                  icon: const Icon(Symbols.help_rounded),
+                  tooltip: '帮助',
+                  onPressed: () =>
+                      showHelp(context, HelpAssets.replaceRuleHelp),
+                ),
+                // [A3 形态对齐 | full-stack-engineer + UI] 新增入口跳整页编辑器
+                IconButton(
+                  icon: const Icon(Symbols.add_rounded),
+                  onPressed: () => ReplaceRuleEditScreen.open(context),
+                ),
+              ],
             ),
-          ),
-        ),
-        actions: [
-          // [UI-fix v2.0.2 | 2026-08-06] 分组筛选入口（对标原版 menu_group）— Qoder
-          PopupMenuButton<String?>(
-            tooltip: '分组筛选',
-            icon: Icon(
-              _groupFilter == null ? Symbols.filter_list_rounded : Symbols.filter_alt_rounded,
-            ),
-            onSelected: (v) => setState(() => _groupFilter = v),
-            itemBuilder: (_) => [
-              const PopupMenuItem<String?>(value: null, child: Text('全部')),
-              const PopupMenuItem<String?>(
-                value: '__enabled__',
-                child: Text('启用'),
-              ),
-              const PopupMenuItem<String?>(
-                value: '__disabled__',
-                child: Text('禁用'),
-              ),
-              const PopupMenuItem<String?>(
-                value: '__null__',
-                child: Text('无分组'),
-              ),
-              for (final g in _collectGroups(state.rules))
-                PopupMenuItem<String?>(value: g, child: Text('分组：$g')),
-            ],
-          ),
-          // P2-12：分组管理（对标原版 menu_group_manage → GroupManageDialog）
-          IconButton(
-            icon: const Icon(Symbols.folder_rounded),
-            tooltip: '分组管理',
-            onPressed: () => _showGroupManage(context, state.rules),
-          ),
-          // [UI-fix v2.0.2 | 2026-08-06] 导入入口接 ReplaceRuleImportConfirmScreen
-          // （对标原版 ReplaceRuleActivity menu_import：本地/网络/二维码均已接通） — Qoder
-          PopupMenuButton<String>(
-            tooltip: '导入',
-            icon: const Icon(Symbols.file_download_rounded),
-            onSelected: _handleImportMenu,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'local', child: Text('本地导入')),
-              PopupMenuItem(value: 'online', child: Text('网络导入')),
-              PopupMenuItem(value: 'qrcode', child: Text('二维码导入')),
-              PopupMenuItem(value: 'passphrase', child: Text('口令导入')),
-            ],
-          ),
-          // [UI-fix v2.0.2 | 2026-08-06] 批量模式入口 — Qoder
-          IconButton(
-            icon: const Icon(Symbols.checklist_rounded),
-            tooltip: '批量操作',
-            onPressed: () => setState(() => _batchMode = true),
-          ),
-          IconButton(
-            icon: const Icon(Symbols.help_rounded),
-            tooltip: '帮助',
-            onPressed: () => showHelp(context, HelpAssets.replaceRuleHelp),
-          ),
-          // [A3 形态对齐 | full-stack-engineer + UI] 新增入口跳整页编辑器
-          IconButton(
-            icon: const Icon(Symbols.add_rounded),
-            onPressed: () => ReplaceRuleEditScreen.open(context),
-          ),
-        ],
-      ),
       body: Builder(
         builder: (context) {
           if (state.loading) {
@@ -261,44 +274,69 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         controller: _ruleListController,
         child: ListView.builder(
           controller: _ruleListController,
-        // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: rules.length,
-        itemBuilder: (context, index) {
-          final rule = rules[index];
-          return _ReplaceRuleTile(
-            key: ValueKey(rule.id),
-            rule: rule,
-            index: index,
-            total: rules.length,
-            batchMode: true,
-            selected: _selected.contains(rule.id),
-            onSelect: () => _toggleSelect(rule.id),
-            onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
-            onEdit: () => _toggleSelect(rule.id),
-            onDelete: () => _confirmDelete(context, provider, rule),
-            onMoveUp: () => provider.moveUp(index),
-            onMoveDown: () => provider.moveDown(index),
-          );
-        },
+          // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: rules.length,
+          itemBuilder: (context, index) {
+            final rule = rules[index];
+            return _ReplaceRuleTile(
+              key: ValueKey(rule.id),
+              rule: rule,
+              index: index,
+              total: rules.length,
+              batchMode: true,
+              selected: _selected.contains(rule.id),
+              onSelect: () => _toggleSelect(rule.id),
+              onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
+              onEdit: () => _toggleSelect(rule.id),
+              onDelete: () => _confirmDelete(context, provider, rule),
+            );
+          },
         ),
       );
     }
+
+    // [批12 | 2026-11-10] 筛选/搜索/分组子集态不可拖拽：子集无法安全全量
+    // 重排（会打乱未展示规则），Rust 侧也会以「缺失 id」拒绝子集提交。
+    final subsetMode = _filter.isNotEmpty || _groupFilter != null;
+    if (subsetMode) {
+      return Column(
+        children: [
+          _buildSubsetReorderHint(context),
+          Expanded(
+            child: ListView.builder(
+              controller: _ruleListController,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: rules.length,
+              itemBuilder: (context, index) {
+                final rule = rules[index];
+                return _ReplaceRuleTile(
+                  key: ValueKey(rule.id),
+                  rule: rule,
+                  index: index,
+                  total: rules.length,
+                  showDragHandle: false,
+                  onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
+                  onEdit: () => ReplaceRuleEditScreen.open(context, rule: rule),
+                  onDelete: () => _confirmDelete(context, provider, rule),
+                  onEnterBatch: () => _enterBatch(rule.id),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
     return ReorderableListView.builder(
       // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: rules.length,
-      onReorderItem: (oldIndex, newIndex) {
-        // 简单的排序处理
-        if (oldIndex < newIndex) {
-          for (var i = oldIndex; i < newIndex; i++) {
-            provider.moveDown(i);
-          }
-        } else {
-          for (var i = oldIndex; i > newIndex; i--) {
-            provider.moveUp(i);
-          }
-        }
+      // [批12] 一次全量重排落库（onReorderItem 的 newIndex 已按移除项调整）
+      onReorderItem: (oldIndex, newIndex) async {
+        final ok = await provider.reorder(oldIndex, newIndex);
+        if (!mounted || ok) return;
+        _showSortFailure();
       },
       itemBuilder: (context, index) {
         final rule = rules[index];
@@ -311,12 +349,43 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           // [A3 形态对齐 | full-stack-engineer + UI] 列表行编辑跳整页编辑器
           onEdit: () => ReplaceRuleEditScreen.open(context, rule: rule),
           onDelete: () => _confirmDelete(context, provider, rule),
-          onMoveUp: () => provider.moveUp(index),
-          onMoveDown: () => provider.moveDown(index),
           onEnterBatch: () => _enterBatch(rule.id),
         );
       },
     );
+  }
+
+  /// [批12] 子集筛选态拖拽禁用说明
+  Widget _buildSubsetReorderHint(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Row(
+        children: [
+          Icon(
+            Symbols.info_rounded,
+            size: 16,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '筛选/搜索状态下暂不支持拖拽排序',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// [批12] 排序落库失败提示（顺序已由 notifier.load() 回滚）
+  void _showSortFailure() {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('排序保存失败，已恢复原顺序')));
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 分组筛选 — Qoder =====
@@ -365,8 +434,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       default:
         final g = _groupFilter!;
         result = result.where(
-          (r) =>
-              r.group?.split(',').map((e) => e.trim()).contains(g) ?? false,
+          (r) => r.group?.split(',').map((e) => e.trim()).contains(g) ?? false,
         );
     }
     if (_filter.isNotEmpty) {
@@ -451,10 +519,15 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         }
         _exitBatch();
       case 'top':
-        await notifier.moveToTop(ids);
+        // [批12] 重排数组后一次全量落库；失败已回滚并提示
+        final topOk = await notifier.moveToTop(ids);
+        if (!mounted) return;
+        if (!topOk) _showSortFailure();
         _exitBatch();
       case 'bottom':
-        await notifier.moveToBottom(ids);
+        final bottomOk = await notifier.moveToBottom(ids);
+        if (!mounted) return;
+        if (!bottomOk) _showSortFailure();
         _exitBatch();
       case 'export':
         await _exportSelected(ids);
@@ -480,8 +553,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         .where((r) => ids.contains(r.id))
         .toList();
     if (rules.isEmpty) return;
-    final json = const JsonEncoder.withIndent('  ')
-        .convert(rules.map((r) => r.toJson()).toList());
+    final json = const JsonEncoder.withIndent(
+      '  ',
+    ).convert(rules.map((r) => r.toJson()).toList());
     final result = await showExportFileSheet(
       context,
       content: json,
@@ -492,9 +566,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       passphraseType: SourcePassphraseType.replaceRule,
     );
     if (!mounted || result == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result.message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
     _exitBatch();
   }
 
@@ -566,9 +640,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         Navigator.of(context).pop();
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取替换规则失败：$e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('获取替换规则失败：$e')));
       }
     }
   }
@@ -591,9 +665,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       await _parseAndConfirm(trimmed);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('扫码内容不是可识别的替换规则数据')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('扫码内容不是可识别的替换规则数据')));
   }
 
   /// 本地文件导入（对标原版 menu_import_local：任选文件，解析层容错）
@@ -607,9 +681,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       if (picked == null || picked.files.isEmpty) return;
       final path = picked.files.single.path;
       if (path == null) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('无法获取文件路径')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('无法获取文件路径')));
         return;
       }
       final text = await File(path).readAsString();
@@ -617,9 +689,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       await _parseAndConfirm(text);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('从文件导入失败：$e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('从文件导入失败：$e')));
       }
     }
   }
@@ -654,15 +726,15 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     try {
       candidates = _parseRulesText(text);
     } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('格式错误，未解析到替换规则')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('格式错误，未解析到替换规则')));
       return;
     }
     if (candidates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('格式错误，未解析到替换规则')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('格式错误，未解析到替换规则')));
       return;
     }
     if (!mounted) return;
@@ -678,9 +750,9 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     if (!mounted) return;
     // 确认页返回导入成功条数；取消返回 null/0
     if (imported != null && imported > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('导入完成（$imported 条）')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('导入完成（$imported 条）')));
     }
   }
 
@@ -722,8 +794,10 @@ class _ReplaceRuleTile extends StatelessWidget {
   final ValueChanged<bool> onToggle;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onMoveUp;
-  final VoidCallback onMoveDown;
+
+  /// [批12] 筛选/搜索/分组子集态禁用拖拽手柄（子集无法安全全量重排）
+  final bool showDragHandle;
+
   // [UI-fix v2.0.2 | 2026-08-06] 批量模式支持 — Qoder
   final bool batchMode;
   final bool selected;
@@ -738,8 +812,7 @@ class _ReplaceRuleTile extends StatelessWidget {
     required this.onToggle,
     required this.onEdit,
     required this.onDelete,
-    required this.onMoveUp,
-    required this.onMoveDown,
+    this.showDragHandle = true,
     this.batchMode = false,
     this.selected = false,
     this.onSelect,
@@ -751,9 +824,7 @@ class _ReplaceRuleTile extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       // [LAYOUT_PLAN P2] 分组卡圆角 16dp；边距 horizontal16（全局标尺）
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
         onTap: batchMode ? onSelect : onEdit,
@@ -766,11 +837,8 @@ class _ReplaceRuleTile extends StatelessWidget {
             children: [
               // [UI-fix v2.0.2 | 2026-08-06] 批量模式显示选中框，否则排序手柄 — Qoder
               if (batchMode)
-                Checkbox(
-                  value: selected,
-                  onChanged: (_) => onSelect?.call(),
-                )
-              else
+                Checkbox(value: selected, onChanged: (_) => onSelect?.call())
+              else if (showDragHandle)
                 // 排序手柄
                 ReorderableDragStartListener(
                   index: index,
@@ -778,6 +846,12 @@ class _ReplaceRuleTile extends StatelessWidget {
                     Symbols.drag_handle_rounded,
                     color: theme.colorScheme.outline,
                   ),
+                )
+              else
+                // [批12] 子集筛选态：手柄置灰且不挂拖拽监听
+                Icon(
+                  Symbols.drag_handle_rounded,
+                  color: theme.colorScheme.outlineVariant,
                 ),
               const SizedBox(width: 8),
               // 规则信息
@@ -883,17 +957,12 @@ class _ImportUrlDialogState extends State<_ImportUrlDialog> {
             TextField(
               controller: _controller,
               autofocus: widget.history.isEmpty,
-              decoration: const InputDecoration(
-                hintText: '输入替换规则 URL 地址',
-              ),
+              decoration: const InputDecoration(hintText: '输入替换规则 URL 地址'),
               keyboardType: TextInputType.url,
             ),
             if (widget.history.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text(
-                '历史记录',
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
+              Text('历史记录', style: Theme.of(context).textTheme.labelMedium),
               const SizedBox(height: 4),
               for (final url in widget.history)
                 InkWell(

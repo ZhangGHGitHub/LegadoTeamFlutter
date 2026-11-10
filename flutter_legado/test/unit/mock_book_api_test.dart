@@ -100,7 +100,8 @@ void main() {
 
     test('updateReadConfigField 非法入参抛错', () async {
       expect(
-        () => api.updateReadConfigField('mock://nonexist', 'reverseToc', 'true'),
+        () =>
+            api.updateReadConfigField('mock://nonexist', 'reverseToc', 'true'),
         throwsA(isA<StateError>()),
       );
       expect(
@@ -244,17 +245,14 @@ void main() {
       expect(url, 'new_url');
     });
 
-    test(
-      'switchSourcePrefetch 直通 switchSource 并计数'
-      '（2026-09-24 换源预拉缓存：命中/未命中语义由 Rust 侧承担，'
-      'mock 仅记录调用供单测断言 call count）',
-      () async {
-        final before = api.prefetchApplyCallCount;
-        final url = await api.switchSourcePrefetch('old', 'source', 'new_url');
-        expect(url, 'new_url');
-        expect(api.prefetchApplyCallCount, before + 1);
-      },
-    );
+    test('switchSourcePrefetch 直通 switchSource 并计数'
+        '（2026-09-24 换源预拉缓存：命中/未命中语义由 Rust 侧承担，'
+        'mock 仅记录调用供单测断言 call count）', () async {
+      final before = api.prefetchApplyCallCount;
+      final url = await api.switchSourcePrefetch('old', 'source', 'new_url');
+      expect(url, 'new_url');
+      expect(api.prefetchApplyCallCount, before + 1);
+    });
 
     test('cancelSwitchSourceApply 计数且无副作用', () async {
       final before = api.cancelApplyCallCount;
@@ -318,31 +316,27 @@ void main() {
       expect(refreshed['hasMore'], isTrue);
       expect((refreshed['articles'] as List).first['origin'], url);
       expect((refreshed['articles'] as List).first['sort'], '默认');
-      expect(
-        (refreshed['articles'] as List).first['title'],
-        contains('默认'),
-      );
+      expect((refreshed['articles'] as List).first['title'], contains('默认'));
 
-      final more = jsonDecode(
-        await api.rssLoadMoreArticles(
-          url,
-          '默认',
-          refreshed['nextUrl'] as String,
-          2,
-        ),
-      ) as Map;
+      final more =
+          jsonDecode(
+                await api.rssLoadMoreArticles(
+                  url,
+                  '默认',
+                  refreshed['nextUrl'] as String,
+                  2,
+                ),
+              )
+              as Map;
       expect((more['articles'] as List).length, 5);
       expect(more['hasMore'], isFalse);
       expect(more['nextUrl'], isNull);
 
       // 搜索关键词进入 Mock 标题（UI 联调可区分搜索态）
-      final searched = jsonDecode(
-        await api.rssRefreshArticles(url, '搜索', url, key: '红'),
-      ) as Map;
-      expect(
-        (searched['articles'] as List).first['title'],
-        contains('搜索：红'),
-      );
+      final searched =
+          jsonDecode(await api.rssRefreshArticles(url, '搜索', url, key: '红'))
+              as Map;
+      expect((searched['articles'] as List).first['title'], contains('搜索：红'));
 
       // 清缓存为 no-op（Mock 无缓存）
       await api.rssClearSortCache(url);
@@ -503,6 +497,114 @@ void main() {
       final rules = await api.getReplaceRules();
       expect(rules.length, 1);
       expect(rules[0].name, '测试规则');
+    });
+
+    test('addReplaceRule 追加到末尾（order=max+1）', () async {
+      final first = await api.addReplaceRule(
+        const ReplaceRule(name: '第一条', pattern: 'a'),
+      );
+      final second = await api.addReplaceRule(
+        const ReplaceRule(name: '第二条', pattern: 'b'),
+      );
+      expect(first.order, 0);
+      expect(second.order, 1);
+    });
+  });
+
+  // ===== [批12 | 2026-11-10] 替换规则排序（契约 §2.8 reorderReplaceRules）=====
+  group('替换规则排序（批12）', () {
+    Future<List<ReplaceRule>> seedThree() async {
+      final a = await api.addReplaceRule(
+        const ReplaceRule(name: 'A', pattern: 'a'),
+      );
+      final b = await api.addReplaceRule(
+        const ReplaceRule(name: 'B', pattern: 'b'),
+      );
+      final c = await api.addReplaceRule(
+        const ReplaceRule(name: 'C', pattern: 'c'),
+      );
+      return [a, b, c];
+    }
+
+    test('getReplaceRules 按 order 升序返回（不再按插入序）', () async {
+      final seed = await seedThree();
+      // 把 C 的 order 改成 0、A 改成 1、B 改成 2
+      await api.updateReplaceRule(seed[2].copyWith(order: 0)); // C
+      await api.updateReplaceRule(seed[0].copyWith(order: 1)); // A
+      await api.updateReplaceRule(seed[1].copyWith(order: 2)); // B
+
+      final rules = await api.getReplaceRules();
+      expect(rules.map((r) => r.name).toList(), equals(['C', 'A', 'B']));
+      expect(rules.map((r) => r.order).toList(), equals([0, 1, 2]));
+    });
+
+    test('updateReplaceRule 记录末次完整对象（scope 可断言）', () async {
+      final added = await api.addReplaceRule(
+        const ReplaceRule(name: 'scope_rule', pattern: 'a', scope: '旧范围'),
+      );
+      await api.updateReplaceRule(added.copyWith(scope: '新范围'));
+
+      expect(api.lastUpdatedReplaceRule?.id, added.id);
+      expect(api.lastUpdatedReplaceRule?.scope, '新范围');
+      final stored = (await api.getReplaceRules()).firstWhere(
+        (r) => r.id == added.id,
+      );
+      expect(stored.scope, '新范围');
+    });
+
+    test('reorderReplaceRules 记录 idsJson 与调用次数，并按顺序重编号', () async {
+      final seed = await seedThree();
+      final ids = seed.map((r) => r.id).toList().reversed.toList();
+
+      final count = await api.reorderReplaceRules(ids);
+
+      expect(count, 3);
+      expect(api.reorderReplaceRulesCalls, 1);
+      expect(
+        api.lastReorderReplaceRulesIdsJson,
+        equals(jsonEncode(ids)),
+        reason: '应原样记录全量 id 顺序（JSON 数组）',
+      );
+      final rules = await api.getReplaceRules();
+      expect(rules.map((r) => r.id).toList(), equals(ids));
+      expect(rules.map((r) => r.order).toList(), equals([0, 1, 2]));
+    });
+
+    test('空列表返回 0 且不改动', () async {
+      await seedThree();
+      final before = await api.getReplaceRules();
+
+      expect(await api.reorderReplaceRules(const []), 0);
+      final after = await api.getReplaceRules();
+      expect(
+        after.map((r) => (r.id, r.order)).toList(),
+        equals(before.map((r) => (r.id, r.order)).toList()),
+      );
+    });
+
+    test('重复/未知/缺失 id 抛错且零写入', () async {
+      final seed = await seedThree();
+      final ids = seed.map((r) => r.id).toList();
+      Future<List<(int, int)>> snapshot() async =>
+          (await api.getReplaceRules()).map((r) => (r.id, r.order)).toList();
+      final before = await snapshot();
+
+      // 重复
+      expect(
+        () => api.reorderReplaceRules([ids[0], ids[0], ids[1]]),
+        throwsA(isA<Exception>()),
+      );
+      // 未知
+      expect(
+        () => api.reorderReplaceRules([...ids, 999999]),
+        throwsA(isA<Exception>()),
+      );
+      // 缺失
+      expect(
+        () => api.reorderReplaceRules([ids[0], ids[1]]),
+        throwsA(isA<Exception>()),
+      );
+      expect(await snapshot(), equals(before), reason: '非法集必须零写入');
     });
   });
 
@@ -779,10 +881,13 @@ void main() {
     test('list 空表 seed 原版默认 5 源（sortNumber 升序）', () async {
       final list = await api.dictRuleList();
       expect(list.length, 5);
-      expect(
-        list.map((r) => r['name']).toList(),
-        ['海词中文', '海词英文', '有道', '哔哩', '百度汉语'],
-      );
+      expect(list.map((r) => r['name']).toList(), [
+        '海词中文',
+        '海词英文',
+        '有道',
+        '哔哩',
+        '百度汉语',
+      ]);
     });
 
     test('add → update → setEnabled → reorder → delete 全链路往返', () async {
@@ -840,7 +945,9 @@ void main() {
       expect(list.firstWhere((r) => r['id'] == idA)['enabled'], isFalse);
 
       // reorder（全量重编号：[idB, idA, 默认 5 源 id] → 新顺序与 sortNumber 生效）
-      final allIds = (await api.dictRuleList()).map((r) => r['id'] as int).toList();
+      final allIds = (await api.dictRuleList())
+          .map((r) => r['id'] as int)
+          .toList();
       final defaultIds = allIds.where((i) => i <= 5).toList(); // 默认 5 源
       final newOrder = [idB, idA, ...defaultIds];
       expect(await api.dictRuleReorder(jsonEncode(newOrder)), 7);
@@ -850,8 +957,10 @@ void main() {
       expect(list.last['sortNumber'], 6);
 
       // reorder 非法 JSON → 明确错误
-      expect(() => api.dictRuleReorder('not a json array'),
-          throwsA(isA<Exception>()));
+      expect(
+        () => api.dictRuleReorder('not a json array'),
+        throwsA(isA<Exception>()),
+      );
       expect(() => api.dictRuleReorder('{"a":1}'), throwsA(isA<Exception>()));
 
       // delete（不存在返回 false）
@@ -862,8 +971,7 @@ void main() {
       expect(list.where((r) => r['id'] == idA), isEmpty);
     });
 
-    test('import REPLACE by name：异名插入 / 同名覆盖保留 id / 单对象',
-        () async {
+    test('import REPLACE by name：异名插入 / 同名覆盖保留 id / 单对象', () async {
       final json1 =
           '[{"name":"导入A","urlRule":"http://a","showRule":"sa"},'
           '{"name":"导入B","urlRule":"http://b","showRule":"sb"}]';
@@ -907,16 +1015,17 @@ void main() {
         throwsA(isA<Exception>()),
       );
       expect(
-        () => api.dictRuleImport(jsonOrUrl: 'https://x.com/rules.json', kind: 'url'),
+        () => api.dictRuleImport(
+          jsonOrUrl: 'https://x.com/rules.json',
+          kind: 'url',
+        ),
         throwsA(isA<Exception>()),
       );
     });
   });
 
-  group('替换规则预览（契约 §2.8 previewReplaceRule，[替换规则预览 | 2026-09-13]）',
-      () {
-    test('previewReplaceRule 确定性返回 [mock预览] + 输入并累计调用计数',
-        () async {
+  group('替换规则预览（契约 §2.8 previewReplaceRule，[替换规则预览 | 2026-09-13]）', () {
+    test('previewReplaceRule 确定性返回 [mock预览] + 输入并累计调用计数', () async {
       const ruleJson =
           '{"name":"去广告","pattern":"广告","replacement":"【广告】","isRegex":false}';
       final out = await api.previewReplaceRule(ruleJson, 'AAAA广告');
@@ -932,10 +1041,11 @@ void main() {
   // ===== [批35] 批量删除 / 书籍级阅读记录开关 =====
   group('批35：批量删除原文件 / 书籍级阅读记录开关', () {
     test('deleteBooks 批量移除书籍记录并返回实际删除/缺失计数', () async {
-      final result = await api.deleteBooks(
-        ['mock://book/1', 'mock://book/2', 'mock://missing'],
-        deleteOriginal: true,
-      );
+      final result = await api.deleteBooks([
+        'mock://book/1',
+        'mock://book/2',
+        'mock://missing',
+      ], deleteOriginal: true);
       expect(result.deleted, 2, reason: '在架两本计入实际删除数');
       expect(result.missing, 1, reason: '不在架的 URL 计入 missing');
       expect(result.warnings, isEmpty, reason: 'Mock 不接触磁盘，无文件失败提示');
