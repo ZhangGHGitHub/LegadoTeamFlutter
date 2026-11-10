@@ -8,9 +8,10 @@
 //   `docs/REFACTORING_ACTIVE_PLAN.md` 设置批11），顺序固定在参考两项之后。
 //
 // 交互约定：
-// - 选项禁用时不关闭 Sheet，只提示禁用原因（如未配置 WebDAV / 备份恢复忙）；
+// - 选项禁用时灰显，原因只显示在行内副标题（不弹 SnackBar：Sheet 打开时
+//   SnackBar 会被弹层遮挡）；
 // - 备份/恢复进行中（`isBusy` 回调）在点按瞬间再次判定，避免 Sheet 打开后
-//   自动备份/恢复启动导致并发写库。
+//   自动备份/恢复启动导致并发写库；命中忙碌时刷新为禁用态且不关闭 Sheet。
 import 'package:flutter/material.dart';
 
 import 'ios_widgets.dart';
@@ -189,8 +190,12 @@ Future<T?> _showOptionSheet<T>({
   );
 }
 
-/// 选项行：图标 + 文案；禁用时灰显，点按只提示原因不关闭 Sheet
-class _OptionRow<T> extends StatelessWidget {
+/// 选项行：图标 + 文案；禁用时灰显，原因显示在行内副标题
+///
+/// [isBusy] 除 build 期用于初始禁用外，**点按瞬间再次复判**；Sheet 打开后
+/// 自动备份/恢复可能已启动，复判命中时 `setState` 刷新为禁用态并拒绝执行，
+/// 不关闭 Sheet。
+class _OptionRow<T> extends StatefulWidget {
   const _OptionRow({required this.option, required this.busy, this.isBusy});
 
   final _OptionEntry<T> option;
@@ -198,33 +203,36 @@ class _OptionRow<T> extends StatelessWidget {
   final bool Function()? isBusy;
 
   @override
+  State<_OptionRow<T>> createState() => _OptionRowState<T>();
+}
+
+class _OptionRowState<T> extends State<_OptionRow<T>> {
+  bool get _busyNow => widget.busy || (widget.isBusy?.call() ?? false);
+
+  @override
   Widget build(BuildContext context) {
-    final busyNow = busy || (isBusy?.call() ?? false);
-    final disabledReason = busyNow
+    final disabledReason = _busyNow
         ? kBackupRestoreBusyHint
-        : option.disabledReason;
+        : widget.option.disabledReason;
     final enabled = disabledReason == null;
-    return GestureDetector(
-      // 禁用行仍需接收点按以给出原因提示；ListTile 的 enabled=false 会吞掉
-      // 点击，因此禁用态由外层 GestureDetector 兜底。
-      behavior: HitTestBehavior.opaque,
-      onTap: enabled
-          ? null
-          : () {
-              ScaffoldMessenger.maybeOf(
-                context,
-              )?.showSnackBar(SnackBar(content: Text(disabledReason)));
-            },
-      child: Opacity(
-        opacity: enabled ? 1 : 0.55,
-        child: IosListTile(
-          icon: option.icon,
-          title: option.label,
-          subtitle: disabledReason,
-          enabled: enabled,
-          showChevron: enabled,
-          onTap: enabled ? () => Navigator.of(context).pop(option.value) : null,
-        ),
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: IosListTile(
+        icon: widget.option.icon,
+        title: widget.option.label,
+        subtitle: disabledReason,
+        enabled: enabled,
+        showChevron: enabled,
+        onTap: enabled
+            ? () {
+                // 点按前复判：并发备份/恢复启动时拒绝执行并刷新禁用态
+                if (_busyNow) {
+                  setState(() {});
+                  return;
+                }
+                Navigator.of(context).pop(widget.option.value);
+              }
+            : null,
       ),
     );
   }

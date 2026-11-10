@@ -310,9 +310,32 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     return picked;
   }
 
+  /// WebDAV 是否具备备份上传/远端列目录能力（批11 回修 P2-1）
+  ///
+  /// 只要求服务器地址非空：`WebDavBackupService.resolveConfigJson()` 与
+  /// 「测试配置」连接探测都允许空账号/密码（匿名 WebDAV）。不能用
+  /// `SyncState.isConfigured`（要求地址+账号+密码），否则匿名服务器上
+  /// 「备份至网络 / 网络恢复 / 远端最新」会被误禁用，而「本地+网络」
+  /// 又能成功上传，入口语义不一致。
+  ///
+  /// 读取 DB 失败时回退页面已加载的地址，避免临时故障把入口全部禁用。
+  Future<bool> _hasWebDavConfig() async {
+    try {
+      return await WebDavBackupService(
+            api: ref.read(bookApiProvider),
+            settings: _settings,
+          ).resolveConfigJson() !=
+          null;
+    } catch (e) {
+      debugPrint('[WebDavSettings] 读取 WebDAV 配置失败，按页面地址兜底：$e');
+      return _url.trim().isNotEmpty;
+    }
+  }
+
   /// 备份行点按：弹参考版三选 Sheet（批11）
   Future<void> _showBackupOptions() async {
-    final configured = ref.read(syncNotifierProvider).isConfigured;
+    final configured = await _hasWebDavConfig();
+    if (!mounted) return;
     final option = await showBackupOptionSheet(
       context: context,
       webDavConfigured: configured,
@@ -366,10 +389,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 备份目录、不改「仅保留最新备份」。WebDAV 未配置由 Sheet 禁用并在
   /// 此处兜底提示。
   Future<void> _doWebDavOnlyBackup() async {
-    if (!ref.read(syncNotifierProvider).isConfigured) {
+    if (!await _hasWebDavConfig()) {
       _showSnack(kWebDavNotConfiguredHint);
       return;
     }
+    if (!mounted) return;
     WebDavBackupUploadResult? upload;
     final progress = await _runWithProgress('备份中…', () async {
       final api = ref.read(bookApiProvider);
@@ -544,7 +568,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 四项：本地恢复 / 网络恢复 / 本地最新 / 远端最新。长按恢复行仍直接
   /// 走本地文件选择器（用户裁决保留的既有快捷）。
   Future<void> _showRestoreOptions() async {
-    final configured = ref.read(syncNotifierProvider).isConfigured;
+    final configured = await _hasWebDavConfig();
+    if (!mounted) return;
     final option = await showRestoreOptionSheet(
       context: context,
       webDavConfigured: configured,
@@ -738,10 +763,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 列表按名称降序（服务层排序，对齐参考版）。列表请求失败回退询问是否
   /// 改为本地恢复；列表为空提示「未找到远端备份」。
   Future<void> _restoreFromRemoteList() async {
-    if (!ref.read(syncNotifierProvider).isConfigured) {
+    if (!await _hasWebDavConfig()) {
       _showSnack(kWebDavNotConfiguredHint);
       return;
     }
+    if (!mounted) return;
     final (:ran, :list, :error) = await _loadRemoteBackups();
     if (!mounted || !ran) return;
     if (error != null) {
@@ -763,10 +789,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
 
   /// 远端最新：复用候选解析（mtime 最大）后直接覆盖恢复（批11）
   Future<void> _restoreLatestRemote() async {
-    if (!ref.read(syncNotifierProvider).isConfigured) {
+    if (!await _hasWebDavConfig()) {
       _showSnack(kWebDavNotConfiguredHint);
       return;
     }
+    if (!mounted) return;
     final (:ran, :list, :error) = await _loadRemoteBackups();
     if (!mounted || !ran) return;
     if (error != null) {
@@ -832,14 +859,24 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     }
     switch (run.status) {
       case WebDavRestoreStatus.success:
+        // 批11 回修 P3-5：只允许 seen 前进，不因恢复较旧远端备份而调低。
+        // seen 是「已处理过的最新远端时间」基准，调低会导致启动检查重复
+        // 提示同一份（或更旧的）远端备份。
+        final existingSeen = await _settings.getIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          defaultValue: 0,
+        );
+        final nextSeen = candidate.lastModifiedMillis > existingSeen
+            ? candidate.lastModifiedMillis
+            : existingSeen;
         await _settings.setIntPref(
           PrefKeys.lastSeenRemoteBackupMtime,
-          candidate.lastModifiedMillis,
+          nextSeen,
         );
         if (!mounted) return;
         _showSnack(AppStrings.restoreSuccess);
       case WebDavRestoreStatus.passwordRequired:
-        _showSnack('该备份需要密码，请下载后使用本地恢复');
+        _showSnack('暂不支持网络恢复密码备份，请使用本地恢复');
       case WebDavRestoreStatus.busy:
         _showSnack(kBackupRestoreBusyHint);
       case WebDavRestoreStatus.failed:

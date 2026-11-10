@@ -135,6 +135,17 @@ void main() {
     );
   }
 
+  /// 匿名 WebDAV：只有 URL，账号/密码为空（上传/列目录仍需可用）
+  void configureWebDavAnonymous() {
+    api.seedServer(
+      config: jsonEncode({
+        'url': 'https://dav.example.com/',
+        'username': '',
+        'password': '',
+      }),
+    );
+  }
+
   void setUserBackupPath() {
     SharedPreferences.setMockInitialValues({'app_backup_path': userDir.path});
   }
@@ -187,6 +198,21 @@ void main() {
   Finder dialogButton(String label) =>
       find.descendant(of: find.byType(AlertDialog), matching: find.text(label));
 
+  /// 远端列表 JSON 桩（last_modified 留空 → 回退文件名时间）
+  void stubRemoteList(List<Map<String, Object?>> items) {
+    when(
+      () => api.webdavListDir(any(), ''),
+    ).thenAnswer((_) async => jsonEncode(items));
+  }
+
+  /// 打开恢复 Sheet → 网络恢复 → 等远端列表入场完成
+  Future<void> openRemoteBackupList(WidgetTester tester) async {
+    await openRestoreSheet(tester);
+    await tester.tap(find.text('网络恢复'));
+    await pumpUntilFound(tester, find.text('选择远端备份'));
+    await tester.pumpAndSettle();
+  }
+
   group('备份 Sheet 动作', () {
     testWidgets('仅本地：调用 api.backup 用户目录，不上传 WebDAV', (tester) async {
       setUserBackupPath();
@@ -221,7 +247,7 @@ void main() {
       verifyNever(() => api.webdavUploadFile(any(), any(), any()));
     });
 
-    testWidgets('仅网络：未配置时禁用并提示，不创建备份', (tester) async {
+    testWidgets('仅网络：未配置时禁用，点按不创建备份', (tester) async {
       await pumpScreen(tester);
       await openBackupSheet(tester);
 
@@ -229,7 +255,8 @@ void main() {
       await tester.tap(find.text('备份至网络'));
       await tester.pumpAndSettle();
 
-      expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
+      // 禁用原因只保留行内副标题（无 SnackBar），点按不执行
+      expect(find.text('请先配置 WebDAV'), findsOneWidget);
       verifyNever(() => api.backup(any()));
       verifyNever(() => api.webdavUploadFile(any(), any(), any()));
     });
@@ -283,7 +310,7 @@ void main() {
       await tester.tap(find.text('备份至本地'));
       await tester.pumpAndSettle();
 
-      expect(find.text('正在备份或恢复，请稍候'), findsNWidgets(4));
+      expect(find.text('正在备份或恢复，请稍候'), findsNWidgets(3));
       verifyNever(() => api.backup(any()));
 
       gate.complete();
@@ -305,6 +332,55 @@ void main() {
       await pumpUntilFound(tester, find.textContaining('已上传 WebDAV'));
 
       verify(() => api.backup(userDir.path)).called(1);
+      verify(() => api.webdavUploadFile(any(), any(), any())).called(1);
+    });
+
+    testWidgets('仅网络：上传失败提示「备份失败」，不写用户目录/临时目录并回滚 lastBackup', (tester) async {
+      configureWebDav();
+      setUserBackupPath();
+      stubBackupWritingFile();
+      when(
+        () => api.webdavUploadFile(any(), any(), any()),
+      ).thenThrow(Exception('上传失败'));
+      final settings = SettingsService();
+      await settings.setLastBackupTime(4242);
+      final before = _tempArtifacts('legado_webdav_only_');
+
+      await pumpScreen(tester);
+      await openBackupSheet(tester);
+      await tester.tap(find.text('备份至网络'));
+      await pumpUntilFound(tester, find.textContaining('备份失败'));
+
+      expect(find.textContaining('备份失败'), findsOneWidget);
+      expect(userDir.listSync(), isEmpty);
+      final after = _tempArtifacts('legado_webdav_only_');
+      expect(after.difference(before), isEmpty, reason: '失败后临时目录必须清理');
+      expect(
+        await settings.getLastBackupTime(),
+        4242,
+        reason: '仅网络失败不得推迟自动备份周期',
+      );
+    });
+
+    testWidgets('匿名 WebDAV（仅 URL）：备份至网络可用', (tester) async {
+      configureWebDavAnonymous();
+      setUserBackupPath();
+      stubBackupWritingFile();
+      when(
+        () => api.webdavUploadFile(any(), any(), any()),
+      ).thenAnswer((_) async {});
+
+      await pumpScreen(tester);
+      await openBackupSheet(tester);
+
+      expect(
+        find.text('请先配置 WebDAV'),
+        findsNothing,
+        reason: '上传只要求 URL，账号/密码可空',
+      );
+      await tester.tap(find.text('备份至网络'));
+      await pumpUntilFound(tester, find.textContaining('备份成功'));
+
       verify(() => api.webdavUploadFile(any(), any(), any())).called(1);
     });
   });
@@ -568,6 +644,196 @@ void main() {
 
       expect(picker.pickCalls, 1);
       verifyNever(() => api.restore(any(), password: any(named: 'password')));
+    });
+
+    testWidgets('匿名 WebDAV（仅 URL）：网络恢复/远端最新可用', (tester) async {
+      configureWebDavAnonymous();
+      stubRemoteList(const []);
+
+      await pumpScreen(tester);
+      await openRestoreSheet(tester);
+
+      expect(
+        find.text('请先配置 WebDAV'),
+        findsNothing,
+        reason: '列目录只要求 URL，账号/密码可空',
+      );
+      await tester.tap(find.text('远端最新'));
+      await pumpUntilFound(tester, find.text('未找到远端备份'));
+
+      verify(() => api.webdavListDir(any(), '')).called(1);
+    });
+
+    testWidgets('网络恢复：下载异常 → 恢复失败且不写 seen', (tester) async {
+      configureWebDav();
+      stubRemoteList([
+        {
+          'name': 'backup_20260101_120000.json',
+          'is_dir': false,
+          'last_modified': '',
+        },
+      ]);
+      when(
+        () => api.webdavDownloadFile(any(), any(), any()),
+      ).thenThrow(Exception('下载失败'));
+
+      await pumpScreen(tester);
+      await openRemoteBackupList(tester);
+      await tester.tap(find.text('backup_20260101_120000.json'));
+      await tester.pumpAndSettle();
+      expect(find.text('确认恢复吗？'), findsOneWidget);
+      await tester.tap(dialogButton('恢复'));
+      await pumpUntilFound(tester, find.textContaining('恢复失败'));
+
+      expect(find.textContaining('恢复失败'), findsOneWidget);
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime),
+        isNull,
+        reason: '恢复失败不得写去重键',
+      );
+      verifyNever(() => api.restore(any(), password: any(named: 'password')));
+    });
+
+    testWidgets('网络恢复：restore 异常 → 恢复失败且不写 seen', (tester) async {
+      configureWebDav();
+      stubRemoteList([
+        {
+          'name': 'backup_20260101_120000.json',
+          'is_dir': false,
+          'last_modified': '',
+        },
+      ]);
+      when(() => api.webdavDownloadFile(any(), any(), any())).thenAnswer((
+        invocation,
+      ) async {
+        final localPath = invocation.positionalArguments[2] as String;
+        await File(localPath).writeAsString('{}');
+      });
+      when(
+        () => api.restore(any(), password: any(named: 'password')),
+      ).thenThrow(Exception('写入失败'));
+
+      await pumpScreen(tester);
+      await openRemoteBackupList(tester);
+      await tester.tap(find.text('backup_20260101_120000.json'));
+      await tester.pumpAndSettle();
+      await tester.tap(dialogButton('恢复'));
+      await pumpUntilFound(tester, find.textContaining('恢复失败'));
+
+      expect(find.textContaining('恢复失败'), findsOneWidget);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
+    });
+
+    testWidgets('网络恢复：密码 zip → 暂不支持提示且不写 seen/不 restore', (tester) async {
+      configureWebDav();
+      stubRemoteList([
+        {
+          'name': 'backup_20260101_120000.zip',
+          'is_dir': false,
+          'last_modified': '',
+        },
+      ]);
+      when(() => api.webdavDownloadFile(any(), any(), any())).thenAnswer((
+        invocation,
+      ) async {
+        final localPath = invocation.positionalArguments[2] as String;
+        await File(localPath).writeAsString('PK\x03\x04');
+      });
+      when(() => api.backupInspect(any())).thenAnswer(
+        (_) async => const BackupInspectInfo(
+          format: BackupFormat.zip,
+          passwordRequired: true,
+          passwordProtectedFiles: ['servers.json'],
+        ),
+      );
+
+      await pumpScreen(tester);
+      await openRemoteBackupList(tester);
+      await tester.tap(find.text('backup_20260101_120000.zip'));
+      await tester.pumpAndSettle();
+      await tester.tap(dialogButton('恢复'));
+      await pumpUntilFound(tester, find.text('暂不支持网络恢复密码备份，请使用本地恢复'));
+
+      verifyNever(() => api.restore(any(), password: any(named: 'password')));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
+    });
+
+    testWidgets('网络恢复：忙碌 → 提示稍候、不下载/不恢复/不写 seen', (tester) async {
+      configureWebDav();
+      stubRemoteList([
+        {
+          'name': 'backup_20260101_120000.json',
+          'is_dir': false,
+          'last_modified': '',
+        },
+      ]);
+      when(
+        () => api.webdavDownloadFile(any(), any(), any()),
+      ).thenAnswer((_) async {});
+
+      await pumpScreen(tester);
+      await openRemoteBackupList(tester);
+
+      // 列表已取到后模拟自动备份启动，再确认恢复 → 互斥拒绝
+      final gate = Completer<void>();
+      final lock = LocalBackupService.instance.runExclusive(() async {
+        await gate.future;
+        return null;
+      });
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+
+      await tester.tap(find.text('backup_20260101_120000.json'));
+      await tester.pumpAndSettle();
+      await tester.tap(dialogButton('恢复'));
+      await pumpUntilFound(tester, find.text('正在备份或恢复，请稍候'));
+
+      verifyNever(() => api.webdavDownloadFile(any(), any(), any()));
+      verifyNever(() => api.restore(any(), password: any(named: 'password')));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
+
+      gate.complete();
+      await lock;
+    });
+
+    testWidgets('远端恢复成功：seen 取 max(现有, 候选 mtime)，不调低', (tester) async {
+      configureWebDav();
+      stubRemoteList([
+        {
+          'name': 'backup_20260101_120000.json',
+          'is_dir': false,
+          'last_modified': '',
+        },
+      ]);
+      when(() => api.webdavDownloadFile(any(), any(), any())).thenAnswer((
+        invocation,
+      ) async {
+        final localPath = invocation.positionalArguments[2] as String;
+        await File(localPath).writeAsString('{}');
+      });
+      const futureSeen = 9999999999999;
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.lastSeenRemoteBackupMtime: futureSeen,
+      });
+
+      await pumpScreen(tester);
+      await openRemoteBackupList(tester);
+      await tester.tap(find.text('backup_20260101_120000.json'));
+      await tester.pumpAndSettle();
+      await tester.tap(dialogButton('恢复'));
+      await pumpUntilFound(tester, find.text('恢复成功'));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime),
+        futureSeen,
+        reason: '恢复较旧远端不得把 seen 调低（会重复提示）',
+      );
     });
   });
 }

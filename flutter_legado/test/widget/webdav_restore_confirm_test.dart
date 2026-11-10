@@ -199,7 +199,7 @@ void main() {
     expect(find.text('恢复完成，回写 0 条书源'), findsOneWidget);
   });
 
-  testWidgets('WebDAV 未配置：恢复 Sheet 网络项禁用并提示，不触发同步/恢复', (tester) async {
+  testWidgets('WebDAV 未配置：恢复 Sheet 网络项禁用，点按不执行', (tester) async {
     await pumpScreen(tester);
 
     await tapRestoreTile(tester);
@@ -209,15 +209,16 @@ void main() {
     expect(find.text('网络恢复'), findsOneWidget);
     expect(find.text('本地最新'), findsOneWidget);
     expect(find.text('远端最新'), findsOneWidget);
-    // 未配置时网络两项显示禁用原因
+    // 未配置时网络两项显示禁用原因（行内副标题，不弹 SnackBar）
     expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
 
     await tester.tap(find.text('网络恢复'));
     await tester.pumpAndSettle();
 
-    // 点按禁用项只提示，不关闭 Sheet、不触发同步/恢复
+    // 点按禁用项不执行、不关闭 Sheet、不触发同步/恢复
     expect(find.text('网络恢复'), findsOneWidget);
-    expect(find.text('请先配置 WebDAV'), findsWidgets);
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
+    expect(find.byType(SnackBar), findsNothing);
     expect(find.text('确认同步吗？'), findsNothing);
     expect(find.text('确认恢复吗？'), findsNothing);
     verifyNever(() => mockApi.webdavFullSync(any(), any(), any()));

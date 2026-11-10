@@ -296,6 +296,10 @@ class LocalBackupService {
   static const String _webDavOnlyTempPrefix = 'legado_webdav_only_';
 
   /// 删除本服务创建的临时目录（前缀不匹配时不删，防误删）
+  ///
+  /// 进程被强杀时 finally 不会执行；失败日志保留完整路径前缀
+  /// `legado_webdav_only_`，供后续启动清扫任务定位残留（清扫实现本批只
+  /// 登记、不实现）。
   static Future<void> _deleteTempDir(Directory dir) async {
     try {
       final segments = dir.uri.pathSegments
@@ -305,7 +309,10 @@ class LocalBackupService {
       if (!name.startsWith(_webDavOnlyTempPrefix)) return;
       if (await dir.exists()) await dir.delete(recursive: true);
     } catch (e) {
-      debugPrint('[LocalBackupService] 清理仅网络备份临时目录失败（忽略）：$e');
+      debugPrint(
+        '[LocalBackupService] 清理仅网络备份临时目录失败'
+        '（忽略，待清扫路径=${dir.path}）：$e',
+      );
     }
   }
 

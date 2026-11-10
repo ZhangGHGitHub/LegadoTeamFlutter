@@ -98,7 +98,7 @@ void main() {
     expect(find.text('备份至本地'), findsNothing);
   });
 
-  testWidgets('WebDAV 未配置：备份至网络禁用，点按提示且不关闭 Sheet', (tester) async {
+  testWidgets('WebDAV 未配置：备份至网络禁用，点按不执行且不关闭 Sheet', (tester) async {
     BackupOption? result;
     await tester.pumpWidget(
       _host((context) async {
@@ -117,13 +117,14 @@ void main() {
     await tester.tap(find.text('备份至网络'));
     await tester.pumpAndSettle();
 
-    // 禁用原因保留在行内 + SnackBar 提示，Sheet 不关闭、不返回选择
-    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
+    // 禁用原因只保留行内副标题（不弹 SnackBar），Sheet 不关闭、不返回选择
+    expect(find.text('请先配置 WebDAV'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
     expect(find.text('备份至网络'), findsOneWidget);
     expect(result, isNull);
   });
 
-  testWidgets('忙碌态：全部选项禁用并提示，点按不返回选择', (tester) async {
+  testWidgets('忙碌态：全部选项禁用，点按不返回选择', (tester) async {
     BackupOption? result;
     await tester.pumpWidget(
       _host((context) async {
@@ -142,9 +143,37 @@ void main() {
     await tester.tap(find.text('备份至本地'));
     await tester.pumpAndSettle();
 
-    expect(find.text(kBackupRestoreBusyHint), findsNWidgets(4));
+    expect(find.text(kBackupRestoreBusyHint), findsNWidgets(3));
     expect(find.text('备份至本地'), findsOneWidget);
     expect(result, isNull);
+  });
+
+  testWidgets('点按前复判忙碌：Sheet 打开后转忙则拒绝执行并灰显', (tester) async {
+    var busy = false;
+    BackupOption? result;
+    await tester.pumpWidget(
+      _host((context) async {
+        result = await showBackupOptionSheet(
+          context: context,
+          webDavConfigured: true,
+          isBusy: () => busy,
+        );
+      }),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text(kBackupRestoreBusyHint), findsNothing);
+
+    // Sheet 打开后自动备份启动：点按瞬间必须复判并拒绝；仅被点的行
+    // 立即刷新为禁用态（其余行在各自点按时复判）
+    busy = true;
+    await tester.tap(find.text('备份至本地'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('备份至本地'), findsOneWidget);
+    expect(find.text(kBackupRestoreBusyHint), findsOneWidget);
+    expect(result, isNull);
+    busy = false;
   });
 
   testWidgets('恢复 Sheet 四项顺序/图标（参考两项 + 用户裁决两项）', (tester) async {
