@@ -338,6 +338,26 @@ void main() {
       expect(captureReorderedIds(), equals([3, 1, 2]));
     });
 
+    test('连续两次拖动串行执行，最终顺序与调用顺序一致', () async {
+      final calls = <List<int>>[];
+      when(() => mockApi.reorderReplaceRules(any())).thenAnswer((inv) async {
+        calls.add(List<int>.from(inv.positionalArguments[0] as List<int>));
+        return 3;
+      });
+
+      // 两次拖动不等待前一次完成（模拟快速连续拖拽）
+      final first = readNotifier().reorder(0, 1); // A,B,C → B,A,C
+      final second = readNotifier().reorder(1, 2); // B,A,C → B,C,A
+      expect(await first, isTrue);
+      expect(await second, isTrue);
+
+      expect(calls, [
+        [2, 1, 3],
+        [2, 3, 1],
+      ], reason: '门闩应串行提交，第二次基于第一次结果');
+      expect(readState().rules.map((r) => r.name).toList(), ['B', 'C', 'A']);
+    });
+
     test('置顶失败 → 返回 false 且回滚', () async {
       when(
         () => mockApi.reorderReplaceRules(any()),

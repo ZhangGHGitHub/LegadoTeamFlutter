@@ -95,13 +95,39 @@ class ReplaceRuleNotifier extends Notifier<ReplaceRuleState> {
 
   // ===== [批12 | 2026-11-10] 排序写链路（全量重排，一次 FFI 调用） =====
 
+  /// [批12 P3] 排序写链路串行门闩
+  ///
+  /// 连续拖动/置顶置底按调用顺序排队执行，避免在途请求与后续乐观更新
+  /// 交错导致本地顺序与 DB 分叉。
+  Future<void> _orderTail = Future<void>.value();
+
+  /// 入队并串行执行一次排序写操作（队尾吞掉异常，后续操作仍可执行）
+  Future<bool> _enqueueOrder(Future<bool> Function() action) {
+    final result = _orderTail.then((_) => action());
+    _orderTail = result.then<void>((_) {}, onError: (_, _) {});
+    return result;
+  }
+
   /// 拖拽排序
   ///
   /// [newIndex] 为 `ReorderableListView.onReorderItem` 已调整的目标索引
   /// （移除后的插入位置）。流程：乐观更新本地列表 → 一次全量
   /// `reorderReplaceRules` 落库 → 失败 `load()` 回滚。
   /// 返回 false 表示落库失败且顺序已回滚，由页面提示用户。
-  Future<bool> reorder(int oldIndex, int newIndex) async {
+  Future<bool> reorder(int oldIndex, int newIndex) =>
+      _enqueueOrder(() => _reorderNow(oldIndex, newIndex));
+
+  /// 将指定规则批量置顶（重排数组后**一次**全量落库）
+  ///
+  /// 对标原版 `replace_rule_sel.xml` menu_top_sel；替代原「逐条 update」实现。
+  Future<bool> moveToTop(List<int> ids) =>
+      _enqueueOrder(() => _moveToTopNow(ids));
+
+  /// 将指定规则批量置底（重排数组后**一次**全量落库）
+  Future<bool> moveToBottom(List<int> ids) =>
+      _enqueueOrder(() => _moveToBottomNow(ids));
+
+  Future<bool> _reorderNow(int oldIndex, int newIndex) async {
     final rules = state.rules;
     if (oldIndex < 0 || oldIndex >= rules.length) return true;
     if (newIndex < 0 || newIndex >= rules.length) return true;
@@ -112,10 +138,7 @@ class ReplaceRuleNotifier extends Notifier<ReplaceRuleState> {
     return _commitOrder(ordered);
   }
 
-  /// 将指定规则批量置顶（重排数组后**一次**全量落库）
-  ///
-  /// 对标原版 `replace_rule_sel.xml` menu_top_sel；替代原「逐条 update」实现。
-  Future<bool> moveToTop(List<int> ids) async {
+  Future<bool> _moveToTopNow(List<int> ids) async {
     if (ids.isEmpty) return true;
     final selected = state.rules.where((r) => ids.contains(r.id)).toList();
     if (selected.isEmpty) return true;
@@ -123,8 +146,7 @@ class ReplaceRuleNotifier extends Notifier<ReplaceRuleState> {
     return _commitOrder([...selected, ...rest]);
   }
 
-  /// 将指定规则批量置底（重排数组后**一次**全量落库）
-  Future<bool> moveToBottom(List<int> ids) async {
+  Future<bool> _moveToBottomNow(List<int> ids) async {
     if (ids.isEmpty) return true;
     final selected = state.rules.where((r) => ids.contains(r.id)).toList();
     if (selected.isEmpty) return true;
@@ -141,6 +163,8 @@ class ReplaceRuleNotifier extends Notifier<ReplaceRuleState> {
     try {
       final api = ref.read(bookApiProvider);
       await api.reorderReplaceRules(renumbered.map((r) => r.id).toList());
+      // 成功后本地 order 已与 DB 写入顺序一致（0..n-1）；串行门闩保证
+      // 下一次排序基于本结果继续，不会与在途请求交错。
       return true;
     } catch (_) {
       // 非法集零写入/网络失败：DB 顺序未变，重读即恢复原顺序

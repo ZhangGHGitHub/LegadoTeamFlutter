@@ -283,7 +283,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
               key: ValueKey(rule.id),
               rule: rule,
               index: index,
-              total: rules.length,
               batchMode: true,
               selected: _selected.contains(rule.id),
               onSelect: () => _toggleSelect(rule.id),
@@ -314,7 +313,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   key: ValueKey(rule.id),
                   rule: rule,
                   index: index,
-                  total: rules.length,
                   showDragHandle: false,
                   onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
                   onEdit: () => ReplaceRuleEditScreen.open(context, rule: rule),
@@ -344,7 +342,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
           key: ValueKey(rule.id),
           rule: rule,
           index: index,
-          total: rules.length,
           onToggle: (enabled) => provider.setEnabled(rule.id, enabled),
           // [A3 形态对齐 | full-stack-engineer + UI] 列表行编辑跳整页编辑器
           onEdit: () => ReplaceRuleEditScreen.open(context, rule: rule),
@@ -381,11 +378,14 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     );
   }
 
-  /// [批12] 排序落库失败提示（顺序已由 notifier.load() 回滚）
+  /// [批12] 排序落库失败提示
+  ///
+  /// 文案不承诺「已恢复原顺序」：`load()` 回滚本身可能失败（DB 不可用），
+  /// 此时 state.error 会驱动错误态，SnackBar 只陈述保存失败。
   void _showSortFailure() {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('排序保存失败，已恢复原顺序')));
+    ).showSnackBar(const SnackBar(content: Text('排序保存失败')));
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 分组筛选 — Qoder =====
@@ -790,7 +790,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
 class _ReplaceRuleTile extends StatelessWidget {
   final ReplaceRule rule;
   final int index;
-  final int total;
   final ValueChanged<bool> onToggle;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -808,7 +807,6 @@ class _ReplaceRuleTile extends StatelessWidget {
     super.key,
     required this.rule,
     required this.index,
-    required this.total,
     required this.onToggle,
     required this.onEdit,
     required this.onDelete,

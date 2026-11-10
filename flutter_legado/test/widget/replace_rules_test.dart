@@ -238,6 +238,41 @@ void main() {
       );
     });
 
+    testWidgets('分组/启用筛选态同样禁用拖拽并显示说明', (tester) async {
+      const rules = [
+        ReplaceRule(id: 1, name: '甲规则', pattern: 'a', group: '净化组'),
+        ReplaceRule(
+          id: 2,
+          name: '乙规则',
+          pattern: 'b',
+          group: '净化组',
+          isEnabled: false,
+        ),
+        ReplaceRule(id: 3, name: '丙规则', pattern: 'c'),
+      ];
+      await pumpScreen(tester, rules: rules);
+      expect(find.byType(ReorderableDragStartListener), findsWidgets);
+
+      // 分组筛选：只有「净化组」两条可见
+      await tester.tap(find.byTooltip('分组筛选'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('分组：净化组').last);
+      await tester.pumpAndSettle();
+      expect(find.text('筛选/搜索状态下暂不支持拖拽排序'), findsOneWidget);
+      expect(find.byType(ReorderableListView), findsNothing);
+      expect(find.byType(ReorderableDragStartListener), findsNothing);
+      expect(find.text('丙规则'), findsNothing, reason: '无分组规则被筛掉');
+
+      // 启用筛选：禁用的乙规则不可见，仍不可拖拽
+      await tester.tap(find.byTooltip('分组筛选'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('启用').last);
+      await tester.pumpAndSettle();
+      expect(find.text('筛选/搜索状态下暂不支持拖拽排序'), findsOneWidget);
+      expect(find.byType(ReorderableDragStartListener), findsNothing);
+      expect(find.text('乙规则'), findsNothing, reason: '禁用规则被筛掉');
+    });
+
     testWidgets('排序落库失败：回滚原顺序并提示', (tester) async {
       final api = _FailingReorderApi();
       await api.addReplaceRule(const ReplaceRule(name: 'A', pattern: 'a'));
@@ -253,7 +288,7 @@ void main() {
 
       // FFI 抛错 → notifier.load() 回滚 → 页面提示
       expect(api.reorderAttempts, 1, reason: '失败只尝试一次，不逐条写入');
-      expect(find.text('排序保存失败，已恢复原顺序'), findsOneWidget);
+      expect(find.text('排序保存失败'), findsOneWidget);
 
       double dyOf(String name) => tester.getTopLeft(find.text(name)).dy;
       expect(dyOf('A'), lessThan(dyOf('B')));

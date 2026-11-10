@@ -142,9 +142,23 @@ void main() {
       );
       expect((await findById(added.id)).scope, '新范围');
 
-      // 未提供 scope（其余字段整体回传）→ 保留既有值
-      await api.updateReplaceRule(
-        (await findById(added.id)).copyWith(pattern: 'y'),
+      // 未提供 scope → 保留既有值。BookApi 恒传空串表达「清除」，故必须
+      // 直调生成的桥接函数并**省略**可选参，才能覆盖 Rust `Option::None` 分支
+      final current = await findById(added.id);
+      await bridge.replaceRuleUpdate(
+        ruleId: current.id,
+        name: current.name,
+        pattern: 'y',
+        replacement: current.replacement,
+        isRegex: current.isRegex,
+        isEnabled: current.isEnabled,
+        group: current.group ?? '',
+        scopeTitle: current.scopeTitle,
+        scopeContent: current.scopeContent,
+        excludeScope: current.excludeScope ?? '',
+        timeoutMillisecond: current.timeoutMillisecond,
+        scopeSource: current.scopeSource,
+        // scope 省略：FFI 侧 None → 保留既有值
       );
       expect((await findById(added.id)).scope, '新范围');
 
