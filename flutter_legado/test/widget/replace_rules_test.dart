@@ -239,6 +239,33 @@ void main() {
       );
     });
 
+    testWidgets('手柄 48dp 全域可起拖（图标盒外偏移命中）', (tester) async {
+      final api = MockBookApi();
+      await api.addReplaceRule(const ReplaceRule(name: 'A', pattern: 'a'));
+      await api.addReplaceRule(const ReplaceRule(name: 'B', pattern: 'b'));
+      await api.addReplaceRule(const ReplaceRule(name: 'C', pattern: 'c'));
+      final firstId = (await api.getReplaceRules()).first.id;
+      await pumpScreenWithApi(tester, api);
+
+      final handle = find.byKey(ValueKey('replace-rule-drag-handle-$firstId'));
+      final topLeft = tester.getTopLeft(handle);
+      // 24dp 图标居中于 48dp：图标 x 区间为 [topLeft.dx+12, topLeft.dx+36]，
+      // 取 +4 落在图标盒外、48dp 命中区内（修复前该点不进入 Listener 命中路径）
+      final gesture = await tester.startGesture(topLeft + const Offset(4, 24));
+      await tester.pump(const Duration(milliseconds: 100));
+      await gesture.moveBy(const Offset(0, 200));
+      await tester.pump(const Duration(milliseconds: 300));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        api.reorderReplaceRulesCalls,
+        1,
+        reason: '图标外、48dp 命中区内的起点也必须触发拖拽重排',
+      );
+      expect(api.lastReorderReplaceRulesIdsJson, isNotNull);
+    });
+
     testWidgets('搜索筛选态禁用拖拽手柄并显示说明', (tester) async {
       const rule = ReplaceRule(id: 1, name: '去广告', pattern: '广告');
       await pumpScreen(tester, rules: [rule]);

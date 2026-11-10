@@ -822,13 +822,22 @@ class _ReplaceRuleTile extends StatelessWidget {
   /// 原实现只包裸 24dp `Icon`，真实手指容错偏小（y 偏移 19px 即被滚动手势
   /// 接管）；扩到 Material 建议的最小触控目标。行高由 Switch/IconButton
   /// 的 48dp 决定，48dp 手柄不改变行高。
+  ///
+  /// **命中修复**：`SizedBox`/`Center` 无绘制、无自身命中，而
+  /// `ReorderableDragStartListener` 内部 `Listener` 默认
+  /// `HitTestBehavior.deferToChild`——透明外圈不会进入命中路径。用
+  /// `ColoredBox(Colors.transparent)` 包住 48×48：透明色仍按 opaque 行为
+  /// 参与命中，整个命中区都能起拖。
   Widget _buildDragHandleIcon(Color color) {
     return SizedBox(
       key: ValueKey('replace-rule-drag-handle-${rule.id}'),
       width: 48,
       height: 48,
-      child: Center(
-        child: Icon(Symbols.drag_handle_rounded, size: 24, color: color),
+      child: ColoredBox(
+        color: Colors.transparent,
+        child: Center(
+          child: Icon(Symbols.drag_handle_rounded, size: 24, color: color),
+        ),
       ),
     );
   }
