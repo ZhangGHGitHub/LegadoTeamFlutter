@@ -3895,7 +3895,9 @@ async fn test_b6_save_replace_rule_semantics() {
     assert_eq!(rules.len(), 3, "id 命中应更新而非新增");
     let updated = rules.iter().find(|r| r.id == first_id).unwrap();
     assert_eq!(updated.name, "规则一改");
-    assert_eq!(updated.order, 9);
+    // 批12 P2：update 不写 sortOrder——即使请求显式携带 sortOrder=9，
+    // 既有行排序保持不变（排序只经 reorderReplaceRules 全量重排）
+    assert_eq!(updated.order, 1, "既有行更新不得改写排序值");
 }
 
 #[tokio::test]

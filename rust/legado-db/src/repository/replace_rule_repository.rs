@@ -46,14 +46,18 @@ impl<'a> ReplaceRuleRepository<'a> {
         Ok(self.conn.last_insert_rowid())
     }
 
-    /// 更新替换规则
+    /// 更新替换规则（**不写 `sortOrder`**，排序只经 [`Self::reorder`] 变更）
+    ///
+    /// 批12 P2：update 是「读-改-写」路径，调用方持有的 `rule.order` 可能是
+    /// 排序前的旧快照；若一并写回会与 `reorder`（或 Web `/saveReplaceRule`）
+    /// 交错，把新排序覆盖回旧值。故 SQL 不含 `sortOrder`，列值保持不变。
     pub fn update(&self, rule: &ReplaceRule) -> LegadoResult<()> {
         self.conn
             .execute(
                 "UPDATE replace_rules SET name=?1, \"group\"=?2, pattern=?3, replacement=?4,
                  scope=?5, scopeTitle=?6, scopeContent=?7, excludeScope=?8, isEnabled=?9,
-                 isRegex=?10, timeoutMillisecond=?11, sortOrder=?12, scopeSource=?13
-                 WHERE id=?14",
+                 isRegex=?10, timeoutMillisecond=?11, scopeSource=?12
+                 WHERE id=?13",
                 params![
                     rule.name,
                     rule.group,
@@ -66,7 +70,6 @@ impl<'a> ReplaceRuleRepository<'a> {
                     rule.is_enabled,
                     rule.is_regex,
                     rule.timeout_millisecond,
-                    rule.order,
                     rule.scope_source,
                     rule.id,
                 ],
@@ -636,6 +639,67 @@ mod tests {
                 .iter()
                 .map(|r| r.order)
                 .collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+    }
+
+    /// 批12 P2：update 不写 sortOrder——重排后携带旧 order 快照的整行更新
+    /// 不得覆盖新排序
+    #[test]
+    fn test_update_after_reorder_keeps_sort_order() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReplaceRuleRepository::new(db.connection());
+        let id1 = repo.insert(&make_rule_at("r1", 0)).unwrap();
+        let id2 = repo.insert(&make_rule_at("r2", 1)).unwrap();
+        let id3 = repo.insert(&make_rule_at("r3", 2)).unwrap();
+
+        repo.reorder(&[id3, id1, id2]).unwrap();
+        let before: Vec<(i64, i32)> = repo
+            .find_all()
+            .unwrap()
+            .iter()
+            .map(|r| (r.id, r.order))
+            .collect();
+
+        // 调用方持有排序前旧快照（order=99），update 后顺序必须保持
+        let mut stale = make_rule_at("r1_updated", 99);
+        stale.id = id1;
+        repo.update(&stale).unwrap();
+
+        let after = repo.find_all().unwrap();
+        assert_eq!(
+            after.iter().map(|r| (r.id, r.order)).collect::<Vec<_>>(),
+            before,
+            "update 不得写回 sortOrder（即使传入旧 order 快照）"
+        );
+        assert_eq!(
+            after.iter().find(|r| r.id == id1).unwrap().name,
+            "r1_updated",
+            "其余字段应正常更新"
+        );
+    }
+
+    /// 批12 P2：先 update（含旧 order）再 reorder，排序结果仍以 reorder 为准
+    #[test]
+    fn test_update_then_reorder_applies_new_order() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReplaceRuleRepository::new(db.connection());
+        let id1 = repo.insert(&make_rule_at("r1", 0)).unwrap();
+        let id2 = repo.insert(&make_rule_at("r2", 1)).unwrap();
+        let id3 = repo.insert(&make_rule_at("r3", 2)).unwrap();
+
+        let mut stale = make_rule_at("r1_updated", 99);
+        stale.id = id1;
+        repo.update(&stale).unwrap();
+
+        assert_eq!(repo.reorder(&[id2, id3, id1]).unwrap(), 3);
+        let all = repo.find_all().unwrap();
+        assert_eq!(
+            all.iter().map(|r| r.id).collect::<Vec<_>>(),
+            vec![id2, id3, id1]
+        );
+        assert_eq!(
+            all.iter().map(|r| r.order).collect::<Vec<_>>(),
             vec![0, 1, 2]
         );
     }

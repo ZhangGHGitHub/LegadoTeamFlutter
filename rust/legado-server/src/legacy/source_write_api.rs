@@ -11,7 +11,7 @@
 //! | POST `/saveRssSource` | `RssSourceController.saveSource`（:24-38） | 单条 JSON；解析失败文案拼接 Gson 消息 |
 //! | POST `/saveRssSources` | `RssSourceController.saveSources`（:40-55） | JSON 数组；逐条跳过空名/空 URL |
 //! | POST `/deleteRssSources` | `RssSourceController.deleteSources`（:68-76） | 数组；删源 + 文章 + 缓存变量 |
-//! | POST `/saveReplaceRule` | `ReplaceRuleController.saveRule`（:23-45） | 单条 JSON；`sortOrder` 缺省/MIN → `MAX(sortOrder)+1` |
+//! | POST `/saveReplaceRule` | `ReplaceRuleController.saveRule`（:23-45） | 单条 JSON；插入时 `sortOrder` 缺省/MIN → `MAX(sortOrder)+1`；既有行更新不改排序 |
 //! | POST `/deleteReplaceRule` | `ReplaceRuleController.delete`（:48-59） | 按 id 删除；不存在亦成功 |
 //! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | `{rule, text}`；不落库；正则/字面量/@js: 替换 |
 //!
@@ -874,8 +874,9 @@ fn parse_replace_rule(text: &str) -> Option<(ReplaceRule, bool)> {
 ///
 /// 语义：缺参 →「数据不能为空」；坏 JSON →「格式不对」；排序键（原版
 /// `order` / 本轨 `sortOrder`，P1-1）缺省（Gson 实体默认 `Int.MIN_VALUE`）
-/// 或显式 `Int.MIN_VALUE` → `MAX(sortOrder)+1`；id 命中既有行走全列
-/// update（等价 Room REPLACE），否则插入新行。
+/// 或显式 `Int.MIN_VALUE` → `MAX(sortOrder)+1`（**仅插入新行时生效**）；
+/// id 命中既有行只更新内容字段——批12 P2 起 `update` 不写 `sortOrder`，
+/// 排序只经 `reorderReplaceRules` 全量重排，避免旧快照覆盖新排序。
 ///
 /// **返回值形态**：原版成功路径未调用 `setData`，信封保持构造默认
 /// （`isSuccess=false` +「未知错误,请联系开发者!」），Web 页因此把成功
@@ -902,11 +903,13 @@ pub async fn save_replace_rule(
                 match repo.find_all() {
                     Err(e) => ReturnData::error(e.to_string()),
                     Ok(rules) => {
-                        if order_missing || rule.order == i32::MIN {
+                        let exists = rule.id != 0 && rules.iter().any(|r| r.id == rule.id);
+                        // 批12 P2：排序只在插入新行时补 MAX+1；既有行 update
+                        // 不写 sortOrder（排序由 reorderReplaceRules 独占）
+                        if !exists && (order_missing || rule.order == i32::MIN) {
                             let max_order = rules.iter().map(|r| r.order).max().unwrap_or(0);
                             rule.order = max_order.wrapping_add(1);
                         }
-                        let exists = rule.id != 0 && rules.iter().any(|r| r.id == rule.id);
                         let written = if exists {
                             repo.update(&rule)
                         } else {
