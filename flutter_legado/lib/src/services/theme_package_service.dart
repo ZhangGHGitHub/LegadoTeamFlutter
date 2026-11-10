@@ -167,7 +167,10 @@ class _BoundedOutputStream extends OutputStream {
   @override
   void writeStream(InputStream stream) {
     while (!stream.isEOS) {
-      final remaining = stream.length - stream.position;
+      // archive 4.0.9 的 InputStream.length 语义是「剩余可读字节」
+      //（InputMemoryStream: buffer.length - position；
+      //  InputFileStream: fileRemaining），不能再减 position。
+      final remaining = stream.length;
       if (remaining <= 0) break;
       final take = min(remaining, 8192);
       writeBytes(stream.readBytes(take).toUint8List());
@@ -202,6 +205,10 @@ abstract final class ThemePackageService {
 
   /// 解压总量上限（512MB）
   static const int maxTotalBytes = 512 * 1024 * 1024;
+
+  /// 中央目录大小上限（4MB）：主题包只有清单+两张图，远小于该值；
+  /// 防止伪造 entries=0 + 巨型中央目录先构造百万 Header 对象。
+  static const int maxCentralDirectoryBytes = 4 * 1024 * 1024;
 
   /// 清单颜色键 → 我方偏好键（顺序即导出顺序）
   static const List<(String, String)> _colorKeys = [
@@ -315,6 +322,14 @@ abstract final class ThemePackageService {
       directory.read(input);
       if (directory.filePosition < 0) {
         throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+      }
+      // zip64 可能把 EOCD 的 0xFFFF/0xFFFFFFFF 覆盖为真实值，解析后再复检
+      if (directory.numberOfThisDisk != 0 ||
+          directory.diskWithTheStartOfTheCentralDirectory != 0) {
+        throw const ThemePackageException('不支持分卷主题包');
+      }
+      if (directory.centralDirectorySize > maxCentralDirectoryBytes) {
+        throw const ThemePackageException('主题包清单过大（上限 4MB）');
       }
       if (directory.totalCentralDirectoryEntries > maxEntries ||
           directory.fileHeaders.length > maxEntries) {
@@ -467,6 +482,9 @@ abstract final class ThemePackageService {
         throw const ThemePackageException('主题包条目过多（上限 4096）');
       }
       if (centralDirectorySize != 0xffffffff) {
+        if (centralDirectorySize > maxCentralDirectoryBytes) {
+          throw const ThemePackageException('主题包清单过大（上限 4MB）');
+        }
         if (centralDirectorySize > maxTotalBytes) {
           throw const ThemePackageException('主题包内容过大（上限 512MB）');
         }

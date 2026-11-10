@@ -18,9 +18,10 @@ import 'package:flutter_legado/src/services/theme_package_service.dart';
 Uint8List _pngBytes({int width = 1, int height = 1}) =>
     Uint8List.fromList(img.encodePng(img.Image(width: width, height: height)));
 
-Uint8List _zip(List<ArchiveFile> entries) {
+Uint8List _zip(List<ArchiveFile> entries, {CompressionType? compression}) {
   final archive = Archive();
   for (final entry in entries) {
+    if (compression != null) entry.compression = compression;
     archive.addFile(entry);
   }
   return Uint8List.fromList(ZipEncoder().encode(archive));
@@ -135,6 +136,94 @@ void main() {
     expect(data.backgroundDark, equals(await dark.readAsBytes()));
     expect(data.backgroundLightName, 'assets/background/light.png');
     expect(data.backgroundDarkName, 'assets/background/dark.png');
+  });
+
+  test('STORED 包导出→导入：清单与日/夜背景图字节完整', () async {
+    // 回归证据：修复前 writeStream 用 length-position 计算剩余字节，
+    // STORED 条目只写出约一半，长清单会被截断成非法 JSON。
+    // 清单 > 8KB 且背景图 100KB，确保跨过 writeStream 的 8KB 分块，
+    // 父实现的 length-position 截断会直接暴露为 JSON 非法/字节不一致。
+    final name = List<String>.filled(5000, '长').join();
+    final light = Uint8List.fromList(
+      List<int>.generate(100000, (index) => index & 0xff),
+    );
+    final dark = _pngBytes(width: 2, height: 2);
+    final zip = await writeZip(
+      'stored.zip',
+      _zip([
+        _textEntry(
+          'manifest.json',
+          _manifest(
+            name: name,
+            colors: {PrefKeys.cPrimary: 0xFF112233},
+            background: {
+              'light': 'assets/background/light.png',
+              'dark': 'assets/background/dark.png',
+            },
+          ),
+        ),
+        ArchiveFile.bytes('assets/background/light.png', light),
+        ArchiveFile.bytes('assets/background/dark.png', dark),
+      ], compression: CompressionType.none),
+    );
+
+    final data = await ThemePackageService.importThemePackage(zip);
+    expect(data.name, name);
+    expect(data.backgroundLight, equals(light));
+    expect(data.backgroundDark, equals(dark));
+  });
+
+  test('STORED 条目实际超 32MB → 解压中止并报条目过大', () async {
+    // 回归证据：修复前 STORED 只写一半（约 16MB），既不会触发上限，
+    // 也不会报错；修复后必须在写出 32MB+1 时立即中止。
+    final oversized = Uint8List(ThemePackageService.maxEntryBytes + 1);
+    final zip = await writeZip(
+      'stored_too_big.zip',
+      _zip([
+        _textEntry(
+          'manifest.json',
+          _manifest(
+            colors: {PrefKeys.cPrimary: 1},
+            background: {'light': 'assets/background/light.png'},
+          ),
+        ),
+        ArchiveFile('assets/background/light.png', 1, oversized),
+      ], compression: CompressionType.none),
+    );
+
+    await expectLater(
+      ThemePackageService.importThemePackage(zip),
+      throwsA(
+        isA<ThemePackageException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('条目过大'), contains('32MB')),
+        ),
+      ),
+    );
+  });
+
+  test('伪造 entries=0 + 巨型中央目录 → 清单过大', () async {
+    final bytes = Uint8List(22);
+    final view = ByteData.sublistView(bytes);
+    view.setUint32(0, 0x06054b50, Endian.little); // EOCD 签名
+    view.setUint32(
+      12,
+      ThemePackageService.maxCentralDirectoryBytes + 1,
+      Endian.little,
+    );
+    final zip = await writeZip('huge_directory.zip', bytes);
+
+    await expectLater(
+      ThemePackageService.importThemePackage(zip),
+      throwsA(
+        isA<ThemePackageException>().having(
+          (e) => e.message,
+          'message',
+          contains('清单过大'),
+        ),
+      ),
+    );
   });
 
   test('背景图仅 light：dark 字节为 null', () async {
@@ -328,6 +417,8 @@ void main() {
   });
 
   test('伪造小 size + 实际超 32MB → 流式解压中止并报条目过大', () async {
+    // 覆盖性用例（deflate 路径）：区分性回归证据见上方 STORED 超 32MB
+    // 用例（父实现因 writeStream 截断不会触发上限）。
     // 中央目录声明 1 字节，实际写入 32MB+1（全 0，压缩后很小）：
     // 头部预检无法识别，必须由解压时的限长输出流中止。
     final oversized = Uint8List(ThemePackageService.maxEntryBytes + 1);
@@ -352,6 +443,8 @@ void main() {
   });
 
   test('伪造小 size + 实际总量超 512MB → 流式累计中止', () async {
+    // 覆盖性用例：父实现完整解压后同样报「内容过大」，轻量夹具无法观察
+    // 流式中止时机；544MB STORED 夹具过重，故不强行构造区分性证据。
     // 17 条各声明 1 字节、实际各 32MB（单条不超限），累计 544MB；
     // 头部预检通过，解压侧按实际写出字节累计到 512MB 即中止。
     final chunk = Uint8List(ThemePackageService.maxEntryBytes);
@@ -376,6 +469,7 @@ void main() {
   });
 
   test('条目数超 4096 → EOCD 预检直接拒绝', () async {
+    // 覆盖性用例：父实现解码后同样拒绝；此处额外锁定当前 EOCD 预检路径。
     final entries = <ArchiveFile>[
       _textEntry('manifest.json', _manifest(colors: {PrefKeys.cPrimary: 1})),
       for (var i = 0; i < ThemePackageService.maxEntries; i++)
@@ -421,6 +515,7 @@ void main() {
   });
 
   test('NUL 与绝对路径条目名 → 非法路径', () async {
+    // 覆盖性用例：父实现同样在条目循环中拒绝非法路径。
     for (final badName in <String>['bad\u0000name.png', '/absolute.png']) {
       final zip = await writeZip(
         'bad_name_${badName.hashCode}.zip',

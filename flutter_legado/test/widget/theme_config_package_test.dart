@@ -540,6 +540,35 @@ void main() {
     await drainSnackBars(tester);
   });
 
+  testWidgets('旧版无背景字段条目：应用后保持当前壁纸', (tester) async {
+    final dayWallpaper = await writeFile(tester, 'keep_day.png', _pngBytes);
+    final nightWallpaper = await writeFile(tester, 'keep_night.png', _pngBytes);
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.bgImage: dayWallpaper.path,
+      PrefKeys.bgImageN: nightWallpaper.path,
+      'themeConfigList': jsonEncode([
+        {'name': '旧版主题', 'isNight': false, 'primary': 0xFF010101},
+      ]),
+    });
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await openThemeManage(tester);
+
+    await runAppIo(
+      tester,
+      () => tester.tap(find.byKey(const ValueKey('theme-config-item-0'))),
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getString(PrefKeys.bgImage),
+      dayWallpaper.path,
+      reason: '旧条目不写 bgImage 字段，应用时不得清除当前壁纸',
+    );
+    expect(prefs.getString(PrefKeys.bgImageN), nightWallpaper.path);
+    await drainSnackBars(tester);
+  });
+
   testWidgets('主题列表解析失败：跳过孤儿清理，不删除主题包背景图', (tester) async {
     // 预热基目录，确保本用例真的走到 cleanupOrphansSync
     ThemeBackgroundImageStore.warmWith(tempDir);
