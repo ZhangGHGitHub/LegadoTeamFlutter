@@ -1420,14 +1420,12 @@ pub fn apply_content_processing(book_url: &str, raw_content: &str, chapter_title
     )
 }
 
-/// 对原始正文应用净化（带章级「删除重复标题」开关，Task #51）
+/// [测试/历史入口] 对原始正文应用净化（带章级「删除重复标题」开关，Task #51）
 ///
-/// 阅读器正文读取/导出链路调用：按章读取开关（全局默认去除，
-/// 章级 opt-out 时保留原始标题），其余行为与 [`apply_content_processing`] 一致。
-///
-/// 未持有 chapter_url 的历史调用入口：`@js:` 绑定的 `chapter.url` 按
-/// `(book_url, chapter_index)` 回查；已知章节 URL 的调用方应优先使用
-/// [`apply_content_processing_chapter_with_context`]，避免回查错章。
+/// **生产链路已全部改用 [`apply_content_processing_chapter_with_context`]**：
+/// 本入口未持有 chapter_url，`@js:` 的 `chapter.url` 只能按 index 回查，
+/// 在 chapter_url 不在目录 / 回退 index=0 的场景可能绑定错章；保留仅为
+/// 既有测试与历史调用，生产代码不要新增调用。
 pub fn apply_content_processing_chapter(
     book_url: &str,
     raw_content: &str,

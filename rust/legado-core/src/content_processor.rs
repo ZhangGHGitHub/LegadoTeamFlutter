@@ -600,6 +600,18 @@ fn run_replace_rules(
     result
 }
 
+/// 规则超时上限（60s）
+///
+/// `valid_timeout_millisecond` 只处理 ≤0 → 3000；脏数据/恶意规则可给出
+/// 接近 `i64::MAX` 的毫秒值，`Instant + Duration` 会溢出 panic。统一夹到
+/// 60s，既覆盖正常阅读场景，也保证 deadline 计算安全。
+const MAX_REPLACE_RULE_TIMEOUT_MS: u64 = 60_000;
+
+/// 规则有效超时（毫秒）：≤0 归一 3000，上界夹到 [`MAX_REPLACE_RULE_TIMEOUT_MS`]
+fn effective_timeout_ms(rule: &ReplaceRuleEntry) -> u64 {
+    (rule.valid_timeout_millisecond().max(0) as u64).min(MAX_REPLACE_RULE_TIMEOUT_MS)
+}
+
 /// 在独立线程中应用单条规则，超时则跳过（保留原内容）
 ///
 /// 对应 Kotlin `RegexExtensions.replace` 的 `onTimeout` 保护：
@@ -610,7 +622,7 @@ fn apply_rule_with_timeout(
     rule: &ReplaceRuleEntry,
     js_executor: &Option<Arc<dyn ReplaceJsExecutor>>,
 ) -> String {
-    let timeout_ms = rule.valid_timeout_millisecond() as u64;
+    let timeout_ms = effective_timeout_ms(rule);
     // 规则级 deadline 与 recv_timeout 共用同一时间原点：`@js:` 逐匹配执行时
     // 把剩余预算下传执行器，避免被丢弃的线程继续跑满沙箱默认预算（回修 P2-1）
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
@@ -663,7 +675,7 @@ pub fn preview_single_rule(
     if rule.pattern.is_empty() {
         return Ok(content.to_string());
     }
-    let timeout_ms = rule.valid_timeout_millisecond() as u64;
+    let timeout_ms = effective_timeout_ms(rule);
     // 与 apply_rule_with_timeout 同一口径：规则级 deadline 下传 `@js:` 执行器
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let content_owned = content.to_string();
@@ -686,10 +698,7 @@ pub fn preview_single_rule(
         // 超时 → 上抛超时说明（对齐 Kotlin 超时保护，但预览需要可见反馈）
         Err(_timeout) => {
             log::debug!("预览替换规则「{}」执行超时（{}ms）", rule.name, timeout_ms);
-            Err(format!(
-                "规则执行超时（{}ms），已跳过该规则",
-                rule.valid_timeout_millisecond()
-            ))
+            Err(format!("规则执行超时（{timeout_ms}ms），已跳过该规则"))
         }
     }
 }
@@ -1135,6 +1144,50 @@ mod tests {
         fn eval(&self, _code: &str, result: &str) -> Result<String, String> {
             std::thread::sleep(Duration::from_millis(500));
             Ok(result.to_string())
+        }
+    }
+
+    /// 记录型 JS 执行器（回修三审 P2：逐匹配剩余预算证据）
+    ///
+    /// - [`Self::eval`] 仅记录 legacy 调用次数：旧实现（不回传 remaining）
+    ///   会走这里，测试据此断言必红；
+    /// - [`Self::eval_with_budget`] 记录每次收到的 `remaining`，并 sleep
+    ///   25ms 保证 `Instant` 可测到逐匹配递减，返回 `[result]` 作为执行痕迹。
+    #[derive(Default)]
+    struct RecordingJs {
+        budget_calls: std::sync::Mutex<Vec<Duration>>,
+        legacy_calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl RecordingJs {
+        fn budget_remainings(&self) -> Vec<Duration> {
+            self.budget_calls.lock().expect("记录锁不应中毒").clone()
+        }
+
+        fn legacy_calls(&self) -> usize {
+            self.legacy_calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl ReplaceJsExecutor for RecordingJs {
+        fn eval(&self, _code: &str, result: &str) -> Result<String, String> {
+            self.legacy_calls
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(result.to_string())
+        }
+
+        fn eval_with_budget(
+            &self,
+            _code: &str,
+            result: &str,
+            remaining: Duration,
+        ) -> Result<String, String> {
+            self.budget_calls
+                .lock()
+                .expect("记录锁不应中毒")
+                .push(remaining);
+            std::thread::sleep(Duration::from_millis(25));
+            Ok(format!("[{result}]"))
         }
     }
 
@@ -1776,6 +1829,103 @@ mod tests {
         }];
         let result = apply_replace_rules("x abc y", &rules, mock_js());
         assert_eq!(result, "x ABC y");
+    }
+
+    /// [批15 三审 P2] 逐匹配下传的 `remaining` ≤ 规则超时且严格递减
+    ///
+    /// 旧实现（固定 5s / 不回传 remaining）不会调用 `eval_with_budget`，
+    /// 本用例的 `legacy_calls == 0` 与调用记录断言必红。
+    #[test]
+    fn test_js_rule_receives_decreasing_remaining_budget_per_match() {
+        let recorder = Arc::new(RecordingJs::default());
+        let rule = ReplaceRuleEntry {
+            pattern: r"(\d+)".to_string(),
+            replacement: "@js:result".to_string(),
+            is_regex: true,
+            timeout_millisecond: 3000,
+            ..ReplaceRuleEntry::default()
+        };
+        let out = apply_replace_rules(
+            "0 1 2 3",
+            std::slice::from_ref(&rule),
+            Some(recorder.clone()),
+        );
+        assert_eq!(out, "[0] [1] [2] [3]", "记录型执行器应逐匹配执行");
+        assert_eq!(
+            recorder.legacy_calls(),
+            0,
+            "必须走 eval_with_budget，旧实现会回退 eval"
+        );
+
+        let remainings = recorder.budget_remainings();
+        assert_eq!(remainings.len(), 4, "4 个匹配应收到 4 次预算");
+        for remaining in &remainings {
+            assert!(
+                *remaining <= Duration::from_millis(3000),
+                "逐匹配预算不应超过规则超时: {remaining:?}"
+            );
+        }
+        for pair in remainings.windows(2) {
+            assert!(
+                pair[1] < pair[0],
+                "逐匹配剩余预算应严格递减: {remainings:?}"
+            );
+        }
+    }
+
+    /// [批15 三审 P2] 规则预算耗尽（deadline 已过）时不再调用执行器
+    ///
+    /// 覆盖 `replace_with_js` 的 `remaining.is_zero()` 分支：旧实现没有
+    /// deadline/预算检查，本用例会编译失败（红）。
+    #[test]
+    fn test_js_rule_budget_exhausted_before_match_returns_error() {
+        let recorder = Arc::new(RecordingJs::default());
+        let executor: Arc<dyn ReplaceJsExecutor> = recorder.clone();
+        let rule = regex_rule(r"\d+", "@js:result");
+        let result = apply_single_rule(
+            "0 1",
+            &rule,
+            Some(executor.as_ref()),
+            Instant::now(), // deadline 已到 → 首个匹配前预算为 0
+        );
+        let err = result.expect_err("预算耗尽应返回 Err");
+        assert!(err.contains("预算耗尽"), "错误文案应说明预算耗尽: {err}");
+        assert!(
+            recorder.budget_remainings().is_empty(),
+            "预算耗尽后不应再调用执行器"
+        );
+    }
+
+    /// [批15 三审 P3-3] 超大 `timeoutMillisecond` 夹到 60s，不 panic
+    #[test]
+    fn test_huge_rule_timeout_is_clamped_to_upper_bound() {
+        let mut rule = ReplaceRuleEntry {
+            pattern: "abc".to_string(),
+            replacement: "@js:upper".to_string(),
+            is_regex: true,
+            timeout_millisecond: i64::MAX,
+            ..ReplaceRuleEntry::default()
+        };
+        assert_eq!(
+            effective_timeout_ms(&rule),
+            MAX_REPLACE_RULE_TIMEOUT_MS,
+            "超大超时应夹到 60s"
+        );
+        rule.timeout_millisecond = 0;
+        assert_eq!(effective_timeout_ms(&rule), 3000, "≤0 仍归一 3000");
+        rule.timeout_millisecond = -5;
+        assert_eq!(effective_timeout_ms(&rule), 3000, "负数仍归一 3000");
+
+        // 端到端：超大值不 panic，规则正常执行
+        rule.timeout_millisecond = i64::MAX;
+        let start = Instant::now();
+        let out = apply_replace_rules("abc", std::slice::from_ref(&rule), mock_js());
+        assert_eq!(out, "ABC");
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "超大超时值应被夹到 60s，实际耗时 {:?}",
+            start.elapsed()
+        );
     }
 
     // ─── 作用域过滤测试 ────────────────────────────────────

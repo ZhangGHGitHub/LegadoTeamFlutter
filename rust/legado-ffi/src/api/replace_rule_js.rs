@@ -123,6 +123,11 @@ impl ReplaceRuleJsExecutor {
     }
 }
 
+// 注：IIFE 依赖原生 `eval`。`fresh_engine` 以 `allow_script_run(true)` 创建
+// 沙箱；若未来关闭该开关，`eval` 会被沙箱替换为返回提示字符串的函数，
+// 直接拼进正文会静默污染。`thread_engine` 在引擎创建时探测 `eval('1+1')`，
+// 非 "2" 即上抛 Err，由管线保留原文（回修三审 P3-4）。
+
 /// 替换规则单次 `@js:` 执行的沙箱预算上限
 ///
 /// 与 `SandboxConfig::default().max_execution_time` 保持一致；规则剩余预算
@@ -146,10 +151,23 @@ fn thread_engine() -> Result<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsE
     ENGINE.with(|slot| {
         let mut slot = slot.borrow_mut();
         if slot.is_none() {
-            *slot = Some(
-                crate::js_executor::fresh_engine("replace-rule")
-                    .map_err(|e| format!("JS 引擎创建失败: {e}"))?,
-            );
+            let engine = crate::js_executor::fresh_engine("replace-rule")
+                .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+            // [批15 三审 P3-4] 断言沙箱允许原生 eval：IIFE 依赖直接 eval
+            // 建立逐匹配作用域；若 allow_script_run=false，eval 被替换为返回
+            // 提示字符串的函数，会把提示文本静默拼进正文。此处主动探测并
+            // 上抛，管线按既有口径保留原文。
+            {
+                let guard = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
+                let probe = legado_js::JsEngine::eval(&*guard, "eval('1+1')")
+                    .map_err(|e| format!("@js: 沙箱 eval 探测失败: {e}"))?;
+                if probe != "2" {
+                    return Err(format!(
+                        "@js: 替换规则依赖原生 eval，当前沙箱禁用了 eval（allow_script_run=false）：{probe}"
+                    ));
+                }
+            }
+            *slot = Some(engine);
         }
         Ok(slot
             .as_ref()

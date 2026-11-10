@@ -548,12 +548,17 @@ mod quickjs_engine {
         /// instructionObserverThreshold=10000 仅作协程取消检查点、
         /// `RhinoContext.kt:336-343` ensureActive；递归深度 ≤10 于 :345-350），
         /// 同段死循环/正则回溯在原版会挂到外层搜索超时（30s 口径）才被协程
-        /// 取消；我方 5s 预算按设计主动中断。本批只做文案可读化，不改预算
-        /// （5s 已覆盖正常书源；原版同场景是无限挂起，体验更差）。
+        /// 取消；我方按设计主动中断。本批只做文案可读化，不改预算。
+        ///
+        /// [批15 三审 P3-2] 文案使用**最近生效预算**（`timeout_ns`，可由
+        /// [`Self::set_execution_timeout`] 收紧），不再固定显示
+        /// `SandboxConfig::max_execution_time`（默认 5000ms）；50ms 规则
+        /// 超时日志应显示 50ms。
         fn interrupted_message(&self) -> String {
+            let budget_ms =
+                std::time::Duration::from_nanos(self.timeout_ns.load(Ordering::SeqCst)).as_millis();
             format!(
-                "脚本执行超时被中断（interrupted，单次求值预算 {} ms）：书源脚本运行过长，可能存在死循环或正则回溯爆炸",
-                self.config.max_execution_time.as_millis()
+                "脚本执行超时被中断（interrupted，单次求值预算 {budget_ms} ms）：书源脚本运行过长，可能存在死循环或正则回溯爆炸"
             )
         }
 
@@ -736,6 +741,10 @@ mod quickjs_tests {
         assert!(
             msg.contains("interrupted") || msg.contains("超时"),
             "中断错误应可读，实际: {msg}"
+        );
+        assert!(
+            msg.contains("50 ms"),
+            "中断文案应显示最近生效预算 50ms（而非固定 5000ms），实际: {msg}"
         );
 
         // 中断后同一引擎复用：重置预算后正常求值
