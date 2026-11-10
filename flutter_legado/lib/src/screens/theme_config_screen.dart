@@ -192,9 +192,18 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
     // [批14] 已保存主题包背景图（theme_light/theme_dark 槽位）也纳入 keep，
     // 否则本次孤儿清理会把导入主题的壁纸删掉；当前全局壁纸同理。
-    final savedThemeBackgrounds = <String>[];
+    // [批14 回修 P2-6] 列表读取/解析失败时 themeListReadable=false，
+    // 整轮孤儿清理跳过，避免把已保存主题引用的图片误判为孤儿。
+    List<Map<String, dynamic>>? savedThemes;
     try {
-      for (final item in await _loadThemeList()) {
+      savedThemes = await _tryLoadThemeList();
+    } catch (e) {
+      debugPrint('ThemeConfigScreen 读取主题列表失败（跳过清理）：$e');
+    }
+    final themeListReadable = savedThemes != null;
+    final savedThemeBackgrounds = <String>[];
+    if (savedThemes != null) {
+      for (final item in savedThemes) {
         final day = item['bgImage'];
         final night = item['bgImageNight'];
         if (day is String && day.isNotEmpty) savedThemeBackgrounds.add(day);
@@ -202,8 +211,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           savedThemeBackgrounds.add(night);
         }
       }
-    } catch (e) {
-      debugPrint('ThemeConfigScreen 读取主题包背景图引用失败（跳过清理）：$e');
     }
     final backgroundKeep = <String>[
       containerImageLight,
@@ -215,6 +222,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       ...savedThemeBackgrounds,
     ];
     if (backgroundPrefsReadable &&
+        themeListReadable &&
         backgroundKeep.any((value) => value.isNotEmpty) &&
         ThemeBackgroundImageStore.isWarm) {
       // best effort：清理失败（权限/IO）不得阻断外观页加载
@@ -1791,15 +1799,24 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   static const _themeListKey = 'themeConfigList';
 
-  /// 读取已保存主题配置列表
-  Future<List<Map<String, dynamic>>> _loadThemeList() async {
+  /// 读取已保存主题配置列表（解析失败按空列表处理，兼容旧调用方）
+  Future<List<Map<String, dynamic>>> _loadThemeList() async =>
+      await _tryLoadThemeList() ?? [];
+
+  /// 读取已保存主题配置列表；读取/解析失败返回 null
+  ///
+  /// [批14 回修 P2-6] 孤儿清理依赖该列表中的背景图引用；返回 null 表示
+  /// 「引用未知」，调用方必须跳过本轮清理，不能按空列表处理。
+  Future<List<Map<String, dynamic>>?> _tryLoadThemeList() async {
     final raw = await _settings.getStringPref(_themeListKey);
     if (raw.isEmpty) return [];
     try {
-      return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return [for (final item in decoded) item as Map<String, dynamic>];
     } catch (e) {
-      debugPrint('ThemeConfigScreen._loadThemeList 解析异常: $e');
-      return [];
+      debugPrint('ThemeConfigScreen._tryLoadThemeList 解析异常: $e');
+      return null;
     }
   }
 
@@ -1836,9 +1853,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       final item = list[index];
                       final isNight = item['isNight'] == true;
                       // [设备验收 8b] 不用 ListTile 默认 leading/trailing 宽度：
-                      // 两个 48dp 按钮会把 320dp 标题挤成「测…」。自定义 Row
-                      // 给标题 Expanded，按钮紧凑 30dp（批14 增加导出按钮后
-                      // 由 36dp 收紧），保证短标题/副标题单行。
+                      // 默认 48dp 按钮会把 320dp 标题挤成「测…」。自定义 Row
+                      // 给标题 Expanded，按钮可点区 40dp（批14 增加导出按钮后
+                      // 由 36dp 调整为 40dp，视觉仍紧凑），标题允许换行不截断。
                       final titleStyle = Theme.of(context).textTheme.bodyLarge;
                       final subtitleStyle = Theme.of(context)
                           .textTheme
@@ -1877,7 +1894,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                   children: [
                                     Text(
                                       '${item['name'] ?? '未命名'}',
-                                      maxLines: 1,
+                                      // [批14 回修] 窄屏 + 大字体允许两行，
+                                      // 避免新增导出按钮后标题被省略号截断。
+                                      maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: titleStyle,
                                     ),
@@ -1901,8 +1920,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
-                                  width: 30,
-                                  height: 36,
+                                  width: 40,
+                                  height: 40,
                                 ),
                                 onPressed: () => _exportSavedTheme(item),
                               ),
@@ -1916,8 +1935,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
-                                  width: 30,
-                                  height: 36,
+                                  width: 40,
+                                  height: 40,
                                 ),
                                 onPressed: () => _renameThemeConfig(
                                   list,
@@ -1935,8 +1954,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
-                                  width: 30,
-                                  height: 36,
+                                  width: 40,
+                                  height: 40,
                                 ),
                                 onPressed: () async {
                                   list = List.of(list)..removeAt(index);
@@ -1990,49 +2009,83 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     setDialogState(() {});
   }
 
-  /// 应用一份已保存的主题配置（按日/夜写入对应颜色组）
+  /// 应用一份已保存的主题配置
+  ///
+  /// - 主题包条目带完整 `colors`（12 槽）时应用全部槽位；旧版条目只有
+  ///   当前日/夜半组字段，按原有半组逻辑应用。
+  /// - 带 `paletteId` 且落在内置调色板范围内时切换调色板；无效/缺失保持
+  ///   当前调色板。
+  /// - 背景图：条目显式含 `bgImage`/`bgImageNight` 时按值应用，空串表示
+  ///   「明确无背景」并清除旧壁纸；旧版条目无字段则保持当前壁纸不动。
   ///
   /// [批13] 旧版 `themeConfigList` 条目没有 `primaryText`/`secondaryText`
   /// 字段：按未设置（0 → 清除）处理，不抛异常。类型容错统一走
   /// [ThemeConfigJson.asInt]（与导入 JSON 同一实现，旧 JSON 缺字段/数值被
   /// 序列化为 double 均安全）。
   Future<void> _applyThemeConfig(Map<String, dynamic> config) async {
-    final isNight = config['isNight'] == true;
-    await ref.read(themeColorsProvider.notifier).applyColors({
-      if (isNight) ...{
-        PrefKeys.cNPrimary: ThemeConfigJson.asInt(config['primary']),
-        PrefKeys.cNAccent: ThemeConfigJson.asInt(config['accent']),
-        PrefKeys.cNBackground: ThemeConfigJson.asInt(config['background']),
-        PrefKeys.cNBBackground: ThemeConfigJson.asInt(
-          config['bottomBackground'],
-        ),
-        PrefKeys.cNPrimaryText: ThemeConfigJson.asInt(config['primaryText']),
-        PrefKeys.cNSecondaryText: ThemeConfigJson.asInt(
-          config['secondaryText'],
-        ),
-      } else ...{
-        PrefKeys.cPrimary: ThemeConfigJson.asInt(config['primary']),
-        PrefKeys.cAccent: ThemeConfigJson.asInt(config['accent']),
-        PrefKeys.cBackground: ThemeConfigJson.asInt(config['background']),
-        PrefKeys.cBBackground: ThemeConfigJson.asInt(
-          config['bottomBackground'],
-        ),
-        PrefKeys.cPrimaryText: ThemeConfigJson.asInt(config['primaryText']),
-        PrefKeys.cSecondaryText: ThemeConfigJson.asInt(config['secondaryText']),
-      },
-    });
-    // [批14] 主题包背景图：仅当条目录入了 bgImage/bgImageNight 时应用
-    // （旧版保存的主题无此字段 → 保持当前壁纸不动）。
-    final dayPath = _resolveSavedBackground(config['bgImage']);
-    final nightPath = _resolveSavedBackground(config['bgImageNight']);
-    if (dayPath != null || nightPath != null) {
+    final colorsNotifier = ref.read(themeColorsProvider.notifier);
+    final storedColors = config['colors'];
+    if (storedColors is Map) {
+      // [批14 回修] 主题包携带完整 12 槽，不能只应用 isNight 半组
+      await colorsNotifier.applyColors({
+        for (final key in _themeColorKeys)
+          key: ThemeConfigJson.asInt(storedColors[key]),
+      });
+    } else {
+      final isNight = config['isNight'] == true;
+      await colorsNotifier.applyColors({
+        if (isNight) ...{
+          PrefKeys.cNPrimary: ThemeConfigJson.asInt(config['primary']),
+          PrefKeys.cNAccent: ThemeConfigJson.asInt(config['accent']),
+          PrefKeys.cNBackground: ThemeConfigJson.asInt(config['background']),
+          PrefKeys.cNBBackground: ThemeConfigJson.asInt(
+            config['bottomBackground'],
+          ),
+          PrefKeys.cNPrimaryText: ThemeConfigJson.asInt(config['primaryText']),
+          PrefKeys.cNSecondaryText: ThemeConfigJson.asInt(
+            config['secondaryText'],
+          ),
+        } else ...{
+          PrefKeys.cPrimary: ThemeConfigJson.asInt(config['primary']),
+          PrefKeys.cAccent: ThemeConfigJson.asInt(config['accent']),
+          PrefKeys.cBackground: ThemeConfigJson.asInt(config['background']),
+          PrefKeys.cBBackground: ThemeConfigJson.asInt(
+            config['bottomBackground'],
+          ),
+          PrefKeys.cPrimaryText: ThemeConfigJson.asInt(config['primaryText']),
+          PrefKeys.cSecondaryText: ThemeConfigJson.asInt(
+            config['secondaryText'],
+          ),
+        },
+      });
+    }
+
+    // [批14 回修 P2] paletteId 不再只存不用：有效索引才切换，未知值静默忽略
+    final paletteId = ThemeConfigJson.asInt(config['paletteId']);
+    if (paletteId != null &&
+        paletteId >= 0 &&
+        paletteId < Md3Palettes.all.length) {
       await ref
-          .read(themeColorsProvider.notifier)
-          .setBgImage(day: dayPath, night: nightPath);
+          .read(themeNotifierProvider.notifier)
+          .setPaletteId(Md3Palettes.all[paletteId].id);
+    }
+
+    // [批14 回修 P1-2/P2-5] 只有显式背景字段才动壁纸；空串 = 清除旧壁纸，
+    // 避免从「有背景主题」切到「无背景主题」时残留上一套壁纸。
+    final hasDayBackground = config.containsKey('bgImage');
+    final hasNightBackground = config.containsKey('bgImageNight');
+    if (hasDayBackground || hasNightBackground) {
+      await ThemeBackgroundImageStore.ensureWarm();
+      final dayPath = _resolveSavedBackground(config['bgImage']);
+      final nightPath = _resolveSavedBackground(config['bgImageNight']);
+      await colorsNotifier.setBgImage(
+        day: hasDayBackground ? (dayPath ?? '') : null,
+        night: hasNightBackground ? (nightPath ?? '') : null,
+      );
       if (mounted) {
         setState(() {
-          if (dayPath != null) _bgImage = dayPath;
-          if (nightPath != null) _bgImageNight = nightPath;
+          if (hasDayBackground) _bgImage = dayPath ?? '';
+          if (hasNightBackground) _bgImageNight = nightPath ?? '';
         });
       }
     }
@@ -2115,10 +2168,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     PrefKeys.cNSecondaryText,
   ];
 
-  /// 导出一条已保存主题为完整主题包 zip（名称 + 12 色槽 + 日/夜背景图）
+  /// 导出一条已保存主题为完整主题包 zip（名称 + 12 色槽 + 已有的日/夜背景图）
   ///
-  /// 背景图优先取条目内记录的 `bgImage`/`bgImageNight`（主题包导入时落盘）；
-  /// 旧版保存的主题没有这两个字段，回落到当前全局壁纸，尽力保证包完整。
+  /// 背景图只取条目内记录的 `bgImage`/`bgImageNight`（主题包导入时落盘）；
+  /// 旧版保存的主题没有这两个字段，按「无背景」导出，不回落到当前全局壁纸。
   Future<void> _exportSavedTheme(Map<String, dynamic> item) async {
     final name = '${item['name'] ?? '未命名'}';
     final isNight = item['isNight'] == true;
@@ -2225,12 +2278,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   /// 已保存主题的背景图文件（日/夜）
   ///
-  /// 条目带 `bgImage`/`bgImageNight` 时以其为准（空值就是无图）；旧版条目
-  /// 无字段时回落到当前全局壁纸。
+  /// 只有条目显式记录 `bgImage`/`bgImageNight` 时才入包（空值 = 无图）。
+  /// 旧版保存的主题没有背景字段，**不得**回落到用户当前全局壁纸，
+  /// 避免把与主题无关的私人壁纸打进分享包。
   (File?, File?) _savedThemeBackgroundFiles(Map<String, dynamic> item) {
-    File? usable(String stored) {
-      if (stored.isEmpty) return null;
-      final resolved = ThemeBackgroundImageStore.resolveSync(stored);
+    File? usable(dynamic raw) {
+      if (raw is! String || raw.isEmpty) return null;
+      final resolved = ThemeBackgroundImageStore.resolveSync(raw);
       if (resolved.isEmpty) return null;
       try {
         final file = File(resolved);
@@ -2240,13 +2294,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       }
     }
 
-    final dayStored = item.containsKey('bgImage')
-        ? '${item['bgImage'] ?? ''}'
-        : _bgImage;
-    final nightStored = item.containsKey('bgImageNight')
-        ? '${item['bgImageNight'] ?? ''}'
-        : _bgImageNight;
-    return (usable(dayStored), usable(nightStored));
+    return (usable(item['bgImage']), usable(item['bgImageNight']));
   }
 
   /// 导入主题包：解析 → 背景图落盘 → 重名递增 → 写入 themeConfigList
@@ -2308,8 +2356,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         'colors': <String, int>{
           for (final key in _themeColorKeys) key: read(key),
         },
-        'bgImage': ?backgroundLight,
-        'bgImageNight': ?backgroundDark,
+        // 两侧都写（空串 = 明确无背景），避免应用时跨主题残留旧壁纸
+        'bgImage': backgroundLight ?? '',
+        'bgImageNight': backgroundDark ?? '',
       });
       await _settings.setStringPref(_themeListKey, jsonEncode(list));
       if (!mounted) return;

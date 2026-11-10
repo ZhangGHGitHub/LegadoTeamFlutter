@@ -327,16 +327,15 @@ void main() {
     );
   });
 
-  test('单条声明体积超 64MB → 条目过大（不实际解压大数据）', () async {
+  test('伪造小 size + 实际超 32MB → 流式解压中止并报条目过大', () async {
+    // 中央目录声明 1 字节，实际写入 32MB+1（全 0，压缩后很小）：
+    // 头部预检无法识别，必须由解压时的限长输出流中止。
+    final oversized = Uint8List(ThemePackageService.maxEntryBytes + 1);
     final zip = await writeZip(
       'too_big_entry.zip',
       _zip([
         _textEntry('manifest.json', _manifest(colors: {PrefKeys.cPrimary: 1})),
-        ArchiveFile(
-          'assets/background/big.png',
-          ThemePackageService.maxEntryBytes + 1,
-          const <int>[1, 2, 3],
-        ),
+        ArchiveFile('assets/background/big.png', 1, oversized),
       ]),
     );
 
@@ -346,21 +345,20 @@ void main() {
         isA<ThemePackageException>().having(
           (e) => e.message,
           'message',
-          contains('条目过大'),
+          allOf(contains('条目过大'), contains('32MB')),
         ),
       ),
     );
   });
 
-  test('声明总量超 512MB → 主题包内容过大', () async {
+  test('伪造小 size + 实际总量超 512MB → 流式累计中止', () async {
+    // 17 条各声明 1 字节、实际各 32MB（单条不超限），累计 544MB；
+    // 头部预检通过，解压侧按实际写出字节累计到 512MB 即中止。
+    final chunk = Uint8List(ThemePackageService.maxEntryBytes);
     final entries = <ArchiveFile>[
       _textEntry('manifest.json', _manifest(colors: {PrefKeys.cPrimary: 1})),
-      for (var i = 0; i < 9; i++)
-        ArchiveFile(
-          'assets/background/big$i.png',
-          ThemePackageService.maxEntryBytes,
-          const <int>[1, 2, 3],
-        ),
+      for (var i = 0; i < 17; i++)
+        ArchiveFile('assets/background/big$i.png', 1, chunk),
     ];
 
     await expectLater(
@@ -375,6 +373,76 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('条目数超 4096 → EOCD 预检直接拒绝', () async {
+    final entries = <ArchiveFile>[
+      _textEntry('manifest.json', _manifest(colors: {PrefKeys.cPrimary: 1})),
+      for (var i = 0; i < ThemePackageService.maxEntries; i++)
+        ArchiveFile.bytes('empty/$i.txt', const <int>[]),
+    ];
+    final zip = await writeZip('too_many.zip', _zip(entries));
+
+    await expectLater(
+      ThemePackageService.importThemePackage(zip),
+      throwsA(
+        isA<ThemePackageException>().having(
+          (e) => e.message,
+          'message',
+          contains('条目过多'),
+        ),
+      ),
+    );
+  });
+
+  test('符号链接条目 → 明确拒绝（不解压链接目标）', () async {
+    final link = ArchiveFile.bytes(
+      'assets/background/light.png',
+      utf8.encode('/etc/passwd'),
+    )..mode = 0xa1ff; // 0xA000 | 0777：unix 符号链接
+    final zip = await writeZip(
+      'symlink.zip',
+      _zip([
+        _textEntry('manifest.json', _manifest(colors: {PrefKeys.cPrimary: 1})),
+        link,
+      ]),
+    );
+
+    await expectLater(
+      ThemePackageService.importThemePackage(zip),
+      throwsA(
+        isA<ThemePackageException>().having(
+          (e) => e.message,
+          'message',
+          contains('符号链接'),
+        ),
+      ),
+    );
+  });
+
+  test('NUL 与绝对路径条目名 → 非法路径', () async {
+    for (final badName in <String>['bad\u0000name.png', '/absolute.png']) {
+      final zip = await writeZip(
+        'bad_name_${badName.hashCode}.zip',
+        _zip([
+          _textEntry(
+            'manifest.json',
+            _manifest(colors: {PrefKeys.cPrimary: 1}),
+          ),
+          _textEntry(badName, 'x'),
+        ]),
+      );
+      await expectLater(
+        ThemePackageService.importThemePackage(zip),
+        throwsA(
+          isA<ThemePackageException>().having(
+            (e) => e.message,
+            'message',
+            contains('非法路径'),
+          ),
+        ),
+      );
+    }
   });
 
   test('未知资源（字体/封面等）忽略，不影响导入', () async {

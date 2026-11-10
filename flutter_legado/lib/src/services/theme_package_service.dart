@@ -30,11 +30,13 @@
 // ```
 // 颜色值 0 = 未设置（与批13 口径一致）。
 //
-// 安全口径：条目数 ≤ 4096、单条 ≤ 64MB、总量 ≤ 512MB；拒绝含 `..`、
-// 绝对路径、反斜杠或 NUL 的条目名；拒绝 0 字节 zip。所有失败以
+// 安全口径：EOCD 预检条目数；逐条限长流式解压（单条 ≤ 32MB、总量 ≤ 512MB，
+// 超限立即中止，不等待整条解压完成）；拒绝含 `..`、绝对路径、反斜杠、NUL
+// 的条目名与符号链接条目；拒绝 0 字节 zip。所有失败以
 // [ThemePackageException] 抛出中文原因，调用方直接展示。
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show min;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -97,6 +99,94 @@ class ThemePackageData {
   final String appVersion;
 }
 
+/// 解压预算（跨条目累计实际写出字节）
+class _EntryBudget {
+  int used = 0;
+}
+
+/// 限长输出流：写入时立即校验单条/总量，超限抛中文异常中止解压
+class _BoundedOutputStream extends OutputStream {
+  _BoundedOutputStream({
+    required this.entryName,
+    required this.maxEntryBytes,
+    required this.maxTotalBytes,
+    required this.retain,
+  }) : super(byteOrder: ByteOrder.littleEndian);
+
+  final String entryName;
+  final int maxEntryBytes;
+  final int maxTotalBytes;
+  final bool retain;
+  final BytesBuilder _bytes = BytesBuilder(copy: true);
+  int _length = 0;
+
+  @override
+  int get length => _length;
+
+  @override
+  void clear() {
+    _length = 0;
+    _bytes.clear();
+  }
+
+  @override
+  void flush() {}
+
+  void _reserve(int count) {
+    final next = _length + count;
+    if (next > maxEntryBytes) {
+      throw ThemePackageException('主题包条目过大：$entryName（上限 32MB）');
+    }
+    if (next > maxTotalBytes) {
+      throw const ThemePackageException('主题包内容过大（上限 512MB）');
+    }
+  }
+
+  @override
+  void writeByte(int value) {
+    _reserve(1);
+    if (retain) _bytes.addByte(value);
+    _length++;
+  }
+
+  @override
+  void writeBytes(List<int> bytes, {int? length}) {
+    final count = min(length ?? bytes.length, bytes.length);
+    if (count <= 0) return;
+    _reserve(count);
+    if (retain) {
+      _bytes.add(
+        bytes is Uint8List
+            ? Uint8List.sublistView(bytes, 0, count)
+            : bytes.sublist(0, count),
+      );
+    }
+    _length += count;
+  }
+
+  @override
+  void writeStream(InputStream stream) {
+    while (!stream.isEOS) {
+      final remaining = stream.length - stream.position;
+      if (remaining <= 0) break;
+      final take = min(remaining, 8192);
+      writeBytes(stream.readBytes(take).toUint8List());
+    }
+  }
+
+  @override
+  Uint8List subset(int start, [int? end]) {
+    if (!retain) return Uint8List(0);
+    final all = _bytes.toBytes();
+    final stop = end ?? all.length;
+    if (start < 0 || start >= stop || stop > all.length) return Uint8List(0);
+    return Uint8List.sublistView(all, start, stop);
+  }
+
+  @override
+  Uint8List getBytes() => retain ? _bytes.toBytes() : Uint8List(0);
+}
+
 /// App 主题包 zip 编解码
 abstract final class ThemePackageService {
   ThemePackageService._();
@@ -107,8 +197,8 @@ abstract final class ThemePackageService {
   /// zip 条目数上限
   static const int maxEntries = 4096;
 
-  /// 单条解压后大小上限（64MB）
-  static const int maxEntryBytes = 64 * 1024 * 1024;
+  /// 单条解压后大小上限（32MB；与 ThemeBackgroundImageStore.maxBytes 一致）
+  static const int maxEntryBytes = 32 * 1024 * 1024;
 
   /// 解压总量上限（512MB）
   static const int maxTotalBytes = 512 * 1024 * 1024;
@@ -191,8 +281,23 @@ abstract final class ThemePackageService {
     await target.writeAsBytes(encoded, flush: true);
   }
 
-  /// 解析主题包（安全校验 + 清单校验）
+  /// 解析主题包（EOCD 预检 + 限长流式解压 + 清单校验）
+  ///
+  /// 所有底层异常（archive 解析、文件 IO、解压）统一转换为
+  /// [ThemePackageException] 中文提示，不把英文异常抛给界面。
   static Future<ThemePackageData> importThemePackage(File zip) async {
+    try {
+      return await _importThemePackage(zip);
+    } on ThemePackageException {
+      rethrow;
+    } on FileSystemException catch (e) {
+      throw ThemePackageException('无法读取主题包：${e.message}');
+    } catch (_) {
+      throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+    }
+  }
+
+  static Future<ThemePackageData> _importThemePackage(File zip) async {
     final fileLength = await zip.length();
     if (fileLength <= 0) {
       throw const ThemePackageException('主题包文件为空');
@@ -200,110 +305,219 @@ abstract final class ThemePackageService {
     if (fileLength > maxTotalBytes) {
       throw const ThemePackageException('主题包文件过大（上限 512MB）');
     }
-    final bytes = await zip.readAsBytes();
-    if (bytes.isEmpty) {
-      throw const ThemePackageException('主题包文件为空');
-    }
-    // archive 的 ZipDecoder 对非 zip 输入会返回空归档（不抛错），先按本地
-    // 文件头判定，避免把任意文件报成「清单不完整」。
-    if (!_looksLikeZip(bytes)) {
-      throw const ThemePackageException('无法读取主题包（文件格式不正确）');
-    }
+    // 解压前先读 EOCD：条目数与中央目录大小可伪造，但先挡住明显超限包，
+    // 避免为 5000+ 条目/超大目录做完整解析。
+    await _validateEocd(zip, fileLength);
 
-    final Archive archive;
+    final input = InputFileStream(zip.path);
     try {
-      archive = ZipDecoder().decodeBytes(bytes);
-    } catch (_) {
-      throw const ThemePackageException('无法读取主题包（文件格式不正确）');
-    }
-
-    final files = <String, Uint8List>{};
-    var count = 0;
-    var declaredTotal = 0;
-    var actualTotal = 0;
-    for (final entry in archive) {
-      count++;
-      if (count > maxEntries) {
+      final directory = ZipDirectory();
+      directory.read(input);
+      if (directory.filePosition < 0) {
+        throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+      }
+      if (directory.totalCentralDirectoryEntries > maxEntries ||
+          directory.fileHeaders.length > maxEntries) {
         throw const ThemePackageException('主题包条目过多（上限 4096）');
       }
-      final entryName = entry.name;
-      if (!_isSafeEntryName(entryName)) {
-        throw ThemePackageException('主题包包含非法路径：$entryName');
-      }
-      if (entry.isDirectory) continue;
 
-      // 先看中央目录声明的大小，避免为超大条目解压后再判断
-      if (entry.size > maxEntryBytes) {
-        throw ThemePackageException('主题包条目过大：$entryName');
-      }
-      declaredTotal += entry.size;
-      if (declaredTotal > maxTotalBytes) {
-        throw const ThemePackageException('主题包内容过大（上限 512MB）');
+      final headers = <String, ZipFileHeader>{};
+      var declaredTotal = 0;
+      for (final header in directory.fileHeaders) {
+        final entryName = header.filename;
+        if (!_isSafeEntryName(entryName)) {
+          throw ThemePackageException('主题包包含非法路径：$entryName');
+        }
+        final fileType = (header.externalFileAttributes >> 16) & 0xf000;
+        if (fileType == 0xa000) {
+          throw ThemePackageException('主题包包含符号链接条目：$entryName');
+        }
+        if ((header.generalPurposeBitFlag & 0x1) != 0) {
+          throw ThemePackageException('主题包包含加密条目：$entryName');
+        }
+        if (entryName.endsWith('/') || fileType == 0x4000) continue;
+
+        // 中央目录声明大小只用于提前拒绝；真正解压仍按实际写出字节限长。
+        if (header.uncompressedSize > maxEntryBytes) {
+          throw ThemePackageException('主题包条目过大：$entryName（上限 32MB）');
+        }
+        declaredTotal += header.uncompressedSize;
+        if (declaredTotal > maxTotalBytes) {
+          throw const ThemePackageException('主题包内容过大（上限 512MB）');
+        }
+        final file = header.file;
+        if (file == null) {
+          throw ThemePackageException('无法读取主题包（$entryName 头部损坏）');
+        }
+        if (header.compressionMethod != 0 &&
+            header.compressionMethod != 8 &&
+            header.compressionMethod != 12) {
+          throw ThemePackageException('主题包压缩方式不支持：$entryName');
+        }
+        headers[entryName] = header;
       }
 
-      final data = entry.content;
-      if (data.length > maxEntryBytes) {
-        throw ThemePackageException('主题包条目过大：$entryName');
+      final manifestHeader = headers['manifest.json'];
+      if (manifestHeader == null) {
+        throw const ThemePackageException('主题包清单不完整');
       }
-      actualTotal += data.length;
-      if (actualTotal > maxTotalBytes) {
-        throw const ThemePackageException('主题包内容过大（上限 512MB）');
+      final budget = _EntryBudget();
+      final manifest = _decodeManifest(
+        _extractEntry(manifestHeader, budget, retain: true),
+      );
+
+      final version = _asNullableInt(manifest['formatVersion']);
+      if (version != formatVersion) {
+        throw ThemePackageException('不支持的主题包版本: ${version ?? '未知'}');
       }
-      files[entryName] = data;
+      final config = manifest['config'];
+      if (config is! Map<String, dynamic>) {
+        throw const ThemePackageException('主题包清单不完整');
+      }
+      final colorsRaw = config['colors'];
+      if (colorsRaw is! Map<String, dynamic>) {
+        throw const ThemePackageException('主题包清单不完整');
+      }
+
+      final lightPath = _resolveBackgroundPath(manifest, headers.keys, 'light');
+      final darkPath = _resolveBackgroundPath(manifest, headers.keys, 'dark');
+      Uint8List? lightBytes;
+      Uint8List? darkBytes;
+      for (final header in directory.fileHeaders) {
+        final entryName = header.filename;
+        final fileType = (header.externalFileAttributes >> 16) & 0xf000;
+        if (entryName == 'manifest.json' ||
+            entryName.endsWith('/') ||
+            fileType == 0x4000) {
+          continue;
+        }
+        final retain = entryName == lightPath || entryName == darkPath;
+        // 未知资源也解压计数（总量限制覆盖整个包），但不保留字节。
+        final bytes = _extractEntry(header, budget, retain: retain);
+        if (retain) {
+          if (entryName == lightPath) lightBytes = bytes;
+          if (entryName == darkPath) darkBytes = bytes;
+        }
+      }
+
+      return ThemePackageData(
+        name: _normalizeName(manifest['name']),
+        isNight: config['isNight'] == true,
+        paletteId: _asNullableInt(config['paletteId']),
+        colors: _decodeColors(colorsRaw),
+        backgroundLight: lightBytes == null || lightBytes.isEmpty
+            ? null
+            : lightBytes,
+        backgroundDark: darkBytes == null || darkBytes.isEmpty
+            ? null
+            : darkBytes,
+        backgroundLightName: lightBytes == null || lightBytes.isEmpty
+            ? null
+            : lightPath,
+        backgroundDarkName: darkBytes == null || darkBytes.isEmpty
+            ? null
+            : darkPath,
+        appVersion: manifest['appVersion'] is String
+            ? manifest['appVersion'] as String
+            : '',
+      );
+    } finally {
+      input.closeSync();
     }
+  }
 
-    final manifestBytes = files['manifest.json'];
-    if (manifestBytes == null) {
-      throw const ThemePackageException('主题包清单不完整');
+  /// EOCD 预检：拒绝 0 字节/非 zip/分卷/条目超限/中央目录越界
+  static Future<void> _validateEocd(File zip, int fileLength) async {
+    final raf = await zip.open();
+    try {
+      final tailLength = min(fileLength, 22 + 0xffff);
+      await raf.setPosition(fileLength - tailLength);
+      final tail = await raf.read(tailLength);
+      if (tail.length < 22) {
+        throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+      }
+      var index = -1;
+      for (var i = tail.length - 22; i >= 0; i--) {
+        if (tail[i] == 0x50 &&
+            tail[i + 1] == 0x4b &&
+            tail[i + 2] == 0x05 &&
+            tail[i + 3] == 0x06) {
+          index = i;
+          break;
+        }
+      }
+      if (index < 0) {
+        throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+      }
+      int u16(int offset) =>
+          tail[index + offset] | (tail[index + offset + 1] << 8);
+      int u32(int offset) =>
+          tail[index + offset] |
+          (tail[index + offset + 1] << 8) |
+          (tail[index + offset + 2] << 16) |
+          (tail[index + offset + 3] << 24);
+
+      if (u16(4) != 0 || u16(6) != 0) {
+        throw const ThemePackageException('不支持分卷主题包');
+      }
+      final entries = u16(10);
+      final centralDirectorySize = u32(12);
+      final centralDirectoryOffset = u32(16);
+      if (entries != 0xffff && entries > maxEntries) {
+        throw const ThemePackageException('主题包条目过多（上限 4096）');
+      }
+      if (centralDirectorySize != 0xffffffff) {
+        if (centralDirectorySize > maxTotalBytes) {
+          throw const ThemePackageException('主题包内容过大（上限 512MB）');
+        }
+        if (centralDirectoryOffset != 0xffffffff &&
+            centralDirectoryOffset + centralDirectorySize > fileLength) {
+          throw const ThemePackageException('无法读取主题包（文件格式不正确）');
+        }
+      }
+    } finally {
+      await raf.close();
     }
+  }
+
+  static Map<String, dynamic> _decodeManifest(Uint8List bytes) {
     dynamic decoded;
     try {
-      decoded = jsonDecode(utf8.decode(manifestBytes, allowMalformed: true));
+      decoded = jsonDecode(utf8.decode(bytes, allowMalformed: true));
     } catch (_) {
       throw const ThemePackageException('主题包清单不完整');
     }
     if (decoded is! Map<String, dynamic>) {
       throw const ThemePackageException('主题包清单不完整');
     }
+    return decoded;
+  }
 
-    final version = _asNullableInt(decoded['formatVersion']);
-    if (version != formatVersion) {
-      throw ThemePackageException('不支持的主题包版本: ${version ?? '未知'}');
+  /// 限长流式解压单条；[retain] 为 false 时只计数不保留字节
+  static Uint8List _extractEntry(
+    ZipFileHeader header,
+    _EntryBudget budget, {
+    required bool retain,
+  }) {
+    final file = header.file;
+    if (file == null) {
+      throw ThemePackageException('无法读取主题包（${header.filename} 头部损坏）');
     }
-
-    final config = decoded['config'];
-    if (config is! Map<String, dynamic>) {
-      throw const ThemePackageException('主题包清单不完整');
-    }
-    final colorsRaw = config['colors'];
-    if (colorsRaw is! Map<String, dynamic>) {
-      throw const ThemePackageException('主题包清单不完整');
-    }
-
-    final lightPath = _resolveBackgroundPath(decoded, files, 'light');
-    final darkPath = _resolveBackgroundPath(decoded, files, 'dark');
-    final lightBytes = lightPath == null ? null : files[lightPath];
-    final darkBytes = darkPath == null ? null : files[darkPath];
-
-    return ThemePackageData(
-      name: _normalizeName(decoded['name']),
-      isNight: config['isNight'] == true,
-      paletteId: _asNullableInt(config['paletteId']),
-      colors: _decodeColors(colorsRaw),
-      backgroundLight: lightBytes == null || lightBytes.isEmpty
-          ? null
-          : lightBytes,
-      backgroundDark: darkBytes == null || darkBytes.isEmpty ? null : darkBytes,
-      backgroundLightName: lightBytes == null || lightBytes.isEmpty
-          ? null
-          : lightPath,
-      backgroundDarkName: darkBytes == null || darkBytes.isEmpty
-          ? null
-          : darkPath,
-      appVersion: decoded['appVersion'] is String
-          ? decoded['appVersion'] as String
-          : '',
+    final sink = _BoundedOutputStream(
+      entryName: header.filename,
+      maxEntryBytes: maxEntryBytes,
+      maxTotalBytes: maxTotalBytes - budget.used,
+      retain: retain,
     );
+    try {
+      file.decompress(sink);
+    } on ThemePackageException {
+      rethrow;
+    } catch (_) {
+      throw ThemePackageException('无法读取主题包（${header.filename} 解压失败）');
+    }
+    budget.used += sink.length;
+    return sink.getBytes();
   }
 
   /// 重名递增：`X` → `X 2` → `X 3`（参考 uniqueSavedThemeName 口径）
@@ -375,7 +589,7 @@ abstract final class ThemePackageService {
     final length = await file.length();
     if (length <= 0) return null;
     if (length > maxEntryBytes) {
-      throw const ThemePackageException('背景图片过大（上限 64MB）');
+      throw const ThemePackageException('背景图片过大（上限 32MB）');
     }
     final bytes = await file.readAsBytes();
     return ('$entryPrefix.${_imageExtension(file.path)}', bytes);
@@ -384,7 +598,7 @@ abstract final class ThemePackageService {
   /// 清单引用的背景图条目名；引用非法抛错，引用缺失时尝试按固定路径发现
   static String? _resolveBackgroundPath(
     Map<String, dynamic> manifest,
-    Map<String, Uint8List> files,
+    Iterable<String> entryNames,
     String side,
   ) {
     final assets = manifest['assets'];
@@ -393,6 +607,7 @@ abstract final class ThemePackageService {
       final raw = assets['background'];
       if (raw is Map<String, dynamic>) background = raw;
     }
+    final available = entryNames.toSet();
     final referenced = background?[side];
     String? path;
     if (referenced is String && referenced.trim().isNotEmpty) {
@@ -400,22 +615,13 @@ abstract final class ThemePackageService {
       if (!_isSafeEntryName(path) || !path.startsWith('assets/background/')) {
         throw ThemePackageException('主题包包含非法路径：$path');
       }
-      return files.containsKey(path) ? path : null;
+      return available.contains(path) ? path : null;
     }
     // 清单未声明时按固定命名发现（兼容手工打包/精简清单）
     final prefix = 'assets/background/$side.';
     final candidates =
-        files.keys.where((name) => name.startsWith(prefix)).toList()..sort();
+        available.where((name) => name.startsWith(prefix)).toList()..sort();
     return candidates.isEmpty ? null : candidates.first;
-  }
-
-  /// zip 本地文件头（普通/空归档/分段）；其他内容一律按格式错误拒绝
-  static bool _looksLikeZip(Uint8List bytes) {
-    if (bytes.length < 4) return false;
-    if (bytes[0] != 0x50 || bytes[1] != 0x4B) return false;
-    return (bytes[2] == 0x03 && bytes[3] == 0x04) ||
-        (bytes[2] == 0x05 && bytes[3] == 0x06) ||
-        (bytes[2] == 0x07 && bytes[3] == 0x08);
   }
 
   /// 条目名安全校验：禁止绝对路径、反斜杠、NUL 与 `..` 段
@@ -441,7 +647,6 @@ abstract final class ThemePackageService {
   static int? _asNullableInt(dynamic value) =>
       value is int ? value : (value is num ? value.toInt() : null);
 
-  /// 当前 App 版本（读取失败不影响导出）
   /// 当前 App 版本读取器（测试可替换，避免依赖平台插件）
   @visibleForTesting
   static Future<String> Function() appVersionLoader = _loadAppVersion;
