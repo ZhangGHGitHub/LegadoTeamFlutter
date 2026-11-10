@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:path_provider/path_provider.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/container_color_dialog.dart';
 import '../widgets/legado_app_bar.dart';
@@ -37,6 +38,7 @@ import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
 import '../services/theme_background_image_store.dart';
 import '../services/theme_config_json.dart';
+import '../services/theme_package_service.dart';
 import '../theme/md3_colors.dart';
 import '../utils/color_hex.dart';
 import '../utils/error_message.dart';
@@ -51,7 +53,17 @@ import 'main_navigation_settings_sheet.dart';
 /// 主题模式与全局字体缩放经 [ThemeNotifier] 全局实时生效；
 /// 日间/夜间自定义颜色经 [ThemeColorsNotifier] 驱动 MaterialApp 即时生效。
 class ThemeConfigScreen extends ConsumerStatefulWidget {
-  const ThemeConfigScreen({super.key});
+  const ThemeConfigScreen({
+    super.key,
+    this.exportFileService = const ExportFileService(),
+    this.themePackageFilePicker,
+  });
+
+  /// 导出文件服务（测试注入；默认真实落盘实现）
+  final ExportFileService exportFileService;
+
+  /// 测试注入：返回已选主题包 zip 路径；null 时走系统文件选择器
+  final Future<String?> Function()? themePackageFilePicker;
 
   @override
   ConsumerState<ThemeConfigScreen> createState() => _ThemeConfigScreenState();
@@ -178,11 +190,29 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       backgroundPrefsReadable = false;
       debugPrint('ThemeConfigScreen 读取背景图偏好失败，跳过孤儿清理：$e');
     }
+    // [批14] 已保存主题包背景图（theme_light/theme_dark 槽位）也纳入 keep，
+    // 否则本次孤儿清理会把导入主题的壁纸删掉；当前全局壁纸同理。
+    final savedThemeBackgrounds = <String>[];
+    try {
+      for (final item in await _loadThemeList()) {
+        final day = item['bgImage'];
+        final night = item['bgImageNight'];
+        if (day is String && day.isNotEmpty) savedThemeBackgrounds.add(day);
+        if (night is String && night.isNotEmpty) {
+          savedThemeBackgrounds.add(night);
+        }
+      }
+    } catch (e) {
+      debugPrint('ThemeConfigScreen 读取主题包背景图引用失败（跳过清理）：$e');
+    }
     final backgroundKeep = <String>[
       containerImageLight,
       containerImageDark,
       itemImageLight,
       itemImageDark,
+      bgImage,
+      bgImageNight,
+      ...savedThemeBackgrounds,
     ];
     if (backgroundPrefsReadable &&
         backgroundKeep.any((value) => value.isNotEmpty) &&
@@ -1784,6 +1814,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         builder: (ctx, setDialogState) => AlertDialog(
           // [队列⑦c A3] 对话框标题与入口行一致（主题管理）
           title: const Text('主题管理'),
+          // [批14] 列表行增加导出按钮后，用更小的水平留白换取标题宽度
+          //（360dp 下 8 个中文字符仍可完整显示）。
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
           // [设备验收 8b] 收紧内容内边距，把宽度留给标题
           contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           content: SizedBox(
@@ -1801,7 +1837,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       final isNight = item['isNight'] == true;
                       // [设备验收 8b] 不用 ListTile 默认 leading/trailing 宽度：
                       // 两个 48dp 按钮会把 320dp 标题挤成「测…」。自定义 Row
-                      // 给标题 Expanded，按钮紧凑 36dp，保证短标题/副标题单行。
+                      // 给标题 Expanded，按钮紧凑 30dp（批14 增加导出按钮后
+                      // 由 36dp 收紧），保证短标题/副标题单行。
                       final titleStyle = Theme.of(context).textTheme.bodyLarge;
                       final subtitleStyle = Theme.of(context)
                           .textTheme
@@ -1819,7 +1856,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
+                            horizontal: 4,
                             vertical: 6,
                           ),
                           child: Row(
@@ -1855,16 +1892,31 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                 ),
                               ),
                               IconButton(
+                                key: ValueKey('theme-config-export-$index'),
+                                icon: const Icon(
+                                  Symbols.ios_share_rounded,
+                                  size: 18,
+                                ),
+                                tooltip: '导出主题包',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 30,
+                                  height: 36,
+                                ),
+                                onPressed: () => _exportSavedTheme(item),
+                              ),
+                              IconButton(
                                 key: ValueKey('theme-config-rename-$index'),
                                 icon: const Icon(
                                   Symbols.edit_rounded,
-                                  size: 20,
+                                  size: 18,
                                 ),
                                 tooltip: '重命名',
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
-                                  width: 36,
+                                  width: 30,
                                   height: 36,
                                 ),
                                 onPressed: () => _renameThemeConfig(
@@ -1877,13 +1929,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                 key: ValueKey('theme-config-delete-$index'),
                                 icon: const Icon(
                                   Symbols.delete_rounded,
-                                  size: 20,
+                                  size: 18,
                                 ),
                                 tooltip: '删除',
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
-                                  width: 36,
+                                  width: 30,
                                   height: 36,
                                 ),
                                 onPressed: () async {
@@ -1903,6 +1955,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   ),
           ),
           actions: [
+            TextButton(
+              key: const ValueKey('theme-package-import'),
+              onPressed: () => _importThemePackage(list, setDialogState),
+              child: const Text('导入主题包'),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('关闭'),
@@ -1964,7 +2021,32 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         PrefKeys.cSecondaryText: ThemeConfigJson.asInt(config['secondaryText']),
       },
     });
+    // [批14] 主题包背景图：仅当条目录入了 bgImage/bgImageNight 时应用
+    // （旧版保存的主题无此字段 → 保持当前壁纸不动）。
+    final dayPath = _resolveSavedBackground(config['bgImage']);
+    final nightPath = _resolveSavedBackground(config['bgImageNight']);
+    if (dayPath != null || nightPath != null) {
+      await ref
+          .read(themeColorsProvider.notifier)
+          .setBgImage(day: dayPath, night: nightPath);
+      if (mounted) {
+        setState(() {
+          if (dayPath != null) _bgImage = dayPath;
+          if (nightPath != null) _bgImageNight = nightPath;
+        });
+      }
+    }
     _toast('已应用主题「${config['name'] ?? '未命名'}」');
+  }
+
+  /// 已保存主题中的背景图引用 → 可用文件绝对路径（缺失/非法返回 null）
+  ///
+  /// 主题包导入的背景图落盘为相对 Support 目录的标识；全局壁纸渲染仍按
+  /// 绝对路径读取，故应用主题时先经 [ThemeBackgroundImageStore.resolveSync]。
+  String? _resolveSavedBackground(dynamic raw) {
+    if (raw is! String || raw.isEmpty) return null;
+    if (!ThemeBackgroundImageStore.isUsableSync(raw)) return null;
+    return ThemeBackgroundImageStore.resolveSync(raw);
   }
 
   /// 保存当前日/夜颜色为命名主题（对齐原版 saveDayTheme/saveNightTheme）
@@ -2013,6 +2095,250 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     });
     await _settings.setStringPref(_themeListKey, jsonEncode(list));
     _toast('已保存主题「$name」');
+  }
+
+  // ===== [批14 | 全栈工程师 + UI] 主题包 zip：单条导出 / 导入 =====
+
+  /// 12 个颜色槽位（保存主题、主题包完整色表共用）
+  static const List<String> _themeColorKeys = [
+    PrefKeys.cPrimary,
+    PrefKeys.cAccent,
+    PrefKeys.cBackground,
+    PrefKeys.cBBackground,
+    PrefKeys.cPrimaryText,
+    PrefKeys.cSecondaryText,
+    PrefKeys.cNPrimary,
+    PrefKeys.cNAccent,
+    PrefKeys.cNBackground,
+    PrefKeys.cNBBackground,
+    PrefKeys.cNPrimaryText,
+    PrefKeys.cNSecondaryText,
+  ];
+
+  /// 导出一条已保存主题为完整主题包 zip（名称 + 12 色槽 + 日/夜背景图）
+  ///
+  /// 背景图优先取条目内记录的 `bgImage`/`bgImageNight`（主题包导入时落盘）；
+  /// 旧版保存的主题没有这两个字段，回落到当前全局壁纸，尽力保证包完整。
+  Future<void> _exportSavedTheme(Map<String, dynamic> item) async {
+    final name = '${item['name'] ?? '未命名'}';
+    final isNight = item['isNight'] == true;
+    final colors = _colorsFromSavedTheme(item, isNight: isNight);
+    final paletteId = ThemeConfigJson.asInt(item['paletteId']);
+    final (backgroundLight, backgroundDark) = _savedThemeBackgroundFiles(item);
+    final fileName = ThemePackageService.exportFileName(
+      name: name,
+      millis: DateTime.now().millisecondsSinceEpoch,
+    );
+    String? tempPath;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      tempPath = '${tempDir.path}${Platform.pathSeparator}$fileName';
+      await ThemePackageService.exportThemePackage(
+        name: name,
+        colors: colors,
+        paletteId: paletteId,
+        isNight: isNight,
+        backgroundLight: backgroundLight,
+        backgroundDark: backgroundDark,
+        targetPath: tempPath,
+      );
+      if (!mounted) return;
+      final saved = await widget.exportFileService.saveExistingFile(
+        sourcePath: tempPath,
+        fileName: fileName,
+      );
+      if (saved == null || !mounted) return; // 用户取消
+      _toast(
+        widget.exportFileService.savedMessage(
+          saved: saved,
+          requestedFileName: fileName,
+        ),
+      );
+    } catch (e) {
+      debugPrint('ThemeConfigScreen._exportSavedTheme 异常: $e');
+      if (mounted) _toast('导出主题包失败：${errorMessage(e)}');
+    } finally {
+      if (tempPath != null) {
+        try {
+          final temp = File(tempPath);
+          if (await temp.exists()) await temp.delete();
+        } catch (e) {
+          debugPrint('ThemeConfigScreen 主题包临时文件清理失败: $e');
+        }
+      }
+    }
+  }
+
+  /// 已保存主题 → 12 色槽状态
+  ///
+  /// 优先读取主题包导入时保存的完整 `colors` 表（无损再导出）；旧版条目
+  /// 只有当前日/夜半组字段，另半组按 0（未设置）处理。
+  ThemeColorsState _colorsFromSavedTheme(
+    Map<String, dynamic> item, {
+    required bool isNight,
+  }) {
+    final storedColors = item['colors'];
+    if (storedColors is Map) {
+      int read(String key) => ThemeConfigJson.asInt(storedColors[key]) ?? 0;
+      int? nonZero(String key) {
+        final value = read(key);
+        return value == 0 ? null : value;
+      }
+
+      return ThemeColorsState(
+        primary: nonZero(PrefKeys.cPrimary),
+        accent: nonZero(PrefKeys.cAccent),
+        background: nonZero(PrefKeys.cBackground),
+        bottomBackground: nonZero(PrefKeys.cBBackground),
+        primaryNight: nonZero(PrefKeys.cNPrimary),
+        accentNight: nonZero(PrefKeys.cNAccent),
+        backgroundNight: nonZero(PrefKeys.cNBackground),
+        bottomBackgroundNight: nonZero(PrefKeys.cNBBackground),
+        primaryTextColor: read(PrefKeys.cPrimaryText),
+        secondaryTextColor: read(PrefKeys.cSecondaryText),
+        primaryTextColorNight: read(PrefKeys.cNPrimaryText),
+        secondaryTextColorNight: read(PrefKeys.cNSecondaryText),
+      );
+    }
+
+    int legacy(String key) => ThemeConfigJson.asInt(item[key]) ?? 0;
+    int? nonZero(int value) => value == 0 ? null : value;
+    if (isNight) {
+      return ThemeColorsState(
+        primaryNight: nonZero(legacy('primary')),
+        accentNight: nonZero(legacy('accent')),
+        backgroundNight: nonZero(legacy('background')),
+        bottomBackgroundNight: nonZero(legacy('bottomBackground')),
+        primaryTextColorNight: legacy('primaryText'),
+        secondaryTextColorNight: legacy('secondaryText'),
+      );
+    }
+    return ThemeColorsState(
+      primary: nonZero(legacy('primary')),
+      accent: nonZero(legacy('accent')),
+      background: nonZero(legacy('background')),
+      bottomBackground: nonZero(legacy('bottomBackground')),
+      primaryTextColor: legacy('primaryText'),
+      secondaryTextColor: legacy('secondaryText'),
+    );
+  }
+
+  /// 已保存主题的背景图文件（日/夜）
+  ///
+  /// 条目带 `bgImage`/`bgImageNight` 时以其为准（空值就是无图）；旧版条目
+  /// 无字段时回落到当前全局壁纸。
+  (File?, File?) _savedThemeBackgroundFiles(Map<String, dynamic> item) {
+    File? usable(String stored) {
+      if (stored.isEmpty) return null;
+      final resolved = ThemeBackgroundImageStore.resolveSync(stored);
+      if (resolved.isEmpty) return null;
+      try {
+        final file = File(resolved);
+        return file.existsSync() && file.lengthSync() > 0 ? file : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final dayStored = item.containsKey('bgImage')
+        ? '${item['bgImage'] ?? ''}'
+        : _bgImage;
+    final nightStored = item.containsKey('bgImageNight')
+        ? '${item['bgImageNight'] ?? ''}'
+        : _bgImageNight;
+    return (usable(dayStored), usable(nightStored));
+  }
+
+  /// 导入主题包：解析 → 背景图落盘 → 重名递增 → 写入 themeConfigList
+  ///
+  /// 与参考版的差异（已登记）：参考版导入后立即应用；我方只入库，由用户
+  /// 在列表中主动点应用，避免误改当前主题。
+  Future<void> _importThemePackage(
+    List<Map<String, dynamic>> list,
+    StateSetter setDialogState,
+  ) async {
+    final path = await _pickThemePackagePath();
+    if (path == null || !mounted) return;
+    try {
+      final data = await ThemePackageService.importThemePackage(File(path));
+      final name = ThemePackageService.uniqueThemeName(
+        data.name,
+        list.map((item) => '${item['name'] ?? ''}'),
+      );
+
+      String? backgroundLight;
+      String? backgroundDark;
+      if (data.backgroundLight != null) {
+        backgroundLight = await ThemeBackgroundImageStore.storeBytes(
+          data.backgroundLight!,
+          originalName: data.backgroundLightName ?? 'light.png',
+          slot: ThemeBackgroundImageStore.themeLightSlot,
+        );
+      }
+      if (data.backgroundDark != null) {
+        backgroundDark = await ThemeBackgroundImageStore.storeBytes(
+          data.backgroundDark!,
+          originalName: data.backgroundDarkName ?? 'dark.png',
+          slot: ThemeBackgroundImageStore.themeDarkSlot,
+        );
+      }
+
+      int read(String key) => data.colors[key] ?? 0;
+      final isNight = data.isNight;
+      list.add(<String, dynamic>{
+        'name': name,
+        'isNight': isNight,
+        if (data.paletteId != null) 'paletteId': data.paletteId,
+        // 应用现有主题时仍读取半组字段（与 _saveTheme 同构）
+        'primary': isNight ? read(PrefKeys.cNPrimary) : read(PrefKeys.cPrimary),
+        'accent': isNight ? read(PrefKeys.cNAccent) : read(PrefKeys.cAccent),
+        'background': isNight
+            ? read(PrefKeys.cNBackground)
+            : read(PrefKeys.cBackground),
+        'bottomBackground': isNight
+            ? read(PrefKeys.cNBBackground)
+            : read(PrefKeys.cBBackground),
+        'primaryText': isNight
+            ? read(PrefKeys.cNPrimaryText)
+            : read(PrefKeys.cPrimaryText),
+        'secondaryText': isNight
+            ? read(PrefKeys.cNSecondaryText)
+            : read(PrefKeys.cSecondaryText),
+        // 完整 12 色槽（再导出时无损）
+        'colors': <String, int>{
+          for (final key in _themeColorKeys) key: read(key),
+        },
+        'bgImage': ?backgroundLight,
+        'bgImageNight': ?backgroundDark,
+      });
+      await _settings.setStringPref(_themeListKey, jsonEncode(list));
+      if (!mounted) return;
+      setDialogState(() {});
+      _toast('已导入主题包 $name');
+    } on ThemePackageException catch (e) {
+      if (mounted) _toast('导入失败：${e.message}');
+    } catch (e) {
+      debugPrint('ThemeConfigScreen._importThemePackage 异常: $e');
+      if (mounted) _toast('导入失败：${errorMessage(e)}');
+    }
+  }
+
+  /// 选择主题包 zip（测试可注入路径）
+  Future<String?> _pickThemePackagePath() async {
+    final injected = widget.themePackageFilePicker;
+    if (injected != null) return injected();
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: '导入主题包',
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+      );
+      return result?.files.single.path;
+    } catch (e) {
+      debugPrint('ThemeConfigScreen._pickThemePackagePath 异常: $e');
+      if (mounted) _toast('导入失败：无法选择文件');
+      return null;
+    }
   }
 
   // ===== [B3-C1 A3 | 全栈工程师 + UI] 导出/导入主题（文件级最小实现） =====

@@ -38,10 +38,15 @@ class ThemeBackgroundImageStore {
 
   /// 槽位名（大容器 / 项目卡面，日夜各一）。
   /// [设置批2b-1b-2b] 新增项目图槽位；`.9.png` 与普通图共用同一槽位。
+  ///
+  /// [批14] 新增主题包背景图槽位：导入主题包时写入全局壁纸，
+  /// 与容器图分槽，避免清理容器图时误删当前壁纸。
   static const String largeLightSlot = 'large_light';
   static const String largeDarkSlot = 'large_dark';
   static const String itemLightSlot = 'item_light';
   static const String itemDarkSlot = 'item_dark';
+  static const String themeLightSlot = 'theme_light';
+  static const String themeDarkSlot = 'theme_dark';
 
   /// 孤儿清理扫描的槽位（顺序固定）
   static const List<String> slotDirs = <String>[
@@ -49,6 +54,8 @@ class ThemeBackgroundImageStore {
     largeDarkSlot,
     itemLightSlot,
     itemDarkSlot,
+    themeLightSlot,
+    themeDarkSlot,
   ];
 
   /// 单张图大小上限（32MB）：超过直接拒绝，避免异常大图拖垮内存/磁盘
@@ -84,7 +91,8 @@ class ThemeBackgroundImageStore {
 
   /// 测试 seam：应用 Support 目录获取（默认 path_provider）。
   /// 测试可覆盖为返回临时目录，避免触碰真实沙盒。
-  static Future<Directory> Function() supportDir = getApplicationSupportDirectory;
+  static Future<Directory> Function() supportDir =
+      getApplicationSupportDirectory;
 
   /// 缓存的 Support 绝对路径（[warmWith]/[store]/[ensureWarm] 填充），
   /// 供同步 [resolveSync] 使用（IosGroup build 无 async 上下文）。
@@ -124,10 +132,7 @@ class ThemeBackgroundImageStore {
   ///   [FormatException]，调用方提示并保留旧图。
   /// - 原子写：先落 `.tmp-<micros>` 再 rename，异常不留下半成品正式文件。
   /// - 失败（源不存在 / 读写异常 / Web）抛出，由调用方提示并保留旧图。
-  static Future<String> store(
-    String sourcePath, {
-    required String slot,
-  }) async {
+  static Future<String> store(String sourcePath, {required String slot}) async {
     if (kIsWeb) throw UnsupportedError('Web 端不支持容器背景图');
     if (!_slotPattern.hasMatch(slot)) {
       throw ArgumentError.value(slot, 'slot', '非法槽位名');
@@ -151,9 +156,7 @@ class ThemeBackgroundImageStore {
     final length = await sourceFile.length();
     if (length <= 0) throw const FormatException('图片内容为空');
     if (length > maxBytes) {
-      throw FormatException(
-        '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）',
-      );
+      throw FormatException('图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
     }
     await _validateDecodable(sourceFile);
     // 流式 md5：不把整文件读入 Dart 堆（32MB 上限已兜底）
@@ -204,9 +207,7 @@ class ThemeBackgroundImageStore {
     }
     if (bytes.isEmpty) throw const FormatException('图片内容为空');
     if (bytes.length > maxBytes) {
-      throw FormatException(
-        '图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）',
-      );
+      throw FormatException('图片过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
     }
     await _validateDecodableBytes(bytes, originalName);
 
@@ -313,9 +314,10 @@ class ThemeBackgroundImageStore {
   /// 低成本孤儿清理（设置页加载时调用）：删除槽位目录中未被引用的自有图片
   /// 与**超过 [tmpOrphanMinAge] 的**中断残留临时文件；非自有命名不动。
   ///
-  /// [设置批2b-1b-2b] 扫描 [slotDirs] 四个槽位
-  /// （large_light/large_dark/item_light/item_dark），因此调用方 [keep]
-  /// 必须同时包含大容器图与项目图的当前值（日/夜共四项）。
+  /// [设置批2b-1b-2b] 扫描 [slotDirs] 全部槽位
+  /// （large_light/large_dark/item_light/item_dark + 批14 的
+  /// theme_light/theme_dark），因此调用方 [keep] 必须同时包含大容器图、
+  /// 项目图与已保存主题包背景图的当前值（日/夜）。
   /// [keep] 为当前仍被引用的偏好值（绝对路径或相对标识均可）。
   /// 返回删除数量。基目录未预热时直接返回 0（不触发平台通道）。
   static int cleanupOrphansSync({required Iterable<String> keep}) {
