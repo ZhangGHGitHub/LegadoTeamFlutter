@@ -46,6 +46,10 @@ const _imgB = 'https://cdn.example.com/book-b.png';
 // 不预置字节缓存：用于验证「测量在途/失败」不依赖渲染成功回填
 const _imgA = 'https://cdn.example.com/inflight-a.png';
 const _failImg = 'https://cdn.example.com/fail.png';
+final List<String> _manyImgs = List.generate(
+  6,
+  (i) => 'https://cdn.example.com/many-$i.png',
+);
 
 class _FixedReaderNotifier extends ReaderNotifier {
   _FixedReaderNotifier(this.initial);
@@ -71,7 +75,20 @@ ReaderState _readerState(
   String bookUrl = 'https://book.example.com/1',
   String origin = 'https://source.example.com',
   String? chapterImgUrl,
+  int chapterIndex = 0,
+  bool isLoading = false,
+  List<BookChapter>? chapters,
 }) {
+  final chapterList =
+      chapters ??
+      [
+        BookChapter(
+          url: '$bookUrl/c1',
+          title: '第一章 混排',
+          index: 0,
+          imgUrl: chapterImgUrl,
+        ),
+      ];
   return ReaderState(
     currentBook: Book(
       bookUrl: bookUrl,
@@ -80,18 +97,12 @@ ReaderState _readerState(
       origin: origin,
       bookType: BookType.text,
     ),
-    chapters: [
-      BookChapter(
-        url: '$bookUrl/c1',
-        title: '第一章 混排',
-        index: 0,
-        imgUrl: chapterImgUrl,
-      ),
-    ],
-    currentChapterIndex: 0,
+    chapters: chapterList,
+    currentChapterIndex: chapterIndex,
     chapterContent: content,
     fontSize: fontSize,
     lineHeight: 1.5,
+    isLoading: isLoading,
   );
 }
 
@@ -182,6 +193,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     ReaderImageSizeCache.clearForTest();
     ReaderImageBytesCache.clearForTest();
+    ReaderPageViewState.debugRepaginationCount = 0;
     ReaderImageBytesCache.put('', _bigImg, _pngBytes);
     ReaderImageBytesCache.put('', _smallImg, _pngBytes);
     ReaderImageBytesCache.put('https://source.example.com', _bigImg, _pngBytes);
@@ -190,7 +202,7 @@ void main() {
       _smallImg,
       _pngBytes,
     );
-    for (final url in [_img1, _img2, _img3, _imgB]) {
+    for (final url in [_img1, _img2, _img3, _imgB, ..._manyImgs]) {
       ReaderImageBytesCache.put('https://source.example.com', url, _pngBytes);
       ReaderImageBytesCache.put('https://source-b.example.com', url, _pngBytes);
     }
@@ -382,7 +394,7 @@ void main() {
       expect(find.textContaining('翻页测试文字'), findsWidgets);
     });
 
-    testWidgets('第 3 图挂起时前两张尺寸仍立即生效（P1-1）', (tester) async {
+    testWidgets('第 3 图挂起时前两张尺寸已回填，批次结束统一重排（P1-1/P1-2）', (tester) async {
       tester.view.physicalSize = const Size(400, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -414,18 +426,28 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
       c2.complete(const ReaderImageSize(200, 100));
       await tester.pump(const Duration(milliseconds: 20));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 20));
 
+      // [批16 三审 P1-2] 批次未结束不重排，但已完成尺寸已写回
       expect(ReaderImageSizeCache.lookup(_img1)?.width, 200);
       expect(ReaderImageSizeCache.lookup(_img2)?.width, 200);
       expect(ReaderImageSizeCache.hasResult(_img3), isFalse);
+
+      c3.complete(const ReaderImageSize(200, 100));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
       final layouts = tester
           .widgetList<ReaderImageLineWidget>(find.byType(ReaderImageLineWidget))
           .map((w) => w.layout)
-          .where((l) => l.image.url == _img1 || l.image.url == _img2)
+          .where(
+            (l) =>
+                l.image.url == _img1 ||
+                l.image.url == _img2 ||
+                l.image.url == _img3,
+          )
           .toList();
-      expect(layouts.length, greaterThanOrEqualTo(2));
+      expect(layouts.length, greaterThanOrEqualTo(3));
       for (final layout in layouts) {
         expect(layout.placeholder, isFalse);
         expect(layout.height, closeTo(100 * 376 / 200, 1));
@@ -560,7 +582,7 @@ void main() {
         find.byType(ReaderPageView),
       );
       expect(pageView.pageCount, greaterThan(2));
-      pageView.nextPageOrChapter();
+      pageView.goToPage(1);
       await tester.pumpAndSettle();
       final pageBefore = pageView.currentPageIndex;
       expect(pageBefore, 1);
@@ -571,6 +593,157 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
 
       expect(pageView.currentPageIndex, pageBefore);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('全章测量并发上限=1，6 图仅统一重排一次（P1-1/P1-2）', (tester) async {
+      tester.view.physicalSize = const Size(400, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final completers = [
+        for (var i = 0; i < _manyImgs.length; i++)
+          Completer<ReaderImageSize?>(),
+      ];
+      var active = 0;
+      var maxActive = 0;
+      Future<ReaderImageSize?> measurer(ReaderInlineImage image) {
+        active++;
+        if (active > maxActive) maxActive = active;
+        final index = _manyImgs.indexOf(image.url);
+        return completers[index].future.whenComplete(() => active--);
+      }
+
+      final content = List.generate(
+        _manyImgs.length,
+        (i) => '第$i图<img src="${_manyImgs[i]}">正文',
+      ).join('\n\n');
+      await pumpReader(
+        tester,
+        state: _readerState(content),
+        measurer: measurer,
+        size: const Size(400, 1600),
+      );
+      expect(active, 1);
+      final baseCount = ReaderPageViewState.debugRepaginationCount;
+
+      for (final completer in completers) {
+        completer.complete(const ReaderImageSize(200, 100));
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+
+      expect(maxActive, 1, reason: '重排不得重启测量协程');
+      expect(
+        ReaderPageViewState.debugRepaginationCount - baseCount,
+        lessThanOrEqualTo(2),
+        reason: '6 图批次应只在结束后统一重排一次',
+      );
+      for (final url in _manyImgs) {
+        expect(ReaderImageSizeCache.lookup(url)?.width, 200);
+      }
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('同书切章 loading 冻结期取消在途测量（P2-4）', (tester) async {
+      final pendingA = Completer<ReaderImageSize?>();
+      Future<ReaderImageSize?> measurer(ReaderInlineImage image) {
+        if (image.url == _imgA) return pendingA.future;
+        return Future.value(const ReaderImageSize(120, 60));
+      }
+
+      const bookUrl = 'https://book.example.com/1';
+      final chapters = [
+        const BookChapter(url: '$bookUrl/c1', title: '第一章', index: 0),
+        const BookChapter(url: '$bookUrl/c2', title: '第二章', index: 1),
+      ];
+      final notifier = _SwitchableReaderNotifier(
+        _readerState('甲<img src="$_imgA">乙', chapters: chapters),
+      );
+      await pumpReader(
+        tester,
+        state: notifier.initial,
+        notifier: notifier,
+        measurer: measurer,
+      );
+      expect(ReaderImageSizeCache.isMeasuring(_imgA), isTrue);
+
+      // 切章进入 loading 冻结（旧分页仍渲染，repaginate=false）
+      notifier.switchTo(
+        _readerState('', chapterIndex: 1, isLoading: true, chapters: chapters),
+      );
+      await tester.pump();
+      expect(
+        ReaderImageSizeCache.isMeasuring(_imgA),
+        isFalse,
+        reason: 'loading 冻结期就必须取消旧章测量',
+      );
+
+      notifier.switchTo(
+        _readerState(
+          '新章<img src="$_imgB">正文',
+          chapterIndex: 1,
+          chapters: chapters,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(ReaderImageSizeCache.lookup(_imgB)?.width, 120);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('网络类失败同章不重试、回章可重试（P3-7）', (tester) async {
+      var calls = 0;
+      Future<ReaderImageSize?> measurer(ReaderInlineImage image) async {
+        calls++;
+        return null;
+      }
+
+      const bookUrl = 'https://book.example.com/1';
+      final chapters = [
+        const BookChapter(url: '$bookUrl/c1', title: '第一章', index: 0),
+        const BookChapter(url: '$bookUrl/c2', title: '第二章', index: 1),
+      ];
+      final notifier = _SwitchableReaderNotifier(
+        _readerState('失败<img src="$_failImg">正文', chapters: chapters),
+      );
+      await pumpReader(
+        tester,
+        state: notifier.initial,
+        notifier: notifier,
+        measurer: measurer,
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(calls, 1);
+      expect(ReaderImageSizeCache.lookup(_failImg)?.retryable, isTrue);
+
+      // 同章内触发重排：不得重试
+      notifier.switchTo(
+        _readerState(
+          '失败<img src="$_failImg">正文',
+          fontSize: 18,
+          chapters: chapters,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(calls, 1);
+
+      // 切到无图章再回本章：网络类失败允许重试
+      notifier.switchTo(
+        _readerState('第二章正文', chapterIndex: 1, chapters: chapters),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      notifier.switchTo(
+        _readerState('失败<img src="$_failImg">正文', chapters: chapters),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(calls, 2);
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
   });

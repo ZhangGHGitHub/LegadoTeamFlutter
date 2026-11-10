@@ -275,6 +275,11 @@ class LineInfo {
   // 渲染侧把占位符替换为 WidgetSpan。纯文本行为空。
   final List<ReaderImageLayout> inlineImages;
 
+  // [批16 三审 P2-5] 行内逐字符章节偏移（与渲染文本同下标；缩进列为 -1，
+  // 行内图片占位符指向 `<img>` 标签起点）。用于行内图后文本的高亮/选区
+  // 精确映射；纯文本行为 null。
+  final List<int>? chapterOffsets;
+
   const LineInfo({
     required this.words,
     required this.width,
@@ -287,7 +292,16 @@ class LineInfo {
     this.highlightMapped = false,
     this.imageLayout,
     this.inlineImages = const [],
+    this.chapterOffsets,
   });
+
+  /// 行内某下标对应的章节全局偏移（无映射返回 null）
+  int? chapterOffsetAt(int index) {
+    final offsets = chapterOffsets;
+    if (offsets == null || index < 0 || index >= offsets.length) return null;
+    final value = offsets[index];
+    return value >= 0 ? value : null;
+  }
 
   /// 该行是否含独立图片
   bool get hasImage => imageLayout != null;
@@ -886,6 +900,7 @@ class ParagraphLayoutEngine {
     final lines = <LineInfo>[];
     final buffer = StringBuffer();
     final bufferInlines = <ReaderImageLayout>[];
+    final bufferOffsets = <int>[];
     var bufferParaStart = -1;
     var indentDone = false;
     double? inlineSlotWidth;
@@ -923,6 +938,12 @@ class ParagraphLayoutEngine {
         indentSize: indentLen > 0 ? config.indentCount : 0,
       );
 
+      // 逐字符章节偏移（缩进置 -1；行内图片占位符指向标签起点）
+      final offsets = <int>[
+        if (indentLen > 0) ...List<int>.filled(indentLen, -1),
+        ...bufferOffsets,
+      ];
+
       // 行内图片占位符位置 → 按出现顺序与 bufferInlines 对齐
       final placeholderIndices = <int>[
         for (var i = 0; i < text.length; i++)
@@ -948,6 +969,41 @@ class ParagraphLayoutEngine {
         for (final layout in lineInlines) {
           lineHeight = math.max(lineHeight, layout.height);
         }
+
+        // [批16 三审 P2-5] 行首第一个真实字符的章节偏移/跳过长度。
+        // 行内图占位符只占 1 个渲染字符但对应原 `<img>` 标签整段，故不能
+        // 再用「行内线性偏移」，必须查逐字符映射。
+        var highlightSkip = 0;
+        var chapterStartOffset = -1;
+        for (
+          var k = raw.startIndex;
+          k < raw.endIndex && k < offsets.length;
+          k++
+        ) {
+          if (offsets[k] >= 0 && text[k] != readerImagePlaceholderChar) {
+            highlightSkip = k - raw.startIndex;
+            chapterStartOffset = offsets[k];
+            break;
+          }
+        }
+        if (chapterStartOffset < 0) {
+          highlightSkip = 0;
+          chapterStartOffset =
+              raw.startIndex >= 0 &&
+                  raw.startIndex < offsets.length &&
+                  offsets[raw.startIndex] >= 0
+              ? offsets[raw.startIndex]
+              : sourceStart;
+        }
+        final lineChapterOffsets = <int>[
+          for (
+            var k = raw.startIndex;
+            k < raw.endIndex && k < offsets.length;
+            k++
+          )
+            offsets[k] >= 0 ? chapterStart + offsets[k] : -1,
+        ];
+
         lines.add(
           LineInfo(
             words: raw.words,
@@ -956,22 +1012,19 @@ class ParagraphLayoutEngine {
             startIndex: raw.startIndex,
             endIndex: raw.endIndex,
             hangingWidth: raw.hangingWidth,
-            chapterStartIndex:
-                chapterStart +
-                sourceStart +
-                (raw.startIndex - indentLen)
-                    .clamp(0, trimmedPara.length)
-                    .toInt(),
-            highlightSkip: (indentLen - raw.startIndex)
-                .clamp(0, text.length)
+            chapterStartIndex: (chapterStart + chapterStartOffset)
+                .clamp(chapterStart, chapterStart + trimmedPara.length)
                 .toInt(),
+            highlightSkip: highlightSkip.clamp(0, text.length).toInt(),
             highlightMapped: true,
             inlineImages: List.unmodifiable(lineInlines),
+            chapterOffsets: List<int>.unmodifiable(lineChapterOffsets),
           ),
         );
       }
       buffer.clear();
       bufferInlines.clear();
+      bufferOffsets.clear();
       bufferParaStart = -1;
     }
 
@@ -981,6 +1034,9 @@ class ParagraphLayoutEngine {
           if (text.isEmpty) continue;
           if (buffer.isEmpty) bufferParaStart = start;
           buffer.write(text);
+          for (var i = 0; i < text.length; i++) {
+            bufferOffsets.add(start + i);
+          }
         case ReaderImageRun(:final image, :final start, :final end):
           final layout = resolveReaderImageLayout(
             image: image,
@@ -992,6 +1048,7 @@ class ParagraphLayoutEngine {
           );
           if (layout.isInline) {
             buffer.write(readerImagePlaceholderChar);
+            bufferOffsets.add(start);
             bufferInlines.add(layout);
           } else {
             flushTextBuffer();

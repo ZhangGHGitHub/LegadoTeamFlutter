@@ -623,8 +623,11 @@ class ReaderTextContent extends StatelessWidget {
     if (highlightMatches.isEmpty || !line.highlightMapped) {
       return [TextSpan(text: segment)];
     }
+    // [批16 三审 P2-5] 行内图片占位符对应整段 `<img>` 标签，优先用逐字符
+    // 章节偏移映射；无映射时回落既有线性公式。
+    final mapped = line.chapterOffsetAt(offsetInLine);
     final chapterStart =
-        line.chapterStartIndex + (offsetInLine - line.highlightSkip);
+        mapped ?? line.chapterStartIndex + (offsetInLine - line.highlightSkip);
     return buildHighlightedLineSpans(
       text: segment,
       chapterStart: chapterStart < 0 ? 0 : chapterStart,

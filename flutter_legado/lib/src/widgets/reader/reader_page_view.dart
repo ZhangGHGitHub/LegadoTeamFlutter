@@ -22,6 +22,7 @@ import '../../screens/rss_articles_screen.dart' show showRssPhotoViewer;
 import '../../services/book_marking_render.dart';
 import '../../services/bookmark_badge_image_store.dart';
 import '../../services/highlight_match_sync.dart';
+import '../../services/local_book_store.dart' show LocalBookStore;
 import '../../utils/comic_image_utils.dart';
 import '../../utils/reader_inline_image.dart';
 import '../../widgets/error_view.dart';
@@ -33,6 +34,29 @@ import 'reader_page_chrome.dart';
 import 'turn/page_direction.dart';
 import 'turn/reader_turn_view.dart';
 import 'reader_text_content.dart';
+
+/// 正文图片字节加载失败类别（批16 三审 P3-7）
+enum _ReaderImageFailureKind {
+  none,
+
+  /// 网络/超时/HTTP 状态：允许跨章重试（同章由 attempted 集合去重）
+  network,
+
+  /// 路径拒绝/格式错误/解码失败：永久失败
+  permanent,
+}
+
+class _ReaderImageFetchResult {
+  final Uint8List? bytes;
+  final _ReaderImageFailureKind failure;
+
+  const _ReaderImageFetchResult(this.bytes, this.failure);
+
+  const _ReaderImageFetchResult.ok(Uint8List this.bytes)
+    : failure = _ReaderImageFailureKind.none;
+
+  const _ReaderImageFetchResult.failed(this.failure) : bytes = null;
+}
 
 /// 阅读器内容区（分页 + 5 种翻页模式）
 ///
@@ -312,8 +336,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   String? _readerImageSourceOrigin;
   Future<void>? _readerImageSourceLoading;
 
-  /// 图片字节加载在途去重
-  final Map<String, Future<Uint8List?>> _imageLoads = {};
+  /// 图片字节加载在途去重（结果含失败分类，供测量回填重试语义）
+  final Map<String, Future<_ReaderImageFetchResult>> _imageLoads = {};
 
   /// 图片测量代际（换书/切章时自增，旧会话结果作废）
   int _imageMeasureSession = 0;
@@ -321,8 +345,22 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 本会话已 beginMeasure 的 key → 会话号（取消时逐个回滚在途标记）
   final Map<String, int> _imageMeasureKeys = {};
 
+  /// 本会话已尝试过的 key（网络失败同章内不重试；换章清空）
+  final Set<String> _imageMeasureAttempted = {};
+
+  /// 测量协程互斥：全章同一时刻只允许 1 个协程（重排不得重启测量）
+  bool _imageMeasureRunning = false;
+
+  /// 测量归属的书/章（build 阶段检测切章，含 loading 冻结期）
+  String _imageMeasureBookUrl = '\u0000';
+  int _imageMeasureChapterIndex = -1;
+
   /// 合并重排定时器（逐图完成时 16ms 内合并为一次 setState）
   Timer? _imageReflowTimer;
+
+  /// 分页次数（测试观测重排次数；生产不读取）
+  @visibleForTesting
+  static int debugRepaginationCount = 0;
 
   /// 当前页索引
   int get currentPageIndex => _currentPageIndex;
@@ -692,6 +730,28 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       ReaderImageSizeCache.cancelMeasure(key);
     }
     _imageMeasureKeys.clear();
+    _imageMeasureAttempted.clear();
+    _endImageMeasureBatch();
+  }
+
+  void _endImageMeasureBatch() {
+    if (!_imageMeasureRunning) return;
+    _imageMeasureRunning = false;
+    ReaderImageSizeCache.endMeasureBatch();
+  }
+
+  /// 检测书/章身份变化（含 loading 冻结期：build 阶段即取消旧章测量）
+  void _syncImageMeasureIdentity(ReaderState state) {
+    final bookUrl = state.currentBook?.bookUrl ?? '';
+    final chapterIndex = state.currentChapterIndex;
+    if (bookUrl == _imageMeasureBookUrl &&
+        chapterIndex == _imageMeasureChapterIndex) {
+      return;
+    }
+    _imageMeasureBookUrl = bookUrl;
+    _imageMeasureChapterIndex = chapterIndex;
+    _imageMeasureSession++;
+    _cancelImageMeasurements();
   }
 
   /// 合并重排：逐图完成时只安排一次 setState（16ms 内合并）
@@ -900,10 +960,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 预览与在途标记，eager 预载随后以新源 bookUrl 重建 — Qoder
     final chapterChanged =
         _paginatedChapterIndex != chapterIndex || content != _paginatedContent;
-    final bookUrlNow = state.currentBook?.bookUrl ?? '';
-    // [批16 回修 P1-1] 换书/切章/正文替换：取消在途图片测量并回滚
-    // 「在途」标记（不写失败），新章同 URL 可重新测量。
-    if (chapterChanged || bookUrlNow != _paginatedBookUrl) {
+    // [批16 三审] 书/章切换已在 build 的 _syncImageMeasureIdentity 处理；
+    // 此处仅处理同章正文替换（刷新/换源内容变化），避免旧的测量会话写回。
+    if (content != _paginatedContent) {
       _imageMeasureSession++;
       _cancelImageMeasurements();
     }
@@ -927,6 +986,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
 
     _paginatedPages = pages;
+    debugRepaginationCount++;
     _paginatedContent = content;
     _paginatedChapterIndex = chapterIndex;
     _paginatedBookUrl = state.currentBook?.bookUrl ?? '';
@@ -994,6 +1054,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final notifier = ref.read(readerNotifierProvider.notifier);
     // [批34] 订阅高亮规则修订号：规则页保存/删除后重建，并让文本匹配缓存失效
     ref.watch(highlightRulesRevisionProvider);
+    // [批16 三审 P2-4] 切章即取消旧章测量（loading 冻结期 build 仍会执行，
+    // 不能等 repaginate 时才处理，否则旧章迟到结果会继续写回/下载）
+    _syncImageMeasureIdentity(state);
 
     // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 章节切换加载中：保留上一章
     // 既有分页渲染（跳过重分页）——此前直接整树换成 LoadingIndicator，
@@ -1433,14 +1496,16 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       0.0,
       availableHeight - titleBlockHeight - 6,
     );
-    final titleImageLayout = _buildTitleImageLayout(
-      imgUrl: titleImageUrl,
-      baseUrl: titleImageBaseUrl,
-      availableWidth: availableWidth,
-      maxHeight: titleImageMaxHeight,
-      fontSize: state.fontSize,
-      lineHeight: state.lineHeight,
-    );
+    final titleImageLayout = titleImageMaxHeight <= 0
+        ? null
+        : _buildTitleImageLayout(
+            imgUrl: titleImageUrl,
+            baseUrl: titleImageBaseUrl,
+            availableWidth: availableWidth,
+            maxHeight: titleImageMaxHeight,
+            fontSize: state.fontSize,
+            lineHeight: state.lineHeight,
+          );
     firstPageHeight = availableHeight - titleBlockHeight;
     if (titleImageLayout != null) {
       firstPageHeight -= titleImageLayout.height + 6;
@@ -1454,12 +1519,21 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   }
 
   /// [批16] 章节图片绝对化基址：chapter.baseUrl → chapter.url → bookUrl
+  ///
+  /// [批16 三审 P3-8] iOS 本地书 bookUrl/chapter.url 可能是相对
+  /// Documents 的可迁移标识（`books/x.epub`），先经
+  /// [LocalBookStore.resolveSync] 解析为真实路径；在线 URL 原样返回。
   String _chapterImageBaseUrl(ReaderState state, BookChapter? chapter) {
-    final base = chapter?.baseUrl.trim() ?? '';
+    String resolve(String value) {
+      final raw = value.trim();
+      return raw.isEmpty ? '' : LocalBookStore.resolveSync(raw);
+    }
+
+    final base = resolve(chapter?.baseUrl ?? '');
     if (base.isNotEmpty) return base;
-    final url = chapter?.url.trim() ?? '';
+    final url = resolve(chapter?.url ?? '');
     if (url.isNotEmpty) return url;
-    return state.currentBook?.bookUrl ?? '';
+    return resolve(state.currentBook?.bookUrl ?? '');
   }
 
   /// [批16] 章节标题图布局（首屏容量计算与渲染共用，尺寸未知用占位高度）
@@ -1520,17 +1594,26 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// [批16] 下载/解码正文图片字节（书源 imageDecode 走 FFI，本地书读盘，
   /// 其余走 HTTP；结果进 LRU 缓存供渲染与尺寸测量共用）。
   ///
-  /// [批16 回修 P1-2/P3-10/P3-12]
-  /// - 本地路径仅本地书可读，且必须落在书文件目录内（canonical 校验）；
+  /// [批16 三审 P2-3/P3-7/P3-8/P3-10/P3-12]
+  /// - 本地路径按「书文件真实存在 + 目录围栏」准入，不依赖类型位/来源；
   /// - 所有文件读取做位图魔数校验；
   /// - data URI 本地 base64 解码，不走 HTTP；
-  /// - HTTP 兜底仅 http/https，且 10s 超时。
-  Future<Uint8List?> _loadReaderImageBytes(ReaderInlineImage image) {
+  /// - HTTP 兜底仅 http/https，且 10s 超时；
+  /// - 失败分类：网络/超时 → [network]（可跨章重试）；路径/格式/解码 →
+  ///   [permanent]。
+  Future<Uint8List?> _loadReaderImageBytes(ReaderInlineImage image) async =>
+      (await _loadReaderImageResult(image)).bytes;
+
+  Future<_ReaderImageFetchResult> _loadReaderImageResult(
+    ReaderInlineImage image,
+  ) {
     final book = ref.read(readerNotifierProvider).currentBook;
     final origin = book?.origin ?? '';
     final cacheKey = ReaderImageBytesCache.keyOf(origin, image.rawSrc);
     final cacheHit = ReaderImageBytesCache.get(origin, image.rawSrc);
-    if (cacheHit != null) return Future.value(cacheHit);
+    if (cacheHit != null) {
+      return Future.value(_ReaderImageFetchResult.ok(cacheHit));
+    }
     final inflight = _imageLoads[cacheKey];
     if (inflight != null) return inflight;
     final future = _fetchReaderImageBytes(image, book);
@@ -1540,78 +1623,85 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     });
   }
 
-  Future<Uint8List?> _fetchReaderImageBytes(
+  Future<_ReaderImageFetchResult> _fetchReaderImageBytes(
     ReaderInlineImage image,
     Book? book,
   ) async {
     final origin = book?.origin ?? '';
+    const permanent = _ReaderImageFetchResult.failed(
+      _ReaderImageFailureKind.permanent,
+    );
+    const network = _ReaderImageFetchResult.failed(
+      _ReaderImageFailureKind.network,
+    );
     try {
       final url = image.options.url;
       // data: URI 本地解码（对齐 P3-10）
       final dataBytes = decodeReaderDataUriImage(url);
       if (dataBytes != null) {
-        if (!looksLikeImageBytes(dataBytes)) return null;
+        if (!looksLikeImageBytes(dataBytes)) return permanent;
         ReaderImageBytesCache.put(origin, image.rawSrc, dataBytes);
-        return dataBytes;
+        return _ReaderImageFetchResult.ok(dataBytes);
       }
-      // 本地文件：仅本地书 + 书目录围栏 + 魔数校验
+      // 本地文件：bookUrl 解析为真实路径（iOS 相对标识经 resolveSync），
+      // 文件不存在 / 目录外 / 非图片一律拒绝（与书籍类型位无关）。
       if (isReaderLocalFilePath(url)) {
-        if (book == null ||
-            !isLocalBookForReaderImages(
-              origin: origin,
-              bookType: book.bookType,
-            )) {
-          return null;
-        }
+        final bookPath = LocalBookStore.resolveSync(book?.bookUrl ?? '');
+        if (bookPath.isEmpty || bookPath.contains('://')) return permanent;
         final file = await resolveReaderLocalImageFile(
           url: url,
-          bookFilePath: book.bookUrl,
+          bookFilePath: bookPath,
         );
-        if (file == null) return null;
+        if (file == null) return permanent;
         final bytes = await file.readAsBytes();
-        if (!looksLikeImageBytes(bytes)) return null;
+        if (!looksLikeImageBytes(bytes)) return permanent;
         ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
-        return bytes;
+        return _ReaderImageFetchResult.ok(bytes);
       }
       // 非 http/https（content:/cbz:// 等）一律拒绝，收紧 SSRF/协议面
-      if (!isReaderHttpImageUrl(url)) return null;
-      final localBook =
-          book != null &&
-          isLocalBookForReaderImages(origin: origin, bookType: book.bookType);
+      if (!isReaderHttpImageUrl(url)) return permanent;
       // 在线书：优先书源 FFI（含 imageDecode / Referer / Cookie 链路）
-      if (!localBook && origin.trim().isNotEmpty) {
+      if (origin.trim().isNotEmpty) {
         await _ensureReaderImageSource(origin);
         final source = _readerImageSource;
         if (source != null) {
-          final json = await ref
-              .read(bookApiProvider)
-              .fetchImageWithDecode(image.rawSrc, jsonEncode(source.toJson()))
-              .timeout(const Duration(seconds: 15));
-          final decoded = jsonDecode(json);
-          final b64 = decoded is Map ? decoded['base64'] as String? ?? '' : '';
-          if (b64.isNotEmpty) {
+          try {
+            final json = await ref
+                .read(bookApiProvider)
+                .fetchImageWithDecode(image.rawSrc, jsonEncode(source.toJson()))
+                .timeout(const Duration(seconds: 15));
+            final decoded = jsonDecode(json);
+            final b64 = decoded is Map
+                ? decoded['base64'] as String? ?? ''
+                : '';
+            if (b64.isEmpty) return permanent;
             final bytes = base64Decode(b64);
-            if (looksLikeImageBytes(bytes)) {
-              ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
-              return bytes;
-            }
+            if (!looksLikeImageBytes(bytes)) return permanent;
+            ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
+            return _ReaderImageFetchResult.ok(bytes);
+          } catch (_) {
+            // FFI 下载/解密异常：按网络类失败处理，允许跨章重试
+            return network;
           }
-          return null;
         }
       }
       // 无书源/本地书兜底：HTTP GET（复合 headers 透传，10s 超时）
       final uri = Uri.tryParse(url);
-      if (uri == null) return null;
-      final response = await http
-          .get(uri, headers: image.options.headers)
-          .timeout(const Duration(seconds: 10));
-      if (response.statusCode != 200) return null;
-      final bytes = response.bodyBytes;
-      if (!looksLikeImageBytes(bytes)) return null;
-      ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
-      return bytes;
+      if (uri == null) return permanent;
+      try {
+        final response = await http
+            .get(uri, headers: image.options.headers)
+            .timeout(const Duration(seconds: 10));
+        if (response.statusCode != 200) return network;
+        final bytes = response.bodyBytes;
+        if (!looksLikeImageBytes(bytes)) return permanent;
+        ReaderImageBytesCache.put(origin, image.rawSrc, bytes);
+        return _ReaderImageFetchResult.ok(bytes);
+      } catch (_) {
+        return network;
+      }
     } catch (_) {
-      return null;
+      return network;
     }
   }
 
@@ -1661,11 +1751,19 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
     if (titleImage != null) images.add(titleImage);
 
+    if (_imageMeasureRunning) return;
+
     final pending = <ReaderInlineImage>[];
     final seen = <String>{};
     for (final image in images) {
       if (!seen.add(image.rawSrc)) continue;
-      if (ReaderImageSizeCache.hasResult(image.rawSrc) ||
+      final existing = ReaderImageSizeCache.lookup(image.rawSrc);
+      if (existing != null) {
+        if (existing.isValid) continue;
+        // 永久失败（解码/格式/路径）不再重试；网络类失败允许跨章重试
+        if (!existing.retryable) continue;
+      }
+      if (_imageMeasureAttempted.contains(image.rawSrc) ||
           ReaderImageSizeCache.isMeasuring(image.rawSrc)) {
         continue;
       }
@@ -1673,50 +1771,72 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     }
     if (pending.isEmpty) return;
 
+    _imageMeasureRunning = true;
+    ReaderImageSizeCache.beginMeasureBatch();
     final session = _imageMeasureSession;
     final bookUrl = book?.bookUrl ?? '';
     final origin = book?.origin ?? '';
     unawaited(() async {
-      for (final image in pending) {
-        if (!mounted || session != _imageMeasureSession) return;
-        final live = ref.read(readerNotifierProvider);
-        if ((live.currentBook?.bookUrl ?? '') != bookUrl ||
-            (live.currentBook?.origin ?? '') != origin) {
-          // 换书/换源：取消本次会话剩余在途标记（不写失败）
-          _imageMeasureSession++;
-          _cancelImageMeasurements();
-          return;
-        }
-        // 标记在真正开始下载前（取消可回滚）
-        if (!ReaderImageSizeCache.beginMeasure(image.rawSrc)) continue;
-        _imageMeasureKeys[image.rawSrc] = session;
-        ReaderImageSize? size;
-        try {
-          final measurer = widget.imageMeasurer;
-          if (measurer != null) {
-            size = await measurer(image);
-          } else {
-            final bytes = await _loadReaderImageBytes(image);
-            size = bytes == null ? null : await decodeReaderImageSize(bytes);
+      var changed = false;
+      try {
+        for (final image in pending) {
+          if (!mounted || session != _imageMeasureSession) return;
+          final live = ref.read(readerNotifierProvider);
+          if ((live.currentBook?.bookUrl ?? '') != bookUrl ||
+              (live.currentBook?.origin ?? '') != origin) {
+            // 换书/换源：取消本次会话剩余在途标记（不写失败）
+            _imageMeasureSession++;
+            _cancelImageMeasurements();
+            return;
           }
-        } catch (_) {
-          size = null;
-        }
-        if (!mounted || session != _imageMeasureSession) {
-          // 会话已失效：仅当该 key 仍归本会话所有时回滚，避免误清新会话
-          if (_imageMeasureKeys[image.rawSrc] == session) {
-            _imageMeasureKeys.remove(image.rawSrc);
-            ReaderImageSizeCache.cancelMeasure(image.rawSrc);
+          // 标记在真正开始下载前（取消可回滚）
+          if (!ReaderImageSizeCache.beginMeasure(image.rawSrc)) continue;
+          _imageMeasureKeys[image.rawSrc] = session;
+          _imageMeasureAttempted.add(image.rawSrc);
+          ReaderImageSize? size;
+          var retryable = true;
+          try {
+            final measurer = widget.imageMeasurer;
+            if (measurer != null) {
+              size = await measurer(image);
+              retryable = true;
+            } else {
+              final result = await _loadReaderImageResult(image);
+              if (result.bytes == null) {
+                retryable = result.failure != _ReaderImageFailureKind.permanent;
+              } else {
+                size = await decodeReaderImageSize(result.bytes!);
+                // 字节已取到但解码失败：永久失败
+                retryable = false;
+              }
+            }
+          } catch (_) {
+            size = null;
+            retryable = true;
           }
-          return;
+          if (!mounted || session != _imageMeasureSession) {
+            // 会话已失效：仅当该 key 仍归本会话所有时回滚，避免误清新会话
+            if (_imageMeasureKeys[image.rawSrc] == session) {
+              _imageMeasureKeys.remove(image.rawSrc);
+              ReaderImageSizeCache.cancelMeasure(image.rawSrc);
+            }
+            return;
+          }
+          final written = ReaderImageSizeCache.completeMeasure(
+            image.rawSrc,
+            size,
+            retryable: retryable,
+          );
+          _imageMeasureKeys.remove(image.rawSrc);
+          if (written) changed = true;
         }
-        final written = ReaderImageSizeCache.completeMeasure(
-          image.rawSrc,
-          size,
-        );
-        _imageMeasureKeys.remove(image.rawSrc);
-        // 每张完成立即回填并触发合并重排（不等待整章循环）
-        if (written) _scheduleImageReflow();
+      } finally {
+        // [批16 三审 P1-1/P1-2] 只有本会话结束才释放互斥并统一重排一次；
+        // 重排触发的分页不会再次启动测量协程。
+        if (session == _imageMeasureSession) {
+          _endImageMeasureBatch();
+          if (changed) _scheduleImageReflow();
+        }
       }
     }());
   }

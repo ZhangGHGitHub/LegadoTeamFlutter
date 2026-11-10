@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_legado/src/services/local_book_store.dart';
 import 'package:flutter_legado/src/utils/reader_inline_image.dart';
 import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_bookmark_policy.dart';
@@ -169,36 +170,20 @@ void main() {
     });
   });
 
-  group('本地读盘安全（P1-2）', () {
-    test('本地书判定：本地 origin/位通过，在线与 WebDAV 拒绝', () {
+  group('本地读盘安全（P2-3）', () {
+    test('准入按书文件真实存在 + 围栏，不依赖类型位/来源', () async {
+      // 在线 bookUrl（含 ://）不指向本地文件 → 拒绝
       expect(
-        isLocalBookForReaderImages(origin: 'loc_book', bookType: 0),
-        isTrue,
-      );
-      expect(isLocalBookForReaderImages(origin: '', bookType: 0x1000), isTrue);
-      expect(isLocalBookForReaderImages(origin: '', bookType: 0x100), isTrue);
-      expect(
-        isLocalBookForReaderImages(
-          origin: 'https://source.example.com',
-          bookType: 8,
+        await resolveReaderLocalImageFile(
+          url: 'file:///tmp/a.png',
+          bookFilePath: 'https://book.example.com/book',
         ),
-        isFalse,
+        isNull,
       );
+      // 空 bookUrl → 拒绝
       expect(
-        isLocalBookForReaderImages(
-          origin: 'webDav::https://dav.example.com/book.epub',
-          bookType: 0x1000,
-        ),
-        isTrue,
-        reason: '显式 local 位优先（离线缓存场景）',
-      );
-      expect(
-        isLocalBookForReaderImages(
-          origin: 'webDav::https://dav.example.com/book.epub',
-          bookType: 0,
-        ),
-        isFalse,
-        reason: 'WebDAV 内容在远端，不得读本地磁盘',
+        await resolveReaderLocalImageFile(url: '/tmp/a.png', bookFilePath: ''),
+        isNull,
       );
     });
 
@@ -264,6 +249,28 @@ void main() {
       }
     });
 
+    test('iOS 相对 bookUrl 经 resolveSync 后本地图可解析（P3-8）', () async {
+      final docs = await Directory.systemTemp.createTemp('reader_docs_sync_');
+      addTearDown(() => docs.delete(recursive: true));
+      final books = Directory('${docs.path}${Platform.pathSeparator}books');
+      final images = Directory('${books.path}${Platform.pathSeparator}img');
+      await images.create(recursive: true);
+      final bookFile = File('${books.path}${Platform.pathSeparator}book.txt');
+      await bookFile.writeAsString('book');
+      final imageFile = File('${images.path}${Platform.pathSeparator}a.png');
+      await imageFile.writeAsBytes([1, 2, 3]);
+      LocalBookStore.warmWith(docs);
+
+      final resolvedBook = LocalBookStore.resolveSync('books/book.txt');
+      final resolvedUrl = resolveReaderImageUrl('img/a.png', resolvedBook);
+      final file = await resolveReaderLocalImageFile(
+        url: resolvedUrl,
+        bookFilePath: resolvedBook,
+      );
+      expect(file, isNotNull);
+      expect(file!.path, imageFile.path);
+    });
+
     test('data URI 本地解码（P3-10）与非法输入', () {
       expect(decodeReaderDataUriImage('data:image/png;base64,AAEC'), [0, 1, 2]);
       expect(decodeReaderDataUriImage('data:image/png,AAEC'), isNull);
@@ -326,6 +333,28 @@ void main() {
         ),
         isFalse,
         reason: '已有成功结果不被覆盖',
+      );
+    });
+
+    test('失败分类：网络失败跨章可重试，解码失败永久（P3-7）', () {
+      expect(ReaderImageSizeCache.beginMeasure('net'), isTrue);
+      ReaderImageSizeCache.completeMeasure('net', null, retryable: true);
+      expect(ReaderImageSizeCache.lookup('net')!.failed, isTrue);
+      expect(ReaderImageSizeCache.lookup('net')!.retryable, isTrue);
+      expect(
+        ReaderImageSizeCache.beginMeasure('net'),
+        isTrue,
+        reason: '网络类失败允许跨章重试',
+      );
+      ReaderImageSizeCache.cancelMeasure('net');
+
+      expect(ReaderImageSizeCache.beginMeasure('bad'), isTrue);
+      ReaderImageSizeCache.completeMeasure('bad', null, retryable: false);
+      expect(ReaderImageSizeCache.lookup('bad')!.retryable, isFalse);
+      expect(
+        ReaderImageSizeCache.beginMeasure('bad'),
+        isFalse,
+        reason: '解码/格式失败永久不重试',
       );
     });
   });
@@ -499,6 +528,15 @@ void main() {
       final result = layout(img, availableWidth: 300, maxHeight: 400);
       expect(result.height, 400);
       expect(result.width, 100);
+    });
+
+    test('maxHeight=0 视为不可用（零尺寸占位，P3-6）', () {
+      final img = image('https://c.com/no-height.png');
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(300, 200));
+      final result = layout(img, availableWidth: 300, maxHeight: 0);
+      expect(result.width, 0);
+      expect(result.height, 0);
+      expect(result.placeholder, isTrue);
     });
   });
 
@@ -680,6 +718,44 @@ void main() {
       expect(range.start, tagStart);
       expect(range.end, content.indexOf('>') + 1);
       expect(range.isEmpty, isFalse);
+    });
+
+    test('行内小图之后的文本章节偏移按标签长度补偿（P2-5）', () {
+      const content = '前文<img src="https://c.com/inline.png">后文';
+      final img = parseReaderInlineImage('https://c.com/inline.png')!;
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(24, 24));
+
+      final pages = engine().paginateChapter(content, 300, 600);
+      final line = pages
+          .expand((page) => page.paragraphs)
+          .expand((para) => para.lines)
+          .firstWhere((line) => line.inlineImages.isNotEmpty);
+      final text = line.words.join('');
+      final afterIndex = text.indexOf('后');
+      expect(afterIndex, greaterThan(0));
+      expect(line.chapterOffsetAt(afterIndex), content.indexOf('后'));
+      expect(
+        line.chapterOffsetAt(0),
+        content.indexOf('前'),
+        reason: '行首文本映射不受占位符影响',
+      );
+    });
+
+    test('独立图片之后的文本行章节起点准确（P2-5）', () {
+      const content = '甲<img src="https://c.com/big-map.png">乙';
+      final img = parseReaderInlineImage('https://c.com/big-map.png')!;
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(300, 200));
+
+      final pages = engine().paginateChapter(content, 300, 600);
+      final lines = pages
+          .expand((page) => page.paragraphs)
+          .expand((para) => para.lines)
+          .toList();
+      final imageIndex = lines.indexWhere((line) => line.imageLayout != null);
+      expect(imageIndex, greaterThanOrEqualTo(0));
+      final afterText = lines[imageIndex + 1];
+      expect(afterText.words.join(), contains('乙'));
+      expect(afterText.chapterStartIndex, content.indexOf('乙'));
     });
 
     test('纯文本段落不产生图片字段且行高与既有公式一致', () {

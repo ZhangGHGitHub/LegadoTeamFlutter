@@ -240,6 +240,8 @@ class _ReaderInlineImageWidgetState extends State<ReaderInlineImageWidget> {
     final intrinsic = await decodeReaderImageSize(bytes);
     final size = intrinsic != null && intrinsic.isValid ? intrinsic : fallback;
     if (!mounted || !size.isValid) return;
+    // 测量批次在途时不回填：避免用降采样/测试字节尺寸覆盖权威测量结果
+    if (ReaderImageSizeCache.isBatchMeasuring) return;
     final existing = ReaderImageSizeCache.lookup(widget.image.rawSrc);
     if (existing != null && existing.isValid) return;
     ReaderImageSizeCache.put(widget.image.rawSrc, size);

@@ -21,7 +21,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
-import '../models/book.dart' show BookType;
 import 'click_img_way.dart';
 import 'comic_image_utils.dart';
 
@@ -56,9 +55,17 @@ class ReaderImageSize {
   /// 测量失败/图片不可用（布局仍按占位高度，避免分页丢字）
   final bool failed;
 
-  const ReaderImageSize(this.width, this.height) : failed = false;
+  /// 失败是否可跨章重试（网络/超时为 true；解码/格式/路径拒绝为 false）
+  final bool retryable;
 
-  const ReaderImageSize.failed() : width = 0, height = 0, failed = true;
+  const ReaderImageSize(this.width, this.height)
+    : failed = false,
+      retryable = false;
+
+  const ReaderImageSize.failed({this.retryable = true})
+    : width = 0,
+      height = 0,
+      failed = true;
 
   bool get isValid => !failed && width > 0 && height > 0;
 }
@@ -70,16 +77,28 @@ class ReaderImageSize {
 ///
 /// [beginMeasure]/[completeMeasure]/[cancelMeasure] 为在途测量生命周期：
 /// - 同一 URL 同时只允许一次测量（[beginMeasure] 返回 false 表示已在途或
-///   已有结果）；
+///   已有不可重试结果）；
 /// - 换书/切章取消（[cancelMeasure]）只清在途标记、不写失败，允许新章
 ///   重新测量；
-/// - 失败结果保留（失败不重复下载），但渲染成功可经 [put] 覆盖。
+/// - 解码/格式失败永久保留；网络类失败（[ReaderImageSize.retryable]）允许
+///   跨章重试，同章内是否重试由阅读页会话级 attempted 集合控制。
 class ReaderImageSizeCache {
   ReaderImageSizeCache._();
 
   static final Map<String, ReaderImageSize> _sizes = {};
   static final Set<String> _inFlight = {};
+  static int _measureBatchDepth = 0;
   static int _revision = 0;
+
+  /// 是否有测量批次在进行（渲染回填需让位给权威测量）
+  static bool get isBatchMeasuring => _measureBatchDepth > 0;
+
+  /// 标记测量批次开始/结束（阅读页串行测量协程生命周期）
+  static void beginMeasureBatch() => _measureBatchDepth++;
+
+  static void endMeasureBatch() {
+    if (_measureBatchDepth > 0) _measureBatchDepth--;
+  }
 
   /// 缓存修订号（每次 put 递增）
   static int get revision => _revision;
@@ -94,23 +113,31 @@ class ReaderImageSizeCache {
   /// 是否正在测量
   static bool isMeasuring(String rawSrc) => _inFlight.contains(keyOf(rawSrc));
 
-  /// 尝试开始一次测量：已有结果/已在途返回 false
+  /// 尝试开始一次测量：已有不可重试结果/已在途返回 false
   static bool beginMeasure(String rawSrc) {
     final key = keyOf(rawSrc);
-    if (_sizes.containsKey(key)) return false;
+    final existing = _sizes[key];
+    if (existing != null) {
+      // 仅网络类失败允许跨章重试；解码/格式失败永久保留
+      if (!(existing.failed && existing.retryable)) return false;
+    }
     return _inFlight.add(key);
   }
 
   /// 完成测量：写回结果并清在途标记；返回是否写入
   ///
   /// 若期间渲染层已成功写回真实尺寸，则保留已有成功结果（避免覆盖与
-  /// 多余 revision）。
-  static bool completeMeasure(String rawSrc, ReaderImageSize? size) {
+  /// 多余 revision）。[retryable] 仅对失败结果生效。
+  static bool completeMeasure(
+    String rawSrc,
+    ReaderImageSize? size, {
+    bool retryable = true,
+  }) {
     final key = keyOf(rawSrc);
     _inFlight.remove(key);
     final existing = _sizes[key];
     if (existing != null && existing.isValid) return false;
-    put(key, size ?? const ReaderImageSize.failed());
+    put(key, size ?? ReaderImageSize.failed(retryable: retryable));
     return true;
   }
 
@@ -122,8 +149,8 @@ class ReaderImageSizeCache {
     _revision++;
   }
 
-  static void putFailure(String rawSrc) =>
-      put(rawSrc, const ReaderImageSize.failed());
+  static void putFailure(String rawSrc, {bool retryable = true}) =>
+      put(rawSrc, ReaderImageSize.failed(retryable: retryable));
 
   @visibleForTesting
   static int get inFlightCount => _inFlight.length;
@@ -132,6 +159,7 @@ class ReaderImageSizeCache {
   static void clearForTest() {
     _sizes.clear();
     _inFlight.clear();
+    _measureBatchDepth = 0;
     _revision = 0;
   }
 }
@@ -439,9 +467,20 @@ ReaderImageLayout resolveReaderImageLayout({
   bool forceStandalone = false,
 }) {
   final widthLimit = math.max(1.0, availableWidth);
-  final heightLimit = maxHeight.isFinite && maxHeight > 0
-      ? maxHeight
+  // [批16 三审 P3-6] maxHeight==0 是「没有可用高度」而非不限高：返回
+  // 零尺寸布局，调用方（标题图）应跳过渲染。
+  final heightLimit = maxHeight.isFinite
+      ? math.max(0.0, maxHeight)
       : double.infinity;
+  if (heightLimit <= 0) {
+    return ReaderImageLayout(
+      image: image,
+      placement: ReaderImagePlacement.standalone,
+      width: 0,
+      height: 0,
+      placeholder: true,
+    );
+  }
   final explicitStyle = (image.style ?? '').trim().toUpperCase();
   final bookStyle = (bookImageStyle ?? '').trim().toUpperCase();
   final size = ReaderImageSizeCache.lookup(image.rawSrc);
@@ -539,23 +578,6 @@ ReaderImageLayout resolveReaderImageLayout({
   );
 }
 
-/// 是否本地书（正文图片允许读取本地文件的安全准入）
-///
-/// 对齐审查口径：`origin == loc_book` / local 位（双位域）视为本地书；
-/// **WebDAV 虽在 [BookType.isLocalOrigin] 内，但内容在远端，禁止读本地
-/// 磁盘**，故显式排除。
-bool isLocalBookForReaderImages({
-  required String origin,
-  required int bookType,
-}) {
-  final byBit = (bookType & (BookType.local | BookType.kotlinLocal)) != 0;
-  final normOrigin = origin.trim();
-  final byOrigin =
-      BookType.isLocalOrigin(normOrigin) &&
-      !BookType.isWebDavOrigin(normOrigin);
-  return byBit || byOrigin;
-}
-
 /// 远端图片地址是否允许 HTTP 兜底（仅 http/https，收紧 SSRF 面）
 bool isReaderHttpImageUrl(String url) {
   final lower = url.trim().toLowerCase();
@@ -564,8 +586,9 @@ bool isReaderHttpImageUrl(String url) {
 
 /// 是否本地文件路径（file:// / Windows 盘符 / POSIX 绝对路径 / UNC）
 ///
-/// 仅用于「进入本地读盘安全校验」的分流；在线书即使命中该判定也会被
-/// [isLocalBookForReaderImages] 拒绝。
+/// 仅用于「进入本地读盘安全校验」的分流；实际准入由
+/// [resolveReaderLocalImageFile] 按「书文件存在 + 目录围栏」判定，
+/// 不依赖书籍类型位/来源（WebDAV 落 LOCAL 位时同样走文件围栏）。
 bool isReaderLocalFilePath(String url) {
   final raw = url.trim();
   if (raw.isEmpty) return false;
@@ -622,7 +645,8 @@ bool isPathInsideDirectory(String candidate, String directory) {
 /// 解析并校验本地书正文图片文件（安全围栏）
 ///
 /// 仅允许读取**书文件所在目录（含子目录）**内的图片；拒绝 UNC、路径
-/// 穿越与符号链接逃逸。调用方还须先满足 [isLocalBookForReaderImages]。
+/// 穿越与符号链接逃逸。调用方传入经 `LocalBookStore.resolveSync` 解析的
+/// 书文件真实路径；书文件不存在时返回 null（不依赖书籍类型位/来源）。
 /// 返回 null 表示拒绝/不存在。
 Future<File?> resolveReaderLocalImageFile({
   required String url,
