@@ -1064,6 +1064,40 @@ impl ReplaceRuleEntry {
             self.timeout_millisecond
         }
     }
+
+    /// 判断本规则是否会在正文管线触发 `@js:` 执行
+    ///
+    /// 与 [`apply_single_rule`] 的执行条件严格一致：仅启用的**正则**规则、
+    /// `scope_content` 生效、pattern 非空、且替换内容以 `@js:` 开头。
+    /// App（`legado-ffi`）与 Web（`legado-server`）两条正文净化链共用本
+    /// 判定决定是否注入 `ReplaceJsExecutor`，避免两处条件漂移。
+    pub fn needs_js_execution(&self) -> bool {
+        rule_needs_js_execution(
+            self.is_enabled,
+            self.is_regex,
+            self.scope_content,
+            &self.pattern,
+            &self.replacement,
+        )
+    }
+}
+
+/// 判断替换规则字段组合是否会在正文管线触发 `@js:` 执行
+///
+/// 见 [`ReplaceRuleEntry::needs_js_execution`]；此自由函数供仅有原始字段
+/// （未构造 `ReplaceRuleEntry`）的调用方复用同一条件。
+pub fn rule_needs_js_execution(
+    is_enabled: bool,
+    is_regex: bool,
+    scope_content: bool,
+    pattern: &str,
+    replacement: &str,
+) -> bool {
+    is_enabled
+        && is_regex
+        && scope_content
+        && !pattern.is_empty()
+        && replacement.starts_with("@js:")
 }
 
 /// 处理结果统计

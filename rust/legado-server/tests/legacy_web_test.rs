@@ -776,6 +776,307 @@ async fn test_get_book_content_replace_rule_gated_by_use_replace_rule() {
     assert_eq!(json["data"], "正文内容");
 }
 
+// ---------------------------------------------------------------------------
+// 批17：Web 阅读端 `@js:` 替换规则对齐（与 App 端共享 legado-js 执行器）
+// ---------------------------------------------------------------------------
+
+/// seed 一本书 + 一章 + 章节缓存正文（Web 正文净化测试基线）
+async fn seed_cached_chapter(
+    state: &Arc<AppState>,
+    book_url: &str,
+    book_name: &str,
+    book_author: &str,
+    chapter: &BookChapter,
+    content: &str,
+) {
+    let db = state.db.lock().await;
+    BookRepository::new(db.connection())
+        .insert(&Book {
+            book_url: book_url.to_string(),
+            origin: "https://src.example.com".to_string(),
+            origin_name: "测试书源".to_string(),
+            name: book_name.to_string(),
+            author: book_author.to_string(),
+            ..Book::default()
+        })
+        .unwrap();
+    BookChapterRepository::new(db.connection())
+        .insert(chapter)
+        .unwrap();
+    CacheBookRepository::new(db.connection())
+        .insert(&CachedChapter {
+            id: 0,
+            book_url: book_url.to_string(),
+            chapter_index: chapter.index,
+            chapter_title: chapter.title.clone(),
+            chapter_url: chapter.url.clone(),
+            content: content.to_string(),
+            cached_at: 0,
+            size_bytes: 0,
+        })
+        .unwrap();
+}
+
+/// 批17 先红后绿：Web `/getBookContent` 必须执行 `@js:` 替换规则
+///
+/// 修复前 `purify_content` 调用 `ContentProcessor::process(None)`，`@js:`
+/// 规则被静默跳过（返回原文）；修复后与 App 端共享 legado-js 执行器。
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_get_book_content_applies_js_replace_rule() {
+    let state = make_test_state();
+    let book_url = "https://b17.example.com/book/1";
+    seed_cached_chapter(
+        &state,
+        book_url,
+        "批十七书籍",
+        "批十七作者",
+        &BookChapter {
+            url: "https://b17.example.com/ch/7".to_string(),
+            title: "第七章 批十七".to_string(),
+            book_url: book_url.to_string(),
+            index: 7,
+            ..BookChapter::default()
+        },
+        "前批十七标记后",
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_JS替换".to_string(),
+            pattern: "批十七标记".to_string(),
+            replacement: r#"@js: result + "!""#.to_string(),
+            is_regex: true,
+            is_enabled: true,
+            scope_content: true,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let app = create_router(state);
+    let uri = format!("/getBookContent?url={}&index=7", enc(book_url));
+    let (_, json) = get_json(app, &uri).await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"], "前批十七标记!后",
+        "Web 阅读端必须执行 @js: 规则（修复前为原文）"
+    );
+}
+
+/// 批17：Web 端 `@js:` 的 `chapter` / `book` 绑定来自章节行与书籍行
+///
+/// 对齐 App 端 `test_content_processing_js_bindings_chapter_and_book_visible`：
+/// 字段全部断言，防止只绑 `result` 或绑定错行（如把第 0 章/其他书绑进来）。
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_get_book_content_js_bindings_chapter_and_book_visible() {
+    let state = make_test_state();
+    let book_url = "https://b17.example.com/book/bind";
+    seed_cached_chapter(
+        &state,
+        book_url,
+        "批十七绑定书名",
+        "批十七绑定作者",
+        &BookChapter {
+            url: "https://b17.example.com/ch/3".to_string(),
+            title: "第三章 批十七绑定".to_string(),
+            book_url: book_url.to_string(),
+            index: 3,
+            ..BookChapter::default()
+        },
+        "前批十七绑定标记后",
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_绑定可见".to_string(),
+            pattern: "批十七绑定标记".to_string(),
+            replacement: r#"@js: result + "|" + chapter.title + "|" + chapter.index + "|" + chapter.url + "|" + chapter.bookUrl + "|" + book.name + "|" + book.author + "|" + book.bookUrl"#.to_string(),
+            is_regex: true,
+            is_enabled: true,
+            scope_content: true,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let app = create_router(state);
+    let uri = format!("/getBookContent?url={}&index=3", enc(book_url));
+    let (_, json) = get_json(app, &uri).await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"],
+        "前批十七绑定标记|第三章 批十七绑定|3|https://b17.example.com/ch/3|\
+         https://b17.example.com/book/bind|批十七绑定书名|批十七绑定作者|\
+         https://b17.example.com/book/bind后"
+    );
+}
+
+/// 批17：`@js:` 抛错保留原文，且不阻断后续普通规则（与 App 端一致）
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_get_book_content_js_rule_error_keeps_original_and_continues() {
+    let state = make_test_state();
+    let book_url = "https://b17.example.com/book/err";
+    seed_cached_chapter(
+        &state,
+        book_url,
+        "批十七抛错书",
+        "作者",
+        &BookChapter {
+            url: "https://b17.example.com/ch/0".to_string(),
+            title: "第一章".to_string(),
+            book_url: book_url.to_string(),
+            index: 0,
+            ..BookChapter::default()
+        },
+        "前批十七抛错标记后 后续普通标记",
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_抛错".to_string(),
+            pattern: "批十七抛错标记".to_string(),
+            replacement: "@js:(function(){ throw new Error('boom'); })()".to_string(),
+            is_regex: true,
+            is_enabled: true,
+            scope_content: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_后续普通".to_string(),
+            pattern: "后续普通标记".to_string(),
+            replacement: "已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let app = create_router(state);
+    let uri = format!("/getBookContent?url={}&index=0", enc(book_url));
+    let (_, json) = get_json(app, &uri).await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"], "前批十七抛错标记后 已换",
+        "@js: 抛错应保留原文，后续普通规则仍需执行"
+    );
+}
+
+/// 批17：`@js:` 超时保留原文（规则级 timeoutMillisecond 生效）
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_get_book_content_js_rule_timeout_keeps_original() {
+    let state = make_test_state();
+    let book_url = "https://b17.example.com/book/timeout";
+    seed_cached_chapter(
+        &state,
+        book_url,
+        "批十七超时书",
+        "作者",
+        &BookChapter {
+            url: "https://b17.example.com/ch/0".to_string(),
+            title: "第一章".to_string(),
+            book_url: book_url.to_string(),
+            index: 0,
+            ..BookChapter::default()
+        },
+        "前批十七超时标记后",
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_超时".to_string(),
+            pattern: "批十七超时标记".to_string(),
+            replacement: "@js:while(true){}".to_string(),
+            is_regex: true,
+            is_enabled: true,
+            scope_content: true,
+            timeout_millisecond: 60,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let app = create_router(state);
+    let uri = format!("/getBookContent?url={}&index=0", enc(book_url));
+    let (_, json) = get_json(app, &uri).await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"], "前批十七超时标记后",
+        "@js: 超时应保留原文，不阻断正文返回"
+    );
+}
+
+/// 批17：无 quickjs feature 时 Web 端明确不执行 `@js:`，其他规则仍生效
+#[cfg(not(feature = "quickjs"))]
+#[tokio::test]
+async fn test_get_book_content_js_rule_skipped_without_quickjs() {
+    let state = make_test_state();
+    let book_url = "https://b17.example.com/book/noqjs";
+    seed_cached_chapter(
+        &state,
+        book_url,
+        "批十七无JS书",
+        "作者",
+        &BookChapter {
+            url: "https://b17.example.com/ch/0".to_string(),
+            title: "第一章".to_string(),
+            book_url: book_url.to_string(),
+            index: 0,
+            ..BookChapter::default()
+        },
+        "前批十七无JS标记后 普通标记",
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_无quickjs".to_string(),
+            pattern: "批十七无JS标记".to_string(),
+            replacement: r#"@js: result + "!""#.to_string(),
+            is_regex: true,
+            is_enabled: true,
+            scope_content: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "批17_普通".to_string(),
+            pattern: "普通标记".to_string(),
+            replacement: "已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let app = create_router(state);
+    let uri = format!("/getBookContent?url={}&index=0", enc(book_url));
+    let (_, json) = get_json(app, &uri).await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"], "前批十七无JS标记后 已换",
+        "无 quickjs 时 @js: 应保留原文，普通规则仍生效"
+    );
+}
+
 #[tokio::test]
 async fn test_save_book_progress_beacon_text_plain() {
     let state = make_test_state();

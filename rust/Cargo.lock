@@ -1943,6 +1943,7 @@ dependencies = [
 name = "legado-ffi"
 version = "0.2.0"
 dependencies = [
+ "axum",
  "base64",
  "chrono",
  "encoding_rs",
@@ -1967,6 +1968,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "uuid",
  "zip",
 ]

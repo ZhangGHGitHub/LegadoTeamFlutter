@@ -17,10 +17,11 @@ use legado_db::{
     BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository,
     CacheRepository, ReplaceRuleRepository,
 };
-
-use crate::api::replace_rule_js::{
+// [批17] `@js:` 执行器与绑定构造下沉 legado-js（与 Web 阅读端共用同一实现）
+use legado_js::replace_rule_js::{
     ReplaceJsBindings, ReplaceJsBook, ReplaceJsChapter, ReplaceRuleJsExecutor,
 };
+
 use crate::db_state::{resolve_local_book_path, with_database};
 use crate::runtime;
 
@@ -1719,10 +1720,11 @@ fn process_content_with_rules_inner_ctx(
 
 /// 判断替换规则字段是否需要在正文管线执行 `@js:`
 ///
-/// 与 `content_processor::apply_single_rule` 的执行条件严格一致：仅启用的
-/// **正则**规则、`scopeContent` 生效、pattern 非空、且替换内容以 `@js:` 开头
-/// （非正则规则走字面量替换，`@js:` 原样插入，对齐参考版 `String.replace` 语义）。
-/// 正文规则过滤与 `@js:` 绑定构建共用本判定，避免两处条件漂移。
+/// 与 `content_processor::apply_single_rule` 的执行条件严格一致（实现收敛
+/// 在 [`legado_core::content_processor::rule_needs_js_execution`]，Web 端
+/// 正文净化复用同一判定）：仅启用的**正则**规则、`scopeContent` 生效、
+/// pattern 非空、且替换内容以 `@js:` 开头（非正则规则走字面量替换，`@js:`
+/// 原样插入，对齐参考版 `String.replace` 语义）。
 fn rule_needs_js_execution(
     is_enabled: bool,
     is_regex: bool,
@@ -1730,22 +1732,18 @@ fn rule_needs_js_execution(
     pattern: &str,
     replacement: &str,
 ) -> bool {
-    is_enabled
-        && is_regex
-        && scope_content
-        && !pattern.is_empty()
-        && replacement.starts_with("@js:")
+    legado_core::content_processor::rule_needs_js_execution(
+        is_enabled,
+        is_regex,
+        scope_content,
+        pattern,
+        replacement,
+    )
 }
 
 /// 判断替换规则条目是否需要执行 `@js:`（见 [`rule_needs_js_execution`]）
 fn entry_needs_js_execution(rule: &ReplaceRuleEntry) -> bool {
-    rule_needs_js_execution(
-        rule.is_enabled,
-        rule.is_regex,
-        rule.scope_content,
-        &rule.pattern,
-        &rule.replacement,
-    )
+    rule.needs_js_execution()
 }
 
 /// 构建正文净化 `@js:` 的章节/书籍绑定（生产路径）

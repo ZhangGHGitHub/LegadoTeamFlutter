@@ -9,7 +9,9 @@ use legado_core::models::ReplaceRule;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::ReplaceRuleRepository;
 
-use crate::api::replace_rule_js::ReplaceRuleJsExecutor;
+// [批17] `@js:` 执行器下沉 legado-js（与 Web 阅读端共用同一实现）
+use legado_js::replace_rule_js::ReplaceRuleJsExecutor;
+
 use crate::db_state::with_database;
 
 /// 获取所有替换规则

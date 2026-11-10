@@ -43,8 +43,6 @@ pub mod privacy_api;
 pub mod read_record_api;
 pub mod reader;
 pub mod replace_rule_api;
-/// [批15 | 2026-11-10] 替换规则 `@js:` 执行器（预览 / 正文净化生产 / 书源导入共用）
-pub mod replace_rule_js;
 pub mod review_api;
 pub mod rss;
 pub mod rss_read_record_api;

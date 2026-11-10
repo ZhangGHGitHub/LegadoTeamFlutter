@@ -33,6 +33,8 @@ pub mod js_source;
 pub mod jslib_normalize;
 /// loginCheckJs 响应解析内核（P5 下沉：ffi/server 共享单一实现）
 pub mod login_check;
+/// [批17] 替换规则 `@js:` 执行器（App 预览/正文/书源导入与 Web 阅读端共用）
+pub mod replace_rule_js;
 pub mod sandbox;
 pub mod scope;
 pub mod source_engine;

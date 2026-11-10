@@ -26,7 +26,7 @@ use serde_json::Value;
 use legado_book::{BookFormat, LocalBook};
 use legado_core::cache_book::CachedChapter;
 use legado_core::content_processor::{
-    ContentProcessor, ProcessorConfig, ReplaceRuleEntry, ScopeContext,
+    ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry, ScopeContext,
 };
 use legado_core::models::book_type;
 use legado_core::models::{Book, BookChapter};
@@ -38,6 +38,10 @@ use legado_db::repository::cache_repository::CacheRepository;
 use legado_db::repository::replace_rule_repository::ReplaceRuleRepository;
 use legado_db::repository::Repository;
 use legado_db::BookSourceRepository;
+// [批17] `@js:` 执行器与绑定构造复用 legado-js（与 App 端共用同一实现）
+use legado_js::replace_rule_js::{
+    ReplaceJsBindings, ReplaceJsBook, ReplaceJsChapter, ReplaceRuleJsExecutor,
+};
 use legado_net::{LegadoClient, LegadoClientConfig};
 use tokio::io::AsyncWriteExt;
 
@@ -528,7 +532,7 @@ async fn get_book_content_inner(
             .map_err(|e| e.to_string())?
     };
     if let Some(cached) = cached.filter(|c| !c.content.trim().is_empty()) {
-        return Ok(purify_content(state, &book, &chapter.title, &cached.content).await);
+        return Ok(purify_content(state, &book, &chapter, &cached.content).await);
     }
 
     // 2) 本地书：文件解析（对齐 BookHelp.getContent 的本地书分支）
@@ -547,7 +551,7 @@ async fn get_book_content_inner(
             },
         )
         .map_err(|e| e.to_string())?;
-        return Ok(purify_content(state, &book, &chapter.title, &content).await);
+        return Ok(purify_content(state, &book, &chapter, &content).await);
     }
 
     // 3) 网络抓取（对齐 WebBook.getContentAwait）
@@ -585,7 +589,7 @@ async fn get_book_content_inner(
         }
     }
 
-    Ok(purify_content(state, &book, &chapter.title, &content).await)
+    Ok(purify_content(state, &book, &chapter, &content).await)
 }
 
 /// 正文净化（替换规则 + 去重复标题；`includeTitle=false`）
@@ -599,10 +603,15 @@ async fn get_book_content_inner(
 /// 替换规则按 `Book.getUseReplaceRule()` 门控（对齐 `ContentProcessor.kt:116`
 /// 的 `useReplace && book.getUseReplaceRule()`）：epub 本地书 / 图片书默认不
 /// 应用规则；去重复标题不受该门控（原版第一分支恒执行）。
+///
+/// [批17] `@js:` 规则与 App 端执行口径一致：注入 legado-js 的共享执行器，
+/// 章节/书籍绑定取自本节已查出的章节行与书籍行（见
+/// [`build_replace_js_bindings`]）；JS 抛错/超时由 `ContentProcessor`
+/// 规则级保护保留原文，无 quickjs 时执行器返回 Err 同样保留原文、不 panic。
 async fn purify_content(
     state: &Arc<AppState>,
     book: &Book,
-    chapter_title: &str,
+    chapter: &BookChapter,
     raw_content: &str,
 ) -> String {
     let replace_enabled = use_replace_rule(book);
@@ -623,9 +632,53 @@ async fn purify_content(
         indent_spaces: 0,
         trim_empty_lines: false,
     };
+    // [批17] 与 App 端正文净化同款注入条件：规则生效且确有 `@js:` 正文规则
+    // 才构造执行器；非 quickjs 构建执行器 eval 返回 Err，管线按既有口径
+    // 保留原文（后续规则不受影响）
+    let js_executor: Option<Arc<dyn ReplaceJsExecutor>> =
+        if replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution) {
+            Some(Arc::new(ReplaceRuleJsExecutor::new(
+                build_replace_js_bindings(book, Some(chapter)),
+            )))
+        } else {
+            None
+        };
     ContentProcessor::new(config)
         .with_scope_context(ScopeContext::new(book.name.clone(), book.origin.clone()))
-        .process(raw_content, chapter_title, &entries)
+        .process_with_js(raw_content, &chapter.title, &entries, js_executor)
+}
+
+/// 构建 Web 正文净化 `@js:` 的章节/书籍绑定（对齐 App 端口径）
+///
+/// 数据全部来自 [`purify_content`] 调用方已查出的行，不额外查库：
+/// - 章节：`title`/`index`/`url` 取章节行，`bookUrl` 取解析后的书籍地址；
+/// - 书籍：`name`/`author` 取书籍行，`bookUrl` 优先书籍主键、为空时回退
+///   章节行的 `bookUrl`（与 App 端 `book ?: chapter.bookUrl` 兜底语义一致）；
+/// - 章节行缺失（防御分支）时章节绑定整体留空（空串/0），对齐 App 端
+///   `known_chapter=false` 口径，**不把其他章节的值绑进当前章节**。
+fn build_replace_js_bindings(book: &Book, chapter: Option<&BookChapter>) -> ReplaceJsBindings {
+    let book_url = if book.book_url.is_empty() {
+        chapter.map(|c| c.book_url.clone()).unwrap_or_default()
+    } else {
+        book.book_url.clone()
+    };
+    let chapter_binding = match chapter {
+        Some(chapter) => ReplaceJsChapter {
+            title: chapter.title.clone(),
+            index: chapter.index,
+            url: chapter.url.clone(),
+            book_url: book_url.clone(),
+        },
+        None => ReplaceJsChapter::default(),
+    };
+    ReplaceJsBindings::new(
+        chapter_binding,
+        ReplaceJsBook {
+            name: book.name.clone(),
+            author: book.author.clone(),
+            book_url,
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -2488,5 +2541,38 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// [批17] Web `@js:` 绑定：章节行缺失时整体留空（不绑错章），书籍字段
+    /// 仍来自书籍行；书籍主键为空时 `bookUrl` 回退章节行的 `bookUrl`。
+    #[test]
+    fn test_build_replace_js_bindings_never_invents_chapter_values() {
+        let book = Book {
+            book_url: String::new(),
+            name: "绑定书".to_string(),
+            author: "绑定作者".to_string(),
+            ..Book::default()
+        };
+        // 章节行缺失：章节绑定整体留空，不给出任何章节值
+        let bindings = build_replace_js_bindings(&book, None);
+        assert_eq!(bindings.chapter, ReplaceJsChapter::default());
+        assert_eq!(bindings.book.name, "绑定书");
+        assert_eq!(bindings.book.author, "绑定作者");
+        assert_eq!(bindings.book.book_url, "");
+
+        // 章节行存在但书籍主键为空 → bookUrl 回退章节行的 bookUrl
+        let chapter = BookChapter {
+            book_url: "https://b17.example.com/book/1".to_string(),
+            title: "第一章".to_string(),
+            index: 1,
+            url: "https://b17.example.com/ch/1".to_string(),
+            ..BookChapter::default()
+        };
+        let bindings = build_replace_js_bindings(&book, Some(&chapter));
+        assert_eq!(bindings.chapter.title, "第一章");
+        assert_eq!(bindings.chapter.index, 1);
+        assert_eq!(bindings.chapter.url, "https://b17.example.com/ch/1");
+        assert_eq!(bindings.chapter.book_url, "https://b17.example.com/book/1");
+        assert_eq!(bindings.book.book_url, "https://b17.example.com/book/1");
     }
 }

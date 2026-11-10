@@ -7,6 +7,9 @@
 //! 设计要点：
 //! - legado-core 只定义 [`legado_core::content_processor::ReplaceJsExecutor`]
 //!   契约（不依赖 legado-js），由本模块完成 QuickJS 对接；
+//! - **执行器与绑定构造单一下沉点（批17）**：本模块位于 `legado-js`，App 端
+//!   （`legado-ffi` 阅读/预览/书源导入）与 Web 阅读端（`legado-server` 正文
+//!   净化）均依赖 `legado-js` 并复用同一份实现与绑定脚本构造，禁止复制第二份；
 //! - **预览与生产共用同一绑定构造函数**（`ReplaceRuleJsExecutor::build_script`）：
 //!   预览/书源导入用 [`ReplaceJsBindings::empty`]（空章节/书籍上下文），
 //!   正文净化生产路径注入真实 `chapter`/`book`，消除「预览能跑、生产跳过」；
@@ -135,31 +138,45 @@ impl ReplaceRuleJsExecutor {
 #[cfg(feature = "quickjs")]
 const MAX_JS_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// 创建替换规则专用沙箱引擎（允许原生 `eval`，内存上限 64MB）
+///
+/// 与 App 端正文执行的引擎构造口径一致：`allow_script_run(true)` 保证 IIFE
+/// 内 `eval` 为原生实现；64MB 内存上限覆盖大 JSON/长正文的逐匹配结果。
+#[cfg(feature = "quickjs")]
+fn fresh_engine() -> Result<std::sync::Arc<std::sync::Mutex<crate::QuickJsEngine>>, String> {
+    let engine = crate::QuickJsEngine::new(
+        crate::SandboxConfig::default()
+            .with_allow_script_run(true)
+            .with_memory_limit(64 * 1024 * 1024),
+    )
+    .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+    Ok(std::sync::Arc::new(std::sync::Mutex::new(engine)))
+}
+
 /// 取当前线程复用的替换规则引擎（首次调用创建，线程结束释放）
 ///
 /// 规则在独立线程执行（`apply_rule_with_timeout`），因此 thread-local 天然
 /// 限定「一条规则一个引擎」；逐匹配复用同一 Runtime/Context，避免每次匹配
 /// 重建 Runtime（回修 P1）。每次 eval 用 IIFE + 直接 eval 建立新作用域。
 #[cfg(feature = "quickjs")]
-fn thread_engine() -> Result<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsEngine>>, String> {
+fn thread_engine() -> Result<std::sync::Arc<std::sync::Mutex<crate::QuickJsEngine>>, String> {
     use std::cell::RefCell;
     thread_local! {
         static ENGINE: RefCell<
-            Option<std::sync::Arc<std::sync::Mutex<legado_js::QuickJsEngine>>>,
+            Option<std::sync::Arc<std::sync::Mutex<crate::QuickJsEngine>>>,
         > = const { RefCell::new(None) };
     }
     ENGINE.with(|slot| {
         let mut slot = slot.borrow_mut();
         if slot.is_none() {
-            let engine = crate::js_executor::fresh_engine("replace-rule")
-                .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+            let engine = fresh_engine()?;
             // [批15 三审 P3-4] 断言沙箱允许原生 eval：IIFE 依赖直接 eval
             // 建立逐匹配作用域；若 allow_script_run=false，eval 被替换为返回
             // 提示字符串的函数，会把提示文本静默拼进正文。此处主动探测并
             // 上抛，管线按既有口径保留原文。
             {
                 let guard = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
-                let probe = legado_js::JsEngine::eval(&*guard, "eval('1+1')")
+                let probe = crate::JsEngine::eval(&*guard, "eval('1+1')")
                     .map_err(|e| format!("@js: 沙箱 eval 探测失败: {e}"))?;
                 if probe != "2" {
                     return Err(format!(
@@ -203,6 +220,6 @@ impl ReplaceJsExecutor for ReplaceRuleJsExecutor {
         let engine = thread_engine()?;
         let engine = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
         engine.set_execution_timeout(budget);
-        legado_js::JsEngine::eval(&*engine, &script).map_err(|e| e.to_string())
+        crate::JsEngine::eval(&*engine, &script).map_err(|e| e.to_string())
     }
 }
