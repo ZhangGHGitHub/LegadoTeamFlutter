@@ -1,0 +1,7 @@
+WebDAV server root: C:\Users\admin\AppData\Local\Temp\legado_dav (wsgidav 4.4.0, anonymous)
+PROPFIND http://192.168.100.52:8090/legado/ 结果（文件名 / mtime）:
+  
+2026-11-10 03:20:05.803561300 backup_20260101_120000_000.json
+2026-11-10 03:43:57.520125500 backup_20261110_032628_168.json
+2026-11-10 03:40:43.760587400 backup_20261110_034000_000.json
+2026-11-10 03:51:23.915308900 backup_20261110_035000_000.json
