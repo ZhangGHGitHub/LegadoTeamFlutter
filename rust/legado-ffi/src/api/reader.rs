@@ -6,7 +6,9 @@
 use serde::{Deserialize, Serialize};
 
 use legado_core::cache_book::CachedChapter;
-use legado_core::content_processor::{ContentProcessor, ProcessorConfig, ReplaceRuleEntry};
+use legado_core::content_processor::{
+    ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry,
+};
 use legado_core::models::{book_type, Book, BookChapter, ReplaceRule};
 use legado_core::web_book::{BookSourceFetcher, WebBookEngine, WebChapter};
 use legado_core::{LegadoError, LegadoResult};
@@ -16,6 +18,9 @@ use legado_db::{
     CacheRepository, ReplaceRuleRepository,
 };
 
+use crate::api::replace_rule_js::{
+    ReplaceJsBindings, ReplaceJsBook, ReplaceJsChapter, ReplaceRuleJsExecutor,
+};
 use crate::db_state::{resolve_local_book_path, with_database};
 use crate::runtime;
 
@@ -1507,7 +1512,18 @@ fn apply_content_processing_inner(
         .map(|idx| is_same_title_removed(book_url, idx))
         .unwrap_or(true);
 
-    process_content_with_rules_inner(
+    // [批15] `@js:` 替换规则的生产执行上下文：仅在确有需要执行的正则
+    // `@js:` 规则时才构建（并回查章节 URL），无 @js: 规则时零额外开销
+    let js_bindings = build_replace_js_bindings(
+        book_url,
+        book.as_ref(),
+        chapter_title,
+        chapter_index,
+        replace_rules_enabled,
+        &rules,
+    );
+
+    process_content_with_rules_inner_ctx(
         raw_content,
         chapter_title,
         &rules,
@@ -1516,6 +1532,7 @@ fn apply_content_processing_inner(
         re_segment,
         chinese_convert,
         remove_duplicate_title,
+        js_bindings,
     )
 }
 
@@ -1550,6 +1567,7 @@ fn process_content_with_rules(
 // 参数集对应上游 ContentProcessor.getContent 的四个独立开关（useReplace /
 // reSegment / chineseConvert / removeSameTitle），拆结构体会增加所有测试调用点
 // 噪声，暂不拆（与仓库既有 allow 处理一致）。
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn process_content_with_rules_inner(
     raw_content: &str,
@@ -1560,6 +1578,37 @@ fn process_content_with_rules_inner(
     re_segment: bool,
     chinese_convert: Option<String>,
     remove_duplicate_title: bool,
+) -> String {
+    // 无章节/书籍上下文的入口（既有测试/内容搜索）：`@js:` 绑定为空上下文，
+    // 但执行器仍注入——修复「预览能跑、生产跳过」
+    process_content_with_rules_inner_ctx(
+        raw_content,
+        chapter_title,
+        rules,
+        book_name,
+        replace_rules_enabled,
+        re_segment,
+        chinese_convert,
+        remove_duplicate_title,
+        ReplaceJsBindings::empty(),
+    )
+}
+
+/// 净化核心逻辑（带 `@js:` 章节/书籍绑定上下文）
+///
+/// 与 `process_content_with_rules_inner` 相同，额外接收正文净化生产路径
+/// 已解析的 `chapter`/`book` 绑定（预览与源导入不传章节/书籍上下文）。
+#[allow(clippy::too_many_arguments)]
+fn process_content_with_rules_inner_ctx(
+    raw_content: &str,
+    chapter_title: &str,
+    rules: &[ReplaceRule],
+    book_name: &str,
+    replace_rules_enabled: bool,
+    re_segment: bool,
+    chinese_convert: Option<String>,
+    remove_duplicate_title: bool,
+    js_bindings: ReplaceJsBindings,
 ) -> String {
     // 2. 按 scope 过滤（与 Android 语义一致，并修复空 book_name 守卫与精确匹配）：
     //    - None → 全局生效
@@ -1598,8 +1647,108 @@ fn process_content_with_rules_inner(
         indent_spaces: 0,
         trim_empty_lines: false,
     };
+    // [批15] 仅在确有可执行的 `@js:` 正文规则时注入执行器：
+    // 非 quickjs 构建下执行器 eval 返回 Err，管线按既有口径保留原文（不 panic）
+    let js_executor: Option<std::sync::Arc<dyn ReplaceJsExecutor>> =
+        if config.apply_replace_rules && entries.iter().any(entry_needs_js_execution) {
+            Some(std::sync::Arc::new(ReplaceRuleJsExecutor::new(js_bindings)))
+        } else {
+            None
+        };
     let processor = ContentProcessor::new(config);
-    processor.process(raw_content, chapter_title, &entries)
+    processor.process_with_js(raw_content, chapter_title, &entries, js_executor)
+}
+
+/// 判断替换规则字段是否需要在正文管线执行 `@js:`
+///
+/// 与 `content_processor::apply_single_rule` 的执行条件严格一致：仅启用的
+/// **正则**规则、`scopeContent` 生效、pattern 非空、且替换内容以 `@js:` 开头
+/// （非正则规则走字面量替换，`@js:` 原样插入，对齐参考版 `String.replace` 语义）。
+/// 正文规则过滤与 `@js:` 绑定构建共用本判定，避免两处条件漂移。
+fn rule_needs_js_execution(
+    is_enabled: bool,
+    is_regex: bool,
+    scope_content: bool,
+    pattern: &str,
+    replacement: &str,
+) -> bool {
+    is_enabled
+        && is_regex
+        && scope_content
+        && !pattern.is_empty()
+        && replacement.starts_with("@js:")
+}
+
+/// 判断替换规则条目是否需要执行 `@js:`（见 [`rule_needs_js_execution`]）
+fn entry_needs_js_execution(rule: &ReplaceRuleEntry) -> bool {
+    rule_needs_js_execution(
+        rule.is_enabled,
+        rule.is_regex,
+        rule.scope_content,
+        &rule.pattern,
+        &rule.replacement,
+    )
+}
+
+/// 构建正文净化 `@js:` 的章节/书籍绑定（生产路径）
+///
+/// 对齐参考版 `RegexExtensions.kt:32-57`：
+/// - 章节：`title`/`index` 由调用方传入，`url` 按 `(book_url, index)` 回查
+///   （章节行缺失时为空串，不阻断正文）；
+/// - 书籍：`name`/`author` 取书籍行，`bookUrl` 回退书籍主键（书籍行缺失时
+///   仍给出 `bookUrl`，对应参考版 `book ?: chapter.bookUrl` 的兜底语义）；
+/// - 无需要执行的 `@js:` 规则时返回空上下文，避免额外的章节回查与引擎创建。
+fn build_replace_js_bindings(
+    book_url: &str,
+    book: Option<&Book>,
+    chapter_title: &str,
+    chapter_index: Option<i32>,
+    replace_rules_enabled: bool,
+    rules: &[ReplaceRule],
+) -> ReplaceJsBindings {
+    let needs_js = replace_rules_enabled
+        && rules.iter().any(|rule| {
+            rule_needs_js_execution(
+                rule.is_enabled,
+                rule.is_regex,
+                rule.scope_content,
+                &rule.pattern,
+                &rule.replacement,
+            )
+        });
+    if !needs_js {
+        return ReplaceJsBindings::empty();
+    }
+
+    let chapter_url = chapter_index
+        .and_then(|index| {
+            with_database(|db| {
+                BookChapterRepository::new(db.connection())
+                    .find_by_book_url_and_index(book_url, index)
+            })
+            .ok()
+            .flatten()
+        })
+        .map(|chapter| chapter.url)
+        .unwrap_or_default();
+    let resolved_book_url = book
+        .map(|b| b.book_url.as_str())
+        .filter(|url| !url.is_empty())
+        .unwrap_or(book_url);
+
+    ReplaceJsBindings::new(
+        ReplaceJsChapter {
+            title: chapter_title.to_string(),
+            index: chapter_index.unwrap_or(0),
+            url: chapter_url,
+            book_url: resolved_book_url.to_string(),
+        },
+        ReplaceJsBook {
+            name: book.map(|b| b.name.clone()).unwrap_or_default(),
+            author: book.map(|b| b.author.clone()).unwrap_or_default(),
+            book_url: resolved_book_url.to_string(),
+        },
+    )
 }
 
 /// 根据 chapter_url 查找章节序号、标题与变量（找不到时返回 (0, 空标题, None, false)）
@@ -3545,6 +3694,224 @@ mod tests {
         let rules = vec![make_test_rule("数字", r"\d+", "NUM", true, true)];
         let result = process_content_with_rules("abc 123 def 456", "", &rules, "");
         assert_eq!(result, "abc NUM def NUM");
+    }
+
+    /// [批15] 生产正文净化必须执行 `@js:` 替换规则
+    ///
+    /// 断言走 reader.rs 正文净化生产核心 [`process_content_with_rules`]，
+    /// 不走 `previewReplaceRule` 预览 API：修复前执行器未注入 → `@js:` 被
+    /// 安全跳过、输出原文（红）；修复后逐匹配执行 QuickJS、数字翻倍（绿）。
+    /// 非 quickjs 构建口径：`@js:` 明确不执行、保留原文（不 panic）。
+    #[test]
+    fn test_content_processing_js_replace_rule_executes_in_production_pipeline() {
+        let rules = vec![make_test_rule(
+            "批15_js翻倍",
+            r"(\d+)",
+            "@js:String(Number(result) * 2)",
+            true,
+            true,
+        )];
+        let result = process_content_with_rules("a12b", "", &rules, "");
+        #[cfg(feature = "quickjs")]
+        assert_eq!(
+            result, "a24b",
+            "生产链路应执行 @js: 替换（result 绑定当前匹配文本）"
+        );
+        #[cfg(not(feature = "quickjs"))]
+        assert_eq!(result, "a12b", "无 quickjs 构建 @js: 不执行，保留原文");
+    }
+
+    /// [批15] `@js:` 的 `chapter` / `book` 绑定在生产净化链路可见
+    ///
+    /// 对齐参考版 `RegexExtensions.kt:44-49`：逐匹配绑定 `result`、`chapter`
+    /// 与 `book`。本章节/书籍字段全部断言，防止只绑 `result` 的半实现回归。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_content_processing_js_bindings_chapter_and_book_visible() {
+        let rules = vec![make_test_rule(
+            "批15_绑定可见",
+            "批十五标记",
+            r#"@js: result + "|" + chapter.title + "|" + chapter.index + "|" + chapter.url + "|" + chapter.bookUrl + "|" + book.name + "|" + book.author + "|" + book.bookUrl"#,
+            true,
+            true,
+        )];
+        let bindings = ReplaceJsBindings::new(
+            ReplaceJsChapter {
+                title: "第九章 绑定".to_string(),
+                index: 9,
+                url: "https://batch15.example.com/ch/9".to_string(),
+                book_url: "https://batch15.example.com/book/1".to_string(),
+            },
+            ReplaceJsBook {
+                name: "绑定书名".to_string(),
+                author: "绑定作者".to_string(),
+                book_url: "https://batch15.example.com/book/1".to_string(),
+            },
+        );
+        let result = process_content_with_rules_inner_ctx(
+            "前批十五标记后",
+            "第九章 绑定",
+            &rules,
+            "绑定书名",
+            true,
+            false,
+            None,
+            true,
+            bindings,
+        );
+        assert_eq!(
+            result,
+            "前批十五标记|第九章 绑定|9|https://batch15.example.com/ch/9|\
+             https://batch15.example.com/book/1|绑定书名|绑定作者|\
+             https://batch15.example.com/book/1后"
+        );
+    }
+
+    /// [批15] 预览与生产结果一致（同一输入、同一规则）
+    ///
+    /// 预览走 `previewReplaceRule` FFI，生产走 reader.rs 正文净化核心；
+    /// 两处共用 [`ReplaceRuleJsExecutor`] 与绑定构造函数，输出必须相等。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_replace_rule_preview_matches_production() {
+        let rule = make_test_rule(
+            "批15_预览一致",
+            r"(\d+)",
+            "@js:String(Number(result) * 2)",
+            true,
+            true,
+        );
+        let rule_json = serde_json::to_string(&rule).unwrap();
+        let preview = crate::api::replace_rule_api::preview_replace_rule(&rule_json, "a12b")
+            .expect("预览不应上抛异常");
+        let production = process_content_with_rules("a12b", "", std::slice::from_ref(&rule), "");
+        assert_eq!(preview, "a24b", "预览应真实执行 @js:");
+        assert_eq!(production, preview, "预览与生产输出应完全一致");
+    }
+
+    /// [批15] `@js:` 抛错 → 保留原文，且不阻断后续规则
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_replace_rule_error_keeps_original_and_continues() {
+        let bad = make_test_rule(
+            "批15_抛错",
+            "抛错标记",
+            "@js:throw new Error('boom')",
+            true,
+            true,
+        );
+        let good = make_test_rule("批15_正常", "正常标记", "已替换", true, true);
+        let result = process_content_with_rules("抛错标记 正常标记", "", &[bad, good], "");
+        assert_eq!(
+            result, "抛错标记 已替换",
+            "@js: 抛错应保留原文且后续规则继续执行"
+        );
+    }
+
+    /// [批15] `@js:` 超时 → 保留原文，且不阻断后续规则
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_replace_rule_timeout_keeps_original_and_continues() {
+        let mut slow = make_test_rule("批15_超时", "超时标记", "@js:while(true){}", true, true);
+        slow.timeout_millisecond = 50;
+        let good = make_test_rule("批15_超时后正常", "正常标记", "已替换", true, true);
+        let started = std::time::Instant::now();
+        let result = process_content_with_rules("超时标记 正常标记", "", &[slow, good], "");
+        assert_eq!(
+            result, "超时标记 已替换",
+            "@js: 超时应保留原文且后续规则继续执行"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(3),
+            "规则级 50ms 超时应先于沙箱 5s 截止返回，实际耗时 {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// [批15] 非 quickjs 构建：`@js:` 明确不执行（保留原文），其他规则不受影响
+    #[cfg(not(feature = "quickjs"))]
+    #[test]
+    fn test_js_replace_rule_skipped_in_non_quickjs_build() {
+        let js_rule = make_test_rule(
+            "批15_无quickjs",
+            r"(\d+)",
+            "@js:String(Number(result) * 2)",
+            true,
+            true,
+        );
+        let plain = make_test_rule("批15_普通", "普通标记", "已换", true, true);
+        let result = process_content_with_rules("a12b 普通标记", "", &[js_rule, plain], "");
+        assert_eq!(
+            result, "a12b 已换",
+            "无 quickjs 构建 @js: 应保留原文，普通规则仍生效"
+        );
+    }
+
+    /// [批15] DB 规则加载 → `apply_content_processing_chapter` 生产入口执行 `@js:`
+    ///
+    /// 覆盖「get_enabled_rules → 正文净化」完整生产链路（非预览 API），
+    /// 并验证生产路径把真实 `chapter.title` / `book.name` 注入 JS。
+    /// 规则/token 用独立中文词汇，规避共享测试库其他规则的干扰。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_apply_content_processing_chapter_executes_db_js_rule() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch15-db-js.example.com/book/1";
+
+        // 书籍行：name/author 供 JS `book.*` 绑定
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            if book_repo.find_by_url(book_url)?.is_none() {
+                book_repo.insert(&Book {
+                    book_url: book_url.to_string(),
+                    name: "批十五测试书籍".to_string(),
+                    author: "批十五作者".to_string(),
+                    ..Book::default()
+                })?;
+            }
+            let chapter_repo = BookChapterRepository::new(db.connection());
+            chapter_repo.insert_batch(&[BookChapter {
+                url: format!("{book_url}/chapter/0"),
+                title: "批十五章节标题".to_string(),
+                book_url: book_url.to_string(),
+                index: 0,
+                ..BookChapter::default()
+            }])?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let rule_id = with_database(|db| {
+            ReplaceRuleRepository::new(db.connection()).insert(&ReplaceRule {
+                name: "批15_db规则".to_string(),
+                pattern: "批十五唯一标记甲".to_string(),
+                replacement: r#"@js: result + "|" + chapter.title + "|" + book.name"#.to_string(),
+                is_regex: true,
+                is_enabled: true,
+                ..ReplaceRule::default()
+            })
+        })
+        .unwrap();
+
+        let result = apply_content_processing_chapter(
+            book_url,
+            "前文批十五唯一标记甲后文",
+            "批十五章节标题",
+            0,
+        );
+        assert_eq!(
+            result, "前文批十五唯一标记甲|批十五章节标题|批十五测试书籍后文",
+            "生产入口应从 DB 加载规则并执行 @js:，chapter/book 绑定应可见"
+        );
+
+        // 清理本用例的规则/章节/书籍（避免污染共享测试库）
+        with_database(|db| {
+            ReplaceRuleRepository::new(db.connection()).delete(rule_id)?;
+            BookChapterRepository::new(db.connection()).delete_by_book_url(book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
     }
 
     /// 测试未启用规则不生效：仅传入启用规则（模拟 get_enabled_rules 过滤）

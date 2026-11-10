@@ -9,6 +9,7 @@ use legado_core::models::ReplaceRule;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::ReplaceRuleRepository;
 
+use crate::api::replace_rule_js::ReplaceRuleJsExecutor;
 use crate::db_state::with_database;
 
 /// 获取所有替换规则
@@ -199,7 +200,8 @@ pub fn replace_rule_reorder(ids_json: &str) -> LegadoResult<i32> {
 /// - 取 `isEnabled && scopeSource && pattern 非空` 的启用规则；
 /// - `scope`/`excludeScope` 按「源名称或源 URL」忽略大小写 contains 匹配
 ///   （独立源上下文，不复用书名 `ScopeContext`）；
-/// - 对整源 JSON 顺序逐条应用；`@js:` 复用正文管线（无生产 JS 执行器，安全跳过）；
+/// - 对整源 JSON 顺序逐条应用；`@js:` 注入与正文/预览**同一** QuickJS 执行器
+///   （无章节/书籍上下文，对齐参考版书源导入场景），逐匹配绑定 `result`；
 /// - 未命中返回原文；单条规则的超时/执行错误保留原文，**任何错误都不上抛 FFI**
 ///   （返回原始 JSON），保证导入流程不中断。
 pub fn apply_replace_rules_to_source(
@@ -214,8 +216,10 @@ pub fn apply_replace_rules_to_source(
             .iter()
             .map(ReplaceRuleEntry::from_replace_rule)
             .collect();
-        // 与正文管线 FFI 路径一致：无生产 JS 执行器，@js: 规则被安全跳过
-        let js_executor: Option<std::sync::Arc<dyn ReplaceJsExecutor>> = None;
+        // [批15] 注入生产执行器：@js: 真实执行（非 quickjs 构建返回 Err，
+        // 由管线按既有口径保留原文，不阻断导入）
+        let js_executor: Option<std::sync::Arc<dyn ReplaceJsExecutor>> =
+            Some(std::sync::Arc::new(ReplaceRuleJsExecutor::without_context()));
         Ok(apply_source_replace_rules(
             source_json,
             &entries,
@@ -234,40 +238,7 @@ pub fn apply_replace_rules_to_source(
     }
 }
 
-/// 替换规则预览的 `@js:` JS 执行器（契约 §2.8 `previewReplaceRule`）
-///
-/// [替换规则预览 | 2026-09-13] 把 legado-js 的 QuickJS 引擎适配为
-/// `content_processor::ReplaceJsExecutor` 契约（legado-core 不依赖
-/// legado-js，由 FFI 层完成对接，与 `js_executor::QuickJsExecutor` 同模式）：
-/// - 每次 eval 走 [`crate::js_executor::fresh_engine`] 新建独立引擎
-///   （对齐 F3-6 非主路径策略，规避引擎池全局残留串扰）；
-/// - 当前正则匹配文本以 `result` 绑定注入（对齐 Kotlin
-///   `bindings["result"] = matcher.group()` 语义）；
-/// - 非 quickjs 构建（feature 关闭 / 无引擎）返回 `Err`，由预览路径
-///   拼 `⚠️ ` 前缀展示，不上抛 FFI 异常。
-struct ReplacePreviewJsExecutor;
-
-impl ReplaceJsExecutor for ReplacePreviewJsExecutor {
-    fn eval(&self, js_code: &str, result: &str) -> Result<String, String> {
-        #[cfg(feature = "quickjs")]
-        {
-            let engine = crate::js_executor::fresh_engine("replace-rule-preview")
-                .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
-            let engine = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
-            let bindings: [(&str, legado_js::JsValue); 1] =
-                [("result", legado_js::JsValue::from(result))];
-            legado_js::JsEngine::eval_with_bindings(&*engine, js_code, &bindings)
-                .map_err(|e| e.to_string())
-        }
-        #[cfg(not(feature = "quickjs"))]
-        {
-            let _ = (js_code, result);
-            Err("QuickJS 未启用，@js: 替换预览不可用（请确认构建启用 quickjs feature）".to_string())
-        }
-    }
-}
-
-/// 替换规则编辑器预览：对单条规则在示例文本上执行真实替换管线
+/// 替换规则预览：对单条规则在示例文本上执行真实替换管线
 ///
 /// [替换规则预览 | 2026-09-13，契约 §2.8 `previewReplaceRule`] 语义：
 /// - 从 [rule_json] 反序列化单条 [`ReplaceRule`]（JSON 解析失败 = `Err`，
@@ -277,14 +248,15 @@ impl ReplaceJsExecutor for ReplacePreviewJsExecutor {
 /// - **规则级错误（非法正则 / `@js:` JS 异常 / 执行超时）不上抛 FFI**：
 ///   返回 `⚠️ ` 前缀错误文本，可直接展示于编辑器预览区（单一语义源）；
 /// - 成功 = 替换后文本（未命中时原样返回 [sample]）。
+///
+/// [批15] `@js:` 使用与正文净化/书源导入相同的 [`ReplaceRuleJsExecutor`]
+/// 与绑定构造函数（空章节/书籍上下文），预览与生产不再各写一份绑定。
 pub fn preview_replace_rule(rule_json: &str, sample: &str) -> LegadoResult<String> {
     let rule: ReplaceRule = serde_json::from_str(rule_json)
         .map_err(|e| LegadoError::Ffi(format!("替换规则 JSON 解析失败: {e}")))?;
     let entry = ReplaceRuleEntry::from_replace_rule(&rule);
-    // @js: 预览注入真实 QuickJS 执行器（与书源管线 FFI 路径的 None 降级不同——
-    // 预览的价值就在 `@js:` 真实执行）
     let js_executor: Option<std::sync::Arc<dyn ReplaceJsExecutor>> =
-        Some(std::sync::Arc::new(ReplacePreviewJsExecutor));
+        Some(std::sync::Arc::new(ReplaceRuleJsExecutor::without_context()));
     match preview_single_rule(sample, &entry, &js_executor) {
         Ok(text) => Ok(text),
         Err(e) => Ok(format!("⚠️ {e}")),
@@ -801,6 +773,53 @@ mod tests {
         );
     }
 
+    /// [批15] 书源导入路径同样执行 `@js:` 规则
+    ///
+    /// 修复前 `apply_replace_rules_to_source` 传 `None` 执行器 → `@js:` 被
+    /// 安全跳过（红：原 token 保留）；修复后注入生产执行器 → 替换生效（绿）。
+    /// 使用完全独立的 ss15 词汇与源作用域，避免共享测试库其他规则干扰。
+    #[test]
+    fn test_apply_replace_rules_to_source_executes_js_rule() {
+        let _db_guard = setup_test_db();
+        let rule_id = add_replace_rule(
+            "rr_js15_source",
+            "ss15源甲",
+            r#"@js:"ss15源乙""#,
+            true,
+            "ss15甲域",
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+        )
+        .unwrap();
+
+        let json = r#"{"bookSourceName":"ss15甲域书库","ruleSearch":{"searchUrl":"https://ss15源甲.example.com/search/{{key}}"}}"#;
+        let applied =
+            apply_replace_rules_to_source(json, "ss15甲域书库", "https://ss15甲域.example.com");
+        if cfg!(feature = "quickjs") {
+            // quickjs：@js: 真实执行 → 原 token 被替换
+            assert!(
+                applied.contains("ss15源乙"),
+                "书源导入 @js: 规则应真实执行，实际: {applied}"
+            );
+            assert!(
+                !applied.contains("ss15源甲"),
+                "@js: 替换后原 token 不应保留，实际: {applied}"
+            );
+        } else {
+            // 非 quickjs：@js: 不执行 → 原 token 保留（不阻断导入）
+            assert_eq!(
+                applied, json,
+                "无 quickjs 构建 @js: 应保留原文，实际: {applied}"
+            );
+        }
+
+        delete_replace_rule(rule_id).unwrap();
+    }
+
     // ─── [替换规则预览 | 2026-09-13] previewReplaceRule 五类单测 ───
     // 预览为纯函数路径（不访问 DB），无需 setup_test_db。
     // ruleJson 字段与 Dart `ReplaceRule.toJson()` 对齐（camelCase）。
@@ -866,6 +885,26 @@ mod tests {
                 "非 quickjs 构建应返回 ⚠️ 降级提示而非异常，实际: {out}"
             );
         }
+    }
+
+    /// ③b 预览同样绑定空 `chapter` / `book` 对象（与生产共用绑定构造函数）
+    ///
+    /// 若预览只绑 `result`，`chapter.title` 会抛 TypeError → 返回 ⚠️；
+    /// 断言直接拼接成功且缺失字段为空串/0。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_preview_js_rule_binds_empty_chapter_and_book() {
+        let json = preview_rule_json(
+            "标记",
+            r#"@js: result + "|" + chapter.title + "|" + chapter.index + "|" + book.name + "|" + book.author"#,
+            true,
+            3000,
+        );
+        let out = preview_replace_rule(&json, "标记").unwrap();
+        assert_eq!(
+            out, "标记||0||",
+            "预览应绑定空 chapter/book 对象（缺失字段为空串/0）"
+        );
     }
 
     /// ④ 超时保护：`@js:` 死循环 + 短超时 → ⚠️ 超时文本
