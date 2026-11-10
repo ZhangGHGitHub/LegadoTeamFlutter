@@ -1,0 +1,1631 @@
+--------- beginning of crash
+11-11 07:08:56.865 48575 48575 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7664de8b7d80 in tid 48575 (Shutdown thread), pid 48575 (Shutdown thread)
+11-11 07:08:56.893 48592 48592 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:08:56.893 48592 48592 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:08:56.893 48592 48592 F DEBUG   : Revision: '0'
+11-11 07:08:56.893 48592 48592 F DEBUG   : ABI: 'x86_64'
+11-11 07:08:56.893 48592 48592 F DEBUG   : Timestamp: 2026-11-11 07:08:56.874439883+0800
+11-11 07:08:56.893 48592 48592 F DEBUG   : Process uptime: 3s
+11-11 07:08:56.893 48592 48592 F DEBUG   : Cmdline: uiautomator
+11-11 07:08:56.893 48592 48592 F DEBUG   : pid: 48575, tid: 48575, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:08:56.893 48592 48592 F DEBUG   : uid: 0
+11-11 07:08:56.893 48592 48592 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007664de8b7d80
+11-11 07:08:56.893 48592 48592 F DEBUG   :     rax 0000000000000000  rbx 00007667bad3089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:08:56.893 48592 48592 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:08:56.893 48592 48592 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007664de8b7d80  r15 0000000000008928
+11-11 07:08:56.893 48592 48592 F DEBUG   :     rdi 00007664dec7ec08  rsi 0000000000001000
+11-11 07:08:56.893 48592 48592 F DEBUG   :     rbp 00007ffc9773f950  rsp 00007ffc9773f8e8  rip 00007664de8b7d80
+11-11 07:08:56.893 48592 48592 F DEBUG   : 4 total frames
+11-11 07:08:56.893 48592 48592 F DEBUG   : backtrace:
+11-11 07:08:56.893 48592 48592 F DEBUG   :       #00 pc 00007664de8b7d80  <unknown>
+11-11 07:08:56.893 48592 48592 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:08:56.893 48592 48592 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:08:56.893 48592 48592 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:01.374 48597 48597 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7195014b7d80 in tid 48597 (Shutdown thread), pid 48597 (Shutdown thread)
+11-11 07:09:01.402 48616 48616 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:01.402 48616 48616 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:01.402 48616 48616 F DEBUG   : Revision: '0'
+11-11 07:09:01.402 48616 48616 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:01.402 48616 48616 F DEBUG   : Timestamp: 2026-11-11 07:09:01.382695624+0800
+11-11 07:09:01.402 48616 48616 F DEBUG   : Process uptime: 3s
+11-11 07:09:01.402 48616 48616 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:01.402 48616 48616 F DEBUG   : pid: 48597, tid: 48597, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:01.402 48616 48616 F DEBUG   : uid: 0
+11-11 07:09:01.402 48616 48616 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007195014b7d80
+11-11 07:09:01.402 48616 48616 F DEBUG   :     rax 0000000000000000  rbx 00007197d56f089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:01.403 48616 48616 F DEBUG   :     r8  00007197d56e7fa4  r9  00000000000032cd  r10 0000000000000000  r11 0000000000000206
+11-11 07:09:01.403 48616 48616 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007195014b7d80  r15 0000000000008928
+11-11 07:09:01.403 48616 48616 F DEBUG   :     rdi 000071950187ec08  rsi 0000000000001000
+11-11 07:09:01.403 48616 48616 F DEBUG   :     rbp 00007ffde5cf02d0  rsp 00007ffde5cf0268  rip 00007195014b7d80
+11-11 07:09:01.403 48616 48616 F DEBUG   : 4 total frames
+11-11 07:09:01.403 48616 48616 F DEBUG   : backtrace:
+11-11 07:09:01.403 48616 48616 F DEBUG   :       #00 pc 00007195014b7d80  <unknown>
+11-11 07:09:01.403 48616 48616 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:01.403 48616 48616 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:01.403 48616 48616 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:04.446 48627 48627 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x73b265a49d80 in tid 48627 (Shutdown thread), pid 48627 (Shutdown thread)
+11-11 07:09:04.476 48642 48642 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:04.476 48642 48642 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:04.476 48642 48642 F DEBUG   : Revision: '0'
+11-11 07:09:04.476 48642 48642 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:04.476 48642 48642 F DEBUG   : Timestamp: 2026-11-11 07:09:04.455946116+0800
+11-11 07:09:04.476 48642 48642 F DEBUG   : Process uptime: 3s
+11-11 07:09:04.476 48642 48642 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:04.476 48642 48642 F DEBUG   : pid: 48627, tid: 48627, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:04.476 48642 48642 F DEBUG   : uid: 0
+11-11 07:09:04.476 48642 48642 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000073b265a49d80
+11-11 07:09:04.476 48642 48642 F DEBUG   :     rax 0000000000000000  rbx 000073b5533f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:04.476 48642 48642 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:04.476 48642 48642 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000073b265a49d80  r15 0000000000008928
+11-11 07:09:04.476 48642 48642 F DEBUG   :     rdi 000073b265e10c08  rsi 0000000000001000
+11-11 07:09:04.476 48642 48642 F DEBUG   :     rbp 00007ffe83365200  rsp 00007ffe83365198  rip 000073b265a49d80
+11-11 07:09:04.476 48642 48642 F DEBUG   : 4 total frames
+11-11 07:09:04.476 48642 48642 F DEBUG   : backtrace:
+11-11 07:09:04.476 48642 48642 F DEBUG   :       #00 pc 000073b265a49d80  <unknown>
+11-11 07:09:04.476 48642 48642 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:04.476 48642 48642 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:04.476 48642 48642 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:09.013 48648 48648 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x737c53d02d80 in tid 48648 (Shutdown thread), pid 48648 (Shutdown thread)
+11-11 07:09:09.043 48663 48663 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:09.043 48663 48663 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:09.043 48663 48663 F DEBUG   : Revision: '0'
+11-11 07:09:09.043 48663 48663 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:09.044 48663 48663 F DEBUG   : Timestamp: 2026-11-11 07:09:09.022106582+0800
+11-11 07:09:09.044 48663 48663 F DEBUG   : Process uptime: 3s
+11-11 07:09:09.044 48663 48663 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:09.044 48663 48663 F DEBUG   : pid: 48648, tid: 48648, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:09.044 48663 48663 F DEBUG   : uid: 0
+11-11 07:09:09.044 48663 48663 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000737c53d02d80
+11-11 07:09:09.044 48663 48663 F DEBUG   :     rax 0000000000000000  rbx 0000737f2639889c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:09.044 48663 48663 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:09.044 48663 48663 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000737c53d02d80  r15 0000000000008928
+11-11 07:09:09.044 48663 48663 F DEBUG   :     rdi 0000737c540c9c08  rsi 0000000000001000
+11-11 07:09:09.044 48663 48663 F DEBUG   :     rbp 00007ffdcedf5730  rsp 00007ffdcedf56c8  rip 0000737c53d02d80
+11-11 07:09:09.044 48663 48663 F DEBUG   : 4 total frames
+11-11 07:09:09.044 48663 48663 F DEBUG   : backtrace:
+11-11 07:09:09.044 48663 48663 F DEBUG   :       #00 pc 0000737c53d02d80  <unknown>
+11-11 07:09:09.044 48663 48663 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:09.044 48663 48663 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:09.044 48663 48663 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:13.132 48679 48679 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7449872d5d80 in tid 48679 (Shutdown thread), pid 48679 (Shutdown thread)
+11-11 07:09:13.160 48695 48695 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:13.160 48695 48695 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:13.160 48695 48695 F DEBUG   : Revision: '0'
+11-11 07:09:13.160 48695 48695 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:13.160 48695 48695 F DEBUG   : Timestamp: 2026-11-11 07:09:13.141570286+0800
+11-11 07:09:13.160 48695 48695 F DEBUG   : Process uptime: 3s
+11-11 07:09:13.160 48695 48695 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:13.160 48695 48695 F DEBUG   : pid: 48679, tid: 48679, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:13.160 48695 48695 F DEBUG   : uid: 0
+11-11 07:09:13.160 48695 48695 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007449872d5d80
+11-11 07:09:13.160 48695 48695 F DEBUG   :     rax 0000000000000000  rbx 0000744c4c1f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:13.160 48695 48695 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:13.160 48695 48695 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007449872d5d80  r15 0000000000008928
+11-11 07:09:13.160 48695 48695 F DEBUG   :     rdi 000074498769cc08  rsi 0000000000001000
+11-11 07:09:13.160 48695 48695 F DEBUG   :     rbp 00007ffda9cf12c0  rsp 00007ffda9cf1258  rip 00007449872d5d80
+11-11 07:09:13.160 48695 48695 F DEBUG   : 4 total frames
+11-11 07:09:13.160 48695 48695 F DEBUG   : backtrace:
+11-11 07:09:13.160 48695 48695 F DEBUG   :       #00 pc 00007449872d5d80  <unknown>
+11-11 07:09:13.160 48695 48695 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:13.160 48695 48695 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:13.160 48695 48695 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:17.891 48700 48700 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x705e0b4f9d80 in tid 48700 (Shutdown thread), pid 48700 (Shutdown thread)
+11-11 07:09:17.919 48717 48717 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:17.919 48717 48717 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:17.919 48717 48717 F DEBUG   : Revision: '0'
+11-11 07:09:17.919 48717 48717 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:17.919 48717 48717 F DEBUG   : Timestamp: 2026-11-11 07:09:17.899840712+0800
+11-11 07:09:17.919 48717 48717 F DEBUG   : Process uptime: 3s
+11-11 07:09:17.919 48717 48717 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:17.919 48717 48717 F DEBUG   : pid: 48700, tid: 48700, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:17.919 48717 48717 F DEBUG   : uid: 0
+11-11 07:09:17.919 48717 48717 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000705e0b4f9d80
+11-11 07:09:17.919 48717 48717 F DEBUG   :     rax 0000000000000000  rbx 00007060ed37489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:17.919 48717 48717 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:17.919 48717 48717 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000705e0b4f9d80  r15 0000000000008928
+11-11 07:09:17.919 48717 48717 F DEBUG   :     rdi 0000705e0b8c0c08  rsi 0000000000001000
+11-11 07:09:17.919 48717 48717 F DEBUG   :     rbp 00007ffd2cf4bb00  rsp 00007ffd2cf4ba98  rip 0000705e0b4f9d80
+11-11 07:09:17.919 48717 48717 F DEBUG   : 4 total frames
+11-11 07:09:17.919 48717 48717 F DEBUG   : backtrace:
+11-11 07:09:17.919 48717 48717 F DEBUG   :       #00 pc 0000705e0b4f9d80  <unknown>
+11-11 07:09:17.919 48717 48717 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:17.919 48717 48717 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:17.919 48717 48717 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:19.953 48722 48722 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76c6e18fed80 in tid 48722 (Shutdown thread), pid 48722 (Shutdown thread)
+11-11 07:09:19.979 48738 48738 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:19.979 48738 48738 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:19.979 48738 48738 F DEBUG   : Revision: '0'
+11-11 07:09:19.979 48738 48738 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:19.979 48738 48738 F DEBUG   : Timestamp: 2026-11-11 07:09:19.960856971+0800
+11-11 07:09:19.979 48738 48738 F DEBUG   : Process uptime: 3s
+11-11 07:09:19.979 48738 48738 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:19.979 48738 48738 F DEBUG   : pid: 48722, tid: 48722, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:19.979 48738 48738 F DEBUG   : uid: 0
+11-11 07:09:19.979 48738 48738 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000076c6e18fed80
+11-11 07:09:19.979 48738 48738 F DEBUG   :     rax 0000000000000000  rbx 000076c9ad9e889c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:19.979 48738 48738 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:19.979 48738 48738 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076c6e18fed80  r15 0000000000008928
+11-11 07:09:19.979 48738 48738 F DEBUG   :     rdi 000076c6e1cc5c08  rsi 0000000000001000
+11-11 07:09:19.979 48738 48738 F DEBUG   :     rbp 00007ffc69acb260  rsp 00007ffc69acb1f8  rip 000076c6e18fed80
+11-11 07:09:19.979 48738 48738 F DEBUG   : 4 total frames
+11-11 07:09:19.979 48738 48738 F DEBUG   : backtrace:
+11-11 07:09:19.979 48738 48738 F DEBUG   :       #00 pc 000076c6e18fed80  <unknown>
+11-11 07:09:19.979 48738 48738 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:19.979 48738 48738 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:19.979 48738 48738 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:23.044 48751 48751 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e35084a6d80 in tid 48751 (Shutdown thread), pid 48751 (Shutdown thread)
+11-11 07:09:23.071 48767 48767 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:23.072 48767 48767 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:23.072 48767 48767 F DEBUG   : Revision: '0'
+11-11 07:09:23.072 48767 48767 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:23.072 48767 48767 F DEBUG   : Timestamp: 2026-11-11 07:09:23.052223711+0800
+11-11 07:09:23.072 48767 48767 F DEBUG   : Process uptime: 3s
+11-11 07:09:23.072 48767 48767 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:23.072 48767 48767 F DEBUG   : pid: 48751, tid: 48751, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:23.072 48767 48767 F DEBUG   : uid: 0
+11-11 07:09:23.072 48767 48767 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e35084a6d80
+11-11 07:09:23.072 48767 48767 F DEBUG   :     rax 0000000000000000  rbx 00007e37e3ef289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:23.072 48767 48767 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:23.072 48767 48767 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e35084a6d80  r15 0000000000008928
+11-11 07:09:23.072 48767 48767 F DEBUG   :     rdi 00007e350886dc08  rsi 0000000000001000
+11-11 07:09:23.072 48767 48767 F DEBUG   :     rbp 00007fff95579af0  rsp 00007fff95579a88  rip 00007e35084a6d80
+11-11 07:09:23.072 48767 48767 F DEBUG   : 4 total frames
+11-11 07:09:23.072 48767 48767 F DEBUG   : backtrace:
+11-11 07:09:23.072 48767 48767 F DEBUG   :       #00 pc 00007e35084a6d80  <unknown>
+11-11 07:09:23.072 48767 48767 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:23.072 48767 48767 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:23.072 48767 48767 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:27.208 48772 48772 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e26a6a4ad80 in tid 48772 (Shutdown thread), pid 48772 (Shutdown thread)
+11-11 07:09:27.236 48789 48789 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:27.236 48789 48789 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:27.236 48789 48789 F DEBUG   : Revision: '0'
+11-11 07:09:27.236 48789 48789 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:27.236 48789 48789 F DEBUG   : Timestamp: 2026-11-11 07:09:27.216138915+0800
+11-11 07:09:27.236 48789 48789 F DEBUG   : Process uptime: 2s
+11-11 07:09:27.236 48789 48789 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:27.236 48789 48789 F DEBUG   : pid: 48772, tid: 48772, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:27.236 48789 48789 F DEBUG   : uid: 0
+11-11 07:09:27.236 48789 48789 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e26a6a4ad80
+11-11 07:09:27.236 48789 48789 F DEBUG   :     rax 0000000000000000  rbx 00007e29777f389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:27.236 48789 48789 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:27.236 48789 48789 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e26a6a4ad80  r15 0000000000008928
+11-11 07:09:27.236 48789 48789 F DEBUG   :     rdi 00007e26a6e11c08  rsi 0000000000001000
+11-11 07:09:27.236 48789 48789 F DEBUG   :     rbp 00007fff2f1757b0  rsp 00007fff2f175748  rip 00007e26a6a4ad80
+11-11 07:09:27.236 48789 48789 F DEBUG   : 4 total frames
+11-11 07:09:27.236 48789 48789 F DEBUG   : backtrace:
+11-11 07:09:27.236 48789 48789 F DEBUG   :       #00 pc 00007e26a6a4ad80  <unknown>
+11-11 07:09:27.236 48789 48789 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:27.236 48789 48789 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:27.236 48789 48789 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:31.257 48799 48799 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x706114d1bd80 in tid 48799 (Shutdown thread), pid 48799 (Shutdown thread)
+11-11 07:09:31.286 48816 48816 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:31.286 48816 48816 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:31.286 48816 48816 F DEBUG   : Revision: '0'
+11-11 07:09:31.286 48816 48816 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:31.286 48816 48816 F DEBUG   : Timestamp: 2026-11-11 07:09:31.266186441+0800
+11-11 07:09:31.286 48816 48816 F DEBUG   : Process uptime: 3s
+11-11 07:09:31.286 48816 48816 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:31.286 48816 48816 F DEBUG   : pid: 48799, tid: 48799, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:31.286 48816 48816 F DEBUG   : uid: 0
+11-11 07:09:31.286 48816 48816 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000706114d1bd80
+11-11 07:09:31.286 48816 48816 F DEBUG   :     rax 0000000000000000  rbx 000070640734389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:31.286 48816 48816 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:31.286 48816 48816 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000706114d1bd80  r15 0000000000008928
+11-11 07:09:31.286 48816 48816 F DEBUG   :     rdi 00007061150e2c08  rsi 0000000000001000
+11-11 07:09:31.286 48816 48816 F DEBUG   :     rbp 00007ffc9765b1a0  rsp 00007ffc9765b138  rip 0000706114d1bd80
+11-11 07:09:31.286 48816 48816 F DEBUG   : 4 total frames
+11-11 07:09:31.286 48816 48816 F DEBUG   : backtrace:
+11-11 07:09:31.286 48816 48816 F DEBUG   :       #00 pc 0000706114d1bd80  <unknown>
+11-11 07:09:31.286 48816 48816 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:31.286 48816 48816 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:31.286 48816 48816 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:35.297 48821 48821 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x71f854af4d80 in tid 48821 (Shutdown thread), pid 48821 (Shutdown thread)
+11-11 07:09:35.322 48836 48836 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:35.323 48836 48836 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:35.323 48836 48836 F DEBUG   : Revision: '0'
+11-11 07:09:35.323 48836 48836 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:35.323 48836 48836 F DEBUG   : Timestamp: 2026-11-11 07:09:35.304618026+0800
+11-11 07:09:35.323 48836 48836 F DEBUG   : Process uptime: 3s
+11-11 07:09:35.323 48836 48836 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:35.323 48836 48836 F DEBUG   : pid: 48821, tid: 48821, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:35.323 48836 48836 F DEBUG   : uid: 0
+11-11 07:09:35.323 48836 48836 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000071f854af4d80
+11-11 07:09:35.323 48836 48836 F DEBUG   :     rax 0000000000000000  rbx 000071fb3e95e89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:35.323 48836 48836 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:35.323 48836 48836 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000071f854af4d80  r15 0000000000008928
+11-11 07:09:35.323 48836 48836 F DEBUG   :     rdi 000071f854ebbc08  rsi 0000000000001000
+11-11 07:09:35.323 48836 48836 F DEBUG   :     rbp 00007fffd85e3740  rsp 00007fffd85e36d8  rip 000071f854af4d80
+11-11 07:09:35.323 48836 48836 F DEBUG   : 4 total frames
+11-11 07:09:35.323 48836 48836 F DEBUG   : backtrace:
+11-11 07:09:35.323 48836 48836 F DEBUG   :       #00 pc 000071f854af4d80  <unknown>
+11-11 07:09:35.323 48836 48836 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:35.323 48836 48836 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:35.323 48836 48836 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:40.365 48848 48848 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7bff24847d80 in tid 48848 (Shutdown thread), pid 48848 (Shutdown thread)
+11-11 07:09:40.409 48864 48864 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:40.409 48864 48864 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:40.409 48864 48864 F DEBUG   : Revision: '0'
+11-11 07:09:40.409 48864 48864 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:40.409 48864 48864 F DEBUG   : Timestamp: 2026-11-11 07:09:40.376009349+0800
+11-11 07:09:40.409 48864 48864 F DEBUG   : Process uptime: 3s
+11-11 07:09:40.409 48864 48864 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:40.409 48864 48864 F DEBUG   : pid: 48848, tid: 48848, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:40.409 48864 48864 F DEBUG   : uid: 0
+11-11 07:09:40.409 48864 48864 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007bff24847d80
+11-11 07:09:40.409 48864 48864 F DEBUG   :     rax 0000000000000000  rbx 00007c02075f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:40.409 48864 48864 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:40.409 48864 48864 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007bff24847d80  r15 0000000000008928
+11-11 07:09:40.409 48864 48864 F DEBUG   :     rdi 00007bff24c0ec08  rsi 0000000000001000
+11-11 07:09:40.409 48864 48864 F DEBUG   :     rbp 00007ffe057a59b0  rsp 00007ffe057a5948  rip 00007bff24847d80
+11-11 07:09:40.409 48864 48864 F DEBUG   : 4 total frames
+11-11 07:09:40.409 48864 48864 F DEBUG   : backtrace:
+11-11 07:09:40.409 48864 48864 F DEBUG   :       #00 pc 00007bff24847d80  <unknown>
+11-11 07:09:40.409 48864 48864 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:40.409 48864 48864 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:40.409 48864 48864 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:44.979 48870 48870 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x796a7a654d80 in tid 48870 (Shutdown thread), pid 48870 (Shutdown thread)
+11-11 07:09:45.007 48886 48886 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:45.007 48886 48886 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:45.007 48886 48886 F DEBUG   : Revision: '0'
+11-11 07:09:45.007 48886 48886 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:45.007 48886 48886 F DEBUG   : Timestamp: 2026-11-11 07:09:44.988132910+0800
+11-11 07:09:45.007 48886 48886 F DEBUG   : Process uptime: 3s
+11-11 07:09:45.007 48886 48886 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:45.007 48886 48886 F DEBUG   : pid: 48870, tid: 48870, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:45.007 48886 48886 F DEBUG   : uid: 0
+11-11 07:09:45.007 48886 48886 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000796a7a654d80
+11-11 07:09:45.007 48886 48886 F DEBUG   :     rax 0000000000000000  rbx 0000796ddf0f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:45.007 48886 48886 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:45.007 48886 48886 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000796a7a654d80  r15 0000000000008928
+11-11 07:09:45.007 48886 48886 F DEBUG   :     rdi 0000796a7aa1bc08  rsi 0000000000001000
+11-11 07:09:45.007 48886 48886 F DEBUG   :     rbp 00007ffcc86c9410  rsp 00007ffcc86c93a8  rip 0000796a7a654d80
+11-11 07:09:45.007 48886 48886 F DEBUG   : 4 total frames
+11-11 07:09:45.007 48886 48886 F DEBUG   : backtrace:
+11-11 07:09:45.007 48886 48886 F DEBUG   :       #00 pc 0000796a7a654d80  <unknown>
+11-11 07:09:45.007 48886 48886 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:45.007 48886 48886 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:45.007 48886 48886 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:48.047 48897 48897 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x704d9c104d80 in tid 48897 (Shutdown thread), pid 48897 (Shutdown thread)
+11-11 07:09:48.075 48913 48913 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:48.075 48913 48913 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:48.075 48913 48913 F DEBUG   : Revision: '0'
+11-11 07:09:48.075 48913 48913 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:48.075 48913 48913 F DEBUG   : Timestamp: 2026-11-11 07:09:48.056253561+0800
+11-11 07:09:48.075 48913 48913 F DEBUG   : Process uptime: 3s
+11-11 07:09:48.075 48913 48913 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:48.075 48913 48913 F DEBUG   : pid: 48897, tid: 48897, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:48.075 48913 48913 F DEBUG   : uid: 0
+11-11 07:09:48.075 48913 48913 F DEBUG   : signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x0000704d9c104d80
+11-11 07:09:48.075 48913 48913 F DEBUG   : Cause: trying to execute non-executable memory.
+11-11 07:09:48.075 48913 48913 F DEBUG   :     rax 0000000000000000  rbx 0000705085b9d89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:48.075 48913 48913 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:48.075 48913 48913 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000704d9c104d80  r15 0000000000008928
+11-11 07:09:48.075 48913 48913 F DEBUG   :     rdi 0000704d9c4cbc08  rsi 0000000000001000
+11-11 07:09:48.075 48913 48913 F DEBUG   :     rbp 00007ffe5be196f0  rsp 00007ffe5be19688  rip 0000704d9c104d80
+11-11 07:09:48.075 48913 48913 F DEBUG   : 4 total frames
+11-11 07:09:48.075 48913 48913 F DEBUG   : backtrace:
+11-11 07:09:48.075 48913 48913 F DEBUG   :       #00 pc 0000000000904d80  <anonymous:704d9b800000>
+11-11 07:09:48.075 48913 48913 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:48.075 48913 48913 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:48.075 48913 48913 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:55.880 48926 48926 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x71e07c10ad80 in tid 48926 (Shutdown thread), pid 48926 (Shutdown thread)
+11-11 07:09:55.907 48943 48943 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:55.907 48943 48943 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:55.907 48943 48943 F DEBUG   : Revision: '0'
+11-11 07:09:55.907 48943 48943 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:55.907 48943 48943 F DEBUG   : Timestamp: 2026-11-11 07:09:55.888775271+0800
+11-11 07:09:55.907 48943 48943 F DEBUG   : Process uptime: 4s
+11-11 07:09:55.907 48943 48943 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:55.907 48943 48943 F DEBUG   : pid: 48926, tid: 48926, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:55.907 48943 48943 F DEBUG   : uid: 0
+11-11 07:09:55.907 48943 48943 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000071e07c10ad80
+11-11 07:09:55.907 48943 48943 F DEBUG   :     rax 0000000000000000  rbx 000071e3d5bad89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:55.907 48943 48943 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:55.907 48943 48943 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000071e07c10ad80  r15 0000000000008928
+11-11 07:09:55.907 48943 48943 F DEBUG   :     rdi 000071e07c4d1c08  rsi 0000000000001000
+11-11 07:09:55.907 48943 48943 F DEBUG   :     rbp 00007ffe34efd690  rsp 00007ffe34efd628  rip 000071e07c10ad80
+11-11 07:09:55.907 48943 48943 F DEBUG   : 4 total frames
+11-11 07:09:55.907 48943 48943 F DEBUG   : backtrace:
+11-11 07:09:55.907 48943 48943 F DEBUG   :       #00 pc 000071e07c10ad80  <unknown>
+11-11 07:09:55.907 48943 48943 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:55.907 48943 48943 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:55.907 48943 48943 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:59.831 48949 48949 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76d1f4f25d80 in tid 48949 (Shutdown thread), pid 48949 (Shutdown thread)
+11-11 07:09:59.857 48965 48965 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:09:59.857 48965 48965 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:09:59.857 48965 48965 F DEBUG   : Revision: '0'
+11-11 07:09:59.857 48965 48965 F DEBUG   : ABI: 'x86_64'
+11-11 07:09:59.857 48965 48965 F DEBUG   : Timestamp: 2026-11-11 07:09:59.839263679+0800
+11-11 07:09:59.857 48965 48965 F DEBUG   : Process uptime: 3s
+11-11 07:09:59.857 48965 48965 F DEBUG   : Cmdline: uiautomator
+11-11 07:09:59.857 48965 48965 F DEBUG   : pid: 48949, tid: 48949, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:09:59.857 48965 48965 F DEBUG   : uid: 0
+11-11 07:09:59.857 48965 48965 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000076d1f4f25d80
+11-11 07:09:59.857 48965 48965 F DEBUG   :     rax 0000000000000000  rbx 000076d4c9bc289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:09:59.857 48965 48965 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:09:59.857 48965 48965 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076d1f4f25d80  r15 0000000000008928
+11-11 07:09:59.857 48965 48965 F DEBUG   :     rdi 000076d1f52ecc08  rsi 0000000000001000
+11-11 07:09:59.857 48965 48965 F DEBUG   :     rbp 00007ffebedf3560  rsp 00007ffebedf34f8  rip 000076d1f4f25d80
+11-11 07:09:59.857 48965 48965 F DEBUG   : 4 total frames
+11-11 07:09:59.857 48965 48965 F DEBUG   : backtrace:
+11-11 07:09:59.857 48965 48965 F DEBUG   :       #00 pc 000076d1f4f25d80  <unknown>
+11-11 07:09:59.857 48965 48965 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:59.857 48965 48965 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:09:59.857 48965 48965 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:03.890 48976 48976 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x756b704aad80 in tid 48976 (Shutdown thread), pid 48976 (Shutdown thread)
+11-11 07:10:03.918 48993 48993 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:10:03.918 48993 48993 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:10:03.918 48993 48993 F DEBUG   : Revision: '0'
+11-11 07:10:03.918 48993 48993 F DEBUG   : ABI: 'x86_64'
+11-11 07:10:03.918 48993 48993 F DEBUG   : Timestamp: 2026-11-11 07:10:03.899320118+0800
+11-11 07:10:03.918 48993 48993 F DEBUG   : Process uptime: 3s
+11-11 07:10:03.918 48993 48993 F DEBUG   : Cmdline: uiautomator
+11-11 07:10:03.918 48993 48993 F DEBUG   : pid: 48976, tid: 48976, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:10:03.918 48993 48993 F DEBUG   : uid: 0
+11-11 07:10:03.918 48993 48993 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000756b704aad80
+11-11 07:10:03.918 48993 48993 F DEBUG   :     rax 0000000000000000  rbx 0000756e3b3f389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:10:03.918 48993 48993 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:10:03.918 48993 48993 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000756b704aad80  r15 0000000000008928
+11-11 07:10:03.918 48993 48993 F DEBUG   :     rdi 0000756b70871c08  rsi 0000000000001000
+11-11 07:10:03.918 48993 48993 F DEBUG   :     rbp 00007ffc45d985d0  rsp 00007ffc45d98568  rip 0000756b704aad80
+11-11 07:10:03.918 48993 48993 F DEBUG   : 4 total frames
+11-11 07:10:03.918 48993 48993 F DEBUG   : backtrace:
+11-11 07:10:03.918 48993 48993 F DEBUG   :       #00 pc 0000756b704aad80  <unknown>
+11-11 07:10:03.918 48993 48993 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:03.918 48993 48993 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:03.918 48993 48993 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:10.746 49006 49006 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x79884ec94d80 in tid 49006 (Shutdown thread), pid 49006 (Shutdown thread)
+11-11 07:10:10.773 49021 49021 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:10:10.773 49021 49021 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:10:10.773 49021 49021 F DEBUG   : Revision: '0'
+11-11 07:10:10.773 49021 49021 F DEBUG   : ABI: 'x86_64'
+11-11 07:10:10.773 49021 49021 F DEBUG   : Timestamp: 2026-11-11 07:10:10.755207948+0800
+11-11 07:10:10.773 49021 49021 F DEBUG   : Process uptime: 3s
+11-11 07:10:10.773 49021 49021 F DEBUG   : Cmdline: uiautomator
+11-11 07:10:10.773 49021 49021 F DEBUG   : pid: 49006, tid: 49006, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:10:10.773 49021 49021 F DEBUG   : uid: 0
+11-11 07:10:10.773 49021 49021 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000079884ec94d80
+11-11 07:10:10.773 49021 49021 F DEBUG   :     rax 0000000000000000  rbx 0000798b2ad5a89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:10:10.773 49021 49021 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:10:10.773 49021 49021 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000079884ec94d80  r15 0000000000008928
+11-11 07:10:10.773 49021 49021 F DEBUG   :     rdi 000079884f05bc08  rsi 0000000000001000
+11-11 07:10:10.773 49021 49021 F DEBUG   :     rbp 00007ffcd5ff9cd0  rsp 00007ffcd5ff9c68  rip 000079884ec94d80
+11-11 07:10:10.773 49021 49021 F DEBUG   : 4 total frames
+11-11 07:10:10.773 49021 49021 F DEBUG   : backtrace:
+11-11 07:10:10.773 49021 49021 F DEBUG   :       #00 pc 000079884ec94d80  <unknown>
+11-11 07:10:10.773 49021 49021 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:10.773 49021 49021 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:10.773 49021 49021 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:17.826 49033 49033 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x720d070f4d80 in tid 49033 (Shutdown thread), pid 49033 (Shutdown thread)
+11-11 07:10:17.854 49051 49051 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:10:17.854 49051 49051 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:10:17.854 49051 49051 F DEBUG   : Revision: '0'
+11-11 07:10:17.854 49051 49051 F DEBUG   : ABI: 'x86_64'
+11-11 07:10:17.854 49051 49051 F DEBUG   : Timestamp: 2026-11-11 07:10:17.835167993+0800
+11-11 07:10:17.854 49051 49051 F DEBUG   : Process uptime: 3s
+11-11 07:10:17.854 49051 49051 F DEBUG   : Cmdline: uiautomator
+11-11 07:10:17.854 49051 49051 F DEBUG   : pid: 49033, tid: 49033, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:10:17.854 49051 49051 F DEBUG   : uid: 0
+11-11 07:10:17.854 49051 49051 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000720d070f4d80
+11-11 07:10:17.854 49051 49051 F DEBUG   :     rax 0000000000000000  rbx 0000720fdc94e89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:10:17.854 49051 49051 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:10:17.854 49051 49051 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000720d070f4d80  r15 0000000000008928
+11-11 07:10:17.854 49051 49051 F DEBUG   :     rdi 0000720d074bbc08  rsi 0000000000001000
+11-11 07:10:17.854 49051 49051 F DEBUG   :     rbp 00007ffc719d3940  rsp 00007ffc719d38d8  rip 0000720d070f4d80
+11-11 07:10:17.854 49051 49051 F DEBUG   : 4 total frames
+11-11 07:10:17.854 49051 49051 F DEBUG   : backtrace:
+11-11 07:10:17.854 49051 49051 F DEBUG   :       #00 pc 0000720d070f4d80  <unknown>
+11-11 07:10:17.854 49051 49051 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:17.854 49051 49051 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:17.854 49051 49051 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:22.748 49062 49062 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7073dc0a9d80 in tid 49062 (Shutdown thread), pid 49062 (Shutdown thread)
+11-11 07:10:22.776 49080 49080 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:10:22.776 49080 49080 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:10:22.776 49080 49080 F DEBUG   : Revision: '0'
+11-11 07:10:22.776 49080 49080 F DEBUG   : ABI: 'x86_64'
+11-11 07:10:22.776 49080 49080 F DEBUG   : Timestamp: 2026-11-11 07:10:22.756501687+0800
+11-11 07:10:22.776 49080 49080 F DEBUG   : Process uptime: 3s
+11-11 07:10:22.776 49080 49080 F DEBUG   : Cmdline: uiautomator
+11-11 07:10:22.776 49080 49080 F DEBUG   : pid: 49062, tid: 49062, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:10:22.776 49080 49080 F DEBUG   : uid: 0
+11-11 07:10:22.776 49080 49080 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007073dc0a9d80
+11-11 07:10:22.776 49080 49080 F DEBUG   :     rax 0000000000000000  rbx 00007076a77f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:10:22.776 49080 49080 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:10:22.776 49080 49080 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007073dc0a9d80  r15 0000000000008928
+11-11 07:10:22.776 49080 49080 F DEBUG   :     rdi 00007073dc470c08  rsi 0000000000001000
+11-11 07:10:22.776 49080 49080 F DEBUG   :     rbp 00007ffd26f13d90  rsp 00007ffd26f13d28  rip 00007073dc0a9d80
+11-11 07:10:22.776 49080 49080 F DEBUG   : 4 total frames
+11-11 07:10:22.776 49080 49080 F DEBUG   : backtrace:
+11-11 07:10:22.776 49080 49080 F DEBUG   :       #00 pc 00007073dc0a9d80  <unknown>
+11-11 07:10:22.776 49080 49080 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:22.776 49080 49080 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:22.776 49080 49080 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:28.357 49092 49092 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x73bedda5cd80 in tid 49092 (Shutdown thread), pid 49092 (Shutdown thread)
+11-11 07:10:28.384 49108 49108 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:10:28.384 49108 49108 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:10:28.385 49108 49108 F DEBUG   : Revision: '0'
+11-11 07:10:28.385 49108 49108 F DEBUG   : ABI: 'x86_64'
+11-11 07:10:28.385 49108 49108 F DEBUG   : Timestamp: 2026-11-11 07:10:28.364871657+0800
+11-11 07:10:28.385 49108 49108 F DEBUG   : Process uptime: 3s
+11-11 07:10:28.385 49108 49108 F DEBUG   : Cmdline: uiautomator
+11-11 07:10:28.385 49108 49108 F DEBUG   : pid: 49092, tid: 49092, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:10:28.385 49108 49108 F DEBUG   : uid: 0
+11-11 07:10:28.385 49108 49108 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000073bedda5cd80
+11-11 07:10:28.385 49108 49108 F DEBUG   :     rax 0000000000000000  rbx 000073c1b093489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:10:28.385 49108 49108 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:10:28.385 49108 49108 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000073bedda5cd80  r15 0000000000008928
+11-11 07:10:28.385 49108 49108 F DEBUG   :     rdi 000073bedde23c08  rsi 0000000000001000
+11-11 07:10:28.385 49108 49108 F DEBUG   :     rbp 00007ffd425a3490  rsp 00007ffd425a3428  rip 000073bedda5cd80
+11-11 07:10:28.385 49108 49108 F DEBUG   : 4 total frames
+11-11 07:10:28.385 49108 49108 F DEBUG   : backtrace:
+11-11 07:10:28.385 49108 49108 F DEBUG   :       #00 pc 000073bedda5cd80  <unknown>
+11-11 07:10:28.385 49108 49108 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:28.385 49108 49108 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:28.385 49108 49108 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:43.362 49127 49127 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e74db2bbd80 in tid 49127 (Shutdown thread), pid 49127 (Shutdown thread)
+11-11 07:10:43.391 49143 49143 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:10:43.391 49143 49143 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:10:43.391 49143 49143 F DEBUG   : Revision: '0'
+11-11 07:10:43.391 49143 49143 F DEBUG   : ABI: 'x86_64'
+11-11 07:10:43.391 49143 49143 F DEBUG   : Timestamp: 2026-11-11 07:10:43.371268347+0800
+11-11 07:10:43.391 49143 49143 F DEBUG   : Process uptime: 3s
+11-11 07:10:43.391 49143 49143 F DEBUG   : Cmdline: uiautomator
+11-11 07:10:43.391 49143 49143 F DEBUG   : pid: 49127, tid: 49127, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:10:43.391 49143 49143 F DEBUG   : uid: 0
+11-11 07:10:43.391 49143 49143 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e74db2bbd80
+11-11 07:10:43.391 49143 49143 F DEBUG   :     rax 0000000000000000  rbx 00007e77b26f589c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:10:43.391 49143 49143 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:10:43.391 49143 49143 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e74db2bbd80  r15 0000000000008928
+11-11 07:10:43.391 49143 49143 F DEBUG   :     rdi 00007e74db682c08  rsi 0000000000001000
+11-11 07:10:43.391 49143 49143 F DEBUG   :     rbp 00007ffec8ecb680  rsp 00007ffec8ecb618  rip 00007e74db2bbd80
+11-11 07:10:43.391 49143 49143 F DEBUG   : 4 total frames
+11-11 07:10:43.391 49143 49143 F DEBUG   : backtrace:
+11-11 07:10:43.391 49143 49143 F DEBUG   :       #00 pc 00007e74db2bbd80  <unknown>
+11-11 07:10:43.391 49143 49143 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:43.391 49143 49143 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:10:43.391 49143 49143 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:07.463 49168 49168 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x74566c31cd80 in tid 49168 (Shutdown thread), pid 49168 (Shutdown thread)
+11-11 07:11:07.489 49186 49186 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:07.489 49186 49186 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:07.489 49186 49186 F DEBUG   : Revision: '0'
+11-11 07:11:07.489 49186 49186 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:07.489 49186 49186 F DEBUG   : Timestamp: 2026-11-11 07:11:07.471384298+0800
+11-11 07:11:07.489 49186 49186 F DEBUG   : Process uptime: 3s
+11-11 07:11:07.489 49186 49186 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:07.489 49186 49186 F DEBUG   : pid: 49168, tid: 49168, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:07.489 49186 49186 F DEBUG   : uid: 0
+11-11 07:11:07.489 49186 49186 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000074566c31cd80
+11-11 07:11:07.489 49186 49186 F DEBUG   :     rax 0000000000000000  rbx 00007459473b089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:07.489 49186 49186 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:11:07.489 49186 49186 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000074566c31cd80  r15 0000000000008928
+11-11 07:11:07.489 49186 49186 F DEBUG   :     rdi 000074566c6e3c08  rsi 0000000000001000
+11-11 07:11:07.489 49186 49186 F DEBUG   :     rbp 00007fffe9b8ab90  rsp 00007fffe9b8ab28  rip 000074566c31cd80
+11-11 07:11:07.489 49186 49186 F DEBUG   : 4 total frames
+11-11 07:11:07.489 49186 49186 F DEBUG   : backtrace:
+11-11 07:11:07.489 49186 49186 F DEBUG   :       #00 pc 000074566c31cd80  <unknown>
+11-11 07:11:07.489 49186 49186 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:07.489 49186 49186 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:07.489 49186 49186 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:12.498 49191 49191 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x70735fb1dd80 in tid 49191 (Shutdown thread), pid 49191 (Shutdown thread)
+11-11 07:11:12.525 49208 49208 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:12.525 49208 49208 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:12.525 49208 49208 F DEBUG   : Revision: '0'
+11-11 07:11:12.525 49208 49208 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:12.525 49208 49208 F DEBUG   : Timestamp: 2026-11-11 07:11:12.506957362+0800
+11-11 07:11:12.525 49208 49208 F DEBUG   : Process uptime: 3s
+11-11 07:11:12.525 49208 49208 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:12.525 49208 49208 F DEBUG   : pid: 49191, tid: 49191, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:12.525 49208 49208 F DEBUG   : uid: 0
+11-11 07:11:12.525 49208 49208 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000070735fb1dd80
+11-11 07:11:12.525 49208 49208 F DEBUG   :     rax 0000000000000000  rbx 000070763697689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:12.525 49208 49208 F DEBUG   :     r8  000070763696dfa4  r9  0000000000003324  r10 0000000000000000  r11 0000000000000206
+11-11 07:11:12.525 49208 49208 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000070735fb1dd80  r15 0000000000008928
+11-11 07:11:12.525 49208 49208 F DEBUG   :     rdi 000070735fee4c08  rsi 0000000000001000
+11-11 07:11:12.525 49208 49208 F DEBUG   :     rbp 00007ffd8449d430  rsp 00007ffd8449d3c8  rip 000070735fb1dd80
+11-11 07:11:12.525 49208 49208 F DEBUG   : 4 total frames
+11-11 07:11:12.525 49208 49208 F DEBUG   : backtrace:
+11-11 07:11:12.525 49208 49208 F DEBUG   :       #00 pc 000070735fb1dd80  <unknown>
+11-11 07:11:12.525 49208 49208 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:12.525 49208 49208 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:12.525 49208 49208 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:19.447 49224 49224 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x781ac0aadd80 in tid 49224 (Shutdown thread), pid 49224 (Shutdown thread)
+11-11 07:11:19.474 49242 49242 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:19.474 49242 49242 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:19.474 49242 49242 F DEBUG   : Revision: '0'
+11-11 07:11:19.474 49242 49242 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:19.474 49242 49242 F DEBUG   : Timestamp: 2026-11-11 07:11:19.455563821+0800
+11-11 07:11:19.474 49242 49242 F DEBUG   : Process uptime: 3s
+11-11 07:11:19.474 49242 49242 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:19.474 49242 49242 F DEBUG   : pid: 49224, tid: 49224, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:19.474 49242 49242 F DEBUG   : uid: 0
+11-11 07:11:19.474 49242 49242 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000781ac0aadd80
+11-11 07:11:19.474 49242 49242 F DEBUG   :     rax 0000000000000000  rbx 0000781d7f7ca89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:19.474 49242 49242 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:11:19.474 49242 49242 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000781ac0aadd80  r15 0000000000008928
+11-11 07:11:19.474 49242 49242 F DEBUG   :     rdi 0000781ac0e74c08  rsi 0000000000001000
+11-11 07:11:19.474 49242 49242 F DEBUG   :     rbp 00007fff27b24c70  rsp 00007fff27b24c08  rip 0000781ac0aadd80
+11-11 07:11:19.474 49242 49242 F DEBUG   : 4 total frames
+11-11 07:11:19.474 49242 49242 F DEBUG   : backtrace:
+11-11 07:11:19.474 49242 49242 F DEBUG   :       #00 pc 0000781ac0aadd80  <unknown>
+11-11 07:11:19.474 49242 49242 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:19.474 49242 49242 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:19.474 49242 49242 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:26.248 49253 49253 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e442cca3d80 in tid 49253 (Shutdown thread), pid 49253 (Shutdown thread)
+11-11 07:11:26.274 49271 49271 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:26.274 49271 49271 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:26.274 49271 49271 F DEBUG   : Revision: '0'
+11-11 07:11:26.274 49271 49271 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:26.274 49271 49271 F DEBUG   : Timestamp: 2026-11-11 07:11:26.255881589+0800
+11-11 07:11:26.274 49271 49271 F DEBUG   : Process uptime: 2s
+11-11 07:11:26.274 49271 49271 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:26.274 49271 49271 F DEBUG   : pid: 49253, tid: 49253, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:26.274 49271 49271 F DEBUG   : uid: 0
+11-11 07:11:26.274 49271 49271 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e442cca3d80
+11-11 07:11:26.274 49271 49271 F DEBUG   :     rax 0000000000000000  rbx 00007e47077f689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:26.274 49271 49271 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:11:26.274 49271 49271 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e442cca3d80  r15 0000000000008928
+11-11 07:11:26.274 49271 49271 F DEBUG   :     rdi 00007e442d06ac08  rsi 0000000000001000
+11-11 07:11:26.274 49271 49271 F DEBUG   :     rbp 00007ffd54567a20  rsp 00007ffd545679b8  rip 00007e442cca3d80
+11-11 07:11:26.274 49271 49271 F DEBUG   : 4 total frames
+11-11 07:11:26.274 49271 49271 F DEBUG   : backtrace:
+11-11 07:11:26.274 49271 49271 F DEBUG   :       #00 pc 00007e442cca3d80  <unknown>
+11-11 07:11:26.274 49271 49271 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:26.274 49271 49271 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:26.274 49271 49271 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:35.030 49286 49286 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7471f7908d80 in tid 49286 (Shutdown thread), pid 49286 (Shutdown thread)
+11-11 07:11:35.057 49301 49301 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:35.057 49301 49301 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:35.057 49301 49301 F DEBUG   : Revision: '0'
+11-11 07:11:35.057 49301 49301 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:35.057 49301 49301 F DEBUG   : Timestamp: 2026-11-11 07:11:35.038165110+0800
+11-11 07:11:35.057 49301 49301 F DEBUG   : Process uptime: 3s
+11-11 07:11:35.057 49301 49301 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:35.057 49301 49301 F DEBUG   : pid: 49286, tid: 49286, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:35.057 49301 49301 F DEBUG   : uid: 0
+11-11 07:11:35.057 49301 49301 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007471f7908d80
+11-11 07:11:35.057 49301 49301 F DEBUG   :     rax 0000000000000000  rbx 0000747542f5489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:35.057 49301 49301 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:11:35.057 49301 49301 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007471f7908d80  r15 0000000000008928
+11-11 07:11:35.057 49301 49301 F DEBUG   :     rdi 00007471f7ccfc08  rsi 0000000000001000
+11-11 07:11:35.057 49301 49301 F DEBUG   :     rbp 00007ffd9bcc0f40  rsp 00007ffd9bcc0ed8  rip 00007471f7908d80
+11-11 07:11:35.057 49301 49301 F DEBUG   : 4 total frames
+11-11 07:11:35.057 49301 49301 F DEBUG   : backtrace:
+11-11 07:11:35.057 49301 49301 F DEBUG   :       #00 pc 00007471f7908d80  <unknown>
+11-11 07:11:35.057 49301 49301 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:35.057 49301 49301 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:35.057 49301 49301 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:42.248 49313 49313 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76cc3489cd80 in tid 49313 (Shutdown thread), pid 49313 (Shutdown thread)
+11-11 07:11:42.277 49329 49329 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:42.277 49329 49329 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:42.277 49329 49329 F DEBUG   : Revision: '0'
+11-11 07:11:42.277 49329 49329 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:42.277 49329 49329 F DEBUG   : Timestamp: 2026-11-11 07:11:42.256649378+0800
+11-11 07:11:42.277 49329 49329 F DEBUG   : Process uptime: 2s
+11-11 07:11:42.277 49329 49329 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:42.277 49329 49329 F DEBUG   : pid: 49313, tid: 49313, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:42.277 49329 49329 F DEBUG   : uid: 0
+11-11 07:11:42.277 49329 49329 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000076cc3489cd80
+11-11 07:11:42.277 49329 49329 F DEBUG   :     rax 0000000000000000  rbx 000076cf1d30189c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:42.277 49329 49329 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:11:42.277 49329 49329 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076cc3489cd80  r15 0000000000008928
+11-11 07:11:42.277 49329 49329 F DEBUG   :     rdi 000076cc34c63c08  rsi 0000000000001000
+11-11 07:11:42.277 49329 49329 F DEBUG   :     rbp 00007ffe72fc1f70  rsp 00007ffe72fc1f08  rip 000076cc3489cd80
+11-11 07:11:42.277 49329 49329 F DEBUG   : 4 total frames
+11-11 07:11:42.277 49329 49329 F DEBUG   : backtrace:
+11-11 07:11:42.277 49329 49329 F DEBUG   :       #00 pc 000076cc3489cd80  <unknown>
+11-11 07:11:42.277 49329 49329 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:42.277 49329 49329 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:42.277 49329 49329 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:50.380 49341 49341 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7b31eaeead80 in tid 49341 (Shutdown thread), pid 49341 (Shutdown thread)
+11-11 07:11:50.413 49356 49356 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:11:50.413 49356 49356 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:11:50.413 49356 49356 F DEBUG   : Revision: '0'
+11-11 07:11:50.413 49356 49356 F DEBUG   : ABI: 'x86_64'
+11-11 07:11:50.413 49356 49356 F DEBUG   : Timestamp: 2026-11-11 07:11:50.388860563+0800
+11-11 07:11:50.413 49356 49356 F DEBUG   : Process uptime: 3s
+11-11 07:11:50.413 49356 49356 F DEBUG   : Cmdline: uiautomator
+11-11 07:11:50.413 49356 49356 F DEBUG   : pid: 49341, tid: 49341, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:11:50.413 49356 49356 F DEBUG   : uid: 0
+11-11 07:11:50.413 49356 49356 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007b31eaeead80
+11-11 07:11:50.413 49356 49356 F DEBUG   :     rax 0000000000000000  rbx 00007b34ac3af89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:11:50.413 49356 49356 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:11:50.413 49356 49356 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007b31eaeead80  r15 0000000000008928
+11-11 07:11:50.413 49356 49356 F DEBUG   :     rdi 00007b31eb2b1c08  rsi 0000000000001000
+11-11 07:11:50.413 49356 49356 F DEBUG   :     rbp 00007ffda01d4030  rsp 00007ffda01d3fc8  rip 00007b31eaeead80
+11-11 07:11:50.413 49356 49356 F DEBUG   : 4 total frames
+11-11 07:11:50.413 49356 49356 F DEBUG   : backtrace:
+11-11 07:11:50.413 49356 49356 F DEBUG   :       #00 pc 00007b31eaeead80  <unknown>
+11-11 07:11:50.413 49356 49356 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:50.413 49356 49356 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:11:50.413 49356 49356 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:16.365 49378 49378 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x75a529865d80 in tid 49378 (Shutdown thread), pid 49378 (Shutdown thread)
+11-11 07:12:16.397 49394 49394 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:16.398 49394 49394 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:16.398 49394 49394 F DEBUG   : Revision: '0'
+11-11 07:12:16.398 49394 49394 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:16.398 49394 49394 F DEBUG   : Timestamp: 2026-11-11 07:12:16.374095813+0800
+11-11 07:12:16.398 49394 49394 F DEBUG   : Process uptime: 3s
+11-11 07:12:16.398 49394 49394 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:16.398 49394 49394 F DEBUG   : pid: 49378, tid: 49378, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:16.398 49394 49394 F DEBUG   : uid: 0
+11-11 07:12:16.398 49394 49394 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000075a529865d80
+11-11 07:12:16.398 49394 49394 F DEBUG   :     rax 0000000000000000  rbx 000075a81bfa789c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:16.398 49394 49394 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:12:16.398 49394 49394 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000075a529865d80  r15 0000000000008928
+11-11 07:12:16.398 49394 49394 F DEBUG   :     rdi 000075a529c2cc08  rsi 0000000000001000
+11-11 07:12:16.398 49394 49394 F DEBUG   :     rbp 00007ffed91af4f0  rsp 00007ffed91af488  rip 000075a529865d80
+11-11 07:12:16.398 49394 49394 F DEBUG   : 4 total frames
+11-11 07:12:16.398 49394 49394 F DEBUG   : backtrace:
+11-11 07:12:16.398 49394 49394 F DEBUG   :       #00 pc 000075a529865d80  <unknown>
+11-11 07:12:16.398 49394 49394 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:16.398 49394 49394 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:16.398 49394 49394 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:22.163 49406 49406 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7541bc655d80 in tid 49406 (Shutdown thread), pid 49406 (Shutdown thread)
+11-11 07:12:22.191 49422 49422 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:22.191 49422 49422 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:22.191 49422 49422 F DEBUG   : Revision: '0'
+11-11 07:12:22.191 49422 49422 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:22.191 49422 49422 F DEBUG   : Timestamp: 2026-11-11 07:12:22.172428868+0800
+11-11 07:12:22.191 49422 49422 F DEBUG   : Process uptime: 3s
+11-11 07:12:22.191 49422 49422 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:22.191 49422 49422 F DEBUG   : pid: 49406, tid: 49406, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:22.191 49422 49422 F DEBUG   : uid: 0
+11-11 07:12:22.191 49422 49422 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007541bc655d80
+11-11 07:12:22.191 49422 49422 F DEBUG   :     rax 0000000000000000  rbx 0000754520af689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:22.191 49422 49422 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:12:22.191 49422 49422 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007541bc655d80  r15 0000000000008928
+11-11 07:12:22.191 49422 49422 F DEBUG   :     rdi 00007541bca1cc08  rsi 0000000000001000
+11-11 07:12:22.191 49422 49422 F DEBUG   :     rbp 00007fffea264510  rsp 00007fffea2644a8  rip 00007541bc655d80
+11-11 07:12:22.191 49422 49422 F DEBUG   : 4 total frames
+11-11 07:12:22.191 49422 49422 F DEBUG   : backtrace:
+11-11 07:12:22.191 49422 49422 F DEBUG   :       #00 pc 00007541bc655d80  <unknown>
+11-11 07:12:22.191 49422 49422 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:22.191 49422 49422 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:22.191 49422 49422 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:28.196 49433 49433 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7c22f4d1dd80 in tid 49433 (Shutdown thread), pid 49433 (Shutdown thread)
+11-11 07:12:28.223 49449 49449 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:28.223 49449 49449 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:28.223 49449 49449 F DEBUG   : Revision: '0'
+11-11 07:12:28.223 49449 49449 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:28.223 49449 49449 F DEBUG   : Timestamp: 2026-11-11 07:12:28.204133268+0800
+11-11 07:12:28.223 49449 49449 F DEBUG   : Process uptime: 2s
+11-11 07:12:28.223 49449 49449 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:28.223 49449 49449 F DEBUG   : pid: 49433, tid: 49433, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:28.223 49449 49449 F DEBUG   : uid: 0
+11-11 07:12:28.223 49449 49449 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007c22f4d1dd80
+11-11 07:12:28.223 49449 49449 F DEBUG   :     rax 0000000000000000  rbx 00007c265f18989c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:28.223 49449 49449 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:12:28.223 49449 49449 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007c22f4d1dd80  r15 0000000000008928
+11-11 07:12:28.223 49449 49449 F DEBUG   :     rdi 00007c22f50e4c08  rsi 0000000000001000
+11-11 07:12:28.223 49449 49449 F DEBUG   :     rbp 00007ffdf2e8dc50  rsp 00007ffdf2e8dbe8  rip 00007c22f4d1dd80
+11-11 07:12:28.223 49449 49449 F DEBUG   : 4 total frames
+11-11 07:12:28.223 49449 49449 F DEBUG   : backtrace:
+11-11 07:12:28.223 49449 49449 F DEBUG   :       #00 pc 00007c22f4d1dd80  <unknown>
+11-11 07:12:28.223 49449 49449 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:28.223 49449 49449 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:28.223 49449 49449 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:34.659 49464 49464 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7d08b7ca7d80 in tid 49464 (Shutdown thread), pid 49464 (Shutdown thread)
+11-11 07:12:34.690 49480 49480 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:34.690 49480 49480 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:34.690 49480 49480 F DEBUG   : Revision: '0'
+11-11 07:12:34.690 49480 49480 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:34.690 49480 49480 F DEBUG   : Timestamp: 2026-11-11 07:12:34.668330566+0800
+11-11 07:12:34.690 49480 49480 F DEBUG   : Process uptime: 3s
+11-11 07:12:34.690 49480 49480 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:34.690 49480 49480 F DEBUG   : pid: 49464, tid: 49464, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:34.690 49480 49480 F DEBUG   : uid: 0
+11-11 07:12:34.690 49480 49480 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007d08b7ca7d80
+11-11 07:12:34.690 49480 49480 F DEBUG   :     rax 0000000000000000  rbx 00007d0c1b0f489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:34.690 49480 49480 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:12:34.690 49480 49480 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007d08b7ca7d80  r15 0000000000008928
+11-11 07:12:34.690 49480 49480 F DEBUG   :     rdi 00007d08b806ec08  rsi 0000000000001000
+11-11 07:12:34.690 49480 49480 F DEBUG   :     rbp 00007ffee11601a0  rsp 00007ffee1160138  rip 00007d08b7ca7d80
+11-11 07:12:34.690 49480 49480 F DEBUG   : 4 total frames
+11-11 07:12:34.690 49480 49480 F DEBUG   : backtrace:
+11-11 07:12:34.690 49480 49480 F DEBUG   :       #00 pc 00007d08b7ca7d80  <unknown>
+11-11 07:12:34.690 49480 49480 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:34.690 49480 49480 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:34.690 49480 49480 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:42.498 49491 49491 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x712b3d881d80 in tid 49491 (Shutdown thread), pid 49491 (Shutdown thread)
+11-11 07:12:42.528 49508 49508 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:42.528 49508 49508 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:42.528 49508 49508 F DEBUG   : Revision: '0'
+11-11 07:12:42.528 49508 49508 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:42.528 49508 49508 F DEBUG   : Timestamp: 2026-11-11 07:12:42.507637166+0800
+11-11 07:12:42.528 49508 49508 F DEBUG   : Process uptime: 3s
+11-11 07:12:42.528 49508 49508 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:42.528 49508 49508 F DEBUG   : pid: 49491, tid: 49491, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:42.528 49508 49508 F DEBUG   : uid: 0
+11-11 07:12:42.528 49508 49508 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000712b3d881d80
+11-11 07:12:42.528 49508 49508 F DEBUG   :     rax 0000000000000000  rbx 0000712e943b389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:42.528 49508 49508 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:12:42.528 49508 49508 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000712b3d881d80  r15 0000000000008928
+11-11 07:12:42.528 49508 49508 F DEBUG   :     rdi 0000712b3dc48c08  rsi 0000000000001000
+11-11 07:12:42.528 49508 49508 F DEBUG   :     rbp 00007fff9722dac0  rsp 00007fff9722da58  rip 0000712b3d881d80
+11-11 07:12:42.528 49508 49508 F DEBUG   : 4 total frames
+11-11 07:12:42.528 49508 49508 F DEBUG   : backtrace:
+11-11 07:12:42.528 49508 49508 F DEBUG   :       #00 pc 0000712b3d881d80  <unknown>
+11-11 07:12:42.528 49508 49508 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:42.528 49508 49508 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:42.528 49508 49508 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:51.230 49520 49520 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x729401ac7d80 in tid 49520 (Shutdown thread), pid 49520 (Shutdown thread)
+11-11 07:12:51.258 49537 49537 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:51.258 49537 49537 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:51.258 49537 49537 F DEBUG   : Revision: '0'
+11-11 07:12:51.258 49537 49537 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:51.258 49537 49537 F DEBUG   : Timestamp: 2026-11-11 07:12:51.238867377+0800
+11-11 07:12:51.258 49537 49537 F DEBUG   : Process uptime: 2s
+11-11 07:12:51.258 49537 49537 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:51.258 49537 49537 F DEBUG   : pid: 49520, tid: 49520, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:51.258 49537 49537 F DEBUG   : uid: 0
+11-11 07:12:51.258 49537 49537 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000729401ac7d80
+11-11 07:12:51.258 49537 49537 F DEBUG   :     rax 0000000000000000  rbx 00007296c89f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:51.258 49537 49537 F DEBUG   :     r8  00007296c89e9fa4  r9  00000000000032d9  r10 0000000000000000  r11 0000000000000206
+11-11 07:12:51.258 49537 49537 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000729401ac7d80  r15 0000000000008928
+11-11 07:12:51.258 49537 49537 F DEBUG   :     rdi 0000729401e8ec08  rsi 0000000000001000
+11-11 07:12:51.258 49537 49537 F DEBUG   :     rbp 00007ffc4b1b1b60  rsp 00007ffc4b1b1af8  rip 0000729401ac7d80
+11-11 07:12:51.258 49537 49537 F DEBUG   : 4 total frames
+11-11 07:12:51.258 49537 49537 F DEBUG   : backtrace:
+11-11 07:12:51.258 49537 49537 F DEBUG   :       #00 pc 0000729401ac7d80  <unknown>
+11-11 07:12:51.258 49537 49537 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:51.258 49537 49537 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:51.258 49537 49537 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:57.663 49549 49549 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x77d9edc52d80 in tid 49549 (Shutdown thread), pid 49549 (Shutdown thread)
+11-11 07:12:57.690 49565 49565 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:12:57.690 49565 49565 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:12:57.690 49565 49565 F DEBUG   : Revision: '0'
+11-11 07:12:57.690 49565 49565 F DEBUG   : ABI: 'x86_64'
+11-11 07:12:57.690 49565 49565 F DEBUG   : Timestamp: 2026-11-11 07:12:57.671573389+0800
+11-11 07:12:57.690 49565 49565 F DEBUG   : Process uptime: 3s
+11-11 07:12:57.690 49565 49565 F DEBUG   : Cmdline: uiautomator
+11-11 07:12:57.690 49565 49565 F DEBUG   : pid: 49549, tid: 49549, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:12:57.690 49565 49565 F DEBUG   : uid: 0
+11-11 07:12:57.690 49565 49565 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000077d9edc52d80
+11-11 07:12:57.690 49565 49565 F DEBUG   :     rax 0000000000000000  rbx 000077dce58f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:12:57.690 49565 49565 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:12:57.690 49565 49565 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000077d9edc52d80  r15 0000000000008928
+11-11 07:12:57.690 49565 49565 F DEBUG   :     rdi 000077d9ee019c08  rsi 0000000000001000
+11-11 07:12:57.690 49565 49565 F DEBUG   :     rbp 00007ffdb70e7bf0  rsp 00007ffdb70e7b88  rip 000077d9edc52d80
+11-11 07:12:57.690 49565 49565 F DEBUG   : 4 total frames
+11-11 07:12:57.691 49565 49565 F DEBUG   : backtrace:
+11-11 07:12:57.691 49565 49565 F DEBUG   :       #00 pc 000077d9edc52d80  <unknown>
+11-11 07:12:57.691 49565 49565 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:57.691 49565 49565 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:12:57.691 49565 49565 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:07.097 49581 49581 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x791bede5cd80 in tid 49581 (Shutdown thread), pid 49581 (Shutdown thread)
+11-11 07:13:07.124 49597 49597 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:13:07.124 49597 49597 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:13:07.124 49597 49597 F DEBUG   : Revision: '0'
+11-11 07:13:07.124 49597 49597 F DEBUG   : ABI: 'x86_64'
+11-11 07:13:07.124 49597 49597 F DEBUG   : Timestamp: 2026-11-11 07:13:07.105466828+0800
+11-11 07:13:07.124 49597 49597 F DEBUG   : Process uptime: 3s
+11-11 07:13:07.124 49597 49597 F DEBUG   : Cmdline: uiautomator
+11-11 07:13:07.124 49597 49597 F DEBUG   : pid: 49581, tid: 49581, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:13:07.124 49597 49597 F DEBUG   : uid: 0
+11-11 07:13:07.124 49597 49597 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000791bede5cd80
+11-11 07:13:07.124 49597 49597 F DEBUG   :     rax 0000000000000000  rbx 0000791ec11cd89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:13:07.124 49597 49597 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:13:07.124 49597 49597 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000791bede5cd80  r15 0000000000008928
+11-11 07:13:07.124 49597 49597 F DEBUG   :     rdi 0000791bee223c08  rsi 0000000000001000
+11-11 07:13:07.124 49597 49597 F DEBUG   :     rbp 00007ffda11327d0  rsp 00007ffda1132768  rip 0000791bede5cd80
+11-11 07:13:07.124 49597 49597 F DEBUG   : 4 total frames
+11-11 07:13:07.124 49597 49597 F DEBUG   : backtrace:
+11-11 07:13:07.124 49597 49597 F DEBUG   :       #00 pc 0000791bede5cd80  <unknown>
+11-11 07:13:07.124 49597 49597 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:07.124 49597 49597 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:07.124 49597 49597 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:22.947 49613 49613 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7076288eed80 in tid 49613 (Shutdown thread), pid 49613 (Shutdown thread)
+11-11 07:13:22.974 49630 49630 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:13:22.974 49630 49630 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:13:22.974 49630 49630 F DEBUG   : Revision: '0'
+11-11 07:13:22.974 49630 49630 F DEBUG   : ABI: 'x86_64'
+11-11 07:13:22.974 49630 49630 F DEBUG   : Timestamp: 2026-11-11 07:13:22.955162046+0800
+11-11 07:13:22.974 49630 49630 F DEBUG   : Process uptime: 3s
+11-11 07:13:22.974 49630 49630 F DEBUG   : Cmdline: uiautomator
+11-11 07:13:22.974 49630 49630 F DEBUG   : pid: 49613, tid: 49613, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:13:22.974 49630 49630 F DEBUG   : uid: 0
+11-11 07:13:22.974 49630 49630 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007076288eed80
+11-11 07:13:22.974 49630 49630 F DEBUG   :     rax 0000000000000000  rbx 00007078edbf389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:13:22.974 49630 49630 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:13:22.974 49630 49630 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007076288eed80  r15 0000000000008928
+11-11 07:13:22.974 49630 49630 F DEBUG   :     rdi 0000707628cb5c08  rsi 0000000000001000
+11-11 07:13:22.974 49630 49630 F DEBUG   :     rbp 00007ffc26a38d70  rsp 00007ffc26a38d08  rip 00007076288eed80
+11-11 07:13:22.974 49630 49630 F DEBUG   : 4 total frames
+11-11 07:13:22.974 49630 49630 F DEBUG   : backtrace:
+11-11 07:13:22.974 49630 49630 F DEBUG   :       #00 pc 00007076288eed80  <unknown>
+11-11 07:13:22.974 49630 49630 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:22.974 49630 49630 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:22.974 49630 49630 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:30.810 49641 49641 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7f0b18ce7d80 in tid 49641 (Shutdown thread), pid 49641 (Shutdown thread)
+11-11 07:13:30.838 49657 49657 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:13:30.838 49657 49657 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:13:30.838 49657 49657 F DEBUG   : Revision: '0'
+11-11 07:13:30.838 49657 49657 F DEBUG   : ABI: 'x86_64'
+11-11 07:13:30.838 49657 49657 F DEBUG   : Timestamp: 2026-11-11 07:13:30.819198896+0800
+11-11 07:13:30.838 49657 49657 F DEBUG   : Process uptime: 3s
+11-11 07:13:30.838 49657 49657 F DEBUG   : Cmdline: uiautomator
+11-11 07:13:30.838 49657 49657 F DEBUG   : pid: 49641, tid: 49641, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:13:30.838 49657 49657 F DEBUG   : uid: 0
+11-11 07:13:30.838 49657 49657 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007f0b18ce7d80
+11-11 07:13:30.838 49657 49657 F DEBUG   :     rax 0000000000000000  rbx 00007f0e0df7689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:13:30.838 49657 49657 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:13:30.838 49657 49657 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007f0b18ce7d80  r15 0000000000008928
+11-11 07:13:30.838 49657 49657 F DEBUG   :     rdi 00007f0b190aec08  rsi 0000000000001000
+11-11 07:13:30.838 49657 49657 F DEBUG   :     rbp 00007ffe7d0f46f0  rsp 00007ffe7d0f4688  rip 00007f0b18ce7d80
+11-11 07:13:30.838 49657 49657 F DEBUG   : 4 total frames
+11-11 07:13:30.838 49657 49657 F DEBUG   : backtrace:
+11-11 07:13:30.838 49657 49657 F DEBUG   :       #00 pc 00007f0b18ce7d80  <unknown>
+11-11 07:13:30.838 49657 49657 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:30.838 49657 49657 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:30.838 49657 49657 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:35.774 49663 49663 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e29ad25bd80 in tid 49663 (Shutdown thread), pid 49663 (Shutdown thread)
+11-11 07:13:35.802 49678 49678 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:13:35.802 49678 49678 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:13:35.802 49678 49678 F DEBUG   : Revision: '0'
+11-11 07:13:35.802 49678 49678 F DEBUG   : ABI: 'x86_64'
+11-11 07:13:35.802 49678 49678 F DEBUG   : Timestamp: 2026-11-11 07:13:35.782381182+0800
+11-11 07:13:35.802 49678 49678 F DEBUG   : Process uptime: 3s
+11-11 07:13:35.802 49678 49678 F DEBUG   : Cmdline: uiautomator
+11-11 07:13:35.802 49678 49678 F DEBUG   : pid: 49663, tid: 49663, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:13:35.802 49678 49678 F DEBUG   : uid: 0
+11-11 07:13:35.802 49678 49678 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e29ad25bd80
+11-11 07:13:35.802 49678 49678 F DEBUG   :     rax 0000000000000000  rbx 00007e2c8a39189c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:13:35.802 49678 49678 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:13:35.802 49678 49678 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e29ad25bd80  r15 0000000000008928
+11-11 07:13:35.802 49678 49678 F DEBUG   :     rdi 00007e29ad622c08  rsi 0000000000001000
+11-11 07:13:35.802 49678 49678 F DEBUG   :     rbp 00007fff4e3aa430  rsp 00007fff4e3aa3c8  rip 00007e29ad25bd80
+11-11 07:13:35.802 49678 49678 F DEBUG   : 4 total frames
+11-11 07:13:35.802 49678 49678 F DEBUG   : backtrace:
+11-11 07:13:35.802 49678 49678 F DEBUG   :       #00 pc 00007e29ad25bd80  <unknown>
+11-11 07:13:35.802 49678 49678 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:35.802 49678 49678 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:35.802 49678 49678 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:41.887 49690 49690 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7ae60f724d80 in tid 49690 (Shutdown thread), pid 49690 (Shutdown thread)
+11-11 07:13:41.915 49707 49707 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:13:41.915 49707 49707 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:13:41.915 49707 49707 F DEBUG   : Revision: '0'
+11-11 07:13:41.915 49707 49707 F DEBUG   : ABI: 'x86_64'
+11-11 07:13:41.915 49707 49707 F DEBUG   : Timestamp: 2026-11-11 07:13:41.896285567+0800
+11-11 07:13:41.915 49707 49707 F DEBUG   : Process uptime: 3s
+11-11 07:13:41.915 49707 49707 F DEBUG   : Cmdline: uiautomator
+11-11 07:13:41.915 49707 49707 F DEBUG   : pid: 49690, tid: 49690, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:13:41.915 49707 49707 F DEBUG   : uid: 0
+11-11 07:13:41.915 49707 49707 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007ae60f724d80
+11-11 07:13:41.915 49707 49707 F DEBUG   :     rax 0000000000000000  rbx 00007ae8e177489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:13:41.915 49707 49707 F DEBUG   :     r8  00007ae8e176bfa4  r9  00000000000032a3  r10 0000000000000000  r11 0000000000000206
+11-11 07:13:41.915 49707 49707 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007ae60f724d80  r15 0000000000008928
+11-11 07:13:41.915 49707 49707 F DEBUG   :     rdi 00007ae60faebc08  rsi 0000000000001000
+11-11 07:13:41.915 49707 49707 F DEBUG   :     rbp 00007fff419c4050  rsp 00007fff419c3fe8  rip 00007ae60f724d80
+11-11 07:13:41.915 49707 49707 F DEBUG   : 4 total frames
+11-11 07:13:41.915 49707 49707 F DEBUG   : backtrace:
+11-11 07:13:41.915 49707 49707 F DEBUG   :       #00 pc 00007ae60f724d80  <unknown>
+11-11 07:13:41.915 49707 49707 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:41.915 49707 49707 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:41.915 49707 49707 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:47.864 49719 49719 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e06258e7d80 in tid 49719 (Shutdown thread), pid 49719 (Shutdown thread)
+11-11 07:13:47.891 49735 49735 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:13:47.891 49735 49735 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:13:47.891 49735 49735 F DEBUG   : Revision: '0'
+11-11 07:13:47.891 49735 49735 F DEBUG   : ABI: 'x86_64'
+11-11 07:13:47.891 49735 49735 F DEBUG   : Timestamp: 2026-11-11 07:13:47.872364624+0800
+11-11 07:13:47.891 49735 49735 F DEBUG   : Process uptime: 3s
+11-11 07:13:47.891 49735 49735 F DEBUG   : Cmdline: uiautomator
+11-11 07:13:47.891 49735 49735 F DEBUG   : pid: 49719, tid: 49719, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:13:47.891 49735 49735 F DEBUG   : uid: 0
+11-11 07:13:47.891 49735 49735 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e06258e7d80
+11-11 07:13:47.891 49735 49735 F DEBUG   :     rax 0000000000000000  rbx 00007e09092f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:13:47.891 49735 49735 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:13:47.891 49735 49735 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e06258e7d80  r15 0000000000008928
+11-11 07:13:47.891 49735 49735 F DEBUG   :     rdi 00007e0625caec08  rsi 0000000000001000
+11-11 07:13:47.891 49735 49735 F DEBUG   :     rbp 00007ffefa9092c0  rsp 00007ffefa909258  rip 00007e06258e7d80
+11-11 07:13:47.891 49735 49735 F DEBUG   : 4 total frames
+11-11 07:13:47.891 49735 49735 F DEBUG   : backtrace:
+11-11 07:13:47.891 49735 49735 F DEBUG   :       #00 pc 00007e06258e7d80  <unknown>
+11-11 07:13:47.891 49735 49735 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:47.891 49735 49735 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:13:47.891 49735 49735 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:08.994 49876 49876 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x702946502d80 in tid 49876 (Shutdown thread), pid 49876 (Shutdown thread)
+11-11 07:14:09.027 49892 49892 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:09.027 49892 49892 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:09.027 49892 49892 F DEBUG   : Revision: '0'
+11-11 07:14:09.027 49892 49892 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:09.027 49892 49892 F DEBUG   : Timestamp: 2026-11-11 07:14:09.004860130+0800
+11-11 07:14:09.027 49892 49892 F DEBUG   : Process uptime: 3s
+11-11 07:14:09.027 49892 49892 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:09.027 49892 49892 F DEBUG   : pid: 49876, tid: 49876, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:09.027 49892 49892 F DEBUG   : uid: 0
+11-11 07:14:09.027 49892 49892 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000702946502d80
+11-11 07:14:09.027 49892 49892 F DEBUG   :     rax 0000000000000000  rbx 0000702c2d1eb89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:09.027 49892 49892 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:09.027 49892 49892 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000702946502d80  r15 0000000000008928
+11-11 07:14:09.027 49892 49892 F DEBUG   :     rdi 00007029468c9c08  rsi 0000000000001000
+11-11 07:14:09.027 49892 49892 F DEBUG   :     rbp 00007fff3f8b8470  rsp 00007fff3f8b8408  rip 0000702946502d80
+11-11 07:14:09.027 49892 49892 F DEBUG   : 4 total frames
+11-11 07:14:09.027 49892 49892 F DEBUG   : backtrace:
+11-11 07:14:09.027 49892 49892 F DEBUG   :       #00 pc 0000702946502d80  <unknown>
+11-11 07:14:09.027 49892 49892 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:09.027 49892 49892 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:09.027 49892 49892 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:17.848 49906 49906 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7cc56728bd80 in tid 49906 (Shutdown thread), pid 49906 (Shutdown thread)
+11-11 07:14:17.883 49922 49922 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:17.883 49922 49922 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:17.884 49922 49922 F DEBUG   : Revision: '0'
+11-11 07:14:17.884 49922 49922 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:17.884 49922 49922 F DEBUG   : Timestamp: 2026-11-11 07:14:17.857957920+0800
+11-11 07:14:17.884 49922 49922 F DEBUG   : Process uptime: 3s
+11-11 07:14:17.884 49922 49922 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:17.884 49922 49922 F DEBUG   : pid: 49906, tid: 49906, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:17.884 49922 49922 F DEBUG   : uid: 0
+11-11 07:14:17.884 49922 49922 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007cc56728bd80
+11-11 07:14:17.884 49922 49922 F DEBUG   :     rax 0000000000000000  rbx 00007cc82ccf689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:17.884 49922 49922 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:17.884 49922 49922 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007cc56728bd80  r15 0000000000008928
+11-11 07:14:17.884 49922 49922 F DEBUG   :     rdi 00007cc567652c08  rsi 0000000000001000
+11-11 07:14:17.884 49922 49922 F DEBUG   :     rbp 00007fff59265aa0  rsp 00007fff59265a38  rip 00007cc56728bd80
+11-11 07:14:17.884 49922 49922 F DEBUG   : 4 total frames
+11-11 07:14:17.884 49922 49922 F DEBUG   : backtrace:
+11-11 07:14:17.884 49922 49922 F DEBUG   :       #00 pc 00007cc56728bd80  <unknown>
+11-11 07:14:17.884 49922 49922 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:17.884 49922 49922 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:17.884 49922 49922 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:28.215 49939 49939 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7178abb19d80 in tid 49939 (Shutdown thread), pid 49939 (Shutdown thread)
+11-11 07:14:28.244 49956 49956 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:28.244 49956 49956 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:28.244 49956 49956 F DEBUG   : Revision: '0'
+11-11 07:14:28.244 49956 49956 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:28.244 49956 49956 F DEBUG   : Timestamp: 2026-11-11 07:14:28.224160997+0800
+11-11 07:14:28.244 49956 49956 F DEBUG   : Process uptime: 2s
+11-11 07:14:28.244 49956 49956 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:28.244 49956 49956 F DEBUG   : pid: 49939, tid: 49939, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:28.244 49956 49956 F DEBUG   : uid: 0
+11-11 07:14:28.244 49956 49956 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007178abb19d80
+11-11 07:14:28.244 49956 49956 F DEBUG   :     rax 0000000000000000  rbx 0000717b7e9ab89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:28.244 49956 49956 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:28.244 49956 49956 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007178abb19d80  r15 0000000000008928
+11-11 07:14:28.244 49956 49956 F DEBUG   :     rdi 00007178abee0c08  rsi 0000000000001000
+11-11 07:14:28.244 49956 49956 F DEBUG   :     rbp 00007ffd8cdacf90  rsp 00007ffd8cdacf28  rip 00007178abb19d80
+11-11 07:14:28.244 49956 49956 F DEBUG   : 4 total frames
+11-11 07:14:28.244 49956 49956 F DEBUG   : backtrace:
+11-11 07:14:28.244 49956 49956 F DEBUG   :       #00 pc 00007178abb19d80  <unknown>
+11-11 07:14:28.244 49956 49956 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:28.244 49956 49956 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:28.244 49956 49956 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:34.129 49969 49969 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7172106fcd80 in tid 49969 (Shutdown thread), pid 49969 (Shutdown thread)
+11-11 07:14:34.157 49984 49984 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:34.157 49984 49984 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:34.157 49984 49984 F DEBUG   : Revision: '0'
+11-11 07:14:34.157 49984 49984 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:34.157 49984 49984 F DEBUG   : Timestamp: 2026-11-11 07:14:34.137378476+0800
+11-11 07:14:34.157 49984 49984 F DEBUG   : Process uptime: 3s
+11-11 07:14:34.157 49984 49984 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:34.157 49984 49984 F DEBUG   : pid: 49969, tid: 49969, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:34.157 49984 49984 F DEBUG   : uid: 0
+11-11 07:14:34.157 49984 49984 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007172106fcd80
+11-11 07:14:34.157 49984 49984 F DEBUG   :     rax 0000000000000000  rbx 0000717508fe489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:34.157 49984 49984 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:34.157 49984 49984 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007172106fcd80  r15 0000000000008928
+11-11 07:14:34.157 49984 49984 F DEBUG   :     rdi 0000717210ac3c08  rsi 0000000000001000
+11-11 07:14:34.157 49984 49984 F DEBUG   :     rbp 00007ffe34c0d460  rsp 00007ffe34c0d3f8  rip 00007172106fcd80
+11-11 07:14:34.157 49984 49984 F DEBUG   : 4 total frames
+11-11 07:14:34.157 49984 49984 F DEBUG   : backtrace:
+11-11 07:14:34.157 49984 49984 F DEBUG   :       #00 pc 00007172106fcd80  <unknown>
+11-11 07:14:34.157 49984 49984 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:34.157 49984 49984 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:34.157 49984 49984 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:40.605 50000 50000 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x76fd6cd1dd80 in tid 50000 (Shutdown thread), pid 50000 (Shutdown thread)
+11-11 07:14:40.633 50016 50016 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:40.633 50016 50016 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:40.633 50016 50016 F DEBUG   : Revision: '0'
+11-11 07:14:40.633 50016 50016 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:40.633 50016 50016 F DEBUG   : Timestamp: 2026-11-11 07:14:40.613675132+0800
+11-11 07:14:40.633 50016 50016 F DEBUG   : Process uptime: 3s
+11-11 07:14:40.633 50016 50016 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:40.633 50016 50016 F DEBUG   : pid: 50000, tid: 50000, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:40.633 50016 50016 F DEBUG   : uid: 0
+11-11 07:14:40.633 50016 50016 F DEBUG   : signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x000076fd6cd1dd80
+11-11 07:14:40.633 50016 50016 F DEBUG   : Cause: trying to execute non-executable memory.
+11-11 07:14:40.633 50016 50016 F DEBUG   :     rax 0000000000000000  rbx 0000770030bb289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:40.633 50016 50016 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:40.633 50016 50016 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076fd6cd1dd80  r15 0000000000008928
+11-11 07:14:40.633 50016 50016 F DEBUG   :     rdi 000076fd6d0e4c08  rsi 0000000000001000
+11-11 07:14:40.633 50016 50016 F DEBUG   :     rbp 00007fff44f53750  rsp 00007fff44f536e8  rip 000076fd6cd1dd80
+11-11 07:14:40.633 50016 50016 F DEBUG   : 4 total frames
+11-11 07:14:40.633 50016 50016 F DEBUG   : backtrace:
+11-11 07:14:40.633 50016 50016 F DEBUG   :       #00 pc 000000000091dd80  <anonymous:76fd6c400000>
+11-11 07:14:40.633 50016 50016 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:40.633 50016 50016 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:40.634 50016 50016 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:48.473 50028 50028 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7230492e4d80 in tid 50028 (Shutdown thread), pid 50028 (Shutdown thread)
+11-11 07:14:48.501 50043 50043 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:48.501 50043 50043 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:48.501 50043 50043 F DEBUG   : Revision: '0'
+11-11 07:14:48.501 50043 50043 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:48.501 50043 50043 F DEBUG   : Timestamp: 2026-11-11 07:14:48.482702266+0800
+11-11 07:14:48.501 50043 50043 F DEBUG   : Process uptime: 3s
+11-11 07:14:48.501 50043 50043 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:48.501 50043 50043 F DEBUG   : pid: 50028, tid: 50028, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:48.501 50043 50043 F DEBUG   : uid: 0
+11-11 07:14:48.501 50043 50043 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007230492e4d80
+11-11 07:14:48.501 50043 50043 F DEBUG   :     rax 0000000000000000  rbx 00007233128fe89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:48.501 50043 50043 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:48.501 50043 50043 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007230492e4d80  r15 0000000000008928
+11-11 07:14:48.501 50043 50043 F DEBUG   :     rdi 00007230496abc08  rsi 0000000000001000
+11-11 07:14:48.501 50043 50043 F DEBUG   :     rbp 00007fff64e7f390  rsp 00007fff64e7f328  rip 00007230492e4d80
+11-11 07:14:48.501 50043 50043 F DEBUG   : 4 total frames
+11-11 07:14:48.501 50043 50043 F DEBUG   : backtrace:
+11-11 07:14:48.501 50043 50043 F DEBUG   :       #00 pc 00007230492e4d80  <unknown>
+11-11 07:14:48.501 50043 50043 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:48.501 50043 50043 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:48.501 50043 50043 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:54.558 50056 50056 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x78e037876d80 in tid 50056 (Shutdown thread), pid 50056 (Shutdown thread)
+11-11 07:14:54.587 50071 50071 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:14:54.587 50071 50071 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:14:54.587 50071 50071 F DEBUG   : Revision: '0'
+11-11 07:14:54.587 50071 50071 F DEBUG   : ABI: 'x86_64'
+11-11 07:14:54.587 50071 50071 F DEBUG   : Timestamp: 2026-11-11 07:14:54.567201210+0800
+11-11 07:14:54.587 50071 50071 F DEBUG   : Process uptime: 3s
+11-11 07:14:54.587 50071 50071 F DEBUG   : Cmdline: uiautomator
+11-11 07:14:54.587 50071 50071 F DEBUG   : pid: 50056, tid: 50056, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:14:54.587 50071 50071 F DEBUG   : uid: 0
+11-11 07:14:54.587 50071 50071 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000078e037876d80
+11-11 07:14:54.587 50071 50071 F DEBUG   :     rax 0000000000000000  rbx 000078e3877f289c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:14:54.587 50071 50071 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:14:54.587 50071 50071 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000078e037876d80  r15 0000000000008928
+11-11 07:14:54.587 50071 50071 F DEBUG   :     rdi 000078e037c3dc08  rsi 0000000000001000
+11-11 07:14:54.587 50071 50071 F DEBUG   :     rbp 00007fff02e81560  rsp 00007fff02e814f8  rip 000078e037876d80
+11-11 07:14:54.587 50071 50071 F DEBUG   : 4 total frames
+11-11 07:14:54.587 50071 50071 F DEBUG   : backtrace:
+11-11 07:14:54.587 50071 50071 F DEBUG   :       #00 pc 000078e037876d80  <unknown>
+11-11 07:14:54.587 50071 50071 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:54.587 50071 50071 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:14:54.587 50071 50071 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:04.747 50087 50087 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x719ced04ed80 in tid 50087 (Shutdown thread), pid 50087 (Shutdown thread)
+11-11 07:15:04.775 50104 50104 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:04.775 50104 50104 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:04.775 50104 50104 F DEBUG   : Revision: '0'
+11-11 07:15:04.775 50104 50104 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:04.775 50104 50104 F DEBUG   : Timestamp: 2026-11-11 07:15:04.755449229+0800
+11-11 07:15:04.775 50104 50104 F DEBUG   : Process uptime: 3s
+11-11 07:15:04.775 50104 50104 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:04.775 50104 50104 F DEBUG   : pid: 50087, tid: 50087, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:04.775 50104 50104 F DEBUG   : uid: 0
+11-11 07:15:04.775 50104 50104 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000719ced04ed80
+11-11 07:15:04.775 50104 50104 F DEBUG   :     rax 0000000000000000  rbx 0000719fe9bc589c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:04.775 50104 50104 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:04.775 50104 50104 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000719ced04ed80  r15 0000000000008928
+11-11 07:15:04.775 50104 50104 F DEBUG   :     rdi 0000719ced415c08  rsi 0000000000001000
+11-11 07:15:04.775 50104 50104 F DEBUG   :     rbp 00007ffc7077d650  rsp 00007ffc7077d5e8  rip 0000719ced04ed80
+11-11 07:15:04.775 50104 50104 F DEBUG   : 4 total frames
+11-11 07:15:04.775 50104 50104 F DEBUG   : backtrace:
+11-11 07:15:04.775 50104 50104 F DEBUG   :       #00 pc 0000719ced04ed80  <unknown>
+11-11 07:15:04.775 50104 50104 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:04.775 50104 50104 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:04.775 50104 50104 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:10.612 50115 50115 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7ee336f13d80 in tid 50115 (Shutdown thread), pid 50115 (Shutdown thread)
+11-11 07:15:10.640 50130 50130 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:10.640 50130 50130 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:10.640 50130 50130 F DEBUG   : Revision: '0'
+11-11 07:15:10.640 50130 50130 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:10.640 50130 50130 F DEBUG   : Timestamp: 2026-11-11 07:15:10.621798323+0800
+11-11 07:15:10.640 50130 50130 F DEBUG   : Process uptime: 3s
+11-11 07:15:10.640 50130 50130 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:10.640 50130 50130 F DEBUG   : pid: 50115, tid: 50115, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:10.640 50130 50130 F DEBUG   : uid: 0
+11-11 07:15:10.640 50130 50130 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007ee336f13d80
+11-11 07:15:10.640 50130 50130 F DEBUG   :     rax 0000000000000000  rbx 00007ee6aa53a89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:10.640 50130 50130 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:10.640 50130 50130 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007ee336f13d80  r15 0000000000008928
+11-11 07:15:10.640 50130 50130 F DEBUG   :     rdi 00007ee3372dac08  rsi 0000000000001000
+11-11 07:15:10.640 50130 50130 F DEBUG   :     rbp 00007fffe45e0d10  rsp 00007fffe45e0ca8  rip 00007ee336f13d80
+11-11 07:15:10.640 50130 50130 F DEBUG   : 4 total frames
+11-11 07:15:10.640 50130 50130 F DEBUG   : backtrace:
+11-11 07:15:10.640 50130 50130 F DEBUG   :       #00 pc 00007ee336f13d80  <unknown>
+11-11 07:15:10.640 50130 50130 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:10.640 50130 50130 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:10.640 50130 50130 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:17.430 50145 50145 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x73c4dda72d80 in tid 50145 (Shutdown thread), pid 50145 (Shutdown thread)
+11-11 07:15:17.458 50161 50161 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:17.458 50161 50161 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:17.458 50161 50161 F DEBUG   : Revision: '0'
+11-11 07:15:17.458 50161 50161 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:17.458 50161 50161 F DEBUG   : Timestamp: 2026-11-11 07:15:17.438210274+0800
+11-11 07:15:17.458 50161 50161 F DEBUG   : Process uptime: 3s
+11-11 07:15:17.458 50161 50161 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:17.458 50161 50161 F DEBUG   : pid: 50145, tid: 50145, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:17.458 50161 50161 F DEBUG   : uid: 0
+11-11 07:15:17.458 50161 50161 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000073c4dda72d80
+11-11 07:15:17.458 50161 50161 F DEBUG   :     rax 0000000000000000  rbx 000073c7af2f489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:17.458 50161 50161 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:17.458 50161 50161 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000073c4dda72d80  r15 0000000000008928
+11-11 07:15:17.458 50161 50161 F DEBUG   :     rdi 000073c4dde39c08  rsi 0000000000001000
+11-11 07:15:17.458 50161 50161 F DEBUG   :     rbp 00007ffca9bff310  rsp 00007ffca9bff2a8  rip 000073c4dda72d80
+11-11 07:15:17.458 50161 50161 F DEBUG   : 4 total frames
+11-11 07:15:17.458 50161 50161 F DEBUG   : backtrace:
+11-11 07:15:17.458 50161 50161 F DEBUG   :       #00 pc 000073c4dda72d80  <unknown>
+11-11 07:15:17.458 50161 50161 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:17.458 50161 50161 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:17.458 50161 50161 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:22.596 50170 50170 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7a041b68ed80 in tid 50170 (Shutdown thread), pid 50170 (Shutdown thread)
+11-11 07:15:22.624 50186 50186 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:22.624 50186 50186 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:22.624 50186 50186 F DEBUG   : Revision: '0'
+11-11 07:15:22.624 50186 50186 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:22.624 50186 50186 F DEBUG   : Timestamp: 2026-11-11 07:15:22.604765789+0800
+11-11 07:15:22.624 50186 50186 F DEBUG   : Process uptime: 3s
+11-11 07:15:22.624 50186 50186 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:22.624 50186 50186 F DEBUG   : pid: 50170, tid: 50170, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:22.624 50186 50186 F DEBUG   : uid: 0
+11-11 07:15:22.624 50186 50186 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007a041b68ed80
+11-11 07:15:22.624 50186 50186 F DEBUG   :     rax 0000000000000000  rbx 00007a07140fe89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:22.624 50186 50186 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:22.624 50186 50186 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007a041b68ed80  r15 0000000000008928
+11-11 07:15:22.624 50186 50186 F DEBUG   :     rdi 00007a041ba55c08  rsi 0000000000001000
+11-11 07:15:22.624 50186 50186 F DEBUG   :     rbp 00007ffdf1fe8d40  rsp 00007ffdf1fe8cd8  rip 00007a041b68ed80
+11-11 07:15:22.624 50186 50186 F DEBUG   : 4 total frames
+11-11 07:15:22.624 50186 50186 F DEBUG   : backtrace:
+11-11 07:15:22.624 50186 50186 F DEBUG   :       #00 pc 00007a041b68ed80  <unknown>
+11-11 07:15:22.624 50186 50186 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:22.624 50186 50186 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:22.624 50186 50186 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:30.799 50198 50198 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e8ba44f6d80 in tid 50198 (Shutdown thread), pid 50198 (Shutdown thread)
+11-11 07:15:30.830 50213 50213 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:30.830 50213 50213 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:30.830 50213 50213 F DEBUG   : Revision: '0'
+11-11 07:15:30.830 50213 50213 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:30.830 50213 50213 F DEBUG   : Timestamp: 2026-11-11 07:15:30.808624054+0800
+11-11 07:15:30.830 50213 50213 F DEBUG   : Process uptime: 3s
+11-11 07:15:30.830 50213 50213 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:30.830 50213 50213 F DEBUG   : pid: 50198, tid: 50198, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:30.830 50213 50213 F DEBUG   : uid: 0
+11-11 07:15:30.830 50213 50213 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e8ba44f6d80
+11-11 07:15:30.830 50213 50213 F DEBUG   :     rax 0000000000000000  rbx 00007e8e7e1f489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:30.830 50213 50213 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:30.830 50213 50213 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e8ba44f6d80  r15 0000000000008928
+11-11 07:15:30.830 50213 50213 F DEBUG   :     rdi 00007e8ba48bdc08  rsi 0000000000001000
+11-11 07:15:30.830 50213 50213 F DEBUG   :     rbp 00007ffc58f8b8b0  rsp 00007ffc58f8b848  rip 00007e8ba44f6d80
+11-11 07:15:30.830 50213 50213 F DEBUG   : 4 total frames
+11-11 07:15:30.830 50213 50213 F DEBUG   : backtrace:
+11-11 07:15:30.830 50213 50213 F DEBUG   :       #00 pc 00007e8ba44f6d80  <unknown>
+11-11 07:15:30.830 50213 50213 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:30.830 50213 50213 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:30.830 50213 50213 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:43.014 50230 50230 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7bb459d0fd80 in tid 50230 (Shutdown thread), pid 50230 (Shutdown thread)
+11-11 07:15:43.043 50246 50246 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:43.043 50246 50246 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:43.043 50246 50246 F DEBUG   : Revision: '0'
+11-11 07:15:43.043 50246 50246 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:43.043 50246 50246 F DEBUG   : Timestamp: 2026-11-11 07:15:43.023252659+0800
+11-11 07:15:43.043 50246 50246 F DEBUG   : Process uptime: 3s
+11-11 07:15:43.043 50246 50246 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:43.043 50246 50246 F DEBUG   : pid: 50230, tid: 50230, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:43.043 50246 50246 F DEBUG   : uid: 0
+11-11 07:15:43.043 50246 50246 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007bb459d0fd80
+11-11 07:15:43.043 50246 50246 F DEBUG   :     rax 0000000000000000  rbx 00007bb72d9f489c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:43.043 50246 50246 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:43.043 50246 50246 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007bb459d0fd80  r15 0000000000008928
+11-11 07:15:43.043 50246 50246 F DEBUG   :     rdi 00007bb45a0d6c08  rsi 0000000000001000
+11-11 07:15:43.043 50246 50246 F DEBUG   :     rbp 00007ffc2a5e1020  rsp 00007ffc2a5e0fb8  rip 00007bb459d0fd80
+11-11 07:15:43.043 50246 50246 F DEBUG   : 4 total frames
+11-11 07:15:43.043 50246 50246 F DEBUG   : backtrace:
+11-11 07:15:43.043 50246 50246 F DEBUG   :       #00 pc 00007bb459d0fd80  <unknown>
+11-11 07:15:43.043 50246 50246 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:43.043 50246 50246 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:43.043 50246 50246 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:50.100 50257 50257 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7506eec56d80 in tid 50257 (Shutdown thread), pid 50257 (Shutdown thread)
+11-11 07:15:50.129 50273 50273 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:50.129 50273 50273 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:50.129 50273 50273 F DEBUG   : Revision: '0'
+11-11 07:15:50.129 50273 50273 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:50.129 50273 50273 F DEBUG   : Timestamp: 2026-11-11 07:15:50.109148107+0800
+11-11 07:15:50.129 50273 50273 F DEBUG   : Process uptime: 3s
+11-11 07:15:50.129 50273 50273 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:50.129 50273 50273 F DEBUG   : pid: 50257, tid: 50257, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:50.129 50273 50273 F DEBUG   : uid: 0
+11-11 07:15:50.129 50273 50273 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007506eec56d80
+11-11 07:15:50.129 50273 50273 F DEBUG   :     rax 0000000000000000  rbx 00007509f33ba89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:50.129 50273 50273 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:50.129 50273 50273 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007506eec56d80  r15 0000000000008928
+11-11 07:15:50.129 50273 50273 F DEBUG   :     rdi 00007506ef01dc08  rsi 0000000000001000
+11-11 07:15:50.129 50273 50273 F DEBUG   :     rbp 00007ffc7901f850  rsp 00007ffc7901f7e8  rip 00007506eec56d80
+11-11 07:15:50.129 50273 50273 F DEBUG   : 4 total frames
+11-11 07:15:50.129 50273 50273 F DEBUG   : backtrace:
+11-11 07:15:50.129 50273 50273 F DEBUG   :       #00 pc 00007506eec56d80  <unknown>
+11-11 07:15:50.129 50273 50273 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:50.129 50273 50273 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:50.129 50273 50273 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:57.080 50284 50284 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x71ab08287d80 in tid 50284 (Shutdown thread), pid 50284 (Shutdown thread)
+11-11 07:15:57.107 50300 50300 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:15:57.107 50300 50300 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:15:57.107 50300 50300 F DEBUG   : Revision: '0'
+11-11 07:15:57.107 50300 50300 F DEBUG   : ABI: 'x86_64'
+11-11 07:15:57.107 50300 50300 F DEBUG   : Timestamp: 2026-11-11 07:15:57.088521692+0800
+11-11 07:15:57.107 50300 50300 F DEBUG   : Process uptime: 3s
+11-11 07:15:57.107 50300 50300 F DEBUG   : Cmdline: uiautomator
+11-11 07:15:57.107 50300 50300 F DEBUG   : pid: 50284, tid: 50284, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:15:57.107 50300 50300 F DEBUG   : uid: 0
+11-11 07:15:57.107 50300 50300 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000071ab08287d80
+11-11 07:15:57.107 50300 50300 F DEBUG   :     rax 0000000000000000  rbx 000071adfcd1e89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:15:57.107 50300 50300 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:15:57.107 50300 50300 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000071ab08287d80  r15 0000000000008928
+11-11 07:15:57.107 50300 50300 F DEBUG   :     rdi 000071ab0864ec08  rsi 0000000000001000
+11-11 07:15:57.107 50300 50300 F DEBUG   :     rbp 00007ffed39d54a0  rsp 00007ffed39d5438  rip 000071ab08287d80
+11-11 07:15:57.107 50300 50300 F DEBUG   : 4 total frames
+11-11 07:15:57.107 50300 50300 F DEBUG   : backtrace:
+11-11 07:15:57.107 50300 50300 F DEBUG   :       #00 pc 000071ab08287d80  <unknown>
+11-11 07:15:57.107 50300 50300 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:57.107 50300 50300 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:15:57.107 50300 50300 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:08.047 50318 50318 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7bd2bb267d80 in tid 50318 (Shutdown thread), pid 50318 (Shutdown thread)
+11-11 07:16:08.074 50334 50334 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:16:08.074 50334 50334 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:16:08.074 50334 50334 F DEBUG   : Revision: '0'
+11-11 07:16:08.074 50334 50334 F DEBUG   : ABI: 'x86_64'
+11-11 07:16:08.074 50334 50334 F DEBUG   : Timestamp: 2026-11-11 07:16:08.055918753+0800
+11-11 07:16:08.074 50334 50334 F DEBUG   : Process uptime: 3s
+11-11 07:16:08.074 50334 50334 F DEBUG   : Cmdline: uiautomator
+11-11 07:16:08.074 50334 50334 F DEBUG   : pid: 50318, tid: 50318, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:16:08.074 50334 50334 F DEBUG   : uid: 0
+11-11 07:16:08.074 50334 50334 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007bd2bb267d80
+11-11 07:16:08.074 50334 50334 F DEBUG   :     rax 0000000000000000  rbx 00007bd6270f189c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:16:08.074 50334 50334 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:16:08.074 50334 50334 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007bd2bb267d80  r15 0000000000008928
+11-11 07:16:08.074 50334 50334 F DEBUG   :     rdi 00007bd2bb62ec08  rsi 0000000000001000
+11-11 07:16:08.074 50334 50334 F DEBUG   :     rbp 00007ffdd3df5320  rsp 00007ffdd3df52b8  rip 00007bd2bb267d80
+11-11 07:16:08.074 50334 50334 F DEBUG   : 4 total frames
+11-11 07:16:08.074 50334 50334 F DEBUG   : backtrace:
+11-11 07:16:08.074 50334 50334 F DEBUG   :       #00 pc 00007bd2bb267d80  <unknown>
+11-11 07:16:08.074 50334 50334 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:08.074 50334 50334 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:08.074 50334 50334 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:19.947 50352 50352 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7b7d2bebfd80 in tid 50352 (Shutdown thread), pid 50352 (Shutdown thread)
+11-11 07:16:19.973 50370 50370 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:16:19.973 50370 50370 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:16:19.973 50370 50370 F DEBUG   : Revision: '0'
+11-11 07:16:19.973 50370 50370 F DEBUG   : ABI: 'x86_64'
+11-11 07:16:19.973 50370 50370 F DEBUG   : Timestamp: 2026-11-11 07:16:19.954702784+0800
+11-11 07:16:19.973 50370 50370 F DEBUG   : Process uptime: 3s
+11-11 07:16:19.973 50370 50370 F DEBUG   : Cmdline: uiautomator
+11-11 07:16:19.973 50370 50370 F DEBUG   : pid: 50352, tid: 50352, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:16:19.973 50370 50370 F DEBUG   : uid: 0
+11-11 07:16:19.973 50370 50370 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007b7d2bebfd80
+11-11 07:16:19.973 50370 50370 F DEBUG   :     rax 0000000000000000  rbx 00007b801fd5089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:16:19.973 50370 50370 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:16:19.973 50370 50370 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007b7d2bebfd80  r15 0000000000008928
+11-11 07:16:19.973 50370 50370 F DEBUG   :     rdi 00007b7d2c286c08  rsi 0000000000001000
+11-11 07:16:19.973 50370 50370 F DEBUG   :     rbp 00007ffe899dd540  rsp 00007ffe899dd4d8  rip 00007b7d2bebfd80
+11-11 07:16:19.973 50370 50370 F DEBUG   : 4 total frames
+11-11 07:16:19.973 50370 50370 F DEBUG   : backtrace:
+11-11 07:16:19.973 50370 50370 F DEBUG   :       #00 pc 00007b7d2bebfd80  <unknown>
+11-11 07:16:19.973 50370 50370 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:19.973 50370 50370 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:19.973 50370 50370 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:30.046 50387 50387 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7b2f11276d80 in tid 50387 (Shutdown thread), pid 50387 (Shutdown thread)
+11-11 07:16:30.074 50402 50402 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:16:30.074 50402 50402 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:16:30.074 50402 50402 F DEBUG   : Revision: '0'
+11-11 07:16:30.074 50402 50402 F DEBUG   : ABI: 'x86_64'
+11-11 07:16:30.074 50402 50402 F DEBUG   : Timestamp: 2026-11-11 07:16:30.054968247+0800
+11-11 07:16:30.074 50402 50402 F DEBUG   : Process uptime: 3s
+11-11 07:16:30.074 50402 50402 F DEBUG   : Cmdline: uiautomator
+11-11 07:16:30.074 50402 50402 F DEBUG   : pid: 50387, tid: 50387, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:16:30.074 50402 50402 F DEBUG   : uid: 0
+11-11 07:16:30.074 50402 50402 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007b2f11276d80
+11-11 07:16:30.074 50402 50402 F DEBUG   :     rax 0000000000000000  rbx 00007b31dc34389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:16:30.074 50402 50402 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:16:30.074 50402 50402 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007b2f11276d80  r15 0000000000008928
+11-11 07:16:30.074 50402 50402 F DEBUG   :     rdi 00007b2f1163dc08  rsi 0000000000001000
+11-11 07:16:30.074 50402 50402 F DEBUG   :     rbp 00007fffb455c9d0  rsp 00007fffb455c968  rip 00007b2f11276d80
+11-11 07:16:30.074 50402 50402 F DEBUG   : 4 total frames
+11-11 07:16:30.074 50402 50402 F DEBUG   : backtrace:
+11-11 07:16:30.074 50402 50402 F DEBUG   :       #00 pc 00007b2f11276d80  <unknown>
+11-11 07:16:30.074 50402 50402 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:30.074 50402 50402 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:30.074 50402 50402 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:37.646 50413 50413 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7fe246b18d80 in tid 50413 (Shutdown thread), pid 50413 (Shutdown thread)
+11-11 07:16:37.674 50429 50429 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:16:37.674 50429 50429 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:16:37.674 50429 50429 F DEBUG   : Revision: '0'
+11-11 07:16:37.674 50429 50429 F DEBUG   : ABI: 'x86_64'
+11-11 07:16:37.674 50429 50429 F DEBUG   : Timestamp: 2026-11-11 07:16:37.654981609+0800
+11-11 07:16:37.674 50429 50429 F DEBUG   : Process uptime: 3s
+11-11 07:16:37.674 50429 50429 F DEBUG   : Cmdline: uiautomator
+11-11 07:16:37.674 50429 50429 F DEBUG   : pid: 50413, tid: 50413, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:16:37.674 50429 50429 F DEBUG   : uid: 0
+11-11 07:16:37.674 50429 50429 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007fe246b18d80
+11-11 07:16:37.674 50429 50429 F DEBUG   :     rax 0000000000000000  rbx 00007fe50ed3089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:16:37.674 50429 50429 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:16:37.674 50429 50429 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007fe246b18d80  r15 0000000000008928
+11-11 07:16:37.674 50429 50429 F DEBUG   :     rdi 00007fe246edfc08  rsi 0000000000001000
+11-11 07:16:37.674 50429 50429 F DEBUG   :     rbp 00007ffc89443bf0  rsp 00007ffc89443b88  rip 00007fe246b18d80
+11-11 07:16:37.674 50429 50429 F DEBUG   : 4 total frames
+11-11 07:16:37.674 50429 50429 F DEBUG   : backtrace:
+11-11 07:16:37.674 50429 50429 F DEBUG   :       #00 pc 00007fe246b18d80  <unknown>
+11-11 07:16:37.674 50429 50429 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:37.675 50429 50429 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:16:37.675 50429 50429 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:00.546 50458 50458 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x718fb8685d80 in tid 50458 (Shutdown thread), pid 50458 (Shutdown thread)
+11-11 07:17:00.573 50474 50474 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:00.573 50474 50474 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:00.573 50474 50474 F DEBUG   : Revision: '0'
+11-11 07:17:00.573 50474 50474 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:00.573 50474 50474 F DEBUG   : Timestamp: 2026-11-11 07:17:00.554307692+0800
+11-11 07:17:00.573 50474 50474 F DEBUG   : Process uptime: 3s
+11-11 07:17:00.573 50474 50474 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:00.573 50474 50474 F DEBUG   : pid: 50458, tid: 50458, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:00.573 50474 50474 F DEBUG   : uid: 0
+11-11 07:17:00.573 50474 50474 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0000718fb8685d80
+11-11 07:17:00.573 50474 50474 F DEBUG   :     rax 0000000000000000  rbx 000071930177589c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:00.573 50474 50474 F DEBUG   :     r8  000071930176cfa4  r9  0000000000003297  r10 0000000000000000  r11 0000000000000206
+11-11 07:17:00.573 50474 50474 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 0000718fb8685d80  r15 0000000000008928
+11-11 07:17:00.573 50474 50474 F DEBUG   :     rdi 0000718fb8a4cc08  rsi 0000000000001000
+11-11 07:17:00.573 50474 50474 F DEBUG   :     rbp 00007ffc6f170be0  rsp 00007ffc6f170b78  rip 0000718fb8685d80
+11-11 07:17:00.573 50474 50474 F DEBUG   : 4 total frames
+11-11 07:17:00.573 50474 50474 F DEBUG   : backtrace:
+11-11 07:17:00.573 50474 50474 F DEBUG   :       #00 pc 0000718fb8685d80  <unknown>
+11-11 07:17:00.573 50474 50474 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:00.573 50474 50474 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:00.573 50474 50474 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:07.766 50485 50485 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x78cddec6dd80 in tid 50485 (Shutdown thread), pid 50485 (Shutdown thread)
+11-11 07:17:07.795 50501 50501 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:07.795 50501 50501 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:07.795 50501 50501 F DEBUG   : Revision: '0'
+11-11 07:17:07.795 50501 50501 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:07.795 50501 50501 F DEBUG   : Timestamp: 2026-11-11 07:17:07.775597400+0800
+11-11 07:17:07.795 50501 50501 F DEBUG   : Process uptime: 3s
+11-11 07:17:07.795 50501 50501 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:07.795 50501 50501 F DEBUG   : pid: 50485, tid: 50485, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:07.795 50501 50501 F DEBUG   : uid: 0
+11-11 07:17:07.795 50501 50501 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000078cddec6dd80
+11-11 07:17:07.795 50501 50501 F DEBUG   :     rax 0000000000000000  rbx 000078d0d2fd389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:07.795 50501 50501 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:17:07.795 50501 50501 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000078cddec6dd80  r15 0000000000008928
+11-11 07:17:07.795 50501 50501 F DEBUG   :     rdi 000078cddf034c08  rsi 0000000000001000
+11-11 07:17:07.795 50501 50501 F DEBUG   :     rbp 00007ffefd9a9ea0  rsp 00007ffefd9a9e38  rip 000078cddec6dd80
+11-11 07:17:07.795 50501 50501 F DEBUG   : 4 total frames
+11-11 07:17:07.795 50501 50501 F DEBUG   : backtrace:
+11-11 07:17:07.795 50501 50501 F DEBUG   :       #00 pc 000078cddec6dd80  <unknown>
+11-11 07:17:07.795 50501 50501 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:07.795 50501 50501 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:07.795 50501 50501 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:18.315 50528 50528 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76a081eacd80 in tid 50528 (Shutdown thread), pid 50528 (Shutdown thread)
+11-11 07:17:18.345 50546 50546 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:18.345 50546 50546 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:18.345 50546 50546 F DEBUG   : Revision: '0'
+11-11 07:17:18.345 50546 50546 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:18.345 50546 50546 F DEBUG   : Timestamp: 2026-11-11 07:17:18.326117891+0800
+11-11 07:17:18.345 50546 50546 F DEBUG   : Process uptime: 3s
+11-11 07:17:18.345 50546 50546 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:18.345 50546 50546 F DEBUG   : pid: 50528, tid: 50528, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:18.345 50546 50546 F DEBUG   : uid: 0
+11-11 07:17:18.345 50546 50546 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000076a081eacd80
+11-11 07:17:18.345 50546 50546 F DEBUG   :     rax 0000000000000000  rbx 000076a355df589c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:18.345 50546 50546 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:17:18.345 50546 50546 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076a081eacd80  r15 0000000000008928
+11-11 07:17:18.345 50546 50546 F DEBUG   :     rdi 000076a082273c08  rsi 0000000000001000
+11-11 07:17:18.345 50546 50546 F DEBUG   :     rbp 00007fff49a64550  rsp 00007fff49a644e8  rip 000076a081eacd80
+11-11 07:17:18.345 50546 50546 F DEBUG   : 4 total frames
+11-11 07:17:18.345 50546 50546 F DEBUG   : backtrace:
+11-11 07:17:18.345 50546 50546 F DEBUG   :       #00 pc 000076a081eacd80  <unknown>
+11-11 07:17:18.345 50546 50546 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:18.345 50546 50546 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:18.345 50546 50546 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:23.063 50551 50551 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x72ff3d8ffd80 in tid 50551 (Shutdown thread), pid 50551 (Shutdown thread)
+11-11 07:17:23.090 50568 50568 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:23.090 50568 50568 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:23.090 50568 50568 F DEBUG   : Revision: '0'
+11-11 07:17:23.090 50568 50568 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:23.090 50568 50568 F DEBUG   : Timestamp: 2026-11-11 07:17:23.071910679+0800
+11-11 07:17:23.090 50568 50568 F DEBUG   : Process uptime: 3s
+11-11 07:17:23.090 50568 50568 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:23.090 50568 50568 F DEBUG   : pid: 50551, tid: 50551, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:23.090 50568 50568 F DEBUG   : uid: 0
+11-11 07:17:23.090 50568 50568 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000072ff3d8ffd80
+11-11 07:17:23.090 50568 50568 F DEBUG   :     rax 0000000000000000  rbx 000073029fd1a89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:23.090 50568 50568 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:17:23.090 50568 50568 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000072ff3d8ffd80  r15 0000000000008928
+11-11 07:17:23.090 50568 50568 F DEBUG   :     rdi 000072ff3dcc6c08  rsi 0000000000001000
+11-11 07:17:23.090 50568 50568 F DEBUG   :     rbp 00007ffc4341f1f0  rsp 00007ffc4341f188  rip 000072ff3d8ffd80
+11-11 07:17:23.090 50568 50568 F DEBUG   : 4 total frames
+11-11 07:17:23.090 50568 50568 F DEBUG   : backtrace:
+11-11 07:17:23.090 50568 50568 F DEBUG   :       #00 pc 000072ff3d8ffd80  <unknown>
+11-11 07:17:23.090 50568 50568 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:23.090 50568 50568 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:23.090 50568 50568 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:29.630 50581 50581 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7f7df645dd80 in tid 50581 (Shutdown thread), pid 50581 (Shutdown thread)
+11-11 07:17:29.658 50597 50597 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:29.658 50597 50597 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:29.658 50597 50597 F DEBUG   : Revision: '0'
+11-11 07:17:29.658 50597 50597 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:29.658 50597 50597 F DEBUG   : Timestamp: 2026-11-11 07:17:29.639492299+0800
+11-11 07:17:29.658 50597 50597 F DEBUG   : Process uptime: 3s
+11-11 07:17:29.658 50597 50597 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:29.658 50597 50597 F DEBUG   : pid: 50581, tid: 50581, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:29.658 50597 50597 F DEBUG   : uid: 0
+11-11 07:17:29.658 50597 50597 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007f7df645dd80
+11-11 07:17:29.658 50597 50597 F DEBUG   :     rax 0000000000000000  rbx 00007f80df2f589c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:29.658 50597 50597 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:17:29.658 50597 50597 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007f7df645dd80  r15 0000000000008928
+11-11 07:17:29.658 50597 50597 F DEBUG   :     rdi 00007f7df6824c08  rsi 0000000000001000
+11-11 07:17:29.658 50597 50597 F DEBUG   :     rbp 00007ffd78612460  rsp 00007ffd786123f8  rip 00007f7df645dd80
+11-11 07:17:29.658 50597 50597 F DEBUG   : 4 total frames
+11-11 07:17:29.658 50597 50597 F DEBUG   : backtrace:
+11-11 07:17:29.658 50597 50597 F DEBUG   :       #00 pc 00007f7df645dd80  <unknown>
+11-11 07:17:29.658 50597 50597 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:29.658 50597 50597 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:29.658 50597 50597 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:40.256 50620 50620 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7fee93a93d80 in tid 50620 (Shutdown thread), pid 50620 (Shutdown thread)
+11-11 07:17:40.285 50638 50638 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:40.285 50638 50638 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:40.285 50638 50638 F DEBUG   : Revision: '0'
+11-11 07:17:40.285 50638 50638 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:40.285 50638 50638 F DEBUG   : Timestamp: 2026-11-11 07:17:40.265905698+0800
+11-11 07:17:40.285 50638 50638 F DEBUG   : Process uptime: 5s
+11-11 07:17:40.285 50638 50638 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:40.285 50638 50638 F DEBUG   : pid: 50620, tid: 50620, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:40.285 50638 50638 F DEBUG   : uid: 0
+11-11 07:17:40.285 50638 50638 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007fee93a93d80
+11-11 07:17:40.285 50638 50638 F DEBUG   :     rax 0000000000000000  rbx 00007ff16c54d89c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:40.285 50638 50638 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:17:40.285 50638 50638 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007fee93a93d80  r15 0000000000008928
+11-11 07:17:40.285 50638 50638 F DEBUG   :     rdi 00007fee93e5ac08  rsi 0000000000001000
+11-11 07:17:40.285 50638 50638 F DEBUG   :     rbp 00007ffccff056a0  rsp 00007ffccff05638  rip 00007fee93a93d80
+11-11 07:17:40.285 50638 50638 F DEBUG   : 4 total frames
+11-11 07:17:40.285 50638 50638 F DEBUG   : backtrace:
+11-11 07:17:40.285 50638 50638 F DEBUG   :       #00 pc 00007fee93a93d80  <unknown>
+11-11 07:17:40.285 50638 50638 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:40.285 50638 50638 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:40.285 50638 50638 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:51.940 50653 50653 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7cd7306e3d80 in tid 50653 (Shutdown thread), pid 50653 (Shutdown thread)
+11-11 07:17:51.969 50671 50671 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:51.969 50671 50671 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:51.969 50671 50671 F DEBUG   : Revision: '0'
+11-11 07:17:51.969 50671 50671 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:51.969 50671 50671 F DEBUG   : Timestamp: 2026-11-11 07:17:51.949239057+0800
+11-11 07:17:51.969 50671 50671 F DEBUG   : Process uptime: 3s
+11-11 07:17:51.969 50671 50671 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:51.969 50671 50671 F DEBUG   : pid: 50653, tid: 50653, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:51.969 50671 50671 F DEBUG   : uid: 0
+11-11 07:17:51.969 50671 50671 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007cd7306e3d80
+11-11 07:17:51.969 50671 50671 F DEBUG   :     rax 0000000000000000  rbx 00007cda09b2689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:51.969 50671 50671 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:17:51.969 50671 50671 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007cd7306e3d80  r15 0000000000008928
+11-11 07:17:51.969 50671 50671 F DEBUG   :     rdi 00007cd730aaac08  rsi 0000000000001000
+11-11 07:17:51.969 50671 50671 F DEBUG   :     rbp 00007fff44e1f130  rsp 00007fff44e1f0c8  rip 00007cd7306e3d80
+11-11 07:17:51.969 50671 50671 F DEBUG   : 4 total frames
+11-11 07:17:51.969 50671 50671 F DEBUG   : backtrace:
+11-11 07:17:51.969 50671 50671 F DEBUG   :       #00 pc 00007cd7306e3d80  <unknown>
+11-11 07:17:51.969 50671 50671 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:51.969 50671 50671 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:51.969 50671 50671 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:55.531 50681 50681 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x77c882676d80 in tid 50681 (Shutdown thread), pid 50681 (Shutdown thread)
+11-11 07:17:55.557 50697 50697 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:17:55.558 50697 50697 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:17:55.558 50697 50697 F DEBUG   : Revision: '0'
+11-11 07:17:55.558 50697 50697 F DEBUG   : ABI: 'x86_64'
+11-11 07:17:55.558 50697 50697 F DEBUG   : Timestamp: 2026-11-11 07:17:55.539082965+0800
+11-11 07:17:55.558 50697 50697 F DEBUG   : Process uptime: 3s
+11-11 07:17:55.558 50697 50697 F DEBUG   : Cmdline: uiautomator
+11-11 07:17:55.558 50697 50697 F DEBUG   : pid: 50681, tid: 50681, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:17:55.558 50697 50697 F DEBUG   : uid: 0
+11-11 07:17:55.558 50697 50697 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000077c882676d80
+11-11 07:17:55.558 50697 50697 F DEBUG   :     rax 0000000000000000  rbx 000077cb6bb7389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:17:55.558 50697 50697 F DEBUG   :     r8  000077cb6bb6afa4  r9  00000000000032af  r10 0000000000000000  r11 0000000000000206
+11-11 07:17:55.558 50697 50697 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000077c882676d80  r15 0000000000008928
+11-11 07:17:55.558 50697 50697 F DEBUG   :     rdi 000077c882a3dc08  rsi 0000000000001000
+11-11 07:17:55.558 50697 50697 F DEBUG   :     rbp 00007fff91471360  rsp 00007fff914712f8  rip 000077c882676d80
+11-11 07:17:55.558 50697 50697 F DEBUG   : 4 total frames
+11-11 07:17:55.558 50697 50697 F DEBUG   : backtrace:
+11-11 07:17:55.558 50697 50697 F DEBUG   :       #00 pc 000077c882676d80  <unknown>
+11-11 07:17:55.558 50697 50697 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:55.558 50697 50697 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:17:55.558 50697 50697 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:01.997 50710 50710 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7e21570b9d80 in tid 50710 (Shutdown thread), pid 50710 (Shutdown thread)
+11-11 07:18:02.026 50728 50728 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:18:02.026 50728 50728 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:18:02.026 50728 50728 F DEBUG   : Revision: '0'
+11-11 07:18:02.026 50728 50728 F DEBUG   : ABI: 'x86_64'
+11-11 07:18:02.026 50728 50728 F DEBUG   : Timestamp: 2026-11-11 07:18:02.006713857+0800
+11-11 07:18:02.026 50728 50728 F DEBUG   : Process uptime: 3s
+11-11 07:18:02.026 50728 50728 F DEBUG   : Cmdline: uiautomator
+11-11 07:18:02.026 50728 50728 F DEBUG   : pid: 50710, tid: 50710, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:18:02.026 50728 50728 F DEBUG   : uid: 0
+11-11 07:18:02.026 50728 50728 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007e21570b9d80
+11-11 07:18:02.026 50728 50728 F DEBUG   :     rax 0000000000000000  rbx 00007e24323f589c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:18:02.026 50728 50728 F DEBUG   :     r8  00007e24323ecfa4  r9  00000000000032b2  r10 0000000000000000  r11 0000000000000206
+11-11 07:18:02.026 50728 50728 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007e21570b9d80  r15 0000000000008928
+11-11 07:18:02.026 50728 50728 F DEBUG   :     rdi 00007e2157480c08  rsi 0000000000001000
+11-11 07:18:02.026 50728 50728 F DEBUG   :     rbp 00007ffc4886c8a0  rsp 00007ffc4886c838  rip 00007e21570b9d80
+11-11 07:18:02.026 50728 50728 F DEBUG   : 4 total frames
+11-11 07:18:02.026 50728 50728 F DEBUG   : backtrace:
+11-11 07:18:02.026 50728 50728 F DEBUG   :       #00 pc 00007e21570b9d80  <unknown>
+11-11 07:18:02.026 50728 50728 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:02.026 50728 50728 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:02.026 50728 50728 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:09.147 50741 50741 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7699446c1d80 in tid 50741 (Shutdown thread), pid 50741 (Shutdown thread)
+11-11 07:18:09.177 50757 50757 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:18:09.177 50757 50757 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:18:09.177 50757 50757 F DEBUG   : Revision: '0'
+11-11 07:18:09.177 50757 50757 F DEBUG   : ABI: 'x86_64'
+11-11 07:18:09.177 50757 50757 F DEBUG   : Timestamp: 2026-11-11 07:18:09.156980840+0800
+11-11 07:18:09.177 50757 50757 F DEBUG   : Process uptime: 3s
+11-11 07:18:09.177 50757 50757 F DEBUG   : Cmdline: uiautomator
+11-11 07:18:09.177 50757 50757 F DEBUG   : pid: 50741, tid: 50741, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:18:09.177 50757 50757 F DEBUG   : uid: 0
+11-11 07:18:09.177 50757 50757 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007699446c1d80
+11-11 07:18:09.177 50757 50757 F DEBUG   :     rax 0000000000000000  rbx 0000769c2a77189c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:18:09.177 50757 50757 F DEBUG   :     r8  0000769c2a768fa4  r9  000000000000330c  r10 0000000000000000  r11 0000000000000206
+11-11 07:18:09.177 50757 50757 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007699446c1d80  r15 0000000000008928
+11-11 07:18:09.177 50757 50757 F DEBUG   :     rdi 0000769944a88c08  rsi 0000000000001000
+11-11 07:18:09.177 50757 50757 F DEBUG   :     rbp 00007fffea1ab010  rsp 00007fffea1aafa8  rip 00007699446c1d80
+11-11 07:18:09.177 50757 50757 F DEBUG   : 4 total frames
+11-11 07:18:09.177 50757 50757 F DEBUG   : backtrace:
+11-11 07:18:09.177 50757 50757 F DEBUG   :       #00 pc 00007699446c1d80  <unknown>
+11-11 07:18:09.177 50757 50757 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:09.177 50757 50757 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:09.177 50757 50757 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:30.348 50798 50798 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x72dcd16d8d80 in tid 50798 (Shutdown thread), pid 50798 (Shutdown thread)
+11-11 07:18:30.374 50814 50814 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:18:30.374 50814 50814 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:18:30.374 50814 50814 F DEBUG   : Revision: '0'
+11-11 07:18:30.374 50814 50814 F DEBUG   : ABI: 'x86_64'
+11-11 07:18:30.374 50814 50814 F DEBUG   : Timestamp: 2026-11-11 07:18:30.356163646+0800
+11-11 07:18:30.374 50814 50814 F DEBUG   : Process uptime: 3s
+11-11 07:18:30.374 50814 50814 F DEBUG   : Cmdline: uiautomator
+11-11 07:18:30.374 50814 50814 F DEBUG   : pid: 50798, tid: 50798, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:18:30.374 50814 50814 F DEBUG   : uid: 0
+11-11 07:18:30.374 50814 50814 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000072dcd16d8d80
+11-11 07:18:30.374 50814 50814 F DEBUG   :     rax 0000000000000000  rbx 000072df97f5689c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:18:30.374 50814 50814 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:18:30.374 50814 50814 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000072dcd16d8d80  r15 0000000000008928
+11-11 07:18:30.374 50814 50814 F DEBUG   :     rdi 000072dcd1a9fc08  rsi 0000000000001000
+11-11 07:18:30.374 50814 50814 F DEBUG   :     rbp 00007ffd062e05b0  rsp 00007ffd062e0548  rip 000072dcd16d8d80
+11-11 07:18:30.374 50814 50814 F DEBUG   : 4 total frames
+11-11 07:18:30.374 50814 50814 F DEBUG   : backtrace:
+11-11 07:18:30.374 50814 50814 F DEBUG   :       #00 pc 000072dcd16d8d80  <unknown>
+11-11 07:18:30.374 50814 50814 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:30.374 50814 50814 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:30.374 50814 50814 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:40.979 50833 50833 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7cd480903d80 in tid 50833 (Shutdown thread), pid 50833 (Shutdown thread)
+11-11 07:18:41.007 50849 50849 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:18:41.007 50849 50849 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:18:41.007 50849 50849 F DEBUG   : Revision: '0'
+11-11 07:18:41.007 50849 50849 F DEBUG   : ABI: 'x86_64'
+11-11 07:18:41.007 50849 50849 F DEBUG   : Timestamp: 2026-11-11 07:18:40.988291007+0800
+11-11 07:18:41.007 50849 50849 F DEBUG   : Process uptime: 3s
+11-11 07:18:41.007 50849 50849 F DEBUG   : Cmdline: uiautomator
+11-11 07:18:41.007 50849 50849 F DEBUG   : pid: 50833, tid: 50833, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:18:41.007 50849 50849 F DEBUG   : uid: 0
+11-11 07:18:41.007 50849 50849 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007cd480903d80
+11-11 07:18:41.007 50849 50849 F DEBUG   :     rax 0000000000000000  rbx 00007cd767db389c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:18:41.007 50849 50849 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:18:41.007 50849 50849 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007cd480903d80  r15 0000000000008928
+11-11 07:18:41.007 50849 50849 F DEBUG   :     rdi 00007cd480ccac08  rsi 0000000000001000
+11-11 07:18:41.007 50849 50849 F DEBUG   :     rbp 00007ffe3228cc40  rsp 00007ffe3228cbd8  rip 00007cd480903d80
+11-11 07:18:41.007 50849 50849 F DEBUG   : 4 total frames
+11-11 07:18:41.007 50849 50849 F DEBUG   : backtrace:
+11-11 07:18:41.007 50849 50849 F DEBUG   :       #00 pc 00007cd480903d80  <unknown>
+11-11 07:18:41.007 50849 50849 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:41.007 50849 50849 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:18:41.007 50849 50849 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:19:17.186 51023 51023 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76f0864c2d80 in tid 51023 (Shutdown thread), pid 51023 (Shutdown thread)
+11-11 07:19:17.215 51041 51041 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 07:19:17.215 51041 51041 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 07:19:17.215 51041 51041 F DEBUG   : Revision: '0'
+11-11 07:19:17.215 51041 51041 F DEBUG   : ABI: 'x86_64'
+11-11 07:19:17.215 51041 51041 F DEBUG   : Timestamp: 2026-11-11 07:19:17.194954376+0800
+11-11 07:19:17.215 51041 51041 F DEBUG   : Process uptime: 3s
+11-11 07:19:17.215 51041 51041 F DEBUG   : Cmdline: uiautomator
+11-11 07:19:17.215 51041 51041 F DEBUG   : pid: 51023, tid: 51023, name: Shutdown thread  >>> uiautomator <<<
+11-11 07:19:17.215 51041 51041 F DEBUG   : uid: 0
+11-11 07:19:17.215 51041 51041 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x000076f0864c2d80
+11-11 07:19:17.215 51041 51041 F DEBUG   :     rax 0000000000000000  rbx 000076f3565f089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 07:19:17.215 51041 51041 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 07:19:17.215 51041 51041 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 000076f0864c2d80  r15 0000000000008928
+11-11 07:19:17.215 51041 51041 F DEBUG   :     rdi 000076f086889c08  rsi 0000000000001000
+11-11 07:19:17.215 51041 51041 F DEBUG   :     rbp 00007ffee8fe29d0  rsp 00007ffee8fe2968  rip 000076f0864c2d80
+11-11 07:19:17.215 51041 51041 F DEBUG   : 4 total frames
+11-11 07:19:17.215 51041 51041 F DEBUG   : backtrace:
+11-11 07:19:17.215 51041 51041 F DEBUG   :       #00 pc 000076f0864c2d80  <unknown>
+11-11 07:19:17.215 51041 51041 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:19:17.215 51041 51041 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 07:19:17.215 51041 51041 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
