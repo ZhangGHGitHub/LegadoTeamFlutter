@@ -1,0 +1,414 @@
+--------- beginning of system
+11-10 14:19:29.387   838  6936 I ActivityManager: Force stopping io.legado.flutter_legado appid=10067 user=0: from pid 14615
+11-10 14:19:29.388   838  6936 I ActivityManager: Killing 13533:io.legado.flutter_legado/u0a67 (adj 0): stop io.legado.flutter_legado due to from pid 14615
+11-10 14:19:29.388   838   859 D DisplayManagerService: Drop pending events for gone uid 10067
+11-10 14:19:29.389   838  6936 W ActivityTaskManager: Force removing ActivityRecord{6675353 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity t1210 f}}: app died, no saved state
+--------- beginning of main
+11-10 14:19:29.389   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-10 14:19:29.389   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-10 14:19:29.389   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={10067} in 0ms
+11-10 14:19:29.389   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-10 14:19:29.389   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-10 14:19:29.389   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={20067} in 0ms
+11-10 14:19:29.389   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:29.390  1097  1241 V WindowManagerShell: Transition requested (#321): android.os.BinderProxy@5917489 TransitionRequestInfo { type = CLOSE, triggerTask = TaskInfo{userId=0 taskId=1210 effectiveUid=10067 displayId=0 isRunning=false baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=null topActivity=null origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=0 lastActiveTime=141604591 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@b668c8e} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=null launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=true lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 321 }
+11-10 14:19:29.393  1791  1791 D ViewRootImpl: Skipping stats log for color mode
+11-10 14:19:29.393   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:29.394   838  6936 I AppsFilter: interaction: PackageSetting{5c82467 com.android.adbkeyboard/10056} -> PackageSetting{d5e33b3 io.legado.flutter_legado/10067} BLOCKED
+11-10 14:19:29.397  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-10 14:19:29.397   838   920 I UsageStatsService: Time changed in by -2 seconds
+11-10 14:19:29.397   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:29.397   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:29.400  1177  1177 D CarrierSvcBindHelper: onHandleForceStop: [io.legado.flutter_legado]
+11-10 14:19:29.400   838   949 I system_server: AssetManager2(0x74c46dee12f8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.401   838   949 I system_server: AssetManager2(0x74c46df1b638) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.403  1177  1177 D CarrierSvcBindHelper: No carrier app for: 0
+11-10 14:19:29.405   709   709 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-10 14:19:29.410   838   944 W InputDispatcher: channel 'b5d188 io.legado.flutter_legado/io.legado.flutter.MainActivity' ~ Consumer closed input channel or an error occurred.  events=0x9
+11-10 14:19:29.414   838   944 E InputDispatcher: channel 'b5d188 io.legado.flutter_legado/io.legado.flutter.MainActivity' ~ Channel is unrecoverably broken and will be disposed!
+11-10 14:19:29.414   838   944 I WindowManager: WINDOW DIED Window{b5d188 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}
+11-10 14:19:29.415  1791  1962 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:29.430   838  7898 V ActivityManager: Got obituary of 13533:io.legado.flutter_legado
+11-10 14:19:29.430   838  4692 I ImeTracker: io.legado.flutter_legado:151b5f67: onRequestHide at ORIGIN_SERVER reason HIDE_REMOVE_CLIENT fromUser false
+11-10 14:19:29.430   838  4692 I ImeTracker: io.legado.flutter_legado:151b5f67: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-10 14:19:29.430   838  7898 I WindowManager: WIN DEATH: Window{b5d188 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity EXITING}
+11-10 14:19:29.431   658   658 I Zygote  : Process 13533 exited due to signal 9 (Killed)
+11-10 14:19:29.431   838   861 W ActivityManager: setHasOverlayUi called on unknown pid: 13533
+11-10 14:19:29.433   838   861 V WindowManager: Unknown focus tokens, dropping reportFocusChanged
+11-10 14:19:29.439  1791 14619 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:29.442  1791 14619 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:29.449  1097  1652 V WindowManagerShell: onTransitionReady(transaction=3599182619852)
+11-10 14:19:29.449  1097  1241 V WindowManagerShell: onTransitionReady (#321) android.os.BinderProxy@5917489: {id=321 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-10 14:19:29.449  1097  1241 V WindowManagerShell:         {m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd514caf sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-10 14:19:29.449  1097  1241 V WindowManagerShell:         {m=CLOSE f=NONE leash=Surface(name=Task=1210)/@0xf5528bc sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-10 14:19:29.449  1097  1241 V WindowManagerShell:         {m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0x713d045 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}
+11-10 14:19:29.449  1097  1241 V WindowManagerShell:     ]}
+11-10 14:19:29.450  1097  1241 V WindowManagerShell: Playing animation for (#321) android.os.BinderProxy@5917489@0
+11-10 14:19:29.450  1097  1241 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-10 14:19:29.450  1097  1241 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=321 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd514caf sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=CLOSE f=NONE leash=Surface(name=Task=1210)/@0xf5528bc sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0x713d045 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}]}
+11-10 14:19:29.450  1097  1241 V WindowManagerShell:  Delegate animation for (#321) to null
+11-10 14:19:29.450  1097  1241 V WindowManagerShell: start default transition animation, info = {id=321 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd514caf sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=CLOSE f=NONE leash=Surface(name=Task=1210)/@0xf5528bc sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0x713d045 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}]}
+11-10 14:19:29.450  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@aa62bc1 animAttr=0x11 type=CLOSE isEntrance=false
+11-10 14:19:29.450   709   722 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:29.450  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@a7822a7 animAttr=0x10 type=CLOSE isEntrance=true
+11-10 14:19:29.451  1097  1241 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@2f3c1d5
+11-10 14:19:29.453   838   858 V WindowManager: Sent Transition (#321) createdAt=11-10 14:19:29.389 via request=TransitionRequestInfo { type = CLOSE, triggerTask = TaskInfo{userId=0 taskId=1210 effectiveUid=10067 displayId=0 isRunning=false baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=null topActivity=null origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=0 lastActiveTime=141604591 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{601c70c Task{59d4e5e #1210 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=null launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=true lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 321 }
+11-10 14:19:29.453   838   858 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-10 14:19:29.453   838   858 V WindowManager:     info={id=321 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-10 14:19:29.453   838   858 V WindowManager:         {WCT{RemoteToken{c571a95 Task{ef78a85 #1 type=home}}} m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd0e6f9e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-10 14:19:29.453   838   858 V WindowManager:         {WCT{RemoteToken{601c70c Task{59d4e5e #1210 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} m=CLOSE f=NONE leash=Surface(name=Task=1210)/@0x8680b0e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-10 14:19:29.453   838   858 V WindowManager:         {m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0xc114776 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}
+11-10 14:19:29.453   838   858 V WindowManager:     ]}
+11-10 14:19:29.454   838  6936 W UserManagerService: Requested status bar icon for non-badged user 0
+11-10 14:19:29.454  1097  1241 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#321) android.os.BinderProxy@5917489@0
+11-10 14:19:29.455   838   858 V WindowManager: Finish Transition (#321): created at 11-10 14:19:29.389 collect-started=0.012ms request-sent=0.039ms started=4.511ms ready=4.503ms sent=60.334ms finished=66.095ms
+11-10 14:19:29.463   838  7095 E IPCThreadState: Binder transaction failure. id: 1293473, BR_*: 29189, error: -22 (Invalid argument)
+11-10 14:19:29.463   838  7095 W ActivityManager: pid 838 system sent binder code 7 with flags 1 to frozen apps and got error -32
+11-10 14:19:29.464   838  7095 W WindowManager: Exception thrown during dispatchAppVisibility Window{b5d188 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity EXITING}
+11-10 14:19:29.464   838  7095 W WindowManager: android.os.DeadObjectException
+11-10 14:19:29.464   838  7095 W WindowManager: 	at android.os.BinderProxy.transactNative(Native Method)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at android.os.BinderProxy.transact(BinderProxy.java:592)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at android.view.IWindow$Stub$Proxy.dispatchAppVisibility(IWindow.java:557)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.WindowState.sendAppVisibilityToClients(WindowState.java:3298)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.WindowContainer.sendAppVisibilityToClients(WindowContainer.java:1343)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.WindowToken.setClientVisible(WindowToken.java:437)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.ActivityRecord.setClientVisible(ActivityRecord.java:7158)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.ActivityRecord.postApplyAnimation(ActivityRecord.java:5849)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.ActivityRecord.commitVisibility(ActivityRecord.java:5792)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.Transition.finishTransition(Transition.java:1373)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.TransitionController.finishTransition(TransitionController.java:986)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.WindowOrganizerController.finishTransition(WindowOrganizerController.java:526)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at android.window.IWindowOrganizerController$Stub.onTransact(IWindowOrganizerController.java:293)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at com.android.server.wm.WindowOrganizerController.onTransact(WindowOrganizerController.java:215)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-10 14:19:29.464   838  7095 W WindowManager: 	at android.os.Binder.execTransact(Binder.java:1350)
+11-10 14:19:29.464   838  7095 W Process : Unable to open /proc/13533/status
+11-10 14:19:29.466  1097  1241 V WindowManagerShell: Track 0 became idle
+11-10 14:19:29.466  1097  1241 V WindowManagerShell: All active transition animations finished
+11-10 14:19:29.466   838   948 I ImeTracker: com.microsoft.launcher:4e3f3bf6: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-10 14:19:29.469   838   858 E ActivityManager: Sending non-protected broadcast uu.intent.action.STOP_ACCELERATE from system 838:system/1000 pkg android
+11-10 14:19:29.469   838   858 E ActivityManager: java.lang.Throwable
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.wm.TaskUtils.$r8$lambda$zCiVPiagCM9gvj0qkEpNf1ODT4k(TaskUtils.java:2205)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda5.run(R8$$SyntheticClass:0)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.os.Looper.loop(Looper.java:317)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-10 14:19:29.469   838   858 E ActivityManager: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-10 14:19:29.469   838  7898 W UserManagerService: Requested status bar icon for non-badged user 0
+11-10 14:19:29.470  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-10 14:19:29.474   838  6936 W UserManagerService: Requested status bar icon for non-badged user 0
+11-10 14:19:29.474   838  7898 I system_server: AssetManager2(0x74c46deefd58) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.474   838  7898 I system_server: AssetManager2(0x74c46df1e838) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.475   838  7898 I system_server: AssetManager2(0x74c46df02318) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.475   838  7898 I system_server: AssetManager2(0x74c46df25278) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.475  1791  1791 D InsetsController: hide(ime(), fromIme=false)
+11-10 14:19:29.475  1791  1791 I ImeTracker: com.microsoft.launcher:4e3f3bf6: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-10 14:19:29.476   838  7898 I system_server: AssetManager2(0x74c46df04bb8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.476   838  7898 I system_server: AssetManager2(0x74c46def6158) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.477   838  7898 I system_server: AssetManager2(0x74c46df096b8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.478   838  7898 I system_server: AssetManager2(0x74c46defbf18) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.478   838  7898 I system_server: AssetManager2(0x74c46df02f98) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.479   838  7898 I system_server: AssetManager2(0x74c46df019b8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.479   838  7898 I system_server: AssetManager2(0x74c46df1f198) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.480   838  7898 I system_server: AssetManager2(0x74c46df0de98) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.480   838  7898 I system_server: AssetManager2(0x74c46dee4818) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.481   838  7898 I system_server: AssetManager2(0x74c46df0b918) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.481   838  7898 I system_server: AssetManager2(0x74c46deea2b8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.481   838  7898 I system_server: AssetManager2(0x74c46df00a18) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.481   838  7898 I system_server: AssetManager2(0x74c46dee9f98) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.482   838  7898 I system_server: AssetManager2(0x74c46df01698) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.482   838  7898 I system_server: AssetManager2(0x74c46df2d8d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.482   838  7898 I system_server: AssetManager2(0x74c46df09078) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.483   838  7898 I system_server: AssetManager2(0x74c46df116d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.484   838  7898 I system_server: AssetManager2(0x74c46df274d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.484   838  7898 I system_server: AssetManager2(0x74c46df1cf38) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.486   838  7898 I system_server: AssetManager2(0x74c46df1a698) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.486   838  7898 I system_server: AssetManager2(0x74c46df0fdd8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.487   838  7898 I system_server: AssetManager2(0x74c46df1ee78) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.487   709   709 E BpTransactionCompletedListener: Failed to transact (-32)
+11-10 14:19:29.487   709   709 E BpTransactionCompletedListener: Failed to transact (-32)
+11-10 14:19:29.488   838  7898 I system_server: AssetManager2(0x74c46df1b958) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.489   838  7898 I system_server: AssetManager2(0x74c46df0afb8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.490   838  7898 I system_server: AssetManager2(0x74c46df064b8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.491   838  7898 I system_server: AssetManager2(0x74c46def06b8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.492   838  7898 I system_server: AssetManager2(0x74c46df0bf58) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.492   838  7898 I system_server: AssetManager2(0x74c46df07138) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.492   838  7898 I system_server: AssetManager2(0x74c46df099d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.493   838  7898 I system_server: AssetManager2(0x74c46df1a378) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.494   838  7898 I system_server: AssetManager2(0x74c46df2a6d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.495   838  7898 I system_server: AssetManager2(0x74c46df20a98) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.498   838  7898 I system_server: AssetManager2(0x74c46df0eb18) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.500   838  7898 I system_server: AssetManager2(0x74c46deef718) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.502   838  7898 I system_server: AssetManager2(0x74c46df12678) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.503   838  7898 I system_server: AssetManager2(0x74c46deff758) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.506   838  7898 I system_server: AssetManager2(0x74c46df06198) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.507   838  7898 I system_server: AssetManager2(0x74c46def3ef8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.507   838  7898 I system_server: AssetManager2(0x74c46df04ed8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.508   838  7898 I system_server: AssetManager2(0x74c46deefa38) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.511   838  7898 I system_server: AssetManager2(0x74c46df12038) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.511   838  7898 I system_server: AssetManager2(0x74c46df15878) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.512   838  7898 I system_server: AssetManager2(0x74c46df003d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.514   838  7898 I system_server: AssetManager2(0x74c46df1faf8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.517   838  7898 I system_server: AssetManager2(0x74c46df23fb8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.519   838  7898 I system_server: AssetManager2(0x74c46deeea98) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.519   838  7898 I system_server: AssetManager2(0x74c46df07458) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.520   838  7898 I system_server: AssetManager2(0x74c46defdb38) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:29.602   838   851 W System  : A resource failed to call release. 
+11-10 14:19:29.972  2014  2014 W AccMsgReceiver: AccMsgReceiver: onReceive action = uu.intent.action.STOP_ACCELERATE
+11-10 14:19:29.975   838  1588 W ActivityManager: Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-10 14:19:29.975  2014  2075 W AccServiceManager: onAppClose: packageName = io.legado.flutter_legado
+11-10 14:19:31.465   838  7898 W ActivityTaskManager: callingPackage for (uid=2000, pid=14643) has no WPC
+11-10 14:19:31.466   838  7898 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@5ef0dbf0 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-10 14:19:31.466   838  7898 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-10 14:19:31.466   838  7898 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-10 14:19:31.467   838  7898 E CellBroadcastUtils: getDefaultCellBroadcastReceiverPackageName: no package found
+11-10 14:19:31.470  1097  1255 I ndroid.systemui: AssetManager2(0x74c46df210d8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:31.470   838  7898 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-10 14:19:31.471  1097  1241 V WindowManagerShell: Transition requested (#322): android.os.BinderProxy@32feb69 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1211 effectiveUid=10067 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=141958212 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@15769ee} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{92ce8f io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 322 }
+11-10 14:19:31.471  1097  1241 D ShellSplitScreen: logExit: no-op, mLoggerSessionId is null
+11-10 14:19:31.472   838   861 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@5ef0dbf0 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-10 14:19:31.474   838   873 W ActivityManager: Unknown package:com.google.android.gms
+11-10 14:19:31.475  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-10 14:19:31.475  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-10 14:19:31.475   838  1056 I AppsFilter: interaction: PackageSetting{5c82467 com.android.adbkeyboard/10056} -> PackageSetting{b649054 io.legado.flutter_legado/10067} BLOCKED
+11-10 14:19:31.476   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:31.478   838   949 I system_server: AssetManager2(0x74c46defdb38) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:31.478   838   949 I system_server: AssetManager2(0x74c46df28158) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:31.480   658   658 D Zygote  : Forked child process 14647
+11-10 14:19:31.480   838   873 I ActivityManager: Start proc 14647:io.legado.flutter_legado/u0a67 for next-top-activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}
+11-10 14:19:31.487   709   709 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-10 14:19:31.488   838  1056 D CoreBackPreview: Window{fe0d466 u0 Splash Screen io.legado.flutter_legado}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@1a391d4, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-10 14:19:31.489   838  7095 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-10 14:19:31.490  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.492  1097  1283 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-10 14:19:31.495  1097 14648 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.497   838   858 V WindowManager: Sent Transition (#322) createdAt=11-10 14:19:31.466 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1211 effectiveUid=10067 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=141958212 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{d6ec89a Task{2d345bc #1211 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{f163d89 io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 322 }
+11-10 14:19:31.497   838   858 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-10 14:19:31.497   838   858 V WindowManager:     info={id=322 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-10 14:19:31.497   838   858 V WindowManager:         {WCT{RemoteToken{d6ec89a Task{2d345bc #1211 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} m=OPEN f=NONE leash=Surface(name=Task=1211)/@0x70bdf7d sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-10 14:19:31.497   838   858 V WindowManager:         {WCT{RemoteToken{c571a95 Task{ef78a85 #1 type=home}}} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0xd0e6f9e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}
+11-10 14:19:31.497   838   858 V WindowManager:     ]}
+11-10 14:19:31.498  1097 34628 V WindowManagerShell: onTransitionReady(transaction=3599182619872)
+11-10 14:19:31.498  1097  1241 V WindowManagerShell: onTransitionReady (#322) android.os.BinderProxy@32feb69: {id=322 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-10 14:19:31.498  1097  1241 V WindowManagerShell:         {m=OPEN f=NONE leash=Surface(name=Task=1211)/@0xabd7211 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-10 14:19:31.498  1097  1241 V WindowManagerShell:         {m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x590ef76 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}
+11-10 14:19:31.498  1097  1241 V WindowManagerShell:     ]}
+11-10 14:19:31.498   838  7095 W UserManagerService: Requested status bar icon for non-badged user 0
+11-10 14:19:31.499  1097  1241 V WindowManagerShell: Playing animation for (#322) android.os.BinderProxy@32feb69@0
+11-10 14:19:31.499  1097  1241 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-10 14:19:31.499  1097  1241 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=322 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=OPEN f=NONE leash=Surface(name=Task=1211)/@0xabd7211 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x590ef76 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}]}
+11-10 14:19:31.499  1097  1241 V WindowManagerShell:  Delegate animation for (#322) to null
+11-10 14:19:31.499  1097  1241 V WindowManagerShell: start default transition animation, info = {id=322 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=OPEN f=NONE leash=Surface(name=Task=1211)/@0xabd7211 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x590ef76 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1}]}
+11-10 14:19:31.499  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@c948d02 animAttr=0x13 type=OPEN isEntrance=false
+11-10 14:19:31.499  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@842774e animAttr=0x12 type=OPEN isEntrance=true
+11-10 14:19:31.499  1097  1241 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@2f3c1d5
+11-10 14:19:31.504  1097  1241 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#322) android.os.BinderProxy@32feb69@0
+11-10 14:19:31.505   838   858 V WindowManager: Finish Transition (#322): created at 11-10 14:19:31.466 collect-started=0.026ms request-sent=4.11ms started=5.104ms ready=29.916ms sent=30.75ms finished=38.985ms
+11-10 14:19:31.506  1097  1241 V WindowManagerShell: Track 0 became idle
+11-10 14:19:31.506  1097  1241 V WindowManagerShell: All active transition animations finished
+11-10 14:19:31.506   838  1588 W UserManagerService: Requested status bar icon for non-badged user 0
+11-10 14:19:31.506 14647 14647 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-10 14:19:31.506 14647 14647 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-10 14:19:31.506 14647 14647 E Zygote  : pkg name is 0 => io.legado.flutter_legado, data dir is /data/user/0/io.legado.flutter_legado
+11-10 14:19:31.506   838  1588 W UserManagerService: Requested status bar icon for non-badged user 0
+11-10 14:19:31.507 14647 14647 W zygote64: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: nemuhotd
+11-10 14:19:31.522  1791  1791 D VRI[Launcher]: visibilityChanged oldVisibility=true newVisibility=false
+11-10 14:19:31.535 14647 14647 I Zygote  : seccomp disabled by setenforce 0
+11-10 14:19:31.541 14647 14647 I .flutter_legado: Using CollectorTypeCMC GC.
+11-10 14:19:31.541 14647 14647 W .flutter_legado: Unexpected CPU variant for x86: x86_64.
+11-10 14:19:31.541 14647 14647 W .flutter_legado: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-10 14:19:31.541 14647 14647 V libnb   : enter native_bridge2_initialize /data/user/0/io.legado.flutter_legado/code_cache arm64
+11-10 14:19:31.541 14647 14647 E libnb   : The translator implementation library has not been set.
+11-10 14:19:31.551 14647 14647 E libnb   : get_callbacks native_handle 0xfc65a304bea21ca3: 1 libnb:/system/lib64/libhoudini.so
+11-10 14:19:31.551 14647 14647 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-10 14:19:31.553 14647 14647 I houdini : [14647] Houdini now in android app mode
+11-10 14:19:31.553 14647 14647 I houdini : [14647] Intel Bridge Technology for NetEase Mumu only, Copyright(C) Intel Corp. 2012-now.
+11-10 14:19:31.553 14647 14647 I houdini : [14647] Use permitted only under a valid commercial software license agreement - all other rights reserved.
+11-10 14:19:31.553 14647 14647 I houdini : [14647] Initialize library(version: 15.0.0.Netease_com3.0 RELEASE)... successfully.
+11-10 14:19:31.553 14647 14647 W HP      : x_initialize private_dir:/data/user/0/io.legado.flutter_legado/code_cache instruction_set:arm64 getMethodShorty:0x74c3da628700 ret:1
+11-10 14:19:31.555 14647 14647 E .flutter_legado: Not starting debugger since process cannot load the jdwp agent.
+11-10 14:19:31.556 14647 14647 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-10 14:19:31.540 14647 14647 I .flutter_legado: type=1400 audit(0.0:5398): avc:  denied  { execmod } for  path="/system/lib64/libhoudini.so" dev="sda6" ino=2825 scontext=u:r:untrusted_app:s0:c67,c256,c512,c768 tcontext=u:object_r:system_lib_file:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-10 14:19:31.540 14647 14647 I .flutter_legado: type=1400 audit(0.0:5399): avc:  denied  { write } for  name="property_service" dev="tmpfs" ino=664 scontext=u:r:untrusted_app:s0:c67,c256,c512,c768 tcontext=u:object_r:property_socket:s0 tclass=sock_file permissive=1 app=io.legado.flutter_legado
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: setPresentationRotation 0 for io.legado.flutter_legado:1211
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: java.lang.Exception
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at android.os.Looper.loop(Looper.java:317)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-10 14:19:31.569   838   858 E [MUMU]TaskTab: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-10 14:19:31.571   838   858 E ActivityManager: Sending non-protected broadcast nemu.intent.action.NEW_TASK from system 838:system/1000 pkg android
+11-10 14:19:31.571   838   858 E ActivityManager: java.lang.Throwable
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.wm.TaskUtils.$r8$lambda$JRBio5N1z1PXvDB9E_DBrd2vjYw(TaskUtils.java:2179)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda2.run(R8$$SyntheticClass:0)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.os.Looper.loop(Looper.java:317)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-10 14:19:31.571   838   858 E ActivityManager: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-10 14:19:31.577  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-10 14:19:31.540 14647 14647 I .flutter_legado: type=1400 audit(0.0:5400): avc:  denied  { connectto } for  path="/dev/socket/property_service" scontext=u:r:untrusted_app:s0:c67,c256,c512,c768 tcontext=u:r:init:s0 tclass=unix_stream_socket permissive=1 app=io.legado.flutter_legado
+11-10 14:19:31.592   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:31.596 14647 14647 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+11-10 14:19:31.596 14647 14647 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+11-10 14:19:31.599 14647 14647 D nativeloader: Configuring clns-7 for other apk /data/app/~~EXC6SrpkF63jcdTFWVJdaA==/io.legado.flutter_legado-unFFTYnhHlPDZOEA3ZpZkA==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~EXC6SrpkF63jcdTFWVJdaA==/io.legado.flutter_legado-unFFTYnhHlPDZOEA3ZpZkA==/lib/x86_64:/data/app/~~EXC6SrpkF63jcdTFWVJdaA==/io.legado.flutter_legado-unFFTYnhHlPDZOEA3ZpZkA==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/io.legado.flutter_legado
+11-10 14:19:31.601 14647 14647 I .flutter_legado: AssetManager2(0x74c46dee1938) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:31.602 14647 14647 V GraphicsEnvironment: Currently set values for:
+11-10 14:19:31.602 14647 14647 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+11-10 14:19:31.602 14647 14647 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+11-10 14:19:31.602 14647 14647 V GraphicsEnvironment: io.legado.flutter_legado is not listed in per-application setting
+11-10 14:19:31.602 14647 14647 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: setPresentationRotation 0 for io.legado.flutter_legado:1211
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: java.lang.Exception
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at android.os.Looper.loop(Looper.java:317)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-10 14:19:31.609   838   858 E [MUMU]TaskTab: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-10 14:19:31.609   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:31.609   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:31.611 14647 14668 E libEGL  : intercept_property_get () for (persist.graphics.egl)
+11-10 14:19:31.611 14647 14647 I .flutter_legado: AssetManager2(0x74c46deebed8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:31.616 14647 14668 I EGL_emulation: EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-10 14:19:31.619   838  1056 D FileUtils: Rounded bytes from 6231212032 to 8000000000
+11-10 14:19:31.621 14647 14647 I .flutter_legado: AssetManager2(0x74c46dee4b38) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:31.622 14647 14671 D skia    : [SkFontMgr Android Parser] '/product/etc/fonts_customization.xml' could not be opened
+11-10 14:19:31.629 14647 14672 E vulkan  : intercept_property_get () for (ro.hardware.vulkan)
+11-10 14:19:31.630 14647 14647 D DesktopModeFlagsUtil: Toggle override initialized to: OVERRIDE_OFF
+11-10 14:19:31.640 14647 14672 D vulkan  : searching for layers in '/data/app/~~EXC6SrpkF63jcdTFWVJdaA==/io.legado.flutter_legado-unFFTYnhHlPDZOEA3ZpZkA==/lib/x86_64'
+11-10 14:19:31.640 14647 14672 D vulkan  : searching for layers in '/data/app/~~EXC6SrpkF63jcdTFWVJdaA==/io.legado.flutter_legado-unFFTYnhHlPDZOEA3ZpZkA==/base.apk!/lib/x86_64'
+11-10 14:19:31.662 14647 14647 D com.llfbandit.app_links: Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity }
+11-10 14:19:31.665 14647 14647 E TTS     : Failed to initialize TextToSpeech with status: -1
+11-10 14:19:31.682   480   480 I hwservicemanager: getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-10 14:19:31.682 14647 14672 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.configstore@1.0::ISurfaceFlingerConfigs instance: default
+11-10 14:19:31.682 14647 14647 W HWUI    : Unknown dataspace 0
+11-10 14:19:31.688 14647 14647 I WindowExtensionsImpl: Initializing Window Extensions, vendor API level=8, activity embedding enabled=true
+11-10 14:19:31.690   838  7095 D CoreBackPreview: Window{ba6f1ff u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@ee0f8b8, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-10 14:19:31.693 14647 14666 I EGL_emulation: EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-10 14:19:31.695 14647 14666 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-10 14:19:31.702   709  1454 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619827820427265280: UNSUPPORTED (8)
+11-10 14:19:31.703 14647 14666 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-10 14:19:31.704 14647 14666 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.allocator@2.0::IAllocator instance: default
+11-10 14:19:31.705 14647 14666 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.718 14647 14672 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x74c3522d0000 0x74c3526d0000]
+11-10 14:19:31.728 14647 14672 I flutter : [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
+11-10 14:19:31.729 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-10 14:19:31.729 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-10 14:19:31.730 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-10 14:19:31.730 14647 14672 E gralloc_kona: gralloc_alloc: Unknown format 56
+11-10 14:19:31.730 14647 14672 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-10 14:19:31.730 14647 14672 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-10 14:19:31.730 14647 14672 E gralloc_kona: gralloc_alloc: Unknown format 59
+11-10 14:19:31.730 14647 14672 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-10 14:19:31.730 14647 14672 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-10 14:19:31.730 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-10 14:19:31.730 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-10 14:19:31.731 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-10 14:19:31.731 14647 14672 E gralloc_kona: gralloc_alloc: Unknown format 56
+11-10 14:19:31.731 14647 14672 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-10 14:19:31.731 14647 14672 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-10 14:19:31.731 14647 14672 E gralloc_kona: gralloc_alloc: Unknown format 59
+11-10 14:19:31.731 14647 14672 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-10 14:19:31.731 14647 14672 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-10 14:19:31.731 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.742 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.751 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.760 14647 14672 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.777 14647 14647 I flutter : [启动] CrashLogService 初始化耗时：92ms
+11-10 14:19:31.776 14647 14647 I .flutter_legado: type=1400 audit(0.0:5401): avc:  denied  { getattr } for  path="/sys/fs/cgroup/uid_10067/pid_14647/cgroup.controllers" dev="cgroup2" ino=372772 scontext=u:r:untrusted_app:s0:c67,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-10 14:19:31.776 14647 14647 I .flutter_legado: type=1400 audit(0.0:5402): avc:  denied  { read } for  name="cpu.max" dev="cgroup2" ino=12474 scontext=u:r:untrusted_app:s0:c67,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-10 14:19:31.828 14647 14647 D WindowLayoutComponentImpl: Register WindowLayoutInfoListener on Context=io.legado.flutter.MainActivity@1bd4ada, of which baseContext=android.app.ContextImpl@1442c01
+11-10 14:19:31.847 14647 14647 I flutter : [RustApi] ttsSetCacheDir -> /data/user/0/io.legado.flutter_legado/files/tts_cache（ok=true）
+11-10 14:19:31.848 14647 14647 I flutter : [RustApi] setCacheDir -> /data/user/0/io.legado.flutter_legado/cache/js_cache
+11-10 14:19:31.848 14647 14647 I flutter : [RustApi] setImageCacheDir -> /data/user/0/io.legado.flutter_legado/cache/image_cache
+11-10 14:19:31.848 14647 14647 I flutter : [RustApi] setAudioCacheDir -> /data/user/0/io.legado.flutter_legado/cache/audio_cache
+11-10 14:19:31.849 14647 14647 I flutter : [RustApi] 设备 ID 注入完成：60fc9ee0e1bfe876
+11-10 14:19:31.850 14647 14647 I flutter : [RustApi] 主题注入完成（palette=def mode=0）
+11-10 14:19:31.850 14647 14647 I flutter : [RustApi] 阅读配置注入完成（bgIndex=0）
+11-10 14:19:31.850 14647 14647 I flutter : [启动] 并行初始化（prefs+FFI）耗时：72ms
+11-10 14:19:31.850 14647 14647 I flutter : [启动] 远程书库服务器迁移耗时：0ms
+11-10 14:19:31.850 14647 14647 I flutter : [启动] 语言/图片绘制偏好初始化耗时：0ms
+11-10 14:19:31.851 14647 14647 I flutter : [启动] 自动清除过期搜索：删除 0 条（阈值 -1 天）
+11-10 14:19:31.851 14647 14647 I flutter : [启动] UserAgent 同步耗时：0ms
+11-10 14:19:31.851 14647 14647 I flutter : [启动] 线程数同步耗时：0ms
+11-10 14:19:31.852 14647 14647 I flutter : [启动] 替换净化默认开关同步耗时：0ms
+11-10 14:19:31.852 14647 14647 I flutter : [启动] 总启动耗时：167ms
+11-10 14:19:31.864 14647 14647 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+11-10 14:19:31.864 14647 14647 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+11-10 14:19:31.872 14647 14672 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x74c345aa6000 0x74c345ea6000]
+11-10 14:19:31.926 14647 14666 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:31.929   838   858 I ActivityTaskManager: Displayed io.legado.flutter_legado/io.legado.flutter.MainActivity for user 0: +463ms
+11-10 14:19:31.929   838   858 I ActivityTaskManager: Fully drawn io.legado.flutter_legado/io.legado.flutter.MainActivity: +463ms
+11-10 14:19:31.955   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-10 14:19:31.956   838   948 I ImeTracker: io.legado.flutter_legado:7b4ecf12: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-10 14:19:31.957 14647 14647 D InsetsController: hide(ime(), fromIme=false)
+11-10 14:19:31.957 14647 14647 I ImeTracker: io.legado.flutter_legado:7b4ecf12: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-10 14:19:32.072  2014  2014 W AccMsgReceiver: AccMsgReceiver: onReceive action = nemu.intent.action.NEW_TASK
+11-10 14:19:32.074   838  7898 W ActivityManager: Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-10 14:19:32.075  2014  2075 W AccServiceManager: onAppLaunch: packageName = io.legado.flutter_legado
+11-10 14:19:32.075  2014  2075 W TranslateGameManager: onAppLaunch: packageName = io.legado.flutter_legado, hasPackageLaunchedBefore = false, supportTranslateReally = false, isLocalTranslateEnabled = false
+11-10 14:19:32.125  1097  1255 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@1e82a9e
+11-10 14:19:32.125   838  7095 D CoreBackPreview: Window{fe0d466 u0 Splash Screen io.legado.flutter_legado EXITING}: Setting back callback null
+11-10 14:19:32.396 14647 14675 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 2160000 Range: [0x74c345a94000 0x74c345ca3580]
+11-10 14:19:34.147     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-10 14:19:34.148 14731 14731 I init    : type=1400 audit(0.0:5404): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-10 14:19:34.148 14731 14731 I serial_console: type=1400 audit(0.0:5405): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-10 14:19:34.181     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-10 14:19:34.148 14731 14731 I serial_console: type=1400 audit(0.0:5406): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-10 14:19:34.148 14731 14731 I serial_console: type=1400 audit(0.0:5407): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=755 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-10 14:19:34.148 14731 14731 I serial_console: type=1400 audit(0.0:5408): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=755 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-10 14:19:36.946   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-10 14:19:36.946   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-10 14:19:36.946   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={10052} in 1ms
+11-10 14:19:36.946   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-10 14:19:36.947   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-10 14:19:36.947   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={20052} in 0ms
+11-10 14:19:37.455 14647 14732 D ProfileInstaller: Installing profile for io.legado.flutter_legado
+11-10 14:19:39.151     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-10 14:19:39.164     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-10 14:19:41.611 14647 14647 I .flutter_legado: AssetManager2(0x74c46df39db8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:41.612 14647 14647 I .flutter_legado: AssetManager2(0x74c46df3cfb8) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:41.613 14647 14647 I .flutter_legado: AssetManager2(0x74c46df35f38) locale list changing from [] to [zh-Hans-CN]
+11-10 14:19:43.688 14750 14750 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-10 14:19:43.688 14750 14750 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-10 14:19:43.688 14750 14750 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-10 14:19:43.689   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-10 14:19:43.692 14750 14751 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-10 14:19:43.693 14750 14751 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-10 14:19:44.159     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-10 14:19:44.172     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-10 14:19:49.167     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-10 14:19:49.179     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-10 14:19:54.179     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-10 14:19:54.192     1   459 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-10 14:19:56.096 14647 14654 W System  : A resource failed to call close. 
+11-10 14:19:56.096 14647 14654 W System  : A resource failed to call close. 
