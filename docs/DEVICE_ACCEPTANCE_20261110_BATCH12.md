@@ -225,3 +225,76 @@ adb exec-out screencap -p > docs/materials_1110c/tmp_qb12_68_terminal.png
 - 五项崩溃计数 0，`pm clear` 终态干净，无测试残留（应用数据已清除）。
 
 — ZCode 全栈工程师子代理 ｜ 2026-11-10
+
+## 十一、手柄 48dp 命中区修复复验（QA 子代理，2026-11-10）
+
+### 11.1 被测对象与版本核对
+
+| 项目 | 值 |
+| --- | --- |
+| APK | `flutter_legado/build/app/outputs/flutter-apk/app-release.apk`，sha256 `aead62f2b0f2692c2781f0e647406661f32071ed6218ed93e6ff4069ea0a4ae5`，210,457,092 字节，构建时间 2026-11-10 14:57 |
+| 设备安装 | `adb install -r` 返回 Success；`versionName=2.0.481`、`versionCode=482`、`lastUpdateTime=2026-11-10 14:58:37` |
+| 设备内 APK | `adb pull` 设备 `base.apk` 后校验，sha256 与提供 APK 完全一致（排除旧包残留） |
+| 设备/屏幕 | MuMu `192.168.100.62:5555`，1080×1920，density 480（3.0×，1dp=3px） |
+| 被测提交 | `c3cdacb65d`（`ColoredBox(Colors.transparent)` 包住 48×48 命中层，`ReorderableDragStartListener` 包住整个 48dp 盒） |
+| APK 与提交一致性 | 从 HEAD 重新执行 `flutter build apk --release`，产物 sha256 仍为 `aead62f2…`（增量构建未重编译 Dart，`app.so` 时间戳保持 14:57:32）；提交新增用例 `flutter test test/widget/replace_rules_test.dart --plain-name "手柄 48dp 全域可起拖"` 通过（1 passed） |
+
+### 11.2 本轮几何测量（规则 A/B/C，重新测量）
+
+新建 3 条规则 A/B/C（pattern `a`/`b`/`c`，正则+正文，替换 `x`），初始顺序 A→B→C。
+
+| 项 | 测量值（px） |
+| --- | --- |
+| 行区间 / 行中心 | A [264,504] y=384；B [504,744] y=624；C [744,984] y=864（行高 240px=80dp） |
+| 手柄 24dp 图标盒 | x 107.5–179.5，y=行中心±36px（截图可见笔画 x 120–167，中心 143.5） |
+| 手柄 48dp 盒 | x 71.5–215.5（144px=48dp），y=行中心±72px；对应源码 Card 16dp 边距 + 行 8dp 内边距 + 48dp SizedBox |
+| 负向起点 | (175, 864)（24dp 图标盒内） |
+| 正向起点 | (200, 864)、(90, 864)（48dp 盒内、24dp 图标盒外；距图标盒边界 20.5px / 17.5px） |
+
+### 11.3 复验结果
+
+| 项 | 结果 | 证据（`docs/materials_1110c/`） | 说明 |
+| --- | --- | --- | --- |
+| H1 安装与版本 | PASS | `tmp_qb12_hit_01_launch.png` | 安装 Success；2.0.481/482；设备内 APK 与提供包同 sha256 |
+| H2 重建 APK 与提交一致性 | PASS | 构建日志；`flutter test` 输出 | HEAD 重建得同一 sha256；新增 48dp 命中用例通过 |
+| H3 新建 3 条规则 A/B/C | PASS | `tmp_qb12_hit_03_replace_rules.png` ～ `tmp_qb12_hit_08_rules3_initial.png` | 初始顺序 A→B→C；uiautomator 确认行 bounds [264,504]/[504,744]/[744,984] |
+| H4 负向对照：24dp 图标盒内起拖（x=175，swipe 1500ms） | PASS（当次） | `tmp_qb12_hit_09_neg_x175_before.png`、`_10_neg_x175_mid.png`、`_11_neg_x175_after.png` | 中途 C 卡片抬升并跟随，落点后顺序 C→A→B；已知可行路径，作对照 |
+| H5 正向（核心）：x=200，swipe 1500ms | **FAIL（注入方式）** | `_12_pos_x200_before.png`、`_13_pos_x200_mid.png`、`_14_pos_x200_after.png`（复现：`_18`/`_19`/`_20`） | 两次均为列表 overscroll（三卡整体位移 109px），无卡片抬升、顺序不变 |
+| H6 正向（核心）：x=200，`input motionevent` 逐点注入 | **PASS** | `_15_motionevent_before.png`、`_16_motionevent_mid.png`、`_17_motionevent_after.png` | DOWN(200,864)→逐点 MOVE→UP；中途 B 卡片抬升并遮挡相邻行，落点后顺序 C→B→A |
+| H7 正向（左侧）：x=90，swipe 1500ms | **FAIL（注入方式）** | `_21_x90_swipe_before.png`、`_22_x90_swipe_mid.png`、`_23_x90_swipe_after.png` | 纯 overscroll，顺序不变 |
+| H8 正向（左侧）：x=90，`input motionevent` | **PASS** | `_24_x90_motionevent_before.png`、`_25_x90_motionevent_mid.png`、`_26_x90_motionevent_after.png` | 中途卡片抬升，落点后顺序 A→C→B（底部 A 置顶） |
+| H9 注入坐标精度 | PASS | `_27_pointerloc_swipe.png`、`_28_pointerloc_motionevent.png` | 系统「指针位置」叠加层：swipe 中途 X=200.0 Y=461.5（请求 500→400）；motionevent DOWN X=200.0 Y=500.0，落点均为请求坐标 |
+| H10 复核：图标盒中心 x=140，swipe 1500ms | **FAIL（注入方式）** | `_35_x140_swipe_before.png`、`_36_x140_swipe_mid.png`、`_37_x140_swipe_after.png` | 连已知可用的图标盒中心也失败（overscroll），说明该注入方式在当前环境整体不稳定 |
+| H11 x=175 复测（swipe 1500ms） | FAIL（注入方式） | `_29_x175_swipe2_before.png`、`_30_x175_swipe2_mid.png`、`_31_x175_swipe2_after.png` | 图标盒内同样不再稳定触发 |
+| H12 x=200，swipe 300ms | **PASS** | `_32_swipe300_before.png`、`_33_swipe300_mid.png`、`_34_swipe300_after.png` | 卡片抬升并置顶（B→A→C） |
+| H13 x=90，swipe 300ms | **PASS** | `_38_x90_swipe300_before.png`、`_39_x90_swipe300_mid.png`、`_40_x90_swipe300_after.png` | 卡片抬升并置顶（C→B→A） |
+| H14 持久化：返回重进 | PASS | `_41_back_profile.png`、`_42_reenter_order.png` | 48dp 盒外起点完成的重排 C→B→A 保持 |
+| H15 持久化：force-stop 冷启动 | PASS | `_43_coldstart_home.png`、`_44_coldstart_order.png` | 冷启动再进列表仍 C→B→A |
+| H16 冷启动后 1500ms swipe 复测 | FAIL（注入方式） | `_45_cold_swipe_before.png`、`_46_cold_swipe_mid.png`、`_47_cold_swipe_after.png` | 仍 overscroll，顺序不变 |
+| H17 冷启动后 motionevent 复现（x=200） | **PASS** | `_48_final_me_before.png`、`_49_final_me_mid.png`、`_50_final_me_after.png` | 底部 A 抬升并置顶，顺序 C→B→A → A→C→B |
+| H18 logcat 五项崩溃计数 | PASS | `logcat_b12_hit.txt`（8,232 行） | `FATAL EXCEPTION`、`ANR in`、`E/flutter`、`overflowed`、`E AndroidRuntime` 均为 0；8 条 `Fatal signal` 全为 `uiautomator`（uid 2000）Shutdown thread，测试工具进程，与应用无关 |
+| H19 清理与设备终态 | PASS | `_51_terminal.png` | `pm clear` Success；前台回到 `com.microsoft.launcher/.Launcher`；应用仍安装 2.0.481/482 |
+
+统计：PASS 14、FAIL 5（H5/H7/H10/H11/H16 为同一「1500ms swipe 注入不稳定」现象，H5 为核心项记录）、BLOCKED 0。
+
+### 11.4 注入方式差异定位
+
+1. 同一坐标两种方式结果不同：`input swipe … 1500` 在 x=200 触发列表 overscroll；`input motionevent`（同为 (200,864) 起点）触发卡片抬升与重排。
+2. 「指针位置」叠加层证明两者落点均为请求坐标（H9），排除坐标缩放/偏移。
+3. 1500ms swipe 的失败不局限于图标盒外：连 x=140（24dp 图标盒中心）也失败（H10），x=175 复测同样失败（H11）；而 300ms swipe 在 x=90/x=200 均成功（H12/H13），motionevent 在 x=90/x=200 均成功且可重复（H6/H8/H17）。
+4. 因此 H5/H7/H10/H11/H16 归因于 `input swipe` 长时长注入在当前 MuMu/adb 环境下的手势竞技场结果不稳定，与命中区实现无关；判定以 motionevent 与 300ms swipe 为准。
+
+### 11.5 判定
+
+判定：**48dp 命中生效**。
+
+依据：
+
+- 48dp 盒内、24dp 图标盒外的两个起点 x=200（距图标盒右边界 20.5px）与 x=90（距左边界 17.5px），使用细粒度/短时长注入均能起拖并完成重排；修复前同坐标全部被列表滚动接管（见第十节 G7/G8）。
+- APK 确含修复：HEAD 重建同 sha256、Dart 未再编译、新增「图标盒外偏移命中」widget 用例通过。
+- 48dp 盒外起点完成的重排（C→B→A）在返回重进与 force-stop 冷启动后均持久化。
+- 五项崩溃计数 0；`pm clear` 终态干净。
+
+保留说明：1500ms `input swipe` 在本环境不稳定（首次成功、之后在任意 x 均失败），后续设备复验建议使用 300ms swipe 或 `input motionevent` 逐点注入；真实手指的连续事件流与 motionevent 序列更接近。
+
+— QA 子代理 ｜ 2026-11-10
