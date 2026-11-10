@@ -1,0 +1,11 @@
+=== 2026-11-11 06:15:16 POST /mcp/call no header (token 已配置) ===
+{"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+=== 2026-11-11 06:15:16 POST /mcp/call wrong token ===
+{"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+=== 2026-11-11 06:15:16 POST /mcp/call correct token ===
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 115
+date: Tue, 10 Nov 2026 22:15:24 GMT
+
+{"jsonrpc":"2.0","result":{"content":[{"text":"-- 结果 --\n2\n\n耗时 2ms","type":"text"}]},"error":null,"id":1}

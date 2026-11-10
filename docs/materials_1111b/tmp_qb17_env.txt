@@ -1,0 +1,5 @@
+model=SM-G9900
+android=15 sdk=35
+Physical size: 1080x1920
+Physical density: 480
+abi=x86_64

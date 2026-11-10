@@ -1,0 +1,20 @@
+=== 2026-11-11 06:14:01 POST /mcp/call no token (token 未配置) ===
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+x-content-type-options: nosniff
+access-control-allow-methods: GET, POST
+connection: close
+content-length: 88
+date: Tue, 10 Nov 2026 22:14:10 GMT
+
+{"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+=== POST /mcp/call with arbitrary header ===
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+x-content-type-options: nosniff
+access-control-allow-methods: GET, POST
+connection: close
+content-length: 88
+date: Tue, 10 Nov 2026 22:14:10 GMT
+
+{"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}

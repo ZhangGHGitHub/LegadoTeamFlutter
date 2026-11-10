@@ -1,0 +1,200 @@
+11-11 06:17:53.714  1097  1652 V WindowManagerShell: onTransitionReady(transaction=3599182629162)
+11-11 06:17:53.715  1097  1241 V WindowManagerShell: onTransitionReady (#406) android.os.BinderProxy@b59bcda: {id=406 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-11 06:17:53.715  1097  1241 V WindowManagerShell:         {m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd39afe8 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-11 06:17:53.715  1097  1241 V WindowManagerShell:         {m=CLOSE f=NONE leash=Surface(name=Task=1237)/@0xa98c601 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-11 06:17:53.715  1097  1241 V WindowManagerShell:         {m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0x526cca6 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}
+11-11 06:17:53.715  1097  1241 V WindowManagerShell:     ]}
+11-11 06:17:53.715  1097  1241 V WindowManagerShell: Playing animation for (#406) android.os.BinderProxy@b59bcda@0
+11-11 06:17:53.718   838  8600 I system_server: AssetManager2(0x74c46df29738) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.719   709  1454 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 06:17:53.726  1097  1241 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-11 06:17:53.727   838  8600 I system_server: AssetManager2(0x74c46df2f4f8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.727  1097  1241 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=406 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd39afe8 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=CLOSE f=NONE leash=Surface(name=Task=1237)/@0xa98c601 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0x526cca6 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}]}
+11-11 06:17:53.727  1097  1241 V WindowManagerShell:  Delegate animation for (#406) to null
+11-11 06:17:53.727  1097  1241 V WindowManagerShell: start default transition animation, info = {id=406 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd39afe8 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=CLOSE f=NONE leash=Surface(name=Task=1237)/@0xa98c601 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},{m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0x526cca6 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}]}
+11-11 06:17:53.728  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@d630d32 animAttr=0x11 type=CLOSE isEntrance=false
+11-11 06:17:53.728  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@5109400 animAttr=0x10 type=CLOSE isEntrance=true
+11-11 06:17:53.728  1097  1241 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@2f3c1d5
+11-11 06:17:53.730   838   858 V WindowManager: Sent Transition (#406) createdAt=11-11 06:17:53.204 via request=TransitionRequestInfo { type = CLOSE, triggerTask = TaskInfo{userId=0 taskId=1237 effectiveUid=10067 displayId=0 isRunning=false baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=null topActivity=null origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=0 lastActiveTime=199188569 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{3b1e19c Task{419a26e #1237 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=null launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=true lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 406 }
+11-11 06:17:53.730   838  5405 W ProcessStats: Tracking association SourceState{724d0f8 system/1000 ImpBg #6559} whose proc state 6 is better than process ProcessState{ea75ad9 com.microsoft.launcher/10052 pkg=com.microsoft.launcher} proc state 12 (2 skipped)
+11-11 06:17:53.730   838  8600 I system_server: AssetManager2(0x74c46df34958) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.730   838   858 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-11 06:17:53.730   838   858 V WindowManager:     info={id=406 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-11 06:17:53.730   838   858 V WindowManager:         {WCT{RemoteToken{c571a95 Task{ef78a85 #1 type=home}}} m=TO_FRONT f=SHOW_WALLPAPER|MOVE_TO_TOP leash=Surface(name=Task=1)/@0xd0e6f9e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-11 06:17:53.730   838   858 V WindowManager:         {WCT{RemoteToken{3b1e19c Task{419a26e #1237 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} m=CLOSE f=NONE leash=Surface(name=Task=1237)/@0xe6a3ada sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 taskParent=-1},
+11-11 06:17:53.730   838   858 V WindowManager:         {m=TO_FRONT f=IS_WALLPAPER leash=Surface(name=WallpaperWindowToken{49c86e3 token=android.os.Binder@b260e9d})/@0xc114776 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0}
+11-11 06:17:53.730   838   858 V WindowManager:     ]}
+11-11 06:17:53.732   838  7095 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 06:17:53.735  1097  1241 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#406) android.os.BinderProxy@b59bcda@0
+11-11 06:17:53.739   838   858 V WindowManager: Finish Transition (#406): created at 11-11 06:17:53.204 collect-started=0.016ms request-sent=0.043ms started=6.69ms ready=6.685ms sent=510.357ms finished=531.879ms
+11-11 06:17:53.741   838  8600 I system_server: AssetManager2(0x74c46df02c78) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.744   838  6936 E IPCThreadState: Binder transaction failure. id: 1860964, BR_*: 29189, error: -22 (Invalid argument)
+11-11 06:17:53.744   838  6936 W ActivityManager: pid 838 system sent binder code 7 with flags 1 to frozen apps and got error -32
+11-11 06:17:53.745   838  8600 I system_server: AssetManager2(0x74c46df2e558) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.748   838  6936 W WindowManager: Exception thrown during dispatchAppVisibility Window{5601919 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity EXITING}
+11-11 06:17:53.748   838  6936 W WindowManager: android.os.DeadObjectException
+11-11 06:17:53.748   838  6936 W WindowManager: 	at android.os.BinderProxy.transactNative(Native Method)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at android.os.BinderProxy.transact(BinderProxy.java:592)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at android.view.IWindow$Stub$Proxy.dispatchAppVisibility(IWindow.java:557)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.WindowState.sendAppVisibilityToClients(WindowState.java:3298)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.WindowContainer.sendAppVisibilityToClients(WindowContainer.java:1343)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.WindowToken.setClientVisible(WindowToken.java:437)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.ActivityRecord.setClientVisible(ActivityRecord.java:7158)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.ActivityRecord.postApplyAnimation(ActivityRecord.java:5849)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.ActivityRecord.commitVisibility(ActivityRecord.java:5792)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.Transition.finishTransition(Transition.java:1373)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.TransitionController.finishTransition(TransitionController.java:986)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.WindowOrganizerController.finishTransition(WindowOrganizerController.java:526)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at android.window.IWindowOrganizerController$Stub.onTransact(IWindowOrganizerController.java:293)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at com.android.server.wm.WindowOrganizerController.onTransact(WindowOrganizerController.java:215)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-11 06:17:53.748   838  6936 W WindowManager: 	at android.os.Binder.execTransact(Binder.java:1350)
+11-11 06:17:53.748   838  6936 W Process : Unable to open /proc/43674/status
+11-11 06:17:53.749   838  8600 I system_server: AssetManager2(0x74c46defaf78) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.749   838  8600 I system_server: AssetManager2(0x74c46df31118) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.749   838  8600 I system_server: AssetManager2(0x74c46df03c18) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.754   838   948 I ImeTracker: com.microsoft.launcher:58562112: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-11 06:17:53.754  1791  1791 D InsetsController: hide(ime(), fromIme=false)
+11-11 06:17:53.754  1791  1791 I ImeTracker: com.microsoft.launcher:58562112: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-11 06:17:53.757   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 06:17:53.758  1097  1241 V WindowManagerShell: Track 0 became idle
+11-11 06:17:53.758  1097  1241 V WindowManagerShell: All active transition animations finished
+11-11 06:17:53.758   838  4692 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 06:17:53.759  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-11 06:17:53.760   838  4692 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 06:17:53.761   838  8600 I system_server: AssetManager2(0x74c46df2ad18) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.763   838   849 I system_server: Background concurrent mark compact GC freed 14MB AllocSpace bytes, 145(3660KB) LOS objects, 50% free, 20MB/40MB, paused 457us,876us total 121.506ms
+11-11 06:17:53.763   838  8600 I system_server: AssetManager2(0x74c46df1bf98) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.766   838  8600 I system_server: AssetManager2(0x74c46df05e78) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.767  2014  2014 W AccMsgReceiver: AccMsgReceiver: onReceive action = uu.intent.action.STOP_ACCELERATE
+11-11 06:17:53.768  1529  1529 I od.sogou.chuizi: AssetManager2(0x74c46dee44f8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.771   838  8600 I system_server: AssetManager2(0x74c46df23018) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.772   838   851 W System  : A resource failed to call close. 
+11-11 06:17:53.773   838  7898 W ContentProviderHelper: Permission Denial: opening provider com.android.providers.calendar.CalendarProvider2 from ProcessRecord{3953957 1791:com.microsoft.launcher/u0a52} (pid=1791, uid=10052) requires android.permission.READ_CALENDAR or android.permission.WRITE_CALENDAR
+11-11 06:17:53.776   838   851 W System  : A resource failed to call close. 
+11-11 06:17:53.776   838   851 W System  : A resource failed to call close. 
+11-11 06:17:53.776   838   851 W System  : A resource failed to call close. 
+11-11 06:17:53.776   838   851 W System  : A resource failed to call close. 
+11-11 06:17:53.776   838   851 W System  : A resource failed to call close. 
+11-11 06:17:53.781  1791  1900 W System.err: java.lang.SecurityException: Permission Denial: opening provider com.android.providers.calendar.CalendarProvider2 from ProcessRecord{3953957 1791:com.microsoft.launcher/u0a52} (pid=1791, uid=10052) requires android.permission.READ_CALENDAR or android.permission.WRITE_CALENDAR
+11-11 06:17:53.785   709   709 E BpTransactionCompletedListener: Failed to transact (-32)
+11-11 06:17:53.785   709   709 E BpTransactionCompletedListener: Failed to transact (-32)
+11-11 06:17:53.785   838  6936 W ActivityManager: Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3261)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.os.Parcel.createException(Parcel.java:3245)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.os.Parcel.readException(Parcel.java:3228)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.os.Parcel.readException(Parcel.java:3170)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.app.IActivityManager$Stub$Proxy.getContentProvider(IActivityManager.java:6391)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.app.ActivityThread.acquireProvider(ActivityThread.java:8095)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.app.ContextImpl$ApplicationContentResolver.acquireUnstableProvider(ContextImpl.java:3875)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.content.ContentResolver.acquireUnstableProvider(ContentResolver.java:2542)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.content.ContentResolver.query(ContentResolver.java:1213)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.content.ContentResolver.query(ContentResolver.java:1161)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.content.ContentResolver.query(ContentResolver.java:1117)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.microsoft.intune.mam.client.content.PassthroughContentResolverManagementBehavior.query(SourceFile:2)
+11-11 06:17:53.789  1791  1900 W System.err: 	at n7.c.g(SourceFile:11)
+11-11 06:17:53.789  1791  1900 W System.err: 	at da.a.c(SourceFile:33)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.microsoft.launcher.calendar.c.g(SourceFile:5)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.microsoft.launcher.calendar.c.l(SourceFile:17)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.microsoft.launcher.telemetry.k.E(SourceFile:103)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.microsoft.launcher.telemetry.l.doInBackground(SourceFile:30)
+11-11 06:17:53.789  1791  1900 W System.err: 	at xb.f.onRun(SourceFile:1)
+11-11 06:17:53.789  1791  1900 W System.err: 	at xb.g.run(SourceFile:1)
+11-11 06:17:53.789  1791  1900 W System.err: 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:524)
+11-11 06:17:53.789  1791  1900 W System.err: 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+11-11 06:17:53.789  1791  1900 W System.err: 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+11-11 06:17:53.789  1791  1900 W System.err: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+11-11 06:17:53.789  1791  1900 W System.err: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+11-11 06:17:53.789  1791  1900 W System.err: 	at java.lang.Thread.run(Thread.java:1119)
+11-11 06:17:53.789  1791  1900 W System.err: Caused by: android.os.RemoteException: Remote stack trace:
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.android.server.am.ContentProviderHelper.checkAssociationAndPermissionLocked(ContentProviderHelper.java:731)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.android.server.am.ContentProviderHelper.getContentProviderImpl(ContentProviderHelper.java:408)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.android.server.am.ContentProviderHelper.getContentProvider(ContentProviderHelper.java:150)
+11-11 06:17:53.789  1791  1900 W System.err: 	at com.android.server.am.ActivityManagerService.getContentProvider(ActivityManagerService.java:7101)
+11-11 06:17:53.789  1791  1900 W System.err: 	at android.app.IActivityManager$Stub.onTransact(IActivityManager.java:2998)
+11-11 06:17:53.791  2014  2075 W AccServiceManager: onAppClose: packageName = io.legado.flutter_legado
+11-11 06:17:53.795   838  6936 W ContentProviderHelper: Permission Denial: opening provider com.android.providers.calendar.CalendarProvider2 from ProcessRecord{3953957 1791:com.microsoft.launcher/u0a52} (pid=1791, uid=10052) requires android.permission.READ_CALENDAR or android.permission.WRITE_CALENDAR
+11-11 06:17:53.795  1791  1900 W System.err: java.lang.SecurityException: Permission Denial: opening provider com.android.providers.calendar.CalendarProvider2 from ProcessRecord{3953957 1791:com.microsoft.launcher/u0a52} (pid=1791, uid=10052) requires android.permission.READ_CALENDAR or android.permission.WRITE_CALENDAR
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3261)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.os.Parcel.createException(Parcel.java:3245)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.os.Parcel.readException(Parcel.java:3228)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.os.Parcel.readException(Parcel.java:3170)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.app.IActivityManager$Stub$Proxy.getContentProvider(IActivityManager.java:6391)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.app.ActivityThread.acquireProvider(ActivityThread.java:8095)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.app.ContextImpl$ApplicationContentResolver.acquireUnstableProvider(ContextImpl.java:3875)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.content.ContentResolver.acquireUnstableProvider(ContentResolver.java:2542)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.content.ContentResolver.query(ContentResolver.java:1213)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.content.ContentResolver.query(ContentResolver.java:1161)
+11-11 06:17:53.801  1791  1900 W System.err: 	at android.content.ContentResolver.query(ContentResolver.java:1117)
+11-11 06:17:53.801  1791  1900 W System.err: 	at com.microsoft.intune.mam.client.content.PassthroughContentResolverManagementBehavior.query(SourceFile:2)
+11-11 06:17:53.801  1791  1900 W System.err: 	at n7.c.g(SourceFile:11)
+11-11 06:17:53.801  1791  1900 W System.err: 	at da.a.c(SourceFile:33)
+11-11 06:17:53.801  1791  1900 W System.err: 	at com.microsoft.launcher.calendar.c.g(SourceFile:5)
+11-11 06:17:53.801  1791  1900 W System.err: 	at com.microsoft.launcher.telemetry.k.E(SourceFile:104)
+11-11 06:17:53.801  1791  1900 W System.err: 	at com.microsoft.launcher.telemetry.l.doInBackground(SourceFile:30)
+11-11 06:17:53.801  1791  1900 W System.err: 	at xb.f.onRun(SourceFile:1)
+11-11 06:17:53.801  1791  1900 W System.err: 	at xb.g.run(SourceFile:1)
+11-11 06:17:53.801  1791  1900 W System.err: 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:524)
+11-11 06:17:53.801  1791  1900 W System.err: 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+11-11 06:17:53.801  1791  1900 W System.err: 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+11-11 06:17:53.801  1791  1900 W System.err: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+11-11 06:17:53.801  1791  1900 W System.err: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+11-11 06:17:53.801  1791  1900 W System.err: 	at java.lang.Thread.run(Thread.java:1119)
+11-11 06:17:53.807   838  8600 I system_server: AssetManager2(0x74c46df29a58) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.820   838  8600 I system_server: AssetManager2(0x74c46defdb38) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.820   496  1575 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-11 06:17:53.852  1529  1529 D ViewRootImpl: Skip registering CompatOnBackInvokedCallback on IME dispatcher
+11-11 06:17:53.857  1791  1829 W rosoft.launcher: Suspending all threads took: 7.004ms
+11-11 06:17:53.883  3971  4015 E NetworkLocationProvider: LocationProviderV2 onSetRequest
+11-11 06:17:53.895   838  8600 I system_server: AssetManager2(0x74c46defb8d8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.895   838   858 W AlarmManager: Unrecognized alarm listener com.android.server.location.gnss.GnssLocationProvider$$ExternalSyntheticLambda14@3f001d4
+11-11 06:17:53.896  3971 45318 E NetworkLocationProvider: callHost: 23.186899670521122,113.419151791492808
+11-11 06:17:53.897   838   858 W AlarmManager: Unrecognized alarm listener com.android.server.location.gnss.GnssLocationProvider$$ExternalSyntheticLambda14@3f001d4
+11-11 06:17:53.897   838   858 W AlarmManager: Unrecognized alarm listener com.android.server.location.gnss.GnssLocationProvider$$ExternalSyntheticLambda13@bb78f7d
+11-11 06:17:53.899  3971  4015 E NetworkLocationProvider: LocationProviderV2 onSetRequest
+11-11 06:17:53.900  3971 45320 E NetworkLocationProvider: callHost: 23.186899470848584,113.419151591820267
+11-11 06:17:53.901  2014  2028 I com.mumu.acc: Background concurrent mark compact GC freed 2923KB AllocSpace bytes, 29(580KB) LOS objects, 49% free, 3404KB/6809KB, paused 95us,1.351ms total 115.730ms
+11-11 06:17:53.901   838   858 E GnssUtilsJni: IGnss injectLocation() failed.
+11-11 06:17:53.901  2014  2028 W com.mumu.acc: Reducing the number of considered missed Gc histogram windows from 1093 to 100
+11-11 06:17:53.901   838   858 E GnssUtilsJni: IGnss injectLocation() failed.
+11-11 06:17:53.904   838  8600 I system_server: AssetManager2(0x74c46df2df18) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.911   838  8600 I system_server: AssetManager2(0x74c46df22398) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.913   838  8600 I system_server: AssetManager2(0x74c46df32a18) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.913   838  8600 I system_server: AssetManager2(0x74c46df2b038) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.919   838  8600 I system_server: AssetManager2(0x74c46df1f7d8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.943  1791  1829 I rosoft.launcher: Background concurrent mark compact GC freed 9521KB AllocSpace bytes, 35(1112KB) LOS objects, 49% free, 8990KB/17MB, paused 7.641ms,3.785ms total 302.966ms
+11-11 06:17:53.943  1791  1829 W rosoft.launcher: Reducing the number of considered missed Gc histogram windows from 506 to 100
+11-11 06:17:53.953   838  8600 I system_server: AssetManager2(0x74c46defac58) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.957   838  8600 I system_server: AssetManager2(0x74c46df0c598) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.958   838  8600 I system_server: AssetManager2(0x74c46df01058) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.973   838  8600 I system_server: AssetManager2(0x74c46df116d8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.976   838  8600 I system_server: AssetManager2(0x74c46df148d8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.978   838  8600 I system_server: AssetManager2(0x74c46dee28d8) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:53.979   838  8600 I system_server: AssetManager2(0x74c46df0c278) locale list changing from [] to [zh-Hans-CN]
+11-11 06:17:54.467  1791  2100 E AndroidCll-EventSender: Error connecting.
+11-11 06:17:54.467  1791  2100 E AndroidCll-EventSender: Error writing data
+11-11 06:17:54.469  1791  1868 I rosoft.launcher: Waiting for a blocking GC ProfileSaver
+11-11 06:17:54.485  1791  1868 I rosoft.launcher: WaitForGcToComplete blocked ProfileSaver on Background for 15.532ms
+11-11 06:17:54.619  1791  2099 E AndroidCll-EventSender: Error connecting.
+11-11 06:17:54.619  1791  2099 E AndroidCll-EventSender: Error writing data
+11-11 06:17:55.881 45330 45330 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 06:17:55.881 45330 45330 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 06:17:55.881 45330 45330 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 06:17:55.882   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 06:17:55.887 45330 45331 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 06:17:55.900 45330 45331 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 06:17:56.290 45334 45334 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: window
+11-11 06:17:56.335     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 5, oldlen = 0
+11-11 06:17:56.332 45337 45337 I init    : type=1400 audit(0.0:6972): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 06:17:56.332 45337 45337 I init    : type=1400 audit(0.0:6973): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 06:17:56.332 45337 45337 I init    : type=1400 audit(0.0:6974): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 06:17:56.336 45337 45337 I serial_console: type=1400 audit(0.0:6975): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 06:17:56.336 45337 45337 I serial_console: type=1400 audit(0.0:6976): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 06:17:56.336 45337 45337 I serial_console: type=1400 audit(0.0:6977): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 06:17:56.336 45337 45337 I serial_console: type=1400 audit(0.0:6978): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 06:18:01.327     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 5, oldlen = 0
+11-11 06:18:03.385   838   932 D ActivityManager: freezing 3970 com.microsoft.launcher:hockeysender
+11-11 06:18:03.482   838   932 D ActivityManager: freezing 44246 com.android.adbkeyboard
+11-11 06:18:03.482   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-11 06:18:03.482   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-11 06:18:03.482   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={10056} in 1ms

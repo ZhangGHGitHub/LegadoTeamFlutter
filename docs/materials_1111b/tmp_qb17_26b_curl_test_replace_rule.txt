@@ -1,0 +1,5 @@
+=== A: 最小示例 (同单测) ===
+{"isSuccess":true,"errorMsg":"","data":"a1"}
+=== B: 数字双倍 ===
+{"rule":{"pattern":"(\d+)","replacement":"@js:String(Number(result)*2)","isRegex":true},"text":"12 34 56"}
+{"isSuccess":false,"errorMsg":"格式不对","data":null}

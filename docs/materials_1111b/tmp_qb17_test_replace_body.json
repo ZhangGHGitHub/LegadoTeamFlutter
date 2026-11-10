@@ -1,0 +1,1 @@
+{"rule": {"pattern": "(\\d+)", "replacement": "@js:String(Number(result)*2)", "isRegex": true}, "text": "12 34 56"}

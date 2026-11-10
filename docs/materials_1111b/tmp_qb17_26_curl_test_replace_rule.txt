@@ -1,0 +1,2 @@
+=== 2026-11-11 06:17:01 POST /testReplaceRule 正确令牌 (数字双倍) ===
+{"isSuccess":true,"errorMsg":"","data":"24 68 112"}
