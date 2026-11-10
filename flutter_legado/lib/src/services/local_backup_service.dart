@@ -232,8 +232,117 @@ class LocalBackupService {
     }
   }
 
+  /// 仅上传到 WebDAV 的备份（批11：备份 Sheet「备份至网络」）
+  ///
+  /// 与「本地 + WebDAV」的区别：本地只作为上传中转，**不写用户备份目录**，
+  /// 也不受「仅保留最新备份」影响——
+  /// 1. 先确认 WebDAV 已配置（未配置直接抛 [StateError]，不创建临时文件）；
+  /// 2. 在系统临时目录创建隔离目录，调用 [createBackup]（uploadWebDav=true）；
+  /// 3. 上传失败/未上传视为本次备份失败（异常上抛，调用方提示「备份失败」），
+  ///    并回滚 `lastBackup`，避免失败的「仅网络」推迟自动备份周期；
+  /// 4. 无论成功失败，finally 删除临时目录（含本次备份文件）。
+  ///
+  /// 成功返回上传结果（远端文件名供调用方提示）；`lastBackup` 由
+  /// [createBackup] 在本地备份成功后写入，成功路径保留。
+  Future<WebDavBackupUploadResult> createBackupToWebDavOnly({
+    required BookApi api,
+    SettingsService? settings,
+    WebDavBackupService? webDavBackupService,
+    DateTime? now,
+    Directory Function()? tempDirProvider,
+  }) async {
+    final s = settings ?? SettingsService();
+    final service =
+        webDavBackupService ?? WebDavBackupService(api: api, settings: s);
+    // 先确认配置：未配置时既不应该生成临时备份，也不应该写 lastBackup
+    if (await service.resolveConfigJson() == null) {
+      throw StateError('未配置 WebDAV');
+    }
+
+    final base = (tempDirProvider ?? () => Directory.systemTemp)();
+    final sep = Platform.pathSeparator;
+    final dir = await Directory(
+      '${base.path}$sep$_webDavOnlyTempPrefix'
+      '${DateTime.now().microsecondsSinceEpoch}',
+    ).create(recursive: true);
+    final previousLastBackup = await s.getLastBackupTime();
+    try {
+      final result = await createBackup(
+        api: api,
+        settings: s,
+        dirPath: dir.path,
+        uploadWebDav: true,
+        webDavBackupService: service,
+        now: now,
+      );
+      // 「仅网络」下上传失败 = 备份失败（与「本地+WebDAV」的宽容语义不同）
+      final uploadError = result.uploadError;
+      if (uploadError != null) {
+        await s.setLastBackupTime(previousLastBackup);
+        throw uploadError;
+      }
+      final upload = result.upload;
+      if (upload == null) {
+        await s.setLastBackupTime(previousLastBackup);
+        throw StateError('未配置 WebDAV');
+      }
+      return upload;
+    } finally {
+      await _deleteTempDir(dir);
+    }
+  }
+
+  /// 系统临时目录前缀（仅清理本方法创建的目录）
+  static const String _webDavOnlyTempPrefix = 'legado_webdav_only_';
+
+  /// 删除本服务创建的临时目录（前缀不匹配时不删，防误删）
+  static Future<void> _deleteTempDir(Directory dir) async {
+    try {
+      final segments = dir.uri.pathSegments
+          .where((segment) => segment.isNotEmpty)
+          .toList();
+      final name = segments.isEmpty ? '' : segments.last;
+      if (!name.startsWith(_webDavOnlyTempPrefix)) return;
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (e) {
+      debugPrint('[LocalBackupService] 清理仅网络备份临时目录失败（忽略）：$e');
+    }
+  }
+
+  /// 查找备份目录内最新的本地备份文件（批11「本地最新」快捷恢复）
+  ///
+  /// 口径与「仅保留最新」共用 [_localBackupName]：只认
+  /// `legado_backup_<millis>.json`（大小写敏感、仅直接子文件、不递归），
+  /// 取文件名中 millis 最大者；目录不存在/空串/无匹配返回 null。
+  /// 目录列举失败向上抛（调用方按恢复失败提示）。
+  static Future<String?> findLatestLocalBackup(String dirPath) async {
+    final trimmed = dirPath.trim();
+    if (trimmed.isEmpty) return null;
+    final dir = Directory(trimmed);
+    if (!await dir.exists()) return null;
+
+    String? latestPath;
+    var latestMillis = -1;
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final segments = entity.uri.pathSegments
+          .where((segment) => segment.isNotEmpty)
+          .toList();
+      final name = segments.isEmpty ? '' : segments.last;
+      final match = _localBackupName.firstMatch(name);
+      if (match == null) continue;
+      final millis = int.tryParse(match.group(1)!);
+      if (millis == null) continue;
+      if (millis > latestMillis) {
+        latestMillis = millis;
+        latestPath = entity.path;
+      }
+    }
+    return latestPath;
+  }
+
   /// 本地备份命名（Dart `RustApi.backup` 生成：`legado_backup_<millis>.json`）
-  static final RegExp _localBackupName = RegExp(r'^legado_backup_\d+\.json$');
+  static final RegExp _localBackupName = RegExp(r'^legado_backup_(\d+)\.json$');
 
   /// 仅保留最新本地备份（对齐原版 `Backup.kt:435-439`）
   ///

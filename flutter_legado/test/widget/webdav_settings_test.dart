@@ -124,7 +124,7 @@ void main() {
     expect(prefs.getBool('onlyLatestBackup'), after);
   });
 
-  testWidgets('未配置 WebDAV 时点击恢复给出提示', (tester) async {
+  testWidgets('[批11] 未配置 WebDAV 时点击恢复弹四项 Sheet，网络项禁用', (tester) async {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
@@ -133,7 +133,12 @@ void main() {
     await tester.tap(find.text('恢复'));
     await tester.pumpAndSettle();
 
-    expect(find.text('未配置 WebDAV，请长按「恢复」从本地恢复'), findsOneWidget);
+    expect(find.text('本地恢复'), findsOneWidget);
+    expect(find.text('网络恢复'), findsOneWidget);
+    expect(find.text('本地最新'), findsOneWidget);
+    expect(find.text('远端最新'), findsOneWidget);
+    // 网络恢复 + 远端最新两项禁用原因
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
   });
 
   testWidgets('备份忽略列表：打开独立对话框并保存勾选项', (tester) async {

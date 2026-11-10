@@ -21,12 +21,16 @@ import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/local_backup_service.dart';
 import '../services/settings_service.dart';
+import '../services/webdav_backup_candidates.dart';
+import '../services/webdav_backup_service.dart';
 import '../services/webdav_restore_service.dart';
 import '../utils/error_message.dart';
+import '../widgets/backup_restore_option_sheet.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/remote_backup_list_sheet.dart';
 import '../widgets/restore_ignore_dialog.dart';
 
 /// WebDAV 连接测试状态（差异清单 C7「测试配置」行）
@@ -292,27 +296,122 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     setState(() => _backupPath = picked);
   }
 
-  /// 本地备份（批40：本地 JSON 备份 + 上传本次备份文件到 WebDAV）
+  /// 解析本次备份使用的本地目录（为空时弹目录选择器）
+  ///
+  /// 用户取消返回 null；选择成功后写回 `app_backup_path` 并刷新页面。
+  /// 三个备份入口（仅本地 / 本地+网络 / 长按快捷）共用。
+  Future<String?> _resolveBackupDir() async {
+    var dirPath = _backupPath;
+    if (dirPath.isNotEmpty) return dirPath;
+    final picked = await FilePicker.platform.getDirectoryPath();
+    if (picked == null) return null;
+    await CrashLogService.instance.setBackupPath(picked);
+    if (mounted) setState(() => _backupPath = picked);
+    return picked;
+  }
+
+  /// 备份行点按：弹参考版三选 Sheet（批11）
+  Future<void> _showBackupOptions() async {
+    final configured = ref.read(syncNotifierProvider).isConfigured;
+    final option = await showBackupOptionSheet(
+      context: context,
+      webDavConfigured: configured,
+      busy: _busy,
+      isBusy: () => LocalBackupService.isBusy,
+    );
+    if (option == null || !mounted) return;
+    switch (option) {
+      case BackupOption.local:
+        await _doLocalOnlyBackup();
+      case BackupOption.webDav:
+        await _doWebDavOnlyBackup();
+      case BackupOption.localAndWebDav:
+        await _doLocalBackup();
+    }
+  }
+
+  /// 仅本地备份（备份 Sheet 第一项）
+  Future<void> _doLocalOnlyBackup() async {
+    final dirPath = await _resolveBackupDir();
+    if (dirPath == null || !mounted) return;
+    LocalBackupResult? result;
+    final progress = await _runWithProgress('备份中…', () async {
+      final api = ref.read(bookApiProvider);
+      result = await LocalBackupService.instance.runExclusive(
+        () => LocalBackupService.instance.createBackup(
+          api: api,
+          settings: _settings,
+          dirPath: dirPath,
+          uploadWebDav: false,
+        ),
+      );
+    }, captureError: true);
+    if (!mounted || !progress.ran) return;
+    final error = progress.error;
+    if (error != null) {
+      _showSnack('备份失败：${errorMessage(error)}');
+      return;
+    }
+    final r = result;
+    if (r == null) {
+      _showSnack(kBackupRestoreBusyHint);
+      return;
+    }
+    _showSnack('${AppStrings.backupSuccess}：${r.filePath}');
+  }
+
+  /// 仅网络备份（备份 Sheet 第二项）
+  ///
+  /// 本地文件只作为上传中转，落在系统临时目录并在 finally 删除；不写用户
+  /// 备份目录、不改「仅保留最新备份」。WebDAV 未配置由 Sheet 禁用并在
+  /// 此处兜底提示。
+  Future<void> _doWebDavOnlyBackup() async {
+    if (!ref.read(syncNotifierProvider).isConfigured) {
+      _showSnack(kWebDavNotConfiguredHint);
+      return;
+    }
+    WebDavBackupUploadResult? upload;
+    final progress = await _runWithProgress('备份中…', () async {
+      final api = ref.read(bookApiProvider);
+      upload = await LocalBackupService.instance.runExclusive(
+        () => LocalBackupService.instance.createBackupToWebDavOnly(
+          api: api,
+          settings: _settings,
+        ),
+      );
+    }, captureError: true);
+    if (!mounted || !progress.ran) return;
+    final error = progress.error;
+    if (error != null) {
+      _showSnack('备份失败：${errorMessage(error)}');
+      return;
+    }
+    final result = upload;
+    if (result == null) {
+      _showSnack(kBackupRestoreBusyHint);
+      return;
+    }
+    _showSnack(
+      '${AppStrings.backupSuccess}：已上传 WebDAV：${result.remoteFileName}',
+    );
+  }
+
+  /// 本地 + WebDAV 备份（备份 Sheet 第三项；长按备份行保持此快捷）
   ///
   /// 对齐原版 `web_dav_backup`（`backupLocked(uploadWebDav=true)`）：
   /// - 上传的是**本次备份文件本身**（不再走 `webdavFullSync` 上传
-  ///   bookshelf.json/sources.json，那属「恢复」短按入口）；
+  ///   bookshelf.json/sources.json，那属「同步书库（合并）」菜单入口）；
   /// - 与自动备份共用 `LocalBackupService` 互斥锁：已有备份在执行时
   ///   提示稍候，不排队；
   /// - 上传失败不影响本地备份成功，SnackBar 分开提示；
   /// - 未配置 WebDAV 时仅本地备份（与既有行为一致）。
   Future<void> _doLocalBackup() async {
-    await _runWithProgress('备份中…', () async {
-      var dirPath = _backupPath;
-      if (dirPath.isEmpty) {
-        final picked = await FilePicker.platform.getDirectoryPath();
-        if (picked == null) return;
-        dirPath = picked;
-        await CrashLogService.instance.setBackupPath(dirPath);
-        if (mounted) setState(() => _backupPath = dirPath);
-      }
+    final dirPath = await _resolveBackupDir();
+    if (dirPath == null || !mounted) return;
+    LocalBackupResult? result;
+    final progress = await _runWithProgress('备份中…', () async {
       final api = ref.read(bookApiProvider);
-      final result = await LocalBackupService.instance.runExclusive(
+      result = await LocalBackupService.instance.runExclusive(
         () => LocalBackupService.instance.createBackup(
           api: api,
           settings: _settings,
@@ -320,57 +419,65 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
           uploadWebDav: true,
         ),
       );
-      if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
-      if (result == null) {
-        messenger.showSnackBar(const SnackBar(content: Text('正在备份或恢复，请稍候')));
-        return;
-      }
-      if (result.uploadError != null) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              '${AppStrings.backupSuccess}：${result.filePath}\n'
-              'WebDAV 上传失败：${errorMessage(result.uploadError!)}',
-            ),
-          ),
-        );
-        return;
-      }
-      final upload = result.upload;
+    }, captureError: true);
+    if (!mounted || !progress.ran) return;
+    final error = progress.error;
+    if (error != null) {
+      _showSnack('备份失败：${errorMessage(error)}');
+      return;
+    }
+    final r = result;
+    if (r == null) {
+      _showSnack(kBackupRestoreBusyHint);
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    if (r.uploadError != null) {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            upload == null
-                ? '${AppStrings.backupSuccess}：${result.filePath}'
-                : '${AppStrings.backupSuccess}：${result.filePath}\n'
-                      '已上传 WebDAV：${upload.remoteFileName}',
+            '${AppStrings.backupSuccess}：${r.filePath}\n'
+            'WebDAV 上传失败：${errorMessage(r.uploadError!)}',
           ),
         ),
       );
-    });
+      return;
+    }
+    final upload = r.upload;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          upload == null
+              ? '${AppStrings.backupSuccess}：${r.filePath}'
+              : '${AppStrings.backupSuccess}：${r.filePath}\n'
+                    '已上传 WebDAV：${upload.remoteFileName}',
+        ),
+      ),
+    );
   }
 
-  /// WebDAV 短按「恢复」确认（[批7c] 文案按真实数据方向区分入口）
+  /// WebDAV「同步书库（合并）」确认（[批7c] 文案按真实数据方向区分入口）
   ///
-  /// 短按并不从远端覆盖本地：`restoreFromWebDav` 先经 `webdavFullSync`
-  /// 上传本地书架覆盖远端 `bookshelf.json`，再只消费远端 `sources` 回写
-  /// 书源，本地阅读进度不受影响。确认文案必须如实反映该方向，避免用户
-  /// 误以为会覆盖本地进度。
+  /// 该入口保留批7c 的合并同步能力（原「恢复」短按行为），批11 起移入
+  /// 顶栏 ⋮ 菜单，不再占用「恢复」行点按：`restoreFromWebDav` 先经
+  /// `webdavFullSync` 上传本地书架覆盖远端 `bookshelf.json`，再只消费远端
+  /// `sources` 回写书源，本地阅读进度不受影响。确认文案必须如实反映该
+  /// 方向，避免用户误以为会覆盖本地进度。
   Future<bool> _confirmWebDavSync() {
     return showConfirmDialog(
       context,
       title: '确认同步吗？',
       content:
           '将上传本地书架并覆盖远端备份（bookshelf.json），同时回写远端书源；'
-          '不会覆盖本地阅读进度。如需从备份覆盖本地，请使用长按本地恢复。',
+          '不会覆盖本地阅读进度。如需从备份覆盖本地，请使用「恢复」中的'
+          '本地恢复或网络恢复。',
       confirmText: '同步',
       cancelText: '取消',
       isDestructive: true,
     );
   }
 
-  /// 本地恢复确认（长按「恢复」= 用本地备份覆盖书架）
+  /// 本地恢复确认（点按「恢复」→ 本地恢复 / 长按「恢复」快捷）
   ///
   /// [批7b] 恢复会把备份中的阅读进度与书籍信息写回库内，覆盖书架中
   /// 已有书籍的当前进度。确认后执行原恢复链；取消返回 false，调用方
@@ -386,8 +493,25 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     );
   }
 
-  /// 默认恢复：优先 WebDAV；失败或未配置则提示（长按走本地）
-  Future<void> _doRestore() async {
+  /// 远端恢复确认（网络恢复 / 远端最新）
+  ///
+  /// 网络恢复会下载远端备份并覆盖本地书架；确认文案明确文件来源与覆盖
+  /// 范围，取消不产生任何下载/写入。
+  Future<bool> _confirmRemoteRestore(String remoteName) {
+    return showConfirmDialog(
+      context,
+      title: '确认恢复吗？',
+      content:
+          '将下载远端备份「$remoteName」并覆盖本地书架，包括已有书籍的'
+          '阅读进度与书籍信息。确定继续吗？',
+      confirmText: '恢复',
+      cancelText: '取消',
+      isDestructive: true,
+    );
+  }
+
+  /// 「同步书库（合并）」：原恢复短按能力，批11 移入顶栏 ⋮ 菜单
+  Future<void> _doSyncLibrary() async {
     final sync = ref.read(syncNotifierProvider);
     if (sync.isConfigured) {
       if (!await _confirmWebDavSync()) return;
@@ -400,7 +524,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         );
         if (!mounted) return;
         if (message == null) {
-          _showSnack('正在备份或恢复，请稍候');
+          _showSnack(kBackupRestoreBusyHint);
           return;
         }
         await _reloadPrefsAfterRestore();
@@ -412,15 +536,37 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       return;
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('未配置 WebDAV，请长按「恢复」从本地恢复')));
+    _showSnack('未配置 WebDAV，请先配置后再同步书库');
   }
 
-  /// 本地恢复（长按「恢复」）
+  /// 恢复行点按：弹恢复 Sheet（批11）
   ///
-  /// 流程：选文件 → zip 忽略项提示 → 覆盖确认 → （zip）只读探测是否需要
-  /// 备份密码 → 需要则密码框 → 恢复。
+  /// 四项：本地恢复 / 网络恢复 / 本地最新 / 远端最新。长按恢复行仍直接
+  /// 走本地文件选择器（用户裁决保留的既有快捷）。
+  Future<void> _showRestoreOptions() async {
+    final configured = ref.read(syncNotifierProvider).isConfigured;
+    final option = await showRestoreOptionSheet(
+      context: context,
+      webDavConfigured: configured,
+      busy: _busy,
+      isBusy: () => LocalBackupService.isBusy,
+    );
+    if (option == null || !mounted) return;
+    switch (option) {
+      case RestoreOption.localFile:
+        await _doRestoreFromLocal();
+      case RestoreOption.remoteFile:
+        await _restoreFromRemoteList();
+      case RestoreOption.latestLocal:
+        await _restoreLatestLocal();
+      case RestoreOption.latestRemote:
+        await _restoreLatestRemote();
+    }
+  }
+
+  /// 本地恢复（点按 Sheet 第一项 / 长按「恢复」快捷）
+  ///
+  /// 流程：选文件 → [_restoreLocalBackup]。
   ///
   /// [批17b] 原版加密 zip 备份：`backupInspect` 判定 `passwordRequired`
   /// 后弹「输入备份密码」；密码只经 FFI 传给 Rust，不写日志/不落盘/
@@ -437,6 +583,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     );
     final backupPath = result?.files.single.path;
     if (backupPath == null) return;
+    if (!mounted) return;
+    await _restoreLocalBackup(backupPath);
+  }
+
+  /// 本地备份文件恢复全链（文件已确定，含 zip 提示/覆盖确认/密码循环）
+  Future<void> _restoreLocalBackup(String backupPath) async {
     if (!mounted) return;
     // 批17c P3-5：容器按**文件魔数**判定（`.json` 命名的加密 zip 也要弹
     // 密码框）；扩展名只是快判。判定口径与 Rust `is_zip_backup` 一致。
@@ -561,6 +713,166 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       },
     );
     return acquired ?? false;
+  }
+
+  /// 拉取远端备份列表（网络恢复 / 远端最新共用，批11）
+  ///
+  /// 返回记录：
+  /// - `ran=false`：进度框未执行（页面已销毁 / 另一操作进行中）；
+  /// - `error != null`：列目录失败（调用方提示「改为本地恢复」回退）；
+  /// - `list` 为空：远端没有 `backup*` 文件（调用方提示「未找到远端备份」）。
+  Future<({bool ran, List<RemoteBackupCandidate>? list, Object? error})>
+  _loadRemoteBackups() async {
+    List<RemoteBackupCandidate>? list;
+    final progress = await _runWithProgress('获取远端备份列表…', () async {
+      list = await WebDavBackupService(
+        api: ref.read(bookApiProvider),
+        settings: _settings,
+      ).listRemoteBackups();
+    }, captureError: true);
+    return (ran: progress.ran, list: list, error: progress.error);
+  }
+
+  /// 网络恢复：远端列表 → 选文件 → 下载覆盖本地（批11）
+  ///
+  /// 列表按名称降序（服务层排序，对齐参考版）。列表请求失败回退询问是否
+  /// 改为本地恢复；列表为空提示「未找到远端备份」。
+  Future<void> _restoreFromRemoteList() async {
+    if (!ref.read(syncNotifierProvider).isConfigured) {
+      _showSnack(kWebDavNotConfiguredHint);
+      return;
+    }
+    final (:ran, :list, :error) = await _loadRemoteBackups();
+    if (!mounted || !ran) return;
+    if (error != null) {
+      await _offerLocalRestoreFallback();
+      return;
+    }
+    final candidates = list ?? const <RemoteBackupCandidate>[];
+    if (candidates.isEmpty) {
+      _showSnack('未找到远端备份');
+      return;
+    }
+    final picked = await showRemoteBackupListSheet(
+      context: context,
+      candidates: candidates,
+    );
+    if (picked == null || !mounted) return;
+    await _restoreRemoteCandidate(picked);
+  }
+
+  /// 远端最新：复用候选解析（mtime 最大）后直接覆盖恢复（批11）
+  Future<void> _restoreLatestRemote() async {
+    if (!ref.read(syncNotifierProvider).isConfigured) {
+      _showSnack(kWebDavNotConfiguredHint);
+      return;
+    }
+    final (:ran, :list, :error) = await _loadRemoteBackups();
+    if (!mounted || !ran) return;
+    if (error != null) {
+      await _offerLocalRestoreFallback();
+      return;
+    }
+    final latest = latestRemoteBackupFromCandidates(
+      list ?? const <RemoteBackupCandidate>[],
+    );
+    if (latest == null) {
+      _showSnack('未找到远端备份');
+      return;
+    }
+    await _restoreRemoteCandidate(latest);
+  }
+
+  /// 远端列表获取失败：询问是否改为本地恢复（对齐参考版 fallback）
+  Future<void> _offerLocalRestoreFallback() async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: '网络备份列表获取失败',
+      content: '网络备份列表获取失败，是否改为本地恢复？',
+      confirmText: '本地恢复',
+      cancelText: '取消',
+    );
+    if (!confirmed || !mounted) return;
+    await _doRestoreFromLocal();
+  }
+
+  /// 下载并恢复选中的远端备份（网络恢复 / 远端最新共用）
+  ///
+  /// 成功后写 `lastSeenRemoteBackupMtime=远端 mtime`（不写 `lastBackup`，
+  /// 避免推迟自动备份周期）；失败文案「恢复失败：…」。备份需要密码时
+  /// 不下载（`restoreRemoteBackupExclusive` 在探测阶段返回），提示改用
+  /// 本地恢复。
+  Future<void> _restoreRemoteCandidate(RemoteBackupCandidate candidate) async {
+    if (!await _confirmRemoteRestore(candidate.name)) return;
+    if (!mounted) return;
+    WebDavRestoreRunResult? result;
+    final progress = await _runWithProgress('恢复中…', () async {
+      result =
+          await WebDavRestoreService(
+            api: ref.read(bookApiProvider),
+            settings: _settings,
+          ).restoreRemoteBackupExclusive(
+            remoteName: candidate.name,
+            refresh: () async {
+              if (!mounted) return;
+              await _reloadPrefsAfterRestore();
+            },
+          );
+    }, captureError: true);
+    if (!mounted || !progress.ran) return;
+    final thrown = progress.error;
+    if (thrown != null) {
+      _showRestoreFailure(thrown);
+      return;
+    }
+    final run = result;
+    if (run == null) {
+      _showSnack(kBackupRestoreBusyHint);
+      return;
+    }
+    switch (run.status) {
+      case WebDavRestoreStatus.success:
+        await _settings.setIntPref(
+          PrefKeys.lastSeenRemoteBackupMtime,
+          candidate.lastModifiedMillis,
+        );
+        if (!mounted) return;
+        _showSnack(AppStrings.restoreSuccess);
+      case WebDavRestoreStatus.passwordRequired:
+        _showSnack('该备份需要密码，请下载后使用本地恢复');
+      case WebDavRestoreStatus.busy:
+        _showSnack(kBackupRestoreBusyHint);
+      case WebDavRestoreStatus.failed:
+        final error = run.error;
+        if (error == null) {
+          _showSnack('恢复失败');
+        } else {
+          _showRestoreFailure(error);
+        }
+    }
+  }
+
+  /// 本地最新：在备份目录内查找最新 `legado_backup_<millis>.json` 并恢复
+  ///
+  /// 目录为空/未配置/无匹配统一提示「未找到本地备份」；查目录异常按
+  /// 「恢复失败」提示。找到后复用本地恢复全链（覆盖确认、zip 密码循环）。
+  Future<void> _restoreLatestLocal() async {
+    String? backupPath;
+    final progress = await _runWithProgress('查找本地备份…', () async {
+      backupPath = await LocalBackupService.findLatestLocalBackup(_backupPath);
+    }, captureError: true);
+    if (!mounted || !progress.ran) return;
+    final error = progress.error;
+    if (error != null) {
+      _showSnack('恢复失败：${errorMessage(error)}');
+      return;
+    }
+    final path = backupPath;
+    if (path == null) {
+      _showSnack('未找到本地备份');
+      return;
+    }
+    await _restoreLocalBackup(path);
   }
 
   /// 备份密码重试循环（批17b）
@@ -958,12 +1270,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
               switch (v) {
                 case 'import_old':
                   _doImportOldData();
+                // 批11：原「恢复」短按的合并同步能力移入此处保留
+                case 'sync_library':
+                  _doSyncLibrary();
                 case 'log':
                   Navigator.pushNamed(context, AppRoutes.appLog);
               }
             },
             itemBuilder: (ctx) => const [
               PopupMenuItem(value: 'import_old', child: Text('导入旧版数据')),
+              PopupMenuItem(value: 'sync_library', child: Text('同步书库（合并）')),
               PopupMenuItem(value: 'log', child: Text('日志')),
             ],
           ),
@@ -1098,18 +1414,23 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   subtitle: _backupPath.isEmpty ? '请选择备份路径' : _backupPath,
                   onTap: _busy ? null : _pickBackupPath,
                 ),
-                IosListTile(
-                  title: '备份',
-                  subtitle: '本地和 WebDav 一起备份',
-                  onTap: _busy ? null : _doLocalBackup,
+                // 批11：点按弹参考版三选 Sheet；长按保留「本地+WebDAV」快捷
+                GestureDetector(
+                  onLongPress: _busy ? null : _doLocalBackup,
+                  child: IosListTile(
+                    title: '备份',
+                    subtitle: '选择备份方式',
+                    onTap: _busy ? null : _showBackupOptions,
+                  ),
                 ),
-                // 短按 WebDAV 优先；长按本地恢复
+                // 批11：点按弹恢复 Sheet（本地/网络/本地最新/远端最新）；
+                // 长按保留本地文件选择器快捷（用户裁决）
                 GestureDetector(
                   onLongPress: _busy ? null : _doRestoreFromLocal,
                   child: IosListTile(
                     title: '恢复',
-                    subtitle: '优先从 WebDav 恢复，长按从本地恢复',
-                    onTap: _busy ? null : _doRestore,
+                    subtitle: '选择恢复方式',
+                    onTap: _busy ? null : _showRestoreOptions,
                   ),
                 ),
                 IosListTile(

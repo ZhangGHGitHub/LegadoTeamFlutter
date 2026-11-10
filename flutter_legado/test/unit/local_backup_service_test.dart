@@ -23,9 +23,18 @@ class _FakeWebDavBackupService extends WebDavBackupService {
   _FakeWebDavBackupService({required super.api});
 
   int calls = 0;
+  final List<String> uploadedPaths = [];
   Object? error;
   WebDavBackupUploadResult? result;
   bool returnNull = false;
+
+  /// `resolveConfigJson` 返回；null 模拟未配置 WebDAV（批11 仅网络备份）
+  String? resolvedConfigJson =
+      '{"url":"https://dav.example.com","username":"u",'
+      '"password":"p","remote_dir":"/legado/"}';
+
+  @override
+  Future<String?> resolveConfigJson() async => resolvedConfigJson;
 
   @override
   Future<WebDavBackupUploadResult?> uploadBackup({
@@ -33,6 +42,7 @@ class _FakeWebDavBackupService extends WebDavBackupService {
     DateTime? now,
   }) async {
     calls++;
+    uploadedPaths.add(localFilePath);
     final e = error;
     if (e != null) throw e;
     if (returnNull) return null;
@@ -566,6 +576,199 @@ void main() {
       expect(File(path).existsSync(), isFalse, reason: '不得保留未过滤备份');
       expect(webDav.calls, 0, reason: '过滤失败不得上传');
       expect(await settings.getLastBackupTime(), 0);
+    });
+  });
+
+  // ===== 批11：仅网络备份 / 本地最新挑选 =====
+
+  group('createBackupToWebDavOnly（批11）', () {
+    late Directory onlyBase;
+
+    setUp(() {
+      onlyBase = Directory.systemTemp.createTempSync('webdav_only_base_');
+    });
+
+    tearDown(() {
+      if (onlyBase.existsSync()) onlyBase.deleteSync(recursive: true);
+    });
+
+    /// `api.backup` 在传入的目录内落一个合法 JSON 备份文件
+    void stubBackupWritingFile() {
+      when(() => api.backup(any())).thenAnswer((invocation) async {
+        final dir = invocation.positionalArguments.first as String;
+        final path = '$dir${Platform.pathSeparator}legado_backup_100.json';
+        await File(path).writeAsString('{}');
+        return path;
+      });
+    }
+
+    test('成功：临时目录内备份并上传，清理临时目录且写 lastBackup', () async {
+      stubBackupWritingFile();
+      final webDav = _FakeWebDavBackupService(api: api)
+        ..result = const WebDavBackupUploadResult(
+          remoteFileName: 'backup_20261110_120000_000.json',
+        );
+      final now = DateTime(2026, 11, 10, 12);
+
+      final result = await LocalBackupService().createBackupToWebDavOnly(
+        api: api,
+        settings: settings,
+        webDavBackupService: webDav,
+        now: now,
+        tempDirProvider: () => onlyBase,
+      );
+
+      expect(result.remoteFileName, 'backup_20261110_120000_000.json');
+      expect(webDav.calls, 1);
+      expect(webDav.uploadedPaths, hasLength(1));
+      expect(
+        webDav.uploadedPaths.single,
+        startsWith(onlyBase.path),
+        reason: '仅网络备份的本地中转文件必须在临时目录内',
+      );
+      expect(onlyBase.listSync(), isEmpty, reason: '临时目录必须被清理');
+      expect(
+        await settings.getLastBackupTime(),
+        now.millisecondsSinceEpoch,
+        reason: '成功写入 lastBackup',
+      );
+    });
+
+    test('上传失败：异常上抛、回滚 lastBackup、清理临时目录', () async {
+      await settings.setLastBackupTime(123456);
+      stubBackupWritingFile();
+      final webDav = _FakeWebDavBackupService(api: api)
+        ..error = Exception('网络不可用');
+
+      await expectLater(
+        LocalBackupService().createBackupToWebDavOnly(
+          api: api,
+          settings: settings,
+          webDavBackupService: webDav,
+          tempDirProvider: () => onlyBase,
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(webDav.calls, 1);
+      expect(
+        await settings.getLastBackupTime(),
+        123456,
+        reason: '仅网络失败不得推迟自动备份周期',
+      );
+      expect(onlyBase.listSync(), isEmpty, reason: '临时目录必须被清理');
+    });
+
+    test('上传被跳过（未配置竞态）：按失败处理并回滚 lastBackup', () async {
+      await settings.setLastBackupTime(777);
+      stubBackupWritingFile();
+      final webDav = _FakeWebDavBackupService(api: api)..returnNull = true;
+
+      await expectLater(
+        LocalBackupService().createBackupToWebDavOnly(
+          api: api,
+          settings: settings,
+          webDavBackupService: webDav,
+          tempDirProvider: () => onlyBase,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(await settings.getLastBackupTime(), 777);
+      expect(onlyBase.listSync(), isEmpty);
+    });
+
+    test('未配置 WebDAV：直接抛错，不创建备份/临时目录，不写 lastBackup', () async {
+      final webDav = _FakeWebDavBackupService(api: api)
+        ..resolvedConfigJson = null;
+
+      await expectLater(
+        LocalBackupService().createBackupToWebDavOnly(
+          api: api,
+          settings: settings,
+          webDavBackupService: webDav,
+          tempDirProvider: () => onlyBase,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      verifyNever(() => api.backup(any()));
+      expect(webDav.calls, 0);
+      expect(onlyBase.listSync(), isEmpty);
+      expect(await settings.getLastBackupTime(), 0);
+    });
+  });
+
+  group('findLatestLocalBackup（批11）', () {
+    test('多文件取文件名 millis 最大者（与目录列举顺序无关）', () async {
+      for (final millis in [200, 900, 100]) {
+        File(
+          '${tempDir.path}${Platform.pathSeparator}legado_backup_$millis.json',
+        ).writeAsStringSync('{}');
+      }
+
+      final picked = await LocalBackupService.findLatestLocalBackup(
+        tempDir.path,
+      );
+
+      expect(
+        picked,
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_900.json',
+      );
+    });
+
+    test('命名不符 / 大小写不符 / 子目录 / 目录同名均跳过', () async {
+      File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_abc.json',
+      ).writeAsStringSync('{}');
+      File(
+        '${tempDir.path}${Platform.pathSeparator}other.json',
+      ).writeAsStringSync('{}');
+      File(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_5.JSON',
+      ).writeAsStringSync('{}');
+      Directory(
+        '${tempDir.path}${Platform.pathSeparator}legado_backup_999.json',
+      ).createSync();
+      final sub = Directory('${tempDir.path}${Platform.pathSeparator}nested')
+        ..createSync();
+      File(
+        '${sub.path}${Platform.pathSeparator}legado_backup_9999.json',
+      ).writeAsStringSync('{}');
+
+      final picked = await LocalBackupService.findLatestLocalBackup(
+        tempDir.path,
+      );
+
+      expect(picked, isNull, reason: '不得命中非本项目命名或子目录文件');
+    });
+
+    test('目录尾分隔符不影响挑选', () async {
+      final path =
+          '${tempDir.path}${Platform.pathSeparator}legado_backup_42.json';
+      File(path).writeAsStringSync('{}');
+
+      final picked = await LocalBackupService.findLatestLocalBackup(
+        '${tempDir.path}${Platform.pathSeparator}',
+      );
+
+      expect(picked, path);
+    });
+
+    test('空路径 / 不存在目录 / 空目录返回 null', () async {
+      expect(await LocalBackupService.findLatestLocalBackup(''), isNull);
+      expect(
+        await LocalBackupService.findLatestLocalBackup(
+          '${tempDir.path}${Platform.pathSeparator}missing',
+        ),
+        isNull,
+      );
+      final empty = Directory('${tempDir.path}${Platform.pathSeparator}empty')
+        ..createSync();
+      expect(
+        await LocalBackupService.findLatestLocalBackup(empty.path),
+        isNull,
+      );
     });
   });
 }

@@ -108,9 +108,7 @@ void main() {
     expect(await settings.getAutoBackupWebDav(), isTrue);
   });
 
-  testWidgets('保留数量：超过上限 1000 被拒绝且不落盘（批40 回修 P3-3）', (
-    tester,
-  ) async {
+  testWidgets('保留数量：超过上限 1000 被拒绝且不落盘（批40 回修 P3-3）', (tester) async {
     await pumpScreen(tester);
 
     await scrollTo(tester, 'WebDAV 备份保留数量');
@@ -125,9 +123,7 @@ void main() {
     expect(await settings.getWebDavBackupKeepCount(), 0);
   });
 
-  testWidgets('备份按钮链路：本地备份成功并写 lastBackup，未配置 WebDAV 不上传', (
-    tester,
-  ) async {
+  testWidgets('备份按钮链路：本地备份成功并写 lastBackup，未配置 WebDAV 不上传', (tester) async {
     final tempDir = Directory.systemTemp.createTempSync('legado_backup_btn_');
     addTearDown(() {
       // Windows 上文件句柄释放有延迟，清理失败不影响断言结果
@@ -159,6 +155,12 @@ void main() {
 
     await scrollTo(tester, '备份');
     await tester.tap(find.text('备份'));
+    await tester.pumpAndSettle();
+    // 批11：点按备份行弹三选 Sheet，选「本地与网络」链路
+    expect(find.text('备份至本地'), findsOneWidget);
+    expect(find.text('备份至网络'), findsOneWidget);
+    expect(find.text('备份至本地与网络'), findsOneWidget);
+    await tester.tap(find.text('备份至本地与网络'));
     // 进度框含无限动画且备份链路有真实文件 IO：不能用 pumpAndSettle；
     // 用 runAsync 推进真实事件循环，等待完成提示出现。
     for (var i = 0; i < 200; i++) {

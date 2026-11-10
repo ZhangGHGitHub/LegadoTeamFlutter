@@ -1,10 +1,10 @@
-/// 备份恢复确认对话框（批7b/批7c）
+/// 备份恢复确认对话框（批7b/批7c/批11）
 ///
-/// 短按「恢复」= WebDAV 同步（上传本地书架覆盖远端 + 回写远端书源），
-/// 长按「恢复」= 本地恢复（用备份覆盖本地阅读进度与书籍信息）。
-/// 本测试钉住：
-/// - 两个入口的确认文案与实际数据方向一致；
-/// - WebDAV 未配置时短按只提示、不弹确认；
+/// 批11 起「恢复」点按弹恢复 Sheet（本地/网络/本地最新/远端最新），原
+/// WebDAV 合并同步移入顶栏 ⋮「同步书库（合并）」；长按「恢复」仍为本地
+/// 恢复（用备份覆盖本地阅读进度与书籍信息）。本测试钉住：
+/// - 「同步书库（合并）」确认文案与实际数据方向一致；
+/// - WebDAV 未配置时恢复 Sheet 的网络项禁用并提示，不触发同步/恢复；
 /// - 本地恢复先选文件后确认：取消选择/取消确认均不触发 restore；
 /// - 确认后执行对应恢复链。
 library;
@@ -86,7 +86,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
-    when(() => mockApi.getBookSources()).thenAnswer((_) async => <BookSource>[]);
+    when(
+      () => mockApi.getBookSources(),
+    ).thenAnswer((_) async => <BookSource>[]);
     // 批17b：恢复调用显式携带 password（无密码为 null）
     when(
       () => mockApi.restore(any(), password: any(named: 'password')),
@@ -127,6 +129,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 打开顶栏 ⋮ 并点「同步书库（合并）」
+  Future<void> tapSyncMenuItem(WidgetTester tester) async {
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('同步书库（合并）'));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> longPressRestoreTile(WidgetTester tester) async {
     await tester.scrollUntilVisible(find.text('恢复'), 100);
     await tester.pumpAndSettle();
@@ -134,32 +144,31 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder dialogButton(String label) => find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text(label),
-      );
+  Finder dialogButton(String label) =>
+      find.descendant(of: find.byType(AlertDialog), matching: find.text(label));
 
   /// 造一个 .json 备份文件路径（不落盘；恢复链的偏好读取异常会被吞掉）
   String fakeBackupPath(String name) =>
       '${Directory.systemTemp.path}${Platform.pathSeparator}$name';
 
-  testWidgets('短按恢复：文案说明上传本地覆盖远端、不覆盖本地进度', (tester) async {
+  testWidgets('同步书库（合并）：文案说明上传本地覆盖远端、不覆盖本地进度', (tester) async {
     configureWebDav();
     await pumpScreen(tester);
 
-    await tapRestoreTile(tester);
+    await tapSyncMenuItem(tester);
 
     expect(find.text('确认同步吗？'), findsOneWidget);
     expect(
       find.text(
         '将上传本地书架并覆盖远端备份（bookshelf.json），同时回写远端书源；'
-        '不会覆盖本地阅读进度。如需从备份覆盖本地，请使用长按本地恢复。',
+        '不会覆盖本地阅读进度。如需从备份覆盖本地，请使用「恢复」中的'
+        '本地恢复或网络恢复。',
       ),
       findsOneWidget,
     );
     expect(dialogButton('取消'), findsOneWidget);
     expect(dialogButton('同步'), findsOneWidget);
-    // 短按入口不得复用本地恢复文案（会误导用户以为覆盖本地进度）
+    // 同步入口不得复用本地恢复文案（会误导用户以为覆盖本地进度）
     expect(find.text('确认恢复吗？'), findsNothing);
   });
 
@@ -167,7 +176,7 @@ void main() {
     configureWebDav();
     await pumpScreen(tester);
 
-    await tapRestoreTile(tester);
+    await tapSyncMenuItem(tester);
     await tester.tap(dialogButton('取消'));
     await tester.pumpAndSettle();
 
@@ -182,7 +191,7 @@ void main() {
     ).thenAnswer((_) async => '{"sources":"[]"}');
     await pumpScreen(tester);
 
-    await tapRestoreTile(tester);
+    await tapSyncMenuItem(tester);
     await tester.tap(dialogButton('同步'));
     await tester.pumpAndSettle();
 
@@ -190,18 +199,29 @@ void main() {
     expect(find.text('恢复完成，回写 0 条书源'), findsOneWidget);
   });
 
-  testWidgets('WebDAV 未配置：短按只提示长按本地恢复、不弹确认', (tester) async {
+  testWidgets('WebDAV 未配置：恢复 Sheet 网络项禁用并提示，不触发同步/恢复', (tester) async {
     await pumpScreen(tester);
 
     await tapRestoreTile(tester);
 
-    expect(find.text('未配置 WebDAV，请长按「恢复」从本地恢复'), findsOneWidget);
+    // 恢复点按 = 参考版四项 Sheet（批11）
+    expect(find.text('本地恢复'), findsOneWidget);
+    expect(find.text('网络恢复'), findsOneWidget);
+    expect(find.text('本地最新'), findsOneWidget);
+    expect(find.text('远端最新'), findsOneWidget);
+    // 未配置时网络两项显示禁用原因
+    expect(find.text('请先配置 WebDAV'), findsNWidgets(2));
+
+    await tester.tap(find.text('网络恢复'));
+    await tester.pumpAndSettle();
+
+    // 点按禁用项只提示，不关闭 Sheet、不触发同步/恢复
+    expect(find.text('网络恢复'), findsOneWidget);
+    expect(find.text('请先配置 WebDAV'), findsWidgets);
     expect(find.text('确认同步吗？'), findsNothing);
     expect(find.text('确认恢复吗？'), findsNothing);
     verifyNever(() => mockApi.webdavFullSync(any(), any(), any()));
-    verifyNever(
-      () => mockApi.restore(any(), password: any(named: 'password')),
-    );
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
   });
 
   testWidgets('本地恢复取消选择文件：不弹确认、不调用 restore', (tester) async {
@@ -213,9 +233,7 @@ void main() {
 
     expect(picker.pickCalls, 1);
     expect(find.text('确认恢复吗？'), findsNothing);
-    verifyNever(
-      () => mockApi.restore(any(), password: any(named: 'password')),
-    );
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
     expect(find.text('恢复中…'), findsNothing);
   });
 
@@ -239,40 +257,32 @@ void main() {
     await tester.tap(dialogButton('取消'));
     await tester.pumpAndSettle();
 
-    verifyNever(
-      () => mockApi.restore(any(), password: any(named: 'password')),
-    );
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
     expect(find.text('恢复中…'), findsNothing);
   });
 
-  testWidgets(
-    '选择 zip 且配置了恢复忽略项：提示忽略项对 zip 不生效、恢复行为不变',
-    (tester) async {
-      // [批9 回修 P2-9] zip 恢复体不读取忽略项：必须明确提示，避免静默失效
-      SharedPreferences.setMockInitialValues({
-        SettingsService.restoreIgnoreStorageKey: jsonEncode({'readConfig': true}),
-      });
-      final backupPath = fakeBackupPath('legado_backup_zip_ignore.zip');
-      final picker = _FakeFilePicker(
-        FilePickerResult([
-          PlatformFile(name: 'backup.zip', size: 0, path: backupPath),
-        ]),
-      );
-      _useFakeFilePicker(picker);
-      await pumpScreen(tester);
+  testWidgets('选择 zip 且配置了恢复忽略项：提示忽略项对 zip 不生效、恢复行为不变', (tester) async {
+    // [批9 回修 P2-9] zip 恢复体不读取忽略项：必须明确提示，避免静默失效
+    SharedPreferences.setMockInitialValues({
+      SettingsService.restoreIgnoreStorageKey: jsonEncode({'readConfig': true}),
+    });
+    final backupPath = fakeBackupPath('legado_backup_zip_ignore.zip');
+    final picker = _FakeFilePicker(
+      FilePickerResult([
+        PlatformFile(name: 'backup.zip', size: 0, path: backupPath),
+      ]),
+    );
+    _useFakeFilePicker(picker);
+    await pumpScreen(tester);
 
-      await longPressRestoreTile(tester);
+    await longPressRestoreTile(tester);
 
-      expect(
-        find.text('zip 备份暂不支持忽略项过滤（将按备份内容恢复）'),
-        findsOneWidget,
-      );
-      // 纯提示：确认后照常执行恢复，且恢复路径未被忽略项改写
-      await tester.tap(dialogButton('恢复'));
-      await tester.pumpAndSettle();
-      verify(() => mockApi.restore(backupPath, password: null)).called(1);
-    },
-  );
+    expect(find.text('zip 备份暂不支持忽略项过滤（将按备份内容恢复）'), findsOneWidget);
+    // 纯提示：确认后照常执行恢复，且恢复路径未被忽略项改写
+    await tester.tap(dialogButton('恢复'));
+    await tester.pumpAndSettle();
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+  });
 
   testWidgets('确认本地恢复：选择器允许 .json/.zip，选择文件后调用 restore', (tester) async {
     // widget 测试的 FakeAsync 不驱动真实文件 IO：走 .json 备份会触发

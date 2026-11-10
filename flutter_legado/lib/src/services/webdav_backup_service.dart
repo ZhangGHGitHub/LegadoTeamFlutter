@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import '../models/book.dart' show BookType;
 import 'book_api.dart';
 import 'settings_service.dart';
+import 'webdav_backup_candidates.dart';
 import 'webdav_server_service.dart';
 
 /// 远端备份文件名前缀（对齐原版 `displayName.startsWith("backup")`）
@@ -74,14 +75,14 @@ class WebDavBackupPruneResult {
           : const [],
       failed: failedRaw is List
           ? failedRaw
-              .whereType<Map>()
-              .map(
-                (e) => WebDavBackupPruneFailure(
-                  name: '${e['name'] ?? ''}',
-                  error: '${e['error'] ?? ''}',
-                ),
-              )
-              .toList(growable: false)
+                .whereType<Map>()
+                .map(
+                  (e) => WebDavBackupPruneFailure(
+                    name: '${e['name'] ?? ''}',
+                    error: '${e['error'] ?? ''}',
+                  ),
+                )
+                .toList(growable: false)
           : const [],
     );
   }
@@ -114,11 +115,9 @@ class WebDavBackupUploadResult {
 /// - [resolveConfigJson]：从 DB `servers` 表默认行 + 子目录偏好构造
 ///   `WebDavConfig` JSON（与 `SyncNotifier.buildConfigJson` 同形）。
 class WebDavBackupService {
-  WebDavBackupService({
-    required BookApi api,
-    SettingsService? settings,
-  })  : _api = api,
-        _settings = settings ?? SettingsService();
+  WebDavBackupService({required BookApi api, SettingsService? settings})
+    : _api = api,
+      _settings = settings ?? SettingsService();
 
   final BookApi _api;
   final SettingsService _settings;
@@ -159,6 +158,21 @@ class WebDavBackupService {
       'password': server.password,
       'remote_dir': config.remoteDir,
     });
+  }
+
+  /// 列出远端备份文件（批11）
+  ///
+  /// 口径与启动自动检查一致：`webdavListDir` 根目录 → 过滤目录/非
+  /// `backup` 前缀/非法文件名 → 解析 mtime；返回**按名称降序**（对齐
+  /// 参考版 `WebDavManager` 远端备份列表）。WebDAV 未配置返回空列表
+  /// （调用方按「未配置」处理），列目录失败原样上抛（调用方提示回退）。
+  Future<List<RemoteBackupCandidate>> listRemoteBackups({
+    String? configJson,
+  }) async {
+    final config = configJson ?? await resolveConfigJson();
+    if (config == null) return const [];
+    final raw = await _api.webdavListDir(config, '');
+    return sortRemoteBackupsByNameDescending(parseRemoteBackupCandidates(raw));
   }
 
   /// 上传本地备份文件并按保留数清理历史备份
