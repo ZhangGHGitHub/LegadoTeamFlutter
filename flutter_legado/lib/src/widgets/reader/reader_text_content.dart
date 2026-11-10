@@ -419,11 +419,17 @@ class ReaderTextContent extends StatelessWidget {
             }
 
             final text = line.words.join('');
-            // 两端对齐：非最后一行且非单行时分配额外字间距
+            // 两端对齐：非最后一行、非单行，且下一行仍是文本行。
+            // [批16 设备回修 P3] 文本块被图片行截断时，块末行按自然左对齐，
+            // 避免图片上方「前文字。」被拉伸成居中观感。
             double extraLetterSpacing = 0.0;
+            final nextIsText =
+                lineIdx + 1 < para.lines.length &&
+                para.lines[lineIdx + 1].imageLayout == null;
             // [UI-fix v2.0.2 | 2026-08-06] 关闭两端对齐时不再拉伸字距
             // （对标 MoreConfig textFullJustify 开关） — Qoder
-            final shouldJustify = justify && !isLastLine && !isSingleLine;
+            final shouldJustify =
+                justify && !isLastLine && !isSingleLine && nextIsText;
             if (shouldJustify && line.width > 0) {
               if (line.width < availableWidth) {
                 final gapCount = line.words.length - 1;

@@ -136,6 +136,8 @@ Widget _page({
   double fontSize = 16,
   double width = 300,
   double height = 600,
+  int pageIndex = 0,
+  double? firstPageHeight,
   TextScaler textScaler = TextScaler.noScaling,
   ReaderImageLayout? titleImageLayout,
   void Function(ReaderInlineImage)? onPreview,
@@ -146,7 +148,13 @@ Widget _page({
     ).copyWith(textScaler: textScaler),
     context: _FakeBuildContext(),
   );
-  final pages = engine.paginateChapter(content, width, height);
+  final pages = engine.paginateChapter(
+    content,
+    width,
+    height,
+    firstPageHeight: firstPageHeight,
+  );
+  final safeIndex = pageIndex.clamp(0, pages.length - 1);
   return MediaQuery(
     data: const MediaQueryData(
       size: Size(360, 640),
@@ -154,8 +162,8 @@ Widget _page({
     child: MaterialApp(
       home: Scaffold(
         body: ReaderTypographicPage(
-          pageInfo: pages.first,
-          pageIndex: 0,
+          pageInfo: pages[safeIndex],
+          pageIndex: safeIndex,
           totalPages: pages.length,
           chapterTitle: '第一章 混排',
           fontSize: fontSize,
@@ -186,6 +194,24 @@ Future<Uint8List> _encodePng(int width, int height) async {
   image.dispose();
   picture.dispose();
   return data!.buffer.asUint8List();
+}
+
+/// 与设备验收书一致的混合分段内容（首段大图 + 单换行段组 + 空行分隔）
+String _deviceLikeContent() {
+  final first = List.generate(
+    6,
+    (i) =>
+        '第一大段第${i + 1}句：这是用于翻页对照的普通文本，内容与图片无关，'
+        '确保本页有足够多的文字行可以验证图片前后文字没有丢失，'
+        '也确保分页器有可翻页的空间。',
+  ).join('\n');
+  final second = List.generate(
+    8,
+    (i) =>
+        '第二大段第${i + 1}句：图片之后的段落继续存在，翻页后应当仍能看到'
+        '连续的文字，不出现空白页，也不出现文字被图片挤出可视区域的情况。',
+  ).join('\n');
+  return '前文字。<img src="$_bigImg">后文字。\n\n$first\n\n$second';
 }
 
 void main() {
@@ -276,6 +302,77 @@ void main() {
 
     expect(find.byType(ReaderInlineImageWidget), findsNothing);
     expect(find.textContaining('纯文本第一段'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('混排段落跨页不丢字：第 2 页首行前缀完整（P1）', (tester) async {
+    ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(800, 600));
+    await tester.pumpWidget(
+      _page(
+        content: _deviceLikeContent(),
+        width: 320,
+        height: 540,
+        pageIndex: 1,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final lineTexts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((text) => text.data ?? text.textSpan?.toPlainText() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toList();
+    for (final text in lineTexts) {
+      expect(
+        text.contains('\n') || text.contains('\r'),
+        isFalse,
+        reason: '行内换行会被 maxLines:1 裁掉后续段落前缀: $text',
+      );
+    }
+    for (final text in lineTexts) {
+      if (!text.startsWith('　　') || !text.contains('大段')) continue;
+      expect(
+        RegExp(r'^　　第[一二]大段第\d+句').hasMatch(text),
+        isTrue,
+        reason: '段落首行前缀被截断: $text',
+      );
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('含图章节首页利用率：图片段后继续放文本段（P2）', (tester) async {
+    ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(800, 600));
+    await tester.pumpWidget(
+      _page(
+        content: _deviceLikeContent(),
+        width: 320,
+        height: 540,
+        firstPageHeight: 480,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ReaderInlineImageWidget), findsOneWidget);
+    expect(
+      find.textContaining('第一大段第1句'),
+      findsWidgets,
+      reason: '首屏应同时包含图片段与后续文本段',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('图片旁单行文本不拉伸居中（P3）', (tester) async {
+    ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(400, 300));
+    await tester.pumpWidget(_page(content: '前文字。<img src="$_bigImg">后文字。'));
+    await tester.pumpAndSettle();
+
+    final lineText = tester.widget<Text>(find.textContaining('前文字').first);
+    final spacing = lineText.style?.letterSpacing;
+    expect(
+      spacing == null || spacing == 0,
+      isTrue,
+      reason: '图片上方单行文本不应被两端对齐拉伸，letterSpacing=$spacing',
+    );
     expect(tester.takeException(), isNull);
   });
 

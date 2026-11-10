@@ -1,0 +1,13 @@
+192.168.100.52 - - [11/Nov/2026 02:33:13] "GET /big.png HTTP/1.1" 200 -
+192.168.100.52 - - [11/Nov/2026 02:33:13] "GET /small.png HTTP/1.1" 200 -
+192.168.100.52 - - [11/Nov/2026 02:33:13] code 404, message File not found
+192.168.100.52 - - [11/Nov/2026 02:33:13] "GET /missing.png HTTP/1.1" 404 -
+192.168.100.62 - - [11/Nov/2026 02:34:31] "GET /big.png HTTP/1.1" 200 -
+192.168.100.62 - - [11/Nov/2026 02:43:59] "GET /small.png HTTP/1.1" 200 -
+192.168.100.62 - - [11/Nov/2026 02:46:50] code 404, message File not found
+192.168.100.62 - - [11/Nov/2026 02:46:50] "GET /missing.png HTTP/1.1" 404 -
+192.168.100.62 - - [11/Nov/2026 02:48:21] code 404, message File not found
+192.168.100.62 - - [11/Nov/2026 02:48:21] "GET /missing.png HTTP/1.1" 404 -
+192.168.100.62 - - [11/Nov/2026 02:49:19] code 404, message File not found
+192.168.100.62 - - [11/Nov/2026 02:49:19] "GET /missing.png HTTP/1.1" 404 -
+192.168.100.62 - - [11/Nov/2026 02:49:34] "GET /big.png HTTP/1.1" 200 -

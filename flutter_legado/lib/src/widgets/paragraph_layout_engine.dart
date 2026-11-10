@@ -493,40 +493,74 @@ class ParagraphLayoutEngine {
       currentHeight = 0.0;
     }
 
-    // 追加一个段落分片：沿用既有「放入当前页 / 当前页满则换页 / 超高按行
-    // 拆分」逻辑；[forceNewPage] 仅用于 SINGLE 图片语义的强制分页。
+    // 追加拆分后的多页：中间页直接落盘，最后一页留在 current 让后续段落
+    // 继续填满剩余空间（对齐上游逐行分页，避免页底大段空白）。
+    void appendSplitPages(List<PageInfo> subPages) {
+      if (subPages.isEmpty) return;
+      if (subPages.length == 1) {
+        final only = subPages.first;
+        currentPageParagraphs = List.from(only.paragraphs);
+        currentHeight = only.totalHeight;
+        return;
+      }
+      pages.addAll(subPages.sublist(0, subPages.length - 1));
+      final last = subPages.last;
+      currentPageParagraphs = List.from(last.paragraphs);
+      currentHeight = last.totalHeight;
+    }
+
+    // 追加一个段落分片：优先用当前页剩余空间容纳（超高段落按行切分，
+    // 首片留在当前页），仅当剩余不足一行时才整段换页。
+    // [forceNewPage] 仅用于 SINGLE 图片语义的强制分页。
     void appendParagraph(ParagraphInfo tagged, {required bool forceNewPage}) {
       if (forceNewPage) flushCurrentPage();
       final spacingHeight = currentPageParagraphs.isNotEmpty
           ? config.paragraphSpacing
           : 0.0;
-      final startCapacity = currentPageParagraphs.isEmpty
-          ? capacityFor(pages.length)
-          : pageHeight;
-      if (tagged.totalHeight > startCapacity) {
-        // 先把之前累积的段落存为一页
-        flushCurrentPage();
-        // 按行拆分超长段落（首张子页若落在章首页则按首页容量）
+      final pageCapacity = capacityFor(pages.length);
+      final hasContent = currentPageParagraphs.isNotEmpty;
+      final remaining = hasContent
+          ? pageCapacity - currentHeight - spacingHeight
+          : pageCapacity;
+      final lineHeight = config.fontSize * config.lineHeight;
+
+      if (tagged.totalHeight > remaining) {
+        // [批16 设备回修 P2] 当前页还有至少一行空间时，把段落首片填进来，
+        // 而不是整段推到下一页（图片段后的后续段落也能继续利用剩余空间）。
+        if (hasContent && remaining >= lineHeight) {
+          final subPages = _splitTallParagraph(
+            tagged,
+            pageHeight,
+            firstPageCapacity: remaining,
+            chapterParagraphIndex: tagged.chapterParagraphIndex,
+          );
+          final first = subPages.isNotEmpty ? subPages.first : null;
+          if (first != null &&
+              first.paragraphs.isNotEmpty &&
+              first.paragraphs.first.lines.isNotEmpty) {
+            currentPageParagraphs.add(first.paragraphs.first);
+            currentHeight += spacingHeight + first.totalHeight;
+            flushCurrentPage();
+            appendSplitPages(subPages.sublist(1));
+            return;
+          }
+        }
+        if (hasContent) {
+          // 剩余不足一行（或首片放不下）：先落当前页，再从整页起拆
+          flushCurrentPage();
+        }
         final subPages = _splitTallParagraph(
           tagged,
           pageHeight,
           firstPageCapacity: capacityFor(pages.length),
           chapterParagraphIndex: tagged.chapterParagraphIndex,
         );
-        pages.addAll(subPages);
+        appendSplitPages(subPages);
         return;
       }
-      // 检查是否需要换页（对应 Kotlin prepareNextPageIfNeed）
-      if (currentPageParagraphs.isNotEmpty &&
-          (currentHeight + spacingHeight + tagged.totalHeight >
-              capacityFor(pages.length))) {
-        flushCurrentPage();
-        currentPageParagraphs = [tagged];
-        currentHeight = tagged.totalHeight;
-      } else {
-        currentPageParagraphs.add(tagged);
-        currentHeight += spacingHeight + tagged.totalHeight;
-      }
+
+      currentPageParagraphs.add(tagged);
+      currentHeight += spacingHeight + tagged.totalHeight;
     }
 
     // [批16 回修 P2-6] SINGLE 图片只在图片行前分页：先把段落按
@@ -745,17 +779,20 @@ class ParagraphLayoutEngine {
 
   /// 分割段落（保留每段在章节文本中的全局起点）
   ///
-  /// 移植自 Kotlin splitNotBlank：按换行符分割，过滤空白段落
-  /// 支持双换行符（\n\n）和单换行符（\n）两种分段模式。
+  /// 移植自 Kotlin splitNotBlank：按换行符分割，过滤空白段落。
+  ///
+  /// [批16 设备回修 P1] 不能因为正文含 `\n\n` 就只按空行分段——混排章节
+  /// 常见「单换行分段 + 空行分隔段组」并存，旧逻辑会把单换行行合并成
+  /// 一个超长段落，`\n` 作为普通字符留在行内，`Text(maxLines:1)` 只显示
+  /// 首个视觉行，其后的段落前缀在视觉上被裁掉（语义树仍在）。统一按
+  /// `\n`/`\r\n` 分段，空行由空白段过滤吸收，与上游 splitNotBlank 一致。
   ///
   /// [批34] 返回 `(text, start)`：`text` 为 trim 后的段落文本，`start` 为
   /// 该文本首字符在原始 `content` 中的 UTF-16 偏移（跳过前导空白），
   /// 供高亮区间映射与段落选择定位使用。
   List<({String text, int start})> _splitParagraphsWithOffsets(String content) {
     if (content.trim().isEmpty) return [];
-    final separator = content.contains('\n\n')
-        ? RegExp(r'\n\s*\n')
-        : RegExp(r'\n');
+    final separator = RegExp(r'\r?\n');
     final result = <({String text, int start})>[];
     var last = 0;
     void addSegment(int start, int end) {

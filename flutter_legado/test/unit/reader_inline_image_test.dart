@@ -786,6 +786,119 @@ void main() {
       expect(afterLine.imageLayout!.placeholder, isFalse);
     });
   });
+
+  group('设备回修（批16 验收 P1/P2）', () {
+    // 与设备验收书一致的混合分段：首段含大图，随后 6 段单换行分段，
+    // 空行分隔后又 8 段单换行。旧实现因含 \n\n 而按空行分段，把单换行
+    // 段落合并为超长段，\n 留在行内导致 Text(maxLines:1) 裁掉后续前缀。
+    String deviceLikeChapter() {
+      final first = List.generate(
+        6,
+        (i) =>
+            '第一大段第${i + 1}句：这是用于翻页对照的普通文本，内容与图片无关，'
+            '确保本页有足够多的文字行可以验证图片前后文字没有丢失，'
+            '也确保分页器有可翻页的空间。',
+      ).join('\n');
+      final second = List.generate(
+        8,
+        (i) =>
+            '第二大段第${i + 1}句：图片之后的段落继续存在，翻页后应当仍能看到'
+            '连续的文字，不出现空白页，也不出现文字被图片挤出可视区域的情况。',
+      ).join('\n');
+      return '前文字。<img src="https://c.com/device-big.png">后文字。\n\n'
+          '$first\n\n$second';
+    }
+
+    ParagraphLayoutEngine deviceEngine() => ParagraphLayoutEngine(
+      config: const ParagraphConfig(
+        fontSize: 20,
+        lineHeight: 1.6,
+        paragraphSpacing: 8,
+        indent: 40,
+        indentCount: 2,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+        imageStyle: 'FULL',
+      ),
+      context: _FakeBuildContext(),
+    );
+
+    test('混排章节跨页不丢字：行内无换行符且第 2 页首行前缀完整', () {
+      final content = deviceLikeChapter();
+      final img = parseReaderInlineImage('https://c.com/device-big.png')!;
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(800, 600));
+
+      final pages = deviceEngine().paginateChapter(content, 320, 540);
+      expect(pages.length, greaterThan(1));
+
+      for (final page in pages) {
+        for (final para in page.paragraphs) {
+          for (final line in para.lines) {
+            final text = line.words.join('');
+            expect(
+              text.contains('\n') || text.contains('\r'),
+              isFalse,
+              reason: '行内不得残留换行符（会 Text maxLines:1 裁字）: $text',
+            );
+          }
+        }
+      }
+
+      // 任何以段落前缀开头的行都必须是完整的「　　第N大段第M句：」，
+      // 不允许出现被换行/分页切成半截的前缀（设备 P1 形态）。
+      for (final page in pages) {
+        for (final para in page.paragraphs) {
+          for (final line in para.lines) {
+            final text = line.words.join('');
+            if (text.startsWith('　　') && text.contains('大段')) {
+              expect(
+                RegExp(r'^　　第[一二]大段第\d+句').hasMatch(text),
+                isTrue,
+                reason: '段落前缀不完整: $text',
+              );
+            }
+          }
+        }
+      }
+
+      // 第 2 页首行必须是原文的连续子串（允许是跨页段落的中段）
+      final page2FirstLine = pages[1].paragraphs.first.lines.first.words.join(
+        '',
+      );
+      expect(page2FirstLine, isNotEmpty);
+      expect(
+        _stripImages(content).contains(page2FirstLine.trim()),
+        isTrue,
+        reason: '第 2 页首行应为原文连续子串: $page2FirstLine',
+      );
+
+      final rendered = pages
+          .expand((page) => page.paragraphs)
+          .expand((para) => para.lines)
+          .map((line) => line.words.join(''))
+          .join()
+          .replaceAll(RegExp(r'\s'), '');
+      expect(
+        rendered,
+        _stripImages(content).replaceAll(RegExp(r'\s'), ''),
+        reason: '逐字符比对：全章文本不得丢失（图片标签本身不入正文）',
+      );
+    });
+
+    test('含图章节首页利用率：图片段后继续放后续文本段（同页 ≥2 段）', () {
+      final content = deviceLikeChapter();
+      final img = parseReaderInlineImage('https://c.com/device-big.png')!;
+      ReaderImageSizeCache.put(img.rawSrc, const ReaderImageSize(800, 600));
+
+      final pages = deviceEngine().paginateChapter(content, 320, 540);
+      expect(
+        pages.first.paragraphs.length,
+        greaterThanOrEqualTo(2),
+        reason: '首屏应为「图片段 + 至少 1 个文本段」',
+      );
+      expect(pages.first.totalHeight, greaterThan(540 * 0.7));
+    });
+  });
 }
 
 String _json(Map<String, String> map) {
