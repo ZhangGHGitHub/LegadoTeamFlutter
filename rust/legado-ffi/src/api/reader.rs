@@ -631,6 +631,8 @@ fn get_chapter_content_inner(
             &chapter.title,
             apply_replace_rules,
             Some(chapter_index),
+            Some(&chapter.url),
+            true,
         ))
     } else {
         // 在线书籍：返回章节 URL 信息，由上层配合书源规则获取正文
@@ -1078,11 +1080,13 @@ fn fetch_chapter_content_inner(
             }
         }
         // 缓存存储原始正文，返回前应用净化（避免规则变更后缓存陈旧）
-        let processed = apply_content_processing_chapter(
+        let processed = apply_content_processing_chapter_with_context(
             book_url,
             &cached_chapter.content,
             &cached_chapter.chapter_title,
             chapter_index,
+            Some(chapter_url),
+            known_chapter,
         );
         return Ok(processed);
     }
@@ -1178,11 +1182,13 @@ fn fetch_chapter_content_inner(
     }
 
     // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
-    Ok(apply_content_processing_chapter(
+    Ok(apply_content_processing_chapter_with_context(
         book_url,
         &content,
         &effective_title,
         chapter_index,
+        Some(chapter_url),
+        known_chapter,
     ))
 }
 
@@ -1349,11 +1355,13 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
             &chapter_to_local_info(&chapter),
             charset.as_deref(),
         )?;
-        return Ok(apply_content_processing_chapter(
+        return Ok(apply_content_processing_chapter_with_context(
             book_url,
             &content,
             &chapter.title,
             chapter.index,
+            Some(&chapter.url),
+            true,
         ));
     }
 
@@ -1401,13 +1409,25 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
 /// 缩进/空行修剪仍不在此处做（`indent_spaces=0`、`trim_empty_lines=false`），
 /// 以免改变原始正文排版。
 pub fn apply_content_processing(book_url: &str, raw_content: &str, chapter_title: &str) -> String {
-    apply_content_processing_inner(book_url, raw_content, chapter_title, true, None)
+    apply_content_processing_inner(
+        book_url,
+        raw_content,
+        chapter_title,
+        true,
+        None,
+        None,
+        false,
+    )
 }
 
 /// 对原始正文应用净化（带章级「删除重复标题」开关，Task #51）
 ///
 /// 阅读器正文读取/导出链路调用：按章读取开关（全局默认去除，
 /// 章级 opt-out 时保留原始标题），其余行为与 [`apply_content_processing`] 一致。
+///
+/// 未持有 chapter_url 的历史调用入口：`@js:` 绑定的 `chapter.url` 按
+/// `(book_url, chapter_index)` 回查；已知章节 URL 的调用方应优先使用
+/// [`apply_content_processing_chapter_with_context`]，避免回查错章。
 pub fn apply_content_processing_chapter(
     book_url: &str,
     raw_content: &str,
@@ -1420,6 +1440,34 @@ pub fn apply_content_processing_chapter(
         chapter_title,
         true,
         Some(chapter_index),
+        None,
+        true,
+    )
+}
+
+/// 对原始正文应用净化（携带调用方已持有的章节 URL 与「是否命中目录」标记）
+///
+/// [批15 回修 P2-2] `chapter_url` 已知时直接作为 `@js:` 的 `chapter.url`
+/// 绑定，不再按 index 回查——`fetch_chapter_content` 对不在目录的
+/// chapter_url 会回退 index=0，按 index 回查会把第 0 章的 url/index 绑进
+/// 当前章节的 JS。`known_chapter=false` 时 `chapter` 绑定整体留空
+/// （空串/0），不给出错误值；`book` 绑定仍使用书籍行。
+pub fn apply_content_processing_chapter_with_context(
+    book_url: &str,
+    raw_content: &str,
+    chapter_title: &str,
+    chapter_index: i32,
+    chapter_url: Option<&str>,
+    known_chapter: bool,
+) -> String {
+    apply_content_processing_inner(
+        book_url,
+        raw_content,
+        chapter_title,
+        true,
+        Some(chapter_index),
+        chapter_url,
+        known_chapter,
     )
 }
 
@@ -1438,7 +1486,15 @@ pub fn apply_content_processing_raw(
     chapter_title: &str,
     chapter_index: Option<i32>,
 ) -> String {
-    apply_content_processing_inner(book_url, raw_content, chapter_title, false, chapter_index)
+    apply_content_processing_inner(
+        book_url,
+        raw_content,
+        chapter_title,
+        false,
+        chapter_index,
+        None,
+        false,
+    )
 }
 
 /// apply_content_processing 的内部实现：`apply_replace_rules` 表示路径语义
@@ -1462,6 +1518,8 @@ fn apply_content_processing_inner(
     chapter_title: &str,
     apply_replace_rules: bool,
     chapter_index: Option<i32>,
+    chapter_url: Option<&str>,
+    known_chapter: bool,
 ) -> String {
     // 1. 一次开库同时取出启用替换规则与书籍行（name/readConfig/bookType 均来自
     //    同一行，避免多次查询落在不同版本上）
@@ -1513,12 +1571,14 @@ fn apply_content_processing_inner(
         .unwrap_or(true);
 
     // [批15] `@js:` 替换规则的生产执行上下文：仅在确有需要执行的正则
-    // `@js:` 规则时才构建（并回查章节 URL），无 @js: 规则时零额外开销
+    // `@js:` 规则时才构建（非 quickjs 构建直接返回空上下文，不查库）
     let js_bindings = build_replace_js_bindings(
         book_url,
         book.as_ref(),
         chapter_title,
         chapter_index,
+        chapter_url,
+        known_chapter,
         replace_rules_enabled,
         &rules,
     );
@@ -1693,56 +1753,75 @@ fn entry_needs_js_execution(rule: &ReplaceRuleEntry) -> bool {
 /// 构建正文净化 `@js:` 的章节/书籍绑定（生产路径）
 ///
 /// 对齐参考版 `RegexExtensions.kt:32-57`：
-/// - 章节：`title`/`index` 由调用方传入，`url` 按 `(book_url, index)` 回查
-///   （章节行缺失时为空串，不阻断正文）；
+/// - 章节：优先使用调用方已持有的 `chapter_url`；未持有且 `known_chapter`
+///   为真时按 `(book_url, index)` 回查，章节行缺失则空串；
+/// - `known_chapter=false`（chapter_url 不在当前目录、index 是回退值 0）时
+///   章节绑定整体留空（空串/0），**不把第 0 章的 url/index 绑进当前章节**；
 /// - 书籍：`name`/`author` 取书籍行，`bookUrl` 回退书籍主键（书籍行缺失时
 ///   仍给出 `bookUrl`，对应参考版 `book ?: chapter.bookUrl` 的兜底语义）；
-/// - 无需要执行的 `@js:` 规则时返回空上下文，避免额外的章节回查与引擎创建。
+/// - 无需要执行的 `@js:` 规则时返回空上下文，避免额外的章节回查与引擎创建；
+/// - 非 quickjs 构建直接返回空上下文，不产生章节回查 DB 查询。
+#[allow(clippy::too_many_arguments)] // 章节/书籍上下文 + 规则开关，均为调用方已有值
 fn build_replace_js_bindings(
     book_url: &str,
     book: Option<&Book>,
     chapter_title: &str,
     chapter_index: Option<i32>,
+    chapter_url_hint: Option<&str>,
+    known_chapter: bool,
     replace_rules_enabled: bool,
     rules: &[ReplaceRule],
 ) -> ReplaceJsBindings {
-    let needs_js = replace_rules_enabled
-        && rules.iter().any(|rule| {
-            rule_needs_js_execution(
-                rule.is_enabled,
-                rule.is_regex,
-                rule.scope_content,
-                &rule.pattern,
-                &rule.replacement,
-            )
-        });
+    // P3-7：非 quickjs 构建不执行 @js:，无需查章节 URL
+    if !cfg!(feature = "quickjs") || !replace_rules_enabled {
+        return ReplaceJsBindings::empty();
+    }
+    let needs_js = rules.iter().any(|rule| {
+        rule_needs_js_execution(
+            rule.is_enabled,
+            rule.is_regex,
+            rule.scope_content,
+            &rule.pattern,
+            &rule.replacement,
+        )
+    });
     if !needs_js {
         return ReplaceJsBindings::empty();
     }
 
-    let chapter_url = chapter_index
-        .and_then(|index| {
-            with_database(|db| {
-                BookChapterRepository::new(db.connection())
-                    .find_by_book_url_and_index(book_url, index)
-            })
-            .ok()
-            .flatten()
-        })
-        .map(|chapter| chapter.url)
-        .unwrap_or_default();
     let resolved_book_url = book
         .map(|b| b.book_url.as_str())
         .filter(|url| !url.is_empty())
         .unwrap_or(book_url);
-
-    ReplaceJsBindings::new(
+    let chapter_binding = if known_chapter {
+        let chapter_url = match chapter_url_hint {
+            // 优先使用调用方已持有的章节 URL（避免 index 回退导致错章）
+            Some(url) => url.to_string(),
+            None => chapter_index
+                .and_then(|index| {
+                    with_database(|db| {
+                        BookChapterRepository::new(db.connection())
+                            .find_by_book_url_and_index(book_url, index)
+                    })
+                    .ok()
+                    .flatten()
+                })
+                .map(|chapter| chapter.url)
+                .unwrap_or_default(),
+        };
         ReplaceJsChapter {
             title: chapter_title.to_string(),
             index: chapter_index.unwrap_or(0),
             url: chapter_url,
             book_url: resolved_book_url.to_string(),
-        },
+        }
+    } else {
+        // 章节不在目录：留空，不给出错误值
+        ReplaceJsChapter::default()
+    };
+
+    ReplaceJsBindings::new(
+        chapter_binding,
         ReplaceJsBook {
             name: book.map(|b| b.name.clone()).unwrap_or_default(),
             author: book.map(|b| b.author.clone()).unwrap_or_default(),
@@ -3721,6 +3800,36 @@ mod tests {
         assert_eq!(result, "a12b", "无 quickjs 构建 @js: 不执行，保留原文");
     }
 
+    /// [批15 回修 P1] 2000 次匹配必须复用同一引擎并在默认 3000ms 内完成
+    ///
+    /// 修复前每次匹配新建 QuickJS 引擎（约 2.5ms/次），2000 次约 3s+ 会触发
+    /// 规则超时、整条规则被丢弃且输出原文；复用引擎后应在预算内全部执行。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_replace_rule_2000_matches_reuse_engine_within_timeout() {
+        let rules = vec![make_test_rule(
+            "批15_2000匹配",
+            r"(\d+)",
+            "@js:String(Number(result) * 2)",
+            true,
+            true,
+        )];
+        let content = "1 ".repeat(2000);
+        let expected = "2 ".repeat(2000);
+        let started = std::time::Instant::now();
+        let result = process_content_with_rules(&content, "", &rules, "");
+        let elapsed = started.elapsed();
+        eprintln!("[批15 perf] 2000 matches elapsed: {elapsed:?}");
+        assert_eq!(
+            result, expected,
+            "2000 次 @js: 匹配应在默认 3000ms 超时内全部执行（实际 {elapsed:?}）"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_millis(3000),
+            "2000 次匹配耗时 {elapsed:?} 不应触发 3000ms 规则超时"
+        );
+    }
+
     /// [批15] `@js:` 的 `chapter` / `book` 绑定在生产净化链路可见
     ///
     /// 对齐参考版 `RegexExtensions.kt:44-49`：逐匹配绑定 `result`、`chapter`
@@ -3789,42 +3898,310 @@ mod tests {
         assert_eq!(production, preview, "预览与生产输出应完全一致");
     }
 
-    /// [批15] `@js:` 抛错 → 保留原文，且不阻断后续规则
+    /// [批15 回修 P2-5] `@js:` 抛错 → 保留原文，且不阻断后续 **JS** 规则
+    ///
+    /// 后续规则也用 `@js:`：父提交（生产链路未注入执行器）两条都跳过，
+    /// 输出不会变成「本次执行」，因此本用例在父提交为红、修复后为绿。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_js_replace_rule_error_keeps_original_and_continues() {
         let bad = make_test_rule(
             "批15_抛错",
             "抛错标记",
-            "@js:throw new Error('boom')",
+            "@js:(function(){ throw new Error('boom'); })()",
             true,
             true,
         );
-        let good = make_test_rule("批15_正常", "正常标记", "已替换", true, true);
+        let good = make_test_rule("批15_后续JS", "正常标记", r#"@js:"本次执行""#, true, true);
         let result = process_content_with_rules("抛错标记 正常标记", "", &[bad, good], "");
         assert_eq!(
-            result, "抛错标记 已替换",
-            "@js: 抛错应保留原文且后续规则继续执行"
+            result, "抛错标记 本次执行",
+            "@js: 抛错应保留原文，后续 @js: 规则仍需执行"
         );
     }
 
-    /// [批15] `@js:` 超时 → 保留原文，且不阻断后续规则
+    /// [批15 回修 P2-5] `@js:` 超时 → 保留原文，且不阻断后续 **JS** 规则
+    ///
+    /// 后续规则也用 `@js:`（父提交两条都跳过 → 红），修复后超时规则保留
+    /// 原文、后续 JS 规则执行 → 绿。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_js_replace_rule_timeout_keeps_original_and_continues() {
         let mut slow = make_test_rule("批15_超时", "超时标记", "@js:while(true){}", true, true);
         slow.timeout_millisecond = 50;
-        let good = make_test_rule("批15_超时后正常", "正常标记", "已替换", true, true);
+        let good = make_test_rule("批15_超时后JS", "正常标记", r#"@js:"本次执行""#, true, true);
         let started = std::time::Instant::now();
         let result = process_content_with_rules("超时标记 正常标记", "", &[slow, good], "");
         assert_eq!(
-            result, "超时标记 已替换",
-            "@js: 超时应保留原文且后续规则继续执行"
+            result, "超时标记 本次执行",
+            "@js: 超时应保留原文，后续 @js: 规则仍需执行"
         );
         assert!(
             started.elapsed() < std::time::Duration::from_secs(3),
             "规则级 50ms 超时应先于沙箱 5s 截止返回，实际耗时 {:?}",
             started.elapsed()
+        );
+    }
+
+    /// [批15 回修 P1] 引擎复用后逐匹配 `let` 不重复声明（IIFE + 直接 eval 作用域）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_replace_rule_engine_reuse_supports_let_per_match() {
+        let rules = vec![make_test_rule(
+            "批15_let复用",
+            r"(\d+)",
+            "@js: let n = Number(result); String(n * 2)",
+            true,
+            true,
+        )];
+        let result = process_content_with_rules("1 2 3", "", &rules, "");
+        assert_eq!(
+            result, "2 4 6",
+            "同一引擎逐匹配复用不应触发顶层 let 重复声明"
+        );
+    }
+
+    /// [批15 回修 P2-4] 单次 `@js:` 结果超过上限 → 保留原文，不拼进正文
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_replace_rule_result_length_capped() {
+        let rules = vec![make_test_rule(
+            "批15_结果超限",
+            "超限标记",
+            r#"@js:"甲".repeat(2 * 1024 * 1024)"#,
+            true,
+            true,
+        )];
+        let result = process_content_with_rules("超限标记", "", &rules, "");
+        assert_eq!(
+            result, "超限标记",
+            "超过 1MB 的单次 @js: 结果应被拒绝并保留原文"
+        );
+    }
+
+    /// [批15 回修 P2-2] `@js:` 绑定回查 chapter.url / bookUrl
+    ///
+    /// 调用方未持有 chapter_url 时按 (book_url, index) 回查；已持有时优先
+    /// 使用调用方 URL，不再回查。book 行缺失时 bookUrl 回退书籍主键。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_replace_js_bindings_chapter_url_and_book_fallback() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch15-bind.example.com/book/1";
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            if book_repo.find_by_url(book_url)?.is_none() {
+                book_repo.insert(&Book {
+                    book_url: book_url.to_string(),
+                    name: "批十五绑定书籍".to_string(),
+                    author: "批十五绑定作者".to_string(),
+                    ..Book::default()
+                })?;
+            }
+            let chapter_repo = BookChapterRepository::new(db.connection());
+            if chapter_repo
+                .find_by_book_url_and_index(book_url, 0)?
+                .is_none()
+            {
+                chapter_repo.insert_batch(&[BookChapter {
+                    url: format!("{book_url}/chapter/0"),
+                    title: "批十五绑定章节".to_string(),
+                    book_url: book_url.to_string(),
+                    index: 0,
+                    ..BookChapter::default()
+                }])?;
+            }
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let book = with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+            .unwrap()
+            .expect("书籍行应存在");
+        let rules = vec![make_test_rule(
+            "批15_绑定回查",
+            "标记",
+            "@js:result",
+            true,
+            true,
+        )];
+
+        // 1) 无 URL hint：按 index 回查 chapter.url / bookUrl
+        let bindings = build_replace_js_bindings(
+            book_url,
+            Some(&book),
+            "批十五绑定章节",
+            Some(0),
+            None,
+            true,
+            true,
+            &rules,
+        );
+        assert_eq!(
+            bindings.chapter.url,
+            format!("{book_url}/chapter/0"),
+            "应按 (book_url, index) 回查章节 URL"
+        );
+        assert_eq!(bindings.chapter.book_url, book_url);
+        assert_eq!(bindings.book.name, "批十五绑定书籍");
+        assert_eq!(bindings.book.author, "批十五绑定作者");
+        assert_eq!(bindings.book.book_url, book_url);
+
+        // 2) 调用方持有 URL：优先使用，忽略 index 回查
+        let bindings = build_replace_js_bindings(
+            book_url,
+            Some(&book),
+            "批十五绑定章节",
+            Some(0),
+            Some("https://hint.example.com/ch/9"),
+            true,
+            true,
+            &rules,
+        );
+        assert_eq!(
+            bindings.chapter.url, "https://hint.example.com/ch/9",
+            "调用方已持有 chapter_url 时应优先使用"
+        );
+
+        // 3) 章节不在目录（known_chapter=false）：chapter 留空、book 保留
+        let bindings = build_replace_js_bindings(
+            book_url,
+            Some(&book),
+            "不应出现的标题",
+            Some(0),
+            Some("https://hint.example.com/ch/999"),
+            false,
+            true,
+            &rules,
+        );
+        assert_eq!(
+            bindings.chapter,
+            ReplaceJsChapter::default(),
+            "known_chapter=false 时 chapter 绑定应留空，不得给出第 0 章错误值"
+        );
+        assert_eq!(bindings.book.name, "批十五绑定书籍");
+
+        // 4) 书籍行缺失：bookUrl 回退书籍主键，name/author 空串
+        let bindings = build_replace_js_bindings(
+            "https://missing-book.example.com/book",
+            None,
+            "章节",
+            Some(0),
+            Some("https://missing-book.example.com/ch/0"),
+            true,
+            true,
+            &rules,
+        );
+        assert_eq!(
+            bindings.book.book_url, "https://missing-book.example.com/book",
+            "书籍行缺失时 bookUrl 应回退书籍主键"
+        );
+        assert!(bindings.book.name.is_empty());
+        assert!(bindings.book.author.is_empty());
+
+        // 清理本用例数据
+        with_database(|db| {
+            BookChapterRepository::new(db.connection()).delete_by_book_url(book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+    }
+
+    /// [批15 回修 P2-2] 生产入口 known_chapter=false 时章节绑定留空
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_apply_content_processing_unknown_chapter_leaves_bindings_empty() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch15-unknown.example.com/book/1";
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            if book_repo.find_by_url(book_url)?.is_none() {
+                book_repo.insert(&Book {
+                    book_url: book_url.to_string(),
+                    name: "批十五未知章书籍".to_string(),
+                    ..Book::default()
+                })?;
+            }
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        let rule_id = with_database(|db| {
+            ReplaceRuleRepository::new(db.connection()).insert(&ReplaceRule {
+                name: "批15_未知章".to_string(),
+                pattern: "批十五未知章标记".to_string(),
+                // 章节为空 → 空章；否则输出错误 URL（用于区分旧行为）
+                replacement:
+                    r#"@js: (chapter.url === "" && chapter.title === "" && chapter.index === 0) ? "空章" : ("错误:" + chapter.url)"#
+                        .to_string(),
+                is_regex: true,
+                is_enabled: true,
+                ..ReplaceRule::default()
+            })
+        })
+        .unwrap();
+
+        // known_chapter=false：即便 index 回退为 0，也不能绑定第 0 章 url
+        let result = apply_content_processing_chapter_with_context(
+            book_url,
+            "前批十五未知章标记后",
+            "不应出现的标题",
+            0,
+            Some("https://batch15-unknown.example.com/ch/999"),
+            false,
+        );
+        assert!(
+            result.contains("空章") && !result.contains("错误:"),
+            "known_chapter=false 时 chapter 绑定应留空，实际: {result}"
+        );
+
+        // known_chapter=true 且持有 URL：绑定真实 URL（输出含「错误:」标记即可）
+        let result = apply_content_processing_chapter_with_context(
+            book_url,
+            "前批十五未知章标记后",
+            "真实标题",
+            0,
+            Some("https://batch15-unknown.example.com/ch/999"),
+            true,
+        );
+        assert!(
+            result.contains("错误:"),
+            "known_chapter=true 时应绑定调用方 URL，实际: {result}"
+        );
+
+        with_database(|db| {
+            ReplaceRuleRepository::new(db.connection()).delete(rule_id)?;
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+    }
+
+    /// [批15 回修 P3-7] 非 quickjs 构建：绑定构建直接返回空上下文（不查库）
+    #[cfg(not(feature = "quickjs"))]
+    #[test]
+    fn test_build_replace_js_bindings_skips_lookup_without_quickjs() {
+        let rules = vec![make_test_rule(
+            "批15_无quickjs绑定",
+            "标记",
+            "@js:result",
+            true,
+            true,
+        )];
+        let bindings = build_replace_js_bindings(
+            "https://batch15-nq.example.com/book",
+            None,
+            "章节",
+            Some(0),
+            None,
+            true,
+            true,
+            &rules,
+        );
+        assert_eq!(
+            bindings,
+            ReplaceJsBindings::empty(),
+            "非 quickjs 构建不应构建章节/书籍绑定（避免多余 DB 查询）"
         );
     }
 

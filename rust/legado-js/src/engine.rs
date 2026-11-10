@@ -346,6 +346,13 @@ mod quickjs_engine {
         epoch: Instant,
         /// 执行超时截止时间（相对于 epoch 的纳秒数），每次 eval 前更新
         deadline_ns: Arc<AtomicU64>,
+        /// 当前单次求值预算（纳秒）
+        ///
+        /// 初始取 `SandboxConfig::max_execution_time`；宿主可经
+        /// [`Self::set_execution_timeout`] 按规则剩余预算收紧——规则级
+        /// `recv_timeout` 丢弃结果后，执行线程仍会在本预算截止处被中断，
+        /// 不会继续跑满默认 5s。
+        timeout_ns: AtomicU64,
         /// 超时中断标志
         interrupted: Arc<AtomicBool>,
     }
@@ -410,15 +417,28 @@ mod quickjs_engine {
                 config,
                 epoch,
                 deadline_ns,
+                timeout_ns: AtomicU64::new(timeout_ns),
                 interrupted,
             })
         }
 
+        /// 覆盖后续 eval 的单次执行预算
+        ///
+        /// 供宿主按规则剩余超时预算收紧沙箱截止时间（替换规则 `@js:` 逐匹配
+        /// 执行时下传剩余预算）。每次 eval 前 [`Self::reset_deadline`] 使用
+        /// 本值；传 0 会被夹到 1ms，避免无预算的 eval 立即被中断。
+        pub fn set_execution_timeout(&self, timeout: std::time::Duration) {
+            let ns = timeout.as_nanos().min(u64::MAX as u128) as u64;
+            self.timeout_ns.store(ns.max(1_000_000), Ordering::SeqCst);
+        }
+
         /// 重置超时 deadline（在每次 eval 前调用）
         ///
-        /// 将 deadline 设置为「当前时刻 + 超时时长」相对于 epoch 的绝对纳秒数。
+        /// 将 deadline 设置为「当前时刻 + 当前单次预算」相对于 epoch 的绝对
+        /// 纳秒数；预算默认取 `SandboxConfig::max_execution_time`，可由
+        /// [`Self::set_execution_timeout`] 收紧。
         fn reset_deadline(&self) {
-            let timeout_ns = self.config.max_execution_time.as_nanos() as u64;
+            let timeout_ns = self.timeout_ns.load(Ordering::SeqCst);
             let now_ns = self.epoch.elapsed().as_nanos() as u64;
             self.deadline_ns
                 .store(now_ns + timeout_ns, Ordering::SeqCst);
@@ -698,6 +718,29 @@ mod quickjs_tests {
         let engine = make_engine();
         let result = engine.eval("1 + 2").unwrap();
         assert_eq!(result, "3");
+    }
+
+    /// [批15 回修 P2-1] 可运行时收紧单次预算；中断后同一引擎仍可复用
+    #[test]
+    fn test_set_execution_timeout_interrupts_and_engine_reusable() {
+        let engine = make_engine();
+        engine.set_execution_timeout(Duration::from_millis(50));
+        let started = Instant::now();
+        let err = engine.eval("while(true){}").unwrap_err();
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "收紧后的 50ms 预算应中断死循环，实际耗时 {:?}",
+            started.elapsed()
+        );
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("interrupted") || msg.contains("超时"),
+            "中断错误应可读，实际: {msg}"
+        );
+
+        // 中断后同一引擎复用：重置预算后正常求值
+        engine.set_execution_timeout(Duration::from_secs(1));
+        assert_eq!(engine.eval("1 + 1").unwrap(), "2");
     }
 
     // 剑来目录 0 章排查（2026-08-15）：qmToc 返回 1279 元素数组,JS 层

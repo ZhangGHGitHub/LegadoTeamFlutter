@@ -1889,6 +1889,7 @@ dependencies = [
  "des",
  "ecb",
  "fancy-regex",
+ "log",
  "lru",
  "md5",
  "pbkdf2",

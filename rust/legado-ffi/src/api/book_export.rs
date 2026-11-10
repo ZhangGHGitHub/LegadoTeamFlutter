@@ -14,7 +14,9 @@ use legado_db::repository::book_repository::BookRepository;
 use legado_db::repository::cache_book_repository::CacheBookRepository;
 use legado_parser::AnalyzeUrl;
 
-use crate::api::reader::{apply_content_processing_chapter, chapter_to_local_info, is_local_book};
+use crate::api::reader::{
+    apply_content_processing_chapter_with_context, chapter_to_local_info, is_local_book,
+};
 use crate::db_state::{resolve_local_book_path, with_database};
 
 /// 导出结果
@@ -196,8 +198,15 @@ fn export_book_inner(
             };
             // 导出内容与阅读器显示对齐：应用替换规则 + 内容净化
             // （含章级「删除重复标题」开关，Task #51）
-            let content =
-                apply_content_processing_chapter(book_url, &raw_content, &ch.title, ch.index);
+            // [批15 回修 P2-2] 导出链路已持有章节 URL，直接作为 @js: chapter.url
+            let content = apply_content_processing_chapter_with_context(
+                book_url,
+                &raw_content,
+                &ch.title,
+                ch.index,
+                Some(&ch.url),
+                true,
+            );
             // 图片书 PDF 导出（对齐上游 #483）：从正文提取 img 标签，
             // 并相对章节 URL 绝对化（对齐 Kotlin NetworkUtils.getAbsoluteURL）
             let images = if matches!(export_format, ExportFormat::Pdf) {

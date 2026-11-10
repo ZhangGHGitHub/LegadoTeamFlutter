@@ -29,7 +29,7 @@
 //!   `excludeScope`（排除书名/书源）。
 
 use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +47,22 @@ pub trait ReplaceJsExecutor: Send + Sync {
     ///
     /// 返回 JS 执行结果字符串，将作为该匹配项的替换内容（字面插入，不做 `$` 展开）。
     fn eval(&self, js_code: &str, result: &str) -> Result<String, String>;
+
+    /// 带剩余预算执行 `@js:` 替换表达式
+    ///
+    /// 替换规则逐匹配执行时，宿主把「规则总超时 - 已耗时」作为 `remaining`
+    /// 传入，执行器据此收紧 JS 沙箱截止时间：规则级 `recv_timeout` 丢弃结果
+    /// 后，执行线程不会继续跑满默认沙箱预算。默认实现忽略预算、委托
+    /// [`Self::eval`]，既有实现零改动。
+    fn eval_with_budget(
+        &self,
+        js_code: &str,
+        result: &str,
+        remaining: Duration,
+    ) -> Result<String, String> {
+        let _ = remaining;
+        self.eval(js_code, result)
+    }
 }
 
 // ─── 作用域上下文 ──────────────────────────────────────────
@@ -595,21 +611,36 @@ fn apply_rule_with_timeout(
     js_executor: &Option<Arc<dyn ReplaceJsExecutor>>,
 ) -> String {
     let timeout_ms = rule.valid_timeout_millisecond() as u64;
+    // 规则级 deadline 与 recv_timeout 共用同一时间原点：`@js:` 逐匹配执行时
+    // 把剩余预算下传执行器，避免被丢弃的线程继续跑满沙箱默认预算（回修 P2-1）
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let content_owned = content.to_string();
     let rule_owned = rule.clone();
     let js_owned = js_executor.clone();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let replaced = apply_single_rule(&content_owned, &rule_owned, js_owned.as_deref());
+        let replaced =
+            apply_single_rule(&content_owned, &rule_owned, js_owned.as_deref(), deadline);
         let _ = tx.send(replaced);
     });
     match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
         // 替换成功
         Ok(Ok(new_content)) => new_content,
         // 规则执行出错（正则语法错误 / JS 执行失败）→ 跳过该规则
-        Ok(Err(_e)) => content.to_string(),
+        Ok(Err(e)) => {
+            // 回修 P3-8：仅记录规则名与错误，不打印正文
+            log::debug!("替换规则「{}」执行失败，保留原文: {e}", rule.name);
+            content.to_string()
+        }
         // 超时 → 跳过该规则
-        Err(_timeout) => content.to_string(),
+        Err(_timeout) => {
+            log::debug!(
+                "替换规则「{}」执行超时（{}ms），保留原文",
+                rule.name,
+                timeout_ms
+            );
+            content.to_string()
+        }
     }
 }
 
@@ -633,24 +664,33 @@ pub fn preview_single_rule(
         return Ok(content.to_string());
     }
     let timeout_ms = rule.valid_timeout_millisecond() as u64;
+    // 与 apply_rule_with_timeout 同一口径：规则级 deadline 下传 `@js:` 执行器
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     let content_owned = content.to_string();
     let rule_owned = rule.clone();
     let js_owned = js_executor.clone();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let replaced = apply_single_rule(&content_owned, &rule_owned, js_owned.as_deref());
+        let replaced =
+            apply_single_rule(&content_owned, &rule_owned, js_owned.as_deref(), deadline);
         let _ = tx.send(replaced);
     });
     match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
         // 替换成功
         Ok(Ok(new_content)) => Ok(new_content),
         // 规则执行出错（正则语法错误 / JS 执行失败）→ 上抛供预览展示
-        Ok(Err(e)) => Err(e),
+        Ok(Err(e)) => {
+            log::debug!("预览替换规则「{}」执行失败: {e}", rule.name);
+            Err(e)
+        }
         // 超时 → 上抛超时说明（对齐 Kotlin 超时保护，但预览需要可见反馈）
-        Err(_timeout) => Err(format!(
-            "规则执行超时（{}ms），已跳过该规则",
-            rule.valid_timeout_millisecond()
-        )),
+        Err(_timeout) => {
+            log::debug!("预览替换规则「{}」执行超时（{}ms）", rule.name, timeout_ms);
+            Err(format!(
+                "规则执行超时（{}ms），已跳过该规则",
+                rule.valid_timeout_millisecond()
+            ))
+        }
     }
 }
 
@@ -663,6 +703,7 @@ fn apply_single_rule(
     content: &str,
     rule: &ReplaceRuleEntry,
     js_executor: Option<&dyn ReplaceJsExecutor>,
+    deadline: Instant,
 ) -> Result<String, String> {
     if !rule.is_regex {
         return Ok(content.replace(&rule.pattern, &rule.replacement));
@@ -673,7 +714,7 @@ fn apply_single_rule(
             // @js: 表达式替换（对应 Kotlin RegexExtensions.kt 的 isJs 分支）
             let executor = js_executor
                 .ok_or_else(|| "@js: 替换表达式需要 JS 执行器，当前未注入".to_string())?;
-            replace_with_js(&compiled, content, js_code, executor)
+            replace_with_js(&compiled, content, js_code, executor, deadline)
         }
         None => Ok(compiled.replace_all(content, &rule.replacement)),
     }
@@ -686,23 +727,53 @@ fn strip_js_prefix(replacement: &str) -> Option<&str> {
     replacement.strip_prefix("@js:")
 }
 
+/// 单次 `@js:` 返回值上限的上下界（回修 P2-4）
+///
+/// 上限 = `章节原文长度 × 4`，夹逼在 [64KB, 1MB]：下限防止极短预览样例把
+/// 合法替换误判为超限，上限防止病态规则单次产出超大字符串导致 OOM。
+const JS_RESULT_LIMIT_MIN_BYTES: usize = 64 * 1024;
+const JS_RESULT_LIMIT_MAX_BYTES: usize = 1024 * 1024;
+
+/// 计算单次 `@js:` 返回值允许的最大字节数
+fn js_result_limit(content_len: usize) -> usize {
+    content_len
+        .saturating_mul(4)
+        .clamp(JS_RESULT_LIMIT_MIN_BYTES, JS_RESULT_LIMIT_MAX_BYTES)
+}
+
 /// 逐匹配执行 JS 并拼接结果
 ///
 /// 对应 Kotlin `matcher.find()` 循环 + `bindings["result"] = matcher.group()`。
 /// JS 结果字面插入（等价于 Kotlin `quoteReplacementJs` 转义后的 appendReplacement）。
+///
+/// - `deadline`：规则级截止时刻，逐匹配把剩余预算下传执行器（回修 P2-1）；
+/// - 单次结果超过 [`js_result_limit`] 时返回 `Err`（上层保留原文并记日志）。
 fn replace_with_js(
     compiled: &CompiledRegex,
     content: &str,
     js_code: &str,
     executor: &dyn ReplaceJsExecutor,
+    deadline: Instant,
 ) -> Result<String, String> {
     let ranges = compiled.find_ranges(content)?;
+    let result_limit = js_result_limit(content.len());
     let mut out = String::with_capacity(content.len());
     let mut last = 0;
     for (start, end) in ranges {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("@js: 规则执行预算耗尽（已超时），保留原文".to_string());
+        }
         out.push_str(&content[last..start]);
         let matched = &content[start..end];
-        let js_result = executor.eval(js_code, matched)?;
+        let js_result = executor.eval_with_budget(js_code, matched, remaining)?;
+        if js_result.len() > result_limit {
+            return Err(format!(
+                "@js: 单次替换结果超限（{} 字节 > 上限 {} 字节），保留原文",
+                js_result.len(),
+                result_limit
+            ));
+        }
         out.push_str(&js_result);
         last = end;
     }

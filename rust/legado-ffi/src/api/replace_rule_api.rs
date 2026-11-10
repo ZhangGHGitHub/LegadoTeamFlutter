@@ -887,23 +887,37 @@ mod tests {
         }
     }
 
-    /// ③b 预览同样绑定空 `chapter` / `book` 对象（与生产共用绑定构造函数）
+    /// ③b 预览与生产共用同一绑定构造点，chapter/book 字段可见
     ///
     /// 若预览只绑 `result`，`chapter.title` 会抛 TypeError → 返回 ⚠️；
-    /// 断言直接拼接成功且缺失字段为空串/0。
+    /// 断言预览与生产管线（`apply_replace_rules` + 同一执行器/空上下文）
+    /// 输出相等，且缺失字段为空串/0（回修 P2-5）。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_preview_js_rule_binds_empty_chapter_and_book() {
-        let json = preview_rule_json(
-            "标记",
-            r#"@js: result + "|" + chapter.title + "|" + chapter.index + "|" + book.name + "|" + book.author"#,
-            true,
-            3000,
-        );
+        let replacement = r#"@js: result + "|" + chapter.title + "|" + chapter.index + "|" + book.name + "|" + book.author"#;
+        let json = preview_rule_json("标记", replacement, true, 3000);
         let out = preview_replace_rule(&json, "标记").unwrap();
         assert_eq!(
             out, "标记||0||",
             "预览应绑定空 chapter/book 对象（缺失字段为空串/0）"
+        );
+
+        // 生产管线：同一规则、同一输入、同一执行器构造点（空上下文）
+        let entry = ReplaceRuleEntry {
+            pattern: "标记".to_string(),
+            replacement: replacement.to_string(),
+            is_regex: true,
+            ..ReplaceRuleEntry::default()
+        };
+        let production = legado_core::content_processor::apply_replace_rules(
+            "标记",
+            std::slice::from_ref(&entry),
+            Some(std::sync::Arc::new(ReplaceRuleJsExecutor::without_context())),
+        );
+        assert_eq!(
+            production, out,
+            "预览与生产（空上下文）应输出一致且 chapter/book 可见"
         );
     }
 

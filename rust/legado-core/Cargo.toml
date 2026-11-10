@@ -22,6 +22,8 @@ uuid = { workspace = true }
 lru = "0.12"
 # Java 正则方言支持（lookbehind / backreference / 原子组等 regex crate 不支持的语法）
 fancy-regex = "0.19.0"
+# [批15 回修] 替换规则错误/超时 debug 日志（不打印正文内容；同版本已在工作区依赖图）
+log = "0.4"
 # 隐私密码凭据（批9a，契约 §2.53）：PBKDF2-HMAC-SHA256 210000 次 / 32B verifier。
 # 用户已授权隐私完整版（当前仅数据层）；三 crate 均已在 Cargo.lock，无新增传递依赖面。
 pbkdf2 = "0.12"
