@@ -875,6 +875,33 @@ void main() {
       );
     });
 
+    test('stop() 后迟到的 sync/播放完成/唤醒锁回调不再新建会话', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.mediaButtonOnExit: true,
+      });
+      final notifier = container.read(audioNotifierProvider.notifier);
+      await notifier.initMediaSession();
+      expect(container.read(audioNotifierProvider).isMediaSessionReady, isTrue);
+
+      clearInteractions(audioService);
+      notifier.stop();
+      await Future<void>.delayed(Duration.zero);
+
+      // 模拟 stop 后在途/迟到的 _syncMediaSession（如播放路径 await 恢复）
+      await notifier.debugSyncMediaSession();
+      // 模拟播放器完成回调（章末/段末）
+      player.completePlayback();
+      await Future<void>.delayed(Duration.zero);
+
+      verifyNever(() => audioService.init());
+      verify(() => audioService.dispose()).called(1);
+      expect(
+        container.read(audioNotifierProvider).isMediaSessionReady,
+        isFalse,
+        reason: 'stop 之后任何迟到回调都不得重建空媒体会话',
+      );
+    });
+
     test('release 与在途 initMediaSession 交错 → 最终保持已释放（不半状态）', () async {
       final initGate = Completer<void>();
       var initStarted = false;

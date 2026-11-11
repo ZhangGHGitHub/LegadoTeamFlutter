@@ -155,7 +155,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     _headsetMediaButtonService = ref.read(headsetMediaButtonServiceProvider);
     _headsetMediaButtonService?.attachActivityHandler(this, _onHeadsetMediaKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final notifier = ref.read(audioNotifierProvider.notifier);
+      // [TTS P3 回修 | 2026-11-11] 页面已退出则不再初始化媒体会话，
+      // 避免快速进出时在 stop/release 之后重建空会话。
+      if (!mounted) return;
+      final notifier = _audioNotifier;
       // [设置批5a-1] 播放器背景偏好（纯色/透明）
       unawaited(
         ref

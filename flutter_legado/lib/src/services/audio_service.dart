@@ -301,9 +301,13 @@ class AudioService {
 
   /// 听书 PARTIAL_WAKE_LOCK（对齐 PreferKey.audioPlayWakeLock / AudioPlayService）
   Future<void> setWakeLock(bool enabled) async {
-    if (!_initialized) {
+    // [TTS P3 回修 | 2026-11-11] 仅「开启」需要会话；关闭唤醒锁不得为
+    // 尚未初始化/已释放的会话自动 init——stop() 释放媒体会话后紧接的
+    // `_releaseReadAloudWakeLock()` 曾因此重建一条空 MediaSession。
+    if (enabled && !_initialized) {
       await init();
     }
+    if (!_initialized) return;
     try {
       await _channel.invokeMethod<void>('setWakeLock', {'enabled': enabled});
     } on PlatformException {

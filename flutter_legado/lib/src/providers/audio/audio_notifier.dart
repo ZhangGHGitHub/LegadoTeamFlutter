@@ -1518,21 +1518,37 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   }
 
   Future<void> _syncMediaSession() async {
+    // [TTS P3 回修 | 2026-11-11] 空闲态（含 stop 之后）绝不补建会话：
+    // 旧实现在 stop 释放后仍可能被在途播放回调走到这里，经
+    // `_mediaSessionReleased` 分支重建一条 active 空 MediaSession。
+    if (state.state == PlayerState.idle) return;
+
+    // 释放代际快照：每个 await 之后复检，释放/停止发生后不再继续建会话
+    final releaseEpoch = _mediaSessionReleaseEpoch;
+    bool stale() =>
+        _disposed ||
+        _mediaSessionReleaseEpoch != releaseEpoch ||
+        state.state == PlayerState.idle;
+
     // [批9b-5] 会话曾被 `mediaButtonOnExit=false` 的停播/后台路径释放：
     // 再次播放时补建，避免此后再无媒体通知/系统播放控制。从未初始化过的
     // 场景（测试/非 Android）保持旧行为直接返回，不等待平台通道。
     if (!state.isMediaSessionReady) {
       if (!_mediaSessionReleased) return;
       await initMediaSession(bookName: state.bookName);
+      if (stale()) return;
     }
-    if (!state.isMediaSessionReady) return;
+    if (!state.isMediaSessionReady || stale()) return;
     // 批9a 项6：ignoreAudioFocus 开启时跳过焦点请求（对齐原版
     // BaseReadAloudService.kt:582 不请求焦点语义；允许与其他应用同时出声）
     if (!_ignoreAudioFocus) {
       await _audioService.requestAudioFocus();
+      if (stale()) return;
     }
     await _pushMediaSessionMetadata();
+    if (stale()) return;
     await _audioService.notifyPlaying();
+    if (stale()) return;
     // [设置批5a-1] TTS 朗读唤醒锁：按偏好启用（流媒体路径由听书页开关负责）
     await _applyReadAloudWakeLock();
   }
@@ -1566,6 +1582,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 供页面 dispose 等无法读 `state`（Notifier 保护成员）或 `ref` 的
   /// 生命周期阶段判断：空闲态退出听书页应强制释放媒体会话。
   bool get isIdle => state.state == PlayerState.idle;
+
+  /// 测试钩子：直接触发媒体会话同步（验证 stop 后迟到回调不重建会话）
+  @visibleForTesting
+  Future<void> debugSyncMediaSession() => _syncMediaSession();
 
   /// 退出阅读器钩子（设置批5a-1）
   ///
@@ -1728,6 +1748,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 流媒体模式跳过（听书页自己的唤醒锁开关负责），避免两条偏好互相踩停。
   Future<void> _applyReadAloudWakeLock() async {
     if (state.isStreamMode) return;
+    // [TTS P3 回修] 会话已释放（stop 后迟到回调）不得为持锁重建空会话
+    if (!_audioService.isInitialized) return;
     try {
       await _audioService.setWakeLock(_readAloudWakeLock);
     } catch (e) {
@@ -1737,6 +1759,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   Future<void> _releaseReadAloudWakeLock() async {
     if (state.isStreamMode) return;
+    // [TTS P3 回修 | 2026-11-11] 会话已释放时不再调用 setWakeLock：
+    // 关闭唤醒锁无需会话，旧实现会经 AudioService.setWakeLock → init()
+    // 在 release 后重建一条空 MediaSession（dumpsys 残留 active 空会话）。
+    if (!_audioService.isInitialized) return;
     try {
       await _audioService.setWakeLock(false);
     } catch (e) {
@@ -1831,7 +1857,11 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   /// 听书唤醒锁（对齐 audioPlayWakeLock）
   Future<void> setWakeLockEnabled(bool enabled) async {
-    await _audioService.setWakeLock(enabled);
+    // [TTS P3 回修] 仅在会话存在时应用；无会话时仅持久化偏好，
+    // 避免为开关设置重建一条空 MediaSession。
+    if (_audioService.isInitialized) {
+      await _audioService.setWakeLock(enabled);
+    }
     try {
       await _api.setConfig(kAudioPlayWakeLockKey, enabled ? 'true' : 'false');
     } catch (_) {}

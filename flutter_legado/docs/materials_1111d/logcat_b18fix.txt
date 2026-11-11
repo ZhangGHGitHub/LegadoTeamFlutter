@@ -1,0 +1,1415 @@
+--------- beginning of main
+11-11 16:42:22.600  7391  7391 I sh      : type=1400 audit(0.0:12111): avc:  denied  { read open } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:42:22.600  7391  7391 I sh      : type=1400 audit(0.0:12112): avc:  denied  { execute_no_trans } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:42:22.600  7391  7391 I logcat  : type=1400 audit(0.0:12113): avc:  denied  { map } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:42:22.604  7391  7391 I logcat  : type=1400 audit(0.0:12114): avc:  denied  { read } for  name="u:object_r:default_prop:s0" dev="tmpfs" ino=239 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-11 16:42:23.307     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:25.853  7402  7402 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:42:25.853  7402  7402 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:42:25.853  7402  7402 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:42:25.854   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:42:25.857  7402  7403 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:42:25.858  7402  7403 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:42:28.299     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:33.303     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:36.449  1532  1568 I NemuSysOpt: Start compat memory
+11-11 16:42:36.453  1532  1568 I NemuSysOpt: Compat memory done
+11-11 16:42:37.150  7419  7419 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:42:37.150  7419  7419 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:42:37.150  7419  7419 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:42:37.150   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:42:37.153  7419  7420 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:42:37.154  7419  7420 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:42:38.319     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:43.323     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:46.228   838  6463 D WifiNl80211Manager: Scan result ready event
+11-11 16:42:46.228   838  6463 D WifiNative: Scan result ready event
+11-11 16:42:47.319  7100  7153 I legado-regex: [regex_safe] 首次编译 pattern（线程 <unnamed>），前64字符: (?m)^\s{0,4}第[零一二三四五六七八九十百千万\d]+[章回节卷集部篇话]\s*.+$|(?m)^\s{0,4}Cha
+11-11 16:42:47.320  7100  7153 I legado-regex: [regex_safe] 首次编译 pattern（线程 <unnamed>），前64字符: 第[零一二三四五六七八九十百千万\d]+[卷部]
+11-11 16:42:47.321  7100  7100 I flutter : [BookInfo] 首屏就绪 4ms name=tmp_qb17_book chapters=3 tocLoading=false
+11-11 16:42:47.321  7100  7100 I flutter : [BookInfo] 全量完成 4ms
+11-11 16:42:47.337  7100  7100 I flutter : [BookOpen] name=tmp_qb17_book origin=loc_book typeBits=0 route=/reader srcType=null videoLike=false
+11-11 16:42:48.339     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:50.381  7436  7436 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:42:50.381  7436  7436 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:42:50.381  7436  7436 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:42:50.381   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:42:50.385  7436  7437 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:42:50.385  7436  7437 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:42:53.339     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:42:58.347     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:02.555  7447  7447 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:43:02.555  7447  7447 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:43:02.555  7447  7447 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:43:02.555   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:43:02.559  7447  7448 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:43:02.560  7447  7448 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:43:03.355     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:08.359     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:12.599  7100  7107 W System  : A resource failed to call close. 
+11-11 16:43:12.599  7100  7107 W System  : A resource failed to call close. 
+11-11 16:43:13.371     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:16.660  7459  7459 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:43:16.660  7459  7459 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:43:16.660  7459  7459 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:43:16.660   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:43:16.663  7459  7460 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:43:16.664  7459  7460 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:43:18.375     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:23.383     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:28.387     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:33.399     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:33.950  7465  7465 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:43:33.944  7465  7465 I dumpsys : type=1400 audit(0.0:12120): avc:  denied  { write } for  path="pipe:[1920414]" dev="pipefs" ino=1920414 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=fifo_file permissive=1
+11-11 16:43:34.015  7470  7470 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:43:34.015  7470  7470 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:43:34.015  7470  7470 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:43:34.015   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:43:34.018  7470  7471 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:43:34.019  7470  7471 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+--------- beginning of system
+11-11 16:43:37.789  1097  2958 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-11 16:43:38.407     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:41.720  7473  7473 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:43:43.411     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:48.423     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:48.669   838   932 D ActivityManager: freezing 4188 com.android.externalstorage
+11-11 16:43:48.670   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-11 16:43:48.670   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-11 16:43:48.670   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={10017} in 1ms
+11-11 16:43:51.460  7478  7478 I logcat  : type=1400 audit(0.0:12121): avc:  denied  { write } for  name="logdr" dev="tmpfs" ino=923 scontext=u:r:su:s0 tcontext=u:object_r:logdr_socket:s0 tclass=sock_file permissive=1
+11-11 16:43:53.431     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:57.648   838  6463 I MediaSessionStack: addSession to bottom of stack | record: io.legado.flutter_legado/legado_flutter_media/15 (userId=0)
+11-11 16:43:57.650   838  1616 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/15 (userId=0) playbackState=null
+11-11 16:43:57.657   838  1616 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:43:57.657   838  1616 I AS.FadeOutManager: unfadeOutUid() uid:10067
+11-11 16:43:57.659   838  1616 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/15 (userId=0)
+11-11 16:43:57.659   838  1616 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/15 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237024400, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:43:57.659   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:43:57.659   838  1616 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10067; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-11 16:43:57.662   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:43:57.864   838   838 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-11 16:43:57.864   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:43:57.865  1608  1608 I id.ext.services: AssetManager2(0x74c46df4e5d8) locale list changing from [] to [zh-Hans-CN]
+11-11 16:43:58.068  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:43:58.064 46976 46976 I adbd    : type=1400 audit(0.0:12122): avc:  denied  { write } for  path="socket:[1567864]" dev="sockfs" ino=1567864 scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=tcp_socket permissive=1
+11-11 16:43:58.064 46976 46976 I adbd    : type=1400 audit(0.0:12123): avc:  denied  { read } for  path="socket:[1567864]" dev="sockfs" ino=1567864 scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=tcp_socket permissive=1
+11-11 16:43:58.269  1097  1271 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-11 16:43:58.275  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:43:58.275  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:43:58.276  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:43:58.278  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:43:58.280  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:43:58.281  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:43:58.285  1097  1097 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-11 16:43:58.285  1097 44559 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-11 16:43:58.294  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:43:58.368  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:43:58.443     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:43:58.684  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:44:01.725  7492  7492 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:44:01.726  7492  7492 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:44:01.726  7492  7492 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:44:01.726   709  1454 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:44:01.729  7492  7493 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:44:01.730  7492  7493 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:44:01.720  7492  7492 I screencap: type=1400 audit(0.0:12124): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:surfaceflinger:s0 tclass=binder permissive=1
+11-11 16:44:01.720  7492  7492 I screencap: type=1400 audit(0.0:12125): avc:  denied  { transfer } for  scontext=u:r:su:s0 tcontext=u:r:surfaceflinger:s0 tclass=binder permissive=1
+11-11 16:44:01.829  7494  7494 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:44:03.443     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:03.440  7497  7497 I init    : type=1400 audit(0.0:12126): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:44:03.440  7497  7497 I init    : type=1400 audit(0.0:12127): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:44:03.440  7497  7497 I serial_console: type=1400 audit(0.0:12128): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:44:03.440  7497  7497 I serial_console: type=1400 audit(0.0:12129): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:44:08.471     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:09.665  7100  7100 W TextToSpeech: stop failed: not bound to TTS engine
+11-11 16:44:09.665   838  1616 I MediaFocusControl: abandonAudioFocus() from uid/pid 10067/7100 clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado
+11-11 16:44:09.666   838  1616 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/15 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237024400, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:44:09.666   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:44:09.666   838  6463 I MediaSessionStack: removeSession | record: io.legado.flutter_legado/legado_flutter_media/15 (userId=0)
+11-11 16:44:09.666   838  6463 D MediaSessionService: destroySessionLocked: record=io.legado.flutter_legado/legado_flutter_media/15 (userId=0)
+11-11 16:44:09.667   838  1219 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10067 in package io.legado.flutter_legado
+11-11 16:44:09.667   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:44:09.668  1097  1271 D MediaDataManager: session destroyed for 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:44:09.668  1097  1271 D MediaDataManager: Removing still-active player 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:44:09.684  1097  1097 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10067 because it was removed by the system
+11-11 16:44:12.428  7501  7501 I cmd     : type=1400 audit(0.0:12130): avc:  denied  { read write } for  path="socket:[1923103]" dev="sockfs" ino=1923103 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-11 16:44:12.428   838   838 I binder:838_7: type=1400 audit(0.0:12131): avc:  denied  { call } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=binder permissive=1
+11-11 16:44:12.428   838   838 I binder:838_7: type=1400 audit(0.0:12132): avc:  denied  { getopt } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-11 16:44:13.471     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:14.514  7507  7507 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:44:14.514  7507  7507 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:44:14.514  7507  7507 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:44:14.515   709  1454 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:44:14.518  7507  7508 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:44:14.519  7507  7508 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:44:14.512   709   709 I binder:709_4: type=1400 audit(0.0:12133): avc:  denied  { call } for  scontext=u:r:surfaceflinger:s0 tcontext=u:r:su:s0 tclass=binder permissive=1
+11-11 16:44:18.471     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:23.479     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:28.487     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:33.495     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:33.939  7520  7520 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:44:33.939  7520  7520 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:44:33.939  7520  7520 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:44:33.939   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:44:33.942  7520  7521 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:44:33.943  7520  7521 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:44:38.495     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:43.507     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:45.936  7529  7529 I sh      : type=1400 audit(0.0:12134): avc:  denied  { getattr } for  path="/system/bin/screencap" dev="sda6" ino=419 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:44:45.936  7529  7529 I sh      : type=1400 audit(0.0:12135): avc:  denied  { execute } for  name="screencap" dev="sda6" ino=419 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:44:45.936  7531  7531 I sh      : type=1400 audit(0.0:12136): avc:  denied  { read open } for  path="/system/bin/screencap" dev="sda6" ino=419 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:44:45.936  7531  7531 I sh      : type=1400 audit(0.0:12137): avc:  denied  { execute_no_trans } for  path="/system/bin/screencap" dev="sda6" ino=419 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:44:45.975  7531  7531 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:44:45.975  7531  7531 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:44:45.975  7531  7531 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:44:45.936  7531  7531 I screencap: type=1400 audit(0.0:12138): avc:  denied  { map } for  path="/system/bin/screencap" dev="sda6" ino=419 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:44:45.982   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:44:45.985  7531  7532 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:44:45.986  7531  7532 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:44:48.515     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:48.512  7533  7533 I init    : type=1400 audit(0.0:12139): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:44:53.527     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:44:57.468  7535  7535 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:44:58.523     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:03.547     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:03.808  7540  7540 I logcat  : type=1400 audit(0.0:12140): avc:  denied  { read } for  name="u:object_r:default_prop:s0" dev="tmpfs" ino=239 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-11 16:45:03.808  7540  7540 I logcat  : type=1400 audit(0.0:12141): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:default_prop:s0" dev="tmpfs" ino=239 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-11 16:45:03.808  7540  7540 I logcat  : type=1400 audit(0.0:12142): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:default_prop:s0" dev="tmpfs" ino=239 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-11 16:45:03.808  7540  7540 I logcat  : type=1400 audit(0.0:12143): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:default_prop:s0" dev="tmpfs" ino=239 scontext=u:r:su:s0 tcontext=u:object_r:default_prop:s0 tclass=file permissive=1
+11-11 16:45:03.808  7540  7540 I logcat  : type=1400 audit(0.0:12144): avc:  denied  { write } for  name="logdr" dev="tmpfs" ino=923 scontext=u:r:su:s0 tcontext=u:object_r:logdr_socket:s0 tclass=sock_file permissive=1
+11-11 16:45:06.453  1532  1568 I NemuSysOpt: Start compat memory
+11-11 16:45:06.455  1532  1568 I NemuSysOpt: Compat memory done
+11-11 16:45:08.547     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:13.551     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:18.559     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:20.692 46976 46976 I /apex/com.android.adbd/bin/adbd: type=1400 audit(0.0:12145): avc:  denied  { dac_read_search } for  comm=73796E6320737663203232 capability=2  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-11 16:45:20.692 46976 46976 I /apex/com.android.adbd/bin/adbd: type=1400 audit(0.0:12146): avc:  denied  { search } for  comm=73796E6320737663203232 name="0" dev="tmpfs" ino=12 scontext=u:r:su:s0 tcontext=u:object_r:mnt_user_file:s0 tclass=dir permissive=1
+11-11 16:45:20.692 46976 46976 I /apex/com.android.adbd/bin/adbd: type=1400 audit(0.0:12147): avc:  denied  { read } for  comm=73796E6320737663203232 name="primary" dev="tmpfs" ino=46 scontext=u:r:su:s0 tcontext=u:object_r:mnt_user_file:s0 tclass=lnk_file permissive=1
+11-11 16:45:20.692 46976 46976 I /apex/com.android.adbd/bin/adbd: type=1400 audit(0.0:12148): avc:  denied  { search } for  comm=73796E6320737663203232 name="/" dev="fuse" ino=2883585 scontext=u:r:su:s0 tcontext=u:object_r:fuse:s0 tclass=dir permissive=1
+11-11 16:45:20.692 46976 46976 I /apex/com.android.adbd/bin/adbd: type=1400 audit(0.0:12149): avc:  denied  { search } for  comm=73796E6320737663203232 name="Download" dev="f2fs" ino=1048605 scontext=u:r:su:s0 tcontext=u:object_r:vboxsf_file:s0 tclass=dir permissive=1
+11-11 16:45:20.770  7100  7100 I flutter : [BookInfo] 首屏就绪 0ms name=tmp_qb17_book chapters=3 tocLoading=false
+11-11 16:45:20.771  7100  7100 I flutter : [BookInfo] 全量完成 0ms
+11-11 16:45:22.847  7554  7554 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:45:22.847  7554  7554 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:45:22.847  7554  7554 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:45:22.847   709  1454 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:22.850  7554  7555 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:45:22.851  7554  7555 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:45:23.571     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:26.227   838  1219 D WifiNl80211Manager: Scan result ready event
+11-11 16:45:26.227   838  1219 D WifiNative: Scan result ready event
+11-11 16:45:28.579     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:33.599     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:37.409  7100  7100 W FilePickerUtils: Custom file type azw3 is unsupported and will be ignored.
+11-11 16:45:37.409  7100  7100 W FilePickerUtils: Custom file type azw is unsupported and will be ignored.
+11-11 16:45:37.409  7100  7100 W FilePickerUtils: Custom file type umd is unsupported and will be ignored.
+11-11 16:45:37.409  7100  7100 D FilePickerUtils: Allowed file extensions mimes: [application/epub+zip, text/plain, application/x-mobipocket-ebook, application/pdf, application/x-cbz]
+11-11 16:45:37.409  7100  7100 D FilePickerDelegate: Selected type */*
+11-11 16:45:37.411   838  1219 E CellBroadcastUtils: getDefaultCellBroadcastReceiverPackageName: no package found
+11-11 16:45:37.411   838  1219 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-11 16:45:37.413   838  1219 I ActivityTaskManager: START u0 {act=android.intent.action.OPEN_DOCUMENT cat=[android.intent.category.OPENABLE] typ=*/* cmp=com.android.documentsui/.picker.PickActivity (has extras)} with LAUNCH_MULTIPLE from uid 10067 (sr=10232326) (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+11-11 16:45:37.413  1097  1241 V WindowManagerShell: Transition requested (#443): android.os.BinderProxy@1a792a9 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1249 effectiveUid=10067 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{com.android.documentsui/com.android.documentsui.picker.PickActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=2 lastActiveTime=237124154 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@abf202e} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{c2e7cf com.android.documentsui.picker.PickActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 443 }
+11-11 16:45:37.413  1097  1241 D ShellSplitScreen: logExit: no-op, mLoggerSessionId is null
+11-11 16:45:37.414   838  1219 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-11 16:45:37.414   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:37.414   838  1219 D ActivityManager: quick sync unfreeze 31218 for 1
+11-11 16:45:37.415   838  1219 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-11 16:45:37.416   838   861 D ActivityManager: sync unfroze 31218 com.android.documentsui for 1
+11-11 16:45:37.416   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:37.416 31218 31218 I oid.documentsui: AssetManager2(0x74c46df113b8) locale list changing from [] to [zh-Hans-CN]
+11-11 16:45:37.417   709   709 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-11 16:45:37.417   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:37.417   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:37.425   838  1219 D ActivityManager: sync unfroze 4188 com.android.externalstorage for 7
+11-11 16:45:37.425   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:37.428 31218 31218 E oid.documentsui: No package ID ff found for resource ID 0xffffffff.
+11-11 16:45:37.429 31218 31218 W SelectionTracker: Setting gestureTooltypes is likely to result in unexpected behavior.
+11-11 16:45:37.430 31218 31218 E oid.documentsui: No package ID ff found for resource ID 0xffffffff.
+11-11 16:45:37.432 31218 31218 E oid.documentsui: No package ID ff found for resource ID 0xffffffff.
+11-11 16:45:37.435   838  6463 D CoreBackPreview: Window{9d27b87 u0 com.android.documentsui/com.android.documentsui.picker.PickActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@2edf6dd, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-11 16:45:37.439 31218 31240 I EGL_emulation: EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-11 16:45:37.439 31218 31240 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-11 16:45:37.444 31218 31240 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:37.448 31218  7578 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:37.449 31218  7578 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:37.462  1097  7137 V WindowManagerShell: onTransitionReady(transaction=3599182635801)
+11-11 16:45:37.462  1097  1241 V WindowManagerShell: onTransitionReady (#443) android.os.BinderProxy@1a792a9: {id=443 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-11 16:45:37.462  1097  1241 V WindowManagerShell:         {m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0xeb7f55c sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},
+11-11 16:45:37.462  1097  1241 V WindowManagerShell:         {m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0x23db065 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}
+11-11 16:45:37.462  1097  1241 V WindowManagerShell:     ]}
+11-11 16:45:37.462  1097  1241 V WindowManagerShell: Playing animation for (#443) android.os.BinderProxy@1a792a9@0
+11-11 16:45:37.462  1097  1241 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-11 16:45:37.462  1097  1241 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=443 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0xeb7f55c sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0x23db065 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}]}
+11-11 16:45:37.462  1097  1241 V WindowManagerShell:  Delegate animation for (#443) to null
+11-11 16:45:37.462  1097  1241 V WindowManagerShell: start default transition animation, info = {id=443 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0xeb7f55c sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},{m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0x23db065 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}]}
+11-11 16:45:37.462 31218 31218 E oid.documentsui: No package ID ff found for resource ID 0xffffffff.
+11-11 16:45:37.462  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@67f0706 animAttr=0x5 type=OPEN isEntrance=false
+11-11 16:45:37.462   838  6463 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 16:45:37.462   709  1454 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:37.463   838   858 I ActivityTaskManager: Displayed com.android.documentsui/.picker.PickActivity for user 0: +51ms
+11-11 16:45:37.463   838   858 V WindowManager: Sent Transition (#443) createdAt=11-11 16:45:37.411 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=1249 effectiveUid=10067 displayId=0 isRunning=true baseIntent=Intent { act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER] flg=0x10200000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{com.android.documentsui/com.android.documentsui.picker.PickActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=2 lastActiveTime=237124154 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{b529e1d Task{b7c80c7 #1249 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{602ad33 com.android.documentsui.picker.PickActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(225, 456 - 856, 1536) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 443 }
+11-11 16:45:37.463   838   858 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-11 16:45:37.463   838   858 V WindowManager:     info={id=443 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-11 16:45:37.463   838   858 V WindowManager:         {m=OPEN f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0x476fe20 sb=Rect(0, 0 - 0, 0) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=-1->0 r=-1->0:-1 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},
+11-11 16:45:37.463   838   858 V WindowManager:         {m=TO_BACK f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0xe1a29ba sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}
+11-11 16:45:37.463   838   858 V WindowManager:     ]}
+11-11 16:45:37.464 31218 31218 E oid.documentsui: No package ID ff found for resource ID 0xffffffff.
+11-11 16:45:37.464 31218 31218 D DefaultSelectionTracker: Ignoring onDataSetChange. No active selection.
+11-11 16:45:37.464  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:37.465  1097  1283 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-11 16:45:37.466  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:37.468  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@4ad7819 animAttr=0x4 type=OPEN isEntrance=true
+11-11 16:45:37.485   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:37.493  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:37.495  1097  1283 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-11 16:45:37.495  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:37.497  1097  1241 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@2f3c1d5
+11-11 16:45:37.515  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-11 16:45:37.551 31218 31218 E ImeBackDispatcher: Ime callback not found. Ignoring unregisterReceivedCallback. callbackId: 124259955
+11-11 16:45:37.552   838   948 I ImeTracker: com.android.documentsui:ce2100c8: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-11 16:45:37.552 31218 31218 D InsetsController: hide(ime(), fromIme=false)
+11-11 16:45:37.552 31218 31218 I ImeTracker: com.android.documentsui:ce2100c8: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-11 16:45:37.733  1097  1241 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#443) android.os.BinderProxy@1a792a9@0
+11-11 16:45:37.735   838   858 V WindowManager: Finish Transition (#443): created at 11-11 16:45:37.411 collect-started=0.03ms request-sent=2.067ms started=2.576ms ready=4.152ms sent=50.95ms finished=323.967ms
+11-11 16:45:37.735  7100  7100 D VRI[MainActivity]: visibilityChanged oldVisibility=true newVisibility=false
+11-11 16:45:37.736  1097  1241 V WindowManagerShell: Track 0 became idle
+11-11 16:45:37.736  1097  1241 V WindowManagerShell: All active transition animations finished
+11-11 16:45:37.736   838  1616 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 16:45:37.736   838  1616 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 16:45:37.767   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:37.789  1097  2983 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-11 16:45:38.591     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:38.592  7580  7580 I serial_console: type=1400 audit(0.0:12165): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=755 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-11 16:45:38.592  7580  7580 I serial_console: type=1400 audit(0.0:12166): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=755 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-11 16:45:39.452  7581  7581 I sh      : type=1400 audit(0.0:12167): avc:  denied  { dac_override } for  capability=1  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-11 16:45:39.460  7583  7583 I cmd     : type=1400 audit(0.0:12168): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:servicemanager:s0 tclass=binder permissive=1
+11-11 16:45:39.474 31218 31218 D AutofillManager: view not autofillable - not passing ime action check
+11-11 16:45:39.475 31218 31218 I ImeTracker: com.android.documentsui:b0cf5034: onRequestShow at ORIGIN_CLIENT reason SHOW_SOFT_INPUT fromUser false
+11-11 16:45:39.476 31218 31218 D InsetsController: show(ime(), fromIme=false)
+11-11 16:45:39.476 31218 31218 D InsetsController: Setting requestedVisibleTypes to -1 (was -9)
+11-11 16:45:39.477 31218 31218 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+11-11 16:45:39.477 31218 31218 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+11-11 16:45:39.478   838   948 W InputMethodManagerService: Delegator package does not match. Ignoring startStylusHandwriting
+11-11 16:45:39.460  7583  7583 I cmd     : type=1400 audit(0.0:12169): avc:  denied  { use } for  path="socket:[1924037]" dev="sockfs" ino=1924037 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=fd permissive=1
+11-11 16:45:39.485  1529  1689 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:39.487   838  1219 D CoreBackPreview: Window{9d27b87 u0 com.android.documentsui/com.android.documentsui.picker.PickActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@bf6f07c, mPriority=0, mIsAnimationCallback=true, mOverrideBehavior=0}
+11-11 16:45:39.489  1529  7586 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:39.489  1529  7586 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:39.634 31218 31218 I ImeTracker: com.android.documentsui:b0cf5034: onShown
+11-11 16:45:40.522 31218 31218 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+11-11 16:45:40.522 31218 31218 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+11-11 16:45:41.701  1537  1553 I FuseDaemon: Background concurrent mark compact GC freed 2816KB AllocSpace bytes, 0(0B) LOS objects, 49% free, 2696KB/5392KB, paused 497us,4.406ms total 127.409ms
+11-11 16:45:41.702  1537  1553 W FuseDaemon: Reducing the number of considered missed Gc histogram windows from 7955 to 100
+11-11 16:45:41.764  4188 26594 V ExternalStorage: Restricting access for path: /storage/emulated/0/Android/data
+11-11 16:45:41.766  4188 26594 V ExternalStorage: Restricting access for path: /storage/emulated/0/Android/obb
+11-11 16:45:41.793 31218 31218 D DefaultSelectionTracker: Ignoring onDataSetChange. No active selection.
+11-11 16:45:42.627  7595  7595 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:45:42.627  7595  7595 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:45:42.627  7595  7595 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:45:42.627   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:42.630  7595  7596 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:45:42.631  7595  7596 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:45:42.624  7595  7595 I binder:7595_1: type=1400 audit(0.0:12170): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:hwservicemanager:s0 tclass=binder permissive=1
+11-11 16:45:42.628  7595  7595 I binder:7595_1: type=1400 audit(0.0:12171): avc:  denied  { read } for  name="u:object_r:system_prop:s0" dev="tmpfs" ino=556 scontext=u:r:su:s0 tcontext=u:object_r:system_prop:s0 tclass=file permissive=1
+11-11 16:45:42.628  7595  7595 I binder:7595_1: type=1400 audit(0.0:12172): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:system_prop:s0" dev="tmpfs" ino=556 scontext=u:r:su:s0 tcontext=u:object_r:system_prop:s0 tclass=file permissive=1
+11-11 16:45:42.628  7595  7595 I binder:7595_1: type=1400 audit(0.0:12173): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:system_prop:s0" dev="tmpfs" ino=556 scontext=u:r:su:s0 tcontext=u:object_r:system_prop:s0 tclass=file permissive=1
+11-11 16:45:42.628  7595  7595 I binder:7595_1: type=1400 audit(0.0:12174): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:system_prop:s0" dev="tmpfs" ino=556 scontext=u:r:su:s0 tcontext=u:object_r:system_prop:s0 tclass=file permissive=1
+11-11 16:45:42.742   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-11 16:45:42.742   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-11 16:45:42.742   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={10067} in 0ms
+11-11 16:45:42.742   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-11 16:45:42.742   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-11 16:45:42.742   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={20067} in 1ms
+11-11 16:45:43.603     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:48.607     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:52.734  1097  1241 V WindowManagerShell: Transition requested (#444): android.os.BinderProxy@f498c31 TransitionRequestInfo { type = CLOSE, triggerTask = null, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 444 }
+11-11 16:45:52.735   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:52.736   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:52.736   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:52.737   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:52.737   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:52.738  7100  7100 D ViewRootImpl: Skipping stats log for color mode
+11-11 16:45:52.739  7100  7604 I FilePickerUtils: Caching from URI: content://com.android.externalstorage.documents/document/primary%3ADownload%2Ftmp_qb15_book.txt
+11-11 16:45:52.744  1537  4762 I MediaProvider: Open with lower FS for /storage/emulated/0/Download/tmp_qb15_book.txt. Uid: 10017
+11-11 16:45:52.746  7100  7604 D FilePickerUtils: File loaded and cached at:/data/user/0/io.legado.flutter_legado/cache/file_picker/1794386752740/tmp_qb15_book.txt
+11-11 16:45:52.746  7100  7604 D FilePickerDelegate: File path:[w4.a@e66c40c]
+11-11 16:45:52.750   709   709 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-11 16:45:52.752  7100  7115 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.753  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-11 16:45:52.753  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-11 16:45:52.754  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-11 16:45:52.755  7100  7120 E gralloc_kona: gralloc_alloc: Unknown format 56
+11-11 16:45:52.755  7100  7120 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-11 16:45:52.755  7100  7120 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-11 16:45:52.755  7100  7120 E gralloc_kona: gralloc_alloc: Unknown format 59
+11-11 16:45:52.755  7100  7120 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-11 16:45:52.755  7100  7120 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-11 16:45:52.755  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-11 16:45:52.755  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-11 16:45:52.756  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-11 16:45:52.756  7100  7120 E gralloc_kona: gralloc_alloc: Unknown format 56
+11-11 16:45:52.756  7100  7120 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-11 16:45:52.756  7100  7120 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-11 16:45:52.756  7100  7120 E gralloc_kona: gralloc_alloc: Unknown format 59
+11-11 16:45:52.756  7100  7120 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-11 16:45:52.756  7100  7120 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-11 16:45:52.756  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.766  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.776  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.785  7100  7120 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.798  7100  7115 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.809  7100  7120 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x74c3cc6b0000 0x74c3ccab0000]
+11-11 16:45:52.849  1097  1241 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-11 16:45:52.869  1097  7137 V WindowManagerShell: onTransitionReady(transaction=3599182635830)
+11-11 16:45:52.869  1097  1241 V WindowManagerShell: onTransitionReady (#444) android.os.BinderProxy@f498c31: {id=444 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-11 16:45:52.869  1097  1241 V WindowManagerShell:         {m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0x9edcf16 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},
+11-11 16:45:52.869  1097  1241 V WindowManagerShell:         {m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0x5e1097 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}
+11-11 16:45:52.869  1097  1241 V WindowManagerShell:     ]}
+11-11 16:45:52.869  1097  1241 V WindowManagerShell: Playing animation for (#444) android.os.BinderProxy@f498c31@0
+11-11 16:45:52.869  1097  1241 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-11 16:45:52.869  1097  1241 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=444 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0x9edcf16 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0x5e1097 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}]}
+11-11 16:45:52.869  1097  1241 V WindowManagerShell:  Delegate animation for (#444) to null
+11-11 16:45:52.869  1097  1241 V WindowManagerShell: start default transition animation, info = {id=444 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[{m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0x9edcf16 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},{m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0x5e1097 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}]}
+11-11 16:45:52.870  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@76fc6a2 animAttr=0x6 type=CLOSE isEntrance=true
+11-11 16:45:52.870  1097  1241 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@c049069 animAttr=0x7 type=CLOSE isEntrance=false
+11-11 16:45:52.870   838  6463 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 16:45:52.870   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:52.870   838   858 V WindowManager: Sent Transition (#444) createdAt=11-11 16:45:52.734 via request=TransitionRequestInfo { type = CLOSE, triggerTask = null, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 444 }
+11-11 16:45:52.870   838   858 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-11 16:45:52.870   838   858 V WindowManager:     info={id=444 t=CLOSE f=0x0 trk=0 r=[0@Point(0, 0)] c=[
+11-11 16:45:52.870   838   858 V WindowManager:         {m=CLOSE f=FILLS_TASK leash=Surface(name=ActivityRecord{124505705 u0 com.android.documentsui/.picker.PickActivity)/@0x476fe20 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=com.android.documentsui/.picker.PickActivity opt={t=FROM_STYLE mUserId=0}},
+11-11 16:45:52.870   838   858 V WindowManager:         {m=TO_FRONT f=FILLS_TASK leash=Surface(name=ActivityRecord{10232326 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity)/@0xe1a29ba sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=0 bc=ffffffff component=io.legado.flutter_legado/io.legado.flutter.MainActivity opt={t=FROM_STYLE mUserId=0}}
+11-11 16:45:52.870   838   858 V WindowManager:     ]}
+11-11 16:45:52.872  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:52.873  1097  1283 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-11 16:45:52.875  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:52.884   709  1454 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-11 16:45:52.884  7100  7115 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:52.885   838   948 I ImeTracker: io.legado.flutter_legado:3cacffb9: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-11 16:45:52.886 31218 31218 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=ImeCallback=ImeOnBackInvokedCallback@124259955 Callback=android.window.IOnBackInvokedCallback$Stub$Proxy@6b2f28c
+11-11 16:45:52.886  7100  7100 D InsetsController: hide(ime(), fromIme=false)
+11-11 16:45:52.886  7100  7100 I ImeTracker: io.legado.flutter_legado:3cacffb9: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-11 16:45:52.886   838  1685 D CoreBackPreview: Window{9d27b87 u0 com.android.documentsui/com.android.documentsui.picker.PickActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@ca6fe5f, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-11 16:45:52.887  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:52.889  1097  1283 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-11 16:45:52.889  1529  1529 I ImeTracker: com.sohu.inputmethod.sogou.chuizi:8a169342: onRequestHide at ORIGIN_IME reason HIDE_SOFT_INPUT_LEGACY_DIRECT fromUser false
+11-11 16:45:52.889  1529  1529 I ImeTracker: com.sohu.inputmethod.sogou.chuizi:8a169342: onHidden
+11-11 16:45:52.889  1097  1283 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-11 16:45:52.890  1097  1241 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@2f3c1d5
+11-11 16:45:53.134  1097  1241 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#444) android.os.BinderProxy@f498c31@0
+11-11 16:45:53.134   838   858 V WindowManager: Finish Transition (#444): created at 11-11 16:45:52.734 collect-started=0.014ms request-sent=0.027ms started=1.103ms ready=3.447ms sent=134.791ms finished=400.156ms
+11-11 16:45:53.135 31218 31218 D VRI[PickActivity]: visibilityChanged oldVisibility=true newVisibility=false
+11-11 16:45:53.135  1097  1241 V WindowManagerShell: Track 0 became idle
+11-11 16:45:53.135  1097  1241 V WindowManagerShell: All active transition animations finished
+11-11 16:45:53.135   838  6463 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 16:45:53.136   838  6463 W UserManagerService: Requested status bar icon for non-badged user 0
+11-11 16:45:53.138 31218 31218 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@d69f534
+11-11 16:45:53.138   838  6463 D CoreBackPreview: Window{9d27b87 u0 com.android.documentsui/com.android.documentsui.picker.PickActivity}: Setting back callback null
+11-11 16:45:53.139 31218 31218 D ViewRootImpl: Skipping stats log for color mode
+11-11 16:45:53.140   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:45:53.615     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:45:57.797  7608  7608 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:45:57.797  7608  7608 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:45:57.798  7608  7608 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:45:57.798   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:45:57.801  7608  7609 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:45:57.802  7608  7609 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:45:57.796   709   709 I binder:709_3: type=1400 audit(0.0:12175): avc:  denied  { use } for  path="/dev/ashmem12a7ea66-8996-4cbd-8913-bd2bc42f302c" dev="tmpfs" ino=823 scontext=u:r:su:s0 tcontext=u:r:surfaceflinger:s0 tclass=fd permissive=1
+11-11 16:45:58.623     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:03.136   838   932 D ActivityManager: freezing 31218 com.android.documentsui
+11-11 16:46:03.452   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:46:03.471   838   872 D ActivityManager: sync unfroze 1434 com.android.permissioncontroller for 0
+11-11 16:46:03.631     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:08.651     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:12.020  7100  7100 I flutter : [BookInfo] 首屏就绪 3ms name=tmp_qb15_book chapters=3 tocLoading=false
+11-11 16:46:12.020  7100  7100 I flutter : [BookInfo] 全量完成 3ms
+11-11 16:46:12.036  7100  7100 I flutter : [BookOpen] name=tmp_qb15_book origin=loc_book typeBits=0 route=/reader srcType=null videoLike=false
+11-11 16:46:13.651     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:16.115   838  1685 I MediaSessionStack: addSession to bottom of stack | record: io.legado.flutter_legado/legado_flutter_media/16 (userId=0)
+11-11 16:46:16.115   838  1685 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=null
+11-11 16:46:16.124   838  1685 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:46:16.124   838  1685 I AS.FadeOutManager: unfadeOutUid() uid:10067
+11-11 16:46:16.125   838  1685 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/16 (userId=0)
+11-11 16:46:16.125   838  1685 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237162866, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:46:16.125   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:46:16.125   838  1685 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10067; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-11 16:46:16.127   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:46:16.331   838   838 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-11 16:46:16.331   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:46:16.734  1097  1271 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:16.743  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:16.744  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:16.745  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:16.751  1097  1097 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-11 16:46:16.752  1097 44559 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-11 16:46:16.762  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:16.850  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:17.167  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:18.648     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:20.200  7635  7635 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:46:20.200  7635  7635 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:46:20.200  7635  7635 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:46:20.200   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:46:20.203  7635  7636 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:46:20.204  7635  7636 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:46:20.302  7637  7637 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:46:20.296  7637  7637 I dumpsys : type=1400 audit(0.0:12176): avc:  denied  { write } for  path="pipe:[1925598]" dev="pipefs" ino=1925598 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=fifo_file permissive=1
+11-11 16:46:23.655     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:28.663     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:29.333   838  6463 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:46:29.340   838  6463 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237176081, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call release. 
+11-11 16:46:29.973  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:29.974  1097  1110 W System  : A resource failed to call HardwareBuffer.close. 
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:30.050  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:30.367  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:31.367   838  6463 D androidtc: Initializing SystemTextClassifier, type = System
+11-11 16:46:31.668  7100  7100 I flutter : [媒体会话] mediaButtonOnExit=true，保留会话以响应耳机按键
+11-11 16:46:33.380  7650  7650 I adbd    : type=1400 audit(0.0:12177): avc:  denied  { read write } for  name="0" dev="devpts" ino=3 scontext=u:r:su:s0 tcontext=u:object_r:devpts:s0 tclass=chr_file permissive=1
+11-11 16:46:33.380  7650  7650 I adbd    : type=1400 audit(0.0:12178): avc:  denied  { open } for  path="/dev/pts/0" dev="devpts" ino=3 scontext=u:r:su:s0 tcontext=u:object_r:devpts:s0 tclass=chr_file permissive=1
+11-11 16:46:33.380  7650  7650 I adbd    : type=1400 audit(0.0:12179): avc:  denied  { ioctl } for  path="/dev/pts/0" dev="devpts" ino=3 ioctlcmd=0x5401 scontext=u:r:su:s0 tcontext=u:object_r:devpts:s0 tclass=chr_file permissive=1
+11-11 16:46:33.426  7652  7652 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:46:33.426  7652  7652 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:46:33.426  7652  7652 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:46:33.426   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:46:33.430  7652  7653 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:46:33.432  7652  7653 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:46:33.691     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: Cannot acquire BluetoothActivityEnergyInfo
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: java.util.concurrent.ExecutionException: java.lang.RuntimeException: error: 9
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.reportGet(CompletableFuture.java:372)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:2072)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:181)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectStats(BluetoothPowerStatsCollector.java:149)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector.collectAndDeliverStats(PowerStatsCollector.java:176)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.PowerStatsCollector$$ExternalSyntheticLambda0.run(R8$$SyntheticClass:0)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.os.Looper.loop(Looper.java:317)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: Caused by: java.lang.RuntimeException: error: 9
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector$1.onBluetoothActivityEnergyInfoError(BluetoothPowerStatsCollector.java:170)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.lambda$onError$2(BluetoothAdapter.java:1063)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothUtils.lambda$executeFromBinder$0(BluetoothUtils.java:343)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothUtils$$ExternalSyntheticLambda1.run(D8$$SyntheticClass:0)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.SystemServerInitThreadPool$$ExternalSyntheticLambda0.execute(R8$$SyntheticClass:0)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothUtils.executeFromBinder(BluetoothUtils.java:343)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter$OnBluetoothActivityEnergyInfoProxy.onError(BluetoothAdapter.java:1062)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at android.bluetooth.BluetoothAdapter.requestControllerActivityEnergyInfo(BluetoothAdapter.java:2769)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BatteryStatsImpl$BluetoothStatsRetrieverImpl.requestControllerActivityEnergyInfo(BatteryStatsImpl.java:401)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	at com.android.server.power.stats.BluetoothPowerStatsCollector.collectBluetoothActivityInfo(BluetoothPowerStatsCollector.java:159)
+11-11 16:46:37.429   838   881 E BluetoothPowerStatsCollector: 	... 8 more
+11-11 16:46:37.792   838  6463 D TelephonyManager: requestModemActivityInfo: Sending result to app: ModemActivityInfo{ mTimestamp=237184533 mSleepTimeMs=0 mIdleTimeMs=237183516 mActivityStatsTechSpecificInfo=[{mRat=UNKNOWN,mFrequencyRange=UNKNOWN,mTxTimeMs[]=[0, 0, 0, 0, 0],mRxTimeMs=0}]}
+11-11 16:46:38.691     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:43.507   838   932 D ActivityManager: freezing 1434 com.android.permissioncontroller
+11-11 16:46:43.507   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET, states=14
+11-11 16:46:43.507   838   999 D InetDiagMessage: Destroyed 0 sockets, proto=IPPROTO_TCP, family=AF_INET6, states=14
+11-11 16:46:43.507   838   999 D InetDiagMessage: Destroyed live tcp sockets for uids={10040} in 1ms
+11-11 16:46:43.687     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:45.695   838  1685 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:46:45.697  1097  1355 I ndroid.systemui: AssetManager2(0x74c46df064b8) locale list changing from [] to [zh-Hans-CN]
+11-11 16:46:45.697   838  6463 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237192438, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:46:45.698  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:46.417  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:46.418  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:46.418  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:46.418  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:46.418  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:46.733  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:48.711     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:53.703     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:58.723     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:46:58.902   838  6463 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:46:58.905   838  1685 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237205646, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:59.617  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:46:59.933  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:47:00.743  7665  7665 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:47:00.777  7668  7668 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:47:00.858  7673  7673 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:47:00.859  7673  7673 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:47:00.859  7673  7673 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:47:00.859   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:47:00.866  7673  7674 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:47:00.868  7673  7674 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:47:03.731     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:08.731     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:13.735     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:18.763     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:22.735   838  1685 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:47:22.737   838  1685 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237229478, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:47:23.450  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:47:23.763     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:47:23.769  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:47:25.788  7685  7685 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:47:25.854  7690  7690 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:47:25.855  7690  7690 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:47:25.855  7690  7690 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:47:25.855   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:47:25.858  7690  7691 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:47:25.859  7690  7691 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:47:28.775     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:33.164  7693  7693 I uiautomator: type=1400 audit(0.0:12180): avc:  denied  { getattr } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:33.164  7693  7693 I uiautomator: type=1400 audit(0.0:12181): avc:  denied  { execute } for  name="app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:33.164  7693  7693 I uiautomator: type=1400 audit(0.0:12182): avc:  denied  { read open } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:33.202  7693  7693 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+11-11 16:47:33.164  7693  7693 I uiautomator: type=1400 audit(0.0:12183): avc:  denied  { execute_no_trans } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:33.209  7693  7693 I AndroidRuntime: Using default boot image
+11-11 16:47:33.209  7693  7693 I AndroidRuntime: Leaving lock profiling enabled
+11-11 16:47:33.210  7693  7693 W app_process: ART APEX data files are untrusted.
+11-11 16:47:33.210  7693  7693 I app_process: Using CollectorTypeCMC GC.
+11-11 16:47:33.164  7693  7693 I app_process: type=1400 audit(0.0:12184): avc:  denied  { map } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:33.243  7693  7693 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-11 16:47:33.249  7693  7693 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-11 16:47:33.249  7693  7693 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-11 16:47:33.249  7693  7693 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-11 16:47:33.249  7693  7693 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-11 16:47:33.250  7693  7693 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-11 16:47:33.250  7693  7693 W app_process: Unexpected CPU variant for x86: x86_64.
+11-11 16:47:33.250  7693  7693 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-11 16:47:33.251  7693  7693 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-11 16:47:33.251  7693  7693 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-11 16:47:33.252  7693  7693 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-11 16:47:33.252  7693  7693 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-11 16:47:33.252  7693  7693 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-11 16:47:33.252  7693  7693 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-11 16:47:33.252  7693  7693 E libnb   : The translator implementation library has not been set.
+11-11 16:47:33.257  7693  7693 E libnb   : get_callbacks native_handle 0xf96e24801bdf2505: 1 libnb:/system/lib64/libhoudini.so
+11-11 16:47:33.257  7693  7693 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-11 16:47:33.269  7693  7693 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-11 16:47:33.269  7693  7693 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-11 16:47:33.271  7693  7693 D UiAutomationConnection: Created on user UserHandle{0}
+11-11 16:47:33.271  7693  7693 I UiAutomation: Initialized for user 0 on display 0
+11-11 16:47:33.271  7693  7693 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-11 16:47:33.271   838  1616 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-11 16:47:33.271   838  1616 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-11 16:47:33.272   838  1616 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-11 16:47:33.273   838   838 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-11 16:47:33.274   838  1685 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-11 16:47:33.775     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:34.284  7100  7100 I .flutter_legado: type=1400 audit(0.0:12234): avc:  denied  { call } for  scontext=u:r:zygote:s0 tcontext=u:r:su:s0 tclass=binder permissive=1 app=io.legado.flutter_legado
+11-11 16:47:34.298  1537  1662 E StorageManager: Failed to set extended attributes for /storage/emulated/0/qb18fix_dump.xml to set project id.: Operation not supported on transport endpoint
+11-11 16:47:34.298  1537  1662 W MediaProvider: Failed to update quota type for /storage/emulated/0/qb18fix_dump.xml
+11-11 16:47:34.298  1537  1662 W MediaProvider: java.io.IOException: Failed to update quota type for /storage/emulated/0/qb18fix_dump.xml
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at android.os.storage.StorageManager.updateExternalStorageFileQuotaType(StorageManager.java:2598)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at com.android.providers.media.MediaProvider.updateQuotaTypeForFileInternal(MediaProvider.java:1024)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at com.android.providers.media.MediaProvider.lambda$onFileCreatedForFuse$16(MediaProvider.java:2290)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at com.android.providers.media.MediaProvider.$r8$lambda$QvobK0mrOcF7YLdAJMtFTbarHSw(MediaProvider.java:0)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at com.android.providers.media.MediaProvider$$ExternalSyntheticLambda18.run(R8$$SyntheticClass:0)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at android.os.Looper.loop(Looper.java:317)
+11-11 16:47:34.298  1537  1662 W MediaProvider: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-11 16:47:34.299  7693  7693 W AccessibilityNodeInfoDumper: Fetch time: 12ms
+11-11 16:47:34.300   838  1685 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-11 16:47:34.300   838  1685 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-11 16:47:34.300  7693  7693 D AndroidRuntime: Shutting down VM
+11-11 16:47:34.301   838   838 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-11 16:47:34.284  7693  7693 I uiautomator: type=1400 audit(0.0:12235): avc:  denied  { read } for  name="u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:34.284  7693  7693 I uiautomator: type=1400 audit(0.0:12236): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:34.284  7693  7693 I uiautomator: type=1400 audit(0.0:12237): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:34.284  7693  7693 I uiautomator: type=1400 audit(0.0:12238): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+--------- beginning of crash
+11-11 16:47:35.105  7693  7693 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7b9ca52bcd80 in tid 7693 (Shutdown thread), pid 7693 (Shutdown thread)
+11-11 16:47:35.114  7712  7712 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-11 16:47:35.114   513   513 I tombstoned: received crash request for pid 7693
+11-11 16:47:35.115  7712  7712 I crash_dump64: performing dump of process 7693 (target tid = 7693)
+11-11 16:47:35.140  7712  7712 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 16:47:35.140  7712  7712 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 16:47:35.140  7712  7712 F DEBUG   : Revision: '0'
+11-11 16:47:35.140  7712  7712 F DEBUG   : ABI: 'x86_64'
+11-11 16:47:35.140  7712  7712 F DEBUG   : Timestamp: 2026-11-11 16:47:35.117127928+0800
+11-11 16:47:35.140  7712  7712 F DEBUG   : Process uptime: 3s
+11-11 16:47:35.140  7712  7712 F DEBUG   : Cmdline: uiautomator
+11-11 16:47:35.140  7712  7712 F DEBUG   : pid: 7693, tid: 7693, name: Shutdown thread  >>> uiautomator <<<
+11-11 16:47:35.140  7712  7712 F DEBUG   : uid: 0
+11-11 16:47:35.140  7712  7712 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007b9ca52bcd80
+11-11 16:47:35.140  7712  7712 F DEBUG   :     rax 0000000000000000  rbx 00007b9f8b8f089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 16:47:35.140  7712  7712 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 16:47:35.140  7712  7712 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007b9ca52bcd80  r15 0000000000008928
+11-11 16:47:35.140  7712  7712 F DEBUG   :     rdi 00007b9ca5683c08  rsi 0000000000001000
+11-11 16:47:35.140  7712  7712 F DEBUG   :     rbp 00007ffdfbad9ce0  rsp 00007ffdfbad9c78  rip 00007b9ca52bcd80
+11-11 16:47:35.140  7712  7712 F DEBUG   : 4 total frames
+11-11 16:47:35.140  7712  7712 F DEBUG   : backtrace:
+11-11 16:47:35.140  7712  7712 F DEBUG   :       #00 pc 00007b9ca52bcd80  <unknown>
+11-11 16:47:35.140  7712  7712 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 16:47:35.140  7712  7712 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 16:47:35.140  7712  7712 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 16:47:35.143   838  1096 W NativeCrashListener: Couldn't find ProcessRecord for pid 7693
+11-11 16:47:35.143   513   513 E tombstoned: Tombstone written to: tombstone_13
+11-11 16:47:35.143   838   926 E NativeTombstoneManager: Tombstone's UID (0) not an app, ignoring
+11-11 16:47:35.145   838   926 I DropBoxManagerService: add tag=SYSTEM_TOMBSTONE_PROTO_WITH_HEADERS isTagEnabled=true flags=0x4
+11-11 16:47:35.149   838   926 E NativeTombstoneManager: Tombstone's UID (0) not an app, ignoring
+11-11 16:47:35.150   838   926 I BootReceiver: Copying /data/tombstones/tombstone_13 to DropBox (SYSTEM_TOMBSTONE)
+11-11 16:47:35.150   838   926 I DropBoxManagerService: add tag=SYSTEM_TOMBSTONE isTagEnabled=true flags=0x6
+11-11 16:47:35.942   838  1219 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:47:35.945   838  1219 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237242686, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:47:36.455  1532  1568 I NemuSysOpt: Start compat memory
+11-11 16:47:36.459  1532  1568 I NemuSysOpt: Compat memory done
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:47:36.667  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:47:36.983  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:47:37.789  1097  3009 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-11 16:47:38.779     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:38.776  7716  7716 I init    : type=1400 audit(0.0:12248): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:47:38.776  7716  7716 I init    : type=1400 audit(0.0:12249): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:47:38.776  7716  7716 I serial_console: type=1400 audit(0.0:12250): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:47:38.776  7716  7716 I serial_console: type=1400 audit(0.0:12251): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-11 16:47:43.787     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:46.736  7718  7718 I uiautomator: type=1400 audit(0.0:12252): avc:  denied  { getattr } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:46.736  7718  7718 I uiautomator: type=1400 audit(0.0:12253): avc:  denied  { execute } for  name="app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:46.736  7718  7718 I uiautomator: type=1400 audit(0.0:12254): avc:  denied  { read open } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:46.774  7718  7718 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+11-11 16:47:46.736  7718  7718 I uiautomator: type=1400 audit(0.0:12255): avc:  denied  { execute_no_trans } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:46.781  7718  7718 I AndroidRuntime: Using default boot image
+11-11 16:47:46.781  7718  7718 I AndroidRuntime: Leaving lock profiling enabled
+11-11 16:47:46.782  7718  7718 W app_process: ART APEX data files are untrusted.
+11-11 16:47:46.783  7718  7718 I app_process: Using CollectorTypeCMC GC.
+11-11 16:47:46.736  7718  7718 I app_process: type=1400 audit(0.0:12256): avc:  denied  { map } for  path="/system/bin/app_process64" dev="sda6" ino=123 scontext=u:r:su:s0 tcontext=u:object_r:zygote_exec:s0 tclass=file permissive=1
+11-11 16:47:46.772  7718  7718 I app_process: type=1400 audit(0.0:12257): avc:  denied  { read } for  name="u:object_r:dalvik_runtime_prop:s0" dev="tmpfs" ino=233 scontext=u:r:su:s0 tcontext=u:object_r:dalvik_runtime_prop:s0 tclass=file permissive=1
+11-11 16:47:46.812  7718  7718 D nativeloader: InitDefaultPublicLibraries for_preload=1: libandroid.so:libaaudio.so:libamidi.so:libbinder_ndk.so:libc.so:libcamera2ndk.so:libdl.so:libEGL.so:libGLESv1_CM.so:libGLESv2.so:libGLESv3.so:libicu.so:libicui18n.so:libicuuc.so:libjnigraphics.so:liblog.so:libmediandk.so:libm.so:libnativehelper.so:libnativewindow.so:libOpenMAXAL.so:libOpenSLES.so:libRS.so:libstdc++.so:libsync.so:libvulkan.so:libwebviewchromium_plat_support.so:libz.so:libcallhost.so
+11-11 16:47:46.817  7718  7718 D nativeloader: Load libicu_jni.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-11 16:47:46.817  7718  7718 D app_process: u_setTimeZoneFilesDirectory("/apex/com.android.tzdata/etc/tz/versioned/8/icu") succeeded. 
+11-11 16:47:46.817  7718  7718 D app_process: I18n APEX ICU file found: /apex/com.android.i18n/etc/icu/icudt75l.dat
+11-11 16:47:46.818  7718  7718 D nativeloader: Load libjavacore.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-11 16:47:46.818  7718  7718 D nativeloader: Load libopenjdk.so using APEX ns com_android_art for caller /apex/com.android.art/javalib/core-oj.jar: ok
+11-11 16:47:46.819  7718  7718 W app_process: Unexpected CPU variant for x86: x86_64.
+11-11 16:47:46.819  7718  7718 W app_process: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-11 16:47:46.820  7718  7718 W app_process: ClassLoaderContext shared library size mismatch. Expected=2, found=0 (PCL[]{PCL[/system/framework/android.test.base.jar*2643221532]#PCL[/system/framework/android.test.mock.jar*4236284042]} | PCL[])
+11-11 16:47:46.820  7718  7718 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[]{PCL[/system/framework/android.test.runner.jar*760235463]#PCL[/system/framework/android.test.base.jar*2643221532]} | PCL[/system/framework/android.test.runner.jar*760235463])
+11-11 16:47:46.820  7718  7718 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-11 16:47:46.821  7718  7718 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-11 16:47:46.821  7718  7718 W nativebridge: Cannot create code cache directory ./code_cache: Read-only file system.
+11-11 16:47:46.821  7718  7718 V libnb   : enter native_bridge2_initialize (null) x86_64
+11-11 16:47:46.821  7718  7718 E libnb   : The translator implementation library has not been set.
+11-11 16:47:46.827  7718  7718 E libnb   : get_callbacks native_handle 0xc5bb741a68ed697b: 1 libnb:/system/lib64/libhoudini.so
+11-11 16:47:46.827  7718  7718 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-11 16:47:46.837  7718  7718 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-11 16:47:46.838  7718  7718 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-11 16:47:46.840  7718  7718 D UiAutomationConnection: Created on user UserHandle{0}
+11-11 16:47:46.840  7718  7718 I UiAutomation: Initialized for user 0 on display 0
+11-11 16:47:46.840  7718  7718 W UiAutomation: Created with deprecatead constructor, assumes DEFAULT_DISPLAY
+11-11 16:47:46.840   838  1219 D AccessibilityManagerService: changeCurrentUserForTestAutomationIfNeededLocked(0): ignoring because device doesn't support visible background users
+11-11 16:47:46.840   838  1219 I UiAutomationManager: Registering UiTestAutomationService (id=com.android.server.accessibility/UiAutomation, flags=0x0) when called by user 0
+11-11 16:47:46.841   838  1219 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-11 16:47:46.843   838  1616 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-11 16:47:46.845   838   838 D BatterySaverPolicy: accessibility changed to true, updating policy.
+11-11 16:47:47.856  7718  7718 W AccessibilityNodeInfoDumper: Fetch time: 2ms
+11-11 16:47:47.857   838  1685 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-11 16:47:47.857   838  1685 D AccessibilityManagerService: restoreCurrentUserForTestAutomationIfNeededLocked(): ignoring because device doesn't support visible background users
+11-11 16:47:47.857   838   838 D BatterySaverPolicy: accessibility changed to false, updating policy.
+11-11 16:47:47.858  7718  7718 D AndroidRuntime: Shutting down VM
+11-11 16:47:47.848  7718  7718 I uiautomator: type=1400 audit(0.0:12294): avc:  denied  { read } for  name="u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:47.848  7718  7718 I uiautomator: type=1400 audit(0.0:12295): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:47.848  7718  7718 I uiautomator: type=1400 audit(0.0:12296): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:47.848  7718  7718 I uiautomator: type=1400 audit(0.0:12297): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:qemu_sf_lcd_density_prop:s0" dev="tmpfs" ino=508 scontext=u:r:su:s0 tcontext=u:object_r:qemu_sf_lcd_density_prop:s0 tclass=file permissive=1
+11-11 16:47:48.663  7718  7718 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7c72f92ebd80 in tid 7718 (Shutdown thread), pid 7718 (Shutdown thread)
+11-11 16:47:48.670  7733  7733 I crash_dump64: obtaining output fd from tombstoned, type: kDebuggerdTombstoneProto
+11-11 16:47:48.670   513   513 I tombstoned: received crash request for pid 7718
+11-11 16:47:48.670  7733  7733 I crash_dump64: performing dump of process 7718 (target tid = 7718)
+11-11 16:47:48.695  7733  7733 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+11-11 16:47:48.695  7733  7733 F DEBUG   : Build fingerprint: 'Samsung/r9q/r9q:15/V417IR/1171:user/release-keys'
+11-11 16:47:48.695  7733  7733 F DEBUG   : Revision: '0'
+11-11 16:47:48.695  7733  7733 F DEBUG   : ABI: 'x86_64'
+11-11 16:47:48.695  7733  7733 F DEBUG   : Timestamp: 2026-11-11 16:47:48.671575723+0800
+11-11 16:47:48.695  7733  7733 F DEBUG   : Process uptime: 3s
+11-11 16:47:48.695  7733  7733 F DEBUG   : Cmdline: uiautomator
+11-11 16:47:48.695  7733  7733 F DEBUG   : pid: 7718, tid: 7718, name: Shutdown thread  >>> uiautomator <<<
+11-11 16:47:48.695  7733  7733 F DEBUG   : uid: 0
+11-11 16:47:48.695  7733  7733 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00007c72f92ebd80
+11-11 16:47:48.695  7733  7733 F DEBUG   :     rax 0000000000000000  rbx 00007c764a4f089c  rcx 0000000000000001  rdx 0000000000000002
+11-11 16:47:48.695  7733  7733 F DEBUG   :     r8  0000000000000020  r9  0000000000020002  r10 0000000000000001  r11 0000000000000206
+11-11 16:47:48.695  7733  7733 F DEBUG   :     r12 0000000000001000  r13 00000000000005b7  r14 00007c72f92ebd80  r15 0000000000008928
+11-11 16:47:48.695  7733  7733 F DEBUG   :     rdi 00007c72f96b2c08  rsi 0000000000001000
+11-11 16:47:48.695  7733  7733 F DEBUG   :     rbp 00007fff9f0393e0  rsp 00007fff9f039378  rip 00007c72f92ebd80
+11-11 16:47:48.695  7733  7733 F DEBUG   : 4 total frames
+11-11 16:47:48.695  7733  7733 F DEBUG   : backtrace:
+11-11 16:47:48.695  7733  7733 F DEBUG   :       #00 pc 00007c72f92ebd80  <unknown>
+11-11 16:47:48.695  7733  7733 F DEBUG   :       #01 pc 000000000005846f  /apex/com.android.runtime/lib64/bionic/libc.so (__cxa_finalize+287) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 16:47:48.695  7733  7733 F DEBUG   :       #02 pc 000000000005c83f  /apex/com.android.runtime/lib64/bionic/libc.so (exit+31) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 16:47:48.695  7733  7733 F DEBUG   :       #03 pc 00000000000520dc  /apex/com.android.runtime/lib64/bionic/libc.so (__libc_init+124) (BuildId: 52bc34193ef6f6311bbb44f2305d1b1d)
+11-11 16:47:48.697   838  1096 W NativeCrashListener: Couldn't find ProcessRecord for pid 7718
+11-11 16:47:48.697   513   513 E tombstoned: Tombstone written to: tombstone_14
+11-11 16:47:48.697   838   926 E NativeTombstoneManager: Tombstone's UID (0) not an app, ignoring
+11-11 16:47:48.697   838   926 E NativeTombstoneManager: Tombstone's UID (0) not an app, ignoring
+11-11 16:47:48.795     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:48.792  7739  7739 I init    : type=1400 audit(0.0:12298): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:47:53.799     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:47:58.811     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:02.312 46976 46976 I /apex/com.android.adbd/bin/adbd: type=1400 audit(0.0:12301): avc:  denied  { read } for  comm=73796E6320737663203232 name="qb18fix_dump.xml" dev="fuse" ino=2885251 scontext=u:r:su:s0 tcontext=u:object_r:fuse:s0 tclass=file permissive=1
+11-11 16:48:03.815     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:06.229   838  8451 D WifiNl80211Manager: Scan result ready event
+11-11 16:48:06.229   838  8451 D WifiNative: Scan result ready event
+11-11 16:48:08.823     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:09.084  7746  7746 I sh      : type=1400 audit(0.0:12302): avc:  denied  { write search } for  name="tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-11 16:48:09.100  7100  7100 W TextToSpeech: stop failed: not bound to TTS engine
+11-11 16:48:09.100   838  8451 I MediaFocusControl: abandonAudioFocus() from uid/pid 10067/7100 clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado
+11-11 16:48:09.100   838  8451 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237242686, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:48:09.100   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:48:09.101   838  1616 I MediaSessionStack: removeSession | record: io.legado.flutter_legado/legado_flutter_media/16 (userId=0)
+11-11 16:48:09.101   838  1616 D MediaSessionService: destroySessionLocked: record=io.legado.flutter_legado/legado_flutter_media/16 (userId=0)
+11-11 16:48:09.101   838  1616 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10067 in package io.legado.flutter_legado
+11-11 16:48:09.101   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:48:09.104  1097  1271 D MediaDataManager: session destroyed for 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:48:09.104  1097  1271 D MediaDataManager: Removing still-active player 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:48:09.084  7746  7746 I sh      : type=1400 audit(0.0:12303): avc:  denied  { getattr } for  path="/data/local/tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-11 16:48:09.084  7746  7746 I sh      : type=1400 audit(0.0:12304): avc:  denied  { getattr } for  path="/system/bin/input" dev="sda6" ino=272 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:48:09.117  1097  1097 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10067 because it was removed by the system
+11-11 16:48:09.084  7746  7746 I sh      : type=1400 audit(0.0:12305): avc:  denied  { open } for  path="/system/bin/input" dev="sda6" ino=272 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:48:09.084  7746  7746 I sh      : type=1400 audit(0.0:12306): avc:  denied  { execute_no_trans } for  path="/system/bin/input" dev="sda6" ino=272 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-11 16:48:09.092  7748  7748 I cmd     : type=1400 audit(0.0:12307): avc:  denied  { read write } for  path="socket:[1924750]" dev="sockfs" ino=1924750 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-11 16:48:09.096   838   838 I binder:838_1F: type=1400 audit(0.0:12308): avc:  denied  { getopt } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-11 16:48:13.839     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:18.839     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:23.859     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:24.158  7754  7754 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:48:24.156  7754  7754 I dumpsys : type=1400 audit(0.0:12309): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:system_server:s0 tclass=binder permissive=1
+11-11 16:48:24.196  7757  7757 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:48:24.271  7762  7762 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:48:24.271  7762  7762 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:48:24.271  7762  7762 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:48:24.272   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:48:24.276  7762  7763 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:48:24.277  7762  7763 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:48:24.268  7762  7762 I screencap: type=1400 audit(0.0:12310): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:surfaceflinger:s0 tclass=binder permissive=1
+11-11 16:48:24.268  7762  7762 I screencap: type=1400 audit(0.0:12311): avc:  denied  { transfer } for  scontext=u:r:su:s0 tcontext=u:r:surfaceflinger:s0 tclass=binder permissive=1
+11-11 16:48:24.272   709   709 I binder:709_3: type=1400 audit(0.0:12312): avc:  denied  { call } for  scontext=u:r:surfaceflinger:s0 tcontext=u:r:su:s0 tclass=binder permissive=1
+11-11 16:48:28.859     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:30.028  7766  7766 I sh      : type=1400 audit(0.0:12313): avc:  denied  { getattr } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:48:30.028  7766  7766 I sh      : type=1400 audit(0.0:12314): avc:  denied  { execute } for  name="logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:48:30.028  7766  7766 I sh      : type=1400 audit(0.0:12315): avc:  denied  { read open } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:48:30.028  7766  7766 I sh      : type=1400 audit(0.0:12316): avc:  denied  { execute_no_trans } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:48:30.028  7766  7766 I logcat  : type=1400 audit(0.0:12317): avc:  denied  { map } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:48:30.032  7766  7766 I logcat  : type=1400 audit(0.0:12318): avc:  denied  { write } for  name="logdr" dev="tmpfs" ino=923 scontext=u:r:su:s0 tcontext=u:object_r:logdr_socket:s0 tclass=sock_file permissive=1
+11-11 16:48:30.032  7766  7766 I logcat  : type=1400 audit(0.0:12319): avc:  denied  { connectto } for  path="/dev/socket/logdr" scontext=u:r:su:s0 tcontext=u:r:logd:s0 tclass=unix_stream_socket permissive=1
+11-11 16:48:33.875     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:38.708  7772  7772 I cmd     : type=1400 audit(0.0:12320): avc:  denied  { transfer } for  scontext=u:r:su:s0 tcontext=u:r:system_server:s0 tclass=binder permissive=1
+11-11 16:48:38.879     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:43.823  7782  7782 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:48:43.875     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:43.894  7787  7787 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:48:43.895  7787  7787 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:48:43.895  7787  7787 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:48:43.895   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:48:43.898  7787  7789 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:48:43.899  7787  7789 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:48:48.883     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:53.895     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:48:57.224  7799  7799 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:48:57.225  7799  7799 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:48:57.225  7799  7799 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:48:57.225   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:48:57.228  7799  7800 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:48:57.229  7799  7800 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:48:58.891     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:03.899     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:03.900  7802  7802 I serial_console: type=1400 audit(0.0:12321): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=755 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-11 16:49:03.900  7802  7802 I serial_console: type=1400 audit(0.0:12322): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=755 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-11 16:49:08.907     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:09.788  7804  7804 I sh      : type=1400 audit(0.0:12323): avc:  denied  { dac_override } for  capability=1  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-11 16:49:09.802   838  6463 I MediaSessionStack: addSession to bottom of stack | record: io.legado.flutter_legado/legado_flutter_media/17 (userId=0)
+11-11 16:49:09.803   838  6463 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/17 (userId=0) playbackState=null
+11-11 16:49:09.805   838  6936 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:49:09.805   838  6936 I AS.FadeOutManager: unfadeOutUid() uid:10067
+11-11 16:49:09.806   838  6936 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/17 (userId=0)
+11-11 16:49:09.806   838  6936 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/17 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237336547, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:49:09.806   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:49:09.807   838  6936 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10067; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-11 16:49:09.796  7806  7806 I cmd     : type=1400 audit(0.0:12324): avc:  denied  { call } for  scontext=u:r:su:s0 tcontext=u:r:servicemanager:s0 tclass=binder permissive=1
+11-11 16:49:09.809   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:49:09.796  7806  7806 I cmd     : type=1400 audit(0.0:12325): avc:  denied  { use } for  path="socket:[1929218]" dev="sockfs" ino=1929218 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=fd permissive=1
+11-11 16:49:10.011   838   838 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-11 16:49:10.011   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:49:10.414  1097  1271 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-11 16:49:10.421  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:49:10.421  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:49:10.422  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:49:10.423  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:49:10.424  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:49:10.425  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:49:10.434  1097  1097 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-11 16:49:10.436  1097 44559 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-11 16:49:10.447  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:49:10.517  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:49:10.833  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:49:13.854  7810  7810 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:49:13.848  7810  7810 I dumpsys : type=1400 audit(0.0:12326): avc:  denied  { write } for  path="pipe:[1928343]" dev="pipefs" ino=1928343 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=fifo_file permissive=1
+11-11 16:49:13.919     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:13.927  7815  7815 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:49:13.928  7815  7815 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:49:13.928  7815  7815 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:49:13.931   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:49:13.928  7815  7815 I binder:7815_1: type=1400 audit(0.0:12327): avc:  denied  { read } for  name="u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=386 scontext=u:r:su:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=1
+11-11 16:49:13.948  7815  7817 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:49:13.948  7815  7817 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:49:13.928  7815  7815 I binder:7815_1: type=1400 audit(0.0:12328): avc:  denied  { open } for  path="/dev/__properties__/u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=386 scontext=u:r:su:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=1
+11-11 16:49:13.928  7815  7815 I binder:7815_1: type=1400 audit(0.0:12329): avc:  denied  { getattr } for  path="/dev/__properties__/u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=386 scontext=u:r:su:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=1
+11-11 16:49:13.928  7815  7815 I binder:7815_1: type=1400 audit(0.0:12330): avc:  denied  { map } for  path="/dev/__properties__/u:object_r:hwservicemanager_prop:s0" dev="tmpfs" ino=386 scontext=u:r:su:s0 tcontext=u:object_r:hwservicemanager_prop:s0 tclass=file permissive=1
+11-11 16:49:18.915     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:20.085  7100  7100 I flutter : [媒体会话] mediaButtonOnExit=true，保留会话以响应耳机按键
+11-11 16:49:21.814  7100  7100 W TextToSpeech: stop failed: not bound to TTS engine
+11-11 16:49:21.814   838  1616 I MediaFocusControl: abandonAudioFocus() from uid/pid 10067/7100 clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado
+11-11 16:49:21.815   838  1616 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/17 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237336547, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:49:21.815   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:49:21.815   838  1616 I MediaSessionStack: removeSession | record: io.legado.flutter_legado/legado_flutter_media/17 (userId=0)
+11-11 16:49:21.815   838  1616 D MediaSessionService: destroySessionLocked: record=io.legado.flutter_legado/legado_flutter_media/17 (userId=0)
+11-11 16:49:21.816  1097  1271 D MediaDataManager: session destroyed for 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:49:21.816  1097  1271 D MediaDataManager: Removing still-active player 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:49:21.816   838  6463 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10067 in package io.legado.flutter_legado
+11-11 16:49:21.816   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:49:21.834  1097  1097 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10067 because it was removed by the system
+11-11 16:49:23.923     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:28.935     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:33.947     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:36.867  7832  7832 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:49:36.949  7837  7837 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:49:36.949  7837  7837 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:49:36.949  7837  7837 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:49:36.949   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:49:36.952  7837  7838 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:49:36.954  7837  7838 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:49:37.789  1097  1409 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-11 16:49:38.951     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:43.959     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:48.959     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:50.123  7854  7854 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:49:50.187  7859  7859 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:49:50.187  7859  7859 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:49:50.187  7859  7859 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:49:50.187   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:49:50.190  7859  7860 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:49:50.191  7859  7860 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:49:53.979     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:49:58.975     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:03.991     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:05.656  7871  7871 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:50:05.656  7871  7871 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:50:05.656  7871  7871 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:50:05.657   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:50:05.660  7871  7872 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:50:05.661  7871  7872 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:50:06.459  1532  1568 I NemuSysOpt: Start compat memory
+11-11 16:50:06.463  1532  1568 I NemuSysOpt: Compat memory done
+11-11 16:50:08.995     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:13.999     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:19.007     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:21.943   838  6936 I MediaSessionStack: addSession to bottom of stack | record: io.legado.flutter_legado/legado_flutter_media/18 (userId=0)
+11-11 16:50:21.944   838  6936 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/18 (userId=0) playbackState=null
+11-11 16:50:21.947   838  6936 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:50:21.947   838  6936 I AS.FadeOutManager: unfadeOutUid() uid:10067
+11-11 16:50:21.948   838  6936 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/18 (userId=0)
+11-11 16:50:21.948   838  6936 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/18 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237408689, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:50:21.948   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:50:21.948   838  6936 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10067; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-11 16:50:21.950   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:50:22.152   838   838 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-11 16:50:22.152   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:50:22.367  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:50:22.555  1097  1271 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-11 16:50:22.561  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:50:22.561  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:50:22.561  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:50:22.564  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:50:22.566  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:50:22.567  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:50:22.568  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:50:22.568  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:50:22.568  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:50:22.584  1097  1097 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-11 16:50:22.584  1097 44559 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-11 16:50:22.587  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:50:22.667  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:50:22.983  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:50:24.019     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:25.999  7884  7884 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:50:26.064  7889  7889 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:50:26.065  7889  7889 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:50:26.065  7889  7889 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:50:26.065   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:50:26.068  7889  7890 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:50:26.069  7889  7890 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:50:29.023     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:33.218  7100  7100 I flutter : [媒体会话] mediaButtonOnExit=true，保留会话以响应耳机按键
+11-11 16:50:34.043     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:34.941  7100  7100 W TextToSpeech: stop failed: not bound to TTS engine
+11-11 16:50:34.941   838  1219 I MediaFocusControl: abandonAudioFocus() from uid/pid 10067/7100 clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado
+11-11 16:50:34.942   838  1219 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/18 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237408689, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:50:34.942   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:50:34.942   838  1219 I MediaSessionStack: removeSession | record: io.legado.flutter_legado/legado_flutter_media/18 (userId=0)
+11-11 16:50:34.942   838  1219 D MediaSessionService: destroySessionLocked: record=io.legado.flutter_legado/legado_flutter_media/18 (userId=0)
+11-11 16:50:34.942   838  1219 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10067 in package io.legado.flutter_legado
+11-11 16:50:34.942   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:50:34.944  1097  1271 D MediaDataManager: session destroyed for 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:50:34.944  1097  1097 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10067 because it was removed by the system
+11-11 16:50:39.039     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:44.051     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:46.231   838  1616 D WifiNl80211Manager: Scan result ready event
+11-11 16:50:46.231   838  1616 D WifiNative: Scan result ready event
+11-11 16:50:49.063     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:49.991  7907  7907 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:50:50.069  7912  7912 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:50:50.069  7912  7912 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:50:50.069  7912  7912 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:50:50.070   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:50:50.073  7912  7913 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:50:50.074  7912  7913 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:50:54.067     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:50:58.244  7922  7922 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:50:58.244  7922  7922 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:50:58.244  7922  7922 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:50:58.245   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:50:58.248  7922  7923 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:50:58.249  7922  7923 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:50:59.075     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:04.095     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:09.091     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:10.537  7934  7934 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:51:10.598  7939  7939 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:51:10.598  7939  7939 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:51:10.599  7939  7939 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:51:10.599   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:51:10.602  7939  7940 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:51:10.603  7939  7940 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:51:14.095     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:19.115     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:24.111     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:29.131     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:33.580  7952  7952 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:51:33.581  7952  7952 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:51:33.581  7952  7952 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:51:33.581   709   891 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:51:33.584  7952  7953 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:51:33.585  7952  7953 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:51:34.131     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:37.790  1097  2958 D PowerUI : can't show warning due to - plugged: true status unknown: false
+11-11 16:51:39.135     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:44.143     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:48.175   838  1219 I MediaSessionStack: addSession to bottom of stack | record: io.legado.flutter_legado/legado_flutter_media/19 (userId=0)
+11-11 16:51:48.175   838  6463 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/19 (userId=0) playbackState=null
+11-11 16:51:48.178   838  1616 I MediaFocusControl: requestAudioFocus() from uid/pid 10067/7100 AA=USAGE_MEDIA/CONTENT_TYPE_MUSIC clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado req=1 flags=0x0 sdk=36
+11-11 16:51:48.178   838  1616 I AS.FadeOutManager: unfadeOutUid() uid:10067
+11-11 16:51:48.180   838  1616 I MediaSessionStack: onPlaybackStateChanged - Pushing session to top | record: io.legado.flutter_legado/legado_flutter_media/19 (userId=0)
+11-11 16:51:48.180   838  1616 D MediaSessionService: onSessionPlaybackStateChanged: record=io.legado.flutter_legado/legado_flutter_media/19 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237494921, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:51:48.180   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:51:48.180   838  1616 I ActivityManager: Background started FGS: Allowed [callingPackage: io.legado.flutter_legado; callingUid: 10067; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=io.legado.flutter_legado/io.legado.flutter.PlaybackForegroundService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-11 16:51:48.181   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:51:48.384   838   838 W NotificationHistory: Attempted to add notif for locked/gone/disabled user 0
+11-11 16:51:48.384   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:51:48.787  1097  1271 D MediaResumeListener: Checking for service component for io.legado.flutter_legado
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:51:48.794  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:51:48.795  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:51:48.795  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:51:48.795  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:51:48.795  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:51:48.796  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:51:48.797  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:51:48.817  1097  1097 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 12288
+11-11 16:51:48.818  1097 44559 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-11 16:51:48.832  1097  1097 W HWUI    : Image decoding logging dropped!
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:51:48.900  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:51:49.155     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown center_vertical_guideline
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown action_button_guideline
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown icon
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown media_seamless
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown media_action_barrier_start
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown media_action_barrier_end
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown media_action_barrier_top
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown remove_text
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown settings
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown dismiss
+11-11 16:51:49.217  1097  1097 W ConstraintSet: id unknown cancel
+11-11 16:51:52.226  7964  7964 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:51:52.289  7969  7969 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:51:52.290  7969  7969 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:51:52.290  7969  7969 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:51:52.290   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:51:52.294  7969  7970 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:51:52.295  7969  7970 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:51:54.175     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:59.175     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:51:59.484  7100  7100 I flutter : [媒体会话] mediaButtonOnExit=true，保留会话以响应耳机按键
+11-11 16:52:01.204  7100  7100 W TextToSpeech: stop failed: not bound to TTS engine
+11-11 16:52:01.205   838  6463 I MediaFocusControl: abandonAudioFocus() from uid/pid 10067/7100 clientId=android.media.AudioManager@d9864e5X0.b@6beebba callingPack=io.legado.flutter_legado
+11-11 16:52:01.206   838  6463 D MediaSessionService: onSessionActiveStateChanged: record=io.legado.flutter_legado/legado_flutter_media/19 (userId=0) playbackState=PlaybackState {state=PLAYING(3), position=0, buffered position=0, speed=1.0, updated=237494921, actions=3670015, custom actions=[], active item id=-1, error=null}
+11-11 16:52:01.206   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:52:01.206   838  6463 I MediaSessionStack: removeSession | record: io.legado.flutter_legado/legado_flutter_media/19 (userId=0)
+11-11 16:52:01.206   838  6463 D MediaSessionService: destroySessionLocked: record=io.legado.flutter_legado/legado_flutter_media/19 (userId=0)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: error unlinking to binder death
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: java.util.NoSuchElementException: Death link does not exist (NAME_NOT_FOUND)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: 	at android.os.BinderProxy.unlinkToDeathNative(Native Method)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: 	at android.os.BinderProxy.unlinkToDeath(BinderProxy.java:646)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: 	at com.android.server.media.MediaSessionRecord$ControllerStub.unregisterCallback(MediaSessionRecord.java:1774)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: 	at android.media.session.ISessionController$Stub.onTransact(ISessionController.java:396)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-11 16:52:01.206   838  1219 W MediaSessionRecord: 	at android.os.Binder.execTransact(Binder.java:1350)
+11-11 16:52:01.206   838  1685 W ForegroundServiceTypeLoggerModule: Logger should be tracking FGS types correctly for UID 10067 in package io.legado.flutter_legado
+11-11 16:52:01.207   838  1041 D BackgroundInstallControlService: Package event received: 0
+11-11 16:52:01.207  1097  1271 D MediaDataManager: session destroyed for 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:52:01.207  1097  1271 D MediaDataManager: Removing still-active player 0|io.legado.flutter_legado|7776|null|10067
+11-11 16:52:01.208  1097  1097 D NotificationMediaManager: Not dismissing 0|io.legado.flutter_legado|7776|null|10067 because it was removed by the system
+11-11 16:52:04.179     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:52:09.199     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:52:14.199     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:52:16.255  7986  7986 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:52:16.290  7989  7989 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: media_session
+11-11 16:52:16.368  7994  7994 W screencap: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-11 16:52:16.368  7994  7994 W BpBinder: Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-11 16:52:16.368  7994  7994 W ProcessState: Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-11 16:52:16.368   709  1605 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-11 16:52:16.371  7994  7995 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-11 16:52:16.372  7994  7995 W screencap: Cannot open renderer configuration file (nemuhotd pid=498)
+11-11 16:52:19.207     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:52:24.204  7998  7998 I sh      : type=1400 audit(0.0:12336): avc:  denied  { getattr } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:52:24.208  7998  7998 I sh      : type=1400 audit(0.0:12337): avc:  denied  { execute } for  name="logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:52:24.243     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0
+11-11 16:52:24.208  7998  7998 I sh      : type=1400 audit(0.0:12338): avc:  denied  { read open } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:52:24.208  7998  7998 I sh      : type=1400 audit(0.0:12339): avc:  denied  { execute_no_trans } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:52:24.208  7998  7998 I logcat  : type=1400 audit(0.0:12340): avc:  denied  { map } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-11 16:52:29.223     1   459 W libc    : Rewrite len too long for denied property "init.svc_debug_pid.serial_console", len = 4, oldlen = 0

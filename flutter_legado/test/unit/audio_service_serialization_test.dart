@@ -106,4 +106,16 @@ void main() {
     expect(service.isInitialized, isFalse, reason: '旧 init 不得覆盖新 release');
     expect(calls, ['init', 'release']);
   });
+
+  test('释放会话后 setWakeLock(false) 不得自动 init（不重建空会话）', () async {
+    final service = AudioService.instance;
+    await service.init();
+    await service.dispose();
+    calls.clear();
+
+    await service.setWakeLock(false);
+
+    expect(calls, isEmpty, reason: '关闭唤醒锁不需要会话，不得发送 init/release');
+    expect(service.isInitialized, isFalse);
+  });
 }
