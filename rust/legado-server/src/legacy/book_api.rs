@@ -26,7 +26,8 @@ use serde_json::Value;
 use legado_book::{BookFormat, LocalBook};
 use legado_core::cache_book::CachedChapter;
 use legado_core::content_processor::{
-    ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry, ScopeContext,
+    book_scope_matches, ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry,
+    ScopeContext,
 };
 use legado_core::models::book_type;
 use legado_core::models::{Book, BookChapter};
@@ -613,7 +614,8 @@ async fn get_book_content_inner(
 /// 正文净化（替换规则 + 去重复标题 + 简繁转换 + 重新分段；`includeTitle=false`）
 ///
 /// 对齐原版 `ContentProcessor.getContent(book, chapter, content, includeTitle=false)`：
-/// 只做正文净化，不重排/不缩进/不去空行（避免改变排版）。
+/// 只做正文净化，不做段落缩进/空行修剪；重新分段按书籍行
+/// `readConfig.reSegment` 执行（与 App 阅读端一致）。
 ///
 /// [批20-B] 配置面与 App 阅读端统一（两端打开同一 SQLite 文件）：
 /// - 去重复标题读章级 `caches:sameTitleRemoved:{bookUrl}:{index}`（缺省去除）；
@@ -657,15 +659,8 @@ async fn purify_content(
         let db = state.db.lock().await;
         let conn = db.connection();
         let rules = ReplaceRuleRepository::new(conn).get_enabled_rules();
-        let settings = app_config::load_content_purify_config(conn, &book.book_url, chapter.index)
-            .unwrap_or_else(|e| {
-                tracing::warn!(
-                    "读取正文净化配置失败，回退默认值（book={}, chapter={}）: {e}",
-                    book.name,
-                    chapter.index
-                );
-                ContentPurifyConfig::defaults()
-            });
+        // 三键各自回退默认值并 warn（单键损坏不影响其他键，与 App 一致）
+        let settings = app_config::load_content_purify_config(conn, &book.book_url, chapter.index);
         (rules, settings)
     };
     let rules = match rules {
@@ -673,7 +668,12 @@ async fn purify_content(
         Err(_) => return raw_content.to_string(),
     };
     let replace_enabled = use_replace_rule(book, settings.replace_enable_default);
-    let entries = ReplaceRuleEntry::from_replace_rules(&rules);
+    // [批20-B 回修] 与 App 阅读端一致：先按书名 scope 预过滤，再计算
+    // `@js:` 许可——仅命中他书的 JS 规则不应占用信号量。
+    let entries: Vec<ReplaceRuleEntry> = ReplaceRuleEntry::from_replace_rules(&rules)
+        .into_iter()
+        .filter(|entry| book_scope_matches(entry.scope.as_deref(), &book.name))
+        .collect();
     let needs_js = replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution);
     // [批17 三审 P2] 非阻塞限流：超限请求不等待 `@js:` 任务完成、不放大
     // 延迟；但**仍执行完整净化管线**，只把 `js_executor` 置 None——去重复

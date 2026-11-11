@@ -12,8 +12,6 @@
 
 use rusqlite::Connection;
 
-use legado_core::LegadoResult;
-
 use crate::repository::cache_repository::CacheRepository;
 
 /// 配置键前缀（caches 表 KV，与 `legado-ffi::config_api` 同口径）
@@ -109,27 +107,42 @@ impl Default for ContentPurifyConfig {
     }
 }
 
+/// 读取单个配置键；读库失败时记录告警并返回 `None`（该键回落默认值）
+///
+/// 逐键回退：单行/单键损坏不影响其他配置键，与 App 侧各配置键独立
+/// 读取、独立回落的口径一致。
+fn read_config_or_default(repo: &CacheRepository<'_>, full_key: &str) -> Option<String> {
+    match repo.get(full_key) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!("读取配置 {full_key} 失败，使用该键默认值: {e}");
+            None
+        }
+    }
+}
+
 /// 读取正文净化配置（Web 与 App 共用同一套键名与解析口径）
 ///
-/// 任一配置行读取失败 → `Err`，由调用方回退 [`ContentPurifyConfig::defaults`]
-/// 并记录告警；不把「读库失败」静默当成某项配置的合法值。
+/// 三个配置键各自读取、各自回退默认值：任一键读库失败只影响该项，
+/// 其余键仍按真实配置生效（与 App 三处独立读取一致）。
 pub fn load_content_purify_config(
     conn: &Connection,
     book_url: &str,
     chapter_index: i32,
-) -> LegadoResult<ContentPurifyConfig> {
+) -> ContentPurifyConfig {
     let repo = CacheRepository::new(conn);
-    let chinese_raw = repo.get(&config_key(CHINESE_CONVERT_TYPE_KEY))?;
-    let replace_raw = repo.get(&config_key(REPLACE_ENABLE_DEFAULT_KEY))?;
-    let same_title_raw = repo.get(&same_title_removed_key(book_url, chapter_index))?;
+    let chinese_raw = read_config_or_default(&repo, &config_key(CHINESE_CONVERT_TYPE_KEY));
+    let replace_raw = read_config_or_default(&repo, &config_key(REPLACE_ENABLE_DEFAULT_KEY));
+    let same_title_raw =
+        read_config_or_default(&repo, &same_title_removed_key(book_url, chapter_index));
 
-    Ok(ContentPurifyConfig {
+    ContentPurifyConfig {
         chinese_convert: chinese_convert_direction(parse_chinese_convert_type(
             chinese_raw.as_deref(),
         )),
         replace_enable_default: parse_replace_enable_default(replace_raw.as_deref()),
         remove_duplicate_title: parse_same_title_removed(same_title_raw.as_deref()),
-    })
+    }
 }
 
 #[cfg(test)]
@@ -192,7 +205,7 @@ mod tests {
     #[test]
     fn test_load_content_purify_config_defaults_when_absent() {
         let db = init_in_memory_database().unwrap();
-        let loaded = load_content_purify_config(db.connection(), "https://a.book", 3).unwrap();
+        let loaded = load_content_purify_config(db.connection(), "https://a.book", 3);
         assert_eq!(loaded, ContentPurifyConfig::defaults());
     }
 
@@ -207,7 +220,7 @@ mod tests {
         repo.put(&same_title_removed_key("https://a.book", 3), "1", 0)
             .unwrap();
 
-        let loaded = load_content_purify_config(db.connection(), "https://a.book", 3).unwrap();
+        let loaded = load_content_purify_config(db.connection(), "https://a.book", 3);
         assert_eq!(
             loaded,
             ContentPurifyConfig {
@@ -218,16 +231,47 @@ mod tests {
         );
 
         // 其他章节不受该章开关影响（默认去除）
-        let other = load_content_purify_config(db.connection(), "https://a.book", 4).unwrap();
+        let other = load_content_purify_config(db.connection(), "https://a.book", 4);
         assert!(other.remove_duplicate_title);
     }
 
     #[test]
-    fn test_load_content_purify_config_errors_when_table_missing() {
+    fn test_load_content_purify_config_falls_back_per_key_when_table_missing() {
         let db = init_in_memory_database().unwrap();
         db.connection()
             .execute("DROP TABLE caches", [])
             .expect("删除 caches 表");
-        assert!(load_content_purify_config(db.connection(), "https://a.book", 0).is_err());
+        // 读库失败不 panic、不整体报错：三个键各自回落默认值
+        assert_eq!(
+            load_content_purify_config(db.connection(), "https://a.book", 0),
+            ContentPurifyConfig::defaults()
+        );
+    }
+
+    #[test]
+    fn test_load_content_purify_config_broken_key_does_not_affect_others() {
+        use rusqlite::params;
+
+        let db = init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = CacheRepository::new(conn);
+        repo.put(&config_key(REPLACE_ENABLE_DEFAULT_KEY), "false", 0)
+            .unwrap();
+        repo.put(&same_title_removed_key("https://a.book", 0), "1", 0)
+            .unwrap();
+        // 仅把 chineseConverterType 写成非 UTF-8 BLOB，使该行读取报错
+        conn.execute(
+            "INSERT OR REPLACE INTO caches (key, value, deadline, created_at)
+             VALUES (?1, ?2, 0, 0)",
+            params![config_key(CHINESE_CONVERT_TYPE_KEY), vec![0xFF_u8]],
+        )
+        .expect("写入损坏的配置行");
+
+        let loaded = load_content_purify_config(conn, "https://a.book", 0);
+        // 损坏键回落该键默认值（0 → 不转换）
+        assert_eq!(loaded.chinese_convert, None);
+        // 其他两个键不受影响，仍读取真实值
+        assert!(!loaded.replace_enable_default);
+        assert!(!loaded.remove_duplicate_title);
     }
 }

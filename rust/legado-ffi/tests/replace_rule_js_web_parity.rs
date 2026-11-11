@@ -54,7 +54,7 @@ use tower::ServiceExt;
 use legado_ffi::db_state::with_database;
 use legado_ffi::legado_core::cache_book::CachedChapter;
 use legado_ffi::legado_core::download_manager::DownloadManager;
-use legado_ffi::legado_core::models::{Book, BookChapter, ReplaceRule};
+use legado_ffi::legado_core::models::{Book, BookChapter, ReadConfig, ReplaceRule};
 use legado_ffi::legado_db::app_config;
 use legado_ffi::legado_db::repository::cache_repository::CacheRepository;
 use legado_ffi::legado_db::repository::Repository;
@@ -407,10 +407,13 @@ async fn test_app_build_enables_server_only_quickjs_path() {
 /// 统一目标（用户 2026-11-12 裁决：统一到 App 侧）：
 /// - 书名精确命中（`scope` 恰为书名）→ 两端生效；
 /// - `scope` 为完整 `origin`（仅命中书籍来源）→ 两端都**不**生效；
+/// - `scope` 为书名 + 后缀（旧 Web 子串命中）→ 两端都**不**生效；
 /// - `scope` 为书名子串 → 两端都不生效。
 ///
 /// 修复前（批17 快照）：Web 走 `ContentProcessor` 的 `ScopeContext`
-/// 子串匹配 → origin-only 规则生效，与 App 不一致；本用例在该实现下红。
+/// 子串匹配 → origin-only 与「书名 + 后缀」规则生效，与 App 不一致；
+/// 本用例在该实现下必红（origin 必须与 `test_book` 实际 origin 一致，
+/// 否则旧实现同样不命中，用例失去鉴别力）。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
 async fn test_js_rule_scope_semantics_unified_app_and_web() {
@@ -418,12 +421,14 @@ async fn test_js_rule_scope_semantics_unified_app_and_web() {
     let book_url = "https://batch20.example.com/book/parity-scope";
     let title = "第一章";
     let chapter_url = "https://batch20.example.com/ch/scope-0";
-    let raw = "前A标记中B标记后C标记";
+    // 标记前缀 JS批20 保证 App 全局 DB 内与其他用例规则不交叉命中
+    let raw = "前JS批20A标记中JS批20B标记后JS批20C标记JS批20D标记";
+    let book = test_book(book_url, "批二十作用域书");
     let rules = [
         // 书名精确命中：两端都生效
         ReplaceRule {
             name: "批20_书名作用域".to_string(),
-            pattern: "A标记".to_string(),
+            pattern: "JS批20A标记".to_string(),
             replacement: "A已换".to_string(),
             is_regex: false,
             is_enabled: true,
@@ -431,21 +436,21 @@ async fn test_js_rule_scope_semantics_unified_app_and_web() {
             scope: Some("批二十作用域书".to_string()),
             ..Default::default()
         },
-        // 仅书籍来源命中：统一后两端都不生效
+        // 仅书籍来源命中（scope 取书籍行真实 origin）：统一后两端都不生效
         ReplaceRule {
             name: "批20_来源作用域".to_string(),
-            pattern: "B标记".to_string(),
+            pattern: "JS批20B标记".to_string(),
             replacement: r#"@js: result + "!""#.to_string(),
             is_regex: true,
             is_enabled: true,
             scope_content: true,
-            scope: Some("https://batch20.example.com".to_string()),
+            scope: Some(book.origin.clone()),
             ..Default::default()
         },
         // 书名子串（非精确项）：两端都不生效
         ReplaceRule {
             name: "批20_子串作用域".to_string(),
-            pattern: "C标记".to_string(),
+            pattern: "JS批20C标记".to_string(),
             replacement: "C已换".to_string(),
             is_regex: false,
             is_enabled: true,
@@ -453,10 +458,20 @@ async fn test_js_rule_scope_semantics_unified_app_and_web() {
             scope: Some("批二十作用域".to_string()),
             ..Default::default()
         },
+        // 书名 + 后缀：旧 Web 子串命中、新语义精确不命中（真鉴别项）
+        ReplaceRule {
+            name: "批20_书名后缀作用域".to_string(),
+            pattern: "JS批20D标记".to_string(),
+            replacement: "D已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some(format!("{}（精校版）", book.name)),
+            ..Default::default()
+        },
     ];
-    let expected = "前A已换中B标记后C标记";
+    let expected = "前A已换中JS批20B标记后JS批20C标记JS批20D标记";
 
-    let book = test_book(book_url, "批二十作用域书");
     let chapter = test_chapter(book_url, 0, title, chapter_url);
     let web_state = make_web_state();
     seed_web(&web_state, &book, &chapter, raw, &rules).await;
@@ -470,7 +485,10 @@ async fn test_js_rule_scope_semantics_unified_app_and_web() {
         .to_string();
     let app = app_content(book_url, raw, title, 0, chapter_url);
 
-    assert_eq!(app, expected, "App：书名精确 scope 生效，来源/子串不生效");
+    assert_eq!(
+        app, expected,
+        "App：书名精确 scope 生效，来源/子串/后缀不生效"
+    );
     assert_eq!(web, expected, "Web：必须与 App 使用同一 scope 语义");
     assert_eq!(app, web, "App 与 Web 对同一 scope 判定必须一致");
 }
@@ -573,11 +591,39 @@ async fn test_replace_enable_default_false_parity() {
     .await;
 }
 
+/// [批20-B] `readConfig.reSegment=true`：两端逐字一致
+///
+/// Web 新读取路径（`book.read_config.re_segment` → `ProcessorConfig.re_segment`）
+/// 此前无用例；修复前 Web 固定 `re_segment=false`，保持原始换行（红）。
+#[tokio::test]
+async fn test_re_segment_parity_from_book_read_config() {
+    let _app_guard = ensure_app_db().await;
+    let book_url = "https://batch20.example.com/book/parity-resegment";
+    let mut book = test_book(book_url, "批二十重分段书");
+    book.read_config = Some(ReadConfig {
+        re_segment: true,
+        ..Default::default()
+    });
+    let chapter = test_chapter(book_url, 0, "第一章", "https://batch20.example.com/ch/rs-0");
+
+    assert_app_web_parity(
+        "reSegment=true",
+        &book,
+        &chapter,
+        "第一段内容。\n第二段内容。",
+        &[],
+        &[],
+        "第一段内容。第二段内容。",
+    )
+    .await;
+}
+
 /// [批20-B] `scope` 语义两端一致：按 `[,;，；]` 拆分 + 书名精确匹配，
 /// 不看 `origin`
 ///
-/// 覆盖：多书名精确命中、origin-only、书名子串、`global`。
-/// 修复前：Web 子串匹配 → origin-only 规则生效，与 App 不一致（红）。
+/// 覆盖：多书名精确命中、origin-only、书名子串、`global`、书名 + 后缀。
+/// 修复前：Web 子串匹配 → origin-only 与「书名 + 后缀」规则生效，
+/// 且不识别 `global`，与 App 不一致（红）。
 #[tokio::test]
 async fn test_content_scope_parity_split_exact_book_name() {
     let _app_guard = ensure_app_db().await;
@@ -587,7 +633,7 @@ async fn test_content_scope_parity_split_exact_book_name() {
     let rules = [
         ReplaceRule {
             name: "批20_多书名精确".to_string(),
-            pattern: "A标记".to_string(),
+            pattern: "SC批20A标记".to_string(),
             replacement: "A已换".to_string(),
             is_regex: false,
             is_enabled: true,
@@ -597,17 +643,18 @@ async fn test_content_scope_parity_split_exact_book_name() {
         },
         ReplaceRule {
             name: "批20_仅来源".to_string(),
-            pattern: "B标记".to_string(),
+            pattern: "SC批20B标记".to_string(),
             replacement: "B已换".to_string(),
             is_regex: false,
             is_enabled: true,
             scope_content: true,
-            scope: Some("https://batch20.example.com".to_string()),
+            // 与书籍行真实 origin 一致，旧 Web 子串实现会命中（真鉴别项）
+            scope: Some(book.origin.clone()),
             ..Default::default()
         },
         ReplaceRule {
             name: "批20_书名子串".to_string(),
-            pattern: "C标记".to_string(),
+            pattern: "SC批20C标记".to_string(),
             replacement: "C已换".to_string(),
             is_regex: false,
             is_enabled: true,
@@ -617,12 +664,23 @@ async fn test_content_scope_parity_split_exact_book_name() {
         },
         ReplaceRule {
             name: "批20_全局".to_string(),
-            pattern: "D标记".to_string(),
+            pattern: "SC批20D标记".to_string(),
             replacement: "D已换".to_string(),
             is_regex: false,
             is_enabled: true,
             scope_content: true,
             scope: Some("global".to_string()),
+            ..Default::default()
+        },
+        ReplaceRule {
+            name: "批20_书名后缀".to_string(),
+            pattern: "SC批20E标记".to_string(),
+            replacement: "E已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            // 旧 Web `s.contains(book_name)` 命中、新语义精确不命中（真鉴别项）
+            scope: Some(format!("{}（精校版）", book.name)),
             ..Default::default()
         },
     ];
@@ -631,10 +689,10 @@ async fn test_content_scope_parity_split_exact_book_name() {
         "scope 拆分精确匹配",
         &book,
         &chapter,
-        "A标记B标记C标记D标记",
+        "SC批20A标记SC批20B标记SC批20C标记SC批20D标记SC批20E标记",
         &rules,
         &[],
-        "A已换B标记C标记D已换",
+        "A已换SC批20B标记SC批20C标记D已换SC批20E标记",
     )
     .await;
 }
@@ -651,8 +709,8 @@ async fn test_exclude_scope_ignored_in_content_parity() {
     let chapter = test_chapter(book_url, 0, "第一章", "https://batch20.example.com/ch/ex-0");
     let rule = ReplaceRule {
         name: "批20_excludeScope".to_string(),
-        pattern: "E标记".to_string(),
-        replacement: "E已换".to_string(),
+        pattern: "EX批20标记".to_string(),
+        replacement: "EX批20已换".to_string(),
         is_regex: false,
         is_enabled: true,
         scope_content: true,
@@ -664,10 +722,10 @@ async fn test_exclude_scope_ignored_in_content_parity() {
         "excludeScope 正文忽略",
         &book,
         &chapter,
-        "前E标记后",
+        "前EX批20标记后",
         std::slice::from_ref(&rule),
         &[],
-        "前E已换后",
+        "前EX批20已换后",
     )
     .await;
 }
@@ -691,10 +749,10 @@ async fn test_same_title_removed_toggle_parity() {
         "第一章 同名标题",
         "https://batch20.example.com/ch/title-a-0",
     );
-    let raw = "第一章 同名标题\n正文标记";
+    let raw = "第一章 同名标题\nTITLE批20正文标记";
     let rule = ReplaceRule {
         name: "批20_去重标题".to_string(),
-        pattern: "正文标记".to_string(),
+        pattern: "TITLE批20正文标记".to_string(),
         replacement: "已换".to_string(),
         is_regex: false,
         is_enabled: true,
@@ -785,10 +843,10 @@ async fn test_web_purify_config_read_failure_falls_back_to_defaults() {
         "第一章 同名标题",
         "https://batch20.example.com/ch/cf-0",
     );
-    let raw = "第一章 同名标题\n正文标记";
+    let raw = "第一章 同名标题\nTITLE批20正文标记";
     let rule = ReplaceRule {
         name: "批20_配置失败回退".to_string(),
-        pattern: "正文标记".to_string(),
+        pattern: "TITLE批20正文标记".to_string(),
         replacement: "已换".to_string(),
         is_regex: false,
         is_enabled: true,

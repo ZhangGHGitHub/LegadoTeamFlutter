@@ -456,7 +456,11 @@ pub fn apply_title_replace_rules(
     run_replace_rules(title, rules, js_executor, ScopeMode::Title, None)
 }
 
-/// 按正文作用域过滤规则（对应 Kotlin `ReplaceRuleDao.findEnabledByContentScope`）
+/// 按正文作用域过滤规则（批20-B 起统一 App 语义）
+///
+/// 正文路径不再与 Kotlin `ReplaceRuleDao.findEnabledByContentScope` 的
+/// LIKE 查询等价：`scope` 按 `[,;，；]` 拆分后与**书名**精确匹配，
+/// 不看 `book_origin`、不处理 `excludeScope`（见 [`book_scope_matches`]）。
 pub fn filter_content_rules<'a>(
     rules: &'a [ReplaceRuleEntry],
     ctx: &ScopeContext,

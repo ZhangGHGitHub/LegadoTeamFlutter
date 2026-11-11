@@ -1909,6 +1909,7 @@ name = "legado-db"
 version = "0.2.0"
 dependencies = [
  "legado-core",
+ "log",
  "md5",
  "r2d2",
  "r2d2_sqlite",
