@@ -1,0 +1,31 @@
+# C12/C13 MCP 令牌行为 — 命令与输出转录（2026-11-11 16:27，宿主执行）
+
+## C12 未配置令牌时调用 /mcp/call
+
+$ curl -s -i --max-time 10 -H "Content-Type: application/json" -d '{}' http://192.168.100.62:1122/mcp/call
+
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+x-content-type-options: nosniff
+access-control-allow-methods: GET, POST
+connection: close
+content-length: 88
+date: Wed, 11 Nov 2026 08:27:50 GMT
+
+{"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+
+## C13 /mcp/tools 免令牌访问
+
+$ curl -s -i --max-time 10 http://192.168.100.62:1122/mcp/tools
+
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 6173
+date: Wed, 11 Nov 2026 08:27:50 GMT
+
+[{"name":"search_books","description":"Search for books by name or author across all enabled sources",...},
+ {"name":"read_help_doc","description":"按名称读取应用内帮助文档内容（Markdown）",...}]
+（共 20 个工具：search_books/get_chapters/read_chapter/get_bookshelf/add_to_bookshelf/
+ list_sources/get_source/update_source/get_reading_progress/get_bookmarks/add_bookmark/
+ get_replace_rules/eval_js/get_cookies/clear_cookies/debug_source/get_debug_progress/
+ check_sources/list_help_docs/read_help_doc）

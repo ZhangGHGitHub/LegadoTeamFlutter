@@ -1,0 +1,58 @@
+# A5 临时目录清扫 — 命令与输出转录（2026-11-11，逐条来自实机执行）
+
+## 0. 环境/路径判定
+
+任务预设路径：/data/data/io.legado.flutter_legado/cache
+Flutter 引擎实际 dart:io Directory.systemTemp：
+- engine/src/flutter/shell/common/switches.cc:
+  command_line.GetOptionValue(FlagForSwitch(Switch::kCacheDirPath),
+                              &settings.temp_directory_path);
+- engine/src/flutter/shell/platform/android/io/flutter/util/PathUtils.java:
+  getCacheDirectory() -> applicationContext.getCodeCacheDir()（注释：This code path is used to set up dart:io's `Directory.systemTemp`）
+- libflutter.so 内含唯一字符串 "/data/local/tmp"（Dart 兜底值；本 App 由 --cache-dir-path 覆盖）
+结论：本机实际 systemTemp = /data/data/io.legado.flutter_legado/code_cache
+
+## 1. 在任务指定 cache 目录做对照（未清理，证明不在清扫范围）
+
+$ adb shell ls -la /data/data/io.legado.flutter_legado/cache
+drwx--S--- 2 u0_a67 u0_a67_cache 4096 2026-11-11 07:19 audio_cache
+drwx--S--- 3 u0_a67 u0_a67_cache 4096 2026-11-11 16:04 file_picker
+...
+$ adb shell mkdir -p /data/data/io.legado.flutter_legado/cache/legado_webdav_only_test
+$ adb shell touch -t 202611111400.00 /data/data/io.legado.flutter_legado/cache/legado_webdav_only_test
+$ adb shell chown u0_a67:u0_a67_cache /data/data/io.legado.flutter_legado/cache/legado_webdav_only_test
+$ adb shell ls -ld /data/data/io.legado.flutter_legado/cache/legado_webdav_only_test
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 14:00 .../cache/legado_webdav_only_test
+
+$ adb shell am force-stop io.legado.flutter_legado
+$ adb shell monkey -p io.legado.flutter_legado -c android.intent.category.LAUNCHER 1
+$ sleep 8; adb shell "ls -ld /data/data/io.legado.flutter_legado/cache/legado_webdav_*"
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 16:10 .../cache/legado_webdav_only_fresh
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 14:00 .../cache/legado_webdav_only_test
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 14:00 .../cache/legado_webdav_restore_test
+（未删除：该目录不是 Directory.systemTemp）
+
+## 2. 在实际 systemTemp（code_cache）验证清扫
+
+$ adb shell ls -la /data/data/io.legado.flutter_legado/code_cache
+-rw------- 1 u0_a67 u0_a67_cache 789680 2026-11-11 16:14 flutter.impeller.vkcache
+drwx--S--- 3 u0_a67 u0_a67_cache 4096 2026-11-11 16:03 flutter_engine
+
+$ adb shell mkdir -p \
+    /data/data/io.legado.flutter_legado/code_cache/legado_webdav_only_test \
+    /data/data/io.legado.flutter_legado/code_cache/legado_webdav_restore_test2 \
+    /data/data/io.legado.flutter_legado/code_cache/legado_webdav_only_fresh
+$ adb shell touch -t 202611111400.00 \
+    .../code_cache/legado_webdav_only_test .../code_cache/legado_webdav_restore_test2
+$ adb shell chown -R u0_a67:u0_a67_cache .../code_cache/legado_webdav_*
+$ adb shell ls -ld .../code_cache/legado_webdav_*
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 16:16 .../code_cache/legado_webdav_only_fresh
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 14:00 .../code_cache/legado_webdav_only_test
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 14:00 .../code_cache/legado_webdav_restore_test2
+
+$ adb shell am force-stop io.legado.flutter_legado
+$ adb shell monkey -p io.legado.flutter_legado -c android.intent.category.LAUNCHER 1
+$ sleep 8; adb shell "ls -ld /data/data/io.legado.flutter_legado/code_cache/legado_webdav_*"
+drwxrwsrwx 2 u0_a67 u0_a67_cache 4096 2026-11-11 16:16 .../code_cache/legado_webdav_only_fresh
+
+结论：两条 mtime=14:00（启动时已超过 1 小时）的目录被删除；16:16 新建的对照目录保留。

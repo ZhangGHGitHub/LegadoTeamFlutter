@@ -1,0 +1,3 @@
+    legado_flutter_media io.legado.flutter_legado/legado_flutter_media/14 (userId=0)
+      package=io.legado.flutter_legado
+      mediaButtonReceiver=MBR {pi=PendingIntent{3a30f7a: PendingIntentRecord{41b1fca io.legado.flutter_legado broadcastIntent}}, componentName=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MediaButtonReceiver}, type=1, pkg=io.legado.flutter_legado}
