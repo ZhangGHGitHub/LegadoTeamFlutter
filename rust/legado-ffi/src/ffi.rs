@@ -2738,7 +2738,9 @@ pub mod ffi {
     ///
     /// - port>0：启动/重启独立 MCP 服务监听该端口（合法区间 1024..65530，
     ///   越界或占用报 Internal）；port≤0：停止独立服务；
-    /// - Web 端口的 /mcp/* 挂载不受影响（兼容并存）；端口持久化并启动时恢复。
+    /// - Web 端口挂载保持存在：`/mcp/tools`（GET）免令牌；`/mcp/call`
+    ///   （POST）需 `x-legado-token`（未配置令牌时一律拒绝）；独立 MCP
+    ///   端口鉴权与行为不变。端口持久化并启动时恢复。
     pub fn set_mcp_port(port: i32) -> Result<(), BridgeError> {
         crate::api::server_api::set_mcp_port(port)?;
         Ok(())

@@ -329,8 +329,8 @@ static MCP_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 设置独立 MCP 服务端口（启停状态机）
 ///
-/// - `port <= 0`：停止独立 MCP 服务（Web 端口 /mcp/* 挂载不受影响），
-///   并持久化该值；
+/// - `port <= 0`：停止独立 MCP 服务（Web 端口挂载保持存在；其中
+///   `/mcp/call` 需 `x-legado-token`，`/mcp/tools` 免令牌），并持久化该值；
 /// - `port` 合法区间 `1024..=65530`（对齐原版 NumberPicker），
 ///   越界报 `Internal` 错误（可读消息）；
 /// - 端口变更自动重启（先停旧再启新，abort 后等待旧监听器释放，
