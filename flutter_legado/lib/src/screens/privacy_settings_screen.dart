@@ -11,8 +11,9 @@
 //   启动应用（默认 false）、验证频率（EveryTime/AppSession/UntilBackground，
 //   默认 AppSession）、离开后台宽限（0/30/120/180/300，默认 0，仅
 //   UntilBackground 显示）；
-// - 说明组：密码仅存本机、不随备份导出，忘记密码无法访问私密内容；
-//   明示私密内容不随备份/导出/Web 排除、系统云备份可能迁移密码与标记。
+// - 说明组：密码凭据仅存本机、不随应用内备份或书籍导出，忘记密码无法
+//   访问私密内容；明示私密内容不随本地/WebDAV 备份、导出、进度同步与
+//   Web 服务排除，系统云备份可能迁移密码凭据与私密标记。
 //
 // 密码对话框：无密码时只填新密码+确认；已有密码时先验当前密码。改密失败
 // 的旧密错误内联提示「密码错误」，其他失败提示重试。清除密码必须二次
@@ -419,22 +420,23 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '隐私密码仅保存在本机，不随备份导出。启用私密功能后，'
-                    '忘记密码将无法访问私密内容。启动应用验证只在下次启动'
-                    '应用时触发；私密书籍与分组在书架、详情与阅读器中均按'
-                    '验证状态脱敏或放行。',
+                    '隐私密码凭据仅保存在本机，不随应用内备份或书籍导出。'
+                    '启用私密功能后，忘记密码将无法访问私密内容。启动应用'
+                    '验证只在下次启动应用时触发；私密书籍与分组在书架、'
+                    '详情与阅读器中均按验证状态脱敏或放行。',
                     style: noteStyle,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '私密内容不会从备份、书籍导出或 Web 服务中排除；'
-                    '如需彻底保护，请勿分享备份文件、不要在公共网络开启 Web 服务。',
+                    '私密内容不会从本地与 WebDAV 备份（含自动上传）、书籍导出、'
+                    '进度同步或 Web 服务中排除。如需彻底保护，请勿分享备份文件、'
+                    '不要在不可信网络开启 Web 服务；开启后同一网络内任何设备均可访问。',
                     key: const ValueKey('privacyBackupDisclosure'),
                     style: noteStyle,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '本机隐私密码与私密标记保存在应用数据库内，'
+                    '隐私密码凭据（加盐校验值）与私密标记保存在应用数据库内，'
                     '可能随 Android 系统云备份一起迁移到其他设备。',
                     key: const ValueKey('privacySystemBackupDisclosure'),
                     style: noteStyle,

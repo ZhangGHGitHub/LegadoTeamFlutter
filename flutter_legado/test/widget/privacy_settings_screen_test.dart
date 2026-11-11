@@ -294,27 +294,30 @@ void main() {
     expect(clearRow.enabled, isFalse, reason: '无密码时不可清除');
   });
 
-  testWidgets('说明：明示备份/导出/Web 不排除私密内容与系统云备份风险', (tester) async {
+  testWidgets('说明：明示备份/导出/进度同步/Web 不排除私密内容与系统云备份风险', (tester) async {
     await pumpScreen(tester);
 
     await tester.scrollUntilVisible(
       find.byKey(const ValueKey('privacyBackupDisclosure')),
       100,
     );
+    expect(find.textContaining('不随应用内备份或书籍导出'), findsOneWidget);
     expect(
       find.text(
-        '私密内容不会从备份、书籍导出或 Web 服务中排除；'
-        '如需彻底保护，请勿分享备份文件、不要在公共网络开启 Web 服务。',
+        '私密内容不会从本地与 WebDAV 备份（含自动上传）、书籍导出、'
+        '进度同步或 Web 服务中排除。如需彻底保护，请勿分享备份文件、'
+        '不要在不可信网络开启 Web 服务；开启后同一网络内任何设备均可访问。',
       ),
       findsOneWidget,
     );
     expect(
       find.text(
-        '本机隐私密码与私密标记保存在应用数据库内，'
+        '隐私密码凭据（加盐校验值）与私密标记保存在应用数据库内，'
         '可能随 Android 系统云备份一起迁移到其他设备。',
       ),
       findsOneWidget,
     );
+    expect(find.textContaining('公共网络'), findsNothing);
   });
 
   testWidgets('启用开关：无密码弹设密框，取消不开启，成功后自动开启', (tester) async {
