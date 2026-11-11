@@ -153,6 +153,7 @@ class AppTheme {
     Color? bottomBackground,
     Color? primaryTextColor,
     Color? secondaryTextColor,
+    String? fontFamily,
   }) {
     var scheme = brightness == Brightness.light
         ? md3LightScheme(palette)
@@ -175,6 +176,7 @@ class AppTheme {
             ? scheme.surfaceContainerLowest
             : scheme.surfaceContainerLow,
         tabBarBg: scheme.surfaceContainer,
+        fontFamily: fontFamily,
       );
     }
 
@@ -224,6 +226,7 @@ class AppTheme {
           ? scheme.surfaceContainerLowest
           : scheme.surfaceContainerLow,
       tabBarBg: bottomBackground ?? scheme.surfaceContainer,
+      fontFamily: fontFamily,
     );
   }
 
@@ -243,8 +246,17 @@ class AppTheme {
     required Color separator,
     required Color cardColor,
     required Color tabBarBg,
+    String? fontFamily,
   }) {
     final bool isLight = brightness == Brightness.light;
+    // [应用字体入口 2026-11-11] 应用字体只作用于界面文字：把字体族应用到
+    // AppTypography 派生的全部文本样式（含组件主题里显式引用的样式），
+    // ThemeData.fontFamily 再兜底 DefaultTextStyle；阅读正文走
+    // ReaderPageView 自己的 reader_font_family，不经过这里。
+    final baseTextTheme = AppTypography.lightTextTheme;
+    final textTheme = fontFamily == null
+        ? baseTextTheme
+        : baseTextTheme.apply(fontFamily: fontFamily);
     // [设置批2b-1b-1] 全局卡片边框覆盖（参考版 BaseCard/GlassCard 分支）：
     // 开关关/宽度 0 时不绘制；0 色回落 outlineVariant。RoundedRectangleBorder
     // 的 side 不参与布局，卡片尺寸与无边框一致。
@@ -274,7 +286,10 @@ class AppTheme {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: colorScheme,
-      textTheme: AppTypography.lightTextTheme,
+      textTheme: textTheme,
+      // [应用字体入口 2026-11-11] 兜底 DefaultTextStyle（未显式带 fontFamily
+      // 的组件文本）；null = 跟随系统默认字体
+      fontFamily: fontFamily,
       scaffoldBackgroundColor: scaffoldBackground,
       dividerColor: separator,
       splashFactory: InkSparkle.splashFactory,
@@ -295,10 +310,8 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 3,
         centerTitle: false,
-        titleTextStyle: AppTypography.lightTextTheme.titleLarge?.copyWith(
-          color: appBarForeground,
-        ),
-        toolbarTextStyle: AppTypography.lightTextTheme.bodyLarge?.copyWith(
+        titleTextStyle: textTheme.titleLarge?.copyWith(color: appBarForeground),
+        toolbarTextStyle: textTheme.bodyLarge?.copyWith(
           color: appBarForeground,
         ),
         // 浅色导航栏 → 深色状态栏图标；暗色导航栏 → 浅色状态栏图标
@@ -331,6 +344,7 @@ class AppTheme {
           return TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w500,
+            fontFamily: fontFamily,
             color: selected
                 ? colorScheme.onSurface
                 : colorScheme.onSurfaceVariant,
@@ -361,7 +375,7 @@ class AppTheme {
           elevation: 0,
           minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          textStyle: AppTypography.lightTextTheme.labelLarge,
+          textStyle: textTheme.labelLarge,
           shape: const StadiumBorder(),
         ),
       ),
@@ -371,7 +385,7 @@ class AppTheme {
         style: FilledButton.styleFrom(
           minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          textStyle: AppTypography.lightTextTheme.labelLarge,
+          textStyle: textTheme.labelLarge,
           shape: const StadiumBorder(),
         ),
       ),
@@ -383,7 +397,7 @@ class AppTheme {
           foregroundColor: colorScheme.primary,
           minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          textStyle: AppTypography.lightTextTheme.labelLarge,
+          textStyle: textTheme.labelLarge,
           side: BorderSide(color: colorScheme.outline),
           shape: const StadiumBorder(),
         ),
@@ -393,7 +407,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: colorScheme.primary,
-          textStyle: AppTypography.lightTextTheme.labelLarge,
+          textStyle: textTheme.labelLarge,
         ),
       ),
 
@@ -424,7 +438,7 @@ class AppTheme {
           borderRadius: _fieldFillRadius,
           borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
-        hintStyle: AppTypography.lightTextTheme.bodyMedium?.copyWith(
+        hintStyle: textTheme.bodyMedium?.copyWith(
           color: colorScheme.onSurfaceVariant,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -485,8 +499,8 @@ class AppTheme {
         unselectedLabelColor: colorScheme.onSurfaceVariant,
         indicatorColor: colorScheme.primary,
         indicatorSize: TabBarIndicatorSize.label,
-        labelStyle: AppTypography.lightTextTheme.titleSmall,
-        unselectedLabelStyle: AppTypography.lightTextTheme.titleSmall,
+        labelStyle: textTheme.titleSmall,
+        unselectedLabelStyle: textTheme.titleSmall,
         tabAlignment: TabAlignment.start,
       ),
 
@@ -542,10 +556,10 @@ class AppTheme {
         backgroundColor: colorScheme.surfaceContainerLow,
         selectedColor: colorScheme.secondaryContainer,
         secondarySelectedColor: colorScheme.secondaryContainer,
-        labelStyle: AppTypography.lightTextTheme.labelLarge?.copyWith(
+        labelStyle: textTheme.labelLarge?.copyWith(
           color: colorScheme.onSurfaceVariant,
         ),
-        secondaryLabelStyle: AppTypography.lightTextTheme.labelLarge?.copyWith(
+        secondaryLabelStyle: textTheme.labelLarge?.copyWith(
           color: colorScheme.onSecondaryContainer,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -628,9 +642,7 @@ class AppTheme {
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
         ),
         hintStyle: WidgetStateProperty.all(
-          AppTypography.lightTextTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
+          textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
       ),
 

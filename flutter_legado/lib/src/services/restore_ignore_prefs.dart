@@ -58,6 +58,11 @@ class RestoreIgnorePrefs {
     //（设备级，不随备份往返）；随备份恢复会让「每日最多一次」判定基于
     // 旧设备的时间戳，可能重复弹窗或长时间不检查
     PrefKeys.lastCheckUpdate,
+    // [应用字体入口 2026-11-11] 应用字体文件位于本机 Support 目录，属
+    // 设备级资源、无法随 JSON 备份迁移；偏好标识随备份往返会在目标机
+    // 指向缺失文件（首次启动即报加载失败）。整键排除，字体文件本身
+    // 也不在任何备份/孤儿清理扫描范围内。
+    PrefKeys.appFontPath,
     // [批9b 审查回修] 仅 private_enabled 设备级排除（对齐参考版
     // BackupConfig alwaysIgnore）：旧备份不得在目标设备凭空开启应用锁。
     // 密码凭据只在本机 caches（`config:private_password_*`，不写入

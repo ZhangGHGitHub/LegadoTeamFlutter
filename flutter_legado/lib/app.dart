@@ -10,6 +10,7 @@ import 'src/providers/bookshelf/bookshelf_notifier.dart';
 import 'src/providers/privacy/privacy_notifier.dart';
 import 'src/providers/providers.dart';
 import 'src/providers/ui_settings/ui_settings_notifier.dart';
+import 'src/providers/theme/app_font_notifier.dart';
 import 'src/providers/theme/theme_colors_notifier.dart';
 import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
@@ -407,6 +408,21 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // [UI-FIX v2.0.5 | 2026-08-08] 自定义主题颜色接入 MaterialApp（对齐原版
     // ThemeConfigFragment 日间/夜间颜色配置，设置页修改后全局即时生效） — Qoder
     final themeColors = ref.watch(themeColorsProvider);
+    // [应用字体入口 2026-11-11] 应用界面字体：成功后 family 非空，ThemeData
+    // 换字体族 → MaterialApp 立即重建生效；加载失败/超时 family 为 null，
+    // 界面继续用默认字体（阅读正文不受影响）。
+    final appFont = ref.watch(appFontProvider);
+    ref.listen<AppFontState>(appFontProvider, (previous, next) {
+      final message = next.errorMessage;
+      if (message == null || message == previous?.errorMessage) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final navContext = PlatformBridgeService.navigatorKey.currentContext;
+        if (navContext == null || !navContext.mounted) return;
+        ScaffoldMessenger.of(navContext)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+      });
+    });
     // [审查 P2-1] 0 = 未设置（参考版重置/未设置槽写透明 0）：兜底不生成
     // Color(0x00000000)，否则 AppBar/Scaffold 会变透明、前景按暗色取白。
     Color? c(int? argb) => argb != null && argb != 0 ? Color(argb) : null;
@@ -473,6 +489,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
             secondaryTextColor: c(
               themeColors.secondaryTextColorFor(Brightness.light),
             ),
+            fontFamily: appFont.family,
           ),
           themeColors.bgImage,
         );
@@ -497,6 +514,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
             secondaryTextColor: c(
               themeColors.secondaryTextColorFor(Brightness.dark),
             ),
+            fontFamily: appFont.family,
           ),
           themeColors.bgImageNight,
         );

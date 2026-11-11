@@ -899,6 +899,21 @@ class PrefKeys {
   /// （Rust 本地 TXT 无目录规则时按该字数分章，批1b-3）。
   static const maxLengthWithNoToc = 'maxLengthWithNoToc';
 
+  // ===== 应用字体（2026-11-11 用户裁决：做）=====
+
+  /// 应用界面自定义字体文件（参考版外观页「字体设置」，键名对齐参考版
+  /// `appFontPath`，日/夜共用）。
+  ///
+  /// 值语义：**相对应用 Support 目录的可迁移标识**（`app_font/<文件名>`，
+  /// 正斜杠），读取侧按当前 Support 目录运行时拼接；不存绝对路径（iOS
+  /// 容器 UUID 会在重签名/重装后变化，与 `ThemeBackgroundImageStore`
+  /// 同口径）。字体文件只影响 App 界面文字（`ThemeData.textTheme`
+  /// fontFamily），**不影响阅读正文**——正文仍走 `reader_font_family`。
+  ///
+  /// 字体文件属设备级资源、不可跨设备迁移，故加入
+  /// `RestoreIgnorePrefs.alwaysIgnoreKeys`，不随备份往返。
+  static const appFontPath = 'appFontPath';
+
   // ===== 隐私与应用锁（批9b，键名逐字对齐参考版 PreferKey）=====
   //
   // 密码凭据（salt/verifier）由 Rust 存 caches `config:private_password_*`，

@@ -26,6 +26,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../constants/pref_keys.dart';
 import '../providers/providers.dart';
+import '../providers/theme/app_font_notifier.dart';
 import '../providers/theme/eye_protection_notifier.dart';
 import '../providers/theme/system_bar_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
@@ -692,6 +693,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final themeNotifier = ref.read(themeNotifierProvider.notifier);
     final colors = ref.watch(themeColorsProvider);
     final ui = ref.watch(uiSettingsProvider);
+    // [应用字体入口 2026-11-11] 应用界面字体状态（与阅读正文字体分离）
+    final appFont = ref.watch(appFontProvider);
     // [设置批2a-1] 护眼模式：与全局叠加层共用同一 Notifier（写入即全局生效）
     final eyeProtection = ref.watch(eyeProtectionProvider);
     final eyeProtectionNotifier = ref.read(eyeProtectionProvider.notifier);
@@ -829,6 +832,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         title: '主题管理',
                         subtitle: '使用、保存、导入或分享主题',
                         onTap: _showThemeListDialog,
+                      ),
+                      // 字体设置（参考版外观页「字体设置」，位于主题管理之后、
+                      // 背景图片之前；日/夜共用，仅影响 App 界面文字。参考版
+                      // 与阅读正文字体分离——正文仍由阅读设置/字体页管理）
+                      IosListTile(
+                        title: '字体设置',
+                        subtitle: _appFontSubtitle(appFont),
+                        onTap: _showAppFontDialog,
                       ),
                       // 导出/导入主题（[B3-C1 A3] 复用 ThemeColorsNotifier +
                       // ThemeNotifier，全部经主题槽位，无硬编码色值）
@@ -2471,6 +2482,67 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           .setThemeMode(importedThemeMode);
     }
     if (mounted) _toast('主题已导入');
+  }
+
+  /// 应用字体行副标题：未设置 / 文件名 / 加载失败提示
+  ///
+  /// 文件名截断到 24 字符：IosListTile 副标题允许换行，但长文件名在
+  /// 360dp + 大字体下会明显撑高行；截断只影响展示，不改偏好值。
+  String _appFontSubtitle(AppFontState state) {
+    if (!state.initialized || state.loading) return '正在加载字体…';
+    if (!state.isSet) return '未设置（跟随系统默认字体）';
+    final name = state.displayName ?? '自定义字体';
+    final short = name.length <= 24 ? name : '${name.substring(0, 23)}…';
+    if (state.errorMessage != null) {
+      return '已设置：$short（加载失败，已回退默认字体）';
+    }
+    return '已设置：$short';
+  }
+
+  /// 应用字体选择/清除（参考版外观页「字体设置」；日/夜共用）
+  ///
+  /// 选中的文件由 [AppFontStore] 复制到应用 Support 目录并校验；
+  /// 成功后 Notifier 立即注册新字体族 → MaterialApp 重建即时生效。
+  Future<void> _showAppFontDialog() async {
+    final appFont = ref.read(appFontProvider);
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('字体设置'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'select'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('选择字体文件'),
+            ),
+          ),
+          if (appFont.isSet)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'clear'),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('清除字体'),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'select') {
+      final outcome = await ref.read(appFontProvider.notifier).pickAndImport();
+      if (!mounted) return;
+      if (outcome.canceled) return;
+      if (outcome.error != null) {
+        _toast(outcome.error!);
+        return;
+      }
+      _toast('应用字体已更新');
+    } else if (action == 'clear') {
+      await ref.read(appFontProvider.notifier).clear();
+      if (!mounted) return;
+      _toast('已恢复默认字体');
+    }
   }
 
   /// 背景图片选择/删除（对齐原版 backgroundImage；经 ThemeColorsNotifier
