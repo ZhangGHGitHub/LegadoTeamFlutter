@@ -3,8 +3,9 @@
 // 负责把排版引擎产出的 [ReaderImageLayout] 画出来：
 // - 独立图片行：按显示宽高 + 对齐方式渲染；
 // - 行内小图：作为 `Text.rich` 的 WidgetSpan 占位渲染；
-// - 点击接既有 [ClickImgTapDetector]（五档语义），action 执行通道仍按
-//   现状回退预览（`kClickImgActionSupported=false`）；
+// - 点击接既有 [ClickImgTapDetector]（五档语义）；批20-A 起经
+//   `ReaderImageRenderConfig.onRunAction` 执行书源 click/js 动作（契约
+//   §2.21），未注入回调时回退预览；
 // - 字节加载器由阅读页注入（书源 imageDecode 走 FFI，本地/无源走 HTTP），
 //   本组件在无加载器时只画占位，保证组件级测试不触发网络；
 // - [批16 回修 P1-3/P2-8] 渲染解码按显示宽度上限降采样（ResizeImage），
@@ -54,13 +55,16 @@ typedef ReaderImageBytesLoader =
 typedef ReaderImageSizeMeasurer =
     Future<ReaderImageSize?> Function(ReaderInlineImage image);
 
-/// 正文图片渲染配置（点击档位 + 在线文本判定 + 预览回调 + 字节加载器）
+/// 正文图片渲染配置（点击档位 + 在线文本判定 + 预览/动作回调 + 字节加载器）
 @immutable
 class ReaderImageRenderConfig {
   final ReaderImageBytesLoader? loader;
   final String clickImgWay;
   final bool onlineText;
   final ValueChanged<ReaderInlineImage>? onPreview;
+
+  /// 执行图片书源 `click`/`js` 动作（契约 §2.21；null 时回退预览）
+  final ClickImgActionRunner? onRunAction;
 
   /// 字节缓存键前缀（书源地址；本地/无源为空串）
   final String cacheOrigin;
@@ -73,6 +77,7 @@ class ReaderImageRenderConfig {
     this.clickImgWay = kDefaultClickImgWay,
     this.onlineText = false,
     this.onPreview,
+    this.onRunAction,
     this.cacheOrigin = '',
     this.onSizeResolved,
   });
@@ -82,6 +87,7 @@ class ReaderImageRenderConfig {
     String? clickImgWay,
     bool? onlineText,
     ValueChanged<ReaderInlineImage>? onPreview,
+    ClickImgActionRunner? onRunAction,
     String? cacheOrigin,
     VoidCallback? onSizeResolved,
   }) {
@@ -90,6 +96,7 @@ class ReaderImageRenderConfig {
       clickImgWay: clickImgWay ?? this.clickImgWay,
       onlineText: onlineText ?? this.onlineText,
       onPreview: onPreview ?? this.onPreview,
+      onRunAction: onRunAction ?? this.onRunAction,
       cacheOrigin: cacheOrigin ?? this.cacheOrigin,
       onSizeResolved: onSizeResolved ?? this.onSizeResolved,
     );
@@ -276,12 +283,15 @@ class _ReaderInlineImageWidgetState extends State<ReaderInlineImageWidget> {
       height: widget.height,
       child: _buildImage(context, bytes),
     );
-    if (widget.config.onPreview == null) return sized;
+    if (widget.config.onPreview == null && widget.config.onRunAction == null) {
+      return sized;
+    }
     return ClickImgTapDetector(
       clickImgWay: widget.config.clickImgWay,
       onlineText: widget.config.onlineText,
       options: widget.image.options,
       onPreview: () => widget.config.onPreview?.call(widget.image),
+      onRunAction: widget.config.onRunAction,
       child: sized,
     );
   }

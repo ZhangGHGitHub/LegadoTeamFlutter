@@ -5,12 +5,19 @@
 // - consume/preview/runAction：挂 GestureDetector 消费点击
 // - "4" 双击档：首击消费（onTap 空实现），双击窗口内第二击执行决策
 //
-// 说明：本仓库文本阅读器尚无行内图片渲染（见实现登记），本组件当前唯一
-// 消费点是 image-dominant 图片页；后续补行内渲染时可直接复用。
+// 消费点：image-dominant 图片页与正文行内图片（批16）分别经
+// ReaderImageDominantBody / ReaderImageRenderConfig 注入 onPreview 与
+// onRunAction；[onRunAction] 接 `BookApi.evalImageAction`（契约 §2.21）。
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../utils/click_img_way.dart';
+
+/// 图片动作执行回调（`click`/`js` 源码 + 图片地址）
+typedef ClickImgActionRunner =
+    Future<void> Function(String action, String imgSrc);
 
 /// 图片点击手势分发器
 class ClickImgTapDetector extends StatelessWidget {
@@ -26,6 +33,11 @@ class ClickImgTapDetector extends StatelessWidget {
   /// 打开图片预览（对齐原版 PhotoDialog）
   final VoidCallback onPreview;
 
+  /// 执行书源 `click`/`js` 动作（契约 §2.21）
+  ///
+  /// 为空时按旧口径回退 [onPreview]（调用方未接线 action 的兜底）。
+  final ClickImgActionRunner? onRunAction;
+
   final Widget child;
 
   const ClickImgTapDetector({
@@ -34,24 +46,32 @@ class ClickImgTapDetector extends StatelessWidget {
     required this.onlineText,
     required this.options,
     required this.onPreview,
+    this.onRunAction,
     required this.child,
   });
 
   ClickImgTapEffect _resolve({required bool doubleTap}) => resolveClickImgTap(
-        way: clickImgWay,
-        onlineText: onlineText,
-        hasClick: options.hasClick,
-        hasJs: options.hasJs,
-        doubleTap: doubleTap,
-      );
+    way: clickImgWay,
+    onlineText: onlineText,
+    hasClick: options.hasClick,
+    hasJs: options.hasJs,
+    doubleTap: doubleTap,
+  );
 
   void _apply(ClickImgTapEffect effect) {
     switch (effect) {
       case ClickImgTapEffect.preview:
-      case ClickImgTapEffect.runAction:
-        // 当前构建无 action 执行能力（kClickImgActionSupported=false），
-        // 纯决策已把 action 回退为 preview；此处兜底同口径
         onPreview();
+      case ClickImgTapEffect.runAction:
+        // click 优先、js 兜底（"0"/"2" 档 click 非空才 runAction；
+        // "2" 档仅 js 时走 js；"4" 档只有 click 会进入本分支）
+        final action = options.click ?? options.js;
+        final runner = onRunAction;
+        if (action == null || runner == null) {
+          onPreview();
+        } else {
+          unawaited(runner(action, options.url));
+        }
       case ClickImgTapEffect.consume:
       case ClickImgTapEffect.passThrough:
         break;

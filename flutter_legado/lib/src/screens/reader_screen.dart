@@ -1195,6 +1195,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                       // 图片当前仅在该兜底页出现，档位在此消费）
                       clickImgWay: cfg.clickImgWay,
                       imageStyle: book.readConfig?.imageStyle,
+                      // [批20-A] 图片 action 绑定 chapter（契约 §2.21）
+                      chapterIndex: state.currentChapterIndex,
                       onToggleControls: notifier.toggleControls,
                       hasNextChapter: state.hasNextChapter,
                       hasPrevChapter: state.hasPreviousChapter,

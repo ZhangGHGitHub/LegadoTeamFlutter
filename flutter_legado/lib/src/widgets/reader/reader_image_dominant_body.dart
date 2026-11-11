@@ -35,6 +35,7 @@ class ReaderImageDominantBody extends ConsumerStatefulWidget {
   final Future<void> Function()? onPrevChapter;
   final bool hasNextChapter;
   final bool hasPrevChapter;
+
   /// 图片样式：FULL / TEXT / SINGLE（大小写不敏感）；空=默认
   final String? imageStyle;
 
@@ -42,6 +43,9 @@ class ReaderImageDominantBody extends ConsumerStatefulWidget {
   /// [批1b-2b] 文本排版引擎尚无行内图片渲染，图片只在本兜底页出现，
   /// 故五档点击分流在此消费。
   final String clickImgWay;
+
+  /// 当前章节序号（图片 action 绑定 `chapter`；`-1` 表示无章节上下文）
+  final int chapterIndex;
 
   const ReaderImageDominantBody({
     super.key,
@@ -54,6 +58,7 @@ class ReaderImageDominantBody extends ConsumerStatefulWidget {
     this.hasPrevChapter = false,
     this.imageStyle,
     this.clickImgWay = kDefaultClickImgWay,
+    this.chapterIndex = -1,
   });
 
   @override
@@ -212,11 +217,7 @@ class _ReaderImageDominantBodyState
         child: image,
       );
     } else if (style == 'SINGLE') {
-      result = SizedBox(
-        height: viewH,
-        width: double.infinity,
-        child: image,
-      );
+      result = SizedBox(height: viewH, width: double.infinity, child: image);
     } else {
       result = image;
     }
@@ -233,6 +234,7 @@ class _ReaderImageDominantBodyState
       onlineText: _onlineText,
       options: options,
       onPreview: () => _previewImage(options),
+      onRunAction: _runImageAction,
       child: child,
     );
   }
@@ -244,6 +246,23 @@ class _ReaderImageDominantBodyState
       url: stripCompositeImageUrl(options.url),
       headers: options.headers,
     );
+  }
+
+  /// 执行正文图片的书源 `click`/`js` 动作（契约 §2.21）
+  ///
+  /// 参考版 `ReadBookController.clickImg` 的 onError 只记录日志、不打断
+  /// 阅读；此处同样吞掉执行异常（含无 quickjs 构建的明确错误）。
+  Future<void> _runImageAction(String action, String imgSrc) async {
+    final bookUrl = widget.book.bookUrl;
+    if (bookUrl.isEmpty) return;
+    try {
+      await ref
+          .read(bookApiProvider)
+          .evalImageAction(bookUrl, widget.chapterIndex, action, imgSrc);
+    } catch (e) {
+      // 动作执行失败不打断阅读（无 quickjs 构建等明确错误在此可见）
+      debugPrint('[reader] 图片动作执行失败（已忽略）：$e');
+    }
   }
 
   Widget _buildChapterNav() {
@@ -344,8 +363,7 @@ class _FfiComicImageState extends ConsumerState<_FfiComicImage> {
           return SizedBox(
             height: 160,
             child: Center(
-              child:
-                  Text('图片加载失败', style: TextStyle(color: Colors.grey[600])),
+              child: Text('图片加载失败', style: TextStyle(color: Colors.grey[600])),
             ),
           );
         }

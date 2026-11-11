@@ -99,7 +99,9 @@ void main() {
     });
 
     test('坏 JSON fail-closed：保留纯 URL，不抛错', () {
-      final opts = parseClickImgUrlOptions('https://cdn.example.com/a.jpg,{bad');
+      final opts = parseClickImgUrlOptions(
+        'https://cdn.example.com/a.jpg,{bad',
+      );
       expect(opts.url, 'https://cdn.example.com/a.jpg');
       expect(opts.hasAction, isFalse);
     });
@@ -128,19 +130,21 @@ void main() {
       bool js = false,
       bool doubleTap = false,
       bool actionAvailable = false,
-    }) =>
-        resolveClickImgTap(
-          way: way,
-          onlineText: online,
-          hasClick: click,
-          hasJs: js,
-          doubleTap: doubleTap,
-          actionAvailable: actionAvailable,
-        );
+    }) => resolveClickImgTap(
+      way: way,
+      onlineText: online,
+      hasClick: click,
+      hasJs: js,
+      doubleTap: doubleTap,
+      actionAvailable: actionAvailable,
+    );
 
     test('"1" 预览：无论在线/动作/双击均预览', () {
       expect(resolve('1'), ClickImgTapEffect.preview);
-      expect(resolve('1', online: false, click: true), ClickImgTapEffect.preview);
+      expect(
+        resolve('1', online: false, click: true),
+        ClickImgTapEffect.preview,
+      );
       expect(resolve('1', doubleTap: true), ClickImgTapEffect.preview);
     });
 
@@ -182,15 +186,19 @@ void main() {
     });
 
     test('"3" 关闭：始终不消费（穿透给页面）', () {
-      expect(resolve('3', click: true, actionAvailable: true),
-          ClickImgTapEffect.passThrough);
+      expect(
+        resolve('3', click: true, actionAvailable: true),
+        ClickImgTapEffect.passThrough,
+      );
       expect(resolve('3', doubleTap: true), ClickImgTapEffect.passThrough);
     });
 
     test('"4" 双击：首击消费不动作', () {
       expect(resolve('4', click: true), ClickImgTapEffect.consume);
-      expect(resolve('4', js: true, doubleTap: false),
-          ClickImgTapEffect.consume);
+      expect(
+        resolve('4', js: true, doubleTap: false),
+        ClickImgTapEffect.consume,
+      );
     });
 
     test('"4" 双击：第二击 click 非空 → action/预览回退', () {
@@ -233,19 +241,57 @@ void main() {
     });
 
     test('非法档位按钳制后的 "2" 处理', () {
-      expect(resolve('9', online: false, click: true),
-          ClickImgTapEffect.passThrough);
-      expect(resolve('x', online: true, click: true, actionAvailable: false),
-          ClickImgTapEffect.preview);
+      expect(
+        resolve('9', online: false, click: true),
+        ClickImgTapEffect.passThrough,
+      );
+      expect(
+        resolve('x', online: true, click: true, actionAvailable: false),
+        ClickImgTapEffect.preview,
+      );
     });
   });
 
-  test('当前构建无图片 action 执行能力（阻塞项锁）', () {
+  test('当前构建具备图片 action 执行能力（批20-A 契约 §2.21）', () {
     expect(
       kClickImgActionSupported,
-      isFalse,
-      reason: '缺少带书源 jsLib + book/chapter/result 绑定的 action 执行 FFI；'
-          '若后续补齐须同步更新本断言与 image-dominant 回退说明',
+      isTrue,
+      reason:
+          'Rust BookApi.evalImageAction + FFI eval_image_action 已交付；'
+          '若回退能力须同步更新本断言与 image-dominant 回退说明',
+    );
+  });
+
+  test('默认 actionAvailable 打开后，档位 0/2/4 命中动作走 runAction', () {
+    expect(
+      resolveClickImgTap(
+        way: '0',
+        onlineText: true,
+        hasClick: true,
+        hasJs: false,
+        doubleTap: false,
+      ),
+      ClickImgTapEffect.runAction,
+    );
+    expect(
+      resolveClickImgTap(
+        way: '2',
+        onlineText: true,
+        hasClick: false,
+        hasJs: true,
+        doubleTap: false,
+      ),
+      ClickImgTapEffect.runAction,
+    );
+    expect(
+      resolveClickImgTap(
+        way: '4',
+        onlineText: true,
+        hasClick: true,
+        hasJs: false,
+        doubleTap: true,
+      ),
+      ClickImgTapEffect.runAction,
     );
   });
 }

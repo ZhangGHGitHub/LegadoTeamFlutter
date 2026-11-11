@@ -1343,6 +1343,22 @@ Future<String> parseRule({
 Future<String> jsEval({required String script}) =>
     RustLib.instance.api.crateFfiFfiJsEval(script: script);
 
+/// 执行正文图片 `click`/`js` 动作（契约 §2.21，批20-A）
+///
+/// 成功返回动作结果字符串；动作抛错/超时/非法返回空串（Rust 侧记
+/// debug 日志，不上抛）；无 quickjs 构建返回明确错误。
+Future<String> evalImageAction({
+  required String bookUrl,
+  required int chapterIndex,
+  required String action,
+  required String imgSrc,
+}) => RustLib.instance.api.crateFfiFfiEvalImageAction(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  action: action,
+  imgSrc: imgSrc,
+);
+
 /// 获取书籍的所有书签（JSON 数组）
 Future<String> bookmarkGetAll({required String bookName}) =>
     RustLib.instance.api.crateFfiFfiBookmarkGetAll(bookName: bookName);
@@ -2166,12 +2182,10 @@ Future<String> serverStatus() => RustLib.instance.api.crateFfiFfiServerStatus();
 ///
 /// - port>0：启动/重启独立 MCP 服务监听该端口（合法区间 1024..65530，
 ///   越界或占用报 Internal）；port≤0：停止独立服务；
-/// - Web 端口挂载保持存在：`/mcp/tools`（GET）免令牌；`/mcp/call`（POST）
-///   已纳入 `PROTECTED_SOURCE_WRITE_ROUTES`，须携带 `x-legado-token`
-///   （与 `config:jsSourceApiToken` 字节级相等；默认
-///   `jsSourceApiTokenRequired=true` 且未配置令牌时一律拒绝，显式关闭
-///   required 时按原版免令牌放行）；独立 MCP 端口的鉴权与行为不变。
-///   端口持久化并启动时恢复。
+/// - Web 端口挂载保持存在：`/mcp/tools`（GET）免令牌；`/mcp/call`
+///   （POST）需 `x-legado-token`（默认 required=true 且未配置令牌时
+///   一律拒绝；显式 required=false 时免令牌放行）；独立 MCP 端口
+///   鉴权与行为不变。端口持久化并启动时恢复。
 Future<void> setMcpPort({required int port}) =>
     RustLib.instance.api.crateFfiFfiSetMcpPort(port: port);
 

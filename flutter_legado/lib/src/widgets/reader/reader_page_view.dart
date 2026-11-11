@@ -1597,7 +1597,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
   }
 
-  /// [批16] 正文图片渲染配置（字节加载/点击档位/预览回调）
+  /// [批16] 正文图片渲染配置（字节加载/点击档位/预览与动作回调）
   ReaderImageRenderConfig _imageRenderConfig(ReaderState state) {
     final book = state.currentBook;
     final onlineText =
@@ -1609,10 +1609,33 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       clickImgWay: widget.clickImgWay,
       onlineText: onlineText,
       onPreview: _previewReaderImage,
+      // [批20-A] 图片 click/js 动作执行（契约 §2.21）
+      onRunAction: _runReaderImageAction,
       cacheOrigin: book?.origin ?? '',
       // 渲染成功回填尺寸后触发一次合并重排（P2-8）
       onSizeResolved: _scheduleImageReflow,
     );
+  }
+
+  /// [批20-A] 执行正文图片的书源 `click`/`js` 动作（契约 §2.21）
+  ///
+  /// 对齐参考版 `ReadBookController.clickImg` 的 onError：执行失败只记录
+  /// 日志、不打断阅读（Rust 侧对动作抛错/超时已降级为空串，无 quickjs
+  /// 构建在此吞掉明确错误）。
+  Future<void> _runReaderImageAction(String action, String imgSrc) async {
+    if (!mounted) return;
+    final bookUrl = _paginatedBookUrl.isNotEmpty
+        ? _paginatedBookUrl
+        : (ref.read(readerNotifierProvider).currentBook?.bookUrl ?? '');
+    if (bookUrl.isEmpty) return;
+    try {
+      await ref
+          .read(bookApiProvider)
+          .evalImageAction(bookUrl, _displayChapterIndex, action, imgSrc);
+    } catch (e) {
+      // 动作执行失败不打断阅读（无 quickjs 构建等明确错误在此可见）
+      debugPrint('[reader] 图片动作执行失败（已忽略）：$e');
+    }
   }
 
   /// [批16] 打开正文图片预览（复用既有全屏查看器，复合 headers 透传）

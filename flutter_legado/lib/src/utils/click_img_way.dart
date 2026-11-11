@@ -14,10 +14,10 @@
 // 本仓库现状（参见实现说明）：
 // - Rust `HtmlFormatter.format_keep_img` 保留 `<img src="URL,{json}">` 复合
 //   URL 的 JSON 后缀，故 `click`/`action`/`js`/`headers` 信息在正文中可用；
-// - 但尚无「带书源 jsLib + book/chapter/result 绑定」的图片 action 执行
-//   FFI（`BookApi.evalJs` 是裸沙箱），`kClickImgActionSupported` 恒为
-//   false → 命中 action 时回退为预览，并把「图片 click action 执行能力」
-//   作为阻塞项登记。
+// - 批20-A 起 Rust 提供 `BookApi.evalImageAction`（契约 §2.21）：按书籍行
+//   查书源，注入 source/book/chapter/result/baseUrl/java 后执行动作；
+//   `kClickImgActionSupported` 打开为 true，命中 action 时执行书源动作，
+//   动作不可执行/无动作的档位仍按矩阵回退预览或穿透。
 //
 // 参考版默认档位为 "2"（兼容旧版）；原版 pref 的 defaultValue 为 "0"，
 // 按任务口径统一取 "2"。
@@ -29,9 +29,10 @@ const String kDefaultClickImgWay = '2';
 
 /// 当前构建是否具备执行图片 `click`/`js` action 的能力。
 ///
-/// 参考版经书源 `evalJS` 注入 `book`/`chapter`/`result`/`java` 后执行；
-/// 本仓库尚无等价 FFI（`BookApi.evalJs` 为无绑定裸沙箱），故恒 false。
-const bool kClickImgActionSupported = false;
+/// 批20-A 起经 Rust `BookApi.evalImageAction`（契约 §2.21）执行：书源按
+/// 书籍 `origin` 查得，`book`/`chapter`/`result`/`baseUrl` 由 Rust 注入，
+/// `java` 命名空间由 JS 引擎宿主 API 提供；故恒 true。
+const bool kClickImgActionSupported = true;
 
 /// 五档下拉选项（值与顺序对齐原版 `click_image_way_value` /
 /// `click_image_way_title`）
@@ -172,7 +173,8 @@ enum ClickImgTapEffect {
   /// 打开图片预览（对齐原版 PhotoDialog）
   preview,
 
-  /// 执行书源 click/js action（当前构建不可用，见 [kClickImgActionSupported]）
+  /// 执行书源 click/js action（[kClickImgActionSupported] 为 true 时经
+  /// `BookApi.evalImageAction` 执行；执行器缺失时由手势层回退预览）
   runAction,
 }
 
@@ -195,9 +197,8 @@ enum ClickImgTapEffect {
 /// | "4" | 消费（不动作） | click 非空 → action；否则预览 |
 /// | 其他("0"/非法) | click 非空 → action；否则穿透 | 同单击 |
 ///
-/// action 不可执行时统一回退 [ClickImgTapEffect.preview]（任务口径：
-/// 「若 Rust 无 action，回退预览并登记」；本仓库有 action 数据但无执行能力，
-/// 同样回退预览并登记）。
+/// action 不可执行时统一回退 [ClickImgTapEffect.preview]（批20-A 起默认
+/// 可执行；旧调用方可用 `actionAvailable: false` 保持回退口径）。
 ClickImgTapEffect resolveClickImgTap({
   required String way,
   required bool onlineText,

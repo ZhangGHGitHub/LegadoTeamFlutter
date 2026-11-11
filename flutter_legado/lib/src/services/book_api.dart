@@ -1405,6 +1405,22 @@ abstract class BookApi {
   /// 获取 JS 引擎版本
   Future<String> getJsEngineVersion();
 
+  /// 执行正文图片上的书源 `click`/`js` 动作（契约 §2.21，批20-A）
+  ///
+  /// 对齐参考版 `ReadBookController.kt:677-695`：Rust 侧按 [bookUrl] 查书籍行
+  /// 与书源，注入 `source`/`book`/`chapter`/`result`/`baseUrl`/`java` 后执行
+  /// [action]。成功返回动作结果字符串；动作抛错/超时/非法返回空串（Rust 侧
+  /// 记 debug 日志，不上抛）；无 quickjs 构建抛错。
+  ///
+  /// - [chapterIndex] — 章节序号（`-1` 表示无章节上下文）
+  /// - [imgSrc] — 图片地址（绑定 `result`，目录部分绑定 `baseUrl`）
+  Future<String> evalImageAction(
+    String bookUrl,
+    int chapterIndex,
+    String action,
+    String imgSrc,
+  );
+
   // ========== 服务器管理 ==========
 
   /// 启动服务器

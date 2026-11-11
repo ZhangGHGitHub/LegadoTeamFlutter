@@ -64,6 +64,20 @@ mixin RustApiMediaFormat on RustApiDecode implements BookApi {
     }
   }
 
+  /// 执行正文图片上的书源 `click`/`js` 动作（契约 §2.21，批20-A）
+  @override
+  Future<String> evalImageAction(
+    String bookUrl,
+    int chapterIndex,
+    String action,
+    String imgSrc,
+  ) => bridge.evalImageAction(
+    bookUrl: bookUrl,
+    chapterIndex: chapterIndex,
+    action: action,
+    imgSrc: imgSrc,
+  );
+
   // ========== 服务器管理 ==========
 
   /// 启动服务器（委托 Rust server_start 真实启动 Web 服务）

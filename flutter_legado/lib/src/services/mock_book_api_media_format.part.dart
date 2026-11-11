@@ -37,8 +37,10 @@ mixin MockBookApiMediaFormat on MockBookApiStore implements BookApi {
   /// [cbz 批 D | 2026-10-03] 与 Rust FFI `cbz_read_page` 同返回形态
   /// （JSON：{ base64, len }）。
   @override
-  Future<String> cbzReadPage({required String path, required String entry}) async =>
-      '{"base64": "", "len": 0}';
+  Future<String> cbzReadPage({
+    required String path,
+    required String entry,
+  }) async => '{"base64": "", "len": 0}';
 
   // ========== JS 引擎 ==========
 
@@ -47,6 +49,15 @@ mixin MockBookApiMediaFormat on MockBookApiStore implements BookApi {
 
   @override
   Future<String> getJsEngineVersion() async => 'mock-quickjs';
+
+  /// 执行正文图片动作（Mock 返回可断言结果；测试子类可覆写捕获参数）
+  @override
+  Future<String> evalImageAction(
+    String bookUrl,
+    int chapterIndex,
+    String action,
+    String imgSrc,
+  ) async => 'mock:$action';
 
   // ========== 服务器管理 ==========
 
