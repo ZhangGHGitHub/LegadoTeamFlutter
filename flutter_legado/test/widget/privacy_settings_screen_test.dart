@@ -3,7 +3,8 @@
 /// 覆盖：设置主页入口与路由、进入验证闸门（取消/错误/通过/只验不授权）、
 /// 三组与默认值、启用开关（无密码弹设密框、取消不开启、成功后自动开启）、
 /// 密码对话框校验、改密旧密错误、清密二次确认/enabled 回落/保存中不可关闭、
-/// 策略写失败提示、生物快捷开关（开启/失败/关闭）、360dp + 1.6 倍字体无溢出。
+/// 策略写失败提示、生物快捷开关（开启/失败/关闭）、说明组备份与系统云备份
+/// 明示文案、360dp + 1.3/1.6 倍字体无溢出。
 library;
 
 import 'dart:async';
@@ -291,6 +292,29 @@ void main() {
       find.byKey(const ValueKey('privacyClearPasswordRow')),
     );
     expect(clearRow.enabled, isFalse, reason: '无密码时不可清除');
+  });
+
+  testWidgets('说明：明示备份/导出/Web 不排除私密内容与系统云备份风险', (tester) async {
+    await pumpScreen(tester);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('privacyBackupDisclosure')),
+      100,
+    );
+    expect(
+      find.text(
+        '私密内容不会从备份、书籍导出或 Web 服务中排除；'
+        '如需彻底保护，请勿分享备份文件、不要在公共网络开启 Web 服务。',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        '本机隐私密码与私密标记保存在应用数据库内，'
+        '可能随 Android 系统云备份一起迁移到其他设备。',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('启用开关：无密码弹设密框，取消不开启，成功后自动开启', (tester) async {
@@ -590,6 +614,25 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('私密标记暂不可用'), findsOneWidget);
+  });
+
+  testWidgets('360dp + 1.3 倍字体：说明补充文案自然换行无溢出', (tester) async {
+    await pumpScreen(
+      tester,
+      physicalSize: const Size(1080, 1920),
+      textScale: 1.3,
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('privacySystemBackupDisclosure')),
+      100,
+    );
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey('privacyBackupDisclosure')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('360dp + 1.6 倍字体：页面与密码对话框无溢出', (tester) async {
