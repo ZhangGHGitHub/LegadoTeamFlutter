@@ -760,7 +760,9 @@
 > - **配置面**：两端均读取章级 `caches:sameTitleRemoved:{bookUrl}:{index}`、`config:chineseConverterType`、`books.readConfig.reSegment` 与 `config:replaceEnableDefault`（缺省值依次为：去除重复标题 / 0 不转换 / false / true）；配置读取失败回退默认值并记录告警，不阻断正文。
 > - **作用域面**：正文 `scope` 统一为 App 语义——按 `[,;，；]` 拆分后与书名精确匹配，不看 `origin`、不处理 `excludeScope`（实现下沉 `legado_core::content_processor::book_scope_matches`，两端共用）；标题路径仍保留原 DAO 子串匹配 + `excludeScope`。
 >
-> 因此默认与非默认配置下两端正文输出一致。回归用例：`legado-ffi/tests/replace_rule_js_web_parity.rs`（默认配置逐字相等 + 简繁/替换总开关/scope/excludeScope/章级去重 parity）。
+> 因此**去重标题开关、简繁转换、重新分段、替换总开关及正文 `scope` 判定**在默认与非默认配置下两端一致。回归用例：`legado-ffi/tests/replace_rule_js_web_parity.rs`（默认配置逐字相等 + 简繁/替换总开关/scope/excludeScope/章级去重/reSegment parity）。
+>
+> **仍存在的既有差异（批20-B 未统一）**：Web `purify_content_blocking` 向 `ContentProcessor` 传 `ScopeContext::new(book.name, book.origin)`，而 App `process_content_with_rules_inner_ctx` 未注入 `ScopeContext`；`remove_duplicate_title` 用 `scope_context.book_name` 作为章节标题前的可选书名前缀，故正文首行恰为「书名 + 章节标题」时 Web 会额外去掉该行、App 不会。
 >
 > **并发保护与耗尽风险（批17 三审登记）**：`/getBookContent` 无鉴权。正文净化经 `spawn_blocking` 执行；**仅 FFI 内嵌 `server_start` 创建的 runtime** 设 `max_blocking_threads(8)`（独立 `start_server` 使用调用方 runtime，无此上限，需自行配置）。含 `@js:` 的净化另有进程级信号量上限 **4**：`try_acquire` 非阻塞，超限时**仍执行完整净化管线**（去重标题/普通规则照常生效），只禁用 `@js:` 执行器、其匹配保留原文（与 no-quickjs 语义一致）。Web 端口 `/mcp/call` 的 `eval_js` 可执行任意 JS（timeout 5..600s），会把共享 blocking 池（8 槽）占满、导致净化排队；该路由已纳入写源令牌守卫（生产入口 `attach_source_write_token_guard`），未配置/未携带令牌一律拒绝；独立 MCP 端口沿用自身 token 中间件。剩余风险：持有令牌的客户端仍可占满 8 槽，需通过限流另行收敛。
 
