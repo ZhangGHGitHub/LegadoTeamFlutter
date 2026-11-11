@@ -18,6 +18,7 @@ import '../utils/audio_skip_policy.dart';
 import '../routes.dart';
 import '../services/audio_cache_events.dart';
 import '../services/headset_media_button_service.dart';
+import '../services/system_tts_service.dart';
 import '../widgets/read_aloud_timer_sheet.dart';
 import 'source_edit_screen.dart';
 import 'source_login_screen.dart';
@@ -60,9 +61,50 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   /// （透明露出全局背景图/壁纸）。模糊/流光在设置页置灰未实现。
   bool _transparentBackground = false;
 
+  // ===== [TTS P3 | 2026-11-11] 听书页内联朗读引擎 =====
+  //
+  // 面板内直接展示当前引擎名并允许切换（对齐「朗读设置 → 引擎与音色」
+  // 的数据源）：系统 TTS 引擎（flutter_tts getEngines）+ HTTP 引擎
+  // （getHttpTts）。首次展开设置面板时加载；两列表都为空（如模拟器无
+  // 系统 TTS 且无 HTTP 引擎）显示「未检测到可用语音引擎」并禁用选择。
+  bool _enginesLoading = false;
+  bool _enginesLoaded = false;
+  List<HttpTts> _httpEngines = const [];
+  List<SystemTtsEngine> _systemEngines = const [];
+  String _effectiveEngineUrl = '';
+
+  /// 当前生效引擎名（系统 TTS 显示具体引擎/系统默认，HTTP 引擎显示配置名）
+  String get _selectedEngineLabel {
+    final url = normalizeTtsEngineUrl(_effectiveEngineUrl);
+    if (url.isEmpty || url == kSystemTtsEngineUrl) {
+      final name = ref.read(systemTtsServiceProvider).selectedEngineName;
+      if (name == null || name.isEmpty) {
+        // 系统 TTS 但设备未安装引擎（如模拟器）：如实提示，不假装可用
+        return _systemEngines.isEmpty ? '系统 TTS（未检测到可用引擎）' : '系统默认';
+      }
+      for (final engine in _systemEngines) {
+        if (engine.name == name) return engine.displayName;
+      }
+      return name;
+    }
+    for (final engine in _httpEngines) {
+      if (normalizeTtsEngineUrl(engine.url) == url) return engine.name;
+    }
+    return url;
+  }
+
+  /// 是否存在可选择的引擎（系统引擎或 HTTP 引擎任一非空）
+  bool get _hasEngineOptions =>
+      _systemEngines.isNotEmpty || _httpEngines.isNotEmpty;
+
   /// [批9b-5] 耳机媒体键服务（听书页挂载期间按「活动内处理」语义接管
   /// 空闲态播放键，对齐原版 AudioPlayActivity.playButton）
   HeadsetMediaButtonService? _headsetMediaButtonService;
+
+  /// [TTS P3 | 2026-11-11] dispose 阶段不能读 ref：提前捕获朗读 Notifier，
+  /// 保证退出听书页的媒体会话释放真正执行（此前 ref 失效时异常被吞，
+  /// 会话保留为 STOPPED 记录）。
+  late final AudioNotifier _audioNotifier;
 
   // ===== 音频章节预下载批量状态（契约 §2.48，对齐原版 AudioCacheService 计数）=====
   //
@@ -88,6 +130,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   @override
   void initState() {
     super.initState();
+    // [TTS P3 | 2026-11-11] 先捕获 Notifier：dispose 阶段 WidgetRef 已失效，
+    // 不能再用 ref.read 做媒体会话释放。
+    _audioNotifier = ref.read(audioNotifierProvider.notifier);
     // [批9b-5] 听书页存在时，空闲态耳机播放键交由本页播放（对齐原版
     // AudioPlayActivity.observeLiveBus → playButton），而不是从最近书启动
     _headsetMediaButtonService = ref.read(headsetMediaButtonServiceProvider);
@@ -158,12 +203,18 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
     // 页面销毁只清理输入控制器；定时停止计时归 Notifier 所有
     // （[A4] 退出听书页后倒计时/按章停止继续生效）
     // 释放媒体会话资源（后台播放/焦点）
-    // [UI-fix v2.0.11 | 2026-08-10] 防御卸载时序边界：element 已 dispose
-    // 时（快速连续导航/测试环境树卸载）ref.read 会抛
-    // 「Cannot use ref after the widget was disposed」，跳过释放 — Reasonix
-    try {
-      ref.read(audioNotifierProvider.notifier).releaseMediaSession();
-    } catch (_) {}
+    // [TTS P3 | 2026-11-11] 使用 initState 捕获的 Notifier（dispose 时 ref
+    // 已失效，旧实现 try/catch 吞掉异常导致释放未执行、留下 STOPPED 记录）。
+    // 空闲态强制释放（无播放可控制，不应保留陈旧会话）；播放/暂停中保持
+    // 既有保留语义（后台播放与耳机键控制不被切断）。
+    // 延迟到微任务：releaseMediaSession 内部会写 Notifier state 并通知
+    // 监听者；若在 unmount 同步栈内写，已 defunct 的
+    // ConsumerStatefulElement 会被 markNeedsBuild 触发框架断言。
+    scheduleMicrotask(() {
+      unawaited(
+        _audioNotifier.releaseMediaSession(force: _audioNotifier.isIdle),
+      );
+    });
     super.dispose();
   }
 
@@ -181,6 +232,206 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   /// 分钟/章节互斥、预设/滑块/「读完本章再停」与持久化统一在
   /// `read_aloud_timer_sheet.dart`；本页只保留入口与剩余量展示。
   Future<void> _showTimerPicker() => showReadAloudTimerSheet(context);
+
+  // ===== [TTS P3 | 2026-11-11] 设置面板：引擎/音调/音量 =====
+
+  /// 展开/收起设置面板；首次展开加载内联引擎列表
+  Future<void> _toggleSettings() async {
+    final next = !_showSettings;
+    setState(() => _showSettings = next);
+    if (next && !_enginesLoaded && !_enginesLoading) {
+      await _loadTtsEngines();
+    }
+  }
+
+  /// 加载可用朗读引擎（系统 TTS getEngines + HTTP 引擎 getHttpTts）
+  ///
+  /// 任一来源为空都不影响另一来源；两者皆空时面板显示不可用空态。
+  Future<void> _loadTtsEngines() async {
+    setState(() => _enginesLoading = true);
+    try {
+      final api = ref.read(bookApiProvider);
+      final systemTts = ref.read(systemTtsServiceProvider);
+      // 允许用户在系统设置安装引擎后回到本页即时看到
+      systemTts.invalidateAvailability();
+      await systemTts.loadSelection();
+      final effective = await _audioNotifier.loadEffectiveTtsEngineUrl();
+      final httpEngines = await api.getHttpTts();
+      final systemEngines = await systemTts.engines();
+      if (!mounted) return;
+      setState(() {
+        _httpEngines = httpEngines;
+        _systemEngines = systemEngines;
+        _effectiveEngineUrl = effective;
+        _enginesLoaded = true;
+        _enginesLoading = false;
+      });
+    } catch (e) {
+      debugPrint('加载朗读引擎列表失败（显示空态）：$e');
+      if (!mounted) return;
+      setState(() {
+        _enginesLoaded = true;
+        _enginesLoading = false;
+      });
+    }
+  }
+
+  /// 重新加载引擎列表（从朗读设置页返回后同步新增/删除/切换结果）
+  Future<void> _reloadTtsEngines() async {
+    _enginesLoaded = false;
+    if (_showSettings) await _loadTtsEngines();
+  }
+
+  /// 语速落库（TTS 模式）：与朗读条/设置页同键（[PrefKeys.ttsSpeechRate]）。
+  ///
+  /// 流媒体听书的语速由书级 `readConfig.playSpeed` 经 Notifier 落库，
+  /// 不走本键（避免把音频书语速带到 TTS 朗读）。
+  Future<void> _persistTtsSpeed(double speed) async {
+    try {
+      await ref
+          .read(settingsProvider)
+          .setIntPref(PrefKeys.ttsSpeechRate, ttsSpeechRateFromSpeed(speed));
+    } catch (e) {
+      debugPrint('保存朗读语速失败（忽略）：$e');
+    }
+  }
+
+  /// 音调落库：与朗读设置页同键（[PrefKeys.ttsPitch]），重启后由
+  /// `AudioNotifier.initMediaSession` 读回。
+  Future<void> _persistTtsPitch(double pitch) async {
+    try {
+      await ref
+          .read(settingsProvider)
+          .setIntPref(PrefKeys.ttsPitch, ttsPitchToStored(pitch));
+    } catch (e) {
+      debugPrint('保存朗读音调失败（忽略）：$e');
+    }
+  }
+
+  /// 音量落库：与朗读设置页同键（[PrefKeys.ttsVolume]）
+  Future<void> _persistTtsVolume(double volume) async {
+    try {
+      await ref
+          .read(settingsProvider)
+          .setIntPref(PrefKeys.ttsVolume, ttsVolumeToStored(volume));
+    } catch (e) {
+      debugPrint('保存朗读音量失败（忽略）：$e');
+    }
+  }
+
+  /// 内联引擎选择对话框：系统引擎（含系统默认）+ HTTP 引擎
+  Future<void> _showInlineEnginePicker() async {
+    if (!_hasEngineOptions) return;
+    final systemTts = ref.read(systemTtsServiceProvider);
+    final currentUrl = normalizeTtsEngineUrl(_effectiveEngineUrl);
+    final systemSelected =
+        currentUrl.isEmpty || currentUrl == kSystemTtsEngineUrl;
+    final currentKey = systemSelected
+        ? 'system:${systemTts.selectedEngineName ?? 'default'}'
+        : 'http:$currentUrl';
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('选择朗读引擎'),
+        children: [
+          if (_systemEngines.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+              child: Text('系统引擎'),
+            ),
+            RadioGroup<String>(
+              groupValue: currentKey,
+              onChanged: (v) {
+                if (v != null) Navigator.pop(dialogContext, v);
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  RadioListTile<String>(
+                    title: const Text('系统默认'),
+                    subtitle: const Text('跟随系统「文字转语音」设置'),
+                    value: 'system:default',
+                  ),
+                  for (final engine in _systemEngines)
+                    RadioListTile<String>(
+                      title: Text(engine.displayName),
+                      subtitle: Text(engine.name),
+                      value: 'system:${engine.name}',
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (_httpEngines.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
+              child: Text('HTTP 引擎'),
+            ),
+            RadioGroup<String>(
+              groupValue: currentKey,
+              onChanged: (v) {
+                if (v != null) Navigator.pop(dialogContext, v);
+              },
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final engine in _httpEngines)
+                    RadioListTile<String>(
+                      title: Text(engine.name),
+                      subtitle: Text(engine.url),
+                      value: 'http:${normalizeTtsEngineUrl(engine.url)}',
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const Divider(height: 1),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    if (picked.startsWith('http:')) {
+      final url = picked.substring('http:'.length);
+      await _audioNotifier.setGlobalTtsEngine(url);
+      if (!mounted) return;
+      setState(
+        () => _effectiveEngineUrl = normalizeTtsEngineUrl(
+          _audioNotifier.resolveTtsEngineUrl(),
+        ),
+      );
+      final name = () {
+        for (final engine in _httpEngines) {
+          if (normalizeTtsEngineUrl(engine.url) == url) return engine.name;
+        }
+        return url;
+      }();
+      _snack('已切换朗读引擎：$name');
+      return;
+    }
+
+    // 系统引擎：先应用平台引擎（失败不切换全局值，避免指向不可用引擎）
+    final name = picked == 'system:default'
+        ? null
+        : picked.substring('system:'.length);
+    final voices = await systemTts.selectEngine(name);
+    if (!mounted) return;
+    if (voices == null) {
+      _snack('引擎初始化失败');
+      return;
+    }
+    await _audioNotifier.setGlobalTtsEngine(kSystemTtsEngineUrl);
+    if (!mounted) return;
+    setState(() => _effectiveEngineUrl = kSystemTtsEngineUrl);
+    _snack(name == null ? '已使用系统默认引擎' : '已切换系统引擎：$name');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +457,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
               icon: const Icon(Symbols.settings_rounded),
               // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：补 tooltip（本体不动）
               tooltip: '设置',
-              onPressed: () => setState(() => _showSettings = !_showSettings),
+              onPressed: () => unawaited(_toggleSettings()),
             ),
             // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml）。
             // [B1 P1 收口 | 2026-10-04] 预下载入口曾下线（旧页面内循环写旧孤儿键，
@@ -662,6 +913,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                   onChanged: (v) => ref
                       .read(audioNotifierProvider.notifier)
                       .updateConfig(speed: v),
+                  // [TTS P3 | 2026-11-11] TTS 模式同步落全局语速键；
+                  // 音频书语速由 Notifier 写书级 playSpeed。
+                  onChangeEnd: isStream
+                      ? null
+                      : (v) => unawaited(_persistTtsSpeed(v)),
                 ),
               ),
               SizedBox(
@@ -684,6 +940,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                     onChanged: (v) => ref
                         .read(audioNotifierProvider.notifier)
                         .updateConfig(pitch: v),
+                    // [TTS P3 | 2026-11-11] 拖动结束落库（同设置页键），
+                    // 退出/重启后由 initMediaSession 读回，不再只改会话配置。
+                    onChangeEnd: (v) => unawaited(_persistTtsPitch(v)),
                   ),
                 ),
                 SizedBox(
@@ -705,6 +964,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
                     onChanged: (v) => ref
                         .read(audioNotifierProvider.notifier)
                         .updateConfig(volume: v),
+                    // [TTS P3 | 2026-11-11] 同音调：拖动结束落库
+                    onChangeEnd: (v) => unawaited(_persistTtsVolume(v)),
                   ),
                 ),
                 SizedBox(
@@ -714,15 +975,44 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
               ],
             ),
             const SizedBox(height: 4),
+            // [TTS P3 | 2026-11-11] 内联朗读引擎：显示当前引擎名并可直接
+            // 切换（系统引擎 + HTTP 引擎）。列表为空时明确提示并禁用选择，
+            // 避免无引擎设备（如 MuMu）点击后崩溃或误以为可切换。
+            ListTile(
+              key: const ValueKey('audio-tts-engine-row'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Symbols.record_voice_over_rounded, size: 20),
+              title: const Text('朗读引擎'),
+              subtitle: Text(
+                _enginesLoading
+                    ? '加载中…'
+                    : (_hasEngineOptions ? _selectedEngineLabel : '未检测到可用语音引擎'),
+              ),
+              trailing: _enginesLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Symbols.chevron_right_rounded, size: 20),
+              enabled: !_enginesLoading && _hasEngineOptions,
+              onTap: _hasEngineOptions ? _showInlineEnginePicker : null,
+            ),
             ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Symbols.tune_rounded, size: 20),
               title: const Text('朗读设置'),
               subtitle: const Text('引擎/音色/语速与朗读行为'),
-              // [设备验收 P1] 指向新三页签页；HTTP 引擎管理在页内可达
-              onTap: () =>
-                  Navigator.pushNamed(context, AppRoutes.readAloudSettings),
+              // [设备验收 P1] 指向新三页签页；HTTP 引擎管理在页内可达。
+              // [TTS P3 | 2026-11-11] 返回后重载内联引擎列表，同步页内
+              // 新增/删除/切换结果。
+              onTap: () async {
+                await Navigator.pushNamed(context, AppRoutes.readAloudSettings);
+                if (!mounted) return;
+                await _reloadTtsEngines();
+              },
             ),
           ],
         ],

@@ -119,6 +119,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// [批9c] dispose 阶段不能读 ref；提前捕获用于离页撤销私密授权
   PrivacyNotifier? _privacyNotifier;
 
+  /// [TTS P3 | 2026-11-11] dispose 阶段不能读 ref：提前捕获朗读 Notifier，
+  /// 离页兜底停止朗读不再触发 `Bad state: Cannot use "ref" after the widget
+  /// was disposed`（会话停止语义不变，仅去掉异常日志）。
+  late final AudioNotifier _audioNotifier;
+
   /// 最近一次构建时的当前书 URL（dispose 撤销授权用）
   String? _privateBookUrl;
 
@@ -267,6 +272,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     super.initState();
     // [批9c] 提前取私密 Notifier（dispose 时不能再读 ref）
     _privacyNotifier = ref.read(privacyNotifierProvider.notifier);
+    // [TTS P3 | 2026-11-11] 同理由：dispose 兜底停止朗读只使用该引用
+    _audioNotifier = ref.read(audioNotifierProvider.notifier);
     // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
     // [设备验收 P1] Android 走原生 ReaderKeysBridge 捕获（不依赖
     // FlutterView 焦点）；桌面/iOS 无该通道，保留 HardwareKeyboard。
@@ -361,9 +368,12 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _teardownKeepLight();
     // [设置批5a-1] 退出阅读器：keepReadAloudOnExit=false 时停止由阅读器
     // 发起的朗读（听书页/后台会话由 Notifier 内的来源标记排除）。
-    // ref 在 super.dispose() 前仍可用；异常吞掉，退出流程不因朗读清理失败中断。
+    // [TTS P3 | 2026-11-11] 用 initState 捕获的 Notifier：dispose 阶段
+    // WidgetRef 已判定为 unmounted，ref.read 会抛
+    // `Bad state: Cannot use "ref" after the widget was disposed`。
+    // 异常吞掉，退出流程不因朗读清理失败中断。
     try {
-      unawaited(ref.read(audioNotifierProvider.notifier).onReaderExit());
+      unawaited(_audioNotifier.onReaderExit());
     } catch (e) {
       // [设备验收 P1] 不再静默：记录原因，但不改变退出流程
       debugPrint('阅读器 dispose 停止朗读失败（忽略）：$e');
@@ -878,7 +888,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// 唯一时机。onReaderExit 幂等，重复调用安全。
   void _notifyReadAloudExit() {
     try {
-      unawaited(ref.read(audioNotifierProvider.notifier).onReaderExit());
+      // [TTS P3 | 2026-11-11] 与 dispose 共用捕获引用（幂等），避免依赖
+      // 调用时机上的 ref 可用性。
+      unawaited(_audioNotifier.onReaderExit());
     } catch (e) {
       debugPrint('退出阅读器停止朗读失败（忽略）: $e');
     }

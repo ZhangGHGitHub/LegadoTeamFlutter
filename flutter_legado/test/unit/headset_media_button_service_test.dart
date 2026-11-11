@@ -130,8 +130,9 @@ void main() {
   });
 
   tearDown(() {
-    HeadsetMediaButtonService.debounceWindow =
-        const Duration(milliseconds: 250);
+    HeadsetMediaButtonService.debounceWindow = const Duration(
+      milliseconds: 250,
+    );
     messenger.setMockMethodCallHandler(HeadsetMediaButtonService.channel, null);
   });
 
@@ -369,10 +370,7 @@ void main() {
         isFalse,
         reason: 'type/origin 均缺失，不能猜测为文本',
       );
-      expect(
-        isTextBookForMediaButton(book(0, origin: 'https://x')),
-        isFalse,
-      );
+      expect(isTextBookForMediaButton(book(0, origin: 'https://x')), isFalse);
     });
   });
 
@@ -436,11 +434,7 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       sessionButtons.add(MediaButtonEvent.play);
       await Future<void>.delayed(Duration.zero);
@@ -453,11 +447,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: true,
         PrefKeys.readAloudByMediaButton: false,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       sessionButtons.add(MediaButtonEvent.play);
       await Future<void>.delayed(Duration.zero);
@@ -528,11 +518,7 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, ['startReadAloud:newest:7:0']);
@@ -555,18 +541,12 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
-      expect(
-        audio.calls,
-        ['startReadAloud:local-txt:2:320'],
-        reason: 'P2-1：本地 TXT 无 Kotlin text 位也必须入选',
-      );
+      expect(audio.calls, [
+        'startReadAloud:local-txt:2:320',
+      ], reason: 'P2-1：本地 TXT 无 Kotlin text 位也必须入选');
     });
 
     test('后台 + 本地 cbz（4160）不启动；最近文本仍优先', () async {
@@ -592,11 +572,7 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, ['startReadAloud:local-txt:4:0']);
@@ -618,11 +594,7 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, isEmpty);
@@ -653,11 +625,7 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, ['startReadAloud:newer:4:999']);
@@ -669,11 +637,7 @@ void main() {
         PrefKeys.readAloudByMediaButton: true,
       });
       when(() => api.getBooks()).thenAnswer((_) async => []);
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, isEmpty);
@@ -684,11 +648,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: false,
         PrefKeys.readAloudByMediaButton: true,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, isEmpty);
@@ -700,11 +660,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: true,
         PrefKeys.readAloudByMediaButton: false,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       await emitNative({'keyCode': 85, 'action': 0, 'repeat': 0});
       expect(audio.calls, isEmpty);
@@ -715,11 +671,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: false,
         PrefKeys.readAloudByMediaButton: true,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => true,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => true);
       final received = <HeadsetMediaKey>[];
       final owner = Object();
       service.attachActivityHandler(owner, received.add);
@@ -743,11 +695,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: false,
         PrefKeys.readAloudByMediaButton: true,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       final received = <HeadsetMediaKey>[];
       service.attachActivityHandler(Object(), received.add);
       await service.start();
@@ -773,11 +721,7 @@ void main() {
           ),
         ],
       );
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       final received = <HeadsetMediaKey>[];
       service.attachActivityHandler(Object(), received.add);
       await service.start();
@@ -791,11 +735,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: false,
         PrefKeys.readAloudByMediaButton: true,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       service.didChangeAppLifecycleState(AppLifecycleState.paused);
       await Future<void>.delayed(Duration.zero);
@@ -808,11 +748,7 @@ void main() {
         PrefKeys.mediaButtonOnExit: true,
         PrefKeys.readAloudByMediaButton: true,
       });
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       service.didChangeAppLifecycleState(AppLifecycleState.paused);
       await Future<void>.delayed(Duration.zero);
@@ -826,11 +762,7 @@ void main() {
       audio
         ..hasActivePlayback = true
         ..isPlaying = false;
-      service = buildService(
-        audio: audio,
-        api: api,
-        foreground: () => false,
-      );
+      service = buildService(audio: audio, api: api, foreground: () => false);
       await service.start();
       service.didChangeAppLifecycleState(AppLifecycleState.paused);
       await Future<void>.delayed(Duration.zero);
@@ -855,26 +787,36 @@ void main() {
       when(() => audioService.abandonAudioFocus()).thenAnswer((_) async {});
       when(() => audioService.init()).thenAnswer((_) async {});
       when(() => audioService.isInitialized).thenReturn(true);
-      when(() => audioService.requestAudioFocus()).thenAnswer((_) async => true);
-      when(() => audioService.updateMetadata(
-            title: any(named: 'title'),
-            artist: any(named: 'artist'),
-            album: any(named: 'album'),
-          )).thenAnswer((_) async {});
-      when(() => audioService.notifyPlaying(position: any(named: 'position')))
-          .thenAnswer((_) async {});
-      when(() => audioService.notifyPaused(position: any(named: 'position')))
-          .thenAnswer((_) async {});
+      when(
+        () => audioService.requestAudioFocus(),
+      ).thenAnswer((_) async => true);
+      when(
+        () => audioService.updateMetadata(
+          title: any(named: 'title'),
+          artist: any(named: 'artist'),
+          album: any(named: 'album'),
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => audioService.notifyPlaying(position: any(named: 'position')),
+      ).thenAnswer((_) async {});
+      when(
+        () => audioService.notifyPaused(position: any(named: 'position')),
+      ).thenAnswer((_) async {});
       when(() => audioService.setPlaying(any())).thenAnswer((_) async {});
-      when(() => audioService.updatePlaybackState(
-            state: any(named: 'state'),
-            position: any(named: 'position'),
-          )).thenAnswer((_) async {});
+      when(
+        () => audioService.updatePlaybackState(
+          state: any(named: 'state'),
+          position: any(named: 'position'),
+        ),
+      ).thenAnswer((_) async {});
       when(() => audioService.setWakeLock(any())).thenAnswer((_) async {});
-      when(() => audioService.mediaButtonStream)
-          .thenAnswer((_) => Stream<MediaButtonEvent>.empty());
-      when(() => audioService.audioFocusStream)
-          .thenAnswer((_) => Stream<AudioFocusEvent>.empty());
+      when(
+        () => audioService.mediaButtonStream,
+      ).thenAnswer((_) => Stream<MediaButtonEvent>.empty());
+      when(
+        () => audioService.audioFocusStream,
+      ).thenAnswer((_) => Stream<AudioFocusEvent>.empty());
       container = ProviderContainer(
         overrides: [
           bookApiProvider.overrideWithValue(api),
@@ -912,6 +854,27 @@ void main() {
       verify(() => audioService.dispose()).called(1);
     });
 
+    test('stop() 彻底停止强制释放会话（不留 STOPPED 记录）', () async {
+      SharedPreferences.setMockInitialValues({
+        // 「全程响应耳机按键」默认开：旧实现会保留 STOPPED 会话；
+        // 彻底停止后必须释放（按键由静态接收器 → Flutter 决策链响应）。
+        PrefKeys.mediaButtonOnExit: true,
+      });
+      final notifier = container.read(audioNotifierProvider.notifier);
+      await notifier.initMediaSession();
+      expect(container.read(audioNotifierProvider).isMediaSessionReady, isTrue);
+
+      notifier.stop();
+      await Future<void>.delayed(Duration.zero);
+
+      verify(() => audioService.dispose()).called(1);
+      expect(
+        container.read(audioNotifierProvider).isMediaSessionReady,
+        isFalse,
+        reason: '停止后会话应被释放，dumpsys media_session 不再保留 legado 记录',
+      );
+    });
+
     test('播放中（流媒体）退出听书页：onExit=false 也不释放会话', () async {
       SharedPreferences.setMockInitialValues({
         PrefKeys.mediaButtonOnExit: false,
@@ -923,14 +886,16 @@ void main() {
         ],
       );
       when(() => api.getBook(any())).thenAnswer((_) async => null);
-      when(() => api.getAudioChapterMedia(any(), any())).thenAnswer(
-        (_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'},
-      );
-      when(() => api.getAudioProgress(any(), any()))
-          .thenAnswer((_) async => null);
+      when(
+        () => api.getAudioChapterMedia(any(), any()),
+      ).thenAnswer((_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'});
+      when(
+        () => api.getAudioProgress(any(), any()),
+      ).thenAnswer((_) async => null);
       when(() => api.getConfig(any())).thenAnswer((_) async => null);
-      when(() => api.saveAudioProgress(any(), any(), any()))
-          .thenAnswer((_) async {});
+      when(
+        () => api.saveAudioProgress(any(), any(), any()),
+      ).thenAnswer((_) async {});
 
       final notifier = container.read(audioNotifierProvider.notifier);
       await notifier.initMediaSession();
@@ -952,8 +917,9 @@ void main() {
     test('空闲态会话播放/切段键不盲目启动播放（交服务按偏好决策）', () async {
       final buttons = StreamController<MediaButtonEvent>.broadcast();
       addTearDown(buttons.close);
-      when(() => audioService.mediaButtonStream)
-          .thenAnswer((_) => buttons.stream);
+      when(
+        () => audioService.mediaButtonStream,
+      ).thenAnswer((_) => buttons.stream);
       when(() => audioService.init()).thenAnswer((_) async {});
       when(() => audioService.isInitialized).thenReturn(true);
 
@@ -969,12 +935,13 @@ void main() {
 
       expect(container.read(audioNotifierProvider).state, PlayerState.idle);
       verifyNever(() => api.getChapters(any()));
-      verifyNever(() => audioService.notifyPlaying(position: any(named: 'position')));
+      verifyNever(
+        () => audioService.notifyPlaying(position: any(named: 'position')),
+      );
     });
   });
 
-  group('[批9b-5 回修] 真实 mediaButtonStream 按键接线（126/127/86/79/87/88）',
-      () {
+  group('[批9b-5 回修] 真实 mediaButtonStream 按键接线（126/127/86/79/87/88）', () {
     const sessionChannel = MethodChannel('legado/media_session');
     late MockRustApi api;
     late FakeStreamAudioPlayer player;
@@ -1037,9 +1004,9 @@ void main() {
 
     test('87/88：TTS 模式切段（nextParagraph/prevParagraph），不整章切换', () async {
       stubChapters();
-      when(() => api.getChapterContentFull(any(), any())).thenAnswer(
-        (_) async => '段一。\n\n段二。\n\n段三。',
-      );
+      when(
+        () => api.getChapterContentFull(any(), any()),
+      ).thenAnswer((_) async => '段一。\n\n段二。\n\n段三。');
       final notifier = container.read(audioNotifierProvider.notifier);
       await notifier.initMediaSession();
       await notifier.loadChapters('tts-url');
@@ -1049,8 +1016,11 @@ void main() {
 
       await emitSession('onSkipToNext'); // KEYCODE_MEDIA_NEXT=87
       expect(notifier.currentParagraphIndex, 1);
-      expect(container.read(audioNotifierProvider).currentIndex, 0,
-          reason: 'TTS 不应整章切换');
+      expect(
+        container.read(audioNotifierProvider).currentIndex,
+        0,
+        reason: 'TTS 不应整章切换',
+      );
 
       await emitSession('onSkipToPrevious'); // KEYCODE_MEDIA_PREVIOUS=88
       expect(notifier.currentParagraphIndex, 0);
@@ -1061,13 +1031,15 @@ void main() {
 
     test('87/88：流媒体模式切章（next/previous）', () async {
       stubChapters();
-      when(() => api.getAudioChapterMedia(any(), any())).thenAnswer(
-        (_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'},
-      );
-      when(() => api.getAudioProgress(any(), any()))
-          .thenAnswer((_) async => null);
-      when(() => api.saveAudioProgress(any(), any(), any()))
-          .thenAnswer((_) async {});
+      when(
+        () => api.getAudioChapterMedia(any(), any()),
+      ).thenAnswer((_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'});
+      when(
+        () => api.getAudioProgress(any(), any()),
+      ).thenAnswer((_) async => null);
+      when(
+        () => api.saveAudioProgress(any(), any(), any()),
+      ).thenAnswer((_) async {});
 
       final notifier = container.read(audioNotifierProvider.notifier);
       await notifier.initMediaSession();
@@ -1087,13 +1059,15 @@ void main() {
 
     test('126/127/79/86：暂停→恢复；播放中 PLAY 键 no-op；STOP 停止', () async {
       stubChapters();
-      when(() => api.getAudioChapterMedia(any(), any())).thenAnswer(
-        (_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'},
-      );
-      when(() => api.getAudioProgress(any(), any()))
-          .thenAnswer((_) async => null);
-      when(() => api.saveAudioProgress(any(), any(), any()))
-          .thenAnswer((_) async {});
+      when(
+        () => api.getAudioChapterMedia(any(), any()),
+      ).thenAnswer((_) async => {'mediaUrl': 'https://cdn.example.com/a.mp3'});
+      when(
+        () => api.getAudioProgress(any(), any()),
+      ).thenAnswer((_) async => null);
+      when(
+        () => api.saveAudioProgress(any(), any(), any()),
+      ).thenAnswer((_) async {});
 
       final notifier = container.read(audioNotifierProvider.notifier);
       await notifier.initMediaSession();
@@ -1110,8 +1084,11 @@ void main() {
       final plays = player.playedUrls.length;
       await emitSession('onPlay'); // 已播放：no-op，不重播当前段
       await emitSession('onPlay'); // KEYCODE_HEADSETHOOK=79 同走 onPlay
-      expect(player.playedUrls.length, plays,
-          reason: '已播放时 PLAY/HEADSETHOOK 必须 no-op，避免重复出声');
+      expect(
+        player.playedUrls.length,
+        plays,
+        reason: '已播放时 PLAY/HEADSETHOOK 必须 no-op，避免重复出声',
+      );
 
       await emitSession('onStop'); // KEYCODE_MEDIA_STOP=86
       expect(container.read(audioNotifierProvider).state, PlayerState.idle);

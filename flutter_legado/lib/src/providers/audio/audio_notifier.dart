@@ -542,11 +542,13 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _mediaButtonSub = null;
     _audioFocusSub?.cancel();
     _audioFocusSub = null;
-    await _audioService.dispose();
+    // 先标记释放/未就绪，再等待原生 release：停止后立刻重播时
+    // [_syncMediaSession] 能立即走补建分支（不等原生调用返回）。
     _mediaSessionReleased = true;
+    state = state.copyWith(isMediaSessionReady: false);
+    await _audioService.dispose();
     // 会话释放后原生元数据清空：[第2项] 重置签名，避免下次初始化误跳过推送
     _lastMediaMetadataSignature = '';
-    state = state.copyWith(isMediaSessionReady: false);
   }
 
   /// 耳机键保留会话偏好（读取失败按默认 true 处理，保持「响应耳机键」）
@@ -1539,6 +1541,12 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 本次朗读是否由阅读器发起（测试/UI 判定用）
   bool get readAloudStartedFromReader => _startedFromReader;
 
+  /// 当前是否为空闲态（无播放会话）
+  ///
+  /// 供页面 dispose 等无法读 `state`（Notifier 保护成员）或 `ref` 的
+  /// 生命周期阶段判断：空闲态退出听书页应强制释放媒体会话。
+  bool get isIdle => state.state == PlayerState.idle;
+
   /// 退出阅读器钩子（设置批5a-1）
   ///
   /// 语义对齐参考版 `keepReadAloudOnExit`：
@@ -2124,6 +2132,12 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     );
     _audioService.notifyStopped();
     _audioService.abandonAudioFocus();
+    // [TTS P3 | 2026-11-11] 彻底停止即结束媒体会话：此前只把播放态置为
+    // STOPPED 而不释放会话，`dumpsys media_session` 会长期保留 legado 的
+    // STOPPED 记录（通知/FGS 已为 0）。force 释放走原生 `release`（deactivate
+    // + release），不保留无控制价值的陈旧会话；停止后耳机键仍由静态
+    // MediaButtonReceiver → Flutter 决策链响应（mediaButtonOnExit 语义不变）。
+    unawaited(releaseMediaSession(force: true));
     // [设置批5a-1] TTS 朗读停止即释放唤醒锁（幂等；流模式跳过）
     unawaited(_releaseReadAloudWakeLock());
   }
