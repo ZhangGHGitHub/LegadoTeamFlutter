@@ -413,6 +413,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // 界面继续用默认字体（阅读正文不受影响）。
     final appFont = ref.watch(appFontProvider);
     ref.listen<AppFontState>(appFontProvider, (previous, next) {
+      // 只提示启动加载失败；外观页导入失败由该页 toast 负责，避免同一条
+      // 消息全局 SnackBar + 页面 toast 重复弹出
+      if (next.errorOrigin != AppFontErrorOrigin.startup) return;
       final message = next.errorMessage;
       if (message == null || message == previous?.errorMessage) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {

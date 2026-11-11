@@ -134,6 +134,7 @@ void main() {
     expect(state.isActive, isFalse);
     expect(state.errorMessage, isNotNull);
     expect(state.errorMessage, contains('默认字体'));
+    expect(state.errorOrigin, AppFontErrorOrigin.startup);
 
     // 主题侧 family 为 null → 不应用自定义字体族
     final theme = AppTheme.palette(
@@ -153,6 +154,26 @@ void main() {
     expect(state.stored, id);
     expect(state.family, isNull);
     expect(state.errorMessage, contains('超时'));
+    expect(state.errorOrigin, AppFontErrorOrigin.startup);
+  });
+
+  test('超时后迟到成功不二次切换（保持默认字体）', () async {
+    final id = await seedValidFont();
+    final lateSuccess = Completer<void>();
+    AppFontStore.engineLoader = (family, bytes) => lateSuccess.future;
+    final container = newContainer(timeout: const Duration(milliseconds: 10));
+    final timedOut = await waitForLoaded(container);
+    expect(timedOut.errorMessage, contains('超时'));
+
+    lateSuccess.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    final state = container.read(appFontProvider);
+    expect(state.stored, id);
+    expect(state.family, isNull);
+    expect(state.isActive, isFalse);
+    expect(state.errorMessage, contains('超时'));
+    expect(state.errorOrigin, AppFontErrorOrigin.startup);
   });
 
   test('清除后立即回退默认字体（文件删除 + 偏好清除 + family=null）', () async {
@@ -190,10 +211,50 @@ void main() {
     expect(outcome.canceled, isFalse);
     expect(outcome.error, isNull);
     final state = container.read(appFontProvider);
-    expect(state.stored, 'app_font/picked.otf');
+    expect(state.stored, isNotNull);
+    expect(AppFontStore.displayNameOf(state.stored!), 'picked.otf');
+    expect(
+      state.stored,
+      matches(RegExp(r'^app_font/[0-9a-f]{32}_picked\.otf$')),
+    );
     expect(state.isActive, isTrue);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(PrefKeys.appFontPath), state.stored);
+  });
+
+  test('导入加载失败：回滚新文件/偏好，旧字体保持生效', () async {
+    final oldId = await seedValidFont(name: 'old.ttf');
+    final container = newContainer();
+    final before = await waitForLoaded(container);
+    expect(before.isActive, isTrue);
+
+    AppFontStore.engineLoader = (family, bytes) async {
+      throw Exception('引擎拒绝');
+    };
+    final newBytes = validSfnt()..[31] = 9;
+    AppFontStore.picker = () async =>
+        AppFontPick(bytes: newBytes, name: 'new.ttf');
+    final outcome = await container
+        .read(appFontProvider.notifier)
+        .pickAndImport();
+
+    expect(outcome.error, contains('加载失败'));
+    final after = container.read(appFontProvider);
+    expect(after.stored, oldId);
+    expect(after.family, before.family);
+    expect(after.isActive, isTrue);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(PrefKeys.appFontPath), oldId);
+
+    final dir = Directory('${temp.path}${Platform.pathSeparator}app_font');
+    final files = dir.listSync().whereType<File>().toList();
+    expect(files.length, 1, reason: '回滚后只应保留旧字体文件');
+    final oldFile = File(
+      '${temp.path}${Platform.pathSeparator}'
+      '${oldId.replaceAll('/', Platform.pathSeparator)}',
+    );
+    expect(files.single.absolute.path, oldFile.absolute.path);
   });
 
   test('选择导入校验失败：旧字体保持不变并返回中文提示', () async {
@@ -227,6 +288,21 @@ void main() {
 
     expect(outcome.canceled, isTrue);
     expect(container.read(appFontProvider).stored, id);
+  });
+
+  test('app.dart 接线：亮/暗主题均传 appFont.family，全局仅提示启动错误', () {
+    final source = File('lib/app.dart').readAsStringSync();
+    expect(
+      RegExp(r'fontFamily:\s*appFont\.family').allMatches(source).length,
+      2,
+      reason: 'MaterialApp 亮/暗主题均须显式传入应用字体族',
+    );
+    expect(source, contains('ref.watch(appFontProvider)'));
+    expect(
+      source,
+      contains('next.errorOrigin != AppFontErrorOrigin.startup'),
+      reason: '导入失败应由外观页提示，全局 SnackBar 仅处理启动失败',
+    );
   });
 
   test('AppTheme 仅在 fontFamily 非空时应用界面字体（AppBar/正文同族）', () {

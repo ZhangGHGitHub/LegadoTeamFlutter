@@ -162,12 +162,22 @@ class AppFontStore {
     }
   }
 
-  /// 导入字节流：校验 → 落盘 → 写偏好 → 删除旧自有文件，返回相对标识。
+  /// 导入字节流：校验 → 内容哈希命名落盘 → 写偏好 → 清理旧自有文件。
+  ///
+  /// 文件名固定为 `<字体内容 md5>_<原文件名>.<ext>`：
+  /// - 不同内容永不覆盖彼此，避免「先删后 rename」的中间态丢失旧字体；
+  /// - 同一内容重复导入命中同一文件，不重复写盘；
+  /// - 写入采用同目录 tmp + rename，失败不产生半成品正式文件。
+  ///
+  /// [keepPrevious]：为 true 时**不删除**旧字体文件，由调用方在引擎加载
+  /// 成功后调用 [finalizeImport] 提交；加载失败可调用 [rollbackImport]
+  /// 删除新文件并恢复旧偏好（导入事务化）。
   ///
   /// 失败抛 [FormatException]（空/超限/格式/损坏），不留下正式文件。
   static Future<String> importBytes(
     Uint8List bytes, {
     required String originalName,
+    bool keepPrevious = false,
   }) async {
     if (kIsWeb) throw UnsupportedError('当前平台不支持自定义应用字体');
     if (bytes.isEmpty) throw const FormatException('字体文件为空');
@@ -187,19 +197,23 @@ class AppFontStore {
     final dirPath = '$supportPath$sep$subDir';
     await Directory(dirPath).create(recursive: true);
 
-    final fileName = _sanitizeFileName(originalName, ext);
+    final digest = md5.convert(bytes).toString();
+    final fileName = '${digest}_${_sanitizeFileName(originalName, ext)}';
     final target = File('$dirPath$sep$fileName');
-    final tmp = File(
-      '$dirPath$sep.$fileName.tmp-${DateTime.now().microsecondsSinceEpoch}',
-    );
-    try {
-      await tmp.writeAsBytes(bytes, flush: true);
-      // Windows 的 rename 不能覆盖已存在文件：先删旧同名文件（仅自有目录内）
-      if (target.existsSync()) await target.delete();
-      await tmp.rename(target.path);
-    } catch (e) {
-      await _safeDelete(tmp);
-      rethrow;
+    var created = false;
+    if (!target.existsSync()) {
+      final tmp = File(
+        '$dirPath$sep.$fileName.tmp-${DateTime.now().microsecondsSinceEpoch}',
+      );
+      try {
+        await tmp.writeAsBytes(bytes, flush: true);
+        await tmp.rename(target.path);
+        created = true;
+      } catch (e) {
+        await _safeDelete(tmp);
+        // rename 竞态：并发导入同内容时对方已落正式文件 → 视为成功
+        if (!target.existsSync()) rethrow;
+      }
     }
 
     final id = '$subDir/$fileName';
@@ -208,19 +222,77 @@ class AppFontStore {
     try {
       await prefs.setString(PrefKeys.appFontPath, id);
     } catch (e) {
-      // 偏好写入失败：本次落盘无引用，删除避免孤儿文件
-      await _safeDelete(target);
+      // 偏好写入失败：本次新建文件无引用，删除避免孤儿；已存在文件不动
+      if (created) await _safeDelete(target);
       rethrow;
     }
-    if (previous != null && previous.isNotEmpty && previous != id) {
-      await deleteOwned(previous);
+    if (!keepPrevious) {
+      await finalizeImport(newId: id, previousId: previous);
     }
     return id;
   }
 
-  /// 导入本地文件路径（桌面/iOS file_picker 返回 path 时使用）
+  /// 导入事务提交：删除旧自有字体文件（与 [importBytes] 的
+  /// `keepPrevious: true` 配套，引擎加载成功后调用）。
+  ///
+  /// 路径按规范化（Windows/macOS 小写）比较：`Font.ttf` → `font.ttf`
+  /// 这类仅大小写变化的替换不得删掉刚写入/复用的新文件。
+  static Future<void> finalizeImport({
+    required String newId,
+    String? previousId,
+  }) async {
+    if (previousId == null || previousId.isEmpty || previousId == newId) {
+      return;
+    }
+    await ensureWarm();
+    final newPath = resolveSync(newId);
+    final previousPath = resolveSync(previousId);
+    if (newPath.isNotEmpty &&
+        previousPath.isNotEmpty &&
+        _sameResolvedPath(newPath, previousPath)) {
+      return;
+    }
+    await deleteOwned(previousId);
+  }
+
+  /// 导入事务回滚：删除新文件、恢复旧偏好（旧文件在事务期间未删除）
+  static Future<void> rollbackImport({
+    required String newId,
+    String? previousId,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (previousId != null && previousId.isNotEmpty) {
+        await prefs.setString(PrefKeys.appFontPath, previousId);
+      } else {
+        await prefs.remove(PrefKeys.appFontPath);
+      }
+    } catch (_) {
+      // 偏好恢复失败也继续删除新文件，避免无引用孤儿
+    }
+    // 同一内容重复导入（新旧标识指向同一文件）时不得删除，否则会连同
+    // 事务前正在使用的旧字体一起删掉
+    await ensureWarm();
+    final newPath = resolveSync(newId);
+    final previousPath = previousId == null || previousId.isEmpty
+        ? ''
+        : resolveSync(previousId);
+    if (newPath.isNotEmpty &&
+        previousPath.isNotEmpty &&
+        _sameResolvedPath(newPath, previousPath)) {
+      return;
+    }
+    await deleteOwned(newId);
+  }
+
+  /// 导入本地文件路径（picker 返回 path 时使用）：先 stat 大小，再读入内存
   static Future<String> importFile(String sourcePath) async {
     final file = File(sourcePath);
+    final length = await file.length();
+    if (length <= 0) throw const FormatException('字体文件为空');
+    if (length > maxBytes) {
+      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+    }
     final bytes = await file.readAsBytes();
     return importBytes(bytes, originalName: _baseName(sourcePath));
   }
@@ -270,15 +342,19 @@ class AppFontStore {
     if (!isUsableSync(stored)) return null;
     final path = resolveSync(stored);
     try {
-      _validateFontBytes(await File(path).readAsBytes());
+      _validateFontBytes(await readBytes(File(path)));
       return path;
     } catch (_) {
       return null;
     }
   }
 
-  /// 偏好值对应的显示文件名（不做可用性判断）
-  static String displayNameOf(String stored) => _baseName(stored);
+  /// 偏好值对应的显示文件名（剥离内容哈希前缀，不做可用性判断）
+  static String displayNameOf(String stored) {
+    final name = _baseName(stored);
+    final match = RegExp(r'^[0-9a-f]{32}_(.+)$').firstMatch(name);
+    return match?.group(1) ?? name;
+  }
 
   /// 删除自有字体文件并清除偏好；文件不存在/删除失败静默（偏好仍清除）
   static Future<void> clear({String? stored}) async {
@@ -352,6 +428,11 @@ class AppFontStore {
     if (!file.existsSync()) {
       return const AppFontLoadResult.failure('自定义字体文件缺失，已回退默认字体');
     }
+    // 先复用同步可用性检查（大小/文件头/表目录长度），避免把明显无效的
+    // 文件整体读入内存；随后再读字节做完整表目录校验。
+    if (!isUsableSync(stored)) {
+      return const AppFontLoadResult.failure('自定义字体文件已损坏，已回退默认字体');
+    }
     Uint8List bytes;
     try {
       bytes = await readBytes(file);
@@ -383,18 +464,28 @@ class AppFontStore {
       allowedExtensions: allowedExtensions.toList(growable: false),
       dialogTitle: '选择字体文件',
       allowCompression: false,
-      withData: true,
+      // 不在选择阶段把整文件读入内存：先按平台元数据/stat 拦截超限，
+      // 通过后再读字节（Android 内容 URI 由插件落缓存路径后读取）
+      withData: false,
     );
     if (result == null || result.files.isEmpty) return null;
     final picked = result.files.single;
     if (picked.size > maxBytes) {
       throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
     }
-    final bytes =
-        picked.bytes ??
-        (picked.path != null ? await File(picked.path!).readAsBytes() : null);
-    if (bytes == null) {
+    final path = picked.path;
+    if (path == null) {
       throw const FormatException('无法读取所选字体文件');
+    }
+    final file = File(path);
+    final length = await file.length();
+    if (length <= 0) throw const FormatException('字体文件为空');
+    if (length > maxBytes) {
+      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
+    }
+    final bytes = await file.readAsBytes();
+    if (bytes.length > maxBytes) {
+      throw FormatException('字体文件过大（上限 ${maxBytes ~/ (1024 * 1024)}MB）');
     }
     return AppFontPick(bytes: bytes, name: picked.name);
   }
@@ -424,21 +515,58 @@ class AppFontStore {
   /// 文件名校验/归一：去掉路径与控制字符，保留 Unicode 文件名；
   /// 确保以白名单扩展名结尾，长度上限 100 字符（避免路径过长）。
   static String _sanitizeFileName(String originalName, String ext) {
-    var name = _baseName(
-      originalName,
-    ).replaceAll(RegExp(r'[\x00-\x1f<>:"/\\|?*]'), '_').trim();
-    name = name.replaceFirst(RegExp(r'^\.+'), '');
-    if (name.isEmpty) name = 'app_font';
-    if (!name.toLowerCase().endsWith('.$ext')) {
-      final dot = name.lastIndexOf('.');
-      if (dot > 0) name = name.substring(0, dot);
-      name = '$name.$ext';
+    var base = _baseName(originalName);
+    // 去掉源扩展名（是否白名单已在上层校验），只保留基名
+    final dot = base.lastIndexOf('.');
+    if (dot > 0) base = base.substring(0, dot);
+    base = base.replaceAll(RegExp(r'[\x00-\x1f<>:"/\\|?*]'), '_').trim();
+    base = base.replaceFirst(RegExp(r'^\.+'), '');
+    // Windows 不允许文件名以空格/点结尾
+    base = base.replaceAll(RegExp(r'[. ]+$'), '');
+    if (base.isEmpty) base = 'app_font';
+    // Windows 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9）加前缀规避
+    if (_windowsReservedNames.contains(base.toUpperCase())) {
+      base = '_$base';
     }
-    if (name.length > 100) {
-      final suffix = '.$ext';
-      name = '${name.substring(0, 100 - suffix.length)}$suffix';
+    // 按 Unicode 码点（rune）截断，避免切断代理对产生非法 UTF-16
+    final maxBaseRunes = 100 - ext.length - 1;
+    if (base.runes.length > maxBaseRunes) {
+      base = String.fromCharCodes(base.runes.take(maxBaseRunes));
     }
-    return name;
+    return '$base.$ext';
+  }
+
+  /// Windows 保留设备名（大小写不敏感，带扩展名同样保留）
+  static const Set<String> _windowsReservedNames = <String>{
+    'CON',
+    'PRN',
+    'AUX',
+    'NUL',
+    'COM1',
+    'COM2',
+    'COM3',
+    'COM4',
+    'COM5',
+    'COM6',
+    'COM7',
+    'COM8',
+    'COM9',
+    'LPT1',
+    'LPT2',
+    'LPT3',
+    'LPT4',
+    'LPT5',
+    'LPT6',
+    'LPT7',
+    'LPT8',
+    'LPT9',
+  };
+
+  /// 两条绝对路径是否指向同一文件（Windows/macOS/iOS 大小写不敏感）
+  static bool _sameResolvedPath(String a, String b) {
+    final caseInsensitive =
+        Platform.isWindows || Platform.isMacOS || Platform.isIOS;
+    return caseInsensitive ? a.toLowerCase() == b.toLowerCase() : a == b;
   }
 
   /// 校验字体文件：扩展名已在上层校验，这里按文件头 + 表目录判断。

@@ -9,6 +9,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -103,13 +104,16 @@ void main() {
   }
 
   /// widget FakeAsync 下用同步文件 IO + 预置偏好（不调用异步导入链路）
+  ///
+  /// 使用与新导入链路一致的内容哈希前缀文件名，验证 UI 显示会剥离前缀。
   String seedFont({String name = '我的字体.ttf'}) {
     final dir = Directory('${temp.path}${Platform.pathSeparator}app_font')
       ..createSync(recursive: true);
+    final storedName = '${'0' * 32}_$name';
     File(
-      '${dir.path}${Platform.pathSeparator}$name',
+      '${dir.path}${Platform.pathSeparator}$storedName',
     ).writeAsBytesSync(validSfnt());
-    final id = 'app_font/$name';
+    final id = 'app_font/$storedName';
     SharedPreferences.setMockInitialValues(<String, Object>{
       PrefKeys.appFontPath: id,
     });
@@ -136,7 +140,7 @@ void main() {
     final id = seedFont();
     await pumpPage(tester);
 
-    expect(id, 'app_font/我的字体.ttf');
+    expect(AppFontStore.displayNameOf(id), '我的字体.ttf');
     expect(find.text('已设置：我的字体.ttf'), findsOneWidget);
     expect(container.read(appFontProvider).isActive, isTrue);
   });
@@ -211,5 +215,16 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('字体设置'), findsOneWidget);
+
+    // 具体几何断言（不仅靠 takeException）：行/副标题都不得超出 360dp
+    final tileRect = tester.getRect(
+      find.ancestor(of: find.text('字体设置'), matching: find.byType(ListTile)),
+    );
+    expect(tileRect.right, lessThanOrEqualTo(360.5));
+    final subtitle = tester.renderObject<RenderParagraph>(
+      find.textContaining('已设置：'),
+    );
+    expect(subtitle.size.width, lessThanOrEqualTo(tileRect.width));
+    expect(subtitle.size.height, lessThan(200));
   });
 }

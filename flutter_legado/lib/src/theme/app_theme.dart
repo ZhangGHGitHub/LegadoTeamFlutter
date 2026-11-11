@@ -529,7 +529,10 @@ class AppTheme {
       // Snackbar 主题 —— M3 inverseSurface 反色
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colorScheme.inverseSurface,
-        contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
+        contentTextStyle: TextStyle(
+          color: colorScheme.onInverseSurface,
+          fontFamily: fontFamily,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_controlRadius),
@@ -544,7 +547,11 @@ class AppTheme {
           color: colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(4),
         ),
-        textStyle: TextStyle(color: colorScheme.onSurface, fontSize: 12),
+        textStyle: TextStyle(
+          color: colorScheme.onSurface,
+          fontSize: 12,
+          fontFamily: fontFamily,
+        ),
       ),
 
       // Chip 主题 —— M3 默认（选中态 secondaryContainer 落地）

@@ -86,7 +86,8 @@ void main() {
     final bytes = validSfnt();
     final id = await AppFontStore.importBytes(bytes, originalName: '我的字体.ttf');
 
-    expect(id, 'app_font/我的字体.ttf');
+    // 文件名 = 内容 md5 前缀 + 原文件名，避免不同内容互相覆盖
+    expect(id, matches(RegExp(r'^app_font/[0-9a-f]{32}_我的字体\.ttf$')));
     final file = fontFile(id);
     expect(file.existsSync(), isTrue);
     expect(file.readAsBytesSync(), bytes);
@@ -178,7 +179,8 @@ void main() {
     );
     final prefs = await SharedPreferences.getInstance();
 
-    expect(second, 'app_font/second.otf');
+    expect(AppFontStore.displayNameOf(second), 'second.otf');
+    expect(second, matches(RegExp(r'^app_font/[0-9a-f]{32}_second\.otf$')));
     expect(prefs.getString(PrefKeys.appFontPath), second);
     expect(firstFile.existsSync(), isFalse);
     expect(fontFile(second).existsSync(), isTrue);
@@ -279,6 +281,96 @@ void main() {
 
     expect(familyA, startsWith('AppCustomFont_'));
     expect(familyA, isNot(familyB));
+  });
+
+  test('仅大小写变化的替换不误删新文件', () async {
+    final first = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: 'Font.ttf',
+    );
+    final second = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: 'font.ttf',
+    );
+    final prefs = await SharedPreferences.getInstance();
+
+    expect(AppFontStore.displayNameOf(first), 'Font.ttf');
+    expect(AppFontStore.displayNameOf(second), 'font.ttf');
+    expect(prefs.getString(PrefKeys.appFontPath), second);
+    // 关键：新标识指向的文件必须存在（大小写不敏感平台上即旧文件本身）
+    expect(fontFile(second).existsSync(), isTrue);
+    expect(AppFontStore.isUsableSync(second), isTrue);
+  });
+
+  test('导入事务：keepPrevious 保留旧文件；finalize 后删除旧文件', () async {
+    final first = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: 'old.ttf',
+    );
+    final oldFile = fontFile(first);
+    final newBytes = validSfnt()..[31] = 2;
+    final second = await AppFontStore.importBytes(
+      newBytes,
+      originalName: 'new.ttf',
+      keepPrevious: true,
+    );
+
+    expect(oldFile.existsSync(), isTrue);
+    expect(fontFile(second).existsSync(), isTrue);
+
+    await AppFontStore.finalizeImport(newId: second, previousId: first);
+    expect(oldFile.existsSync(), isFalse);
+    expect(fontFile(second).existsSync(), isTrue);
+  });
+
+  test('导入事务：rollback 删除新文件并恢复旧偏好/旧文件', () async {
+    final first = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: 'old.ttf',
+    );
+    final oldFile = fontFile(first);
+    final newBytes = validSfnt()..[31] = 3;
+    final second = await AppFontStore.importBytes(
+      newBytes,
+      originalName: 'new.ttf',
+      keepPrevious: true,
+    );
+    expect(fontFile(second).existsSync(), isTrue);
+
+    await AppFontStore.rollbackImport(newId: second, previousId: first);
+
+    expect(fontFile(second).existsSync(), isFalse);
+    expect(oldFile.existsSync(), isTrue);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(PrefKeys.appFontPath), first);
+  });
+
+  test('文件名校验：按 rune 截断不切断代理对；Windows 保留名加前缀', () async {
+    final longName = '${List<String>.filled(120, '😀').join()}.ttf';
+    final longId = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: longName,
+    );
+    final display = AppFontStore.displayNameOf(longId);
+
+    expect(display.endsWith('.ttf'), isTrue);
+    expect(display.runes.length, lessThanOrEqualTo(100));
+    expect(
+      display.runes.any((rune) => rune >= 0xD800 && rune <= 0xDFFF),
+      isFalse,
+      reason: '不得留下孤立的 UTF-16 代理项',
+    );
+    expect(display.contains('\uFFFD'), isFalse);
+
+    final reservedId = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: 'CON.ttf',
+    );
+    expect(AppFontStore.displayNameOf(reservedId), '_CON.ttf');
+  });
+
+  test('兼容旧格式标识：app_font/<文件名> 仍可显示与解析', () {
+    expect(AppFontStore.displayNameOf('app_font/legacy.ttf'), 'legacy.ttf');
   });
 
   test('字体文件不在主题背景图孤儿清理范围内（不会被误删）', () async {

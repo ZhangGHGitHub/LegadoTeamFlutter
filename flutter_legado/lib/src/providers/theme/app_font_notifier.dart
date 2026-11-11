@@ -10,6 +10,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../services/app_font_store.dart';
 
+/// 应用字体错误来源（用于全局提示去重）
+///
+/// - [startup]：启动读取时加载失败 → 由 app.dart 全局 SnackBar 提示；
+/// - [import]：外观页导入失败 → 由外观页 toast 提示，全局不再重复弹出。
+enum AppFontErrorOrigin { none, startup, import }
+
 /// 应用字体状态（不可变）
 class AppFontState {
   /// 相对 Support 目录的可迁移标识（null/空 = 未设置）
@@ -31,6 +37,9 @@ class AppFontState {
   /// 最近一次加载失败的中文提示（成功时为 null）
   final String? errorMessage;
 
+  /// 错误来源（全局提示据此去重，避免导入失败同时弹两次）
+  final AppFontErrorOrigin errorOrigin;
+
   const AppFontState({
     this.stored,
     this.displayName,
@@ -38,6 +47,7 @@ class AppFontState {
     this.loading = false,
     this.initialized = false,
     this.errorMessage,
+    this.errorOrigin = AppFontErrorOrigin.none,
   });
 
   /// 是否已配置字体（文件可能加载失败）
@@ -102,7 +112,11 @@ class AppFontNotifier extends Notifier<AppFontState> {
   }
 
   /// 读取并加载指定字体；返回错误提示（成功为 null）
-  Future<String?> _load(String stored, {required int generation}) async {
+  Future<String?> _load(
+    String stored, {
+    required int generation,
+    AppFontErrorOrigin origin = AppFontErrorOrigin.startup,
+  }) async {
     final displayName = AppFontStore.displayNameOf(stored);
     state = AppFontState(
       stored: stored,
@@ -125,6 +139,7 @@ class AppFontNotifier extends Notifier<AppFontState> {
       stored: stored,
       displayName: displayName,
       errorMessage: result.errorMessage,
+      errorOrigin: origin,
       initialized: true,
     );
     return result.errorMessage;
@@ -132,6 +147,9 @@ class AppFontNotifier extends Notifier<AppFontState> {
 
   /// 选择并导入字体文件。取消返回 [AppFontImportOutcome.canceled]；
   /// 校验/选择失败返回 failed（旧字体保持不变）；成功返回 success。
+  ///
+  /// 事务语义：新文件先落盘且**不删除旧文件**，引擎加载成功后才提交删除；
+  /// 加载失败则回滚（删新文件、恢复旧偏好与旧状态），不会丢旧字体。
   Future<AppFontImportOutcome> pickAndImport() async {
     AppFontPick? picked;
     try {
@@ -145,11 +163,17 @@ class AppFontNotifier extends Notifier<AppFontState> {
     }
     if (picked == null) return const AppFontImportOutcome.canceled();
 
+    final previousState = state;
+    // 启动初始化未完成时 state 可能尚无值：回退读取偏好，保证事务回滚
+    // 与旧文件清理都不会丢引用
+    final previousId =
+        state.stored ?? await AppFontStore.readStoredIdentifier();
     String stored;
     try {
       stored = await AppFontStore.importBytes(
         picked.bytes,
         originalName: picked.name,
+        keepPrevious: true,
       );
     } on FormatException catch (e) {
       return AppFontImportOutcome.failed(e.message);
@@ -157,10 +181,21 @@ class AppFontNotifier extends Notifier<AppFontState> {
       return const AppFontImportOutcome.failed('字体导入失败，请重试');
     }
     final generation = ++_generation;
-    final error = await _load(stored, generation: generation);
-    return error == null
-        ? const AppFontImportOutcome.success()
-        : AppFontImportOutcome.failed(error);
+    final error = await _load(
+      stored,
+      generation: generation,
+      origin: AppFontErrorOrigin.import,
+    );
+    if (error == null) {
+      await AppFontStore.finalizeImport(newId: stored, previousId: previousId);
+      return const AppFontImportOutcome.success();
+    }
+    // 加载失败：回滚新文件/偏好，恢复导入前的状态（旧字体文件从未删除）
+    await AppFontStore.rollbackImport(newId: stored, previousId: previousId);
+    if (!_disposed && generation == _generation) {
+      state = previousState;
+    }
+    return AppFontImportOutcome.failed(error);
   }
 
   /// 清除应用字体：删除自有文件 + 清偏好 + 立即回退默认字体

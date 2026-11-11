@@ -241,6 +241,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   bool _paginatedJustify = true;
   String? _paginatedFontFamily;
 
+  /// 分页对应的 DefaultTextStyle（含主题字体等环境样式）
+  ///
+  /// [应用字体入口回修 2026-11-11] 应用字体只作用于界面文字；阅读正文
+  /// 虽显式覆盖 fontFamily，但 baseStyle 仍决定 fallback/度量等环境样式。
+  /// 将其纳入分页键：应用字体/主题 typography 迟到变化时重新测量，避免
+  /// 沿用旧分页尺寸导致行溢出。
+  TextStyle? _paginatedBaseStyle;
+
   // [UI-fix v2.0.3 | 2026-08-06] 分页缓存键新增页面边距 — Qoder
   String _paginatedMargins = '';
   String _paginatedPageChrome = '';
@@ -671,6 +679,24 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     unawaited(_refreshFontFamily());
   }
 
+  /// 阅读正文实际字体族（绝不返回 null）
+  ///
+  /// [应用字体入口回修 2026-11-11] `TextStyle(fontFamily: null)` 会并入
+  /// 上层 DefaultTextStyle——MaterialApp 的 ThemeData 已注入应用字体
+  /// （界面字体），若正文不显式覆盖，未设置阅读字体时正文会误用应用字体。
+  /// 因此读者未配置字体时取平台 typography 的默认族名（Roboto /
+  /// CupertinoSystemText / Segoe UI），保证应用字体绝不泄漏进正文。
+  String _resolveReaderFontFamily(BuildContext context) {
+    final configured = _fontFamily;
+    if (configured != null && configured.isNotEmpty) return configured;
+    final typography = Theme.of(context).typography;
+    final baseTheme = Theme.of(context).brightness == Brightness.dark
+        ? typography.white
+        : typography.black;
+    final family = baseTheme.bodyMedium?.fontFamily;
+    return (family == null || family.isEmpty) ? 'Roboto' : family;
+  }
+
   /// 从 SharedPreferences 读取当前阅读字体，自定义字体需先经 FontLoader 注册
   Future<void> _refreshFontFamily() async {
     try {
@@ -783,7 +809,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final textBold = widget.textBold;
     final italic = widget.italic;
     final justify = widget.textFullJustify;
-    final fontFamily = _fontFamily;
+    // [应用字体入口回修 2026-11-11] 未配置阅读字体时取平台默认族名，
+    // 显式覆盖 ThemeData 注入的应用字体（测量与渲染同参）
+    final fontFamily = _resolveReaderFontFamily(context);
+    // 实测样式合并 DefaultTextStyle（与渲染侧 Text 的主题字体一致，
+    // 避免字体度量差异引入像素级偏差）；纳入分页键，见下方
+    final baseStyle = DefaultTextStyle.of(context).style;
     // [UI-fix v2.0.3 | 2026-08-06] 页面边距变化同样触发重新分页 — Qoder
     final margins =
         '${widget.marginTop}_${widget.marginBottom}_${widget.marginLeft}_${widget.marginRight}';
@@ -826,6 +857,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             italic != _paginatedItalic ||
             justify != _paginatedJustify ||
             fontFamily != _paginatedFontFamily ||
+            baseStyle != _paginatedBaseStyle ||
             margins != _paginatedMargins ||
             widget.pageChrome.layoutKey != _paginatedPageChrome ||
             sysPaddingKey != _paginatedSysPadding ||
@@ -855,6 +887,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         italic == _paginatedItalic &&
         justify == _paginatedJustify &&
         fontFamily == _paginatedFontFamily &&
+        baseStyle == _paginatedBaseStyle &&
         margins == _paginatedMargins &&
         widget.pageChrome.layoutKey == _paginatedPageChrome &&
         sysPaddingKey == _paginatedSysPadding &&
@@ -883,9 +916,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // RenderFlex 溢出 ~16-27px（随字号增大）。改为 TextPainter 按
     // 渲染同参实测页脚与标题块高度，首页容量单独下发排版引擎 — Qoder
     final textScaler = MediaQuery.textScalerOf(context);
-    // 实测样式合并 DefaultTextStyle（与渲染侧 Text 的主题字体一致，
-    // 避免字体度量差异引入像素级偏差）
-    final baseStyle = DefaultTextStyle.of(context).style;
     final chrome = widget.pageChrome;
     final headerBlock = ReaderPageLayoutMetrics.headerBlockHeight(
       context,
@@ -1002,6 +1032,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedItalic = italic;
     _paginatedJustify = justify;
     _paginatedFontFamily = fontFamily;
+    _paginatedBaseStyle = baseStyle;
     _paginatedMargins = margins;
     _paginatedPageChrome = widget.pageChrome.layoutKey;
     _paginatedSysPadding = sysPaddingKey;
@@ -1478,7 +1509,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           TextStyle(
             fontSize: state.fontSize + chrome.titleSize,
             fontWeight: FontWeight.bold,
-            fontFamily: effectiveTitleFontFamily(chrome, _fontFamily),
+            fontFamily: effectiveTitleFontFamily(
+              chrome,
+              _resolveReaderFontFamily(context),
+            ),
           ),
         ),
       ),
@@ -1979,7 +2013,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       backgroundColor: state.backgroundColor,
       textColor: _resolveTextColor(state),
       letterSpacing: widget.letterSpacing * state.fontSize,
-      fontFamily: _fontFamily,
+      fontFamily: _resolveReaderFontFamily(context),
       justify: widget.textFullJustify,
       fontWeight: _fontWeightFor(widget.textBold),
       fontStyle: _fontStyleFor(widget.italic),
@@ -2113,7 +2147,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                         // 不分页、无测量侧，故仅渲染侧取值。
                         fontFamily: effectiveTitleFontFamily(
                           widget.pageChrome,
-                          _fontFamily,
+                          _resolveReaderFontFamily(context),
                         ),
                       ),
                     ),
@@ -2145,7 +2179,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   // [UI-fix v2.0.2 | 2026-08-06] 字距/字体/两端对齐透传到正文渲染 — Qoder
                   // [UI-fix v2.0.4 | 2026-08-08] 字距 em→px；字重接线 — Qoder
                   letterSpacing: widget.letterSpacing * state.fontSize,
-                  fontFamily: _fontFamily,
+                  fontFamily: _resolveReaderFontFamily(context),
                   fontWeight: _fontWeightFor(widget.textBold),
                   fontStyle: _fontStyleFor(widget.italic),
                   justify: widget.textFullJustify,
@@ -2169,7 +2203,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 textColor: textColor,
                 // [UI-fix v2.0.4 | 2026-08-08] 字距 em→px；字重接线 — Qoder
                 letterSpacing: widget.letterSpacing * state.fontSize,
-                fontFamily: _fontFamily,
+                fontFamily: _resolveReaderFontFamily(context),
                 fontWeight: _fontWeightFor(widget.textBold),
                 fontStyle: _fontStyleFor(widget.italic),
                 // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
@@ -2245,7 +2279,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       // 对齐/字重透传到分页页渲染（与测量同参）— Qoder
       textColor: _resolveTextColor(state),
       letterSpacing: widget.letterSpacing * state.fontSize,
-      fontFamily: _fontFamily,
+      fontFamily: _resolveReaderFontFamily(context),
       justify: widget.textFullJustify,
       fontWeight: _fontWeightFor(widget.textBold),
       fontStyle: _fontStyleFor(widget.italic),
