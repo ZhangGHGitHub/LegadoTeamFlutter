@@ -1,0 +1,136 @@
+批19 设备验收命令与输出转录
+日期：2026-11-11
+设备：MuMu「Test测试」192.168.100.62:5555
+
+== 1. 连接与版本 ==
+$ adb devices
+List of devices attached
+192.168.100.62:5555     device
+
+$ adb -s 192.168.100.62:5555 shell getprop ro.product.cpu.abi
+x86_64
+
+$ adb -s 192.168.100.62:5555 shell dumpsys package io.legado.flutter_legado | grep -iE "versionName|versionCode|primaryCpuAbi"
+    primaryCpuAbi=x86_64
+    versionCode=490 minSdk=24 targetSdk=36
+    versionName=2.0.489
+
+$ adb -s 192.168.100.62:5555 shell getprop ro.product.model
+SM-G9900
+$ adb -s 192.168.100.62:5555 shell getprop ro.build.version.release
+15
+$ adb -s 192.168.100.62:5555 shell getprop ro.build.version.sdk
+35
+$ adb -s 192.168.100.62:5555 shell wm size
+Physical size: 1080x1920
+$ adb -s 192.168.100.62:5555 shell wm density
+Physical density: 480
+（1080 / (480/160) = 360dp）
+
+== 2. APK 指纹 ==
+$ sha256sum build/app/outputs/flutter-apk/app-release.apk
+300b4fa688e98ae729d1026090635071d2e9e785cfbdb0360f2cbdd2c32e94f6 *build/app/outputs/flutter-apk/app-release.apk
+$ ls -l build/app/outputs/flutter-apk/app-release.apk
+211178960 B
+
+== 3. armv7 打包 ==
+$ unzip -l build/app/outputs/flutter-apk/app-release.apk | grep -E "liblegado_ffi.so"
+ 35778992  1981-01-01 01:01   lib/arm64-v8a/liblegado_ffi.so
+ 22529324  1981-01-01 01:01   lib/armeabi-v7a/liblegado_ffi.so
+ 39671056  1981-01-01 01:01   lib/x86_64/liblegado_ffi.so
+
+$ unzip -l build/app/outputs/flutter-apk/app-release.apk | grep "lib/armeabi-v7a/"
+ 21381708  1981-01-01 01:01   lib/armeabi-v7a/libapp.so
+  3244440  1981-01-01 01:01   lib/armeabi-v7a/libbarhopper_v3.so
+    76816  1981-01-01 01:01   lib/armeabi-v7a/libdartjni.so
+     4416  1981-01-01 01:01   lib/armeabi-v7a/libdatastore_shared_counter.so
+  8453804  1981-01-01 01:01   lib/armeabi-v7a/libflutter.so
+    24448  1981-01-01 01:01   lib/armeabi-v7a/libimage_processing_util_jni.so
+ 22529324  1981-01-01 01:01   lib/armeabi-v7a/liblegado_ffi.so
+     3460  1981-01-01 01:01   lib/armeabi-v7a/libsurface_util_jni.so
+
+== 4. 字体推送与导入 ==
+$ adb -s 192.168.100.62:5555 push C:/Windows/Fonts/simhei.ttf /sdcard/Download/simhei.ttf
+C:/Windows/Fonts/simhei.ttf: 1 file pushed, 0 skipped. 75.4 MB/s (9745792 bytes in 0.123s)
+$ adb -s 192.168.100.62:5555 shell ls -l /sdcard/Download/simhei.ttf
+-rw-rw-rw- 1 root root 9745792 2026-03-24 21:56 /sdcard/Download/simhei.ttf
+
+选择后应用副本：
+$ adb -s 192.168.100.62:5555 shell ls -l /data/data/io.legado.flutter_legado/files/app_font
+-rw------- 1 u0_a67 u0_a67 9745792 2026-11-11 20:33 4093871a7f48e43b9ce7c38da0c34809_simhei.ttf
+
+== 5. 偏好键（选中应用字体后） ==
+$ adb -s 192.168.100.62:5555 shell "cat /data/data/io.legado.flutter_legado/shared_prefs/FlutterSharedPreferences.xml | tr '<' '\n<' | grep -E 'appFontPath|reader_font_family'"
+string name="flutter.appFontPath">app_font/4093871a7f48e43b9ce7c38da0c34809_simhei.ttf
+（reader_font_family 不存在 = 正文系统默认）
+
+阅读器改等宽体后：
+string name="flutter.reader_font_family">monospace
+string name="flutter.appFontPath">app_font/4093871a7f48e43b9ce7c38da0c34809_simhei.ttf
+
+阅读器改衬线体后：
+string name="flutter.reader_font_family">serif
+string name="flutter.appFontPath">app_font/4093871a7f48e43b9ce7c38da0c34809_simhei.ttf
+
+== 6. 清除字体后 ==
+$ adb -s 192.168.100.62:5555 shell "cat .../FlutterSharedPreferences.xml | tr '<' '\n<' | grep -E 'appFontPath|reader_font_family'"
+string name="flutter.reader_font_family">serif
+（appFontPath 已移除；reader_font_family 保留，证明两套字体独立）
+$ adb -s 192.168.100.62:5555 shell ls -la /data/data/io.legado.flutter_legado/files/app_font
+total 8
+drwx------ 2 u0_a67 u0_a67 4096 2026-11-11 20:37 .
+drwxrwx--x 5 u0_a67 u0_a67 4096 2026-11-11 20:33 ..
+
+== 7. 字号缩放 ==
+$ adb -s 192.168.100.62:5555 shell settings put system font_scale 1.3
+$ adb -s 192.168.100.62:5555 shell settings get system font_scale
+1.3
+（B9 截图 tmp_qb19_24/25 后恢复）
+$ adb -s 192.168.100.62:5555 shell settings put system font_scale 1.0
+$ adb -s 192.168.100.62:5555 shell settings get system font_scale
+1.0
+
+== 8. 会话崩溃计数（logcat_b19.txt，19,560 行） ==
+FATAL EXCEPTION              0
+ANR in io.legado             0
+RenderFlex overflowed        0
+OutOfMemoryError             0
+OutOfMemory                  0
+E/flutter                    0
+E AndroidRuntime             0
+Fatal signal                55（全部 uiautomator）
+
+$ adb -s 192.168.100.62:5555 logcat -b crash -d | wc -l
+1211
+$ grep -c "io.legado" crash_b19.txt
+0
+$ grep -oE "Cmdline: [^ ]+" crash_b19.txt | sort | uniq -c
+     55 Cmdline: uiautomator
+
+示例 tombstone 上下文：
+F libc    : Fatal signal 11 (SIGSEGV) ... in tid 11135 (Shutdown thread), pid 11135 (Shutdown thread)
+F DEBUG   : Cmdline: uiautomator
+F DEBUG   : pid: 11135, tid: 11135, name: Shutdown thread  >>> uiautomator <<<
+F DEBUG   : #01 pc ... libc.so (__cxa_finalize+287)
+F DEBUG   : #02 pc ... libc.so (exit+31)
+
+== 9. 进程退出原因 ==
+$ adb -s 192.168.100.62:5555 shell dumpsys activity exit-info io.legado.flutter_legado
+ApplicationExitInfo #0: reason=10 (USER REQUESTED) subreason=21 (FORCE STOP)
+ApplicationExitInfo #1: reason=10 (USER REQUESTED) subreason=21 (FORCE STOP)
+ApplicationExitInfo #2: reason=10 (USER REQUESTED) subreason=21 (FORCE STOP)
+ApplicationExitInfo #3: reason=16 (PACKAGE UPDATED)
+ApplicationExitInfo #4: reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) description=clear data
+（无 reason=5 CRASH / reason=6 ANR）
+
+== 10. 终态 ==
+$ adb -s 192.168.100.62:5555 shell pm clear io.legado.flutter_legado
+Success
+$ adb -s 192.168.100.62:5555 shell monkey -p io.legado.flutter_legado -c android.intent.category.LAUNCHER 1
+Events injected: 1
+（前台 io.legado.flutter_legado/io.legado.flutter.MainActivity；空书架截图 tmp_qb19_28.png）
+$ adb -s 192.168.100.62:5555 shell settings get system font_scale
+1.0
+$ adb -s 192.168.100.62:5555 shell rm -f /sdcard/Download/simhei.ttf
+$ adb -s 192.168.100.62:5555 shell ls /sdcard/Download/simhei.ttf
+ls: /sdcard/Download/simhei.ttf: No such file or directory
