@@ -8,6 +8,7 @@
 //! - [`migration`] — 基于版本号的增量迁移框架（MigrationRegistry）
 //! - [`import`] — Room JSON 数据导入工具
 //! - [`default_data`] — 默认数据导入（JSON 格式）
+//! - [`app_config`] — 正文净化等跨进程共享配置（caches `config:` 键）
 //!
 //! # Examples
 //!
@@ -25,6 +26,7 @@
 //! assert_eq!(count, 0);
 //! ```
 
+pub mod app_config;
 pub mod connection;
 pub mod default_data;
 pub mod import;

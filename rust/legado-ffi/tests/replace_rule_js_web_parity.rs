@@ -10,19 +10,23 @@
 //! 3. `@js:` 超时 → 两端保留原文；
 //! 4. 无 quickjs feature → 两端都不执行 `@js:`，普通规则仍生效；
 //! 5. [批17 回修 P1] App 构建下 Web `/testReplaceRule` 预览真实执行 `@js:`；
-//! 6. [批17 回修 P2] origin-only `scope` 的既有语义差异快照。
+//! 6. [批20-B] 配置面/作用域面统一：简繁转换、`replaceEnableDefault=false`、
+//!    章级 `sameTitleRemoved`、`scope`（拆分 + 书名精确匹配）与
+//!    `excludeScope`（正文路径忽略）两端逐字一致。
 //!
 //! **修复前红/覆盖性口径（按基线版本）**：
 //! - 批17 前基线 `217e2c3dcb` 红：Web 正文执行/绑定断言（旧 Web 跳过 `@js:`）；
 //! - `feebd44f41` 起为绿：`/testReplaceRule` 预览用例（修复随该提交落地，
 //!   当前仅防回归，不再标「父提交必红」）；
 //! - 覆盖性（父提交亦绿）：抛错、超时、无 quickjs —— 旧 Web 跳过 `@js:`
-//!   同样保留原文，故不能作为修复证据。
+//!   同样保留原文，故不能作为修复证据；
+//! - [批20-B] 简繁/替换默认开关/scope/excludeScope/章级去重用例在统一前
+//!   必红（Web 使用常量配置 + `ScopeContext` 子串匹配）。
 //!
-//! **parity 前提（P2-3）**：App 端与 Web 端均使用**默认正文净化配置**
-//! （`chineseConverterType=0`、`replaceEnableDefault=true`、章级去重开启、
-//! `reSegment=false`）且规则为全局作用域；非默认配置/scope 的差异见
-//! `docs/API_CONTRACT.md` §2.8 批17 回修登记。
+//! **parity 前提（批20-B 起）**：App 端与 Web 端读取**同一套 caches 配置键**
+//! （测试中两侧 DB 分别 seed 相同值），因此非默认配置下也要求逐字相等。
+//! 覆盖默认值（`chineseConverterType=0`、`replaceEnableDefault=true`、章级
+//! 去重开启、`reSegment=false`）的既有用例继续保留。
 //!
 //! 修复前（批15 产物）：Web 端 `purify_content` 调用无执行器管线，`@js:`
 //! 被静默跳过，输出原文 → 本文件在 `--features quickjs` 下红。
@@ -36,7 +40,7 @@
 //! - Web 侧每次测试自建内存 DB 与独立 `AppState`，经真实路由 `/getBookContent`
 //!   走生产请求链；
 //! - App 全局 DB 在本文件内共享 → 用异步互斥锁串行，且各用例使用唯一标记，
-//!   避免规则/书籍交叉污染。
+//!   避免规则/书籍/配置交叉污染。
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
@@ -51,6 +55,7 @@ use legado_ffi::db_state::with_database;
 use legado_ffi::legado_core::cache_book::CachedChapter;
 use legado_ffi::legado_core::download_manager::DownloadManager;
 use legado_ffi::legado_core::models::{Book, BookChapter, ReplaceRule};
+use legado_ffi::legado_db::app_config;
 use legado_ffi::legado_db::repository::cache_repository::CacheRepository;
 use legado_ffi::legado_db::repository::Repository;
 use legado_ffi::legado_db::{
@@ -152,20 +157,27 @@ async fn seed_web(
 /// 向 App 端全局 DB 写入书籍/章节/替换规则（App 不读 `cached_chapters`：
 /// 净化入口直接接收原始正文）
 ///
-/// **parity 前提（显式 seed）**：App 端正文净化会读取
-/// `config:chineseConverterType`（默认 0=不转换）、`config:replaceEnableDefault`
-/// （默认 true）、章级 `sameTitleRemoved:{bookUrl}:{index}`（无键=去除，显式
-/// 写 `"0"` 锁定）与 `readConfig.reSegment`（Book 行为空=关闭）。Web 端对应
-/// 值固定为 None/true/true/false；仅当两端均为默认配置时「逐字相等」成立。
+/// 默认配置（显式 seed）：`config:chineseConverterType=0`、
+/// `config:replaceEnableDefault=true`、章级 `sameTitleRemoved:{bookUrl}:{index}`
+/// 写 `"0"`（去除重复标题）。需要非默认配置的用例在调用本函数后用
+/// [`seed_app_config`] 覆盖（caches 表 REPLACE 语义，后写胜出）。
 ///
 /// 各用例使用唯一 bookUrl，且 DB 文件按进程号隔离，无需清理历史行。
 fn seed_app(book: &Book, chapter: &BookChapter, rules: &[ReplaceRule]) {
     with_database(|db| {
         let repo = CacheRepository::new(db.connection());
-        repo.put("config:chineseConverterType", "0", 0)?;
-        repo.put("config:replaceEnableDefault", "true", 0)?;
         repo.put(
-            &format!("sameTitleRemoved:{}:{}", book.book_url, chapter.index),
+            &format!("config:{}", app_config::CHINESE_CONVERT_TYPE_KEY),
+            "0",
+            0,
+        )?;
+        repo.put(
+            &format!("config:{}", app_config::REPLACE_ENABLE_DEFAULT_KEY),
+            "true",
+            0,
+        )?;
+        repo.put(
+            &app_config::same_title_removed_key(&book.book_url, chapter.index),
             "0",
             0,
         )
@@ -175,6 +187,27 @@ fn seed_app(book: &Book, chapter: &BookChapter, rules: &[ReplaceRule]) {
     with_database(|db| BookChapterRepository::new(db.connection()).insert(chapter)).unwrap();
     for rule in rules {
         with_database(|db| ReplaceRuleRepository::new(db.connection()).insert(rule)).unwrap();
+    }
+}
+
+/// 覆盖 App 端全局 caches 配置（在 [`seed_app`] 之后调用，后写胜出）
+fn seed_app_config(pairs: &[(&str, &str)]) {
+    with_database(|db| {
+        let repo = CacheRepository::new(db.connection());
+        for (key, value) in pairs {
+            repo.put(&format!("config:{key}"), value, 0)?;
+        }
+        Ok(())
+    })
+    .unwrap();
+}
+
+/// 覆盖 Web 端内存 DB 的 caches 配置（与 App 端同键同值）
+async fn seed_web_config(state: &Arc<AppState>, pairs: &[(&str, &str)]) {
+    let db = state.db.lock().await;
+    let repo = CacheRepository::new(db.connection());
+    for (key, value) in pairs {
+        repo.put(&format!("config:{key}"), value, 0).unwrap();
     }
 }
 
@@ -369,52 +402,61 @@ async fn test_app_build_enables_server_only_quickjs_path() {
     );
 }
 
-/// [批17 回修 P2-3] `scope` 语义差异快照（已登记，非本批统一项）
+/// [批20-B] `scope` 语义统一后的 App/Web 一致性
 ///
-/// - 书名精确命中（`scope` 恰为书名）：两端一致生效；
-/// - **仅命中书籍来源**（`scope` 为完整 `origin`）：Web 走
-///   `ContentProcessor` 的 `ScopeContext`（`scope.contains(book_name) ||
-///   scope.contains(book_origin)`）→ 生效；App 正文路径先把 `scope` 按
-///   `[,;，；]` 拆分后与**书名**精确比较（不看 origin、不处理
-///   `excludeScope`）→ 不生效。
+/// 统一目标（用户 2026-11-12 裁决：统一到 App 侧）：
+/// - 书名精确命中（`scope` 恰为书名）→ 两端生效；
+/// - `scope` 为完整 `origin`（仅命中书籍来源）→ 两端都**不**生效；
+/// - `scope` 为书名子串 → 两端都不生效。
 ///
-/// 该分叉为批前既有语义，已在 `docs/API_CONTRACT.md` §2.8 批17 回修登记；
-/// 统一 scope 语义需另立批次并做设备验收，本用例锁定当前口径（改动时
-/// 必须同步更新登记）。
+/// 修复前（批17 快照）：Web 走 `ContentProcessor` 的 `ScopeContext`
+/// 子串匹配 → origin-only 规则生效，与 App 不一致；本用例在该实现下红。
 #[cfg(feature = "quickjs")]
 #[tokio::test]
-async fn test_js_rule_scope_origin_only_known_divergence() {
+async fn test_js_rule_scope_semantics_unified_app_and_web() {
     let _app_guard = ensure_app_db().await;
-    let book_url = "https://batch17.example.com/book/parity-scope";
+    let book_url = "https://batch20.example.com/book/parity-scope";
     let title = "第一章";
-    let chapter_url = "https://batch17.example.com/ch/scope-0";
-    let raw = "前A标记中B标记后";
+    let chapter_url = "https://batch20.example.com/ch/scope-0";
+    let raw = "前A标记中B标记后C标记";
     let rules = [
         // 书名精确命中：两端都生效
         ReplaceRule {
-            name: "批17_书名作用域".to_string(),
+            name: "批20_书名作用域".to_string(),
             pattern: "A标记".to_string(),
             replacement: "A已换".to_string(),
             is_regex: false,
             is_enabled: true,
             scope_content: true,
-            scope: Some("批十七作用域书".to_string()),
+            scope: Some("批二十作用域书".to_string()),
             ..Default::default()
         },
-        // 仅书籍来源命中：Web 生效、App 不生效（既有差异）
+        // 仅书籍来源命中：统一后两端都不生效
         ReplaceRule {
-            name: "批17_来源作用域".to_string(),
+            name: "批20_来源作用域".to_string(),
             pattern: "B标记".to_string(),
             replacement: r#"@js: result + "!""#.to_string(),
             is_regex: true,
             is_enabled: true,
             scope_content: true,
-            scope: Some("https://batch17.example.com".to_string()),
+            scope: Some("https://batch20.example.com".to_string()),
+            ..Default::default()
+        },
+        // 书名子串（非精确项）：两端都不生效
+        ReplaceRule {
+            name: "批20_子串作用域".to_string(),
+            pattern: "C标记".to_string(),
+            replacement: "C已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("批二十作用域".to_string()),
             ..Default::default()
         },
     ];
+    let expected = "前A已换中B标记后C标记";
 
-    let book = test_book(book_url, "批十七作用域书");
+    let book = test_book(book_url, "批二十作用域书");
     let chapter = test_chapter(book_url, 0, title, chapter_url);
     let web_state = make_web_state();
     seed_web(&web_state, &book, &chapter, raw, &rules).await;
@@ -428,15 +470,352 @@ async fn test_js_rule_scope_origin_only_known_divergence() {
         .to_string();
     let app = app_content(book_url, raw, title, 0, chapter_url);
 
-    assert_eq!(
-        app, "前A已换中B标记后",
-        "App：书名 scope 生效、origin-only scope 不生效（既有口径）"
+    assert_eq!(app, expected, "App：书名精确 scope 生效，来源/子串不生效");
+    assert_eq!(web, expected, "Web：必须与 App 使用同一 scope 语义");
+    assert_eq!(app, web, "App 与 Web 对同一 scope 判定必须一致");
+}
+
+/// 断言同一书/章/规则/配置下 App 与 Web 输出均为 `expected`
+///
+/// 调用方必须先持有 [`ensure_app_db`] 的守卫（本函数会写 App 全局 DB）。
+async fn assert_app_web_parity(
+    case: &str,
+    book: &Book,
+    chapter: &BookChapter,
+    raw: &str,
+    rules: &[ReplaceRule],
+    config: &[(&str, &str)],
+    expected: &str,
+) {
+    let web_state = make_web_state();
+    seed_web(&web_state, book, chapter, raw, rules).await;
+    seed_app(book, chapter, rules);
+    // 两端 seed 相同配置（caches REPLACE 语义，覆盖 seed_app 的默认值）
+    seed_web_config(&web_state, config).await;
+    seed_app_config(config);
+
+    let web_json = web_content(web_state, &book.book_url, chapter.index).await;
+    assert_eq!(web_json["isSuccess"], true, "{case}: web={web_json}");
+    let web = web_json["data"].as_str().expect("Web 正文应为字符串");
+    let app = app_content(
+        &book.book_url,
+        raw,
+        &chapter.title,
+        chapter.index,
+        &chapter.url,
     );
-    assert_eq!(
-        web, "前A已换中B标记!后",
-        "Web：书名与 origin-only scope 均生效（原版 DAO 口径）"
+
+    assert_eq!(app, expected, "{case}: App 结果不符");
+    assert_eq!(web, expected, "{case}: Web 结果不符");
+    assert_eq!(app, web, "{case}: App 与 Web 必须逐字一致");
+}
+
+/// [批20-B] 简繁转换：Web 必须读取与 App 相同的 `chineseConverterType`
+///
+/// 修复前：Web 固定 `chinese_convert=None` → 原文不转换，与 App 不一致（红）。
+#[tokio::test]
+async fn test_chinese_convert_parity_from_shared_config() {
+    let _app_guard = ensure_app_db().await;
+    let book_url = "https://batch20.example.com/book/parity-convert";
+    let book = test_book(book_url, "批二十简繁书");
+    let chapter = test_chapter(
+        book_url,
+        0,
+        "第一章",
+        "https://batch20.example.com/ch/convert-0",
     );
-    assert_ne!(app, web, "该差异已登记，非本批修复范围");
+
+    assert_app_web_parity(
+        "简繁转换 t2s",
+        &book,
+        &chapter,
+        "前測試內容后",
+        &[],
+        &[("chineseConverterType", "1")],
+        "前测试内容后",
+    )
+    .await;
+}
+
+/// [批20-B] `replaceEnableDefault=false`：两端都不应用替换规则
+///
+/// 修复前：Web 固定默认 true → 仍替换，与 App 不一致（红）。
+#[tokio::test]
+async fn test_replace_enable_default_false_parity() {
+    let _app_guard = ensure_app_db().await;
+    let book_url = "https://batch20.example.com/book/parity-replace-off";
+    let book = test_book(book_url, "批二十替换开关书");
+    let chapter = test_chapter(
+        book_url,
+        0,
+        "第一章",
+        "https://batch20.example.com/ch/off-0",
+    );
+    let rule = ReplaceRule {
+        name: "批20_替换开关".to_string(),
+        pattern: "批二十替换标记".to_string(),
+        replacement: "已换".to_string(),
+        is_regex: false,
+        is_enabled: true,
+        scope_content: true,
+        ..Default::default()
+    };
+
+    assert_app_web_parity(
+        "替换总开关关闭",
+        &book,
+        &chapter,
+        "前批二十替换标记后",
+        std::slice::from_ref(&rule),
+        &[("replaceEnableDefault", "false")],
+        "前批二十替换标记后",
+    )
+    .await;
+}
+
+/// [批20-B] `scope` 语义两端一致：按 `[,;，；]` 拆分 + 书名精确匹配，
+/// 不看 `origin`
+///
+/// 覆盖：多书名精确命中、origin-only、书名子串、`global`。
+/// 修复前：Web 子串匹配 → origin-only 规则生效，与 App 不一致（红）。
+#[tokio::test]
+async fn test_content_scope_parity_split_exact_book_name() {
+    let _app_guard = ensure_app_db().await;
+    let book_url = "https://batch20.example.com/book/parity-scope-content";
+    let book = test_book(book_url, "批二十作用域书");
+    let chapter = test_chapter(book_url, 0, "第一章", "https://batch20.example.com/ch/sc-0");
+    let rules = [
+        ReplaceRule {
+            name: "批20_多书名精确".to_string(),
+            pattern: "A标记".to_string(),
+            replacement: "A已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("批二十作用域书,另一本书".to_string()),
+            ..Default::default()
+        },
+        ReplaceRule {
+            name: "批20_仅来源".to_string(),
+            pattern: "B标记".to_string(),
+            replacement: "B已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("https://batch20.example.com".to_string()),
+            ..Default::default()
+        },
+        ReplaceRule {
+            name: "批20_书名子串".to_string(),
+            pattern: "C标记".to_string(),
+            replacement: "C已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("批二十作用域".to_string()),
+            ..Default::default()
+        },
+        ReplaceRule {
+            name: "批20_全局".to_string(),
+            pattern: "D标记".to_string(),
+            replacement: "D已换".to_string(),
+            is_regex: false,
+            is_enabled: true,
+            scope_content: true,
+            scope: Some("global".to_string()),
+            ..Default::default()
+        },
+    ];
+
+    assert_app_web_parity(
+        "scope 拆分精确匹配",
+        &book,
+        &chapter,
+        "A标记B标记C标记D标记",
+        &rules,
+        &[],
+        "A已换B标记C标记D已换",
+    )
+    .await;
+}
+
+/// [批20-B] 正文路径两端都忽略 `excludeScope`
+///
+/// 修复前：Web 走 `ScopeContext` 的 excludeScope 排除 → 规则不生效，
+/// 与 App（正文路径不处理 excludeScope）不一致（红）。
+#[tokio::test]
+async fn test_exclude_scope_ignored_in_content_parity() {
+    let _app_guard = ensure_app_db().await;
+    let book_url = "https://batch20.example.com/book/parity-exclude";
+    let book = test_book(book_url, "批二十排除书");
+    let chapter = test_chapter(book_url, 0, "第一章", "https://batch20.example.com/ch/ex-0");
+    let rule = ReplaceRule {
+        name: "批20_excludeScope".to_string(),
+        pattern: "E标记".to_string(),
+        replacement: "E已换".to_string(),
+        is_regex: false,
+        is_enabled: true,
+        scope_content: true,
+        exclude_scope: Some("批二十排除书".to_string()),
+        ..Default::default()
+    };
+
+    assert_app_web_parity(
+        "excludeScope 正文忽略",
+        &book,
+        &chapter,
+        "前E标记后",
+        std::slice::from_ref(&rule),
+        &[],
+        "前E已换后",
+    )
+    .await;
+}
+
+/// [批20-B] 章级 `sameTitleRemoved` 开关两端一致
+///
+/// 默认（无键）= 去除重复标题；章级 opt-out（值 `"1"`）= 保留原始标题。
+/// 修复前：Web 固定 `remove_duplicate_title=true` → opt-out 章仍去除（红）。
+#[tokio::test]
+async fn test_same_title_removed_toggle_parity() {
+    let _app_guard = ensure_app_db().await;
+
+    // 场景 a：默认（去除重复标题）
+    let book_default = test_book(
+        "https://batch20.example.com/book/parity-title-default",
+        "批二十去重书A",
+    );
+    let chapter_default = test_chapter(
+        &book_default.book_url,
+        0,
+        "第一章 同名标题",
+        "https://batch20.example.com/ch/title-a-0",
+    );
+    let raw = "第一章 同名标题\n正文标记";
+    let rule = ReplaceRule {
+        name: "批20_去重标题".to_string(),
+        pattern: "正文标记".to_string(),
+        replacement: "已换".to_string(),
+        is_regex: false,
+        is_enabled: true,
+        scope_content: true,
+        ..Default::default()
+    };
+
+    assert_app_web_parity(
+        "默认去除重复标题",
+        &book_default,
+        &chapter_default,
+        raw,
+        std::slice::from_ref(&rule),
+        &[],
+        "已换",
+    )
+    .await;
+
+    // 场景 b：章级 opt-out（保留标题）
+    let book_keep = test_book(
+        "https://batch20.example.com/book/parity-title-keep",
+        "批二十去重书B",
+    );
+    let chapter_keep = test_chapter(
+        &book_keep.book_url,
+        0,
+        "第一章 同名标题",
+        "https://batch20.example.com/ch/title-b-0",
+    );
+
+    let web_state = make_web_state();
+    seed_web(
+        &web_state,
+        &book_keep,
+        &chapter_keep,
+        raw,
+        std::slice::from_ref(&rule),
+    )
+    .await;
+    seed_app(&book_keep, &chapter_keep, std::slice::from_ref(&rule));
+    {
+        let db = web_state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put(
+                &app_config::same_title_removed_key(&book_keep.book_url, 0),
+                "1",
+                0,
+            )
+            .unwrap();
+    }
+    with_database(|db| {
+        CacheRepository::new(db.connection()).put(
+            &app_config::same_title_removed_key(&book_keep.book_url, 0),
+            "1",
+            0,
+        )
+    })
+    .unwrap();
+
+    let web_json = web_content(web_state, &book_keep.book_url, 0).await;
+    assert_eq!(web_json["isSuccess"], true, "web={web_json}");
+    let web = web_json["data"].as_str().expect("Web 正文应为字符串");
+    let app = app_content(
+        &book_keep.book_url,
+        raw,
+        &chapter_keep.title,
+        chapter_keep.index,
+        &chapter_keep.url,
+    );
+    let expected = "第一章 同名标题\n已换";
+    assert_eq!(app, expected, "App：章级 opt-out 应保留标题");
+    assert_eq!(web, expected, "Web：必须读取同一章级开关");
+    assert_eq!(app, web);
+}
+
+/// [批20-B] Web 配置读取失败 → 回退默认值（不崩、不返回原文）
+///
+/// 删除 `caches` 表模拟读库失败：净化仍按默认配置执行（去重标题开、
+/// 替换默认开），而不是把配置读取失败误当成「关闭所有净化」。
+#[tokio::test]
+async fn test_web_purify_config_read_failure_falls_back_to_defaults() {
+    let web_state = make_web_state();
+    let book_url = "https://batch20.example.com/book/parity-config-fail";
+    let book = test_book(book_url, "批二十配置失败书");
+    let chapter = test_chapter(
+        book_url,
+        0,
+        "第一章 同名标题",
+        "https://batch20.example.com/ch/cf-0",
+    );
+    let raw = "第一章 同名标题\n正文标记";
+    let rule = ReplaceRule {
+        name: "批20_配置失败回退".to_string(),
+        pattern: "正文标记".to_string(),
+        replacement: "已换".to_string(),
+        is_regex: false,
+        is_enabled: true,
+        scope_content: true,
+        ..Default::default()
+    };
+    seed_web(
+        &web_state,
+        &book,
+        &chapter,
+        raw,
+        std::slice::from_ref(&rule),
+    )
+    .await;
+    {
+        let db = web_state.db.lock().await;
+        db.connection()
+            .execute("DROP TABLE caches", [])
+            .expect("删除 caches 表以模拟配置读取失败");
+    }
+
+    let web_json = web_content(web_state, book_url, 0).await;
+    assert_eq!(web_json["isSuccess"], true, "web={web_json}");
+    assert_eq!(
+        web_json["data"], "已换",
+        "配置读取失败应回退默认值（去重标题开 + 替换默认开）"
+    );
 }
 
 /// 批17：`@js:` 抛错两端都保留原文，且后续普通规则继续生效

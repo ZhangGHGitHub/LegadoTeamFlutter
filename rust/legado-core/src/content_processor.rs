@@ -26,7 +26,14 @@
 //!   `\uXXXX`、`\R`、`(?d)`/`(?c)`/`(?u)` 等 Java 专有语法做等价转换；
 //! - 替换超时：每条规则在独立线程执行，超过 `timeoutMillisecond` 自动跳过；
 //! - 作用域过滤：`scopeTitle`（仅标题）/ `scopeContent`（仅正文）/
-//!   `excludeScope`（排除书名/书源）。
+//!   `excludeScope`（排除书源；**正文路径不参与**，对齐 App 现状）。
+//!
+//! ## 书籍作用域统一（批20-B）
+//!
+//! 正文路径的 `scope` 判定统一为 App 语义（[`book_scope_matches`]）：
+//! 按 `[,;，；]` 拆分后与**书名**精确比较，不看 `origin`、不处理
+//! `excludeScope`。`legado-ffi` 阅读端与 `legado-server` Web 端共用本函数，
+//! 禁止各写一份。
 
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
@@ -67,9 +74,13 @@ pub trait ReplaceJsExecutor: Send + Sync {
 
 // ─── 作用域上下文 ──────────────────────────────────────────
 
-/// 作用域上下文（书名 + 书源），用于 scope / excludeScope 匹配
+/// 作用域上下文（书名 + 书源）
 ///
-/// 对应 Kotlin `ReplaceRuleDao.findEnabledByContentScope(name, origin)` 的两个参数。
+/// - 正文路径：仅 `book_name` 参与 `scope` 精确匹配（[`book_scope_matches`]），
+///   不看 `book_origin`、不处理 `excludeScope`（与 App 阅读端一致）；
+/// - 标题路径（`filter_title_rules`）：保留原版 DAO 的「书名/书源」子串匹配
+///   与 `excludeScope` 排除；
+/// - `book_name` 同时用于去重复标题的书名前缀匹配。
 #[derive(Debug, Clone, Default)]
 pub struct ScopeContext {
     /// 书名（对应 DAO 的 :name）
@@ -155,7 +166,8 @@ impl Default for ProcessorConfig {
 /// 内容处理器
 pub struct ContentProcessor {
     config: ProcessorConfig,
-    /// 作用域上下文（可选）：设置后启用 scope / excludeScope 过滤
+    /// 作用域上下文（可选）：正文规则按书名精确匹配，标题规则额外启用
+    /// `excludeScope` 排除；`book_name` 亦用于去重复标题
     scope_context: Option<ScopeContext>,
 }
 
@@ -171,7 +183,8 @@ impl ContentProcessor {
         Self::new(ProcessorConfig::default())
     }
 
-    /// 设置作用域上下文（启用 excludeScope 排除与 scope 匹配）
+    /// 设置作用域上下文（书名用于去重复标题；正文 `scope` 按
+    /// [`book_scope_matches`] 精确匹配，标题规则保留 `excludeScope` 排除）
     pub fn with_scope_context(mut self, ctx: ScopeContext) -> Self {
         self.scope_context = Some(ctx);
         self
@@ -541,7 +554,33 @@ fn source_context_contains(needle: &str, ctx: &SourceScopeContext) -> bool {
         || ctx.source_url.to_lowercase().contains(&needle)
 }
 
-/// 规则作用域判定（enabled + scopeTitle/scopeContent + scope + excludeScope）
+/// 书籍作用域判定（App/Web 正文路径统一语义）
+///
+/// 对齐 App 阅读端正文净化：
+/// - `None` / 空串 / `"global"` → 全局生效；
+/// - 否则按 `[,;，；]` 拆分，任一项 `trim()` 后与书名**精确相等**才生效；
+/// - 书名为空时带具体 scope 的规则不生效（避免空串恒真）；
+/// - **不看书籍来源（`origin`），不处理 `excludeScope`**。
+///
+/// `legado-ffi` 阅读端与 `legado-server` Web 端必须共用本函数，禁止各写一份。
+pub fn book_scope_matches(scope: Option<&str>, book_name: &str) -> bool {
+    match scope {
+        None => true,
+        Some(scope) => {
+            if scope.is_empty() || scope == "global" {
+                true
+            } else if book_name.is_empty() {
+                false
+            } else {
+                scope
+                    .split([',', ';', '，', '；'])
+                    .any(|item| item.trim() == book_name)
+            }
+        }
+    }
+}
+
+/// 规则作用域判定（enabled + scopeTitle/scopeContent + 模式相关 scope 过滤）
 fn scope_allows(rule: &ReplaceRuleEntry, mode: ScopeMode, ctx: Option<&ScopeContext>) -> bool {
     if !rule.is_enabled {
         return false;
@@ -553,19 +592,24 @@ fn scope_allows(rule: &ReplaceRuleEntry, mode: ScopeMode, ctx: Option<&ScopeCont
     if !in_scope {
         return false;
     }
-    if let Some(ctx) = ctx {
-        if !scope_matches(rule.scope.as_deref(), ctx) {
-            return false;
+    match (mode, ctx) {
+        // 无上下文：不做 scope 过滤（App 阅读端已按统一语义预过滤）
+        (_, None) => true,
+        // 正文路径：统一到 App 语义（书名精确匹配，忽略 origin/excludeScope）
+        (ScopeMode::Content, Some(ctx)) => {
+            book_scope_matches(rule.scope.as_deref(), &ctx.book_name)
         }
-        if is_excluded(rule.exclude_scope.as_deref(), ctx) {
-            return false;
+        // 标题路径：保留原版 DAO 的「书名/书源」子串匹配 + excludeScope 排除
+        (ScopeMode::Title, Some(ctx)) => {
+            title_scope_matches(rule.scope.as_deref(), ctx)
+                && !title_is_excluded(rule.exclude_scope.as_deref(), ctx)
         }
     }
-    true
 }
 
-/// scope 匹配（对应 DAO：`scope LIKE %name% OR scope LIKE %origin% OR scope IS NULL OR scope = ''`）
-fn scope_matches(scope: Option<&str>, ctx: &ScopeContext) -> bool {
+/// 标题路径 scope 匹配（对应 DAO：`scope LIKE %name% OR scope LIKE %origin% OR
+/// scope IS NULL OR scope = ''`）
+fn title_scope_matches(scope: Option<&str>, ctx: &ScopeContext) -> bool {
     match scope {
         None => true,
         Some("") => true,
@@ -573,8 +617,9 @@ fn scope_matches(scope: Option<&str>, ctx: &ScopeContext) -> bool {
     }
 }
 
-/// excludeScope 排除判定（对应 DAO：`excludeScope IS NULL OR (NOT LIKE %name% AND NOT LIKE %origin%)`）
-fn is_excluded(exclude_scope: Option<&str>, ctx: &ScopeContext) -> bool {
+/// 标题路径 excludeScope 排除判定（对应 DAO：`excludeScope IS NULL OR
+/// (NOT LIKE %name% AND NOT LIKE %origin%)`）
+fn title_is_excluded(exclude_scope: Option<&str>, ctx: &ScopeContext) -> bool {
     match exclude_scope {
         None => false,
         Some("") => false,
@@ -2100,8 +2145,8 @@ mod tests {
     }
 
     #[test]
-    fn test_exclude_scope_skips_rule() {
-        // excludeScope 包含书名 → 规则不生效
+    fn test_exclude_scope_ignored_in_content_pipeline() {
+        // 正文路径统一 App 语义：不处理 excludeScope → 规则照常生效
         let rules = vec![ReplaceRuleEntry {
             pattern: "广告".to_string(),
             replacement: String::new(),
@@ -2115,9 +2160,9 @@ mod tests {
         })
         .with_scope_context(ScopeContext::new("书籍A", "https://src"));
         let result = processor.process("广告内容", "", &rules);
-        assert_eq!(result, "广告内容");
+        assert_eq!(result, "内容", "正文路径必须忽略 excludeScope");
 
-        // 书名不在排除范围 → 规则生效
+        // 书名不在排除范围同样生效（excludeScope 完全不参与正文判定）
         let processor2 = ContentProcessor::new(ProcessorConfig {
             apply_replace_rules: true,
             ..noop_config()
@@ -2128,8 +2173,27 @@ mod tests {
     }
 
     #[test]
-    fn test_exclude_scope_by_origin() {
-        // excludeScope 包含书源（对应 DAO：excludeScope LIKE %origin%）→ 规则不生效
+    fn test_exclude_scope_still_applies_to_title_filter() {
+        // 标题路径保留原版 excludeScope 排除语义（本次仅统一正文路径）
+        let rules = vec![ReplaceRuleEntry {
+            pattern: "广告".to_string(),
+            replacement: String::new(),
+            is_regex: false,
+            scope_title: true,
+            scope_content: false,
+            exclude_scope: Some("书籍A".to_string()),
+            ..ReplaceRuleEntry::default()
+        }];
+        assert!(filter_title_rules(&rules, &ScopeContext::new("书籍A", "https://src")).is_empty());
+        assert_eq!(
+            filter_title_rules(&rules, &ScopeContext::new("书籍B", "https://src")).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_exclude_scope_by_origin_ignored_in_content_pipeline() {
+        // 正文路径连 origin 都不看，excludeScope 按 origin 命中也不排除
         let rules = vec![ReplaceRuleEntry {
             pattern: "广告".to_string(),
             replacement: String::new(),
@@ -2143,7 +2207,7 @@ mod tests {
         })
         .with_scope_context(ScopeContext::new("任意书籍", "https://biquge.com"));
         let result = processor.process("广告内容", "", &rules);
-        assert_eq!(result, "广告内容");
+        assert_eq!(result, "内容");
     }
 
     #[test]
@@ -2193,7 +2257,8 @@ mod tests {
         let ctx = ScopeContext::new("斗破苍穹", "https://src");
         let filtered = filter_content_rules(&rules, &ctx);
         let names: Vec<&str> = filtered.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, vec!["正文全局"]);
+        // 正文路径不处理 excludeScope：排除本书的规则仍应保留
+        assert_eq!(names, vec!["正文全局", "排除本书"]);
     }
 
     #[test]
@@ -2235,6 +2300,65 @@ mod tests {
         ];
         let ctx = ScopeContext::new("任意", "任意");
         assert_eq!(filter_content_rules(&rules, &ctx).len(), 2);
+    }
+
+    #[test]
+    fn test_book_scope_matches_unified_semantics() {
+        // None / 空 / global → 全局
+        assert!(book_scope_matches(None, "任意书"));
+        assert!(book_scope_matches(Some(""), "任意书"));
+        assert!(book_scope_matches(Some("global"), "任意书"));
+
+        // 分隔符拆分 + trim 精确匹配
+        assert!(book_scope_matches(Some("书A, 书B;书C，书D；书E"), "书B"));
+        assert!(book_scope_matches(Some("书A, 书B;书C，书D；书E"), "书D"));
+
+        // 子串/部分书名不命中
+        assert!(!book_scope_matches(Some("斗破苍穹"), "斗破"));
+        assert!(!book_scope_matches(Some("斗破"), "斗破苍穹"));
+
+        // 只看书名，不看 origin
+        assert!(!book_scope_matches(
+            Some("https://src.example.com"),
+            "示例书"
+        ));
+
+        // 书名为空时带具体 scope 不生效
+        assert!(!book_scope_matches(Some("示例书"), ""));
+    }
+
+    #[test]
+    fn test_content_scope_split_exact_and_origin_ignored() {
+        let rules = vec![
+            ReplaceRuleEntry {
+                name: "多书名".to_string(),
+                pattern: "A".to_string(),
+                replacement: "X".to_string(),
+                is_regex: false,
+                scope: Some("书A，书B;书C".to_string()),
+                ..ReplaceRuleEntry::default()
+            },
+            ReplaceRuleEntry {
+                name: "仅来源".to_string(),
+                pattern: "B".to_string(),
+                replacement: "Y".to_string(),
+                is_regex: false,
+                scope: Some("https://src.example.com".to_string()),
+                ..ReplaceRuleEntry::default()
+            },
+        ];
+        let ctx = ScopeContext::new("书B", "https://src.example.com");
+        let filtered = filter_content_rules(&rules, &ctx);
+        let names: Vec<&str> = filtered.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["多书名"],
+            "仅书名精确拆分命中；origin-only 不生效"
+        );
+
+        // 部分书名子串不命中
+        let ctx2 = ScopeContext::new("书", "https://src.example.com");
+        assert!(filter_content_rules(&rules, &ctx2).is_empty());
     }
 
     // ─── 源作用域（scopeSource）测试 ───────────────────────

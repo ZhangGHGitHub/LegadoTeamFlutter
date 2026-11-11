@@ -7,11 +7,12 @@ use serde::{Deserialize, Serialize};
 
 use legado_core::cache_book::CachedChapter;
 use legado_core::content_processor::{
-    ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry,
+    book_scope_matches, ContentProcessor, ProcessorConfig, ReplaceJsExecutor, ReplaceRuleEntry,
 };
 use legado_core::models::{book_type, Book, BookChapter, ReplaceRule};
 use legado_core::web_book::{BookSourceFetcher, WebBookEngine, WebChapter};
 use legado_core::{LegadoError, LegadoResult};
+use legado_db::app_config;
 use legado_db::repository::Repository;
 use legado_db::{
     BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository,
@@ -26,10 +27,9 @@ use crate::db_state::{resolve_local_book_path, with_database};
 use crate::runtime;
 
 // ─── 简繁转换配置（对齐 Kotlin AppConfig.chineseConverterType） ──────────────
-
-/// 配置键：繁简转换类型（与 Kotlin `PreferKey.chineseConverterType` 同名，
-/// 备份恢复时可跨端互通）
-const CHINESE_CONVERT_CONFIG_KEY: &str = "chineseConverterType";
+//
+// [批20-B] 键名 / 解析口径 / 章级开关键下沉 `legado_db::app_config`，
+// 与 Web 阅读端共用同一份实现（两端读同一 caches 表）。
 
 /// [批1b-3] 配置键：无目录规则时每章最大字数（与参考版
 /// `PreferKey.maxLengthWithNoToc` 同名，跨端备份可互通）
@@ -39,11 +39,8 @@ const MAX_LENGTH_WITH_NO_TOC_CONFIG_KEY: &str = "maxLengthWithNoToc";
 ///
 /// 配置不存在、非数字或超出 0..=2 范围时回退为 0（不转换）。
 pub fn get_chinese_convert_type() -> i32 {
-    crate::api::config_api::get_config(CHINESE_CONVERT_CONFIG_KEY)
-        .ok()
-        .and_then(|v| v.parse::<i32>().ok())
-        .filter(|t| (0..=2).contains(t))
-        .unwrap_or(0)
+    let raw = crate::api::config_api::get_config(app_config::CHINESE_CONVERT_TYPE_KEY).ok();
+    app_config::parse_chinese_convert_type(raw.as_deref())
 }
 
 /// 设置并持久化繁简转换类型（0=不转换 / 1=繁转简 t2s / 2=简转繁 s2t）
@@ -55,16 +52,15 @@ pub fn set_chinese_convert_type(convert_type: i32) {
     } else {
         0
     };
-    let _ = crate::api::config_api::set_config(CHINESE_CONVERT_CONFIG_KEY, &normalized.to_string());
+    let _ = crate::api::config_api::set_config(
+        app_config::CHINESE_CONVERT_TYPE_KEY,
+        &normalized.to_string(),
+    );
 }
 
 /// 繁简转换类型 → content_processor 管线方向（None / "t2s" / "s2t"）
 fn chinese_convert_direction(convert_type: i32) -> Option<String> {
-    match convert_type {
-        1 => Some("t2s".to_string()),
-        2 => Some("s2t".to_string()),
-        _ => None,
-    }
+    app_config::chinese_convert_direction(convert_type)
 }
 
 /// 当前配置的管线转换方向（读取持久化配置）
@@ -73,9 +69,6 @@ fn current_chinese_convert_direction() -> Option<String> {
 }
 
 // ─── 替换净化默认开关（批7a，对齐 Kotlin AppConfig.replaceEnableDefault）────────
-
-/// 配置键：默认启用替换净化（与 Kotlin `PreferKey.replaceEnableDefault` 同名）
-const REPLACE_ENABLE_DEFAULT_CONFIG_KEY: &str = "replaceEnableDefault";
 
 /// 读取「默认启用替换净化」（缺省/非法 → true）
 ///
@@ -86,13 +79,11 @@ const REPLACE_ENABLE_DEFAULT_CONFIG_KEY: &str = "replaceEnableDefault";
 /// - `"false"` / `"0"`（忽略大小写与首尾空白）→ `false`；
 /// - 其余 → `true`。
 ///
-/// 参考同文件 [`get_chinese_convert_type`] 的 config_api 用法：读取失败
-/// （DB 不可用等）同样回落 `true`，不阻断正文读取。
+/// [批20-B] 解析下沉 `legado_db::app_config::parse_replace_enable_default`，
+/// 与 Web 共用；读取失败（DB 不可用等）同样回落 `true`，不阻断正文读取。
 fn get_replace_enable_default() -> bool {
-    match crate::api::config_api::get_config(REPLACE_ENABLE_DEFAULT_CONFIG_KEY) {
-        Ok(raw) => !matches!(raw.trim().to_lowercase().as_str(), "false" | "0"),
-        Err(_) => true,
-    }
+    let raw = crate::api::config_api::get_config(app_config::REPLACE_ENABLE_DEFAULT_KEY).ok();
+    app_config::parse_replace_enable_default(raw.as_deref())
 }
 
 /// 书籍实体是否为本地书（对齐 Kotlin `Book.isLocal`，与
@@ -186,11 +177,10 @@ fn get_max_length_with_no_toc() -> u32 {
 /// 该章 opt-out（保留原始标题）；无键/其他值 → 全局默认（去除重复标题）。
 /// 语义对齐原版：原版以 "nr" 后缀章节文件标记不删标题的章（removeSameTitleCache），
 /// 此处等价地以 caches 键表达，缓存清理时开关随之复位为默认，与原版语义一致。
-const SAME_TITLE_REMOVED_KEY_PREFIX: &str = "sameTitleRemoved:";
-
-/// 构造章级开关的 caches 存储键
+///
+/// [批20-B] 键构造 / 值解析下沉 `legado_db::app_config`，Web 阅读端共用。
 fn same_title_removed_key(book_url: &str, chapter_index: i32) -> String {
-    format!("{SAME_TITLE_REMOVED_KEY_PREFIX}{book_url}:{chapter_index}")
+    app_config::same_title_removed_key(book_url, chapter_index)
 }
 
 /// 该章是否启用「去除重复标题」（全局默认 true；章级 opt-out 时 false）
@@ -208,7 +198,7 @@ fn is_same_title_removed(book_url: &str, chapter_index: i32) -> bool {
             None
         }
     };
-    !matches!(value.as_deref(), Some("1"))
+    app_config::parse_same_title_removed(value.as_deref())
 }
 
 /// 权威查询章级「删除重复标题」开关（caches KV，对齐 §5.14 遗留）
@@ -1669,27 +1659,14 @@ fn process_content_with_rules_inner_ctx(
     remove_duplicate_title: bool,
     js_bindings: ReplaceJsBindings,
 ) -> String {
-    // 2. 按 scope 过滤（与 Android 语义一致，并修复空 book_name 守卫与精确匹配）：
+    // 2. 按 scope 过滤（统一语义下沉 `legado_core::content_processor::
+    //    book_scope_matches`，Web 阅读端共用同一实现）：
     //    - None → 全局生效
     //    - Some(scope)：scope 为空或 "global" → 全局；
     //      否则仅当 book_name 非空，且 scope 按 [,;，；] 拆分后存在 trim()==book_name 的精确项才生效。
     let entries: Vec<ReplaceRuleEntry> = rules
         .iter()
-        .filter(|rule| match &rule.scope {
-            None => true,
-            Some(scope) => {
-                if scope.is_empty() || scope == "global" {
-                    true
-                } else if book_name.is_empty() {
-                    // book_name 为空时，带具体 scope 的规则不生效（避免 contains("") 恒真）
-                    false
-                } else {
-                    scope
-                        .split([',', ';', '，', '；'])
-                        .any(|item| item.trim() == book_name)
-                }
-            }
-        })
+        .filter(|rule| book_scope_matches(rule.scope.as_deref(), book_name))
         .map(ReplaceRuleEntry::from_replace_rule)
         .collect();
 
@@ -4782,14 +4759,16 @@ mod tests {
     #[test]
     fn test_replace_enable_default_parsing() {
         let _db_guard = crate::db_state::ensure_test_db();
-        let _cfg = ConfigValueGuard::capture(REPLACE_ENABLE_DEFAULT_CONFIG_KEY);
+        let _cfg = ConfigValueGuard::capture(app_config::REPLACE_ENABLE_DEFAULT_KEY);
 
         for raw in ["false", "FALSE", "  False  ", "0", " 0 "] {
-            crate::api::config_api::set_config(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, raw).unwrap();
+            crate::api::config_api::set_config(app_config::REPLACE_ENABLE_DEFAULT_KEY, raw)
+                .unwrap();
             assert!(!get_replace_enable_default(), "raw={raw:?} 应解析为 false");
         }
         for raw in ["true", "TRUE", "1", "", "anything", "2"] {
-            crate::api::config_api::set_config(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, raw).unwrap();
+            crate::api::config_api::set_config(app_config::REPLACE_ENABLE_DEFAULT_KEY, raw)
+                .unwrap();
             assert!(get_replace_enable_default(), "raw={raw:?} 应回落 true");
         }
     }
@@ -4802,8 +4781,9 @@ mod tests {
     fn test_use_replace_rule_false_keeps_chinese_convert() {
         let _db_guard = crate::db_state::ensure_test_db();
         // 全局默认置 true，证明关闭来自书级显式 false（而非全局默认）
-        let _replace_default = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
-        let _chinese = ConfigValueGuard::set(CHINESE_CONVERT_CONFIG_KEY, "1");
+        let _replace_default =
+            ConfigValueGuard::set(app_config::REPLACE_ENABLE_DEFAULT_KEY, "true");
+        let _chinese = ConfigValueGuard::set(app_config::CHINESE_CONVERT_TYPE_KEY, "1");
         let book_url = "https://batch7a.example.com/use-replace-false";
         insert_batch7a_book(Book {
             book_url: book_url.to_string(),
@@ -4836,7 +4816,8 @@ mod tests {
     #[test]
     fn test_image_book_replace_default_off_explicit_on() {
         let _db_guard = crate::db_state::ensure_test_db();
-        let _replace_default = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+        let _replace_default =
+            ConfigValueGuard::set(app_config::REPLACE_ENABLE_DEFAULT_KEY, "true");
         let rule_id = insert_batch7a_rule("批7a_image_gate_unique", "广告", "");
         let content = "图片广告正文";
 
@@ -4902,7 +4883,8 @@ mod tests {
     #[test]
     fn test_use_replace_rule_epub_entity_detection() {
         let _db_guard = crate::db_state::ensure_test_db();
-        let _replace_default = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+        let _replace_default =
+            ConfigValueGuard::set(app_config::REPLACE_ENABLE_DEFAULT_KEY, "true");
 
         // 在线书：bookUrl 以 .epub 结尾，但 originName 不是 → 不关闭
         let online = Book {
@@ -4957,7 +4939,7 @@ mod tests {
         let content = "普通广告正文";
 
         {
-            let _cfg = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "false");
+            let _cfg = ConfigValueGuard::set(app_config::REPLACE_ENABLE_DEFAULT_KEY, "false");
             assert_eq!(
                 apply_content_processing(book_url, content, ""),
                 content,
@@ -4965,7 +4947,7 @@ mod tests {
             );
         }
         {
-            let _cfg = ConfigValueGuard::set(REPLACE_ENABLE_DEFAULT_CONFIG_KEY, "true");
+            let _cfg = ConfigValueGuard::set(app_config::REPLACE_ENABLE_DEFAULT_KEY, "true");
             assert_eq!(
                 apply_content_processing(book_url, content, ""),
                 "普通正文",

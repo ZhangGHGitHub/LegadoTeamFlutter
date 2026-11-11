@@ -31,6 +31,7 @@ use legado_core::content_processor::{
 use legado_core::models::book_type;
 use legado_core::models::{Book, BookChapter};
 use legado_core::web_book::{WebBookEngine, WebChapter};
+use legado_db::app_config::{self, ContentPurifyConfig};
 use legado_db::repository::book_chapter_repository::BookChapterRepository;
 use legado_db::repository::book_repository::BookRepository;
 use legado_db::repository::cache_book_repository::CacheBookRepository;
@@ -94,9 +95,11 @@ fn is_image_book(book: &Book) -> bool {
 ///
 /// - `readConfig.useReplaceRule` 非空 → 取该值（含 false）；
 /// - 否则图片类书源 / epub 本地书默认**关闭**净化；
-/// - 其余回退 `AppConfig.replaceEnableDefault`（AppConfig.kt:680，默认 true；
-///   Rust Web 服务无 Android 偏好读取桥，固定取其默认值——登记差异）。
-fn use_replace_rule(book: &Book) -> bool {
+/// - 其余回退 caches `config:replaceEnableDefault`（缺省 true）。
+///
+/// [批20-B] `replace_enable_default` 由调用方从与 App 共享的 caches 表读出，
+/// 不再使用 Web 侧硬编码常量。
+fn use_replace_rule(book: &Book, replace_enable_default: bool) -> bool {
     if let Some(value) = book
         .read_config
         .as_ref()
@@ -107,11 +110,8 @@ fn use_replace_rule(book: &Book) -> bool {
     if is_image_book(book) || is_epub_book(book) {
         return false;
     }
-    REPLACE_ENABLE_DEFAULT
+    replace_enable_default
 }
-
-/// `AppConfig.replaceEnableDefault` 的 Kotlin 默认值（AppConfig.kt:680 第二参 true）
-const REPLACE_ENABLE_DEFAULT: bool = true;
 
 /// Web 正文净化 `@js:` 并发上限（进程级，同时最多 4 条含 JS 的净化任务）
 ///
@@ -610,13 +610,22 @@ async fn get_book_content_inner(
     Ok(purify_content(state, &book, &chapter, &content).await)
 }
 
-/// 正文净化（替换规则 + 去重复标题；`includeTitle=false`）
+/// 正文净化（替换规则 + 去重复标题 + 简繁转换 + 重新分段；`includeTitle=false`）
 ///
 /// 对齐原版 `ContentProcessor.getContent(book, chapter, content, includeTitle=false)`：
-/// 只做正文净化，不重排/不缩进/不去空行（避免改变排版）；简繁转换取默认
-/// 关闭（Rust 侧未桥接 `chineseConverterType` 配置，登记差异）。规则作用域
-///（scope/excludeScope/scopeContent）交由 `ContentProcessor` 内建过滤，
-/// 语义对齐 Kotlin DAO 的 LIKE 判定。
+/// 只做正文净化，不重排/不缩进/不去空行（避免改变排版）。
+///
+/// [批20-B] 配置面与 App 阅读端统一（两端打开同一 SQLite 文件）：
+/// - 去重复标题读章级 `caches:sameTitleRemoved:{bookUrl}:{index}`（缺省去除）；
+/// - 简繁转换读 `caches:config:chineseConverterType`（0/1/2）；
+/// - `reSegment` 读书籍行 `readConfig.reSegment`；
+/// - 替换总开关缺省值读 `caches:config:replaceEnableDefault`（缺省 true）。
+///
+/// 配置读取失败时回退默认值并记录告警，不阻断正文返回。
+///
+/// 规则作用域由 `ContentProcessor` 内建过滤；[批20-B] 正文路径的 `scope`
+/// 统一为 App 语义（[`legado_core::content_processor::book_scope_matches`]：
+/// 按 `[,;，；]` 拆分 + 书名精确匹配，不看 origin、不处理 excludeScope）。
 ///
 /// 替换规则按 `Book.getUseReplaceRule()` 门控（对齐 `ContentProcessor.kt:116`
 /// 的 `useReplace && book.getUseReplaceRule()`）：epub 本地书 / 图片书默认不
@@ -629,7 +638,7 @@ async fn get_book_content_inner(
 ///
 /// [批17 回修 P2] 规则执行（Java 方言正则编译、`@js:` QuickJS、逐规则
 /// `recv_timeout` 等待）是 CPU 密集阻塞操作，`/getBookContent` 又无鉴权：
-/// 先异步读规则，再把纯计算经 `spawn_blocking` 移交 blocking 线程池，
+/// 先异步读规则与配置，再把纯计算经 `spawn_blocking` 移交 blocking 线程池，
 /// 避免并发请求占满 tokio worker（与 `testReplaceRule` 的 P1-3 同款）。
 ///
 /// [批17 三审 P2] 含 `@js:` 的净化再经进程级信号量限流（见
@@ -643,15 +652,27 @@ async fn purify_content(
     chapter: &BookChapter,
     raw_content: &str,
 ) -> String {
-    let replace_enabled = use_replace_rule(book);
-    let rules = {
+    // 规则与配置一次性读出（同一把 DB 锁，避免读到不同版本）
+    let (rules, settings) = {
         let db = state.db.lock().await;
-        ReplaceRuleRepository::new(db.connection()).get_enabled_rules()
+        let conn = db.connection();
+        let rules = ReplaceRuleRepository::new(conn).get_enabled_rules();
+        let settings = app_config::load_content_purify_config(conn, &book.book_url, chapter.index)
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    "读取正文净化配置失败，回退默认值（book={}, chapter={}）: {e}",
+                    book.name,
+                    chapter.index
+                );
+                ContentPurifyConfig::defaults()
+            });
+        (rules, settings)
     };
     let rules = match rules {
         Ok(rules) => rules,
         Err(_) => return raw_content.to_string(),
     };
+    let replace_enabled = use_replace_rule(book, settings.replace_enable_default);
     let entries = ReplaceRuleEntry::from_replace_rules(&rules);
     let needs_js = replace_enabled && entries.iter().any(ReplaceRuleEntry::needs_js_execution);
     // [批17 三审 P2] 非阻塞限流：超限请求不等待 `@js:` 任务完成、不放大
@@ -679,7 +700,15 @@ async fn purify_content(
     match tokio::task::spawn_blocking(move || {
         // permit 随闭包持有到净化结束（panic 时由 Drop 释放）
         let _js_permit = js_permit;
-        purify_content_blocking(&book, &chapter, &raw, &entries, replace_enabled, allow_js)
+        purify_content_blocking(
+            &book,
+            &chapter,
+            &raw,
+            &entries,
+            replace_enabled,
+            allow_js,
+            &settings,
+        )
     })
     .await
     {
@@ -695,6 +724,8 @@ async fn purify_content(
 ///
 /// `allow_js=false` 表示并发闸门已满：仍跑完整管线，仅不注入 `@js:` 执行器
 /// （`ContentProcessor` 对缺执行器的 `@js:` 保留原文，普通规则继续）。
+/// `settings` 为与 App 共享的配置快照（简繁/章级去重/替换默认开关）；
+/// `reSegment` 来自书籍行。
 fn purify_content_blocking(
     book: &Book,
     chapter: &BookChapter,
@@ -702,11 +733,17 @@ fn purify_content_blocking(
     entries: &[ReplaceRuleEntry],
     replace_enabled: bool,
     allow_js: bool,
+    settings: &ContentPurifyConfig,
 ) -> String {
+    let re_segment = book
+        .read_config
+        .as_ref()
+        .map(|config| config.re_segment)
+        .unwrap_or(false);
     let config = ProcessorConfig {
-        remove_duplicate_title: true,
-        re_segment: false,
-        chinese_convert: None,
+        remove_duplicate_title: settings.remove_duplicate_title,
+        re_segment,
+        chinese_convert: settings.chinese_convert.clone(),
         apply_replace_rules: replace_enabled,
         indent_spaces: 0,
         trim_empty_lines: false,
@@ -2006,13 +2043,16 @@ mod tests {
     /// P1-3：`Book.getUseReplaceRule()`（Book.kt:226-236）对齐
     #[test]
     fn test_use_replace_rule_gating() {
-        // 未设置：普通在线文字书 → 回退 AppConfig.replaceEnableDefault(true)
+        // 未设置：普通在线文字书 → 回退全局默认（true）
         let text = Book {
             origin: "https://src".to_string(),
             book_type: book_type::TEXT,
             ..Book::default()
         };
-        assert!(use_replace_rule(&text));
+        assert!(use_replace_rule(&text, true));
+
+        // 全局默认 false → 普通文字书关闭
+        assert!(!use_replace_rule(&text, false));
 
         // epub 本地书 → 默认关闭
         let epub = Book {
@@ -2022,7 +2062,7 @@ mod tests {
             ..Book::default()
         };
         assert!(is_epub_book(&epub));
-        assert!(!use_replace_rule(&epub));
+        assert!(!use_replace_rule(&epub, true));
 
         // 本地图片书（IMAGE_BIT 位域）→ 默认关闭
         let image = Book {
@@ -2031,7 +2071,7 @@ mod tests {
             ..Book::default()
         };
         assert!(is_image_book(&image));
-        assert!(!use_replace_rule(&image));
+        assert!(!use_replace_rule(&image, true));
 
         // 在线图片书源（type 数值域 IMAGE=2 不属位域 64）→ 不误判
         let online_image = Book {
@@ -2040,26 +2080,37 @@ mod tests {
             ..Book::default()
         };
         assert!(!is_image_book(&online_image));
-        assert!(use_replace_rule(&online_image));
+        assert!(use_replace_rule(&online_image, true));
+        assert!(!use_replace_rule(&online_image, false));
 
-        // readConfig.useReplaceRule 非空 → 取该值（含对 epub 显式开启）
+        // readConfig.useReplaceRule 非空 → 取该值（含对 epub 显式开启、
+        // 以及显式 true 覆盖全局默认 false）
         let epub_on = Book {
             read_config: Some(legado_core::models::ReadConfig {
                 use_replace_rule: Some(true),
                 ..Default::default()
             }),
-            ..epub.clone()
+            ..epub
         };
-        assert!(use_replace_rule(&epub_on));
+        assert!(use_replace_rule(&epub_on, false));
 
         let text_off = Book {
             read_config: Some(legado_core::models::ReadConfig {
                 use_replace_rule: Some(false),
                 ..Default::default()
             }),
+            ..text.clone()
+        };
+        assert!(!use_replace_rule(&text_off, true));
+
+        let text_on = Book {
+            read_config: Some(legado_core::models::ReadConfig {
+                use_replace_rule: Some(true),
+                ..Default::default()
+            }),
             ..text
         };
-        assert!(!use_replace_rule(&text_off));
+        assert!(use_replace_rule(&text_on, false));
     }
 
     /// P1-2：本地图片扩展名白名单

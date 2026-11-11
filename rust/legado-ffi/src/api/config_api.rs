@@ -13,7 +13,10 @@ use crate::db_state::with_database;
 ///
 /// `pub(crate)`：备份模块（`backup_api`）读写 `directLinkUploadRule` 配置时复用
 /// 同一前缀，避免键格式在两处漂移。
-pub(crate) const CONFIG_PREFIX: &str = "config:";
+///
+/// [批20-B] 别名到 `legado_db::app_config::CONFIG_PREFIX`：Web 进程直接读
+/// 同一 caches 表，前缀常量只允许一处定义。
+pub(crate) const CONFIG_PREFIX: &str = legado_db::app_config::CONFIG_PREFIX;
 
 /// 隐私凭据键前缀（契约 §2.53）
 ///
