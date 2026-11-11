@@ -9,12 +9,14 @@
 //    更新面板引擎名；
 // d) 系统引擎选择 → 先 selectEngine（持久化 systemTtsEngine）再切全局
 //    系统 TTS 哨兵，面板显示具体引擎名。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,6 +88,7 @@ class _FakeSystemTts extends SystemTtsService {
 
   final List<SystemTtsEngine> engineList;
   String? selected;
+  final List<String?> selectHistory = [];
 
   @override
   Future<List<SystemTtsEngine>> engines() async => engineList;
@@ -99,6 +102,7 @@ class _FakeSystemTts extends SystemTtsService {
   @override
   Future<List<SystemTtsVoice>?> selectEngine(String? engineName) async {
     selected = engineName;
+    selectHistory.add(engineName);
     return const [];
   }
 
@@ -217,6 +221,38 @@ void main() {
 
   final engineRow = find.byKey(const ValueKey('audio-tts-engine-row'));
 
+  /// TTS 朗读桩：两段正文 + 每段合成返回唯一路径
+  void stubTtsPlayback() {
+    var seq = 0;
+    when(
+      () => api.getChapterContentFull(any(), any()),
+    ).thenAnswer((_) async => '第一段内容。\n\n第二段内容。');
+    when(
+      () => api.audioSpeak(
+        text: any(named: 'text'),
+        engineUrl: any(named: 'engineUrl'),
+        speed: any(named: 'speed'),
+        pitch: any(named: 'pitch'),
+        volume: any(named: 'volume'),
+        voiceName: any(named: 'voiceName'),
+      ),
+    ).thenAnswer((_) async => '/tmp/tts_${++seq}.wav');
+  }
+
+  /// 启动 TTS 播放并断言进入 playing
+  Future<void> startTtsPlayback(
+    WidgetTester tester, {
+    String engineUrl = 'https://tts.example.com/speak?text={{text}}',
+  }) async {
+    stubTtsPlayback();
+    await pumpAudioScreen(tester);
+    final notifier = container.read(audioNotifierProvider.notifier);
+    notifier.updateConfig(engineUrl: engineUrl);
+    await notifier.play();
+    await tester.pump();
+    expect(readState().state, PlayerState.playing);
+  }
+
   group('音调/音量落库并可读回', () {
     testWidgets('拖动结束写 ttsSpeechRate/ttsPitch/ttsVolume，新会话读回', (tester) async {
       await pumpAudioScreen(tester);
@@ -235,6 +271,9 @@ void main() {
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.ttsSpeechRate), ttsSpeechRateFromSpeed(2.0));
+      // [P3 回修] 手动调语速同时关闭「跟随系统」，且 TTS 不再写书级 playSpeed
+      verify(() => api.setConfig(kTtsFollowSysConfigKey, 'false')).called(1);
+      verifyNever(() => api.updateBook(any()));
 
       // 音调 1.3 → 参考刻度 13
       sliders[1].onChanged!(1.3);
@@ -274,6 +313,62 @@ void main() {
       await tester.pump();
 
       verify(() => audioService.dispose()).called(1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('init 在途时快速退出 → 最终已释放，不残留就绪态', (tester) async {
+      final gate = Completer<void>();
+      var initStarted = false;
+      when(() => audioService.init()).thenAnswer((_) async {
+        initStarted = true;
+        await gate.future;
+      });
+      when(() => audioService.isInitialized).thenReturn(true);
+
+      await pumpAudioScreen(tester);
+      for (var i = 0; i < 20 && !initStarted; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(initStarted, isTrue, reason: '先进听书页让会话初始化处于在途状态');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      gate.complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        readState().isMediaSessionReady,
+        isFalse,
+        reason: '在途 init 完成后不得把已退出页面的会话重新标记为就绪',
+      );
+      verify(() => audioService.dispose()).called(greaterThanOrEqualTo(1));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('播放中销毁页面 → 保留媒体会话（后台播放控制不断）', (tester) async {
+      await startTtsPlayback(tester);
+      expect(readState().state, PlayerState.playing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      await tester.pump();
+
+      verifyNever(() => audioService.dispose());
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('暂停中销毁页面 → 保留媒体会话（耳机键可恢复）', (tester) async {
+      await startTtsPlayback(tester);
+      container.read(audioNotifierProvider.notifier).pause();
+      await tester.pump();
+      expect(readState().state, PlayerState.paused);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      await tester.pump();
+
+      verifyNever(() => audioService.dispose());
       expect(tester.takeException(), isNull);
     });
   });
@@ -343,6 +438,130 @@ void main() {
       ).called(1);
       expect(find.text('测试引擎'), findsOneWidget, reason: '面板回显具体系统引擎名');
       expect(readState().config.engineUrl, kSystemTtsEngineUrl);
+    });
+
+    testWidgets('HTTP 引擎加载失败但系统引擎可用 → 标注部分失败且仍可选择', (tester) async {
+      systemTts = _FakeSystemTts(
+        engineList: const [
+          SystemTtsEngine(name: 'com.test.tts', label: '测试引擎'),
+        ],
+      );
+      container = buildContainer();
+      addTearDown(container.dispose);
+      when(
+        () => api.getHttpTts(),
+      ).thenAnswer((_) async => throw StateError('http down'));
+
+      await pumpAudioScreen(tester);
+      await openSettings(tester);
+
+      expect(find.textContaining('部分引擎加载失败'), findsOneWidget);
+      final tile = tester.widget<ListTile>(engineRow);
+      expect(tile.enabled, isTrue);
+
+      await tester.tap(engineRow);
+      await settle(tester);
+      expect(find.text('测试引擎'), findsOneWidget, reason: '单来源失败不得拖垮另一来源');
+    });
+
+    testWidgets('全部引擎来源失败 → 显示加载失败并可点击重试', (tester) async {
+      when(
+        () => api.getHttpTts(),
+      ).thenAnswer((_) async => throw StateError('http down'));
+
+      await pumpAudioScreen(tester);
+      await openSettings(tester);
+
+      expect(find.text('朗读引擎加载失败，点击重试'), findsOneWidget);
+      final tile = tester.widget<ListTile>(engineRow);
+      expect(tile.enabled, isTrue);
+      expect(tile.onTap, isNotNull);
+      expect(find.byIcon(Symbols.refresh_rounded), findsOneWidget);
+
+      await tester.tap(engineRow);
+      await settle(tester);
+      verify(() => api.getHttpTts()).called(greaterThanOrEqualTo(2));
+    });
+
+    testWidgets('系统引擎列表为空仍保留「系统默认」可回选', (tester) async {
+      const url = 'https://tts.example.com/speak?text={{text}}';
+      when(
+        () => api.getHttpTts(),
+      ).thenAnswer((_) async => const [HttpTts(name: 'HTTP引擎A', url: url)]);
+
+      // 先把当前全局引擎设为 HTTP，再从对话框切回系统默认
+      await container
+          .read(audioNotifierProvider.notifier)
+          .setGlobalTtsEngine(url);
+
+      await pumpAudioScreen(tester);
+      await openSettings(tester);
+      expect(find.text('HTTP引擎A'), findsOneWidget);
+
+      await tester.tap(engineRow);
+      await settle(tester);
+      expect(find.text('系统默认'), findsOneWidget, reason: '系统引擎为空也不隐藏默认项');
+
+      await tester.tap(find.text('系统默认'));
+      await settle(tester);
+
+      expect(systemTts.selectHistory, [null]);
+      verify(
+        () => api.setConfig(kTtsEngineConfigKey, kSystemTtsEngineUrl),
+      ).called(1);
+      expect(readState().config.engineUrl, kSystemTtsEngineUrl);
+    });
+  });
+
+  group('切换引擎生效时机', () {
+    testWidgets('播放中切引擎 → 当前段不重读，下一段用新引擎', (tester) async {
+      const engineA = 'https://tts.example.com/a?text={{text}}';
+      const engineB = 'https://tts.example.com/b?text={{text}}';
+      final spokenEngines = <String>[];
+      when(
+        () => api.getChapterContentFull(any(), any()),
+      ).thenAnswer((_) async => '第一段内容。\n\n第二段内容。');
+      when(
+        () => api.audioSpeak(
+          text: any(named: 'text'),
+          engineUrl: any(named: 'engineUrl'),
+          speed: any(named: 'speed'),
+          pitch: any(named: 'pitch'),
+          volume: any(named: 'volume'),
+          voiceName: any(named: 'voiceName'),
+        ),
+      ).thenAnswer((invocation) async {
+        spokenEngines.add(invocation.namedArguments[#engineUrl] as String);
+        return '/tmp/tts_${spokenEngines.length}.wav';
+      });
+      when(() => api.getHttpTts()).thenAnswer(
+        (_) async => const [
+          HttpTts(name: '引擎A', url: engineA),
+          HttpTts(name: '引擎B', url: engineB),
+        ],
+      );
+
+      await pumpAudioScreen(tester);
+      final notifier = container.read(audioNotifierProvider.notifier);
+      notifier.updateConfig(engineUrl: engineA);
+      await notifier.play();
+      await tester.pump();
+      expect(spokenEngines.first, engineA, reason: '首段使用原引擎');
+
+      await openSettings(tester);
+      await tester.tap(engineRow);
+      await settle(tester);
+      await tester.tap(find.text('引擎B'));
+      await settle(tester);
+      expect(readState().config.engineUrl, engineB);
+
+      final player =
+          container.read(streamAudioPlayerProvider) as FakeStreamAudioPlayer;
+      player.completePlayback();
+      await tester.pump();
+      await tester.pump();
+
+      expect(spokenEngines.last, engineB, reason: '切引擎后下一段应使用新引擎');
     });
   });
 }

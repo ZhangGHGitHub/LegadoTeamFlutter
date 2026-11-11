@@ -18,6 +18,12 @@ import '../constants/pref_keys.dart';
 /// HTTP 合成管线（Rust `tts_speak` 会把它当 URL 模板）。
 const String kSystemTtsEngineUrl = 'system://tts';
 
+/// 「语速跟随系统」偏好键（config 存储，对齐原版 `AppConfig.ttsFlowSys`）
+///
+/// 朗读条切换开关、朗读设置与听书页手动调语速共用：手动调语速时应同时
+/// 写 `false`，避免 UI 仍显示「跟随系统」但实际使用用户值。
+const String kTtsFollowSysConfigKey = 'ttsFollowSys';
+
 /// UI 语速下限/上限（倍速）
 const double kMinTtsSpeed = 0.5;
 const double kMaxTtsSpeed = 3.0;

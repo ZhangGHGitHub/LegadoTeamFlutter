@@ -2168,8 +2168,10 @@ Future<String> serverStatus() => RustLib.instance.api.crateFfiFfiServerStatus();
 ///   越界或占用报 Internal）；port≤0：停止独立服务；
 /// - Web 端口挂载保持存在：`/mcp/tools`（GET）免令牌；`/mcp/call`（POST）
 ///   已纳入 `PROTECTED_SOURCE_WRITE_ROUTES`，须携带 `x-legado-token`
-///   （与 `config:jsSourceApiToken` 字节级相等，未配置令牌时一律拒绝）；
-///   独立 MCP 端口的鉴权与行为不变。端口持久化并启动时恢复。
+///   （与 `config:jsSourceApiToken` 字节级相等；默认
+///   `jsSourceApiTokenRequired=true` 且未配置令牌时一律拒绝，显式关闭
+///   required 时按原版免令牌放行）；独立 MCP 端口的鉴权与行为不变。
+///   端口持久化并启动时恢复。
 Future<void> setMcpPort({required int port}) =>
     RustLib.instance.api.crateFfiFfiSetMcpPort(port: port);
 

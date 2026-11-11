@@ -102,26 +102,60 @@ class AudioService {
   bool get playbackActive => _playbackActive;
 
   // ===== 生命周期方法 =====
+  //
+  // [TTS P3 回修 | 2026-11-11] init/release 串行化：
+  // - release 在途时 init 必须等待（否则旧 release 完成后原生已释放，
+  //   Dart 却因 `_initialized` 早置 true 而误判就绪，通知/耳机键失效）；
+  // - init 在途时 release 先落 `_initialized=false` 并用代际号使旧 init
+  //   的结果失效（否则 release 空转后旧 init 重新把服务标为就绪，
+  //   MediaSession 残留为 STOPPED 记录）。
+  // 最终状态只可能收敛到「已释放」或「已就绪」，不存在半状态。
+  /// 在途 init（并发调用共享同一 Future）
+  Future<void>? _initFuture;
+
+  /// 在途 release（并发释放合并等待）
+  Future<void>? _releaseFuture;
+
+  /// 生命周期代际号：dispose 自增使在途 init 的完成回调失效
+  int _lifecycleGeneration = 0;
 
   /// 初始化媒体会话
   ///
   /// 在听书页面 initState 时调用，创建 Android MediaSession 实例
   /// 并注册媒体按钮回调。
   Future<void> init() async {
-    if (_initialized) return;
+    // release 在途：等待其完成后再决定是否初始化，避免与新 init 交错
+    final release = _releaseFuture;
+    if (release != null) await release;
 
+    if (_initialized) return;
+    final pending = _initFuture;
+    if (pending != null) return pending;
+
+    final generation = ++_lifecycleGeneration;
     // 注册原生 → Flutter 的回调处理
     _registerHandler();
 
+    final future = _initialize(generation);
+    _initFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_initFuture, future)) _initFuture = null;
+    }
+  }
+
+  Future<void> _initialize(int generation) async {
     try {
       await _channel.invokeMethod<bool>('init');
-      _initialized = true;
+      // 仅在期间没有 dispose 发生时标记就绪（旧 init 不得覆盖新 release）
+      if (generation == _lifecycleGeneration) _initialized = true;
     } on PlatformException {
       // 非 Android 平台或初始化失败，静默处理
-      _initialized = false;
+      if (generation == _lifecycleGeneration) _initialized = false;
     } on MissingPluginException {
       // 插件未注册（如测试环境），静默处理
-      _initialized = false;
+      if (generation == _lifecycleGeneration) _initialized = false;
     }
   }
 
@@ -129,8 +163,35 @@ class AudioService {
   ///
   /// 在听书页面 dispose 时调用，释放 MediaSession 和音频焦点。
   Future<void> dispose() async {
-    if (!_initialized) return;
+    // 在途 init 视为本次释放的会话；清空引用使随后的重播 init 能在
+    // release 完成后真正重建，而不是复用已失效的旧 init Future。
+    final initInFlight = _initFuture;
+    _initFuture = null;
 
+    // 已有 release 在途：合并等待，不重复发送 release
+    final inFlight = _releaseFuture;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    // 先落未初始化态 + 使在途 init 失效，再等待原生 release（关键顺序：
+    // 旧实现在 await 之后才置 false，期间 init 会误判仍已初始化而空转）。
+    _lifecycleGeneration++;
+    final hadSession = _initialized || initInFlight != null;
+    _initialized = false;
+    if (!hadSession) return;
+
+    final future = _releaseNative();
+    _releaseFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_releaseFuture, future)) _releaseFuture = null;
+    }
+  }
+
+  Future<void> _releaseNative() async {
     try {
       await _channel.invokeMethod<void>('release');
     } on PlatformException {
@@ -138,8 +199,6 @@ class AudioService {
     } on MissingPluginException {
       // 静默处理
     }
-
-    _initialized = false;
   }
 
   // ===== 音频焦点方法 =====
@@ -232,9 +291,7 @@ class AudioService {
     if (!_initialized) return;
 
     try {
-      await _channel.invokeMethod<void>('setPlaying', {
-        'playing': playing,
-      });
+      await _channel.invokeMethod<void>('setPlaying', {'playing': playing});
     } on PlatformException {
       // 静默处理
     } on MissingPluginException {

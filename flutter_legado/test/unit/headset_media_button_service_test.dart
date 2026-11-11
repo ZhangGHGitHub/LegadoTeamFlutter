@@ -875,6 +875,40 @@ void main() {
       );
     });
 
+    test('release 与在途 initMediaSession 交错 → 最终保持已释放（不半状态）', () async {
+      final initGate = Completer<void>();
+      var initStarted = false;
+      when(() => audioService.init()).thenAnswer((_) async {
+        initStarted = true;
+        await initGate.future;
+      });
+      when(() => audioService.isInitialized).thenReturn(true);
+
+      final notifier = container.read(audioNotifierProvider.notifier);
+      final initFuture = notifier.initMediaSession();
+      for (var i = 0; i < 20 && !initStarted; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(initStarted, isTrue, reason: '先让 init 进入在途状态');
+
+      // 模拟听书页快速退出：init 尚未完成时释放
+      await notifier.releaseMediaSession(force: true);
+      expect(
+        container.read(audioNotifierProvider).isMediaSessionReady,
+        isFalse,
+      );
+
+      initGate.complete();
+      await initFuture;
+
+      expect(
+        container.read(audioNotifierProvider).isMediaSessionReady,
+        isFalse,
+        reason: '旧 init 完成后不得把状态重新置为就绪',
+      );
+      verify(() => audioService.dispose()).called(greaterThanOrEqualTo(1));
+    });
+
     test('播放中（流媒体）退出听书页：onExit=false 也不释放会话', () async {
       SharedPreferences.setMockInitialValues({
         PrefKeys.mediaButtonOnExit: false,

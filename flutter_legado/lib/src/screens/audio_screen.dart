@@ -69,6 +69,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   // 系统 TTS 且无 HTTP 引擎）显示「未检测到可用语音引擎」并禁用选择。
   bool _enginesLoading = false;
   bool _enginesLoaded = false;
+
+  /// 是否有任一引擎来源加载失败（与「确实无引擎」区分文案）
+  bool _engineLoadFailed = false;
   List<HttpTts> _httpEngines = const [];
   List<SystemTtsEngine> _systemEngines = const [];
   String _effectiveEngineUrl = '';
@@ -96,6 +99,20 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
   /// 是否存在可选择的引擎（系统引擎或 HTTP 引擎任一非空）
   bool get _hasEngineOptions =>
       _systemEngines.isNotEmpty || _httpEngines.isNotEmpty;
+
+  /// 引擎行副标题：区分「加载失败可重试」与「确实没有可用引擎」
+  String get _engineSubtitle {
+    if (_enginesLoading) return '加载中…';
+    if (_hasEngineOptions) {
+      return _engineLoadFailed
+          ? '$_selectedEngineLabel（部分引擎加载失败）'
+          : _selectedEngineLabel;
+    }
+    return _engineLoadFailed ? '朗读引擎加载失败，点击重试' : '未检测到可用语音引擎';
+  }
+
+  /// 空列表且加载失败：允许点击重试
+  bool get _engineRetryable => !_hasEngineOptions && _engineLoadFailed;
 
   /// [批9b-5] 耳机媒体键服务（听书页挂载期间按「活动内处理」语义接管
   /// 空闲态播放键，对齐原版 AudioPlayActivity.playButton）
@@ -246,34 +263,53 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
 
   /// 加载可用朗读引擎（系统 TTS getEngines + HTTP 引擎 getHttpTts）
   ///
-  /// 任一来源为空都不影响另一来源；两者皆空时面板显示不可用空态。
+  /// 两个来源分别兜底：任一来源失败不阻断另一来源；两者皆空时面板显示
+  /// 空态。`_engineLoadFailed` 用于区分「某来源加载失败」与「确实无引擎」。
   Future<void> _loadTtsEngines() async {
-    setState(() => _enginesLoading = true);
+    setState(() {
+      _enginesLoading = true;
+      _engineLoadFailed = false;
+    });
+    final api = ref.read(bookApiProvider);
+    final systemTts = ref.read(systemTtsServiceProvider);
+    var failed = false;
+
+    var httpEngines = _httpEngines;
     try {
-      final api = ref.read(bookApiProvider);
-      final systemTts = ref.read(systemTtsServiceProvider);
+      httpEngines = await api.getHttpTts();
+    } catch (e) {
+      failed = true;
+      debugPrint('加载 HTTP 朗读引擎失败：$e');
+    }
+
+    var systemEngines = _systemEngines;
+    try {
       // 允许用户在系统设置安装引擎后回到本页即时看到
       systemTts.invalidateAvailability();
       await systemTts.loadSelection();
-      final effective = await _audioNotifier.loadEffectiveTtsEngineUrl();
-      final httpEngines = await api.getHttpTts();
-      final systemEngines = await systemTts.engines();
-      if (!mounted) return;
-      setState(() {
-        _httpEngines = httpEngines;
-        _systemEngines = systemEngines;
-        _effectiveEngineUrl = effective;
-        _enginesLoaded = true;
-        _enginesLoading = false;
-      });
+      systemEngines = await systemTts.engines();
     } catch (e) {
-      debugPrint('加载朗读引擎列表失败（显示空态）：$e');
-      if (!mounted) return;
-      setState(() {
-        _enginesLoaded = true;
-        _enginesLoading = false;
-      });
+      failed = true;
+      debugPrint('加载系统朗读引擎失败：$e');
     }
+
+    var effective = _effectiveEngineUrl;
+    try {
+      effective = await _audioNotifier.loadEffectiveTtsEngineUrl();
+    } catch (e) {
+      failed = true;
+      debugPrint('读取当前朗读引擎失败：$e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _httpEngines = httpEngines;
+      _systemEngines = systemEngines;
+      _effectiveEngineUrl = effective;
+      _engineLoadFailed = failed;
+      _enginesLoaded = true;
+      _enginesLoading = false;
+    });
   }
 
   /// 重新加载引擎列表（从朗读设置页返回后同步新增/删除/切换结果）
@@ -291,6 +327,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       await ref
           .read(settingsProvider)
           .setIntPref(PrefKeys.ttsSpeechRate, ttsSpeechRateFromSpeed(speed));
+      // [TTS P3 回修 | 2026-11-11] 手动调语速即视为脱离「跟随系统」：
+      // 与朗读条共用 config 键，避免朗读条仍显示「跟随系统」却用用户值。
+      await ref
+          .read(bookApiProvider)
+          .setConfig(kTtsFollowSysConfigKey, 'false');
     } catch (e) {
       debugPrint('保存朗读语速失败（忽略）：$e');
     }
@@ -334,7 +375,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       builder: (dialogContext) => SimpleDialog(
         title: const Text('选择朗读引擎'),
         children: [
-          if (_systemEngines.isNotEmpty) ...[
+          // [TTS P3 回修] 系统引擎列表为空也保留「系统默认」：用户从
+          // HTTP 引擎切回系统 TTS 时仍可回选，不因设备未装引擎而消失。
+          if (platformSupportsSystemTts()) ...[
             const Padding(
               padding: EdgeInsets.fromLTRB(24, 8, 24, 4),
               child: Text('系统引擎'),
@@ -984,20 +1027,28 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Symbols.record_voice_over_rounded, size: 20),
               title: const Text('朗读引擎'),
-              subtitle: Text(
-                _enginesLoading
-                    ? '加载中…'
-                    : (_hasEngineOptions ? _selectedEngineLabel : '未检测到可用语音引擎'),
-              ),
+              subtitle: Text(_engineSubtitle),
               trailing: _enginesLoading
                   ? const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Symbols.chevron_right_rounded, size: 20),
-              enabled: !_enginesLoading && _hasEngineOptions,
-              onTap: _hasEngineOptions ? _showInlineEnginePicker : null,
+                  : Icon(
+                      _engineRetryable
+                          ? Symbols.refresh_rounded
+                          : Symbols.chevron_right_rounded,
+                      size: 20,
+                    ),
+              enabled:
+                  !_enginesLoading && (_hasEngineOptions || _engineRetryable),
+              onTap: _enginesLoading
+                  ? null
+                  : (_hasEngineOptions
+                        ? _showInlineEnginePicker
+                        : (_engineRetryable
+                              ? () => unawaited(_loadTtsEngines())
+                              : null)),
             ),
             ListTile(
               dense: true,

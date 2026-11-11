@@ -222,6 +222,13 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// 释放过会话才在再次播放时补建，避免普通播放路径意外等待平台通道。
   bool _mediaSessionReleased = false;
 
+  /// [TTS P3 回修 | 2026-11-11] 媒体会话释放代际号。
+  ///
+  /// `initMediaSession` 入口快照；若在初始化过程中发生过真实释放
+  /// （代际号变化），初始化末尾必须再释放一次，避免「release 空转后
+  /// 旧 init 把 isMediaSessionReady 重新置 true」的半状态。
+  int _mediaSessionReleaseEpoch = 0;
+
   /// [第2项] 最近一次推送到通知/锁屏的媒体元数据签名（去重节流，见
   /// [_pushMediaSessionMetadata]）
   String _lastMediaMetadataSignature = '';
@@ -438,6 +445,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (bookName.isNotEmpty) state = state.copyWith(bookName: bookName);
     if (state.isMediaSessionReady) return;
 
+    // [TTS P3 回修 | 2026-11-11] 快照释放代际：初始化期间若发生真实释放
+    // （如听书页快速退出），本方法不得把 isMediaSessionReady 重新置 true。
+    final releaseEpoch = _mediaSessionReleaseEpoch;
+
     // 批9a 项6：会话入口读取「忽略音频焦点」偏好（流模式听书与 TTS 朗读
     // 两条路径都经此初始化，一处读取两路生效）
     // [设置批5a-1] 同一入口补齐朗读设置批次的偏好：唤醒锁 / 媒体键翻章 /
@@ -445,7 +456,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     await _loadReadAloudPreferences();
     // [审查回修 P2-3] 0 模式跨进程残留：会话起手清空一次旧缓存
     await _sweepZeroRetentionCacheOnce();
+    // 偏好读取期间已被释放（页面已退出等）：不再初始化，避免会话残留
+    if (_mediaSessionReleaseEpoch != releaseEpoch) return;
     await _audioService.init();
+    // init 在途期间发生释放：补一次强制释放收敛到「已释放」，
+    // 不建立订阅、不置就绪（旧实现会在此后重新置 true 并清释放标记）。
+    if (_mediaSessionReleaseEpoch != releaseEpoch) {
+      await releaseMediaSession(force: true);
+      return;
+    }
 
     _mediaButtonSub = _audioService.mediaButtonStream.listen((event) {
       switch (event) {
@@ -544,6 +563,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _audioFocusSub = null;
     // 先标记释放/未就绪，再等待原生 release：停止后立刻重播时
     // [_syncMediaSession] 能立即走补建分支（不等原生调用返回）。
+    _mediaSessionReleaseEpoch++;
     _mediaSessionReleased = true;
     state = state.copyWith(isMediaSessionReady: false);
     await _audioService.dispose();
@@ -2225,7 +2245,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         state = state.copyWith(errorMessage: null);
       }
     }
-    if (speed != null) {
+    // [TTS P3 回修 | 2026-11-11] 书级 playSpeed 只属于音频书（流媒体）；
+    // TTS 朗读语速全局键由 UI 落库，拖 TTS 语速不得再写书级 playSpeed。
+    if (speed != null && state.isStreamMode) {
       _scheduleSpeedPersist(updated.speed);
     }
     if (state.isStreamMode && speed != null && _streamPlayer.isInitialized) {
@@ -2328,6 +2350,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   /// 语速落库（防抖合并；仅听书页绑定书籍后写）
   void _scheduleSpeedPersist(double speed) {
+    // 纵深防御：仅音频书（流媒体）写书级 playSpeed
+    if (!state.isStreamMode) return;
     final book = _book;
     if (book == null) return;
     final bookUrl = book.bookUrl.isNotEmpty ? book.bookUrl : state.bookUrl;

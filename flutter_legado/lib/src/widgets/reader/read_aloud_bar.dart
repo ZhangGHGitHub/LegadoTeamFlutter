@@ -50,8 +50,9 @@ class ReadAloudBar extends ConsumerStatefulWidget {
 }
 
 class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
-  /// 语速跟随系统开关持久化键（对齐原版 PreferKey / AppConfig.ttsFlowSys）
-  static const _keyFollowSystem = 'ttsFollowSys';
+  // 语速跟随系统开关持久化键（对齐原版 PreferKey / AppConfig.ttsFlowSys）
+  // [TTS P3 回修] 与听书页共用常量，避免两处字面量漂移。
+  static const _keyFollowSystem = kTtsFollowSysConfigKey;
 
   // ===== 定时停止状态 =====
   //
