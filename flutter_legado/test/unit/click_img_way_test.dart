@@ -59,6 +59,23 @@ void main() {
       expect(opts.hasAction, isTrue);
     });
 
+    test('rawSrc 保留完整复合 src；actionSrc 作为动作 result', () {
+      const raw = 'https://cdn.example.com/a.jpg,{"click":"act()"}';
+      final opts = parseClickImgUrlOptions(raw);
+      expect(opts.rawSrc, raw, reason: 'P3-6：动作 result 传完整 src');
+      expect(opts.url, 'https://cdn.example.com/a.jpg');
+      expect(opts.actionSrc, raw);
+    });
+
+    test('手工构造 options 无 rawSrc 时 actionSrc 回退纯 URL', () {
+      const opts = ClickImgUrlOptions(
+        url: 'https://cdn.example.com/a.jpg',
+        click: 'act()',
+      );
+      expect(opts.rawSrc, isEmpty);
+      expect(opts.actionSrc, 'https://cdn.example.com/a.jpg');
+    });
+
     test('参考版 action 键作为 click 别名', () {
       final opts = parseClickImgUrlOptions(
         'https://cdn.example.com/a.jpg,{"action":"doIt()"}',
@@ -119,6 +136,26 @@ void main() {
         '{"headers":{"X-Count":2,"X-Flag":true}}',
       );
       expect(opts.headers, {'X-Count': '2', 'X-Flag': 'true'});
+    });
+  });
+
+  group('clickImgToastHint 静态 toast 降级提示', () {
+    test('提取 java.toast 字面量', () {
+      final hint = clickImgToastHint("java.toast('这是章节提示'); 'ok'");
+      expect(hint?.message, '这是章节提示');
+      expect(hint?.isLong, isFalse);
+    });
+
+    test('提取 java.longToast 字面量（双引号）', () {
+      final hint = clickImgToastHint('java.longToast("长提示")');
+      expect(hint?.message, '长提示');
+      expect(hint?.isLong, isTrue);
+    });
+
+    test('无 toast / 动态消息 / 空消息返回 null', () {
+      expect(clickImgToastHint("java.log('x')"), isNull);
+      expect(clickImgToastHint('java.toast(msg)'), isNull);
+      expect(clickImgToastHint("java.toast('')"), isNull);
     });
   });
 

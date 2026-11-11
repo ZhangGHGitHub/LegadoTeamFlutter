@@ -25,10 +25,13 @@ import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_image_dominant_body.dart';
 
 const _plainImg = '<img src="https://cdn.example.com/a.jpg">';
-const _actionImg =
-    '<img src="https://cdn.example.com/a.jpg,{"click":"act()"}">';
-const _jsActionImg =
-    '<img src="https://cdn.example.com/a.jpg,{"js":"legacy()"}">';
+const _actionRawSrc = 'https://cdn.example.com/a.jpg,{"click":"act()"}';
+const _jsActionRawSrc = 'https://cdn.example.com/a.jpg,{"js":"legacy()"}';
+const _actionImg = '<img src="$_actionRawSrc">';
+const _jsActionImg = '<img src="$_jsActionRawSrc">';
+const _toastActionImg =
+    '<img src="https://cdn.example.com/a.jpg,'
+    '{"click":"java.toast(\'动作提示\')"}">';
 
 const _bookUrl = 'https://book.example.com/1';
 const _chapterIndex = 3;
@@ -150,12 +153,47 @@ void main() {
     expect(api.actions, ['act()']);
     expect(api.bookUrls, [_bookUrl]);
     expect(api.chapterIndexes, [_chapterIndex]);
-    expect(api.imgSrcs, ['https://cdn.example.com/a.jpg']);
+    expect(api.imgSrcs, [_actionRawSrc], reason: 'P3-6：result 传完整复合 src');
     expect(
       find.byType(RssPhotoViewer),
       findsNothing,
       reason: '执行 action 时不再回退预览',
     );
+  });
+
+  testWidgets('"2" 在线文本书 + click 动作：连续点击每次执行', (tester) async {
+    final api = _CapturingApi();
+    await _pumpPage(
+      tester,
+      way: '2',
+      content: _actionImg,
+      book: _book(type: 8, origin: 'https://source.example.com'),
+      api: api,
+    );
+    await tester.tap(find.byType(CachedNetworkImage));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byType(CachedNetworkImage));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(api.actions, ['act()', 'act()'], reason: '连续点击不得被去重/丢弃');
+    expect(api.imgSrcs, [_actionRawSrc, _actionRawSrc]);
+  });
+
+  testWidgets('"2" 动作含 java.toast 字面量：执行后弹出可见提示', (tester) async {
+    final api = _CapturingApi();
+    await _pumpPage(
+      tester,
+      way: '2',
+      content: _toastActionImg,
+      book: _book(type: 8, origin: 'https://source.example.com'),
+      api: api,
+    );
+    await tester.tap(find.byType(CachedNetworkImage));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('动作提示'), findsOneWidget);
+    expect(api.actions, hasLength(1));
   });
 
   testWidgets('"2" 在线文本书 + 仅 js 动作：调用 evalImageAction', (tester) async {
@@ -172,7 +210,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(api.actions, ['legacy()']);
-    expect(api.imgSrcs, ['https://cdn.example.com/a.jpg']);
+    expect(api.imgSrcs, [_jsActionRawSrc]);
   });
 
   testWidgets('"0" 默认行为：单击 click 动作 → evalImageAction', (tester) async {

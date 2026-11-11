@@ -401,10 +401,13 @@ ReaderInlineImage? parseReaderInlineImage(
   final options = parseClickImgUrlOptions(raw);
   if (options.url.trim().isEmpty) return null;
   final resolvedUrl = resolveReaderImageUrl(options.url, baseUrl);
+  // P3-6：rawSrc 保留绝对化后的完整复合 src（动作 result 传整串）
+  final rebuiltSrc = rebuildReaderImageSrc(raw, resolvedUrl);
   return ReaderInlineImage(
-    rawSrc: rebuildReaderImageSrc(raw, resolvedUrl),
+    rawSrc: rebuiltSrc,
     options: ClickImgUrlOptions(
       url: resolvedUrl,
+      rawSrc: rebuiltSrc,
       click: options.click,
       js: options.js,
       headers: options.headers,

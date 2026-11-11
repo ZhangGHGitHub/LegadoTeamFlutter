@@ -64,6 +64,12 @@ class ClickImgUrlOptions {
   /// 纯 URL（已剥离 `,{json}` 后缀，可直接交给 CachedNetworkImage/预览器）
   final String url;
 
+  /// 原始 `<img src>`（保留 `,{json}` 复合后缀）
+  ///
+  /// [批20-A 审查 P3-6] 书源动作的 `result` 绑定对齐参考版传**完整 src**
+  /// （含复合参数）；预览/加载仍用 [url]。
+  final String rawSrc;
+
   /// 点击动作：原版读复合 JSON 的 `click`；参考版 `image.action` 亦兼容
   final String? click;
 
@@ -83,6 +89,7 @@ class ClickImgUrlOptions {
 
   const ClickImgUrlOptions({
     required this.url,
+    this.rawSrc = '',
     this.click,
     this.js,
     this.headers = const <String, String>{},
@@ -96,9 +103,14 @@ class ClickImgUrlOptions {
   /// 是否带任何可执行动作（click/action 或 js）
   bool get hasAction => hasClick || hasJs;
 
+  /// 动作执行时的 `result` 绑定：完整 src（复合参数保留），
+  /// 手工构造的 options（无 rawSrc）回退纯 URL。
+  String get actionSrc => rawSrc.isEmpty ? url : rawSrc;
+
   @override
   String toString() =>
-      'ClickImgUrlOptions(url: $url, click: $click, js: $js, headers: $headers)';
+      'ClickImgUrlOptions(url: $url, rawSrc: $rawSrc, click: $click, '
+      'js: $js, headers: $headers)';
 }
 
 /// 解析正文图片 URL 的复合参数（对齐原版 `AnalyzeUrl` + `ImageColumn`
@@ -111,7 +123,9 @@ ClickImgUrlOptions parseClickImgUrlOptions(String src) {
   if (raw.isEmpty) return const ClickImgUrlOptions(url: '');
 
   final separator = _clickImgParamSeparator.firstMatch(raw);
-  if (separator == null) return ClickImgUrlOptions(url: raw);
+  if (separator == null) {
+    return ClickImgUrlOptions(url: raw, rawSrc: raw);
+  }
 
   final url = raw.substring(0, separator.start).trim();
   final jsonPart = raw.substring(separator.end);
@@ -142,12 +156,38 @@ ClickImgUrlOptions parseClickImgUrlOptions(String src) {
   }
   return ClickImgUrlOptions(
     url: url.isEmpty ? raw : url,
+    rawSrc: raw,
     click: click,
     js: js,
     headers: headers,
     style: style,
     width: width,
   );
+}
+
+/// 从动作源码提取 `java.toast` / `java.longToast` 的静态字面消息
+///
+/// P1-2 降级提示：Rust 侧已用 `ui_action_queue` 收集并在 warn 日志中输出，
+/// 但契约未扩返回结构，动作产生的 toast 无法直接回传 Dart。此处对
+/// `java.toast('...')` / `java.longToast("...")` 的**字面量参数**做静态提取，
+/// 由阅读页弹 SnackBar 给出可见提示；动态拼接消息无法提取时返回 null
+/// （仍可从 Rust warn 日志追溯）。
+({String message, bool isLong})? clickImgToastHint(String action) {
+  final longMatch = RegExp(
+    r'''java\.longToast\s*\(\s*(['"`])([\s\S]*?)\1''',
+  ).firstMatch(action);
+  if (longMatch != null) {
+    final message = longMatch.group(2) ?? '';
+    return message.isEmpty ? null : (message: message, isLong: true);
+  }
+  final toastMatch = RegExp(
+    r'''java\.toast\s*\(\s*(['"`])([\s\S]*?)\1''',
+  ).firstMatch(action);
+  if (toastMatch != null) {
+    final message = toastMatch.group(2) ?? '';
+    return message.isEmpty ? null : (message: message, isLong: false);
+  }
+  return null;
 }
 
 String? _nonBlank(Object? value) {

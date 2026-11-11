@@ -70,7 +70,8 @@ class ClickImgTapDetector extends StatelessWidget {
         if (action == null || runner == null) {
           onPreview();
         } else {
-          unawaited(runner(action, options.url));
+          // P3-6：result 绑定传完整 src（保留复合参数），对齐参考版
+          unawaited(runner(action, options.actionSrc));
         }
       case ClickImgTapEffect.consume:
       case ClickImgTapEffect.passThrough:

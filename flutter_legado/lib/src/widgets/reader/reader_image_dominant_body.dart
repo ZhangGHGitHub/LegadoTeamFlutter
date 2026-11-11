@@ -255,10 +255,20 @@ class _ReaderImageDominantBodyState
   Future<void> _runImageAction(String action, String imgSrc) async {
     final bookUrl = widget.book.bookUrl;
     if (bookUrl.isEmpty) return;
+    final toast = clickImgToastHint(action);
     try {
       await ref
           .read(bookApiProvider)
           .evalImageAction(bookUrl, widget.chapterIndex, action, imgSrc);
+      // P1-2 降级提示：契约未回传 action 队列，静态字面 toast 在此可见
+      if (toast != null && mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text(toast.message),
+            duration: Duration(seconds: toast.isLong ? 5 : 2),
+          ),
+        );
+      }
     } catch (e) {
       // 动作执行失败不打断阅读（无 quickjs 构建等明确错误在此可见）
       debugPrint('[reader] 图片动作执行失败（已忽略）：$e');

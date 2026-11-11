@@ -26,6 +26,7 @@ import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/utils/reader_inline_image.dart';
 import 'package:flutter_legado/src/widgets/paragraph_layout_engine.dart';
+import 'package:flutter_legado/src/widgets/reader/click_img_tap_detector.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_inline_image_widget.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_page_chrome.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_page_view.dart';
@@ -121,11 +122,14 @@ ReaderImageRenderConfig _renderConfig({
   void Function(ReaderInlineImage)? onPreview,
   String cacheOrigin = '',
   VoidCallback? onSizeResolved,
+  String clickImgWay = '1',
+  ClickImgActionRunner? onRunAction,
 }) {
   return ReaderImageRenderConfig(
     loader: (image) async => _pngBytes,
-    clickImgWay: '1',
+    clickImgWay: clickImgWay,
     onPreview: onPreview ?? (_) {},
+    onRunAction: onRunAction,
     cacheOrigin: cacheOrigin,
     onSizeResolved: onSizeResolved,
   );
@@ -141,6 +145,8 @@ Widget _page({
   TextScaler textScaler = TextScaler.noScaling,
   ReaderImageLayout? titleImageLayout,
   void Function(ReaderInlineImage)? onPreview,
+  String clickImgWay = '1',
+  ClickImgActionRunner? onRunAction,
 }) {
   final engine = ParagraphLayoutEngine(
     config: _paragraphConfig(
@@ -171,7 +177,11 @@ Widget _page({
           paragraphSpacing: 8,
           backgroundColor: Colors.white,
           textColor: Colors.black,
-          imageConfig: _renderConfig(onPreview: onPreview),
+          imageConfig: _renderConfig(
+            onPreview: onPreview,
+            clickImgWay: clickImgWay,
+            onRunAction: onRunAction,
+          ),
           titleImageLayout: titleImageLayout,
           contentPadding: const EdgeInsets.all(12),
         ),
@@ -246,6 +256,31 @@ void main() {
     expect(find.textContaining('图片前文字'), findsWidgets);
     expect(find.textContaining('图片后文字'), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('P3-9 行内图片 onRunAction：点击执行完整 src 动作', (tester) async {
+    ReaderImageSizeCache.put(_bigImg, const ReaderImageSize(400, 300));
+    final actions = <String>[];
+    final srcs = <String>[];
+    final rawSrc = '$_bigImg,{"click":"act()"}';
+    final content = '图片前文字。<img src="$rawSrc">图片后文字。';
+
+    await tester.pumpWidget(
+      _page(
+        content: content,
+        clickImgWay: '0',
+        onRunAction: (action, imgSrc) async {
+          actions.add(action);
+          srcs.add(imgSrc);
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ReaderInlineImageWidget));
+    await tester.pump();
+
+    expect(actions, ['act()']);
+    expect(srcs, [rawSrc], reason: 'P3-6：行内图片动作 result 传完整 src');
   });
 
   testWidgets('小图行内 WidgetSpan：图片与文本在同一行渲染', (tester) async {
