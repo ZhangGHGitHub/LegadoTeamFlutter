@@ -22,6 +22,7 @@ import 'src/services/deep_link_service.dart';
 import 'src/services/headset_media_button_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/services/settings_service.dart';
+import 'src/services/temp_dir_cleaner.dart';
 import 'src/services/video_float_window.dart';
 import 'src/constants/pref_keys.dart';
 import 'src/theme/app_theme.dart';
@@ -286,6 +287,12 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
           _topRouteWatcher.didObserveTopChange &&
           _topRouteWatcher.topRouteName == AppRoutes.home,
     );
+    // 启动清扫系统临时目录中残留的 WebDAV 备份/恢复目录（批10/批11 登记）：
+    // 首帧后异步执行，不阻塞启动；只清理超过 1 小时未修改的目录，失败仅
+    // 记日志（见 [TempDirCleaner]）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(TempDirCleaner().sweep());
+    });
     // P1-11：监听系统 legado:// / yuedu:// 深链 → Association；
     // P1-4：注入本地书籍导入器，消费外部书籍文件 VIEW intent（content://）
     WidgetsBinding.instance.addPostFrameCallback((_) {
