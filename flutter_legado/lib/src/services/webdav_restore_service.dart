@@ -10,13 +10,16 @@
 //   远端名与 `.json`/`.zip` 后缀，Rust 依赖后缀/魔数分流），整链（下载 +
 //   探测 + 恢复）跑在 `LocalBackupService.runExclusiveRestore` 内，与备份
 //   互斥；临时文件在 finally 删除；
-// - 需要密码的 zip 不自动恢复（返回 [WebDavRestoreStatus.passwordRequired]，
-//   由调用方提示用户去备份恢复页手动处理，差异已登记）。
+// - 需要密码的 zip 在探测阶段返回 [WebDavRestoreStatus.passwordRequired] 与
+//   探测信息；设置页网络恢复据此弹密码框，用户输入后携带 `password` 再次
+//   调用本链完成恢复。启动自动检查不使用该交互，仍按「需用户手动处理」处理
+//   （差异已登记）。
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/backup_inspect_info.dart';
 import '../models/book.dart';
 import 'book_api.dart';
 import 'local_backup_service.dart';
@@ -54,24 +57,30 @@ enum WebDavRestoreStatus {
 /// 自动恢复整链结果
 @immutable
 class WebDavRestoreRunResult {
-  const WebDavRestoreRunResult._(this.status, this.error);
+  const WebDavRestoreRunResult._(this.status, this.error, this.inspect);
 
   const WebDavRestoreRunResult.success()
-    : this._(WebDavRestoreStatus.success, null);
+    : this._(WebDavRestoreStatus.success, null, null);
 
-  const WebDavRestoreRunResult.busy() : this._(WebDavRestoreStatus.busy, null);
+  const WebDavRestoreRunResult.busy()
+    : this._(WebDavRestoreStatus.busy, null, null);
 
-  const WebDavRestoreRunResult.passwordRequired()
-    : this._(WebDavRestoreStatus.passwordRequired, null);
+  /// [inspect] 为探测结果，调用方弹密码框时需要受保护条目清单；旧调用方
+  /// 可不传（仅用于测试构造）。
+  const WebDavRestoreRunResult.passwordRequired([BackupInspectInfo? inspect])
+    : this._(WebDavRestoreStatus.passwordRequired, null, inspect);
 
   const WebDavRestoreRunResult.failed(Object error)
-    : this._(WebDavRestoreStatus.failed, error);
+    : this._(WebDavRestoreStatus.failed, error, null);
 
   /// 结果状态
   final WebDavRestoreStatus status;
 
   /// 失败异常（仅 [WebDavRestoreStatus.failed]）
   final Object? error;
+
+  /// zip 密码探测结果（仅 [WebDavRestoreStatus.passwordRequired]）
+  final BackupInspectInfo? inspect;
 }
 
 /// 本地恢复链（无 UI，调用方负责提示与页面刷新）
@@ -165,14 +174,17 @@ class WebDavRestoreService {
   ///
   /// - [configJson] 由调用方预解析（自动检查已为列目录读取过，避免重复读
   ///   DB）；为空时自行解析，未配置 WebDAV 按失败处理；
-  /// - 需要密码的 zip 在探测阶段返回 [WebDavRestoreStatus.passwordRequired]，
-  ///   不调用 restore（零写入）；
+  /// - 需要密码的 zip 且未提供 [password] 时，在探测阶段返回
+  ///   [WebDavRestoreStatus.passwordRequired]（携带探测信息），不调用 restore
+  ///   （零写入）；调用方弹密码框后携带 [password] 再次调用本方法即可完成
+  ///   恢复。自动检查不传 password，行为不变（不自动恢复）；
   /// - 临时目录/文件在 finally 删除；
   /// - [refresh] 恢复成功后调用（全局 provider 重读），异常向上抛给调用方
   ///   判定为恢复失败。
   Future<WebDavRestoreRunResult> restoreRemoteBackupExclusive({
     required String remoteName,
     String? configJson,
+    String? password,
     Future<void> Function()? refresh,
   }) async {
     final result = await _backupService
@@ -191,12 +203,14 @@ class WebDavRestoreService {
             final isZip = isZipBackupFile(downloadedPath);
             if (isZip) {
               final inspect = await _api.backupInspect(downloadedPath);
-              if (inspect.passwordRequired) {
-                return const WebDavRestoreRunResult.passwordRequired();
+              if (inspect.passwordRequired && password == null) {
+                return WebDavRestoreRunResult.passwordRequired(inspect);
               }
             }
             await restoreBackupFile(
               downloadedPath,
+              // JSON 备份没有密码语义；仅 zip 容器透传（防御误传）。
+              password: isZip ? password : null,
               isZipContainer: isZip,
               refresh: refresh,
             );

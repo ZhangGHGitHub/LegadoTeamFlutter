@@ -64,6 +64,29 @@ class _ProgressResult {
   final Object? error;
 }
 
+/// 密码恢复单次尝试结果（本地/网络恢复共用密码循环）
+///
+/// 与异常区分：任务抛出的异常由 [_ProgressResult.error] 承载并按密码错误码
+/// 判定；本类型只表达「互斥拒绝」与「业务失败」两种正常返回。
+class _PasswordRestoreAttempt {
+  const _PasswordRestoreAttempt.success() : busy = false, error = null;
+
+  const _PasswordRestoreAttempt.busy() : busy = true, error = null;
+
+  const _PasswordRestoreAttempt.failed(this.error) : busy = false;
+
+  /// 备份/恢复互斥拒绝（本次未执行，调用方提示稍候）
+  final bool busy;
+
+  /// 业务失败异常（null = 成功）
+  final Object? error;
+}
+
+/// 备份密码连续错误的最大尝试次数（本地/网络恢复共用）
+///
+/// 超过后中止，避免无限重试；取消密码框随时可中止（零写入）。
+const int _kMaxPasswordAttempts = 3;
+
 /// 判定备份文件是不是原版 zip 备份（批10 移入恢复服务，设置页共用）
 ///
 /// 扩展名快判 + 文件魔数（口径见 [WebDavRestoreService.isZipBackupFile]）。
@@ -559,32 +582,43 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   }
 
   /// 「同步书库（合并）」：原恢复短按能力，批11 移入顶栏 ⋮ 菜单
+  ///
+  /// 判定口径与批11 后的备份/恢复网络入口一致：先看 `_hasWebDavConfig()`
+  /// （仅要求 URL），再看同步所需的账号/密码是否齐全。匿名 WebDAV 上
+  /// `webdavFullSync` 会 401，必须在发起请求前拦截并给出明确提示；不能
+  /// 只判 `SyncState.isConfigured`（未配置时会误报「未配置 WebDAV」），
+  /// 也不能直接放行（用户会看到无意义的 401 失败）。
   Future<void> _doSyncLibrary() async {
-    final sync = ref.read(syncNotifierProvider);
-    if (sync.isConfigured) {
-      if (!await _confirmWebDavSync()) return;
+    if (!await _hasWebDavConfig()) {
       if (!mounted) return;
-      await _runWithProgress('恢复中…', () async {
-        // 批40 回修 P2-2：恢复与备份/自动备份共用进程内互斥（恢复会写库，
-        // 与自动备份并发会互相覆盖）；已有备份执行中直接提示稍候。
-        final message = await LocalBackupService.instance.runExclusiveRestore(
-          () => ref.read(syncNotifierProvider.notifier).restoreFromWebDav(),
-        );
-        if (!mounted) return;
-        if (message == null) {
-          _showSnack(kBackupRestoreBusyHint);
-          return;
-        }
-        await _reloadPrefsAfterRestore();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message.isEmpty ? '恢复完成' : message)),
-        );
-      });
+      _showSnack('未配置 WebDAV，请先配置后再同步书库');
       return;
     }
     if (!mounted) return;
-    _showSnack('未配置 WebDAV，请先配置后再同步书库');
+    final sync = ref.read(syncNotifierProvider);
+    if (!sync.isConfigured) {
+      _showSnack('同步书库需要账号密码，请先在 WebDAV 设置中填写');
+      return;
+    }
+    if (!await _confirmWebDavSync()) return;
+    if (!mounted) return;
+    await _runWithProgress('恢复中…', () async {
+      // 批40 回修 P2-2：恢复与备份/自动备份共用进程内互斥（恢复会写库，
+      // 与自动备份并发会互相覆盖）；已有备份执行中直接提示稍候。
+      final message = await LocalBackupService.instance.runExclusiveRestore(
+        () => ref.read(syncNotifierProvider.notifier).restoreFromWebDav(),
+      );
+      if (!mounted) return;
+      if (message == null) {
+        _showSnack(kBackupRestoreBusyHint);
+        return;
+      }
+      await _reloadPrefsAfterRestore();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message.isEmpty ? '恢复完成' : message)),
+      );
+    });
   }
 
   /// 恢复行点按：弹恢复 Sheet（批11）
@@ -674,10 +708,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         return;
       }
       if (inspect?.passwordRequired ?? false) {
-        await _restoreWithPasswordLoop(
-          backupPath,
-          inspect!,
-          isZipContainer: isZip,
+        await _promptAndRestoreWithPassword(
+          inspect: inspect!,
+          attempt: (password) => _attemptLocalRestore(
+            backupPath,
+            password: password,
+            isZipContainer: isZip,
+          ),
         );
         return;
       }
@@ -706,15 +743,19 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final error = restoreResult.error!;
     // 防御：探测称无需密码但后端仍要求（如探测与恢复之间文件被替换）
     if (isZip && _hasBackupErrorPrefix(error, _kBackupPasswordRequired)) {
-      await _restoreWithPasswordLoop(
-        backupPath,
-        inspect ??
+      await _promptAndRestoreWithPassword(
+        inspect:
+            inspect ??
             const BackupInspectInfo(
               format: BackupFormat.zip,
               passwordRequired: true,
               passwordProtectedFiles: [],
             ),
-        isZipContainer: true,
+        attempt: (password) => _attemptLocalRestore(
+          backupPath,
+          password: password,
+          isZipContainer: true,
+        ),
       );
       return;
     }
@@ -850,25 +891,15 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 下载并恢复选中的远端备份（网络恢复 / 远端最新共用）
   ///
   /// 成功后写 `lastSeenRemoteBackupMtime=远端 mtime`（不写 `lastBackup`，
-  /// 避免推迟自动备份周期）；失败文案「恢复失败：…」。备份需要密码时
-  /// 不下载（`restoreRemoteBackupExclusive` 在探测阶段返回），提示改用
-  /// 本地恢复。
+  /// 避免推迟自动备份周期）；失败文案「恢复失败：…」。需要密码的 zip 在
+  /// 探测阶段返回（零写入），随后复用本地恢复的密码输入循环完成恢复；
+  /// 取消或连续 [_kMaxPasswordAttempts] 次密码错误即中止，不写 seen。
   Future<void> _restoreRemoteCandidate(RemoteBackupCandidate candidate) async {
     if (!await _confirmRemoteRestore(candidate.name)) return;
     if (!mounted) return;
     WebDavRestoreRunResult? result;
     final progress = await _runWithProgress('恢复中…', () async {
-      result =
-          await WebDavRestoreService(
-            api: ref.read(bookApiProvider),
-            settings: _settings,
-          ).restoreRemoteBackupExclusive(
-            remoteName: candidate.name,
-            refresh: () async {
-              if (!mounted) return;
-              await _reloadPrefsAfterRestore();
-            },
-          );
+      result = await _restoreRemote(candidate);
     }, captureError: true);
     if (!mounted || !progress.ran) return;
     final thrown = progress.error;
@@ -883,24 +914,21 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     }
     switch (run.status) {
       case WebDavRestoreStatus.success:
-        // 批11 回修 P3-5：只允许 seen 前进，不因恢复较旧远端备份而调低。
-        // seen 是「已处理过的最新远端时间」基准，调低会导致启动检查重复
-        // 提示同一份（或更旧的）远端备份。
-        final existingSeen = await _settings.getIntPref(
-          PrefKeys.lastSeenRemoteBackupMtime,
-          defaultValue: 0,
-        );
-        final nextSeen = candidate.lastModifiedMillis > existingSeen
-            ? candidate.lastModifiedMillis
-            : existingSeen;
-        await _settings.setIntPref(
-          PrefKeys.lastSeenRemoteBackupMtime,
-          nextSeen,
-        );
+        await _markRemoteBackupSeen(candidate);
         if (!mounted) return;
         _showSnack(AppStrings.restoreSuccess);
       case WebDavRestoreStatus.passwordRequired:
-        _showSnack('暂不支持网络恢复密码备份，请使用本地恢复');
+        final inspect = run.inspect;
+        if (inspect == null) {
+          // 探测信息缺失时无法弹密码框：保留批10/11 的显式提示，不静默失败
+          _showSnack('暂不支持网络恢复密码备份，请使用本地恢复');
+          return;
+        }
+        if (!mounted) return;
+        await _promptAndRestoreWithPassword(
+          inspect: inspect,
+          attempt: (password) => _attemptRemoteRestore(candidate, password),
+        );
       case WebDavRestoreStatus.busy:
         _showSnack(kBackupRestoreBusyHint);
       case WebDavRestoreStatus.failed:
@@ -910,6 +938,66 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         } else {
           _showRestoreFailure(error);
         }
+    }
+  }
+
+  /// 下载并恢复远端备份（携带可选密码，供密码重试循环复用）
+  Future<WebDavRestoreRunResult> _restoreRemote(
+    RemoteBackupCandidate candidate, {
+    String? password,
+  }) {
+    return WebDavRestoreService(
+      api: ref.read(bookApiProvider),
+      settings: _settings,
+    ).restoreRemoteBackupExclusive(
+      remoteName: candidate.name,
+      password: password,
+      refresh: () async {
+        if (!mounted) return;
+        await _reloadPrefsAfterRestore();
+      },
+    );
+  }
+
+  /// 网络恢复成功后写 `lastSeenRemoteBackupMtime`（只前进不调低）
+  ///
+  /// 批11 回修 P3-5：只允许 seen 前进，不因恢复较旧远端备份而调低。seen 是
+  /// 「已处理过的最新远端时间」基准，调低会导致启动检查重复提示同一份
+  /// （或更旧的）远端备份。
+  Future<void> _markRemoteBackupSeen(RemoteBackupCandidate candidate) async {
+    final existingSeen = await _settings.getIntPref(
+      PrefKeys.lastSeenRemoteBackupMtime,
+      defaultValue: 0,
+    );
+    final nextSeen = candidate.lastModifiedMillis > existingSeen
+        ? candidate.lastModifiedMillis
+        : existingSeen;
+    await _settings.setIntPref(PrefKeys.lastSeenRemoteBackupMtime, nextSeen);
+  }
+
+  /// 密码循环中的一次网络恢复尝试
+  ///
+  /// 失败/忙返回结构化结果交给公共循环判定；异常由公共循环的进度框捕获。
+  Future<_PasswordRestoreAttempt> _attemptRemoteRestore(
+    RemoteBackupCandidate candidate,
+    String password,
+  ) async {
+    final result = await _restoreRemote(candidate, password: password);
+    switch (result.status) {
+      case WebDavRestoreStatus.success:
+        await _markRemoteBackupSeen(candidate);
+        return const _PasswordRestoreAttempt.success();
+      case WebDavRestoreStatus.busy:
+        return const _PasswordRestoreAttempt.busy();
+      case WebDavRestoreStatus.passwordRequired:
+        // 传入密码后不应再要求密码；按失败处理（防御，避免死循环）
+        return _PasswordRestoreAttempt.failed(
+          result.error ?? StateError('备份仍要求密码'),
+        );
+      case WebDavRestoreStatus.failed:
+        return _PasswordRestoreAttempt.failed(
+          result.error ?? StateError('恢复失败'),
+        );
     }
   }
 
@@ -936,24 +1024,27 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await _restoreLocalBackup(path);
   }
 
-  /// 备份密码重试循环（批17b）
+  /// 备份密码重试循环（本地/网络恢复共用）
   ///
-  /// 每轮：弹密码框 → 关闭后显示进度框执行恢复 → 进度框关闭后判定错误：
-  /// - `BACKUP_PASSWORD_INVALID` → 重开密码框并内联提示「密码错误或备份
-  ///   已损坏，请重试」，保留上次输入便于修改；
-  /// - `BACKUP_PASSWORD_REQUIRED`（防御，如探测后文件被替换）→ 重开密码框；
+  /// 每轮：弹密码框 → 关闭后显示进度框执行一次 [attempt] → 进度框关闭后判定：
+  /// - 成功：提示恢复成功并结束（网络恢复的 seen 由 attempt 在成功时写入）；
+  /// - 互斥拒绝（busy）：提示稍候并结束；
+  /// - `BACKUP_PASSWORD_INVALID` 且未达 [_kMaxPasswordAttempts]：重开密码框
+  ///   并内联提示「密码错误或备份已损坏，请重试」，保留上次输入便于修改；
+  /// - `BACKUP_PASSWORD_INVALID` 达到上限：中止并提示，不再重试；
+  /// - `BACKUP_PASSWORD_REQUIRED`（防御，如探测后文件被替换）：重开密码框；
   /// - `BACKUP_ENCRYPTED_CONTENT_CORRUPT` → 提示备份文件损坏并结束；
   /// - 其他 → 统一错误提示。
   ///
-  /// 用户取消密码框即中止：不调用 restore（零写入）。密码只存在于本次
+  /// 用户取消密码框即中止：不调用 [attempt]（零写入）。密码只存在于本次
   /// 调用栈与对话框 controller 中，对话框销毁即清空。
-  Future<void> _restoreWithPasswordLoop(
-    String backupPath,
-    BackupInspectInfo inspect, {
-    bool? isZipContainer,
+  Future<void> _promptAndRestoreWithPassword({
+    required BackupInspectInfo inspect,
+    required Future<_PasswordRestoreAttempt> Function(String password) attempt,
   }) async {
     var lastPassword = '';
     String? inlineError;
+    var invalidAttempts = 0;
     while (mounted) {
       final password = await _showBackupPasswordDialog(
         inspect: inspect,
@@ -965,27 +1056,33 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       lastPassword = password;
       inlineError = null;
 
-      var restoreBusy = false;
-      final error = await _runWithProgress('恢复中…', () async {
-        restoreBusy = !await _performLocalRestore(
-          backupPath,
-          password: password,
-          isZipContainer: isZipContainer,
-        );
+      var outcome = const _PasswordRestoreAttempt.busy();
+      final progress = await _runWithProgress('恢复中…', () async {
+        outcome = await attempt(password);
       }, captureError: true);
       // 忙（另一操作进行中）或页面已销毁：中止循环，不提示成功
-      if (!error.ran) return;
-      // 备份/恢复互斥拒绝（批40 回修 P2-2）：中止循环（不重开密码框）
-      if (restoreBusy) {
-        _showSnack('正在备份或恢复，请稍候');
-        return;
+      if (!mounted || !progress.ran) return;
+      // 先取异常（本地恢复抛出的密码错误），再判互斥拒绝；否则 attempt 的
+      // 默认 busy 值会把异常误判为「正在备份或恢复」。
+      Object? failure = progress.error;
+      if (failure == null) {
+        if (outcome.busy) {
+          // 备份/恢复互斥拒绝（批40 回修 P2-2）：中止循环（不重开密码框）
+          _showSnack(kBackupRestoreBusyHint);
+          return;
+        }
+        failure = outcome.error;
       }
-      if (error.error == null) {
+      if (failure == null) {
         _showSnack(AppStrings.restoreSuccess);
         return;
       }
-      final failure = error.error!;
       if (_hasBackupErrorPrefix(failure, _kBackupPasswordInvalid)) {
+        invalidAttempts++;
+        if (invalidAttempts >= _kMaxPasswordAttempts) {
+          _showSnack('密码错误次数过多，已取消恢复');
+          return;
+        }
         // 密码错误：进度框已关闭，重开密码框并保留输入
         inlineError = '密码错误或备份已损坏，请重试';
         continue;
@@ -996,6 +1093,22 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       _showRestoreFailure(failure);
       return;
     }
+  }
+
+  /// 密码循环中的一次本地恢复尝试
+  Future<_PasswordRestoreAttempt> _attemptLocalRestore(
+    String backupPath, {
+    required String password,
+    bool? isZipContainer,
+  }) async {
+    final busy = !await _performLocalRestore(
+      backupPath,
+      password: password,
+      isZipContainer: isZipContainer,
+    );
+    return busy
+        ? const _PasswordRestoreAttempt.busy()
+        : const _PasswordRestoreAttempt.success();
   }
 
   Future<String?> _showBackupPasswordDialog({

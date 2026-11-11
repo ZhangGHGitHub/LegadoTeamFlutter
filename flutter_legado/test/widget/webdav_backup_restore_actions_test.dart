@@ -727,14 +727,14 @@ void main() {
       expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
     });
 
-    testWidgets('网络恢复：密码 zip → 暂不支持提示且不写 seen/不 restore', (tester) async {
-      configureWebDav();
+    /// 密码 zip 网络恢复公共桩：远端只有一份加密 zip，下载写 zip 魔数，
+    /// 探测恒为「需要密码」。
+    void stubPasswordZipRemote({
+      String name = 'backup_20260101_120000.zip',
+      String lastModified = 'Thu, 01 Jan 2026 12:00:00 GMT',
+    }) {
       stubRemoteList([
-        {
-          'name': 'backup_20260101_120000.zip',
-          'is_dir': false,
-          'last_modified': '',
-        },
+        {'name': name, 'is_dir': false, 'last_modified': lastModified},
       ]);
       when(() => api.webdavDownloadFile(any(), any(), any())).thenAnswer((
         invocation,
@@ -749,15 +749,105 @@ void main() {
           passwordProtectedFiles: ['servers.json'],
         ),
       );
+    }
 
+    /// 等待唯一一个备份密码对话框稳定出现（输入框 + 确定按钮）
+    ///
+    /// 密码错误重试时旧对话框退场、新对话框入场会有短暂重叠；光标闪烁
+    /// 会持续调度帧（pumpAndSettle 可能超时），故按「唯一 AlertDialog +
+    /// 唯一 TextField」判定并用固定时长推进入场动画。
+    Future<void> waitForPasswordDialog(WidgetTester tester) async {
+      for (var i = 0; i < 400; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 2)),
+        );
+        final dialogs = find.byType(AlertDialog).evaluate();
+        final fields = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        );
+        if (dialogs.length == 1 &&
+            fields.evaluate().length == 1 &&
+            find.text('输入备份密码').evaluate().isNotEmpty) {
+          await tester.pump(const Duration(milliseconds: 300));
+          return;
+        }
+      }
+      fail('备份密码对话框未出现');
+    }
+
+    /// 打开网络恢复列表并选中密码 zip、确认恢复，等密码框出现
+    Future<void> startRemotePasswordRestore(WidgetTester tester) async {
       await pumpScreen(tester);
       await openRemoteBackupList(tester);
       await tester.tap(find.text('backup_20260101_120000.zip'));
       await tester.pumpAndSettle();
       await tester.tap(dialogButton('恢复'));
-      await pumpUntilFound(tester, find.text('暂不支持网络恢复密码备份，请使用本地恢复'));
+      await waitForPasswordDialog(tester);
+    }
 
+    testWidgets('网络恢复：密码 zip 弹密码框，正确密码完成恢复并写 seen', (tester) async {
+      configureWebDav();
+      final expectedSeen = HttpDate.parse(
+        'Thu, 01 Jan 2026 12:00:00 GMT',
+      ).millisecondsSinceEpoch;
+      stubPasswordZipRemote();
+
+      await startRemotePasswordRestore(tester);
+      await tester.enterText(find.byType(TextField), '正确的 密码');
+      await tester.tap(dialogButton('确定'));
+      await pumpUntilFound(tester, find.text('恢复成功'));
+
+      verify(() => api.restore(any(), password: '正确的 密码')).called(1);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), expectedSeen);
+      expect(prefs.getInt(PrefKeys.lastBackup), isNull);
+    });
+
+    testWidgets('网络恢复：密码 zip 取消输入 → 不恢复、不写 seen', (tester) async {
+      configureWebDav();
+      stubPasswordZipRemote();
+
+      await startRemotePasswordRestore(tester);
+      await tester.tap(dialogButton('取消'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('输入备份密码'), findsNothing);
       verifyNever(() => api.restore(any(), password: any(named: 'password')));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
+    });
+
+    testWidgets('网络恢复：密码连续错误三次 → 中止且不写 seen', (tester) async {
+      configureWebDav();
+      stubPasswordZipRemote();
+      when(() => api.restore(any(), password: 'wrong')).thenAnswer(
+        (_) async => throw Exception(
+          'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
+        ),
+      );
+
+      await startRemotePasswordRestore(tester);
+      for (var i = 0; i < 3; i++) {
+        await waitForPasswordDialog(tester);
+        await tester.enterText(find.byType(TextField), 'wrong');
+        await tester.tap(dialogButton('确定'));
+        if (i < 2) {
+          // 前两次：密码框重开并内联提示，允许继续重试
+          await pumpUntilFound(tester, find.text('密码错误或备份已损坏，请重试'));
+        } else {
+          // 第三次：中止循环，不再重开密码框
+          await pumpUntilFound(tester, find.text('密码错误次数过多，已取消恢复'));
+        }
+      }
+
+      // 第三次提交后密码框开始退场；pumpUntilFound 只保证提示已插入，
+      // 再固定推进一段以完成对话框退场动画。
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('输入备份密码'), findsNothing);
+      expect(find.text('密码错误次数过多，已取消恢复'), findsOneWidget);
+      verify(() => api.restore(any(), password: 'wrong')).called(3);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
     });

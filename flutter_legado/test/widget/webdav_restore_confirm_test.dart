@@ -112,6 +112,28 @@ void main() {
     });
   }
 
+  /// 匿名 WebDAV：只有 URL，账号/密码为空
+  void configureWebDavAnonymous() {
+    mockApi.seedServer(
+      config: jsonEncode({
+        'url': 'https://dav.example.com/',
+        'username': '',
+        'password': '',
+      }),
+    );
+  }
+
+  /// 完整凭据直接写入 DB servers 表（同步书库需要账号密码）
+  void configureWebDavInDb() {
+    mockApi.seedServer(
+      config: jsonEncode({
+        'url': 'https://dav.example.com/',
+        'username': 'user',
+        'password': 'pass',
+      }),
+    );
+  }
+
   Future<void> pumpScreen(WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -192,6 +214,37 @@ void main() {
     await pumpScreen(tester);
 
     await tapSyncMenuItem(tester);
+    await tester.tap(dialogButton('同步'));
+    await tester.pumpAndSettle();
+
+    verify(() => mockApi.webdavFullSync(any(), any(), any())).called(1);
+    expect(find.text('恢复完成，回写 0 条书源'), findsOneWidget);
+  });
+
+  testWidgets('同步书库：仅 URL（匿名）时提示填写账号密码且不发起请求', (tester) async {
+    // 批11 后备份/恢复入口只要求 URL；同步书库仍需要账号密码，必须在
+    // 发起 webdavFullSync 前明确拦截，不能静默 401。
+    configureWebDavAnonymous();
+    await pumpScreen(tester);
+
+    await tapSyncMenuItem(tester);
+
+    expect(find.text('同步书库需要账号密码，请先在 WebDAV 设置中填写'), findsOneWidget);
+    expect(find.text('确认同步吗？'), findsNothing);
+    // 不弹确认、不进入进度框、不发起任何同步请求
+    expect(find.text('恢复中…'), findsNothing);
+    verifyNever(() => mockApi.webdavFullSync(any(), any(), any()));
+  });
+
+  testWidgets('同步书库：DB 中完整凭据正常发起 webdavFullSync', (tester) async {
+    configureWebDavInDb();
+    when(
+      () => mockApi.webdavFullSync(any(), any(), any()),
+    ).thenAnswer((_) async => '{"sources":"[]"}');
+    await pumpScreen(tester);
+
+    await tapSyncMenuItem(tester);
+    expect(find.text('确认同步吗？'), findsOneWidget);
     await tester.tap(dialogButton('同步'));
     await tester.pumpAndSettle();
 

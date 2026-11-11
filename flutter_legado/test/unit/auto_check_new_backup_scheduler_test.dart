@@ -64,6 +64,7 @@ class _FakeRestoreService extends WebDavRestoreService {
   Future<WebDavRestoreRunResult> restoreRemoteBackupExclusive({
     required String remoteName,
     String? configJson,
+    String? password,
     Future<void> Function()? refresh,
   }) async {
     calls++;

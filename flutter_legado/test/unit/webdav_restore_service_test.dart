@@ -182,10 +182,39 @@ void main() {
       );
 
       expect(result.status, WebDavRestoreStatus.passwordRequired);
+      expect(
+        result.inspect,
+        same(api.inspectResult),
+        reason: '密码框需要受保护文件清单，探测结果必须随结果返回',
+      );
       expect(api.inspectCalls, 1);
       expect(api.restoreCalls, 0, reason: '需密码不得自动恢复');
       expect(File(api.downloadedPath!).existsSync(), isFalse);
       expect(refreshCalls, 0);
+    });
+
+    test('zip 需密码但调用方提供 password：正常恢复并透传密码', () async {
+      final remoteName = 'backup_20261110_120000_123.zip';
+      api.downloadBytes = [0x50, 0x4B, 0x03, 0x04, 0x00];
+      api.inspectResult = const BackupInspectInfo(
+        format: BackupFormat.zip,
+        passwordRequired: true,
+        passwordProtectedFiles: ['servers.json'],
+      );
+
+      final result = await build().restoreRemoteBackupExclusive(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+        password: '备份 密码',
+      );
+
+      expect(result.status, WebDavRestoreStatus.success);
+      expect(api.inspectCalls, 1);
+      expect(api.restoreCalls, 1);
+      expect(api.restoredPath, endsWith('.zip'));
+      expect(api.restoredPassword, '备份 密码');
+      expect(File(api.downloadedPath!).existsSync(), isFalse);
+      expect(tempBase.listSync(), isEmpty, reason: '临时目录仍须清理');
     });
 
     test('zip 免密：探测后正常恢复', () async {
