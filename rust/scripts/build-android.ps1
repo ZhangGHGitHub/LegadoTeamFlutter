@@ -20,6 +20,9 @@ $AllTargets = @{
         triple = "armv7-linux-androideabi"
         abi    = "armeabi-v7a"
         cc     = "armv7a-linux-androideabi21-clang.cmd"
+        # [P2-24/P2-25] 32 位 armv7 的 quickjs feature 组合含 rar，rar 在此目标
+        # 无法编译（u64: ToUsize）；按裁决显式不带 quickjs，避免每轮先失败一次。
+        quickjs = $false
     }
     "x86_64" = @{
         triple = "x86_64-linux-android"
@@ -212,17 +215,28 @@ foreach ($key in $SelectedKeys) {
     Write-Host ""
     Write-Host ">> Building $triple ($($info.abi))..." -ForegroundColor Yellow
 
+    # [P2-24/P2-25] armv7 预跳过 quickjs：与 .github/workflows/flutter-release.yml
+    # 的显式命令一致，直接构建无 quickjs 版本；其余 ABI 仍先带 quickjs、失败再回退。
+    $UseQuickJs = $info.quickjs -ne $false
     $srcFile = Join-Path $RustDir "target\$triple\$Mode\liblegado_ffi.so"
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    if ($Mode -eq "release") {
-        cargo build --release --target $triple -p legado-ffi --features quickjs 2>&1
+    if ($UseQuickJs) {
+        if ($Mode -eq "release") {
+            cargo build --release --target $triple -p legado-ffi --features quickjs 2>&1
+        } else {
+            cargo build --target $triple -p legado-ffi --features quickjs 2>&1
+        }
     } else {
-        cargo build --target $triple -p legado-ffi --features quickjs 2>&1
+        if ($Mode -eq "release") {
+            cargo build --release --target $triple -p legado-ffi 2>&1
+        } else {
+            cargo build --target $triple -p legado-ffi 2>&1
+        }
     }
     $buildExit = $LASTEXITCODE
-    # S7：本 ABI 是否成功以 quickjs feature 构建（下方回退到无 quickjs 时保持 $false）
-    $QuickJsUsed[$key] = ($buildExit -eq 0)
+    # S7：记录本 ABI 是否真正以 quickjs feature 构建（预跳过/回退均为 false）
+    $QuickJsUsed[$key] = $UseQuickJs -and ($buildExit -eq 0)
     $ErrorActionPreference = $prevEAP
 
     if ($buildExit -ne 0 -and $null -ne $ContentHash) {
@@ -237,7 +251,7 @@ foreach ($key in $SelectedKeys) {
             $ReusedSo[$key] = $true
         }
     }
-    if ($buildExit -ne 0) {
+    if ($UseQuickJs -and $buildExit -ne 0) {
         Write-Host "   quickjs build failed; retrying without quickjs ..." -ForegroundColor Yellow
         $ErrorActionPreference = "Continue"
         if ($Mode -eq "release") {

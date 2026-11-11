@@ -14,7 +14,7 @@ param(
     [ValidateSet("release", "debug")]
     [string]$Mode = "debug",
 
-    [string]$Targets = "aarch64,x86_64",
+    [string]$Targets = "aarch64,armv7,x86_64",
 
     [switch]$AutoBuild,
 
