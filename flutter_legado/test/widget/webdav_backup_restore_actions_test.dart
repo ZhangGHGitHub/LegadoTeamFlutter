@@ -420,6 +420,41 @@ void main() {
       expect(prefs.getInt(PrefKeys.lastBackup), isNull);
     });
 
+    testWidgets('本地恢复：seen 已含未来 mtime 时不被调低', (tester) async {
+      const futureSeen = 9999999999999;
+      SharedPreferences.setMockInitialValues({
+        'app_backup_path': userDir.path,
+        PrefKeys.lastSeenRemoteBackupMtime: futureSeen,
+      });
+      final backupPath = '${userDir.path}${_sep()}legado_backup_future.json';
+      File(backupPath).writeAsStringSync('{}');
+      _useFakeFilePicker(
+        _FakeFilePicker(
+          FilePickerResult([
+            PlatformFile(
+              name: 'legado_backup_future.json',
+              size: 0,
+              path: backupPath,
+            ),
+          ]),
+        ),
+      );
+
+      await pumpScreen(tester);
+      await openRestoreSheet(tester);
+      await tester.tap(find.text('本地恢复'));
+      await tester.pumpAndSettle();
+      await tester.tap(dialogButton('恢复'));
+      await pumpUntilFound(tester, find.text('恢复成功'));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime),
+        futureSeen,
+        reason: '本地恢复写 seen 只允许前进，不得把未来 mtime 调低',
+      );
+    });
+
     testWidgets('本地恢复：zip 需要密码时仍弹密码框（Sheet 入口）', (tester) async {
       setUserBackupPath();
       final backupPath = '${userDir.path}${_sep()}legado_backup_pwd.zip';
@@ -728,10 +763,11 @@ void main() {
     });
 
     /// 密码 zip 网络恢复公共桩：远端只有一份加密 zip，下载写 zip 魔数，
-    /// 探测恒为「需要密码」。
+    /// 探测恒为「需要密码」。[onDownload] 用于统计实际下载次数。
     void stubPasswordZipRemote({
       String name = 'backup_20260101_120000.zip',
       String lastModified = 'Thu, 01 Jan 2026 12:00:00 GMT',
+      void Function()? onDownload,
     }) {
       stubRemoteList([
         {'name': name, 'is_dir': false, 'last_modified': lastModified},
@@ -739,6 +775,7 @@ void main() {
       when(() => api.webdavDownloadFile(any(), any(), any())).thenAnswer((
         invocation,
       ) async {
+        onDownload?.call();
         final localPath = invocation.positionalArguments[2] as String;
         await File(localPath).writeAsString('PK\x03\x04');
       });
@@ -777,6 +814,28 @@ void main() {
       fail('备份密码对话框未出现');
     }
 
+    /// 等网络恢复临时目录清理完成
+    ///
+    /// dispose 走真实文件 IO，pumpAndSettle 不驱动事件循环；用 runAsync
+    /// 逐步推进直到临时目录消失。
+    Future<void> waitForTempCleaned(
+      WidgetTester tester,
+      Set<String> before,
+    ) async {
+      for (var i = 0; i < 400; i++) {
+        if (_tempArtifacts(
+          'legado_webdav_restore_',
+        ).difference(before).isEmpty) {
+          return;
+        }
+        await tester.pump(const Duration(milliseconds: 10));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 2)),
+        );
+      }
+      fail('网络恢复临时目录未清理');
+    }
+
     /// 打开网络恢复列表并选中密码 zip、确认恢复，等密码框出现
     Future<void> startRemotePasswordRestore(WidgetTester tester) async {
       await pumpScreen(tester);
@@ -792,41 +851,57 @@ void main() {
       final expectedSeen = HttpDate.parse(
         'Thu, 01 Jan 2026 12:00:00 GMT',
       ).millisecondsSinceEpoch;
-      stubPasswordZipRemote();
+      var downloads = 0;
+      stubPasswordZipRemote(onDownload: () => downloads++);
+      final before = _tempArtifacts('legado_webdav_restore_');
 
       await startRemotePasswordRestore(tester);
       await tester.enterText(find.byType(TextField), '正确的 密码');
       await tester.tap(dialogButton('确定'));
       await pumpUntilFound(tester, find.text('恢复成功'));
 
+      expect(downloads, 1, reason: '密码输入只探测下载一次');
       verify(() => api.restore(any(), password: '正确的 密码')).called(1);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), expectedSeen);
       expect(prefs.getInt(PrefKeys.lastBackup), isNull);
+      await waitForTempCleaned(tester, before);
     });
 
     testWidgets('网络恢复：密码 zip 取消输入 → 不恢复、不写 seen', (tester) async {
       configureWebDav();
-      stubPasswordZipRemote();
+      var downloads = 0;
+      stubPasswordZipRemote(onDownload: () => downloads++);
+      var restoreCalls = 0;
+      when(
+        () => api.restore(any(), password: any(named: 'password')),
+      ).thenAnswer((_) async {
+        restoreCalls++;
+      });
+      final before = _tempArtifacts('legado_webdav_restore_');
 
       await startRemotePasswordRestore(tester);
       await tester.tap(dialogButton('取消'));
       await tester.pumpAndSettle();
 
       expect(find.text('输入备份密码'), findsNothing);
-      verifyNever(() => api.restore(any(), password: any(named: 'password')));
+      expect(downloads, 1);
+      expect(restoreCalls, 0, reason: '取消密码框不得调用 restore');
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
+      await waitForTempCleaned(tester, before);
     });
 
     testWidgets('网络恢复：密码连续错误三次 → 中止且不写 seen', (tester) async {
       configureWebDav();
-      stubPasswordZipRemote();
+      var downloads = 0;
+      stubPasswordZipRemote(onDownload: () => downloads++);
       when(() => api.restore(any(), password: 'wrong')).thenAnswer(
         (_) async => throw Exception(
           'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
         ),
       );
+      final before = _tempArtifacts('legado_webdav_restore_');
 
       await startRemotePasswordRestore(tester);
       for (var i = 0; i < 3; i++) {
@@ -838,7 +913,7 @@ void main() {
           await pumpUntilFound(tester, find.text('密码错误或备份已损坏，请重试'));
         } else {
           // 第三次：中止循环，不再重开密码框
-          await pumpUntilFound(tester, find.text('密码错误次数过多，已取消恢复'));
+          await pumpUntilFound(tester, find.text('密码错误次数过多或备份文件损坏，已取消恢复'));
         }
       }
 
@@ -846,10 +921,46 @@ void main() {
       // 再固定推进一段以完成对话框退场动画。
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('输入备份密码'), findsNothing);
-      expect(find.text('密码错误次数过多，已取消恢复'), findsOneWidget);
+      expect(find.text('密码错误次数过多或备份文件损坏，已取消恢复'), findsOneWidget);
+      expect(downloads, 1, reason: '三次重试必须复用同一份已下载包');
       verify(() => api.restore(any(), password: 'wrong')).called(3);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), isNull);
+      await waitForTempCleaned(tester, before);
+    });
+
+    testWidgets('网络恢复：密码输错两次后正确 → 仅下载一次并成功写 seen', (tester) async {
+      configureWebDav();
+      final expectedSeen = HttpDate.parse(
+        'Thu, 01 Jan 2026 12:00:00 GMT',
+      ).millisecondsSinceEpoch;
+      var downloads = 0;
+      stubPasswordZipRemote(onDownload: () => downloads++);
+      when(() => api.restore(any(), password: 'wrong')).thenAnswer(
+        (_) async => throw Exception(
+          'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
+        ),
+      );
+      final before = _tempArtifacts('legado_webdav_restore_');
+
+      await startRemotePasswordRestore(tester);
+      for (var i = 0; i < 2; i++) {
+        await waitForPasswordDialog(tester);
+        await tester.enterText(find.byType(TextField), 'wrong');
+        await tester.tap(dialogButton('确定'));
+        await pumpUntilFound(tester, find.text('密码错误或备份已损坏，请重试'));
+      }
+      await waitForPasswordDialog(tester);
+      await tester.enterText(find.byType(TextField), 'right');
+      await tester.tap(dialogButton('确定'));
+      await pumpUntilFound(tester, find.text('恢复成功'));
+
+      expect(downloads, 1, reason: '密码重试必须复用同一份已下载包');
+      verify(() => api.restore(any(), password: 'wrong')).called(2);
+      verify(() => api.restore(any(), password: 'right')).called(1);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), expectedSeen);
+      await waitForTempCleaned(tester, before);
     });
 
     testWidgets('网络恢复：忙碌 → 提示稍候、不下载/不恢复/不写 seen', (tester) async {

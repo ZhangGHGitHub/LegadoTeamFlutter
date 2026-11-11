@@ -82,10 +82,11 @@ class _PasswordRestoreAttempt {
   final Object? error;
 }
 
-/// 备份密码连续错误的最大尝试次数（本地/网络恢复共用）
+/// 网络恢复密码连续错误的最大尝试次数
 ///
-/// 超过后中止，避免无限重试；取消密码框随时可中止（零写入）。
-const int _kMaxPasswordAttempts = 3;
+/// 网络恢复每次错误都要重新执行一次恢复链（复用已下载包），为避免无限
+/// 重试设为 3 次；本地恢复沿用批17b 的无限重试（不传 maxInvalidAttempts）。
+const int _kMaxRemotePasswordAttempts = 3;
 
 /// 判定备份文件是不是原版 zip 备份（批10 移入恢复服务，设置页共用）
 ///
@@ -793,12 +794,20 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
           },
         );
         // 审查回修 P2：本地恢复成功意味着当前数据已是用户认可的最新状态，
-        // 记录 seen=now（不改 lastBackup），避免下次启动又提示恢复更旧的
-        // 远端备份。
-        await _settings.setIntPref(
+        // 记录 seen（不改 lastBackup），避免下次启动又提示恢复更旧的远端
+        // 备份。审查回修 P3：与网络恢复一致只允许 seen 前进——直接写 now
+        // 会在 seen 已含未来远端 mtime 时把值调低，导致启动检查重复提示。
+        final existingSeen = await _settings.getIntPref(
           PrefKeys.lastSeenRemoteBackupMtime,
-          DateTime.now().millisecondsSinceEpoch,
+          defaultValue: 0,
         );
+        final nowMillis = DateTime.now().millisecondsSinceEpoch;
+        if (nowMillis > existingSeen) {
+          await _settings.setIntPref(
+            PrefKeys.lastSeenRemoteBackupMtime,
+            nowMillis,
+          );
+        }
         return true;
       },
     );
@@ -891,44 +900,89 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 下载并恢复选中的远端备份（网络恢复 / 远端最新共用）
   ///
   /// 成功后写 `lastSeenRemoteBackupMtime=远端 mtime`（不写 `lastBackup`，
-  /// 避免推迟自动备份周期）；失败文案「恢复失败：…」。需要密码的 zip 在
-  /// 探测阶段返回（零写入），随后复用本地恢复的密码输入循环完成恢复；
-  /// 取消或连续 [_kMaxPasswordAttempts] 次密码错误即中止，不写 seen。
+  /// 避免推迟自动备份周期）；失败文案「恢复失败：…」。需要密码的 zip 先
+  /// 下载探测一次（零写入），密码循环复用同一份已下载包（不重复下载），
+  /// 循环结束统一清理临时目录；取消或连续
+  /// [_kMaxRemotePasswordAttempts] 次密码错误即中止，不写 seen。
   Future<void> _restoreRemoteCandidate(RemoteBackupCandidate candidate) async {
     if (!await _confirmRemoteRestore(candidate.name)) return;
     if (!mounted) return;
+    final service = _remoteRestoreService();
+    WebDavPreparedRemoteBackup? prepared;
     WebDavRestoreRunResult? result;
     final progress = await _runWithProgress('恢复中…', () async {
-      result = await _restoreRemote(candidate);
+      final handle = await service.prepareRemoteBackup(
+        remoteName: candidate.name,
+      );
+      prepared = handle;
+      if (handle == null) return;
+      // 需要密码：保留句柄给密码循环，避免每次重试重新下载整包
+      if (handle.passwordRequired) return;
+      result = await service.restorePreparedBackup(
+        handle,
+        refresh: _refreshAfterRemoteRestore,
+      );
     }, captureError: true);
-    if (!mounted || !progress.ran) return;
+    final handle = prepared;
+    if (!mounted || !progress.ran) {
+      // 页面销毁/进度框未执行：仍要清理可能已下载的临时包
+      if (handle != null) await service.disposePreparedBackup(handle);
+      return;
+    }
     final thrown = progress.error;
     if (thrown != null) {
+      if (handle != null) await service.disposePreparedBackup(handle);
+      if (!mounted) return;
       _showRestoreFailure(thrown);
       return;
     }
-    final run = result;
-    if (run == null) {
+    if (handle == null) {
       _showSnack(kBackupRestoreBusyHint);
       return;
     }
+    try {
+      final run = result;
+      if (run != null) {
+        await _applyRemoteRestoreResult(run, candidate);
+        return;
+      }
+      final inspect = handle.inspect;
+      if (inspect == null) {
+        // 探测信息缺失时无法弹密码框：保留批10/11 的显式提示，不静默失败
+        _showSnack('暂不支持网络恢复密码备份，请使用本地恢复');
+        return;
+      }
+      await _promptAndRestoreWithPassword(
+        inspect: inspect,
+        maxInvalidAttempts: _kMaxRemotePasswordAttempts,
+        attempt: (password) =>
+            _attemptRemoteRestore(service, handle, candidate, password),
+      );
+    } finally {
+      await service.disposePreparedBackup(handle);
+    }
+  }
+
+  /// 网络恢复服务（设置页统一注入 api/settings）
+  WebDavRestoreService _remoteRestoreService() =>
+      WebDavRestoreService(api: ref.read(bookApiProvider), settings: _settings);
+
+  /// 网络恢复成功后的全局状态重读
+  Future<void> _refreshAfterRemoteRestore() async {
+    if (!mounted) return;
+    await _reloadPrefsAfterRestore();
+  }
+
+  /// 处理网络恢复（非密码循环）的结果
+  Future<void> _applyRemoteRestoreResult(
+    WebDavRestoreRunResult run,
+    RemoteBackupCandidate candidate,
+  ) async {
     switch (run.status) {
       case WebDavRestoreStatus.success:
         await _markRemoteBackupSeen(candidate);
         if (!mounted) return;
         _showSnack(AppStrings.restoreSuccess);
-      case WebDavRestoreStatus.passwordRequired:
-        final inspect = run.inspect;
-        if (inspect == null) {
-          // 探测信息缺失时无法弹密码框：保留批10/11 的显式提示，不静默失败
-          _showSnack('暂不支持网络恢复密码备份，请使用本地恢复');
-          return;
-        }
-        if (!mounted) return;
-        await _promptAndRestoreWithPassword(
-          inspect: inspect,
-          attempt: (password) => _attemptRemoteRestore(candidate, password),
-        );
       case WebDavRestoreStatus.busy:
         _showSnack(kBackupRestoreBusyHint);
       case WebDavRestoreStatus.failed:
@@ -938,25 +992,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         } else {
           _showRestoreFailure(error);
         }
+      case WebDavRestoreStatus.passwordRequired:
+        // restorePreparedBackup 不会返回该状态；防御性按失败处理
+        _showRestoreFailure(StateError('备份仍要求密码'));
     }
-  }
-
-  /// 下载并恢复远端备份（携带可选密码，供密码重试循环复用）
-  Future<WebDavRestoreRunResult> _restoreRemote(
-    RemoteBackupCandidate candidate, {
-    String? password,
-  }) {
-    return WebDavRestoreService(
-      api: ref.read(bookApiProvider),
-      settings: _settings,
-    ).restoreRemoteBackupExclusive(
-      remoteName: candidate.name,
-      password: password,
-      refresh: () async {
-        if (!mounted) return;
-        await _reloadPrefsAfterRestore();
-      },
-    );
   }
 
   /// 网络恢复成功后写 `lastSeenRemoteBackupMtime`（只前进不调低）
@@ -975,14 +1014,20 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await _settings.setIntPref(PrefKeys.lastSeenRemoteBackupMtime, nextSeen);
   }
 
-  /// 密码循环中的一次网络恢复尝试
+  /// 密码循环中的一次网络恢复尝试（复用同一份已下载包）
   ///
   /// 失败/忙返回结构化结果交给公共循环判定；异常由公共循环的进度框捕获。
   Future<_PasswordRestoreAttempt> _attemptRemoteRestore(
+    WebDavRestoreService service,
+    WebDavPreparedRemoteBackup prepared,
     RemoteBackupCandidate candidate,
     String password,
   ) async {
-    final result = await _restoreRemote(candidate, password: password);
+    final result = await service.restorePreparedBackup(
+      prepared,
+      password: password,
+      refresh: _refreshAfterRemoteRestore,
+    );
     switch (result.status) {
       case WebDavRestoreStatus.success:
         await _markRemoteBackupSeen(candidate);
@@ -1029,9 +1074,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 每轮：弹密码框 → 关闭后显示进度框执行一次 [attempt] → 进度框关闭后判定：
   /// - 成功：提示恢复成功并结束（网络恢复的 seen 由 attempt 在成功时写入）；
   /// - 互斥拒绝（busy）：提示稍候并结束；
-  /// - `BACKUP_PASSWORD_INVALID` 且未达 [_kMaxPasswordAttempts]：重开密码框
+  /// - `BACKUP_PASSWORD_INVALID` 且未达 [maxInvalidAttempts]：重开密码框
   ///   并内联提示「密码错误或备份已损坏，请重试」，保留上次输入便于修改；
-  /// - `BACKUP_PASSWORD_INVALID` 达到上限：中止并提示，不再重试；
+  /// - `BACKUP_PASSWORD_INVALID` 达到 [maxInvalidAttempts]：中止并提示；
+  ///   [maxInvalidAttempts] 为 null 时不设上限（本地恢复保持原行为）；
   /// - `BACKUP_PASSWORD_REQUIRED`（防御，如探测后文件被替换）：重开密码框；
   /// - `BACKUP_ENCRYPTED_CONTENT_CORRUPT` → 提示备份文件损坏并结束；
   /// - 其他 → 统一错误提示。
@@ -1041,6 +1087,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   Future<void> _promptAndRestoreWithPassword({
     required BackupInspectInfo inspect,
     required Future<_PasswordRestoreAttempt> Function(String password) attempt,
+    int? maxInvalidAttempts,
   }) async {
     var lastPassword = '';
     String? inlineError;
@@ -1079,8 +1126,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       }
       if (_hasBackupErrorPrefix(failure, _kBackupPasswordInvalid)) {
         invalidAttempts++;
-        if (invalidAttempts >= _kMaxPasswordAttempts) {
-          _showSnack('密码错误次数过多，已取消恢复');
+        if (maxInvalidAttempts != null &&
+            invalidAttempts >= maxInvalidAttempts) {
+          _showSnack('密码错误次数过多或备份文件损坏，已取消恢复');
           return;
         }
         // 密码错误：进度框已关闭，重开密码框并保留输入

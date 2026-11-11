@@ -78,6 +78,52 @@ void main() {
     expect(freshRestore.existsSync(), isTrue);
   });
 
+  test('时间边界：恰好 maxAge 保留，maxAge+1ms 删除', () async {
+    final boundary = createDir('legado_webdav_only_boundary');
+    final base = DateTime(2026, 1, 1, 12);
+
+    // 恰好 1 小时：`current.difference(modified) <= maxAge` → 保留
+    final kept = await TempDirCleaner(
+      tempDirProvider: () => tempBase,
+      now: () => base,
+      modifiedTimeProvider: (_) async =>
+          base.subtract(const Duration(hours: 1)),
+    ).sweep();
+    expect(kept, 0);
+    expect(boundary.existsSync(), isTrue);
+
+    // 超过 1 毫秒：严格大于 maxAge → 删除
+    final deleted = await TempDirCleaner(
+      tempDirProvider: () => tempBase,
+      now: () => base,
+      modifiedTimeProvider: (_) async =>
+          base.subtract(const Duration(hours: 1, milliseconds: 1)),
+    ).sweep();
+    expect(deleted, 1);
+    expect(boundary.existsSync(), isFalse);
+  });
+
+  test('目录 mtime 不随文件内容更新：取最新子项 mtime 避免长写入误删', () async {
+    final longWrite = createDir(
+      'legado_webdav_only_long_write',
+      fileName: 'legado_backup_100.json',
+    );
+    final child = File('${longWrite.path}${sep()}legado_backup_100.json');
+    // 子项 mtime 设为未来，目录自身 mtime 仍是创建时刻；最近活动时间必须
+    // 取子项的较大值，否则长任务会被误判为超过 1 小时未修改。
+    final childTime = DateTime.now().add(const Duration(minutes: 30));
+    await child.setLastModified(childTime);
+
+    final actual = await child.lastModified();
+    final latest = await TempDirCleaner.latestModifiedForTest(longWrite);
+    expect(
+      latest.millisecondsSinceEpoch,
+      actual.millisecondsSinceEpoch,
+      reason: '最新直接子项 mtime 晚于目录 mtime 时必须采用子项时间',
+    );
+    expect(latest.isAfter(DateTime.now()), isTrue);
+  });
+
   test('删除失败只记日志、不抛错，目录保留待下次启动重试', () async {
     final stuck = createDir('legado_webdav_only_stuck');
 

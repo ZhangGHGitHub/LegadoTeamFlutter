@@ -22,6 +22,7 @@ class _RestoreApi extends MockBookApi {
   String? downloadText;
   Object? downloadError;
   String? downloadedPath;
+  int downloadCalls = 0;
 
   BackupInspectInfo inspectResult = const BackupInspectInfo(
     format: BackupFormat.json,
@@ -43,6 +44,7 @@ class _RestoreApi extends MockBookApi {
     String path,
     String localFilePath,
   ) async {
+    downloadCalls++;
     downloadedPath = localFilePath;
     final error = downloadError;
     if (error != null) throw error;
@@ -215,6 +217,77 @@ void main() {
       expect(api.restoredPassword, '备份 密码');
       expect(File(api.downloadedPath!).existsSync(), isFalse);
       expect(tempBase.listSync(), isEmpty, reason: '临时目录仍须清理');
+    });
+
+    test('zip 需密码且 password 为空串：按未提供处理，不发起 restore', () async {
+      final remoteName = 'backup_20261110_120000_123.zip';
+      api.downloadBytes = [0x50, 0x4B, 0x03, 0x04, 0x00];
+      api.inspectResult = const BackupInspectInfo(
+        format: BackupFormat.zip,
+        passwordRequired: true,
+        passwordProtectedFiles: ['servers.json'],
+      );
+
+      final result = await build().restoreRemoteBackupExclusive(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+        password: '',
+      );
+
+      expect(result.status, WebDavRestoreStatus.passwordRequired);
+      expect(api.restoreCalls, 0, reason: '空串不应进入 restore');
+      expect(File(api.downloadedPath!).existsSync(), isFalse);
+      expect(tempBase.listSync(), isEmpty);
+    });
+
+    test('prepare + restorePreparedBackup：密码重试复用同一份下载，仅下载一次', () async {
+      final remoteName = 'backup_20261110_120000_123.zip';
+      api.downloadBytes = [0x50, 0x4B, 0x03, 0x04, 0x00];
+      api.inspectResult = const BackupInspectInfo(
+        format: BackupFormat.zip,
+        passwordRequired: true,
+        passwordProtectedFiles: ['servers.json'],
+      );
+      final service = build();
+
+      final prepared = await service.prepareRemoteBackup(
+        remoteName: remoteName,
+        configJson: '{"url":"x"}',
+      );
+      expect(prepared, isNotNull);
+      expect(prepared!.passwordRequired, isTrue);
+      expect(api.downloadCalls, 1);
+      expect(
+        File(prepared.localPath).existsSync(),
+        isTrue,
+        reason: '密码输入期间必须保留已下载包',
+      );
+
+      // 第一次密码错误（临时包保留，供下一次重试）
+      api.restoreError = Exception(
+        'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
+      );
+      final first = await service.restorePreparedBackup(
+        prepared,
+        password: 'wrong',
+      );
+      expect(first.status, WebDavRestoreStatus.failed);
+
+      // 第二次密码正确：复用同一路径，不再下载
+      api.restoreError = null;
+      final second = await service.restorePreparedBackup(
+        prepared,
+        password: 'right',
+      );
+      expect(second.status, WebDavRestoreStatus.success);
+      expect(api.downloadCalls, 1, reason: '重试不得重新下载整包');
+      expect(api.restoreCalls, 2);
+      expect(api.restoredPath, prepared.localPath);
+      expect(api.restoredPassword, 'right');
+
+      await service.disposePreparedBackup(prepared);
+      expect(File(prepared.localPath).existsSync(), isFalse);
+      expect(tempBase.listSync(), isEmpty, reason: '循环结束统一清理临时目录');
     });
 
     test('zip 免密：探测后正常恢复', () async {

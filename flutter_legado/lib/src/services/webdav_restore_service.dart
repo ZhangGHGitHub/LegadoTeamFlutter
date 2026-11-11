@@ -7,13 +7,12 @@
 //   WebDAV 账号回填、旧远程书库强制迁移等步骤；启动自动检查需要同一套
 //   语义，不能复制第二份实现；
 // - 自动检查先经 `webdavDownloadFile` 把远端备份落到临时目录（文件名保留
-//   远端名与 `.json`/`.zip` 后缀，Rust 依赖后缀/魔数分流），整链（下载 +
-//   探测 + 恢复）跑在 `LocalBackupService.runExclusiveRestore` 内，与备份
-//   互斥；临时文件在 finally 删除；
+//   远端名与 `.json`/`.zip` 后缀，Rust 依赖后缀/魔数分流）；下载 + 探测与
+//   恢复均在 `LocalBackupService.runExclusiveRestore` 内与备份互斥；
 // - 需要密码的 zip 在探测阶段返回 [WebDavRestoreStatus.passwordRequired] 与
-//   探测信息；设置页网络恢复据此弹密码框，用户输入后携带 `password` 再次
-//   调用本链完成恢复。启动自动检查不使用该交互，仍按「需用户手动处理」处理
-//   （差异已登记）。
+//   探测信息。设置页网络恢复经 [prepareRemoteBackup] 下载一次，密码重试复用
+//   同一份 [WebDavPreparedRemoteBackup] 句柄，循环结束统一清理；启动自动
+//   检查不使用该交互，仍按「需用户手动处理」处理（差异已登记）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -81,6 +80,31 @@ class WebDavRestoreRunResult {
 
   /// zip 密码探测结果（仅 [WebDavRestoreStatus.passwordRequired]）
   final BackupInspectInfo? inspect;
+}
+
+/// 已下载并探测完成的远端备份句柄（密码重试期间复用，避免重复下载整包）
+///
+/// 由 [WebDavRestoreService.prepareRemoteBackup] 创建；恢复流程结束后调用方
+/// 必须调用 [WebDavRestoreService.disposePreparedBackup] 清理临时目录。
+@immutable
+class WebDavPreparedRemoteBackup {
+  const WebDavPreparedRemoteBackup._({
+    required this.localPath,
+    required this.isZip,
+    this.inspect,
+  });
+
+  /// 临时目录内的备份文件路径（保留远端文件名与后缀）
+  final String localPath;
+
+  /// 是否 zip 容器（按扩展名 + 文件魔数判定）
+  final bool isZip;
+
+  /// zip 密码探测结果（非 zip 为 null）
+  final BackupInspectInfo? inspect;
+
+  /// 是否需要备份密码
+  bool get passwordRequired => inspect?.passwordRequired ?? false;
 }
 
 /// 本地恢复链（无 UI，调用方负责提示与页面刷新）
@@ -170,14 +194,88 @@ class WebDavRestoreService {
     }
   }
 
+  /// 下载并探测远端备份，返回可复用的临时文件句柄
+  ///
+  /// 下载 + 探测整段在备份/恢复互斥锁内执行；返回 null = 已有备份/恢复执行
+  /// 中（未发起下载）。失败向上抛，并删除刚创建的临时目录。
+  /// 调用方在恢复流程结束后必须调用 [disposePreparedBackup]。
+  Future<WebDavPreparedRemoteBackup?> prepareRemoteBackup({
+    required String remoteName,
+    String? configJson,
+  }) async {
+    return _backupService.runExclusiveRestore<WebDavPreparedRemoteBackup>(
+      () async {
+        final config = configJson ?? await _webDavBackup.resolveConfigJson();
+        if (config == null) {
+          throw StateError('未配置 WebDAV');
+        }
+        final path = await downloadRemoteBackup(
+          configJson: config,
+          remoteName: remoteName,
+        );
+        try {
+          final isZip = isZipBackupFile(path);
+          final inspect = isZip ? await _api.backupInspect(path) : null;
+          return WebDavPreparedRemoteBackup._(
+            localPath: path,
+            isZip: isZip,
+            inspect: inspect,
+          );
+        } catch (_) {
+          await _deleteTempDir(File(path).parent);
+          rethrow;
+        }
+      },
+    );
+  }
+
+  /// 恢复一份已下载的远端备份（每次尝试独占备份/恢复互斥锁）
+  ///
+  /// 不负责删除临时目录（由 [disposePreparedBackup] 在密码循环结束后统一
+  /// 清理）；恢复失败返回 [WebDavRestoreStatus.failed]，互斥拒绝返回 busy。
+  Future<WebDavRestoreRunResult> restorePreparedBackup(
+    WebDavPreparedRemoteBackup prepared, {
+    String? password,
+    Future<void> Function()? refresh,
+  }) async {
+    final result = await _backupService
+        .runExclusiveRestore<WebDavRestoreRunResult>(() async {
+          try {
+            await restoreBackupFile(
+              prepared.localPath,
+              // JSON 备份没有密码语义；仅 zip 容器透传（防御误传）。
+              password: prepared.isZip ? password : null,
+              isZipContainer: prepared.isZip,
+              refresh: refresh,
+            );
+            return const WebDavRestoreRunResult.success();
+          } catch (e, stack) {
+            // 静默失败：只记录异常类型与栈，不打印 URL/凭据等敏感信息
+            debugPrint(
+              '[WebDavRestoreService] 远端备份恢复失败'
+              '（${e.runtimeType}）:\n$stack',
+            );
+            return WebDavRestoreRunResult.failed(e);
+          }
+        });
+    return result ?? const WebDavRestoreRunResult.busy();
+  }
+
+  /// 删除 [WebDavPreparedRemoteBackup] 对应的临时目录（幂等，失败只记日志）
+  Future<void> disposePreparedBackup(WebDavPreparedRemoteBackup prepared) {
+    return _deleteTempDir(File(prepared.localPath).parent);
+  }
+
   /// 自动检查整链：下载 → 探测 → 恢复，独占备份/恢复互斥锁
+  ///
+  /// 单次调用便捷入口（自动检查/既有调用方）：内部下载一次，需密码且未
+  /// 提供 [password]（null 或空串）时返回 [WebDavRestoreStatus.passwordRequired]
+  /// （携带探测信息）并清理临时目录。设置页密码重试应改用
+  /// [prepareRemoteBackup] + [restorePreparedBackup] 复用同一份已下载包，
+  /// 不要循环调用本方法（否则每次重试都会重新下载整包）。
   ///
   /// - [configJson] 由调用方预解析（自动检查已为列目录读取过，避免重复读
   ///   DB）；为空时自行解析，未配置 WebDAV 按失败处理；
-  /// - 需要密码的 zip 且未提供 [password] 时，在探测阶段返回
-  ///   [WebDavRestoreStatus.passwordRequired]（携带探测信息），不调用 restore
-  ///   （零写入）；调用方弹密码框后携带 [password] 再次调用本方法即可完成
-  ///   恢复。自动检查不传 password，行为不变（不自动恢复）；
   /// - 临时目录/文件在 finally 删除；
   /// - [refresh] 恢复成功后调用（全局 provider 重读），异常向上抛给调用方
   ///   判定为恢复失败。
@@ -187,48 +285,32 @@ class WebDavRestoreService {
     String? password,
     Future<void> Function()? refresh,
   }) async {
-    final result = await _backupService
-        .runExclusiveRestore<WebDavRestoreRunResult>(() async {
-          String? downloadedPath;
-          try {
-            final config =
-                configJson ?? await _webDavBackup.resolveConfigJson();
-            if (config == null) {
-              throw StateError('未配置 WebDAV');
-            }
-            downloadedPath = await downloadRemoteBackup(
-              configJson: config,
-              remoteName: remoteName,
-            );
-            final isZip = isZipBackupFile(downloadedPath);
-            if (isZip) {
-              final inspect = await _api.backupInspect(downloadedPath);
-              if (inspect.passwordRequired && password == null) {
-                return WebDavRestoreRunResult.passwordRequired(inspect);
-              }
-            }
-            await restoreBackupFile(
-              downloadedPath,
-              // JSON 备份没有密码语义；仅 zip 容器透传（防御误传）。
-              password: isZip ? password : null,
-              isZipContainer: isZip,
-              refresh: refresh,
-            );
-            return const WebDavRestoreRunResult.success();
-          } catch (e, stack) {
-            // 静默失败：只记录异常类型与栈，不打印 URL/凭据等敏感信息
-            debugPrint(
-              '[WebDavRestoreService] 远端备份恢复失败（${e.runtimeType}）:\n$stack',
-            );
-            return WebDavRestoreRunResult.failed(e);
-          } finally {
-            final path = downloadedPath;
-            if (path != null) {
-              await _deleteTempDir(File(path).parent);
-            }
-          }
-        });
-    return result ?? const WebDavRestoreRunResult.busy();
+    WebDavPreparedRemoteBackup? prepared;
+    try {
+      prepared = await prepareRemoteBackup(
+        remoteName: remoteName,
+        configJson: configJson,
+      );
+    } catch (e, stack) {
+      debugPrint(
+        '[WebDavRestoreService] 远端备份下载/探测失败'
+        '（${e.runtimeType}）:\n$stack',
+      );
+      return WebDavRestoreRunResult.failed(e);
+    }
+    if (prepared == null) return const WebDavRestoreRunResult.busy();
+    try {
+      if (prepared.passwordRequired && (password?.isEmpty ?? true)) {
+        return WebDavRestoreRunResult.passwordRequired(prepared.inspect);
+      }
+      return await restorePreparedBackup(
+        prepared,
+        password: password,
+        refresh: refresh,
+      );
+    } finally {
+      await disposePreparedBackup(prepared);
+    }
   }
 
   /// 执行恢复全链（偏好回填 + 业务表恢复 + 服务器迁移 + 刷新）

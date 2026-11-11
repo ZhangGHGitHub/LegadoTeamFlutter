@@ -94,7 +94,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
-    when(() => mockApi.getBookSources()).thenAnswer((_) async => <BookSource>[]);
+    when(
+      () => mockApi.getBookSources(),
+    ).thenAnswer((_) async => <BookSource>[]);
     when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
     when(
       () => mockApi.restore(any(), password: any(named: 'password')),
@@ -138,18 +140,13 @@ void main() {
               overrides: [bookApiProvider.overrideWithValue(mockApi)],
               child: child,
             )
-          : UncontrolledProviderScope(
-              container: container,
-              child: child,
-            ),
+          : UncontrolledProviderScope(container: container, child: child),
     );
     await tester.pumpAndSettle();
   }
 
-  Finder dialogButton(String label) => find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text(label),
-      );
+  Finder dialogButton(String label) =>
+      find.descendant(of: find.byType(AlertDialog), matching: find.text(label));
 
   /// 长按「恢复」→ 选文件 → 覆盖确认 → 进入（可选密码框）
   Future<void> startLocalRestore(
@@ -196,17 +193,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('输入备份密码'), findsNothing);
-    verifyNever(
-      () => mockApi.restore(any(), password: any(named: 'password')),
-    );
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
   });
 
   testWidgets('密码错误一次：重开密码框内联提示，第二次正确后以密码恢复', (tester) async {
     stubPasswordRequired();
     final backupPath = fakeBackupPath('legado_backup_retry.zip');
-    when(
-      () => mockApi.restore(any(), password: 'wrong'),
-    ).thenAnswer(
+    when(() => mockApi.restore(any(), password: 'wrong')).thenAnswer(
       (_) async => throw Exception(
         'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
       ),
@@ -232,6 +225,34 @@ void main() {
     verify(() => mockApi.restore(backupPath, password: '正确的 密码')).called(1);
   });
 
+  testWidgets('本地恢复：密码连续错误三次后仍可继续重试（不设上限）', (tester) async {
+    // 审查回修 P2-3：3 次上限只用于网络恢复；本地恢复沿用批17b 的无限重试。
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_retry_unlimited.zip');
+    when(() => mockApi.restore(any(), password: 'wrong')).thenAnswer(
+      (_) async => throw Exception(
+        'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
+      ),
+    );
+
+    await startLocalRestore(tester, backupPath: backupPath);
+    for (var i = 0; i < 3; i++) {
+      expect(find.text('输入备份密码'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'wrong');
+      await tester.tap(dialogButton('确定'));
+      await tester.pumpAndSettle();
+      expect(find.text('密码错误或备份已损坏，请重试'), findsOneWidget);
+    }
+
+    await tester.enterText(find.byType(TextField), 'right');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('输入备份密码'), findsNothing);
+    verify(() => mockApi.restore(backupPath, password: 'wrong')).called(3);
+    verify(() => mockApi.restore(backupPath, password: 'right')).called(1);
+  });
+
   testWidgets('探测无需密码：不弹密码框，restore 的 password 为 null', (tester) async {
     stubPasswordNotRequired();
     final backupPath = fakeBackupPath('legado_backup_plain.zip');
@@ -253,15 +274,14 @@ void main() {
     await startLocalRestore(tester, backupPath: backupPath);
 
     verify(() => mockApi.restore(backupPath, password: null)).called(1);
-    verify(() => mockApi.setConfig(PrefKeys.userAgent, 'RestoredUA/1.0'))
-        .called(1);
+    verify(
+      () => mockApi.setConfig(PrefKeys.userAgent, 'RestoredUA/1.0'),
+    ).called(1);
   });
 
   // 批9b-2 审查回修：恢复完成的 appPrefs 需同步 threadCount 到 Rust
   testWidgets('恢复完成后把 threadCount 同步到 Rust config', (tester) async {
-    SharedPreferences.setMockInitialValues({
-      PrefKeys.threadCount: 12,
-    });
+    SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 12});
     stubPasswordNotRequired();
     final backupPath = fakeBackupPath('legado_backup_thread.zip');
 
@@ -273,9 +293,7 @@ void main() {
 
   // 批9b-2 审查回修：恢复后存量 >256 夹逼为 256 再同步 Rust
   testWidgets('恢复后 threadCount 存量 999 夹逼为 256 同步 Rust', (tester) async {
-    SharedPreferences.setMockInitialValues({
-      PrefKeys.threadCount: 999,
-    });
+    SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 999});
     stubPasswordNotRequired();
     final backupPath = fakeBackupPath('legado_backup_thread_clamp.zip');
 
@@ -289,8 +307,7 @@ void main() {
   // 恢复写盘放在 mockApi.restore stub 内，模拟真实恢复顺序；同时监听
   // provider 中间状态，断言 reload 期间没有默认值帧、且状态变化发生在
   // 恢复写盘之后。
-  testWidgets('恢复 appPrefs 后护眼设置同会话立即重读（无默认值中间帧）',
-      (tester) async {
+  testWidgets('恢复 appPrefs 后护眼设置同会话立即重读（无默认值中间帧）', (tester) async {
     final backupPath = fakeBackupPath('legado_backup_eye_settings.zip');
     var restoreWrotePrefs = false;
     when(
@@ -341,8 +358,7 @@ void main() {
 
     verify(() => mockApi.restore(backupPath, password: null)).called(1);
     final restored = container.read(eyeProtectionProvider);
-    expect(restored.enabled, isTrue,
-        reason: '恢复后同会话内应立即生效，不得等重启');
+    expect(restored.enabled, isTrue, reason: '恢复后同会话内应立即生效，不得等重启');
     expect(restored.intensity, 30);
     expect(restored.startTime, '23:00');
     // 中间状态证据：reload 直接旧值→新值，不得出现默认值帧；且此次状态
@@ -354,8 +370,11 @@ void main() {
     );
     expect(transitions, isNotEmpty);
     expect(transitions.last, restored);
-    expect(wroteFlags, everyElement(isTrue),
-        reason: 'provider 更新必须晚于 mock restore 写盘');
+    expect(
+      wroteFlags,
+      everyElement(isTrue),
+      reason: 'provider 更新必须晚于 mock restore 写盘',
+    );
   });
 
   testWidgets('恢复 appPrefs 后容器外观设置同会话立即重读', (tester) async {
@@ -394,14 +413,13 @@ void main() {
 
     final transitions = <UiSettingsState>[];
     final wroteFlags = <bool>[];
-    final subscription = container.listen<UiSettingsState>(
-      uiSettingsProvider,
-      (previous, next) {
-        transitions.add(next);
-        wroteFlags.add(restoreWrotePrefs);
-      },
-      fireImmediately: false,
-    );
+    final subscription = container.listen<UiSettingsState>(uiSettingsProvider, (
+      previous,
+      next,
+    ) {
+      transitions.add(next);
+      wroteFlags.add(restoreWrotePrefs);
+    }, fireImmediately: false);
     addTearDown(subscription.close);
 
     stubPasswordNotRequired();
@@ -497,9 +515,7 @@ void main() {
     await tester.tap(dialogButton('确定'));
     await tester.pumpAndSettle();
 
-    verify(
-      () => mockApi.restore(backupPath, password: '  密码 中文 '),
-    ).called(1);
+    verify(() => mockApi.restore(backupPath, password: '  密码 中文 ')).called(1);
   });
 
   testWidgets('加密内容损坏：提示备份文件损坏，不进入密码重试', (tester) async {
@@ -566,9 +582,7 @@ void main() {
     // 对话框仍在、内联校验提示可见、零 restore 调用（后端会把空串当未提供）
     expect(find.text('输入备份密码'), findsOneWidget);
     expect(find.text('请输入备份密码'), findsOneWidget);
-    verifyNever(
-      () => mockApi.restore(any(), password: any(named: 'password')),
-    );
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
   });
 
   testWidgets('纯空白密码提交同样被拦截（密码原文不 trim）', (tester) async {
@@ -581,9 +595,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('请输入备份密码'), findsOneWidget);
-    verifyNever(
-      () => mockApi.restore(any(), password: any(named: 'password')),
-    );
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
 
     // 补输真实密码后校验提示消失并原样透传（含首尾空格）
     await tester.enterText(find.byType(TextField), '  pwd  ');
@@ -596,8 +608,7 @@ void main() {
 
   // ─── 批17c P3-5：`.json` 命名的加密 zip 也弹密码框 ──────────────────
 
-  testWidgets('.json 命名的加密 zip（文件魔数判定）仍弹密码框并透传密码',
-      (tester) async {
+  testWidgets('.json 命名的加密 zip（文件魔数判定）仍弹密码框并透传密码', (tester) async {
     stubPasswordRequired();
     // 真实文件：PK\x03\x04 魔数（内容不必是合法 zip——本用例只驱动 UI 判定）。
     // 同步写入：testWidgets 的 FakeAsync 不驱动真实异步 I/O
@@ -630,9 +641,7 @@ void main() {
   testWidgets('探测无需密码但后端要求密码：防御性重开密码框', (tester) async {
     stubPasswordNotRequired();
     final backupPath = fakeBackupPath('legado_backup_defensive.zip');
-    when(
-      () => mockApi.restore(any(), password: null),
-    ).thenAnswer(
+    when(() => mockApi.restore(any(), password: null)).thenAnswer(
       (_) async => throw Exception(
         'FFI error: Internal error: BACKUP_PASSWORD_REQUIRED: '
         '该备份包含原版加密的登录信息（cookies.json）',
