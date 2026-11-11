@@ -73,10 +73,55 @@ impl ReplaceJsBindings {
     }
 }
 
+/// 图片 `click`/`js` action 的绑定上下文（契约 §2.21 `evalImageAction`）
+///
+/// 对齐参考版 `ReadBookController.kt:677-695` / `BaseSource.evalJS`：
+/// 图片动作可见 `source`（书源 JSON 对象）、`book`（name/author/bookUrl）、
+/// `chapter`（title/index/url/bookUrl）、`result`（=imgSrc）与 `baseUrl`
+/// （=imgSrc 的目录部分）。`java` 命名空间由引擎宿主 API 全局注册
+/// （`log/t2s/s2t/get/put` 等），无需在此重复绑定。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ImageActionBindings {
+    /// 书源 JSON 对象文本（无书源上下文时传 `"{}"`，避免 JS 侧 undefined）
+    pub source_json: String,
+    /// 书籍上下文（缺失时字段为空串）
+    pub book: ReplaceJsBook,
+    /// 章节上下文（缺失时字段为空串/0）
+    pub chapter: ReplaceJsChapter,
+    /// 动作结果（=imgSrc）
+    pub result: String,
+    /// 图片地址目录部分（JS `baseUrl`）
+    pub base_url: String,
+}
+
+impl ImageActionBindings {
+    /// 构造图片动作绑定
+    pub fn new(
+        source_json: impl Into<String>,
+        book: ReplaceJsBook,
+        chapter: ReplaceJsChapter,
+        result: impl Into<String>,
+        base_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            source_json: source_json.into(),
+            book,
+            chapter,
+            result: result.into(),
+            base_url: base_url.into(),
+        }
+    }
+}
+
+/// 图片 action 默认执行预算（对齐替换规则默认超时 3000ms）
+pub const IMAGE_ACTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// 替换规则 `@js:` 的 QuickJS 执行器
 ///
 /// 实现 legado-core 的 [`ReplaceJsExecutor`] 契约；预览、正文净化与书源导入
-/// 均复用本执行器（绑定构造只有一份）。
+/// 均复用本执行器（绑定构造只有一份）。正文图片 `click`/`js` action
+/// （契约 §2.21）也复用同一 QuickJS 引擎与 IIFE + `eval` 绑定构造风格
+/// （[`Self::eval_image_action`]），不新增第二份执行器。
 pub struct ReplaceRuleJsExecutor {
     bindings: ReplaceJsBindings,
 }
@@ -87,9 +132,53 @@ impl ReplaceRuleJsExecutor {
         Self { bindings }
     }
 
-    /// 无章节/书籍上下文创建执行器（预览 / 书源导入）
+    /// 无章节/书籍上下文创建执行器（预览 / 书源导入 / 图片 action）
     pub fn without_context() -> Self {
         Self::new(ReplaceJsBindings::empty())
+    }
+
+    /// 执行正文图片 `click`/`js` action（契约 §2.21 `evalImageAction`）
+    ///
+    /// 默认预算 [`IMAGE_ACTION_TIMEOUT`]（3s）。脚本形如
+    /// `(function(source, book, chapter, result, baseUrl){ return eval(<code>); })(…)`，
+    /// 与替换规则共用 IIFE + 直接 `eval` 的作用域隔离方式，避免同一引擎
+    /// 复用时的顶层重声明。动作抛错/超时/非法返回 `Err`，由调用方按契约
+    /// 降级为空串（不 panic）。
+    pub fn eval_image_action(
+        &self,
+        js_code: &str,
+        image: &ImageActionBindings,
+    ) -> Result<String, String> {
+        self.eval_image_action_with_budget(js_code, image, IMAGE_ACTION_TIMEOUT)
+    }
+
+    /// 执行图片 action（显式预算；测试与后续配置化入口）
+    #[cfg(feature = "quickjs")]
+    pub fn eval_image_action_with_budget(
+        &self,
+        js_code: &str,
+        image: &ImageActionBindings,
+        budget: std::time::Duration,
+    ) -> Result<String, String> {
+        let script = build_image_action_script(image, js_code)?;
+        let budget = budget
+            .min(MAX_JS_BUDGET)
+            .max(std::time::Duration::from_millis(1));
+        let engine = thread_engine()?;
+        let engine = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
+        engine.set_execution_timeout(budget);
+        crate::JsEngine::eval(&*engine, &script).map_err(|e| e.to_string())
+    }
+
+    /// 非 quickjs 构建：显式返回可读错误（调用方按契约上抛，不静默）
+    #[cfg(not(feature = "quickjs"))]
+    pub fn eval_image_action_with_budget(
+        &self,
+        _js_code: &str,
+        _image: &ImageActionBindings,
+        _budget: std::time::Duration,
+    ) -> Result<String, String> {
+        Err("QuickJS 未启用，图片 action 不执行".to_string())
     }
 
     /// 构造 `result` / `chapter` / `book` 三个 JS 绑定并包成 IIFE（唯一绑定构造点）
@@ -130,6 +219,46 @@ impl ReplaceRuleJsExecutor {
 // 沙箱；若未来关闭该开关，`eval` 会被沙箱替换为返回提示字符串的函数，
 // 直接拼进正文会静默污染。`thread_engine` 在引擎创建时探测 `eval('1+1')`，
 // 非 "2" 即上抛 Err，由管线保留原文（回修三审 P3-4）。
+
+/// 构造图片 action 绑定脚本（与 [`ReplaceRuleJsExecutor::build_script`]
+/// 同一「IIFE + 直接 eval」风格，仅绑定集合不同）
+///
+/// `source` 必须是合法 JSON 对象；空串/非法 JSON 回退 `{}`，保证 JS 侧
+/// `source` 恒为对象而非 `undefined`。`book`/`chapter` 字段缺失时给空串/0，
+/// 避免拼出 `"undefined"`。
+#[cfg(feature = "quickjs")]
+fn build_image_action_script(image: &ImageActionBindings, js_code: &str) -> Result<String, String> {
+    let code = serde_json::to_string(js_code).map_err(|e| format!("图片动作序列化失败: {e}"))?;
+    let source = if image.source_json.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        match serde_json::from_str::<serde_json::Value>(&image.source_json) {
+            Ok(value @ serde_json::Value::Object(_)) => value,
+            _ => serde_json::json!({}),
+        }
+    };
+    let source_json =
+        serde_json::to_string(&source).map_err(|e| format!("图片动作 source 序列化失败: {e}"))?;
+    let result_json = serde_json::to_string(&image.result)
+        .map_err(|e| format!("图片动作 result 序列化失败: {e}"))?;
+    let base_url_json = serde_json::to_string(&image.base_url)
+        .map_err(|e| format!("图片动作 baseUrl 序列化失败: {e}"))?;
+    let chapter_json = serde_json::json!({
+        "title": image.chapter.title,
+        "index": image.chapter.index,
+        "url": image.chapter.url,
+        "bookUrl": image.chapter.book_url,
+    });
+    let book_json = serde_json::json!({
+        "name": image.book.name,
+        "author": image.book.author,
+        "bookUrl": image.book.book_url,
+    });
+    Ok(format!(
+        "(function(source, book, chapter, result, baseUrl) {{ return eval({code}); }})(\
+         {source_json}, {book_json}, {chapter_json}, {result_json}, {base_url_json})"
+    ))
+}
 
 /// 替换规则单次 `@js:` 执行的沙箱预算上限
 ///

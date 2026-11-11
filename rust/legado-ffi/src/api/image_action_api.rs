@@ -1,0 +1,368 @@
+//! 正文图片 `click`/`js` 动作执行（契约 §2.21 `evalImageAction`）
+//!
+//! 对齐参考版 `ReadBookController.kt:677-695`：正文 `<img>` 的复合 URL
+//! （`src,{json}`）携带 `click`/`js` 动作源码；点击时以书源 `evalJS` 语义
+//! 注入 `source`（书源 JSON 对象）、`book`（name/author/bookUrl）、
+//! `chapter`（title/index/url/bookUrl）、`result`（=imgSrc）、`baseUrl`
+//! （imgSrc 目录部分）与全局 `java` 命名空间（`log/t2s/s2t/get/put`）。
+//!
+//! 约定：
+//! - 执行器复用 `legado-js::replace_rule_js` 的 QuickJS 线程引擎与
+//!   IIFE + `eval` 绑定构造风格（不新增第二份执行器）；
+//! - 动作抛错/超时/非法 → 返回空串并 `log::debug!`，不上抛（避免打断阅读）；
+//! - 无 quickjs 构建 → 返回明确错误（不静默）；
+//! - `bookUrl` 无对应书籍行 → `book` 字段留空、`source` 为空对象 `{}`；
+//! - `chapterIndex < 0` 或章节行缺失 → `chapter` 字段为空串/0。
+
+use legado_core::LegadoResult;
+
+#[cfg(feature = "quickjs")]
+use legado_core::models::{book_type, Book, BookChapter, BookSource};
+#[cfg(feature = "quickjs")]
+use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+#[cfg(feature = "quickjs")]
+use legado_js::replace_rule_js::{
+    ImageActionBindings, ReplaceJsBook, ReplaceJsChapter, ReplaceRuleJsExecutor,
+    IMAGE_ACTION_TIMEOUT,
+};
+
+#[cfg(feature = "quickjs")]
+use crate::db_state::with_database;
+
+/// 执行正文图片 `click`/`js` 动作（契约 §2.21）
+///
+/// - `book_url` — 书籍 URL（查 books 行 → origin → 书源 JSON）
+/// - `chapter_index` — 章节序号（`< 0` 表示无章节上下文）
+/// - `action` — 动作源码（复合 URL 的 `click` 或 `js`）
+/// - `img_src` — 图片地址（绑定 `result`；目录部分绑定 `baseUrl`）
+///
+/// 成功返回动作结果字符串；动作抛错/超时/非法返回空串（仅记 debug 日志）。
+#[cfg(feature = "quickjs")]
+pub fn eval_image_action(
+    book_url: &str,
+    chapter_index: i32,
+    action: &str,
+    img_src: &str,
+) -> LegadoResult<String> {
+    eval_image_action_with_budget(
+        book_url,
+        chapter_index,
+        action,
+        img_src,
+        IMAGE_ACTION_TIMEOUT,
+    )
+}
+
+/// 带显式预算的图片动作执行（测试注入短超时；生产走默认 3s）
+#[cfg(feature = "quickjs")]
+pub fn eval_image_action_with_budget(
+    book_url: &str,
+    chapter_index: i32,
+    action: &str,
+    img_src: &str,
+    budget: std::time::Duration,
+) -> LegadoResult<String> {
+    // 空动作：按「非法动作」口径返回空串，不进入 JS 引擎
+    if action.trim().is_empty() {
+        log::debug!("图片动作执行跳过：动作源码为空（book={book_url}）");
+        return Ok(String::new());
+    }
+
+    match eval_image_action_inner(book_url, chapter_index, action, img_src, budget) {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            // 契约：动作抛错/超时/非法不上抛，返回空串并记日志
+            log::debug!("图片动作执行失败（book={book_url}, chapter={chapter_index}）：{err}");
+            Ok(String::new())
+        }
+    }
+}
+
+/// 无 quickjs 构建：返回明确错误（不静默降级）
+#[cfg(not(feature = "quickjs"))]
+pub fn eval_image_action(
+    _book_url: &str,
+    _chapter_index: i32,
+    _action: &str,
+    _img_src: &str,
+) -> LegadoResult<String> {
+    Err(legado_core::LegadoError::JsEngine(
+        "QuickJS 未启用，图片 action 不执行（evalImageAction 不可用）".to_string(),
+    ))
+}
+
+/// 聚合查询、绑定构造与执行（错误由外层按契约降级）
+#[cfg(feature = "quickjs")]
+fn eval_image_action_inner(
+    book_url: &str,
+    chapter_index: i32,
+    action: &str,
+    img_src: &str,
+    budget: std::time::Duration,
+) -> LegadoResult<String> {
+    let book = with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))?;
+    let source = load_source(book.as_ref())?;
+    let chapter = load_chapter(book_url, chapter_index)?;
+
+    let source_json = match source {
+        Some(source) => serde_json::to_string(&source)?,
+        None => "{}".to_string(),
+    };
+    let book_binding = match book.as_ref() {
+        Some(book) => ReplaceJsBook {
+            name: book.name.clone(),
+            author: book.author.clone(),
+            book_url: book.book_url.clone(),
+        },
+        // 契约：无书籍行时 book 字段留空
+        None => ReplaceJsBook::default(),
+    };
+    let chapter_binding = match chapter.as_ref() {
+        Some(chapter) => ReplaceJsChapter {
+            title: chapter.title.clone(),
+            index: chapter.index,
+            url: chapter.url.clone(),
+            book_url: if chapter.book_url.is_empty() {
+                book_url.to_string()
+            } else {
+                chapter.book_url.clone()
+            },
+        },
+        // 契约：无章节上下文时字段为空串/0
+        None => ReplaceJsChapter::default(),
+    };
+
+    let bindings = ImageActionBindings::new(
+        source_json,
+        book_binding,
+        chapter_binding,
+        img_src,
+        image_base_url(img_src),
+    );
+    // 复用替换规则执行器（同一 QuickJS 线程引擎与 IIFE + eval 绑定风格）
+    ReplaceRuleJsExecutor::without_context()
+        .eval_image_action_with_budget(action, &bindings, budget)
+        .map_err(legado_core::LegadoError::JsEngine)
+}
+
+/// 按书籍 `origin` 查书源；书籍或书源缺失时返回 `None`（绑定 `{}`）
+#[cfg(feature = "quickjs")]
+fn load_source(book: Option<&Book>) -> LegadoResult<Option<BookSource>> {
+    let Some(book) = book else {
+        return Ok(None);
+    };
+    if book.origin == book_type::LOCAL_TAG || book.origin.is_empty() {
+        return Ok(None);
+    }
+    with_database(|db| BookSourceRepository::new(db.connection()).find_by_url(&book.origin))
+}
+
+/// 按 `(bookUrl, chapterIndex)` 查章节；index `< 0` 时不查询
+#[cfg(feature = "quickjs")]
+fn load_chapter(book_url: &str, chapter_index: i32) -> LegadoResult<Option<BookChapter>> {
+    if chapter_index < 0 {
+        return Ok(None);
+    }
+    with_database(|db| {
+        BookChapterRepository::new(db.connection())
+            .find_by_book_url_and_index(book_url, chapter_index)
+    })
+}
+
+/// 取图片地址的目录部分（等价 Kotlin `Uri` 取目录；解析失败回退原串）
+///
+/// 仅处理 `scheme://` 绝对地址；`?`/`#` 之后不参与目录截取。无 scheme、
+/// 无路径分隔符或其它异常形态一律原样返回（对齐契约「失败用 imgSrc 本身」）。
+#[cfg(feature = "quickjs")]
+fn image_base_url(img_src: &str) -> String {
+    let src = img_src.trim();
+    if src.is_empty() {
+        return String::new();
+    }
+    let Some(scheme_end) = src.find("://").map(|idx| idx + 3) else {
+        return src.to_string();
+    };
+    let path_end = src.find(['?', '#']).unwrap_or(src.len());
+    let path = &src[..path_end];
+    if path.len() <= scheme_end {
+        return src.to_string();
+    }
+    match path[scheme_end..].rfind('/') {
+        Some(relative) => {
+            let dir_end = scheme_end + relative + 1;
+            path[..dir_end].to_string()
+        }
+        None => src.to_string(),
+    }
+}
+
+#[cfg(all(test, feature = "quickjs"))]
+mod tests {
+    use super::*;
+    use crate::db_state::ensure_test_db;
+    use legado_core::models::{Book, BookChapter, BookSource};
+    use legado_db::repository::Repository;
+    use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+
+    struct Fixture {
+        book_url: String,
+        image: String,
+    }
+
+    /// 插入独立书源/书籍/章节（tag 唯一化，避免共享测试库互相污染）
+    fn setup_fixture(tag: &str) -> Fixture {
+        let _db_guard = ensure_test_db();
+        let source_url = format!("https://image-action-{tag}.example.com/source");
+        let book_url = format!("https://image-action-{tag}.example.com/book/1");
+        let chapter_url = format!("https://image-action-{tag}.example.com/chapter/7");
+        with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.clone(),
+                book_source_name: format!("图片动作源{tag}"),
+                ..BookSource::default()
+            })?;
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.clone(),
+                origin: source_url.clone(),
+                name: format!("图片动作书{tag}"),
+                author: format!("作者{tag}"),
+                ..Book::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert_batch(&[BookChapter {
+                url: chapter_url,
+                title: format!("第{tag}章"),
+                index: 7,
+                book_url: book_url.clone(),
+                ..BookChapter::default()
+            }])
+        })
+        .unwrap();
+        Fixture {
+            book_url,
+            image: format!("https://cdn-{tag}.example.com/dir/pic.jpg"),
+        }
+    }
+
+    /// 绑定字段可见：source/book/chapter/result/baseUrl/java 同时可读
+    #[test]
+    fn bindings_visible_to_action() {
+        let fx = setup_fixture("bindings");
+        let action = "[source.bookSourceName, book.name, book.author, book.bookUrl, \
+                      chapter.title, chapter.index, chapter.url, chapter.bookUrl, \
+                      result, baseUrl, typeof java.log, typeof java.t2s, typeof java.s2t, \
+                      typeof java.get, typeof java.put].join('|')";
+        let out = eval_image_action(&fx.book_url, 7, action, &fx.image).unwrap();
+        let expected = format!(
+            "图片动作源bindings|图片动作书bindings|作者bindings|{}|第bindings章|7|\
+             https://image-action-bindings.example.com/chapter/7|{}|{}|{}|\
+             function|function|function|function|function",
+            fx.book_url, fx.book_url, fx.image, "https://cdn-bindings.example.com/dir/",
+        );
+        assert_eq!(out, expected);
+    }
+
+    /// `chapterIndex < 0`：chapter 绑定留空（title/url/bookUrl 空串、index 0）
+    #[test]
+    fn negative_chapter_index_leaves_chapter_empty() {
+        let fx = setup_fixture("nochapter");
+        let action = "[chapter.title, chapter.index, chapter.url, chapter.bookUrl].join('|')";
+        let out = eval_image_action(&fx.book_url, -1, action, &fx.image).unwrap();
+        assert_eq!(out, "|0||");
+    }
+
+    /// 无书籍行：book 留空，source 仍为对象、result/baseUrl 仍可用
+    #[test]
+    fn missing_book_leaves_book_empty_but_source_and_result_available() {
+        let _db_guard = ensure_test_db();
+        let out = eval_image_action(
+            "https://image-action-no-such-book.example.com/book/1",
+            -1,
+            "[typeof source, Object.keys(source).length, book.name, book.author, \
+             book.bookUrl, result, baseUrl].join('|')",
+            "https://cdn.example.com/a/b.jpg",
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            "object|0||||https://cdn.example.com/a/b.jpg|https://cdn.example.com/a/"
+        );
+    }
+
+    /// 动作抛错：返回空串（不上抛）
+    #[test]
+    fn action_throw_returns_empty_string() {
+        let fx = setup_fixture("throw");
+        let out = eval_image_action(&fx.book_url, 7, "throw new Error('boom')", &fx.image).unwrap();
+        assert_eq!(out, "");
+    }
+
+    /// 非法 JS：返回空串（不上抛）
+    #[test]
+    fn invalid_action_returns_empty_string() {
+        let fx = setup_fixture("invalid");
+        let out = eval_image_action(&fx.book_url, 7, "(function(", &fx.image).unwrap();
+        assert_eq!(out, "");
+    }
+
+    /// 空动作：直接返回空串
+    #[test]
+    fn blank_action_returns_empty_string() {
+        let fx = setup_fixture("blank");
+        let out = eval_image_action(&fx.book_url, 7, "   ", &fx.image).unwrap();
+        assert_eq!(out, "");
+    }
+
+    /// 超时：死循环在短预算内被中断，返回空串（不上抛）
+    #[test]
+    fn timeout_returns_empty_string() {
+        let fx = setup_fixture("timeout");
+        let out = eval_image_action_with_budget(
+            &fx.book_url,
+            7,
+            "while (true) {}",
+            &fx.image,
+            std::time::Duration::from_millis(50),
+        )
+        .unwrap();
+        assert_eq!(out, "");
+    }
+
+    /// 目录提取：绝对地址取目录；无 scheme/无可截取目录回退原串
+    #[test]
+    fn base_url_is_directory_of_img_src() {
+        assert_eq!(
+            image_base_url("https://cdn.example.com/a/b.jpg"),
+            "https://cdn.example.com/a/"
+        );
+        assert_eq!(
+            image_base_url("https://cdn.example.com/a.jpg?token=/x/y"),
+            "https://cdn.example.com/"
+        );
+        assert_eq!(image_base_url("relative/path/a.jpg"), "relative/path/a.jpg");
+        assert_eq!(
+            image_base_url("https://cdn.example.com"),
+            "https://cdn.example.com"
+        );
+        assert_eq!(image_base_url(""), "");
+    }
+}
+
+#[cfg(all(test, not(feature = "quickjs")))]
+mod no_quickjs_tests {
+    use super::eval_image_action;
+
+    /// 无 quickjs 构建：明确报错（不静默返回空串）
+    #[test]
+    fn without_quickjs_returns_explicit_error() {
+        let err = eval_image_action(
+            "https://book.example.com/1",
+            0,
+            "1 + 1",
+            "https://img.example.com/a.jpg",
+        )
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("QuickJS"), "message={message}");
+        assert!(message.contains("evalImageAction"), "message={message}");
+    }
+}

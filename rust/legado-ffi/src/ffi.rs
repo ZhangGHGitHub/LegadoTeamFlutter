@@ -1748,6 +1748,20 @@ pub mod ffi {
         })
     }
 
+    /// 执行正文图片 `click`/`js` 动作（契约 §2.21，批20-A）
+    ///
+    /// 成功返回动作结果字符串；动作抛错/超时/非法返回空串（Rust 侧记
+    /// debug 日志，不上抛）；无 quickjs 构建返回明确错误。
+    pub fn eval_image_action(
+        book_url: String,
+        chapter_index: i32,
+        action: String,
+        img_src: String,
+    ) -> Result<String, BridgeError> {
+        crate::api::image_action_api::eval_image_action(&book_url, chapter_index, &action, &img_src)
+            .map_err(BridgeError::from)
+    }
+
     // ─── 书签管理 ─────────────────────────────────────────────
 
     /// 获取书籍的所有书签（JSON 数组）

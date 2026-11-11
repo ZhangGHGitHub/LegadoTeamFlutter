@@ -31,6 +31,8 @@ pub mod highlight_api;
 /// [批11 | 2026-10-26] HTTP 采集开关（契约 §2.10 / legado-net 采集点接线）
 pub mod http_log_api;
 pub mod http_tts_api;
+/// [批20-A | 2026-11-12] 正文图片 click/js 动作执行（契约 §2.21 evalImageAction）
+pub mod image_action_api;
 pub mod image_api;
 pub mod image_cache_api;
 pub mod js_source_config_api;
