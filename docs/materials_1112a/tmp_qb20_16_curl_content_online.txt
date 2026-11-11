@@ -1,0 +1,2 @@
+{"isSuccess":true,"errorMsg":"","data":"批20在线书正文。数字样本一：12 34 56。\n<img src=\"http://192.168.100.52:8091/t.png,{\"click\":\"java.put('qa20_action_ran','yes'); java.toast('ACTION-CLICK-OK')\"}\">\n图片下方段落：数值 100 200 300，期望变为 200 400 600。"}
+HTTP 200

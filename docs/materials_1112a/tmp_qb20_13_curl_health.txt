@@ -1,0 +1,2 @@
+{"service":"legado-server","status":"ok","version":"0.2.0"}
+HTTP 200

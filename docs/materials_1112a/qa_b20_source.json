@@ -1,0 +1,23 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8091",
+  "bookSourceName": "QA批20图片动作源",
+  "bookSourceGroup": "QA",
+  "bookSourceType": 0,
+  "bookUrlPattern": ".*192\\.168\\.100\\.52:8091/book1\\.html.*",
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 0,
+  "ruleBookInfo": {
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text"
+  },
+  "ruleToc": {
+    "chapterList": "class.chapter",
+    "chapterName": "text",
+    "chapterUrl": "href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  }
+}
