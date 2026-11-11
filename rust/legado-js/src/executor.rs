@@ -58,6 +58,108 @@ impl QuickJsExecutor {
     }
 }
 
+/// 创建带书源 jsLib / 前置绑定 / setup / 桥的独立 QuickJS 引擎
+///
+/// 供 [`QuickJsExecutor`] 的 fresh 路径与正文图片动作（契约 §2.21）共用：
+/// - `prelude_script` 在 jsLib **之前**求值（参考版 `BaseSource.evalJS` 以
+///   绑定 scope 加载 jsLib，jsLib 顶层引用 `source`/`cookie` 时需要）；
+/// - jsLib 加载复用既有级联：URL 映射加载器 → 原样 eval → Rhino 宽容
+///   `jslib_normalize` 归一化重试；失败登记能力台账并带原因上抛；
+/// - `setup_script` 在 jsLib 之后求值（失败降级继续，与既有执行器一致）；
+/// - 最后重注入 Response / Jsoup 桥。
+///
+/// 调用方负责在求值后自行设置单次预算（`set_execution_timeout`）。
+pub(crate) fn create_engine_with_js_lib(
+    source_tag: &str,
+    js_lib: Option<&str>,
+    prelude_script: Option<&str>,
+    setup_script: Option<&str>,
+    timeout: Option<std::time::Duration>,
+) -> Result<crate::QuickJsEngine, String> {
+    let mut config = crate::sandbox::SandboxConfig::default()
+        .with_allow_script_run(true)
+        .with_memory_limit(64 * 1024 * 1024);
+    if let Some(t) = timeout {
+        config = config.with_timeout(t);
+    }
+    let engine = crate::QuickJsEngine::new(config).map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+    crate::host_api::current_source::with_current_source_tag(source_tag, || {
+        if let Some(prelude) = prelude_script {
+            crate::JsEngine::eval(&engine, prelude)
+                .map_err(|e| format!("书源动作前置绑定求值失败: {e}"))?;
+        }
+        if let Some(lib) = js_lib {
+            // cap 3（URL 映射 jsLib）：先探测 URL 映射形态（全字符串值
+            // 的 JSON 对象）→ 经加载器解析（共享客户端拉取 + 进程缓存 +
+            // 逐条降级台账登记），eval 拼接脚本；非 URL 映射形态照旧
+            // 走原始 eval 级联
+            let ledger_tag = format!("executor:{source_tag}");
+            let is_url_map = crate::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some();
+            let url_map_script = crate::host_api::jslib_loader::resolve_js_lib_url_map(
+                lib,
+                &ledger_tag,
+                &crate::host_api::jslib_loader::default_js_lib_fetcher,
+            );
+            if is_url_map {
+                // 逐条拉取失败已在加载器内记台账（降级跳过该条，
+                // 仅依赖该 jsLib 的规则受影响）；全失败时脚本为 None，
+                // 直接跳过 eval（原始 JSON 非合法 JS，不回退原始级联）
+                if let Some(script) = &url_map_script {
+                    if let Err(e) = crate::JsEngine::eval(&engine, script) {
+                        crate::host_api::capability_ledger::record_jslib_load_failure(
+                            &ledger_tag,
+                            &e.to_string(),
+                        );
+                        return Err(format!("jsLib 求值失败: {e}"));
+                    }
+                }
+            } else if let Err(e) = crate::JsEngine::eval(&engine, lib) {
+                // 仅对语法错误尝试 Rhino 宽容语法归一化后重试一次（与 engine_cache
+                // 缓存路径一致；对齐原版 corejs-Rhino 宽松解析——B 站 jsLib 的
+                // let 参数影子重声明、data..item_null 双点笔误等）。
+                let recovered = if engine.check_syntax(lib).is_err() {
+                    let (normalized, changed) = crate::jslib_normalize::normalize(lib);
+                    if changed && crate::JsEngine::eval(&engine, &normalized).is_ok() {
+                        eprintln!(
+                            "[legado-js] 书源 {source_tag} jsLib 经 Rhino 宽容语法归一化后加载成功（原错误: {e}）"
+                        );
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if !recovered {
+                    eprintln!("[legado-js] 书源 {source_tag} jsLib 加载失败（带原因上抛）: {e}");
+                    crate::host_api::capability_ledger::record_jslib_load_failure(
+                        &ledger_tag,
+                        &e.to_string(),
+                    );
+                    return Err(format!("jsLib 求值失败: {e}"));
+                }
+            }
+        }
+        if let Some(setup) = setup_script {
+            if let Err(e) = crate::JsEngine::eval(&engine, setup) {
+                eprintln!("[legado-js] 书源 {source_tag} setup 加载失败（降级继续）: {e}");
+            }
+        }
+        if let Err(e) =
+            crate::JsEngine::eval(&engine, crate::host_api::quickjs_impl::RESPONSE_BRIDGE_JS)
+        {
+            eprintln!("[legado-js] 书源 {source_tag} Response 桥重新注入失败（降级继续）: {e}");
+        }
+        if let Err(e) =
+            crate::JsEngine::eval(&engine, crate::host_api::quickjs_impl::JSOUP_BRIDGE_JS)
+        {
+            eprintln!("[legado-js] 书源 {source_tag} Jsoup 桥重新注入失败（降级继续）: {e}");
+        }
+        Ok(())
+    })?;
+    Ok(engine)
+}
+
 impl JsExecutor for QuickJsExecutor {
     fn execute_js(&self, js_code: &str) -> Result<String, String> {
         use std::collections::hash_map::DefaultHasher;
@@ -72,103 +174,14 @@ impl JsExecutor for QuickJsExecutor {
         let lexical = LEXICAL.get_or_init(|| Mutex::new(std::collections::HashSet::new()));
         let is_lexical = lexical.lock().map(|s| s.contains(&hash)).unwrap_or(false);
         let run_fresh = || -> Result<String, String> {
-            let engine = crate::QuickJsEngine::new(
-                crate::sandbox::SandboxConfig::default()
-                    .with_allow_script_run(true)
-                    .with_memory_limit(64 * 1024 * 1024),
-            )
-            .map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+            let engine = create_engine_with_js_lib(
+                &self.source_tag,
+                self.js_lib.as_deref(),
+                None,
+                self.setup_script.as_deref(),
+                None,
+            )?;
             crate::host_api::current_source::with_current_source_tag(&self.source_tag, || {
-                if let Some(lib) = &self.js_lib {
-                    // cap 3（URL 映射 jsLib）：先探测 URL 映射形态（全字符串值
-                    // 的 JSON 对象）→ 经加载器解析（共享客户端拉取 + 进程缓存 +
-                    // 逐条降级台账登记），eval 拼接脚本；非 URL 映射形态照旧
-                    // 走原始 eval 级联
-                    let ledger_tag = format!("executor:{}", self.source_tag);
-                    let is_url_map =
-                        crate::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some();
-                    let url_map_script = crate::host_api::jslib_loader::resolve_js_lib_url_map(
-                        lib,
-                        &ledger_tag,
-                        &crate::host_api::jslib_loader::default_js_lib_fetcher,
-                    );
-                    if is_url_map {
-                        // 逐条拉取失败已在加载器内记台账（降级跳过该条，
-                        // 仅依赖该 jsLib 的规则受影响）；全失败时脚本为 None，
-                        // 直接跳过 eval（原始 JSON 非合法 JS，不回退原始级联）
-                        if let Some(script) = &url_map_script {
-                            if let Err(e) = crate::JsEngine::eval(&engine, script) {
-                                // 队列④：登记台账后**带原因上抛**（对齐原版
-                                // SharedJsScope.evaluateJsLib 失败直接抛，
-                                // SharedJsScope.kt:251/:258）。此前静默降级会让
-                                // 失败推迟到主脚本引用点，报出误导性
-                                // `source is not defined`（iOS 实机 1/2 号根因链）
-                                crate::host_api::capability_ledger::record_jslib_load_failure(
-                                    &ledger_tag,
-                                    &e.to_string(),
-                                );
-                                return Err(format!("jsLib 求值失败: {e}"));
-                            }
-                        }
-                    } else if let Err(e) = crate::JsEngine::eval(&engine, lib) {
-                        // 仅对语法错误尝试 Rhino 宽容语法归一化后重试一次（与 engine_cache
-                        // 缓存路径一致；对齐原版 corejs-Rhino 宽松解析——B 站 jsLib 的
-                        // let 参数影子重声明、data..item_null 双点笔误等）。
-                        // 归一化仍失败 / 运行时错误：登记台账后带原因上抛（不再静默降级）
-                        let recovered = if engine.check_syntax(lib).is_err() {
-                            let (normalized, changed) = crate::jslib_normalize::normalize(lib);
-                            if changed && crate::JsEngine::eval(&engine, &normalized).is_ok() {
-                                eprintln!(
-                                        "[legado-js] 书源 {} jsLib 经 Rhino 宽容语法归一化后加载成功（原错误: {e}）",
-                                        self.source_tag
-                                    );
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-                        if !recovered {
-                            eprintln!(
-                                "[legado-js] 书源 {} jsLib 加载失败（带原因上抛）: {e}",
-                                self.source_tag
-                            );
-                            // 队列④：jsLib 加载失败登记能力受限台账
-                            // （键与缓存路径一致：executor:<source_tag>）
-                            crate::host_api::capability_ledger::record_jslib_load_failure(
-                                &ledger_tag,
-                                &e.to_string(),
-                            );
-                            return Err(format!("jsLib 求值失败: {e}"));
-                        }
-                    }
-                }
-                if let Some(setup) = &self.setup_script {
-                    if let Err(e) = crate::JsEngine::eval(&engine, setup) {
-                        eprintln!(
-                            "[legado-js] 书源 {} setup 加载失败（降级继续）: {e}",
-                            self.source_tag
-                        );
-                    }
-                }
-                if let Err(e) = crate::JsEngine::eval(
-                    &engine,
-                    crate::host_api::quickjs_impl::RESPONSE_BRIDGE_JS,
-                ) {
-                    eprintln!(
-                        "[legado-js] 书源 {} Response 桥重新注入失败（降级继续）: {e}",
-                        self.source_tag
-                    );
-                }
-                if let Err(e) =
-                    crate::JsEngine::eval(&engine, crate::host_api::quickjs_impl::JSOUP_BRIDGE_JS)
-                {
-                    eprintln!(
-                        "[legado-js] 书源 {} Jsoup 桥重新注入失败（降级继续）: {e}",
-                        self.source_tag
-                    );
-                }
                 crate::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
             })
         };

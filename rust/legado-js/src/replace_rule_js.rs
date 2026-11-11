@@ -153,6 +153,12 @@ impl ReplaceRuleJsExecutor {
     }
 
     /// 执行图片 action（显式预算；测试与后续配置化入口）
+    ///
+    /// 每次调用创建独立引擎（对齐参考版 Rhino 每次 `evalJS` 新作用域），
+    /// 按书源 `jsLib` 预载共享库（复用 `executor::create_engine_with_js_lib`
+    /// 的 URL 映射/归一化级联），再注入 `source`（含 `getKey/getTag/
+    /// getVariable/put/get` 方法与按 source 作用域的 `java.get/put`）、
+    /// `cookie`、`book/chapter/result/baseUrl` 后执行动作。
     #[cfg(feature = "quickjs")]
     pub fn eval_image_action_with_budget(
         &self,
@@ -160,14 +166,34 @@ impl ReplaceRuleJsExecutor {
         image: &ImageActionBindings,
         budget: std::time::Duration,
     ) -> Result<String, String> {
-        let script = build_image_action_script(image, js_code)?;
         let budget = budget
             .min(MAX_JS_BUDGET)
             .max(std::time::Duration::from_millis(1));
-        let engine = thread_engine()?;
-        let engine = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
+        let (source_url, source_name, js_lib) = image_action_source_meta(image);
+        let source_tag = if source_url.is_empty() {
+            image.book.book_url.clone()
+        } else {
+            source_url.clone()
+        };
+        let (prelude, script) =
+            build_image_action_scripts(image, js_code, &source_url, &source_name)?;
+        let engine = crate::executor::create_engine_with_js_lib(
+            &source_tag,
+            js_lib.as_deref(),
+            Some(&prelude),
+            None,
+            Some(budget),
+        )?;
         engine.set_execution_timeout(budget);
-        crate::JsEngine::eval(&*engine, &script).map_err(|e| e.to_string())
+        let raw = crate::host_api::current_source::with_current_source_tag(&source_tag, || {
+            crate::JsEngine::eval(&engine, &script).map_err(|e| e.to_string())
+        })?;
+        // 契约：void 动作（java.toast/java.log 等）返回 "undefined" 时归一为空串
+        Ok(if raw.trim() == "undefined" {
+            String::new()
+        } else {
+            raw
+        })
     }
 
     /// 非 quickjs 构建：显式返回可读错误（调用方按契约上抛，不静默）
@@ -220,14 +246,51 @@ impl ReplaceRuleJsExecutor {
 // 直接拼进正文会静默污染。`thread_engine` 在引擎创建时探测 `eval('1+1')`，
 // 非 "2" 即上抛 Err，由管线保留原文（回修三审 P3-4）。
 
-/// 构造图片 action 绑定脚本（与 [`ReplaceRuleJsExecutor::build_script`]
-/// 同一「IIFE + 直接 eval」风格，仅绑定集合不同）
+/// 解析图片动作书源元信息（key/name/jsLib）
 ///
-/// `source` 必须是合法 JSON 对象；空串/非法 JSON 回退 `{}`，保证 JS 侧
-/// `source` 恒为对象而非 `undefined`。`book`/`chapter` 字段缺失时给空串/0，
-/// 避免拼出 `"undefined"`。
+/// `source_json` 为 `BookSource` 序列化结果；缺失/非法时返回空 key/name 与
+/// 无 jsLib（绑定仍为对象，动作按降级路径执行）。
 #[cfg(feature = "quickjs")]
-fn build_image_action_script(image: &ImageActionBindings, js_code: &str) -> Result<String, String> {
+fn image_action_source_meta(image: &ImageActionBindings) -> (String, String, Option<String>) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&image.source_json) else {
+        return (String::new(), String::new(), None);
+    };
+    let url = value
+        .get("bookSourceUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let name = value
+        .get("bookSourceName")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let js_lib = value
+        .get("jsLib")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .filter(|s| !s.trim().is_empty());
+    (url, name, js_lib)
+}
+
+/// 构造图片 action 的（前置绑定脚本, 动作脚本）
+///
+/// 前置脚本对齐参考版 `BaseSource.evalJS` 的绑定面：
+/// - `source`（书源 JSON 对象）+ `getKey/getTag/getVariable/putVariable/
+///   put/get` 方法；`put/get` 按 `v_{sourceKey}_{key}` 源作用域读写；
+/// - `java.get/put` 覆盖为同一源作用域（避免裸键污染 `@get` 兜底层）；
+/// - `cookie` 对象（getCookie/setCookie/clearCookies/removeCookie/
+///   replaceCookie/cookieToMap/mapToCookie）；
+/// - `baseUrl`/`result`/`book`/`chapter` 全局（jsLib 函数裸调用可见）。
+///
+/// 动作脚本仍用 IIFE + 直接 `eval`（与替换规则同一作用域隔离方式）。
+#[cfg(feature = "quickjs")]
+fn build_image_action_scripts(
+    image: &ImageActionBindings,
+    js_code: &str,
+    source_url: &str,
+    source_name: &str,
+) -> Result<(String, String), String> {
     let code = serde_json::to_string(js_code).map_err(|e| format!("图片动作序列化失败: {e}"))?;
     let source = if image.source_json.trim().is_empty() {
         serde_json::json!({})
@@ -239,6 +302,10 @@ fn build_image_action_script(image: &ImageActionBindings, js_code: &str) -> Resu
     };
     let source_json =
         serde_json::to_string(&source).map_err(|e| format!("图片动作 source 序列化失败: {e}"))?;
+    let source_url_json = serde_json::to_string(source_url)
+        .map_err(|e| format!("图片动作 sourceKey 序列化失败: {e}"))?;
+    let source_name_json = serde_json::to_string(source_name)
+        .map_err(|e| format!("图片动作 sourceTag 序列化失败: {e}"))?;
     let result_json = serde_json::to_string(&image.result)
         .map_err(|e| format!("图片动作 result 序列化失败: {e}"))?;
     let base_url_json = serde_json::to_string(&image.base_url)
@@ -254,10 +321,81 @@ fn build_image_action_script(image: &ImageActionBindings, js_code: &str) -> Resu
         "author": image.book.author,
         "bookUrl": image.book.book_url,
     });
-    Ok(format!(
-        "(function(source, book, chapter, result, baseUrl) {{ return eval({code}); }})(\
-         {source_json}, {book_json}, {chapter_json}, {result_json}, {base_url_json})"
-    ))
+
+    let prelude = format!(
+        r#"
+var __lgActionSource = {source_json};
+var __lgSourceKey = {source_url_json};
+var __lgRawGet = java.get;
+var __lgRawPut = java.put;
+var __lgRawRemove = java.removeVariable;
+__lgActionSource.getKey = function() {{ return __lgSourceKey; }};
+__lgActionSource.getTag = function() {{ return {source_name_json}; }};
+__lgActionSource.getVariable = function() {{
+  return __lgRawGet('sourceVariable_' + __lgSourceKey) || '';
+}};
+__lgActionSource.putVariable = function(v) {{
+  if (v === null || v === undefined) {{
+    __lgRawRemove('sourceVariable_' + __lgSourceKey);
+  }} else {{
+    __lgRawPut('sourceVariable_' + __lgSourceKey, String(v));
+  }}
+  return v;
+}};
+__lgActionSource.get = function(k) {{
+  return __lgRawGet('v_' + __lgSourceKey + '_' + String(k)) || '';
+}};
+__lgActionSource.put = function(k, v) {{
+  var s = (v === null || v === undefined) ? '' : String(v);
+  __lgRawPut('v_' + __lgSourceKey + '_' + String(k), s);
+  return s;
+}};
+globalThis.source = __lgActionSource;
+globalThis.sourceApi = __lgActionSource;
+globalThis.baseUrl = {base_url_json};
+globalThis.result = {result_json};
+globalThis.book = {book_json};
+globalThis.chapter = {chapter_json};
+globalThis.cookie = {{
+  getCookie: function(url, key) {{
+    if (key === undefined || key === null || key === '') {{
+      return java.getCookie(String(url));
+    }}
+    return java.getCookie(String(url), String(key));
+  }},
+  getKey: function(url, key) {{
+    if (key === undefined || key === null || key === '') {{
+      return java.getCookie(String(url));
+    }}
+    return java.getCookie(String(url), String(key));
+  }},
+  setCookie: function(url, value) {{ return java.setCookie(String(url), String(value)); }},
+  clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
+  removeCookie: function(url) {{ return java.removeCookie(String(url)); }},
+  replaceCookie: function(url, value) {{
+    return java.replaceCookie(String(url), String(value == null ? '' : value));
+  }},
+  cookieToMap: function(str) {{
+    try {{ return JSON.parse(java.cookieToMap(String(str == null ? '' : str))); }}
+    catch (e) {{ return {{}}; }}
+  }},
+  mapToCookie: function(map) {{
+    var json = (map === null || map === undefined)
+      ? '' : (typeof map === 'string' ? map : JSON.stringify(map));
+    if (!json) return null;
+    var r = java.mapToCookie(json);
+    return r === undefined ? null : r;
+  }}
+}};
+java.get = function(k) {{ return __lgActionSource.get(k); }};
+java.put = function(k, v) {{ return __lgActionSource.put(k, v); }};
+"#
+    );
+    let script = format!(
+        "(function(source, book, chapter, result, baseUrl, java) {{ return eval({code}); }})(\
+         __lgActionSource, {book_json}, {chapter_json}, {result_json}, {base_url_json}, java)"
+    );
+    Ok((prelude, script))
 }
 
 /// 替换规则单次 `@js:` 执行的沙箱预算上限

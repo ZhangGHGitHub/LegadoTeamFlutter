@@ -36,7 +36,9 @@ use crate::db_state::with_database;
 /// - `action` — 动作源码（复合 URL 的 `click` 或 `js`）
 /// - `img_src` — 图片地址（绑定 `result`；目录部分绑定 `baseUrl`）
 ///
-/// 成功返回动作结果字符串；动作抛错/超时/非法返回空串（仅记 debug 日志）。
+/// 成功返回动作结果字符串；动作抛错/超时/非法返回空串（记 warn 日志）。
+/// 动作期间产生的 `java.toast`/`showBrowser` 等中途 UI 副作用经
+/// `ui_action_queue` 收集并记 warn 日志（契约未扩返回结构，暂不回传 Dart）。
 #[cfg(feature = "quickjs")]
 pub fn eval_image_action(
     book_url: &str,
@@ -62,18 +64,43 @@ pub fn eval_image_action_with_budget(
     img_src: &str,
     budget: std::time::Duration,
 ) -> LegadoResult<String> {
+    let (result, actions) =
+        eval_image_action_collect_with_budget(book_url, chapter_index, action, img_src, budget)?;
+    if !actions.is_empty() {
+        // P1-2：无收集栈时 `push_action` 静默丢弃；此处显式收集并落 warn
+        // （release 可见），为后续契约扩展（回传 Dart 回放）保留证据。
+        log::warn!(
+            "图片动作收集到 {} 个 UI 副作用（契约未回传，仅日志）：{}",
+            actions.len(),
+            serde_json::to_string(&actions).unwrap_or_else(|_| "<序列化失败>".to_string())
+        );
+    }
+    Ok(result)
+}
+
+/// 执行图片动作并返回收集到的 UI 副作用（测试可断言 action 未被丢弃）
+///
+/// 动作抛错/超时/非法/DB 错误均降级为空串（仅 warn 日志），与公开入口同语义。
+#[cfg(feature = "quickjs")]
+pub(crate) fn eval_image_action_collect_with_budget(
+    book_url: &str,
+    chapter_index: i32,
+    action: &str,
+    img_src: &str,
+    budget: std::time::Duration,
+) -> LegadoResult<(String, Vec<serde_json::Value>)> {
     // 空动作：按「非法动作」口径返回空串，不进入 JS 引擎
     if action.trim().is_empty() {
-        log::debug!("图片动作执行跳过：动作源码为空（book={book_url}）");
-        return Ok(String::new());
+        log::warn!("图片动作执行跳过：动作源码为空（book={book_url}）");
+        return Ok((String::new(), Vec::new()));
     }
 
     match eval_image_action_inner(book_url, chapter_index, action, img_src, budget) {
-        Ok(result) => Ok(result),
+        Ok(pair) => Ok(pair),
         Err(err) => {
             // 契约：动作抛错/超时/非法不上抛，返回空串并记日志
-            log::debug!("图片动作执行失败（book={book_url}, chapter={chapter_index}）：{err}");
-            Ok(String::new())
+            log::warn!("图片动作执行失败（book={book_url}, chapter={chapter_index}）：{err}");
+            Ok((String::new(), Vec::new()))
         }
     }
 }
@@ -91,7 +118,7 @@ pub fn eval_image_action(
     ))
 }
 
-/// 聚合查询、绑定构造与执行（错误由外层按契约降级）
+/// 聚合查询、绑定构造、执行与 UI 副作用收集
 #[cfg(feature = "quickjs")]
 fn eval_image_action_inner(
     book_url: &str,
@@ -99,7 +126,7 @@ fn eval_image_action_inner(
     action: &str,
     img_src: &str,
     budget: std::time::Duration,
-) -> LegadoResult<String> {
+) -> LegadoResult<(String, Vec<serde_json::Value>)> {
     let book = with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))?;
     let source = load_source(book.as_ref())?;
     let chapter = load_chapter(book_url, chapter_index)?;
@@ -139,10 +166,19 @@ fn eval_image_action_inner(
         img_src,
         image_base_url(img_src),
     );
-    // 复用替换规则执行器（同一 QuickJS 线程引擎与 IIFE + eval 绑定风格）
-    ReplaceRuleJsExecutor::without_context()
-        .eval_image_action_with_budget(action, &bindings, budget)
-        .map_err(legado_core::LegadoError::JsEngine)
+    // 复用替换规则执行器；UI 副作用按每次求值独立收集（P1-2）
+    let (eval_result, collected) = legado_js::host_api::ui_action_queue::with_collect(|| {
+        ReplaceRuleJsExecutor::without_context()
+            .eval_image_action_with_budget(action, &bindings, budget)
+    });
+    let raw = match eval_result {
+        Ok(raw) => raw,
+        Err(err) => {
+            log::warn!("图片动作执行失败（book={book_url}, chapter={chapter_index}）：{err}");
+            String::new()
+        }
+    };
+    Ok((raw, collected.actions))
 }
 
 /// 按书籍 `origin` 查书源；书籍或书源缺失时返回 `None`（绑定 `{}`）
@@ -205,20 +241,34 @@ mod tests {
     use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
 
     struct Fixture {
+        source_url: String,
+        source_name: String,
         book_url: String,
         image: String,
     }
 
     /// 插入独立书源/书籍/章节（tag 唯一化，避免共享测试库互相污染）
-    fn setup_fixture(tag: &str) -> Fixture {
-        let _db_guard = ensure_test_db();
+    ///
+    /// 返回串行锁守卫，调用方必须绑定到变量（如 `let (_g, fx) = ...`），
+    /// 避免共享测试库上的并发读写交错。
+    fn setup_fixture(tag: &str) -> (std::sync::MutexGuard<'static, ()>, Fixture) {
+        setup_fixture_with(tag, None)
+    }
+
+    fn setup_fixture_with(
+        tag: &str,
+        js_lib: Option<&str>,
+    ) -> (std::sync::MutexGuard<'static, ()>, Fixture) {
+        let db_guard = ensure_test_db();
         let source_url = format!("https://image-action-{tag}.example.com/source");
+        let source_name = format!("图片动作源{tag}");
         let book_url = format!("https://image-action-{tag}.example.com/book/1");
         let chapter_url = format!("https://image-action-{tag}.example.com/chapter/7");
         with_database(|db| {
             BookSourceRepository::new(db.connection()).insert(&BookSource {
                 book_source_url: source_url.clone(),
-                book_source_name: format!("图片动作源{tag}"),
+                book_source_name: source_name.clone(),
+                js_lib: js_lib.map(str::to_string),
                 ..BookSource::default()
             })?;
             BookRepository::new(db.connection()).insert(&Book {
@@ -237,16 +287,27 @@ mod tests {
             }])
         })
         .unwrap();
-        Fixture {
-            book_url,
-            image: format!("https://cdn-{tag}.example.com/dir/pic.jpg"),
+        (
+            db_guard,
+            Fixture {
+                source_url,
+                source_name,
+                book_url,
+                image: format!("https://cdn-{tag}.example.com/dir/pic.jpg"),
+            },
+        )
+    }
+
+    fn remove_keys(keys: &[String]) {
+        for key in keys {
+            let _ = legado_js::host_api::variable_store::remove_variable(key);
         }
     }
 
     /// 绑定字段可见：source/book/chapter/result/baseUrl/java 同时可读
     #[test]
     fn bindings_visible_to_action() {
-        let fx = setup_fixture("bindings");
+        let (_g, fx) = setup_fixture("bindings");
         let action = "[source.bookSourceName, book.name, book.author, book.bookUrl, \
                       chapter.title, chapter.index, chapter.url, chapter.bookUrl, \
                       result, baseUrl, typeof java.log, typeof java.t2s, typeof java.s2t, \
@@ -261,37 +322,128 @@ mod tests {
         assert_eq!(out, expected);
     }
 
+    /// P1-1：书源 jsLib 在动作执行前预载（修复前 `getDP` ReferenceError → 空串）
+    ///
+    /// 同时验证 jsLib 顶层可读 `source.getKey()`（前置绑定先于 jsLib 求值）。
+    #[test]
+    fn js_lib_function_is_visible_to_action() {
+        let (_g, fx) = setup_fixture_with(
+            "jslib",
+            Some(
+                "var __libKey = source.getKey();\n\
+                 function getDP(a, b) { return a + b; }\n\
+                 function libKey() { return __libKey; }",
+            ),
+        );
+        let out = eval_image_action(
+            &fx.book_url,
+            7,
+            "[getDP(1, 37), libKey()].join('|')",
+            &fx.image,
+        )
+        .unwrap();
+        assert_eq!(out, format!("38|{}", fx.source_url));
+    }
+
+    /// P1-1：QuickJS 拒绝的 Rhino 宽容语法经 `jslib_normalize` 归一化后加载
+    #[test]
+    fn js_lib_normalized_when_quickjs_rejects_syntax() {
+        let (_g, fx) = setup_fixture_with(
+            "jslibnorm",
+            Some("function libValue() { var data = {item: {v: 'ok'}}; return data..item.v; }"),
+        );
+        let out = eval_image_action(&fx.book_url, 7, "libValue()", &fx.image).unwrap();
+        assert_eq!(out, "ok");
+    }
+
+    /// P2-4：source 方法面（getKey/getTag/getVariable/putVariable/put/get）
+    /// 与 P2-3：java.get/put 按 `v_{sourceKey}_{key}` 源作用域读写（不碰裸键）
+    #[test]
+    fn source_methods_and_scoped_java_get_put() {
+        let (_g, fx) = setup_fixture("srcmethods");
+        let source_key = format!("v_{}_k", fx.source_url);
+        let java_key = format!("v_{}_jk", fx.source_url);
+        let var_key = format!("sourceVariable_{}", fx.source_url);
+        let action = "[source.getKey(), source.getTag(), source.get('k'), \
+                      source.put('k', 'v'), source.get('k'), source.getVariable(), \
+                      source.putVariable('sv'), source.getVariable(), \
+                      java.put('jk', 'jv'), java.get('jk')].join('|')";
+        let out = eval_image_action(&fx.book_url, 7, action, &fx.image).unwrap();
+        assert_eq!(
+            out,
+            format!("{}|{}||v|v||sv|sv|jv|jv", fx.source_url, fx.source_name)
+        );
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&source_key).unwrap(),
+            Some("v".to_string())
+        );
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&java_key).unwrap(),
+            Some("jv".to_string())
+        );
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&var_key).unwrap(),
+            Some("sv".to_string())
+        );
+        assert!(
+            legado_js::host_api::variable_store::get_variable("k")
+                .unwrap()
+                .is_none(),
+            "java.put 不得写裸键（会污染 @get 兜底层）"
+        );
+        remove_keys(&[source_key, java_key, var_key]);
+    }
+
+    /// P2-4：cookie 对象方法面可用（getCookie/setCookie/cookieToMap 等）
+    #[test]
+    fn cookie_object_methods_available() {
+        let (_g, fx) = setup_fixture("cookieobj");
+        let action = "[typeof cookie.getCookie, typeof cookie.setCookie, \
+                      typeof cookie.cookieToMap, cookie.cookieToMap('a=1; b=2')['a']].join('|')";
+        let out = eval_image_action(&fx.book_url, 7, action, &fx.image).unwrap();
+        assert_eq!(out, "function|function|function|1");
+    }
+
     /// `chapterIndex < 0`：chapter 绑定留空（title/url/bookUrl 空串、index 0）
     #[test]
     fn negative_chapter_index_leaves_chapter_empty() {
-        let fx = setup_fixture("nochapter");
+        let (_g, fx) = setup_fixture("nochapter");
         let action = "[chapter.title, chapter.index, chapter.url, chapter.bookUrl].join('|')";
         let out = eval_image_action(&fx.book_url, -1, action, &fx.image).unwrap();
         assert_eq!(out, "|0||");
     }
 
-    /// 无书籍行：book 留空，source 仍为对象、result/baseUrl 仍可用
+    /// `chapterIndex >= 0` 但章节行缺失：chapter 绑定留空（不误报其它章）
+    #[test]
+    fn missing_chapter_row_leaves_chapter_empty() {
+        let (_g, fx) = setup_fixture("missingchapter");
+        let action = "[chapter.title, chapter.index, chapter.url, chapter.bookUrl].join('|')";
+        let out = eval_image_action(&fx.book_url, 8, action, &fx.image).unwrap();
+        assert_eq!(out, "|0||");
+    }
+
+    /// 无书籍行：book 留空，source 仍为对象（含 6 个方法）、result/baseUrl 可用
     #[test]
     fn missing_book_leaves_book_empty_but_source_and_result_available() {
         let _db_guard = ensure_test_db();
         let out = eval_image_action(
             "https://image-action-no-such-book.example.com/book/1",
             -1,
-            "[typeof source, Object.keys(source).length, book.name, book.author, \
-             book.bookUrl, result, baseUrl].join('|')",
+            "[typeof source, Object.keys(source).length, typeof source.getKey, \
+             book.name, book.author, book.bookUrl, result, baseUrl].join('|')",
             "https://cdn.example.com/a/b.jpg",
         )
         .unwrap();
         assert_eq!(
             out,
-            "object|0||||https://cdn.example.com/a/b.jpg|https://cdn.example.com/a/"
+            "object|6|function||||https://cdn.example.com/a/b.jpg|https://cdn.example.com/a/"
         );
     }
 
     /// 动作抛错：返回空串（不上抛）
     #[test]
     fn action_throw_returns_empty_string() {
-        let fx = setup_fixture("throw");
+        let (_g, fx) = setup_fixture("throw");
         let out = eval_image_action(&fx.book_url, 7, "throw new Error('boom')", &fx.image).unwrap();
         assert_eq!(out, "");
     }
@@ -299,7 +451,7 @@ mod tests {
     /// 非法 JS：返回空串（不上抛）
     #[test]
     fn invalid_action_returns_empty_string() {
-        let fx = setup_fixture("invalid");
+        let (_g, fx) = setup_fixture("invalid");
         let out = eval_image_action(&fx.book_url, 7, "(function(", &fx.image).unwrap();
         assert_eq!(out, "");
     }
@@ -307,15 +459,41 @@ mod tests {
     /// 空动作：直接返回空串
     #[test]
     fn blank_action_returns_empty_string() {
-        let fx = setup_fixture("blank");
+        let (_g, fx) = setup_fixture("blank");
         let out = eval_image_action(&fx.book_url, 7, "   ", &fx.image).unwrap();
         assert_eq!(out, "");
+    }
+
+    /// P3-8：void 动作返回 "undefined" → 归一空串
+    #[test]
+    fn void_action_returns_empty_string() {
+        let (_g, fx) = setup_fixture("void");
+        let out = eval_image_action(&fx.book_url, 7, "void 0", &fx.image).unwrap();
+        assert_eq!(out, "");
+    }
+
+    /// P1-2：UI 副作用进入 `ui_action_queue` 收集（修复前无收集栈被静默丢弃）
+    #[test]
+    fn ui_actions_are_collected_not_dropped() {
+        let (_g, fx) = setup_fixture("uiactions");
+        let (out, actions) = eval_image_action_collect_with_budget(
+            &fx.book_url,
+            7,
+            "java.toast('hi'); 'done'",
+            &fx.image,
+            IMAGE_ACTION_TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(out, "done");
+        assert_eq!(actions.len(), 1, "actions={actions:?}");
+        assert_eq!(actions[0]["action"], "toast");
+        assert_eq!(actions[0]["message"], "hi");
     }
 
     /// 超时：死循环在短预算内被中断，返回空串（不上抛）
     #[test]
     fn timeout_returns_empty_string() {
-        let fx = setup_fixture("timeout");
+        let (_g, fx) = setup_fixture("timeout");
         let out = eval_image_action_with_budget(
             &fx.book_url,
             7,
@@ -337,6 +515,11 @@ mod tests {
         assert_eq!(
             image_base_url("https://cdn.example.com/a.jpg?token=/x/y"),
             "https://cdn.example.com/"
+        );
+        // P3-6：result 传完整复合 src 时目录仍正确剥离
+        assert_eq!(
+            image_base_url("https://cdn.example.com/a/b.jpg,{\"click\":\"act()\"}"),
+            "https://cdn.example.com/a/"
         );
         assert_eq!(image_base_url("relative/path/a.jpg"), "relative/path/a.jpg");
         assert_eq!(

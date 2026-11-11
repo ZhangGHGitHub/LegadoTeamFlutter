@@ -198,6 +198,13 @@ pub fn register_all_apis<'js>(
     register_config_apis(ctx, &java, &globals)?;
     register_concurrency_apis(ctx, &java, &globals)?;
     register_misc_apis(ctx, &java, &globals)?;
+    // [批20-A 审查 P2-5 风险登记] archive/font API（unzipFile /
+    // getZipStringContent / queryTTF 等）可读取调用方传入的本地路径/解压
+    // 任意 ZIP，但**未**随 allow_file_access 门控。原因：生产引擎统一为
+    // `SandboxConfig::default()`（allow_file_access=false），若一并门控会
+    // 移除书源实际依赖的字体/压缩能力（queryTTF、unzipFile 等），属行为
+    // 回退；故保留现有兼容面并登记为已知残余风险，后续如需收紧须先提供
+    // 书源兼容替代（如仅允许 URL/内存字节输入）。
     register_archive_apis(ctx, &java, &globals)?;
     register_font_apis(ctx, &java, &globals)?;
     // 全局 cache 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存，对齐 WebCacheManager）
