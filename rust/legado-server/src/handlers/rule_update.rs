@@ -1,9 +1,14 @@
 //! 规则订阅更新处理器
 //!
 //! 提供规则订阅管理与更新能力：
-//! - GET /api/rule-update/subs — 获取订阅列表
-//! - POST /api/rule-update/check — 检查更新
-//! - POST /api/rule-update/apply — 应用更新
+//! - GET /api/rule-update/subs — 获取订阅列表（只读，免令牌）
+//! - POST /api/rule-update/check — 检查更新（触发出站拉取；令牌保护）
+//! - POST /api/rule-update/apply — 应用更新（拉取并 upsert 三张规则表；令牌保护）
+//!
+//! 两个 POST 端点登记在
+//! [`crate::legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`]（批24
+//! P1-1），由生产入口 `server::attach_source_write_token_guard` 在 body
+//! 提取前统一校验 `x-legado-token`。
 
 use axum::extract::State;
 use axum::Json;
@@ -249,8 +254,23 @@ mod tests {
     use axum::Router;
     use tower::ServiceExt;
 
+    use legado_db::repository::cache_repository::CacheRepository;
     use legado_db::repository::rule_sub_repository::RuleSubRecord;
     use legado_db::Database;
+
+    use crate::routes::create_router;
+    use crate::server::attach_source_write_token_guard;
+
+    /// 令牌错误文案（对齐原版 `hasValidJsSourceApiToken` 失败文案）
+    const TOKEN_ERROR: &str = "Web 书源访问令牌未配置或不正确";
+
+    /// 写入令牌配置（`config:jsSourceApiToken`）
+    async fn seed_token(state: &Arc<AppState>, token: &str) {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put("config:jsSourceApiToken", token, 0)
+            .unwrap();
+    }
 
     fn make_test_state() -> Arc<AppState> {
         let db = Database::open_in_memory().unwrap();
@@ -561,6 +581,121 @@ mod tests {
         assert_eq!(sub.last_update, 0);
     }
 
+    /// 批24 P1-1：`POST /api/rule-update/apply` 未鉴权必须拒绝且**零写入**
+    /// （修复前该端点完全免令牌，LAN 内可直接触发拉取并覆写三张规则表）
+    #[tokio::test]
+    async fn test_apply_update_requires_token_and_writes_nothing_without_it() {
+        use legado_db::repository::Repository;
+        use legado_db::BookSourceRepository;
+
+        let state = make_test_state();
+        let body = r#"[
+            {"bookSourceUrl":"https://token-p11.example.com","bookSourceName":"T","searchUrl":"https://token-p11.example.com/s"}
+        ]"#;
+        let port = spawn_json_server(body.to_string());
+        let url = format!("http://127.0.0.1:{port}/sub.json");
+        {
+            let db = state.db.lock().await;
+            RuleSubRepository::new(db.connection())
+                .insert(&RuleSubRecord {
+                    url: url.clone(),
+                    name: "令牌面订阅".to_string(),
+                    sub_type: "bookSource".to_string(),
+                    version: "1.0".to_string(),
+                    created_at: 1_700_000_000_000,
+                    ..RuleSubRecord::default()
+                })
+                .unwrap();
+        }
+        seed_token(&state, "secret").await;
+        let app =
+            attach_source_write_token_guard(create_router(Arc::clone(&state)), Arc::clone(&state));
+
+        // 无令牌 → 拒绝（原版令牌失败信封 + Connection: close）
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rule-update/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"url": url})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::CONNECTION)
+                .and_then(|v| v.to_str().ok()),
+            Some("close"),
+            "令牌失败应关闭连接（原版 shouldCloseConnection）"
+        );
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["isSuccess"], false, "{json}");
+        assert_eq!(json["errorMsg"], TOKEN_ERROR, "{json}");
+
+        // 零写入：书源表空、订阅版本号未推进
+        {
+            let db = state.db.lock().await;
+            assert_eq!(
+                BookSourceRepository::new(db.connection())
+                    .find_all()
+                    .unwrap()
+                    .len(),
+                0,
+                "未授权 apply 不得写入任何书源"
+            );
+            let sub = RuleSubRepository::new(db.connection())
+                .find_by_url(&url)
+                .unwrap()
+                .unwrap();
+            assert_eq!(sub.version, "1.0", "未授权 apply 不得推进版本号");
+            assert_eq!(sub.last_update, 0);
+        }
+
+        // 带正确令牌 → 正常拉取并落库
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rule-update/apply")
+                    .header("content-type", "application/json")
+                    .header("x-legado-token", "secret")
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"url": url})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["success"], true, "{json}");
+        assert_eq!(json["items_added"], 1, "{json}");
+
+        let db = state.db.lock().await;
+        let sources = BookSourceRepository::new(db.connection())
+            .find_all()
+            .unwrap();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].book_source_url, "https://token-p11.example.com");
+        let sub = RuleSubRepository::new(db.connection())
+            .find_by_url(&url)
+            .unwrap()
+            .unwrap();
+        assert_ne!(sub.version, "1.0", "授权 apply 后版本号应推进");
+    }
+
     /// 相邻缺陷修复：数组订阅的版本取最新 `lastUpdateTime`，
     /// 版本一致时必须报告「已是最新」（修复前恒 `hasUpdate=true`）
     #[tokio::test]
@@ -650,6 +785,13 @@ mod tests {
             .unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["results"][0]["has_update"], true, "{json}");
-        assert_eq!(json["results"][0]["remote_version"], "1700000000002");
+        // 批24 P2：版本为「最新时间戳-内容指纹」
+        let remote_version = json["results"][0]["remote_version"]
+            .as_str()
+            .unwrap_or_default();
+        assert!(
+            remote_version.starts_with("1700000000002-content-"),
+            "remote_version={remote_version}"
+        );
     }
 }

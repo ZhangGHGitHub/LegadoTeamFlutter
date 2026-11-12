@@ -156,8 +156,10 @@ fn is_loopback_repo_url(url: &str) -> bool {
 /// 校验 `/api/sources/update` 的 `repo_url`（审查批 P1-1）
 ///
 /// 只允许 `http`/`https`；拒绝本机与内网/保留地址（`localhost`、
-/// `127.0.0.1`、`10.x`、`172.16-31.x`、`192.168.x`、`169.254.x`、`::1`、
-/// `fc00::/7`、`fe80::/10`、IPv4-mapped 回环等）。拒绝字面量即可挡住
+/// `127.0.0.1`、`10.x`、`172.16-31.x`、`192.168.x`、`169.254.x`、
+/// `100.64.0.0/10`（含云元数据 `100.100.100.200`）、`192.0.0.0/24`、
+/// `198.18.0.0/15`、`240.0.0.0/4`、`::1`、`fc00::/7`、`fe80::/10`、
+/// IPv4-mapped 回环等）。拒绝字面量即可挡住
 /// 「把设备当 SSRF 探针」的最直接形态；域名解析到内网（DNS rebinding）
 /// 属登记残余，需要解析级校验时另立批次。
 ///
@@ -195,6 +197,32 @@ fn validate_repo_url(raw: &str) -> Result<reqwest::Url, String> {
 }
 
 /// 内网/保留地址判定（对齐审查批 P1-1 要求的最小集合 + 明显不可路由地址）
+///
+/// 批24 P2 补齐易被用作 SSRF 跳板/云元数据端点的保留网段：
+/// - `100.64.0.0/10`（CGNAT；含腾讯云元数据 `100.100.100.200`）；
+/// - `192.0.0.0/24`（IETF 协议保留）；
+/// - `198.18.0.0/15`（基准测试保留）；
+/// - `240.0.0.0/4`（保留，含 `255.255.255.255`）。
+///
+/// `Ipv4Addr::is_shared` / `is_benchmarking` / `is_reserved` 在本工具链
+/// （1.97.1）仍是 nightly `ip` feature，故用 `(base, mask)` 手动判定。
+fn ipv4_in_range(v4: std::net::Ipv4Addr, base: u32, mask: u32) -> bool {
+    (u32::from(v4) & mask) == (base & mask)
+}
+
+/// `100.64.0.0/10`
+const CGNAT_BASE: u32 = 0x6440_0000;
+const CGNAT_MASK: u32 = 0xFFC0_0000;
+/// `192.0.0.0/24`
+const IETF_PROTOCOL_BASE: u32 = 0xC000_0000;
+const IETF_PROTOCOL_MASK: u32 = 0xFFFF_FF00;
+/// `198.18.0.0/15`
+const BENCHMARK_BASE: u32 = 0xC612_0000;
+const BENCHMARK_MASK: u32 = 0xFFFE_0000;
+/// `240.0.0.0/4`（含 255.255.255.255）
+const RESERVED_BASE: u32 = 0xF000_0000;
+const RESERVED_MASK: u32 = 0xF000_0000;
+
 fn is_disallowed_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -204,6 +232,10 @@ fn is_disallowed_ip(ip: IpAddr) -> bool {
                 || v4.is_unspecified()
                 || v4.is_broadcast()
                 || v4.is_multicast()
+                || ipv4_in_range(v4, CGNAT_BASE, CGNAT_MASK)
+                || ipv4_in_range(v4, IETF_PROTOCOL_BASE, IETF_PROTOCOL_MASK)
+                || ipv4_in_range(v4, BENCHMARK_BASE, BENCHMARK_MASK)
+                || ipv4_in_range(v4, RESERVED_BASE, RESERVED_MASK)
         }
         IpAddr::V6(v6) => {
             v6.is_loopback()
@@ -225,9 +257,10 @@ pub async fn check_updates(State(state): State<Arc<AppState>>) -> Result<Json<Va
     // 回环仓库（本地测试服务）不经系统/环境变量代理路由：reqwest 默认客户端
     // 在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，死代理环境下回环流量会被
     // 劫持（P2-17 约定 cda70a0c54）。真实仓库集合沿用默认客户端，生产行为不变。
+    // 批24 P2：移除 `danger_accept_invalid_certs(true)`。该端点会对订阅仓库
+    // 发起出站请求，放宽证书校验会让中间人用自签证书替换仓库内容。
     let builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .danger_accept_invalid_certs(true)
         .dns_resolver(legado_net::custom_hosts::resolver());
     let client = (if repos.iter().all(|r| is_loopback_repo_url(&r.url)) {
         builder.no_proxy()
@@ -1305,6 +1338,19 @@ mod tests {
             "http://172.31.255.255/repo.json",
             "http://192.168.1.10/repo.json",
             "http://169.254.169.254/latest/meta-data",
+            // 批24 P2：CGNAT 段（含腾讯云元数据 100.100.100.200）
+            "http://100.64.0.1/repo.json",
+            "http://100.100.100.200/latest/meta-data",
+            "http://100.127.255.255/repo.json",
+            // IETF 协议保留 192.0.0.0/24
+            "http://192.0.0.1/repo.json",
+            "http://192.0.0.255/repo.json",
+            // 基准测试保留 198.18.0.0/15
+            "http://198.18.0.1/repo.json",
+            "http://198.19.255.255/repo.json",
+            // 保留 240.0.0.0/4（含广播地址）
+            "http://240.0.0.1/repo.json",
+            "http://255.255.255.255/repo.json",
             "http://[::1]/repo.json",
             "http://0.0.0.0/repo.json",
             "http://[::ffff:127.0.0.1]/repo.json",
@@ -1319,6 +1365,10 @@ mod tests {
             // 私网边界外（172.32/192.169）是公网地址，不得误拒
             "http://172.32.0.1/repo.json",
             "http://192.169.0.1/repo.json",
+            // 批24 P2 新增保留段的紧邻外侧同样是公网
+            "http://100.128.0.1/repo.json",
+            "http://192.0.1.1/repo.json",
+            "http://198.20.0.1/repo.json",
         ] {
             assert!(validate_repo_url(raw).is_ok(), "应接受: {raw}");
         }

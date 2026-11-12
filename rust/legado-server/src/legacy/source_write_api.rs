@@ -32,7 +32,11 @@
 //! content}` 四条（请求体自带完整书源，`mainJs`/`@js:` 在 QuickJS 中真实执行，
 //! 属同等级任意 JS 执行面）为第 14–17 条；审查批 P1-1（2026-11-13）再追加
 //! 自研 REST 源写面四条（方法限定）为第 18–21 条：`POST /api/sources`、
-//! `PUT|DELETE /api/sources/{id}`、`POST /api/sources/update`。
+//! `PUT|DELETE /api/sources/{id}`、`POST /api/sources/update`；批24 回修
+//! P1-1（2026-11-13）再追加规则订阅 Web 面两条（方法限定）为第 22–23 条：
+//! `POST /api/rule-update/check`（触发出站拉取）与
+//! `POST /api/rule-update/apply`（拉取并 upsert 三张规则表）——
+//! `GET /api/rule-update/subs` 读取面保持免令牌。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -188,7 +192,15 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 这些端点在原版无等价面（原版写面为 `/saveBookSource(s)`、
 /// `/deleteBookSources`），此前完全绕过令牌面；其中 `POST /api/sources`
 /// 旧实现 `INSERT OR REPLACE` 还会用默认实体清空已存在 URL 的全部规则。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 21] = [
+///
+/// [批24 回修 P1-1] 追加规则订阅 Web 面两条（方法限定）：`POST
+/// /api/rule-update/check` 会按订阅 URL 发起出站 HTTP 拉取（LAN 可达时
+/// 可被用作 SSRF/放大器），`POST /api/rule-update/apply` 更会拉取远程内容
+/// 并**真正 upsert 进 book_sources / rssSources / replace_rules**（P1-3 起，
+/// 此前仅写版本号）。未鉴权时同网段攻击者无需令牌即可覆写本机规则库；
+/// 两条均纳入与源写端点相同的令牌前置守卫（`GET /api/rule-update/subs`
+/// 只读订阅列表，保持免令牌）。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 23] = [
     ("/startBookSourceCheck", None),
     ("/stopBookSourceCheck", None),
     ("/saveBookSource", None),
@@ -210,6 +222,8 @@ pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 21] = [
     ("/api/sources/{id}", Some("PUT")),
     ("/api/sources/{id}", Some("DELETE")),
     ("/api/sources/update", Some("POST")),
+    ("/api/rule-update/check", Some("POST")),
+    ("/api/rule-update/apply", Some("POST")),
 ];
 
 /// 请求（方法 + 路径）是否命中受保护源写面
@@ -245,8 +259,9 @@ fn route_pattern_matches(pattern: &str, path: &str) -> bool {
 /// `Content-Length` 不会拖住连接、不会触发 axum 默认 2MB body 限制的 413）。
 /// handler 内的 [`token_rejection`] 保留为纵深防御。
 ///
-/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（21 条，含自研 `/api/webbook/*`
-/// 四条与 `/api/sources` 方法限定的四条）生效；其余路径原样放行。
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（23 条，含自研 `/api/webbook/*`
+/// 四条、`/api/sources` 方法限定四条与 `/api/rule-update/*` 方法限定两条）
+/// 生效；其余路径原样放行。
 /// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
 /// `serve_web_with_injected_paths` 组装路由后统一套用）。
 pub async fn source_write_token_guard(
@@ -1390,12 +1405,12 @@ mod tests {
         );
     }
 
-    /// P2-2 / P0-1 / P1-1：受保护路由表（21 条：批30 检验会话两条 +
+    /// P2-2 / P0-1 / P1-1：受保护路由表（23 条：批30 检验会话两条 +
     /// 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*` 四条 + P1-1 自研
-    /// REST 源写面四条）与方法限定匹配语义
+    /// REST 源写面四条 + 批24 规则订阅 Web 面两条）与方法限定匹配语义
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 21);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 23);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1498,6 +1513,35 @@ mod tests {
         assert!(!is_protected_source_write_request(
             &Method::GET,
             "/api/sources/https%3A%2F%2Fexample.com"
+        ));
+
+        // ── 批24 P1-1：规则订阅 Web 写面（方法限定） ─────────────────────
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/rule-update/check"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/rule-update/apply"
+        ));
+        // 只读订阅列表保持免令牌
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rule-update/subs"
+        ));
+        // 仅 POST 受保护（GET 等其它方法不命中）
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rule-update/apply"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rule-update/check"
+        ));
+        // 前缀相近但非既有路由的路径不匹配（精确匹配）
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/api/rule-update/apply/extra"
         ));
     }
 

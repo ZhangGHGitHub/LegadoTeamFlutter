@@ -15,8 +15,9 @@ use crate::ws;
 /// 顶层路由分三层：
 /// 1. `/api/*`（自研 REST）与 `/mcp/*`（MCP）——其中写/执行面
 ///    （`/api/webbook/*`、`/api/sources` 写方法、`/api/sources/update`、
-///    `/mcp/call`）在生产入口由 `server::attach_source_write_token_guard`
-///    统一前置令牌校验（见 `legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`）；
+///    `/api/rule-update/{check,apply}`、`/mcp/call`）在生产入口由
+///    `server::attach_source_write_token_guard` 统一前置令牌校验
+///    （见 `legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`）；
 /// 2. [`legacy::legacy_routes`]（原版 Web 端点，原版路径 + `ReturnData` 信封）；
 /// 3. 兜底静态服务 [`web_assets::serve_static`]（嵌入优先 + 开发机磁盘兜底）
 ///    与方法兜底 [`web_assets::method_not_allowed_or_preflight`]
