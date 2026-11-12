@@ -33,6 +33,7 @@ pub mod import;
 pub mod migration;
 pub mod repository;
 pub mod rule_big_data;
+pub mod rule_sub_apply;
 pub mod schema;
 
 pub use connection::Database;
@@ -77,6 +78,7 @@ pub use repository::server_repository::{
     ServerRepository, DEFAULT_WEBDAV_SERVER_ID, DEFAULT_WEBDAV_SERVER_NAME,
 };
 pub use repository::txt_toc_rule_repository::{TxtTocRuleRecord, TxtTocRuleRepository};
+pub use rule_sub_apply::{apply_rule_subscription, RuleSubApplyOutcome};
 pub use schema::SCHEMA_VERSION;
 
 use legado_core::LegadoResult;

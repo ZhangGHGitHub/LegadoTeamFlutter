@@ -161,7 +161,8 @@ pub async fn check_update(
 
 /// POST /api/rule-update/apply — 应用更新
 ///
-/// 拉取远程订阅内容并合并到本地。
+/// 拉取远程订阅内容 → 按订阅类型真正落库 → 同事务回写版本号。
+/// 与 FFI `ruleSubApplyUpdate` 共用 `legado_db::apply_rule_subscription`。
 pub async fn apply_update(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ApplyUpdateRequest>,
@@ -198,40 +199,43 @@ pub async fn apply_update(
         }
     };
 
-    // 使用空本地 JSON 进行合并（简化版：全量导入）
-    let merge_result = legado_net::merge_subscription("[]", &remote_json, &sub.sub_type);
+    // 与 FFI `ruleSubApplyUpdate` 共用 legado-db 单实现：按 sub_type 真正
+    // 写入 book_sources / rssSources / replace_rules，版本号写在同一事务的
+    // 最后一步；任一步失败整笔回滚且不推进版本号（P1-3）。
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let new_version = extract_version(&remote_json).unwrap_or_default();
 
-    let result = match merge_result {
-        Ok(mr) => {
-            // 更新订阅版本和时间
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as i64;
+    let applied = {
+        let db = state.db.lock().await;
+        legado_db::apply_rule_subscription(
+            db.connection(),
+            sub.id,
+            &sub.sub_type,
+            &remote_json,
+            &new_version,
+            now,
+        )
+    };
 
-            let new_version = extract_version(&remote_json).unwrap_or_default();
-            {
-                let db = state.db.lock().await;
-                let repo = RuleSubRepository::new(db.connection());
-                let _ = repo.update_version(sub.id, &new_version, now);
-            }
-
-            ApplyUpdateResult {
-                url: sub.url.clone(),
-                success: true,
-                items_added: mr.added,
-                items_updated: mr.updated,
-                items_removed: mr.removed,
-                error: None,
-            }
-        }
+    let result = match applied {
+        Ok(outcome) => ApplyUpdateResult {
+            url: sub.url.clone(),
+            success: true,
+            items_added: outcome.added,
+            items_updated: outcome.updated,
+            items_removed: outcome.removed,
+            error: None,
+        },
         Err(e) => ApplyUpdateResult {
             url: sub.url.clone(),
             success: false,
             items_added: 0,
             items_updated: 0,
             items_removed: 0,
-            error: Some(e),
+            error: Some(format!("应用订阅失败: {e}")),
         },
     };
 
@@ -396,6 +400,178 @@ mod tests {
             .unwrap();
         let json: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["success"], false);
+    }
+
+    /// 启动一次性回环 JSON 服务器（返回固定 body），返回端口
+    ///
+    /// 与 legado-ffi 既有测试同款最小 HTTP/1.1 实现；`Connection: close`
+    /// 让 reqwest 读完即断开，无需 keep-alive 循环。
+    fn spawn_json_server(body: String) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while let Ok(1) = sock.read(&mut byte) {
+                    head.push(byte[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(response.as_bytes());
+                let _ = sock.flush();
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+        port
+    }
+
+    /// P1-3：`POST /api/rule-update/apply` 必须真正落库（修复前只回写版本号）
+    #[tokio::test]
+    async fn test_apply_update_lands_book_sources_in_db() {
+        use legado_db::repository::Repository;
+        use legado_db::BookSourceRepository;
+
+        let state = make_test_state();
+        let body = r#"[
+            {"bookSourceUrl":"https://web-p13-a.example.com","bookSourceName":"P13-A","searchUrl":"https://web-p13-a.example.com/s"},
+            {"bookSourceUrl":"https://web-p13-b.example.com","bookSourceName":"P13-B","searchUrl":"https://web-p13-b.example.com/s"}
+        ]"#;
+        let port = spawn_json_server(body.to_string());
+        let url = format!("http://127.0.0.1:{port}/sub.json");
+
+        {
+            let db = state.db.lock().await;
+            RuleSubRepository::new(db.connection())
+                .insert(&RuleSubRecord {
+                    url: url.clone(),
+                    name: "Web应用订阅".to_string(),
+                    sub_type: "bookSource".to_string(),
+                    version: "1.0".to_string(),
+                    created_at: 1_700_000_000_000,
+                    ..RuleSubRecord::default()
+                })
+                .unwrap();
+        }
+
+        let app = make_router(state.clone());
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rule-update/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"url": url})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["success"], true, "应用应成功: {json}");
+        // Web 端点沿用既有 snake_case 响应字段（FFI 侧为 camelCase）
+        assert_eq!(json["items_added"], 2, "计数应为真实落库变化: {json}");
+        assert_eq!(json["items_updated"], 0);
+        assert_eq!(json["items_removed"], 0);
+
+        // DB 真有 2 行
+        let db = state.db.lock().await;
+        let sources = BookSourceRepository::new(db.connection())
+            .find_all()
+            .unwrap();
+        assert_eq!(sources.len(), 2);
+        assert!(sources
+            .iter()
+            .any(|s| s.book_source_url == "https://web-p13-b.example.com"));
+        // 版本号（最后更新时间）已推进
+        let sub = RuleSubRepository::new(db.connection())
+            .find_by_url(&url)
+            .unwrap()
+            .unwrap();
+        assert!(sub.last_update > 0);
+    }
+
+    /// P1-3：落库失败时返回 success=false，DB 零改动、版本号不推进
+    #[tokio::test]
+    async fn test_apply_update_rolls_back_on_invalid_item() {
+        use legado_db::repository::Repository;
+        use legado_db::BookSourceRepository;
+
+        let state = make_test_state();
+        let body = r#"[{"bookSourceName":"没有URL"}]"#;
+        let port = spawn_json_server(body.to_string());
+        let url = format!("http://127.0.0.1:{port}/sub.json");
+
+        {
+            let db = state.db.lock().await;
+            RuleSubRepository::new(db.connection())
+                .insert(&RuleSubRecord {
+                    url: url.clone(),
+                    name: "Web应用失败".to_string(),
+                    sub_type: "bookSource".to_string(),
+                    version: "1.0".to_string(),
+                    created_at: 1_700_000_000_000,
+                    ..RuleSubRecord::default()
+                })
+                .unwrap();
+        }
+
+        let app = make_router(state.clone());
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rule-update/apply")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"url": url})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["success"], false);
+        assert!(json["error"]
+            .as_str()
+            .unwrap()
+            .contains("缺少 bookSourceUrl"));
+
+        let db = state.db.lock().await;
+        assert_eq!(
+            BookSourceRepository::new(db.connection())
+                .find_all()
+                .unwrap()
+                .len(),
+            0,
+            "失败时不得留下任何条目"
+        );
+        let sub = RuleSubRepository::new(db.connection())
+            .find_by_url(&url)
+            .unwrap()
+            .unwrap();
+        assert_eq!(sub.version, "1.0", "失败时版本号不得推进");
+        assert_eq!(sub.last_update, 0);
     }
 
     #[test]

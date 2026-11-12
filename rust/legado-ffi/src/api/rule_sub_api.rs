@@ -10,8 +10,8 @@
 use serde::Serialize;
 
 use legado_core::{LegadoError, LegadoResult};
-use legado_db::{RuleSubRecord, RuleSubRepository};
-use legado_net::{fetch_subscription, merge_subscription, should_update, RuleSubscription};
+use legado_db::{apply_rule_subscription, RuleSubRecord, RuleSubRepository};
+use legado_net::{fetch_subscription, should_update, RuleSubscription};
 
 use crate::db_state::with_database;
 
@@ -184,10 +184,17 @@ pub fn check_sub_update_db(id: i64) -> LegadoResult<CheckUpdateResponse> {
     Ok(response)
 }
 
-/// 应用订阅更新（委托 fetch_subscription + merge_subscription）
+/// 应用订阅更新（P1-3：拉取远程 → 真正落库 → 最后回写版本号）
 ///
-/// 流程：拉取远程内容 → 合并（rule_subs 不存储条目内容，按全量导入合并）
-/// → 更新订阅版本号与最后更新时间。
+/// 流程：
+/// 1. 读取订阅记录并拉取远程内容；
+/// 2. [`apply_remote_content`] 按 `sub_type` 把条目写进
+///    `book_sources` / `rssSources` / `replace_rules`，与版本号更新在
+///    **同一数据库事务**内完成（任一步失败整体回滚，版本号不推进）；
+/// 3. 返回的 `itemsAdded` / `itemsUpdated` / `itemsRemoved` 是真实落库变化。
+///
+/// 落库实现与 Web `POST /api/rule-update/apply` 共用
+/// `legado_db::apply_rule_subscription`（单实现，禁止两轨各写一份）。
 pub fn apply_sub_update_db(id: i64) -> LegadoResult<ApplyUpdateResponse> {
     let sub = with_database(|db| {
         let repo = RuleSubRepository::new(db.connection());
@@ -217,30 +224,8 @@ pub fn apply_sub_update_db(id: i64) -> LegadoResult<ApplyUpdateResponse> {
         }
     };
 
-    // 与 server 端 apply_update 一致：本地无条目内容缓存，按全量导入合并
-    match merge_subscription("[]", &remote_json, &sub.sub_type) {
-        Ok(mr) => {
-            let new_version = extract_version(&remote_json).unwrap_or_default();
-            with_database(|db| {
-                let repo = RuleSubRepository::new(db.connection());
-                repo.update_version(sub.id, &new_version, now_millis())
-            })?;
-
-            let total_items = serde_json::from_str::<Vec<serde_json::Value>>(&mr.merged_json)
-                .map(|v| v.len())
-                .unwrap_or(0);
-
-            Ok(ApplyUpdateResponse {
-                id: sub.id,
-                url: sub.url.clone(),
-                success: true,
-                items_added: mr.added,
-                items_updated: mr.updated,
-                items_removed: mr.removed,
-                total_items,
-                error: None,
-            })
-        }
+    match apply_remote_content(&sub, &remote_json) {
+        Ok(response) => Ok(response),
         Err(e) => Ok(ApplyUpdateResponse {
             id: sub.id,
             url: sub.url.clone(),
@@ -249,9 +234,51 @@ pub fn apply_sub_update_db(id: i64) -> LegadoResult<ApplyUpdateResponse> {
             items_updated: 0,
             items_removed: 0,
             total_items: 0,
-            error: Some(e),
+            error: Some(format!("应用订阅失败: {e}")),
         }),
     }
+}
+
+/// 应用已拉取的远程订阅内容（无网络）
+///
+/// 失败时返回 `Err`，此时数据库（含订阅版本号）零改动。
+fn apply_remote_content(
+    sub: &RuleSubRecord,
+    remote_json: &str,
+) -> LegadoResult<ApplyUpdateResponse> {
+    with_database(|db| apply_remote_content_on(db, sub, remote_json))
+}
+
+/// [`apply_remote_content`] 的连接注入形态（生产用全局池；测试用隔离内存库）
+///
+/// 抽出该层是为了让「应用后 DB 真有数据 / 失败零写入」的断言能在
+/// **独立内存库**上执行：共享测试库被大量用例并行复用（含未持串行锁的
+/// 历史用例），在共享库上做「订阅镜像」写入既会抢写锁也会误删他例夹具。
+fn apply_remote_content_on(
+    db: &legado_db::Database,
+    sub: &RuleSubRecord,
+    remote_json: &str,
+) -> LegadoResult<ApplyUpdateResponse> {
+    let new_version = extract_version(remote_json).unwrap_or_default();
+    let outcome = apply_rule_subscription(
+        db.connection(),
+        sub.id,
+        &sub.sub_type,
+        remote_json,
+        &new_version,
+        now_millis(),
+    )?;
+
+    Ok(ApplyUpdateResponse {
+        id: sub.id,
+        url: sub.url.clone(),
+        success: true,
+        items_added: outcome.added,
+        items_updated: outcome.updated,
+        items_removed: outcome.removed,
+        total_items: outcome.total,
+        error: None,
+    })
 }
 
 #[cfg(test)]
@@ -388,6 +415,92 @@ mod tests {
         assert!(apply.error.is_some());
 
         delete_sub_db(inserted.id).unwrap();
+    }
+
+    /// 建隔离内存库并写入一条订阅，返回 (db, 订阅快照)
+    ///
+    /// 不用共享测试库：`apply` 是「订阅镜像」写入，会删除本地不在远程列表里
+    /// 的同类条目；共享库里有大量其他用例的并行夹具，既会抢写锁（database
+    /// is locked）也会误删他例数据。隔离内存库与生产走同一
+    /// `apply_remote_content_on` / `apply_rule_subscription` 代码路径。
+    fn isolated_db_with_sub(sub_type: &str) -> (legado_db::Database, RuleSubRecord) {
+        let db = legado_db::init_in_memory_database().unwrap();
+        let id = RuleSubRepository::new(db.connection())
+            .insert(&RuleSubRecord {
+                url: format!("https://example.com/ffi_apply_{sub_type}.json"),
+                name: format!("FFI应用订阅-{sub_type}"),
+                sub_type: sub_type.to_string(),
+                version: "1.0".to_string(),
+                created_at: 1_700_000_000_000,
+                ..RuleSubRecord::default()
+            })
+            .unwrap();
+        let sub = RuleSubRepository::new(db.connection())
+            .find_by_id(id)
+            .unwrap()
+            .unwrap();
+        (db, sub)
+    }
+
+    /// P1-3：应用订阅必须真正落库（不是只回写版本号）
+    #[test]
+    fn test_apply_remote_content_lands_rows_and_bumps_version() {
+        use legado_db::BookSourceRepository;
+
+        let (db, sub) = isolated_db_with_sub("bookSource");
+        let remote = r#"[
+            {"bookSourceUrl":"https://ffi-p13-a.example.com","bookSourceName":"P13-A","searchUrl":"https://ffi-p13-a.example.com/s"},
+            {"bookSourceUrl":"https://ffi-p13-b.example.com","bookSourceName":"P13-B","searchUrl":"https://ffi-p13-b.example.com/s"}
+        ]"#;
+
+        let resp = apply_remote_content_on(&db, &sub, remote).unwrap();
+        assert!(resp.success, "应用应成功: {:?}", resp.error);
+        assert_eq!(resp.items_added, 2, "新增数应为真实落库的 2 条");
+        assert_eq!(resp.items_updated, 0);
+        assert_eq!(resp.total_items, 2);
+
+        // DB 真有 2 行，字段可读回
+        let landed = BookSourceRepository::new(db.connection())
+            .find_by_url("https://ffi-p13-a.example.com")
+            .unwrap()
+            .expect("书源应已落库");
+        assert_eq!(landed.book_source_name, "P13-A");
+
+        // 最后更新时间已推进（订阅内容是 JSON 数组，无 version 字段 → 版本串为空，
+        // 与既有多数订阅源形态一致；此处断言版本号已随落库同事务回写）
+        let after = RuleSubRepository::new(db.connection())
+            .find_by_id(sub.id)
+            .unwrap()
+            .unwrap();
+        assert!(after.last_update > 0);
+    }
+
+    /// P1-3：落库失败时数据库零改动、版本号不推进
+    #[test]
+    fn test_apply_remote_content_failure_keeps_db_and_version() {
+        use legado_db::BookSourceRepository;
+
+        let (db, sub) = isolated_db_with_sub("bookSource");
+
+        // 缺 bookSourceUrl → 解析阶段失败，零写入
+        let err =
+            apply_remote_content_on(&db, &sub, r#"[{"bookSourceName":"无URL"}]"#).unwrap_err();
+        assert!(err.to_string().contains("缺少 bookSourceUrl"));
+
+        let version = RuleSubRepository::new(db.connection())
+            .find_by_id(sub.id)
+            .unwrap()
+            .unwrap()
+            .version;
+        assert_eq!(version, "1.0", "失败时版本号不得推进");
+        // 无效条目（空 URL）没有被写入
+        assert!(
+            BookSourceRepository::new(db.connection())
+                .find_by_url("")
+                .unwrap()
+                .is_none(),
+            "解析阶段失败时不得留下任何条目"
+        );
     }
 
     #[test]
