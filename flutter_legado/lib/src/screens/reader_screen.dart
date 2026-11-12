@@ -179,6 +179,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   String? _reviewSourceJson;
   int _reviewLoadToken = 0;
 
+  /// [批25 P2 设备验收 | 2026-11-13] 段评摘要加载去重键（bookUrl + 章索引）
+  ///
+  /// 与 [_lastPreloadedIndex] 分离：摘要加载不再依赖「预载相邻章」的
+  /// loading 跃迁分支，首次进入阅读器正文就绪即触发，同章只请求一次。
+  String? _reviewLoadedKey;
+
+  /// 段评摘要去重键（同一本书同一章只请求一次）
+  static String _reviewSummaryKey(Book book, int chapterIndex) =>
+      '${book.bookUrl}\u0000$chapterIndex';
+
   // [UI-fix v2.0.3 | 2026-08-08] 自动换源（autoChangeSource）防循环状态 — Qoder
 
   /// 自动换源进行中（避免并发触发）
@@ -718,6 +728,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       }
       return;
     }
+    final requestKey = _reviewSummaryKey(book, state.currentChapterIndex);
     try {
       final api = ref.read(bookApiProvider);
       final sources = await api.getBookSources();
@@ -764,6 +775,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       final sourceJson = jsonEncode(matched.toJson());
       final raw = await api.reviewGetSummary(sourceJson, jsonEncode(request));
       if (!mounted || token != _reviewLoadToken) return;
+      // 换章/换书后旧章结果不得套到新章正文：新章请求在帧后才发起，
+      // 旧结果可能先于它返回（键守卫补 token 守卫的空窗）
+      if (requestKey != _reviewLoadedKey) return;
       final map = jsonDecode(raw) as Map<String, dynamic>;
       final countsRaw = map['counts'] as Map? ?? {};
       final keysRaw = map['keys'] as Map? ?? {};
@@ -823,10 +837,59 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (index != _lastPreloadedIndex) {
         _lastPreloadedIndex = index;
         _preloadAdjacentChapters(state);
-        unawaited(_loadReviewSummary());
       }
     }
     _wasLoading = state.isLoading;
+  }
+
+  /// 段评摘要独立触发：首进阅读器 / 换章 / 换书后加载当前章摘要
+  ///
+  /// [批25 P2 设备验收 | 2026-11-13] 修复：此前 [_loadReviewSummary] 挂在
+  /// [_maybePreloadAdjacentChapters] 的 `_wasLoading && !isLoading` 跃迁里，
+  /// 而开书路径（先 `openBook` 后 push 阅读器）正文命中缓存/预取时首帧
+  /// `isLoading` 已为 false，跃迁永不发生 → `/review/summary` 从不请求，
+  /// 段落徽标与段评面板不可达。现按「书 + 章」去重键独立判定（对齐原版
+  /// ReadBookActivity.loadReviewSummaryIfNeeded 在正文更新后调用的时机）。
+  ///
+  /// 触发条件：正文加载完成且无错误（loading 中跳过，结束后构建会再进）；
+  /// 同章重复构建不重复请求（[_reviewLoadedKey] 去重）。— 全栈工程师 + UI
+  void _maybeLoadReviewSummary(ReaderState state) {
+    final book = state.currentBook;
+    if (book == null ||
+        state.chapters.isEmpty ||
+        state.isLoading ||
+        state.error != null) {
+      return;
+    }
+    final key = _reviewSummaryKey(book, state.currentChapterIndex);
+    if (key == _reviewLoadedKey) return;
+    _reviewLoadedKey = key;
+    // 换章/换书：先清上一章徽标（对齐原版新 key 请求前
+    // clearReviewProviders），防新章正文短暂套用旧章段号计数。此处处于
+    // build 阶段，直接改字段即可（随后构建的子树读到空表，无需
+    // setState）；摘要返回后由 _loadReviewSummary 统一 setState。
+    _reviewCounts = {};
+    _reviewKeys = {};
+    _reviewSourceJson = null;
+    // 构建期不能同步 setState/发请求：放到帧后执行，并复核仍是同一书同一
+    // 章，防快速连点翻章时以旧 key 请求新章。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final current = ref.read(readerNotifierProvider);
+      final currentBook = current.currentBook;
+      if (currentBook == null ||
+          current.chapters.isEmpty ||
+          current.isLoading ||
+          current.error != null) {
+        return;
+      }
+      final currentKey = _reviewSummaryKey(
+        currentBook,
+        current.currentChapterIndex,
+      );
+      if (currentKey != key) return;
+      unawaited(_loadReviewSummary());
+    });
   }
 
   /// 预加载当前章节的前后各 2 章内容，提升翻页阅读体验（静默失败）
@@ -1044,6 +1107,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         audio.state != PlayerState.idle;
 
     _maybePreloadAdjacentChapters(state);
+    // 段评摘要独立触发（不依赖相邻章预载的 loading 跃迁）
+    _maybeLoadReviewSummary(state);
 
     // 必应漫画等：正文仅为 <img> HTML 时勿走文本排版（会刷裸标签）
     final imageDominant =
