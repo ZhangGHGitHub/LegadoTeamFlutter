@@ -5270,6 +5270,91 @@ async fn test_b6_token_guard_rejects_before_body_read() {
     assert_eq!(rd["data"], "已执行");
 }
 
+/// [审查批 P2] `POST /api/sources/check|check-batch` 纳入路由级令牌前置：
+/// 无令牌时在 body 提取前拒绝。
+///
+/// 两条端点接受请求体中的任意 `BookSource` 并对 `searchUrl` 发起出站请求
+/// （`check-batch` 最多 20 并发），是同 LAN 可达时的无鉴权 SSRF/出站放大器
+/// （审计报告 P1-1「同组旁路」）。与其余源写端点同型取证：body 流一旦被
+/// 轮询就 panic，证明守卫未读取请求体；1 GiB `Content-Length` 声明验证响应
+/// 是令牌失败信封（200 + `Connection: close`）而非 body 限额的 413。
+///
+/// 带令牌时放行到 handler：`check-batch` 空数组返回零结果（不发网络请求）；
+/// 单条 `check` 用缺 `searchUrl` 的源（`check_full` 在首个出站点前即返回
+/// `no searchUrl defined`），证明守卫不是无条件拒绝，且用例不依赖外网。
+#[tokio::test]
+async fn test_source_check_routes_token_guard_rejects_before_body_read() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app =
+        legado_server::server::attach_source_write_token_guard(create_router(state.clone()), state);
+
+    for uri in ["/api/sources/check", "/api/sources/check-batch"] {
+        let body_stream = futures_util::stream::once(async move {
+            if std::hint::black_box(true) {
+                panic!("令牌前置中间件失效：{uri} 未授权请求读取了请求体");
+            }
+            Ok::<axum::body::Bytes, std::io::Error>(axum::body::Bytes::new())
+        });
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("Content-Type", "application/json")
+            .header("Content-Length", "1073741824")
+            .body(Body::from_stream(body_stream))
+            .unwrap();
+        let resp = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "{uri}");
+        let connection = header_str(resp.headers(), "connection").to_string();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let rd: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(rd["isSuccess"], false, "{uri} rd={rd}");
+        assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "{uri} rd={rd}");
+        assert_eq!(connection, "close", "{uri} 令牌失败应关闭连接");
+    }
+
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 带令牌：check-batch 空数组 → handler 正常返回零结果（非令牌错误）
+    let (status, headers, rd) = post_write_json(
+        app.clone(),
+        "/api/sources/check-batch",
+        Some("application/json"),
+        &auth,
+        br#"{"sources":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "rd={rd}");
+    assert_eq!(rd["total"], 0, "rd={rd}");
+    assert_eq!(rd["passed"], 0, "rd={rd}");
+    assert_eq!(rd["failed"], 0, "rd={rd}");
+    assert_ne!(header_str(&headers, "connection"), "close");
+
+    // 带令牌：check 缺 searchUrl 的源 → handler 正常返回检查结果（出站前失败）
+    let body = json!({
+        "source": {
+            "bookSourceUrl": "https://p2.example.com",
+            "bookSourceName": "P2 无搜索源"
+        }
+    })
+    .to_string();
+    let (status, headers, rd) = post_write_json(
+        app,
+        "/api/sources/check",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "rd={rd}");
+    assert_eq!(rd["source_url"], "https://p2.example.com", "rd={rd}");
+    assert_eq!(rd["search_ok"], false, "rd={rd}");
+    assert_eq!(rd["search_error"], "no searchUrl defined", "rd={rd}");
+    assert_ne!(header_str(&headers, "connection"), "close");
+}
+
 /// [审查批 P2-1] 段评两条写端点（`/openLegacyReview`、`/runLegacyReview`）
 /// 纳入路由级令牌前置：无令牌时在 body 提取前拒绝。
 ///

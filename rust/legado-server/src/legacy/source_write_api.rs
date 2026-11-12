@@ -40,7 +40,10 @@
 //! `GET /api/rule-update/subs` 读取面保持免令牌；审查批 P2-1（2026-11-13）
 //! 补齐原版集合内此前遗漏的段评两条 `/openLegacyReview`、`/runLegacyReview`
 //! 为第 24–25 条（B4 实现时仅在 handler 内校验，此时 axum 提取器已缓冲请求体，
-//! 「未授权不读 body」不成立）。
+//! 「未授权不读 body」不成立）；审查批 P2（2026-11-13，sources check 鉴权）
+//! 再追加自研 `POST /api/sources/check`、`POST /api/sources/check-batch`
+//! （方法限定，请求体任意 `BookSource` 触发出站，`check-batch` 最多 20 并发）
+//! 为第 26–27 条。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -211,7 +214,16 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 校验——axum 提取 `String` body 发生在 handler 之前，未授权请求仍会被
 /// 按 body 限额缓冲（默认 2MB），「未授权不读 body」不成立。纳入路由级
 /// 前置守卫后与其余源写端点语义一致；handler 内校验保留为纵深防御。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 25] = [
+///
+/// [审查批 P2：sources check 鉴权] 追加自研 `POST /api/sources/check`、
+/// `POST /api/sources/check-batch`（方法限定）：两条接受请求体中的任意
+/// `BookSource` 并对 `searchUrl` 发起**出站请求**（`check-batch` 还允许
+/// 最多 20 并发），此前完全绕过令牌面，是同 LAN 可达时的无鉴权 SSRF/出站
+/// 放大器（审计报告 P1-1「同组旁路」登记、本批收口）。两条端点本身不落库，
+/// 纳入同一令牌前置守卫后与其余「执行面 + 出站」端点语义一致；同前缀的
+/// 只读路由（`GET /api/sources`、`GET /api/sources/{id}`、
+/// `/api/sources/repos`、`/api/sources/updates`）继续保持免令牌。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 27] = [
     ("/startBookSourceCheck", None),
     ("/stopBookSourceCheck", None),
     ("/saveBookSource", None),
@@ -235,6 +247,8 @@ pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 25] = [
     ("/api/sources/{id}", Some("PUT")),
     ("/api/sources/{id}", Some("DELETE")),
     ("/api/sources/update", Some("POST")),
+    ("/api/sources/check", Some("POST")),
+    ("/api/sources/check-batch", Some("POST")),
     ("/api/rule-update/check", Some("POST")),
     ("/api/rule-update/apply", Some("POST")),
 ];
@@ -272,8 +286,8 @@ fn route_pattern_matches(pattern: &str, path: &str) -> bool {
 /// `Content-Length` 不会拖住连接、不会触发 axum 默认 2MB body 限制的 413）。
 /// handler 内的 [`token_rejection`] 保留为纵深防御。
 ///
-/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（25 条，含自研 `/api/webbook/*`
-/// 四条、`/api/sources` 方法限定四条、`/api/rule-update/*` 方法限定两条与
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（27 条，含自研 `/api/webbook/*`
+/// 四条、`/api/sources` 方法限定六条、`/api/rule-update/*` 方法限定两条与
 /// B4 段评两条）生效；其余路径原样放行。
 /// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
 /// `serve_web_with_injected_paths` 组装路由后统一套用）。
@@ -1418,13 +1432,14 @@ mod tests {
         );
     }
 
-    /// P2-2 / P0-1 / P1-1 / P2-1：受保护路由表（25 条：批30 检验会话两条 +
-    /// 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*` 四条 + P1-1 自研
-    /// REST 源写面四条 + 批24 规则订阅 Web 面两条 + 段评写面两条）与方法
+    /// P2-2 / P0-1 / P1-1 / P2-1 / P2（sources check）：受保护路由表（27 条：
+    /// 批30 检验会话两条 + 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*`
+    /// 四条 + P1-1 自研 REST 源写面四条 + 批24 规则订阅 Web 面两条 + 段评
+    /// 写面两条 + 审查批 P2 `POST /api/sources/check|check-batch` 两条）与方法
     /// 限定匹配语义
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 25);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 27);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1522,11 +1537,32 @@ mod tests {
             &Method::PUT,
             "/api/sources/a/b"
         ));
-        // 其它只读/检查端点不因前缀相同被误纳入
-        assert!(!is_protected_source_write_request(
+        // ── 审查批 P2：sources check 执行面（方法限定） ──────────────────
+        // 两条接受请求体任意 BookSource 并触发出站（check-batch 最多 20 并发），
+        // 必须与其余源写/执行面同级受保护。
+        assert!(is_protected_source_write_request(
             &Method::POST,
             "/api/sources/check"
         ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/sources/check-batch"
+        ));
+        // 仅 POST 受保护：GET 等其它方法不命中（路由本身也只注册 POST）
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/sources/check"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/sources/check-batch"
+        ));
+        // 精确匹配：不因前缀相同把未知子路径误纳入
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/api/sources/check-batch/extra"
+        ));
+        // 其它只读端点不因前缀相同被误纳入
         assert!(!is_protected_source_write_request(
             &Method::GET,
             "/api/sources/https%3A%2F%2Fexample.com"

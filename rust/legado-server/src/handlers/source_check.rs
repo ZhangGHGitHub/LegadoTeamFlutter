@@ -3,6 +3,18 @@
 //! 提供以下端点：
 //! - POST /api/sources/check       — 检查单个书源有效性
 //! - POST /api/sources/check-batch — 批量检查书源（并行）
+//!
+//! 令牌面（审查批 P2）：两条均以「方法 + 路径」形式登记在
+//! `legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`，生产入口
+//! （`server::attach_source_write_token_guard`）在 body 提取前校验
+//! `x-legado-token`。请求体可携带任意 `BookSource`，`searchUrl` 会被直接
+//! 出站请求；`check-batch` 并发上限 20。
+//!
+//! 已登记的残余（本批未改，避免范围膨胀）：`searchUrl`/`bookSourceUrl`
+//! **没有**内网/保留地址校验，也不限制重定向跳数目标——持有令牌的调用方
+//! 仍可把设备当作 SSRF 探针。后续批次建议复用
+//! `handlers::source_update::{validate_repo_url, is_disallowed_ip}` 的字面量
+//! 校验（含逐跳重定向）并补 DNS 解析级校验。
 
 use std::sync::Arc;
 

@@ -120,7 +120,7 @@ pub async fn serve_web_with_injected_paths(
     init_http_log(&state).await;
 
     let router = create_router(Arc::clone(&state));
-    // P2-2（批10 审查）：源写/执行 17 条路由的令牌前置中间件——在 handler
+    // P2-2（批10 审查）：源写/执行 27 条路由的令牌前置中间件——在 handler
     // 提取 body 之前校验 `x-legado-token`，未授权请求不读取请求体。
     let router = attach_source_write_token_guard(router, Arc::clone(&state));
 
@@ -181,10 +181,10 @@ pub async fn serve_web_with_injected_paths(
 /// 为 Web 路由挂上源写端点令牌前置中间件（P2-2，批10 审查）
 ///
 /// 中间件实现见 [`crate::legacy::source_write_api::source_write_token_guard`]：
-/// 仅对 `PROTECTED_SOURCE_WRITE_ROUTES`（25 条：本模块 10 条 + 批30 检验
+/// 仅对 `PROTECTED_SOURCE_WRITE_ROUTES`（27 条：本模块 10 条 + 批30 检验
 /// 会话 2 条 + B4 段评 2 条 + 批17 三审 `/mcp/call` + P0-1 自研
 /// `/api/webbook/*` 4 条 + P1-1 自研 REST 源写面 4 条 + 批24 规则订阅 Web 面
-/// 2 条）生效，未授权时
+/// 2 条 + 审查批 P2 `POST /api/sources/check|check-batch` 2 条）生效，未授权时
 /// 直接返回原版失败信封 + `Connection: close`，**不读取请求体**。挂载点选在
 /// [`serve_web_with_injected_paths`]（FFI / 独立二进制共用的生产入口），
 /// `create_router` 本体保持无状态可测；handler 内令牌校验保留为纵深防御。

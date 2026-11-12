@@ -65,7 +65,9 @@ fn api_routes() -> Router<Arc<AppState>> {
         // `legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`，生产入口
         // （`server::attach_source_write_token_guard`）在 body 提取前统一校验
         // `x-legado-token`；GET /sources（及 /sources/repos|updates 等只读
-        // 子路由）保持免令牌。
+        // 子路由）保持免令牌。审查批 P2 起 `POST /sources/check`、
+        // `POST /sources/check-batch` 同样入表——两条接受任意 `BookSource`
+        // 并触发出站（同 LAN 可达时的无鉴权 SSRF 面）。
         .route(
             "/sources",
             get(handlers::source::list_sources).post(handlers::source::create_source),
