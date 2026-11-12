@@ -248,8 +248,15 @@ extension BookshelfStateGrouping on BookshelfState {
     if (!isFilterMode || query.isEmpty) return source;
     return source
         .where((book) => exclude == null || !exclude(book))
-        .where((book) => _matchesFilter(book, query))
+        .where(matchesFilterQuery)
         .toList();
+  }
+
+  /// 单本书是否命中当前过滤关键词（不含模式/空白判定，供 UI 分类空态）
+  bool matchesFilterQuery(Book book) {
+    final query = filterQuery.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return _matchesFilter(book, query);
   }
 
   /// 单本书是否命中过滤关键词（参考版同口径：五个字段任一包含即命中）

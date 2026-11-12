@@ -233,17 +233,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 根目录返回 false，交给主页既有逻辑（切回书架 / 双击退出）。
   bool _handleFolderBack() {
     if (!mounted) return false;
-    final settings = ref.read(bookshelfSettingsProvider);
-    if (settings.bookGroupStyle != 2) return false;
     final state = ref.read(bookshelfNotifierProvider);
-    if (state.isBatchMode) {
-      ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
-      return true;
-    }
-    // 过滤态优先退出过滤（文件夹根目录下 _inFolderRoot 为真，否则返回会
-    // 直接落到「退出页面」分支）
+    // 过滤态优先退出过滤（默认「顶部标签/隐藏标签」样式也必须生效，
+    // 因此放在 bookGroupStyle 判定之前）
     if (state.isFilterMode) {
       _exitShelfFilter(ref);
+      return true;
+    }
+    final settings = ref.read(bookshelfSettingsProvider);
+    if (settings.bookGroupStyle != 2) return false;
+    if (state.isBatchMode) {
+      ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
       return true;
     }
     if (_inFolderRoot) return false;
@@ -564,16 +564,19 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     WidgetRef ref,
   ) async {
     final state = ref.read(bookshelfNotifierProvider);
-    final count = state.selectedUrls.length;
+    final notifier = ref.read(bookshelfNotifierProvider.notifier);
+    // [审查 P1 误删防护] 只统计「当前可见 ∩ 已选」；隐藏项不删除并明确告知
+    final visibleSelected = notifier.visibleSelectedUrls;
+    final count = visibleSelected.length;
     if (count == 0) return;
+    final hiddenCount = state.selectedUrls.length - count;
     // 仅当选中集合里存在本地书才提供「删除源文件」（对齐参考版 hasLocalBook）
     // [批35b P3-3] 用与 Rust `is_local_storage_book` 完全同构的判定：弹窗
     // 出现「删除源文件」的条件必须与 Rust 真正会尝试删文件的条件一致
     //（Rust 为真源，见 BookType.isLocalStorageBook）。
     final hasLocalBook = state.books.any(
       (b) =>
-          state.selectedUrls.contains(b.bookUrl) &&
-          BookType.isLocalStorageBook(b),
+          visibleSelected.contains(b.bookUrl) && BookType.isLocalStorageBook(b),
     );
     var deleteOriginal = false;
     final confirmed = await showDialog<bool>(
@@ -585,7 +588,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('已选$count本'),
+              Text(
+                hiddenCount > 0
+                    ? '已选$count本（另有$hiddenCount本未显示，不会删除）'
+                    : '已选$count本',
+              ),
               if (hasLocalBook)
                 InkWell(
                   onTap: () =>
@@ -1291,6 +1298,30 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       privacy,
     );
     final isEmpty = shelfBooks.isEmpty && !state.isLoading && !groupLocked;
+    // [审查 P3] 空态三分：真空白 / 无匹配 / 匹配项均为私密未授权
+    final groupBooks = state.booksInGroup(effectiveGroup);
+    final filterMatched = state.isFiltering
+        ? groupBooks.where(state.matchesFilterQuery).toList()
+        : const <Book>[];
+    final filterMatchedLocked = filterMatched
+        .where((book) => state.isBookContentLocked(book, privacy))
+        .length;
+    final emptyPrivacyOnly =
+        state.isFiltering &&
+        filterMatched.isNotEmpty &&
+        filterMatchedLocked == filterMatched.length;
+    final emptyNoMatch =
+        state.isFiltering && filterMatched.isEmpty && groupBooks.isNotEmpty;
+    final emptyTitle = emptyPrivacyOnly
+        ? '匹配的书籍均为私密内容，验证后查看'
+        : emptyNoMatch
+        ? '未找到匹配的书籍'
+        : AppStrings.emptyBookshelf;
+    final emptyIcon = emptyPrivacyOnly
+        ? Symbols.lock_rounded
+        : emptyNoMatch
+        ? Symbols.search_off_rounded
+        : Symbols.library_books_rounded;
     // 文件夹组内容：顶部返回组根 + 组标题（无 TabBar）
     final folderGroup = settings.bookGroupStyle == 2 ? effectiveGroup : null;
 
@@ -1329,7 +1360,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 // 空态上方仍呈现「已选0本 · 共0本」胶囊）
                 ? Column(
                     children: [
-                      _buildBatchSummaryCard(context, ref, state),
+                      _buildBatchSummaryCard(context, ref),
                       Expanded(
                         child: EmptyState(
                           icon: Symbols.library_books_rounded,
@@ -1350,13 +1381,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     child: UnconstrainedBox(
                       constrainedAxis: Axis.horizontal,
                       child: EmptyState(
-                        icon: state.isFiltering
-                            ? Symbols.search_off_rounded
-                            : Symbols.library_books_rounded,
-                        title: state.isFiltering
-                            ? '未找到匹配的书籍'
-                            : AppStrings.emptyBookshelf,
-                        kaomoji: !state.isFiltering,
+                        icon: emptyIcon,
+                        title: emptyTitle,
+                        kaomoji: !emptyPrivacyOnly && !emptyNoMatch,
                       ),
                     ),
                   ),
@@ -1426,9 +1453,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               // [UI-fix 2.0.258] 批量模式摘要卡位于头部之后（对齐参考版：
               // 标题/Tab →「已选N本 · 共M本」胶囊 → 书列表）
               if (state.isBatchMode)
-                SliverToBoxAdapter(
-                  child: _buildBatchSummaryCard(context, ref, state),
-                ),
+                SliverToBoxAdapter(child: _buildBatchSummaryCard(context, ref)),
               if (manualGridFallback)
                 SliverToBoxAdapter(child: _buildManualSortListNotice(context)),
               // 分组模式：渲染分组头 + 分组内容
@@ -1450,7 +1475,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                   shelfBooks,
                   viewportWidth,
                 )
-              else if (settings.bookshelfSort == BookshelfSortMode.manual)
+              else if (settings.bookshelfSort == BookshelfSortMode.manual &&
+                  !state.isFilterMode)
+                // [审查 P2] 过滤态禁用拖拽：过滤子集只含部分书籍，按子集
+                // 写 order=0..k-1 会与未显示书排序冲突；退回普通列表。
                 _buildReorderableSliver(
                   context,
                   ref,
@@ -1469,9 +1497,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 ),
               // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
               if (state.isBatchMode && state.selectedUrls.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: _buildBatchBottomBar(context, ref, state),
-                ),
+                SliverToBoxAdapter(child: _buildBatchBottomBar(context, ref)),
             ],
           ];
           final scrollView = CustomScrollView(
@@ -1514,11 +1540,21 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (folderGroup == null) {
       title = Text(AppStrings.bookshelf);
     } else {
-      final count = state.booksInGroup(folderGroup).length;
+      final privacy = ref.watch(privacyNotifierProvider);
+      final groupBooks = state.booksInGroup(folderGroup);
+      // [审查 P3] 过滤态标题计数用过滤后可见数量（与列表/删除口径一致）
+      final count = state.isFilterMode
+          ? state
+                .filterBooks(
+                  groupBooks,
+                  exclude: (book) => state.isBookContentLocked(book, privacy),
+                )
+                .length
+          : groupBooks.length;
       // [批9c] 私密分组锁定态不展示书籍数（规模也是信息）
       final groupLocked = state.isGroupContentLocked(
         folderGroup.groupId,
-        ref.watch(privacyNotifierProvider),
+        privacy,
       );
       title = Row(
         children: [
@@ -1554,13 +1590,20 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       expandedHeight: showTabs ? 164 : 108,
       title: title,
       // [设置批6a-2] 组内容顶部返回组根（桌面/iOS 普通返回入口）
+      // [审查 P3] 过滤态下该箭头实际先退出过滤：图标/提示/行为一并明确
       leading: folderGroup == null
           ? null
           : IconButton(
               key: const ValueKey('bookshelf_folder_back'),
-              icon: const Icon(Icons.arrow_back_rounded),
-              tooltip: '返回分组',
-              onPressed: _exitFolderToRoot,
+              icon: Icon(
+                state.isFilterMode
+                    ? Symbols.search_off_rounded
+                    : Icons.arrow_back_rounded,
+              ),
+              tooltip: state.isFilterMode ? '退出搜索' : '返回分组',
+              onPressed: state.isFilterMode
+                  ? () => _exitShelfFilter(ref)
+                  : _exitFolderToRoot,
             ),
       // [UI-fix 2.0.258] 选择模式顶栏切换为批量动作集（全选/反选/删除/取消）
       actions: state.isBatchMode
@@ -3511,11 +3554,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// "A Positioned widget must be wrapped with its parent"，release
   /// 帧渲染中断），导致选择模式整屏灰白空白（台账 1-5 P0）。
   /// 现改为常规 Center 布局，不再依赖 Stack 定位。
-  Widget _buildBatchSummaryCard(
-    BuildContext context,
-    WidgetRef ref,
-    BookshelfState state,
-  ) {
+  Widget _buildBatchSummaryCard(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(bookshelfNotifierProvider.notifier);
+    // [审查 P1] 计数与删除口径一致：已选/总数都按过滤后可见集合
+    final selectedCount = notifier.visibleSelectedUrls.length;
+    final visibleCount = notifier.visibleGroupBooks().length;
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
@@ -3537,7 +3580,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 ),
                 Flexible(
                   child: Text(
-                    '已选 ${state.selectedUrls.length} 本',
+                    '已选 $selectedCount 本',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -3547,7 +3590,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 ),
                 Flexible(
                   child: Text(
-                    ' · 共 ${state.currentGroupBooks.length} 本',
+                    ' · 共 $visibleCount 本',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall,
@@ -3562,13 +3605,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   /// [UI_SYNC_REFACTOR T3] 底部批量工具条（对齐参考 SelectionBottomBar）
-  Widget _buildBatchBottomBar(
-    BuildContext context,
-    WidgetRef ref,
-    BookshelfState state,
-  ) {
+  Widget _buildBatchBottomBar(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final count = state.selectedUrls.length;
+    // [审查 P1] 与删除口径一致：只按可见且已选数量展示/启用操作
+    final count = ref
+        .read(bookshelfNotifierProvider.notifier)
+        .visibleSelectedUrls
+        .length;
     if (count == 0) return const SizedBox.shrink();
     return SafeArea(
       top: false,

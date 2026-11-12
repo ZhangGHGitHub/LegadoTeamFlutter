@@ -356,18 +356,35 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(selectedUrls: urls);
   }
 
+  /// 与书架 UI 完全一致的当前分组可见书籍
+  ///
+  /// [审查 P1 误删防护] UI 过滤态用 `isBookContentLocked` 把私密未授权书
+  /// 剔出可见列表；批量选择/删除必须复用同一 exclude 口径，否则全选会把
+  /// 屏上不可见的私密书纳入选中，删除即误删。
+  List<Book> visibleGroupBooks() {
+    final privacy = ref.read(privacyNotifierProvider);
+    return state.filterBooks(
+      state.currentGroupBooks,
+      exclude: (book) => state.isBookContentLocked(book, privacy),
+    );
+  }
+
+  /// 当前可见且已选中的 URL（批量删除只允许作用于该集合）
+  Set<String> get visibleSelectedUrls {
+    return {
+      for (final book in visibleGroupBooks())
+        if (state.selectedUrls.contains(book.bookUrl)) book.bookUrl,
+    };
+  }
+
   void selectAll() {
     state = state.copyWith(
-      selectedUrls: {
-        for (final b in state.filterBooks(state.currentGroupBooks)) b.bookUrl,
-      },
+      selectedUrls: {for (final b in visibleGroupBooks()) b.bookUrl},
     );
   }
 
   void invertSelection() {
-    final all = {
-      for (final b in state.filterBooks(state.currentGroupBooks)) b.bookUrl,
-    };
+    final all = {for (final b in visibleGroupBooks()) b.bookUrl};
     state = state.copyWith(selectedUrls: all.difference(state.selectedUrls));
   }
 
@@ -386,10 +403,13 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   /// 成功后先同步 UI 列表再重拉数据源保证与 Rust 一致，最后清空选中并退出
   /// 选择模式（对标原版批量操作完成即退出选择态）；记录删除失败置
   /// `state.error` 后向上抛出，由调用方提示（不静默假装成功）。
+  ///
+  /// [审查 P1 误删防护] 只删除「当前可见 ∩ 已选」：过滤态下屏上不可见的
+  /// 选中项（私密未授权书/其他分组残留）一律不进入删除请求。
   Future<DeleteBooksResult> deleteSelectedBooks({
     bool deleteOriginal = false,
   }) async {
-    final urls = state.selectedUrls.toList();
+    final urls = visibleSelectedUrls.toList();
     if (urls.isEmpty) {
       return const DeleteBooksResult(deleted: 0, missing: 0);
     }
@@ -418,20 +438,24 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   /// 进入/退出书架内搜索过滤（对齐参考版 `setSearchMode`）
   ///
-  /// 退出时清空关键词；进入时清空批量选择（过滤态下「已选 N 本」与
-  /// 可见结果不一致会误导用户）。纯展示层状态，不触发数据请求。
+  /// 退出时清空关键词；模式切换一律清空批量选择（过滤态下「已选 N 本」
+  /// 与可见结果不一致会误导用户，且删除只允许作用于可见交集）。
   void setFilterMode(bool active) {
     state = state.copyWith(
       isFilterMode: active,
       filterQuery: active ? state.filterQuery : '',
       isBatchMode: active ? false : state.isBatchMode,
-      selectedUrls: active ? const <String>{} : state.selectedUrls,
+      selectedUrls: const <String>{},
     );
   }
 
   /// 更新书架内过滤关键词（输入即筛，对齐参考版 `setSearchKey`）
+  ///
+  /// [审查 P1 误删防护] 关键词变化后可见集合变化，旧选中可能已不可见：
+  /// 立即清空 selectedUrls，避免批量摘要/删除沿用旧结果。
   void setFilterQuery(String query) {
-    state = state.copyWith(filterQuery: query);
+    if (state.filterQuery == query) return;
+    state = state.copyWith(filterQuery: query, selectedUrls: const <String>{});
   }
 
   /// 清除错误状态

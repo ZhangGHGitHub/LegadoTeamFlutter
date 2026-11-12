@@ -715,27 +715,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   /// 则直接按 URL 查库并校验在架。查不到/已不在架给中文提示并中止，
   /// 跳转异常同样提示，不崩溃。
   Future<void> _openBookmarkFromResult(Map result) async {
-    final bookName = (result['bookName'] as String?)?.trim() ?? '';
-    final author = (result['author'] as String?)?.trim() ?? '';
-    final chapterIndex = (result['chapterIndex'] as num?)?.toInt() ?? 0;
-    final chapterPos = (result['chapterPos'] as num?)?.toInt() ?? 0;
-    if (bookName.isEmpty) {
-      _showMyPageMessage('书签信息不完整，无法打开');
-      return;
-    }
     Book? found;
+    var chapterIndex = 0;
+    var chapterPos = 0;
     try {
+      // [审查 P3] 结果解析（含 as num?）整体入 try：异常统一落「打开失败」
+      final bookName = (result['bookName'] as String?)?.trim() ?? '';
+      final author = (result['author'] as String?)?.trim() ?? '';
+      chapterIndex = (result['chapterIndex'] as num?)?.toInt() ?? 0;
+      chapterPos = (result['chapterPos'] as num?)?.toInt() ?? 0;
+      if (bookName.isEmpty) {
+        _showMyPageMessage('书签信息不完整，无法打开');
+        return;
+      }
       final api = ref.read(bookApiProvider);
       final bookUrl = (result['bookUrl'] as String?)?.trim() ?? '';
       if (bookUrl.isNotEmpty) {
         found = await api.getBook(bookUrl);
       } else {
         final books = await api.getBooks();
-        for (final candidate in books) {
-          if (candidate.name.trim() != bookName) continue;
-          if (author.isNotEmpty && candidate.author.trim() != author) continue;
-          found = candidate;
-          break;
+        final matches = [
+          for (final candidate in books)
+            if (candidate.name.trim() == bookName &&
+                (author.isEmpty || candidate.author.trim() == author))
+              candidate,
+        ];
+        // [审查 P3] 跨源同名书不再默认取第一条：多本命中时让用户选择
+        if (matches.length > 1) {
+          if (!mounted) return;
+          found = await _chooseBookmarkBook(matches);
+          if (found == null) return; // 用户取消
+        } else if (matches.isNotEmpty) {
+          found = matches.first;
         }
       }
     } catch (e) {
@@ -762,6 +773,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       if (!mounted) return;
       _showMyPageMessage('打开书籍失败：${errorMessage(e)}');
     }
+  }
+
+  /// 同名书多命中时的选择弹窗（按来源名/作者区分，返回 null = 取消）
+  Future<Book?> _chooseBookmarkBook(List<Book> books) {
+    return showDialog<Book>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('选择书籍'),
+        children: [
+          for (final book in books)
+            SimpleDialogOption(
+              key: ValueKey('bookmarkBookChoice_${book.bookUrl}'),
+              onPressed: () => Navigator.pop(dialogContext, book),
+              child: Text(
+                '${book.name} · ${book.author.isEmpty ? '未知作者' : book.author}'
+                '${book.originName.isEmpty ? '' : '（${book.originName}）'}',
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   void _showMyPageMessage(String message) {

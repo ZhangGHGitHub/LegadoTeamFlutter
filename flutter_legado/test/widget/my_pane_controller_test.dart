@@ -48,6 +48,51 @@ void main() {
     expect(navigatorKey.currentState!.canPop(), isTrue);
   });
 
+  testWidgets('pushNamedForResult 回传 pop 结果；去重时返回 null', (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final controller = MyPaneController()..navigatorKey = navigatorKey;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: const Scaffold(body: SizedBox.shrink()),
+        onGenerateRoute: (settings) => MaterialPageRoute<Object?>(
+          settings: settings,
+          builder: (_) => Scaffold(
+            body: Center(
+              child: Builder(
+                builder: (context) => ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop('pop-value'),
+                  child: const Text('pop-me'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pending = controller.pushNamedForResult('/x');
+    expect(pending, isNotNull);
+    await tester.pumpAndSettle();
+    expect(find.text('pop-me'), findsOneWidget);
+
+    // 栈顶同路由去重：不返回新 future，避免重复打开页面
+    expect(controller.pushNamedForResult('/x'), isNull);
+
+    await tester.tap(find.text('pop-me'));
+    await tester.pumpAndSettle();
+    expect(await pending, 'pop-value');
+  });
+
+  test('未挂载 nested Navigator 时 pushNamedForResult 返回 null', () {
+    final controller = MyPaneController();
+    addTearDown(controller.dispose);
+    expect(controller.pushNamedForResult('/x'), isNull);
+  });
+
   test('未挂载 nested Navigator 时 pushNamed 返回 false（调用方 root push）', () {
     final controller = MyPaneController();
     addTearDown(controller.dispose);
