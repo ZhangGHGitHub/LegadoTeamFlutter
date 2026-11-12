@@ -8,6 +8,8 @@
 // 4. §2.x 每节声明数 == 实际行数
 // 5. 附录与 §2.x 按标题双射镜像，合计行 = 附录各行之和
 // 6. 文档声明的 BookApi 总数 == book_api.dart 程序化计数
+// 7. Rust FFI 导出面（rust/legado-ffi/src/ffi.rs 的 pub fn）与 Dart 生成
+//    wrapper（lib/src/bridge/ffi/ffi.dart）双向闭合（审查 P2-2）
 //
 // 编写：主 Agent ｜ 2026-08-22
 
@@ -486,8 +488,96 @@ void main() {
         reason: '文档声明 $docCount ≠ book_api.dart 实际 ${bNames.length}，请同步更新文档计数',
       );
     });
+
+    // [审查 P2-2] 契约门禁的「第三边」：前 6 项只核文档/服务层，content hash
+    // 不覆盖 rust/legado-ffi/src/ffi.rs 的导出面——新增 pub fn 但忘记跑
+    // frb codegen、或 Rust 侧删函数而未重生成 Dart，都能静默通过 CI。
+    // 本项做双向差集：
+    //   · Rust 有 / Dart 无 → 失败（除非登记在 _ffiAllowedRustOnly）；
+    //   · Dart 有 / Rust 无 → 失败（除非登记在 _ffiAllowedDartOnly，
+    //     仅用于纯 Dart 辅助函数）。
+    test('第 7 项：Rust FFI 导出面 ↔ Dart wrapper 双向闭合', () {
+      final rustFns = _extractRustPubFns(
+        _read('../rust/legado-ffi/src/ffi.rs'),
+      );
+      final dartFns = _extractDartFfiWrappers(
+        _read('lib/src/bridge/ffi/ffi.dart'),
+      );
+
+      // 解析器自检（不钉死具体数字，避免每次新增导出都要改测试）：
+      // 2026-11 人工核对为 328 unique 导出；数量骤降只可能是解析失效。
+      expect(
+        rustFns.length,
+        greaterThan(300),
+        reason: 'ffi.rs 仅解析出 ${rustFns.length} 个 pub fn，疑似解析器失效',
+      );
+      expect(
+        dartFns.length,
+        greaterThan(300),
+        reason: 'ffi/ffi.dart 仅解析出 ${dartFns.length} 个 wrapper，疑似解析器失效',
+      );
+
+      final rustByNorm = _indexByIdent(rustFns);
+      final dartByNorm = _indexByIdent(dartFns);
+      expect(
+        rustByNorm.length,
+        rustFns.length,
+        reason: 'Rust 导出名归一后发生碰撞：${_collisions(rustFns)}',
+      );
+      expect(
+        dartByNorm.length,
+        dartFns.length,
+        reason: 'Dart wrapper 名归一后发生碰撞：${_collisions(dartFns)}',
+      );
+
+      final rustOnly =
+          rustByNorm.entries
+              .where(
+                (e) =>
+                    !dartByNorm.containsKey(e.key) &&
+                    !_ffiAllowedRustOnly.contains(e.value),
+              )
+              .map((e) => e.value)
+              .toList()
+            ..sort();
+      final dartOnly =
+          dartByNorm.entries
+              .where(
+                (e) =>
+                    !rustByNorm.containsKey(e.key) &&
+                    !_ffiAllowedDartOnly.contains(e.value),
+              )
+              .map((e) => e.value)
+              .toList()
+            ..sort();
+
+      expect(
+        rustOnly,
+        isEmpty,
+        reason:
+            '以下 Rust FFI 导出在 ffi/ffi.dart 无对应 wrapper'
+            '（新增 pub fn 后是否漏跑 frb codegen？确属例外请登记到 '
+            '_ffiAllowedRustOnly）：$rustOnly',
+      );
+      expect(
+        dartOnly,
+        isEmpty,
+        reason:
+            '以下 Dart wrapper 在 ffi.rs 无对应 pub fn'
+            '（Rust 侧删导出后是否漏跑 codegen？纯 Dart 辅助函数请登记到 '
+            '_ffiAllowedDartOnly）：$dartOnly',
+      );
+    });
   });
 }
+
+// ---------- 第 7 项校验：允许名单（集中登记，默认必须为空） ----------
+
+/// Rust 有、Dart 无的登记例外。非空时须逐项注释「为什么不是漂移」。
+const _ffiAllowedRustOnly = <String>{};
+
+/// Dart 有、Rust 无的登记例外（仅限纯 Dart 辅助函数，逐项注释原因）。
+const _ffiAllowedDartOnly = <String>{};
 
 class _Sec {
   _Sec(this.id, this.title, this.declared, this.actual, this.rowNames);
@@ -724,4 +814,177 @@ int _firstNumberAfter(String l, String marker) {
   }
   if (s3 == i) return -1;
   return int.parse(l.substring(s3, i));
+}
+
+// ---------- 第 7 项校验：Rust FFI 导出面 ↔ Dart wrapper ----------
+
+/// 提取 Rust 源码中的 `pub fn` / `pub async fn` 函数名。
+///
+/// 先剥离注释与字符串字面量（避免文档里的「pub fn」与 raw string 误命中），
+/// 再按 `pub` + 空白 + `(async )?fn` + 名字匹配：
+/// - `pub(crate)` / `pub(super)` / `pub(in path)` 因 `pub` 后不是空白而排除；
+/// - 泛型 `<...>` 与 `where` 子句位于函数名之后，不影响名字捕获；
+/// - `#[frb]` / `#[allow]` 等属性在声明之前，不影响匹配；
+/// - 同名函数可因 `#[cfg(feature)]` 双实现（如 `js_eval`），按名字去重。
+Set<String> _extractRustPubFns(String src) {
+  final re = RegExp(r'\bpub\s+(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)');
+  return re.allMatches(_stripRustNonCode(src)).map((m) => m.group(1)!).toSet();
+}
+
+/// 剥离 Rust 源码中的注释与字符串字面量，保留换行（不改变行结构）。
+///
+/// 只服务于「pub fn 名字」提取，不做完整词法分析；覆盖行注释、可嵌套块
+/// 注释、普通字符串、raw 字符串（`r#"…"#` / `br#"…"#`）。字符字面量
+/// （`'x'`）不处理：Rust 的 `'static` 生命周期若按字符字面量成对剥离会
+/// 吞掉后续代码，而字符字面量不可能包含函数名。
+String _stripRustNonCode(String src) {
+  final out = StringBuffer();
+  final n = src.length;
+  int i = 0;
+  while (i < n) {
+    final c = src.codeUnitAt(i);
+    // 行注释：// ... 直到行尾
+    if (c == 47 && i + 1 < n && src.codeUnitAt(i + 1) == 47) {
+      while (i < n && src.codeUnitAt(i) != 10) {
+        i++;
+      }
+      continue;
+    }
+    // 块注释：/* ... */（Rust 支持嵌套）
+    if (c == 47 && i + 1 < n && src.codeUnitAt(i + 1) == 42) {
+      int depth = 1;
+      i += 2;
+      while (i < n && depth > 0) {
+        if (src.codeUnitAt(i) == 47 &&
+            i + 1 < n &&
+            src.codeUnitAt(i + 1) == 42) {
+          depth++;
+          i += 2;
+        } else if (src.codeUnitAt(i) == 42 &&
+            i + 1 < n &&
+            src.codeUnitAt(i + 1) == 47) {
+          depth--;
+          i += 2;
+        } else {
+          if (src.codeUnitAt(i) == 10) out.write('\n');
+          i++;
+        }
+      }
+      continue;
+    }
+    // raw 字符串：整体跳过，仅保留换行
+    final rawEnd = _rustRawStringEnd(src, i);
+    if (rawEnd > i) {
+      for (int k = i; k < rawEnd; k++) {
+        if (src.codeUnitAt(k) == 10) out.write('\n');
+      }
+      i = rawEnd;
+      continue;
+    }
+    // 普通字符串 / 字节串：跳过内容（含转义），保留内部换行
+    if (c == 34) {
+      i++;
+      while (i < n) {
+        final d = src.codeUnitAt(i);
+        if (d == 92) {
+          i += 2;
+          continue;
+        }
+        if (d == 34) {
+          i++;
+          break;
+        }
+        if (d == 10) out.write('\n');
+        i++;
+      }
+      continue;
+    }
+    out.writeCharCode(c);
+    i++;
+  }
+  return out.toString();
+}
+
+/// 若 `i` 处起始一个 Rust raw 字符串（`r"` / `r#"` / `br"` / `br#"`），
+/// 返回其结束后的下标；否则返回 -1。
+int _rustRawStringEnd(String src, int i) {
+  final n = src.length;
+  if (i > 0 && _isIdentChar(src.codeUnitAt(i - 1))) return -1;
+  int j = i;
+  if (j < n && src.codeUnitAt(j) == 114) {
+    j++; // r
+  } else if (j + 1 < n &&
+      src.codeUnitAt(j) == 98 &&
+      src.codeUnitAt(j + 1) == 114) {
+    j += 2; // br
+  } else {
+    return -1;
+  }
+  int hashes = 0;
+  while (j < n && src.codeUnitAt(j) == 35) {
+    hashes++;
+    j++;
+  }
+  if (j >= n || src.codeUnitAt(j) != 34) return -1;
+  j++;
+  while (j < n) {
+    if (src.codeUnitAt(j) == 34) {
+      bool closed = true;
+      for (int k = 0; k < hashes; k++) {
+        if (j + 1 + k >= n || src.codeUnitAt(j + 1 + k) != 35) {
+          closed = false;
+          break;
+        }
+      }
+      if (closed) return j + 1 + hashes;
+    }
+    j++;
+  }
+  return n;
+}
+
+/// 提取 frb 生成的 Dart wrapper 名（顶层 `Future<T> name(...)` /
+/// `Stream<T> name(...)`）。
+///
+/// 生成文件中的桥接函数都是顶层声明（行首无缩进）；类内方法有缩进，
+/// 天然排除。返回类型用贪婪 `.+` 吃到最后一个 `>`，兼容嵌套泛型。
+Set<String> _extractDartFfiWrappers(String src) {
+  final re = RegExp(r'^(?:Future|Stream)<.+>\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(');
+  final names = <String>{};
+  for (final line in src.split('\n')) {
+    if (!line.startsWith('Future<') && !line.startsWith('Stream<')) continue;
+    final m = re.firstMatch(line);
+    if (m != null) names.add(m.group(1)!);
+  }
+  return names;
+}
+
+/// FFI 名字归一：Rust snake_case ↔ Dart lowerCamelCase。
+///
+/// frb 的数字边界规则不完全可逆（`archive_import_7z` → `archiveImport7Z`），
+/// 故不实现具体大小写转换，统一「去下划线 + 小写」后比较；归一碰撞由
+/// 调用方断言（当前两侧均无碰撞）。
+String _normIdent(String s) => s.replaceAll('_', '').toLowerCase();
+
+/// 归一名 -> 原始名（保留首次出现顺序）。
+Map<String, String> _indexByIdent(Iterable<String> names) {
+  final out = <String, String>{};
+  for (final n in names) {
+    out.putIfAbsent(_normIdent(n), () => n);
+  }
+  return out;
+}
+
+/// 归一后发生碰撞的原始名清单（用于失败原因提示）。
+List<String> _collisions(Iterable<String> names) {
+  final groups = <String, List<String>>{};
+  for (final n in names) {
+    groups.putIfAbsent(_normIdent(n), () => <String>[]).add(n);
+  }
+  final out = <String>[];
+  for (final group in groups.values) {
+    if (group.length > 1) out.addAll(group);
+  }
+  out.sort();
+  return out;
 }
