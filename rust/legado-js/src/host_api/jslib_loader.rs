@@ -115,26 +115,35 @@ pub fn default_js_lib_fetcher(url: &str) -> Result<String, String> {
     Ok(resp.body)
 }
 
-/// 解析 URL 映射 jsLib 为可 eval 脚本。
+/// URL 映射 jsLib 的解析结果（批21-A 回修：携带降级标记）
 ///
-/// 逐条目：
-/// - `http(s)://` 值 → `fetch(url)`（进程缓存命中则不拉取）；失败 →
-///   记日志 + [`capability_ledger::record_jslib_load_failure`]（上游措辞
-///   由 fetcher 错误串携带）+ **跳过该条**（降级继续：仅依赖该 jsLib 的
-///   规则受影响，整源规则继续求值——与上游整源抛错的差异为有意降级，
-///   对齐本仓库「失败记台账不炸源」的既有失败路径）；
-/// - 其余值 → 原样追加（上游非 URL 值即原始 JS）。
+/// 调用方（`executor::create_engine_with_js_lib_with_status`）据
+/// [`Self::degraded`] 决定是否缓存引擎：存在拉取失败的条目时**不入缓存**，
+/// 下次点击重试失败条目（旧实现每次点击新建引擎天然重试，缓存后不能把
+/// 「暂时失败」放大成「淘汰前永久失败」）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct JsLibUrlMapResolution {
+    /// 可 eval 的拼接脚本；非 URL 映射/空映射/全部条目为空时为 `None`
+    pub script: Option<String>,
+    /// 是否至少有一条 URL 条目拉取失败（失败条目已记台账并跳过）
+    pub degraded: bool,
+}
+
+/// 解析 URL 映射 jsLib 为可 eval 脚本（附降级标记）
 ///
-/// 至少一条可解析返回 `Some(拼接脚本)`（各段间以换行分隔，段首附
-/// `// {键名}` 注释便于排障）；全部失败/空映射返回 `None`（调用方按
-/// 未提供 jsLib 处理）。
-pub fn resolve_js_lib_url_map(
+/// 语义同 [`resolve_js_lib_url_map`]；额外回报本次解析是否出现 URL 拉取
+/// 失败。`degraded=true` 表示脚本可能缺少失败条目，调用方不应长期缓存
+/// 依赖该 jsLib 的引擎。
+pub fn resolve_js_lib_url_map_with_status(
     js_lib: &str,
     source_tag: &str,
     fetch: &JsLibFetcher,
-) -> Option<String> {
-    let entries = parse_js_lib_url_map(js_lib)?;
+) -> JsLibUrlMapResolution {
+    let Some(entries) = parse_js_lib_url_map(js_lib) else {
+        return JsLibUrlMapResolution::default();
+    };
     let mut parts: Vec<String> = Vec::new();
+    let mut degraded = false;
     for (name, value) in entries {
         let v = value.trim();
         if !(v.starts_with("http://") || v.starts_with("https://")) {
@@ -161,6 +170,7 @@ pub fn resolve_js_lib_url_map(
                     parts.push(format!("// {name}\n{body}"));
                 }
                 Err(e) => {
+                    degraded = true;
                     eprintln!(
                         "[jslib_loader] {source_tag}: {e}（降级继续，仅依赖 jsLib {name} 的规则受影响）"
                     );
@@ -169,11 +179,23 @@ pub fn resolve_js_lib_url_map(
             },
         }
     }
-    if parts.is_empty() {
-        None
-    } else {
-        Some(parts.join("\n"))
+    JsLibUrlMapResolution {
+        script: if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join("\n"))
+        },
+        degraded,
     }
+}
+
+/// 解析 URL 映射 jsLib 为可 eval 脚本（不关心降级标记的既有入口）
+pub fn resolve_js_lib_url_map(
+    js_lib: &str,
+    source_tag: &str,
+    fetch: &JsLibFetcher,
+) -> Option<String> {
+    resolve_js_lib_url_map_with_status(js_lib, source_tag, fetch).script
 }
 
 #[cfg(test)]
@@ -294,8 +316,12 @@ mod tests {
 
         // 回环 127.0.0.1:1 必拒绝连接（无监听），不发真实外网请求
         let jslib = r#"{"bad":"http://127.0.0.1:1/never.js","good":"var ok42 = 42;"}"#;
-        let script = resolve_js_lib_url_map(jslib, "capb1_jslib_fail", &default_js_lib_fetcher)
+        let resolution =
+            resolve_js_lib_url_map_with_status(jslib, "capb1_jslib_fail", &default_js_lib_fetcher);
+        let script = resolution
+            .script
             .expect("单条失败不得阻断其余条目（降级继续）");
+        assert!(resolution.degraded, "存在拉取失败条目时必须标记 degraded");
         assert!(
             script.contains("var ok42 = 42;"),
             "非 URL 条目应原样拼接: {script}"

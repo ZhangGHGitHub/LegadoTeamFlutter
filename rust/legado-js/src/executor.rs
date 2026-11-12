@@ -76,6 +76,23 @@ pub(crate) fn create_engine_with_js_lib(
     setup_script: Option<&str>,
     timeout: Option<std::time::Duration>,
 ) -> Result<crate::QuickJsEngine, String> {
+    create_engine_with_js_lib_with_status(source_tag, js_lib, prelude_script, setup_script, timeout)
+        .map(|(engine, _degraded)| engine)
+}
+
+/// 同 [`create_engine_with_js_lib`]，额外回报 jsLib 是否降级加载
+///
+/// 返回 `(引擎, degraded)`；`degraded=true` 表示 URL 映射形态的 jsLib
+/// 至少有一条拉取失败（失败条目已记台账并跳过，脚本可能缺少依赖）。
+/// 图片动作引擎缓存据此**不缓存**该引擎，下次点击重试失败条目，避免把
+/// 「暂时网络失败」放大成「LRU 淘汰前永久失败」（批21-A 回修）。
+pub(crate) fn create_engine_with_js_lib_with_status(
+    source_tag: &str,
+    js_lib: Option<&str>,
+    prelude_script: Option<&str>,
+    setup_script: Option<&str>,
+    timeout: Option<std::time::Duration>,
+) -> Result<(crate::QuickJsEngine, bool), String> {
     let mut config = crate::sandbox::SandboxConfig::default()
         .with_allow_script_run(true)
         .with_memory_limit(64 * 1024 * 1024);
@@ -83,6 +100,7 @@ pub(crate) fn create_engine_with_js_lib(
         config = config.with_timeout(t);
     }
     let engine = crate::QuickJsEngine::new(config).map_err(|e| format!("JS 引擎创建失败: {e}"))?;
+    let mut js_lib_degraded = false;
     crate::host_api::current_source::with_current_source_tag(source_tag, || {
         if let Some(prelude) = prelude_script {
             crate::JsEngine::eval(&engine, prelude)
@@ -95,16 +113,17 @@ pub(crate) fn create_engine_with_js_lib(
             // 走原始 eval 级联
             let ledger_tag = format!("executor:{source_tag}");
             let is_url_map = crate::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some();
-            let url_map_script = crate::host_api::jslib_loader::resolve_js_lib_url_map(
-                lib,
-                &ledger_tag,
-                &crate::host_api::jslib_loader::default_js_lib_fetcher,
-            );
             if is_url_map {
+                let resolution = crate::host_api::jslib_loader::resolve_js_lib_url_map_with_status(
+                    lib,
+                    &ledger_tag,
+                    &crate::host_api::jslib_loader::default_js_lib_fetcher,
+                );
+                js_lib_degraded = resolution.degraded;
                 // 逐条拉取失败已在加载器内记台账（降级跳过该条，
                 // 仅依赖该 jsLib 的规则受影响）；全失败时脚本为 None，
                 // 直接跳过 eval（原始 JSON 非合法 JS，不回退原始级联）
-                if let Some(script) = &url_map_script {
+                if let Some(script) = &resolution.script {
                     if let Err(e) = crate::JsEngine::eval(&engine, script) {
                         crate::host_api::capability_ledger::record_jslib_load_failure(
                             &ledger_tag,
@@ -157,7 +176,7 @@ pub(crate) fn create_engine_with_js_lib(
         }
         Ok(())
     })?;
-    Ok(engine)
+    Ok((engine, js_lib_degraded))
 }
 
 impl JsExecutor for QuickJsExecutor {

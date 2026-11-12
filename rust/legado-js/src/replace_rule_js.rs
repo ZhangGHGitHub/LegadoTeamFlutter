@@ -140,6 +140,14 @@ pub const IMAGE_ACTION_ENGINE_CACHE_CAPACITY: usize = 4;
 ///   会阻塞其他书源）；并发同键竞争时保留先入缓存者，本次新建实例丢弃；
 /// - **失效**：书源更新路径调用 [`invalidate_image_action_engine`]；此外
 ///   缓存键同时校验 `jsLib` 字符串签名，签名变化即重建（防漏调用失效）。
+/// - **降级不入缓存**（批21-A 回修）：URL 映射 jsLib 有拉取失败条目时，
+///   创建闭包回报 `degraded=true`，本次引擎按一次性使用且不写入缓存，
+///   下次点击重试失败条目（避免暂时网络失败被放大为淘汰前永久失败）。
+/// - **jsLib 顶层可变状态跨点击保留（已知差异）**：jsLib 只在首次点击
+///   求值一次（对齐参考版 `SharedJsScope` 每源一次求值），因此 jsLib 顶层
+///   `var n = 0; n++` 的累加、或 `var host = result` 捕获的首张图片绑定，
+///   会在同一缓存条目内延续到后续点击；动作内部变量仍由 IIFE 隔离。
+///   需要彻底重置 jsLib 状态时调用 [`invalidate_image_action_engine`]。
 #[cfg(feature = "quickjs")]
 mod image_action_engine_cache {
     use std::collections::{HashMap, VecDeque};
@@ -197,15 +205,17 @@ mod image_action_engine_cache {
     /// 取缓存引擎；返回 `(引擎, 是否本次新建)`
     ///
     /// `source_url` 为空白时不缓存（调用方原有「每次新建」语义）。
+    /// 创建闭包返回 `(引擎, degraded)`：`degraded=true`（jsLib 有拉取失败
+    /// 条目）时**不写入缓存**，本次引擎按一次性使用，下次点击重试。
     /// 创建闭包返回的引擎视为已执行过初始化脚本（含绑定前置），
     /// 因而 `fresh=true` 时调用方无需再次重放绑定。
     pub(super) fn get_or_create(
         source_url: &str,
         js_lib: Option<&str>,
-        create: impl FnOnce() -> Result<SharedEngine, String>,
+        create: impl FnOnce() -> Result<(SharedEngine, bool), String>,
     ) -> Result<(SharedEngine, bool), String> {
         if source_url.trim().is_empty() {
-            let engine = create()?;
+            let (engine, _degraded) = create()?;
             CREATED.fetch_add(1, Ordering::Relaxed);
             return Ok((engine, true));
         }
@@ -224,8 +234,14 @@ mod image_action_engine_cache {
             }
         }
         // 创建可能包含 jsLib 拉取/求值，不持全局锁，避免阻塞其他书源点击
-        let engine = create()?;
+        let (engine, degraded) = create()?;
         CREATED.fetch_add(1, Ordering::Relaxed);
+        if degraded {
+            eprintln!(
+                "[legado-js] 书源 {source_url} 图片动作引擎 jsLib 降级加载（存在拉取失败），不入缓存，下次点击重试"
+            );
+            return Ok((engine, true));
+        }
         let mut store = lock_store();
         if let Some(existing) = store.entries.get(source_url) {
             if existing.js_lib == js_lib {
@@ -261,6 +277,15 @@ mod image_action_engine_cache {
 
     pub(super) fn len() -> usize {
         lock_store().entries.len()
+    }
+
+    /// 测试用：取某书源当前缓存的引擎句柄（用于构造锁竞争/锁中毒）
+    #[cfg(test)]
+    pub(super) fn get(source_url: &str) -> Option<SharedEngine> {
+        lock_store()
+            .entries
+            .get(source_url)
+            .map(|entry| entry.engine.clone())
     }
 
     pub(super) fn created_count() -> u64 {
@@ -323,6 +348,26 @@ pub fn clear_image_action_engines() {
     image_action_engine_cache::clear();
 }
 
+/// 创建图片动作引擎（含前置绑定），返回 `(引擎, jsLib 是否降级加载)`
+///
+/// URL 映射 jsLib 有拉取失败条目时 `degraded=true`；缓存层据此不入缓存，
+/// 下次点击重试。
+#[cfg(feature = "quickjs")]
+fn create_image_action_engine(
+    source_tag: &str,
+    js_lib: Option<&str>,
+    prelude: &str,
+    budget: std::time::Duration,
+) -> Result<(crate::QuickJsEngine, bool), String> {
+    crate::executor::create_engine_with_js_lib_with_status(
+        source_tag,
+        js_lib,
+        Some(prelude),
+        None,
+        Some(budget),
+    )
+}
+
 /// 替换规则 `@js:` 的 QuickJS 执行器
 ///
 /// 实现 legado-core 的 [`ReplaceJsExecutor`] 契约；预览、正文净化与书源导入
@@ -363,16 +408,21 @@ impl ReplaceRuleJsExecutor {
     ///
     /// 引擎按书源 `bookSourceUrl` 进程内 LRU 缓存（批21-A）：首次点击创建
     /// 引擎并按书源 `jsLib` 预载共享库（复用 `executor::
-    /// create_engine_with_js_lib` 的 URL 映射/归一化级联），后续点击命中
-    /// 缓存直接复用。**每次点击都重放幂等绑定脚本**（`source` 含
-    /// `getKey/getTag/getVariable/putVariable/put/get` 方法与按 source
+    /// create_engine_with_js_lib_with_status` 的 URL 映射/归一化级联），
+    /// 后续点击命中缓存直接复用。**每次点击都重放幂等绑定脚本**（`source`
+    /// 含 `getKey/getTag/getVariable/putVariable/put/get` 方法与按 source
     /// 作用域的 `java.get/put`、`cookie`、`baseUrl/result/book/chapter`），
     /// 因而上一次点击的绑定不会残留到本次；动作本身仍以 IIFE + 直接
     /// `eval` 执行，动作内 `let`/`const` 不进入全局作用域。
     ///
     /// 缓存不命中/被 [`invalidate_image_action_engine`] 清掉/`jsLib`
-    /// 签名变化时重新创建；`bookSourceUrl` 为空（无书源上下文）时不缓存，
-    /// 保持每次新建的原有语义。
+    /// 签名变化时重新创建；URL 映射 jsLib 有拉取失败时引擎不入缓存
+    /// （下次点击重试）；`bookSourceUrl` 为空（无书源上下文）时不缓存。
+    ///
+    /// 并发保护（批21-A 回修）：缓存引擎用 `try_lock` 获取——同一书源上一次
+    /// 动作仍阻塞在 `java.webView`/`getVerificationCode` 等长宿主调用时，
+    /// 本次点击**降级为一次性引擎**立即执行，不排队等待；锁中毒时先失效
+    /// 该源缓存再降级，避免该源永久返回空。
     #[cfg(feature = "quickjs")]
     pub fn eval_image_action_with_budget(
         &self,
@@ -393,26 +443,52 @@ impl ReplaceRuleJsExecutor {
             build_image_action_scripts(image, js_code, &source_url, &source_name)?;
         let (engine, fresh) =
             image_action_engine_cache::get_or_create(&source_url, js_lib.as_deref(), || {
-                let engine = crate::executor::create_engine_with_js_lib(
-                    &source_tag,
-                    js_lib.as_deref(),
-                    Some(&prelude),
-                    None,
-                    Some(budget),
-                )?;
-                Ok(std::sync::Arc::new(std::sync::Mutex::new(engine)))
+                let (engine, degraded) =
+                    create_image_action_engine(&source_tag, js_lib.as_deref(), &prelude, budget)?;
+                Ok((std::sync::Arc::new(std::sync::Mutex::new(engine)), degraded))
             })?;
-        let guard = engine.lock().map_err(|_| "JS 引擎锁中毒".to_string())?;
-        guard.set_execution_timeout(budget);
-        let raw = crate::host_api::current_source::with_current_source_tag(&source_tag, || {
-            // 复用缓存引擎时重放绑定脚本：重置 source/result/baseUrl/book/
-            // chapter 等全局，避免上一次点击的绑定残留（脚本幂等，重复执行
-            // 不会重复捕获 java.get/put 原始实现）。
-            if !fresh {
-                crate::JsEngine::eval(&*guard, &prelude).map_err(|e| e.to_string())?;
+        let cached_guard = match engine.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                // 同一书源上一次动作仍在执行（可能阻塞在长宿主调用）：
+                // 不排队等待，本次用一次性引擎执行，避免后续点击全部卡死
+                eprintln!(
+                    "[legado-js] 图片动作引擎正被占用，本次降级为一次性引擎（source={source_tag}）"
+                );
+                None
             }
-            crate::JsEngine::eval(&*guard, &script).map_err(|e| e.to_string())
-        })?;
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                // 持锁线程 panic 导致中毒：失效该源缓存，避免永久返回空
+                eprintln!(
+                    "[legado-js] 图片动作引擎锁中毒，已失效该源缓存并降级为一次性引擎（source={source_tag}）"
+                );
+                invalidate_image_action_engine(&source_url);
+                None
+            }
+        };
+        let raw = if let Some(guard) = cached_guard {
+            guard.set_execution_timeout(budget);
+            crate::host_api::current_source::with_current_source_tag(&source_tag, || {
+                // 复用缓存引擎时重放绑定脚本：重置 source/result/baseUrl/book/
+                // chapter 等全局，避免上一次点击的绑定残留（脚本幂等，重复执行
+                // 不会重复捕获 java.get/put 原始实现）。
+                if !fresh {
+                    crate::JsEngine::eval(&*guard, &prelude).map_err(|e| e.to_string())?;
+                }
+                crate::JsEngine::eval(&*guard, &script).map_err(|e| e.to_string())
+            })?
+        } else {
+            // 一次性引擎：创建时已应用前置绑定，无需重放
+            let (engine, degraded) =
+                create_image_action_engine(&source_tag, js_lib.as_deref(), &prelude, budget)?;
+            if degraded {
+                eprintln!("[legado-js] 图片动作一次性引擎 jsLib 降级加载（source={source_tag}）");
+            }
+            engine.set_execution_timeout(budget);
+            crate::host_api::current_source::with_current_source_tag(&source_tag, || {
+                crate::JsEngine::eval(&engine, &script).map_err(|e| e.to_string())
+            })?
+        };
         // 契约：void 动作（java.toast/java.log 等）返回 "undefined" 时归一为空串
         Ok(if raw.trim() == "undefined" {
             String::new()
@@ -924,5 +1000,148 @@ mod image_action_cache_tests {
         assert_eq!(run(&old, "lib()"), "old");
         assert_eq!(run(&new, "lib()"), "new");
         assert_eq!(image_action_engine_created_count(), 2);
+    }
+
+    // ─── 批21-A 回修：jsLib 拉取降级 → 不入缓存，下次点击重试 ───
+
+    /// URL 映射 jsLib 全失败：引擎仍可用（降级），但**不得入缓存**，
+    /// 第二次点击必须重新创建并重试拉取（修复前到 LRU 淘汰前不再重试）
+    #[test]
+    fn degraded_url_map_js_lib_is_not_cached_and_retries() {
+        let _guard = guarded();
+        let _ledger = crate::host_api::capability_ledger::LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::host_api::capability_ledger::reset_jslib_load_failures();
+
+        let url = source_url("degraded-all");
+        // 回环 127.0.0.1:1 必拒绝连接（无监听），不发真实外网请求
+        let image = bindings(&url, Some(r#"{"bad":"http://127.0.0.1:1/never.js"}"#));
+        assert_eq!(run(&image, "'ok'"), "ok");
+        assert_eq!(image_action_engine_created_count(), 1);
+        assert_eq!(
+            image_action_engine_cache_len(),
+            0,
+            "降级加载的引擎不得进入缓存"
+        );
+
+        assert_eq!(run(&image, "'ok2'"), "ok2");
+        assert_eq!(
+            image_action_engine_created_count(),
+            2,
+            "第二次点击应重新创建引擎并重试失败条目"
+        );
+        assert_eq!(image_action_engine_cache_len(), 0);
+    }
+
+    /// 部分条目失败同样视为 degraded（成功条目仍可用）→ 不入缓存
+    #[test]
+    fn partially_degraded_url_map_js_lib_is_not_cached() {
+        let _guard = guarded();
+        let _ledger = crate::host_api::capability_ledger::LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        crate::host_api::capability_ledger::reset_jslib_load_failures();
+
+        let url = source_url("degraded-partial");
+        let image = bindings(
+            &url,
+            Some(r#"{"good":"var ok42 = 42;","bad":"http://127.0.0.1:1/never.js"}"#),
+        );
+        assert_eq!(run(&image, "ok42"), "42");
+        assert_eq!(image_action_engine_cache_len(), 0);
+        let _ = run(&image, "ok42");
+        assert_eq!(image_action_engine_created_count(), 2);
+    }
+
+    // ─── 批21-A 回修：缓存复用下 jsLib 顶层状态保留（已知差异锁定） ───
+
+    /// 已知差异：jsLib 顶层计数器跨点击累加（jsLib 只求值一次）
+    ///
+    /// 对齐参考版 `SharedJsScope` 每源一次求值语义；需要彻底重置时调用
+    /// `invalidate_image_action_engine`。
+    #[test]
+    fn js_lib_top_level_counter_persists_across_clicks() {
+        let _guard = guarded();
+        let url = source_url("jslibstate-counter");
+        let image = bindings(
+            &url,
+            Some("var __cnt = 0; function next() { __cnt += 1; return __cnt; }"),
+        );
+        assert_eq!(run(&image, "next()"), "1");
+        assert_eq!(run(&image, "next()"), "2", "jsLib 顶层状态应跨点击保留");
+        assert_eq!(image_action_engine_created_count(), 1, "jsLib 不应重新求值");
+    }
+
+    /// 已知差异：jsLib 顶层捕获的 `result` 固定为首张图片
+    ///
+    /// 每次点击会刷新 `globalThis.result`，但 jsLib 顶层 `var host = result`
+    /// 只在首次求值时执行；依赖图片级绑定的 jsLib 需在函数内读取 `result`。
+    #[test]
+    fn js_lib_top_level_result_capture_uses_first_click() {
+        let _guard = guarded();
+        let url = source_url("jslibstate-result");
+        let first = bindings_with(
+            &url,
+            Some("var __host = result; function libHost() { return __host; }"),
+            "源",
+            "https://a.example.com/1.jpg",
+        );
+        let second = bindings_with(
+            &url,
+            Some("var __host = result; function libHost() { return __host; }"),
+            "源",
+            "https://b.example.com/2.jpg",
+        );
+        assert_eq!(run(&first, "libHost()"), "https://a.example.com/1.jpg");
+        assert_eq!(
+            run(&second, "libHost()"),
+            "https://a.example.com/1.jpg",
+            "jsLib 顶层捕获的 result 固定为首张图片（已知差异）"
+        );
+        assert_eq!(image_action_engine_created_count(), 1);
+    }
+
+    // ─── 批21-A 回修：引擎锁竞争/中毒降级 ───
+
+    /// 同源引擎被占用时 try_lock 失败 → 一次性引擎立即执行，不排队
+    ///
+    /// 修复前使用无限期 `lock()`，同线程持锁时本测试会永久阻塞（红线）。
+    #[test]
+    fn busy_cached_engine_falls_back_to_one_off_engine() {
+        let _guard = guarded();
+        let url = source_url("busy");
+        let image = bindings(&url, None);
+        assert_eq!(run(&image, "'cached'"), "cached");
+        let handle = image_action_engine_cache::get(&url).expect("缓存引擎应存在");
+        let held = handle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // 持锁期间再次点击：必须降级成功，而不是等待同一把锁
+        assert_eq!(run(&image, "'fallback'"), "fallback");
+        drop(held);
+        // 缓存引擎未被替换，释放后继续命中
+        assert_eq!(run(&image, "'cached-again'"), "cached-again");
+        assert_eq!(image_action_engine_created_count(), 1);
+    }
+
+    /// 引擎锁中毒 → 失效该源缓存并降级为一次性引擎（避免永久返回空）
+    #[test]
+    fn poisoned_cached_engine_is_invalidated_and_falls_back() {
+        let _guard = guarded();
+        let url = source_url("poison");
+        let image = bindings(&url, None);
+        assert_eq!(run(&image, "'before'"), "before");
+        let handle = image_action_engine_cache::get(&url).expect("缓存引擎应存在");
+        let _ = std::thread::spawn(move || {
+            let _guard = handle.lock().unwrap();
+            panic!("测试注入：持锁 panic 以毒化引擎锁");
+        })
+        .join();
+        assert_eq!(run(&image, "'after-poison'"), "after-poison");
+        assert_eq!(image_action_engine_cache_len(), 0, "中毒后应失效该源缓存");
+        // 后续点击重新创建并恢复正常缓存
+        assert_eq!(run(&image, "'recovered'"), "recovered");
+        assert_eq!(image_action_engine_cache_len(), 1);
     }
 }

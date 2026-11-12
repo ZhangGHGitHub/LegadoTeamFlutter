@@ -14,8 +14,8 @@
 //! - **UI 副作用回传（批21-A）**：动作期间产生的 `java.toast`/`java.longToast`/
 //!   `java.showBrowser`/`java.startBrowser`/`java.openUrl` 等经
 //!   `ui_action_queue` 收集；有 action 时返回值扩展为结构化 JSON
-//!   `{"result":"...","actions":[{...}]}`，无 action 时保持纯结果字符串
-//!   （向后兼容，Dart 侧据 `actions` 且非空判定信封）；
+//!   `{"_lgActions":true,"result":"...","actions":[{...}]}`（`_lgActions`
+//!   为判别标记），无 action 时保持纯结果字符串（向后兼容）；
 //! - 无 quickjs 构建 → 返回明确错误（不静默）；
 //! - `bookUrl` 无对应书籍行 → `book` 字段留空、`source` 为空对象 `{}`；
 //! - `chapterIndex < 0` 或章节行缺失 → `chapter` 字段为空串/0。
@@ -68,10 +68,11 @@ pub fn eval_image_action(
 ///
 /// UI action 信封格式（仅 `actions` 非空时）：
 /// ```json
-/// {"result": "动作返回值", "actions": [{"action": "toast", "message": "..."}]}
+/// {"_lgActions": true, "result": "动作返回值", "actions": [{"action": "toast", "message": "..."}]}
 /// ```
-/// `result` 与无 action 时的纯字符串返回值完全一致（`undefined` 已归一为
-/// 空串），Dart 侧只需在检测到信封时拆包。
+/// `_lgActions` 是信封判别标记：动作自身返回同形 JSON 时不会缺少该字段，
+/// Dart 侧据此避免把普通结果误拆包。`result` 与无 action 时的纯字符串
+/// 返回值完全一致（`undefined` 已归一为空串）。
 #[cfg(feature = "quickjs")]
 pub fn eval_image_action_with_budget(
     book_url: &str,
@@ -85,9 +86,10 @@ pub fn eval_image_action_with_budget(
     Ok(image_action_envelope(result, actions))
 }
 
-/// 组装返回值：无 UI action 保持纯字符串，有则返回结构化信封。
+/// 组装返回值：无 UI action 保持纯字符串，有则返回带判别标记的结构化信封。
 ///
-/// 信封只在 `actions` 非空时产生，避免把普通 JSON 字符串结果误判为信封；
+/// 信封只在 `actions` 非空时产生；`_lgActions=true` 供 Dart 侧可靠识别
+/// （书源动作恰好返回 `{"result":...,"actions":[...]}` 时不会被误拆包）。
 /// `serde_json::to_string` 对 `Value` 数组不会失败，失败时按纯字符串返回
 /// （不影响阅读主链路）。
 #[cfg(feature = "quickjs")]
@@ -96,6 +98,7 @@ fn image_action_envelope(result: String, actions: Vec<serde_json::Value>) -> Str
         return result;
     }
     serde_json::to_string(&serde_json::json!({
+        "_lgActions": true,
         "result": result.clone(),
         "actions": actions,
     }))
@@ -530,10 +533,27 @@ mod tests {
         let raw =
             eval_image_action(&fx.book_url, 7, "java.toast('a' + 'b'); 'done'", &fx.image).unwrap();
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["_lgActions"], true, "信封必须带判别标记");
         assert_eq!(value["result"], "done");
         assert_eq!(value["actions"].as_array().map(Vec::len), Some(1));
         assert_eq!(value["actions"][0]["action"], "toast");
         assert_eq!(value["actions"][0]["message"], "ab");
+    }
+
+    /// 批21-A 回修：动作自身返回同形 JSON 但无真实 action → 仍是纯字符串
+    ///
+    /// Dart 侧据 `_lgActions` 标记识别信封，不会把该结果误拆包。
+    #[test]
+    fn action_result_shaped_like_envelope_without_ui_actions_stays_plain() {
+        let (_g, fx) = setup_fixture("uienvelopeshape");
+        let raw = eval_image_action(
+            &fx.book_url,
+            7,
+            r#"JSON.stringify({result: 'x', actions: [{action: 'toast'}]})"#,
+            &fx.image,
+        )
+        .unwrap();
+        assert_eq!(raw, r#"{"result":"x","actions":[{"action":"toast"}]}"#);
     }
 
     /// 批21-A：无 UI action 时返回值仍是纯字符串（向后兼容）
