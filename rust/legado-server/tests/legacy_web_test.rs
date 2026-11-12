@@ -5269,3 +5269,63 @@ async fn test_b6_token_guard_rejects_before_body_read() {
     assert_eq!(rd["isSuccess"], true, "rd={rd}");
     assert_eq!(rd["data"], "已执行");
 }
+
+/// [审查批 P2-1] 段评两条写端点（`/openLegacyReview`、`/runLegacyReview`）
+/// 纳入路由级令牌前置：无令牌时在 body 提取前拒绝。
+///
+/// 与源写端点同型取证：body 流一旦被轮询就 panic，证明守卫未读取请求体；
+/// 1 GiB `Content-Length` 声明验证响应是令牌失败信封（200 + `Connection:
+/// close`）而非 body 限额的 413。带令牌时放行到 handler（坏 JSON → 原版
+/// 「数据格式错误: …」文案），证明守卫不是无条件拒绝。
+#[tokio::test]
+async fn test_review_routes_token_guard_rejects_before_body_read() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app =
+        legado_server::server::attach_source_write_token_guard(create_router(state.clone()), state);
+
+    for uri in ["/openLegacyReview", "/runLegacyReview"] {
+        let body_stream = futures_util::stream::once(async move {
+            if std::hint::black_box(true) {
+                panic!("令牌前置中间件失效：{uri} 未授权请求读取了请求体");
+            }
+            Ok::<axum::body::Bytes, std::io::Error>(axum::body::Bytes::new())
+        });
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("Content-Type", "application/json")
+            .header("Content-Length", "1073741824")
+            .body(Body::from_stream(body_stream))
+            .unwrap();
+        let resp = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "{uri}");
+        let connection = header_str(resp.headers(), "connection").to_string();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let rd: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(rd["isSuccess"], false, "{uri} rd={rd}");
+        assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "{uri} rd={rd}");
+        assert_eq!(connection, "close", "{uri} 令牌失败应关闭连接");
+
+        // 带令牌：放行到 handler（坏 JSON → 「数据格式错误」，非令牌错误）
+        let (status, headers, rd) = post_write_json(
+            app.clone(),
+            uri,
+            Some("application/json"),
+            &[(B6_TOKEN, "secret")],
+            b"not-json",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{uri} rd={rd}");
+        assert!(
+            rd["errorMsg"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("数据格式错误"),
+            "{uri} rd={rd}"
+        );
+        assert_ne!(header_str(&headers, "connection"), "close", "{uri}");
+    }
+}

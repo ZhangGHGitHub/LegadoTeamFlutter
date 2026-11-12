@@ -16,8 +16,9 @@
 //! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | `{rule, text}`；不落库；正则/字面量/@js: 替换 |
 //!
 //! 令牌面：本模块 10 条端点全部受保护，但分属两条链（`HttpServer.kt:58-73`）：
-//! - **9 条**在原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258，该集合
-//!   共 11 条，另含 B4 已实现的 `/openLegacyReview`、`/runLegacyReview`）内，
+//! - **9 条**在原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:251-265，该集合
+//!   共 13 条：本模块 9 条 + B4 段评 `/openLegacyReview`、`/runLegacyReview` +
+//!   批30 检验会话 `/startBookSourceCheck`、`/stopBookSourceCheck`）内，
 //!   由 `hasValidJsSourceApiToken` 统一判定；
 //! - **`saveJsSource` 不在该集合**：由独立 [`validate_js_source_headers`] 链
 //!   保护（HttpServer.kt:60-62），该链第一步即令牌校验（对齐
@@ -36,7 +37,10 @@
 //! P1-1（2026-11-13）再追加规则订阅 Web 面两条（方法限定）为第 22–23 条：
 //! `POST /api/rule-update/check`（触发出站拉取）与
 //! `POST /api/rule-update/apply`（拉取并 upsert 三张规则表）——
-//! `GET /api/rule-update/subs` 读取面保持免令牌。
+//! `GET /api/rule-update/subs` 读取面保持免令牌；审查批 P2-1（2026-11-13）
+//! 补齐原版集合内此前遗漏的段评两条 `/openLegacyReview`、`/runLegacyReview`
+//! 为第 24–25 条（B4 实现时仅在 handler 内校验，此时 axum 提取器已缓冲请求体，
+//! 「未授权不读 body」不成立）。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -170,10 +174,10 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// - 路径模式末段 `{id}` 匹配**单个**路径段（对齐 axum `{id}` 路径参数；
 ///   注意查询串不参与匹配，路径参数为百分号编码时原样按段匹配）。
 ///
-/// 与原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258）中本模块
+/// 与原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:251-265）中本模块
 /// 的 9 条 + 独立链保护的 `/saveJsSource`（HttpServer.kt:60-62）一致；
 /// 批30 追加检验会话两条 `/startBookSourceCheck`、`/stopBookSourceCheck`
-/// （同属原版集合，HttpServer.kt:251-254）。
+/// （同属原版集合，HttpServer.kt:251-265）。
 ///
 /// [批17 三审 P2] 追加 `/mcp/call`：Web 端口该路由可执行任意 JS
 /// （`eval_js`，timeout 5..600s），与源写端点同为高成本副作用面，纳入同一
@@ -200,7 +204,14 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 此前仅写版本号）。未鉴权时同网段攻击者无需令牌即可覆写本机规则库；
 /// 两条均纳入与源写端点相同的令牌前置守卫（`GET /api/rule-update/subs`
 /// 只读订阅列表，保持免令牌）。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 23] = [
+///
+/// [审查批 P2-1] 追加 B4 段评两条 `/openLegacyReview`、`/runLegacyReview`
+/// （均为 `legacy_routes` 内注册的 POST）：两条本就在原版集合
+/// （HttpServer.kt:251-265）内，但此前仅由 handler 内 `has_valid_token`
+/// 校验——axum 提取 `String` body 发生在 handler 之前，未授权请求仍会被
+/// 按 body 限额缓冲（默认 2MB），「未授权不读 body」不成立。纳入路由级
+/// 前置守卫后与其余源写端点语义一致；handler 内校验保留为纵深防御。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 25] = [
     ("/startBookSourceCheck", None),
     ("/stopBookSourceCheck", None),
     ("/saveBookSource", None),
@@ -213,6 +224,8 @@ pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 23] = [
     ("/saveReplaceRule", None),
     ("/deleteReplaceRule", None),
     ("/testReplaceRule", None),
+    ("/openLegacyReview", None),
+    ("/runLegacyReview", None),
     ("/mcp/call", None),
     ("/api/webbook/search", None),
     ("/api/webbook/info", None),
@@ -259,9 +272,9 @@ fn route_pattern_matches(pattern: &str, path: &str) -> bool {
 /// `Content-Length` 不会拖住连接、不会触发 axum 默认 2MB body 限制的 413）。
 /// handler 内的 [`token_rejection`] 保留为纵深防御。
 ///
-/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（23 条，含自研 `/api/webbook/*`
-/// 四条、`/api/sources` 方法限定四条与 `/api/rule-update/*` 方法限定两条）
-/// 生效；其余路径原样放行。
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（25 条，含自研 `/api/webbook/*`
+/// 四条、`/api/sources` 方法限定四条、`/api/rule-update/*` 方法限定两条与
+/// B4 段评两条）生效；其余路径原样放行。
 /// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
 /// `serve_web_with_injected_paths` 组装路由后统一套用）。
 pub async fn source_write_token_guard(
@@ -1405,12 +1418,13 @@ mod tests {
         );
     }
 
-    /// P2-2 / P0-1 / P1-1：受保护路由表（23 条：批30 检验会话两条 +
+    /// P2-2 / P0-1 / P1-1 / P2-1：受保护路由表（25 条：批30 检验会话两条 +
     /// 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*` 四条 + P1-1 自研
-    /// REST 源写面四条 + 批24 规则订阅 Web 面两条）与方法限定匹配语义
+    /// REST 源写面四条 + 批24 规则订阅 Web 面两条 + 段评写面两条）与方法
+    /// 限定匹配语义
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 23);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 25);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1424,6 +1438,8 @@ mod tests {
             "/saveReplaceRule",
             "/deleteReplaceRule",
             "/testReplaceRule",
+            "/openLegacyReview",
+            "/runLegacyReview",
             "/mcp/call",
             "/api/webbook/search",
             "/api/webbook/info",
@@ -1444,9 +1460,10 @@ mod tests {
             &Method::POST,
             "/saveBook"
         ));
+        // 段评页面读取面（GET /legacyReviewPage）保持免令牌：nonce 即凭据
         assert!(!is_protected_source_write_request(
             &Method::POST,
-            "/openLegacyReview"
+            "/legacyReviewPage"
         ));
         // 只保护可执行 JS 的 call；tools 列表无副作用，保持免令牌
         assert!(!is_protected_source_write_request(
