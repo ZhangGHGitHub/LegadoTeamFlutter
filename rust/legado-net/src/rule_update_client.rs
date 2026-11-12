@@ -191,6 +191,80 @@ pub fn should_update(last_update: i64, interval_hours: i32, now_millis: i64) -> 
     last_update + interval_millis <= now_millis
 }
 
+/// 从订阅原文提取版本标识（FFI `ruleSubCheckUpdate` 与 Web
+/// `/api/rule-update/check` 共用，单实现）
+///
+/// 订阅载荷有两种真实形态：
+/// - **JSON 对象**（少数订阅源自带元信息）：取字符串字段 `version`；
+/// - **JSON 数组**（书源/RSS 源/替换规则导出的标准形态）：没有顶层
+///   `version`，此前的实现恒返回 `None`，导致 `hasUpdate` 恒为 true、
+///   UI 每次检查都提示「发现新版本」。现改为：
+///   1. 取全部条目 `lastUpdateTime` 的最大值（毫秒时间戳字符串，兼容数字与
+///      数字字符串）——书源/RSS 源作者更新规则时会推进该字段，对齐上游
+///      `RuleUpdate.kt` 按 `lastUpdateTime` 判新的口径；
+///   2. 若没有任何非零时间戳（如替换规则订阅），退化为原文的稳定内容指纹
+///      `content-<16 hex>`：内容不变 → 版本不变，内容变 → 版本变，保证
+///      「已是最新」能正确显示。
+///
+/// 空数组 / 非法 JSON / 其他顶层类型返回 `None`（无可比较版本）。
+pub fn extract_subscription_version(payload: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+    match value {
+        serde_json::Value::Object(map) => map
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        serde_json::Value::Array(items) => {
+            if items.is_empty() {
+                return None;
+            }
+            let latest = items
+                .iter()
+                .filter_map(|item| item.get("lastUpdateTime"))
+                .filter_map(json_i64)
+                .max()
+                .unwrap_or(0);
+            if latest > 0 {
+                Some(latest.to_string())
+            } else {
+                Some(content_fingerprint(payload))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// JSON 数字或数字字符串 → i64（第三方订阅两种写法都存在）
+fn json_i64(value: &serde_json::Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+}
+
+/// 稳定内容指纹：FNV-1a 64 位（跨进程/跨平台一致，无额外依赖）
+///
+/// 只用于「内容是否变化」的比较，不作为展示语义；外层原文先 trim，
+/// 避免订阅端偶尔多一个换行被误判为新版本。
+fn content_fingerprint(payload: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in payload.trim().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("content-{hash:016x}")
+}
+
+/// 判断远程订阅相对本地版本是否有更新
+///
+/// 没有可比较版本（空数组 / 非法 JSON / 无 `version` 的对象）时返回 false：
+/// 「无法判断」不应表现为「有新版本」，否则每次检查都会误报。
+pub fn has_subscription_update(remote_json: &str, local_version: &str) -> bool {
+    match extract_subscription_version(remote_json) {
+        Some(remote_version) => remote_version != local_version,
+        None => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,5 +388,69 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("items_added"));
         assert!(json.contains("1.2.0"));
+    }
+
+    // ─── 订阅版本提取（P1-3 相邻缺陷：数组订阅恒 hasUpdate）─────
+
+    #[test]
+    fn test_extract_version_from_object_payload() {
+        assert_eq!(
+            extract_subscription_version(r#"{"version":"1.2.3","data":[]}"#),
+            Some("1.2.3".to_string())
+        );
+        // 对象但无 version → None
+        assert_eq!(extract_subscription_version(r#"{"data":[]}"#), None);
+        assert_eq!(extract_subscription_version("not json"), None);
+    }
+
+    #[test]
+    fn test_extract_version_from_array_uses_latest_last_update_time() {
+        // 订阅载荷是数组（书源/RSS 源导出形态），版本取最新 lastUpdateTime；
+        // 兼容数字与数字字符串两种写法
+        let payload = r#"[
+            {"bookSourceUrl":"https://a.com","lastUpdateTime":1700000000000},
+            {"bookSourceUrl":"https://b.com","lastUpdateTime":1700000500000},
+            {"bookSourceUrl":"https://c.com","lastUpdateTime":"1700000300000"}
+        ]"#;
+        assert_eq!(
+            extract_subscription_version(payload),
+            Some("1700000500000".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_version_array_without_timestamps_uses_stable_fingerprint() {
+        // 替换规则订阅没有 lastUpdateTime：退化为内容指纹，
+        // 保证「内容不变 → 版本不变」「内容变 → 版本变」
+        let first = r#"[{"name":"规则A","pattern":"a"}]"#;
+        let second = r#"[{"name":"规则A","pattern":"b"}]"#;
+        let v1 = extract_subscription_version(first).expect("数组应给出内容指纹");
+        let v1_again = extract_subscription_version(first).expect("同一原文指纹应稳定");
+        let v2 = extract_subscription_version(second).expect("数组应给出内容指纹");
+        assert_eq!(v1, v1_again);
+        assert_ne!(v1, v2);
+        assert!(v1.starts_with("content-"), "指纹格式: {v1}");
+    }
+
+    #[test]
+    fn test_extract_version_empty_array_returns_none() {
+        assert_eq!(extract_subscription_version("[]"), None);
+        assert_eq!(extract_subscription_version("  [ ]  "), None);
+    }
+
+    #[test]
+    fn test_has_subscription_update_semantics() {
+        let payload = r#"[{"name":"规则A","lastUpdateTime":1700000000000}]"#;
+        let version = extract_subscription_version(payload).unwrap();
+        // 版本一致 → 已是最新（修复前数组恒 None → 恒 true）
+        assert!(!has_subscription_update(payload, &version));
+        assert!(has_subscription_update(payload, ""));
+        // 时间戳推进 → 有更新
+        assert!(has_subscription_update(
+            r#"[{"name":"规则A","lastUpdateTime":1700000000001}]"#,
+            &version
+        ));
+        // 空数组：无可比较版本，不提示更新
+        assert!(!has_subscription_update("[]", ""));
     }
 }

@@ -11,7 +11,10 @@ use serde::Serialize;
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{apply_rule_subscription, RuleSubRecord, RuleSubRepository};
-use legado_net::{fetch_subscription, should_update, RuleSubscription};
+use legado_net::{
+    extract_subscription_version, fetch_subscription, has_subscription_update, should_update,
+    RuleSubscription,
+};
 
 use crate::db_state::with_database;
 
@@ -123,16 +126,6 @@ fn now_millis() -> i64 {
         .as_millis() as i64
 }
 
-/// 从订阅 JSON 内容中提取版本信息（与 server 端 extract_version 语义一致）
-fn extract_version(json_str: &str) -> Option<String> {
-    if let Ok(obj) = serde_json::from_str::<serde_json::Value>(json_str) {
-        if let Some(v) = obj.get("version").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
-        }
-    }
-    None
-}
-
 /// 检查订阅更新（委托 should_update + fetch_subscription）
 ///
 /// 流程：
@@ -155,11 +148,11 @@ pub fn check_sub_update_db(id: i64) -> LegadoResult<CheckUpdateResponse> {
 
     let response = match crate::runtime::block_on(fetch_subscription(&subscription)) {
         Ok(remote_json) => {
-            let remote_version = extract_version(&remote_json);
-            let has_update = match &remote_version {
-                Some(rv) => rv != &sub.version,
-                None => !remote_json.is_empty(),
-            };
+            // 版本提取与「是否有更新」判定统一走 legado-net 单实现：
+            // 数组订阅取最新 lastUpdateTime（无时间戳时用内容指纹），
+            // 修复此前 remoteVersion 恒 None → hasUpdate 恒 true 的误报。
+            let remote_version = extract_subscription_version(&remote_json);
+            let has_update = has_subscription_update(&remote_json, &sub.version);
             CheckUpdateResponse {
                 id: sub.id,
                 url: sub.url.clone(),
@@ -259,7 +252,7 @@ fn apply_remote_content_on(
     sub: &RuleSubRecord,
     remote_json: &str,
 ) -> LegadoResult<ApplyUpdateResponse> {
-    let new_version = extract_version(remote_json).unwrap_or_default();
+    let new_version = extract_subscription_version(remote_json).unwrap_or_default();
     let outcome = apply_rule_subscription(
         db.connection(),
         sub.id,

@@ -66,8 +66,8 @@ pub use response::{LegadoRawResponse, LegadoResponse, LegadoStreamResponse};
 pub use retry::{RetryConfig, RetryExecutor};
 pub use rss::{fetch_feed, parse_default_items, parse_feed, DefaultFeedItem, RssArticle, RssFeed};
 pub use rule_update_client::{
-    fetch_subscription, merge_subscription, should_update, MergeResult, RuleSubscription,
-    UpdateResult,
+    extract_subscription_version, fetch_subscription, has_subscription_update, merge_subscription,
+    should_update, MergeResult, RuleSubscription, UpdateResult,
 };
 pub use source_checker::{CaptchaInfo, CheckResult, CheckerConfig, RedirectInfo, SourceChecker};
 pub use ssl_config::SslConfig;

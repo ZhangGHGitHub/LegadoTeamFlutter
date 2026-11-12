@@ -129,12 +129,10 @@ pub async fn check_update(
 
         match legado_net::fetch_subscription(&subscription).await {
             Ok(remote_json) => {
-                // 尝试从远程 JSON 中提取版本信息
-                let remote_version = extract_version(&remote_json);
-                let has_update = match &remote_version {
-                    Some(rv) => rv != &sub.version,
-                    None => !remote_json.is_empty(),
-                };
+                // 版本提取与「是否有更新」判定统一走 legado-net 单实现
+                // （数组订阅取最新 lastUpdateTime，无时间戳时用内容指纹）
+                let remote_version = legado_net::extract_subscription_version(&remote_json);
+                let has_update = legado_net::has_subscription_update(&remote_json, &sub.version);
 
                 results.push(CheckUpdateResult {
                     url: sub.url.clone(),
@@ -206,7 +204,7 @@ pub async fn apply_update(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-    let new_version = extract_version(&remote_json).unwrap_or_default();
+    let new_version = legado_net::extract_subscription_version(&remote_json).unwrap_or_default();
 
     let applied = {
         let db = state.db.lock().await;
@@ -240,17 +238,6 @@ pub async fn apply_update(
     };
 
     Ok(Json(json!(result)))
-}
-
-/// 尝试从 JSON 内容中提取版本信息
-fn extract_version(json_str: &str) -> Option<String> {
-    // 尝试解析为对象并查找 version 字段
-    if let Ok(obj) = serde_json::from_str::<Value>(json_str) {
-        if let Some(v) = obj.get("version").and_then(|v| v.as_str()) {
-            return Some(v.to_string());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -574,13 +561,95 @@ mod tests {
         assert_eq!(sub.last_update, 0);
     }
 
-    #[test]
-    fn test_extract_version() {
-        assert_eq!(
-            extract_version(r#"{"version": "1.2.3", "data": []}"#),
-            Some("1.2.3".to_string())
-        );
-        assert_eq!(extract_version(r#"[{"a": 1}]"#), None);
-        assert_eq!(extract_version("not json"), None);
+    /// 相邻缺陷修复：数组订阅的版本取最新 `lastUpdateTime`，
+    /// 版本一致时必须报告「已是最新」（修复前恒 `hasUpdate=true`）
+    #[tokio::test]
+    async fn test_check_update_array_feed_reports_latest_when_version_matches() {
+        let state = make_test_state();
+        let body = r#"[{"bookSourceUrl":"https://web-check.example.com","bookSourceName":"C","lastUpdateTime":1700000000000}]"#;
+        let port = spawn_json_server(body.to_string());
+        let url = format!("http://127.0.0.1:{port}/sub.json");
+        let version = legado_net::extract_subscription_version(body).expect("数组应有版本");
+
+        {
+            let db = state.db.lock().await;
+            RuleSubRepository::new(db.connection())
+                .insert(&RuleSubRecord {
+                    url: url.clone(),
+                    name: "版本检查".to_string(),
+                    sub_type: "bookSource".to_string(),
+                    version: version.clone(),
+                    created_at: 1_700_000_000_000,
+                    ..RuleSubRecord::default()
+                })
+                .unwrap();
+        }
+
+        let app = make_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rule-update/check")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"url": url})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["results"][0]["has_update"], false, "{json}");
+        assert_eq!(json["results"][0]["remote_version"], version);
+    }
+
+    /// 远程时间戳推进 → 报告有更新
+    #[tokio::test]
+    async fn test_check_update_array_feed_reports_update_when_timestamp_advanced() {
+        let state = make_test_state();
+        let body = r#"[{"bookSourceUrl":"https://web-check.example.com","bookSourceName":"C","lastUpdateTime":1700000000002}]"#;
+        let port = spawn_json_server(body.to_string());
+        let url = format!("http://127.0.0.1:{port}/sub.json");
+
+        {
+            let db = state.db.lock().await;
+            RuleSubRepository::new(db.connection())
+                .insert(&RuleSubRecord {
+                    url: url.clone(),
+                    name: "版本检查-旧".to_string(),
+                    sub_type: "bookSource".to_string(),
+                    version: "1700000000000".to_string(),
+                    created_at: 1_700_000_000_000,
+                    ..RuleSubRecord::default()
+                })
+                .unwrap();
+        }
+
+        let app = make_router(state);
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/rule-update/check")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_string(&json!({"url": url})).unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["results"][0]["has_update"], true, "{json}");
+        assert_eq!(json["results"][0]["remote_version"], "1700000000002");
     }
 }

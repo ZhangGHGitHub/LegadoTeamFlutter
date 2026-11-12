@@ -11,7 +11,7 @@
 //!
 //! ## 语义
 //!
-//! 1. 按订阅类型解析远程 JSON（必须是数组），以既有仓储单事务写入：
+//! 1. 按订阅类型解析远程 JSON（必须是数组），以既有仓储单事务 **upsert**：
 //!    - 书源：`book_sources`，主键 `bookSourceUrl`
 //!      （`BookSourceRepository::insert_batch_with_check_state`，对齐原版
 //!      `SourceHelp.insertBookSource` 的「写入 + 重建检验状态」）；
@@ -21,19 +21,24 @@
 //!      `legado_net::merge_subscription` 的键一致；原版 `RuleUpdate.kt` 按
 //!      远程 `id` 匹配，但远程规则 id 与本库自增 id 无对应关系，按名称匹配
 //!      才不会误插重复规则）。
-//! 2. 计数是**实际落库变化**：
+//! 2. **只新增与更新，不删除本地条目**（对齐上游 `RuleUpdate.kt:26-117` 与
+//!    参考版「勾选导入」的加法语义）：订阅通常只覆盖某一批规则，本地还有
+//!    用户自行添加/其他订阅导入的同类条目；若按「远程即全量」删除，会把
+//!    不在该订阅里的本地书源误删（100 个本地书源 + 2 条订阅 → 删 98 个），
+//!    且自动更新会在后台静默执行。因此 `removed` 字段保留但**恒为 0**。
+//! 3. 计数是**实际落库变化**：
 //!    - `added`：本地不存在该键 → 已插入；
 //!    - `updated`：本地存在且规则内容变化 → 已覆盖写入；
 //!      书源用 `BookSource::check_content()` 判定（该函数会归一
 //!      `customOrder` / `enabled` / `lastUpdateTime` / `respondTime` /
 //!      `weight`，避免「仅本地运行态字段不同」被误计为更新并反复重写）；
-//!    - `removed`：本地存在、远程已无该键 → 已删除；
+//!    - `removed`：恒为 0（仅 upsert）；
 //!    - `total`：远程去重后的条目数。
-//! 3. 版本号与最后更新时间在**同事务内最后写入**：任一条目解析/写入/删除
-//!    失败或订阅行不存在时整笔回滚，版本号不推进（否则下次检查会显示
-//!    「已是最新」但数据没进去）。
-//! 4. 空远程列表直接报错、零写入：避免一次异常响应把本地规则清空。
-//! 5. 书源 / RSS 源更新时保留本地分组（对齐原版 `RuleUpdate.cacheSource`
+//! 4. 版本号与最后更新时间在**同事务内最后写入**：任一条目解析/写入失败或
+//!    订阅行不存在时整笔回滚，版本号不推进（否则下次检查会显示「已是最新」
+//!    但数据没进去）。
+//! 5. 空远程列表直接报错、零写入：避免一次异常响应把本地规则清空。
+//! 6. 书源 / RSS 源更新时保留本地分组（对齐原版 `RuleUpdate.cacheSource`
 //!    静默更新分支 `list.bookSourceGroup = localSource.bookSourceGroup`），
 //!    分组是用户的本地组织偏好，不属于远程规则内容。
 //!
@@ -69,13 +74,16 @@ pub struct RuleSubApplyOutcome {
     pub added: usize,
     /// 更新条目数（本地有、规则内容变化，已覆盖写入）
     pub updated: usize,
-    /// 移除条目数（本地有、远程已无，已删除）
+    /// 移除条目数：**恒为 0**（仅 upsert，不删除本地条目；字段保留以维持
+    /// FFI/Web 响应形态不变）
     pub removed: usize,
-    /// 远程去重后的条目总数（即应用后的规则集大小）
+    /// 远程去重后的条目数（本次应用涉及的规则条数；不等于应用后本地总数）
     pub total: usize,
 }
 
-/// 应用规则订阅更新：按 `sub_type` 落库并在同事务内推进订阅版本号
+/// 应用规则订阅更新：按 `sub_type` upsert 落库并在同事务内推进订阅版本号
+///
+/// 只新增与更新，不删除本地条目（`removed` 恒 0），语义基准见模块文档。
 ///
 /// # 参数
 /// - `conn`：数据库连接（事务由本函数开启；调用方若已在外层事务内则复用）
@@ -170,22 +178,14 @@ fn apply_book_sources(conn: &Connection, remote_json: &str) -> LegadoResult<Rule
         }
     }
 
-    let removed_items: Vec<&BookSource> = local
-        .iter()
-        .filter(|source| !remote.contains_key(&source.book_source_url))
-        .collect();
-    let removed = removed_items.len();
-
-    // 写入与删除都在 in_transaction 内：任一步失败整批回滚
+    // 仅 upsert：远程缺失的本地书源原样保留（对齐上游 RuleUpdate.kt 与参考版
+    // 「勾选导入」加法语义，`removed` 恒 0）。写入与版本号同事务。
     repo.insert_batch_with_check_state(&to_write)?;
-    for item in removed_items {
-        repo.delete(&item.book_source_url)?;
-    }
 
     Ok(RuleSubApplyOutcome {
         added,
         updated,
-        removed,
+        removed: 0,
         total: order.len(),
     })
 }
@@ -244,24 +244,15 @@ fn apply_rss_sources(conn: &Connection, remote_json: &str) -> LegadoResult<RuleS
         }
     }
 
-    let removed_items: Vec<&RssSource> = local
-        .iter()
-        .filter(|source| !remote.contains_key(&source.source_url))
-        .collect();
-    let removed = removed_items.len();
-
+    // 仅 upsert：远程缺失的本地 RSS 源原样保留（同书源口径，`removed` 恒 0）
     for item in &to_write {
         repo.insert(item).map_err(LegadoError::Database)?;
-    }
-    for item in &removed_items {
-        repo.delete(&item.source_url)
-            .map_err(LegadoError::Database)?;
     }
 
     Ok(RuleSubApplyOutcome {
         added,
         updated,
-        removed,
+        removed: 0,
         total: order.len(),
     })
 }
@@ -343,19 +334,11 @@ fn apply_replace_rules(conn: &Connection, remote_json: &str) -> LegadoResult<Rul
         }
     }
 
-    let removed_items: Vec<&ReplaceRule> = local
-        .iter()
-        .filter(|rule| !remote.contains_key(&rule.name))
-        .collect();
-    let removed = removed_items.len();
-    for rule in removed_items {
-        repo.delete(rule.id)?;
-    }
-
+    // 仅 upsert：远程缺失的本地替换规则原样保留（`removed` 恒 0）
     Ok(RuleSubApplyOutcome {
         added,
         updated,
-        removed,
+        removed: 0,
         total: order.len(),
     })
 }
@@ -570,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_book_sources_removes_missing_rows() {
+    fn test_apply_book_sources_keeps_rows_missing_from_remote() {
         let db = init_in_memory_database().unwrap();
         let conn = db.connection();
         let sub_id = seed_sub(conn, "bookSource", "1.0");
@@ -582,6 +565,8 @@ mod tests {
         ])
         .unwrap();
 
+        // 远程只含 A：B 是本地其他来源的书源，应用订阅不得删除（仅 upsert，
+        // 对齐上游 RuleUpdate.kt 与参考版「勾选导入」加法语义）
         let remote = format!(
             "[{}]",
             book_source_json("https://a.example.com", "A", "https://a.example.com/s")
@@ -595,18 +580,26 @@ mod tests {
             1_700_000_100_000,
         )
         .unwrap();
-        assert_eq!(outcome.removed, 1);
-        assert_eq!(outcome.added, 0);
-        assert_eq!(outcome.updated, 0);
+        assert_eq!(
+            outcome,
+            RuleSubApplyOutcome {
+                added: 0,
+                updated: 0,
+                removed: 0,
+                total: 1
+            }
+        );
 
+        // 本地 B 必须原样保留（含检验状态）
         let stored = repo.find_all().unwrap();
-        assert_eq!(stored.len(), 1);
-        assert_eq!(stored[0].book_source_url, "https://a.example.com");
-        // 检验状态随删除级联清理
-        let removed_state = crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(conn)
+        assert_eq!(stored.len(), 2, "远程缺失的本地书源不得被删除");
+        assert!(stored
+            .iter()
+            .any(|s| s.book_source_url == "https://b.example.com"));
+        let kept_state = crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(conn)
             .find_by_url("https://b.example.com")
             .unwrap();
-        assert!(removed_state.is_none());
+        assert!(kept_state.is_some(), "未删除条目的检验状态应保留");
     }
 
     #[test]
@@ -660,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_rss_sources_add_update_remove() {
+    fn test_apply_rss_sources_add_update_keeps_missing() {
         let db = init_in_memory_database().unwrap();
         let conn = db.connection();
         let sub_id = seed_sub(conn, "rssSource", "1.0");
@@ -682,7 +675,7 @@ mod tests {
         })
         .unwrap();
 
-        // 远程：A 新规则 + C 新增（B 被移除）
+        // 远程：A 新规则 + C 新增；B 不在远程（仅 upsert，不得删除）
         let remote = format!(
             "[{},{}]",
             rss_json("https://a.example.com/rss", "A源", "new"),
@@ -696,13 +689,13 @@ mod tests {
             RuleSubApplyOutcome {
                 added: 1,
                 updated: 1,
-                removed: 1,
+                removed: 0,
                 total: 2
             }
         );
 
         let stored = repo.find_all().unwrap();
-        assert_eq!(stored.len(), 2);
+        assert_eq!(stored.len(), 3, "远程缺失的本地 RSS 源不得被删除");
         let a = stored
             .iter()
             .find(|s| s.source_url == "https://a.example.com/rss")
@@ -713,9 +706,12 @@ mod tests {
         assert!(stored
             .iter()
             .any(|s| s.source_url == "https://c.example.com/rss"));
-        assert!(!stored
-            .iter()
-            .any(|s| s.source_url == "https://b.example.com/rss"));
+        assert!(
+            stored
+                .iter()
+                .any(|s| s.source_url == "https://b.example.com/rss"),
+            "B 应原样保留"
+        );
         assert_eq!(version_of(conn, sub_id).0, "2.0");
     }
 
@@ -728,13 +724,13 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_replace_rules_add_update_remove_with_append_order() {
+    fn test_apply_replace_rules_add_update_keeps_missing_with_append_order() {
         let db = init_in_memory_database().unwrap();
         let conn = db.connection();
         let sub_id = seed_sub(conn, "replaceRule", "1.0");
         let repo = ReplaceRuleRepository::new(conn);
 
-        // 本地已有「旧规则」（order=5）与「将被移除」（order=6）
+        // 本地已有「旧规则」（order=5）与「远程缺失的本地规则」（order=6）
         let old_id = repo
             .insert(&ReplaceRule {
                 name: "旧规则".into(),
@@ -745,7 +741,7 @@ mod tests {
             })
             .unwrap();
         repo.insert(&ReplaceRule {
-            name: "将被移除".into(),
+            name: "远程缺失的本地规则".into(),
             pattern: "x".into(),
             replacement: "y".into(),
             order: 6,
@@ -772,13 +768,13 @@ mod tests {
             RuleSubApplyOutcome {
                 added: 1,
                 updated: 1,
-                removed: 1,
+                removed: 0,
                 total: 2
             }
         );
 
         let stored = repo.find_all().unwrap();
-        assert_eq!(stored.len(), 2);
+        assert_eq!(stored.len(), 3, "远程缺失的本地替换规则不得被删除");
         let old = stored.iter().find(|r| r.name == "旧规则").unwrap();
         assert_eq!(old.id, old_id, "按本地 id 更新，不新增重复行");
         assert_eq!(old.pattern, "a2");
@@ -786,7 +782,11 @@ mod tests {
         assert_eq!(old.order, 5, "已有规则排序不变");
         let added = stored.iter().find(|r| r.name == "新规则").unwrap();
         assert_eq!(added.order, 7, "新规则按 max+1 尾插");
-        assert!(!stored.iter().any(|r| r.name == "将被移除"));
+        let kept = stored
+            .iter()
+            .find(|r| r.name == "远程缺失的本地规则")
+            .expect("本地其他规则应原样保留");
+        assert_eq!(kept.order, 6, "未涉及规则的排序不变");
     }
 
     // ─── 回滚 / 错误 ──────────────────────────────────────
