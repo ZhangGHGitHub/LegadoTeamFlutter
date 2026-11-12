@@ -143,7 +143,8 @@ static SWITCH_APPLY_EPOCH: AtomicU64 = AtomicU64::new(0);
 /// 加法式；上游 `cancelChangeSource()` L715-721 的 FFI 化）
 pub fn cancel_switch_apply() {
     SWITCH_APPLY_EPOCH.fetch_add(1, Ordering::SeqCst);
-    super::web_book::bump_toc_fetch_epoch();
+    // 换源取消无具体书籍上下文：递增全局取消栅栏，中止所有在途目录链
+    super::web_book::bump_all_toc_fetch_epochs();
 }
 
 /// 增强预拉有界并发上限（保守值，论证见 [`enrich_switch_candidates_async`]
@@ -1107,11 +1108,11 @@ fn switch_book_source_prefetch_with<F: BookSourceFetcher>(
     }
 
     // 取消代数：cancel_switch_apply +1；各网络步骤前与提交前比对，取消后
-    // 不提交（DB 零变更），并 bump TOC 刷新代数中止在途分页链
+    // 不提交（DB 零变更），并递增全局取消栅栏中止在途目录分页链
     let apply_epoch = SWITCH_APPLY_EPOCH.load(Ordering::SeqCst);
     let ensure_not_cancelled = |epoch: u64| -> LegadoResult<()> {
         if epoch != SWITCH_APPLY_EPOCH.load(Ordering::SeqCst) {
-            super::web_book::bump_toc_fetch_epoch();
+            super::web_book::bump_all_toc_fetch_epochs();
             return Err(LegadoError::Internal("换源已取消".into()));
         }
         Ok(())

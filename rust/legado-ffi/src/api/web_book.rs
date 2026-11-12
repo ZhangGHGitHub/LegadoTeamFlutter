@@ -23,9 +23,9 @@ pub use legado_fetcher::web_book::RealBookSourceFetcher;
 
 // ─── 兄弟模块引用收口（re-export：原 `api::web_book` 路径与签名不变）──────────
 pub(crate) use legado_fetcher::web_book::{
-    begin_book_flow, book_var_overlay_map, build_js_orchestrator, bump_toc_fetch_epoch,
-    chapter_url_variables, convert_js_search_results, matches_book_url_pattern,
-    merge_variables_json, record_next_chapter_map,
+    begin_book_flow, book_var_overlay_map, build_js_orchestrator, bump_all_toc_fetch_epochs,
+    bump_toc_fetch_epoch, chapter_url_variables, convert_js_search_results,
+    matches_book_url_pattern, merge_variables_json, record_next_chapter_map,
 };
 
 // ─── 宿主注入面组装 ───────────────────────────────────────────────────────────

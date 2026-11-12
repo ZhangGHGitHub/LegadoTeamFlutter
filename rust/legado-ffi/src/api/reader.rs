@@ -722,11 +722,13 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
     source_url: &str,
     engine: &WebBookEngine<F>,
 ) -> LegadoResult<ChapterListResponse> {
-    // [性能专项 2026-09-24] 刷新代数 +1：本刷新成为最新代数，使在途旧刷新的
-    // 目录分页链在下一页边界判活失败而中止（换源场景取消 10 分钟在途链；
-    // 对齐上游 ensureActive() 判活语义，无状态 FFI 用进程级原子计数器，
-    // 不改 FFI 签名）。
-    crate::api::web_book::bump_toc_fetch_epoch();
+    // [性能专项 2026-09-24 | 2026-11-13 键控] 刷新代数 +1（**只加本书的键**）：
+    // 本刷新成为本书最新代数，使本书在途旧刷新的目录分页链在下一页边界判活
+    // 失败而中止（换源场景取消 10 分钟在途链；对齐上游 ensureActive() 判活语义）。
+    // 键 = 书籍稳定主键 book_url，与 fetcher 目录链（book_meta.book_url）同键；
+    // 改前为进程级单计数器：自动刷新 A 书期间手动刷新 B 书会误杀 A 的在途链。
+    // 无具体书籍的取消（换源取消/应用中止）走 bump_all_toc_fetch_epochs。
+    crate::api::web_book::bump_toc_fetch_epoch(book_url);
     // 1. 从数据库获取书源配置 + 书籍记录（书籍用于确定真实的目录抓取 URL）
     let (source, existing_book) = with_database(|db| {
         let source = BookSourceRepository::new(db.connection()).find_by_url(source_url)?;

@@ -2948,6 +2948,14 @@ impl RealBookSourceFetcher {
             .and_then(|r| r.next_toc_url.as_deref())
             .unwrap_or("")
             .trim();
+        // 取消判活键（按书籍键控）：书籍稳定主键优先（refresh_toc 链
+        // book_meta.book_url = DB books.bookUrl，与入口 bump 键一致）；无
+        // book 上下文的已知目录页路径退化为目录页 URL。
+        let epoch_key = book_meta
+            .map(|m| m.book_url.trim())
+            .filter(|u| !u.is_empty())
+            .unwrap_or(toc_url)
+            .to_string();
         if !next_toc_rule.is_empty() {
             let t_next = std::time::Instant::now();
             // [B-11] 排除判据 = 首抓页最终 URL（对齐原版
@@ -2983,14 +2991,16 @@ impl RealBookSourceFetcher {
                 // 分页分支同构，避免逐页重复查 DB。
                 let serial_header_set = self.parse_source_header_set(source);
                 let mut next_url = next_urls.remove(0);
-                // [性能专项 2026-09-24] 刷新代数在循环入口捕获（新刷新 bump 代数
-                // → 本链在下一页边界中止，对齐上游 ensureActive()）；目录总页数
-                // 上限含首抓页（上游仅靠 visited 去重，新 URL 失控链会无限抓取）。
-                let epoch = current_toc_fetch_epoch();
+                // [性能专项 2026-09-24] 刷新代数在循环入口捕获（同一本书的新刷新
+                // bump 本键代数 → 本链在下一页边界中止，对齐上游 ensureActive()）；
+                // 目录总页数上限含首抓页（上游仅靠 visited 去重，新 URL 失控链会
+                // 无限抓取）。
+                let epoch = current_toc_fetch_epoch(&epoch_key);
                 let mut toc_pages_seen: usize = 1;
                 while !next_url.is_empty() && visited.insert(next_url.clone()) {
-                    // 取消判活：被新刷新代数抢占 → 中止在途分页链（不静默、不写库）
-                    if epoch != current_toc_fetch_epoch() {
+                    // 取消判活：被同书新刷新/全局取消抢占 → 中止在途分页链
+                    // （不静默、不写库；其他书刷新不影响本链）
+                    if epoch != current_toc_fetch_epoch(&epoch_key) {
                         return Err(LegadoError::Internal(
                             "toc refresh superseded by a newer refresh generation".into(),
                         ));
@@ -3080,8 +3090,9 @@ impl RealBookSourceFetcher {
                 let volume_r = rules.volume.to_string();
                 let update_time_r = rules.update_time.to_string();
                 let client = self.deps.client.clone();
-                // [性能专项 2026-09-24] 刷新代数（并行拉页的取消判活基线）
-                let epoch = current_toc_fetch_epoch();
+                // [性能专项 2026-09-24] 刷新代数（并行拉页的取消判活基线；
+                // 2026-11-13 起按书籍键控，其他书刷新不再误杀本链）
+                let epoch = current_toc_fetch_epoch(&epoch_key);
 
                 let futs: Vec<_> = next_urls
                     .into_iter()
@@ -3097,12 +3108,13 @@ impl RealBookSourceFetcher {
                         let update_time_r = update_time_r.clone();
                         let client = client.clone();
                         let header_set = header_set.clone();
+                        let epoch_key = epoch_key.clone();
                         // P2-9 ②：并发分页页内解析器同样带 `book` 绑定（对齐串行分页与
                         // chapterList 层；此前并发分支缺失，`@js:book.name` 在该路径取空）
                         let book_binding = book_binding.clone();
                         async move {
-                            // 取消判活：被新刷新代数抢占 → 中止本页（不发请求）
-                            if epoch != current_toc_fetch_epoch() {
+                            // 取消判活：被同书新刷新/全局取消抢占 → 中止本页（不发请求）
+                            if epoch != current_toc_fetch_epoch(&epoch_key) {
                                 return Err(LegadoError::Internal(
                                     "toc refresh superseded by a newer refresh generation".into(),
                                 ));
@@ -3533,21 +3545,75 @@ const MAX_CONTENT_PAGES: usize = 99;
 //   = 5.1 万章，远超真实目录，截断保护。
 // - TOC_PAGE_CONCURRENCY：并行拉页（nextTocUrl 展开 >1 页）并发上限，对齐
 //   上游 `AppConfig.threadCount` 默认 32（原 `join_all` 无界）。
-// - TOC_FETCH_EPOCH：进程级刷新代数。每次 refresh_toc 入口 +1；目录分页链
-//   在每页边界比对捕获的代数，被新刷新抢占即中止（对齐上游 ensureActive()
-//   判活语义，无状态 FFI 用原子计数器实现，不改 FFI 签名）。
+// - TOC_FETCH_EPOCH：刷新代数（**按书籍键控**）。每次 refresh_toc 入口只为
+//   本书记数 +1；目录分页链在每页边界比对本书记数，被**同一本书**的新刷新
+//   抢占才中止（对齐上游 ensureActive() 判活语义）。键控修复（2026-11-13）：
+//   改前为进程级单一计数器——冷启动自动刷新 A 书期间，手动刷新任意 B 书都会
+//   让 A 的在途分页链被误杀（自动侧静默失败/手动侧成功数缩水）。无具体书籍
+//   的取消（换源取消/换源应用中止）仍走全局取消栅栏
+//   [`bump_all_toc_fetch_epochs`]，语义不变。
 const MAX_TOC_PAGES: usize = 512;
 const TOC_PAGE_CONCURRENCY: usize = 32;
-static TOC_FETCH_EPOCH: AtomicU64 = AtomicU64::new(0);
+/// 书籍键控代数表容量：键为书籍稳定主键（bookUrl），每次刷新覆盖同键值，
+/// 因此容量上限 = 进程内被刷新过的不同书籍数；超限时清掉过期代数（保留
+/// 最近 4096 代），极端情况下老在途链会被判为过期（安全侧：中止不写库）。
+const TOC_FETCH_EPOCHS_MAX: usize = 4096;
+/// 全局代数分配器（每次 refresh_toc 取一个单调递增世代号）
+static TOC_FETCH_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// 书籍键 → 最近一次刷新世代号
+static TOC_FETCH_EPOCHS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+/// 全局取消栅栏（无具体书籍的取消请求递增；所有在途链在下一页边界中止）
+static TOC_FETCH_CANCEL_FENCE: AtomicU64 = AtomicU64::new(0);
 
-/// 新刷新代数 +1（refresh_toc 入口调用，使在途旧刷新的分页链在下一页边界中止）
-pub fn bump_toc_fetch_epoch() {
-    TOC_FETCH_EPOCH.fetch_add(1, Ordering::SeqCst);
+fn toc_fetch_epochs() -> &'static Mutex<HashMap<String, u64>> {
+    TOC_FETCH_EPOCHS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// 当前刷新代数（分页链在页边界比对，不等即已被新刷新抢占）
-fn current_toc_fetch_epoch() -> u64 {
-    TOC_FETCH_EPOCH.load(Ordering::SeqCst)
+/// 刷新代数快照：书籍世代 + 全局取消栅栏
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TocFetchEpoch {
+    book: u64,
+    global: u64,
+}
+
+/// 为本书记录新刷新世代（refresh_toc 入口调用）
+///
+/// 只影响 `book_url` 对应的在途分页链；其他书籍的链不受影响。
+pub fn bump_toc_fetch_epoch(book_url: &str) {
+    let generation = TOC_FETCH_COUNTER
+        .fetch_add(1, Ordering::SeqCst)
+        .wrapping_add(1);
+    let mut epochs = toc_fetch_epochs()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    // 容量保护：极端多书场景下清掉过期世代（老链随即在页边界中止，安全侧）
+    if epochs.len() >= TOC_FETCH_EPOCHS_MAX {
+        epochs.retain(|_, v| v.saturating_add(TOC_FETCH_EPOCHS_MAX as u64) >= generation);
+    }
+    // 并发同书两次 bump 可能乱序取号：保留较大世代，确保「后取号者胜」
+    epochs
+        .entry(book_url.to_string())
+        .and_modify(|v| *v = (*v).max(generation))
+        .or_insert(generation);
+}
+
+/// 取消所有在途目录刷新（换源取消/换源应用中止等无具体书籍的场景）
+pub fn bump_all_toc_fetch_epochs() {
+    TOC_FETCH_CANCEL_FENCE.fetch_add(1, Ordering::SeqCst);
+}
+
+/// 当前刷新代数快照（分页链在页边界比对，不等即已被新刷新抢占）
+fn current_toc_fetch_epoch(book_url: &str) -> TocFetchEpoch {
+    let book = toc_fetch_epochs()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .get(book_url)
+        .copied()
+        .unwrap_or(0);
+    TocFetchEpoch {
+        book,
+        global: TOC_FETCH_CANCEL_FENCE.load(Ordering::SeqCst),
+    }
 }
 
 /// 解析单页正文，返回（净化后正文，下一页 URL 列表）
@@ -8956,6 +9022,169 @@ mod tests {
     fn has_proxy_header(head: &str) -> bool {
         head.lines()
             .any(|line| line.to_ascii_lowercase().starts_with("proxy:"))
+    }
+
+    /// 串行分页夹具：`/p2` 响应前触发 `on_p2`（模拟另一本书/同一本书的新
+    /// 刷新 bump 代数），`/p3` 返回末页。首抓页由调用方直接传 body。
+    ///
+    /// 注意：本夹具只用于 bump **书籍键**（互不影响其他用例）；全局取消
+    /// 栅栏是进程级状态，任何 bump_all 都会误杀并行测试的在途链，故全局
+    /// 取消语义用纯快照用例覆盖（见
+    /// `test_toc_fetch_epoch_snapshot_mismatch_semantics`）。
+    fn spawn_epoch_paging_server(
+        on_p2: Arc<dyn Fn() + Send + Sync>,
+    ) -> (u16, Arc<Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_srv = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&head).to_string();
+                let target = head
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
+                let path = target.split('?').next().unwrap_or("/");
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(head);
+                }
+                let body = match path {
+                    "/p2" => {
+                        on_p2();
+                        format!(
+                            r#"{{"rows":[{{"name":"第二章","url":"/c/2"}}],"next":"http://127.0.0.1:{port}/p3"}}"#
+                        )
+                    }
+                    "/p3" => r#"{"rows":[{"name":"第三章","url":"/c/3"}]}"#.to_string(),
+                    _ => r#"{"rows":[]}"#.to_string(),
+                };
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (port, seen)
+    }
+
+    fn epoch_test_source(base: &str) -> BookSource {
+        serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": base,
+            "bookSourceName": "epoch-fixture",
+            "ruleToc": {
+                "chapterList": "$.rows",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url",
+                "nextTocUrl": "$.next"
+            }
+        }))
+        .expect("epoch fixture source json")
+    }
+
+    fn run_epoch_chain(port: u16, book_key: &str) -> LegadoResult<Vec<WebChapter>> {
+        let base = format!("http://127.0.0.1:{port}");
+        let source = epoch_test_source(&base);
+        let toc_url = format!("{base}/toc/first");
+        let body = format!(r#"{{"rows":[{{"name":"第一章","url":"/c/1"}}],"next":"{base}/p2"}}"#);
+        let meta = BookMeta {
+            book_url: book_key.to_string(),
+            ..Default::default()
+        };
+        block_on(test_fetcher().parse_chapters_from_toc_body(
+            &source,
+            &toc_url,
+            body,
+            "代数夹具",
+            Some(&meta),
+            None,
+            std::time::Instant::now(),
+            &toc_url,
+        ))
+    }
+
+    /// P1 回归（2026-11-13）：刷新代数按书籍键控——自动刷新 A 书期间，
+    /// 另一本书 B 的新刷新不得取消 A 的在途目录分页链。
+    ///
+    /// 红证据：改前 bump 进程级单计数器时，B 的 bump 会让 A 在 `/p2` 之后
+    /// 的页边界判活失败，本用例 expect 章节数 3 会拿到 superseded 错误。
+    #[test]
+    fn test_toc_fetch_epoch_keyed_by_book_other_book_bump_does_not_cancel() {
+        let bumps = Arc::new(AtomicU64::new(0));
+        let bumps_srv = Arc::clone(&bumps);
+        let (port, _seen) = spawn_epoch_paging_server(Arc::new(move || {
+            bumps_srv.fetch_add(1, Ordering::SeqCst);
+            bump_toc_fetch_epoch("epoch-key-other-book");
+        }));
+
+        let chapters =
+            run_epoch_chain(port, "epoch-key-book-a").expect("其他书刷新不得取消本书在途目录链");
+
+        assert_eq!(bumps.load(Ordering::SeqCst), 1, "p2 必须触发外部 bump");
+        assert_eq!(
+            chapters.len(),
+            3,
+            "首抓页 + p2 + p3 共 3 章；被误杀时会在页边界返回 superseded"
+        );
+    }
+
+    /// P1 回归（2026-11-13）：同一本书的新刷新 bump 本键代数 → 在途旧链
+    /// 必须在下一页边界中止，且错误文案明确（不是静默空目录）。
+    #[test]
+    fn test_toc_fetch_epoch_same_book_bump_cancels_inflight_chain() {
+        let (port, _seen) = spawn_epoch_paging_server(Arc::new(|| {
+            bump_toc_fetch_epoch("epoch-key-same-book");
+        }));
+
+        let err =
+            run_epoch_chain(port, "epoch-key-same-book").expect_err("同书新刷新必须取消在途旧链");
+        assert!(
+            err.to_string()
+                .contains("toc refresh superseded by a newer refresh generation"),
+            "取消错误必须明确可辨识，实际: {err}"
+        );
+    }
+
+    /// 全局取消栅栏（换源取消/应用中止）语义：快照任一维度变化即判失效。
+    ///
+    /// 不使用 bump_all 实弹：全局栅栏是进程级状态，会误杀并行测试的在途
+    /// 分页链（cargo 默认并行）。分页链真实判活已由上面两个用例覆盖，
+    /// 此处只钉住「全局维度参与比较」这一契约。
+    #[test]
+    fn test_toc_fetch_epoch_snapshot_mismatch_semantics() {
+        let captured = TocFetchEpoch { book: 7, global: 3 };
+        assert_eq!(captured, TocFetchEpoch { book: 7, global: 3 });
+        assert_ne!(
+            captured,
+            TocFetchEpoch { book: 8, global: 3 },
+            "同书新刷新（书籍世代变化）必须判为过期"
+        );
+        assert_ne!(
+            captured,
+            TocFetchEpoch { book: 7, global: 4 },
+            "全局取消栅栏变化必须判为过期"
+        );
     }
 
     /// 批29b 审查 P2-3（负例①）/P2-6：并发 nextTocUrl 分页跨域页不得携带
