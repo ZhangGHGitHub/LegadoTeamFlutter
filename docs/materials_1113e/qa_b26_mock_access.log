@@ -1,0 +1,9 @@
+GET /book1.html
+GET /chapter2.html
+GET /chapter3.html
+GET /chapter4.html
+GET /review/summary
+GET /chapter5.html
+GET /chapter6.html
+GET /review/detail
+GET /review/summary
