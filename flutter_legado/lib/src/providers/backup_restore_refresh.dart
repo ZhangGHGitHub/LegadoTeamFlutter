@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../constants/pref_keys.dart';
+import '../services/process_text_service.dart';
 import '../services/replace_default_sync.dart';
 import 'bookshelf/bookshelf_notifier.dart';
 import 'bookshelf_settings/bookshelf_settings_notifier.dart';
@@ -80,4 +81,13 @@ Future<void> reloadAppStateAfterBackupRestore(WidgetRef ref) async {
   // 随后都让缓存 provider 失效，下次菜单 watch 重读 prefs。
   await syncReplaceEnableDefaultAfterRestore(ref.read(bookApiProvider));
   ref.invalidate(replaceEnableDefaultProvider);
+  // process_text：备份 appPrefs 可能替换「文字操作显示搜索」开关，恢复后
+  // 立即把偏好应用到 Android PROCESS_TEXT 入口组件。否则同会话打开设置页
+  // 会用组件旧状态反写偏好（对齐原版 read-back 语义），静默丢弃恢复值。
+  // 非 Android 平台内部直接跳过；失败不阻断恢复。
+  try {
+    await ProcessTextMenuService.syncFromPref(settings);
+  } catch (e) {
+    debugPrint('恢复后同步文字操作开关失败（不阻断恢复）：$e');
+  }
 }

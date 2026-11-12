@@ -61,7 +61,7 @@ object ProcessTextBridge {
 
     fun isEnabled(context: Context): Boolean {
         val state = context.packageManager.getComponentEnabledSetting(component(context))
-        return state != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        return isEnabledState(state)
     }
 
     fun setEnabled(context: Context, enabled: Boolean) {
@@ -80,6 +80,15 @@ object ProcessTextBridge {
     } else {
         PackageManager.COMPONENT_ENABLED_STATE_DISABLED
     }
+
+    /**
+     * 组件状态 → 是否启用（纯函数，供 JVM 单测）：
+     * 仅 DISABLED 视为关闭；DEFAULT（manifest enabled=true 且从未设置过）/
+     * ENABLED / DISABLED_USER 等均视为启用，与原版
+     * `!= COMPONENT_ENABLED_STATE_DISABLED` 判定一致。
+     */
+    fun isEnabledState(componentState: Int): Boolean =
+        componentState != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
 
     private fun component(context: Context): ComponentName =
         ComponentName(context.packageName, ALIAS_CLASS)

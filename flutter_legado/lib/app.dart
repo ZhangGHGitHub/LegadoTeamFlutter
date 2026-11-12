@@ -412,10 +412,23 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// 自动刷新书架完成提示（轻量 SnackBar；无成功项/路径未就绪时静默）
+  /// 自动刷新书架完成提示（轻量 SnackBar）
+  ///
+  /// 仅在书架主路由可见且隐私闸门放行时提示：避免冷启动自动刷新结束时
+  /// 用户已在阅读页/隐私锁屏，SnackBar 弹在无关界面（阅读页遮挡正文）。
+  /// 其余情形静默丢弃——刷新结果仍可通过书架章节数变化观察。
   void _showAutoRefreshNotice(AutoRefreshBookResult result) {
     final message = result.notice;
     if (message == null || !mounted) return;
+    if (_privacyGateBlocked.value) {
+      debugPrint('[AutoRefreshBook] 隐私闸门未放行，跳过完成提示');
+      return;
+    }
+    if (!_topRouteWatcher.didObserveTopChange ||
+        _topRouteWatcher.topRouteName != AppRoutes.home) {
+      debugPrint('[AutoRefreshBook] 当前不在书架主路由，跳过完成提示');
+      return;
+    }
     final context = PlatformBridgeService.navigatorKey.currentContext;
     if (context == null || !context.mounted) return;
     ScaffoldMessenger.of(context)
@@ -428,6 +441,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     WidgetsBinding.instance.removeObserver(_privacyBackGuard);
     // [批10] 先解除调度器对隐私 notifier 的监听，再释放 notifier
     AutoCheckNewBackupScheduler.instance?.dispose();
+    // 自动刷新调度器持有启动 Timer 与捕获 ref 的闭包：随根 State 释放，
+    // 避免测试/热重启后残留定时器与单例引用
+    AutoRefreshBookScheduler.instance?.dispose();
     _privacyGateBlocked.dispose();
     super.dispose();
   }

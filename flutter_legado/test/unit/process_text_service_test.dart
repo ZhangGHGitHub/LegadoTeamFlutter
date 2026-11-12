@@ -76,6 +76,16 @@ void main() {
       expect(platformEnabled, isTrue);
     });
 
+    test('原生返回 null → setEnabled 返回 null（调用方回滚开关）', () async {
+      messenger().setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+
+      expect(await ProcessTextMenuService.setEnabled(false), isNull);
+      expect(calls.single.method, 'setEnabled');
+    });
+
     test('syncFromPref 把偏好值应用到原生组件', () async {
       installBridge();
       SharedPreferences.setMockInitialValues({PrefKeys.processText: false});

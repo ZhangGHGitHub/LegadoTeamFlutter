@@ -36,6 +36,12 @@ class ProcessTextMenuService {
 
   static const MethodChannel _channel = MethodChannel('legado/process_text');
 
+  /// 设置组件状态的通道超时：备份恢复链 await 本调用，原生无响应时不得
+  /// 让恢复进度对话框永久挂起（测试环境无原生桥时 Future 可能不完成）。
+  /// 读取类调用不设超时——设置页只做一次探测，异常已由 catch 兜底；加
+  /// Timer 会让「仅渲染设置页」的测试在 teardown 报 pending timer。
+  static const Duration _setChannelTimeout = Duration(seconds: 3);
+
   /// 当前平台是否支持（仅 Android 有系统文字操作菜单）
   static bool get isSupported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -56,15 +62,17 @@ class ProcessTextMenuService {
 
   /// 启用/禁用 PROCESS_TEXT 入口组件
   ///
-  /// 返回实际生效状态；非 Android / 桥未注册或执行失败时返回 null
+  /// 返回实际生效状态；非 Android / 桥未注册、超时或执行失败时返回 null
   /// （调用方据此回滚 UI 并提示，不向界面抛异常）。
   static Future<bool?> setEnabled(bool enabled) async {
     if (!isSupported) return null;
     try {
-      final applied = await _channel.invokeMethod<bool>('setEnabled', {
-        'enabled': enabled,
-      });
-      return applied ?? enabled;
+      final applied = await _channel
+          .invokeMethod<bool>('setEnabled', {'enabled': enabled})
+          .timeout(_setChannelTimeout);
+      // 原生未回传明确结果（null）视同失败：调用方据此回滚开关，
+      // 不允许「偏好已改但系统菜单没变」的假生效。
+      return applied;
     } catch (e) {
       debugPrint('[ProcessText] 设置组件状态失败（enabled=$enabled）：$e');
       return null;
