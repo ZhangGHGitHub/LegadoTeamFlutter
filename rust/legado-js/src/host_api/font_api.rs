@@ -22,11 +22,22 @@
 //! `{"fontId":"...","type":"url|file|base64","data":"...","valid":bool}`，
 //! `replaceFont(text, errorHandle, correctHandle, filter?)` 返回替换后文本；
 //! 书源 JS 调用方式无需任何改动。
+//!
+//! # 本地路径策略（批21-B）
+//!
+//! `type=file` 分支读取本地文件，受 [`FsPolicy`] 约束：JS 注册层把
+//! `SandboxConfig.allow_file_access` 派生为策略传入 `*_with_policy` 入口。
+//! `allow_file_access=false`（书源生产路径）时仅允许引擎自建目录内的字体
+//! 路径，越界返回 `valid=false` 且附 `error` 字段的句柄（显式拒绝）；
+//! URL / Base64 分支不受影响（原版 Kotlin 也只支持这两种字符串形态）。
+//! 本模块的 `query_ttf` / `replace_font` / `query_base64_ttf` 是**不受限**
+//! 核心实现（Rust 侧调用 / 单测用），安全边界在 JS 注册层。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 
+use crate::host_api::fs_policy::FsPolicy;
 use crate::host_api::query_ttf::QueryTtf;
 
 /// 内存 LRU 缓存容量（对应 Kotlin `AppCacheManager.queryTTFMap = LruCache(4)`）
@@ -123,13 +134,32 @@ fn classify(data: &str) -> &'static str {
 /// ```json
 /// {"fontId":"...","type":"url|file|base64","data":"...","valid":true}
 /// ```
+///
+/// 本函数为**不受限**核心实现（Rust 侧调用 / 单测）；JS 注册层使用
+/// [`query_ttf_with_policy`]，按 `allow_file_access` 收紧本地文件路径。
 pub fn query_ttf(data: &str, use_cache: bool) -> String {
+    query_ttf_with_policy(data, use_cache, FsPolicy::unrestricted())
+}
+
+/// queryTTF 的带路径策略变体（JS 宿主绑定入口）
+///
+/// 策略先于缓存生效：受限引擎不会因宽松引擎（如测试/permissive 配置）
+/// 先前缓存过同一路径的句柄而绕过白名单。
+pub fn query_ttf_with_policy(data: &str, use_cache: bool, policy: FsPolicy) -> String {
     if data.is_empty() {
         return "null".to_string();
     }
 
     // 缓存 key：SHA-256(data)，对齐 Kotlin
     let cache_key = sha256_hex(data.as_bytes());
+    let font_type = classify(data);
+
+    // 本地文件路径先过白名单（在缓存命中之前，避免跨引擎缓存绕过策略）
+    if font_type == "file" {
+        if let Err(e) = policy.resolve_read_path(data) {
+            return policy_rejected_handle(&cache_key, font_type, data, e);
+        }
+    }
 
     // 检查句柄缓存（对齐 Kotlin AppCacheManager.getQueryTTF）
     if use_cache {
@@ -141,10 +171,8 @@ pub fn query_ttf(data: &str, use_cache: bool) -> String {
         }
     }
 
-    let font_type = classify(data);
-
     // 加载字体二进制：磁盘缓存 → 下载 / 读文件 / base64 解码
-    let font_bytes = load_font_bytes(data, font_type, &cache_key);
+    let font_bytes = load_font_bytes(data, font_type, &cache_key, policy);
     let (font_bytes, valid) = match font_bytes {
         Ok(bytes) => (Some(bytes), true),
         Err(_) => (None, false),
@@ -177,8 +205,28 @@ pub fn query_ttf(data: &str, use_cache: bool) -> String {
     handle
 }
 
+/// 路径策略拒绝时返回的句柄 JSON（显式错误，不静默）
+///
+/// 保持既有四字段形状并追加 `error`（additive，调用端可忽略）。
+fn policy_rejected_handle(font_id: &str, font_type: &str, data: &str, error: String) -> String {
+    eprintln!("[queryTTF] {error}");
+    serde_json::json!({
+        "fontId": font_id,
+        "type": font_type,
+        "data": data,
+        "valid": false,
+        "error": error
+    })
+    .to_string()
+}
+
 /// 加载字体二进制（URL 走磁盘缓存 + legado-net 下载，file 直接读取，base64 解码）
-fn load_font_bytes(data: &str, font_type: &str, cache_key: &str) -> Result<Vec<u8>, String> {
+fn load_font_bytes(
+    data: &str,
+    font_type: &str,
+    cache_key: &str,
+    policy: FsPolicy,
+) -> Result<Vec<u8>, String> {
     match font_type {
         "url" => {
             let cache_path = font_cache_dir().join(format!("{}.ttf", cache_key));
@@ -198,7 +246,9 @@ fn load_font_bytes(data: &str, font_type: &str, cache_key: &str) -> Result<Vec<u
         }
         "file" => {
             let path = data.strip_prefix("file://").unwrap_or(data);
-            std::fs::read(path).map_err(|e| format!("read font file error: {}", e))
+            // 受限模式：仅允许引擎沙箱/字体缓存目录内的路径
+            let resolved = policy.resolve_read_path(path)?;
+            std::fs::read(resolved).map_err(|e| format!("read font file error: {}", e))
         }
         _ => {
             use base64::Engine;
@@ -244,6 +294,11 @@ pub fn query_base64_ttf(data: &str) -> String {
     query_ttf(data, true)
 }
 
+/// queryBase64TTF 的带路径策略变体（JS 宿主绑定入口）
+pub fn query_base64_ttf_with_policy(data: &str, policy: FsPolicy) -> String {
+    query_ttf_with_policy(data, true, policy)
+}
+
 /// replaceFont(text, errorFontData, correctFontData, filter?) → 替换后文本
 ///
 /// 对应 Kotlin: `replaceFont(text, errorQueryTTF, correctQueryTTF, filter): String`
@@ -258,6 +313,26 @@ pub fn replace_font(
     error_font_data: &str,
     correct_font_data: &str,
     filter: bool,
+) -> String {
+    replace_font_with_policy(
+        text,
+        error_font_data,
+        correct_font_data,
+        filter,
+        FsPolicy::unrestricted(),
+    )
+}
+
+/// replaceFont 的带路径策略变体（JS 宿主绑定入口）
+///
+/// `filter` / 句柄语义与 [`replace_font`] 完全一致；额外约束：句柄
+/// `type=file` 时按策略校验路径（防伪造句柄绕过 `queryTTF` 白名单再读文件）。
+pub fn replace_font_with_policy(
+    text: &str,
+    error_font_data: &str,
+    correct_font_data: &str,
+    filter: bool,
+    policy: FsPolicy,
 ) -> String {
     // 任一句柄为空或 null 时直接返回原文
     if error_font_data.is_empty()
@@ -283,8 +358,8 @@ pub fn replace_font(
 
     // 取得两个已解析字体（LRU 命中优先，否则按句柄重新加载）
     let (Some(error_font), Some(correct_font)) = (
-        resolve_font(error_font_data),
-        resolve_font(correct_font_data),
+        resolve_font(error_font_data, policy),
+        resolve_font(correct_font_data, policy),
     ) else {
         // 任一字体不可用：降级返回原文（对应 Kotlin 端 null 句柄分支）
         return text.to_string();
@@ -324,7 +399,7 @@ pub fn replace_font(
 }
 
 /// 从句柄 JSON 还原已解析字体：LRU 命中优先，否则按 type/data 重新加载解析
-fn resolve_font(handle_json: &str) -> Option<QueryTtf> {
+fn resolve_font(handle_json: &str, policy: FsPolicy) -> Option<QueryTtf> {
     let handle: serde_json::Value = serde_json::from_str(handle_json).ok()?;
     let font_id = handle.get("fontId")?.as_str()?;
 
@@ -334,7 +409,7 @@ fn resolve_font(handle_json: &str) -> Option<QueryTtf> {
 
     let data = handle.get("data")?.as_str()?;
     let font_type = handle.get("type")?.as_str()?;
-    let bytes = load_font_bytes(data, font_type, font_id).ok()?;
+    let bytes = load_font_bytes(data, font_type, font_id, policy).ok()?;
     let ttf = QueryTtf::parse(&bytes).ok()?;
     lru_put(font_id.to_string(), clone_query_ttf(&ttf));
     Some(ttf)
@@ -702,9 +777,80 @@ pub mod tests {
         );
         std::fs::write(&cache_path, &font).unwrap();
         // 磁盘缓存命中：不触发网络下载
-        let bytes = load_font_bytes("https://cached.example.com/font.ttf", "url", &key).unwrap();
+        let bytes = load_font_bytes(
+            "https://cached.example.com/font.ttf",
+            "url",
+            &key,
+            FsPolicy::unrestricted(),
+        )
+        .unwrap();
         assert_eq!(bytes, font);
         // 清理
         let _ = std::fs::remove_file(&cache_path);
+    }
+
+    #[test]
+    fn test_query_ttf_restricted_rejects_outside_file() {
+        // 受限策略：沙箱外字体路径 → valid=false + error（显式拒绝，不静默）
+        let dir = std::env::temp_dir().join(format!(
+            "legado_font_policy_deny_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("demoted.ttf");
+        std::fs::write(&path, b"not-a-real-font").unwrap();
+
+        let handle = query_ttf_with_policy(path.to_str().unwrap(), false, FsPolicy::restricted());
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], false);
+        assert!(
+            parsed["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("文件访问被拒绝"),
+            "handle = {handle}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_query_ttf_restricted_allows_font_cache_file() {
+        // 受限策略：引擎字体缓存目录内的字体仍可读（能力保留）
+        let dir = font_cache_dir().join(format!(
+            "policy_allow_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("fixture.ttf");
+        std::fs::write(
+            &path,
+            build_minimal_ttf(
+                &[Segment {
+                    start: 0x41,
+                    end: 0x41,
+                    id_delta: -0x40,
+                }],
+                false,
+            ),
+        )
+        .unwrap();
+
+        let handle = query_ttf_with_policy(path.to_str().unwrap(), false, FsPolicy::restricted());
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], true);
+        assert!(parsed.get("error").is_none(), "handle = {handle}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

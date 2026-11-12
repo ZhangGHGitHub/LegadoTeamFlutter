@@ -12,7 +12,7 @@
 //! |------|----------------------------------------|------|
 //! | 执行超时 | 5 秒 | 超时后中断脚本执行 |
 //! | eval / Function | **书源路径启用** | `EnginePool` 默认 `allow_script_run=true`（对齐 Rhino 书源信任模型，v1.26）；`SandboxConfig::default()` 仍为 false，供 `js_eval` 等调试/严格入口 |
-//! | 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API |
+//! | 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API；archive/font API 仍注册，但本地路径仅允许引擎自建目录（`legado_js_cache` / `legado_font_cache`，见 `host_api::fs_policy`） |
 //! | 网络 | 受控保留 | 书源网络经 legado-net 宿主 API 统一通道；`allow_network` 为配置/文档口径（D3=A，非 Runtime 门控，F3-3） |
 //! | 内存 | 16 MB | 超过后 QuickJS 分配失败 |
 //! | 栈深度 | 512 | 配置预留；rquickjs 暂无栈深度 API，未强制 enforcement（F3-3 文档对齐） |
@@ -217,6 +217,14 @@ pub struct SandboxConfig {
     /// 参考 Kotlin 端 Rhino 的 `allowScriptRun` 闸门
     pub allow_script_run: bool,
     /// 是否允许访问文件系统
+    ///
+    /// - `false`（默认 / 书源生产路径）：不注册 `readFile` / `writeFile` 等
+    ///   文件 API；`archive` / `font` API（`unzipFile` / `getZipStringContent` /
+    ///   `queryTTF` 等）仍注册以保留书源能力，但**本地路径**只允许引擎自建
+    ///   目录（JS 沙箱根与字体缓存，见 `host_api::fs_policy`），越界返回明确
+    ///   错误。原版 Kotlin 的文件 API 同样限制在应用缓存目录内
+    ///   （`JsExtensions.getFile`），故此处不构成对原版书源能力的削减。
+    /// - `true`（调试 / 可信脚本）：文件 API 注册，archive/font 本地路径不受限。
     pub allow_file_access: bool,
     /// 是否允许网络请求（文档口径：书源网络经宿主 API；非 Runtime 门控，F3-3）
     pub allow_network: bool,

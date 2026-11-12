@@ -24,6 +24,9 @@ pub mod encoding;
 pub mod env;
 pub mod file_utils;
 pub mod font_api;
+/// archive / font 本地路径访问策略（`allow_file_access=false` 时仅允许
+/// 引擎自建临时/缓存目录，见模块文档）
+pub mod fs_policy;
 pub mod global_headers;
 pub mod html_format;
 #[cfg(feature = "quickjs")]

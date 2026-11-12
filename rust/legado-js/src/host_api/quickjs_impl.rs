@@ -33,8 +33,9 @@ use legado_core::LegadoError;
 use crate::host_api::{
     archive_utils, asymmetric_crypto, cache_store, capability_ledger, chinese_utils,
     concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils, font_api,
-    html_format, html_parse, json_utils, message_digest, misc_api, network, platform, regex_utils,
-    register::mount_dual, string_utils, symmetric_crypto, time_utils, variable_store,
+    fs_policy::FsPolicy, html_format, html_parse, json_utils, message_digest, misc_api, network,
+    platform, regex_utils, register::mount_dual, string_utils, symmetric_crypto, time_utils,
+    variable_store,
 };
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
@@ -198,15 +199,18 @@ pub fn register_all_apis<'js>(
     register_config_apis(ctx, &java, &globals)?;
     register_concurrency_apis(ctx, &java, &globals)?;
     register_misc_apis(ctx, &java, &globals)?;
-    // [批20-A 审查 P2-5 风险登记] archive/font API（unzipFile /
-    // getZipStringContent / queryTTF 等）可读取调用方传入的本地路径/解压
-    // 任意 ZIP，但**未**随 allow_file_access 门控。原因：生产引擎统一为
-    // `SandboxConfig::default()`（allow_file_access=false），若一并门控会
-    // 移除书源实际依赖的字体/压缩能力（queryTTF、unzipFile 等），属行为
-    // 回退；故保留现有兼容面并登记为已知残余风险，后续如需收紧须先提供
-    // 书源兼容替代（如仅允许 URL/内存字节输入）。
-    register_archive_apis(ctx, &java, &globals)?;
-    register_font_apis(ctx, &java, &globals)?;
+    // [批21-B P2-5] archive/font API 的本地路径按 SandboxConfig 派生策略
+    // 收紧（批20 仅登记风险）：`allow_file_access=false`（生产默认）时，
+    // `unzipFile` / `getZipStringContent` / `queryTTF` 等只允许访问**引擎
+    // 自建目录**（JS 沙箱根 + 字体缓存）内的路径，越界返回明确错误；
+    // `allow_file_access=true` 保持既有不受限行为（调试/可信脚本）。
+    // 边界与理由见 `host_api::fs_policy` 模块文档：原版 Kotlin 的文件
+    // API 本就限制在应用缓存目录内，且 `getZipStringContent` 只收 URL/十六
+    // 进制、`queryTTF(String)` 只收 URL/Base64——本地路径分支是我方扩展，
+    // 收紧不削减原版书源能力。
+    let fs_policy = FsPolicy::from_sandbox_config(config);
+    register_archive_apis(ctx, &java, &globals, fs_policy)?;
+    register_font_apis(ctx, &java, &globals, fs_policy)?;
     // 全局 cache 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存，对齐 WebCacheManager）
     register_cache_apis(ctx, &java, &globals)?;
 
@@ -4520,14 +4524,22 @@ fn register_archive_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
+    policy: FsPolicy,
 ) -> Result<(), LegadoError> {
     // unzipFile / unArchiveFile(zipPath) -> String（解压目标目录）
     // 对应 Kotlin: unzipFile → unArchiveFile；空路径返回空串
-    let unarchive = rquickjs::Function::new(ctx.clone(), |zip_path: RhinoStr| -> String {
+    //
+    // 批21-B：入参路径先过 FsPolicy；越界返回 `[ERROR]` 明确错误（不静默）。
+    // 默认输出目录 = 压缩包同目录（输入在允许根内 ⇒ 输出也在允许根内）。
+    let unarchive = rquickjs::Function::new(ctx.clone(), move |zip_path: RhinoStr| -> String {
         if zip_path.is_empty() {
             return String::new();
         }
-        archive_utils::un_archive_file(&zip_path, None).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        let path = match policy.resolve_read_path(&zip_path) {
+            Ok(p) => p.to_string_lossy().into_owned(),
+            Err(e) => return format!("[ERROR] {}", e),
+        };
+        archive_utils::un_archive_file(&path, None).unwrap_or_else(|e| format!("[ERROR] {}", e))
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("unzipFile", unarchive.clone())
@@ -4550,8 +4562,8 @@ fn register_archive_apis<'js>(
         "getZipStringContent",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
-                get_zip_string_content_js(&url, &entry, charset.0.as_deref())
+            move |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
+                get_zip_string_content_js(&url, &entry, charset.0.as_deref(), policy)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4565,9 +4577,13 @@ fn register_archive_apis<'js>(
         "un7zFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |seven_z_path: RhinoStr, output_path: RhinoOptStr| -> String {
-                archive_utils::un7z_file(&seven_z_path, output_path.0.as_deref())
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            move |seven_z_path: RhinoStr, output_path: RhinoOptStr| -> String {
+                extract_archive_with_policy(
+                    policy,
+                    &seven_z_path,
+                    output_path.0.as_deref(),
+                    archive_utils::un7z_file,
+                )
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4581,9 +4597,13 @@ fn register_archive_apis<'js>(
         "unrarFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |rar_path: RhinoStr, output_path: RhinoOptStr| -> String {
-                archive_utils::unrar_file(&rar_path, output_path.0.as_deref())
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            move |rar_path: RhinoStr, output_path: RhinoOptStr| -> String {
+                extract_archive_with_policy(
+                    policy,
+                    &rar_path,
+                    output_path.0.as_deref(),
+                    archive_utils::unrar_file,
+                )
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4598,8 +4618,8 @@ fn register_archive_apis<'js>(
         "get7zStringContent",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
-                get_7z_string_content_js(&url, &entry, charset.0.as_deref())
+            move |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
+                get_7z_string_content_js(&url, &entry, charset.0.as_deref(), policy)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4614,8 +4634,8 @@ fn register_archive_apis<'js>(
         "getRarStringContent",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
-                get_rar_string_content_js(&url, &entry, charset.0.as_deref())
+            move |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
+                get_rar_string_content_js(&url, &entry, charset.0.as_deref(), policy)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4624,17 +4644,51 @@ fn register_archive_apis<'js>(
     Ok(())
 }
 
+/// 解压类 API 的公共入口：输入/输出路径过策略后调用具体解压函数
+///
+/// - 输入必须在允许根内（受限模式）；输出目录若显式传入同样校验；
+/// - 输出为 `None` 时由各解压实现默认到输入同目录（输入已受限 ⇒ 输出受限）。
+fn extract_archive_with_policy(
+    policy: FsPolicy,
+    input: &str,
+    output: Option<&str>,
+    extract: impl FnOnce(&str, Option<&str>) -> Result<String, String>,
+) -> String {
+    let input = match policy.resolve_read_path(input) {
+        Ok(p) => p.to_string_lossy().into_owned(),
+        Err(e) => return format!("[ERROR] {}", e),
+    };
+    let output = match output {
+        Some(raw) if !raw.is_empty() => match policy.resolve_write_path(raw) {
+            Ok(p) => Some(p.to_string_lossy().into_owned()),
+            Err(e) => return format!("[ERROR] {}", e),
+        },
+        _ => None,
+    };
+    extract(&input, output.as_deref()).unwrap_or_else(|e| format!("[ERROR] {}", e))
+}
+
 /// getZipStringContent 的 JS 入口实现：解析 ZIP 来源并读取指定条目的字符串内容
 ///
 /// 对应 Kotlin `getZipByteArrayContent` + `getZipStringContent`：
 /// - 绝对 URL → 经 legado-net 下载 ZIP 字节
-/// - 本地存在的文件路径 → 直接读取
+/// - 本地存在的文件路径 → 直接读取（批21-B：受限模式须在引擎沙箱根内，
+///   越界返回 `[ERROR]` 明确错误）
 /// - 其余按十六进制字符串解码
-///   失败时记录日志并返回空串（对齐 Kotlin `log("getZipContent 未发现内容")` + `return ""`）
-fn get_zip_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
-    let bytes = match resolve_zip_bytes(url) {
+///   其它失败记录日志并返回空串（对齐 Kotlin `log("getZipContent 未发现内容")` + `return ""`）
+fn get_zip_string_content_js(
+    url: &str,
+    entry: &str,
+    charset: Option<&str>,
+    policy: FsPolicy,
+) -> String {
+    let bytes = match resolve_zip_bytes(url, policy) {
         Ok(b) => b,
-        Err(e) => {
+        Err(ArchiveResolveError::Denied(e)) => {
+            eprintln!("[getZipStringContent] {e}");
+            return format!("[ERROR] {e}");
+        }
+        Err(ArchiveResolveError::Other(e)) => {
             eprintln!("[getZipStringContent] ZIP 来源解析失败: {e}");
             return String::new();
         }
@@ -4649,18 +4703,27 @@ fn get_zip_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> S
 }
 
 /// 解析 getZipStringContent 的 ZIP 来源为字节数据
-fn resolve_zip_bytes(source: &str) -> Result<Vec<u8>, String> {
-    resolve_archive_bytes(source, "ZIP")
+fn resolve_zip_bytes(source: &str, policy: FsPolicy) -> Result<Vec<u8>, ArchiveResolveError> {
+    resolve_archive_bytes(source, "ZIP", policy)
 }
 
 /// get7zStringContent 的 JS 入口实现：解析 7z 来源并读取指定条目的字符串内容
 ///
 /// 对应 Kotlin `get7zByteArrayContent` + `get7zStringContent`；
 /// 失败时记录日志并返回空串（对齐 Kotlin `?: return ""`）
-fn get_7z_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
-    let bytes = match resolve_archive_bytes(url, "7z") {
+fn get_7z_string_content_js(
+    url: &str,
+    entry: &str,
+    charset: Option<&str>,
+    policy: FsPolicy,
+) -> String {
+    let bytes = match resolve_archive_bytes(url, "7z", policy) {
         Ok(b) => b,
-        Err(e) => {
+        Err(ArchiveResolveError::Denied(e)) => {
+            eprintln!("[get7zStringContent] {e}");
+            return format!("[ERROR] {e}");
+        }
+        Err(ArchiveResolveError::Other(e)) => {
             eprintln!("[get7zStringContent] 7z 来源解析失败: {e}");
             return String::new();
         }
@@ -4678,10 +4741,19 @@ fn get_7z_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> St
 ///
 /// 对应 Kotlin `getRarByteArrayContent` + `getRarStringContent`；
 /// 失败时记录日志并返回空串（对齐 Kotlin `?: return ""`）
-fn get_rar_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> String {
-    let bytes = match resolve_archive_bytes(url, "RAR") {
+fn get_rar_string_content_js(
+    url: &str,
+    entry: &str,
+    charset: Option<&str>,
+    policy: FsPolicy,
+) -> String {
+    let bytes = match resolve_archive_bytes(url, "RAR", policy) {
         Ok(b) => b,
-        Err(e) => {
+        Err(ArchiveResolveError::Denied(e)) => {
+            eprintln!("[getRarStringContent] {e}");
+            return format!("[ERROR] {e}");
+        }
+        Err(ArchiveResolveError::Other(e)) => {
             eprintln!("[getRarStringContent] RAR 来源解析失败: {e}");
             return String::new();
         }
@@ -4695,8 +4767,24 @@ fn get_rar_string_content_js(url: &str, entry: &str, charset: Option<&str>) -> S
     }
 }
 
+/// 压缩来源解析失败原因
+///
+/// 区分「本地路径越界」：受限模式（`allow_file_access=false`）下路径不在
+/// 引擎白名单内时返回 `[ERROR]` 明确错误（批21-B P2-5），不静默降级为空串；
+/// 其余失败保持 Kotlin 语义（记录日志 + 返回空串）。
+enum ArchiveResolveError {
+    /// 路径策略拒绝
+    Denied(String),
+    /// 网络 / 十六进制 / 压缩包解析等其它失败
+    Other(String),
+}
+
 /// 解析压缩档案来源为字节数据（ZIP / 7z / RAR 共用）
-fn resolve_archive_bytes(source: &str, kind: &str) -> Result<Vec<u8>, String> {
+fn resolve_archive_bytes(
+    source: &str,
+    kind: &str,
+    policy: FsPolicy,
+) -> Result<Vec<u8>, ArchiveResolveError> {
     // 网络 URL：经 legado-net 二进制通道下载（尽力支持；
     // legado-net 响应体当前经 String 中转，纯二进制压缩包可能受影响）
     if source.starts_with("http://") || source.starts_with("https://") {
@@ -4704,20 +4792,27 @@ fn resolve_archive_bytes(source: &str, kind: &str) -> Result<Vec<u8>, String> {
         return block_on(async {
             // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
             let client = crate::host_api::network::shared_client_for_url(source)
-                .map_err(|e| format!("网络客户端初始化失败: {e}"))?;
+                .map_err(|e| ArchiveResolveError::Other(format!("网络客户端初始化失败: {e}")))?;
             client
                 .get_bytes(source, None)
                 .await
-                .map_err(|e| format!("{kind} 下载失败: {e}"))
+                .map_err(|e| ArchiveResolveError::Other(format!("{kind} 下载失败: {e}")))
         });
     }
-    // 本地文件路径
-    let path = std::path::Path::new(source);
-    if path.exists() {
-        return std::fs::read(path).map_err(|e| format!("读取本地 {kind} 文件失败: {e}"));
+    // 本地文件路径：受限模式先过白名单（批21-B）。空串跳过（沿用既有
+    // 十六进制分支的失败语义，返回空串而非策略错误）。
+    if !source.is_empty() {
+        let path = policy
+            .resolve_read_path(source)
+            .map_err(ArchiveResolveError::Denied)?;
+        if path.exists() {
+            return std::fs::read(&path)
+                .map_err(|e| ArchiveResolveError::Other(format!("读取本地 {kind} 文件失败: {e}")));
+        }
     }
     // 十六进制字符串（对齐 Kotlin HexUtil.decodeHex 分支）
-    hex::decode(source).map_err(|e| format!("十六进制 {kind} 数据解析失败: {e}"))
+    hex::decode(source)
+        .map_err(|e| ArchiveResolveError::Other(format!("十六进制 {kind} 数据解析失败: {e}")))
 }
 
 /// 按指定字符集解码 ZIP 条目字节
@@ -4743,10 +4838,15 @@ fn decode_bytes_with_charset(bytes: &[u8], charset: Option<&str>) -> String {
 /// 注册字体 API
 ///
 /// 对应 Kotlin 端 `JsExtensions` 中的 queryTTF / queryBase64TTF / replaceFont 方法。
+///
+/// 批21-B：`policy` 由 `SandboxConfig.allow_file_access` 派生；受限模式
+/// （生产默认）下仅允许从引擎自建目录（沙箱根 / 字体缓存）读取本地字体，
+/// 越界返回 `valid=false` + `error` 的句柄（显式拒绝）。URL / Base64 不受影响。
 fn register_font_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
+    policy: FsPolicy,
 ) -> Result<(), LegadoError> {
     // queryTTF(data, useCache?) -> String（字体句柄 JSON）
     // 对应 Kotlin: queryTTF(data: Any?, useCache: Boolean): QueryTTF?
@@ -4757,8 +4857,8 @@ fn register_font_apis<'js>(
         "queryTTF",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: RhinoStr, use_cache: Opt<bool>| -> String {
-                font_api::query_ttf(&data, use_cache.0.unwrap_or(true))
+            move |data: RhinoStr, use_cache: Opt<bool>| -> String {
+                font_api::query_ttf_with_policy(&data, use_cache.0.unwrap_or(true), policy)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4770,8 +4870,8 @@ fn register_font_apis<'js>(
         java,
         globals,
         "queryBase64TTF",
-        rquickjs::Function::new(ctx.clone(), |data: RhinoStr| -> String {
-            font_api::query_base64_ttf(&data)
+        rquickjs::Function::new(ctx.clone(), move |data: RhinoStr| -> String {
+            font_api::query_base64_ttf_with_policy(&data, policy)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -4785,12 +4885,18 @@ fn register_font_apis<'js>(
         "replaceFont",
         rquickjs::Function::new(
             ctx.clone(),
-            |text: RhinoStr,
-             error_font: RhinoStr,
-             correct_font: RhinoStr,
-             filter: Opt<bool>|
-             -> String {
-                font_api::replace_font(&text, &error_font, &correct_font, filter.0.unwrap_or(false))
+            move |text: RhinoStr,
+                  error_font: RhinoStr,
+                  correct_font: RhinoStr,
+                  filter: Opt<bool>|
+                  -> String {
+                font_api::replace_font_with_policy(
+                    &text,
+                    &error_font,
+                    &correct_font,
+                    filter.0.unwrap_or(false),
+                    policy,
+                )
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -6139,6 +6245,215 @@ cipher.decryptStr(b64);
         // 不存在的条目返回空串（对齐 Kotlin return ""）
         let code = format!("java.getRarStringContent('{}', 'no.txt')", hex_str);
         assert_eq!(engine.eval(&code).unwrap(), "");
+    }
+
+    // ============================================================
+    // 批21-B P2-5：allow_file_access=false 时 archive/font 本地路径白名单
+    //
+    // 边界（见 host_api::fs_policy）：
+    // - 受限模式只允许引擎自建目录（<temp>/legado_js_cache、<temp>/legado_font_cache）；
+    // - 越界返回明确错误（archive 前缀 [ERROR]，queryTTF 句柄带 error 字段）；
+    // - allow_file_access=true（permissive）保持不受限（锁定既有调试行为）。
+    // ============================================================
+
+    /// 唯一后缀（进程内测试并行时防撞名）
+    fn unique_suffix() -> String {
+        format!(
+            "{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        )
+    }
+
+    /// 在指定目录创建 ZIP，返回路径
+    fn create_zip_at(dir: &std::path::Path, name: &str, entries: &[(&str, &[u8])]) -> String {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        use zip::ZipWriter;
+
+        std::fs::create_dir_all(dir).unwrap();
+        let zip_path = dir.join(name);
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut writer = ZipWriter::new(file);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (entry, content) in entries {
+            writer.start_file(*entry, options).unwrap();
+            writer.write_all(content).unwrap();
+        }
+        writer.finish().unwrap();
+        zip_path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn test_default_config_denies_archive_path_outside_sandbox() {
+        // 沙箱外的 ZIP（temp 根，非 legado_js_cache）→ 显式拒绝
+        let zip_path = create_zip_for_js(&[("x.txt", b"secret")]);
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+
+        let code = format!("java.getZipStringContent({}, 'x.txt')", js_str(&zip_path));
+        let result = engine.eval(&code).unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "getZipStringContent 应显式拒绝: {result}"
+        );
+
+        let code = format!("java.unzipFile({})", js_str(&zip_path));
+        let result = engine.eval(&code).unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "unzipFile 应显式拒绝: {result}"
+        );
+
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_default_config_allows_archive_path_inside_sandbox() {
+        // 沙箱根内的 ZIP：绝对路径与相对路径都应可用（能力保留）
+        let suffix = unique_suffix();
+        let root = crate::host_api::file_utils::default_sandbox_root();
+        let sub = format!("policy_allow_{suffix}");
+        let zip_path = create_zip_at(
+            &root.join(&sub),
+            "book.zip",
+            &[("content.txt", "沙箱内内容".as_bytes())],
+        );
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+
+        let code = format!(
+            "java.getZipStringContent({}, 'content.txt')",
+            js_str(&zip_path)
+        );
+        assert_eq!(engine.eval(&code).unwrap(), "沙箱内内容");
+
+        // 相对路径按引擎沙箱根解析（对齐原版「相对缓存目录」语义）
+        let rel = format!("{sub}/book.zip");
+        let code = format!("java.getZipStringContent({}, 'content.txt')", js_str(&rel));
+        assert_eq!(engine.eval(&code).unwrap(), "沙箱内内容");
+
+        // 解压：默认输出到 ZIP 同目录（仍在沙箱内）
+        let code = format!("java.unzipFile({})", js_str(&zip_path));
+        let out_dir = engine.eval(&code).unwrap();
+        assert!(!out_dir.starts_with("[ERROR]"), "unzipFile 失败: {out_dir}");
+        assert!(std::path::Path::new(&out_dir).join("content.txt").exists());
+
+        let _ = std::fs::remove_dir_all(root.join(&sub));
+    }
+
+    #[test]
+    fn test_default_config_denies_archive_output_outside_sandbox() {
+        // 输入在沙箱内、显式输出目录在沙箱外 → 拒绝写入
+        let suffix = unique_suffix();
+        let root = crate::host_api::file_utils::default_sandbox_root();
+        let sub = format!("policy_out_{suffix}");
+        let seven_z_path = create_7z_for_js(&[("a.txt", b"7z payload")]);
+        let inside_7z = root.join(&sub).join("book.7z");
+        std::fs::create_dir_all(inside_7z.parent().unwrap()).unwrap();
+        std::fs::copy(&seven_z_path, &inside_7z).unwrap();
+
+        let outside_out = std::env::temp_dir().join(format!("legado_policy_escape_{suffix}"));
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let code = format!(
+            "java.un7zFile({}, {})",
+            js_str(inside_7z.to_str().unwrap()),
+            js_str(outside_out.to_str().unwrap())
+        );
+        let result = engine.eval(&code).unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "输出目录越界应拒绝: {result}"
+        );
+        assert!(!outside_out.exists(), "越界输出目录不应被创建");
+
+        let _ = std::fs::remove_dir_all(root.join(&sub));
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_default_config_denies_font_file_outside_sandbox() {
+        // 沙箱外字体文件：queryTTF 返回 valid=false + error（显式拒绝）
+        use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
+
+        let suffix = unique_suffix();
+        let dir = std::env::temp_dir().join(format!("legado_font_deny_{suffix}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("outside.ttf");
+        std::fs::write(
+            &path,
+            build_minimal_ttf(
+                &[Segment {
+                    start: 0x41,
+                    end: 0x41,
+                    id_delta: -0x40,
+                }],
+                false,
+            ),
+        )
+        .unwrap();
+
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let code = format!("java.queryTTF({})", js_str(path.to_str().unwrap()));
+        let handle = engine.eval(&code).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], false);
+        assert!(
+            parsed["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("文件访问被拒绝"),
+            "handle = {handle}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_default_config_allows_font_file_in_engine_cache() {
+        // 引擎字体缓存目录内的字体：默认配置仍可解析（能力保留）
+        use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
+
+        let suffix = unique_suffix();
+        let dir = crate::host_api::font_api::font_cache_dir().join(format!("policy_{suffix}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("inside.ttf");
+        std::fs::write(
+            &path,
+            build_minimal_ttf(
+                &[Segment {
+                    start: 0x41,
+                    end: 0x41,
+                    id_delta: -0x40,
+                }],
+                false,
+            ),
+        )
+        .unwrap();
+
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let code = format!("java.queryTTF({})", js_str(path.to_str().unwrap()));
+        let handle = engine.eval(&code).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], true);
+        assert!(parsed.get("error").is_none(), "handle = {handle}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_permissive_config_keeps_arbitrary_archive_paths() {
+        // 锁定 allow_file_access=true 的既有不受限行为（调试 / 可信脚本）
+        let zip_path = create_zip_for_js(&[("p.txt", b"permissive")]);
+        let engine = make_engine();
+        let code = format!("java.getZipStringContent({}, 'p.txt')", js_str(&zip_path));
+        assert_eq!(engine.eval(&code).unwrap(), "permissive");
+
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
     }
 
     #[test]
