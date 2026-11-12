@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.494] - 2026-11-13
+
+### Fixed
+- [Rust] 安全修复：Web 服务的书源写入接口（`/api/sources` 增删改、`/api/sources/update`、`/api/rule-update/check|apply`）现在都需要「Web 书源访问令牌」，未授权请求直接拒绝且不读请求体；规则订阅的应用接口此前可在无令牌时触发拉取并覆写规则表。
+- [Rust] 安全修复：书源仓库与订阅检查的出站请求恢复默认 HTTPS 证书校验，避免中间人内容被写入规则库。
+- [Rust] 修复通过 `/api/sources` 重复创建同 URL 书源时会把该书源的规则、jsLib、变量等全部清空的问题；现在返回冲突提示，改用 PUT 修改。
+- [Rust] 书源编辑接口改为部分更新：未提交的字段保持原值，不再被清空或重置为默认。
+- [Rust] 修复规则订阅「应用更新」会用远程旧内容覆盖本地较新书源的问题（本地登录变量、请求头、jsLib、备注不再丢失）。
+
+### Changed
+- [Rust] 书源管理两个读接口（`getBookSourcesForManagement`、`getBookSourceCheckStates`）改为需要访问令牌，且响应不再被中间缓存保存。
+- [Rust] 规则订阅的版本判断改为「最新更新时间 + 内容指纹」，内容变化但时间戳未变时也能正确提示更新。
+
 ## [2.0.493] - 2026-11-13
 
 ### Fixed
