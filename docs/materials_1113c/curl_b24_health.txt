@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 59
+date: Thu, 12 Nov 2026 22:04:48 GMT
+
+{"service":"legado-server","status":"ok","version":"0.2.0"}

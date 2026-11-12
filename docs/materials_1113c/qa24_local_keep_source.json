@@ -1,0 +1,16 @@
+{
+  "bookSourceUrl": "https://qa24.example.com/source/keep-local",
+  "bookSourceName": "QA24 本地保留书源",
+  "bookSourceGroup": "QA24-LOCAL",
+  "bookSourceType": 0,
+  "enabled": true,
+  "searchUrl": "https://qa24.example.com/local?q={key}",
+  "jsLib": "function qa24LocalHelper(){ return \"QA24_LOCAL_JSLIB_MARKER\"; }",
+  "variable": "{\"localKeep\":\"QA24_LOCAL_KEEP_VALUE\"}",
+  "lastUpdateTime": 1700000001000,
+  "ruleSearch": {
+    "bookList": ".local-book",
+    "name": ".local-name",
+    "bookUrl": "a@href"
+  }
+}

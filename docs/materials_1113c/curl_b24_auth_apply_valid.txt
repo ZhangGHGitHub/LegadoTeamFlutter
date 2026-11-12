@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 80
+date: Thu, 12 Nov 2026 22:05:16 GMT
+
+{"error":"未找到订阅: http://192.168.100.63:8899/sub.json","success":false}

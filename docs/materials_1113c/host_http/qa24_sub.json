@@ -1,0 +1,40 @@
+[
+  {
+    "bookSourceUrl": "https://qa24.example.com/source/sub-a",
+    "bookSourceName": "QA24 订阅源A",
+    "bookSourceGroup": "QA24-SUB",
+    "bookSourceType": 0,
+    "enabled": true,
+    "searchUrl": "https://qa24.example.com/sub-a?q={key}",
+    "jsLib": "function qa24SubA(){ return \"QA24_SUB_A_JSLIB\"; }",
+    "variable": "{\"subA\":\"QA24_SUB_A_VARIABLE\"}",
+    "lastUpdateTime": 1800000000000,
+    "ruleSearch": {
+      "bookList": ".sub-a-book",
+      "name": ".sub-a-name",
+      "bookUrl": "a@href"
+    },
+    "ruleContent": {
+      "content": "#sub-a-content"
+    }
+  },
+  {
+    "bookSourceUrl": "https://qa24.example.com/source/sub-b",
+    "bookSourceName": "QA24 订阅源B",
+    "bookSourceGroup": "QA24-SUB",
+    "bookSourceType": 0,
+    "enabled": true,
+    "searchUrl": "https://qa24.example.com/sub-b?q={key}",
+    "jsLib": "function qa24SubB(){ return \"QA24_SUB_B_JSLIB\"; }",
+    "variable": "{\"subB\":\"QA24_SUB_B_VARIABLE\"}",
+    "lastUpdateTime": 1800000001000,
+    "ruleSearch": {
+      "bookList": ".sub-b-book",
+      "name": ".sub-b-name",
+      "bookUrl": "a@href"
+    },
+    "ruleContent": {
+      "content": "#sub-b-content"
+    }
+  }
+]

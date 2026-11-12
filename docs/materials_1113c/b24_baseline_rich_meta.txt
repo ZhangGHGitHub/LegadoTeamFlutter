@@ -1,0 +1,12 @@
+isSuccess True
+name QA24 富书源
+jsLib_len 340
+jsLib_marker True
+variable {"qa24Var":"QA24_VARIABLE_MARKER_7b21","note":"rich source variable must survive duplicate POST"}
+ruleSearch_keys ['author', 'bookList', 'bookUrl', 'checkKeyWord', 'coverUrl', 'intro', 'kind', 'lastChapter', 'name']
+ruleBookInfo {'author': '.qa24-author', 'init': 'init_qa24', 'intro': '.qa24-intro', 'name': 'h1.qa24-title', 'tocUrl': 'a.qa24-toc@href'}
+ruleToc {'chapterList': '.qa24-chapter', 'chapterName': 'a@text', 'chapterUrl': 'a@href'}
+ruleContent {'content': '#qa24-content', 'subContent': '.qa24-sub'}
+mgmt_total 2
+ - QA24 富书源 https://qa24.example.com/source/rich jsLib_len 340 var {"qa24Var":"QA24_VARIABLE_MARKER_7b21","note":"rich source variable must survive duplicate POST"}
+ - QA24 本地保留书源 https://qa24.example.com/source/keep-local jsLib_len 63 var {"localKeep":"QA24_LOCAL_KEEP_VALUE"}

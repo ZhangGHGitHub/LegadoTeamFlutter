@@ -1,0 +1,7 @@
+total_after_apply2 4
+unique_urls 4
+dup_urls []
+ - QA24 富书源 | https://qa24.example.com/source/rich | jsLib_len 340 | variable {"qa24Var":"QA24_VARIABLE_MARKER_7b21","note":"rich source variable must survive duplicate POST"}
+ - QA24 本地保留书源 | https://qa24.example.com/source/keep-local | jsLib_len 63 | variable {"localKeep":"QA24_LOCAL_KEEP_VALUE"}
+ - QA24 订阅源A | https://qa24.example.com/source/sub-a | jsLib_len 49 | variable {"subA":"QA24_SUB_A_VARIABLE"}
+ - QA24 订阅源B | https://qa24.example.com/source/sub-b | jsLib_len 49 | variable {"subB":"QA24_SUB_B_VARIABLE"}

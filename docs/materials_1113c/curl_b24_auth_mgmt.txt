@@ -1,0 +1,9 @@
+HTTP/1.1 200 OK
+content-type: application/json; charset=utf-8
+x-content-type-options: nosniff
+access-control-allow-methods: GET, POST
+cache-control: no-store
+content-length: 66
+date: Thu, 12 Nov 2026 22:05:16 GMT
+
+{"isSuccess":true,"errorMsg":"","data":{"sources":[],"states":[]}}

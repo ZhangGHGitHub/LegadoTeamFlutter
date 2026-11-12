@@ -1,0 +1,7 @@
+pm_clear=Success(above)
+    versionCode=495 minSdk=24 targetSdk=36
+    versionName=2.0.494
+    lastUpdateTime=2026-11-13 05:59:59
+pid=25030
+web_port_check:
+curl_exit=7

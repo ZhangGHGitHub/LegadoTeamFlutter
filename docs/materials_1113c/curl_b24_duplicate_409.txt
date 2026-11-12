@@ -1,0 +1,6 @@
+HTTP/1.1 409 Conflict
+content-type: application/json
+content-length: 117
+date: Thu, 12 Nov 2026 22:06:05 GMT
+
+{"error":"书源 URL 已存在：https://qa24.example.com/source/rich；如需修改请使用 PUT /api/sources/{id}"}

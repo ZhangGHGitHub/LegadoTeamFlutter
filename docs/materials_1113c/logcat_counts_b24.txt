@@ -1,0 +1,8 @@
+FATAL EXCEPTION: 0
+E/AndroidRuntime: 0
+ANR: 0
+OutOfMemory: 0
+Low on memory: 0
+crash_buffer_lines: 948
+crash_legado_refs: 0
+app_errors:

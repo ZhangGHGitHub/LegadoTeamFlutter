@@ -1,0 +1,6 @@
+HTTP/1.1 422 Unprocessable Entity
+content-type: text/plain; charset=utf-8
+content-length: 96
+date: Thu, 12 Nov 2026 22:05:15 GMT
+
+Failed to deserialize the JSON body into the target type: missing field `url` at line 1 column 2
