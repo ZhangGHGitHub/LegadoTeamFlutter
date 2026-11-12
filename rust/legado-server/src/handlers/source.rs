@@ -29,25 +29,40 @@ pub struct CreateSourceRequest {
     pub concurrent_rate: Option<String>,
 }
 
-/// 更新书源请求体
+/// 更新书源请求体（**部分更新**语义，批24 回修 P1-2）
 ///
-/// `concurrent_rate` 需要区分三种 JSON 形态，故与 create 分开：
-/// - 缺键 → 保留数据库原值且不刷新限速注册表；
-/// - 显式 `null` 或空串 → 清除（库内置 None 并移除该 key 的 limiter）；
-/// - 有值 → 入库并刷新。
+/// 所有字段均可缺省：**仅写入请求中出现的键，未出现 = 保持库内原值**。
+/// 修复前 `book_source_group`/`search_url` 缺键被写成 `None`、
+/// `book_source_type` 缺键被重置为 `0`、`enabled` 缺键被重新置为 `true`，
+/// 按 create 形状发 PUT 会清空分组/searchUrl 并重新启用停用源。
+///
+/// 三态字段（`book_source_group` / `search_url` / `concurrent_rate`）：
+/// - 缺键 → 保留数据库原值（`concurrent_rate` 同时不刷新限速注册表）；
+/// - 显式 `null` → 清除（可空字段入库 None；`concurrent_rate` 移除 limiter）；
+/// - 有值 → 写入（`concurrent_rate` 空串等价于清除并刷新）。
 ///
 /// 裸 `Option<Option<String>>` 的 serde 默认语义会把「缺键」和「显式 null」
 /// 都折叠为外层 `None`；这里用 [`deserialize_present_option_string`] 在键存在
 /// 时再包一层 `Some`：缺键走 `#[serde(default)]` → 外层 None，null →
 /// `Some(None)`，空串 → `Some(Some(""))`。
+///
+/// `book_source_type` / `enabled` 为非空标量，缺键与显式 `null` 均视为
+/// 「不修改」。
 #[derive(Debug, Deserialize)]
 pub struct UpdateSourceRequest {
-    pub book_source_url: String,
-    pub book_source_name: String,
-    pub book_source_group: Option<String>,
+    /// 缺省 → 沿用 path 中的源 URL；有值 → 重命名（目标已存在时 409）
+    #[serde(default)]
+    pub book_source_url: Option<String>,
+    #[serde(default)]
+    pub book_source_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_present_option_string")]
+    pub book_source_group: Option<Option<String>>,
+    #[serde(default)]
     pub book_source_type: Option<i32>,
+    #[serde(default)]
     pub enabled: Option<bool>,
-    pub search_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_present_option_string")]
+    pub search_url: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_present_option_string")]
     pub concurrent_rate: Option<Option<String>>,
 }
@@ -126,7 +141,7 @@ pub async fn create_source(
     Ok((StatusCode::CREATED, Json(json!(source))))
 }
 
-/// PUT /api/sources/:id — 更新书源
+/// PUT /api/sources/:id — 更新书源（部分更新）
 ///
 /// 审查批 P1-1：
 /// - path 指向的书源不存在 → **404**（旧实现 `unwrap_or_default()` 会以默认
@@ -134,6 +149,10 @@ pub async fn create_source(
 /// - body URL 指向另一条已存在书源 → **409 Conflict**（拒绝整行覆盖他行）；
 /// - 命中本行时做字段级 mutate：DTO 未暴露的规则/`jsLib`/`variable` 等字段
 ///   保留库内原值。
+///
+/// 批24 回修 P1-2：**未出现的键一律不动**（见 [`UpdateSourceRequest`]）。
+/// 修复前缺键会被写成默认值（分组/searchUrl 清空、类型归 0、停用源被重新
+/// 启用），按 create 形状发 PUT 即触发静默数据丢失。
 pub async fn update_source(
     State(state): State<Arc<AppState>>,
     Path(source_url): Path<String>,
@@ -175,23 +194,39 @@ pub async fn update_source(
                 ));
             }
         };
-        if req.book_source_url != source_url && repo.find_by_url(&req.book_source_url)?.is_some() {
+        // 部分更新：仅出现的键参与修改（P1-2）
+        let target_url = req
+            .book_source_url
+            .clone()
+            .unwrap_or_else(|| source_url.clone());
+        if target_url != source_url && repo.find_by_url(&target_url)?.is_some() {
             return Ok((
                 StatusCode::CONFLICT,
                 Json(json!({
                     "error": format!(
-                        "目标书源 URL 已存在：{}；请先删除目标书源或改用对应 id",
-                        req.book_source_url
+                        "目标书源 URL 已存在：{target_url}；请先删除目标书源或改用对应 id"
                     )
                 })),
             ));
         }
-        source.book_source_url = req.book_source_url;
-        source.book_source_name = req.book_source_name;
-        source.book_source_group = req.book_source_group;
-        source.book_source_type = req.book_source_type.unwrap_or(0);
-        source.enabled = req.enabled.unwrap_or(true);
-        source.search_url = req.search_url;
+        source.book_source_url = target_url;
+        if let Some(name) = req.book_source_name {
+            source.book_source_name = name;
+        }
+        if let Some(group) = req.book_source_group {
+            // 外层 Some = 键存在；内层 None = 显式 null → 清空分组
+            source.book_source_group = group;
+        }
+        if let Some(book_source_type) = req.book_source_type {
+            source.book_source_type = book_source_type;
+        }
+        if let Some(enabled) = req.enabled {
+            source.enabled = enabled;
+        }
+        if let Some(search_url) = req.search_url {
+            // 外层 Some = 键存在；内层 None = 显式 null → 清空 searchUrl
+            source.search_url = search_url;
+        }
         match &rate_change {
             RateChange::Keep => {}
             RateChange::Clear => source.concurrent_rate = None,
@@ -440,9 +475,9 @@ mod tests {
 
         let app = create_router(Arc::clone(&state));
 
-        // 第一次更新：body 未带 search_url → 规则内容变化（`checkContent()`
-        // 只忽略 customOrder/enabled/enabledExplore/lastUpdateTime/respondTime/
-        // weight，名称与 searchUrl 都参与指纹）→ 重建状态
+        // 第一次更新：body 只改名称 → 规则内容变化（`checkContent()` 只忽略
+        // customOrder/enabled/enabledExplore/lastUpdateTime/respondTime/weight，
+        // 名称参与指纹；批24 P1-2 起未出现的 search_url 保持原值）→ 重建状态
         let resp = app
             .clone()
             .oneshot(json_request(
@@ -999,6 +1034,135 @@ mod tests {
         assert_eq!(target.js_lib.as_deref(), Some("b-js-lib"));
         let origin = find_source(&state, a).await.expect("A 行仍在");
         assert_eq!(origin.book_source_name, "A", "A 行不得被改写");
+    }
+
+    // ── 批24 P1-2：PUT 部分更新（只写出现的键） ─────────────────────────
+
+    /// 只传 name：分组/类型/启用状态/searchUrl/concurrentRate/variable 全部保留
+    #[tokio::test]
+    async fn test_update_source_only_name_keeps_other_fields() {
+        let state = make_test_state();
+        let key = "rest-partial-update-name";
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: key.to_string(),
+                book_source_name: "旧名".to_string(),
+                book_source_group: Some("旧分组".to_string()),
+                book_source_type: 3,
+                enabled: false,
+                search_url: Some("https://keep.example/search?q={key}".to_string()),
+                concurrent_rate: Some("1/10000".to_string()),
+                variable: "user=login-token".to_string(),
+                js_lib: Some("js-lib-body".to_string()),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(json_request(
+                Method::PUT,
+                &format!("/api/sources/{key}"),
+                &json!({ "book_source_name": "新名" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let found = find_source(&state, key).await.expect("行仍存在");
+        assert_eq!(found.book_source_name, "新名");
+        assert_eq!(
+            found.book_source_group.as_deref(),
+            Some("旧分组"),
+            "缺键不得清空分组"
+        );
+        assert_eq!(found.book_source_type, 3, "缺键不得把类型重置为 0");
+        assert!(!found.enabled, "缺键不得把停用源重新启用");
+        assert_eq!(
+            found.search_url.as_deref(),
+            Some("https://keep.example/search?q={key}"),
+            "缺键不得清空 searchUrl"
+        );
+        assert_eq!(found.concurrent_rate.as_deref(), Some("1/10000"));
+        assert_eq!(found.variable, "user=login-token");
+        assert_eq!(found.js_lib.as_deref(), Some("js-lib-body"));
+    }
+
+    /// 只传 enabled=false：名称/分组/searchUrl 等全部保留
+    #[tokio::test]
+    async fn test_update_source_only_enabled_keeps_other_fields() {
+        let state = make_test_state();
+        let key = "rest-partial-update-enabled";
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: key.to_string(),
+                book_source_name: "保留名称".to_string(),
+                book_source_group: Some("保留分组".to_string()),
+                book_source_type: 2,
+                enabled: true,
+                search_url: Some("https://keep.example/search?q={key}".to_string()),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(json_request(
+                Method::PUT,
+                &format!("/api/sources/{key}"),
+                &json!({ "enabled": false }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let found = find_source(&state, key).await.expect("行仍存在");
+        assert!(!found.enabled);
+        assert_eq!(found.book_source_name, "保留名称");
+        assert_eq!(found.book_source_group.as_deref(), Some("保留分组"));
+        assert_eq!(found.book_source_type, 2);
+        assert_eq!(
+            found.search_url.as_deref(),
+            Some("https://keep.example/search?q={key}")
+        );
+    }
+
+    /// 显式 null 才清空可空字段；未出现字段继续保留
+    #[tokio::test]
+    async fn test_update_source_explicit_null_clears_only_that_field() {
+        let state = make_test_state();
+        let key = "rest-partial-update-null";
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: key.to_string(),
+                book_source_name: "旧名".to_string(),
+                book_source_group: Some("旧分组".to_string()),
+                search_url: Some("https://old.example/search?q={key}".to_string()),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(json_request(
+                Method::PUT,
+                &format!("/api/sources/{key}"),
+                &json!({ "book_source_group": null, "search_url": null }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let found = find_source(&state, key).await.expect("行仍存在");
+        assert_eq!(found.book_source_name, "旧名", "未出现字段保持原值");
+        assert_eq!(found.book_source_group, None, "显式 null 应清空分组");
+        assert_eq!(found.search_url, None, "显式 null 应清空 searchUrl");
     }
 
     // ── P1-1：令牌前置守卫（生产入口同构） ──────────────────────────────
