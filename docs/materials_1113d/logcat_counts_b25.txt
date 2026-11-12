@@ -1,0 +1,12 @@
+== 五项崩溃计数（logcat_b25.txt） ==
+FATAL EXCEPTION: 0
+E/AndroidRuntime: 0
+ANR: 0
+OutOfMemory: 0
+Low on memory: 0
+
+== crash buffer ==
+total lines: 310
+SIGSEGV: 28
+legado refs: 0
+     14 Cmdline: uiautomator

@@ -1,0 +1,38 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8925",
+  "bookSourceName": "QA25 段评源",
+  "bookSourceGroup": "QA",
+  "bookSourceType": 0,
+  "bookUrlPattern": ".*192\\.168\\.100\\.52:8925/book1\\.html.*",
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 0,
+  "ruleBookInfo": {
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text"
+  },
+  "ruleToc": {
+    "chapterList": "id.list@tag.li",
+    "chapterName": "tag.a@text",
+    "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  },
+  "ruleReview": {
+    "enabled": true,
+    "reviewSummaryUrl": "http://192.168.100.52:8925/review/summary",
+    "summaryListRule": "$.data",
+    "summaryParagraphIndexRule": "$.idx",
+    "summaryParagraphDataRule": "$.token",
+    "summaryCountRule": "$.cnt",
+    "reviewDetailUrl": "http://192.168.100.52:8925/review/detail",
+    "detailListRule": "$.comments",
+    "detailIdRule": "$.id",
+    "detailNameRule": "$.user",
+    "detailBadgeRule": "$.tag",
+    "detailContentRule": "$.text",
+    "reviewQuoteUrl": "http://192.168.100.52:8925/review/reply"
+  }
+}

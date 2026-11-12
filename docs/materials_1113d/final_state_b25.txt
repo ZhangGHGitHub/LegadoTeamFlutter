@@ -1,0 +1,6 @@
+== 设备终态 ==
+    versionCode=496 minSdk=24 targetSdk=36
+    versionName=2.0.495
+28564
+7be30684ec2b6f594fcaf82c425a1cd8f8e7f0e5462d28d896e228b694907b8b  /data/app/~~Pm3OEFn5VgLyxijtanQifQ==/io.legado.flutter_legado-syqrWAMvEBTUXilKz0gr3g==/base.apk
+curl_exit=7

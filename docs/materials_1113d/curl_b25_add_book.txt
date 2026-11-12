@@ -1,0 +1,6 @@
+HTTP/1.1 201 Created
+content-type: application/json
+content-length: 493
+date: Thu, 12 Nov 2026 22:46:47 GMT
+
+{"author":"QA作者","bookUrl":"http://192.168.100.52:8925/book1.html","canUpdate":true,"chapterInVolumeIndex":0,"disableReadRecord":false,"durChapterIndex":0,"durChapterPos":0,"durChapterTime":0,"durVolumeIndex":0,"group":0,"isPrivate":false,"lastCheckCount":0,"lastCheckTime":0,"latestChapterTime":0,"name":"QA25 段评书","order":0,"origin":"http://192.168.100.52:8925","originBookUrl":"","originName":"QA25 段评源","originOrder":0,"syncTime":0,"tocUrl":"","totalChapterNum":0,"type":0}
