@@ -3,13 +3,15 @@
 //! 对应 Kotlin `ArchiveUtils.kt`，提供 ZIP / 7z / RAR 解压能力。
 //! - ZIP：使用 `zip` crate 完整实现
 //! - 7z：使用 `sevenz-rust2` crate 纯 Rust 实现（需 quickjs feature）
-//! - RAR：使用 `rar` crate 纯 Rust 实现（RAR4/RAR5，含加密档案；需 quickjs feature）
+//! - RAR：使用 `rar` crate 纯 Rust 实现（需 quickjs feature；当前仅实现
+//!   RAR5 解压，RAR4 未实现，见 crate README）。解压/读取前统一预扫描条目名
+//!   （只允许普通相对路径组件），防 `../` / 绝对路径条目写出输出目录
 //! - raw-deflate：使用 `flate2` crate（需 quickjs feature），供
 //!   `java.util.zip.Inflater` 语料面（`java.inflateRawBytes` 宿主桥）
 
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Component, Path};
 
 /// unzipFile(zipPath, outputPath?) — 解压 ZIP 文件
 ///
@@ -160,10 +162,215 @@ pub fn un7z_file(_seven_z_path: &str, _output_path: Option<&str>) -> Result<Stri
     Err("[ERROR] 7z decompression requires 'quickjs' feature (sevenz-rust2)".to_string())
 }
 
+// ============================================================
+// RAR 条目名安全闸门（批21-B 回修 P0/P1）
+//
+// rar crate 0.4 在 `extract_all` 中用**未净化的原始条目名**落盘
+// （`file_writer.rs: File::create(format!("{}/{}", path, file.name))`），
+// 且仅提供「解析即解压」入口，无法先拿到条目列表。因此：
+// - 解压前按 RAR5 头部格式预扫描全部条目名，发现任一非法即整体拒绝，
+//   不创建输出目录、不写任何文件；
+// - 读取单个条目时同样先校验条目名（`Path::join` 遇绝对路径会覆盖基准
+//   目录，`..` 可穿越），再 canonicalize 确认最终路径仍在输出目录内。
+// ============================================================
+
+/// RAR 条目名安全校验错误前缀
+///
+/// JS 层据此区分「条目名越界（安全拒绝，需显式 `[ERROR]`）」与「条目不存在
+/// / 归档损坏（沿用 Kotlin 的返回空串语义）」。
+pub const RAR_ENTRY_NAME_ERROR_PREFIX: &str = "RAR 条目名非法";
+
+/// 错误是否由 RAR 条目安全校验产生（条目名非法 / 解析后越界）
+pub fn is_rar_security_error(err: &str) -> bool {
+    err.starts_with(RAR_ENTRY_NAME_ERROR_PREFIX) || err.starts_with("RAR 条目读取被拒绝")
+}
+
+/// 校验并规范化 RAR 条目名（`\` → `/`）
+///
+/// 只允许 [`Component::Normal`] 组件：拒绝空名、绝对路径、盘符/UNC/verbatim
+/// 前缀、根目录与 `..`。返回规范化后的相对路径（用于安全 `join`）。
+fn normalized_rar_entry_name(name: &str) -> Result<String, String> {
+    let normalized = name.replace('\\', "/");
+    let path = Path::new(&normalized);
+    if normalized.is_empty() || path.is_absolute() {
+        return Err(format!(
+            "{RAR_ENTRY_NAME_ERROR_PREFIX}（空或绝对路径）: {name:?}"
+        ));
+    }
+    let mut has_normal = false;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => has_normal = true,
+            _ => {
+                return Err(format!(
+                    "{RAR_ENTRY_NAME_ERROR_PREFIX}（含非普通路径组件，疑似路径穿越）: {name:?}"
+                ))
+            }
+        }
+    }
+    if !has_normal {
+        return Err(format!(
+            "{RAR_ENTRY_NAME_ERROR_PREFIX}（无有效文件名）: {name:?}"
+        ));
+    }
+    Ok(normalized)
+}
+
+/// 在输出目录内安全读取已解压的 RAR 条目
+///
+/// 条目名先过 [`normalized_rar_entry_name`]，再 canonicalize 双重确认
+/// （防御解压产物中的符号链接把最终路径带出输出目录）。
+fn read_rar_entry_inside(out_dir: &Path, entry_name: &str) -> Result<Vec<u8>, String> {
+    let safe_entry = normalized_rar_entry_name(entry_name)?;
+    let target = out_dir.join(&safe_entry);
+    if !target.is_file() {
+        return Err(format!("Entry '{entry_name}' not found in RAR"));
+    }
+    let canonical_root =
+        fs::canonicalize(out_dir).map_err(|e| format!("Failed to resolve RAR output dir: {e}"))?;
+    let canonical_target =
+        fs::canonicalize(&target).map_err(|e| format!("Failed to resolve entry path: {e}"))?;
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err(format!("RAR 条目读取被拒绝（解析后越界）: {entry_name:?}"));
+    }
+    fs::read(&canonical_target).map_err(|e| format!("Failed to read entry '{entry_name}': {e}"))
+}
+
+/// RAR5 签名（`Rar!\x1a\x07\x01\x00`）；RAR4 签名 `...\x00` 不受支持
+const RAR5_SIGNATURE: &[u8] = b"Rar!\x1a\x07\x01\x00";
+
+/// 读取 RAR5 变长整数（base-128 little-endian，高位续传）
+///
+/// 与 rar-0.4.0 `vint.rs` 同构；`pos` 为起始偏移，返回（值, 新偏移）。
+fn read_rar5_vint(data: &[u8], pos: usize) -> Result<(u64, usize), String> {
+    if pos >= data.len() {
+        return Err("RAR 预扫描失败：头部被截断".to_string());
+    }
+    let mut len = 0usize;
+    let mut found_end = false;
+    for (i, &byte) in data[pos..].iter().enumerate() {
+        len = i + 1;
+        if byte & 0x80 == 0 {
+            found_end = true;
+            break;
+        }
+        if i >= 8 {
+            return Err("RAR 预扫描失败：变长整数过长".to_string());
+        }
+    }
+    if !found_end {
+        return Err("RAR 预扫描失败：变长整数不完整".to_string());
+    }
+    let mut out = data[pos + len - 1] as u64;
+    for i in (0..len - 1).rev() {
+        out = (out << 7) | (data[pos + i] & 0x7F) as u64;
+    }
+    Ok((out, pos + len))
+}
+
+/// 越界安全的偏移推进
+fn advance_rar_offset(data_len: usize, pos: usize, amount: u64) -> Result<usize, String> {
+    let amount =
+        usize::try_from(amount).map_err(|_| "RAR 预扫描失败：长度超出地址空间".to_string())?;
+    pos.checked_add(amount)
+        .filter(|end| *end <= data_len)
+        .ok_or_else(|| "RAR 预扫描失败：头部/数据区长度越界".to_string())
+}
+
+/// 预扫描 RAR5 归档的全部条目名（解压前安全闸门）
+///
+/// 只读取头部（不落盘），遍历 File/Service 块并校验每个条目名；任一非法
+/// 立即返回错误，调用方在 `extract_all` 之前中止。非 RAR5 输入 fail-closed
+/// （rar crate 的 RAR4 解压未实现，此前同样无法解压）。
+fn scan_rar5_entry_names(data: &[u8]) -> Result<Vec<String>, String> {
+    if !data.starts_with(RAR5_SIGNATURE) {
+        return Err("RAR 预扫描失败：仅支持 RAR5 归档（RAR4 解压未实现）".to_string());
+    }
+    let mut pos = RAR5_SIGNATURE.len();
+    let mut names = Vec::new();
+    let mut block_count = 0usize;
+    loop {
+        block_count += 1;
+        if block_count > 10_000 {
+            return Err("RAR 预扫描失败：头部数量异常".to_string());
+        }
+        // HeadBlock：CRC32（4 字节，crate 亦不校验）+ vint(HeaderSize)
+        if pos + 4 > data.len() {
+            return Err("RAR 预扫描失败：头部被截断".to_string());
+        }
+        pos += 4;
+        let (header_size, next) = read_rar5_vint(data, pos)?;
+        pos = next;
+        let header_start = pos;
+        let (typ, next) = read_rar5_vint(data, pos)?;
+        pos = next;
+        let (flags, next) = read_rar5_vint(data, pos)?;
+        pos = next;
+        if flags & 0x01 != 0 {
+            // Extra area size（内容跳过，稍后按 HeaderSize 对齐）
+            let (_, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+        }
+        let mut data_size = 0u64;
+        if flags & 0x02 != 0 {
+            let (size, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            data_size = size;
+        }
+        if typ == 2 || typ == 3 {
+            // FileBlock：flags/unpacked/attrs/[mtime]/[crc]/compression/os/name
+            let (file_flags, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            let (_, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            let (_, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            if file_flags & 0x02 != 0 {
+                pos = advance_rar_offset(data.len(), pos, 4)?; // mtime u32
+            }
+            if file_flags & 0x04 != 0 {
+                pos = advance_rar_offset(data.len(), pos, 4)?; // data CRC32
+            }
+            let (_, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            let (_, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            let (name_len, next) = read_rar5_vint(data, pos)?;
+            pos = next;
+            let name_end = advance_rar_offset(data.len(), pos, name_len)?;
+            let name = std::str::from_utf8(&data[pos..name_end])
+                .map_err(|_| "RAR 预扫描失败：条目名非 UTF-8".to_string())?;
+            normalized_rar_entry_name(name)?;
+            names.push(name.to_string());
+            pos = name_end;
+        }
+        // 跳到头部结束（HeaderSize 从 HeaderType 起算）
+        let header_end = advance_rar_offset(data.len(), header_start, header_size)?;
+        if header_end < pos {
+            return Err("RAR 预扫描失败：头部长度与字段不一致".to_string());
+        }
+        pos = header_end;
+        // 跳过数据区
+        pos = advance_rar_offset(data.len(), pos, data_size)?;
+        if typ == 5 {
+            // 归档结束块
+            return Ok(names);
+        }
+        if pos >= data.len() {
+            return Err("RAR 预扫描失败：缺少归档结束块".to_string());
+        }
+    }
+}
+
 /// unrarFile(rarPath, outputPath?) — 解压 RAR 文件
 ///
-/// 使用 `rar` crate 纯 Rust 实现（RAR4/RAR5 全压缩级别 + 加密档案，无 C 依赖）。
+/// 使用 `rar` crate 纯 Rust 实现（需 quickjs feature；当前仅 RAR5，RAR4
+/// 解压未实现）。
 /// 返回解压目标目录路径。
+///
+/// 安全：解压前预扫描全部条目名（[`scan_rar5_entry_names`]），含绝对路径 /
+/// `../` 等越界条目时整体拒绝且不创建输出目录（rar crate 直接以原始条目名
+/// 落盘，不能等解压后再校验）。
 ///
 /// Kotlin 原版走 libarchive（`ArchiveUtils.deCompress`），此处以纯 Rust 方案对等替代。
 #[cfg(feature = "quickjs")]
@@ -172,6 +379,10 @@ pub fn unrar_file(rar_path: &str, output_path: Option<&str>) -> Result<String, S
     if !src.exists() {
         return Err(format!("RAR file not found: {}", src.display()));
     }
+
+    // 解压前预扫描：rar crate 边解析边落盘，必须在任何写入之前拒绝恶意条目
+    let archive_bytes = fs::read(src).map_err(|e| format!("Failed to read RAR archive: {e}"))?;
+    scan_rar5_entry_names(&archive_bytes)?;
 
     let out_dir = match output_path {
         Some(p) => p.to_string(),
@@ -224,9 +435,17 @@ pub fn seven_z_entry_bytes(_seven_z_bytes: &[u8], _entry_name: &str) -> Result<V
 ///
 /// 对应 Kotlin `getRarByteArrayContent` 的流式读取逻辑。
 /// rar crate 仅支持文件路径，故经临时文件中转：写入临时 .rar → 解压到临时目录 → 读取条目。
+///
+/// 安全（批21-B 回修 P0）：`entry_name` 由书源控制，必须先校验（仅普通相对
+/// 路径组件），否则 `out_dir.join(绝对路径)` 会覆盖基准目录、`..` 可穿越；
+/// 归档本身也先预扫描条目名再解压（防恶意条目写到临时目录之外）。
 #[cfg(feature = "quickjs")]
 pub fn rar_entry_bytes(rar_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, String> {
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    // 1) 条目名先校验；2) 归档条目名预扫描（两者都在写临时文件/解压之前）
+    normalized_rar_entry_name(entry_name)?;
+    scan_rar5_entry_names(rar_bytes)?;
 
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -252,21 +471,7 @@ pub fn rar_entry_bytes(rar_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, St
         rar::Archive::extract_all(rar_path, out_path, "")
             .map_err(|e| format!("Invalid RAR archive: {e}"))?;
 
-        // 条目路径兼容：先按原样查找，再尝试反斜杠归一化（RAR 内路径分隔符可能为 \）
-        let target = out_dir.join(entry_name);
-        if target.is_file() {
-            return fs::read(&target)
-                .map_err(|e| format!("Failed to read entry '{entry_name}': {e}"));
-        }
-        let normalized = entry_name.replace('\\', "/");
-        if normalized != entry_name {
-            let target = out_dir.join(&normalized);
-            if target.is_file() {
-                return fs::read(&target)
-                    .map_err(|e| format!("Failed to read entry '{entry_name}': {e}"));
-            }
-        }
-        Err(format!("Entry '{entry_name}' not found in RAR"))
+        read_rar_entry_inside(&out_dir, entry_name)
     })();
 
     // 无论成败都清理临时目录
@@ -557,6 +762,19 @@ mod tests {
         0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
     ];
 
+    /// 恶意 RAR5 测试归档：单文件条目名 `../legado_rar_traversal.txt`
+    /// （由 `scripts/gen_rar5_fixture.py --name ../legado_rar_traversal.txt \`
+    ///  `--content TRAVERSAL-PAYLOAD --const RAR5_TRAVERSAL` 构造）
+    #[cfg(feature = "quickjs")]
+    const RAR5_TRAVERSAL: &[u8] = &[
+        0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0xc5, 0x1a, 0x33, 0x32, 0x03, 0x01, 0x00,
+        0x00, 0xeb, 0x19, 0x8f, 0x93, 0x28, 0x02, 0x02, 0x11, 0x04, 0x11, 0x20, 0x37, 0x1a, 0xd6,
+        0x49, 0x00, 0x01, 0x1b, 0x2e, 0x2e, 0x2f, 0x6c, 0x65, 0x67, 0x61, 0x64, 0x6f, 0x5f, 0x72,
+        0x61, 0x72, 0x5f, 0x74, 0x72, 0x61, 0x76, 0x65, 0x72, 0x73, 0x61, 0x6c, 0x2e, 0x74, 0x78,
+        0x74, 0x54, 0x52, 0x41, 0x56, 0x45, 0x52, 0x53, 0x41, 0x4c, 0x2d, 0x50, 0x41, 0x59, 0x4c,
+        0x4f, 0x41, 0x44, 0x19, 0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
+    ];
+
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_rar_entry_bytes_rar5_basic() {
@@ -595,6 +813,64 @@ mod tests {
             result2.err()
         );
         assert!(Path::new(&result2.unwrap()).join("hello.txt").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_rar_entry_bytes_rejects_absolute_entry() {
+        // 回归锁 P0：绝对路径 entry 不得借 `Path::join` 覆盖解压基准目录。
+        // 修复前 out_dir.join(绝对路径) 直接读回沙箱外文件。
+        let dir = std::env::temp_dir().join(format!("legado_rar_abs_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let secret = dir.join("secret.txt");
+        fs::write(&secret, b"TOP-SECRET").unwrap();
+
+        let err = rar_entry_bytes(RAR5_HELLO, secret.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("条目名非法"), "err = {err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_rar_entry_bytes_rejects_parent_dir_entry() {
+        // 回归锁 P0：`../..` entry 不得穿越出临时解压目录。
+        // 解压目录为 <temp>/legado_rar_entry_<pid>_<nanos>/out，
+        // 两级 `..` 正好回到 <temp>；修复前会读回该秘密文件。
+        let name = format!("legado_rar_escape_{}.txt", uuid());
+        let outside = std::env::temp_dir().join(&name);
+        fs::write(&outside, b"ESCAPED-SECRET").unwrap();
+
+        let err = rar_entry_bytes(RAR5_HELLO, &format!("../../{name}")).unwrap_err();
+        assert!(err.contains("条目名非法"), "err = {err}");
+
+        let _ = fs::remove_file(&outside);
+    }
+
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_unrar_file_rejects_traversal_entry() {
+        // 回归锁 P1：rar crate 以原始条目名落盘（file_writer.rs:20），
+        // `../` 条目必须在解压前整体拒绝，且不创建输出目录、不写出越界文件。
+        let dir = std::env::temp_dir().join(format!("legado_rar_traversal_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let rar_path = dir.join("evil.rar");
+        fs::write(&rar_path, RAR5_TRAVERSAL).unwrap();
+
+        let out_dir = dir.join("out");
+        let err =
+            unrar_file(rar_path.to_str().unwrap(), Some(out_dir.to_str().unwrap())).unwrap_err();
+        assert!(err.contains("条目名非法"), "err = {err}");
+        assert!(!out_dir.exists(), "预扫描拒绝时不应创建输出目录");
+        assert!(
+            !dir.join("legado_rar_traversal.txt").exists(),
+            "越界条目不得写出输出目录"
+        );
+
+        // 读取侧对同一恶意归档同样在解压前拒绝
+        assert!(rar_entry_bytes(RAR5_TRAVERSAL, "legado_rar_traversal.txt").is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }

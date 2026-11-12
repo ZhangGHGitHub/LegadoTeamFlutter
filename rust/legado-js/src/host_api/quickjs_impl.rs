@@ -4760,6 +4760,11 @@ fn get_rar_string_content_js(
     };
     match archive_utils::rar_entry_bytes(&bytes, entry) {
         Ok(b) => decode_bytes_with_charset(&b, charset),
+        Err(e) if archive_utils::is_rar_security_error(&e) => {
+            // 条目名越界（P0）：显式 [ERROR]，不静默降级为空串
+            eprintln!("[getRarStringContent] {e}");
+            format!("[ERROR] {e}")
+        }
         Err(e) => {
             eprintln!("[getRarStringContent] {e}");
             String::new()
@@ -6256,6 +6261,55 @@ cipher.decryptStr(b64);
     // - allow_file_access=true（permissive）保持不受限（锁定既有调试行为）。
     // ============================================================
 
+    #[test]
+    fn test_js_get_rar_string_content_rejects_traversal_entry() {
+        // P0 端到端：hex 来源（默认配置仍可用）+ 书源控制的 entry 参数。
+        // 修复前 `out_dir.join(绝对路径)` / `..` 会读回沙箱外文件。
+        const RAR5_HELLO: &[u8] = &[
+            0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0xc5, 0x1a, 0x33, 0x32, 0x03, 0x01,
+            0x00, 0x00, 0xe4, 0xf8, 0x02, 0x48, 0x16, 0x02, 0x02, 0x10, 0x04, 0x10, 0x20, 0xec,
+            0x68, 0x08, 0x45, 0x00, 0x01, 0x09, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78,
+            0x74, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x20, 0x52, 0x41, 0x52, 0x20, 0x57, 0x6f, 0x72,
+            0x6c, 0x64, 0x21, 0x19, 0xb2, 0x3a, 0x35, 0x03, 0x05, 0x00, 0x00,
+        ];
+        let hex_str = hex::encode(RAR5_HELLO);
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("legado_rar_js_{}", unique_suffix()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let secret = dir.join("secret.txt");
+        std::fs::write(&secret, b"TOP-SECRET").unwrap();
+
+        // 绝对路径 entry：修复前会直接读回 secret.txt
+        let code = format!(
+            "java.getRarStringContent('{}', {})",
+            hex_str,
+            js_str(secret.to_str().unwrap())
+        );
+        let result = engine.eval(&code).unwrap();
+        assert!(result.contains("条目名非法"), "result = {result}");
+
+        // `../..` entry：修复前会穿越到系统临时目录
+        let escape_name = format!("legado_rar_js_escape_{}.txt", unique_suffix());
+        let outside = std::env::temp_dir().join(&escape_name);
+        std::fs::write(&outside, b"ESCAPED").unwrap();
+        let entry = format!("../../{escape_name}");
+        let code = format!(
+            "java.getRarStringContent('{}', {})",
+            hex_str,
+            js_str(&entry)
+        );
+        let result = engine.eval(&code).unwrap();
+        assert!(result.contains("条目名非法"), "result = {result}");
+        assert_eq!(std::fs::read(&outside).unwrap(), b"ESCAPED");
+
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // 正常 entry 仍可读取（能力保留）
+        let code = format!("java.getRarStringContent('{}', 'hello.txt')", hex_str);
+        assert_eq!(engine.eval(&code).unwrap(), "Hello RAR World!");
+    }
     /// 唯一后缀（进程内测试并行时防撞名）
     fn unique_suffix() -> String {
         format!(
@@ -6454,6 +6508,103 @@ cipher.decryptStr(b64);
         assert_eq!(engine.eval(&code).unwrap(), "permissive");
 
         let _ = std::fs::remove_dir_all(std::path::Path::new(&zip_path).parent().unwrap());
+    }
+
+    #[test]
+    fn test_default_config_denies_parent_dir_archive_source() {
+        // 引擎层 `..`：受限模式在读取前直接拒绝（不依赖目标文件是否存在）
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+
+        let result = engine
+            .eval("java.getZipStringContent('../../legado_fs_policy_escape.zip', 'x.txt')")
+            .unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "getZipStringContent 应显式拒绝: {result}"
+        );
+
+        let result = engine
+            .eval("java.unzipFile('../legado_fs_policy_escape.zip')")
+            .unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "unzipFile 应显式拒绝: {result}"
+        );
+    }
+
+    #[test]
+    fn test_default_config_denies_font_file_url_outside_sandbox() {
+        // 回归锁 P2：`file://` 前缀必须先剥掉再预检，且拒绝句柄带 error 字段。
+        // 修复前 file://C:\... 在 Windows 被判为相对路径拼入沙箱 → 预检恒通过。
+        use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
+
+        let suffix = unique_suffix();
+        let dir = std::env::temp_dir().join(format!("legado_font_file_url_{suffix}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("outside.ttf");
+        // 写入真实可用字体：确保拒绝来自路径策略而非字体解析失败
+        std::fs::write(
+            &path,
+            build_minimal_ttf(
+                &[Segment {
+                    start: 0x41,
+                    end: 0x41,
+                    id_delta: -0x40,
+                }],
+                false,
+            ),
+        )
+        .unwrap();
+
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let file_url = format!("file://{}", path.display());
+        let code = format!("java.queryTTF({})", js_str(&file_url));
+        let handle = engine.eval(&code).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], false);
+        assert!(
+            parsed["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("文件访问被拒绝"),
+            "handle = {handle}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_permissive_config_allows_font_file_outside_sandbox() {
+        // 锁定 permissive 字体本地路径不受限（调试 / 可信脚本）
+        use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
+
+        let suffix = unique_suffix();
+        let dir = std::env::temp_dir().join(format!("legado_font_permissive_{suffix}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("outside.ttf");
+        std::fs::write(
+            &path,
+            build_minimal_ttf(
+                &[Segment {
+                    start: 0x41,
+                    end: 0x41,
+                    id_delta: -0x40,
+                }],
+                false,
+            ),
+        )
+        .unwrap();
+
+        let engine = make_engine();
+        let code = format!("java.queryTTF({})", js_str(path.to_str().unwrap()));
+        let handle = engine.eval(&code).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], true);
+        assert!(parsed.get("error").is_none(), "handle = {handle}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

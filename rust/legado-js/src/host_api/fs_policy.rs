@@ -15,8 +15,9 @@
 //! - `allow_file_access=false`（`SandboxConfig::default()`，书源生产路径）
 //!   → 仅允许访问**引擎自建目录**内的路径（[`allowed_roots`]）：
 //!   1. `file_utils::default_sandbox_root()`：`downloadFile` / `cacheFile` /
-//!      `importScript` / `getFile` 的落盘根（`<系统临时目录>/legado_js_cache`），
-//!      书源拿到的本地路径都由这些 API 生成；
+//!      `importScript` 的落盘根（`<系统临时目录>/legado_js_cache`），书源
+//!      拿到的本地路径都由这些 API 生成（`getFile` 仅在
+//!      `allow_file_access=true` 时注册，但同用该根）；
 //!   2. `font_api::font_cache_dir()`：URL 字体下载缓存目录
 //!      （`<系统临时目录>/legado_font_cache`），由引擎自身写入。
 //!
@@ -101,13 +102,24 @@ fn resolve_restricted(raw: &str, action: &str) -> Result<PathBuf, String> {
     }
 
     let requested = Path::new(raw);
-    // 词法层直接拒绝 `..`：引擎生成/返回的路径不会包含它，拒绝可避免
-    // 依赖 canonicalize 的边界差异（不存在的尾段、符号链接等）。
-    if requested
-        .components()
-        .any(|c| matches!(c, Component::ParentDir))
-    {
-        return Err(format!("文件访问被拒绝：路径包含 `..`（{raw}）"));
+    // 词法层拒绝 `..` 与非盘符 Prefix：
+    // - `..`：引擎生成/返回的路径不会包含它，拒绝可避免依赖 canonicalize
+    //   的边界差异（不存在的尾段、符号链接等）；
+    // - UNC / verbatim / 设备命名空间（`\\?\`、`\\server\share`、`\\.\`）：
+    //   访问可能阻塞宿主且 JS 超时中断不了原生调用，一律拒绝（批21-B 回修
+    //   P3）。普通盘符（`C:\...`，Prefix::Disk）保留——引擎沙箱根即盘符路径。
+    for component in requested.components() {
+        match component {
+            Component::ParentDir => {
+                return Err(format!("文件访问被拒绝：路径包含 `..`（{raw}）"));
+            }
+            Component::Prefix(prefix) if !matches!(prefix.kind(), std::path::Prefix::Disk(_)) => {
+                return Err(format!(
+                    "文件访问被拒绝：不支持 UNC/设备/verbatim 路径前缀（{raw}）"
+                ));
+            }
+            _ => {}
+        }
     }
 
     // 相对路径按引擎沙箱根解析（对齐原版「相对路径相对缓存目录」语义）
@@ -286,6 +298,97 @@ mod tests {
     fn test_restricted_rejects_empty_path() {
         let err = FsPolicy::restricted().resolve_read_path("").unwrap_err();
         assert!(err.contains("路径为空"), "err = {err}");
+    }
+
+    #[test]
+    fn test_restricted_rejects_sibling_with_sandbox_prefix() {
+        // 分隔符边界：`legado_js_cache_evil` 是沙箱根的兄弟目录，不能因
+        // 字符串前缀相同而被 starts_with 放行（Path 组件级比较应拒绝）。
+        let sandbox = crate::host_api::file_utils::default_sandbox_root();
+        let sibling = sandbox.with_file_name(format!(
+            "{}_evil",
+            sandbox
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "legado_js_cache".to_string())
+        ));
+        std::fs::create_dir_all(&sibling).unwrap();
+        let file = sibling.join("evil.zip");
+        std::fs::write(&file, b"PK").unwrap();
+
+        let err = FsPolicy::restricted()
+            .resolve_read_path(file.to_str().unwrap())
+            .unwrap_err();
+        assert!(err.contains("引擎沙箱目录"), "err = {err}");
+
+        let _ = std::fs::remove_dir_all(&sibling);
+    }
+
+    /// 创建目录链接：Unix 用 symlink，Windows 用 junction（普通用户可建）
+    fn create_dir_link(link: &Path, target: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (link, target);
+            false
+        }
+    }
+
+    #[test]
+    fn test_restricted_rejects_symlink_or_junction_escape() {
+        // 目录链接指向沙箱外：canonicalize 后的真实路径越界必须拒绝
+        let target = std::env::temp_dir().join(unique("legado_fs_policy_link_target"));
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("secret.txt"), b"SECRET").unwrap();
+
+        let link =
+            crate::host_api::file_utils::default_sandbox_root().join(unique("fs_policy_link"));
+        if !create_dir_link(&link, &target) {
+            eprintln!("skip: 当前环境无法创建目录链接（权限不足）");
+            let _ = std::fs::remove_dir_all(&target);
+            return;
+        }
+
+        let probe = link.join("secret.txt");
+        let err = FsPolicy::restricted()
+            .resolve_read_path(probe.to_str().unwrap())
+            .unwrap_err();
+        assert!(err.contains("引擎沙箱目录"), "err = {err}");
+
+        // 先移除链接本身再清理目标目录（Windows junction 不应跟随删除）
+        let _ = std::fs::remove_dir(&link);
+        let _ = std::fs::remove_dir_all(&target);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_restricted_rejects_verbatim_and_unc_prefix() {
+        // P3：UNC / verbatim / 设备命名空间可能在原生调用中阻塞且无法被
+        // JS 超时中断，词法层直接拒绝（普通盘符 Prefix::Disk 仍允许）。
+        for raw in [
+            r"\\?\C:\Windows\win.ini",
+            r"\\server\share\x.zip",
+            r"\\.\COM1",
+        ] {
+            let err = FsPolicy::restricted().resolve_read_path(raw).unwrap_err();
+            assert!(
+                err.contains("UNC/设备/verbatim"),
+                "raw = {raw}, err = {err}"
+            );
+        }
     }
 
     #[test]

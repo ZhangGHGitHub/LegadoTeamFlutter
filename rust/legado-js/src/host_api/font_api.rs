@@ -109,12 +109,17 @@ fn clone_query_ttf(ttf: &QueryTtf) -> QueryTtf {
 }
 
 /// 判断 data 类型（与原桩化实现一致的判定规则）
+///
+/// 注意：Windows 盘符判断用字节下标（`as_bytes().get(1)`），不能用
+/// `data[1..]` 切片——首字符为多字节 UTF-8（如 `queryTTF("中文")`）时
+/// 字节 1 不在字符边界上会 panic（批21-B 回修 P3）。
 fn classify(data: &str) -> &'static str {
+    let bytes = data.as_bytes();
     if data.starts_with("http://") || data.starts_with("https://") {
         "url"
     } else if data.starts_with('/')
         || data.starts_with("file://")
-        || (data.len() > 2 && data[1..].starts_with(":\\"))
+        || (bytes.get(1) == Some(&b':') && bytes.get(2) == Some(&b'\\'))
     {
         "file"
     } else {
@@ -154,9 +159,13 @@ pub fn query_ttf_with_policy(data: &str, use_cache: bool, policy: FsPolicy) -> S
     let cache_key = sha256_hex(data.as_bytes());
     let font_type = classify(data);
 
-    // 本地文件路径先过白名单（在缓存命中之前，避免跨引擎缓存绕过策略）
+    // 本地文件路径先过白名单（在缓存命中之前，避免宽松引擎先缓存的同串
+    // 句柄让受限引擎命中 valid=true）。
+    // 必须先剥 `file://` 前缀再校验：`Path::new("file://C:/x")` 在 Windows
+    // 不是绝对路径，会作为相对路径拼进沙箱而"恒通过"预检（批21-B 回修 P2）。
     if font_type == "file" {
-        if let Err(e) = policy.resolve_read_path(data) {
+        let path = data.strip_prefix("file://").unwrap_or(data);
+        if let Err(e) = policy.resolve_read_path(path) {
             return policy_rejected_handle(&cache_key, font_type, data, e);
         }
     }
@@ -787,6 +796,25 @@ pub mod tests {
         assert_eq!(bytes, font);
         // 清理
         let _ = std::fs::remove_file(&cache_path);
+    }
+
+    #[test]
+    fn test_classify_multibyte_first_char_no_panic() {
+        // P3：首字符为多字节 UTF-8 时不得因 `data[1..]` 非字符边界 panic
+        assert_eq!(classify("中文"), "base64");
+        assert_eq!(classify("é"), "base64");
+        let handle = query_ttf("中文", false);
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "base64");
+        assert_eq!(parsed["valid"], false);
+    }
+
+    #[test]
+    fn test_classify_file_forms() {
+        assert_eq!(classify("file:///tmp/x.ttf"), "file");
+        assert_eq!(classify("/tmp/x.ttf"), "file");
+        assert_eq!(classify(r"C:\fonts\x.ttf"), "file");
+        assert_eq!(classify("https://e.com/x.ttf"), "url");
     }
 
     #[test]

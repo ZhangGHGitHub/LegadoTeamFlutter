@@ -1,4 +1,9 @@
-"""构造最小 RAR5 归档（单文件 STORE 无压缩），输出 Rust 字节字面量"""
+"""构造最小 RAR5 归档（单文件 STORE 无压缩），输出 Rust 字节字面量
+
+默认输出与既有 `RAR5_HELLO` 测试夹具一致；可指定条目名生成安全回归夹具
+（如 `--name ../evil.txt` 验证解压/读取侧的路径穿越拒绝）。
+"""
+import argparse
 import zlib
 import struct
 
@@ -27,15 +32,13 @@ def block(header_type: int, flags: int, body: bytes, data_size: int | None = Non
     return struct.pack("<I", crc) + payload
 
 
-def main() -> None:
+def build(name: bytes, content: bytes) -> bytes:
     sig = b"Rar!\x1a\x07\x01\x00"
 
     # 主归档头（type=1，flags=0，archive flags=0）
     main_hdr = block(1, 0, vint(0))
 
     # 文件头（type=2）
-    content = b"Hello RAR World!"
-    name = b"hello.txt"
     file_flags = 0x0004  # CRC present
     body = b"".join([
         vint(file_flags),          # File flags
@@ -51,10 +54,20 @@ def main() -> None:
     # 归档结束块（type=5，endarc flags=0）
     end_hdr = block(5, 0, vint(0))
 
-    data = sig + main_hdr + file_hdr + end_hdr
+    return sig + main_hdr + file_hdr + end_hdr
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--name", default="hello.txt", help="归档内条目名")
+    parser.add_argument("--content", default="Hello RAR World!", help="条目内容（UTF-8）")
+    parser.add_argument("--const", default="RAR5_HELLO", help="输出的 Rust 常量名")
+    args = parser.parse_args()
+
+    data = build(args.name.encode(), args.content.encode())
     rust = ", ".join(f"0x{b:02x}" for b in data)
-    print(f"// 共 {len(data)} 字节")
-    print(f"const RAR5_HELLO: &[u8] = &[{rust}];")
+    print(f"// 共 {len(data)} 字节，条目名 = {args.name!r}")
+    print(f"const {args.const}: &[u8] = &[{rust}];")
 
 
 if __name__ == "__main__":
