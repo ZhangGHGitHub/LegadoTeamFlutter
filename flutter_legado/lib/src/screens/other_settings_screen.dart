@@ -37,6 +37,7 @@ import '../providers/providers.dart';
 import '../providers/source_check/check_source_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../services/crash_log_service.dart';
+import '../services/process_text_service.dart';
 import '../services/replace_default_sync.dart';
 import '../services/settings_service.dart';
 import '../services/web_service_wake_lock_service.dart';
@@ -93,6 +94,13 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   int _webPort = 1122;
   int _threadCount = 16;
   bool _processText = true;
+
+  /// `process_text` 原生组件可用性：非 Android 置灰并标注，Android 桥异常
+  /// 时也不留可点却无效的死开关（首帧先按平台判定，避免非 Android 闪现可点态）
+  ProcessTextAvailability _processTextAvailability =
+      ProcessTextMenuService.isSupported
+          ? ProcessTextAvailability.supported
+          : ProcessTextAvailability.unsupportedPlatform;
   bool _blockSourceBrowser = false;
   bool _recordLog = false;
   bool _recordHttpLog = false;
@@ -176,6 +184,15 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     _threadCount = rawThreadCount.clamp(1, 256);
     _processText =
         await s.getBoolPref(PrefKeys.processText, defaultValue: true);
+    // 文字操作显示搜索：以原生组件实际状态为准回写偏好（对齐原版
+    // OtherConfigFragment.kt:76 `putPrefBoolean(processText, isProcessTextEnabled())`），
+    // 避免备份恢复/旧版本残留导致「偏好开但系统菜单不显示」；非 Android
+    // 无系统文字操作菜单，置灰并标注。
+    _processTextAvailability = await ProcessTextMenuService.availability();
+    if (_processTextAvailability == ProcessTextAvailability.supported) {
+      _processText = await ProcessTextMenuService.isEnabled();
+      await s.setBoolPref(PrefKeys.processText, _processText);
+    }
     _blockSourceBrowser = await s.getBoolPref(
       PrefKeys.blockSourceBrowser,
       defaultValue: false,
@@ -217,6 +234,32 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 「文字操作显示搜索」副标题：按平台/桥可用性诚实标注
+  String get _processTextSubtitle {
+    switch (_processTextAvailability) {
+      case ProcessTextAvailability.supported:
+        return '长按文字在操作菜单中显示阅读·搜索';
+      case ProcessTextAvailability.unsupportedPlatform:
+        return '长按文字在操作菜单中显示阅读·搜索（$_androidOnly）';
+      case ProcessTextAvailability.bridgeUnavailable:
+        return '当前构建未接入系统文字操作菜单，开关不可用';
+    }
+  }
+
+  /// 切换系统文字操作菜单入口（写偏好 + 启停 Android 组件）
+  Future<void> _setProcessText(bool value) async {
+    setState(() => _processText = value);
+    await _settingsService.setBoolPref(PrefKeys.processText, value);
+    final applied = await ProcessTextMenuService.setEnabled(value);
+    if (!mounted) return;
+    if (applied != value) {
+      // 系统拒绝（极少数定制 ROM 限制组件启停）：回滚 UI 与偏好并提示
+      setState(() => _processText = !value);
+      await _settingsService.setBoolPref(PrefKeys.processText, !value);
+      _toast('系统限制，文字操作菜单设置未生效');
+    }
   }
 
   @override
@@ -539,12 +582,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               SettingSwitchRow(
                 title: '文字操作显示搜索',
-                subtitle: '长按文字在操作菜单中显示阅读·搜索',
+                subtitle: _processTextSubtitle,
                 value: _processText,
-                onChanged: (v) {
-                  setState(() => _processText = v);
-                  _settingsService.setBoolPref(PrefKeys.processText, v);
-                },
+                // 非 Android / 原生桥不可用的构建置灰：不留「可点但无效果」的
+                // 死开关（原版该能力本身就是 Android 组件启停）
+                onChanged: _processTextAvailability ==
+                        ProcessTextAvailability.supported
+                    ? _setProcessText
+                    : null,
               ),
               SettingSwitchRow(
                 title: '记录日志',

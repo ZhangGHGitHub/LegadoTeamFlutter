@@ -178,12 +178,27 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+        </activity>
+
+        <!-- 「文字操作显示搜索」（pref: process_text）入口组件。
+             独立 activity-alias 承载 PROCESS_TEXT intent-filter，便于按
+             设置开关动态启用/禁用（对齐原版启停 SharedReceiverActivity
+             组件的语义，见 OtherConfigFragment.setProcessTextEnable）；
+             targetActivity 必须先在 manifest 中声明（Android 要求）。
+             alias 默认启用 = 保持既有「系统菜单始终显示阅读」行为，
+             ProcessTextBridge 经 setComponentEnabledSetting 切换。 -->
+        <activity-alias
+            android:name=".ProcessTextAlias"
+            android:exported="true"
+            android:label="阅读"
+            android:enabled="true"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <!-- 图标变体（对齐原版 Launcher1~6：默认禁用，LauncherIconBridge
              经 setComponentEnabledSetting 切换哪个可见以更换桌面图标）。

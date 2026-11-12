@@ -18,10 +18,12 @@ import 'src/screens/video_screen.dart';
 import 'src/services/auto_task_scheduler.dart';
 import 'src/services/auto_backup_scheduler.dart';
 import 'src/services/auto_check_new_backup_scheduler.dart';
+import 'src/services/auto_refresh_book_scheduler.dart';
 import 'src/services/app_update_service.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/headset_media_button_service.dart';
 import 'src/services/platform_bridge_service.dart';
+import 'src/services/process_text_service.dart';
 import 'src/services/settings_service.dart';
 import 'src/services/temp_dir_cleaner.dart';
 import 'src/services/video_float_window.dart';
@@ -272,6 +274,23 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // [批40] 自动备份调度：启动首帧后判定一次，之后回前台（resumed）再判定
     //（对齐原版 MainActivity.onResume → Backup.autoBack）
     AutoBackupScheduler.attach(ref.read(bookApiProvider));
+    // 自动刷新书架：冷启动首帧后延迟 2s 判定一次（对齐原版
+    // MainActivity.onPostCreate → postDelayed(2000) → upAllBookToc）；
+    // `auto_refresh` 关闭时直接跳过，`onlyUpdateRead` 只刷新已读完的书；
+    // 进程内只执行一次（不挂 resumed），失败静默、成功轻量 SnackBar 提示。
+    AutoRefreshBookScheduler.attach(
+      api: ref.read(bookApiProvider),
+      settings: ref.read(settingsProvider),
+      onBookshelfChanged: () async {
+        if (!mounted) return;
+        await ref.read(bookshelfNotifierProvider.notifier).refresh();
+      },
+      onResult: _showAutoRefreshNotice,
+    );
+    // 「文字操作显示搜索」（process_text）：启动时把偏好应用到 Android
+    // PROCESS_TEXT 入口组件（activity-alias），对齐原版设置页以组件状态
+    // 回写偏好的双向一致性；非 Android 平台直接跳过。
+    unawaited(ProcessTextMenuService.syncFromPref(ref.read(settingsProvider)));
     // [批10] autoCheckNewBackup 启动检查：冷启动、隐私闸门放行后延迟 5s
     // 检查一次 WebDAV 远端是否有比本地新的备份；进程内只查一次，不挂
     // resumed。确认后走共享恢复链并刷新全局 provider（与设置页恢复同一实现）。
@@ -391,6 +410,17 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 自动刷新书架完成提示（轻量 SnackBar；无成功项/路径未就绪时静默）
+  void _showAutoRefreshNotice(AutoRefreshBookResult result) {
+    final message = result.notice;
+    if (message == null || !mounted) return;
+    final context = PlatformBridgeService.navigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

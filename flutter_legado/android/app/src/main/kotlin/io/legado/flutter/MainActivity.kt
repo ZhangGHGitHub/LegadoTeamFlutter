@@ -62,6 +62,7 @@ open class MainActivity : FlutterActivity() {
         private const val CHANNEL_DEEP_LINK = "legado/deep_link"
         private const val CHANNEL_SYSTEM_BAR = "legado/system_bar"
         private const val CHANNEL_DEVICE_ID = "legado/device_id"
+        private const val CHANNEL_PROCESS_TEXT = ProcessTextBridge.CHANNEL
         private const val CHANNEL_COOKIE = "legado/cookie"
         private const val CHANNEL_LAUNCHER_ICON = LauncherIconBridge.CHANNEL
         private const val CHANNEL_HEAP_DUMP = "legado/heap_dump"
@@ -244,6 +245,13 @@ open class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_LAUNCHER_ICON)
             .setMethodCallHandler { call, result ->
                 LauncherIconBridge.handleMethodCall(call, result, this)
+            }
+
+        // 「文字操作显示搜索」：启停承载 PROCESS_TEXT intent-filter 的
+        // activity-alias（对齐原版 OtherConfigFragment.setProcessTextEnable）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_PROCESS_TEXT)
+            .setMethodCallHandler { call, result ->
+                ProcessTextBridge.handleMethodCall(call, result, this)
             }
 
         // [设置批6b-1] 网络状态：仅 WiFi 加载封面（ConnectivityManager）
