@@ -27,7 +27,10 @@
 //! 本轨 [`PROTECTED_SOURCE_WRITE_ROUTES`] 常量把上述 9 条 + `saveJsSource` +
 //! 批30 检验会话两条（`/startBookSourceCheck`、`/stopBookSourceCheck`）合并为
 //! 12 条，供路由级前置中间件统一使用（原版集合本就包含检验两条）；批17 三审
-//! 再追加 Web 端口 `/mcp/call`（可执行任意 JS 的 MCP 工具调用面）为第 13 条。
+//! 再追加 Web 端口 `/mcp/call`（可执行任意 JS 的 MCP 工具调用面）为第 13 条；
+//! 审查批 P0-1（2026-11-13）再追加自研 `/api/webbook/{search,info,chapters,
+//! content}` 四条（请求体自带完整书源，`mainJs`/`@js:` 在 QuickJS 中真实执行，
+//! 属同等级任意 JS 执行面）为第 14–17 条。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -136,7 +139,7 @@ use legado_db::BookSourceRepository;
 // [批17 回修 P1] 预览/正文共用 legado-js 单一 `@js:` 执行器（禁止第二份适配）
 use legado_js::replace_rule_js::ReplaceRuleJsExecutor;
 
-use super::source_api::{load_js_source_api_config, token_error_response};
+use super::source_api::{load_js_source_api_config, token_error_response, JsSourceApiConfig};
 use super::{origin_of, to_response, ReturnData};
 use crate::state::AppState;
 
@@ -161,7 +164,14 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// [批17 三审 P2] 追加 `/mcp/call`：Web 端口该路由可执行任意 JS
 /// （`eval_js`，timeout 5..600s），与源写端点同为高成本副作用面，纳入同一
 /// 令牌前置守卫；独立 MCP 端口（`serve_mcp`）已有自己的 token 中间件。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 13] = [
+///
+/// [审查批 P0-1] 追加自研 `/api/webbook/{search,info,chapters,content}`
+/// 四条：这些端点接受请求体中的完整 `BookSource`，对 `mainJs` 书源真实执行
+/// QuickJS（`java.*` 宿主 API 可发起任意网络请求）。原版无对应端点（原版
+/// 正文/搜索链只使用 DB 内已保存书源），故不在原版 13 条集合内；但「请求体
+/// 自带 source 并执行规则」的执行面与 `/mcp/call` 等价，必须纳入同一令牌
+/// 前置守卫，否则 LAN 可达时同网段攻击者无需令牌即可执行任意 JS。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 17] = [
     "/startBookSourceCheck",
     "/stopBookSourceCheck",
     "/saveBookSource",
@@ -175,6 +185,10 @@ pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 13] = [
     "/deleteReplaceRule",
     "/testReplaceRule",
     "/mcp/call",
+    "/api/webbook/search",
+    "/api/webbook/info",
+    "/api/webbook/chapters",
+    "/api/webbook/content",
 ];
 
 /// 路径是否属于受保护源写端点
@@ -189,7 +203,8 @@ pub fn is_protected_source_write_route(path: &str) -> bool {
 /// `Content-Length` 不会拖住连接）。handler 内的
 /// [`token_rejection`] 保留为纵深防御。
 ///
-/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`] 生效；其余路径原样放行。
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（17 条，含自研 `/api/webbook/*`
+/// 四条）生效；其余路径原样放行。
 /// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
 /// `serve_web_with_injected_paths` 组装路由后统一套用）。
 pub async fn source_write_token_guard(
@@ -245,11 +260,34 @@ async fn token_rejection(
     origin: Option<&str>,
 ) -> Option<Response> {
     let config = load_js_source_api_config(state).await;
+    warn_if_token_enforcement_disabled(&config);
     if config.has_valid_token(headers) {
         None
     } else {
         Some(token_error_response(uri, origin))
     }
+}
+
+/// 令牌校验被显式关闭时的一次性告警（`config:jsSourceApiTokenRequired=false`）
+///
+/// 语义（对齐原版 `AppConfig.jsSourceApiTokenRequired`）：显式关闭后
+/// [`PROTECTED_SOURCE_WRITE_ROUTES`] 全部免令牌放行——包括自研
+/// `/api/webbook/*` 的任意 JS 执行面。这是用户显式 opt-out，行为保持与既有
+/// 源写端点/`/mcp/call` 一致；但必须留下安全可见性告警。用 [`Once`] 避免
+/// 每个请求刷日志（首次命中的请求即足以提示运维）。
+static TOKEN_DISABLED_WARNED: std::sync::Once = std::sync::Once::new();
+
+fn warn_if_token_enforcement_disabled(config: &JsSourceApiConfig) {
+    if config.required {
+        return;
+    }
+    TOKEN_DISABLED_WARNED.call_once(|| {
+        tracing::warn!(
+            "源写/执行类端点令牌校验已显式关闭（config:jsSourceApiTokenRequired=false）：\
+             PROTECTED_SOURCE_WRITE_ROUTES 无令牌放行，其中 /api/webbook/* 与 /mcp/call \
+             可在设备进程内执行任意 JS；请仅在可信网络使用"
+        );
+    });
 }
 
 /// 校验失败响应（原版 `shouldCloseConnection = true`：`ReturnData.setErrorMsg`
@@ -1309,11 +1347,11 @@ mod tests {
         );
     }
 
-    /// P2-2：受保护路由清单与中间件判定一致（13 条：批30 检验会话两条 +
-    /// 批17 三审 `/mcp/call`）
+    /// P2-2 / P0-1：受保护路由清单与中间件判定一致（17 条：批30 检验会话
+    /// 两条 + 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*` 四条）
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 13);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 17);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1328,6 +1366,10 @@ mod tests {
             "/deleteReplaceRule",
             "/testReplaceRule",
             "/mcp/call",
+            "/api/webbook/search",
+            "/api/webbook/info",
+            "/api/webbook/chapters",
+            "/api/webbook/content",
         ] {
             assert!(is_protected_source_write_route(path), "{path}");
         }
@@ -1336,6 +1378,12 @@ mod tests {
         assert!(!is_protected_source_write_route("/openLegacyReview"));
         // 只保护可执行 JS 的 call；tools 列表无副作用，保持免令牌
         assert!(!is_protected_source_write_route("/mcp/tools"));
+        // 相邻但非执行面：/api/search 走 DB 内书源，/api/webbook 前缀的未知
+        // 子路径不匹配既有路由（精确匹配，不做前缀放行）
+        assert!(!is_protected_source_write_route("/api/search"));
+        assert!(!is_protected_source_write_route(
+            "/api/webbook/search/extra"
+        ));
     }
 
     /// 用户态保留：enabled/enabledExplore/customOrder/weight/respondTime

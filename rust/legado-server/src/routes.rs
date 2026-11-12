@@ -81,6 +81,9 @@ fn api_routes() -> Router<Arc<AppState>> {
         .route("/search", post(handlers::search::search_books))
         .route("/search/cancel", post(handlers::search::cancel_search))
         // WebBook 书源规则驱动链路
+        // 安全面（审查批 P0-1）：请求体自带完整书源，mainJs/@js: 可执行任意
+        // JS——四条路径均在 PROTECTED_SOURCE_WRITE_ROUTES 内，生产入口
+        // （server::serve_web_with_injected_paths）统一套令牌前置守卫。
         .route("/webbook/search", post(handlers::web_book::search_books))
         .route("/webbook/info", post(handlers::web_book::get_book_info))
         .route("/webbook/chapters", post(handlers::web_book::get_chapters))

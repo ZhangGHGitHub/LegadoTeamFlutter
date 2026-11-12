@@ -502,6 +502,47 @@ mod tests {
         })
     }
 
+    /// 测试令牌（种子到 `config:jsSourceApiToken`，与请求头字节级相等）
+    const TEST_TOKEN: &str = "webbook-test-token-p0-1";
+    const CONFIG_JS_SOURCE_API_TOKEN: &str = "config:jsSourceApiToken";
+    const CONFIG_JS_SOURCE_API_TOKEN_REQUIRED: &str = "config:jsSourceApiTokenRequired";
+
+    /// 种令牌配置并返回挂载生产令牌前置守卫的路由（与
+    /// `serve_web_with_injected_paths` 同组装顺序：create_router →
+    /// attach_source_write_token_guard）
+    async fn make_guarded_app(state: Arc<AppState>) -> axum::Router {
+        seed_token_config(&state, true, Some(TEST_TOKEN)).await;
+        crate::server::attach_source_write_token_guard(create_router(Arc::clone(&state)), state)
+    }
+
+    /// 种 `config:jsSourceApiToken` / `config:jsSourceApiTokenRequired`
+    async fn seed_token_config(state: &Arc<AppState>, required: bool, token: Option<&str>) {
+        let db = state.db.lock().await;
+        let repo = CacheRepository::new(db.connection());
+        if let Some(token) = token {
+            repo.put(CONFIG_JS_SOURCE_API_TOKEN, token, 0)
+                .expect("种令牌");
+        }
+        repo.put(
+            CONFIG_JS_SOURCE_API_TOKEN_REQUIRED,
+            if required { "true" } else { "false" },
+            0,
+        )
+        .expect("种令牌开关");
+    }
+
+    /// 构造 JSON POST 请求（`token` 为 None 时不带 `x-legado-token`）
+    fn post_json(uri: &str, body: String, token: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("Content-Type", "application/json");
+        if let Some(token) = token {
+            builder = builder.header("x-legado-token", token);
+        }
+        builder.body(Body::from(body)).expect("请求构建失败")
+    }
+
     fn make_source_json() -> String {
         serde_json::to_string(&BookSource {
             book_source_url: "https://example.com".to_string(),
@@ -707,7 +748,7 @@ mod tests {
     #[tokio::test]
     async fn test_webbook_search_endpoint() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         // 使用真实书源配置发起搜索（可能因网络不可达返回 502）
         let body = serde_json::to_string(&json!({
@@ -723,6 +764,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -742,7 +784,7 @@ mod tests {
     #[tokio::test]
     async fn test_webbook_search_no_search_url() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let body = serde_json::to_string(&json!({
             "source": serde_json::from_str::<Value>(&make_source_no_search_url()).unwrap(),
@@ -757,6 +799,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -778,7 +821,7 @@ mod tests {
     #[tokio::test]
     async fn test_webbook_info_endpoint() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let body = serde_json::to_string(&json!({
             "source": serde_json::from_str::<Value>(&make_source_json()).unwrap(),
@@ -792,6 +835,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/info")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -809,7 +853,7 @@ mod tests {
     #[tokio::test]
     async fn test_webbook_chapters_endpoint() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let body = serde_json::to_string(&json!({
             "source": serde_json::from_str::<Value>(&make_source_json()).unwrap(),
@@ -823,6 +867,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/chapters")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -840,7 +885,7 @@ mod tests {
     #[tokio::test]
     async fn test_webbook_content_endpoint() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let body = serde_json::to_string(&json!({
             "source": serde_json::from_str::<Value>(&make_source_json()).unwrap(),
@@ -859,6 +904,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/content")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -876,7 +922,7 @@ mod tests {
     #[tokio::test]
     async fn test_webbook_search_missing_query_returns_bad_request() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         // 发送不合法 JSON（缺少 query 字段）
         let body = serde_json::to_string(&json!({
@@ -890,6 +936,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -969,7 +1016,7 @@ mod tests {
     async fn test_webbook_search_concurrent_requests_flow_scope_no_crosstalk() {
         let base = start_mock_search_server().await;
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let mut handles = Vec::new();
         for src_id in 0..4u32 {
@@ -988,6 +1035,7 @@ mod tests {
                             .method(Method::POST)
                             .uri("/api/webbook/search")
                             .header("Content-Type", "application/json")
+                            .header("x-legado-token", TEST_TOKEN)
                             .body(Body::from(body))
                             .unwrap(),
                     )
@@ -1079,7 +1127,7 @@ mod tests {
                 )
                 .expect("种登录头");
         }
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         // 已种登录头：mock 源站放行 → 1 条结果
         let seeded_body = serde_json::to_string(&json!({
@@ -1105,6 +1153,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(seeded_body))
                     .unwrap(),
             )
@@ -1141,6 +1190,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(unseeded_body))
                     .unwrap(),
             )
@@ -1158,11 +1208,14 @@ mod tests {
     /// JS 源（searchUrl 为空、仅 mainJs）经 `/api/webbook/search` 返回脚本
     /// 结果，证明自由入口的 JS 分支在 server 侧可用。仅 quickjs 档真执行
     /// （默认档 JsSourceEngine 为 stub，不产生结果）。
+    ///
+    /// [P0-1] 经生产令牌守卫路由并携带正确 `x-legado-token`：钉死「合法
+    /// 令牌 → JS 正常执行」的绿径（相对路径见同模块无令牌拒绝用例）。
     #[cfg(feature = "quickjs")]
     #[tokio::test]
     async fn test_webbook_search_js_source_dispatch_via_rest() {
         let state = make_test_state();
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let body = serde_json::to_string(&json!({
             "source": {
@@ -1181,6 +1234,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -1201,6 +1255,173 @@ mod tests {
         assert_eq!(
             body["results"][0]["source_url"], "https://js-rest.example.com",
             "JS 结果 source_url 应回填书源 URL"
+        );
+    }
+
+    // ─── [P0-1 审查修复] /api/webbook/* 令牌面 ────────────────────────────────
+
+    /// 回环标记服务：统计收到的 TCP 连接数（用于证明被拒绝的请求未执行 JS）
+    fn start_marker_server() -> (std::net::SocketAddr, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("标记服务可绑定回环端口");
+        let addr = listener.local_addr().expect("标记服务地址");
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hits_srv = Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                hits_srv.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf);
+                let _ = sock.write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        });
+        (addr, hits)
+    }
+
+    /// P0-1：四条 `/api/webbook/*` 无令牌一律拒绝（原版失败信封 +
+    /// `Connection: close`），且被拒绝请求**不得执行**请求体中的 JS。
+    ///
+    /// 「未执行 JS」证明方式：`mainJs` 顶层执行 `java.ajax` 打回环标记服务
+    /// 并计数。守卫在 body 提取前拒绝 → 连接数必须为 0。quickjs 档为真执行
+    /// 证明（若守卫漏挂，JS 在 handler 内同步执行并命中标记服务）；默认档
+    /// JS 引擎为 stub，连接数恒 0，本用例仍验证拒绝层。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_webbook_endpoints_reject_without_token_and_do_not_execute_js() {
+        let (addr, hits) = start_marker_server();
+        let state = make_test_state();
+        let app = make_guarded_app(state).await;
+
+        let main_js = format!(
+            r#"java.ajax('{{"url":"http://{addr}/marker"}}');
+function search(key, page) {{ return JSON.stringify([{{name: 'executed', author: 'x', bookUrl: 'https://no-token.example.com/1'}}]); }}"#
+        );
+        let source = json!({
+            "bookSourceUrl": "https://no-token.example.com",
+            "bookSourceName": "无令牌测试源",
+            "mainJs": main_js,
+        });
+        let cases = [
+            (
+                "/api/webbook/search",
+                json!({ "source": source, "query": "三体", "page": 1 }),
+            ),
+            (
+                "/api/webbook/info",
+                json!({ "source": source, "book_url": "https://no-token.example.com/book/1" }),
+            ),
+            (
+                "/api/webbook/chapters",
+                json!({ "source": source, "book_url": "https://no-token.example.com/book/1" }),
+            ),
+            (
+                "/api/webbook/content",
+                json!({
+                    "source": source,
+                    "chapter": {
+                        "index": 0,
+                        "title": "第一章",
+                        "url": "https://no-token.example.com/ch/1",
+                        "is_vip": false
+                    }
+                }),
+            ),
+        ];
+
+        for (uri, payload) in cases {
+            let resp = app
+                .clone()
+                .oneshot(post_json(uri, payload.to_string(), None))
+                .await
+                .expect("oneshot 调用成功");
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "{uri} 令牌拒绝沿用原版 200 信封"
+            );
+            assert_eq!(
+                resp.headers()
+                    .get(axum::http::header::CONNECTION)
+                    .and_then(|v| v.to_str().ok()),
+                Some("close"),
+                "{uri} 失败响应必须 Connection: close"
+            );
+            let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .expect("读取响应体");
+            let body: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+            assert_eq!(body["isSuccess"], false, "{uri} 必须返回失败信封");
+            assert_eq!(
+                body["errorMsg"], "Web 书源访问令牌未配置或不正确",
+                "{uri} 错误文案"
+            );
+            assert_eq!(body["data"], Value::Null, "{uri} data 应为 null");
+        }
+
+        // 给潜在的异步 JS 执行留观察窗口（守卫有效时应恒 0）
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "未授权请求不得执行请求体中的 mainJs（java.ajax 标记服务不得收到连接）"
+        );
+    }
+
+    /// P0-1 语义：`config:jsSourceApiTokenRequired=false`（显式关闭）时按
+    /// 既有全局语义免令牌放行，`token_rejection` 记一次性 warn。
+    ///
+    /// 与源写端点 / `/mcp/call` 保持同一语义：显式关闭是用户 opt-out；
+    /// 关闭后 `/testReplaceRule`、`/saveJsSource` 同样可执行 JS，单独收紧
+    /// webbook 不增加实际安全收益。恢复防护：删除该配置键（缺省 true）或
+    /// 置 true。quickjs 档同时证明「放行即真执行」（标记服务命中）。
+    ///
+    /// `multi_thread` 必需：mainJs 顶层 `java.ajax` 经
+    /// `host_api::runtime_bridge::block_on` 的 `block_in_place` 分支驱动，
+    /// current_thread runtime 会 panic。
+    #[cfg(feature = "quickjs")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_webbook_required_false_allows_without_token_and_executes_js() {
+        let (addr, hits) = start_marker_server();
+        let state = make_test_state();
+        seed_token_config(&state, false, None).await;
+        let app = crate::server::attach_source_write_token_guard(
+            create_router(Arc::clone(&state)),
+            state,
+        );
+
+        let main_js = format!(
+            r#"java.ajax('{{"url":"http://{addr}/marker"}}');
+function search(key, page) {{ return JSON.stringify([{{name: 'executed-' + key, author: 'x', bookUrl: 'https://required-false.example.com/1'}}]); }}"#
+        );
+        let body = json!({
+            "source": {
+                "bookSourceUrl": "https://required-false.example.com",
+                "bookSourceName": "关闭令牌源",
+                "mainJs": main_js
+            },
+            "query": "三体",
+            "page": 1
+        })
+        .to_string();
+
+        let resp = app
+            .oneshot(post_json("/api/webbook/search", body, None))
+            .await
+            .expect("oneshot 调用成功");
+        assert_eq!(resp.status(), StatusCode::OK, "显式关闭令牌后应免令牌放行");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("读取响应体");
+        let body: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+        assert_eq!(body["total"], 1, "关闭令牌时搜索正常执行");
+        assert_eq!(body["results"][0]["name"], "executed-三体");
+        assert!(
+            hits.load(std::sync::atomic::Ordering::SeqCst) >= 1,
+            "关闭令牌时 mainJs 真实执行（顶层 java.ajax 应命中标记服务）"
         );
     }
 
@@ -1311,7 +1532,7 @@ mod tests {
                 .upsert(MOCK_COOKIE_DOMAIN, "session=dbval")
                 .expect("种 DB cookie（App 登录态）");
         }
-        let app = create_router(state);
+        let app = make_guarded_app(state).await;
 
         let body = serde_json::to_string(&json!({
             "source": make_cookie_mock_source(&base),
@@ -1325,6 +1546,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
@@ -1361,7 +1583,7 @@ mod tests {
                 .upsert(MOCK_COOKIE_DOMAIN, "app=1")
                 .expect("预置 App 侧既有 cookie 行（合并写不得抹除）");
         }
-        let app = create_router(state.clone());
+        let app = make_guarded_app(state.clone()).await;
 
         let body = serde_json::to_string(&json!({
             "source": make_cookie_mock_source(&base),
@@ -1377,6 +1599,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body.clone()))
                     .unwrap(),
             )
@@ -1405,6 +1628,7 @@ mod tests {
                     .method(Method::POST)
                     .uri("/api/webbook/search")
                     .header("Content-Type", "application/json")
+                    .header("x-legado-token", TEST_TOKEN)
                     .body(Body::from(body))
                     .unwrap(),
             )
