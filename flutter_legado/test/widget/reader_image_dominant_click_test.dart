@@ -65,6 +65,20 @@ class _CapturingApi extends MockBookApi {
   }
 }
 
+/// 返回 UI action 信封的 Mock（批21-A：Rust 有中途副作用时的返回形态）
+class _EnvelopeApi extends _CapturingApi {
+  @override
+  Future<String> evalImageAction(
+    String bookUrl,
+    int chapterIndex,
+    String action,
+    String imgSrc,
+  ) async {
+    await super.evalImageAction(bookUrl, chapterIndex, action, imgSrc);
+    return '{"result":"","actions":[{"action":"toast","message":"ab"}]}';
+  }
+}
+
 Future<_ToggleCounter> _pumpPage(
   WidgetTester tester, {
   required String way,
@@ -193,6 +207,26 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('动作提示'), findsOneWidget);
+    expect(api.actions, hasLength(1));
+  });
+
+  testWidgets('"2" 动作信封：动态拼接 toast 消息回放为 SnackBar（批21-A）', (tester) async {
+    final api = _EnvelopeApi();
+    await _pumpPage(
+      tester,
+      way: '2',
+      content:
+          '<img src="https://cdn.example.com/a.jpg,'
+          '{"click":"java.toast(\'a\'+\'b\')"}">',
+      book: _book(type: 8, origin: 'https://source.example.com'),
+      api: api,
+    );
+    await tester.tap(find.byType(CachedNetworkImage));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 修复前：静态字面量提取不到动态拼接消息，界面无提示
+    expect(find.text('ab'), findsOneWidget);
     expect(api.actions, hasLength(1));
   });
 

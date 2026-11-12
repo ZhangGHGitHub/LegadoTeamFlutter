@@ -22,9 +22,11 @@ import '../../screens/rss_articles_screen.dart' show showRssPhotoViewer;
 import '../../services/book_marking_render.dart';
 import '../../services/bookmark_badge_image_store.dart';
 import '../../services/highlight_match_sync.dart';
+import '../../services/image_action_outcome.dart';
 import '../../services/local_book_store.dart' show LocalBookStore;
 import '../../utils/click_img_way.dart' show clickImgToastHint;
 import '../../utils/comic_image_utils.dart';
+import '../../utils/image_action_replay.dart';
 import '../../utils/reader_inline_image.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_indicator.dart';
@@ -1623,23 +1625,46 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 对齐参考版 `ReadBookController.clickImg` 的 onError：执行失败只记录
   /// 日志、不打断阅读（Rust 侧对动作抛错/超时已降级为空串，无 quickjs
   /// 构建在此吞掉明确错误）。
+  ///
+  /// [批21-A] 按 Rust 返回的 UI action 信封回放副作用：toast/longToast →
+  /// SnackBar（含动态拼接消息），showBrowser/startBrowser/openUrl → 系统
+  /// 浏览器；旧 Rust 纯字符串返回值仍保留静态字面量 toast 降级提示。
   Future<void> _runReaderImageAction(String action, String imgSrc) async {
     if (!mounted) return;
     final bookUrl = _paginatedBookUrl.isNotEmpty
         ? _paginatedBookUrl
         : (ref.read(readerNotifierProvider).currentBook?.bookUrl ?? '');
     if (bookUrl.isEmpty) return;
-    final toast = clickImgToastHint(action);
+    final hint = clickImgToastHint(action);
     try {
-      await ref
+      final outcome = await ref
           .read(bookApiProvider)
-          .evalImageAction(bookUrl, _displayChapterIndex, action, imgSrc);
-      // P1-2 降级提示：契约未回传 action 队列，静态字面 toast 在此可见
-      if (toast != null && mounted) {
+          .evalImageActionOutcome(
+            bookUrl,
+            _displayChapterIndex,
+            action,
+            imgSrc,
+          );
+      if (!mounted) return;
+      if (outcome.actions.isNotEmpty) {
+        await replayImageActionSideEffects(
+          outcome.actions,
+          onToast: (message, {required bool isLong}) {
+            if (!mounted) return;
+            ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+              SnackBar(
+                content: Text(message),
+                duration: Duration(seconds: isLong ? 5 : 2),
+              ),
+            );
+          },
+        );
+      } else if (hint != null) {
+        // 兼容旧 Rust 返回值（无 actions 信封）：静态字面 toast 降级提示
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(
-            content: Text(toast.message),
-            duration: Duration(seconds: toast.isLong ? 5 : 2),
+            content: Text(hint.message),
+            duration: Duration(seconds: hint.isLong ? 5 : 2),
           ),
         );
       }

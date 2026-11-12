@@ -8,8 +8,14 @@
 //!
 //! 约定：
 //! - 执行器复用 `legado-js::replace_rule_js` 的 QuickJS 线程引擎与
-//!   IIFE + `eval` 绑定构造风格（不新增第二份执行器）；
+//!   IIFE + `eval` 绑定构造风格（不新增第二份执行器）；引擎按书源 URL
+//!   进程内 LRU 缓存（批21-A，复用已加载的 `jsLib`）；
 //! - 动作抛错/超时/非法 → 返回空串并 `log::debug!`，不上抛（避免打断阅读）；
+//! - **UI 副作用回传（批21-A）**：动作期间产生的 `java.toast`/`java.longToast`/
+//!   `java.showBrowser`/`java.startBrowser`/`java.openUrl` 等经
+//!   `ui_action_queue` 收集；有 action 时返回值扩展为结构化 JSON
+//!   `{"result":"...","actions":[{...}]}`，无 action 时保持纯结果字符串
+//!   （向后兼容，Dart 侧据 `actions` 且非空判定信封）；
 //! - 无 quickjs 构建 → 返回明确错误（不静默）；
 //! - `bookUrl` 无对应书籍行 → `book` 字段留空、`source` 为空对象 `{}`；
 //! - `chapterIndex < 0` 或章节行缺失 → `chapter` 字段为空串/0。
@@ -37,8 +43,11 @@ use crate::db_state::with_database;
 /// - `img_src` — 图片地址（绑定 `result`；目录部分绑定 `baseUrl`）
 ///
 /// 成功返回动作结果字符串；动作抛错/超时/非法返回空串（记 warn 日志）。
+///
 /// 动作期间产生的 `java.toast`/`showBrowser` 等中途 UI 副作用经
-/// `ui_action_queue` 收集并记 warn 日志（契约未扩返回结构，暂不回传 Dart）。
+/// `ui_action_queue` 收集：**有 action 时**返回结构化 JSON
+/// `{"result":"...","actions":[{...}]}`（批21-A，返回值格式的向后兼容扩展，
+/// 方法签名不变）；**无 action 时**仍返回纯结果字符串（旧调用方无需改动）。
 #[cfg(feature = "quickjs")]
 pub fn eval_image_action(
     book_url: &str,
@@ -56,6 +65,13 @@ pub fn eval_image_action(
 }
 
 /// 带显式预算的图片动作执行（测试注入短超时；生产走默认 3s）
+///
+/// UI action 信封格式（仅 `actions` 非空时）：
+/// ```json
+/// {"result": "动作返回值", "actions": [{"action": "toast", "message": "..."}]}
+/// ```
+/// `result` 与无 action 时的纯字符串返回值完全一致（`undefined` 已归一为
+/// 空串），Dart 侧只需在检测到信封时拆包。
 #[cfg(feature = "quickjs")]
 pub fn eval_image_action_with_budget(
     book_url: &str,
@@ -66,16 +82,24 @@ pub fn eval_image_action_with_budget(
 ) -> LegadoResult<String> {
     let (result, actions) =
         eval_image_action_collect_with_budget(book_url, chapter_index, action, img_src, budget)?;
-    if !actions.is_empty() {
-        // P1-2：无收集栈时 `push_action` 静默丢弃；此处显式收集并落 warn
-        // （release 可见），为后续契约扩展（回传 Dart 回放）保留证据。
-        log::warn!(
-            "图片动作收集到 {} 个 UI 副作用（契约未回传，仅日志）：{}",
-            actions.len(),
-            serde_json::to_string(&actions).unwrap_or_else(|_| "<序列化失败>".to_string())
-        );
+    Ok(image_action_envelope(result, actions))
+}
+
+/// 组装返回值：无 UI action 保持纯字符串，有则返回结构化信封。
+///
+/// 信封只在 `actions` 非空时产生，避免把普通 JSON 字符串结果误判为信封；
+/// `serde_json::to_string` 对 `Value` 数组不会失败，失败时按纯字符串返回
+/// （不影响阅读主链路）。
+#[cfg(feature = "quickjs")]
+fn image_action_envelope(result: String, actions: Vec<serde_json::Value>) -> String {
+    if actions.is_empty() {
+        return result;
     }
-    Ok(result)
+    serde_json::to_string(&serde_json::json!({
+        "result": result.clone(),
+        "actions": actions,
+    }))
+    .unwrap_or(result)
 }
 
 /// 执行图片动作并返回收集到的 UI 副作用（测试可断言 action 未被丢弃）
@@ -260,6 +284,15 @@ mod tests {
         js_lib: Option<&str>,
     ) -> (std::sync::MutexGuard<'static, ()>, Fixture) {
         let db_guard = ensure_test_db();
+        let fixture = insert_fixture(tag, js_lib);
+        (db_guard, fixture)
+    }
+
+    /// 插入一套独立书源/书籍/章节（调用方必须已持有测试库串行锁）
+    ///
+    /// 拆出以便同一测试内插入多个书源（同线程重复 `ensure_test_db`
+    /// 会自锁死）。
+    fn insert_fixture(tag: &str, js_lib: Option<&str>) -> Fixture {
         let source_url = format!("https://image-action-{tag}.example.com/source");
         let source_name = format!("图片动作源{tag}");
         let book_url = format!("https://image-action-{tag}.example.com/book/1");
@@ -287,15 +320,12 @@ mod tests {
             }])
         })
         .unwrap();
-        (
-            db_guard,
-            Fixture {
-                source_url,
-                source_name,
-                book_url,
-                image: format!("https://cdn-{tag}.example.com/dir/pic.jpg"),
-            },
-        )
+        Fixture {
+            source_url,
+            source_name,
+            book_url,
+            image: format!("https://cdn-{tag}.example.com/dir/pic.jpg"),
+        }
     }
 
     fn remove_keys(keys: &[String]) {
@@ -488,6 +518,117 @@ mod tests {
         assert_eq!(actions.len(), 1, "actions={actions:?}");
         assert_eq!(actions[0]["action"], "toast");
         assert_eq!(actions[0]["message"], "hi");
+    }
+
+    /// 批21-A：动态拼接的 java.toast 消息经返回值信封回传（修复前 Dart 不可见）
+    ///
+    /// `java.toast('a' + 'b')` 的静态字面量提取只能拿到 `'a' + 'b'` 片段
+    /// （甚至提取不到），只有走动作队列回传才能拿到实际值 `ab`。
+    #[test]
+    fn dynamic_toast_message_is_returned_in_envelope() {
+        let (_g, fx) = setup_fixture("uienvelope");
+        let raw =
+            eval_image_action(&fx.book_url, 7, "java.toast('a' + 'b'); 'done'", &fx.image).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(value["result"], "done");
+        assert_eq!(value["actions"].as_array().map(Vec::len), Some(1));
+        assert_eq!(value["actions"][0]["action"], "toast");
+        assert_eq!(value["actions"][0]["message"], "ab");
+    }
+
+    /// 批21-A：无 UI action 时返回值仍是纯字符串（向后兼容）
+    #[test]
+    fn no_ui_action_returns_plain_string() {
+        let (_g, fx) = setup_fixture("plainresult");
+        let raw = eval_image_action(&fx.book_url, 7, "'plain'", &fx.image).unwrap();
+        assert_eq!(raw, "plain");
+    }
+
+    /// 批21-A：同一书源连续两次点击只创建一次引擎（jsLib 只加载一次）
+    #[test]
+    fn repeated_clicks_reuse_engine_for_same_source() {
+        let (_g, fx) = setup_fixture_with("cachecount", Some("function lib(){ return 'ok'; }"));
+        legado_js::replace_rule_js::clear_image_action_engines();
+        legado_js::replace_rule_js::reset_image_action_engine_created_count();
+        assert_eq!(
+            eval_image_action(&fx.book_url, 7, "lib()", &fx.image).unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            eval_image_action(&fx.book_url, 7, "lib()", &fx.image).unwrap(),
+            "ok"
+        );
+        assert_eq!(
+            legado_js::replace_rule_js::image_action_engine_created_count(),
+            1,
+            "同一书源连续点击应复用缓存引擎"
+        );
+    }
+
+    /// 批21-A：复用命中时 result/baseUrl 绑定按本次点击刷新（不残留）
+    #[test]
+    fn cache_hit_refreshes_result_binding() {
+        let (_g, fx) = setup_fixture("cacherefresh");
+        legado_js::replace_rule_js::clear_image_action_engines();
+        legado_js::replace_rule_js::reset_image_action_engine_created_count();
+        let first = eval_image_action(
+            &fx.book_url,
+            7,
+            "[result, baseUrl].join('|')",
+            "https://cdn-refresh.example.com/first/a.jpg",
+        )
+        .unwrap();
+        let second = eval_image_action(
+            &fx.book_url,
+            7,
+            "[result, baseUrl].join('|')",
+            "https://cdn-refresh.example.com/second/b.jpg",
+        )
+        .unwrap();
+        assert_eq!(
+            first,
+            "https://cdn-refresh.example.com/first/a.jpg|https://cdn-refresh.example.com/first/"
+        );
+        assert_eq!(
+            second,
+            "https://cdn-refresh.example.com/second/b.jpg|https://cdn-refresh.example.com/second/"
+        );
+        assert_eq!(
+            legado_js::replace_rule_js::image_action_engine_created_count(),
+            1
+        );
+    }
+
+    /// 批21-A：invalidate 后同一书源重新创建引擎（书源更新路径）
+    #[test]
+    fn invalidate_recreates_engine_for_source() {
+        let (_g, fx) = setup_fixture("cacheinvalidate");
+        legado_js::replace_rule_js::clear_image_action_engines();
+        legado_js::replace_rule_js::reset_image_action_engine_created_count();
+        let _ = eval_image_action(&fx.book_url, 7, "'1'", &fx.image).unwrap();
+        legado_js::replace_rule_js::invalidate_image_action_engine(&fx.source_url);
+        let _ = eval_image_action(&fx.book_url, 7, "'2'", &fx.image).unwrap();
+        assert_eq!(
+            legado_js::replace_rule_js::image_action_engine_created_count(),
+            2
+        );
+    }
+
+    /// 批21-A：不同书源各自一个引擎（互不复用）
+    #[test]
+    fn different_sources_use_separate_engines() {
+        let db_guard = ensure_test_db();
+        let first = insert_fixture("cachesep-a", None);
+        let second = insert_fixture("cachesep-b", None);
+        legado_js::replace_rule_js::clear_image_action_engines();
+        legado_js::replace_rule_js::reset_image_action_engine_created_count();
+        let _ = eval_image_action(&first.book_url, 7, "'A'", &first.image).unwrap();
+        let _ = eval_image_action(&second.book_url, 7, "'B'", &second.image).unwrap();
+        assert_eq!(
+            legado_js::replace_rule_js::image_action_engine_created_count(),
+            2
+        );
+        drop(db_guard);
     }
 
     /// 超时：死循环在短预算内被中断，返回空串（不上抛）
