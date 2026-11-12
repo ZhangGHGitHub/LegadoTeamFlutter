@@ -92,8 +92,8 @@
 //!
 //! | 端点 | 原版实现 | 令牌 | 备注 |
 //! |---|---|---|---|
-//! | GET `/getBookSourcesForManagement?urls=` | `BookSourceCheckController.sources`（:22-43） | 无 | `{sources, states}`；`urls` 为 JSON 数组字符串，坏 JSON →「书源地址参数无效」 |
-//! | GET `/getBookSourceCheckStates` | `BookSourceCheckController.states`（:15-20） | 无 | `{states, sessionToken}`；无会话时 `sessionToken: null` |
+//! | GET `/getBookSourcesForManagement?urls=` | `BookSourceCheckController.sources`（:22-43） | **有**（受保护读面，原版 `PROTECTED_HTTP_LOG_READ_ROUTES`） | `{sources, states}`；`urls` 为 JSON 数组字符串，坏 JSON →「书源地址参数无效」 |
+//! | GET `/getBookSourceCheckStates` | `BookSourceCheckController.states`（:15-20） | **有**（同受保护读面） | `{states, sessionToken}`；无会话时 `sessionToken: null` |
 //! | POST `/startBookSourceCheck` | `BookSourceCheckController.start`（:48-85） | **有** | `{sources, keyword}` → `{sessionToken, sourceRevisions}`；提交源须与库内 `checkContent()` 一致 |
 //! | POST `/stopBookSourceCheck` | `BookSourceCheckController.stop`（:87-96） | **有** | `{sessionToken}`；不匹配 →「检验会话已结束或已更换」 |
 //!
@@ -238,7 +238,9 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
         )
         .route("/getHttpLogs", get(source_api::get_http_logs))
         .route("/getHttpLog", get(source_api::get_http_log))
-        // B11 书源管理读（source_check_api.rs；两条 GET 无令牌，对齐原版）
+        // B11 书源管理读（source_check_api.rs；两条 GET 属受保护读面，
+        // handler 内令牌前置 + no-store，对齐原版
+        // `PROTECTED_HTTP_LOG_READ_ROUTES`；审查批 P1-2）
         .route(
             "/getBookSourcesForManagement",
             get(source_check_api::get_book_sources_for_management),

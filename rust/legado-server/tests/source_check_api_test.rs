@@ -122,6 +122,35 @@ async fn post_json_with_token(
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
+/// GET + 自定义请求头，返回响应头（P1-2：令牌与 no-store 断言）
+async fn get_json_with_headers(
+    app: axum::Router,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let mut builder = Request::builder().uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let resp = app
+        .oneshot(builder.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, headers, serde_json::from_slice(&bytes).unwrap())
+}
+
+fn header_str<'a>(headers: &'a axum::http::HeaderMap, name: &str) -> &'a str {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+}
+
 /// 极简 percent-encode（仅测试用）
 fn enc(input: &str) -> String {
     let mut out = String::new();
@@ -148,6 +177,8 @@ fn state_of<'a>(states: &'a Value, url: &str) -> Option<&'a Value> {
 #[tokio::test]
 async fn test_management_sources_full_and_filtered() {
     let state = make_state();
+    // P1-2 起两条管理读端点需令牌；本用例只验证 payload 形状
+    disable_token_requirement(&state).await;
     seed_source(&state, make_source("https://b.example.com")).await;
     seed_source(&state, make_source("https://a.example.com")).await;
     let app = create_router(Arc::clone(&state));
@@ -205,6 +236,7 @@ async fn test_management_sources_full_and_filtered() {
 #[tokio::test]
 async fn test_management_full_branch_reports_db_error() {
     let state = make_state();
+    disable_token_requirement(&state).await;
     seed_source(&state, make_source("https://a.example.com")).await;
     // 制造查询失败（状态表缺失）：全量分支必须返回错误信封而非静默空列表
     {
@@ -229,6 +261,7 @@ async fn test_management_full_branch_reports_db_error() {
 #[tokio::test]
 async fn test_check_states_shape_and_session_token() {
     let state = make_state();
+    disable_token_requirement(&state).await;
     seed_source(&state, make_source("https://a.example.com")).await;
     let app = create_router(Arc::clone(&state));
 
@@ -255,6 +288,76 @@ async fn test_check_states_shape_and_session_token() {
         assert!(keys.contains(&expected), "缺少键 {expected}: {keys:?}");
     }
     assert_eq!(states[0]["status"], "NEEDS_CHECK");
+}
+
+/// P1-2：两条管理读端点属受保护读面——无令牌拒绝（原版文案 +
+/// `Connection: close`）、带令牌通过、两态响应均带 `Cache-Control: no-store`
+///
+/// 返回体含完整 `BookSource`（`variable` 登录态）与 `sessionToken`，
+/// 缺 `no-store` 会让中间缓存保留敏感响应。
+#[tokio::test]
+async fn test_management_read_endpoints_require_token_and_no_store() {
+    const TOKEN_ERROR: &str = "Web 书源访问令牌未配置或不正确";
+    let state = make_state();
+    {
+        let db = state.db.lock().await;
+        let cache = CacheRepository::new(db.connection());
+        cache
+            .put("config:jsSourceApiTokenRequired", "true", 0)
+            .unwrap();
+        cache.put("config:jsSourceApiToken", "secret", 0).unwrap();
+    }
+    seed_source(
+        &state,
+        BookSource {
+            book_source_url: "https://a.example.com".to_string(),
+            book_source_name: "源A".to_string(),
+            variable: "token=abc".to_string(),
+            ..BookSource::default()
+        },
+    )
+    .await;
+    let app = create_router(Arc::clone(&state));
+
+    for uri in ["/getBookSourcesForManagement", "/getBookSourceCheckStates"] {
+        // 红：无令牌 / 错令牌 → 拒绝 + close + no-store
+        for headers in [vec![], vec![("x-legado-token", "wrong")]] {
+            let (status, resp_headers, body) =
+                get_json_with_headers(app.clone(), uri, &headers).await;
+            assert_eq!(status, StatusCode::OK, "{uri}");
+            assert_eq!(body["isSuccess"], false, "{uri} {body}");
+            assert_eq!(body["errorMsg"], TOKEN_ERROR, "{uri} {body}");
+            assert!(body["data"].is_null(), "{uri} {body}");
+            assert_eq!(header_str(&resp_headers, "connection"), "close", "{uri}");
+            assert_eq!(
+                header_str(&resp_headers, "cache-control"),
+                "no-store",
+                "{uri}"
+            );
+        }
+
+        // 绿：带令牌 → 正常数据 + no-store
+        let (_, resp_headers, body) =
+            get_json_with_headers(app.clone(), uri, &[("x-legado-token", "secret")]).await;
+        assert_eq!(body["isSuccess"], true, "{uri} {body}");
+        assert_eq!(
+            header_str(&resp_headers, "cache-control"),
+            "no-store",
+            "{uri}"
+        );
+    }
+
+    // 带令牌时全量返回含 variable 登录态（证明这是敏感读面）
+    let (_, _, body) = get_json_with_headers(
+        app,
+        "/getBookSourcesForManagement",
+        &[("x-legado-token", "secret")],
+    )
+    .await;
+    assert_eq!(
+        body["data"]["sources"][0]["variable"], "token=abc",
+        "{body}"
+    );
 }
 
 // ─── POST /startBookSourceCheck ────────────────────────────────────────────

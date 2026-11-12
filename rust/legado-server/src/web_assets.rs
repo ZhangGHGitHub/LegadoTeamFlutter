@@ -116,8 +116,9 @@ pub fn with_web_headers(resp: &mut Response, header_path: &str, origin: Option<&
 /// 原版 API 响应追加的头（HttpServer.kt:203-204）
 ///
 /// B4 对齐 `addWebHeaders`（HttpServer.kt:268-273）的 no-store 分支：
-/// `PROTECTED_HTTP_LOG_READ_ROUTES`（getHttpLogs/getHttpLog）与
-/// `/getJsSourceApiTokenRequired` 追加 `Cache-Control: no-store`。
+/// `PROTECTED_HTTP_LOG_READ_ROUTES`（getHttpLogs/getHttpLog +
+/// getBookSourcesForManagement/getBookSourceCheckStates，审查批 P1-2 补齐
+/// 后两条）与 `/getJsSourceApiTokenRequired` 追加 `Cache-Control: no-store`。
 pub fn with_api_headers(resp: &mut Response, header_path: &str, origin: Option<&str>) {
     with_web_headers(resp, header_path, origin);
     resp.headers_mut().insert(
@@ -126,7 +127,11 @@ pub fn with_api_headers(resp: &mut Response, header_path: &str, origin: Option<&
     );
     if matches!(
         header_path,
-        "/getHttpLogs" | "/getHttpLog" | "/getJsSourceApiTokenRequired"
+        "/getHttpLogs"
+            | "/getHttpLog"
+            | "/getJsSourceApiTokenRequired"
+            | "/getBookSourcesForManagement"
+            | "/getBookSourceCheckStates"
     ) {
         resp.headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));

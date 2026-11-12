@@ -17,8 +17,11 @@
 //!   （复用 [`crate::server::matches_js_source_api_token`]，与 MCP 路径同一实现）；
 //! - 失败统一 `errorMsg`「Web 书源访问令牌未配置或不正确」，并按原版
 //!   `shouldCloseConnection` 语义追加 `Connection: close`（HttpServer.kt:71-73）；
-//! - 受保护 GET 面 = `PROTECTED_HTTP_LOG_READ_ROUTES`（仅 getHttpLog(s)，
-//!   HttpServer.kt:259-262）；getBookSource(s)/getRssSource(s)/getReplaceRules/
+//! - 受保护 GET 面 = 原版 `PROTECTED_HTTP_LOG_READ_ROUTES`（getHttpLog(s) +
+//!   getBookSourcesForManagement/getBookSourceCheckStates，
+//!   HttpServer.kt:259-271）；本模块实现 getHttpLog(s)，
+//!   [`super::source_check_api`] 实现后两条（同为 handler 前置校验 +
+//!   `no-store`）。getBookSource(s)/getRssSource(s)/getReplaceRules/
 //!   getJsSourceApiTokenRequired 均不在保护集合，**不要求令牌**。
 //!   `getJsSourceApiTokenRequired` 本身恒放行（vue 以其返回值决定是否弹令牌
 //!   输入框，vue assets index-Bm4G1GTr.js `Ye()`）。

@@ -4,10 +4,17 @@
 //!
 //! | 端点 | 原版实现 | 令牌 | 备注 |
 //! |---|---|---|---|
-//! | GET `/getBookSourcesForManagement?urls=` | `BookSourceCheckController.sources`（:22-43） | 无（前端仍会带） | 返回 `{sources, states}`；`urls` 为 JSON 字符串数组，缺省全量；坏 JSON →「书源地址参数无效」 |
-//! | GET `/getBookSourceCheckStates` | `BookSourceCheckController.states`（:15-20） | 无 | 返回 `{states, sessionToken}`（无进行中会话时 `sessionToken: null`） |
+//! | GET `/getBookSourcesForManagement?urls=` | `BookSourceCheckController.sources`（:22-43） | **有**（受保护读面，原版 `PROTECTED_HTTP_LOG_READ_ROUTES`；handler 前置校验 + `no-store`） | 返回 `{sources, states}`；`urls` 为 JSON 字符串数组，缺省全量；坏 JSON →「书源地址参数无效」 |
+//! | GET `/getBookSourceCheckStates` | `BookSourceCheckController.states`（:15-20） | **有**（同受保护读面） | 返回 `{states, sessionToken}`（无进行中会话时 `sessionToken: null`） |
 //! | POST `/startBookSourceCheck` | `BookSourceCheckController.start`（:48-85） | **有**（`PROTECTED_SOURCE_WRITE_ROUTES`） | 请求 `{sources:[BookSource], keyword}`；返回 `{sessionToken, sourceRevisions}`；校验提交源与库内 `checkContent()` 一致；单会话 |
 //! | POST `/stopBookSourceCheck` | `BookSourceCheckController.stop`（:87-96） | **有** | 请求 `{sessionToken}`；会话不匹配 →「检验会话已结束或已更换」；成功 `data=""` |
+//!
+//! 令牌实现选择（审查批 P1-2）：两条 GET 在 handler 内用与
+//! [`super::source_api::get_http_logs`] 同款
+//! `load_js_source_api_config(...).has_valid_token(&headers)` 前置，而不是
+//! 新增路由级中间件——GET 无请求体，不存在「未授权先读 body」的放大面；
+//! 与既有受保护读端点保持同一实现，`create_router` 单测也无须额外挂载守卫。
+//! `Cache-Control: no-store` 由 `web_assets::with_api_headers` 按路径追加。
 //!
 //! 状态机（对齐 `BookSourceCheckState.kt` / `BookSourceDao.kt` / `CheckSourceService.kt`）：
 //! 1. 书源保存（新增/规则变更）→ 状态重建为 `NEEDS_CHECK`，生成新
@@ -373,6 +380,11 @@ fn now_millis() -> i64 {
 }
 
 /// GET `/getBookSourcesForManagement?urls=`（BookSourceCheckController.sources）
+///
+/// 令牌（审查批 P1-2）：原版 `HttpServer.kt:266-271` 把本端点纳入
+/// `PROTECTED_HTTP_LOG_READ_ROUTES`，与 [`super::source_api::get_http_logs`]
+/// 同一判定；响应含完整 `Vec<BookSource>`（`variable` 为登录态），必须
+/// 前置校验后才查库。`no-store` 见 `web_assets::with_api_headers`。
 pub async fn get_book_sources_for_management(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
@@ -380,6 +392,10 @@ pub async fn get_book_sources_for_management(
 ) -> Response {
     let origin = origin_of(&headers);
     let uri = "/getBookSourcesForManagement";
+    let config = load_js_source_api_config(&state).await;
+    if !config.has_valid_token(&headers) {
+        return token_error_response(uri, origin.as_deref());
+    }
     let urls = match params.get("urls") {
         None => None,
         Some(raw) => match serde_json::from_str::<Vec<String>>(raw) {
@@ -478,12 +494,20 @@ pub async fn get_book_sources_for_management(
 }
 
 /// GET `/getBookSourceCheckStates`（BookSourceCheckController.states）
+///
+/// 令牌（审查批 P1-2）：同 [`get_book_sources_for_management`]——原版
+/// `PROTECTED_HTTP_LOG_READ_ROUTES` 成员；响应含 `sessionToken` 与状态详情，
+/// 未鉴权客户端不得轮询。
 pub async fn get_book_source_check_states(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
     let origin = origin_of(&headers);
     let uri = "/getBookSourceCheckStates";
+    let config = load_js_source_api_config(&state).await;
+    if !config.has_valid_token(&headers) {
+        return token_error_response(uri, origin.as_deref());
+    }
     let token = state.source_check.current_token();
     let rd = {
         let db = state.db.lock().await;
