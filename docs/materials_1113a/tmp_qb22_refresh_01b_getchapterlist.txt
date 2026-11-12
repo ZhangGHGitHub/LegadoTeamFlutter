@@ -1,0 +1,4 @@
+# 会话内实测捕获（2026-11-13 03:28:57，设备 192.168.100.63 → 应用 Web 服务 1122）
+# 请求：GET /getChapterList?url=http://192.168.100.52:8091/qa22/book.html
+# 说明：本文件为当次运行时响应的原样留存（事后落盘）；解析结果与宿主 qa22_fixtures/book_3ch.html 一致。
+{"isSuccess":true,"errorMsg":"","data":[{"baseUrl":"http://192.168.100.52:8091/qa22/book.html","bookUrl":"http://192.168.100.52:8091/qa22/book.html","index":0,"isPay":false,"isVip":false,"isVolume":false,"tag":"","title":"第1章 冷启动基线","url":"http://192.168.100.52:8091/qa22/ch1.html"},{"baseUrl":"http://192.168.100.52:8091/qa22/book.html","bookUrl":"http://192.168.100.52:8091/qa22/book.html","index":1,"isPay":false,"isVip":false,"isVolume":false,"tag":"","title":"第2章 目录增量","url":"http://192.168.100.52:8091/qa22/ch2.html"},{"baseUrl":"http://192.168.100.52:8091/qa22/book.html","bookUrl":"http://192.168.100.52:8091/qa22/book.html","index":2,"isPay":false,"isVip":false,"isVolume":false,"tag":"","title":"第3章 已读过滤","url":"http://192.168.100.52:8091/qa22/ch3.html"}]}

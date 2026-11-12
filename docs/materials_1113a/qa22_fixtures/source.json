@@ -1,0 +1,31 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8091/qa22",
+  "bookSourceName": "QA批22在线书源",
+  "bookSourceGroup": "QA",
+  "bookSourceType": 0,
+  "bookUrlPattern": ".*192\\.168\\.100\\.52:8091/qa22/book\\.html.*",
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 0,
+  "searchUrl": "http://192.168.100.52:8091/qa22/search.html?key={{key}}",
+  "ruleSearch": {
+    "bookList": "class.result",
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text",
+    "bookUrl": "class.link@href"
+  },
+  "ruleBookInfo": {
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text"
+  },
+  "ruleToc": {
+    "chapterList": "class.chapter",
+    "chapterName": "text",
+    "chapterUrl": "href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  }
+}

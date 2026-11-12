@@ -1,0 +1,73 @@
+ACTIVITY MANAGER PROCESS EXIT INFO (dumpsys activity exit-info)
+Last Timestamp of Persistence Into Persistent Storage: 2026-11-12 21:15:58.602
+  package: io.legado.flutter_legado
+    Historical Process Exit for uid=0
+        ApplicationExitInfo #0:
+          timestamp=2026-09-26 17:18:23.040 pid=39104 realUid=99005 packageUid=10055 definingUid=10027 user=0
+          process=com.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 reason=1 (EXIT_SELF) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=0.00 description=null state=empty trace=null
+    Historical Process Exit for uid=10055
+        ApplicationExitInfo #0:
+          timestamp=2026-11-13 03:09:25.035 pid=16186 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop io.legado.flutter_legado due to clear data state=empty trace=null
+        ApplicationExitInfo #1:
+          timestamp=2026-11-13 03:08:01.976 pid=12307 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=218MB description=stop io.legado.flutter_legado due to from pid 16158 state=empty trace=null
+        ApplicationExitInfo #2:
+          timestamp=2026-11-13 02:51:55.765 pid=12010 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop io.legado.flutter_legado due to from pid 12278 state=empty trace=null
+        ApplicationExitInfo #3:
+          timestamp=2026-11-13 02:50:45.371 pid=11040 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=222MB description=stop io.legado.flutter_legado due to from pid 11984 state=empty trace=null
+        ApplicationExitInfo #4:
+          timestamp=2026-11-13 02:45:28.459 pid=10864 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop io.legado.flutter_legado due to from pid 11016 state=empty trace=null
+        ApplicationExitInfo #5:
+          timestamp=2026-11-13 02:42:48.084 pid=6271 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=205MB description=stop io.legado.flutter_legado due to installPackageLI state=empty trace=null
+        ApplicationExitInfo #6:
+          timestamp=2026-11-12 21:03:31.645 pid=5933 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop io.legado.flutter_legado due to clear data state=empty trace=null
+        ApplicationExitInfo #7:
+          timestamp=2026-11-12 21:01:01.114 pid=5534 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=240MB description=stop io.legado.flutter_legado due to from pid 5901 state=empty trace=null
+        ApplicationExitInfo #8:
+          timestamp=2026-11-12 20:58:56.230 pid=3946 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=352MB description=stop io.legado.flutter_legado due to clear data state=empty trace=null
+        ApplicationExitInfo #9:
+          timestamp=2026-11-12 20:45:58.587 pid=3191 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop io.legado.flutter_legado due to from pid 3917 state=empty trace=null
+        ApplicationExitInfo #10:
+          timestamp=2026-09-28 01:08:46.298 pid=36827 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=574MB description=stop io.legado.flutter_legado due to from pid 37626 state=empty trace=null
+        ApplicationExitInfo #11:
+          timestamp=2026-09-28 01:07:03.308 pid=36256 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=577MB description=stop io.legado.flutter_legado due to from pid 36815 state=empty trace=null
+        ApplicationExitInfo #12:
+          timestamp=2026-09-28 01:05:26.586 pid=28302 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=21 (FORCE STOP) status=0
+          importance=100 pss=0.00 rss=648MB description=stop io.legado.flutter_legado due to from pid 36224 state=empty trace=null
+        ApplicationExitInfo #13:
+          timestamp=2026-09-27 15:29:15.740 pid=27433 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=0.00 description=stop io.legado.flutter_legado due to installPackageLI state=empty trace=null
+        ApplicationExitInfo #14:
+          timestamp=2026-09-27 14:39:19.242 pid=27196 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=10 (USER REQUESTED) subreason=23 (STOP APP) status=0
+          importance=100 pss=0.00 rss=581MB description=fully stop io.legado.flutter_legado/0 by user request state=empty trace=null
+        ApplicationExitInfo #15:
+          timestamp=2026-09-27 14:38:22.854 pid=20938 realUid=10055 packageUid=10055 definingUid=10055 user=0
+          process=io.legado.flutter_legado reason=16 (PACKAGE UPDATED) subreason=0 (UNKNOWN) status=0
+          importance=100 pss=0.00 rss=866MB description=stop io.legado.flutter_legado due to installPackageLI state=empty trace=null
