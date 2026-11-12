@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>第6章 TTF本地</title></head>
+<body>
+<div class="content">
+<p>点击图片：queryTTF('file:///etc/hosts') 应 valid=false 且带 error。</p>
+<img src="http://192.168.100.52:8091/t.png,{&quot;click&quot;: &quot;var h=java.queryTTF('file:///etc/hosts'); var o=JSON.parse(h); java.toast('TTFFILE valid='+o.valid+' err='+String(o.error||'').substring(0,14))&quot;}">
+</div>
+</body></html>

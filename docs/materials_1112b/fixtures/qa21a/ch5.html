@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>第5章 RAR越界</title></head>
+<body>
+<div class="content">
+<p>点击图片：RAR 越界条目 ../../etc/passwd 应返回 [ERROR]，不返回文件内容。</p>
+<img src="http://192.168.100.52:8091/t.png,{&quot;click&quot;: &quot;var r=java.getRarStringContent('526172211a0700cf907300000d00000000000000e51c7400802e00260000002600000000e4980cf726bc5b5d14300e00200000007261725f6e6f726d616c2e74787452415220e59b9ee5bd92e4b8ade69687e6ada3e69687207261722072656772657373696f6e0a','../../etc/passwd'); java.toast('RAR['+r.substring(0,26)+']')&quot;}">
+</div>
+</body></html>

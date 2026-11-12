@@ -1,0 +1,69 @@
+# 批21 设备验收 — 运行时会话输出摘录
+
+> 说明：以下内容为验收过程中在宿主终端实际观察到并即时录入的原始输出（会话记录），
+> 用于补充 `logcat_b21*.txt` 之外、已被后续 `adb logcat -c` 清空的短片段。
+> 夹具与书源见 `fixtures/`，可按报告「复现命令」重建同一会话。
+
+## 1. Web 服务健康检查（开启后）
+
+```
+$ curl -s http://192.168.100.63:1122/api/health
+{"service":"legado-server","status":"ok","version":"0.2.0"}
+```
+
+## 2. /saveBook（A/B/C 三本 QA 书）
+
+```
+$ curl -s -X POST http://192.168.100.63:1122/saveBook -H "Content-Type: application/json" --data-binary @save_book_a.json
+{"isSuccess":true,"errorMsg":"","data":""}
+
+$ curl -s -X POST http://192.168.100.63:1122/saveBook -H "Content-Type: application/json" --data-binary @save_book_b.json
+{"isSuccess":true,"errorMsg":"","data":""}
+
+$ curl -s -X POST http://192.168.100.63:1122/saveBook -H "Content-Type: application/json" --data-binary @save_book_c.json
+{"isSuccess":true,"errorMsg":"","data":""}
+```
+
+## 3. /getChapterList — 源 A（7 章）
+
+```
+$ curl -s -G http://192.168.100.63:1122/getChapterList \
+    --data-urlencode "url=http://192.168.100.52:8091/qa21a/book.html"
+{"isSuccess":true,"errorMsg":"","data":[
+ {"index":0,"title":"第1章 缓存连点","url":"http://192.168.100.52:8091/qa21a/ch1.html",...},
+ {"index":1,"title":"第2章 动态toast",...},
+ {"index":2,"title":"第3章 openUrl-https",...},
+ {"index":3,"title":"第4章 openUrl-js",...},
+ {"index":4,"title":"第5章 RAR越界",...},
+ {"index":5,"title":"第6章 TTF本地",...},
+ {"index":6,"title":"第7章 TTF网络",...}
+]}
+```
+
+## 4. /getBookContent — 源 A 第1章（含图片 action）
+
+```
+$ curl -s -G http://192.168.100.63:1122/getBookContent \
+    --data-urlencode "url=http://192.168.100.52:8091/qa21a/book.html" --data-urlencode "index=0"
+{"isSuccess":true,"errorMsg":"","data":"连续点击同一图片 3 次：toast 应递增显示 CLICK#1/#2/#3，libAge 持续增大（jsLib 只加载一次）。\n<img src=\"http://192.168.100.52:8091/t.png,{\"click\": \"globalThis.__qa21_clicks=(globalThis.__qa21_clicks||0)+1; var __age=(typeof __qa21_lib_ts==='number')?(Date.now()-__qa21_lib_ts):-1; java.toast('ACTION-CLICK-OK #'+globalThis.__qa21_clicks+' libAge='+__age+'ms')\"}\">"}
+```
+
+## 5. /getBookContent — 源 A 第5章（RAR 越界 action）
+
+```
+{"isSuccess":true,... "data":"... <img src=\"http://192.168.100.52:8091/t.png,{\"click\": \"var r=java.getRarStringContent('526172211a0700cf...','../../etc/passwd'); java.toast('RAR['+r.substring(0,26)+']')\"}\">"}
+```
+
+## 6. /getChapterList — 源 C（大 jsLib 源）
+
+```
+$ curl -s -G http://192.168.100.63:1122/getChapterList \
+    --data-urlencode "url=http://192.168.100.52:8091/qa21c/book.html"
+{"isSuccess":true,"errorMsg":"","data":[{"index":0,"title":"第1章 大jsLib","url":"http://192.168.100.52:8091/qa21c/ch1.html",...}]}
+```
+
+## 7. /getBookContent — 源 C 第1章
+
+```
+{"isSuccess":true,... "data":"大 jsLib：首次点击应 LOADMS 较大、AGE 约 0；再次点击 LOADMS 不变、AGE 明显增大。\n<img src=\"http://192.168.100.52:8091/t.png,{\"click\": \"var a=(typeof __loadedAt==='number')?(__loadedAt-__t0):-1; var age=(typeof __loadedAt==='number')?(Date.now()-__loadedAt):-1; java.toast('HEAVY LOADMS='+a+' AGE='+age+'ms result='+(typeof __loadMs==='function'?__loadMs():-2))\"}\">"}
+```

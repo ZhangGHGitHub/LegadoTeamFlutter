@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>第1章 缓存连点</title></head>
+<body>
+<div class="content">
+<p>连续点击同一图片 3 次：toast 应递增显示 CLICK#1/#2/#3，libAge 持续增大（jsLib 只加载一次）。</p>
+<img src="http://192.168.100.52:8091/t.png,{&quot;click&quot;: &quot;globalThis.__qa21_clicks=(globalThis.__qa21_clicks||0)+1; var __age=(typeof __qa21_lib_ts==='number')?(Date.now()-__qa21_lib_ts):-1; java.toast('ACTION-CLICK-OK #'+globalThis.__qa21_clicks+' libAge='+__age+'ms')&quot;}">
+</div>
+</body></html>

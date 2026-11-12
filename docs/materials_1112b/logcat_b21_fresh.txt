@@ -1,0 +1,66 @@
+--------- beginning of main
+11-12 21:02:06.126 W/Scheduler(  699): No mode change to emit
+11-12 21:02:06.131 W/Scheduler(  699): No mode change to emit
+11-12 21:02:06.131 I/.flutter_legado( 5933): type=1400 audit(0.0:433): avc:  denied  { getattr } for  path="/sys/fs/cgroup/uid_10055/pid_5933/cgroup.controllers" dev="cgroup2" ino=6770 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-12 21:02:06.149 W/Scheduler(  699): No mode change to emit
+11-12 21:02:06.131 I/.flutter_legado( 5933): type=1400 audit(0.0:434): avc:  denied  { read } for  name="cpu.max" dev="cgroup2" ino=3595 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-12 21:02:06.163 I/flutter ( 5933): [image-action] openUrl 拒绝非白名单 URL（scheme=javascript）：javascript:alert(1)
+11-12 21:02:06.131 I/.flutter_legado( 5933): type=1400 audit(0.0:435): avc:  denied  { open } for  path="/sys/fs/cgroup/uid_10055/cpu.max" dev="cgroup2" ino=3595 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-12 21:02:06.326 W/Scheduler(  699): No mode change to emit
+11-12 21:02:07.587 I/init    ( 6135): type=1400 audit(0.0:436): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-12 21:02:07.587 I/serial_console( 6135): type=1400 audit(0.0:437): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-12 21:02:07.587 I/serial_console( 6135): type=1400 audit(0.0:438): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-12 21:02:07.701 W/screencap( 6138): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-12 21:02:07.701 W/BpBinder( 6138): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-12 21:02:07.701 W/ProcessState( 6138): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-12 21:02:07.702 D/gralloc_kona(  699): gralloc_alloc: Creating ashmem region of size 8298496
+11-12 21:02:07.705 E/HidlServiceManagement( 6138): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-12 21:02:07.706 W/screencap( 6138): Cannot open renderer configuration file (nemuhotd pid=499)
+11-12 21:02:09.132 W/Scheduler(  699): No mode change to emit
+--------- beginning of system
+11-12 21:02:10.659 D/PowerUI ( 1083): can't show warning due to - plugged: true status unknown: false
+11-12 21:02:12.595 I/serial_console( 6143): type=1400 audit(0.0:439): avc:  denied  { read write } for  name="ttyS1" dev="tmpfs" ino=780 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-12 21:02:12.595 I/serial_console( 6143): type=1400 audit(0.0:440): avc:  denied  { open } for  path="/dev/ttyS1" dev="tmpfs" ino=780 scontext=u:r:su:s0 tcontext=u:object_r:serial_device:s0 tclass=chr_file permissive=1
+11-12 21:02:15.517 D/WifiNl80211Manager(  836): Scan result ready event
+11-12 21:02:15.517 D/WifiNative(  836): Scan result ready event
+11-12 21:02:21.543 W/Scheduler(  699): No mode change to emit
+11-12 21:02:21.565 W/Scheduler(  699): No mode change to emit
+11-12 21:02:21.743 W/Scheduler(  699): No mode change to emit
+11-12 21:02:24.114 W/screencap( 6155): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-12 21:02:24.114 W/BpBinder( 6155): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-12 21:02:24.114 W/ProcessState( 6155): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-12 21:02:24.114 D/gralloc_kona(  699): gralloc_alloc: Creating ashmem region of size 8298496
+11-12 21:02:24.117 E/HidlServiceManagement( 6155): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-12 21:02:24.118 W/screencap( 6155): Cannot open renderer configuration file (nemuhotd pid=499)
+11-12 21:02:24.205 W/Scheduler(  699): No mode change to emit
+11-12 21:02:24.405 W/Scheduler(  699): No mode change to emit
+11-12 21:02:25.773 W/screencap( 6164): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-12 21:02:25.774 W/BpBinder( 6164): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-12 21:02:25.774 W/ProcessState( 6164): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-12 21:02:25.774 D/gralloc_kona(  699): gralloc_alloc: Creating ashmem region of size 8298496
+11-12 21:02:25.777 E/HidlServiceManagement( 6164): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-12 21:02:25.778 W/screencap( 6164): Cannot open renderer configuration file (nemuhotd pid=499)
+11-12 21:02:37.862 W/Scheduler(  699): No mode change to emit
+11-12 21:02:37.865 W/Scheduler(  699): No mode change to emit
+11-12 21:02:37.881 W/Scheduler(  699): No mode change to emit
+11-12 21:02:38.062 W/Scheduler(  699): No mode change to emit
+11-12 21:02:40.408 W/Scheduler(  699): No mode change to emit
+11-12 21:02:40.608 W/Scheduler(  699): No mode change to emit
+11-12 21:02:41.976 W/screencap( 6182): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-12 21:02:41.976 W/BpBinder( 6182): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-12 21:02:41.976 W/ProcessState( 6182): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-12 21:02:41.977 D/gralloc_kona(  699): gralloc_alloc: Creating ashmem region of size 8298496
+11-12 21:02:41.979 E/HidlServiceManagement( 6182): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-12 21:02:41.980 W/screencap( 6182): Cannot open renderer configuration file (nemuhotd pid=499)
+11-12 21:02:42.068 W/Scheduler(  699): No mode change to emit
+11-12 21:02:42.268 W/Scheduler(  699): No mode change to emit
+11-12 21:02:44.452 I/NemuSysOpt( 1514): Start compat memory
+11-12 21:02:44.459 I/NemuSysOpt( 1514): Compat memory done
+11-12 21:02:44.615 W/Scheduler(  699): No mode change to emit
+11-12 21:02:44.815 W/Scheduler(  699): No mode change to emit
+11-12 21:02:46.684 W/screencap( 6198): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-12 21:02:46.684 W/BpBinder( 6198): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-12 21:02:46.685 W/ProcessState( 6198): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-12 21:02:46.685 D/gralloc_kona(  699): gralloc_alloc: Creating ashmem region of size 8298496
+11-12 21:02:46.687 E/HidlServiceManagement( 6198): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-12 21:02:46.688 W/screencap( 6198): Cannot open renderer configuration file (nemuhotd pid=499)

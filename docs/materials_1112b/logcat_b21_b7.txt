@@ -1,0 +1,18 @@
+--------- beginning of main
+11-12 21:02:06.126 W/Scheduler(  699): No mode change to emit
+11-12 21:02:06.131 W/Scheduler(  699): No mode change to emit
+11-12 21:02:06.131 I/.flutter_legado( 5933): type=1400 audit(0.0:433): avc:  denied  { getattr } for  path="/sys/fs/cgroup/uid_10055/pid_5933/cgroup.controllers" dev="cgroup2" ino=6770 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-12 21:02:06.149 W/Scheduler(  699): No mode change to emit
+11-12 21:02:06.131 I/.flutter_legado( 5933): type=1400 audit(0.0:434): avc:  denied  { read } for  name="cpu.max" dev="cgroup2" ino=3595 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-12 21:02:06.163 I/flutter ( 5933): [image-action] openUrl 拒绝非白名单 URL（scheme=javascript）：javascript:alert(1)
+11-12 21:02:06.131 I/.flutter_legado( 5933): type=1400 audit(0.0:435): avc:  denied  { open } for  path="/sys/fs/cgroup/uid_10055/cpu.max" dev="cgroup2" ino=3595 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-12 21:02:06.326 W/Scheduler(  699): No mode change to emit
+11-12 21:02:07.587 I/init    ( 6135): type=1400 audit(0.0:436): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-12 21:02:07.587 I/serial_console( 6135): type=1400 audit(0.0:437): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-12 21:02:07.587 I/serial_console( 6135): type=1400 audit(0.0:438): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-12 21:02:07.701 W/screencap( 6138): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: SurfaceFlingerAIDL
+11-12 21:02:07.701 W/BpBinder( 6138): Linking to death on android.gui.ISurfaceComposer but there are no threads (yet?) listening to incoming transactions. See ProcessState::startThreadPool and ProcessState::setThreadPoolMaxThreadCount. Generally you should setup the binder threadpool before other initialization steps.
+11-12 21:02:07.701 W/ProcessState( 6138): Extra binder thread started, but 0 threads requested. Do not use *startThreadPool when zero threads are requested.
+11-12 21:02:07.702 D/gralloc_kona(  699): gralloc_alloc: Creating ashmem region of size 8298496
+11-12 21:02:07.705 E/HidlServiceManagement( 6138): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-12 21:02:07.706 W/screencap( 6138): Cannot open renderer configuration file (nemuhotd pid=499)

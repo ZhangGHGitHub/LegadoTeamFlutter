@@ -1,0 +1,24 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8091/qa21c",
+  "bookSourceName": "QA批21图片动作源C",
+  "bookSourceGroup": "QA",
+  "bookSourceType": 0,
+  "bookUrlPattern": ".*192\\.168\\.100\\.52:8091/qa21c/book\\.html.*",
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 0,
+  "jsLib": "var __t0=Date.now(); var __acc=0; for (var i=0;i<20000000;i++){__acc=(__acc+i)%1000003;} var __loadedAt=Date.now(); function __loadMs(){return __loadedAt-__t0;}",
+  "ruleBookInfo": {
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text"
+  },
+  "ruleToc": {
+    "chapterList": "class.chapter",
+    "chapterName": "text",
+    "chapterUrl": "href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  }
+}

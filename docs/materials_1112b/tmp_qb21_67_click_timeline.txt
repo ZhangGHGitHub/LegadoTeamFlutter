@@ -1,0 +1,43 @@
+# 批21 设备验收 — 点击时间线与 toast 观测
+
+> 宿主时间为 Windows 侧 `date +%H:%M:%S.%N`（与设备 logcat 时间同一时区、误差 < 1s）；
+> 截图通过 `adb exec-out screencap -p -d <SF display id>`，单次约 120–180ms。
+
+## A. 源 A 第1章：同图连点（缓存行为证明）
+
+| 次数 | 宿主点击时刻 | 截图时刻 | 截图内 toast | 说明 |
+| --- | --- | --- | --- | --- |
+| 1 | 20:46:50.813 | 20:46:52.002 | `ACTION-CLICK-OK #1 libAge=1ms` | 首次点击：创建引擎并加载 jsLib；libAge≈0 表明 jsLib 刚求值 |
+| 2 | 20:47:03.263 | 20:47:04.429 | `ACTION-CLICK-OK #2 libAge=12398ms` | 计数递增、libAge 增长：同一引擎复用，jsLib 未重载 |
+| 3 | 20:47:15.240 | 20:47:16.415 | `ACTION-CLICK-OK #3 libAge=24377ms` | 同上 |
+| 4（误触） | 约 20:47:33 | — | UI dump 捕获 `ACTION-CLICK-OK #4 libAge=38663ms` | 仍正常，计数/时间连续 |
+
+结论：同源连续点击复用同一 JS 引擎；动作内 `globalThis` 计数跨点击递增、jsLib 顶层
+`__qa21_lib_ts` 只求值一次。截图：`tmp_qb21_13_click1.png`、`tmp_qb21_14_click2.png`、
+`tmp_qb21_15_click3.png`。
+
+## B. 源 C 第1章：大 jsLib（20,000,000 次循环）首次 vs 复用耗时
+
+| 事件 | 宿主时刻 | 观测 |
+| --- | --- | --- |
+| 首次点击 | 20:55:59.309 | `input tap` 53ms；截图 s1=+211ms、s2=+386ms 均无 toast |
+| 首次点击完成 | ≈20:55:59.875 | 第二次点击时 `AGE=33674ms`（20:56:33.553）反推 `__loadedAt≈20:55:59.879` |
+| 第二次点击 | 20:56:33.553 | 截图（+1.15s）toast：`HEAVY LOADMS=566 AGE=33674ms result=566` |
+| 第三次点击 | 20:57:15.184 | s1=+171ms 无 toast；s3=+425ms toast：`HEAVY LOADMS=566 AGE=75301ms result=566` |
+
+结论：
+- 首次点击引擎创建阶段加载 jsLib 耗时 **566ms**（`__loadMs()` 返回值，release/x86_64 设备实测）；
+- 后续点击 `LOADMS` 恒为 566，但 `AGE` 持续增大（33.7s → 75.3s），证明未重新加载 jsLib、未重建引擎；
+- 首次点击在 +386ms 时 toast 尚未出现（>566ms 的创建开销），缓存点击 toast 在 +425ms 内可见；
+  即单次点击省去约 0.57s 的 jsLib 加载开销。
+截图：`tmp_qb21_43_heavy_first_s1.png`、`tmp_qb21_44_heavy_first_s2.png`、
+`tmp_qb21_46_heavy_retry.png`、`tmp_qb21_49_cached_seq1.png`、`tmp_qb21_49_cached_seq3.png`。
+
+## C. 多源隔离
+
+| 事件 | 时刻 | toast |
+| --- | --- | --- |
+| 源 B 首次点击 | 20:51:59.577 | `SOURCE-B ACTION-CLICK-OK #1` |
+
+源 A 引擎计数已到 #4，源 B 仍是 #1，且源 B 未配置 jsLib：不同书源各自独立引擎。
+截图：`tmp_qb21_34_sourceB_click.png`。
