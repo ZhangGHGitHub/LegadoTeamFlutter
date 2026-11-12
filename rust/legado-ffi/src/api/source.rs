@@ -71,6 +71,9 @@ pub fn add_source(source_json: &str) -> LegadoResult<BookSource> {
         &saved.book_source_url,
         saved.concurrent_rate.as_deref().unwrap_or(""),
     );
+    // [批21-A] 图片动作引擎按书源 URL 缓存：书源新增/覆盖后立即失效，
+    // 避免旧 jsLib 引擎继续驻留（缓存另有 jsLib 签名校验兜底）
+    legado_js::replace_rule_js::invalidate_image_action_engine(&saved.book_source_url);
     Ok(saved)
 }
 
@@ -88,6 +91,8 @@ pub fn update_source(source_json: &str) -> LegadoResult<()> {
         &source.book_source_url,
         source.concurrent_rate.as_deref().unwrap_or(""),
     );
+    // [批21-A] 书源更新后失效图片动作引擎缓存（jsLib/规则变更即时生效）
+    legado_js::replace_rule_js::invalidate_image_action_engine(&source.book_source_url);
     Ok(())
 }
 
@@ -96,7 +101,10 @@ pub fn delete_source(source_url: &str) -> LegadoResult<()> {
     with_database(|db| {
         let repo = BookSourceRepository::new(db.connection());
         repo.delete(source_url)
-    })
+    })?;
+    // [批21-A] 删除后回收该书的图片动作引擎
+    legado_js::replace_rule_js::invalidate_image_action_engine(source_url);
+    Ok(())
 }
 
 /// 启用书源
@@ -147,6 +155,8 @@ pub fn import_sources(json_array: &str) -> LegadoResult<i32> {
             &source.book_source_url,
             source.concurrent_rate.as_deref().unwrap_or(""),
         );
+        // [批21-A] 导入覆盖同 URL 书源时失效其图片动作引擎
+        legado_js::replace_rule_js::invalidate_image_action_engine(&source.book_source_url);
     }
     Ok(count)
 }
