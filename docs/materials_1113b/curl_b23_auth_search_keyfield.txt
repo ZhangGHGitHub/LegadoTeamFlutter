@@ -1,0 +1,6 @@
+HTTP/1.1 422 Unprocessable Entity
+content-type: text/plain; charset=utf-8
+content-length: 100
+date: Thu, 12 Nov 2026 20:03:53 GMT
+
+Failed to deserialize the JSON body into the target type: missing field `query` at line 1 column 144

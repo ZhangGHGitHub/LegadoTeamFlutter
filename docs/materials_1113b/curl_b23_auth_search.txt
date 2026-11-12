@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 187
+date: Thu, 12 Nov 2026 20:03:53 GMT
+
+{"results":[{"name":"EXECUTED","author":"qa","book_url":"https://example.com/b/1","cover_url":null,"intro":null,"latest_chapter":null,"source_url":"x"}],"total":1,"query":"test","page":1}

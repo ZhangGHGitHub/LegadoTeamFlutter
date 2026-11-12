@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 171
+date: Thu, 12 Nov 2026 20:05:20 GMT
+
+{"name":"","author":"","cover_url":null,"intro":null,"categories":[],"last_chapter":null,"book_url":"https://example.com/b/1","toc_url":"https://example.com/b/1","type":8}

@@ -1,0 +1,23 @@
+== pm clear ==
+Success
+
+== version ==
+    versionCode=494 minSdk=24 targetSdk=36
+    versionName=2.0.493
+
+== port probe after clear ==
+http_code=000 curl_exit=7
+port closed (curl exit 7)
+
+== app pid after relaunch ==
+
+== display ==
+    mDisplayId=26
+    mDisplayId=27
+  mDisplayId=26
+  mDisplayId=26
+  mDisplayId=26
+
+== relaunch after clear ==
+pid=21831
+version=    versionName=2.0.493
