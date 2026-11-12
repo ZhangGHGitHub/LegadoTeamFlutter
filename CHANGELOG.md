@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.495] - 2026-11-13
+
+### Fixed
+- [Rust] 安全修复：Web 服务的段评写接口（`/openLegacyReview`、`/runLegacyReview`）改为在读取请求体之前校验「Web 书源访问令牌」，未授权请求不再占用请求体解析。
+
+### Changed
+- [工程] 契约校验新增「Rust FFI 导出面 ↔ Dart 桥接」双向一致性检查，防止新增导出未接入桥接而静默漂移。
+- [工程] CI 的 quickjs clippy 档补齐 `legado-fetcher`，与同文件 quickjs 测试档保持一致。
+
 ## [2.0.494] - 2026-11-13
 
 ### Fixed
