@@ -1627,8 +1627,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 构建在此吞掉明确错误）。
   ///
   /// [批21-A] 按 Rust 返回的 UI action 信封回放副作用：toast/longToast →
-  /// SnackBar（含动态拼接消息），showBrowser/startBrowser/openUrl → 系统
-  /// 浏览器；旧 Rust 纯字符串返回值仍保留静态字面量 toast 降级提示。
+  /// SnackBar（含动态拼接消息），showBrowser/startBrowser/openUrl → 复用
+  /// `PlatformBridgeService` 既有桥接策略（拦截设置/二次确认/深链分流）；
+  /// 旧 Rust 纯字符串返回值仍保留静态字面量 toast 降级提示。
   Future<void> _runReaderImageAction(String action, String imgSrc) async {
     if (!mounted) return;
     final bookUrl = _paginatedBookUrl.isNotEmpty

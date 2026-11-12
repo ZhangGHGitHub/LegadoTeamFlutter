@@ -12,7 +12,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/providers/ui_settings/ui_settings_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
+import 'package:flutter_legado/src/services/image_action_outcome.dart';
 import 'package:flutter_legado/src/services/platform_bridge_service.dart';
+import 'package:flutter_legado/src/utils/image_action_replay.dart';
 
 void main() {
   tearDown(() {
@@ -95,8 +97,9 @@ void main() {
   testWidgets('全局设置镜像开启（无测试覆写）同样拦截', (tester) async {
     final observer = _RouteRecorder();
     // UiSettingsNotifier 启动加载后镜像；此处直接模拟镜像值
-    uiSettingsListenable.value =
-        const UiSettingsState(blockSourceBrowser: true);
+    uiSettingsListenable.value = const UiSettingsState(
+      blockSourceBrowser: true,
+    );
     await tester.pumpWidget(_host(observer));
     await tester.pumpAndSettle();
 
@@ -130,8 +133,7 @@ void main() {
 
   // ─── [批39 审查回修] openBrowser/startBrowser 同样豁免 legado:/yuedu: ────
 
-  testWidgets('开启拦截：openBrowser 的 legado:// 深链仍走站内、不提示拦截',
-      (tester) async {
+  testWidgets('开启拦截：openBrowser 的 legado:// 深链仍走站内、不提示拦截', (tester) async {
     final observer = _RouteRecorder();
     bridge().blockSourceBrowserOverride = true;
     await tester.pumpWidget(_host(observer));
@@ -148,8 +150,7 @@ void main() {
     expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
   });
 
-  testWidgets('开启拦截：startBrowser 的 yuedu:// 深链仍走站内、不提示拦截',
-      (tester) async {
+  testWidgets('开启拦截：startBrowser 的 yuedu:// 深链仍走站内、不提示拦截', (tester) async {
     final observer = _RouteRecorder();
     bridge().blockSourceBrowserOverride = true;
     await tester.pumpWidget(_host(observer));
@@ -165,6 +166,51 @@ void main() {
 
     expect(find.text('已阻止书源打开浏览器'), findsNothing);
     expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
+  });
+
+  // ─── 批21-A 回修 P1：图片动作外链复用既有桥接策略 ───
+
+  testWidgets('图片动作 openUrl 回放：开启拦截后不弹确认并提示', (tester) async {
+    final observer = _RouteRecorder();
+    bridge().blockSourceBrowserOverride = true;
+    await tester.pumpWidget(_host(observer));
+    await tester.pumpAndSettle();
+
+    await replayImageActionSideEffects(const [
+      ImageActionSideEffect(
+        name: 'openUrl',
+        data: {
+          'action': 'openUrl',
+          'url': 'https://image-action.example.com/target',
+        },
+      ),
+    ], onToast: (message, {required bool isLong}) {});
+    await tester.pumpAndSettle();
+
+    expect(find.text('已阻止书源打开浏览器'), findsOneWidget);
+    expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsNothing);
+    expect(observer.pushedNames, isNot(contains(AppRoutes.browser)));
+  });
+
+  testWidgets('图片动作 openUrl 回放：关闭拦截后走外跳二次确认', (tester) async {
+    final observer = _RouteRecorder();
+    bridge().blockSourceBrowserOverride = false;
+    await tester.pumpWidget(_host(observer));
+    await tester.pumpAndSettle();
+
+    await replayImageActionSideEffects(const [
+      ImageActionSideEffect(
+        name: 'openUrl',
+        data: {
+          'action': 'openUrl',
+          'url': 'https://image-action.example.com/target',
+        },
+      ),
+    ], onToast: (message, {required bool isLong}) {});
+    await tester.pumpAndSettle();
+
+    expect(find.text('正在请求跳转链接/应用，是否跳转？'), findsOneWidget);
+    expect(find.text('已阻止书源打开浏览器'), findsNothing);
   });
 }
 

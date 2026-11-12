@@ -2,7 +2,8 @@
 //
 // Rust 侧在有 UI 副作用（java.toast / java.longToast / java.showBrowser /
 // java.startBrowser / java.openUrl 等）时，把返回值扩展为结构化 JSON：
-//   {"result": "动作返回值", "actions": [{"action": "toast", "message": "ab"}]}
+//   {"_lgActions": true, "result": "动作返回值",
+//    "actions": [{"action": "toast", "message": "ab"}]}
 // 无副作用时保持纯结果字符串（向后兼容）。本文件只做解析，不触发任何 UI。
 
 import 'dart:convert';
@@ -54,9 +55,10 @@ class ImageActionOutcome {
 
   /// 解析 Rust `evalImageAction` 原始返回串
   ///
-  /// 仅当返回值是 JSON 对象、含字符串 `result` 与**非空** `actions` 数组时
-  /// 视为信封（Rust 只在有 action 时才包信封，非空判定可避免把书源动作
-  /// 恰好返回的同形 JSON 误判）；其余情况一律按纯结果字符串处理。
+  /// 仅当返回值是 JSON 对象、`_lgActions == true`（Rust 判别标记）、
+  /// `result` 为字符串且 `actions` 为非空数组时视为信封；其余情况一律按
+  /// 纯结果字符串处理。判别标记可避免把书源动作恰好返回的同形 JSON
+  /// （如 `{"result":"x","actions":[...]}`）误拆包。
   /// 解析失败不抛错（阅读主链路不因坏数据中断）。
   static ImageActionOutcome parse(String raw) {
     final text = raw.trim();
@@ -64,6 +66,7 @@ class ImageActionOutcome {
       try {
         final decoded = jsonDecode(text);
         if (decoded is Map<String, dynamic> &&
+            decoded['_lgActions'] == true &&
             decoded['result'] is String &&
             decoded['actions'] is List &&
             (decoded['actions'] as List).isNotEmpty) {

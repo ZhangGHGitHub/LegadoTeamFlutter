@@ -257,8 +257,9 @@ class _ReaderImageDominantBodyState
   ///
   /// [批21-A] Rust 有 UI 副作用时返回结构化信封，此处按 action 类型回放
   /// （toast/longToast → SnackBar，支持 `java.toast('a' + 'b')` 这类动态
-  /// 消息；showBrowser/startBrowser/openUrl → 系统浏览器）。旧 Rust 返回
-  /// 纯字符串时仍保留静态字面量 toast 的降级提示。
+  /// 消息；showBrowser/startBrowser/openUrl → 复用
+  /// `PlatformBridgeService` 既有桥接策略：拦截设置/二次确认/深链分流）。
+  /// 旧 Rust 返回纯字符串时仍保留静态字面量 toast 的降级提示。
   Future<void> _runImageAction(String action, String imgSrc) async {
     final bookUrl = widget.book.bookUrl;
     if (bookUrl.isEmpty) return;

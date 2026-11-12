@@ -49,7 +49,8 @@ void main() {
 
     test('信封：拆出 result 与动态拼接 toast 消息（a+b → ab）', () {
       final outcome = ImageActionOutcome.parse(
-        '{"result":"done","actions":[{"action":"toast","message":"ab"}]}',
+        '{"_lgActions":true,"result":"done",'
+        '"actions":[{"action":"toast","message":"ab"}]}',
       );
       expect(outcome.result, 'done');
       expect(outcome.actions, hasLength(1));
@@ -59,7 +60,7 @@ void main() {
 
     test('信封：longToast 与 openUrl 均保留原始字段', () {
       final outcome = ImageActionOutcome.parse(
-        '{"result":"","actions":['
+        '{"_lgActions":true,"result":"","actions":['
         '{"action":"longToast","message":"长提示"},'
         '{"action":"openUrl","url":"https://example.com/a","mimeType":"text/html"}'
         ']}',
@@ -72,7 +73,24 @@ void main() {
     });
 
     test('actions 为空数组：不视为信封（防误判普通 JSON 结果）', () {
-      const raw = '{"result":"x","actions":[]}';
+      const raw = '{"_lgActions":true,"result":"x","actions":[]}';
+      final outcome = ImageActionOutcome.parse(raw);
+      expect(outcome.result, raw);
+      expect(outcome.actions, isEmpty);
+    });
+
+    test('同形 JSON 但无 _lgActions 标记：不拆包（P2 回修）', () {
+      // 书源动作自身返回 {"result":...,"actions":[...]} 时不得被误拆包
+      const raw = '{"result":"x","actions":[{"action":"toast","message":"假"}]}';
+      final outcome = ImageActionOutcome.parse(raw);
+      expect(outcome.result, raw);
+      expect(outcome.actions, isEmpty);
+    });
+
+    test('有标记但 result 非字符串：不视为信封', () {
+      const raw =
+          '{"_lgActions":true,"result":1,"actions":['
+          '{"action":"toast","message":"x"}]}';
       final outcome = ImageActionOutcome.parse(raw);
       expect(outcome.result, raw);
       expect(outcome.actions, isEmpty);
@@ -94,7 +112,7 @@ void main() {
 
     test('actions 中非对象/缺 action 名的条目被跳过，合法条目保留', () {
       final outcome = ImageActionOutcome.parse(
-        '{"result":"r","actions":['
+        '{"_lgActions":true,"result":"r","actions":['
         '"not-a-map",'
         '{"message":"缺动作名"},'
         '{"action":"toast","message":"ok"}'
@@ -104,19 +122,13 @@ void main() {
       expect(outcome.actions, hasLength(1));
       expect(outcome.actions.single.message, 'ok');
     });
-
-    test('result 非字符串（如数字）：不视为信封', () {
-      const raw = '{"result":1,"actions":[{"action":"toast","message":"x"}]}';
-      final outcome = ImageActionOutcome.parse(raw);
-      expect(outcome.result, raw);
-      expect(outcome.actions, isEmpty);
-    });
   });
 
   group('BookApi.evalImageActionOutcome 扩展', () {
     test('拆包并透传原参数', () async {
       final api = _FakeImageActionApi(
-        '{"result":"ok","actions":[{"action":"toast","message":"ab"}]}',
+        '{"_lgActions":true,"result":"ok",'
+        '"actions":[{"action":"toast","message":"ab"}]}',
       );
       final outcome = await api.evalImageActionOutcome(
         'https://book.example.com/1',

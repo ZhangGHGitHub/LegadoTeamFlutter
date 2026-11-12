@@ -75,7 +75,8 @@ class _EnvelopeApi extends _CapturingApi {
     String imgSrc,
   ) async {
     await super.evalImageAction(bookUrl, chapterIndex, action, imgSrc);
-    return '{"result":"","actions":[{"action":"toast","message":"ab"}]}';
+    return '{"_lgActions":true,"result":"",'
+        '"actions":[{"action":"toast","message":"ab"}]}';
   }
 }
 
