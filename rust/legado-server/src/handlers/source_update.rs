@@ -11,6 +11,7 @@ use axum::Json;
 use legado_core::models::BookSource;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use legado_db::repository::book_source_repository::BookSourceRepository;
@@ -152,6 +153,70 @@ fn is_loopback_repo_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost")
 }
 
+/// 校验 `/api/sources/update` 的 `repo_url`（审查批 P1-1）
+///
+/// 只允许 `http`/`https`；拒绝本机与内网/保留地址（`localhost`、
+/// `127.0.0.1`、`10.x`、`172.16-31.x`、`192.168.x`、`169.254.x`、`::1`、
+/// `fc00::/7`、`fe80::/10`、IPv4-mapped 回环等）。拒绝字面量即可挡住
+/// 「把设备当 SSRF 探针」的最直接形态；域名解析到内网（DNS rebinding）
+/// 属登记残余，需要解析级校验时另立批次。
+///
+/// 重定向同样逐跳走本函数（[`execute_update`] 的 `redirect::Policy`），
+/// 防止公网 URL 302 到内网。
+fn validate_repo_url(raw: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(raw).map_err(|e| format!("仓库地址无效: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!(
+            "仓库地址仅支持 http/https，实际为 {}",
+            url.scheme()
+        ));
+    }
+    match url.host() {
+        Some(url::Host::Domain(domain)) => {
+            let lowered = domain.to_ascii_lowercase();
+            let lowered = lowered.trim_end_matches('.');
+            if lowered == "localhost" || lowered.ends_with(".localhost") {
+                return Err(format!("仓库地址不允许指向本机: {domain}"));
+            }
+        }
+        Some(url::Host::Ipv4(ip)) => {
+            if is_disallowed_ip(IpAddr::V4(ip)) {
+                return Err(format!("仓库地址不允许指向内网/保留地址: {ip}"));
+            }
+        }
+        Some(url::Host::Ipv6(ip)) => {
+            if is_disallowed_ip(IpAddr::V6(ip)) {
+                return Err(format!("仓库地址不允许指向内网/保留地址: {ip}"));
+            }
+        }
+        None => return Err("仓库地址缺少主机名".to_string()),
+    }
+    Ok(url)
+}
+
+/// 内网/保留地址判定（对齐审查批 P1-1 要求的最小集合 + 明显不可路由地址）
+fn is_disallowed_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_unique_local()
+                || v6.is_unicast_link_local()
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| is_disallowed_ip(IpAddr::V4(v4)))
+        }
+    }
+}
+
 /// GET /api/sources/updates — 检查书源更新
 ///
 /// 从所有仓库获取远程书源列表，与本地对比，返回需要更新的书源。
@@ -199,20 +264,35 @@ pub async fn check_updates(State(state): State<Arc<AppState>>) -> Result<Json<Va
 /// POST /api/sources/update — 执行更新
 ///
 /// 从指定仓库下载书源并合并到本地数据库。
+///
+/// 安全约束（审查批 P1-1）：
+/// - `repo_url` 只允许 `http`/`https`，且不得指向本机/内网/保留地址
+///   （[`validate_repo_url`]）；重定向逐跳复用同一校验；
+/// - 不再无条件 `danger_accept_invalid_certs(true)`（原实现会接受任意自签
+///   证书，配合任意 `repo_url` 放大中间人攻击面）；证书校验恢复默认。
 pub async fn execute_update(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UpdateRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let repo_url = validate_repo_url(&req.repo_url)
+        .map_err(|message| ApiError(legado_core::LegadoError::Parser(message)))?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
-        .danger_accept_invalid_certs(true)
+        // 逐跳校验重定向目标：拒绝 302 到内网/非 http(s) 的 SSRF 变形
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if validate_repo_url(attempt.url().as_str()).is_ok() {
+                attempt.follow()
+            } else {
+                attempt.error("重定向目标不被允许（仅 http/https 且不得指向内网）")
+            }
+        }))
         .dns_resolver(legado_net::custom_hosts::resolver())
         .build()
         .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
     // 下载远程书源
     let response = client
-        .get(&req.repo_url)
+        .get(repo_url)
         .send()
         .await
         .map_err(|e| legado_core::LegadoError::Network(format!("请求仓库失败: {e}")))?;
@@ -456,7 +536,51 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::routes::create_router;
+    use crate::server::attach_source_write_token_guard;
     use tokio::sync::Mutex;
+
+    /// 令牌错误文案（对齐原版 `hasValidJsSourceApiToken` 失败文案）
+    const TOKEN_ERROR: &str = "Web 书源访问令牌未配置或不正确";
+
+    /// 测试仓库域名：生产校验拒绝回环字面量（127.0.0.1/localhost），
+    /// 集成用例经自定义 hosts 把本域名映射到 127.0.0.1——仍走真实
+    /// `validate_repo_url` + reqwest + DNS resolver 链路，不引入 test-only
+    /// 校验旁路。
+    const MOCK_REPO_HOST: &str = "source-repo.test";
+
+    /// 串行锁：自定义 hosts 映射为进程级全局状态，避免并行用例互相清理
+    static MOCK_HOSTS_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// 离开作用域清理 hosts 映射（panic 亦不泄漏）
+    struct MockHostsGuard;
+
+    impl Drop for MockHostsGuard {
+        fn drop(&mut self) {
+            legado_net::custom_hosts::clear_custom_hosts();
+        }
+    }
+
+    /// 注入 `MOCK_REPO_HOST → 127.0.0.1` 映射，返回清理守卫
+    fn map_mock_repo_host() -> MockHostsGuard {
+        legado_net::custom_hosts::apply_custom_hosts(
+            &json!({ MOCK_REPO_HOST: "127.0.0.1" }).to_string(),
+        )
+        .expect("hosts 映射注入失败");
+        MockHostsGuard
+    }
+
+    /// 测试仓库 URL（域名为映射后的 `MOCK_REPO_HOST`，端口取 mock 实际端口）
+    fn mock_repo_url(addr: std::net::SocketAddr, path: &str) -> String {
+        format!("http://{MOCK_REPO_HOST}:{}{path}", addr.port())
+    }
+
+    /// 写入 caches 配置（令牌开关/令牌值）
+    async fn seed_config(state: &Arc<AppState>, key: &str, value: &str) {
+        let db = state.db.lock().await;
+        legado_db::repository::cache_repository::CacheRepository::new(db.connection())
+            .put(key, value, 0)
+            .unwrap();
+    }
 
     fn make_test_state() -> Arc<AppState> {
         let db = legado_db::init_in_memory_database().unwrap();
@@ -726,6 +850,8 @@ mod tests {
         use legado_core::models::BookSource;
 
         let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        let _hosts = map_mock_repo_host();
         let url = "https://server-ratelimit-batch.example/";
 
         // 本地已有旧率书源（含嵌套规则的真实形态种子），并让 server registry
@@ -767,7 +893,7 @@ mod tests {
 
         let app = create_router(state);
         let body = serde_json::to_string(&json!({
-            "repo_url": format!("http://{addr}/repo.json"),
+            "repo_url": mock_repo_url(addr, "/repo.json"),
             "only_update_existing": false
         }))
         .unwrap();
@@ -803,6 +929,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_update_creates_check_states() {
         let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        let _hosts = map_mock_repo_host();
         let urls = [
             "https://update-state-a.example/",
             "https://update-state-b.example/",
@@ -816,7 +944,7 @@ mod tests {
 
         let app = create_router(Arc::clone(&state));
         let body = serde_json::to_string(&json!({
-            "repo_url": format!("http://{addr}/repo.json"),
+            "repo_url": mock_repo_url(addr, "/repo.json"),
             "only_update_existing": false
         }))
         .unwrap();
@@ -852,6 +980,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_update_persists_nested_rules_and_variable() {
         let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        let _hosts = map_mock_repo_host();
 
         let rule_search = json!({
             "bookList": "class.result||class.bookbox",
@@ -894,7 +1024,7 @@ mod tests {
 
         let app = create_router(state.clone());
         let body = serde_json::to_string(&json!({
-            "repo_url": format!("http://{addr}/repo.json"),
+            "repo_url": mock_repo_url(addr, "/repo.json"),
             "only_update_existing": false
         }))
         .unwrap();
@@ -964,6 +1094,8 @@ mod tests {
         use std::time::Duration;
 
         let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        let _hosts = map_mock_repo_host();
         let url = "https://reimport.example/";
 
         // 本地存量：登录态 variable + 旧限速 + 旧规则
@@ -1008,7 +1140,7 @@ mod tests {
 
         let app = create_router(state.clone());
         let body = serde_json::to_string(&json!({
-            "repo_url": format!("http://{addr}/repo.json"),
+            "repo_url": mock_repo_url(addr, "/repo.json"),
             "only_update_existing": false
         }))
         .unwrap();
@@ -1066,6 +1198,8 @@ mod tests {
     #[tokio::test]
     async fn test_execute_update_variable_absent_clears_local_like_ffi() {
         let state = make_test_state();
+        let _hosts_lock = MOCK_HOSTS_LOCK.lock().await;
+        let _hosts = map_mock_repo_host();
         let url = "https://no-var.example/";
 
         {
@@ -1091,7 +1225,7 @@ mod tests {
 
         let app = create_router(state.clone());
         let body = serde_json::to_string(&json!({
-            "repo_url": format!("http://{addr}/repo.json"),
+            "repo_url": mock_repo_url(addr, "/repo.json"),
             "only_update_existing": false
         }))
         .unwrap();
@@ -1152,5 +1286,119 @@ mod tests {
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["updated"], 5);
         assert_eq!(json["added"], 3);
+    }
+
+    // ── P1-1：repo_url 校验（协议/内网/保留地址） ─────────────────────────
+
+    #[test]
+    fn test_validate_repo_url_rejects_non_http_and_private_hosts() {
+        for raw in [
+            "ftp://example.com/repo.json",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "http://127.0.0.1:8080/repo.json",
+            "http://127.0.0.2/repo.json",
+            "http://localhost/repo.json",
+            "http://LOCALHOST./repo.json",
+            "http://10.0.0.1/repo.json",
+            "http://172.16.0.1/repo.json",
+            "http://172.31.255.255/repo.json",
+            "http://192.168.1.10/repo.json",
+            "http://169.254.169.254/latest/meta-data",
+            "http://[::1]/repo.json",
+            "http://0.0.0.0/repo.json",
+            "http://[::ffff:127.0.0.1]/repo.json",
+            "not-a-url",
+            "http://",
+        ] {
+            assert!(validate_repo_url(raw).is_err(), "应拒绝: {raw}");
+        }
+        for raw in [
+            "https://raw.githubusercontent.com/gedoor/legado/master/x.json",
+            "http://example.com/repo.json",
+            // 私网边界外（172.32/192.169）是公网地址，不得误拒
+            "http://172.32.0.1/repo.json",
+            "http://192.169.0.1/repo.json",
+        ] {
+            assert!(validate_repo_url(raw).is_ok(), "应接受: {raw}");
+        }
+    }
+
+    /// 集成面：内网/非 http 的 repo_url 在发起网络请求前即 400
+    #[tokio::test]
+    async fn test_execute_update_rejects_private_repo_url_before_network() {
+        let state = make_test_state();
+        let app = create_router(state);
+        for repo_url in [
+            "http://127.0.0.1:9/repo.json",
+            "http://192.168.1.10/repo.json",
+            "ftp://example.com/repo.json",
+        ] {
+            let body = json!({
+                "repo_url": repo_url,
+                "only_update_existing": false
+            })
+            .to_string();
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/sources/update")
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{repo_url}");
+            let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let rd: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(rd["error"]["type"], "parser", "{repo_url} rd={rd}");
+        }
+    }
+
+    /// 无令牌 `POST /api/sources/update` 在读取 body 前被拒（3 MiB 仍走令牌
+    /// 失败信封而非 axum 413）
+    #[tokio::test]
+    async fn test_source_update_requires_token_before_reading_body() {
+        let state = make_test_state();
+        seed_config(&state, "config:jsSourceApiToken", "secret").await;
+        let app =
+            attach_source_write_token_guard(create_router(Arc::clone(&state)), Arc::clone(&state));
+        let big = format!(
+            "{{\"repo_url\":\"https://example.com/repo.json\",\"padding\":\"{}\"}}",
+            "x".repeat(3 * 1024 * 1024)
+        );
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(big))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "守卫应在 body 提取前拒绝（不能是 413）"
+        );
+        assert_eq!(
+            resp.headers()
+                .get("connection")
+                .and_then(|v| v.to_str().ok()),
+            Some("close")
+        );
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["isSuccess"], false, "{body}");
+        assert_eq!(body["errorMsg"], TOKEN_ERROR, "{body}");
     }
 }

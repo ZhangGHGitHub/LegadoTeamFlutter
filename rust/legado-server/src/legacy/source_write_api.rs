@@ -30,7 +30,9 @@
 //! 再追加 Web 端口 `/mcp/call`（可执行任意 JS 的 MCP 工具调用面）为第 13 条；
 //! 审查批 P0-1（2026-11-13）再追加自研 `/api/webbook/{search,info,chapters,
 //! content}` 四条（请求体自带完整书源，`mainJs`/`@js:` 在 QuickJS 中真实执行，
-//! 属同等级任意 JS 执行面）为第 14–17 条。
+//! 属同等级任意 JS 执行面）为第 14–17 条；审查批 P1-1（2026-11-13）再追加
+//! 自研 REST 源写面四条（方法限定）为第 18–21 条：`POST /api/sources`、
+//! `PUT|DELETE /api/sources/{id}`、`POST /api/sources/update`。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -121,7 +123,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Query, Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 use serde_json::{Map, Value};
@@ -154,7 +156,15 @@ const JS_SOURCE_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 /// 批30 检验会话 `/startBookSourceCheck`、`/stopBookSourceCheck`）
 pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 
-/// 受保护源写路由（P2-2，路由级令牌前置中间件使用）
+/// 受保护源写路由表（P2-2，路由级令牌前置中间件使用）
+///
+/// 每条为 `(路径模式, 方法限定)`：
+/// - 方法限定 `None`：该路径**全部方法**受保护——对齐原版
+///   `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258）的裸路径集合语义；
+/// - 方法限定 `Some("POST")` 等：仅该方法受保护——用于自研 `/api/sources`
+///   这类读写共用同一路径的 REST 端点（GET 读取面保持免令牌）；
+/// - 路径模式末段 `{id}` 匹配**单个**路径段（对齐 axum `{id}` 路径参数；
+///   注意查询串不参与匹配，路径参数为百分号编码时原样按段匹配）。
 ///
 /// 与原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258）中本模块
 /// 的 9 条 + 独立链保护的 `/saveJsSource`（HttpServer.kt:60-62）一致；
@@ -171,40 +181,72 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 正文/搜索链只使用 DB 内已保存书源），故不在原版 13 条集合内；但「请求体
 /// 自带 source 并执行规则」的执行面与 `/mcp/call` 等价，必须纳入同一令牌
 /// 前置守卫，否则 LAN 可达时同网段攻击者无需令牌即可执行任意 JS。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 17] = [
-    "/startBookSourceCheck",
-    "/stopBookSourceCheck",
-    "/saveBookSource",
-    "/saveBookSources",
-    "/deleteBookSources",
-    "/saveJsSource",
-    "/saveRssSource",
-    "/saveRssSources",
-    "/deleteRssSources",
-    "/saveReplaceRule",
-    "/deleteReplaceRule",
-    "/testReplaceRule",
-    "/mcp/call",
-    "/api/webbook/search",
-    "/api/webbook/info",
-    "/api/webbook/chapters",
-    "/api/webbook/content",
+///
+/// [审查批 P1-1] 追加自研 REST 源写面四条（方法限定；GET 读取面保持
+/// 免令牌）：`POST /api/sources`（创建/写库）、`PUT|DELETE /api/sources/{id}`
+/// （改/删）、`POST /api/sources/update`（按任意 `repo_url` 整批导入源）。
+/// 这些端点在原版无等价面（原版写面为 `/saveBookSource(s)`、
+/// `/deleteBookSources`），此前完全绕过令牌面；其中 `POST /api/sources`
+/// 旧实现 `INSERT OR REPLACE` 还会用默认实体清空已存在 URL 的全部规则。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 21] = [
+    ("/startBookSourceCheck", None),
+    ("/stopBookSourceCheck", None),
+    ("/saveBookSource", None),
+    ("/saveBookSources", None),
+    ("/deleteBookSources", None),
+    ("/saveJsSource", None),
+    ("/saveRssSource", None),
+    ("/saveRssSources", None),
+    ("/deleteRssSources", None),
+    ("/saveReplaceRule", None),
+    ("/deleteReplaceRule", None),
+    ("/testReplaceRule", None),
+    ("/mcp/call", None),
+    ("/api/webbook/search", None),
+    ("/api/webbook/info", None),
+    ("/api/webbook/chapters", None),
+    ("/api/webbook/content", None),
+    ("/api/sources", Some("POST")),
+    ("/api/sources/{id}", Some("PUT")),
+    ("/api/sources/{id}", Some("DELETE")),
+    ("/api/sources/update", Some("POST")),
 ];
 
-/// 路径是否属于受保护源写端点
-pub fn is_protected_source_write_route(path: &str) -> bool {
-    PROTECTED_SOURCE_WRITE_ROUTES.contains(&path)
+/// 请求（方法 + 路径）是否命中受保护源写面
+///
+/// 方法比较大小写不敏感（`Method::as_str()` 为大写）；
+/// 路径模式含 `{id}` 时只匹配单段，避免把 `/api/sources/repos` 等读取
+/// 子路由误判为 `PUT/DELETE /api/sources/{id}`（其方法本身也不匹配，
+/// 双保险）。
+pub fn is_protected_source_write_request(method: &Method, path: &str) -> bool {
+    PROTECTED_SOURCE_WRITE_ROUTES
+        .iter()
+        .any(|(pattern, allowed_method)| {
+            allowed_method.is_none_or(|allowed| allowed.eq_ignore_ascii_case(method.as_str()))
+                && route_pattern_matches(pattern, path)
+        })
+}
+
+/// 路径模式匹配：末段 `{id}` 匹配单个非空路径段，其余精确匹配
+fn route_pattern_matches(pattern: &str, path: &str) -> bool {
+    match pattern.strip_suffix("/{id}") {
+        Some(prefix) => path
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .is_some_and(|id| !id.is_empty() && !id.contains('/')),
+        None => pattern == path,
+    }
 }
 
 /// 路由级令牌前置中间件（P2-2，批10 审查）
 ///
 /// 在 handler 提取 `Bytes` / `Query` **之前**校验令牌：未授权请求直接返回
 /// 原版失败信封 + `Connection: close`，不读取请求体（超大
-/// `Content-Length` 不会拖住连接）。handler 内的
-/// [`token_rejection`] 保留为纵深防御。
+/// `Content-Length` 不会拖住连接、不会触发 axum 默认 2MB body 限制的 413）。
+/// handler 内的 [`token_rejection`] 保留为纵深防御。
 ///
-/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（17 条，含自研 `/api/webbook/*`
-/// 四条）生效；其余路径原样放行。
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（21 条，含自研 `/api/webbook/*`
+/// 四条与 `/api/sources` 方法限定的四条）生效；其余路径原样放行。
 /// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
 /// `serve_web_with_injected_paths` 组装路由后统一套用）。
 pub async fn source_write_token_guard(
@@ -212,11 +254,12 @@ pub async fn source_write_token_guard(
     request: Request,
     next: Next,
 ) -> Response {
-    let path = request.uri().path();
-    if !is_protected_source_write_route(path) {
+    let method = request.method().clone();
+    // 路径在移动 request 前取自有副本（令牌失败响应需要 uri 字符串）
+    let uri = request.uri().path().to_string();
+    if !is_protected_source_write_request(&method, &uri) {
         return next.run(request).await;
     }
-    let uri = path.to_string();
     let headers = request.headers().clone();
     let origin = origin_of(&headers);
     if let Some(resp) = token_rejection(&state, &headers, &uri, origin.as_deref()).await {
@@ -1347,11 +1390,12 @@ mod tests {
         );
     }
 
-    /// P2-2 / P0-1：受保护路由清单与中间件判定一致（17 条：批30 检验会话
-    /// 两条 + 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*` 四条）
+    /// P2-2 / P0-1 / P1-1：受保护路由表（21 条：批30 检验会话两条 +
+    /// 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*` 四条 + P1-1 自研
+    /// REST 源写面四条）与方法限定匹配语义
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 17);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 21);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1371,18 +1415,89 @@ mod tests {
             "/api/webbook/chapters",
             "/api/webbook/content",
         ] {
-            assert!(is_protected_source_write_route(path), "{path}");
+            // 裸路径条目不限方法：任取 POST 均应命中
+            assert!(
+                is_protected_source_write_request(&Method::POST, path),
+                "{path}"
+            );
         }
-        assert!(!is_protected_source_write_route("/getBookshelf"));
-        assert!(!is_protected_source_write_route("/saveBook"));
-        assert!(!is_protected_source_write_route("/openLegacyReview"));
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/getBookshelf"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/saveBook"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/openLegacyReview"
+        ));
         // 只保护可执行 JS 的 call；tools 列表无副作用，保持免令牌
-        assert!(!is_protected_source_write_route("/mcp/tools"));
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/mcp/tools"
+        ));
         // 相邻但非执行面：/api/search 走 DB 内书源，/api/webbook 前缀的未知
         // 子路径不匹配既有路由（精确匹配，不做前缀放行）
-        assert!(!is_protected_source_write_route("/api/search"));
-        assert!(!is_protected_source_write_route(
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/api/search"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
             "/api/webbook/search/extra"
+        ));
+
+        // ── P1-1：自研 REST 源写面（方法限定） ───────────────────────────
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/sources"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/sources/update"
+        ));
+        // PUT/DELETE 的 {id} 为单段（URL 通常百分号编码，段内不含 '/'）
+        assert!(is_protected_source_write_request(
+            &Method::PUT,
+            "/api/sources/https%3A%2F%2Fexample.com"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::DELETE,
+            "/api/sources/https%3A%2F%2Fexample.com"
+        ));
+        // 读取面保持免令牌：GET /api/sources、/sources/{id} 与只读子路由
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/sources"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/sources/repos"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/sources/updates"
+        ));
+        // 非写方法不命中 {id} 条目
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/api/sources/https%3A%2F%2Fexample.com"
+        ));
+        // 多段路径不匹配单段 {id}
+        assert!(!is_protected_source_write_request(
+            &Method::PUT,
+            "/api/sources/a/b"
+        ));
+        // 其它只读/检查端点不因前缀相同被误纳入
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/api/sources/check"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/sources/https%3A%2F%2Fexample.com"
         ));
     }
 

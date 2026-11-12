@@ -13,7 +13,10 @@ use crate::ws;
 /// 创建完整的应用路由，注入共享状态
 ///
 /// 顶层路由分三层：
-/// 1. `/api/*`（自研 REST）与 `/mcp/*`（MCP）——保持原有行为不变；
+/// 1. `/api/*`（自研 REST）与 `/mcp/*`（MCP）——其中写/执行面
+///    （`/api/webbook/*`、`/api/sources` 写方法、`/api/sources/update`、
+///    `/mcp/call`）在生产入口由 `server::attach_source_write_token_guard`
+///    统一前置令牌校验（见 `legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`）；
 /// 2. [`legacy::legacy_routes`]（原版 Web 端点，原版路径 + `ReturnData` 信封）；
 /// 3. 兜底静态服务 [`web_assets::serve_static`]（嵌入优先 + 开发机磁盘兜底）
 ///    与方法兜底 [`web_assets::method_not_allowed_or_preflight`]
@@ -56,6 +59,12 @@ fn api_routes() -> Router<Arc<AppState>> {
         // 书籍导出
         .route("/books/export", post(handlers::export::export_book))
         .route("/books/export/info", post(handlers::export::export_info))
+        // 书源写面（审查批 P1-1）：POST /sources、PUT|DELETE /sources/{id}、
+        // POST /sources/update 均以「方法 + 路径」形式登记在
+        // `legacy::source_write_api::PROTECTED_SOURCE_WRITE_ROUTES`，生产入口
+        // （`server::attach_source_write_token_guard`）在 body 提取前统一校验
+        // `x-legado-token`；GET /sources（及 /sources/repos|updates 等只读
+        // 子路由）保持免令牌。
         .route(
             "/sources",
             get(handlers::source::list_sources).post(handlers::source::create_source),

@@ -76,6 +76,12 @@ pub async fn list_sources(State(state): State<Arc<AppState>>) -> Result<Json<Val
 }
 
 /// POST /api/sources — 创建书源
+///
+/// 审查批 P1-1：已存在同 URL 时返回 **409 Conflict**，不再走
+/// `INSERT OR REPLACE` 全列覆盖。旧实现用 `BookSource { ..Default::default() }`
+/// 构造实体后写入，重复 URL 会用默认实体清空已存在书源的规则 / `jsLib` /
+/// `variable`（登录态）等 DTO 未暴露字段——静默数据丢失。字段级修改请走
+/// `PUT /api/sources/{id}`（保留未暴露字段）。
 pub async fn create_source(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateSourceRequest>,
@@ -94,6 +100,18 @@ pub async fn create_source(
     {
         let db = state.db.lock().await;
         let repo = BookSourceRepository::new(db.connection());
+        // P1-1：先查重，禁止 REPLACE 整行覆盖（含规则/jsLib/variable）
+        if repo.find_by_url(&source.book_source_url)?.is_some() {
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": format!(
+                        "书源 URL 已存在：{}；如需修改请使用 PUT /api/sources/{{id}}",
+                        source.book_source_url
+                    )
+                })),
+            ));
+        }
         // 批30b P2-1：INSERT OR REPLACE 触发外键级联删状态行，必须同事务重建
         // 检验状态（对齐原版 BookSourceDao.insert 的 saveCheckStates）
         repo.insert_with_check_state(&source)?;
@@ -109,11 +127,18 @@ pub async fn create_source(
 }
 
 /// PUT /api/sources/:id — 更新书源
+///
+/// 审查批 P1-1：
+/// - path 指向的书源不存在 → **404**（旧实现 `unwrap_or_default()` 会以默认
+///   实体 upsert，相当于静默创建一条空规则书源）；
+/// - body URL 指向另一条已存在书源 → **409 Conflict**（拒绝整行覆盖他行）；
+/// - 命中本行时做字段级 mutate：DTO 未暴露的规则/`jsLib`/`variable` 等字段
+///   保留库内原值。
 pub async fn update_source(
     State(state): State<Arc<AppState>>,
     Path(source_url): Path<String>,
     Json(req): Json<UpdateSourceRequest>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<(StatusCode, Json<Value>), ApiError> {
     // concurrentRate 三态：缺键保留 / 显式 null 或空串清除 / 有值更新
     enum RateChange {
         Keep,
@@ -135,12 +160,32 @@ pub async fn update_source(
     let source = {
         let db = state.db.lock().await;
         let repo = BookSourceRepository::new(db.connection());
-        // 先按 path 取完整实体做字段级 mutate：DTO 未暴露的字段（规则/header/
-        // jsLib/variable 等）保持库内原值，不再用 `BookSource::default()` 构造
-        // （全列 upsert 会清掉这些字段）。path 不存在时维持原有 INSERT OR
-        // REPLACE 语义（以默认实体补齐），不改为 404；URL 冲突时保持现有
-        // 「按 path 查找、写 body URL」行为（以 body URL 为准替换该行）。
-        let mut source = repo.find_by_url(&source_url)?.unwrap_or_default();
+        // P1-1：先按 path 取完整实体做字段级 mutate：DTO 未暴露的字段（规则/
+        // header/jsLib/variable 等）保持库内原值，不再用 `BookSource::default()`
+        // 构造（全列 upsert 会清掉这些字段）。path 不存在 → 404，禁止以默认
+        // 实体 upsert 出空规则书源；body URL 命中另一行 → 409，禁止整行覆盖。
+        let mut source = match repo.find_by_url(&source_url)? {
+            Some(source) => source,
+            None => {
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "error": format!("书源不存在：{source_url}")
+                    })),
+                ));
+            }
+        };
+        if req.book_source_url != source_url && repo.find_by_url(&req.book_source_url)?.is_some() {
+            return Ok((
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": format!(
+                        "目标书源 URL 已存在：{}；请先删除目标书源或改用对应 id",
+                        req.book_source_url
+                    )
+                })),
+            ));
+        }
         source.book_source_url = req.book_source_url;
         source.book_source_name = req.book_source_name;
         source.book_source_group = req.book_source_group;
@@ -169,7 +214,7 @@ pub async fn update_source(
         }
     }
 
-    Ok(Json(json!(source)))
+    Ok((StatusCode::OK, Json(json!(source))))
 }
 
 /// DELETE /api/sources/:id — 删除书源
@@ -192,10 +237,42 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::routes::create_router;
+    use crate::server::attach_source_write_token_guard;
     use crate::state::AppState;
     use legado_core::models::rule::{ContentRule, SearchRule};
+    use legado_db::repository::cache_repository::CacheRepository;
     use legado_fetcher::rate_limit::RateLimiterRegistry;
     use tokio::sync::Mutex;
+
+    /// 令牌错误文案（对齐原版 `hasValidJsSourceApiToken` 失败文案）
+    const TOKEN_ERROR: &str = "Web 书源访问令牌未配置或不正确";
+
+    /// 写入 caches 配置（令牌开关/令牌值）
+    async fn seed_config(state: &Arc<AppState>, key: &str, value: &str) {
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .put(key, value, 0)
+            .unwrap();
+    }
+
+    /// 构造带 Origin/令牌头的 JSON 请求
+    fn json_request_with_token(
+        method: Method,
+        uri: &str,
+        body: &Value,
+        token: Option<&str>,
+    ) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("Content-Type", "application/json");
+        if let Some(token) = token {
+            builder = builder.header("x-legado-token", token);
+        }
+        builder
+            .body(Body::from(serde_json::to_string(body).unwrap()))
+            .unwrap()
+    }
 
     fn make_test_state() -> Arc<AppState> {
         let db = legado_db::init_in_memory_database().unwrap();
@@ -520,12 +597,14 @@ mod tests {
         assert!(passed.is_ok(), "缺省 concurrentRate 必须清除既有 limiter");
 
         // 显式空串 → 同样按 None 入库，响应不输出 concurrentRate 键
+        // （P1-1 起重复 URL POST 返回 409，此处用独立 URL 验证空串处理）
+        let empty_url = "https://rest-rate-create-empty.example";
         let resp = app
             .oneshot(json_request(
                 Method::POST,
                 "/api/sources",
                 &json!({
-                    "book_source_url": url,
+                    "book_source_url": empty_url,
                     "book_source_name": "无限速创建源",
                     "concurrent_rate": ""
                 }),
@@ -534,7 +613,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::CREATED);
         assert!(
-            find_source(&state, url)
+            find_source(&state, empty_url)
                 .await
                 .unwrap()
                 .concurrent_rate
@@ -786,9 +865,9 @@ mod tests {
         assert!(third.is_err(), "额度用满且原窗口保留（未重建）时应继续等待");
     }
 
-    /// update path 不存在时维持原有 INSERT OR REPLACE 语义（不返回 404）
+    /// P1-1：PUT path 不存在时返回 404（旧实现以默认实体 upsert）
     #[tokio::test]
-    async fn test_update_source_unknown_path_upserts() {
+    async fn test_update_source_unknown_path_returns_404() {
         let state = make_test_state();
         let key = "rest-rate-update-absent";
         let app = create_router(Arc::clone(&state));
@@ -796,14 +875,249 @@ mod tests {
             .oneshot(json_request(
                 Method::PUT,
                 &format!("/api/sources/{key}"),
-                &json!({ "book_source_url": key, "book_source_name": "不存在则插入" }),
+                &json!({ "book_source_url": key, "book_source_name": "不存在则不插入" }),
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert!(
+            find_source(&state, key).await.is_none(),
+            "404 不得以默认实体写出新行"
+        );
+    }
 
-        let found = find_source(&state, key).await.expect("应按 body URL 插入");
-        assert_eq!(found.book_source_name, "不存在则插入");
-        assert!(found.concurrent_rate.is_none());
+    /// P1-1（关键数据丢失防护）：重复 URL POST → 409，且原行规则/jsLib/
+    /// variable 等未暴露字段一个都不能少
+    #[tokio::test]
+    async fn test_create_source_conflict_preserves_existing_rules() {
+        let state = make_test_state();
+        let url = "https://rest-conflict-keep.example";
+        let original = BookSource {
+            book_source_url: url.to_string(),
+            book_source_name: "原书源".to_string(),
+            book_source_group: Some("原分组".to_string()),
+            concurrent_rate: Some("1/10000".to_string()),
+            js_lib: Some("js-lib-body".to_string()),
+            header: Some("{\"X-Test\":\"1\"}".to_string()),
+            variable: "user=login-token".to_string(),
+            book_source_comment: Some("备注".to_string()),
+            search_url: Some("https://keep.example/search?q={key}".to_string()),
+            rule_search: Some(SearchRule {
+                book_list: Some("class.result".to_string()),
+                ..SearchRule::default()
+            }),
+            rule_content: Some(ContentRule {
+                content: Some("class.content@text".to_string()),
+                ..ContentRule::default()
+            }),
+            ..BookSource::default()
+        };
+        seed_source(&state, original.clone()).await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(json_request(
+                Method::POST,
+                "/api/sources",
+                &json!({ "book_source_url": url, "book_source_name": "覆盖尝试" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+        let found = find_source(&state, url).await.expect("原行必须仍在");
+        assert_eq!(found.book_source_name, "原书源", "冲突请求不得改写名称");
+        assert_eq!(found.book_source_group.as_deref(), Some("原分组"));
+        assert_eq!(
+            found.concurrent_rate.as_deref(),
+            Some("1/10000"),
+            "冲突请求不得清空 concurrentRate"
+        );
+        // 关键断言：旧实现（default + INSERT OR REPLACE）会把下列字段全部清空
+        assert_eq!(found.js_lib.as_deref(), Some("js-lib-body"));
+        assert_eq!(found.header.as_deref(), Some("{\"X-Test\":\"1\"}"));
+        assert_eq!(found.variable, "user=login-token");
+        assert_eq!(found.book_source_comment.as_deref(), Some("备注"));
+        assert_eq!(
+            found
+                .rule_search
+                .as_ref()
+                .and_then(|r| r.book_list.as_deref()),
+            Some("class.result")
+        );
+        assert_eq!(
+            found
+                .rule_content
+                .as_ref()
+                .and_then(|r| r.content.as_deref()),
+            Some("class.content@text")
+        );
+    }
+
+    /// P1-1：PUT body URL 命中另一行 → 409，且目标行原值不被整行覆盖
+    #[tokio::test]
+    async fn test_update_source_body_url_collision_returns_409() {
+        let state = make_test_state();
+        let a = "https://rest-collision-a.example";
+        let b = "https://rest-collision-b.example";
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: a.to_string(),
+                book_source_name: "A".to_string(),
+                js_lib: Some("a-js-lib".to_string()),
+                ..BookSource::default()
+            },
+        )
+        .await;
+        seed_source(
+            &state,
+            BookSource {
+                book_source_url: b.to_string(),
+                book_source_name: "B".to_string(),
+                variable: "b-login".to_string(),
+                js_lib: Some("b-js-lib".to_string()),
+                ..BookSource::default()
+            },
+        )
+        .await;
+
+        let app = create_router(Arc::clone(&state));
+        let resp = app
+            .oneshot(json_request(
+                Method::PUT,
+                "/api/sources/https%3A%2F%2Frest-collision-a.example",
+                &json!({ "book_source_url": b, "book_source_name": "改到 B" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+        let target = find_source(&state, b).await.expect("B 行仍在");
+        assert_eq!(target.book_source_name, "B", "B 行不得被覆盖");
+        assert_eq!(target.variable, "b-login", "B 的登录态不得被清空");
+        assert_eq!(target.js_lib.as_deref(), Some("b-js-lib"));
+        let origin = find_source(&state, a).await.expect("A 行仍在");
+        assert_eq!(origin.book_source_name, "A", "A 行不得被改写");
+    }
+
+    // ── P1-1：令牌前置守卫（生产入口同构） ──────────────────────────────
+
+    /// 无令牌的 `POST /api/sources` 必须在读取请求体之前被拒：
+    /// 3 MiB body（超过 axum 默认 2 MiB 上限）仍返回原版令牌失败信封，
+    /// 而不是 413；且库内不得产生任何行。
+    #[tokio::test]
+    async fn test_source_rest_write_requires_token_before_reading_body() {
+        let state = make_test_state();
+        seed_config(&state, "config:jsSourceApiToken", "secret").await;
+        let app =
+            attach_source_write_token_guard(create_router(Arc::clone(&state)), Arc::clone(&state));
+        let big = format!(
+            "{{\"book_source_url\":\"https://guard.example\",\"padding\":\"{}\"}}",
+            "x".repeat(3 * 1024 * 1024)
+        );
+
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/sources")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(big))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "守卫应在 body 提取前拒绝（不能是 413）"
+        );
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::CONNECTION)
+                .and_then(|v| v.to_str().ok()),
+            Some("close"),
+            "令牌失败应关闭连接（原版 shouldCloseConnection）"
+        );
+        let body = response_json(resp).await;
+        assert_eq!(body["isSuccess"], false, "{body}");
+        assert_eq!(body["errorMsg"], TOKEN_ERROR, "{body}");
+        assert!(
+            find_source(&state, "https://guard.example").await.is_none(),
+            "未授权请求不得落库"
+        );
+
+        // PUT/DELETE /api/sources/{id} 同样受令牌面保护（未命中行也先拒令牌）
+        for method in [Method::PUT, Method::DELETE] {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(method.clone())
+                        .uri("/api/sources/https%3A%2F%2Fguard.example")
+                        .header("Content-Type", "application/json")
+                        .body(Body::from(
+                            r#"{"book_source_url":"https://guard.example","book_source_name":"x"}"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK, "{method}");
+            let body = response_json(resp).await;
+            assert_eq!(body["errorMsg"], TOKEN_ERROR, "{method} {body}");
+        }
+    }
+
+    /// 带正确令牌后写面正常；GET 读取面保持免令牌
+    #[tokio::test]
+    async fn test_source_rest_read_public_and_write_with_token() {
+        let state = make_test_state();
+        seed_config(&state, "config:jsSourceApiToken", "secret").await;
+        let app =
+            attach_source_write_token_guard(create_router(Arc::clone(&state)), Arc::clone(&state));
+
+        // 无令牌 POST → 拒绝
+        let resp = app
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                "/api/sources",
+                &json!({ "book_source_url": "https://token-write.example", "book_source_name": "带令牌" }),
+            ))
+            .await
+            .unwrap();
+        let body = response_json(resp).await;
+        assert_eq!(body["errorMsg"], TOKEN_ERROR, "{body}");
+
+        // 带令牌 POST → 201
+        let resp = app
+            .clone()
+            .oneshot(json_request_with_token(
+                Method::POST,
+                "/api/sources",
+                &json!({ "book_source_url": "https://token-write.example", "book_source_name": "带令牌" }),
+                Some("secret"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        assert!(find_source(&state, "https://token-write.example")
+            .await
+            .is_some());
+
+        // GET /api/sources 不在令牌面内（读取面保持原行为）
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/sources")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }
