@@ -28,10 +28,8 @@
 //!    且自动更新会在后台静默执行。因此 `removed` 字段保留但**恒为 0**。
 //! 3. 计数是**实际落库变化**：
 //!    - `added`：本地不存在该键 → 已插入；
-//!    - `updated`：本地存在且规则内容变化 → 已覆盖写入；
-//!      书源用 `BookSource::check_content()` 判定（该函数会归一
-//!      `customOrder` / `enabled` / `lastUpdateTime` / `respondTime` /
-//!      `weight`，避免「仅本地运行态字段不同」被误计为更新并反复重写）；
+//!    - `updated`：本地存在且**远程条目严格更新**（逐条门控，见第 7 点）
+//!      → 已覆盖写入；
 //!    - `removed`：恒为 0（仅 upsert）；
 //!    - `total`：远程去重后的条目数。
 //! 4. 版本号与最后更新时间在**同事务内最后写入**：任一条目解析/写入失败或
@@ -41,6 +39,14 @@
 //! 6. 书源 / RSS 源更新时保留本地分组（对齐原版 `RuleUpdate.cacheSource`
 //!    静默更新分支 `list.bookSourceGroup = localSource.bookSourceGroup`），
 //!    分组是用户的本地组织偏好，不属于远程规则内容。
+//! 7. **逐条时间戳门控**（批24 回修 P1-3，对齐上游 `RuleUpdate.kt:41-47`
+//!    与 `:75-80`）：仅当 `remote.lastUpdateTime > local.lastUpdateTime`
+//!    才覆盖该条；否则一律保留本地。修复前只比较 `check_content()`（其归一
+//!    掉 `lastUpdateTime`），订阅版本一推进就会把远程**旧内容**盖到本地
+//!    新内容上，丢失 `variable`（登录态）/`header`/`jsLib`/名称/comment
+//!    等远程并未更新的字段。逐条门控同时覆盖 RSS 源（同一字段口径）。
+//!    说明：本地与远程都无时间戳（均为 0）时不覆盖，与上游静默更新分支
+//!    一致；新增条目（本地不存在）不受门控影响。
 //!
 //! ## 与 `legado_net::merge_subscription` 的关系
 //!
@@ -167,13 +173,16 @@ fn apply_book_sources(conn: &Connection, remote_json: &str) -> LegadoResult<Rule
                 to_write.push(remote_item.clone());
             }
             Some(local_item) => {
+                // 上游 RuleUpdate.kt:41-47 逐条门控：远程时间戳不严格更新时
+                // 保留本地，避免用远程旧内容覆盖本地新规则/登录态。
+                if remote_item.last_update_time <= local_item.last_update_time {
+                    continue;
+                }
                 let mut candidate = remote_item.clone();
                 // 分组是本地组织偏好，远程不覆盖（对齐原版静默更新语义）
                 candidate.book_source_group = local_item.book_source_group.clone();
-                if local_item.check_content() != candidate.check_content() {
-                    updated += 1;
-                    to_write.push(candidate);
-                }
+                updated += 1;
+                to_write.push(candidate);
             }
         }
     }
@@ -233,13 +242,16 @@ fn apply_rss_sources(conn: &Connection, remote_json: &str) -> LegadoResult<RuleS
                 to_write.push(remote_item.clone());
             }
             Some(local_item) => {
+                // 同书源口径：只有远程 lastUpdateTime 严格更新才覆盖
+                // （上游 RuleUpdate.kt:75-80）
+                if remote_item.last_update_time <= local_item.last_update_time {
+                    continue;
+                }
                 let mut candidate = remote_item.clone();
                 // 分组保留本地（同书源口径）
                 candidate.source_group = local_item.source_group.clone();
-                if rss_content_key(local_item) != rss_content_key(&candidate) {
-                    updated += 1;
-                    to_write.push(candidate);
-                }
+                updated += 1;
+                to_write.push(candidate);
             }
         }
     }
@@ -255,19 +267,6 @@ fn apply_rss_sources(conn: &Connection, remote_json: &str) -> LegadoResult<RuleS
         removed: 0,
         total: order.len(),
     })
-}
-
-/// RSS 源「规则内容」归一化键：剔除本地运行态字段，避免误判更新。
-///
-/// `RssSource` 没有像 `BookSource::check_content` 那样的既有归一函数，
-/// 这里按同一口径处理 `customOrder` / `lastUpdateTime` / `enabled`
-/// （本地启停与排序不属于远程规则内容）。
-fn rss_content_key(source: &RssSource) -> String {
-    let mut normalized = source.clone();
-    normalized.custom_order = 0;
-    normalized.last_update_time = 0;
-    normalized.enabled = true;
-    serde_json::to_string(&normalized).unwrap_or_default()
 }
 
 // ─── 替换规则 ────────────────────────────────────────────────
@@ -446,6 +445,13 @@ mod tests {
         serde_json::from_str(&book_source_json(url, name, search_url)).unwrap()
     }
 
+    /// 带 `lastUpdateTime` 的书源 JSON（P1-3 逐条门控用例）
+    fn book_source_json_at(url: &str, name: &str, search_url: &str, timestamp: i64) -> String {
+        format!(
+            r#"{{"bookSourceUrl":"{url}","bookSourceName":"{name}","bookSourceType":0,"searchUrl":"{search_url}","lastUpdateTime":{timestamp},"ruleSearch":{{"bookList":"x","name":"y","author":"z","bookUrl":"w"}}}}"#
+        )
+    }
+
     // ─── 书源 ─────────────────────────────────────────────
 
     #[test]
@@ -516,16 +522,18 @@ mod tests {
             "https://old.example.com/s?q={key}",
         );
         local.book_source_group = Some("本地分组".to_string());
+        local.last_update_time = 1_700_000_000_000;
         BookSourceRepository::new(conn)
             .insert_with_check_state(&local)
             .unwrap();
 
         let remote = format!(
             "[{}]",
-            book_source_json(
+            book_source_json_at(
                 "https://a.example.com",
                 "新名",
-                "https://new.example.com/s?q={key}"
+                "https://new.example.com/s?q={key}",
+                1_700_000_100_000
             )
         );
         let outcome = apply_rule_subscription(
@@ -550,6 +558,128 @@ mod tests {
         );
         // 分组保留本地
         assert_eq!(stored[0].book_source_group.as_deref(), Some("本地分组"));
+    }
+
+    /// P1-3 核心回归：本地 lastUpdateTime 更新时，远程同 URL 的旧内容
+    /// **不得覆盖**本地（变量/登录态/header/jsLib/名称/comment 全部保留）
+    #[test]
+    fn test_apply_book_sources_keeps_newer_local_content() {
+        let db = init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let sub_id = seed_sub(conn, "bookSource", "1.0");
+
+        let mut local = book_source(
+            "https://a.example.com",
+            "本地新名",
+            "https://local-new.example.com/s?q={key}",
+        );
+        local.last_update_time = 2_000;
+        local.book_source_group = Some("本地分组".to_string());
+        local.variable = "user=login-token".to_string();
+        local.header = Some("{\"Authorization\":\"Bearer x\"}".to_string());
+        local.js_lib = Some("local-js-lib".to_string());
+        local.book_source_comment = Some("本地备注".to_string());
+        BookSourceRepository::new(conn)
+            .insert_with_check_state(&local)
+            .unwrap();
+
+        // 远程是同 URL 的旧版本（时间戳更小、内容更旧）
+        let remote = format!(
+            "[{}]",
+            book_source_json_at(
+                "https://a.example.com",
+                "远程旧名",
+                "https://remote-old.example.com/s?q={key}",
+                1_000
+            )
+        );
+        let outcome = apply_rule_subscription(
+            conn,
+            sub_id,
+            "bookSource",
+            &remote,
+            "2.0",
+            1_700_000_100_000,
+        )
+        .unwrap();
+        assert_eq!(
+            outcome,
+            RuleSubApplyOutcome {
+                added: 0,
+                updated: 0,
+                removed: 0,
+                total: 1
+            },
+            "远程未严格更新时不得计入 updated"
+        );
+
+        let stored = BookSourceRepository::new(conn).find_all().unwrap();
+        assert_eq!(stored.len(), 1);
+        let found = &stored[0];
+        assert_eq!(found.book_source_name, "本地新名", "本地新内容不得被覆盖");
+        assert_eq!(
+            found.search_url.as_deref(),
+            Some("https://local-new.example.com/s?q={key}")
+        );
+        assert_eq!(found.variable, "user=login-token", "登录态不得丢失");
+        assert_eq!(
+            found.header.as_deref(),
+            Some("{\"Authorization\":\"Bearer x\"}")
+        );
+        assert_eq!(found.js_lib.as_deref(), Some("local-js-lib"));
+        assert_eq!(found.book_source_comment.as_deref(), Some("本地备注"));
+        assert_eq!(found.last_update_time, 2_000, "本地时间戳不得被回退");
+    }
+
+    /// P1-3 正向：远程时间戳严格更新 → 正常覆盖（分组仍保留本地）
+    #[test]
+    fn test_apply_book_sources_updates_when_remote_timestamp_is_newer() {
+        let db = init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let sub_id = seed_sub(conn, "bookSource", "1.0");
+
+        let mut local = book_source("https://a.example.com", "旧名", "https://old.example.com/s");
+        local.last_update_time = 1_000;
+        local.book_source_group = Some("本地分组".to_string());
+        BookSourceRepository::new(conn)
+            .insert_with_check_state(&local)
+            .unwrap();
+
+        let remote = format!(
+            "[{}]",
+            book_source_json_at(
+                "https://a.example.com",
+                "新名",
+                "https://new.example.com/s",
+                2_000
+            )
+        );
+        let outcome = apply_rule_subscription(
+            conn,
+            sub_id,
+            "bookSource",
+            &remote,
+            "2.0",
+            1_700_000_100_000,
+        )
+        .unwrap();
+        assert_eq!(outcome.updated, 1);
+
+        let stored = BookSourceRepository::new(conn).find_all().unwrap();
+        assert_eq!(stored[0].book_source_name, "新名");
+        assert_eq!(
+            stored[0].search_url.as_deref(),
+            Some("https://new.example.com/s")
+        );
+        assert_eq!(
+            stored[0].last_update_time, 2_000,
+            "覆盖后本地时间戳应推进到远程值"
+        );
+        assert_eq!(
+            stored[0].book_source_group.as_deref(),
+            Some("本地分组"),
+            "分组仍保留本地组织偏好"
+        );
     }
 
     #[test]
@@ -652,6 +782,13 @@ mod tests {
         )
     }
 
+    /// 带 `lastUpdateTime` 的 RSS 源 JSON（P1-3 逐条门控用例）
+    fn rss_json_at(url: &str, name: &str, rule_title: &str, timestamp: i64) -> String {
+        format!(
+            r#"{{"sourceUrl":"{url}","sourceName":"{name}","ruleArticles":"{rule_title}","ruleTitle":"title","ruleLink":"link","lastUpdateTime":{timestamp}}}"#
+        )
+    }
+
     #[test]
     fn test_apply_rss_sources_add_update_keeps_missing() {
         let db = init_in_memory_database().unwrap();
@@ -665,6 +802,7 @@ mod tests {
             source_name: "A源".into(),
             rule_articles: Some("old".into()),
             source_group: Some("本地分组".into()),
+            last_update_time: 1_000,
             ..RssSource::default()
         })
         .unwrap();
@@ -678,7 +816,7 @@ mod tests {
         // 远程：A 新规则 + C 新增；B 不在远程（仅 upsert，不得删除）
         let remote = format!(
             "[{},{}]",
-            rss_json("https://a.example.com/rss", "A源", "new"),
+            rss_json_at("https://a.example.com/rss", "A源", "new", 2_000),
             rss_json("https://c.example.com/rss", "C源", "c-rule")
         );
         let outcome =
@@ -713,6 +851,42 @@ mod tests {
             "B 应原样保留"
         );
         assert_eq!(version_of(conn, sub_id).0, "2.0");
+    }
+
+    /// P1-3：本地 RSS 源更新时，远程旧内容不得覆盖本地
+    #[test]
+    fn test_apply_rss_sources_keeps_newer_local_content() {
+        let db = init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let sub_id = seed_sub(conn, "rssSource", "1.0");
+        let repo = RssSourceRepository::new(conn);
+
+        repo.insert(&RssSource {
+            source_url: "https://a.example.com/rss".into(),
+            source_name: "本地新名".into(),
+            rule_articles: Some("local-new".into()),
+            source_group: Some("本地分组".into()),
+            last_update_time: 2_000,
+            ..RssSource::default()
+        })
+        .unwrap();
+
+        let remote = format!(
+            "[{}]",
+            rss_json_at("https://a.example.com/rss", "远程旧名", "remote-old", 1_000)
+        );
+        let outcome =
+            apply_rule_subscription(conn, sub_id, "rssSource", &remote, "2.0", 1_700_000_100_000)
+                .unwrap();
+        assert_eq!(outcome.added, 0);
+        assert_eq!(outcome.updated, 0, "远程旧内容不得覆盖本地新内容");
+
+        let stored = repo.find_all().unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].source_name, "本地新名");
+        assert_eq!(stored[0].rule_articles.as_deref(), Some("local-new"));
+        assert_eq!(stored[0].source_group.as_deref(), Some("本地分组"));
+        assert_eq!(stored[0].last_update_time, 2_000);
     }
 
     // ─── 替换规则 ─────────────────────────────────────────
