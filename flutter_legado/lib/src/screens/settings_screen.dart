@@ -11,6 +11,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../l10n/app_strings.dart';
 import '../routes.dart';
 import '../constants/pref_keys.dart';
+import '../models/models.dart';
+import '../utils/book_open_utils.dart';
 import '../utils/error_message.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/web_keep_alive_service.dart';
@@ -674,14 +676,99 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   /// - 双栏：推进容器 nested Navigator（右栏）；
   /// - 单栏 / 独立页：root push 全屏（参考版单栏目的地覆盖 MainScreen，
   ///   底栏由 root 页面覆盖）。
-  void _openMyEntry(String route) {
+  /// 打开「我的」页入口。
+  ///
+  /// 书签页点击条目时会 pop 书签信息（书名/作者/章节），这里等待返回值
+  /// 后定位书架书籍并跳章——原实现不 await，点击书签只退回我的页。
+  Future<void> _openMyEntry(String route) async {
+    Object? result;
     final scope = context.getInheritedWidgetOfExactType<MyPaneScope>();
-    if (scope != null &&
-        scope.isMultiPane &&
-        scope.controller.pushNamed(route)) {
+    if (scope != null && scope.isMultiPane) {
+      final pending = scope.controller.pushNamedForResult(route);
+      if (pending != null) {
+        result = await pending;
+      } else if (scope.controller.topRoute == route) {
+        // 栈顶已是同一路由：对齐 pushNamed 的去重语义，不重复打开
+        return;
+      } else {
+        result = await Navigator.of(
+          context,
+          rootNavigator: true,
+        ).pushNamed(route);
+      }
+    } else {
+      result = await Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamed(route);
+    }
+    if (!mounted) return;
+    if (route == AppRoutes.bookmarks && result is Map) {
+      await _openBookmarkFromResult(result);
+    }
+  }
+
+  /// 书签页 pop 结果 → 定位书架书籍并跳到对应章节。
+  ///
+  /// 书签模型只带书名 + 作者（无 bookUrl）：按书名 + 作者在书架精确反查
+  /// （对齐原版 `BookmarkDao.getByBook` 语义）；若将来结果携带 bookUrl，
+  /// 则直接按 URL 查库并校验在架。查不到/已不在架给中文提示并中止，
+  /// 跳转异常同样提示，不崩溃。
+  Future<void> _openBookmarkFromResult(Map result) async {
+    final bookName = (result['bookName'] as String?)?.trim() ?? '';
+    final author = (result['author'] as String?)?.trim() ?? '';
+    final chapterIndex = (result['chapterIndex'] as num?)?.toInt() ?? 0;
+    final chapterPos = (result['chapterPos'] as num?)?.toInt() ?? 0;
+    if (bookName.isEmpty) {
+      _showMyPageMessage('书签信息不完整，无法打开');
       return;
     }
-    Navigator.of(context, rootNavigator: true).pushNamed(route);
+    Book? found;
+    try {
+      final api = ref.read(bookApiProvider);
+      final bookUrl = (result['bookUrl'] as String?)?.trim() ?? '';
+      if (bookUrl.isNotEmpty) {
+        found = await api.getBook(bookUrl);
+      } else {
+        final books = await api.getBooks();
+        for (final candidate in books) {
+          if (candidate.name.trim() != bookName) continue;
+          if (author.isNotEmpty && candidate.author.trim() != author) continue;
+          found = candidate;
+          break;
+        }
+      }
+    } catch (e) {
+      _showMyPageMessage('打开书籍失败：${errorMessage(e)}');
+      return;
+    }
+    if (!mounted) return;
+    if (found == null || !BookOpenUtils.isInBookshelf(found)) {
+      _showMyPageMessage('该书已不在书架');
+      return;
+    }
+    try {
+      await BookOpenUtils.openBook(
+        context,
+        ref,
+        found.copyWith(
+          durChapterIndex: chapterIndex < 0 ? 0 : chapterIndex,
+          durChapterPos: chapterPos < 0 ? 0 : chapterPos,
+        ),
+        // 书签可能落在第 0 章 0 位置：必须直达阅读器，不走未读进详情分支
+        unreadOpensBookInfo: false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showMyPageMessage('打开书籍失败：${errorMessage(e)}');
+    }
+  }
+
+  void _showMyPageMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 我的页可导航行（容器内按当前入口高亮）

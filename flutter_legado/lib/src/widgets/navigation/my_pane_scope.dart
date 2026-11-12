@@ -41,21 +41,40 @@ class MyPaneController extends ChangeNotifier {
   /// 路由时去重，避免重复点入口叠页；push 抛错时回滚去重/选中态，保证
   /// 重试仍可进入。
   bool pushNamed(String name, {Object? arguments}) {
+    final result = _push(name, arguments: arguments);
+    return result.pushed;
+  }
+
+  /// 同 [pushNamed]，但返回被推入路由关闭时的 pop 结果。
+  ///
+  /// null = 未实际推入（容器未挂载，或栈顶已是同一路由被去重）；
+  /// 调用方据此区分「无需处理返回值」与「等待页面结果」。
+  /// 书签入口需要页面 pop 结果做二次跳转，布尔版 [pushNamed] 无法承载。
+  Future<Object?>? pushNamedForResult(String name, {Object? arguments}) {
+    return _push(name, arguments: arguments).result;
+  }
+
+  ({bool pushed, Future<Object?>? result}) _push(
+    String name, {
+    Object? arguments,
+  }) {
     final navigator = navigatorKey?.currentState;
-    if (navigator == null) return false;
-    if (_topRoute == name) return true;
+    if (navigator == null) return (pushed: false, result: null);
+    if (_topRoute == name) return (pushed: true, result: null);
     final previousTop = _topRoute;
     final previousSelected = _selectedRoute;
     _topRoute = name;
     select(name);
     try {
-      navigator.pushNamed(name, arguments: arguments);
+      return (
+        pushed: true,
+        result: navigator.pushNamed(name, arguments: arguments),
+      );
     } catch (_) {
       _topRoute = previousTop;
       select(previousSelected);
       rethrow;
     }
-    return true;
   }
 }
 

@@ -141,9 +141,11 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
   }
 
   void _navigateToChapter(BuildContext context, Bookmark bookmark) {
-    // 返回书签信息给调用方，由 reader_screen 处理跳转
+    // 返回书签信息给调用方（我的页 → 书签），由调用方定位书架书籍并
+    // 跳到对应章节；Bookmark 模型无 bookUrl，故同时带书名 + 作者供反查。
     Navigator.of(context).pop({
       'bookName': bookmark.bookName,
+      'author': bookmark.bookAuthor,
       'chapterIndex': bookmark.chapterIndex,
       'chapterPos': bookmark.chapterPos,
     });
