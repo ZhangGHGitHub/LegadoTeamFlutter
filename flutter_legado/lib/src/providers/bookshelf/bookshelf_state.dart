@@ -84,6 +84,15 @@ class BookshelfState with _$BookshelfState {
     /// false 时书架先不渲染锁定态（列表与标记并行加载，避免闪烁）；
     /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
     @Default(false) bool privacyLoaded,
+
+    /// 书架内搜索过滤模式（对齐参考版 `BookshelfUiState.isSearch`）
+    ///
+    /// 开启时顶栏下方出现过滤输入条，当前分组列表按 [filterQuery] 实时筛选；
+    /// 关闭时 [filterQuery] 一并清空（对齐参考版 `setSearchMode(false)`）。
+    @Default(false) bool isFilterMode,
+
+    /// 书架内搜索过滤关键词（本地展示层过滤，不触发数据请求）
+    @Default('') String filterQuery,
   }) = _BookshelfState;
 }
 
@@ -221,6 +230,38 @@ extension BookshelfStateGrouping on BookshelfState {
 
   /// 当前分组 Tab 下的书籍（纯展示层过滤，对标原版 BooksFragment 按 groupId 查询）
   List<Book> get currentGroupBooks => booksInGroup(selectedGroup);
+
+  /// 书架内过滤是否实际生效（模式开 + 关键词非空白）
+  bool get isFiltering => isFilterMode && filterQuery.trim().isNotEmpty;
+
+  /// 按书架内搜索关键词过滤（对齐参考版 `filterBooks` / `matchesSearchKey`：
+  /// 书名/作者/来源名/分类/自定义标签，大小写不敏感）。
+  ///
+  /// [exclude] 供 UI 传入「私密且未授权」判定：过滤态下先剔除锁定书再匹配，
+  /// 否则「能否搜到书名」本身即泄露私密内容（对齐参考版
+  /// `hidePrivateFromSearch`）。未过滤/空关键词原样返回。
+  List<Book> filterBooks(
+    List<Book> source, {
+    bool Function(Book book)? exclude,
+  }) {
+    final query = filterQuery.trim().toLowerCase();
+    if (!isFilterMode || query.isEmpty) return source;
+    return source
+        .where((book) => exclude == null || !exclude(book))
+        .where((book) => _matchesFilter(book, query))
+        .toList();
+  }
+
+  /// 单本书是否命中过滤关键词（参考版同口径：五个字段任一包含即命中）
+  static bool _matchesFilter(Book book, String lowerQuery) {
+    bool hit(String? value) =>
+        value != null && value.toLowerCase().contains(lowerQuery);
+    return hit(book.name) ||
+        hit(book.author) ||
+        hit(book.originName) ||
+        hit(book.kind) ||
+        hit(book.customTag);
+  }
 
   /// 隐藏空分组后的可见分组列表（「全部」始终保留，空书架保留空态骨架）
   ///

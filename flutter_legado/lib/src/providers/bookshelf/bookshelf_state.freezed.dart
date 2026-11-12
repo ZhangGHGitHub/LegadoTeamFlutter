@@ -64,6 +64,15 @@ mixin _$BookshelfState {
   /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
   bool get privacyLoaded => throw _privateConstructorUsedError;
 
+  /// 书架内搜索过滤模式（对齐参考版 `BookshelfUiState.isSearch`）
+  ///
+  /// 开启时顶栏下方出现过滤输入条，当前分组列表按 [filterQuery] 实时筛选；
+  /// 关闭时 [filterQuery] 一并清空（对齐参考版 `setSearchMode(false)`）。
+  bool get isFilterMode => throw _privateConstructorUsedError;
+
+  /// 书架内搜索过滤关键词（本地展示层过滤，不触发数据请求）
+  String get filterQuery => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $BookshelfStateCopyWith<BookshelfState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -89,7 +98,9 @@ abstract class $BookshelfStateCopyWith<$Res> {
       bool showWordCount,
       Set<String> privateBookUrls,
       Set<int> privateGroupIds,
-      bool privacyLoaded});
+      bool privacyLoaded,
+      bool isFilterMode,
+      String filterQuery});
 }
 
 /// @nodoc
@@ -119,6 +130,8 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? privateBookUrls = null,
     Object? privateGroupIds = null,
     Object? privacyLoaded = null,
+    Object? isFilterMode = null,
+    Object? filterQuery = null,
   }) {
     return _then(_value.copyWith(
       books: null == books
@@ -177,6 +190,14 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.privacyLoaded
           : privacyLoaded // ignore: cast_nullable_to_non_nullable
               as bool,
+      isFilterMode: null == isFilterMode
+          ? _value.isFilterMode
+          : isFilterMode // ignore: cast_nullable_to_non_nullable
+              as bool,
+      filterQuery: null == filterQuery
+          ? _value.filterQuery
+          : filterQuery // ignore: cast_nullable_to_non_nullable
+              as String,
     ) as $Val);
   }
 }
@@ -203,7 +224,9 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       bool showWordCount,
       Set<String> privateBookUrls,
       Set<int> privateGroupIds,
-      bool privacyLoaded});
+      bool privacyLoaded,
+      bool isFilterMode,
+      String filterQuery});
 }
 
 /// @nodoc
@@ -231,6 +254,8 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? privateBookUrls = null,
     Object? privateGroupIds = null,
     Object? privacyLoaded = null,
+    Object? isFilterMode = null,
+    Object? filterQuery = null,
   }) {
     return _then(_$BookshelfStateImpl(
       books: null == books
@@ -289,6 +314,14 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value.privacyLoaded
           : privacyLoaded // ignore: cast_nullable_to_non_nullable
               as bool,
+      isFilterMode: null == isFilterMode
+          ? _value.isFilterMode
+          : isFilterMode // ignore: cast_nullable_to_non_nullable
+              as bool,
+      filterQuery: null == filterQuery
+          ? _value.filterQuery
+          : filterQuery // ignore: cast_nullable_to_non_nullable
+              as String,
     ));
   }
 }
@@ -310,7 +343,9 @@ class _$BookshelfStateImpl implements _BookshelfState {
       this.showWordCount = true,
       final Set<String> privateBookUrls = const <String>{},
       final Set<int> privateGroupIds = const <int>{},
-      this.privacyLoaded = false})
+      this.privacyLoaded = false,
+      this.isFilterMode = false,
+      this.filterQuery = ''})
       : _books = books,
         _groups = groups,
         _selectedUrls = selectedUrls,
@@ -430,9 +465,22 @@ class _$BookshelfStateImpl implements _BookshelfState {
   @JsonKey()
   final bool privacyLoaded;
 
+  /// 书架内搜索过滤模式（对齐参考版 `BookshelfUiState.isSearch`）
+  ///
+  /// 开启时顶栏下方出现过滤输入条，当前分组列表按 [filterQuery] 实时筛选；
+  /// 关闭时 [filterQuery] 一并清空（对齐参考版 `setSearchMode(false)`）。
+  @override
+  @JsonKey()
+  final bool isFilterMode;
+
+  /// 书架内搜索过滤关键词（本地展示层过滤，不触发数据请求）
+  @override
+  @JsonKey()
+  final String filterQuery;
+
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount, privateBookUrls: $privateBookUrls, privateGroupIds: $privateGroupIds, privacyLoaded: $privacyLoaded)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls, showCustomTags: $showCustomTags, showSourceTags: $showSourceTags, showWordCount: $showWordCount, privateBookUrls: $privateBookUrls, privateGroupIds: $privateGroupIds, privacyLoaded: $privacyLoaded, isFilterMode: $isFilterMode, filterQuery: $filterQuery)';
   }
 
   @override
@@ -464,7 +512,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
             const DeepCollectionEquality()
                 .equals(other._privateGroupIds, _privateGroupIds) &&
             (identical(other.privacyLoaded, privacyLoaded) ||
-                other.privacyLoaded == privacyLoaded));
+                other.privacyLoaded == privacyLoaded) &&
+            (identical(other.isFilterMode, isFilterMode) ||
+                other.isFilterMode == isFilterMode) &&
+            (identical(other.filterQuery, filterQuery) ||
+                other.filterQuery == filterQuery));
   }
 
   @override
@@ -483,7 +535,9 @@ class _$BookshelfStateImpl implements _BookshelfState {
       showWordCount,
       const DeepCollectionEquality().hash(_privateBookUrls),
       const DeepCollectionEquality().hash(_privateGroupIds),
-      privacyLoaded);
+      privacyLoaded,
+      isFilterMode,
+      filterQuery);
 
   @JsonKey(ignore: true)
   @override
@@ -508,7 +562,9 @@ abstract class _BookshelfState implements BookshelfState {
       final bool showWordCount,
       final Set<String> privateBookUrls,
       final Set<int> privateGroupIds,
-      final bool privacyLoaded}) = _$BookshelfStateImpl;
+      final bool privacyLoaded,
+      final bool isFilterMode,
+      final String filterQuery}) = _$BookshelfStateImpl;
 
   @override
 
@@ -572,6 +628,17 @@ abstract class _BookshelfState implements BookshelfState {
   /// false 时书架先不渲染锁定态（列表与标记并行加载，避免闪烁）；
   /// 加载失败按「未锁定」处理，不误锁整库（见 PrivacyContentService）。
   bool get privacyLoaded;
+  @override
+
+  /// 书架内搜索过滤模式（对齐参考版 `BookshelfUiState.isSearch`）
+  ///
+  /// 开启时顶栏下方出现过滤输入条，当前分组列表按 [filterQuery] 实时筛选；
+  /// 关闭时 [filterQuery] 一并清空（对齐参考版 `setSearchMode(false)`）。
+  bool get isFilterMode;
+  @override
+
+  /// 书架内搜索过滤关键词（本地展示层过滤，不触发数据请求）
+  String get filterQuery;
   @override
   @JsonKey(ignore: true)
   _$$BookshelfStateImplCopyWith<_$BookshelfStateImpl> get copyWith =>

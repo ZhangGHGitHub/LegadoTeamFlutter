@@ -406,7 +406,7 @@ void main() {
     expect(find.text('文件夹根目录'), findsOneWidget);
   });
 
-  testWidgets('搜索直达（书架内搜索过滤延期）保持默认且禁用', (tester) async {
+  testWidgets('搜索直达开关启用并可持久化（书架内过滤已接入）', (tester) async {
     await pumpSheet(tester);
     final row = find.byKey(const ValueKey('bookshelfSearchDirectSwitch'));
     expect(row, findsOneWidget);
@@ -414,7 +414,16 @@ void main() {
       find.descendant(of: row, matching: find.byType(Switch)),
     );
     expect(sw.value, isTrue);
-    expect(sw.onChanged, isNull);
+    expect(sw.onChanged, isNotNull);
+    expect(find.text('开启：点击搜索，长按筛选；关闭：点击筛选，长按搜索。'), findsOneWidget);
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getBool(BookshelfSettings.keyBookshelfSearchActionDirectToSearch),
+      isFalse,
+    );
   });
 
   testWidgets('开关即时持久化（隐藏空分组 / 快速滚动条）', (tester) async {

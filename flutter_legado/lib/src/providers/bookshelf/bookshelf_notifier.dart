@@ -358,12 +358,16 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   void selectAll() {
     state = state.copyWith(
-      selectedUrls: {for (final b in state.currentGroupBooks) b.bookUrl},
+      selectedUrls: {
+        for (final b in state.filterBooks(state.currentGroupBooks)) b.bookUrl,
+      },
     );
   }
 
   void invertSelection() {
-    final all = {for (final b in state.currentGroupBooks) b.bookUrl};
+    final all = {
+      for (final b in state.filterBooks(state.currentGroupBooks)) b.bookUrl,
+    };
     state = state.copyWith(selectedUrls: all.difference(state.selectedUrls));
   }
 
@@ -410,6 +414,24 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
 
   void setGroupMode(GroupMode mode) {
     state = state.copyWith(groupMode: mode);
+  }
+
+  /// 进入/退出书架内搜索过滤（对齐参考版 `setSearchMode`）
+  ///
+  /// 退出时清空关键词；进入时清空批量选择（过滤态下「已选 N 本」与
+  /// 可见结果不一致会误导用户）。纯展示层状态，不触发数据请求。
+  void setFilterMode(bool active) {
+    state = state.copyWith(
+      isFilterMode: active,
+      filterQuery: active ? state.filterQuery : '',
+      isBatchMode: active ? false : state.isBatchMode,
+      selectedUrls: active ? const <String>{} : state.selectedUrls,
+    );
+  }
+
+  /// 更新书架内过滤关键词（输入即筛，对齐参考版 `setSearchKey`）
+  void setFilterQuery(String query) {
+    state = state.copyWith(filterQuery: query);
   }
 
   /// 清除错误状态

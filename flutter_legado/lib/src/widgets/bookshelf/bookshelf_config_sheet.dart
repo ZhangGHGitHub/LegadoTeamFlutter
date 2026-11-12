@@ -547,11 +547,14 @@ class BookshelfConfigSheet extends ConsumerWidget {
                 _SwitchRow(
                   key: const ValueKey('bookshelfSearchDirectSwitch'),
                   title: '搜索直达',
-                  subtitle: '书架内搜索过滤将在后续批次提供',
-                  // 书架内搜索过滤不在 6a-1 范围：保持参考版默认开启并禁用，
-                  // 避免给出「已生效」的假象；后续批次接入过滤后启用。
-                  value: true,
-                  onChanged: null,
+                  subtitle: '开启：点击搜索，长按筛选；关闭：点击筛选，长按搜索。',
+                  // 书架内搜索过滤已接入：点击/长按按本开关分流全局搜索与
+                  // 书架内过滤（对齐参考版 bookshelf_search_button_hint）。
+                  value: settings.bookshelfSearchActionDirectToSearch,
+                  onChanged: (value) => update(
+                    (s) =>
+                        s.copyWith(bookshelfSearchActionDirectToSearch: value),
+                  ),
                 ),
                 _SwitchRow(
                   key: const ValueKey('bookshelfFastScrollerSwitch'),

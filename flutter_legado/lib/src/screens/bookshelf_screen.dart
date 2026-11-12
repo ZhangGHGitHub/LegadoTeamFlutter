@@ -133,6 +133,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// [设置批6a-1] 更新全部时的待更新数量（`showWaitUpCount` 顶栏角标）
   final ValueNotifier<int> _waitUpCount = ValueNotifier<int>(0);
 
+  /// 书架内搜索过滤输入控制器（[BookshelfState.isFilterMode] 时挂载）
+  final TextEditingController _filterController = TextEditingController();
+  final FocusNode _filterFocusNode = FocusNode();
+
   /// 书架内容实际宽度（多栏/窄 pane 小于窗口宽；配置面板列数提示用）
   double? _lastViewportWidth;
 
@@ -216,6 +220,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     _scrollController.dispose();
     _folderScrollController.dispose();
     _waitUpCount.dispose();
+    _filterController.dispose();
+    _filterFocusNode.dispose();
     _tabController?.removeListener(_onTabControllerChanged);
     _tabController?.dispose();
     super.dispose();
@@ -234,14 +240,25 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
       return true;
     }
+    // 过滤态优先退出过滤（文件夹根目录下 _inFolderRoot 为真，否则返回会
+    // 直接落到「退出页面」分支）
+    if (state.isFilterMode) {
+      _exitShelfFilter(ref);
+      return true;
+    }
     if (_inFolderRoot) return false;
     _exitFolderToRoot();
     return true;
   }
 
-  /// 从组内容返回文件夹根目录
+  /// 从组内容返回文件夹根目录（过滤态下退化为「退出过滤」）
   void _exitFolderToRoot() {
-    if (!mounted || _inFolderRoot) return;
+    if (!mounted) return;
+    if (ref.read(bookshelfNotifierProvider).isFilterMode) {
+      _exitShelfFilter(ref);
+      return;
+    }
+    if (_inFolderRoot) return;
     final state = ref.read(bookshelfNotifierProvider);
     if (state.isBatchMode) {
       ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
@@ -803,8 +820,120 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     }
   }
 
+  /// 顶栏搜索按钮主动作（对齐参考版 `onSearchClick`）：
+  /// 「搜索直达」开 → 全局搜索页；关 → 切换书架内过滤。
+  void _onSearchButton(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool directToSearch,
+  }) {
+    if (directToSearch) {
+      _openGlobalSearch(context);
+    } else {
+      _toggleShelfFilter(ref);
+    }
+  }
+
+  /// 顶栏搜索按钮长按动作：与主动作相反（对齐参考版 `onSearchLongClick`）
+  void _onSearchButtonLongPress(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool directToSearch,
+  }) {
+    if (directToSearch) {
+      _toggleShelfFilter(ref);
+    } else {
+      _openGlobalSearch(context);
+    }
+  }
+
+  /// 切换书架内过滤模式（参考版 `toggleBookshelfFilter`：进入/退出同一入口）
+  void _toggleShelfFilter(WidgetRef ref) {
+    if (ref.read(bookshelfNotifierProvider).isFilterMode) {
+      _exitShelfFilter(ref);
+    } else {
+      _enterShelfFilter(ref);
+    }
+  }
+
+  /// 进入书架内过滤（输入即筛当前分组）
+  void _enterShelfFilter(WidgetRef ref) {
+    final state = ref.read(bookshelfNotifierProvider);
+    if (state.isFilterMode) {
+      _filterFocusNode.requestFocus();
+      return;
+    }
+    ref.read(bookshelfNotifierProvider.notifier).setFilterMode(true);
+    _filterController.text = state.filterQuery;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _filterFocusNode.requestFocus();
+    });
+  }
+
+  /// 退出书架内过滤并清空关键词
+  void _exitShelfFilter(WidgetRef ref) {
+    _filterController.clear();
+    ref.read(bookshelfNotifierProvider.notifier).setFilterMode(false);
+  }
+
+  /// 打开全局搜索页；过滤关键词非空时作为初始搜索词带入
+  /// （对齐参考版 `onNavigateToSearch(uiState.searchKey.trim())`）
+  void _openGlobalSearch(BuildContext context) {
+    Navigator.pushNamed(
+      context,
+      AppRoutes.search,
+      arguments: ref.read(bookshelfNotifierProvider).filterQuery.trim(),
+    );
+  }
+
+  /// 书架内过滤输入条（过滤模式激活时挂在头部下方）
+  Widget _buildShelfFilterBar(
+    BuildContext context,
+    WidgetRef ref,
+    BookshelfState state,
+  ) {
+    final theme = Theme.of(context);
+    final notifier = ref.read(bookshelfNotifierProvider.notifier);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: TextField(
+        key: const ValueKey('bookshelf_filter_field'),
+        controller: _filterController,
+        focusNode: _filterFocusNode,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: '搜索书架中的书名或作者',
+          prefixIcon: const Icon(Symbols.search_rounded, size: 20),
+          suffixIcon: IconButton(
+            key: const ValueKey('bookshelf_filter_clear'),
+            tooltip: state.filterQuery.isEmpty ? '退出搜索' : '清除',
+            icon: const Icon(Icons.close_rounded, size: 20),
+            onPressed: () {
+              if (state.filterQuery.isEmpty) {
+                _exitShelfFilter(ref);
+              } else {
+                _filterController.clear();
+                notifier.setFilterQuery('');
+              }
+            },
+          ),
+          filled: true,
+          fillColor: theme.colorScheme.surfaceContainerHigh,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+        ),
+        onChanged: notifier.setFilterQuery,
+      ),
+    );
+  }
+
   List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(bookshelfSettingsProvider);
+    final directToSearch = settings.bookshelfSearchActionDirectToSearch;
     return [
       // [设置批6a-1] 更新全部进行中的待更新数量（参考版 showWaitUpCount）
       if (settings.showWaitUpCount)
@@ -826,10 +955,25 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         ),
       // [UI-fix v2.0.175] 恢复搜索图标（原版 main_bookshelf.xml actionbar
       // 自带搜索项，红线对齐；Dynamic 搜索行双入口并存——用户报障找不到搜索）
-      IconButton(
-        icon: const Icon(Symbols.search_rounded),
-        tooltip: AppStrings.search,
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
+      // [搜索直达] 对齐参考版双语义：点击/长按按设置分流「全局搜索」与
+      // 「书架内过滤」。长按由外层 GestureDetector 承接，Tooltip 设 manual
+      // 避免其默认长按触发抢占手势（仍保留语义标签供无障碍/自动化读取）。
+      Tooltip(
+        message: directToSearch ? AppStrings.search : '书架内搜索',
+        triggerMode: TooltipTriggerMode.manual,
+        child: GestureDetector(
+          onLongPress: () => _onSearchButtonLongPress(
+            context,
+            ref,
+            directToSearch: directToSearch,
+          ),
+          child: IconButton(
+            key: const ValueKey('bookshelf_search_button'),
+            icon: const Icon(Symbols.search_rounded),
+            onPressed: () =>
+                _onSearchButton(context, ref, directToSearch: directToSearch),
+          ),
+        ),
       ),
       // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「布局设置」
       // [parity C3 B2] 触发钮为裸 ⋮ 图标（对齐参考 03b 顶栏 ⋮ 位置，无圆底）；
@@ -1096,7 +1240,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     }
 
     // [设置批6a-2] 文件夹根目录：分组卡片（独立于组内容布局）
-    if (settings.bookGroupStyle == 2 && _inFolderRoot) {
+    // [搜索直达] 过滤态下退回平铺书列表（根目录分组卡片无法承载逐书过滤）
+    if (settings.bookGroupStyle == 2 && _inFolderRoot && !state.isFilterMode) {
       return LayoutBuilder(
         builder: (layoutContext, layoutConstraints) => _buildFolderRoot(
           context,
@@ -1130,10 +1275,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         _pendingVisibleGroupId = null;
       });
     }
-    final shelfBooks = sortBookshelfBooks(
-      state.booksInGroup(effectiveGroup),
-      sort: settings.bookshelfSort,
-      sortOrder: settings.bookshelfSortOrder,
+    final shelfBooks = state.filterBooks(
+      sortBookshelfBooks(
+        state.booksInGroup(effectiveGroup),
+        sort: settings.bookshelfSort,
+        sortOrder: settings.bookshelfSortOrder,
+      ),
+      // 过滤态先剔除私密未授权书：能搜到书名本身就是泄露
+      exclude: (book) => state.isBookContentLocked(book, privacy),
     );
     // [批9c] 私密分组内容区整页锁定：组名与 Tab 保持可见，只替换内容
     // （对齐参考版 PrivateGroupLockedPage）；解锁后派生条件自动翻回。
@@ -1168,6 +1317,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               visibleGroups,
               effectiveGroup,
             ),
+          // 过滤态空结果：输入条必须保留，否则用户无法修改/清除关键词
+          if (state.isFilterMode)
+            SliverToBoxAdapter(
+              child: _buildShelfFilterBar(context, ref, state),
+            ),
           SliverFillRemaining(
             hasScrollBody: false,
             child: state.isBatchMode
@@ -1196,9 +1350,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     child: UnconstrainedBox(
                       constrainedAxis: Axis.horizontal,
                       child: EmptyState(
-                        icon: Symbols.library_books_rounded,
-                        title: AppStrings.emptyBookshelf,
-                        kaomoji: true,
+                        icon: state.isFiltering
+                            ? Symbols.search_off_rounded
+                            : Symbols.library_books_rounded,
+                        title: state.isFiltering
+                            ? '未找到匹配的书籍'
+                            : AppStrings.emptyBookshelf,
+                        kaomoji: !state.isFiltering,
                       ),
                     ),
                   ),
@@ -1232,6 +1390,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 settings,
                 visibleGroups,
                 effectiveGroup,
+              ),
+            // 书架内过滤输入条（私密分组锁定态不显示，避免过滤空结果误导）
+            if (state.isFilterMode && !groupLocked)
+              SliverToBoxAdapter(
+                child: _buildShelfFilterBar(context, ref, state),
               ),
             // [批9c] 私密分组：只锁内容区，头部/Tab/相邻分组仍可交互；
             // 批量摘要与底部工具条一并隐藏（避免通过“已选 N 本 / 共 M 本”
