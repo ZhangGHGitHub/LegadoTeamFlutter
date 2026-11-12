@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.496] - 2026-11-13
+
+### Fixed
+- [UI] 修复段评面板打不开的问题：进入阅读器后段评摘要未加载（只在特定章节切换时机触发），现在正文就绪即加载，段落徽标与段评面板恢复正常；切换章节会正确刷新，不会残留上一章计数。
+
 ## [2.0.495] - 2026-11-13
 
 ### Fixed
