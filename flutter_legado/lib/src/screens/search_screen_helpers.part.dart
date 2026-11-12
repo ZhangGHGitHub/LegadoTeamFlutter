@@ -10,8 +10,23 @@ part of 'search_screen.dart';
 
 extension _SearchHelpers on _SearchScreenState {
 
-  /// 聚焦变化时更新输入帮助层显隐
-  void _onFocusChanged() => _updateInputHelpVisibility();
+  /// 聚焦变化时更新输入帮助层显隐，并刷新 PopScope 返回键状态。
+  ///
+  /// [批22 P2] `PopScope.canPop` 是 build 期快照：焦点丢失（如点空白处、
+  /// IME 收起）后若不重建，下一次系统返回仍按旧的 canPop=false 被吞掉。
+  /// 重新聚焦视为新焦点会话，重置返回键状态机。
+  void _onFocusChanged() {
+    if (mounted) {
+      final focused = _focusNode.hasFocus;
+      setState(() {
+        if (focused) {
+          _backUnfocusConsumed = false;
+          _keyboardShownSinceFocus = false;
+        }
+      });
+    }
+    _updateInputHelpVisibility();
+  }
 
   /// 对标原版 setOnQueryTextFocusChangeListener + visibleInputHelp
   ///

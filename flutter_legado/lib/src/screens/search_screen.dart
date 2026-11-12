@@ -62,6 +62,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _resultsScrollController = ScrollController();
+  // [批22 P2] 系统返回键状态机——设备验收：连续两次返回仍停留搜索页。
+  //
+  // 原实现仅以 `!_focusNode.hasFocus` 作为 canPop：Android 上软键盘可见时，
+  // 第一次返回由 IME 消费（Flutter 收不到 popRoute），键盘收起但焦点仍在；
+  // 第二次返回送达后仅执行失焦，页面依旧不退出。
+  //
+  // - `_backUnfocusConsumed`：本次焦点会话已用一次返回执行「仅失焦」，
+  //   下一次返回不再依赖 hasFocus 的实时值，直接允许 pop；
+  // - `_keyboardShownSinceFocus`：本次焦点会话软键盘真实出现过；若随后键盘
+  //   收起而焦点仍在，说明那次返回已被系统用于收键盘，下一次送达的返回
+  //   必须直接退出。
+  bool _backUnfocusConsumed = false;
+  bool _keyboardShownSinceFocus = false;
   // [fix v2.0.102] 构造期捕获 notifier 实例：riverpod 在 state.dispose() 执行前
   // 已将 element 标记为 disposed，dispose 内任何 ref.read 都会抛
   // 「Cannot use ref after the widget was disposed」；state getter 为 protected，
@@ -281,12 +294,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
       }
     });
 
+    // [批22 P2] 键盘可见性参与返回键判定：build 读取 viewInsets 建立依赖，
+    // 键盘升降（含被系统返回键收起）都会触发重建。
+    final focused = _focusNode.hasFocus;
+    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
+    if (focused && keyboardVisible) {
+      _keyboardShownSinceFocus = true;
+    }
+    // 键盘曾被系统返回键收起而焦点仍在：本次送达的返回直接退出，
+    // 避免设备上「按两次仍停留」（第一次被 IME 吃掉、第二次只失焦）。
+    final keyboardDismissedBySystem =
+        focused && !keyboardVisible && _keyboardShownSinceFocus;
+
     return PopScope(
-      // 对标原版 finish()：搜索框聚焦时返回仅失焦不退出
-      canPop: !_focusNode.hasFocus,
+      // 对标原版 finish()：搜索框聚焦时返回仅失焦不退出；失焦后返回退出。
+      // 显式标志保证「已消费过失焦」的焦点会话不再被 hasFocus/重建时序卡住。
+      canPop: _backUnfocusConsumed || !focused || keyboardDismissedBySystem,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _focusNode.hasFocus) {
+        if (didPop) return;
+        if (_focusNode.hasFocus) {
           FocusScope.of(context).unfocus();
+          if (!_backUnfocusConsumed) {
+            setState(() => _backUnfocusConsumed = true);
+          }
         }
       },
       child: AppScaffold(
