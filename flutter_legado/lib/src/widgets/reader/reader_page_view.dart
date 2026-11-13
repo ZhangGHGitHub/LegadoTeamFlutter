@@ -1283,8 +1283,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
     _highlightMatches = _highlightSync.sync(
       HighlightMatchRequest(
-        // 滚动模式走 ReaderParagraphs（尚未接线高亮）：不做无意义的跨 FFI 匹配
-        enabled: book != null && state.pageTurnMode != PageTurnMode.scroll,
+        // 滚动模式同样加载并渲染高亮（分页/滚动共用章节全局坐标）
+        enabled: book != null,
         bookUrl: bookUrl,
         bookName: bookName,
         origin: bookOrigin,
@@ -1297,7 +1297,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
     // [批7b-2b] 用户笔记：watch 修订号，保存/启停/删除后即时重算
     _syncMarkingMatches(
-      enabled: book != null && state.pageTurnMode != PageTurnMode.scroll,
+      enabled: book != null,
       content: content,
       bookUrl: bookUrl,
       chapterIndex: chapterIndex,
@@ -1306,7 +1306,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 手动高亮（highlights 表）：按章加载已存记录并并入正文渲染。
     // watch 修订号——阅读器保存高亮成功后自增，立即重拉当前章（缺陷修复）。
     _syncSavedHighlightMatches(
-      enabled: book != null && state.pageTurnMode != PageTurnMode.scroll,
+      enabled: book != null,
       content: content,
       bookUrl: bookUrl,
       chapterIndex: chapterIndex,
@@ -1323,8 +1323,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   ///
   /// 键 = 书 + 章 + 已分页正文（长度/hash）+ 笔记修订号；键变化先清空旧
   /// 命中再异步加载，避免新章/换书短暂套用上一章区间。失败清空，下一次
-  /// build 重试（单 key 最多 2 次）。滚动模式不加载（与规则同边界，
-  /// 正文走 ReaderParagraphs 尚未接线渲染）。
+  /// build 重试（单 key 最多 2 次）。滚动模式同样加载并渲染（正文坐标与
+  /// 分页同源，均为章节全局 UTF-16 偏移）。
   void _syncMarkingMatches({
     required bool enabled,
     required String content,
@@ -1421,8 +1421,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   ///
   /// 键 = 书 + 章 + 已分页正文（长度/hash）+ 手动高亮修订号；键变化先
   /// 清空旧命中再异步加载，避免新章/换书短暂套用上一章区间。失败清空，
-  /// 下一次 build 重试（单 key 最多 2 次）。滚动模式不加载（与规则、笔记
-  /// 同边界，正文走 ReaderParagraphs 尚未接线高亮渲染）。
+  /// 下一次 build 重试（单 key 最多 2 次）。滚动模式同样加载并渲染
+  /// （正文坐标与分页同源，均为章节全局 UTF-16 偏移）。
   void _syncSavedHighlightMatches({
     required bool enabled,
     required String content,
@@ -2389,6 +2389,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   selectText: widget.selectText,
                   reviewCounts: widget.reviewCounts,
                   onReviewTap: widget.onReviewTap,
+                  // 滚动模式正文高亮：与分页同源（_combinedHighlightMatches
+                  // 为章节全局 UTF-16 区间，按行 chapterStartIndex 映射）
+                  highlightMatches: _combinedHighlightMatches,
                   imageConfig: imageConfig,
                 )
             else if (state.chapterContent.isNotEmpty)
@@ -2410,6 +2413,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 fontStyle: _fontStyleFor(widget.italic),
                 // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
                 selectText: widget.selectText,
+                // 回退渲染同样按章节全局坐标切 span（段间换行计 1 字符）
+                highlightMatches: _combinedHighlightMatches,
               )
             else if (!state.isLoading)
               Center(

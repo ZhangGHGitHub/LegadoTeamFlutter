@@ -391,6 +391,10 @@ class ReaderTextContent extends StatelessWidget {
       builder: (context, constraints) {
         final widgets = <Widget>[];
         final availableWidth = constraints.maxWidth;
+        // 命中顺序整页校验一次；逐行游标只前进不回退（行/段按章节顺序
+        // 渲染），滚动模式整章渲染时避免每行全表扫描 + 重复有序校验。
+        final matchesStartSorted = isStartSorted(highlightMatches);
+        var lineMatchCursor = 0;
 
         for (var paraIdx = 0; paraIdx < pageInfo.paragraphs.length; paraIdx++) {
           final para = pageInfo.paragraphs[paraIdx];
@@ -456,13 +460,36 @@ class ReaderTextContent extends StatelessWidget {
                   : null,
             );
 
+            // 命中游标：end <= 本行正文起点的命中与本行及后续行无关
+            if (line.highlightMapped && highlightMatches.isNotEmpty) {
+              while (lineMatchCursor < highlightMatches.length &&
+                  highlightMatches[lineMatchCursor].end <=
+                      line.chapterStartIndex) {
+                lineMatchCursor++;
+              }
+            }
+            final lineBodyLength =
+                text.length - line.highlightSkip.clamp(0, text.length);
+            final lineHasHighlight =
+                highlightMatches.isNotEmpty &&
+                line.highlightMapped &&
+                lineMatchCursor < highlightMatches.length &&
+                highlightMatches[lineMatchCursor].start <
+                    line.chapterStartIndex + lineBodyLength;
+
             // [批16] 含行内图片的行：占位符替换为 WidgetSpan，文字分段
             // 继承同一行样式/高亮
             final lineText = line.inlineImages.isNotEmpty
-                ? _buildInlineImageLine(line, text, lineTextStyle)
+                ? _buildInlineImageLine(
+                    line,
+                    text,
+                    lineTextStyle,
+                    searchFrom: lineMatchCursor,
+                    assumeStartSorted: matchesStartSorted,
+                  )
                 // [批34] 命中行改 Text.rich：按章节全局偏移切分 span，只应用
                 // 不影响字体度量的样式（颜色/背景/下划线/删除线）— full-stack-engineer
-                : highlightMatches.isEmpty || !line.highlightMapped
+                : !lineHasHighlight
                 ? Text(
                     text,
                     style: lineTextStyle,
@@ -476,6 +503,8 @@ class ReaderTextContent extends StatelessWidget {
                         chapterStart: line.chapterStartIndex,
                         highlightSkip: line.highlightSkip,
                         matches: highlightMatches,
+                        searchFrom: lineMatchCursor,
+                        assumeStartSorted: matchesStartSorted,
                       ),
                     ),
                     style: lineTextStyle,
@@ -579,7 +608,13 @@ class ReaderTextContent extends StatelessWidget {
   ///
   /// 排版按占位符宽度断行，渲染用同宽 WidgetSpan 替换，保证行宽与分页
   /// 结果一致；文字分段沿用同一行样式，高亮按分段偏移映射。
-  Widget _buildInlineImageLine(LineInfo line, String text, TextStyle style) {
+  Widget _buildInlineImageLine(
+    LineInfo line,
+    String text,
+    TextStyle style, {
+    int searchFrom = 0,
+    bool assumeStartSorted = false,
+  }) {
     final spans = <InlineSpan>[];
     var segmentStart = 0;
     var imageIndex = 0;
@@ -587,7 +622,13 @@ class ReaderTextContent extends StatelessWidget {
       if (text.codeUnitAt(i) != 0xFFFC) continue;
       if (i > segmentStart) {
         spans.addAll(
-          _inlineTextSpans(line, text.substring(segmentStart, i), segmentStart),
+          _inlineTextSpans(
+            line,
+            text.substring(segmentStart, i),
+            segmentStart,
+            searchFrom: searchFrom,
+            assumeStartSorted: assumeStartSorted,
+          ),
         );
       }
       if (imageIndex < line.inlineImages.length) {
@@ -609,7 +650,13 @@ class ReaderTextContent extends StatelessWidget {
     }
     if (segmentStart < text.length) {
       spans.addAll(
-        _inlineTextSpans(line, text.substring(segmentStart), segmentStart),
+        _inlineTextSpans(
+          line,
+          text.substring(segmentStart),
+          segmentStart,
+          searchFrom: searchFrom,
+          assumeStartSorted: assumeStartSorted,
+        ),
       );
     }
     return Text.rich(
@@ -624,8 +671,10 @@ class ReaderTextContent extends StatelessWidget {
   List<InlineSpan> _inlineTextSpans(
     LineInfo line,
     String segment,
-    int offsetInLine,
-  ) {
+    int offsetInLine, {
+    int searchFrom = 0,
+    bool assumeStartSorted = false,
+  }) {
     if (highlightMatches.isEmpty || !line.highlightMapped) {
       return [TextSpan(text: segment)];
     }
@@ -639,6 +688,8 @@ class ReaderTextContent extends StatelessWidget {
       chapterStart: chapterStart < 0 ? 0 : chapterStart,
       highlightSkip: 0,
       matches: highlightMatches,
+      searchFrom: searchFrom,
+      assumeStartSorted: assumeStartSorted,
     );
   }
 }
@@ -669,6 +720,9 @@ class ReaderParagraphs extends StatelessWidget {
   // [C3 斜体 | Qoder UI] 正文斜体（与 fontWeight 同链路透传，测量/渲染同参）
   final FontStyle? fontStyle;
 
+  /// 本章高亮命中区间（UTF-16 章节全局偏移，互不重叠、按 start 升序）
+  final List<HighlightMatch> highlightMatches;
+
   const ReaderParagraphs({
     super.key,
     required this.content,
@@ -683,6 +737,7 @@ class ReaderParagraphs extends StatelessWidget {
     this.selectText = true,
     this.fontWeight,
     this.fontStyle,
+    this.highlightMatches = const [],
   });
 
   @override
@@ -691,11 +746,35 @@ class ReaderParagraphs extends StatelessWidget {
     // [P2-2 低成本] 滚动模式无分页 ParagraphInfo：按行累计段首偏移，
     // 传给选区面板（此前恒 0，笔记/高亮锚点全落在章首）
     var offset = 0;
+    // 高亮命中游标：命中列表按 start 升序且互不重叠（合并结果契约），
+    // 段落按章节顺序推进时只需前进游标，避免每段全表扫描整章命中。
+    var matchCursor = 0;
     final items = <Widget>[];
     for (var index = 0; index < paragraphs.length; index++) {
       final p = paragraphs[index];
       final leading = p.length - p.trimLeft().length;
       final paragraphChapterPos = offset + leading;
+      // 段落正文在章节中的半开区间 [offset, offset + p.length)：`p` 为
+      // `content.split('\n')` 的分段原文，段间换行符不在 p 内，故下方
+      // offset 累计必须 +1（换行符在章节文本中占 1 个 UTF-16 code unit）。
+      final paragraphEnd = offset + p.length;
+      while (matchCursor < highlightMatches.length &&
+          highlightMatches[matchCursor].end <= offset) {
+        matchCursor++;
+      }
+      final hasHighlight =
+          matchCursor < highlightMatches.length &&
+          highlightMatches[matchCursor].start < paragraphEnd;
+      final paragraphStyle = TextStyle(
+        fontSize: fontSize,
+        height: lineHeight,
+        color: textColor,
+        fontFamily: fontFamily,
+        // [UI-fix v2.0.4 | 2026-08-08] 字重接线 — Qoder
+        fontWeight: fontWeight,
+        fontStyle: fontStyle,
+        letterSpacing: letterSpacing != 0 ? letterSpacing : null,
+      );
       items.add(
         // [UI-fix v2.0.1 | 2026-08-06] 滚动回退模式段落级长按入口
         // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
@@ -711,19 +790,20 @@ class ReaderParagraphs extends StatelessWidget {
                 ),
           child: Padding(
             padding: EdgeInsets.only(bottom: paragraphSpacing),
-            child: Text(
-              p.isEmpty ? ' ' : p,
-              style: TextStyle(
-                fontSize: fontSize,
-                height: lineHeight,
-                color: textColor,
-                fontFamily: fontFamily,
-                // [UI-fix v2.0.4 | 2026-08-08] 字重接线 — Qoder
-                fontWeight: fontWeight,
-                fontStyle: fontStyle,
-                letterSpacing: letterSpacing != 0 ? letterSpacing : null,
-              ),
-            ),
+            // 无命中的段落保持原 Text 渲染路径（不建多余 span 树）。
+            child: hasHighlight
+                ? Text.rich(
+                    TextSpan(
+                      children: buildHighlightedParagraphSpans(
+                        text: p,
+                        chapterStart: offset,
+                        matches: highlightMatches,
+                        searchFrom: matchCursor,
+                      ),
+                    ),
+                    style: paragraphStyle,
+                  )
+                : Text(p.isEmpty ? ' ' : p, style: paragraphStyle),
           ),
         ),
       );
