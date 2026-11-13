@@ -365,7 +365,8 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
         // 如果是 TXT 文件且选择了非 UTF-8 编码，先转换编码
         if (filePath.toLowerCase().endsWith('.txt') && selectedEncoding != 'UTF-8') {
-          // P2-3：Rust 转换结果写到 `<name>.<ext>.converted`，并通过
+          // P2-3：Rust 转换结果写到同目录 `converted/<原名>`（保留原文件名，
+          // 避免 TxtParser 用 file_stem 取名时书名被污染成 `foo.txt`），并通过
           // output_path 返回，必须导入该输出文件——否则用户选择的编码
           // 完全无效（仍导入原文件）。转换失败计入失败明细，不得静默。
           String? convertedPath;
