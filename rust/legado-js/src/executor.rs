@@ -219,30 +219,43 @@ impl JsExecutor for QuickJsExecutor {
             return run_fresh();
         }
         let key = format!("executor:{}", self.source_tag);
-        let (cached, _, js_lib_ok) = crate::engine_cache::get_or_create(
-            &key,
-            self.js_lib.as_deref(),
-            self.setup_script.as_deref(),
-            None,
-        )
-        .map_err(|e| e.to_string())?;
-        // 缓存引擎构造期 jsLib 求值失败 → 带原因上抛（与 fresh 路径同一语义；
-        // 原版 SharedJsScope.evaluateJsLib 失败直接抛）。原因取台账最后错误摘要
-        // （engine_cache::init_engine 已登记 `record_jslib_load_failure`）。
-        if js_lib_ok == Some(false) {
-            let reason = crate::host_api::capability_ledger::last_jslib_error(&key)
-                .filter(|s| !s.trim().is_empty())
-                .unwrap_or_else(|| "原因未记录（见 capability_ledger）".to_string());
-            return Err(format!("jsLib 求值失败: {reason}"));
-        }
+        // P3-4：缓存路径的 `get_or_create` 必须与后续 eval 同在书源 tag
+        // 护栏内——`init_engine` 构造期会 eval jsLib/setup，其顶层
+        // `java.ajax` 需要正确 tag 才能取本源 `global_headers` 并通过 cookie
+        // 写侧门控（改前护栏只包住下游 eval，构造期副作用落入「未归属
+        // 上下文」）。jsLib 失败上抛的台账查询并入同一闭包，语义不变。
         let result =
             crate::host_api::current_source::with_current_source_tag(&self.source_tag, || {
-                cached
-                    .lock()
-                    .map_err(|_| "JS 引擎锁中毒".to_string())
-                    .and_then(|engine| {
+                let (cached, _, js_lib_ok) = crate::engine_cache::get_or_create(
+                    &key,
+                    self.js_lib.as_deref(),
+                    self.setup_script.as_deref(),
+                    None,
+                )
+                .map_err(|e| e.to_string())?;
+                // 缓存引擎构造期 jsLib 求值失败 → 带原因上抛（与 fresh 路径同一语义；
+                // 原版 SharedJsScope.evaluateJsLib 失败直接抛）。原因取台账最后错误摘要
+                // （engine_cache::init_engine 已登记 `record_jslib_load_failure`）。
+                if js_lib_ok == Some(false) {
+                    let reason = crate::host_api::capability_ledger::last_jslib_error(&key)
+                        .filter(|s| !s.trim().is_empty())
+                        .unwrap_or_else(|| "原因未记录（见 capability_ledger）".to_string());
+                    return Err(format!("jsLib 求值失败: {reason}"));
+                }
+                // 先绑定锁结果再匹配：避免尾部临时 `PoisonError<Guard>`
+                // 晚于局部变量 `cached` 析构的借用冲突。
+                let lock_result = cached.lock();
+                match lock_result {
+                    Ok(engine) => {
                         crate::JsEngine::eval(&*engine, js_code).map_err(|e| e.to_string())
-                    })
+                    }
+                    // P3-1 同源问题：中毒引擎不得用 `into_inner` 复用；使条目
+                    // 失效后本次明确失败，下一次调用经 `get_or_create` 重建。
+                    Err(_) => {
+                        crate::engine_cache::invalidate(&key);
+                        Err("JS 引擎锁中毒：该缓存引擎已失效，下次调用将重建（请重试）".to_string())
+                    }
+                }
             });
         match result {
             Err(e) if e.contains("redeclaration") || e.contains("already declared") => {

@@ -14,6 +14,8 @@
 //!   （回环 URL 走 `no_proxy` 直连池，生产池不变；逐请求 30s 超时；内容
 //!   上限 2MB）→ 进程级 LRU 缓存（`md5(url)` 键，容量 64，**无 TTL**，
 //!   进程重启丢失，对齐上游 aCache 内存语义）→ 返回拼接脚本由调用方 eval；
+//!   拉取失败另入 **60s 负缓存**（P2-5：死 URL 在 TTL 内不重复发起请求，
+//!   避免逐次 30s 阻塞与日志刷屏）；
 //! - **拉取失败** → 可读错误（上游「下载jsLib-{url}失败」措辞）+
 //!   [`capability_ledger::record_jslib_load_failure`] 台账登记，**跳过该
 //!   条继续其余条目**（降级继续，仅依赖该 jsLib 的规则受影响——与上游
@@ -28,7 +30,7 @@
 
 use std::num::NonZeroUsize;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use lru::LruCache;
 
@@ -47,8 +49,35 @@ const MAX_JSLIB_CONTENT_LEN: usize = 2 * 1024 * 1024;
 /// 进程级 jsLib 内容缓存容量（按 `md5(url)` 键，无 TTL）
 const JSLIB_CACHE_CAPACITY: usize = 64;
 
+/// 拉取失败负缓存 TTL（P2-5）
+///
+/// 选择 60s 的理由：死 URL 在用户连续操作（搜索、登录检测、同一轮内多次
+/// `@js:` 求值）期间只尝试一次，不再逐次阻塞 [`JSLIB_FETCH_TIMEOUT`]（30s）
+/// 并刷屏；同时保留分钟级恢复窗口——源站短暂故障恢复后无需重启进程即可
+/// 重新拉取。负缓存与正缓存同为进程内内存语义（重启丢失），不引入持久化
+/// 或跨进程共享。
+const JSLIB_NEGATIVE_TTL: Duration = Duration::from_secs(60);
+
+/// 负缓存容量（与正缓存同量级；仅存失败 URL 的错误摘要）
+const JSLIB_NEGATIVE_CAPACITY: usize = 64;
+
+/// 日志展示用 tag 上限（字符数）。缓存键可能内嵌完整 mainJs（数百 KB），
+/// 直接打印会刷屏（P3-5）；台账仍用完整 key 定位，仅日志截断。
+const LOG_TAG_MAX_CHARS: usize = 96;
+
 /// 可注入的 jsLib 拉取器：`url → 内容`；错误串须可读（进台账与日志）
 pub type JsLibFetcher = dyn Fn(&str) -> Result<String, String> + Send + Sync;
+
+/// 日志展示用 tag：超长时截断并追加省略号（字符边界安全）
+fn display_tag(tag: &str) -> String {
+    let mut chars = tag.chars();
+    let head: String = chars.by_ref().take(LOG_TAG_MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{head}…")
+    } else {
+        head
+    }
+}
 
 /// 解析 URL 映射形态的 jsLib（`{"crypto":"https://…/crypto-js.min.js"}`）。
 ///
@@ -83,11 +112,54 @@ fn jslib_cache() -> &'static Mutex<LruCache<String, String>> {
     })
 }
 
-/// 测试用：清空进程级 jsLib 内容缓存（缓存为进程全局，跨测试并行安全须
-/// 先清再断言命中计数）
+/// 进程级 jsLib **失败**负缓存（`md5(url)` 键 → (失败时刻, 错误串)）
+///
+/// P2-5：死 URL 的拉取失败在 [`JSLIB_NEGATIVE_TTL`] 内不再发起网络请求，
+/// 直接复用首次错误（台账仍按调用方 tag 登记，行为对调用方可观测性不变）。
+fn jslib_negative_cache() -> &'static Mutex<LruCache<String, (Instant, String)>> {
+    static CACHE: OnceLock<Mutex<LruCache<String, (Instant, String)>>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let cap =
+            NonZeroUsize::new(JSLIB_NEGATIVE_CAPACITY).unwrap_or(NonZeroUsize::new(16).unwrap());
+        Mutex::new(LruCache::new(cap))
+    })
+}
+
+/// 命中未过期的负缓存则返回首次错误；过期条目顺带移除。
+fn negative_cached_error(key: &str) -> Option<String> {
+    let mut cache = jslib_negative_cache().lock().ok()?;
+    match cache.get(key).cloned() {
+        Some((failed_at, err)) if failed_at.elapsed() < JSLIB_NEGATIVE_TTL => Some(err),
+        Some(_) => {
+            cache.pop(key);
+            None
+        }
+        None => None,
+    }
+}
+
+/// 登记拉取失败（供 [`JSLIB_NEGATIVE_TTL`] 内短路重试）
+fn cache_failure(key: String, err: &str) {
+    if let Ok(mut cache) = jslib_negative_cache().lock() {
+        cache.put(key, (Instant::now(), err.to_string()));
+    }
+}
+
+/// 拉取成功后清除负缓存（URL 恢复可达的路径）
+fn clear_failure(key: &str) {
+    if let Ok(mut cache) = jslib_negative_cache().lock() {
+        cache.pop(key);
+    }
+}
+
+/// 测试用：清空进程级 jsLib 内容缓存与失败负缓存（缓存为进程全局，
+/// 跨测试并行安全须先清再断言命中计数）
 #[doc(hidden)]
 pub fn reset_jslib_cache_for_test() {
     if let Ok(mut c) = jslib_cache().lock() {
+        c.clear();
+    }
+    if let Ok(mut c) = jslib_negative_cache().lock() {
         c.clear();
     }
 }
@@ -160,23 +232,39 @@ pub fn resolve_js_lib_url_map_with_status(
             .lock()
             .ok()
             .and_then(|mut c| c.get(&key).cloned());
-        match cached {
-            Some(body) => parts.push(format!("// {name}\n{body}")),
-            None => match (fetch)(v) {
-                Ok(body) => {
-                    if let Ok(mut c) = jslib_cache().lock() {
-                        c.put(key, body.clone());
-                    }
-                    parts.push(format!("// {name}\n{body}"));
+        if let Some(body) = cached {
+            parts.push(format!("// {name}\n{body}"));
+            continue;
+        }
+        // 失败负缓存（P2-5）：TTL 内不再发起网络请求，直接复用首次错误。
+        // 死 URL 源在连续操作中不会逐次阻塞 30s，也不会重复刷屏。
+        if let Some(err) = negative_cached_error(&key) {
+            degraded = true;
+            eprintln!(
+                "[jslib_loader] {}: {err}（负缓存命中，{}s 内不重试；仅依赖 jsLib {name} 的规则受影响）",
+                display_tag(source_tag),
+                JSLIB_NEGATIVE_TTL.as_secs()
+            );
+            capability_ledger::record_jslib_load_failure(source_tag, &err);
+            continue;
+        }
+        match (fetch)(v) {
+            Ok(body) => {
+                if let Ok(mut c) = jslib_cache().lock() {
+                    c.put(key.clone(), body.clone());
                 }
-                Err(e) => {
-                    degraded = true;
-                    eprintln!(
-                        "[jslib_loader] {source_tag}: {e}（降级继续，仅依赖 jsLib {name} 的规则受影响）"
-                    );
-                    capability_ledger::record_jslib_load_failure(source_tag, &e);
-                }
-            },
+                clear_failure(&key);
+                parts.push(format!("// {name}\n{body}"));
+            }
+            Err(e) => {
+                degraded = true;
+                cache_failure(key, &e);
+                eprintln!(
+                    "[jslib_loader] {}: {e}（降级继续，仅依赖 jsLib {name} 的规则受影响）",
+                    display_tag(source_tag)
+                );
+                capability_ledger::record_jslib_load_failure(source_tag, &e);
+            }
         }
     }
     JsLibUrlMapResolution {
@@ -313,6 +401,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         capability_ledger::reset_jslib_load_failures();
+        reset_jslib_cache_for_test();
 
         // 回环 127.0.0.1:1 必拒绝连接（无监听），不发真实外网请求
         let jslib = r#"{"bad":"http://127.0.0.1:1/never.js","good":"var ok42 = 42;"}"#;
@@ -332,5 +421,54 @@ mod tests {
         );
         let err = capability_ledger::last_jslib_error("capb1_jslib_fail").expect("失败必须记台账");
         assert!(err.contains("下载jsLib-"), "台账措辞须对齐上游: {err}");
+    }
+
+    /// P2-5：同一死 URL 连续两次解析只发起一次拉取（60s 负缓存内），
+    /// 且第二次仍按调用方 tag 登记台账（可观测性不因负缓存丢失）。
+    #[test]
+    fn test_jslib_failure_negative_cache_skips_repeat_fetch() {
+        let _ledger = capability_ledger::LEDGER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        capability_ledger::reset_jslib_load_failures();
+        reset_jslib_cache_for_test();
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_fetch = Arc::clone(&calls);
+        let fetcher = move |url: &str| -> Result<String, String> {
+            calls_fetch.fetch_add(1, Ordering::SeqCst);
+            Err(format!("下载jsLib-{url}失败: mock 连接拒绝"))
+        };
+        let jslib = r#"{"crypto":"http://127.0.0.1:1/dead.js"}"#;
+
+        let first = resolve_js_lib_url_map_with_status(jslib, "p25-neg-cache", &fetcher);
+        assert!(first.degraded, "首次拉取失败必须标记 degraded");
+        assert!(first.script.is_none(), "全条失败时不应产生可 eval 脚本");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "首次必须发起拉取");
+
+        let second = resolve_js_lib_url_map_with_status(jslib, "p25-neg-cache", &fetcher);
+        assert!(second.degraded, "负缓存命中仍须标记 degraded");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "负缓存 TTL 内不得重复发起拉取（修复前每次请求都重发）"
+        );
+        let err =
+            capability_ledger::last_jslib_error("p25-neg-cache").expect("负缓存命中仍须可观测");
+        assert!(err.contains("下载jsLib-"), "台账措辞须保留: {err}");
+    }
+
+    /// P3-5：日志展示 tag 超长时截断（缓存键内嵌完整 mainJs 会刷屏），
+    /// 短 tag / UTF-8 多字节均不改变原文。
+    #[test]
+    fn test_display_tag_truncates_long_cache_key() {
+        assert_eq!(
+            display_tag("https://example.com/source"),
+            "https://example.com/source"
+        );
+        let long = "源".repeat(LOG_TAG_MAX_CHARS + 10);
+        let shown = display_tag(&long);
+        assert_eq!(shown.chars().count(), LOG_TAG_MAX_CHARS + 1);
+        assert!(shown.ends_with('…'), "超长 tag 必须有截断标记");
     }
 }

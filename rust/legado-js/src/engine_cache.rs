@@ -52,6 +52,72 @@ fn store() -> &'static Mutex<Store> {
     })
 }
 
+/// per-key 构建闸门表（P2-1 single-flight）
+///
+/// 只保存「构建进行中/仍有等待者」的 key。同 key 的未命中构建经对应
+/// `Mutex<()>` 串行化，异 key 使用不同闸门，构建仍在全局缓存锁外**并行**
+/// 执行。表项清理见 [`FlightGuard::drop`]。
+type FlightGate = Arc<Mutex<()>>;
+static FLIGHTS: OnceLock<Mutex<HashMap<String, FlightGate>>> = OnceLock::new();
+
+fn flights() -> &'static Mutex<HashMap<String, FlightGate>> {
+    FLIGHTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn lock_flights() -> std::sync::MutexGuard<'static, HashMap<String, FlightGate>> {
+    // 闸门表只做串行化簿记，不承载引擎状态；中毒（表操作中 panic）时
+    // 取回内部表可能仍可用，继续服务比整表瘫痪更安全。
+    flights()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// 取得 key 对应的构建闸门（不存在则创建）
+fn acquire_flight(key: &str) -> FlightGate {
+    let mut map = lock_flights();
+    map.entry(key.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+/// single-flight 闸门守卫：构建结束（含 panic 展开）时清理表项。
+///
+/// 清理策略：**仅当无其他等待者时移除**——`Arc::strong_count == 2`
+/// （表内一份 + 本守卫一份）。等待者仍持有 `Arc` 时保留表项，最后由
+/// 最后一个持有者退出时移除；互斥量由 `Arc` 保证存活到该时刻，等待者
+/// 不会在阻塞中途被换锁。清理在表锁内完成，期间不会有新等待者克隆，
+/// 因此不会误删正在被等待的闸门。
+struct FlightGuard {
+    key: String,
+    gate: FlightGate,
+}
+
+impl FlightGuard {
+    fn new(key: &str) -> Self {
+        Self {
+            key: key.to_string(),
+            gate: acquire_flight(key),
+        }
+    }
+
+    fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, ()>> {
+        self.gate.lock()
+    }
+}
+
+impl Drop for FlightGuard {
+    fn drop(&mut self) {
+        let mut map = lock_flights();
+        if map
+            .get(&self.key)
+            .is_some_and(|gate| Arc::ptr_eq(gate, &self.gate))
+            && Arc::strong_count(&self.gate) <= 2
+        {
+            map.remove(&self.key);
+        }
+    }
+}
+
 fn init_engine(
     key: &str,
     js_lib: &str,
@@ -163,7 +229,7 @@ pub fn get_or_create(
 /// 缓存键比较包含 `timeout`：同一 key 换预算会重建条目（与其他初始化
 /// 脚本变化同语义）；`None` 与既有调用方逐字节等价。
 ///
-/// # 锁纪律（P2-6）
+/// # 锁纪律（P2-6）与同 key single-flight（P2-1）
 ///
 /// `init_engine` 会 eval 数百 KB jsLib，jsLib/setup 顶层可能出现
 /// `java.ajax` 等宿主调用并阻塞到网络超时；该构建过程**不得**在全局缓存
@@ -172,8 +238,18 @@ pub fn get_or_create(
 ///
 /// 1. 短锁查表：命中且初始化上下文一致 → 克隆返回；
 /// 2. 锁外构建：未命中/上下文变化 → 释放锁后执行 `init_engine`；
-/// 3. 写锁复查：并发构建同一 key 时先装入者胜出，后到者丢弃本次构建
-///    结果并返回既有条目（两者语义等价，避免相互覆盖造成抖动）。
+/// 3. 写锁复查：先装入者胜出，后到者丢弃本次构建结果并返回既有条目。
+///
+/// 步骤 2 的「锁外构建」单独存在时，同 key 并发未命中会让每个线程各建一个
+/// QuickJS Runtime、各 eval 一遍 jsLib，并**重复执行 jsLib/setup/mainJs 顶层
+/// 的宿主副作用**（`java.ajax`、`setCookie`、`putVariable` 等）——结果虽然
+/// 等价，远端请求/登录侧效应却会 N 倍放大。因此未命中构建按 key 加
+/// [`FlightGuard`] 闸门：同 key 同时只有一个线程构建，等待者在闸门内复查
+/// 缓存并复用先到者结果；异 key 闸门不同，构建并发度不受影响。
+///
+/// 注意：闸门只覆盖「构建」阶段。`init_engine` 返回后的写锁复查仍保留，
+/// 用于兜住闸门表清理竞态（极端时序下两个线程可能持不同闸门），保证
+/// 缓存条目仍是「先装入者胜出」。
 pub fn get_or_create_with_timeout(
     key: &str,
     js_lib: Option<&str>,
@@ -188,13 +264,25 @@ pub fn get_or_create_with_timeout(
     if let Some(hit) = lookup_cached(key, lib, setup, main, timeout)? {
         return Ok(hit);
     }
-    // 2. 慢路径：锁外构建（可能阻塞在 jsLib 顶层宿主调用上）
+    // 2. 同 key single-flight：只允许一个线程进入构建；其余线程在此等待
+    //    （闸门只影响同一 key，异 key 互不阻塞）。守卫在作用域结束或 panic
+    //    展开时清理表项。
+    let flight = FlightGuard::new(key);
+    let _gate = flight
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // 等待期间先到者可能已完成装入：复查命中则直接复用，不重复构建。
+    if let Some(hit) = lookup_cached(key, lib, setup, main, timeout)? {
+        return Ok(hit);
+    }
+    // 3. 锁外构建（持 per-key 闸门，但不持全局缓存锁）
     let (engine, main_ok, lib_ok) = init_engine(key, lib, setup, main, timeout)?;
-    // 3. 写锁复查并装入
+    // 4. 写锁复查并装入
     let mut guard = store()
         .lock()
         .map_err(|_| LegadoError::JsEngine("缓存锁中毒".into()))?;
-    // 并发首次构建同一 key：他线程已装入且上下文一致 → 丢弃自身构建结果
+    // 极端竞态（闸门表清理后新建闸门）下仍可能并发构建同一 key：
+    // 上下文一致则复用先装入者，丢弃本次构建结果。
     if let Some(entry) = guard.entries.get(key) {
         if entry.matches(lib, setup, main, timeout) {
             let result = (entry.engine.clone(), entry.main_js_ok, entry.js_lib_ok);
@@ -267,6 +355,21 @@ fn touch_lru(guard: &mut Store, key: &str) {
     guard.order.push_back(key.to_string());
 }
 
+/// 使指定缓存条目失效（P3-1：锁中毒等引擎不可复用场景）。
+///
+/// 与 [`clear_for_tests`] 不同，本函数是生产 API：只移除单个 key，下次
+/// [`get_or_create`] 会重建全新引擎；key 不存在时为空操作。已克隆出去的
+/// `Arc` 不受影响（引用计数归零后自然释放），因此不会与正在使用该引擎的
+/// 调用方产生悬垂引用。
+pub fn invalidate(key: &str) {
+    let mut guard = store()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if guard.entries.remove(key).is_some() {
+        guard.order.retain(|k| k != key);
+    }
+}
+
 /// 测试串行锁：进程级缓存被同一二进制的多个测试共享，
 /// 凡调用 [clear_for_tests]/[len_for_tests] 的测试必须先持此锁，防止并发清空串扰。
 pub static TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -276,6 +379,8 @@ pub fn clear_for_tests() {
     let mut guard = store().lock().unwrap();
     guard.entries.clear();
     guard.order.clear();
+    // 闸门表同样清空（测试隔离；进行中的构建各自持有 Arc，清理不中断其构建）
+    lock_flights().clear();
 }
 
 /// 返回当前缓存条目数，供回归测试确认 LRU 上限。
@@ -325,9 +430,16 @@ mod tests {
     /// 改前 `get_or_create_with_timeout` 在持有全局缓存 Mutex 期间执行
     /// `init_engine`，本用例的快路径查询会被慢构建拖住（红）；改为
     /// 「快路径短锁 → 锁外构建 → 写锁复查」后快路径应立即返回（绿）。
+    ///
+    /// P2-2（批29 审查）：同步点必须是「mock 收到慢构建请求」，而不是固定
+    /// `sleep(150ms)`。后者在 CI 调度延迟下可能让探针先拿到缓存锁，旧实现
+    /// 也快速返回 → 假绿。收到请求时：旧实现必然正持全局缓存锁（构建在锁内）
+    /// → 探针必阻塞；新实现必然已释放全局锁（构建在锁外）→ 探针立即返回。
+    /// 500ms 仍保留为宽松上限（探针本身无网络/无构建）。
     #[test]
     fn cached_key_fast_path_not_blocked_by_slow_build() {
         use std::io::{Read, Write};
+        use std::sync::mpsc;
         use std::time::Instant;
 
         let _guard = TEST_LOCK.lock().unwrap();
@@ -336,10 +448,12 @@ mod tests {
         // 预热快路径 key（无初始化脚本，构建瞬时）
         let (warm, _, _) = get_or_create("fast-key", None, None, None).unwrap();
 
-        // 最小回环服务：读到请求后延迟 1200ms 再回响应，拖住慢构建。
-        // 非阻塞 accept + 5s 上限，保证构建未发起请求时测试线程不会永久挂起。
+        // 最小回环服务：读到请求后先通知测试线程（同步点），再延迟 1200ms
+        // 回响应，拖住慢构建。非阻塞 accept + 5s 上限，保证构建未发起请求
+        // 时测试线程不会永久挂起。
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
+        let (req_tx, req_rx) = mpsc::channel::<()>();
         let server = std::thread::spawn(move || {
             listener.set_nonblocking(true).unwrap();
             let deadline = Instant::now() + Duration::from_secs(5);
@@ -348,6 +462,8 @@ mod tests {
                     Ok((mut sock, _)) => {
                         let mut buf = [0u8; 1024];
                         let _ = sock.read(&mut buf);
+                        // 慢构建已进入 init_engine 并发出宿主请求
+                        let _ = req_tx.send(());
                         std::thread::sleep(Duration::from_millis(1200));
                         let _ = sock.write_all(
                             b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
@@ -371,8 +487,11 @@ mod tests {
             let _ = get_or_create("slow-build-key", Some(&slow_lib), None, None);
             slow_start.elapsed()
         });
-        // 等慢构建进入 init_engine（构建在锁外，此时全局锁已释放）
-        std::thread::sleep(Duration::from_millis(150));
+        // 以「mock 收到请求」为同步点（替代固定 sleep）：此刻旧实现必然
+        // 持全局缓存锁，新实现必然已释放。
+        req_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("慢构建未在 5s 内发起 jsLib 顶层请求，测试前提不成立");
 
         let probe_start = Instant::now();
         let (fast, _, _) = get_or_create("fast-key", None, None, None).unwrap();
@@ -389,6 +508,125 @@ mod tests {
         assert!(
             fast_elapsed < Duration::from_millis(500),
             "已缓存 key 的快路径被慢构建阻塞：{fast_elapsed:?}（慢构建 {slow_elapsed:?}）"
+        );
+    }
+
+    /// P2-1：同 key 并发未命中只构建一次（per-key single-flight）。
+    ///
+    /// 修复前：每个线程都完整执行 `init_engine`（各建 QuickJS Runtime、
+    /// 各 eval jsLib、重复执行 jsLib 顶层宿主副作用），mock 收到 N 次请求；
+    /// 修复后只有先到者构建，等待者在闸门内复查缓存复用其结果，mock 只
+    /// 收到 1 次。计数用 mock 请求数（直接锁定「远端/登录副作用不重复」）。
+    #[test]
+    fn same_key_concurrent_misses_build_engine_once() {
+        use std::io::{Read, Write};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Barrier;
+
+        const THREADS: usize = 4;
+
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_for_tests();
+
+        // 慢响应 mock（每连接独立线程）：延迟 400ms 保证修复前所有线程都
+        // 已完成快路径未命中并进入 init_engine，请求计数稳定为 N。
+        let requests = Arc::new(AtomicUsize::new(0));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let requests_srv = Arc::clone(&requests);
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+        let server = std::thread::spawn(move || {
+            listener.set_nonblocking(true).unwrap();
+            loop {
+                // 测试结束通知后退出，避免测试进程残留阻塞线程
+                if stop_rx.try_recv().is_ok() {
+                    return;
+                }
+                match listener.accept() {
+                    Ok((mut sock, _)) => {
+                        let requests_conn = Arc::clone(&requests_srv);
+                        std::thread::spawn(move || {
+                            let mut buf = [0u8; 1024];
+                            let _ = sock.read(&mut buf);
+                            requests_conn.fetch_add(1, Ordering::SeqCst);
+                            std::thread::sleep(Duration::from_millis(400));
+                            let _ = sock.write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                            );
+                        });
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => return,
+                }
+            }
+        });
+
+        let js_lib = format!("java.ajax('http://{addr}/slow');");
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let handles: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let js_lib = js_lib.clone();
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    // Barrier：让所有线程同时越过快路径查表，放大并发未命中
+                    barrier.wait();
+                    get_or_create("single-flight-key", Some(&js_lib), None, None)
+                        .expect("并发构建应成功")
+                        .0
+                })
+            })
+            .collect();
+        let engines: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+
+        let observed = requests.load(Ordering::SeqCst);
+        let _ = stop_tx.send(());
+        let _ = server.join();
+
+        assert_eq!(
+            observed, 1,
+            "同 key 并发未命中必须只构建一次（修复前每线程各建一次 → N 次请求）"
+        );
+        for engine in &engines {
+            assert!(
+                Arc::ptr_eq(engine, &engines[0]),
+                "所有等待者必须复用先到者装入的同一引擎实例"
+            );
+        }
+        // 同 key 只装入一个条目（len 断言受并行测试影响，故用 key 定位）
+        assert_eq!(
+            store()
+                .lock()
+                .unwrap()
+                .entries
+                .get("single-flight-key")
+                .map(|entry| Arc::strong_count(&entry.engine))
+                .unwrap_or(0),
+            THREADS + 1,
+            "缓存条目应只被各线程的返回句柄 + 缓存表引用"
+        );
+        assert!(
+            !lock_flights().contains_key("single-flight-key"),
+            "single-flight 表项必须在无等待者后清理（防内存泄漏）"
+        );
+    }
+
+    /// P3-1 配套：`invalidate` 移除条目后，下次获取会重建全新引擎。
+    #[test]
+    fn invalidate_forces_rebuild() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_for_tests();
+        let (first, _, _) = get_or_create("invalidate-key", None, None, None).unwrap();
+        invalidate("invalidate-key");
+        assert_eq!(len_for_tests(), 0, "失效后条目必须移除");
+        let (second, _, _) = get_or_create("invalidate-key", None, None, None).unwrap();
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "失效后必须重建引擎，不得复用旧句柄"
         );
     }
 

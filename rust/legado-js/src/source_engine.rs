@@ -302,12 +302,29 @@ impl JsSourceEngine {
             let pooled_opt = self.pooled_engine.clone();
             if let Some(pooled) = pooled_opt {
                 // 池化模式：通过 Arc<Mutex<QuickJsEngine>> 执行。
-                // 锁中毒恢复（P2-9）：某次 eval panic 后不再连锁 panic，
-                // 取回内部引擎继续执行（QuickJS 状态可能不完整，由调用方
-                // 按执行错误降级）。
-                let engine_guard = pooled
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                // 锁中毒（P3-1）：某次 eval 在持有引擎时 panic，QuickJS Runtime
+                // 可能停在未收尾状态（栈/中断标记/GC 句柄不完整）。旧实现用
+                // `into_inner` 取回后继续复用，会把半损坏运行时扩散到后续调用。
+                // 处置选择：**使共享缓存条目失效 + 本次调用明确失败**。
+                // - 不就地重建：`script_cache` 持有旧 Runtime 的编译产物
+                //   （rquickjs 句柄与 Runtime 绑定），mainJs 状态也需重放，
+                //   就地换引擎需要跨 Runtime 复用句柄，风险高于收益；
+                // - panic 已中断本次求值，返回错误是语义诚实的结果；
+                // - 条目失效后，下一次 `new_quickjs`/`get_or_create` 会重建
+                //   全新引擎，调用链（每次操作新建编排器）可自愈。
+                let engine_guard = match pooled.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        // 先释放 PoisonError 内的 guard（解锁），再清缓存条目
+                        drop(poisoned);
+                        let cache_key =
+                            format!("mainjs:{}:{}", self.config.source_url, self.config.main_js);
+                        crate::engine_cache::invalidate(&cache_key);
+                        return Err(LegadoError::JsEngine(
+                            "JS 引擎锁中毒：该缓存引擎已失效，下次调用将重建（请重试）".to_string(),
+                        ));
+                    }
+                };
 
                 // 首次调用时 eval 主脚本，后续跳过（mainJs 求值缓存）
                 if !self.main_js_loaded {
@@ -634,6 +651,61 @@ function search(q) {{ return q; }}"#
         );
         cookie_store::clear_cookies(&echo_url);
         drop(_lock);
+    }
+
+    /// P3-1：池化引擎锁中毒（某次 eval 持锁 panic）后不得 `into_inner`
+    /// 复用半损坏 Runtime；必须使缓存条目失效并让本次调用明确失败，
+    /// 下一次构造经 `get_or_create` 重建全新引擎。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn poisoned_pooled_engine_is_invalidated_and_rebuilt() {
+        let _guard = crate::engine_cache::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::engine_cache::clear_for_tests();
+
+        let config = JsSourceConfig::new(
+            "p31-poison-source".to_string(),
+            "function probe(){ return 'ok'; }".to_string(),
+        );
+        let mut engine = JsSourceEngine::new_quickjs(config.clone()).expect("首次构造");
+        let poisoned = engine.pooled_engine.clone().expect("池化引擎");
+
+        // 在持锁状态下 panic → 互斥量中毒
+        let poison_target = poisoned.clone();
+        let panicked = std::panic::catch_unwind(move || {
+            let _guard = poison_target.lock().unwrap();
+            panic!("P3-1 测试：模拟持锁 panic");
+        });
+        assert!(panicked.is_err(), "必须先制造锁中毒");
+        assert!(poisoned.is_poisoned(), "引擎互斥量应处于中毒状态");
+
+        let err = engine
+            .call_function("probe", &[])
+            .expect_err("中毒引擎不得复用，本次调用必须明确失败");
+        assert!(
+            err.to_string().contains("锁中毒"),
+            "错误须明确指向锁中毒: {err}"
+        );
+
+        // 条目已失效：下一次构造必须得到全新引擎（而非中毒句柄）
+        let rebuilt = JsSourceEngine::new_quickjs(config).expect("中毒后重构建");
+        let fresh = rebuilt.pooled_engine.clone().expect("池化引擎");
+        assert!(
+            !Arc::ptr_eq(&poisoned, &fresh),
+            "中毒条目必须失效并重建全新引擎"
+        );
+        assert_eq!(
+            rebuilt
+                .pooled_engine
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .eval("probe()")
+                .unwrap(),
+            "ok"
+        );
     }
 
     /// W2 附带纠正（2026-10-06）：`engine_cache::get_or_create` 元组为
