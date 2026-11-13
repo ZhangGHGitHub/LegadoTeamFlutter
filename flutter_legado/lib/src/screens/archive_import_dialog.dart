@@ -69,8 +69,11 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   /// 失败明细（`书名：原因`），结果提示取首条并汇总条数
   final List<String> _importFailures = [];
 
-  /// 导入总数（用户选中数）
+  /// 导入总数（导入起始时的选中数快照）
   int _importTotal = 0;
+
+  /// 解压成功但没有任何可导入文件（用于区分「零处理」的结果提示）
+  bool _importExtractedEmpty = false;
 
   /// 已处理数（成功 + 失败），用于导入进度文本
   int get _importProcessed => _importDone + _importFailed;
@@ -259,11 +262,20 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   /// bookUrl 也指向该目录，不能整目录清理），提示中给出可定位路径，
   /// 用户可到「导入」页重试。
   String get _importResultMessage {
+    // P2-1：零处理场景不得回落成「成功导入 0 本书籍」。解压成功但没有任何
+    // 可导入文件（包内无支持格式）与「选中与解压结果不匹配」分开提示。
+    if (_importExtractedEmpty) {
+      return '压缩包内未解压出可导入文件（已选 $_importTotal 本）';
+    }
     if (_importFailures.isEmpty) {
+      if (_importDone == 0) {
+        return '未导入任何文件（已选 $_importTotal 本）';
+      }
       return '成功导入 $_importDone 本书籍';
     }
     final failed = _importFailures.length;
-    final more = failed > 1 ? ' 等 $failed 本' : '';
+    // P3-7：只展示首条明细，其余条数汇总；完整明细保留在 _importFailures
+    final more = failed > 1 ? '（另有 ${failed - 1} 本）' : '';
     final detail = '${_importFailures.first}$more';
     final summary = _importDone == 0
         ? '导入失败：$detail'
@@ -275,12 +287,19 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   Future<void> _confirmImport() async {
     if (_selected.isEmpty || _importing) return;
 
+    // P2-2 ①：导入起始处同时快照「选中集合」与「TXT 编码」。计数总数、
+    // 本轮实际处理集合与编码必须同源——导入期间不再读取可变 UI 状态，
+    // 避免「总数 N、实际处理 M」的计数错位。
+    final selectedNames = Set<String>.of(_selected);
+    final selectedEncoding = _selectedEncoding;
+
     setState(() {
       _importing = true;
       _importDone = 0;
       _importFailed = 0;
       _importFailures.clear();
-      _importTotal = _selected.length;
+      _importExtractedEmpty = false;
+      _importTotal = selectedNames.length;
     });
 
     try {
@@ -327,32 +346,62 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
       // 将解压出的书籍逐个导入书架
       final extractedFiles =
           (result['extracted_files'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+
+      // P2-1：解压成功但零文件（包内无支持格式）时标记，结果提示不得
+      // 回落成「成功导入 0 本书籍」。
+      if (extractedFiles.isEmpty && mounted) {
+        setState(() => _importExtractedEmpty = true);
+      }
+
       if (!mounted) return;
       final notifier = ref.read(bookshelfNotifierProvider.notifier);
-      // 导入期间文件列表仍可勾选/取消；先快照选中集合，避免边导入边改
-      // 造成「总数 N、实际只处理 M」的计数错位
-      final selectedNames = Set<String>.of(_selected);
 
       for (final filePath in extractedFiles) {
         final fileName = filePath.split(Platform.pathSeparator).last;
-        // 只导入用户选中的文件
+        // 只导入用户选中的文件（按导入起始快照判定）
         if (!selectedNames.contains(fileName)) continue;
 
+        var importPath = filePath;
+
         // 如果是 TXT 文件且选择了非 UTF-8 编码，先转换编码
-        if (filePath.toLowerCase().endsWith('.txt') && _selectedEncoding != 'UTF-8') {
+        if (filePath.toLowerCase().endsWith('.txt') && selectedEncoding != 'UTF-8') {
+          // P2-3：Rust 转换结果写到 `<name>.<ext>.converted`，并通过
+          // output_path 返回，必须导入该输出文件——否则用户选择的编码
+          // 完全无效（仍导入原文件）。转换失败计入失败明细，不得静默。
+          String? convertedPath;
+          var convertError = '';
           try {
-            await _api.archiveConvertEncoding(
+            final convertResult = await _api.archiveConvertEncoding(
               filePath: filePath,
-              fromEncoding: _selectedEncoding,
+              fromEncoding: selectedEncoding,
               toEncoding: 'utf-8',
             );
-          } catch (_) {
-            // 编码转换失败不阻断导入流程
+            if (convertResult['success'] == true) {
+              convertedPath = convertResult['output_path'] as String?;
+            } else {
+              final rawError = convertResult['error'];
+              convertError = rawError is String ? rawError.trim() : '';
+            }
+          } catch (e) {
+            convertError = errorMessage(e);
           }
+          if (convertedPath == null || convertedPath.isEmpty) {
+            if (mounted) {
+              setState(() {
+                _importFailed++;
+                _importFailures.add(
+                  '$fileName：编码转换失败'
+                  '（${convertError.isEmpty ? kUnknownErrorMessage : convertError}）',
+                );
+              });
+            }
+            continue;
+          }
+          importPath = convertedPath;
         }
 
         try {
-          await notifier.importLocalBook(filePath);
+          await notifier.importLocalBook(importPath);
           // 只有导入成功才计入成功数（修复前失败也会自增，导致假成功）
           if (mounted) {
             setState(() => _importDone++);
@@ -393,7 +442,10 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   @override
   Widget build(BuildContext context) {
     final fileName = widget.archivePath.split(Platform.pathSeparator).last;
-    return AlertDialog(
+    // P2-2 ③：导入期间禁止返回键/点击遮罩关闭对话框，否则导入结果
+    // （成功/失败计数与明细）会随对话框一起丢失。导入结束后对话框由
+    // 代码主动 pop（Navigator.pop 不受 PopScope 限制）。
+    final dialog = AlertDialog(
       // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       shape: RoundedRectangleBorder(
@@ -455,6 +507,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         ),
       ],
     );
+    return PopScope(canPop: !_importing, child: dialog);
   }
 
   /// 文件列表内容区域
@@ -516,15 +569,18 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
               vertical: 12,
             ),
             value: isSelected,
-            onChanged: (v) {
-              setState(() {
-                if (v == true) {
-                  _selected.add(name);
-                } else {
-                  _selected.remove(name);
-                }
-              });
-            },
+            // P2-2 ②：导入期间冻结勾选，避免起始快照与实际可见选择不一致
+            onChanged: _importing
+                ? null
+                : (v) {
+                    setState(() {
+                      if (v == true) {
+                        _selected.add(name);
+                      } else {
+                        _selected.remove(name);
+                      }
+                    });
+                  },
             title: Text(
               name,
               maxLines: 1,
@@ -559,15 +615,20 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
             items: _supportedEncodings
                 .map((enc) => DropdownMenuItem(value: enc, child: Text(enc)))
                 .toList(),
-            onChanged: (v) {
-              if (v != null) setState(() => _selectedEncoding = v);
-            },
+            // P2-2 ②：导入期间冻结编码选择（本轮编码已在起始处快照）
+            onChanged: _importing
+                ? null
+                : (v) {
+                    if (v != null) setState(() => _selectedEncoding = v);
+                  },
           ),
         ),
         const SizedBox(width: 8),
         // 检测编码按钮
         IconButton.filledTonal(
-          onPressed: _detecting || _selected.isEmpty ? null : _detectEncoding,
+          onPressed: _importing || _detecting || _selected.isEmpty
+              ? null
+              : _detectEncoding,
           icon: _detecting
               ? const SizedBox(
                   width: 16,

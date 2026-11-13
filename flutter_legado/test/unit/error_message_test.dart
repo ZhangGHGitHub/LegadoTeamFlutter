@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/services/file_save_channel.dart';
+import 'package:flutter_legado/src/services/rust_api.dart'
+    show RustApiException;
 import 'package:flutter_legado/src/utils/error_message.dart';
 
 void main() {
@@ -211,6 +213,25 @@ void main() {
       );
       expect(errorMessage(e), '导出内容为空，未创建文件');
       expect(errorDetailMessage(e), '导出内容为空，未创建文件');
+    });
+  });
+
+  // 批28 P3-6：RustApiException.toString() 带「RustApiException: ...」类名与
+  // operation 后缀，直接展示会把内部实现泄漏给用户（与原 BridgeError 同类问题）
+  group('errorMessage RustApiException（P3-6）', () {
+    test('只返回 message，不泄漏类名与 operation', () {
+      const e = RustApiException('书籍内容为空', operation: 'importLocalBook');
+
+      expect(errorMessage(e), '书籍内容为空');
+      expect(errorMessage(e), isNot(contains('RustApiException')));
+      expect(errorMessage(e), isNot(contains('operation')));
+      expect(errorDetailMessage(e), '书籍内容为空');
+    });
+
+    test('message 为空/全空白 → 兜底文案', () {
+      expect(errorMessage(const RustApiException('')), kUnknownErrorMessage);
+      expect(errorMessage(const RustApiException('   ')), kUnknownErrorMessage);
+      expect(errorDetailMessage(const RustApiException('')), kUnknownErrorMessage);
     });
   });
 }

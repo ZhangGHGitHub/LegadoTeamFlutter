@@ -1,5 +1,6 @@
 import '../bridge/ffi.dart';
 import '../services/file_save_channel.dart';
+import '../services/rust_api.dart' show RustApiException;
 
 /// BridgeError 无 message（或全空白）时的兜底文案。
 ///
@@ -28,6 +29,10 @@ const String kPermissionDeniedMessage = '没有写入权限，请换一个保存
 /// [FileSaveException]（Android 系统另存）自带中文 `message`，这里同样
 /// 返回它（技术详情另见 [errorDetailMessage]）。
 ///
+/// [RustApiException]（服务层解析 FFI 信封后抛出的异常）的 `toString()`
+/// 形如 `RustApiException: <message> (operation: ...)`，直接展示会泄漏
+/// 内部类名与操作名；这里只取 `message`。
+///
 /// 本函数对 [BridgeError] 返回其 `message`；message 为空或全空白时回落
 /// [kUnknownErrorMessage]；其余异常保持 `e.toString()`。
 ///
@@ -35,6 +40,10 @@ const String kPermissionDeniedMessage = '没有写入权限，请换一个保存
 /// 底层串，供失败面板的次要行展示/复制排障（见 [errorDetailMessage]）。
 String rawErrorMessage(Object e) {
   if (e is BridgeError) {
+    final message = e.message;
+    return message.trim().isEmpty ? kUnknownErrorMessage : message;
+  }
+  if (e is RustApiException) {
     final message = e.message;
     return message.trim().isEmpty ? kUnknownErrorMessage : message;
   }

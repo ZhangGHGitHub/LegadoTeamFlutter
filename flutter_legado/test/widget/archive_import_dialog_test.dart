@@ -6,9 +6,15 @@
 /// 3. 确认导入调用 archiveImport7z，outputDir 以 archive_import 结尾；
 /// 4. 列表失败 → 错误态与重试入口；
 /// 5. [P1-1] 部分文件导入失败时结果提示分列成功/失败数与失败书名、原因，
-///    不把失败计入「成功导入 N 本」；全成功时提示正常。
+///    不把失败计入「成功导入 N 本」；全成功时提示正常；
+/// 6. [批28 P2-1] 全失败/零处理/零解压文件不得提示「成功导入」；
+/// 7. [批28 P2-2] 导入期间禁用勾选、编码与检测入口，总数起始快照；
+/// 8. [批28 P2-3] 编码转换后使用 output_path 导入，转换失败计入失败明细；
+/// 9. [批28 P3-6/P3-7/P3-8] 失败明细不泄漏 RustApiException 类名，
+///    多失败只展示首条 + 「另有 N-1 本」。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -26,6 +32,7 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/archive_import_dialog.dart';
+import 'package:flutter_legado/src/services/rust_api.dart' show RustApiException;
 
 import '../mocks/mocks.dart';
 
@@ -241,8 +248,9 @@ void main() {
       find.textContaining('成功导入 1 本，2 本失败：bad1.txt：文件损坏，无法解析'),
       findsOneWidget,
     );
-    // 多条失败给出「等 N 本」
-    expect(find.textContaining('等 2 本'), findsOneWidget);
+    // P3-7：多条失败只展示首条，其余条数以「另有 N-1 本」汇总
+    expect(find.textContaining('（另有 1 本）'), findsOneWidget);
+    expect(find.textContaining('等 2 本'), findsNothing);
     // BridgeError 无 toString()，不得显示类型名
     expect(find.textContaining("Instance of 'BridgeError'"), findsNothing);
     // 失败文件保留位置可定位（应用文档/archive_import）
@@ -284,6 +292,304 @@ void main() {
     expect(find.textContaining('本失败'), findsNothing);
 
     // 走完 SnackBar 计时器，避免用例结束残留 pending timer
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  /// 解压结果 stub：按文件名返回 outputDir 下的解压路径
+  void stub7zExtracted(List<String> names) {
+    when(
+      () => api.archiveImport7z(
+        sevenZipPath: any(named: 'sevenZipPath'),
+        outputDir: any(named: 'outputDir'),
+      ),
+    ).thenAnswer((invocation) async {
+      final outputDir = invocation.namedArguments[#outputDir] as String;
+      return <String, dynamic>{
+        'success': true,
+        'extracted_files': <String>[
+          for (final name in names) '$outputDir${Platform.pathSeparator}$name',
+        ],
+        'error': null,
+      };
+    });
+  }
+
+  /// 选择 TXT 编码下拉项（打开菜单后点选目标编码）
+  Future<void> selectEncoding(WidgetTester tester, String encoding) async {
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(encoding).last);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('P3-8 全部失败：提示「导入失败：」且不出现「成功导入」', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['bad1.txt', 'bad2.txt', 'bad3.txt']);
+    stub7zExtracted(['bad1.txt', 'bad2.txt', 'bad3.txt']);
+    failNames.addAll(['bad1.txt', 'bad2.txt', 'bad3.txt']);
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (3)',
+      expectedText: '导入失败：',
+    );
+
+    expect(find.textContaining('导入失败：'), findsOneWidget);
+    // 全失败不得出现任何「成功导入」字样（修复前提示「成功导入 0 本书籍」）
+    expect(find.textContaining('成功导入'), findsNothing);
+    // P3-7：首条明细 + 其余条数
+    expect(find.textContaining('（另有 2 本）'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P3-7 单条失败不出现「等 N 本」/「另有 0 本」', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['good.txt', 'bad.txt']);
+    stub7zExtracted(['good.txt', 'bad.txt']);
+    failNames.add('bad.txt');
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (2)',
+      expectedText: '本失败',
+    );
+
+    expect(
+      find.textContaining('成功导入 1 本，1 本失败：bad.txt：文件损坏，无法解析'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('等 1 本'), findsNothing);
+    expect(find.textContaining('另有 0 本'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P2-1 解压成功但零文件：提示未解压出可导入文件', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['book.txt']);
+    stub7zExtracted(const []);
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (1)',
+      expectedText: '压缩包内未解压出可导入文件',
+    );
+
+    expect(find.textContaining('压缩包内未解压出可导入文件'), findsOneWidget);
+    expect(find.textContaining('成功导入'), findsNothing);
+    expect(find.textContaining('未导入任何文件'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P2-1 零处理：选中与解压结果不匹配时提示未导入任何文件', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['selected.txt']);
+    // 解压结果里没有选中文件：成功数 0、失败数 0
+    stub7zExtracted(['other.txt']);
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (1)',
+      expectedText: '未导入任何文件',
+    );
+
+    expect(find.textContaining('未导入任何文件（已选 1 本）'), findsOneWidget);
+    expect(find.textContaining('成功导入'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P2-3 编码转换成功：使用 output_path 导入，编码选择生效', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['book.txt']);
+    stub7zExtracted(['book.txt']);
+
+    when(
+      () => api.archiveConvertEncoding(
+        filePath: any(named: 'filePath'),
+        fromEncoding: any(named: 'fromEncoding'),
+        toEncoding: any(named: 'toEncoding'),
+      ),
+    ).thenAnswer((invocation) async {
+      final filePath = invocation.namedArguments[#filePath] as String;
+      return <String, dynamic>{
+        'success': true,
+        'output_path': '$filePath.converted',
+        'error': null,
+      };
+    });
+
+    final importedPaths = <String>[];
+    when(() => api.importLocalBook(any())).thenAnswer((invocation) async {
+      final path = invocation.positionalArguments.first as String;
+      importedPaths.add(path);
+      return Book(
+        bookUrl: path,
+        name: path.split(Platform.pathSeparator).last,
+        author: '本地导入',
+        origin: BookType.localTag,
+        bookType: BookType.local,
+      );
+    });
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await selectEncoding(tester, 'GBK');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (1)',
+      expectedText: '成功导入 1 本书籍',
+    );
+
+    verify(
+      () => api.archiveConvertEncoding(
+        filePath: any(named: 'filePath'),
+        fromEncoding: 'GBK',
+        toEncoding: 'utf-8',
+      ),
+    ).called(1);
+    // 修复前转换结果被丢弃，导入的是原文件（编码选择完全无效）
+    expect(importedPaths, hasLength(1));
+    expect(importedPaths.single, endsWith('book.txt.converted'));
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P2-3 编码转换失败：计入失败明细，不静默导入原文件', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['book.txt']);
+    stub7zExtracted(['book.txt']);
+    when(
+      () => api.archiveConvertEncoding(
+        filePath: any(named: 'filePath'),
+        fromEncoding: any(named: 'fromEncoding'),
+        toEncoding: any(named: 'toEncoding'),
+      ),
+    ).thenAnswer(
+      (_) async => <String, dynamic>{
+        'success': false,
+        'output_path': null,
+        'error': '编码转换失败: 源文件包含无法以 GBK 解码的字节',
+      },
+    );
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await selectEncoding(tester, 'GBK');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (1)',
+      expectedText: '编码转换失败',
+    );
+
+    expect(find.textContaining('导入失败：book.txt：编码转换失败'), findsOneWidget);
+    expect(find.textContaining('成功导入'), findsNothing);
+    // 转换失败时不得退回导入原文件（否则用户选择的编码形同虚设）
+    verifyNever(() => api.importLocalBook(any()));
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P3-6 RustApiException 失败明细只显示 message', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['book.txt']);
+    stub7zExtracted(['book.txt']);
+    when(() => api.importLocalBook(any())).thenAnswer(
+      (_) async => throw const RustApiException(
+        '书籍内容为空',
+        operation: 'importLocalBook',
+      ),
+    );
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+    await tapImportAndWaitForResult(
+      tester,
+      buttonText: '导入 (1)',
+      expectedText: '导入失败：',
+    );
+
+    expect(find.textContaining('导入失败：book.txt：书籍内容为空'), findsOneWidget);
+    // 内部类名与 operation 不得泄漏到用户可见文案
+    expect(find.textContaining('RustApiException'), findsNothing);
+    expect(find.textContaining('operation: importLocalBook'), findsNothing);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('P2-2 导入期间禁用勾选/编码/检测，总数按起始快照', (tester) async {
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['a.txt', 'b.txt']);
+    final extract = Completer<Map<String, dynamic>>();
+    when(
+      () => api.archiveImport7z(
+        sevenZipPath: any(named: 'sevenZipPath'),
+        outputDir: any(named: 'outputDir'),
+      ),
+    ).thenAnswer((_) => extract.future);
+
+    await openDialog(tester, '${tempDir.path}${Platform.pathSeparator}books.7z');
+
+    // 解压挂起期间：导入中，总数已按起始快照固定为 2
+    await tester.runAsync(() async {
+      await tester.tap(find.text('导入 (2)'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await tester.pump();
+    });
+    await tester.pump();
+    expect(find.text('导入中 0/2'), findsOneWidget);
+
+    // 列表勾选、编码下拉、检测编码按钮全部禁用（不得在导入中改输入）
+    expect(
+      tester
+          .widget<CheckboxListTile>(find.byType(CheckboxListTile).first)
+          .onChanged,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<DropdownButtonFormField<String>>(
+            find.byType(DropdownButtonFormField<String>),
+          )
+          .onChanged,
+      isNull,
+    );
+    expect(
+      tester.widget<IconButton>(find.byType(IconButton)).onPressed,
+      isNull,
+    );
+
+    // P2-2 ③：点击遮罩不得关闭对话框（否则导入结果提示会丢失）
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(ArchiveImportDialog), findsOneWidget);
+
+    // 收尾：完成解压（零文件）并走完提示
+    await tester.runAsync(() async {
+      extract.complete(<String, dynamic>{
+        'success': true,
+        'extracted_files': <String>[],
+        'error': null,
+      });
+      for (var i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await tester.pump();
+        if (find.textContaining('未解压出可导入文件').evaluate().isNotEmpty) {
+          break;
+        }
+      }
+    });
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
   });
