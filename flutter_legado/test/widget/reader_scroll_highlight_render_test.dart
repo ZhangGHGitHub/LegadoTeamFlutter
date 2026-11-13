@@ -9,7 +9,10 @@
 /// ① 滚动模式 + 规则高亮 → 正文出现高亮 span；
 /// ② 滚动模式 + 手动高亮 → 正文出现高亮 span；
 /// ③ 多段章节第 3 段高亮 → 位置正确（验证 `\n` 计入章节偏移累计）；
-/// ④ [ReaderParagraphs] 回退渲染同样按章节坐标切 span（第 3 段定位）。
+/// ④ [ReaderParagraphs] 回退渲染同样按章节坐标切 span（第 3 段定位）；
+/// ⑤ 批32 P2-2：CRLF 正文（`\r\n`）第 3 段定位、多命中共存
+///    （早段 + 晚段，游标推进）、乱序输入兜底；
+/// ⑥ 批32 P3-3：CRLF 跨段命中不染色段尾不可见 `\r`（两路渲染）。
 library;
 
 import 'dart:convert';
@@ -151,6 +154,41 @@ bool hasSpan(
   return false;
 }
 
+/// 构造带红色背景的手动高亮命中（[start, end) 章节全局偏移）
+HighlightMatch redMatch(int start, int end, {int order = 1}) {
+  return HighlightMatch(
+    ruleId: -1,
+    start: start,
+    end: end,
+    order: order,
+    style: HighlightStyle.fromMap(const {'fill': 0x33FF0000}),
+  );
+}
+
+/// 直接挂载滚动回退渲染（[ReaderParagraphs]）
+Future<void> pumpReaderParagraphs(
+  WidgetTester tester, {
+  required String content,
+  required List<HighlightMatch> matches,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: ReaderParagraphs(
+            content: content,
+            fontSize: 14,
+            lineHeight: 1.4,
+            paragraphSpacing: 8,
+            textColor: Colors.black,
+            highlightMatches: matches,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -162,6 +200,13 @@ void main() {
   //   第 3 段 [16,23)「第三段落文字。」
   const threeParagraphs = '第一段落文字。\n第二段落文字。\n第三段落文字。';
   const thirdParagraphStart = 16;
+
+  // CRLF 三段落正文（段间 `\r\n`，每段 7 字）：
+  //   第 1 段 [0,7)，'\r'=7，'\n'=8
+  //   第 2 段 [9,16)，'\r'=16，'\n'=17
+  //   第 3 段 [18,25)
+  const crlfThreeParagraphs = '第一段落文字。\r\n第二段落文字。\r\n第三段落文字。';
+  const crlfThirdParagraphStart = 18;
 
   testWidgets('滚动模式 + 规则高亮：正文出现高亮 span（修复前红）', (tester) async {
     final api = MockBookApi();
@@ -279,6 +324,207 @@ void main() {
     expect(
       hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
       isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('滚动模式多段章节（CRLF）：第 3 段高亮位置正确', (tester) async {
+    final api = MockBookApi();
+    await seedSavedHighlight(
+      api,
+      bookText: crlfThreeParagraphs,
+      chapterPos: crlfThirdParagraphStart,
+      chapterPosEnd: crlfThirdParagraphStart + 3,
+    );
+
+    await pumpScrollReader(tester, api: api, content: crlfThreeParagraphs);
+
+    expect(
+      hasSpan(tester, '第三段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: 'CRLF 的 \\r 也计入章节偏移：7 + 2 + 7 + 2 = 18',
+    );
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isFalse,
+    );
+    expect(
+      hasSpan(tester, '第二段', background: const Color(0x33FF0000)),
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ReaderParagraphs 回退渲染（CRLF）：第 3 段高亮位置正确', (tester) async {
+    await pumpReaderParagraphs(
+      tester,
+      content: crlfThreeParagraphs,
+      matches: [redMatch(crlfThirdParagraphStart, crlfThirdParagraphStart + 3)],
+    );
+
+    expect(
+      hasSpan(tester, '第三段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: 'split 后 \\r 留在段尾，offset 累计需同时计入 \\r 与 \\n',
+    );
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isFalse,
+    );
+    expect(
+      hasSpan(tester, '第二段', background: const Color(0x33FF0000)),
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('滚动模式多命中共存：早段与晚段都染色、中间段不染', (tester) async {
+    final api = MockBookApi();
+    await seedSavedHighlight(
+      api,
+      bookText: threeParagraphs,
+      chapterPos: 0,
+      chapterPosEnd: 3,
+    );
+    await seedSavedHighlight(
+      api,
+      bookText: threeParagraphs,
+      chapterPos: thirdParagraphStart,
+      chapterPosEnd: thirdParagraphStart + 3,
+    );
+
+    await pumpScrollReader(tester, api: api, content: threeParagraphs);
+
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '早段命中不能因游标推进而丢失',
+    );
+    expect(
+      hasSpan(tester, '第三段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '游标推进后晚段命中仍需渲染',
+    );
+    expect(
+      hasSpan(tester, '第二段', background: const Color(0x33FF0000)),
+      isFalse,
+      reason: '中间段未被任何命中覆盖',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ReaderParagraphs 多命中共存：首尾染色、中间不染', (tester) async {
+    await pumpReaderParagraphs(
+      tester,
+      content: threeParagraphs,
+      matches: [redMatch(0, 3), redMatch(16, 19)],
+    );
+
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isTrue,
+    );
+    expect(
+      hasSpan(tester, '第三段', background: const Color(0x33FF0000)),
+      isTrue,
+    );
+    expect(
+      hasSpan(tester, '第二段', background: const Color(0x33FF0000)),
+      isFalse,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ReaderParagraphs 乱序命中（晚段在前）：两处都染色', (tester) async {
+    await pumpReaderParagraphs(
+      tester,
+      content: threeParagraphs,
+      // 乱序输入：晚段在前、早段在后（非合并结果契约之外的历史/坏数据）
+      matches: [redMatch(16, 19, order: 1), redMatch(0, 3, order: 2)],
+    );
+
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '乱序兜底应在段落遍历前排序一次，早段命中不能丢',
+    );
+    expect(
+      hasSpan(tester, '第三段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '乱序兜底后晚段命中仍需渲染',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ReaderParagraphs（CRLF）多命中跨段：不染色段尾 \\r', (tester) async {
+    const content = '第一段落文字。\r\n第二段落文字。';
+    // 两个命中，其中 [5,12) 跨段：第 1 段 [5,7)（字。），跨过 '\r\n'
+    // 后第 2 段 [9,12)。多命中同时覆盖游标「遇跨段命中不得提前跳过」。
+    await pumpReaderParagraphs(
+      tester,
+      content: content,
+      matches: [redMatch(0, 3, order: 1), redMatch(5, 12, order: 2)],
+    );
+
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '早段命中应渲染',
+    );
+    expect(
+      hasSpan(tester, '字。', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '跨段命中在第 1 段应裁剪到正文末尾',
+    );
+    final crSpans = findSpans(tester, '字。\r');
+    expect(
+      crSpans,
+      isEmpty,
+      reason: '段尾 \\r 是分隔符，不应进入渲染 span 被下划线/背景染色',
+    );
+    expect(
+      hasSpan(tester, '第二段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '跨段命中在第 2 段应继续染色（游标判据不能只看 start）',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('滚动模式（CRLF）多命中跨段：两段都染色且不含 \\r', (tester) async {
+    const content = '第一段落文字。\r\n第二段落文字。';
+    final api = MockBookApi();
+    await seedSavedHighlight(
+      api,
+      bookText: content,
+      chapterPos: 0,
+      chapterPosEnd: 3,
+    );
+    await seedSavedHighlight(
+      api,
+      bookText: content,
+      chapterPos: 5,
+      chapterPosEnd: 12,
+    );
+
+    await pumpScrollReader(tester, api: api, content: content);
+
+    expect(
+      hasSpan(tester, '第一段', background: const Color(0x33FF0000)),
+      isTrue,
+    );
+    expect(
+      hasSpan(tester, '字。', background: const Color(0x33FF0000)),
+      isTrue,
+    );
+    expect(
+      hasSpan(tester, '第二段', background: const Color(0x33FF0000)),
+      isTrue,
+      reason: '跨段命中在第 2 行需继续染色（游标判据不能只看 start）',
+    );
+    expect(
+      findSpans(tester, '字。\r'),
+      isEmpty,
+      reason: '分页排版路径已 trim 段落，\\r 不应出现在正文 span 中',
     );
     expect(tester.takeException(), isNull);
   });

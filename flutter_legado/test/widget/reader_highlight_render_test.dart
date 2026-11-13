@@ -241,4 +241,86 @@ void main() {
       isTrue,
     );
   });
+
+  testWidgets('多命中共存：早段命中后游标推进，晚段仍染色', (tester) async {
+    // 两个段落行：0..4 / 4..8；命中 [0,2) 与 [4,6)，游标必须越过早段命中
+    final pageInfo = PageInfo(
+      paragraphs: [
+        paragraph(words: ['一二三四']),
+        paragraph(words: ['五六七八'], chapterStart: 4, startIndex: 4),
+      ],
+      totalHeight: 48,
+    );
+    await pumpContent(
+      tester,
+      pageInfo: pageInfo,
+      matches: [
+        HighlightMatch(
+          ruleId: 2,
+          start: 0,
+          end: 2,
+          order: 1,
+          style: HighlightStyle.fromMap(const {'fill': 0x3300FF00}),
+        ),
+        HighlightMatch(
+          ruleId: 3,
+          start: 4,
+          end: 6,
+          order: 2,
+          style: HighlightStyle.fromMap(const {'fill': 0x3300FF00}),
+        ),
+      ],
+    );
+    expect(
+      hasStyledSpan(tester, '一二', background: const Color(0x3300FF00)),
+      isTrue,
+      reason: '早段命中不能因游标推进而丢失',
+    );
+    expect(
+      hasStyledSpan(tester, '五六', background: const Color(0x3300FF00)),
+      isTrue,
+      reason: '游标推进后晚段命中仍需渲染',
+    );
+  });
+
+  testWidgets('乱序命中（晚段在前）：排序后两段都染色', (tester) async {
+    final pageInfo = PageInfo(
+      paragraphs: [
+        paragraph(words: ['一二三四']),
+        paragraph(words: ['五六七八'], chapterStart: 4, startIndex: 4),
+      ],
+      totalHeight: 48,
+    );
+    await pumpContent(
+      tester,
+      pageInfo: pageInfo,
+      matches: [
+        // 乱序输入：晚段在前
+        HighlightMatch(
+          ruleId: 5,
+          start: 4,
+          end: 6,
+          order: 1,
+          style: HighlightStyle.fromMap(const {'fill': 0x3300FF00}),
+        ),
+        HighlightMatch(
+          ruleId: 4,
+          start: 0,
+          end: 2,
+          order: 2,
+          style: HighlightStyle.fromMap(const {'fill': 0x3300FF00}),
+        ),
+      ],
+    );
+    expect(
+      hasStyledSpan(tester, '一二', background: const Color(0x3300FF00)),
+      isTrue,
+      reason: 'ReaderTextContent 入口应排序一次，早段命中不能丢',
+    );
+    expect(
+      hasStyledSpan(tester, '五六', background: const Color(0x3300FF00)),
+      isTrue,
+      reason: '排序后晚段命中仍需渲染',
+    );
+  });
 }
