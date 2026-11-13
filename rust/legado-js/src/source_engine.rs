@@ -148,19 +148,39 @@ impl JsSourceEngine {
                 // 逐条失败降级台账。非映射形态保持原样（原始 JS eval 级联）。
                 //
                 // 降级约定与既有加载器一致：单条失败仅跳过该条并记台账
-                // （`record_jslib_load_failure`）；全条失败时 script 为 None，
-                // 不 eval 原始 JSON（非合法 JS，回退只会重复失败），主脚本
-                // 仍可构造——失败原因经台账可观测，不静默。
+                // （`record_jslib_load_failure`）——部分失败保留降级（成功条目
+                // 仍可用）。**全条失败**见下方 P2-3：不得静默构造无 jsLib 的
+                // 引擎，改为带台账原因上抛（对齐上游 evaluateJsLib 失败即抛）。
                 let resolved_js_lib = match config.js_lib.as_deref() {
                     Some(lib)
                         if crate::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some() =>
                     {
-                        crate::host_api::jslib_loader::resolve_js_lib_url_map_with_status(
-                            lib,
-                            &cache_key,
-                            &crate::host_api::jslib_loader::default_js_lib_fetcher,
-                        )
-                        .script
+                        let resolution =
+                            crate::host_api::jslib_loader::resolve_js_lib_url_map_with_status(
+                                lib,
+                                &cache_key,
+                                &crate::host_api::jslib_loader::default_js_lib_fetcher,
+                            );
+                        // P2-3（批29 审查，方案 A）：URL 映射**全条**失败时
+                        // `script == None`。旧实现把 None 交给 engine_cache →
+                        // 构造成功但不带 jsLib（`js_lib_ok == None`），W2/B1 声明的
+                        // 「jsLib 失败必须带原因上抛」不生效；失败原因只进进程内
+                        // 台账（`jslib_load_failures()` 无 FFI 出口），用户仍看到
+                        // `xxx is not defined`（点位后移、文案失真）。上游
+                        // `SharedJsScope.evaluateJsLib` 下载失败直接抛
+                        //（`下载jsLib-…失败`）——全条失败即整源失败，此处对齐；
+                        // 原因取加载器台账（逐条失败已由 loader 登记）。
+                        if resolution.script.is_none() {
+                            let reason =
+                                crate::host_api::capability_ledger::last_jslib_error(&cache_key)
+                                    .filter(|s| !s.trim().is_empty())
+                                    .unwrap_or_else(|| {
+                                        "URL 映射 jsLib 无可执行脚本（空映射或条目全为空）"
+                                            .to_string()
+                                    });
+                            return Err(LegadoError::JsEngine(format!("jsLib 加载失败: {reason}")));
+                        }
+                        resolution.script
                     }
                     other => other.map(str::to_string),
                 };

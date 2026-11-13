@@ -1391,6 +1391,14 @@ impl RealBookSourceFetcher {
     /// `LoginRequired` 由搜索链路按源静默吞吐（原版错误吞吐：单源
     /// 失败不中断其他源）。
     ///
+    /// [P2-4 批29 审查] 错误分类：只有「checkJs 自身判定未登录」
+    ///（首检 cast/JS 失败 + 二次 code 500 或二次仍失败）才返回
+    /// `LoginRequired`；**jsLib 加载/求值失败**（checkJs 执行前的前置
+    /// 加载阶段）映射 `LegadoError::JsEngine` 并保留根因——否则坏 jsLib
+    /// 被误报「书源需要登录，请先登录」，搜索路径按源吞掉后用户只看到
+    /// 源消失。二次 eval 仍保留（上游 evalJS 双路径；URL 映射 jsLib 的
+    /// 瞬时拉取失败可能重试恢复），仅错误分类按 jsLib 失败优先。
+    ///
     /// [P2-8 引擎链审查 2026-11-13] `setup_script` 为书源上下文绑定
     /// （`legado_fetcher::source_setup::book_source_js_setup_script` 生成：
     /// `source`/`cookie`/`cache`/`java`/`baseUrl`）。上游 `analyzeUrl.evalJS`
@@ -1434,6 +1442,10 @@ impl RealBookSourceFetcher {
             return Ok(resp);
         }
         let first_err = first.unwrap_err();
+        // [P2-4 批29 审查] 首检失败的 jsLib 归因只算一次：jsLib 坏掉时
+        // 二次 errResponse 必然同样失败，最终错误须保留该归因（不得被
+        // 二次结果的 500/失败覆盖成 LoginRequired）。
+        let first_js_lib_failure = first_err.js_lib_reason().map(str::to_string);
 
         // [WebBook.kt:84-87] 错误路径：构造 errResponse（code 500，
         // body = 首次失败原因，对齐 getErrStrResponse 的 body=stackTraceStr）
@@ -1454,11 +1466,20 @@ impl RealBookSourceFetcher {
                     "[web_book] loginCheckJs errResponse 二次 eval 仍 code 500（整源失败）: src={}",
                     source.book_source_url
                 );
+                // [P2-4] 原始 throwable 是 jsLib 失败 → JS 引擎错误，
+                // 不是「未登录」（二次 500 只是把首次失败原因回显）
+                if let Some(reason) = first_js_lib_failure {
+                    eprintln!(
+                        "[web_book] loginCheckJs 前置 jsLib 不可用（归类 JsEngine，非登录问题）: {reason}"
+                    );
+                    return Err(LegadoError::JsEngine(reason));
+                }
                 Err(LegadoError::LoginRequired(
                     "书源需要登录，请先在书源菜单中登录后重试".into(),
                 ))
             }
             // [WebBook.kt:88] 块值 = 二次返回值 res：放行并采用二次结果
+            //（首检的 jsLib 瞬时失败在二次重试中恢复时同样走到这里）
             Ok(second) => Ok(second),
             // [WebBook.kt:91-94] catch (_: Throwable) { throw throwable }
             // = 重抛原始 throwable = 整源失败
@@ -1467,6 +1488,20 @@ impl RealBookSourceFetcher {
                     "[web_book] loginCheckJs errResponse 二次 eval 失败（整源失败）: {second_err} src={}",
                     source.book_source_url
                 );
+                // [P2-4] 任一阶段 jsLib 不可用 → JS 引擎错误（优先二次
+                // 的最新原因，其次首检原因），不得归因为「未登录」
+                if let Some(reason) = second_err.js_lib_reason() {
+                    eprintln!(
+                        "[web_book] loginCheckJs 前置 jsLib 不可用（归类 JsEngine，非登录问题）: {reason}"
+                    );
+                    return Err(LegadoError::JsEngine(reason.to_string()));
+                }
+                if let Some(reason) = first_js_lib_failure {
+                    eprintln!(
+                        "[web_book] loginCheckJs 前置 jsLib 不可用（归类 JsEngine，非登录问题）: {reason}"
+                    );
+                    return Err(LegadoError::JsEngine(reason));
+                }
                 Err(LegadoError::LoginRequired(
                     "书源需要登录，请先在书源菜单中登录后重试".into(),
                 ))

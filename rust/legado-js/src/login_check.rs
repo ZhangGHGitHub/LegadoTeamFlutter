@@ -41,6 +41,27 @@ pub enum LoginCheckEvalError {
     CastFailed(String),
     /// JS 执行失败（引擎/脚本错误，如语法错误）
     JsFailed(String),
+    /// 书源 jsLib（共享库）加载/求值失败——checkJs 尚未开始执行
+    ///
+    /// [P2-4 批29 审查] 与 [`Self::JsFailed`] 区分开：jsLib 不可用不是
+    /// checkJs 的判定结果，调用方**不得**映射为 `LoginRequired`
+    ///（修复前坏 jsLib 被误报「书源需要登录，请先登录」，且搜索路径按源
+    /// 静默吞掉，用户只看到源消失）。对齐上游语义：`evaluateJsLib` 失败
+    /// 直接抛（`SharedJsScope.kt:231-258`），属整源 JS 引擎错误。
+    JsLibUnavailable(String),
+}
+
+impl LoginCheckEvalError {
+    /// 若是 jsLib 不可用类错误，返回可读原因
+    ///
+    /// 调用方据此映射 `LegadoError::JsEngine`（保留 jsLib 根因），而不是
+    /// 登录错误（P2-4）。
+    pub fn js_lib_reason(&self) -> Option<&str> {
+        match self {
+            Self::JsLibUnavailable(reason) => Some(reason),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for LoginCheckEvalError {
@@ -48,8 +69,26 @@ impl std::fmt::Display for LoginCheckEvalError {
         match self {
             Self::CastFailed(m) => write!(f, "{m}"),
             Self::JsFailed(m) => write!(f, "{m}"),
+            Self::JsLibUnavailable(m) => write!(f, "{m}"),
         }
     }
+}
+
+/// `QuickJsExecutor::execute_js` 错误中「jsLib 加载/求值失败」的前缀
+///
+/// 产出点唯一：`executor.rs` 的缓存路径（`js_lib_ok == Some(false)` 分支）
+/// 与 fresh 路径（`create_engine_with_js_lib_with_status` 的 eval 失败）都
+/// 以该前缀上抛。本模块据此把「书源共享库不可用」与「checkJs 自身失败」
+/// 分开（P2-4）。`execute_js` 的错误面是 `String`（trait 与 legado-parser
+/// 共用，不为单一调用方扩类型），故用前缀判定；误判由分类单测兜底
+///（`js_lib_failure_classified_as_jslib_unavailable`）。
+#[cfg(feature = "quickjs")]
+const JS_LIB_EVAL_ERROR_PREFIX: &str = "jsLib 求值失败";
+
+/// 判定 `execute_js` 错误是否源自 jsLib 加载/求值失败
+#[cfg(feature = "quickjs")]
+fn is_js_lib_eval_error(err: &str) -> bool {
+    err.starts_with(JS_LIB_EVAL_ERROR_PREFIX)
 }
 
 /// 执行 loginCheckJs 并按 StrResponse 对象语义解析完成值
@@ -144,9 +183,17 @@ pub fn execute_login_check_response_with_context(
          code: function() {{ return __result_code; }} }};\n\
          {js_code}"
     );
-    let eval_result = executor
-        .execute_js(&wrapped_code)
-        .map_err(|e| LoginCheckEvalError::JsFailed(format!("loginCheckJs 执行失败: {e}")))?;
+    let eval_result = executor.execute_js(&wrapped_code).map_err(|e| {
+        // [P2-4 批29 审查] jsLib 加载/求值失败在 checkJs 执行**之前**发生
+        //（`execute_js` 的前置加载阶段），不是 checkJs 的判定结果——必须
+        // 单独归类，调用方才能映射 `LegadoError::JsEngine` 而不是
+        // `LoginRequired`（坏 jsLib 被误报「书源需要登录」的回退点）。
+        if is_js_lib_eval_error(&e) {
+            LoginCheckEvalError::JsLibUnavailable(e)
+        } else {
+            LoginCheckEvalError::JsFailed(format!("loginCheckJs 执行失败: {e}"))
+        }
+    })?;
 
     parse_login_check_completion(&eval_result, response_body, response_url, response_code)
 }
@@ -359,6 +406,48 @@ mod tests {
         assert!(
             matches!(r2, Err(LoginCheckEvalError::JsFailed(_))),
             "实际: {r2:?}"
+        );
+    }
+
+    /// [P2-4 批29 审查] jsLib 加载/求值失败单独归类
+    ///
+    /// checkJs 执行前的前置 jsLib 加载失败必须与「checkJs 自身失败」
+    /// （[`LoginCheckEvalError::JsFailed`]）区分：调用方据
+    /// [`LoginCheckEvalError::js_lib_reason`] 映射 `LegadoError::JsEngine`，
+    /// 而不是误报「书源需要登录」。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn js_lib_failure_classified_as_jslib_unavailable() {
+        // 唯一 source_tag：避免与同二进制并行用例的引擎缓存/台账串键
+        // checkJs 自身合法（`result` 直通）；仅 jsLib 语法错误
+        let r = execute_login_check_response_with_context(
+            "result",
+            "body",
+            "http://p24-unit/x",
+            200,
+            "p24-unit-broken-lib",
+            Some("function {"),
+            None,
+        );
+        match r {
+            Err(LoginCheckEvalError::JsLibUnavailable(reason)) => {
+                assert!(reason.contains("jsLib"), "原因须保留 jsLib 根因: {reason}");
+            }
+            other => panic!("坏 jsLib 应归类 JsLibUnavailable，实际: {other:?}"),
+        }
+        // 对照：checkJs 自身语法错误仍是 JsFailed（不得误入 jsLib 类别）
+        let r2 = execute_login_check_response_with_context(
+            "function {",
+            "body",
+            "http://p24-unit/x",
+            200,
+            "p24-unit-bad-checkjs",
+            Some("function ok() { return 1; }"),
+            None,
+        );
+        assert!(
+            matches!(r2, Err(LoginCheckEvalError::JsFailed(_))),
+            "checkJs 自身失败应保持 JsFailed: {r2:?}"
         );
     }
 

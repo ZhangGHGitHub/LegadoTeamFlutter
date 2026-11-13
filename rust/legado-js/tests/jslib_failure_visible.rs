@@ -227,24 +227,64 @@ fn js_source_engine_url_map_jslib_is_resolved() {
     );
 }
 
-/// ⑧ P2-5 拉取失败降级：单条 URL 拉取失败不阻断构造（与 `QuickJsExecutor`
-/// fresh 路径同约定：逐条跳过 + 能力台账登记），但失败必须可观测
-/// （`last_jslib_error` 按缓存键可查，措辞对齐上游「下载jsLib-…失败」）。
+/// ⑧ [P2-3 批29 审查，方案 A] URL 映射 jsLib **全条**失败必须带原因上抛
+///
+/// 修复前：`resolution.script == None` 被静默交给 engine_cache → 构造成功
+/// 但不带 jsLib（`js_lib_ok == None`），W2/B1 的「jsLib 失败必须带原因上抛」
+/// 不生效；失败原因只进进程内台账（`jslib_load_failures()` 无 FFI 出口），
+/// 用户最终看到 `xxx is not defined`（点位后移、文案失真）。上游
+/// `SharedJsScope.evaluateJsLib` 下载失败直接抛（`下载jsLib-…失败`）——
+/// 全条失败即整源失败。本用例断言 `LegadoError::JsEngine` 且带台账原因。
 #[test]
-fn js_source_engine_url_map_jslib_fetch_failure_is_observable() {
+fn js_source_engine_url_map_jslib_all_fail_is_hard_error() {
     let _guard = cache_guard();
     engine_cache::clear_for_tests();
-    let source_url = "p25-urlmap-fail-source";
+    let source_url = "p23-urlmap-allfail-source";
     let main_js = "function probe(){ return 1; }";
-    let cache_key = format!("mainjs:{source_url}:{main_js}");
     let config = legado_js::JsSourceConfig::new(source_url.to_string(), main_js.to_string())
         .with_js_lib(r#"{"bad":"http://127.0.0.1:1/never.js"}"#.to_string());
-    legado_js::JsSourceEngine::new_quickjs(config)
-        .expect("单条拉取失败按既有降级约定继续（不静默但也不阻断构造）");
-    let err = legado_js::host_api::capability_ledger::last_jslib_error(&cache_key)
-        .expect("拉取失败必须登记能力台账（可观测）");
+    let err = match legado_js::JsSourceEngine::new_quickjs(config) {
+        Ok(_) => panic!("URL 映射 jsLib 全条失败必须上抛（不得静默构造无 jsLib 引擎）"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
     assert!(
-        err.contains("下载jsLib-") && err.contains("never.js"),
-        "台账措辞须对齐上游并带失败 URL: {err}"
+        msg.contains("jsLib 加载失败"),
+        "错误须带「jsLib 加载失败」前缀: {msg}"
+    );
+    assert!(
+        msg.contains("never.js"),
+        "错误须保留失败 URL（台账原因）: {msg}"
+    );
+}
+
+/// ⑧b [P2-3 对照] **部分**条目失败保留降级（成功条目可用），失败原因仍登记
+/// 台账——与全条失败的硬上抛边界（方案 A：部分失败不阻断构造）。
+#[test]
+fn js_source_engine_url_map_jslib_partial_fail_degrades_with_ledger() {
+    let _guard = cache_guard();
+    engine_cache::clear_for_tests();
+    let source_url = "p23-urlmap-partial-source";
+    let main_js = "function probe(){ return p23PartialLib(); }";
+    let cache_key = format!("mainjs:{source_url}:{main_js}");
+    let addr = spawn_jslib_mock("function p23PartialLib(){ return 'partial-ok'; }");
+    let config = legado_js::JsSourceConfig::new(source_url.to_string(), main_js.to_string())
+        .with_js_lib(format!(
+            r#"{{"bad":"http://127.0.0.1:1/never.js","good":"http://{addr}/good.js"}}"#
+        ));
+    let mut engine = legado_js::JsSourceEngine::new_quickjs(config)
+        .expect("部分条目失败应保留降级（成功条目仍可用）");
+    assert_eq!(
+        engine
+            .call_function("probe", &[])
+            .expect("mainJs 应能调用成功条目的库函数"),
+        Some("partial-ok".to_string()),
+        "部分失败时成功条目必须仍进入引擎"
+    );
+    let reason = legado_js::host_api::capability_ledger::last_jslib_error(&cache_key)
+        .expect("失败条目必须登记能力台账（可观测）");
+    assert!(
+        reason.contains("下载jsLib-") && reason.contains("never.js"),
+        "台账措辞须对齐上游并带失败 URL: {reason}"
     );
 }
