@@ -18,6 +18,14 @@
 //! - version=5（批27）：新增 `bookMemos`（书备忘数组，元素
 //!   `{bookUrl, content, updatedAt}`，对齐原版 `bookMemo.json`，**空表也写空数组**）；
 //!   `readRecords` 元素扩为 13 字段（v113 readRecord：作者主键 + 章节快照/显示元数据）。
+//! - version=6（审查 20261113 P1-1）：新增 `bookMarks`（划线/笔记数组，元素为
+//!   [`legado_core::models::BookMarking`] 12 列 camelCase 形态，对齐参考版
+//!   `bookMarking.json`，**空表也写空数组**）；zip 恢复同时接纳参考版
+//!   `bookMarking.json`。参考版证据：`Backup.kt:71,158`（`backupFileNames` 含
+//!   `bookMarking.json` 且 `bookMarkingDao.all` 写出）、`Restore.kt:163-165`
+//!   （`fileToListT<BookMarking>` → `bookMarkingDao.insert`），该能力自参考版
+//!   `488a375`（2026-09-28）起存在，早于批7b 立项——批7b「与参考版一致不纳入
+//!   备份」的登记前提不成立，本次按参考版补齐。
 //!
 //! 兼容语义（防复发规定 9：备份格式版本化）：恢复器按字段驱动解析，
 //! 全部列表字段 `#[serde(default)]`——旧备份（无 version 或 version<2）
@@ -39,7 +47,9 @@
 //!
 //! 原版 `Backup.kt` 写出的文件清单（`selectedBackupFileNames` + 固定写出项）：
 //! - 书架/分组：`bookshelf.json`、`bookGroup.json`、`bookMemo.json`
-//! - 标注：`bookmark.json`、`highlight.json`（`writeEmpty=true`）、`highlightRule.json`
+//! - 标注：`bookmark.json`、`bookMarking.json`（划线/笔记，参考版
+//!   `Backup.kt:71,158`；我方 v6 起映射）、`highlight.json`（`writeEmpty=true`）、
+//!   `highlightRule.json`
 //! - 源：`bookSource.json`、`rssSources.json`、`rssStar.json`、`sourceSub.json`
 //! - 规则：`replaceRule.json`、`txtTocRule.json`、`httpTTS.json`、`keyboardAssists.json`、
 //!   `dictRule.json`、`autoTask.json`、`servers.json`、`directLinkUploadRule.json`
@@ -213,17 +223,17 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use legado_core::crypto::AesCrypto;
-use legado_core::models::{Book, BookSource, Bookmark, RssSource};
+use legado_core::models::{Book, BookMarking, BookSource, Bookmark, RssSource};
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
-    AutoTaskRepository, BookGroup, BookGroupRepository, BookMemo, BookMemoRepository,
-    BookRepository, BookSourceRepository, BookmarkRepository, CacheRepository, CookieRepository,
-    DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository, HttpTts,
-    HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord, ReadRecordRepository,
-    ReplaceRuleRepository, RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord,
-    RuleSubRepository, SearchKeywordRepository, ServerRepository, TxtTocRuleRecord,
-    TxtTocRuleRepository,
+    AutoTaskRepository, BookGroup, BookGroupRepository, BookMarkingRepository, BookMemo,
+    BookMemoRepository, BookRepository, BookSourceRepository, BookmarkRepository, CacheRepository,
+    CookieRepository, DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository,
+    HttpTts, HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord,
+    ReadRecordRepository, ReplaceRuleRepository, RssSourceRepository, RssStarRecord,
+    RssStarRepository, RuleSubRecord, RuleSubRepository, SearchKeywordRepository, ServerRepository,
+    TxtTocRuleRecord, TxtTocRuleRepository,
 };
 
 use crate::api::config_api::CONFIG_PREFIX;
@@ -233,13 +243,14 @@ use crate::db_state::with_database;
 ///
 /// v4（批16f）：新增 `directLinkUploadRule`（直链上传规则配置）。
 /// v5（批27）：新增 `bookMemos`（书备忘）；`readRecords` 元素扩为 13 字段。
-pub const BACKUP_VERSION: i32 = 5;
+/// v6（审查 20261113 P1-1）：新增 `bookMarks`（划线/笔记）。
+pub const BACKUP_VERSION: i32 = 6;
 
 /// 备份数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupData {
     /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表；v4=直链上传规则；
-    /// v5=书备忘 + readRecord 13 字段，见模块注释的版本语义）
+    /// v5=书备忘 + readRecord 13 字段；v6=划线/笔记，见模块注释的版本语义）
     #[serde(default = "default_version")]
     pub version: i32,
     /// 备份时间戳（毫秒）
@@ -251,6 +262,16 @@ pub struct BackupData {
     /// 书签列表
     #[serde(default)]
     pub bookmarks: Vec<serde_json::Value>,
+    /// 划线/笔记列表（v6 新增，对齐参考版 `bookMarking.json`）
+    ///
+    /// 元素形态为 [`legado_core::models::BookMarking`]（12 列 camelCase：
+    /// `id`/`bookUrl`/`bookName`/`bookAuthor`/`chapterIndex`/`anchorJson`/
+    /// `styleJson`/`note`/`chapterName`/`enabled`/`createdAt`/`updatedAt`）。
+    /// 写入侧**空表也写空数组**（对齐参考版固定写出项）；旧备份缺该键时
+    /// serde 默认空数组，恢复器据此**不触碰**库内既有标记——与 v5 `bookMemos`
+    /// 的「缺失即跳过」语义一致。
+    #[serde(default, rename = "bookMarks")]
+    pub book_marks: Vec<serde_json::Value>,
     /// 替换规则列表
     #[serde(default, rename = "replaceRules")]
     pub replace_rules: Vec<serde_json::Value>,
@@ -399,6 +420,7 @@ impl BackupData {
             backup_time: 0,
             books: Vec::new(),
             bookmarks: Vec::new(),
+            book_marks: Vec::new(),
             replace_rules: Vec::new(),
             book_sources: Vec::new(),
             rss_sources: Vec::new(),
@@ -513,10 +535,10 @@ pub struct RestoreStats {
 
 /// 创建备份到指定路径
 ///
-/// 收集 BackupData 全部 19 类数据（v5 覆盖面，对齐原版 `Backup.kt:279-330`
+/// 收集 BackupData 全部 20 类数据（v6 覆盖面，对齐原版 `Backup.kt:279-330`
 /// 中所有表已在库的类别，以及 `servers.json`/`directLinkUploadRule.json`/
-/// `bookMemo.json`），统一经各 repository/配置仓储读取后模型序列化，写入
-/// JSON 文件，返回备份文件路径。
+/// `bookMemo.json`/`bookMarking.json`），统一经各 repository/配置仓储读取后
+/// 模型序列化，写入 JSON 文件，返回备份文件路径。
 ///
 /// **媒体不在 JSON 备份内**（批41）：备份格式为单文件 JSON，无法内嵌封面/背景/
 /// 阅读记录封面等二进制媒体，也不做 base64 膨胀；我方无 zip 创建面，故创建侧
@@ -554,6 +576,14 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .find_all()?
             .into_iter()
             .filter_map(|b| serde_json::to_value(&b).ok())
+            .collect();
+
+        // 收集划线/笔记（v6：参考版 `Backup.kt:71,158` 的 `bookMarking.json`；
+        // 空表也写空数组，对齐固定写出项）
+        let book_marks: Vec<serde_json::Value> = BookMarkingRepository::new(conn)
+            .find_all()?
+            .into_iter()
+            .filter_map(|m| serde_json::to_value(&m).ok())
             .collect();
 
         // 收集替换规则
@@ -693,6 +723,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             backup_time: now,
             books,
             bookmarks,
+            book_marks,
             replace_rules,
             book_sources,
             rss_sources,
@@ -1004,9 +1035,12 @@ const COVER_FONT_DIR: &str = "font";
 const BACKUP_MEDIA_DIR_ENV: &str = "LEGADO_BACKUP_MEDIA_DIR";
 
 /// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
-const ZIP_DATA_FILES: [&str; 22] = [
+const ZIP_DATA_FILES: [&str; 23] = [
     "bookshelf.json",
     "bookmark.json",
+    // 划线/笔记（审查 20261113 P1-1：参考版 `Backup.kt:71,158` 固定写出；
+    // 此前不在白名单 → 包内数据被静默丢弃）
+    "bookMarking.json",
     "highlight.json",
     "highlightRule.json",
     "bookGroup.json",
@@ -2539,6 +2573,9 @@ fn backup_data_from_zip(
     // 书备忘（批27，对齐原版 bookMemo.json；恢复时按 restoredBookUrls 过滤）
     data.book_memos = zip_json_array(archive, "bookMemo.json").unwrap_or_default();
     data.bookmarks = zip_json_array(archive, "bookmark.json").unwrap_or_default();
+    // 划线/笔记（v6：参考版 `bookMarking.json`；字段名与本方模型逐列一致，
+    // 直接交恢复体 `BookMarking` 反序列化，无需键归一）
+    data.book_marks = zip_json_array(archive, "bookMarking.json").unwrap_or_default();
     data.highlights = zip_json_array(archive, "highlight.json").unwrap_or_default();
     let mut replace_policy = ReplaceTablePolicy::default();
     if let Some(rules) = zip_json_array(archive, "highlightRule.json") {
@@ -3025,6 +3062,29 @@ fn restore_backup_in_tx(
                 Ok(_) => stats.bookmarks += 1,
                 Err(e) => log::warn!("恢复书签失败（已跳过）: {} - {e}", bm.book_name),
             }
+        }
+    }
+
+    // 恢复划线/笔记（v6，对齐参考版 `Restore.kt:163-165` 的 `bookMarkingDao.insert`）。
+    // `id` 为 TEXT 主键，按 `upsert`（INSERT OR REPLACE）写入：同一备份重复恢复
+    // 幂等；`book_marks` 无外键，不依赖 books 段是否同行恢复（参考版同样不校验）。
+    // 备份条目缺 `id`（serde 默认空串）时补 UUID v4，与 FFI `book_marking_save`
+    // 同口径——避免同批多条空主键互相覆盖，也避免整批因约束失败被丢弃。
+    let book_marking_repo = BookMarkingRepository::new(conn);
+    for value in &backup.book_marks {
+        match serde_json::from_value::<BookMarking>(value.clone()) {
+            Ok(mut marking) => {
+                if marking.id.trim().is_empty() {
+                    marking.id = uuid::Uuid::new_v4().to_string();
+                }
+                match book_marking_repo.upsert(&marking) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        log::warn!("恢复划线/笔记失败（已跳过）: {} - {e}", marking.book_name)
+                    }
+                }
+            }
+            Err(e) => log::warn!("恢复划线/笔记解析失败（已跳过）: {e}"),
         }
     }
 
@@ -3659,6 +3719,7 @@ mod tests {
             for table in [
                 "books",
                 "bookmarks",
+                "book_marks",
                 "replace_rules",
                 "book_sources",
                 "rssSources",
@@ -4088,6 +4149,156 @@ mod tests {
                 .get(book_url)?
                 .expect("旧备份缺 bookMemos 时不得清空库内备忘");
             assert_eq!(memo.content, "库内既有备忘");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P1-1] 备份 v6：划线/笔记随自有 JSON 备份往返（12 列逐字段）
+    #[test]
+    fn test_book_marks_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_roundtrip_book_marks");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("book_marks.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let marking = BookMarking {
+            id: "bm-roundtrip".to_string(),
+            book_url: "https://marking.example/book/1".to_string(),
+            book_name: "划线书".to_string(),
+            book_author: "作者甲".to_string(),
+            chapter_index: Some(3),
+            anchor_json: r#"{"start":5,"end":9}"#.to_string(),
+            style_json: Some(r#"{"textColor":-1}"#.to_string()),
+            note: "往返备注".to_string(),
+            chapter_name: "第四章".to_string(),
+            enabled: false,
+            created_at: 1_700_000_000_000,
+            updated_at: 1_700_000_000_100,
+        };
+        with_database(|db| BookMarkingRepository::new(db.connection()).upsert(&marking)).unwrap();
+
+        backup_create(path_str).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path_str).unwrap()).unwrap();
+        assert_eq!(raw["version"], 6, "备份格式应升到 v6");
+        let marks = raw["bookMarks"].as_array().unwrap();
+        assert_eq!(marks.len(), 1, "划线/笔记应写入 bookMarks 段: {marks:?}");
+        assert_eq!(marks[0]["id"], "bm-roundtrip");
+        assert_eq!(marks[0]["bookUrl"], "https://marking.example/book/1");
+        assert_eq!(marks[0]["bookName"], "划线书");
+        assert_eq!(marks[0]["bookAuthor"], "作者甲");
+        assert_eq!(marks[0]["chapterIndex"], 3);
+        assert_eq!(marks[0]["anchorJson"], r#"{"start":5,"end":9}"#);
+        assert_eq!(marks[0]["styleJson"], r#"{"textColor":-1}"#);
+        assert_eq!(marks[0]["note"], "往返备注");
+        assert_eq!(marks[0]["chapterName"], "第四章");
+        assert_eq!(marks[0]["enabled"], false);
+        assert_eq!(marks[0]["createdAt"], 1_700_000_000_000_i64);
+        assert_eq!(marks[0]["updatedAt"], 1_700_000_000_100_i64);
+
+        // 清库后恢复：12 列逐字段一致
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM book_marks", [])
+                .map_err(|e| LegadoError::Database(format!("清空划线/笔记失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        backup_restore(path_str).unwrap();
+        with_database(|db| {
+            let restored = BookMarkingRepository::new(db.connection())
+                .get_by_id("bm-roundtrip")?
+                .expect("划线/笔记应随备份恢复");
+            assert_eq!(restored, marking, "恢复后 12 列应逐字段一致");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P1-1] 旧格式（v1~v5，无 bookMarks 键）恢复不得清空库内既有划线/笔记
+    #[test]
+    fn test_legacy_backup_without_book_marks_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v5_no_book_marks");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("v5_backup.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let marking = BookMarking {
+            id: "bm-existing".to_string(),
+            book_url: "https://marking.example/legacy".to_string(),
+            book_name: "旧备份划线书".to_string(),
+            book_author: "作者乙".to_string(),
+            chapter_index: Some(1),
+            anchor_json: r#"{"start":1}"#.to_string(),
+            style_json: None,
+            note: "库内既有笔记".to_string(),
+            chapter_name: "第二章".to_string(),
+            enabled: true,
+            created_at: 100,
+            updated_at: 200,
+        };
+        with_database(|db| BookMarkingRepository::new(db.connection()).upsert(&marking)).unwrap();
+
+        // v5 形态：无 bookMarks 键
+        fs::write(path_str, r#"{"version":5,"backupTime":1,"books":[]}"#).unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let restored = BookMarkingRepository::new(db.connection())
+                .get_by_id("bm-existing")?
+                .expect("旧备份缺 bookMarks 时不得清空库内划线/笔记");
+            assert_eq!(restored, marking);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P1-1] 恢复条目缺 id（第三方/损坏包）时补 UUID，
+    /// 同批多条空主键不得互相覆盖
+    #[test]
+    fn test_restore_book_marks_missing_id_generates_uuid() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_book_marks_missing_id");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("no_id.json");
+        let path_str = backup_path.to_str().unwrap();
+        fs::write(
+            path_str,
+            r#"{"version":6,"backupTime":1,"books":[],"bookMarks":[
+                {"bookUrl":"https://marking.example/a","anchorJson":"{\"start\":1}","note":"甲"},
+                {"bookUrl":"https://marking.example/b","anchorJson":"{\"start\":2}","note":"乙"}
+            ]}"#,
+        )
+        .unwrap();
+
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let all = BookMarkingRepository::new(db.connection()).find_all()?;
+            assert_eq!(all.len(), 2, "两条缺 id 条目应各自落库: {all:?}");
+            assert!(
+                all.iter().all(|m| !m.id.trim().is_empty()),
+                "缺 id 条目应补 UUID: {all:?}"
+            );
+            assert_ne!(all[0].id, all[1].id, "同批不得共用同一空主键");
             Ok::<(), LegadoError>(())
         })
         .unwrap();
@@ -5006,11 +5217,20 @@ mod tests {
             content.contains("\"bookMemos\""),
             "v5 备份应包含 bookMemos 字段（空表也写空数组）：{content}"
         );
+        assert!(
+            content.contains("\"bookMarks\""),
+            "v6 备份应包含 bookMarks 字段（空表也写空数组）：{content}"
+        );
         let raw: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(
             raw.get("bookMemos").and_then(|v| v.as_array()),
             Some(&Vec::new()),
             "空表应写出空数组而非省略键"
+        );
+        assert_eq!(
+            raw.get("bookMarks").and_then(|v| v.as_array()),
+            Some(&Vec::new()),
+            "划线/笔记空表应写出空数组而非省略键"
         );
         assert!(
             !content.contains("\"autoTasks\""),
@@ -5302,8 +5522,8 @@ mod tests {
         let content = fs::read_to_string(&backup_path).unwrap();
         let parsed: BackupData = serde_json::from_str(&content).unwrap();
         // 版本契约钉死一次字面量（P2-4）：常量若是误改，此处必须红
-        // 批27：备份格式版本 4→5（新增 bookMemos）
-        assert_eq!(parsed.version, 5, "v5 契约版本");
+        // 批27：备份格式版本 4→5（新增 bookMemos）；审查 20261113 P1-1：5→6（新增 bookMarks）
+        assert_eq!(parsed.version, 6, "v6 契约版本");
         assert_eq!(
             parsed.direct_link_upload_rule.as_deref(),
             Some(DIRECT_LINK_RULE_SEED),
@@ -5808,10 +6028,10 @@ mod tests {
     /// 密钥 = MD5("secret") 小写 hex 前 16 个 ASCII 字符 `5ebe2294ecd0e0f0`。
     const UPSTREAM_SECRET_PW_SERVERS: &str = "2vU9PxdlMNdJf1ZFkNTKycmGR0xILunMY6nIlKNqGxbBimVUkWjSd0juf6gc/wO5/Gf0BuDDaTzIqpLG1FWHe0kv2jIAZZiIrlG/2gyyyV8Rpnrdkw6KxU0pWcUDah9/dm+xTmldxLQNMeYqaCjXmbCAm8HhRvwnfLB34pV/Hpw=";
 
-    /// [批9 回归 / 批41 媒体] 原版 zip 全类别落库：18 类数据文件 + 加密 servers +
-    /// 媒体落盘与封面 remap + 配置快照跳过
-    /// （`cookies.json`/`runtimeSourceCache.json` 有独立分支用例，
-    /// `directLinkUploadRule.json` 有批16f 专项用例）
+    /// [批9 回归 / 批41 媒体 / 审查 20261113 P1-1] 原版 zip 全类别落库：
+    /// 19 类数据文件（含 `bookMarking.json`）+ 加密 servers + 媒体落盘与封面
+    /// remap 与配置快照跳过。`cookies.json`/`runtimeSourceCache.json` 有独立分支
+    /// 用例，`directLinkUploadRule.json` 有批16f 专项用例。
     #[test]
     fn test_restore_upstream_zip_roundtrip_all_tables() {
         let _db_guard = crate::db_state::ensure_test_db();
@@ -5835,6 +6055,12 @@ mod tests {
         ]"#;
         let bookmark = r#"[{"id":11,"time":1700000001000,"bookName":"zip书一","bookAuthor":"作者甲",
             "chapterIndex":2,"chapterPos":9,"chapterName":"第三章","bookText":"书签文本","content":"内容"}]"#;
+        // 参考版 GSON 形态（camelCase、12 列）；审查 20261113 P1-1
+        let book_marking = r#"[{"id":"zip-marking-1","bookUrl":"https://zip.example/book/1",
+            "bookName":"zip书一","bookAuthor":"作者甲","chapterIndex":1,
+            "anchorJson":"{\"start\":5,\"end\":9}","styleJson":"{\"textColor\":-1}",
+            "note":"zip划线笔记","chapterName":"第二章","enabled":true,
+            "createdAt":1700000008000,"updatedAt":1700000009000}]"#;
         let highlight = r#"[{"time":1700000002000,"bookUrl":"https://zip.example/book/1",
             "chapterUrl":"ch://1","bookName":"zip书一","bookAuthor":"作者甲","chapterIndex":1,
             "chapterPos":2,"chapterPosEnd":8,"layoutTitleLength":3,"chapterName":"第二章",
@@ -5883,6 +6109,7 @@ mod tests {
                 ("bookshelf.json", bookshelf.as_bytes()),
                 ("bookGroup.json", book_group.as_bytes()),
                 ("bookmark.json", bookmark.as_bytes()),
+                ("bookMarking.json", book_marking.as_bytes()),
                 ("highlight.json", highlight.as_bytes()),
                 ("highlightRule.json", highlight_rule.as_bytes()),
                 ("bookSource.json", book_source.as_bytes()),
@@ -5978,6 +6205,24 @@ mod tests {
             assert_eq!(bookmarks[0].book_name, "zip书一");
             assert_eq!(bookmarks[0].chapter_index, 2);
             assert_eq!(bookmarks[0].book_text, "书签文本");
+
+            // 划线/笔记（审查 20261113 P1-1：bookMarking.json 此前被静默丢弃）
+            let markings = BookMarkingRepository::new(conn).find_all()?;
+            assert_eq!(markings.len(), 1, "zip 内 bookMarking.json 应恢复");
+            assert_eq!(markings[0].id, "zip-marking-1");
+            assert_eq!(markings[0].book_url, "https://zip.example/book/1");
+            assert_eq!(markings[0].book_name, "zip书一");
+            assert_eq!(markings[0].chapter_index, Some(1));
+            assert_eq!(markings[0].anchor_json, r#"{"start":5,"end":9}"#);
+            assert_eq!(
+                markings[0].style_json.as_deref(),
+                Some(r#"{"textColor":-1}"#)
+            );
+            assert_eq!(markings[0].note, "zip划线笔记");
+            assert_eq!(markings[0].chapter_name, "第二章");
+            assert!(markings[0].enabled);
+            assert_eq!(markings[0].created_at, 1_700_000_008_000);
+            assert_eq!(markings[0].updated_at, 1_700_000_009_000);
 
             // 高亮
             let highlight = HighlightRepository::new(conn)

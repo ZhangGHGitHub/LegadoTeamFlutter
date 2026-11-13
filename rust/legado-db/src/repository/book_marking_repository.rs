@@ -6,10 +6,13 @@
 //! - `getForChapterSync` → [`BookMarkingRepository::list_for_chapter`]（按
 //!   `bookUrl` 查；`chapterIndex` 为 Some 时同时返回 `chapterIndex IS NULL`
 //!   的全局标记，`createdAt` 升序）；
-//! - `getById` / `upsert`（INSERT OR REPLACE）/ `setEnabled` / `delete`。
+//! - `getById` / `upsert`（INSERT OR REPLACE）/ `setEnabled` / `delete`；
+//! - `all`（参考版 `BookMarkingDao.all`）→ [`BookMarkingRepository::find_all`]。
 //!
-//! 书签标记与 `bookmarks`（页面导航）和 `highlights`（正文高亮记录）独立，
-//! 不纳入备份（与参考版一致）。
+//! 书签标记与 `bookmarks`（页面导航）和 `highlights`（正文高亮记录）独立。
+//! 备份口径：参考版 `Backup.kt:71,158` / `Restore.kt:163-165` **包含**
+//! `bookMarking.json`，我方备份格式 v6 起同样纳入——`backup_create` 经
+//! [`BookMarkingRepository::find_all`] 收集，恢复经 `upsert` 落库。
 //!
 //! 查询口径（批7b-1 审查 P3-1）：列表查询统一走
 //! [`super::collect_rows_logged`]——坏行（列类型漂移/损坏）跳过但记 stderr
@@ -33,6 +36,23 @@ pub struct BookMarkingRepository<'a> {
 impl<'a> BookMarkingRepository<'a> {
     pub fn new(conn: &'a Connection) -> Self {
         Self { conn }
+    }
+
+    /// 取全表（对齐参考版 `BookMarkingDao.all`，供备份导出）
+    ///
+    /// `createdAt` 升序、`id` 兜底，保证同一库两次备份产出的数组顺序稳定
+    /// （为备份往返的逐字段比对提供可复现基线）。
+    pub fn find_all(&self) -> LegadoResult<Vec<BookMarking>> {
+        let mut stmt = self
+            .conn
+            .prepare(&format!("{SELECT_COLUMNS} ORDER BY createdAt ASC, id ASC"))
+            .map_err(|e| LegadoError::Database(format!("准备书签标记全量查询失败: {e}")))?;
+        let rows = super::collect_rows_logged(
+            stmt.query_map([], row_to_marking)
+                .map_err(|e| LegadoError::Database(format!("查询书签标记失败: {e}")))?,
+            "book_marks find_all",
+        );
+        Ok(rows)
     }
 
     /// 按「书名 + 作者」取全部章节/全部源的标记
@@ -219,6 +239,49 @@ mod tests {
 
         assert!(repo.delete("m1").unwrap(), "存在时 delete 返回 true");
         assert!(repo.get_by_id("m1").unwrap().is_none());
+    }
+
+    /// 全表查询：跨书跨源全部返回，`createdAt` 升序、`id` 兜底（备份导出用）
+    #[test]
+    fn test_find_all_ordering() {
+        let db = init_in_memory_database().unwrap();
+        let repo = BookMarkingRepository::new(db.connection());
+
+        repo.upsert(&make_marking(
+            "b2",
+            "https://b/2",
+            "书乙",
+            "作者乙",
+            Some(1),
+            200,
+        ))
+        .unwrap();
+        repo.upsert(&make_marking(
+            "a2",
+            "https://a/1",
+            "书甲",
+            "作者甲",
+            Some(0),
+            100,
+        ))
+        .unwrap();
+        repo.upsert(&make_marking(
+            "a1",
+            "https://a/1",
+            "书甲",
+            "作者甲",
+            None,
+            100,
+        ))
+        .unwrap();
+
+        let all = repo.find_all().unwrap();
+        let ids: Vec<_> = all.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["a1", "a2", "b2"],
+            "createdAt 升序、同毫秒 id 兜底"
+        );
     }
 
     /// 按书名+作者排序：chapterIndex 升序（NULL 在前，SQLite 默认），再 createdAt

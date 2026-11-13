@@ -553,8 +553,10 @@ CREATE TABLE IF NOT EXISTS book_memos (
 /// 保留 DEFAULT 仅便于手工/测试插入缺列数据。
 ///
 /// 与既有 `bookmarks`（页面导航书签）和 `highlights`（正文高亮记录）独立，
-/// **无外键**（参考版 `BookMarking` 未声明 `ForeignKey`），与参考版一致
-/// **不纳入备份**。
+/// **无外键**（参考版 `BookMarking` 未声明 `ForeignKey`）。
+/// 备份口径：备份格式 v6 起纳入（对齐参考版 `Backup.kt:71,158` 的
+/// `bookMarking.json`；批7b「与参考版一致不纳入备份」的登记前提有误，已在
+/// 审查 20261113 P1-1 更正）。
 pub const CREATE_BOOK_MARKS: &str = "
 CREATE TABLE IF NOT EXISTS book_marks (
     id TEXT PRIMARY KEY NOT NULL,

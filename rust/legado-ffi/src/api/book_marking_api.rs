@@ -2,8 +2,11 @@
 //!
 //! 契约 §2.52（批7b-1）：书签标记数据层，逐条对齐参考版
 //! `data/entities/BookMarking.kt:21-46` 与 `data/dao/BookMarkingDao.kt:13-87`。
-//! 与既有书签（`bookmarks`，页面导航）和正文高亮记录（`highlights`）相互独立，
-//! **不纳入备份**（与参考版一致）。
+//! 与既有书签（`bookmarks`，页面导航）和正文高亮记录（`highlights`）相互独立。
+//! 备份口径（审查 20261113 P1-1 更正）：参考版自 `488a375`（2026-09-28）起在
+//! `Backup.kt:71,158` / `Restore.kt:163-165` 备份 `bookMarking.json`，批7b 当时
+//! 登记的「与参考版一致不纳入备份」不成立；备份格式 v6 起 `book_marks` 随
+//! `backup_create` / `backup_restore` 与参考版 zip 往返（见 `backup_api.rs`）。
 //!
 //! 本模块只做数据层，不做渲染：划词内联卡、编辑 Sheet、目录笔记页与正文渲染
 //! 属 7b-2，锚点解析与文本匹配放 Dart 侧。
