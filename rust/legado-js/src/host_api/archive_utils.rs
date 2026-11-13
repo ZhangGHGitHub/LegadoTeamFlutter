@@ -25,6 +25,10 @@ use std::path::{Component, Path, PathBuf};
 // - 单条目 32MB：书源场景的文本/图片条目远小于该值，与主题图单文件上限同口径；
 // - 单次解压/读取总量 512MB：避免「多条 32MB」叠加耗尽内存/磁盘。
 //
+// 7z 整包解压（P2-1）同样纳入限额：逐条目流式写出，写盘前按头部声明的
+// 条目大小与累计总量拒绝、写盘时按实际字节复核，不再走无上限的
+// `decompress_file` 整包解压。
+//
 // 超限一律返回明确错误（`unzipFile` 经 JS 注册层加 `[ERROR]` 前缀），
 // 不静默截断。
 // ============================================================
@@ -63,11 +67,118 @@ fn total_limit_error(total: u64) -> String {
     )
 }
 
-/// 清理本次解压已写出的文件（限额中止时删除半成品；不删除目录本身）
-fn cleanup_extracted_files(paths: &[PathBuf]) {
-    for path in paths {
-        let _ = fs::remove_file(path);
+/// 解压产物清理守卫（P3-1）
+///
+/// 记录本次解压**实际创建**的文件与目录：
+/// - 成功完成时调用 [`commit`](Self::commit) 跳过清理；
+/// - 任何错误路径（含 `?` 早退）都在 `Drop` 中删除半成品，避免残留。
+///
+/// 目录只登记本次新建的最上层路径（其父目录已存在），因此绝不会删除用户
+/// 已有的输出目录；文件在 `File::create` **成功之后**登记，避免创建失败时
+/// 误删用户原有的同名只读文件。
+struct ExtractionGuard {
+    files: Vec<PathBuf>,
+    dirs: Vec<PathBuf>,
+    committed: bool,
+}
+
+impl ExtractionGuard {
+    fn new() -> Self {
+        Self {
+            files: Vec::new(),
+            dirs: Vec::new(),
+            committed: false,
+        }
     }
+
+    /// 确保目录存在；仅登记本次新建目录（已存在则不动）
+    fn ensure_dir(&mut self, dir: &Path) -> Result<(), String> {
+        if dir.is_dir() {
+            return Ok(());
+        }
+        if dir.exists() {
+            // 同名文件占位：明确报错，避免后续写入错误难以定位
+            return Err(format!(
+                "Failed to create dir {}: 路径已存在且不是目录",
+                dir.display()
+            ));
+        }
+        // 找到本次新建的最上层目录（其父目录必须已存在），
+        // 失败清理时 remove_dir_all 可一并删除其下所有产物
+        let mut top = dir;
+        while let Some(parent) = top.parent() {
+            if parent.as_os_str().is_empty() || parent.exists() {
+                break;
+            }
+            top = parent;
+        }
+        // 先创建并登记最上层目录，再补建其余层级：create_dir_all 中途失败时
+        // 已创建的层级也必然被守卫清理
+        match fs::create_dir(top) {
+            Ok(()) => {
+                if !self.dirs.iter().any(|recorded| recorded == top) {
+                    self.dirs.push(top.to_path_buf());
+                }
+            }
+            // 并发下被其他进程抢先创建：不登记，避免删除非本次创建的目录
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(format!("Failed to create dir {}: {e}", top.display())),
+        }
+        fs::create_dir_all(dir)
+            .map_err(|e| format!("Failed to create dir {}: {e}", dir.display()))?;
+        Ok(())
+    }
+
+    /// 登记本次写出的文件（须在 `File::create` 成功后调用）
+    fn track_file(&mut self, path: &Path) {
+        self.files.push(path.to_path_buf());
+    }
+
+    /// 解压成功：交出产物，跳过清理
+    fn commit(mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for ExtractionGuard {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        for file in &self.files {
+            let _ = fs::remove_file(file);
+        }
+        // 逆序删除本次新建目录（remove_dir_all 覆盖其下全部半成品）
+        for dir in self.dirs.iter().rev() {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+}
+
+/// 流式拷贝单个条目到输出文件，按单条目/累计总量限额中途截止
+///
+/// 返回实际写入字节数；超限返回 [`ARCHIVE_LIMIT_ERROR_PREFIX`] 错误
+/// （不静默截断）。`+1` 用于识别「恰好超过允许上限」。
+fn copy_entry_capped<W: std::io::Write>(
+    reader: &mut dyn Read,
+    out: &mut W,
+    total_written: u64,
+    entry_name: &str,
+) -> Result<u64, String> {
+    let remaining_total = ARCHIVE_MAX_TOTAL_BYTES.saturating_sub(total_written);
+    let allowed = ARCHIVE_MAX_ENTRY_BYTES.min(remaining_total);
+    let mut limited = (&mut *reader).take(allowed + 1);
+    let written = std::io::copy(&mut limited, out)
+        .map_err(|e| format!("Failed to write {entry_name:?}: {e}"))?;
+
+    if written > ARCHIVE_MAX_ENTRY_BYTES {
+        return Err(entry_limit_error(entry_name, written));
+    }
+    let total = total_written.saturating_add(written);
+    if total > ARCHIVE_MAX_TOTAL_BYTES {
+        return Err(total_limit_error(total));
+    }
+    Ok(written)
 }
 
 /// 读取 ZIP 条目字节到内存（单条目限额，超限显式报错）
@@ -124,11 +235,12 @@ pub fn unzip_file(zip_path: &str, output_path: Option<&str>) -> Result<String, S
     let mut archive =
         zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP archive: {e}"))?;
 
-    fs::create_dir_all(&out_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
+    // P3-1：流式解压 + 单条目/总量限额 + 统一清理守卫（成功提交，失败自动
+    // 删除本次写出的文件与新建目录，含输出根目录）
+    let mut guard = ExtractionGuard::new();
+    guard.ensure_dir(Path::new(&out_dir))?;
 
-    // P3-1：流式解压 + 单条目/总量限额，避免 zip bomb 整条目入内存或写满磁盘
     let mut total_written: u64 = 0;
-    let mut created_files: Vec<PathBuf> = Vec::new();
 
     for i in 0..archive.len() {
         let mut entry = archive
@@ -144,57 +256,38 @@ pub fn unzip_file(zip_path: &str, output_path: Option<&str>) -> Result<String, S
         let target = Path::new(&out_dir).join(&entry_name);
 
         if entry.is_dir() {
-            fs::create_dir_all(&target)
-                .map_err(|e| format!("Failed to create dir {}: {e}", target.display()))?;
+            guard.ensure_dir(&target)?;
             continue;
         }
 
-        // 声明大小快速拒绝（中央目录可伪造，实际写入字节稍后再复核）
+        // 声明大小快速拒绝（中央目录可伪造，实际写入字节由 copy_entry_capped 复核）
         let declared = entry.size();
         if declared > ARCHIVE_MAX_ENTRY_BYTES {
-            cleanup_extracted_files(&created_files);
             return Err(entry_limit_error(entry_name.display(), declared));
         }
         if total_written.saturating_add(declared) > ARCHIVE_MAX_TOTAL_BYTES {
-            cleanup_extracted_files(&created_files);
             return Err(total_limit_error(total_written.saturating_add(declared)));
         }
 
         // 确保父目录存在
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create dir {}: {e}", parent.display()))?;
+            guard.ensure_dir(parent)?;
         }
 
         let mut out = fs::File::create(&target)
             .map_err(|e| format!("Failed to write {}: {e}", target.display()))?;
-        created_files.push(target.clone());
+        guard.track_file(&target);
 
-        // 流式拷贝：`+1` 用于识别「恰好超过上限」，整条目不再读入内存
-        let written = match std::io::copy(
-            &mut (&mut entry).take(ARCHIVE_MAX_ENTRY_BYTES + 1),
+        // 流式拷贝：整条目不再读入内存，超限即中止（半成品由守卫清理）
+        total_written = copy_entry_capped(
+            &mut entry,
             &mut out,
-        ) {
-            Ok(n) => n,
-            Err(e) => {
-                drop(out);
-                cleanup_extracted_files(&created_files);
-                return Err(format!("Failed to write {}: {e}", target.display()));
-            }
-        };
-        drop(out);
-
-        if written > ARCHIVE_MAX_ENTRY_BYTES {
-            cleanup_extracted_files(&created_files);
-            return Err(entry_limit_error(entry_name.display(), written));
-        }
-        total_written = total_written.saturating_add(written);
-        if total_written > ARCHIVE_MAX_TOTAL_BYTES {
-            cleanup_extracted_files(&created_files);
-            return Err(total_limit_error(total_written));
-        }
+            total_written,
+            &entry_name.to_string_lossy(),
+        )?;
     }
 
+    guard.commit();
     Ok(out_dir)
 }
 
@@ -240,11 +333,84 @@ pub fn zip_entry_bytes(zip_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, St
     read_zip_entry_capped(&mut entry, entry_name)
 }
 
+/// 7z 条目名安全校验错误前缀
+#[cfg(feature = "quickjs")]
+const SEVEN_Z_ENTRY_NAME_ERROR_PREFIX: &str = "7z 条目名非法";
+
+/// 7z 前置校验：条目名 + 声明解压大小（单条目 / 累计总量）
+///
+/// 7z 头部为每个条目声明 UnpackedSize，可在**任何写盘之前**整体拒绝超限
+/// 归档（压缩炸弹的头部必然声明巨大的 UnpackedSize）。实际写入时仍按真实
+/// 字节复核（见 [`copy_entry_capped`]），不信任可伪造的声明值。
+#[cfg(feature = "quickjs")]
+fn check_seven_z_declared_limits(archive: &sevenz_rust2::Archive) -> Result<(), String> {
+    let mut total = 0u64;
+    for entry in &archive.files {
+        normalized_entry_name(SEVEN_Z_ENTRY_NAME_ERROR_PREFIX, &entry.name)?;
+        if entry.is_directory {
+            continue;
+        }
+        if entry.size > ARCHIVE_MAX_ENTRY_BYTES {
+            return Err(entry_limit_error(&entry.name, entry.size));
+        }
+        total = total
+            .checked_add(entry.size)
+            .ok_or_else(|| total_limit_error(u64::MAX))?;
+        if total > ARCHIVE_MAX_TOTAL_BYTES {
+            return Err(total_limit_error(total));
+        }
+    }
+    Ok(())
+}
+
+/// 解压单个 7z 条目到输出目录（逐条目流式，不整包入内存）
+///
+/// 调用前 [`check_seven_z_declared_limits`] 已按头部声明值整体校验；这里再
+/// 按真实读取字节复核（声明值可被伪造），并按单条目/累计总量限额中止。
+#[cfg(feature = "quickjs")]
+fn extract_seven_z_entry(
+    entry: &sevenz_rust2::ArchiveEntry,
+    stream: &mut dyn Read,
+    out_dir: &Path,
+    guard: &mut ExtractionGuard,
+    total_written: &mut u64,
+) -> Result<(), String> {
+    if entry.size > ARCHIVE_MAX_ENTRY_BYTES {
+        return Err(entry_limit_error(&entry.name, entry.size));
+    }
+    let declared_total = total_written.saturating_add(entry.size);
+    if declared_total > ARCHIVE_MAX_TOTAL_BYTES {
+        return Err(total_limit_error(declared_total));
+    }
+
+    let rel = normalized_entry_name(SEVEN_Z_ENTRY_NAME_ERROR_PREFIX, &entry.name)?;
+    let target = out_dir.join(&rel);
+
+    if entry.is_directory {
+        guard.ensure_dir(&target)?;
+        return Ok(());
+    }
+
+    if let Some(parent) = target.parent() {
+        guard.ensure_dir(parent)?;
+    }
+    let mut out = fs::File::create(&target)
+        .map_err(|e| format!("Failed to write {}: {e}", target.display()))?;
+    guard.track_file(&target);
+
+    *total_written = copy_entry_capped(stream, &mut out, *total_written, &entry.name)?;
+    Ok(())
+}
+
 /// un7zFile(7zPath, outputPath?) — 解压 7z 文件
 ///
 /// 使用 `sevenz-rust2` 纯 Rust 实现解压 7z 格式文件。
 /// 支持 LZMA/LZMA2/COPY 等编解码器。
 /// 返回解压目标目录路径。
+///
+/// 安全：P2-1 起按 `ArchiveReader` 逐条目流式解压，写入前按头部声明大小与
+/// 累计总量拒绝、写入时按实际字节复核（单条目 32MB / 总量 512MB），
+/// 失败路径由 [`ExtractionGuard`] 统一清理半成品。
 #[cfg(feature = "quickjs")]
 pub fn un7z_file(seven_z_path: &str, output_path: Option<&str>) -> Result<String, String> {
     let src = Path::new(seven_z_path);
@@ -264,9 +430,42 @@ pub fn un7z_file(seven_z_path: &str, output_path: Option<&str>) -> Result<String
         }
     };
 
-    sevenz_rust2::decompress_file(src, &out_dir)
-        .map_err(|e| format!("7z decompression failed: {e}"))?;
+    let file = fs::File::open(src).map_err(|e| format!("Failed to open 7z: {e}"))?;
+    let mut reader = sevenz_rust2::ArchiveReader::new(file, sevenz_rust2::Password::empty())
+        .map_err(|e| format!("Invalid 7z archive: {e}"))?;
 
+    // P2-1：先按头部声明大小整体校验（7z 头为每个条目声明 UnpackedSize），
+    // 超限归档在创建输出目录/写盘之前直接拒绝
+    check_seven_z_declared_limits(reader.archive())?;
+
+    let mut guard = ExtractionGuard::new();
+    guard.ensure_dir(Path::new(&out_dir))?;
+
+    let mut total_written: u64 = 0;
+    let mut failure: Option<String> = None;
+    let result = reader.for_each_entries(|entry, stream| {
+        match extract_seven_z_entry(
+            entry,
+            stream,
+            Path::new(&out_dir),
+            &mut guard,
+            &mut total_written,
+        ) {
+            Ok(()) => Ok(true),
+            Err(err) => {
+                failure = Some(err);
+                // 中止遍历；已写产物由守卫在返回后统一清理
+                Ok(false)
+            }
+        }
+    });
+
+    if let Some(err) = failure {
+        return Err(err);
+    }
+    result.map_err(|e| format!("7z decompression failed: {e}"))?;
+
+    guard.commit();
     Ok(out_dir)
 }
 
@@ -304,12 +503,15 @@ pub fn is_rar_security_error(err: &str) -> bool {
 /// 只允许 [`Component::Normal`] 组件：拒绝空名、绝对路径、盘符/UNC/verbatim
 /// 前缀、根目录与 `..`。返回规范化后的相对路径（用于安全 `join`）。
 fn normalized_rar_entry_name(name: &str) -> Result<String, String> {
+    normalized_entry_name(RAR_ENTRY_NAME_ERROR_PREFIX, name)
+}
+
+/// 通用条目名校验：只允许普通相对路径组件（`prefix` 区分归档格式的错误语义）
+fn normalized_entry_name(prefix: &str, name: &str) -> Result<String, String> {
     let normalized = name.replace('\\', "/");
     let path = Path::new(&normalized);
     if normalized.is_empty() || path.is_absolute() {
-        return Err(format!(
-            "{RAR_ENTRY_NAME_ERROR_PREFIX}（空或绝对路径）: {name:?}"
-        ));
+        return Err(format!("{prefix}（空或绝对路径）: {name:?}"));
     }
     let mut has_normal = false;
     for component in path.components() {
@@ -317,15 +519,13 @@ fn normalized_rar_entry_name(name: &str) -> Result<String, String> {
             Component::Normal(_) => has_normal = true,
             _ => {
                 return Err(format!(
-                    "{RAR_ENTRY_NAME_ERROR_PREFIX}（含非普通路径组件，疑似路径穿越）: {name:?}"
+                    "{prefix}（含非普通路径组件，疑似路径穿越）: {name:?}"
                 ))
             }
         }
     }
     if !has_normal {
-        return Err(format!(
-            "{RAR_ENTRY_NAME_ERROR_PREFIX}（无有效文件名）: {name:?}"
-        ));
+        return Err(format!("{prefix}（无有效文件名）: {name:?}"));
     }
     Ok(normalized)
 }
@@ -1242,6 +1442,70 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// P3-1 回归锁：第 2 个条目创建失败时，第 1 个已写文件必须清理
+    ///
+    /// 修复前 `by_index` / `File::create` 失败走 `?` 直接返回，已解压文件残留。
+    #[test]
+    fn test_unzip_file_cleans_up_when_entry_create_fails() {
+        let zip_path = create_test_zip(&[
+            ("a_first.txt", b"first entry"),
+            ("z_blocked.txt", b"second entry"),
+        ]);
+
+        let dir = std::env::temp_dir().join(format!("legado_zip_cleanup_{}", uuid()));
+        let out_dir = dir.join("out");
+        fs::create_dir_all(&out_dir).unwrap();
+        // 用同名目录占位，使第 2 个条目的 `File::create` 必然失败
+        fs::create_dir_all(out_dir.join("z_blocked.txt")).unwrap();
+
+        let err = unzip_file(&zip_path, Some(out_dir.to_str().unwrap())).unwrap_err();
+        assert!(err.contains("Failed to write"), "err = {err}");
+        assert!(
+            !out_dir.join("a_first.txt").exists(),
+            "第 1 个已写文件必须随失败清理"
+        );
+        assert!(
+            out_dir.join("z_blocked.txt").is_dir(),
+            "用户已有同名目录不得删除"
+        );
+        assert!(out_dir.exists(), "用户已有输出目录不得删除");
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(Path::new(&zip_path).parent().unwrap());
+    }
+
+    /// P3-1 回归锁：限额失败时本次创建的输出根目录也不得残留
+    #[test]
+    fn test_unzip_file_removes_created_output_dir_on_limit_failure() {
+        let dir = std::env::temp_dir().join(format!("legado_zip_root_cleanup_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("bomb.zip");
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut writer = ZipWriter::new(file);
+            let stored =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("small.txt", stored).unwrap();
+            writer.write_all(b"ok").unwrap();
+            // 第 2 个条目超单条目上限；Deflated 压缩避免测试落盘膨胀
+            let deflated =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("huge.bin", deflated).unwrap();
+            writer
+                .write_all(&vec![0u8; (ARCHIVE_MAX_ENTRY_BYTES + 1) as usize])
+                .unwrap();
+            writer.finish().unwrap();
+        }
+
+        let out_dir = dir.join("out");
+        let err =
+            unzip_file(zip_path.to_str().unwrap(), Some(out_dir.to_str().unwrap())).unwrap_err();
+        assert!(err.contains("单条目上限"), "err = {err}");
+        assert!(!out_dir.exists(), "失败后本次创建的输出根目录必须清理");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     // ============================================================
     // RAR5 头部构造辅助（仅用于预扫描限额测试；CRC 不被预扫描校验）
     // ============================================================
@@ -1342,6 +1606,27 @@ mod tests {
     // 7z 解压测试（需要 quickjs feature 启用 sevenz-rust2）
     // ============================================================
 
+    /// 辅助：按给定顺序创建 7z（条目顺序确定，用于「第 2 个条目失败」类测试）
+    #[cfg(feature = "quickjs")]
+    fn create_test_7z_ordered(entries: &[(&str, &[u8])]) -> String {
+        let dir = std::env::temp_dir().join(format!("legado_7z_ordered_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let seven_z_path = dir.join("test.7z");
+
+        let mut writer = sevenz_rust2::ArchiveWriter::create(&seven_z_path).unwrap();
+        for (name, content) in entries {
+            writer
+                .push_archive_entry(
+                    sevenz_rust2::ArchiveEntry::new_file(name),
+                    Some(std::io::Cursor::new(content.to_vec())),
+                )
+                .unwrap();
+        }
+        writer.finish().unwrap();
+
+        seven_z_path.to_string_lossy().to_string()
+    }
+
     /// 辅助：创建包含指定文件的测试 7z 压缩包，返回 7z 文件路径
     #[cfg(feature = "quickjs")]
     fn create_test_7z(entries: &[(&str, &[u8])]) -> String {
@@ -1439,6 +1724,111 @@ mod tests {
         assert_eq!(content, "auto detect 7z");
 
         let _ = fs::remove_dir_all(&out);
+        let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    /// P2-1 回归锁：7z 整包解压必须与 ZIP 同口径限额
+    ///
+    /// 修复前 `un7z_file` 直接 `sevenz_rust2::decompress_file`，对条目声明/实际
+    /// 解压大小没有任何限制，书源可控的 7z 压缩炸弹可无限写盘。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_un7z_file_rejects_oversized_entry() {
+        let dir = std::env::temp_dir().join(format!("legado_7z_bomb_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let seven_z_path = dir.join("bomb.7z");
+        // 33MB 全 0（高压缩比），压缩后仅数十 KB；流式生成，不占测试内存
+        {
+            let mut writer = sevenz_rust2::ArchiveWriter::create(&seven_z_path).unwrap();
+            writer
+                .push_archive_entry(
+                    sevenz_rust2::ArchiveEntry::new_file("huge.bin"),
+                    Some(std::io::repeat(0).take(ARCHIVE_MAX_ENTRY_BYTES + 1)),
+                )
+                .unwrap();
+            writer.finish().unwrap();
+        }
+
+        let out_dir = dir.join("out");
+        let err = un7z_file(
+            seven_z_path.to_str().unwrap(),
+            Some(out_dir.to_str().unwrap()),
+        )
+        .unwrap_err();
+        assert!(err.contains(ARCHIVE_LIMIT_ERROR_PREFIX), "err = {err}");
+        assert!(err.contains("单条目上限"), "err = {err}");
+        assert!(!out_dir.exists(), "超限 7z 不得留下输出目录或半成品");
+
+        // 通用入口按 magic 分派到 7z 时同样受限
+        let err = un_archive_file(
+            seven_z_path.to_str().unwrap(),
+            Some(dir.join("out2").to_str().unwrap()),
+        )
+        .unwrap_err();
+        assert!(err.contains(ARCHIVE_LIMIT_ERROR_PREFIX), "err = {err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// P2-1 回归锁：7z 条目声明大小之和超过总量上限时，解压前整体拒绝
+    ///
+    /// 用内存 `Archive` 构造声明值（无需真实 544MB 数据），验证前置校验
+    /// 覆盖「多条各自合法、累计超限」的压缩炸弹。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_check_seven_z_declared_limits_rejects_oversized_total() {
+        let per_entry = ARCHIVE_MAX_ENTRY_BYTES; // 恰好等于单条目上限（允许）
+        let count = (ARCHIVE_MAX_TOTAL_BYTES / per_entry + 1) as usize;
+        let mut archive = sevenz_rust2::Archive::default();
+        archive.files = (0..count)
+            .map(|i| {
+                let mut entry = sevenz_rust2::ArchiveEntry::new_file(&format!("part-{i}.bin"));
+                entry.size = per_entry;
+                entry
+            })
+            .collect();
+
+        let err = check_seven_z_declared_limits(&archive).unwrap_err();
+        assert!(err.contains("总量上限"), "err = {err}");
+
+        // 单条目声明超限同样在前置校验拒绝
+        let mut archive = sevenz_rust2::Archive::default();
+        archive.files = vec![{
+            let mut entry = sevenz_rust2::ArchiveEntry::new_file("big.bin");
+            entry.size = ARCHIVE_MAX_ENTRY_BYTES + 1;
+            entry
+        }];
+        let err = check_seven_z_declared_limits(&archive).unwrap_err();
+        assert!(err.contains("单条目上限"), "err = {err}");
+    }
+
+    /// P3-1 回归锁：7z 解压中第 2 个条目创建失败时，第 1 个已写文件必须清理
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_un7z_file_cleans_up_when_entry_create_fails() {
+        let seven_z_path = create_test_7z_ordered(&[
+            ("a_first.txt", b"first entry"),
+            ("z_blocked.txt", b"second entry"),
+        ]);
+
+        let out_dir = std::env::temp_dir().join(format!("legado_7z_cleanup_{}", uuid()));
+        fs::create_dir_all(&out_dir).unwrap();
+        // 用同名目录占位，使第 2 个条目的 `File::create` 必然失败
+        fs::create_dir_all(out_dir.join("z_blocked.txt")).unwrap();
+
+        let err = un7z_file(&seven_z_path, Some(out_dir.to_str().unwrap())).unwrap_err();
+        assert!(err.contains("Failed to write"), "err = {err}");
+        assert!(
+            !out_dir.join("a_first.txt").exists(),
+            "第 1 个已写文件必须随失败清理"
+        );
+        assert!(
+            out_dir.join("z_blocked.txt").is_dir(),
+            "用户已有同名目录不得删除"
+        );
+        assert!(out_dir.exists(), "用户已有输出目录不得删除");
+
+        let _ = fs::remove_dir_all(&out_dir);
         let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
     }
 
