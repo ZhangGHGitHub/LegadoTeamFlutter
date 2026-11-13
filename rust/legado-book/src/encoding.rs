@@ -14,7 +14,7 @@
 
 use std::fs::{self, File};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use encoding_rs::{Encoding, GB18030, UTF_8};
 use legado_core::{LegadoError, LegadoResult};
@@ -143,10 +143,34 @@ pub fn detect_encoding_from_bytes(data: &[u8]) -> EncodingDetectResult {
     }
 }
 
+/// 转换产物子目录名（与源文件同目录）
+///
+/// 产物保持原文件名不变：导入链 `TxtParser::parse`（见 [`crate::txt`]）以
+/// `file_stem()` 作为书名，若产物改名（历史实现为
+/// `<原文件名>.<ext>.converted`，其 `file_stem()` 是 `foo.txt`），书架书名
+/// 会被扩展名污染。
+const CONVERTED_DIR_NAME: &str = "converted";
+
+/// 构造转换输出路径：`<源文件目录>/converted/<源文件名>`
+///
+/// 无父目录（裸相对文件名）时落到当前目录下的 `converted/`。
+fn converted_output_path(file_path: &str) -> LegadoResult<PathBuf> {
+    let path = Path::new(file_path);
+    let file_name = path.file_name().ok_or_else(|| {
+        LegadoError::BookParse(format!("无法确定编码转换输出文件名: {file_path}"))
+    })?;
+    let parent = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => Path::new("."),
+    };
+    Ok(parent.join(CONVERTED_DIR_NAME).join(file_name))
+}
+
 /// 转换文件编码
 ///
-/// 将文件从源编码转换为目标编码，结果写入新文件（原文件名加 `.converted` 后缀）。
-/// 若转换失败，保留原始字节不做修改。
+/// 将文件从源编码转换为目标编码，结果写入源文件同目录的 `converted/`
+/// 子目录，**文件名保持不变**（书名取 `file_stem()`，不得被产物命名污染）。
+/// 原文件保留不动；若转换失败，不写出任何产物。
 ///
 /// # 参数
 /// - `file_path`: 源文件路径
@@ -189,14 +213,11 @@ pub fn convert_file_encoding(
         )));
     }
 
-    // 构造输出路径
-    let path = Path::new(file_path);
-    let out_path = path.with_extension(format!(
-        "{}.converted",
-        path.extension()
-            .map(|e| e.to_string_lossy().to_string())
-            .unwrap_or_default()
-    ));
+    // 构造输出路径：同目录 `converted/` 子目录、保持原文件名
+    let out_path = converted_output_path(file_path)?;
+    if let Some(out_dir) = out_path.parent() {
+        fs::create_dir_all(out_dir)?;
+    }
 
     fs::write(&out_path, &*encoded)?;
 
@@ -347,6 +368,53 @@ mod tests {
         // 验证输出文件内容
         let content = fs::read_to_string(&out_path).unwrap();
         assert_eq!(content, "你好世界");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [回归] 批28 回修暴露：转换产物必须保持原文件名（`file_stem` 不变），
+    /// 否则导入链 `TxtParser::parse` 取 `file_stem()` 作书名时，`foo.txt` 的
+    /// 书名会被污染成 `foo.txt`（历史实现写出 `foo.txt.converted`，stem 为
+    /// `foo.txt`）。
+    ///
+    /// 修复前该用例变红：`file_stem()` 返回 `foo.txt`、父目录不是 `converted`。
+    #[test]
+    fn test_convert_output_preserves_original_file_stem() {
+        let dir =
+            std::env::temp_dir().join(format!("legado_test_encoding_stem_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let src_path = dir.join("foo.txt");
+        // GBK 编码的「你好世界你好世界」（16 字节，>8 字节便于导入链魔数探测）
+        let gbk_bytes = [
+            0xC4, 0xE3, 0xBA, 0xC3, 0xCA, 0xC0, 0xBD, 0xE7, 0xC4, 0xE3, 0xBA, 0xC3, 0xCA, 0xC0,
+            0xBD, 0xE7,
+        ];
+        fs::write(&src_path, gbk_bytes).unwrap();
+
+        let out_path = convert_file_encoding(src_path.to_str().unwrap(), "gbk", "utf-8").unwrap();
+        let out = Path::new(&out_path);
+
+        assert_eq!(
+            out.file_name().map(|n| n.to_string_lossy().to_string()),
+            Some("foo.txt".to_string()),
+            "转换产物文件名必须与原文件一致: {out_path}"
+        );
+        assert_eq!(
+            out.file_stem().map(|n| n.to_string_lossy().to_string()),
+            Some("foo".to_string()),
+            "书名取自 file_stem，转换产物不得改变 stem: {out_path}"
+        );
+        assert_eq!(
+            out.parent()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().to_string()),
+            Some("converted".to_string()),
+            "转换产物应落在同目录 converted 子目录: {out_path}"
+        );
+        assert_eq!(fs::read_to_string(&out_path).unwrap(), "你好世界你好世界");
+        assert!(src_path.exists(), "原文件必须保留（可重试转换）");
 
         let _ = fs::remove_dir_all(&dir);
     }

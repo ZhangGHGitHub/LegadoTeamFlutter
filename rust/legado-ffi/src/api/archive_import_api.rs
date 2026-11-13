@@ -211,3 +211,67 @@ pub fn convert_txt_encoding(
 pub fn is_archive_file(file_path: &str) -> bool {
     archive::is_archive_file(file_path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::book_import::import_local_book;
+    use crate::db_state::{ensure_test_db, with_database};
+    use legado_db::BookRepository;
+
+    /// [回归] 批28 回修暴露的用户可见缺陷：压缩包导入选择「编码转换」后，
+    /// 导入链拿转换产物路径建书，书名取 `file_stem()`——历史产物名
+    /// `foo.txt.converted` 的 stem 是 `foo.txt`，书架书名被污染成 `foo.txt`。
+    ///
+    /// 端到端断言：转换 → 用 `output_path` 导入 → 书名恰为 `foo`（不含扩展名），
+    /// 且转换产物位于同目录 `converted/` 子目录、文件名与原文件一致。
+    /// 修复前该用例变红（导入成功但书名为 `foo.txt`）。
+    #[test]
+    fn test_converted_txt_import_keeps_clean_book_name() {
+        let _db_guard = ensure_test_db();
+
+        // 模拟 archive_import 解压目录：书籍文件直接落在输出目录根部
+        let dir = std::env::temp_dir().join(format!(
+            "legado_test_archive_convert_import_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let src_path = dir.join("foo.txt");
+        // GBK 编码的「你好世界你好世界」（16 字节，满足魔数探测的 8 字节读取）
+        std::fs::write(
+            &src_path,
+            [
+                0xC4u8, 0xE3, 0xBA, 0xC3, 0xCA, 0xC0, 0xBD, 0xE7, 0xC4, 0xE3, 0xBA, 0xC3, 0xCA,
+                0xC0, 0xBD, 0xE7,
+            ],
+        )
+        .unwrap();
+
+        let converted = convert_txt_encoding(src_path.to_str().unwrap(), "gbk", "utf-8");
+        assert!(converted.success, "转换失败: {:?}", converted.error);
+        let out_path = converted.output_path.expect("成功时必须返回 output_path");
+
+        assert_eq!(
+            std::path::Path::new(&out_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string()),
+            Some("foo".to_string()),
+            "转换产物的 file_stem 必须与原文件一致: {out_path}"
+        );
+
+        let res = import_local_book(&out_path).unwrap();
+        assert!(res.success, "导入失败: {:?}", res.error);
+        let book = res.book.expect("成功时应有 book");
+        assert_eq!(book.name, "foo", "书名取 file_stem，不得带 .txt 扩展名");
+        assert!(
+            !book.name.contains(".txt"),
+            "书名不得被转换产物命名污染: {}",
+            book.name
+        );
+        assert_eq!(book.book_url, out_path, "book_url 应为传入的产物路径");
+
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(&out_path)).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
