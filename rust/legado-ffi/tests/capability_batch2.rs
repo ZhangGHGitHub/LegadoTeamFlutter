@@ -200,6 +200,8 @@ fn test_java_url_getter_states() {
 #[test]
 fn test_java_header_map_put_collects() {
     let (engine, _s) = engine_with_source("https://capb2h1.example.com/", "cap2 headerMap");
+    // P0-1：写入受 URL 窗口门控（生产由 parse_with_js 开启；此处显式模拟）
+    let _window = legado_parser::analyze_url::UrlWindowGuard::begin();
     assert_eq!(engine.eval("typeof java.headerMap").unwrap(), "object");
     engine
         .eval("java.headerMap.put('Cookie', 'is_human=1')")

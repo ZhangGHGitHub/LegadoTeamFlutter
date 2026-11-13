@@ -7,7 +7,6 @@
 //! - [`request`] — `LegadoRequest` 请求结构
 //! - [`response`] — `LegadoResponse` 响应结构
 //! - [`cookie_store`] — `CookieStore` Cookie 管理
-//! - [`url_template`] — URL 模板解析引擎
 //! - [`rss`] — RSS/Atom Feed 解析器
 //! - [`cover`] — 封面图片下载与缓存
 //! - [`http_log`] — HTTP 请求日志采集接口（可插拔实现，对齐原版 `HttpLogInterceptor`）
@@ -36,7 +35,9 @@ pub mod rule_update_client;
 pub mod source_checker;
 pub mod ssl_config;
 pub mod timing;
-pub mod url_template;
+// P3-3：原 `url_template` 模块（第二套基础 URL 模板解析器）已删除——全仓
+// 无消费方、与真实实现 legado_parser::AnalyzeUrl 双轨漂移。URL 模板解析
+// 统一走 legado_parser::AnalyzeUrl（parse/parse_with_js）。
 pub mod user_agent;
 pub mod verification;
 pub mod webdav;
@@ -71,7 +72,6 @@ pub use rule_update_client::{
 };
 pub use source_checker::{CaptchaInfo, CheckResult, CheckerConfig, RedirectInfo, SourceChecker};
 pub use ssl_config::SslConfig;
-pub use url_template::{parse_url_template, ParsedUrl, UrlOption};
 pub use user_agent::{
     default_user_agent, set_default_user_agent, UserAgentMiddleware, UserAgentRotator,
 };

@@ -2767,8 +2767,11 @@ fn register_network_apis<'js>(
     // 上游 URL 规则窗口内 java.headerMap 即 AnalyzeUrl 实例的请求头 Map
     //（写入直接生效于本次请求）；Rust 侧经 legado-parser 线程局部收集器
     // 暂存，parse_with_js 收尾并入 AnalyzeUrl.headers → fetch_page 组头生效。
-    // 非 URL 窗口写入会被下次窗口收尾丢弃（上游同款：无 AnalyzeUrl 上下文
-    // 则无 headerMap 可写；语料 #286 仅在选项 js 窗口使用）。
+    // P0-1：写入受 URL 窗口门控（legado-parser UrlWindowGuard 深度 > 0 才
+    // 接受），窗口外（jsLib 顶层 / source evalJS / init）直接丢弃并告警
+    //——对齐上游「无 AnalyzeUrl 上下文即无 headerMap 可写」，杜绝失败源
+    // 残留头被下一源成功解析收尾时并入（跨源凭据外发）。
+    // 语料 #286 仅在选项 js 窗口使用。
     mount_dual(
         java,
         globals,
@@ -5540,7 +5543,9 @@ cipher.decryptStr(b64);
         let engine = make_engine();
         // 非 URL 窗口（未设置）→ 空串
         assert_eq!(engine.eval("java.getCurrentUrl()").unwrap(), "");
-        // URL 规则窗口（模拟 parser 状态机置值）
+        // URL 规则窗口（模拟 parser 状态机置值；P0-1 起 headerMapPut 受
+        // 窗口门控，须经 UrlWindowGuard 开启，生产由 parse_with_js 内部开启）
+        let _window = legado_parser::analyze_url::UrlWindowGuard::begin();
         legado_parser::analyze_url::set_current_url(Some("https://cur.test/s?k=1".into()));
         assert_eq!(
             engine.eval("java.getCurrentUrl()").unwrap(),

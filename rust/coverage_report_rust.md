@@ -140,7 +140,6 @@
 ### 2.4 legado-net (部分，171+ 测试)
 
 **已测试的模块：**
-- ✅ `url_template.rs` - URL 模板解析 - ✅ 完整覆盖
 - ✅ `rate_limit.rs` - 限流器 - ✅ 9 个测试
 - ✅ `user_agent.rs` - UA 轮换器 - ✅ 6 个测试
 - ✅ `retry.rs` - 重试机制 - ✅ 完整覆盖

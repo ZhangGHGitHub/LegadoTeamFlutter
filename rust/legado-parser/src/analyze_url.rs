@@ -18,7 +18,7 @@
 //! - bookName/title 等内置变量支持
 //! - getByteArrayAwait 流式读取（data URI 直接解码）
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
 use base64::Engine;
@@ -37,16 +37,27 @@ thread_local! {
     ///   `@js:`/`{{}}` 评估窗口内字段尚未赋值 → `java.url` 为空串；
     /// - URL 选项 `{"js": ...}` 评估前置 `Some(绝对 URL)`——上游在
     ///   `url = getAbsoluteURL(...)`（L235）**之后**才评估选项 js（L274-278）；
-    /// - `parse_with_js` 退出置 `None`——非 URL 规则窗口（source evalJS，
-    ///   上游 java=source）`java.url` 应回退 sourceUrl，不残留上一请求。
+    /// - `parse_with_js` 退出恢复进入前的值（通常 `None`）——非 URL 规则窗口
+    ///   （source evalJS，上游 java=source）`java.url` 应回退 sourceUrl，不残留
+    ///   上一请求；嵌套窗口恢复外层值（由 [`UrlWindowGuard`] 统一收尾）。
     static CURRENT_URL: RefCell<Option<String>> = const { RefCell::new(None) };
 
     /// URL 规则 JS 窗口内书源经 `java.headerMap.put(k, v)` 写入的请求头
     /// （上游即 AnalyzeUrl 实例的 `headerMap` 字段——写入直接生效于本次
     /// 请求）。宿主桥写入 → `parse_with_js` 在选项 js 评估后统一取走并入
     /// `self.headers`，请求组头（fetch_page）即可见。
+    ///
+    /// **作用域**：仅在 [`UrlWindowGuard`] 打开的 URL 窗口内累积；窗口外写入
+    /// 被 [`push_pending_request_header`] 丢弃（对齐上游「无 AnalyzeUrl 上下文
+    /// 即无 headerMap 可写」）。窗口入口/所有退出路径（含 `Err` 与 panic）由
+    /// guard 清空，杜绝失败源的头残留进下一源请求（P0-1）。
     static PENDING_REQUEST_HEADERS: RefCell<Vec<(String, String)>> =
         const { RefCell::new(Vec::new()) };
+
+    /// URL 规则窗口嵌套深度：`parse_with_js` 进入 +1、退出（成功/失败/panic）
+    /// −1。仅 > 0 时接受 `push_pending_request_header` 写入——jsLib 顶层、
+    /// source evalJS、init 等非 URL 窗口的误写在此被拒绝。
+    static URL_WINDOW_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 /// 读取当前请求 URL（`java.url` 后端；`None` = 非 URL 规则窗口）
@@ -60,13 +71,120 @@ pub fn set_current_url(url: Option<String>) {
 }
 
 /// 书源在 URL 规则 JS 窗口写入请求头（`java.headerMap.put` 后端）
+///
+/// 窗口门控：仅 [`UrlWindowGuard`] 打开的 URL 窗口内接受写入；jsLib 顶层、
+/// source evalJS、`init` 等窗口外调用直接丢弃并告警（只打印键名，不打印值，
+/// 避免凭据落日志）。这样即使书源在非 URL 上下文误调 `java.headerMap.put`，
+/// 也不会污染下一次任意请求。
 pub fn push_pending_request_header(key: String, value: String) {
+    if URL_WINDOW_DEPTH.with(Cell::get) == 0 {
+        eprintln!(
+            "[legado-parser] 忽略 URL 窗口外的请求头写入（{key}）：仅 @js:/{{{{}}}}/URL 选项 js 窗口内 java.headerMap 有效"
+        );
+        return;
+    }
     PENDING_REQUEST_HEADERS.with(|c| c.borrow_mut().push((key, value)));
 }
 
 /// 取走窗口内写入的请求头（`parse_with_js` 收尾并入 AnalyzeUrl.headers）
 pub fn take_pending_request_headers() -> Vec<(String, String)> {
     PENDING_REQUEST_HEADERS.with(|c| std::mem::take(&mut *c.borrow_mut()))
+}
+
+fn clear_pending_request_headers() {
+    PENDING_REQUEST_HEADERS.with(|c| c.borrow_mut().clear());
+}
+
+/// URL 规则窗口 RAII 护栏：界定 `java.headerMap` / `java.url` 的作用域。
+///
+/// # 为什么必须 RAII（P0-1 根因）
+///
+/// 旧实现只在 `parse_with_js` 的**成功路径** `take` pending 并手动
+/// `set_current_url(None)`；两条 `Err` 路径（URL 模板 JS 失败、`Self::parse`
+/// 失败）提前 `return Err` 漏清，panic 路径更无处可清。于是书源 A 在
+/// `@js:` 中写入 `Authorization` 后脚本报错，头会残留在线程局部队列，被同一
+/// tokio blocking 线程随后处理的**任意书源 B** 成功收尾时并入请求——跨源
+/// 认证头/签名头外发。散点复位不可靠（新增退出路径必然再漏），故改为
+/// 「构造即开启、`Drop` 必收尾」的单一护栏。
+///
+/// # 语义
+///
+/// - [`Self::begin`]：根窗口入口先丢弃窗口外陈值（防御历史残留）；嵌套
+///   窗口则快照外层 pending，保证内层不吞/不污染外层（LIFO 恢复）；
+/// - [`Self::finish`]：成功路径显式取走本窗口请求头并复位；
+/// - [`Drop`]：未 `finish` 的退出（`Err`/panic）清空本窗口 pending 并复位
+///   `CURRENT_URL`（恢复进入前的值，嵌套时即外层值）。
+///
+/// 当前仓内不存在「URL 窗口 JS 内再次触发 `parse_with_js`」的生产调用路径
+/// （`legado-js` 宿主 API 只做网络/存储，不回调 parser），嵌套支持为防御性
+/// 设计；见模块测试 `test_nested_url_window_headers_are_isolated`。
+#[doc(hidden)]
+pub struct UrlWindowGuard {
+    /// 进入窗口前的 `CURRENT_URL`（嵌套时为外层窗口值）
+    saved_url: Option<String>,
+    /// 嵌套窗口：外层已收集的请求头快照；根窗口为 `None`
+    saved_outer_pending: Option<Vec<(String, String)>>,
+    /// 成功路径调用过 [`Self::finish`] 后置真，`Drop` 不再重复复位
+    finished: bool,
+}
+
+impl UrlWindowGuard {
+    /// 开启一个 URL 规则窗口（`parse_with_js` 内部使用；宿主桥测试可借此
+    /// 模拟窗口状态，生产代码不应直接调用）
+    #[doc(hidden)]
+    pub fn begin() -> Self {
+        let depth = URL_WINDOW_DEPTH.with(Cell::get);
+        let saved_outer_pending = if depth == 0 {
+            // 根窗口入口：窗口外写入已被 push 门控拒绝，理论上必为空；
+            // 这里仍显式丢弃陈值（防旧版本/异常路径遗留，入口一次性清空，
+            // 绝不把上一次失败调用的头带进本次请求）。
+            let stale = take_pending_request_headers();
+            if !stale.is_empty() {
+                eprintln!(
+                    "[legado-parser] URL 窗口入口丢弃 {} 条残留请求头（防跨源泄漏）",
+                    stale.len()
+                );
+            }
+            None
+        } else {
+            // 嵌套窗口：快照外层 pending 并清空本层，退出时恢复——内层
+            // 请求头只并入内层请求，外层继续累积自己的头。
+            Some(take_pending_request_headers())
+        };
+        let saved_url = current_url();
+        URL_WINDOW_DEPTH.with(|d| d.set(depth + 1));
+        Self {
+            saved_url,
+            saved_outer_pending,
+            finished: false,
+        }
+    }
+
+    /// 成功收尾：取走本窗口请求头，复位状态机并恢复外层快照
+    fn finish(mut self) -> Vec<(String, String)> {
+        self.finished = true;
+        let headers = take_pending_request_headers();
+        self.restore();
+        headers
+    }
+
+    /// 收尾公共部分：清本层残留 → 恢复外层快照 → 恢复 `CURRENT_URL` → 深度 −1
+    fn restore(&self) {
+        clear_pending_request_headers();
+        if let Some(outer) = &self.saved_outer_pending {
+            PENDING_REQUEST_HEADERS.with(|c| *c.borrow_mut() = outer.clone());
+        }
+        set_current_url(self.saved_url.clone());
+        URL_WINDOW_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
+
+impl Drop for UrlWindowGuard {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.restore();
+        }
+    }
 }
 
 /// HTTP 请求方法
@@ -1326,8 +1444,27 @@ new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})"
         page: i32,
         js_executor: &dyn JsExecutor,
     ) -> LegadoResult<Self> {
-        // 0. URL 规则窗口状态机开启：@js:/{{}} 评估窗口内 java.url = ""
-        //    （上游 AnalyzeUrl.url 字段此时仍未赋值，见 CURRENT_URL 文档）
+        Self::parse_with_js_inner(template, variables, page, js_executor, Self::parse)
+    }
+
+    /// [`Self::parse_with_js`] 的可注入 parse 实现（`parse` 闭包仅供测试注入
+    /// 失败路径；生产恒传 [`Self::parse`]）。
+    fn parse_with_js_inner(
+        template: &str,
+        variables: &HashMap<String, String>,
+        page: i32,
+        js_executor: &dyn JsExecutor,
+        parse: impl FnOnce(&str, &HashMap<String, String>, i32) -> LegadoResult<Self>,
+    ) -> LegadoResult<Self> {
+        // 0. URL 规则窗口护栏（RAII，P0-1）：构造即开启、Drop 必收尾。
+        //    - 入口先丢弃窗口外陈值（失败源残留的 header 绝不进入本次请求）；
+        //    - 所有退出路径（JS 失败 / parse 失败 / panic）统一由 Drop 复位
+        //      CURRENT_URL 与清空 pending。禁止再散点 set_current_url(None)
+        //      ——旧实现正是漏了 JS 失败与 parse 失败两条 Err 路径。
+        let window = UrlWindowGuard::begin();
+
+        // @js:/{{}} 评估窗口内 java.url = ""（上游 AnalyzeUrl.url 字段
+        // 此时仍未赋值，见 CURRENT_URL 文档）
         crate::analyze_url::set_current_url(Some(String::new()));
 
         // 1. 先执行 @js:/<js> 内嵌 JS（失败上抛真实错误：懒人听书
@@ -1335,7 +1472,7 @@ new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})"
         //    静默保留 @js: 文本会被当 URL 请求 → HTTP 404 误导）
         let (processed, js_err) = Self::analyze_js_with_error(template, js_executor, variables);
         if let Some(err) = js_err {
-            crate::analyze_url::set_current_url(None);
+            // Err 退出：window 的 Drop 清空本窗口 pending 并复位 java.url
             return Err(LegadoError::Internal(format!(
                 "URL 模板 JS 执行失败: {err}"
             )));
@@ -1344,14 +1481,8 @@ new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})"
         // 2. 处理 {{expression}} 内嵌表达式（用 JS 执行复杂表达式）
         let processed = Self::replace_inner_expressions_with_js(&processed, variables, js_executor);
 
-        // 3. 调用标准 parse 流程
-        let mut parsed = match Self::parse(&processed, variables, page) {
-            Ok(p) => p,
-            Err(e) => {
-                crate::analyze_url::set_current_url(None);
-                return Err(e);
-            }
-        };
+        // 3. 调用标准 parse 流程（Err 退出同样由 window 的 Drop 收尾）
+        let mut parsed = parse(&processed, variables, page)?;
 
         // 4. URL 选项 `{"js": ...}` 评估路径（对齐上游 AnalyzeUrl.analyzeUrl()
         //    L274-278：url 已绝对化后评估，`bindings["result"] = url`，返回值
@@ -1378,12 +1509,12 @@ new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})"
                 }
             }
         }
-        // 窗口收尾：书源写入的请求头并入本次请求；URL 状态机复位（后续
-        // source evalJS 窗口 java.url 回退 sourceUrl，见 CURRENT_URL 文档）
-        for (k, v) in crate::analyze_url::take_pending_request_headers() {
+        // 成功收尾：显式取走本窗口请求头并入本次请求，随后 guard 复位
+        // URL 状态机（source evalJS 窗口 java.url 回退 sourceUrl）并恢复
+        // 嵌套外层快照。
+        for (k, v) in window.finish() {
             parsed.headers_mut().insert(k, v);
         }
-        crate::analyze_url::set_current_url(None);
 
         Ok(parsed)
     }
@@ -3127,5 +3258,265 @@ mod tests {
         url.set_url("https://b.test/q?x=1");
         assert_eq!(url.url(), "https://b.test/q?x=1");
         assert_eq!(url.url_no_query(), "https://b.test/q?x=1");
+    }
+
+    // ─── P0-1 回归：URL 窗口请求头不得跨源/跨调用泄漏 ───────────────────────
+
+    /// 透传执行器：无 @js 模板不会被调用；被调用时原样返回
+    struct NoopUrlExecutor;
+
+    impl crate::analyze_rule::JsExecutor for NoopUrlExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            Ok(js_code.to_string())
+        }
+    }
+
+    /// 书源 A：写入认证头后 JS 立即失败（真实形态：`@js:` 调 jsLib 抛错）
+    struct WriteHeaderThenFailExecutor;
+
+    impl crate::analyze_rule::JsExecutor for WriteHeaderThenFailExecutor {
+        fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+            super::push_pending_request_header(
+                "Authorization".to_string(),
+                "Bearer source-a-secret".to_string(),
+            );
+            Err("source A js boom".to_string())
+        }
+    }
+
+    /// 双源回环：A 写头后 JS 失败 → 同线程 B 成功解析，B 请求头不得含 A 的键。
+    ///
+    /// 缺陷形态（修复前）：A 的 `Authorization` 残留在线程局部队列，B 的
+    /// `parse_with_js` 成功收尾 `take` 后 `headers.insert` → 认证头发往 B 域。
+    #[test]
+    fn test_failed_url_js_headers_do_not_leak_into_next_source() {
+        // 显式复位（防同线程历史残留干扰断言）
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        let err = AnalyzeUrl::parse_with_js(
+            "@js:sourceA()",
+            &HashMap::new(),
+            1,
+            &WriteHeaderThenFailExecutor,
+        )
+        .err()
+        .expect("A 源 @js: 失败必须上抛");
+        assert!(
+            err.to_string().contains("URL 模板 JS 执行失败"),
+            "失败原因应为 URL 模板 JS 错误: {err}"
+        );
+
+        // 同线程紧接着解析书源 B（成功路径）
+        let parsed_b =
+            AnalyzeUrl::parse_with_js("https://b.test/s", &HashMap::new(), 1, &NoopUrlExecutor)
+                .expect("B 源解析应成功");
+        assert!(
+            parsed_b.headers().get("Authorization").is_none(),
+            "A 源失败后残留的 Authorization 不得注入 B 源请求，实际头: {:?}",
+            parsed_b.headers()
+        );
+        assert!(
+            parsed_b.headers().is_empty(),
+            "B 源不应继承任何窗口外请求头: {:?}",
+            parsed_b.headers()
+        );
+        assert!(
+            super::take_pending_request_headers().is_empty(),
+            "成功收尾后收集器必须为空"
+        );
+        assert_eq!(
+            super::current_url(),
+            None,
+            "失败退出后 java.url 状态机必须复位"
+        );
+    }
+
+    /// 窗口外写入（jsLib 顶层/source evalJS/init）→ 下一次成功解析必须为空。
+    #[test]
+    fn test_header_write_outside_url_window_is_dropped() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        // 非 URL 窗口写入：旧实现无条件 push，会污染下一次任意请求
+        super::push_pending_request_header("X-Leak".to_string(), "1".to_string());
+        assert!(
+            super::take_pending_request_headers().is_empty(),
+            "窗口外写入必须被 push 门控直接丢弃"
+        );
+
+        let parsed =
+            AnalyzeUrl::parse_with_js("https://b.test/s", &HashMap::new(), 1, &NoopUrlExecutor)
+                .expect("B 源解析应成功");
+        assert!(
+            parsed.headers().get("X-Leak").is_none(),
+            "窗口外写入不得落入下一请求: {:?}",
+            parsed.headers()
+        );
+        assert!(parsed.headers().is_empty());
+    }
+
+    /// 入口丢弃陈值：即使收集器在窗口外被塞值（旧版失败残留形态），
+    /// `parse_with_js` 入口也必须清空，绝不并入本次请求。
+    #[test]
+    fn test_stale_headers_are_discarded_on_window_entry() {
+        super::set_current_url(None);
+        // 直接向线程局部收集器塞陈值（模拟历史缺陷遗留，绕过窗口门控）
+        super::PENDING_REQUEST_HEADERS.with(|c| {
+            c.borrow_mut()
+                .push(("X-Stale".to_string(), "old-source-value".to_string()));
+        });
+
+        let parsed =
+            AnalyzeUrl::parse_with_js("https://b.test/s", &HashMap::new(), 1, &NoopUrlExecutor)
+                .expect("B 源解析应成功");
+        assert!(
+            parsed.headers().get("X-Stale").is_none(),
+            "入口必须丢弃陈值，实际头: {:?}",
+            parsed.headers()
+        );
+        assert!(parsed.headers().is_empty());
+    }
+
+    /// parse 阶段失败退出：窗口内已写入的头不得残留给下一次解析。
+    ///
+    /// 注：当前 `Self::parse` 主体无 `Err` 构造（签名保留 Result 的防御路径），
+    /// 故用 `parse_with_js_inner` 注入必失败 parse 闭包覆盖该退出分支；生产
+    /// 路径的 guard 收尾与之一致。
+    #[test]
+    fn test_parse_failure_path_leaves_no_residue() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        struct WriteHeaderExecutor;
+        impl crate::analyze_rule::JsExecutor for WriteHeaderExecutor {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Parse-Fail".to_string(), "1".to_string());
+                Ok(js_code.to_string())
+            }
+        }
+
+        let err = AnalyzeUrl::parse_with_js_inner(
+            "@js:noop()",
+            &HashMap::new(),
+            1,
+            &WriteHeaderExecutor,
+            |_: &str, _: &HashMap<String, String>, _: i32| {
+                Err(LegadoError::Internal("parse boom".into()))
+            },
+        )
+        .err()
+        .expect("注入的 parse 失败必须上抛");
+        assert!(matches!(err, LegadoError::Internal(_)));
+        assert_eq!(
+            super::current_url(),
+            None,
+            "parse 失败退出后 java.url 状态机必须复位"
+        );
+        assert!(
+            super::take_pending_request_headers().is_empty(),
+            "parse 失败退出后窗口 pending 必须清空"
+        );
+
+        let parsed =
+            AnalyzeUrl::parse_with_js("https://b.test/s", &HashMap::new(), 1, &NoopUrlExecutor)
+                .expect("B 源解析应成功");
+        assert!(
+            parsed.headers().get("X-Parse-Fail").is_none(),
+            "parse 失败残留不得进入下一次解析: {:?}",
+            parsed.headers()
+        );
+    }
+
+    /// panic 退出：guard 的 Drop 必须复位状态（线程池复用不残留）。
+    #[test]
+    fn test_panic_exit_resets_url_window_state() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        struct PanicExecutor;
+        impl crate::analyze_rule::JsExecutor for PanicExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Panic".to_string(), "1".to_string());
+                panic!("executor panic");
+            }
+        }
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            AnalyzeUrl::parse_with_js("@js:boom()", &HashMap::new(), 1, &PanicExecutor)
+        }));
+        assert!(result.is_err(), "执行器 panic 应展开");
+        assert_eq!(
+            super::current_url(),
+            None,
+            "panic 展开后 java.url 状态机必须复位"
+        );
+        assert!(
+            super::take_pending_request_headers().is_empty(),
+            "panic 展开后窗口 pending 必须清空"
+        );
+
+        let parsed =
+            AnalyzeUrl::parse_with_js("https://b.test/s", &HashMap::new(), 1, &NoopUrlExecutor)
+                .expect("panic 后的同线程解析应成功");
+        assert!(parsed.headers().is_empty(), "panic 残留不得跨调用");
+    }
+
+    /// 嵌套窗口隔离：内层请求头只进内层请求，外层继续保留自己的头。
+    ///
+    /// 当前仓内无生产嵌套调用路径（legado-js 宿主 API 不回调 parser），此
+    /// 用例覆盖防御性会话快照设计。修复前：内层成功收尾会 `take` 走外层头，
+    /// 外层丢失、内层多收外层头。
+    #[test]
+    fn test_nested_url_window_headers_are_isolated() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        struct InnerExecutor;
+        impl crate::analyze_rule::JsExecutor for InnerExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Inner".to_string(), "1".to_string());
+                Ok("https://inner.test/r".to_string())
+            }
+        }
+
+        struct OuterExecutor;
+        impl crate::analyze_rule::JsExecutor for OuterExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Outer".to_string(), "1".to_string());
+                // 嵌套：URL 模板 JS 内再次触发解析（内层窗口）
+                let inner =
+                    AnalyzeUrl::parse_with_js("@js:inner()", &HashMap::new(), 1, &InnerExecutor)
+                        .expect("内层解析应成功");
+                assert_eq!(
+                    inner.headers().get("X-Inner").map(String::as_str),
+                    Some("1"),
+                    "内层头应落入内层请求"
+                );
+                assert!(
+                    inner.headers().get("X-Outer").is_none(),
+                    "外层头不得被内层吞走: {:?}",
+                    inner.headers()
+                );
+                Ok("https://outer.test/r".to_string())
+            }
+        }
+
+        let outer = AnalyzeUrl::parse_with_js("@js:outer()", &HashMap::new(), 1, &OuterExecutor)
+            .expect("外层解析应成功");
+        assert_eq!(outer.url(), "https://outer.test/r");
+        assert_eq!(
+            outer.headers().get("X-Outer").map(String::as_str),
+            Some("1"),
+            "外层头应保留到外层请求: {:?}",
+            outer.headers()
+        );
+        assert!(
+            outer.headers().get("X-Inner").is_none(),
+            "内层头不得注入外层请求: {:?}",
+            outer.headers()
+        );
+        assert_eq!(super::current_url(), None, "嵌套退出后状态机复位");
+        assert!(super::take_pending_request_headers().is_empty());
     }
 }

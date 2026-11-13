@@ -261,7 +261,6 @@ make gen      # flutter_rust_bridge_codegen generate
 |------|------|
 | `client.rs` | LegadoClient：统一 HTTP 客户端（reqwest） |
 | `cookie_store.rs` | Cookie 持久化管理 |
-| `url_template.rs` | URL 模板处理 |
 | `request.rs` / `response.rs` | 请求/响应封装 |
 | `middleware.rs` | 网络中间件链 |
 | `retry.rs` | 请求重试策略 |

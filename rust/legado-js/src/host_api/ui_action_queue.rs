@@ -120,7 +120,13 @@ pub fn with_collect<R>(f: impl FnOnce() -> R) -> (R, CollectedActions) {
     (result, collected)
 }
 
-/// 兼容旧 API：开启一次收集（同线程压栈；配对 [`end_collect`] / [`discard_collect`]）
+/// 兼容旧 API（**仅供测试**，P3-6）：开启一次收集（同线程压栈；配对
+/// [`end_collect`] / [`discard_collect`]）。
+///
+/// 生产代码一律使用 [`with_collect`]（RAII，求值失败/panic 自动丢弃会话）；
+/// 本组 `begin/end/discard` API 无 RAII，漏配对会在线程池复用线程上残留
+/// 半开会话，**不得**在新生产路径使用。当前仓内仅
+/// `tests/ui_action_queue_isolation.rs` 与模块测试使用。
 ///
 /// 与旧语义的差异：不再清空进程级共享队列，而是压入新会话——嵌套/并发调用
 /// 各自隔离。旧调用面均为「begin → 同步求值 → end」的顶层顺序用法，语义等价。
@@ -152,7 +158,8 @@ pub fn push_payload_json(payload_json: &str) {
     }
 }
 
-/// 兼容旧 API：结束收集并取出当前线程栈顶会话的全部 action
+/// 兼容旧 API（**仅供测试**，P3-6）：结束收集并取出当前线程栈顶会话的
+/// 全部 action。生产请用 [`with_collect`]。
 pub fn end_collect() -> Vec<Value> {
     pop_session().actions
 }
@@ -176,7 +183,8 @@ fn request_refresh_explore() {
     });
 }
 
-/// 兼容旧 API：丢弃栈顶会话并关闭收集（求值失败时调用；作用域外为无操作）
+/// 兼容旧 API（**仅供测试**，P3-6）：丢弃栈顶会话并关闭收集（求值失败时
+/// 调用；作用域外为无操作）。生产请用 [`with_collect`]（panic 自动丢弃）。
 pub fn discard_collect() {
     let _ = pop_session();
 }
