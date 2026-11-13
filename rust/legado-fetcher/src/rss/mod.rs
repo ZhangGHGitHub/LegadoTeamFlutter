@@ -75,6 +75,8 @@ pub use sort_urls::RssSortUrl;
 ///   既有非 2xx 报错（更严格，避免把错误页当正文）；
 /// - `loginCheckJs` 判定未登录 → `Err(LegadoError::LoginRequired)`（对齐原版
 ///   「throw throwable」整源失败语义）；
+/// - `loginCheckJs` 执行前的 jsLib 加载/求值失败 → `Err(LegadoError::JsEngine)`
+///   （批33 线B：jsLib 故障不得误报为「RSS 源需要登录」，根因随错误上抛）；
 /// - 响应体空白 → `Err`（原版 `RssParserByRule.parseXML` `body.isNullOrBlank()`
 ///   抛 `NoStackTraceException`，**不伪造文章**）；
 /// - 正文非空但解析出 0 篇 → `Ok(空列表)`（原版同样如此，畸形 XML 按

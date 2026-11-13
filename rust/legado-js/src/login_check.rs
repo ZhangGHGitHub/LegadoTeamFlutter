@@ -91,6 +91,22 @@ fn is_js_lib_eval_error(err: &str) -> bool {
     err.starts_with(JS_LIB_EVAL_ERROR_PREFIX)
 }
 
+/// 归类 `QuickJsExecutor::execute_js` 的执行错误（jsLib 前置失败 vs checkJs 自身失败）
+///
+/// [批33 线B] 本函数是 `JS_LIB_EVAL_ERROR_PREFIX` 前缀识别的**唯一识别点**：
+/// server 书源链路（[`execute_login_check_response_with_context`]）与 RSS
+/// 链路（`legado_fetcher::rss::login::eval_login_check`）共用，避免两处
+/// 各自硬编码「jsLib 求值失败」导致分类漂移（批29 只在书源链路接线，
+/// RSS 侧仍把错误压平成 `String`，坏 jsLib 被误报「RSS 源需要登录」）。
+#[cfg(feature = "quickjs")]
+pub fn classify_login_check_exec_error(err: String) -> LoginCheckEvalError {
+    if is_js_lib_eval_error(&err) {
+        LoginCheckEvalError::JsLibUnavailable(err)
+    } else {
+        LoginCheckEvalError::JsFailed(format!("loginCheckJs 执行失败: {err}"))
+    }
+}
+
 /// 执行 loginCheckJs 并按 StrResponse 对象语义解析完成值
 /// （P3-6 A 分叉点1：取代旧谓词字符串判定，搜索/详情/explore 全链路
 /// 统一走本函数——STAGE4-P36 后旧谓词 `execute_login_check_js` 已移除，
@@ -188,11 +204,9 @@ pub fn execute_login_check_response_with_context(
         //（`execute_js` 的前置加载阶段），不是 checkJs 的判定结果——必须
         // 单独归类，调用方才能映射 `LegadoError::JsEngine` 而不是
         // `LoginRequired`（坏 jsLib 被误报「书源需要登录」的回退点）。
-        if is_js_lib_eval_error(&e) {
-            LoginCheckEvalError::JsLibUnavailable(e)
-        } else {
-            LoginCheckEvalError::JsFailed(format!("loginCheckJs 执行失败: {e}"))
-        }
+        // [批33 线B] 归类逻辑抽到 [`classify_login_check_exec_error`]，RSS
+        // 链路复用同一前缀识别（单一识别点）。
+        classify_login_check_exec_error(e)
     })?;
 
     parse_login_check_completion(&eval_result, response_body, response_url, response_code)

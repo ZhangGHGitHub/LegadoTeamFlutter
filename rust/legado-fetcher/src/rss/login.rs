@@ -48,6 +48,15 @@ pub fn has_login_check(source: &RssSource) -> bool {
 ///   非 500 则采用（自动登录等场景），否则重抛**原始请求错误**（对齐
 ///   `throw throwable`）。
 ///
+/// [批33 线B] 错误归类：只有「checkJs 自身判定未登录」才返回
+/// `LoginRequired`；**jsLib 加载/求值失败**（checkJs 执行前的前置加载
+/// 阶段）映射 `LegadoError::JsEngine` 并保留根因——修复前错误被压平成
+/// `String`，坏 jsLib 被包装成「RSS 源需要登录（… jsLib 求值失败: …）」，
+/// 与批29 书源链路（`web_book::execute_login_check`）的同类缺陷一致。
+/// 二次 eval 仍保留（URL 映射 jsLib 的瞬时拉取失败可能重试恢复），仅错误
+/// 分类按 jsLib 失败优先。请求失败路径重抛原始请求错误（非登录错误），
+/// 语义不变。
+///
 /// 调用方负责在请求前完成同源门控与 header/setup 构造（见
 /// [`super::request::source_headers_with_login`]）。
 pub fn gate_login(
@@ -62,20 +71,44 @@ pub fn gate_login(
     match fetched {
         Ok(resp) => match apply_success_check(source, &resp, setup_script.clone()) {
             Ok(checked) => Ok(checked),
-            Err(first_err) => match apply_error_check(
-                source,
-                &first_err,
-                request_url,
-                setup_script.clone(),
-            ) {
-                Ok(Some(second)) => Ok(second),
-                Ok(None) => Err(LegadoError::LoginRequired(format!(
-                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}）"
-                ))),
-                Err(second_err) => Err(LegadoError::LoginRequired(format!(
-                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}；二次检测失败: {second_err}）"
-                ))),
-            },
+            Err(first_err) => {
+                // [P2-4 批29 范式] jsLib 归因只算一次：jsLib 坏掉时二次
+                // errResponse 必然同样失败，最终错误须保留该归因（不得被
+                // 二次结果的 500/失败覆盖成 LoginRequired）。
+                let first_js_lib_failure = first_err.js_lib_reason().map(str::to_string);
+                match apply_error_check(
+                    source,
+                    &first_err.to_string(),
+                    request_url,
+                    setup_script.clone(),
+                ) {
+                    Ok(Some(second)) => Ok(second),
+                    Ok(None) => {
+                        // 二次仍 500：原始初检失败是 jsLib 故障 → JS 引擎
+                        // 错误（二次 500 只是把首次失败原因回显）
+                        if let Some(reason) = first_js_lib_failure {
+                            Err(LegadoError::JsEngine(reason))
+                        } else {
+                            Err(LegadoError::LoginRequired(format!(
+                                "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}）"
+                            )))
+                        }
+                    }
+                    Err(second_err) => {
+                        // 任一阶段 jsLib 不可用 → JsEngine（优先二次的最新
+                        // 原因，其次首检原因），不得归因为「未登录」
+                        if let Some(reason) = second_err.js_lib_reason() {
+                            Err(LegadoError::JsEngine(reason.to_string()))
+                        } else if let Some(reason) = first_js_lib_failure {
+                            Err(LegadoError::JsEngine(reason))
+                        } else {
+                            Err(LegadoError::LoginRequired(format!(
+                                "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}；二次检测失败: {second_err}）"
+                            )))
+                        }
+                    }
+                }
+            }
         },
         Err(fetch_err) => {
             // 原始请求失败：errResponse（code 500）交给 checkJs（自动登录场景）
@@ -97,11 +130,15 @@ pub fn gate_login(
 ///
 /// `check_js` 空白 → 原样返回；否则以成功响应三元组执行 checkJs，
 /// 采用 JS 返回（可能被修改）的响应。
+///
+/// 错误保留 [`LoginCheckEvalError`] 类型（不压平成 `String`），调用方据
+/// [`LoginCheckEvalError::js_lib_reason`] 区分 jsLib 故障与 checkJs 判定
+/// 失败（批33 线B）。
 pub fn apply_success_check(
     source: &RssSource,
     response: &RssListResponse,
     setup_script: Option<String>,
-) -> Result<RssListResponse, String> {
+) -> Result<RssListResponse, LoginCheckEvalError> {
     let Some(check_js) = source
         .login_check_js
         .as_deref()
@@ -109,21 +146,19 @@ pub fn apply_success_check(
     else {
         return Ok(response.clone());
     };
-    match eval_login_check(
+    eval_login_check(
         source,
         check_js,
         &response.body,
         &response.final_url,
         response.status,
         setup_script,
-    ) {
-        Ok(checked) => Ok(RssListResponse {
-            body: checked.body,
-            final_url: checked.url,
-            status: checked.code,
-        }),
-        Err(e) => Err(e.to_string()),
-    }
+    )
+    .map(|checked| RssListResponse {
+        body: checked.body,
+        final_url: checked.url,
+        status: checked.code,
+    })
 }
 
 /// 失败路径的登录检测（对应原版 `getErrStrResponse` + 二次 eval）
@@ -132,13 +167,14 @@ pub fn apply_success_check(
 /// - `Ok(Some(response))`：二次 eval 得到非 500 响应 → 采用该响应继续解析
 ///   （自动登录场景）；
 /// - `Ok(None)`：二次 eval 仍返回 code 500 → 判定登录失败，调用方重抛原始错误；
-/// - `Err(msg)`：二次 eval 自身失败（cast/JS 错误）→ 调用方重抛原始错误。
+/// - `Err(LoginCheckEvalError)`：二次 eval 自身失败（cast/JS 错误/jsLib
+///   故障）→ 调用方重抛原始错误。
 pub fn apply_error_check(
     source: &RssSource,
     error_text: &str,
     url: &str,
     setup_script: Option<String>,
-) -> Result<Option<RssListResponse>, String> {
+) -> Result<Option<RssListResponse>, LoginCheckEvalError> {
     let Some(check_js) = source
         .login_check_js
         .as_deref()
@@ -154,7 +190,7 @@ pub fn apply_error_check(
             final_url: checked.url,
             status: checked.code,
         })),
-        Err(e) => Err(e.to_string()),
+        Err(e) => Err(e),
     }
 }
 
@@ -194,7 +230,7 @@ pub fn eval_login_check(
     );
     let completion = executor
         .execute_js(&wrapped_code)
-        .map_err(|e| LoginCheckEvalError::JsFailed(format!("loginCheckJs 执行失败: {e}")))?;
+        .map_err(legado_js::login_check::classify_login_check_exec_error)?;
     parse_completion(&completion, response_body, response_url, response_code)
 }
 
@@ -324,11 +360,15 @@ mod tests {
         );
         let first_err = apply_success_check(&source, &response(), Some(rss_setup(&source)))
             .expect_err("首检 cast 失败");
-        assert!(first_err.contains("无法解析为响应对象"), "{first_err}");
+        let first_err_text = first_err.to_string();
+        assert!(
+            first_err_text.contains("无法解析为响应对象"),
+            "{first_err_text}"
+        );
 
         let second = apply_error_check(
             &source,
-            &first_err,
+            &first_err_text,
             "https://rss-login.example.com/list",
             Some(rss_setup(&source)),
         )
@@ -357,6 +397,66 @@ mod tests {
     fn error_path_js_failure_returns_err() {
         let source = source_with_check("throw new Error('脚本炸了')");
         assert!(apply_error_check(&source, "原始网络错误", "u", Some(rss_setup(&source))).is_err());
+    }
+
+    /// [批33 线B] 坏 jsLib + RSS 源 → `LegadoError::JsEngine`（带 jsLib 根因），
+    /// 不得误报「RSS 源需要登录」
+    ///
+    /// 复现批29 线B 遗留观察 1：`loginCheckJs` 执行前的前置 jsLib 加载失败被
+    /// [`apply_success_check`] 压平成 `String`，`gate_login` 无法区分
+    /// 「jsLib 坏了」与「checkJs 判定未登录」，统一包装成 `LoginRequired`，
+    /// 用户看到「RSS 源需要登录（… jsLib 求值失败: …）」的误导文案。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn broken_js_lib_is_js_engine_error_not_login_required() {
+        let source = RssSource {
+            source_url: "https://rss-login-bad-lib.example.com/feed".to_string(),
+            login_check_js: Some("result".to_string()),
+            js_lib: Some("function {".to_string()),
+            ..RssSource::default()
+        };
+        let err = gate_login(
+            &source,
+            "https://rss-login-bad-lib.example.com/list",
+            None,
+            Ok(response()),
+        )
+        .expect_err("坏 jsLib 必须整源失败");
+        match err {
+            LegadoError::JsEngine(reason) => {
+                assert!(reason.contains("jsLib"), "须保留 jsLib 根因: {reason}");
+            }
+            other => panic!("坏 jsLib 应归类 JsEngine，实际: {other:?}"),
+        }
+    }
+
+    /// [批33 线B] 健康 jsLib + 真未登录 → 仍返回 `LoginRequired`
+    /// （防止把真正的未登录错误过度上抛成 `JsEngine`）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn healthy_js_lib_genuine_login_required_stays_login_required() {
+        // 首检 cast 失败（false）；二次 errResponse（code 500）返回 result
+        // → 二次结果仍 500 → 判定未登录
+        let source = RssSource {
+            source_url: "https://rss-login-healthy.example.com/feed".to_string(),
+            login_check_js: Some(
+                "(function(){ if (result.code() === 500) return result; return false; })()"
+                    .to_string(),
+            ),
+            js_lib: Some("function helper() { return 1; }".to_string()),
+            ..RssSource::default()
+        };
+        let err = gate_login(
+            &source,
+            "https://rss-login-healthy.example.com/list",
+            None,
+            Ok(response()),
+        )
+        .expect_err("未登录应报错");
+        assert!(
+            matches!(err, LegadoError::LoginRequired(_)),
+            "真未登录应保持 LoginRequired，实际: {err:?}"
+        );
     }
 
     /// `source` 绑定可用于 loginCheckJs（原版 BaseSource.evalJS 语义）
