@@ -6,11 +6,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
+import '../providers/privacy/privacy_notifier.dart';
+import '../providers/privacy/privacy_state.dart';
 import '../providers/providers.dart';
 import '../providers/read_record/read_record_notifier.dart';
 import '../routes.dart';
+import '../services/privacy_content_service.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/privacy/private_locked_cover.dart';
 
 /// 首页页签（对齐参考版首页布局）
 ///
@@ -158,20 +163,19 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
         readRecordNotifierProvider.select((s) => s.totalReadTimeMs));
     final books = ref.watch(
         bookshelfNotifierProvider.select((s) => s.books));
+    // [审查] 首页最近阅读与阅读记录页共用同一份私密策略/标记快照：
+    // 私密书未授权时不得在首页明文展示书名/作者/章节名。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
 
-    // 最近阅读：按阅读记录 lastRead 取最近一本，回书架找同名书（拿完整 Book 对象开书）
-    final sorted = [...records]..sort((a, b) => b.lastRead.compareTo(a.lastRead));
-    Book? recent;
-    if (sorted.isNotEmpty) {
-      final top = sorted.first;
-      for (final b in books) {
-        // ReadRecordShow 无 author 字段，按书名匹配（书名+作者唯一性由书架保证）
-        if (b.name == top.bookName) {
-          recent = b;
-          break;
-        }
-      }
-    }
+    // 最近阅读：按阅读记录 lastRead 取最近一条，再按「物理书名+作者」
+    // 反查书架/隐私快照（含批31 改名别名桥），不再用裸书名匹配。
+    final recent = _resolveRecentRead(
+      records: records,
+      books: books,
+      privacy: privacy,
+      privacyContent: privacyContent,
+    );
     final readBooks =
         records.where((r) => r.readTime > 0).length;
     final totalHours = (totalMs / 3600000).toStringAsFixed(1);
@@ -209,72 +213,8 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
           ),
           const SizedBox(height: 16),
           // ===== 最近阅读卡 =====
-          if (recent != null)
-            _HomeCard(
-              onTap: () => _openBook(recent!),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 64,
-                    height: 88,
-                    child: BookCover(
-                      coverUrl: recent.coverUrl,
-                      bookName: recent.name,
-                      bookAuthor: recent.author,
-                      width: 64,
-                      height: 88,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Symbols.menu_book_rounded,
-                                size: 18, color: cs.primary),
-                            const SizedBox(width: 6),
-                            Text('最近阅读',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleSmall
-                                    ?.copyWith(color: cs.primary)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(recent.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 4),
-                        Text(recent.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(
-                                    color: cs.onSurfaceVariant)),
-                        if (recent.durChapterTitle != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            recent.durChapterTitle!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: cs.onSurfaceVariant),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  _progressBadge(recent, cs),
-                ],
-              ),
-            ),
+          // [审查] 三态：正常 / 私密未授权占位 / 隐私快照未就绪中性占位。
+          if (recent != null) _buildRecentCard(recent, cs),
           if (recent != null) const SizedBox(height: 12),
           // ===== 统计双卡 =====
           Row(
@@ -409,10 +349,390 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
     );
   }
 
-  Future<void> _openBook(Book book) async {
-    // 与阅读记录页同链路：分流编排统一在 BookOpenUtils.openBook
-    // （未读进详情 + 书源类型位解析后按类型进阅读器）
-    await BookOpenUtils.openBook(context, ref, book);
+  /// 解析最近阅读视图（隐私脱敏三态 + 批31 改名别名桥）
+  ///
+  /// [审查] 旧实现用 `Book.name == record.bookName` 裸书名匹配且不做隐私
+  /// 判定：私密书作为最近阅读时首页会明文展示书名/作者/章节名；私密书
+  /// 改名后旧记录又匹配不到 → 卡片消失。现改为按「物理书名 + 作者」经
+  /// [PrivacyContentSnapshot.findBookByNameAuthor] 反查（内部已并入
+  /// [PrivacyRecordAliasStore] 登记的改名别名），并以同一快照判定锁定态。
+  _RecentReadView? _resolveRecentRead({
+    required List<ReadRecordShow> records,
+    required List<Book> books,
+    required PrivacyState privacy,
+    required PrivacyContentSnapshot privacyContent,
+  }) {
+    if (records.isEmpty) return null;
+    final sorted = [...records]
+      ..sort((a, b) => b.lastRead.compareTo(a.lastRead));
+    final top = sorted.first;
+
+    // 首帧竞态：策略或私密标记尚未就绪时，空快照会把私密书判成「非私密」
+    // （fail-open）。此处先渲染中性占位，等快照加载完成再决定正常/锁定，
+    // 绝不按未就绪状态明文渲染身份信息。
+    if (!privacy.loaded || (privacy.enabled && !privacyContent.loaded)) {
+      return _RecentReadView(record: top, mode: _RecentReadMode.pending);
+    }
+
+    final book = _resolveRecentBook(top, books, privacyContent);
+    // 记录键可能因历史作者形态/改名边界反查不到候选；若最终落到一本
+    // 私密书，仍按书籍维度补一次锁定判定（fail-closed，宁占位不泄漏）。
+    final locked = _isRecentLocked(top, privacy, privacyContent) ||
+        (book != null && privacyContent.isBookLocked(book, privacy));
+    if (locked) {
+      // 锁定态仍可保留书对象用于取模糊封面（不渲染任何文本身份）。
+      return _RecentReadView(
+        record: top,
+        mode: _RecentReadMode.locked,
+        book: book,
+      );
+    }
+    if (book == null) return null; // 书架无书：与既有行为一致，不显示卡片
+    return _RecentReadView(
+      record: top,
+      mode: _RecentReadMode.normal,
+      book: book,
+    );
+  }
+
+  /// 最近阅读是否应脱敏（与阅读记录页同一判定）
+  ///
+  /// 记录的展示名可能被用户改过，物理名才是落库键；两把键都查，
+  /// 避免任一形态漏判。
+  bool _isRecentLocked(
+    ReadRecordShow item,
+    PrivacyState privacy,
+    PrivacyContentSnapshot privacyContent,
+  ) {
+    if (!privacy.loaded ||
+        !privacy.enabled ||
+        !privacy.verifyOnOpenBook ||
+        !privacyContent.loaded) {
+      return false;
+    }
+    final physical = item.physicalBookName.isNotEmpty
+        ? item.physicalBookName
+        : item.bookName;
+    final keys = <PrivacyRecordKey>[
+      PrivacyRecordKey(physical, item.author),
+      if (item.bookName != physical)
+        PrivacyRecordKey(item.bookName, item.author),
+    ];
+    return keys.any((key) => privacyContent.isRecordLocked(key, privacy));
+  }
+
+  /// 反查最近阅读对应的当前书籍
+  ///
+  /// 优先走隐私快照（含改名别名），快照未持有书籍时退回书架定向匹配。
+  Book? _resolveRecentBook(
+    ReadRecordShow item,
+    List<Book> books,
+    PrivacyContentSnapshot privacyContent,
+  ) {
+    final physical = item.physicalBookName.isNotEmpty
+        ? item.physicalBookName
+        : item.bookName;
+    Book? resolved;
+    if (privacyContent.loaded) {
+      resolved = privacyContent.findBookByNameAuthor(physical, item.author);
+      if (resolved == null && item.bookName != physical) {
+        resolved = privacyContent.findBookByNameAuthor(
+          item.bookName,
+          item.author,
+        );
+      }
+    }
+    final candidate = resolved;
+    if (candidate != null) {
+      // 书架上可能有更新的阅读进度，优先使用同 URL 的书架实例。
+      for (final book in books) {
+        if (book.bookUrl == candidate.bookUrl) return book;
+      }
+      return candidate;
+    }
+    return _matchShelfBook(item, books);
+  }
+
+  /// 快照未持有书籍时的书架匹配（无书私密标记/无改名历史的常规路径）
+  ///
+  /// 不再裸书名命中：作者非空时要求名+作者同时相等；作者为空时仅在同名
+  /// 唯一的情况下命中，避免同名书误配。
+  Book? _matchShelfBook(ReadRecordShow item, List<Book> books) {
+    final physical = item.physicalBookName.isNotEmpty
+        ? item.physicalBookName
+        : item.bookName;
+    final author = item.author.trim();
+    Book? uniqueByName(String name) {
+      final matches = books.where((b) => b.name == name).toList();
+      return matches.length == 1 ? matches.single : null;
+    }
+
+    if (author.isNotEmpty) {
+      for (final book in books) {
+        if (book.name == physical && book.author == author) return book;
+      }
+    } else {
+      final exact = uniqueByName(physical);
+      if (exact != null) return exact;
+    }
+    if (item.bookName != physical) {
+      if (author.isNotEmpty) {
+        for (final book in books) {
+          if (book.name == item.bookName && book.author == author) return book;
+        }
+      } else {
+        final display = uniqueByName(item.bookName);
+        if (display != null) return display;
+      }
+    }
+    return null;
+  }
+
+  Widget _recentLabel(ColorScheme cs) => Row(
+    children: [
+      Icon(Symbols.menu_book_rounded, size: 18, color: cs.primary),
+      const SizedBox(width: 6),
+      Text('最近阅读',
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(color: cs.primary)),
+    ],
+  );
+
+  /// 最近阅读卡：正常 / 锁定 / 首帧中性占位
+  Widget _buildRecentCard(_RecentReadView recent, ColorScheme cs) {
+    switch (recent.mode) {
+      case _RecentReadMode.pending:
+        // 中性骨架：不含任何书名/作者/章节文本，也不响应点击。
+        return _HomeCard(
+          key: const ValueKey('homeRecentCard'),
+          child: Row(
+            children: [
+              Container(
+                key: const ValueKey('homeRecentPending'),
+                width: 64,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _recentLabel(cs),
+                    const SizedBox(height: 10),
+                    _RecentSkeletonBar(
+                        width: 150, color: cs.surfaceContainerHighest),
+                    const SizedBox(height: 8),
+                    _RecentSkeletonBar(
+                        width: 96, color: cs.surfaceContainerHighest),
+                    const SizedBox(height: 8),
+                    _RecentSkeletonBar(
+                        width: 120, color: cs.surfaceContainerHighest),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      case _RecentReadMode.locked:
+        final book = recent.book;
+        return _HomeCard(
+          key: const ValueKey('homeRecentCard'),
+          onTap: () => _openRecent(recent.record),
+          child: Row(
+            children: [
+              PrivateLockedCover(
+                width: 64,
+                height: 88,
+                coverUrl: book?.customCoverUrl ?? book?.coverUrl,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _recentLabel(cs),
+                    const SizedBox(height: 8),
+                    Row(
+                      key: const ValueKey('homeRecentLocked'),
+                      children: [
+                        Icon(Symbols.lock_rounded,
+                            size: 16, color: cs.primary),
+                        const SizedBox(width: 6),
+                        Text('私密书籍',
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '内容已隐藏，解锁后查看',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      case _RecentReadMode.normal:
+        final book = recent.book;
+        if (book == null) return const SizedBox.shrink();
+        return _HomeCard(
+          key: const ValueKey('homeRecentCard'),
+          onTap: () => _openRecent(recent.record),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 64,
+                height: 88,
+                child: BookCover(
+                  coverUrl: book.customCoverUrl ?? book.coverUrl,
+                  bookName: book.name,
+                  bookAuthor: book.author,
+                  width: 64,
+                  height: 88,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _recentLabel(cs),
+                    const SizedBox(height: 8),
+                    Text(book.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    Text(book.author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant)),
+                    if (book.durChapterTitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        book.durChapterTitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              _progressBadge(book, cs),
+            ],
+          ),
+        );
+    }
+  }
+
+  /// 打开最近阅读（点击前兜底隐私校验，与阅读记录页一致）
+  ///
+  /// 未授权私密记录：仅提示「请先在书架解锁」，既不打开阅读器/详情，
+  /// 也不把书名作为关键词发给第三方搜索。加载期间页面被弹出则直接返回。
+  Future<void> _openRecent(ReadRecordShow record) async {
+    try {
+      await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+      final privacyContent = await ref
+          .read(privacyContentProvider.notifier)
+          .ensureLoaded();
+      if (!mounted) return;
+      final privacy = ref.read(privacyNotifierProvider);
+      final book = _resolveRecentBook(
+        record,
+        ref.read(bookshelfNotifierProvider).books,
+        privacyContent,
+      );
+      final locked = _isRecentLocked(record, privacy, privacyContent) ||
+          (book != null && privacyContent.isBookLocked(book, privacy));
+      if (locked) {
+        _showRecentMessage('该书为私密内容，请先在书架解锁后再打开');
+        return;
+      }
+      if (book == null) {
+        _showRecentMessage('书籍已不在书架中');
+        return;
+      }
+      // 与阅读记录页同链路：分流编排统一在 BookOpenUtils.openBook
+      // （未读进详情 + 书源类型位解析后按类型进阅读器）
+      await BookOpenUtils.openBook(context, ref, book);
+    } catch (e) {
+      debugPrint('[首页] 最近阅读打开失败：$e');
+      if (!mounted) return;
+      _showRecentMessage('打开失败，请稍后重试');
+    }
+  }
+
+  void _showRecentMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+/// 首页最近阅读卡的隐私三态
+enum _RecentReadMode {
+  /// 正常展示（非私密或已授权）
+  normal,
+
+  /// 私密且未授权：只显示中性占位与模糊封面
+  locked,
+
+  /// 隐私策略/标记尚未加载：只显示无身份信息的中性骨架
+  pending,
+}
+
+/// 最近阅读卡解析结果
+class _RecentReadView {
+  const _RecentReadView({
+    required this.record,
+    required this.mode,
+    this.book,
+  });
+
+  final ReadRecordShow record;
+  final _RecentReadMode mode;
+
+  /// 解析到的当前书籍（锁定态可为 null，用于取封面）
+  final Book? book;
+}
+
+/// 首帧占位骨架条
+class _RecentSkeletonBar extends StatelessWidget {
+  const _RecentSkeletonBar({required this.width, required this.color});
+
+  final double width;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 10,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+    );
   }
 }
 
@@ -421,7 +741,7 @@ class _HomeCard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
 
-  const _HomeCard({required this.child, this.onTap});
+  const _HomeCard({super.key, required this.child, this.onTap});
 
   @override
   Widget build(BuildContext context) {
