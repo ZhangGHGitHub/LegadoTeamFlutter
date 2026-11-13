@@ -1,0 +1,45 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8931/fast",
+  "bookSourceName": "QA29 快源",
+  "bookSourceGroup": "QA29",
+  "bookSourceType": 0,
+  "bookUrlPattern": ".*192\\.168\\.100\\.52:8931/fast/book\\.html.*",
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 0,
+  "searchUrl": "http://192.168.100.52:8931/fast/search?q={{key}}",
+  "ruleSearch": {
+    "bookList": "class.book",
+    "name": "class.title@text",
+    "author": "class.author@text",
+    "bookUrl": "class.title@href"
+  },
+  "ruleBookInfo": {
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text",
+    "tocUrl": "class.toc@href"
+  },
+  "ruleToc": {
+    "chapterList": "id.list@tag.li",
+    "chapterName": "tag.a@text",
+    "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  },
+  "ruleReview": {
+    "enabled": true,
+    "reviewSummaryUrl": "http://192.168.100.52:8931/review/summary",
+    "summaryListRule": "$.data",
+    "summaryParagraphIndexRule": "$.idx",
+    "summaryParagraphDataRule": "$.token",
+    "summaryCountRule": "$.cnt",
+    "reviewDetailUrl": "http://192.168.100.52:8931/review/detail",
+    "detailListRule": "$.comments",
+    "detailIdRule": "$.id",
+    "detailNameRule": "$.user",
+    "detailBadgeRule": "$.tag",
+    "detailContentRule": "$.text"
+  }
+}

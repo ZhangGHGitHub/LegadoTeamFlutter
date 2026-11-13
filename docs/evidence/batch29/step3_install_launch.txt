@@ -1,0 +1,29 @@
+=== batch29 step3 install/launch ===
+date: 2026-11-13T13:39:16+08:00
+apk: flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+7a08202559417f9b1adad90f47228cc5fddb97a3a3bb5c7893230c3e8be665e3 *../../../flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+
+install: adb install -r -> Success: streamed 212458300 bytes
+
+launch: am start -W io.legado.flutter_legado/io.legado.flutter.MainActivity
+LaunchState: COLD TotalTime: 1467ms
+
+/usr/bin/bash: line 3: tr: command not found
+/usr/bin/bash: line 3: tr: command not found
+
+crash counts (launch logcat_b29_launch.txt):
+  FATAL EXCEPTION: 0
+  E/AndroidRuntime: 0
+  E/flutter(non-MESA): 0
+
+final (release reinstall after smoke):
+FATAL=0
+AndroidRuntime=0
+ANR=0
+OOM=0
+LowMemory=0
+E_flutter_non_MESA=0
+crash_legado_refs=0
+version: versionCode=500 minSdk=24 targetSdk=36
+    versionName=2.0.499
+pid: 45889

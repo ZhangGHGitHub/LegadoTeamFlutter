@@ -1,0 +1,11 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8931/badjs",
+  "bookSourceName": "QA29 坏jsLib-JS源",
+  "bookSourceGroup": "QA29",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 2,
+  "jsLib": "{\"qa29lib\": \"http://192.168.100.52:59999/qa29_dead.js\"}",
+  "mainJs": "function search(key, page) { return JSON.stringify([{name: 'QA29 坏库源书', author: '坏库作者', bookUrl: 'http://192.168.100.52:8931/fast/book.html'}]); }"
+}

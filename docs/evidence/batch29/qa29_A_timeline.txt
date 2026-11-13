@@ -1,0 +1,7 @@
+  2.08s fast=True slow=False
+SHOT qa29_A_02s.png (149834 bytes, phys=4619827620554604074)
+  4.69s fast=True slow=False
+  7.11s fast=True slow=False
+SHOT qa29_A_06s.png (149834 bytes, phys=4619827620554604074)
+  9.89s fast=True slow=True
+RESULT first_fast=2.08s first_slow=9.89s

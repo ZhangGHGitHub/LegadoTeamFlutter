@@ -1,0 +1,35 @@
+13:16:02.682 LISTEN 192.168.100.52:8931 slow=8.0s
+13:16:06.309 GET /ping
+13:16:06.324 GET /fast/search?q=test
+=== SCENARIO A search-trigger 13:20:43.807 ===
+13:20:44.019 GET /search?q=QA29
+13:20:44.019 GET /search?q=QA29
+=== SCENARIO A retry 13:21:32.291 ===
+13:21:33.025 GET /slow/search?q=QA29
+13:21:33.026 GET /fast/search?q=QA29
+13:21:41.026 SLOW-SEARCH released after 8.0s
+13:22:26.623 LISTEN 192.168.100.52:8931 slow=8.0s
+=== SCENARIO A jsLib-run 13:22:31.820 ===
+13:22:32.536 GET /fast/search?q=QA29
+13:22:32.549 GET /slow/search?q=QA29
+13:22:32.592 GET /slow/jsblock
+13:22:40.593 SLOW-JSBLOCK released after 8.0s
+13:24:02.953 GET /badlogin/search?q=QA29
+13:24:22.162 GET /fast/search?q=QA29
+13:24:32.230 GET /fast/book.html
+13:24:32.235 GET /fast/toc.html
+13:24:52.893 GET /fast/toc.html
+13:24:52.899 GET /fast/ch1.html
+13:24:52.913 GET /fast/ch2.html
+13:24:52.935 GET /review/summary
+13:25:08.674 GET /review/detail
+13:25:45.066 GET /review/summary
+13:27:49.576 GET /review/summary
+13:27:58.827 GET /review/summary
+13:28:22.597 GET /fast/book.html
+13:28:32.978 GET /review/summary
+13:30:24.660 GET /fast/book.html
+13:33:48.077 GET /fast/book.html
+13:33:48.110 GET /review/summary
+13:35:22.270 GET /fast/book.html
+13:37:30.878 GET /review/summary

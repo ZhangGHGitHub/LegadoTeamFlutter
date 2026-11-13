@@ -1,0 +1,32 @@
+{
+  "bookSourceUrl": "http://192.168.100.52:8931/badlogin",
+  "bookSourceName": "QA29 坏jsLib-登录源",
+  "bookSourceGroup": "QA29",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 3,
+  "jsLib": "var __qa29_bad_login = __qa29_missing_login_lib__();",
+  "loginCheckJs": "return result;",
+  "searchUrl": "http://192.168.100.52:8931/badlogin/search?q={{key}}",
+  "ruleSearch": {
+    "bookList": "class.book",
+    "name": "class.title@text",
+    "author": "class.author@text",
+    "bookUrl": "class.title@href"
+  },
+  "ruleBookInfo": {
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text",
+    "tocUrl": "class.toc@href"
+  },
+  "ruleToc": {
+    "chapterList": "id.list@tag.li",
+    "chapterName": "tag.a@text",
+    "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  }
+}

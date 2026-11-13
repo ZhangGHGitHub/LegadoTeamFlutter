@@ -1,0 +1,7 @@
+FATAL=0
+AndroidRuntime=0
+ANR=0
+OOM=0
+LowMemory=0
+E_flutter_non_MESA=0
+crash_legado_refs=0

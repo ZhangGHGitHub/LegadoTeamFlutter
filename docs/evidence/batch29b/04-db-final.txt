@@ -1,0 +1,7 @@
+=== highlights ===
+{'bookName': 'QA29 快源书', 'chapterIndex': 1, 'chapterPos': 0, 'chapterPosEnd': 18, 'bookText': '批29 第二章第一段：翻章后的正文。', 'style': '{"type":"background","color":"#FFA5D6A7"}'}
+{'bookName': 'QA29 快源书', 'chapterIndex': 1, 'chapterPos': 19, 'chapterPosEnd': 37, 'bookText': '批29 第二章第二段：翻章成功标志。', 'style': '{"type":"background","color":"#FFA5D6A7"}'}
+{'bookName': '批28测试乙', 'chapterIndex': 0, 'chapterPos': 0, 'chapterPosEnd': 6, 'bookText': '这是样例乙。', 'style': '{"type":"background","color":"#FF90CAF9"}'}
+{'bookName': 'QA29 快源书', 'chapterIndex': 0, 'chapterPos': 25, 'chapterPosEnd': 49, 'bookText': '批29 第一章第二段：用于段评与划线回归的文本。', 'style': '{"type":"background","color":"#FF90CAF9"}'}
+highlightRules count = 0
+book_marks count = 2

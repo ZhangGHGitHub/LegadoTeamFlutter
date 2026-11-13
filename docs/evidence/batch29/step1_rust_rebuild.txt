@@ -1,0 +1,30 @@
+=== batch29 step1 rust rebuild ===
+date: 2026-11-13T13:14:45+08:00
+HEAD: 9ccdbcf94476497930adcf286055ccfdb7a936ed
+
+--- command ---
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -File rust/scripts/build-android.ps1 -Mode release -Targets "aarch64,armv7,x86_64"
+exit: 0
+
+--- .so ---
+-rw-r--r-- 1 admin 197608 52540584 Nov 13 13:12 flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+-rw-r--r-- 1 admin 197608 34815368 Nov 13 13:13 flutter_legado/android/app/src/main/jniLibs/armeabi-v7a/liblegado_ffi.so
+-rw-r--r-- 1 admin 197608 52914976 Nov 13 13:14 flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+
+--- sha256 ---
+6d968174808a5d92ae346ccdef0e5376d48f8fe7b05e9dbb46db4c7a544dd7c8 *flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+7245fadb586b7a19bda4b45049b8e07270f4a6e55a5ab97443299b1c5110196f *flutter_legado/android/app/src/main/jniLibs/armeabi-v7a/liblegado_ffi.so
+b64576f5f9e29f03fddcdfb18281ebb86a4216c5946e3fed634d5257c35b9923 *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+
+--- meta ---
+flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so.meta
+{"contentHash":-905874848,"mode":"release","quickjs":true,"builtAt":"2026-11-13T13:14:22.6522661+08:00","rustFingerprint":"dec30301c961a49507e713cecf2e1ba7aa259a5d79aa0f557c35e406d2af6001"}
+flutter_legado/android/app/src/main/jniLibs/armeabi-v7a/liblegado_ffi.so.meta
+{"contentHash":-905874848,"mode":"release","quickjs":false,"builtAt":"2026-11-13T13:14:22.6761050+08:00","rustFingerprint":"dec30301c961a49507e713cecf2e1ba7aa259a5d79aa0f557c35e406d2af6001"}
+flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so.meta
+{"contentHash":-905874848,"mode":"release","quickjs":true,"builtAt":"2026-11-13T13:14:22.6897150+08:00","rustFingerprint":"dec30301c961a49507e713cecf2e1ba7aa259a5d79aa0f557c35e406d2af6001"}
+--- fingerprint check ---
+[Fingerprint] arm64-v8a 一致（指纹 dec30301c961a495…）
+[Fingerprint] x86_64 一致（指纹 dec30301c961a495…）
+DECISION=REUSE fingerprint=dec30301c961a49507e713cecf2e1ba7aa259a5d79aa0f557c35e406d2af6001
+fingerprint_exit=0

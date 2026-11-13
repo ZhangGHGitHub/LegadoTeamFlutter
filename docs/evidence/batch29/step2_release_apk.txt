@@ -1,0 +1,11 @@
+=== batch29 step2 release apk ===
+date: 2026-11-13T13:16:02+08:00
+cmd: cd flutter_legado && flutter build apk --release
+exit: 0
+assembleRelease: 48.6s
+
+-rw-r--r-- 1 admin 197608 212458300 Nov 13 13:15 flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+7a08202559417f9b1adad90f47228cc5fddb97a3a3bb5c7893230c3e8be665e3 *flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+
+pubspec version:
+4:version: 2.0.499+500

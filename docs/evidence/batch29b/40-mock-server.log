@@ -1,0 +1,234 @@
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.63', 39286)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 119, in do_GET
+    self._send(json.dumps(SUMMARY, ensure_ascii=False), "application/json; charset=utf-8")
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.52', 6308)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 115, in do_GET
+    self._send(BOOK_HTML)
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.52', 6309)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 119, in do_GET
+    self._send(json.dumps(SUMMARY, ensure_ascii=False), "application/json; charset=utf-8")
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.52', 6337)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 115, in do_GET
+    self._send(BOOK_HTML)
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.52', 6338)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 119, in do_GET
+    self._send(json.dumps(SUMMARY, ensure_ascii=False), "application/json; charset=utf-8")
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.52', 10110)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 115, in do_GET
+    self._send(BOOK_HTML)
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.52', 10111)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 119, in do_GET
+    self._send(json.dumps(SUMMARY, ensure_ascii=False), "application/json; charset=utf-8")
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.63', 59392)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 115, in do_GET
+    self._send(BOOK_HTML)
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 10159)
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 424, in handle_one_request
+    method()
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 115, in do_GET
+    self._send(BOOK_HTML)
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 105, in _send
+    self.send_response(200)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 501, in send_response
+    self.log_request(code)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 553, in log_request
+    self.log_message('"%s" %s %s',
+  File "D:\OH-WorkSpace\LegadoTeam\legado\docs\materials_1113d\qa_b25_mock_server.py", line 100, in log_message
+    with open(sys.argv[2], "a", encoding="utf-8") as fh:
+              ~~~~~~~~^^^
+IndexError: list index out of range
+----------------------------------------

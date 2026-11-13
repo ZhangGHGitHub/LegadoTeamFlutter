@@ -1,0 +1,5 @@
+GET /book1.html
+GET /review/summary?bookUrl=x&chapterIndex=0
+GET /book1.html
+GET /review/summary
+GET /review/detail
