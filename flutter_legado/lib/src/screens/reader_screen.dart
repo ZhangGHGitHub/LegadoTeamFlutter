@@ -179,11 +179,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   String? _reviewSourceJson;
   int _reviewLoadToken = 0;
 
-  /// [批25 P2 设备验收 | 2026-11-13] 段评摘要加载去重键（bookUrl + 章索引）
+  /// 段评摘要「已确定」去重键（bookUrl + 章索引）
   ///
   /// 与 [_lastPreloadedIndex] 分离：摘要加载不再依赖「预载相邻章」的
   /// loading 跃迁分支，首次进入阅读器正文就绪即触发，同章只请求一次。
+  ///
+  /// [审查 P2-1 | 2026-11-13] 该键只在请求**成功**（或确定无需请求：
+  /// 书源地址为空/无匹配书源/未启用 ruleReview）后提交。修复前在发起
+  /// 请求前就占用该键：一次失败或帧后复核不通过后，同章 build 永远命中
+  /// 去重分支，摘要不再重试（徽标与段评面板再次不可达）。
   String? _reviewLoadedKey;
+
+  /// 正在请求中的去重键（防并发重复请求；与成功键分离，失败即释放）
+  String? _reviewInFlightKey;
+
+  /// 段评摘要失败后的退避重试状态
+  ///
+  /// 失败时清空 [_reviewLoadedKey] 并延迟 [_reviewRetryDelay] 触发重建；
+  /// 退避窗口内由 build 触发的重复尝试直接忽略，避免弱网/书源异常时每次
+  /// build 都打一次 FFI。同键自动重试最多 [_reviewMaxRetryAttempts] 次
+  /// （切换章节/书籍按新键重新计数），避免无限重试。
+  Timer? _reviewRetryTimer;
+  String? _reviewRetryKey;
+  int _reviewRetryAttempt = 0;
+  bool _reviewRetryExhausted = false;
+  static const Duration _reviewRetryDelay = Duration(seconds: 2);
+  static const int _reviewMaxRetryAttempts = 3;
 
   /// 段评摘要去重键（同一本书同一章只请求一次）
   static String _reviewSummaryKey(Book book, int chapterIndex) =>
@@ -363,6 +384,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     // 防销毁后回调泄漏）
     appRouteObserver.unsubscribe(this);
     _autoTimer?.cancel();
+    // [审查 P2-1] 段评摘要失败退避定时器随页面销毁取消（防销毁后回调）
+    _reviewRetryTimer?.cancel();
     // [批1b-2a] 清空音量键节流状态（无 Timer，重置即无残留；防跨书/重进
     // 阅读器沿用上次翻页时间导致首次按键被误节流）
     _volumeKeyPageGate.reset();
@@ -714,24 +737,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   }
 
   /// 加载当前章段评摘要（对齐 ReadBookActivity.loadReviewSummaryIfNeeded）
+  ///
+  /// [审查 P2-1] 去重键提交时机：请求成功（或确定无需请求）才写
+  /// [_reviewLoadedKey]；失败释放该键并进入退避重试，保证同章不会因一次
+  /// 失败/竞态永久不再加载。
   Future<void> _loadReviewSummary() async {
-    final token = ++_reviewLoadToken;
     final state = ref.read(readerNotifierProvider);
     final book = state.currentBook;
-    if (book == null || book.origin.isEmpty) {
-      if (mounted && token == _reviewLoadToken) {
-        setState(() {
-          _reviewCounts = {};
-          _reviewKeys = {};
-          _reviewSourceJson = null;
-        });
-      }
+    if (book == null) {
+      final token = ++_reviewLoadToken;
+      _reviewInFlightKey = null;
+      if (mounted && token == _reviewLoadToken) _clearReviewData();
       return;
     }
     final requestKey = _reviewSummaryKey(book, state.currentChapterIndex);
+    // 同键请求已在飞行中：直接复用，不消耗 token/不重复打 FFI
+    if (_reviewInFlightKey == requestKey) return;
+    final token = ++_reviewLoadToken;
+    if (book.origin.isEmpty) {
+      _commitReviewNoop(requestKey, token);
+      return;
+    }
+    _reviewInFlightKey = requestKey;
     try {
       final api = ref.read(bookApiProvider);
       final sources = await api.getBookSources();
+      // 查询书源期间已换章/换书：不再为旧章发起摘要请求（结果也无法套用）
+      if (!_reviewRequestStillCurrent(requestKey, token)) {
+        if (_reviewInFlightKey == requestKey) _reviewInFlightKey = null;
+        return;
+      }
       BookSource? matched;
       for (final s in sources) {
         if (s.bookSourceUrl == book.origin) {
@@ -740,13 +775,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         }
       }
       if (matched == null) {
-        if (mounted && token == _reviewLoadToken) {
-          setState(() {
-            _reviewCounts = {};
-            _reviewKeys = {};
-            _reviewSourceJson = null;
-          });
-        }
+        _commitReviewNoop(requestKey, token);
         return;
       }
       final rr = matched.ruleReview;
@@ -757,13 +786,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
               rr.enabled &&
               (rr.reviewSummaryUrl ?? '').trim().isNotEmpty);
       if (!enabled) {
-        if (mounted && token == _reviewLoadToken) {
-          setState(() {
-            _reviewCounts = {};
-            _reviewKeys = {};
-            _reviewSourceJson = null;
-          });
-        }
+        _commitReviewNoop(requestKey, token);
         return;
       }
       final chapter = state.currentChapter;
@@ -774,10 +797,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       };
       final sourceJson = jsonEncode(matched.toJson());
       final raw = await api.reviewGetSummary(sourceJson, jsonEncode(request));
-      if (!mounted || token != _reviewLoadToken) return;
-      // 换章/换书后旧章结果不得套到新章正文：新章请求在帧后才发起，
-      // 旧结果可能先于它返回（键守卫补 token 守卫的空窗）
-      if (requestKey != _reviewLoadedKey) return;
+      // 换章/换书后旧章结果不得套到新章正文：token + 书/章键双重校验
+      //（新章请求在帧后才发起，旧结果可能先于它返回）
+      if (!_reviewRequestStillCurrent(requestKey, token) ||
+          _reviewInFlightKey != requestKey) {
+        if (_reviewInFlightKey == requestKey) _reviewInFlightKey = null;
+        return;
+      }
       final map = jsonDecode(raw) as Map<String, dynamic>;
       final countsRaw = map['counts'] as Map? ?? {};
       final keysRaw = map['keys'] as Map? ?? {};
@@ -792,20 +818,88 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         final k = int.tryParse(e.key.toString());
         if (k != null) keys[k] = e.value.toString();
       }
+      // 成功后才提交去重键（失败/竞态不占位）
+      _reviewLoadedKey = requestKey;
+      _reviewInFlightKey = null;
+      _resetReviewRetry();
       setState(() {
         _reviewCounts = counts;
         _reviewKeys = keys;
         _reviewSourceJson = sourceJson;
       });
     } catch (_) {
-      if (mounted && token == _reviewLoadToken) {
-        setState(() {
-          _reviewCounts = {};
-          _reviewKeys = {};
-          _reviewSourceJson = null;
-        });
-      }
+      if (_reviewInFlightKey == requestKey) _reviewInFlightKey = null;
+      if (!_reviewRequestStillCurrent(requestKey, token)) return;
+      // 失败不占位：清空成功键并退避重试（同章下次 build 可再次加载）
+      _reviewLoadedKey = null;
+      _clearReviewData();
+      _scheduleReviewRetry(requestKey);
     }
+  }
+
+  /// 请求返回时校验：页面仍挂载、仍是最新请求、正文仍是同一书同一章
+  bool _reviewRequestStillCurrent(String key, int token) {
+    if (!mounted || token != _reviewLoadToken) return false;
+    final latest = ref.read(readerNotifierProvider);
+    final latestBook = latest.currentBook;
+    return latestBook != null &&
+        _reviewSummaryKey(latestBook, latest.currentChapterIndex) == key;
+  }
+
+  /// 清空当前章摘要徽标数据（调用方保证 mounted 且请求仍有效）
+  void _clearReviewData() {
+    setState(() {
+      _reviewCounts = {};
+      _reviewKeys = {};
+      _reviewSourceJson = null;
+    });
+  }
+
+  /// 确定无需请求（书源地址为空/无匹配书源/未启用 ruleReview）：
+  /// 提交去重键并清空徽标，避免同章每次 build 都重复查询书源
+  void _commitReviewNoop(String key, int token) {
+    if (!_reviewRequestStillCurrent(key, token)) {
+      if (_reviewInFlightKey == key) _reviewInFlightKey = null;
+      return;
+    }
+    _reviewLoadedKey = key;
+    _reviewInFlightKey = null;
+    _resetReviewRetry();
+    _clearReviewData();
+  }
+
+  /// 摘要失败后安排一次退避重试
+  ///
+  /// 同键最多自动重试 [_reviewMaxRetryAttempts] 次；退避窗口内由 build
+  /// 触发的重复尝试由 [_maybeLoadReviewSummary] 直接忽略。
+  void _scheduleReviewRetry(String key) {
+    if (!mounted) return;
+    if (_reviewRetryKey != key) {
+      _reviewRetryKey = key;
+      _reviewRetryAttempt = 0;
+      _reviewRetryExhausted = false;
+    }
+    if (_reviewRetryAttempt >= _reviewMaxRetryAttempts) {
+      _reviewRetryExhausted = true;
+      return;
+    }
+    _reviewRetryAttempt++;
+    _reviewRetryTimer?.cancel();
+    _reviewRetryTimer = Timer(_reviewRetryDelay, () {
+      _reviewRetryTimer = null;
+      if (!mounted) return;
+      // 仅触发一次重建：build 中 _maybeLoadReviewSummary 重新发起请求
+      setState(() {});
+    });
+  }
+
+  /// 复位失败退避状态（切章/换书、成功加载或确定无需请求后调用）
+  void _resetReviewRetry() {
+    _reviewRetryTimer?.cancel();
+    _reviewRetryTimer = null;
+    _reviewRetryKey = null;
+    _reviewRetryAttempt = 0;
+    _reviewRetryExhausted = false;
   }
 
   void _onReviewTap(int paragraphIndex, int count) {
@@ -852,7 +946,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// ReadBookActivity.loadReviewSummaryIfNeeded 在正文更新后调用的时机）。
   ///
   /// 触发条件：正文加载完成且无错误（loading 中跳过，结束后构建会再进）；
-  /// 同章重复构建不重复请求（[_reviewLoadedKey] 去重）。— 全栈工程师 + UI
+  /// 同章重复构建不重复请求（[_reviewLoadedKey]/[_reviewInFlightKey]）。
+  /// [审查 P2-1] 失败后按 [_reviewRetryDelay] 退避重试，退避窗口内重复
+  /// build 直接跳过，同键自动重试上限 [_reviewMaxRetryAttempts]。
+  /// — 全栈工程师 + UI
   void _maybeLoadReviewSummary(ReaderState state) {
     final book = state.currentBook;
     if (book == null ||
@@ -862,8 +959,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       return;
     }
     final key = _reviewSummaryKey(book, state.currentChapterIndex);
-    if (key == _reviewLoadedKey) return;
-    _reviewLoadedKey = key;
+    if (key == _reviewLoadedKey || key == _reviewInFlightKey) return;
+    if (key == _reviewRetryKey) {
+      // 同键失败退避中：定时器未到点、或自动重试已耗尽时跳过
+      //（到点后定时器 setState 重建，此时 timer 已置空才会继续重试）
+      if (_reviewRetryTimer != null || _reviewRetryExhausted) return;
+    } else {
+      // 换章/换书：旧章的退避状态作废，按新键重新计数
+      _resetReviewRetry();
+      _reviewRetryKey = key;
+    }
     // 换章/换书：先清上一章徽标（对齐原版新 key 请求前
     // clearReviewProviders），防新章正文短暂套用旧章段号计数。此处处于
     // build 阶段，直接改字段即可（随后构建的子树读到空表，无需
@@ -872,7 +977,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     _reviewKeys = {};
     _reviewSourceJson = null;
     // 构建期不能同步 setState/发请求：放到帧后执行，并复核仍是同一书同一
-    // 章，防快速连点翻章时以旧 key 请求新章。
+    // 章，防快速连点翻章时以旧 key 请求新章。此处不再提前占用去重键：
+    // 复核不通过时无需复位，下次 build 可正常重试。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final current = ref.read(readerNotifierProvider);

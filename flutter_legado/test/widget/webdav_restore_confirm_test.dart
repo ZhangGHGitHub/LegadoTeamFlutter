@@ -9,6 +9,7 @@
 /// - 确认后执行对应恢复链。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -218,7 +219,31 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => mockApi.webdavFullSync(any(), any(), any())).called(1);
-    expect(find.text('恢复完成，回写 0 条书源'), findsOneWidget);
+    expect(find.text('同步完成，回写 0 条书源'), findsOneWidget);
+  });
+
+  // [审查 P2-6 | 2026-11-13] 该入口是上传方向（上传本地书架覆盖远端 +
+  // 回写远端书源）；进度文案写成「恢复中…」会让用户误以为远端覆盖本地。
+  testWidgets('确认 WebDAV 同步：进度文案为「同步中…」而非「恢复中…」', (tester) async {
+    configureWebDav();
+    final gate = Completer<String>();
+    when(
+      () => mockApi.webdavFullSync(any(), any(), any()),
+    ).thenAnswer((_) => gate.future);
+    await pumpScreen(tester);
+
+    await tapSyncMenuItem(tester);
+    await tester.tap(dialogButton('同步'));
+    // 同步仍挂起时进度框应已出现
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('同步中…'), findsOneWidget);
+    expect(find.text('恢复中…'), findsNothing);
+
+    gate.complete('{"sources":"[]"}');
+    await tester.pumpAndSettle();
+    expect(find.text('同步完成，回写 0 条书源'), findsOneWidget);
   });
 
   testWidgets('同步书库：仅 URL（匿名）时提示填写账号密码且不发起请求', (tester) async {
@@ -249,7 +274,7 @@ void main() {
     await tester.pumpAndSettle();
 
     verify(() => mockApi.webdavFullSync(any(), any(), any())).called(1);
-    expect(find.text('恢复完成，回写 0 条书源'), findsOneWidget);
+    expect(find.text('同步完成，回写 0 条书源'), findsOneWidget);
   });
 
   testWidgets('WebDAV 未配置：恢复 Sheet 网络项禁用，点按不执行', (tester) async {

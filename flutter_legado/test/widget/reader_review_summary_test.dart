@@ -12,6 +12,9 @@
 // 2. 切章 → 按新章再次请求并换成新章徽标（累计 2 次）
 // 3. 同章重复构建（控件显隐）→ 不重复请求（仍 2 次）
 // 4. 书源无 ruleReview → 从不请求（既有行为不回归）
+// 5. [审查 P2-1] 首次摘要失败 → 2s 退避窗口内不重复请求，退避结束后
+//    自动重试成功并渲染徽标（修前失败即永久占键，红）
+// 6. [审查 P2-1] 持续失败时自动重试有上限（首次 + 3 次重试后停止）
 library;
 
 import 'dart:convert';
@@ -86,6 +89,7 @@ class _SummaryCounter {
 MockRustApi _stubApi({
   BookSource source = _reviewSource,
   _SummaryCounter? summaryCounter,
+  int failFirstSummaryCalls = 0,
 }) {
   final api = MockRustApi();
   when(() => api.getChapters(any())).thenAnswer((_) async => _chapters);
@@ -106,6 +110,11 @@ MockRustApi _stubApi({
   ).thenAnswer((_) async {});
   when(() => api.reviewGetSummary(any(), any())).thenAnswer((i) async {
     summaryCounter?.calls++;
+    // [审查 P2-1] 前 N 次强制造失败，用于验证失败后不占去重键且会退避重试
+    if (summaryCounter != null &&
+        summaryCounter.calls <= failFirstSummaryCalls) {
+      throw Exception('模拟摘要请求失败');
+    }
     final request =
         jsonDecode(i.positionalArguments[1] as String) as Map<String, dynamic>;
     final chapter = request['chapter'] as Map<String, dynamic>?;
@@ -237,5 +246,57 @@ void main() {
 
     verifyNever(() => api.reviewGetSummary(any(), any()));
     expect(find.byType(ReviewColumnBadge), findsNothing);
+  });
+
+  // [审查 P2-1 | 2026-11-13] 失败/竞态不得占用去重键：修复前
+  // `_maybeLoadReviewSummary` 在发起请求前即写 `_reviewLoadedKey`，同章
+  // 一次失败后永久不再重试，徽标与段评面板均不可达。
+  testWidgets('摘要首次失败后按 2s 退避自动重试，成功后渲染徽标', (tester) async {
+    final summary = _SummaryCounter();
+    final api = _stubApi(summaryCounter: summary, failFirstSummaryCalls: 1);
+    final container = await _enterReaderWithContentReady(tester, api);
+
+    expect(summary.calls, 1, reason: '首进阅读器应发起一次摘要请求并失败');
+    expect(find.byType(ReviewColumnBadge), findsNothing, reason: '失败后不得残留摘要徽标');
+
+    // 退避窗口内同章重复构建（控件显隐）不得再打 FFI
+    final notifier = container.read(readerNotifierProvider.notifier);
+    notifier.toggleControls();
+    await tester.pump();
+    notifier.toggleControls();
+    await tester.pump();
+    expect(summary.calls, 1, reason: '2s 退避窗口内的重复 build 不得重复请求摘要（防弱网抖动）');
+
+    // 退避结束：定时器触发重建 → 同章重试成功
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(summary.calls, 2, reason: '首次失败后应在退避结束后自动重试（修复前永久不重试）');
+    final badgeCounts = tester
+        .widgetList<ReviewColumnBadge>(find.byType(ReviewColumnBadge))
+        .map((badge) => badge.count)
+        .toList();
+    expect(
+      badgeCounts,
+      containsAll(<int>[7, 3]),
+      reason: '重试成功后摘要 counts 应渲染到正文段落角标',
+    );
+  });
+
+  testWidgets('摘要持续失败时自动重试有上限，不会无限打 FFI', (tester) async {
+    final summary = _SummaryCounter();
+    final api = _stubApi(summaryCounter: summary, failFirstSummaryCalls: 999);
+    await _enterReaderWithContentReady(tester, api);
+    expect(summary.calls, 1, reason: '首次请求已发生');
+
+    // 每次退避结束触发一次自动重试：共 3 次
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    }
+    expect(summary.calls, 4, reason: '首次失败后最多自动重试 3 次');
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(summary.calls, 4, reason: '达到重试上限后不得继续自动重试');
   });
 }

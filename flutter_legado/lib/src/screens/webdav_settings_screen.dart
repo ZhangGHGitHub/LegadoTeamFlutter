@@ -603,8 +603,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     }
     if (!await _confirmWebDavSync()) return;
     if (!mounted) return;
-    await _runWithProgress('恢复中…', () async {
-      // 批40 回修 P2-2：恢复与备份/自动备份共用进程内互斥（恢复会写库，
+    // [审查 P2-6] 该入口是上传方向（上传本地书架覆盖远端 + 回写远端书源），
+    // 进度文案不得写成「恢复中…」（与动作方向相反）。
+    await _runWithProgress('同步中…', () async {
+      // 批40 回修 P2-2：同步与备份/自动备份共用进程内互斥（同步会写库，
       // 与自动备份并发会互相覆盖）；已有备份执行中直接提示稍候。
       final message = await LocalBackupService.instance.runExclusiveRestore(
         () => ref.read(syncNotifierProvider.notifier).restoreFromWebDav(),
@@ -617,7 +619,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       await _reloadPrefsAfterRestore();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message.isEmpty ? '恢复完成' : message)),
+        SnackBar(content: Text(message.isEmpty ? '同步完成' : message)),
       );
     });
   }

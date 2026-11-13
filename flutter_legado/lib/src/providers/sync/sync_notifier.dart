@@ -285,11 +285,12 @@ class SyncNotifier extends Notifier<SyncState> {
     }
   }
 
-  /// 从 WebDAV 恢复（获取远端数据并回写书源）
+  /// WebDAV 全量同步（上传本地书架/书源，再回写远端书源）
   ///
-  /// 调用真实 webdavFullSync 取得远端合并数据，书源经 importBookSources 回写；
-  /// 书架批量回写受限于 BookApi 暂无批量导入契约，登记为跨轨需求。
-  /// 返回用于展示的结果描述。
+  /// 调用真实 webdavFullSync：先上传本地书架覆盖远端 bookshelf.json，再
+  /// 取远端合并数据，书源经 importBookSources 回写；书架批量回写受限于
+  /// BookApi 暂无批量导入契约，登记为跨轨需求。
+  /// 返回用于展示的结果描述（方向是同步，不是「恢复」）。
   Future<String> restoreFromWebDav() async {
     if (!state.isConfigured) {
       _setError('请先配置 WebDAV 服务器信息');
@@ -308,10 +309,12 @@ class SyncNotifier extends Notifier<SyncState> {
         imported = await api.importBookSources(remoteSources);
       }
       await _markSyncSuccess();
-      return '恢复完成，回写 $imported 条书源';
+      // [审查 P2-6] 该链路上传本地书架覆盖远端并回写远端书源，用户可见
+      // 结果文案按「同步」表述，避免与「恢复（远端覆盖本地）」方向混淆。
+      return '同步完成，回写 $imported 条书源';
     } catch (e) {
-      _setError('恢复失败: $e');
-      return '恢复失败: $e';
+      _setError('同步失败: $e');
+      return '同步失败: $e';
     }
   }
 
