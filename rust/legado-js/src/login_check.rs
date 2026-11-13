@@ -78,9 +78,52 @@ pub fn execute_login_check_response(
     response_code: u16,
     source_tag: &str,
 ) -> Result<LoginCheckResponse, LoginCheckEvalError> {
+    execute_login_check_response_with_context(
+        js_code,
+        response_body,
+        response_url,
+        response_code,
+        source_tag,
+        None,
+        None,
+    )
+}
+
+/// 执行 loginCheckJs（携带书源上下文：jsLib + setup 绑定）
+///
+/// [P2-8 引擎链审查 2026-11-13] 上游 `WebBook.kt:74-99` 的
+/// `analyzeUrl.evalJS(checkJs, it)` 并非裸 eval：`AnalyzeUrl.evalJS`
+/// （AnalyzeUrl.kt:395-421）会把 `source`/`cookie`/`cache`/`java` 等绑定进
+/// scope，并经 `source.getShareScope()` 挂载书源 jsLib（SharedJsScope）。
+/// 旧实现只 `QuickJsExecutor::new(source_tag)` 且只注入 `result`，导致
+/// loginCheckJs 调用 jsLib 函数或 `source.getVariable()` 时抛
+/// `xxx is not defined` → `JsFailed` → 错误沿登录检测上抛（整源失败）。
+///
+/// 本函数复用规则执行器的既有构造链（`QuickJsExecutor::with_js_lib` /
+/// `with_setup_script`，与 `js_adapter::construct_analyzer_with_source_context`
+/// 和 RSS `eval_login_check` 同构），不另造绑定逻辑：
+/// - `js_lib`：书源 jsLib（调用方可先 `sanitize_js_lib_for_quickjs`）；
+///   URL 映射形态由执行器 fresh 路径的 `jslib_loader` 解析；
+/// - `setup_script`：`legado_fetcher::source_setup::book_source_js_setup_script`
+///   生成的 `source/baseUrl/cookie/cache/java` 绑定。
+///
+/// 判定结果语义不变：`result` 注入与 [`parse_login_check_completion`] 的三叉点
+/// （`{}` 直通 / 对象采用 / 其余 CastFailed）逐字保留。
+#[cfg(feature = "quickjs")]
+pub fn execute_login_check_response_with_context(
+    js_code: &str,
+    response_body: &str,
+    response_url: &str,
+    response_code: u16,
+    source_tag: &str,
+    js_lib: Option<&str>,
+    setup_script: Option<&str>,
+) -> Result<LoginCheckResponse, LoginCheckEvalError> {
     use legado_parser::JsExecutor;
 
-    let executor = crate::executor::QuickJsExecutor::new(source_tag);
+    let executor = crate::executor::QuickJsExecutor::new(source_tag)
+        .with_js_lib(js_lib.map(str::to_string))
+        .with_setup_script(setup_script.map(str::to_string));
 
     // 注入方法形 result 绑定（对齐 Kotlin StrResponse 语义：
     // result.body()/url()/code() 方法调用）
@@ -168,6 +211,24 @@ pub fn execute_login_check_response(
     response_url: &str,
     response_code: u16,
     _source_tag: &str,
+) -> Result<LoginCheckResponse, LoginCheckEvalError> {
+    Ok(LoginCheckResponse {
+        code: response_code,
+        body: response_body.to_string(),
+        url: response_url.to_string(),
+    })
+}
+
+/// 非 quickjs 构建：上下文档同样静默直通（无 JS 引擎，绑定无意义）
+#[cfg(not(feature = "quickjs"))]
+pub fn execute_login_check_response_with_context(
+    _js_code: &str,
+    response_body: &str,
+    response_url: &str,
+    response_code: u16,
+    _source_tag: &str,
+    _js_lib: Option<&str>,
+    _setup_script: Option<&str>,
 ) -> Result<LoginCheckResponse, LoginCheckEvalError> {
     Ok(LoginCheckResponse {
         code: response_code,

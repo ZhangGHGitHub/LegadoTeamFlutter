@@ -164,3 +164,87 @@ fn js_source_engine_valid_jslib_still_constructs() {
         legado_js::JsSourceEngine::new_quickjs(config).expect("正常 jsLib 的 JS 源构造不得受影响");
     assert!(engine.is_main_js_loaded(), "构造期 mainJs 应已 eval 成功");
 }
+
+/// 回环 jsLib mock：返回固定 JS 文件（`Connection: close`）
+fn spawn_jslib_mock(body: &str) -> std::net::SocketAddr {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+    let addr = listener.local_addr().expect("local_addr");
+    let body = body.to_string();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut sock) = stream else { continue };
+            let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+            let mut buf = [0u8; 1024];
+            let mut req = Vec::new();
+            loop {
+                match sock.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        req.extend_from_slice(&buf[..n]);
+                        if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = sock.write_all(resp.as_bytes());
+        }
+    });
+    addr
+}
+
+/// ⑦ P2-5（引擎链审查 2026-11-13）：JS 书源 URL 映射形态 jsLib 必须经
+/// `jslib_loader` 解析后交给引擎缓存，不得把映射 JSON 原样 eval。
+/// 修复前：`init_engine` eval JSON 报语法错误 → `js_lib_ok=false` →
+/// `new_quickjs` 误报「jsLib 求值失败」。
+#[test]
+fn js_source_engine_url_map_jslib_is_resolved() {
+    let _guard = cache_guard();
+    engine_cache::clear_for_tests();
+    let addr = spawn_jslib_mock("function p25LibFn(){ return 'p25-lib-ok'; }");
+    let js_lib = format!(r#"{{"lib":"http://{addr}/lib.js"}}"#);
+    let config = legado_js::JsSourceConfig::new(
+        "p25-urlmap-source".to_string(),
+        "function probe(){ return p25LibFn(); }".to_string(),
+    )
+    .with_js_lib(js_lib);
+    let mut engine = legado_js::JsSourceEngine::new_quickjs(config)
+        .expect("URL 映射 jsLib 应被解析后加载，不得误报「jsLib 求值失败」（修复前红）");
+    assert_eq!(
+        engine
+            .call_function("probe", &[])
+            .expect("mainJs 调用库函数应成功"),
+        Some("p25-lib-ok".to_string()),
+        "URL 映射 jsLib 内容应已进入引擎"
+    );
+}
+
+/// ⑧ P2-5 拉取失败降级：单条 URL 拉取失败不阻断构造（与 `QuickJsExecutor`
+/// fresh 路径同约定：逐条跳过 + 能力台账登记），但失败必须可观测
+/// （`last_jslib_error` 按缓存键可查，措辞对齐上游「下载jsLib-…失败」）。
+#[test]
+fn js_source_engine_url_map_jslib_fetch_failure_is_observable() {
+    let _guard = cache_guard();
+    engine_cache::clear_for_tests();
+    let source_url = "p25-urlmap-fail-source";
+    let main_js = "function probe(){ return 1; }";
+    let cache_key = format!("mainjs:{source_url}:{main_js}");
+    let config = legado_js::JsSourceConfig::new(source_url.to_string(), main_js.to_string())
+        .with_js_lib(r#"{"bad":"http://127.0.0.1:1/never.js"}"#.to_string());
+    legado_js::JsSourceEngine::new_quickjs(config)
+        .expect("单条拉取失败按既有降级约定继续（不静默但也不阻断构造）");
+    let err = legado_js::host_api::capability_ledger::last_jslib_error(&cache_key)
+        .expect("拉取失败必须登记能力台账（可观测）");
+    assert!(
+        err.contains("下载jsLib-") && err.contains("never.js"),
+        "台账措辞须对齐上游并带失败 URL: {err}"
+    );
+}

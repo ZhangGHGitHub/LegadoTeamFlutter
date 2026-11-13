@@ -1347,6 +1347,23 @@ impl RealBookSourceFetcher {
         Ok(Some(body))
     }
 
+    /// loginCheckJs 上下文 setup（仅在配置了非空 checkJs 时生成）
+    ///
+    /// [P2-8] `execute_login_check` 需要书源 setup 绑定，但绝大多数源没有
+    /// loginCheckJs；若在每个搜索/详情/目录/正文请求上无条件生成，会平白
+    /// 增加宿主 DB 查询（infoMap/登录缓存）。此处按 checkJs 存在性短路。
+    fn login_check_setup_script(&self, source: &BookSource) -> Option<String> {
+        if source
+            .login_check_js
+            .as_deref()
+            .is_some_and(|js| !js.trim().is_empty())
+        {
+            self.deps.setup_script_for(source)
+        } else {
+            None
+        }
+    }
+
     /// 执行 loginCheckJs 登录检测（规则路径增强）
     ///
     /// 对齐原版 Kotlin WebBook.kt:74-99 双路径语义（searchBookAwait，
@@ -1373,11 +1390,19 @@ impl RealBookSourceFetcher {
     /// 返回值 = 解析应采用的响应（JS 修改值或原始值）；Err 上抛
     /// `LoginRequired` 由搜索链路按源静默吞吐（原版错误吞吐：单源
     /// 失败不中断其他源）。
+    ///
+    /// [P2-8 引擎链审查 2026-11-13] `setup_script` 为书源上下文绑定
+    /// （`legado_fetcher::source_setup::book_source_js_setup_script` 生成：
+    /// `source`/`cookie`/`cache`/`java`/`baseUrl`）。上游 `analyzeUrl.evalJS`
+    /// 会把该绑定与书源 jsLib 一起挂进 checkJs 作用域；旧实现缺失，
+    /// loginCheckJs 引用 `source.getVariable()` 或 jsLib 函数即抛错。
+    /// 宿主数据（infoMap/登录缓存）由调用方按其既有入口生成后传入。
     pub fn execute_login_check(
         source: &BookSource,
         response_body: &str,
         response_url: &str,
         response_code: u16,
+        setup_script: Option<&str>,
     ) -> LegadoResult<legado_js::login_check::LoginCheckResponse> {
         let login_check_js = match &source.login_check_js {
             Some(js) if !js.trim().is_empty() => js,
@@ -1391,13 +1416,19 @@ impl RealBookSourceFetcher {
             }
         };
 
+        // 与规则执行器同构：jsLib 先 sanitize（去 Rhino 特有行），URL 映射
+        // 形态由执行器 fresh 路径的 jslib_loader 解析
+        let js_lib = source.js_lib.as_deref().map(sanitize_js_lib_for_quickjs);
+
         // 首检（成功响应）：完成值按 StrResponse 对象解析
-        let first = legado_js::login_check::execute_login_check_response(
+        let first = legado_js::login_check::execute_login_check_response_with_context(
             login_check_js,
             response_body,
             response_url,
             response_code,
             &source.book_source_url,
+            js_lib.as_deref(),
+            setup_script,
         );
         if let Ok(resp) = first {
             return Ok(resp);
@@ -1407,12 +1438,14 @@ impl RealBookSourceFetcher {
         // [WebBook.kt:84-87] 错误路径：构造 errResponse（code 500，
         // body = 首次失败原因，对齐 getErrStrResponse 的 body=stackTraceStr）
         let err_body = format!("HTTP/1.1 500 Internal Server Error\n\n{}", first_err);
-        match legado_js::login_check::execute_login_check_response(
+        match legado_js::login_check::execute_login_check_response_with_context(
             login_check_js,
             &err_body,
             response_url,
             500,
             &source.book_source_url,
+            js_lib.as_deref(),
+            setup_script,
         ) {
             // [WebBook.kt:88-90] 二次 it.code() == 500 → throw throwable
             //（重抛原始 throwable = 整源失败）
@@ -1755,7 +1788,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let base_url = fetched.final_url;
 
         // 2.5 loginCheckJs 登录检测（规则路径增强）
-        Self::execute_login_check(source, &body, &base_url, 200)?;
+        Self::execute_login_check(
+            source,
+            &body,
+            &base_url,
+            200,
+            self.login_check_setup_script(source).as_deref(),
+        )?;
 
         let search_rule = source.rule_search.as_ref();
 
@@ -1975,7 +2014,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         );
 
         // 1.5 loginCheckJs 登录检测
-        Self::execute_login_check(source, &body, book_url, 200)?;
+        Self::execute_login_check(
+            source,
+            &body,
+            book_url,
+            200,
+            self.login_check_setup_script(source).as_deref(),
+        )?;
 
         // 2. 使用 bookInfo 规则解析（canReName/existing 由调用方决定：
         //    无状态入口传 true/空 → 解析值直接生效；换源传 false/既有值 → 门控）
@@ -2084,7 +2129,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .await?;
 
         // 1.5 loginCheckJs 登录检测
-        Self::execute_login_check(source, &body, &chapter.url, 200)?;
+        Self::execute_login_check(
+            source,
+            &body,
+            &chapter.url,
+            200,
+            self.login_check_setup_script(source).as_deref(),
+        )?;
 
         // 1.6 正文 webJs / sourceRegex（对齐 WebBook.getContent →
         // AnalyzeUrl.getStrResponseAwait(jsStr=webJs, sourceRegex=…)）
@@ -2533,7 +2584,13 @@ impl RealBookSourceFetcher {
         // `?` 解包后本路径不采用响应值——explore/toc 链本期范围红线，
         // 错误上抛 = 整源失败，对齐原版调用形态）。
         // 无 loginCheckJs 配置时内部直通原始响应，不影响既有源。
-        Self::execute_login_check(source, &toc_body, toc_url, 200)?;
+        Self::execute_login_check(
+            source,
+            &toc_body,
+            toc_url,
+            200,
+            self.login_check_setup_script(source).as_deref(),
+        )?;
         eprintln!(
             "[web_book] get_chapters_from_known_toc fetched {} in {:?}",
             analyze_toc.url(),
@@ -2601,7 +2658,13 @@ impl RealBookSourceFetcher {
             let page = self.fetch_page(&analyze_book, headers.as_ref()).await?;
             let toc_final_url = page.final_url;
             let info_body = page.body;
-            Self::execute_login_check(source, &info_body, book_url, 200)?;
+            Self::execute_login_check(
+                source,
+                &info_body,
+                book_url,
+                200,
+                self.login_check_setup_script(source).as_deref(),
+            )?;
             // P2-9 ②：书名空或配了 author 规则时建解析器（名字仅在空时补，
             // author 取 ruleBookInfo.author，逐行 trim 取首非空行，同 name 模式）
             let author_rule = info_rule.and_then(|r| r.author.as_deref());
@@ -2708,7 +2771,13 @@ impl RealBookSourceFetcher {
         eprintln!("[web_book] get_chapters info_body in {:?}", t0.elapsed());
 
         // 1.5 loginCheckJs 登录检测
-        Self::execute_login_check(source, &info_body, book_url, 200)?;
+        Self::execute_login_check(
+            source,
+            &info_body,
+            book_url,
+            200,
+            self.login_check_setup_script(source).as_deref(),
+        )?;
 
         let mut info_analyzer = construct_analyzer_with_source_context(
             info_body.clone(),
@@ -4792,7 +4861,13 @@ impl RealBookSourceFetcher {
         );
         let fetched = self.fetch_page(&analyze_url, headers.as_ref()).await?;
         // loginCheckJs：未登录上抛，交由调用方按「发现请求失败」处理
-        let login = Self::execute_login_check(source, &fetched.body, &fetched.final_url, 200)?;
+        let login = Self::execute_login_check(
+            source,
+            &fetched.body,
+            &fetched.final_url,
+            200,
+            self.login_check_setup_script(source).as_deref(),
+        )?;
         let body = login.body;
         let base_url = login.url;
 

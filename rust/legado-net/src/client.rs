@@ -233,7 +233,8 @@ impl LegadoClient {
 
         // SSL 配置：优先使用 ssl 字段，否则回退到 accept_invalid_certs
         if let Some(ref ssl) = config.ssl {
-            builder = ssl.apply(builder);
+            // P3-5：自定义 CA 解析失败显式上抛（不再静默按默认根证书连接）
+            builder = ssl.apply(builder)?;
         } else if config.accept_invalid_certs {
             builder = builder.danger_accept_invalid_certs(true);
         }
@@ -1771,6 +1772,24 @@ mod tests {
         };
         let client = LegadoClient::new(cfg);
         assert!(client.is_ok());
+    }
+
+    /// P3-5：坏自定义 CA 必须在客户端构建期显式失败（修复前静默忽略 → Ok）
+    #[test]
+    fn test_build_client_with_invalid_custom_ca_fails_explicitly() {
+        let cfg = LegadoClientConfig {
+            ssl: Some(SslConfig::with_ca("this is not a valid PEM")),
+            ..Default::default()
+        };
+        let err = match LegadoClient::new(cfg) {
+            Ok(_) => panic!("坏 CA 应 fail-fast 而不是静默按默认根证书连接"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("自定义 CA") && msg.contains("PEM 解析失败"),
+            "错误须明确指向自定义 CA 配置: {msg}"
+        );
     }
 
     #[test]

@@ -1236,6 +1236,10 @@ pub(crate) async fn search_single_source(
     // 书源上下文 setup：搜索模板 `{{source.getKey()}}` 等依赖 source/cookie
     // 绑定（爱下电子等源）——对齐原版 AnalyzeUrl.kt evalJS source 绑定
     let search_setup = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+    // loginCheckJs 复用同一书源上下文（P2-8）：setup 随 URL 构建闭包移动，
+    // 登录检测段保留克隆（source/cookie/cache + jsLib 绑定，对齐上游
+    // `analyzeUrl.evalJS(checkJs, it)`）。
+    let login_setup = search_setup.clone();
     let analyze_url = tokio::task::spawn_blocking(move || {
         crate::js_executor::build_search_url_with_setup(
             &template,
@@ -1343,7 +1347,11 @@ pub(crate) async fn search_single_source(
     // [WebBook.kt:100-111] 解析采用 login-check 返回的响应（baseUrl=res.url、
     // body=res.body）：bookUrlPattern 直连判定与相对 URL 绝对化均基于修改后 URL。
     let login_outcome = crate::api::web_book::RealBookSourceFetcher::execute_login_check(
-        source, &body, &final_url, resp_code,
+        source,
+        &body,
+        &final_url,
+        resp_code,
+        login_setup.as_deref(),
     )?;
     // [S0-D | 任务 B 2026-09-19；任务 A 2026-09-19 适配] login_check 段计时点
     //（env 门控 LEGADO_SEARCH_PHASE_TIMING）：已移至 login_check 调用之后，
@@ -2067,9 +2075,14 @@ mod s0e_tests {
     fn test_s0e_login_check_pass() {
         // ① 方法形 result 直通：JSON.stringify 丢弃函数属性 → "{}" → 原始三元组
         let source = mk_source("https://ex.com", None, Some("result"), None);
-        let resp =
-            RealBookSourceFetcher::execute_login_check(&source, "ok", "https://ex.com/s", 200)
-                .expect("方法形 result 应直通原始响应");
+        let resp = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "ok",
+            "https://ex.com/s",
+            200,
+            None,
+        )
+        .expect("方法形 result 应直通原始响应");
         assert_eq!(resp.code, 200);
         assert_eq!(resp.body, "ok", "直通应保留原始 body");
         assert_eq!(resp.url, "https://ex.com/s");
@@ -2081,9 +2094,14 @@ mod s0e_tests {
             Some("result.code() == 200 ? { code: 200, body: 'new-body', url: 'https://ex.com/s2' } : false"),
             None,
         );
-        let resp2 =
-            RealBookSourceFetcher::execute_login_check(&source2, "ok", "https://ex.com/s", 200)
-                .expect("可 cast 响应对象应通过");
+        let resp2 = RealBookSourceFetcher::execute_login_check(
+            &source2,
+            "ok",
+            "https://ex.com/s",
+            200,
+            None,
+        )
+        .expect("可 cast 响应对象应通过");
         assert_eq!(resp2.body, "new-body", "应采用 JS 修改后的 body");
         assert_eq!(resp2.url, "https://ex.com/s2", "应采用 JS 修改后的 url");
     }
@@ -2093,8 +2111,9 @@ mod s0e_tests {
     #[test]
     fn test_s0e_login_check_required() {
         let source = mk_source("https://ex.com", None, Some("false"), None);
-        let err = RealBookSourceFetcher::execute_login_check(&source, "b", "https://ex.com/s", 200)
-            .expect_err("false 应判定未登录");
+        let err =
+            RealBookSourceFetcher::execute_login_check(&source, "b", "https://ex.com/s", 200, None)
+                .expect_err("false 应判定未登录");
         assert!(matches!(err, LegadoError::LoginRequired(_)));
     }
 
@@ -2119,6 +2138,7 @@ mod s0e_tests {
             "login-wall",
             "https://ex.com/s",
             200,
+            None,
         )
         .expect("二次 eval 返回 code != 500 对象应放行");
         assert_eq!(resp.code, 200, "应采用二次结果的 code");

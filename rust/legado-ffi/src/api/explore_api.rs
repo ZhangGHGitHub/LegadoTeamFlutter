@@ -578,11 +578,21 @@ async fn explore_books_async(
     //   body = res.body)`）。
     // — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
     // — full-stack-engineer + Bridge（STAGE4-P36 语义对齐 F1 三叉点）
+    // — 引擎链审查 P2-8：checkJs 需与规则执行器同构的 source/cookie/cache
+    //   + jsLib 上下文（上游 `analyzeUrl.evalJS(checkJs, it)`），宿主数据经
+    //   既有 `book_source_js_setup_script` 入口生成；无 checkJs 时不生成
+    //   （避免为绝大多数源平白增加 DB 查询）。
+    let login_setup = source
+        .login_check_js
+        .as_deref()
+        .filter(|js| !js.trim().is_empty())
+        .and_then(|_| crate::api::source_js_bindings::book_source_js_setup_script(source).ok());
     let login_outcome = crate::api::web_book::RealBookSourceFetcher::execute_login_check(
         source,
         &response_body,
         &response_url,
         response_status,
+        login_setup.as_deref(),
     )?;
 
     let body = login_outcome.body;
@@ -1078,6 +1088,7 @@ mod login_check_tests {
             "<html>登录页</html>",
             "https://a.com/explore",
             200,
+            None,
         )
         .unwrap_err();
         assert!(matches!(r, LegadoError::LoginRequired(_)));
@@ -1093,6 +1104,7 @@ mod login_check_tests {
             "<html>正常页</html>",
             "https://a.com/explore",
             200,
+            None,
         );
         assert!(
             matches!(r, Err(LegadoError::LoginRequired(_))),
@@ -1115,6 +1127,7 @@ mod login_check_tests {
             "<html>登录页</html>",
             "https://a.com/explore",
             200,
+            None,
         )
         .expect("二次 eval code≠500 应放行");
         assert_eq!(r.body, "auto-login-ok", "应采用二次修改响应体，实际: {r:?}");
@@ -1136,6 +1149,7 @@ mod login_check_tests {
             "<html>正常页</html>",
             "https://a.com/explore",
             200,
+            None,
         )
         .expect("JS 修改响应应首检成功");
         assert_eq!(
@@ -1156,6 +1170,7 @@ mod login_check_tests {
             "<html>x</html>",
             "https://a.com",
             200,
+            None,
         )
         .expect("无 loginCheckJs 配置应直通");
         assert_eq!(r.body, "<html>x</html>");
