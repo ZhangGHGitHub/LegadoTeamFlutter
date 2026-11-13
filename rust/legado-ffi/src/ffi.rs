@@ -455,7 +455,10 @@ pub mod ffi {
     ///
     /// 返回 CheckResult JSON：`source_url` / `search_ok` / `toc_ok` /
     /// `content_ok` / `search_error` / `toc_error` / `content_error` /
-    /// `total_time_ms` / `captcha` / `redirect`。
+    /// `total_time_ms` / `captcha` / `redirect` / `cancelled`。
+    ///
+    /// `step_timeout_ms` 真正生效：每个网络步骤超时记为 `"timeout"`，
+    /// 整源总预算为 `step_timeout_ms × 启用步数`。
     ///
     /// `source_json` — BookSource JSON（字段名对齐 Android 原版 camelCase）
     /// `config_json` — 可选校验配置 JSON（keyword/step_timeout_ms/check_search/
@@ -470,6 +473,9 @@ pub mod ffi {
     /// 每完成一个书源即推送一条进度 JSON：`index` / `total` / `is_last` /
     /// `source_name` / `result`（CheckResult）。流在所有书源完成、
     /// 取消或 sink 关闭后自然结束。
+    ///
+    /// 取消（[`Self::source_check_cancel`]）在 100ms 轮询周期内打断在途
+    /// 请求；被取消的书源不回推进度（不计为书源失败）。
     ///
     /// `source_urls_json` — 待校验书源 URL 的 JSON 数组；为空则校验全部书源
     /// `config_json` — 可选校验配置 JSON，空串用默认配置

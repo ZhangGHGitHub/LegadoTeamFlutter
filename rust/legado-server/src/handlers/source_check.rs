@@ -128,6 +128,7 @@ pub async fn check_batch(
                         total_time_ms: 0,
                         captcha: None,
                         redirect: None,
+                        cancelled: false,
                     };
                 }
             };
@@ -152,6 +153,7 @@ pub async fn check_batch(
                     total_time_ms: 0,
                     captcha: None,
                     redirect: None,
+                    cancelled: false,
                 });
             }
         }

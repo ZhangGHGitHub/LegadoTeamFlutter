@@ -10,21 +10,30 @@
 //!
 //! 与 server 端点的差异：批量校验采用串行执行（对齐 Kotlin 原版），
 //! 避免对书源站产生并发压力；支持全局取消（对齐 Kotlin `CheckSource.stop`）。
+//!
+//! P1-5（超时/取消接线）：`step_timeout_ms` 经 [`CheckerConfig`] 下传，
+//! 检查器对每个网络步骤（搜索/详情/目录/正文）施加 `tokio::time::timeout`，
+//! 并以整源总预算 `step_timeout_ms × 步数` 兜底；取消令牌在每步
+//! `select!` 中轮询，卡住的请求可在 100ms 内被丢弃。取消结果以
+//! [`CheckResult::cancelled`] 标记，不计为书源失败。
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use serde::{Deserialize, Serialize};
 
 use legado_core::models::BookSource;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::BookSourceRepository;
-use legado_net::source_checker::{CheckResult, CheckerConfig, SourceChecker};
+use legado_net::source_checker::{CancelToken, CheckResult, CheckerConfig, SourceChecker};
 
 use crate::db_state::with_database;
 
-/// 批量校验全局取消标志（对齐搜索链路 `SEARCH_CANCELLED` 模式）
-static CHECK_CANCELLED: AtomicBool = AtomicBool::new(false);
+/// 批量校验全局取消令牌（对齐搜索链路 `SEARCH_CANCELLED` 模式）
+///
+/// P1-5：由 `AtomicBool` 升级为 [`CancelToken`]，检查器在每个网络步骤的
+/// `select!` 中轮询该标志——取消不再只在书源之间生效，卡住的请求也能在
+/// 一个轮询周期（100ms）内被打断。
+static CHECK_CANCELLED: LazyLock<CancelToken> = LazyLock::new(CancelToken::new);
 
 // ─── 配置 DTO ─────────────────────────────────────────────────────────────────
 
@@ -67,11 +76,21 @@ fn parse_config(config_json: &str) -> LegadoResult<CheckerConfig> {
 }
 
 /// 创建共享 HTTP 客户端上的书源检查器
-fn create_checker(config: CheckerConfig) -> LegadoResult<SourceChecker> {
+///
+/// `cancel` — 可选取消令牌（批量校验注入全局 [`CHECK_CANCELLED`]；
+/// 单本校验传 `None`，仅受 `step_timeout_ms` 约束）
+fn create_checker(
+    config: CheckerConfig,
+    cancel: Option<CancelToken>,
+) -> LegadoResult<SourceChecker> {
     // shared_client 内部为 Arc 全共享结构，clone 廉价；
     // 校验链路复用全局连接池与 Cookie 存储（对齐搜索/取章链路）
     let client = Arc::new(crate::http_state::shared_client()?);
-    Ok(SourceChecker::with_config(client, config))
+    let checker = SourceChecker::with_config(client, config);
+    Ok(match cancel {
+        Some(token) => checker.with_cancel_token(token),
+        None => checker,
+    })
 }
 
 // ─── 单本校验 ─────────────────────────────────────────────────────────────────
@@ -86,7 +105,7 @@ pub fn check_source(source_json: &str, config_json: &str) -> LegadoResult<CheckR
     let source: BookSource = serde_json::from_str(source_json)
         .map_err(|e| LegadoError::Ffi(format!("BookSource JSON 解析失败: {e}")))?;
     let config = parse_config(config_json)?;
-    let checker = create_checker(config)?;
+    let checker = create_checker(config, None)?;
     Ok(crate::runtime::block_on(async move {
         checker.check_full(&source).await
     }))
@@ -152,7 +171,7 @@ async fn run_check_sources_stream_inner<F>(
     F: FnMut(String) -> Result<(), String>,
 {
     // 新一轮校验重置取消标志
-    CHECK_CANCELLED.store(false, Ordering::SeqCst);
+    CHECK_CANCELLED.reset();
 
     let total = sources.len();
     if total == 0 {
@@ -160,7 +179,7 @@ async fn run_check_sources_stream_inner<F>(
     }
 
     let config = parse_config(config_json).unwrap_or_default();
-    let checker = match create_checker(config) {
+    let checker = match create_checker(config, Some(CHECK_CANCELLED.clone())) {
         Ok(c) => c,
         Err(e) => {
             log::error!("书源校验：共享 HTTP 客户端初始化失败: {e}");
@@ -170,7 +189,7 @@ async fn run_check_sources_stream_inner<F>(
 
     // 串行逐个校验（对齐 Kotlin CheckSourceService，避免对书源站并发压力）
     for (index, source) in sources.into_iter().enumerate() {
-        if CHECK_CANCELLED.load(Ordering::SeqCst) {
+        if CHECK_CANCELLED.is_cancelled() {
             break;
         }
 
@@ -188,8 +207,17 @@ async fn run_check_sources_stream_inner<F>(
                 total_time_ms: 0,
                 captcha: None,
                 redirect: None,
+                cancelled: false,
             },
         };
+
+        // P1-5：取消发生在某个书源内部时，该结果标记为「已取消」而非
+        // 「书源不可用」——流按取消静默结束，不回推这条半成品结果
+        //（对齐 Kotlin `flow` 取消语义：被取消的调用不发射结果）。
+        if result.is_cancelled() {
+            log::debug!("书源校验：用户取消，终止流（已完成 {index}/{total}）");
+            break;
+        }
 
         let progress = CheckProgress {
             index,
@@ -212,8 +240,11 @@ async fn run_check_sources_stream_inner<F>(
 }
 
 /// 取消正在进行的批量校验（对齐 Kotlin `CheckSource.stop`）
+///
+/// P1-5：置位后，正在进行的网络步骤会在 100ms 轮询周期内被 `select!`
+/// 打断（不再等当前书源的 1~3 个 HTTP 请求自然结束）。
 pub fn cancel_check_sources() {
-    CHECK_CANCELLED.store(true, Ordering::SeqCst);
+    CHECK_CANCELLED.cancel();
 }
 
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
@@ -254,6 +285,7 @@ fn all_sources_as_options() -> LegadoResult<Vec<Option<BookSource>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     /// 流式测试共享全局取消标志 `CHECK_CANCELLED`，并行执行会互相
     /// 置位/重置导致不稳定，故串行化所有流式测试。
@@ -336,6 +368,130 @@ mod tests {
     #[test]
     fn test_check_source_invalid_json() {
         assert!(check_source("{not json", "").is_err());
+    }
+
+    /// P1-5：DTO → `CheckerConfig` → `SourceChecker` 全链路字段不丢失
+    ///
+    /// 修复前 `step_timeout_ms` 只被解析、从未被检查器消费；本用例锁定
+    /// 「FFI 入口拿到的检查器确实带着请求里的配置」。
+    #[test]
+    fn test_create_checker_carries_all_config_fields() {
+        let config = parse_config(
+            r#"{
+                "keyword":"校验词",
+                "step_timeout_ms":5000,
+                "check_search":false,
+                "check_toc":false,
+                "check_content":false,
+                "detect_captcha":false,
+                "detect_redirect":false
+            }"#,
+        )
+        .unwrap();
+        let checker = create_checker(config, Some(CancelToken::new())).expect("创建检查器");
+
+        let effective = checker.config();
+        assert_eq!(effective.keyword, "校验词");
+        assert_eq!(effective.step_timeout_ms, 5_000);
+        assert!(!effective.check_search);
+        assert!(!effective.check_toc);
+        assert!(!effective.check_content);
+        assert!(!effective.detect_captcha);
+        assert!(!effective.detect_redirect);
+    }
+
+    /// P1-5：全局取消标志置位/复位
+    #[tokio::test]
+    async fn test_cancel_flag_roundtrip() {
+        let _guard = lock_stream_tests().await;
+        CHECK_CANCELLED.reset();
+        assert!(!CHECK_CANCELLED.is_cancelled());
+
+        cancel_check_sources();
+        assert!(CHECK_CANCELLED.is_cancelled());
+
+        CHECK_CANCELLED.reset();
+        assert!(!CHECK_CANCELLED.is_cancelled());
+    }
+
+    /// P1-5：批量校验中取消必须打断卡住的请求（而非等当前书源跑完）
+    ///
+    /// 本地回环服务器 accept 后不回包；200ms 后置位全局取消标志，
+    /// 断言整条流 1s 内结束，且不为在途书源回推「失败」结果。
+    /// 修复前该用例会等满客户端 read_timeout（60s）。
+    #[tokio::test]
+    async fn test_stream_cancel_interrupts_hanging_request() {
+        use std::io::Read;
+
+        let _guard = lock_stream_tests().await;
+
+        // 卡死服务器：接受连接并读完请求头后一直不回包
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑定回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            while let Ok((mut sock, _)) = listener.accept() {
+                std::thread::spawn(move || {
+                    let mut buf = [0u8; 4096];
+                    let _ = sock.read(&mut buf);
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                });
+            }
+        });
+
+        let mut source = make_source_no_search(&format!("http://127.0.0.1:{port}"), "卡死源");
+        source.search_url = Some(format!("http://127.0.0.1:{port}/search?q={{key}}"));
+
+        let collected = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let collected_cb = collected.clone();
+
+        let canceller = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            cancel_check_sources();
+        });
+
+        let started = std::time::Instant::now();
+        run_check_sources_stream_inner(vec![Some(source)], "", move |json| {
+            collected_cb.lock().unwrap().push(json);
+            Ok(())
+        })
+        .await;
+        let elapsed = started.elapsed();
+        canceller.await.unwrap();
+
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "取消应在 1s 内返回，实际 {elapsed:?}"
+        );
+        assert!(
+            collected.lock().unwrap().is_empty(),
+            "被用户取消的书源不得回推结果（不计为书源失败）"
+        );
+        CHECK_CANCELLED.reset();
+    }
+
+    /// 上一轮残留的取消标志不得吞掉新一轮批量校验
+    #[tokio::test]
+    async fn test_stream_run_resets_stale_cancel_flag() {
+        let _guard = lock_stream_tests().await;
+        cancel_check_sources();
+
+        let collected = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let collected_cb = collected.clone();
+        run_check_sources_stream_inner(
+            vec![Some(make_source_no_search("https://a.example.com", "源A"))],
+            "",
+            move |json| {
+                collected_cb.lock().unwrap().push(json);
+                Ok(())
+            },
+        )
+        .await;
+
+        assert_eq!(
+            collected.lock().unwrap().len(),
+            1,
+            "残留取消标志应在新一轮开始时被复位"
+        );
     }
 
     // ─── 批量流式校验 ─────────────────────────────────────────
@@ -485,6 +641,7 @@ mod tests {
                 total_time_ms: 100,
                 captcha: None,
                 redirect: None,
+                cancelled: false,
             },
         };
         let json = serde_json::to_string(&progress).unwrap();
@@ -498,6 +655,7 @@ mod tests {
             "\"toc_ok\"",
             "\"content_ok\"",
             "\"total_time_ms\"",
+            "\"cancelled\"",
         ] {
             assert!(json.contains(field), "缺少字段 {field}: {json}");
         }

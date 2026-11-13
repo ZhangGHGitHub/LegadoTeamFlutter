@@ -70,7 +70,9 @@ pub use rule_update_client::{
     extract_subscription_version, fetch_subscription, has_subscription_update, merge_subscription,
     should_update, MergeResult, RuleSubscription, UpdateResult,
 };
-pub use source_checker::{CaptchaInfo, CheckResult, CheckerConfig, RedirectInfo, SourceChecker};
+pub use source_checker::{
+    CancelToken, CaptchaInfo, CheckResult, CheckerConfig, RedirectInfo, SourceChecker,
+};
 pub use ssl_config::SslConfig;
 pub use user_agent::{
     default_user_agent, set_default_user_agent, UserAgentMiddleware, UserAgentRotator,

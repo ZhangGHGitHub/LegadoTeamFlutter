@@ -4,6 +4,7 @@
 //! 通过 `LegadoClient` 发起 HTTP 请求，验证书源规则是否可正常工作。
 //! 增强功能：验证码识别、重定向详情检测（对齐 `SourceVerificationHelp`）。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -84,6 +85,13 @@ pub struct CheckResult {
     pub captcha: Option<CaptchaInfo>,
     /// 重定向检测结果
     pub redirect: Option<RedirectInfo>,
+    /// 是否被用户主动取消（P1-5）
+    ///
+    /// `true` 表示校验在完成前收到取消请求（[`CancelToken`]），此时
+    /// 各步错误字段为 `"cancelled"` / `"skipped: cancelled"`，**不表示
+    /// 书源不可用**。批量校验流遇到该结果会静默结束，不再回推后续进度。
+    #[serde(default)]
+    pub cancelled: bool,
 }
 
 impl CheckResult {
@@ -101,12 +109,20 @@ impl CheckResult {
             total_time_ms: 0,
             captcha: None,
             redirect: None,
+            cancelled: false,
         }
     }
 
     /// 所有检查是否都通过
     pub fn all_ok(&self) -> bool {
-        self.search_ok && self.toc_ok && self.content_ok
+        !self.cancelled && self.search_ok && self.toc_ok && self.content_ok
+    }
+
+    /// 校验是否被用户主动取消
+    ///
+    /// 取消态不是「书源不可用」：批量校验不应把它计入失败统计/清源依据。
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
     }
 
     /// 搜索检查是否通过
@@ -128,17 +144,131 @@ impl CheckResult {
     pub fn is_available(&self) -> bool {
         self.search_ok && !self.has_captcha()
     }
+
+    /// 收尾：写入总耗时
+    fn finish_at(mut self, start: Instant) -> Self {
+        self.total_time_ms = start.elapsed().as_millis() as i64;
+        self
+    }
+
+    /// 收尾：标记用户取消并写入总耗时
+    fn finish_cancelled(mut self, start: Instant) -> Self {
+        self.cancelled = true;
+        self.finish_at(start)
+    }
 }
 
 /// 默认搜索关键词（对应 Kotlin `CheckSource.keyword`）
 const DEFAULT_KEYWORD: &str = "我的";
+
+/// 取消标志轮询间隔
+///
+/// 「停止校验」的响应上界：即使请求正卡在网络上，`select!` 也会在
+/// 一个轮询周期内丢弃请求 future 返回（远小于用户可感知的 1s）。
+const CANCEL_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// 单步超时下界（防御 0 值配置：避免每次请求立即失败）
+const MIN_STEP_TIMEOUT_MS: u64 = 100;
+
+/// 单步/整源超时上界（防御异常配置：避免 `Instant` 加法溢出）
+const MAX_STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// 步骤超时标记（写入 `search_error` / `toc_error` / `content_error`）
+pub const STEP_TIMEOUT_ERROR: &str = "timeout";
+
+/// 步骤被用户取消的标记
+pub const STEP_CANCELLED_ERROR: &str = "cancelled";
+
+/// 因用户取消而跳过的后续步骤标记
+pub const STEP_SKIPPED_CANCELLED: &str = "skipped: cancelled";
+
+/// 单步执行结果（P1-5：区分超时、用户取消与业务失败）
+enum StepOutcome<T> {
+    /// 步骤完成
+    Done(T),
+    /// 步骤业务失败（网络错误、状态码/空响应、规则匹配失败等）
+    Failed(String),
+    /// 步骤超过 `step_timeout_ms`（或整源总预算耗尽）
+    TimedOut,
+    /// 用户主动取消（不计为书源不可用）
+    Cancelled,
+}
+
+/// 等待取消令牌置位（`None` 表示无取消能力：永不返回）
+async fn wait_for_cancel(token: Option<CancelToken>) {
+    match token {
+        Some(token) => {
+            while !token.is_cancelled() {
+                tokio::time::sleep(CANCEL_POLL_INTERVAL).await;
+            }
+        }
+        None => std::future::pending::<()>().await,
+    }
+}
+
+/// 标记「本步被取消 / 后续步骤因取消跳过」，未启用的步骤直接置为通过
+fn mark_cancelled_step(
+    error: &mut Option<String>,
+    enabled: bool,
+    ok: &mut bool,
+    at_this_step: bool,
+) {
+    if !enabled {
+        *ok = true;
+        return;
+    }
+    let message = if at_this_step {
+        STEP_CANCELLED_ERROR
+    } else {
+        STEP_SKIPPED_CANCELLED
+    };
+    *error = Some(message.to_string());
+}
+
+/// 校验取消令牌（批量校验共享，对齐 Kotlin `CheckSource.stop`）
+///
+/// 由调用方（如 legado-ffi 的批量校验流）创建并经
+/// [`SourceChecker::with_cancel_token`] 注入。检查器在每个网络步骤的
+/// `select!` 中轮询该标志；置位后当前请求立即被丢弃，`CheckResult`
+/// 以 [`CheckResult::cancelled`] 标记返回，而不是记为书源失败。
+#[derive(Debug, Clone, Default)]
+pub struct CancelToken {
+    flag: Arc<AtomicBool>,
+}
+
+impl CancelToken {
+    /// 创建未取消的令牌
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 置位取消（幂等；可由任意线程/上下文调用）
+    pub fn cancel(&self) {
+        self.flag.store(true, Ordering::SeqCst);
+    }
+
+    /// 是否已取消
+    pub fn is_cancelled(&self) -> bool {
+        self.flag.load(Ordering::SeqCst)
+    }
+
+    /// 复位为未取消（新一轮批量校验开始时调用）
+    pub fn reset(&self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
+}
 
 /// 书源检查器配置
 #[derive(Debug, Clone)]
 pub struct CheckerConfig {
     /// 搜索关键词
     pub keyword: String,
-    /// 单步超时（毫秒）
+    /// 单步超时（毫秒，默认 180_000）
+    ///
+    /// 每个网络步骤（搜索 / 详情 / 目录 / 正文）独立计时；整源总预算为
+    /// `step_timeout_ms × 启用步数`（见 [`SourceChecker::check_full`]）。
+    /// 超时记为该步失败（`"timeout"`）而非放弃整源。防御性夹取
+    /// 100ms~24h。
     pub step_timeout_ms: u64,
     /// 是否检查搜索
     pub check_search: bool,
@@ -172,6 +302,8 @@ impl Default for CheckerConfig {
 pub struct SourceChecker {
     client: Arc<LegadoClient>,
     config: CheckerConfig,
+    /// 取消令牌（批量校验注入；单本校验为 `None`，仅受超时约束）
+    cancel: Option<CancelToken>,
 }
 
 impl SourceChecker {
@@ -180,12 +312,98 @@ impl SourceChecker {
         Self {
             client,
             config: CheckerConfig::default(),
+            cancel: None,
         }
     }
 
     /// 使用自定义配置创建检查器
     pub fn with_config(client: Arc<LegadoClient>, config: CheckerConfig) -> Self {
-        Self { client, config }
+        Self {
+            client,
+            config,
+            cancel: None,
+        }
+    }
+
+    /// 注入取消令牌（批量校验「停止」用）
+    pub fn with_cancel_token(mut self, token: CancelToken) -> Self {
+        self.cancel = Some(token);
+        self
+    }
+
+    /// 当前生效的检查配置（供上层断言 DTO → 配置链路）
+    pub fn config(&self) -> &CheckerConfig {
+        &self.config
+    }
+
+    /// 取消标志是否已置位
+    fn is_cancelled(&self) -> bool {
+        self.cancel.as_ref().is_some_and(CancelToken::is_cancelled)
+    }
+
+    /// 生效的单步超时（契约字段 [`CheckerConfig::step_timeout_ms`]）
+    ///
+    /// 防御性夹取：`0` 会使每次请求立即失败，下限取 [`MIN_STEP_TIMEOUT_MS`]；
+    /// 上限取 [`MAX_STEP_TIMEOUT`]（24h），避免 `Instant` 加法溢出。
+    fn effective_step_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.config.step_timeout_ms.max(MIN_STEP_TIMEOUT_MS))
+            .min(MAX_STEP_TIMEOUT)
+    }
+
+    /// 整源总预算的步数（仅统计启用的步骤，至少 1）
+    fn enabled_step_count(&self) -> u32 {
+        let mut count = 0;
+        if self.config.check_search {
+            count += 1;
+        }
+        if self.config.check_toc {
+            count += 1;
+        }
+        if self.config.check_content {
+            count += 1;
+        }
+        count.max(1)
+    }
+
+    /// 整源总上限：`step_timeout_ms × 步数`
+    ///
+    /// 防多步叠加无界：每步预算取 `min(step_timeout, 距离 deadline 的剩余)`
+    /// （见 [`Self::run_step`]），整源耗时不会超过该值。
+    fn total_deadline(&self, start: Instant, steps: u32) -> Instant {
+        start + self.effective_step_timeout() * steps.max(1)
+    }
+
+    /// 执行单个网络步骤：单步超时 + 取消可中断
+    ///
+    /// - 超时 → [`StepOutcome::TimedOut`]（记 `"timeout"`，继续由调用方
+    ///   决定后续步骤的跳过语义）；
+    /// - 取消 → [`StepOutcome::Cancelled`]（用户主动，返回前丢弃请求 future，
+    ///   在 [`CANCEL_POLL_INTERVAL`] 内生效）；
+    /// - 业务失败 → [`StepOutcome::Failed`]（保留原错误文案）。
+    ///
+    /// 整源总预算耗尽时不再发起请求，直接返回 `TimedOut`。
+    async fn run_step<T, F>(&self, step: F, deadline: Instant) -> StepOutcome<T>
+    where
+        F: std::future::Future<Output = Result<T, String>>,
+    {
+        // 取消优先于预算判定：已在取消态时立即返回
+        if self.is_cancelled() {
+            return StepOutcome::Cancelled;
+        }
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            return StepOutcome::TimedOut;
+        };
+        let budget = self.effective_step_timeout().min(remaining);
+
+        tokio::select! {
+            biased;
+            _ = wait_for_cancel(self.cancel.clone()) => StepOutcome::Cancelled,
+            outcome = tokio::time::timeout(budget, step) => match outcome {
+                Ok(Ok(value)) => StepOutcome::Done(value),
+                Ok(Err(message)) => StepOutcome::Failed(message),
+                Err(_) => StepOutcome::TimedOut,
+            },
+        }
     }
 
     /// 完整检查（搜索 + 目录 + 内容 + 验证码检测 + 重定向检测）
@@ -199,10 +417,11 @@ impl SourceChecker {
     /// 7. 记录每步成功/失败
     pub async fn check_full(&self, source: &BookSource) -> CheckResult {
         let start = Instant::now();
-        let source_url = &source.book_source_url;
+        // 整源总上限 = 单步超时 × 启用步数（防多步叠加无界）
+        let deadline = self.total_deadline(start, self.enabled_step_count());
 
         let mut result = CheckResult {
-            source_url: source_url.clone(),
+            source_url: source.book_source_url.clone(),
             search_ok: false,
             toc_ok: false,
             content_ok: false,
@@ -212,18 +431,62 @@ impl SourceChecker {
             total_time_ms: 0,
             captcha: None,
             redirect: None,
+            cancelled: false,
         };
+
+        // 入口即取消：不发起任何请求（不计为书源失败）
+        if self.is_cancelled() {
+            mark_cancelled_step(
+                &mut result.search_error,
+                self.config.check_search,
+                &mut result.search_ok,
+                true,
+            );
+            mark_cancelled_step(
+                &mut result.toc_error,
+                self.config.check_toc,
+                &mut result.toc_ok,
+                true,
+            );
+            mark_cancelled_step(
+                &mut result.content_error,
+                self.config.check_content,
+                &mut result.content_ok,
+                true,
+            );
+            return result.finish_cancelled(start);
+        }
 
         // Step 1: 搜索检查
         let search_result = if self.config.check_search {
-            match self.do_search_check(source).await {
-                Ok(first_book_url) => {
+            match self.run_step(self.do_search_check(source), deadline).await {
+                StepOutcome::Done(first_book_url) => {
                     result.search_ok = true;
                     Some(first_book_url)
                 }
-                Err(e) => {
+                StepOutcome::Failed(e) => {
                     result.search_error = Some(e);
                     None
+                }
+                StepOutcome::TimedOut => {
+                    result.search_error = Some(STEP_TIMEOUT_ERROR.to_string());
+                    None
+                }
+                StepOutcome::Cancelled => {
+                    mark_cancelled_step(
+                        &mut result.toc_error,
+                        self.config.check_toc,
+                        &mut result.toc_ok,
+                        false,
+                    );
+                    mark_cancelled_step(
+                        &mut result.content_error,
+                        self.config.check_content,
+                        &mut result.content_ok,
+                        false,
+                    );
+                    result.search_error = Some(STEP_CANCELLED_ERROR.to_string());
+                    return result.finish_cancelled(start);
                 }
             }
         } else {
@@ -234,14 +497,31 @@ impl SourceChecker {
         // Step 2: 目录检查（需要搜索结果中的书籍 URL）
         let toc_result = if self.config.check_toc {
             if let Some(ref book_url) = search_result {
-                match self.do_toc_check(source, book_url).await {
-                    Ok(first_chapter_url) => {
+                match self
+                    .run_step(self.do_toc_check(source, book_url), deadline)
+                    .await
+                {
+                    StepOutcome::Done(first_chapter_url) => {
                         result.toc_ok = true;
                         Some(first_chapter_url)
                     }
-                    Err(e) => {
+                    StepOutcome::Failed(e) => {
                         result.toc_error = Some(e);
                         None
+                    }
+                    StepOutcome::TimedOut => {
+                        result.toc_error = Some(STEP_TIMEOUT_ERROR.to_string());
+                        None
+                    }
+                    StepOutcome::Cancelled => {
+                        mark_cancelled_step(
+                            &mut result.content_error,
+                            self.config.check_content,
+                            &mut result.content_ok,
+                            false,
+                        );
+                        result.toc_error = Some(STEP_CANCELLED_ERROR.to_string());
+                        return result.finish_cancelled(start);
                     }
                 }
             } else if result.search_error.is_some() {
@@ -259,12 +539,22 @@ impl SourceChecker {
         // Step 3: 内容检查（需要目录结果中的章节 URL）
         if self.config.check_content {
             if let Some(ref chapter_url) = toc_result {
-                match self.do_content_check(source, chapter_url).await {
-                    Ok(()) => {
+                match self
+                    .run_step(self.do_content_check(source, chapter_url), deadline)
+                    .await
+                {
+                    StepOutcome::Done(()) => {
                         result.content_ok = true;
                     }
-                    Err(e) => {
+                    StepOutcome::Failed(e) => {
                         result.content_error = Some(e);
+                    }
+                    StepOutcome::TimedOut => {
+                        result.content_error = Some(STEP_TIMEOUT_ERROR.to_string());
+                    }
+                    StepOutcome::Cancelled => {
+                        result.content_error = Some(STEP_CANCELLED_ERROR.to_string());
+                        return result.finish_cancelled(start);
                     }
                 }
             } else if result.toc_error.is_some() {
@@ -276,8 +566,7 @@ impl SourceChecker {
             result.content_ok = true;
         }
 
-        result.total_time_ms = start.elapsed().as_millis() as i64;
-        result
+        result.finish_at(start)
     }
 
     /// 快速检查（仅搜索 + 验证码/重定向检测）
@@ -285,10 +574,10 @@ impl SourceChecker {
     /// 简化校验流程，快速判断书源是否可用。
     pub async fn check_search(&self, source: &BookSource) -> CheckResult {
         let start = Instant::now();
-        let source_url = &source.book_source_url;
+        let deadline = self.total_deadline(start, 1);
 
         let mut result = CheckResult {
-            source_url: source_url.clone(),
+            source_url: source.book_source_url.clone(),
             search_ok: false,
             toc_ok: false,
             content_ok: false,
@@ -298,19 +587,31 @@ impl SourceChecker {
             total_time_ms: 0,
             captcha: None,
             redirect: None,
+            cancelled: false,
         };
 
-        match self.do_search_check(source).await {
-            Ok(_) => {
+        if self.is_cancelled() {
+            result.search_error = Some(STEP_CANCELLED_ERROR.to_string());
+            return result.finish_cancelled(start);
+        }
+
+        match self.run_step(self.do_search_check(source), deadline).await {
+            StepOutcome::Done(_) => {
                 result.search_ok = true;
             }
-            Err(e) => {
+            StepOutcome::Failed(e) => {
                 result.search_error = Some(e);
+            }
+            StepOutcome::TimedOut => {
+                result.search_error = Some(STEP_TIMEOUT_ERROR.to_string());
+            }
+            StepOutcome::Cancelled => {
+                result.search_error = Some(STEP_CANCELLED_ERROR.to_string());
+                return result.finish_cancelled(start);
             }
         }
 
-        result.total_time_ms = start.elapsed().as_millis() as i64;
-        result
+        result.finish_at(start)
     }
 
     /// 快速有效性检查（对齐 Kotlin `CheckSource` 简化流程）
@@ -319,10 +620,10 @@ impl SourceChecker {
     /// 不执行目录/内容检查，适用于批量快速筛查。
     pub async fn quick_check(&self, source: &BookSource) -> CheckResult {
         let start = Instant::now();
-        let source_url = &source.book_source_url;
+        let deadline = self.total_deadline(start, 1);
 
         let mut result = CheckResult {
-            source_url: source_url.clone(),
+            source_url: source.book_source_url.clone(),
             search_ok: false,
             toc_ok: false,
             content_ok: false,
@@ -332,27 +633,42 @@ impl SourceChecker {
             total_time_ms: 0,
             captcha: None,
             redirect: None,
+            cancelled: false,
         };
 
+        if self.is_cancelled() {
+            result.search_error = Some(STEP_CANCELLED_ERROR.to_string());
+            return result.finish_cancelled(start);
+        }
+
         // 构建搜索 URL
-        let search_url = match source.search_url.as_ref() {
-            Some(url) => url,
-            None => {
-                result.search_error = Some("no searchUrl defined".to_string());
-                result.total_time_ms = start.elapsed().as_millis() as i64;
-                return result;
-            }
+        let Some(search_url) = source.search_url.as_ref() else {
+            result.search_error = Some("no searchUrl defined".to_string());
+            return result.finish_at(start);
         };
 
         let url = self.build_search_url(search_url, &self.effective_keyword(source));
 
-        // 发起请求
-        let resp = match self.client.get(&url, source_request_headers(source)).await {
-            Ok(r) => r,
-            Err(e) => {
-                result.search_error = Some(format!("search request failed: {}", e));
-                result.total_time_ms = start.elapsed().as_millis() as i64;
-                return result;
+        // 发起请求（受单步超时与取消约束）
+        let request = async {
+            self.client
+                .get(&url, source_request_headers(source))
+                .await
+                .map_err(|e| format!("search request failed: {}", e))
+        };
+        let resp = match self.run_step(request, deadline).await {
+            StepOutcome::Done(resp) => resp,
+            StepOutcome::Failed(e) => {
+                result.search_error = Some(e);
+                return result.finish_at(start);
+            }
+            StepOutcome::TimedOut => {
+                result.search_error = Some(STEP_TIMEOUT_ERROR.to_string());
+                return result.finish_at(start);
+            }
+            StepOutcome::Cancelled => {
+                result.search_error = Some(STEP_CANCELLED_ERROR.to_string());
+                return result.finish_cancelled(start);
             }
         };
 
@@ -375,8 +691,7 @@ impl SourceChecker {
             result.search_error = Some("search returned empty body".to_string());
         }
 
-        result.total_time_ms = start.elapsed().as_millis() as i64;
-        result
+        result.finish_at(start)
     }
 
     // ---- 内部检查步骤 ----
@@ -787,6 +1102,7 @@ mod tests {
             total_time_ms: 100,
             captcha: None,
             redirect: None,
+            cancelled: false,
         };
         assert!(result.all_ok());
         assert!(result.is_search_ok());
@@ -1179,6 +1495,7 @@ mod tests {
                 matched_keyword: Some("captcha".to_string()),
             }),
             redirect: None,
+            cancelled: false,
         };
         assert!(result.has_captcha());
         assert!(!result.is_available()); // 有验证码时不可用
@@ -1202,7 +1519,273 @@ mod tests {
                 final_url: "https://login.example.com".to_string(),
                 is_login_redirect: true,
             }),
+            cancelled: false,
         };
         assert!(result.has_redirect());
+    }
+
+    // ---- P1-5：单步超时 / 整体预算 / 取消可中断 ----
+
+    use std::time::Duration;
+
+    /// 测试用最小 HTTP 服务器：按（端口, 路径）返回（延迟, 响应体）。
+    ///
+    /// 延迟在回包前生效，用于模拟「慢站点」；`Duration::from_secs(60)`
+    /// 即等价于请求卡死。后台任务随测试运行时析构自动中止。
+    async fn spawn_http_server<F>(respond: F) -> u16
+    where
+        F: Fn(u16, &str) -> (Duration, String) + Send + Sync + 'static,
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("绑定测试端口");
+        let port = listener.local_addr().unwrap().port();
+        let respond = Arc::new(respond);
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
+                let respond = Arc::clone(&respond);
+                tokio::spawn(async move {
+                    // 读到请求头结束即可判定路径
+                    let mut head = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        match sock.read(&mut byte).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(_) => head.push(byte[0]),
+                        }
+                        if head.len() > 16 * 1024 {
+                            return;
+                        }
+                    }
+                    let head = String::from_utf8_lossy(&head).to_string();
+                    let path = head.split_whitespace().nth(1).unwrap_or("/").to_string();
+                    let (delay, body) = respond(port, &path);
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = sock.write_all(response.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        port
+    }
+
+    /// 构造走本地回环、禁用系统代理的检查器（附取消令牌）
+    fn make_checker_with(
+        read_timeout: Duration,
+        config: CheckerConfig,
+    ) -> (SourceChecker, CancelToken) {
+        let client = Arc::new(
+            LegadoClient::new(LegadoClientConfig {
+                read_timeout,
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            })
+            .unwrap(),
+        );
+        let token = CancelToken::new();
+        (
+            SourceChecker::with_config(client, config).with_cancel_token(token.clone()),
+            token,
+        )
+    }
+
+    fn source_with_search_url(url: String) -> BookSource {
+        BookSource {
+            book_source_url: "http://127.0.0.1".to_string(),
+            book_source_name: "Timeout Test".to_string(),
+            search_url: Some(url),
+            ..BookSource::default()
+        }
+    }
+
+    /// 单步 300ms + 站端 2s 慢响应：该步必须在 ~300ms 记为 timeout，
+    /// 而不是等到 2s 后成功（修复前：2s 且 search_ok=true）。
+    #[tokio::test]
+    async fn test_step_timeout_applies_to_slow_search() {
+        let port = spawn_http_server(|_port, _path| {
+            (
+                Duration::from_secs(2),
+                "<html><body>slow</body></html>".to_string(),
+            )
+        })
+        .await;
+
+        let (checker, _token) = make_checker_with(
+            Duration::from_secs(10),
+            CheckerConfig {
+                step_timeout_ms: 300,
+                ..CheckerConfig::default()
+            },
+        );
+        let source = source_with_search_url(format!("http://127.0.0.1:{port}/search?q={{key}}"));
+
+        let started = Instant::now();
+        let result = checker.check_search(&source).await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "单步超时 300ms 应在 1s 内返回，实际 {elapsed:?}"
+        );
+        assert!(!result.search_ok, "超时不得记为成功");
+        assert_eq!(
+            result.search_error.as_deref(),
+            Some("timeout"),
+            "超时应以 timeout 标记，而非网络错误或成功"
+        );
+        assert!(!result.cancelled);
+    }
+
+    /// `quick_check` 与 `check_search` 共用同一条超时链路
+    #[tokio::test]
+    async fn test_quick_check_step_timeout() {
+        let port = spawn_http_server(|_port, _path| {
+            (
+                Duration::from_secs(2),
+                "<html><body>slow</body></html>".to_string(),
+            )
+        })
+        .await;
+
+        let (checker, _token) = make_checker_with(
+            Duration::from_secs(10),
+            CheckerConfig {
+                step_timeout_ms: 300,
+                ..CheckerConfig::default()
+            },
+        );
+        let source = source_with_search_url(format!("http://127.0.0.1:{port}/search?q={{key}}"));
+
+        let started = Instant::now();
+        let result = checker.quick_check(&source).await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "quick_check 单步超时应在 1s 内返回，实际 {elapsed:?}"
+        );
+        assert!(!result.search_ok);
+        assert_eq!(result.search_error.as_deref(), Some("timeout"));
+    }
+
+    /// 搜索成功、目录超时：超时只记该步失败，后续步骤按既有依赖语义
+    /// 标 skipped，不整源放弃；整源耗时受总预算（3 × 300ms）约束。
+    #[tokio::test]
+    async fn test_timeout_marks_step_failed_and_keeps_existing_skip_semantics() {
+        let port = spawn_http_server(|port, path| {
+            if path.starts_with("/search") {
+                (
+                    Duration::ZERO,
+                    format!(r#"<a href="http://127.0.0.1:{port}/book/1">book</a>"#),
+                )
+            } else {
+                (Duration::from_secs(2), "<html>toc</html>".to_string())
+            }
+        })
+        .await;
+
+        let (checker, _token) = make_checker_with(
+            Duration::from_secs(10),
+            CheckerConfig {
+                step_timeout_ms: 300,
+                ..CheckerConfig::default()
+            },
+        );
+        let mut source =
+            source_with_search_url(format!("http://127.0.0.1:{port}/search?q={{key}}"));
+        source.book_url_pattern = Some(format!(r"http://127\.0\.0\.1:{port}/book/\d+"));
+
+        let started = Instant::now();
+        let result = checker.check_full(&source).await;
+        let elapsed = started.elapsed();
+
+        assert!(result.search_ok, "搜索应成功");
+        assert!(!result.toc_ok, "目录慢响应应超时");
+        assert_eq!(result.toc_error.as_deref(), Some("timeout"));
+        assert_eq!(
+            result.content_error.as_deref(),
+            Some("skipped: toc failed"),
+            "正文沿用既有依赖跳过语义"
+        );
+        assert!(
+            elapsed < Duration::from_millis(1_500),
+            "目录超时应在 ~300ms 生效，实际 {elapsed:?}"
+        );
+        assert!(
+            result.total_time_ms <= 1_000,
+            "整源总预算（3 × 300ms）应约束耗时上界，实际 {}ms",
+            result.total_time_ms
+        );
+        assert!(!result.cancelled);
+    }
+
+    /// 卡死请求 + 200ms 后取消：必须在 1s 内返回，且标记为「已取消」
+    /// 而非「书源失败」（修复前：等满客户端 read_timeout=3s 才返回）。
+    #[tokio::test]
+    async fn test_cancel_interrupts_hanging_request_within_one_second() {
+        let port = spawn_http_server(|_port, _path| (Duration::from_secs(60), String::new())).await;
+        let (checker, token) = make_checker_with(Duration::from_secs(3), CheckerConfig::default());
+        let source = source_with_search_url(format!("http://127.0.0.1:{port}/search?q={{key}}"));
+
+        let canceller = {
+            let token = token.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                token.cancel();
+            })
+        };
+
+        let started = Instant::now();
+        let result = checker.check_full(&source).await;
+        let elapsed = started.elapsed();
+        canceller.await.unwrap();
+
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "取消应在 1s 内返回，实际 {elapsed:?}"
+        );
+        assert!(result.cancelled, "取消必须标记 cancelled");
+        assert!(!result.search_ok);
+        assert_eq!(
+            result.search_error.as_deref(),
+            Some("cancelled"),
+            "取消不得计为超时或网络失败"
+        );
+        assert_eq!(result.toc_error.as_deref(), Some("skipped: cancelled"));
+        assert_eq!(result.content_error.as_deref(), Some("skipped: cancelled"));
+    }
+
+    /// 入口即已取消：不发起任何网络请求，直接返回取消态
+    #[tokio::test]
+    async fn test_cancel_before_start_skips_all_requests() {
+        let port = spawn_http_server(|_port, _path| (Duration::from_secs(60), String::new())).await;
+        let (checker, token) = make_checker_with(Duration::from_secs(3), CheckerConfig::default());
+        token.cancel();
+        let source = source_with_search_url(format!("http://127.0.0.1:{port}/search?q={{key}}"));
+
+        let started = Instant::now();
+        let result = checker.check_full(&source).await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "已取消应在入口直接返回，实际 {elapsed:?}"
+        );
+        assert!(result.cancelled);
+        assert_eq!(result.search_error.as_deref(), Some("cancelled"));
+        assert_eq!(result.toc_error.as_deref(), Some("cancelled"));
+        assert_eq!(result.content_error.as_deref(), Some("cancelled"));
     }
 }
