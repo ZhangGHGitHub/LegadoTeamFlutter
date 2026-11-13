@@ -1,7 +1,7 @@
 /// 正文高亮匹配同步器测试（批34b P2-1/P2-4/P3-3）
 ///
 /// 覆盖：缓存命中、未命中发起一次 FFI 与在途去重、换章清旧命中、
-/// 滚动模式（未启用）不跨 FFI、规则修订号变化丢弃旧结果、
+/// enabled=false（停用/无书）不跨 FFI、规则修订号变化丢弃旧结果、
 /// 失败清 key + 短退避 + 单 key 重试预算、缓存键含文本长度。
 library;
 
@@ -186,7 +186,7 @@ void main() {
   });
 
   group('HighlightMatchSync - 停用与旧结果丢弃', () {
-    test('滚动模式/无书（enabled=false）不调用 FFI 且清空旧命中', () async {
+    test('enabled=false（停用/无书）不调用 FFI 且清空旧命中', () async {
       final sync = HighlightMatchSync();
       var calls = 0;
       Future<String> load({
@@ -211,7 +211,7 @@ void main() {
       expect(disabled, isEmpty);
       expect(sync.matches, isEmpty);
       expect(sync.key, isEmpty);
-      expect(calls, 1, reason: '滚动模式不得发起跨 FFI 匹配');
+      expect(calls, 1, reason: 'enabled=false（停用/无书）不得发起跨 FFI 匹配');
     });
 
     test('在途期间章节切换：旧章结果到达后丢弃', () async {

@@ -35,7 +35,7 @@ class HighlightMatchRequest {
     required this.rulesRevision,
   });
 
-  /// false = 滚动模式 / 无书：清空且不发起跨 FFI
+  /// false = 停用 / 无书：清空且不发起跨 FFI
   final bool enabled;
 
   /// 书籍 URL（缓存键组成部分）

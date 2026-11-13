@@ -455,37 +455,47 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
 
   /// 快照未持有书籍时的书架匹配（无书私密标记/无改名历史的常规路径）
   ///
-  /// 不再裸书名命中：作者非空时要求名+作者同时相等；作者为空时仅在同名
-  /// 唯一的情况下命中，避免同名书误配。
+  /// 匹配按三级放宽（[审查 P1-1]：批32 收紧为「名+作者严格双等」后，
+  /// 阅读器新写记录作者为空、展示作者又可能是合并串 `甲、乙`，导致首页
+  /// 最近阅读卡静默消失，而阅读记录页仍能打开同一记录）：
+  /// 1. 物理名 + 展示作者精确相等（最严，保持原行为）；
+  /// 2. 展示作者按 `、` / 历史 `\u001F` 拆段后逐段匹配（复用
+  ///    [PrivacyContentSnapshot.authorTokens]，覆盖 `甲、乙` vs `甲`）；
+  /// 3. 裸名兜底：同名非空时取第一条，与阅读记录页 `findBookByName`
+  ///    同口径（作者为空是阅读器新写记录的常态）。
+  ///
+  /// **匹配放宽不降低隐私安全性**：是否脱敏由 [_isRecentLocked]
+  /// （记录键 → 全部同名候选 fail-closed）与
+  /// [PrivacyContentSnapshot.isBookLocked] 在渲染前独立判定，开书侧还有
+  /// `book_utils.ensurePrivateAccess` 第二道闸门；此处只决定「展示哪本
+  /// 书架实例」，不参与锁定判定。
   Book? _matchShelfBook(ReadRecordShow item, List<Book> books) {
     final physical = item.physicalBookName.isNotEmpty
         ? item.physicalBookName
         : item.bookName;
     final author = item.author.trim();
-    Book? uniqueByName(String name) {
-      final matches = books.where((b) => b.name == name).toList();
-      return matches.length == 1 ? matches.single : null;
-    }
 
-    if (author.isNotEmpty) {
-      for (final book in books) {
-        if (book.name == physical && book.author == author) return book;
-      }
-    } else {
-      final exact = uniqueByName(physical);
-      if (exact != null) return exact;
-    }
-    if (item.bookName != physical) {
+    Book? matchByName(String name) {
       if (author.isNotEmpty) {
         for (final book in books) {
-          if (book.name == item.bookName && book.author == author) return book;
+          if (book.name == name && book.author == author) return book;
         }
-      } else {
-        final display = uniqueByName(item.bookName);
-        if (display != null) return display;
+        // 展示作者可能是历史合并串（`甲、乙`）或编码串，拆段后逐段匹配
+        for (final token in PrivacyContentSnapshot.authorTokens(author)) {
+          for (final book in books) {
+            if (book.name == name && book.author == token) return book;
+          }
+        }
       }
+      // 裸名兜底：同名非空取第一条（对齐 findBookByName 的 firstOrNull）
+      for (final book in books) {
+        if (book.name == name) return book;
+      }
+      return null;
     }
-    return null;
+
+    return matchByName(physical) ??
+        (item.bookName != physical ? matchByName(item.bookName) : null);
   }
 
   Widget _recentLabel(ColorScheme cs) => Row(

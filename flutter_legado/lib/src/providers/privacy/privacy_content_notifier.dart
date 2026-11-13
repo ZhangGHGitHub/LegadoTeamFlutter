@@ -5,6 +5,7 @@
 // 写入私密标记（批量设私密 / 分组私密开关）后由调用方 `refresh()`。
 //
 // 编写：全栈工程师（批9c） ｜ 2026-11-09
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/privacy_content_service.dart';
@@ -25,7 +26,10 @@ class PrivacyContentNotifier extends Notifier<PrivacyContentSnapshot> {
   PrivacyContentSnapshot build() {
     _disposed = false;
     ref.onDispose(() => _disposed = true);
-    _loading ??= _load();
+    // 延后一轮微任务再加载：若依赖在首次 await 前就同步抛异常，`_load`
+    // 会在 build 返回前写 state，随后被 build 的返回值（empty）覆盖，
+    // 导致 loaded 永远 false（A3 回归用例覆盖该边界）。
+    _loading ??= Future<PrivacyContentSnapshot>.microtask(_load);
     return PrivacyContentSnapshot.empty;
   }
 
@@ -51,12 +55,29 @@ class PrivacyContentNotifier extends Notifier<PrivacyContentSnapshot> {
     return next;
   }
 
+  /// 读取快照，任何异常都收敛为「标记不可用」的已完成快照
+  ///
+  /// [审查 A3] 旧实现无 catch：依赖抛异常时 `state` 永远停在 `empty`
+  /// （`loaded=false`），首页/书架的隐私骨架常驻，同时留下未处理异步错误。
+  /// 现捕获异常并落 `loaded=true + markersUnavailable=true`：UI 不再永久
+  /// 等待，语义与 [PrivacyContentService.load] 的 fail-open 一致（标记读取
+  /// 失败不得锁住整库）；具体失败原因仍由底层 debugPrint 记录。
   Future<PrivacyContentSnapshot> _load() async {
     if (_disposed) return PrivacyContentSnapshot.empty;
-    final snapshot = await PrivacyContentService(
-      api: ref.read(bookApiProvider),
-    ).load();
-    if (!_disposed) state = snapshot;
+    var snapshot = PrivacyContentSnapshot.empty;
+    try {
+      snapshot = await PrivacyContentService(
+        api: ref.read(bookApiProvider),
+      ).load();
+    } catch (e) {
+      debugPrint('[隐私] 标记快照加载异常（按标记不可用处理）：$e');
+      snapshot = const PrivacyContentSnapshot(
+        loaded: true,
+        markersUnavailable: true,
+      );
+    } finally {
+      if (!_disposed) state = snapshot;
+    }
     return snapshot;
   }
 }

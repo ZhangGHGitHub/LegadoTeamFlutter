@@ -74,14 +74,25 @@ class _ImmediateBookshelfNotifier extends BookshelfNotifier {
   BookshelfState build() => BookshelfState(books: _books);
 }
 
+/// 隐私标记读取失败：模拟 getPrivateBookUrls 抛异常（fail-open 语义）
+class _BrokenMarkerApi extends PrivacyMockBookApi {
+  _BrokenMarkerApi({super.books, super.readRecords});
+
+  @override
+  Future<List<String>> getPrivateBookUrls() async =>
+      throw StateError('markers down');
+}
+
 Book _buildBook({
   required String name,
   required bool isPrivate,
+  String bookUrl = 'https://a.com/secret',
+  String author = _secretAuthor,
   String chapterTitle = _secretChapter,
 }) => Book(
-  bookUrl: 'https://a.com/secret',
+  bookUrl: bookUrl,
   name: name,
-  author: _secretAuthor,
+  author: author,
   origin: 'https://a.com',
   bookType: BookType.text,
   isPrivate: isPrivate,
@@ -90,10 +101,13 @@ Book _buildBook({
   durChapterTitle: chapterTitle,
 );
 
-ReadRecord _buildRecord({required String bookName}) => ReadRecord(
+ReadRecord _buildRecord({
+  required String bookName,
+  String author = _secretAuthor,
+}) => ReadRecord(
   deviceId: 'device',
   bookName: bookName,
-  author: _secretAuthor,
+  author: author,
   readTime: 61000,
   lastRead: DateTime(2026, 11, 13, 9, 30).millisecondsSinceEpoch,
   lastChapterTitle: _secretChapter,
@@ -185,6 +199,131 @@ void main() {
     expect(find.text(_secretAuthor), findsOneWidget);
     expect(find.text('公开章节'), findsOneWidget);
     expect(find.text('私密书籍'), findsNothing, reason: '非私密书不得被误脱敏');
+  });
+
+  testWidgets('同名双作者 + 空作者记录：裸名兜底命中，卡片不消失', (tester) async {
+    // 阅读器新写记录不传作者（Rust upsert_full 新行 author 为空），而书架
+    // 存在同名不同作者的书。批32 的「作者为空仅同名唯一才命中」会让卡片
+    // 静默消失；放宽后应兜底裸名（与阅读记录页 findBookByName 同口径）。
+    final api = PrivacyMockBookApi(
+      books: [
+        _buildBook(
+          name: '同名书',
+          isPrivate: false,
+          bookUrl: 'https://a.com/one',
+          author: '作者甲',
+          chapterTitle: '甲章节',
+        ),
+        _buildBook(
+          name: '同名书',
+          isPrivate: false,
+          bookUrl: 'https://a.com/two',
+          author: '作者乙',
+          chapterTitle: '乙章节',
+        ),
+      ],
+      readRecords: [_buildRecord(bookName: '同名书', author: '')],
+    );
+    final container = await _bootContainer(api: api);
+    await _pumpHome(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('homeRecentCard')),
+      findsOneWidget,
+      reason: '空作者记录必须兜底裸名匹配，卡片不得静默消失',
+    );
+    expect(find.text('同名书'), findsOneWidget);
+    expect(find.text('作者甲'), findsOneWidget, reason: '取书架同名第一条展示');
+    expect(find.text('私密书籍'), findsNothing);
+  });
+
+  testWidgets('合并作者记录（甲、乙）对书架作者甲：拆段匹配，卡片不消失', (tester) async {
+    final api = PrivacyMockBookApi(
+      books: [
+        _buildBook(
+          name: '合并作者书',
+          isPrivate: false,
+          author: '作者甲',
+          chapterTitle: '甲章节',
+        ),
+      ],
+      readRecords: [_buildRecord(bookName: '合并作者书', author: '作者甲、作者乙')],
+    );
+    final container = await _bootContainer(api: api);
+    await _pumpHome(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('homeRecentCard')),
+      findsOneWidget,
+      reason: '展示作者是历史合并串时必须拆段匹配，卡片不得消失',
+    );
+    expect(find.text('合并作者书'), findsOneWidget);
+    expect(find.text('作者甲'), findsOneWidget);
+  });
+
+  testWidgets('同名私密书 + 空作者记录：匹配放宽后仍锁定，不泄漏身份', (tester) async {
+    // 裸名兜底会取第一条（私密书）；锁定判定由 _isRecentLocked 独立执行
+    // （空作者 → 全部同名候选 fail-closed），匹配放宽不得绕过脱敏。
+    const secretBookName = '同名秘密书';
+    final api = PrivacyMockBookApi(
+      books: [
+        _buildBook(
+          name: secretBookName,
+          isPrivate: true,
+          bookUrl: 'https://a.com/secret-private',
+          author: '私密作者甲',
+        ),
+        _buildBook(
+          name: secretBookName,
+          isPrivate: false,
+          bookUrl: 'https://a.com/public-two',
+          author: '公开作者乙',
+        ),
+      ],
+      readRecords: [_buildRecord(bookName: secretBookName, author: '')],
+    );
+    final container = await _bootContainer(api: api);
+    await _pumpHome(tester, container);
+
+    expect(
+      find.byKey(const ValueKey('homeRecentCard')),
+      findsOneWidget,
+      reason: '同名书匹配后应保留卡片（锁定占位）',
+    );
+    expect(find.text('私密书籍'), findsOneWidget);
+    expect(find.text(secretBookName), findsNothing, reason: '私密书名不得泄漏');
+    expect(find.text('私密作者甲'), findsNothing);
+    expect(find.text('公开作者乙'), findsNothing);
+    expect(find.text(_secretChapter), findsNothing);
+  });
+
+  testWidgets('隐私标记加载失败：fail-open 明文（锁住既有语义）', (tester) async {
+    // 语义锁定：markersUnavailable 时按「无标记」处理，不为一次 IO 失败
+    // 锁住整库，首页卡片照常明文展示。这是与 PrivacyContentService 顶部
+    // 注释一致的刻意取舍；隐私设置页会显示「标记暂不可用」提示，开书侧
+    // 的 ensurePrivateAccess 闸门仍会按库内标记兜底。
+    final api = _BrokenMarkerApi(
+      books: [
+        _buildBook(
+          name: '标记不可用书',
+          isPrivate: false,
+          bookUrl: 'https://a.com/markers-down',
+          author: '普通作者',
+          chapterTitle: '普通章节',
+        ),
+      ],
+      readRecords: [_buildRecord(bookName: '标记不可用书', author: '普通作者')],
+    );
+    final container = await _bootContainer(api: api);
+    final privacyContent = container.read(privacyContentProvider);
+    expect(privacyContent.loaded, isTrue, reason: '加载失败也必须结束加载态');
+    expect(privacyContent.markersUnavailable, isTrue);
+    await _pumpHome(tester, container);
+
+    expect(find.byKey(const ValueKey('homeRecentCard')), findsOneWidget);
+    expect(find.text('标记不可用书'), findsOneWidget, reason: 'fail-open：标记不可用时明文展示');
+    expect(find.text('普通作者'), findsOneWidget);
+    expect(find.text('私密书籍'), findsNothing);
   });
 
   testWidgets('私密书改名：别名桥仍能匹配，未授权占位、授权后显示新名', (tester) async {

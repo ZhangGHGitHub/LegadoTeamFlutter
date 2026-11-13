@@ -190,7 +190,7 @@ class PrivacyContentSnapshot {
       }
     }
 
-    for (final token in _authorTokens(author)) {
+    for (final token in authorTokens(author)) {
       addBooks(recordKeyCandidates[PrivacyRecordKey(name, token)]);
     }
     for (final entry in aliasRecordKeyCandidates.entries) {
@@ -206,7 +206,11 @@ class PrivacyContentSnapshot {
   ///
   /// 单段若为 `\u001Eauthors:[...]` 原始串，按 JSON 数组取元素；否则按
   /// `、` 拆分。空白、与整串相同的段不重复返回。
-  static List<String> _authorTokens(String author) {
+  ///
+  /// [审查 P1-1] 公开供首页最近阅读的书架匹配复用：阅读记录的展示作者
+  /// （`甲、乙`）与书架作者（`甲`）只有拆段后才能对齐；复用同一实现
+  /// 可避免两处拆分语义漂移。
+  static List<String> authorTokens(String author) {
     final out = <String>[];
     final whole = author.trim();
     void add(String value) {

@@ -4,10 +4,13 @@
 /// 记录脱敏、列表锁定 URL 过滤、加载失败 fail-open（不致整库误锁）。
 library;
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/privacy/privacy_content_notifier.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/privacy_content_service.dart';
 import 'package:flutter_legado/src/services/privacy_record_alias_store.dart';
 
@@ -438,6 +441,29 @@ void main() {
           _privacy(),
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('A3 快照 Notifier 异常收敛', () {
+    test('依赖抛异常：loaded=true + markersUnavailable=true，不留永久骨架', () async {
+      final container = ProviderContainer(
+        overrides: [
+          bookApiProvider.overrideWith((ref) => throw StateError('api down')),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final snapshot = await container
+          .read(privacyContentProvider.notifier)
+          .ensureLoaded();
+
+      expect(snapshot.loaded, isTrue, reason: '异常也必须结束加载态');
+      expect(snapshot.markersUnavailable, isTrue, reason: '上报标记不可用');
+      expect(
+        container.read(privacyContentProvider).loaded,
+        isTrue,
+        reason: 'state 不得停留在 loaded=false（隐私骨架/等待态常驻）',
       );
     });
   });
