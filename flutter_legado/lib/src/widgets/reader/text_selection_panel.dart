@@ -297,206 +297,243 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     final theme = Theme.of(context);
     final cfg = ref.watch(readerAdvConfigProvider) ?? ReaderAdvancedConfig();
     final menuView = SelectionMenuConfig.decode(cfg.textSelectMenuConfig).view;
+    // [设备验收缺陷 | 2026-11-13] 面板内容在小屏/大字号下（文本块最高
+    // 0.3 屏 + 操作行 + 展开的配色行 + Sheet 自带走纸）会超过底部 Sheet
+    // 可用高度。原实现 Column 不可滚动，超屏部分被挤出 RenderFlex 的
+    // layout 尺寸之外——虽然仍被绘制（可见），但 RenderFlex 只在自身
+    // size 内命中测试，导致最底部「高亮颜色」行看得见却点不到，手工
+    // 高亮入口在真机上完全不可用。改为外层单一纵向滚动容器承载整列：
+    //   · 内层文本块保留自身 SingleChildScrollView 与 0.3 屏高度上限，
+    //     两轴/内外滚动互不抢占（内层有界，外层仅在内容超屏时滚动）；
+    //   · 底部留出安全区 + 8dp，保证最后一个可交互元素下方的点击余量；
+    //   · 键盘唤起时以 viewInsets 抬升，避免操作区被遮挡 — 全栈工程师
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SingleChildScrollView(
+          key: const ValueKey('selection-panel-scroll'),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            8 + MediaQuery.paddingOf(context).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.dividerColor.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text(
+                    '已选文本',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // [设备验收缺陷 | 2026-11-13] 字数文本改为弹性收缩：320dp /
+                  // 大字号下「已选文本 + 字数 + 高亮/关闭」整行曾横向溢出
+                  // 59px，行尾「关闭」被推出 Row 尺寸而无法命中（同属
+                  // 「可见不可点」），高亮/关闭必须始终可达。
+                  Expanded(
+                    child: Text(
+                      '${_selectedText.length} 字',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                  // [批7b-2a] menu_mark 改为「笔记」后，手工高亮保留为面板内
+                  // 二级入口（参考版无独立高亮项；既有 highlightAdd 能力不删）
+                  TextButton(
+                    key: const ValueKey('selection-panel-highlight'),
+                    onPressed: () => setState(
+                      () => _showHighlightColors = !_showHighlightColors,
+                    ),
+                    child: const Text('高亮'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+              // 段落选区：原生 SelectableText（长按取词 + 拖拽手柄精细调整）
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: theme.dividerColor.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Text(
-                  '已选文本',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
                   ),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '${_selectedText.length} 字',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.3,
                   ),
-                ),
-                const Spacer(),
-                // [批7b-2a] menu_mark 改为「笔记」后，手工高亮保留为面板内
-                // 二级入口（参考版无独立高亮项；既有 highlightAdd 能力不删）
-                TextButton(
-                  key: const ValueKey('selection-panel-highlight'),
-                  onPressed: () => setState(
-                    () => _showHighlightColors = !_showHighlightColors,
-                  ),
-                  child: const Text('高亮'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('关闭'),
-                ),
-              ],
-            ),
-            // 段落选区：原生 SelectableText（长按取词 + 拖拽手柄精细调整）
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
-                ),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.3,
-                ),
-                child: SingleChildScrollView(
-                  child: SelectableText(
-                    widget.text,
-                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
-                    onSelectionChanged: (selection, cause) {
-                      _maybeSelectHaptic(cause);
-                      final text = widget.text;
-                      if (!selection.isValid || selection.isCollapsed) {
-                        if (_userSelected.isNotEmpty ||
-                            _userSelectionStart != null) {
-                          setState(() {
-                            _userSelected = '';
-                            _userSelectionStart = null;
-                          });
-                        }
-                        return;
-                      }
-                      final start = selection.start.clamp(0, text.length);
-                      final end = selection.end.clamp(0, text.length);
-                      setState(() {
-                        _userSelected = text.substring(start, end);
-                        _userSelectionStart = start;
-                      });
-                    },
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '提示：长按上方文本可精细调整选区，未选择时默认操作整段',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-            const SizedBox(height: 8),
-            // 操作菜单（批4c：按选择菜单配置排序/分区）
-            // [审查 P2-1] 动作可横向滚动，管理按钮固定在滚动区外，
-            // 避免 360dp 下被挤出屏幕后折叠组不可达。
-            Row(
-              children: [
-                Expanded(
                   child: SingleChildScrollView(
-                    key: const ValueKey('selection-panel-actions-scroll'),
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final def in menuView.active)
-                          _actionItem(
-                            def,
-                            showIcon: cfg.showSelectMenuIcon,
-                            onTap: _panelAction(def.id),
-                          ),
-                      ],
+                    child: SelectableText(
+                      widget.text,
+                      style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
+                      onSelectionChanged: (selection, cause) {
+                        _maybeSelectHaptic(cause);
+                        final text = widget.text;
+                        if (!selection.isValid || selection.isCollapsed) {
+                          if (_userSelected.isNotEmpty ||
+                              _userSelectionStart != null) {
+                            setState(() {
+                              _userSelected = '';
+                              _userSelectionStart = null;
+                            });
+                          }
+                          return;
+                        }
+                        final start = selection.start.clamp(0, text.length);
+                        final end = selection.end.clamp(0, text.length);
+                        setState(() {
+                          _userSelected = text.substring(start, end);
+                          _userSelectionStart = start;
+                        });
+                      },
                     ),
                   ),
                 ),
-                SizedBox(
-                  height: 24,
-                  child: VerticalDivider(
-                    width: 1,
-                    color: theme.colorScheme.outlineVariant,
-                  ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '提示：长按上方文本可精细调整选区，未选择时默认操作整段',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
                 ),
-                IconButton(
-                  key: const ValueKey('selection-panel-manage'),
-                  tooltip: '管理选择菜单',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.settings_outlined, size: 20),
-                  onPressed: () => unawaited(
-                    TextSelectMenuConfigSheet.showForReader(
-                      context,
-                      ProviderScope.containerOf(context, listen: false),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            // 高亮配色行（多色高亮，对齐原版 HighlightStyle）
-            AnimatedSize(
-              duration: const Duration(milliseconds: 150),
-              child: _showHighlightColors
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 8),
+              ),
+              const SizedBox(height: 8),
+              // 操作菜单（批4c：按选择菜单配置排序/分区）
+              // [审查 P2-1] 动作可横向滚动，管理按钮固定在滚动区外，
+              // 避免 360dp 下被挤出屏幕后折叠组不可达。
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      key: const ValueKey('selection-panel-actions-scroll'),
+                      scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          Text(
-                            '高亮颜色',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.outline,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          for (var i = 0; i < kHighlightColors.length; i++)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: InkWell(
-                                key: ValueKey('highlight-color-$i'),
-                                onTap: () =>
-                                    _openHighlightDialog(kHighlightColors[i]),
-                                customBorder: const CircleBorder(),
-                                child: Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: kHighlightColors[i],
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color:
-                                          kHighlightColors[i] ==
-                                              _lastHighlightColor
-                                          ? theme.colorScheme.primary
-                                          : theme.dividerColor,
-                                      width:
-                                          kHighlightColors[i] ==
-                                              _lastHighlightColor
-                                          ? 2.5
-                                          : 1,
-                                    ),
-                                  ),
-                                  child:
-                                      kHighlightColors[i] == _lastHighlightColor
-                                      ? Icon(
-                                          Icons.check,
-                                          size: 18,
-                                          color: theme.colorScheme.onSurface,
-                                        )
-                                      : null,
-                                ),
-                              ),
+                          for (final def in menuView.active)
+                            _actionItem(
+                              def,
+                              showIcon: cfg.showSelectMenuIcon,
+                              onTap: _panelAction(def.id),
                             ),
                         ],
                       ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ],
+                    ),
+                  ),
+                  SizedBox(
+                    height: 24,
+                    child: VerticalDivider(
+                      width: 1,
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('selection-panel-manage'),
+                    tooltip: '管理选择菜单',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.settings_outlined, size: 20),
+                    onPressed: () => unawaited(
+                      TextSelectMenuConfigSheet.showForReader(
+                        context,
+                        ProviderScope.containerOf(context, listen: false),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              // 高亮配色行（多色高亮，对齐原版 HighlightStyle）
+              // [设备验收缺陷 | 2026-11-13] 窄屏/大字号下 5 色 + 标签可能
+              // 横向溢出 Row 尺寸（同样会「可见不可点」），故配色行横向可滚。
+              AnimatedSize(
+                duration: const Duration(milliseconds: 150),
+                child: _showHighlightColors
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: SingleChildScrollView(
+                          key: const ValueKey('selection-panel-colors-scroll'),
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              Text(
+                                '高亮颜色',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.outline,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              for (var i = 0; i < kHighlightColors.length; i++)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: InkWell(
+                                    key: ValueKey('highlight-color-$i'),
+                                    onTap: () => _openHighlightDialog(
+                                      kHighlightColors[i],
+                                    ),
+                                    customBorder: const CircleBorder(),
+                                    child: Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: kHighlightColors[i],
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color:
+                                              kHighlightColors[i] ==
+                                                  _lastHighlightColor
+                                              ? theme.colorScheme.primary
+                                              : theme.dividerColor,
+                                          width:
+                                              kHighlightColors[i] ==
+                                                  _lastHighlightColor
+                                              ? 2.5
+                                              : 1,
+                                        ),
+                                      ),
+                                      child:
+                                          kHighlightColors[i] ==
+                                              _lastHighlightColor
+                                          ? Icon(
+                                              Icons.check,
+                                              size: 18,
+                                              color:
+                                                  theme.colorScheme.onSurface,
+                                            )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -16,6 +16,7 @@ import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
 import 'package:flutter_legado/src/services/book_api.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/theme/app_theme.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 import 'package:flutter_legado/src/widgets/reader/text_selection_panel.dart';
 import 'package:flutter_legado/src/widgets/reader/text_select_menu_config_sheet.dart';
@@ -802,6 +803,163 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('编辑内容'), findsOneWidget);
+    });
+  });
+
+  // [设备验收缺陷 | 2026-11-13] 底部面板内容超屏时底部操作不可达。
+  // 面板原来用不可滚动 Column 承载，内容（文本块 0.3 屏 + 操作行 +
+  // 展开的「高亮颜色」行 + Sheet 走纸）一旦超过 Sheet 可用高度，超出
+  // 部分会落在 Column 的 layout 尺寸之外：仍被绘制（看得见），但不参与
+  // 命中测试（点不到）——手工高亮入口因此在真机上不可用。
+  // 这里用真实 showModalBottomSheet 路径 + 应用主题（含 Sheet 走纸）
+  // 覆盖三种场景：横屏小高度（会溢出）、竖屏设备尺寸（不溢出但贴底）、
+  // 窄屏大字号（头部行横向挤压）。
+  group('底部选择面板·可达性', () {
+    // 足以把选区文本块顶到 0.3 屏上限的长段落
+    final longParagraph = List.filled(
+      40,
+      '用于验证底部面板在内容超出可用高度时仍可操作的长段落文本。',
+    ).join();
+
+    Widget sheetHost(ProviderContainer container) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              key: const ValueKey('open-selection-panel-sheet'),
+              onPressed: () =>
+                  TextSelectionPanel.show(context, text: longParagraph),
+              child: const Text('打开面板'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Future<void> openAndExpand(
+      WidgetTester tester,
+      ProviderContainer container,
+    ) async {
+      await tester.pumpWidget(sheetHost(container));
+      await tester.tap(
+        find.byKey(const ValueKey('open-selection-panel-sheet')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('selection-panel-highlight')));
+      await tester.pumpAndSettle();
+    }
+
+    ScrollableState outerScrollable(WidgetTester tester) =>
+        tester.state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('selection-panel-scroll')),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+
+    testWidgets('横屏 640×360：内容超出 Sheet 高度时配色行可滚动到并点击', (tester) async {
+      // 阅读器支持横屏（reader_screen 按设置在竖/横屏间切换）；横屏下
+      // Sheet 可用高度不足，正是设备上「配色行被挤出屏幕」的触发条件。
+      tester.view.physicalSize = const Size(640, 360);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await openAndExpand(tester, _container(_config()));
+
+      // 先验证用户可见症状：配色行必须能被滚动揭示且可点。修复前
+      // 面板不可滚动，该行整行落在 Column 的 layout 尺寸之外——可见
+      // 但 hitTestable 为空，tap 会抛 "would not hit test" 警告且对话框
+      // 不出现，这也是设备上手工高亮入口不可用的直接原因。
+      final color0 = find.byKey(const ValueKey('highlight-color-0'));
+      await tester.ensureVisible(color0);
+      await tester.pumpAndSettle();
+      expect(
+        color0.hitTestable(),
+        findsOneWidget,
+        reason: '配色行必须进入可点击区域（修复前整行在 Column 尺寸外，点不到）',
+      );
+      final rect = tester.getRect(color0);
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(
+        rect.bottom,
+        lessThanOrEqualTo(360 - 8),
+        reason: '最后一个可交互元素下方须保留底部安全余量',
+      );
+
+      // 外层滚动容器：存在、有滚动量、能响应用户拖动（避开内层选区
+      // 文本块：从面板左侧留白处起手）。
+      expect(
+        find.byKey(const ValueKey('selection-panel-scroll')),
+        findsOneWidget,
+        reason: '面板内容必须由可滚动容器承载（修复前为不可滚动 Column）',
+      );
+      final position = outerScrollable(tester).position;
+      expect(
+        position.maxScrollExtent,
+        greaterThan(0),
+        reason: '内容高度超过 Sheet 可用高度时必须可纵向滚动',
+      );
+      position.jumpTo(0);
+      await tester.pump();
+      await tester.dragFrom(const Offset(8, 120), const Offset(0, -40));
+      await tester.pumpAndSettle();
+      expect(position.pixels, greaterThan(0), reason: '外层滚动容器必须响应用户拖动');
+
+      await tester.ensureVisible(color0);
+      await tester.pumpAndSettle();
+      await tester.tap(color0);
+      await tester.pumpAndSettle();
+      expect(find.text('保存高亮'), findsOneWidget, reason: '点色块应打开高亮对话框');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('360×640 设备尺寸：内容未超屏时保持紧凑且配色行可点', (tester) async {
+      // 与设备 1080×1920@3.0 同逻辑尺寸；内容刚好放下时不得为滚动而
+      // 强制整屏（避免每次长按都弹满屏），配色行仍须可点。
+      tester.view.physicalSize = const Size(1080, 1920);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.reset);
+      await openAndExpand(tester, _container(_config()));
+
+      final position = outerScrollable(tester).position;
+      expect(
+        position.maxScrollExtent,
+        0,
+        reason: '内容未超出时外层滚动范围为 0（面板保持内容自适应高度）',
+      );
+
+      final color0 = find.byKey(const ValueKey('highlight-color-0'));
+      expect(color0.hitTestable(), findsOneWidget);
+      final rect = tester.getRect(color0);
+      expect(rect.top, greaterThanOrEqualTo(0));
+      expect(rect.bottom, lessThanOrEqualTo(640));
+      await tester.tap(color0);
+      await tester.pumpAndSettle();
+      expect(find.text('保存高亮'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('320dp + 1.5 倍字号：头部「高亮/关闭」仍可达', (tester) async {
+      // 同属「可见不可点」类：字数文本固定宽度时头部 Row 在 320dp/大字号
+      // 下横向溢出，「关闭」被推出 Row 尺寸而无法命中。
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1.0;
+      tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await openAndExpand(tester, _container(_config()));
+
+      expect(tester.takeException(), isNull, reason: '头部行不得横向溢出');
+      expect(
+        find.byKey(const ValueKey('selection-panel-highlight')).hitTestable(),
+        findsOneWidget,
+      );
+      final closeRect = tester.getRect(find.widgetWithText(TextButton, '关闭'));
+      expect(closeRect.right, lessThanOrEqualTo(320));
+      expect(closeRect.bottom, lessThanOrEqualTo(640));
     });
   });
 
