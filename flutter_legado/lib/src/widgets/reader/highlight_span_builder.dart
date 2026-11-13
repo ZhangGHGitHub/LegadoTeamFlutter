@@ -74,13 +74,17 @@ List<InlineSpan> buildHighlightedParagraphSpans({
 }) {
   if (text.isEmpty) return const [TextSpan(text: '')];
   if (matches.isEmpty) return [TextSpan(text: text)];
-  final from = searchFrom.clamp(0, matches.length);
+  // 乱序兜底：排序后 searchFrom 的下标语义失效，退回全表扫描。
+  final ordered = _startSorted(matches);
+  final from = identical(ordered, matches)
+      ? searchFrom.clamp(0, ordered.length)
+      : 0;
   return _buildHighlightedSpans(
     text: text,
     skip: 0,
     bodyStart: chapterStart,
     bodyEnd: chapterStart + text.length,
-    matches: matches,
+    matches: ordered,
     searchFrom: from,
   );
 }

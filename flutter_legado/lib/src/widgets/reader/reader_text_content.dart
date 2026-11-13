@@ -460,8 +460,11 @@ class ReaderTextContent extends StatelessWidget {
                   : null,
             );
 
-            // 命中游标：end <= 本行正文起点的命中与本行及后续行无关
-            if (line.highlightMapped && highlightMatches.isNotEmpty) {
+            // 命中游标：end <= 本行正文起点的命中与本行及后续行无关。
+            // 乱序输入（非合并结果）不推进游标，由 span 构建器排序兜底。
+            if (matchesStartSorted &&
+                line.highlightMapped &&
+                highlightMatches.isNotEmpty) {
               while (lineMatchCursor < highlightMatches.length &&
                   highlightMatches[lineMatchCursor].end <=
                       line.chapterStartIndex) {
@@ -473,9 +476,10 @@ class ReaderTextContent extends StatelessWidget {
             final lineHasHighlight =
                 highlightMatches.isNotEmpty &&
                 line.highlightMapped &&
-                lineMatchCursor < highlightMatches.length &&
-                highlightMatches[lineMatchCursor].start <
-                    line.chapterStartIndex + lineBodyLength;
+                (!matchesStartSorted ||
+                    (lineMatchCursor < highlightMatches.length &&
+                        highlightMatches[lineMatchCursor].start <
+                            line.chapterStartIndex + lineBodyLength));
 
             // [批16] 含行内图片的行：占位符替换为 WidgetSpan，文字分段
             // 继承同一行样式/高亮
@@ -748,6 +752,8 @@ class ReaderParagraphs extends StatelessWidget {
     var offset = 0;
     // 高亮命中游标：命中列表按 start 升序且互不重叠（合并结果契约），
     // 段落按章节顺序推进时只需前进游标，避免每段全表扫描整章命中。
+    // 乱序输入（非合并结果）不推进游标，由 span 构建器排序兜底。
+    final matchesStartSorted = isStartSorted(highlightMatches);
     var matchCursor = 0;
     final items = <Widget>[];
     for (var index = 0; index < paragraphs.length; index++) {
@@ -758,13 +764,17 @@ class ReaderParagraphs extends StatelessWidget {
       // `content.split('\n')` 的分段原文，段间换行符不在 p 内，故下方
       // offset 累计必须 +1（换行符在章节文本中占 1 个 UTF-16 code unit）。
       final paragraphEnd = offset + p.length;
-      while (matchCursor < highlightMatches.length &&
-          highlightMatches[matchCursor].end <= offset) {
-        matchCursor++;
+      if (matchesStartSorted) {
+        while (matchCursor < highlightMatches.length &&
+            highlightMatches[matchCursor].end <= offset) {
+          matchCursor++;
+        }
       }
-      final hasHighlight =
-          matchCursor < highlightMatches.length &&
-          highlightMatches[matchCursor].start < paragraphEnd;
+      final hasHighlight = highlightMatches.isNotEmpty &&
+          p.isNotEmpty &&
+          (!matchesStartSorted ||
+              (matchCursor < highlightMatches.length &&
+                  highlightMatches[matchCursor].start < paragraphEnd));
       final paragraphStyle = TextStyle(
         fontSize: fontSize,
         height: lineHeight,
