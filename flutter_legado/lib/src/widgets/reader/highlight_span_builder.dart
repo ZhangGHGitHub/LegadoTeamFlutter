@@ -41,7 +41,9 @@ List<InlineSpan> buildHighlightedLineSpans({
     return [TextSpan(text: text)];
   }
 
-  final ordered = assumeStartSorted ? matches : _startSorted(matches);
+  final ordered = assumeStartSorted
+      ? matches
+      : sortHighlightMatchesByStart(matches);
   // searchFrom 只对原本有序的列表有效；兜底排序后下标语义已变，退回全表
   // 扫描（乱序属异常输入，正确性优先于性能）。
   final from = identical(ordered, matches)
@@ -66,16 +68,24 @@ List<InlineSpan> buildHighlightedLineSpans({
 ///
 /// [searchFrom] 语义同 [buildHighlightedLineSpans]：调用方按段落递增推进
 /// 游标（或二分）后传入，避免每段全表扫描整章命中。
+/// - [assumeStartSorted]：调用方已用 [isStartSorted] 校验或
+///   [sortHighlightMatchesByStart] 预排序过时为 true，跳过每段 O(m) 校验
+///   （`ReaderParagraphs` 整章渲染的热路径）。预排序后 `searchFrom` 的
+///   下标语义仍然有效，调用方应传**已排序**的 `matches`。
 List<InlineSpan> buildHighlightedParagraphSpans({
   required String text,
   required int chapterStart,
   required List<HighlightMatch> matches,
   int searchFrom = 0,
+  bool assumeStartSorted = false,
 }) {
   if (text.isEmpty) return const [TextSpan(text: '')];
   if (matches.isEmpty) return [TextSpan(text: text)];
-  // 乱序兜底：排序后 searchFrom 的下标语义失效，退回全表扫描。
-  final ordered = _startSorted(matches);
+  // 未声明已排序时校验一次；乱序兜底排序后 searchFrom 下标语义失效，
+  // 退回全表扫描。
+  final ordered = assumeStartSorted
+      ? matches
+      : sortHighlightMatchesByStart(matches);
   final from = identical(ordered, matches)
       ? searchFrom.clamp(0, ordered.length)
       : 0;
@@ -154,7 +164,11 @@ bool isStartSorted(List<HighlightMatch> matches) {
 /// 校验命中列表按 `start` 升序；乱序时返回稳定排序后的副本
 ///
 /// 升序输入直接返回原列表（零分配）；乱序才复制排序，保证渲染不丢区间。
-List<HighlightMatch> _startSorted(List<HighlightMatch> matches) {
+/// 整章渲染（`ReaderParagraphs` / `ReaderTextContent`）应在 build 入口
+/// 调用一次并复用结果，避免每段/每行重复 O(m) 校验与排序（批32 P3-1）。
+List<HighlightMatch> sortHighlightMatchesByStart(
+  List<HighlightMatch> matches,
+) {
   if (isStartSorted(matches)) return matches;
   return [...matches]..sort((a, b) {
     final byStart = a.start.compareTo(b.start);

@@ -354,6 +354,11 @@ class ReaderTextContent extends StatelessWidget {
   /// [批34] 本章高亮命中区间（UTF-16 章节全局偏移）
   final List<HighlightMatch> highlightMatches;
 
+  /// [批32 P3-2] 父级已确认 [highlightMatches] 按 `start` 升序时为 true：
+  /// 滚动模式整章 = N 个本组件，父级校验一次后下传，避免每页重复 O(m)
+  /// 有序校验。null 表示未声明，本组件内部校验并按需排序一次。
+  final bool? matchesStartSorted;
+
   /// [P2-2] 分页快照章节索引/标题（长按选区时优先于实时阅读状态）
   final int? chapterIndex;
   final String? chapterTitle;
@@ -377,6 +382,7 @@ class ReaderTextContent extends StatelessWidget {
     this.reviewCounts,
     this.onReviewTap,
     this.highlightMatches = const [],
+    this.matchesStartSorted,
     this.chapterIndex,
     this.chapterTitle,
     this.imageConfig = const ReaderImageRenderConfig(),
@@ -391,9 +397,11 @@ class ReaderTextContent extends StatelessWidget {
       builder: (context, constraints) {
         final widgets = <Widget>[];
         final availableWidth = constraints.maxWidth;
-        // 命中顺序整页校验一次；逐行游标只前进不回退（行/段按章节顺序
-        // 渲染），滚动模式整章渲染时避免每行全表扫描 + 重复有序校验。
-        final matchesStartSorted = isStartSorted(highlightMatches);
+        // [批32 P3-1/P3-2] 整页只排序/校验一次并复用：排序后游标恢复可用
+        // （乱序输入不再逐行排序兜底）；父级已确认有序时跳过本页 O(m) 校验。
+        final orderedMatches = matchesStartSorted == true
+            ? highlightMatches
+            : sortHighlightMatchesByStart(highlightMatches);
         var lineMatchCursor = 0;
 
         for (var paraIdx = 0; paraIdx < pageInfo.paragraphs.length; paraIdx++) {
@@ -461,12 +469,10 @@ class ReaderTextContent extends StatelessWidget {
             );
 
             // 命中游标：end <= 本行正文起点的命中与本行及后续行无关。
-            // 乱序输入（非合并结果）不推进游标，由 span 构建器排序兜底。
-            if (matchesStartSorted &&
-                line.highlightMapped &&
-                highlightMatches.isNotEmpty) {
-              while (lineMatchCursor < highlightMatches.length &&
-                  highlightMatches[lineMatchCursor].end <=
+            // [批32 P3-1] 入口排序后列表恒有序，游标始终可推进。
+            if (line.highlightMapped && orderedMatches.isNotEmpty) {
+              while (lineMatchCursor < orderedMatches.length &&
+                  orderedMatches[lineMatchCursor].end <=
                       line.chapterStartIndex) {
                 lineMatchCursor++;
               }
@@ -474,12 +480,11 @@ class ReaderTextContent extends StatelessWidget {
             final lineBodyLength =
                 text.length - line.highlightSkip.clamp(0, text.length);
             final lineHasHighlight =
-                highlightMatches.isNotEmpty &&
+                orderedMatches.isNotEmpty &&
                 line.highlightMapped &&
-                (!matchesStartSorted ||
-                    (lineMatchCursor < highlightMatches.length &&
-                        highlightMatches[lineMatchCursor].start <
-                            line.chapterStartIndex + lineBodyLength));
+                lineMatchCursor < orderedMatches.length &&
+                orderedMatches[lineMatchCursor].start <
+                    line.chapterStartIndex + lineBodyLength;
 
             // [批16] 含行内图片的行：占位符替换为 WidgetSpan，文字分段
             // 继承同一行样式/高亮
@@ -488,8 +493,8 @@ class ReaderTextContent extends StatelessWidget {
                     line,
                     text,
                     lineTextStyle,
+                    matches: orderedMatches,
                     searchFrom: lineMatchCursor,
-                    assumeStartSorted: matchesStartSorted,
                   )
                 // [批34] 命中行改 Text.rich：按章节全局偏移切分 span，只应用
                 // 不影响字体度量的样式（颜色/背景/下划线/删除线）— full-stack-engineer
@@ -506,9 +511,9 @@ class ReaderTextContent extends StatelessWidget {
                         text: text,
                         chapterStart: line.chapterStartIndex,
                         highlightSkip: line.highlightSkip,
-                        matches: highlightMatches,
+                        matches: orderedMatches,
                         searchFrom: lineMatchCursor,
-                        assumeStartSorted: matchesStartSorted,
+                        assumeStartSorted: true,
                       ),
                     ),
                     style: lineTextStyle,
@@ -616,8 +621,8 @@ class ReaderTextContent extends StatelessWidget {
     LineInfo line,
     String text,
     TextStyle style, {
+    required List<HighlightMatch> matches,
     int searchFrom = 0,
-    bool assumeStartSorted = false,
   }) {
     final spans = <InlineSpan>[];
     var segmentStart = 0;
@@ -630,8 +635,8 @@ class ReaderTextContent extends StatelessWidget {
             line,
             text.substring(segmentStart, i),
             segmentStart,
+            matches: matches,
             searchFrom: searchFrom,
-            assumeStartSorted: assumeStartSorted,
           ),
         );
       }
@@ -658,8 +663,8 @@ class ReaderTextContent extends StatelessWidget {
           line,
           text.substring(segmentStart),
           segmentStart,
+          matches: matches,
           searchFrom: searchFrom,
-          assumeStartSorted: assumeStartSorted,
         ),
       );
     }
@@ -676,10 +681,10 @@ class ReaderTextContent extends StatelessWidget {
     LineInfo line,
     String segment,
     int offsetInLine, {
+    required List<HighlightMatch> matches,
     int searchFrom = 0,
-    bool assumeStartSorted = false,
   }) {
-    if (highlightMatches.isEmpty || !line.highlightMapped) {
+    if (matches.isEmpty || !line.highlightMapped) {
       return [TextSpan(text: segment)];
     }
     // [批16 三审 P2-5] 行内图片占位符对应整段 `<img>` 标签，优先用逐字符
@@ -691,9 +696,9 @@ class ReaderTextContent extends StatelessWidget {
       text: segment,
       chapterStart: chapterStart < 0 ? 0 : chapterStart,
       highlightSkip: 0,
-      matches: highlightMatches,
+      matches: matches,
       searchFrom: searchFrom,
-      assumeStartSorted: assumeStartSorted,
+      assumeStartSorted: true,
     );
   }
 }
@@ -724,7 +729,10 @@ class ReaderParagraphs extends StatelessWidget {
   // [C3 斜体 | Qoder UI] 正文斜体（与 fontWeight 同链路透传，测量/渲染同参）
   final FontStyle? fontStyle;
 
-  /// 本章高亮命中区间（UTF-16 章节全局偏移，互不重叠、按 start 升序）
+  /// 本章高亮命中区间（UTF-16 章节全局偏移）
+  ///
+  /// [批32 P3-1] 允许乱序输入：build 入口用
+  /// [sortHighlightMatchesByStart] 排序一次后复用。
   final List<HighlightMatch> highlightMatches;
 
   const ReaderParagraphs({
@@ -750,31 +758,36 @@ class ReaderParagraphs extends StatelessWidget {
     // [P2-2 低成本] 滚动模式无分页 ParagraphInfo：按行累计段首偏移，
     // 传给选区面板（此前恒 0，笔记/高亮锚点全落在章首）
     var offset = 0;
-    // 高亮命中游标：命中列表按 start 升序且互不重叠（合并结果契约），
-    // 段落按章节顺序推进时只需前进游标，避免每段全表扫描整章命中。
-    // 乱序输入（非合并结果）不推进游标，由 span 构建器排序兜底。
-    final matchesStartSorted = isStartSorted(highlightMatches);
+    // [批32 P3-1] 高亮命中列表在入口只排序/校验一次并复用：排序后段落
+    // 按章节顺序推进时游标恒可用，避免每段重复 O(m) 校验（乱序时还会
+    // 每段重排 → 整章 O(段落数 × m log m)）。
+    final orderedMatches = sortHighlightMatchesByStart(highlightMatches);
     var matchCursor = 0;
     final items = <Widget>[];
     for (var index = 0; index < paragraphs.length; index++) {
-      final p = paragraphs[index];
+      final raw = paragraphs[index];
+      // [批32 P3-3] CRLF：`split('\n')` 会把 '\r' 留在段尾。分页路径
+      // `_splitParagraphsWithOffsets` 按 `\r?\n` 切分并 trim，滚动回退
+      // 渲染需剔除段尾 '\r'，否则跨段/跨行手动高亮会把不可见的 '\r'
+      // 也包进样式（下划线/背景），与分页模式不一致。
+      final hasCr = raw.endsWith('\r');
+      final p = hasCr ? raw.substring(0, raw.length - 1) : raw;
       final leading = p.length - p.trimLeft().length;
       final paragraphChapterPos = offset + leading;
-      // 段落正文在章节中的半开区间 [offset, offset + p.length)：`p` 为
-      // `content.split('\n')` 的分段原文，段间换行符不在 p 内，故下方
-      // offset 累计必须 +1（换行符在章节文本中占 1 个 UTF-16 code unit）。
+      // 段落正文在章节中的半开区间 [offset, offset + p.length)：段间
+      // 换行符不在 p 内。CRLF 的 '\r' 已从 p 剔除，下方 offset 累计需
+      // 同时补回被剔除的 1 个 '\r' 与 1 个 '\n'，否则后续段落偏移错位。
       final paragraphEnd = offset + p.length;
-      if (matchesStartSorted) {
-        while (matchCursor < highlightMatches.length &&
-            highlightMatches[matchCursor].end <= offset) {
+      if (orderedMatches.isNotEmpty) {
+        while (matchCursor < orderedMatches.length &&
+            orderedMatches[matchCursor].end <= offset) {
           matchCursor++;
         }
       }
-      final hasHighlight = highlightMatches.isNotEmpty &&
+      final hasHighlight = orderedMatches.isNotEmpty &&
           p.isNotEmpty &&
-          (!matchesStartSorted ||
-              (matchCursor < highlightMatches.length &&
-                  highlightMatches[matchCursor].start < paragraphEnd));
+          matchCursor < orderedMatches.length &&
+          orderedMatches[matchCursor].start < paragraphEnd;
       final paragraphStyle = TextStyle(
         fontSize: fontSize,
         height: lineHeight,
@@ -807,8 +820,9 @@ class ReaderParagraphs extends StatelessWidget {
                       children: buildHighlightedParagraphSpans(
                         text: p,
                         chapterStart: offset,
-                        matches: highlightMatches,
+                        matches: orderedMatches,
                         searchFrom: matchCursor,
+                        assumeStartSorted: true,
                       ),
                     ),
                     style: paragraphStyle,
@@ -817,7 +831,8 @@ class ReaderParagraphs extends StatelessWidget {
           ),
         ),
       );
-      offset += p.length + 1; // + '\n'
+      // +1 为 '\n'；CRLF 段尾 '\r' 已被剔除，额外 +1 保持章节偏移对齐。
+      offset += p.length + 1 + (hasCr ? 1 : 0);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

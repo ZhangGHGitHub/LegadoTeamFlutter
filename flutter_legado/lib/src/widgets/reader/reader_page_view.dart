@@ -32,6 +32,7 @@ import '../../utils/reader_inline_image.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/paragraph_layout_engine.dart';
+import 'highlight_span_builder.dart';
 import 'reader_bookmark_policy.dart';
 import 'reader_inline_image_widget.dart';
 import 'reader_page_chrome.dart';
@@ -2303,6 +2304,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // [UI-fix v2.0.4 | 2026-08-08] 文字色经自定义配色解析 — Qoder
     final textColor = _resolveTextColor(state);
     final imageConfig = _imageRenderConfig(state);
+    // [批32 P3-2] 整章命中列表在此只校验/排序一次，N 个分页共用：
+    // `ReaderTextContent` 每页不再各做一次 O(m) 有序校验（滚动模式
+    // 整章渲染 = 每页一个实例）。
+    final scrollHighlightMatches = sortHighlightMatchesByStart(
+      _combinedHighlightMatches,
+    );
     // [批16] 滚动模式标题图：按正文可用宽解析（无分页容量约束）
     final scrollBodyWidth =
         MediaQuery.of(context).size.width -
@@ -2390,8 +2397,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   reviewCounts: widget.reviewCounts,
                   onReviewTap: widget.onReviewTap,
                   // 滚动模式正文高亮：与分页同源（_combinedHighlightMatches
-                  // 为章节全局 UTF-16 区间，按行 chapterStartIndex 映射）
-                  highlightMatches: _combinedHighlightMatches,
+                  // 为章节全局 UTF-16 区间，按行 chapterStartIndex 映射）；
+                  // [批32 P3-2] 父级已排序，下传标志跳过每页重复校验。
+                  highlightMatches: scrollHighlightMatches,
+                  matchesStartSorted: true,
                   imageConfig: imageConfig,
                 )
             else if (state.chapterContent.isNotEmpty)
@@ -2414,7 +2423,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
                 selectText: widget.selectText,
                 // 回退渲染同样按章节全局坐标切 span（段间换行计 1 字符）
-                highlightMatches: _combinedHighlightMatches,
+                highlightMatches: scrollHighlightMatches,
               )
             else if (!state.isLoading)
               Center(
