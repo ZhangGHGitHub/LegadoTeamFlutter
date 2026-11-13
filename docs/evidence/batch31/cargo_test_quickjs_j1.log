@@ -1,0 +1,1455 @@
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 26s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-0a19ed0be9d76a84.exe)
+
+running 880 tests
+test api::audio_api::tests::test_lyric_from_variable ... ok
+test api::audio_cache_api::tests::clear_chapter_removes_orphan_marker_with_zero_count ... ok
+test api::audio_cache_api::tests::clear_chapter_isolated_and_idempotent ... ok
+test api::audio_cache_api::tests::clear_book_all_and_idempotent ... ok
+test api::audio_cache_api::tests::cleanup_stale_threshold ... ok
+test api::audio_cache_api::tests::clear_chapter_waits_inflight_download_and_wins ... ok
+test api::audio_cache_api::tests::extension_detection_and_rejections ... ok
+test api::audio_api::tests::test_audio_progress ... ok
+test api::audio_cache_api::tests::file_name_and_metadata_roundtrip ... ok
+test api::archive_import_api::tests::test_converted_txt_import_keeps_clean_book_name ... ok
+test api::audio_cache_api::tests::key_if_blank_and_sensitivity ... ok
+test api::audio_cache_api::tests::key_vectors ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_no_origin_falls_back_to_chapter_url ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_large_lyric_file_fallback ... ok
+test api::audio_cache_api::tests::parse_five_segment_names ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_cache_hit ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_missing_chapter ... ok
+test api::audio_api::tests::test_get_audio_chapter_media_volume_short_circuit ... ok
+test api::audio_cache_api::tests::safe_title_normalization ... ok
+test api::auto_task_api::tests::test_can_refresh_book_toc ... ok
+test api::auto_task_api::tests::test_build_book_update_task ... ok
+test api::auto_task_api::tests::test_execute_task ... ok
+test api::auto_task_api::tests::test_next_due_at ... ok
+test api::auto_task_api::tests::test_normalize_script ... ok
+test api::auto_task_api::tests::test_find_book_update_task ... ok
+test api::auto_task_api::tests::test_prepare_imported_tasks_camel_case_locals_preserve_runtime_state ... ok
+test api::auto_task_api::tests::test_prepare_imported_tasks ... ok
+test api::auto_task_api::tests::test_prepare_imported_tasks_snake_case_locals_compatible ... ok
+test api::auto_task_api::tests::test_update_cron_batch ... ok
+test api::backup_api::tests::test_backup_aes_key_matches_upstream ... ok
+test api::audio_cache_api::tests::cancel_aborts_inflight_download ... ok
+test api::backup_api::tests::test_backup_inspect_json_backup ... ok
+test api::auto_task_api::tests::test_auto_task_crud_db ... ok
+test api::backup_api::tests::test_backup_inspect_rejects_unsupported_format ... ok
+test api::backup_api::tests::test_backup_list ... ok
+test api::backup_api::tests::test_backup_list_nonexistent_dir ... ok
+test api::backup_api::tests::test_backup_create_and_restore ... ok
+test api::backup_api::tests::test_backup_inspect_does_not_restore_media ... ok
+test api::audio_cache_api::tests::concurrent_same_key_downloads_are_serialized ... ok
+test api::audio_cache_api::tests::book_isolation ... ok
+test api::backup_api::tests::test_backup_inspect_zip_variants ... ok
+test api::backup_api::tests::test_backup_without_direct_link_rule_omits_key ... ok
+test api::backup_api::tests::test_book_marks_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_book_memo_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_json_value_kind_and_base64_shape ... ok
+test api::backup_api::tests::test_book_reverse_toc_display_backup_roundtrip ... ok
+test api::audio_cache_api::tests::download_failures_leave_no_residue ... ok
+test api::backup_api::tests::test_book_source_restore_rebuilds_check_state ... ok
+test api::backup_api::tests::test_direct_link_upload_rule_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_merge_cookie_values_aligned_with_upstream ... ok
+test api::backup_api::tests::test_disable_read_record_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_json_restore_guards_dangling_cover_paths ... ok
+test api::backup_api::tests::test_legacy_backup_without_book_marks_keeps_existing ... ok
+test api::backup_api::tests::test_legacy_backup_without_book_memos_keeps_existing ... ok
+test api::backup_api::tests::test_read_zip_entry_limited_counts_bytes_on_error_path ... ok
+test api::audio_cache_api::tests::download_idempotent_already_cached ... ok
+test api::backup_api::tests::test_legacy_backup_without_direct_link_rule_keeps_existing_config ... ok
+test api::backup_api::tests::test_legacy_backup_without_servers_keeps_existing_rows ... ok
+test api::backup_api::tests::test_restore_broken_zip_errors ... ok
+test api::backup_api::tests::test_new_tables_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_private_flags_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_read_record_backup_13_fields_roundtrip ... ok
+test api::backup_api::tests::test_read_record_restore_v113_semantics ... ok
+test api::backup_api::tests::test_restore_book_marks_empty_anchor_skipped ... ok
+test api::audio_cache_api::tests::download_installs_and_cleans_old_versions ... ok
+test api::backup_api::tests::test_restore_book_marks_missing_id_generates_uuid ... ok
+test api::backup_api::tests::test_restore_book_marks_twice_idempotent ... ok
+test api::backup_api::tests::test_restore_cookies_concurrent_jar_write_no_rollback ... ok
+test api::backup_api::tests::test_restore_direct_link_rule_field_as_json_array_skips ... ok
+test api::backup_api::tests::test_restore_direct_link_rule_field_as_json_object_restores ... ok
+test api::backup_api::tests::test_restore_direct_link_rule_inline_object_keeps_all_keys ... ok
+test api::backup_api::tests::test_restore_direct_link_rule_with_bom_prefix ... ok
+test api::audio_cache_api::tests::download_strips_proxy_header_from_source_headers ... ok
+test api::backup_api::tests::test_restore_empty_direct_link_rule_skipped ... ok
+test api::backup_api::tests::test_restore_empty_json_object_direct_link_rule_written ... ok
+test api::backup_api::tests::test_restore_rejects_oversized_backup_file ... ok
+test api::backup_api::tests::test_restore_rejects_unsupported_format ... ok
+test api::backup_api::tests::test_restore_empty_zip_returns_zero_stats ... ok
+test api::backup_api::tests::test_restore_cookies_covers_every_js_key_of_same_domain ... ok
+test api::backup_api::tests::test_restore_entry_level_warn_still_commits ... ok
+test api::backup_api::tests::test_restore_explicit_empty_book_marks_keeps_existing ... ok
+test api::backup_api::tests::test_restore_invalid_direct_link_rule_skips_and_keeps_existing ... ok
+test api::backup_api::tests::test_restore_legacy_book_without_progress_fields_clears_like_original ... ok
+test api::backup_api::tests::test_restore_overwrites_existing_book_progress ... ok
+test api::audio_cache_api::tests::download_validation_errors ... ok
+test api::audio_cache_api::tests::failures_degrade_without_panic ... ok
+test api::audio_cache_api::tests::injected_dir_used ... ok
+test api::audio_cache_api::tests::latest_committed_prefers_newest ... ok
+test api::audio_cache_api::tests::list_sorted_unique_committed ... ok
+test api::backup_api::tests::test_restore_overwrites_local_progress_with_backup_values ... ok
+test api::audio_cache_api::tests::query_hit_requires_marker_and_nonzero_size ... ok
+test api::backup_api::tests::test_restore_uncaught_error_rolls_back_all ... ok
+test api::backup_api::tests::test_restore_zip_media_rejects_unsafe_and_oversized ... ok
+test api::backup_api::tests::test_restore_upstream_zip_book_memo_filtered_and_newest_wins ... ok
+test api::backup_api::tests::test_restore_upstream_zip_broken_entry_skips_only_that_class ... ok
+test api::backup_api::tests::test_restore_upstream_zip_missing_files_skip_class ... ok
+test api::backup_api::tests::test_restore_upstream_zip_read_record_different_author_separate_rows ... ok
+test api::backup_api::tests::test_restore_upstream_zip_read_record_same_author_newest_wins ... ok
+test api::backup_api::tests::test_restore_upstream_zip_roundtrip_all_tables ... ok
+test api::backup_api::tests::test_restore_zip_chinese_and_space_passwords ... ok
+test api::backup_api::tests::test_restore_zip_cookies_take_effect_in_process_memory ... ok
+test api::backup_api::tests::test_restore_zip_corrupt_encrypted_cookies ... ok
+test api::backup_api::tests::test_restore_zip_encrypted_array_direct_link_rule_skipped ... ok
+test api::backup_api::tests::test_restore_zip_maps_direct_link_upload_rule_to_config ... ok
+test api::backup_api::tests::test_restore_zip_media_files_and_remap ... ok
+test api::backup_api::tests::test_restore_zip_media_merge_overwrites_and_keeps_local ... ok
+test api::backup_api::tests::test_restore_upstream_zip_bad_book_marking_keeps_existing ... ok
+test api::backup_api::tests::test_restore_zip_media_total_limit_aborts ... ok
+test api::backup_api::tests::test_restore_zip_password_protected_cookies_errors_without_writes ... ok
+test api::backup_api::tests::test_strip_verbatim_prefix ... ok
+test api::backup_api::tests::test_restore_zip_plain_array_direct_link_rule_skipped ... ok
+test api::backup_api::tests::test_restore_zip_plaintext_servers_supported ... ok
+test api::backup_api::tests::test_zip_entry_count_limit_rejected_before_parse ... ok
+test api::backup_api::tests::test_zip_entry_path_guard ... ok
+test api::backup_api::tests::test_zip_forged_uncompressed_size_entry_skipped ... ok
+test api::backup_api::tests::test_zip_media_path_guard ... ok
+test api::backup_api::tests::test_restore_zip_rejects_parent_dir_entry_and_warns ... ok
+test api::backup_api::tests::test_restore_zip_replaces_highlight_rules_and_keyboard_assists ... ok
+test api::backup_api::tests::test_restore_zip_runtime_source_cache_branches ... ok
+test api::backup_api::tests::test_restore_zip_secret_password_servers_skipped ... ok
+test api::backup_api::tests::test_restore_zip_mixed_encrypted_servers_and_plain_cookies ... ok
+test api::backup_api::tests::test_restore_zip_servers_only_wrong_password_invalid ... ok
+test api::backup_api::tests::test_restore_zip_source_sub_type_mapping ... ok
+test api::backup_api::tests::test_restore_zip_without_direct_link_rule_keeps_existing_config ... ok
+test api::backup_api::tests::test_restore_zip_wrong_password_zero_writes ... ok
+test api::backup_api::tests::test_rss_source_backup_restore_roundtrip ... ok
+test api::book_group_api::tests::test_dto_serializes_camel_case ... ok
+test api::backup_api::tests::test_servers_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_servers_restore_preserves_zero_id ... ok
+test api::backup_api::tests::test_toc_url_backup_restore_roundtrip ... ok
+test api::backup_api::tests::test_v1_backup_still_restorable ... ok
+test api::backup_api::tests::test_zip_restore_to_json_backup_drops_local_cover_paths ... ok
+test api::book_export::tests::test_export_local_book_applies_replace_rules ... ok
+test api::book_export::tests::test_export_local_book_non_empty_content ... ok
+test api::book_export::tests::test_export_local_book_pdf ... ok
+test api::book_export::tests::test_export_local_book_relative_identifier ... ok
+test api::backup_api::tests::test_restore_zip_with_password_restores_servers_cookies_runtime ... ok
+test api::book_export::tests::test_export_with_chapter_range ... ok
+test api::book_export::tests::test_export_with_file_name_template ... ok
+test api::book_export::tests::test_export_with_gbk_encoding ... ok
+test api::book_group_api::tests::test_add_group_uses_power_of_two_ids ... ok
+test api::book_group_api::tests::test_book_group_crud ... ok
+test api::book_group_api::tests::test_set_show_readback ... ok
+test api::book_import::tests::import_cbz_sets_local_image_bit ... ok
+test api::book_import::tests::import_txt_keeps_local_without_image_bit ... ok
+test api::book_marking_api::tests::test_list_for_chapter_and_cross_source ... ok
+test api::book_marking_api::tests::test_save_generates_uuid_and_timestamps ... ok
+test api::book_marking_api::tests::test_save_rejects_empty_anchor_and_invalid_json ... ok
+test api::book_marking_api::tests::test_set_enabled_and_delete_noop ... ok
+test api::bookmark_api::tests::test_add_and_get_bookmarks ... ok
+test api::bookmark_api::tests::test_add_multiple_bookmarks ... ok
+test api::bookmark_api::tests::test_delete_bookmark ... ok
+test api::bookshelf::tests::test_delete_books_removes_webdav_cached_file ... ok
+test api::bookmark_api::tests::test_get_bookmarks_by_book ... ok
+test api::bookmark_api::tests::test_search_bookmarks ... ok
+test api::bookmark_api::tests::test_search_bookmarks_by_content ... ok
+test api::bookshelf::tests::test_delete_books_keeps_non_local_file ... ok
+test api::bookshelf::tests::test_delete_books_missing_file_yields_warning ... ok
+test api::bookshelf::tests::test_delete_books_partial_failure_reports_counts ... ok
+test api::bookshelf::tests::test_delete_books_rejects_absolute_path_outside_roots ... ok
+test api::bookshelf::tests::test_delete_books_rejects_directory ... ok
+test api::bookshelf::tests::test_delete_books_rejects_parent_dir_escape_keeps_file ... ok
+test api::bookshelf::tests::test_delete_books_rejects_symlink ... ok
+test api::bookshelf::tests::test_delete_books_rejects_unlisted_extension_but_deletes_record ... ok
+test api::bookshelf::tests::test_delete_books_rejects_url_scheme_but_deletes_record ... ok
+test api::bookshelf::tests::test_delete_books_removes_local_file_and_record ... ok
+test api::bookmark_api::tests::test_get_all_bookmarks ... ok
+test api::bookshelf::tests::test_merge_origin_empty_existing_uses_incoming ... ok
+test api::bookshelf::tests::test_merge_origin_webdav_kept_against_local_incoming ... ok
+test api::bookshelf::tests::test_merge_origin_webdav_to_webdav_later_write_wins ... ok
+test api::bookshelf::tests::test_set_book_charset_single_column_preserves_read_config ... ok
+test api::bookshelf::tests::test_set_read_record_disabled_single_column ... ok
+test api::bookshelf::tests::test_update_and_add_book_preserve_disable_read_record_when_key_missing ... ok
+test api::bookshelf::tests::test_update_book_allows_local_to_webdav_origin ... ok
+test api::bookshelf::tests::test_update_book_keeps_online_origin_against_stale_snapshot ... ok
+test api::bookshelf::tests::test_update_book_preserves_manga_scope_read_config ... ok
+test api::bookshelf::tests::test_update_book_whole_write_drops_unmodeled_read_config_keys ... ok
+test api::bookshelf::tests::test_update_read_config_field_creates_config_when_empty ... ok
+test api::bookshelf::tests::test_update_read_config_field_json_value_types ... ok
+test api::bookshelf::tests::test_update_read_config_field_preserves_unmodeled_keys ... ok
+test api::bookshelf::tests::test_update_read_config_field_rejects_missing_book_blank_key_and_bad_json ... ok
+test api::bookshelf::tests::test_update_read_config_field_rejects_type_mismatch_and_keeps_config ... ok
+test api::cache_api::tests::test_cache_apis ... ok
+test api::cache_api::tests::test_clear_cache_before_resets_same_title_flags ... ok
+test api::cache_api::tests::test_clear_chapter_cache_empty_book_url ... ok
+test api::cache_api::tests::test_clear_chapter_cache_single_row ... ok
+test api::cache_api::tests::test_list_cached_chapters_empty_book_and_no_toc ... ok
+test api::cache_api::tests::test_list_cached_chapters_set_and_word_count ... ok
+test api::cache_api::tests::test_list_cached_display_loose_body_only ... ok
+test api::cache_api::tests::test_save_chapter_content_roundtrip ... ok
+test api::cache_api::tests::test_shrink_database ... ok
+test api::cache_download_api::tests::test_cancel_flag_set ... ok
+test api::cache_download_api::tests::test_download_cancel_queued_task_not_executed ... ok
+test api::cache_download_api::tests::test_download_concurrency_clamps_thread_count ... ok
+test api::cache_download_api::tests::test_download_strict_even_when_loose_cache_exists ... ok
+test api::cache_download_api::tests::test_failed_chapters_persistence_roundtrip_and_legacy_snapshot ... ok
+test api::cache_download_api::tests::test_failed_chapters_recorded_and_cleared_on_retry ... ok
+test api::cache_download_api::tests::test_task_from_persisted_trims_oversized_finished_ahead ... ok
+test api::cache_download_api::tests::test_unknown_task ... ok
+test api::cbz_api::tests::cbz_read_page_bytes_and_prefix_compat ... ok
+test api::cbz_api::tests::cbz_read_page_error_paths ... ok
+test api::cache_download_api::tests::test_local_book_batch_download ... ok
+test api::config_api::tests::test_parse_thread_count_defaults_and_clamp ... ok
+test api::cache_download_api::tests::test_local_book_relative_identifier_batch_download ... ok
+test api::cache_download_api::tests::test_download_cancel_with_concurrency_stops_after_in_flight ... ok
+test api::cache_download_api::tests::test_running_chapters ... ok
+test api::cache_download_api::tests::test_start_validation ... ok
+test api::cache_download_api::tests::test_task_from_persisted_trimmed_fixture_runs_to_total ... ok
+test api::config_api::tests::test_config_crud ... ok
+test api::config_api::tests::test_private_config_keys_are_guarded ... ok
+test api::config_api::tests::test_resolve_thread_count_reads_config ... ok
+test api::cache_download_api::tests::test_download_concurrency_max_in_flight_order_and_no_duplicate ... ok
+test api::config_api::tests::test_restore_user_agent_reads_config ... ok
+test api::cover_api::tests::test_cover_rule_crud_roundtrip ... ok
+test api::cache_download_api::tests::test_download_global_admission_one_book_at_a_time ... ok
+test api::config_api::tests::test_set_config_user_agent_updates_runtime_default ... ok
+test api::cover_api::tests::test_cover_rule_enabled_cookie_jar_roundtrip ... ok
+test api::dict_api::tests::test_compose_fetch_headers_cookie_jar_gate ... ok
+test api::cache_download_api::tests::test_download_restore_running_tasks_admit_one_book ... ok
+test api::cover_api::tests::test_disabled_rule_not_executed ... ok
+test api::dict_api::tests::test_dict_rule_crud_flow ... ok
+test api::dict_api::tests::test_import_parse_rules_array ... ok
+test api::dict_api::tests::test_import_parse_rules_errors_and_filter ... ok
+test api::dict_api::tests::test_import_parse_rules_single ... ok
+test api::dict_api::tests::test_dict_rule_import_upsert_by_name ... ok
+test api::dict_api::tests::test_html_to_text ... ok
+test api::cache_download_api::tests::test_download_resume_p0_prefix_advance_must_not_redownload_finished_ahead ... ok
+test api::cover_api::tests::test_empty_extract_returns_nothing ... ok
+test api::dict_api::tests::test_dict_rule_reorder_bad_json ... ok
+test api::dict_api::tests::test_lookup_data_uri_rule ... ok
+test api::dict_api::tests::test_serialization_fields ... ok
+test api::direct_link_upload_api::tests::test_blank_rule_errors_before_network ... ok
+test api::direct_link_upload_api::tests::test_compress_upload_requests_zip ... ok
+test api::direct_link_upload_api::tests::test_content_payload_size_limit ... ok
+test api::direct_link_upload_api::tests::test_empty_result_reports_upload_failed_with_body ... ok
+test api::direct_link_upload_api::tests::test_file_path_payload_and_size_limit ... ok
+test api::direct_link_upload_api::tests::test_file_path_upload_flow ... ok
+test api::direct_link_upload_api::tests::test_js_download_rule_base_url_binding ... ok
+test api::direct_link_upload_api::tests::test_js_download_rule_with_quickjs ... ok
+test api::direct_link_upload_api::tests::test_jsonpath_download_rule ... ok
+test api::direct_link_upload_api::tests::test_network_error_upload ... ok
+test api::direct_link_upload_api::tests::test_payload_requires_exactly_one ... ok
+test api::direct_link_upload_api::tests::test_regex_download_rule ... ok
+test api::explore_api::explore_binding_tests::test_explore_chained_step_src_is_top_level_body ... ok
+test api::explore_api::explore_binding_tests::test_explore_top_level_book_binding_is_null ... ok
+test api::explore_api::field_clean_tests::test_format_book_author_strips_prefix_suffix ... ok
+test api::explore_api::field_clean_tests::test_format_book_name_strips_author_suffix ... ok
+test api::explore_api::field_clean_tests::test_format_intro_strips_html ... ok
+test api::explore_api::field_clean_tests::test_parse_explore_as_single_book ... ok
+test api::explore_api::field_clean_tests::test_reverse_prefix_flag_semantics ... ok
+test api::explore_api::login_check_tests::test_aggregate_sources_common_explore_and_header ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::explore_api::login_check_tests::test_eval_this_semantics ... ok
+test api::explore_api::login_check_tests::test_explore_js_lib_get_config_visible ... ok
+test api::explore_api::login_check_tests::test_explore_login_check_bare_false_whole_source_fail ... ok
+test api::explore_api::login_check_tests::test_explore_login_check_bare_true_whole_source_fail ... ok
+test api::explore_api::login_check_tests::test_explore_login_check_modified_response_adopted ... ok
+test api::explore_api::login_check_tests::test_explore_login_check_no_config_skips ... ok
+test api::explore_api::login_check_tests::test_explore_login_check_second_adopt ... ok
+test api::explore_api::login_check_tests::test_explore_real_jslib_get_config_visible ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::explore_api::login_check_tests::test_shushan_booklist_js_with_jslib_and_setup ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::explore_api::login_check_tests::test_shushan_header_rule_injected_to_global_headers ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::explore_api::tests::test_explore_analyze_url_double_brace_page ... ok
+test api::dict_api::tests::test_lookup_failed_rule_skipped ... ok
+test api::explore_api::tests::test_explore_fetch_books_empty_url ... ok
+test api::explore_api::tests::test_explore_fetch_books_invalid_source_json ... ok
+test api::dict_api::tests::test_lookup_js_rules ... ok
+test api::cache_download_api::tests::test_download_resume_two_workers_skip_finished_ahead_race ... ok
+test api::dict_api::tests::test_lookup_no_enabled_rules ... ok
+test api::cover_api::tests::test_failed_rule_isolated ... ok
+test api::explore_api::tests::test_explore_parse_url_empty ... ok
+test api::dict_api::tests::test_lookup_seeds_defaults_when_empty ... ok
+test api::dict_api::tests::test_lookup_show_rule_css ... ok
+test api::cache_download_api::tests::test_download_slow_first_chapter_keeps_finished_ahead_bounded ... ok
+test api::cover_api::tests::test_no_enabled_rules_returns_empty_array ... ok
+test api::explore_api::tests::test_explore_parse_url_js_requires_source_json ... ok
+test api::explore_api::tests::test_explore_parse_url_js_returns_json_array ... ok
+test api::explore_api::tests::test_explore_parse_url_json_with_style ... ok
+test api::explore_api::tests::test_explore_parse_url_text ... ok
+test api::explore_api::tests::test_explore_parse_url_text_without_source_json ... ok
+test api::explore_info_map::tests::test_variables_for_url_includes_info_map_entries ... ok
+test api::cache_download_api::tests::test_download_worker_loop_panic_marks_failed_and_joins ... ok
+test api::cover_api::tests::test_relative_url_absolutized ... ok
+test api::highlight_api::tests::test_highlight_add_invalid_json ... ok
+test api::cache_download_api::tests::test_download_worker_panic_counted_as_failed ... ok
+test api::highlight_api::tests::test_highlight_crud_flow ... ok
+test api::highlight_api::tests::test_highlight_rule_match_deadline_check ... ok
+test api::cover_api::tests::test_rule_url_template_and_extract ... ok
+test api::cover_api::tests::test_save_cover_rule_rejects_blank ... ok
+test api::highlight_api::tests::test_highlight_rule_crud_flow ... ok
+test api::cache_download_api::tests::test_network_chapter_missing_image_is_not_refetched_registered_gap ... ok
+test api::highlight_api::tests::test_highlight_rule_match_apply_to_title_filter ... ok
+test api::highlight_api::tests::test_highlight_rule_match_empty_and_limits ... ok
+test api::highlight_api::tests::test_highlight_delete_by_book ... ok
+test api::highlight_api::tests::test_highlight_rule_match_fancy_regex_fallback ... ok
+test api::highlight_api::tests::test_highlight_rule_match_size_cap ... ok
+test api::highlight_api::tests::test_highlight_rule_match_java_ascii_char_classes ... ok
+test api::highlight_api::tests::test_highlight_rule_match_literal_utf16_and_style_json ... ok
+test api::explore_api::tests::test_explore_cross_site_category_omits_login_header_and_proxy ... ok
+test api::highlight_api::tests::test_highlight_rule_match_max_matches_keeps_high_priority ... ok
+test api::highlight_api::tests::test_highlight_rule_match_overlap_priority_truncates_lower_order ... ok
+test api::explore_api::tests::test_explore_fetch_data_uri_empty_mime_decoded_locally ... ok
+test api::highlight_api::tests::test_highlight_rule_match_regex_java_dialect_and_invalid_skip ... ok
+test api::highlight_api::tests::test_highlight_rule_match_same_order_first_hit_wins ... ok
+test api::image_action_api::tests::base_url_is_directory_of_img_src ... ok
+test api::highlight_api::tests::test_highlight_rule_match_zero_width_regex_terminates ... ok
+test api::highlight_api::tests::test_highlight_rule_save_normalizes_group_only ... ok
+test api::highlight_api::tests::test_highlight_rule_uuid_and_apply_to_body_roundtrip ... ok
+test api::http_log_api::tests::test_restore_reads_persisted_value ... ok
+test api::http_tts_api::tests::test_http_tts_crud ... ok
+test api::explore_api::tests::test_explore_fetch_data_uri_with_type_option_decoded_locally ... ok
+test api::image_action_api::tests::action_result_shaped_like_envelope_without_ui_actions_stays_plain ... ok
+test api::image_action_api::tests::action_throw_returns_empty_string ... ok
+test api::image_action_api::tests::bindings_visible_to_action ... ok
+test api::image_action_api::tests::blank_action_returns_empty_string ... ok
+test api::image_action_api::tests::cache_hit_refreshes_result_binding ... ok
+test api::image_action_api::tests::cookie_object_methods_available ... ok
+test api::http_log_api::tests::test_set_http_log_recording_persists_and_toggles ... ok
+test api::image_action_api::tests::different_sources_use_separate_engines ... ok
+test api::image_action_api::tests::dynamic_toast_message_is_returned_in_envelope ... ok
+test api::image_action_api::tests::invalid_action_returns_empty_string ... ok
+test api::image_action_api::tests::invalidate_recreates_engine_for_source ... ok
+test api::image_action_api::tests::js_lib_function_is_visible_to_action ... ok
+test api::image_action_api::tests::js_lib_normalized_when_quickjs_rejects_syntax ... ok
+test api::image_action_api::tests::missing_book_leaves_book_empty_but_source_and_result_available ... ok
+test api::image_api::tests::test_decode_51manga_style_aes_nopadding_offline ... ok
+test api::image_api::tests::test_decode_no_rule_returns_original ... ok
+test api::image_action_api::tests::missing_chapter_row_leaves_chapter_empty ... ok
+test api::image_api::tests::test_decode_rule_only_without_js_lib ... ok
+test api::image_action_api::tests::negative_chapter_index_leaves_chapter_empty ... ok
+test api::image_api::tests::test_default_referer_domain_only ... ok
+test api::image_api::tests::test_ensure_image_default_user_agent_adds_global ... ok
+test api::image_api::tests::test_ensure_image_default_user_agent_case_insensitive ... ok
+test api::image_api::tests::test_fetch_favcomic_image_decode_real ... ignored, requires network access
+test api::image_api::tests::test_looks_like_image_bytes ... ok
+test api::image_api::tests::test_decode_51manga_real_ciphertext_fixture ... ok
+test api::image_api::tests::test_decode_with_js_lib_xor ... ok
+test api::image_cache_api::tests::book_dir_name_is_single_safe_component ... ok
+test api::image_cache_api::tests::cache_file_name_matches_image_file_path ... ok
+test api::image_api::tests::test_decode_twice_no_redeclaration ... ok
+test api::image_cache_api::tests::delete_unreferenced_missing_dir_returns_zero ... ok
+test api::image_cache_api::tests::delete_unreferenced_only_direct_files ... ok
+test api::image_api::tests::test_split_composite_image_url ... ok
+test api::image_cache_api::tests::extract_image_urls_line_fallback ... ok
+test api::image_cache_api::tests::extract_image_urls_line_fallback_composite ... ok
+test api::image_cache_api::tests::extract_image_urls_keeps_single_quoted_composite ... ok
+test api::image_cache_api::tests::get_miss_returns_none ... ok
+test api::image_cache_api::tests::injected_cache_dir_none_when_unset ... ok
+test api::image_cache_api::tests::injected_cache_dir_returns_injected_value ... ok
+test api::image_cache_api::tests::extract_image_urls_keeps_double_quoted_composite ... ok
+test api::image_cache_api::tests::long_book_url_truncation_isolated ... ok
+test api::image_cache_api::tests::extract_image_urls_supports_quote_variants ... ok
+test api::image_action_api::tests::no_ui_action_returns_plain_string ... ok
+test api::image_cache_api::tests::injected_dir_used ... ok
+test api::image_cache_api::tests::retained_names_absolutize_urls ... ok
+test api::image_cache_api::tests::md5_naming_layout ... ok
+test api::image_cache_api::tests::retained_names_current_volume_skips ... ok
+test api::image_cache_api::tests::retained_names_empty_window_skips ... ok
+test api::image_cache_api::tests::retained_names_include_chapter_img_url ... ok
+test api::image_cache_api::tests::path_isolation_by_book_url ... ok
+test api::image_cache_api::tests::retained_names_forward_missing_skips_chapter_only ... ok
+test api::image_cache_api::tests::retained_names_skip_when_backward_content_missing ... ok
+test api::image_cache_api::tests::retained_names_skip_when_content_blank ... ok
+test api::image_cache_api::tests::retained_names_skip_when_current_content_missing ... ok
+test api::image_cache_api::tests::retained_names_skip_volume_chapter ... ok
+test api::image_cache_api::tests::suffix_rules ... ok
+test api::image_cache_api::tests::retain_zero_keeps_files ... ok
+test api::image_cache_api::tests::retained_names_only_cover_window ... ok
+test api::log_api::tests::test_capacity_visible_via_api ... ok
+test api::log_api::tests::test_clear_and_export ... ok
+test api::log_api::tests::test_invalid_level ... ok
+test api::log_api::tests::test_log_entry_serialization_for_dart ... ok
+test api::log_api::tests::test_push_and_list ... ok
+test api::log_api::tests::test_store_api_surface ... ok
+test api::image_cache_api::tests::save_get_roundtrip ... ok
+test api::image_cache_api::tests::write_fail_degrades_to_false ... ok
+test api::net_api::tests::test_get_sub_domain_matches_storage_key ... ok
+test api::image_action_api::tests::repeated_clicks_reuse_engine_for_same_source ... ok
+test api::image_action_api::tests::source_methods_and_scoped_java_get_put ... ok
+test api::explore_api::tests::test_explore_fetch_siluke_xuanhuan_live ... ok
+test api::explore_api::tests::test_explore_parse_url_dahuiwolf_from_env ... ok
+test api::image_action_api::tests::timeout_returns_empty_string ... ok
+test api::pay_action_api::tests::test_classify_pay_result ... ok
+test api::explore_api::tests::test_explore_parse_url_js_aggregate_explore_kinds ... ok
+test api::image_action_api::tests::ui_actions_are_collected_not_dropped ... ok
+test api::pre_update::tests::test_apply_web_info_to_book ... ok
+test api::pre_update::tests::test_run_pre_update_js_empty_is_ok ... ok
+test api::explore_api::tests::test_explore_parse_url_js_host_from_jslib ... ok
+test api::pre_update::tests::test_run_pre_update_js_mutates_book_fields ... ok
+test api::image_action_api::tests::void_action_returns_empty_string ... ok
+test api::net_api::tests::test_clear_cookie_by_subdomain ... ok
+test api::explore_api::tests::test_explore_parse_url_js_java_get_put ... ok
+test api::explore_api::tests::test_explore_parse_url_js_source_get_put ... ok
+test api::pay_action_api::quickjs_tests::test_pay_action_returns_url ... ok
+test api::pay_action_api::quickjs_tests::test_pay_action_success_clears_cache ... ok
+test api::pay_action_api::tests::test_local_book_short_circuit ... ok
+test api::pay_action_api::tests::test_missing_pay_action_error ... ok
+test api::image_api::tests::test_p219_image_decode_path_carries_request_domain_cookie ... ok
+test api::privacy_api::tests::test_cache_clear_preserves_private_biometric ... ok
+test api::privacy_api::tests::test_cache_clear_preserves_private_password ... ok
+test api::privacy_api::tests::test_privacy_biometric_lifecycle ... ok
+test api::privacy_api::tests::test_privacy_biometric_set_rejects_invalid_lengths ... ok
+test api::privacy_api::tests::test_privacy_biometric_set_requires_password ... ok
+test api::privacy_api::tests::test_privacy_failed_password_change_keeps_biometric ... ok
+test api::privacy_api::tests::test_privacy_password_lifecycle ... ok
+test api::privacy_api::tests::test_privacy_password_mutation_clears_biometric ... ok
+test api::reader::tests::is_local_book_includes_cbz_excludes_zip ... ok
+test api::privacy_api::tests::test_privacy_set_password_concurrent_serialized ... ok
+test api::privacy_api::tests::test_privacy_set_password_validation ... ok
+test api::net_api::tests::test_clear_cookie_concurrent_rmw_no_resurrection ... ok
+test api::privacy_api::tests::test_set_book_group_private_and_get_private_group_ids ... ok
+test api::privacy_api::tests::test_set_books_private_and_get_private_book_urls ... ok
+test api::privacy_api::tests::test_set_books_private_rejects_invalid_json ... ok
+test api::read_record_api::tests::test_read_record_crud ... ok
+test api::read_record_api::tests::test_upsert_read_record_skips_when_book_disabled ... ok
+test api::read_record_api::tests::test_upsert_syncs_daily_duration ... ok
+test api::read_record_api::tests::test_upsert_uses_primary_row_for_daily_delta ... ok
+test api::reader::tests::cbz_local_book_lazy_toc_and_content_end_to_end ... ok
+test api::reader::tests::local_book_relative_identifier_roundtrip ... ok
+test api::reader::tests::local_parse_result_is_discarded_when_settings_changed_mid_parse ... ok
+test api::reader::tests::local_txt_charset_setting_rebuilds_toc_and_decodes_content ... ok
+test api::net_api::tests::test_clear_cookie_covers_db_persistence_rows ... ok
+test api::reader::tests::test_content_processing_chinese_convert_none ... ok
+test api::reader::tests::test_content_processing_chinese_convert_s2t ... ok
+test api::reader::tests::test_content_processing_chinese_convert_t2s ... ok
+test api::reader::tests::test_content_processing_disabled_rules_not_applied ... ok
+test api::reader::tests::test_content_processing_js_bindings_chapter_and_book_visible ... ok
+test api::reader::tests::test_content_processing_js_replace_rule_executes_in_production_pipeline ... ok
+test api::reader::tests::local_txt_no_rule_length_split_follows_config ... ok
+test api::reader::tests::test_content_processing_raw_keeps_replaced_words ... ok
+test api::reader::tests::test_content_processing_regex_replace ... ok
+test api::reader::tests::test_content_processing_raw_still_removes_duplicate_title ... ok
+test api::reader::tests::test_content_processing_scope_empty_book_name ... ok
+test api::reader::tests::test_content_processing_scope_filter ... ok
+test api::reader::tests::test_content_processing_remove_duplicate_title ... ok
+test api::reader::tests::test_content_processing_scope_global ... ok
+test api::reader::tests::test_content_processing_scope_multi_delimiter ... ok
+test api::reader::tests::test_content_processing_scope_no_substring_match ... ok
+test api::reader::tests::test_content_processing_text_replace ... ok
+test api::reader::tests::local_txt_toc_rule_applies_falls_back_and_clears ... ok
+test api::reader::tests::test_fetch_chapter_content_cache_hit ... ignored, requires network access
+test api::reader::tests::test_fetch_chapter_content_returns_text_not_json_metadata ... ignored, requires network access
+test api::reader::tests::stale_book_from_set_toc_rule_does_not_reset_derived_fields ... ok
+test api::reader::tests::test_fetch_chapter_content_success ... ignored, requires network access
+test api::reader::tests::stale_full_book_write_does_not_resurrect_cleared_toc_rule ... ok
+test api::reader::tests::test_apply_content_processing_chapter_executes_db_js_rule ... ok
+test api::reader::tests::test_get_chapter_content_full_online ... ignored, requires network access
+test api::reader::tests::test_apply_content_processing_chinese_convert_integration ... ok
+test api::reader::tests::test_apply_content_processing_integration ... ok
+test api::reader::tests::test_apply_content_processing_raw_integration ... ok
+test api::reader::tests::test_js_replace_rule_engine_reuse_supports_let_per_match ... ok
+test api::reader::tests::test_js_replace_rule_error_keeps_original_and_continues ... ok
+test api::reader::tests::test_apply_content_processing_unknown_chapter_leaves_bindings_empty ... ok
+test api::reader::tests::test_build_replace_js_bindings_chapter_url_and_book_fallback ... ok
+test api::reader::tests::test_js_replace_rule_preview_matches_production ... ok
+test api::reader::tests::test_cache_hit_lazy_self_heals_word_count_once ... ok
+test api::reader::tests::test_chinese_convert_type_roundtrip ... ok
+test api::net_api::tests::test_set_custom_hosts_apply_and_persist ... ok
+test api::reader::tests::test_js_replace_rule_result_length_capped ... ok
+test api::reader::tests::test_content_title_rule_overrides_title_and_persists_img_url ... ok
+test api::reader::tests::test_fetch_chapter_content_source_not_found ... ok
+test api::reader::tests::test_refresh_toc_saves_to_db ... ignored, requires network access
+test api::reader::tests::test_get_chapter_content_full_chapter_not_found ... ok
+test api::reader::tests::test_get_chapter_content_full_no_origin ... ok
+test api::reader::tests::test_refresh_toc_success ... ignored, requires network access
+test api::reader::tests::test_image_book_replace_default_off_explicit_on ... ok
+test api::reader::tests::test_raw_search_path_does_not_re_segment ... ok
+test api::reader::tests::test_re_segment_applies_when_book_config_enabled ... ok
+test api::reader::tests::test_refresh_toc_no_duplicate_retry_when_toc_url_empty ... ok
+test api::reader::tests::test_refresh_toc_passes_book_key_not_fetch_url ... ok
+test api::net_api::tests::test_set_custom_hosts_invalid_json ... ok
+test api::reader::tests::test_title_convert_by_type ... ok
+test api::reader::tests::test_refresh_toc_passes_db_variables_to_fetcher ... ok
+test api::reader::tests::test_content_without_title_rule_keeps_chapter_title ... ok
+test api::reader::tests::test_refresh_toc_placeholder_not_on_shelf ... ok
+test api::reader::tests::test_refresh_toc_self_heals_bad_toc_url ... ok
+test api::reader::tests::test_js_replace_rule_timeout_keeps_original_and_continues ... ok
+test api::reader::tests::test_word_count_format_aligned_with_original ... ok
+test api::reader::tests::test_refresh_toc_syncs_toc_derived_fields ... ok
+test api::reader::tests::test_replace_enable_default_parsing ... ok
+test api::reader::tests::test_save_chapter_cache_after_successful_fetch ... ok
+test api::reader::tests::test_save_chapter_cache_backfills_word_count ... ok
+test api::reader::tests::test_text_book_replace_follows_replace_enable_default ... ok
+test api::net_api::tests::test_set_custom_hosts_rebuilds_shared_client ... ok
+test api::reader::tests::test_js_replace_rule_2000_matches_reuse_engine_within_timeout ... ok
+test api::reader::tests::test_toggle_same_title_removed_content_pipeline ... ok
+test api::reader::tests::test_toggle_same_title_removed_errors ... ok
+test api::reader::tests::test_use_replace_rule_epub_entity_detection ... ok
+test api::reader::tests::test_refresh_toc_persists_volume_pay_and_tag ... ok
+test api::replace_rule_api::tests::test_preview_invalid_json ... ok
+test api::reader::tests::test_use_replace_rule_false_keeps_chinese_convert ... ok
+test api::replace_rule_api::tests::test_preview_js_rule ... ok
+test api::replace_rule_api::tests::test_preview_literal_rule ... ok
+test api::replace_rule_api::tests::test_preview_regex_rule ... ok
+test api::replace_rule_api::tests::test_preview_js_rule_binds_empty_chapter_and_book ... ok
+test api::reader::tests::test_word_count_backfill_failure_harmless ... ok
+test api::replace_rule_api::tests::test_add_and_get_rules ... ok
+test api::replace_rule_api::tests::test_add_multiple_rules ... ok
+test api::replace_rule_api::tests::test_add_rule_order_is_max_plus_one ... ok
+test api::replace_rule_api::tests::test_add_rule_with_group_scope_timeout ... ok
+test api::replace_rule_api::tests::test_update_rule_scope_semantics ... ok
+test api::replace_rule_api::tests::test_add_rule_with_scope_source ... ok
+test api::review_api::tests::test_convert_js_review_items_mapping ... ok
+test api::replace_rule_api::tests::test_apply_replace_rules_to_source_executes_js_rule ... ok
+test api::review_api::tests::test_js_review_get_replies_empty_main_js_rejected ... ok
+test api::replace_rule_api::tests::test_apply_replace_rules_to_source_hit_and_miss ... ok
+test api::review_api::tests::test_review_get_detail_incomplete_rules ... ok
+test api::replace_rule_api::tests::test_apply_replace_rules_to_source_url_match ... ok
+test api::review_api::tests::test_review_get_replies_incomplete_rules ... ok
+test api::review_api::tests::test_review_get_replies_invalid_source_json ... ok
+test api::replace_rule_api::tests::test_delete_replace_rule ... ok
+test api::review_api::tests::test_review_get_replies_missing_rule ... ok
+test api::replace_rule_api::tests::test_get_enabled_rules ... ok
+test api::review_api::tests::test_review_get_summary_disabled_returns_empty ... ok
+test api::reader::tests::test_refresh_toc_source_not_found ... ok
+test api::rss::tests::page_already_stored_empty_page_is_false ... ok
+test api::replace_rule_api::tests::test_replace_rule_reorder_full_sequence ... ok
+test api::replace_rule_api::tests::test_replace_rule_reorder_rejects_illegal_sets ... ok
+test api::replace_rule_api::tests::test_set_rule_enabled_toggle ... ok
+test api::rss::tests::rss_load_more_blank_next_url_returns_empty_page ... ok
+test api::replace_rule_api::tests::test_update_replace_rule ... ok
+test api::replace_rule_api::tests::test_add_rule_with_scope ... ok
+test api::replace_rule_api::tests::test_update_rule_scope_source_semantics ... ok
+test api::replace_rule_api::tests::test_update_rule_with_group_scope_timeout ... ok
+test api::rss::tests::add_rss_source_persists_group_and_single_url ... ok
+test api::rss::tests::import_rss_sources_accepts_numeric_enable_read_record ... ok
+test api::rss_web_bridge::tests::envelope_rejects_unknown_method_and_bad_args ... ok
+test api::review_api::tests::test_review_get_detail_js_source_quickjs_e2e ... ok
+test api::review_api::tests::test_review_get_replies_js_source_dispatched ... ok
+test api::review_api::tests::test_js_review_get_detail_has_reply_url_matches_capability ... ok
+test api::review_api::tests::test_review_get_replies_js_source_quickjs_e2e ... ok
+test api::rss_web_bridge::tests::store_cache_memory_and_toast_action ... ok
+test api::replace_rule_api::tests::test_preview_timeout ... ok
+test api::rss_web_bridge::tests::trim_idle_semaphores_never_evicts_in_use_entries ... ok
+test api::reader::tests::test_volume_chapter_empty_content_is_exempt ... ok
+test api::rss::tests::page_already_stored_last_in_wrong_sort_is_false ... ok
+test api::rss::tests::page_already_stored_same_sort_requires_both_ends ... ok
+test api::rss::tests::page_already_stored_uses_last_article_own_sort ... ok
+test api::rule_sub_api::tests::test_apply_remote_content_failure_keeps_db_and_version ... ok
+test api::rss::tests::set_rss_source_enabled_updates_only_rss_sources ... ok
+test api::rule_sub_api::tests::test_response_serialization ... ok
+test api::rss_read_record_api::tests::test_clear_by_origin_none_some_and_blank ... ok
+test api::rss_read_record_api::tests::test_rss_mark_read_full_roundtrip ... ok
+test api::rss_read_record_api::tests::test_rss_read_record_crud ... ok
+test api::rss_web_bridge::tests::cookie_set_updates_cookie_store ... ok
+test api::rss_star_api::tests::test_rss_star_crud ... ok
+test api::rule_sub_api::tests::test_apply_remote_content_lands_rows_and_bumps_version ... ok
+test api::rss_web_bridge::tests::generated_script_keeps_bridge_in_closure_and_cleans_globals ... ok
+test api::rss_web_bridge::tests::prepare_gates_on_preload_js ... ok
+test api::rss_web_bridge::tests::prepare_script_contains_bridge_shims_and_snapshot ... ok
+test api::rule_sub_api::tests::test_apply_sub_update_not_found ... ok
+test api::rule_sub_api::tests::test_check_sub_update_not_found ... ok
+test api::search::d4_js_precision_tests::test_search_single_source_js_precision_filter ... ok
+test api::search::error_class_tests::test_db_ffi_internal_fall_back_to_parser_error ... ok
+test api::search::error_class_tests::test_empty_content_variants_map_empty ... ok
+test api::search::error_class_tests::test_io_maps_http_error ... ok
+test api::search::error_class_tests::test_js_engine_maps_js_error ... ok
+test api::search::error_class_tests::test_login_required_maps_login_required ... ok
+test api::search::error_class_tests::test_network_cancel_and_task_error_map_cancelled ... ok
+test api::search::error_class_tests::test_network_generic_maps_http_error ... ok
+test api::search::error_class_tests::test_network_panic_wrapper_maps_parser_error ... ok
+test api::search::error_class_tests::test_ok_empty_maps_empty ... ok
+test api::search::error_class_tests::test_ok_nonempty_maps_ok ... ok
+test api::search::error_class_tests::test_parser_family_maps_parser_error ... ok
+test api::search::error_class_tests::test_timeout_variant_and_batch_wrapper_map_timeout ... ok
+test api::search::p0_2_s2_tests::test_dedup_keeps_first_occurrence ... ok
+test api::search::p0_2_s2_tests::test_dedup_preserves_order_and_empty ... ok
+test api::search::p0_2_s2_tests::test_split_book_list_prefix_minus_reverses ... ok
+test api::search::p0_2_s2_tests::test_split_book_list_prefix_no_prefix_unchanged ... ok
+test api::search::p0_2_s2_tests::test_split_book_list_prefix_plus_strips_only ... ok
+test api::search::p3f_tests::test_p3f_precision_author_match_kept ... ok
+test api::search::p3f_tests::test_p3f_precision_filters_non_matching ... ok
+test api::search::p3f_tests::test_p3f_precision_kind_match_kept ... ok
+test api::search::p3f_tests::test_p3f_precision_no_match_drops_all ... ok
+test api::search::p3f_tests::test_p3f_precision_off_keeps_all ... ok
+test api::search::p3f_tests::test_r1v_switch_search_element_variable_export ... ok
+test api::s0_fixture_tests::s0b_book_url_pattern_miss ... ok
+test api::s0_fixture_tests::s0b_book_url_pattern_hit ... ok
+test api::search::s0e_tests::test_s0e_dedup_key_is_book_url_only ... ok
+test api::search::s0e_tests::test_s0e_empty_list_falls_back_to_detail ... ok
+test api::s0_fixture_tests::s0b_empty_list_detail_fallback ... ok
+test api::s0_fixture_tests::s0b_empty_list_unparseable ... ok
+test api::search::s0e_tests::test_s0e_empty_list_with_pattern_no_fallback ... ok
+test api::s0_fixture_tests::s0b_login_check_modified_response ... ok
+test api::search::s0e_tests::test_s0e_pattern_direct_hit_parses_detail ... ok
+test api::search::s0e_tests::test_s0e_pattern_miss_continues_list_parse ... ok
+test api::search::s0e_tests::test_s0e_login_check_err_path_recovers ... ok
+test api::search::s0e_tests::test_s0e_login_check_pass ... ok
+test api::search::tests::probe_51_toc_detail ... ignored, requires network
+test api::search::s0e_tests::test_s0e_login_check_required ... ok
+test api::search::tests::probe_all_image_sources_batch ... ignored, requires network + tmp_debug/sources.json
+test api::search::tests::probe_fast_group_novel_fail_classify ... ignored, e2e network probe
+test api::search::tests::probe_fast_group_novel_search ... ignored, e2e network probe
+test api::search::tests::probe_gbk_charset_novel_search ... ignored, e2e network probe
+test api::search::tests::probe_manga_group_e2e_search ... ignored, e2e network probe
+test api::search::tests::probe_manga_sources_from_tmp_debug ... ignored, requires network + tmp_debug fixtures
+test api::search::tests::probe_missing_manga_sources ... ignored, e2e network probe
+test api::search::tests::probe_relative_search_urls ... ignored, requires network
+test api::s0_fixture_tests::s0b_redirect_final_url ... ok
+test api::search::tests::test_book_list_elements_error_class_narrowing ... ok
+test api::search::tests::test_book_type_of_source_mapping ... ok
+test api::search::tests::test_annotated_candidate_json_carries_origin_order ... ok
+test api::search::tests::test_default_user_agent_matches_net_client_default ... ok
+test api::search::tests::test_cover_candidate_serialize ... ok
+test api::s0_fixture_tests::s0b_login_check_pass ... ok
+test api::search::tests::test_build_search_url_post_method ... ok
+test api::s0_fixture_tests::s0b_login_check_required ... ok
+test api::search::tests::test_e2e_yckceo_read_chain_network ... ignored
+test api::search::tests::test_e2e_yckceo_search_network ... ignored
+test api::search::tests::test_ensure_default_user_agent_adds_when_missing ... ok
+test api::search::tests::test_ensure_default_user_agent_keeps_source_ua ... ok
+test api::search::tests::test_ensure_default_user_agent_uses_global_setting ... ok
+test api::search::tests::test_extract_cover_candidates_dedup_and_filter ... ok
+test api::search::tests::test_extract_cover_candidates_empty_input ... ok
+test api::search::tests::test_js_engine_error_surfaces_via_batch_channel ... ok
+test api::s0_fixture_tests::s0b_login_check_second_adopt ... ok
+test api::search::tests::test_parse_empty_response ... ok
+test api::search::tests::test_parse_fields_complete_and_partial_failure_isolated ... ok
+test api::search::tests::test_parse_html_book_url_empty_falls_back_to_base ... ok
+test api::search::tests::test_parse_html_search_results ... ok
+test api::search::tests::test_parse_json_search_results ... ok
+test api::search::tests::test_parse_kind_multi_match_joined_with_comma ... ok
+test api::search::tests::test_parse_no_match_is_zero_success ... ok
+test api::search::tests::test_parse_no_rule_search_returns_empty ... ok
+test api::search::tests::test_parse_origin_order_from_custom_order ... ok
+test api::search::tests::test_parse_search_book_url_css_js_chain ... ok
+test api::search::tests::test_parse_search_formats_name_author ... ok
+test api::search::tests::test_parse_search_js_rule ... ok
+test api::search::tests::test_drive_cancel_wakes_blocked_collect_promptly ... ok
+test api::search::tests::test_parse_skips_items_without_name ... ok
+test api::search::tests::test_parse_search_source_context_available ... ok
+test api::search::tests::test_read_record_annotation_absent ... ok
+test api::search::tests::test_parse_sto66_real_response_xpath ... ok
+test api::search::tests::test_read_record_index_batch_lookup ... ok
+test api::search::tests::test_read_record_index_match_semantics ... ok
+test api::search::tests::test_read_record_index_multi_author_encoded ... ok
+test api::search::tests::test_resolve_url_variants ... ok
+test api::search::tests::test_result_to_search_book_preserves_origin_order ... ok
+test api::search::tests::test_build_search_url_key_replacement ... ok
+test api::search::tests::test_search_single_source_consumes_retry_option ... ok
+test api::search::tests::test_search_single_source_cookie_jar_gate_end_to_end ... ok
+test api::search::tests::test_search_overlap_a_replaced_by_b ... ok
+test api::search::tests::test_search_single_source_decodes_meta_only_gbk ... ok
+test api::search::tests::test_search_single_source_detects_undeclared_gbk ... ok
+test api::search::tests::test_search_single_source_empty_cover_rule_yields_no_cover ... ok
+test api::search::tests::test_search_single_source_explicit_charset_wins_over_detection ... ok
+test api::search::tests::offline_51_chapter_list_from_saved_html ... ok
+test api::search::tests::test_search_single_source_uses_final_url_after_redirect ... ok
+test api::search::tests::test_web_source_searcher_no_search_url ... ok
+test api::search::tests::test_word_count_format_aligns_original ... ok
+test api::search::tests::test_search_single_source_utf8_undeclared_no_regression ... ok
+test api::search::tests::test_drive_source_batches_sink_err_aborts_remaining ... ok
+test api::server_api::tests::test_build_injected_paths_maps_roots ... ok
+test api::server_api::tests::test_build_injected_paths_none_fallbacks ... ok
+test api::search::tests::test_drive_source_batches_isolation_concurrency_timeout ... ok
+test api::search::tests::test_drive_timeout_effective_for_blocking_parse ... ok
+test api::rule_sub_api::tests::test_check_sub_update_unreachable_url ... ok
+test api::rule_sub_api::tests::test_rule_sub_crud_db ... ok
+test api::rule_sub_api::tests::test_rule_sub_update_order_db ... ok
+test api::rss_web_bridge::tests::login_info_set_syncs_variable_store_loopback ... ok
+test api::search::error_class_tests::test_clear_expired_search_books_row_count ... ok
+test api::server_api::tests::test_server_status_initial ... ok
+test api::search::tests::test_load_search_sources_empty_array_means_all ... ok
+test api::search::tests::test_read_record_annotation_with_db ... ok
+test api::search_history_api::tests::test_search_history_by_prefix ... ok
+test api::search_history_api::tests::test_search_history_crud ... ok
+test api::server_api::tests::test_mcp_port_bind_conflict ... ok
+test api::server_api::tests::test_mcp_port_out_of_range ... ok
+test api::server_api::tests::test_mcp_port_stop_semantics ... ok
+test api::rss_web_bridge::tests::store_isolates_and_persists_source_variables ... ok
+test api::server_api::tests::test_server_start_injects_image_cache_root_whitelist ... ok
+test api::server_api::tests::test_server_stop_when_not_running ... ok
+test api::source_callback_api::tests::is_js_true_aligns_kotlin ... ok
+test api::source_callback_api::tests::call_back_btn_missing_book_errors ... ok
+test api::source_check_api::tests::test_cancel_during_source_load_window_stops_batch ... ok
+test api::source::tests::test_add_source_refreshes_rate_limiter ... ok
+test api::source_check_api::tests::test_check_progress_serialize_contract ... ok
+test api::source_check_api::tests::test_check_source_invalid_json ... ok
+test api::source_check_api::tests::test_check_source_no_search_url ... ok
+test api::source_check_api::tests::test_check_source_with_config_skip_steps ... ok
+test api::source::tests::test_import_sources_batch_is_atomic ... ok
+test api::source::tests::test_import_sources_lenient_max_batch_size_string ... ok
+test api::source::tests::test_import_sources_refreshes_rate_limiter ... ok
+test api::source::tests::test_set_source_variable ... ok
+test api::source_check_api::tests::test_create_checker_carries_all_config_fields ... ok
+test api::source_check_api::tests::test_load_check_sources_invalid_json ... ok
+test api::source::tests::test_source_list_includes_bookshelf_counts ... ok
+test api::source_check_api::tests::test_parse_config_empty_uses_default ... ok
+test api::source_check_api::tests::test_parse_config_invalid_json ... ok
+test api::source_check_api::tests::test_parse_config_partial_override ... ok
+test api::server_api::tests::test_mcp_requires_js_source_api_token ... ok
+test api::source::tests::test_update_source_clears_rate_limiter_when_rate_removed ... ok
+test api::search::p3f_tests::test_search_books_max_in_flight_uses_thread_count_config ... ok
+test api::search::tests::test_session_registration_and_cleanup_safety ... ok
+test api::source_debug_api::tests::test_cancel_debug_sets_flag ... ok
+test api::source_debug_api::tests::test_debug_key_routing_prefixes ... ok
+test api::source_debug_api::tests::test_debug_log_item_json ... ok
+test api::source_debug_api::tests::test_format_elapsed_zeroish ... ok
+test api::source::tests::test_update_source_refreshes_rate_limiter ... ok
+test api::source_debug_api::tests::test_is_abs_url ... ok
+test api::source_js_bindings::tests::test_extract_js_lib_host_decl ... ok
+test api::source_js_bindings::tests::test_js_lib_quickjs_prefix_balanced_when_packages_inside_function ... ok
+test api::source_js_bindings::tests::test_js_lib_quickjs_prefix_trims_packages ... ok
+test api::source_js_bindings::tests::test_sanitize_js_lib_keeps_functions_after_packages ... ok
+test api::source_login_v1_api::tests::test_get_login_js_plain_kept ... ok
+test api::source_login_v1_api::tests::test_get_login_js_strips_wrappers ... ok
+test api::source_login_cache::tests::test_login_header_roundtrip ... ok
+test api::server_api::tests::test_mcp_same_port_restart_cycle ... ok
+test api::search::p3f_tests::test_search_concurrency_reads_thread_count_config ... ok
+test api::server_api::tests::test_mcp_start_restart_stop_state_machine ... ok
+test api::source_login_v2_api::tests::test_eval_login_action_v2_persists_login_info ... ok
+test api::source_login_v2_api::tests::test_eval_login_ui_v2_source_binding ... ok
+test api::source_login_v2_api::tests::test_is_login_ui_v2 ... ok
+test api::source_switch::tests::test_cancel_during_apply_blocks_commit ... ok
+test api::source_login_v2_api::tests::test_eval_missing_script_error ... ok
+test api::source_switch::tests::test_cancel_switch_apply_bumps_apply_epoch ... ok
+test api::source_switch::tests::test_enrich_one_switch_candidate_writes_prefetch_cache ... ok
+test api::source_login_v2_api::tests::test_eval_login_ui_v2_render_states ... ok
+test api::source_login_v2_api::tests::test_eval_login_action_v2_commands ... ok
+test api::source_login_v2_api::tests::test_eval_login_ui_v2_declarative_login_url ... ok
+test api::source_switch::tests::test_p215_yield_stale_overlay_to_db_rule_matrix ... ok
+test api::source_switch::tests::test_enrich_parallel_bounded_and_order_preserved ... ok
+test api::source_switch::tests::test_enrich_single_failure_passthrough_keeps_info_entry ... ok
+test api::source_switch::tests::test_persist_switch_matches_keeps_candidate_variable ... ok
+test api::source_switch::tests::test_enrich_timeout_isolates_slow_candidate ... ok
+test api::source_switch::tests::test_p215_switch_yields_stale_overlay_to_db_variable ... ok
+test api::source_check_api::tests::test_cancel_current_session_does_not_cancel_concurrent_stream ... ok
+test api::source_check_api::tests::test_check_sources_stream_cancel ... ok
+test api::source_check_api::tests::test_check_sources_stream_empty ... ok
+test api::source_check_api::tests::test_check_sources_stream_missing_source ... ok
+test api::source_check_api::tests::test_check_sources_stream_order_and_progress ... ok
+test api::source_check_api::tests::test_check_sources_stream_sink_closed ... ok
+test api::source_check_api::tests::test_new_session_does_not_clear_other_session_cancel ... ok
+test api::source_check_api::tests::test_session_cancel_isolation ... ok
+test api::source_check_api::tests::test_session_registry_cleaned_on_all_exit_paths ... ok
+test api::source_switch::tests::test_source_group_contains_membership ... ok
+test api::source_switch::tests::test_source_switch_response_serialize ... ok
+test api::source_switch::tests::test_switch_book_source_keeps_book_url_in_returned_json ... ignored, requires network access
+test api::source_switch::tests::test_switch_book_source_rejects_empty_new_book_url ... ok
+test api::source_switch::tests::test_perf_apply_hit_vs_on_spot_miss ... ok
+test api::source_switch::tests::test_resolve_switch_options_from_json_and_config ... ok
+test api::source_switch::tests::test_resolve_switch_sources_blank_group_means_all ... ok
+test api::source_switch::tests::test_resolve_switch_sources_empty_means_all ... ok
+test api::source_switch::tests::test_resolve_switch_sources_group_membership ... ok
+test api::source_switch::tests::test_resolve_switch_sources_group_no_match ... ok
+test api::source_switch::tests::test_resolve_switch_sources_url_filter ... ok
+test api::source_switch::tests::test_switch_keeps_book_url_stable_no_zombie ... ok
+test api::source_switch::tests::test_update_book_missing_origin_book_url_keeps_column ... ok
+test api::source_switch::tests::test_prefetch_cache_cap_skips_oversized_entry ... ok
+test api::source_switch::tests::test_prefetch_cache_roundtrip_and_key_separator ... ok
+test api::source_switch::tests::test_prefetch_hit_skips_fetch ... ok
+test api::source_switch::tests::test_prefetch_miss_fetches_on_spot ... ok
+test api::tts_speak_api::tests::test_set_tts_cache_dir_roundtrip ... ok
+test api::toc_no_rederive_tests::get_chapters_with_vars_fetches_passed_toc_url_without_rederive ... ok
+test api::verification_api::tests::test_pending_requests_json ... ok
+test api::verification_api::tests::test_serialize_event_contract ... ok
+test api::verification_api::tests::test_stream_cancel_flow ... ok
+test api::tts_speak_api::tests::test_tts_speak_cache_hit_without_network ... ok
+test api::tts_speak_api::tests::test_tts_speak_empty_text_error ... ok
+test api::verification_api::tests::test_submit_unknown_and_duplicate ... ok
+test api::verification_api::tests::test_stream_request_submit_flow ... ok
+test api::source_switch::tests::test_source_switch_prefetch_hit_syncs_toc_derived_fields ... ok
+test api::toc_no_rederive_tests::toc_embedded_in_detail_page_url ... ok
+test api::source_switch::tests::test_source_switch_syncs_toc_derived_fields ... ok
+test api::video_api::tests::test_parse_video_danmaku_drops_unsupported_types ... ok
+test api::video_api::tests::test_capture_fallback_resolves_book_by_source_and_chapter ... ok
+test api::video_api::tests::test_parse_video_danmaku_four_types ... ok
+test api::video_api::tests::test_parse_video_danmaku_entity_decoding ... ok
+test api::video_api::tests::test_parse_video_danmaku_invalid_documents ... ok
+test api::video_api::tests::test_parse_video_danmaku_malformed_rows_skipped ... ok
+test api::video_api::tests::test_parse_video_danmaku_order_and_cdata ... ok
+test api::source_switch::tests::test_switch_fails_and_keeps_old_source_when_info_fails ... ok
+test api::video_api::tests::test_parse_video_danmaku_p_attribute_segments ... ok
+test api::video_api::tests::test_parse_video_danmaku_type7_json ... ok
+test api::toc_no_rederive_tests::known_toc_login_check_js_blocks_when_not_logged_in ... ok
+test api::web_book::tests::qmao_video_content_smoke ... ignored, network smoke: qmao video content
+test api::web_book::tests::test_77shuku_search_diag ... ignored, 外部源站网络诊断，非确定性 CI 测试
+test api::web_book::tests::test_batch_search_scan_extended_wave2 ... ignored, 外部源站批量诊断，非确定性 CI 测试
+test api::web_book::tests::test_batch_search_scan_text_sources ... ignored, 外部 fixture 与源站网络诊断，非确定性 CI 测试
+test api::toc_no_rederive_tests::known_toc_js_chapter_list_reads_book_name_hint ... ok
+test api::web_book::tests::test_build_engine_creates_real_fetcher ... ok
+test api::web_book::tests::test_connect_str_response_search_url_no_undefined ... ignored, 外部源站重定向，离线契约由 legado-js bridge test 覆盖
+test api::web_book::tests::test_hongshu_jsonp_search_diag ... ignored, 外部源站 JSONP 诊断，非确定性 CI 测试
+test api::web_book::tests::test_js_network_sources_diag ... ignored, 外部源站限频/WAF，手工诊断专用
+test api::web_book::tests::test_jsoup_post_redirect_search_diag ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::source_check_api::tests::test_stream_cancel_interrupts_hanging_request ... ok
+test api::source_check_api::tests::test_stream_run_ignores_cancel_from_previous_session ... ok
+test api::video_api::tests::test_concurrent_same_chapter_capture_keeps_all_keys ... ok
+test api::source_switch::tests::test_switch_uses_parsed_toc_url_and_preserves_parsed_values ... ok
+test api::web_book::tests::test_p212_reenter_detail_expands_db_variables ... ok
+test api::web_book::tests::test_p212_unswitched_book_route_hits_by_book_url ... ok
+test api::video_api::tests::test_get_video_danmaku_inline_roundtrip ... ok
+test api::web_book::tests::test_qibuge_catalog_and_content_gbk ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::web_book::tests::test_qibuge_search_diag ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::web_book::tests::test_qiexs_search_diag ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::web_book::tests::test_qushu123_connect_search_diag ... ignored, 外部源站/fixture 诊断，非确定性 CI 测试
+test api::source_switch::tests::test_switch_writes_origin_book_url_and_keeps_book_url_stable ... ok
+test api::web_book::tests::test_shushan_real_toc_repro ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::web_book::tests::test_shushu_all_in_one_toc_diag ... ignored, 外部源站网络诊断，非确定性 CI 测试
+test api::web_book::tests::test_siluke_book_info_chapters_timing_and_cache ... ignored, requires network access
+test api::web_book::tests::test_siluke_full_rules_next_toc ... ignored, requires network access
+test api::web_book::tests::test_taoxiaoshuo_search_diag ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::web_book::tests::test_tianyashuku_search_url_diag ... ignored, 外部重定向源诊断，离线 Response bridge 契约覆盖
+test api::web_book::tests::test_real_fetcher_constructs ... ok
+test api::web_book::tests::test_webbook_chapters_invalid_source_json ... ok
+test api::web_book::tests::test_webbook_content_invalid_chapter_json ... ok
+test api::web_book::tests::test_webbook_info_invalid_source_json ... ok
+test api::video_api::tests::test_get_video_danmaku_large_file_roundtrip ... ok
+test api::web_book::tests::test_webbook_search_invalid_source_json ... ok
+test api::web_book::tests::test_xbqgxs_search_diag ... ignored, 外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试
+test api::source_switch::tests::test_two_consecutive_switches_both_succeed ... ok
+test api::video_api::tests::test_get_video_danmaku_none_degradation ... ok
+test api::webdav_api::tests::test_server_save_rejects_invalid_shape ... ok
+test api::webdav_api::tests::test_servers_crud_roundtrip ... ok
+test api::video_api::tests::test_put_media_sub_content_write_failure_degrades ... ok
+test api::webdav_api::tests::test_webdav_prune_backups_zero_does_nothing ... ok
+test api::webdav_api::tests::test_webdav_list_dir_loopback_runtime_alive ... ok
+test api::video_api::tests::test_threshold_counts_supplementary_plane_by_utf16_units ... ok
+test api::video_api::tests::test_threshold_uses_kotlin_utf16_length ... ok
+test api::webdav_api::tests::test_webdav_upload_file_bad_config ... ok
+test api::webdav_api::tests::test_webdav_upload_file_missing_file ... ok
+test api::webdav_api::tests::test_webdav_prune_ignores_uppercase_backup_name ... ok
+test api::toc_no_rederive_tests::e2e_fetch_page_path_carries_request_domain_js_cookie ... ok
+test api::webdav_api::tests::test_webdav_prune_with_non_empty_remote_dir ... ok
+test api::webdav_api::tests::test_webdav_prune_backups_delete_failure_recorded ... ok
+test bridge::tests::test_ffi_response_failure ... ok
+test bridge::tests::test_ffi_response_failure_serialize ... ok
+test bridge::tests::test_ffi_response_success ... ok
+test bridge::tests::test_ffi_response_success_serialize ... ok
+test api::webdav_api::tests::test_webdav_prune_backups_keeps_latest_and_excludes_current ... ok
+test db_state::tests::resolve_passthrough_web_and_absolute ... ok
+test error::tests::test_ffi_error_from_legado_error ... ok
+test error::tests::test_ffi_error_from_serde ... ok
+test error::tests::test_ffi_error_new ... ok
+test error::tests::test_ffi_error_serialize ... ok
+test http_state::tests::test_db_cookie_persistence_roundtrip ... ok
+test api::webdav_api::tests::test_webdav_prune_uses_href_and_decodes_percent_encoding ... ok
+test api::toc_no_rederive_tests::e2e_fetch_simple_cached_path_carries_request_domain_js_cookie ... ok
+test api::webdav_api::tests::test_webdav_upload_file_then_prune_loopback ... ok
+test api::web_book::tests::test_book_variable_from_db_no_manual_seeding ... ok
+test api::web_book::tests::test_p219_ffi_cross_domain_no_leak ... ok
+test api::web_book::tests::test_p219_ffi_http_path_carries_domain_key_cookie ... ok
+test api::web_book::tests::test_p219_ffi_multi_tld_and_ip_key_consistency ... ok
+test api::web_book::tests::test_p219_ffi_same_domain_cross_source_shared ... ok
+test api::web_book::tests::test_p29_real_aigei_source_getstringlist ... ok
+test api::web_book::tests::test_webbook_content_empty_chapter_url_returns_error ... ok
+test api::web_book::tests::test_webbook_search_empty_query_returns_error ... ok
+test api::webview_api::tests::test_submit_with_cookies_empty_or_invalid_json ... ok
+test api::webview_api::tests::test_submit_with_cookies_merged_upsert ... ok
+test api::webview_api::tests::test_submit_with_cookies_unrelated_domain_not_touched ... ok
+test http_state::tests::test_js_cookie_sink_db_roundtrip ... ok
+test http_state::tests::test_js_cookie_sink_merge_with_http_rows ... ok
+test http_state::tests::test_js_cookie_sink_remove_all ... ok
+test http_state::tests::test_js_cookie_sink_remove_covers_jar_memory ... ok
+test js_executor::auto_task_js_tests::test_auto_task_js_evaluates ... ok
+test js_executor::auto_task_js_tests::test_auto_task_js_string_result ... ok
+test js_executor::auto_task_js_tests::test_auto_task_js_error_propagates ... ok
+test js_executor::tests::test_construct_analyzer_js_string_concat ... ok
+test js_executor::tests::test_construct_analyzer_js_rule ... ok
+test js_executor::tests::test_construct_analyzer_with_js_lib ... ok
+test js_executor::tests::test_js_error_url_roundtrip ... ok
+test js_executor::tests::test_fresh_engine_no_global_leak ... ok
+test js_executor::tests::test_build_search_url_js_block_template ... ok
+test js_executor::tests::test_build_explore_url_js_error_propagates_not_fallback ... ok
+test http_state::tests::test_js_cookie_sink_upsert_throughput ... ok
+test log_bridge::tests::test_parse_level_filter ... ok
+test http_state::tests::test_lookup_source_cookie_jar_falls_back_to_rss_source ... ok
+test http_state::tests::test_lookup_source_cookie_jar_from_db ... ok
+test http_state::tests::test_reset_shared_client_rebuilds ... ok
+test js_executor::tests::test_build_explore_url_js_page_variable_injected ... ok
+test http_state::tests::test_shared_client_concurrent ... ok
+test http_state::tests::test_shared_client_same_underlying ... ok
+test http_state::tests::test_shared_client_with_db_cookie_persistence ... ok
+test js_executor::tests::test_p219_validate_js_lib_construction_carries_request_domain_cookie ... ok
+test js_executor::tests::test_build_search_url_jslib_failure_surfaces_reason ... ok
+test js_executor::tests::test_build_search_url_with_js_lib ... ok
+test js_executor::tests::test_relative_search_url_absolutized ... ok
+test js_executor::tests::test_validate_js_lib_favcomic_jslib_failure_surfaces_and_records ... ok
+test js_executor::tests::test_relative_search_url_with_java_encode_uri ... ok
+test js_executor::tests::test_build_search_url_literal_regression ... ok
+test js_executor::tests::test_build_search_url_js_template_render ... ok
+
+test result: ok. 838 passed; 0 failed; 42 ignored; 0 measured; 0 filtered out; finished in 55.72s
+
+     Running tests\capability_batch1.rs (target\debug\deps\capability_batch1-e8fe9f09f64f5196.exe)
+
+running 7 tests
+test test_cache_memory_roundtrip_e2e ... ok
+test test_cache_memory_isolated_key_spaces ... ok
+test test_cookie_get_key_multilabel_tld_and_ip ... ok
+test test_cookie_get_key_e2e ... ok
+test test_jslib_url_map_explore_e2e ... ok
+test test_cache_memory_cross_context ... ok
+test test_jslib_url_map_explore_failure_ledger ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.02s
+
+     Running tests\capability_batch2.rs (target\debug\deps\capability_batch2-a87e7fb5f28efe75.exe)
+
+running 7 tests
+test test_java_url_getter_states ... ok
+test test_cache_dev_id_roundtrip ... ok
+test test_packages_text_utils_is_empty_e2e ... ok
+test test_java_header_map_put_collects ... ok
+test test_cookie_object_eight_methods ... ok
+test test_cookie_replace_map_roundtrip_e2e ... ok
+test test_search_url_option_js_full_flow_e2e ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests\capability_sweep.rs (target\debug\deps\capability_sweep-316185e677321231.exe)
+
+running 2 tests
+test test_offline_dry_run_sweep ... ignored
+test test_static_capability_reconciliation ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests\clear_book_cache_same_title.rs (target\debug\deps\clear_book_cache_same_title-0c7749c68562cccc.exe)
+
+running 2 tests
+test clear_book_cache_resets_same_title_switch ... ok
+test clear_cache_all_resets_same_title_switch ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\comic_content_fixture.rs (target\debug\deps\comic_content_fixture-a606e401785a0eaa.exe)
+
+running 9 tests
+test test_cover_decode_js_maps_to_image_decode_on_favcomic_fixture ... ok
+test test_empty_content_rule_returns_chapter_url_like_original ... ok
+test test_fetch_image_with_decode_non_image_result_is_error ... ok
+test test_fetch_image_cross_site_omits_login_header_and_strips_proxy ... ok
+test test_fetch_image_http_error_is_network_error ... ok
+test test_fetch_image_same_site_adds_login_header_and_strips_proxy ... ok
+test test_favcomic_comic_chain_detail_toc_content_offline ... ok
+test test_fetch_image_with_decode_xor_decode_hit_and_composite_headers ... ok
+test test_fetch_image_without_decode_rule_passes_through ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests\db_open_cookie_wiring.rs (target\debug\deps\db_open_cookie_wiring-cf7af1a4635fd454.exe)
+
+running 1 test
+test db_open_wires_js_cookie_sink_end_to_end ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\local_book_lazy_toc_fields.rs (target\debug\deps\local_book_lazy_toc_fields-70a7fbe0700e49dd.exe)
+
+running 1 test
+test local_book_lazy_toc_load_syncs_derived_fields ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\prologue_collision.rs (target\debug\deps\prologue_collision-18263d990e53b7f2.exe)
+
+running 3 tests
+test test_aibus_850_self_reference_is_tdz_not_redefinition ... ok
+test test_lofter_702_search_block_no_redeclaration ... ok
+test test_repeated_eval_block_isolation ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\reading_flow_rust_defects.rs (target\debug\deps\reading_flow_rust_defects-4d2f036b8dba76a1.exe)
+
+running 9 tests
+test green_progress_write_fails_during_switch_write_lock ... ok
+test red_empty_cached_chapter_content_short_circuits_fetch ... ok
+test perf_reader_data_local_profile ... ok
+test green_progress_write_succeeds_after_brief_write_lock_release ... ok
+test red_source_switch_snapshot_clobbers_progress_written_in_window ... ok
+test red_stale_cache_row_returned_after_toc_change ... ok
+test red_toc_rewrite_delete_and_insert_not_atomic ... ok
+test red_update_book_stale_snapshot_reverts_reading_progress ... ok
+test red_update_book_stale_snapshot_reverts_source_switch ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.86s
+
+     Running tests\refresh_chapter_cache_semantics.rs (target\debug\deps\refresh_chapter_cache_semantics-45d48c45e1ff8ccf.exe)
+
+running 3 tests
+test c2a_failed_fetch_only_loses_current_chapter_cache ... ok
+test c2c_success_writes_single_row_and_clear_chapter_is_single_grain ... ok
+test c2b_cached_chapter_refresh_forces_network_after_clear ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests\replace_rule_js_web_parity.rs (target\debug\deps\replace_rule_js_web_parity-3694fe7d91a4373a.exe)
+
+running 13 tests
+test test_web_purify_config_read_failure_falls_back_to_defaults ... ok
+test test_web_test_replace_rule_executes_js_in_app_build ... ok
+test test_app_build_enables_server_only_quickjs_path ... ok
+test test_chinese_convert_parity_from_shared_config ... ok
+test test_exclude_scope_ignored_in_content_parity ... ok
+test test_same_title_removed_toggle_parity ... ok
+test test_js_rule_error_parity_app_and_web_keep_original ... ok
+test test_content_scope_parity_split_exact_book_name ... ok
+test test_js_rule_scope_semantics_unified_app_and_web ... ok
+test test_js_rule_parity_app_and_web_with_chapter_book_bindings ... ok
+test test_re_segment_parity_from_book_read_config ... ok
+test test_js_rule_timeout_parity_app_and_web_keep_original ... ok
+test test_replace_enable_default_false_parity ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests\retain_comic_images.rs (target\debug\deps\retain_comic_images-51c638452903db40.exe)
+
+running 8 tests
+test e2e_forward_missing_default_predownload_still_cleans ... ok
+test e2e_missing_cache_dir_returns_zero ... ok
+test e2e_missing_window_content_skips_cleanup ... ok
+test e2e_non_image_book_not_cleaned ... ok
+test e2e_relative_img_url_absolutized ... ok
+test e2e_retain_zero_not_cleaned ... ok
+test e2e_volume_chapter_missing_content_does_not_block ... ok
+test e2e_window_keep_and_delete ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\rss_cached_articles_query.rs (target\debug\deps\rss_cached_articles_query-028d1f4e5a7cc109.exe)
+
+running 1 test
+test rss_list_cached_articles_reads_db_only ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\rss_content_loopback.rs (target\debug\deps\rss_content_loopback-5f39bfa7b82f1d7b.exe)
+
+running 1 test
+test rss_content_pagination_writeback_and_login_end_to_end ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests\rss_fetch_articles_loopback.rs (target\debug\deps\rss_fetch_articles_loopback-3659b295db3b01f6.exe)
+
+running 1 test
+test fetch_rss_articles_loopback_end_to_end ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests\rss_rule_pagination_loopback.rs (target\debug\deps\rss_rule_pagination_loopback-74e831c9edadb1c6.exe)
+
+running 1 test
+test rss_rule_pagination_sort_cache_and_login_end_to_end ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests\rss_web_bridge_loopback.rs (target\debug\deps\rss_web_bridge_loopback-3943172b2832e204.exe)
+
+running 1 test
+test rss_web_view_host_bridge_loopback_end_to_end ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests\search_aggregate_fixture.rs (target\debug\deps\search_aggregate_fixture-645299e426ec3e13.exe)
+
+running 2 tests
+test fixture_input_books_deserialize_as_core_search_book ... ok
+test cross_source_merge_fixture_matches_dart_apply_precision_search ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\server_bind_all_interfaces.rs (target\debug\deps\server_bind_all_interfaces-c5dae48535c5d98c.exe)
+
+running 1 test
+test server_start_listens_on_all_interfaces ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\server_bind_conflict.rs (target\debug\deps\server_bind_conflict-326bc454969eeca0.exe)
+
+running 1 test
+test server_start_reports_bind_conflict_synchronously ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\server_shared_db.rs (target\debug\deps\server_shared_db-5eab6cd93f8d8d9c.exe)
+
+running 1 test
+test server_and_ffi_share_same_database ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\server_start_requires_db.rs (target\debug\deps\server_start_requires_db-7051d5dc1a53d09c.exe)
+
+running 1 test
+test server_start_without_db_open_returns_err ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\server_stop_releases_port.rs (target\debug\deps\server_stop_releases_port-e9c2ab9430db1e37.exe)
+
+running 1 test
+test server_stop_releases_port_for_immediate_same_port_restart ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\three_entry_parity.rs (target\debug\deps\three_entry_parity-d6be2eb06ef3d293.exe)
+
+running 4 tests
+test three_entry_parity_book_url_pattern_miss ... ok
+test three_entry_parity_login_check_pass ... ok
+test three_entry_parity_login_check_required ... ok
+test three_entry_parity_redirect_final_url ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running tests\toc_redirect_final_url.rs (target\debug\deps\toc_redirect_final_url-be0620b500c1eca1.exe)
+
+running 1 test
+test redirected_toc_pagination_resolves_next_page_against_final_url ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\toc_refresh_perf.rs (target\debug\deps\toc_refresh_perf-d4e7f06ee68584f2.exe)
+
+running 7 tests
+test perf_parallel_bounded ... ok
+test perf_parallel_failure_no_silent_loss ... ok
+test perf_serial_cycle_stop ... ok
+test perf_serial_failure_truncates ... ok
+test perf_serial_timing_matrix ... ok
+test perf_serial_unbounded_chain_guarded ... ok
+test perf_stale_refresh_cancelled ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 35.38s
+
+     Running tests\webjs_fallback_ledger_subscriber.rs (target\debug\deps\webjs_fallback_ledger_subscriber-8fbc2f0ebd98ce28.exe)
+
+running 1 test
+test webjs_with_subscriber_uses_dom_channel_and_skips_ledger ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src\lib.rs (target\debug\deps\legado_net-14590e56d773ac18.exe)
+
+running 283 tests
+test client::tests::test_build_client_with_invalid_custom_ca_fails_explicitly ... ok
+test client::tests::test_cookie_jar_marker_presence_is_case_insensitive ... ok
+test client::tests::test_build_client_with_ssl_config ... ok
+test client::tests::test_build_client ... ok
+test client::tests::test_build_client_with_rate_limit ... ok
+test client::tests::test_build_client_with_proxy ... ok
+test client::tests::test_build_client_with_user_agents ... ok
+test client::tests::test_build_client_with_proxy_pool ... ok
+test client::tests::test_cookie_persistence_load_on_build ... ok
+test client::tests::test_concurrent_same_domain_persist_equals_memory ... ok
+test client::tests::test_cookie_persistence_not_attached_by_default ... ok
+test client::tests::test_build_client_with_retry ... ok
+test client::tests::test_build_client_with_all_middleware ... ok
+test client::tests::test_build_client_with_full_config ... ok
+test client::tests::test_default_config ... ok
+test client::tests::test_cookie_persistence_writeback_on_set_cookie ... ok
+test client::tests::test_build_client_with_socks5_credentials ... ok
+test client::tests::test_empty_jar_view_does_not_delete_shared_row ... ok
+test client::tests::test_merge_cookie_headers_rule_priority_p1_2 ... ok
+test client::tests::test_multi_tld_sites_cookies_isolated_p1_1_repro ... ok
+test client::tests::test_default_config_user_agent_is_sentinel ... ok
+test client::tests::test_default_user_agent_is_browser_ua ... ok
+test client::tests::test_custom_headers_preserved_and_null_ua_skipped ... ok
+test client::tests::test_blank_global_user_agent_falls_back_to_builtin ... ok
+test client::tests::test_cookie_merge_rule_priority_e2e_p1_2 ... ok
+test client::tests::test_gzip_response_decompressed ... ok
+test client::tests::test_no_follow_redirects_returns_302_unchanged ... ok
+test cookie_store::tests::test_cookie_string_parsing ... ok
+test client::tests::test_cookie_jar_marker_enables_writeback_and_is_stripped ... ok
+test cookie_store::tests::test_cookie_string_to_map_empty ... ok
+test client::tests::test_connection_pool_reuses_keep_alive ... ok
+test cookie_store::tests::test_domain_cookie_string ... ok
+test cookie_store::tests::test_domain_key_co_uk ... ok
+test cookie_store::tests::test_domain_key_host_equals_suffix ... ok
+test cookie_store::tests::test_domain_key_invalid_url ... ok
+test cookie_store::tests::test_domain_key_ipv4 ... ok
+test cookie_store::tests::test_domain_key_ipv6 ... ok
+test cookie_store::tests::test_domain_key_trailing_dot_normalized ... ok
+test client::tests::test_explicit_client_config_user_agent_wins_over_global ... ok
+test client::tests::test_cookie_jar_gate_applies_to_raw_response_collect ... ok
+test cookie_store::tests::test_expired_cookie_not_returned ... ok
+test cookie_store::tests::test_get_cookie_string ... ok
+test cookie_store::tests::test_domain_key_multi_label_tld ... ok
+test client::tests::test_cookie_jar_marker_stays_stripped_across_redirect_hops ... ok
+test cookie_store::tests::test_get_key ... ok
+test client::tests::test_without_cookie_jar_marker_skips_writeback_read_side_unchanged ... ok
+test cookie_store::tests::test_get_cookie_string_multi_tld_isolated ... ok
+test cookie_store::tests::test_domain_key_single_label_host ... ok
+test cookie_store::tests::test_domain_key_single_label_tld ... ok
+test cookie_store::tests::test_domain_key_private_suffixes ... ok
+test cookie_store::tests::test_load_persisted ... ok
+test cookie_store::tests::test_map_to_cookie_string_empty ... ok
+test cookie_store::tests::test_merge_cookies ... ok
+test cookie_store::tests::test_merge_cookies_empty ... ok
+test cookie_store::tests::test_remove_domain ... ok
+test cookie_store::tests::test_remove_cookie_by_name ... ok
+test cookie_store::tests::test_replace_same_name_cookie ... ok
+test cookie_store::tests::test_set_and_get_cookie ... ok
+test cookie_store::tests::test_remove_expired ... ok
+test cookie_store::tests::test_set_cookies_from_empty_string ... ok
+test cookie_store::tests::test_set_cookies_from_string ... ok
+test client::tests::test_explicit_user_agent_header_wins_over_global ... ok
+test custom_hosts::tests::test_clear_semantics ... ok
+test cover::tests::test_cache_path_deterministic ... ok
+test cover::tests::test_cache_path_different_urls ... ok
+test client::tests::test_global_user_agent_applied_when_header_missing ... ok
+test cover::tests::test_get_cached_miss ... ok
+test cover::tests::test_write_and_read_cache ... ok
+test cover::tests::test_get_cached_hit ... ok
+test cover::tests::test_cleanup_no_expired ... ok
+test direct_link_upload::tests::test_build_multipart_body_rejects_header_injection ... ok
+test direct_link_upload::tests::test_build_multipart_body_format ... ok
+test cover::tests::test_cache_size ... ok
+test cover::tests::test_clear ... ok
+test cover::tests::test_cleanup_all_expired ... ok
+test direct_link_upload::tests::test_build_parts_missing_body_errors ... ok
+test direct_link_upload::tests::test_compress_skipped_when_already_zip ... ok
+test direct_link_upload::tests::test_build_parts_file_request_and_text_fields ... ok
+test direct_link_upload::tests::test_parse_upload_url_with_options ... ok
+test direct_link_upload::tests::test_parse_upload_url_invalid_options ... ok
+test direct_link_upload::tests::test_parse_upload_url_without_options ... ok
+test direct_link_upload::tests::test_rule_camel_case_and_snake_case ... ok
+test direct_link_upload::tests::test_upload_loopback_multipart_parts_and_fields ... ok
+test direct_link_upload::tests::test_validate_rule_errors ... ok
+test http_log::tests::test_capture_disabled_returns_none_and_submits_nothing ... ok
+test direct_link_upload::tests::test_compress_produces_zip_and_renames ... ok
+test http_log::tests::test_capture_enabled_records_once_and_strips_cookie_jar_marker ... ok
+test http_log::tests::test_capture_failure_shape ... ok
+test http_log::tests::test_debug_sink_and_global_recorder_coexist ... ok
+test direct_link_upload::tests::test_upload_loopback_compress_produces_zip ... ok
+test http_log::tests::test_debug_sink_captures_inside_scope_only ... ok
+test middleware::tests::test_empty_chain_calls_final_handler ... ok
+test middleware::tests::test_middleware_chain_add ... ok
+test middleware::tests::test_middleware_chain_default ... ok
+test middleware::tests::test_middleware_chain_new ... ok
+test proxy::tests::test_credentials_debug_masks_password ... ok
+test middleware::tests::test_middleware_chain_execution_order ... ok
+test proxy::tests::test_effective_url_encodes_special_credentials ... ok
+test proxy::tests::test_effective_url_inserts_credentials ... ok
+test proxy::tests::test_from_url_extracts_socks5_credentials ... ok
+test proxy::tests::test_from_url_no_credentials ... ok
+test proxy::tests::test_from_url_percent_encoded_credentials ... ok
+test proxy::tests::test_parse_proxy_config_http_without_credentials ... ok
+test proxy::tests::test_parse_proxy_config_rejects_control_chars ... ok
+test proxy::tests::test_parse_proxy_config_legacy_format ... ok
+test proxy::tests::test_parse_proxy_config_standard_socks5_with_credentials ... ok
+test proxy::tests::test_parse_proxy_config_rejects_invalid ... ok
+test proxy::tests::test_proxy_config_from_url ... ok
+test proxy::tests::test_parse_proxy_config_rejects_oversized_socks5_credentials ... ok
+test proxy::tests::test_proxy_pool_empty ... ok
+test proxy::tests::test_proxy_middleware_empty_pool ... ok
+test proxy::tests::test_proxy_pool_len ... ok
+test proxy::tests::test_proxy_pool_random_returns_valid ... ok
+test proxy::tests::test_proxy_pool_round_robin ... ok
+test proxy::tests::test_proxy_type_from_url ... ok
+test proxy::tests::test_to_reqwest_proxy_invalid ... ok
+test proxy::tests::test_to_reqwest_proxy_valid ... ok
+test rate_limit::tests::test_domain_isolation ... ok
+test rate_limit::tests::test_domain_rate_limiter_creation ... ok
+test proxy::tests::test_to_reqwest_proxy_socks5_with_credentials ... ok
+test rate_limit::tests::test_domain_rate_limiter_get_or_create ... ok
+test rate_limit::tests::test_domain_rate_limiter_set_concurrent ... ok
+test rate_limit::tests::test_domain_slot_acquire ... ok
+test rate_limit::tests::test_extract_domain ... ok
+test rate_limit::tests::test_interval_limiter_parse ... ok
+test rate_limit::tests::test_interval_limiter_window_throttles ... ok
+test rate_limit::tests::test_rate_limiter_creation ... ok
+test rate_limit::tests::test_rate_limiter_acquire_release ... ok
+test remote_book::tests::test_from_file_info_no_extension ... ok
+test remote_book::tests::test_find_tag_value_ci_prefix_agnostic ... ok
+test remote_book::tests::test_manager_new_trims_slash ... ok
+test remote_book::tests::test_parse_propfind_prefix_variants ... ok
+test remote_book::tests::test_parse_propfind_response ... ok
+test remote_book::tests::test_remote_book_archive ... ok
+test remote_book::tests::test_remote_book_is_book_file ... ok
+test remote_book::tests::test_remote_book_is_dir ... ok
+test remote_book::tests::test_remote_book_serialization ... ok
+test remote_book::tests::test_remote_book_txt ... ok
+test response::tests::test_content_type ... ok
+test response::tests::test_header_case_insensitive ... ok
+test response::tests::test_is_not_success ... ok
+test response::tests::test_is_success_2xx ... ok
+test response::tests::test_missing_header ... ok
+test response::tests::test_raw_response_helpers ... ok
+test retry::tests::test_default_retry_config ... ok
+test response::tests::test_response_serde ... ok
+test retry::tests::test_delay_capped_at_max ... ok
+test retry::tests::test_delay_for_attempt_exponential_backoff ... ok
+test retry::tests::test_execute_with_retry_max_retries_zero ... ok
+test retry::tests::test_retry_executor_creation ... ok
+test retry::tests::test_should_retry_status_custom ... ok
+test rss::tests::test_parse_atom ... ok
+test rss::tests::test_parse_empty_feed ... ok
+test rss::tests::test_parse_feed_auto_detect_atom ... ok
+test rss::tests::test_parse_feed_auto_detect_rss ... ok
+test rss::tests::test_parse_invalid_xml ... ok
+test rss::tests::test_parse_rss_20 ... ok
+test rss::tests::test_parse_rss_cdata ... ok
+test rss::tests::test_parse_rss_with_enclosure ... ok
+test rss::tests::test_rss_article_serde ... ok
+test rss::tests::test_rss_feed_serde ... ok
+test rule_update_client::tests::test_extract_version_array_without_timestamps_uses_stable_fingerprint ... ok
+test rule_update_client::tests::test_extract_version_empty_array_returns_none ... ok
+test rule_update_client::tests::test_extract_version_from_array_uses_latest_last_update_time ... ok
+test rule_update_client::tests::test_extract_version_from_object_payload ... ok
+test client::tests::test_follow_redirects_stops_at_21st_hop ... ok
+test rule_update_client::tests::test_has_subscription_update_semantics ... ok
+test client::tests::test_follow_redirects_follows_20_hops ... ok
+test rule_update_client::tests::test_merge_book_source_add_new ... ok
+test rule_update_client::tests::test_merge_book_source_remove ... ok
+test rule_update_client::tests::test_merge_book_source_update ... ok
+test rule_update_client::tests::test_merge_invalid_json ... ok
+test rule_update_client::tests::test_merge_invalid_type ... ok
+test rule_update_client::tests::test_merge_no_changes ... ok
+test rule_update_client::tests::test_merge_replace_rule ... ok
+test rule_update_client::tests::test_merge_rss_source ... ok
+test rule_update_client::tests::test_should_update ... ok
+test client::tests::test_no_redirect_variant_caches_and_shares_cookie_store ... ok
+test rule_update_client::tests::test_update_result_serialization ... ok
+test rule_update_client::tests::test_version_detects_content_change_without_timestamp_bump ... ok
+test source_checker::tests::test_build_search_url ... ok
+test source_checker::tests::test_build_search_url_double_brace ... ok
+test source_checker::tests::test_build_search_url_search_key ... ok
+test source_checker::tests::test_cancel_before_start_skips_all_requests ... ok
+test socks5_e2e::test_socks5_wrong_credentials_rejected ... ok
+test source_checker::tests::test_cancelled_result_is_not_available ... ok
+test source_checker::tests::test_check_full_no_search_url ... ok
+test source_checker::tests::test_check_result_all_failed ... ok
+test source_checker::tests::test_check_result_all_ok ... ok
+test socks5_e2e::test_socks5_credentialed_proxy_e2e ... ok
+test source_checker::tests::test_check_result_with_captcha ... ok
+test source_checker::tests::test_check_result_with_redirect ... ok
+test source_checker::tests::test_checker_config_default ... ok
+test source_checker::tests::test_checker_with_config ... ok
+test source_checker::tests::test_check_search_no_search_url ... ok
+test source_checker::tests::test_detect_captcha_anti_bot ... ok
+test source_checker::tests::test_detect_captcha_click ... ok
+test source_checker::tests::test_detect_captcha_empty ... ok
+test source_checker::tests::test_detect_captcha_image ... ok
+test source_checker::tests::test_detect_captcha_none ... ok
+test source_checker::tests::test_detect_captcha_slide ... ok
+test source_checker::tests::test_detect_redirect_cross_domain ... ok
+test source_checker::tests::test_detect_redirect_no_redirect ... ok
+test source_checker::tests::test_detect_redirect_same_domain ... ok
+test source_checker::tests::test_detect_redirect_to_login ... ok
+test source_checker::tests::test_effective_keyword_uses_source_override ... ok
+test source_checker::tests::test_extract_first_book_url_no_match ... ok
+test retry::tests::test_execute_with_retry_success_on_first ... ok
+test retry::tests::test_execute_with_retry_success_returns_ok ... ok
+test source_checker::tests::test_extract_first_book_url_with_pattern ... ok
+test source_checker::tests::test_extract_host ... ok
+test source_checker::tests::test_is_login_or_verify_url ... ok
+test source_checker::tests::test_parse_headers_json ... ok
+test source_checker::tests::test_parse_headers_line_format ... ok
+test rule_update_client::tests::test_fetch_subscription_rejects_self_signed_certificate ... ok
+test source_checker::tests::test_parse_headers_none ... ok
+test source_checker::tests::test_source_request_headers_cookie_jar_gate ... ok
+test source_checker::tests::test_extract_first_href_none ... ok
+test source_checker::tests::test_extract_first_href ... ok
+test source_checker::tests::test_extract_first_href_single_quotes ... ok
+test ssl_config::tests::test_apply_invalid_ca_returns_error ... ok
+test ssl_config::tests::test_apply_valid_ca_loads ... ok
+test ssl_config::tests::test_apply_verify_false ... ok
+test ssl_config::tests::test_apply_verify_true ... ok
+test ssl_config::tests::test_default_ssl_config ... ok
+test ssl_config::tests::test_ssl_config_clone ... ok
+test ssl_config::tests::test_unsafe_ssl_config ... ok
+test ssl_config::tests::test_with_ca_config ... ok
+test timing::tests::test_host_of_invalid ... ok
+test timing::tests::test_host_of_valid ... ok
+test timing::tests::test_tcp_probe_default ... ok
+test timing::tests::test_ms_conversion ... ok
+test user_agent::tests::test_custom_agents_list ... ok
+test user_agent::tests::test_default_rotator_has_agents ... ok
+test user_agent::tests::test_default_trait ... ok
+test user_agent::tests::test_default_user_agent_builtin_when_unset ... ok
+test user_agent::tests::test_next_round_robin_order ... ok
+test user_agent::tests::test_random_returns_valid_agent ... ok
+test user_agent::tests::test_default_user_agent_concurrent_read_write_is_safe ... ok
+test user_agent::tests::test_set_default_user_agent_normalizes_and_clears ... ok
+test user_agent::tests::test_set_default_user_agent_rejects_control_chars ... ok
+test user_agent::tests::test_with_empty_agents_falls_back_to_default ... ok
+test user_agent::tests::test_user_agent_middleware_adds_header ... ok
+test verification::tests::test_can_join ... ok
+test verification::tests::test_register_and_join ... ok
+test verification::tests::test_complete_notifies_waiters ... ok
+test verification::tests::test_try_join_no_existing_flight ... ok
+test webdav::tests::test_conflict_resolution_serialize ... ok
+test webdav::tests::test_auth_header ... ok
+test webdav::tests::test_days_since_epoch ... ok
+test webdav::tests::test_conflict_resolve_result_serialize ... ok
+test webdav::tests::test_filter_self_entry_drops_requested_dir ... ok
+test webdav::tests::test_filter_self_entry_percent_encoded ... ok
+test webdav::tests::test_is_backup_json_name_strict_and_case_sensitive ... ok
+test webdav::tests::test_full_url ... ok
+test webdav::tests::test_merge_json_arrays ... ok
+test webdav::tests::test_merge_json_invalid ... ok
+test webdav::tests::test_merge_json_objects ... ok
+test webdav::tests::test_normalize_url_path ... ok
+test webdav::tests::test_parse_propfind_empty ... ok
+test webdav::tests::test_parse_propfind_response ... ok
+test webdav::tests::test_parse_rfc1123_epoch ... ok
+test webdav::tests::test_parse_rfc1123_invalid ... ok
+test webdav::tests::test_parse_rfc1123_timestamp ... ok
+test webdav::tests::test_resolve_href_relative_path ... ok
+test webdav::tests::test_sync_result_serialize ... ok
+test webdav::tests::test_times_are_close ... ok
+test webdav::tests::test_webdav_config_serialize ... ok
+test source_checker::tests::test_cancel_interrupts_hanging_request_within_one_second ... ok
+test custom_hosts::tests::test_e2e_fallback_system_dns ... ok
+test custom_hosts::tests::test_e2e_hosts_override_hit ... ok
+test custom_hosts::tests::test_lookup_hit_and_miss ... ok
+test custom_hosts::tests::test_parse_comma_separated_string ... ok
+test custom_hosts::tests::test_parse_invalid_json ... ok
+test custom_hosts::tests::test_parse_invalid_ip_skipped ... ok
+test custom_hosts::tests::test_parse_ip_array ... ok
+test custom_hosts::tests::test_parse_single_ip ... ok
+test source_checker::tests::test_quick_check_step_timeout ... ok
+test source_checker::tests::test_step_timeout_applies_to_slow_search ... ok
+test source_checker::tests::test_timeout_marks_step_failed_and_keeps_existing_skip_semantics ... ok
+test direct_link_upload::tests::test_upload_overrides_client_total_timeout ... ok
+test direct_link_upload::tests::test_upload_network_error ... ok
+test webdav::tests::test_request_total_timeout_aborts_silent_server ... ok
+
+test result: ok. 283 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.07s
+
+     Running tests\http_log_recording.rs (target\debug\deps\http_log_recording-cb0c8205e7aa3515.exe)
+
+running 5 tests
+test test_recording_disabled_does_not_record ... ok
+test test_success_and_redirect_chain_record_single_entry ... ok
+test test_failure_records_status_minus_one ... ok
+test test_retry_records_once_with_final_status ... ok
+test test_no_redirect_variant_records_302 ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.06s
+
+   Doc-tests legado_ffi
+
+running 1 test
+test legado-ffi\src\runtime.rs - runtime::block_on_async (line 72) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests legado_net
+
+running 1 test
+test legado-net\src\cover.rs - cover::CoverCache (line 18) ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT_CODE=0

@@ -1,0 +1,16 @@
+==> adb: D:\Android\platform-tools\adb.exe
+==> 目标设备: 192.168.100.63:5555（io.legado.flutter_legado）
+[PASS] 设备 192.168.100.63:5555 在线
+[PASS] 跳过构建，复用已有 APK
+==> adb install -r ...
+[PASS] APK 安装成功
+[PASS] 已装版本与 pubspec 一致（2.0.501）
+[PASS] 应用进程存活（u0_a55        2374   660   16787592 224804 futex_wait          0 S io.legado.flutter_legado）
+[PASS] 无崩溃日志（FATAL/E/flutter）
+==> 未检测到历史崩溃弹窗
+[PASS] UI 主界面渲染正常（检测到：书架/发现/订阅/我的）
+
+================ 冒烟测试汇总 ================
+  通过: 7   失败: 0   设备: 192.168.100.63:5555
+结果: PASSED
+EXIT_CODE=0

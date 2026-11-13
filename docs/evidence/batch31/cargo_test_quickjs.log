@@ -1,0 +1,327 @@
+   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+memory allocation of 2097152 bytes failed
+stack backtrace:
+memory allocation of 1835008 bytes failed
+stack backtrace:
+memory allocation of 1835008 bytes failed
+stack backtrace:
+memory allocation of 2097152 bytes failed
+stack backtrace:
+   0:     0x7ff8aa85f38e - <unknown>
+error[E0786]: found invalid metadata files for crate `legado_ffi`
+  --> legado-ffi\examples\dbg_songhe_bookurl.rs:22:5
+   |
+22 | use legado_ffi::js_executor::construct_analyzer_with_source_context;
+   |     ^^^^^^^^^^
+   |
+   = note: failed to mmap file '\\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib': 页面文件太小，无法完成操作。 (os error 1455)
+
+error[E0786]: found invalid metadata files for crate `legado_ffi`
+  --> legado-ffi\tests\local_book_lazy_toc_fields.rs:33:5
+   |
+33 | use legado_ffi::legado_db::BookRepository;
+   |     ^^^^^^^^^^
+   |
+   = note: failed to mmap file '\\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib': 页面文件太小，无法完成操作。 (os error 1455)
+
+error: only metadata stub found for `rlib` dependency `std` please provide path to the corresponding .rmeta file with full metadata
+  --> legado-ffi\examples\dbg_songhe_bookurl.rs:23:5
+   |
+23 | use std::fs;
+   |     ^^^
+
+For more information about this error, try `rustc --explain E0786`.
+error[E0460]: found possibly newer version of crate `axum` which `legado_ffi` depends on
+   --> legado-ffi\tests\rss_content_loopback.rs:154:5
+    |
+154 |     legado_ffi::api::rss::add_rss_source(&source.to_string()).expect("写入 RSS 源");
+    |     ^^^^^^^^^^
+    |
+    = note: perhaps that crate needs to be recompiled?
+    = note: the following crate versions were found:
+            crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-5eee12c9608beab1.rmeta
+            crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-b0365af2d57efe80.rmeta
+            crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-b23e5dec0cf9b0a4.rmeta
+            crate `legado_ffi`: \\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib
+
+error[E0460]: found possibly newer version of crate `axum` which `legado_ffi` depends on
+  --> legado-ffi\tests\db_open_cookie_wiring.rs:57:5
+   |
+57 |     legado_ffi::ffi::ffi::init().expect("ffi init（tokio runtime）");
+   |     ^^^^^^^^^^
+   |
+   = note: perhaps that crate needs to be recompiled?
+   = note: the following crate versions were found:
+           crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-03ff3aac9382926e.rlib
+           crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-5eee12c9608beab1.rmeta
+           crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-b0365af2d57efe80.rmeta
+           crate `axum`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-b23e5dec0cf9b0a4.rmeta
+           crate `legado_ffi`: \\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib
+
+error[E0463]: can't find crate for `legado_ffi`
+  --> legado-ffi\tests\toc_redirect_final_url.rs:43:5
+   |
+43 | use legado_ffi::legado_core::models::Book;
+   |     ^^^^^^^^^^ can't find crate
+
+error: could not compile `legado-ffi` (example "dbg_songhe_bookurl") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+For more information about this error, try `rustc --explain E0463`.
+error[E0460]: found possibly newer version of crate `legado_server` which `legado_ffi` depends on
+  --> legado-ffi\tests\rss_cached_articles_query.rs:71:5
+   |
+71 |     legado_ffi::ffi::ffi::init().expect("ffi init（tokio runtime）");
+   |     ^^^^^^^^^^
+   |
+   = note: perhaps that crate needs to be recompiled?
+   = note: the following crate versions were found:
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-1ce5bdc883b697af.rlib
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-6e5b1c55fab43c87.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-6e5b1c55fab43c87.rlib
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-73c26b6327c288cc.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-73c26b6327c288cc.rlib
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-af4447ca41ba0243.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-af4447ca41ba0243.rlib
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-08106c749ca4e366.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-2d1c75da71f4e5f9.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-43b44d99fc09a351.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-9e63970afe0bf54d.rmeta
+           crate `legado_server`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-c9261fec08f955ee.rmeta
+           crate `legado_ffi`: \\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib
+
+error: could not compile `legado-ffi` (test "local_book_lazy_toc_fields") due to 1 previous error
+error: could not compile `legado-ffi` (test "toc_redirect_final_url") due to 1 previous error
+   1:     0x7ff8aa887c61 - core::fmt::write
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\core\src\fmt\mod.rs:0
+   0:     0x7ff8aa85f38e - std::backtrace_rs::backtrace::win64::trace
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\..\..\backtrace\src\backtrace\win64.rs:85
+   1:     0x7ff8aa85f38e - std::backtrace_rs::backtrace::trace_unsynchronized
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\..\..\backtrace\src\backtrace\mod.rs:66
+   2:     0x7ff8aa85f38e - std::sys::backtrace::_print_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:74
+   3:     0x7ff8aa85f38e - std::sys::backtrace::impl$0::print::impl$0::fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:44
+   4:     0x7ff8aa887c61 - core::fmt::write
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\core\src\fmt\mod.rs:0
+   0:     0x7ff8aa85f38e - std::backtrace_rs::backtrace::win64::trace
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\..\..\backtrace\src\backtrace\win64.rs:85
+   1:     0x7ff8aa85f38e - std::backtrace_rs::backtrace::trace_unsynchronized
+   0:     0x7ff8aa85f38e - std::backtrace_rs::backtrace::win64::trace
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\..\..\backtrace\src\backtrace\win64.rs:85
+   1:     0x7ff8aa85f38e - std::backtrace_rs::backtrace::trace_unsynchronized
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\..\..\backtrace\src\backtrace\mod.rs:66
+   2:     0x7ff8aa85f38e - std::sys::backtrace::_print_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:74
+   3:     0x7ff8aa85f38e - std::sys::backtrace::impl$0::print::impl$0::fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:44
+   2:     0x7ff8aa86f7e4 - std::io::default_write_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:622
+   3:     0x7ff8aa86f7e4 - std::io::Write::write_fmt<std::sys::stdio::windows::Stderr>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:1977
+   4:     0x7ff8aa887c61 - core::fmt::write
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\core\src\fmt\mod.rs:0
+   5:     0x7ff8aa86f7e4 - std::io::default_write_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:622
+   6:     0x7ff8aa86f7e4 - std::io::Write::write_fmt<std::sys::stdio::windows::Stderr>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:1977
+   5:     0x7ff8aa86f7e4 - std::io::default_write_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:622
+   6:     0x7ff8aa86f7e4 - std::io::Write::write_fmt<std::sys::stdio::windows::Stderr>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:1977
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\..\..\backtrace\src\backtrace\mod.rs:66
+   2:     0x7ff8aa85f38e - std::sys::backtrace::_print_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:74
+   3:     0x7ff8aa85f38e - std::sys::backtrace::impl$0::print::impl$0::fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:44
+   4:     0x7ff8aa887c61 - core::fmt::write
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\core\src\fmt\mod.rs:0
+   5:     0x7ff8aa86f7e4 - std::io::default_write_fmt
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:622
+   6:     0x7ff8aa86f7e4 - std::io::Write::write_fmt<std::sys::stdio::windows::Stderr>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\io\mod.rs:1977
+   4:     0x7ff8aa852794 - std::sys::backtrace::BacktraceLock::print
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:47
+   5:     0x7ff8aa852794 - std::alloc::default_alloc_error_hook
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:397
+   7:     0x7ff8aa852794 - std::sys::backtrace::BacktraceLock::print
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:47
+   8:     0x7ff8aa852794 - std::alloc::default_alloc_error_hook
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:397
+   7:     0x7ff8aa852794 - std::sys::backtrace::BacktraceLock::print
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:47
+   8:     0x7ff8aa852794 - std::alloc::default_alloc_error_hook
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:397
+   7:     0x7ff8aa852794 - std::sys::backtrace::BacktraceLock::print
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:47
+   8:     0x7ff8aa852794 - std::alloc::default_alloc_error_hook
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:397
+   6:     0x7ff8aa83808c - std::alloc::rust_oom::closure$0
+   9:     0x7ff8aa83808c - std::alloc::rust_oom::closure$0
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:428
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:428
+   9:     0x7ff8aa83808c - std::alloc::rust_oom::closure$0
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:428
+   9:     0x7ff8aa83808c - std::alloc::rust_oom::closure$0
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:428
+  10:     0x7ff8aa83579f - std::sys::backtrace::__rust_end_short_backtrace<std::alloc::rust_oom::closure_env$0,never$>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:182
+   7:     0x7ff8aa83579f - std::sys::backtrace::__rust_end_short_backtrace<std::alloc::rust_oom::closure_env$0,never$>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:182
+  10:     0x7ff8aa83579f - std::sys::backtrace::__rust_end_short_backtrace<std::alloc::rust_oom::closure_env$0,never$>
+For more information about this error, try `rustc --explain E0460`.
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:182
+   8:     0x7ff8aa85283b - std::alloc::rust_oom
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:424
+  11:     0x7ff8aa85283b - std::alloc::rust_oom
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:424
+  11:     0x7ff8aa85283b - std::alloc::rust_oom
+  10:     0x7ff8aa83579f - std::sys::backtrace::__rust_end_short_backtrace<std::alloc::rust_oom::closure_env$0,never$>
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\backtrace.rs:182
+  11:     0x7ff8aa85283b - std::alloc::rust_oom
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:424
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:424
+  12:     0x7ff8aa838fd8 - std::alloc::_::__rust_alloc_error_handler
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:423
+   9:     0x7ff8aa838fd8 - std::alloc::_::__rust_alloc_error_handler
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:423
+  12:     0x7ff8aa838fd8 - std::alloc::_::__rust_alloc_error_handler
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:423
+  12:     0x7ff8aa838fd8 - std::alloc::_::__rust_alloc_error_handler
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\alloc.rs:423
+error[E0460]: found possibly newer version of crate `rand` which `legado_ffi` depends on
+  --> legado-ffi\examples\dbg_jslib.rs:13:5
+   |
+13 |     legado_ffi::db_state::record_db_path(&db_path);
+   |     ^^^^^^^^^^
+   |
+   = note: perhaps that crate needs to be recompiled?
+   = note: the following crate versions were found:
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-49dbf978afa28492.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-49dbf978afa28492.rlib
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-a5101c3d0f6be566.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-a5101c3d0f6be566.rlib
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-dfb88c391d0b72ef.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-dfb88c391d0b72ef.rlib
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-f55f706b464faf4e.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-f55f706b464faf4e.rlib
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-5d3d273e47a52a54.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-76284939af651e25.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-af9538694c210764.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-c1a53c4a3053c8f2.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-f1fd6716916ee33d.rmeta
+           crate `rand`: D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librand-f5608165181e7783.rmeta
+           crate `legado_ffi`: \\?\D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib
+
+  13:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error::rt_error
+  10:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error::rt_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:551
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:551
+  11:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error
+  14:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:557
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:557
+  13:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error::rt_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:551
+  14:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:557
+  13:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error::rt_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:551
+  14:     0x7ff8aedecbf9 - alloc::alloc::handle_alloc_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\alloc.rs:557
+  15:     0x7ff8aedecc16 - alloc::raw_vec::handle_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\raw_vec\mod.rs:890
+  12:     0x7ff8aedecc16 - alloc::raw_vec::handle_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\raw_vec\mod.rs:890
+  15:     0x7ff8aedecc16 - alloc::raw_vec::handle_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\raw_vec\mod.rs:890
+error: could not compile `legado-ffi` (test "db_open_cookie_wiring") due to 1 previous error
+  15:     0x7ff8aedecc16 - alloc::raw_vec::handle_error
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\alloc\src\raw_vec\mod.rs:890
+  16:     0x7ff8ac056f93 - <rustc_arena[9ab42e2fa10c937d]::DroplessArena>::grow
+  13:     0x7ff8ac056f93 - <rustc_arena[9ab42e2fa10c937d]::DroplessArena>::grow
+  16:     0x7ff8ac056f93 - <rustc_arena[9ab42e2fa10c937d]::DroplessArena>::grow
+  16:     0x7ff8ac056f93 - <rustc_arena[9ab42e2fa10c937d]::DroplessArena>::grow
+  17:     0x7ff8abf3d19f - <rustc_middle[327ca6dd13956ce7]::ty::context::CtxtInterners>::intern_const
+  14:     0x7ff8abf3ee2d - <rustc_middle[327ca6dd13956ce7]::ty::context::CtxtInterners>::intern_ty
+  17:     0x7ff8abb2ce5e - RINvCsdhu3MFcRC5R_11rustc_arena7outlineNCINvMs6_B2_NtB2_13DroplessArena15alloc_from_iterNtNtCsdVfrV9B22WJ_10rustc_span6def_id8CrateNumINtNtNtNtCs55qC6OcLGgs_4core4iter8adapters10filter_map9FilterMapIB29_INtNtB2d_3map3MapINtNtB2d_9enumerate9EnumerateINtNtNt
+  17:     0x7ff8abf0c767 - <rustc_middle[327ca6dd13956ce7]::ty::context::TyCtxt>::intern_valtree
+  18:     0x7ff8abbec82d - <rustc_metadata[c477d82d1f6163c5]::creader::CStore as rustc_session[1b536e8aa96b1df1]::cstore::CrateStore>::def_key
+  19:     0x7ff8abb2caa2 - RINvCsdhu3MFcRC5R_11rustc_arena7outlineNCINvMs6_B2_NtB2_13DroplessArena15alloc_from_iterNtNtCsdVfrV9B22WJ_10rustc_span6def_id8CrateNumINtNtNtNtCs55qC6OcLGgs_4core4iter8adapters10filter_map9FilterMapIB29_INtNtB2d_3map3MapINtNtB2d_9enumerate9EnumerateINtNtNt
+  18:     0x7ff8abbcea91 - <rustc_metadata[c477d82d1f6163c5]::creader::CStore>::set_used_recursively
+  15:     0x7ff8abbe420d - <rustc_metadata[c477d82d1f6163c5]::rmeta::encoder::EncodeContext as rustc_middle[327ca6dd13956ce7]::ty::codec::TyEncoder>::encode_alloc_id
+  18:     0x7ff8aa5376e6 - rustc_metadata[c477d82d1f6163c5]::rmeta::encoder::encode_metadata
+  20:     0x7ff8aa5376e6 - rustc_metadata[c477d82d1f6163c5]::rmeta::encoder::encode_metadata
+  16:     0x7ff8abb2ccb8 - RINvCsdhu3MFcRC5R_11rustc_arena7outlineNCINvMs6_B2_NtB2_13DroplessArena15alloc_from_iterNtNtCsdVfrV9B22WJ_10rustc_span6def_id8CrateNumINtNtNtNtCs55qC6OcLGgs_4core4iter8adapters10filter_map9FilterMapIB29_INtNtB2d_3map3MapINtNtB2d_9enumerate9EnumerateINtNtNt
+  19:     0x7ff8abbecb0e - <rustc_metadata[c477d82d1f6163c5]::creader::CStore as rustc_session[1b536e8aa96b1df1]::cstore::CrateStore>::def_key
+  17:     0x7ff8aa5376e6 - rustc_metadata[c477d82d1f6163c5]::rmeta::encoder::encode_metadata
+  20:     0x7ff8abb2caa2 - RINvCsdhu3MFcRC5R_11rustc_arena7outlineNCINvMs6_B2_NtB2_13DroplessArena15alloc_from_iterNtNtCsdVfrV9B22WJ_10rustc_span6def_id8CrateNumINtNtNtNtCs55qC6OcLGgs_4core4iter8adapters10filter_map9FilterMapIB29_INtNtB2d_3map3MapINtNtB2d_9enumerate9EnumerateINtNtNt
+  21:     0x7ff8aa5376e6 - rustc_metadata[c477d82d1f6163c5]::rmeta::encoder::encode_metadata
+  18:     0x7ff8aa3688ae - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  19:     0x7ff8aa3688ae - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  21:     0x7ff8aa3688ae - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  22:     0x7ff8aa3688ae - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  23:     0x7ff8aa248b3d - <<rustc_ty_utils[526278a885831dab]::opaque_types::OpaqueTypeCollector>::collect_taits_declared_in_body::TaitInBodyFinder as rustc_hir[1ea8a90067a68ca8]::intravisit::Visitor>::visit_nested_item
+  20:     0x7ff8aa248b3d - <<rustc_ty_utils[526278a885831dab]::opaque_types::OpaqueTypeCollector>::collect_taits_declared_in_body::TaitInBodyFinder as rustc_hir[1ea8a90067a68ca8]::intravisit::Visitor>::visit_nested_item
+  22:     0x7ff8aa248b3d - <<rustc_ty_utils[526278a885831dab]::opaque_types::OpaqueTypeCollector>::collect_taits_declared_in_body::TaitInBodyFinder as rustc_hir[1ea8a90067a68ca8]::intravisit::Visitor>::visit_nested_item
+  24:     0x7ff8aa368752 - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  23:     0x7ff8aa368752 - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  21:     0x7ff8aa368752 - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  24:     0x7ff8ab887188 - <rustc_codegen_ssa[f515b37f3e18fe62]::CrateInfo>::new
+  25:     0x7ff8ab887188 - <rustc_codegen_ssa[f515b37f3e18fe62]::CrateInfo>::new
+  22:     0x7ff8ab887188 - <rustc_codegen_ssa[f515b37f3e18fe62]::CrateInfo>::new
+  19:     0x7ff8aa248b3d - <<rustc_ty_utils[526278a885831dab]::opaque_types::OpaqueTypeCollector>::collect_taits_declared_in_body::TaitInBodyFinder as rustc_hir[1ea8a90067a68ca8]::intravisit::Visitor>::visit_nested_item
+  20:     0x7ff8aa368752 - llvm::TargetTransformInfoImplBase::canHaveNonUndefGlobalInitializerInAddressSpace
+  23:     0x7ff8a7b65447 - <rustc_interface[7971ec2362d01f78]::queries::Linker>::codegen_and_build_linker
+  26:     0x7ff8a7b65447 - <rustc_interface[7971ec2362d01f78]::queries::Linker>::codegen_and_build_linker
+  25:     0x7ff8a7b65447 - <rustc_interface[7971ec2362d01f78]::queries::Linker>::codegen_and_build_linker
+  21:     0x7ff8ab887188 - <rustc_codegen_ssa[f515b37f3e18fe62]::CrateInfo>::new
+  22:     0x7ff8a7b65447 - <rustc_interface[7971ec2362d01f78]::queries::Linker>::codegen_and_build_linker
+  26:     0x7ff8a7b0e6ac - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  27:     0x7ff8a7b0e6ac - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  24:     0x7ff8a7b0e6ac - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  27:     0x7ff8a7b0a591 - RINvNtNtCslFVcyoAu48q_3std3sys9backtrace28___rust_begin_short_backtraceNCNCINvNtCsaqrPHTSpvJs_15rustc_interface4util26run_in_thread_with_globalsNCINvB1e_31run_in_thread_pool_with_globalsNCINvNtB1g_9interface12run_compileruNCNvCs5a844wrxEGq_17rustc_driver_i
+  25:     0x7ff8a7b0a591 - RINvNtNtCslFVcyoAu48q_3std3sys9backtrace28___rust_begin_short_backtraceNCNCINvNtCsaqrPHTSpvJs_15rustc_interface4util26run_in_thread_with_globalsNCINvB1e_31run_in_thread_pool_with_globalsNCINvNtB1g_9interface12run_compileruNCNvCs5a844wrxEGq_17rustc_driver_i
+  28:     0x7ff8a7b0a591 - RINvNtNtCslFVcyoAu48q_3std3sys9backtrace28___rust_begin_short_backtraceNCNCINvNtCsaqrPHTSpvJs_15rustc_interface4util26run_in_thread_with_globalsNCINvB1e_31run_in_thread_pool_with_globalsNCINvNtB1g_9interface12run_compileruNCNvCs5a844wrxEGq_17rustc_driver_i
+  28:     0x7ff8a7b13507 - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  26:     0x7ff8a7b13507 - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  29:     0x7ff8a7b13507 - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  30:     0x7ff8aa85c55a - std::sys::thread::windows::impl$0::new::thread_start
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\thread\windows.rs:58
+  29:     0x7ff8aa85c55a - std::sys::thread::windows::impl$0::new::thread_start
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\thread\windows.rs:58
+  27:     0x7ff8aa85c55a - std::sys::thread::windows::impl$0::new::thread_start
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\thread\windows.rs:58
+  31:     0x7ff9d74dcd87 - BaseThreadInitThunk
+  30:     0x7ff9d74dcd87 - BaseThreadInitThunk
+  28:     0x7ff9d74dcd87 - BaseThreadInitThunk
+  23:     0x7ff8a7b0e6ac - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  24:     0x7ff8a7b0a591 - RINvNtNtCslFVcyoAu48q_3std3sys9backtrace28___rust_begin_short_backtraceNCNCINvNtCsaqrPHTSpvJs_15rustc_interface4util26run_in_thread_with_globalsNCINvB1e_31run_in_thread_pool_with_globalsNCINvNtB1g_9interface12run_compileruNCNvCs5a844wrxEGq_17rustc_driver_i
+  25:     0x7ff8a7b13507 - std[fc79cc53f84b73ec]::sys::backtrace::__rust_begin_short_backtrace::<std[fc79cc53f84b73ec]::thread::lifecycle::spawn_unchecked<ctrlc[85c6d45e5360c17e]::set_handler_inner<rustc_driver_impl[3c242465527f1190]::install_ctrlc_handler::{closure#0}>::{closure#0}, ()>::{closure#1}::{closure#0}::{closure#0}, ()>
+  26:     0x7ff8aa85c55a - std::sys::thread::windows::impl$0::new::thread_start
+                               at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library\std\src\sys\thread\windows.rs:58
+  32:     0x7ff9d890caec - RtlUserThreadStart
+  29:     0x7ff9d890caec - RtlUserThreadStart
+  31:     0x7ff9d890caec - RtlUserThreadStart
+  27:     0x7ff9d74dcd87 - BaseThreadInitThunk
+error: could not compile `legado-ffi` (example "dbg_jslib") due to 1 previous error
+  28:     0x7ff9d890caec - RtlUserThreadStart
+error: could not compile `legado-ffi` (test "rss_cached_articles_query") due to 1 previous error
+error: could not compile `legado-ffi` (test "rss_content_loopback") due to 1 previous error
+error: could not compile `legado-ffi` (test "server_start_requires_db")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\admin\.rustup\toolchains\1.97.1-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name server_start_requires_db --edition=2021 'legado-ffi\tests\server_start_requires_db.rs' --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --cfg 'feature="default"' --cfg 'feature="quickjs"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "quickjs"))' -C metadata=a000ef1614b17d26 -C extra-filename=-7051d5dc1a53d09c --out-dir 'D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' -C 'incremental=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\incremental' -L 'dependency=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' --extern 'axum=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-170ce2ee763e191d.rlib' --extern 'base64=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libbase64-9bed43e4c043ef32.rlib' --extern 'chrono=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libchrono-060036981798386d.rlib' --extern 'encoding_rs=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libencoding_rs-f0d9193dbc18bdd2.rlib' --extern 'flutter_rust_bridge=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libflutter_rust_bridge-0bdca6d677ac9c0e.rlib' --extern 'futures=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libfutures-25298f1b16a7c655.rlib' --extern 'legado_book=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_book-dcef8c1cf8263b0f.rlib' --extern 'legado_core=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_core-0e1170e6f33dcfdd.rlib' --extern 'legado_db=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_db-29fbc75fe8611310.rlib' --extern 'legado_fetcher=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_fetcher-c0d1f7abf895c0a9.rlib' --extern 'legado_ffi=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib' --extern 'legado_js=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_js-ec7f758a89fb300f.rlib' --extern 'legado_net=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_net-920b3fecfc4f06ab.rlib' --extern 'legado_parser=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_parser-28672b4500d6ce90.rlib' --extern 'legado_server=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-69d7f186293c3f49.rlib' --extern 'log=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblog-35f8c052278b030b.rlib' --extern 'md5=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libmd5-754d20310eaf4397.rlib' --extern 'quick_xml=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libquick_xml-6362fac279c17ac1.rlib' --extern 'r2d2=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2-d389eb74a6429304.rlib' --extern 'r2d2_sqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2_sqlite-63f06b8b2a4a1545.rlib' --extern 'regex=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libregex-5ef618ca113f132d.rlib' --extern 'rusqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librusqlite-5bbca6c1411bef40.rlib' --extern 'serde=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde-ba52994f14196751.rlib' --extern 'serde_json=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde_json-2a74ca927032391a.rlib' --extern 'tokio=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtokio-50e9e2342f51781b.rlib' --extern 'tower=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtower-b2637365b98cd813.rlib' --extern 'uuid=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libuuid-5804e449a0da89f9.rlib' --extern 'zip=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libzip-5d3a4a18b5f32d98.rlib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\dart-sys-e20e5ea51c3de9df\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\unrar_sys-7cf62bcf5662aaba\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\bzip2-sys-0969f4e64e4e34da\out\lib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\lzma-sys-78ce37356ad5f9a4\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\zstd-sys-1b156bd08763b9dd\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\libsqlite3-sys-d69c60411b6d5e50\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\ring-032308f5f3f5367b\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\rquickjs-sys-bbf01b7d9839b2b8\out' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64'` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+error: could not compile `legado-ffi` (example "dbg_comic_pipeline")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\admin\.rustup\toolchains\1.97.1-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name dbg_comic_pipeline --edition=2021 'legado-ffi\examples\dbg_comic_pipeline.rs' --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --cfg 'feature="default"' --cfg 'feature="quickjs"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "quickjs"))' -C metadata=c1252dadaa79622c --out-dir 'D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\examples' -C 'incremental=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\incremental' -L 'dependency=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' --extern 'axum=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-170ce2ee763e191d.rlib' --extern 'base64=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libbase64-9bed43e4c043ef32.rlib' --extern 'chrono=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libchrono-060036981798386d.rlib' --extern 'encoding_rs=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libencoding_rs-f0d9193dbc18bdd2.rlib' --extern 'flutter_rust_bridge=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libflutter_rust_bridge-0bdca6d677ac9c0e.rlib' --extern 'futures=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libfutures-25298f1b16a7c655.rlib' --extern 'legado_book=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_book-dcef8c1cf8263b0f.rlib' --extern 'legado_core=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_core-0e1170e6f33dcfdd.rlib' --extern 'legado_db=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_db-29fbc75fe8611310.rlib' --extern 'legado_fetcher=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_fetcher-c0d1f7abf895c0a9.rlib' --extern 'legado_ffi=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib' --extern 'legado_js=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_js-ec7f758a89fb300f.rlib' --extern 'legado_net=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_net-920b3fecfc4f06ab.rlib' --extern 'legado_parser=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_parser-28672b4500d6ce90.rlib' --extern 'legado_server=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-69d7f186293c3f49.rlib' --extern 'log=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblog-35f8c052278b030b.rlib' --extern 'md5=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libmd5-754d20310eaf4397.rlib' --extern 'quick_xml=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libquick_xml-6362fac279c17ac1.rlib' --extern 'r2d2=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2-d389eb74a6429304.rlib' --extern 'r2d2_sqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2_sqlite-63f06b8b2a4a1545.rlib' --extern 'regex=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libregex-5ef618ca113f132d.rlib' --extern 'rusqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librusqlite-5bbca6c1411bef40.rlib' --extern 'serde=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde-ba52994f14196751.rlib' --extern 'serde_json=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde_json-2a74ca927032391a.rlib' --extern 'tokio=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtokio-50e9e2342f51781b.rlib' --extern 'tower=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtower-b2637365b98cd813.rlib' --extern 'uuid=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libuuid-5804e449a0da89f9.rlib' --extern 'zip=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libzip-5d3a4a18b5f32d98.rlib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\dart-sys-e20e5ea51c3de9df\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\unrar_sys-7cf62bcf5662aaba\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\bzip2-sys-0969f4e64e4e34da\out\lib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\lzma-sys-78ce37356ad5f9a4\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\zstd-sys-1b156bd08763b9dd\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\libsqlite3-sys-d69c60411b6d5e50\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\ring-032308f5f3f5367b\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\rquickjs-sys-bbf01b7d9839b2b8\out' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64'` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+error: could not compile `legado-ffi` (test "server_bind_all_interfaces")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\admin\.rustup\toolchains\1.97.1-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name server_bind_all_interfaces --edition=2021 'legado-ffi\tests\server_bind_all_interfaces.rs' --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --cfg 'feature="default"' --cfg 'feature="quickjs"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "quickjs"))' -C metadata=ae856405d3f2c4a6 -C extra-filename=-c5dae48535c5d98c --out-dir 'D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' -C 'incremental=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\incremental' -L 'dependency=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' --extern 'axum=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-170ce2ee763e191d.rlib' --extern 'base64=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libbase64-9bed43e4c043ef32.rlib' --extern 'chrono=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libchrono-060036981798386d.rlib' --extern 'encoding_rs=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libencoding_rs-f0d9193dbc18bdd2.rlib' --extern 'flutter_rust_bridge=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libflutter_rust_bridge-0bdca6d677ac9c0e.rlib' --extern 'futures=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libfutures-25298f1b16a7c655.rlib' --extern 'legado_book=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_book-dcef8c1cf8263b0f.rlib' --extern 'legado_core=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_core-0e1170e6f33dcfdd.rlib' --extern 'legado_db=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_db-29fbc75fe8611310.rlib' --extern 'legado_fetcher=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_fetcher-c0d1f7abf895c0a9.rlib' --extern 'legado_ffi=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib' --extern 'legado_js=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_js-ec7f758a89fb300f.rlib' --extern 'legado_net=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_net-920b3fecfc4f06ab.rlib' --extern 'legado_parser=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_parser-28672b4500d6ce90.rlib' --extern 'legado_server=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-69d7f186293c3f49.rlib' --extern 'log=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblog-35f8c052278b030b.rlib' --extern 'md5=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libmd5-754d20310eaf4397.rlib' --extern 'quick_xml=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libquick_xml-6362fac279c17ac1.rlib' --extern 'r2d2=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2-d389eb74a6429304.rlib' --extern 'r2d2_sqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2_sqlite-63f06b8b2a4a1545.rlib' --extern 'regex=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libregex-5ef618ca113f132d.rlib' --extern 'rusqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librusqlite-5bbca6c1411bef40.rlib' --extern 'serde=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde-ba52994f14196751.rlib' --extern 'serde_json=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde_json-2a74ca927032391a.rlib' --extern 'tokio=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtokio-50e9e2342f51781b.rlib' --extern 'tower=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtower-b2637365b98cd813.rlib' --extern 'uuid=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libuuid-5804e449a0da89f9.rlib' --extern 'zip=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libzip-5d3a4a18b5f32d98.rlib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\dart-sys-e20e5ea51c3de9df\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\unrar_sys-7cf62bcf5662aaba\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\bzip2-sys-0969f4e64e4e34da\out\lib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\lzma-sys-78ce37356ad5f9a4\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\zstd-sys-1b156bd08763b9dd\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\libsqlite3-sys-d69c60411b6d5e50\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\ring-032308f5f3f5367b\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\rquickjs-sys-bbf01b7d9839b2b8\out' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64'` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+error: could not compile `legado-ffi` (test "server_stop_releases_port")
+
+Caused by:
+  process didn't exit successfully: `C:\Users\admin\.rustup\toolchains\1.97.1-x86_64-pc-windows-msvc\bin\rustc.exe --crate-name server_stop_releases_port --edition=2021 'legado-ffi\tests\server_stop_releases_port.rs' --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --cfg 'feature="default"' --cfg 'feature="quickjs"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("default", "quickjs"))' -C metadata=abbbd357ae3c8db2 -C extra-filename=-e9c2ab9430db1e37 --out-dir 'D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' -C 'incremental=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\incremental' -L 'dependency=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps' --extern 'axum=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libaxum-170ce2ee763e191d.rlib' --extern 'base64=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libbase64-9bed43e4c043ef32.rlib' --extern 'chrono=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libchrono-060036981798386d.rlib' --extern 'encoding_rs=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libencoding_rs-f0d9193dbc18bdd2.rlib' --extern 'flutter_rust_bridge=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libflutter_rust_bridge-0bdca6d677ac9c0e.rlib' --extern 'futures=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libfutures-25298f1b16a7c655.rlib' --extern 'legado_book=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_book-dcef8c1cf8263b0f.rlib' --extern 'legado_core=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_core-0e1170e6f33dcfdd.rlib' --extern 'legado_db=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_db-29fbc75fe8611310.rlib' --extern 'legado_fetcher=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_fetcher-c0d1f7abf895c0a9.rlib' --extern 'legado_ffi=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_ffi.rlib' --extern 'legado_js=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_js-ec7f758a89fb300f.rlib' --extern 'legado_net=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_net-920b3fecfc4f06ab.rlib' --extern 'legado_parser=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_parser-28672b4500d6ce90.rlib' --extern 'legado_server=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblegado_server-69d7f186293c3f49.rlib' --extern 'log=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\liblog-35f8c052278b030b.rlib' --extern 'md5=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libmd5-754d20310eaf4397.rlib' --extern 'quick_xml=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libquick_xml-6362fac279c17ac1.rlib' --extern 'r2d2=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2-d389eb74a6429304.rlib' --extern 'r2d2_sqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libr2d2_sqlite-63f06b8b2a4a1545.rlib' --extern 'regex=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libregex-5ef618ca113f132d.rlib' --extern 'rusqlite=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\librusqlite-5bbca6c1411bef40.rlib' --extern 'serde=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde-ba52994f14196751.rlib' --extern 'serde_json=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libserde_json-2a74ca927032391a.rlib' --extern 'tokio=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtokio-50e9e2342f51781b.rlib' --extern 'tower=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libtower-b2637365b98cd813.rlib' --extern 'uuid=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libuuid-5804e449a0da89f9.rlib' --extern 'zip=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\deps\libzip-5d3a4a18b5f32d98.rlib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\dart-sys-e20e5ea51c3de9df\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\unrar_sys-7cf62bcf5662aaba\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\bzip2-sys-0969f4e64e4e34da\out\lib' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\lzma-sys-78ce37356ad5f9a4\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\zstd-sys-1b156bd08763b9dd\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\libsqlite3-sys-d69c60411b6d5e50\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\ring-032308f5f3f5367b\out' -L 'native=D:\OH-WorkSpace\LegadoTeam\legado\rust\target\debug\build\rquickjs-sys-bbf01b7d9839b2b8\out' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64' -L 'native=D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\atlmfc\lib\x64'` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)
+EXIT_CODE=101

@@ -1,0 +1,3 @@
+$ cargo clippy -p legado-net -p legado-ffi -p legado-server --features quickjs --all-targets -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s
+EXIT_CODE=0

@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.cover_album_migrated" value="true" />
+    <long name="flutter.lastBackup" value="1794569577170" />
+    <boolean name="flutter.process_text" value="true" />
+    <boolean name="flutter.reader_layout_is_night" value="false" />
+    <long name="flutter.lastCheckUpdate" value="1794524382807" />
+    <boolean name="flutter.private_enabled" value="true" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <boolean name="flutter.brightness_mode_migrated_v1b1" value="true" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <long name="flutter.lastSeenRemoteBackupMtime" value="1794569634990" />
+    <boolean name="flutter.remote_servers_migrated" value="true" />
+    <boolean name="flutter.source_rule_help_shown" value="true" />
+    <string name="flutter.check_source_keyword">我的</string>
+    <string name="flutter.app_backup_path">/storage/emulated/0/Download/legado_backup</string>
+    <string name="flutter.check_source_config">{&quot;step_timeout_ms&quot;:5000,&quot;check_search&quot;:true,&quot;check_toc&quot;:true,&quot;check_content&quot;:true,&quot;detect_captcha&quot;:true,&quot;detect_redirect&quot;:true}</string>
+</map>

@@ -1,0 +1,41 @@
+19:13:39.640 LISTEN 192.168.100.52:8931 sleep=60.0s
+19:13:44.307 GET /ping
+19:14:09.486 GET /slow/search?q=%E6%88%91%E7%9A%84
+19:14:09.487 SLOW-SEARCH begin sleep 60.0s
+19:14:35.501 GET /slow/search?q=%E6%88%91%E7%9A%84
+19:14:35.502 SLOW-SEARCH begin sleep 60.0s
+19:15:03.143 GET /slow/search?q=%E6%88%91%E7%9A%84
+19:15:03.143 SLOW-SEARCH begin sleep 60.0s
+19:15:09.488 SLOW-SEARCH released after 60.0s
+19:15:35.503 SLOW-SEARCH released after 60.0s
+19:15:37.906 GET /slow/search?q=%E6%88%91%E7%9A%84
+19:15:37.906 SLOW-SEARCH begin sleep 60.0s
+19:16:03.145 SLOW-SEARCH released after 60.0s
+19:16:06.859 GET /slow/search?q=%E6%88%91%E7%9A%84
+19:16:06.861 SLOW-SEARCH begin sleep 60.0s
+19:16:37.908 SLOW-SEARCH released after 60.0s
+19:17:06.862 SLOW-SEARCH released after 60.0s
+19:18:19.953 GET /fast/book.html
+19:18:20.145 GET /review/summary
+19:18:22.158 GET /review/summary
+19:18:24.174 GET /review/summary
+19:18:26.191 GET /review/summary
+19:18:30.492 GET /fast/book.html
+19:19:43.495 GET /review/summary
+19:19:45.510 GET /review/summary
+19:19:47.526 GET /review/summary
+19:19:49.542 GET /review/summary
+19:19:50.012 GET /review/summary
+19:19:52.026 GET /review/summary
+19:19:54.051 GET /review/summary
+19:19:56.074 GET /review/summary
+19:19:58.656 GET /fast/book.html
+19:20:21.362 GET /fast/book.html
+19:22:32.492 GET /review/summary
+19:22:34.527 GET /review/summary
+19:22:36.543 GET /review/summary
+19:22:38.559 GET /review/summary
+19:23:07.670 GET /review/summary
+19:23:09.694 GET /review/summary
+19:23:11.722 GET /review/summary
+19:23:13.743 GET /review/summary
