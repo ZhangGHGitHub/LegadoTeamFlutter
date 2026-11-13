@@ -11,6 +11,7 @@ import 'package:flutter_legado/src/providers/bookshelf/bookshelf_notifier.dart';
 import 'package:flutter_legado/src/providers/bookshelf_settings/bookshelf_settings_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/book_api.dart' show DeleteBooksResult;
+import 'package:flutter_legado/src/services/privacy_record_alias_store.dart';
 
 import '../mocks/mocks.dart';
 
@@ -151,6 +152,25 @@ void main() {
 
       expect(readState().books, hasLength(2));
       expect(readState().books.any((b) => b.bookUrl == 'book://2'), isFalse);
+    });
+
+    test('removeBook 成功后清理该书改名别名（P2-4）', () async {
+      await pumpInit();
+      const store = PrivacyRecordAliasStore();
+      await store.register(
+        oldName: '旧书名',
+        oldAuthor: '作者',
+        bookUrl: 'book://2',
+      );
+      when(() => mockApi.deleteBook('book://2')).thenAnswer((_) async {});
+
+      await readNotifier().removeBook('book://2');
+
+      expect(
+        (await store.load()).any((a) => a.bookUrl == 'book://2'),
+        isFalse,
+        reason: '书籍删除后旧书名别名不得继续明文留存',
+      );
     });
 
     test('removeBook 失败时设置 error 且列表不变', () async {
@@ -384,6 +404,43 @@ void main() {
       expect(readState().isBatchMode, isFalse);
       expect(readState().selectedUrls, isEmpty);
       expect(readState().books.map((b) => b.bookUrl), contains('book://3'));
+    });
+
+    test('deleteSelectedBooks 成功后清理批量书籍改名别名（P2-4）', () async {
+      await pumpInit();
+      const store = PrivacyRecordAliasStore();
+      await store.register(
+        oldName: '旧书名1',
+        oldAuthor: '作者',
+        bookUrl: 'book://1',
+      );
+      await store.register(
+        oldName: '旧书名2',
+        oldAuthor: '作者',
+        bookUrl: 'book://2',
+      );
+      await store.register(
+        oldName: '保留旧书名',
+        oldAuthor: '作者',
+        bookUrl: 'book://3',
+      );
+      readNotifier().toggleBatchMode();
+      readNotifier().toggleSelect('book://1');
+      readNotifier().toggleSelect('book://2');
+      when(() => mockApi.deleteBooks(any(),
+          deleteOriginal: any(named: 'deleteOriginal'))).thenAnswer(
+        (_) async => const DeleteBooksResult(deleted: 2, missing: 0),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => [testBooks[2]]);
+
+      await readNotifier().deleteSelectedBooks();
+
+      final remaining = await store.load();
+      expect(
+        remaining.map((a) => a.bookUrl),
+        ['book://3'],
+        reason: '只清理实际删除书籍的别名，未删书条目保留',
+      );
     });
 
     test('deleteSelectedBooks 透传 deleteOriginal=true', () async {

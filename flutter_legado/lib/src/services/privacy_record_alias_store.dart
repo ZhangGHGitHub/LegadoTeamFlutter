@@ -106,6 +106,53 @@ class PrivacyRecordAliasStore {
     }
   }
 
+  /// 清空全部别名（用户「清空全部阅读记录」时同步调用）
+  ///
+  /// 别名只为阅读记录/书签的旧键服务：记录清空后继续留存会让旧私密书名
+  /// 以明文躺在 SharedPreferences 并随备份往返，也会让已删书条目永久占位。
+  Future<void> clear() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(PrefKeys.privacyRecordAliases);
+    } catch (e) {
+      debugPrint('[隐私] 清空改名别名失败（不阻断清空记录）：$e');
+    }
+  }
+
+  /// 删除某本书的全部改名别名（书籍删除入口按稳定标识清理）
+  ///
+  /// 书籍删除后别名已无当前书籍可锚定；继续保留只会在后续加载时被跳过，
+  /// 但旧书名仍会明文留在偏好/备份中，故按 `bookUrl` 同步移除。
+  Future<void> removeByBookUrl(String bookUrl) =>
+      removeByBookUrls(<String>[bookUrl]);
+
+  /// 批量删除多本书的改名别名（批量删书只读写一次偏好）
+  Future<void> removeByBookUrls(Iterable<String> bookUrls) async {
+    final urls = {
+      for (final url in bookUrls)
+        if (url.trim().isNotEmpty) url.trim(),
+    };
+    if (urls.isEmpty) return;
+    try {
+      final existing = await load();
+      final next = existing
+          .where((alias) => !urls.contains(alias.bookUrl.trim()))
+          .toList();
+      if (next.length == existing.length) return;
+      final prefs = await SharedPreferences.getInstance();
+      if (next.isEmpty) {
+        await prefs.remove(PrefKeys.privacyRecordAliases);
+      } else {
+        await prefs.setString(
+          PrefKeys.privacyRecordAliases,
+          jsonEncode([for (final alias in next) alias.toJson()]),
+        );
+      }
+    } catch (e) {
+      debugPrint('[隐私] 删除书籍改名别名失败（不阻断删除）：$e');
+    }
+  }
+
   /// 登记一条改名别名（精确重复不重复写入）
   ///
   /// 同名旧名可能先后属于不同书籍（删除后重建）：按完整三元组去重，

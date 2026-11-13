@@ -8,6 +8,7 @@ import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart' show DeleteBooksResult;
 import '../../services/privacy_content_service.dart';
+import '../../services/privacy_record_alias_store.dart';
 import '../../services/settings_service.dart';
 import '../../services/webdav_book_upload_service.dart';
 import '../privacy/privacy_content_notifier.dart';
@@ -298,6 +299,9 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     try {
       final api = ref.read(bookApiProvider);
       await api.deleteBook(bookUrl);
+      // [审查 P2-4] 书籍已删除：同步清理改名别名，避免旧书名明文残留
+      // 在 SharedPreferences / 备份中，也避免已删书条目永久占位。
+      await const PrivacyRecordAliasStore().removeByBookUrl(bookUrl);
       state = state.copyWith(
         books: state.books.where((b) => b.bookUrl != bookUrl).toList(),
       );
@@ -419,6 +423,8 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
         urls,
         deleteOriginal: deleteOriginal,
       );
+      // [审查 P2-4] 批量删书后按 bookUrl 清理改名别名（单次读写偏好）。
+      await const PrivacyRecordAliasStore().removeByBookUrls(urls);
       state = state.copyWith(
         books: state.books.where((b) => !urls.contains(b.bookUrl)).toList(),
         isBatchMode: false,

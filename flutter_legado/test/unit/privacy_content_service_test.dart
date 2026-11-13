@@ -330,6 +330,96 @@ void main() {
       );
     });
 
+    test('合并作者显示串 + 改名别名：精确键未中仍按作者分段锁定', () async {
+      final api = PrivacyMockBookApi(
+        books: [_book(url: 'u1', name: '新书名', author: '甲', isPrivate: true)],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '甲', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      // v113 迁移保留的合并作者行：作者列展示为「甲、乙」，与别名登记的
+      // 「甲」精确键不一致。修复前作者非空直接返回空候选 → 旧名 fail-open。
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '甲、乙'),
+          _privacy(),
+        ),
+        isTrue,
+        reason: '合并作者串必须拆段命中别名，旧私密书名不得明文显示',
+      );
+      expect(
+        snapshot.findBookByNameAuthor('旧书名', '甲、乙')?.bookUrl,
+        'u1',
+        reason: '锁定行应能锚回当前书籍取真实封面',
+      );
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '\u001Eauthors:["乙","甲"]'),
+          _privacy(),
+        ),
+        isTrue,
+        reason: '直接传入历史原始合并串（未解码）时同样应拆段命中',
+      );
+    });
+
+    test('合并作者与别名作者完全不相交：仅按别名同名回落锁定', () async {
+      final api = PrivacyMockBookApi(
+        books: [_book(url: 'u1', name: '新书名', author: '甲', isPrivate: true)],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '甲', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '乙、丙'),
+          _privacy(),
+        ),
+        isTrue,
+        reason: '精确键与作者分段均未中时，别名派生候选的同名回落必须兜底',
+      );
+    });
+
+    test('非私密记录不误锁：精确命中公开书 / 同名私密书不扩大匹配', () async {
+      final api = PrivacyMockBookApi(
+        books: [
+          _book(url: 'u1', name: '新书名', author: '甲', isPrivate: true),
+          _book(url: 'u2', name: '公开书', author: '甲'),
+          _book(url: 'u3', name: '同名书', author: '丙', isPrivate: true),
+        ],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '甲', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('公开书', '甲、乙'),
+          _privacy(),
+        ),
+        isFalse,
+        reason: '作者分段只命中公开书时不得脱敏',
+      );
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('同名书', '甲、乙'),
+          _privacy(),
+        ),
+        isFalse,
+        reason: '作者非空时不得回落到当前书籍的同名候选（避免 P2-5 误锁）',
+      );
+    });
+
     test('别名指向已删除书籍：跳过且不误锁', () async {
       final api = PrivacyMockBookApi(
         books: [_book(url: 'u2', name: '其它书', author: '作者', isPrivate: true)],

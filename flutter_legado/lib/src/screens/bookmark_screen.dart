@@ -285,8 +285,6 @@ class _BookmarkTile extends StatelessWidget {
                       width: 40,
                       height: 56,
                       coverUrl: lockedCoverUrl,
-                      bookName: bookmark.bookName,
-                      bookAuthor: bookmark.bookAuthor,
                     ),
                     const SizedBox(width: 12),
                     Expanded(child: SizedBox(height: 56)),

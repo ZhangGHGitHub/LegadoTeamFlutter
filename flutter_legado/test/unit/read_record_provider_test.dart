@@ -12,6 +12,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/read_record/read_record_notifier.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/screens/read_record_screen.dart';
+import 'package:flutter_legado/src/services/privacy_record_alias_store.dart';
 
 import '../mocks/mocks.dart';
 
@@ -158,6 +159,26 @@ void main() {
       await readNotifier().load();
       await readNotifier().setSortMode(ReadRecordSortMode.readTime);
       expect(readState().records.first.bookName, '长');
+    });
+
+    test('clearAll 同步清空改名别名（P2-4）', () async {
+      await const PrivacyRecordAliasStore().register(
+        oldName: '旧私密书名',
+        oldAuthor: '作者',
+        bookUrl: 'book://secret',
+      );
+      expect(await const PrivacyRecordAliasStore().load(), isNotEmpty);
+
+      when(() => mockApi.clearReadRecords()).thenAnswer((_) async {});
+      stubRecords(const []);
+      await readNotifier().clearAll();
+
+      verify(() => mockApi.clearReadRecords()).called(1);
+      expect(
+        await const PrivacyRecordAliasStore().load(),
+        isEmpty,
+        reason: '清空记录后旧私密书名不得继续明文留在 SharedPreferences',
+      );
     });
 
     test('删除后重新加载', () async {

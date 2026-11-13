@@ -14,6 +14,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../services/privacy_record_alias_store.dart';
 import '../utils/error_message.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/empty_state.dart';
@@ -602,6 +603,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     if (confirmed != true || !mounted) return;
     try {
       await ref.read(bookApiProvider).deleteBook(book.bookUrl);
+      // [审查 P2-4] 删除入口同步清理该书改名别名（旧书名不留在偏好/备份）
+      await const PrivacyRecordAliasStore().removeByBookUrl(book.bookUrl);
       await _notifier.load();
     } catch (e) {
       if (mounted) {

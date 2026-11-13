@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/privacy_record_alias_store.dart';
 import '../../services/settings_service.dart';
 import '../providers.dart';
 import 'read_record_state.dart';
@@ -143,9 +144,13 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
   }
 
   /// 清空全部（对齐 clear）
+  ///
+  /// [审查 P2-4] 记录清空后同步清空改名别名：别名键含旧私密书名，继续
+  /// 留存会让明文随 SharedPreferences 备份往返，且已删书条目永不释放。
   Future<void> clearAll() async {
     try {
       await ref.read(bookApiProvider).clearReadRecords();
+      await const PrivacyRecordAliasStore().clear();
       await load();
     } catch (e) {
       state = state.copyWith(error: _mapError(e));

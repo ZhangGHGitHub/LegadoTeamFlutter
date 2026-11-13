@@ -12,7 +12,9 @@
 // 绝不让一次 IO 失败把整库书锁住。加载失败不抛异常，调用方拿到
 // `loaded=true` 的空快照即可继续渲染。
 //
-// 编写：全栈工程师（批9c / 审查 P2-3） ｜ 2026-11-09 / 2026-11-13
+// 编写：全栈工程师（批9c / 审查 P2-3 / P2-2） ｜ 2026-11-09 / 2026-11-13
+import 'dart:convert' show jsonDecode;
+
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
@@ -48,6 +50,7 @@ class PrivacyContentSnapshot {
     this.privateGroupIds = const <int>{},
     this.booksByUrl = const <String, Book>{},
     this.recordKeyCandidates = const <PrivacyRecordKey, List<Book>>{},
+    this.aliasRecordKeyCandidates = const <PrivacyRecordKey, List<Book>>{},
     this.groupsById = const <int, BookGroup>{},
     this.loaded = false,
     this.markersUnavailable = false,
@@ -70,6 +73,13 @@ class PrivacyContentSnapshot {
   /// 同一键可能对应多本书（旧名被新书复用、同名同作者跨源书）：
   /// 判定侧按「任一候选私密即锁定」fail-closed，取封面时优先私密候选。
   final Map<PrivacyRecordKey, List<Book>> recordKeyCandidates;
+
+  /// 仅由 [PrivacyRecordAlias] 派生的「旧书名 + 旧作者」候选
+  ///
+  /// [审查 P2-2] 精确键未中时只允许在这张表里做同名回落：合并作者展示串
+  /// （`甲、乙`）与别名登记作者（`甲`）不一致时仍能锚回私密书，同时不把
+  /// 当前书籍的同名候选纳入判定，避免加剧 P2-5 误锁。
+  final Map<PrivacyRecordKey, List<Book>> aliasRecordKeyCandidates;
 
   /// `groupId -> BookGroup`（分组名等展示信息）
   final Map<int, BookGroup> groupsById;
@@ -115,16 +125,23 @@ class PrivacyContentSnapshot {
   /// 反查不到返回 null，调用方按「与私密无关」处理（fail-open），
   /// 避免同名误伤或整表脱敏。精确键命中多本候选时优先返回私密书，
   /// 供锁定行取真实封面（判定仍由 [isRecordLocked] 逐候选执行）。
+  ///
+  /// [审查 P2-2] 精确键未中且作者非空时，按作者分段 + 别名派生候选做
+  /// 受限回落（见 [_fallbackCandidates]），使「合并作者展示串 + 改名别名」
+  /// 的旧记录也能取到当前书籍/封面。
   Book? findBookByNameAuthor(String name, String author) {
     if (name.trim().isEmpty) return null;
     final exact = recordKeyCandidates[PrivacyRecordKey(name, author)];
     if (exact != null && exact.isNotEmpty) {
       return _preferPrivateCandidate(exact);
     }
-    if (author.trim().isNotEmpty) return null;
-    final sameName = _sameNameCandidates(name);
-    if (sameName.length != 1) return null; // 同名多本：无法确定，按非私密处理
-    return sameName.first;
+    if (author.trim().isEmpty) {
+      final sameName = _sameNameCandidates(name);
+      if (sameName.length != 1) return null; // 同名多本：无法确定，按非私密处理
+      return sameName.first;
+    }
+    final fallback = _fallbackCandidates(name, author);
+    return fallback.isEmpty ? null : _preferPrivateCandidate(fallback);
   }
 
   /// 阅读记录 / 书签是否应脱敏
@@ -142,11 +159,84 @@ class PrivacyContentSnapshot {
   }
 
   /// 锁定判定候选：作者非空取精确键；作者为空取同名全部候选
+  ///
+  /// [审查 P2-2] 作者非空但精确键未中（历史合并作者显示串 `甲、乙` 与
+  /// 别名登记作者 `甲` 不一致）时，走受限回落；**不**退化为当前书籍的
+  /// 同名全部候选（那会加剧 P2-5 的同名误锁）。
   List<Book> _lockCandidates(PrivacyRecordKey key) {
-    if (key.author.trim().isNotEmpty) {
-      return _withoutDuplicates(recordKeyCandidates[key]);
+    if (key.author.trim().isEmpty) {
+      return _sameNameCandidates(key.name);
     }
-    return _sameNameCandidates(key.name);
+    final exact = _withoutDuplicates(recordKeyCandidates[key]);
+    if (exact.isNotEmpty) return exact;
+    return _fallbackCandidates(key.name, key.author);
+  }
+
+  /// 精确键未中时的受限候选
+  ///
+  /// 1. 合并作者展示串按分隔符拆段（`甲、乙` → `甲` / `乙`；兼容历史
+  ///    `\u001Eauthors:[...]` 原始串），逐段做**精确键**匹配；
+  /// 2. 仅对 [aliasRecordKeyCandidates]（别名派生）做同名回落，覆盖旧记录
+  ///    作者形态与别名登记值不同的情况。
+  ///
+  /// 当前书籍的同名候选不参与回落：作者非空时同名不代表同一本书，
+  /// 扩大同名匹配会加剧 P2-5 误锁。
+  List<Book> _fallbackCandidates(String name, String author) {
+    final out = <Book>[];
+    void addBooks(Iterable<Book>? books) {
+      if (books == null) return;
+      for (final book in books) {
+        if (out.every((b) => b.bookUrl != book.bookUrl)) out.add(book);
+      }
+    }
+
+    for (final token in _authorTokens(author)) {
+      addBooks(recordKeyCandidates[PrivacyRecordKey(name, token)]);
+    }
+    for (final entry in aliasRecordKeyCandidates.entries) {
+      if (entry.key.name == name) addBooks(entry.value);
+    }
+    return out;
+  }
+
+  /// 历史合并作者串前缀（对齐 `ReadRecordAuthors.PREFIX`）
+  static const String _combinedAuthorsPrefix = '\u001Eauthors:';
+
+  /// 作者展示串拆段：`、`（展示连接符）/ `\u001F`（历史聚合分隔符）
+  ///
+  /// 单段若为 `\u001Eauthors:[...]` 原始串，按 JSON 数组取元素；否则按
+  /// `、` 拆分。空白、与整串相同的段不重复返回。
+  static List<String> _authorTokens(String author) {
+    final out = <String>[];
+    final whole = author.trim();
+    void add(String value) {
+      final token = value.trim();
+      if (token.isEmpty || token == whole || out.contains(token)) return;
+      out.add(token);
+    }
+
+    for (final segment in author.split('\u001F')) {
+      final trimmed = segment.trim();
+      if (trimmed.startsWith(_combinedAuthorsPrefix)) {
+        try {
+          final decoded = jsonDecode(
+            trimmed.substring(_combinedAuthorsPrefix.length),
+          );
+          if (decoded is List) {
+            for (final item in decoded) {
+              if (item is String) add(item);
+            }
+            continue;
+          }
+        } on FormatException {
+          // 非法 JSON：按普通段继续拆分（不吞历史脏值）
+        }
+      }
+      for (final part in trimmed.split('、')) {
+        add(part);
+      }
+    }
+    return out;
   }
 
   /// 同名（忽略作者）的全部候选，按 bookUrl 去重
@@ -248,9 +338,15 @@ class PrivacyContentService {
       for (final book in books) book.bookUrl: book,
     };
     final recordKeyCandidates = <PrivacyRecordKey, List<Book>>{};
-    void addCandidate(String name, String author, Book book) {
+    final aliasRecordKeyCandidates = <PrivacyRecordKey, List<Book>>{};
+    void addCandidate(
+      Map<PrivacyRecordKey, List<Book>> index,
+      String name,
+      String author,
+      Book book,
+    ) {
       if (name.trim().isEmpty) return;
-      final list = recordKeyCandidates.putIfAbsent(
+      final list = index.putIfAbsent(
         PrivacyRecordKey(name, author),
         () => <Book>[],
       );
@@ -259,13 +355,16 @@ class PrivacyContentService {
 
     // 当前「书名+作者」优先入索引（与改名别名同键时同书去重）
     for (final book in books) {
-      addCandidate(book.name, book.author, book);
+      addCandidate(recordKeyCandidates, book.name, book.author, book);
     }
-    // [P2-3] 改名历史别名：按 bookUrl 找回当前书籍，旧记录键即可命中
+    // [P2-3] 改名历史别名：按 bookUrl 找回当前书籍，旧记录键即可命中。
+    // [P2-2] 同时单独保留「别名派生」索引：精确键未中时只允许在这张表
+    // 做同名回落，不把当前书籍的同名候选纳入（控制 P2-5 误锁面）。
     for (final alias in aliases) {
       final book = booksByUrl[alias.bookUrl];
       if (book == null) continue; // 书已删除：无当前书籍可锚定
-      addCandidate(alias.name, alias.author, book);
+      addCandidate(recordKeyCandidates, alias.name, alias.author, book);
+      addCandidate(aliasRecordKeyCandidates, alias.name, alias.author, book);
     }
     final groupsById = <int, BookGroup>{
       for (final group in groups) group.groupId: group,
@@ -276,6 +375,7 @@ class PrivacyContentService {
       privateGroupIds: privateGroupIds,
       booksByUrl: booksByUrl,
       recordKeyCandidates: recordKeyCandidates,
+      aliasRecordKeyCandidates: aliasRecordKeyCandidates,
       groupsById: groupsById,
       loaded: true,
       markersUnavailable: markersUnavailable,

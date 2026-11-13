@@ -335,6 +335,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final privacyContent = await ref
         .read(privacyContentProvider.notifier)
         .ensureLoaded();
+    // [审查 P3-9] 加载期间页面可能已被弹出：dispose 后 ref.read 会抛
+    // 「Cannot use ref after dispose」，且此时也无打开书籍的 UI 上下文。
+    if (!mounted) return;
     final privacy = ref.read(privacyNotifierProvider);
     final locked =
         privacyContent.isRecordLocked(
@@ -535,8 +538,6 @@ class _ReadRecordTile extends StatelessWidget {
                     width: 40,
                     height: 56,
                     coverUrl: lockedCoverUrl,
-                    bookName: item.bookName,
-                    bookAuthor: item.author,
                   ),
                   const SizedBox(width: 12),
                   Expanded(

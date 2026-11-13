@@ -49,14 +49,16 @@ class PrivateLockedCoverOverlay extends StatelessWidget {
 }
 
 /// 锁定封面（模糊封面 + 遮罩；无封面 URL 时退化为纯色书形占位）
+///
+/// [审查 P2-1] 组件层不再接收书名/作者：`BookCover` 在加载中/加载失败时
+/// 会回落到**绘制书名/作者**的默认封面，锁定行即使强模糊也不得渲染任何
+/// 真实身份文本。锁定上下文只保留封面图，调用方不得传入文本。
 class PrivateLockedCover extends StatelessWidget {
   const PrivateLockedCover({
     super.key,
     required this.width,
     required this.height,
     this.coverUrl,
-    this.bookName,
-    this.bookAuthor,
     this.sourceOrigin,
     this.heroTag,
     this.borderRadius = 4,
@@ -68,8 +70,6 @@ class PrivateLockedCover extends StatelessWidget {
   final double width;
   final double height;
   final String? coverUrl;
-  final String? bookName;
-  final String? bookAuthor;
   final String? sourceOrigin;
   final String? heroTag;
   final double borderRadius;
@@ -85,8 +85,6 @@ class PrivateLockedCover extends StatelessWidget {
             imageFilter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: BookCover(
               coverUrl: coverUrl,
-              bookName: bookName,
-              bookAuthor: bookAuthor,
               width: width,
               height: height,
               borderRadius: borderRadius,

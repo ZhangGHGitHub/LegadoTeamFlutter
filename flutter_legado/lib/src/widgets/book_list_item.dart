@@ -124,8 +124,6 @@ class BookListItem extends StatelessWidget {
                           width: coverWidth,
                           height: coverHeight,
                           coverUrl: book.customCoverUrl ?? book.coverUrl,
-                          bookName: book.name,
-                          bookAuthor: book.author,
                           sourceOrigin: book.origin,
                           heroTag: 'book-cover:${book.bookUrl}',
                           borderRadius: 4,

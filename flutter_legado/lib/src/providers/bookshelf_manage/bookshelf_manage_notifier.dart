@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/privacy_record_alias_store.dart';
 import '../providers.dart';
 import 'bookshelf_manage_state.dart';
 
@@ -63,8 +64,11 @@ class BookshelfManageNotifier extends Notifier<BookshelfManageState> {
     state = state.copyWith(isBusy: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
+      final aliasStore = const PrivacyRecordAliasStore();
       for (final url in urls) {
         await api.deleteBook(url);
+        // [审查 P2-4] 删除成功后立即清理该书改名别名。
+        await aliasStore.removeByBookUrl(url);
       }
       state = state.copyWith(isBusy: false);
       await load();

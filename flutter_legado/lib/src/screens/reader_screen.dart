@@ -22,6 +22,7 @@ import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/headset_media_button_service.dart';
 import '../services/platform_bridge_service.dart';
+import '../services/privacy_record_alias_store.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/reader/read_aloud_bar.dart';
@@ -1166,6 +1167,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Future<void> _removeNotShelfBook(Book book) async {
     try {
       await ref.read(bookApiProvider).deleteBook(book.bookUrl);
+      // [审查 P2-4] 临时书删除同样按 bookUrl 清理改名别名（若有）。
+      await const PrivacyRecordAliasStore().removeByBookUrl(book.bookUrl);
     } catch (_) {
       // 清理失败不阻断退出（极端残留仅影响占位行，不污染书架列表）
     }

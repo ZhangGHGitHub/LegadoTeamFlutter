@@ -177,8 +177,6 @@ class BookGridItem extends StatelessWidget {
                         width: width,
                         height: height,
                         coverUrl: coverUrl,
-                        bookName: title,
-                        bookAuthor: author,
                         sourceOrigin: sourceOrigin,
                         heroTag: heroTag,
                         borderRadius: 0,
