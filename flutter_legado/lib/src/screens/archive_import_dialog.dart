@@ -60,9 +60,20 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   /// 导入中状态
   bool _importing = false;
 
-  /// 导入进度
+  /// 导入成功数（仅 try 成功分支自增；失败不计入）
   int _importDone = 0;
+
+  /// 导入失败数
+  int _importFailed = 0;
+
+  /// 失败明细（`书名：原因`），结果提示取首条并汇总条数
+  final List<String> _importFailures = [];
+
+  /// 导入总数（用户选中数）
   int _importTotal = 0;
+
+  /// 已处理数（成功 + 失败），用于导入进度文本
+  int get _importProcessed => _importDone + _importFailed;
 
   /// 选择的编码（针对 TXT 子文件）
   String _selectedEncoding = 'UTF-8';
@@ -231,7 +242,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('编码检测失败: $e')),
+          SnackBar(content: Text('编码检测失败: ${errorMessage(e)}')),
         );
       }
     } finally {
@@ -242,6 +253,24 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     }
   }
 
+  /// 导入结果提示：成功数、失败数与首个失败明细
+  ///
+  /// 失败项的解压文件保留在「应用文档/archive_import」目录（成功书目的
+  /// bookUrl 也指向该目录，不能整目录清理），提示中给出可定位路径，
+  /// 用户可到「导入」页重试。
+  String get _importResultMessage {
+    if (_importFailures.isEmpty) {
+      return '成功导入 $_importDone 本书籍';
+    }
+    final failed = _importFailures.length;
+    final more = failed > 1 ? ' 等 $failed 本' : '';
+    final detail = '${_importFailures.first}$more';
+    final summary = _importDone == 0
+        ? '导入失败：$detail'
+        : '成功导入 $_importDone 本，$failed 本失败：$detail';
+    return '$summary（解压文件保留在应用文档/archive_import 目录，可重试）';
+  }
+
   /// 确认导入：解压压缩包并将书籍添加到书架
   Future<void> _confirmImport() async {
     if (_selected.isEmpty || _importing) return;
@@ -249,6 +278,8 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     setState(() {
       _importing = true;
       _importDone = 0;
+      _importFailed = 0;
+      _importFailures.clear();
       _importTotal = _selected.length;
     });
 
@@ -298,11 +329,14 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
           (result['extracted_files'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       if (!mounted) return;
       final notifier = ref.read(bookshelfNotifierProvider.notifier);
+      // 导入期间文件列表仍可勾选/取消；先快照选中集合，避免边导入边改
+      // 造成「总数 N、实际只处理 M」的计数错位
+      final selectedNames = Set<String>.of(_selected);
 
       for (final filePath in extractedFiles) {
         final fileName = filePath.split(Platform.pathSeparator).last;
         // 只导入用户选中的文件
-        if (!_selected.contains(fileName)) continue;
+        if (!selectedNames.contains(fileName)) continue;
 
         // 如果是 TXT 文件且选择了非 UTF-8 编码，先转换编码
         if (filePath.toLowerCase().endsWith('.txt') && _selectedEncoding != 'UTF-8') {
@@ -319,12 +353,18 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
         try {
           await notifier.importLocalBook(filePath);
-        } catch (_) {
-          // 单个文件导入失败不阻断整体流程
-        }
-
-        if (mounted) {
-          setState(() => _importDone++);
+          // 只有导入成功才计入成功数（修复前失败也会自增，导致假成功）
+          if (mounted) {
+            setState(() => _importDone++);
+          }
+        } catch (e) {
+          // 单个文件失败不阻断整体流程，但必须计数并保留「书名：原因」
+          if (mounted) {
+            setState(() {
+              _importFailed++;
+              _importFailures.add('$fileName：${errorMessage(e)}');
+            });
+          }
         }
       }
 
@@ -333,14 +373,14 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('成功导入 $_importDone 本书籍')),
+          SnackBar(content: Text(_importResultMessage)),
         );
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败: $e')),
+          SnackBar(content: Text('导入失败: ${errorMessage(e)}')),
         );
       }
     } finally {
@@ -410,7 +450,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
               ? null
               : _confirmImport,
           child: _importing
-              ? Text('导入中 $_importDone/$_importTotal')
+              ? Text('导入中 $_importProcessed/$_importTotal')
               : Text('导入 (${_selected.length})'),
         ),
       ],
