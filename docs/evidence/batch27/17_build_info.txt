@@ -1,0 +1,39 @@
+== 批27 设备验收构建信息（采集时间 2026-11-13 08:57 +08:00） ==
+git HEAD: 6209538e063980823169a96eb4216db8c9b3a715 2026-11-13 08:32:17 +0800 docs: 批27 契约登记与双日志（2.0.497+498）
+
+-- jniLibs .so --
+arm64-v8a: mtime=2026-11-13 08:41:58 size=52498824 meta={"contentHash":-905874848,"mode":"release","quickjs":true,"builtAt":"2026-11-13T08:43:28.4452495+08:00","rustFingerprint":"3b1775536d217b840f4329c6b5d8d19c54ae89dacdd490f1048edc89cbd262e1"}
+armeabi-v7a: mtime=2026-11-13 08:42:42 size=34828524 meta={"contentHash":-905874848,"mode":"release","quickjs":false,"builtAt":"2026-11-13T08:43:28.4673111+08:00","rustFingerprint":"3b1775536d217b840f4329c6b5d8d19c54ae89dacdd490f1048edc89cbd262e1"}
+x86_64: mtime=2026-11-13 08:43:28 size=52839104 meta={"contentHash":-905874848,"mode":"release","quickjs":true,"builtAt":"2026-11-13T08:43:28.4800521+08:00","rustFingerprint":"3b1775536d217b840f4329c6b5d8d19c54ae89dacdd490f1048edc89cbd262e1"}
+
+-- APK --
+path=D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\build\app\outputs\flutter-apk\app-release.apk
+size=212359620 (202.5 MB) mtime=2026-11-13 08:45:18
+sha256=b20c1990017c6599fe55fbb348fc3c2d816406fbd63bdf4f46daef9979362789
+
+-- adb devices --
+List of devices attached
+192.168.100.63:5555    device product:r9q model:SM_G9900 device:r9q transport_id:1
+
+-- installed package --
+flags=0x0
+versionCode=498 minSdk=24 targetSdk=36
+versionName=2.0.497
+flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+
+-- smoke test output (run 2026-11-13 08:54, exit 0) --
+==> adb: D:\Android\platform-tools\adb.exe
+==> 目标设备: 192.168.100.63:5555（io.legado.flutter_legado）
+[PASS] 设备 192.168.100.63:5555 在线
+[PASS] 跳过构建，复用已有 APK
+==> adb install -r ...
+[PASS] APK 安装成功
+[PASS] 已装版本与 pubspec 一致（2.0.497）
+[PASS] 应用进程存活（u0_a55       32903   660   16711904 220536 0                   0 S io.legado.flutter_legado）
+[PASS] 无崩溃日志（FATAL/E/flutter）
+==> 未检测到历史崩溃弹窗
+[PASS] UI 主界面渲染正常（检测到：书架/发现/订阅/我的）
+
+================ 冒烟测试汇总 ================
+  通过: 7   失败: 0   设备: 192.168.100.63:5555
+结果: PASSED

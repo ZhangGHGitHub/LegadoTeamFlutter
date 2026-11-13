@@ -1,0 +1,120 @@
+{
+  "version": 6,
+  "backupTime": 1794531036580,
+  "books": [
+    {
+      "author": "QA作者",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "canUpdate": true,
+      "chapterInVolumeIndex": 0,
+      "disableReadRecord": false,
+      "durChapterIndex": 1,
+      "durChapterPos": 0,
+      "durChapterTime": 1794526069834,
+      "durChapterTitle": "第二章 后续",
+      "durVolumeIndex": 0,
+      "group": 0,
+      "intro": "用于批25 段评面板验收的本地书。",
+      "isPrivate": false,
+      "lastCheckCount": 0,
+      "lastCheckTime": 0,
+      "latestChapterTime": 1794525958826,
+      "latestChapterTitle": "第六章",
+      "name": "QA25 段评书",
+      "order": 0,
+      "origin": "http://192.168.100.52:8925",
+      "originBookUrl": "",
+      "originName": "QA25 段评源",
+      "originOrder": 0,
+      "syncTime": 0,
+      "tocUrl": "http://192.168.100.52:8925/book1.html",
+      "totalChapterNum": 6,
+      "type": 8
+    }
+  ],
+  "bookmarks": [],
+  "bookMarks": [],
+  "replaceRules": [],
+  "bookSources": [
+    {
+      "bookSourceGroup": "QA",
+      "bookSourceName": "QA25 段评源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:8925",
+      "bookUrlPattern": ".*192\\.168\\.100\\.52:8925/book1\\.html.*",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": true,
+      "enabledCookieJar": true,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 180000,
+      "ruleBookInfo": {
+        "author": "class.author@text",
+        "intro": "class.intro@text",
+        "name": "class.name@text"
+      },
+      "ruleContent": {
+        "content": "class.content@html"
+      },
+      "ruleReview": {
+        "detailBadgeRule": "$.tag",
+        "detailContentRule": "$.text",
+        "detailIdRule": "$.id",
+        "detailListRule": "$.comments",
+        "detailNameRule": "$.user",
+        "enabled": true,
+        "reviewDetailUrl": "http://192.168.100.52:8925/review/detail",
+        "reviewQuoteUrl": "http://192.168.100.52:8925/review/reply",
+        "reviewSummaryUrl": "http://192.168.100.52:8925/review/summary",
+        "summaryCountRule": "$.cnt",
+        "summaryListRule": "$.data",
+        "summaryParagraphDataRule": "$.token",
+        "summaryParagraphIndexRule": "$.idx"
+      },
+      "ruleToc": {
+        "chapterList": "id.list@tag.li",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "weight": 0
+    }
+  ],
+  "rssSources": [],
+  "readRecords": [
+    {
+      "author": "",
+      "bookName": "QA25 段评书",
+      "coverUrl": null,
+      "deviceId": "",
+      "displayAuthor": "",
+      "displayBookName": "QA25 段评书",
+      "lastChapterIndex": -1,
+      "lastChapterPos": 0,
+      "lastChapterTitle": null,
+      "lastRead": 1794526069834,
+      "metadataEditedAt": 0,
+      "readTime": 70497,
+      "resolvedAuthor": null
+    }
+  ],
+  "bookMemos": [],
+  "bookGroups": [],
+  "rssStars": [],
+  "highlights": [],
+  "highlightRules": [],
+  "searchHistory": [],
+  "ruleSubs": [],
+  "txtTocRules": [],
+  "httpTTS": [],
+  "dictRules": [],
+  "keyboardAssists": [],
+  "servers": [],
+  "appPrefs": {
+    "process_text": true,
+    "reader_layout_is_night": false,
+    "reader_adv_letter_spacing_migrated": true,
+    "settingsMigrated_v271": true
+  }
+}

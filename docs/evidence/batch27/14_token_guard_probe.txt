@@ -1,0 +1,15 @@
+=== 批27 新增 6 条受保护路由（无令牌，期望 200 + token errorMsg） ===
+1) POST /api/rss/articles -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+2) GET /api/rss/http%3A%2F%2F127.0.0.1%3A1/articles -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+3) HEAD /api/rss/http%3A%2F%2F127.0.0.1%3A1/articles -> http=200 body=
+4) POST /api/tts/speak -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+5) POST /api/audio/speak -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+6) POST /api/bookshelf/update-toc -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+7) POST /api/bookshelf/update-toc/single -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+
+=== 既有受保护路由回归对照 ===
+8) POST /api/sources -> http=200 body={"isSuccess":false,"errorMsg":"Web 书源访问令牌未配置或不正确","data":null}
+
+=== 免令牌只读面回归对照（应用内主流程依赖） ===
+9) GET /api/sources -> http=200 body={"sources":[{"bookSourceGroup":"QA","bookSourceName":"QA25 段评源","bookSourceType":0,"bookSourceUrl":"http://192.168.100.5
+10) GET / -> http=200 body_len=2158
