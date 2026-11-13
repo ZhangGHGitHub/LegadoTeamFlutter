@@ -1,0 +1,26 @@
+Batch 28 device acceptance — build info
+HEAD: bc63c7e85c5c9bd22e1fc13c0380639d810e607b
+Version: 2.0.498+499
+Host date: 2026-11-13
+
+Rust build (pwsh rust/scripts/build-android.ps1 -Mode release -Targets "aarch64,armv7,x86_64"):
+- FRB content hash: -905874848
+- Rust source fingerprint: 601b5f467100467542647659e854a88c32e3990aaa56f63616dd4f7365674da1
+- rust-fingerprint.ps1 -Check => DECISION=REUSE for arm64-v8a / armeabi-v7a / x86_64
+- .so mtimes: arm64-v8a 2026-11-13 10:51:50; armeabi-v7a 10:52:36; x86_64 10:53:27
+- quickjs meta: arm64-v8a true; armeabi-v7a false; x86_64 true
+- .so sizes: arm64-v8a 52500216; armeabi-v7a 34823872; x86_64 52843312 bytes
+
+Release APK:
+- path: flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+- size: 212359816 bytes (202.5 MiB)
+- mtime: 2026-11-13 10:55:10 +0800
+- sha256: 9000d622fbd421c0c439fb1b2da453048de2b9b5b84a0d7b2d5540fe7941bf14
+
+Debug APK (smoke test -SkipBuild):
+- path: flutter_legado/build/app/outputs/flutter-apk/app-debug.apk
+
+Device:
+- MuMu instance 0 "Test2", adb 192.168.100.63:5555, Android 15, ABI x86_64
+- wm size 1080x1920, density 480
+- installed versionName 2.0.498 / versionCode 499 (lastUpdateTime 2026-11-13 10:55:37)
