@@ -2,7 +2,9 @@
 ///
 /// - [`buildMarkingMatches`]：把当前章 `book_marks` 按锚点解析成
 ///   `HighlightMatch`（UTF-16 半开区间），供与规则命中合并后渲染；
-/// - [`mergeHighlightAndMarkingMatches`]：规则命中 + 标记命中的区间合成。
+/// - [`mergeHighlightAndMarkingMatches`]：规则命中 + 标记命中的区间合成；
+/// - [`mergeHighlightMarkingAndSavedMatches`]：再并入 `highlights` 表的
+///   用户手动高亮（设备验收缺陷修复：此前渲染链完全没有消费该表）。
 ///
 /// 纯函数、不依赖 Flutter；单章标记数量正常 < 100，合并采用事件点扫描
 /// （起止事件 + 活动区间集合），避免大面积 O(n²) 切分。
@@ -17,6 +19,12 @@ import 'book_marking_range_resolver.dart';
 
 /// 标记命中的 order 基准（高于普通高亮规则 sortOrder，规则通常为 0..n）
 const int kBookMarkingMatchOrderBase = 1 << 20;
+
+/// 用户手动高亮（`highlights` 表）命中的 order 基准
+///
+/// 低于笔记标记（[kBookMarkingMatchOrderBase]）、高于普通规则；实际重叠
+/// 优先级由 [`mergeHighlightMarkingAndSavedMatches`] 的层级决定。
+const int kSavedHighlightMatchOrderBase = 1 << 19;
 
 /// 把当前章书签标记解析为可渲染命中
 ///
@@ -72,32 +80,62 @@ List<HighlightMatch> mergeHighlightAndMarkingMatches({
   required List<HighlightMatch> marks,
 }) {
   if (marks.isEmpty) return List<HighlightMatch>.of(rules);
+  return _mergeTiered(rules: rules, marks: marks, saved: const []);
+}
 
+/// 合并规则命中 + 笔记标记 + 用户手动高亮（`highlights` 表）
+///
+/// 层级优先级：**笔记标记 > 用户手动高亮 > 规则命中**。
+///
+/// 依据：
+/// 1. 用户手动高亮必须高于规则命中——参考版 `ReadBook.highlightRangesOfChapter`
+///    以 `rules + manual` 顺序交给 `HighlightMatcher.resolve`，后者的
+///    `HighlightStyle.merge` 由后出现的 manual 覆盖规则；且用户点「保存高亮」
+///    是显式操作，规则只是自动匹配。
+/// 2. 笔记标记继续高于手动高亮，沿用 7b-2b 已冻结的「用户标记高于规则」
+///    语义；两类都是显式操作，重叠属边缘场景，保持笔记优先可使既有标记
+///    渲染结果零变化（本批只对原先「无任何高亮」的区间新增渲染）。
+///
+/// 手动高亮之间按列表顺序，靠后者优先（`highlightListByChapter` 为
+/// `chapterPos, time` 升序 → 同位置更晚创建者生效，对齐原版
+/// `ReadBook.highlights` 的 time 覆盖语义）。
+/// `saved` 为空时等价于 [mergeHighlightAndMarkingMatches]。
+List<HighlightMatch> mergeHighlightMarkingAndSavedMatches({
+  required List<HighlightMatch> rules,
+  required List<HighlightMatch> marks,
+  required List<HighlightMatch> saved,
+}) {
+  if (saved.isEmpty) {
+    return mergeHighlightAndMarkingMatches(rules: rules, marks: marks);
+  }
+  return _mergeTiered(rules: rules, marks: marks, saved: saved);
+}
+
+/// 三层级合并核心（事件点扫描，输出互不重叠）
+List<HighlightMatch> _mergeTiered({
+  required List<HighlightMatch> rules,
+  required List<HighlightMatch> marks,
+  required List<HighlightMatch> saved,
+}) {
   final intervals = <_ArenaInterval>[];
-  for (var i = 0; i < rules.length; i++) {
-    final rule = rules[i];
-    if (rule.start < 0 || rule.end <= rule.start) continue;
-    intervals.add(
-      _ArenaInterval(
-        match: rule,
-        isMark: false,
-        index: i,
-        styleKey: _styleKey(rule.style),
-      ),
-    );
+  void addAll(List<HighlightMatch> source, int tier) {
+    for (var i = 0; i < source.length; i++) {
+      final match = source[i];
+      if (match.start < 0 || match.end <= match.start) continue;
+      intervals.add(
+        _ArenaInterval(
+          match: match,
+          tier: tier,
+          index: i,
+          styleKey: _styleKey(match.style),
+        ),
+      );
+    }
   }
-  for (var i = 0; i < marks.length; i++) {
-    final mark = marks[i];
-    if (mark.start < 0 || mark.end <= mark.start) continue;
-    intervals.add(
-      _ArenaInterval(
-        match: mark,
-        isMark: true,
-        index: i,
-        styleKey: _styleKey(mark.style),
-      ),
-    );
-  }
+
+  addAll(rules, _kTierRule);
+  addAll(saved, _kTierSaved);
+  addAll(marks, _kTierMark);
   if (intervals.isEmpty) return const [];
 
   // 事件点：同一位置先处理结束（半开区间 [start,end)）
@@ -138,16 +176,24 @@ List<HighlightMatch> mergeHighlightAndMarkingMatches({
   return out;
 }
 
+/// 层级：规则 0 < 手动高亮 1 < 笔记标记 2
+const int _kTierRule = 0;
+const int _kTierSaved = 1;
+const int _kTierMark = 2;
+
 class _ArenaInterval {
   const _ArenaInterval({
     required this.match,
-    required this.isMark,
+    required this.tier,
     required this.index,
     required this.styleKey,
   });
 
   final HighlightMatch match;
-  final bool isMark;
+
+  /// 来源层级（见 `_kTier*`）
+  final int tier;
+
   final int index;
   final String styleKey;
 }
@@ -172,10 +218,14 @@ _ArenaInterval? _pickWinner(Set<int> active, List<_ArenaInterval> intervals) {
   return best;
 }
 
-/// 规则索引用于同 order 先出现者优先；标记索引越大优先级越高
+/// 规则索引用于同 order 先出现者优先；标记/手动高亮索引越大优先级越高
 bool _isHigherPriority(_ArenaInterval a, _ArenaInterval b) {
-  if (a.isMark != b.isMark) return a.isMark;
-  if (a.isMark) return a.index > b.index;
+  if (a.tier != b.tier) return a.tier > b.tier;
+  if (a.tier != _kTierRule) {
+    // 标记：列表靠后者优先（createdAt ASC）
+    // 手动高亮：chapterPos,time 升序靠后者优先（同位置更晚创建覆盖）
+    return a.index > b.index;
+  }
   final byOrder = a.match.order.compareTo(b.match.order);
   if (byOrder != 0) return byOrder > 0;
   return a.index < b.index;

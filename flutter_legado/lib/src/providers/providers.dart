@@ -53,6 +53,14 @@ final highlightRulesRevisionProvider = StateProvider<int>((ref) => 0);
 /// 本批先建立，TOC 笔记列表直接 watch `bookMarkingNotifierProvider` 状态。
 final bookMarkingsRevisionProvider = StateProvider<int>((ref) => 0);
 
+/// 手动高亮修订号（highlights 表正文渲染）
+///
+/// 阅读器「保存高亮」成功后自增；阅读页 watch 该值并重新拉取当前章
+/// `highlightListByChapter`，使用户保存后立即在正文看到高亮（此前该表
+/// 零渲染调用方，保存成功但正文无任何变化）。外部导入/备份恢复不走该
+/// 信号，切换章节或重开书后生效（与高亮规则修订号同口径）。
+final bookHighlightsRevisionProvider = StateProvider<int>((ref) => 0);
+
 /// Web 服务可访问地址解析 Provider（M1 我的页）
 ///
 /// 默认真实网卡枚举（[LanWebServiceAddressResolver]，局域网 IPv4 优先、

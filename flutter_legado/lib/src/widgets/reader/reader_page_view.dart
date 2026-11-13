@@ -24,6 +24,7 @@ import '../../services/bookmark_badge_image_store.dart';
 import '../../services/highlight_match_sync.dart';
 import '../../services/image_action_outcome.dart';
 import '../../services/local_book_store.dart' show LocalBookStore;
+import '../../services/saved_highlight_render.dart';
 import '../../utils/click_img_way.dart' show clickImgToastHint;
 import '../../utils/comic_image_utils.dart';
 import '../../utils/image_action_replay.dart';
@@ -320,6 +321,29 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 切章/换书/正文变化时清空尝试次数与失败退避，避免 A→B→A 回到
   /// 同一章时被上一轮迟到失败耗尽预算（修订号变化按新 key 独立计数）。
   String _markingIdentityKey = '';
+
+  // ===== 手动高亮（highlights 表）正文渲染状态 =====
+  //
+  // 设备验收缺陷：保存侧写入 highlights 表后正文永不显示（渲染链只读
+  // highlight_rules 规则表，highlightListByChapter 零调用方）。以下状态
+  // 按章加载已存高亮并并入渲染，机制与笔记标记一致（同型轻量缓存 +
+  // 在途去重 + 单 key 重试预算 + 切章先清空）。
+
+  /// 当前章已存手动高亮转换后的命中区间
+  List<HighlightMatch> _savedHighlightMatches = const [];
+
+  /// 当前手动高亮命中对应的键（书 + 章 + 正文 + 修订号）
+  String _savedHighlightKey = '';
+
+  /// 在途手动高亮加载键（去重）
+  String _savedHighlightLoadingKey = '';
+
+  /// 各 key 已发起的加载次数（单 key 最多 2 次）
+  final Map<String, int> _savedHighlightAttempts = {};
+  static const int _maxSavedHighlightAttempts = 2;
+
+  /// 重试预算所属的「书+章+正文」身份键（不含修订号）
+  String _savedHighlightIdentityKey = '';
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -1278,9 +1302,19 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       chapterIndex: chapterIndex,
       revision: ref.watch(bookMarkingsRevisionProvider),
     );
-    _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+    // 手动高亮（highlights 表）：按章加载已存记录并并入正文渲染。
+    // watch 修订号——阅读器保存高亮成功后自增，立即重拉当前章（缺陷修复）。
+    _syncSavedHighlightMatches(
+      enabled: book != null && state.pageTurnMode != PageTurnMode.scroll,
+      content: content,
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+      revision: ref.watch(bookHighlightsRevisionProvider),
+    );
+    _combinedHighlightMatches = mergeHighlightMarkingAndSavedMatches(
       rules: _highlightMatches,
       marks: _markingMatches,
+      saved: _savedHighlightMatches,
     );
   }
 
@@ -1349,9 +1383,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       _markingAttempts.remove(key);
       setState(() {
         _markingMatches = matches;
-        _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+        _combinedHighlightMatches = mergeHighlightMarkingAndSavedMatches(
           rules: _highlightMatches,
           marks: _markingMatches,
+          saved: _savedHighlightMatches,
         );
       });
     } catch (e) {
@@ -1362,9 +1397,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       _markingKey = '';
       setState(() {
         _markingMatches = const [];
-        _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+        _combinedHighlightMatches = mergeHighlightMarkingAndSavedMatches(
           rules: _highlightMatches,
           marks: _markingMatches,
+          saved: _savedHighlightMatches,
         );
       });
       debugPrint(
@@ -1373,6 +1409,110 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       );
     } finally {
       if (_markingLoadingKey == key) _markingLoadingKey = '';
+    }
+  }
+
+  /// 同步当前章已存手动高亮（highlights 表）
+  ///
+  /// 缺陷修复：以往正文渲染只消费 `highlight_rules` 规则命中，
+  /// `highlightListByChapter` 无调用方——用户保存的高亮只能出现在目录
+  /// 「标注」列表，正文内联永不渲染。
+  ///
+  /// 键 = 书 + 章 + 已分页正文（长度/hash）+ 手动高亮修订号；键变化先
+  /// 清空旧命中再异步加载，避免新章/换书短暂套用上一章区间。失败清空，
+  /// 下一次 build 重试（单 key 最多 2 次）。滚动模式不加载（与规则、笔记
+  /// 同边界，正文走 ReaderParagraphs 尚未接线高亮渲染）。
+  void _syncSavedHighlightMatches({
+    required bool enabled,
+    required String content,
+    required String bookUrl,
+    required int chapterIndex,
+    required int revision,
+  }) {
+    if (!enabled || content.isEmpty || bookUrl.isEmpty) {
+      _savedHighlightMatches = const [];
+      _savedHighlightKey = '';
+      _savedHighlightLoadingKey = '';
+      _savedHighlightIdentityKey = '';
+      return;
+    }
+    final identityKey =
+        '$bookUrl\u0000$chapterIndex\u0000${content.length}'
+        '\u0000${content.hashCode}';
+    if (identityKey != _savedHighlightIdentityKey) {
+      // 切章/换书/正文变化：重置重试预算与失败退避
+      _savedHighlightIdentityKey = identityKey;
+      _savedHighlightAttempts.clear();
+    }
+    final key = '$identityKey\u0000$revision';
+    if (key == _savedHighlightKey) return;
+
+    // 换章/换书/正文或修订号变化：先清旧命中（切章不得残留旧章高亮）
+    _savedHighlightMatches = const [];
+    if (_savedHighlightLoadingKey == key) {
+      _savedHighlightKey = key;
+      return;
+    }
+    final attempts = _savedHighlightAttempts[key] ?? 0;
+    if (attempts >= _maxSavedHighlightAttempts) {
+      // 重试预算耗尽：记为当前 key，后续 build 不再重复请求
+      _savedHighlightKey = key;
+      return;
+    }
+    _savedHighlightAttempts[key] = attempts + 1;
+    _savedHighlightKey = key;
+    _savedHighlightLoadingKey = key;
+    unawaited(_loadSavedHighlightMatches(key, content, bookUrl, chapterIndex));
+  }
+
+  /// 异步加载当前章手动高亮并解析为命中区间
+  ///
+  /// 坐标：`highlights.chapterPos/chapterPosEnd` 已是章节正文 UTF-16 偏移
+  /// （保存侧 `chapterOffsetOfSelection` 已扣除首行缩进），解析见
+  /// [buildSavedHighlightMatches]；不得在此再叠加/扣除缩进列。
+  Future<void> _loadSavedHighlightMatches(
+    String key,
+    String content,
+    String bookUrl,
+    int chapterIndex,
+  ) async {
+    try {
+      final raw = await ref
+          .read(bookApiProvider)
+          .highlightListByChapter(bookUrl: bookUrl, chapterIndex: chapterIndex);
+      if (!mounted || _savedHighlightKey != key) return;
+      final matches = buildSavedHighlightMatches(
+        content: content,
+        rawJson: raw,
+      );
+      _savedHighlightAttempts.remove(key);
+      setState(() {
+        _savedHighlightMatches = matches;
+        _combinedHighlightMatches = mergeHighlightMarkingAndSavedMatches(
+          rules: _highlightMatches,
+          marks: _markingMatches,
+          saved: _savedHighlightMatches,
+        );
+      });
+    } catch (e) {
+      // 旧请求失败不得清空新章已采纳的高亮
+      if (!mounted || _savedHighlightKey != key) return;
+      // 高亮是增益能力：失败降级为无高亮，不影响正文阅读
+      _savedHighlightKey = '';
+      setState(() {
+        _savedHighlightMatches = const [];
+        _combinedHighlightMatches = mergeHighlightMarkingAndSavedMatches(
+          rules: _highlightMatches,
+          marks: _markingMatches,
+          saved: _savedHighlightMatches,
+        );
+      });
+      debugPrint(
+        '[highlight] 手动高亮加载失败（已降级为无高亮；'
+        '单 key 最多 $_maxSavedHighlightAttempts 次，下一次 build 重试）: $e',
+      );
+    } finally {
+      if (_savedHighlightLoadingKey == key) _savedHighlightLoadingKey = '';
     }
   }
 
@@ -1392,10 +1532,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (!mounted) return;
     setState(() {
       _highlightMatches = _highlightSync.matches;
-      // 规则先/后到都重算合并（笔记先到时不丢）
-      _combinedHighlightMatches = mergeHighlightAndMarkingMatches(
+      // 规则先/后到都重算合并（笔记/手动高亮先到时不丢）
+      _combinedHighlightMatches = mergeHighlightMarkingAndSavedMatches(
         rules: _highlightMatches,
         marks: _markingMatches,
+        saved: _savedHighlightMatches,
       );
     });
   }

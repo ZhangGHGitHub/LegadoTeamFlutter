@@ -67,6 +67,44 @@ int chapterOffsetOfSelection({
   return chapterPos + bodyIndex;
 }
 
+/// 构造 highlights 表的 BookHighlight JSON（契约 §2.36 / DB v99）
+///
+/// [chapterPos] 为选区起点在**章节正文**中的 UTF-16 偏移，调用方须先经
+/// [chapterOffsetOfSelection] 扣除首行缩进全角空格；`chapterPosEnd` 由
+/// 选中文本长度推出。样式对齐参考版
+/// `{"type":"background","color":"#AARRGGBB"}`，阅读页渲染侧由
+/// `parseSavedHighlightStyle` 解析（见 saved_highlight_render.dart）。
+Map<String, dynamic> buildBookHighlightJson({
+  required Book book,
+  required int chapterIndex,
+  required String chapterUrl,
+  required String chapterName,
+  required int chapterPos,
+  required String selectedText,
+  required Color color,
+  String note = '',
+}) {
+  return <String, dynamic>{
+    'time': 0, // 0 时由 Rust 侧自动分配主键
+    'bookUrl': book.bookUrl,
+    'chapterUrl': chapterUrl,
+    'bookName': book.name,
+    'bookAuthor': book.author,
+    'chapterIndex': chapterIndex,
+    'chapterPos': chapterPos,
+    'chapterPosEnd': chapterPos + selectedText.length,
+    'layoutTitleLength': 0,
+    'chapterName': chapterName,
+    'bookText': selectedText,
+    'style': jsonEncode({
+      'type': 'background',
+      'color':
+          '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
+    }),
+    'note': note,
+  };
+}
+
 /// 选区前后文片段（锚点消歧用；各最多 24 个 UTF-16 单元）
 ({String before, String after}) markingContextAround(
   String content,
@@ -682,30 +720,24 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       fineSelection: _userSelected.trim().isNotEmpty,
       selectionStart: _userSelectionStart,
     );
-    final highlight = <String, dynamic>{
-      'time': 0, // 0 时由 Rust 侧自动分配主键
-      'bookUrl': book.bookUrl,
-      'chapterUrl': chapterUrl,
-      'bookName': book.name,
-      'bookAuthor': book.author,
-      'chapterIndex': effectiveChapterIndex,
-      'chapterPos': chapterPos,
-      'chapterPosEnd': chapterPos + selected.length,
-      'layoutTitleLength': 0,
-      'chapterName': chapterName,
-      'bookText': selected,
-      'style': jsonEncode({
-        'type': 'background',
-        'color':
-            '#${color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
-      }),
-      'note': note,
-    };
+    final highlight = buildBookHighlightJson(
+      book: book,
+      chapterIndex: effectiveChapterIndex,
+      chapterUrl: chapterUrl,
+      chapterName: chapterName,
+      chapterPos: chapterPos,
+      selectedText: selected,
+      color: color,
+      note: note,
+    );
     try {
       await ref
           .read(bookApiProvider)
           .highlightAdd(highlightJson: jsonEncode(highlight));
       _lastHighlightColor = color;
+      // 缺陷修复：正文渲染须按章消费 highlights 表。自增修订号让阅读页
+      // 立即重拉当前章并内联渲染（此前保存成功但正文无任何变化）。
+      ref.read(bookHighlightsRevisionProvider.notifier).state++;
       _toast(note.isEmpty ? '已添加高亮' : '已添加高亮与笔记');
       _close();
     } catch (e) {
