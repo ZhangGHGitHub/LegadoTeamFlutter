@@ -1,0 +1,11 @@
+installed_version:
+    versionCode=501 minSdk=24 targetSdk=36
+    versionName=2.0.500
+    lastUpdateTime=2026-11-13 16:45:33
+screenshot_final_size:
+(1080, 1920)
+font_scale=1.0
+accelerometer_rotation=1
+user_rotation=0
+Physical size: 1080x1920
+Physical density: 480

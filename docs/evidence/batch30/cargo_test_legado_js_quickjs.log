@@ -1,0 +1,934 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running unittests src\lib.rs (target\debug\deps\legado_js-df738ced7daa3239.exe)
+
+running 734 tests
+test engine::quickjs_tests::test_eval_with_bindings_int ... ok
+test engine::quickjs_tests::test_eval_basic_arithmetic ... ok
+test engine::quickjs_tests::test_array_methods ... ok
+test engine::quickjs_tests::test_eval_with_bindings_string ... ok
+test engine::quickjs_tests::test_execute_compiled_with_bindings ... ok
+test engine::quickjs_tests::test_date_builtin ... ok
+test engine::quickjs_tests::test_compile_and_execute ... ok
+test engine::quickjs_tests::test_file_api_available_with_permissive_config ... ok
+test engine::quickjs_tests::test_eval_array_object_normalized_to_json ... ok
+test engine::quickjs_tests::test_eval_boolean ... ok
+test engine::quickjs_tests::test_eval_string ... ok
+test engine::quickjs_tests::test_eval_null_undefined ... ok
+test engine::quickjs_tests::test_eval_with_bindings_float ... ok
+test engine::quickjs_tests::test_check_syntax_valid_and_invalid ... ok
+test engine::quickjs_tests::test_eval_error_propagates ... ok
+test engine::quickjs_tests::test_check_syntax_deep_nesting_does_not_hang ... ok
+test engine::quickjs_tests::test_function_definition_and_call ... ok
+test engine::quickjs_tests::test_file_api_blocked_with_default_config ... ok
+test engine::quickjs_tests::test_sandbox_memory_limit ... ignored, QuickJS memory limit test causes ACCESS_VIOLATION on Windows
+test engine::quickjs_tests::test_host_api_encode_uri_component_search_template ... ok
+test engine::quickjs_tests::test_host_api_encode_uri ... ok
+test engine::quickjs_tests::test_host_api_encode_uri_component ... ok
+test engine::quickjs_tests::test_host_api_base64_encode_decode ... ok
+test engine::quickjs_tests::test_host_api_md5_encode ... ok
+test engine::quickjs_tests::test_host_api_hex_encode_decode ... ok
+test engine::quickjs_tests::test_host_api_md5_encode_16 ... ok
+test engine::quickjs_tests::test_object_creation ... ok
+test engine::quickjs_tests::test_host_api_sha256 ... ok
+test engine::quickjs_tests::test_math_builtin ... ok
+test engine::quickjs_tests::test_packages_shim_common_classes ... ok
+test engine::quickjs_tests::test_packages_shim_cipher_aes_cbc_decrypt ... ok
+test engine::quickjs_tests::test_sandbox_oom_engine_reusable_with_headroom ... ok
+test engine::quickjs_tests::test_syntax_error ... ok
+test engine::quickjs_tests::test_sandbox_memory_limit_oom_backtrace_regression ... ok
+test engine::quickjs_tests::test_sandbox_timeout ... ok
+test engine::quickjs_tests::test_json_stringify_large_array ... ok
+test engine::quickjs_tests::test_timeout_normal_execution_not_interrupted ... ok
+test executor::tests::test_quickjs_executor_reuse ... ok
+test host_api::archive_utils::tests::test_check_seven_z_declared_limits_rejects_oversized_total ... ok
+test host_api::archive_utils::tests::test_get_zip_byte_array_content ... ok
+test host_api::archive_utils::tests::test_get_zip_byte_array_content_zip_not_found ... ok
+test host_api::archive_utils::tests::test_get_zip_string_content ... ok
+test host_api::archive_utils::tests::test_get_zip_string_content_not_found_entry ... ok
+test host_api::archive_utils::tests::test_inflate_raw_bytes ... ok
+test host_api::archive_utils::tests::test_rar_entry_bytes_invalid_data ... ok
+test host_api::archive_utils::tests::test_rar_entry_bytes_rar5_basic ... ok
+test host_api::archive_utils::tests::test_rar_entry_bytes_rejects_absolute_entry ... ok
+test host_api::archive_utils::tests::test_rar_entry_bytes_rejects_parent_dir_entry ... ok
+test host_api::archive_utils::tests::test_read_file_magic_7z ... ok
+test host_api::archive_utils::tests::test_read_file_magic_large_file_prefix ... ok
+test host_api::archive_utils::tests::test_read_file_magic_rar ... ok
+test engine::quickjs_tests::test_json_stringify_real_qimao_toc ... ok
+test host_api::archive_utils::tests::test_read_file_magic_zip ... ok
+test host_api::archive_utils::tests::test_scan_rar5_rejects_oversized_entry ... ok
+test host_api::archive_utils::tests::test_scan_rar5_rejects_oversized_total ... ok
+test host_api::archive_utils::tests::test_seven_z_entry_bytes_basic ... ok
+test host_api::archive_utils::tests::test_un7z_file_basic ... ok
+test host_api::archive_utils::tests::test_un7z_file_cleans_up_when_entry_create_fails ... ok
+test host_api::archive_utils::tests::test_un7z_file_not_found ... ok
+test host_api::archive_utils::tests::test_un7z_file_default_output ... ok
+test host_api::archive_utils::tests::test_un_archive_file_7z ... ok
+test host_api::archive_utils::tests::test_un_archive_file_unknown_format ... ok
+test host_api::archive_utils::tests::test_un_archive_file_zip ... ok
+test engine::quickjs_tests::test_set_execution_timeout_interrupts_and_engine_reusable ... ok
+test host_api::archive_utils::tests::test_unrar_file_rar5_basic ... ok
+test host_api::archive_utils::tests::test_unrar_file_streaming_scan_rejects_oversized_entry ... ok
+test host_api::archive_utils::tests::test_unrar_file_rejects_traversal_entry ... ok
+test host_api::archive_utils::tests::test_unrar_file_stub_or_not_found ... ok
+test host_api::archive_utils::tests::test_unzip_file_basic ... ok
+test host_api::archive_utils::tests::test_unzip_file_cleans_up_when_entry_create_fails ... ok
+test host_api::archive_utils::tests::test_unzip_file_not_found ... ok
+test host_api::archive_utils::tests::test_unzip_file_default_output ... ok
+test engine::quickjs_tests::test_timeout_infinite_loop_interrupted ... ok
+test host_api::archive_utils::tests::test_zip_entry_bytes_from_memory ... ok
+test engine::quickjs_tests::test_timeout_engine_recovers_after_interrupt ... ok
+test host_api::asymmetric_crypto::tests::test_decode_cipher_text_base64_and_hex ... ok
+test host_api::asymmetric_crypto::tests::test_parse_invalid_key_fails ... ok
+test host_api::asymmetric_crypto::tests::test_parse_keys_from_base64_der ... ok
+test host_api::archive_utils::tests::test_unzip_file_rejects_oversized_entry ... ok
+test host_api::asymmetric_crypto::tests::test_parse_rsa_transformation ... ok
+test host_api::asymmetric_crypto::tests::test_parse_sign_algorithm ... ok
+test host_api::archive_utils::tests::test_unzip_file_removes_created_output_dir_on_limit_failure ... ok
+test host_api::asymmetric_crypto::tests::test_asym_state_random_keys_roundtrip ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_oaep_sha256_roundtrip ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_decrypt_bad_length_fails ... ok
+test host_api::asymmetric_crypto::tests::test_parse_private_key_from_pem ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_pkcs1_roundtrip ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_pkcs1_segmented_long_data ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_sign_verify_roundtrip ... ok
+test host_api::cache_store::tests::test_cache_dir_priority_and_default ... ok
+test host_api::cache_store::tests::test_file_roundtrip ... ok
+test host_api::cache_store::tests::test_memory_roundtrip ... ok
+test host_api::cache_store::tests::test_missing_key_returns_none ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_private_encrypt_public_decrypt ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_verify_wrong_key_fails ... ok
+test host_api::asymmetric_crypto::tests::test_rsa_wrong_key_decrypt_fails ... ok
+test host_api::cache_store::tests::test_put_get_expired ... ok
+test host_api::cache_store::tests::test_put_get_permanent ... ok
+test host_api::cache_store::tests::test_put_nonsync_clears_memory ... ok
+test host_api::capability_ledger::tests::test_jslib_failure_count_and_last_error ... ok
+test host_api::capability_ledger::tests::test_jslib_failure_truncation ... ok
+test host_api::capability_ledger::tests::test_unknown_symbol_counting_and_snapshot ... ok
+test host_api::cache_store::tests::test_put_write_failure_keeps_memory ... ok
+test host_api::cache_store::tests::test_set_cache_dir_injected_hit ... ok
+test host_api::cache_store::tests::test_write_fail_warned_once ... ok
+test host_api::capability_ledger::tests::test_unknown_symbol_truncation_and_capacity ... ok
+test host_api::capability_ledger::tests::test_webjs_fallback_ledger_visible_via_reexport ... ok
+test host_api::chinese_utils::tests::test_empty_string ... ok
+test host_api::chinese_utils::tests::test_mixed_text ... ok
+test host_api::chinese_utils::tests::test_t2s_basic ... ok
+test host_api::chinese_utils::tests::test_s2t_basic ... ok
+test host_api::chinese_utils::tests::test_roundtrip_common ... ok
+test host_api::chinese_utils::tests::test_s2t_sentence ... ok
+test host_api::chinese_utils::tests::test_t2s_sentence ... ok
+test host_api::concurrency_api::tests::test_different_keys_independent ... ok
+test host_api::concurrency_api::tests::test_tick_increments ... ok
+test host_api::concurrency_api::tests::test_single_flight_caches ... ok
+test host_api::config_api::tests::test_get_android_id_stable ... ok
+test host_api::config_api::tests::test_get_read_book_config_is_valid_json ... ok
+test host_api::config_api::tests::test_get_theme_config_is_valid_json ... ok
+test host_api::config_api::tests::test_get_theme_mode ... ok
+test host_api::config_api::tests::test_get_web_view_ua ... ok
+test host_api::config_api::tests::test_injected_read_book_config_passthrough ... ok
+test host_api::config_api::tests::test_injected_theme_config_passthrough ... ok
+test host_api::config_api::tests::test_injected_theme_mode_mapping ... ok
+test host_api::cookie_store::sink_tests::test_cookie_str_to_map_upstream_semantics ... ok
+test host_api::cookie_store::sink_tests::test_map_to_cookie_str ... ok
+test host_api::cookie_store::sink_tests::test_backfill_skips_legacy_raw_url_row_no_shadowing ... ok
+test host_api::cookie_store::sink_tests::test_set_cookie_sink_first_wins ... ok
+test host_api::cookie_store::sink_tests::test_clear_all_covers_persistence_no_resurrection ... ok
+test host_api::cookie_store::sink_tests::test_replace_cookie_str_merges_and_persists ... ok
+test host_api::cookie_store::sink_tests::test_sink_backfill_memory_first ... ok
+test host_api::cookie_store::sink_tests::test_sink_batch_parse_mirrors_binding ... ok
+test host_api::cookie_store::sink_tests::test_sink_batch_write_single_upsert ... ok
+test host_api::cookie_store::sink_tests::test_sink_clear_removes_persisted ... ok
+test host_api::cookie_store::sink_tests::test_sink_roundtrip_merge_self_consistent ... ok
+test host_api::cookie_store::sink_tests::test_sink_skip_unchanged_write ... ok
+test host_api::cookie_store::tests::test_bare_host_string_is_self_keyed ... ok
+test host_api::cookie_store::tests::test_clear_cookies ... ok
+test host_api::cookie_store::tests::test_cookies_for_url_empty_returns_empty ... ok
+test host_api::cookie_store::tests::test_get_cookie_by_key_cross_subdomain_domain_key ... ok
+test host_api::cookie_store::tests::test_merge_js_cookies_appends_nonconflicting_keys ... ok
+test host_api::cookie_store::tests::test_merge_js_cookies_existing_key_wins ... ok
+test host_api::cookie_store::tests::test_merge_js_cookies_no_existing_inserts_cookie_key ... ok
+test host_api::cookie_store::tests::test_merge_js_cookies_preserves_existing_key_case ... ok
+test host_api::cookie_store::tests::test_missing_cookie ... ok
+test host_api::cookie_store::tests::test_multiple_cookies ... ok
+test host_api::cookie_store::tests::test_p219_ip_literal_domain_key ... ok
+test host_api::cookie_store::tests::test_p219_multi_label_tld_domain_key ... ok
+test host_api::cookie_store::tests::test_p219_unrelated_domain_cookie_never_carried ... ok
+test host_api::cookie_store::tests::test_raw_string_key_hit ... ok
+test host_api::cookie_store::tests::test_same_domain_same_name_last_write_wins ... ok
+test host_api::cookie_store::tests::test_set_and_get_cookie ... ok
+test host_api::cookie_store::tests::test_tag_isolation ... ok
+test host_api::cookie_store::tests::test_upstream_sync_same_domain_cross_source_sharing ... ok
+test host_api::cookie_store::tests::test_upstream_sync_thirdparty_url_cookie_carried ... ok
+test host_api::crypto_api::tests::test_aes_encrypt_decrypt_default_iv ... ok
+test host_api::cookie_store::tests::test_upstream_sync_unowned_context_carries_request_domain_cookie ... ok
+test host_api::crypto_api::tests::test_aes_encrypt_decrypt_roundtrip ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_aes_cbc ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_aes_ecb ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_des ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_desede ... ok
+test host_api::crypto_api::tests::test_aes_wrong_key_fails ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_desede_bad_mode ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_invalid_transformation ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_rc4 ... ok
+test host_api::crypto_api::tests::test_create_symmetric_crypto_unsupported_algo ... ok
+test host_api::crypto_api::tests::test_des_bad_key_length ... ok
+test host_api::crypto_api::tests::test_rc4_different_keys_differ ... ok
+test host_api::crypto_api::tests::test_rc4_encrypt_decrypt_roundtrip ... ok
+test host_api::crypto_api::tests::test_des_encrypt_decrypt_roundtrip ... ok
+test host_api::crypto_api::tests::test_triple_des_encode_base64_str_roundtrip ... ok
+test host_api::current_source::tests::test_set_get_clear ... ok
+test host_api::current_source::tests::test_with_restores_previous ... ok
+test host_api::current_source::tests::test_thread_isolation ... ok
+test host_api::device_id::tests::test_ignores_empty_device_id ... ok
+test host_api::device_id::tests::test_set_and_get_device_id ... ok
+test host_api::encoding::tests::test_bytes_to_str_utf8 ... ok
+test host_api::encoding::tests::test_digest_base64_str_sha256 ... ok
+test host_api::encoding::tests::test_digest_hex_md5 ... ok
+test host_api::encoding::tests::test_digest_hex_sha1 ... ok
+test host_api::encoding::tests::test_digest_hex_sha256 ... ok
+test host_api::encoding::tests::test_digest_hex_sha384 ... ok
+test host_api::encoding::tests::test_digest_hex_sha512 ... ok
+test host_api::encoding::tests::test_digest_hex_unsupported ... ok
+test host_api::encoding::tests::test_encode_uri_component_keeps_unreserved ... ok
+test host_api::encoding::tests::test_encode_uri_component_percent_encodes ... ok
+test host_api::encoding::tests::test_hmac_base64_sha256 ... ok
+test host_api::encoding::tests::test_bytes_to_str_gbk ... ok
+test host_api::encoding::tests::test_hmac_hex_md5 ... ok
+test host_api::encoding::tests::test_hmac_hex_sha1 ... ok
+test host_api::encoding::tests::test_hmac_hex_sha256 ... ok
+test host_api::encoding::tests::test_hmac_hex_sha512 ... ok
+test host_api::encoding::tests::test_hmac_jca_style_algorithm_names ... ok
+test host_api::encoding::tests::test_str_to_bytes_gbk ... ok
+test host_api::encoding::tests::test_str_to_bytes_roundtrip ... ok
+test host_api::encoding::tests::test_str_to_bytes_utf8 ... ok
+test host_api::env::tests::test_clone_shares_variables ... ok
+test host_api::env::tests::test_default_trait ... ok
+test host_api::env::tests::test_new_default ... ok
+test host_api::env::tests::test_variables_isolation_between_instances ... ok
+test host_api::env::tests::test_with_source_tag ... ok
+test host_api::env::tests::test_resolve_safe_path ... ok
+test host_api::current_source::tests::test_with_restores_after_panic ... ok
+test host_api::file_utils::tests::test_delete_nonexistent ... ok
+test host_api::file_utils::tests::test_file_exists_false ... ok
+test host_api::file_utils::tests::test_delete_file ... ok
+test host_api::file_utils::tests::test_file_exists_true ... ok
+test host_api::file_utils::tests::test_get_txt_in_folder_nonexistent ... ok
+test host_api::file_utils::tests::test_list_files_empty_dir ... ok
+test host_api::file_utils::tests::test_get_txt_in_folder_not_a_dir ... ok
+test host_api::file_utils::tests::test_read_nonexistent_returns_empty ... ok
+test host_api::file_utils::tests::test_read_txt_file_gbk ... ok
+test host_api::file_utils::tests::test_read_txt_file_nonexistent ... ok
+test host_api::file_utils::tests::test_sandbox_absolute_path_outside_blocked ... ok
+test host_api::file_utils::tests::test_sandbox_nested_traversal_blocked ... ok
+test host_api::file_utils::tests::test_sandbox_path_traversal_blocked ... ok
+test host_api::concurrency_api::tests::test_lock_acquire_and_release ... ok
+test host_api::file_utils::tests::test_file_operations_in_sandbox ... ok
+test host_api::file_utils::tests::test_sandbox_path_traversal_read_blocked ... ok
+test host_api::file_utils::tests::test_read_txt_file_utf8 ... ok
+test host_api::file_utils::tests::test_sandbox_valid_path ... ok
+test host_api::font_api::tests::test_classify_file_forms ... ok
+test host_api::font_api::tests::test_classify_multibyte_first_char_no_panic ... ok
+test host_api::font_api::tests::test_handle_cache_lru_capacity ... ok
+test host_api::font_api::tests::test_font_disk_cache_roundtrip ... ok
+test host_api::font_api::tests::test_query_ttf_base64_invalid ... ok
+test host_api::file_utils::tests::test_write_and_read_file ... ok
+test host_api::font_api::tests::test_query_ttf_empty ... ok
+test host_api::font_api::tests::test_query_base64_ttf ... ok
+test host_api::font_api::tests::test_query_ttf_base64_real_font ... ok
+test host_api::font_api::tests::test_query_ttf_cache_hit ... ok
+test host_api::font_api::tests::test_replace_font_blank_kept ... ok
+test host_api::font_api::tests::test_replace_font_filter_removes_unmapped ... ok
+test host_api::font_api::tests::test_replace_font_invalid_handle_degrades ... ok
+test host_api::font_api::tests::test_replace_font_multi_char_codepoint ... ok
+test host_api::font_api::tests::test_replace_font_null_handles ... ok
+test host_api::font_api::tests::test_query_ttf_file_real_font ... ok
+test host_api::font_api::tests::test_replace_font_real_mapping ... ok
+test host_api::font_api::tests::test_replace_font_unmapped_kept ... ok
+test host_api::fs_policy::tests::test_normalize_lexical_resolves_dots ... ok
+test host_api::font_api::tests::test_query_ttf_restricted_rejects_outside_file ... ok
+test host_api::font_api::tests::test_query_ttf_restricted_allows_font_cache_file ... ok
+test host_api::fs_policy::tests::test_restricted_allows_missing_output_inside_sandbox ... ok
+test host_api::fs_policy::tests::test_restricted_rejects_empty_path ... ok
+test host_api::fs_policy::tests::test_restricted_rejects_parent_dir_traversal ... ok
+test host_api::fs_policy::tests::test_restricted_allows_font_cache_dir ... ok
+test host_api::fs_policy::tests::test_restricted_allows_relative_path_in_sandbox ... ok
+test host_api::fs_policy::tests::test_restricted_rejects_verbatim_and_unc_prefix ... ok
+test host_api::fs_policy::tests::test_unrestricted_keeps_arbitrary_path ... ok
+test host_api::fs_policy::tests::test_restricted_rejects_outside_absolute_path ... ok
+test host_api::global_headers::tests::test_isolated_by_tag ... ok
+test host_api::global_headers::tests::test_put_and_get_headers ... ok
+test host_api::fs_policy::tests::test_restricted_rejects_sibling_with_sandbox_prefix ... ok
+test host_api::fs_policy::tests::test_restricted_rejects_symlink_or_junction_escape ... ok
+test host_api::html_format::tests::test_html_format_empty ... ok
+test host_api::html_format::tests::test_html_format_decodes_entities ... ok
+test host_api::html_format::tests::test_html_format_br_tags ... ok
+test host_api::html_format::tests::test_html_format_nbsp ... ok
+test host_api::html_format::tests::test_html_format_basic_paragraphs ... ok
+test host_api::html_format::tests::test_html_format_removes_comments ... ok
+test host_api::html_format::tests::test_html_format_with_tags_none ... ok
+test host_api::html_format::tests::test_html_format_removes_script_style ... ok
+test host_api::html_format::tests::test_html_format_with_tags_keep_multiple ... ok
+test host_api::html_format::tests::test_html_format_with_tags_keep_img ... ok
+test host_api::html_parse::tests::test_dispatch_js_nested ... ok
+test host_api::html_parse::tests::test_dispatch_auto_content_json ... ok
+test host_api::html_parse::tests::test_dispatch_json_nested ... ok
+test host_api::html_parse::tests::test_dispatch_jsonpath_on_html_yields_empty ... ok
+test host_api::html_parse::tests::test_dispatch_json_top_level ... ok
+test host_api::html_parse::tests::test_dispatch_html_css_unchanged ... ok
+test host_api::html_parse::tests::test_get_elements_dispatch_json ... ok
+test host_api::html_parse::tests::test_get_string_jsoup_prefix_and_html_mode ... ok
+test host_api::html_parse::tests::test_element_chain_jsoup_prefix ... ok
+test host_api::html_parse::tests::test_get_string_with_content ... ok
+test host_api::html_parse::tests::test_get_string_list_unjoined_multi_values ... ok
+test host_api::html_parse::tests::test_get_string_list_null_semantics_and_newline_split ... ok
+test host_api::html_parse::tests::test_jsoup_unescape_entities ... ok
+test host_api::html_parse::tests::test_dispatch_explicit_prefixes ... ok
+test host_api::html_parse::tests::test_select_empty_and_invalid ... ok
+test host_api::jslib_loader::tests::test_display_tag_truncates_long_cache_key ... ok
+test host_api::html_parse::tests::test_select_outer_htmls_css ... ok
+test host_api::jslib_loader::tests::test_jslib_failure_negative_cache_skips_repeat_fetch ... ok
+test host_api::html_parse::tests::test_jsoup_html_n_excluded ... ok
+test host_api::jslib_loader::tests::test_parse_js_lib_url_map ... ok
+test host_api::json_utils::tests::test_invalid_json ... ok
+test host_api::json_utils::tests::test_json_get_string_existing_key ... ok
+test host_api::json_utils::tests::test_json_get_string_missing_key ... ok
+test host_api::json_utils::tests::test_json_get_string_numeric_field ... ok
+test host_api::json_utils::tests::test_json_path_array_elements ... ok
+test host_api::json_utils::tests::test_json_path_nested_field ... ok
+test host_api::json_utils::tests::test_json_path_root_field ... ok
+test host_api::json_utils::tests::test_to_json_pretty ... ok
+test host_api::json_utils::tests::test_to_json_roundtrip ... ok
+test host_api::message_digest::tests::test_digest_bytes_standard_vectors ... ok
+test host_api::message_digest::tests::test_digest_bytes_unknown_algorithm_errors ... ok
+test host_api::message_digest::tests::test_digest_length_matches_algorithm ... ok
+test host_api::message_digest::tests::test_incremental_matches_oneshot ... ok
+test host_api::message_digest::tests::test_parse_algorithm_rejects_unknown ... ok
+test host_api::message_digest::tests::test_parse_algorithm_supported ... ok
+test host_api::misc_api::tests::test_get_source_empty ... ok
+test host_api::misc_api::tests::test_get_source_with_url ... ok
+test host_api::misc_api::tests::test_get_tag ... ok
+test host_api::misc_api::tests::test_log_type ... ok
+test host_api::html_parse::tests::test_jsoup_elements_indexed_access ... ok
+test host_api::misc_api::tests::test_long_toast ... ok
+test host_api::misc_api::tests::test_parse_js_url_full ... ok
+test host_api::misc_api::tests::test_parse_js_url_invalid ... ok
+test host_api::misc_api::tests::test_parse_js_url_no_port_no_query ... ok
+test host_api::misc_api::tests::test_parse_js_url_plus_and_userinfo ... ok
+test host_api::misc_api::tests::test_parse_js_url_relative_base ... ok
+test host_api::misc_api::tests::test_to_url_no_query ... ok
+test host_api::misc_api::tests::test_to_url_with_query ... ok
+test host_api::misc_api::tests::test_toast ... ok
+test host_api::network::http_options_tests::test_body_accepts_object ... ok
+test host_api::network::http_options_tests::test_body_accepts_string ... ok
+test host_api::network::http_options_tests::test_call_timeout_to_request_timeout_boundaries ... ok
+test host_api::network::tests::test_ajax_all_invalid_json ... ok
+test host_api::network::tests::test_ajax_all ... ok
+test host_api::network::tests::test_ajax_empty_url ... ok
+test host_api::network::tests::test_ajax_get ... ok
+test host_api::network::tests::test_ajax_cookie_jar_gate_by_current_source ... ok
+test host_api::network::tests::test_ajax_unsupported_method ... ok
+test host_api::network::tests::test_ajax_url_option_format_returns_body ... ignored, 依赖 httpbin.org，外部 503/验证页会改变响应体格式
+test host_api::network::tests::test_ajax_post ... ok
+test host_api::network::tests::test_connect_full_unsupported_method ... ok
+test host_api::network::tests::test_connect_full_get ... ok
+test host_api::network::tests::test_head_full ... ok
+test host_api::network::tests::test_http_get_basic ... ok
+test host_api::network::tests::test_http_get_with_headers ... ok
+test host_api::network::tests::test_http_head ... ok
+test host_api::network::tests::test_http_post_basic ... ok
+test host_api::network::tests::test_merge_global_cookie_keyed_by_request_url ... ok
+test host_api::network::tests::test_merge_global_cookie_unowned_no_cookie_for_unwritten_domain ... ok
+test host_api::network::tests::test_p219_ajax_cookie_same_domain_shared_foreign_never_carried ... ok
+test host_api::network::tests::test_p219_ajax_cookie_unowned_carries_request_domain_cookie ... ok
+test host_api::network::tests::test_parse_headers ... ok
+test host_api::network::tests::test_js_network_entrypoints_cookie_jar_gate_three_states_table ... ok
+test host_api::network::tests::test_pool_build_without_persistence_is_plain_new ... ok
+test host_api::network::tests::test_post_full ... ok
+test host_api::network::tests::test_persistence_cold_start_same_domain_carried_foreign_never ... ok
+test host_api::network::tests::test_set_client_cookie_persistence_first_wins ... ok
+test host_api::network::tests::test_shared_client_pools ... ok
+test host_api::network::tests::test_shared_pool_reuses_keep_alive ... ok
+test host_api::platform::tests::test_get_verification_code_blocks_until_submit ... ok
+test host_api::platform::tests::test_open_url_bridge_payload ... ok
+test host_api::platform::tests::test_open_video_player_bridge_payload ... ok
+test host_api::platform::tests::test_open_video_player_float_flag ... ok
+test host_api::platform::tests::test_show_browser_bridge_payload ... ok
+test host_api::platform::tests::test_start_browser_await_degrades_to_image_channel ... ok
+test host_api::platform::tests::test_start_browser_bridge_payload ... ok
+test host_api::platform::tests::test_web_view_bridge_payload ... ok
+test host_api::platform::tests::test_web_view_get_override_url_bridge_payload ... ok
+test host_api::platform::tests::test_web_view_get_source_bridge_payload ... ok
+test host_api::pre_update_hooks::tests::test_inactive_rejects ... ok
+test host_api::pre_update_hooks::tests::test_with_hooks_invokes ... ok
+test host_api::query_ttf::tests::test_composite_glyph_signature ... ok
+test host_api::query_ttf::tests::test_format0_cmap ... ok
+test host_api::query_ttf::tests::test_glyph_signatures_distinct ... ok
+test host_api::query_ttf::tests::test_is_blank_unicode ... ok
+test host_api::query_ttf::tests::test_parse_minimal_ttf_cmap ... ok
+test host_api::query_ttf::tests::test_parse_truncated_font_fails ... ok
+test host_api::network::tests::test_split_brain_shared_store_cross_pool_same_round ... ok
+test host_api::quickjs_impl::tests::test_aes_base64_decode_to_string_host ... ok
+test host_api::quickjs_impl::tests::test_bare_global_new_apis ... ok
+test host_api::quickjs_impl::tests::test_bare_global_still_works ... ok
+test host_api::quickjs_impl::tests::test_bare_open_video_player_with_float ... ok
+test host_api::quickjs_impl::tests::test_bare_query_ttf ... ok
+test host_api::quickjs_impl::tests::test_bare_web_view_bridge ... ok
+test host_api::quickjs_impl::tests::test_binding_get_string_html_css_unchanged ... ok
+test host_api::quickjs_impl::tests::test_alias_batch_hmac_base64_decoder_hex_sleep ... ok
+test host_api::quickjs_impl::tests::test_binding_get_string_jsonpath_nested ... ok
+test host_api::quickjs_impl::tests::test_binding_get_string_jsonpath_on_html_yields_empty ... ok
+test host_api::quickjs_impl::tests::test_binding_get_string_jsonpath_top_level ... ok
+test host_api::quickjs_impl::tests::test_binding_songhe_detail_kind_no_zero_words ... ok
+test host_api::quickjs_impl::tests::test_binding_songhe_search_category ... ok
+test host_api::quickjs_impl::tests::test_cache_global_roundtrip ... ok
+test host_api::quickjs_impl::tests::test_connect_str_response_raw_request_url_bridge ... ok
+test host_api::quickjs_impl::tests::test_connectnr_passes_body ... ok
+test host_api::quickjs_impl::tests::test_binding_songhe_chapters_no_free_lock ... ok
+test host_api::quickjs_impl::tests::test_cookie_replace_to_map_roundtrip ... ok
+test host_api::quickjs_impl::tests::test_create_symmetric_crypto_image_decode_nopadding ... ok
+test host_api::quickjs_impl::tests::test_create_symmetric_crypto_returns_object_with_decrypt ... ok
+test host_api::quickjs_impl::tests::test_default_config_allows_archive_path_inside_sandbox ... ok
+test host_api::quickjs_impl::tests::test_default_config_allows_font_file_in_engine_cache ... ok
+test host_api::quickjs_impl::tests::test_default_config_denies_archive_path_outside_sandbox ... ok
+test host_api::quickjs_impl::tests::test_default_config_denies_archive_output_outside_sandbox ... ok
+test host_api::quickjs_impl::tests::test_default_config_denies_font_file_outside_sandbox ... ok
+test host_api::quickjs_impl::tests::test_default_config_denies_font_file_url_outside_sandbox ... ok
+test host_api::quickjs_impl::tests::test_default_config_denies_parent_dir_archive_source ... ok
+test host_api::quickjs_impl::tests::test_get_current_url_and_header_map_put ... ok
+test host_api::quickjs_impl::tests::test_hex_decode_to_byte_array ... ok
+test host_api::quickjs_impl::tests::test_inflate_raw_bytes_and_zip_shim ... ok
+test host_api::quickjs_impl::tests::test_java_aes_encrypt_decrypt ... ok
+test host_api::quickjs_impl::tests::test_java_aes_encrypt_returns_base64 ... ok
+test host_api::quickjs_impl::tests::test_java_ajax_all_exists ... ok
+test host_api::quickjs_impl::tests::test_java_and_bare_produce_same_result ... ok
+test host_api::quickjs_impl::tests::test_java_bytes_to_str ... ok
+test host_api::quickjs_impl::tests::test_java_connect_exists ... ok
+test host_api::quickjs_impl::tests::test_java_desede_bad_mode_returns_error_prefix ... ok
+test host_api::quickjs_impl::tests::test_java_desede_chain_qdsign ... ok
+test host_api::quickjs_impl::tests::test_java_digest_hex ... ok
+test host_api::quickjs_impl::tests::test_java_get7z_string_content_exists ... ok
+test host_api::quickjs_impl::tests::test_java_get7z_string_content_local_file ... ok
+test host_api::quickjs_impl::tests::test_java_get_cookie ... ok
+test host_api::quickjs_impl::tests::test_java_get_rar_string_content_exists ... ok
+test host_api::quickjs_impl::tests::test_java_get_verification_code_channel ... ok
+test host_api::quickjs_impl::tests::test_java_getstringlist_function_and_size ... ok
+test host_api::quickjs_impl::tests::test_java_getstringlist_null_semantics_and_aliases ... ok
+test host_api::quickjs_impl::tests::test_java_head_exists ... ok
+test host_api::quickjs_impl::tests::test_java_html_format ... ok
+test host_api::quickjs_impl::tests::test_java_html_format_complex ... ok
+test host_api::quickjs_impl::tests::test_java_namespace_base64 ... ok
+test host_api::quickjs_impl::tests::test_java_namespace_http_get_exists ... ok
+test host_api::quickjs_impl::tests::test_java_namespace_md5 ... ok
+test host_api::quickjs_impl::tests::test_java_namespace_sha256 ... ok
+test host_api::quickjs_impl::tests::test_java_namespace_urlencode ... ok
+test host_api::quickjs_impl::tests::test_java_open_url_bridge ... ok
+test host_api::quickjs_impl::tests::test_java_open_video_player_bridge ... ok
+test host_api::quickjs_impl::tests::test_java_post_exists ... ok
+test host_api::quickjs_impl::tests::test_java_put_visible_to_analyze_rule_get ... ok
+test host_api::quickjs_impl::tests::test_java_query_base64_ttf ... ok
+test host_api::quickjs_impl::tests::test_java_query_ttf_empty ... ok
+test host_api::quickjs_impl::tests::test_java_rc4_roundtrip ... ok
+test host_api::quickjs_impl::tests::test_java_replace_font_null_handles ... ok
+test host_api::quickjs_impl::tests::test_java_replace_font_real_cmap ... ok
+test host_api::quickjs_impl::tests::test_java_replace_font_stub ... ok
+test host_api::quickjs_impl::tests::test_java_s2t ... ok
+test host_api::quickjs_impl::tests::test_java_set_content_updates_src ... ok
+test host_api::quickjs_impl::tests::test_java_start_browser_await_degraded ... ok
+test host_api::quickjs_impl::tests::test_java_start_browser_bridge ... ok
+test host_api::quickjs_impl::tests::test_java_str_to_bytes ... ok
+test host_api::quickjs_impl::tests::test_java_t2s ... ok
+test host_api::quickjs_impl::tests::test_java_to_num_chapter ... ok
+test host_api::quickjs_impl::tests::test_java_un7z_file_exists ... ok
+test host_api::quickjs_impl::tests::test_java_unrar_file_exists ... ok
+test host_api::quickjs_impl::tests::test_java_unrar_file_missing_file_error ... ok
+test host_api::quickjs_impl::tests::test_java_unzip_file_exists ... ok
+test host_api::quickjs_impl::tests::test_java_web_view_bridge ... ok
+test host_api::quickjs_impl::tests::test_java_web_view_get_source_bridge ... ok
+test host_api::quickjs_impl::tests::test_js_base64_decode_to_byte_array ... ok
+test host_api::quickjs_impl::tests::test_js_get_7z_string_content ... ok
+test host_api::quickjs_impl::tests::test_js_get_rar_string_content_hex_source ... ok
+test host_api::quickjs_impl::tests::test_js_get_rar_string_content_rejects_traversal_entry ... ok
+test host_api::quickjs_impl::tests::test_js_get_zip_string_content ... ok
+test host_api::quickjs_impl::tests::test_js_get_zip_string_content_hex_source ... ok
+test host_api::quickjs_impl::tests::test_js_long_toast ... ok
+test host_api::quickjs_impl::tests::test_js_show_browser_payload ... ok
+test host_api::quickjs_impl::tests::test_js_time_format ... ok
+test host_api::quickjs_impl::tests::test_js_to_url_fields ... ok
+test host_api::quickjs_impl::tests::test_js_to_url_relative_base ... ok
+test host_api::quickjs_impl::tests::test_js_unzip_file_empty_path ... ok
+test host_api::quickjs_impl::tests::test_js_unzip_file_round_trip ... ok
+test engine_cache::tests::cached_key_fast_path_not_blocked_by_slow_build ... ok
+test host_api::quickjs_impl::tests::test_js_web_view_get_override_url_payload ... ok
+test host_api::quickjs_impl::tests::test_p215_book_var_get_bridge_roundtrip ... ok
+test host_api::quickjs_impl::tests::test_p215_store_get_falls_back_to_bookvar_in_flow ... ok
+test engine_cache::tests::timeout_participates_in_cache_key ... ok
+test host_api::quickjs_impl::tests::test_packages_android_text_utils_is_empty ... ok
+test host_api::quickjs_impl::tests::test_packages_java_string_new_bytes_returns_plaintext ... ok
+test host_api::quickjs_impl::tests::test_packages_shim_input_stream ... ok
+test executor::tests::test_cache_per_source_isolation_and_capacity ... ok
+test host_api::quickjs_impl::tests::test_packages_shim_lang_parse_strict_semantics ... ok
+test executor::tests::test_completion_value_is_preserved_on_fast_path ... ok
+test host_api::quickjs_impl::tests::test_packages_shim_lang_util ... ok
+test executor::tests::test_js_lib_persists_across_independent_executes ... ok
+test host_api::quickjs_impl::tests::test_permissive_config_allows_font_file_outside_sandbox ... ok
+test host_api::quickjs_impl::tests::test_permissive_config_keeps_arbitrary_archive_paths ... ok
+test host_api::quickjs_impl::tests::test_response_bridge_cookies_helper ... ok
+test host_api::quickjs_impl::tests::test_response_bridge_post_location ... ok
+test host_api::quickjs_impl::tests::test_songhe_fixtures_local_and_present ... ok
+test host_api::quickjs_impl::tests::test_response_bridge_reinjection_restores_global_connect ... ok
+test host_api::quickjs_impl::tests::test_response_headers_map_and_list_bridge ... ok
+test engine_cache::tests::invalidate_forces_rebuild ... ok
+test host_api::quickjs_impl::tests::test_up_login_data_noop ... ok
+test host_api::quickjs_impl::tests::test_web_view_nullable_args ... ok
+test engine_cache::tests::changing_initialization_scripts_rebuilds_entry ... ok
+test host_api::regex_utils::tests::test_invalid_regex ... ok
+test host_api::regex_utils::tests::test_reg_exp_cache_hit_behavior_unchanged ... ok
+test host_api::regex_utils::tests::test_reg_exp_find_all_basic ... ok
+test host_api::regex_utils::tests::test_reg_exp_find_all_empty ... ok
+test host_api::regex_utils::tests::test_reg_exp_capture_group ... ok
+test host_api::regex_utils::tests::test_reg_exp_matches_false ... ok
+test host_api::regex_utils::tests::test_reg_exp_matches_true ... ok
+test host_api::regex_utils::tests::test_reg_exp_find_all_group_basic ... ok
+test host_api::regex_utils::tests::test_reg_exp_no_match ... ok
+test host_api::regex_utils::tests::test_reg_exp_overlong_pattern_degrades ... ok
+test host_api::regex_utils::tests::test_reg_exp_pathological_pattern_degrades ... ok
+test host_api::regex_utils::tests::test_reg_exp_replace_basic ... ok
+test host_api::regex_utils::tests::test_reg_exp_whole_match ... ok
+test host_api::runtime_bridge::tests::test_block_on_simple ... ok
+test host_api::runtime_bridge::tests::test_runtime_creation ... ok
+test host_api::source_callback::tests::test_event_filtering_by_type ... ok
+test host_api::source_callback::tests::test_js_callback_functions ... ok
+test host_api::source_callback::tests::test_registry_fire_nonexistent_source ... ok
+test host_api::source_callback::tests::test_registry_is_empty ... ok
+test host_api::regex_utils::tests::test_reg_exp_replace_with_backreference ... ok
+test host_api::source_callback::tests::test_registry_multiple_handlers ... ok
+test host_api::source_callback::tests::test_registry_register_and_fire ... ok
+test host_api::source_callback::tests::test_registry_unregister ... ok
+test host_api::source_callback::tests::test_source_event_display ... ok
+test host_api::source_callback::tests::test_source_event_name_and_payload ... ok
+test host_api::string_utils::tests::test_replace_all ... ok
+test host_api::string_utils::tests::test_replace_first ... ok
+test host_api::string_utils::tests::test_substring_after ... ok
+test host_api::string_utils::tests::test_substring_before ... ok
+test host_api::string_utils::tests::test_trim_end ... ok
+test host_api::string_utils::tests::test_trim_start ... ok
+test host_api::string_utils::tests::test_urldecode_basic ... ok
+test host_api::string_utils::tests::test_urlencode_basic ... ok
+test host_api::string_utils::tests::test_urlencode_roundtrip ... ok
+test host_api::string_utils::tests::test_utf8_gbk_roundtrip ... ok
+test host_api::string_utils::tests_num_chapter::test_chinese_num_to_int_abbreviated ... ok
+test host_api::string_utils::tests_num_chapter::test_chinese_num_to_int_sequence ... ok
+test host_api::string_utils::tests_num_chapter::test_chinese_num_to_int_weighted ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_already_arabic ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_basic ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_hundred ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_no_match ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_simple ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_thousand ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_twenty ... ok
+test host_api::string_utils::tests_num_chapter::test_to_num_chapter_with_prefix ... ok
+test host_api::symmetric_crypto::tests::test_aes_base64_decode_to_string_pkcs ... ok
+test host_api::symmetric_crypto::tests::test_sym_state_desede_bytes ... ok
+test host_api::time_utils::tests::test_current_time_millis_positive ... ok
+test host_api::symmetric_crypto::tests::test_sym_state_nopadding_bytes ... ok
+test host_api::time_utils::tests::test_format_time_custom_format ... ok
+test host_api::time_utils::tests::test_format_time_default ... ok
+test host_api::time_utils::tests::test_format_time_invalid_timestamp ... ok
+test host_api::time_utils::tests::test_format_time_with_offset ... ok
+test host_api::time_utils::tests::test_parse_time_basic ... ok
+test host_api::time_utils::tests::test_parse_time_invalid ... ok
+test host_api::time_utils::tests::test_time_diff_ms ... ok
+test host_api::ui_action_queue::tests::collect_drain_and_ignore_when_off ... ok
+test host_api::ui_action_queue::tests::nested_scopes_do_not_leak ... ok
+test host_api::ui_action_queue::tests::refresh_explore_flag_is_per_session ... ok
+test host_api::ui_action_queue::tests::scoped_collect_isolated_from_outside ... ok
+test host_api::variable_store::tests::test_book_write_path_key_format ... ok
+test host_api::variable_store::tests::test_clear_flow_scope ... ok
+test host_api::variable_store::tests::test_clear_variables ... ok
+test host_api::quickjs_impl::tests::test_thread_sleep ... ok
+test host_api::variable_store::tests::test_flow_get_prefers_scoped_then_bare ... ok
+test host_api::variable_store::tests::test_clear_source_variables_clears_five_families_only ... ok
+test host_api::variable_store::tests::test_flow_put_get_without_scope_is_bare ... ok
+test host_api::variable_store::tests::test_flow_scope_same_key_is_noop ... ok
+test host_api::variable_store::tests::test_flow_scope_switch_keeps_persistent_bare_keys ... ok
+test host_api::variable_store::tests::test_get_nonexistent_variable ... ok
+test host_api::variable_store::tests::test_get_variable_store_handle ... ok
+test host_api::variable_store::tests::test_list_variable_keys ... ok
+test host_api::variable_store::tests::test_overwrite_variable ... ok
+test host_api::variable_store::tests::test_p215_bookvar_fallback_absent_without_scope ... ok
+test host_api::variable_store::tests::test_p215_bookvar_fallback_cross_book_isolation ... ok
+test host_api::variable_store::tests::test_p215_clear_flow_scope_clears_type_overlays ... ok
+test host_api::variable_store::tests::test_p215_flow_get_bookvar_fallback_is_last_resort ... ok
+test host_api::variable_store::tests::test_p215_same_scope_keeps_type_overlay ... ok
+test host_api::variable_store::tests::test_p215_scope_switch_clears_type_overlays_keeps_bookvar ... ok
+test host_api::variable_store::tests::test_remove_variable ... ok
+test host_api::variable_store::tests::test_set_and_get_variable ... ok
+test js_source::js_source_book::tests::test_build_search_url ... ok
+test js_source::js_source_book::tests::test_build_search_url_no_placeholders ... ok
+test js_source::js_source_book::tests::test_filter_valid_chapters ... ok
+test js_source::js_source_book::tests::test_filter_valid_results ... ok
+test js_source::js_source_book::tests::test_get_review_detail_null_result_returns_empty_page ... ok
+test js_source::js_source_book::tests::test_get_review_detail_invalid_json_errors ... ok
+test js_source::js_source_book::tests::test_get_review_replies_invalid_json_errors ... ok
+test js_source::js_source_book::tests::test_get_review_detail_parses_js_json ... ok
+test js_source::js_source_book::tests::test_get_review_replies_null_result_returns_empty ... ok
+test js_source::js_source_book::tests::test_get_review_replies_parses_js_json ... ok
+test js_source::js_source_book::tests::test_parse_book_info_valid ... ok
+test js_source::js_source_book::tests::test_parse_book_info_missing_required_field ... ok
+test js_source::js_source_book::tests::test_parse_chapters_empty_array ... ok
+test js_source::js_source_book::tests::test_parse_chapters_valid ... ok
+test js_source::js_source_book::tests::test_parse_search_results_invalid_json ... ok
+test js_source::js_source_book::tests::test_parse_search_results_valid ... ok
+test js_source::js_source_book::tests::test_validate_search_result ... ok
+test js_source::js_source_config::tests::extract_empty_fails ... ok
+test js_source::js_source_config::tests::extract_full_source ... ok
+test js_source::js_source_config::tests::extract_explore_url_without_function_fails ... ok
+test js_source::js_source_config::tests::extract_legacy_source_variable ... ok
+test js_source::js_source_config::tests::extract_login_ui_function_conflicts_with_data ... ok
+test js_source::js_source_config::tests::extract_login_ui_function_sets_marker ... ok
+test js_source::js_source_config::tests::extract_missing_config_fails ... ok
+test js_source::js_source_config::tests::extract_missing_required_function_fails ... ok
+test js_source::js_source_config::tests::extract_normalizes_empty_login_ui ... ok
+test js_source::js_source_config::tests::stamp_handles_multi_declaration ... ok
+test js_source::js_source_config::tests::stamp_ignores_expression_values ... ok
+test js_source::js_source_config::tests::stamp_ignores_keys_inside_strings_and_comments ... ok
+test js_source::js_source_config::tests::stamp_replaces_date_now_call ... ok
+test js_source::js_source_config::tests::stamp_replaces_legacy_source_variable ... ok
+test js_source::js_source_config::tests::stamp_replaces_top_level_number_literal ... ok
+test js_source::js_source_config::tests::stamp_returns_none_without_match ... ok
+test js_source::js_source_config::tests::stamp_skips_nested_objects ... ok
+test js_source::js_source_config::tests::extract_normalizes_explore_url_array ... ok
+test js_source::js_source_config::tests::syntax_check_empty_input ... ok
+test js_source::js_source_config::tests::syntax_check_balanced_brackets_fallback_accepts ... ok
+test js_source::js_source_config::tests::syntax_check_quickjs_does_not_execute_code ... ok
+test js_source::js_source_debug_formatter::tests::test_format_book_list ... ok
+test js_source::js_source_debug_formatter::tests::test_format_chapter_list ... ok
+test js_source::js_source_debug_formatter::tests::test_format_content_detail ... ok
+test js_source::js_source_debug_formatter::tests::test_format_content_log ... ok
+test js_source::js_source_debug_formatter::tests::test_format_error ... ok
+test js_source::js_source_debug_formatter::tests::test_format_search_log ... ok
+test js_source::js_source_debug_formatter::tests::test_format_toc_log ... ok
+test js_source::js_source_debug_formatter::tests::test_format_value_short ... ok
+test js_source::js_source_debug_formatter::tests::test_format_value_truncated ... ok
+test js_source::js_source_marshaller::tests::test_extract_field ... ok
+test js_source::js_source_marshaller::tests::test_js_book_info_camel_case_deserialize ... ok
+test js_source::js_source_marshaller::tests::test_js_chapter_camel_case_deserialize ... ok
+test js_source::js_source_marshaller::tests::test_js_search_result_camel_case_deserialize ... ok
+test js_source::js_source_marshaller::tests::test_js_search_result_serialize_camel_case ... ok
+test js_source::js_source_marshaller::tests::test_marshal_book_info_download_urls_absolute_and_filter ... ok
+test js_source::js_source_marshaller::tests::test_marshal_book_info_not_object ... ok
+test js_source::js_source_marshaller::tests::test_marshal_book_info_valid ... ok
+test js_source::js_source_marshaller::tests::test_marshal_chapters_filters_invalid ... ok
+test js_source::js_source_marshaller::tests::test_marshal_chapters_url_normalization ... ok
+test js_source::js_source_marshaller::tests::test_marshal_chapters_valid ... ok
+test js_source::js_source_marshaller::tests::test_marshal_content ... ok
+test js_source::js_source_marshaller::tests::test_marshal_search_empty ... ok
+test js_source::js_source_marshaller::tests::test_marshal_search_filters_invalid_entries ... ok
+test js_source::js_source_marshaller::tests::test_marshal_search_not_array ... ok
+test js_source::js_source_marshaller::tests::test_marshal_search_valid ... ok
+test js_source::js_source_marshaller::tests::test_validate_book_type ... ok
+test js_source::js_source_review::tests::test_parse_detail_page ... ok
+test js_source::js_source_review::tests::test_parse_detail_page_content_protocol_fields ... ok
+test js_source::js_source_config::tests::syntax_check_quickjs_rejects_invalid_script ... ok
+test js_source::js_source_review::tests::test_parse_detail_page_missing_items ... ok
+test js_source::js_source_review::tests::test_parse_reply_items_empty_items_array ... ok
+test js_source::js_source_review::tests::test_parse_reply_items_missing_items_array_errors ... ok
+test js_source::js_source_review::tests::test_parse_reply_items_flattens_nested_in_order ... ok
+test js_source::js_source_review::tests::test_parse_reply_items_non_object_or_invalid_json_errors ... ok
+test js_source::js_source_review::tests::test_parse_review_detail_empty ... ok
+test js_source::js_source_review::tests::test_parse_review_detail_valid ... ok
+test js_source::js_source_review::tests::test_parse_review_summary ... ok
+test js_source::js_source_review::tests::test_parse_reviews_empty ... ok
+test js_source::js_source_review::tests::test_parse_reviews_valid ... ok
+test js_source::js_source_upsert::tests::test_detect_conflict_found ... ok
+test js_source::js_source_upsert::tests::test_detect_conflict_not_found ... ok
+test js_source::js_source_upsert::tests::test_merge_user_state ... ok
+test js_source::js_source_upsert::tests::test_merge_user_state_invalid_json ... ok
+test js_source::js_source_upsert::tests::test_validate_invalid_json ... ok
+test js_source::js_source_upsert::tests::test_validate_missing_fields ... ok
+test js_source::js_source_upsert::tests::test_validate_payload_empty ... ok
+test js_source::js_source_upsert::tests::test_validate_payload_valid ... ok
+test js_source::js_source_upsert::tests::test_validate_url_warning ... ok
+test js_source::js_source_upsert::tests::test_validate_payload_too_large ... ok
+test js_source::js_source_upsert::tests::test_validate_valid_source ... ok
+test jslib_normalize::tests::block_comment_untouched ... ok
+test jslib_normalize::tests::bili_style_combined_fix ... ok
+test jslib_normalize::tests::destructuring_reference_is_not_shadow ... ok
+test jslib_normalize::tests::double_dot_collapsed_in_code ... ok
+test jslib_normalize::tests::double_dot_in_string_untouched ... ok
+test jslib_normalize::tests::double_dot_in_template_expression_collapsed ... ok
+test jslib_normalize::tests::initializer_window_string_parens_safe ... ok
+test jslib_normalize::tests::let_param_shadow_renamed ... ok
+test jslib_normalize::tests::multi_decl_list_still_detected ... ok
+test jslib_normalize::tests::multi_decl_no_init_item_window_extends ... ok
+test jslib_normalize::tests::no_initializer_single_decl_still_renamed_after ... ok
+test jslib_normalize::tests::normal_param_untouched ... ok
+test jslib_normalize::tests::number_range_not_collapsed ... ok
+test jslib_normalize::tests::rename_skips_strings_comments_regex ... ok
+test jslib_normalize::tests::self_referencing_initializer_keeps_param ... ok
+test jslib_normalize::tests::self_referencing_initializer_no_initializer_ref_after ... ok
+test jslib_normalize::tests::triple_dot_spread_untouched ... ok
+test login_check::tests::login_check_response_bare_values_cast_fail ... ok
+test login_check::tests::login_check_response_js_error_classify ... ok
+test login_check::tests::login_check_response_method_form_passthrough ... ok
+test login_check::tests::login_check_response_modified_object_adopted ... ok
+test login_check::tests::js_lib_failure_classified_as_jslib_unavailable ... ok
+test replace_rule_js::image_action_cache_tests::action_variables_do_not_leak_between_clicks ... ok
+test replace_rule_js::image_action_cache_tests::bindings_are_refreshed_on_cache_hit ... ok
+test replace_rule_js::image_action_cache_tests::busy_cached_engine_falls_back_to_one_off_engine ... ok
+test engine_cache::tests::lru_never_exceeds_max ... ok
+test engine_cache::tests::same_key_concurrent_misses_build_engine_once ... ok
+test executor::tests::test_redeclaration_falls_back_to_fresh_engine ... ok
+test executor::tests::test_valid_jslib_still_loads_and_runs ... ok
+test js_source::js_source_book::tests::test_get_review_replies_quickjs_fixture_and_missing_function ... ok
+test host_api::quickjs_impl::tests::test_java_query_ttf ... ok
+test host_api::jslib_loader::tests::test_jslib_fetch_failure_ledger_and_partial ... ok
+test host_api::jslib_loader::tests::test_jslib_url_map_fetch_eval_and_cache ... ok
+test host_api::quickjs_impl::tests::test_known_java_surface_records_nothing ... ok
+test host_api::quickjs_impl::tests::test_packages_shim_input_stream_capability_ledger ... ok
+test sandbox::tests::test_sandbox_config_builder ... ok
+test sandbox::tests::test_sandbox_config_default ... ok
+test sandbox::tests::test_sandbox_config_permissive ... ok
+test sandbox::tests::test_sandbox_config_strict ... ok
+test sandbox::tests::test_sandbox_config_validate_low_memory ... ok
+test sandbox::tests::test_sandbox_config_validate_ok ... ok
+test sandbox::tests::test_sandbox_config_validate_zero_stack ... ok
+test sandbox::tests::test_sandbox_config_validate_zero_timeout ... ok
+test sandbox::tests::test_sandbox_state_equality ... ok
+test sandbox::tests::test_sandbox_stats_peak_memory ... ok
+test sandbox::tests::test_sandbox_stats_record_error ... ok
+test sandbox::tests::test_sandbox_stats_record_success ... ok
+test sandbox::tests::test_sandbox_stats_record_timeout ... ok
+test scope::tests::test_creation_lock_different_keys ... ok
+test scope::tests::test_creation_lock_same_key ... ok
+test scope::tests::test_crypto_scope_put_and_get ... ok
+test scope::tests::test_lru_access_refreshes_order ... ok
+test scope::tests::test_lru_cache_hit_and_miss ... ok
+test scope::tests::test_lru_capacity_eviction_multiple ... ok
+test scope::tests::test_lru_eviction ... ok
+test scope::tests::test_release_creation_lock ... ok
+test scope::tests::test_scope_clear ... ok
+test scope::tests::test_scope_data_new ... ok
+test scope::tests::test_scope_data_with_crypto ... ok
+test scope::tests::test_scope_get_missing ... ok
+test scope::tests::test_scope_put_and_get ... ok
+test scope::tests::test_scope_remove ... ok
+test scope::tests::test_shared_scope_manager_new ... ok
+test host_api::quickjs_impl::tests::test_packages_shim_input_stream_java_semantics ... ok
+test source_engine::tests::construction_main_js_failure_retries_with_bindings_on_first_call ... ok
+test source_engine::tests::test_call_function_empty_main_js_error ... ok
+test source_engine::tests::test_main_js_eval_only_once ... ok
+test source_engine::tests::test_main_js_not_loaded_initially ... ok
+test source_engine::tests::test_normalize_result ... ok
+test host_api::quickjs_impl::tests::test_unknown_class_sentinel_probe_safe ... ok
+test source_engine::tests::test_reset_main_js_state ... ok
+test host_api::quickjs_impl::tests::test_unknown_java_symbol_recorded_and_message ... ok
+test source_engine::tests::test_p219_new_quickjs_construction_carries_request_domain_cookie ... ok
+test source_engine::tests::poisoned_pooled_engine_is_invalidated_and_rebuilt ... ok
+test replace_rule_js::image_action_cache_tests::degraded_url_map_js_lib_is_not_cached_and_retries ... ok
+test replace_rule_js::image_action_cache_tests::different_sources_get_separate_engines ... ok
+test replace_rule_js::image_action_cache_tests::invalidate_forces_recreate ... ok
+test replace_rule_js::image_action_cache_tests::js_lib_change_rebuilds_engine_without_explicit_invalidate ... ok
+test replace_rule_js::image_action_cache_tests::js_lib_top_level_counter_persists_across_clicks ... ok
+test replace_rule_js::image_action_cache_tests::js_lib_top_level_result_capture_uses_first_click ... ok
+test replace_rule_js::image_action_cache_tests::lru_evicts_least_recently_used ... ok
+test replace_rule_js::image_action_cache_tests::partially_degraded_url_map_js_lib_is_not_cached ... ok
+test replace_rule_js::image_action_cache_tests::poisoned_cached_engine_is_invalidated_and_falls_back ... ok
+test replace_rule_js::image_action_cache_tests::same_source_reuses_engine_and_js_lib ... ok
+test replace_rule_js::image_action_cache_tests::scoped_java_get_put_survive_reuse_without_recursion ... ok
+test host_api::archive_utils::tests::test_un7z_file_rejects_oversized_entry ... ok
+
+test result: ok. 732 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 13.66s
+
+     Running tests\cookie_no_sink.rs (target\debug\deps\cookie_no_sink-5560bdfa0fa036a8.exe)
+
+running 1 test
+test test_default_no_sink_is_pure_memory ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\cookie_persistence.rs (target\debug\deps\cookie_persistence-6b409728d976ad1c.exe)
+
+running 5 tests
+test test_clear_all_covers_persistence ... ok
+test test_clear_covers_both_sides_idempotent ... ok
+test test_merge_self_consistent_persisted_equals_memory ... ok
+test test_persistence_roundtrip_survives_restart ... ok
+test test_domain_key_persistence_consistency ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\get_elements_select_jiujiu.rs (target\debug\deps\get_elements_select_jiujiu-59090cd397810a40.exe)
+
+running 3 tests
+test get_elements_select_chained_text_and_length_face ... ok
+test get_elements_existing_element_face_unchanged ... ok
+test get_elements_nested_select_and_collection_face ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\host_api_array_arg.rs (target\debug\deps\host_api_array_arg-eebe9e34d499d004.exe)
+
+running 6 tests
+test scalar_string_params_coerce_js_values_like_rhino ... ok
+test optional_string_param_null_and_array_coerce ... ok
+test ajax_all_null_and_undefined_coerce_to_empty_list ... ok
+test jinjiang_booklist_ajax_all_array_arg_accepts_array ... ok
+test ajax_test_all_array_elements_coerce_via_to_string ... ok
+test ajax_array_arg_requests_first_element ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\host_api_numeric_arg.rs (target\debug\deps\host_api_numeric_arg-fb3ae77dc614b90f.exe)
+
+running 7 tests
+test primitive_int_params_coerce_and_check_range ... ok
+test primitive_long_params_reject_non_numeric_like_rhino ... ok
+test truncation_then_range_check_matches_rhino_boundaries ... ok
+test optional_numeric_params_keep_arity_and_coerce_when_present ... ok
+test ajax_array_first_element_boundary_matches_probe ... ok
+test primitive_long_params_coerce_like_rhino ... ok
+test boxed_numeric_and_boolean_params_stay_strict ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests\interrupted_message.rs (target\debug\deps\interrupted_message-af03a00be40958da.exe)
+
+running 3 tests
+test normal_script_after_interrupt_is_not_misreported ... ok
+test timeout_message_is_readable_and_keeps_interrupted_keyword ... ok
+test catastrophic_regex_backtracking_reports_readable_timeout ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests\java_ajax_call_timeout.rs (target\debug\deps\java_ajax_call_timeout-7f19247273b1f73f.exe)
+
+running 4 tests
+test java_ajax_call_timeout_out_of_range_returns_error_text ... ok
+test java_ajax_call_timeout_zero_does_not_expire_immediately ... ok
+test java_ajax_default_and_arity_forms_still_work ... ok
+test java_ajax_call_timeout_aborts_slow_request ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests\java_importer_dejian_rsa.rs (target\debug\deps\java_importer_dejian_rsa-b87524722befda4a.exe)
+
+running 4 tests
+test java_importer_zero_arg_and_ctor_args_forms ... ok
+test key_factory_and_signature_error_paths ... ok
+test java_util_base64_decoder_encoder_face ... ok
+test java_importer_with_scope_rsa_sign_full_flow ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\java_string_plain_call_xiaoxiao.rs (target\debug\deps\java_string_plain_call_xiaoxiao-bdc4e84d7844aec8.exe)
+
+running 3 tests
+test qimao_new_string_bytes_still_object_guard ... ok
+test java_string_plain_call_returns_jsstring_object ... ok
+test xiaoxiao_with_scope_string_plain_call_digest_hex ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\java_toast_void_return.rs (target\debug\deps\java_toast_void_return-0edcac84c478c56c.exe)
+
+running 1 test
+test java_toast_and_long_toast_return_empty_like_upstream_void ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\js_lib_corpus.rs (target\debug\deps\js_lib_corpus-0e792716aa648b69.exe)
+
+running 2 tests
+test favcomic_jslib_loads_with_resolved_input_stream ... ok
+test qimao_jslib_loads_and_pure_functions_are_stable ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\jslib_failure_visible.rs (target\debug\deps\jslib_failure_visible-333af60ef65827d9.exe)
+
+running 11 tests
+test js_source_engine_url_map_jslib_all_fail_is_hard_error ... ok
+test js_source_engine_url_map_jslib_is_resolved ... ok
+test js_source_engine_url_map_jslib_partial_fail_degrades_with_ledger ... ok
+test js_source_engine_valid_jslib_still_constructs ... ok
+test valid_jslib_still_loads_and_runs ... ok
+test jslib_failure_surfaces_even_when_script_does_not_use_library ... ok
+test jslib_runtime_failure_surfaces_with_reason_cached_path ... ok
+test js_source_engine_construction_surfaces_jslib_failure ... ok
+test js_source_engine_empty_jslib_map_constructs ... ok
+test jslib_runtime_failure_surfaces_with_reason_fresh_path ... ok
+test url_map_jslib_routes_to_fresh_path ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.14s
+
+     Running tests\jsoup_elements_77shuku.rs (target\debug\deps\jsoup_elements_77shuku-e926b52fe9783772.exe)
+
+running 3 tests
+test shuku77_search_rule_legacy_bridge_reproduces_not_a_function ... ok
+test shuku77_content_rule_remove_and_unescape_roundtrip ... ok
+test shuku77_search_rule_jsoup_elements_roundtrip ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\jsoup_elements_index_access.rs (target\debug\deps\jsoup_elements_index_access-0e23feeeb312a403.exe)
+
+running 3 tests
+test select_result_supports_numeric_index_access ... ok
+test index_getters_do_not_break_existing_face ... ok
+test elements_from_list_supports_numeric_index_access ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\jsstring_method_surface.rs (target\debug\deps\jsstring_method_surface-4d69b781230c02ee.exe)
+
+running 4 tests
+test java_digest_hex_returns_jsstring_object ... ok
+test java_md5_encode_returns_jsstring_object ... ok
+test jsstring_method_surface ... ok
+test xiaoxiao_decode_chain_full_replica ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\message_digest_qimao.rs (target\debug\deps\message_digest_qimao-2df9cbb4f224f981.exe)
+
+running 2 tests
+test message_digest_unknown_algorithm_is_reported_and_ledgered ... ok
+test qimao_api_jslib_message_digest_roundtrip ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests\str_response_tianlai_loopback.rs (target\debug\deps\str_response_tianlai_loopback-abaca7d256d99b83.exe)
+
+running 3 tests
+test str_response_code_302_and_cookie_header_face ... ok
+test str_response_follows_redirect_to_final_200 ... ok
+test str_response_headers_no_arg_returns_map ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests\ui_action_queue_isolation.rs (target\debug\deps\ui_action_queue_isolation-05c267eb1286b4ab.exe)
+
+running 4 tests
+test outside_scope_push_is_dropped ... ok
+test sequential_scoped_reuse_has_no_residue ... ok
+test concurrent_scoped_sessions_do_not_interfere ... ok
+test concurrent_compat_sessions_do_not_interfere ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\uri_component_coercion.rs (target\debug\deps\uri_component_coercion-98b16484cb454e02.exe)
+
+running 1 test
+test encode_uri_component_coerces_non_string_values ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests legado_js
+
+running 2 tests
+test legado-js\src\host_api\ui_action_queue.rs - host_api::ui_action_queue (line 35) ... ignored
+test legado-js\src\lib.rs - (line 17) ... ignored
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT=0

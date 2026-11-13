@@ -1,0 +1,7 @@
+192.168.100.52 - - [13/Nov/2026 15:54:59] "GET /ping.txt HTTP/1.1" 200 -
+192.168.100.63 - - [13/Nov/2026 15:55:27] "GET /qa30_bad_source.json HTTP/1.1" 200 -
+192.168.100.63 - - [13/Nov/2026 15:55:53] "GET /qa30_bad_source.json HTTP/1.1" 200 -
+192.168.100.52 - - [13/Nov/2026 16:13:33] "GET /qa30_unzip_source.json HTTP/1.1" 200 -
+192.168.100.63 - - [13/Nov/2026 16:17:26] "GET /qa30_unzip_source.json HTTP/1.1" 200 -
+192.168.100.52 - - [13/Nov/2026 16:18:56] "GET /qa30_unzip_source2.json HTTP/1.1" 200 -
+192.168.100.63 - - [13/Nov/2026 16:19:23] "GET /qa30_unzip_source2.json HTTP/1.1" 200 -

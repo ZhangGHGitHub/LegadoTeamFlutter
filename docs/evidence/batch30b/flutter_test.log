@@ -1,0 +1,40 @@
+<asynchronous suspension>
+#13     _WebDavSettingsScreenState._showRestoreOptions (package:flutter_legado/src/screens/webdav_settings_screen.dart:645:9)
+<asynchronous suspension>
+
+[WebDavRestoreService] 远端备份恢复失败（_Exception）:
+#0      main.<anonymous closure>.<anonymous closure>.<anonymous closure> (file:///D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_backup_restore_actions_test.dart:940:22)
+#1      Mock.noSuchMethod (package:mocktail/src/mocktail.dart:131:37)
+#2      MockRustApi.restore (file:///D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/mocks/mocks.dart:25:7)
+#3      WebDavRestoreService.restoreBackupFile (package:flutter_legado/src/services/webdav_restore_service.dart:365:18)
+<asynchronous suspension>
+#4      WebDavRestoreService.restorePreparedBackup.<anonymous closure> (package:flutter_legado/src/services/webdav_restore_service.dart:244:13)
+<asynchronous suspension>
+#5      LocalBackupService.runExclusiveRestore (package:flutter_legado/src/services/local_backup_service.dart:116:14)
+<asynchronous suspension>
+#6      WebDavRestoreService.restorePreparedBackup (package:flutter_legado/src/services/webdav_restore_service.dart:241:20)
+<asynchronous suspension>
+#7      _WebDavSettingsScreenState._attemptRemoteRestore (package:flutter_legado/src/screens/webdav_settings_screen.dart:1028:20)
+<asynchronous suspension>
+#8      _WebDavSettingsScreenState._promptAndRestoreWithPassword.<anonymous closure> (package:flutter_legado/src/screens/webdav_settings_screen.dart:1110:19)
+<asynchronous suspension>
+#9      _WebDavSettingsScreenState._runWithProgress (package:flutter_legado/src/screens/webdav_settings_screen.dart:1372:7)
+<asynchronous suspension>
+#10     _WebDavSettingsScreenState._promptAndRestoreWithPassword (package:flutter_legado/src/screens/webdav_settings_screen.dart:1109:24)
+<asynchronous suspension>
+#11     _WebDavSettingsScreenState._restoreRemoteCandidate (package:flutter_legado/src/screens/webdav_settings_screen.dart:957:7)
+<asynchronous suspension>
+#12     _WebDavSettingsScreenState._restoreFromRemoteList (package:flutter_legado/src/screens/webdav_settings_screen.dart:863:5)
+<asynchronous suspension>
+#13     _WebDavSettingsScreenState._showRestoreOptions (package:flutter_legado/src/screens/webdav_settings_screen.dart:645:9)
+<asynchronous suspension>
+
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：MissingPluginException(No implementation found for method setEnabled on channel legado/process_text)
+02:20 +5830 ~1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_backup_restore_actions_test.dart: 恢复 Sheet 动作 网络恢复：忙碌 → 提示稍候、不下载/不恢复/不写 seen
+[LocalBackupService] 已有备份/恢复执行中，跳过本次恢复触发
+02:20 +5831 ~1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_backup_restore_actions_test.dart: 恢复 Sheet 动作 远端恢复成功：seen 取 max(现有, 候选 mtime)，不调低
+[CoverAlbumStore] 测试环境未注入 Support 目录，跳过加载
+[ProcessText] 设置组件状态失败（enabled=true）：MissingPluginException(No implementation found for method setEnabled on channel legado/process_text)
+02:20 +5832 ~1: D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/widget/webdav_backup_restore_actions_test.dart: (tearDownAll)
+02:20 +5832 ~1: All tests passed!

@@ -1,0 +1,27 @@
+{
+  "bookSourceUrl": "https://qa30-unzip-limit2.local",
+  "bookSourceName": "QA30 解压限额源2",
+  "bookSourceGroup": "QA30",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "customOrder": 0,
+  "searchUrl": "@js: java.unzipFile('qa30_big40mb.zip')",
+  "ruleSearch": {
+    "bookList": "class.book",
+    "name": "class.title@text",
+    "author": "class.author@text",
+    "bookUrl": "class.title@href"
+  },
+  "ruleBookInfo": {
+    "name": "class.name@text"
+  },
+  "ruleToc": {
+    "chapterList": "id.list@tag.li",
+    "chapterName": "tag.a@text",
+    "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+    "content": "class.content@html"
+  }
+}

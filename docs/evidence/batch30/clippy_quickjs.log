@@ -1,0 +1,6 @@
+    Checking legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)
+    Checking legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    Checking legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+    Checking legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.83s
+EXIT=0

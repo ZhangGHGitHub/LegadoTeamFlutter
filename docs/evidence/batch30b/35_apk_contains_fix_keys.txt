@@ -1,0 +1,6 @@
+APK: flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+sha256: 81ce42e84b41dc75b8241847716ffbc7d89c057f7e5bb668a625dc411118ebca
+lib/arm64-v8a/libapp.so strings occurrence counts:
+  selection-panel-scroll = 1
+  selection-panel-colors-scroll = 1
+  highlight-color- = 1

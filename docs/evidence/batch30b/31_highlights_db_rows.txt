@@ -1,0 +1,6 @@
+time|bookUrl|chapterIndex|chapterPos|chapterPosEnd|style
+1794559863358|http://192.168.100.52:8931/fast/book.html|0|25|49|{"type":"background","color":"#FFFFE082"}
+1794559625186|http://192.168.100.52:8931/fast/book.html|0|0|24|{"type":"background","color":"#FFFFE082"}
+1794550802998|http://192.168.100.52:8931/fast/book.html|0|25|49|{"type":"background","color":"#FF90CAF9"}
+1794550404845|/data/user/0/io.legado.flutter_legado/app_flu|0|0|6|{"type":"background","color":"#FF90CAF9"}
+1794547765451|http://192.168.100.52:8931/fast/book.html|1|19|37|{"type":"background","color":"#FFA5D6A7"}

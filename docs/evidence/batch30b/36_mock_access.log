@@ -1,0 +1,8 @@
+16:57:41.195 LISTEN 192.168.100.52:8931 slow=8.0s
+16:57:43.206 GET /review/summary
+16:57:43.231 GET /ping
+16:58:02.513 GET /fast/book.html
+16:58:02.605 GET /review/summary
+16:58:20.388 GET /review/detail
+16:58:58.141 GET /review/summary
+16:59:03.291 GET /review/summary

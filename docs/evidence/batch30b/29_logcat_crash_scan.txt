@@ -1,0 +1,11 @@
+APP_PID=63503
+INSTALLED:
+    versionCode=501 minSdk=24 targetSdk=36
+    versionName=2.0.500
+    lastUpdateTime=2026-11-13 16:45:33
+--- app-specific fatal/anr/e.flutter since logcat clear ---
+(none)
+--- last 3 fatal signals (uiautomator shutdown noise) ---
+11-13 17:01:26.291 63339 63339 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7fae0a094d80 in tid 63339 (Shutdown thread), pid 63339 (Shutdown thread)
+11-13 17:01:30.425 63371 63371 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x76103a110d80 in tid 63371 (Shutdown thread), pid 63371 (Shutdown thread)
+11-13 17:01:40.256 63420 63420 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x776dfd720d80 in tid 63420 (Shutdown thread), pid 63420 (Shutdown thread)
