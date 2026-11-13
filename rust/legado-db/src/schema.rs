@@ -83,9 +83,12 @@ use legado_core::{LegadoError, LegadoResult};
 ///   `bookUrl`/`bookName`/`bookAuthor`/`chapterIndex`（可空）/`anchorJson`
 ///   （NOT NULL）/`styleJson`（可空）/`note`/`chapterName`/`enabled`/
 ///   `createdAt`/`updatedAt`，索引 `(bookUrl, chapterIndex)`。书签标记与
-///   既有 `bookmarks`（页面导航）、`highlights`（正文高亮记录）独立，
-///   **不纳入备份**（与参考版一致）；Migration117To118 幂等建表 + 建索引，
-///   并纳入开库自愈 `repair_legacy_columns`。
+///   既有 `bookmarks`（页面导航）、`highlights`（正文高亮记录）独立。
+///   本条目原记「**不纳入备份**（与参考版一致）」——该前提有误，已被备份
+///   格式 v6 推翻（审查 20261113 P1-1；依据参考版 `Backup.kt:71,158`：
+///   `bookMarking.json` 属固定写出项，`Restore.kt:163-165` 读回；该能力自
+///   参考版 `488a375` 起存在）；建表 DDL 本身不受影响。
+///   Migration117To118 幂等建表 + 建索引，并纳入开库自愈 `repair_legacy_columns`。
 /// - v119：`books` / `book_groups` 补 `isPrivate` 列（批9a 隐私与私密标记数据层，
 ///   对齐参考版 `Book.kt:89` 与 `BookGroup.kt:27`）：`INTEGER NOT NULL DEFAULT 0`，
 ///   单本私密标记与「所属私密分组」取并集（判定属消费方）；

@@ -332,7 +332,7 @@ pub struct BackupData {
     ///
     /// 仅用于「恢复原版 zip 备份」：我方 `backup_create` 尚未收集该表，
     /// 序列化时按 `skip_serializing_if` 省略，故自有 JSON 备份形状不受影响
-    /// （当前版本为 v5；该键仍只在恢复原版 zip 时出现）。收到该键时按主键
+    /// （当前版本为 v6；该键仍只在恢复原版 zip 时出现）。收到该键时按主键
     /// `id` REPLACE 写入。
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "autoTasks")]
     pub auto_tasks: Vec<serde_json::Value>,
@@ -2978,6 +2978,11 @@ fn restore_backup_in_tx(
     backup: &BackupData,
     replace_policy: ReplaceTablePolicy,
 ) -> LegadoResult<RestoreStats> {
+    // [审查 20261113 P3] `book_marks`（划线/笔记）恢复成功数**不计入**
+    // `RestoreStats`：该结构是 `backup_restore` 的 FFI 返回契约（`books`/
+    // `bookmarks`/`replaceRules`/`bookSources`/`rssSources`/`readRecords`
+    // 六项），新增字段会扩大返回结构并波及 Dart 侧解析；本次维持既有口径，
+    // 恢复成功/失败只体现在日志（失败记 warn 跳过）。如需统计，须先改契约。
     let mut stats = RestoreStats {
         books: 0,
         bookmarks: 0,
@@ -3070,10 +3075,26 @@ fn restore_backup_in_tx(
     // 幂等；`book_marks` 无外键，不依赖 books 段是否同行恢复（参考版同样不校验）。
     // 备份条目缺 `id`（serde 默认空串）时补 UUID v4，与 FFI `book_marking_save`
     // 同口径——避免同批多条空主键互相覆盖，也避免整批因约束失败被丢弃。
+    //
+    // [审查 20261113 P3] 空 `anchorJson`（`bookMarking.json` 残缺条目或旧备份）
+    // 同样跳过并记 warn：FFI 保存路径 `book_marking_save`
+    // （`book_marking_api.rs:59-61`）明确拒绝空锚点，落库后该行永远无法渲染。
+    // 参考版 `Restore.kt:163-165` 虽直接 insert、不做锚点校验，但其正文渲染
+    // 依赖锚点定位，目录笔记列表 `TocViewModel.markingUiList` 也对锚点
+    // `mapNotNull` 丢弃——空锚点行在参考版用户侧同样不可见。故「跳过」不改变
+    // 参考版可见行为（不丢任何可展示的标记），同时避免库内积存永久不可用的行。
     let book_marking_repo = BookMarkingRepository::new(conn);
     for value in &backup.book_marks {
         match serde_json::from_value::<BookMarking>(value.clone()) {
             Ok(mut marking) => {
+                if marking.anchor_json.trim().is_empty() {
+                    log::warn!(
+                        "恢复划线/笔记跳过空锚点条目（anchorJson 为空）: {} / {}",
+                        marking.book_name,
+                        marking.id
+                    );
+                    continue;
+                }
                 if marking.id.trim().is_empty() {
                     marking.id = uuid::Uuid::new_v4().to_string();
                 }
@@ -4299,6 +4320,188 @@ mod tests {
                 "缺 id 条目应补 UUID: {all:?}"
             );
             assert_ne!(all[0].id, all[1].id, "同批不得共用同一空主键");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P3] 空 `anchorJson` 条目恢复时跳过（记 warn），同批合法
+    /// 条目照常恢复：与 FFI 保存路径 `book_marking_save` 拒绝空锚点同口径。
+    /// 参考版对无法解析锚点的标记在目录笔记列表（`TocViewModel.markingUiList`
+    /// 的 `mapNotNull`）与正文渲染中同样不展示，故跳过无用户可见差异。
+    #[test]
+    fn test_restore_book_marks_empty_anchor_skipped() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_book_marks_empty_anchor");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("empty_anchor.json");
+        let path_str = backup_path.to_str().unwrap();
+        fs::write(
+            path_str,
+            r#"{"version":6,"backupTime":1,"books":[],"bookMarks":[
+                {"id":"bm-good","bookUrl":"https://marking.example/good","bookName":"好书",
+                 "anchorJson":"{\"start\":1}","note":"合法"},
+                {"id":"bm-empty","bookUrl":"https://marking.example/empty","bookName":"坏书甲",
+                 "anchorJson":"","note":"空锚点"},
+                {"id":"bm-blank","bookUrl":"https://marking.example/blank","bookName":"坏书乙",
+                 "anchorJson":"   ","note":"纯空白锚点"}
+            ]}"#,
+        )
+        .unwrap();
+
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let all = BookMarkingRepository::new(db.connection()).find_all()?;
+            assert_eq!(all.len(), 1, "只应恢复合法锚点条目: {all:?}");
+            assert_eq!(all[0].id, "bm-good", "合法锚点条目不得被同批坏条目拖累");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P3] 显式 `"bookMarks": []` 恢复不得清空库内既有标记：
+    /// 空数组与缺键同语义（无条目 = 不触碰），**不是** replaceAll
+    #[test]
+    fn test_restore_explicit_empty_book_marks_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_book_marks_empty_array");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("empty_array.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let marking = BookMarking {
+            id: "bm-keep-empty-array".to_string(),
+            book_url: "https://marking.example/keep".to_string(),
+            book_name: "空数组保书".to_string(),
+            book_author: "作者丙".to_string(),
+            chapter_index: Some(2),
+            anchor_json: r#"{"start":3}"#.to_string(),
+            style_json: None,
+            note: "库内既有".to_string(),
+            chapter_name: "第三章".to_string(),
+            enabled: true,
+            created_at: 300,
+            updated_at: 400,
+        };
+        with_database(|db| BookMarkingRepository::new(db.connection()).upsert(&marking)).unwrap();
+
+        fs::write(
+            path_str,
+            r#"{"version":6,"backupTime":1,"books":[],"bookMarks":[]}"#,
+        )
+        .unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let restored = BookMarkingRepository::new(db.connection())
+                .get_by_id("bm-keep-empty-array")?
+                .expect("显式空数组恢复不得清空库内既有标记");
+            assert_eq!(restored, marking);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P3] 同一份备份连续恢复两次幂等：同 id `REPLACE`，不增殖
+    #[test]
+    fn test_restore_book_marks_twice_idempotent() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_book_marks_twice");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("twice.json");
+        let path_str = backup_path.to_str().unwrap();
+        fs::write(
+            path_str,
+            r#"{"version":6,"backupTime":1,"books":[],"bookMarks":[
+                {"id":"bm-twice","bookUrl":"https://marking.example/twice","bookName":"幂等书",
+                 "bookAuthor":"作者丁","chapterIndex":4,"anchorJson":"{\"start\":7}",
+                 "note":"两次恢复","chapterName":"第五章","enabled":true,
+                 "createdAt":1700000010000,"updatedAt":1700000011000}
+            ]}"#,
+        )
+        .unwrap();
+
+        backup_restore(path_str).unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let all = BookMarkingRepository::new(db.connection()).find_all()?;
+            assert_eq!(all.len(), 1, "同一备份恢复两次不得增殖: {all:?}");
+            assert_eq!(all[0].id, "bm-twice");
+            assert_eq!(all[0].note, "两次恢复");
+            assert_eq!(all[0].created_at, 1_700_000_010_000);
+            assert_eq!(all[0].updated_at, 1_700_000_011_000);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [审查 20261113 P3] zip 内 `bookMarking.json` 为坏 JSON：该类 warn 跳过，
+    /// 库内既有标记不清除，其余表（bookshelf）照常恢复
+    #[test]
+    fn test_restore_upstream_zip_bad_book_marking_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let existing = BookMarking {
+            id: "bm-existing-zip-bad".to_string(),
+            book_url: "https://marking.example/existing".to_string(),
+            book_name: "坏包前既有".to_string(),
+            book_author: "作者戊".to_string(),
+            chapter_index: None,
+            anchor_json: r#"{"start":9}"#.to_string(),
+            style_json: None,
+            note: "坏包不得清库".to_string(),
+            chapter_name: "第一章".to_string(),
+            enabled: true,
+            created_at: 500,
+            updated_at: 600,
+        };
+        with_database(|db| BookMarkingRepository::new(db.connection()).upsert(&existing)).unwrap();
+
+        let bookshelf = r#"[
+            {"bookUrl":"https://zip.example/bad/1","name":"坏包书","author":"作者己",
+             "origin":"https://zip.example/source","originName":"zip源","type":0,
+             "durChapterIndex":1,"durChapterPos":2,"durChapterTitle":"第二章"}
+        ]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_upstream_zip_bad_book_marking",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("bookMarking.json", b"{ this is not json"),
+            ],
+        );
+        // 媒体根隔离到本用例临时目录（媒体为空，仅防 prepare_media_root 落到共享 temp）
+        let _media_guard = set_test_media_root(&dir.join("media"));
+        // 坏 JSON 属条目级错误：整体恢复应成功（不因单类坏数据丢整包）
+        backup_restore(&path).unwrap();
+
+        with_database(|db| {
+            let all = BookMarkingRepository::new(db.connection()).find_all()?;
+            assert_eq!(all.len(), 1, "坏 bookMarking.json 不得清库: {all:?}");
+            assert_eq!(all[0], existing);
+            let book = BookRepository::new(db.connection())
+                .find_by_url("https://zip.example/bad/1")?
+                .expect("同一坏包内 bookshelf.json 应照常恢复");
+            assert_eq!(book.name, "坏包书");
             Ok::<(), LegadoError>(())
         })
         .unwrap();
@@ -6212,6 +6415,7 @@ mod tests {
             assert_eq!(markings[0].id, "zip-marking-1");
             assert_eq!(markings[0].book_url, "https://zip.example/book/1");
             assert_eq!(markings[0].book_name, "zip书一");
+            assert_eq!(markings[0].book_author, "作者甲");
             assert_eq!(markings[0].chapter_index, Some(1));
             assert_eq!(markings[0].anchor_json, r#"{"start":5,"end":9}"#);
             assert_eq!(
