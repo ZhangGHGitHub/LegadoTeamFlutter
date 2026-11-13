@@ -2771,14 +2771,29 @@ fn register_network_apis<'js>(
     // 接受），窗口外（jsLib 顶层 / source evalJS / init）直接丢弃并告警
     //——对齐上游「无 AnalyzeUrl 上下文即无 headerMap 可写」，杜绝失败源
     // 残留头被下一源成功解析收尾时并入（跨源凭据外发）。
-    // 语料 #286 仅在选项 js 窗口使用。
+    // 返回值 = 本次写入是否被接受：窗口外返回 false（脚本可感知未生效），
+    // 窗口内返回 true（P3-10）。
+    //
+    // 实现备注（P3-3，修正本注释旧表述）：引擎是懒建的——`QuickJsExecutor`
+    // 首次 `execute_js` 在**本次** `parse_with_js` 打开的 URL 窗口内执行
+    // jsLib/setup 顶层代码（executor.rs `execute_js` → engine_cache::
+    // init_engine 在锁内 eval jsLib/setup；后续请求命中缓存不再重放）。
+    // 因此 jsLib/setup **顶层** `java.headerMap.put` 并非一律丢弃：若「建引擎
+    // 的首次调用」恰好发生在 URL 规则窗口内，写入会被接受并计入该次请求；
+    // 缓存命中后顶层代码不再执行，写入也不会再次生效——即「首次请求带、
+    // 后续请求不带」的行为不确定。缓存键按 source_tag 与 jsLib/setup 内容
+    // 隔离（engine_cache::get_or_create），跨源不共享引擎，不构成跨源泄漏。
+    // 语料 #286 仅在选项 js 窗口使用，未依赖该顶层写入语义。
     mount_dual(
         java,
         globals,
         "headerMapPut",
         rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> bool {
+            // 先取窗口状态再写：parser 的 push 在窗口外会丢弃并告警，
+            // 返回值据此告知脚本本次写入是否真的生效。
+            let accepted = legado_parser::analyze_url::is_url_window_open();
             legado_parser::analyze_url::push_pending_request_header(key.0, value.0);
-            true
+            accepted
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -5543,6 +5558,16 @@ cipher.decryptStr(b64);
         let engine = make_engine();
         // 非 URL 窗口（未设置）→ 空串
         assert_eq!(engine.eval("java.getCurrentUrl()").unwrap(), "");
+        // P3-10：窗口外写入被 parser 丢弃 → 返回值 false（脚本可感知未生效）
+        assert_eq!(
+            engine.eval("java.headerMapPut('X-Leak', '1')").unwrap(),
+            "false",
+            "窗口外 headerMapPut 必须返回 false"
+        );
+        assert!(
+            legado_parser::analyze_url::take_pending_request_headers().is_empty(),
+            "窗口外写入不得进入收集器"
+        );
         // URL 规则窗口（模拟 parser 状态机置值；P0-1 起 headerMapPut 受
         // 窗口门控，须经 UrlWindowGuard 开启，生产由 parse_with_js 内部开启）
         let _window = legado_parser::analyze_url::UrlWindowGuard::begin();
@@ -5551,11 +5576,17 @@ cipher.decryptStr(b64);
             engine.eval("java.getCurrentUrl()").unwrap(),
             "https://cur.test/s?k=1"
         );
-        // headerMapPut → parser 线程局部收集器
-        engine
-            .eval("java.headerMapPut('Cookie', 'is_human=x')")
-            .unwrap();
-        engine.eval("java.headerMapPut('X-T', '1')").unwrap();
+        // headerMapPut → parser 线程局部收集器；窗口内写入返回 true
+        assert_eq!(
+            engine
+                .eval("java.headerMapPut('Cookie', 'is_human=x')")
+                .unwrap(),
+            "true"
+        );
+        assert_eq!(
+            engine.eval("java.headerMapPut('X-T', '1')").unwrap(),
+            "true"
+        );
         let pending = legado_parser::analyze_url::take_pending_request_headers();
         assert_eq!(
             pending,

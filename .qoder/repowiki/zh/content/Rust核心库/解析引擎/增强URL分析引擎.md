@@ -1,5 +1,11 @@
 # 增强URL分析引擎
 
+> **过期说明（2026-11-13）**：`legado-net/src/url_template.rs` 的
+> `parse_url_template` 已删除（全仓无消费方，且与 `legado_parser::AnalyzeUrl`
+> 双轨漂移）。本文中一切关于 `legado-net` / `parse_url_template` 的描述均为
+> 历史生成内容；URL 模板解析统一走 `legado-parser` 的 `AnalyzeUrl`
+> （`parse` / `parse_with_js`），`legado-net` 仅保留 HTTP/Cookie/RSS/WebDAV 等网络能力。
+
 <cite>
 **本文引用的文件**   
 - [analyze_url.rs](file://rust/legado-parser/src/analyze_url.rs)

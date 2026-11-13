@@ -20,6 +20,8 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::rc::Rc;
 
 use base64::Engine;
 use md5::{Digest, Md5};
@@ -70,14 +72,27 @@ pub fn set_current_url(url: Option<String>) {
     CURRENT_URL.with(|c| *c.borrow_mut() = url);
 }
 
+/// 当前线程是否处于 URL 规则窗口内（`parse_with_js` 窗口深度 > 0）
+///
+/// 宿主桥 [`push_pending_request_header`] 用它做写入门控；`java.headerMapPut`
+/// 也用它作为返回值，使脚本能感知「窗口外写入被丢弃、并未生效」。
+pub fn is_url_window_open() -> bool {
+    URL_WINDOW_DEPTH.with(Cell::get) > 0
+}
+
 /// 书源在 URL 规则 JS 窗口写入请求头（`java.headerMap.put` 后端）
 ///
 /// 窗口门控：仅 [`UrlWindowGuard`] 打开的 URL 窗口内接受写入；jsLib 顶层、
 /// source evalJS、`init` 等窗口外调用直接丢弃并告警（只打印键名，不打印值，
 /// 避免凭据落日志）。这样即使书源在非 URL 上下文误调 `java.headerMap.put`，
 /// 也不会污染下一次任意请求。
+///
+/// 注：引擎初始化（jsLib/setup 首次求值）也发生在 `parse_with_js` 打开的
+/// 窗口内（懒建引擎），故 jsLib 顶层写入会被接受并计入首次请求——详见
+/// `QuickJsExecutor::execute_js` 与 `engine_cache::init_engine`；缓存命中后
+/// 不再重放 jsLib，写入不会二次生效。
 pub fn push_pending_request_header(key: String, value: String) {
-    if URL_WINDOW_DEPTH.with(Cell::get) == 0 {
+    if !is_url_window_open() {
         eprintln!(
             "[legado-parser] 忽略 URL 窗口外的请求头写入（{key}）：仅 @js:/{{{{}}}}/URL 选项 js 窗口内 java.headerMap 有效"
         );
@@ -118,6 +133,15 @@ fn clear_pending_request_headers() {
 /// 当前仓内不存在「URL 窗口 JS 内再次触发 `parse_with_js`」的生产调用路径
 /// （`legado-js` 宿主 API 只做网络/存储，不回调 parser），嵌套支持为防御性
 /// 设计；见模块测试 `test_nested_url_window_headers_are_isolated`。
+///
+/// # 线程亲和（P3-1）
+///
+/// 收尾（[`Drop`]）改写的 `CURRENT_URL` / `PENDING_REQUEST_HEADERS` /
+/// `URL_WINDOW_DEPTH` 都是**调用线程**的 thread-local。若 guard 被跨线程
+/// 移动后在另一线程 Drop，会清空/篡改那一线程的窗口状态（污染他源请求）。
+/// 因此用 `PhantomData<Rc<()>>` 让 `UrlWindowGuard` 在编译期 `!Send`
+/// （同时 `!Sync`；guard 本就不应共享）。`begin` 保持 `pub`——仓内
+/// `legado-ffi` 集成测试用它模拟窗口，改成 `pub(crate)` 会破坏既有测试。
 #[doc(hidden)]
 pub struct UrlWindowGuard {
     /// 进入窗口前的 `CURRENT_URL`（嵌套时为外层窗口值）
@@ -126,6 +150,8 @@ pub struct UrlWindowGuard {
     saved_outer_pending: Option<Vec<(String, String)>>,
     /// 成功路径调用过 [`Self::finish`] 后置真，`Drop` 不再重复复位
     finished: bool,
+    /// `Rc` 为 `!Send`，借 `PhantomData` 传递线程亲和标记（不占空间）
+    _not_send: PhantomData<Rc<()>>,
 }
 
 impl UrlWindowGuard {
@@ -157,6 +183,7 @@ impl UrlWindowGuard {
             saved_url,
             saved_outer_pending,
             finished: false,
+            _not_send: PhantomData,
         }
     }
 
@@ -3518,5 +3545,179 @@ mod tests {
         );
         assert_eq!(super::current_url(), None, "嵌套退出后状态机复位");
         assert!(super::take_pending_request_headers().is_empty());
+    }
+
+    /// 嵌套窗口（内层 Err）：内层写入的头随内层 guard 丢弃，外层头完整保留。
+    ///
+    /// 修复前（无嵌套快照、Err 路径不清 pending）：内层失败后 `X-Inner`
+    /// 残留，外层成功收尾 `take` 时被一并并入外层请求——外层请求多带
+    /// 内层失败分支的头。
+    #[test]
+    fn test_nested_url_window_inner_error_keeps_outer_headers() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        struct InnerFailExecutor;
+        impl crate::analyze_rule::JsExecutor for InnerFailExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Inner".to_string(), "1".to_string());
+                Err("inner boom".to_string())
+            }
+        }
+
+        struct OuterExecutor;
+        impl crate::analyze_rule::JsExecutor for OuterExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Outer".to_string(), "1".to_string());
+                // 嵌套：内层 URL 模板 JS 失败（Err 退出）
+                let inner_err = AnalyzeUrl::parse_with_js(
+                    "@js:inner()",
+                    &HashMap::new(),
+                    1,
+                    &InnerFailExecutor,
+                )
+                .err()
+                .expect("内层 @js: 失败必须上抛");
+                assert!(
+                    inner_err.to_string().contains("URL 模板 JS 执行失败"),
+                    "内层失败原因应保留: {inner_err}"
+                );
+                Ok("https://outer.test/r".to_string())
+            }
+        }
+
+        let outer = AnalyzeUrl::parse_with_js("@js:outer()", &HashMap::new(), 1, &OuterExecutor)
+            .expect("内层失败不得影响外层解析");
+        assert_eq!(outer.url(), "https://outer.test/r");
+        assert_eq!(
+            outer.headers().get("X-Outer").map(String::as_str),
+            Some("1"),
+            "内层 Err 后外层头必须保留: {:?}",
+            outer.headers()
+        );
+        assert!(
+            outer.headers().get("X-Inner").is_none(),
+            "内层失败分支的头不得注入外层请求: {:?}",
+            outer.headers()
+        );
+        assert_eq!(super::current_url(), None, "嵌套 Err 退出后状态机复位");
+        assert!(super::take_pending_request_headers().is_empty());
+    }
+
+    /// 嵌套窗口（内层 panic）：Drop 展开同样隔离内层头，外层头完整保留。
+    ///
+    /// 修复前：panic 路径无收尾，`X-Inner` 残留后被外层成功收尾取走。
+    #[test]
+    fn test_nested_url_window_inner_panic_keeps_outer_headers() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        struct InnerPanicExecutor;
+        impl crate::analyze_rule::JsExecutor for InnerPanicExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Inner".to_string(), "1".to_string());
+                panic!("inner executor panic");
+            }
+        }
+
+        struct OuterExecutor;
+        impl crate::analyze_rule::JsExecutor for OuterExecutor {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                super::push_pending_request_header("X-Outer".to_string(), "1".to_string());
+                // 嵌套：内层 panic 由外层捕获（模拟调用方兜底），不得破坏外层窗口
+                let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    AnalyzeUrl::parse_with_js(
+                        "@js:inner()",
+                        &HashMap::new(),
+                        1,
+                        &InnerPanicExecutor,
+                    )
+                }));
+                assert!(caught.is_err(), "内层执行器 panic 应展开");
+                Ok("https://outer.test/r".to_string())
+            }
+        }
+
+        let outer = AnalyzeUrl::parse_with_js("@js:outer()", &HashMap::new(), 1, &OuterExecutor)
+            .expect("内层 panic 不得影响外层解析");
+        assert_eq!(outer.url(), "https://outer.test/r");
+        assert_eq!(
+            outer.headers().get("X-Outer").map(String::as_str),
+            Some("1"),
+            "内层 panic 后外层头必须保留: {:?}",
+            outer.headers()
+        );
+        assert!(
+            outer.headers().get("X-Inner").is_none(),
+            "内层 panic 分支的头不得注入外层请求: {:?}",
+            outer.headers()
+        );
+        assert_eq!(super::current_url(), None, "嵌套 panic 退出后状态机复位");
+        assert!(super::take_pending_request_headers().is_empty());
+    }
+
+    /// 行为级 Err 回归（公开路径）：多个 `<js>` 块中，首块已成功写入的
+    /// 请求头在后续块失败时也必须随窗口收尾清空。
+    ///
+    /// 与 `test_parse_failure_path_leaves_no_residue` 不同，本用例只经
+    /// `parse_with_js` + 注入执行器（旧实现即可编译/运行）：旧实现首个
+    /// `<js>` 块无条件 push `X-Early`，第二个块 Err 提前返回且不清 pending，
+    /// 下一源成功收尾 `take` 后 `X-Early` 进入其请求 → 本用例变红。
+    #[test]
+    fn test_url_js_error_after_accepted_header_leaves_no_residue() {
+        let _ = super::take_pending_request_headers();
+        super::set_current_url(None);
+
+        struct FirstBlockWritesThenSecondFails {
+            calls: std::sync::atomic::AtomicUsize,
+        }
+        impl crate::analyze_rule::JsExecutor for FirstBlockWritesThenSecondFails {
+            fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+                let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if n == 0 {
+                    super::push_pending_request_header("X-Early".to_string(), "1".to_string());
+                    Ok("https://first.test/".to_string())
+                } else {
+                    Err("second block boom".to_string())
+                }
+            }
+        }
+
+        let executor = FirstBlockWritesThenSecondFails {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let err = AnalyzeUrl::parse_with_js(
+            "<js>first()</js>https://mid.test/<js>second()</js>",
+            &HashMap::new(),
+            1,
+            &executor,
+        )
+        .err()
+        .expect("第二个 JS 块失败必须上抛");
+        assert!(
+            err.to_string().contains("URL 模板 JS 执行失败"),
+            "失败原因应为 URL 模板 JS 错误: {err}"
+        );
+        assert_eq!(
+            executor.calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "两个 <js> 块都应执行"
+        );
+        assert!(
+            super::take_pending_request_headers().is_empty(),
+            "Err 退出后首块已接受的头必须清空"
+        );
+        assert_eq!(super::current_url(), None, "Err 退出后状态机必须复位");
+
+        // 同线程紧接着解析下一源（成功路径）：不得继承失败分支的头
+        let parsed =
+            AnalyzeUrl::parse_with_js("https://b.test/s", &HashMap::new(), 1, &NoopUrlExecutor)
+                .expect("B 源解析应成功");
+        assert!(
+            parsed.headers().get("X-Early").is_none(),
+            "失败分支首块的头不得泄漏到下一源: {:?}",
+            parsed.headers()
+        );
+        assert!(parsed.headers().is_empty());
     }
 }

@@ -76,7 +76,7 @@ legado-server — 独立 HTTP 服务，依赖 legado-core/db/net/parser/js
 |-------|------|------|
 | **legado-core** | serde, thiserror | 无内部依赖，公共基础层 |
 | **legado-parser** | core | 书源规则解析（CSS/XPath/Regex/JsonPath） |
-| **legado-net** | core | HTTP 请求、Cookie、URL 模板、RSS、WebDAV |
+| **legado-net** | core | HTTP 请求、Cookie、RSS、WebDAV（URL 模板解析在 legado-parser） |
 | **legado-js** | core | JavaScript 沙箱（可选 QuickJS feature） |
 | **legado-book** | core | 书籍文件解析（EPUB/TXT/MOBI/PDF） |
 | **legado-db** | core | SQLite 数据库（rusqlite bundled） |

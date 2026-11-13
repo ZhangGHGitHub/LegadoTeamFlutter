@@ -2,6 +2,11 @@
 name = "legado-net"
 version = "0.2.0"
 edition = "2021"
+# 内部 crate，不对外发布：仅作为本 workspace 的路径依赖被 legado-ffi /
+# legado-server 等消费（无 description/license/repository/readme 发布面，
+# CI 也无 cargo publish 流程）。公开 API 只对仓内调用方负责，删除
+# `url_template` 等内部导出不构成外部破坏性变更，无需升 minor。
+publish = false
 
 [dependencies]
 legado-core = { path = "../legado-core" }
