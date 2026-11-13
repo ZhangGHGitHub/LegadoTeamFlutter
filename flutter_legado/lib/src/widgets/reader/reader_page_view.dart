@@ -38,6 +38,7 @@ import 'reader_page_chrome.dart';
 import 'turn/page_direction.dart';
 import 'turn/reader_turn_view.dart';
 import 'reader_text_content.dart';
+import '../../utils/error_message.dart';
 
 /// 正文图片字节加载失败类别（批16 三审 P3-7）
 enum _ReaderImageFailureKind {
@@ -560,7 +561,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         bookText: text,
       );
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('书签操作失败：$e')));
+      messenger?.showSnackBar(SnackBar(content: Text('书签操作失败：${errorMessage(e)}')));
     } finally {
       _bookmarkToggleInFlight = false;
     }

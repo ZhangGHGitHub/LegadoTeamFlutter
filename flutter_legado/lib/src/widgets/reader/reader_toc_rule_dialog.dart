@@ -19,6 +19,7 @@ import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../../routes.dart';
 import '../../utils/txt_toc_rule.dart';
+import '../../utils/error_message.dart';
 
 /// 弹层中「默认规则」的单选值（规则 id 用字符串，避免与默认值冲突）
 const String _defaultRuleValue = '__default__';
@@ -71,7 +72,7 @@ Future<void> showReaderTocRuleDialog(
             ),
           );
         } catch (e) {
-          messenger.showSnackBar(SnackBar(content: Text('设置目录规则失败: $e')));
+          messenger.showSnackBar(SnackBar(content: Text('设置目录规则失败: ${errorMessage(e)}')));
         }
       },
     ),

@@ -36,6 +36,7 @@ import '../providers/reader/reader_theme_notifier.dart';
 import '../services/export_file_service.dart';
 import '../services/reader_theme_service.dart';
 import 'reader_config_panel.dart';
+import '../utils/error_message.dart';
 
 /// 阅读主题列表页
 class ReaderThemeScreen extends ConsumerStatefulWidget {
@@ -208,7 +209,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       if (!mounted || !showMessage) return;
       _showSnack('已应用「${theme.name}」');
     } catch (e) {
-      if (mounted) _showSnack('应用主题失败：$e');
+      if (mounted) _showSnack('应用主题失败：${errorMessage(e)}');
     } finally {
       if (mounted) setState(() => _applying = false);
     }
@@ -349,7 +350,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       }
       await _doImport(utf8.decode(bytes, allowMalformed: true));
     } catch (e) {
-      if (mounted) _showSnack('导入失败：$e');
+      if (mounted) _showSnack('导入失败：${errorMessage(e)}');
     }
   }
 
@@ -375,7 +376,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
     } on FormatException catch (e) {
       if (mounted) _showSnack('导入失败：${e.message}');
     } catch (e) {
-      if (mounted) _showSnack('导入失败：$e');
+      if (mounted) _showSnack('导入失败：${errorMessage(e)}');
     }
   }
 
@@ -396,7 +397,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
       if (saved == null) return; // 用户取消
       _showSnack('已导出「$name」');
     } catch (e) {
-      if (mounted) _showSnack('导出失败：$e');
+      if (mounted) _showSnack('导出失败：${errorMessage(e)}');
     }
   }
 
@@ -426,7 +427,7 @@ class _ReaderThemeScreenState extends ConsumerState<ReaderThemeScreen> {
         } catch (_) {}
       }
     } catch (e) {
-      if (mounted) _showSnack('分享失败：$e');
+      if (mounted) _showSnack('分享失败：${errorMessage(e)}');
     }
   }
 

@@ -8,6 +8,7 @@ import '../../screens/code_edit_screen.dart';
 import 'help_markdown_builders.dart';
 import 'help_markdown_styles.dart';
 import 'help_sections.dart';
+import '../../utils/error_message.dart';
 
 /// 帮助文档弹窗（对标 Android TextDialog Mode.MD + showToc）
 ///
@@ -59,7 +60,7 @@ class _HelpScreenState extends State<HelpScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '$e');
+      setState(() => _error = errorMessage(e));
     }
   }
 

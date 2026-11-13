@@ -56,6 +56,7 @@ import '../widgets/privacy/private_locked_page.dart';
 import '../widgets/privacy/privacy_unlock_dialog.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/list_footer.dart';
+import '../utils/error_message.dart';
 part 'book_info_screen_load.part.dart';
 part 'book_info_screen_builders.part.dart';
 part 'book_info_screen_dialogs.part.dart';

@@ -698,7 +698,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       }
       await _load();
     } catch (e) {
-      _toast('切换启用状态失败：$e');
+      _toast('切换启用状态失败：${errorMessage(e)}');
     }
   }
 
@@ -758,7 +758,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
             await ref.read(bookApiProvider).deleteRssSource(source.sourceUrl);
             await _load();
           } catch (e) {
-            _toast('删除失败：$e');
+            _toast('删除失败：${errorMessage(e)}');
           }
         }
     }
@@ -787,7 +787,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
         await api.updateRssSource(s);
       }
     } catch (e) {
-      _toast('保存排序失败：$e');
+      _toast('保存排序失败：${errorMessage(e)}');
       await _load();
     }
   }
@@ -864,7 +864,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
           await _load();
           _toast(enable ? '已启用所选订阅源' : '已禁用所选订阅源');
         } catch (e) {
-          _toast('操作失败：$e');
+          _toast('操作失败：${errorMessage(e)}');
         }
       case 'add_group':
         await _showAddGroupDialog();
@@ -897,7 +897,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
           await _load();
           _toast('已删除所选订阅源');
         } catch (e) {
-          _toast('删除失败：$e');
+          _toast('删除失败：${errorMessage(e)}');
           await _load();
         }
     }
@@ -925,7 +925,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       }
       _toast(toTop ? '已置顶所选订阅源' : '已置底所选订阅源');
     } catch (e) {
-      _toast('操作失败：$e');
+      _toast('操作失败：${errorMessage(e)}');
       await _load();
     }
   }
@@ -954,7 +954,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       await _load();
       _toast('已为所选订阅源添加分组「$name」');
     } catch (e) {
-      _toast('添加分组失败：$e');
+      _toast('添加分组失败：${errorMessage(e)}');
     }
   }
 
@@ -993,7 +993,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       await _load();
       _toast('已从所选订阅源移除分组「$group」');
     } catch (e) {
-      _toast('移除分组失败：$e');
+      _toast('移除分组失败：${errorMessage(e)}');
     }
   }
 
@@ -1132,7 +1132,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       if (!mounted) return;
       await _parseAndConfirm(text);
     } catch (e) {
-      _toast('从文件导入失败：$e');
+      _toast('从文件导入失败：${errorMessage(e)}');
     }
   }
 
@@ -1185,7 +1185,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }
-      _toast('获取订阅源失败：$e');
+      _toast('获取订阅源失败：${errorMessage(e)}');
     }
   }
 
@@ -1220,7 +1220,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       if (!mounted) return;
       _toast(n > 0 ? '已导入 $n 条默认订阅源' : '默认订阅源已同步');
     } catch (e) {
-      _toast('导入默认规则失败：$e');
+      _toast('导入默认规则失败：${errorMessage(e)}');
     }
   }
 

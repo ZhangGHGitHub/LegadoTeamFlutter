@@ -113,7 +113,7 @@ class _QrShareDialog extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：$e')),
+          SnackBar(content: Text('分享失败：${errorMessage(e)}')),
         );
       }
     }

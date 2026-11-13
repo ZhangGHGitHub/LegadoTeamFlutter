@@ -45,6 +45,7 @@ import '../utils/book_open_utils.dart';
 import '../utils/image_paint_utils.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/video_settings_dialog.dart';
+import '../utils/error_message.dart';
 
 /// 其他设置页面（对齐原版 OtherConfigFragment）
 ///
@@ -687,7 +688,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         );
       } catch (e) {
         if (mounted) {
-          _toast('替换净化配置同步失败：$e');
+          _toast('替换净化配置同步失败：${errorMessage(e)}');
         }
       }
     });
@@ -719,7 +720,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await ref.read(bookApiProvider).setConfig(PrefKeys.userAgent, value);
     } catch (e) {
       if (mounted) {
-        _toast('已保存偏好，但同步网络层失败：$e');
+        _toast('已保存偏好，但同步网络层失败：${errorMessage(e)}');
       }
     }
   }
@@ -910,7 +911,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       setState(() => _jsSourceApiToken = result);
       _toast(result.isEmpty ? '已清除 Token' : 'Token 已保存');
     } catch (e) {
-      _toast('保存失败：$e');
+      _toast('保存失败：${errorMessage(e)}');
     }
   }
 
@@ -938,7 +939,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await ref.read(bookApiProvider).clearCache();
       if (mounted) _toast('成功清理缓存');
     } catch (e) {
-      if (mounted) _toast('清理失败：$e');
+      if (mounted) _toast('清理失败：${errorMessage(e)}');
     }
   }
 
@@ -959,7 +960,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await WebViewCookieManager().clearCookies();
       _toast('WebView Cookie 已清除');
     } catch (e) {
-      _toast('清除失败：$e');
+      _toast('清除失败：${errorMessage(e)}');
     }
   }
 
@@ -999,7 +1000,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       }
     } catch (e) {
       debugPrint('OtherSettingsScreen 压缩数据库异常: $e');
-      if (mounted) _toast('压缩失败: $e');
+      if (mounted) _toast('压缩失败: ${errorMessage(e)}');
     }
   }
 

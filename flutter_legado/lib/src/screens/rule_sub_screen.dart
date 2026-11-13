@@ -21,6 +21,7 @@ import '../widgets/loading_indicator.dart';
 import 'rss_source_import_confirm_screen.dart';
 import 'replace_rule_import_confirm_screen.dart';
 import 'source_import_confirm_screen.dart';
+import '../utils/error_message.dart';
 
 /// 规则订阅管理页（对标原版 RuleSubActivity）
 ///
@@ -232,7 +233,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
             Navigator.of(context).pop();
           }
           messenger.showSnackBar(
-            SnackBar(content: Text('检查更新失败：$e')),
+            SnackBar(content: Text('检查更新失败：${errorMessage(e)}')),
           );
           return;
         }
@@ -262,7 +263,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
             Navigator.of(context).pop();
           }
           messenger.showSnackBar(
-            SnackBar(content: Text('应用更新失败：$e')),
+            SnackBar(content: Text('应用更新失败：${errorMessage(e)}')),
           );
           return;
         }
@@ -351,7 +352,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取书源失败：$e')),
+        SnackBar(content: Text('获取书源失败：${errorMessage(e)}')),
       );
       return;
     }
@@ -395,7 +396,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取订阅源失败：$e')),
+        SnackBar(content: Text('获取订阅源失败：${errorMessage(e)}')),
       );
       return;
     }
@@ -451,7 +452,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取替换规则失败：$e')),
+        SnackBar(content: Text('获取替换规则失败：${errorMessage(e)}')),
       );
       return;
     }

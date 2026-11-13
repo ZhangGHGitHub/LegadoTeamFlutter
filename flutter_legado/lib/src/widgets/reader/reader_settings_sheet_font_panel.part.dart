@@ -451,7 +451,7 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('简繁转换设置失败: $e')),
+          SnackBar(content: Text('简繁转换设置失败: ${errorMessage(e)}')),
         );
       }
     }

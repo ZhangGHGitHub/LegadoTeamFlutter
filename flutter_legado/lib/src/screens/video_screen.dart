@@ -20,6 +20,7 @@ import '../widgets/video_danmaku_layer.dart';
 import '../widgets/video_float_window_button.dart';
 import '../widgets/video_long_press_speed.dart';
 import '../widgets/video_settings_dialog.dart';
+import '../utils/error_message.dart';
 
 /// 视频播放页面
 ///
@@ -437,7 +438,7 @@ class _VideoScreenState extends State<VideoScreen> {
       if (mounted && !_handedToFloat) {
         setState(() {
           _loadingChapter = false;
-          _chapterError = '$e';
+          _chapterError = errorMessage(e);
         });
       }
     }
@@ -503,7 +504,7 @@ class _VideoScreenState extends State<VideoScreen> {
       if (!mounted || _handedToFloat) return;
       setState(() {
         _loadingChapter = false;
-        _chapterError = '$e';
+        _chapterError = errorMessage(e);
       });
     }
   }
@@ -607,7 +608,7 @@ class _VideoScreenState extends State<VideoScreen> {
       if (!mounted || _handedToFloat) return;
       setState(() {
         _loadingChapter = false;
-        _chapterError = '$e';
+        _chapterError = errorMessage(e);
       });
     }
   }

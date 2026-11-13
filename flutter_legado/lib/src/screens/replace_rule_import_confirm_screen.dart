@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../widgets/custom_group_dialog.dart';
 import 'source_import_confirm_screen.dart' show AppColorsExt;
+import '../utils/error_message.dart';
 
 /// 替换规则导入状态（对标原版 ImportReplaceRuleDialog 状态展示）
 enum _ImportStatus {
@@ -164,7 +165,7 @@ class _ReplaceRuleImportConfirmScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：$e')),
+          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
         );
       }
     } finally {

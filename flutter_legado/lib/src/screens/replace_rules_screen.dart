@@ -24,6 +24,7 @@ import '../widgets/passphrase_import.dart';
 import '../widgets/replace_rule_group_manage_dialog.dart';
 import 'replace_rule_edit_screen.dart';
 import 'replace_rule_import_confirm_screen.dart';
+import '../utils/error_message.dart';
 
 /// 替换规则管理页面
 class ReplaceRulesScreen extends ConsumerStatefulWidget {
@@ -642,7 +643,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('获取替换规则失败：$e')));
+        ).showSnackBar(SnackBar(content: Text('获取替换规则失败：${errorMessage(e)}')));
       }
     }
   }
@@ -691,7 +692,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('从文件导入失败：$e')));
+        ).showSnackBar(SnackBar(content: Text('从文件导入失败：${errorMessage(e)}')));
       }
     }
   }

@@ -52,12 +52,23 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
     if (!mounted) return;
     final state = ref.read(remoteBookNotifierProvider);
     final messenger = ScaffoldMessenger.of(context);
-    if (state.error != null && (state.importedCount ?? 0) == 0) {
-      messenger.showSnackBar(SnackBar(content: Text(state.error!)));
+    final count = state.importedCount ?? 0;
+    final failures = state.importFailures;
+    // [P2-7] 全部失败且无逐条明细（如未配置 WebDAV/未选择）走页面级 error；
+    // 其余按「成功 N 本 + M 本失败 + 首条原因」与压缩包导入同范式提示。
+    if (count == 0 && failures.isEmpty) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(state.error ?? '导入失败')),
+      );
       return;
     }
-    final count = state.importedCount ?? 0;
-    messenger.showSnackBar(SnackBar(content: Text('成功导入 $count 本')));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          remoteBookImportResultMessage(ok: count, failures: failures),
+        ),
+      ),
+    );
     if (count > 0) {
       ref.read(bookshelfNotifierProvider.notifier).refresh();
     }

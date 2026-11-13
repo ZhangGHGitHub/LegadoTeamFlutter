@@ -24,6 +24,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
 import '../widgets/explore_page_control.dart';
 import '../widgets/legado_app_bar.dart';
+import '../utils/error_message.dart';
 
 /// 路由参数类型转发（routes.dart / explore_screen.dart 依赖）— 保留原导出
 export '../providers/explore/explore_show_notifier.dart' show ExploreShowArgs;
@@ -92,7 +93,7 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('加入书架失败: $e')),
+        SnackBar(content: Text('加入书架失败: ${errorMessage(e)}')),
       );
     }
   }

@@ -209,7 +209,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       await ref.read(bookshelfNotifierProvider.notifier).refresh();
       await _loadGroups();
     } catch (e) {
-      _showError('保存失败：$e');
+      _showError('保存失败：${errorMessage(e)}');
     }
   }
 
@@ -233,7 +233,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       // 让书架列表/分组计数立即反映（不回退到已删除组）。
       await ref.read(bookshelfNotifierProvider.notifier).refresh();
     } catch (e) {
-      _showError('删除失败：$e');
+      _showError('删除失败：${errorMessage(e)}');
     }
   }
 
@@ -243,7 +243,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       await api.updateBookGroup(group.copyWith(show: !group.show));
       await _loadGroups();
     } catch (e) {
-      _showError('更新失败：$e');
+      _showError('更新失败：${errorMessage(e)}');
     }
   }
 
@@ -262,7 +262,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       }
       setState(() => _groups = [...reordered]);
     } catch (e) {
-      _showError('排序失败：$e');
+      _showError('排序失败：${errorMessage(e)}');
       await _loadGroups();
     }
   }
@@ -590,7 +590,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
         ).showSnackBar(SnackBar(content: Text('已更新「${group.groupName}」的书籍')));
       }
     } catch (e) {
-      _showError('分配失败：$e');
+      _showError('分配失败：${errorMessage(e)}');
     }
   }
 }

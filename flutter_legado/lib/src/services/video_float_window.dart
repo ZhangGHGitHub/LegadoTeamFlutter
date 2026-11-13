@@ -34,6 +34,7 @@ import '../models/models.dart';
 import '../utils/video_play_utils.dart';
 import '../utils/video_progress.dart';
 import 'book_api.dart';
+import '../utils/error_message.dart';
 
 /// 悬浮窗播放状态（Dart → 原生；原生 → Dart 回全屏/接管共用）
 @immutable
@@ -560,7 +561,7 @@ class VideoFloatWindowCoordinator {
       _chapterIndex = next;
     } catch (e) {
       debugPrint('[VideoFloat] 连播失败：$e');
-      onNotice?.call('连播失败：$e');
+      onNotice?.call('连播失败：${errorMessage(e)}');
       await _finish(fallback);
     }
   }

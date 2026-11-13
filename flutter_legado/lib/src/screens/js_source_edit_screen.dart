@@ -15,6 +15,7 @@ import '../widgets/source_rule_help_sheet.dart';
 import 'code_edit_screen.dart';
 import 'curl_analyze_url_sheet.dart';
 import 'source_debug_screen.dart';
+import '../utils/error_message.dart';
 
 /// JS 单文件书源编辑（对标原版 JsSourceEditActivity 最小可用）
 ///
@@ -73,7 +74,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
         _controller.text = _kJsSourceTemplate;
       }
     } catch (e) {
-      _error = '$e';
+      _error = errorMessage(e);
       _controller.text = _kJsSourceTemplate;
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -152,7 +153,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
         Navigator.of(context).pop(true);
       }
     } catch (e) {
-      if (mounted) _toast('保存失败：$e');
+      if (mounted) _toast('保存失败：${errorMessage(e)}');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -238,7 +239,7 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
         _toast('语法检查通过');
       }
     } catch (e) {
-      _toast('语法检查失败：$e');
+      _toast('语法检查失败：${errorMessage(e)}');
     }
   }
 

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
+import '../utils/error_message.dart';
 
 /// cURL ↔ AnalyzeUrl 双向转换（对标原版 `CurlAnalyzeUrlDialog`）
 ///
@@ -89,7 +90,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _output.clear());
-      final msg = _friendlyError('$e');
+      final msg = _friendlyError(errorMessage(e));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } finally {
       if (mounted) setState(() => _converting = false);

@@ -140,7 +140,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('无法打开文件: $e')),
+        SnackBar(content: Text('无法打开文件: ${errorMessage(e)}')),
       );
     }
   }
@@ -195,7 +195,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败: $e')),
+        SnackBar(content: Text('删除失败: ${errorMessage(e)}')),
       );
       return;
     }

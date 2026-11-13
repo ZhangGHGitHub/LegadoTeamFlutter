@@ -16,6 +16,7 @@ import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/passphrase_import.dart';
+import '../utils/error_message.dart';
 
 /// 朗读引擎配置页面
 ///
@@ -75,7 +76,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       setState(() => _loading = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('加载朗读引擎失败: $e')),
+          SnackBar(content: Text('加载朗读引擎失败: ${errorMessage(e)}')),
         );
       }
     }
@@ -113,7 +114,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('删除失败: $e')),
+        SnackBar(content: Text('删除失败: ${errorMessage(e)}')),
       );
     }
   }
@@ -141,7 +142,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('保存失败: $e')),
+        SnackBar(content: Text('保存失败: ${errorMessage(e)}')),
       );
     }
   }

@@ -6,6 +6,7 @@ import 'bridge_http.dart';
 
 import '../bridge/ffi.dart' show BridgeError;
 import 'book_api.dart';
+import '../utils/error_message.dart';
 
 /// 书源导入结果
 class ImportResult {
@@ -291,7 +292,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['网络请求超时：$e'],
+        errors: ['网络请求超时：${errorMessage(e)}'],
         unit: unit,
       );
     } catch (e) {
@@ -300,7 +301,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['从 URL 导入失败：$e'],
+        errors: ['从 URL 导入失败：${errorMessage(e)}'],
         unit: unit,
       );
     }
@@ -332,7 +333,7 @@ class SourceImportService {
         success: 0,
         failed: 0,
         skipped: 0,
-        errors: ['读取文件失败：$e'],
+        errors: ['读取文件失败：${errorMessage(e)}'],
         unit: unit,
       );
     }

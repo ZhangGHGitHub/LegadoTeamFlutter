@@ -18,6 +18,7 @@ import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../dict_dialog.dart';
 import 'reader_action_helpers.dart';
+import '../../utils/error_message.dart';
 
 void selectionToast(BuildContext context, String message) {
   if (!context.mounted) return;
@@ -45,7 +46,7 @@ Future<void> selectionShare(
   try {
     await Share.share(text);
   } catch (e) {
-    if (context.mounted) selectionToast(context, '分享失败：$e');
+    if (context.mounted) selectionToast(context, '分享失败：${errorMessage(e)}');
   }
 }
 
@@ -68,7 +69,7 @@ Future<void> selectionOpenBrowser(
       if (context.mounted) selectionToast(context, '无法打开浏览器');
     }
   } catch (e) {
-    if (context.mounted) selectionToast(context, '打开浏览器失败：$e');
+    if (context.mounted) selectionToast(context, '打开浏览器失败：${errorMessage(e)}');
   }
 }
 
@@ -146,7 +147,7 @@ Future<void> selectionAddBookmark(
   } catch (e) {
     messenger?.showSnackBar(
       SnackBar(
-        content: Text('添加书签失败：$e'),
+        content: Text('添加书签失败：${errorMessage(e)}'),
         duration: const Duration(seconds: 2),
       ),
     );

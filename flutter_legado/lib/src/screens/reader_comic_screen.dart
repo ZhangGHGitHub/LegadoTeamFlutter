@@ -1970,7 +1970,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             File('${dir.path}/$fileName')..writeAsBytesSync(data.bytes);
         _showPageActionSnackBar('已保存到文档目录: ${file.path}');
       } catch (e) {
-        _showPageActionSnackBar('保存图片失败: $e');
+        _showPageActionSnackBar('保存图片失败: ${errorMessage(e)}');
       }
       return;
     }
@@ -1995,7 +1995,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         _showPageActionSnackBar('已保存到文档目录: ${file.path}');
       }
     } catch (e) {
-      _showPageActionSnackBar('保存图片失败: $e');
+      _showPageActionSnackBar('保存图片失败: ${errorMessage(e)}');
     }
   }
 
@@ -2015,7 +2015,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       await file.writeAsBytes(data.bytes);
       await Share.shareXFiles([XFile(file.path)], subject: '漫画图片');
     } catch (e) {
-      _showPageActionSnackBar('分享失败: $e');
+      _showPageActionSnackBar('分享失败: ${errorMessage(e)}');
     }
   }
 
@@ -2979,7 +2979,7 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = errorMessage(e);
         _loading = false;
       });
       widget.onError();
@@ -3240,7 +3240,7 @@ class _LocalCbzImageState extends ConsumerState<_LocalCbzImage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = errorMessage(e);
         _loading = false;
       });
       widget.onError();
@@ -3401,7 +3401,7 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = errorMessage(e);
         _loading = false;
       });
       widget.onError();

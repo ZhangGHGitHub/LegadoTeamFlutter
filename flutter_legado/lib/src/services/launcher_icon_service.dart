@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../utils/error_message.dart';
 
 /// 切换结果：`ok=false` 时 [message] 携带失败原因，供 UI 展示真实错误
 /// （此前统一返回 bool，UI 只能显示笼统的"当前平台或系统版本不支持"）。
@@ -115,7 +116,7 @@ class LauncherIconService {
       );
     } catch (e) {
       debugPrint('[LauncherIcon] set failed: $e');
-      return LauncherIconResult(ok: false, message: '$e');
+      return LauncherIconResult(ok: false, message: errorMessage(e));
     }
   }
 }

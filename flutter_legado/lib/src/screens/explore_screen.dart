@@ -38,6 +38,7 @@ import '../widgets/explore_page_control.dart';
 import '../widgets/explore_source_content.dart';
 import '../widgets/error_view.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
+import '../utils/error_message.dart';
 
 // [A4 形态对齐 | full-stack-engineer + UI] C8 展开区 3 列 chips 分区网格
 // （分组标题 + 固定 3 列 URL chips；chip 引擎仍复用 ExploreKindLayout）
@@ -381,7 +382,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('置顶失败: $e')),
+        SnackBar(content: Text('置顶失败: ${errorMessage(e)}')),
       );
     }
   }

@@ -12,6 +12,7 @@ import '../providers/source/source_notifier.dart';
 import '../services/source_import_service.dart';
 import '../widgets/custom_group_dialog.dart';
 import '../widgets/pill_divider.dart';
+import '../utils/error_message.dart';
 
 /// 书源导入状态（对标原版 ImportBookSourceStatus）
 enum _ImportStatus {
@@ -168,7 +169,7 @@ class _SourceImportConfirmScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：$e')),
+          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
         );
       }
     } finally {

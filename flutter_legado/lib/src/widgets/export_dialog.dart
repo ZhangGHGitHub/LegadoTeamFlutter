@@ -546,7 +546,7 @@ class _ExportDialogState extends State<ExportDialog> {
         } catch (e) {
           debugPrint('[ExportDialog] 写入文件失败：$e');
           if (mounted) {
-            _showError('文件写入失败：$e');
+            _showError('文件写入失败：${errorMessage(e)}');
           }
           return;
         }

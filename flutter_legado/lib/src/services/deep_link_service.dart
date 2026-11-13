@@ -14,6 +14,7 @@ import '../utils/shared_text.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 import '../widgets/passphrase_import.dart';
 import 'source_share_passphrase.dart';
+import '../utils/error_message.dart';
 
 /// 监听 Android `legado://` / `yuedu://` 深链并导航到关联导入页；
 /// P1-4 起同时消费外部书籍文件 VIEW intent（content:// / file://）
@@ -496,7 +497,7 @@ class DeepLinkService {
       await _dispatchCopiedFile(path, messenger);
     } catch (e) {
       debugPrint('[DeepLink] 外部文件导入失败：$e');
-      messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：$e')));
+      messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：${errorMessage(e)}')));
     } finally {
       _lastHandledFile = null;
     }
@@ -638,7 +639,7 @@ class DeepLinkService {
       return path;
     } catch (e) {
       debugPrint('[DeepLink] 外部文件拷贝失败：$e');
-      messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：$e')));
+      messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：${errorMessage(e)}')));
       return null;
     }
   }

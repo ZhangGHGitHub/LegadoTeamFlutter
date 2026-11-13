@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../utils/error_message.dart';
 
 /// 系统 TTS 引擎哨兵 URL
 ///
@@ -1022,7 +1023,7 @@ class SystemTtsService {
         throw SystemTtsException('系统 TTS 合成超时（${synthesisTimeout.inSeconds}s）');
       }
       if (e is SystemTtsException) rethrow;
-      throw SystemTtsException('系统 TTS 合成失败：$e');
+      throw SystemTtsException('系统 TTS 合成失败：${errorMessage(e)}');
     }
   }
 

@@ -346,7 +346,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
           if (!mounted || seq != _decodeSeq) return;
           setState(() {
             _isDecoding = false;
-            _dataError = e is ImageDataUriException ? e.message : '$e';
+            _dataError = e is ImageDataUriException ? e.message : errorMessage(e);
           });
         },
       ),
@@ -386,7 +386,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
         } on ImageDataUriException {
           rethrow;
         } catch (e) {
-          throw ImageDataUriException('$e');
+          throw ImageDataUriException(errorMessage(e));
         }
       }
       if (image != null) return image.bytes;
@@ -1482,7 +1482,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存源变量失败：$e')),
+          SnackBar(content: Text('保存源变量失败：${errorMessage(e)}')),
         );
       }
     }
@@ -1498,7 +1498,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('布局保存失败：$e')),
+          SnackBar(content: Text('布局保存失败：${errorMessage(e)}')),
         );
       }
     }
@@ -1535,7 +1535,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清空失败：$e')),
+          SnackBar(content: Text('清空失败：${errorMessage(e)}')),
         );
       }
     }

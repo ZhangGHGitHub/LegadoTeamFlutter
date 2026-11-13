@@ -13,6 +13,7 @@ import '../../screens/reader_config_panel.dart';
 import '../../screens/reader_menu_system_panel.dart';
 import '../../screens/reader_theme_screen.dart';
 import 'reader_tip_config_sheet.dart';
+import '../../utils/error_message.dart';
 
 part 'reader_settings_sheet_font_panel.part.dart';
 // ↑ [C3 形态对齐 | full-stack-engineer + UI] Tt 行内字体面板 part（参照

@@ -12,6 +12,7 @@ import '../services/app_update_service.dart';
 import '../services/crash_log_service.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/update_dialog.dart';
+import '../utils/error_message.dart';
 
 /// 关于页面（对齐原版 about.xml + AboutFragment）
 ///
@@ -94,7 +95,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
       if (!mounted) return;
       setState(() => _checkingUpdate = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查更新\n$e')),
+        SnackBar(content: Text('检查更新\n${errorMessage(e)}')),
       );
     }
   }
@@ -180,7 +181,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存日志失败：$e')),
+        SnackBar(content: Text('保存日志失败：${errorMessage(e)}')),
       );
     }
   }
@@ -221,7 +222,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('创建堆转储失败：$e')),
+        SnackBar(content: Text('创建堆转储失败：${errorMessage(e)}')),
       );
     }
   }

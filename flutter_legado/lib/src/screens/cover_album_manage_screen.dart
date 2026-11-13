@@ -26,6 +26,7 @@ import '../widgets/cover_album_preview.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
+import '../utils/error_message.dart';
 
 /// 封面相册管理页
 class CoverAlbumManageScreen extends ConsumerStatefulWidget {
@@ -69,7 +70,7 @@ class _CoverAlbumManageScreenState
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('新建相册失败：$e');
+      _showMessage('新建相册失败：${errorMessage(e)}');
     }
   }
 
@@ -82,7 +83,7 @@ class _CoverAlbumManageScreenState
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('重命名失败：$e');
+      _showMessage('重命名失败：${errorMessage(e)}');
     }
   }
 
@@ -130,7 +131,7 @@ class _CoverAlbumManageScreenState
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('删除失败：$e');
+      _showMessage('删除失败：${errorMessage(e)}');
     }
   }
 
@@ -146,7 +147,7 @@ class _CoverAlbumManageScreenState
           );
       _showMessage('已将「${album.name}」设为默认封面');
     } catch (e) {
-      _showMessage('设置默认封面失败：$e');
+      _showMessage('设置默认封面失败：${errorMessage(e)}');
     }
   }
 
@@ -421,7 +422,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
         try {
           bytes = await pick.readBytes();
         } catch (e) {
-          failures.add('${pick.name}：读取失败（$e）');
+          failures.add('${pick.name}：读取失败（${errorMessage(e)}）');
           continue;
         }
         final result = await CoverAlbumStore.instance.importImages(
@@ -447,7 +448,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('导入失败：$e');
+      _showMessage('导入失败：${errorMessage(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -486,7 +487,7 @@ class _CoverAlbumEditorSheetState extends ConsumerState<CoverAlbumEditorSheet>
     } on CoverAlbumException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('删除图片失败：$e');
+      _showMessage('删除图片失败：${errorMessage(e)}');
     }
   }
 

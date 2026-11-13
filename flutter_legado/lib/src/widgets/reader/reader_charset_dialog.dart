@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/models.dart' show BookType;
 import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/reader/reader_notifier.dart';
+import '../../utils/error_message.dart';
 
 /// 常用编码候选（对齐原版 showCharsetConfig 的选项集）
 const List<String> kReaderCharsets = [
@@ -121,6 +122,6 @@ Future<void> _applyCharset(
     }
     messenger.showSnackBar(SnackBar(content: Text('已设置编码：$applied')));
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('设置编码失败: $e')));
+    messenger.showSnackBar(SnackBar(content: Text('设置编码失败: ${errorMessage(e)}')));
   }
 }

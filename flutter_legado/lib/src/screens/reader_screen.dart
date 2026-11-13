@@ -38,6 +38,7 @@ import '../utils/comic_image_utils.dart';
 import '../utils/source_login_prompt.dart';
 import '../utils/volume_key_page_gate.dart';
 import 'reader_config_panel.dart';
+import '../utils/error_message.dart';
 
 /// 目录页返回后重读 DB 书籍快照，并在替换/重分段配置变化时重载正文
 ///
@@ -1842,7 +1843,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           );
       messenger?.showSnackBar(SnackBar(content: Text('已添加书签：$chapterName')));
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('添加书签失败：$e')));
+      messenger?.showSnackBar(SnackBar(content: Text('添加书签失败：${errorMessage(e)}')));
     }
   }
 
@@ -1981,7 +1982,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('自动换源失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('自动换源失败: ${errorMessage(e)}')));
       }
     } finally {
       _autoSwitching = false;

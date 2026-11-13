@@ -422,7 +422,8 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       await dir.create(recursive: true);
     }
     var ok = 0;
-    String? lastErr;
+    // [P2-7] 失败明细逐条保留（文件名 + 可读原因）；部分失败不得静默。
+    final failures = <String>[];
     for (final item in selected) {
       String? localPath;
       var imported = false;
@@ -453,7 +454,9 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         ));
         ok++;
       } catch (e) {
-        lastErr = _mapError(e);
+        // [P2-7] 记录「文件名：可读原因」；循环结束统一交给页面展示
+        failures.add('${item.filename}：${errorMessage(e)}');
+
         // 下载/导入失败：删除临时文件，避免残留。导入成功后的
         // updateBook 失败不清理——bookUrl 仍指向该文件。
         if (!imported && localPath != null) {
@@ -464,8 +467,13 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     state = state.copyWith(
       isImporting: false,
       importedCount: ok,
+      importFailures: failures,
       selectedPaths: {},
-      error: ok == 0 ? (lastErr ?? '导入失败') : null,
+      // 全部失败时保留单条汇总错误（页面错误态）；部分失败改由
+      // importFailures + 结果文案展示，不污染页面级 error。
+      error: ok == 0
+          ? (failures.isNotEmpty ? failures.first : '导入失败')
+          : null,
       clearError: ok > 0,
     );
     if (ok > 0) {

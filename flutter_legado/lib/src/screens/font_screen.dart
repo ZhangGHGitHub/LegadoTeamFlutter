@@ -8,6 +8,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/error_message.dart';
 
 /// 字体管理页面
 ///
@@ -226,7 +227,7 @@ class _FontScreenState extends State<FontScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('字体导入失败: $e')),
+          SnackBar(content: Text('字体导入失败: ${errorMessage(e)}')),
         );
       }
     } finally {

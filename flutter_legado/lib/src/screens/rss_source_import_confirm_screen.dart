@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../widgets/custom_group_dialog.dart';
 import 'source_import_confirm_screen.dart' show AppColorsExt;
+import '../utils/error_message.dart';
 
 /// 订阅源导入状态（对标原版 ImportRssSourceDialog 状态展示）
 enum _ImportStatus {
@@ -161,7 +162,7 @@ class _RssSourceImportConfirmScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：$e')),
+          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
         );
       }
     } finally {

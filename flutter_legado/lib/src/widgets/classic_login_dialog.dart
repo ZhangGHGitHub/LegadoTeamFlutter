@@ -255,7 +255,7 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
     try {
       await _runAction(action);
     } catch (e) {
-      _snack('动作执行失败：$e');
+      _snack('动作执行失败：${errorMessage(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -284,7 +284,7 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (e) {
-      if (mounted) _snack('登录出错：$e');
+      if (mounted) _snack('登录出错：${errorMessage(e)}');
       if (mounted) setState(() => _busy = false);
     }
   }

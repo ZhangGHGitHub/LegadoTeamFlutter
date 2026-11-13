@@ -28,6 +28,7 @@ import 'reader_charset_dialog.dart';
 import 'reader_download_dialog.dart';
 import 'reader_page_chrome.dart';
 import 'reader_settings_sheet.dart';
+import '../../utils/error_message.dart';
 
 /// 阅读器顶部工具栏
 ///
@@ -171,7 +172,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       );
     } catch (e) {
       if (!context.mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('上传进度失败：$e')));
+      messenger.showSnackBar(SnackBar(content: Text('上传进度失败：${errorMessage(e)}')));
     }
   }
 
@@ -322,7 +323,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       await ref.read(readerNotifierProvider.notifier).openBook(book);
       if (context.mounted) _snack(context, '目录已更新');
     } catch (e) {
-      if (context.mounted) _snack(context, '更新目录失败: $e');
+      if (context.mounted) _snack(context, '更新目录失败: ${errorMessage(e)}');
     }
   }
 
@@ -434,7 +435,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
         _snack(context, '反转内容保存失败');
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '反转内容失败: $e');
+      if (context.mounted) _snack(context, '反转内容失败: ${errorMessage(e)}');
     }
   }
 
@@ -536,7 +537,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
             _snack(context, '已禁用书源：$sourceName');
           }
         } catch (e) {
-          if (context.mounted) _snack(context, '禁用书源失败: $e');
+          if (context.mounted) _snack(context, '禁用书源失败: ${errorMessage(e)}');
         }
     }
   }
@@ -584,7 +585,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       }
     } catch (e) {
       // 对标原版 onError：执行购买操作出错
-      if (context.mounted) _snack(context, '章节购买失败: $e');
+      if (context.mounted) _snack(context, '章节购买失败: ${errorMessage(e)}');
     }
   }
 
@@ -674,7 +675,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
         _snack(context, next ? '已去除重复标题' : '该章已保留原标题');
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '设置失败: $e');
+      if (context.mounted) _snack(context, '设置失败: ${errorMessage(e)}');
     }
   }
 

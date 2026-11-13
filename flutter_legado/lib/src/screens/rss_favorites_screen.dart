@@ -88,7 +88,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     } catch (e) {
       // 失败时恢复
       setState(() => _stars.add(star));
-      messenger.showSnackBar(SnackBar(content: Text('操作失败：$e')));
+      messenger.showSnackBar(SnackBar(content: Text('操作失败：${errorMessage(e)}')));
     }
   }
 

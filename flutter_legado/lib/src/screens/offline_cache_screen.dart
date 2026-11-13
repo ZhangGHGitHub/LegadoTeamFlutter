@@ -20,6 +20,7 @@ import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/export_dialog.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/pill_divider.dart';
+import '../utils/error_message.dart';
 
 /// 离线缓存界面（对齐原版 CacheActivity）
 ///
@@ -184,7 +185,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       _snack('$label已加入缓存队列');
       _refresh(silent: true);
     } catch (e) {
-      _snack('缓存启动失败：$e');
+      _snack('缓存启动失败：${errorMessage(e)}');
     }
   }
 
@@ -197,7 +198,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       _snack('已停止${locked ? '本书' : '《${entry.book.name}》'}下载');
       _refresh(silent: true);
     } catch (e) {
-      _snack('停止失败：$e');
+      _snack('停止失败：${errorMessage(e)}');
     }
   }
 

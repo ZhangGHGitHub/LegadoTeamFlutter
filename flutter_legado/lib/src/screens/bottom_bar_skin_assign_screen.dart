@@ -8,6 +8,7 @@ import '../widgets/legado_app_bar.dart';
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
 import '../widgets/ios_widgets.dart';
+import '../utils/error_message.dart';
 
 /// 底栏皮肤槽位分配（对齐 BottomBarSkinAssignActivity）
 ///
@@ -107,7 +108,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = '$e';
+        _error = errorMessage(e);
       });
     }
   }
@@ -145,7 +146,7 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败：$e')),
+        SnackBar(content: Text('保存失败：${errorMessage(e)}')),
       );
     }
   }

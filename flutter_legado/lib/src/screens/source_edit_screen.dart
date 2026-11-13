@@ -25,6 +25,7 @@ import '../utils/source_login_entry.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import 'code_edit_screen.dart';
+import '../utils/error_message.dart';
 part 'source_edit_screen_load.part.dart';
 part 'source_edit_screen_actions.part.dart';
 part 'source_edit_screen_builders.part.dart';

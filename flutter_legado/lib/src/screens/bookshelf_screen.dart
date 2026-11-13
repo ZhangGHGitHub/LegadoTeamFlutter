@@ -47,6 +47,7 @@ import '../widgets/navigation/main_detail_pane_scope.dart';
 import '../widgets/privacy/private_locked_page.dart';
 import '../widgets/privacy/privacy_unlock_dialog.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
+import '../utils/error_message.dart';
 
 /// 书架页面（Riverpod ConsumerStatefulWidget）
 ///
@@ -139,6 +140,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// 书架内容实际宽度（多栏/窄 pane 小于窗口宽；配置面板列数提示用）
   double? _lastViewportWidth;
+
+  /// [P2-5] 正在打开中的书（按 bookUrl 去重）
+  ///
+  /// `_openBook` 在 push 前有「书源列表查询 + 漫画开关镜像刷新」两段
+  /// await；弱网/书源多时用户双击会在第一段 await 期间再次进入并压入
+  /// 第二个阅读器。这里只拦截**同一本**书的并发打开（不同书仍可各自
+  /// 打开），且由 `finally` 覆盖所有退出路径（异常、context 卸载等）
+  /// 复位，避免守卫泄漏导致该书此后无法打开。
+  final Set<String> _openingBookUrls = <String>{};
 
   @override
   void initState() {
@@ -2577,7 +2587,24 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 对标原版 startActivityForBook：未读进书详页 + 立即自动开读（A4 对齐 B）；
   /// 已读按 BookType 分流到 video / audio / reader-comic / reader
   /// （勿固定文本阅读器）。— Reasonix + UI
+  ///
+  /// [P2-5] 重入保护：开书流程在 push 前有异步等待（见
+  /// [_openingBookUrls]），同一本书的重复点击在此直接忽略。
   Future<void> _openBook(BuildContext context, WidgetRef ref, Book book) async {
+    final key = book.bookUrl;
+    if (!_openingBookUrls.add(key)) return;
+    try {
+      await _openBookImpl(context, ref, book);
+    } finally {
+      _openingBookUrls.remove(key);
+    }
+  }
+
+  Future<void> _openBookImpl(
+    BuildContext context,
+    WidgetRef ref,
+    Book book,
+  ) async {
     if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
       // [A4 对齐 B | 2026-09-21 裁决] 未读书单击 = 详情页 + 立即自动开读
       // （等价重构版 BookInfoPage(openReaderImmediately: true)）：详情页
@@ -2747,7 +2774,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         } catch (e) {
           failures.add(file.name);
           if (failureDetails.length < 3) {
-            failureDetails.add('${file.name}：本地书持久化失败（$e）');
+            failureDetails.add('${file.name}：本地书持久化失败（${errorMessage(e)}）');
           }
           continue;
         }
@@ -3282,7 +3309,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         content = (await api.httpGet(content)).trim();
       } catch (e) {
         if (mounted) {
-          messenger.showSnackBar(SnackBar(content: Text('拉取书单失败: $e')));
+          messenger.showSnackBar(SnackBar(content: Text('拉取书单失败: ${errorMessage(e)}')));
         }
         return;
       }

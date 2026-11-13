@@ -111,6 +111,13 @@ class RemoteBookState {
   final int? importedCount;
   final String? error;
 
+  /// [P2-7] 批量导入的失败明细（`文件名：原因`）
+  ///
+  /// 逐本导入时部分失败不得静默：成功数走 [importedCount]，失败明细走
+  /// 本字段，由页面统一拼「成功 N 本，M 本失败：首条（另有 X 本）」。
+  /// 起始导入与 [copyWith.clearImported] 时清空。
+  final List<String> importFailures;
+
   /// 服务器 Sheet 内联错误（保存/删除失败原因）
   ///
   /// 与 [error] 分离：Sheet 贴底弹出时 SnackBar 会被遮挡，服务器操作失败
@@ -131,6 +138,7 @@ class RemoteBookState {
     this.importedCount,
     this.error,
     this.serverError,
+    this.importFailures = const [],
   });
 
   /// 展示路径（对齐原版 tvPath：默认 books/，自定义服务器从 / 起）
@@ -196,6 +204,7 @@ class RemoteBookState {
     int? importedCount,
     String? error,
     String? serverError,
+    List<String>? importFailures,
     bool clearError = false,
     bool clearServerError = false,
     bool clearImported = false,
@@ -216,6 +225,25 @@ class RemoteBookState {
       error: clearError ? null : (error ?? this.error),
       serverError:
           clearServerError ? null : (serverError ?? this.serverError),
+      importFailures: clearImported
+          ? const []
+          : (importFailures ?? this.importFailures),
     );
   }
+}
+
+/// [P2-7] 远程书库批量导入结果文案（成功/失败分列）
+///
+/// 与压缩包导入（`archive_import_dialog.dart` 的 `_importResultMessage`）
+/// 保持同一范式：成功数 + 失败数 + 首条失败明细（其余仅汇总条数），
+/// 失败明细由 [RemoteBookState.importFailures] 提供（`文件名：原因`）。
+String remoteBookImportResultMessage({
+  required int ok,
+  required List<String> failures,
+}) {
+  if (failures.isEmpty) return '成功导入 $ok 本';
+  final more = failures.length > 1 ? '（另有 ${failures.length - 1} 本）' : '';
+  final detail = '${failures.first}$more';
+  if (ok == 0) return '导入失败：$detail';
+  return '成功导入 $ok 本，${failures.length} 本失败：$detail';
 }

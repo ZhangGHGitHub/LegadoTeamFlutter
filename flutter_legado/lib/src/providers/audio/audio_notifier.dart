@@ -13,6 +13,7 @@ import '../../services/read_aloud_timer_settings.dart';
 import '../../services/stream_audio_player.dart';
 import '../../services/system_tts_service.dart';
 import '../../utils/audio_skip_policy.dart';
+import '../../utils/error_message.dart';
 import '../../utils/read_aloud_content_split.dart';
 import '../providers.dart';
 import 'audio_state.dart';
@@ -1077,7 +1078,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       // [P0 | 2026-10-03] 在线书正文抓取失败（网络/书源失效等）必须有用户
       // 可见提示：errorMessage 由朗读条警示条/听书页错误行展示（不静默）
       state = state.copyWith(
-        errorMessage: '章节正文获取失败，无法朗读：$e',
+        errorMessage: '章节正文获取失败，无法朗读：${errorMessage(e)}',
         state: PlayerState.error,
       );
     }

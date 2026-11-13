@@ -14,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../services/source_share_passphrase.dart';
+import '../utils/error_message.dart';
 
 /// 弹出「复制口令」对话框
 ///
@@ -124,7 +125,7 @@ class _SourceSharePassphraseDialogState
       await Clipboard.setData(ClipboardData(text: passphrase));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = '复制失败：$e');
+      setState(() => _error = '复制失败：${errorMessage(e)}');
       return;
     }
     if (!mounted) return;

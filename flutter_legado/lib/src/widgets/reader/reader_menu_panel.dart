@@ -30,6 +30,7 @@ import 'reader_menu_style.dart';
 import 'reader_toc_rule_dialog.dart';
 import 'reader_top_bar_actions.dart';
 import 'text_processing_sheet.dart';
+import '../../utils/error_message.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
@@ -173,7 +174,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('设置保存失败: $e')));
+      ).showSnackBar(SnackBar(content: Text('设置保存失败: ${errorMessage(e)}')));
     }
   }
 

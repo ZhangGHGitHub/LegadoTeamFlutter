@@ -14,6 +14,7 @@ import '../../providers/providers.dart'
     show bookApiProvider, replaceEnableDefaultProvider;
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/sync/sync_notifier.dart';
+import '../../utils/error_message.dart';
 
 /// 九宫格动作执行回调（生产环境由 ReaderScreen 注入，测试可计数）
 class ReaderTapActionDelegate {
@@ -170,7 +171,7 @@ Future<void> _saveEditedContent(
       readerActionSnack(context, '章节内容保存失败');
     }
   } catch (e) {
-    if (context.mounted) readerActionSnack(context, '章节内容保存失败：$e');
+    if (context.mounted) readerActionSnack(context, '章节内容保存失败：${errorMessage(e)}');
   }
 }
 
@@ -195,7 +196,7 @@ Future<bool> updateReaderBookConfig(
     return true;
   } catch (e) {
     if (showError && context.mounted) {
-      readerActionSnack(context, '设置保存失败: $e');
+      readerActionSnack(context, '设置保存失败: ${errorMessage(e)}');
     }
     return false;
   }
@@ -365,6 +366,6 @@ Future<void> syncReaderProgress(BuildContext context, WidgetRef ref) async {
     }
   } catch (e) {
     if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(content: Text('同步进度失败：$e')));
+    messenger.showSnackBar(SnackBar(content: Text('同步进度失败：${errorMessage(e)}')));
   }
 }

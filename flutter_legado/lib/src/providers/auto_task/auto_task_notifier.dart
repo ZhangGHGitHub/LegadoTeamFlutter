@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../services/book_api.dart';
 import '../providers.dart';
 import 'auto_task_state.dart';
+import '../../utils/error_message.dart';
 
 export 'auto_task_state.dart';
 
@@ -61,7 +62,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
     } catch (e) {
       state = state.copyWith(
         tasks: [],
-        error: '加载任务失败: $e',
+        error: '加载任务失败: ${errorMessage(e)}',
         isLoading: false,
       );
     }
@@ -78,7 +79,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       await rustApi.autoTaskCreateRule(ruleJson: jsonEncode(task.toJson()));
       await loadTasks(silent: true);
     } catch (e) {
-      state = state.copyWith(error: '创建任务失败: $e');
+      state = state.copyWith(error: '创建任务失败: ${errorMessage(e)}');
     }
   }
 
@@ -101,7 +102,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       await loadTasks(silent: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: '创建任务失败: $e');
+      state = state.copyWith(error: '创建任务失败: ${errorMessage(e)}');
       return false;
     }
   }
@@ -120,7 +121,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       final decoded = jsonDecode(ruleJson);
       id = decoded is Map ? decoded['id']?.toString() ?? '' : '';
     } catch (e) {
-      state = state.copyWith(error: '更新任务失败: 规则 JSON 无效: $e');
+      state = state.copyWith(error: '更新任务失败: 规则 JSON 无效: ${errorMessage(e)}');
       return false;
     }
     if (id.isEmpty) {
@@ -137,7 +138,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       await loadTasks(silent: true);
       return true;
     } catch (e) {
-      state = state.copyWith(error: '更新任务失败: $e');
+      state = state.copyWith(error: '更新任务失败: ${errorMessage(e)}');
       return false;
     }
   }
@@ -166,7 +167,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       );
       await loadTasks(silent: true);
     } catch (e) {
-      state = state.copyWith(tasks: previous, error: '更新任务失败: $e');
+      state = state.copyWith(tasks: previous, error: '更新任务失败: ${errorMessage(e)}');
     }
   }
 
@@ -181,7 +182,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       await rustApi.autoTaskDeleteRule(id: id);
       await loadTasks(silent: true);
     } catch (e) {
-      state = state.copyWith(error: '删除任务失败: $e');
+      state = state.copyWith(error: '删除任务失败: ${errorMessage(e)}');
     }
   }
 
@@ -216,7 +217,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
         }).toList(),
       );
     } catch (e) {
-      state = state.copyWith(error: '运行任务失败: $e');
+      state = state.copyWith(error: '运行任务失败: ${errorMessage(e)}');
     }
   }
 

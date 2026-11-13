@@ -26,6 +26,7 @@ import '../widgets/reader/reader_top_bar_config_sheet.dart';
 import 'click_action_config_sheet.dart';
 import 'page_key_config_sheet.dart';
 import '../widgets/reader/text_select_menu_config_sheet.dart';
+import '../utils/error_message.dart';
 part 'reader_config_panel_data.part.dart';
 part 'reader_config_panel_builders.part.dart';
 

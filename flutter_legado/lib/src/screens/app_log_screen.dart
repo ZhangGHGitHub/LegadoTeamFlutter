@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/app_log/app_log_notifier.dart';
+import '../utils/error_message.dart';
 
 /// 应用日志页面
 ///
@@ -106,7 +107,7 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      ).showSnackBar(SnackBar(content: Text('导出失败：${errorMessage(e)}')));
     }
   }
 

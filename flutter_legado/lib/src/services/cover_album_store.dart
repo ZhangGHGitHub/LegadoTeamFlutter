@@ -34,6 +34,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart';
+import '../utils/error_message.dart';
 
 /// 相册内的一张封面图（索引只保存 [fileName]，[path] 为运行时绝对路径）
 class CoverAlbumImage {
@@ -941,7 +942,7 @@ class CoverAlbumStore {
         failures.add(
           CoverAlbumImportFailure(
             displayName: input.displayName,
-            message: '导入失败：$e',
+            message: '导入失败：${errorMessage(e)}',
           ),
         );
       }
@@ -1093,7 +1094,7 @@ class CoverAlbumStore {
       // 失败时不留下半成品 tmp（成功路径已 rename 为正式索引）
       final pending = temp;
       if (pending != null) _deleteFileQuietlySync(pending);
-      throw CoverAlbumException('保存封面相册失败：$e');
+      throw CoverAlbumException('保存封面相册失败：${errorMessage(e)}');
     }
   }
 

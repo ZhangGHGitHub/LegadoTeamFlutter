@@ -30,6 +30,7 @@ import '../widgets/open_url_confirm_dialog.dart';
 import 'rss_articles_screen.dart';
 import 'search_screen.dart';
 import 'source_login_screen.dart';
+import '../utils/error_message.dart';
 
 /// RSS 文章详情 / 阅读页面
 ///
@@ -364,7 +365,7 @@ class _RssArticleDetailScreenState
       final hasFallback = widget.article.content?.trim().isNotEmpty ?? false;
       setState(() {
         _isContentLoading = false;
-        _contentError = '$e';
+        _contentError = errorMessage(e);
       });
       // 自带 content 可用时继续阅读自带内容，仅用轻提示告知规则正文失败；
       // 审查 P2-8：降级态同样提供「重试」入口。
@@ -427,7 +428,7 @@ class _RssArticleDetailScreenState
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('收藏操作失败：$e')),
+          SnackBar(content: Text('收藏操作失败：${errorMessage(e)}')),
         );
       }
     } finally {
@@ -617,7 +618,7 @@ class _RssArticleDetailScreenState
       if (mounted) {
         setState(() {
           _isWebLoading = false;
-          _webError = '$e';
+          _webError = errorMessage(e);
         });
       }
     }

@@ -10,6 +10,7 @@ import '../../services/settings_service.dart';
 import '../../services/webdav_server_service.dart';
 import '../providers.dart';
 import 'sync_state.dart';
+import '../../utils/error_message.dart';
 
 export 'sync_state.dart';
 
@@ -281,7 +282,7 @@ class SyncNotifier extends Notifier<SyncState> {
       await api.webdavFullSync(buildConfigJson(), localBooks, localSources);
       await _markSyncSuccess();
     } catch (e) {
-      _setError('备份失败: $e');
+      _setError('备份失败: ${errorMessage(e)}');
     }
   }
 
@@ -313,8 +314,8 @@ class SyncNotifier extends Notifier<SyncState> {
       // 结果文案按「同步」表述，避免与「恢复（远端覆盖本地）」方向混淆。
       return '同步完成，回写 $imported 条书源';
     } catch (e) {
-      _setError('同步失败: $e');
-      return '同步失败: $e';
+      _setError('同步失败: ${errorMessage(e)}');
+      return '同步失败: ${errorMessage(e)}';
     }
   }
 

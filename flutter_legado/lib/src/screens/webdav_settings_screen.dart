@@ -208,7 +208,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.maybeOf(
         context,
-      )?.showSnackBar(SnackBar(content: Text('加载 WebDAV 配置失败：$e')));
+      )?.showSnackBar(SnackBar(content: Text('加载 WebDAV 配置失败：${errorMessage(e)}')));
     }
   }
 
@@ -225,7 +225,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('保存 WebDAV 配置失败：$e')));
+      ).showSnackBar(SnackBar(content: Text('保存 WebDAV 配置失败：${errorMessage(e)}')));
     }
   }
 

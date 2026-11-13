@@ -22,6 +22,7 @@ import '../services/system_tts_service.dart';
 import '../widgets/read_aloud_timer_sheet.dart';
 import 'source_edit_screen.dart';
 import 'source_login_screen.dart';
+import '../utils/error_message.dart';
 
 /// 听书播放页面
 class AudioScreen extends ConsumerStatefulWidget {
@@ -1279,7 +1280,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> with RouteAware {
       await Clipboard.setData(ClipboardData(text: url));
       if (mounted) _snack('播放地址已复制');
     } catch (e) {
-      if (mounted) _snack('复制失败：$e');
+      if (mounted) _snack('复制失败：${errorMessage(e)}');
     }
   }
 

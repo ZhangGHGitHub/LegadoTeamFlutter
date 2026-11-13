@@ -18,6 +18,7 @@ import '../utils/read_aloud_content_split.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/legado_app_bar.dart';
+import '../utils/error_message.dart';
 
 /// 朗读设置页（设置批5a-1）
 ///
@@ -294,7 +295,7 @@ class _ReadAloudSettingsScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      _toast('读取朗读设置失败：$e');
+      _toast('读取朗读设置失败：${errorMessage(e)}');
     }
   }
 

@@ -327,7 +327,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('书签角标图保存失败：$e')));
+      ).showSnackBar(SnackBar(content: Text('书签角标图保存失败：${errorMessage(e)}')));
     }
   }
 
@@ -503,7 +503,7 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
                     if (mounted) {
                       ScaffoldMessenger.of(
                         context,
-                      ).showSnackBar(SnackBar(content: Text('简繁转换设置失败: $e')));
+                      ).showSnackBar(SnackBar(content: Text('简繁转换设置失败: ${errorMessage(e)}')));
                     }
                   }
                 },

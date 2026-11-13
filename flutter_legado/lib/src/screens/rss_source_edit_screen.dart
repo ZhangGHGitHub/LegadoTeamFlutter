@@ -390,7 +390,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
         setState(() => _testResult = '成功获取 ${articles.length} 篇文章：\n$titles');
       }
     } catch (e) {
-      setState(() => _testError = '测试失败：$e');
+      setState(() => _testError = '测试失败：${errorMessage(e)}');
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -450,7 +450,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清除 Cookie 失败：$e')),
+          SnackBar(content: Text('清除 Cookie 失败：${errorMessage(e)}')),
         );
       }
     }
@@ -501,7 +501,7 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('粘贴失败，剪贴板不是有效的订阅源 JSON：$e')),
+          SnackBar(content: Text('粘贴失败，剪贴板不是有效的订阅源 JSON：${errorMessage(e)}')),
         );
       }
     }

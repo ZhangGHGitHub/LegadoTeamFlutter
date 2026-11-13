@@ -297,7 +297,7 @@ extension _SourceEditActions on _SourceEditScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('保存失败：$e')));
+        ).showSnackBar(SnackBar(content: Text('保存失败：${errorMessage(e)}')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -451,7 +451,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('打开搜索失败：$e')),
+          SnackBar(content: Text('打开搜索失败：${errorMessage(e)}')),
         );
       }
     } finally {
@@ -477,7 +477,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清除 Cookie 失败：$e')),
+          SnackBar(content: Text('清除 Cookie 失败：${errorMessage(e)}')),
         );
       }
     }
@@ -517,7 +517,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('设置源变量失败：$e')),
+          SnackBar(content: Text('设置源变量失败：${errorMessage(e)}')),
         );
       }
     } finally {
@@ -607,7 +607,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('分享失败：$e')),
+        SnackBar(content: Text('分享失败：${errorMessage(e)}')),
       );
     }
   }
@@ -676,7 +676,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('调试失败：$e')),
+          SnackBar(content: Text('调试失败：${errorMessage(e)}')),
         );
       }
     } finally {

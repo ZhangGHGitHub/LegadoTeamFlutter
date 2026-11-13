@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/book.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/remote_book/remote_book_notifier.dart';
@@ -490,6 +491,85 @@ void main() {
       final items = readState().items;
       expect(items, hasLength(2));
       expect(items.every((e) => e.isOnBookShelf), isTrue);
+    });
+
+    test('部分导入失败：保留成功数 + 失败明细（P2-7）', () async {
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'ok.epub',
+            'path': '/legado/books/ok.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+          {
+            'name': 'bad.epub',
+            'path': '/legado/books/bad.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+          .thenAnswer((_) async {});
+      when(() => mockApi.importLocalBook(any())).thenAnswer((inv) async {
+        final path = inv.positionalArguments.first as String;
+        if (path.endsWith('bad.epub')) {
+          throw const BridgeError(message: '文件损坏，无法解析');
+        }
+        return const Book(
+          bookUrl: '/tmp/ok.epub',
+          name: 'ok',
+          origin: 'loc:',
+          originName: 'ok.epub',
+        );
+      });
+      when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      final n = readNotifier();
+      await n.init();
+
+      for (final item in readState().items) {
+        n.toggleSelect(item);
+      }
+      await n.addSelectedToBookshelf();
+
+      final state = readState();
+      expect(state.importedCount, 1, reason: '成功 1 本必须如实计数');
+      expect(
+        state.importFailures,
+        hasLength(1),
+        reason: '失败 1 本不得被「成功导入 N 本」静默吞掉',
+      );
+      expect(state.importFailures.single, contains('bad.epub'));
+      expect(state.importFailures.single, contains('文件损坏，无法解析'));
+      expect(
+        state.importFailures.single,
+        isNot(contains('Instance of')),
+        reason: '失败明细应使用 BridgeError.message 而非类型名',
+      );
+      // 部分失败仍算导入完成，不污染页面级错误态
+      expect(state.error, isNull);
+    });
+
+    test('结果文案：全成功 / 部分失败 / 全失败（P2-7）', () {
+      expect(
+        remoteBookImportResultMessage(ok: 3, failures: const []),
+        '成功导入 3 本',
+      );
+      expect(
+        remoteBookImportResultMessage(
+          ok: 3,
+          failures: const ['bad.epub：文件损坏', 'x.txt：网络超时'],
+        ),
+        '成功导入 3 本，2 本失败：bad.epub：文件损坏（另有 1 本）',
+      );
+      expect(
+        remoteBookImportResultMessage(ok: 0, failures: const ['bad.epub：文件损坏']),
+        '导入失败：bad.epub：文件损坏',
+      );
     });
   });
 

@@ -393,7 +393,7 @@ extension _SourceActions on _SourceScreenState {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：$e')),
+          SnackBar(content: Text('分享失败：${errorMessage(e)}')),
         );
       }
     }
@@ -447,7 +447,7 @@ extension _SourceActions on _SourceScreenState {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('从文件导入失败：$e')),
+          SnackBar(content: Text('从文件导入失败：${errorMessage(e)}')),
         );
       }
     }
@@ -520,7 +520,7 @@ extension _SourceActions on _SourceScreenState {
         Navigator.of(context).pop();
       }
       messenger.showSnackBar(
-        SnackBar(content: Text('获取书源失败：$e')),
+        SnackBar(content: Text('获取书源失败：${errorMessage(e)}')),
       );
       return;
     }

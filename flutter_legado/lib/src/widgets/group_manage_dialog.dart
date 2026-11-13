@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'confirm_dialog.dart';
+import '../utils/error_message.dart';
 
 /// 安卓端 AppPattern.splitGroupRegex：[,;，；]
 final RegExp _splitGroupRegex = RegExp(r'[,;，；]');
@@ -95,7 +96,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('操作失败：$e')),
+          SnackBar(content: Text('操作失败：${errorMessage(e)}')),
         );
       }
     } finally {
@@ -141,7 +142,7 @@ class _GroupManageDialogState<T> extends State<GroupManageDialog<T>> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('添加分组失败：$e')),
+          SnackBar(content: Text('添加分组失败：${errorMessage(e)}')),
         );
       }
     } finally {

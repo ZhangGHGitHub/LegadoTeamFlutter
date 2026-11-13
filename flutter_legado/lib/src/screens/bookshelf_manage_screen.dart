@@ -116,7 +116,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取分组失败: $e')),
+          SnackBar(content: Text('获取分组失败: ${errorMessage(e)}')),
         );
       }
       return;
@@ -179,7 +179,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取书源失败: $e')),
+          SnackBar(content: Text('获取书源失败: ${errorMessage(e)}')),
         );
       }
       return;
@@ -606,7 +606,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e')),
+          SnackBar(content: Text('删除失败: ${errorMessage(e)}')),
         );
       }
     }

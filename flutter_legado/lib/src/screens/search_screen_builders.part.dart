@@ -876,7 +876,7 @@ extension _SearchBuilders on _SearchScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('书源加载失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('书源加载失败: ${errorMessage(e)}')));
       }
       return;
     }

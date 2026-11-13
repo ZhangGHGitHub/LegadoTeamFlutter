@@ -13,6 +13,7 @@ import '../../routes.dart';
 import '../../services/system_tts_service.dart';
 import '../app_progress_indicator.dart';
 import '../read_aloud_timer_sheet.dart';
+import '../../utils/error_message.dart';
 
 /// 阅读器朗读控制条
 ///
@@ -168,7 +169,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
     try {
       engines = await ref.read(bookApiProvider).getHttpTts();
     } catch (e) {
-      if (mounted) _snack('朗读引擎列表加载失败: $e');
+      if (mounted) _snack('朗读引擎列表加载失败: ${errorMessage(e)}');
       return;
     }
     if (!mounted) return;

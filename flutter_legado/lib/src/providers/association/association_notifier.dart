@@ -16,6 +16,7 @@ import '../../services/settings_service.dart';
 import '../../services/source_import_service.dart';
 import '../providers.dart';
 import 'association_state.dart';
+import '../../utils/error_message.dart';
 
 export 'association_state.dart';
 
@@ -604,7 +605,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         success++;
       } catch (e) {
-        errors.add('导入替换规则「${item['name']}」失败：$e');
+        errors.add('导入替换规则「${item['name']}」失败：${errorMessage(e)}');
       }
     }
     return ImportResult(
@@ -662,7 +663,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         success++;
       } catch (e) {
-        errors.add('导入主题配置失败：$e');
+        errors.add('导入主题配置失败：${errorMessage(e)}');
       }
     }
     return ImportResult(
@@ -711,7 +712,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         success++;
       } catch (e) {
-        errors.add('导入字典规则「${item['name']}」失败：$e');
+        errors.add('导入字典规则「${item['name']}」失败：${errorMessage(e)}');
       }
     }
     await _api.setConfig('dict_rules', jsonEncode(existing));
@@ -759,7 +760,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         success++;
       } catch (e) {
-        errors.add('导入 TXT 规则「${item['name']}」失败：$e');
+        errors.add('导入 TXT 规则「${item['name']}」失败：${errorMessage(e)}');
       }
     }
     await _api.setConfig('txt_toc_rules', jsonEncode(existing));
@@ -906,7 +907,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         imported.add(rule);
       } catch (e) {
-        errors.add('导入高亮规则「$name」失败：$e');
+        errors.add('导入高亮规则「$name」失败：${errorMessage(e)}');
       }
     }
 
@@ -920,7 +921,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
           if (seenUuids.contains(uuid)) success++;
         }
       } catch (e) {
-        errors.add('写入高亮规则失败：$e');
+        errors.add('写入高亮规则失败：${errorMessage(e)}');
       }
     }
 
@@ -1015,7 +1016,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
         await _api.autoTaskCreateRule(ruleJson: jsonEncode(task));
         success++;
       } catch (e) {
-        errors.add('导入自动任务「${task['name']}」失败：$e');
+        errors.add('导入自动任务「${task['name']}」失败：${errorMessage(e)}');
       }
     }
 

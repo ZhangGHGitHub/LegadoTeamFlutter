@@ -25,6 +25,7 @@ import '../../screens/reader_config_panel.dart';
 import 'marking_sheet.dart';
 import 'selection_menu_actions.dart';
 import 'text_select_menu_config_sheet.dart';
+import '../../utils/error_message.dart';
 
 /// 高亮配色（对齐原版 HighlightStyle 多色能力，颜色写入 BookHighlight.style JSON）
 const List<Color> kHighlightColors = [
@@ -741,7 +742,7 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
       _toast(note.isEmpty ? '已添加高亮' : '已添加高亮与笔记');
       _close();
     } catch (e) {
-      _toast('添加高亮失败：$e');
+      _toast('添加高亮失败：${errorMessage(e)}');
     }
   }
 }

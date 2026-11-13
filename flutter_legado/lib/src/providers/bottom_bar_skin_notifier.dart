@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../services/bottom_bar_skin_service.dart';
+import '../utils/error_message.dart';
 
 /// 底栏皮肤状态
 class BottomBarSkinState {
@@ -49,7 +50,7 @@ class BottomBarSkinNotifier extends Notifier<BottomBarSkinState> {
       final active = await _service.getActive();
       state = BottomBarSkinState(skins: skins, active: active);
     } catch (e) {
-      state = state.copyWith(loading: false, error: '$e');
+      state = state.copyWith(loading: false, error: errorMessage(e));
     }
   }
 

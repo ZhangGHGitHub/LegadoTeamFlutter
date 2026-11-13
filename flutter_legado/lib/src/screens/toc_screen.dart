@@ -27,6 +27,7 @@ import '../utils/txt_toc_rule.dart' show buildReparseRuleJson, isLocalTxtBook;
 import '../widgets/reader/marking_sheet.dart';
 import '../widgets/reader/reader_action_helpers.dart';
 import '../widgets/reader/reader_toc_rule_dialog.dart';
+import '../utils/error_message.dart';
 
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
 ///
@@ -957,7 +958,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
     } catch (e) {
       // [P2-5] fail-closed 不误报：Rust 拒绝/清表失败时旧目录仍在，
       // 必须明示失败（口径对齐 reader_toc_rule_dialog）
-      messenger.showSnackBar(SnackBar(content: Text('重新解析目录失败: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('重新解析目录失败: ${errorMessage(e)}')));
     }
   }
 
@@ -1253,7 +1254,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('缓存启动失败：$e')));
+      ).showSnackBar(SnackBar(content: Text('缓存启动失败：${errorMessage(e)}')));
     }
   }
 
@@ -1292,7 +1293,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${retry ? '重新下载' : '缓存'}启动失败：$e')),
+        SnackBar(content: Text('${retry ? '重新下载' : '缓存'}启动失败：${errorMessage(e)}')),
       );
     }
   }

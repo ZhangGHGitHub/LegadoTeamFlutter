@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../services/book_api.dart';
+import '../utils/error_message.dart';
 
 /// 登录 V2 动态状态协议对话框（对标 Kotlin SourceLoginDialogV2，上游 #402/#488）
 ///
@@ -121,7 +122,7 @@ class LoginV2DialogState extends State<LoginV2Dialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = errorMessage(e);
         _busy = false;
       });
     }
@@ -187,7 +188,7 @@ class LoginV2DialogState extends State<LoginV2Dialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = '$e';
+        _error = errorMessage(e);
         _busy = false;
       });
     }

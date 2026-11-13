@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
+import '../../utils/error_message.dart';
 
 /// 阅读器「离线缓存」章节范围选择对话框（两个阅读顶栏共享实现）
 ///
@@ -95,7 +96,7 @@ void showReaderOfflineCacheDialog(BuildContext context, WidgetRef ref) {
             } catch (e) {
               if (context.mounted) {
                 messenger.showSnackBar(
-                  SnackBar(content: Text('缓存启动失败：$e')),
+                  SnackBar(content: Text('缓存启动失败：${errorMessage(e)}')),
                 );
               }
             }

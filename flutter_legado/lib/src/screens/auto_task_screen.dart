@@ -20,6 +20,7 @@ import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/passphrase_import.dart';
+import '../utils/error_message.dart';
 
 /// 定时任务管理页面
 class AutoTaskScreen extends ConsumerStatefulWidget {
@@ -627,7 +628,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         await _importFromRaw(context, raw, '本地文件');
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '读取文件失败: $e');
+      if (context.mounted) _snack(context, '读取文件失败: ${errorMessage(e)}');
     }
   }
 
@@ -689,7 +690,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         await _importFromRaw(context, resp.body, '线上');
       }
     } catch (e) {
-      if (context.mounted) _snack(context, '下载失败: $e');
+      if (context.mounted) _snack(context, '下载失败: ${errorMessage(e)}');
     }
   }
 
@@ -808,23 +809,23 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     );
     if (confirmed != true) return;
 
-    var count = 0;
-    for (final task in newTasks) {
-      try {
-        // 用 Raw 入库：保留 customOrder/lastRunAt 等本地运行时字段
-        await notifier.createTaskRaw(jsonEncode(task));
-        count++;
-      } catch (_) {
-        // 单条失败不阻断整体导入
-      }
-    }
+    // [P2-8] 写入失败必须与「解析阶段无效任务」分开计数并展示原因；
+    // createTaskRaw 失败时返回 false（不抛异常），旧实现只 catch 异常，
+    // 导致 DB 写入失败被完全静默。
+    final writeResult = await writeImportedAutoTasks(
+      tasks: newTasks,
+      create: notifier.createTaskRaw,
+      lastError: () => ref.read(autoTaskNotifierProvider).error,
+    );
     _resyncScheduler();
     if (context.mounted) {
       _snack(
         context,
-        errors.isEmpty
-            ? '已导入 $count 个任务'
-            : '已导入 $count 个任务，跳过 ${errors.length} 个无效任务',
+        importTasksResultMessage(
+          count: writeResult.count,
+          parseErrors: errors.length,
+          writeFailures: writeResult.failures,
+        ),
       );
     }
   }
@@ -1023,4 +1024,56 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
       ],
     );
   }
+}
+
+/// [P2-8] 逐条写入导入任务，返回成功数与失败明细（`任务名：原因`）
+///
+/// `create` 返回 false 表示写入失败（[AutoTaskNotifier.createTaskRaw] 的
+/// 契约是失败不抛异常，只写 error 状态并返回 false）；`lastError` 用于
+/// 取回该状态里的可读原因。抽为顶层函数便于单测直接覆盖「部分写入失败
+/// 不再静默」。
+Future<({int count, List<String> failures})> writeImportedAutoTasks({
+  required List<Map<String, dynamic>> tasks,
+  required Future<bool> Function(String ruleJson) create,
+  required String? Function() lastError,
+}) async {
+  var count = 0;
+  final failures = <String>[];
+  for (final task in tasks) {
+    final name = (task['name']?.toString() ?? '').trim();
+    final label = name.isEmpty ? '未命名任务' : name;
+    try {
+      if (await create(jsonEncode(task))) {
+        count++;
+        continue;
+      }
+      final reason = lastError()?.trim();
+      failures.add(
+        '$label：${reason == null || reason.isEmpty ? '写入失败' : reason}',
+      );
+    } catch (e) {
+      failures.add('$label：${errorMessage(e)}');
+    }
+  }
+  return (count: count, failures: failures);
+}
+
+/// [P2-8] 批量导入结果文案：成功数 / 解析无效数 / 写入失败数分列
+///
+/// 与压缩包导入同范式：失败只展开首条明细，其余汇总条数。
+String importTasksResultMessage({
+  required int count,
+  required int parseErrors,
+  required List<String> writeFailures,
+}) {
+  final parts = <String>[count == 0 ? '未导入任何任务' : '已导入 $count 个任务'];
+  if (parseErrors > 0) {
+    parts.add('跳过 $parseErrors 个无效任务');
+  }
+  if (writeFailures.isNotEmpty) {
+    final more =
+        writeFailures.length > 1 ? '（另有 ${writeFailures.length - 1} 个）' : '';
+    parts.add('${writeFailures.length} 个写入失败：${writeFailures.first}$more');
+  }
+  return parts.join('，');
 }

@@ -201,7 +201,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导入失败：$e')),
+          SnackBar(content: Text('导入失败：${errorMessage(e)}')),
         );
       }
     }
@@ -298,7 +298,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：$e')),
+          SnackBar(content: Text('分享失败：${errorMessage(e)}')),
         );
       }
     }
@@ -338,7 +338,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法编辑：$e')),
+          SnackBar(content: Text('无法编辑：${errorMessage(e)}')),
         );
       }
     }

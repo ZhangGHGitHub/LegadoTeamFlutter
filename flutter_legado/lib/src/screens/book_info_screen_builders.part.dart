@@ -310,7 +310,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('自定义按钮执行失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('自定义按钮执行失败: ${errorMessage(e)}')));
       }
     }
   }
@@ -1827,7 +1827,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       } else {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('更新失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('更新失败: ${errorMessage(e)}')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -2050,7 +2050,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('置顶失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('置顶失败: ${errorMessage(e)}')));
       }
     }
   }
@@ -2077,7 +2077,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('清除缓存失败: $e')));
+        ).showSnackBar(SnackBar(content: Text('清除缓存失败: ${errorMessage(e)}')));
       }
     }
   }
@@ -2364,7 +2364,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (mounted) {
         setState(() => _webFileImportingUrl = null);
       }
-      messenger.showSnackBar(SnackBar(content: Text('ImportWebFileError\n$e')));
+      messenger.showSnackBar(SnackBar(content: Text('ImportWebFileError\n${errorMessage(e)}')));
     }
   }
 

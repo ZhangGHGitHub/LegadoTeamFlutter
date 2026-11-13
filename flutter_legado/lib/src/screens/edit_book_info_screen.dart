@@ -9,6 +9,7 @@ import '../providers/providers.dart';
 import '../services/book_api.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/book_cover.dart';
+import '../utils/error_message.dart';
 
 /// 书籍信息编辑页面
 ///
@@ -227,7 +228,7 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存失败: $e')),
+        SnackBar(content: Text('保存失败: ${errorMessage(e)}')),
       );
       setState(() => _saving = false);
     }

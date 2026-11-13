@@ -207,7 +207,7 @@ class _ChangeChapterSourceSheetState
       if (!mounted) return;
       setState(() => _applying = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('单章换源失败：$e')),
+        SnackBar(content: Text('单章换源失败：${errorMessage(e)}')),
       );
     }
   }
