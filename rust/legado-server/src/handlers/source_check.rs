@@ -60,6 +60,24 @@ pub struct CheckBatchResponse {
 }
 
 /// 创建 SourceChecker 实例
+///
+/// 性能审查 P3-7 的结论：**有意保持逐源客户端**，不复用 FFI 侧
+/// `legado_js::host_api::network` 的共享客户端池。依据：
+/// 1. 共享池的配置（`PoolKind::Default`）与这里的
+///    `LegadoClientConfig::default()` 逐项相同，差异只在**生命周期与
+///    CookieStore 归属**——共享池是进程级单例，App 级 `CookieStore` 跨源共享；
+/// 2. 我方 `LegadoClient` 的读侧 Cookie 注入是**无条件**的
+///    （`apply_headers_and_cookies` 总会按域拼出 `Cookie` 头），写侧才受
+///    `enabled_cookie_jar` 门控。共享客户端会让书源 A 的会话 Cookie 串到
+///    同域的书源 B（上游 OkHttp 拦截器是读写都按 `CookieJar` 标记门控，
+///    故上游共享客户端不构成同等风险），批量校验结果会随处理顺序/并发度
+///    变化，失去确定性；
+/// 3. 逐源客户端把 Cookie 生命周期限制在单次校验的 search/toc/content 三步
+///    内，语义更贴切。并发上限 20 个连接池的成本低于跨源凭据串用与结果
+///    不确定性的风险。
+///
+/// 若后续为 `LegadoClient` 提供「复用连接池但隔离 CookieStore」的构造入口，
+/// 或把读侧 Cookie 注入改为按 `enabled_cookie_jar` 门控，可重新评估共享。
 fn create_checker(keyword: Option<&str>) -> Result<SourceChecker, ApiError> {
     let client = LegadoClient::new(LegadoClientConfig::default())?;
     let config = CheckerConfig {

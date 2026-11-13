@@ -33,7 +33,6 @@
 //! 本模块的 `query_ttf` / `replace_font` / `query_base64_ttf` 是**不受限**
 //! 核心实现（Rust 侧调用 / 单测用），安全边界在 JS 注册层。
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 
@@ -43,8 +42,18 @@ use crate::host_api::query_ttf::QueryTtf;
 /// 内存 LRU 缓存容量（对应 Kotlin `AppCacheManager.queryTTFMap = LruCache(4)`）
 const FONT_LRU_CAPACITY: usize = 4;
 
-/// 全局字体句柄缓存（font_id → 字体元数据 JSON）
-static HANDLE_CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+/// 句柄缓存容量（同 [`FONT_LRU_CAPACITY`]，对齐上游 `LruCache(4)`）
+///
+/// P2-3：句柄 JSON 必须回显完整 `data`——[`resolve_font`] 在解析缓存
+/// 未命中时依赖它重新加载字体（JS 侧句柄只是字符串，无法持有解析对象，
+/// 这是与上游返回 `QueryTTF` 对象的实现差异）。旧实现用无界 `HashMap`
+/// 缓存句柄，逐章换字体的书源（常见反爬）会让进程内累积 N 份字体串；
+/// 改为容量 4 的 LRU 后与上游 `AppCacheManager.queryTTFMap` 的内存上界
+/// 一致，也保证 `data` 回显不会无限累积。
+const HANDLE_LRU_CAPACITY: usize = FONT_LRU_CAPACITY;
+
+/// 全局字体句柄缓存（font_id → 字体元数据 JSON，最近使用在前，容量 4）
+static HANDLE_CACHE: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
 /// 已解析字体 LRU 缓存（font_id → QueryTtf，最近使用在前）
 static FONT_LRU: Mutex<Vec<(String, QueryTtf)>> = Mutex::new(Vec::new());
@@ -52,13 +61,19 @@ static FONT_LRU: Mutex<Vec<(String, QueryTtf)>> = Mutex::new(Vec::new());
 /// 磁盘字体缓存目录（默认系统临时目录下 `legado_font_cache`，同 TTS 缓存模式）
 static FONT_CACHE_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// 获取或初始化句柄缓存
-fn get_cache() -> std::sync::MutexGuard<'static, Option<HashMap<String, String>>> {
-    let mut guard = HANDLE_CACHE.lock().unwrap();
-    if guard.is_none() {
-        *guard = Some(HashMap::new());
-    }
-    guard
+/// 句柄 LRU 查询（命中时移到队首）
+fn handle_cache_get(cache: &mut Vec<(String, String)>, key: &str) -> Option<String> {
+    let idx = cache.iter().position(|(k, _)| k == key)?;
+    let (_, handle) = cache.remove(idx);
+    cache.insert(0, (key.to_string(), handle.clone()));
+    Some(handle)
+}
+
+/// 句柄 LRU 写入（超容量淘汰最久未用）
+fn handle_cache_put(cache: &mut Vec<(String, String)>, key: String, handle: String) {
+    cache.retain(|(k, _)| k != &key);
+    cache.insert(0, (key, handle));
+    cache.truncate(HANDLE_LRU_CAPACITY);
 }
 
 /// 字体磁盘缓存目录（可按 TTS 缓存同模式覆写）
@@ -172,11 +187,9 @@ pub fn query_ttf_with_policy(data: &str, use_cache: bool, policy: FsPolicy) -> S
 
     // 检查句柄缓存（对齐 Kotlin AppCacheManager.getQueryTTF）
     if use_cache {
-        let guard = get_cache();
-        if let Some(cache) = guard.as_ref() {
-            if let Some(cached) = cache.get(&cache_key) {
-                return cached.clone();
-            }
+        let mut guard = HANDLE_CACHE.lock().unwrap();
+        if let Some(cached) = handle_cache_get(&mut guard, &cache_key) {
+            return cached;
         }
     }
 
@@ -200,15 +213,13 @@ pub fn query_ttf_with_policy(data: &str, use_cache: bool, policy: FsPolicy) -> S
     })
     .to_string();
 
-    // 写入缓存（对齐 Kotlin：key != null 时 put）
+    // 写入缓存（对齐 Kotlin：key != null 时 put；句柄与解析结果同为容量 4 的 LRU）
     if use_cache && parsed.is_some() {
         if let Some(ttf) = parsed {
             lru_put(cache_key.clone(), ttf);
         }
-        let mut guard = get_cache();
-        if let Some(cache) = guard.as_mut() {
-            cache.insert(cache_key, handle.clone());
-        }
+        let mut guard = HANDLE_CACHE.lock().unwrap();
+        handle_cache_put(&mut guard, cache_key, handle.clone());
     }
 
     handle
@@ -701,6 +712,35 @@ pub mod tests {
         assert_eq!(r1, r2);
         let parsed: serde_json::Value = serde_json::from_str(&r1).unwrap();
         assert_eq!(parsed["valid"], true);
+    }
+
+    #[test]
+    fn test_handle_cache_lru_capacity() {
+        // P2-3 回归锁：句柄缓存必须与上游 LruCache(4) 同容量，逐章换字体
+        // 不得让进程内累积任意多份句柄（含完整 data 回显）。
+        let mut cache = Vec::new();
+        for i in 0..6 {
+            handle_cache_put(&mut cache, format!("k{i}"), format!("handle-{i}"));
+        }
+        assert_eq!(cache.len(), HANDLE_LRU_CAPACITY);
+        // 最近写入的在前，最久未用的 k0/k1 被淘汰
+        assert_eq!(cache[0].0, "k5");
+        assert!(cache.iter().all(|(k, _)| k != "k0" && k != "k1"));
+
+        // 命中刷新顺序：k2 命中后移到队首，再写入 k6 淘汰队尾 k3
+        assert_eq!(
+            handle_cache_get(&mut cache, "k2"),
+            Some("handle-2".to_string())
+        );
+        assert_eq!(cache[0].0, "k2");
+        handle_cache_put(&mut cache, "k6".to_string(), "handle-6".to_string());
+        assert_eq!(cache.len(), HANDLE_LRU_CAPACITY);
+        assert!(cache.iter().all(|(k, _)| k != "k3"));
+        assert_eq!(cache[0].0, "k6");
+
+        // 未命中不改变缓存
+        assert_eq!(handle_cache_get(&mut cache, "missing"), None);
+        assert_eq!(cache.len(), HANDLE_LRU_CAPACITY);
     }
 
     #[test]
