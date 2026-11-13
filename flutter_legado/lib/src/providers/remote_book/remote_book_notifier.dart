@@ -402,12 +402,18 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         .where((e) => state.selectedPaths.contains(e.relativePath))
         .toList();
     if (selected.isEmpty) {
-      state = state.copyWith(error: '请先选择要导入的书籍');
+      // [P3-3] 早退也必须清空上次导入结果：否则页面会用残留的
+      // importedCount/importFailures 拼出「成功导入 N 本」的假提示。
+      state = state.copyWith(
+        error: '请先选择要导入的书籍',
+        clearImported: true,
+      );
       return;
     }
     final config = await buildActiveConfigJson();
     if (config == null) {
-      state = state.copyWith(error: 'WebDAV 未配置');
+      // [P3-3] 同上：配置错误的早退不得复用上一次的成功计数。
+      state = state.copyWith(error: 'WebDAV 未配置', clearImported: true);
       return;
     }
     state = state.copyWith(isImporting: true, clearError: true, clearImported: true);

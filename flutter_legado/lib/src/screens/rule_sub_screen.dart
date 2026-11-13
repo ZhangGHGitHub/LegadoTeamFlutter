@@ -244,7 +244,7 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
         final version = (result['remoteVersion'] ?? '').toString();
         messenger.showSnackBar(SnackBar(
           content: Text(error.isNotEmpty
-              ? '检查更新失败：$error'
+              ? '检查更新失败：${errorMessage(error)}'
               : (hasUpdate
                   ? '发现新版本${version.isNotEmpty ? '：$version' : ''}'
                   : '已是最新版本')),

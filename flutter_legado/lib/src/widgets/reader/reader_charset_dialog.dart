@@ -117,7 +117,7 @@ Future<void> _applyCharset(
     // 本地书：目录/正文都要按新编码重读；失败不得提示成功
     final error = await notifier.reloadAfterCharsetChange(updated);
     if (error != null) {
-      messenger.showSnackBar(SnackBar(content: Text('设置编码失败：$error')));
+      messenger.showSnackBar(SnackBar(content: Text('设置编码失败：${errorMessage(error)}')));
       return;
     }
     messenger.showSnackBar(SnackBar(content: Text('已设置编码：$applied')));

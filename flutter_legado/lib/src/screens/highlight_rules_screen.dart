@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/highlight_style.dart' show normalizeArgb;
 import '../providers/highlight_rules/highlight_rules_notifier.dart';
+import '../utils/error_message.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/loading_indicator.dart';
@@ -276,7 +277,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     if (error != null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('分组操作失败：$error')));
+      ).showSnackBar(SnackBar(content: Text('分组操作失败：${errorMessage(error)}')));
     }
     _normalizeGroupFilter();
     _showErrorIfAny();
@@ -336,7 +337,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     if (error == null || !mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text('操作失败: $error')));
+    ).showSnackBar(SnackBar(content: Text('操作失败: ${errorMessage(error)}')));
   }
 
   /// 导出全部高亮规则（批16e：接入统一导出目标 Sheet）

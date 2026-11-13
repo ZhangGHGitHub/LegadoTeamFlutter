@@ -571,6 +571,91 @@ void main() {
         '导入失败：bad.epub：文件损坏',
       );
     });
+
+    /// 成功导入一本的公共桩（用于 P3-3 早退前制造残留计数）
+    Future<RemoteBookNotifier> importOnce() async {
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'novel.epub',
+            'path': '/legado/books/novel.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+          .thenAnswer((_) async {});
+      when(() => mockApi.importLocalBook(any())).thenAnswer(
+        (_) async => const Book(
+          bookUrl: '/tmp/novel.epub',
+          name: 'novel',
+          origin: 'loc:',
+          originName: 'novel.epub',
+        ),
+      );
+      when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      final n = readNotifier();
+      await n.init();
+      n.toggleSelect(readState().items.single);
+      await n.addSelectedToBookshelf();
+      expect(readState().importedCount, 1, reason: '先制造一次成功导入计数');
+      return n;
+    }
+
+    test('早退（未选择）清空上次导入计数（P3-3）', () async {
+      final n = await importOnce();
+
+      // 未选择直接导入：早退分支
+      await n.addSelectedToBookshelf();
+
+      final state = readState();
+      expect(state.error, '请先选择要导入的书籍');
+      expect(
+        state.importedCount,
+        isNull,
+        reason: '早退不得残留上次成功计数，否则页面会假称「成功导入 N 本」',
+      );
+      expect(state.importFailures, isEmpty);
+    });
+
+    test('早退（WebDAV 未配置）清空上次导入计数与失败明细（P3-3）', () async {
+      final n = await importOnce();
+
+      // 移除默认服务器行与旧账号偏好 → 模拟 WebDAV 被删除/未配置
+      mockApi.servers.clear();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('sync_webdav_url');
+      await prefs.remove('sync_webdav_username');
+      await prefs.remove('sync_webdav_password');
+      await prefs.setBool('webdav_servers_migrated', true);
+
+      n.toggleSelect(readState().items.single);
+      await n.addSelectedToBookshelf();
+
+      final state = readState();
+      expect(state.error, 'WebDAV 未配置');
+      expect(
+        state.importedCount,
+        isNull,
+        reason: '配置错误的早退不得复用上次成功计数',
+      );
+      expect(state.importFailures, isEmpty);
+      // 复刻 remote_book_screen._importSelected 的提示分支
+      final ok = state.importedCount ?? 0;
+      final message = ok == 0 && state.importFailures.isEmpty
+          ? (state.error ?? '导入失败')
+          : remoteBookImportResultMessage(ok: ok, failures: state.importFailures);
+      expect(message, 'WebDAV 未配置');
+      expect(
+        message,
+        isNot(contains('成功导入')),
+        reason: '本次是配置错误，提示不能显示成「成功导入 N 本」',
+      );
+    });
   });
 
   // ─── 批18a：服务器列表数据源切换到 servers 表 ─────────────────────────

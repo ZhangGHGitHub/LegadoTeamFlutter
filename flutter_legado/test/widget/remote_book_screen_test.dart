@@ -68,6 +68,26 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 等待真实异步 I/O（临时目录创建/导入）完成并渲染结果
+  ///
+  /// `pumpAndSettle` 只驱动帧与微任务，不等待 dart:io 的实际完成；导入流程
+  /// 含 `Directory.create`，需 `runAsync` 让出真实事件循环。
+  Future<void> pumpUntilText(WidgetTester tester, String text) async {
+    for (var i = 0; i < 100; i++) {
+      if (find.text(text).evaluate().isNotEmpty) return;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    final texts = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.data ?? '')
+        .where((t) => t.isNotEmpty)
+        .join(' | ');
+    fail('等待文本「$text」超时；当前文本：$texts');
+  }
+
   Future<void> fillServerDialog(
     WidgetTester tester, {
     required String name,
@@ -229,6 +249,69 @@ void main() {
       ),
       findsOneWidget,
       reason: '错误文本必须在 Sheet 内可见',
+    );
+  });
+
+  testWidgets('导入成功后配置失效：提示不得复用上次「成功导入 N 本」（P3-3）', (tester) async {
+    when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+      (_) async => jsonEncode([
+        {
+          'name': 'novel.epub',
+          'path': '/legado/books/novel.epub',
+          'size': 12,
+          'is_dir': false,
+        },
+      ]),
+    );
+    when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+    when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+        .thenAnswer((_) async {});
+    when(() => mockApi.importLocalBook(any())).thenAnswer(
+      (_) async => const Book(
+        bookUrl: '/tmp/novel.epub',
+        name: 'novel',
+        origin: 'loc:',
+        originName: 'novel.epub',
+      ),
+    );
+    when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
+
+    await pumpScreen(tester);
+    expect(find.text('novel.epub'), findsOneWidget);
+
+    // ① 先成功导入一次，制造 importedCount = 1
+    await tester.tap(find.text('novel.epub'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '加入书架 (1)'));
+    await pumpUntilText(tester, '成功导入 1 本');
+    expect(find.text('成功导入 1 本'), findsOneWidget);
+
+    // 等首条 SnackBar 退场：它贴底覆盖操作栏，会吞掉后续点击
+    ScaffoldMessenger.of(
+      tester.element(find.byType(RemoteBookScreen)),
+    ).clearSnackBars();
+    await tester.pumpAndSettle();
+    expect(find.byType(SnackBar), findsNothing);
+
+    // ② 模拟 WebDAV 被删除/未配置（清 DB 行与旧账号偏好）
+    mockApi.servers.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('sync_webdav_url');
+    await prefs.remove('sync_webdav_username');
+    await prefs.remove('sync_webdav_password');
+    await prefs.setBool('webdav_servers_migrated', true);
+
+    // ③ 再次选择并导入 → 配置错误早退
+    await tester.tap(find.text('novel.epub'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '加入书架 (1)'));
+    await pumpUntilText(tester, 'WebDAV 未配置');
+
+    expect(find.text('WebDAV 未配置'), findsOneWidget);
+    expect(
+      find.textContaining('成功导入'),
+      findsNothing,
+      reason: '配置错误不得显示成「成功导入 N 本」（上次计数必须清空）',
     );
   });
 }

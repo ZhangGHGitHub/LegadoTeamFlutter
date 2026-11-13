@@ -74,8 +74,9 @@ void main() {
           ),
       ],
     );
-    when(() => mockApi.getChapterContentFull('book://online', 1))
-        .thenAnswer((_) async => '正文内容');
+    when(
+      () => mockApi.getChapterContentFull('book://online', 1),
+    ).thenAnswer((_) async => '正文内容');
 
     final observer = _ReaderPushCounter();
     await tester.pumpWidget(
@@ -105,10 +106,23 @@ void main() {
     gate.complete(const <BookSource>[]);
     await tester.pumpAndSettle();
 
+    expect(observer.readerPushes, 1, reason: '同一本书在开书等待窗口内重复点击不得 push 第二个阅读器');
+    expect(find.text('STUB_READER'), findsOneWidget);
+
+    // [P3-6] 守卫必须在 finally 中释放：进入阅读器后返回书架，再次点击
+    // 仍能正常 push。若 finally 漏了 remove，守卫永久锁死，上面「只 push
+    // 一次」的断言仍会通过，本段是缺失的回归覆盖。
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('在线之书'), findsOneWidget, reason: '应已返回书架');
+
+    await tester.tap(find.text('在线之书'));
+    await tester.pumpAndSettle();
+
     expect(
       observer.readerPushes,
-      1,
-      reason: '同一本书在开书等待窗口内重复点击不得 push 第二个阅读器',
+      2,
+      reason: '返回书架后再次点击必须能重新 push；否则说明 _openingBookUrls 未释放',
     );
     expect(find.text('STUB_READER'), findsOneWidget);
   });

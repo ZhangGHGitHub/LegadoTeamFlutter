@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/models.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
+import '../../utils/error_message.dart';
 
 // [SB-HUNT | 2026-09-25] 换源流程统一入口（阅读器两个换源入口共用）：
 // 菜单面板 _changeSourceFlow / 顶栏 _changeBookSource 原为两份同形拷贝，
@@ -74,7 +75,7 @@ Future<void> runChangeSourceFlow(
   messenger.clearSnackBars();
   if (!context.mounted) return; // 结果条仅在阅读器仍在场时展示
   if (err != null) {
-    messenger.showSnackBar(SnackBar(content: Text('更换书源后重载失败：$err')));
+    messenger.showSnackBar(SnackBar(content: Text('更换书源后重载失败：${errorMessage(err)}')));
   }
   // 成功不弹阅读器侧结果条（去重：换源页「已切换到」为唯一成功反馈）
 }

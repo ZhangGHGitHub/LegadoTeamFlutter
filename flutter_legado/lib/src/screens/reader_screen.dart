@@ -1139,7 +1139,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           // 入架失败：可见提示且不退出（项目规则：用户可见失败必须提示）
           final err = ref.read(bookshelfNotifierProvider).error;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(err != null ? '加入书架失败：$err' : '加入书架失败')),
+            SnackBar(content: Text(err != null ? '加入书架失败：${errorMessage(err)}' : '加入书架失败')),
           );
           return;
         }

@@ -1873,7 +1873,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '笔记加载失败：$error',
+                '笔记加载失败：${errorMessage(error)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.error,
                 ),

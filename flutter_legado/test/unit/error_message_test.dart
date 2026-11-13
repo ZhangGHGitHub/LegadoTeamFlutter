@@ -176,6 +176,55 @@ void main() {
     });
   });
 
+  // P3-4：纯 ASCII 的引擎/WebView/书源验证超时同样含 `timeout`，但并非
+  // 传输层问题；不得被映射成「网络连接超时」（本次 183 处接入 errorMessage
+  // 后放大误分类面）。
+  group('errorMessage 执行超时不误报网络（P3-4）', () {
+    test('JavaScript/脚本引擎超时保持原文，不映射为网络', () {
+      for (final raw in const [
+        'JavaScript execution timeout',
+        'script execution timed out',
+        'InternalError: interrupted',
+      ]) {
+        expect(friendlyErrorMessage(raw), raw, reason: '引擎超时不得显示为网络问题');
+        expect(
+          friendlyErrorMessage(raw),
+          isNot(kConnectionTimeoutMessage),
+          reason: '「$raw」是脚本执行超时，不是网络连接超时',
+        );
+      }
+    });
+
+    test('WebView/书源验证超时保持原文，不映射为网络', () {
+      for (final raw in const [
+        'webview execution timed out',
+        'source verification timed out',
+      ]) {
+        expect(friendlyErrorMessage(raw), raw);
+        expect(friendlyErrorMessage(raw), isNot(kConnectionTimeoutMessage));
+      }
+      // BridgeError（Rust 统一抛错）路径同样不误报
+      expect(
+        errorMessage(
+          const BridgeError(message: 'Network error: JavaScript execution timeout'),
+        ),
+        'JavaScript execution timeout',
+      );
+    });
+
+    test('真实传输层超时仍映射为网络提示（不放宽既有映射）', () {
+      expect(
+        friendlyErrorMessage('operation timed out (os error 110)'),
+        kConnectionTimeoutMessage,
+      );
+      expect(
+        friendlyErrorMessage('error trying to connect: tcp connect error: timed out'),
+        kConnectionTimeoutMessage,
+      );
+      expect(friendlyErrorMessage('network is unreachable'), kConnectionTimeoutMessage);
+    });
+  });
+
   // P2-3：权限拒绝/系统另存失败的主文案为中文短句，技术详情可复制
   group('errorMessage 权限与另存失败（P2-3）', () {
     test('Permission Denial / SecurityException → 没有写入权限', () {

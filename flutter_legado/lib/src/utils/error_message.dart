@@ -95,7 +95,9 @@ String errorDetailMessage(Object e) {
 /// 3. 命中形态后按低层标记映射（`os error 111` / `connection refused` /
 ///    `permission denied` 等只出现在传输层/系统层英文错误里）；
 /// 4. 未命中形态的中文业务文案（如「上传超时(timeout)，请重试」）原样返回，
-///    不会被底层映射吞掉。
+///    不会被底层映射吞掉；
+/// 5. 脚本引擎/WebView/书源验证类超时（见 [_isExecutionTimeout]）即使命中
+///    `timeout` 也保持原文，不误报为网络问题（P3-4）。
 String friendlyErrorMessage(String raw) {
   final trimmed = raw.trim();
   if (trimmed.isEmpty) return kUnknownErrorMessage;
@@ -109,11 +111,33 @@ String friendlyErrorMessage(String raw) {
   if (text.isEmpty) return kUnknownErrorMessage;
 
   if (_isLowLevelShaped(text)) {
+    // P3-4：脚本引擎/WebView/书源验证的「超时」不是网络传输问题，
+    // 纯 ASCII 的 `timeout` 不得一律映射为「网络连接超时」。
+    if (_isExecutionTimeout(text)) return text;
     for (final rule in _lowLevelErrorRules) {
       if (rule.pattern.hasMatch(text)) return rule.message;
     }
   }
   return text;
+}
+
+/// 是否为脚本引擎/WebView/书源验证类执行超时（非网络传输层）。
+///
+/// 这类文本同样是纯 ASCII，旧规则会把 `JavaScript execution timeout`、
+/// `webview execution timed out` 等误报成「网络连接超时」。识别到引擎特征
+/// 时保持原文，避免把规则/脚本问题误导成网络问题；真实传输层超时
+/// （`os error 110` 等）不含这些特征，仍走原有映射。
+bool _isExecutionTimeout(String text) {
+  final timedOut = RegExp(
+    r'timeout|timed out|interrupted',
+    caseSensitive: false,
+  ).hasMatch(text);
+  if (!timedOut) return false;
+  return RegExp(
+    r'javascript|quickjs|\bscript\b|\bwebview\b|source verification|'
+    r'internalerror',
+    caseSensitive: false,
+  ).hasMatch(text);
 }
 
 /// 是否底层错误形态：纯 ASCII，或以已知底层前缀开头（行首锚定）

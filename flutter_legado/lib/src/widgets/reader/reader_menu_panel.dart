@@ -590,7 +590,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     messenger.clearSnackBars();
     if (!context.mounted) return;
     messenger.showSnackBar(
-      SnackBar(content: Text(err == null ? '正文已刷新' : '刷新正文失败：$err')),
+      SnackBar(content: Text(err == null ? '正文已刷新' : '刷新正文失败：${errorMessage(err)}')),
     );
   }
 

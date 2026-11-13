@@ -999,7 +999,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                             messenger.showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  err == null ? '正文已刷新' : '刷新正文失败：$err',
+                                  err == null ? '正文已刷新' : '刷新正文失败：${errorMessage(err)}',
                                 ),
                               ),
                             );

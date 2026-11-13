@@ -13,6 +13,7 @@ import '../../constants/pref_keys.dart';
 import '../../models/models.dart';
 import '../../services/rust_api.dart';
 import '../../services/settings_service.dart';
+import '../../utils/error_message.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import '../providers.dart';
 import '../theme/theme_notifier.dart';
@@ -800,7 +801,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
       if (err != null) {
         // 正文抓取失败：目录已是新源，保留旧正文，错误显式返回
         state = state.copyWith(isLoading: false, error: err);
-        return '正文刷新失败：$err';
+        return '正文刷新失败：${errorMessage(err)}';
       }
       // 持久化换源后的新进度（新章节索引/位置）
       await _saveProgress();

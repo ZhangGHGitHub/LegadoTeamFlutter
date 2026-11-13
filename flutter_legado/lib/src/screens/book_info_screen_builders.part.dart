@@ -1912,7 +1912,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (!mounted) return;
       if (!ok) {
         final err = ref.read(bookshelfNotifierProvider).error;
-        _snack(err != null ? '移出书架失败：$err' : '移出书架失败');
+        _snack(err != null ? '移出书架失败：${errorMessage(err)}' : '移出书架失败');
         return;
       }
       setState(() => _inBookshelf = false);
@@ -1930,7 +1930,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (!mounted) return;
       if (!ok) {
         final err = ref.read(bookshelfNotifierProvider).error;
-        _snack(err != null ? '加入书架失败：$err' : '加入书架失败');
+        _snack(err != null ? '加入书架失败：${errorMessage(err)}' : '加入书架失败');
         return;
       }
       setState(() => _inBookshelf = true);
@@ -1985,7 +1985,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         setState(() => _inBookshelf = true);
       } else {
         final err = ref.read(bookshelfNotifierProvider).error;
-        _snack(err != null ? '加入书架失败：$err' : '加入书架失败');
+        _snack(err != null ? '加入书架失败：${errorMessage(err)}' : '加入书架失败');
       }
     } else if (mounted) {
       setState(() => _loadedBook = updated);
