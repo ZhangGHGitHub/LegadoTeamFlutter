@@ -5414,3 +5414,151 @@ async fn test_review_routes_token_guard_rejects_before_body_read() {
         assert_ne!(header_str(&headers, "connection"), "close", "{uri}");
     }
 }
+
+/// [审查批 P1/P2] 同组无鉴权任意 URL 出站面 6 条路由纳入路由级令牌前置：
+/// 无令牌时在 body 提取前拒绝，带令牌可进入 handler。
+///
+/// 覆盖（按 routes.rs 实际注册方法）：
+/// - `POST /api/rss/articles`（body `{url}` → `fetch_feed`）；
+/// - `GET /api/rss/{source_url}/articles`（路径参数解码 → `fetch_feed`）；
+/// - `POST /api/tts/speak` / `POST /api/audio/speak`（body `engine_url` →
+///   任意出站，响应体原样回传）；
+/// - `POST /api/bookshelf/update-toc/single` / `POST /api/bookshelf/update-toc`
+///   （body URL → 库内书源 → 出站；批量面 `max_concurrent` 另收敛到 9）。
+///
+/// body 类沿用 `5a458fd04a` 的取证法：body 流一旦被轮询就 panic，证明守卫
+/// 未读取请求体；1 GiB `Content-Length` 声明验证响应是令牌失败信封
+///（200 + `Connection: close`）而非 body 限额的 413。带令牌用例均走
+///「缺参 / 空批次 / 非法 URL」提前返回路径，不依赖外网。
+#[tokio::test]
+async fn test_outbound_surface_routes_token_guard_rejects_before_body_read() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app =
+        legado_server::server::attach_source_write_token_guard(create_router(state.clone()), state);
+
+    // ── body 类 5 条：无令牌必须在提取 body 前拒绝 ──────────────────────
+    for uri in [
+        "/api/rss/articles",
+        "/api/tts/speak",
+        "/api/audio/speak",
+        "/api/bookshelf/update-toc/single",
+        "/api/bookshelf/update-toc",
+    ] {
+        let body_stream = futures_util::stream::once(async move {
+            if std::hint::black_box(true) {
+                panic!("令牌前置中间件失效：{uri} 未授权请求读取了请求体");
+            }
+            Ok::<axum::body::Bytes, std::io::Error>(axum::body::Bytes::new())
+        });
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("Content-Type", "application/json")
+            .header("Content-Length", "1073741824")
+            .body(Body::from_stream(body_stream))
+            .unwrap();
+        let resp = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "{uri}");
+        let connection = header_str(resp.headers(), "connection").to_string();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let rd: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(rd["isSuccess"], false, "{uri} rd={rd}");
+        assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "{uri} rd={rd}");
+        assert_eq!(connection, "close", "{uri} 令牌失败应关闭连接");
+    }
+
+    // ── 路径参数类 1 条（GET）：无令牌同样拒绝 ──────────────────────────
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/rss/https%3A%2F%2F127.0.0.1%3A1%2Ffeed/articles")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let connection = header_str(resp.headers(), "connection").to_string();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let rd: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(rd["isSuccess"], false, "rss GET rd={rd}");
+    assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "rss GET rd={rd}");
+    assert_eq!(connection, "close", "rss GET 令牌失败应关闭连接");
+
+    // ── 带令牌：守卫放行到 handler ──────────────────────────────────────
+    let auth = [(B6_TOKEN, "secret")];
+
+    // body 类三件：空 JSON → Json 提取器缺字段 422（早于任何出站调用），
+    // 证明守卫放行且不是无条件拒绝。
+    for uri in ["/api/rss/articles", "/api/tts/speak", "/api/audio/speak"] {
+        let (status, headers, bytes) =
+            post_write_raw(app.clone(), uri, Some("application/json"), &auth, b"{}").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}");
+        assert_ne!(header_str(&headers, "connection"), "close", "{uri}");
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains(B4_TOKEN_ERROR),
+            "{uri} 不应返回令牌错误"
+        );
+    }
+
+    // GET rss：非法 URL 在 URL 解析阶段失败（502 network），不发起 DNS/连接。
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/api/rss/not-a-valid-url/articles")
+                .header(B6_TOKEN, "secret")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["error"]["type"], "network", "value={value}");
+
+    // update-toc/single：书籍不在库 → 400「书籍不存在」（纯 DB，不出站）
+    let body = json!({ "book_url": "https://no-such-book.example.com/1" }).to_string();
+    let (status, headers, rd) = post_write_json(
+        app.clone(),
+        "/api/bookshelf/update-toc/single",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "rd={rd}");
+    assert_eq!(rd["updated"], false, "rd={rd}");
+    assert_eq!(rd["error"], "书籍不存在", "rd={rd}");
+    assert_ne!(header_str(&headers, "connection"), "close");
+
+    // update-toc 批量：空批次 → 200 started，且 max_concurrent 收敛到 9
+    let body = json!({ "books": [], "max_concurrent": 1000 }).to_string();
+    let (status, headers, rd) = post_write_json(
+        app.clone(),
+        "/api/bookshelf/update-toc",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "rd={rd}");
+    assert_eq!(rd["started"], true, "rd={rd}");
+    assert_eq!(rd["total"], 0, "rd={rd}");
+    assert_eq!(
+        rd["max_concurrent"], 9,
+        "请求 1000 并发必须收敛到 9 rd={rd}"
+    );
+    assert_ne!(header_str(&headers, "connection"), "close");
+}

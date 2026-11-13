@@ -43,7 +43,13 @@
 //! 「未授权不读 body」不成立）；审查批 P2（2026-11-13，sources check 鉴权）
 //! 再追加自研 `POST /api/sources/check`、`POST /api/sources/check-batch`
 //! （方法限定，请求体任意 `BookSource` 触发出站，`check-batch` 最多 20 并发）
-//! 为第 26–27 条。
+//! 为第 26–27 条；审查批 P1/P2（2026-11-13，同组无鉴权出站面收口）再追加
+//! 6 条（方法限定）为第 28–33 条：`POST /api/rss/articles`、
+//! `GET /api/rss/{source_url}/articles`（路径参数解码后直接出站）、
+//! `POST /api/tts/speak`、`POST /api/audio/speak`（响应体原样回传，可把
+//! 任意可达内网响应外带）、`POST /api/bookshelf/update-toc` 与
+//! `POST /api/bookshelf/update-toc/single`（按请求体 URL 从库取源后出站，
+//! 批量面另有并发上限收口）。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -221,9 +227,22 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 最多 20 并发），此前完全绕过令牌面，是同 LAN 可达时的无鉴权 SSRF/出站
 /// 放大器（审计报告 P1-1「同组旁路」登记、本批收口）。两条端点本身不落库，
 /// 纳入同一令牌前置守卫后与其余「执行面 + 出站」端点语义一致；同前缀的
-/// 只读路由（`GET /api/sources`、`GET /api/sources/{id}`、
-/// `/api/sources/repos`、`/api/sources/updates`）继续保持免令牌。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 27] = [
+/// 只读路由（`GET /api/sources`、`/api/sources/repos`、`/api/sources/updates`）
+/// 继续保持免令牌；`/api/sources/{id}` 仅注册 `PUT`/`DELETE`（无 GET 读取面）。
+///
+/// [审查批 P1/P2：同组无鉴权出站面] 追加 6 条（方法限定）：
+/// `POST /api/rss/articles`（body `{url}` 直接 `fetch_feed`，默认客户端
+/// `accept_invalid_certs=true` 且跟随 20 跳重定向）、
+/// `GET /api/rss/{source_url}/articles`（路径参数解码后直接出站）、
+/// `POST /api/tts/speak` 与 `POST /api/audio/speak`（body `engine_url`
+/// 直接 GET，**响应体原样回传**，等同把任意可达内网响应外带）、
+/// `POST /api/bookshelf/update-toc` 与 `/single`（body 的 `book_url` /
+/// `source_url` 从库取源后出站，批量面 `max_concurrent` 另设 9 上限）。
+/// 六条此前完全无鉴权：服务绑 `0.0.0.0` 时同 LAN 攻击者无需令牌即可把
+/// 设备当出站代理。与 sources check 同属审计报告「同组旁路」，
+/// 纳入同一令牌前置守卫；`/api/tts/engines` 与
+/// `GET /api/bookshelf/update-toc/progress` 等只读面保持免令牌。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 33] = [
     ("/startBookSourceCheck", None),
     ("/stopBookSourceCheck", None),
     ("/saveBookSource", None),
@@ -251,31 +270,72 @@ pub const PROTECTED_SOURCE_WRITE_ROUTES: [(&str, Option<&str>); 27] = [
     ("/api/sources/check-batch", Some("POST")),
     ("/api/rule-update/check", Some("POST")),
     ("/api/rule-update/apply", Some("POST")),
+    ("/api/rss/articles", Some("POST")),
+    ("/api/rss/{source_url}/articles", Some("GET")),
+    ("/api/tts/speak", Some("POST")),
+    ("/api/audio/speak", Some("POST")),
+    ("/api/bookshelf/update-toc/single", Some("POST")),
+    ("/api/bookshelf/update-toc", Some("POST")),
 ];
 
 /// 请求（方法 + 路径）是否命中受保护源写面
 ///
-/// 方法比较大小写不敏感（`Method::as_str()` 为大写）；
-/// 路径模式含 `{id}` 时只匹配单段，避免把 `/api/sources/repos` 等读取
-/// 子路由误判为 `PUT/DELETE /api/sources/{id}`（其方法本身也不匹配，
-/// 双保险）。
+/// 方法比较大小写不敏感（`Method::as_str()` 为大写），`GET` 限定条目
+/// 同时覆盖 `HEAD`（见 [`method_allowed`]）；路径模式中的 `{...}` 只匹配
+/// 单个非空路径段，避免把 `/api/sources/repos` 等读取子路由误判为
+/// `PUT/DELETE /api/sources/{id}`（其方法本身也不匹配，双保险）。
 pub fn is_protected_source_write_request(method: &Method, path: &str) -> bool {
     PROTECTED_SOURCE_WRITE_ROUTES
         .iter()
         .any(|(pattern, allowed_method)| {
-            allowed_method.is_none_or(|allowed| allowed.eq_ignore_ascii_case(method.as_str()))
-                && route_pattern_matches(pattern, path)
+            method_allowed(*allowed_method, method) && route_pattern_matches(pattern, path)
         })
 }
 
-/// 路径模式匹配：末段 `{id}` 匹配单个非空路径段，其余精确匹配
-fn route_pattern_matches(pattern: &str, path: &str) -> bool {
-    match pattern.strip_suffix("/{id}") {
-        Some(prefix) => path
-            .strip_prefix(prefix)
-            .and_then(|rest| rest.strip_prefix('/'))
-            .is_some_and(|id| !id.is_empty() && !id.contains('/')),
-        None => pattern == path,
+/// 方法限定匹配
+///
+/// `None` 表示该路径全部方法受保护；`Some("GET")` 同时覆盖 `HEAD`：
+/// axum 的 `get()` 按 RFC 9110 自动服务 HEAD，若不覆盖则攻击者可用 HEAD
+/// 绕过令牌仍然触发出站（无响应体外带，但盲 SSRF 副作用相同）。
+/// `OPTIONS` 预检不受影响（方法限定条目的 `Some(...)` 不匹配 OPTIONS）。
+pub(crate) fn method_allowed(allowed: Option<&str>, method: &Method) -> bool {
+    match allowed {
+        None => true,
+        Some(allowed) => {
+            allowed.eq_ignore_ascii_case(method.as_str())
+                || (method == Method::HEAD && allowed.eq_ignore_ascii_case("GET"))
+        }
+    }
+}
+
+/// 路径模式匹配：`{...}` 段匹配任意单个非空路径段，其余段精确匹配
+///
+/// 按 `/` 分段后逐段比较，**段数必须一致**。与旧实现只识别末段 `{id}`
+/// 不同，占位符可出现在任意段（如中段参数
+/// `/api/rss/{source_url}/articles`），且不会退化为前缀匹配：
+/// 空段（`//`、尾部 `/`）、缺段、多段均不命中。
+pub(crate) fn route_pattern_matches(pattern: &str, path: &str) -> bool {
+    let mut pattern_segments = pattern.split('/');
+    let mut path_segments = path.split('/');
+    loop {
+        match (pattern_segments.next(), path_segments.next()) {
+            (Some(expected), Some(actual)) => {
+                let is_parameter =
+                    expected.len() > 2 && expected.starts_with('{') && expected.ends_with('}');
+                if is_parameter {
+                    // 占位符只接受单个非空段；`/` 之外的任意内容原样匹配
+                    //（路径参数为百分号编码时按编码后的字面量比较）
+                    if actual.is_empty() {
+                        return false;
+                    }
+                } else if expected != actual {
+                    return false;
+                }
+            }
+            // 两侧同时结束才算匹配；段数不同即拒绝（含尾部 `/` 空段）
+            (None, None) => return true,
+            _ => return false,
+        }
     }
 }
 
@@ -286,9 +346,9 @@ fn route_pattern_matches(pattern: &str, path: &str) -> bool {
 /// `Content-Length` 不会拖住连接、不会触发 axum 默认 2MB body 限制的 413）。
 /// handler 内的 [`token_rejection`] 保留为纵深防御。
 ///
-/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（27 条，含自研 `/api/webbook/*`
-/// 四条、`/api/sources` 方法限定六条、`/api/rule-update/*` 方法限定两条与
-/// B4 段评两条）生效；其余路径原样放行。
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`]（33 条，含自研 `/api/webbook/*`
+/// 四条、`/api/sources` 方法限定六条、`/api/rule-update/*` 方法限定两条、
+/// 无鉴权出站面六条与 B4 段评两条）生效；其余路径原样放行。
 /// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
 /// `serve_web_with_injected_paths` 组装路由后统一套用）。
 pub async fn source_write_token_guard(
@@ -1432,14 +1492,15 @@ mod tests {
         );
     }
 
-    /// P2-2 / P0-1 / P1-1 / P2-1 / P2（sources check）：受保护路由表（27 条：
-    /// 批30 检验会话两条 + 批17 三审 `/mcp/call` + P0-1 自研 `/api/webbook/*`
-    /// 四条 + P1-1 自研 REST 源写面四条 + 批24 规则订阅 Web 面两条 + 段评
-    /// 写面两条 + 审查批 P2 `POST /api/sources/check|check-batch` 两条）与方法
-    /// 限定匹配语义
+    /// P2-2 / P0-1 / P1-1 / P2-1 / P2（sources check）/ P1-P2（无鉴权出站面）：
+    /// 受保护路由表（33 条：批30 检验会话两条 + 批17 三审 `/mcp/call` +
+    /// P0-1 自研 `/api/webbook/*` 四条 + P1-1 自研 REST 源写面四条 + 批24
+    /// 规则订阅 Web 面两条 + 段评写面两条 + 审查批 P2 `POST
+    /// /api/sources/check|check-batch` 两条 + 无鉴权出站面六条）与方法限定
+    /// 匹配语义
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 27);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 33);
         for path in [
             "/startBookSourceCheck",
             "/stopBookSourceCheck",
@@ -1596,6 +1657,171 @@ mod tests {
             &Method::POST,
             "/api/rule-update/apply/extra"
         ));
+
+        // ── 审查批 P1/P2：同组无鉴权出站面（方法限定） ───────────────────
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/rss/articles"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::GET,
+            "/api/rss/https%3A%2F%2Fexample.com%2Ffeed/articles"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/tts/speak"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/audio/speak"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/bookshelf/update-toc"
+        ));
+        assert!(is_protected_source_write_request(
+            &Method::POST,
+            "/api/bookshelf/update-toc/single"
+        ));
+        // 仅注册方法受保护：GET /api/rss/articles 未注册（POST 专用），
+        // 其它方法不命中方法限定条目
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rss/articles"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/tts/speak"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/audio/speak"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/bookshelf/update-toc"
+        ));
+        // 中段参数只吃单段：缺段/多段/空段都不命中
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rss/articles"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rss/a/b/articles"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/rss//articles"
+        ));
+        // HEAD 与 GET 同面（axum `get()` 同时服务 HEAD，防绕过）
+        assert!(is_protected_source_write_request(
+            &Method::HEAD,
+            "/api/rss/https%3A%2F%2Fexample.com%2Ffeed/articles"
+        ));
+        // 同前缀只读面保持免令牌
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/tts/engines"
+        ));
+        assert!(!is_protected_source_write_request(
+            &Method::GET,
+            "/api/bookshelf/update-toc/progress"
+        ));
+        // 精确段数：`stop` 叶子路由不受批量更新条目影响（本身不触发出站）
+        assert!(!is_protected_source_write_request(
+            &Method::POST,
+            "/api/bookshelf/update-toc/stop"
+        ));
+    }
+
+    /// 匹配器改造回归：原 27 条表项的既有匹配语义逐条保持
+    ///
+    /// 旧实现只识别末段 `{id}`，新实现按 `/` 分段支持任意段占位符。
+    /// 本表为改造前的行为对照：每条给出一个应命中的具体路径（方法与表项
+    /// 一致）；`{id}` 的单段/多段/空段边界单独钉死，防止分段匹配退化为
+    /// 前缀匹配。
+    #[test]
+    fn test_route_pattern_matches_preserves_legacy_entries() {
+        // 旧表 27 条的命中样例（方法, 路径）
+        let legacy_positive = [
+            (Method::POST, "/startBookSourceCheck"),
+            (Method::POST, "/stopBookSourceCheck"),
+            (Method::POST, "/saveBookSource"),
+            (Method::POST, "/saveBookSources"),
+            (Method::POST, "/deleteBookSources"),
+            (Method::POST, "/saveJsSource"),
+            (Method::POST, "/saveRssSource"),
+            (Method::POST, "/saveRssSources"),
+            (Method::POST, "/deleteRssSources"),
+            (Method::POST, "/saveReplaceRule"),
+            (Method::POST, "/deleteReplaceRule"),
+            (Method::POST, "/testReplaceRule"),
+            (Method::POST, "/openLegacyReview"),
+            (Method::POST, "/runLegacyReview"),
+            (Method::POST, "/mcp/call"),
+            (Method::POST, "/api/webbook/search"),
+            (Method::POST, "/api/webbook/info"),
+            (Method::POST, "/api/webbook/chapters"),
+            (Method::POST, "/api/webbook/content"),
+            (Method::POST, "/api/sources"),
+            (Method::PUT, "/api/sources/https%3A%2F%2Fexample.com"),
+            (Method::DELETE, "/api/sources/https%3A%2F%2Fexample.com"),
+            (Method::POST, "/api/sources/update"),
+            (Method::POST, "/api/sources/check"),
+            (Method::POST, "/api/sources/check-batch"),
+            (Method::POST, "/api/rule-update/check"),
+            (Method::POST, "/api/rule-update/apply"),
+        ];
+        for (method, path) in legacy_positive {
+            assert!(
+                is_protected_source_write_request(&method, path),
+                "旧表项 {method} {path} 语义改变"
+            );
+        }
+
+        // `{id}` 末段：单段命中；空段/多段/缺段不命中
+        assert!(route_pattern_matches(
+            "/api/sources/{id}",
+            "/api/sources/abc"
+        ));
+        assert!(!route_pattern_matches("/api/sources/{id}", "/api/sources/"));
+        assert!(!route_pattern_matches(
+            "/api/sources/{id}",
+            "/api/sources/a/b"
+        ));
+        assert!(!route_pattern_matches("/api/sources/{id}", "/api/sources"));
+        // 无占位符条目仍为整串精确匹配（不因前缀相同放行）
+        assert!(route_pattern_matches("/api/sources", "/api/sources"));
+        assert!(!route_pattern_matches("/api/sources", "/api/sources/abc"));
+        assert!(!route_pattern_matches("/api/sources", "/api/sources/"));
+
+        // 中段参数：位置任意，只吃单段
+        assert!(route_pattern_matches(
+            "/api/rss/{source_url}/articles",
+            "/api/rss/https%3A%2F%2Fexample.com%2Ffeed/articles"
+        ));
+        assert!(!route_pattern_matches(
+            "/api/rss/{source_url}/articles",
+            "/api/rss//articles"
+        ));
+        assert!(!route_pattern_matches(
+            "/api/rss/{source_url}/articles",
+            "/api/rss/a/b/articles"
+        ));
+        assert!(!route_pattern_matches(
+            "/api/rss/{source_url}/articles",
+            "/api/rss/articles"
+        ));
+        assert!(!route_pattern_matches(
+            "/api/rss/{source_url}/articles",
+            "/api/rss/a/articles/extra"
+        ));
+        // 首段参数同样支持
+        assert!(route_pattern_matches("/api/{id}/x", "/api/abc/x"));
+        assert!(!route_pattern_matches("/api/{id}/x", "/api//x"));
+        // 空占位符 `{}` 不是参数段（保持精确匹配，避免误配）
+        assert!(!route_pattern_matches("/api/{}/x", "/api/abc/x"));
     }
 
     /// 用户态保留：enabled/enabledExplore/customOrder/weight/respondTime

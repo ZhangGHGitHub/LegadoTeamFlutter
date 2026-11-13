@@ -18,9 +18,10 @@ pub struct RssSourceResponse {
     pub feed: RssFeed,
 }
 
-/// GET /api/rss/articles — 获取 RSS 文章列表
+/// POST /api/rss/articles — 获取 RSS 文章列表
 ///
-/// 请求体为 JSON `{ "url": "https://..." }`。
+/// 请求体为 JSON `{ "url": "https://..." }`。该端点按请求体任意 URL 出站，
+/// 生产入口由 `PROTECTED_SOURCE_WRITE_ROUTES` 前置令牌守卫保护。
 pub async fn get_articles(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<RssFetchRequest>,

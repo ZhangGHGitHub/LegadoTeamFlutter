@@ -101,10 +101,15 @@ fn api_routes() -> Router<Arc<AppState>> {
         .route("/webbook/chapters", post(handlers::web_book::get_chapters))
         .route("/webbook/content", post(handlers::web_book::get_content))
         // TTS 文本转语音
+        // 安全面（审查批 P1/P2）：`/tts/speak` 接受 body `engine_url` 直接
+        // 出站并原样回传响应体，已纳入 `PROTECTED_SOURCE_WRITE_ROUTES`
+        //（方法限定 POST）；`/tts/engines` 只读，保持免令牌。
         .route("/tts/speak", post(handlers::tts::speak))
         .route("/tts/engines", get(handlers::tts::list_engines))
         .route("/tts/synthesize", post(handlers::tts::synthesize_by_id))
         // 听书音频播放
+        // 安全面（审查批 P1/P2）：`/audio/speak` 与 `/tts/speak` 同型（任意
+        // `engine_url` 出站 + 响应体外带），已入表（方法限定 POST）。
         .route("/audio/chapters", post(handlers::audio::get_chapters))
         .route("/audio/speak", post(handlers::audio::speak))
         .route("/audio/play", post(handlers::audio::play_control))
@@ -113,6 +118,9 @@ fn api_routes() -> Router<Arc<AppState>> {
             post(handlers::audio::get_chapter_media),
         )
         // RSS 订阅源
+        // 安全面（审查批 P1/P2）：`POST /rss/articles`（body url）与
+        // `GET /rss/{source_url}/articles`（路径参数解码）都直接出站，已入表
+        //（POST / GET 分别方法限定）；`GET` 条目同时覆盖 HEAD。
         .route("/rss/articles", post(handlers::rss::get_articles))
         .route(
             "/rss/{source_url}/articles",
@@ -183,6 +191,10 @@ fn api_routes() -> Router<Arc<AppState>> {
             post(handlers::rule_update::apply_update),
         )
         // TOC Update API
+        // 安全面（审查批 P1/P2）：单本 / 批量两条按请求体 `book_url` /
+        // `source_url` 从库取源后出站，已入表（方法限定 POST）；`max_concurrent`
+        // 另在 handler 内收敛到 9（上游 `AppConst.MAX_THREAD`）防出站放大。
+        // `progress` 只读、`stop` 仅置取消标志，保持免令牌。
         .route(
             "/bookshelf/update-toc/single",
             post(handlers::toc_update::update_single_toc),
@@ -378,6 +390,99 @@ mod tests {
                 resp.status(),
                 StatusCode::NOT_FOUND,
                 "Route {uri} should be registered"
+            );
+        }
+    }
+
+    /// 受保护路由表 ↔ 实际注册路由样例的交叉校验（审查建议）
+    ///
+    /// `PROTECTED_SOURCE_WRITE_ROUTES` 的每条表项必须能命中至少一个**已注册**
+    /// 路由样例，否则令牌守卫会静默失效——典型场景是中段路径参数
+    /// `/api/rss/{source_url}/articles`：旧匹配器只识别末段 `{id}`，加表后
+    /// 永不命中且无任何编译/测试报错。样例路径逐条取自 [`api_routes`] 与
+    /// [`legacy::legacy_routes`] 的注册点。
+    ///
+    /// 另用 OPTIONS 请求确认每个样例路径确实存在于路由表（未注册路径会
+    /// 落到静态资产兜底并返回 404）。
+    #[tokio::test]
+    async fn test_protected_routes_cover_registered_route_samples() {
+        use crate::legacy::source_write_api::{
+            method_allowed, route_pattern_matches, PROTECTED_SOURCE_WRITE_ROUTES,
+        };
+        use axum::http::Method;
+
+        // (方法, 具体路径)：与注册点逐条对应
+        const SAMPLES: &[(&str, &str)] = &[
+            // legacy_routes（原版 Web 端点）
+            ("POST", "/startBookSourceCheck"),
+            ("POST", "/stopBookSourceCheck"),
+            ("POST", "/saveBookSource"),
+            ("POST", "/saveBookSources"),
+            ("POST", "/deleteBookSources"),
+            ("POST", "/saveJsSource"),
+            ("POST", "/saveRssSource"),
+            ("POST", "/saveRssSources"),
+            ("POST", "/deleteRssSources"),
+            ("POST", "/saveReplaceRule"),
+            ("POST", "/deleteReplaceRule"),
+            ("POST", "/testReplaceRule"),
+            ("POST", "/openLegacyReview"),
+            ("POST", "/runLegacyReview"),
+            // 顶层 MCP
+            ("POST", "/mcp/call"),
+            // api_routes
+            ("POST", "/api/webbook/search"),
+            ("POST", "/api/webbook/info"),
+            ("POST", "/api/webbook/chapters"),
+            ("POST", "/api/webbook/content"),
+            ("POST", "/api/sources"),
+            ("PUT", "/api/sources/https%3A%2F%2Fexample.com"),
+            ("DELETE", "/api/sources/https%3A%2F%2Fexample.com"),
+            ("POST", "/api/sources/update"),
+            ("POST", "/api/sources/check"),
+            ("POST", "/api/sources/check-batch"),
+            ("POST", "/api/rule-update/check"),
+            ("POST", "/api/rule-update/apply"),
+            // 审查批 P1/P2：无鉴权出站面
+            ("POST", "/api/rss/articles"),
+            ("GET", "/api/rss/https%3A%2F%2Fexample.com%2Ffeed/articles"),
+            ("POST", "/api/tts/speak"),
+            ("POST", "/api/audio/speak"),
+            ("POST", "/api/bookshelf/update-toc/single"),
+            ("POST", "/api/bookshelf/update-toc"),
+        ];
+
+        // 1) 每条表项至少命中一个已注册样例
+        for (pattern, allowed) in PROTECTED_SOURCE_WRITE_ROUTES {
+            let matched = SAMPLES.iter().any(|(method, path)| {
+                let method = Method::from_bytes(method.as_bytes()).expect("样例方法非法");
+                method_allowed(allowed, &method) && route_pattern_matches(pattern, path)
+            });
+            assert!(
+                matched,
+                "表项 {pattern} ({allowed:?}) 没有匹配任何已注册路由样例：令牌守卫会对该路由\
+                 静默失效（请核对 routes.rs / legacy/mod.rs 的实际注册方法）"
+            );
+        }
+
+        // 2) 样例路径确实注册（OPTIONS 未匹配到路由时走静态兜底 → 404）
+        let app = create_router(make_test_state());
+        for (_, path) in SAMPLES {
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::OPTIONS)
+                        .uri(*path)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_ne!(
+                resp.status(),
+                StatusCode::NOT_FOUND,
+                "样例路径 {path} 未在 create_router 注册"
             );
         }
     }

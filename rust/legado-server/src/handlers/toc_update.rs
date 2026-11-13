@@ -30,6 +30,23 @@ use super::web_book::{build_engine, RealBookSourceFetcher};
 use crate::error::ApiError;
 use crate::state::AppState;
 
+/// 批量更新最大并发上限（出站限流，防出站放大）
+///
+/// 取值依据（与上游口径对齐）：上游 `MainViewModel` 的批量目录线程池固定为
+/// `min(AppConfig.threadCount, AppConst.MAX_THREAD)`，其中
+/// `AppConst.MAX_THREAD = 9`（`app/src/main/java/io/legado/app/constant/AppConst.kt:29`）、
+/// `AppConfig.threadCount` 缺省 32（`AppConfig.kt:417`）——即上游默认并发 9、
+/// 硬上限同为 9。我方 `TOC_UPDATER` 缺省并发 4（`TocUpdater::new(4)`），
+/// 与上游默认（9）同量级。故把请求体 `max_concurrent` 收敛到 `1..=9`：
+/// 正常 UI 默认值不受影响，但拒绝请求方把本机并发推到任意大（该端点此前
+/// 仅 `.max(1)`，配合无鉴权可被当作高并发出站放大器）。
+pub const TOC_UPDATE_MAX_CONCURRENT: usize = 9;
+
+/// 请求并发数收敛：至少 1，最多 [`TOC_UPDATE_MAX_CONCURRENT`]
+fn clamp_max_concurrent(requested: usize) -> usize {
+    requested.clamp(1, TOC_UPDATE_MAX_CONCURRENT)
+}
+
 /// 全局目录更新调度器实例（批量任务共享）
 static TOC_UPDATER: LazyLock<Mutex<Arc<TocUpdater>>> =
     LazyLock::new(|| Mutex::new(Arc::new(TocUpdater::new(4))));
@@ -43,7 +60,8 @@ static STOP_FLAG: AtomicBool = AtomicBool::new(false);
 #[derive(Debug, Deserialize)]
 pub struct BatchTocUpdateBody {
     pub books: Vec<BookTocEntry>,
-    /// 最大并发数，默认 4（对标 Kotlin AppConfig.threadCount 限流）
+    /// 最大并发数，默认 4（对标 Kotlin AppConfig.threadCount 限流）；
+    /// 服务端收敛到 `1..=TOC_UPDATE_MAX_CONCURRENT`（上游硬上限 9）
     #[serde(default = "default_concurrent")]
     pub max_concurrent: usize,
 }
@@ -328,6 +346,8 @@ pub async fn start_toc_update(
     State(state): State<Arc<AppState>>,
     Json(body): Json<BatchTocUpdateBody>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    // 并发数在进入调度器前收敛（防请求方把本机推到任意高并发出站）
+    let max_concurrent = clamp_max_concurrent(body.max_concurrent);
     let updater = {
         let guard = TOC_UPDATER.lock().await;
         if guard.get_progress().is_running {
@@ -336,9 +356,9 @@ pub async fn start_toc_update(
                 Json(json!({ "error": "batch update already running" })),
             ));
         }
-        // 重置停止标志并重建调度器（应用新的并发数）
+        // 重置停止标志并重建调度器（应用收敛后的并发数）
         STOP_FLAG.store(false, Ordering::SeqCst);
-        let new_updater = Arc::new(TocUpdater::new(body.max_concurrent.max(1)));
+        let new_updater = Arc::new(TocUpdater::new(max_concurrent));
         drop(guard);
         let mut guard = TOC_UPDATER.lock().await;
         *guard = Arc::clone(&new_updater);
@@ -384,7 +404,7 @@ pub async fn start_toc_update(
         Json(json!({
             "started": true,
             "total": total,
-            "max_concurrent": body.max_concurrent,
+            "max_concurrent": max_concurrent,
         })),
     ))
 }
@@ -458,6 +478,61 @@ mod tests {
         STOP_FLAG.store(false, Ordering::SeqCst);
         let updater = TOC_UPDATER.lock().await;
         updater.reset();
+    }
+
+    /// [审查批 P1/P2] `max_concurrent` 收敛到 `1..=9`
+    /// （上限依据：上游 `min(AppConfig.threadCount, AppConst.MAX_THREAD=9)`）
+    #[test]
+    fn test_clamp_max_concurrent() {
+        assert_eq!(clamp_max_concurrent(0), 1);
+        assert_eq!(clamp_max_concurrent(1), 1);
+        assert_eq!(clamp_max_concurrent(4), 4);
+        assert_eq!(clamp_max_concurrent(9), 9);
+        assert_eq!(clamp_max_concurrent(10), 9);
+        assert_eq!(clamp_max_concurrent(usize::MAX), 9);
+    }
+
+    /// 端点侧同口径：请求体 1000 并发 → 调度器按 9 建、响应回显 9
+    ///（空批次不发网络请求，用例不依赖外网）
+    #[tokio::test]
+    async fn test_start_toc_update_clamps_max_concurrent() {
+        let _guard = TEST_LOCK.lock().await;
+        reset_global().await;
+
+        let app = test_router(make_test_state());
+        let body = serde_json::to_string(&json!({
+            "books": [],
+            "max_concurrent": 1000
+        }))
+        .unwrap();
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/bookshelf/update-toc")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let json = body_json(resp.into_body()).await;
+        assert_eq!(json["started"], true);
+        assert_eq!(json["total"], 0);
+        assert_eq!(
+            json["max_concurrent"], TOC_UPDATE_MAX_CONCURRENT,
+            "请求 1000 并发必须收敛到上限 9"
+        );
+        assert_eq!(
+            TOC_UPDATER.lock().await.max_concurrent(),
+            TOC_UPDATE_MAX_CONCURRENT,
+            "调度器实际并发数同样收敛"
+        );
+
+        wait_batch_done(0).await;
     }
 
     async fn body_json(body: Body) -> Value {
