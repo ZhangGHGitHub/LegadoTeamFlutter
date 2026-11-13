@@ -24,7 +24,6 @@
 pub mod engine;
 #[cfg(feature = "quickjs")]
 pub mod engine_cache;
-pub mod engine_pool;
 /// QuickJS 执行器适配（P5 下沉：原 ffi `js_executor::quickjs_impl`）
 #[cfg(feature = "quickjs")]
 pub mod executor;
@@ -43,8 +42,6 @@ pub mod source_engine;
 #[cfg(feature = "quickjs")]
 pub use engine::QuickJsEngine;
 pub use engine::{CompiledScript, JsEngine, JsValue, StubJsEngine};
-#[cfg(feature = "quickjs")]
-pub use engine_pool::EnginePool;
 pub use host_api::HostEnv;
 pub use sandbox::{SandboxConfig, SandboxState, SandboxStats};
 pub use scope::{ScopeData, SharedScopeManager};

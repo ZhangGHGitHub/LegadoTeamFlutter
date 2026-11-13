@@ -1,13 +1,14 @@
 //! JsExecutor 适配器（legado-ffi 层）
 //!
-//! 在 FFI 层把 legado-js 的 QuickJS 引擎池适配为 legado-parser 期望的
+//! 在 FFI 层把 legado-js 的 QuickJS 引擎缓存适配为 legado-parser 期望的
 //! [`legado_parser::JsExecutor`]，从而打通书源 `@js:` 规则的执行链路。
 //!
 //! 设计要点：
 //! - 保持 crate 依赖单向：legado-ffi 同时依赖 legado-js 与 legado-parser，
 //!   由本层完成两者对接，避免 legado-parser ↔ legado-js 循环依赖。
-//! - 复用 legado-js 的 [`EnginePool`]：按 `source_tag`（书源 URL）缓存
-//!   `Arc<Mutex<QuickJsEngine>>`，避免每源重复创建 Runtime + Context。
+//! - 复用 legado-js 的 `engine_cache`：按书源缓存键缓存
+//!   `Arc<Mutex<QuickJsEngine>>`（LRU + 锁外构建），避免每源重复创建
+//!   Runtime + Context。
 //! - 全部以 `#[cfg(feature = "quickjs")]` 门控：feature 关闭时
 //!   [`construct_analyzer`] 退化为 `AnalyzeRule::new`（不注入执行器，静默降级），
 //!   默认构建仍走 stub 且编译通过。

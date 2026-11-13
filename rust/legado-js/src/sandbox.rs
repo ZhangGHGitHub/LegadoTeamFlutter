@@ -11,7 +11,7 @@
 //! | 维度 | 默认策略（`SandboxConfig::default()`） | 说明 |
 //! |------|----------------------------------------|------|
 //! | 执行超时 | 5 秒 | 超时后中断脚本执行 |
-//! | eval / Function | **书源路径启用** | `EnginePool` 默认 `allow_script_run=true`（对齐 Rhino 书源信任模型，v1.26）；`SandboxConfig::default()` 仍为 false，供 `js_eval` 等调试/严格入口 |
+//! | eval / Function | **书源路径启用** | 引擎缓存的 `engine_cache::init_engine` 默认 `allow_script_run=true`（对齐 Rhino 书源信任模型，v1.26）；`SandboxConfig::default()` 仍为 false，供 `js_eval` 等调试/严格入口 |
 //! | 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API；archive/font API 仍注册，但本地路径仅允许引擎自建目录（`legado_js_cache` / `legado_font_cache`，见 `host_api::fs_policy`） |
 //! | 网络 | 受控保留 | 书源网络经 legado-net 宿主 API 统一通道；`allow_network` 为配置/文档口径（D3=A，非 Runtime 门控，F3-3） |
 //! | 内存 | 16 MB | 超过后 QuickJS 分配失败 |

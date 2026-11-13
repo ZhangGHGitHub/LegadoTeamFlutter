@@ -15,8 +15,6 @@ use legado_core::{LegadoError, LegadoResult};
 use crate::engine::QuickJsEngine;
 use crate::engine::{CompiledScript, JsEngine, JsValue, StubJsEngine};
 #[cfg(feature = "quickjs")]
-use crate::engine_pool::EnginePool;
-#[cfg(feature = "quickjs")]
 use crate::sandbox::SandboxConfig;
 use crate::scope::SharedScopeManager;
 #[cfg(feature = "quickjs")]
@@ -91,17 +89,14 @@ impl CallResult {
 ///
 /// 支持两种引擎持有方式：
 /// - 直接持有 `Box<dyn JsEngine>`（stub / with_engine）
-/// - 通过 `EnginePool` 按 source_tag 共享引擎（池化模式）
+/// - 持有进程级引擎缓存（[`crate::engine_cache`]）返回的
+///   `Arc<Mutex<QuickJsEngine>>`（`new_quickjs` 池化模式）
 pub struct JsSourceEngine {
     /// 源配置
     config: JsSourceConfig,
     /// JS 引擎实例（非池化模式）
     engine: Option<Box<dyn JsEngine>>,
-    /// 引擎池（池化模式，启用 quickjs 时可用）
-    #[cfg(feature = "quickjs")]
-    #[allow(dead_code)]
-    engine_pool: Option<Arc<EnginePool>>,
-    /// 池化模式下缓存的引擎引用（避免每次调用都查池）
+    /// 池化模式下缓存的引擎引用（避免每次调用都查缓存）
     #[cfg(feature = "quickjs")]
     pooled_engine: Option<Arc<Mutex<QuickJsEngine>>>,
     /// 书源标识（用于 Cookie/变量隔离，后续由 HostEnv 承载）
@@ -120,8 +115,6 @@ impl JsSourceEngine {
         let source_tag = Some(config.source_url.clone());
         Self {
             engine: Some(Box::new(StubJsEngine::new())),
-            #[cfg(feature = "quickjs")]
-            engine_pool: None,
             #[cfg(feature = "quickjs")]
             pooled_engine: None,
             config,
@@ -145,9 +138,35 @@ impl JsSourceEngine {
         // 元组顺序为 (engine, main_js_ok, js_lib_ok)（engine_cache.rs:132/160/182）
         let (pooled_engine, main_js_ok, js_lib_ok) =
             crate::host_api::current_source::with_current_source_tag(&config.source_url, || {
+                // P2-5（引擎链审查 2026-11-13）：URL 映射形态 jsLib
+                // （`{"crypto":"https://…/crypto-js.min.js"}`）不是合法 JS，
+                // 若原样交给 `engine_cache::init_engine` 会被 eval 判为语法
+                // 错误 → `js_lib_ok=false` → 本构造函数误报「jsLib 求值失败」。
+                // 上游语义（SharedJsScope.parseJsLibMap / evaluateJsLib）是逐条
+                // 拉取 URL 后 eval；与 `QuickJsExecutor`（executor.rs run_fresh
+                // 分支）同源复用 `jslib_loader`：共享客户端拉取 + 进程缓存 +
+                // 逐条失败降级台账。非映射形态保持原样（原始 JS eval 级联）。
+                //
+                // 降级约定与既有加载器一致：单条失败仅跳过该条并记台账
+                // （`record_jslib_load_failure`）；全条失败时 script 为 None，
+                // 不 eval 原始 JSON（非合法 JS，回退只会重复失败），主脚本
+                // 仍可构造——失败原因经台账可观测，不静默。
+                let resolved_js_lib = match config.js_lib.as_deref() {
+                    Some(lib)
+                        if crate::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some() =>
+                    {
+                        crate::host_api::jslib_loader::resolve_js_lib_url_map_with_status(
+                            lib,
+                            &cache_key,
+                            &crate::host_api::jslib_loader::default_js_lib_fetcher,
+                        )
+                        .script
+                    }
+                    other => other.map(str::to_string),
+                };
                 crate::engine_cache::get_or_create(
                     &cache_key,
-                    config.js_lib.as_deref(),
+                    resolved_js_lib.as_deref(),
                     None,
                     Some(&config.main_js),
                 )
@@ -179,7 +198,6 @@ impl JsSourceEngine {
         let main_js_loaded = !matches!(main_js_ok, Some(false));
         Ok(Self {
             engine: None,
-            engine_pool: None,
             pooled_engine: Some(pooled_engine),
             config,
             source_tag,
@@ -199,33 +217,9 @@ impl JsSourceEngine {
         let source_tag = Some(config.source_url.clone());
         Ok(Self {
             engine: Some(Box::new(engine)),
-            engine_pool: None,
             pooled_engine: None,
             config,
             source_tag,
-            scope_manager: None,
-            script_cache: HashMap::new(),
-            main_js_loaded: false,
-        })
-    }
-
-    /// 使用引擎池创建（池化模式）
-    ///
-    /// 从共享引擎池中按 source_tag 获取或创建引擎，避免每源重复创建。
-    /// 引擎创建失败时返回 `Err`（遵循 FFI 禁 panic 规范）。
-    #[cfg(feature = "quickjs")]
-    pub fn new_with_pool(
-        config: JsSourceConfig,
-        pool: Arc<EnginePool>,
-    ) -> Result<Self, legado_core::LegadoError> {
-        let source_tag = config.source_url.clone();
-        let pooled_engine = pool.get_or_create(&source_tag)?;
-        Ok(Self {
-            engine: None,
-            engine_pool: Some(pool),
-            pooled_engine: Some(pooled_engine),
-            source_tag: Some(source_tag),
-            config,
             scope_manager: None,
             script_cache: HashMap::new(),
             main_js_loaded: false,
@@ -237,8 +231,6 @@ impl JsSourceEngine {
         let source_tag = Some(config.source_url.clone());
         Self {
             engine: Some(engine),
-            #[cfg(feature = "quickjs")]
-            engine_pool: None,
             #[cfg(feature = "quickjs")]
             pooled_engine: None,
             config,
@@ -309,8 +301,13 @@ impl JsSourceEngine {
             // 克隆 Arc 以释放对 self 的借用
             let pooled_opt = self.pooled_engine.clone();
             if let Some(pooled) = pooled_opt {
-                // 池化模式：通过 Arc<Mutex<QuickJsEngine>> 执行
-                let engine_guard = pooled.lock().unwrap();
+                // 池化模式：通过 Arc<Mutex<QuickJsEngine>> 执行。
+                // 锁中毒恢复（P2-9）：某次 eval panic 后不再连锁 panic，
+                // 取回内部引擎继续执行（QuickJS 状态可能不完整，由调用方
+                // 按执行错误降级）。
+                let engine_guard = pooled
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
 
                 // 首次调用时 eval 主脚本，后续跳过（mainJs 求值缓存）
                 if !self.main_js_loaded {

@@ -3718,9 +3718,11 @@ fn register_html_parse_apis<'js>(
 /// put / putMemory / getFromMemory / deleteMemory / get(onlyDisk) /
 /// putFile / getFile / delete。后端为 `cache_store` 模块的进程级
 /// LRU 内存 + 磁盘文件，语义对齐 CacheManager.kt:60-98：
-/// - saveTime <= 0 → 仅内存（putMemory），永久有效
-/// - saveTime > 0  → 磁盘条目 + 截止时间，读取时过期即删
+/// - saveTime <= 0 → 写永久磁盘条目（deadline=0）**并同步内存层**：
+///   同进程 `get` 命中内存，进程重启后仍可从磁盘读回；不是“仅内存”
+/// - saveTime > 0  → 磁盘条目 + 截止时间，成功后清内存层，读取过期即删
 /// - putFile/getFile：磁盘裸文件，无过期
+/// - 仅 `putMemory` 是纯内存、不落盘
 ///
 /// 值统一字符串化后存储（上游 WebCacheManager 存 String；对象值
 /// 走 JSON.stringify 为兼容超集）；缺失键返回显式 **null**
@@ -3735,7 +3737,9 @@ fn register_cache_apis<'js>(
         rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     // put(key, value, saveTime?) -> bool
-    // saveTime<=0 语义对齐 CacheManager.kt:60-98：仅内存、无过期
+    // 实现见 `cache_store::put`：无论 saveTime 都写磁盘条目；saveTime<=0 时
+    // deadline=0（永久）并同步写内存层，因此**不是“仅内存”**（纯内存写只有
+    // putMemory）。saveTime>0 为带截止时间的磁盘条目，成功后清内存层。
     // saveTime 上游为非空原始 Int（CacheManager.kt:60；WebCacheManager.put :172
     // 同为 `saveTime: Int = 0`，@JvmOverloads 缺省 0）：按 Rhino 原始 int 语义
     // 宽松（字符串数字可；缺参 → None → 0 — W4 探针），域判定与 int 同

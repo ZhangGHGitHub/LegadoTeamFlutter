@@ -18,6 +18,8 @@ use std::time::Duration;
 /// 进程级引擎缓存容量上限（LRU 驱逐阈值；pub 供 FFI 层回归测试断言不变式）
 pub const MAX_ENTRIES: usize = 32;
 type SharedEngine = Arc<Mutex<QuickJsEngine>>;
+/// 缓存引擎句柄 +（构建时 mainJs eval 状态, 构建时 jsLib eval 状态）
+type CachedEngine = (SharedEngine, Option<bool>, Option<bool>);
 struct Entry {
     engine: SharedEngine,
     js_lib: String,
@@ -56,7 +58,7 @@ fn init_engine(
     setup_script: &str,
     main_js: &str,
     timeout: Option<Duration>,
-) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
+) -> LegadoResult<CachedEngine> {
     let mut config = SandboxConfig::default()
         .with_allow_script_run(true)
         .with_memory_limit(64 * 1024 * 1024);
@@ -146,7 +148,7 @@ pub fn get_or_create(
     js_lib: Option<&str>,
     setup_script: Option<&str>,
     main_js: Option<&str>,
-) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
+) -> LegadoResult<CachedEngine> {
     get_or_create_with_timeout(key, js_lib, setup_script, main_js, None)
 }
 
@@ -160,38 +162,46 @@ pub fn get_or_create(
 ///
 /// 缓存键比较包含 `timeout`：同一 key 换预算会重建条目（与其他初始化
 /// 脚本变化同语义）；`None` 与既有调用方逐字节等价。
+///
+/// # 锁纪律（P2-6）
+///
+/// `init_engine` 会 eval 数百 KB jsLib，jsLib/setup 顶层可能出现
+/// `java.ajax` 等宿主调用并阻塞到网络超时；该构建过程**不得**在全局缓存
+/// 锁内执行，否则一个源的首次建引擎会拖住所有源（含已缓存 key 的快路径）。
+/// 因此采用三段式（同 `host_api::network::shared_client` 的双检模式）：
+///
+/// 1. 短锁查表：命中且初始化上下文一致 → 克隆返回；
+/// 2. 锁外构建：未命中/上下文变化 → 释放锁后执行 `init_engine`；
+/// 3. 写锁复查：并发构建同一 key 时先装入者胜出，后到者丢弃本次构建
+///    结果并返回既有条目（两者语义等价，避免相互覆盖造成抖动）。
 pub fn get_or_create_with_timeout(
     key: &str,
     js_lib: Option<&str>,
     setup_script: Option<&str>,
     main_js: Option<&str>,
     timeout: Option<Duration>,
-) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
+) -> LegadoResult<CachedEngine> {
     let lib = js_lib.unwrap_or("");
     let setup = setup_script.unwrap_or("");
     let main = main_js.unwrap_or("");
+    // 1. 快路径：短锁查表（无慢操作）
+    if let Some(hit) = lookup_cached(key, lib, setup, main, timeout)? {
+        return Ok(hit);
+    }
+    // 2. 慢路径：锁外构建（可能阻塞在 jsLib 顶层宿主调用上）
+    let (engine, main_ok, lib_ok) = init_engine(key, lib, setup, main, timeout)?;
+    // 3. 写锁复查并装入
     let mut guard = store()
         .lock()
         .map_err(|_| LegadoError::JsEngine("缓存锁中毒".into()))?;
-    let same = guard
-        .entries
-        .get(key)
-        .map(|e| {
-            e.js_lib == lib && e.setup_script == setup && e.main_js == main && e.timeout == timeout
-        })
-        .unwrap_or(false);
-    if same {
-        let entry = guard.entries.get(key).unwrap();
-        let engine = entry.engine.clone();
-        let main_ok = entry.main_js_ok;
-        let lib_ok = entry.js_lib_ok;
-        guard.order.retain(|k| k != key);
-        guard.order.push_back(key.to_string());
-        return Ok((engine, main_ok, lib_ok));
+    // 并发首次构建同一 key：他线程已装入且上下文一致 → 丢弃自身构建结果
+    if let Some(entry) = guard.entries.get(key) {
+        if entry.matches(lib, setup, main, timeout) {
+            let result = (entry.engine.clone(), entry.main_js_ok, entry.js_lib_ok);
+            touch_lru(&mut guard, key);
+            return Ok(result);
+        }
     }
-    guard.entries.remove(key);
-    guard.order.retain(|k| k != key);
-    let (engine, main_ok, lib_ok) = init_engine(key, lib, setup, main, timeout)?;
     guard.entries.insert(
         key.to_string(),
         Entry {
@@ -204,13 +214,57 @@ pub fn get_or_create_with_timeout(
             js_lib_ok: lib_ok,
         },
     );
-    guard.order.push_back(key.to_string());
+    touch_lru(&mut guard, key);
     while guard.entries.len() > MAX_ENTRIES {
         if let Some(old) = guard.order.pop_front() {
             guard.entries.remove(&old);
         }
     }
     Ok((engine, main_ok, lib_ok))
+}
+
+impl Entry {
+    /// 初始化上下文是否与请求一致（缓存键之外的比较维度）
+    fn matches(
+        &self,
+        js_lib: &str,
+        setup_script: &str,
+        main_js: &str,
+        timeout: Option<Duration>,
+    ) -> bool {
+        self.js_lib == js_lib
+            && self.setup_script == setup_script
+            && self.main_js == main_js
+            && self.timeout == timeout
+    }
+}
+
+/// 快路径查表：命中且上下文一致时克隆引擎并更新 LRU 次序
+fn lookup_cached(
+    key: &str,
+    js_lib: &str,
+    setup_script: &str,
+    main_js: &str,
+    timeout: Option<Duration>,
+) -> LegadoResult<Option<CachedEngine>> {
+    let mut guard = store()
+        .lock()
+        .map_err(|_| LegadoError::JsEngine("缓存锁中毒".into()))?;
+    let hit = guard
+        .entries
+        .get(key)
+        .filter(|e| e.matches(js_lib, setup_script, main_js, timeout))
+        .map(|e| (e.engine.clone(), e.main_js_ok, e.js_lib_ok));
+    if hit.is_some() {
+        touch_lru(&mut guard, key);
+    }
+    Ok(hit)
+}
+
+/// 把 key 移到 LRU 队尾（最近使用）
+fn touch_lru(guard: &mut Store, key: &str) {
+    guard.order.retain(|k| k != key);
+    guard.order.push_back(key.to_string());
 }
 
 /// 测试串行锁：进程级缓存被同一二进制的多个测试共享，
@@ -263,6 +317,79 @@ mod tests {
         )
         .unwrap();
         assert_eq!(second.lock().unwrap().eval("marker()").unwrap(), "2");
+    }
+
+    /// P2-6：慢构建（jsLib 顶层 `java.ajax` 阻塞在原生网络调用）不得阻塞
+    /// 已缓存 key 的快路径。
+    ///
+    /// 改前 `get_or_create_with_timeout` 在持有全局缓存 Mutex 期间执行
+    /// `init_engine`，本用例的快路径查询会被慢构建拖住（红）；改为
+    /// 「快路径短锁 → 锁外构建 → 写锁复查」后快路径应立即返回（绿）。
+    #[test]
+    fn cached_key_fast_path_not_blocked_by_slow_build() {
+        use std::io::{Read, Write};
+        use std::time::Instant;
+
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_for_tests();
+
+        // 预热快路径 key（无初始化脚本，构建瞬时）
+        let (warm, _, _) = get_or_create("fast-key", None, None, None).unwrap();
+
+        // 最小回环服务：读到请求后延迟 1200ms 再回响应，拖住慢构建。
+        // 非阻塞 accept + 5s 上限，保证构建未发起请求时测试线程不会永久挂起。
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            listener.set_nonblocking(true).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                match listener.accept() {
+                    Ok((mut sock, _)) => {
+                        let mut buf = [0u8; 1024];
+                        let _ = sock.read(&mut buf);
+                        std::thread::sleep(Duration::from_millis(1200));
+                        let _ = sock.write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                        );
+                        return;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= deadline {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => return,
+                }
+            }
+        });
+
+        let slow_lib = format!("java.ajax('http://{addr}/slow');");
+        let slow_start = Instant::now();
+        let builder = std::thread::spawn(move || {
+            let _ = get_or_create("slow-build-key", Some(&slow_lib), None, None);
+            slow_start.elapsed()
+        });
+        // 等慢构建进入 init_engine（构建在锁外，此时全局锁已释放）
+        std::thread::sleep(Duration::from_millis(150));
+
+        let probe_start = Instant::now();
+        let (fast, _, _) = get_or_create("fast-key", None, None, None).unwrap();
+        let fast_elapsed = probe_start.elapsed();
+
+        let slow_elapsed = builder.join().unwrap();
+        let _ = server.join();
+
+        assert!(Arc::ptr_eq(&fast, &warm), "快路径必须命中既有引擎");
+        assert!(
+            slow_elapsed >= Duration::from_millis(1000),
+            "慢构建未被拖住（{slow_elapsed:?}），测试前提不成立"
+        );
+        assert!(
+            fast_elapsed < Duration::from_millis(500),
+            "已缓存 key 的快路径被慢构建阻塞：{fast_elapsed:?}（慢构建 {slow_elapsed:?}）"
+        );
     }
 
     /// 批21a：单次求值预算参与缓存键比较——同预算复用同一引擎，

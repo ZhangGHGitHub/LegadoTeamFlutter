@@ -37,9 +37,40 @@ pub fn current_source_tag() -> Option<String> {
     CURRENT_SOURCE.with(|cell| cell.borrow().clone())
 }
 
+/// 书源标识作用域护栏：进入时保存原值并绑定新 tag，退出（含 panic
+/// 展开）时由 `Drop` 恢复原值。
+///
+/// P2-7：改前 `with_current_source_tag` 在闭包正常返回后才恢复，
+/// 闭包 panic 时恢复被跳过；tokio blocking 线程复用后 tag 残留，
+/// 后续请求的 `global_headers`、验证码钩子、cookie 写侧门控会错源。
+/// 模式同 `ui_action_queue::ScopeGuard`。
+struct SourceTagGuard {
+    prev: Option<String>,
+}
+
+impl SourceTagGuard {
+    fn new(tag: &str) -> Self {
+        let prev = CURRENT_SOURCE.with(|cell| cell.borrow().clone());
+        set_current_source_tag(tag);
+        Self { prev }
+    }
+}
+
+impl Drop for SourceTagGuard {
+    fn drop(&mut self) {
+        let prev = self.prev.take();
+        // 线程销毁阶段 TLS 可能已不可用；`try_with` 避免 Drop 内二次 panic
+        let _ = CURRENT_SOURCE.try_with(|cell| {
+            *cell.borrow_mut() = prev;
+        });
+    }
+}
+
 /// 在闭包执行期间临时绑定书源标识，退出时恢复原值
 ///
 /// 供 `JsSourceEngine` 等嵌套调用场景使用，保证不破坏外层绑定。
+/// 恢复经 RAII [`SourceTagGuard`] 完成：闭包 panic 展开时同样恢复，
+/// 不会在复用的 blocking 线程上残留错误书源。
 ///
 /// 注意（2026-09-23 上游同步，用户裁决）：P2-19 曾以该绑定承载 JS cookie 取用
 /// scope（按书源 tag 维度过滤 `GLOBAL_COOKIES`）；同步上游后 cookie 取用改按
@@ -47,13 +78,8 @@ pub fn current_source_tag() -> Option<String> {
 /// 本绑定**不再承载 cookie scope**。保留不动，仍服务于全局请求头
 /// （`global_headers`，按 tag 隔离）与书源上下文（引擎分桶、验证码钩子等）。
 pub fn with_current_source_tag<R>(tag: &str, f: impl FnOnce() -> R) -> R {
-    let prev = CURRENT_SOURCE.with(|cell| cell.borrow().clone());
-    set_current_source_tag(tag);
-    let result = f();
-    CURRENT_SOURCE.with(|cell| {
-        *cell.borrow_mut() = prev;
-    });
-    result
+    let _guard = SourceTagGuard::new(tag);
+    f()
 }
 
 #[cfg(test)]
@@ -79,6 +105,27 @@ mod tests {
         assert_eq!(inner.as_deref(), Some("inner"));
         assert_eq!(current_source_tag().as_deref(), Some("outer"));
         clear_current_source_tag();
+    }
+
+    /// P2-7：闭包 panic 展开后 tag 必须恢复原值（RAII Drop 护栏），
+    /// 否则复用 blocking 线程上会残留错误书源。
+    #[test]
+    fn test_with_restores_after_panic() {
+        // 外层已绑定 → panic 后恢复为外层值
+        set_current_source_tag("outer");
+        let result = std::panic::catch_unwind(|| {
+            with_current_source_tag("inner", || -> () { panic!("boom-with-outer") })
+        });
+        assert!(result.is_err());
+        assert_eq!(current_source_tag().as_deref(), Some("outer"));
+
+        // 无外层绑定 → panic 后恢复为 None
+        clear_current_source_tag();
+        let result = std::panic::catch_unwind(|| {
+            with_current_source_tag("inner", || -> () { panic!("boom-with-none") })
+        });
+        assert!(result.is_err());
+        assert!(current_source_tag().is_none());
     }
 
     #[test]
