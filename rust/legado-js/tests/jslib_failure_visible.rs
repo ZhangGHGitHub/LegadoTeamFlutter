@@ -258,6 +258,32 @@ fn js_source_engine_url_map_jslib_all_fail_is_hard_error() {
     );
 }
 
+/// ⑧c [批29 回修] 空映射 jsLib（`"{}"`）不得按「全条失败」硬上抛。
+///
+/// `resolution.script == None` 不代表全条失败：空映射 / 条目全为空值同样
+/// 得到 `None`，但 `degraded == false`（没有任何 URL 拉取失败），语义等价
+/// 于「未配置 jsLib」，此类源此前可正常构造。硬失败条件须同时满足
+/// `degraded && script.is_none()`。
+#[test]
+fn js_source_engine_empty_jslib_map_constructs() {
+    let _guard = cache_guard();
+    engine_cache::clear_for_tests();
+    let config = legado_js::JsSourceConfig::new(
+        "p23-urlmap-empty-source".to_string(),
+        "function probe(){ return 'empty-map-ok'; }".to_string(),
+    )
+    .with_js_lib("{}".to_string());
+    let mut engine = legado_js::JsSourceEngine::new_quickjs(config)
+        .expect("空映射 jsLib 等价于未配置，构造不得硬失败（修复前红）");
+    assert_eq!(
+        engine
+            .call_function("probe", &[])
+            .expect("mainJs 调用应成功"),
+        Some("empty-map-ok".to_string()),
+        "空映射 jsLib 不应影响 mainJs 加载与调用"
+    );
+}
+
 /// ⑧b [P2-3 对照] **部分**条目失败保留降级（成功条目可用），失败原因仍登记
 /// 台账——与全条失败的硬上抛边界（方案 A：部分失败不阻断构造）。
 #[test]

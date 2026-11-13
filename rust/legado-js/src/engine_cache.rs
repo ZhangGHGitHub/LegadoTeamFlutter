@@ -374,6 +374,18 @@ pub fn invalidate(key: &str) {
 /// 凡调用 [clear_for_tests]/[len_for_tests] 的测试必须先持此锁，防止并发清空串扰。
 pub static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+/// 测试用：取得 [`TEST_LOCK`]，中毒时取回内部值复用。
+///
+/// 直接用 `lock().unwrap()` 会让任一用例的断言失败毒化锁，进而把同二进制
+/// 其余用例级联成 `PoisonError`（批29 回修：慢构建用例假红一次即连带 7 条
+/// 失败，真实断言被掩盖）。本 helper 保证单个用例 panic 只影响自身。
+#[cfg(test)]
+pub(crate) fn lock_test() -> std::sync::MutexGuard<'static, ()> {
+    TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// 清空缓存，供 FFI 回归测试隔离进程级状态。
 pub fn clear_for_tests() {
     let mut guard = store().lock().unwrap();
@@ -393,7 +405,7 @@ mod tests {
     use super::*;
     #[test]
     fn lru_never_exceeds_max() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = lock_test();
         clear_for_tests();
         // 插入量须超过上限才会触发 LRU 逐出（MAX_ENTRIES 8→32 后原 10 条不再越界）
         for i in 0..(MAX_ENTRIES + 2) {
@@ -404,7 +416,7 @@ mod tests {
 
     #[test]
     fn changing_initialization_scripts_rebuilds_entry() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = lock_test();
         clear_for_tests();
         let (first, _, _) = get_or_create(
             "invalidate",
@@ -435,20 +447,28 @@ mod tests {
     /// `sleep(150ms)`。后者在 CI 调度延迟下可能让探针先拿到缓存锁，旧实现
     /// 也快速返回 → 假绿。收到请求时：旧实现必然正持全局缓存锁（构建在锁内）
     /// → 探针必阻塞；新实现必然已释放全局锁（构建在锁外）→ 探针立即返回。
-    /// 500ms 仍保留为宽松上限（探针本身无网络/无构建）。
+    ///
+    /// 批29 回修：原断言 `fast_elapsed < 500ms` 是**绝对耗时**，并行跑多个
+    /// 测试二进制（高 CPU 负载）时会假红；且 panic 时持 [`TEST_LOCK`] 毒化
+    /// 锁 → 同二进制其余用例级联失败。现改为**相对先后**：以慢构建起点为
+    /// 基准记录探针返回时刻 `slow_start.elapsed()`，要求探针在 mock 回响应
+    /// 之前返回（mock 收到请求后延迟 3000ms 才回，阈值 2000ms 留 1000ms
+    /// 余量吸收 CPU 竞争）。探针若真被慢构建阻塞，最早也要等 mock 响应之后
+    /// 才能返回（`>= 3000ms`），仍会被稳定判红；`slow_elapsed >= 2500ms`
+    /// 保留为「慢构建确实被拖住」的前提校验。
     #[test]
     fn cached_key_fast_path_not_blocked_by_slow_build() {
         use std::io::{Read, Write};
         use std::sync::mpsc;
         use std::time::Instant;
 
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = lock_test();
         clear_for_tests();
 
         // 预热快路径 key（无初始化脚本，构建瞬时）
         let (warm, _, _) = get_or_create("fast-key", None, None, None).unwrap();
 
-        // 最小回环服务：读到请求后先通知测试线程（同步点），再延迟 1200ms
+        // 最小回环服务：读到请求后先通知测试线程（同步点），再延迟 3000ms
         // 回响应，拖住慢构建。非阻塞 accept + 5s 上限，保证构建未发起请求
         // 时测试线程不会永久挂起。
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -464,7 +484,7 @@ mod tests {
                         let _ = sock.read(&mut buf);
                         // 慢构建已进入 init_engine 并发出宿主请求
                         let _ = req_tx.send(());
-                        std::thread::sleep(Duration::from_millis(1200));
+                        std::thread::sleep(Duration::from_millis(3000));
                         let _ = sock.write_all(
                             b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
                         );
@@ -495,19 +515,23 @@ mod tests {
 
         let probe_start = Instant::now();
         let (fast, _, _) = get_or_create("fast-key", None, None, None).unwrap();
-        let fast_elapsed = probe_start.elapsed();
+        let probe_elapsed = probe_start.elapsed();
+        // 相对慢构建起点的返回时刻：mock 收到请求后 3000ms 才回响应，探针
+        // 若未被阻塞必远早于此（阈值 2000ms）返回。
+        let probe_return_at = slow_start.elapsed();
 
         let slow_elapsed = builder.join().unwrap();
         let _ = server.join();
 
         assert!(Arc::ptr_eq(&fast, &warm), "快路径必须命中既有引擎");
         assert!(
-            slow_elapsed >= Duration::from_millis(1000),
+            slow_elapsed >= Duration::from_millis(2500),
             "慢构建未被拖住（{slow_elapsed:?}），测试前提不成立"
         );
         assert!(
-            fast_elapsed < Duration::from_millis(500),
-            "已缓存 key 的快路径被慢构建阻塞：{fast_elapsed:?}（慢构建 {slow_elapsed:?}）"
+            probe_return_at < Duration::from_millis(2000),
+            "已缓存 key 的快路径被慢构建阻塞：探针于慢构建起点后 {probe_return_at:?} 才返回\
+             （mock 收请求后 3000ms 才回响应；探针自身耗时 {probe_elapsed:?}）"
         );
     }
 
@@ -525,7 +549,7 @@ mod tests {
 
         const THREADS: usize = 4;
 
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = lock_test();
         clear_for_tests();
 
         // 慢响应 mock（每连接独立线程）：延迟 400ms 保证修复前所有线程都
@@ -618,7 +642,7 @@ mod tests {
     /// P3-1 配套：`invalidate` 移除条目后，下次获取会重建全新引擎。
     #[test]
     fn invalidate_forces_rebuild() {
-        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = lock_test();
         clear_for_tests();
         let (first, _, _) = get_or_create("invalidate-key", None, None, None).unwrap();
         invalidate("invalidate-key");
@@ -634,7 +658,7 @@ mod tests {
     /// 换预算（None ↔ 30s）必须重建，既有 `get_or_create` 语义逐字不变。
     #[test]
     fn timeout_participates_in_cache_key() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = lock_test();
         clear_for_tests();
         let (a, _, _) = get_or_create_with_timeout(
             "timeout-key",

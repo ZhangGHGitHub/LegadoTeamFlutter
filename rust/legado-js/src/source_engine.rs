@@ -170,7 +170,14 @@ impl JsSourceEngine {
                         // `SharedJsScope.evaluateJsLib` 下载失败直接抛
                         //（`下载jsLib-…失败`）——全条失败即整源失败，此处对齐；
                         // 原因取加载器台账（逐条失败已由 loader 登记）。
-                        if resolution.script.is_none() {
+                        //
+                        // 批29 回修：`script == None` 不等于「全条失败」——
+                        // `jsLib: "{}"` 或映射条目全为空值同样得到 None，但没有
+                        // 任何拉取失败，语义等价于「未配置 jsLib」，此类源此前
+                        // 可正常构造。仅当 `degraded`（[`JsLibUrlMapResolution`]
+                        // 契约：至少一条 URL 条目拉取失败）为真且最终无可执行
+                        // 脚本时才硬失败。
+                        if resolution.degraded && resolution.script.is_none() {
                             let reason =
                                 crate::host_api::capability_ledger::last_jslib_error(&cache_key)
                                     .filter(|s| !s.trim().is_empty())

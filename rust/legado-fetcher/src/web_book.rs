@@ -10127,11 +10127,15 @@ mod tests {
         source.concurrent_rate = Some("1/300".to_string());
         let fetcher = explore_test_fetcher();
         let category_url = format!("http://127.0.0.1:{port}/list");
+        // 计时锚点必须放在首次请求**之前**：固定窗口从首次取到许可时起算，
+        // 从「首次返回后」起算会漏掉首次请求自身耗时（高 CPU 负载下可达
+        // 100ms+，批29 回修压测实测 193ms < 200ms 假红）。以首次请求起点
+        // 为锚，两次请求完成时刻之差必然覆盖完整 300ms 窗口。
+        let started = Instant::now();
         let first = block_on(fetcher.explore_first_book(&source, &category_url, 1))
             .expect("首次发现应成功");
         assert!(first.is_some());
 
-        let started = Instant::now();
         let second = block_on(fetcher.explore_first_book(&source, &category_url, 1))
             .expect("第二次发现应成功");
         assert!(second.is_some());

@@ -163,6 +163,16 @@ pub fn ensure_test_db() -> std::sync::MutexGuard<'static, ()> {
         // 文件池容量 16，主侧仍有余量。
         let path =
             std::env::temp_dir().join(format!("legado_ffi_shared_test_{}.db", std::process::id()));
+        // PID 退出后可被复用：清理同 PID 的历史残留库（含 WAL/SHM 附属文件），
+        // 避免上一轮测试成功结尾写入的数据污染本次（批29 回修实测：rss 判底
+        // 用例读到上一轮残留的「末条」行，`cargo test --workspace` 假红且单跑
+        // 必绿）。路径只含本进程 PID，不会触碰其他运行中的测试进程。
+        let base = path.as_os_str().to_os_string();
+        for suffix in ["", "-wal", "-shm"] {
+            let mut candidate = base.clone();
+            candidate.push(suffix);
+            let _ = std::fs::remove_file(std::path::PathBuf::from(candidate));
+        }
         let path_str = path.to_str().expect("测试 DB 路径含非 UTF-8 字符");
         let db = legado_db::init_database(path_str).expect("Failed to init test database");
         init_database(db).expect("Failed to set global database");

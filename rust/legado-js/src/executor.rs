@@ -293,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_js_lib_persists_across_independent_executes() {
-        let _guard = crate::engine_cache::TEST_LOCK.lock().unwrap();
+        let _guard = crate::engine_cache::lock_test();
         crate::engine_cache::clear_for_tests();
         let lib = Some("function persisted(){ return 'ok'; }".to_string());
         let first = QuickJsExecutor::new("persist_tag").with_js_lib(lib.clone());
@@ -305,7 +305,7 @@ mod tests {
     /// [P5 迁移] 顶层 const 重声明 → 回退每次新建引擎（词法脚本路径）。
     #[test]
     fn test_redeclaration_falls_back_to_fresh_engine() {
-        let _guard = crate::engine_cache::TEST_LOCK.lock().unwrap();
+        let _guard = crate::engine_cache::lock_test();
         crate::engine_cache::clear_for_tests();
         let executor = QuickJsExecutor::new("redeclaration_tag");
         let script = "const regression_value = 41; regression_value + 1";
@@ -320,7 +320,7 @@ mod tests {
     /// （覆盖缓存路径 / fresh 路径 / 不使用库函数场景）。
     #[test]
     fn test_valid_jslib_still_loads_and_runs() {
-        let _guard = crate::engine_cache::TEST_LOCK.lock().unwrap();
+        let _guard = crate::engine_cache::lock_test();
         crate::engine_cache::clear_for_tests();
         let executor = QuickJsExecutor::new("jslib_ok_tag")
             .with_js_lib(Some("function marker(){ return 'ok'; }".to_string()));
@@ -329,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_completion_value_is_preserved_on_fast_path() {
-        let _guard = crate::engine_cache::TEST_LOCK.lock().unwrap();
+        let _guard = crate::engine_cache::lock_test();
         crate::engine_cache::clear_for_tests();
         let executor = QuickJsExecutor::new("completion_tag");
         assert_eq!(executor.execute_js("1 + 2").unwrap(), "3");
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_cache_per_source_isolation_and_capacity() {
-        let _guard = crate::engine_cache::TEST_LOCK.lock().unwrap();
+        let _guard = crate::engine_cache::lock_test();
         crate::engine_cache::clear_for_tests();
         for i in 0..8 {
             let tag = format!("lru_tag_{i}");
