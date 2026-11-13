@@ -27,6 +27,32 @@ extension _BookInfoLoad on _BookInfoScreenState {
     _loadData();
   }
 
+  /// [审查 P2-3] 详情刷新隐式改名时登记旧名别名
+  ///
+  /// `mergeWebInfo(refresh: true)` 会用书源元数据覆盖 `name/author`；这类
+  /// 非用户显式改名同样会让 readRecord/bookmarks 的「书名+作者」反查失配。
+  /// 更新前登记「旧书名+旧作者 → bookUrl」，返回是否发生改名。
+  Future<bool> _recordRenameAlias(Book before, Book after) async {
+    if (before.name == after.name && before.author == after.author) {
+      return false;
+    }
+    await const PrivacyRecordAliasStore().register(
+      oldName: before.name,
+      oldAuthor: before.author,
+      bookUrl: before.bookUrl,
+    );
+    return true;
+  }
+
+  /// [审查 P2-3] 改名落库后刷新隐私快照，让记录/书签列表立即按新别名反查
+  Future<void> _refreshPrivacyAfterRename() async {
+    try {
+      await ref.read(privacyContentProvider.notifier).refresh();
+    } catch (e) {
+      debugPrint('[隐私] 详情改名后刷新隐私快照失败（下次加载生效）：$e');
+    }
+  }
+
   /// 加载「删除提醒」开关（对齐原版 LocalConfig.deleteBookAlert）
   Future<void> _loadDeleteBookAlert() async {
     final v = await _settingsService.getDeleteBookAlert();
@@ -226,7 +252,11 @@ extension _BookInfoLoad on _BookInfoScreenState {
           // 已入库书：把补全的元数据写回 DB（对标原版 inBookshelf 时 update）
           if (inShelf) {
             try {
+              // [审查 P2-3] 详情刷新可能按书源元数据改写书名/作者（隐式
+              // 改名）：更新前登记旧名别名，更新成功后刷新隐私快照。
+              final renamed = await _recordRenameAlias(book, b);
               await api.updateBook(b);
+              if (renamed) await _refreshPrivacyAfterRename();
             } catch (e) {
               debugPrint('更新书籍元数据失败: $e');
             }
@@ -269,7 +299,9 @@ extension _BookInfoLoad on _BookInfoScreenState {
           // update）；未入库仅展示不落库（对齐原版 loadChapter !inBookshelf）
           if (inShelf) {
             try {
+              final renamed = await _recordRenameAlias(book, b);
               await api.updateBook(b);
+              if (renamed) await _refreshPrivacyAfterRename();
             } catch (e) {
               debugPrint('U7 刷新落库失败: $e');
             }

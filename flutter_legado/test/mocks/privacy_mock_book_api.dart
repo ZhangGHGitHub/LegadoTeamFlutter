@@ -59,6 +59,18 @@ class PrivacyMockBookApi extends MockBookApi {
     return book;
   }
 
+  /// 单书更新计数（改名/持久化链路断言）
+  int updateBookCalls = 0;
+
+  /// 更新内存书架（P2-3 改名链路测试需要 `getBooks` 反映新书名；
+  /// 基类 `MockBookApi` 只改其内部样例库，不影响本替身的 [books] 列表）。
+  @override
+  Future<void> updateBook(Book book) async {
+    updateBookCalls++;
+    final idx = books.indexWhere((b) => b.bookUrl == book.bookUrl);
+    if (idx >= 0) books[idx] = book;
+  }
+
   @override
   Future<List<BookGroup>> getBookGroups() async => List<BookGroup>.of(groups);
 

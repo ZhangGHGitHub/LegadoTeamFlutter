@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/privacy/privacy_state.dart';
 import 'package:flutter_legado/src/services/privacy_content_service.dart';
+import 'package:flutter_legado/src/services/privacy_record_alias_store.dart';
 
 import '../mocks/privacy_mock_book_api.dart';
 
@@ -55,6 +56,16 @@ class _BrokenMarkerApi extends PrivacyMockBookApi {
   @override
   Future<List<String>> getPrivateBookUrls() async =>
       throw StateError('markers down');
+}
+
+/// 固定别名替身（不触碰 SharedPreferences）
+class _FakeAliasStore extends PrivacyRecordAliasStore {
+  _FakeAliasStore(this.aliases);
+
+  final List<PrivacyRecordAlias> aliases;
+
+  @override
+  Future<List<PrivacyRecordAlias>> load() async => aliases;
 }
 
 void main() {
@@ -199,5 +210,145 @@ void main() {
       isEmpty,
       reason: '标记读取失败时不得误锁整库（fail-open）',
     );
+  });
+
+  group('P2-3 改名别名反查', () {
+    test('私密书改名后：旧名+作者按 bookUrl 命中当前书并锁定', () async {
+      final api = PrivacyMockBookApi(
+        books: [_book(url: 'u1', name: '新书名', author: '作者', isPrivate: true)],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '作者', bookUrl: 'u1'),
+        ]),
+      ).load();
+      final privacy = _privacy();
+
+      expect(
+        snapshot.findBookByNameAuthor('旧书名', '作者')?.bookUrl,
+        'u1',
+        reason: '改名别名应锚回当前书籍',
+      );
+      expect(
+        snapshot.isRecordLocked(const PrivacyRecordKey('旧书名', '作者'), privacy),
+        isTrue,
+      );
+      expect(
+        snapshot.isRecordLocked(const PrivacyRecordKey('旧书名', ''), privacy),
+        isTrue,
+        reason: '作者列为空的历史行应按同名唯一候选锁定',
+      );
+      expect(
+        snapshot.isRecordLocked(const PrivacyRecordKey('新书名', '作者'), privacy),
+        isTrue,
+        reason: '改名后的当前记录同样锁定',
+      );
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '作者'),
+          _privacy(grantedBookUrls: {'u1'}),
+        ),
+        isFalse,
+        reason: 'EveryTime 已授权该本时不再脱敏',
+      );
+    });
+
+    test('非私密书改名后：旧记录不误锁（不过度脱敏）', () async {
+      final api = PrivacyMockBookApi(
+        books: [_book(url: 'u1', name: '新书名', author: '作者')],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '作者', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      expect(
+        snapshot.findBookByNameAuthor('旧书名', '作者')?.name,
+        '新书名',
+        reason: '非私密改名也应按别名解析当前书名',
+      );
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '作者'),
+          _privacy(),
+        ),
+        isFalse,
+      );
+    });
+
+    test('旧名被新书复用：任一候选私密即锁定（fail-closed）', () async {
+      final api = PrivacyMockBookApi(
+        books: [
+          _book(url: 'u1', name: '新书名', author: '作者', isPrivate: true),
+          _book(url: 'u2', name: '旧书名', author: '作者'),
+        ],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '作者', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '作者'),
+          _privacy(),
+        ),
+        isTrue,
+        reason: '旧名记录可能属于已改名私密书，不得因同名新书而放行',
+      );
+      expect(
+        snapshot.findBookByNameAuthor('旧书名', '作者')?.bookUrl,
+        'u1',
+        reason: '锁定行取封面优先私密候选',
+      );
+    });
+
+    test('无任何私密标记但有改名别名：仍加载书籍供展示解析', () async {
+      final api = PrivacyMockBookApi(
+        books: [_book(url: 'u1', name: '新书名', author: '作者')],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '旧书名', author: '作者', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      expect(snapshot.loaded, isTrue);
+      expect(snapshot.booksByUrl, contains('u1'));
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('旧书名', '作者'),
+          _privacy(),
+        ),
+        isFalse,
+      );
+    });
+
+    test('别名指向已删除书籍：跳过且不误锁', () async {
+      final api = PrivacyMockBookApi(
+        books: [_book(url: 'u2', name: '其它书', author: '作者', isPrivate: true)],
+      );
+      final snapshot = await PrivacyContentService(
+        api: api,
+        aliasStore: _FakeAliasStore(const [
+          PrivacyRecordAlias(name: '已删书', author: '作者', bookUrl: 'u1'),
+        ]),
+      ).load();
+
+      expect(snapshot.findBookByNameAuthor('已删书', '作者'), isNull);
+      expect(
+        snapshot.isRecordLocked(
+          const PrivacyRecordKey('已删书', '作者'),
+          _privacy(),
+        ),
+        isFalse,
+      );
+    });
   });
 }

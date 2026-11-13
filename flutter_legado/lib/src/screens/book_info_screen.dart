@@ -35,6 +35,7 @@ import '../services/local_book_store.dart'; // [iOS 视角F C1] 本地书相对�
 import '../services/network_status_service.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/privacy_content_service.dart';
+import '../services/privacy_record_alias_store.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_book_upload_service.dart';
 import '../utils/book_info_utils.dart';

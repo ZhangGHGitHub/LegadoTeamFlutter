@@ -245,21 +245,21 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
               );
             }
             final item = state.records[index - 1];
-            final recordKey = PrivacyRecordKey(
-              item.physicalBookName.isNotEmpty
-                  ? item.physicalBookName
-                  : item.bookName,
-              item.author,
-            );
+            final recordKey = _recordKeyOf(item);
             final locked = privacyContent.isRecordLocked(recordKey, privacy);
-            final lockedBook = locked
-                ? privacyContent.findBookByNameAuthor(
-                    recordKey.name,
-                    recordKey.author,
-                  )
-                : null;
+            final resolvedBook = privacyContent.findBookByNameAuthor(
+              recordKey.name,
+              recordKey.author,
+            );
+            // [审查 P2-3] 改名后记录仍持旧名：按别名锚回当前书籍时展示
+            // 当前书名（用户自定义显示名优先，不覆盖）。
+            final displayName = locked
+                ? item.bookName
+                : _displayNameOf(privacyContent, item);
+            final lockedBook = locked ? resolvedBook : null;
             return _ReadRecordTile(
               item: item,
+              displayName: displayName,
               lastReadText: _formatDate(item.lastRead),
               durationText: formatDuring(item.readTime),
               locked: locked,
@@ -272,6 +272,39 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         ),
       ),
     );
+  }
+
+  /// 记录的脱敏反查键（物理书名优先；历史行物理名缺失时回退展示名）
+  static PrivacyRecordKey _recordKeyOf(ReadRecordShow item) => PrivacyRecordKey(
+    item.physicalBookName.isNotEmpty ? item.physicalBookName : item.bookName,
+    item.author,
+  );
+
+  /// [审查 P2-3] 改名后按别名锚回当前书籍
+  ///
+  /// 仅当记录未使用自定义显示名（`bookName == physicalBookName`）时生效：
+  /// 用户显式编辑过的显示名优先，不被当前书名覆盖。
+  static Book? _resolveRenamedBook(
+    PrivacyContentSnapshot content,
+    ReadRecordShow item,
+  ) {
+    final physical = item.physicalBookName.isNotEmpty
+        ? item.physicalBookName
+        : item.bookName;
+    if (physical != item.bookName) return null;
+    return content.findBookByNameAuthor(physical, item.author);
+  }
+
+  /// 列表/删除确认/搜索关键词共用的展示书名
+  ///
+  /// 改名后旧记录显示当前书名（审查 P2-3）；反查不到时保持库内展示值。
+  static String _displayNameOf(
+    PrivacyContentSnapshot content,
+    ReadRecordShow item,
+  ) {
+    final book = _resolveRenamedBook(content, item);
+    if (book != null && book.name.trim().isNotEmpty) return book.name;
+    return item.bookName;
   }
 
   Future<void> _onMenuSelected(String value) async {
@@ -294,16 +327,49 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final physicalName = item.physicalBookName.isNotEmpty
         ? item.physicalBookName
         : item.bookName;
-    final book = await notifier.findBookByName(physicalName);
+    // [审查 P2-3 兜底] 跳转前隐私校验（fail-closed）：先等策略/标记就绪，
+    // 再按物理名与显示名各查一次。未授权的私密记录既不打开书籍，也绝不把
+    // 书名作为关键词发给第三方书源搜索（锁定行虽已禁用 onTap，此处兜住
+    // 「列表渲染后标记才生效/状态滞后」的窗口）。
+    await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+    final privacyContent = await ref
+        .read(privacyContentProvider.notifier)
+        .ensureLoaded();
+    final privacy = ref.read(privacyNotifierProvider);
+    final locked =
+        privacyContent.isRecordLocked(
+          PrivacyRecordKey(physicalName, item.author),
+          privacy,
+        ) ||
+        privacyContent.isRecordLocked(
+          PrivacyRecordKey(item.bookName, item.author),
+          privacy,
+        );
+    if (locked) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('该书为私密内容，请先在书架解锁后再打开')));
+      return;
+    }
+    final book =
+        await notifier.findBookByName(physicalName) ??
+        // [审查 P2-3] 已改名：按别名锚回当前书籍，避免落进「书架无书」
+        // 分支把旧书名带进第三方搜索。
+        privacyContent.findBookByNameAuthor(physicalName, item.author) ??
+        (item.bookName == physicalName
+            ? null
+            : privacyContent.findBookByNameAuthor(item.bookName, item.author));
     if (!context.mounted) return;
     if (book == null) {
       // 对齐原版：书架无书 → 带书名打开搜索
       // [设置批2b-2b P1-3] 阅读记录可位于「我的」容器 nested Navigator 内，
       // 搜索必须打开在根导航（全屏），不能关进右栏/My 页签。
-      await Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pushNamed(AppRoutes.search, arguments: item.bookName);
+      // [审查 P2-3] 关键词取别名解析后的当前书名（非私密才可达此分支）。
+      await Navigator.of(context, rootNavigator: true).pushNamed(
+        AppRoutes.search,
+        arguments: _displayNameOf(privacyContent, item),
+      );
       return;
     }
     await _openBook(context, book);
@@ -345,7 +411,8 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         content: Text(
           locked
               ? '将删除本书全部作者的阅读记录，确定吗？'
-              : '将删除「${item.bookName}」该书全部作者的阅读记录，确定吗？',
+              // [审查 P2-3] 改名后展示当前书名（物理旧名不外露）
+              : '将删除「${_displayNameOf(privacyContent, item)}」该书全部作者的阅读记录，确定吗？',
         ),
         actions: [
           TextButton(
@@ -422,6 +489,9 @@ String formatDuring(int mss) {
 
 class _ReadRecordTile extends StatelessWidget {
   final ReadRecordShow item;
+
+  /// [审查 P2-3] 展示书名：改名后由别名解析为当前书名（用户自定义显示名除外）
+  final String displayName;
   final String durationText;
   final String lastReadText;
   final VoidCallback onTap;
@@ -433,6 +503,7 @@ class _ReadRecordTile extends StatelessWidget {
 
   const _ReadRecordTile({
     required this.item,
+    required this.displayName,
     required this.durationText,
     required this.lastReadText,
     required this.onTap,
@@ -504,7 +575,7 @@ class _ReadRecordTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.bookName,
+                    displayName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall,

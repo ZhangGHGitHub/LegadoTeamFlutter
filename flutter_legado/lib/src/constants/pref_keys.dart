@@ -942,6 +942,17 @@ class PrefKeys {
   static const privateBackgroundGraceSeconds =
       'private_background_grace_seconds';
 
+  /// 私密书改名登记表（`[{"name","author","bookUrl"}]` JSON）
+  ///
+  /// `readRecord`/`bookmarks` 表只存书名+作者（无 bookUrl）。私密书改名后
+  /// 旧记录仍持旧名，脱敏反查按当前书名匹配会落空（fail-open → 旧名明文
+  /// 显示并可被带入第三方搜索）。改名时把「旧书名+旧作者 → bookUrl」登记
+  /// 在此，隐私快照加载时并入反查索引，脱敏判定回到稳定标识 bookUrl。
+  ///
+  /// 本机偏好数据，随 `appPrefs` 备份往返；不含密码或凭据。键值中的旧书名
+  /// 与 readRecord 表内既有明文同源，不新增暴露面。
+  static const privacyRecordAliases = 'privacy_record_aliases_v1';
+
   /// 隐私策略键集合（备份恢复忽略与设置页持久化共用）
   static const privatePolicyKeys = <String>{
     privateEnabled,

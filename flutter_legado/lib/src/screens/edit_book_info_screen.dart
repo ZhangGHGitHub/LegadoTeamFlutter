@@ -5,8 +5,10 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/privacy/privacy_content_notifier.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
+import '../services/privacy_record_alias_store.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/book_cover.dart';
 import '../utils/error_message.dart';
@@ -217,8 +219,32 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
         customIntro: customIntro,
       );
 
+      // [审查 P2-3] 改名/改作者后，readRecord / bookmarks 行仍持旧「书名+
+      // 作者」，脱敏反查（按当前 books.name 匹配）会落空并 fail-open 显示
+      // 旧书名。先按稳定标识 bookUrl 登记旧名别名，再落库：
+      // 注册失败只记日志（不改名阻断），updateBook 失败时别名也无害
+      // （旧键仍指向同一本书）。
+      final renamed = name != book.name || author != book.author;
+      if (renamed) {
+        await const PrivacyRecordAliasStore().register(
+          oldName: book.name,
+          oldAuthor: book.author,
+          bookUrl: book.bookUrl,
+        );
+      }
+
       final api = ref.read(bookApiProvider);
       await api.updateBook(updated);
+
+      // 重读隐私快照，让阅读记录/书签列表立即用新别名反查（否则上一轮
+      // 快照会缓存到下次启动）。失败不阻断保存。
+      if (renamed) {
+        try {
+          await ref.read(privacyContentProvider.notifier).refresh();
+        } catch (e) {
+          debugPrint('[隐私] 改名后刷新隐私快照失败（下次加载生效）：$e');
+        }
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
