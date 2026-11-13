@@ -140,9 +140,12 @@ impl CheckResult {
         self.redirect.as_ref().is_some_and(|r| r.redirected)
     }
 
-    /// 书源是否可用（快速判断：搜索通过且无验证码阻断）
+    /// 书源是否可用（快速判断：未取消、搜索通过且无验证码阻断）
+    ///
+    /// P3-1：`cancelled` 必须排除——搜索请求成功但后续被用户取消时，
+    /// 结果不是「书源可用」，与 [`Self::all_ok`] 的判定口径保持一致。
     pub fn is_available(&self) -> bool {
-        self.search_ok && !self.has_captcha()
+        !self.cancelled && self.search_ok && !self.has_captcha()
     }
 
     /// 收尾：写入总耗时
@@ -252,7 +255,10 @@ impl CancelToken {
         self.flag.load(Ordering::SeqCst)
     }
 
-    /// 复位为未取消（新一轮批量校验开始时调用）
+    /// 复位为未取消
+    ///
+    /// 仅用于**复用同一令牌**的调用方。批量校验已改为会话级新令牌
+    ///（legado-ffi `source_check_api`），不再依赖 reset。
     pub fn reset(&self) {
         self.flag.store(false, Ordering::SeqCst);
     }
@@ -382,6 +388,17 @@ impl SourceChecker {
     /// - 业务失败 → [`StepOutcome::Failed`]（保留原错误文案）。
     ///
     /// 整源总预算耗尽时不再发起请求，直接返回 `TimedOut`。
+    ///
+    /// # 取消是协作式的（P3-2）
+    ///
+    /// `select!` 只能在本函数内部的 await 点（`step` 的 HTTP future）抢占。
+    /// `step` 内部若含**同步 CPU 段**——例如 [`Self::do_search_check`] 返回后
+    /// 的响应体正则提取（`extract_first_book_url`），以及 [`Self::quick_check`]
+    /// 在 `run_step` 之外对响应体做的验证码关键词全量扫描与重定向判定——
+    /// 这些段会一口气执行完才回到 `select!`。因此「取消在 100ms 内生效」
+    /// 是对**网络等待**成立的上界；响应体极大（数十 MB 级）时，CPU 解析
+    /// 可能晚于 1s 才观察到取消。该延迟受单步 `step_timeout_ms` 与整源
+    /// 总预算约束，不会无界。
     async fn run_step<T, F>(&self, step: F, deadline: Instant) -> StepOutcome<T>
     where
         F: std::future::Future<Output = Result<T, String>>,
@@ -1499,6 +1516,31 @@ mod tests {
         };
         assert!(result.has_captcha());
         assert!(!result.is_available()); // 有验证码时不可用
+    }
+
+    /// P3-1：已取消的结果即使搜索成功也不得判为「可用」
+    ///
+    /// 修复前 `is_available()` 只看 `search_ok && !has_captcha()`，
+    /// 与 `all_ok()`（含 `!cancelled`）口径冲突：搜索成功后被取消的
+    /// 结果会被上层当成可用书源。
+    #[test]
+    fn test_cancelled_result_is_not_available() {
+        let result = CheckResult {
+            source_url: "test".to_string(),
+            search_ok: true,
+            toc_ok: true,
+            content_ok: true,
+            search_error: None,
+            toc_error: None,
+            content_error: None,
+            total_time_ms: 100,
+            captcha: None,
+            redirect: None,
+            cancelled: true,
+        };
+        assert!(result.is_search_ok());
+        assert!(!result.is_available(), "已取消的结果不得判为可用");
+        assert!(!result.all_ok());
     }
 
     #[test]

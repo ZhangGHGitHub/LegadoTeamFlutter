@@ -474,8 +474,10 @@ pub mod ffi {
     /// `source_name` / `result`（CheckResult）。流在所有书源完成、
     /// 取消或 sink 关闭后自然结束。
     ///
-    /// 取消（[`Self::source_check_cancel`]）在 100ms 轮询周期内打断在途
-    /// 请求；被取消的书源不回推进度（不计为书源失败）。
+    /// 每次调用创建**独立**校验会话与取消令牌（P1-1）：并发流之间
+    /// 互不干扰；[`Self::source_check_cancel`] 取消最近登记的会话，在
+    /// 100ms 轮询周期内打断在途请求；被取消的书源不回推进度（不计为
+    /// 书源失败）。
     ///
     /// `source_urls_json` — 待校验书源 URL 的 JSON 数组；为空则校验全部书源
     /// `config_json` — 可选校验配置 JSON，空串用默认配置
@@ -494,7 +496,10 @@ pub mod ffi {
         Ok(())
     }
 
-    /// 取消正在进行的批量书源校验
+    /// 取消正在进行的批量书源校验（无会话 id 的兼容入口）
+    ///
+    /// 取消最近登记的校验会话；正常 UI 同时只有一个流，等价于「停止
+    /// 当前校验」。会话已结束时为 no-op（不会误伤后续会话）。
     pub fn source_check_cancel() -> Result<(), BridgeError> {
         crate::api::source_check_api::cancel_check_sources();
         Ok(())

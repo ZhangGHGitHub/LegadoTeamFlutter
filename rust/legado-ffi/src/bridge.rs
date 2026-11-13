@@ -343,7 +343,9 @@ pub unsafe extern "C" fn ffi_source_check_stream(
     }))
 }
 
-/// 取消正在进行的批量书源校验
+/// 取消正在进行的批量书源校验（无会话 id 的兼容入口）
+///
+/// P1-1 会话化后只取消最近登记的会话；无活动会话时为 no-op。
 #[no_mangle]
 pub extern "C" fn ffi_source_check_cancel() {
     let _ = catch_unwind(|| {
