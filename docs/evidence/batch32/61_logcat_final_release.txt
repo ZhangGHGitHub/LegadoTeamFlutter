@@ -1,0 +1,980 @@
+--------- beginning of main
+11-13 21:00:24.271 14148 14148 I sh      : type=1400 audit(0.0:20878): avc:  denied  { getattr } for  path="/data/local/tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-13 21:00:24.271 14148 14148 I sh      : type=1400 audit(0.0:20879): avc:  denied  { getattr } for  path="/system/bin/logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-13 21:00:24.271 14148 14148 I sh      : type=1400 audit(0.0:20880): avc:  denied  { execute } for  name="logcat" dev="sda6" ino=309 scontext=u:r:su:s0 tcontext=u:object_r:logcat_exec:s0 tclass=file permissive=1
+11-13 21:00:24.427 49390 49390 I abb     : StartCommandInProcess(73657474696e67730067657400676c6f settings.get.glo [truncated])
+11-13 21:00:24.429 49390 49390 I abb     : StartCommandInProcess(7061636b61676500696e7374616c6c00 package.install. [truncated])
+--------- beginning of system
+11-13 21:00:24.432   836 17785 D PackageManagerShellCommand: do write split, inPath: -, splitName: base.apk
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: No service published for: persistent_data_block
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: android.os.ServiceManager$ServiceNotFoundException: No service published for: persistent_data_block
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.os.ServiceManager.getServiceOrThrow(ServiceManager.java:203)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry$82.createService(SystemServiceRegistry.java:1111)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry$82.createService(SystemServiceRegistry.java:1108)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry$StaticServiceFetcher.getService(SystemServiceRegistry.java:2406)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.app.SystemServiceRegistry.getSystemService(SystemServiceRegistry.java:1919)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.app.ContextImpl.getSystemService(ContextImpl.java:2320)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.content.Context.getSystemService(Context.java:4588)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageInstallerSession.markAsSealed(PackageInstallerSession.java:2444)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageInstallerSession.commit(PackageInstallerSession.java:2193)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.content.pm.PackageInstaller$Session.commit(PackageInstaller.java:1988)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.doCommitSession(PackageManagerShellCommand.java:4337)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.doRunInstall(PackageManagerShellCommand.java:1636)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.runInstall(PackageManagerShellCommand.java:1563)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerShellCommand.onCommand(PackageManagerShellCommand.java:247)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.modules.utils.BasicShellCommandHandler.exec(BasicShellCommandHandler.java:97)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.os.ShellCommand.exec(ShellCommand.java:38)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerService$IPackageManagerImpl.onShellCommand(PackageManagerService.java:6743)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.os.Binder.shellCommand(Binder.java:1143)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.os.Binder.onTransact(Binder.java:945)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.content.pm.IPackageManager$Stub.onTransact(IPackageManager.java:4693)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at com.android.server.pm.PackageManagerService$IPackageManagerImpl.onTransact(PackageManagerService.java:6727)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: 	at android.os.Binder.execTransact(Binder.java:1350)
+11-13 21:00:26.231   836 17785 E SystemServiceRegistry: Manager wrapper not available: persistent_data_block
+11-13 21:00:26.240   836   906 D FileSystemUtils: Total number of LOAD segments 2
+11-13 21:00:26.241   836   906 D FileSystemUtils: Size before punching holes st_blocks: 415024, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.241   836   906 D FileSystemUtils: Size after punching holes st_blocks: 415024, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.241   836   906 D FileSystemUtils: Extra field length: 6001,  Size before punching holes st_blocks: 415024, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.241   836   906 D FileSystemUtils: Extra field length: 6001 content near offset: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.241   836   906 D FileSystemUtils: Punching hole in file - start: 156987392 len:4096
+11-13 21:00:26.241   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 415024, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.241   836   906 D FileSystemUtils: Total number of LOAD segments 3
+11-13 21:00:26.241   836   906 D FileSystemUtils: Size before punching holes st_blocks: 415024, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.241   836   906 D FileSystemUtils: Punching holes for length:7008 content which should be zero: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.241   836   906 D FileSystemUtils: Punching hole in file - start: 156790784 len:4096
+11-13 21:00:26.241   836   906 D FileSystemUtils: Size after punching holes st_blocks: 415016, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.241   836   906 D FileSystemUtils: Extra field length: 15413,  Size before punching holes st_blocks: 415016, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.242   836   906 D FileSystemUtils: Extra field length: 15413 content near offset: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.242   836   906 D FileSystemUtils: Punching hole in file - start: 150949888 len:12288
+11-13 21:00:26.242   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 414992, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.242   836   906 D FileSystemUtils: Total number of LOAD segments 2
+11-13 21:00:26.242   836   906 D FileSystemUtils: Size before punching holes st_blocks: 414992, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.242   836   906 D FileSystemUtils: Size after punching holes st_blocks: 414992, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.242   836   906 D FileSystemUtils: Extra field length: 12609,  Size before punching holes st_blocks: 414992, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.242   836   906 D FileSystemUtils: Extra field length: 12609 content near offset: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.242   836   906 D FileSystemUtils: Punching hole in file - start: 209965056 len:12288
+11-13 21:00:26.243   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 414968, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.243   836   906 D FileSystemUtils: Total number of LOAD segments 4
+11-13 21:00:26.243   836   906 D FileSystemUtils: Size before punching holes st_blocks: 414968, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.243   836   906 D FileSystemUtils: Size after punching holes st_blocks: 414968, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.243   836   906 D FileSystemUtils: Extra field length: 16063,  Size before punching holes st_blocks: 414968, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.243   836   906 D FileSystemUtils: Extra field length: 16063 content near offset: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.243   836   906 D FileSystemUtils: Punching hole in file - start: 169922560 len:12288
+11-13 21:00:26.243   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 414944, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.243   836   906 D FileSystemUtils: Total number of LOAD segments 3
+11-13 21:00:26.243   836   906 D FileSystemUtils: Size before punching holes st_blocks: 414944, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.243   836   906 D FileSystemUtils: Punching holes for length:50142 content which should be zero: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.243   836   906 D FileSystemUtils: Punching hole in file - start: 139034624 len:49152
+11-13 21:00:26.244   836   906 D FileSystemUtils: Punching holes for length:53664 content which should be zero: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.244   836   906 D FileSystemUtils: Punching hole in file - start: 150892544 len:53248
+11-13 21:00:26.244   836   906 D FileSystemUtils: Size after punching holes st_blocks: 414744, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.244   836   906 D FileSystemUtils: Extra field length: 12874,  Size before punching holes st_blocks: 414744, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.244   836   906 D FileSystemUtils: Extra field length: 12874 content near offset: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.244   836   906 D FileSystemUtils: Punching hole in file - start: 130879488 len:12288
+11-13 21:00:26.244   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.244   836   906 D FileSystemUtils: Total number of LOAD segments 3
+11-13 21:00:26.244   836   906 D FileSystemUtils: Size before punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.244   836   906 D FileSystemUtils: Size after punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.244   836   906 D FileSystemUtils: Extra field length: 1904,  Size before punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.244   836   906 D FileSystemUtils: Skipping punching apk as extra field length is less than block size
+11-13 21:00:26.244   836   906 W NativeLibraryHelper: Failed to punch apk : /data/app/vmdl1414631614.tmp/base.apk at extra field
+11-13 21:00:26.245   836   906 D FileSystemUtils: Total number of LOAD segments 3
+11-13 21:00:26.245   836   906 D FileSystemUtils: Size before punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Size after punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Extra field length: 10106,  Size before punching holes st_blocks: 414720, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Extra field length: 10106 content near offset: 0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.245   836   906 D FileSystemUtils: Punching hole in file - start: 156999680 len:8192
+11-13 21:00:26.245   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 414704, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Total number of LOAD segments 3
+11-13 21:00:26.245   836   906 D FileSystemUtils: Size before punching holes st_blocks: 414704, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Size after punching holes st_blocks: 414704, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Extra field length: 5290,  Size before punching holes st_blocks: 414704, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.245   836   906 D FileSystemUtils: Extra field length: 5290 content near offset: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+11-13 21:00:26.245   836   906 D FileSystemUtils: Punching hole in file - start: 156872704 len:4096
+11-13 21:00:26.245   836   906 D FileSystemUtils: punchHolesInApk:: Size after punching holes st_blocks: 414696, st_blksize: 4096, st_size: 212491600
+11-13 21:00:26.249   836   893 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.249   836   893 I system_server: AssetManager2(0x79b6ee46e858) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.254   836   870 I ActivityManager: Force stopping io.legado.flutter_legado appid=10055 user=-1: installPackageLI
+11-13 21:00:26.254   836   893 I PackageManager: Update package io.legado.flutter_legado code path from /data/app/~~egkIqHJUywTY04vrPisXKw==/io.legado.flutter_legado-QYMY45go9LW54m5nZUnJfw== to /data/app/vmdl1414631614.tmp; Retain data and using new
+11-13 21:00:26.306 14156 14156 I artd    : Starting artd
+11-13 21:00:26.307 14156 14156 I AidlLazyServiceRegistrar: Registering service artd
+11-13 21:00:26.312 14156 14156 I AidlLazyServiceRegistrar: Process has 1 (of 1 available) client(s) in use after notification artd has clients: 1
+11-13 21:00:26.319   836   893 W PackageManager: Could not find package com.android.companiondevicemanager
+11-13 21:00:26.320   836   893 W PackageManager: Could not find package com.android.companiondevicemanager
+11-13 21:00:26.354   491   602 W vold    : Project IDs are not supported on /data/media/0/Android/data/io.legado.flutter_legado/; continuing application directory migration
+11-13 21:00:26.360 14156 14158 I artd    : Merge skipped because there are no existing profiles
+11-13 21:00:26.360   836   893 I ArtService: Adjusting the compiler filter for 'io.legado.flutter_legado' from 'speed-profile' to 'verify' because there is no valid profile
+11-13 21:00:26.381 14156 14158 I artd    : Dex parent of /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk is not writable: Permission denied
+11-13 21:00:26.381 14156 14158 I artd    : GetBestInfo checking odex in dalvik-cache (/data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.dex)
+11-13 21:00:26.381 14156 14158 I artd    : Loading /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.dex with executable: 0
+11-13 21:00:26.382 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.dex: File /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex does not exist.
+11-13 21:00:26.382 14156 14158 I artd    : GetBestInfo checking odex next to the dex file (/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex)
+11-13 21:00:26.382 14156 14158 I artd    : Loading /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex with executable: 0
+11-13 21:00:26.382 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex: File /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex does not exist.
+11-13 21:00:26.382 14156 14158 I artd    : GetBestInfo checking vdex in dalvik-cache (/data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex)
+11-13 21:00:26.382 14156 14158 I artd    : unable to open vdex file /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex: File /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex does not exist.
+11-13 21:00:26.382 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex: File /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex does not exist.
+11-13 21:00:26.382 14156 14158 I artd    : GetBestInfo checking vdex next to the dex file (/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex)
+11-13 21:00:26.382 14156 14158 I artd    : unable to open vdex file /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex: File /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex does not exist.
+11-13 21:00:26.382 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex: File /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex does not exist.
+11-13 21:00:26.382 14156 14158 I artd    : GetBestInfo checking dm (/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.dm)
+11-13 21:00:26.382 14156 14158 W ziparchive: Unable to open '/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.dm': No such file or directory
+11-13 21:00:26.382 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.dm: I/O error
+11-13 21:00:26.382 14156 14158 I artd    : GetBestInfo checking dm (/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.dm)
+11-13 21:00:26.382 14156 14158 W ziparchive: Unable to open '/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.dm': No such file or directory
+11-13 21:00:26.382 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.dm: I/O error
+11-13 21:00:26.382 14156 14158 I artd    : GetBestInfo no usable artifacts
+11-13 21:00:26.387 14156 14158 I artd    : Running dex2oat: /apex/com.android.art/bin/art_exec --drop-capabilities --set-task-profile=Dex2OatBootComplete --set-priority=background --keep-fds=6:7:8:9:10:11 -- /apex/com.android.art/bin/dex2oat32 --zip-fd=6 --zip-location=/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk --oat-fd=7 --oat-location=/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex --output-vdex-fd=8 --swap-fd=9 --class-loader-context-fds=10:11 --class-loader-context=PCL[]{PCL[/system_ext/framework/androidx.window.extensions.jar]#PCL[/system_ext/framework/androidx.window.sidecar.jar]} --classpath-dir=/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ== --instruction-set=x86_64 --instruction-set-features=default --instruction-set-variant=x86_64 --compiler-filter=verify --compilation-reason=install --compact-dex-level=none --max-image-block-size=524288 --resolve-startup-const-strings=true --generate-mini-debug-info --runtime-arg -Xdeny-art-apex-data-files --runtime-arg -Xtarget-sdk-version:36 --runtime-arg -Xhidden-api-policy:enabled --runtime-arg -Xms64m --runtime-arg -Xmx512m --comments=app-name:io.legado.flutter_legado,app-version-name:2.0.502,app-version-code:503,art-version:352090000
+11-13 21:00:26.387 14156 14158 I artd    : Opened FDs: 6:/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk 7:/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex.ySPJ3R.tmp 8:/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.vdex.eDHXMo.tmp 9:/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex.swap.ELsWsC.tmp 10:/system_ext/framework/androidx.window.sidecar.jar 11:/system_ext/framework/androidx.window.extensions.jar 
+11-13 21:00:26.396   836   849 W System  : A resource failed to call HardwareBuffer.close. 
+11-13 21:00:26.401   836   849 W System  : A resource failed to call close. 
+11-13 21:00:26.466 14160 14160 W dex2oat32: Obsolete flag --compact-dex-level ignored
+11-13 21:00:26.468 14160 14160 W dex2oat32: Unexpected CPU variant for x86: x86_64.
+11-13 21:00:26.468 14160 14160 W dex2oat32: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-13 21:00:26.473 14160 14160 I dex2oat32: /apex/com.android.art/bin/dex2oat32 --output-vdex-fd=8 --class-loader-context-fds=10:11 --class-loader-context=PCL[]{PCL[/system_ext/framework/androidx.window.extensions.jar]#PCL[/system_ext/framework/androidx.window.sidecar.jar]} --classpath-dir=/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ== --compiler-filter=verify --compilation-reason=install --compact-dex-level=none --max-image-block-size=524288 --resolve-startup-const-strings=true --generate-mini-debug-info --comments=app-name:io.legado.flutter_legado,app-version-name:2.0.502,app-version-code:503,art-version:352090000
+11-13 21:00:26.508 14160 14160 W dex2oat32: ART APEX data files are untrusted.
+11-13 21:00:26.511 14160 14160 I dex2oat32: Using CollectorTypeCMC GC.
+11-13 21:00:26.610 14160 14164 W dex2oat32: Accessing hidden method Ljava/lang/Thread;->threadId()J (blocked, linking, denied)
+11-13 21:00:26.610 14160 14164 W dex2oat32: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->setChecked(I)V (blocked, linking, denied)
+11-13 21:00:26.610 14160 14164 W dex2oat32: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->setExpandedState(I)V (blocked, linking, denied)
+11-13 21:00:26.614 14160 14165 W dex2oat32: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->getChecked()I (blocked, linking, denied)
+11-13 21:00:26.614 14160 14160 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;-><init>()V (blocked, linking, denied)
+11-13 21:00:26.614 14160 14165 W dex2oat32: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->getExpandedState()I (blocked, linking, denied)
+11-13 21:00:26.614 14160 14165 W dex2oat32: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->getSupplementalDescription()Ljava/lang/CharSequence; (blocked, linking, denied)
+11-13 21:00:26.614 14160 14165 W dex2oat32: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->isFieldRequired()Z (blocked, linking, denied)
+11-13 21:00:26.614 14160 14165 W dex2oat32: Accessing hidden method Landroid/app/ActivityOptions;->setAllowPassThroughOnTouchOutside(Z)V (blocked, linking, denied)
+11-13 21:00:26.614 14160 14165 W dex2oat32: Accessing hidden method Landroid/app/Notification$Builder;->setShortCriticalText(Ljava/lang/String;)Landroid/app/Notification$Builder; (blocked, linking, denied)
+11-13 21:00:26.614 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->setProgress(I)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.614 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->setProgressEndIcon(Landroid/graphics/drawable/Icon;)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.614 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->setProgressIndeterminate(Z)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle$Point;-><init>(I)V (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle$Point;->setColor(I)Landroid/app/Notification$ProgressStyle$Point; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle$Point;->setId(I)Landroid/app/Notification$ProgressStyle$Point; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->addProgressPoint(Landroid/app/Notification$ProgressStyle$Point;)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle$Segment;-><init>(I)V (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle$Segment;->setColor(I)Landroid/app/Notification$ProgressStyle$Segment; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle$Segment;->setId(I)Landroid/app/Notification$ProgressStyle$Segment; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->addProgressSegment(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->setProgressStartIcon(Landroid/graphics/drawable/Icon;)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->setProgressTrackerIcon(Landroid/graphics/drawable/Icon;)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.615 14160 14164 W dex2oat32: Accessing hidden method Landroid/app/Notification$ProgressStyle;->setStyledByProgress(Z)Landroid/app/Notification$ProgressStyle; (blocked, linking, denied)
+11-13 21:00:26.646 14160 14160 I dex2oat32: dex2oat took 182.012ms (325.951ms cpu) (threads: 4) arena alloc=0B (0B) java alloc=4759KB (4873736B) native alloc=2222KB (2275984B) free=1804KB (1848016B)
+11-13 21:00:26.650 14156 14158 I artd    : dex2oat returned code 0
+11-13 21:00:26.652   836   893 I ArtService: Dexopt result: [packageName = io.legado.flutter_legado] DexContainerFileDexoptResult{dexContainerFile=/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk, primaryAbi=true, abi=x86_64, actualCompilerFilter=verify, status=PERFORMED, dex2oatWallTimeMillis=263, dex2oatCpuTimeMillis=350, sizeBytes=5499936, sizeBeforeBytes=0, extendedStatusFlags=[]}
+11-13 21:00:26.660   836   893 I ActivityManager: Force stopping io.legado.flutter_legado appid=10055 user=0: pkg removed
+11-13 21:00:26.663   836   948 I system_server: AssetManager2(0x79b6ee46b338) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.664   836  1038 D ShortcutService: received package broadcast intent: Intent { act=android.intent.action.PACKAGE_REMOVED dat=package: flg=0x4000010 (has extras) }
+11-13 21:00:26.665   836  1000 E AppOps  : attributionTag VCN not declared in manifest of android
+11-13 21:00:26.666   836   836 D ActivityManager: sync unfroze 1764 com.android.keychain for 10
+11-13 21:00:26.667   836   836 D ActivityManager: sync unfroze 2190 com.android.localtransport for 10
+11-13 21:00:26.667   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:26.668   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:26.671   836  1038 D ShortcutService: received package broadcast intent: Intent { act=android.intent.action.PACKAGE_ADDED dat=package: flg=0x4000010 (has extras) }
+11-13 21:00:26.671  1190  1190 D CarrierSvcBindHelper: onPackageUpdateFinished: io.legado.flutter_legado
+11-13 21:00:26.671   836  1038 D ShortcutService: replacing package: io.legado.flutter_legado userId=0
+11-13 21:00:26.673   836  1044 I SdkSandboxManager: No SDKs used. Skipping SDK data reconcilation for CallingInfo{mUid=10055, mPackageName='io.legado.flutter_legado, mAppProcessToken='null'}
+11-13 21:00:26.673   836   954 W PackageConfigPersister: App-specific configuration not found for packageName: io.legado.flutter_legado and userId: 0
+11-13 21:00:26.674   836   869 W TextServicesManagerService: no available spell checker services found
+11-13 21:00:26.675   836   869 W VoiceInteractionManager: no available voice recognition services found for user 0
+11-13 21:00:26.675  1190  1190 D CarrierSvcBindHelper: No carrier app for: 0
+11-13 21:00:26.675  1190  1190 D CarrierSvcBindHelper: onPackageModified: io.legado.flutter_legado
+11-13 21:00:26.675  1190  1190 D CarrierSvcBindHelper: No carrier app for: 0
+11-13 21:00:26.675 15534 15534 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.676 15441 15441 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.677   836  1000 E AppOps  : attributionTag VCN not declared in manifest of android
+11-13 21:00:26.677  2001  2001 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678  1356  1356 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678  1510  1510 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678  1515  1515 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678  3211  3211 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678   836   951 I system_server: AssetManager2(0x79b6ee4774f8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.678  1151  1151 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678  1083  1083 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.678   836  1044 I SdkSandboxManager: No SDKs used. Skipping SDK data reconcilation for CallingInfo{mUid=10055, mPackageName='io.legado.flutter_legado, mAppProcessToken='null'}
+11-13 21:00:26.679   836  1000 E AppOps  : attributionTag VCN not declared in manifest of android
+11-13 21:00:26.679   836   893 D PackageInstallerSession: Marking session 1414631614 as applied
+11-13 21:00:26.675   836   836 I binder:836_1D: type=1400 audit(0.0:20895): avc:  denied  { write } for  path="socket:[1043229]" dev="sockfs" ino=1043229 scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-13 21:00:26.675   836   836 I binder:836_1D: type=1400 audit(0.0:20896): avc:  denied  { call } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=binder permissive=1
+11-13 21:00:26.675   836   836 I binder:836_1D: type=1400 audit(0.0:20897): avc:  denied  { getopt } for  scontext=u:r:system_server:s0 tcontext=u:r:su:s0 tclass=unix_stream_socket permissive=1
+11-13 21:00:26.680  2190  2190 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.675 46916 46916 I adbd    : type=1400 audit(0.0:20898): avc:  denied  { write } for  path="socket:[637205]" dev="sockfs" ino=637205 scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=tcp_socket permissive=1
+11-13 21:00:26.681   836   836 I Telecom : CarModeTracker: Package io.legado.flutter_legado is not tracked.: SSH.oR@AQA
+11-13 21:00:26.681  1764  1764 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.679 46916 46916 I adbd    : type=1400 audit(0.0:20899): avc:  denied  { read } for  path="socket:[637205]" dev="sockfs" ino=637205 scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=tcp_socket permissive=1
+11-13 21:00:26.686   836   951 I system_server: AssetManager2(0x79b6ee4729f8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.689   836   836 I Telecom : InCallController: updateCarModeForConnections: car mode apps: : SSH.oR@AQA
+11-13 21:00:26.695   836   951 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-13 21:00:26.696   836   951 W MagnificationConnectionManager: requestConnection duplicated request: connect=false, mConnectionState=DISCONNECTED
+11-13 21:00:26.696   836   836 I Telecom : InCallController: update carmode current:UserHandle{0} parent:null: SSH.oR@AQA
+11-13 21:00:26.698  1559  1559 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.703  1796  1796 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.703  1190  1190 W VvmPkgInstalledRcvr: carrierVvmPkgAdded: carrier vvm packages doesn't contain io.legado.flutter_legado
+11-13 21:00:26.708  1747  1747 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.711  1190  1190 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.719   836  1058 D ActivityManager: sync unfroze 1423 com.android.permissioncontroller for 6
+11-13 21:00:26.719   836   836 V BackupManagerConstants: getFullBackupIntervalMilliseconds(...) returns 86400000
+11-13 21:00:26.721   836   836 V BackupManagerConstants: getFullBackupRequiredNetworkType(...) returns 2
+11-13 21:00:26.721   836   836 V BackupManagerConstants: getFullBackupRequireCharging(...) returns true
+11-13 21:00:26.722   836   836 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.724  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.724  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.725   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.725  1423  1423 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:26.726   836   836 W AlarmManager: Package io.legado.flutter_legado, uid 10055 lost permission to set exact alarms!
+11-13 21:00:26.726  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.726  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.726   836  1244 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.727  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.727  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.727   836 11020 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.728  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.728  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.728   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.729  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.729  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.729   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.730  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.730  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.730   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.730  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.730  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.730   836 17785 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.730  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.730  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.731   836 11020 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.731  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.731  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.731   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.732  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.732  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.732   836  1244 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.733  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.733  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.733   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.733  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.733  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.733   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.733  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.734  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.734   836 17785 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.735  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.735  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.735   836   851 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.736  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.736  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.736   836  1026 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.737  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.737  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.737   836   909 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.737  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.737  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.737   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.738  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.738  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.739   836  1553 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.740  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.740  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.740   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.741  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.741  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.741   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.742  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.742  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.742   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.743  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.743  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.743   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.745  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.745  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.745   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.745  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.745  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.745   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.746  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.746  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.746   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.746  1423  1492 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.746  1423  1492 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.746   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.747   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:26.747   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:26.747   836   906 E AtomicFile: Failed to rename /data/system/install_sessions.xml.new to /data/system/install_sessions.xml
+11-13 21:00:26.748 14170 14170 W dumpsys : Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: package
+11-13 21:00:26.764  1764  1802 W ndroid.keychain: Reducing the number of considered missed Gc histogram windows from 657 to 100
+11-13 21:00:26.771   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.771   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.771   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.771   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.771   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.771   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.772   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.772   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.772   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.772   836  1345 V Configuration: Updating configuration, locales updated from [] to [zh_CN_#Hans]
+11-13 21:00:26.772 14156 14158 I artd    : Dex parent of /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk is not writable: Permission denied
+11-13 21:00:26.772 14156 14158 I artd    : GetBestInfo checking odex in dalvik-cache (/data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.dex)
+11-13 21:00:26.772 14156 14158 I artd    : Loading /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.dex with executable: 0
+11-13 21:00:26.772 14156 14158 I artd    : OatFileAssistant test for existing oat file /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.dex: File /data/dalvik-cache/x86_64/data@app@~~_HC9a3bodb8HSrFhH-cvuA==@io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==@base.apk@classes.vdex does not exist.
+11-13 21:00:26.772 14156 14158 I artd    : GetBestInfo checking odex next to the dex file (/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex)
+11-13 21:00:26.772 14156 14158 I artd    : Loading /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex with executable: 0
+11-13 21:00:26.772 14156 14158 I artd    : Successfully loaded /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex with executable: 0
+11-13 21:00:26.772 14156 14158 I artd    : /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/oat/x86_64/base.odex is kOatUpToDate with filter verify
+11-13 21:00:26.810  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.810  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.810   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.811  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.811  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.811   836  1375 W ProcessStats: Tracking association SourceState{5c017d4 system/1000 ImpFg #5785} whose proc state 5 is better than process ProcessState{67b4218 com.android.permissioncontroller/10046 pkg=com.android.permissioncontroller} proc state 15 (2 skipped)
+11-13 21:00:26.812   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.812  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.812  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.812  1423  5822 I PermissionControllerServiceImpl: Updating user sensitive for uid 10055
+11-13 21:00:26.812   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.813  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.813  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.813   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.814  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.814  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.814   836  1553 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.815  1796  1869 I rosoft.launcher: AssetManager2(0x79b6ee38b2d8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.815  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.815  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.815   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.816  1423  1488 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.816  1423  1488 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.816   836  1553 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.817  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.817  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.818   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.818  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.818  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.818   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.819  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.819  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.820   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.820  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.820  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.820   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.821  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.821  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.822   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.822  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.822  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.823   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.824  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.824  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.824   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.826  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.826  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.826   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.828  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.828  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.828   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.829  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.829  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.829   836 11020 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.830  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.830  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.830   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.831  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.831  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.831   836  1553 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.831  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.831  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.831   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.832  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.832  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.832   836 17785 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.832  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.832  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.832   836 11020 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.833  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.833  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.834   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.835  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.835  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.835   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.836  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.836  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.836   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.836  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.836  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.836   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.837  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.837  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.838   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.838  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.838  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.838   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.839  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.839  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.839   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.840  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.840  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.840   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.840  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.840  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.841   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.841  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.841  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.841   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.842  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.842  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.842   836  5905 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.843  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.843  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.843   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.844   836  1022 W ActivityTaskManager: callingPackage for (uid=0, pid=14183) has no WPC
+11-13 21:00:26.845  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.845  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.845   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.846  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.846  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.846   836  1022 I system_server: AssetManager2(0x79b6ee457dd8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.846   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.847   836  1022 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@93894678 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-13 21:00:26.847   836  1022 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-13 21:00:26.847  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.847  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.847   836  1022 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-13 21:00:26.847   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.849  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.849   836  1022 I WindowManager: Using new display size: 1080x1920
+11-13 21:00:26.849  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.849   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.850   836  1022 E CellBroadcastUtils: getDefaultCellBroadcastReceiverPackageName: no package found
+11-13 21:00:26.850   699   699 E HWComposer: getDisplayConnectionType: getDisplayConnectionType failed for display 4619826888040906820: UNSUPPORTED (8)
+11-13 21:00:26.850   699   699 E HWComposer: getDisplayConnectionType: getDisplayConnectionType failed for display 4619826888040906820: UNSUPPORTED (8)
+11-13 21:00:26.850   699   699 E HWComposer: getMaxLayerPictureProfiles: getMaxLayerPictureProfiles failed for display 4619826888040906820: UNSUPPORTED (8)
+11-13 21:00:26.850   699   699 W HWC2    : Can't query capability Unknown. Display Capabilities were not queried from HWC yet
+11-13 21:00:26.850   699   699 I SurfaceFlinger: Connecting display 4619826888040906820(HAL ID 68)
+11-13 21:00:26.851   699   722 D SurfaceFlinger: Physical display 68 plugined successfully
+11-13 21:00:26.851  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.851  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.851   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.852  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.852  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.852   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.853  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.853  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.853   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.854  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.854  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.854   836 17785 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.855  1083  1257 I ndroid.systemui: AssetManager2(0x79b6ee39acd8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.855  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.855  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.855   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.856  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.856  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.856   836  1375 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.856  1083  1257 I ndroid.systemui: AssetManager2(0x79b6ee39b958) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.856  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.856  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.857   836 17962 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.857   836  1022 W OptProp : Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-13 21:00:26.857  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.857  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.857   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.858  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.858  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.858   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.858  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.858  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.859   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.859  1083  1232 V WindowManagerShell: Transition requested (#150): android.os.BinderProxy@1d6437f TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=239 effectiveUid=10055 displayId=68 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=88040243 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@4059f4c} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{db62b95 io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(237, 420 - 844, 1500) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 150 }
+11-13 21:00:26.859  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.859  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.860   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.860  1083  1259 I ndroid.systemui: AssetManager2(0x79b6ee39c8f8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.860   836  1022 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity} with LAUNCH_SINGLE_TOP from uid 0 (BAL_ALLOW_ALLOWLISTED_UID) result code=0
+11-13 21:00:26.861   699   699 W HwcComposer: getPerFrameMetadataKeys failed with 8
+11-13 21:00:26.861   699   699 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:26.864   699   699 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:26.864  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.864  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.865   699   699 I Scheduler: Display 4619827820427265280 is the pacesetter
+11-13 21:00:26.868   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.868   836  1022 D CoreBackPreview: Window{1566289 u0 Splash Screen io.legado.flutter_legado}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@442eaaf, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-13 21:00:26.868  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.868  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.869   836   859 V GrammaticalInflectionUtils: AttributionSource: android.content.AttributionSource@93894678 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-13 21:00:26.869   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.869   836   871 W ActivityManager: Unknown package:com.google.android.gms
+11-13 21:00:26.869   699   721 W HWC2    : Can't query capability AutoLowLatencyMode. Display Capabilities were not queried from HWC yet
+11-13 21:00:26.869   699   721 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619826888040906820: UNSUPPORTED (8)
+11-13 21:00:26.869   836   859 E LocalDisplayAdapter: Can't find display mode with id -1
+11-13 21:00:26.869   836   859 W LocalDisplayAdapter: DisplayModeSpecs base mode no longer available, using currently active mode.
+11-13 21:00:26.869   699   721 W HWC2    : Can't query capability Brightness. Display Capabilities were not queried from HWC yet
+11-13 21:00:26.870   836   859 I DisplayDeviceRepository: Display device added: DisplayDeviceInfo{"mumuscreen068": uniqueId="local:4619826888040906820", 1080 x 1920, modeId 137, renderFrameRate 60.000004, hasArrSupport false, frameRateCategoryRate FrameRateCategoryRate {normal=60.0, high=90.0}, supportedRefreshRates [], defaultModeId 137, userPreferredModeId -1, supportedModes [{id=137, width=1080, height=1920, fps=60.000004, vsync=60.000004, synthetic=false, alternativeRefreshRates=[15.000001], supportedHdrTypes=[]}, {id=138, width=1080, height=1920, fps=15.000001, vsync=15.000001, synthetic=false, alternativeRefreshRates=[60.000004], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities HdrCapabilities{mSupportedHdrTypes=[], mMaxLuminance=500.0, mMaxAverageLuminance=500.0, mMinLuminance=0.0}, isForceSdr false, allmSupported false, gameContentTypeSupported false, density 480, 480.0 x 480.0 dpi, appVsyncOff 1000000, presDeadline 16666666, touch INTERNAL, rotation 0, type INTERNAL, address {port=68, model=0x401cec13e97a00}, deviceProductInfo DeviceProductInfo{name=mumuscreen068, manufacturerPnpId=GGL, productId=1, modelYear=null, manufactureDate=ManufactureDate{week=27, year=2006}, connectionToSinkType=1}, state UNKNOWN, committedState UNKNOWN, frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 1.0, brightnessDefault 0.5, brightnessDim -1.0, hdrSdrRatio NaN, FLAG_ALLOWED_TO_BE_DEFAULT_DISPLAY, FLAG_ROTATES_WITH_CONTENT, FLAG_SECURE, FLAG_SUPPORTS_PROTECTED_BUFFERS, FLAG_TRUSTED, installOrientation 0, displayShape DisplayShape{ spec=1673867177 displayWidth=1080 displayHeight=1920 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-13 21:00:26.870   836   859 I LogicalDisplayMapper: Applying layout: [{dispId: 0(ON), displayGroupName: , addr: {port=0, model=0x401ceced0008c5}, mThermalBrightnessThrottlingMapId: null, mRefreshRateZoneId: null, mLeadDisplayId: -1, mLeadDisplayAddress: null, mThermalRefreshRateThrottlingMapId: null, mPowerThrottlingMapId: null}], Previous layout: [{dispId: 0(ON), displayGroupName: , addr: {port=0, model=0x401ceced0008c5}, mThermalBrightnessThrottlingMapId: null, mRefreshRateZoneId: null, mLeadDisplayId: -1, mLeadDisplayAddress: null, mThermalRefreshRateThrottlingMapId: null, mPowerThrottlingMapId: null}]
+11-13 21:00:26.870   836   859 I LogicalDisplayMapper: Setting new display group 0 for display 69, from previous group: null
+11-13 21:00:26.870  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.870  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.870   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.871  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.871  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.871   836  2568 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.871  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.871  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.871   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.872  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.872  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.872   836 17785 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.872  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.872  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.872   836 17785 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.872   660   660 D Zygote  : Forked child process 14196
+11-13 21:00:26.872   836   871 I ActivityManager: Start proc 14196:io.legado.flutter_legado/u0a55 for top-activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}
+11-13 21:00:26.873  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.873  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.873   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.873   836   859 W BrightnessThrottler: DeviceConfig ThermalBrightnessThrottlingData is null
+11-13 21:00:26.874  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.874  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.874   836   859 W DisplayPowerController[69]: Screen brightness nits configuration is unavailable; falling back
+11-13 21:00:26.875   836  1553 I DisplayDevice: [69] Layerstack set to 69 for local:4619826888040906820
+11-13 21:00:26.875   836   886 D BrightnessThermalClamper: Thermal status observer already started
+11-13 21:00:26.875   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.876  1747  1770 W com.mumu.store: Reducing the number of considered missed Gc histogram windows from 112 to 100
+11-13 21:00:26.876  1083  1232 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-13 21:00:26.876  1083  1232 E SingleInstanceRemoteListener: Failed remote call on null listener
+11-13 21:00:26.877  1083  1299 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:26.877   780   803 D nemuinput: onDisplayAdded: displayId=69
+11-13 21:00:26.878  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.878  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.879   836  1553 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.879   836   859 I InputManager-JNI: Viewport [0] to add: local:4619827820427265280, isActive: true
+11-13 21:00:26.879   836   859 I InputManager-JNI: Viewport [1] to add: local:4619826876442645002, isActive: true
+11-13 21:00:26.879   836   859 I InputManager-JNI: Viewport [2] to add: local:4619827096767843139, isActive: true
+11-13 21:00:26.879   836   859 I InputManager-JNI: Viewport [3] to add: local:4619826888040906820, isActive: false
+11-13 21:00:26.880   836   857 I system_server: AssetManager2(0x79b6ee44fdb8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.880  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.880  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.881  1083  1299 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-13 21:00:26.881   836  5495 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.882   699   699 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-13 21:00:26.882   836   944 I InputReader: Reconfiguring input devices, changes=DISPLAY_INFO
+11-13 21:00:26.884   836   944 W InputReader: Input device Xiaomi integration should be associated with display id: 1794 but the corresponding viewport cannot be found
+11-13 21:00:26.885   836   944 D EventHub: configureBatteryLocked rawBatteryId 1 name battery
+11-13 21:00:26.885   836   944 D EventHub: No input device configuration file found for device 'Xiaomi Touchscreen'.
+11-13 21:00:26.885  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.885  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.885   780   803 D nemuinput: Created uinput device fd=15 for display:69 type:0
+11-13 21:00:26.885   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.885   836   944 I EventHub: usingClockIoctl=true
+11-13 21:00:26.885   836   944 I EventHub: New device: id=293, fd=583, path='/dev/input/event12', name='Xiaomi Touchscreen', classes=TOUCH | TOUCH_MT | BATTERY, configuration='', keyLayout='', keyCharacterMap='', builtinKeyboard=false, 
+11-13 21:00:26.890  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.890  1083 14198 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:26.890  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.891   836  1553 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.891   836   944 I InputReader: Disabling Xiaomi Touchscreen (device 294) because the associated viewport is not active
+11-13 21:00:26.891   836   944 I InputReader: Device reconfigured: id=294, name='Xiaomi Touchscreen', size 1081x1921, orientation Rotation0, mode DISABLED, display id 69
+11-13 21:00:26.891   836   944 I InputReader: Disabling Xiaomi Touchscreen (device 294) because the associated viewport is not active
+11-13 21:00:26.891   836   944 I InputReader: Device added: id=294, eventHubId=293, name='Xiaomi Touchscreen', descriptor='296ea62433d93a4d3b78663c852d3b0f5ca9fcb1',sources=TOUCHSCREEN
+11-13 21:00:26.892   780   803 D nemuinput: Created uinput device fd=16 for display:69 type:1
+11-13 21:00:26.897   780   803 D nemuinput: Created uinput device fd=17 for display:69 type:2
+11-13 21:00:26.897  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.898  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.898 14196 14196 W nativebridge: Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-13 21:00:26.898 14196 14196 W nativebridge: Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-13 21:00:26.898 14196 14196 E Zygote  : pkg name is 0 => io.legado.flutter_legado, data dir is /data/user/0/io.legado.flutter_legado
+11-13 21:00:26.899 14196 14196 W zygote64: Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: nemuhotd
+11-13 21:00:26.901   780   803 D nemuinput: Created uinput device fd=18 for display:69 type:3
+11-13 21:00:26.901   836  1022 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.903  1747  1747 W System.err: com.mumu.store.data.remote.ApiError: 应用不存在
+11-13 21:00:26.905  1747  1940 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcast:1274 android.content.ContextWrapper.sendBroadcast:506 com.mumu.store.base.A.g:335 com.mumu.store.base.A$a.b:10 com.mumu.store.base.A$a.onNext:3 
+11-13 21:00:26.906   836   857 I WindowManager: Override config changes=20005df8 {0.0 ?mcc0mnc ?localeList ?layoutDir sw360dp w360dp h640dp 480dpi nrml long port ?uimode ?night finger -keyb/v/v -nav/h winConfig={ mBounds=Rect(0, 0 - 1080, 1920) mAppBounds=Rect(0, 0 - 1080, 1920) mMaxBounds=Rect(0, 0 - 1080, 1920) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} ?fontWeightAdjustment} for displayId=69
+11-13 21:00:26.906  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.906  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.906   836   857 V WindowManager: Content Recording: Successfully created a ContentRecordingSession for displayId=69 to mirror content from displayId=0
+11-13 21:00:26.907   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.907  1747  1747 W System.err: 	at com.mumu.store.data.remote.d.c(Proguard:50)
+11-13 21:00:26.907  1747  1747 W System.err: 	at com.mumu.store.data.remote.d.a(Proguard:3)
+11-13 21:00:26.907  1747  1747 W System.err: 	at retrofit2.x.f(Proguard:59)
+11-13 21:00:26.907  1747  1747 W System.err: 	at retrofit2.x.execute(Proguard:25)
+11-13 21:00:26.907  1747  1747 W System.err: 	at l3.c.F(Proguard:24)
+11-13 21:00:26.907  1747  1747 W System.err: 	at J1.h.a(Proguard:15)
+11-13 21:00:26.907  1747  1747 W System.err: 	at l3.a.F(Proguard:8)
+11-13 21:00:26.907  1747  1747 W System.err: 	at J1.h.a(Proguard:15)
+11-13 21:00:26.907  1747  1747 W System.err: 	at io.reactivex.internal.operators.observable.x$b.run(Proguard:7)
+11-13 21:00:26.907  1747  1747 W System.err: 	at J1.n$a.run(Proguard:10)
+11-13 21:00:26.907  1747  1747 W System.err: 	at io.reactivex.internal.schedulers.h.run(Proguard:14)
+11-13 21:00:26.907  1747  1747 W System.err: 	at io.reactivex.internal.schedulers.h.call(Proguard:1)
+11-13 21:00:26.907  1747  1747 W System.err: 	at java.util.concurrent.FutureTask.run(FutureTask.java:317)
+11-13 21:00:26.907  1747  1747 W System.err: 	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:348)
+11-13 21:00:26.907  1747  1747 W System.err: 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1156)
+11-13 21:00:26.907  1747  1747 W System.err: 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:651)
+11-13 21:00:26.907  1747  1747 W System.err: 	at java.lang.Thread.run(Thread.java:1119)
+11-13 21:00:26.907  1083  1232 I ndroid.systemui: AssetManager2(0x79b6ee3a58b8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.908  1083  1232 I ndroid.systemui: AssetManager2(0x79b6ee3a77f8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.908  1083  1232 I ndroid.systemui: AssetManager2(0x79b6ee3bc978) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.908  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.908  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.908  1083  1232 W DisplayController: Skipping Display Configuration change on non-added display.
+11-13 21:00:26.908  1083  1232 I ndroid.systemui: AssetManager2(0x79b6ee38de98) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.909   836   836 W WindowTokenClientController: Can't find attached WindowTokenClient for android.window.WindowTokenClient@d33feec
+11-13 21:00:26.910   836  1553 E ActivityManager: Sending non-protected broadcast com.mumu.ACTION_NOTIFY_FORCT_UPDATE from system 1747:com.mumu.store/1000 pkg com.mumu.store
+11-13 21:00:26.910   836  1553 E ActivityManager: java.lang.Throwable
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at android.app.IActivityManager$Stub.onTransact(IActivityManager.java:2888)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at com.android.server.am.ActivityManagerService.onTransact(ActivityManagerService.java:2726)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at android.os.Binder.execTransactInternal(Binder.java:1406)
+11-13 21:00:26.910   836  1553 E ActivityManager: 	at android.os.Binder.execTransact(Binder.java:1350)
+11-13 21:00:26.910   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.911  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.911  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.911   836   886 I DisplayPowerController: Window Manager Policy screenTurningOn complete
+11-13 21:00:26.911   836   886 I DisplayBrightnessStrategySelector: Changing the DisplayBrightnessStrategy from InvalidBrightnessStrategy to FollowerBrightnessStrategy for display 69
+11-13 21:00:26.911   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.911   836   886 V DisplayPowerController[69]: Brightness [0.07874016] reason changing to: 'follower', previous reason: '0'.
+11-13 21:00:26.911   836   886 I DisplayPowerController[69]: BrightnessEvent: brt=0.07874016 (49.0%), nits= -1.0, lux=-1.0, reason=follower, strat=FollowerBrightnessStrategy, state=ON, stateReason=DEFAULT_POLICY, policy=BRIGHT, flags=, initBrt=NaN, rcmdBrt=NaN, preBrt=NaN, preLux=0.0, wasShortTermModelActive=false, autoBrightness=false (default), unclampedBrt=0.07874016, hbmMax=1.0, hbmMode=off, thrmMax=1.0, rbcStrength=-1, powerFactor=1.0, physDisp=mumuscreen068(local:4619826888040906820), logicalId=69
+11-13 21:00:26.911   836   886 D BrightnessThermalClamper: Thermal status observer already started
+11-13 21:00:26.911   836   886 D BrightnessThermalClamper: Thermal status observer already started
+11-13 21:00:26.912   836   944 D EventHub: configureBatteryLocked rawBatteryId 1 name battery
+11-13 21:00:26.912   836   944 D EventHub: No input device configuration file found for device 'Xiaomi Keyboard'.
+11-13 21:00:26.912  1083  1232 V ShellDragAndDrop: Display added: 69
+11-13 21:00:26.912  1423  5823 D AccessibilitySourceService: enabled a11y services count 0
+11-13 21:00:26.912  1423  5823 D AccessibilitySourceService: a11y source sending 0 issue to sc
+11-13 21:00:26.912   836 18098 D SafetySourceDataValidat: No cert check requested for package com.android.permissioncontroller
+11-13 21:00:26.914   836   857 V WindowManager: Content Recording: Display 69 state was (0), is now (0), so update recording?
+11-13 21:00:26.915   699   699 I RefreshRateSelector: Display 4619826888040906820 policy changed
+11-13 21:00:26.915   699   699 I RefreshRateSelector: Previous: {defaultModeId=0, allowGroupSwitching=false, primaryRanges={physical=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz], render=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz]}, appRequestRanges={physical=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz], render=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz]} idleScreenConfig=nullptr}
+11-13 21:00:26.915   699   699 I RefreshRateSelector: Current:  DisplayManagerPolicy{defaultModeId=0, allowGroupSwitching=false, primaryRanges={physical=[0.00 Hz, inf Hz], render=[0.00 Hz, 1000.00 Hz]}, appRequestRanges={physical=[0.00 Hz, inf Hz], render=[0.00 Hz, inf Hz]} idleScreenConfig=nullptr}
+11-13 21:00:26.915   699   699 I RefreshRateSelector: 0 mode changes were performed under the previous policy
+11-13 21:00:26.915   699   699 D DisplayModeController: setDesiredMode 4619826888040906820 {mode={fps=60.00 Hz, modePtr={id=0, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=true, force=false}
+11-13 21:00:26.915   836   944 W EventHub: Unable to disable kernel key repeat for /dev/input/event13: Function not implemented
+11-13 21:00:26.915   836   944 I EventHub: usingClockIoctl=true
+11-13 21:00:26.915   836   944 I EventHub: New device: id=294, fd=639, path='/dev/input/event13', name='Xiaomi Keyboard', classes=KEYBOARD | ALPHAKEY | BATTERY | EXTERNAL, configuration='', keyLayout='/system/usr/keylayout/Generic.kl', keyCharacterMap='/system/usr/keychars/Generic.kcm', builtinKeyboard=false, 
+11-13 21:00:26.916   836   944 E EventHub: Could not get device name for /dev/input/mouse5: Inappropriate ioctl for device
+11-13 21:00:26.916   836   944 E EventHub: could not get driver version for /dev/input/mouse5, Inappropriate ioctl for device
+11-13 21:00:26.916   836   859 I DisplayDeviceRepository: Display device changed state: "mumuscreen068", ON
+11-13 21:00:26.916   836   856 V WindowManager: Sent Transition (#150) createdAt=11-13 21:00:26.848 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=239 effectiveUid=10055 displayId=68 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=88040243 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{f5e3bb7 Task{107ba51 #239 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{d600119 io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(237, 420 - 844, 1500) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 150 }
+11-13 21:00:26.916   836   856 V WindowManager:     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-13 21:00:26.916   836   856 V WindowManager:     info={id=150 t=OPEN f=0x0 trk=0 r=[68@Point(0, 0)] c=[
+11-13 21:00:26.916   836   856 V WindowManager:         {WCT{RemoteToken{f5e3bb7 Task{107ba51 #239 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} m=OPEN f=NONE p=WCT{RemoteToken{2714f68 DefaultTaskDisplayArea@11843095}} leash=Surface(name=Task=239)/@0x155705a sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68 taskParent=-1},
+11-13 21:00:26.916   836   856 V WindowManager:         {WCT{RemoteToken{2714f68 DefaultTaskDisplayArea@11843095}} m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0xe599805 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68}
+11-13 21:00:26.916   836   856 V WindowManager:     ]}
+11-13 21:00:26.916   836   886 D BrightnessThermalClamper: Thermal status observer already started
+11-13 21:00:26.916   836   859 I InputManager-JNI: Viewport [0] to add: local:4619827820427265280, isActive: true
+11-13 21:00:26.916   836   859 I InputManager-JNI: Viewport [1] to add: local:4619826876442645002, isActive: true
+11-13 21:00:26.916   836   859 I InputManager-JNI: Viewport [2] to add: local:4619827096767843139, isActive: true
+11-13 21:00:26.916   836   859 I InputManager-JNI: Viewport [3] to add: local:4619826888040906820, isActive: true
+11-13 21:00:26.916   699   699 D SurfaceFlinger: Setting power mode 2 on display 4619826888040906820
+11-13 21:00:26.916   699   699 W SurfaceFlinger: Trying to change power mode on inactive display without powering off active display
+11-13 21:00:26.916   699   699 D SurfaceFlinger: Finished setting power mode 2 on display 4619826888040906820
+11-13 21:00:26.917  1083 19387 V WindowManagerShell: onTransitionReady(transaction=3590592698877)
+11-13 21:00:26.917  1083  1232 V WindowManagerShell: onTransitionReady (#150) android.os.BinderProxy@1d6437f: {id=150 t=OPEN f=0x0 trk=0 r=[68@Point(0, 0)] c=[
+11-13 21:00:26.917  1083  1232 V WindowManagerShell:         {m=OPEN f=NONE p=WCT{android.window.IWindowContainerToken$Stub$Proxy@43b6d5f} leash=Surface(name=Task=239)/@0xe31f80 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68 taskParent=-1},
+11-13 21:00:26.917  1083  1232 V WindowManagerShell:         {m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0x14d99b9 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68}
+11-13 21:00:26.917  1083  1232 V WindowManagerShell:     ]}
+11-13 21:00:26.918  1083  1232 V WindowManagerShell: Playing animation for (#150) android.os.BinderProxy@1d6437f@0
+11-13 21:00:26.918  1083  1232 V ShellRecents: RecentsTransitionHandler.startAnimation: no controller found
+11-13 21:00:26.918  1083  1232 V WindowManagerShell: Transition doesn't have explicit remote, search filters for match for {id=150 t=OPEN f=0x0 trk=0 r=[68@Point(0, 0)] c=[{m=OPEN f=NONE p=WCT{android.window.IWindowContainerToken$Stub$Proxy@43b6d5f} leash=Surface(name=Task=239)/@0xe31f80 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68 taskParent=-1},{m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0x14d99b9 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68}]}
+11-13 21:00:26.918  1083  1232 V WindowManagerShell:  Delegate animation for (#150) to null
+11-13 21:00:26.918  1083  1232 V WindowManagerShell: start default transition animation, info = {id=150 t=OPEN f=0x0 trk=0 r=[68@Point(0, 0)] c=[{m=OPEN f=NONE p=WCT{android.window.IWindowContainerToken$Stub$Proxy@43b6d5f} leash=Surface(name=Task=239)/@0xe31f80 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68 taskParent=-1},{m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0x14d99b9 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=68}]}
+11-13 21:00:26.918  1083  1232 V WindowManagerShell: loadAnimation: anim=android.view.animation.AnimationSet@4251875 animAttr=0x4 type=OPEN isEntrance=true
+11-13 21:00:26.918  1747  1940 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.sendBroadcast:1274 android.content.ContextWrapper.sendBroadcast:506 com.mumu.store.search.k.c:31 A0.b$a.b:277 A0.b$a.onNext:3 
+11-13 21:00:26.920   836   886 D BrightnessThermalClamper: Thermal status observer already started
+11-13 21:00:26.920   836   857 V WindowManager: Content Recording: Display 69 state was (0), is now (2), so update recording?
+11-13 21:00:26.921   836   857 V WindowManager: Content Recording: Display 69 state was (2), is now (2), so update recording?
+11-13 21:00:26.928   699   699 W Scheduler: No mode change to emit
+11-13 21:00:26.929   699  1677 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8192
+11-13 21:00:26.931  1083  1299 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-13 21:00:26.933  1083  1299 D HWUI    : HOOK FAILED! Expected 3 got = 2
+11-13 21:00:26.934  1083  1299 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 2215936
+11-13 21:00:26.935  1083  1232 V WindowManagerShell:  animated by com.android.wm.shell.transition.DefaultTransitionHandler@55c9aed
+11-13 21:00:26.940 14196 14196 I Zygote  : seccomp disabled by setenforce 0
+11-13 21:00:26.945 14196 14196 I .flutter_legado: Using CollectorTypeCMC GC.
+11-13 21:00:26.945 14196 14196 W .flutter_legado: Unexpected CPU variant for x86: x86_64.
+11-13 21:00:26.945 14196 14196 W .flutter_legado: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-13 21:00:26.945 14196 14196 V libnb   : enter native_bridge2_initialize /data/user/0/io.legado.flutter_legado/code_cache arm64
+11-13 21:00:26.946 14196 14196 E libnb   : The translator implementation library has not been set.
+11-13 21:00:26.950   836   944 D EventHub: configureBatteryLocked rawBatteryId 1 name battery
+11-13 21:00:26.950   836   944 D EventHub: No input device configuration file found for device 'Xiaomi Mouse'.
+11-13 21:00:26.950   836   944 I EventHub: usingClockIoctl=true
+11-13 21:00:26.951   836   944 I EventHub: New device: id=295, fd=643, path='/dev/input/event14', name='Xiaomi Mouse', classes=CURSOR | BATTERY | EXTERNAL, configuration='', keyLayout='', keyCharacterMap='', builtinKeyboard=false, 
+11-13 21:00:26.951   836   944 E EventHub: Could not get device name for /dev/input/mouse6: Inappropriate ioctl for device
+11-13 21:00:26.951   836   944 E EventHub: could not get driver version for /dev/input/mouse6, Inappropriate ioctl for device
+11-13 21:00:26.955 14196 14196 E libnb   : get_callbacks native_handle 0xebba6346077fbc27: 1 libnb:/system/lib64/libhoudini.so
+11-13 21:00:26.955 14196 14196 I libnb   : Found /system/lib64/libhoudini.so version 7
+11-13 21:00:26.956 14196 14196 I houdini : [14196] Houdini now in android app mode
+11-13 21:00:26.956 14196 14196 I houdini : [14196] Intel Bridge Technology for NetEase Mumu only, Copyright(C) Intel Corp. 2012-now.
+11-13 21:00:26.956 14196 14196 I houdini : [14196] Use permitted only under a valid commercial software license agreement - all other rights reserved.
+11-13 21:00:26.956 14196 14196 I houdini : [14196] Initialize library(version: 15.0.0.Netease_com3.0 RELEASE)... successfully.
+11-13 21:00:26.956 14196 14196 W HP      : x_initialize private_dir:/data/user/0/io.legado.flutter_legado/code_cache instruction_set:arm64 getMethodShorty:0x79b52baee700 ret:1
+11-13 21:00:26.957 14196 14196 E .flutter_legado: Not starting debugger since process cannot load the jdwp agent.
+11-13 21:00:26.958 14196 14196 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: setPresentationRotation 0 for io.legado.flutter_legado:239
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: java.lang.Exception
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at android.os.Looper.loop(Looper.java:317)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-13 21:00:26.967   836   856 E [MUMU]TaskTab: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-13 21:00:26.969   836   856 E ActivityManager: Sending non-protected broadcast nemu.intent.action.NEW_TASK from system 836:system/1000 pkg android
+11-13 21:00:26.969   836   856 E ActivityManager: java.lang.Throwable
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.wm.TaskUtils.$r8$lambda$JRBio5N1z1PXvDB9E_DBrd2vjYw(TaskUtils.java:2179)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda2.run(R8$$SyntheticClass:0)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.os.Looper.loop(Looper.java:317)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-13 21:00:26.969   836   856 E ActivityManager: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-13 21:00:26.982   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:26.986 14196 14196 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+11-13 21:00:26.986 14196 14196 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+11-13 21:00:26.986   836   944 D EventHub: configureBatteryLocked rawBatteryId 1 name battery
+11-13 21:00:26.986   836   944 D EventHub: No input device configuration file found for device 'Xiaomi Joystick'.
+11-13 21:00:26.987   836   944 W EventHub: Unable to disable kernel key repeat for /dev/input/event15: Function not implemented
+11-13 21:00:26.987   836   944 I EventHub: usingClockIoctl=true
+11-13 21:00:26.987   836   944 I EventHub: New device: id=296, fd=652, path='/dev/input/event15', name='Xiaomi Joystick', classes=KEYBOARD | CURSOR | DPAD | GAMEPAD | JOYSTICK | VIBRATOR | BATTERY | EXTERNAL, configuration='', keyLayout='/system/usr/keylayout/Generic.kl', keyCharacterMap='/system/usr/keychars/Generic.kcm', builtinKeyboard=false, 
+11-13 21:00:26.987 14196 14196 D nativeloader: Configuring clns-7 for other apk /data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/lib/x86_64:/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/io.legado.flutter_legado
+11-13 21:00:26.988   836   944 E InputReader: Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-13 21:00:26.988   836   944 E InputReader: Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-13 21:00:26.988   836   944 I InputReader: Device added: id=295, eventHubId=296, name='Xiaomi Joystick', descriptor='76cc3df2caee24f083927135ff01a72255ca7da1',sources=KEYBOARD | DPAD | GAMEPAD | MOUSE | JOYSTICK
+11-13 21:00:26.988   836   944 E InputReader: Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-13 21:00:26.988   836   944 E InputReader: Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-13 21:00:26.988   836   944 I InputReader: Device added: id=296, eventHubId=295, name='Xiaomi Mouse', descriptor='35759c78279ae8625613ad980dc6d608a1eead03',sources=MOUSE
+11-13 21:00:26.988 14196 14196 I .flutter_legado: AssetManager2(0x79b6ee37ac58) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:26.988   836   944 I InputReader: Device added: id=297, eventHubId=294, name='Xiaomi Keyboard', descriptor='0e6189085ff7df77d1d756fcf40ef1e1b2b7fe84',sources=KEYBOARD
+11-13 21:00:26.990 14196 14196 V GraphicsEnvironment: Currently set values for:
+11-13 21:00:26.990 14196 14196 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+11-13 21:00:26.990 14196 14196 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+11-13 21:00:26.990 14196 14196 V GraphicsEnvironment: io.legado.flutter_legado is not listed in per-application setting
+11-13 21:00:26.990 14196 14196 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+11-13 21:00:26.995   699   699 W Scheduler: No mode change to emit
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: setPresentationRotation 0 for io.legado.flutter_legado:239
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: java.lang.Exception
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at android.os.Looper.loop(Looper.java:317)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-13 21:00:27.002   836   856 E [MUMU]TaskTab: 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-13 21:00:27.002   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:27.002   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:27.003 14196 14218 E libEGL  : intercept_property_get () for (persist.graphics.egl)
+11-13 21:00:27.004 14196 14196 I .flutter_legado: AssetManager2(0x79b6ee383c18) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:27.010 14196 14218 I EGL_emulation: EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-13 21:00:27.023   836 18098 D FileUtils: Rounded bytes from 6231220224 to 8000000000
+11-13 21:00:27.029 14196 14220 D skia    : [SkFontMgr Android Parser] '/product/etc/fonts_customization.xml' could not be opened
+11-13 21:00:27.032 14196 14196 I .flutter_legado: AssetManager2(0x79b6ee384258) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:27.033   836   944 E WindowManager: Display reconfigured outside of a transition: Display{#68 state=ON size=1080x1920 ROTATION_0}
+11-13 21:00:27.033   836   944 E WindowManager: Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-13 21:00:27.034   836   944 E WindowManager: Display reconfigured outside of a transition: Display{#11 state=ON size=1080x1920 ROTATION_0}
+11-13 21:00:27.034   836   944 I WindowManager: Override config changes=60 {0.0 ?mcc0mnc ?localeList ?layoutDir sw360dp w360dp h640dp 480dpi nrml long port ?uimode ?night finger -keyb/v/v dpad/v winConfig={ mBounds=Rect(0, 0 - 1080, 1920) mAppBounds=Rect(0, 0 - 1080, 1920) mMaxBounds=Rect(0, 0 - 1080, 1920) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} ?fontWeightAdjustment} for displayId=69
+11-13 21:00:27.034   836   836 W WindowTokenClientController: Can't find attached WindowTokenClient for android.window.WindowTokenClient@d33feec
+11-13 21:00:27.034   836   886 D BrightnessThermalClamper: Thermal status observer already started
+11-13 21:00:27.037   836   944 I InputReader: Reconfiguring input devices, changes=DISPLAY_INFO
+11-13 21:00:27.037  1083  1232 I ndroid.systemui: AssetManager2(0x79b6ee3a45f8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:27.037  1083  1232 V ShellDragAndDrop: Display changed: 69
+11-13 21:00:27.037   836   944 I InputReader: Device reconfigured: id=294, name='Xiaomi Touchscreen', size 1080x1920, orientation Rotation0, mode DIRECT, display id 69
+11-13 21:00:27.037   836   944 W InputReader: Input device Xiaomi integration should be associated with display id: 1794 but the corresponding viewport cannot be found
+11-13 21:00:27.053 14196 14221 E vulkan  : intercept_property_get () for (ro.hardware.vulkan)
+11-13 21:00:27.063 14196 14221 D vulkan  : searching for layers in '/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/lib/x86_64'
+11-13 21:00:27.064 14196 14221 D vulkan  : searching for layers in '/data/app/~~_HC9a3bodb8HSrFhH-cvuA==/io.legado.flutter_legado-5e844cM5NVfRwIeeWO9QJQ==/base.apk!/lib/x86_64'
+11-13 21:00:27.094   699   757 W Scheduler: No mode change to emit
+11-13 21:00:27.102   481   481 I hwservicemanager: getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-13 21:00:27.102 14196 14221 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.configstore@1.0::ISurfaceFlingerConfigs instance: default
+11-13 21:00:27.121 14196 14196 D com.llfbandit.app_links: Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity }
+11-13 21:00:27.124 14196 14196 E TTS     : Failed to initialize TextToSpeech with status: -1
+11-13 21:00:27.127 14196 14221 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x79b49c59a000 0x79b49c99a000]
+11-13 21:00:27.134 14196 14221 I flutter : [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
+11-13 21:00:27.138 14196 14196 I .flutter_legado: AssetManager2(0x79b6ee37ceb8) locale list changing from [] to [zh-Hans-CN]
+11-13 21:00:27.140 14196 14196 D DesktopModeFlagsUtil: Toggle override initialized to: OVERRIDE_OFF
+11-13 21:00:27.144 14196 14196 W HWUI    : Unknown dataspace 0
+11-13 21:00:27.155 14196 14196 I WindowExtensionsImpl: Initializing Window Extensions, vendor API level=8, activity embedding enabled=true
+11-13 21:00:27.158   836  1022 D CoreBackPreview: Window{976dfad u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@8b38b2e, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-13 21:00:27.159 14196 14216 I EGL_emulation: EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-13 21:00:27.163 14196 14216 W HWUI    : Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-13 21:00:27.163  1083  1083 D ControlsListingControllerImpl: ServiceConfig reloaded, count: 0
+11-13 21:00:27.164  1083  1083 D ControlsListingControllerImpl: ServiceConfig reloaded, count: 0
+11-13 21:00:27.164  3233  3233 D ActivityThread: Package [io.legado.flutter_legado] reported as REPLACED, but missing application info. Assuming REMOVED.
+11-13 21:00:27.165  1083  1083 D ControlsListingControllerImpl: ServiceConfig reloaded, count: 0
+11-13 21:00:27.165   836   870 D ActivityManager: sync unfroze 3233 com.microsoft.launcher:hockeysender for 3
+11-13 21:00:27.165 14196 14221 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-13 21:00:27.166  2001  2001 W AccMsgReceiver: AccMsgReceiver: onReceive action = android.intent.action.PACKAGE_REMOVED
+11-13 21:00:27.166  1515  1515 W MediaProvider: WorkProfileOwnerApps cache is empty
+11-13 21:00:27.167  1515  1515 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@9712620[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-13 21:00:27.167  1515  1515 D CloseableReentrantLock: Successfully acquired lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@9712620[Locked by thread main]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-13 21:00:27.167  1515  1515 D CloseableReentrantLock: Successfully released lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@9712620[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-13 21:00:27.172 14196 14221 E HidlServiceManagement: getService: Potential race detected, descriptor: android.hardware.graphics.allocator@2.0::IAllocator instance: default
+11-13 21:00:27.175  2001  2001 W AccMsgReceiver: AccMsgReceiver: onReceive action = android.intent.action.PACKAGE_ADDED
+11-13 21:00:27.175  1515  1515 W MediaProvider: Failed to invalidate FUSE dentry
+11-13 21:00:27.175  1515  1515 W MediaProvider: java.io.FileNotFoundException: Missing FUSE daemon for /mnt/shared/MuMuShared/Android/media/io.legado.flutter_legado
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.getFuseDaemonForFile(MediaProvider.java:9950)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.invalidateFuseDentry(MediaProvider.java:9987)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.invalidateDentryForExternalStorage(MediaProvider.java:866)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.-$$Nest$minvalidateDentryForExternalStorage(MediaProvider.java:0)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider$3.onReceive(MediaProvider.java:838)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.app.LoadedApk$ReceiverDispatcher$Args.lambda$getRunnable$0(LoadedApk.java:1825)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.app.LoadedApk$ReceiverDispatcher$Args.$r8$lambda$mcNAAl1SQ4MyJPyDg8TJ2x2h0Rk(Unknown Source:0)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.app.LoadedApk$ReceiverDispatcher$Args$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.os.Looper.loop(Looper.java:317)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at android.app.ActivityThread.main(ActivityThread.java:8971)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at java.lang.reflect.Method.invoke(Native Method)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:597)
+11-13 21:00:27.175  1515  1515 W MediaProvider: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:919)
+11-13 21:00:27.175  1515  1515 W MediaProvider: WorkProfileOwnerApps cache is empty
+11-13 21:00:27.175  1515  1515 D PickerSyncLockManager: Trying to acquire lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@c2db74b[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-13 21:00:27.175  1515  1515 D CloseableReentrantLock: Successfully acquired lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@c2db74b[Locked by thread main]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-13 21:00:27.175  1515  1515 D CloseableReentrantLock: Successfully released lock com.android.providers.media.photopicker.sync.CloseableReentrantLock@c2db74b[Unlocked]. Lock Name = CLOUD_PROVIDER_LOCK. Threads that may be waiting to acquire this lock = []
+11-13 21:00:27.176  1515  1515 W MediaProvider: Failed to invalidate FUSE dentry
+11-13 21:00:27.176  1515  1515 W MediaProvider: java.io.FileNotFoundException: Missing FUSE daemon for /mnt/shared/MuMuShared/Android/media/io.legado.flutter_legado
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.getFuseDaemonForFile(MediaProvider.java:9950)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.invalidateFuseDentry(MediaProvider.java:9987)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.invalidateDentryForExternalStorage(MediaProvider.java:866)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider.-$$Nest$minvalidateDentryForExternalStorage(MediaProvider.java:0)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.providers.media.MediaProvider$3.onReceive(MediaProvider.java:838)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.app.LoadedApk$ReceiverDispatcher$Args.lambda$getRunnable$0(LoadedApk.java:1825)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.app.LoadedApk$ReceiverDispatcher$Args.$r8$lambda$mcNAAl1SQ4MyJPyDg8TJ2x2h0Rk(Unknown Source:0)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.app.LoadedApk$ReceiverDispatcher$Args$$ExternalSyntheticLambda0.run(D8$$SyntheticClass:0)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.os.Handler.handleCallback(Handler.java:991)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.os.Looper.loopOnce(Looper.java:232)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.os.Looper.loop(Looper.java:317)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at android.app.ActivityThread.main(ActivityThread.java:8971)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at java.lang.reflect.Method.invoke(Native Method)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:597)
+11-13 21:00:27.176  1515  1515 W MediaProvider: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:919)
+11-13 21:00:27.176  2001  2001 W AccMsgReceiver: AccMsgReceiver: onReceive action = nemu.intent.action.NEW_TASK
+11-13 21:00:27.177   836  1022 W ActivityManager: Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-13 21:00:27.178 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-13 21:00:27.179  1083  1232 V WindowManagerShell: Transition animation finished (aborted=false), notifying core (#150) android.os.BinderProxy@1d6437f@0
+11-13 21:00:27.179   836 17785 W ActivityManager: Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-13 21:00:27.179 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-13 21:00:27.180   836   909 W ActivityManager: Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-13 21:00:27.180  1083  1232 V WindowManagerShell: Track 0 became idle
+11-13 21:00:27.180  1083  1232 V WindowManagerShell: All active transition animations finished
+11-13 21:00:27.180   836   856 V WindowManager: Finish Transition (#150): created at 11-13 21:00:26.848 collect-started=0.014ms request-sent=9.966ms started=27.684ms ready=66.892ms sent=67.836ms finished=331.507ms
+11-13 21:00:27.180 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-13 21:00:27.180  2001  2074 W AccServiceManager: onAppLaunch: packageName = io.legado.flutter_legado
+11-13 21:00:27.181  2001  2074 W TranslateGameManager: onAppLaunch: packageName = io.legado.flutter_legado, hasPackageLaunchedBefore = false, supportTranslateReally = false, isLocalTranslateEnabled = false
+11-13 21:00:27.181  2001  2071 W AccRequestManager: getValidAccPkgDatasInScope: branch=C(new), forceRefresh=true
+11-13 21:00:27.181  2001  2071 D BoostKit: init() called with: installedPackageList = [[io.legado.flutter_legado]], listener = [com.mumu.acc.romsdk.RomSdkBridgeImpl$fetchAccGames$1@8ab8c5d]
+11-13 21:00:27.181  2001  2071 D BoostKit: id:uuromsdk:4c529dfadb059722
+11-13 21:00:27.181  2001  2071 D SdkInit : doInit() called
+11-13 21:00:27.181  2001  2071 D SdkInit : getGames() called
+11-13 21:00:27.182 14196 14221 E gralloc_kona: gralloc_alloc: Unknown format 56
+11-13 21:00:27.182 14196 14221 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-13 21:00:27.182 14196 14221 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-13 21:00:27.182   699  1677 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619827820427265280: UNSUPPORTED (8)
+11-13 21:00:27.182 14196 14221 E gralloc_kona: gralloc_alloc: Unknown format 59
+11-13 21:00:27.182 14196 14221 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-13 21:00:27.182 14196 14221 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-13 21:00:27.182 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-13 21:00:27.182   699  1677 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619826876442645002: UNSUPPORTED (8)
+11-13 21:00:27.182   699  1677 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619827096767843139: UNSUPPORTED (8)
+11-13 21:00:27.182   699  1677 E HWComposer: getSupportedContentTypes: getSupportedContentTypes failed for display 4619826888040906820: UNSUPPORTED (8)
+11-13 21:00:27.182 14196 14216 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:27.182 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-13 21:00:27.184 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 4096
+11-13 21:00:27.186 14196 14221 E gralloc_kona: gralloc_alloc: Unknown format 56
+11-13 21:00:27.186 14196 14221 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-13 21:00:27.186 14196 14221 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-13 21:00:27.186 14196 14221 E gralloc_kona: gralloc_alloc: Unknown format 59
+11-13 21:00:27.186 14196 14221 E GraphicBufferAllocator: Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-13 21:00:27.186 14196 14221 E AHardwareBuffer: GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-13 21:00:27.186 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:27.195   699   699 W Scheduler: No mode change to emit
+11-13 21:00:27.202  2001  2024 W com.mumu.acc: Reducing the number of considered missed Gc histogram windows from 112 to 100
+11-13 21:00:27.203 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:27.219 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:27.233 14196 14221 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:27.262 14196 14196 I flutter : [启动] CrashLogService 初始化耗时：110ms
+11-13 21:00:27.289  2001  2001 W RomSdkBridgeMainland: fetchAccGames: success, size = 0
+11-13 21:00:27.289  2001  2071 W AccRequestManager: handleRealAccRequest: uu.isSuccess=true
+11-13 21:00:27.294   699   757 W Scheduler: No mode change to emit
+11-13 21:00:27.297 14196 14196 D WindowLayoutComponentImpl: Register WindowLayoutInfoListener on Context=io.legado.flutter.MainActivity@85706eb, of which baseContext=android.app.ContextImpl@65fa006
+11-13 21:00:27.329 14196 14196 I flutter : [RustApi] ttsSetCacheDir -> /data/user/0/io.legado.flutter_legado/files/tts_cache（ok=true）
+11-13 21:00:27.329 14196 14196 I flutter : [RustApi] setCacheDir -> /data/user/0/io.legado.flutter_legado/cache/js_cache
+11-13 21:00:27.330 14196 14196 I flutter : [RustApi] setImageCacheDir -> /data/user/0/io.legado.flutter_legado/cache/image_cache
+11-13 21:00:27.330 14196 14196 I flutter : [RustApi] setAudioCacheDir -> /data/user/0/io.legado.flutter_legado/cache/audio_cache
+11-13 21:00:27.331 14196 14196 I flutter : [RustApi] 设备 ID 注入完成：d4f2246244780bde
+11-13 21:00:27.332 14196 14196 I flutter : [RustApi] 主题注入完成（palette=def mode=0）
+11-13 21:00:27.333 14196 14196 I flutter : [RustApi] 阅读配置注入完成（bgIndex=0）
+11-13 21:00:27.333 14196 14196 I flutter : [启动] 并行初始化（prefs+FFI）耗时：69ms
+11-13 21:00:27.333 14196 14196 I flutter : [启动] 远程书库服务器迁移耗时：0ms
+11-13 21:00:27.334 14196 14196 I flutter : [启动] 语言/图片绘制偏好初始化耗时：0ms
+11-13 21:00:27.334 14196 14196 I flutter : [启动] 自动清除过期搜索：删除 0 条（阈值 -1 天）
+11-13 21:00:27.334 14196 14196 I flutter : [启动] UserAgent 同步耗时：0ms
+11-13 21:00:27.335 14196 14196 I flutter : [启动] 线程数同步耗时：0ms
+11-13 21:00:27.335 14196 14196 I flutter : [启动] 替换净化默认开关同步耗时：0ms
+11-13 21:00:27.335 14196 14196 I flutter : [启动] 总启动耗时：187ms
+11-13 21:00:27.364 14196 14196 W WindowOnBackDispatcher: OnBackInvokedCallback is not enabled for the application.
+11-13 21:00:27.364 14196 14196 W WindowOnBackDispatcher: Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+11-13 21:00:27.388 14196 14221 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x79b4910ef000 0x79b4914ef000]
+11-13 21:00:27.450 14196 14216 D gralloc_kona: gralloc_alloc: Creating ashmem region of size 8298496
+11-13 21:00:27.456   836   856 I ActivityTaskManager: Displayed io.legado.flutter_legado/io.legado.flutter.MainActivity for user 0: +608ms
+11-13 21:00:27.456   836   856 I ActivityTaskManager: Fully drawn io.legado.flutter_legado/io.legado.flutter.MainActivity: +608ms
+11-13 21:00:27.479   699   699 W Scheduler: No mode change to emit
+11-13 21:00:27.483   836   947 I ImeTracker: io.legado.flutter_legado:821997d3: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-13 21:00:27.483 14196 14196 D InsetsController: hide(ime(), fromIme=false)
+11-13 21:00:27.483 14196 14196 I ImeTracker: io.legado.flutter_legado:821997d3: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-13 21:00:27.485   836   909 W WindowManager: Failed looking up window session=Session{34c95b5 1510:1000} callers=com.android.server.wm.WindowManagerService.removeClientToken:2070 com.android.server.wm.Session.remove:269 android.view.IWindowSession$Stub.onTransact:696 
+11-13 21:00:27.485   836  1039 D BackgroundInstallControlService: Package event received: 0
+11-13 21:00:27.486   497   506 W Parcel  : Expecting binder but got null!
+11-13 21:00:27.487  1510  1510 E IME_SogouIME: Could not set IME callback false
+11-13 21:00:27.487  1510  1510 W WindowTokenClientController: Can't find attached WindowTokenClient for android.window.WindowTokenClient@222168d
+11-13 21:00:27.490   497   506 I BpBinder: onLastStrongRef automatically unlinking death recipients: 
+11-13 21:00:27.494   836 17785 I ImeTracker: system_server:101fa7a4: onRequestHide at ORIGIN_SERVER reason HIDE_INPUT_TARGET_CHANGED fromUser false
+11-13 21:00:27.494   836   859 I ImeTracker: system_server:101fa7a4: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-13 21:00:27.495  1510  1510 D ViewRootImpl: Skip registering CompatOnBackInvokedCallback on IME dispatcher
+11-13 21:00:27.495   836 17785 I ImeTracker: system_server:101fa7a4: setFinished on previously finished token at PHASE_SERVER_UPDATE_CLIENT_VISIBILITY with STATUS_FAIL
+11-13 21:00:27.495   836 17785 I ImeTracker: system_server:101fa7a4: onFailed at PHASE_SERVER_UPDATE_CLIENT_VISIBILITY
+11-13 21:00:27.528   699   699 W Scheduler: No mode change to emit
+11-13 21:00:27.650  1083  1257 W WindowOnBackDispatcher: sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@7d5737c
+11-13 21:00:27.650   836 17785 D CoreBackPreview: Window{1566289 u0 Splash Screen io.legado.flutter_legado EXITING}: Setting back callback null
+11-13 21:00:27.662   699   757 W Scheduler: No mode change to emit
+11-13 21:00:27.678   699   699 W Scheduler: No mode change to emit
+11-13 21:00:27.762   699   699 W Scheduler: No mode change to emit
+11-13 21:00:27.862   699   757 W Scheduler: No mode change to emit
+11-13 21:00:27.889 14196 14223 I MESA    : on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 2160000 Range: [0x79b491150000 0x79b49135f580]
+11-13 21:00:28.022     1   458 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-13 21:00:28.023 14289 14289 I init    : type=1400 audit(0.0:20918): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-13 21:00:28.023 14289 14289 I init    : type=1400 audit(0.0:20919): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-13 21:00:28.046     1   458 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-13 21:00:28.023 14289 14289 I init    : type=1400 audit(0.0:20920): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-13 21:00:28.023 14289 14289 I serial_console: type=1400 audit(0.0:20921): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-13 21:00:28.023 14289 14289 I serial_console: type=1400 audit(0.0:20922): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-13 21:00:28.178   699   699 W Scheduler: No mode change to emit
+11-13 21:00:30.162   699   699 W Scheduler: No mode change to emit
+11-13 21:00:32.309 14196 14290 D ProfileInstaller: Installing profile for io.legado.flutter_legado
+11-13 21:00:33.022     1   458 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-13 21:00:33.035     1   458 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-13 21:00:37.193   836   932 D ActivityManager: freezing 3233 com.microsoft.launcher:hockeysender
+11-13 21:00:38.034     1   458 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 7, oldlen = 0
+11-13 21:00:38.047     1   458 W libc    : Rewrite len too long for denied property "init.svc.serial_console", len = 10, oldlen = 0
+11-13 21:00:38.935 14294 14294 I sh      : type=1400 audit(0.0:20927): avc:  denied  { dac_override } for  capability=1  scontext=u:r:su:s0 tcontext=u:r:su:s0 tclass=capability permissive=1
+11-13 21:00:38.935 14294 14294 I sh      : type=1400 audit(0.0:20928): avc:  denied  { write search } for  name="tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-13 21:00:38.935 14294 14294 I sh      : type=1400 audit(0.0:20929): avc:  denied  { getattr } for  path="/data/local/tmp" dev="sdc3" ino=3932162 scontext=u:r:su:s0 tcontext=u:object_r:shell_data_file:s0 tclass=dir permissive=1
+11-13 21:00:38.939 14294 14294 I pidof   : type=1400 audit(0.0:20930): avc:  denied  { search } for  name="1" dev="proc" ino=10259 scontext=u:r:su:s0 tcontext=u:r:init:s0 tclass=dir permissive=1
+11-13 21:00:38.939 14294 14294 I pidof   : type=1400 audit(0.0:20931): avc:  denied  { read } for  name="cmdline" dev="proc" ino=14499 scontext=u:r:su:s0 tcontext=u:r:init:s0 tclass=file permissive=1

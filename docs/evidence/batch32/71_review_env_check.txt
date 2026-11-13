@@ -1,0 +1,13 @@
+== 段评环境检查（宿主 192.168.100.52）==
+curl 8925/book1.html -> 000
+curl 8931/fast/book.html -> 000
+
+== 设备 book_sources 中 ruleReview 指向 ==
+run-as: package not debuggable: io.legado.flutter_legado
+
+注：调试包在装期间（20:58）抓取的设备 book_sources 记录（release 包 run-as 不可用，故此处为当时输出留存）：
+  http://192.168.100.52:8925      QA25 段评源   ruleReview={reviewSummaryUrl:.../review/summary, reviewDetailUrl:.../review/detail, reviewQuoteUrl:.../review/reply, enabled:true}
+  http://192.168.100.52:8931/fast QA29 快源     ruleReview={reviewSummaryUrl:.../review/summary, reviewDetailUrl:.../review/detail, enabled:true}
+  http://192.168.100.52:8931/slow QA29 慢源     ruleReview=空
+  http://192.168.100.52:8931/badjs / badlogin  ruleReview=空
+结论：段评依赖上述 mock 书源 HTTP 服务；两端口当前均不可达（curl 000），本机也没有对应 mock 服务脚本（scripts/ 内无 8925/8931 fixture server）。

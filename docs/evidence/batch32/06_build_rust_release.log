@@ -1,0 +1,46 @@
+=== Legado Rust Android Build ===
+Mode:      release
+NDK:       D:\Android\ndk\28.2.13676358
+Toolchain: D:\Android\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin
+Targets:   aarch64, armv7, x86_64
+
+FRB content hash: -905874848
+Rust source fingerprint: b87951003e33efe0...
+>> Ensuring Rust targets installed...
+info: component rust-std for target aarch64-linux-android is up to date
+info: component rust-std for target armv7-linux-androideabi is up to date
+info: component rust-std for target x86_64-linux-android is up to date
+
+>> Building aarch64-linux-android (arm64-v8a)...
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)[0m
+[31;1m   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 58.56s[0m
+   OK
+
+>> Building armv7-linux-androideabi (armeabi-v7a)...
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 42.12s[0m
+   OK
+
+>> Building x86_64-linux-android (x86_64)...
+[31;1m    Finished `release` profile [optimized] target(s) in 0.49s[0m
+   OK
+
+>> Copying .so files to Flutter jniLibs...
+   arm64-v8a\liblegado_ffi.so (49.9 MB)
+   armeabi-v7a\liblegado_ffi.so (33.3 MB)
+   x86_64\liblegado_ffi.so (50.2 MB)
+
+=== Build complete! ===
+Output: D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs
+
+Next steps:
+  cd ..\flutter_legado
+  flutter build apk --debug
+  # or: .\scripts\build-apk.ps1
