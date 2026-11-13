@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.497] - 2026-11-13
+
+### Fixed
+- [Rust] 数据修复：划线/高亮笔记（`book_marks`）此前不在任何备份链——自有 JSON 备份不收集、参考版 zip 恢复会静默丢弃，换机或恢复备份后笔记全部丢失。现已纳入自有备份（格式 v6，新增 `bookMarks` 段）与参考版 zip 恢复（`bookMarking.json`）；旧备份缺该段时不清空库内既有笔记，重复恢复同一条笔记幂等，空锚点坏条目跳过并记日志。
+- [Rust] 安全修复：Web 服务的 RSS 抓取（`/api/rss/articles`、`/api/rss/{source_url}/articles`）、朗读合成（`/api/tts/speak`、`/api/audio/speak`）、目录更新（`/api/bookshelf/update-toc*`）改为在读取请求体之前校验「Web 书源访问令牌」。此前这些接口无需令牌即可让设备代为访问任意地址，其中朗读合成还会把目标地址的响应内容原样返回给请求方。
+
+### Changed
+- [Rust] 目录批量更新的并发上限收敛为 9（此前无上限），避免被当作请求放大器。
+- [工程] 令牌守卫的路径匹配支持中间段参数，并新增「每条受保护表项必须命中一个已注册路由」的结构检查，防止新增路由漏保护。
+
 ## [2.0.496] - 2026-11-13
 
 ### Fixed
