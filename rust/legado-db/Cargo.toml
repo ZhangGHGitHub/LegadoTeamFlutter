@@ -7,9 +7,12 @@ edition = "2021"
 legado-core = { path = "../legado-core" }
 # 逐键配置回退告警（app_config；与 legado-core/net/fetcher/ffi 同主版本）
 log = "0.4"
-rusqlite = { version = "0.31", features = ["bundled"] }
+# 0.41.1 经 libsqlite3-sys 0.39.1 携带 SQLite 3.54.1（修复 RUSTSEC-2026-0459）
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 r2d2 = "0.8"
-r2d2_sqlite = "0.24"
+# default-features = false 必须保留：0.36 起默认 is-valid 会在每次取连接时执行
+# SELECT 1;，而 0.24 的默认实现是空 batch——开启会改变现有性能语义
+r2d2_sqlite = { version = "0.36.0", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }

@@ -210,11 +210,13 @@ impl<'a> CacheRepository<'a> {
 
     /// 获取缓存总数
     pub fn count(&self) -> LegadoResult<usize> {
-        let count: usize = self
+        // rusqlite 0.41 移除了 usize 的 FromSql 实现（32/64 位语义歧义），
+        // 按 SQLite COUNT(*) 原生返回类型 i64 读取后再转 usize。
+        let count: i64 = self
             .conn
             .query_row("SELECT COUNT(*) FROM caches", [], |row| row.get(0))
             .map_err(|e| LegadoError::Database(format!("查询缓存数量失败: {e}")))?;
-        Ok(count)
+        Ok(count as usize)
     }
 
     /// 判断 key 是否存在（不考虑过期）
