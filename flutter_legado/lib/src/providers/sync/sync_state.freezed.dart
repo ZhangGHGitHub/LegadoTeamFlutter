@@ -23,10 +23,7 @@ mixin _$SyncState {
   DateTime? get lastSyncTime => throw _privateConstructorUsedError;
 
   /// 错误信息（null 表示无错误）
-  String? get error => throw _privateConstructorUsedError;
-
-  /// 是否自动同步
-  bool get autoSync =>
+  String? get error =>
       throw _privateConstructorUsedError; // ===== WebDAV 配置 =====
   /// WebDAV 服务器地址
   String get webDavUrl => throw _privateConstructorUsedError;
@@ -63,7 +60,6 @@ abstract class $SyncStateCopyWith<$Res> {
       {SyncStatus status,
       DateTime? lastSyncTime,
       String? error,
-      bool autoSync,
       String webDavUrl,
       String webDavUsername,
       String webDavPassword,
@@ -89,7 +85,6 @@ class _$SyncStateCopyWithImpl<$Res, $Val extends SyncState>
     Object? status = null,
     Object? lastSyncTime = freezed,
     Object? error = freezed,
-    Object? autoSync = null,
     Object? webDavUrl = null,
     Object? webDavUsername = null,
     Object? webDavPassword = null,
@@ -111,10 +106,6 @@ class _$SyncStateCopyWithImpl<$Res, $Val extends SyncState>
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
               as String?,
-      autoSync: null == autoSync
-          ? _value.autoSync
-          : autoSync // ignore: cast_nullable_to_non_nullable
-              as bool,
       webDavUrl: null == webDavUrl
           ? _value.webDavUrl
           : webDavUrl // ignore: cast_nullable_to_non_nullable
@@ -159,7 +150,6 @@ abstract class _$$SyncStateImplCopyWith<$Res>
       {SyncStatus status,
       DateTime? lastSyncTime,
       String? error,
-      bool autoSync,
       String webDavUrl,
       String webDavUsername,
       String webDavPassword,
@@ -183,7 +173,6 @@ class __$$SyncStateImplCopyWithImpl<$Res>
     Object? status = null,
     Object? lastSyncTime = freezed,
     Object? error = freezed,
-    Object? autoSync = null,
     Object? webDavUrl = null,
     Object? webDavUsername = null,
     Object? webDavPassword = null,
@@ -205,10 +194,6 @@ class __$$SyncStateImplCopyWithImpl<$Res>
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
               as String?,
-      autoSync: null == autoSync
-          ? _value.autoSync
-          : autoSync // ignore: cast_nullable_to_non_nullable
-              as bool,
       webDavUrl: null == webDavUrl
           ? _value.webDavUrl
           : webDavUrl // ignore: cast_nullable_to_non_nullable
@@ -248,7 +233,6 @@ class _$SyncStateImpl implements _SyncState {
       {this.status = SyncStatus.idle,
       this.lastSyncTime,
       this.error,
-      this.autoSync = false,
       this.webDavUrl = '',
       this.webDavUsername = '',
       this.webDavPassword = '',
@@ -269,11 +253,6 @@ class _$SyncStateImpl implements _SyncState {
   /// 错误信息（null 表示无错误）
   @override
   final String? error;
-
-  /// 是否自动同步
-  @override
-  @JsonKey()
-  final bool autoSync;
 // ===== WebDAV 配置 =====
   /// WebDAV 服务器地址
   @override
@@ -312,7 +291,7 @@ class _$SyncStateImpl implements _SyncState {
 
   @override
   String toString() {
-    return 'SyncState(status: $status, lastSyncTime: $lastSyncTime, error: $error, autoSync: $autoSync, webDavUrl: $webDavUrl, webDavUsername: $webDavUsername, webDavPassword: $webDavPassword, remoteDir: $remoteDir, deviceName: $deviceName, syncBookProgress: $syncBookProgress, syncBookProgressPlus: $syncBookProgressPlus)';
+    return 'SyncState(status: $status, lastSyncTime: $lastSyncTime, error: $error, webDavUrl: $webDavUrl, webDavUsername: $webDavUsername, webDavPassword: $webDavPassword, remoteDir: $remoteDir, deviceName: $deviceName, syncBookProgress: $syncBookProgress, syncBookProgressPlus: $syncBookProgressPlus)';
   }
 
   @override
@@ -324,8 +303,6 @@ class _$SyncStateImpl implements _SyncState {
             (identical(other.lastSyncTime, lastSyncTime) ||
                 other.lastSyncTime == lastSyncTime) &&
             (identical(other.error, error) || other.error == error) &&
-            (identical(other.autoSync, autoSync) ||
-                other.autoSync == autoSync) &&
             (identical(other.webDavUrl, webDavUrl) ||
                 other.webDavUrl == webDavUrl) &&
             (identical(other.webDavUsername, webDavUsername) ||
@@ -348,7 +325,6 @@ class _$SyncStateImpl implements _SyncState {
       status,
       lastSyncTime,
       error,
-      autoSync,
       webDavUrl,
       webDavUsername,
       webDavPassword,
@@ -369,7 +345,6 @@ abstract class _SyncState implements SyncState {
       {final SyncStatus status,
       final DateTime? lastSyncTime,
       final String? error,
-      final bool autoSync,
       final String webDavUrl,
       final String webDavUsername,
       final String webDavPassword,
@@ -390,10 +365,6 @@ abstract class _SyncState implements SyncState {
 
   /// 错误信息（null 表示无错误）
   String? get error;
-  @override
-
-  /// 是否自动同步
-  bool get autoSync;
   @override // ===== WebDAV 配置 =====
   /// WebDAV 服务器地址
   String get webDavUrl;

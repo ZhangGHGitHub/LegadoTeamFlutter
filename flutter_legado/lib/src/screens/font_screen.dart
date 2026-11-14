@@ -75,6 +75,21 @@ class _FontScreenState extends State<FontScreen> {
     final prefs = await SharedPreferences.getInstance();
     final family = prefs.getString(_familyKey);
     final customRaw = prefs.getStringList(_keyCustomFonts) ?? [];
+    // P3-10：历史重复导入可能已让偏好列表累积同 family 条目，加载时去重
+    final rawCount = customRaw.length;
+    final deduped = <String>[];
+    for (final entry in customRaw) {
+      if (entry.split('|').length != 2) {
+        deduped.add(entry);
+      } else {
+        upsertCustomFontEntry(deduped, entry);
+      }
+    }
+    if (deduped.length != rawCount) {
+      customRaw
+        ..clear()
+        ..addAll(deduped);
+    }
     final customs = <_FontOption>[];
     final missing = <String>[];
     // [iOS 视角F C3] Documents 根目录（运行时拼接相对标识用），惰性获取
@@ -90,7 +105,7 @@ class _FontScreenState extends State<FontScreen> {
       return docsPath!;
     }
 
-    var healedAny = false;
+    var healedAny = deduped.length != rawCount;
     for (var i = 0; i < customRaw.length; i++) {
       final parts = customRaw[i].split('|');
       if (parts.length != 2) continue;
@@ -209,19 +224,27 @@ class _FontScreenState extends State<FontScreen> {
       final list = prefs.getStringList(_keyCustomFonts) ?? [];
       // [iOS 视角F C3] 存「相对 Documents 的可迁移标识」而非绝对路径：
       // 读取侧用当前容器 Documents 目录运行时拼接，跨重签名/重装仍有效。
-      list.add('$family|$_fontSubDir/$family.ttf');
+      // P3-10：同 family 重复导入原位覆盖（文件已重写），不重复累积。
+      final isNew = upsertCustomFontEntry(
+        list,
+        '$family|$_fontSubDir/$family.ttf',
+      );
       await prefs.setStringList(_keyCustomFonts, list);
 
       if (mounted) {
         setState(() {
-          _customFonts.add(_FontOption(family: family, label: name));
+          if (!_customFonts.any((f) => f.family == family)) {
+            _customFonts.add(_FontOption(family: family, label: name));
+          }
           _currentFamily = family;
         });
       }
       await prefs.setString(_familyKey, family);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已导入字体「$name」')),
+          SnackBar(
+            content: Text(isNew ? '已导入字体「$name」' : '已更新字体「$name」'),
+          ),
         );
       }
     } catch (e) {
@@ -360,4 +383,20 @@ class _FontOption {
   final String label;
 
   const _FontOption({required this.family, required this.label});
+}
+
+/// 合并自定义字体偏好条目（`family|相对路径`）：
+/// 同 family 原位覆盖，不重复累积（P3-10）。
+///
+/// 返回 true 表示新增条目；false 表示已有同 family 条目被更新。
+@visibleForTesting
+bool upsertCustomFontEntry(List<String> entries, String entry) {
+  final family = entry.split('|').first;
+  final index = entries.indexWhere((e) => e.split('|').first == family);
+  if (index >= 0) {
+    entries[index] = entry;
+    return false;
+  }
+  entries.add(entry);
+  return true;
 }

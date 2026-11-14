@@ -75,6 +75,41 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('策略/标记未就绪：显示带锁占位而非空白（P3-9）', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      PrefKeys.privateEnabled: true,
+      PrefKeys.privateVerifyOnOpenBook: true,
+    });
+    api = PrivacyMockBookApi(books: [privateBook]);
+    container = ProviderContainer(
+      overrides: [
+        bookApiProvider.overrideWithValue(api),
+        readerNotifierProvider.overrideWith(
+          () => _FakeReaderNotifier(privateBook),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: PrivateReadGate(child: Text('READER_CONTENT')),
+        ),
+      ),
+    );
+
+    // 首帧：provider 尚未 loaded，占位必须有可见锁图标（非空白 SizedBox）
+    expect(
+      find.byKey(const ValueKey('privateReadGateSplash')),
+      findsOneWidget,
+    );
+    expect(find.text('READER_CONTENT'), findsNothing);
+
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('未授权：阅读器不组合，展示锁定页并自动弹验证', (tester) async {
     await boot(tester, book: privateBook);
 

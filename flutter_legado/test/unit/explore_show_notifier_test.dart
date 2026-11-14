@@ -496,7 +496,7 @@ void main() {
         }
         return makeBooks(2, startId: page * 10);
       });
-      await readNotifier().retryPreviousPage();
+      await readNotifier().loadPreviousPage();
 
       expect(readState().previousError, isNull);
       expect(readState().displayPage, equals(1));

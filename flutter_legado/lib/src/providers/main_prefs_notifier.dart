@@ -179,16 +179,6 @@ class MainPrefsNotifier extends Notifier<MainPrefsState> {
     state = state.copyWith();
   }
 
-  /// 设置显示首页
-  Future<void> setShowHome(bool value) => _setTabVisible(MainTab.home, value);
-
-  /// 设置显示发现
-  Future<void> setShowDiscovery(bool value) =>
-      _setTabVisible(MainTab.explore, value);
-
-  /// 设置显示订阅
-  Future<void> setShowRss(bool value) => _setTabVisible(MainTab.rss, value);
-
   /// 统一显隐入口（对齐参考版 setMainDestinationVisible）
   ///
   /// 书架/我的不可隐藏（参考版无对应开关）；隐藏时若该页正是默认首页，

@@ -69,6 +69,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
 
   @override
   void dispose() {
+    _ruleListController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }

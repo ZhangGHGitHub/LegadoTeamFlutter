@@ -21,9 +21,6 @@ class SyncState with _$SyncState {
     /// 错误信息（null 表示无错误）
     String? error,
 
-    /// 是否自动同步
-    @Default(false) bool autoSync,
-
     // ===== WebDAV 配置 =====
 
     /// WebDAV 服务器地址

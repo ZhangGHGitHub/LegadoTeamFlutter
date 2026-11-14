@@ -623,11 +623,6 @@ class SourceNotifier extends Notifier<SourceState> {
         .exportSelectedSources(state.selectedUrls.toList());
   }
 
-  /// 导出全部书源为 JSON
-  Future<String> exportAllSources() async {
-    return await backupService.exportAllSourcesFormatted();
-  }
-
   // ===== 搜索过滤 =====
 
   /// 设置搜索关键词

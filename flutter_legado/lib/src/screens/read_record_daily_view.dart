@@ -78,6 +78,29 @@ class DailyReadEntry {
   const DailyReadEntry({required this.date, required this.seconds});
 }
 
+/// 解析每日时长记录的 `date` 字段为日期（正常 `yyyy-MM-dd`，兼容 ISO 日期时间）。
+///
+/// 非法/空/非数字/越界值返回 null，由调用方跳过该行——避免 `int.parse`
+/// 在 build 期抛 [FormatException] 影响整页渲染（P3-4）。
+DateTime? parseDailyDate(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty) return null;
+  // 兼容 ISO 日期时间：只取日期部分（如 2026-11-13T00:00:00）
+  final dateOnly = value.split(RegExp(r'[T ]')).first;
+  final parts = dateOnly.split('-');
+  if (parts.length != 3) return null;
+  final year = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final day = int.tryParse(parts[2]);
+  if (year == null || month == null || day == null) return null;
+  final date = DateTime(year, month, day);
+  // 拒绝 2026-13-40 这类越界值（DateTime 会静默进位到别的日期）
+  if (date.year != year || date.month != month || date.day != day) {
+    return null;
+  }
+  return date;
+}
+
 /// 每日时长 → 分组（今天 / 昨天 / 更早），各组内按日期倒序；空秒数条目剔除。
 ///
 /// 纯函数便于单测；[now] 可注入便于测试。
@@ -91,14 +114,8 @@ List<({String label, List<DailyReadEntry> entries})> groupDailyByDay(
   for (final e in daily) {
     final seconds = (e['seconds'] as num?)?.toInt() ?? 0;
     if (seconds <= 0) continue;
-    final date = (e['date'] ?? '').toString();
-    final parts = date.split('-');
-    if (parts.length != 3) continue;
-    final d = DateTime(
-      int.parse(parts[0]),
-      int.parse(parts[1]),
-      int.parse(parts[2]),
-    );
+    final d = parseDailyDate((e['date'] ?? '').toString());
+    if (d == null) continue;
     final label = d == today
         ? '今天'
         : d == yesterday

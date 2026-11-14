@@ -77,6 +77,12 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _fsController.dispose();
+    super.dispose();
+  }
+
   String _groupOf(HighlightRule rule) => rule.group?.trim() ?? '';
 
   List<String> _groupNames(List<HighlightRule> rules) {

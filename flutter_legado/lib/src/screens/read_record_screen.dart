@@ -74,6 +74,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
 
   @override
   void dispose() {
+    _listController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -649,17 +650,10 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
       if (!mounted) return;
       final map = <DateTime, int>{};
       for (final e in list) {
-        final date = (e['date'] ?? '').toString();
+        final date = parseDailyDate((e['date'] ?? '').toString());
+        if (date == null) continue;
         final seconds = (e['seconds'] as num?)?.toInt() ?? 0;
-        if (date.isEmpty) continue;
-        final parts = date.split('-');
-        if (parts.length != 3) continue;
-        map[DateTime(
-              int.parse(parts[0]),
-              int.parse(parts[1]),
-              int.parse(parts[2]),
-            )] =
-            seconds;
+        map[date] = seconds;
       }
       setState(() => _dailySeconds = map);
     } catch (e) {

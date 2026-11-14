@@ -401,8 +401,10 @@ class BookOpenUtils {
             break;
           }
         }
-      } catch (_) {
-        // 书源匹配失败按书籍已有类型位继续（与各屏原兜底一致）
+      } catch (e) {
+        // 书源匹配失败按书籍已有类型位继续（与各屏原兜底一致）；
+        // P3-7：至少留痕，避免"莫名其妙用了错误阅读器"无从排查
+        debugPrint('[BookOpenUtils] 书源匹配失败，按已有类型位继续：$e');
       }
     }
     if (!useGlobalNavigator && !context.mounted) return;

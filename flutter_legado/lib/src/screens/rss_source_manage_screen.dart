@@ -81,6 +81,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
 
   @override
   void dispose() {
+    _fsController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }

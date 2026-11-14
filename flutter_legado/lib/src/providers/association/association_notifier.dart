@@ -1032,11 +1032,6 @@ class AssociationNotifier extends Notifier<AssociationState> {
 
   // ===== 其他操作 =====
 
-  /// 设置 URL 输入
-  void setUrlInput(String url) {
-    state = state.copyWith(urlInput: url);
-  }
-
   /// 重置到初始状态
   void reset() {
     state = const AssociationState();

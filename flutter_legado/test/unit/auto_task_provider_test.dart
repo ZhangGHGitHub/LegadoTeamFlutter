@@ -371,17 +371,6 @@ void main() {
       expect(result, equals('cleaned()'));
     });
 
-    test('canRefreshBookToc 成功', () async {
-      when(() => mockApi.autoTaskCanRefreshBookToc(
-            canUpdate: any(named: 'canUpdate'),
-            respectCanUpdate: any(named: 'respectCanUpdate'),
-          )).thenAnswer((_) async => true);
-
-      final result = await readNotifier(container)
-          .canRefreshBookToc(canUpdate: true, respectCanUpdate: true);
-      expect(result, isTrue);
-    });
-
     test('nextDueAt 成功', () async {
       when(() => mockApi.autoTaskNextDueAt(
             cron: any(named: 'cron'),

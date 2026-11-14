@@ -24,6 +24,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../providers/privacy/privacy_notifier.dart';
 import '../../providers/privacy/privacy_state.dart';
+import 'privacy_splash_placeholder.dart';
 
 /// 闸门是否应阻止应用交互（占位/读取错误/锁页）
 ///
@@ -188,7 +189,8 @@ class _PrivacyAppStartGateState extends ConsumerState<PrivacyAppStartGate>
     Widget? overlay;
     if (!privacy.loaded) {
       // 加载未完成：纯色占位，绝不显示 child（避免主页/闪屏内容闪现）
-      overlay = _SplashPlaceholder(key: const ValueKey('privacyGateSplash'));
+      overlay =
+          const PrivacySplashPlaceholder(key: ValueKey('privacyGateSplash'));
     } else if (privacy.policyError != null) {
       // fail-closed：策略读取失败时只允许重试，不显示任何应用内容
       overlay = _buildErrorPage(
@@ -461,22 +463,3 @@ class _OpaqueGatePage extends StatelessWidget {
   }
 }
 
-/// 加载占位：纯色背景 + 低透明度锁图标（无动画、无业务内容）
-class _SplashPlaceholder extends StatelessWidget {
-  const _SplashPlaceholder({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return ColoredBox(
-      color: scheme.surface,
-      child: Center(
-        child: Icon(
-          Symbols.lock_rounded,
-          size: 48,
-          color: scheme.primary.withValues(alpha: 0.25),
-        ),
-      ),
-    );
-  }
-}

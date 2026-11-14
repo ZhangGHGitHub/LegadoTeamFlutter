@@ -99,22 +99,6 @@ class SyncNotifier extends Notifier<SyncState> {
     );
   }
 
-  /// 本地恢复后按备份格式回填旧偏好账号（批8 审查回修 P1-1）
-  ///
-  /// - 备份含 `servers` 段（v3）：以备份 DB 行为准，**不回读偏好**，返回 false；
-  /// - v1/v2 且备份携带账号键：把恢复所得偏好账号覆盖到 DB `id = -1` 行
-  ///   （三项全空时不写库），返回是否实际写入；
-  /// - 无法判定或备份未携带账号：不回填（避免设备残留偏好覆盖当前配置）。
-  ///
-  /// 对齐原版 `Restore.kt:455-470`：恢复 prefs 后 WebDAV 账号立即生效。
-  Future<bool> applyLegacyWebDavPrefsAfterRestore({
-    required WebDavBackupAccountSource source,
-  }) async {
-    if (source != WebDavBackupAccountSource.legacyPrefs) return false;
-    final applied = await _webDavServerService().applyLegacyPrefsOverwrite();
-    return applied != null;
-  }
-
   /// 加载已保存的 WebDAV 配置
   ///
   /// 批8：账号三要素改从 DB servers 表读取（首次调用触发旧偏好一次性迁移）；
@@ -129,7 +113,6 @@ class SyncNotifier extends Notifier<SyncState> {
       deviceName: await _settings.getWebDavDeviceName(),
       syncBookProgress: await _settings.getSyncBookProgress(),
       syncBookProgressPlus: await _settings.getSyncBookProgressPlus(),
-      autoSync: await _settings.getAutoSync(),
       lastSyncTime: await _settings.getLastSyncTime(),
     );
   }
@@ -139,12 +122,6 @@ class SyncNotifier extends Notifier<SyncState> {
         api: ref.read(bookApiProvider),
         settings: _settings,
       );
-
-  /// 切换自动同步
-  Future<void> toggleAutoSync(bool enabled) async {
-    state = state.copyWith(autoSync: enabled);
-    await _settings.setAutoSync(enabled);
-  }
 
   /// 设置「同步书籍进度」开关
   Future<void> setSyncBookProgress(bool enabled) async {

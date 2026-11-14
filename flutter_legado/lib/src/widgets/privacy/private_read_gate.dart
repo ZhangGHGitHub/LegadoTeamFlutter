@@ -16,6 +16,7 @@ import '../../providers/privacy/privacy_content_notifier.dart';
 import '../../providers/privacy/privacy_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
 import 'private_locked_page.dart';
+import 'privacy_splash_placeholder.dart';
 import 'privacy_unlock_dialog.dart';
 
 /// 文本阅读器路由私密闸门（深链兜底）
@@ -105,9 +106,12 @@ class _PrivateReadGateState extends ConsumerState<PrivateReadGate> {
       }
     }
 
-    // 策略/私密标记未就绪：先不组合阅读器（防止首帧泄漏）
+    // 策略/私密标记未就绪：先不组合阅读器（防止首帧泄漏）。
+    // P3-9：给纯色 + 锁图标占位，避免白屏被误判为闪退（不改判定逻辑）。
     if (!privacy.loaded || !content.loaded) {
-      return const SizedBox.expand();
+      return const PrivacySplashPlaceholder(
+        key: ValueKey('privateReadGateSplash'),
+      );
     }
     if (bookUrl == null || readerBook == null) return widget.child;
 

@@ -125,13 +125,6 @@ class ExploreShowNotifier
     }
   }
 
-  /// 加载上一页失败后的顶部条重试
-  ///
-  /// [批39 审查回修] 删除原「无失败记录时置 previousError=null」的空分支：
-  /// [loadPreviousPage] 入口本身就会清空 [ExploreShowState.previousError]，
-  /// 该分支不改变任何行为。
-  Future<void> retryPreviousPage() => loadPreviousPage();
-
   /// 跳转到指定页（对标参考版 jumpToPage / Android skipPage + explore）
   ///
   /// 页码跳转仅对「规则支持页码」的分类开放（`state.canJumpPage`：

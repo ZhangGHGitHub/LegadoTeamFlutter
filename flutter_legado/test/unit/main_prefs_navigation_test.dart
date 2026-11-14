@@ -63,7 +63,9 @@ void main() {
   group('显隐', () {
     test('隐藏发现：从可见列表移除并持久化', () async {
       final container = await containerWith({});
-      await container.read(mainPrefsProvider.notifier).setShowDiscovery(false);
+      await container
+          .read(mainPrefsProvider.notifier)
+          .setTabVisible(MainTab.explore, false);
       final state = container.read(mainPrefsProvider);
       expect(state.showDiscovery, isFalse);
       expect(state.visibleTabs, isNot(contains(MainTab.explore)));
@@ -75,7 +77,9 @@ void main() {
       final container = await containerWith({
         PrefKeys.defaultHomePage: 'explore',
       });
-      await container.read(mainPrefsProvider.notifier).setShowDiscovery(false);
+      await container
+          .read(mainPrefsProvider.notifier)
+          .setTabVisible(MainTab.explore, false);
       final state = container.read(mainPrefsProvider);
       expect(state.defaultHomePage, 'bookshelf');
       final prefs = await SharedPreferences.getInstance();
@@ -84,7 +88,8 @@ void main() {
 
     test('隐藏项挪到顺序末尾（重新显示从末尾出现）', () async {
       final container = await containerWith({});
-      await container.read(mainPrefsProvider.notifier).setShowHome(false);
+      final notifier = container.read(mainPrefsProvider.notifier);
+      await notifier.setTabVisible(MainTab.home, false);
       expect(container.read(mainPrefsProvider).orderedTabs, [
         MainTab.bookshelf,
         MainTab.explore,
@@ -92,7 +97,7 @@ void main() {
         MainTab.my,
         MainTab.home,
       ]);
-      await container.read(mainPrefsProvider.notifier).setShowHome(true);
+      await notifier.setTabVisible(MainTab.home, true);
       expect(container.read(mainPrefsProvider).visibleTabs.last, MainTab.home);
     });
 
@@ -110,9 +115,9 @@ void main() {
     test('三项全隐藏后仍至少保留一项（书架/我的）', () async {
       final container = await containerWith({});
       final notifier = container.read(mainPrefsProvider.notifier);
-      await notifier.setShowHome(false);
-      await notifier.setShowDiscovery(false);
-      await notifier.setShowRss(false);
+      await notifier.setTabVisible(MainTab.home, false);
+      await notifier.setTabVisible(MainTab.explore, false);
+      await notifier.setTabVisible(MainTab.rss, false);
       expect(container.read(mainPrefsProvider).visibleTabs, isNotEmpty);
     });
   });

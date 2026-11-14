@@ -5,6 +5,7 @@
 // /节流重建（2026-08-24：批次不逐批写 state，流结束最终聚合）
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -1437,6 +1438,47 @@ void main() {
               .map((r) => r.book.name)
               .toList(),
           equals(['测试甲', '测试乙', '测试丙']));
+    });
+  });
+
+  // [P3-2] provider 销毁清理：定时器与流订阅不随容器销毁残留
+  group('SearchNotifier provider 销毁清理', () {
+    test('dispose 时取消节流定时器与搜索流订阅', () {
+      fakeAsync((async) {
+        final controller = StreamController<Map<String, dynamic>>();
+        when(() => mockApi.searchMultiStream(
+                any(),
+                sourceUrls: any(named: 'sourceUrls'),
+                page: any(named: 'page')))
+            .thenAnswer((_) => controller.stream);
+
+        final local = ProviderContainer(
+          overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        );
+        local.read(searchNotifierProvider);
+        async.flushMicrotasks();
+
+        unawaited(local.read(searchNotifierProvider.notifier).search('清理测试'));
+        async.flushMicrotasks();
+        expect(controller.hasListener, isTrue, reason: '搜索流已订阅');
+
+        // 投递批次 → 触发 150ms 节流结果定时器
+        controller.add(makeBatch());
+        async.flushMicrotasks();
+        expect(async.pendingTimers, isNotEmpty, reason: '节流定时器已挂起');
+
+        local.dispose();
+        async.flushMicrotasks();
+
+        expect(controller.hasListener, isFalse,
+            reason: 'provider 销毁须取消搜索流订阅');
+        expect(async.pendingTimers, isEmpty,
+            reason: 'provider 销毁须取消节流结果定时器');
+
+        // 若定时器/订阅残留，这里会触发销毁后的迟到回调
+        async.elapse(const Duration(milliseconds: 200));
+        expect(controller.hasListener, isFalse);
+      });
     });
   });
 }

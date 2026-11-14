@@ -166,6 +166,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   @override
   void dispose() {
     _generation++; // 使所有进行中的搜索失效
+    _fsController.dispose();
     _controller.dispose();
     super.dispose();
   }

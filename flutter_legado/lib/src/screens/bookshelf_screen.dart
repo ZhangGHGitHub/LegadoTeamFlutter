@@ -2640,7 +2640,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             break;
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        // P3-7：书源查询失败不再静默——沿用书籍已有类型位打开，并轻提示
+        debugPrint('[Bookshelf] 开书书源匹配失败，按已有类型位继续：$e');
+        if (context.mounted) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(content: Text('书源信息读取失败，已按默认方式打开')),
+          );
+        }
+      }
     }
     if (!context.mounted) return;
     final bookToOpen = typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
@@ -3220,6 +3228,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// URL 匹配书源（对标 Kotlin addBookByUrl：先 bookUrlPattern 正则，
   /// 后按主域名兑底）
+  ///
+  /// [P3-8/D-5 待裁决] 书源正则判定目前是 UI 侧临时实现，语义对应 Rust
+  /// `rust/legado-fetcher/src/web_book.rs::matches_book_url_pattern`。在
+  /// FFI 暴露 `matchesBookUrlPattern`（并更新契约）之前不新增契约项；
+  /// 后续下沉时本方法改为调用 FFI，删除这里的 Dart RegExp 实现。
   BookSource? _matchSource(List<BookSource> sources, String url) {
     for (final s in sources) {
       final pattern = s.bookUrlPattern;

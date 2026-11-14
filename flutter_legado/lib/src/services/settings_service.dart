@@ -425,12 +425,6 @@ class SettingsService {
 
   // ===== 书架展示标签（批35，对齐参考版 BookshelfSettings）=====
 
-  /// 是否显示书架标签（总开关；关闭后标签条整体不渲染）
-  Future<bool> getBookshelfShowTag() => _getBoolPref(bookshelfShowTagKey);
-
-  Future<void> setBookshelfShowTag(bool value) =>
-      _setBoolPref(bookshelfShowTagKey, value);
-
   /// 标签内容 - 用户标签（`Book.customTag`）
   Future<bool> getBookshelfShowCustomTags() =>
       _getBoolPref(bookshelfShowCustomTagsKey);
@@ -589,7 +583,6 @@ class SettingsService {
   static const _keyWebDavDeviceName = 'sync_webdav_device_name';
   static const _keySyncBookProgress = 'sync_book_progress';
   static const _keySyncBookProgressPlus = 'sync_book_progress_plus';
-  static const _keyAutoSync = 'sync_auto';
   static const _keyLastSyncTime = 'sync_last_time';
   // 远程书库服务器（对齐原版 servers 表 + AppConfig.remoteServerId）
   //
@@ -924,25 +917,6 @@ class SettingsService {
       await prefs.setBool(_keySyncBookProgressPlus, value);
     } catch (e) {
       debugPrint('SettingsService.setSyncBookProgressPlus 异常: $e');
-    }
-  }
-
-  Future<bool> getAutoSync() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_keyAutoSync) ?? false;
-    } catch (e) {
-      debugPrint('SettingsService.getAutoSync 异常: $e');
-      return false;
-    }
-  }
-
-  Future<void> setAutoSync(bool value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyAutoSync, value);
-    } catch (e) {
-      debugPrint('SettingsService.setAutoSync 异常: $e');
     }
   }
 

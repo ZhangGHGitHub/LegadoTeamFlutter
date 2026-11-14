@@ -89,6 +89,15 @@ class SearchNotifier extends Notifier<SearchState> {
 
   @override
   SearchState build() {
+    // P3-2：provider 销毁时取消节流定时器与流订阅，避免迟到的定时器/批次
+    // 在销毁后写 state（当前为全局常驻 provider，属为未来 autoDispose /
+    // 测试容器改造预留的安全边界）。
+    ref.onDispose(() {
+      _resultsFlushTimer?.cancel();
+      _resultsFlushTimer = null;
+      _searchSub?.cancel();
+      _searchSub = null;
+    });
     // 延迟到 build() 返回后加载历史 + 恢复搜索范围（对齐原版 AppConfig.searchScope）
     Future.microtask(() async {
       await loadHistory();

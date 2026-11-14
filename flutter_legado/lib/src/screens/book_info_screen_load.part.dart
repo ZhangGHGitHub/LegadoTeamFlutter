@@ -87,9 +87,21 @@ extension _BookInfoLoad on _BookInfoScreenState {
   }
 
   Future<void> _loadData() async {
+    final url = widget.effectiveBookUrl;
+    // P3-6：空 bookUrl 且无路由 Book（深链/旧调用方参数缺失）时没有可加载
+    // 对象，必须给终端错误态；否则 _pageLoading 永远为 true（整页骨架）。
+    if (url.isEmpty && widget.book == null) {
+      if (mounted) {
+        setState(() {
+          _pageLoading = false;
+          _privacyResolved = true;
+          _loadError = '缺少书籍参数';
+        });
+      }
+      return;
+    }
     final sw = Stopwatch()..start();
     final api = ref.read(bookApiProvider);
-    final url = widget.effectiveBookUrl;
     try {
       // 优先从数据库取最新记录（换源/刷新后元数据才会更新），传入对象仅兜底
       final dbBook = url.isEmpty ? null : await api.getBook(url);

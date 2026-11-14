@@ -52,6 +52,12 @@ It was a dark and stormy night.''';
   }
 
   @override
+  void dispose() {
+    _fsController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = ref.watch(txtTocRulesNotifierProvider);
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）

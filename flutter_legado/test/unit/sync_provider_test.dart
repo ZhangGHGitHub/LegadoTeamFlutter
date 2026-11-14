@@ -14,7 +14,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/providers/sync/sync_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/models/models.dart';
-import 'package:flutter_legado/src/services/webdav_server_service.dart';
 
 import '../mocks/mocks.dart';
 
@@ -72,10 +71,6 @@ void main() {
 
     test('初始无错误', () {
       expect(readState().error, isNull);
-    });
-
-    test('初始自动同步关闭', () {
-      expect(readState().autoSync, isFalse);
     });
 
     test('初始 WebDAV 配置为空', () {
@@ -193,7 +188,6 @@ void main() {
         'sync_webdav_device_name': 'loaded_dev',
         'sync_book_progress': false,
         'sync_book_progress_plus': true,
-        'sync_auto': true,
         'sync_last_time': now.millisecondsSinceEpoch,
       });
       await readNotifier().loadConfig();
@@ -206,7 +200,6 @@ void main() {
       expect(state.deviceName, equals('loaded_dev'));
       expect(state.syncBookProgress, isFalse);
       expect(state.syncBookProgressPlus, isTrue);
-      expect(state.autoSync, isTrue);
       expect(state.lastSyncTime, isNotNull);
     });
 
@@ -215,13 +208,6 @@ void main() {
       container.listen(syncNotifierProvider, (_, _) => notified = true);
       await readNotifier().loadConfig();
       expect(notified, isTrue);
-    });
-
-    test('toggleAutoSync 开启/关闭自动同步', () async {
-      await readNotifier().toggleAutoSync(true);
-      expect(readState().autoSync, isTrue);
-      await readNotifier().toggleAutoSync(false);
-      expect(readState().autoSync, isFalse);
     });
 
     test('setSyncBookProgress 持久化开关', () async {
@@ -291,93 +277,6 @@ void main() {
       expect(readState().status, equals(SyncStatus.success));
       expect(msg, contains('回写 0 条书源'));
       verifyNever(() => mockApi.importBookSources(any()));
-    });
-  });
-
-  group('恢复后旧偏好回填（回修 P1-1）', () {
-    void seedDeviceConfigured() {
-      // DB 已配置 + 迁移标记已置：loadSyncServer 不再回读偏好（死数据场景）
-      mockApi.seedServer(
-        config: jsonEncode({
-          'url': 'https://device.example.com/',
-          'username': 'device-user',
-          'password': 'device-pass',
-        }),
-      );
-      SharedPreferences.setMockInitialValues({
-        WebDavServerService.migratedPrefKey: true,
-        'sync_webdav_url': 'https://backup.example.com/',
-        'sync_webdav_username': 'backup-user',
-        'sync_webdav_password': 'backup-pass',
-      });
-    }
-
-    Future<Map<String, dynamic>> defaultDbConfig() async {
-      final rows = jsonDecode(await mockApi.webdavServersList()) as List;
-      final row = rows
-          .cast<Map<String, dynamic>>()
-          .firstWhere((e) => e['id'] == WebDavServerService.defaultServerId);
-      return jsonDecode(row['config'] as String) as Map<String, dynamic>;
-    }
-
-    test('v1/v2 备份（无 servers）：备份偏好覆盖 DB 行', () async {
-      seedDeviceConfigured();
-
-      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
-        source: WebDavBackupAccountSource.legacyPrefs,
-      );
-
-      expect(applied, isTrue);
-      final config = await defaultDbConfig();
-      expect(config['url'], 'https://backup.example.com/');
-      expect(config['username'], 'backup-user');
-      expect(config['password'], 'backup-pass');
-    });
-
-    test('v3 备份（含 servers）：以备份 DB 行为准，不回读偏好', () async {
-      seedDeviceConfigured();
-
-      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
-        source: WebDavBackupAccountSource.serversSection,
-      );
-
-      expect(applied, isFalse, reason: 'v3 不得用偏好覆盖恢复写入的 DB 行');
-      final config = await defaultDbConfig();
-      expect(config['url'], 'https://device.example.com/');
-      expect(config['username'], 'device-user');
-    });
-
-    test('备份未携带账号（无法判定）：不回填设备残留偏好', () async {
-      seedDeviceConfigured();
-
-      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
-        source: WebDavBackupAccountSource.none,
-      );
-
-      expect(applied, isFalse, reason: '备份无账号时不得用残留偏好覆盖 DB');
-      final config = await defaultDbConfig();
-      expect(config['url'], 'https://device.example.com/');
-    });
-
-    test('恢复所得偏好三项全空：不清 DB 配置', () async {
-      mockApi.seedServer(
-        config: jsonEncode({
-          'url': 'https://keep.example.com/',
-          'username': 'keep-user',
-          'password': 'keep-pass',
-        }),
-      );
-      SharedPreferences.setMockInitialValues({
-        WebDavServerService.migratedPrefKey: true,
-      });
-
-      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
-        source: WebDavBackupAccountSource.legacyPrefs,
-      );
-
-      expect(applied, isFalse);
-      final config = await defaultDbConfig();
-      expect(config['url'], 'https://keep.example.com/');
     });
   });
 

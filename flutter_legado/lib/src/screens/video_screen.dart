@@ -467,6 +467,8 @@ class _VideoScreenState extends State<VideoScreen> {
       if (_chapters.isEmpty && book.origin.isNotEmpty) {
         _chapters = await api.refreshToc(book.bookUrl, book.origin);
       }
+      // P3-5：弱网下用户可能已退出页面，迟到结果不得再 setState
+      if (!mounted || _handedToFloat) return;
       if (_chapters.isEmpty) {
         setState(() {
           _loadingChapter = false;
@@ -552,6 +554,7 @@ class _VideoScreenState extends State<VideoScreen> {
   /// [resumeMs] 仅初始章携带书籍进度；换集（手动选集/自动连播）对齐原版
   /// `saveRead(0) → startPlay`，从 0 起播。
   Future<void> _playChapter(int index, {int resumeMs = 0}) async {
+    if (!mounted || _handedToFloat) return;
     final book = widget.book!;
     final chapter = _chapters[index];
     if (chapter.isVolume) {
@@ -580,6 +583,8 @@ class _VideoScreenState extends State<VideoScreen> {
           : await api.getChapterContent(book.bookUrl, index);
       // [V-B2] 弹幕与正文同链加载：§2.49 原文 → §2.50 Rust 解析
       await _loadDanmakuForChapter(api, index);
+      // P3-5：正文/弹幕加载期间可能已退出或移交悬浮窗
+      if (!mounted || _handedToFloat) return;
       final target = resolveVideoPlayTarget(
         content: content,
         chapterUrl: chapter.url,

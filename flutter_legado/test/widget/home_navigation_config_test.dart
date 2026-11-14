@@ -188,7 +188,7 @@ void main() {
     );
     expect(selectedIndex(tester), 2);
 
-    await prefsNotifier(tester).setShowDiscovery(false);
+    await prefsNotifier(tester).setTabVisible(MainTab.explore, false);
     await tester.pumpAndSettle();
 
     expect(destinationLabels(tester), ['首页', '书架', '订阅', '我的']);
@@ -254,7 +254,7 @@ void main() {
       MainTab.explore,
       MainTab.rss,
     ]);
-    await prefsNotifier(tester).setShowRss(false);
+    await prefsNotifier(tester).setTabVisible(MainTab.rss, false);
     await tester.pumpAndSettle();
     expect(destinationLabels(tester), ['我的', '首页', '书架', '发现']);
 

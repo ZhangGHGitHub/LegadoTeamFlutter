@@ -43,5 +43,43 @@ void main() {
       ];
       expect(groupDailyByDay(data, now), isEmpty);
     });
+
+    test('非数字/越界日期不抛异常并跳过（P3-4）', () {
+      final data = [
+        {'date': '2026-ab-13', 'seconds': 500},
+        {'date': '2026-13-40', 'seconds': 500},
+        {'date': '2026-09-11', 'seconds': 600},
+      ];
+      final groups = groupDailyByDay(data, now);
+      expect(groups.single.label, '今天');
+      expect(groups.single.entries.single.seconds, 600);
+    });
+
+    test('ISO 日期时间格式可解析为当天', () {
+      final data = [
+        {'date': '2026-09-10T00:00:00', 'seconds': 300},
+      ];
+      final groups = groupDailyByDay(data, now);
+      expect(groups.single.label, '昨天');
+      expect(groups.single.entries.single.date, DateTime(2026, 9, 10));
+    });
+  });
+
+  group('parseDailyDate 日期解析', () {
+    test('合法 yyyy-MM-dd 与未补零日期', () {
+      expect(parseDailyDate('2026-09-11'), DateTime(2026, 9, 11));
+      expect(parseDailyDate('2026-1-3'), DateTime(2026, 1, 3));
+    });
+
+    test('空/非数字/越界返回 null', () {
+      expect(parseDailyDate(''), isNull);
+      expect(parseDailyDate('bad-date'), isNull);
+      expect(parseDailyDate('2026-ab-13'), isNull);
+      expect(parseDailyDate('2026-13-40'), isNull);
+    });
+
+    test('ISO 日期时间取日期部分', () {
+      expect(parseDailyDate('2026-11-13T00:00:00'), DateTime(2026, 11, 13));
+    });
   });
 }

@@ -38,6 +38,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
 
   @override
   void dispose() {
+    _fsController.dispose();
     _searchController.dispose();
     super.dispose();
   }

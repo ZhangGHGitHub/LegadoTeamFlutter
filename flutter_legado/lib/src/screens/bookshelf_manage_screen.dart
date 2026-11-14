@@ -65,6 +65,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
 
   @override
   void dispose() {
+    _fsController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }

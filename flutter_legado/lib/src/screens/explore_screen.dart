@@ -71,6 +71,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _listController.dispose();
     _searchController.dispose();
     super.dispose();
   }

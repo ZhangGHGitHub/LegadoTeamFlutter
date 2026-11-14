@@ -1144,6 +1144,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       final api = ref.read(bookApiProvider);
       // 获取书籍信息（[P4-3 M3 修2] 走活跃 bookUrl，换源后按新源重载）
       _book = await api.getBook(_activeBookUrl);
+      if (!mounted) return;
       if (_book == null) {
         setState(() {
           _error = '未找到书籍信息';
@@ -1176,6 +1177,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
           !BookType.isLocalOrigin(_book!.origin)) {
         _chapters = await api.refreshToc(_activeBookUrl, _book!.origin);
       }
+      // P3-5：目录/刷新目录是慢请求，退出页面后不得再 setState
+      if (!mounted) return;
       if (_chapters.isEmpty) {
         setState(() {
           _error = '暂无章节';

@@ -224,15 +224,6 @@ void main() {
       expect(await service.getWebDavRemoteDir(), equals('/backup/legado/'));
     });
 
-    test('默认自动同步关闭', () async {
-      expect(await service.getAutoSync(), isFalse);
-    });
-
-    test('开启自动同步', () async {
-      await service.setAutoSync(true);
-      expect(await service.getAutoSync(), isTrue);
-    });
-
     test('默认无最后同步时间', () async {
       expect(await service.getLastSyncTime(), isNull);
     });

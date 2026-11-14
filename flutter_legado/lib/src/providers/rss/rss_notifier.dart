@@ -107,17 +107,6 @@ class RssNotifier extends Notifier<RssState> {
     await prefs.setInt(kRssSourceVersionKey, kRssSourceVersion);
   }
 
-  /// 菜单「导入默认」：立即覆盖 legado 分组（对齐 RssSourceViewModel.importDefault）
-  Future<int> importDefaultSources() async {
-    final api = ref.read(bookApiProvider);
-    final n = await syncDefaultRssSources(api);
-    final sources = await api.getRssSources();
-    state = state.copyWith(sources: sources, error: null);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(kRssSourceVersionKey, kRssSourceVersion);
-    return n;
-  }
-
   // ===== 文章列表操作 =====
 
   /// 选择源并加载分类与第 1 页文章

@@ -303,23 +303,6 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
     }
   }
 
-  /// 判断书籍是否允许刷新目录（FFI）
-  Future<bool?> canRefreshBookToc({
-    required bool canUpdate,
-    required bool respectCanUpdate,
-  }) async {
-    final rustApi = _rustApi;
-    if (rustApi == null) return null;
-    try {
-      return await rustApi.autoTaskCanRefreshBookToc(
-        canUpdate: canUpdate,
-        respectCanUpdate: respectCanUpdate,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// 查找书籍更新任务（FFI）
   ///
   /// 优先按 ID 精确匹配，其次按书名 + 作者匹配。未找到返回 null。
