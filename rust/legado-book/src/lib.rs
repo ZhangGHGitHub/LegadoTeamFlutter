@@ -33,6 +33,7 @@ pub mod export;
 pub mod mobi;
 pub mod pdf;
 pub mod txt;
+mod txt_cache;
 pub mod txt_search;
 pub mod umd;
 

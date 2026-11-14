@@ -4,6 +4,10 @@
 //! 1. 编码检测：读取文件头字节，使用 `encoding_rs` 尝试识别 UTF-8/GBK/GB18030/BIG5 等
 //! 2. 目录提取：使用正则匹配"第X章/第X回/第X节"等常见中文章节标题模式
 //! 3. 章节内容：根据字节偏移范围提取对应段落
+//!
+//! [审查 P2-4] 目录与正文共用 [`crate::txt_cache`] 的 `(path, encoding)`
+//! 解码缓存：章节区间是**解码后文本**的字节偏移，同一本书连续翻章不再重复
+//! 全文件读取 + 解码。
 
 use std::fs::File;
 use std::io::Read;
@@ -170,8 +174,9 @@ impl TxtParser {
         rule: Option<&str>,
         max_chars_with_no_toc: u32,
     ) -> LegadoResult<crate::TocParseOutcome> {
-        let text_bytes = read_file_bytes(path)?;
-        let text = decode_with_charset(&text_bytes, path, charset)?;
+        // [审查 P2-4] 目录解析与正文读取共用解码缓存：
+        // 打开一本书解析目录后，首次翻章即可命中，无需再次全文件解码。
+        let text = crate::txt_cache::load_decoded_text(path, charset)?;
 
         let custom_rule = rule.map(str::trim).filter(|r| !r.is_empty());
         let mut used_custom_rule = false;
@@ -244,8 +249,8 @@ impl TxtParser {
         chapter: &ChapterInfo,
         charset: Option<&str>,
     ) -> LegadoResult<String> {
-        let text_bytes = read_file_bytes(path)?;
-        let text = decode_with_charset(&text_bytes, path, charset)?;
+        // [审查 P2-4] 命中缓存时不再读取/解码整个文件，只做切片
+        let text = crate::txt_cache::load_decoded_text(path, charset)?;
 
         let start = chapter.start.unwrap_or(0) as usize;
         let end = chapter.end.unwrap_or(text.len() as i64) as usize;
@@ -266,44 +271,9 @@ impl TxtParser {
 
         // 读取前 4KB 用于检测
         let mut buf = [0u8; 4096];
-        let n = file.read(&mut buf)?;
-        let sample = &buf[..n];
+        let n = read_up_to(&mut file, &mut buf)?;
 
-        // UTF-8 BOM
-        if sample.starts_with(&[0xEF, 0xBB, 0xBF]) {
-            return Ok("utf-8".to_string());
-        }
-        // UTF-16 LE BOM
-        if sample.starts_with(&[0xFF, 0xFE]) {
-            return Ok("utf-16le".to_string());
-        }
-        // UTF-16 BE BOM
-        if sample.starts_with(&[0xFE, 0xFF]) {
-            return Ok("utf-16be".to_string());
-        }
-
-        // 尝试 UTF-8 验证
-        if std::str::from_utf8(sample).is_ok() {
-            return Ok("utf-8".to_string());
-        }
-
-        // 使用 encoding_rs BOM 检测
-        if let Some((enc, _bom_len)) = Encoding::for_bom(sample) {
-            return Ok(enc.name().to_string());
-        }
-
-        // 尝试常见中文编码
-        for name in &["gb18030", "gbk", "big5", "shift_jis", "euc-kr"] {
-            if let Some(enc) = Encoding::for_label(name.as_bytes()) {
-                let (_, _, had_errors) = enc.decode(sample);
-                if !had_errors {
-                    return Ok(name.to_string());
-                }
-            }
-        }
-
-        // 默认回退到 UTF-8
-        Ok("utf-8".to_string())
+        Ok(detect_encoding_from_sample(&buf[..n]))
     }
 }
 
@@ -311,12 +281,60 @@ impl TxtParser {
 // 辅助函数
 // ---------------------------------------------------------------------------
 
-/// 读取文件全部字节
-fn read_file_bytes(path: &str) -> LegadoResult<Vec<u8>> {
-    let mut file = File::open(path)?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf)?;
-    Ok(buf)
+/// 编码检测（按文件头样本）
+///
+/// 抽成纯函数供 [`crate::txt_cache`] 复用同一份 4KB 样本：缓存校验已经读过
+/// 文件头时不再二次打开文件。检测顺序与原实现逐条一致。
+pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
+    // UTF-8 BOM
+    if sample.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return "utf-8".to_string();
+    }
+    // UTF-16 LE BOM
+    if sample.starts_with(&[0xFF, 0xFE]) {
+        return "utf-16le".to_string();
+    }
+    // UTF-16 BE BOM
+    if sample.starts_with(&[0xFE, 0xFF]) {
+        return "utf-16be".to_string();
+    }
+
+    // 尝试 UTF-8 验证
+    if std::str::from_utf8(sample).is_ok() {
+        return "utf-8".to_string();
+    }
+
+    // 使用 encoding_rs BOM 检测
+    if let Some((enc, _bom_len)) = Encoding::for_bom(sample) {
+        return enc.name().to_string();
+    }
+
+    // 尝试常见中文编码
+    for name in &["gb18030", "gbk", "big5", "shift_jis", "euc-kr"] {
+        if let Some(enc) = Encoding::for_label(name.as_bytes()) {
+            let (_, _, had_errors) = enc.decode(sample);
+            if !had_errors {
+                return name.to_string();
+            }
+        }
+    }
+
+    // 默认回退到 UTF-8
+    "utf-8".to_string()
+}
+
+/// 尽量填满缓冲区（容忍短读与 EINTR）
+fn read_up_to(file: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut filled = 0usize;
+    while filled < buf.len() {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
 }
 
 /// 内置默认规则解析（自动目录）
@@ -537,8 +555,10 @@ fn line_index_for(spans: &[LineSpan], offset: usize) -> usize {
 
 /// 将字节按指定编码解码为字符串
 ///
-/// `encoding_rs::Encoding` 的实例均为 `'static`（`name()` 要求 `&'static self`）
-fn decode_text(bytes: &[u8], enc: &'static Encoding) -> String {
+/// `encoding_rs::Encoding` 的实例均为 `'static`（`name()` 要求 `&'static self`）。
+/// `pub(crate)`：[`crate::txt_cache`] 解码缓存复用同一实现，保证有无缓存
+/// 两条路径的解码结果逐字节一致。
+pub(crate) fn decode_text(bytes: &[u8], enc: &'static Encoding) -> String {
     // 仅跳过与所选编码匹配的 BOM：显式 GBK 覆盖时，开头 `EF BB BF`
     // 是真实文本而非 BOM，不能无条件丢弃
     let skip = if enc == UTF_8 && bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -570,19 +590,6 @@ pub fn encoding_for_label(label: &str) -> LegadoResult<&'static Encoding> {
 /// 编码名归一化为 `encoding_rs` 标准名（如 `GB2312` → `GBK`）
 pub fn normalize_charset(label: &str) -> LegadoResult<String> {
     Ok(encoding_for_label(label)?.name().to_string())
-}
-
-/// 解码文本：显式 charset 覆盖自动检测
-///
-/// 显式覆盖优先于检测/默认；为空时回退 [`TxtParser::detect_encoding`]。
-fn decode_with_charset(bytes: &[u8], path: &str, charset: Option<&str>) -> LegadoResult<String> {
-    if let Some(label) = charset.map(str::trim).filter(|s| !s.is_empty()) {
-        let enc = encoding_for_label(label)?;
-        return Ok(decode_text(bytes, enc));
-    }
-    let detected = TxtParser::detect_encoding(path)?;
-    let enc = Encoding::for_label(detected.as_bytes()).unwrap_or(UTF_8);
-    Ok(decode_text(bytes, enc))
 }
 
 /// 判断标题是否为卷名（第X卷/第X部等）
@@ -1273,5 +1280,278 @@ mod tests {
         assert_eq!(out.chapters.len(), 1);
         assert_eq!(out.chapters[0].title, "全文");
         let _ = std::fs::remove_dir_all(empty.parent().unwrap());
+    }
+
+    // ─── [审查 P2-4] 解码缓存（命中 / 失效 / 多书隔离 / 大文件） ─────────
+
+    /// 构造「N 章、每章 body_repeat 段正文」的 UTF-8 TXT
+    fn build_multi_chapter_txt(chapters: usize, body_repeat: usize) -> String {
+        let body = "正文内容。".repeat(body_repeat);
+        let mut text = String::new();
+        for i in 1..=chapters {
+            text.push_str(&format!("第{i}章 标题{i}\n"));
+            text.push_str(&body);
+            text.push('\n');
+        }
+        text
+    }
+
+    /// 同一本书连续翻章：目录解析只全量读取一次，正文全部命中缓存；
+    /// 重复读同一章内容逐字节一致。
+    #[test]
+    fn test_chapter_content_reuses_decoded_cache() {
+        let text = build_multi_chapter_txt(3, 500);
+        let path = write_temp_txt("cache_hit", text.as_bytes());
+        let path_str = path.to_str().unwrap();
+
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(chapters.len(), 3, "{chapters:?}");
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            1,
+            "目录解析应只做一次全文件读取+解码"
+        );
+
+        let c0 = TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("UTF-8"))
+            .unwrap();
+        let c1 = TxtParser::get_chapter_content_with_charset(path_str, &chapters[1], Some("UTF-8"))
+            .unwrap();
+        let c2 = TxtParser::get_chapter_content_with_charset(path_str, &chapters[2], Some("UTF-8"))
+            .unwrap();
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            1,
+            "连续翻章不得重复全文件读取+解码"
+        );
+
+        // 内容正确（含本章标题与正文，不串到下一章）
+        assert!(c0.starts_with("第1章 标题1"), "{c0:?}");
+        assert!(c0.contains("正文内容。"));
+        assert!(!c0.contains("第2章 标题2"), "首章不得串入下章: {c0:?}");
+        assert!(c1.starts_with("第2章 标题2"), "{c1:?}");
+        assert!(c2.starts_with("第3章 标题3"), "{c2:?}");
+
+        // 重复读同一章：命中缓存且内容完全一致
+        let c0_again =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("UTF-8"))
+                .unwrap();
+        assert_eq!(c0, c0_again, "缓存命中结果必须与首次读取逐字节一致");
+        assert_eq!(crate::txt_cache::full_file_loads(path_str), 1);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// 缓存按编码隔离且归一化别名：`gbk`/`GBK` 命中同一条目，
+    /// `UTF-8` 是另一条（乱码），互不串内容。
+    #[test]
+    fn test_cache_keyed_by_encoding_and_alias_normalized() {
+        let text = "第一章 甲\n正文甲。\n第二章 乙\n正文乙。\n";
+        let (gbk_bytes, _, _) = encoding_rs::GBK.encode(text);
+        let path = write_temp_txt("cache_encoding", &gbk_bytes);
+        let path_str = path.to_str().unwrap();
+
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("gbk")).unwrap();
+        assert_eq!(chapters.len(), 2, "{chapters:?}");
+        let gbk_content =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("GBK"))
+                .unwrap();
+        assert!(gbk_content.contains("正文甲"), "{gbk_content}");
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            1,
+            "编码别名（gbk/GBK）应命中同一缓存条目"
+        );
+
+        // 换编码 = 换解码结果，必须是独立条目（不能复用 GBK 文本）
+        let utf8_content =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("UTF-8"))
+                .unwrap();
+        assert!(
+            !utf8_content.contains("正文甲"),
+            "不同编码不得复用同一解码文本: {utf8_content}"
+        );
+        assert_eq!(crate::txt_cache::full_file_loads(path_str), 2);
+
+        // 回到 GBK：仍命中旧条目，不再重读
+        let gbk_again =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("gbk"))
+                .unwrap();
+        assert_eq!(gbk_content, gbk_again);
+        assert_eq!(crate::txt_cache::full_file_loads(path_str), 2);
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// 两本书交替读：各自命中自己的条目，内容不互相串。
+    #[test]
+    fn test_cache_keeps_two_books_isolated() {
+        let a_text = "第一章 甲书\n甲书正文一。\n第二章 甲书二\n甲书正文二。\n";
+        let b_text = "第一章 乙书\n乙书正文一。\n第二章 乙书二\n乙书正文二。\n";
+        let pa = write_temp_txt("cache_book_a", a_text.as_bytes());
+        let pb = write_temp_txt("cache_book_b", b_text.as_bytes());
+        let (sa, sb) = (pa.to_str().unwrap(), pb.to_str().unwrap());
+
+        let ca = TxtParser::get_chapters_with_charset(sa, Some("UTF-8")).unwrap();
+        let cb = TxtParser::get_chapters_with_charset(sb, Some("UTF-8")).unwrap();
+        assert_eq!(ca.len(), 2);
+        assert_eq!(cb.len(), 2);
+
+        let a1 = TxtParser::get_chapter_content_with_charset(sa, &ca[1], Some("UTF-8")).unwrap();
+        let b1 = TxtParser::get_chapter_content_with_charset(sb, &cb[1], Some("UTF-8")).unwrap();
+        let a1_again =
+            TxtParser::get_chapter_content_with_charset(sa, &ca[1], Some("UTF-8")).unwrap();
+
+        assert!(a1.contains("甲书正文二"), "{a1}");
+        assert!(!a1.contains("乙书"), "A 书不得读到 B 书内容: {a1}");
+        assert!(b1.contains("乙书正文二"), "{b1}");
+        assert!(!b1.contains("甲书"), "B 书不得读到 A 书内容: {b1}");
+        assert_eq!(a1, a1_again, "交替读取后 A 书内容必须一致");
+
+        assert_eq!(crate::txt_cache::full_file_loads(sa), 1);
+        assert_eq!(crate::txt_cache::full_file_loads(sb), 1);
+
+        let _ = std::fs::remove_dir_all(pa.parent().unwrap());
+        let _ = std::fs::remove_dir_all(pb.parent().unwrap());
+    }
+
+    /// 文件被重写（长度变化）后缓存必须失效，读到新内容；
+    /// 文件被删除后不得继续命中缓存。
+    #[test]
+    fn test_cache_invalidated_after_file_rewritten() {
+        let path = write_temp_txt("cache_rewrite", "第一章 甲\n旧内容A。\n".as_bytes());
+        let path_str = path.to_str().unwrap();
+
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        let old =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("UTF-8"))
+                .unwrap();
+        assert!(old.contains("旧内容A"), "{old}");
+
+        // 重写为更长内容：长度/mtime/指纹均变化
+        std::fs::write(&path, "第一章 乙\n新内容B。\n第二章 丙\n更多正文。\n").unwrap();
+        let chapters2 = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(chapters2.len(), 2, "重写后目录必须重新解析: {chapters2:?}");
+        assert_eq!(chapters2[0].title, "第一章 乙");
+        let new =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters2[0], Some("UTF-8"))
+                .unwrap();
+        assert!(new.contains("新内容B"), "重写后必须读到新内容: {new}");
+        assert!(!new.contains("旧内容A"), "不得返回缓存中的旧内容: {new}");
+
+        // 文件删除后不得命中缓存
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters2[0], Some("UTF-8"))
+                .is_err(),
+            "文件删除后必须报错而不是返回缓存内容"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// 同长度 + 同 mtime 的原地替换：仅内容指纹变化也必须失效
+    ///（只靠 size+mtime 会漏判，违反「同路径不同内容必须失效」红线）。
+    #[test]
+    fn test_cache_invalidated_by_fingerprint_on_same_size_same_mtime_rewrite() {
+        let v1 = "第一章 甲\n旧内容A。\n";
+        let v2 = "第一章 乙\n新内容B。\n";
+        assert_eq!(v1.len(), v2.len(), "夹具必须同长度");
+        let path = write_temp_txt("cache_fingerprint", v1.as_bytes());
+        let path_str = path.to_str().unwrap();
+
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        let old =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("UTF-8"))
+                .unwrap();
+        assert!(old.contains("旧内容A"), "{old}");
+        assert_eq!(crate::txt_cache::full_file_loads(path_str), 1);
+
+        let original = std::fs::metadata(&path).unwrap();
+        let (original_len, original_mtime) = (original.len(), original.modified().unwrap());
+
+        // 同长度重写后把 mtime 拨回原值：戳里只剩内容指纹能区分
+        std::fs::write(&path, v2).unwrap();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(original_mtime)
+            .unwrap();
+        let tampered = std::fs::metadata(&path).unwrap();
+        assert_eq!(tampered.len(), original_len);
+        assert_eq!(
+            tampered.modified().unwrap(),
+            original_mtime,
+            "夹具前置条件：长度与 mtime 必须与缓存条目一致"
+        );
+
+        let chapters2 = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(chapters2[0].title, "第一章 乙", "必须重新解析到新标题");
+        let new =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters2[0], Some("UTF-8"))
+                .unwrap();
+        assert!(
+            new.contains("新内容B"),
+            "同长度同 mtime 替换必须靠内容指纹失效: {new}"
+        );
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            2,
+            "指纹不符必须触发一次重新读取"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// 大文件（≥10MB）翻章：解码次数保持为 1（不按绝对耗时断言，避免 flaky）
+    #[test]
+    fn test_large_txt_chapter_reads_hit_cache() {
+        // 36 章 × 300KB 正文 ≈ 10.8MB
+        let text = build_multi_chapter_txt(36, 20_000);
+        assert!(
+            text.len() >= 10 * 1024 * 1024,
+            "夹具必须 ≥10MB，实际 {} 字节",
+            text.len()
+        );
+        let path = write_temp_txt("cache_large", text.as_bytes());
+        let path_str = path.to_str().unwrap();
+
+        let chapters = TxtParser::get_chapters_with_charset(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(chapters.len(), 36, "大文件应识别 36 章");
+
+        let first =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[0], Some("UTF-8"))
+                .unwrap();
+        let middle =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[18], Some("UTF-8"))
+                .unwrap();
+        let last =
+            TxtParser::get_chapter_content_with_charset(path_str, &chapters[35], Some("UTF-8"))
+                .unwrap();
+
+        assert_eq!(
+            crate::txt_cache::full_file_loads(path_str),
+            1,
+            "大文件连续翻章不得重复全文件读取+解码"
+        );
+        assert!(
+            first.starts_with("第1章 标题1"),
+            "{:?}",
+            first.chars().take(12).collect::<String>()
+        );
+        assert!(!first.contains("第2章 标题2"), "首章不得串入下章");
+        assert!(
+            middle.starts_with("第19章 标题19"),
+            "{:?}",
+            middle.chars().take(12).collect::<String>()
+        );
+        assert!(
+            last.starts_with("第36章 标题36"),
+            "{:?}",
+            last.chars().take(12).collect::<String>()
+        );
+        assert!(last.len() > 100_000, "末章应有完整正文");
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
