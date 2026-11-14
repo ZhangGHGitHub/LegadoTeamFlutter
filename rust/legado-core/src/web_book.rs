@@ -54,6 +54,12 @@ pub struct WebChapter {
     /// 章节 URL
     pub url: String,
     /// 是否 VIP 章节
+    ///
+    /// `#[serde(default)]`（缺陷修复 2026-11-15）：外部构造路径（书源调试
+    /// `--`/`++`、REST 正文入口等）不一定提供该字段；缺失时按 false 处理，
+    /// 与相邻 `is_volume`/`is_pay` 口径一致。此前无 default → 调试正文路径
+    /// 反序列化即失败（`missing field 'is_vip'`），整条调试链不可用。
+    #[serde(default)]
     pub is_vip: bool,
     /// 是否卷章（卷章不检查空内容）
     #[serde(default)]
@@ -1251,6 +1257,37 @@ mod tests {
         let ch: WebChapter = serde_json::from_str(json).unwrap();
         assert!(!ch.is_pay);
         assert!(ch.tag.is_none());
+    }
+
+    /// [缺陷回归 2026-11-15] 调试正文路径最小章节 JSON（仅 title/url/index）
+    ///
+    /// `source_debug_api::content_debug` 构造章节对象时只提供 `title`/`url`/
+    /// `index`；`is_vip` 无 `#[serde(default)]` 时整条调试正文链
+    /// （`--<chapterUrl>` 与 `++<tocUrl>` 首章）在
+    /// `webbook_content` 反序列化即失败：`missing field 'is_vip'`。
+    /// 修复要求：缺失时缺省为 false（不得把普通章节误判为 VIP 章节）。
+    #[test]
+    fn test_web_chapter_minimal_debug_json_defaults_is_vip_false() {
+        let json = r#"{"title":"调试","url":"https://example.com/ch/1.html","index":0}"#;
+        let ch: WebChapter =
+            serde_json::from_str(json).expect("正文调试路径最小章节 JSON 必须可反序列化");
+        assert_eq!(ch.index, 0);
+        assert_eq!(ch.title, "调试");
+        assert_eq!(ch.url, "https://example.com/ch/1.html");
+        assert!(!ch.is_vip, "is_vip 缺省必须为 false（不得误判 VIP 章节）");
+        assert!(!ch.is_volume);
+        assert!(!ch.is_pay);
+        assert!(ch.tag.is_none() && ch.variable.is_none() && ch.word_count.is_none());
+    }
+
+    /// [缺陷回归 2026-11-15] 显式 `is_vip: true` 仍须保留（default 只补缺省，
+    /// 不得把真实 VIP 标记压成 false）
+    #[test]
+    fn test_web_chapter_explicit_is_vip_true_preserved() {
+        let json =
+            r#"{"title":"VIP章","url":"https://example.com/ch/2.html","index":1,"is_vip":true}"#;
+        let ch: WebChapter = serde_json::from_str(json).unwrap();
+        assert!(ch.is_vip, "显式 is_vip=true 必须保留");
     }
 
     /// 引擎 get_content_with_meta：默认直链回退（正文规则为空 → 返回章节

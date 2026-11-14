@@ -12,6 +12,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use legado_core::models::BookSource;
+use legado_core::web_book::WebChapter;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::BookSourceRepository;
 use legado_js::js_source::js_source_debug_formatter::JsSourceDebugFormatter;
@@ -479,6 +480,15 @@ fn toc_then_content(source_url: &str, source_json: &str, book_url: &str, session
     }
 }
 
+/// 调试正文路径的章节对象（`--<chapterUrl>` 直连正文 / `++<tocUrl>` 首章正文）
+///
+/// [缺陷回归 2026-11-15] 此前用手拼 `json!({"title","url","index"})`：`WebChapter`
+/// 一旦新增必填字段（`is_vip`）调试路径立即在反序列化处整链失败。以类型化
+/// 值构造 + 序列化，保证调试路径始终提供与结构体一致的**完整对象**。
+fn debug_chapter(title: &str, chapter_url: &str) -> WebChapter {
+    WebChapter::new(0, title, chapter_url)
+}
+
 fn content_debug(
     source_url: &str,
     source_json: &str,
@@ -486,11 +496,13 @@ fn content_debug(
     title: &str,
     session_id: u64,
 ) {
-    let chapter = serde_json::json!({
-        "title": title,
-        "url": chapter_url,
-        "index": 0,
-    });
+    let chapter = match serde_json::to_value(debug_chapter(title, chapter_url)) {
+        Ok(value) => value,
+        Err(e) => {
+            log_debug(Some(source_url), &format!("章节 JSON 失败: {e}"), -1, true);
+            return;
+        }
+    };
     content_debug_json(source_url, source_json, &chapter, title, session_id);
 }
 
@@ -536,6 +548,20 @@ fn content_debug_json(
 mod tests {
     use super::*;
 
+    /// 调试会话全局态（`DEBUG_CANCELLED` / `SESSION` / `EMITTER`）的模块级
+    /// 串行锁：`cancel_debug_book_source` 会清会话与发射器，与端到端用例
+    /// 并行会互踩（取消标志翻转让 `still_active` 返回 false → 漏日志）。
+    ///
+    /// 锁序（`crate::test_support` 全局锁序不变式）：本锁最外层 →
+    /// `GLOBAL_STORE_TEST_LOCK` → DB 守卫。
+    static DEBUG_SESSION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_debug_session() -> std::sync::MutexGuard<'static, ()> {
+        DEBUG_SESSION_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
     #[test]
     fn test_format_elapsed_zeroish() {
         let start = Instant::now();
@@ -576,9 +602,139 @@ mod tests {
 
     #[test]
     fn test_cancel_debug_sets_flag() {
+        let _session_lock = lock_debug_session();
         DEBUG_CANCELLED.store(false, Ordering::SeqCst);
         cancel_debug_book_source();
         assert!(DEBUG_CANCELLED.load(Ordering::SeqCst));
         DEBUG_CANCELLED.store(false, Ordering::SeqCst);
+    }
+
+    // ─── [缺陷回归 2026-11-15] 调试正文路径端到端可用 ─────────────────────────
+
+    /// 回环正文服务器：任意路径返回固定 HTML（`#content` 供 `#content@text` 抽取）
+    fn spawn_content_html_server(html: &'static str) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环正文服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                // 读请求头至空行（不关心内容，仅避免客户端写阻塞）
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    html.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(html.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    /// 调试会话/日志发射器清理守卫（断言 panic 时也不留全局 emitter）
+    struct DebugSessionGuard;
+
+    impl Drop for DebugSessionGuard {
+        fn drop(&mut self) {
+            end_session();
+            DEBUG_CANCELLED.store(false, Ordering::SeqCst);
+        }
+    }
+
+    /// [缺陷回归 2026-11-15] `--<chapterUrl>` 正文调试端到端
+    ///
+    /// 设备实测缺陷：`content_debug` 手拼章节 JSON 仅含 `{title,url,index}`，
+    /// 而 `WebChapter.is_vip` 当时无 `#[serde(default)]` → `webbook_content`
+    /// 反序列化即失败（`missing field 'is_vip'`），书源调试的正文路径
+    /// （`--` 直连正文、`++` 目录后取首章正文）完全不可用。
+    ///
+    /// 本用例走真实调试入口（`debug_book_source_sync` + `--` 前缀 + DB 书源 +
+    /// 回环正文页），断言日志出现「正文页解析完成」与正文预览，且不含
+    /// 序列化错误。修复前本用例必红。
+    #[test]
+    fn test_debug_content_prefix_minimal_chapter_json_end_to_end() {
+        // 锁序不变式：调试会话锁 → store 锁 → DB 锁（见 crate::test_support）
+        let _session_lock = lock_debug_session();
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let port = spawn_content_html_server(
+            r#"<html><body><div id="content">调试正文内容</div></body></html>"#,
+        );
+        let source_url = format!("http://127.0.0.1:{port}");
+        let chapter_url = format!("{source_url}/chapter/1.html");
+
+        // 播种书源：正文规则 #content@text（与设备现场同构的最简 CSS 源）
+        crate::db_state::with_database(|db| {
+            use legado_db::repository::Repository;
+            legado_db::BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.clone(),
+                book_source_name: "调试正文路径回归源".to_string(),
+                rule_content: Some(legado_core::models::rule::ContentRule {
+                    content: Some("#content@text".to_string()),
+                    ..Default::default()
+                }),
+                ..BookSource::default()
+            })
+        })
+        .expect("播种调试书源");
+
+        // 收集调试日志（生产入口 emit_log 的唯一出口）
+        let logs: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let logs_emit = std::sync::Arc::clone(&logs);
+        *emitter_lock().lock().unwrap() = Some(Box::new(move |item: DebugLogItem| {
+            logs_emit.lock().unwrap().push(item.msg);
+        }));
+        let _guard = DebugSessionGuard;
+
+        let session_id = begin_session(&source_url);
+        debug_book_source_sync(&source_url, &format!("--{chapter_url}"), session_id);
+
+        let logs = logs.lock().unwrap().join("\n");
+        assert!(
+            !logs.contains("missing field") && !logs.contains("Serialization error"),
+            "调试正文路径不得出现章节 JSON 反序列化错误，实际日志:\n{logs}"
+        );
+        assert!(
+            logs.contains("正文页解析完成"),
+            "调试正文路径应完成正文解析，实际日志:\n{logs}"
+        );
+        assert!(
+            logs.contains("调试正文内容"),
+            "调试日志应包含正文预览，实际日志:\n{logs}"
+        );
+    }
+
+    /// [缺陷回归 2026-11-15] 调试正文路径构造的章节对象必须是**完整**
+    /// `WebChapter`（双保险：即便未来新增必填字段，类型化序列化也不会漏字段）
+    #[test]
+    fn test_debug_chapter_serializes_as_complete_web_chapter() {
+        let chapter = debug_chapter("调试", "https://example.com/ch/1.html");
+        let json = serde_json::to_string(&chapter).expect("章节序列化");
+        let back: legado_core::web_book::WebChapter =
+            serde_json::from_str(&json).expect("调试章节 JSON 必须可反序列化");
+        assert_eq!(back.title, "调试");
+        assert_eq!(back.url, "https://example.com/ch/1.html");
+        assert_eq!(back.index, 0);
+        assert!(!back.is_vip);
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(
+            value.get("is_vip").is_some(),
+            "调试章节 JSON 必须显式包含 is_vip: {json}"
+        );
     }
 }

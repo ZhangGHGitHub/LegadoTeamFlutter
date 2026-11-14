@@ -882,6 +882,25 @@ mod tests {
         );
     }
 
+    /// [缺陷回归 2026-11-15] REST 正文入口（`WebBookContentRequest.chapter`）
+    /// 是 `WebChapter` 的另一处外部 JSON 构造路径：调用方不提供 `is_vip`
+    /// 时必须可反序列化且按 false 处理（此前 `missing field 'is_vip'` → 422，
+    /// 与书源调试同源的必填字段缺陷）。
+    #[test]
+    fn test_content_request_accepts_chapter_without_is_vip() {
+        let body = json!({
+            "source": serde_json::from_str::<Value>(&make_source_json()).unwrap(),
+            "chapter": {
+                "index": 0,
+                "title": "第一章",
+                "url": "https://example.com/ch/1"
+            }
+        });
+        let req: WebBookContentRequest =
+            serde_json::from_value(body).expect("缺失 is_vip 的章节 JSON 必须可反序列化");
+        assert!(!req.chapter.is_vip, "is_vip 缺省必须为 false");
+    }
+
     #[tokio::test]
     async fn test_webbook_content_endpoint() {
         let state = make_test_state();
