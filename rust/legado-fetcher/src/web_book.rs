@@ -2242,6 +2242,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             next_url_rule,
             &chapter.url,
             Some(source),
+            &source.book_source_url,
             is_media,
             source.js_lib.as_deref(),
             content_setup.clone(),
@@ -3761,7 +3762,7 @@ fn parse_content_page_with_js_lib(
     content_rule_str: &str,
     next_url_rule: &str,
     page_url: &str,
-    _source_url: &str,
+    source_url: &str,
     is_media: bool,
     js_lib: Option<&str>,
     chapter_title: Option<&str>,
@@ -3772,6 +3773,7 @@ fn parse_content_page_with_js_lib(
         next_url_rule,
         page_url,
         None,
+        source_url,
         is_media,
         js_lib,
         None, // setup_script：测试/旧调用无书源上下文
@@ -3788,6 +3790,12 @@ fn parse_content_page_with_js_lib(
 /// 神漫画等内容规则依赖：
 /// `index=parseInt(chapter.index); num=parseInt(book.totalChapterNum);`
 /// 此前仅注入 title → ReferenceError/NaN → 正文空。— Reasonix
+///
+/// `source_tag`：JS 引擎的书源作用域标识（一般为 `book_source_url`）。分页
+/// 正文（第 2..N 页）没有完整 [`BookSource`]，但脚本里的文件 API
+/// （`downloadFile` / `cacheFile` / `getTxtInFolder`）仍须落在**本源**沙箱
+/// 子目录——空 tag 会落 `_shared`，导致同一书源首页与后续页行为不一致，
+/// 且所有书源的分页 JS 共用 `_shared`（P2-1）。调用方总是传当前书源 URL。
 #[allow(clippy::too_many_arguments)] // 分页解析参数集与 Kotlin analyzeContent 对齐，暂不拆结构体
 fn parse_content_page_with_bindings(
     body: String,
@@ -3795,6 +3803,7 @@ fn parse_content_page_with_bindings(
     next_url_rule: &str,
     page_url: &str,
     source: Option<&BookSource>,
+    source_tag: &str,
     is_media: bool,
     js_lib: Option<&str>,
     setup_script: Option<String>,
@@ -3821,8 +3830,15 @@ fn parse_content_page_with_bindings(
             setup_script,
         )
     } else {
-        // 无书源上下文（测试/分页降级）：退回旧行为（仅 jsLib）
-        construct_analyzer_with_js_lib(body, page_url.to_string(), "", js_lib_sanitized.as_deref())
+        // 无完整 BookSource（分页第 2..N 页 / 测试）：仅 jsLib，但**必须**带
+        // 书源 tag——空 tag 会让引擎绑定空作用域，文件 API 落 `_shared`，
+        // 跨源可互相窥视且同源首页/后续页落盘目录不一致（P2-1）。
+        construct_analyzer_with_js_lib(
+            body,
+            page_url.to_string(),
+            source_tag,
+            js_lib_sanitized.as_deref(),
+        )
     };
     // 注入原版 evalJS bindings：chapter/title/book（result/src/baseUrl 由
     // AnalyzeRule.execute_js_rule 自动注入）——漫画/视频书源正文 JS 依赖这些变量
@@ -4031,6 +4047,7 @@ where
                             "", // getNextPageUrl = false
                             &raw_url,
                             None,
+                            source_url,
                             is_media,
                             js_lib,
                             setup_script.clone(),
@@ -4082,6 +4099,7 @@ where
                     next_url_rule,
                     &next_url,
                     None,
+                    source_url,
                     is_media,
                     js_lib,
                     setup_script.clone(),
@@ -8123,6 +8141,103 @@ mod tests {
             MAX_CONTENT_PAGES,
             "页数上限保护应截断于 {MAX_CONTENT_PAGES} 页"
         );
+    }
+
+    /// P2-1（bc292ccf1f 审查）：分页正文（第 2..N 页）里的 JS 文件 API 必须
+    /// 落在**本源**沙箱目录（与首页一致），不得落 `_shared`。
+    ///
+    /// 改前无完整 BookSource 的分页路径以空 tag 构造执行器 →
+    /// `sandbox_scope_dir()` 返回 `_shared`：同源首页与后续页落盘目录不一致，
+    /// 且所有书源的分页 JS 共用 `_shared`（跨源文件互见、可互相预置/删除）。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_pagination_content_js_file_api_lands_in_source_sandbox() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        use legado_js::host_api::current_source::with_current_source_tag;
+        use legado_js::host_api::file_utils::default_sandbox_root;
+        use legado_js::host_api::fs_policy::FsPolicy;
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let port = spawn_html_server("p21-payload".to_string());
+        let file_name = format!("p21-{}-{nanos}.bin", std::process::id());
+        let download_url = format!("http://127.0.0.1:{port}/{file_name}");
+        let source_url = format!(
+            "https://p21.example.com/source-{}-{nanos}",
+            std::process::id()
+        );
+        let other_source_url = format!(
+            "https://p21-other.example.com/source-{}-{nanos}",
+            std::process::id()
+        );
+
+        // 首页正文已由上层解析；这里只驱动分页第 2 页（source=None 分支），
+        // 其 JS 规则执行 java.downloadFile。nextContentUrl 规则非空是分页
+        // 循环的入口条件；第 2 页无 `.next` → 只跑一页。
+        let content_rule = format!("<js>java.downloadFile('{download_url}')</js>");
+        let page2_html = "<html><body>第二页</body></html>".to_string();
+        let result = block_on(fetch_paginated_content(
+            "第一页正文".to_string(),
+            vec!["https://example.com/chap/1_2.html".to_string()],
+            "https://example.com/chap/1.html",
+            &source_url,
+            &content_rule,
+            ".next@href",
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None, // book_meta
+            move |_url: String| {
+                let page2_html = page2_html.clone();
+                async move { Ok::<String, LegadoError>(page2_html) }
+            },
+        ));
+        assert!(result.contains("第一页正文"), "首页正文应保留: {result}");
+
+        let expected_dir = with_current_source_tag(&source_url, default_sandbox_root);
+        let expected_path = expected_dir.join(&file_name);
+        assert!(
+            expected_path.is_file(),
+            "分页 JS downloadFile 应落在本源沙箱目录 {}（实际返回: {result}）",
+            expected_path.display()
+        );
+        assert_eq!(
+            std::fs::read_to_string(&expected_path).unwrap(),
+            "p21-payload",
+            "下载内容应为回环服务器响应"
+        );
+
+        // 空 tag 的旧行为会落 `_shared`：不得出现
+        let shared_path = std::env::temp_dir()
+            .join("legado_js_cache")
+            .join("_shared")
+            .join(&file_name);
+        assert!(
+            !shared_path.exists(),
+            "分页正文文件 API 不得落 _shared: {}",
+            shared_path.display()
+        );
+
+        // 跨源不可读：其他书源的受限策略不得解析本源沙箱路径
+        let cross = with_current_source_tag(&other_source_url, || {
+            FsPolicy::restricted().resolve_read_path(&expected_path.to_string_lossy())
+        });
+        assert!(
+            cross.is_err(),
+            "其他书源不得解析本源沙箱路径: {}",
+            expected_path.display()
+        );
+
+        // 收尾
+        let _ = std::fs::remove_file(&expected_path);
+        let _ = std::fs::remove_dir(&expected_dir);
     }
 
     // ─── R1 subContent 单测（Task #134，对标 BookContent.kt L128-165） ─────

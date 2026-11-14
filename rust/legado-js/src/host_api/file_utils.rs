@@ -29,6 +29,9 @@
 //! 无 tag 时用 `_shared`：`getTxtInFolder(".")` 只能遍历当前书源自己的
 //! 文件，`downloadFile` / `cacheFile` 的落盘也互不可见。同一书源内
 //! `downloadFile` 返回的路径可被 `readTxtFile` / `getFile` 直接消费。
+//! `cacheFile` 的 URL→文件映射同样收敛为**源内相对名**（见 [`cache_file`]）：
+//! 命中按当前源沙箱解析，多源共享同一 URL 不再互相覆盖，`cache.get(md5(url))`
+//! 也不会泄露其他源的绝对路径。
 //!
 //! # 资源上限（P2-6 / P1-1）
 //!
@@ -399,16 +402,38 @@ mod impl_file_utils {
     /// `from_utf8_lossy`（U+FFFD），与上游 Kotlin `File.readText()` 的
     /// 「默认 UTF-8、解码失败替换」语义一致——二进制内容应改用
     /// `downloadFile` 取路径，而不是 `cacheFile` 取文本。
+    ///
+    /// # 缓存键值形态（P2-2：跨源隔离与缓存抖动）
+    ///
+    /// 键仍是上游可见的裸 `md5(url)`（上游 `JsExtensions.cacheFile` 把
+    /// `downloadFile` 返回的**相对路径**写入 `CacheManager`，且 `AnalyzeRule`
+    /// 把 `CacheManager` 绑为 JS `cache`，书源可 `cache.get(md5Encode16(url))`
+    /// 读回该值——故键与可读性保留），但**值改为本源相对文件名**
+    /// `"<md5>.<ext>"`，而非绝对路径：
+    /// - 命中时 `resolve_read_path` 按当前书源的沙箱根解析 → 每个源只可能
+    ///   命中自己目录下的文件，A 源的映射不会被 B 源当成命中；
+    /// - 同一 URL 的相对文件名与源无关，多源共享同一 URL（公共 CDN jsLib
+    ///   等）时写入的映射值一致，不会互相顶掉——旧实现存绝对路径，B 源命中
+    ///   A 源路径后越界重下并覆盖键，A 源下次又 miss，`cacheFile` 的缓存
+    ///   意义消失；
+    /// - `cache.get(md5(url))` 不再返回任何源的绝对路径字符串（内容本来
+    ///   就受 `FsPolicy` 跨源拦截，此处同时消除元数据泄露）。
+    ///
+    /// 兼容性：旧版本写入的绝对路径条目在**本源**仍可命中（策略放行时直接
+    /// 读取），跨源时 `resolve_read_path` 越界 → 视为 miss 并重新下载，随后
+    /// 映射被覆盖为本源相对名。
     pub fn cache_file(policy: &FsPolicy, url: &str, save_time_secs: i64) -> Result<String, String> {
         let key = md5_hex16(url);
 
         // 缓存记录里的路径同样要过读策略（防止 JS 先 cache.put 一个越界路径）。
         // 顺序：策略先行，再做存在性探测（越界路径不触发任何文件系统探测）。
-        if let Some(cached_path) = cache_store::get(&key, false) {
-            if !cached_path.is_empty() {
-                if let Ok(resolved) = policy.resolve_read_path(&cached_path) {
+        // P2-2：相对名在**当前书源**沙箱根下解析，跨源天然 miss（不会命中
+        // 其他源目录里的同名文件）。
+        if let Some(cached_name) = cache_store::get(&key, false) {
+            if !cached_name.is_empty() {
+                if let Ok(resolved) = policy.resolve_read_path(&cached_name) {
                     if resolved.is_file() {
-                        return read_txt_file(policy, &cached_path, None);
+                        return read_txt_file(policy, &cached_name, None);
                     }
                 }
             }
@@ -423,7 +448,8 @@ mod impl_file_utils {
         let cache_name = format!("{key}.{ext}");
 
         let path = download_file(policy, url, Some(&cache_name))?;
-        cache_store::put(&key, &path, save_time_secs);
+        // P2-2：只记相对名，不把沙箱绝对路径写进进程级缓存（跨源可读键）
+        cache_store::put(&key, &cache_name, save_time_secs);
         read_txt_file(policy, &path, None)
     }
 
@@ -688,6 +714,8 @@ mod tests {
     use crate::host_api::fs_policy::FsPolicy;
     use std::fs;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     fn restricted() -> FsPolicy {
         FsPolicy::restricted()
@@ -706,6 +734,15 @@ mod tests {
     fn cleanup_test_dir(name: &str) {
         let path = sandbox_root().join(name);
         let _ = fs::remove_dir_all(&path);
+    }
+
+    /// 测试侧复算 cacheFile 键（实现模块内 `md5_hex16` 为私有）
+    fn cache_key16(input: &str) -> String {
+        use md5::{Digest, Md5};
+
+        let mut hasher = Md5::new();
+        hasher.update(input.as_bytes());
+        hex::encode(hasher.finalize())[..16].to_string()
     }
 
     // ---- 基本文件操作测试 ----
@@ -937,5 +974,141 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Not a directory"));
         cleanup_test_file("not_a_dir.txt");
+    }
+
+    // ---- cacheFile 跨源隔离（P2-2） ----
+
+    /// 计数回环服务器：所有请求固定返回 `body`，返回 (URL, 请求计数)
+    fn spawn_counting_body_server(body: &'static str, name: &str) -> (String, Arc<AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let server_hits = Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                server_hits.fetch_add(1, Ordering::SeqCst);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://127.0.0.1:{port}/{name}"), hits)
+    }
+
+    /// P2-2：同一 URL 在两个书源下各自缓存、互不覆盖（无抖动），且
+    /// 缓存映射值不携带任何源的绝对路径。
+    ///
+    /// 旧实现把绝对路径写进全局裸 `md5(url)` 键：B 源命中 A 源路径 → 策略
+    /// 拒绝 → 重下并覆盖键 → A 源下次再 miss（多源共享公共 CDN jsLib 时
+    /// `cacheFile` 缓存意义消失）；同时 `cache.get(md5(url))` 会泄露 A 源
+    /// 沙箱绝对路径。现值为源内相对文件名，按当前源沙箱解析。
+    #[test]
+    fn test_cache_file_shared_url_is_isolated_per_source() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        use crate::host_api::cache_store;
+        use crate::host_api::current_source::with_current_source_tag;
+
+        let _lock = cache_store::lock_cache_for_test();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let cache_root = std::env::temp_dir().join(format!(
+            "legado-js-cache-p22-{}-{nanos}",
+            std::process::id()
+        ));
+        cache_store::set_test_disk_dir_override(Some(cache_root.clone()));
+
+        let body = "P2-2 shared public jsLib";
+        let (url, hits) = spawn_counting_body_server(body, &format!("p22-{nanos}.js"));
+        let tag_a = format!("https://p22-a.example.com/{nanos}");
+        let tag_b = format!("https://p22-b.example.com/{nanos}");
+        let key = cache_key16(&url);
+
+        // A 首次：下载到 A 源沙箱目录，映射写相对名
+        let a_first = with_current_source_tag(&tag_a, || cache_file(&restricted(), &url, 0))
+            .expect("A 首次 cacheFile");
+        assert_eq!(a_first, body);
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "A 首次应发起下载");
+        let mapping = cache_store::get(&key, false).expect("缓存映射应存在");
+        assert_eq!(
+            mapping,
+            format!("{key}.js"),
+            "键值应为源内相对文件名（P2-2）"
+        );
+        assert!(
+            !mapping.contains('/') && !mapping.contains('\\'),
+            "键值不得包含路径分隔符: {mapping}"
+        );
+
+        // B 首次：同 URL 不得命中 A 的文件，下载到 B 自己的目录
+        let b_first = with_current_source_tag(&tag_b, || cache_file(&restricted(), &url, 0))
+            .expect("B 首次 cacheFile");
+        assert_eq!(b_first, body);
+        assert_eq!(hits.load(Ordering::SeqCst), 2, "B 首次应各自下载");
+
+        // A/B 再次调用：各自命中自己的文件（映射值相同，不互相顶掉）
+        let a_second = with_current_source_tag(&tag_a, || cache_file(&restricted(), &url, 0))
+            .expect("A 二次 cacheFile");
+        let b_second = with_current_source_tag(&tag_b, || cache_file(&restricted(), &url, 0))
+            .expect("B 二次 cacheFile");
+        assert_eq!(a_second, body);
+        assert_eq!(b_second, body);
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            2,
+            "两源二次调用均应命中各自缓存（旧实现会因跨源覆盖反复重下）"
+        );
+
+        // 跨源隔离：A 的绝对路径在 B 源策略下不可解析/不可读
+        let a_path = with_current_source_tag(&tag_a, || default_sandbox_root().join(&mapping));
+        assert!(a_path.is_file(), "A 源缓存文件应存在: {}", a_path.display());
+        let cross = with_current_source_tag(&tag_b, || {
+            restricted().resolve_read_path(&a_path.to_string_lossy())
+        });
+        assert!(
+            cross.is_err(),
+            "B 源不得解析 A 源缓存文件（跨源隔离）: {}",
+            a_path.display()
+        );
+
+        // 缓存映射不携带任何沙箱绝对路径（书源 cache.get 只能看到相对名）
+        let cache_root_text = cache_root.to_string_lossy().into_owned();
+        assert!(
+            !mapping.contains(&cache_root_text),
+            "缓存映射泄露了缓存目录绝对路径: {mapping}"
+        );
+
+        // 收尾
+        cache_store::delete(&key);
+        cache_store::set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&cache_root);
+        for tag in [&tag_a, &tag_b] {
+            let _ = with_current_source_tag(tag, || {
+                let dir = default_sandbox_root();
+                std::fs::remove_file(dir.join(&mapping)).and_then(|_| std::fs::remove_dir(dir))
+            });
+        }
     }
 }
