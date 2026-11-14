@@ -324,7 +324,9 @@ pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
 }
 
 /// 尽量填满缓冲区（容忍短读与 EINTR）
-fn read_up_to(file: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
+///
+/// `pub(crate)`：[`crate::txt_cache`] 的戳采样复用同一实现，避免重复维护。
+pub(crate) fn read_up_to(file: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
     let mut filled = 0usize;
     while filled < buf.len() {
         match file.read(&mut buf[filled..]) {
@@ -1383,13 +1385,31 @@ mod tests {
     }
 
     /// 两本书交替读：各自命中自己的条目，内容不互相串。
+    ///
+    /// 夹具刻意保持**同长度 + 同 mtime**（仅内容不同），排除长度/mtime
+    /// 维度先行区分条目的干扰，验证同编码下不同书确实按路径隔离。
     #[test]
     fn test_cache_keeps_two_books_isolated() {
         let a_text = "第一章 甲书\n甲书正文一。\n第二章 甲书二\n甲书正文二。\n";
         let b_text = "第一章 乙书\n乙书正文一。\n第二章 乙书二\n乙书正文二。\n";
+        assert_eq!(a_text.len(), b_text.len(), "夹具必须同长度");
         let pa = write_temp_txt("cache_book_a", a_text.as_bytes());
         let pb = write_temp_txt("cache_book_b", b_text.as_bytes());
         let (sa, sb) = (pa.to_str().unwrap(), pb.to_str().unwrap());
+
+        // 两次写入的时刻不同：把 B 的 mtime 对齐到 A，确保长度与 mtime 均相同
+        let shared_mtime = std::fs::metadata(&pa).unwrap().modified().unwrap();
+        File::options()
+            .write(true)
+            .open(&pb)
+            .unwrap()
+            .set_modified(shared_mtime)
+            .unwrap();
+        assert_eq!(
+            std::fs::metadata(&pb).unwrap().modified().unwrap(),
+            shared_mtime,
+            "夹具前置条件：两书 mtime 必须相同"
+        );
 
         let ca = TxtParser::get_chapters_with_charset(sa, Some("UTF-8")).unwrap();
         let cb = TxtParser::get_chapters_with_charset(sb, Some("UTF-8")).unwrap();

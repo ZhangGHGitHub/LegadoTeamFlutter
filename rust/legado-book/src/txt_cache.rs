@@ -11,19 +11,22 @@
 //!
 //! # 失效策略（正确性红线）
 //!
-//! 缓存条目绑定文件「戳」：字节数 + mtime + 首尾 4KB 内容指纹，三者任一
-//! 不符即视为未命中并重新读取解码。指纹的用途是覆盖「同长度、同 mtime 的
-//! 原地替换」——仅 mtime+size 在文件系统时间戳粒度（Windows 上系统时钟
-//! 约 15ms）内可能漏判。
+//! 缓存条目绑定文件「戳」：字节数 + mtime + 首/中/尾三段各 4KB 内容指纹，
+//! 任一字段不符即视为未命中并重新读取解码。指纹的用途是覆盖「同长度、同
+//! mtime 的原地替换」——仅 mtime+size 在文件系统时间戳粒度（Windows 上
+//! 系统时钟约 15ms）内可能漏判；`cp -p` / `rsync -t` / 解压保留时间戳 /
+//! 备份恢复还会把新文件 mtime 设为源文件时间戳。中段采样用于识别其中
+//! 「仅中部修订」的替换（首尾未变时仍能失效）。
 //!
 //! 读取完成后会用**实际读到的字节**重算指纹与长度，与打开时的戳不符
 //! （读取期间文件被改写）则不写入缓存，避免缓存撕裂内容；本次仍按原有
 //! 语义返回已读内容。
 //!
-//! 残余风险（已评估）：指纹只采样首尾各 4KB，理论上「长度、mtime 完全
-//! 不变且仅中部内容不同」的替换无法识别；常规写文件/替换（复制、重命名、
-//! 下载落盘）都会改变长度或 mtime，因此不构成实际路径。不采用全文件哈希
-//! 是因为那会重新引入 O(file) 读取，与本修复目标冲突。
+//! 残余风险（已评估）：指纹只采样首/中/尾三段 4KB，理论上「长度、mtime
+//! 完全不变且三段内容均相同、仅其余位置不同」的替换无法识别；常规写文件/
+//! 替换（复制、重命名、下载落盘）都会改变长度或 mtime，因此不构成实际
+//! 路径。不采用全文件哈希是因为那会重新引入 O(file) 读取，与本修复目标
+//! 冲突。
 //!
 //! # 容量
 //!
@@ -46,11 +49,15 @@ use encoding_rs::{Encoding, UTF_8};
 
 use legado_core::LegadoResult;
 
-use crate::txt::{decode_text, detect_encoding_from_sample, encoding_for_label};
+use crate::txt::{decode_text, detect_encoding_from_sample, encoding_for_label, read_up_to};
 
-/// 文件首/尾采样长度（同时作为编码检测样本的上限，与
+/// 文件首/中/尾采样长度（同时作为编码检测样本的上限，与
 /// [`crate::txt::TxtParser::detect_encoding`] 的 4KB 口径一致）
 const SAMPLE_LEN: usize = 4096;
+
+/// 全文件读取的预分配上限：文件元数据长度不可信（稀疏/损坏/超大）时，
+/// 避免按声明长度一次性大块分配；`read_to_end` 会按实际内容渐进扩容。
+const READ_PREALLOC_LIMIT: u64 = 32 * 1024 * 1024;
 
 /// 缓存条目数上限。
 ///
@@ -75,7 +82,7 @@ struct FileStamp {
     len: u64,
     /// 最后修改时间（平台不支持时为 `None`，此时依赖长度 + 指纹）
     modified: Option<SystemTime>,
-    /// 首/尾采样指纹（见 [`fingerprint_bytes`]）
+    /// 首/中/尾采样指纹（见 [`fingerprint_bytes`]）
     fingerprint: u64,
 }
 
@@ -132,10 +139,14 @@ impl TextCache {
         if self.max_entries == 0 || self.max_bytes == 0 || text.len() > self.max_bytes {
             return;
         }
-        // 同 key（同路径 + 同编码 + 同戳）直接替换，避免重复占额
-        if let Some(pos) = self.entries.iter().position(|entry| {
-            entry.path == path && entry.encoding == encoding && entry.stamp == stamp
-        }) {
+        // 同 (path, encoding) 直接替换旧条目：文件更新后旧戳条目不会再命中，
+        // 若把戳纳入去重键，同一本书反复更新会堆积永不复用的死条目并挤掉
+        // 其他书。
+        if let Some(pos) = self
+            .entries
+            .iter()
+            .position(|entry| entry.path == path && entry.encoding == encoding)
+        {
             let removed = self.entries.remove(pos);
             self.total_bytes = self.total_bytes.saturating_sub(removed.text.len());
         }
@@ -187,6 +198,11 @@ struct OpenedText {
     head: Vec<u8>,
 }
 
+/// 打开文件并采集内容戳；`head` 为前 4KB 样本（编码检测复用）
+///
+/// 指纹采样首/中/尾三段各最多 4KB。中段仅在 `len > 2 * SAMPLE_LEN`
+/// （首尾两段之间确实存在未覆盖区间）时读取，因此小文件不会重复读同一段
+/// 字节；每次缓存命中只多 4KB I/O（相比整文件读取仍是极小开销）。
 fn open_and_stamp(path: &str) -> LegadoResult<OpenedText> {
     let mut file = File::open(path)?;
     let meta = file.metadata()?;
@@ -206,6 +222,15 @@ fn open_and_stamp(path: &str) -> LegadoResult<OpenedText> {
         tail.truncate(filled);
         tail.hash(&mut hasher);
     }
+    // 中段采样：覆盖「同长度同 mtime、仅中部修订」的替换。`len > 8KB` 时
+    // `len/2 + 4KB <= len`，窗口不越过文件末尾。
+    if len > 2 * SAMPLE_LEN as u64 {
+        file.seek(SeekFrom::Start(len / 2))?;
+        let mut middle = vec![0u8; SAMPLE_LEN];
+        let filled = read_up_to(&mut file, &mut middle)?;
+        middle.truncate(filled);
+        middle.hash(&mut hasher);
+    }
 
     let stamp = FileStamp {
         len,
@@ -215,27 +240,18 @@ fn open_and_stamp(path: &str) -> LegadoResult<OpenedText> {
     Ok(OpenedText { file, stamp, head })
 }
 
-/// 尽量填满缓冲区（容忍短读与 EINTR）
-fn read_up_to(file: &mut File, buf: &mut [u8]) -> std::io::Result<usize> {
-    let mut filled = 0usize;
-    while filled < buf.len() {
-        match file.read(&mut buf[filled..]) {
-            Ok(0) => break,
-            Ok(n) => filled += n,
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(filled)
-}
-
-/// 按与 [`open_and_stamp`] 相同的规则计算内容指纹（用于读后一致性校验）
+/// 按与 [`open_and_stamp`] 相同的规则计算内容指纹（用于读后一致性校验）：
+/// 首段 + 尾段 + 中段，顺序与打开时一致。
 fn fingerprint_bytes(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     let head_len = bytes.len().min(SAMPLE_LEN);
     bytes[..head_len].hash(&mut hasher);
     if bytes.len() > SAMPLE_LEN {
         bytes[bytes.len() - SAMPLE_LEN..].hash(&mut hasher);
+    }
+    if bytes.len() > 2 * SAMPLE_LEN {
+        let middle = bytes.len() / 2;
+        bytes[middle..middle + SAMPLE_LEN].hash(&mut hasher);
     }
     hasher.finish()
 }
@@ -264,7 +280,9 @@ pub(crate) fn load_decoded_text(path: &str, charset: Option<&str>) -> LegadoResu
 
     // 采样读取后文件位置不在起点（小文件已在 EOF），必须显式回到起点
     opened.file.seek(SeekFrom::Start(0))?;
-    let mut bytes = Vec::with_capacity(usize::try_from(opened.stamp.len).unwrap_or(0));
+    // 元数据长度不可信：预分配封顶，剩余部分由 read_to_end 渐进扩容
+    let mut bytes =
+        Vec::with_capacity(usize::try_from(opened.stamp.len.min(READ_PREALLOC_LIMIT)).unwrap_or(0));
     opened.file.read_to_end(&mut bytes)?;
     let text = Arc::new(decode_text(&bytes, encoding));
 
@@ -323,6 +341,38 @@ mod tests {
 
     fn text(value: &str) -> Arc<String> {
         Arc::new(value.to_string())
+    }
+
+    /// 测试专用临时文件路径（进程号 + 自增值，避免并行用例互踩）
+    fn temp_txt_path(name: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "legado_txt_cache_{}_{}_{}",
+            std::process::id(),
+            n,
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("sample.txt")
+    }
+
+    /// 覆盖文件 mtime（模拟 `cp -p` / `rsync -t` / 备份恢复保留源时间戳）
+    fn set_mtime(path: &std::path::Path, mtime: std::time::SystemTime) {
+        File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+    }
+
+    /// 把标记写入文件正中（落在中段 4KB 采样窗口 `[len/2, len/2+4KB)` 内）
+    fn write_middle_marker(bytes: &mut [u8], marker: &[u8]) {
+        let start = bytes.len() / 2;
+        bytes[start..start + marker.len()].copy_from_slice(marker);
     }
 
     #[test]
@@ -408,5 +458,151 @@ mod tests {
         cache.insert("a", "UTF-8", s.clone(), text("x"));
         assert!(cache.entries.is_empty());
         assert!(cache.get("a", "UTF-8", &s).is_none());
+    }
+
+    /// [审查 P3-1] 去重键必须是 `(path, encoding)`：文件更新后旧戳条目
+    /// 永不命中，若按「路径 + 编码 + 戳」去重会在同一本书反复更新时堆积死条目。
+    #[test]
+    fn test_insert_replaces_stale_entry_for_same_path_and_encoding() {
+        let mut cache = TextCache::new(10, 1024);
+        cache.insert("a", "UTF-8", stamp(1, None, 1), text("old"));
+        cache.insert("a", "UTF-8", stamp(1, None, 2), text("new"));
+        assert_eq!(
+            cache.entries.len(),
+            1,
+            "同路径同编码的新戳条目必须替换旧条目"
+        );
+        assert_eq!(cache.total_bytes, 3, "旧条目字节数必须扣回");
+        assert!(
+            cache.get("a", "UTF-8", &stamp(1, None, 1)).is_none(),
+            "已被替换的旧戳不得命中"
+        );
+        assert_eq!(
+            cache
+                .get("a", "UTF-8", &stamp(1, None, 2))
+                .as_deref()
+                .map(String::as_str),
+            Some("new")
+        );
+
+        // 编码不同是独立条目，不得互相替换
+        cache.insert("a", "GBK", stamp(1, None, 2), text("gbk"));
+        assert_eq!(cache.entries.len(), 2, "编码不同不得互相替换");
+        assert_eq!(cache.total_bytes, 6);
+    }
+
+    /// [审查 P2-1] 同长度 + 同 mtime + 首尾 4KB 相同、仅中部 4KB 不同：
+    /// 中段指纹必须使缓存失效（修复前只采样首尾会命中旧正文）。
+    #[test]
+    fn test_middle_sample_detects_middle_only_replacement() {
+        // 20KB：首段 0..4096、中段 10000..14096、尾段 15904..20000 互不重叠
+        const LEN: usize = 20_000;
+        let path = temp_txt_path("middle_only");
+        let path_str = path.to_str().unwrap();
+
+        let mut v1 = vec![b'a'; LEN];
+        write_middle_marker(&mut v1, b"OLD");
+        std::fs::write(&path, &v1).unwrap();
+        let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        let old = load_decoded_text(path_str, Some("UTF-8")).unwrap();
+        assert!(old.contains("OLD"), "首次读取应包含旧正文");
+        assert_eq!(full_file_loads(path_str), 1);
+
+        // 替换成同长度、仅中段不同的新内容，并把 mtime 拨回原值
+        let mut v2 = v1.clone();
+        write_middle_marker(&mut v2, b"NEW");
+        std::fs::write(&path, &v2).unwrap();
+        set_mtime(&path, original_mtime);
+        let tampered = std::fs::metadata(&path).unwrap();
+        assert_eq!(tampered.len(), LEN as u64, "夹具必须同长度");
+        assert_eq!(
+            tampered.modified().unwrap(),
+            original_mtime,
+            "夹具必须同 mtime"
+        );
+
+        let new = load_decoded_text(path_str, Some("UTF-8")).unwrap();
+        assert!(
+            new.contains("NEW"),
+            "仅中部变化的同长度同 mtime 替换必须失效并读到新内容"
+        );
+        assert!(!new.contains("OLD"), "不得返回缓存中的旧正文");
+        assert_eq!(
+            full_file_loads(path_str),
+            2,
+            "中段指纹不符必须触发一次重新读取"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// [审查 P3-5] mtime 单独变化（内容与长度不变）也必须失效。
+    #[test]
+    fn test_cache_invalidated_when_only_mtime_changes() {
+        let path = temp_txt_path("mtime_only");
+        let path_str = path.to_str().unwrap();
+        std::fs::write(&path, b"alpha\nbeta\n").unwrap();
+        let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        let first = load_decoded_text(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(full_file_loads(path_str), 1);
+
+        // 选一个与当前时刻明确不同的时间（2020-09-13），避免文件系统粒度内相等
+        let different_mtime =
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
+        assert_ne!(different_mtime, original_mtime);
+        set_mtime(&path, different_mtime);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            different_mtime
+        );
+
+        let second = load_decoded_text(path_str, Some("UTF-8")).unwrap();
+        assert_eq!(first, second, "内容未变时解码结果应一致");
+        assert_eq!(
+            full_file_loads(path_str),
+            2,
+            "mtime 变化必须使缓存失效（即使内容与长度未变）"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// [审查 P3-5] 仅尾部（>4KB 偏移）内容变化必须失效。
+    #[test]
+    fn test_tail_sample_detects_tail_only_change() {
+        const LEN: usize = 20_000;
+        let path = temp_txt_path("tail_only");
+        let path_str = path.to_str().unwrap();
+
+        let mut v1 = vec![b'a'; LEN];
+        let marker_start = LEN - 100;
+        v1[marker_start..marker_start + 3].copy_from_slice(b"OLD");
+        std::fs::write(&path, &v1).unwrap();
+        let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        let old = load_decoded_text(path_str, Some("UTF-8")).unwrap();
+        assert!(old.contains("OLD"), "首次读取应包含旧尾段");
+        assert_eq!(full_file_loads(path_str), 1);
+
+        let mut v2 = v1.clone();
+        v2[marker_start..marker_start + 3].copy_from_slice(b"NEW");
+        std::fs::write(&path, &v2).unwrap();
+        set_mtime(&path, original_mtime);
+        let tampered = std::fs::metadata(&path).unwrap();
+        assert_eq!(tampered.len(), LEN as u64);
+        assert_eq!(tampered.modified().unwrap(), original_mtime);
+
+        let new = load_decoded_text(path_str, Some("UTF-8")).unwrap();
+        assert!(new.contains("NEW"), "仅尾部变化必须使缓存失效并读到新内容");
+        assert!(!new.contains("OLD"));
+        assert_eq!(
+            full_file_loads(path_str),
+            2,
+            "尾段指纹不符必须触发一次重新读取"
+        );
+
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
