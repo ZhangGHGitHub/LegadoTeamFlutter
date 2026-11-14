@@ -7,7 +7,10 @@ edition = "2021"
 legado-core = { path = "../legado-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-zip = "2"
+# [批43 | 2026-11-15] 2.4.2 → 9.5.1：修复 RUSTSEC-2026-0367/0368/0369/0429
+# （extract() 系列路径穿越与权限位缺陷，patched 范围 >=9.0.0；2.6.1 非修复版本）。
+# 默认 features 与 2.4.2 对齐（9.5.1 额外默认启用 ppmd，无能力裁剪）。
+zip = "9"
 quick-xml = "0.42"
 encoding_rs = "0.8"
 regex = "1"

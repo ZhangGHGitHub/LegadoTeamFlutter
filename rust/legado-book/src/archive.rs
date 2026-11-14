@@ -199,14 +199,20 @@ fn check_zip_declared_limits(
         let entry = archive
             .by_index(i)
             .map_err(|e| LegadoError::BookParse(format!("读取ZIP条目失败: {e}")))?;
-        validate_archive_entry_name(entry.name(), "ZIP")?;
+        // [批43 | zip 9] `name()` 返回 `ZipResult<Cow<'_, str>>`（含 CP437 回退）。
+        // 本函数是列表与导入共用的结构预检，条目名不可解码按 fail-closed 处理：
+        // 放行会让「逐条名校验」失去完整性保证，也让声明大小统计漏掉该条目。
+        let name = entry
+            .name()
+            .map_err(|e| LegadoError::BookParse(format!("ZIP 条目名解码失败（条目 #{i}）: {e}")))?;
+        validate_archive_entry_name(&name, "ZIP")?;
         if entry.is_dir() {
             continue;
         }
         if entry.size() > limits.max_entry_size {
             return Err(LegadoError::BookParse(format!(
                 "ZIP 单条目过大 [{0}]（{1} 字节，上限 {2} 字节）",
-                entry.name(),
+                name,
                 entry.size(),
                 limits.max_entry_size
             )));
@@ -257,7 +263,17 @@ fn import_zip_file_with_limits(
             continue;
         }
 
-        let entry_name = entry.name().to_string();
+        // [批43 | zip 9] 解压路径：条目名不可解码按 fail-closed 中止整包，
+        // 并沿用本循环的错误清理语义（删除本批已写出的 .part 文件）。
+        let entry_name = match entry.name() {
+            Ok(name) => name.into_owned(),
+            Err(e) => {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!(
+                    "ZIP 条目名解码失败（条目 #{i}）: {e}"
+                )));
+            }
+        };
         let base_name = file_base_name(&entry_name);
 
         // 跳过隐藏文件
@@ -595,7 +611,16 @@ fn list_zip_book_files_with_limits(
             continue;
         }
 
-        let name = entry.name().to_string();
+        // [批43 | zip 9] 列表路径：条目名不可解码时跳过 + 告警，不让一个坏条目
+        // 拖垮整包浏览（`check_zip_declared_limits` 已先行 fail-closed，此处为
+        // 纵深防御；错误分支实际不可达时也保持行为语义明确）。
+        let name = match entry.name() {
+            Ok(name) => name.into_owned(),
+            Err(e) => {
+                eprintln!("ZIP 列表: 跳过条目名无法解码的条目 #{i}: {e}");
+                continue;
+            }
+        };
         let base_name = file_base_name(&name);
         if !base_name.starts_with('.') && is_book_file(base_name) {
             book_files.push(base_name.to_string());
@@ -2123,11 +2148,15 @@ mod tests {
     /// [批32b P3-2] 「实际读取字节」限额分支：伪造中央目录声明大小
     ///
     /// 将 central directory 的 uncompressed size 改为 16（真实输出 4096），
-    /// 声明预检放行（16 ≤ 1024），解压循环按实际读取 4096 字节触发
-    /// `ZIP 单条目超限`——覆盖不信任声明值的实际计数分支（旧测试只覆盖
-    /// 声明值分支 `ZIP 单条目过大`）。
+    /// 声明预检放行（16 ≤ 1024）。
+    ///
+    /// [批43 | zip 9.5.1] 首个命中点变化：zip 9 读取器把「实际字节 > 声明
+    /// uncompressed size」直接视为解码错误（`File is larger than its declared
+    /// uncompressed size`），在读取阶段即 fail-closed；因此「按实际读取字节
+    /// 计数触发 `ZIP 单条目超限`」不再是本夹具的首个错误（该分支保留为纵深
+    /// 防御）。断言按「两种命中点都算通过」编写，并继续验证无 `.part` 残留。
     #[test]
-    fn test_import_zip_actual_read_limit_with_forged_declared_size() {
+    fn test_import_zip_rejects_forged_declared_size() {
         let dir = unique_7z_dir("zip_actual_limit");
         let archive = dir.join("books.zip");
         let payload = vec![b'A'; 4096];
@@ -2155,9 +2184,10 @@ mod tests {
             &limits,
         )
         .unwrap_err();
+        let msg = err.to_string();
         assert!(
-            err.to_string().contains("ZIP 单条目超限"),
-            "应命中实际读取计数分支而非声明预检，实际：{err}"
+            msg.contains("ZIP 单条目超限") || msg.contains("declared uncompressed size"),
+            "伪造声明大小应在实际字节复核或 zip 读取器处被拒绝，实际：{err}"
         );
         assert_no_part_files(&output);
         assert_eq!(fs::read_dir(&output).unwrap().count(), 0);

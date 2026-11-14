@@ -51,9 +51,18 @@ impl CbzFile {
             if entry.is_dir() {
                 continue;
             }
-            let name = entry.name();
-            if is_image_entry(name) {
-                images.push(name.to_string());
+            // [批43 | zip 9] `name()` 返回 `ZipResult<Cow<'_, str>>`。CBZ 打开是
+            // 列表路径：单个条目名不可解码时跳过 + 告警，避免一个坏条目让整本
+            // 漫画无法打开（真正读取该条目时仍会因名称缺失而自然跳过）。
+            let name = match entry.name() {
+                Ok(name) => name,
+                Err(e) => {
+                    eprintln!("CBZ 列表: 跳过条目名无法解码的条目 #{i}: {e}");
+                    continue;
+                }
+            };
+            if is_image_entry(&name) {
+                images.push(name.into_owned());
             }
         }
         images.sort_by(|a, b| natural_cmp(a, b));

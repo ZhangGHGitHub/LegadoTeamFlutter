@@ -495,7 +495,7 @@ mod tests {
                     zip::ZipArchive::new(std::io::Cursor::new(data.clone())).expect("zip 应可读");
                 assert_eq!(archive.len(), 1);
                 let mut entry = archive.by_index(0).unwrap();
-                assert_eq!(entry.name(), "source.json");
+                assert_eq!(entry.name().unwrap(), "source.json");
                 let mut out = Vec::new();
                 std::io::Read::read_to_end(&mut entry, &mut out).unwrap();
                 assert_eq!(out, expected);
@@ -760,7 +760,7 @@ mod tests {
         let mut archive =
             zip::ZipArchive::new(std::io::Cursor::new(file_bytes.to_vec())).expect("zip 可读");
         let mut entry = archive.by_index(0).unwrap();
-        assert_eq!(entry.name(), "rules.json");
+        assert_eq!(entry.name().unwrap(), "rules.json");
         let mut out = Vec::new();
         std::io::Read::read_to_end(&mut entry, &mut out).unwrap();
         assert_eq!(out, b"[1,2,3]");

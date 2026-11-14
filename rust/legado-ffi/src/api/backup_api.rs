@@ -1198,7 +1198,15 @@ fn read_zip_selected(
         }
         // 部分第三方打包工具会给条目加 `./` 前缀；去掉后再做安全校验
         //（`./` 不属于 `..` 逃逸，且去前缀后仍须通过 [`is_safe_zip_entry_name`]）
-        let name = entry.name().trim_start_matches("./").to_string();
+        // [批43 | zip 9] `name()` 返回 `ZipResult<Cow<'_, str>>`：备份恢复属解压
+        // 路径，条目名不可解码按 fail-closed 拒绝整包（不猜测、不静默跳过）。
+        let name = entry
+            .name()
+            .map_err(|e| {
+                LegadoError::Internal(format!("备份 zip 条目名解码失败（条目 #{index}）: {e}"))
+            })?
+            .trim_start_matches("./")
+            .to_string();
         if !is_safe_zip_entry_name(&name) {
             log::warn!("跳过路径不安全的备份 zip 条目: {name}");
             continue;
@@ -8280,14 +8288,20 @@ mod tests {
         bytes[cd + 24..cd + 28].copy_from_slice(&fake_size.to_le_bytes());
     }
 
-    /// [批9 回修 P1] 伪造 uncompressed_size 的超量条目必须按实际读取量跳过
+    /// [批9 回修 P1] 伪造 uncompressed_size 的超量条目必须被拒绝（fail-closed）
     ///
-    /// 用 zip 2.4 构造真实条目（数据与 CRC 完好），仅把声明未压缩大小改为 32
-    /// 字节；实际内容 8192 字节。旧实现只看 `entry.size()` 会放行并
-    /// `read_to_end` 无限解压；修复后限量读取按实际字节数判定为超限并跳过。
-    /// 为避免测试真的生成 256 MiB 数据，直接以较小的 `limit` 调用同一防护函数。
+    /// 用真实条目（数据与 CRC 完好）构造，仅把声明未压缩大小改为 32 字节；
+    /// 实际内容 8192 字节。
+    ///
+    /// [批43 | zip 9.5.1] 行为变化：zip 9 读取器把「实际字节 > 声明
+    /// uncompressed size」视为解码错误（`File is larger than its declared
+    /// uncompressed size`），伪造小声明值的条目在读取阶段即被拒绝；旧版
+    /// zip 2.4 会继续解压，由 [`read_zip_entry_limited`] 的实际字节限额兜底。
+    /// 后者的独立覆盖改用**未伪造**声明值（8192）验证：实际读取量 > limit
+    /// → 跳过；实际读取量 > 总预算 → 明确报错。错误路径的字节入账由
+    /// `test_read_zip_entry_limited_counts_bytes_on_error_path` 单独覆盖。
     #[test]
-    fn test_zip_forged_uncompressed_size_entry_skipped() {
+    fn test_zip_forged_uncompressed_size_rejected() {
         use std::io::Write as _;
 
         let dir = std::env::temp_dir().join("legado_restore_zip_forged_size");
@@ -8310,15 +8324,37 @@ mod tests {
             writer.write_all(&payload).unwrap();
             writer.finish().unwrap();
         }
-        let mut bytes = fs::read(&zip_path).unwrap();
-        forge_zip_uncompressed_size(&mut bytes, 32);
+        let valid_bytes = fs::read(&zip_path).unwrap();
+        let mut forged_bytes = valid_bytes.clone();
+        forge_zip_uncompressed_size(&mut forged_bytes, 32);
 
-        // 声明值已伪造：entry.size() 返回 32（旧实现的放行条件）
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        // 1) 声明值已伪造：entry.size() 返回 32，但 zip 9 读取器拒绝超声明读取
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&forged_bytes[..])).unwrap();
         let mut entry = archive.by_index(0).unwrap();
         assert_eq!(entry.size(), 32, "伪造的声明大小应生效");
+        let mut total_decoded = 0u64;
+        let err = read_zip_entry_limited(
+            "bookshelf.json",
+            entry.size(),
+            &mut entry,
+            1024,
+            &mut total_decoded,
+            MAX_BACKUP_TOTAL_BYTES,
+        )
+        .expect_err("伪造小声明值的条目必须被 zip 读取器拒绝");
+        assert!(
+            err.to_string().contains("declared uncompressed size"),
+            "应命中 zip 9 声明大小校验: {err}"
+        );
+        assert!(
+            total_decoded <= 1024,
+            "失败条目最多读取 limit+1 字节（实际 {total_decoded}）"
+        );
 
-        // 限量读取（测试上限 1024）→ 实际 8192 字节超限，必须跳过
+        // 2) 未伪造声明值：实际读取量超过 limit → 按实际字节跳过
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&valid_bytes[..])).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        assert_eq!(entry.size(), 8192, "未伪造条目声明大小应为 8192");
         let mut total_decoded = 0u64;
         let result = read_zip_entry_limited(
             "bookshelf.json",
@@ -8331,28 +8367,20 @@ mod tests {
         .unwrap();
         assert!(
             result.is_none(),
-            "声明小/实际大的条目必须按实际解压量判定为超限并跳过"
+            "实际读取量超过 limit 的条目必须跳过（不能只看声明值）"
         );
         assert!(
             total_decoded > 1024,
             "已读取字节应计入累计预算: {total_decoded}"
         );
 
-        // 证明条目数据与 CRC 本身完好：不限量读取可读满 8192 字节
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
-        let mut entry = archive.by_index(0).unwrap();
-        let mut full = Vec::new();
-        entry.read_to_end(&mut full).unwrap();
-        assert_eq!(full.len(), 8192, "条目数据本身完好，跳过原因只能是超限");
-        assert!(full.starts_with(b"["));
-
-        // 累计预算超限：读取量入账后超过预算 → 明确错误中止
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        // 3) 累计预算超限：读取量入账后超过预算 → 明确错误中止
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&valid_bytes[..])).unwrap();
         let mut entry = archive.by_index(0).unwrap();
         let mut total_decoded = 0u64;
         let err = read_zip_entry_limited(
             "bookshelf.json",
-            32,
+            entry.size(),
             &mut entry,
             1024,
             &mut total_decoded,
@@ -8363,6 +8391,7 @@ mod tests {
             err.to_string().contains("解压总量超过上限"),
             "跨条目累计超预算应给出明确错误: {err}"
         );
+        assert!(total_decoded > 128, "累计量应已入账: {total_decoded}");
 
         let _ = fs::remove_dir_all(&dir);
     }

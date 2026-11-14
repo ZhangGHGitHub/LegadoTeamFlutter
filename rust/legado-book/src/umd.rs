@@ -108,7 +108,15 @@ impl UmdParser {
             let mut file = archive
                 .by_index(i)
                 .map_err(|e| LegadoError::BookParse(e.to_string()))?;
-            let name = file.name().to_string();
+            // [批43 | zip 9] `name()` 返回 `ZipResult<Cow<'_, str>>`。UMD 解析
+            // 逐条读取正文/封面，属解压路径：条目名不可解码按 fail-closed 报错，
+            // 避免静默丢掉章节造成残缺书目。
+            let name = file
+                .name()
+                .map_err(|e| {
+                    LegadoError::BookParse(format!("UMD 条目名解码失败（条目 #{i}）: {e}"))
+                })?
+                .into_owned();
             let lower = name.to_lowercase();
 
             if lower.ends_with(".html") || lower.ends_with(".htm") {

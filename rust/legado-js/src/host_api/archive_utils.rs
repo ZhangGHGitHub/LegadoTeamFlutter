@@ -185,8 +185,11 @@ fn copy_entry_capped<W: std::io::Write>(
 ///
 /// 先按中央目录声明的 `size()` 快速拒绝，再按实际读取字节复核——声明的
 /// 大小可被伪造，不能只信元数据。
-fn read_zip_entry_capped(
-    entry: &mut zip::read::ZipFile<'_>,
+///
+/// [批43 | zip 9] `ZipFile<'a>` 变为 `ZipFile<'a, R: Read + ?Sized>`，此函数
+/// 需按条目读取器类型泛型化；调用点由 `by_name`/`by_index` 自动推断 `R`。
+fn read_zip_entry_capped<R: std::io::Read>(
+    entry: &mut zip::read::ZipFile<'_, R>,
     entry_name: &str,
 ) -> Result<Vec<u8>, String> {
     let declared = entry.size();
