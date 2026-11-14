@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.504] - 2026-11-15
+
+### Security
+- [Rust] 依赖安全升级：清除全部 23 项已知漏洞（`cargo audit` 从 23 项降至 0 项）。其中最高风险的是 HTTPS 根证书信任链缺陷——已公开私钥的证书颁发机构可被用于伪造任意网站的证书，影响所有书源与 RSS 的 HTTPS 连接；其余为 TLS/QUIC/压缩/数据库层的崩溃与内存安全问题。
+- [Rust] 压缩包解析升级到 zip 9（修复 4 项路径穿越与权限提升漏洞）。同时带来的行为改进：声明大小与实际内容不符的恶意压缩包现在会被直接拒绝。
+
+### Changed
+- [Rust] 数据库引擎 SQLite 3.45 → 3.54，HTTP/TLS 与压缩库同步升级到修复版本。功能与数据格式不变。
+
 ## [2.0.503] - 2026-11-15
 
 ### Fixed
