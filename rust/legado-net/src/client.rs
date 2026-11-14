@@ -465,6 +465,10 @@ impl LegadoClient {
     }
 
     /// 发送 GET 请求并返回原始字节（用于图片等二进制资源）
+    ///
+    /// 注意：响应体经 [`Self::get`] 的 `response.text()` 收集后再转回字节——
+    /// 非 UTF-8 字节会变成 U+FFFD，且网络层没有大小上限。二进制/大文件下载
+    /// 请用 [`Self::get_bytes_capped`]（P1-1 / P1-2）。
     pub async fn get_bytes(
         &self,
         url: &str,
@@ -472,6 +476,58 @@ impl LegadoClient {
     ) -> LegadoResult<Vec<u8>> {
         let resp = self.get(url, headers).await?;
         Ok(resp.body.into_bytes())
+    }
+
+    /// 发送 GET 请求并按**流式上限**读取原始字节（下载：二进制无损 + 内存有界）
+    ///
+    /// 与 [`Self::get_bytes`] 的区别（P1-1 / P1-2）：
+    /// - 响应体经 [`crate::response::LegadoStreamResponse::next_chunk`] 逐块
+    ///   累计，超过 `max_bytes` 立即中止，**不把完整响应体读入内存**；
+    ///   `Content-Length` 已声明超限时在读取任何 body 字节前快速拒绝；
+    /// - 全程不做 UTF-8 文本解码（`response.text()` 会把非 UTF-8 字节替换成
+    ///   U+FFFD），返回的字节可原样落盘；
+    /// - 非 2xx 返回 [`LegadoError::Network`]（对齐上游 `URL.openStream()` 对
+    ///   错误状态抛异常，避免把错误页当下载结果写入磁盘）。
+    ///
+    /// 请求语义（默认头 / Cookie 注入与写侧门控 / 客户端级重试 / 按域名限流 /
+    /// UA 轮换与代理中间件）与 [`Self::get_raw`] 一致；域名限流许可随响应体
+    /// 消费结束释放（[`Self::send_stream`] 持有）。
+    pub async fn get_bytes_capped(
+        &self,
+        url: &str,
+        headers: Option<HashMap<String, String>>,
+        max_bytes: u64,
+    ) -> LegadoResult<Vec<u8>> {
+        let mut request = crate::request::LegadoRequest::get(url);
+        if let Some(headers) = headers {
+            request.headers = headers;
+        }
+        let mut response = self.send_stream(&request).await?;
+
+        if !response.is_success() {
+            return Err(LegadoError::Network(format!(
+                "HTTP {}: {url}",
+                response.status()
+            )));
+        }
+
+        // Content-Length 快拒：声明值已超限时不必读 body（声明值可被服务端
+        // 伪造得更小，逐块累计仍会兜底）
+        if let Some(declared) = response.content_length() {
+            if declared > max_bytes {
+                return Err(download_limit_error(url, declared, max_bytes));
+            }
+        }
+
+        let mut body = Vec::new();
+        while let Some(chunk) = response.next_chunk().await? {
+            let received = body.len() as u64 + chunk.len() as u64;
+            if received > max_bytes {
+                return Err(download_limit_error(url, received, max_bytes));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
     }
 
     /// 发送 GET 请求并返回无损原始字节响应（Task #113：TTS 音频等二进制资源）
@@ -1275,6 +1331,16 @@ fn map_reqwest_error(e: reqwest::Error) -> LegadoError {
     } else {
         LegadoError::Network(format!("Request failed: {chain}"))
     }
+}
+
+/// [`LegadoClient::get_bytes_capped`] 的超限错误
+///
+/// `size` 为 `Content-Length` 声明值（快速拒绝路径）或已接收字节数（逐块
+/// 累计路径）；两条路径共用同一措辞，便于上层统一识别/转发。
+fn download_limit_error(url: &str, size: u64, max_bytes: u64) -> LegadoError {
+    LegadoError::Network(format!(
+        "下载超出大小上限：{url} 响应体 {size} 字节，超过上限 {max_bytes} 字节"
+    ))
 }
 
 /// 取响应头值（键名不区分大小写；缺失返回 None）
@@ -3119,5 +3185,146 @@ mod tests {
         assert!(cookie_jar_marker_present(Some(&headers)));
         assert!(!cookie_jar_marker_present(None));
         assert!(!cookie_jar_marker_present(Some(&HashMap::new())));
+    }
+
+    // ─── get_bytes_capped（P1-1 有上限 + P1-2 二进制无损） ───
+
+    /// 一次性回环服务：返回固定 body
+    ///
+    /// - `declared_len`：`Content-Length` 声明值；`None` 时不发该头，响应体
+    ///   以 `Connection: close` 的 EOF 定界（用于验证「边读边判上限」）；
+    /// - `hold_after_send`：写完 body 后保持连接不关闭的时长（模拟慢/大
+    ///   响应：若调用方读完整 body 才会阻塞，逐块上限则应立即中止）。
+    async fn spawn_capped_test_server(
+        status: u16,
+        body: Vec<u8>,
+        declared_len: Option<usize>,
+        hold_after_send: Duration,
+    ) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf).await;
+                let mut head =
+                    format!("HTTP/1.1 {status} OK\r\nContent-Type: application/octet-stream\r\n");
+                if let Some(len) = declared_len {
+                    head.push_str(&format!("Content-Length: {len}\r\n"));
+                }
+                head.push_str("Connection: close\r\n\r\n");
+                let _ = sock.write_all(head.as_bytes()).await;
+                let _ = sock.write_all(&body).await;
+                let _ = sock.flush().await;
+                if !hold_after_send.is_zero() {
+                    tokio::time::sleep(hold_after_send).await;
+                }
+                let _ = sock.shutdown().await;
+            }
+        });
+        addr
+    }
+
+    fn capped_test_client(read_timeout: Duration) -> LegadoClient {
+        // no_proxy=true：回环测试流量不得经系统/环境变量代理路由
+        LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            read_timeout,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap()
+    }
+
+    /// P1-2：非 UTF-8 二进制（含 0xFF/0x80 与非法序列 0xC3 0x28）必须
+    /// **逐字节一致**返回；`get_bytes` 的 `response.text()` 路径会把它变成
+    /// U+FFFD，本用例锁死 capped 接口的无损语义。
+    #[tokio::test]
+    async fn test_get_bytes_capped_preserves_non_utf8_bytes() {
+        const BINARY: &[u8] = &[0x00, 0xff, 0x80, 0x1f, 0xc3, 0x28];
+        let addr =
+            spawn_capped_test_server(200, BINARY.to_vec(), Some(BINARY.len()), Duration::ZERO)
+                .await;
+        let client = capped_test_client(Duration::from_secs(10));
+
+        let bytes = client
+            .get_bytes_capped(&format!("http://{addr}/binary.dat"), None, 1024)
+            .await
+            .expect("二进制下载应成功");
+
+        assert_eq!(
+            bytes, BINARY,
+            "非 UTF-8 字节必须原样返回（text() 路径会把它们替换为 U+FFFD）"
+        );
+    }
+
+    /// P1-1：`Content-Length` 已声明超限 → 不读 body 直接拒绝
+    ///
+    /// 服务端声明 1MiB、实际不发送 body 并保持连接 5s；客户端 read_timeout
+    /// 设为 1s。若实现先读完 body 再判上限，会得到超时错误（红）；快速拒绝
+    /// 则立即返回大小上限错误。
+    #[tokio::test]
+    async fn test_get_bytes_capped_rejects_declared_oversize_before_reading_body() {
+        let addr =
+            spawn_capped_test_server(200, Vec::new(), Some(1024 * 1024), Duration::from_secs(5))
+                .await;
+        let client = capped_test_client(Duration::from_secs(1));
+
+        let err = client
+            .get_bytes_capped(&format!("http://{addr}/huge.bin"), None, 1024)
+            .await
+            .expect_err("声明超限应报错");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("下载超出大小上限"),
+            "应为大小上限错误（而非读完 body 后的超时）: {msg}"
+        );
+    }
+
+    /// P1-1：服务端不声明 `Content-Length`（EOF 定界）且 body 超限 →
+    /// 逐块累计中止，不等待完整 body 结束
+    ///
+    /// 服务端写入 64KiB 后保持连接 5s；客户端 read_timeout 1s。若实现先
+    /// 收完整 body 再判上限会超时（红）；逐块判定则在读到 ~1KiB 时立即
+    /// 中止（绿）。
+    #[tokio::test]
+    async fn test_get_bytes_capped_aborts_streaming_over_limit() {
+        let body = vec![0x42u8; 64 * 1024];
+        let addr = spawn_capped_test_server(200, body, None, Duration::from_secs(5)).await;
+        let client = capped_test_client(Duration::from_secs(1));
+
+        let err = client
+            .get_bytes_capped(&format!("http://{addr}/stream.bin"), None, 1024)
+            .await
+            .expect_err("流式超限应报错");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("下载超出大小上限"),
+            "应在上限处中止（而非等待 EOF/超时）: {msg}"
+        );
+    }
+
+    /// 非 2xx 不返回错误页字节（对齐上游 `URL.openStream()` 抛异常）
+    #[tokio::test]
+    async fn test_get_bytes_capped_rejects_non_success_status() {
+        let addr = spawn_capped_test_server(
+            404,
+            b"<html>not found</html>".to_vec(),
+            Some(22),
+            Duration::ZERO,
+        )
+        .await;
+        let client = capped_test_client(Duration::from_secs(10));
+
+        let err = client
+            .get_bytes_capped(&format!("http://{addr}/missing.bin"), None, 1024)
+            .await
+            .expect_err("404 应报错而不是返回错误页");
+
+        assert!(err.to_string().contains("HTTP 404"), "err = {err}");
     }
 }

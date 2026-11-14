@@ -2204,8 +2204,15 @@ fn register_file_apis<'js>(
     // - downloadFile(url)：原版单参形态
     // - downloadFile(contentHex, url)：原版 @Deprecated 重载（十六进制内容落盘）
     // - downloadFile(url, fileName)：**我方扩展**，仅 register_extension_apis
-    //   （allow_file_access=true）时接受；生产返回明确 [ERROR]，不静默
-    //   退回按 URL 生成文件名（否则书源会误以为自定义文件名生效）。
+    //   （allow_file_access=true）时接受；生产不会按自定义文件名落盘（第二
+    //   参数按上游 deprecated 重载的 url 解释，见下），避免书源误以为扩展
+    //   能力生效。
+    //
+    // 重载判定（P3-1）：生产**一律**按上游语义解释第二参数为 url（hex 重载）。
+    // 上游 deprecated 的 url 可能不是 http 开头（`//host/x`、`type:` 串等），
+    // 旧实现在生产用「第二参以 http 开头或含 `,{`」猜重载，会把这类调用误判
+    // 成文件名扩展能力而拒绝；只有 allow_file_access=true 分支才用启发式区分
+    // 「URL（hex 重载）」与「文件名（我方扩展）」，与 Rhino 侧重载选择一致。
     mount_dual(
         java,
         globals,
@@ -2216,6 +2223,11 @@ fn register_file_apis<'js>(
                 match arg2.0.as_deref() {
                     None => file_utils::download_file(&policy, &arg1, None)
                         .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+                    Some(second) if !register_extension_apis => {
+                        // 生产：第二参数即 deprecated 重载的 url，不再按前缀猜
+                        file_utils::download_file_from_hex(&policy, &arg1, second)
+                            .unwrap_or_else(|e| format!("[ERROR] {}", e))
+                    }
                     Some(second)
                         if second.starts_with("http://")
                             || second.starts_with("https://")
@@ -2224,11 +2236,6 @@ fn register_file_apis<'js>(
                         // 废弃重载：content(hex) + url
                         file_utils::download_file_from_hex(&policy, &arg1, second)
                             .unwrap_or_else(|e| format!("[ERROR] {}", e))
-                    }
-                    Some(_) if !register_extension_apis => {
-                        "[ERROR] downloadFile(url, fileName) 第二参数文件名重载为非原版 API，\
-                         仅在 allow_file_access=true（调试/可信脚本）下可用"
-                            .to_string()
                     }
                     Some(file_name) => file_utils::download_file(&policy, &arg1, Some(file_name))
                         .unwrap_or_else(|e| format!("[ERROR] {}", e)),

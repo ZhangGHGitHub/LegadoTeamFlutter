@@ -48,6 +48,13 @@ const UPSTREAM_FILE_APIS: &[&str] = &[
 /// 我方扩展（上游不存在；仅 `allow_file_access=true` 注册）
 const EXTENSION_FILE_APIS: &[&str] = &["writeFile", "fileExists"];
 
+/// 非 UTF-8 二进制夹具（P1-2）
+///
+/// 含 `0xFF`/`0x80`（UTF-8 非法起始/续字节）与非法序列 `0xC3 0x28`；
+/// 旧实现 `response.text()` 会把它们替换为 U+FFFD（`EF BF BD`），落盘字节
+/// 与源不一致。用 ASCII 夹具（如 `"BINARY-DATA-123"`）测不出该缺陷。
+const BINARY_FIXTURE: &[u8] = &[0x00, 0xff, 0x80, 0x1f, 0xc3, 0x28];
+
 fn production_engine() -> QuickJsEngine {
     QuickJsEngine::new(
         SandboxConfig::default()
@@ -171,7 +178,9 @@ fn production_config_registers_upstream_file_apis_only() {
         );
     }
 
-    // downloadFile(url, fileName) 文件名重载：生产拒绝，且不联网（回环端口 1）
+    // downloadFile(url, fileName) 文件名重载：生产不注册该扩展能力。P3-1 后
+    // 生产一律按上游语义把第二参数当 deprecated hex 重载的 url，第一参数不是
+    // 合法十六进制 → 明确 [ERROR]，且不联网（回环端口 1）。
     assert_error_string(
         &engine,
         &format!(
@@ -179,7 +188,7 @@ fn production_config_registers_upstream_file_apis_only() {
             js_str("http://127.0.0.1:1/never-reached.bin"),
             js_str("custom-name.bin")
         ),
-        "非原版 API",
+        "Hex decode error",
     );
 
     // permissive：扩展能力恢复可用（原版同名亦在）
@@ -420,7 +429,7 @@ fn spawn_loopback(
                 *map.entry(path.clone()).or_insert(0) += 1;
             }
             let resp = match path.as_str() {
-                "/download.bin" => response(200, "application/octet-stream", b"BINARY-DATA-123"),
+                "/download.bin" => response(200, "application/octet-stream", BINARY_FIXTURE),
                 "/script.js" => response(200, "text/plain", b"1 + 1"),
                 "/import.js" => response(200, "text/plain", b"globalThis.__imported_value = 42;"),
                 _ => response(404, "text/plain", b"not found"),
@@ -498,7 +507,11 @@ fn restricted_mode_download_cache_import_script() {
         "落盘路径应在沙箱内: {downloaded}（沙箱根 {}）",
         base.display()
     );
-    assert_eq!(std::fs::read(&downloaded_path).unwrap(), b"BINARY-DATA-123");
+    assert_eq!(
+        std::fs::read(&downloaded_path).unwrap(),
+        BINARY_FIXTURE,
+        "downloadFile 必须按原始字节落盘（P1-2：非 UTF-8 字节不得被替换为 U+FFFD）"
+    );
     let _ = std::fs::remove_file(&downloaded_path);
 
     // cacheFile(url) 返回**内容**；二次调用命中缓存不再请求
@@ -538,6 +551,68 @@ fn restricted_mode_download_cache_import_script() {
     assert_eq!(local, "2 + 2");
 
     cleanup_dir(&base.join(&sub));
+}
+
+/// P3-1 回归：生产 `downloadFile(content, url)` 的第二参数不要求 http 开头
+///
+/// 上游 deprecated 重载的 url 可以是 `//host/x`、`type:` 串等非 http 形态。
+/// 旧实现在生产用「第二参以 http 开头或含 `,{`」猜重载，会把这类调用误判为
+/// 文件名扩展能力并拒绝。修复后生产一律按 hex 重载执行。
+#[test]
+fn production_download_file_hex_reload_accepts_non_http_second_arg() {
+    let engine = production_engine();
+    let base = file_utils::default_sandbox_root();
+    // 内容 00ff801f → 落盘 0x00 0xFF 0x80 0x1F；url 非 http 开头
+    let returned = engine
+        .eval(&format!(
+            "java.downloadFile({}, {})",
+            js_str("00ff801f"),
+            js_str("//cdn.example/files/payload.bin")
+        ))
+        .unwrap();
+    assert!(
+        !returned.starts_with("[ERROR]"),
+        "deprecated hex 重载应执行: {returned}"
+    );
+    // 对齐 Kotlin：返回相对文件名（md5(url) 前 16 位 + 扩展名）
+    assert!(
+        !Path::new(&returned).is_absolute(),
+        "hex 重载应返回相对文件名: {returned}"
+    );
+    let path = base.join(&returned);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        vec![0x00, 0xff, 0x80, 0x1f],
+        "hex 内容应按字节落盘"
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
+/// P3-1 对照：`allow_file_access=true` 仍识别并执行文件名重载（我方扩展）
+#[test]
+fn permissive_download_file_keeps_filename_extension() {
+    let hits = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let addr = spawn_loopback(hits);
+    let engine = permissive_engine();
+    let dir = std::env::temp_dir().join(unique("file_api_permissive_dl"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dest = dir.join("custom.bin");
+
+    let returned = engine
+        .eval(&format!(
+            "java.downloadFile({}, {})",
+            js_str(&format!("http://{addr}/download.bin")),
+            js_str(&dest.to_string_lossy())
+        ))
+        .unwrap();
+
+    assert_eq!(PathBuf::from(&returned), dest, "应使用指定文件名落盘");
+    assert_eq!(
+        std::fs::read(&dest).unwrap(),
+        BINARY_FIXTURE,
+        "文件名重载同样必须保留原始字节（P1-2）"
+    );
+    cleanup_dir(&dir);
 }
 
 // ---------------------------------------------------------------------------

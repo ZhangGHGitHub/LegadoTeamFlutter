@@ -8,7 +8,8 @@
 //! - deleteFile — 删除文件
 //! - readTxtFile — 读取文本文件（支持编码）
 //! - downloadFile — 下载文件到沙箱（`(url)` / `(contentHex, url)` 为原版
-//!   形态；`(url, fileName)` 文件名重载是我方扩展，仅 permissive 注册）
+//!   形态；`(url, fileName)` 文件名重载是我方扩展，仅 permissive 注册），
+//!   按**原始字节**落盘（二进制无损）
 //! - cacheFile — 缓存网络文件（URL hash 为文件名，返回文件内容）
 //! - importScript — 读取本地/远端 JS 脚本（远端经 cacheFile）
 //! - getTxtInFolder — 获取文件夹下所有文件内容
@@ -29,10 +30,18 @@
 //! 文件，`downloadFile` / `cacheFile` 的落盘也互不可见。同一书源内
 //! `downloadFile` 返回的路径可被 `readTxtFile` / `getFile` 直接消费。
 //!
-//! # 资源上限（P2-6）
+//! # 资源上限（P2-6 / P1-1）
 //!
 //! 单文件读取/下载 32MB、`getTxtInFolder` 累计 64MB（与
 //! `archive_utils` 的单条目 32MB 同口径），超限返回显式错误，不静默截断。
+//! 下载在 legado-net 侧**逐块累计**并在超限时立即中止（内存峰值不超过
+//! 上限），不再「网络层完整缓冲后于落盘前判断」；`Content-Length` 声明值
+//! 已超限时在读取响应体前快速拒绝。
+//!
+//! 下载内容按**原始字节**写盘（P1-2）：不经 UTF-8 文本解码，非 UTF-8
+//! 二进制（图片/字体/压缩包）与源字节完全一致。`cacheFile` 因上游契约返回
+//! 文本，读取时按 UTF-8 解码、非法序列回退 U+FFFD（对齐 Kotlin
+//! `File.readText()`）；二进制内容应使用 `downloadFile` 取路径。
 //!
 //! 越界/超限由调用方转成明确错误（字符串 API 返回 `[ERROR] ...`，布尔/对象
 //! API 抛 JS 异常），不静默返回空值。
@@ -293,13 +302,33 @@ mod impl_file_utils {
     /// 我方既有实现返回绝对路径，书源把返回值直接交给
     /// readTxtFile/getFile/解压 API 时两者等价）。
     ///
-    /// 下载内容超过单文件上限（32MB，与 archive 单条目同口径）显式报错，
-    /// 且在写盘**之前**拒绝（P2-6）。受 `get_bytes` 接口限制，内存峰值由
-    /// 网络层完整缓冲决定，本函数只保证不把超大内容落盘。
+    /// 落盘为**原始字节**（P1-2）：下载走 legado-net 的
+    /// `get_bytes_capped`（流式有上限、不经 UTF-8 解码），不再经
+    /// `response.text()` 做文本转换，非 UTF-8 二进制（图片/字体/压缩包）
+    /// 字节完全一致。
+    ///
+    /// 资源上限（P1-1）：单文件 32MB（与 archive 单条目同口径）。网络层按
+    /// 块累计并在超限时立即中止（内存峰值 ≤ 上限），`Content-Length` 已
+    /// 声明超限时在读取 body 前拒绝；超限错误发生在创建目标文件之前，不会
+    /// 留下半成品。实现上选择「先累计有界字节、再一次写盘」而非「逐块写
+    /// `.part` → rename」：上限已使内存可控，且当前契约是拿到完整内容才
+    /// 落盘——流式写盘还需额外处理临时名、rename 与失败清理；二进制完整性
+    /// 由网络层的无损字节读取保证。
     pub fn download_file(
         policy: &FsPolicy,
         url: &str,
         file_name: Option<&str>,
+    ) -> Result<String, String> {
+        download_file_capped(policy, url, file_name, MAX_FILE_BYTES)
+    }
+
+    /// [`download_file`] 的有界实现（`max_bytes` 供单测注入小上限，生产入口
+    /// 固定 [`MAX_FILE_BYTES`]）
+    fn download_file_capped(
+        policy: &FsPolicy,
+        url: &str,
+        file_name: Option<&str>,
+        max_bytes: u64,
     ) -> Result<String, String> {
         let name = match file_name {
             Some(n) if !n.is_empty() => n.to_string(),
@@ -319,17 +348,10 @@ mod impl_file_utils {
             let client = crate::host_api::network::shared_client_for_url(url)
                 .map_err(|e| format!("Download client error: {}", e))?;
             client
-                .get_bytes(url, None)
+                .get_bytes_capped(url, None, max_bytes)
                 .await
                 .map_err(|e| format!("Download error: {}", e))
         })?;
-
-        if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err(format!(
-                "下载超出大小上限：{url} {} 字节，超过单文件上限 {MAX_FILE_BYTES} 字节",
-                bytes.len()
-            ));
-        }
 
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
@@ -371,16 +393,24 @@ mod impl_file_utils {
     /// 前 16 位为缓存键，`saveTime` 秒（0 = 永久）写入 `cache_store`；缓存
     /// 命中且文件仍存在时直接读取，否则下载后读取。返回内容而非路径——上游
     /// 与随包帮助 `eval(String(java.cacheFile(url)))` 均按内容消费。
+    ///
+    /// 下载与落盘复用 [`download_file`]（流式有上限 + 原始字节，P1-1/P1-2）。
+    /// 本 API 返回文本，读取时按 **UTF-8** 解码；非法序列回退
+    /// `from_utf8_lossy`（U+FFFD），与上游 Kotlin `File.readText()` 的
+    /// 「默认 UTF-8、解码失败替换」语义一致——二进制内容应改用
+    /// `downloadFile` 取路径，而不是 `cacheFile` 取文本。
     pub fn cache_file(policy: &FsPolicy, url: &str, save_time_secs: i64) -> Result<String, String> {
         let key = md5_hex16(url);
 
-        // 缓存记录里的路径同样要过读策略（防止 JS 先 cache.put 一个越界路径）
+        // 缓存记录里的路径同样要过读策略（防止 JS 先 cache.put 一个越界路径）。
+        // 顺序：策略先行，再做存在性探测（越界路径不触发任何文件系统探测）。
         if let Some(cached_path) = cache_store::get(&key, false) {
-            if !cached_path.is_empty()
-                && Path::new(&cached_path).is_file()
-                && policy.resolve_read_path(&cached_path).is_ok()
-            {
-                return read_txt_file(policy, &cached_path, None);
+            if !cached_path.is_empty() {
+                if let Ok(resolved) = policy.resolve_read_path(&cached_path) {
+                    if resolved.is_file() {
+                        return read_txt_file(policy, &cached_path, None);
+                    }
+                }
             }
         }
 
@@ -478,6 +508,86 @@ mod impl_file_utils {
         }
 
         Ok(contents.join("\n"))
+    }
+
+    /// 下载上限单测（P1-1：超限在写盘前拒绝、无残留）
+    ///
+    /// 放在实现模块内以便注入小上限（`download_file_capped`），避免生产用例
+    /// 推 32MB 级 body。
+    #[cfg(test)]
+    mod download_limit_tests {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+        use super::*;
+
+        fn unique_name(tag: &str) -> String {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            format!("{tag}_{}_{}.bin", std::process::id(), nanos)
+        }
+
+        /// 一次性回环服务：声明 `declared_len` 的 Content-Length，但只发送
+        /// `sent_len` 字节即关闭连接
+        ///
+        /// 用于区分「读取 body 前按声明值拒绝」与「读完整 body 再判上限」：
+        /// 后者会因响应体不完整得到解码错误，而不是大小上限错误。
+        fn spawn_truncated_oversize_server(declared_len: usize, sent_len: usize) -> String {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            std::thread::spawn(move || {
+                let Ok((mut sock, _)) = listener.accept() else {
+                    return;
+                };
+                let _ = sock.set_read_timeout(Some(Duration::from_secs(10)));
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                     Content-Length: {declared_len}\r\nConnection: close\r\n\r\n"
+                );
+                if sock.write_all(head.as_bytes()).is_err() {
+                    return;
+                }
+                let _ = sock.write_all(&vec![0x5au8; sent_len]);
+                let _ = sock.flush();
+            });
+            format!("http://{addr}/oversize.bin")
+        }
+
+        #[test]
+        fn download_oversize_is_rejected_before_writing() {
+            let name = unique_name("legado_js_oversize");
+            let root = default_sandbox_root();
+            let _ = fs::create_dir_all(&root);
+            let dest = root.join(&name);
+            let _ = fs::remove_file(&dest);
+            let url = spawn_truncated_oversize_server(1024 * 1024, 4096);
+
+            let err = download_file_capped(&FsPolicy::restricted(), &url, Some(&name), 1024)
+                .expect_err("超限下载应报错");
+
+            assert!(
+                err.contains("下载超出大小上限"),
+                "应在读取 body 前按 Content-Length 拒绝（读完整 body 会得到解码错误）: {err}"
+            );
+            assert!(!dest.exists(), "超限下载不得落盘: {}", dest.display());
+
+            // 不得留下半成品/临时文件（文件名含唯一前缀的全部条目）
+            let leftovers: Vec<String> = fs::read_dir(&root)
+                .map(|entries| {
+                    entries
+                        .filter_map(|entry| entry.ok())
+                        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                        .filter(|entry_name| entry_name.contains(&name))
+                        .collect()
+                })
+                .unwrap_or_default();
+            assert!(leftovers.is_empty(), "不应留下残留文件: {leftovers:?}");
+        }
     }
 }
 
