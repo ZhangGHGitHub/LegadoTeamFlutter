@@ -9,8 +9,16 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # [批43 | 2026-11-15] 2.4.2 → 9.5.1：修复 RUSTSEC-2026-0367/0368/0369/0429
 # （extract() 系列路径穿越与权限位缺陷，patched 范围 >=9.0.0；2.6.1 非修复版本）。
-# 默认 features 与 2.4.2 对齐（9.5.1 额外默认启用 ppmd，无能力裁剪）。
-zip = "9"
+# [P1-1 | zip 9] 必须 default-features = false：9.x 的 default 比 2.4.2 多出
+# `ppmd`。PPMd 解码器按条目数据流内的 2 字节参数分配模型内存
+# （`1 MiB * (((params >> 4) & 0xFF) + 1)`，上限 256 MiB），且 `LazyDecompressor`
+# 把分配推迟到**首次 read**——声明解压后仅 1 字节的恶意条目也能通过我方全部
+# 声明限额，首次读取仍瞬时提交最多 256 MiB（移动端 OOM/LMK）。与 7z 的既有
+# 决策一致（见下方 sevenz-rust2）剔除；下列 8 项恰为 2.4.2 的 default 集合，
+# 零能力回退。
+zip = { version = "9", default-features = false, features = [
+    "aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "time", "zstd", "xz",
+] }
 quick-xml = "0.42"
 encoding_rs = "0.8"
 regex = "1"

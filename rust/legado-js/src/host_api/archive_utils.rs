@@ -1073,6 +1073,38 @@ mod tests {
         let _ = fs::remove_dir_all(Path::new(&zip_path).parent().unwrap());
     }
 
+    /// [P3-7 | zip 9 行为变化] 绝对路径条目的 `enclosed_name()` 语义
+    ///
+    /// zip 2.4.2：绝对路径条目返回 `None` → `unzip_file` 的 `None => continue`
+    /// 直接**跳过**；zip 9.5.1：`depth == 0` 时忽略根/盘符前缀，按相对路径
+    /// 返回（`/etc/x.txt` → `etc/x.txt`）。因此恶意绝对路径条目现在会落到
+    /// `out_dir/etc/x.txt`——仍经 `out_dir.join(...)` 限制在输出目录内，不越界
+    /// （非漏洞），但「被跳过」的旧预期不再成立。本用例锁定新行为。
+    #[test]
+    fn test_unzip_file_absolute_entry_lands_inside_output_dir() {
+        let zip_path = create_test_zip(&[("/etc/x.txt", b"absolute entry")]);
+        let dir = std::env::temp_dir().join(format!("legado_zip_absolute_{}", uuid()));
+        let out_dir = dir.join("out");
+
+        let out = unzip_file(zip_path.as_str(), Some(out_dir.to_str().unwrap())).unwrap();
+        let inside = Path::new(&out).join("etc").join("x.txt");
+        assert!(
+            inside.is_file(),
+            "zip 9 下绝对路径条目应落在输出目录内: {}",
+            inside.display()
+        );
+        assert_eq!(fs::read(&inside).unwrap(), b"absolute entry");
+
+        // 绝对路径前缀被剥离后写入 out_dir 内，不得落到 out_dir 之外的目录
+        assert!(
+            !dir.join("etc").exists(),
+            "不得写到输出目录之外（绝对路径前缀必须被忽略）"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(Path::new(&zip_path).parent().unwrap());
+    }
+
     #[test]
     fn test_unzip_file_default_output() {
         let zip_path = create_test_zip(&[("a.txt", b"aaa")]);

@@ -242,9 +242,10 @@ impl Database {
 ///   `BEGIN`，直接在既有事务内执行闭包，避免 "cannot start a transaction
 ///   within a transaction" 嵌套错误；提交/回滚由外层事务负责（组合语义）。
 ///
-/// 背景：rusqlite 0.31 的 `Connection::transaction` 需要 `&mut Connection`，
-/// 而本项目连接经 r2d2 池共享为 `&Connection`，故沿用项目既有的
-/// `unchecked_transaction()` 模式（见 source_switch / reader / toc_update）。
+/// 背景：rusqlite 0.41.1（当前版本；0.31 起即如此）的
+/// `Connection::transaction` 需要 `&mut Connection`，而本项目连接经 r2d2 池
+/// 共享为 `&Connection`，故沿用项目既有的 `unchecked_transaction()` 模式
+/// （见 source_switch / reader / toc_update）。升级后签名未变，结论仍成立。
 pub fn in_transaction<T, F>(conn: &Connection, context: &str, f: F) -> LegadoResult<T>
 where
     F: FnOnce(&Connection) -> LegadoResult<T>,

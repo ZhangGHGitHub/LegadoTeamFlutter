@@ -2025,6 +2025,151 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// 把 ZIP 中**所有条目**的压缩方法字段改写为 `method`（local header 与
+    /// central directory 各一处，偏移分别固定为 8/10 字节）。
+    ///
+    /// 仅用于构造「声明 method 98（PPMd）」的恶意条目：`ZipWriter` 不提供
+    /// PPMd 编码器，而读取侧只看头部 method 字段，因此改写合法包的 method
+    /// 即可精确复现攻击面，无需伪造整个归档结构。
+    fn rewrite_zip_compression_method(bytes: &mut [u8], method: u16) {
+        let signatures: [(&[u8; 4], usize); 2] = [(b"PK\x03\x04", 8), (b"PK\x01\x02", 10)];
+        for (signature, offset) in signatures {
+            let mut cursor = 0;
+            while cursor + 4 <= bytes.len() {
+                let Some(pos) = bytes[cursor..]
+                    .windows(4)
+                    .position(|window| window == signature)
+                else {
+                    break;
+                };
+                let field = cursor + pos + offset;
+                bytes[field..field + 2].copy_from_slice(&method.to_le_bytes());
+                cursor = field + 2;
+            }
+        }
+    }
+
+    /// [P1-1 | zip 9] PPMd（method 98）条目 fail-closed：**不进入解码分支**
+    ///
+    /// zip 9 的 `default` features 新增 `ppmd`（2.4.2 没有）。PPMd 解码器按
+    /// 条目数据流里的 2 字节参数决定模型内存（`1 MiB * (((params >> 4) & 0xFF)
+    /// + 1)`，上限 256 MiB），且 `LazyDecompressor` 把分配推迟到**首次 read**：
+    /// 一个声明解压后仅 1 字节的恶意条目能通过我方全部声明限额，首次读取时
+    /// 仍瞬时提交最多 256 MiB，移动端可被反复触发 OOM/LMK。本仓与 7z 的既有
+    /// 决策一致（剔除 ppmd 等重型默认 feature），manifest 改为
+    /// `default-features = false` + 2.4.2 等价能力集。
+    ///
+    /// 测试红→绿口径：ppmd 启用时本用例会在解码阶段报 PPMd 参数/初始化错误；
+    /// 剔除后 `zip` 在解压器实例化阶段直接返回
+    /// `compression method not supported: 98`（`io::ErrorKind::Unsupported`），
+    /// 不读取任何条目数据。声明面预检（列表）不触发解压器，仍能正常列出条目。
+    #[test]
+    fn test_zip_ppmd_method_is_rejected_without_decoder() {
+        let dir = unique_7z_dir("zip_ppmd");
+        let archive_path = dir.join("books.zip");
+        create_test_zip(&archive_path, &[("novel.txt", b"legado-ppmd-safe")]);
+        let mut bytes = fs::read(&archive_path).unwrap();
+        rewrite_zip_compression_method(&mut bytes, 98);
+        fs::write(&archive_path, &bytes).unwrap();
+
+        // 列表只走中央目录声明面：恶意条目可被列出（证明它确实能通过声明限额）
+        let listed = list_zip_book_files(archive_path.to_str().unwrap()).unwrap();
+        assert_eq!(listed, vec!["novel.txt".to_string()]);
+
+        // 底层语义：首次 read 即 Unsupported，且不产生任何解码输出
+        let file = File::open(&archive_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let mut buf = Vec::new();
+        let err = entry.read_to_end(&mut buf).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            std::io::ErrorKind::Unsupported,
+            "PPMd 条目应在解压器实例化阶段 fail-closed，实际：{err:?}"
+        );
+        assert!(
+            err.to_string()
+                .contains("compression method not supported: 98"),
+            "错误必须明确指向不支持的压缩方法，实际：{err}"
+        );
+        assert!(buf.is_empty(), "拒绝路径不得产出任何解码字节");
+
+        // 导入路径同样整包失败，且失败回滚不留下半成品
+        let output = dir.join("out");
+        let err =
+            import_zip_file(archive_path.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("compression method not supported: 98"),
+            "导入错误应透出明确的压缩方法不支持文案，实际：{msg}"
+        );
+        assert!(!output.join("novel.txt").exists(), "不得留下半成品");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [P3-8 | zip 9] CP437 条目名解码回归：`name()` 的 `Result<Cow>` 解包路径
+    ///
+    /// 未设置 UTF-8 标志位（bit 11）的条目名按 CP437 解码：raw
+    /// `b"caf\x82.txt"`（0x82 = é）应得到 `café.txt`。列表与导入都必须
+    /// `into_owned()` 解包，不能把 `Ok("...")` 的 Debug 形态泄漏到输出名。
+    /// 构造方式：先写 ASCII 占位名 `cafX.txt`（不置 UTF-8 标志），再把两处
+    /// 名字中的 `X` 改写为 0x82——长度不变，local/central 偏移都不受影响。
+    #[test]
+    fn test_zip_cp437_entry_name_is_decoded_for_list_and_import() {
+        let dir = unique_7z_dir("zip_cp437");
+        let archive_path = dir.join("books.zip");
+        create_test_zip(&archive_path, &[("cafX.txt", b"cp437-name")]);
+        let mut bytes = fs::read(&archive_path).unwrap();
+        let placeholder = b"cafX.txt";
+        let mut patched = 0;
+        let mut cursor = 0;
+        while cursor + placeholder.len() <= bytes.len() {
+            let Some(pos) = bytes[cursor..]
+                .windows(placeholder.len())
+                .position(|window| window == placeholder)
+            else {
+                break;
+            };
+            let at = cursor + pos;
+            bytes[at + 3] = 0x82;
+            patched += 1;
+            cursor = at + placeholder.len();
+        }
+        assert!(
+            patched >= 2,
+            "local header 与 central directory 两处名字都应改写，实际 {patched}"
+        );
+        fs::write(&archive_path, &bytes).unwrap();
+
+        let listed = list_zip_book_files(archive_path.to_str().unwrap()).unwrap();
+        assert_eq!(
+            listed,
+            vec!["café.txt".to_string()],
+            "列表应输出 CP437 解码后的名字（而不是 Ok(\"...\") 或乱码）"
+        );
+
+        let output = dir.join("out");
+        let imported =
+            import_zip_file(archive_path.to_str().unwrap(), output.to_str().unwrap()).unwrap();
+        assert_eq!(imported.len(), 1, "{imported:?}");
+        assert!(
+            imported[0].ends_with("café.txt"),
+            "导入路径应落到解码后的文件名，实际：{imported:?}"
+        );
+        assert_eq!(
+            fs::read(output.join("café.txt")).unwrap(),
+            b"cp437-name",
+            "条目内容应按解码后的名字完整写出"
+        );
+        assert!(
+            !output.join("cafX.txt").exists(),
+            "不得残留 ASCII 占位名对应的文件"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// [批32b P2-1 红→绿] 落位失败清理**全部**剩余 `.part` 且不丢弃既有输出
     ///
     /// 首个目标为目录 → 落位必然失败；旧实现消费式 `for (temp, out) in pending`

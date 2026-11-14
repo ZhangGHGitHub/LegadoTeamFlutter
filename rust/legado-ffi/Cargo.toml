@@ -35,10 +35,21 @@ chrono = "0.4"
 # [V-B2 | 2026-10-05] B 站弹幕 XML 解析（契约 §2.50）；与 legado-book/legado-net 同版本
 quick-xml = "0.42"
 # [批9 | 2026-10-26] 原版 zip 备份恢复：读包/条目校验。与 legado-book 同版本，
-# 该 crate 已由其生产依赖编译进产物——本次仅新增 legado-ffi 的直接依赖边，
-# 无新增 crate、无许可变更（Cargo.lock 版本不变）
+# 该 crate 已由其生产依赖编译进产物——本次仅新增 legado-ffi 的直接依赖边。
+# 注意：批9 当时「无新增 crate、无许可变更（Cargo.lock 版本不变）」的结论已被
+# 批43 升级 zip 2.4.2 → 9.5.1 推翻，以批43 后的 lock 为准：升级本身新增
+# cmov/cpubits/ctutils/hybrid-array/libbz2-rs-sys/nix/ppmd-rust/typed-path/
+# zlib-rs 9 个包，并带入一套重复的 RustCrypto 栈（aes 0.9.4 / digest 0.11.3 /
+# hmac 0.13.0 / sha1 0.11.0 / sha2 0.11.1）。
 # [批43 | 2026-11-15] 2.4.2 → 9.5.1：修复 RUSTSEC-2026-0367/0368/0369/0429
-zip = "9"
+# [P1-1 | zip 9] 同 legado-book：9.x 的 default 新增 ppmd（单条目最多 256 MiB
+# 模型内存，分配推迟到首次 read），与 7z 口径一致显式关闭。关闭后 ppmd-rust
+# 不再参与编译/链接，且无其他依赖启用该可选 feature——Cargo.lock 已随之移除
+# ppmd-rust（最终净新增 8 个包）；下列 8 项恰为 2.4.2 的 default 集合，
+# 零能力回退。
+zip = { version = "9", default-features = false, features = [
+    "aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "time", "zstd", "xz",
+] }
 # [批7b-1 | 2026-11-09] 书签标记保存：空 id 生成 UUID v4（契约 §2.52；
 # workspace 既有依赖，零新增 crate）
 uuid = { workspace = true }
