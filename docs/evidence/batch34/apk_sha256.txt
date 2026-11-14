@@ -1,0 +1,2 @@
+738ef7fbb216e34bc3423e8d10b534e68f5c08a1da06cd6fc0d54f41faf36214 *flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+-rw-r--r-- 1 admin 197608 214851312 Nov 15 05:52 flutter_legado/build/app/outputs/flutter-apk/app-release.apk

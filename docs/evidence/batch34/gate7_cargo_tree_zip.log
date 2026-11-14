@@ -1,0 +1,61 @@
+zip v9.5.1
+├── zip feature "_bzip2_any"
+│   └── zip feature "bzip2"
+│       ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+│       │   └── legado-book feature "default" (command-line)
+│       │       ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+│       │       │   └── legado-ffi feature "default" (command-line)
+│       │       └── legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+│       │           └── legado-server feature "default" (command-line)
+│       │               └── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│       ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│       └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)
+│           └── legado-net feature "default" (command-line)
+│               ├── legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+│               │   └── legado-fetcher feature "default" (command-line)
+│               │       ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│               │       └── legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server) (*)
+│               ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│               └── legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server) (*)
+│       └── zip feature "bzip2" (*)
+├── zip feature "_deflate-any"
+│   ├── zip feature "deflate-flate2"
+│   │   └── zip feature "deflate-flate2-zlib-rs"
+│   │       └── zip feature "deflate"
+│   │           ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+│   │           ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│   │           └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+│   └── zip feature "deflate-zopfli"
+│       └── zip feature "deflate" (*)
+├── zip feature "aes-crypto"
+│   ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+│   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│   └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+├── zip feature "bzip2" (*)
+├── zip feature "deflate" (*)
+├── zip feature "deflate-flate2" (*)
+├── zip feature "deflate-flate2-zlib-rs" (*)
+├── zip feature "deflate-zopfli" (*)
+├── zip feature "deflate64"
+│   ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+│   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│   └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+├── zip feature "flate2"
+│   └── zip feature "deflate-flate2-zlib-rs" (*)
+├── zip feature "lzma"
+│   ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+│   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│   └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+├── zip feature "time"
+│   ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+│   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│   └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+├── zip feature "xz"
+│   ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+│   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+│   └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+└── zip feature "zstd"
+    ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book) (*)
+    ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi) (*)
+    └── legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net) (*)
+EXIT_CODE=0

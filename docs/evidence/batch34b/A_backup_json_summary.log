@@ -1,0 +1,32 @@
+== backup file ==
+remote=/sdcard/Download/legado_backup/legado_backup_1794694631166.json
+local=docs/evidence/batch34b/backup_b34b.json
+dcc00fb69b1d784ef97d36f4a1cf67a0a5c966b8069e1ad447c3996afab33014 *backup_b34b.json
+
+== top-level counts ==
+version: 6
+backupTime: 1794694631166
+books: list[13]
+bookmarks: list[0]
+bookMarks: list[4]
+replaceRules: list[0]
+bookSources: list[539]
+rssSources: list[4]
+readRecords: list[8]
+bookMemos: list[0]
+bookGroups: list[7]
+rssStars: list[0]
+highlights: list[9]
+highlightRules: list[0]
+searchHistory: list[5]
+ruleSubs: list[0]
+txtTocRules: list[26]
+httpTTS: list[3]
+dictRules: list[5]
+keyboardAssists: list[32]
+servers: list[0]
+appPrefs: dict[10]
+
+books: ['B33D2', 'B33D1', 'B33C', 'B33B', 'B33A', 'QA25 段评书', '批28测试乙', '批28测试丙', '批28测试甲', '批28部分乙', '批28部分甲', 'gbkbook', 'QA29 快源书']
+readRecords books: ['批28测试甲', 'QA25 段评书', 'B33A', 'B33C', 'B33B', 'B33D2', 'B33D1', '批28测试乙']
+highlights: [('B33A', None, ''), ('B33A', None, ''), ('QA29 快源书', None, ''), ('QA29 快源书', None, ''), ('QA29 快源书', None, ''), ('QA29 快源书', None, ''), ('QA29 快源书', None, ''), ('批28测试乙', None, ''), ('批28测试甲', None, '')]

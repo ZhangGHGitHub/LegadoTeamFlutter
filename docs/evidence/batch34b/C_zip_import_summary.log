@@ -1,0 +1,10 @@
+== fixture ==
+9cf3dd84e323d085ad699a911d0f6ba66c70baaac51d5b8f77347b5d807f0f0a *docs/evidence/batch28/fixtures/batch28_all_ok.zip
+entries (GBK decoded): 批28测试乙.txt / 批28测试丙.txt / 批28测试甲.txt
+
+== device import ==
+trigger: am start -a VIEW -d file:///sdcard/Download/batch28_all_ok.zip -t application/zip
+dialog: 压缩包导入, TXT 编码 UTF-8, 导入 (3)
+result toast: 成功导入 3 本书籍
+verify: 批28测试乙 -> 第一章 起点 / 这是样例乙。
+UI: ui/C_archive_dialog_all_ok.png, ui/C_archive_result_1s.png, ui/C_book_yi_content.png

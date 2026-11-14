@@ -1,0 +1,7 @@
+--------- beginning of main
+11-15 06:00:38.391 W/Scheduler(  706): No mode change to emit
+11-15 06:00:38.397 W/Scheduler(  706): No mode change to emit
+11-15 06:00:38.592 W/Scheduler(  706): No mode change to emit
+11-15 06:00:38.666 I/.flutter_legado(20984): AssetManager2(0x7106b9c1ea78) locale list changing from [] to [zh-Hans-CN]
+11-15 06:00:38.667 I/.flutter_legado(20984): AssetManager2(0x7106b9bcb738) locale list changing from [] to [zh-Hans-CN]
+11-15 06:00:40.397 W/Scheduler(  706): No mode change to emit

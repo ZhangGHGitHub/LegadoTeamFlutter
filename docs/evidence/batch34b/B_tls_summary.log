@@ -1,0 +1,11 @@
+== old search log (docs/evidence/batch34/B_search_logcat.txt) ==
+app TLS/certificate/handshake lines after filtering system noise: 0
+(空 = 无 TLS/证书错误)
+
+== new search (keyword legado, scope B34QA) ==
+results: 5, progress 2/2, source B34-HTTPS-GitHub url=https://api.github.com/search/repositories
+UI: ui/B_search_results2.png / .xml
+
+== real HTTPS source reachability ==
+半夏小说 https://www.xbanxia.cc/list/1_1.html -> 'Network error: HTTP 403' (TLS 握手成功，HTTP 层被拒绝)
+UI: ui/B_banxia_list.png / .xml

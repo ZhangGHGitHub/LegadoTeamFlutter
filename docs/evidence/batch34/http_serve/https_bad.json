@@ -1,0 +1,30 @@
+[
+  {
+    "bookSourceUrl": "https://self-signed.badssl.com/",
+    "bookSourceName": "B34-HTTPS-BadSSL",
+    "bookSourceGroup": "B34QA",
+    "bookSourceType": 0,
+    "bookSourceComment": "批34 证书校验负向验收：自签证书必须被拒绝",
+    "enabled": true,
+    "enabledExplore": false,
+    "enabledCookieJar": false,
+    "searchUrl": "https://self-signed.badssl.com/?q={{key}}",
+    "ruleSearch": {
+      "bookList": "body",
+      "name": "title@text",
+      "author": "title@text",
+      "bookUrl": "baseUrl"
+    },
+    "ruleBookInfo": {
+      "name": "title@text"
+    },
+    "ruleToc": {
+      "chapterList": "body",
+      "chapterName": "title@text",
+      "chapterUrl": "baseUrl"
+    },
+    "ruleContent": {
+      "content": "body@html"
+    }
+  }
+]

@@ -1,0 +1,5 @@
+package: name='io.legado.flutter_legado' versionCode='505' versionName='2.0.504' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'
+ 36820352  1981-01-01 01:01   lib/arm64-v8a/liblegado_ffi.so
+ 23111052  1981-01-01 01:01   lib/armeabi-v7a/liblegado_ffi.so
+ 41255448  1981-01-01 01:01   lib/x86_64/liblegado_ffi.so

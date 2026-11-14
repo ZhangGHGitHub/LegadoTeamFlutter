@@ -1,0 +1,48 @@
+== E/flutter or process-level FATAL EXCEPTION for app ==
+(以上为空表示应用无 Flutter/Java 崩溃)
+
+== native fatal signals by cmdline ==
+      1 11-15 06:25:23.058 F/DEBUG   (29668): Cmdline: uiautomator
+      1 11-15 06:25:35.587 F/DEBUG   (29731): Cmdline: uiautomator
+      1 11-15 06:25:43.488 F/DEBUG   (29796): Cmdline: uiautomator
+      1 11-15 06:25:51.559 F/DEBUG   (29838): Cmdline: uiautomator
+      1 11-15 06:26:04.160 F/DEBUG   (29884): Cmdline: uiautomator
+      1 11-15 06:26:23.188 F/DEBUG   (29955): Cmdline: uiautomator
+      1 11-15 06:26:26.325 F/DEBUG   (29990): Cmdline: uiautomator
+      1 11-15 06:26:29.669 F/DEBUG   (30026): Cmdline: uiautomator
+      1 11-15 06:26:45.954 F/DEBUG   (30077): Cmdline: uiautomator
+      1 11-15 06:27:30.202 F/DEBUG   (30130): Cmdline: uiautomator
+      1 11-15 06:27:33.561 F/DEBUG   (30166): Cmdline: uiautomator
+      1 11-15 06:27:39.836 F/DEBUG   (30209): Cmdline: uiautomator
+      1 11-15 06:27:46.503 F/DEBUG   (30243): Cmdline: uiautomator
+      1 11-15 06:28:00.535 F/DEBUG   (30294): Cmdline: uiautomator
+      1 11-15 06:28:07.871 F/DEBUG   (30336): Cmdline: uiautomator
+      1 11-15 06:28:17.271 F/DEBUG   (30380): Cmdline: uiautomator
+      1 11-15 06:28:27.169 F/DEBUG   (30424): Cmdline: uiautomator
+      1 11-15 06:29:02.026 F/DEBUG   (30525): Cmdline: uiautomator
+      1 11-15 06:29:08.919 F/DEBUG   (30565): Cmdline: uiautomator
+      1 11-15 06:29:24.676 F/DEBUG   (30602): Cmdline: uiautomator
+      1 11-15 06:29:27.803 F/DEBUG   (30635): Cmdline: uiautomator
+      1 11-15 06:29:32.886 F/DEBUG   (30675): Cmdline: uiautomator
+      1 11-15 06:29:40.675 F/DEBUG   (30719): Cmdline: uiautomator
+      1 11-15 06:29:51.002 F/DEBUG   (30762): Cmdline: uiautomator
+      1 11-15 06:29:59.021 F/DEBUG   (30805): Cmdline: uiautomator
+      1 11-15 06:30:22.419 F/DEBUG   (30871): Cmdline: uiautomator
+      1 11-15 06:30:51.705 F/DEBUG   (31005): Cmdline: uiautomator
+      1 11-15 06:30:55.040 F/DEBUG   (31034): Cmdline: uiautomator
+      1 11-15 06:31:04.102 F/DEBUG   (31084): Cmdline: uiautomator
+      1 11-15 06:31:07.441 F/DEBUG   (31121): Cmdline: uiautomator
+      1 11-15 06:31:16.371 F/DEBUG   (31164): Cmdline: uiautomator
+      1 11-15 06:31:25.438 F/DEBUG   (31208): Cmdline: uiautomator
+      1 11-15 06:32:43.935 F/DEBUG   (31274): Cmdline: uiautomator
+      1 11-15 06:32:47.051 F/DEBUG   (31303): Cmdline: uiautomator
+      1 11-15 06:32:54.053 F/DEBUG   (31351): Cmdline: uiautomator
+      1 11-15 06:33:11.919 F/DEBUG   (31404): Cmdline: uiautomator
+      1 11-15 06:33:25.675 F/DEBUG   (31501): Cmdline: uiautomator
+      1 11-15 06:33:28.803 F/DEBUG   (31537): Cmdline: uiautomator
+      1 11-15 06:33:32.137 F/DEBUG   (31571): Cmdline: uiautomator
+      1 11-15 06:33:38.436 F/DEBUG   (31611): Cmdline: uiautomator
+      1 11-15 06:33:45.368 F/DEBUG   (31646): Cmdline: uiautomator
+      1 11-15 06:34:36.019 F/DEBUG   (31763): Cmdline: uiautomator
+      1 11-15 06:34:43.543 F/DEBUG   (31802): Cmdline: uiautomator
+      1 11-15 06:34:56.720 F/DEBUG   (31840): Cmdline: uiautomator

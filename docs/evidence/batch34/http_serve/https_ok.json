@@ -1,0 +1,36 @@
+[
+  {
+    "bookSourceUrl": "https://api.github.com/search/repositories",
+    "bookSourceName": "B34-HTTPS-GitHub",
+    "bookSourceGroup": "B34QA",
+    "bookSourceType": 0,
+    "bookSourceComment": "批34 HTTPS TLS 验收：真实公网证书 + JSON 搜索",
+    "enabled": true,
+    "enabledExplore": false,
+    "enabledCookieJar": false,
+    "searchUrl": "https://api.github.com/search/repositories?q={{key}}&per_page=5",
+    "header": "{\"Accept\":\"application/vnd.github+json\",\"User-Agent\":\"Legado-QA-B34\"}",
+    "ruleSearch": {
+      "bookList": "$.items[*]",
+      "name": "$.full_name",
+      "author": "$.owner.login",
+      "bookUrl": "$.html_url",
+      "intro": "$.description",
+      "kind": "$.language",
+      "lastChapter": "$.updated_at"
+    },
+    "ruleBookInfo": {
+      "name": "$.full_name",
+      "author": "$.owner.login",
+      "intro": "$.description"
+    },
+    "ruleToc": {
+      "chapterList": "$.items[*]",
+      "chapterName": "$.name",
+      "chapterUrl": "$.url"
+    },
+    "ruleContent": {
+      "content": "$.body"
+    }
+  }
+]
