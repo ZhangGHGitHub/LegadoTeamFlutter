@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.503] - 2026-11-15
+
+### Fixed
+- [Rust] 修复书源文件 API 在生产环境完全不可用的问题：`downloadFile`、`cacheFile`、`importScript`、`readTxtFile`、`getTxtInFolder`、`getFile`、`readFile`、`deleteFile` 此前在 App 内全部不存在（调用即报错），导致依赖这些能力的书源（下载音频/图片/字体、加载远端脚本、读取文本）直接失效。现在按原版语义可用，并限域在各自的沙箱目录内。
+- [Rust] 安全加固：每个书源的文件沙箱相互隔离（此前所有书源共用一个目录，A 书源可读到 B 书源下载的文件）。越界路径（`../`、绝对路径、符号链接、UNC 等）一律拒绝。
+- [Rust] 修复文件下载内容被破坏的问题：非 UTF-8 的二进制文件（压缩包、图片、字体）此前会被错误解码导致内容损坏，`downloadFile` + `unzipFile` 的常见用法直接失效。现在按原始字节保存。
+- [Rust] 安全加固：文件下载增加 32MB 上限、目录批量读取增加 64MB 上限，超限直接报错。此前书源可用超大响应耗尽设备内存。
+
+### Changed
+- [Rust] 文件 API 与帮助文档对齐：`writeFile`、`fileExists`、`downloadFile(url, fileName)` 三项非原版能力仅在调试环境可用，生产不提供。
+
 ## [2.0.502] - 2026-11-13
 
 ### Fixed
