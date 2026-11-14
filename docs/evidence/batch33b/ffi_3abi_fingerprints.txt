@@ -1,0 +1,12 @@
+== arm64-v8a
+mtime=2026-11-15 03:23:09.778994700 +0800 size=52448168
+7f0204088da50c2bc8d2be2173a2ea6e24b550bb1269a0510a53d311a731d46b *flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+{"contentHash":-905874848,"mode":"release","quickjs":true,"builtAt":"2026-11-15T03:24:49.2083535+08:00","rustFingerprint":"1e8680702b9d613fb4933802445dc47a02c8d52a73ddee40eeaa90d07c072123"}
+== armeabi-v7a
+mtime=2026-11-15 03:23:58.158162900 +0800 size=34921900
+b9f7f9fb8e07b50f0fb5b4b6cba907b61ac702421c0274071e074c440cb2b4ff *flutter_legado/android/app/src/main/jniLibs/armeabi-v7a/liblegado_ffi.so
+{"contentHash":-905874848,"mode":"release","quickjs":false,"builtAt":"2026-11-15T03:24:49.2300017+08:00","rustFingerprint":"1e8680702b9d613fb4933802445dc47a02c8d52a73ddee40eeaa90d07c072123"}
+== x86_64
+mtime=2026-11-15 03:24:48.862898800 +0800 size=52801448
+e2c2f7bbc7f5228e76612811706509599db86ee7b12bcb58dd7f11c1a866a0ed *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+{"contentHash":-905874848,"mode":"release","quickjs":true,"builtAt":"2026-11-15T03:24:49.2423217+08:00","rustFingerprint":"1e8680702b9d613fb4933802445dc47a02c8d52a73ddee40eeaa90d07c072123"}

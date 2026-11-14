@@ -1,0 +1,128 @@
+批33b（2.0.503+504）设备验收原始证据摘要（2026-11-15，HEAD a24b29b628）
+环境：MuMu 实例 0「Test2」在线（is_android_started=true），guest 192.168.100.63:5555，
+Android 15 x86_64；宿主 mock 192.168.100.52:8099（docs/evidence/batch33b/mock_server.py）。
+构建脚本均使用 pwsh 7.7.0。
+
+== 0. 版本/CHANGELOG 一致性 ==
+flutter_legado/pubspec.yaml: version: 2.0.503+504
+CHANGELOG.md 顶部: ## [2.0.503] - 2026-11-15
+git HEAD: a24b29b6283cccf34ce652259c96235bea95fb2f
+（versionName=2.0.503，versionCode=504，与 pubspec 及设备安装版本一致；
+  CHANGELOG 无独立 2.0.504 段，+504 为 versionCode。）
+
+== 1. 三 ABI 全量重建（build-android.ps1 -Mode release -Targets aarch64,armv7,x86_64）==
+构建日志：build_rust_release_3abi.log（EXIT=0）
+verify-ffi-android.ps1 -Mode release：verify_ffi_release.log（EXIT=0）
+  [OK] arm64-v8a / armeabi-v7a / x86_64 三项均 FRB hash + Rust 源码指纹一致
+三产物（ffi_3abi_fingerprints.txt）：
+  arm64-v8a   mtime 2026-11-15 03:23:09  size 52,448,168
+    sha256 7f0204088da50c2bc8d2be2173a2ea6e24b550bb1269a0510a53d311a731d46b
+  armeabi-v7a mtime 2026-11-15 03:23:58  size 34,921,900
+    sha256 b9f7f9fb8e07b50f0fb5b4b6cba907b61ac702421c0274071e074c440cb2b4ff
+  x86_64      mtime 2026-11-15 03:24:48  size 52,801,448
+    sha256 e2c2f7bbc7f5228e76612811706509599db86ee7b12bcb58dd7f11c1a866a0ed
+  meta：contentHash 三者均 -905874848；rustFingerprint 三者均
+    1e8680702b9d613fb4933802445dc47a02c8d52a73ddee40eeaa90d07c072123；
+    builtAt 均 2026-11-15T03:24:49；armv7 quickjs=false（脚本既定组合）。
+  ⇒ armv7 不再陈旧（重建前 mtime=2026-11-13 20:36、
+    rustFingerprint=b87951003e33efe03022c0e07b63bf8f1d19785cfd3a6a8265d42702ff2766ad，
+    见 ffi_3abi_before.txt；本轮已由 03:23 产物覆盖）。
+
+== 2. release APK 构建/安装（flutter build apk --release）==
+build_apk_release.log（EXIT=0，202.8MB）
+sha256 322c16d5f2b4a492c2e41f97caaf30368b247112574b87c54b826f5716160378
+  （apk_release_sha256.txt；212,672,096 bytes）
+APK 内三 ABI（apk_release_sha256.txt）：
+  arm64-v8a 36,147,488 / armeabi-v7a 22,744,428 / x86_64 40,119,760
+  旧版 armv7=22,727,036，本轮已变化，非批32遗留。
+安装：adb install -r -> Success；设备拉取 base.apk
+  sha256 = 322c16d5… 与构建产物一致（installed_apk_abi_check.txt）。
+dumpsys package：versionCode=504 versionName=2.0.503
+启动后 pid 存在；logcat 'FATAL EXCEPTION|E/flutter' 计数 = 0。
+
+== 3. debug 冒烟（flutter build apk --debug -> emulator_smoke_test.ps1 -SkipBuild -CheckUI）==
+build_apk_debug.log（EXIT=0）
+smoke_debug.log：通过 7 失败 0，结果 PASSED，EXIT=0
+  设备在线 / APK 安装 / 版本一致 2.0.503 / 进程存活 / 无崩溃 / UI 主界面正常。
+冒烟后已重新安装 release APK（versionCode=504/2.0.503），进程存活、无崩溃。
+
+== 4A. 书源调试正文路径（a872cdf44f 直接验证，release 包）==
+新增 B33-DEBUG-正文调试（CSS 规则 #content@text）经深链导入成功
+（rel_import_confirm2.xml：新增 1；rel_import_done.xml：共1成功1）。
+（1）-- 直连正文：
+  rel_debug_content_logs.xml / .png（10/10 条）
+  ⇒开始访正文页:.../b33/ch/a
+  ︾开始解析正文页
+  ┌获取章节名称 / └调试
+  ┌获取正文内容 / └正文长度:39
+  mock chapter a BATCH33_DEBUG_CONTENT_OK
+  ︽正文页解析完成
+  ⇒ 无 missing field `is_vip`，无 Serialization error。
+  （缺陷现场对照：上轮 docs/evidence/batch33/ui/28_A_logs.xml 同一路径报
+    Serialization error: missing field `is_vip`。）
+（2）++ 目录后取首章正文：
+  rel_debug_toc_logs.xml / .png（20/20 条）
+  ⇒开始获取正文:.../b33/ch/a
+  章节名称:第1章 B33A；正文长度:39；BATCH33_DEBUG_CONTENT_OK；正文页解析完成。
+（3）源 A 原缺陷现场原样复跑（release，与上轮 28_A_logs.xml 同源同 URL）：
+  final_debug_A_content3.xml / .png（10/10 条）
+  [00:00.023] └正文长度:211
+  [00:00.023] A_OK||.../23405f.../text.txt||text.txt||BATCH33_TEXT_OK
+              批33 设备验收：java.downloadFile + java.readTxtFile 生产环境可用
+  [00:00.023] ︽正文页解析完成
+  mock：ts 1794685992.333 /b33/ch/a 200 140B；
+        ts 1794685992.350 /b33/text.txt 200 93B
+  ⇒ 同一路径不再报 missing field `is_vip`，且正文解析完成。
+
+== 4B. 文件 API 生产可用（release 回归）==
+书架 B33A（源 A，@js downloadFile+readTxtFile）阅读器点「刷新正文」：
+  mock_requests.jsonl ts 1794684923.611 /b33/ch/a 200 140B
+                          1794684923.633 /b33/text.txt 200 93B
+  rel_reader_A_refreshed.xml/.png：
+  A_OK||/data/data/io.legado.flutter_legado/cache/js_cache/js_files/
+        23405f6838f1b6f2258e14610d857ba9/text.txt||text.txt||BATCH33_TEXT_OK
+  + 第二段中文正文。⇒ 新 release 构建仍执行下载并读取成功。
+
+== 4C. 跨源隔离（release 回归）==
+D1 刷新：ts 1794684970.928 /b33/text.txt 200 93B；
+  rel_reader_D1_refreshed.xml：D1_OK||.../5faf479640def57c91a7549d0f27348e/
+  text.txt||BATCH33_TEXT_OK
+D2 刷新：ts 1794685013.033 /b33/d2.txt 200 72B；rel_reader_D2_refreshed.xml：
+  D2_PATH||.../54e7dbeeffa7a20041b782133e5a6e7d/d2.txt||BATCH33_D2_OWN_FILE…
+  D2_FOLDER||[BATCH33_D2_OWN_FILE…]（仅本源文件）
+  D2_UP||[[ERROR]文件访问被拒绝：路径包含`..`（..）]
+  D2_READ_A_ABS_ERR||… 23405f…/text.txt 不在引擎沙箱目录内（allow_file_access=false）
+  D2_READ_A_REL_ERR||… 路径包含 `..`
+  D2_GET_A_ERR||… 不在引擎沙箱目录内
+⇒ 本源目录隔离、越界读取全部拒绝。
+
+== 4D. 主流程回归 ==
+阅读/翻章：B33C 目录切换 CH-C1 -> CH-C2 成功（rel_reader_C_toc.xml /
+  rel_reader_C2.png）；D2 翻页 1/2 -> 2/2（rel_reader_D2_page2.png）。
+搜索：关键词 b33，结果 1 · 进度 7/7，命中 B33书A（rel_search_results2.xml）。
+书源管理：深链导入去重（5 已存在 + DEBUG 新增，确认 1）并刷新可见
+  （rel_sources3.xml）；列表/更多菜单/调试入口可用。
+备份恢复：本地备份生成
+  /sdcard/Download/legado_backup/legado_backup_1794685392534.json（46,750B，03:42）；
+  本地最新恢复 -> 确认对话框 -> 执行完成（rel_restore_confirm3.xml /
+  rel_restore_done.xml）；恢复后书架 B33A/B/C/D1/D2 均在
+  （rel_shelf_after_restore2.xml），pid 存活、FATAL/E.flutter=0。
+  本地恢复（文件选择）复验：DocumentsUI 选中同一 JSON 后正常弹出
+  「确认恢复吗？」（repro_after_pick.xml），取消未二次写入。
+段评：B33A 正文段末徽标「3」，点击弹出「段评 · 3」面板并显示
+  b33qa「b33 段评：文件 API 验收通过」（rel_reader_A_review3.png /
+  rel_review_panel.xml/.png）。
+高亮：既有绿色高亮正常渲染；新增长按段落「高亮」-> 选绿色 -> 保存高亮，
+  正文两段均绿色底（rel_highlight_saved.png）；debug 包 DB 查询：
+  highlights 新增 bookUrl=.../b33/book/A chapterIndex=0 chapterPos=135
+  chapterPosEnd=187 style={"type":"background","color":"#FFA5D6A7"}。
+设备 DB（debug 包拉取 device_legado.db）：books=13；book_sources=11
+  （B33QA=6，含 DEBUG）；chapter_reviews(B33A)=1；cached_chapters(B33)=5。
+
+== 5. 收尾 ==
+mock_server 已停止；宿主 8099 不再监听；设备 listening 仅 adbd:5555；
+未启动 App Web 服务（dumpsys activity services 为空）。
+应用保留安装：release 2.0.503(504)，pid 18082 存活，启动后
+FATAL EXCEPTION/E/flutter 计数 0。未卸载。
+临时文件：已删除 docs/evidence/batch33b/installed_release.apk 与设备
+/sdcard/b33_ui.xml。

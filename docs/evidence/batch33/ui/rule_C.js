@@ -1,0 +1,1 @@
+var u=(''+baseUrl).indexOf('chunked')>=0?"http://192.168.100.52:8099/b33/huge_chunked.bin":"http://192.168.100.52:8099/b33/huge.bin";try{var p=java.downloadFile(u);"C_UNEXPECTED_DOWNLOAD||"+p;}catch(e){"C_ERR||"+e;}

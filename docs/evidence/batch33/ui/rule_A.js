@@ -1,0 +1,1 @@
+try{var u="http://192.168.100.52:8099/b33/text.txt";var p=java.downloadFile(u);var t=java.readTxtFile(p);var f=java.getFile(p);"A_OK||"+p+"||"+f.getName()+"||"+t;}catch(e){"A_ERR||"+e;}

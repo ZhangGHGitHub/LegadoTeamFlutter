@@ -1,0 +1,27 @@
+批33b 三 ABI 重建前快照（2026-11-15 03:16 读取，重建动作开始于 03:17 左右）
+来源：flutter_legado/android/app/src/main/jniLibs/<abi>/liblegado_ffi.so 与 .so.meta
+
+== arm64-v8a
+mtime=2026-11-15 02:13
+size=52,489,136
+{"contentHash":-905874848,"mode":"release","quickjs":true,
+ "builtAt":"2026-11-15T02:14:12.6653160+08:00",
+ "rustFingerprint":"bdc31659787411f422c80f77f0c70623517e65760de463eba75a93fda3a16ac6"}
+
+== armeabi-v7a（陈旧：批32 产物）
+mtime=2026-11-13 20:36
+size=34,904,540
+{"contentHash":-905874848,"mode":"release","quickjs":false,
+ "builtAt":"2026-11-13T20:36:38.6236560+08:00",
+ "rustFingerprint":"b87951003e33efe03022c0e07b63bf8f1d19785cfd3a6a8265d42702ff2766ad"}
+
+== x86_64
+mtime=2026-11-15 02:14
+size=52,798,920
+{"contentHash":-905874848,"mode":"release","quickjs":true,
+ "builtAt":"2026-11-15T02:14:12.6968404+08:00",
+ "rustFingerprint":"bdc31659787411f422c80f77f0c70623517e65760de463eba75a93fda3a16ac6"}
+
+结论：重建前 armv7 的 builtAt/rustFingerprint 与 aarch64/x86_64 不一致，
+      确为批32 遗留；本轮 03:23-03:24 已三 ABI 全量重建（见
+      ffi_3abi_fingerprints.txt）。

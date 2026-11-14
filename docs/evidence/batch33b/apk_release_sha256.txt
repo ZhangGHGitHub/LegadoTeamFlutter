@@ -1,0 +1,5 @@
+322c16d5f2b4a492c2e41f97caaf30368b247112574b87c54b826f5716160378 *build/app/outputs/flutter-apk/app-release.apk
+size=212672096 bytes mtime=2026-11-15 03:27:44.787966000 +0800
+ 36147488  1981-01-01 01:01   lib/arm64-v8a/liblegado_ffi.so
+ 22744428  1981-01-01 01:01   lib/armeabi-v7a/liblegado_ffi.so
+ 40119760  1981-01-01 01:01   lib/x86_64/liblegado_ffi.so

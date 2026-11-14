@@ -1,0 +1,2 @@
+http://192.168.100.52:8099/b33/ch/huge|C_UNEXPECTED_DOWNLOAD||[ERROR] Download error: Network error: 下载超出大小上限：http://192.168.100.52:8099/b33/huge.bin 响应体 41943040 字节，超过上限 33554432 字节
+http://192.168.100.52:8099/b33/ch/huge_chunked|C_UNEXPECTED_DOWNLOAD||[ERROR] Download error: Network error: 下载超出大小上限：http://192.168.100.52:8099/b33/huge_chunked.bin 响应体 33554850 字节，超过上限 33554432 字节

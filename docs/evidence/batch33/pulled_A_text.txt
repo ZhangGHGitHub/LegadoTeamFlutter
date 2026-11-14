@@ -1,0 +1,2 @@
+BATCH33_TEXT_OK
+批33 设备验收：java.downloadFile + java.readTxtFile 生产环境可用

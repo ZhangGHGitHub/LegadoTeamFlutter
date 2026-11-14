@@ -1,0 +1,1 @@
+try{var p=java.downloadFile("http://192.168.100.52:8099/b33/text.txt");var t=java.readTxtFile(p);"D1_OK||"+p+"||"+t.replace(/\s+/g,"");}catch(e){"D1_ERR||"+e;}

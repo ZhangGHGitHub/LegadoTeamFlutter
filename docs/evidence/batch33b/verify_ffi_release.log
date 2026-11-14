@@ -1,0 +1,12 @@
+Rust source fingerprint: 1e8680702b9d613f...
+=== Legado Android FFI verify ===
+Expected content hash: -905874848
+Build mode: release
+Targets: aarch64, armv7, x86_64
+
+[OK] arm64-v8a (meta: FRB hash + Rust 源码指纹一致)
+[OK] armeabi-v7a (meta: FRB hash + Rust 源码指纹一致)
+[OK] x86_64 (meta: FRB hash + Rust 源码指纹一致)
+
+=== FFI verify PASSED (FFI 面与 Rust 源码指纹一致，复用现有 .so) ===
+EXIT=0

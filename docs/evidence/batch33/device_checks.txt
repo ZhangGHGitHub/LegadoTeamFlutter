@@ -1,0 +1,106 @@
+批33 设备验收关键命令输出（原始证据摘录，2026-11-15）
+环境：MuMu 实例 0「Test2」，guest 192.168.100.63:5555（Android 15，x86_64），
+宿主 mock 192.168.100.52:8099（docs/evidence/batch33/mock_server.py）
+
+== 1. release 构建与安装 ==
+flutter build apk --release  -> EXIT=0（build_apk_release.log）
+sha256: 66c5630c2253da36dd81ff5fb92f6c62bcabedb781d7ce74eab0080f91099215
+        app-release.apk (212,671,912 bytes)  [apk_sha256.txt]
+adb install -r -> Success
+dumpsys package io.legado.flutter_legado:
+  versionCode=503 versionName=2.0.502 lastUpdateTime=2026-11-15 02:15:53
+logcat -c 后启动 18s：pidof=3286，grep 'FATAL EXCEPTION|E/flutter' 无输出
+release APK 内 jniLibs：lib/x86_64/liblegado_ffi.so 40121840 字节；
+  lib/arm64-v8a 36167248；lib/armeabi-v7a 22727036（armv7 为批32 遗留，
+  本批只重建 aarch64+x86_64；FRB content hash 未变，gradle 校验通过）
+
+== 2. debug 冒烟 ==
+flutter build apk --debug -> EXIT=0
+pwsh -File scripts/emulator_smoke_test.ps1 -Device 192.168.100.63:5555 -SkipBuild -CheckUI
+  [PASS] 设备在线 / APK 安装 / 版本一致(2.0.502) / 进程存活 / 无崩溃日志
+  [PASS] UI 主界面渲染正常（书架/发现/订阅/我的）
+  通过: 7 失败: 0  结果: PASSED  EXIT=0（smoke_debug.log）
+
+== 3. 生产书源文件 API（A）==
+书源 A（http://192.168.100.52:8099/b33/source/A）正文规则：
+  @js: java.downloadFile(url) -> java.readTxtFile(p) -> java.getFile(p).getName()
+阅读器正文（02:25，debug）uiautomator：
+  A_OK||/data/data/io.legado.flutter_legado/cache/js_cache/js_files/
+       23405f6838f1b6f2258e14610d857ba9/text.txt||text.txt||BATCH33_TEXT_OK
+  第二段：批33 设备验收：java.downloadFile + java.readTxtFile 生产环境可用
+run-as 目录：cache/js_cache/js_files/23405f.../text.txt 93 字节
+拉回比对 sha256 = b73bc91ebdcf5b2f838070dd0483e31a5a56c499ed8d09d7224dd95f1e6a4a7f
+mock manifest 期望同值、同长度（pulled_A_text.txt）
+
+release 复验（清空 js_cache + cached_chapters 后重装 release，再次打开 A）：
+mock 请求序列（mock_requests.jsonl）：
+  1794681958.738 /b33/book/A 9
+  1794681958.759 /b33/ch/a 115
+  1794681958.774 /b33/text.txt 93   <= release 生产包重新执行 downloadFile
+  1794681958.818 /b33/reviews.json 174
+正文显示 A_OK + BATCH33_TEXT_OK（129_release_reader_A_clean.png）
+
+== 4. 二进制保真（B）==
+规则：downloadFile(bin.bin) + downloadFile(pack.zip) + unzipFile + readTxtFile 条目
+run-as 目录 bbe91c09.../：
+  bin.bin 4864；pack.zip 422；pack/hello.txt 21；pack/raw.bin 480；pack/big.txt 60001
+拉回 sha256：
+  bin.bin   e79452c9e10409792f9961091f6b56bd74ee21460fbe0f8e6299205d9c514bbb
+  manifest  e79452c9e10409792f9961091f6b56bd74ee21460fbe0f8e6299205d9c514bbb  ✓
+  pack.zip  0370bf6015c11030e5c43d1db268012d57c823acb98133a5d82e26d76dd7b59d
+  manifest   0370bf6015c11030e5c43d1db268012d57c823acb98133a5d82e26d76dd7b59d  ✓
+  （zip 内含时间戳，每次启动 mock 重新打包，hash 以本次 manifest 为准）
+  hello.txt 内容 = BATCH33_ZIP_ENTRY_OK（解压成功即证明下载字节未被 UTF-8 解码破坏）
+正文亦显示 B_BIN||path||len=4864 与 B_ZIP||...（51_reader_B.png / 51_reader_B.xml）
+
+== 5. 超限拒绝（C，32MB 上限）==
+规则尝试下载 40MiB /b33/huge.bin（Content-Length）与 /b33/huge_chunked.bin（chunked）
+运行后正文（cached_chapters 全文，C_cached_content.txt）：
+  /b33/ch/huge:
+    C_UNEXPECTED_DOWNLOAD||[ERROR] Download error: Network error: 下载超出大小上限：
+    http://192.168.100.52:8099/b33/huge.bin 响应体 41943040 字节，超过上限 33554432 字节
+  /b33/ch/huge_chunked:
+    C_UNEXPECTED_DOWNLOAD||[ERROR] Download error: Network error: 下载超出大小上限：
+    http://192.168.100.52:8099/b33/huge_chunked.bin 响应体 33554850 字节，超过上限 33554432 字节
+  （说明：downloadFile 错误按字符串 API 约定返回 "[ERROR] ..."，未抛异常；
+    规则前缀 C_UNEXPECTED_DOWNLOAD 仅为探针标记，不代表下载成功）
+mock 侧：huge.bin 仅发送 131072 字节即 ConnectionResetError（ms=2，快拒）；
+  huge_chunked.bin 发送 34996224 字节后 ConnectionResetError/Aborted（流式中止）
+沙箱目录 2ba058f5...（源 C）为空，无 huge 残留文件
+应用存活：pid 5146；PSS 502964 -> 503844 KB，RSS 594112 -> 595148 KB（+~1MB）
+无 FATAL/E.flutter（54_reader_C.png / 54_reader_C.xml）
+
+== 6. 跨源隔离（D）==
+D1（源 D1）下载 text.txt：D1_OK||.../5faf479640def57c91a7549d0f27348e/text.txt||BATCH33_TEXT_OK
+D2（源 D2）先下载自有 d2.txt，再做跨源探测（cached_chapters 全文，D2_cached_content.txt）：
+  D2_PATH||.../54e7dbeeffa7a20041b782133e5a6e7d/d2.txt||BATCH33_D2_OWN_FILE...
+  D2_FOLDER||[BATCH33_D2_OWN_FILE...]            <= 只含本源文件，无 A 源标记
+  D2_UP||[[ERROR]文件访问被拒绝：路径包含`..`（..）]
+  D2_READ_A_ABS_ERR||Error: readTxtFile: 文件访问被拒绝：
+    /data/user/0/io.legado.flutter_legado/cache/js_cache/js_files/
+    23405f6838f1b6f2258e14610d857ba9/text.txt 不在引擎沙箱目录内
+    （allow_file_access=false；本地文件请先经 java.downloadFile/cacheFile 获取）
+  D2_READ_A_REL_ERR||Error: readTxtFile: 文件访问被拒绝：路径包含 `..`
+    （../23405f6838f1b6f2258e14610d857ba9/text.txt）
+  D2_GET_A_ERR||Error: getFile: 文件访问被拒绝：<A 源绝对路径> 不在引擎沙箱目录内
+结论：同 URL 在两源落到不同 SHA-256 子目录（23405f... vs 5faf47... vs 54e7db...），
+      getTxtInFolder(".") 不串源，绝对路径与 ../ 读取均被拒绝。
+
+== 7. 主流程回归（E）==
+- 阅读/翻章：A/B/C/D1/D2 五书均可打开，C 书 1/2 -> 2/2 翻章成功
+- 搜索：书源 A 过滤搜索关键词 b33 -> 「结果 1 · 进度 1/1」，命中 B33书A（43_search_results.xml）
+- 书源管理：deep link 导入 5 源成功（21_after_import.xml：成功 5）；列表/更多菜单/编辑入口正常
+- 备份恢复：本地备份生成
+  /storage/emulated/0/Download/legado_backup/legado_backup_1794681600856.json (44612 bytes)
+  恢复流程确认框 -> 执行完成，应用存活；DB books=13 / book_sources=10（未丢数据）
+- 段评：mock 源 ruleReview 摘要 -> 正文段落后出现徽标「3」，
+  点击弹出「段评 · 3」面板并显示内容（92/93_review_*.png/xml）
+- 高亮：长按段落 -> 更多 -> 高亮 -> 选绿色 -> 保存高亮；
+  DB highlights: bookUrl=.../book/A chapterIndex=0 chapterPos=0 chapterPosEnd=134
+  style={"type":"background","color":"#FFA5D6A7"}；
+  重启后仍渲染绿色底（89/92/129_*.png）
+
+== 8. 收尾 ==
+mock_server 已停止；adb reverse 已清空；/sdcard/b33_ui.xml 与 /data/local/tmp/b33_*.sql 已删除
+Web 服务未启动（ss -ltn 仅 adbd 5555）
+应用保留安装：release 变体（run-as 报 package not debuggable），version 2.0.502，进程存活

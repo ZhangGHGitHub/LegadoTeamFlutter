@@ -1,0 +1,263 @@
+{
+  "generated_at": "2026-11-15 03:53:34",
+  "host": "192.168.100.52:8099",
+  "sandbox_base_predicted": "/data/user/0/io.legado.flutter_legado/cache/js_cache/js_files",
+  "source_urls": {
+    "A": "http://192.168.100.52:8099/b33/source/A",
+    "B": "http://192.168.100.52:8099/b33/source/B",
+    "C": "http://192.168.100.52:8099/b33/source/C",
+    "D1": "http://192.168.100.52:8099/b33/source/D1",
+    "D2": "http://192.168.100.52:8099/b33/source/D2",
+    "DEBUG": "http://192.168.100.52:8099/b33/source/DEBUG"
+  },
+  "sandbox_dir": {
+    "A": "23405f6838f1b6f2258e14610d857ba9",
+    "D2": "54e7dbeeffa7a20041b782133e5a6e7d"
+  },
+  "a_abs_path": "/data/user/0/io.legado.flutter_legado/cache/js_cache/js_files/23405f6838f1b6f2258e14610d857ba9/text.txt",
+  "files": {
+    "text.txt": {
+      "len": 93,
+      "sha256": "b73bc91ebdcf5b2f838070dd0483e31a5a56c499ed8d09d7224dd95f1e6a4a7f",
+      "content": "BATCH33_TEXT_OK\n批33 设备验收：java.downloadFile + java.readTxtFile 生产环境可用\n"
+    },
+    "d2.txt": {
+      "len": 72,
+      "sha256": "06735174fa39f2f36b3fba7e83c9457a6244d38489e04da0a2840747d828e5e0"
+    },
+    "bin.bin": {
+      "len": 4864,
+      "sha256": "e79452c9e10409792f9961091f6b56bd74ee21460fbe0f8e6299205d9c514bbb"
+    },
+    "pack.zip": {
+      "len": 422,
+      "sha256": "da592b817dff8ee03868d7990460b5aabaeebf9128c08cd04394beb6f963d47b",
+      "entries": [
+        "hello.txt",
+        "raw.bin",
+        "big.txt"
+      ],
+      "hello_sha256": "c5654d25ee522810ace36b74c14ba5f2b3c33ed48bf7d16e407ff17507044eb2"
+    },
+    "huge.bin": {
+      "len": 41943040,
+      "note": "40MiB, Content-Length"
+    },
+    "huge_chunked.bin": {
+      "len": 41943040,
+      "note": "40MiB, chunked"
+    }
+  },
+  "sources": [
+    {
+      "bookSourceUrl": "http://192.168.100.52:8099/b33/source/A",
+      "bookSourceName": "B33-A-文本下载",
+      "bookSourceGroup": "B33QA",
+      "bookSourceType": 0,
+      "bookSourceComment": "批33 设备验收 mock 源（文件 API 策略化）",
+      "enabled": true,
+      "enabledExplore": false,
+      "enabledCookieJar": false,
+      "searchUrl": "http://192.168.100.52:8099/b33/search?kw={{key}}",
+      "ruleSearch": {
+        "bookList": "$.data[*]",
+        "name": "$.name",
+        "author": "$.author",
+        "bookUrl": "$.bookUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "lastChapter": "$.lastChapter"
+      },
+      "ruleBookInfo": {
+        "init": "$.book",
+        "name": "$.name",
+        "author": "$.author",
+        "intro": "$.intro",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "ruleContent": {
+        "content": "@js:try{var u=\"http://192.168.100.52:8099/b33/text.txt\";var p=java.downloadFile(u);var t=java.readTxtFile(p);var f=java.getFile(p);\"A_OK||\"+p+\"||\"+f.getName()+\"||\"+t;}catch(e){\"A_ERR||\"+e;}"
+      }
+    },
+    {
+      "bookSourceUrl": "http://192.168.100.52:8099/b33/source/B",
+      "bookSourceName": "B33-B-二进制zip",
+      "bookSourceGroup": "B33QA",
+      "bookSourceType": 0,
+      "bookSourceComment": "批33 设备验收 mock 源（文件 API 策略化）",
+      "enabled": true,
+      "enabledExplore": false,
+      "enabledCookieJar": false,
+      "searchUrl": "http://192.168.100.52:8099/b33/search?kw={{key}}",
+      "ruleSearch": {
+        "bookList": "$.data[*]",
+        "name": "$.name",
+        "author": "$.author",
+        "bookUrl": "$.bookUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "lastChapter": "$.lastChapter"
+      },
+      "ruleBookInfo": {
+        "init": "$.book",
+        "name": "$.name",
+        "author": "$.author",
+        "intro": "$.intro",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "ruleContent": {
+        "content": "@js:var out='';try{var pb=java.downloadFile(\"http://192.168.100.52:8099/b33/bin.bin\");out+=\"B_BIN||\"+pb+\"||len=\"+java.readTxtFile(pb).length;}catch(e){out+=\"B_BIN_ERR||\"+e;}try{var pz=java.downloadFile(\"http://192.168.100.52:8099/b33/pack.zip\");var d=java.unzipFile(pz);var t=java.readTxtFile(d+\"/hello.txt\");var r=java.readTxtFile(d+\"/raw.bin\");out+=\";;B_ZIP||\"+d+\"||hello=\"+t.replace(/\\s+/g,\"\")+\"||rawlen=\"+r.length;}catch(e){out+=\";;B_ZIP_ERR||\"+e;}out;"
+      }
+    },
+    {
+      "bookSourceUrl": "http://192.168.100.52:8099/b33/source/C",
+      "bookSourceName": "B33-C-超限拒绝",
+      "bookSourceGroup": "B33QA",
+      "bookSourceType": 0,
+      "bookSourceComment": "批33 设备验收 mock 源（文件 API 策略化）",
+      "enabled": true,
+      "enabledExplore": false,
+      "enabledCookieJar": false,
+      "searchUrl": "http://192.168.100.52:8099/b33/search?kw={{key}}",
+      "ruleSearch": {
+        "bookList": "$.data[*]",
+        "name": "$.name",
+        "author": "$.author",
+        "bookUrl": "$.bookUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "lastChapter": "$.lastChapter"
+      },
+      "ruleBookInfo": {
+        "init": "$.book",
+        "name": "$.name",
+        "author": "$.author",
+        "intro": "$.intro",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "ruleContent": {
+        "content": "@js:var u=(''+baseUrl).indexOf('chunked')>=0?\"http://192.168.100.52:8099/b33/huge_chunked.bin\":\"http://192.168.100.52:8099/b33/huge.bin\";try{var p=java.downloadFile(u);\"C_UNEXPECTED_DOWNLOAD||\"+p;}catch(e){\"C_ERR||\"+e;}"
+      }
+    },
+    {
+      "bookSourceUrl": "http://192.168.100.52:8099/b33/source/D1",
+      "bookSourceName": "B33-D1-下载方",
+      "bookSourceGroup": "B33QA",
+      "bookSourceType": 0,
+      "bookSourceComment": "批33 设备验收 mock 源（文件 API 策略化）",
+      "enabled": true,
+      "enabledExplore": false,
+      "enabledCookieJar": false,
+      "searchUrl": "http://192.168.100.52:8099/b33/search?kw={{key}}",
+      "ruleSearch": {
+        "bookList": "$.data[*]",
+        "name": "$.name",
+        "author": "$.author",
+        "bookUrl": "$.bookUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "lastChapter": "$.lastChapter"
+      },
+      "ruleBookInfo": {
+        "init": "$.book",
+        "name": "$.name",
+        "author": "$.author",
+        "intro": "$.intro",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "ruleContent": {
+        "content": "@js:try{var p=java.downloadFile(\"http://192.168.100.52:8099/b33/text.txt\");var t=java.readTxtFile(p);\"D1_OK||\"+p+\"||\"+t.replace(/\\s+/g,\"\");}catch(e){\"D1_ERR||\"+e;}"
+      }
+    },
+    {
+      "bookSourceUrl": "http://192.168.100.52:8099/b33/source/D2",
+      "bookSourceName": "B33-D2-跨源探测",
+      "bookSourceGroup": "B33QA",
+      "bookSourceType": 0,
+      "bookSourceComment": "批33 设备验收 mock 源（文件 API 策略化）",
+      "enabled": true,
+      "enabledExplore": false,
+      "enabledCookieJar": false,
+      "searchUrl": "http://192.168.100.52:8099/b33/search?kw={{key}}",
+      "ruleSearch": {
+        "bookList": "$.data[*]",
+        "name": "$.name",
+        "author": "$.author",
+        "bookUrl": "$.bookUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "lastChapter": "$.lastChapter"
+      },
+      "ruleBookInfo": {
+        "init": "$.book",
+        "name": "$.name",
+        "author": "$.author",
+        "intro": "$.intro",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "ruleContent": {
+        "content": "@js:var out='';try{var p=java.downloadFile(\"http://192.168.100.52:8099/b33/d2.txt\");var own=java.readTxtFile(p);out+=\"D2_PATH||\"+p+\"||\"+own.replace(/\\s+/g,\"\");}catch(e){out+=\"D2_DL_ERR||\"+e;}try{var f=java.getTxtInFolder(\".\");out+=\";;D2_FOLDER||[\"+f.replace(/\\s+/g,\"\")+\"]\";}catch(e){out+=\";;D2_FOLDER_ERR||\"+e;}try{var up=java.getTxtInFolder(\"..\");out+=\";;D2_UP||[\"+up.replace(/\\s+/g,\"\")+\"]\";}catch(e){out+=\";;D2_UP_ERR||\"+e;}try{var r=java.readTxtFile(\"/data/user/0/io.legado.flutter_legado/cache/js_cache/js_files/23405f6838f1b6f2258e14610d857ba9/text.txt\");out+=\";;D2_READ_A_ABS||[\"+r.replace(/\\s+/g,\"\")+\"]\";}catch(e){out+=\";;D2_READ_A_ABS_ERR||\"+e;}try{var r2=java.readTxtFile(\"../23405f6838f1b6f2258e14610d857ba9/text.txt\");out+=\";;D2_READ_A_REL||[\"+r2.replace(/\\s+/g,\"\")+\"]\";}catch(e){out+=\";;D2_READ_A_REL_ERR||\"+e;}try{var g=java.getFile(\"/data/user/0/io.legado.flutter_legado/cache/js_cache/js_files/23405f6838f1b6f2258e14610d857ba9/text.txt\");out+=\";;D2_GET_A||exists=\"+g.exists();}catch(e){out+=\";;D2_GET_A_ERR||\"+e;}out;"
+      }
+    },
+    {
+      "bookSourceUrl": "http://192.168.100.52:8099/b33/source/DEBUG",
+      "bookSourceName": "B33-DEBUG-正文调试",
+      "bookSourceGroup": "B33QA",
+      "bookSourceType": 0,
+      "bookSourceComment": "批33 设备验收 mock 源（文件 API 策略化）",
+      "enabled": true,
+      "enabledExplore": false,
+      "enabledCookieJar": false,
+      "searchUrl": "http://192.168.100.52:8099/b33/search?kw={{key}}",
+      "ruleSearch": {
+        "bookList": "$.data[*]",
+        "name": "$.name",
+        "author": "$.author",
+        "bookUrl": "$.bookUrl",
+        "intro": "$.intro",
+        "kind": "$.kind",
+        "lastChapter": "$.lastChapter"
+      },
+      "ruleBookInfo": {
+        "init": "$.book",
+        "name": "$.name",
+        "author": "$.author",
+        "intro": "$.intro",
+        "tocUrl": "$.tocUrl"
+      },
+      "ruleToc": {
+        "chapterList": "$.data[*]",
+        "chapterName": "$.name",
+        "chapterUrl": "$.url"
+      },
+      "ruleContent": {
+        "content": "#content@text"
+      }
+    }
+  ]
+}

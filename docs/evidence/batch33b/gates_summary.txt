@@ -1,0 +1,32 @@
+批33b 门禁证据汇总（HEAD a24b29b628，2026-11-15）
+> 说明：各条完整 stdout 见同名 .log 文件；此处为命令/退出码/关键结论索引。
+
+1) cd rust && cargo fmt --all -- --check
+   EXIT=0，无输出（gate1_cargo_fmt.log）
+
+2) cargo clippy --workspace --all-targets -- -D warnings
+   EXIT=0，Finished dev profile（gate2_clippy_workspace.log；增量命中）
+
+3) cargo test --workspace
+   EXIT=0；test result: 全部 ok
+   汇总：passed=4021 failed=0 ignored=26（gate3_cargo_test_workspace.log）
+   已知 flaky 三项本轮均 ok：
+     api::source::tests::test_update_source_refreshes_rate_limiter
+     engine_cache::tests::invalidate_forces_rebuild
+     regex_safe::tests::test_compile_regex_safe_negative_cache_hit
+
+4) cargo test -p legado-core -p legado-js -p legado-net -p legado-fetcher
+     -p legado-ffi --features quickjs
+   EXIT=0；passed=3121 failed=0 ignored=49（gate4_cargo_test_quickjs.log）
+
+5) cd flutter_legado && flutter analyze
+   EXIT=0；No issues found!（gate5a_flutter_analyze.log）
+   flutter test（首次全量）：
+     EXIT=1；5873 passed，1 failed，1 skipped
+     唯一失败：test/ffi/direct_link_upload_runtime_test.dart
+       @js: 下载规则：result 绑定前序 JSONPath 结果（BridgeError）
+     处理：rust 下 cargo build -p legado-ffi --features quickjs
+       （build_ffi_debug_quickjs.log EXIT=0）
+       单测重跑：4 passed，0 failed（flutter_test_direct_link_rerun.log）
+       全量重跑：5874 passed，0 failed，1 skipped，EXIT=0
+       （gate5b_flutter_test_clean.log）
