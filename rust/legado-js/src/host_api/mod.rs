@@ -67,7 +67,9 @@ pub use env::HostEnv;
 
 /// 将所有宿主 API 注册到 QuickJS 全局上下文
 ///
-/// 转发至 `quickjs_impl::register_all_apis`，根据沙箱配置门控文件 API。
+/// 转发至 `quickjs_impl::register_all_apis`。上游同名文件 API 始终注册
+/// （P1-1），路径按沙箱配置派生的 `fs_policy` 限域；我方扩展
+/// `writeFile`/`fileExists` 等仍按 `allow_file_access` 门控。
 #[cfg(feature = "quickjs")]
 pub fn register_all(
     ctx: &rquickjs::Ctx<'_>,

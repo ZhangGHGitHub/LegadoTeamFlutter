@@ -250,7 +250,7 @@ rust/
 |------|------|------|
 | 执行超时 | 5s | 超时后中断脚本 |
 | eval / Function | **书源主路径启用** | 引擎缓存（`engine_cache`）默认 `allow_script_run=true`（对齐 Rhino）；`SandboxConfig::default()` 仍禁用，供 `js_eval` 严格入口 |
-| 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API；archive/font API（unzipFile/getZipStringContent/queryTTF 等）仍注册以保留书源能力，但本地路径仅允许引擎自建目录（`legado_js_cache` / `legado_font_cache`），越界显式拒绝；解压类 API 另对压缩包条目名做 `..` / 绝对路径预扫描 |
+| 文件 IO | 限域 | `allow_file_access=false`：上游同名文件 API（readFile/getFile/readTxtFile/getTxtInFolder/deleteFile/downloadFile/cacheFile/importScript）始终注册，路径限域在引擎沙箱根（`legado_js_cache/<书源哈希>`，按书源隔离）与字体缓存目录（`legado_font_cache`），`..` / 越界绝对路径 / 符号链接逃逸显式拒绝；单文件读写 32MB、文件夹累计 64MB、下载 32MB 上限。我方扩展 writeFile/fileExists/downloadFile(url, fileName) 仅 `allow_file_access=true` 注册。archive/font API（unzipFile/getZipStringContent/queryTTF 等）同样限域，另对压缩包条目名做 `..` / 绝对路径预扫描 |
 | 网络 | 受控保留 | 经 legado-net 统一通道，30s 超时 / 限流，与 Kotlin 原版书源对等 |
 | 内存上限 | 16 MB | QuickJS 分配失败即报错 |
 | 栈深度 | 512 | 配置项（enforcement 见 F3-3） |

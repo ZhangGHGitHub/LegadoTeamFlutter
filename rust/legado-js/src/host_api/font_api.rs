@@ -86,8 +86,12 @@ pub fn font_cache_dir() -> PathBuf {
 }
 
 /// 覆写字体磁盘缓存目录（测试 / 宿主注入）
+///
+/// 同时失效 `fs_policy` 的允许根 canonical 缓存（P3：根目录不再每次
+/// 文件/字体 API 调用都 `create_dir_all` + `canonicalize`）。
 pub fn set_font_cache_dir(path: PathBuf) {
     *FONT_CACHE_DIR.write().unwrap() = Some(path);
+    crate::host_api::fs_policy::invalidate_allowed_roots_cache();
 }
 
 /// SHA-256 十六进制摘要（缓存 key，对齐 Kotlin `MessageDigest("SHA-256").toHexString()`）

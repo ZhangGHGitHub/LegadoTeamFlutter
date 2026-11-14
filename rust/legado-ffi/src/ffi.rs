@@ -139,8 +139,17 @@ pub mod ffi {
     /// `cache.put/get/putFile/getFile` 磁盘层落应用私有存储而非系统 temp
     /// 目录（未注入时回落 `<temp_dir>/legado-js-cache`，磁盘缓存随系统
     /// temp 清理而丢失）。
+    ///
+    /// P1-1：同一注入点派生 JS 文件 API 的沙箱根 `<dir>/js_files`，使
+    /// `downloadFile/cacheFile/importScript` 的落盘位置与 `readFile` /
+    /// `readTxtFile` 等读取根一致，并避开系统 temp 清理（未注入时回落
+    /// `<temp_dir>/legado_js_cache`）。注入的是共享父目录，实际沙箱根再按
+    /// 书源 tag 分子目录（P2-2 跨书源隔离）。
     pub fn set_cache_dir(dir: String) {
         legado_js::host_api::cache_store::set_cache_dir(&dir);
+        legado_js::host_api::file_utils::set_sandbox_root(
+            std::path::Path::new(&dir).join("js_files"),
+        );
     }
 
     /// 注入图片磁盘缓存目录（P4-2a，契约 §1.6.1/§2.46）

@@ -12,7 +12,10 @@
 //! - JSON 工具：jsonPath, jsonGetString, toJson
 //! - 正则工具：regExp, regExpReplace, regExpFindAll
 //! - 时间工具：formatTime, timeFormat, currentTimeMillis, parseTime, timeFormatUTC
-//! - 文件工具：readFile, writeFile, fileExists, deleteFile, getTxtInFolder
+//! - 文件工具：readFile, deleteFile, readTxtFile, downloadFile, cacheFile,
+//!   importScript, getTxtInFolder, getFile（始终注册、路径限域）；
+//!   writeFile / fileExists / downloadFile(url, fileName) 为我方扩展，
+//!   仅 `allow_file_access=true` 注册（P1-1）
 //! - 变量存储：getVariable, setVariable, removeVariable, clearVariables
 //! - 网络 API：httpGet, httpPost, httpHead, ajax, ajaxAll, connect, head, post
 //! - 平台桥接：webView, webViewGetSource, webViewGetOverrideUrl, startBrowser,
@@ -159,7 +162,8 @@ impl<'js> rquickjs::FromJs<'js> for AjaxUrlStr {
 /// 每个函数同时挂载到 `java` 命名空间对象和裸全局，
 /// 确保 `java.md5Encode("hello")` 和 `md5Encode("hello")` 都能工作。
 ///
-/// 根据 `SandboxConfig.allow_file_access` 决定是否注册文件 API；
+/// 文件 API **始终注册**，路径统一按 `SandboxConfig.allow_file_access` 派生
+/// 的 [`FsPolicy`] 限域（P1-1：对齐上游「限域在 externalCache，而非禁用」）；
 /// network 与 cookie API 始终注册（经 legado-net 受控通道，保持书源对等）。
 pub fn register_all_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
@@ -171,15 +175,20 @@ pub fn register_all_apis<'js>(
     let java =
         rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
+    // [批21-B P2-5] 本地路径按 SandboxConfig 派生策略收紧；P1-1 起文件 API
+    // 也复用同一策略（受限模式 = 引擎沙箱根 + 字体缓存目录）。
+    let fs_policy = FsPolicy::from_sandbox_config(config);
+
     register_encoding_apis(ctx, &java, &globals)?;
     register_string_apis(ctx, &java, &globals)?;
     register_json_apis(ctx, &java, &globals)?;
     register_regex_apis(ctx, &java, &globals)?;
     register_time_apis(ctx, &java, &globals)?;
-    // 文件 API 仅在 allow_file_access = true 时注册（安全门控）
-    if config.allow_file_access {
-        register_file_apis(ctx, &java, &globals)?;
-    }
+    // P1-1：文件 API 始终注册；allow_file_access=false 时所有路径经
+    // FsPolicy 限域到引擎沙箱根（越界抛异常 / 返回 [ERROR]，不静默）。
+    // 上游不存在的扩展能力（writeFile / fileExists / downloadFile 文件名
+    // 重载）仍按 allow_file_access 门控，不进入生产注册面（P1-1 审查）。
+    register_file_apis(ctx, &java, &globals, fs_policy, config.allow_file_access)?;
     register_variable_apis(ctx, &java, &globals)?;
     // P2-11 ①：book 绑定写路径桥（java-only；FFI web_book IIFE 经
     // `java.__lgBook*` 探测后落 variable_store 裸键持久层）
@@ -208,7 +217,6 @@ pub fn register_all_apis<'js>(
     // API 本就限制在应用缓存目录内，且 `getZipStringContent` 只收 URL/十六
     // 进制、`queryTTF(String)` 只收 URL/Base64——本地路径分支是我方扩展，
     // 收紧不削减原版书源能力。
-    let fs_policy = FsPolicy::from_sandbox_config(config);
     register_archive_apis(ctx, &java, &globals, fs_policy)?;
     register_font_apis(ctx, &java, &globals, fs_policy)?;
     // 全局 cache 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存，对齐 WebCacheManager）
@@ -2086,48 +2094,93 @@ fn register_time_apis<'js>(
 }
 
 /// 注册文件工具 API
+///
+/// P1-1：**上游同名的 8 个文件 API 始终注册**（生产
+/// `allow_file_access=false` 下同样可用），所有路径经 `policy` 校验——
+/// 受限模式仅允许引擎沙箱根（`file_utils::default_sandbox_root`，可经
+/// `file_utils::set_sandbox_root` 由宿主注入应用缓存目录）与字体缓存目录
+/// 内的路径。语义对齐上游 `JsExtensions.kt`：
+/// - `downloadFile(url)` / `downloadFile(contentHex, url)`（deprecated）/
+///   `cacheFile` / `importScript` 需要网络，落盘路径过写策略；
+/// - `getFile` / `readTxtFile` / `getTxtInFolder` / `readFile` 过读策略；
+///   `deleteFile` 过写策略；
+/// - 越界时字符串 API 返回 `[ERROR] ...`，布尔/对象 API 抛 JS 异常（对齐
+///   上游 `getFile` 的 `SecurityException`），不静默、不 panic。
+///
+/// `register_extension_apis`（= `SandboxConfig.allow_file_access`）门控
+/// **原版不存在**的能力：`writeFile`、`fileExists` 与
+/// `downloadFile(url, fileName)` 文件名重载。这些能力保留实现但默认不注册，
+/// 避免生产书源面出现上游没有的写文件/探测接口（重构红线：未经允许禁止
+/// 新增原版不存在的功能）。
 fn register_file_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
+    policy: FsPolicy,
+    register_extension_apis: bool,
 ) -> Result<(), LegadoError> {
     mount_dual(
         java,
         globals,
         "readFile",
-        rquickjs::Function::new(ctx.clone(), |path: RhinoStr| -> String {
-            file_utils::read_file(&path).unwrap_or_default()
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            move |ctx, path: RhinoStr| -> rquickjs::Result<String> {
+                file_utils::read_file(&policy, &path).map_err(|e| {
+                    rquickjs::Exception::throw_message(&ctx, &format!("readFile: {e}"))
+                })
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    mount_dual(
-        java,
-        globals,
-        "writeFile",
-        rquickjs::Function::new(ctx.clone(), |path: RhinoStr, content: RhinoStr| -> bool {
-            file_utils::write_file(&path, &content).is_ok()
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
-    )?;
+    // 我方扩展（上游无 writeFile）：仅 permissive（调试 / 可信脚本）注册
+    if register_extension_apis {
+        mount_dual(
+            java,
+            globals,
+            "writeFile",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx, path: RhinoStr, content: RhinoStr| -> rquickjs::Result<bool> {
+                    file_utils::write_file(&policy, &path, &content).map_err(|e| {
+                        rquickjs::Exception::throw_message(&ctx, &format!("writeFile: {e}"))
+                    })?;
+                    Ok(true)
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )?;
 
-    mount_dual(
-        java,
-        globals,
-        "fileExists",
-        rquickjs::Function::new(ctx.clone(), |path: RhinoStr| -> bool {
-            file_utils::file_exists(&path).unwrap_or(false)
-        })
-        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
-    )?;
+        // 我方扩展（上游无 fileExists）：仅 permissive 注册
+        mount_dual(
+            java,
+            globals,
+            "fileExists",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx, path: RhinoStr| -> rquickjs::Result<bool> {
+                    file_utils::file_exists(&policy, &path).map_err(|e| {
+                        rquickjs::Exception::throw_message(&ctx, &format!("fileExists: {e}"))
+                    })
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )?;
+    }
 
     mount_dual(
         java,
         globals,
         "deleteFile",
-        rquickjs::Function::new(ctx.clone(), |path: RhinoStr| -> bool {
-            file_utils::delete_file(&path).unwrap_or(false)
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            move |ctx, path: RhinoStr| -> rquickjs::Result<bool> {
+                file_utils::delete_file(&policy, &path).map_err(|e| {
+                    rquickjs::Exception::throw_message(&ctx, &format!("deleteFile: {e}"))
+                })
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -2138,48 +2191,61 @@ fn register_file_apis<'js>(
         "readTxtFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |path: RhinoStr, charset: RhinoOptStr| -> String {
-                file_utils::read_txt_file(&path, charset.0.as_deref()).unwrap_or_default()
+            move |ctx, path: RhinoStr, charset: RhinoOptStr| -> rquickjs::Result<String> {
+                file_utils::read_txt_file(&policy, &path, charset.0.as_deref()).map_err(|e| {
+                    rquickjs::Exception::throw_message(&ctx, &format!("readTxtFile: {e}"))
+                })
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // downloadFile 重载对齐 Kotlin JsExtensions：
-    // - downloadFile(url) / downloadFile(url, fileName?)
-    // - downloadFile(contentHex, url)（@Deprecated：十六进制内容落盘）
+    // - downloadFile(url)：原版单参形态
+    // - downloadFile(contentHex, url)：原版 @Deprecated 重载（十六进制内容落盘）
+    // - downloadFile(url, fileName)：**我方扩展**，仅 register_extension_apis
+    //   （allow_file_access=true）时接受；生产返回明确 [ERROR]，不静默
+    //   退回按 URL 生成文件名（否则书源会误以为自定义文件名生效）。
     mount_dual(
         java,
         globals,
         "downloadFile",
-        rquickjs::Function::new(ctx.clone(), |arg1: RhinoStr, arg2: RhinoOptStr| -> String {
-            match arg2.0.as_deref() {
-                None => file_utils::download_file(&arg1, None)
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e)),
-                Some(second)
-                    if second.starts_with("http://")
-                        || second.starts_with("https://")
-                        || second.contains(",{") =>
-                {
-                    // 废弃重载：content(hex) + url
-                    file_utils::download_file_from_hex(&arg1, second)
-                        .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        rquickjs::Function::new(
+            ctx.clone(),
+            move |arg1: RhinoStr, arg2: RhinoOptStr| -> String {
+                match arg2.0.as_deref() {
+                    None => file_utils::download_file(&policy, &arg1, None)
+                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+                    Some(second)
+                        if second.starts_with("http://")
+                            || second.starts_with("https://")
+                            || second.contains(",{") =>
+                    {
+                        // 废弃重载：content(hex) + url
+                        file_utils::download_file_from_hex(&policy, &arg1, second)
+                            .unwrap_or_else(|e| format!("[ERROR] {}", e))
+                    }
+                    Some(_) if !register_extension_apis => {
+                        "[ERROR] downloadFile(url, fileName) 第二参数文件名重载为非原版 API，\
+                         仅在 allow_file_access=true（调试/可信脚本）下可用"
+                            .to_string()
+                    }
+                    Some(file_name) => file_utils::download_file(&policy, &arg1, Some(file_name))
+                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
                 }
-                Some(file_name) => file_utils::download_file(&arg1, Some(file_name))
-                    .unwrap_or_else(|e| format!("[ERROR] {}", e)),
-            }
-        })
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // getFile(path) -> File 风格对象（exists/getName/getAbsolutePath/toString）
-    // 对齐 Kotlin JsExtensions.getFile(path): File（沙箱路径）
+    // 对齐 Kotlin JsExtensions.getFile(path): File（沙箱路径，越界抛异常）
     mount_dual(
         java,
         globals,
         "getFile",
-        rquickjs::Function::new(ctx.clone(), |ctx, path: RhinoStr| {
-            let abs = match file_utils::resolve_safe_path(&path) {
+        rquickjs::Function::new(ctx.clone(), move |ctx, path: RhinoStr| {
+            let abs = match policy.resolve_read_path(&path) {
                 Ok(p) => p,
                 Err(e) => {
                     return Err(rquickjs::Exception::throw_message(
@@ -2220,24 +2286,28 @@ fn register_file_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // cacheFile(url) -> String
+    // cacheFile(url, saveTime?) -> String（返回文件内容，对齐上游）
     mount_dual(
         java,
         globals,
         "cacheFile",
-        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> String {
-            file_utils::cache_file(&url).unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            move |url: RhinoStr, save_time: RhinoOptInt| -> String {
+                file_utils::cache_file(&policy, &url, save_time.0.unwrap_or(0) as i64)
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // importScript(url) -> String
+    // importScript(urlOrPath) -> String（http 经 cacheFile，本地路径直读）
     mount_dual(
         java,
         globals,
         "importScript",
-        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> String {
-            file_utils::import_script(&url).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        rquickjs::Function::new(ctx.clone(), move |url: RhinoStr| -> String {
+            file_utils::import_script(&policy, &url).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -2247,8 +2317,9 @@ fn register_file_apis<'js>(
         java,
         globals,
         "getTxtInFolder",
-        rquickjs::Function::new(ctx.clone(), |folder_path: RhinoStr| -> String {
-            file_utils::get_txt_in_folder(&folder_path).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        rquickjs::Function::new(ctx.clone(), move |folder_path: RhinoStr| -> String {
+            file_utils::get_txt_in_folder(&policy, &folder_path)
+                .unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;

@@ -1435,30 +1435,61 @@ mod quickjs_tests {
     }
 
     // ============================================================
-    // 沙箱文件 API 门控测试
+    // 沙箱文件 API 注册测试（P1-1：上游同名 API 始终注册，路径由 FsPolicy
+    // 限域；我方扩展 writeFile/fileExists 仅 permissive 注册）
     // ============================================================
 
     #[test]
-    fn test_file_api_blocked_with_default_config() {
-        // 默认配置 allow_file_access=false，文件 API 不应注册
+    fn test_file_api_registered_with_default_config() {
+        // 默认配置 allow_file_access=false：上游同名文件 API 仍注册（对齐
+        // 上游「限域而非禁用」），越界由 FsPolicy 拒绝（见 fs_policy/集成测试）
         let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
-        let result = engine.eval("typeof readFile");
-        assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            "undefined",
-            "文件 API 在 allow_file_access=false 时不应注册"
-        );
+        for name in [
+            "readFile",
+            "getFile",
+            "readTxtFile",
+            "getTxtInFolder",
+            "deleteFile",
+            "downloadFile",
+            "cacheFile",
+            "importScript",
+        ] {
+            let result = engine.eval(&format!("typeof {name}")).unwrap();
+            assert_eq!(
+                result, "function",
+                "{name} 在 allow_file_access=false 时也应注册（路径限域）"
+            );
+        }
+
+        // P1-1：原版不存在的扩展能力不得进入生产注册面
+        for name in ["writeFile", "fileExists"] {
+            let via_java = engine.eval(&format!("typeof java.{name}")).unwrap();
+            assert_eq!(
+                via_java, "undefined",
+                "生产配置下 java.{name} 应为 undefined（非原版能力）"
+            );
+            let bare = engine.eval(&format!("typeof {name}")).unwrap();
+            assert_eq!(bare, "undefined", "生产下裸全局 {name} 应为 undefined");
+        }
     }
 
     #[test]
     fn test_file_api_available_with_permissive_config() {
-        // 宽松配置 allow_file_access=true，文件 API 应已注册
+        // 宽松配置 allow_file_access=true，含我方扩展在内全部注册
         let engine = QuickJsEngine::new(SandboxConfig::permissive()).unwrap();
-        let result = engine.eval("typeof readFile").unwrap();
-        assert_eq!(
-            result, "function",
-            "文件 API 在 allow_file_access=true 时应已注册"
-        );
+        for name in [
+            "readFile",
+            "writeFile",
+            "fileExists",
+            "downloadFile",
+            "cacheFile",
+            "importScript",
+        ] {
+            let result = engine.eval(&format!("typeof {name}")).unwrap();
+            assert_eq!(
+                result, "function",
+                "{name} 在 allow_file_access=true 时应已注册"
+            );
+        }
     }
 }

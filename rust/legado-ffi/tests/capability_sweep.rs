@@ -227,15 +227,25 @@ const CAPABILITY_NAMES: &[&str] = &[
     "writeFile",
 ];
 
-/// 文件类 API：仅在 `allow_file_access=true` 时注册；**生产配置为 false**，
-/// 即这 9 个名字在生产的 QuickJS 引擎里不存在——源引用即缺口。
-const FILE_GATED_NAMES: &[&str] = &[
+/// 文件类 API 全清单（10 项）：路径统一经 `FsPolicy` 限域到引擎沙箱根，
+/// 清单用于报告标注「限域」。
+///
+/// P1-1 注册口径：
+/// - 上游同名 8 项（`cacheFile` / `deleteFile` / `downloadFile` / `getFile` /
+///   `getTxtInFolder` / `importScript` / `readFile` / `readTxtFile`）**始终
+///   注册**（生产 `allow_file_access=false` 下也可用）；
+/// - 我方扩展 `fileExists` / `writeFile`（及 `downloadFile` 二参文件名重载）
+///   仅在 `allow_file_access=true` 注册。
+///
+/// 运行时可用性由 `test_production_config_registers_file_apis` 实证。
+const FILE_SANDBOXED_NAMES: &[&str] = &[
     "cacheFile",
     "deleteFile",
     "downloadFile",
     "fileExists",
     "getFile",
     "getTxtInFolder",
+    "importScript",
     "readFile",
     "readTxtFile",
     "writeFile",
@@ -767,8 +777,8 @@ fn classify_chain(chain: &str) -> Option<(String, &'static str)> {
             if let Some(name) = path.strip_prefix("java.") {
                 if !name.contains('.') {
                     if CAPABILITY_NAMES.contains(&name) {
-                        let status = if FILE_GATED_NAMES.contains(&name) {
-                            "提供*（文件门控，生产未注册）"
+                        let status = if FILE_SANDBOXED_NAMES.contains(&name) {
+                            "提供（路径限域引擎沙箱根）"
                         } else {
                             "提供"
                         };
@@ -942,13 +952,13 @@ fn test_static_capability_reconciliation() {
     let dir = sweep_dir();
     let mut md = String::new();
     md.push_str(&format!(
-        "# 静态能力对账报告\n\n- 语料：`{}`（{} 源）\n- 含 JS 片段源数：{}\n- 耗时：{:.2}s\n- 能力面快照：quickjs_impl.rs {} 个宿主函数（双挂载 java.*/裸全局）\n- 文件门控（生产未注册）：{}\n\n",
+        "# 静态能力对账报告\n\n- 语料：`{}`（{} 源）\n- 含 JS 片段源数：{}\n- 耗时：{:.2}s\n- 能力面快照：quickjs_impl.rs {} 个宿主函数（双挂载 java.*/裸全局）\n- 文件 API 全清单（路径限域引擎沙箱根；writeFile/fileExists 与 downloadFile 二参文件名重载仅 allow_file_access=true 注册）：{}\n\n",
         corpus_path().display(),
         total,
         src_has_js,
         started.elapsed().as_secs_f64(),
         CAPABILITY_NAMES.len(),
-        FILE_GATED_NAMES.len()
+        FILE_SANDBOXED_NAMES.len()
     ));
     md.push_str("## 片段命中\n\n| 片段 | 出现源数 |\n|---|---|\n");
     for (label, count) in &fragment_hits {
@@ -978,7 +988,7 @@ fn test_static_capability_reconciliation() {
         bare_used.iter().map(|(k, v)| (*k, v)).collect();
     provided_bare.sort_by_key(|e| std::cmp::Reverse(e.1 .0));
     for (name, (count, examples)) in provided_bare.iter().take(40) {
-        let marked = if FILE_GATED_NAMES.contains(name) {
+        let marked = if FILE_SANDBOXED_NAMES.contains(name) {
             format!("{name}*")
         } else {
             name.to_string()
@@ -1000,7 +1010,7 @@ fn test_static_capability_reconciliation() {
         ));
     }
     md.push_str(
-        "\n\\* 文件门控：`allow_file_access=false`（生产），该函数实际未注册，源引用即缺口。\n",
+        "\n\\* 文件 API：上游同名 8 项始终注册；`allow_file_access=false`（生产）下路径限域引擎沙箱根（按书源分子目录），越界显式报错；writeFile/fileExists 与 downloadFile 二参文件名重载仅 allow_file_access=true 注册。\n",
     );
 
     std::fs::write(dir.join("static_report.md"), &md).expect("static_report.md 写入失败");
@@ -1052,6 +1062,57 @@ fn test_static_capability_reconciliation() {
         total == 0 || !fragment_hits.is_empty(),
         "语料非空但片段收集为零，collect_fragments 异常"
     );
+}
+
+/// P1-1 回归：生产同源配置（`allow_file_access=false`）下**上游同名**文件
+/// API 必须真实可解析——静态 `CAPABILITY_NAMES` 只证明「名字在清单里」，
+/// 不能证明运行时已注册；本测试用与生产/干跑完全一致的配置构造引擎，逐个
+/// 断言 `typeof === "function"`（修复前这 8 个名字全部 `undefined`）。
+/// 同时锁定原版不存在的 `writeFile`/`fileExists` 在生产为 `undefined`。
+#[test]
+fn test_production_config_registers_file_apis() {
+    let engine = QuickJsEngine::new(
+        SandboxConfig::default()
+            .with_allow_script_run(true)
+            .with_memory_limit(64 * 1024 * 1024),
+    )
+    .expect("生产同源引擎创建失败");
+
+    for name in [
+        "downloadFile",
+        "cacheFile",
+        "importScript",
+        "getFile",
+        "readFile",
+        "readTxtFile",
+        "getTxtInFolder",
+        "deleteFile",
+    ] {
+        let via_java = engine
+            .eval(&format!("typeof java.{name}"))
+            .unwrap_or_else(|e| panic!("eval typeof java.{name} 失败: {e}"));
+        assert_eq!(
+            via_java, "function",
+            "生产配置（allow_file_access=false）下 java.{name} 应为函数"
+        );
+        let bare = engine
+            .eval(&format!("typeof {name}"))
+            .unwrap_or_else(|e| panic!("eval typeof {name} 失败: {e}"));
+        assert_eq!(
+            bare, "function",
+            "生产配置（allow_file_access=false）下裸全局 {name} 应为函数"
+        );
+    }
+
+    for name in ["writeFile", "fileExists"] {
+        let via_java = engine
+            .eval(&format!("typeof java.{name}"))
+            .unwrap_or_else(|e| panic!("eval typeof java.{name} 失败: {e}"));
+        assert_eq!(
+            via_java, "undefined",
+            "生产配置下 java.{name} 应为 undefined（非原版能力）"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

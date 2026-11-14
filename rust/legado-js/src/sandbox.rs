@@ -12,7 +12,7 @@
 //! |------|----------------------------------------|------|
 //! | 执行超时 | 5 秒 | 超时后中断脚本执行 |
 //! | eval / Function | **书源路径启用** | 引擎缓存的 `engine_cache::init_engine` 默认 `allow_script_run=true`（对齐 Rhino 书源信任模型，v1.26）；`SandboxConfig::default()` 仍为 false，供 `js_eval` 等调试/严格入口 |
-//! | 文件 IO | 禁止 | `allow_file_access=false`，不注册 readFile/writeFile 等宿主 API；archive/font API 仍注册，但本地路径仅允许引擎自建目录（`legado_js_cache` / `legado_font_cache`，见 `host_api::fs_policy`） |
+//! | 文件 IO | 限域 | 上游同名的 8 个文件 API（`readFile`/`getFile`/`readTxtFile`/`getTxtInFolder`/`deleteFile`/`downloadFile`/`cacheFile`/`importScript`）**始终注册**（P1-1，对齐上游「限域而非禁用」）；`allow_file_access=false` 时所有路径经 `host_api::fs_policy` 限域到引擎沙箱根（按书源分子目录）与字体缓存目录，越界显式报错。我方扩展 `writeFile`/`fileExists`/`downloadFile(url, fileName)` 仅 `true` 时注册 |
 //! | 网络 | 受控保留 | 书源网络经 legado-net 宿主 API 统一通道；`allow_network` 为配置/文档口径（D3=A，非 Runtime 门控，F3-3） |
 //! | 内存 | 16 MB | 超过后 QuickJS 分配失败 |
 //! | 栈深度 | 512 | 配置预留；rquickjs 暂无栈深度 API，未强制 enforcement（F3-3 文档对齐） |
@@ -96,7 +96,9 @@ mod quickjs_sandbox {
             remove_dangerous_globals(&globals)?;
         }
 
-        // 当不允许文件访问时，删除文件系统相关对象
+        // 防御性移除 Node 风格的文件/进程全局（require/process/__filename/
+        // __dirname）；宿主文件 API 不在此禁用——P1-1 起始终注册，路径统一由
+        // `host_api::fs_policy` 限域。
         if !config.allow_file_access {
             remove_file_globals(&globals)?;
         }
@@ -132,10 +134,10 @@ mod quickjs_sandbox {
         Ok(())
     }
 
-    /// 删除文件系统相关全局对象
+    /// 移除 Node 风格的文件/进程全局（防御性清理）
     fn remove_file_globals<'js>(globals: &rquickjs::Object<'js>) -> Result<(), LegadoError> {
-        // QuickJS 默认不包含文件系统 API，此处为安全加固
-        // 删除可能由外部注入的全局对象
+        // QuickJS 默认不包含这些全局，此处仅为防御性清理（防止未来注入的
+        // 兼容层重新暴露 Node 文件系统）。
         let ctx = globals.ctx();
         for name in &["require", "process", "__filename", "__dirname"] {
             // 忽略删除失败（对象不存在的情况）
@@ -216,15 +218,18 @@ pub struct SandboxConfig {
     ///
     /// 参考 Kotlin 端 Rhino 的 `allowScriptRun` 闸门
     pub allow_script_run: bool,
-    /// 是否允许访问文件系统
+    /// 是否允许访问任意本地路径
     ///
-    /// - `false`（默认 / 书源生产路径）：不注册 `readFile` / `writeFile` 等
-    ///   文件 API；`archive` / `font` API（`unzipFile` / `getZipStringContent` /
-    ///   `queryTTF` 等）仍注册以保留书源能力，但**本地路径**只允许引擎自建
-    ///   目录（JS 沙箱根与字体缓存，见 `host_api::fs_policy`），越界返回明确
-    ///   错误。原版 Kotlin 的文件 API 同样限制在应用缓存目录内
-    ///   （`JsExtensions.getFile`），故此处不构成对原版书源能力的削减。
-    /// - `true`（调试 / 可信脚本）：文件 API 注册，archive/font 本地路径不受限。
+    /// - `false`（默认 / 书源生产路径）：**上游同名的 8 个文件 API 仍注册**
+    ///   （P1-1，对齐上游 `JsExtensions` 把文件操作限域在应用缓存目录的
+    ///   语义），但所有路径统一经 `host_api::fs_policy` 校验——只允许引擎
+    ///   沙箱根（`file_utils::default_sandbox_root`，宿主可经
+    ///   `file_utils::set_sandbox_root` 注入应用缓存目录；再按书源 tag 分
+    ///   子目录）与字体缓存目录内的路径，越界返回明确错误。我方扩展
+    ///   `writeFile` / `fileExists` / `downloadFile(url, fileName)` 属原版
+    ///   不存在的写/探测能力，本档**不注册**（重构红线）。
+    /// - `true`（调试 / 可信脚本）：文件 API（含上述扩展）与 archive/font
+    ///   本地路径均不受限。
     pub allow_file_access: bool,
     /// 是否允许网络请求（文档口径：书源网络经宿主 API；非 Runtime 门控，F3-3）
     pub allow_network: bool,

@@ -275,11 +275,12 @@ fun getThemeMode(): String
 * 从网络(由java.cacheFile实现)、本地读取JavaScript文件，导入上下文请手动`eval(String(...))`
 ```js
 java.importScript(url)
-//相对路径支持android/data/{package}/cache
+//相对路径相对引擎沙箱目录解析
 java.importScript(relativePath)
+//绝对路径也必须位于引擎沙箱目录内
 java.importScript(absolutePath)
 ```
-* 缓存网络文件
+* 缓存网络文件（返回文件**内容**；saveTime 单位秒，0 或缺省为永久）
 ```js
 获取
 java.cacheFile(url)
@@ -352,21 +353,37 @@ java.htmlFormat(str: String, redirectUrl: String): String
 ```
 第二个参数用于按当前页面地址补全正文 HTML 中 `<img>` 的相对地址。
 * 文件
->  所有对于文件的读写删操作都是相对路径,只能操作阅读缓存/android/data/{package}/cache/内的文件
+>  所有文件操作都限域在引擎沙箱目录内（应用缓存下的 `js_files/<书源哈希>/`；未注入宿主目录时为系统临时目录 `legado_js_cache/<书源哈希>/`，同一书源共享一个子目录、不同书源互不可见）：相对路径相对该子目录解析，绝对路径也必须位于其中，越界读写返回 `[ERROR]` 或抛异常。单文件读写/下载上限 32MB，`getTxtInFolder` 累计上限 64MB。
 ```js
 //文件下载 url用于生成文件名，返回文件路径
 java.downloadFile(url: String): String
+//已废弃：十六进制内容按 url 类型落盘（原版 @Deprecated 重载）
+java.downloadFile(contentHex: String, url: String): String
 //文件解压,zipPath为压缩文件路径，返回解压路径
 java.unArchiveFile(zipPath: String): String
 java.unzipFile(zipPath: String): String
 java.unrarFile(zipPath: String): String
 java.un7zFile(zipPath: String): String
-//文件夹内所有文件读取
+//文件夹内所有文件读取（换行拼接）
 java.getTxtInFolder(path: String): String
-//读取文本文件
+//读取文本文件（可选第二参数指定编码，默认 UTF-8）
 java.readTxtFile(path: String): String
+java.readTxtFile(path: String, charset: String): String
+//读取文件（文本）
+java.readFile(path: String): String
+//获取文件对象（exists()/getName()/getAbsolutePath()/toString()）
+java.getFile(path: String): File
 //删除文件
 java.deleteFile(path: String): Boolean
+```
+> 以下为我方扩展，**非原版能力**：仅调试/可信脚本环境（`allow_file_access=true`）可用，书源生产环境（`allow_file_access=false`）不注册，调用时为 `undefined`。
+```js
+//写入文件
+java.writeFile(path: String, content: String): Boolean
+//判断文件是否存在
+java.fileExists(path: String): Boolean
+//文件下载：第二参数指定沙箱内文件名
+java.downloadFile(url: String, fileName: String): String
 ```
 
 ### [js加解密类](https://github.com/LegadoTeam/legado/blob/master/app/src/main/java/io/legado/app/help/JsEncodeUtils.kt) 部分函数
