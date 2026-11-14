@@ -353,7 +353,7 @@ java.htmlFormat(str: String, redirectUrl: String): String
 ```
 第二个参数用于按当前页面地址补全正文 HTML 中 `<img>` 的相对地址。
 * 文件
->  所有文件操作都限域在引擎沙箱目录内（应用缓存下的 `js_files/<书源哈希>/`；未注入宿主目录时为系统临时目录 `legado_js_cache/<书源哈希>/`，同一书源共享一个子目录、不同书源互不可见）：相对路径相对该子目录解析，绝对路径也必须位于其中，越界读写返回 `[ERROR]` 或抛异常。单文件读写/下载上限 32MB，`getTxtInFolder` 累计上限 64MB。
+>  所有文件操作都限域在引擎沙箱目录内（应用缓存下的 `js_files/<书源哈希>/`；未注入宿主目录时为系统临时目录 `legado_js_cache/<书源哈希>/`，同一书源共享一个子目录、不同书源互不可见）：相对路径相对该子目录解析，绝对路径也必须位于其中，越界读写返回 `[ERROR]` 或抛异常。单文件读取/下载上限 32MB（`writeFile` 仅调试环境可用且无上限），`getTxtInFolder` 累计上限 64MB。下载按**原始字节**落盘，不做文本编码转换。
 ```js
 //文件下载 url用于生成文件名，返回文件路径
 java.downloadFile(url: String): String
@@ -382,7 +382,8 @@ java.deleteFile(path: String): Boolean
 java.writeFile(path: String, content: String): Boolean
 //判断文件是否存在
 java.fileExists(path: String): Boolean
-//文件下载：第二参数指定沙箱内文件名
+//文件下载：第二参数指定沙箱内文件名（函数本身在生产环境仍存在，
+//但此重载在生产调用时返回 "[ERROR] ... 非原版 API ..."，不联网）
 java.downloadFile(url: String, fileName: String): String
 ```
 

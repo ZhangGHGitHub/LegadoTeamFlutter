@@ -352,7 +352,7 @@ java.htmlFormat(str: String, redirectUrl: String): String
 ```
 第二个参数用于按当前页面地址补全正文 HTML 中 `<img>` 的相对地址。
 * 文件
->  所有对于文件的读写删操作都是相对路径,只能操作阅读缓存/android/data/{package}/cache/内的文件
+>  所有文件操作都限域在引擎沙箱目录内（应用缓存下的 `js_files/<书源哈希>/`，同一书源共享一个子目录、不同书源互不可见）：相对路径相对该子目录解析，绝对路径也必须位于其中，越界读写返回 `[ERROR]` 或抛异常。单文件读取/下载上限 32MB，`getTxtInFolder` 累计上限 64MB。下载按**原始字节**落盘，不做文本编码转换。
 ```js
 //文件下载 url用于生成文件名，返回文件路径
 downloadFile(url: String): String
