@@ -111,31 +111,59 @@ globalThis.cookie = {{
     return r === undefined ? null : r;
   }}
 }};
-globalThis.cache = {{
-  get: function(k) {{ return get(String(k)) || null; }},
-  put: function(k, v) {{ put(String(k), String(v)); return v; }},
-  remove: function(k) {{ removeVariable(String(k)); return true; }},
-  // 对齐上游 CacheManager memoryLruCache（WebCacheManager JS 面）：
-  // 进程级内存缓存，与磁盘 cache 表 / 会话变量独立命名空间，无 TTL，
-  // 跨书源共享（同进程），重启丢失；miss 显式 null（语料判缺式
-  // `v === undefined || v === null`）
-  putMemory: function(k, v) {{ java.cachePutMemory(String(k), v); }},
-  getFromMemory: function(k) {{ return java.cacheGetFromMemory(String(k)); }},
-  deleteMemory: function(k) {{ java.cacheDeleteMemory(String(k)); return true; }}
-}};
-// 语料 cache.dev_id（#25 听小说APP，设备标识读写）：属性式 getter/setter，
-// 后端全局 cache 存储（saveTime=0 永久口径——put 默认无过期）；未写入前
-// 读为 null。— 3b-3
-Object.defineProperty(globalThis.cache, 'dev_id', {{
-  get: function() {{
-    var v = get('dev_id');
-    return (v === undefined || v === null || v === '') ? null : String(v);
-  }},
-  set: function(v) {{
-    if (v === undefined || v === null) return;
-    put('dev_id', String(v));
+// cache 绑定：引擎内置 `cache` 即 cache_store（磁盘 + 内存 + putFile/getFile/
+// delete，与 RSS 分支 / WebView 垫片同一落库层）。批37 P1：此前**无条件**
+// 覆盖为变量表镜像，导致 java.cacheFile 写入的 md5(url) 映射读不回、
+// cache.put 的 saveTime 被丢弃（值永不过期）、cache.putFile/getFile 未定义。
+// 仅在引擎未提供时回落变量表镜像（同 RSS 分支批21c P2-7 守卫）。
+if (typeof globalThis.cache === 'undefined' || globalThis.cache === null) {{
+  globalThis.cache = {{
+    get: function(k) {{ return get(String(k)) || null; }},
+    put: function(k, v) {{ put(String(k), String(v)); return v; }},
+    remove: function(k) {{ removeVariable(String(k)); return true; }},
+    // 对齐上游 CacheManager memoryLruCache（WebCacheManager JS 面）：
+    // 进程级内存缓存，与磁盘 cache 表 / 会话变量独立命名空间，无 TTL，
+    // 跨书源共享（同进程），重启丢失；miss 显式 null（语料判缺式
+    // `v === undefined || v === null`）
+    putMemory: function(k, v) {{ java.cachePutMemory(String(k), v); }},
+    getFromMemory: function(k) {{ return java.cacheGetFromMemory(String(k)); }},
+    deleteMemory: function(k) {{ java.cacheDeleteMemory(String(k)); return true; }}
+  }};
+}} else {{
+  // 引擎 cache（register_cache_apis）已提供 get/put/remove/putMemory/
+  // getFromMemory/deleteMemory/get(onlyDisk)/putFile/getFile/delete（remove
+  // 为兼容别名 → delete）；不整体覆盖，仅在缺面时补桥（兼容自定义引擎/
+  // 历史垫片），绝不替换已有实现。
+  if (typeof globalThis.cache.putMemory !== 'function') {{
+    globalThis.cache.putMemory = function(k, v) {{ java.cachePutMemory(String(k), v); }};
   }}
-}});
+  if (typeof globalThis.cache.getFromMemory !== 'function') {{
+    globalThis.cache.getFromMemory = function(k) {{ return java.cacheGetFromMemory(String(k)); }};
+  }}
+  if (typeof globalThis.cache.deleteMemory !== 'function') {{
+    globalThis.cache.deleteMemory = function(k) {{ java.cacheDeleteMemory(String(k)); return true; }};
+  }}
+}}
+// 语料 cache.dev_id（#25 听小说APP，设备标识读写）：属性式 getter/setter，
+// 后端与 cache.put/get 同一存储（saveTime=0 永久口径——put 默认无过期）；
+// 未写入前读为 null。— 3b-3
+// 守卫后宿主 cache 已存在，属性需单独挂载（不能随整体覆盖丢失）；已存在
+// 同名属性（含原型链）时不覆盖；池化引擎重复 setup 时 defineProperty 可能
+// 因 non-configurable 抛错，忽略即可。
+if (!('dev_id' in globalThis.cache)) {{
+  try {{
+    Object.defineProperty(globalThis.cache, 'dev_id', {{
+      get: function() {{
+        var v = globalThis.cache.get('dev_id');
+        return (v === undefined || v === null || v === '') ? null : String(v);
+      }},
+      set: function(v) {{
+        if (v === undefined || v === null) return;
+        globalThis.cache.put('dev_id', String(v));
+      }}
+    }});
+  }} catch (e) {{}}
+}}
 
 // 对齐原版 getKey() = bookSourceUrl：登录缓存键用 sourceUrl 而非请求 baseUrl
 //（书山 bookUrl 为 data: URI 或详情页 URL，与书源 URL 不同；此前用 baseUrl
@@ -590,6 +618,23 @@ mod tests {
         assert!(
             script.contains("__mountBookSourceApi"),
             "BookSource API 挂载"
+        );
+        // 批37 P1：cache 只在引擎未提供时回落变量表——书源规则 JS 的
+        // cache.get 必须能读回 java.cacheFile 的 cache_store 映射
+        assert!(
+            script.contains(
+                "if (typeof globalThis.cache === 'undefined' || globalThis.cache === null)"
+            ),
+            "书源 cache 应优先复用引擎内置 cache_store（不得无条件覆盖）"
+        );
+        // dev_id 语料兼容项单独挂载（守卫后宿主 cache 已存在，不能随整体覆盖丢失）
+        assert!(
+            script.contains("if (!('dev_id' in globalThis.cache))"),
+            "dev_id 应单独挂载且不覆盖宿主已有属性"
+        );
+        assert!(
+            script.contains("globalThis.cache.get('dev_id')"),
+            "dev_id 读写应走与 cache.get/put 同一存储"
         );
     }
 

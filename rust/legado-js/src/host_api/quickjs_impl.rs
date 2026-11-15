@@ -25,6 +25,7 @@
 //! - 工具类：randomUUID, log, toast, longToast, toURL, upLoginData, threadSleep, inflateRawBytes
 //! - HTML 解析：getElement(s), getString, getStrings, getStringList, jsoup*, setContent
 //! - 全局缓存：cache.put/get/putMemory/getFromMemory/deleteMemory/putFile/getFile/delete
+//!   （+ 兼容别名 remove → delete，见 `register_cache_apis`）
 
 #![cfg(feature = "quickjs")]
 
@@ -3794,8 +3795,9 @@ fn register_html_parse_apis<'js>(
 ///
 /// 对齐上游 WebCacheManager（help/WebCacheManager.kt:171-206）JS 面：
 /// put / putMemory / getFromMemory / deleteMemory / get(onlyDisk) /
-/// putFile / getFile / delete。后端为 `cache_store` 模块的进程级
-/// LRU 内存 + 磁盘文件，语义对齐 CacheManager.kt:60-98：
+/// putFile / getFile / delete（另加兼容别名 remove → delete）。后端为
+/// `cache_store` 模块的进程级 LRU 内存 + 磁盘文件，语义对齐
+/// CacheManager.kt:60-98：
 /// - saveTime <= 0 → 写永久磁盘条目（deadline=0）**并同步内存层**：
 ///   同进程 `get` 命中内存，进程重启后仍可从磁盘读回；不是“仅内存”
 /// - saveTime > 0  → 磁盘条目 + 截止时间，成功后清内存层，读取过期即删
@@ -3885,11 +3887,12 @@ fn register_cache_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     // ─── 书源 setup 脚本内存缓存桥（cap 2：cookie/cache 全局桥面补齐）──────
-    // 书源 setup 脚本（source_js_bindings::book_source_js_setup_script）以
-    // `var cache = {...}` 遮蔽本全局 cache 对象，其 putMemory/getFromMemory/
-    // deleteMemory 经下列 java.* 宿主桥落 cache_store 内存层（与 setup 的
-    // get/put/remove → 会话变量层、磁盘 cache 表互不串键，对齐上游
-    // CacheManager memoryLruCache 的独立命名空间）。
+    // 书源 setup 脚本（source_js_bindings::book_source_js_setup_script）在
+    // 引擎未提供 cache 时才回落变量表镜像；该回落对象的 putMemory/
+    // getFromMemory/deleteMemory 经下列 java.* 宿主桥落 cache_store 内存层
+    // （与宿主 cache 同一内存 LRU，对齐上游 CacheManager memoryLruCache）。
+    // 批37 P1 后生产引擎始终使用本文件的 cache 对象，桥面保留供自定义引擎 /
+    // 历史垫片复用。
     mount_dual(
         java,
         globals,
@@ -3984,6 +3987,27 @@ fn register_cache_apis<'js>(
                 ctx.clone(),
                 |_ctx: rquickjs::Ctx<'js>, key: RhinoStr| -> () {
                     cache_store::delete(&key);
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // remove(key) -> bool（批37 P1 兼容别名）
+    //
+    // 上游 WebCacheManager 只有 `delete`，但书源 setup 旧变量表镜像与 RSS
+    // WebView 垫片都暴露了 `remove`（语料/书源可能已依赖）。批37 P1 把规则
+    // JS 的 cache 统一到本对象后，`remove` 若缺失会让这些脚本退化为
+    // TypeError；此处映射到同一个 `cache_store::delete`（磁盘 + 文件缓存 +
+    // 内存），保证 get/put/remove 同源。返回 true 与旧镜像/垫片一致。
+    cache
+        .set(
+            "remove",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |_ctx: rquickjs::Ctx<'js>, key: RhinoStr| -> bool {
+                    cache_store::delete(&key);
+                    true
                 },
             )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,

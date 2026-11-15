@@ -262,15 +262,19 @@ fn test_cache_memory_cross_context() {
         .expect("deleteMemory eval 失败");
 }
 
-/// 内存层与其他键空间互不可见：
-/// - setup 脚本 `cache.put/get` 委托变量存储（variable_store），
-///   与 cache_store 内存层（putMemory/getFromMemory）独立命名空间
+/// 内存层与磁盘层共享同一 `cache_store` 语义（批37 P1 后 setup 的 cache
+/// 即宿主对象，不再委托变量表）：
+/// - `cache.putMemory` 写进程级内存 LRU，`cache.get` 内存优先 → 命中；
+/// - 永久 `cache.put`（saveTime=0）同步内存层 → `getFromMemory` 可读；
+/// - 非永久 `cache.put`（saveTime>0）清内存层 → `getFromMemory` miss，
+///   但 `get`/`get(onlyDisk)` 仍从磁盘命中。
 ///
-/// （进程级内存 LRU 与磁盘 cache 表分离的结构事实见 cache_store 模块：
-/// put_memory 仅写内存 LRU，不落盘）
+/// 修复前 setup 无条件覆盖 cache 为变量表镜像，`cache.put/get` 与
+/// `putMemory/getFromMemory` 是两个互不可见的键空间（本用例旧断言即该
+/// 错误语义），且 `cacheFile` 的 cache_store 映射读不回。
 #[test]
 fn test_cache_memory_isolated_key_spaces() {
-    let (engine, _s) = engine_with_source("https://capb1c4.example.com/", "cap2 隔离");
+    let (engine, _s) = engine_with_source("https://capb1c4.example.com/", "cap2 同源存储");
     engine
         .eval("cache.putMemory('capb1iso', 'mem-only')")
         .expect("putMemory eval 失败");
@@ -283,8 +287,8 @@ fn test_cache_memory_isolated_key_spaces() {
     );
     assert_eq!(
         engine.eval("cache.get('capb1iso')").expect("eval 失败"),
-        "null",
-        "变量存储（cache.put/get 委托）读不到内存层值"
+        "mem-only",
+        "cache.get 内存优先，应命中 putMemory 写入值"
     );
 
     engine
@@ -294,17 +298,36 @@ fn test_cache_memory_isolated_key_spaces() {
         engine
             .eval("cache.getFromMemory('capb1iso2')")
             .expect("eval 失败"),
-        "null",
-        "内存层读不到变量存储值"
+        "var-only",
+        "永久 put（saveTime=0）同步内存层（对齐上游 CacheManager.put）"
     );
 
-    // 清理（内存层 deleteMemory；变量存储 remove）
     engine
-        .eval("cache.deleteMemory('capb1iso')")
-        .expect("deleteMemory eval 失败");
+        .eval("cache.put('capb1iso3', 'ttl-only', 1)")
+        .expect("put TTL eval 失败");
+    assert_eq!(
+        engine
+            .eval("cache.getFromMemory('capb1iso3')")
+            .expect("eval 失败"),
+        "null",
+        "非永久 put 清除内存层（对齐上游 put 后 deleteMemory）"
+    );
+    assert_eq!(
+        engine.eval("cache.get('capb1iso3')").expect("eval 失败"),
+        "ttl-only",
+        "磁盘层在 TTL 内仍可读"
+    );
+
+    // 清理（同一 cache_store：磁盘 + 文件缓存 + 内存）
     engine
-        .eval("cache.remove('capb1iso2')")
-        .expect("remove eval 失败");
+        .eval("cache.delete('capb1iso')")
+        .expect("delete eval 失败");
+    engine
+        .eval("cache.delete('capb1iso2')")
+        .expect("delete eval 失败");
+    engine
+        .eval("cache.delete('capb1iso3')")
+        .expect("delete eval 失败");
 }
 
 // ---------------------------------------------------------------------------

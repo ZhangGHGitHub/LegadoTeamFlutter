@@ -158,13 +158,14 @@ fn test_cache_dev_id_roundtrip() {
         "capb2-dev-0001",
         "dev_id 属性式读回（后端 saveTime=0 永久键）"
     );
-    // 底层经全局 cache 存储可读（与 cache.get/put 同命名空间）
+    // 底层经全局 cache 存储可读（与 cache.get/put 同命名空间——批37 P1
+    // 后规则 JS 的 cache 即宿主 cache_store，不再委托变量表）
     assert_eq!(
-        engine.eval("String(get('dev_id'))").unwrap(),
+        engine.eval("String(cache.get('dev_id'))").unwrap(),
         "capb2-dev-0001"
     );
     // 收尾
-    engine.eval("removeVariable('dev_id')").unwrap();
+    engine.eval("cache.delete('dev_id')").unwrap();
 }
 
 // ---------------------------------------------------------------------------
