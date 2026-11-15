@@ -14,13 +14,17 @@
 
 use std::collections::HashMap;
 
-/// TTF 解析错误（字体损坏 / 缺表 / 越界）
+use crate::host_api::MAX_FILE_BYTES;
+
+/// TTF 解析错误（字体损坏 / 缺表 / 越界 / 超限）
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TtfError {
     /// 数据长度不足（附所需偏移与长度描述）
     Truncated(&'static str),
     /// 缺少必要的表（cmap / glyf / head / loca / maxp）
     MissingTable(&'static str),
+    /// 输入超过 `MAX_FILE_BYTES`（防超大字体耗尽内存）
+    TooLarge { size: u64, limit: u64 },
 }
 
 impl std::fmt::Display for TtfError {
@@ -28,6 +32,11 @@ impl std::fmt::Display for TtfError {
         match self {
             TtfError::Truncated(what) => write!(f, "TTF 数据截断: {}", what),
             TtfError::MissingTable(tag) => write!(f, "TTF 缺少 {} 表", tag),
+            TtfError::TooLarge { size, limit } => write!(
+                f,
+                "字体数据超出大小上限：{} 字节，上限 {} 字节",
+                size, limit
+            ),
         }
     }
 }
@@ -164,7 +173,16 @@ pub struct QueryTtf {
 
 impl QueryTtf {
     /// 解析 TTF 字体二进制，对应 Java `QueryTTF(byte[] buffer)` 构造流程
+    ///
+    /// 入口先按 `MAX_FILE_BYTES` 拒绝超限输入（P2-C）：字体数据可能来自
+    /// `queryTTF(url)` 的任意书源响应或 Base64 字符串，解析前统一设上限。
     pub fn parse(buf: &[u8]) -> Result<Self, TtfError> {
+        if buf.len() as u64 > MAX_FILE_BYTES {
+            return Err(TtfError::TooLarge {
+                size: buf.len() as u64,
+                limit: MAX_FILE_BYTES,
+            });
+        }
         let mut r = Reader::new(buf);
         let _sfnt_version = r.read_u32()?;
         let num_tables = r.read_u16()? as usize;
@@ -628,6 +646,30 @@ mod tests {
     fn test_parse_truncated_font_fails() {
         let font = build_minimal_ttf(&error_segments(), false);
         assert!(QueryTtf::parse(&font[..10]).is_err());
+    }
+
+    /// P2-C：解析入口必须有输入大小上限（超限直接拒绝，不进表目录解析）
+    #[test]
+    fn test_parse_rejects_oversize_font_data() {
+        let oversized = vec![0u8; MAX_FILE_BYTES as usize + 1];
+        let err = match QueryTtf::parse(&oversized) {
+            Err(error) => error,
+            Ok(_) => panic!("超限输入必须被拒绝"),
+        };
+        match err {
+            TtfError::TooLarge { size, limit } => {
+                assert_eq!(size, MAX_FILE_BYTES + 1);
+                assert_eq!(limit, MAX_FILE_BYTES);
+            }
+            other => panic!("超限输入应返回 TooLarge，实际: {other:?}"),
+        }
+        assert!(
+            err.to_string().contains("超出大小上限"),
+            "错误文本应明确指向大小上限: {err}"
+        );
+
+        // 上限内的正常字体不受影响（同一批用例内做正对照）
+        assert!(QueryTtf::parse(&build_minimal_ttf(&error_segments(), false)).is_ok());
     }
 
     #[test]

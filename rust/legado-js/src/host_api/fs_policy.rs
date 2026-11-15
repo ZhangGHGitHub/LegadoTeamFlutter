@@ -23,7 +23,8 @@
 //! - `allow_file_access=true`（permissive / 调试 / 可信脚本）→ 不做限制，
 //!   与 archive/font 既有行为一致（[`FsPolicy::unrestricted`]）。
 //! - `allow_file_access=false`（`SandboxConfig::default()`，书源生产路径）
-//!   → 仅允许访问**引擎自建目录**内的路径（[`allowed_roots`]）：
+//!   → 仅允许访问**引擎自建目录**内的路径（沙箱根 / 字体缓存根，
+//!   见 `canonical_roots`）：
 //!   1. `file_utils::default_sandbox_root()`：`downloadFile` / `cacheFile` /
 //!      `importScript` 的落盘根，也是 `readFile` / `writeFile` /
 //!      `getFile` / `readTxtFile` / `getTxtInFolder` / `deleteFile` /
@@ -153,7 +154,9 @@ impl PathUsage {
     fn action(self) -> &'static str {
         match self {
             Self::Read => "读取",
-            Self::Write => "写入",
+            // 写策略同时承担 deleteFile / getTxtInFolder 的删除语义，
+            // 文案必须覆盖两者，避免「删除被拒」却提示「写入」造成误解
+            Self::Write => "写入/删除",
         }
     }
 }
@@ -222,13 +225,17 @@ fn resolve_restricted(raw: &str, usage: PathUsage) -> Result<PathBuf, String> {
     // 字体缓存是跨源复用的共享资源：读允许（queryTTF 命中缓存），
     // 写/删拒绝。批33 P2-2 残留面收口——否则 A 源可删除/投毒 B 源字体。
     let inside_font_cache = canonical.starts_with(&font_root);
-    if inside_sandbox || (usage == PathUsage::Read && inside_font_cache) {
-        Ok(canonical)
-    } else if inside_font_cache {
-        Err(format!(
+    // 字体缓存判定必须先于沙箱：若宿主把字体缓存配置到沙箱根内部（或与
+    // 之相等），先判 `inside_sandbox` 会把字体缓存写/删放行（P3-A）。顺序
+    // 调整后嵌套配置下写/删仍然拒绝（fail-closed），读不受影响。
+    if inside_font_cache && usage != PathUsage::Read {
+        return Err(format!(
             "文件访问被拒绝：字体缓存目录为共享只读缓存，书源仅可读取复用（{action} {}）",
             resolved.display()
-        ))
+        ));
+    }
+    if inside_sandbox || inside_font_cache {
+        Ok(canonical)
     } else {
         Err(format!(
             "文件访问被拒绝：{} 不在引擎沙箱目录内\
@@ -238,7 +245,7 @@ fn resolve_restricted(raw: &str, usage: PathUsage) -> Result<PathBuf, String> {
     }
 }
 
-/// allowed_roots 缓存（canonical 根目录）
+/// 允许根缓存（canonical 根目录）
 ///
 /// 每次文件 API 调用都 `create_dir_all` + `canonicalize` 两个根会带来固定
 /// 系统调用开销；根目录在宿主注入（`set_sandbox_root` / `set_font_cache_dir`）
@@ -266,7 +273,7 @@ pub fn invalidate_allowed_roots_cache() {
     }
 }
 
-/// 读取允许根（canonicalize 后用于前缀比较）
+/// 读取并缓存两个 canonical 允许根（沙箱根、字体缓存根）
 ///
 /// 仅含引擎自建目录：JS 沙箱根（`downloadFile` 等落盘处，可由宿主经
 /// `file_utils::set_sandbox_root` 注入；按书源 tag 分子目录）与共享字体
@@ -276,12 +283,6 @@ pub fn invalidate_allowed_roots_cache() {
 /// 时退回词法路径（Windows 下可能因 `\\?\` 前缀不匹配而**失败即拒绝**，
 /// 属有意的 fail-closed 方向）。
 /// 结果按原始根路径缓存，见 [`CachedRoots`]。
-pub fn allowed_roots() -> Vec<PathBuf> {
-    let (canonical_sandbox, canonical_font) = canonical_roots();
-    vec![canonical_sandbox, canonical_font]
-}
-
-/// 读取并缓存两个 canonical 允许根（沙箱根、字体缓存根）
 fn canonical_roots() -> (PathBuf, PathBuf) {
     let raw_sandbox = crate::host_api::file_utils::default_sandbox_root();
     let raw_font = crate::host_api::font_api::font_cache_dir();
@@ -455,6 +456,8 @@ mod tests {
 
     #[test]
     fn test_restricted_allows_font_cache_dir() {
+        // P2-B：字体缓存目录为进程级全局态，取测试锁避免被并行用例覆盖
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let policy = FsPolicy::restricted();
         let name = format!("{}.ttf", unique("fs_policy_font"));
         let path = crate::host_api::font_api::font_cache_dir().join(&name);
@@ -472,6 +475,8 @@ mod tests {
         // P2-2（批33 残留面）：字体缓存是跨源复用的共享资源，书源只可读取
         // （queryTTF 命中缓存），不可写入/删除——否则 A 源可删除 B 源字体，
         // 或经归档解压向缓存投毒。
+        // P2-B：目录为进程级全局态，取测试锁避免被并行用例覆盖
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let policy = FsPolicy::restricted();
         let dir = crate::host_api::font_api::font_cache_dir();
         let name = format!("{}.ttf", unique("fs_policy_font_ro"));
@@ -501,6 +506,56 @@ mod tests {
         assert!(err.contains("字体缓存"), "err = {err}");
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// P3-A：字体缓存嵌套在沙箱根内部（或与沙箱根相等）时，写/删仍按
+    /// 只读拒绝——修复前 `inside_sandbox` 分支先命中，嵌套配置下可写投毒。
+    #[test]
+    fn test_font_cache_nested_in_sandbox_root_is_still_read_only() {
+        use crate::host_api::font_api::{
+            lock_font_cache_for_test, override_font_cache_dir_for_test,
+        };
+
+        let _lock = lock_font_cache_for_test();
+        let sandbox = crate::host_api::file_utils::default_sandbox_root();
+        std::fs::create_dir_all(&sandbox).unwrap();
+        let nested = sandbox.join(unique("nested_font_cache"));
+        std::fs::create_dir_all(&nested).unwrap();
+        let _restore = override_font_cache_dir_for_test(nested.clone());
+
+        let policy = FsPolicy::restricted();
+        let file = nested.join("nested.ttf");
+        std::fs::write(&file, b"ttf").unwrap();
+
+        // 读：仍允许（共享缓存复用路径保留）
+        assert_eq!(
+            policy.resolve_read_path(file.to_str().unwrap()).unwrap(),
+            expected_canonical(&file)
+        );
+
+        // 写/删：已有文件被拒，错误明确指向字体缓存只读
+        let err = policy
+            .resolve_write_path(file.to_str().unwrap())
+            .unwrap_err();
+        assert!(err.contains("字体缓存"), "err = {err}");
+        assert!(err.contains("只读"), "err = {err}");
+        assert!(file.is_file(), "策略校验不得删除字体缓存文件");
+
+        // 写：目录内尚不存在的新文件同样被拒（防投毒）
+        let new_file = nested.join("poison.ttf");
+        let err = policy
+            .resolve_write_path(new_file.to_str().unwrap())
+            .unwrap_err();
+        assert!(err.contains("字体缓存"), "err = {err}");
+
+        // 目录本身（等于嵌套字体缓存根）写/删同样拒绝
+        let err = policy
+            .resolve_write_path(nested.to_str().unwrap())
+            .unwrap_err();
+        assert!(err.contains("字体缓存"), "err = {err}");
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir_all(&nested);
     }
 
     #[test]

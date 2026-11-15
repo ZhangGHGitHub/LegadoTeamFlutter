@@ -86,10 +86,9 @@ mod impl_file_utils {
 
     use crate::host_api::cache_store;
     use crate::host_api::fs_policy::FsPolicy;
-
-    /// 单文件读取/下载上限（32MB，对齐 `archive_utils` 单条目与主题包
-    /// `maxEntryBytes`）
-    const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+    // 单文件读取/下载上限（32MB）统一维护在 `host_api::MAX_FILE_BYTES`，
+    // 字体 API 复用同一口径
+    use crate::host_api::MAX_FILE_BYTES;
 
     /// `getTxtInFolder` 单次累计上限（64MB）
     ///
@@ -1070,6 +1069,8 @@ mod tests {
     /// 写策略先行拒绝（错误文本明确指向字体缓存只读）。
     #[test]
     fn test_delete_file_rejects_font_cache_file() {
+        // P2-B：字体缓存目录为进程级全局态，取测试锁避免被并行用例覆盖
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let dir = crate::host_api::font_api::font_cache_dir();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join(unique_name("font_cache_delete_guard.ttf"));
@@ -1464,6 +1465,8 @@ mod tests {
     /// 引擎根（沙箱根 / 字体缓存根）拒绝删除
     #[test]
     fn test_remove_path_rejects_engine_roots() {
+        // P2-B：字体缓存根为进程级全局态，取测试锁避免被并行用例覆盖
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let checks = [
             default_sandbox_root(),
             crate::host_api::font_api::font_cache_dir(),
@@ -1703,6 +1706,31 @@ mod tests {
             !sandbox_root().join(dir_name).exists(),
             "读完应删除目录（含子目录）"
         );
+    }
+
+    /// P2-A：`getTxtInFolder` 对字体缓存子目录必须「读得到、删不掉」
+    ///
+    /// 锁定 `get_txt_in_folder` 的删除步骤走 **写策略**（`resolve_write_path`）：
+    /// 若有人改回 `resolve_read_path` 或删掉该次校验，`remove_path` 只保护
+    /// 字体缓存**根**，子目录会被递归删除——A 源可借此删光 B 源字体缓存。
+    #[test]
+    fn test_get_txt_in_folder_font_cache_subdir_is_read_only() {
+        // P2-B：字体缓存目录为进程级全局态，取测试锁
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
+        let dir = crate::host_api::font_api::font_cache_dir()
+            .join(unique_name("get_txt_in_folder_font_cache"));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("cached.ttf");
+        fs::write(&file, "FONT-CACHE-FIXTURE").unwrap();
+
+        let content =
+            get_txt_in_folder(&restricted(), dir.to_str().unwrap()).expect("字体缓存目录应可读取");
+        assert_eq!(content, "FONT-CACHE-FIXTURE", "返回内容不得受删除保护影响");
+        assert!(dir.is_dir(), "字体缓存子目录不得被删除: {}", dir.display());
+        assert!(file.is_file(), "字体缓存文件不得被删除: {}", file.display());
+
+        let _ = fs::remove_file(&file);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     // ---- cacheFile 跨源隔离（P2-2） ----

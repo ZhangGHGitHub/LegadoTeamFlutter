@@ -65,6 +65,17 @@ pub mod register;
 
 pub use env::HostEnv;
 
+/// 单文件读写/下载/字体解析的字节上限（32MB）
+///
+/// 与 `file_utils` 的单文件读取/下载上限、`archive_utils` 的单条目上限
+/// 同口径。字体 API 的三条输入路径（URL 下载、本地文件读取、Base64 解码）
+/// 与 `QueryTtf::parse` 共用该上限：`queryTTF(url)` 的响应体先经
+/// `legado-net::get_bytes_capped` 有界下载，超限不落盘；缓存命中与本地字体
+/// 文件按元数据 + 有界读取复核；Base64 在解码前按编码长度预估拒绝。字体
+/// 缓存为跨源共享且书源不可删，若无上限，任意书源可用不同 URL 把任意大小
+/// 响应永久写进共享缓存。
+pub(crate) const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
 /// 将所有宿主 API 注册到 QuickJS 全局上下文
 ///
 /// 转发至 `quickjs_impl::register_all_apis`。上游同名文件 API 始终注册

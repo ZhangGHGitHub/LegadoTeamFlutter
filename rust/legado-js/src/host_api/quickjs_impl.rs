@@ -6636,6 +6636,8 @@ cipher.decryptStr(b64);
     /// 投毒；修复后默认输出同样过写策略，明确拒绝。
     #[test]
     fn test_default_config_rejects_unzip_default_output_in_font_cache() {
+        // P2-B：字体缓存目录为进程级全局态，取测试锁
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let suffix = unique_suffix();
         let cache_dir = crate::host_api::font_api::font_cache_dir();
         std::fs::create_dir_all(&cache_dir).unwrap();
@@ -6649,6 +6651,11 @@ cipher.decryptStr(b64);
             result.starts_with("[ERROR] 文件访问被拒绝"),
             "默认输出落入字体缓存应拒绝: {result}"
         );
+        // P3-C：仅断言前缀时，读策略误删「读允许」也会满足；追加只读语义
+        assert!(
+            result.contains("字体缓存") || result.contains("只读"),
+            "拒绝原因应明确指向字体缓存只读: {result}"
+        );
 
         let out_dir = cache_dir.join(format!("cached_bundle_{suffix}"));
         assert!(!out_dir.exists(), "不得向共享字体缓存写入解压产物");
@@ -6660,6 +6667,8 @@ cipher.decryptStr(b64);
     /// （修复前字体缓存目录在写允许根内，解压可直接落盘）
     #[test]
     fn test_default_config_rejects_archive_explicit_output_in_font_cache() {
+        // P2-B：字体缓存目录为进程级全局态，取测试锁
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let suffix = unique_suffix();
         let root = crate::host_api::file_utils::default_sandbox_root();
         let sub = format!("fontcache_out_{suffix}");
@@ -6681,6 +6690,11 @@ cipher.decryptStr(b64);
             result.starts_with("[ERROR] 文件访问被拒绝"),
             "显式输出到字体缓存应拒绝: {result}"
         );
+        // P3-C：追加只读语义，防止读策略误删后仅靠前缀「假绿」
+        assert!(
+            result.contains("字体缓存") || result.contains("只读"),
+            "拒绝原因应明确指向字体缓存只读: {result}"
+        );
         assert!(!out_dir.exists(), "不得向共享字体缓存写入解压产物");
 
         let _ = std::fs::remove_dir_all(root.join(&sub));
@@ -6691,6 +6705,8 @@ cipher.decryptStr(b64);
     /// （输入来自字体缓存中 7z 伪装的 `.ttf`）
     #[test]
     fn test_default_config_rejects_archive_default_output_in_font_cache() {
+        // P2-B：字体缓存目录为进程级全局态，取测试锁
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         let suffix = unique_suffix();
         let source = create_7z_for_js(&[("a.txt", b"7z payload")]);
         let cache_dir = crate::host_api::font_api::font_cache_dir();
@@ -6705,6 +6721,11 @@ cipher.decryptStr(b64);
         assert!(
             result.starts_with("[ERROR] 文件访问被拒绝"),
             "默认输出落入字体缓存应拒绝: {result}"
+        );
+        // P3-C：追加只读语义，防止读策略误删后仅靠前缀「假绿」
+        assert!(
+            result.contains("字体缓存") || result.contains("只读"),
+            "拒绝原因应明确指向字体缓存只读: {result}"
         );
 
         let out_dir = cache_dir.join(format!("cached_sevenz_{suffix}"));
@@ -6756,6 +6777,8 @@ cipher.decryptStr(b64);
     #[test]
     fn test_default_config_allows_font_file_in_engine_cache() {
         // 引擎字体缓存目录内的字体：默认配置仍可解析（能力保留）
+        // P2-B：字体缓存目录为进程级全局态，取测试锁
+        let _lock = crate::host_api::font_api::lock_font_cache_for_test();
         use crate::host_api::font_api::tests::{build_minimal_ttf, Segment};
 
         let suffix = unique_suffix();

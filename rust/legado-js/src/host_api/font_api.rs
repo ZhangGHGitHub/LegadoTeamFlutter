@@ -33,11 +33,13 @@
 //! 本模块的 `query_ttf` / `replace_font` / `query_base64_ttf` 是**不受限**
 //! 核心实现（Rust 侧调用 / 单测用），安全边界在 JS 注册层。
 
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
 use crate::host_api::fs_policy::FsPolicy;
 use crate::host_api::query_ttf::QueryTtf;
+use crate::host_api::MAX_FILE_BYTES;
 
 /// 内存 LRU 缓存容量（对应 Kotlin `AppCacheManager.queryTTFMap = LruCache(4)`）
 const FONT_LRU_CAPACITY: usize = 4;
@@ -60,6 +62,61 @@ static FONT_LRU: Mutex<Vec<(String, QueryTtf)>> = Mutex::new(Vec::new());
 
 /// 磁盘字体缓存目录（默认系统临时目录下 `legado_font_cache`，同 TTS 缓存模式）
 static FONT_CACHE_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
+
+/// 字体缓存全局态测试串行锁（P2-B）
+///
+/// `FONT_CACHE_DIR` 是进程级全局状态：改写目录的用例必须与所有依赖
+/// 字体缓存目录的用例串行，否则并行执行会互相改目录（误红/假绿）。
+#[cfg(test)]
+static FONT_CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// 取字体缓存测试串行锁（中毒时恢复而非 panic）
+#[cfg(test)]
+pub(crate) fn lock_font_cache_for_test() -> std::sync::MutexGuard<'static, ()> {
+    FONT_CACHE_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+}
+
+/// 清空字体缓存目录覆盖（测试用；恢复默认临时目录）
+#[cfg(test)]
+pub(crate) fn reset_font_cache_dir() {
+    *FONT_CACHE_DIR.write().unwrap() = None;
+    crate::host_api::fs_policy::invalidate_allowed_roots_cache();
+}
+
+/// 当前字体缓存目录覆盖值（测试恢复用；`None` 表示使用默认临时目录）
+#[cfg(test)]
+pub(crate) fn font_cache_dir_override() -> Option<PathBuf> {
+    FONT_CACHE_DIR.read().unwrap().clone()
+}
+
+/// 测试用目录覆盖守卫：离开作用域自动恢复进入前的值（含「未覆盖」状态）
+#[cfg(test)]
+pub(crate) struct FontCacheDirGuard {
+    previous: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl Drop for FontCacheDirGuard {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(path) => set_font_cache_dir(path),
+            None => reset_font_cache_dir(),
+        }
+    }
+}
+
+/// 测试用：覆盖字体缓存目录并返回自动恢复守卫
+///
+/// 与 [`lock_font_cache_for_test`] 配合使用；即使断言 panic，守卫也会在
+/// 栈展开时恢复全局状态，避免污染后续并发用例。
+#[cfg(test)]
+pub(crate) fn override_font_cache_dir_for_test(path: PathBuf) -> FontCacheDirGuard {
+    let previous = font_cache_dir_override();
+    set_font_cache_dir(path);
+    FontCacheDirGuard { previous }
+}
 
 /// 句柄 LRU 查询（命中时移到队首）
 fn handle_cache_get(cache: &mut Vec<(String, String)>, key: &str) -> Option<String> {
@@ -203,24 +260,29 @@ pub fn query_ttf_with_policy(data: &str, use_cache: bool, policy: FsPolicy) -> S
     }
 
     // 加载字体二进制：磁盘缓存 → 下载 / 读文件 / base64 解码
-    let font_bytes = load_font_bytes(data, font_type, &cache_key, policy);
-    let (font_bytes, valid) = match font_bytes {
-        Ok(bytes) => (Some(bytes), true),
-        Err(_) => (None, false),
+    let loaded = load_font_bytes(data, font_type, &cache_key, policy);
+    // 解析字体（cmap + glyf 轮廓签名）；加载/解析失败原因随句柄回显
+    let (parsed, error) = match loaded {
+        Ok(bytes) => match QueryTtf::parse(&bytes) {
+            Ok(ttf) => (Some(ttf), None),
+            Err(error) => (None, Some(error.to_string())),
+        },
+        Err(error) => (None, Some(error)),
     };
 
-    // 解析字体（cmap + glyf 轮廓签名）
-    let parsed = font_bytes
-        .as_ref()
-        .and_then(|bytes| QueryTtf::parse(bytes).ok());
-
-    let handle = serde_json::json!({
+    let mut handle = serde_json::json!({
         "fontId": cache_key,
         "type": font_type,
         "data": data,
-        "valid": valid && parsed.is_some()
-    })
-    .to_string();
+        "valid": parsed.is_some()
+    });
+    if let Some(error) = error {
+        // P2-C：超限/解析失败给明确原因（additive 字段，调用端可忽略；
+        // 与路径策略拒绝的 `error` 字段同形）
+        eprintln!("[queryTTF] {error}");
+        handle["error"] = serde_json::Value::String(error);
+    }
+    let handle = handle.to_string();
 
     // 写入缓存（对齐 Kotlin：key != null 时 put；句柄与解析结果同为容量 4 的 LRU）
     if use_cache && parsed.is_some() {
@@ -250,24 +312,58 @@ fn policy_rejected_handle(font_id: &str, font_type: &str, data: &str, error: Str
 }
 
 /// 加载字体二进制（URL 走磁盘缓存 + legado-net 下载，file 直接读取，base64 解码）
+///
+/// 所有分支按 [`MAX_FILE_BYTES`] 设上限（P2-C）：字体缓存为跨源共享且书源
+/// 不可删，无上限时任意书源可用不同 URL 让引擎把任意大小响应永久落盘。
 fn load_font_bytes(
     data: &str,
     font_type: &str,
     cache_key: &str,
     policy: FsPolicy,
 ) -> Result<Vec<u8>, String> {
+    load_font_bytes_capped(data, font_type, cache_key, policy, MAX_FILE_BYTES)
+}
+
+/// [`load_font_bytes`] 的有界实现（`max_bytes` 供单测注入小上限，生产入口
+/// 固定 [`MAX_FILE_BYTES`]）
+fn load_font_bytes_capped(
+    data: &str,
+    font_type: &str,
+    cache_key: &str,
+    policy: FsPolicy,
+    max_bytes: u64,
+) -> Result<Vec<u8>, String> {
     match font_type {
         "url" => {
             let cache_path = font_cache_dir().join(format!("{}.ttf", cache_key));
-            // 已缓存直接用（对齐 TTS 缓存模式）
-            if let Ok(bytes) = std::fs::read(&cache_path) {
-                if !bytes.is_empty() {
-                    return Ok(bytes);
+            // 已缓存直接用（对齐 TTS 缓存模式）；旧版本可能落盘过任意大小
+            // 响应，命中前按上限复核——超限项视为垃圾删除后按未命中重新
+            // 有界下载，避免把超限数据交给解析层
+            match std::fs::metadata(&cache_path) {
+                Ok(meta) if meta.len() > max_bytes => {
+                    eprintln!(
+                        "[queryTTF] 删除超限字体缓存项（{} 字节，上限 {max_bytes}）: {}",
+                        meta.len(),
+                        cache_path.display()
+                    );
+                    let _ = std::fs::remove_file(&cache_path);
                 }
+                Ok(_) => {
+                    if let Ok(bytes) = read_font_file_capped(&cache_path, max_bytes) {
+                        if !bytes.is_empty() {
+                            return Ok(bytes);
+                        }
+                    }
+                }
+                Err(_) => {}
             }
-            let bytes = download_font(data)?;
-            // 下载成功落盘缓存（失败忽略）
+            let bytes = download_font_capped(data, max_bytes)?;
+            // 下载成功落盘缓存（失败忽略）；下载层已保证不超过上限，
+            // 落盘前再复核一次（防实现漂移）
             if !bytes.is_empty() {
+                if bytes.len() as u64 > max_bytes {
+                    return Err(font_limit_error(max_bytes, bytes.len() as u64));
+                }
                 let _ = std::fs::create_dir_all(font_cache_dir());
                 let _ = std::fs::write(&cache_path, &bytes);
             }
@@ -278,20 +374,58 @@ fn load_font_bytes(
             // 受限模式：仅允许引擎沙箱/字体缓存目录内的路径（字体缓存只读，
             // 此处是读策略；写/删在 resolve_write_path 侧被拒绝）
             let resolved = policy.resolve_read_path(path)?;
-            std::fs::read(resolved).map_err(|e| format!("read font file error: {}", e))
+            read_font_file_capped(&resolved, max_bytes)
         }
         _ => {
+            let trimmed = data.trim();
+            // Base64 解码前按编码长度预估上限（4 字符 → 3 字节），避免先
+            // 解码超大串再判上限造成内存峰值
+            let estimated = (trimmed.len() as u64).div_ceil(4).saturating_mul(3);
+            if estimated > max_bytes {
+                return Err(font_limit_error(max_bytes, estimated));
+            }
             use base64::Engine;
-            base64::engine::general_purpose::STANDARD
-                .decode(data.trim())
-                .map_err(|e| format!("base64 font decode error: {}", e))
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(trimmed)
+                .map_err(|e| format!("base64 font decode error: {}", e))?;
+            if bytes.len() as u64 > max_bytes {
+                return Err(font_limit_error(max_bytes, bytes.len() as u64));
+            }
+            Ok(bytes)
         }
     }
 }
 
-/// 通过 legado-net 下载字体（仅 quickjs 构建可用；其余构建降级为失败）
+/// 字体数据大小上限错误（与 `QueryTtf::parse` 超限文案同口径）
+fn font_limit_error(limit: u64, size: u64) -> String {
+    format!("字体数据超出大小上限：{size} 字节，上限 {limit} 字节")
+}
+
+/// 按上限读取字体文件
+///
+/// 先看元数据快速拒绝，再以 `take(上限 + 1)` 复核——元数据可被并发修改，
+/// 不能只信声明大小；超限明确报错，不静默截断。
+fn read_font_file_capped(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("read font file error: {}", e))?;
+    if meta.len() > max_bytes {
+        return Err(font_limit_error(max_bytes, meta.len()));
+    }
+    let file = std::fs::File::open(path).map_err(|e| format!("read font file error: {}", e))?;
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    file.take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("read font file error: {}", e))?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(font_limit_error(max_bytes, bytes.len() as u64));
+    }
+    Ok(bytes)
+}
+
+/// 有界字体下载：复用 legado-net `get_bytes_capped`（流式累计、超限立即
+/// 中止、`Content-Length` 声明超限时读 body 前拒绝、非 2xx 报错、二进制
+/// 无损），不新增网络层接口
 #[cfg(feature = "quickjs")]
-fn download_font(url: &str) -> Result<Vec<u8>, String> {
+fn download_font_capped(url: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
     use crate::host_api::runtime_bridge::block_on;
 
     block_on(async {
@@ -299,20 +433,16 @@ fn download_font(url: &str) -> Result<Vec<u8>, String> {
         // 回环 URL 经 no_proxy 直连池）
         let client = crate::host_api::network::shared_client_for_url(url)
             .map_err(|e| format!("build client error: {}", e))?;
-        // 字体为二进制资源，用 get_raw 避免 UTF-8 有损转换
-        let resp = client
-            .get_raw(url, None)
+        // 字体为二进制资源，有界下载不经历 UTF-8 有损转换
+        client
+            .get_bytes_capped(url, None, max_bytes)
             .await
-            .map_err(|e| format!("download font error: {}", e))?;
-        if !resp.is_success() {
-            return Err(format!("download font http status {}", resp.status));
-        }
-        Ok(resp.body)
+            .map_err(|e| format!("download font error: {}", e))
     })
 }
 
 #[cfg(not(feature = "quickjs"))]
-fn download_font(_url: &str) -> Result<Vec<u8>, String> {
+fn download_font_capped(_url: &str, _max_bytes: u64) -> Result<Vec<u8>, String> {
     Err("font download requires quickjs feature".to_string())
 }
 
@@ -820,9 +950,12 @@ pub mod tests {
     #[test]
     fn test_font_disk_cache_roundtrip() {
         // URL 分支的磁盘缓存逻辑（直接调用 load_font_bytes 的缓存路径）
+        // P2-B：目录覆盖是进程级全局态，取测试锁并由守卫恢复旧值（含
+        // 「未覆盖」状态），断言 panic 时同样恢复
+        let _lock = lock_font_cache_for_test();
         let dir =
             std::env::temp_dir().join(format!("legado_font_cache_test_{}", std::process::id()));
-        set_font_cache_dir(dir.clone());
+        let _guard = override_font_cache_dir_for_test(dir.clone());
         let key = sha256_hex(b"https://cached.example.com/font.ttf");
         let cache_path = dir.join(format!("{}.ttf", key));
         std::fs::create_dir_all(&dir).unwrap();
@@ -846,6 +979,138 @@ pub mod tests {
         assert_eq!(bytes, font);
         // 清理
         let _ = std::fs::remove_file(&cache_path);
+    }
+
+    /// P2-C：旧版本落盘的超大缓存项在命中时被识别为垃圾并删除，随后按
+    /// 未命中走有界下载（本用例用无网络 URL 验证「不返回超限数据」）
+    #[test]
+    fn test_font_disk_cache_oversize_entry_is_discarded() {
+        let _lock = lock_font_cache_for_test();
+        let dir =
+            std::env::temp_dir().join(format!("legado_font_cache_oversize_{}", std::process::id()));
+        let _guard = override_font_cache_dir_for_test(dir.clone());
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = sha256_hex(b"http://127.0.0.1:1/font.ttf");
+        let cache_path = dir.join(format!("{}.ttf", key));
+        std::fs::write(&cache_path, vec![0u8; 2048]).unwrap();
+
+        // 上限 1024：缓存项 2048 字节 → 被删除后尝试下载；回环 1 端口拒绝
+        // 连接（快速失败），两种构建都必须报错且不得返回超限字节
+        let err = load_font_bytes_capped(
+            "http://127.0.0.1:1/font.ttf",
+            "url",
+            &key,
+            FsPolicy::unrestricted(),
+            1024,
+        )
+        .expect_err("超限缓存项不得作为命中结果返回");
+        assert!(!err.is_empty());
+        assert!(
+            !cache_path.exists(),
+            "超限缓存项应被删除（垃圾清理路径）: {}",
+            cache_path.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// P2-C：Base64 超限在解码前按编码长度拒绝（不分配解码缓冲）
+    #[test]
+    fn test_font_base64_oversize_rejected_before_decode() {
+        let data = "A".repeat(4096);
+        let err = load_font_bytes_capped(
+            &data,
+            "base64",
+            "base64-oversize-key",
+            FsPolicy::unrestricted(),
+            1024,
+        )
+        .expect_err("超限 Base64 应被拒绝");
+        assert!(err.contains("超出大小上限"), "err = {err}");
+    }
+
+    /// P2-C：本地字体文件超限 → queryTTF 返回 valid=false + 明确 error
+    ///
+    /// 用 `set_len` 造 32MB+1 的空洞文件，不实际分配/写入 32MB 数据。
+    #[test]
+    fn test_query_ttf_file_oversize_returns_invalid_with_error() {
+        let dir = std::env::temp_dir().join(format!(
+            "legado_font_file_oversize_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("oversize.ttf");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_FILE_BYTES + 1).unwrap();
+        drop(file);
+
+        let handle = query_ttf(path.to_str().unwrap(), false);
+        let parsed: serde_json::Value = serde_json::from_str(&handle).unwrap();
+        assert_eq!(parsed["type"], "file");
+        assert_eq!(parsed["valid"], false);
+        assert!(
+            parsed["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("超出大小上限"),
+            "handle = {handle}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// P2-C：超限 URL 下载被拒且不落盘（复用 get_bytes_capped 的
+    /// Content-Length 快速拒绝路径；上限注入 1KB，不推 32MB body）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_font_url_oversize_download_rejected_without_cache_write() {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        let _lock = lock_font_cache_for_test();
+        let dir = std::env::temp_dir().join(format!(
+            "legado_font_url_limit_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _guard = override_font_cache_dir_for_test(dir.clone());
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // 声明 4096 字节 > 上限 1024：读取 body 前即拒绝
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let Ok((mut sock, _)) = listener.accept() else {
+                return;
+            };
+            let mut buf = [0u8; 4096];
+            let _ = sock.read(&mut buf);
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                        Content-Length: 4096\r\nConnection: close\r\n\r\n";
+            let _ = sock.write_all(head.as_bytes());
+            let _ = sock.flush();
+        });
+        let url = format!("http://{addr}/font.ttf");
+
+        let key = sha256_hex(url.as_bytes());
+        let cache_path = dir.join(format!("{}.ttf", key));
+        let err = load_font_bytes_capped(&url, "url", &key, FsPolicy::unrestricted(), 1024)
+            .expect_err("超限 URL 下载应被拒绝");
+        assert!(err.contains("超出大小上限"), "err = {err}");
+        assert!(
+            !cache_path.exists(),
+            "超限响应不得落盘: {}",
+            cache_path.display()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -900,6 +1165,8 @@ pub mod tests {
     #[test]
     fn test_query_ttf_restricted_allows_font_cache_file() {
         // 受限策略：引擎字体缓存目录内的字体仍可读（能力保留）
+        // P2-B：目录可能被并行用例覆盖，取字体缓存测试锁
+        let _lock = lock_font_cache_for_test();
         let dir = font_cache_dir().join(format!(
             "policy_allow_{}_{}",
             std::process::id(),
