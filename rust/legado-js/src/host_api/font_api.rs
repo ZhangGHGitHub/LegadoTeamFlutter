@@ -77,6 +77,11 @@ fn handle_cache_put(cache: &mut Vec<(String, String)>, key: String, handle: Stri
 }
 
 /// 字体磁盘缓存目录（可按 TTS 缓存同模式覆写）
+///
+/// 这是**跨书源共享**的公共资源：同一 URL 的字体只下载一次，各源
+/// `queryTTF` 命中复用。目录只由引擎自身写入（下载落盘）；书源在受限
+/// 策略下仅可**读取**，写入/删除/解压输出由
+/// [`FsPolicy::resolve_write_path`] 拒绝（批33 P2-2 残留面）。
 pub fn font_cache_dir() -> PathBuf {
     FONT_CACHE_DIR
         .read()
@@ -270,7 +275,8 @@ fn load_font_bytes(
         }
         "file" => {
             let path = data.strip_prefix("file://").unwrap_or(data);
-            // 受限模式：仅允许引擎沙箱/字体缓存目录内的路径
+            // 受限模式：仅允许引擎沙箱/字体缓存目录内的路径（字体缓存只读，
+            // 此处是读策略；写/删在 resolve_write_path 侧被拒绝）
             let resolved = policy.resolve_read_path(path)?;
             std::fs::read(resolved).map_err(|e| format!("read font file error: {}", e))
         }

@@ -26,7 +26,8 @@
 //! - `allow_file_access=false`（书源生产路径）：仅允许引擎沙箱根
 //!   （[`default_sandbox_root`]，可经 [`set_sandbox_root`] 由宿主注入应用
 //!   缓存目录）与字体缓存目录内的路径；相对路径按沙箱根解析，绝对路径也
-//!   必须落在允许根内，`..` / UNC / 设备前缀一律拒绝；
+//!   必须落在允许根内，`..` / UNC / 设备前缀一律拒绝。**字体缓存为只读
+//!   共享资源**：读取允许（复用），写入/删除/解压输出一律拒绝（批33 P2-2）；
 //! - `allow_file_access=true`（调试 / 可信脚本）：不做限制。
 //!
 //! # 书源隔离（P2-2）
@@ -248,6 +249,10 @@ mod impl_file_utils {
     /// 根目录就是该源的整个存储空间，删掉会让本源后续文件 API 全部失效；
     /// 上游共享 `externalCache`，不存在这个「本源根」概念。目录递归删除
     /// 另拒绝当前工作目录及其祖先（P2-2，permissive 下同样生效）。
+    ///
+    /// 字体缓存为跨源共享的只读资源：其**内部文件**在 [`FsPolicy::resolve_write_path`]
+    /// 阶段即被拒绝（不会走到删除）；引擎根保护只兜底 permissive 模式下
+    /// 误删根目录的情形（批33 P2-2 残留面）。
     pub fn delete_file(policy: &FsPolicy, relative_path: &str) -> Result<bool, String> {
         let path = policy.resolve_write_path(relative_path)?;
         if !path.exists() {
@@ -696,9 +701,9 @@ mod impl_file_utils {
     /// 对应 Kotlin: `getTxtInFolder(path)`（`JsExtensions.kt:903-917`）：读取
     /// 文件夹内**所有文件**（不限扩展名）并以换行拼接，然后
     /// `FileUtils.delete(folder.absolutePath)` **递归删除该目录**。删除失败
-    /// 只告警、不影响已读到的返回内容；`folderPath` 解析后等于引擎根（当前
-    /// 书源沙箱根 / 字体缓存根）或等于/包含进程 CWD 时同样拒绝删除
-    /// （见 [`remove_path`]）。
+    /// 只告警、不影响已读到的返回内容；删除前还要过**写策略**（字体缓存为
+    /// 共享只读，可读但不可删），解析后等于引擎根（当前书源沙箱根 / 字体
+    /// 缓存根）或等于/包含进程 CWD 时同样拒绝删除（见 [`remove_path`]）。
     /// 每个文件读取前单独过策略，防止目录内符号链接越界。
     ///
     /// 资源上限（P2-6）：先按元数据累计，超 64MB 直接拒绝（不读入）；读取
@@ -756,12 +761,22 @@ mod impl_file_utils {
         }
 
         // 对齐上游 `FileUtils.delete(folder.absolutePath)`（deleteRootDir=true）：
-        // 读完递归删除目录。删除失败（含引擎根保护）只告警，不影响返回内容。
-        if let Err(error) = remove_path(&resolved) {
-            eprintln!(
-                "[getTxtInFolder] 删除目录失败（{}）：{error}",
+        // 读完递归删除目录。删除是**写语义**，须再过写策略——字体缓存为共享
+        // 只读资源，即便目录可读也不允许书源删除（批33 P2-2）。删除失败（含
+        // 引擎根保护 / 写策略拒绝）只告警，不影响已读到的返回内容。
+        match policy.resolve_write_path(&resolved.to_string_lossy()) {
+            Ok(deletable) => {
+                if let Err(error) = remove_path(&deletable) {
+                    eprintln!(
+                        "[getTxtInFolder] 删除目录失败（{}）：{error}",
+                        resolved.display()
+                    );
+                }
+            }
+            Err(error) => eprintln!(
+                "[getTxtInFolder] 跳过删除（{}）：{error}",
                 resolved.display()
-            );
+            ),
         }
 
         Ok(contents.join("\n"))
@@ -1047,6 +1062,29 @@ mod tests {
         write_file(&restricted(), "test_delete.txt", "to delete").unwrap();
         assert!(delete_file(&restricted(), "test_delete.txt").unwrap());
         assert!(!file_exists(&restricted(), "test_delete.txt").unwrap());
+    }
+
+    /// P2-2（批33 残留面）：书源 deleteFile 不得删除共享字体缓存文件
+    ///
+    /// 修复前字体缓存目录在写允许根内，A 源可删除 B 源缓存字体；修复后由
+    /// 写策略先行拒绝（错误文本明确指向字体缓存只读）。
+    #[test]
+    fn test_delete_file_rejects_font_cache_file() {
+        let dir = crate::host_api::font_api::font_cache_dir();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(unique_name("font_cache_delete_guard.ttf"));
+        fs::write(&path, b"ttf").unwrap();
+
+        let err = delete_file(&restricted(), path.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("字体缓存"), "err = {err}");
+        assert!(path.is_file(), "书源不得删除共享字体缓存文件");
+
+        // 读仍允许（queryTTF 复用共享缓存）
+        assert!(restricted()
+            .resolve_read_path(path.to_str().unwrap())
+            .is_ok());
+
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

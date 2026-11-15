@@ -2100,7 +2100,9 @@ fn register_time_apis<'js>(
 /// `allow_file_access=false` 下同样可用），所有路径经 `policy` 校验——
 /// 受限模式仅允许引擎沙箱根（`file_utils::default_sandbox_root`，可经
 /// `file_utils::set_sandbox_root` 由宿主注入应用缓存目录）与字体缓存目录
-/// 内的路径。语义对齐上游 `JsExtensions.kt`：
+/// 内的路径；其中**字体缓存只读**：读 API 可复用缓存，写/删 API
+/// （`deleteFile` / `downloadFile` 落盘 / `getTxtInFolder` 的删除副作用）
+/// 由写策略拒绝（批33 P2-2）。语义对齐上游 `JsExtensions.kt`：
 /// - `downloadFile(url)` / `downloadFile(contentHex, url)`（deprecated）/
 ///   `cacheFile` / `importScript` 需要网络，落盘路径过写策略；
 /// - `getFile` / `readTxtFile` / `getTxtInFolder` / `readFile` 过读策略；
@@ -4669,15 +4671,29 @@ fn register_archive_apis<'js>(
     //
     // 批21-B：入参路径先过 FsPolicy；越界返回 `[ERROR]` 明确错误（不静默）。
     // 默认输出目录 = 压缩包同目录（输入在允许根内 ⇒ 输出也在允许根内）。
+    // 批33 P2-2：默认输出同样过**写**策略——输入可能位于共享字体缓存
+    // （`queryTTF(url)` 会落盘任意响应字节，含 ZIP 伪装的 `.ttf`），
+    // 不校验默认输出会让书源借缓存中的压缩包向字体缓存写入。
     let unarchive = rquickjs::Function::new(ctx.clone(), move |zip_path: RhinoStr| -> String {
         if zip_path.is_empty() {
             return String::new();
         }
         let path = match policy.resolve_read_path(&zip_path) {
+            Ok(p) => p,
+            Err(e) => return format!("[ERROR] {}", e),
+        };
+        // 默认输出 = 输入同目录 + 去扩展名文件夹，必须同样过**写**策略：
+        // 输入可能位于共享字体缓存（`queryTTF(url)` 会把 URL 的任意响应
+        // 字节落盘，含 ZIP 伪装的 `.ttf`，解析失败也不清理）。修复前默认
+        // 输出沿用输入父目录 → 书源可借缓存中的压缩包向字体缓存投毒。
+        let out_dir = match policy
+            .resolve_write_path(&archive_default_output_dir(&path, "unzipped").to_string_lossy())
+        {
             Ok(p) => p.to_string_lossy().into_owned(),
             Err(e) => return format!("[ERROR] {}", e),
         };
-        archive_utils::un_archive_file(&path, None).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        archive_utils::un_archive_file(&path.to_string_lossy(), Some(out_dir.as_str()))
+            .unwrap_or_else(|e| format!("[ERROR] {}", e))
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("unzipFile", unarchive.clone())
@@ -4720,6 +4736,7 @@ fn register_archive_apis<'js>(
                     policy,
                     &seven_z_path,
                     output_path.0.as_deref(),
+                    "un7zipped",
                     archive_utils::un7z_file,
                 )
             },
@@ -4740,6 +4757,7 @@ fn register_archive_apis<'js>(
                     policy,
                     &rar_path,
                     output_path.0.as_deref(),
+                    "unrarred",
                     archive_utils::unrar_file,
                 )
             },
@@ -4784,26 +4802,52 @@ fn register_archive_apis<'js>(
 
 /// 解压类 API 的公共入口：输入/输出路径过策略后调用具体解压函数
 ///
-/// - 输入必须在允许根内（受限模式）；输出目录若显式传入同样校验；
-/// - 输出为 `None` 时由各解压实现默认到输入同目录（输入已受限 ⇒ 输出受限）。
+/// - 输入必须在允许根内（受限模式）；
+/// - 显式输出目录必须通过**写**策略；
+/// - 未显式传入输出目录时，按各解压实现的默认规则（输入同目录 + 去扩展名）
+///   先算出目录再过写策略——输入可能位于共享字体缓存（`queryTTF(url)`
+///   会把任意响应字节落盘），默认输出若不校验，书源可借缓存中的压缩包向
+///   字体缓存写入（批33 P2-2 残留面）。
 fn extract_archive_with_policy(
     policy: FsPolicy,
     input: &str,
     output: Option<&str>,
+    default_stem: &str,
     extract: impl FnOnce(&str, Option<&str>) -> Result<String, String>,
 ) -> String {
     let input = match policy.resolve_read_path(input) {
-        Ok(p) => p.to_string_lossy().into_owned(),
+        Ok(p) => p,
         Err(e) => return format!("[ERROR] {}", e),
     };
     let output = match output {
         Some(raw) if !raw.is_empty() => match policy.resolve_write_path(raw) {
-            Ok(p) => Some(p.to_string_lossy().into_owned()),
+            Ok(p) => p,
             Err(e) => return format!("[ERROR] {}", e),
         },
-        _ => None,
+        _ => {
+            let derived = archive_default_output_dir(&input, default_stem);
+            match policy.resolve_write_path(&derived.to_string_lossy()) {
+                Ok(p) => p,
+                Err(e) => return format!("[ERROR] {}", e),
+            }
+        }
     };
-    extract(&input, output.as_deref()).unwrap_or_else(|e| format!("[ERROR] {}", e))
+    let input = input.to_string_lossy();
+    let output = output.to_string_lossy();
+    extract(&input, Some(output.as_ref())).unwrap_or_else(|e| format!("[ERROR] {}", e))
+}
+
+/// 压缩包默认输出目录（与 `archive_utils` 各实现同口径：输入同目录 +
+/// 去扩展名文件夹名；无文件名时用调用方给定的回退名）
+fn archive_default_output_dir(input: &std::path::Path, fallback_stem: &str) -> std::path::PathBuf {
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(fallback_stem);
+    input
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join(stem)
 }
 
 /// getZipStringContent 的 JS 入口实现：解析 ZIP 来源并读取指定条目的字符串内容
@@ -6413,6 +6457,7 @@ cipher.decryptStr(b64);
     //
     // 边界（见 host_api::fs_policy）：
     // - 受限模式只允许引擎自建目录（<temp>/legado_js_cache、<temp>/legado_font_cache）；
+    //   字体缓存**只读**：queryTTF 可命中复用，写入/删除/解压输出一律拒绝；
     // - 越界返回明确错误（archive 前缀 [ERROR]，queryTTF 句柄带 error 字段）；
     // - allow_file_access=true（permissive）保持不受限（锁定既有调试行为）。
     // ============================================================
@@ -6581,6 +6626,92 @@ cipher.decryptStr(b64);
 
         let _ = std::fs::remove_dir_all(root.join(&sub));
         let _ = std::fs::remove_dir_all(std::path::Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    /// P2-2（批33 残留面）：`unzipFile` 默认输出 = 输入同目录 + 去扩展名。
+    ///
+    /// 输入可能来自共享字体缓存：`queryTTF(url)` 会把 URL 的**任意**响应
+    /// 字节落盘（后续解析失败也不清理），书源可让缓存里出现 ZIP 伪装的
+    /// `.ttf`。修复前默认输出沿用输入父目录（字体缓存）→ 可向共享缓存
+    /// 投毒；修复后默认输出同样过写策略，明确拒绝。
+    #[test]
+    fn test_default_config_rejects_unzip_default_output_in_font_cache() {
+        let suffix = unique_suffix();
+        let cache_dir = crate::host_api::font_api::font_cache_dir();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let archive_name = format!("cached_bundle_{suffix}.ttf");
+        let zip_path = create_zip_at(&cache_dir, &archive_name, &[("payload.txt", b"poison")]);
+
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let code = format!("java.unzipFile({})", js_str(&zip_path));
+        let result = engine.eval(&code).unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "默认输出落入字体缓存应拒绝: {result}"
+        );
+
+        let out_dir = cache_dir.join(format!("cached_bundle_{suffix}"));
+        assert!(!out_dir.exists(), "不得向共享字体缓存写入解压产物");
+
+        let _ = std::fs::remove_file(&zip_path);
+    }
+
+    /// un7zFile 显式输出目录指向字体缓存 → 写策略拒绝
+    /// （修复前字体缓存目录在写允许根内，解压可直接落盘）
+    #[test]
+    fn test_default_config_rejects_archive_explicit_output_in_font_cache() {
+        let suffix = unique_suffix();
+        let root = crate::host_api::file_utils::default_sandbox_root();
+        let sub = format!("fontcache_out_{suffix}");
+        let source = create_7z_for_js(&[("a.txt", b"7z payload")]);
+        let inside = root.join(&sub).join("book.7z");
+        std::fs::create_dir_all(inside.parent().unwrap()).unwrap();
+        std::fs::copy(&source, &inside).unwrap();
+
+        let cache_dir = crate::host_api::font_api::font_cache_dir();
+        let out_dir = cache_dir.join(format!("poison_{suffix}"));
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let code = format!(
+            "java.un7zFile({}, {})",
+            js_str(inside.to_str().unwrap()),
+            js_str(out_dir.to_str().unwrap())
+        );
+        let result = engine.eval(&code).unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "显式输出到字体缓存应拒绝: {result}"
+        );
+        assert!(!out_dir.exists(), "不得向共享字体缓存写入解压产物");
+
+        let _ = std::fs::remove_dir_all(root.join(&sub));
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&source).parent().unwrap());
+    }
+
+    /// un7zFile 默认输出（输入同目录）指向字体缓存 → 同样拒绝
+    /// （输入来自字体缓存中 7z 伪装的 `.ttf`）
+    #[test]
+    fn test_default_config_rejects_archive_default_output_in_font_cache() {
+        let suffix = unique_suffix();
+        let source = create_7z_for_js(&[("a.txt", b"7z payload")]);
+        let cache_dir = crate::host_api::font_api::font_cache_dir();
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let cached_name = format!("cached_sevenz_{suffix}.ttf");
+        let cached = cache_dir.join(&cached_name);
+        std::fs::copy(&source, &cached).unwrap();
+
+        let engine = QuickJsEngine::new(SandboxConfig::default()).unwrap();
+        let code = format!("java.un7zFile({})", js_str(cached.to_str().unwrap()));
+        let result = engine.eval(&code).unwrap();
+        assert!(
+            result.starts_with("[ERROR] 文件访问被拒绝"),
+            "默认输出落入字体缓存应拒绝: {result}"
+        );
+
+        let out_dir = cache_dir.join(format!("cached_sevenz_{suffix}"));
+        assert!(!out_dir.exists(), "不得向共享字体缓存写入解压产物");
+
+        let _ = std::fs::remove_file(&cached);
+        let _ = std::fs::remove_dir_all(std::path::Path::new(&source).parent().unwrap());
     }
 
     #[test]
