@@ -3801,7 +3801,8 @@ fn register_html_parse_apis<'js>(
 /// - saveTime <= 0 → 写永久磁盘条目（deadline=0）**并同步内存层**：
 ///   同进程 `get` 命中内存，进程重启后仍可从磁盘读回；不是“仅内存”
 /// - saveTime > 0  → 磁盘条目 + 截止时间，成功后清内存层，读取过期即删
-/// - putFile/getFile：磁盘裸文件，无过期
+/// - putFile/getFile：磁盘裸文件（独立 `file/` 子目录），saveTime 口径同
+///   `put`（`<= 0`/缺省 = 永久，`> 0` 按秒过期）
 /// - 仅 `putMemory` 是纯内存、不落盘
 ///
 /// 值统一字符串化后存储（上游 WebCacheManager 存 String；对象值
@@ -3949,14 +3950,27 @@ fn register_cache_apis<'js>(
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    // putFile(key, value) -> bool（磁盘裸文件，无过期）
+    // putFile(key, value, saveTime?) -> bool
+    // 纯磁盘文件缓存（`file/` 子目录，不进内存层）。saveTime 单位秒，
+    // 缺省/null → 0 = 永久，`<= 0` 同口径（对齐上游
+    // `CacheManager.putFile(key, value, saveTime: Int = 0)` →
+    // `ACache.put`；修复前第三参被静默丢弃、值永不过期）；`> 0` 写旁路
+    // deadline（cache_store::FileCacheMeta），getFile 过期即删。
     cache
         .set(
             "putFile",
             rquickjs::Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'js>, key: RhinoStr, value: rquickjs::Value<'js>| -> bool {
-                    cache_store::put_file(&key, &stringify_cache_value(&ctx, &value))
+                |ctx: rquickjs::Ctx<'js>,
+                 key: RhinoStr,
+                 value: rquickjs::Value<'js>,
+                 save_time: RhinoOptInt|
+                 -> bool {
+                    cache_store::put_file(
+                        &key,
+                        &stringify_cache_value(&ctx, &value),
+                        save_time.0.map(|s| s as i64).unwrap_or(0),
+                    )
                 },
             )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,

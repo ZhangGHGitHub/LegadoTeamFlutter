@@ -147,22 +147,37 @@ if (typeof globalThis.cache === 'undefined' || globalThis.cache === null) {{
 // 语料 cache.dev_id（#25 听小说APP，设备标识读写）：属性式 getter/setter，
 // 后端与 cache.put/get 同一存储（saveTime=0 永久口径——put 默认无过期）；
 // 未写入前读为 null。— 3b-3
-// 守卫后宿主 cache 已存在，属性需单独挂载（不能随整体覆盖丢失）；已存在
-// 同名属性（含原型链）时不覆盖；池化引擎重复 setup 时 defineProperty 可能
-// 因 non-configurable 抛错，忽略即可。
-if (!('dev_id' in globalThis.cache)) {{
+// 守卫后宿主 cache 已存在，属性需单独挂载（不能随整体覆盖丢失）；判定用
+// own-property（`hasOwnProperty`，不含原型链）——自定义引擎原型上的 dev_id
+// 不保证由 cache_store 支撑，仍须为本对象挂 own 属性。池化引擎重复 setup
+// 时 defineProperty 可能因 non-configurable 抛错，告警后跳过（不再静默）。
+if (!Object.prototype.hasOwnProperty.call(globalThis.cache, 'dev_id')) {{
   try {{
     Object.defineProperty(globalThis.cache, 'dev_id', {{
+      // getter/setter 用 `this`（接收者）而非 `globalThis.cache`：脚本把
+      // cache 赋给别名、或替换 globalThis.cache 后，属性读写仍落在真正持有
+      // 该属性的对象上（别名场景 `this` 即该对象）；无宿主方法时回退
+      // globalThis.cache（历史垫片）。
       get: function() {{
-        var v = globalThis.cache.get('dev_id');
+        var c = (this && typeof this.get === 'function') ? this : globalThis.cache;
+        var v = c.get('dev_id');
         return (v === undefined || v === null || v === '') ? null : String(v);
       }},
       set: function(v) {{
         if (v === undefined || v === null) return;
-        globalThis.cache.put('dev_id', String(v));
+        var c = (this && typeof this.put === 'function') ? this : globalThis.cache;
+        if (c && typeof c.put === 'function') c.put('dev_id', String(v));
       }}
     }});
-  }} catch (e) {{}}
+  }} catch (e) {{
+    // cache 被 freeze/seal 或既有 non-configurable 属性：明确告警，
+    // 避免 dev_id 能力静默丢失（java.log 在宿主不可用时再兜底吞掉）
+    try {{
+      if (typeof java !== 'undefined' && java && typeof java.log === 'function') {{
+        java.log('cache.dev_id 挂载失败（cache 可能被 freeze/seal）：' + e);
+      }}
+    }} catch (_) {{}}
+  }}
 }}
 
 // 对齐原版 getKey() = bookSourceUrl：登录缓存键用 sourceUrl 而非请求 baseUrl
@@ -629,12 +644,20 @@ mod tests {
         );
         // dev_id 语料兼容项单独挂载（守卫后宿主 cache 已存在，不能随整体覆盖丢失）
         assert!(
-            script.contains("if (!('dev_id' in globalThis.cache))"),
-            "dev_id 应单独挂载且不覆盖宿主已有属性"
+            script
+                .contains("if (!Object.prototype.hasOwnProperty.call(globalThis.cache, 'dev_id'))"),
+            "dev_id 应按 own-property 判定挂载（原型链同名属性不阻止挂载）"
         );
         assert!(
-            script.contains("globalThis.cache.get('dev_id')"),
-            "dev_id 读写应走与 cache.get/put 同一存储"
+            script.contains("typeof this.get === 'function'")
+                && script.contains("typeof this.put === 'function'")
+                && script.contains("c.get('dev_id')")
+                && script.contains("c.put('dev_id', String(v))"),
+            "dev_id 读写应走接收者（this）的 cache.get/put，保持同一 cache_store 存储"
+        );
+        assert!(
+            script.contains("java.log('cache.dev_id 挂载失败"),
+            "defineProperty 失败应有告警日志（不得静默丢失 dev_id）"
         );
     }
 

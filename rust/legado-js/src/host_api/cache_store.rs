@@ -11,8 +11,11 @@
 //! - `get(key, onlyDisk)` — 内存层优先（onlyDisk 跳过）；磁盘层按
 //!   deadline 校验：0 = 永久（回写内存层），过期 → 删文件并返回 None。
 //! - `putMemory/getFromMemory/deleteMemory` — 内存 LRU（容量 1024）。
-//! - `putFile/getFile` — 纯磁盘（独立子目录 `file/`，不进内存层、不过期）。
-//! - `delete(key)` — 磁盘 + 内存。
+//! - `putFile(key, value, saveTime)` — 纯磁盘（独立子目录 `file/`，不进内存
+//!   层）。saveTime 口径同 `put`：`<= 0` 永久；`> 0` 时在数据文件旁写
+//!   `file/<hash>.meta.json`（`{"d": deadline}`），`getFile` 按 deadline
+//!   校验并删除过期条目。无 meta 的旧文件（历史版本写入）按永久读取。
+//! - `delete(key)` — 磁盘 + 文件缓存（含 meta）+ 内存。
 //!
 //! QuickJS 引擎按 source_tag LRU 缓存、跨书源复用（engine_cache），
 //! 故缓存实现为 **Rust 进程级存储**而非 JS 对象——同一进程内多书源共享
@@ -48,6 +51,13 @@ pub const CACHE_DIR_ENV: &str = "LEGADO_JS_CACHE_DIR";
 #[derive(serde::Serialize, serde::Deserialize)]
 struct DiskCacheEntry {
     v: String,
+    d: i64,
+}
+
+/// 文件缓存旁路元数据：`{"d": deadline(ms)}`（仅 `saveTime > 0` 的
+/// `putFile` 条目写 meta 文件；永久条目不写，历史裸文件按永久读取）
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FileCacheMeta {
     d: i64,
 }
 
@@ -206,6 +216,14 @@ fn file_path(key: &str) -> PathBuf {
     disk_dir().join("file").join(sha256_hex(key))
 }
 
+/// 文件缓存旁路元数据路径（与数据文件同目录，`.meta.json` 后缀；
+/// 仅带 TTL 的 `putFile` 条目存在）
+fn file_meta_path(key: &str) -> PathBuf {
+    disk_dir()
+        .join("file")
+        .join(format!("{}.meta.json", sha256_hex(key)))
+}
+
 fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -321,8 +339,20 @@ pub fn get(key: &str, only_disk: bool) -> Option<String> {
     }
 }
 
-/// 纯磁盘写入（`putFile`，无内存层、不过期）
-pub fn put_file(key: &str, value: &str) -> bool {
+/// 纯磁盘写入（`putFile`）：saveTime 秒，`<= 0` 永久（不写 meta），
+/// `> 0` 同目录旁路 meta 记录 deadline
+///
+/// 对齐上游 `CacheManager.putFile(key, value, saveTime = 0)` →
+/// `ACache.put(key, value, saveTime)`（saveTime 为单位秒的 TTL）。永久
+/// 条目重写时删除旧 meta，避免上一次 TTL 写入的 deadline 把新值提前判过期。
+/// 元数据写失败时删除已写入的数据并返回 false——不能把带 TTL 的值静默
+/// 降级成永久可读。
+pub fn put_file(key: &str, value: &str, save_time_secs: i64) -> bool {
+    let deadline = if save_time_secs <= 0 {
+        0
+    } else {
+        now_millis() + save_time_secs.saturating_mul(1000)
+    };
     let path = file_path(key);
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -339,27 +369,70 @@ pub fn put_file(key: &str, value: &str) -> bool {
     // 可降级，仅记录失败原因（原 `.is_ok()` 静默吞错）；P2-15 剩项：
     // 限流为进程内首条（目录不合法时每次 `cache.putFile` 都会失败）
     match fs::write(&path, value) {
-        Ok(()) => true,
+        Ok(()) => {}
         Err(e) => {
             warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {
                 eprintln!(
                     "[cache_store] 写盘失败 {key} ({path:?}): {e}（同类失败后续不再逐条记日志）"
                 );
             });
-            false
+            return false;
         }
     }
+    if deadline == 0 {
+        // 永久条目：清除上一次 TTL 写入遗留的 deadline（同键重写）
+        let _ = fs::remove_file(file_meta_path(key));
+        return true;
+    }
+    let meta_path = file_meta_path(key);
+    let meta_json = match serde_json::to_string(&FileCacheMeta { d: deadline }) {
+        Ok(j) => j,
+        Err(e) => {
+            let _ = fs::remove_file(&path);
+            warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {
+                eprintln!(
+                    "[cache_store] 文件缓存元数据序列化失败 {key}: {e}（已删除数据，避免 TTL 值降级为永久）"
+                );
+            });
+            return false;
+        }
+    };
+    if let Err(e) = fs::write(&meta_path, meta_json) {
+        let _ = fs::remove_file(&path);
+        warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {
+            eprintln!(
+                "[cache_store] 文件缓存元数据写盘失败 {key} ({meta_path:?}): {e}（已删除数据，避免 TTL 值降级为永久；同类失败后续不再逐条记日志）"
+            );
+        });
+        return false;
+    }
+    true
 }
 
-/// 纯磁盘读取（`getFile`，不做 deadline 校验）
+/// 纯磁盘读取（`getFile`）：按旁路 meta 的 deadline 校验
+///
+/// 无 meta（历史裸文件 / `saveTime <= 0` 写入）按永久读取；meta 损坏时
+/// 同样按永久读取（保持旧数据可读，不因元数据异常丢用户缓存）。过期 →
+/// 删除数据与 meta 并返回 None。
 pub fn get_file(key: &str) -> Option<String> {
+    let meta_path = file_meta_path(key);
+    if let Ok(raw) = fs::read_to_string(&meta_path) {
+        if let Ok(meta) = serde_json::from_str::<FileCacheMeta>(&raw) {
+            if meta.d != 0 && now_millis() > meta.d {
+                let _ = fs::remove_file(file_path(key));
+                let _ = fs::remove_file(&meta_path);
+                return None;
+            }
+        }
+    }
     fs::read_to_string(file_path(key)).ok()
 }
 
-/// 删除（磁盘 + 内存）
+/// 删除（磁盘 + 文件缓存 + 文件缓存 meta + 内存）
 pub fn delete(key: &str) {
     let _ = fs::remove_file(disk_path(key));
     let _ = fs::remove_file(file_path(key));
+    let _ = fs::remove_file(file_meta_path(key));
     delete_memory(key);
 }
 
@@ -444,12 +517,57 @@ mod tests {
     fn test_file_roundtrip() {
         let _lock = lock_cache_for_test();
         let k = unique_key("file");
-        assert!(put_file(&k, "file-value"));
+        assert!(put_file(&k, "file-value", 0));
         assert_eq!(get_file(&k).as_deref(), Some("file-value"));
         // putFile/getFile 不进内存层
         assert!(get_from_memory(&k).is_none());
+        // 永久条目不写 meta（历史裸文件同一形态）
+        assert!(!file_meta_path(&k).exists());
         delete(&k);
         assert!(get_file(&k).is_none());
+    }
+
+    /// P2-1：`putFile` 第三参 saveTime 必须生效（修复前被静默丢弃、永不过期）
+    #[test]
+    fn test_put_file_honors_save_time() {
+        let _lock = lock_cache_for_test();
+        let k = unique_key("filettl");
+        assert!(put_file(&k, "ttl-file", 1));
+        // TTL 条目写旁路 meta，生效期内可读
+        assert!(file_meta_path(&k).exists());
+        assert_eq!(get_file(&k).as_deref(), Some("ttl-file"));
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(
+            get_file(&k).is_none(),
+            "saveTime=1 秒过期后 getFile 必须失效"
+        );
+        // 过期读取顺带清理数据与 meta
+        assert!(!file_path(&k).exists());
+        assert!(!file_meta_path(&k).exists());
+    }
+
+    /// P2-1：`saveTime <= 0` = 永久；同键永久重写须清除旧 TTL meta
+    #[test]
+    fn test_put_file_permanent_clears_stale_meta() {
+        let _lock = lock_cache_for_test();
+        let k = unique_key("fileperm");
+        // 先写 TTL 条目（产生 meta），再用缺省 saveTime 重写为永久
+        assert!(put_file(&k, "ttl-first", 1));
+        assert!(file_meta_path(&k).exists());
+        assert!(put_file(&k, "perm-second", 0));
+        assert!(
+            !file_meta_path(&k).exists(),
+            "永久重写必须删除旧 TTL meta（否则新值会被旧 deadline 提前判过期）"
+        );
+        // 负数 saveTime 与 0 同口径：永久
+        assert!(put_file(&k, "perm-third", -1));
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert_eq!(
+            get_file(&k).as_deref(),
+            Some("perm-third"),
+            "永久条目不得受过期影响"
+        );
+        delete(&k);
     }
 
     #[test]
@@ -527,7 +645,7 @@ mod tests {
 
         // put_file 失败路径：file 路径预建为目录 → 仅记日志，无内存层
         fs::create_dir_all(file_path(&k3)).expect("file 路径预建为目录");
-        assert!(!put_file(&k3, "vf"));
+        assert!(!put_file(&k3, "vf", 0));
         assert!(get_from_memory(&k3).is_none());
         assert!(get_file(&k3).is_none());
 

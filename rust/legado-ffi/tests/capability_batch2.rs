@@ -143,6 +143,12 @@ fn test_cookie_replace_map_roundtrip_e2e() {
 #[test]
 fn test_cache_dev_id_roundtrip() {
     let (engine, _s) = engine_with_source("https://capb2d1.example.com/", "cap2 dev_id");
+    // P2-2：dev_id 已从变量表迁到 cache_store 磁盘永久键——同机上一轮
+    // panic / 并发用例可能留下同名键；先清理（delete 同时清磁盘条目、
+    // 文件缓存与内存层）再断言初始 null，避免假失败。
+    engine
+        .eval("cache.delete('dev_id')")
+        .expect("dev_id 预清理失败");
     // 未写入前读 null（eval 结果字符串化为 "null"，batch1 同口径）
     assert_eq!(
         engine.eval("cache.dev_id").unwrap(),

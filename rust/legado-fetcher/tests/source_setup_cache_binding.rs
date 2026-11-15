@@ -291,6 +291,115 @@ fn setup_engine_cache_put_file_is_available() {
     );
 }
 
+/// P2-1：`cache.putFile(k, v, saveTime)` 的第三参必须生效（修复前被静默
+/// 丢弃、值永不过期）；缺省 saveTime 与 `saveTime = 0` 均为永久。
+#[test]
+fn setup_engine_cache_put_file_honors_save_time() {
+    let source = book_source("https://cap37filettl.example.com");
+    let engine = engine_with_book_setup(&source);
+    let ttl = js_str(&unique("cap37filettl"));
+    let perm = js_str(&unique("cap37fileperm"));
+    let noarg = js_str(&unique("cap37filenoarg"));
+    let rewrite = js_str(&unique("cap37filerewrite"));
+
+    // 三参 TTL：生效期内可读
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.putFile({ttl}, 'ttl-file', 1))")
+        ),
+        "true",
+        "putFile 带 saveTime 应写入成功"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.getFile({ttl}))")
+        ),
+        "ttl-file",
+        "TTL 生效期内 getFile 应命中"
+    );
+
+    // 缺省 saveTime（两参）与 saveTime=0 均按永久处理
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.putFile({noarg}, 'noarg-file'))")
+        ),
+        "true"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.putFile({perm}, 'perm-file', 0))")
+        ),
+        "true"
+    );
+
+    // 同键 TTL → 永久重写：旧 deadline 必须清除，否则新值会被提前判过期
+    eval_as(
+        &engine,
+        &source.book_source_url,
+        &format!("cache.putFile({rewrite}, 'first', 1)"),
+    );
+    eval_as(
+        &engine,
+        &source.book_source_url,
+        &format!("cache.putFile({rewrite}, 'second')"),
+    );
+
+    std::thread::sleep(std::time::Duration::from_millis(1150));
+
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.getFile({ttl}))")
+        ),
+        "null",
+        "saveTime=1 秒过期后 getFile 必须为 null（修复前永不过期）"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.getFile({noarg}))")
+        ),
+        "noarg-file",
+        "缺省 saveTime 必须按永久处理"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.getFile({perm}))")
+        ),
+        "perm-file",
+        "saveTime=0 必须按永久处理"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("String(cache.getFile({rewrite}))")
+        ),
+        "second",
+        "永久重写后旧 TTL deadline 不得生效"
+    );
+
+    for key in [&ttl, &perm, &noarg, &rewrite] {
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            &format!("cache.delete({key})"),
+        );
+    }
+}
+
 /// `cache.put` 的值必须落磁盘：清掉内存层与变量表（模拟进程重启）后，
 /// 新引擎仍能从 cache_store 磁盘层读回。修复前值只在变量表，清掉即丢。
 #[test]
@@ -400,7 +509,79 @@ fn setup_engine_cache_dev_id_still_roundtrips() {
         "cap37-dev-0001",
         "dev_id 与 cache.get/put 同一存储"
     );
+    // P3-2：经别名访问时 getter/setter 以接收者（this）为准，读写不漂移
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            "var alias = cache; alias.dev_id = 'cap37-dev-0002'; String(cache.dev_id)"
+        ),
+        "cap37-dev-0002",
+        "别名写入后本体读回（this 接收者语义）"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            "String(cache.get('dev_id'))"
+        ),
+        "cap37-dev-0002",
+        "别名写入仍落同一 cache_store 键"
+    );
     eval_as(&engine, &source.book_source_url, "cache.delete('dev_id')");
+}
+
+/// P3-2：`dev_id` 挂载用 own-property 判定——自定义引擎 cache 的原型链上
+/// 已有同名属性时仍须为本对象挂 own 属性（不接受不可控的原型值）。
+#[test]
+fn setup_engine_dev_id_mounts_own_property_over_prototype() {
+    let source = book_source("https://cap37devidproto.example.com");
+    let engine = production_engine();
+    // 预置自定义引擎 cache：原型链带 dev_id；实例 get/put 落私有 store
+    engine
+        .eval(
+            r#"
+            (function () {
+              var store = {};
+              var proto = { dev_id: 'proto-value' };
+              var custom = Object.create(proto);
+              custom.get = function (k) {
+                return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null;
+              };
+              custom.put = function (k, v) { store[k] = String(v); };
+              globalThis.cache = custom;
+            })();
+            "#,
+        )
+        .expect("预置自定义 cache 失败");
+    let setup = book_source_js_setup_script(&source, &HashMap::new(), None, None)
+        .expect("setup 脚本生成失败");
+    with_current_source_tag(&source.book_source_url, || engine.eval(&setup))
+        .expect("setup eval 失败");
+
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            "String(Object.prototype.hasOwnProperty.call(cache, 'dev_id'))"
+        ),
+        "true",
+        "原型链同名属性不得阻止 own 属性挂载"
+    );
+    assert_eq!(
+        eval_as(&engine, &source.book_source_url, "String(cache.dev_id)"),
+        "null",
+        "own getter 读自定义 store（空）而非原型值"
+    );
+    assert_eq!(
+        eval_as(
+            &engine,
+            &source.book_source_url,
+            "cache.dev_id = 'own-value'; String(cache.get('dev_id'))"
+        ),
+        "own-value",
+        "own setter 写入接收者的 cache.put"
+    );
 }
 
 // ---------------------------------------------------------------------------
