@@ -4674,26 +4674,24 @@ fn register_archive_apis<'js>(
     // 批33 P2-2：默认输出同样过**写**策略——输入可能位于共享字体缓存
     // （`queryTTF(url)` 会落盘任意响应字节，含 ZIP 伪装的 `.ttf`），
     // 不校验默认输出会让书源借缓存中的压缩包向字体缓存写入。
+    //
+    // 批37 收尾：默认输出推导 + 读/写策略闸门统一走
+    // `extract_archive_with_policy`（与 un7zFile / unrarFile 同一实现），
+    // 不再在本处手写 resolve_read → archive_default_output_dir →
+    // resolve_write，避免默认命名或策略调用方式变化时两处口径漂移。
+    // 空路径返回空串是 `unzipFile` 特有语义（上游 `unArchiveFile`），
+    // 在进入公共闸门前短路，保持既有行为。
     let unarchive = rquickjs::Function::new(ctx.clone(), move |zip_path: RhinoStr| -> String {
         if zip_path.is_empty() {
             return String::new();
         }
-        let path = match policy.resolve_read_path(&zip_path) {
-            Ok(p) => p,
-            Err(e) => return format!("[ERROR] {}", e),
-        };
-        // 默认输出 = 输入同目录 + 去扩展名文件夹，必须同样过**写**策略：
-        // 输入可能位于共享字体缓存（`queryTTF(url)` 会把 URL 的任意响应
-        // 字节落盘，含 ZIP 伪装的 `.ttf`，解析失败也不清理）。修复前默认
-        // 输出沿用输入父目录 → 书源可借缓存中的压缩包向字体缓存投毒。
-        let out_dir = match policy
-            .resolve_write_path(&archive_default_output_dir(&path, "unzipped").to_string_lossy())
-        {
-            Ok(p) => p.to_string_lossy().into_owned(),
-            Err(e) => return format!("[ERROR] {}", e),
-        };
-        archive_utils::un_archive_file(&path.to_string_lossy(), Some(out_dir.as_str()))
-            .unwrap_or_else(|e| format!("[ERROR] {}", e))
+        extract_archive_with_policy(
+            policy,
+            &zip_path,
+            None,
+            "unzipped",
+            archive_utils::un_archive_file,
+        )
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("unzipFile", unarchive.clone())

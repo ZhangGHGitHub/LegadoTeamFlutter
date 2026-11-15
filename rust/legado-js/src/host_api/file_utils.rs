@@ -405,6 +405,11 @@ mod impl_file_utils {
     /// 上游正则 `\s*,\s*(?=\{)`：第一个「逗号 + 可选空白 + `{`」处切分；
     /// 前半为实际请求 URL，后半为选项 JSON。`data:` URI 不属于下载场景，此处
     /// 不做 `legado-parser` 的 base64 特判。
+    ///
+    /// 与上游的逐条细节差异及保留理由见 [`download_file_name`] 的
+    /// 「有意差异」清单（批37 收尾）。此处不复用 `legado-parser` 的私有
+    /// 选项切分：其要求剩余串以 `}` 结尾，且绑定 `AnalyzeUrl` 的模板替换 /
+    /// 请求构造语义，用作命名入口会改变现有行为。
     fn split_url_option(url: &str) -> (&str, Option<&str>) {
         let bytes = url.as_bytes();
         let mut index = 0;
@@ -478,6 +483,36 @@ mod impl_file_utils {
     /// 与上游的安全差异：选项 `type` 直接拼进文件名（上游未校验），若含
     /// `/`/`..` 会改变落盘层级或触发我方 `FsPolicy` 拒绝；这里收敛为
     /// 「ASCII 字母数字才采用，否则回退 URL 后缀」。
+    ///
+    /// # 与上游的有意差异清单（批36 P3-3 登记，批37 收尾）
+    ///
+    /// 命名语义以 `AnalyzeUrl.type ?: UrlUtil.getSuffix(url)` 为基准，但
+    /// **不复用 `legado-parser`**：`split_url_option` / `parse_url_option`
+    /// 均为私有实现且绑定模板替换 / 请求构造（`AnalyzeUrl::parse` 会做
+    /// `{{}}` 变量替换、绝对 URL 拼接与 query 编码），用作「只取扩展名」
+    /// 的入口会引入无关语义；其切分还额外要求剩余串以 `}` 结尾，与上游
+    /// GSON 宽松解析也不一致。以下差异经逐条核对后保留：
+    ///
+    /// 1. **逗号前空白**：上游 `paramPattern = \s*,\s*(?=\{)` 把逗号前空白
+    ///    并入分隔符（`"a.jpg ,{...}"` 的上游 URL 段为 `"a.jpg"`，后缀
+    ///    `jpg`）；我方从逗号处切分，URL 段保留尾随空白，后缀校验失败
+    ///    回退 `ext`。不改：尾随空白不是合法 URL 内容，回退 `ext` 能保证
+    ///    落盘名确定且不会把空白带进文件名；为对齐而裁剪会改变请求 URL
+    ///    字节，超出命名收敛的范围。
+    /// 2. **切分时机**：上游 `CustomUrl.kt:13-22` 与
+    ///    `AnalyzeUrl.kt:250-256` 同样**无条件**按 `paramPattern` 剥离
+    ///    （选项 JSON 解析失败只影响属性收集），与我方一致，不构成差异；
+    ///    此处记录以澄清早期审查登记。
+    /// 3. **非字符串 `type`**：上游 GSON 的 String 适配器会把
+    ///    `{"type":1}` 强转为 `"1"` 并作为扩展名；我方 `as_str()` 视为
+    ///    无 type 并回退 URL 后缀。不改：数字/布尔 `type` 在书源语料中
+    ///    未观察到，GSON 隐式强转属宽松解析副作用；只接受字符串可避免
+    ///    非预期值进入落盘名。
+    /// 4. **含 `.` 的 `type`**（如 `tar.gz`）：上游直接采用得到
+    ///    `<hash>.tar.gz`；我方 ASCII 字母数字收敛把 `.` 视为非法并回退
+    ///    URL 后缀（`a.tar.gz` → `.gz`）。不改：`type` 来自书源可控的
+    ///    选项 JSON，放行 `.` 会同时放行 `..` 与多级后缀，落盘名层级
+    ///    不再可预测；批37 明确不为命名对齐放宽该安全收敛。
     pub(crate) fn download_file_name(url: &str) -> String {
         let type_hint = url_option_type(url)
             .filter(|raw| raw.chars().all(|c| c.is_ascii_alphanumeric()))
