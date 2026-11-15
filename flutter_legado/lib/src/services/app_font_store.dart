@@ -71,6 +71,14 @@ class AppFontStore {
   /// 允许的字体扩展名（小写、无点）
   static const Set<String> allowedExtensions = <String>{'ttf', 'otf', 'ttc'};
 
+  /// 落盘文件名基名的 UTF-8 字节上限。
+  ///
+  /// Linux/Android 单个文件名上限是 255 **字节**（`NAME_MAX`），NTFS/APFS
+  /// 按字符计，故只看 rune 数在 4 字节字符（emoji）下会超限。基名之外还有
+  /// 32 字节内容哈希 + `_` + `.` + 扩展名（≤3）以及导入临时文件的
+  /// `.tmp-<微秒>` 后缀（≤22），合计 ≤ 59 字节，取 160 留足余量。
+  static const int _maxBaseNameBytes = 160;
+
   /// 注册到 Flutter 引擎的字体族名前缀。
   ///
   /// 后缀取**字体内容** md5 前 8 位：换字体（即使沿用同一文件名）后族名
@@ -513,7 +521,8 @@ class AppFontStore {
   }
 
   /// 文件名校验/归一：去掉路径与控制字符，保留 Unicode 文件名；
-  /// 确保以白名单扩展名结尾，长度上限 100 字符（避免路径过长）。
+  /// 确保以白名单扩展名结尾，长度上限 100 字符且基名 ≤160 UTF-8 字节
+  /// （避免超出文件系统的单文件名长度上限）。
   static String _sanitizeFileName(String originalName, String ext) {
     var base = _baseName(originalName);
     // 去掉源扩展名（是否白名单已在上层校验），只保留基名
@@ -528,12 +537,31 @@ class AppFontStore {
     if (_windowsReservedNames.contains(base.toUpperCase())) {
       base = '_$base';
     }
-    // 按 Unicode 码点（rune）截断，避免切断代理对产生非法 UTF-16
+    // 按 Unicode 码点（rune）截断，避免切断代理对产生非法 UTF-16；
+    // 同时限制 UTF-8 字节数：Linux/Android 按字节计 255 上限，纯 rune
+    // 限制在 4 字节字符下仍会 ENAMETOOLONG，导致导入直接失败。
     final maxBaseRunes = 100 - ext.length - 1;
-    if (base.runes.length > maxBaseRunes) {
-      base = String.fromCharCodes(base.runes.take(maxBaseRunes));
+    final truncated = StringBuffer();
+    var runeCount = 0;
+    var byteCount = 0;
+    for (final rune in base.runes) {
+      if (runeCount >= maxBaseRunes) break;
+      final size = _utf8BytesOfRune(rune);
+      if (byteCount + size > _maxBaseNameBytes) break;
+      truncated.writeCharCode(rune);
+      runeCount++;
+      byteCount += size;
     }
+    base = truncated.isEmpty ? 'app_font' : truncated.toString();
     return '$base.$ext';
+  }
+
+  /// 单个 Unicode 码点的 UTF-8 编码字节数
+  static int _utf8BytesOfRune(int rune) {
+    if (rune <= 0x7F) return 1;
+    if (rune <= 0x7FF) return 2;
+    if (rune <= 0xFFFF) return 3;
+    return 4;
   }
 
   /// Windows 保留设备名（大小写不敏感，带扩展名同样保留）

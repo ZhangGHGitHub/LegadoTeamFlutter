@@ -5,6 +5,7 @@
 // 替换字体删除旧自有文件、字体文件不被主题背景图孤儿清理误删、以及
 // 「应用字体不触碰阅读正文字体」的分离约束。
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -361,6 +362,15 @@ void main() {
       reason: '不得留下孤立的 UTF-16 代理项',
     );
     expect(display.contains('\uFFFD'), isFalse);
+    // 落盘名（含 32 字节内容哈希）不得超过 POSIX NAME_MAX：Linux/Android
+    // 按 UTF-8 字节计 255，只按 rune 截断时 96 个 emoji 即 384 字节，
+    // 导入会以 ENAMETOOLONG 失败（Windows 按码元计，掩盖了该缺陷）。
+    final storedName = longId.split('/').last;
+    expect(
+      utf8.encode(storedName).length,
+      lessThanOrEqualTo(255),
+      reason: '单文件名不得超过文件系统 NAME_MAX（Linux/Android 按字节计）',
+    );
 
     final reservedId = await AppFontStore.importBytes(
       validSfnt(),
