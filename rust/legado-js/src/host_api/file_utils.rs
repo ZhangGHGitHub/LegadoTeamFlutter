@@ -5,14 +5,18 @@
 //! - writeFile — 写入文件（我方扩展，**非原版能力**：仅
 //!   `allow_file_access=true` 时注册）
 //! - fileExists — 检查文件是否存在（我方扩展，同上仅 permissive 注册）
-//! - deleteFile — 删除文件
+//! - deleteFile — 删除文件或目录（目录递归，对齐上游
+//!   `FileUtils.delete(file, true)`）
 //! - readTxtFile — 读取文本文件（支持编码）
 //! - downloadFile — 下载文件到沙箱（`(url)` / `(contentHex, url)` 为原版
 //!   形态；`(url, fileName)` 文件名重载是我方扩展，仅 permissive 注册），
-//!   按**原始字节**落盘（二进制无损）
-//! - cacheFile — 缓存网络文件（URL hash 为文件名，返回文件内容）
+//!   按**原始字节**落盘（二进制无损）；命名与返回值对齐上游
+//!   `JsExtensions.kt:518-540`：`<md5Encode16(url)>.<type>`，返回源内
+//!   **相对名**（上游返回相对缓存目录的路径）
+//! - cacheFile — 缓存网络文件（`md5Encode16(url)` 为键与文件名，返回文件内容）
 //! - importScript — 读取本地/远端 JS 脚本（远端经 cacheFile）
-//! - getTxtInFolder — 获取文件夹下所有文件内容
+//! - getTxtInFolder — 获取文件夹下所有文件内容（读完删除该目录，对齐上游
+//!   `JsExtensions.kt:917`）
 //!
 //! # 路径边界（P1-1）
 //!
@@ -28,10 +32,20 @@
 //! 沙箱根按当前书源 tag 分子目录（`<注入根>/<SHA-256(tag) 前 16 字节>`），
 //! 无 tag 时用 `_shared`：`getTxtInFolder(".")` 只能遍历当前书源自己的
 //! 文件，`downloadFile` / `cacheFile` 的落盘也互不可见。同一书源内
-//! `downloadFile` 返回的路径可被 `readTxtFile` / `getFile` 直接消费。
+//! `downloadFile` 返回的**相对名**可被 `readTxtFile` / `getFile` 直接消费
+//! （两者相对路径按当前书源沙箱根解析）。
 //! `cacheFile` 的 URL→文件映射同样收敛为**源内相对名**（见 [`cache_file`]）：
-//! 命中按当前源沙箱解析，多源共享同一 URL 不再互相覆盖，`cache.get(md5(url))`
-//! 也不会泄露其他源的绝对路径。
+//! 命中按当前源沙箱解析，多源共享同一 URL 不再互相覆盖，
+//! `cache.get(md5Encode16(url))` 也不会泄露其他源的绝对路径。
+//!
+//! # 目录删除（批33 偏差收口）
+//!
+//! 上游 `deleteFile` 对目录**递归删除**（`JsExtensions.kt:848` →
+//! `FileUtils.delete(file, true)`）、`getTxtInFolder` 读完**删除目录**
+//! （`JsExtensions.kt:917`），本模块同步该副作用。差异：我方沙箱根按书源
+//! 隔离，删掉根目录会让本源后续 `downloadFile` / `cacheFile` /
+//! `getTxtInFolder` 全部失效，因此两个入口都拒绝删除引擎根（沙箱根 /
+//! 字体缓存根），返回明确错误或告警，不静默清空。
 //!
 //! # 资源上限（P2-6 / P1-1）
 //!
@@ -215,18 +229,59 @@ mod impl_file_utils {
         Ok(path.exists())
     }
 
-    /// 删除文件
+    /// 删除文件或目录
     ///
-    /// 对应 Kotlin: `deleteFile(path)`；仅删除普通文件（不递归删目录，
-    /// 避免 JS 侧误删沙箱目录树）。
+    /// 对应 Kotlin: `deleteFile(path)`（`JsExtensions.kt:848-851`：
+    /// `FileUtils.delete(getFile(path), true)`）——**目录递归删除**，返回是否
+    /// 存在并删除成功。差异（安全边界）：`path` 解析后等于引擎根（当前书源
+    /// 沙箱根 / 字体缓存根）时拒绝并返回明确错误——我方沙箱按书源隔离，
+    /// 根目录就是该源的整个存储空间，删掉会让本源后续文件 API 全部失效；
+    /// 上游共享 `externalCache`，不存在这个「本源根」概念。
     pub fn delete_file(policy: &FsPolicy, relative_path: &str) -> Result<bool, String> {
         let path = policy.resolve_write_path(relative_path)?;
-        if path.exists() {
-            fs::remove_file(&path).map_err(|e| format!("Delete error: {}", e))?;
-            Ok(true)
-        } else {
-            Ok(false)
+        if !path.exists() {
+            return Ok(false);
         }
+        remove_path(&path)?;
+        Ok(true)
+    }
+
+    /// 递归删除文件/目录（调用方已完成 `FsPolicy` 写策略校验）
+    ///
+    /// 引擎根（[`default_sandbox_root`] / `font_api::font_cache_dir`）拒绝：
+    /// 目录存在时 `canonicalize` 后与两根逐一比较（Windows `canonicalize`
+    /// 两侧同样带 `\\?\` 前缀，直接比较即可）。
+    pub(crate) fn remove_path(path: &Path) -> Result<(), String> {
+        ensure_not_engine_root(path)?;
+        let metadata = fs::symlink_metadata(path).map_err(|e| format!("Delete error: {}", e))?;
+        if metadata.is_dir() {
+            fs::remove_dir_all(path).map_err(|e| format!("Delete error: {}", e))
+        } else {
+            fs::remove_file(path).map_err(|e| format!("Delete error: {}", e))
+        }
+    }
+
+    /// 引擎根保护（`deleteFile` / `getTxtInFolder` 共用）
+    fn ensure_not_engine_root(path: &Path) -> Result<(), String> {
+        let Ok(target) = fs::canonicalize(path) else {
+            return Ok(());
+        };
+        let roots = [
+            default_sandbox_root(),
+            crate::host_api::font_api::font_cache_dir(),
+        ];
+        let is_root = roots.iter().any(|root| {
+            fs::canonicalize(root)
+                .map(|canonical| canonical == target)
+                .unwrap_or(false)
+        });
+        if is_root {
+            return Err(format!(
+                "Delete error: 拒绝删除引擎沙箱根目录（{}）",
+                path.display()
+            ));
+        }
+        Ok(())
     }
 
     /// 列出目录下所有文件名
@@ -281,29 +336,107 @@ mod impl_file_utils {
         Ok(decoded.into_owned())
     }
 
-    /// 去掉 URL 的 query/fragment，便于取扩展名与文件名
-    fn url_path_part(url: &str) -> &str {
-        let no_fragment = url.split('#').next().unwrap_or(url);
-        no_fragment.split('?').next().unwrap_or(no_fragment)
+    /// 从 URL 中分离 `,{...}` 选项（对齐上游 `AnalyzeUrl.paramPattern`）
+    ///
+    /// 上游正则 `\s*,\s*(?=\{)`：第一个「逗号 + 可选空白 + `{`」处切分；
+    /// 前半为实际请求 URL，后半为选项 JSON。`data:` URI 不属于下载场景，此处
+    /// 不做 `legado-parser` 的 base64 特判。
+    fn split_url_option(url: &str) -> (&str, Option<&str>) {
+        let bytes = url.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] == b',' {
+                let mut probe = index + 1;
+                while probe < bytes.len()
+                    && matches!(bytes[probe], b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c)
+                {
+                    probe += 1;
+                }
+                if probe < bytes.len() && bytes[probe] == b'{' {
+                    return (&url[..index], Some(&url[probe..]));
+                }
+            }
+            index += 1;
+        }
+        (url, None)
     }
 
-    /// MD5 前 16 位（对齐 Kotlin `md5Encode16`）
-    fn md5_hex16(input: &str) -> String {
-        use md5::{Digest, Md5};
+    /// URL 选项 JSON 中的 `type`（对齐 `AnalyzeUrl.type` / `UrlOption.getType`）
+    ///
+    /// 仅接受字符串且非空白（`getType()` 对 blank 返回 null）；JSON 非法 /
+    /// 非对象 / 无 `type` 均视为无选项类型。返回值未做文件名安全校验，由
+    /// `download_file_name` 统一收敛。
+    fn url_option_type(url: &str) -> Option<String> {
+        let (_, option) = split_url_option(url);
+        let value: serde_json::Value = serde_json::from_str(option?).ok()?;
+        let type_hint = value.get("type")?.as_str()?;
+        (!type_hint.trim().is_empty()).then(|| type_hint.to_string())
+    }
 
-        let mut hasher = Md5::new();
-        hasher.update(input.as_bytes());
-        let hash_hex = hex::encode(hasher.finalize());
-        hash_hex[..16].to_string()
+    /// 扩展名（对齐上游 `UrlUtil.getSuffix`）
+    ///
+    /// `JsExtensions.kt:521` 在无选项 `type` 时调用
+    /// `UrlUtil.getSuffix(url)`：取选项前 URL 的最后一段（`substringAfterLast
+    /// ("/")`）→ 去 `?query` → 去 `#fragment` → 最后一个 `.` 之后；仅当
+    /// 长度 ≤ 5 且全为 ASCII 字母数字时采用，否则回退 `"ext"`
+    /// （`UrlUtil.kt:154-167` 的 `fileSuffixRegex` + `default "ext"`）。
+    fn url_suffix(url: &str) -> &str {
+        let (url, _) = split_url_option(url);
+        let last_segment = url.rsplit('/').next().unwrap_or(url);
+        let no_query = last_segment.split('?').next().unwrap_or(last_segment);
+        let no_fragment = no_query.split('#').next().unwrap_or(no_query);
+        // Kotlin substringAfterLast(".", "")：无 `.` 时为空串（→ ext），
+        // 不能把整个末段当作后缀
+        let suffix = match no_fragment.rsplit_once('.') {
+            Some((_, suffix)) => suffix,
+            None => "",
+        };
+        if !suffix.is_empty()
+            && suffix.len() <= 5
+            && suffix.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            suffix
+        } else {
+            "ext"
+        }
+    }
+
+    /// downloadFile 落盘名（对齐上游 `JsExtensions.kt:518-540`）
+    ///
+    /// 上游：`type = AnalyzeUrl.type ?: UrlUtil.getSuffix(url)`，文件名 =
+    /// `<MD5Utils.md5Encode16(url)>.<type>`。要点：
+    /// - `md5Encode16` 是 MD5 小写 hex 的**中段 16 字符**（`[8, 24)`，
+    ///   `MD5Utils.kt:29-33`），不是前 16 字符；
+    /// - hash 覆盖**完整入参**（含 `,{...}` 选项），故同一资源的不同选项得到
+    ///   不同文件，同名末段的不同 URL 不会互相覆盖；
+    /// - 上游不读 Content-Type，扩展名只来自选项 `type` 或 URL 后缀。
+    ///
+    /// 与上游的安全差异：选项 `type` 直接拼进文件名（上游未校验），若含
+    /// `/`/`..` 会改变落盘层级或触发我方 `FsPolicy` 拒绝；这里收敛为
+    /// 「ASCII 字母数字才采用，否则回退 URL 后缀」。
+    pub(crate) fn download_file_name(url: &str) -> String {
+        let type_hint = url_option_type(url)
+            .filter(|raw| raw.chars().all(|c| c.is_ascii_alphanumeric()))
+            .unwrap_or_else(|| url_suffix(url).to_string());
+        format!(
+            "{}.{}",
+            crate::host_api::encoding::md5_encode_16(url),
+            type_hint
+        )
     }
 
     /// downloadFile(url, fileName?) — 下载文件到沙箱
     ///
     /// 对应 Kotlin: `downloadFile(url)`（**单参**）；`fileName` 第二参数是
     /// 我方扩展，注册层仅在 `allow_file_access=true` 时接受（P1-1：非原版
-    /// 能力不进入生产注册面）。返回沙箱内**绝对路径**（上游返回相对路径，
-    /// 我方既有实现返回绝对路径，书源把返回值直接交给
-    /// readTxtFile/getFile/解压 API 时两者等价）。
+    /// 能力不进入生产注册面）。
+    ///
+    /// 返回**相对文件名**（上游返回相对缓存目录的路径；我方相对名按当前
+    /// 书源沙箱根解析，`readTxtFile` / `getFile` 直接可用）。命名见
+    /// `download_file_name`：`<md5Encode16(url)>.<type>`，不同 URL 同名
+    /// 末段（`/a/cover.jpg` 与 `/b/cover.jpg`）落不同文件，不再互相覆盖。
+    /// 我方扩展 `fileName` 存在时按调用方给定名落盘并原样返回该名（可为
+    /// 绝对路径，permissive 调试场景保持既有行为）。
     ///
     /// 落盘为**原始字节**（P1-2）：下载走 legado-net 的
     /// `get_bytes_capped`（流式有上限、不经 UTF-8 解码），不再经
@@ -335,11 +468,7 @@ mod impl_file_utils {
     ) -> Result<String, String> {
         let name = match file_name {
             Some(n) if !n.is_empty() => n.to_string(),
-            _ => url_path_part(url)
-                .rsplit('/')
-                .find(|s| !s.is_empty())
-                .unwrap_or("download")
-                .to_string(),
+            _ => download_file_name(url),
         };
 
         // 落盘路径必须先过写策略（越界在联网前即拒绝）
@@ -360,25 +489,36 @@ mod impl_file_utils {
             fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
         }
         fs::write(&dest, &bytes).map_err(|e| format!("Write error: {}", e))?;
-        Ok(dest.to_string_lossy().into_owned())
+        // 返回相对名（对齐上游 `path.substring(getCachePath().length)` 的相对
+        // 形态；上游含前导分隔符，我方 `FsPolicy` 相对路径按沙箱根拼接，
+        // 前导 `/` 在 Windows 会被解释为「当前盘根」而越界，故省去）
+        Ok(name)
     }
 
     /// downloadFile(contentHex, url) — 废弃重载：十六进制内容按 url 类型落盘
     ///
-    /// 对应 Kotlin: `@Deprecated downloadFile(content, url)`；返回相对文件名。
+    /// 对应 Kotlin: `@Deprecated downloadFile(content, url)`
+    /// （`JsExtensions.kt:549-570`）：`type = AnalyzeUrl.type ?: return ""`，
+    /// 文件名 `<md5Encode16(url)>.<type>`，返回相对名。与单参形态的差异是
+    /// **没有 URL 后缀回退**——选项未给出 `type` 时上游直接返回空串且不落盘，
+    /// 这里保持一致（`type` 非法字符同样视为不可用，见 `download_file_name`
+    /// 的安全说明）。
     pub fn download_file_from_hex(
         policy: &FsPolicy,
         content_hex: &str,
         url: &str,
     ) -> Result<String, String> {
-        // 从 url 猜扩展名（对齐 AnalyzeUrl.type / UrlUtil.getSuffix 的轻量近似）
-        let type_hint = url_path_part(url)
-            .rsplit('.')
-            .next()
-            .filter(|s| s.len() <= 8 && s.chars().all(|c| c.is_ascii_alphanumeric()))
-            .unwrap_or("bin");
+        let Some(type_hint) =
+            url_option_type(url).filter(|raw| raw.chars().all(|c| c.is_ascii_alphanumeric()))
+        else {
+            // 对齐上游 `?: return ""`：无合法 type 不写文件
+            return Ok(String::new());
+        };
 
-        let name = format!("{}.{type_hint}", md5_hex16(url));
+        let name = format!(
+            "{}.{type_hint}",
+            crate::host_api::encoding::md5_encode_16(url)
+        );
         let dest = policy.resolve_write_path(&name)?;
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
@@ -405,11 +545,11 @@ mod impl_file_utils {
     ///
     /// # 缓存键值形态（P2-2：跨源隔离与缓存抖动）
     ///
-    /// 键仍是上游可见的裸 `md5(url)`（上游 `JsExtensions.cacheFile` 把
-    /// `downloadFile` 返回的**相对路径**写入 `CacheManager`，且 `AnalyzeRule`
-    /// 把 `CacheManager` 绑为 JS `cache`，书源可 `cache.get(md5Encode16(url))`
-    /// 读回该值——故键与可读性保留），但**值改为本源相对文件名**
-    /// `"<md5>.<ext>"`，而非绝对路径：
+    /// 键是上游可见的 `md5Encode16(url)`（MD5 小写 hex 中段 16 字符，对齐
+    /// `MD5Utils.md5Encode16`，也是 JS 侧 `java.md5Encode16` 的返回值；书源
+    /// `cache.get(md5Encode16(url))` 可直接读回）。值改为**源内相对文件名**
+    /// `"<md5Encode16>.<type>"`，与 `download_file_name` 完全一致，而非
+    /// 绝对路径：
     /// - 命中时 `resolve_read_path` 按当前书源的沙箱根解析 → 每个源只可能
     ///   命中自己目录下的文件，A 源的映射不会被 B 源当成命中；
     /// - 同一 URL 的相对文件名与源无关，多源共享同一 URL（公共 CDN jsLib
@@ -421,9 +561,10 @@ mod impl_file_utils {
     ///
     /// 兼容性：旧版本写入的绝对路径条目在**本源**仍可命中（策略放行时直接
     /// 读取），跨源时 `resolve_read_path` 越界 → 视为 miss 并重新下载，随后
-    /// 映射被覆盖为本源相对名。
+    /// 映射被覆盖为本源相对名。键从旧实现的「MD5 前 16 字符」改为中段 16
+    /// 字符后，旧键条目自然 miss（重新下载并写新键），无数据损坏。
     pub fn cache_file(policy: &FsPolicy, url: &str, save_time_secs: i64) -> Result<String, String> {
-        let key = md5_hex16(url);
+        let key = crate::host_api::encoding::md5_encode_16(url);
 
         // 缓存记录里的路径同样要过读策略（防止 JS 先 cache.put 一个越界路径）。
         // 顺序：策略先行，再做存在性探测（越界路径不触发任何文件系统探测）。
@@ -439,13 +580,8 @@ mod impl_file_utils {
             }
         }
 
-        // 保留原始扩展名（去掉 query/fragment 后取最后一段）
-        let ext = url_path_part(url)
-            .rsplit('.')
-            .next()
-            .filter(|s| s.len() <= 5 && s.chars().all(|c| c.is_alphanumeric()))
-            .unwrap_or("cache");
-        let cache_name = format!("{key}.{ext}");
+        // 与 downloadFile(url) 同一命名规则（md5Encode16 + 选项 type/URL 后缀）
+        let cache_name = download_file_name(url);
 
         let path = download_file(policy, url, Some(&cache_name))?;
         // P2-2：只记相对名，不把沙箱绝对路径写进进程级缓存（跨源可读键）
@@ -475,13 +611,16 @@ mod impl_file_utils {
 
     /// getTxtInFolder(folderPath) — 获取文件夹下所有文件内容（换行拼接）
     ///
-    /// 对应 Kotlin: `getTxtInFolder(path)`：读取文件夹内**所有文件**（不限
-    /// 扩展名）并以换行拼接。有意偏差：上游读取后递归删除该文件夹，我方
-    /// 不删除（避免 JS 侧对沙箱内容做破坏性清理；沙箱本身由系统临时目录
-    /// 管理）。每个文件读取前单独过策略，防止目录内符号链接越界。
+    /// 对应 Kotlin: `getTxtInFolder(path)`（`JsExtensions.kt:903-917`）：读取
+    /// 文件夹内**所有文件**（不限扩展名）并以换行拼接，然后
+    /// `FileUtils.delete(folder.absolutePath)` **递归删除该目录**。删除失败
+    /// 只告警、不影响已读到的返回内容；`folderPath` 解析后等于引擎根（当前
+    /// 书源沙箱根 / 字体缓存根）时同样拒绝删除（见 `ensure_not_engine_root`）。
+    /// 每个文件读取前单独过策略，防止目录内符号链接越界。
     ///
     /// 资源上限（P2-6）：先按元数据累计，超 64MB 直接拒绝（不读入）；读取
-    /// 过程再按实际字节复核（元数据可被并发修改）。超限显式报错。
+    /// 过程再按实际字节复核（元数据可被并发修改）。超限显式报错，且不删除
+    /// 目录（与上游一致：读取异常发生在删除之前）。
     pub fn get_txt_in_folder(policy: &FsPolicy, folder_path: &str) -> Result<String, String> {
         let resolved = policy.resolve_read_path(folder_path)?;
         if !resolved.exists() {
@@ -531,6 +670,15 @@ mod impl_file_utils {
                 ));
             }
             contents.push(text);
+        }
+
+        // 对齐上游 `FileUtils.delete(folder.absolutePath)`（deleteRootDir=true）：
+        // 读完递归删除目录。删除失败（含引擎根保护）只告警，不影响返回内容。
+        if let Err(error) = remove_path(&resolved) {
+            eprintln!(
+                "[getTxtInFolder] 删除目录失败（{}）：{error}",
+                resolved.display()
+            );
         }
 
         Ok(contents.join("\n"))
@@ -713,7 +861,7 @@ mod tests {
     use super::*;
     use crate::host_api::fs_policy::FsPolicy;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -736,13 +884,10 @@ mod tests {
         let _ = fs::remove_dir_all(&path);
     }
 
-    /// 测试侧复算 cacheFile 键（实现模块内 `md5_hex16` 为私有）
+    /// 测试侧取 cacheFile 键（对齐 `MD5Utils.md5Encode16`：MD5 小写 hex
+    /// `[8, 24)` 中段 16 字符）
     fn cache_key16(input: &str) -> String {
-        use md5::{Digest, Md5};
-
-        let mut hasher = Md5::new();
-        hasher.update(input.as_bytes());
-        hex::encode(hasher.finalize())[..16].to_string()
+        crate::host_api::encoding::md5_encode_16(input)
     }
 
     // ---- 基本文件操作测试 ----
@@ -943,13 +1088,19 @@ mod tests {
         let files = list_files(&restricted(), test_dir).unwrap();
         assert_eq!(files.len(), 3);
 
-        // getTxtInFolder 读取所有文件（对齐上游 listFiles，不限扩展名）
+        // getTxtInFolder 读取所有文件（对齐上游 listFiles，不限扩展名；
+        // 读完删除目录——JsExtensions.kt:917）
         let txt_content = get_txt_in_folder(&restricted(), test_dir).unwrap();
         assert!(txt_content.contains("file a"));
         assert!(txt_content.contains("file b"));
         assert!(txt_content.contains("log c"));
+        assert!(
+            !sandbox_root().join(test_dir).exists(),
+            "getTxtInFolder 读完应删除目录（对齐上游）"
+        );
 
-        // 删除文件
+        // 重建目录，验证 deleteFile 删文件
+        write_file(&restricted(), "test_ops_dir/a.txt", "file a").unwrap();
         assert!(delete_file(&restricted(), "test_ops_dir/a.txt").unwrap());
         assert!(!file_exists(&restricted(), "test_ops_dir/a.txt").unwrap());
 
@@ -974,6 +1125,136 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Not a directory"));
         cleanup_test_file("not_a_dir.txt");
+    }
+
+    // ---- 批33 偏差收口：downloadFile 命名/相对名、deleteFile 递归、
+    // ---- getTxtInFolder 读完删除目录 ----
+
+    /// `downloadFile(url)` 命名对齐上游：`md5Encode16(url)` + 类型后缀，
+    /// 返回相对名；同名末段的不同 URL 不互相覆盖，返回值可被 readTxtFile 消费
+    #[test]
+    fn test_download_file_md5_name_relative_return_and_no_overwrite() {
+        setup_sandbox();
+        // 两个不同端口的回环服务，路径末段同为 `cover.jpg`（模拟
+        // `/a/cover.jpg` 与 `/b/cover.jpg`）
+        let (url_a, _) = spawn_counting_body_server("COVER_A", "cover.jpg");
+        let (url_b, _) = spawn_counting_body_server("COVER_B", "cover.jpg");
+        assert_eq!(
+            url_a.rsplit('/').next(),
+            url_b.rsplit('/').next(),
+            "两个 URL 末段应相同（覆盖场景前提）"
+        );
+
+        let name_a = download_file(&restricted(), &url_a, None).unwrap();
+        let name_b = download_file(&restricted(), &url_b, None).unwrap();
+
+        // 命名 = md5Encode16(完整 URL) + `.jpg`（中段 16 字符）
+        assert_eq!(name_a, format!("{}.jpg", cache_key16(&url_a)));
+        assert_eq!(name_b, format!("{}.jpg", cache_key16(&url_b)));
+        assert_ne!(name_a, name_b, "同名末段的不同 URL 不得互相覆盖");
+        assert!(!Path::new(&name_a).is_absolute(), "应返回相对名: {name_a}");
+        assert!(
+            !name_a.contains('/') && !name_a.contains('\\'),
+            "相对名不得含路径分隔符: {name_a}"
+        );
+
+        let root = sandbox_root();
+        assert_eq!(fs::read(root.join(&name_a)).unwrap(), b"COVER_A");
+        assert_eq!(fs::read(root.join(&name_b)).unwrap(), b"COVER_B");
+
+        // 返回值可直接被 readTxtFile 消费（相对名按本源沙箱根解析）
+        assert_eq!(
+            read_txt_file(&restricted(), &name_a, None).unwrap(),
+            "COVER_A"
+        );
+
+        let _ = fs::remove_file(root.join(&name_a));
+        let _ = fs::remove_file(root.join(&name_b));
+    }
+
+    /// 命名规则细节（对齐 `UrlUtil.getSuffix` + `AnalyzeUrl.type`）：
+    /// 后缀大小写保留、长度 >5 / 非字母数字回退 `ext`、无 `.` 回退 `ext`、
+    /// 选项 `type` 优先；hash 覆盖完整入参（含选项）
+    #[test]
+    fn test_download_file_name_rules() {
+        // 后缀取自选项前 URL 的最后一段，query/fragment 不参与
+        assert!(download_file_name("https://h/p/a.JPG").ends_with(".JPG"));
+        assert!(download_file_name("https://h/p/a.jpg?x=1#f").ends_with(".jpg"));
+        // 长度 > 5 或非 ASCII 字母数字 → ext
+        assert!(download_file_name("https://h/p/a.verylong").ends_with(".ext"));
+        assert!(download_file_name("https://h/p/a.jp-g").ends_with(".ext"));
+        assert!(download_file_name("https://h/p/no_suffix").ends_with(".ext"));
+        // 选项 type 优先（大小写保留），hash 覆盖含选项的完整 URL
+        let with_type = "https://h/p/a.jpg, {\"type\":\"webp\"}";
+        let name = download_file_name(with_type);
+        assert_eq!(name, format!("{}.webp", cache_key16(with_type)));
+        // type 含路径字符（上游会直接拼接）→ 我方回退 URL 后缀，避免改变层级
+        assert!(download_file_name("https://h/p/a.jpg,{\"type\":\"../evil\"}").ends_with(".jpg"));
+        // type 存在但不是字符串 → 视为无类型
+        assert!(download_file_name("https://h/p/a.jpg,{\"type\":1}").ends_with(".jpg"));
+    }
+
+    /// `deleteFile(dir)` 递归删除（对齐上游 `FileUtils.delete(file, true)`）
+    #[test]
+    fn test_delete_file_removes_directory_recursively() {
+        setup_sandbox();
+        let dir_name = "test_delete_tree";
+        cleanup_test_dir(dir_name);
+        write_file(&restricted(), "test_delete_tree/nested/a.txt", "a").unwrap();
+        write_file(&restricted(), "test_delete_tree/b.txt", "b").unwrap();
+
+        assert!(delete_file(&restricted(), dir_name).unwrap());
+        assert!(
+            !sandbox_root().join(dir_name).exists(),
+            "目录及其内容应全部删除"
+        );
+        assert!(!file_exists(&restricted(), "test_delete_tree/nested/a.txt").unwrap());
+    }
+
+    /// 引擎根（沙箱根 / 字体缓存根）拒绝删除
+    #[test]
+    fn test_remove_path_rejects_engine_roots() {
+        let checks = [
+            default_sandbox_root(),
+            crate::host_api::font_api::font_cache_dir(),
+        ];
+        for root in checks {
+            fs::create_dir_all(&root).unwrap();
+            // 删除步骤本身拒绝（deleteFile / getTxtInFolder 共用该守卫）
+            let err = super::impl_file_utils::remove_path(&root).unwrap_err();
+            assert!(
+                err.contains("拒绝删除引擎沙箱根目录"),
+                "{}: {err}",
+                root.display()
+            );
+            assert!(root.exists(), "引擎根不得被删除: {}", root.display());
+        }
+
+        // deleteFile(".") 解析后等于当前书源沙箱根 → 明确错误
+        let err = delete_file(&restricted(), ".").unwrap_err();
+        assert!(err.contains("拒绝删除引擎沙箱根目录"), "err = {err}");
+    }
+
+    /// `getTxtInFolder` 读完删除目录（内容不受影响；子目录被递归清理）
+    #[test]
+    fn test_get_txt_in_folder_deletes_directory_after_read() {
+        setup_sandbox();
+        let dir_name = "test_txt_folder_delete";
+        cleanup_test_dir(dir_name);
+        write_file(&restricted(), "test_txt_folder_delete/one.txt", "ONE").unwrap();
+        write_file(
+            &restricted(),
+            "test_txt_folder_delete/nested/two.txt",
+            "TWO",
+        )
+        .unwrap();
+
+        let content = get_txt_in_folder(&restricted(), dir_name).unwrap();
+        assert_eq!(content, "ONE", "只拼接直接文件，内容不受删除影响");
+        assert!(
+            !sandbox_root().join(dir_name).exists(),
+            "读完应删除目录（含子目录）"
+        );
     }
 
     // ---- cacheFile 跨源隔离（P2-2） ----

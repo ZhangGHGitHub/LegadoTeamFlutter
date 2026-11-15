@@ -180,13 +180,14 @@ fn production_config_registers_upstream_file_apis_only() {
 
     // downloadFile(url, fileName) 文件名重载：生产不注册该扩展能力。P3-1 后
     // 生产一律按上游语义把第二参数当 deprecated hex 重载的 url，第一参数不是
-    // 合法十六进制 → 明确 [ERROR]，且不联网（回环端口 1）。
+    // 合法十六进制 → 明确 [ERROR]，且不联网（回环端口 1）。选项需带 type，
+    // 否则上游在解码十六进制之前就 `?: return ""`（JsExtensions.kt:556）。
     assert_error_string(
         &engine,
         &format!(
             "java.downloadFile({}, {})",
             js_str("http://127.0.0.1:1/never-reached.bin"),
-            js_str("custom-name.bin")
+            js_str("custom-name.bin,{\"type\":\"bin\"}")
         ),
         "Hex decode error",
     );
@@ -241,14 +242,20 @@ fn restricted_mode_reads_sandbox_files() {
         .unwrap();
     assert_eq!(result, "hello|hello||true|a.txt");
 
-    // 文件夹读取（对齐上游 listFiles：不限扩展名）
+    // 文件夹读取（对齐上游 listFiles：不限扩展名），读完递归删除目录
+    // （JsExtensions.kt:903）
     let folder = engine
         .eval(&format!("java.getTxtInFolder({})", js_str(&sub)))
         .unwrap();
     assert!(folder.contains("hello"), "folder = {folder}");
     assert!(folder.contains("world"), "folder = {folder}");
+    assert!(
+        !base.join(&sub).exists(),
+        "getTxtInFolder 读完应删除目录（对齐上游）"
+    );
 
-    // 删除 + 删除后元数据
+    // 删除 + 删除后元数据（重建文件，目录已被上一步删除）
+    write_fixture(&base, &format!("{sub}/a.txt"), "hello");
     let deleted = engine
         .eval(&format!(
             "java.deleteFile({})",
@@ -317,12 +324,10 @@ fn restricted_mode_rejects_paths_outside_sandbox() {
         &format!("java.importScript({})", js_str("../legado_p1_escape.js")),
         "文件访问被拒绝",
     );
-    // downloadFile(url) 的 URL 尾段为 `..`：落盘路径越界，联网前即拒绝
-    assert_error_string(
-        &engine,
-        &format!("java.downloadFile({})", js_str("http://127.0.0.1:1/..")),
-        "文件访问被拒绝",
-    );
+    // downloadFile：命名改为 `<md5Encode16(url)>.<type>` 后 URL 不再参与
+    // 落盘路径构造（`..` / 分隔符无法注入；选项 type 的字符集收敛在
+    // `download_file_name`，见单元测试 test_download_file_name_rules）。
+    // 这里保留写侧策略探针 deleteFile 的越界拒绝（上方循环已覆盖）。
 
     #[cfg(windows)]
     {
@@ -421,7 +426,7 @@ fn spawn_loopback(
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
     let addr = listener.local_addr().expect("local_addr");
     std::thread::spawn(move || {
-        for stream in listener.incoming().take(8) {
+        for stream in listener.incoming().take(12) {
             let Ok(mut sock) = stream else { continue };
             let path = read_request_path(&mut sock);
             {
@@ -430,6 +435,8 @@ fn spawn_loopback(
             }
             let resp = match path.as_str() {
                 "/download.bin" => response(200, "application/octet-stream", BINARY_FIXTURE),
+                "/a/cover.jpg" => response(200, "image/jpeg", b"COVER_A"),
+                "/b/cover.jpg" => response(200, "image/jpeg", b"COVER_B"),
                 "/script.js" => response(200, "text/plain", b"1 + 1"),
                 "/import.js" => response(200, "text/plain", b"globalThis.__imported_value = 42;"),
                 _ => response(404, "text/plain", b"not found"),
@@ -488,23 +495,33 @@ fn restricted_mode_download_cache_import_script() {
     let base = file_utils::default_sandbox_root();
     let sub = unique("file_api_dl");
 
-    // downloadFile(url) → 沙箱内落盘（文件名由 URL 尾段生成），返回绝对路径
+    // downloadFile(url) → 沙箱内落盘（命名 = md5Encode16(url) + 类型后缀，
+    // 对齐上游 JsExtensions.kt:518-540），返回**相对名**
+    let download_url = format!("http://{addr}/download.bin");
     let downloaded = engine
-        .eval(&format!(
-            "java.downloadFile({})",
-            js_str(&format!("http://{addr}/download.bin"))
-        ))
+        .eval(&format!("java.downloadFile({})", js_str(&download_url)))
         .unwrap();
     assert!(
         !downloaded.starts_with("[ERROR]"),
         "downloadFile 失败: {downloaded}"
     );
-    let downloaded_path = PathBuf::from(&downloaded);
-    // P2-1：返回路径即 canonical（校验路径 = IO 路径）
-    assert_eq!(downloaded_path, canonical_expected(&downloaded_path));
+    assert!(
+        !Path::new(&downloaded).is_absolute(),
+        "downloadFile 应返回相对名: {downloaded}"
+    );
+    assert!(
+        !downloaded.contains('/') && !downloaded.contains('\\'),
+        "相对名不得含路径分隔符: {downloaded}"
+    );
+    assert!(
+        downloaded.ends_with(".bin"),
+        "扩展名应取自 URL 后缀: {downloaded}"
+    );
+    let downloaded_path = base.join(&downloaded);
     assert!(
         downloaded_path.starts_with(canonical_expected(&base)),
-        "落盘路径应在沙箱内: {downloaded}（沙箱根 {}）",
+        "落盘路径应在沙箱内: {}（沙箱根 {}）",
+        downloaded_path.display(),
         base.display()
     );
     assert_eq!(
@@ -512,7 +529,34 @@ fn restricted_mode_download_cache_import_script() {
         BINARY_FIXTURE,
         "downloadFile 必须按原始字节落盘（P1-2：非 UTF-8 字节不得被替换为 U+FFFD）"
     );
+    // 返回值可直接交给 readTxtFile（相对名按本源沙箱根解析）
+    let roundtrip = engine
+        .eval(&format!(
+            "String(java.readTxtFile({}))",
+            js_str(&downloaded)
+        ))
+        .unwrap();
+    assert_eq!(
+        roundtrip,
+        String::from_utf8_lossy(BINARY_FIXTURE),
+        "downloadFile 返回值应可被 readTxtFile 直接消费"
+    );
     let _ = std::fs::remove_file(&downloaded_path);
+
+    // 同名末段的不同 URL 不互相覆盖（上游按 md5(完整 URL) 命名）
+    let cover_a = format!("http://{addr}/a/cover.jpg");
+    let cover_b = format!("http://{addr}/b/cover.jpg");
+    let name_a = engine
+        .eval(&format!("java.downloadFile({})", js_str(&cover_a)))
+        .unwrap();
+    let name_b = engine
+        .eval(&format!("java.downloadFile({})", js_str(&cover_b)))
+        .unwrap();
+    assert_ne!(name_a, name_b, "不同 URL 即使末段相同也不得同名");
+    assert_eq!(std::fs::read(base.join(&name_a)).unwrap(), b"COVER_A");
+    assert_eq!(std::fs::read(base.join(&name_b)).unwrap(), b"COVER_B");
+    let _ = std::fs::remove_file(base.join(&name_a));
+    let _ = std::fs::remove_file(base.join(&name_b));
 
     // cacheFile(url) 返回**内容**；二次调用命中缓存不再请求
     let url = format!("http://{addr}/script.js");
@@ -562,22 +606,43 @@ fn restricted_mode_download_cache_import_script() {
 fn production_download_file_hex_reload_accepts_non_http_second_arg() {
     let engine = production_engine();
     let base = file_utils::default_sandbox_root();
-    // 内容 00ff801f → 落盘 0x00 0xFF 0x80 0x1F；url 非 http 开头
-    let returned = engine
+
+    // 上游 `downloadFile(content, url)`：type 只来自 URL 选项，缺省直接
+    // 返回 "" 且不落盘（JsExtensions.kt:554-570，无 URL 后缀回退）
+    let no_type = engine
         .eval(&format!(
             "java.downloadFile({}, {})",
             js_str("00ff801f"),
             js_str("//cdn.example/files/payload.bin")
         ))
         .unwrap();
+    assert_eq!(
+        no_type, "",
+        "缺省 type 时上游返回空串（P3-1：第二参仍按 url 解释）"
+    );
+
+    // 选项 type 存在：落盘 `<md5Encode16(url)>.<type>`，返回相对名
+    // （内容 00ff801f → 0x00 0xFF 0x80 0x1F；url 非 http 开头）
+    let url = "//cdn.example/files/payload.bin,{\"type\":\"bin\"}";
+    let returned = engine
+        .eval(&format!(
+            "java.downloadFile({}, {})",
+            js_str("00ff801f"),
+            js_str(url)
+        ))
+        .unwrap();
     assert!(
         !returned.starts_with("[ERROR]"),
         "deprecated hex 重载应执行: {returned}"
     );
-    // 对齐 Kotlin：返回相对文件名（md5(url) 前 16 位 + 扩展名）
+    // 对齐 Kotlin：返回相对文件名（md5Encode16 + 选项 type）
     assert!(
         !Path::new(&returned).is_absolute(),
         "hex 重载应返回相对文件名: {returned}"
+    );
+    assert!(
+        returned.ends_with(".bin"),
+        "扩展名应来自选项 type: {returned}"
     );
     let path = base.join(&returned);
     assert_eq!(

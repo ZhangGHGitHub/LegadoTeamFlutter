@@ -8201,8 +8201,14 @@ mod tests {
         ));
         assert!(result.contains("第一页正文"), "首页正文应保留: {result}");
 
+        // downloadFile 命名对齐上游（JsExtensions.kt:518-540）：
+        // md5Encode16(完整 URL) + 类型后缀，不再是 URL 尾段
+        let expected_name = format!(
+            "{}.bin",
+            legado_js::host_api::encoding::md5_encode_16(&download_url)
+        );
         let expected_dir = with_current_source_tag(&source_url, default_sandbox_root);
-        let expected_path = expected_dir.join(&file_name);
+        let expected_path = expected_dir.join(&expected_name);
         assert!(
             expected_path.is_file(),
             "分页 JS downloadFile 应落在本源沙箱目录 {}（实际返回: {result}）",
@@ -8218,7 +8224,7 @@ mod tests {
         let shared_path = std::env::temp_dir()
             .join("legado_js_cache")
             .join("_shared")
-            .join(&file_name);
+            .join(&expected_name);
         assert!(
             !shared_path.exists(),
             "分页正文文件 API 不得落 _shared: {}",
