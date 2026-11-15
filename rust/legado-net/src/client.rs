@@ -1043,8 +1043,14 @@ impl LegadoClient {
 
         // 全量捕获最终响应的 Set-Cookie（HashMap 会折叠同名多值，见
         // `collect_set_cookie_values` 文档）；provider 已逐跳写回的路径下
-        // 不再重复落库（`wrote_any`）
-        let set_cookie_values = collect_set_cookie_values(raw_response.headers());
+        // 不再重复落库（`wrote_any`），故先判写回条件、条件成立才收集，
+        // 省一次响应头分配（P2-2 写放大）
+        let final_writeback = save_cookies && !cookie_ctx.wrote_any();
+        let set_cookie_values = if final_writeback {
+            collect_set_cookie_values(raw_response.headers())
+        } else {
+            Vec::new()
+        };
         let final_url = raw_response.url().to_string();
         let stream = crate::response::LegadoStreamResponse::new(raw_response, permit);
         // 流式路径响应体尚未读取（无 peep 能力）：只记录响应头/状态，body 留空
@@ -1054,7 +1060,7 @@ impl LegadoClient {
         }
         // 写侧 CookieJar 门控：Set-Cookie 随响应头到达，立即写回（与 get_raw
         // 在响应体读完后写回的可见结果一致；流式路径不能等 body 结束）
-        if save_cookies && !cookie_ctx.wrote_any() {
+        if final_writeback {
             self.save_cookies_from_response(&original_url, &final_url, &set_cookie_values);
         }
         Ok(stream)
@@ -1199,8 +1205,14 @@ impl LegadoClient {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
 
-        // 全量 Set-Cookie（HashMap 收头会折叠同名多值，故先单独取）
-        let set_cookie_values = collect_set_cookie_values(response.headers());
+        // 全量 Set-Cookie（HashMap 收头会折叠同名多值，故先单独取）；
+        // provider 已逐跳写回时无需兜底，先判条件再收集（P2-2）
+        let final_writeback = save_cookies && !cookie_ctx.wrote_any();
+        let set_cookie_values = if final_writeback {
+            collect_set_cookie_values(response.headers())
+        } else {
+            Vec::new()
+        };
 
         // 收集响应头
         let mut headers = HashMap::new();
@@ -1211,7 +1223,7 @@ impl LegadoClient {
         }
 
         // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求；provider 已写则跳过）
-        if save_cookies && !cookie_ctx.wrote_any() {
+        if final_writeback {
             self.save_cookies_from_response(original_url, &final_url, &set_cookie_values);
         }
 
@@ -1257,8 +1269,14 @@ impl LegadoClient {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
 
-        // 全量 Set-Cookie（HashMap 收头会折叠同名多值）
-        let set_cookie_values = collect_set_cookie_values(response.headers());
+        // 全量 Set-Cookie（HashMap 收头会折叠同名多值）；provider 已逐跳
+        // 写回时无需兜底，先判条件再收集（P2-2）
+        let final_writeback = save_cookies && !cookie_ctx.wrote_any();
+        let set_cookie_values = if final_writeback {
+            collect_set_cookie_values(response.headers())
+        } else {
+            Vec::new()
+        };
 
         // 收集响应头
         let mut headers = HashMap::new();
@@ -1269,7 +1287,7 @@ impl LegadoClient {
         }
 
         // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求；provider 已写则跳过）
-        if save_cookies && !cookie_ctx.wrote_any() {
+        if final_writeback {
             self.save_cookies_from_response(original_url, &final_url, &set_cookie_values);
         }
 
@@ -1308,7 +1326,9 @@ impl LegadoClient {
     ///
     /// `set_cookie_values` 必须是**全量**多条（不得先折叠成 HashMap——同名
     /// 多值折叠会丢掉除最后一条外的全部 `Set-Cookie`，见
-    /// [`collect_set_cookie_values`]）。
+    /// [`collect_set_cookie_values`]）。解析后的 `pairs` 交给
+    /// [`persist_cookie_pairs`]，后者只把本次键值对（而非整域视图）传给
+    /// DB 与 JS 罐写穿（P1-1）。
     ///
     /// 锁纪律与锁序不变式见 [`persist_cookie_pairs`]（D → J → 释放 J →
     /// 持久化 → 释放 D → JS 罐写穿 observer）；`cookies` 行与 JS 侧共享，
@@ -2015,6 +2035,9 @@ mod tests {
     // ─── Cookie 持久化测试（内存模拟后端） ────────────────────
 
     /// 测试用内存持久化后端
+    ///
+    /// `save` 与生产 `DbCookiePersistence` 同语义：`cookie` 是**本次变更的
+    /// 键值对**（P1-1 后不再传整域视图），按键并集合并、同名 incoming 胜。
     #[derive(Default)]
     struct MockPersistence {
         data: Mutex<HashMap<String, String>>,
@@ -2027,10 +2050,13 @@ mod tests {
         }
 
         fn save(&self, tag: &str, cookie: &str) {
-            self.data
-                .lock()
-                .unwrap()
-                .insert(tag.to_string(), cookie.to_string());
+            let mut data = self.data.lock().unwrap();
+            let merged = match data.get(tag) {
+                Some(existing) => CookieStore::merge_cookies_str(existing, cookie)
+                    .unwrap_or_else(|| cookie.to_string()),
+                None => cookie.to_string(),
+            };
+            data.insert(tag.to_string(), merged);
         }
     }
 
@@ -2092,17 +2118,17 @@ mod tests {
 
     // ─── 重要 1：并发同域双写（per-domain 写通道） ─────────────
 
-    /// 并发测试用：带「过期捕获慢落库」闸门的假持久化后端
+    /// 并发测试用：带「慢落库」闸门的假持久化后端
     ///
-    /// 写回串缺少全量标记（= 过期捕获，未含另一线程的键）时 `save` 延迟
-    /// `slow_ms`——修复前确定性地制造「过期落库最后落库」的交错：另一线程的
-    /// 全量串（快速落库）已在延迟窗口内完成，最后落库必为过期视图；
-    /// 修复后（`domain_write_lock` 按域串行锁）两线程严格串行：先取锁者捕获
-    /// 必为单键（慢落库、先落库），后取锁者捕获必为全量串（快落库、最后
-    /// 落库），最终落库行 = 内存终态。
+    /// P1-1 后 `save` 载荷是**本次变更的键值对**（不再外传整域视图）；
+    /// 本替身与生产 `DbCookiePersistence` 同语义做按键并集合并（incoming
+    /// 胜）。写回串不含 `fast_when_contains` 的写方延迟 `slow_ms`，用于在
+    /// `domain_write_lock`（D）缺失/失效时扩大「读-合并-写」交错窗口：
+    /// 带该标记的写方先落库，随后被延迟写方以合并语义补齐并集——最终
+    /// 落库行仍必须等于内存终态。
     struct GatedPersistence {
         data: Mutex<HashMap<String, String>>,
-        /// 全量串标记：写回串包含之 = 全量捕获 → 立即落库；否则慢落库
+        /// 快速落库标记：写回串包含之 = 立即落库；否则慢落库
         fast_when_contains: String,
         /// 慢落库时长（毫秒）
         slow_ms: u64,
@@ -2115,14 +2141,18 @@ mod tests {
         }
 
         fn save(&self, tag: &str, cookie: &str) {
-            // 闸门：过期捕获（缺少全量标记）→ 慢落库，拉大窗口强制交错
+            // 闸门：不含快速标记 → 慢落库，拉大合并窗口
             if !cookie.contains(&self.fast_when_contains) {
                 std::thread::sleep(std::time::Duration::from_millis(self.slow_ms));
             }
-            self.data
-                .lock()
-                .unwrap()
-                .insert(tag.to_string(), cookie.to_string());
+            let mut data = self.data.lock().unwrap();
+            // 生产同款合并 upsert（键并集、同名 incoming 胜）
+            let merged = match data.get(tag) {
+                Some(existing) => CookieStore::merge_cookies_str(existing, cookie)
+                    .unwrap_or_else(|| cookie.to_string()),
+                None => cookie.to_string(),
+            };
+            data.insert(tag.to_string(), merged);
         }
     }
 
@@ -2139,12 +2169,10 @@ mod tests {
 
     /// 重要 1：并发同域双写，persist 后的最终状态必须等于内存终态
     ///
-    /// **修复前（必红）**：无按域串行锁时，先完成 jar 写入的线程捕获「过期
-    /// 视图」（写回串缺另一线程的键）→ 被慢落库闸门拖延，最后落库必为该
-    /// 过期视图 → 落库行回退（内存含双键，落库行只有单键，重启回填=旧值），
-    /// 断言必红；
-    /// **修复后（必绿）**：`domain_write_lock` 使两线程严格串行，后取锁者
-    /// 捕获必为全量串并最后落库 → 落库行 = 内存终态。
+    /// P1-1 后写回载荷是**本次变更键**（不再外传整域视图），落库实现按键
+    /// 并集合并——两线程并发写不同键时必须都留在库内（无丢更新），且最终
+    /// 落库行与内存终态一致。慢落库闸门放大「读-合并-写」交错窗口：若
+    /// 按域写通道（D）或合并语义失效，可能出现只留单键的落库行。
     #[test]
     fn test_concurrent_same_domain_persist_equals_memory() {
         const URL: &str = "https://www.concurrent-write.test/";
@@ -2998,7 +3026,8 @@ mod tests {
             .expect("带标记请求应成功");
         assert_eq!(resp.status, 200);
 
-        // 写侧：Set-Cookie 应写回持久化后端（含预载 DB cookie）
+        // 写侧：Set-Cookie 应写回持久化后端（P1-1 后载荷仅本次键，
+        // 生产同款合并 upsert 保留库内既有键）
         let saved = persistence
             .data
             .lock()
@@ -3012,7 +3041,7 @@ mod tests {
         );
         assert!(
             saved.contains("dbcookie=fromDB"),
-            "落库行为 jar 全量视图（含预载 DB cookie）: {saved:?}"
+            "落库行应保留库内既有键（合并 upsert，incoming 胜）: {saved:?}"
         );
 
         // 标记头不得出网；读侧 DB cookie 无条件注入

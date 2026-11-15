@@ -40,7 +40,12 @@ impl Cookie {
 pub trait CookiePersistence: Send + Sync {
     /// 加载全部持久化 Cookie，返回 `(域名 tag, "name=value; ...")` 列表
     fn load_all(&self) -> Vec<(String, String)>;
-    /// 插入/更新单个域名的 Cookie 字符串
+    /// 合并写入单个域名的 Cookie 键值串
+    ///
+    /// **载荷是「本次变更的键值对」而非该域全量视图**（P1-1）：实现必须
+    /// 按键合并 upsert（同名 incoming 胜、未出现的键保留），不得先删行再
+    /// 整体覆盖——HTTP 层只把响应解析出的 pairs 传下来，罐内未变更的键
+    /// 不应被外传，否则会用旧视图回滚 JS 侧/库内较新的同名值。
     fn save(&self, tag: &str, cookie: &str);
 }
 

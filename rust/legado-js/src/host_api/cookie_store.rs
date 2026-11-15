@@ -116,11 +116,15 @@ pub fn backfill_from_sink() {
     }
 }
 
-/// HTTP 层写回的 JS 罐写穿（P2-2）：把网络层刚写入 App 罐/DB 的该域全量
-/// cookie 串镜像进 `GLOBAL_COOKIES`，使 `java.getCookie` 在**同进程运行期**
+/// HTTP 层写回的 JS 罐写穿（P2-2）：把网络层本次写入 App 罐/DB 的**变更
+/// 键值对**镜像进 `GLOBAL_COOKIES`，使 `java.getCookie` 在**同进程运行期**
 /// 立即可见（含 3xx 逐跳捕获与最终响应写入）。
 ///
 /// 语义要点：
+/// - 入参是「本次响应写入的键值对」，**不是该域全量视图**（P1-1）：App 罐
+///   与 JS 罐是两个存储（`java.setCookie` 只写 JS 罐/DB），传整域视图会把
+///   App 罐同名旧值反向覆盖 JS 新值（登录态在进程内被打回）。调用方
+///   （net 层 `CookieWriteObserver`）已按此口径收窄载荷；
 /// - **只更新内存罐（G 锁），不写下沉**——DB 已由 `legado-net` 的
 ///   `CookiePersistence` 写回；重复 upsert 会把「同键 incoming 胜」的合并
 ///   语义执行两次（幂等但放大 DB 写）；

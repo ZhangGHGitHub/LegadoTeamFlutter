@@ -1638,6 +1638,9 @@ mod tests {
 
     /// 内存版 CookiePersistence 测试替身（模拟 `legado-ffi::http_state::DbCookiePersistence`
     /// 的 DB 写回，不涉真实数据库）
+    ///
+    /// `save` 与生产 DB 同语义：载荷是本次变更键（P1-1），按键并集合并、
+    /// 同名 incoming 胜。
     #[derive(Default)]
     struct RecordingPersistence {
         rows: std::sync::Mutex<HashMap<String, String>>,
@@ -1678,10 +1681,13 @@ mod tests {
         }
 
         fn save(&self, tag: &str, cookie: &str) {
-            self.rows
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .insert(tag.to_string(), cookie.to_string());
+            let mut rows = self.rows.lock().unwrap_or_else(|p| p.into_inner());
+            let merged = match rows.get(tag) {
+                Some(existing) => CookieStore::merge_cookies_str(existing, cookie)
+                    .unwrap_or_else(|| cookie.to_string()),
+                None => cookie.to_string(),
+            };
+            rows.insert(tag.to_string(), merged);
         }
     }
 

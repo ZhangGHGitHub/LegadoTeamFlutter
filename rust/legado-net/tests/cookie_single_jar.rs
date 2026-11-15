@@ -14,7 +14,11 @@
 //! 5. `follow_redirects=false`：302 原样返回、不发第二跳，但该 302 响应上的
 //!    **多条** `Set-Cookie` 必须全量写回（改造前该 302 即「最终响应」，虽会
 //!    写回但因 HashMap 折叠只剩最后一条）；
-//! 6. 写侧门控关闭：响应 cookie 不写罐/DB，但读侧罐注入无条件保留。
+//! 6. 写侧门控关闭：响应 cookie 不写罐/DB，但读侧罐注入无条件保留；
+//! 7. 跨站重定向（P3-4）：`a.example.com` → `b.other.com` 的 302 后，
+//!    规则 overlay 与源站 jar cookie 都不得带到目标站；
+//! 8. 并发隔离（P3-4）：同 task `join!` 与跨 task `tokio::spawn` 的并发
+//!    请求各自 overlay 不串扰。
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -23,6 +27,9 @@ use std::sync::{Arc, Mutex};
 use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig, COOKIE_JAR_HEADER};
 
 /// 内存型 Cookie 持久化后端（模拟 DB `cookies` 表：域名键 → 完整 cookie 串）
+///
+/// `save` 与生产 `DbCookiePersistence` 同语义：载荷是本次变更键
+/// （P1-1 后不再传整域视图），按键并集合并、同名 incoming 胜。
 #[derive(Default)]
 struct MemoryPersistence {
     rows: Mutex<HashMap<String, String>>,
@@ -59,10 +66,15 @@ impl CookiePersistence for MemoryPersistence {
     }
 
     fn save(&self, tag: &str, cookie: &str) {
-        self.rows
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(tag.to_string(), cookie.to_string());
+        let mut rows = self.rows.lock().unwrap_or_else(|p| p.into_inner());
+        let merged = match rows.get(tag) {
+            Some(existing) => {
+                legado_net::cookie_store::CookieStore::merge_cookies_str(existing, cookie)
+                    .unwrap_or_else(|| cookie.to_string())
+            }
+            None => cookie.to_string(),
+        };
+        rows.insert(tag.to_string(), merged);
     }
 }
 
@@ -85,6 +97,17 @@ struct Route {
 async fn spawn_routes(
     routes: Vec<(&'static str, Route)>,
 ) -> (SocketAddr, Arc<Mutex<Vec<(String, String)>>>) {
+    spawn_routes_with(move |_port| routes).await
+}
+
+/// 同 [`spawn_routes`]，但路由表在监听端口确定后构建
+///
+/// 供「Location 需携带运行时端口」的跨域重定向用例使用（`Route` 的
+/// `location` 为 `&'static str`，用例内以 `Box::leak` 生成）。
+async fn spawn_routes_with<F>(build_routes: F) -> (SocketAddr, Arc<Mutex<Vec<(String, String)>>>)
+where
+    F: FnOnce(u16) -> Vec<(&'static str, Route)>,
+{
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -92,7 +115,8 @@ async fn spawn_routes(
         .expect("bind 127.0.0.1:0");
     let addr = listener.local_addr().expect("local_addr");
     let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
-    let routes: Arc<HashMap<&'static str, Route>> = Arc::new(routes.into_iter().collect());
+    let routes: Arc<HashMap<&'static str, Route>> =
+        Arc::new(build_routes(addr.port()).into_iter().collect());
 
     let seen_srv = Arc::clone(&seen);
     tokio::spawn(async move {
@@ -137,6 +161,9 @@ async fn spawn_routes(
                     Some(route) => (route.status, route.location, route.set_cookies, route.body),
                     None => ("404 Not Found", None, empty, "not-found"),
                 };
+                // 固定短延迟：保证并发用例的两个请求在服务端确实同时在途
+                //（每跳 +100ms，全文件用例总耗时影响可忽略）
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 let mut resp = format!("HTTP/1.1 {status}\r\nContent-Type: text/plain\r\n");
                 if let Some(loc) = location {
                     resp.push_str(&format!("Location: {loc}\r\n"));
@@ -598,5 +625,260 @@ async fn test_gate_off_skips_writeback_but_read_side_still_injects() {
         persistence.row("127.0.0.1"),
         "dbcookie=fromDB",
         "门控关闭时不得落库"
+    );
+}
+
+/// 7) 跨站重定向（P3-4）：规则 overlay 与源站 jar cookie 都不得带到目标站
+///
+/// `a.example.com`（域键 `example.com`）302 → `b.other.com`（域键
+/// `other.com`）。源站请求携带规则 `Cookie: rule=1`，罐内预载
+/// `srcjar=1`，302 响应再写 `hop=1`；目标站请求必须**一个都不带**
+/// （overlay 归属域不匹配 → 自动失效；jar 按请求域键取值 → `other.com`
+/// 无条目）。同时源站 302 的 `hop=1` 必须正常落入源站域。
+#[tokio::test]
+async fn test_cross_domain_redirect_does_not_leak_overlay_or_jar() {
+    let (addr, seen) = spawn_routes_with(|port| {
+        // Location 需携带运行时端口：`Route.location` 为 `&'static str`，
+        // 测试内一次性 leak 换取静态生命周期
+        let location: &'static str =
+            Box::leak(format!("http://b.other.com:{port}/final").into_boxed_str());
+        vec![
+            (
+                "/start",
+                Route {
+                    status: "302 Found",
+                    location: Some(location),
+                    set_cookies: &["hop=1; Path=/"],
+                    body: "",
+                },
+            ),
+            (
+                "/final",
+                Route {
+                    status: "200 OK",
+                    location: None,
+                    set_cookies: &[],
+                    body: "final",
+                },
+            ),
+        ]
+    })
+    .await;
+
+    legado_net::apply_custom_hosts(r#"{"a.example.com": "127.0.0.1", "b.other.com": "127.0.0.1"}"#)
+        .expect("应用 hosts 映射");
+
+    let persistence = Arc::new(MemoryPersistence::default());
+    persistence.preload("example.com", "srcjar=1");
+    let client = test_client(&persistence);
+
+    let mut headers = marker_headers().unwrap();
+    headers.insert("Cookie".to_string(), "rule=1".to_string());
+
+    let resp = client
+        .get(
+            &format!("http://a.example.com:{}/start", addr.port()),
+            Some(headers),
+        )
+        .await
+        .expect("跨站重定向请求应成功");
+    assert_eq!(resp.status, 200, "跟随重定向后应为 200");
+    assert!(resp.url.ends_with("/final"), "最终 URL: {}", resp.url);
+
+    let hops = seen.lock().unwrap().clone();
+    assert_eq!(hops.len(), 2, "应恰好两跳: {hops:?}");
+    let start = cookie_map(
+        &hops
+            .iter()
+            .find(|(p, _)| p == "/start")
+            .expect("应有 /start 跳")
+            .1,
+    );
+    assert_eq!(
+        start.get("rule"),
+        Some(&"1".to_string()),
+        "源站首跳应携带规则 overlay: {hops:?}"
+    );
+    assert_eq!(
+        start.get("srcjar"),
+        Some(&"1".to_string()),
+        "源站首跳应携带源站 jar cookie: {hops:?}"
+    );
+
+    let final_cookie = cookie_map(
+        &hops
+            .iter()
+            .find(|(p, _)| p == "/final")
+            .expect("应有 /final 跳")
+            .1,
+    );
+    assert!(
+        final_cookie.is_empty(),
+        "目标站不得携带规则 overlay / 源站 jar / 302 新写 cookie: {hops:?}"
+    );
+
+    // 源站 302 的 Set-Cookie 仍落源站域键；目标域不产生条目
+    let store = client.cookie_store().read().unwrap();
+    assert_eq!(
+        store.get_key("example.com", "hop"),
+        Some("1".to_string()),
+        "302 的 Set-Cookie 必须写入源站域键"
+    );
+    assert!(
+        store.get_key("other.com", "srcjar").is_none(),
+        "源站 cookie 不得出现在目标域键"
+    );
+    drop(store);
+    let source_row = persistence.row("example.com");
+    assert!(
+        source_row.contains("srcjar=1") && source_row.contains("hop=1"),
+        "源站落库行应为合并且含 302 新键: {source_row:?}"
+    );
+    assert_eq!(persistence.row("other.com"), "", "目标域不得产生持久化行");
+
+    legado_net::clear_custom_hosts();
+}
+
+/// 8a) 并发隔离（同 task `join!`）：两个请求各自的规则 overlay 不串扰
+///
+/// 两个请求命中同一域键（`127.0.0.1`）但覆盖键值不同；服务端固定延迟
+/// 100ms 保证两者同时在途（`join!` 在同一 task 内交替 poll）。任一请求
+/// 若读到对方上下文，断言会看到对方键或缺少自身键。
+#[tokio::test]
+async fn test_concurrent_overlays_isolated_same_task() {
+    let (addr, seen) = spawn_routes(vec![
+        (
+            "/a",
+            Route {
+                status: "200 OK",
+                location: None,
+                set_cookies: &[],
+                body: "a",
+            },
+        ),
+        (
+            "/b",
+            Route {
+                status: "200 OK",
+                location: None,
+                set_cookies: &[],
+                body: "b",
+            },
+        ),
+    ])
+    .await;
+
+    let persistence = Arc::new(MemoryPersistence::default());
+    let client = test_client(&persistence);
+
+    let mut headers_a = marker_headers().unwrap();
+    headers_a.insert("Cookie".to_string(), "rule=A; shared=A".to_string());
+    let mut headers_b = marker_headers().unwrap();
+    headers_b.insert("Cookie".to_string(), "rule=B; shared=B".to_string());
+
+    let url_a = format!("http://{addr}/a");
+    let url_b = format!("http://{addr}/b");
+    let (resp_a, resp_b) = tokio::join!(
+        client.get(&url_a, Some(headers_a)),
+        client.get(&url_b, Some(headers_b))
+    );
+    assert_eq!(resp_a.expect("请求 A 应成功").status, 200);
+    assert_eq!(resp_b.expect("请求 B 应成功").status, 200);
+
+    assert_overlay_isolation(&seen, &client);
+}
+
+/// 8b) 并发隔离（跨 task `tokio::spawn`）：两个请求各自的规则 overlay 不串扰
+#[tokio::test]
+async fn test_concurrent_overlays_isolated_across_tasks() {
+    let (addr, seen) = spawn_routes(vec![
+        (
+            "/a",
+            Route {
+                status: "200 OK",
+                location: None,
+                set_cookies: &[],
+                body: "a",
+            },
+        ),
+        (
+            "/b",
+            Route {
+                status: "200 OK",
+                location: None,
+                set_cookies: &[],
+                body: "b",
+            },
+        ),
+    ])
+    .await;
+
+    let persistence = Arc::new(MemoryPersistence::default());
+    let client = test_client(&persistence);
+
+    let mut headers_a = marker_headers().unwrap();
+    headers_a.insert("Cookie".to_string(), "rule=A; shared=A".to_string());
+    let mut headers_b = marker_headers().unwrap();
+    headers_b.insert("Cookie".to_string(), "rule=B; shared=B".to_string());
+
+    let url_a = format!("http://{addr}/a");
+    let url_b = format!("http://{addr}/b");
+    let client_a = client.clone();
+    let client_b = client.clone();
+    let task_a = tokio::spawn(async move { client_a.get(&url_a, Some(headers_a)).await });
+    let task_b = tokio::spawn(async move { client_b.get(&url_b, Some(headers_b)).await });
+    assert_eq!(
+        task_a
+            .await
+            .expect("任务 A 不应 panic")
+            .expect("请求 A 应成功")
+            .status,
+        200
+    );
+    assert_eq!(
+        task_b
+            .await
+            .expect("任务 B 不应 panic")
+            .expect("请求 B 应成功")
+            .status,
+        200
+    );
+
+    assert_overlay_isolation(&seen, &client);
+}
+
+/// 并发隔离断言：每个路径只看到自己的 overlay（键集合精确匹配，防串扰）
+fn assert_overlay_isolation(seen: &Arc<Mutex<Vec<(String, String)>>>, client: &LegadoClient) {
+    let hops = seen.lock().unwrap().clone();
+    assert_eq!(hops.len(), 2, "应各有一次请求: {hops:?}");
+
+    let map_for = |path: &str| {
+        cookie_map(
+            &hops
+                .iter()
+                .find(|(p, _)| p == path)
+                .unwrap_or_else(|| panic!("缺少 {path} 请求: {hops:?}"))
+                .1,
+        )
+    };
+    let a = map_for("/a");
+    let b = map_for("/b");
+
+    let expected_a: HashMap<String, String> = [("rule", "A"), ("shared", "A")]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    let expected_b: HashMap<String, String> = [("rule", "B"), ("shared", "B")]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    assert_eq!(a, expected_a, "请求 A 的 overlay 被串扰: {hops:?}");
+    assert_eq!(b, expected_b, "请求 B 的 overlay 被串扰: {hops:?}");
+
+    // overlay 只存在于请求链上下文，不得写回 App 罐/DB（无 Set-Cookie）
+    let store = client.cookie_store().read().unwrap();
+    assert!(
+        store.domain_cookie_string("127.0.0.1").is_empty(),
+        "并发 overlay 不得写入 App 罐"
     );
 }

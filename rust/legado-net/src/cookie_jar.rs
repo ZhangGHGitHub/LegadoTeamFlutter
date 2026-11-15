@@ -27,7 +27,10 @@
 //!   响应刷新过的同名键让罐②新值接管（`updated`），即「首跳规则优先、
 //!   链内新值接管」；
 //! - 每条 `Set-Cookie` 全量解析（不折叠），按域串行锁（D）写罐② + 持久化，
-//!   释放 D 后经全局 [`CookieWriteObserver`] 通知 JS 罐写穿。
+//!   释放 D 后经全局 [`CookieWriteObserver`] 通知 JS 罐写穿；
+//! - **落库与写穿只传「本次响应解析出的 pairs」**（P1-1）：App 罐与 JS 罐
+//!   仍是两个存储，若把该域**全量视图**外传，罐②中的同名旧值会被反向镜像
+//!   进 JS 罐/DB，覆盖 JS 侧刚写入的新值（登录态在进程内被静默打回）。
 //!
 //! # 锁纪律（与 `cookie_store::DOMAIN_WRITE_LOCKS` 文档一致）
 //!
@@ -166,11 +169,16 @@ impl ReqwestCookieStore for AppCookieJar {
     /// reqwest 对**每一跳**响应调用（`CookieService::ResponseFuture::poll`）
     ///
     /// - 无上下文 / `save=false` → 整体跳过（写侧门控，对齐上游网络拦截器）；
+    ///   无上下文仅可能来自未来新增的、未包 `with_cookie_context` 的 send
+    ///   路径——打 debug 日志避免静默降级（P3-3），兜底写回仍保留；
     /// - 全量迭代 `Set-Cookie`（不折叠多条），逐条解析 `name=value`；
     /// - 走 [`persist_cookie_pairs`]：D 锁 → 写罐② → 持久化 → 释放 D →
     ///   通知 JS 罐写穿。
     fn set_cookies(&self, cookie_headers: &mut dyn Iterator<Item = &HeaderValue>, url: &Url) {
         let Some(ctx) = current_context() else {
+            log::debug!(
+                "cookie 写侧缺少请求级上下文（send 路径未包 with_cookie_context），已跳过响应 Set-Cookie 写回: {url}"
+            );
             return;
         };
         if !ctx.save {
@@ -269,11 +277,18 @@ pub(crate) fn parse_set_cookie_pair(raw: &str) -> Option<(String, String)> {
 
 /// 写入 App 罐 + 持久化 + JS 罐写穿（provider 与最终响应兜底共用）
 ///
+/// **只向罐外传递本次 `pairs`（P1-1）**：`persistence.save` 与 observer 收到
+/// 的是「本次响应写入的键值对」，不是该域全量视图。App 罐与 JS 罐是两个
+/// 存储（`java.setCookie` 只写 JS 罐/DB），全量视图会把 App 罐里的同名旧值
+/// 反向覆盖进 JS 罐/DB，回滚 JS 侧刚写入的新值；DB 侧本为「按键并集合并、
+/// 同名 incoming 胜」，只传变更键即可保留未出现键。
+///
 /// 锁纪律（见模块文档）：D → J（写罐 + 捕获全量视图）→ 释放 J → 持久化
 /// （仍在 D 内）→ 释放 D → observer。空视图不落库（`cookies` 行与 JS 侧
 /// 共享，空视图仅说明本次未贡献可解析 name=value，不能证明 jar 独占该行）。
 ///
-/// 返回写后该域的全量 cookie 串（供调用方断言/记录）。
+/// 返回写后该域的全量 cookie 串（仅供水位判定/调用方断言，**不得外传给
+/// 持久化或 JS 罐**）。
 pub(crate) fn persist_cookie_pairs(
     store: &Arc<RwLock<CookieStore>>,
     persistence: Option<&dyn CookiePersistence>,
@@ -283,6 +298,13 @@ pub(crate) fn persist_cookie_pairs(
     if pairs.is_empty() {
         return String::new();
     }
+    // 本次响应的变更键集合（同名多条按出现顺序，后写者胜——与罐内
+    // `set_cookie` 的同名替换及 DB/JS 的按键合并语义一致）
+    let incoming = pairs
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("; ");
     let domain_guard = domain_write_lock(domain);
     let view = {
         let Ok(mut guard) = store.write() else {
@@ -305,7 +327,7 @@ pub(crate) fn persist_cookie_pairs(
 
     if let Some(persistence) = persistence {
         if !view.is_empty() {
-            persistence.save(domain, &view);
+            persistence.save(domain, &incoming);
         }
     }
 
@@ -313,7 +335,7 @@ pub(crate) fn persist_cookie_pairs(
     drop(domain_guard);
 
     if !view.is_empty() {
-        notify_cookie_write(domain, &view);
+        notify_cookie_write(domain, &incoming);
     }
     view
 }
@@ -326,7 +348,10 @@ pub(crate) fn persist_cookie_pairs(
 /// 运行期与罐②无同步——HTTP 层（含 3xx 逐跳）新写入的 cookie 必须写穿，
 /// 否则「登录成功后立刻在 JS 里取 token」的源失败（调研报告 §2.5）。
 pub trait CookieWriteObserver: Send + Sync {
-    /// 某域全量 cookie 串已写入罐②并落库（D 锁**已释放**）
+    /// **本次响应写入的键值对**已写入罐②并落库（D 锁**已释放**）
+    ///
+    /// 参数不是该域全量视图（P1-1）：调用方必须按键合并写入 JS 罐
+    ///（同名 incoming 胜、未出现的键保留），不得先删域再整体覆盖。
     fn on_cookies_saved(&self, domain: &str, cookie_string: &str);
 }
 
@@ -458,6 +483,21 @@ mod tests {
             }
         }
 
+        /// 记录落库载荷（验证 P1-1：只传本次变更键，不传整域视图）
+        #[derive(Default)]
+        struct RecordingPersistence(Mutex<Vec<(String, String)>>);
+        impl crate::cookie_store::CookiePersistence for RecordingPersistence {
+            fn load_all(&self) -> Vec<(String, String)> {
+                Vec::new()
+            }
+            fn save(&self, tag: &str, cookie: &str) {
+                self.0
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .push((tag.to_string(), cookie.to_string()));
+            }
+        }
+
         // OnceLock 全局 first-wins：本测试独占注册（同 crate 其余用例不注册；
         // 记录器无副作用，被其它用例共享不影响其断言）
         let notifications: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
@@ -466,9 +506,15 @@ mod tests {
         let store = Arc::new(RwLock::new(CookieStore::new()));
         // 独占域名键，避免与并发用例的通知混淆
         let domain = "cookie-jar-observer-test.example";
+        // 预置罐内旧键（模拟 App 罐已从 DB 载入的旧会话；本次响应未涉及它）
+        store
+            .write()
+            .unwrap()
+            .set_cookies_from_string(domain, "old=OLD");
+        let persistence = RecordingPersistence::default();
         let view = persist_cookie_pairs(
             &store,
-            None,
+            Some(&persistence),
             domain,
             &[
                 ("a".to_string(), "1".to_string()),
@@ -479,11 +525,33 @@ mod tests {
             view.contains("a=1") && view.contains("b=2"),
             "写入后视图: {view}"
         );
+        assert!(
+            view.contains("old=OLD"),
+            "返回值仍是全量视图（供水位判定）: {view}"
+        );
         {
             let guard = store.read().unwrap();
             assert_eq!(guard.get_key(domain, "a"), Some("1".to_string()));
             assert_eq!(guard.get_key(domain, "b"), Some("2".to_string()));
+            assert_eq!(guard.get_key(domain, "old"), Some("OLD".to_string()));
         }
+        let saved = persistence
+            .0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .find(|(d, _)| d == domain)
+            .cloned()
+            .expect("本域应有一次落库");
+        assert!(
+            saved.1.contains("a=1") && saved.1.contains("b=2"),
+            "落库载荷应含本次键: {saved:?}"
+        );
+        assert!(
+            !saved.1.contains("old="),
+            "落库载荷不得含未变更的罐内旧键（P1-1 整域视图回滚）: {saved:?}"
+        );
+
         let recorded = notifications
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -491,7 +559,13 @@ mod tests {
             .find(|(d, _)| d == domain)
             .cloned()
             .expect("本域应收到一次 observer 通知");
-        assert!(recorded.1.contains("a=1"), "通知应带全量视图: {recorded:?}");
-        assert!(recorded.1.contains("b=2"), "通知应带全量视图: {recorded:?}");
+        assert!(
+            recorded.1.contains("a=1") && recorded.1.contains("b=2"),
+            "通知应带本次写入的键值对: {recorded:?}"
+        );
+        assert!(
+            !recorded.1.contains("old="),
+            "通知不得带未变更的罐内旧键（否则 JS 罐同名新值被回滚）: {recorded:?}"
+        );
     }
 }

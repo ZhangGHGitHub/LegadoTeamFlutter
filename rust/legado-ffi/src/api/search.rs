@@ -2520,6 +2520,9 @@ mod tests {
     }
 
     /// 测试用记录型 Cookie 持久化后端（写侧门控落库断言）
+    ///
+    /// `save` 与生产 `DbCookiePersistence` 同语义：载荷是本次变更键
+    /// （P1-1），按键并集合并、同名 incoming 胜。
     #[derive(Default)]
     struct GateRecordingPersistence {
         data: std::sync::Mutex<std::collections::HashMap<String, String>>,
@@ -2536,10 +2539,15 @@ mod tests {
         }
 
         fn save(&self, tag: &str, cookie: &str) {
-            self.data
-                .lock()
-                .unwrap()
-                .insert(tag.to_string(), cookie.to_string());
+            let mut data = self.data.lock().unwrap();
+            let merged = match data.get(tag) {
+                Some(existing) => {
+                    legado_net::cookie_store::CookieStore::merge_cookies_str(existing, cookie)
+                        .unwrap_or_else(|| cookie.to_string())
+                }
+                None => cookie.to_string(),
+            };
+            data.insert(tag.to_string(), merged);
         }
     }
 
