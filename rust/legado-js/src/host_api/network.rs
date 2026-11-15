@@ -275,8 +275,26 @@ static CLIENT_COOKIE_STORE: OnceLock<Arc<RwLock<CookieStore>>> = OnceLock::new()
 /// 注册共享内存 Cookie store（first-wins，同 [`set_client_cookie_persistence`]）
 ///
 /// 返回本次注册是否生效：重复注册忽略并返回 `false`（不覆盖首个实例）。
+///
+/// **附带的 JS 罐写穿（P2-2）**：注册（无论是否 first-wins 命中）都把
+/// [`legado_net::CookieWriteObserver`] 挂到 net 层——HTTP 层（含 3xx 逐跳）
+/// 写回 App 罐/DB 后，经 `host_api::cookie_store::sync_cookie_from_http`
+/// 镜像进 `GLOBAL_COOKIES`，使 `java.getCookie` 在同进程运行期立即可见 HTTP
+/// 新 cookie（此前只有启动回填一条路径）。观察者注册本身 first-wins 且无
+/// 副作用，重复调用安全。
 pub fn set_client_cookie_store(store: Arc<RwLock<CookieStore>>) -> bool {
-    CLIENT_COOKIE_STORE.set(store).is_ok()
+    let registered = CLIENT_COOKIE_STORE.set(store).is_ok();
+    let _ = legado_net::set_cookie_write_observer(Arc::new(JsCookieWriteObserver));
+    registered
+}
+
+/// HTTP 写回 → JS 罐写穿观察者
+struct JsCookieWriteObserver;
+
+impl legado_net::CookieWriteObserver for JsCookieWriteObserver {
+    fn on_cookies_saved(&self, domain: &str, cookie_string: &str) {
+        crate::host_api::cookie_store::sync_cookie_from_http(domain, cookie_string);
+    }
 }
 
 /// 书源 `enabledCookieJar` 查询钩子（批 2 写侧门控）

@@ -7,6 +7,7 @@
 //! - [`request`] — `LegadoRequest` 请求结构
 //! - [`response`] — `LegadoResponse` 响应结构
 //! - [`cookie_store`] — `CookieStore` Cookie 管理
+//! - [`cookie_jar`] — App Cookie 罐 ↔ reqwest `CookieService` 适配器（单罐根治）
 //! - [`rss`] — RSS/Atom Feed 解析器
 //! - [`cover`] — 封面图片下载与缓存
 //! - [`http_log`] — HTTP 请求日志采集接口（可插拔实现，对齐原版 `HttpLogInterceptor`）
@@ -18,6 +19,7 @@
 //! - [`ssl_config`] — SSL/TLS 配置
 
 pub mod client;
+pub mod cookie_jar;
 pub mod cookie_store;
 pub mod cover;
 pub mod custom_hosts;
@@ -49,6 +51,10 @@ mod socks5_e2e;
 // 常用类型重导出
 pub use client::{
     cookie_jar_marker_present, LegadoClient, LegadoClientConfig, MultipartPart, COOKIE_JAR_HEADER,
+};
+pub use cookie_jar::{
+    set_cookie_write_observer, with_cookie_context, AppCookieJar, CookieRequestContext,
+    CookieWriteObserver,
 };
 pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;

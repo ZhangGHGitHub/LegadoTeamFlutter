@@ -116,8 +116,32 @@ pub fn backfill_from_sink() {
     }
 }
 
-/// 备份恢复等「权威来源」场景：以 `域名键 → 完整 cookie 串` **覆盖**内存条目
+/// HTTP 层写回的 JS 罐写穿（P2-2）：把网络层刚写入 App 罐/DB 的该域全量
+/// cookie 串镜像进 `GLOBAL_COOKIES`，使 `java.getCookie` 在**同进程运行期**
+/// 立即可见（含 3xx 逐跳捕获与最终响应写入）。
 ///
+/// 语义要点：
+/// - **只更新内存罐（G 锁），不写下沉**——DB 已由 `legado-net` 的
+///   `CookiePersistence` 写回；重复 upsert 会把「同键 incoming 胜」的合并
+///   语义执行两次（幂等但放大 DB 写）；
+/// - **不取按域写通道（D）**——调用方（net 层 `CookieWriteObserver`）已在
+///   **释放 D 之后**调用本函数；此处再取 D 会与「持 D 等 G」的 JS 写方形成
+///   ABBA（`std::sync::Mutex` 不可重入）。单锁临界区已足够原子；
+/// - 键为 net 层域名键（ETLD+1，与 quickjs 档 [`normalize_cookie_key`] 同一
+///   `legado_net::cookie_store::cookie_domain_key` 真源），直接作为存储键；
+/// - 同键**incoming 胜**（HTTP 新值覆盖 JS 旧值），JS 独有键保留。
+pub fn sync_cookie_from_http(domain: &str, cookie_string: &str) {
+    if domain.is_empty() || cookie_string.is_empty() {
+        return;
+    }
+    let mut store = lock_store();
+    let entry = store.entry(domain.to_string()).or_default();
+    for (name, value) in parse_cookie_pairs(cookie_string) {
+        entry.insert(name, value);
+    }
+}
+
+/// 备份恢复等「权威来源」场景：以 `域名键 → 完整 cookie 串` **覆盖**内存条目
 /// 与 [`backfill_from_sink`] 的区别是方向：回填是「内存优先、miss 回落」
 ///（模拟重启语义，不覆盖进程内较新的内存值），而备份恢复必须让备份值
 /// **立即**生效——调用方（FFI 恢复流程）已在同一保护域内把「库内既有值 ∪

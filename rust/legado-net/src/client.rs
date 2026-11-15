@@ -5,7 +5,11 @@
 //! - 信任所有证书（与原 Kotlin SSLHelper.unsafeSSLSocketFactory 一致）
 //! - 自动重定向
 //! - 透明解压缩（gzip/brotli/deflate，对齐上游 OkHttp）
-//! - Cookie 管理集成（可选 DB 持久化，由上层注入 [`CookiePersistence`]）
+//! - Cookie 管理集成（可选 DB 持久化，由上层注入 [`CookiePersistence`]）；
+//!   **单罐语义**（P2-2）：reqwest 内置 jar 已关闭，App 罐经
+//!   [`crate::cookie_jar::AppCookieJar`] 作为 `cookie_provider` 提供，由 reqwest
+//!   `CookieService` **逐跳**注入/写回（含 3xx）；规则/JS/登录 Cookie 走请求级
+//!   overlay（见 [`crate::cookie_jar`]）
 //! - 默认 Keep-Alive / Cache-Control 头
 //! - 可选重试（指数退避）和按域名限流
 //! - UA 轮换与代理池中间件
@@ -21,6 +25,9 @@ use reqwest::ClientBuilder;
 
 use legado_core::{LegadoError, LegadoResult};
 
+use crate::cookie_jar::{
+    persist_cookie_pairs, with_cookie_context, AppCookieJar, CookieRequestContext,
+};
 use crate::cookie_store::{CookiePersistence, CookieStore};
 use crate::http_log::HttpLogCapture;
 use crate::middleware::MiddlewareChain;
@@ -58,8 +65,8 @@ pub const DEFAULT_USER_AGENT: &str =
 /// - 不存在该键 → 写侧整体跳过（响应 cookie 不进内存 jar、不落 DB）；
 /// - 该头是**内部标记**，发送前在 [`apply_headers_and_cookies`] 中剥离，
 ///   绝不发往真实服务器（对齐上游拦截器 `requestBuilder.removeHeader`）；
-/// - 读侧（DB cookie 注入，[`apply_headers_and_cookies`] 的 Cookie 合并）
-///   **无条件**，不受本标记影响。
+/// - 读侧（App 罐 cookie 注入，由 [`crate::cookie_jar::AppCookieJar`] 在合并
+///   规则 overlay 后输出）**无条件**，不受本标记影响。
 ///
 /// **同名风险（跟随上游）**：书源 header/规则 header 若自带同名 `CookieJar`
 /// 键会被判定为启用（上游 `AnalyzeUrl` 在关闭时移除该键、启用时覆写为 "1"；
@@ -225,11 +232,62 @@ impl LegadoClient {
         cookie_persistence: Option<Arc<dyn CookiePersistence>>,
         existing: Option<Arc<RwLock<CookieStore>>>,
     ) -> LegadoResult<Self> {
+        // Cookie store：复用共享实例或新建（可选从持久化后端预载）
+        //
+        // P2-2 单罐根治：reqwest 需要 `cookie_provider` 持有 App 罐适配器，
+        // 因此罐必须在 builder 构建**之前**就绪（原实现先建客户端、后建罐）。
+        let cookie_store = match existing {
+            // 复用共享 store（跨客户端/池，脑裂修复）：内容不丢；携带
+            // 持久化后端时合并预载（内存按域优先，后端补缺）
+            Some(store) => {
+                if let Some(ref persistence) = cookie_persistence {
+                    let entries = persistence.load_all(); // DB I/O 在 J 锁外
+                    let count = entries.len();
+                    let mut guard = store.write().unwrap_or_else(|p| p.into_inner());
+                    for (domain, loaded) in &entries {
+                        let existing_str = guard.domain_cookie_string(domain);
+                        if existing_str.is_empty() {
+                            guard.set_cookies_from_string(domain, loaded);
+                        } else if let Some(merged) =
+                            CookieStore::merge_cookies_str(loaded, &existing_str)
+                        {
+                            // 合并结果整体重写该域（同名键内存值胜，
+                            // merge_cookies_str 后者覆盖前者）
+                            guard.set_cookies_from_string(domain, &merged);
+                        }
+                    }
+                    log::info!(
+                        "共享 Cookie store 合并预载持久化后端 {} 条域名 Cookie 记录",
+                        count
+                    );
+                }
+                store
+            }
+            None => {
+                let mut store = CookieStore::new();
+                if let Some(ref persistence) = cookie_persistence {
+                    let entries = persistence.load_all();
+                    let count = entries.len();
+                    store.load_persisted(entries);
+                    log::info!("从持久化后端加载 {} 条域名 Cookie 记录", count);
+                }
+                Arc::new(RwLock::new(store))
+            }
+        };
+
+        // P2-2 单罐根治（方案 B2）：关闭 reqwest 内置 jar，把 App 罐适配成
+        // `reqwest::cookie::CookieStore`。reqwest 的 `CookieService` 位于
+        // `FollowRedirect` **内层**，对每一跳请求注入、每一跳响应写回——
+        // 因此 3xx 的 `Set-Cookie` 与链内新会话天然落到本罐/DB，重定向、
+        // 方法改写、超时、重试语义仍全部由 reqwest 提供。
         let mut builder = ClientBuilder::new()
             .connect_timeout(config.connect_timeout)
             .timeout(config.read_timeout)
             .user_agent(&config.user_agent)
-            .cookie_store(true);
+            .cookie_provider(Arc::new(AppCookieJar::new(
+                Arc::clone(&cookie_store),
+                cookie_persistence.clone(),
+            )));
 
         // SSL 配置：优先使用 ssl 字段，否则回退到 accept_invalid_certs
         if let Some(ref ssl) = config.ssl {
@@ -305,46 +363,6 @@ impl LegadoClient {
                 None
             } else {
                 Some(Arc::new(chain))
-            }
-        };
-
-        // Cookie store：复用共享实例或新建（可选从持久化后端预载）
-        let cookie_store = match existing {
-            // 复用共享 store（跨客户端/池，脑裂修复）：内容不丢；携带
-            // 持久化后端时合并预载（内存按域优先，后端补缺）
-            Some(store) => {
-                if let Some(ref persistence) = cookie_persistence {
-                    let entries = persistence.load_all(); // DB I/O 在 J 锁外
-                    let count = entries.len();
-                    let mut guard = store.write().unwrap_or_else(|p| p.into_inner());
-                    for (domain, loaded) in &entries {
-                        let existing_str = guard.domain_cookie_string(domain);
-                        if existing_str.is_empty() {
-                            guard.set_cookies_from_string(domain, loaded);
-                        } else if let Some(merged) =
-                            CookieStore::merge_cookies_str(loaded, &existing_str)
-                        {
-                            // 合并结果整体重写该域（同名键内存值胜，
-                            // merge_cookies_str 后者覆盖前者）
-                            guard.set_cookies_from_string(domain, &merged);
-                        }
-                    }
-                    log::info!(
-                        "共享 Cookie store 合并预载持久化后端 {} 条域名 Cookie 记录",
-                        count
-                    );
-                }
-                store
-            }
-            None => {
-                let mut store = CookieStore::new();
-                if let Some(ref persistence) = cookie_persistence {
-                    let entries = persistence.load_all();
-                    let count = entries.len();
-                    store.load_persisted(entries);
-                    log::info!("从持久化后端加载 {} 条域名 Cookie 记录", count);
-                }
-                Arc::new(RwLock::new(store))
             }
         };
 
@@ -430,38 +448,49 @@ impl LegadoClient {
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        // 请求级 Cookie 上下文（写侧门控 + 规则/JS Cookie overlay）：provider
+        // 回调只拿得到 (headers, url)，只能经 task-local 传入
+        let cookie_ctx = build_cookie_context(url, headers.as_ref(), save_cookies);
         // HTTP 日志采集上下文（开关关闭时为 None，零额外开销；原版拦截器同款门控）
         let log = HttpLogCapture::start("GET", url, headers.as_ref(), "");
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            async move {
-                let mut req = client.get(&url);
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                async move {
+                    // 每次尝试（重试）视为新的一次重定向链：清空「链内已刷新」集合
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.get(&url);
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
+                }
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
-            .await
+        self.execute_with_retry_and_limit(
+            url_for_retry.as_str(),
+            save_cookies,
+            cookie_ctx,
+            log,
+            factory,
+        )
+        .await
     }
 
     /// 发送 GET 请求并返回原始字节（用于图片等二进制资源）
@@ -541,32 +570,34 @@ impl LegadoClient {
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let cookie_ctx = build_cookie_context(url, headers.as_ref(), save_cookies);
         let log = HttpLogCapture::start("GET", url, headers.as_ref(), "");
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            async move {
-                let mut req = client.get(&url);
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.get(&url);
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
+                }
             }
         };
 
@@ -597,7 +628,7 @@ impl LegadoClient {
             }
         };
 
-        self.collect_raw_response(response, &url_for_retry, save_cookies, log)
+        self.collect_raw_response(response, &url_for_retry, save_cookies, &cookie_ctx, log)
             .await
     }
 
@@ -609,34 +640,36 @@ impl LegadoClient {
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let cookie_ctx = build_cookie_context(url, headers.as_ref(), save_cookies);
         let log = HttpLogCapture::start("POST", url, headers.as_ref(), body);
         let headers = Arc::new(headers);
         let url = url.to_string();
         let body = body.to_string();
         let url_for_retry = url.clone();
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            let body = body.clone();
-            async move {
-                let mut req = client.post(&url).body(body);
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                let body = body.clone();
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.post(&url).body(body);
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
+                }
             }
         };
 
@@ -665,7 +698,7 @@ impl LegadoClient {
             }
         };
 
-        self.collect_raw_response(response, &url_for_retry, save_cookies, log)
+        self.collect_raw_response(response, &url_for_retry, save_cookies, &cookie_ctx, log)
             .await
     }
 
@@ -677,39 +710,47 @@ impl LegadoClient {
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let cookie_ctx = build_cookie_context(url, headers.as_ref(), save_cookies);
         let log = HttpLogCapture::start("POST", url, headers.as_ref(), body);
         let headers = Arc::new(headers);
         let url = url.to_string();
         let body = body.to_string();
         let url_for_retry = url.clone();
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            let body = body.clone();
-            async move {
-                let mut req = client.post(&url).body(body);
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                let body = body.clone();
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.post(&url).body(body);
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
+                }
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
-            .await
+        self.execute_with_retry_and_limit(
+            url_for_retry.as_str(),
+            save_cookies,
+            cookie_ctx,
+            log,
+            factory,
+        )
+        .await
     }
 
     /// 发送 multipart/form-data 上传请求（§2.51 直链上传专用出口）
@@ -757,41 +798,51 @@ impl LegadoClient {
             body.len()
         );
         let log = HttpLogCapture::start("POST", url, headers.as_ref(), &log_body);
+        // 请求级 Cookie 上下文（写侧门控 + 规则/JS Cookie overlay）
+        let cookie_ctx = build_cookie_context(url, headers.as_ref(), save_cookies);
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
         let content_type = Arc::new(content_type);
         let fallback_ua = self.request_default_user_agent();
 
-        let factory = move || {
-            let client = self.client.clone();
-            let cookie_store = self.cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            let body = body.clone();
-            let content_type = Arc::clone(&content_type);
-            async move {
-                let mut req = client
-                    .post(&url)
-                    .header("Content-Type", content_type.as_str())
-                    .body(body)
-                    // P1-1：覆写客户端级总超时（按载荷大小估算的上传预算）
-                    .timeout(request_timeout);
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = self.client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                let body = body.clone();
+                let content_type = Arc::clone(&content_type);
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client
+                            .post(&url)
+                            .header("Content-Type", content_type.as_str())
+                            .body(body)
+                            // P1-1：覆写客户端级总超时（按载荷大小估算的上传预算）
+                            .timeout(request_timeout);
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
+                }
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
-            .await
+        self.execute_with_retry_and_limit(
+            url_for_retry.as_str(),
+            save_cookies,
+            cookie_ctx,
+            log,
+            factory,
+        )
+        .await
     }
 
     /// 发送 HEAD 请求
@@ -801,37 +852,45 @@ impl LegadoClient {
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let cookie_ctx = build_cookie_context(url, headers.as_ref(), save_cookies);
         let log = HttpLogCapture::start("HEAD", url, headers.as_ref(), "");
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            async move {
-                let mut req = client.head(&url);
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.head(&url);
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
+                }
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
-            .await
+        self.execute_with_retry_and_limit(
+            url_for_retry.as_str(),
+            save_cookies,
+            cookie_ctx,
+            log,
+            factory,
+        )
+        .await
     }
 
     /// 发送通用请求（基于 `LegadoRequest`）
@@ -840,7 +899,6 @@ impl LegadoClient {
         request: &crate::request::LegadoRequest,
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         let method = request.method.to_reqwest();
         let url = request.url.clone();
@@ -848,6 +906,7 @@ impl LegadoClient {
         let timeout = request.timeout;
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(Some(&request.headers));
+        let cookie_ctx = build_cookie_context(&request.url, Some(&request.headers), save_cookies);
         let method_label = request.method.as_str();
         let log = HttpLogCapture::start(
             method_label,
@@ -857,35 +916,37 @@ impl LegadoClient {
         );
         let headers = Arc::new(Some(request.headers.clone()));
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            let body = body.clone();
-            let method = method.clone();
-            async move {
-                let mut req = client.request(method, &url);
-                if let Some(ref b) = body {
-                    req = req.body(b.clone());
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                let body = body.clone();
+                let method = method.clone();
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.request(method, &url);
+                        if let Some(ref b) = body {
+                            req = req.body(b.clone());
+                        }
+                        if let Some(t) = timeout {
+                            req = req.timeout(t);
+                        }
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
                 }
-                if let Some(t) = timeout {
-                    req = req.timeout(t);
-                }
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
             }
         };
 
-        self.execute_with_retry_and_limit(&request.url, save_cookies, log, factory)
+        self.execute_with_retry_and_limit(&request.url, save_cookies, cookie_ctx, log, factory)
             .await
     }
 
@@ -906,7 +967,6 @@ impl LegadoClient {
         request: &crate::request::LegadoRequest,
     ) -> LegadoResult<crate::response::LegadoStreamResponse> {
         let client = self.client.clone();
-        let cookie_store = self.cookie_store.clone();
         let fallback_ua = self.request_default_user_agent();
         let method = request.method.to_reqwest();
         let url = request.url.clone();
@@ -914,6 +974,7 @@ impl LegadoClient {
         let timeout = request.timeout;
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
         let save_cookies = cookie_jar_marker_present(Some(&request.headers));
+        let cookie_ctx = build_cookie_context(&request.url, Some(&request.headers), save_cookies);
         let log = HttpLogCapture::start(
             request.method.as_str(),
             &request.url,
@@ -924,31 +985,33 @@ impl LegadoClient {
         // cookie 写回需要原始请求 URL（closure 消费 url 之后仍可用）
         let original_url = url.clone();
 
-        let factory = move || {
-            let client = client.clone();
-            let cookie_store = cookie_store.clone();
-            let fallback_ua = fallback_ua.clone();
-            let headers = Arc::clone(&headers);
-            let url = url.clone();
-            let body = body.clone();
-            let method = method.clone();
-            async move {
-                let mut req = client.request(method, &url);
-                if let Some(ref b) = body {
-                    req = req.body(b.clone());
+        let factory = {
+            let ctx_for_send = Arc::clone(&cookie_ctx);
+            move || {
+                let client = client.clone();
+                let cookie_ctx = Arc::clone(&ctx_for_send);
+                let fallback_ua = fallback_ua.clone();
+                let headers = Arc::clone(&headers);
+                let url = url.clone();
+                let body = body.clone();
+                let method = method.clone();
+                async move {
+                    cookie_ctx.begin_attempt();
+                    with_cookie_context(cookie_ctx, async move {
+                        let mut req = client.request(method, &url);
+                        if let Some(ref b) = body {
+                            req = req.body(b.clone());
+                        }
+                        if let Some(t) = timeout {
+                            req = req.timeout(t);
+                        }
+                        req = apply_default_headers_static(req);
+                        req =
+                            apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
+                        req.send().await
+                    })
+                    .await
                 }
-                if let Some(t) = timeout {
-                    req = req.timeout(t);
-                }
-                req = apply_default_headers_static(req);
-                req = apply_headers_and_cookies(
-                    req,
-                    &cookie_store,
-                    &url,
-                    (*headers).clone(),
-                    fallback_ua.clone(),
-                );
-                req.send().await
             }
         };
 
@@ -978,6 +1041,11 @@ impl LegadoClient {
             }
         };
 
+        // 全量捕获最终响应的 Set-Cookie（HashMap 会折叠同名多值，见
+        // `collect_set_cookie_values` 文档）；provider 已逐跳写回的路径下
+        // 不再重复落库（`wrote_any`）
+        let set_cookie_values = collect_set_cookie_values(raw_response.headers());
+        let final_url = raw_response.url().to_string();
         let stream = crate::response::LegadoStreamResponse::new(raw_response, permit);
         // 流式路径响应体尚未读取（无 peep 能力）：只记录响应头/状态，body 留空
         if let Some(capture) = log {
@@ -986,8 +1054,8 @@ impl LegadoClient {
         }
         // 写侧 CookieJar 门控：Set-Cookie 随响应头到达，立即写回（与 get_raw
         // 在响应体读完后写回的可见结果一致；流式路径不能等 body 结束）
-        if save_cookies {
-            self.save_cookies_from_response(&original_url, stream.url(), stream.headers());
+        if save_cookies && !cookie_ctx.wrote_any() {
+            self.save_cookies_from_response(&original_url, &final_url, &set_cookie_values);
         }
         Ok(stream)
     }
@@ -1049,12 +1117,17 @@ impl LegadoClient {
     /// `factory` 是一个请求工厂：每次调用时重建 RequestBuilder 并发送，
     /// 以支持重试时重新发起请求（`RequestBuilder` 在 `send()` 后被消费）。
     ///
+    /// `cookie_ctx`：请求级 Cookie 上下文（写侧门控 + overlay；每次尝试由
+    /// 工厂内 `begin_attempt` 重置链内已刷新集合）。最终响应的兜底写回仅
+    /// 在 provider 未写过（`wrote_any` 为假）时执行，避免同一响应重复落库。
+    ///
     /// `log` 为 HTTP 日志采集上下文（开关关闭时为 None）：**重试耗尽后只在
     /// 最终结果处提交一条**（成功或失败），对齐原版拦截器「一次调用一条记录」。
     async fn execute_with_retry_and_limit<F, Fut>(
         &self,
         url: &str,
         save_cookies: bool,
+        cookie_ctx: Arc<CookieRequestContext>,
         log: Option<HttpLogCapture>,
         factory: F,
     ) -> LegadoResult<LegadoResponse>
@@ -1095,7 +1168,7 @@ impl LegadoClient {
         let remote = raw_response.remote_addr();
 
         let response = self
-            .collect_response(raw_response, url, save_cookies, log)
+            .collect_response(raw_response, url, save_cookies, &cookie_ctx, log)
             .await?;
 
         let body_dur = t0.elapsed() - ttfb;
@@ -1108,7 +1181,11 @@ impl LegadoClient {
     ///
     /// `save_cookies`：写侧门控（请求头带 [`COOKIE_JAR_HEADER`] 标记时为 true）。
     /// false 时响应 `Set-Cookie` 整体跳过（不进内存 jar、不落 DB）；读侧注入
-    /// 由 [`apply_headers_and_cookies`] 无条件完成，与此无关。
+    /// 由 App 罐适配器无条件完成，与此无关。
+    ///
+    /// `cookie_ctx`：本逻辑请求的上下文；provider 已在每跳响应头到达时写回
+    /// （含 3xx）。此处仅在 provider 未写过时兜底写最终响应（防御上下文丢失），
+    /// 避免重复 DB 写。
     ///
     /// `log`：HTTP 日志采集上下文（成功/响应体读取失败时在此提交一条）。
     async fn collect_response(
@@ -1116,10 +1193,14 @@ impl LegadoClient {
         response: reqwest::Response,
         original_url: &str,
         save_cookies: bool,
+        cookie_ctx: &Arc<CookieRequestContext>,
         log: Option<HttpLogCapture>,
     ) -> LegadoResult<LegadoResponse> {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
+
+        // 全量 Set-Cookie（HashMap 收头会折叠同名多值，故先单独取）
+        let set_cookie_values = collect_set_cookie_values(response.headers());
 
         // 收集响应头
         let mut headers = HashMap::new();
@@ -1129,9 +1210,9 @@ impl LegadoClient {
             }
         }
 
-        // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求）
-        if save_cookies {
-            self.save_cookies_from_response(original_url, &final_url, &headers);
+        // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求；provider 已写则跳过）
+        if save_cookies && !cookie_ctx.wrote_any() {
+            self.save_cookies_from_response(original_url, &final_url, &set_cookie_values);
         }
 
         // 读取响应体
@@ -1161,7 +1242,8 @@ impl LegadoClient {
 
     /// 收集二进制响应数据并保存 Cookie（Task #113：无损字节读取，对照 [`collect_response`](Self::collect_response)）
     ///
-    /// `save_cookies` 语义同 [`Self::collect_response`]（写侧门控）。
+    /// `save_cookies` / `cookie_ctx` 语义同 [`Self::collect_response`]（写侧门控 +
+    /// provider 去重）。
     /// `log` 同 [`Self::collect_response`]：仅在采集开启时把字节按有损 UTF-8
     /// 解码进日志（二进制体由上层按 `Content-Type` 判为 `[binary body omitted]`）。
     async fn collect_raw_response(
@@ -1169,10 +1251,14 @@ impl LegadoClient {
         response: reqwest::Response,
         original_url: &str,
         save_cookies: bool,
+        cookie_ctx: &Arc<CookieRequestContext>,
         log: Option<HttpLogCapture>,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
+
+        // 全量 Set-Cookie（HashMap 收头会折叠同名多值）
+        let set_cookie_values = collect_set_cookie_values(response.headers());
 
         // 收集响应头
         let mut headers = HashMap::new();
@@ -1182,9 +1268,9 @@ impl LegadoClient {
             }
         }
 
-        // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求）
-        if save_cookies {
-            self.save_cookies_from_response(original_url, &final_url, &headers);
+        // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求；provider 已写则跳过）
+        if save_cookies && !cookie_ctx.wrote_any() {
+            self.save_cookies_from_response(original_url, &final_url, &set_cookie_values);
         }
 
         // 读取原始字节（不经 UTF-8 解码）
@@ -1213,91 +1299,65 @@ impl LegadoClient {
         })
     }
 
-    /// 从响应头中提取 Set-Cookie 并保存到 CookieStore
+    /// 把最终响应的全量 `Set-Cookie` 写回 App 罐
     ///
-    /// **按域写通道（重要 1）**：先取该域串行锁（`domain_write_lock`，最外层
-    /// D 锁），使「jar 更新 + 捕获全量串 + 持久化落库」对该域原子——并发的
-    /// 同域写入者（HTTP jar 路径 / JS 宿主路径）不得在「捕获」与「落库」之间
-    /// 插入，否则落库行会回退为过期视图（内存=NEW，重启回填=OLD）。
-    /// 结构性不变式不回归：**jar 写锁临界区内仍不做 DB/sink 调用**——jar 锁
-    /// 只覆盖更新/捕获，sink 调用在 jar 锁释放后、域通道锁内执行（锁序图见
-    /// [`crate::cookie_store::DOMAIN_WRITE_LOCKS`] 文档）。
+    /// 正常路径下 reqwest 的 `CookieService` 已在**每一跳**响应头到达时经
+    /// [`crate::cookie_jar::AppCookieJar::set_cookies`] 写回（含 3xx），本函数
+    /// 只在 provider 未写过时兜底（防御请求级上下文丢失），由调用方用
+    /// `cookie_ctx.wrote_any()` 去重，避免同一响应重复落库。
     ///
-    /// **空视图不删行（重要 3）**：`cookies` 表的行与 JS 侧 `setCookie` 写入
-    /// 共享（union 合并、同键 incoming 胜）。「空 jar 视图」仅说明**本次**
-    /// Set-Cookie 未贡献可解析的 name=value，不能证明该行 jar 独占——整行
-    /// 删除会抹掉 JS 侧键（进程内内存仍命中，重启后 JS 键丢失）。
+    /// `set_cookie_values` 必须是**全量**多条（不得先折叠成 HashMap——同名
+    /// 多值折叠会丢掉除最后一条外的全部 `Set-Cookie`，见
+    /// [`collect_set_cookie_values`]）。
+    ///
+    /// 锁纪律与锁序不变式见 [`persist_cookie_pairs`]（D → J → 释放 J →
+    /// 持久化 → 释放 D → JS 罐写穿 observer）；`cookies` 行与 JS 侧共享，
+    /// 空视图不删行（「本次未贡献可解析 name=value」不能证明 jar 独占该行）。
     fn save_cookies_from_response(
         &self,
         original_url: &str,
         final_url: &str,
-        headers: &HashMap<String, String>,
+        set_cookie_values: &[String],
     ) {
+        if set_cookie_values.is_empty() {
+            return;
+        }
         // 优先使用 final_url 提取 domain
         let url_for_cookie = if final_url.is_empty() {
             original_url
         } else {
             final_url
         };
-
-        // 从 headers 中收集 set-cookie
-        let set_cookie_values: Vec<&String> = headers
+        let domain = extract_domain_for_cookie(url_for_cookie);
+        let pairs: Vec<(String, String)> = set_cookie_values
             .iter()
-            .filter(|(k, _)| k.to_lowercase() == "set-cookie")
-            .map(|(_, v)| v)
+            .filter_map(|value| crate::cookie_jar::parse_set_cookie_pair(value))
             .collect();
-
-        if set_cookie_values.is_empty() {
+        if pairs.is_empty() {
             return;
         }
-
-        // 域键先解析（纯函数，无需持锁）
-        let domain = extract_domain_for_cookie(url_for_cookie);
-
-        // 按域写通道：最外层串行锁（D）——本域「捕获 + 写回」与并发的同域
-        // 写入严格串行（drop 时放行；中毒恢复语义见 DOMAIN_WRITE_LOCKS 文档）
-        let _domain_guard = crate::cookie_store::domain_write_lock(&domain);
-
-        // 更新内存 CookieStore 并**在 jar 写锁内**捕获受影响域的全量 Cookie 串；
-        // 持久化写回（DB 调用）放到**jar 锁释放后**（域通道锁仍持有）执行——
-        // jar 锁临界区内不做 DB/sink 调用（避免与 cookie 合并写串行锁形成
-        // 潜在锁环，池取连接等待也不得拖住 jar 读方）
-        let cookie_string = {
-            let Ok(mut store) = self.cookie_store.write() else {
-                // 写锁 poisoned：与改造前一致，整体跳过本次写回
-                return;
-            };
-            for cookie_str in set_cookie_values {
-                // 简单解析：取 `name=value` 部分
-                if let Some(name_value) = cookie_str.split(';').next() {
-                    let name_value = name_value.trim();
-                    if let Some((name, value)) = name_value.split_once('=') {
-                        store.set_cookie(crate::cookie_store::Cookie {
-                            name: name.trim().to_string(),
-                            value: value.trim().to_string(),
-                            domain: domain.clone(),
-                            path: "/".to_string(),
-                            expires: None,
-                            secure: false,
-                            http_only: false,
-                        });
-                    }
-                }
-            }
-            store.domain_cookie_string(&domain)
-        };
-
-        // 持久化写回（jar 写锁已释放、域通道锁内）：将变更域名的全部 Cookie
-        // 序列化后 upsert 到后端（同步写入，单行 upsert 开销可接受；后端
-        // 失败仅记日志不阻断请求）。
-        // 视图为空时**不删行**（重要 3，见函数文档）：该行与 JS 侧共享，
-        // 删除会抹掉 JS 键。
-        if let Some(ref persistence) = self.cookie_persistence {
-            if !cookie_string.is_empty() {
-                persistence.save(&domain, &cookie_string);
-            }
-        }
+        persist_cookie_pairs(
+            &self.cookie_store,
+            self.cookie_persistence.as_deref(),
+            &domain,
+            &pairs,
+        );
     }
+}
+
+/// 全量提取响应中的 `Set-Cookie`（同名多值逐条保留）
+///
+/// `LegadoResponse.headers` 是 `HashMap`（文档口径「每个头取最后一个值」），
+/// `HeaderMap::iter()` 对同名多值逐条产出、`HashMap::insert` 后者覆盖前者
+/// ——直接用 headers map 取 `Set-Cookie` 只会保留最后一条，普通 200 登录
+/// 响应同样受影响（P2-2 附加缺陷）。写回路径必须先取全量。
+fn collect_set_cookie_values(headers: &reqwest::header::HeaderMap) -> Vec<String> {
+    headers
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// 将 reqwest::Error 映射为 LegadoError
@@ -1534,7 +1594,10 @@ pub fn build_multipart_body(
 /// 同键冲突时规则值胜，非冲突键两者都保留；任一侧为空时原样返回另一侧
 /// （避免无谓的重序列化）。
 ///
-/// 该函数为纯函数，便于单测；实际注入见 [`apply_headers_and_cookies`]。
+/// **P2-2 后仅作单测参照**：实际合并已由 App 罐适配器在 reqwest
+/// `CookieService` 内逐跳完成（[`crate::cookie_jar::merge_overlay_cookie_string`]，
+/// 同一「规则优先」语义 + 链内新值接管）；保留本纯函数钉死 P1-2 语义基线。
+#[cfg(test)]
 fn merge_cookie_headers(db_cookie: &str, rule_cookie: &str) -> String {
     if db_cookie.is_empty() {
         rule_cookie.to_string()
@@ -1547,7 +1610,7 @@ fn merge_cookie_headers(db_cookie: &str, rule_cookie: &str) -> String {
     }
 }
 
-/// 应用自定义请求头与 Cookie（对齐上游 `AnalyzeUrl.setCookie` 语义，静态版本）
+/// 应用自定义请求头（对齐上游 `AnalyzeUrl.setCookie` 语义，静态版本）
 ///
 /// - 默认头之外的自定义头**原样应用**（语义不变，含 UA=`"null"` 移除特判）；
 /// - `User-Agent`：调用方未显式提供（键名大小写不敏感）时，注入
@@ -1556,34 +1619,26 @@ fn merge_cookie_headers(db_cookie: &str, rule_cookie: &str) -> String {
 ///   `HttpHelper.kt:70-77` OkHttp 拦截器的每请求读取
 ///   `AppConfig.userAgent`：用户修改设置后无需重建客户端/连接池即生效；
 ///   已显式配置的书源/规则/接口 UA 永不覆盖；
-/// - `Cookie` 头单独处理：DB 持久化 Cookie 与规则/自定义 Cookie **按键合并、
-///   规则优先**（[`merge_cookie_headers`]），最后一次性注入，避免整体替换
-///   导致规则 Cookie 丢失（P1-2 缺陷修复）。
+/// - **`Cookie` 头不再在此拼装**（P2-2 单罐根治）：调用方的
+///   `Cookie`（书源 header / JS `merge_js_cookies` / loginHeader）由
+///   [`build_cookie_context`] 提取为请求级 overlay，最终 Cookie 头由
+///   App 罐适配器（[`crate::cookie_jar::AppCookieJar`]）在 reqwest
+///   `CookieService` 内逐跳合并生成——显式头会**完全屏蔽** reqwest 的
+///   罐注入（其注入条件是「请求没有 Cookie 头」），是 3xx 会话丢失的根因
+///   之一。
 fn apply_headers_and_cookies(
     mut req: reqwest::RequestBuilder,
-    cookie_store: &Arc<RwLock<CookieStore>>,
-    url: &str,
     headers: Option<HashMap<String, String>>,
     fallback_ua: String,
 ) -> reqwest::RequestBuilder {
-    // 规则/自定义 Cookie 头（键不区分大小写；无则为空串）
-    let rule_cookie: String = headers
-        .as_ref()
-        .and_then(|h| {
-            h.iter()
-                .find(|(k, _)| k.to_lowercase() == "cookie")
-                .map(|(_, v)| v.clone())
-        })
-        .unwrap_or_default();
-
     // 调用方是否显式提供了 UA（含 "null" 移除语义：提供过就不再补全局 UA）
     let mut has_user_agent = false;
 
-    // 其余自定义头原样应用（跳过 Cookie，稍后统一合并注入）
+    // 其余自定义头原样应用（跳过 Cookie，交由 app 罐适配器逐跳合并）
     if let Some(hdrs) = headers {
         for (name, value) in hdrs {
-            if name.to_lowercase() == "cookie" {
-                continue; // Cookie 单独合并注入，避免整体替换
+            if name.eq_ignore_ascii_case("cookie") {
+                continue; // 规则/JS/登录 Cookie 走 overlay，不设显式头（见函数文档）
             }
             // 写侧门控标记头：内部头，发送前剥离（对齐上游 HttpHelper 网络
             // 拦截器 `requestBuilder.removeHeader(cookieJarHeader)`）
@@ -1608,19 +1663,41 @@ fn apply_headers_and_cookies(
         req = req.header("User-Agent", fallback_ua);
     }
 
-    // DB 持久化 Cookie
-    let db_cookie = {
-        let store = cookie_store.read().ok();
-        store.map(|s| s.get_cookie_string(url)).unwrap_or_default()
-    };
+    req
+}
 
-    // 合并注入：DB 与规则 Cookie 按键合并、规则优先
-    let merged_cookie = merge_cookie_headers(&db_cookie, &rule_cookie);
-    if merged_cookie.is_empty() {
-        req
-    } else {
-        req.header("Cookie", merged_cookie)
-    }
+/// 构造请求级 Cookie 上下文（写侧门控 + 规则/JS/登录 Cookie overlay）
+///
+/// - `save`：对齐上游 `HttpHelper.kt:86-97` 的写侧门控——请求头带
+///   [`COOKIE_JAR_HEADER`] 标记时，reqwest 每一跳响应的 `Set-Cookie` 都写回
+///   App 罐并按域持久化；无标记时 provider 整体跳过写侧；
+/// - `overlay`：调用方 `Cookie` 头（大小写不敏感）解析为 `name → value`，
+///   首跳按 P1-2 语义覆盖罐视图同名值；本次链中被响应刷新过的同名键在后续
+///   跳让罐新值接管（[`crate::cookie_jar::merge_overlay_cookie_string`]）；
+/// - overlay 归属域键取**请求 URL**：跨站重定向后 provider 的域键不匹配，
+///   规则/登录 Cookie 不跨站泄漏（对齐 reqwest 跨站删 `Cookie` 头语义）。
+///
+/// **读侧无条件**（既有语义，不随本标记变化）：罐内该域 cookie 始终注入，
+/// 与上游「读写均门控」的差异是本站既有取舍（回归用例
+/// `test_without_cookie_jar_marker_skips_writeback_read_side_unchanged`）。
+fn build_cookie_context(
+    url: &str,
+    headers: Option<&HashMap<String, String>>,
+    save: bool,
+) -> Arc<CookieRequestContext> {
+    let rule_cookie = headers
+        .and_then(|h| {
+            h.iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("cookie"))
+                .map(|(_, v)| v.as_str())
+        })
+        .unwrap_or_default();
+    let overlay = CookieStore::cookie_string_to_map(rule_cookie);
+    Arc::new(CookieRequestContext::new(
+        save,
+        crate::cookie_store::cookie_domain_key(url),
+        overlay,
+    ))
 }
 
 /// 从 URL 提取 cookie domain（ETLD+1，对齐上游 `NetworkUtils.getSubDomain`）
@@ -1989,12 +2066,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut headers = HashMap::new();
-        headers.insert("set-cookie".to_string(), "token=xyz789".to_string());
         client.save_cookies_from_response(
             "https://www.example.com/page",
             "https://www.example.com/page",
-            &headers,
+            &["token=xyz789".to_string()],
         );
 
         // 内存与后端均应包含新 Cookie
@@ -2088,18 +2163,16 @@ mod tests {
             .unwrap(),
         );
 
-        let mut a_headers = HashMap::new();
-        a_headers.insert("Set-Cookie".to_string(), "kA=A".to_string());
-        let mut b_headers = HashMap::new();
-        b_headers.insert("Set-Cookie".to_string(), "kB=B".to_string());
+        let a_values = vec!["kA=A".to_string()];
+        let b_values = vec!["kB=B".to_string()];
 
         let c_a = client.clone();
         let c_b = client.clone();
         let handle_a = std::thread::spawn(move || {
-            c_a.save_cookies_from_response(URL, URL, &a_headers);
+            c_a.save_cookies_from_response(URL, URL, &a_values);
         });
         let handle_b = std::thread::spawn(move || {
-            c_b.save_cookies_from_response(URL, URL, &b_headers);
+            c_b.save_cookies_from_response(URL, URL, &b_values);
         });
         handle_a.join().unwrap();
         handle_b.join().unwrap();
@@ -2155,12 +2228,10 @@ mod tests {
         persistence.save("example.com", "js_key=js_val");
 
         // 触发一次「空 jar 视图」保存：Set-Cookie 无 name=value（解析被跳过）
-        let mut headers = HashMap::new();
-        headers.insert("Set-Cookie".to_string(), "Secure; Path=/".to_string());
         client.save_cookies_from_response(
             "https://www.example.com/page",
             "https://www.example.com/page",
-            &headers,
+            &["Secure; Path=/".to_string()],
         );
 
         let persisted = persistence.data.lock().unwrap();
@@ -2186,20 +2257,16 @@ mod tests {
         .unwrap();
 
         // a 站 Set-Cookie
-        let mut a_headers = HashMap::new();
-        a_headers.insert("Set-Cookie".to_string(), "siteA=alice".to_string());
         client.save_cookies_from_response(
             "https://a.example.com.cn/",
             "https://a.example.com.cn/",
-            &a_headers,
+            &["siteA=alice".to_string()],
         );
         // b 站 Set-Cookie
-        let mut b_headers = HashMap::new();
-        b_headers.insert("Set-Cookie".to_string(), "siteB=bob".to_string());
         client.save_cookies_from_response(
             "https://b.other.com.cn/",
             "https://b.other.com.cn/",
-            &b_headers,
+            &["siteB=bob".to_string()],
         );
 
         // 持久化后端：应为两条独立域名行，而非塌缩成单行 `com.cn`
