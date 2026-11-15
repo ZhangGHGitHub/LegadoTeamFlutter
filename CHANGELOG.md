@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.506] - 2026-11-15
+
+### Fixed
+- [Rust] 修复书源下载文件时同名互相覆盖的问题：现在按原版规则以链接摘要命名（此前用链接最后一段作文件名，`/a/cover.jpg` 与 `/b/cover.jpg` 会互相覆盖）。
+- [Rust] 修复书源 `cache.get(java.md5Encode16(url))` 读不到 `cacheFile` 缓存值的问题：我方摘要取值与原版不一致（取了前 16 位，原版取中段），现已对齐。
+- [Rust] 修复书源下载链接带 `,{...}` 选项时请求地址错误导致 404 的问题（选项现在只参与命名，不再混入请求地址）。
+- [Rust] 修复 `deleteFile` 对目录不生效、`getTxtInFolder` 读完不删除目录的问题，现已与原版一致。
+
+### Security
+- [Rust] 安全加固：文件删除新增保护——拒绝删除书源沙箱根目录、拒绝删除应用当前工作目录或其上级目录（此前调试模式下可能清空工作目录内容）。
+
 ## [2.0.505] - 2026-11-15
 
 ### Fixed
