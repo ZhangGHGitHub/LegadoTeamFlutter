@@ -258,14 +258,13 @@ import Security
       return "not_enrolled"
     case .biometryLockout:
       return "locked_out"
-    case .biometryDisallowed:
-      // 策略禁用生物识别：系统层面不可恢复，明确按 failed 处理
-      return "failed"
     case .userCancel, .appCancel, .systemCancel:
       return "cancelled"
     case .authenticationFailed:
       return "failed"
     default:
+      // 其余错误（含策略禁用/未知错误）与 Android `mapErrorCode` 的
+      // else 分支保持一致，统一归为 failed
       return "failed"
     }
   }
