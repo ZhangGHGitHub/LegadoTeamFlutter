@@ -1,0 +1,25 @@
+=== START 02_clippy_workspace : cargo clippy --workspace --all-targets -- -D warnings ===
+=== START 07a flutter analyze ===
+EXIT 02_clippy_workspace = 0  (elapsed 9s)  CMD: cargo clippy --workspace --all-targets -- -D warnings
+=== START 03_clippy_quickjs : cargo clippy -p legado-js -p legado-ffi -p legado-net -p legado-fetcher --features quickjs --all-targets -- -D warnings ===
+EXIT 03_clippy_quickjs = 0  (elapsed 14s)  CMD: cargo clippy -p legado-js -p legado-ffi -p legado-net -p legado-fetcher --features quickjs --all-targets -- -D warnings
+=== START 04_test_workspace : cargo test --workspace ===
+EXIT 07a_flutter_analyze = 0  CMD: flutter analyze --no-fatal-infos
+=== START 07b flutter test ===
+EXIT 07b_flutter_test = 1 (elapsed 166s)  CMD: flutter test
+=== ALL FLUTTER GATES DONE ===
+EXIT 04_test_workspace = 0  (elapsed 257s)  CMD: cargo test --workspace
+=== START 05_test_quickjs : cargo test -p legado-net -p legado-js -p legado-ffi -p legado-fetcher --features quickjs ===
+EXIT 05_test_quickjs = 0  (elapsed 225s)  CMD: cargo test -p legado-net -p legado-js -p legado-ffi -p legado-fetcher --features quickjs
+=== START 06_audit : cargo audit --no-fetch ===
+EXIT 06_audit = 0  (elapsed 0s)  CMD: cargo audit --no-fetch
+=== ALL RUST GATES DONE ===
+EXIT=0
+
+# --- QA 补充记录（2026-11-15）---
+GATE 01_fmt: cargo fmt --all -- --check  EXIT=0  (log: 01_fmt.log, 无输出=无差异)
+GATE 07b 说明: 首次 flutter test EXIT=1 的唯一失败为 test/ffi/direct_link_upload_runtime_test.dart "@js:..."，
+  根因=本门禁序列中 cargo test --workspace 以默认 feature(default=[]) 重建 rust/target/debug/legado_ffi.dll(17:10:34)，
+  覆盖了此前 quickjs 版 DLL；该用例仅 Windows 运行（CI ubuntu 跳过）。
+REPRO: cargo build -p legado-ffi --features quickjs (EXIT=0, DLL 74MB) → 单文件重跑 4/4 通过
+RERUN: flutter test (quickjs DLL) EXIT=0  +5886 ~1 All tests passed (log: 07b_flutter_test_rerun_quickjs.log)
