@@ -536,7 +536,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               IosListTile(
                 title: '清理缓存',
-                subtitle: '清除已下载书籍和字体缓存',
+                // 批37 收尾：实测范围 = cached_chapters + DB caches +
+                // cache_store（JS 书源缓存），不含字体缓存与 js_files 下载文件
+                subtitle: '清除章节缓存与书源缓存',
                 onTap: _cleanCache,
               ),
               IosListTile(
@@ -921,7 +923,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清理缓存'),
-        content: const Text('清除已下载书籍和字体缓存？'),
+        // 批37 收尾：与列表副标题同口径，不宣称清理字体缓存
+        content: const Text('清除章节缓存与书源缓存？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
