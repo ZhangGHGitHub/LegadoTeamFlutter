@@ -1,0 +1,2 @@
+e66b6d249631f5e18bf258864c0df2bd1493d8ac5ec414d63b9f8d56ffdc38b6 *flutter_legado/build/app/outputs/flutter-apk/app-release.apk
+214884284 bytes

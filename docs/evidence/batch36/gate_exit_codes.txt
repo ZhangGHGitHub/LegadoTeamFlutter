@@ -1,0 +1,8 @@
+批36 门禁退出码（2026-11-15，HEAD 37c1951656）
+1. cd rust && cargo fmt --all -- --check                      exit 0（无输出）
+2. cargo clippy --workspace --all-targets -- -D warnings      exit 0（Finished dev profile）
+3. cargo test --workspace                                     exit 0（4039 passed / 0 failed / 26 ignored）
+4. cargo test -p legado-js -p legado-ffi --features quickjs    exit 0（1758 passed / 0 failed / 48 ignored）
+5. cargo audit --no-fetch                                     exit 0（0 vulnerabilities，10 allowed warnings）
+6a. flutter analyze                                           exit 0（No issues found!）
+6b. flutter test                                              exit 0（+5886 ~1 All tests passed!）

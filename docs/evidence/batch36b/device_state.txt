@@ -1,0 +1,9 @@
+    versionCode=507 minSdk=24 targetSdk=36
+    versionName=2.0.506
+--sources--
+http://192.168.100.52:8925|QA25 段评源
+http://192.168.100.52:8926|QA36 文件API源
+--books--
+http://192.168.100.52:8925/book1.html|QA25 段评书|第三章
+--ss--
+no-web-port

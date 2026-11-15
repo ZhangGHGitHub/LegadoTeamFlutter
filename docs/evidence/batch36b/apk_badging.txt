@@ -1,0 +1,2 @@
+package: name='io.legado.flutter_legado' versionCode='507' versionName='2.0.506' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+native-code: 'arm64-v8a' 'armeabi-v7a' 'x86_64'

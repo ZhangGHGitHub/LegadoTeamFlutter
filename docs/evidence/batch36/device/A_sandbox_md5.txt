@@ -1,0 +1,5 @@
+=== 沙箱目录清单（A/C/D 落盘证据，debug 变体时期采集）===
+43e5053ca35fe978.jpg = /a/cover.jpg（A）; a2ade24b38732811.jpg = /b/cover.jpg（B）;
+35d73d37f697fc84.jpg = /a.jpg?probe=36; 95ec7f468cc97771.jpg = /a.jpg（C，选项剥离）; eb76bee6885b2800.zip / 86e801dbd532d146 目录 = D
+期望 md5: A=b6c2ea69b05ff181e741433bb9f89c09 B=967b9c2656fe662dbfab52e7b31777b8 plainJ=5ad1852ee87d25adeafad6e8d9517284
+实测 md5: 43e5053ca35fe978.jpg=b6c2ea69b05ff181e741433bb9f89c09 a2ade24b38732811.jpg=967b9c2656fe662dbfab52e7b31777b8 95ec7f468cc97771.jpg=5ad1852ee87d25adeafad6e8d9517284

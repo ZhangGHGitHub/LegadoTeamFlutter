@@ -1,0 +1,11 @@
+text='' desc='Back' bounds=[30,30][138,138] click=true
+text='' desc='排序' bounds=[696,30][804,138] click=true
+text='' desc='分组' bounds=[828,30][936,138] click=true
+text='' desc='更多选项' bounds=[960,30][1068,138] click=true
+text='' desc='QA25 段评源\n(QA)\n开启' bounds=[0,168][1080,372] click=true
+text='' desc='编辑' bounds=[792,210][912,330] click=true
+text='' desc='更多菜单' bounds=[912,210][1032,330] click=true
+text='' desc='全选（0/1）' bounds=[48,1707][456,1884] click=true
+text='' desc='反选' bounds=[456,1709][702,1883] click=true
+text='' desc='删除' bounds=[702,1709][948,1883] click=false
+text='' desc='更多选项' bounds=[948,1683][1056,1908] click=false

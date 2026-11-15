@@ -1,0 +1,17 @@
+=== app version ===
+    versionCode=507 minSdk=24 targetSdk=36
+    versionName=2.0.506
+=== book_sources ===
+http://192.168.100.52:8926|QA36 文件API源|1
+http://192.168.100.52:8925|QA25 段评源|1
+=== books ===
+QA25 段评书|QA作者|http://192.168.100.52:8925|第二章 后续
+=== highlights ===
+QA25 段评书|第二章 后续|第二章第二段：普通正文。|{"type":"background","color":"#FF90CAF9"}
+=== chapters/cached ===
+6|6|1
+=== crash buffer ===
+=== E/flutter + FATAL ===
+(end)
+=== local backup artifact (before cleanup) ===
+-rwxrwxrwx 1 root root 7010 2026-11-15 10:19 /sdcard/Download/legado/legado_backup_1794709175316.json

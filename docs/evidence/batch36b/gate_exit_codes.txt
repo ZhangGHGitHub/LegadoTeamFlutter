@@ -1,0 +1,29 @@
+批36b 复验门禁（2026-11-15，HEAD 6e14fd5825，设备 192.168.100.63:5555）
+
+1. cd rust && cargo fmt --all -- --check                      exit 0（无输出）
+2. cargo clippy --workspace --all-targets -- -D warnings      exit 0（Finished dev profile）
+3. cargo test --workspace（首跑）                             exit 101
+   唯一失败：api::source::tests::test_update_source_clears_rate_limiter_when_rate_removed
+   panic: Database("插入失败: database is locked")（legado-ffi/src/api/source.rs:334）
+   同批其余 736 passed / 21 ignored；属并行 SQLite 写竞争 flaky（非 cache 改动路径）。
+3b. 重跑（--no-fail-fast，全量）                              exit 0
+   4041 passed / 0 failed / 26 ignored（gate3b_cargo_test_workspace_rerun.log）
+3c. 单测孤独重跑 3 次（--exact）                              3/3 ok（每次 1 passed / 0 failed）
+3d. cargo test -p legado-ffi --lib 全量重跑                   exit 0（737 passed / 0 failed / 21 ignored）
+4. cargo test -p legado-js -p legado-fetcher -p legado-ffi --features quickjs
+                                                              exit 0（1981 passed / 0 failed / 48 ignored）
+   其中新增 source_setup_cache_binding.rs：9 passed / 0 failed
+5. cargo audit --no-fetch                                     exit 0（0 vulnerabilities，10 allowed warnings，扫描 501 crates）
+6a. flutter analyze                                           exit 0（No issues found! ran in 16.0s）
+6b. flutter test                                              exit 0（+5886 ~1 All tests passed!，02:05）
+
+构建与安装：
+- pwsh rust/scripts/build-android.ps1 -Mode release           exit 0（arm64-v8a 50.7MB / armeabi-v7a 33.8MB / x86_64 51.7MB）
+- flutter build apk --release                                 exit 0（205.0MB，214,933,436 bytes）
+- aapt badging：versionName=2.0.506 versionCode=507，native-code arm64-v8a/armeabi-v7a/x86_64
+- adb install -r                                              Success（streamed 214933436 bytes）
+- 启动后 pidof 存活；版本 2.0.506/507；logcat FATAL/E/flutter = 0
+
+证据文件：gates_rust.log / gate3b_cargo_test_workspace_rerun.log / gates_flutter.log /
+build_so_release.log / build_apk_release.log / apk_badging.txt / apk_sha256.txt /
+install_apk.log / logcat_launch.txt / logcat_session_full.txt / logcat_final_launch.txt
