@@ -19,7 +19,26 @@ pub fn get_cache_size() -> LegadoResult<i64> {
     })
 }
 
-/// 清空所有章节缓存
+/// 清空所有缓存（章节缓存 + DB 通用 KV + JS 宿主 cache_store）
+///
+/// [批36 P3-4] 补齐 JS 宿主缓存清理：批36 将书源 `cache` 恢复为宿主
+/// `cache_store`（内存 LRU + `js_cache` 磁盘 KV + `file/` 裸文件）后，
+/// `cache.put` 值、`cacheFile` 映射与 `dev_id` 等长期留在磁盘目录，用户
+/// 「清理缓存」若只清 DB，磁盘占用不降且隐私相关旧值残留。
+///
+/// 上游口径核对：`ConfigViewModel.clearCache` = `BookHelp.clearCache()`
+/// （删 `externalFiles/book_cache`）+ `FileUtils.delete(context.cacheDir)`
+/// （删内部 cacheDir，含默认 `ACache`）；`CacheManager.putFile` 落
+/// `ACache`，故上游清理缓存会清掉 JS 的文件缓存。我方 `cache_store` 是
+/// 书源 cache 的统一落点（`put`/`putFile`/`cacheFile` 映射/内存层），
+/// 必须同口径清空。
+///
+/// 范围决策（不减少既有能力）：DB `caches` 表继续清理（既有契约 §2.16
+/// 语义，仅保留 `config:` 前缀键；上游 DB caches 不清属存储实现差异，
+/// 我方保留为超集），并**新增** [`cache_store::clear_all`]；两者集合互补
+/// 且不冲突。书籍级 [`clear_book_cache`] 不调用 `clear_all`：cache_store
+/// 无书籍维度，且上游 `BookHelp.clearCache(book)` 只删该书 `book_cache`
+/// 目录、不触碰 ACache，整书清理清空进程级缓存会误伤其他书的书源缓存。
 pub fn clear_cache() -> LegadoResult<bool> {
     with_database(|db| {
         let conn = db.connection();
@@ -30,7 +49,11 @@ pub fn clear_cache() -> LegadoResult<bool> {
         let cache_repo = CacheRepository::new(conn);
         cache_repo.clear()?;
         Ok(true)
-    })
+    })?;
+    // DB 清理成功后清空 JS 宿主缓存（内存 + 磁盘 KV + file/；清空为
+    // best-effort，单条删除失败不阻断整体「清理缓存」）
+    legado_js::host_api::cache_store::clear_all();
+    Ok(true)
 }
 
 /// 清除指定书籍的章节缓存（对齐原版 BookHelp.clearCache(book) 的 DB 侧语义）
@@ -40,6 +63,11 @@ pub fn clear_cache() -> LegadoResult<bool> {
 /// （写入侧 reader::toggle_same_title_removed，消费侧读取时跳过同标题去重；
 /// 不清则清缓存后章节仍按旧开关渲染，用户预期「重置」落空）。LIKE 模式
 /// 经 [`like_escape`] 转义 book_url 防通配符跨书误删（同 clear_cache_before）。
+///
+/// [批36 P3-4] **不清理** JS 宿主 cache_store：cache_store 是进程级全局
+/// 存储（键由书源自定义，无书籍维度），且上游 `BookHelp.clearCache(book)`
+/// 只删该书 `book_cache` 目录、不触碰 ACache——整书清理若清空 cache_store
+/// 会误删其他书源的缓存。全量清理入口是 [`clear_cache`]。
 pub fn clear_book_cache(book_url: &str) -> LegadoResult<i32> {
     with_database(|db| {
         use rusqlite::params;
@@ -410,6 +438,52 @@ mod tests {
 
         // 清空缓存不报错
         assert!(clear_cache().unwrap());
+    }
+
+    /// [批36 P3-4] 全局 `clear_cache` 必须同时清空 JS 宿主 cache_store
+    /// （内存 LRU + 磁盘 KV 条目 + `file/` 数据与 meta）。
+    ///
+    /// 修复前 `clear_cache` 只清 DB（cached_chapters + caches），书源
+    /// `cache.put/putFile/cacheFile` 的值仍从 cache_store 命中——本测试红。
+    #[test]
+    fn test_clear_cache_clears_js_cache_store() {
+        use legado_js::host_api::cache_store;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        // 独立缓存根：把清空范围钉在临时目录，避免清到开发机真实缓存
+        let root = std::env::temp_dir().join(format!(
+            "legado-ffi-clear-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        cache_store::set_test_disk_dir_override(Some(root.clone()));
+
+        let key = "clear-cache-js-store-key";
+        let mem_key = "clear-cache-js-store-mem";
+        assert!(cache_store::put(key, "disk-value", 0));
+        assert!(cache_store::put_file(key, "file-value", 3600));
+        cache_store::put_memory(mem_key, "mem-value");
+        assert_eq!(cache_store::get(key, true).as_deref(), Some("disk-value"));
+
+        clear_cache().expect("clear_cache 应成功");
+
+        assert!(
+            cache_store::get(key, false).is_none(),
+            "KV（内存 + 磁盘）应被清空"
+        );
+        assert!(cache_store::get(key, true).is_none(), "磁盘 KV 应被清空");
+        assert!(cache_store::get_file(key).is_none(), "file/ 数据应被清空");
+        assert!(
+            cache_store::get_from_memory(mem_key).is_none(),
+            "内存层应被清空"
+        );
+        assert!(root.is_dir(), "清空后缓存根目录仍应存在");
+
+        cache_store::set_test_disk_dir_override(None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// STAGE3-C2B：单章失效只删 (book_url, chapter_index) 行——

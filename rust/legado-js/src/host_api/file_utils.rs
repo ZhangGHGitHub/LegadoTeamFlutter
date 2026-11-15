@@ -1840,4 +1840,74 @@ mod tests {
             });
         }
     }
+
+    /// [批36 P3-4] `clear_all` 清空 cacheFile 映射后，下次调用重新下载
+    /// （不是使用已删除文件的旧映射），且缓存根目录仍可继续写入
+    #[test]
+    fn test_cache_file_redownloads_after_clear_all() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        use crate::host_api::cache_store;
+        use crate::host_api::current_source::with_current_source_tag;
+
+        let _lock = cache_store::lock_cache_for_test();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let cache_root = std::env::temp_dir().join(format!(
+            "legado-js-cache-clear-all-{}-{nanos}",
+            std::process::id()
+        ));
+        cache_store::set_test_disk_dir_override(Some(cache_root.clone()));
+        setup_sandbox();
+
+        let body = "P3-4 clear_all cacheFile";
+        let (url, hits) = spawn_counting_body_server(body, &format!("p34-{nanos}.js"));
+        let tag = format!("https://p34-clear.example.com/{nanos}");
+        let key = cache_key16(&url);
+
+        // 首次：下载 + 写映射
+        let first = with_current_source_tag(&tag, || cache_file(&restricted(), &url, 0))
+            .expect("首次 cacheFile");
+        assert_eq!(first, body);
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "首次应发起下载");
+        assert!(
+            cache_store::get(&key, false).is_some(),
+            "cacheFile 映射应已写入 cache_store"
+        );
+
+        cache_store::clear_all();
+        assert!(
+            cache_store::get(&key, false).is_none(),
+            "清空后 cacheFile 映射必须失效"
+        );
+
+        // 映射失效 → 重新联网下载，而非使用旧映射指向的残留文件
+        let second = with_current_source_tag(&tag, || cache_file(&restricted(), &url, 0))
+            .expect("清空后再次 cacheFile");
+        assert_eq!(second, body);
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            2,
+            "映射清空后应重新下载（命中旧文件则不增加请求数）"
+        );
+        assert!(
+            cache_store::get(&key, false).is_some(),
+            "重新下载后映射应恢复"
+        );
+        assert!(
+            cache_root.is_dir(),
+            "清空后缓存根目录仍应存在（可继续写入）"
+        );
+
+        // 收尾
+        cache_store::delete(&key);
+        cache_store::set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&cache_root);
+        let _ = with_current_source_tag(&tag, || {
+            let dir = default_sandbox_root();
+            fs::remove_file(dir.join(format!("{key}.js"))).and_then(|_| fs::remove_dir(dir))
+        });
+    }
 }

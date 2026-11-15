@@ -16,6 +16,10 @@
 //!   `file/<hash>.meta.json`（`{"d": deadline}`），`getFile` 按 deadline
 //!   校验并删除过期条目。无 meta 的旧文件（历史版本写入）按永久读取。
 //! - `delete(key)` — 磁盘 + 文件缓存（含 meta）+ 内存。
+//! - `clear_all()` — 进程级全清（P3-4）：内存 LRU + 根目录 KV 条目 +
+//!   `file/` 数据与 meta；**只清本模块自己的产物**、保留注入根目录
+//!   （根目录与 image_cache/audio_cache/js_files 等兄弟目录不受影响），
+//!   供宿主「清理缓存」入口（FFI `cache_clear`）接线。
 //!
 //! QuickJS 引擎按 source_tag LRU 缓存、跨书源复用（engine_cache），
 //! 故缓存实现为 **Rust 进程级存储**而非 JS 对象——同一进程内多书源共享
@@ -36,7 +40,7 @@ use std::fs;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use lru::LruCache;
 use sha2::{Digest, Sha256};
@@ -86,14 +90,17 @@ static INJECTED_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 /// `legado-ffi::ffi::set_cache_dir`（P2-15 剩项新增，生成 Dart 绑定
 /// `setCacheDir`）在启动时注入应用私有缓存目录。
 pub fn set_cache_dir(path: impl AsRef<std::path::Path>) {
+    // 与进行中的磁盘读写/清空互斥：目录切换不能让 clear_all 清到半新半旧目录
+    let _guard = disk_write_guard();
     if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
         *guard = Some(path.as_ref().to_path_buf());
     }
 }
 
-/// 清除注入目录（测试隔离用）
-#[cfg(test)]
-pub(crate) fn clear_cache_dir() {
+/// 清除注入目录（测试隔离用；`test-support` 供跨 crate 测试二进制复用）
+#[cfg(any(test, feature = "test-support"))]
+pub fn clear_cache_dir() {
+    let _guard = disk_write_guard();
     if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
         *guard = None;
     }
@@ -106,12 +113,17 @@ pub(crate) fn clear_cache_dir() {
 /// 故测试构建中 [`disk_dir`] 改走「测试覆盖槽 > 宿主注入（[`set_cache_dir`]）
 /// > 缺省 temp 目录」并整体旁路 env 分支，行为与宿主环境完全无关。
 /// > 生产构建（`cfg(not(test))`）不含此槽，生产逻辑零改动。
-#[cfg(test)]
+///
+/// 门控（提示 1，批36 P3-4 扩）：`cfg(test)`（本 crate lib 单测）或
+/// `test-support` feature（依赖 crate 的 `tests/`/lib 测试经 dev-dependency
+/// 启用）——FFI 侧「清缓存接线」测试需要把清空范围钉在独立临时目录，
+/// 避免清到开发机的 `%TEMP%/legado-js-cache`。生产构建永不启用该 feature。
+#[cfg(any(test, feature = "test-support"))]
 static TEST_DISK_DIR_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 /// 设置（`Some`）或清除（`None`）测试构建的磁盘目录覆盖
-#[cfg(test)]
-pub(crate) fn set_test_disk_dir_override(dir: Option<PathBuf>) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn set_test_disk_dir_override(dir: Option<PathBuf>) {
     if let Ok(mut guard) = TEST_DISK_DIR_OVERRIDE
         .get_or_init(|| Mutex::new(None))
         .lock()
@@ -130,6 +142,29 @@ static PUT_WRITE_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// `putFile` 磁盘写失败一次性告警标志（同 [`PUT_WRITE_FAIL_WARNED`]）
 static PUT_FILE_WRITE_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// `clear_all` 单条删除/根目录补建失败一次性告警标志（P3-4）
+///
+/// 清空是逐条 best-effort：Windows 上可能有个别文件被外部进程短暂占用
+/// （sharing violation），单条失败不应中断其余条目清理，也不该逐条刷日志。
+static CLEAR_ALL_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// 磁盘操作串行化锁（P3-4）
+///
+/// 常态读写（put/get/putFile/getFile/delete/目录注入）持**读锁**，
+/// [`clear_all`] 持**写锁**：清空会等待已进入的单个磁盘操作完成，清空
+/// 期间新的读写排队等待，保证「正在使用中的条目」不会被中途删除/写回；
+/// 清空结束后新写入正常落盘。锁中毒（持锁线程 panic）经 `into_inner`
+/// 恢复——缓存内容不承载一致性状态，继续提供服务优于整体失败。
+static DISK_OP_LOCK: RwLock<()> = RwLock::new(());
+
+fn disk_read_guard() -> RwLockReadGuard<'static, ()> {
+    DISK_OP_LOCK.read().unwrap_or_else(|p| p.into_inner())
+}
+
+fn disk_write_guard() -> RwLockWriteGuard<'static, ()> {
+    DISK_OP_LOCK.write().unwrap_or_else(|p| p.into_inner())
+}
 
 /// 一次性限流告警（P2-15 剩项，照抄 [`DEFAULT_DIR_WARNED`] 的
 /// `compare_exchange` 模式）：首条告警实际执行 `log` 并返回 true，
@@ -156,12 +191,12 @@ pub(crate) fn reset_write_fail_warned() {
 /// 磁盘缓存根目录：env 覆盖 > 宿主注入（[`set_cache_dir`]）>
 /// `<temp_dir>/legado-js-cache`（现状行为，回落时一次性告警）
 ///
-/// 测试构建（`cfg(test)`）：优先查显式测试覆盖槽
+/// 测试构建（`cfg(test)` / `test-support`）：优先查显式测试覆盖槽
 /// （[`set_test_disk_dir_override`]）并整体旁路 env 分支——并行测试
 /// 不得操作进程级环境变量（`set_var` 与并发 env 读是 UB）；生产
 /// 构建不含该分支，生产解析链（env > 注入 > 缺省）逐字节不变。
 pub fn disk_dir() -> PathBuf {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     {
         if let Ok(guard) = TEST_DISK_DIR_OVERRIDE
             .get_or_init(|| Mutex::new(None))
@@ -236,12 +271,15 @@ fn now_millis() -> i64 {
 /// 注入态（INJECTED_DIR）/ 环境变量（CACHE_DIR_ENV）/ 内存层均为进程级
 /// 全局状态：所有触碰磁盘层的测试（本模块与 quickjs_impl 的 cache 全局
 /// 测试）执行前取本锁，互不干扰目录切换/清理。
-#[cfg(test)]
-pub(crate) static CACHE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+///
+/// 门控同 [`set_test_disk_dir_override`]：`cfg(test)` 或 `test-support`
+/// feature（跨 crate 测试二进制共用同一把锁的语义约定）。
+#[cfg(any(test, feature = "test-support"))]
+pub static CACHE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 取磁盘层测试串行锁（返回守卫；中毒时恢复而非 panic）
-#[cfg(test)]
-pub(crate) fn lock_cache_for_test() -> std::sync::MutexGuard<'static, ()> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn lock_cache_for_test() -> std::sync::MutexGuard<'static, ()> {
     CACHE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }
 
@@ -273,6 +311,8 @@ pub fn delete_memory(key: &str) {
 /// 先写盘，成功后再调内存层（deadline==0 → 同步内存；非零 → 清内存，
 /// 对齐上游 put 后 deleteMemory）。
 pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
+    // 读锁覆盖「写盘 + 内存层同步」整体：clear_all 的写锁不会在两者之间切入
+    let _guard = disk_read_guard();
     let deadline = if save_time_secs <= 0 {
         0
     } else {
@@ -321,6 +361,7 @@ pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
 
 /// 磁盘读取（`get`）：内存优先（only_disk 跳过），磁盘按 deadline 校验
 pub fn get(key: &str, only_disk: bool) -> Option<String> {
+    let _guard = disk_read_guard();
     if !only_disk {
         if let Some(v) = get_from_memory(key) {
             return Some(v);
@@ -348,6 +389,7 @@ pub fn get(key: &str, only_disk: bool) -> Option<String> {
 /// 元数据写失败时删除已写入的数据并返回 false——不能把带 TTL 的值静默
 /// 降级成永久可读。
 pub fn put_file(key: &str, value: &str, save_time_secs: i64) -> bool {
+    let _guard = disk_read_guard();
     let deadline = if save_time_secs <= 0 {
         0
     } else {
@@ -415,6 +457,7 @@ pub fn put_file(key: &str, value: &str, save_time_secs: i64) -> bool {
 /// 同样按永久读取（保持旧数据可读，不因元数据异常丢用户缓存）。过期 →
 /// 删除数据与 meta 并返回 None。
 pub fn get_file(key: &str) -> Option<String> {
+    let _guard = disk_read_guard();
     let meta_path = file_meta_path(key);
     if let Ok(raw) = fs::read_to_string(&meta_path) {
         if let Ok(meta) = serde_json::from_str::<FileCacheMeta>(&raw) {
@@ -430,10 +473,110 @@ pub fn get_file(key: &str) -> Option<String> {
 
 /// 删除（磁盘 + 文件缓存 + 文件缓存 meta + 内存）
 pub fn delete(key: &str) {
+    let _guard = disk_read_guard();
     let _ = fs::remove_file(disk_path(key));
     let _ = fs::remove_file(file_path(key));
     let _ = fs::remove_file(file_meta_path(key));
     delete_memory(key);
+}
+
+/// 是否本模块的磁盘 KV 条目文件（`<sha256 小写 hex>.json`）
+///
+/// 注入缓存根是宿主应用缓存目录，同目录还可能有 image_cache / audio_cache /
+/// js_files 等**其他模块**的子目录与文件：清空只认本模块的命名，绝不整目录
+/// `remove_dir_all(root)`（那会越界清掉图片/音频/下载沙箱）。
+fn is_kv_disk_entry(path: &std::path::Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    let Some(stem) = name.strip_suffix(".json") else {
+        return false;
+    };
+    stem.len() == 64
+        && stem
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// 清空全部缓存（内存层 + 磁盘 KV 条目 + `file/` 数据与 meta）
+///
+/// # 语义（批36 P3-4）
+///
+/// 对齐上游「清理缓存」对缓存类存储的整体清理口径（`ConfigViewModel`
+/// `clearCache` = `BookHelp.clearCache()` + `FileUtils.delete(context.cacheDir)`，
+/// 后者删掉 `cacheDir/ACache`——`cache.putFile`/ByteArray 的落点）：我方书源
+/// 的 `cache.put/putFile/cacheFile` 映射与内存层统一落在本模块，故宿主
+/// 「清理缓存」必须同样清空，否则这些值（含 `dev_id`、登录相关缓存）会长期
+/// 残留在 `js_cache` 磁盘目录、清理后磁盘占用不降。
+///
+/// # 范围
+///
+/// - **只清本模块产物**：根目录下 `<sha256>.json` KV 条目 + `file/` 子目录
+///   （数据 + `.meta.json`）。根目录本身与 image_cache / audio_cache /
+///   js_files 等兄弟目录不动（上游删的是 `cacheDir` 整体，我方注入根与
+///   兄弟模块共享，不能照搬整目录删除）。
+/// - **保留根目录**：清空后根目录仍存在（不存在则补建），可立即继续
+///   `put/putFile`；单个条目删除失败（如 Windows 文件被占用）记一次性告警
+///   并继续清理其余条目（best-effort，不因单条失败回滚）。
+/// - **并发安全**：持 [`DISK_OP_LOCK`] 写锁，与进行中的单条读写互斥——
+///   正在使用的条目要么在清空前完成、要么在清空后重新写入，不会出现
+///   「写了一半被删/删了一半被写回」的中间态。
+///
+/// 注意：`clear_all` 是**进程级**入口（整机所有书源共享），不适用于书籍级
+/// 清理——缓存键没有书籍维度，详见 `legado-ffi` `cache_api::clear_book_cache`
+/// 的范围说明。
+pub fn clear_all() {
+    let _guard = disk_write_guard();
+
+    // 1) 内存层：putMemory 的纯内存值与 put 的永久值副本一并清除
+    match memory_cache().lock() {
+        Ok(mut cache) => cache.clear(),
+        Err(poisoned) => poisoned.into_inner().clear(),
+    }
+
+    let root = disk_dir();
+
+    // 2) 根目录 KV 条目：只删本模块命名的 `<sha256>.json`
+    match fs::read_dir(&root) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && is_kv_disk_entry(&path) {
+                    if let Err(e) = fs::remove_file(&path) {
+                        warn_once(&CLEAR_ALL_FAIL_WARNED, || {
+                            eprintln!(
+                                "[cache_store] 清空缓存删除条目失败 {path:?}: {e}（继续清理其余条目）"
+                            );
+                        });
+                    }
+                }
+            }
+        }
+        // 根目录尚未创建 = 无缓存可清（首次使用即清空的正常路径）
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            warn_once(&CLEAR_ALL_FAIL_WARNED, || {
+                eprintln!("[cache_store] 清空缓存读取根目录失败 {root:?}: {e}");
+            });
+        }
+    }
+
+    // 3) file/ 子目录：数据文件与旁路 meta 一次性整体清除
+    let file_dir = root.join("file");
+    if let Err(e) = fs::remove_dir_all(&file_dir) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            warn_once(&CLEAR_ALL_FAIL_WARNED, || {
+                eprintln!("[cache_store] 清空文件缓存目录失败 {file_dir:?}: {e}");
+            });
+        }
+    }
+
+    // 4) 根目录保留/补建：清空后仍可继续 put/putFile
+    if let Err(e) = fs::create_dir_all(&root) {
+        warn_once(&CLEAR_ALL_FAIL_WARNED, || {
+            eprintln!("[cache_store] 清空后补建缓存根目录失败 {root:?}: {e}");
+        });
+    }
 }
 
 #[cfg(test)]
@@ -578,6 +721,120 @@ mod tests {
         assert!(get(&k, true).is_none());
         assert!(get_file(&k).is_none());
         assert!(get_from_memory(&k).is_none());
+    }
+
+    /// [批36 P3-4] `clear_all`：内存层 + 根目录 KV 条目全清；
+    /// 根目录保留（清空后可立即继续写入）
+    #[test]
+    fn test_clear_all_clears_memory_and_disk_entries() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("clear-all-kv");
+        set_test_disk_dir_override(Some(root.clone()));
+        let k_perm = unique_key("clear-kv-perm");
+        let k_ttl = unique_key("clear-kv-ttl");
+        let k_mem = unique_key("clear-mem");
+
+        assert!(put(&k_perm, "perm-value", 0));
+        assert!(put(&k_ttl, "ttl-value", 3600));
+        put_memory(&k_mem, "memory-only");
+        assert!(disk_path(&k_perm).exists());
+        assert!(disk_path(&k_ttl).exists());
+        assert_eq!(get_from_memory(&k_perm).as_deref(), Some("perm-value"));
+
+        clear_all();
+
+        assert!(
+            get(&k_perm, false).is_none(),
+            "永久 KV（内存 + 磁盘）应被清空"
+        );
+        assert!(get(&k_perm, true).is_none(), "磁盘 KV 条目应被清空");
+        assert!(get(&k_ttl, true).is_none(), "TTL 磁盘 KV 条目应被清空");
+        assert!(get_from_memory(&k_mem).is_none(), "纯内存值应被清空");
+        assert!(!disk_path(&k_perm).exists());
+        assert!(!disk_path(&k_ttl).exists());
+        assert!(root.is_dir(), "清空后缓存根目录必须保留");
+
+        // 根目录保留 → 可立即继续写入
+        assert!(put(&k_perm, "after-clear", 0));
+        assert_eq!(get(&k_perm, false).as_deref(), Some("after-clear"));
+
+        delete(&k_perm);
+        set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// [批36 P3-4] `clear_all`：`file/` 数据文件与旁路 meta 一并清空，
+    /// 清空后 `putFile` 可正常继续写
+    #[test]
+    fn test_clear_all_clears_file_cache_and_meta() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("clear-all-file");
+        set_test_disk_dir_override(Some(root.clone()));
+        let k_perm = unique_key("clear-file-perm");
+        let k_ttl = unique_key("clear-file-ttl");
+
+        assert!(put_file(&k_perm, "permanent-file", 0));
+        assert!(put_file(&k_ttl, "ttl-file", 3600));
+        assert!(file_path(&k_perm).exists());
+        assert!(file_meta_path(&k_ttl).exists());
+        assert!(!file_meta_path(&k_perm).exists(), "永久条目不应写旁路 meta");
+
+        clear_all();
+
+        assert!(get_file(&k_perm).is_none(), "永久文件缓存应被清空");
+        assert!(get_file(&k_ttl).is_none(), "TTL 文件缓存应被清空");
+        assert!(!file_path(&k_perm).exists());
+        assert!(!file_path(&k_ttl).exists());
+        assert!(!file_meta_path(&k_ttl).exists(), "旁路 meta 应一并清空");
+        assert!(root.is_dir(), "清空后缓存根目录必须保留");
+
+        assert!(put_file(&k_perm, "after-clear", 0));
+        assert_eq!(get_file(&k_perm).as_deref(), Some("after-clear"));
+
+        delete(&k_perm);
+        set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// [批36 P3-4] `clear_all` 只清本模块产物：注入根是宿主应用缓存目录，
+    /// 兄弟模块目录（image_cache / js_files）与根目录非缓存命名文件不得删除，
+    /// 根目录本身也不得删除
+    #[test]
+    fn test_clear_all_preserves_root_and_sibling_cache_dirs() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("clear-all-scope");
+        set_test_disk_dir_override(Some(root.clone()));
+        let k = unique_key("clear-scope");
+
+        let image_dir = root.join("image_cache");
+        let js_files_dir = root.join("js_files");
+        fs::create_dir_all(&image_dir).expect("image_cache 目录");
+        fs::create_dir_all(&js_files_dir).expect("js_files 目录");
+        fs::write(image_dir.join("cover.bin"), "IMG").expect("图片缓存文件");
+        fs::write(js_files_dir.join("downloaded.js"), "JS").expect("下载沙箱文件");
+        fs::write(root.join("not-a-cache-entry.json"), "KEEP").expect("非缓存文件");
+
+        assert!(put(&k, "value", 0));
+
+        clear_all();
+
+        assert!(!disk_path(&k).exists(), "本模块 KV 条目应被清空");
+        assert_eq!(
+            fs::read_to_string(image_dir.join("cover.bin")).expect("图片缓存应保留"),
+            "IMG"
+        );
+        assert_eq!(
+            fs::read_to_string(js_files_dir.join("downloaded.js")).expect("下载沙箱应保留"),
+            "JS"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("not-a-cache-entry.json")).expect("非缓存文件应保留"),
+            "KEEP"
+        );
+        assert!(root.is_dir(), "缓存根目录本身不得删除");
+
+        set_test_disk_dir_override(None);
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// P2-11 ②：注入目录 → put→get 命中（磁盘文件落注入目录，清理后回落缺省）
