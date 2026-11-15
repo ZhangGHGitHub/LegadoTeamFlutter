@@ -76,7 +76,7 @@ fn backup_path_for(out_path: &Path, seq: usize) -> PathBuf {
 /// 落位失败回滚：删除 `pending` 传入切片的全部临时 `.part`，并把已落位项
 /// 恢复为导入前状态（Windows 有备份则 rename 回既有文件，否则删除本次新文件）
 ///
-/// [批32b P2-1] Windows 上目录/符号链接等非常规目标在落位前已拒绝、不会进入
+/// [批32b P2-1] 目录/符号链接等非常规目标在所有平台落位前已拒绝、不会进入
 /// `landed`，因此这里只处理常规文件；恢复失败仅告警，不改变返回的首个错误。
 fn rollback_landed(landed: Vec<(PathBuf, Option<PathBuf>)>, pending: &[(PathBuf, PathBuf)]) {
     for (temp, _) in pending {
@@ -102,30 +102,33 @@ fn rollback_landed(landed: Vec<(PathBuf, Option<PathBuf>)>, pending: &[(PathBuf,
 ///   平台删除本次新写入的文件（POSIX rename 原子替换，失败时既有目标本就
 ///   未被触碰）。既有输出文件不会因落位失败而丢失。
 /// - 既有目标不是常规文件（目录/符号链接等）一律拒绝，不移动/删除用户数据
-///   （Windows 显式判定；其他平台由 rename 原子语义兜底，目标目录不会被移走）。
+///   （全平台落位前显式判定，不依赖目标文件系统的 rename 失败语义）。
 fn land_pending_files(pending: Vec<(PathBuf, PathBuf)>, label: &str) -> LegadoResult<Vec<String>> {
     let mut landed: Vec<(PathBuf, Option<PathBuf>)> = Vec::with_capacity(pending.len());
     for (index, (temp, out_path)) in pending.iter().enumerate() {
-        // 既有目标必须是常规文件才允许覆盖：目录/符号链接目标若先 rename 到
-        // 备份，会把用户目录整体移走；直接拒绝并回滚。
-        #[cfg(windows)]
-        if out_path.exists() {
-            match fs::symlink_metadata(out_path) {
-                Ok(meta) if meta.is_file() => {}
-                Ok(_) => {
-                    rollback_landed(landed, &pending[index..]);
-                    return Err(LegadoError::BookParse(format!(
-                        "覆盖既有{label}输出文件失败 [{}]: 目标不是常规文件",
-                        out_path.display()
-                    )));
-                }
-                Err(e) => {
-                    rollback_landed(landed, &pending[index..]);
-                    return Err(LegadoError::BookParse(format!(
-                        "覆盖既有{label}输出文件失败 [{}]: {e}",
-                        out_path.display()
-                    )));
-                }
+        // 既有目标必须是常规文件才允许覆盖：目录/符号链接等非常规目标一律在
+        // 落位前拒绝并回滚，不移动/删除用户数据。
+        //
+        // 预检必须在**所有平台**执行（Linux CI 红 → 绿修复）：POSIX 上 rename(2)
+        // 对目录目标虽会以 EISDIR 失败，但对符号链接会静默替换链接本身，且错误
+        // 文案与 Windows 不一致；只有显式 symlink_metadata 才能得到确定、跨平台
+        // 一致的「非常规目标」语义。`NotFound` 表示新增输出。
+        match fs::symlink_metadata(out_path) {
+            Ok(meta) if meta.is_file() => {}
+            Ok(_) => {
+                rollback_landed(landed, &pending[index..]);
+                return Err(LegadoError::BookParse(format!(
+                    "覆盖既有{label}输出文件失败 [{}]: 目标不是常规文件",
+                    out_path.display()
+                )));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                rollback_landed(landed, &pending[index..]);
+                return Err(LegadoError::BookParse(format!(
+                    "覆盖既有{label}输出文件失败 [{}]: {e}",
+                    out_path.display()
+                )));
             }
         }
 
