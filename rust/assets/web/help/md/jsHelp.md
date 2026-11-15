@@ -355,7 +355,9 @@ java.htmlFormat(str: String, redirectUrl: String): String
 * 文件
 >  所有文件操作都限域在引擎沙箱目录内（应用缓存下的 `js_files/<书源哈希>/`；未注入宿主目录时为系统临时目录 `legado_js_cache/<书源哈希>/`，同一书源共享一个子目录、不同书源互不可见）：相对路径相对该子目录解析，绝对路径也必须位于其中，越界读写返回 `[ERROR]` 或抛异常。单文件读取/下载上限 32MB（`writeFile` 仅调试环境可用且无上限），`getTxtInFolder` 累计上限 64MB。下载按**原始字节**落盘，不做文本编码转换。
 ```js
-//文件下载 url用于生成文件名，返回文件路径
+//文件下载：落盘名 <md5Encode16(url)>.<type>，返回**源内相对文件名**
+//（可直接传给 readTxtFile/getFile）；URL 尾部的 ,{...} 选项仅参与命名
+//与 URL 剥离，headers/method 暂不支持
 java.downloadFile(url: String): String
 //已废弃：十六进制内容按 url 类型落盘（原版 @Deprecated 重载）
 java.downloadFile(contentHex: String, url: String): String
@@ -364,7 +366,8 @@ java.unArchiveFile(zipPath: String): String
 java.unzipFile(zipPath: String): String
 java.unrarFile(zipPath: String): String
 java.un7zFile(zipPath: String): String
-//文件夹内所有文件读取（换行拼接）
+//文件夹内所有文件读取（换行拼接）；**读完会删除该目录**（对齐原版），
+//删除失败仅告警；拒绝删除当前工作目录或其祖先
 java.getTxtInFolder(path: String): String
 //读取文本文件（可选第二参数指定编码，默认 UTF-8）
 java.readTxtFile(path: String): String
@@ -373,7 +376,8 @@ java.readTxtFile(path: String, charset: String): String
 java.readFile(path: String): String
 //获取文件对象（exists()/getName()/getAbsolutePath()/toString()）
 java.getFile(path: String): File
-//删除文件
+//删除文件；若为目录则**递归删除**（对齐原版），
+//拒绝删除当前工作目录或其祖先、拒绝删除引擎沙箱根
 java.deleteFile(path: String): Boolean
 ```
 > 以下为我方扩展，**非原版能力**：仅调试/可信脚本环境（`allow_file_access=true`）可用，书源生产环境（`allow_file_access=false`）不注册，调用时为 `undefined`。
