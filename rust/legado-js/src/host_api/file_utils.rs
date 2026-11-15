@@ -12,7 +12,9 @@
 //!   形态；`(url, fileName)` 文件名重载是我方扩展，仅 permissive 注册），
 //!   按**原始字节**落盘（二进制无损）；命名与返回值对齐上游
 //!   `JsExtensions.kt:518-540`：`<md5Encode16(url)>.<type>`，返回源内
-//!   **相对名**（上游返回相对缓存目录的路径）
+//!   **相对名**（上游返回相对缓存目录的路径）。URL 后的 `,{...}` 选项
+//!   参与命名，网络请求前经 `split_url_option` 剥离（选项内
+//!   `headers` / `method` 暂不支持，见 [`download_file`]）
 //! - cacheFile — 缓存网络文件（`md5Encode16(url)` 为键与文件名，返回文件内容）
 //! - importScript — 读取本地/远端 JS 脚本（远端经 cacheFile）
 //! - getTxtInFolder — 获取文件夹下所有文件内容（读完删除该目录，对齐上游
@@ -46,6 +48,14 @@
 //! 隔离，删掉根目录会让本源后续 `downloadFile` / `cacheFile` /
 //! `getTxtInFolder` 全部失效，因此两个入口都拒绝删除引擎根（沙箱根 /
 //! 字体缓存根），返回明确错误或告警，不静默清空。
+//!
+//! 递归删除还有一层**与沙箱策略无关**的保护（P2-2）：`allow_file_access=true`
+//! 时 `FsPolicy` 原样放行任意路径，若脚本对 `.` 调用 `deleteFile` /
+//! `getTxtInFolder`，目标就是**进程 CWD**。Unix/Android 的
+//! `remove_dir_all` 会先逐项删空 CWD 内容、再因无法删除 `.` 报错；
+//! `getTxtInFolder` 只告警并照常返回，用户数据已丢。因此 [`remove_path`]
+//! 对**目录递归删除**额外拒绝「当前工作目录及其祖先」（permissive 下同样
+//! 生效）；引擎根内允许，引擎根外仅放行与 CWD 无关的目标。
 //!
 //! # 资源上限（P2-6 / P1-1）
 //!
@@ -236,7 +246,8 @@ mod impl_file_utils {
     /// 存在并删除成功。差异（安全边界）：`path` 解析后等于引擎根（当前书源
     /// 沙箱根 / 字体缓存根）时拒绝并返回明确错误——我方沙箱按书源隔离，
     /// 根目录就是该源的整个存储空间，删掉会让本源后续文件 API 全部失效；
-    /// 上游共享 `externalCache`，不存在这个「本源根」概念。
+    /// 上游共享 `externalCache`，不存在这个「本源根」概念。目录递归删除
+    /// 另拒绝当前工作目录及其祖先（P2-2，permissive 下同样生效）。
     pub fn delete_file(policy: &FsPolicy, relative_path: &str) -> Result<bool, String> {
         let path = policy.resolve_write_path(relative_path)?;
         if !path.exists() {
@@ -248,40 +259,89 @@ mod impl_file_utils {
 
     /// 递归删除文件/目录（调用方已完成 `FsPolicy` 写策略校验）
     ///
-    /// 引擎根（[`default_sandbox_root`] / `font_api::font_cache_dir`）拒绝：
-    /// 目录存在时 `canonicalize` 后与两根逐一比较（Windows `canonicalize`
-    /// 两侧同样带 `\\?\` 前缀，直接比较即可）。
+    /// 保护顺序（P2-2 / P3-2）：
+    /// 1. 目标必须先能 `canonicalize`——路径存在但解析失败时返回明确错误，
+    ///    不再 `Ok(())` 放行（fail-closed）；
+    /// 2. 目标等于引擎根（[`default_sandbox_root`] /
+    ///    `font_api::font_cache_dir`）→ 拒绝；
+    /// 3. **目录递归删除**时，目标等于当前工作目录或是 CWD 的祖先 → 拒绝
+    ///    （`allow_file_access=true` 下同样生效，防止清空进程 CWD）；
+    /// 4. 其余目录：引擎根内允许；引擎根外仅放行与 CWD 无关的目标
+    ///    （permissive 的调试语义保留，但不能删除 CWD 及其祖先）。
+    ///
+    /// 删除单个文件不做 CWD 判定：删文件不可能清空目录。
+    /// `getTxtInFolder` 侧把这里的错误降级为告警，返回内容不受影响。
     pub(crate) fn remove_path(path: &Path) -> Result<(), String> {
-        ensure_not_engine_root(path)?;
+        remove_path_with_cwd(path, std::env::current_dir().ok().as_deref())
+    }
+
+    /// [`remove_path`] 的实现（`current_dir` 可注入，便于用临时目录模拟
+    /// CWD 做保护测试，避免测试真正切换进程工作目录）
+    pub(super) fn remove_path_with_cwd(
+        path: &Path,
+        current_dir: Option<&Path>,
+    ) -> Result<(), String> {
         let metadata = fs::symlink_metadata(path).map_err(|e| format!("Delete error: {}", e))?;
+        let target = canonicalize_existing(path)?;
+        let roots = engine_roots_canonical();
+        if roots.iter().any(|root| root == &target) {
+            return Err(format!(
+                "Delete error: 拒绝删除引擎沙箱根目录（{}）",
+                path.display()
+            ));
+        }
         if metadata.is_dir() {
+            let inside_engine_root = roots.iter().any(|root| target.starts_with(root));
+            match current_dir {
+                Some(dir) => match fs::canonicalize(dir) {
+                    Ok(cwd) => {
+                        if cwd.starts_with(&target) {
+                            return Err(format!(
+                                "Delete error: 拒绝删除当前工作目录或其祖先目录（{}）",
+                                path.display()
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        return Err(format!(
+                            "Delete error: 无法解析当前工作目录（{}）：{error}",
+                            dir.display()
+                        ));
+                    }
+                },
+                None if !inside_engine_root => {
+                    return Err(format!(
+                        "Delete error: 无法确定当前工作目录，拒绝递归删除（{}）",
+                        path.display()
+                    ));
+                }
+                None => {}
+            }
             fs::remove_dir_all(path).map_err(|e| format!("Delete error: {}", e))
         } else {
             fs::remove_file(path).map_err(|e| format!("Delete error: {}", e))
         }
     }
 
-    /// 引擎根保护（`deleteFile` / `getTxtInFolder` 共用）
-    fn ensure_not_engine_root(path: &Path) -> Result<(), String> {
-        let Ok(target) = fs::canonicalize(path) else {
-            return Ok(());
-        };
-        let roots = [
+    /// `canonicalize` 已存在目标（P3-2：失败即明确错误，不再 fail-open）
+    fn canonicalize_existing(path: &Path) -> Result<PathBuf, String> {
+        fs::canonicalize(path).map_err(|error| {
+            format!(
+                "Delete error: 无法解析目标路径（{}）：{error}",
+                path.display()
+            )
+        })
+    }
+
+    /// 引擎根（canonical 形式；不存在/无法解析的根跳过）
+    fn engine_roots_canonical() -> Vec<PathBuf> {
+        [
             default_sandbox_root(),
             crate::host_api::font_api::font_cache_dir(),
-        ];
-        let is_root = roots.iter().any(|root| {
-            fs::canonicalize(root)
-                .map(|canonical| canonical == target)
-                .unwrap_or(false)
-        });
-        if is_root {
-            return Err(format!(
-                "Delete error: 拒绝删除引擎沙箱根目录（{}）",
-                path.display()
-            ));
-        }
-        Ok(())
+        ]
+        .into_iter()
+        .filter_map(|root| fs::canonicalize(root).ok())
+        .collect()
     }
 
     /// 列出目录下所有文件名
@@ -450,6 +510,21 @@ mod impl_file_utils {
     /// `.part` → rename」：上限已使内存可控，且当前契约是拿到完整内容才
     /// 落盘——流式写盘还需额外处理临时名、rename 与失败清理；二进制完整性
     /// 由网络层的无损字节读取保证。
+    ///
+    /// # `,{...}` 选项（P2-3）
+    ///
+    /// 命名覆盖**完整入参**（含选项），但网络请求只使用
+    /// [`split_url_option`] 剥离后的 URL 部分（对齐上游 `AnalyzeUrl` 在
+    /// 发请求前去掉 `paramPattern` 之后的选项）：
+    /// `downloadFile("http://h/a.jpg,{"type":"jpg"}")` 请求 `/a.jpg`，
+    /// 不会把 `,{...}` 字面量拼进请求路径导致 404。
+    ///
+    /// 选项中的 `headers` / `method` / `body` **暂不支持**（仅 GET）。完整
+    /// 应用需要走 `AnalyzeUrl` 链路：书源级 headers、cookie jar 合并、
+    /// 非 GET 方法的流式有界下载；当前 `get_bytes_capped` 只接受 GET +
+    /// 显式 headers，只应用选项 headers 而不合并书源头/Cookie 会形成半套
+    /// 语义，且可能改变现网下载行为，故留待后续专题。当前选项仅参与命名
+    /// 与 URL 剥离，属已登记的已知差异。
     pub fn download_file(
         policy: &FsPolicy,
         url: &str,
@@ -474,13 +549,19 @@ mod impl_file_utils {
         // 落盘路径必须先过写策略（越界在联网前即拒绝）
         let dest = policy.resolve_write_path(&name)?;
 
+        // P2-3：`,{...}` 选项参与命名（hash 覆盖完整入参），但不属于请求
+        // URL——上游 AnalyzeUrl 在发请求前剥离选项。去掉后
+        // `downloadFile("http://h/a.jpg,{"type":"jpg"}")` 请求 `/a.jpg`，
+        // 而不是把选项字面量拼进路径导致 404。
+        let (request_url, _) = split_url_option(url);
+
         // 异步下载（通过 block_on 桥接）：进程级共享池（2026-09-24 性能专项：
         // 不再每下载新建客户端/连接池；回环 URL 经 no_proxy 直连池）
         let bytes = crate::host_api::runtime_bridge::block_on(async {
-            let client = crate::host_api::network::shared_client_for_url(url)
+            let client = crate::host_api::network::shared_client_for_url(request_url)
                 .map_err(|e| format!("Download client error: {}", e))?;
             client
-                .get_bytes_capped(url, None, max_bytes)
+                .get_bytes_capped(request_url, None, max_bytes)
                 .await
                 .map_err(|e| format!("Download error: {}", e))
         })?;
@@ -532,10 +613,11 @@ mod impl_file_utils {
 
     /// cacheFile(url, saveTime?) — 缓存网络文件并返回**文件内容**
     ///
-    /// 对应 Kotlin: `cacheFile(url)` / `cacheFile(url, saveTime)`：URL MD5
-    /// 前 16 位为缓存键，`saveTime` 秒（0 = 永久）写入 `cache_store`；缓存
-    /// 命中且文件仍存在时直接读取，否则下载后读取。返回内容而非路径——上游
-    /// 与随包帮助 `eval(String(java.cacheFile(url)))` 均按内容消费。
+    /// 对应 Kotlin: `cacheFile(url)` / `cacheFile(url, saveTime)`：缓存键为
+    /// `md5Encode16(url)`（MD5 小写 hex **中段 16 字符**），`saveTime` 秒
+    /// （0 = 永久）写入 `cache_store`；缓存命中且文件仍存在时直接读取，
+    /// 否则下载后读取。返回内容而非路径——上游与随包帮助
+    /// `eval(String(java.cacheFile(url)))` 均按内容消费。
     ///
     /// 下载与落盘复用 [`download_file`]（流式有上限 + 原始字节，P1-1/P1-2）。
     /// 本 API 返回文本，读取时按 **UTF-8** 解码；非法序列回退
@@ -559,10 +641,10 @@ mod impl_file_utils {
     /// - `cache.get(md5(url))` 不再返回任何源的绝对路径字符串（内容本来
     ///   就受 `FsPolicy` 跨源拦截，此处同时消除元数据泄露）。
     ///
-    /// 兼容性：旧版本写入的绝对路径条目在**本源**仍可命中（策略放行时直接
-    /// 读取），跨源时 `resolve_read_path` 越界 → 视为 miss 并重新下载，随后
-    /// 映射被覆盖为本源相对名。键从旧实现的「MD5 前 16 字符」改为中段 16
-    /// 字符后，旧键条目自然 miss（重新下载并写新键），无数据损坏。
+    /// 兼容性：键从旧实现的「MD5 **前** 16 字符」改为中段 16 字符后，旧键
+    /// 条目**不可能**被新键命中（两者是不同的字符串）；旧映射值（沙箱绝对
+    /// 路径）与旧文件名（前 16 字符 + 后缀）同样是孤儿。首次调用会重新下载
+    /// 并按新键/新文件名写入，旧条目不会被读取也不会造成数据损坏；无需迁移。
     pub fn cache_file(policy: &FsPolicy, url: &str, save_time_secs: i64) -> Result<String, String> {
         let key = crate::host_api::encoding::md5_encode_16(url);
 
@@ -615,7 +697,8 @@ mod impl_file_utils {
     /// 文件夹内**所有文件**（不限扩展名）并以换行拼接，然后
     /// `FileUtils.delete(folder.absolutePath)` **递归删除该目录**。删除失败
     /// 只告警、不影响已读到的返回内容；`folderPath` 解析后等于引擎根（当前
-    /// 书源沙箱根 / 字体缓存根）时同样拒绝删除（见 `ensure_not_engine_root`）。
+    /// 书源沙箱根 / 字体缓存根）或等于/包含进程 CWD 时同样拒绝删除
+    /// （见 [`remove_path`]）。
     /// 每个文件读取前单独过策略，防止目录内符号链接越界。
     ///
     /// 资源上限（P2-6）：先按元数据累计，超 64MB 直接拒绝（不读入）；读取
@@ -886,8 +969,48 @@ mod tests {
 
     /// 测试侧取 cacheFile 键（对齐 `MD5Utils.md5Encode16`：MD5 小写 hex
     /// `[8, 24)` 中段 16 字符）
+    ///
+    /// 注意：本函数与被测生产实现同源，只能用于「文件名与键一致」类断言；
+    /// 算法本身的回归由 `test_download_file_name_uses_md5_middle_16_hardcoded_vector`
+    /// 的硬编码向量钉住（P3-4）。
     fn cache_key16(input: &str) -> String {
         crate::host_api::encoding::md5_encode_16(input)
+    }
+
+    fn unique_name(tag: &str) -> String {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{tag}_{}_{nanos}", std::process::id())
+    }
+
+    fn unique_path(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(unique_name(tag))
+    }
+
+    /// 创建目录链接：Unix 用 symlink，Windows 用 junction（普通用户可建）
+    fn create_dir_link(link: &Path, target: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (link, target);
+            false
+        }
     }
 
     // ---- 基本文件操作测试 ----
@@ -1194,6 +1317,95 @@ mod tests {
         assert!(download_file_name("https://h/p/a.jpg,{\"type\":1}").ends_with(".jpg"));
     }
 
+    /// P3-4：`download_file_name` 的 MD5 段必须是**中段** 16 字符
+    ///
+    /// 硬编码向量（`md5("hello") = 5d41402abc4b2a76b9719d911017c592`）：
+    /// 若实现退回旧口径「前 16 字符」（`5d41402abc4b2a76`），此断言立即
+    /// 失败。只用 `cache_key16()`（直接调用生产 `md5_encode_16`）的断言会
+    /// 随实现一起漂移，测不出该回归。
+    #[test]
+    fn test_download_file_name_uses_md5_middle_16_hardcoded_vector() {
+        assert_eq!(
+            download_file_name("hello"),
+            "bc4b2a76b9719d91.ext",
+            "md5Encode16 应取 MD5 hex 的 [8,24)，不是前 16 字符"
+        );
+        assert_eq!(
+            crate::host_api::encoding::md5_encode_16("hello"),
+            "bc4b2a76b9719d91"
+        );
+    }
+
+    /// 记录请求路径的回环服务器（P2-3：请求 URL 不得包含 `,{...}` 选项）
+    fn spawn_request_path_recorder(
+        body: &'static str,
+    ) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let paths = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let server_paths = Arc::clone(&paths);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let text = String::from_utf8_lossy(&head).into_owned();
+                let path = text
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
+                server_paths.lock().unwrap().push(path);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), paths)
+    }
+
+    /// P2-3：`,{...}` 只参与命名，网络请求使用剥离后的 URL
+    ///
+    /// 修复前请求路径字面含 `,{"type":"jpg"}`（服务端 404）；修复后请求
+    /// `/a.jpg`，文件名仍按完整入参的 md5 生成。
+    #[test]
+    fn test_download_file_strips_url_option_from_request() {
+        setup_sandbox();
+        let (base, paths) = spawn_request_path_recorder("JPEG-BYTES");
+        let url = format!("{base}/a.jpg,{{\"type\":\"jpg\"}}");
+
+        let name = download_file(&restricted(), &url, None).unwrap();
+        assert_eq!(name, format!("{}.jpg", cache_key16(&url)));
+        assert_eq!(
+            paths.lock().unwrap().clone(),
+            vec!["/a.jpg".to_string()],
+            "请求路径不得包含 ,{{...}} 选项字面量"
+        );
+        let dest = sandbox_root().join(&name);
+        assert_eq!(fs::read(&dest).unwrap(), b"JPEG-BYTES");
+        let _ = fs::remove_file(dest);
+    }
+
     /// `deleteFile(dir)` 递归删除（对齐上游 `FileUtils.delete(file, true)`）
     #[test]
     fn test_delete_file_removes_directory_recursively() {
@@ -1233,6 +1445,204 @@ mod tests {
         // deleteFile(".") 解析后等于当前书源沙箱根 → 明确错误
         let err = delete_file(&restricted(), ".").unwrap_err();
         assert!(err.contains("拒绝删除引擎沙箱根目录"), "err = {err}");
+
+        // P3-5 ①（Windows）：`...` / `....` 经 Win32 规范化到目录自身，
+        // 受限模式下解析到沙箱根 → 根保护拒绝（真实 CWD 内容不受影响）
+        #[cfg(windows)]
+        for raw in ["...", "...."] {
+            let err = delete_file(&restricted(), raw).unwrap_err();
+            assert!(
+                err.contains("拒绝删除引擎沙箱根目录") || err.contains("当前工作目录"),
+                "raw = {raw}, err = {err}"
+            );
+            assert!(default_sandbox_root().exists(), "沙箱根不得被删除");
+        }
+    }
+
+    /// P2-2：目录递归删除拒绝 CWD 及其祖先（临时目录模拟 CWD）
+    ///
+    /// 通过 `remove_path_with_cwd` 注入模拟 CWD，不改进程工作目录——避免
+    /// 并行测试互相干扰。真实 `deleteFile(".")` / `getTxtInFolder(".")`
+    /// 路径另由子进程用例覆盖。
+    #[test]
+    fn test_remove_path_refuses_cwd_and_ancestors() {
+        let base = unique_path("cwd_guard_dirs");
+        let cwd = base.join("cwd");
+        let child = cwd.join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::write(cwd.join("sentinel.txt"), "KEEP").unwrap();
+
+        // 目标就是 CWD → 拒绝
+        let err = super::impl_file_utils::remove_path_with_cwd(&cwd, Some(&cwd)).unwrap_err();
+        assert!(err.contains("当前工作目录"), "err = {err}");
+        assert!(cwd.join("sentinel.txt").is_file());
+
+        // 目标是 CWD 的祖先 → 拒绝
+        let err = super::impl_file_utils::remove_path_with_cwd(&base, Some(&cwd)).unwrap_err();
+        assert!(err.contains("当前工作目录"), "err = {err}");
+        assert!(cwd.join("sentinel.txt").is_file());
+
+        // 与 CWD 无关的子目录仍可递归删除（permissive 调试语义保留）
+        super::impl_file_utils::remove_path_with_cwd(&child, Some(&cwd)).unwrap();
+        assert!(!child.exists());
+
+        // 引擎根内的目录允许删除（目标在允许根内，不属于 CWD）
+        let in_root = sandbox_root().join(unique_name("cwd_guard_in_root"));
+        fs::create_dir_all(&in_root).unwrap();
+        super::impl_file_utils::remove_path_with_cwd(&in_root, Some(&cwd)).unwrap();
+        assert!(!in_root.exists());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// P3-2：目标存在但 canonicalize 失败 → 明确错误（不再 fail-open）
+    #[cfg(unix)]
+    #[test]
+    fn test_remove_path_fails_closed_on_unresolvable_target() {
+        let base = unique_path("cwd_guard_dangling");
+        fs::create_dir_all(&base).unwrap();
+        let link = base.join("dangling");
+        std::os::unix::fs::symlink(base.join("missing"), &link).unwrap();
+
+        let err = super::impl_file_utils::remove_path_with_cwd(&link, Some(&base)).unwrap_err();
+        assert!(err.contains("无法解析目标路径"), "err = {err}");
+        assert!(
+            fs::symlink_metadata(&link).is_ok(),
+            "解析失败时不得删除目标"
+        );
+
+        let _ = fs::remove_file(&link);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// P3-5 ②：沙箱内目录链接 → 引擎根，拒绝删除且根存活
+    #[test]
+    fn test_delete_file_rejects_link_to_engine_root() {
+        setup_sandbox();
+        let root = sandbox_root();
+        let link = root.join(unique_name("link_to_root"));
+        if !create_dir_link(&link, &root) {
+            eprintln!("skip: 当前环境无法创建目录链接（权限不足）");
+            return;
+        }
+
+        // 受限：写策略直接拒绝末段符号链接/重解析点
+        let relative = link.file_name().unwrap().to_string_lossy().into_owned();
+        let err = delete_file(&restricted(), &relative).unwrap_err();
+        assert!(
+            err.contains("符号链接") || err.contains("重解析点"),
+            "err = {err}"
+        );
+        assert!(root.exists(), "引擎根不得被删除");
+
+        // permissive：canonical 后等于引擎根 → 根保护拒绝
+        let err = delete_file(&FsPolicy::unrestricted(), &link.to_string_lossy()).unwrap_err();
+        assert!(err.contains("拒绝删除引擎沙箱根目录"), "err = {err}");
+        assert!(root.exists(), "引擎根不得被删除");
+
+        // 只移除链接本身，不跟随删除引擎根
+        let _ = fs::remove_dir(&link);
+        let _ = fs::remove_file(&link);
+    }
+
+    /// P3-5 ③：受限模式 `getTxtInFolder(".")` 返回内容且不删除引擎根
+    #[test]
+    fn test_get_txt_in_folder_dot_in_restricted_mode_keeps_engine_root() {
+        use crate::host_api::current_source::with_current_source_tag;
+
+        let tag = format!("https://p35-{}.example/", unique_name("tag"));
+        with_current_source_tag(&tag, || {
+            let root = sandbox_root();
+            fs::create_dir_all(&root).unwrap();
+            fs::write(root.join("keep.txt"), "KEEP").unwrap();
+
+            let content = get_txt_in_folder(&restricted(), ".").unwrap();
+            assert!(content.contains("KEEP"), "content = {content}");
+            assert!(root.exists(), "引擎根不得被删除");
+
+            let _ = fs::remove_file(root.join("keep.txt"));
+            let _ = fs::remove_dir(&root);
+        });
+    }
+
+    const CWD_GUARD_HELPER_ENV: &str = "LEGADO_JS_CWD_GUARD_HELPER";
+
+    /// P2-2：permissive 下 `deleteFile(".")` / `getTxtInFolder(".")` 不得清空 CWD
+    ///
+    /// 在**子进程**里把工作目录设到临时目录后执行真实 API：若保护回归，
+    /// 被删除的是临时目录而不是仓库工作区；同时不切换主测试进程的 CWD，
+    /// 避免干扰并行用例。
+    #[test]
+    fn test_permissive_delete_dot_keeps_cwd_contents() {
+        if std::env::var_os(CWD_GUARD_HELPER_ENV).is_some() {
+            return;
+        }
+        let dir = unique_path("cwd_guard_actual");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("sentinel.txt"), "CWD-SENTINEL").unwrap();
+        let exe = std::env::current_exe().expect("current_exe");
+        let output = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "--nocapture",
+                "host_api::file_utils::tests::cwd_guard_subprocess_helper",
+            ])
+            .current_dir(&dir)
+            .env(CWD_GUARD_HELPER_ENV, "1")
+            .output()
+            .expect("启动 CWD 保护子进程");
+        assert!(
+            output.status.success(),
+            "CWD 保护子进程失败\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(dir.join("sentinel.txt").is_file(), "CWD 内容必须保留");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 子进程侧：真实 CWD 下调用 permissive 文件 API（见上一个用例）
+    #[test]
+    fn cwd_guard_subprocess_helper() {
+        if std::env::var_os(CWD_GUARD_HELPER_ENV).is_none() {
+            return;
+        }
+        let cwd = std::env::current_dir().expect("current_dir");
+        assert!(cwd.join("sentinel.txt").is_file(), "子进程 CWD 夹具缺失");
+        let policy = FsPolicy::unrestricted();
+
+        let err = delete_file(&policy, ".").unwrap_err();
+        assert!(err.contains("当前工作目录"), "err = {err}");
+        assert!(
+            cwd.join("sentinel.txt").is_file(),
+            "deleteFile(\".\") 不得删除 CWD 内容"
+        );
+
+        // P3-5 ①（Windows）：`...` / `....` 经 Win32 规范化到目录自身
+        #[cfg(windows)]
+        for raw in ["...", "...."] {
+            let error = delete_file(&policy, raw)
+                .expect_err("Windows 下 `...`/`....` 应解析到 CWD 并被拒绝");
+            assert!(
+                error.contains("当前工作目录") || error.contains("引擎沙箱根目录"),
+                "raw = {raw}, err = {error}"
+            );
+            assert!(
+                cwd.join("sentinel.txt").is_file(),
+                "raw = {raw} 不得删除 CWD 内容"
+            );
+        }
+
+        let content =
+            get_txt_in_folder(&policy, ".").expect("getTxtInFolder(\".\") 应返回内容而非报错");
+        assert!(
+            content.contains("CWD-SENTINEL"),
+            "应返回 CWD 文件内容: {content}"
+        );
+        assert!(
+            cwd.join("sentinel.txt").is_file(),
+            "getTxtInFolder(\".\") 不得删除 CWD 内容"
+        );
     }
 
     /// `getTxtInFolder` 读完删除目录（内容不受影响；子目录被递归清理）

@@ -574,6 +574,57 @@ fn restricted_mode_download_cache_import_script() {
         "cacheFile 二次调用应命中缓存（saveTime 生效期内）"
     );
 
+    // P2-3：`,{...}` 选项只参与命名，请求前剥离。服务端只登记
+    // `/a/cover.jpg`，选项若进入请求路径会得到 404（旧实现即如此）。
+    let option_url = format!("http://{addr}/a/cover.jpg,{{\"type\":\"jpg\"}}");
+    let option_name = engine
+        .eval(&format!("java.downloadFile({})", js_str(&option_url)))
+        .unwrap();
+    assert!(
+        !option_name.starts_with("[ERROR]"),
+        "选项不得进入请求路径（否则服务端 404）: {option_name}"
+    );
+    assert_eq!(
+        std::fs::read(base.join(&option_name)).unwrap(),
+        b"COVER_A",
+        "选项剥离后应下载到 /a/cover.jpg 的内容"
+    );
+    assert_eq!(
+        hit_count(&hits, "/a/cover.jpg"),
+        2,
+        "请求应落在剥离选项后的 /a/cover.jpg"
+    );
+    let _ = std::fs::remove_file(base.join(&option_name));
+
+    // P3-4 读回契约：`java.cacheFile(url)` 写入的键是
+    // `java.md5Encode16(url)`，值是可与 `downloadFile(url)` 互认的相对名；
+    // 书源 `cache.get(md5Encode16(url))` 必须能读回该文件名。
+    let key = legado_js::host_api::encoding::md5_encode_16(&url);
+    let readback = engine
+        .eval(&format!(
+            r#"
+            var u = {u};
+            var content = java.cacheFile(u);
+            var mapped = cache.get(java.md5Encode16(u));
+            var downloaded = java.downloadFile(u);
+            [String(content), String(mapped), String(downloaded)].join('|')
+            "#,
+            u = js_str(&url)
+        ))
+        .unwrap();
+    let parts: Vec<&str> = readback.split('|').collect();
+    assert_eq!(parts.len(), 3, "readback = {readback}");
+    assert_eq!(parts[0], "1 + 1");
+    assert_eq!(
+        parts[1],
+        format!("{key}.js"),
+        "cache.get(md5Encode16(url)) 应返回缓存映射的文件名"
+    );
+    assert_eq!(
+        parts[1], parts[2],
+        "缓存映射值必须等于 downloadFile 同一 URL 的返回文件名（读回契约）"
+    );
+
     // importScript(URL) 返回脚本内容，且 eval 后可在生产引擎执行
     let import_url = format!("http://{addr}/import.js");
     let code = engine

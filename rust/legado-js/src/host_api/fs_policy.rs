@@ -80,6 +80,10 @@ pub struct FsPolicy {
 
 impl FsPolicy {
     /// 不限制路径（`allow_file_access=true`，调试 / 可信脚本）
+    ///
+    /// 注意：路径解析不受限不等于全部安全约束解除。目录**递归删除**仍受
+    /// `file_utils::remove_path` 的引擎根 / 当前工作目录保护（P2-2）——
+    /// 否则 `deleteFile(".")` / `getTxtInFolder(".")` 会清空进程 CWD。
     pub const fn unrestricted() -> Self {
         Self {
             allow_arbitrary_paths: true,
