@@ -88,6 +88,24 @@ Set<String> _tempArtifacts(String prefix) {
       .toSet();
 }
 
+/// 等网络恢复临时目录清理完成（顶部定义：组内先于声明不可引用）
+///
+/// dispose 走真实文件 IO，`pumpAndSettle` 不驱动事件循环；且清理发生在
+/// 「恢复成功」提示之后，慢机上可能滞后于提示文案出现，故用 runAsync
+/// 逐步推进到目录消失，而不是在提示出现的同一帧立即断言。
+Future<void> waitForTempCleaned(WidgetTester tester, Set<String> before) async {
+  for (var i = 0; i < 400; i++) {
+    if (_tempArtifacts('legado_webdav_restore_').difference(before).isEmpty) {
+      return;
+    }
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 2)),
+    );
+  }
+  fail('网络恢复临时目录未清理');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -591,8 +609,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(PrefKeys.lastSeenRemoteBackupMtime), jan2);
       expect(prefs.getInt(PrefKeys.lastBackup), isNull);
-      final after = _tempArtifacts('legado_webdav_restore_');
-      expect(after.difference(before), isEmpty, reason: '下载临时目录必须清理');
+      await waitForTempCleaned(tester, before);
 
       // sanity：三个时间戳均有效且互不相同
       expect({jan1, jan2, jan3}, hasLength(3));
@@ -812,28 +829,6 @@ void main() {
         }
       }
       fail('备份密码对话框未出现');
-    }
-
-    /// 等网络恢复临时目录清理完成
-    ///
-    /// dispose 走真实文件 IO，pumpAndSettle 不驱动事件循环；用 runAsync
-    /// 逐步推进直到临时目录消失。
-    Future<void> waitForTempCleaned(
-      WidgetTester tester,
-      Set<String> before,
-    ) async {
-      for (var i = 0; i < 400; i++) {
-        if (_tempArtifacts(
-          'legado_webdav_restore_',
-        ).difference(before).isEmpty) {
-          return;
-        }
-        await tester.pump(const Duration(milliseconds: 10));
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 2)),
-        );
-      }
-      fail('网络恢复临时目录未清理');
     }
 
     /// 打开网络恢复列表并选中密码 zip、确认恢复，等密码框出现
