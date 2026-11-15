@@ -337,7 +337,9 @@ class BookOpenUtils {
       if (!privacy.verifyOnOpenBook) return true;
       if (privacy.isBookTargetGranted(facts)) return true;
       if (!context.mounted) return false;
-      return showPrivacyUnlockDialog(
+      // 必须 await：不 await 的话对话框 Future 的异常会绕过下面的 catch，
+      // 既变成未处理异步错误，也破坏「判定链异常一律 fail-open」的语义。
+      return await showPrivacyUnlockDialog(
         context,
         ref,
         bookUrl: book.bookUrl,
