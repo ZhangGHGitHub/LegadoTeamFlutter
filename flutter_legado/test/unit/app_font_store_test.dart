@@ -366,11 +366,23 @@ void main() {
     // 按 UTF-8 字节计 255，只按 rune 截断时 96 个 emoji 即 384 字节，
     // 导入会以 ENAMETOOLONG 失败（Windows 按码元计，掩盖了该缺陷）。
     final storedName = longId.split('/').last;
+    final storedBytes = utf8.encode(storedName);
     expect(
-      utf8.encode(storedName).length,
+      storedBytes.length,
       lessThanOrEqualTo(255),
       reason: '单文件名不得超过文件系统 NAME_MAX（Linux/Android 按字节计）',
     );
+    // 截断必须落在完整字符边界：按 UTF-8 解码回字符串应与原名逐字符一致，
+    // 既不会切出半个多字节字符，也不会出现替换符（Dart 侧等价于 Rust
+    // `String::from_utf8` 成功；allowMalformed 默认即为 false）。
+    expect(utf8.decode(storedBytes, allowMalformed: false), storedName);
+
+    // 非法 UTF-16（孤立代理项）不得透传进落盘名
+    final brokenId = await AppFontStore.importBytes(
+      validSfnt(),
+      originalName: 'a${String.fromCharCode(0xD800)}b.ttf',
+    );
+    expect(AppFontStore.displayNameOf(brokenId), 'ab.ttf');
 
     final reservedId = await AppFontStore.importBytes(
       validSfnt(),

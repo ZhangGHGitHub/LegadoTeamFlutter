@@ -537,14 +537,17 @@ class AppFontStore {
     if (_windowsReservedNames.contains(base.toUpperCase())) {
       base = '_$base';
     }
-    // 按 Unicode 码点（rune）截断，避免切断代理对产生非法 UTF-16；
-    // 同时限制 UTF-8 字节数：Linux/Android 按字节计 255 上限，纯 rune
-    // 限制在 4 字节字符下仍会 ENAMETOOLONG，导致导入直接失败。
+    // 按 Unicode 码点（rune）逐个截断：码点是完整字符边界，因此既不会
+    // 切断代理对，也不会在 UTF-8 上限处切出半个多字节字符；同时限制
+    // UTF-8 字节数：Linux/Android 按字节计 255 上限，纯 rune 限制在 4 字节
+    // 字符下仍会 ENAMETOOLONG，导致导入直接失败。
     final maxBaseRunes = 100 - ext.length - 1;
     final truncated = StringBuffer();
     var runeCount = 0;
     var byteCount = 0;
     for (final rune in base.runes) {
+      // 孤立代理项（非法 UTF-16）无法编码为 UTF-8，直接丢弃
+      if (rune >= 0xD800 && rune <= 0xDFFF) continue;
       if (runeCount >= maxBaseRunes) break;
       final size = _utf8BytesOfRune(rune);
       if (byteCount + size > _maxBaseNameBytes) break;
