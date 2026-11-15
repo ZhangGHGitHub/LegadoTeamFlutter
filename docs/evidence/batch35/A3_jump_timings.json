@@ -1,0 +1,5 @@
+{
+  "status": "discarded",
+  "reason": "A3 夹具为 60MB/60 章（每章约 1MB、约 320k 汉字），单章分页耗时占主导（首次打开 2971ms），无法隔离文件读取成本；改用 A4（60MB/6000 章，每章约 10KB）测量翻章，见 A4_jump_timings*.json",
+  "A3_firstopen_ms": {"first_change": 2971, "settle": 2971, "note": "含 1MB 单章分页"}
+}

@@ -1,0 +1,25 @@
+批35 C 项：同长度 + 同 mtime + 仅中部 4KB 变化的书文件替换（设备实测，release 2.0.505）
+
+被测路径（应用私有导入副本，即真实 bookUrl）：
+  /data/data/io.legado.flutter_legado/files/external_import/QA35_Cmid.txt
+
+替换前：
+  stat: 10400576 1794700708 2026-11-15 07:58:28.710000000 +0800
+  md5 : 5b7a9c03916ed94b95c91768682384a6   （含 OLDCONTENTMARKER）
+替换操作：
+  cp -p <target> /data/local/tmp/c_ref.keep
+  cat <NEW 文件> > <target>
+  touch -r /data/local/tmp/c_ref.keep <target>
+替换后：
+  stat: 10400576 1794700708 2026-11-15 07:58:28.710000000 +0800   （长度与 mtime 完全一致，含 ns）
+  md5 : d1180870d4e79fa4710e853e28488c46   （含 NEWCONTENTMARKER）
+主机侧同源校验（tmp_batch35_qa 夹具）：
+  QA35_C_mid.txt      sha256 2864727d2f30c5d30eb6467c47f02812fa9312b7a999b29538d0a400724cc801
+  QA35_C_mid_NEW.txt  sha256 8e4fc14e1ff2ebbca3a3001b4ef821019f118ebc02726a6c0d0908c581026d88
+  两文件差异仅 47 字节（偏移 5366797..5366856，正好落在 len/2 中段采样窗口内），
+  首 4KB 与尾 4KB 完全相同。
+
+应用内结果（不重启进程，仅切章触发缓存校验）：
+  替换前 读者第 5 章：OLDCONTENTMARKERXXXXX…
+  替换后 先跳第 1 章、再跳第 5 章：NEWCONTENTMARKERYYYYY…（旧内容消失）
+  证据截图：C_old_ch5b.png / C_new_after_replace.png

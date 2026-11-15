@@ -1,0 +1,83 @@
+      Loaded 1509 security advisories (from C:\Users\admin\.cargo\advisory-db)
+    Scanning Cargo.lock for vulnerabilities (501 crate dependencies)
+Crate:     adler
+Version:   1.0.2
+Warning:   unmaintained
+Title:     adler crate is unmaintained, use adler2 instead
+Date:      2025-09-05
+ID:        RUSTSEC-2025-0056
+URL:       https://rustsec.org/advisories/RUSTSEC-2025-0056
+
+Crate:     encoding
+Version:   0.2.33
+Warning:   unmaintained
+Title:     `encoding` is unmaintained
+Date:      2021-12-05
+ID:        RUSTSEC-2021-0153
+URL:       https://rustsec.org/advisories/RUSTSEC-2021-0153
+
+Crate:     fxhash
+Version:   0.2.1
+Warning:   unmaintained
+Title:     fxhash - no longer maintained
+Date:      2025-09-05
+ID:        RUSTSEC-2025-0057
+URL:       https://rustsec.org/advisories/RUSTSEC-2025-0057
+
+Crate:     lzw
+Version:   0.10.0
+Warning:   unmaintained
+Title:     lzw is unmaintained
+Date:      2020-02-10
+ID:        RUSTSEC-2020-0144
+URL:       https://rustsec.org/advisories/RUSTSEC-2020-0144
+
+Crate:     rusttype
+Version:   0.8.3
+Warning:   unmaintained
+Title:     rusttype is Unmaintained
+Date:      2021-04-01
+ID:        RUSTSEC-2021-0140
+URL:       https://rustsec.org/advisories/RUSTSEC-2021-0140
+
+Crate:     stb_truetype
+Version:   0.3.1
+Warning:   unmaintained
+Title:     `stb_truetype` crate has been deprecated; use `ttf-parser` instead
+Date:      2020-04-18
+ID:        RUSTSEC-2020-0020
+URL:       https://rustsec.org/advisories/RUSTSEC-2020-0020
+
+Crate:     stdweb
+Version:   0.4.20
+Warning:   unmaintained
+Title:     stdweb is unmaintained
+Date:      2020-05-04
+ID:        RUSTSEC-2020-0056
+URL:       https://rustsec.org/advisories/RUSTSEC-2020-0056
+
+Crate:     ttf-parser
+Version:   0.25.1
+Warning:   unmaintained
+Title:     `ttf-parser` is unmaintained
+Date:      2026-06-28
+ID:        RUSTSEC-2026-0192
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0192
+
+Crate:     lru
+Version:   0.12.5
+Warning:   unsound
+Title:     `IterMut` violates Stacked Borrows by invalidating internal pointer
+Date:      2026-01-07
+ID:        RUSTSEC-2026-0002
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0002
+
+Crate:     lru
+Version:   0.12.5
+Warning:   unsound
+Title:     Potential use-after-free due to lack of panic safety in `LruCache::pop()`
+Date:      2026-05-12
+ID:        RUSTSEC-2026-0253
+URL:       https://rustsec.org/advisories/RUSTSEC-2026-0253
+
+warning: 10 allowed warnings found

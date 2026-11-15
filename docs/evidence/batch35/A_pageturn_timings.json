@@ -1,0 +1,27 @@
+[
+ {
+  "i": 1,
+  "first_ms": 453,
+  "settle_ms": 453
+ },
+ {
+  "i": 2,
+  "first_ms": 258,
+  "settle_ms": 497
+ },
+ {
+  "i": 3,
+  "first_ms": 290,
+  "settle_ms": 532
+ },
+ {
+  "i": 4,
+  "first_ms": 259,
+  "settle_ms": 499
+ },
+ {
+  "i": 5,
+  "first_ms": 276,
+  "settle_ms": 546
+ }
+]

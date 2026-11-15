@@ -1,0 +1,20 @@
+[
+ {
+  "book": "QA35_A_big",
+  "ch": 8,
+  "title": "第8章 A卷标题8",
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B2_A_ch8.png"
+ },
+ {
+  "book": "QA35_B_big",
+  "ch": 10,
+  "title": "第10章 B卷标题10",
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B2_B_ch10.png"
+ },
+ {
+  "book": "QA35_A_big",
+  "ch": 10,
+  "title": "第10章 A卷标题10",
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B2_A_ch10.png"
+ }
+]

@@ -1,0 +1,34 @@
+FIXTURE A path=D:\OH-WorkSpace\LegadoTeam\legado\tmp_batch35_qa\QA35_A_大文件.txt bytes=10818912 mtime=SystemTime { intervals: 134391727618508348 }
+FIXTURE B path=D:\OH-WorkSpace\LegadoTeam\legado\tmp_batch35_qa\QA35_B_大文件.txt bytes=10818912 mtime=SystemTime { intervals: 134391726150718137 }
+FIXTURE C path=D:\OH-WorkSpace\LegadoTeam\legado\tmp_batch35_qa\QA35_C_mid.txt bytes=10400576 mtime=SystemTime { intervals: 134391727560977777 }
+A toc_cold_ms=23.27 chapters=240
+A cached_ch01 ms=0.293 chars=20855 marker_ok=true
+A cached_ch02 ms=0.355 chars=20855 marker_ok=true
+A cached_ch03 ms=0.163 chars=20855 marker_ok=true
+A cached_ch04 ms=0.148 chars=20855 marker_ok=true
+A cached_ch05 ms=0.136 chars=20855 marker_ok=true
+A cached_ch06 ms=0.134 chars=20855 marker_ok=true
+A cached_ch07 ms=0.141 chars=20855 marker_ok=true
+A cached_ch08 ms=0.143 chars=20855 marker_ok=true
+A cached_ch09 ms=0.140 chars=20855 marker_ok=true
+A cached_ch10 ms=0.136 chars=21101 marker_ok=true
+A prefixed_model_ch11 ms=4.778 marker_ok=true
+A prefixed_model_ch12 ms=4.161 marker_ok=true
+A prefixed_model_ch13 ms=4.227 marker_ok=true
+A prefixed_model_ch14 ms=4.151 marker_ok=true
+A prefixed_model_ch15 ms=4.076 marker_ok=true
+A prefixed_model_ch16 ms=4.054 marker_ok=true
+A prefixed_model_ch17 ms=4.143 marker_ok=true
+A prefixed_model_ch18 ms=4.103 marker_ok=true
+A prefixed_model_ch19 ms=3.943 marker_ok=true
+A prefixed_model_ch20 ms=4.290 marker_ok=true
+A SUMMARY cached_avg_ms=0.179 prefixed_model_avg_ms=4.193 speedup_x=23.4
+A/B alternate idx=1 ok (A_chars=20855 B_chars=20855)
+A/B alternate idx=6 ok (A_chars=20855 B_chars=20855)
+A/B alternate idx=51 ok (A_chars=21101 B_chars=21101)
+A/B alternate idx=121 ok (A_chars=21287 B_chars=21287)
+A/B alternate idx=240 ok (A_chars=21287 B_chars=21287)
+C marker_chapter_index=4 title=第5章 C卷章节5
+C before_marker_ok chars=637916
+C replaced: len=10400576 mtime=SystemTime { intervals: 134391727560977777 } (restored to FileTime { seconds: 13439172756, nanos: 97777700 })
+C after_ms=4.004 new_marker_detected=true chars=637916

@@ -1,0 +1,519 @@
+--------- beginning of system
+11-15 07:36:26.164 V/WindowManagerShell( 1092): Transition animation finished (aborted=false), notifying core (#44) android.os.BinderProxy@904daf@0
+11-15 07:36:26.166 V/WindowManager(  838): Finish Transition (#44): created at 11-15 07:36:20.872 collect-started=1.491ms request-sent=2.797ms started=43.306ms ready=-1.9992642088E7ms sent=5006.091ms finished=5293.892ms
+--------- beginning of main
+11-15 07:36:26.171 E/IPCThreadState(  838): Binder transaction failure. id: 635510, BR_*: 29189, error: -22 (Invalid argument)
+11-15 07:36:26.172 W/ActivityManager(  838): pid 838 system sent binder code 7 with flags 1 to frozen apps and got error -32
+11-15 07:36:26.173 W/WindowManager(  838): Exception thrown during dispatchAppVisibility Window{65404fe u0 io.legado.flutter_legado/io.legado.flutter.MainActivity EXITING}
+11-15 07:36:26.173 W/WindowManager(  838): android.os.DeadObjectException
+11-15 07:36:26.173 W/WindowManager(  838): 	at android.os.BinderProxy.transactNative(Native Method)
+11-15 07:36:26.173 W/WindowManager(  838): 	at android.os.BinderProxy.transact(BinderProxy.java:592)
+11-15 07:36:26.173 W/WindowManager(  838): 	at android.view.IWindow$Stub$Proxy.dispatchAppVisibility(IWindow.java:557)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.WindowState.sendAppVisibilityToClients(WindowState.java:3298)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.WindowContainer.sendAppVisibilityToClients(WindowContainer.java:1343)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.WindowToken.setClientVisible(WindowToken.java:437)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.ActivityRecord.setClientVisible(ActivityRecord.java:7158)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.ActivityRecord.postApplyAnimation(ActivityRecord.java:5849)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.ActivityRecord.commitVisibility(ActivityRecord.java:5792)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.Transition.finishTransition(Transition.java:1373)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.TransitionController.finishTransition(TransitionController.java:986)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.WindowOrganizerController.finishTransition(WindowOrganizerController.java:526)
+11-15 07:36:26.173 W/WindowManager(  838): 	at android.window.IWindowOrganizerController$Stub.onTransact(IWindowOrganizerController.java:293)
+11-15 07:36:26.173 W/WindowManager(  838): 	at com.android.server.wm.WindowOrganizerController.onTransact(WindowOrganizerController.java:215)
+11-15 07:36:26.173 W/WindowManager(  838): 	at android.os.Binder.execTransactInternal(Binder.java:1411)
+11-15 07:36:26.173 W/WindowManager(  838): 	at android.os.Binder.execTransact(Binder.java:1350)
+11-15 07:36:26.173 W/Process (  838): Unable to open /proc/20984/status
+11-15 07:36:26.177 E/ActivityManager(  838): Sending non-protected broadcast uu.intent.action.STOP_ACCELERATE from system 838:system/1000 pkg android
+11-15 07:36:26.177 E/ActivityManager(  838): java.lang.Throwable
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.wm.TaskUtils.$r8$lambda$zCiVPiagCM9gvj0qkEpNf1ODT4k(TaskUtils.java:2205)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda5.run(R8$$SyntheticClass:0)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.os.Handler.handleCallback(Handler.java:991)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.os.Looper.loop(Looper.java:317)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-15 07:36:26.177 E/ActivityManager(  838): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-15 07:36:26.178 V/WindowManagerShell( 1092): Track 0 became idle
+11-15 07:36:26.178 V/WindowManagerShell( 1092): All active transition animations finished
+11-15 07:36:26.179 I/SurfaceFlinger(  706): Disconnecting display 4619827581455741454(HAL ID 14)
+11-15 07:36:26.184 E/SingleInstanceRemoteListener( 1092): Failed remote call on null listener
+11-15 07:36:26.187 E/HWC2    (  706): ~Display: Failed to disable VSYNC for display 14: 2
+11-15 07:36:26.190 E/SchedulerTimer(  706): Terminated
+11-15 07:36:26.191 I/Scheduler(  706): Display 4619827820427265280 is the pacesetter
+11-15 07:36:26.191 I/DisplayDeviceRepository(  838): Display device removed: DisplayDeviceInfo{"mumuscreen014": uniqueId="local:4619827581455741454", 1080 x 1920, modeId 29, renderFrameRate 60.000004, hasArrSupport false, frameRateCategoryRate FrameRateCategoryRate {normal=60.0, high=90.0}, supportedRefreshRates [], defaultModeId 29, userPreferredModeId -1, supportedModes [{id=29, width=1080, height=1920, fps=60.000004, vsync=60.000004, synthetic=false, alternativeRefreshRates=[15.000001], supportedHdrTypes=[]}, {id=30, width=1080, height=1920, fps=15.000001, vsync=15.000001, synthetic=false, alternativeRefreshRates=[60.000004], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities HdrCapabilities{mSupportedHdrTypes=[], mMaxLuminance=500.0, mMaxAverageLuminance=500.0, mMinLuminance=0.0}, isForceSdr false, allmSupported false, gameContentTypeSupported false, density 480, 480.0 x 480.0 dpi, appVsyncOff 1000000, presDeadline 16666666, touch INTERNAL, rotation 0, type INTERNAL, address {port=14, model=0x401cecb55c38b2}, deviceProductInfo DeviceProductInfo{name=mumuscreen014, manufacturerPnpId=GGL, productId=1, modelYear=null, manufactureDate=ManufactureDate{week=27, year=2006}, connectionToSinkType=1}, state ON, committedState ON, frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 1.0, brightnessDefault 0.5, brightnessDim -1.0, hdrSdrRatio NaN, FLAG_ALLOWED_TO_BE_DEFAULT_DISPLAY, FLAG_ROTATES_WITH_CONTENT, FLAG_SECURE, FLAG_SUPPORTS_PROTECTED_BUFFERS, FLAG_TRUSTED, installOrientation 0, displayShape DisplayShape{ spec=1673867177 displayWidth=1080 displayHeight=1920 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-15 07:36:26.195 I/DisplayManagerService(  838): Logical display removed: 15
+11-15 07:36:26.195 I/system_server(  838): AssetManager2(0x7106b9baeef8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.199 D/nemuinput(  771): onDisplayRemoved: displayId=15
+11-15 07:36:26.200 D/nemuinput(  771): Destroyed devices for display:15
+11-15 07:36:26.200 D/nemuinput(  771): Destroying uinput device fd=14
+11-15 07:36:26.201 W/WindowTokenClientController(  838): Can't find attached WindowTokenClient for android.window.WindowTokenClient@638010
+11-15 07:36:26.203 V/ShellDragAndDrop( 1092): Display removed: 15
+11-15 07:36:26.204 W/DisplayRotationCoordinator(  838): Attempted to remove non-matching callback. DisplayId: -1
+11-15 07:36:26.214 E/BpTransactionCompletedListener(  706): Failed to transact (-32)
+11-15 07:36:26.214 E/BpTransactionCompletedListener(  706): Failed to transact (-32)
+11-15 07:36:26.215 I/system_server(  838): AssetManager2(0x7106b9bb9ad8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.216 I/system_server(  838): AssetManager2(0x7106b9bde658) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.216 I/InputManager-JNI(  838): Viewport [0] to add: local:4619827820427265280, isActive: true
+11-15 07:36:26.217 I/InputManager-JNI(  838): Viewport [1] to add: local:4619826851682279951, isActive: true
+11-15 07:36:26.219 I/system_server(  838): AssetManager2(0x7106b9bdc0d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.226 I/system_server(  838): AssetManager2(0x7106b9baf218) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.226 I/InputReader(  838): Reconfiguring input devices, changes=DISPLAY_INFO
+11-15 07:36:26.230 I/system_server(  838): AssetManager2(0x7106b9bcf8d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.235 W/InputReader(  838): Input device Xiaomi Touchscreen should be associated with display id: 15 but the corresponding viewport cannot be found
+11-15 07:36:26.236 W/InputReaderBase(  838): Found 2 viewports with type INTERNAL, but expected 1 at most
+11-15 07:36:26.236 I/InputReader(  838): Device reconfigured: id=62, name='Xiaomi Touchscreen', size 1080x1920, orientation Rotation0, mode DIRECT, display id 0
+11-15 07:36:26.238 I/system_server(  838): AssetManager2(0x7106b9bb84f8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.238 W/InputReader(  838): Input device Xiaomi Keyboard should be associated with display id: 15 but the corresponding viewport cannot be found
+11-15 07:36:26.239 W/InputReader(  838): Input device Xiaomi Mouse should be associated with display id: 15 but the corresponding viewport cannot be found
+11-15 07:36:26.239 W/InputReader(  838): Input device Xiaomi Joystick should be associated with display id: 15 but the corresponding viewport cannot be found
+11-15 07:36:26.239 W/InputReader(  838): Input device Xiaomi integration should be associated with display id: 1794 but the corresponding viewport cannot be found
+11-15 07:36:26.239 I/system_server(  838): AssetManager2(0x7106b9bd43d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.240 D/nemuinput(  771): Destroying uinput device fd=13
+11-15 07:36:26.241 I/EventHub(  838): Removing device Xiaomi Joystick due to epoll hang-up event.
+11-15 07:36:26.241 I/EventHub(  838): Removed device: path=/dev/input/event11 name=Xiaomi Joystick id=61 fd=581 classes=KEYBOARD | CURSOR | DPAD | GAMEPAD | JOYSTICK | VIBRATOR | BATTERY | EXTERNAL
+11-15 07:36:26.242 I/system_server(  838): AssetManager2(0x7106b9bd1e58) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.253 I/system_server(  838): AssetManager2(0x7106b9bd3118) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.255 I/system_server(  838): AssetManager2(0x7106b9bbba18) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.265 I/system_server(  838): AssetManager2(0x7106b9bc1198) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.266 I/EventHub(  838): Removing device '/dev/input/mouse4' due to inotify event
+11-15 07:36:26.266 I/EventHub(  838): Removing device '/dev/input/event11' due to inotify event
+11-15 07:36:26.266 I/EventHub(  838): Removing device '/dev/input/mouse3' due to inotify event
+11-15 07:36:26.266 I/EventHub(  838): Removing device '/dev/input/event10' due to inotify event
+11-15 07:36:26.266 I/EventHub(  838): Removed device: path=/dev/input/event10 name=Xiaomi Mouse id=60 fd=580 classes=CURSOR | BATTERY | EXTERNAL
+11-15 07:36:26.268 I/system_server(  838): AssetManager2(0x7106b9bbe2b8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.270 I/system_server(  838): AssetManager2(0x7106b9bb52f8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.271 I/system_server(  838): AssetManager2(0x7106b9bacc98) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.273 I/system_server(  838): AssetManager2(0x7106b9be3dd8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.274 D/nemuinput(  771): Destroying uinput device fd=12
+11-15 07:36:26.275 I/system_server(  838): AssetManager2(0x7106b9bb36d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.279 I/system_server(  838): AssetManager2(0x7106b9bb9df8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.280 I/system_server(  838): AssetManager2(0x7106b9bddcf8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.285 I/system_server(  838): AssetManager2(0x7106b9bcb738) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.287 I/system_server(  838): AssetManager2(0x7106b9bb1798) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.290 I/system_server(  838): AssetManager2(0x7106b9bd0b98) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.292 I/system_server(  838): AssetManager2(0x7106b9bab9d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.294 I/system_server(  838): AssetManager2(0x7106b9bcc6d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.300 I/system_server(  838): AssetManager2(0x7106b9bdfc38) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.303 I/InputReader(  838): Device removed: id=59, eventHubId=61, name='Xiaomi Joystick', descriptor='3d987e3eb9ee04fee9b9b9ae5548421fa20dc9a7', sources=KEYBOARD | DPAD | GAMEPAD | MOUSE | JOYSTICK
+11-15 07:36:26.303 I/InputReader(  838): Device removed: id=60, eventHubId=60, name='Xiaomi Mouse', descriptor='985220220bd57f34bdbec1832f7073675654e864', sources=MOUSE
+11-15 07:36:26.304 I/system_server(  838): AssetManager2(0x7106b9bc9e38) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.316 I/system_server(  838): AssetManager2(0x7106b9bb1dd8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.320 I/system_server(  838): AssetManager2(0x7106b9bb9498) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.324 I/system_server(  838): AssetManager2(0x7106b9bdd6b8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.325 I/system_server(  838): AssetManager2(0x7106b9bcc9f8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.326 I/system_server(  838): AssetManager2(0x7106b9be3478) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.326 D/nemuinput(  771): Destroying uinput device fd=11
+11-15 07:36:26.330 I/system_server(  838): AssetManager2(0x7106b9bd5378) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.337 I/system_server(  838): AssetManager2(0x7106b9bd6318) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.342 W/Looper  (  838): Slow dispatch took 146ms android.fg h=android.os.Handler c=android.hardware.display.DisplayManagerGlobal$DisplayListenerDelegate$$ExternalSyntheticLambda0@1ba947c m=0
+11-15 07:36:26.351 I/system_server(  838): AssetManager2(0x7106b9bca158) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.366 I/system_server(  838): AssetManager2(0x7106b9bb7558) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.368 E/WindowManager(  838): Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-15 07:36:26.370 I/EventHub(  838): Removing device Xiaomi Keyboard due to epoll hang-up event.
+11-15 07:36:26.370 I/EventHub(  838): Removed device: path=/dev/input/event9 name=Xiaomi Keyboard id=59 fd=579 classes=KEYBOARD | ALPHAKEY | BATTERY | EXTERNAL
+11-15 07:36:26.375 I/system_server(  838): AssetManager2(0x7106b9bb7238) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.395 I/system_server(  838): AssetManager2(0x7106b9bb8818) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.398 I/EventHub(  838): Removing device Xiaomi Touchscreen due to epoll hang-up event.
+11-15 07:36:26.398 I/EventHub(  838): Removed device: path=/dev/input/event8 name=Xiaomi Touchscreen id=58 fd=578 classes=TOUCH | TOUCH_MT | BATTERY
+11-15 07:36:26.398 I/system_server(  838): AssetManager2(0x7106b9bbaa78) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.406 I/system_server(  838): AssetManager2(0x7106b9bbe5d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.409 I/system_server(  838): AssetManager2(0x7106b9bc0b58) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.413 I/system_server(  838): AssetManager2(0x7106b9bbec18) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.421 I/system_server(  838): AssetManager2(0x7106b9bc17d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.426 I/EventHub(  838): Removing device '/dev/input/event9' due to inotify event
+11-15 07:36:26.426 I/EventHub(  838): Removing device '/dev/input/event8' due to inotify event
+11-15 07:36:26.426 I/InputReader(  838): Device removed: id=61, eventHubId=59, name='Xiaomi Keyboard', descriptor='a1676e39b4b3031b5dcbf0b8a6d9e9ce775e5d16', sources=KEYBOARD
+11-15 07:36:26.426 I/InputReader(  838): Device removed: id=62, eventHubId=58, name='Xiaomi Touchscreen', descriptor='4648d6283adca858aaad075c4445a2998940dcf6', sources=TOUCHSCREEN
+11-15 07:36:26.430 E/WindowManager(  838): Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-15 07:36:26.438 I/system_server(  838): AssetManager2(0x7106b9bbb3d8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.440 I/system_server(  838): AssetManager2(0x7106b9bbbd38) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.441 I/system_server(  838): AssetManager2(0x7106b9bbd318) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.451 I/system_server(  838): AssetManager2(0x7106b9bc0838) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.463 I/system_server(  838): AssetManager2(0x7106b9bbf578) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.467 I/system_server(  838): AssetManager2(0x7106b9bbf898) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.470 I/system_server(  838): AssetManager2(0x7106b9bbccd8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.472 I/system_server(  838): AssetManager2(0x7106b9bbc058) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:26.679 W/AccMsgReceiver( 2016): AccMsgReceiver: onReceive action = uu.intent.action.STOP_ACCELERATE
+11-15 07:36:26.682 W/ActivityManager(  838): Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-15 07:36:26.685 W/AccServiceManager( 2016): onAppClose: packageName = io.legado.flutter_legado
+11-15 07:36:28.262 W/ActivityTaskManager(  838): callingPackage for (uid=2000, pid=33913) has no WPC
+11-15 07:36:28.264 I/system_server(  838): AssetManager2(0x7106b9bbc9b8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.266 V/GrammaticalInflectionUtils(  838): AttributionSource: android.content.AttributionSource@26b7b181 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-15 07:36:28.266 W/OptProp (  838): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_RESIZEABLE_ACTIVITY_OVERRIDES
+11-15 07:36:28.266 W/OptProp (  838): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_MIN_ASPECT_RATIO_OVERRIDE
+11-15 07:36:28.270 I/WindowManager(  838): Using new display size: 1080x1920
+11-15 07:36:28.271 E/CellBroadcastUtils(  838): getDefaultCellBroadcastReceiverPackageName: no package found
+11-15 07:36:28.272 E/HWComposer(  706): getDisplayConnectionType: getDisplayConnectionType failed for display 4619827210700952848: UNSUPPORTED (8)
+11-15 07:36:28.273 E/HWComposer(  706): getDisplayConnectionType: getDisplayConnectionType failed for display 4619827210700952848: UNSUPPORTED (8)
+11-15 07:36:28.273 E/HWComposer(  706): getMaxLayerPictureProfiles: getMaxLayerPictureProfiles failed for display 4619827210700952848: UNSUPPORTED (8)
+11-15 07:36:28.273 W/HWC2    (  706): Can't query capability Unknown. Display Capabilities were not queried from HWC yet
+11-15 07:36:28.273 I/SurfaceFlinger(  706): Connecting display 4619827210700952848(HAL ID 16)
+11-15 07:36:28.275 W/OptProp (  838): Cannot read opt property android.window.PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE
+11-15 07:36:28.275 D/SurfaceFlinger(  706): Physical display 16 plugined successfully
+11-15 07:36:28.276 I/ActivityTaskManager(  838): START u0 {flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-15 07:36:28.277 I/ndroid.systemui( 1092): AssetManager2(0x7106b9baebd8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.277 V/GrammaticalInflectionUtils(  838): AttributionSource: android.content.AttributionSource@26b7b181 does not have READ_SYSTEM_GRAMMATICAL_GENDER permission.
+11-15 07:36:28.279 V/WindowManagerShell( 1092): Transition requested (#45): android.os.BinderProxy@34407bb TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=255 effectiveUid=10055 displayId=16 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=20000045 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@3f474d8} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{1bfc031 io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(237, 420 - 844, 1500) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 45 }
+11-15 07:36:28.280 W/ActivityManager(  838): Unknown package:com.google.android.gms
+11-15 07:36:28.280 W/HwcComposer(  706): getPerFrameMetadataKeys failed with 8
+11-15 07:36:28.280 D/gralloc_kona(  706): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:28.280 E/SingleInstanceRemoteListener( 1092): Failed remote call on null listener
+11-15 07:36:28.281 E/SingleInstanceRemoteListener( 1092): Failed remote call on null listener
+11-15 07:36:28.282 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bc9e38) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.283 D/gralloc_kona(  706): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:28.286 I/Scheduler(  706): Display 4619827820427265280 is the pacesetter
+11-15 07:36:28.288 W/HWC2    (  706): Can't query capability AutoLowLatencyMode. Display Capabilities were not queried from HWC yet
+11-15 07:36:28.288 E/HWComposer(  706): getSupportedContentTypes: getSupportedContentTypes failed for display 4619827210700952848: UNSUPPORTED (8)
+11-15 07:36:28.289 E/LocalDisplayAdapter(  838): Can't find display mode with id -1
+11-15 07:36:28.290 W/LocalDisplayAdapter(  838): DisplayModeSpecs base mode no longer available, using currently active mode.
+11-15 07:36:28.290 W/HWC2    (  706): Can't query capability Brightness. Display Capabilities were not queried from HWC yet
+11-15 07:36:28.294 I/DisplayDeviceRepository(  838): Display device added: DisplayDeviceInfo{"mumuscreen016": uniqueId="local:4619827210700952848", 1080 x 1920, modeId 33, renderFrameRate 60.000004, hasArrSupport false, frameRateCategoryRate FrameRateCategoryRate {normal=60.0, high=90.0}, supportedRefreshRates [], defaultModeId 33, userPreferredModeId -1, supportedModes [{id=33, width=1080, height=1920, fps=60.000004, vsync=60.000004, synthetic=false, alternativeRefreshRates=[15.000001], supportedHdrTypes=[]}, {id=34, width=1080, height=1920, fps=15.000001, vsync=15.000001, synthetic=false, alternativeRefreshRates=[60.000004], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities HdrCapabilities{mSupportedHdrTypes=[], mMaxLuminance=500.0, mMaxAverageLuminance=500.0, mMinLuminance=0.0}, isForceSdr false, allmSupported false, gameContentTypeSupported false, density 480, 480.0 x 480.0 dpi, appVsyncOff 1000000, presDeadline 16666666, touch INTERNAL, rotation 0, type INTERNAL, address {port=16, model=0x401cec5f098395}, deviceProductInfo DeviceProductInfo{name=mumuscreen016, manufacturerPnpId=GGL, productId=1, modelYear=null, manufactureDate=ManufactureDate{week=27, year=2006}, connectionToSinkType=1}, state UNKNOWN, committedState UNKNOWN, frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 1.0, brightnessDefault 0.5, brightnessDim -1.0, hdrSdrRatio NaN, FLAG_ALLOWED_TO_BE_DEFAULT_DISPLAY, FLAG_ROTATES_WITH_CONTENT, FLAG_SECURE, FLAG_SUPPORTS_PROTECTED_BUFFERS, FLAG_TRUSTED, installOrientation 0, displayShape DisplayShape{ spec=1673867177 displayWidth=1080 displayHeight=1920 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-15 07:36:28.294 I/LogicalDisplayMapper(  838): Applying layout: [{dispId: 0(ON), displayGroupName: , addr: {port=0, model=0x401ceced0008c5}, mThermalBrightnessThrottlingMapId: null, mRefreshRateZoneId: null, mLeadDisplayId: -1, mLeadDisplayAddress: null, mThermalRefreshRateThrottlingMapId: null, mPowerThrottlingMapId: null}], Previous layout: [{dispId: 0(ON), displayGroupName: , addr: {port=0, model=0x401ceced0008c5}, mThermalBrightnessThrottlingMapId: null, mRefreshRateZoneId: null, mLeadDisplayId: -1, mLeadDisplayAddress: null, mThermalRefreshRateThrottlingMapId: null, mPowerThrottlingMapId: null}]
+11-15 07:36:28.294 I/LogicalDisplayMapper(  838): Setting new display group 0 for display 17, from previous group: null
+11-15 07:36:28.295 W/BrightnessThrottler(  838): DeviceConfig ThermalBrightnessThrottlingData is null
+11-15 07:36:28.295 W/DisplayPowerController[17](  838): Screen brightness nits configuration is unavailable; falling back
+11-15 07:36:28.297 I/BpBinder(  706): onLastStrongRef automatically unlinking death recipients: 
+11-15 07:36:28.298 D/nemuinput(  771): onDisplayAdded: displayId=17
+11-15 07:36:28.298 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bcbd78) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.303 D/nemuinput(  771): Created uinput device fd=11 for display:17 type:0
+11-15 07:36:28.306 I/system_server(  838): AssetManager2(0x7106b9bc0518) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.308 D/nemuinput(  771): Created uinput device fd=12 for display:17 type:1
+11-15 07:36:28.312 D/nemuinput(  771): Created uinput device fd=13 for display:17 type:2
+11-15 07:36:28.312 D/EventHub(  838): configureBatteryLocked rawBatteryId 1 name battery
+11-15 07:36:28.315 D/nemuinput(  771): Created uinput device fd=14 for display:17 type:3
+11-15 07:36:28.317 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bab6b8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.322 D/EventHub(  838): No input device configuration file found for device 'Xiaomi Touchscreen'.
+11-15 07:36:28.323 I/EventHub(  838): usingClockIoctl=true
+11-15 07:36:28.323 I/EventHub(  838): New device: id=66, fd=632, path='/dev/input/event8', name='Xiaomi Touchscreen', classes=TOUCH | TOUCH_MT | BATTERY, configuration='', keyLayout='', keyCharacterMap='', builtinKeyboard=false, 
+11-15 07:36:28.326 W/InputReader(  838): Input device Xiaomi Touchscreen should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.326 W/InputReaderBase(  838): Found 2 viewports with type INTERNAL, but expected 1 at most
+11-15 07:36:28.326 I/InputReader(  838): Device reconfigured: id=67, name='Xiaomi Touchscreen', size 1080x1920, orientation Rotation0, mode DIRECT, display id 0
+11-15 07:36:28.326 W/InputReader(  838): Input device Xiaomi Touchscreen should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.326 W/InputReaderBase(  838): Found 2 viewports with type INTERNAL, but expected 1 at most
+11-15 07:36:28.326 I/InputReader(  838): Device added: id=67, eventHubId=66, name='Xiaomi Touchscreen', descriptor='4648d6283adca858aaad075c4445a2998940dcf6',sources=TOUCHSCREEN
+11-15 07:36:28.327 I/WindowManager(  838): Override config changes=20005df8 {0.0 ?mcc0mnc ?localeList ?layoutDir sw360dp w360dp h640dp 480dpi nrml long port ?uimode ?night -touch -keyb/v/v -nav/h winConfig={ mBounds=Rect(0, 0 - 1080, 1920) mAppBounds=Rect(0, 0 - 1080, 1920) mMaxBounds=Rect(0, 0 - 1080, 1920) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} ?fontWeightAdjustment} for displayId=17
+11-15 07:36:28.327 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bb5618) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.328 W/DisplayController( 1092): Skipping Display Configuration change on non-added display.
+11-15 07:36:28.328 V/WindowManager(  838): Content Recording: Successfully created a ContentRecordingSession for displayId=17 to mirror content from displayId=0
+11-15 07:36:28.328 I/DisplayDevice(  838): [17] Layerstack set to 17 for local:4619827210700952848
+11-15 07:36:28.329 I/DisplayPowerController(  838): Window Manager Policy screenTurningOn complete
+11-15 07:36:28.329 I/DisplayBrightnessStrategySelector(  838): Changing the DisplayBrightnessStrategy from InvalidBrightnessStrategy to FollowerBrightnessStrategy for display 17
+11-15 07:36:28.330 V/DisplayPowerController[17](  838): Brightness [0.07874016] reason changing to: 'follower', previous reason: '0'.
+11-15 07:36:28.330 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bb4cb8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.331 I/DisplayPowerController[17](  838): BrightnessEvent: brt=0.07874016 (49.0%), nits= -1.0, lux=-1.0, reason=follower, strat=FollowerBrightnessStrategy, state=ON, stateReason=DEFAULT_POLICY, policy=BRIGHT, flags=, initBrt=NaN, rcmdBrt=NaN, preBrt=NaN, preLux=0.0, wasShortTermModelActive=false, autoBrightness=false (default), unclampedBrt=0.07874016, hbmMax=1.0, hbmMode=off, thrmMax=1.0, rbcStrength=-1, powerFactor=1.0, physDisp=mumuscreen016(local:4619827210700952848), logicalId=17
+11-15 07:36:28.331 D/DisplayModeController(  706): setDesiredMode 4619827820427265280 {mode={fps=60.00 Hz, modePtr={id=0, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=true, force=false}
+11-15 07:36:28.331 D/DisplayModeController(  706): setDesiredMode 4619827210700952848 {mode={fps=60.00 Hz, modePtr={id=0, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=true, force=false}
+11-15 07:36:28.331 D/BrightnessThermalClamper(  838): Thermal status observer already started
+11-15 07:36:28.331 D/BrightnessThermalClamper(  838): Thermal status observer already started
+11-15 07:36:28.331 D/BrightnessThermalClamper(  838): Thermal status observer already started
+11-15 07:36:28.334 D/CoreBackPreview(  838): Window{e299c9d u0 Splash Screen io.legado.flutter_legado}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@90f2121, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-15 07:36:28.334 D/SurfaceFlinger(  706): Setting power mode 2 on display 4619827210700952848
+11-15 07:36:28.334 W/SurfaceFlinger(  706): Trying to change power mode on inactive display without powering off active display
+11-15 07:36:28.335 W/WindowTokenClientController(  838): Can't find attached WindowTokenClient for android.window.WindowTokenClient@94fe70d
+11-15 07:36:28.335 I/InputManager-JNI(  838): Viewport [0] to add: local:4619827820427265280, isActive: true
+11-15 07:36:28.335 I/InputManager-JNI(  838): Viewport [1] to add: local:4619826851682279951, isActive: true
+11-15 07:36:28.335 D/SurfaceFlinger(  706): Finished setting power mode 2 on display 4619827210700952848
+11-15 07:36:28.335 I/InputManager-JNI(  838): Viewport [2] to add: local:4619827210700952848, isActive: false
+11-15 07:36:28.335 D/EventHub(  838): configureBatteryLocked rawBatteryId 1 name battery
+11-15 07:36:28.335 D/EventHub(  838): No input device configuration file found for device 'Xiaomi Keyboard'.
+11-15 07:36:28.338 D/gralloc_kona( 1092): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:28.338 V/ShellDragAndDrop( 1092): Display added: 17
+11-15 07:36:28.340 I/RefreshRateSelector(  706): Display 4619827210700952848 policy changed
+11-15 07:36:28.340 I/RefreshRateSelector(  706): Previous: {defaultModeId=0, allowGroupSwitching=false, primaryRanges={physical=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz], render=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz]}, appRequestRanges={physical=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz], render=[0.00 Hz, 340282346638528859811704183484516925440.00 Hz]} idleScreenConfig=nullptr}
+11-15 07:36:28.340 I/RefreshRateSelector(  706): Current:  DisplayManagerPolicy{defaultModeId=0, allowGroupSwitching=false, primaryRanges={physical=[0.00 Hz, inf Hz], render=[0.00 Hz, 1000.00 Hz]}, appRequestRanges={physical=[0.00 Hz, inf Hz], render=[0.00 Hz, inf Hz]} idleScreenConfig=nullptr}
+11-15 07:36:28.340 I/RefreshRateSelector(  706): 0 mode changes were performed under the previous policy
+11-15 07:36:28.340 D/DisplayModeController(  706): setDesiredMode 4619827210700952848 {mode={fps=60.00 Hz, modePtr={id=0, vsyncRate=60.00 Hz, peakRefreshRate=60.00 Hz}}, emitEvent=true, force=false}
+11-15 07:36:28.341 W/EventHub(  838): Unable to disable kernel key repeat for /dev/input/event9: Function not implemented
+11-15 07:36:28.341 I/EventHub(  838): usingClockIoctl=true
+11-15 07:36:28.341 I/EventHub(  838): New device: id=67, fd=636, path='/dev/input/event9', name='Xiaomi Keyboard', classes=KEYBOARD | ALPHAKEY | BATTERY | EXTERNAL, configuration='', keyLayout='/system/usr/keylayout/Generic.kl', keyCharacterMap='/system/usr/keychars/Generic.kcm', builtinKeyboard=false, 
+11-15 07:36:28.341 E/EventHub(  838): Could not get device name for /dev/input/mouse3: Inappropriate ioctl for device
+11-15 07:36:28.341 E/EventHub(  838): could not get driver version for /dev/input/mouse3, Inappropriate ioctl for device
+11-15 07:36:28.341 V/WindowManager(  838): Content Recording: Display 17 state was (0), is now (0), so update recording?
+11-15 07:36:28.342 I/DisplayDeviceRepository(  838): Display device changed: DisplayDeviceInfo{"mumuscreen016": uniqueId="local:4619827210700952848", 1080 x 1920, modeId 33, renderFrameRate 60.000004, hasArrSupport false, frameRateCategoryRate FrameRateCategoryRate {normal=60.0, high=90.0}, supportedRefreshRates [], defaultModeId 33, userPreferredModeId -1, supportedModes [{id=33, width=1080, height=1920, fps=60.000004, vsync=60.000004, synthetic=false, alternativeRefreshRates=[15.000001], supportedHdrTypes=[]}, {id=34, width=1080, height=1920, fps=15.000001, vsync=15.000001, synthetic=false, alternativeRefreshRates=[60.000004], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities HdrCapabilities{mSupportedHdrTypes=[], mMaxLuminance=500.0, mMaxAverageLuminance=500.0, mMinLuminance=0.0}, isForceSdr false, allmSupported false, gameContentTypeSupported false, density 480, 480.0 x 480.0 dpi, appVsyncOff 1000000, presDeadline 16666666, touch INTERNAL, rotation 0, type INTERNAL, address {port=16, model=0x401cec5f098395}, deviceProductInfo DeviceProductInfo{name=mumuscreen016, manufacturerPnpId=GGL, productId=1, modelYear=null, manufactureDate=ManufactureDate{week=27, year=2006}, connectionToSinkType=1}, state ON, committedState ON, frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 1.0, brightnessDefault 0.5, brightnessDim -1.0, hdrSdrRatio NaN, FLAG_ALLOWED_TO_BE_DEFAULT_DISPLAY, FLAG_ROTATES_WITH_CONTENT, FLAG_SECURE, FLAG_SUPPORTS_PROTECTED_BUFFERS, FLAG_TRUSTED, installOrientation 0, displayShape DisplayShape{ spec=1673867177 displayWidth=1080 displayHeight=1920 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-15 07:36:28.342 I/DisplayDeviceRepository(  838): Display device same: DisplayDeviceInfo{"mumuscreen016": uniqueId="local:4619827210700952848", 1080 x 1920, modeId 33, renderFrameRate 60.000004, hasArrSupport false, frameRateCategoryRate FrameRateCategoryRate {normal=60.0, high=90.0}, supportedRefreshRates [], defaultModeId 33, userPreferredModeId -1, supportedModes [{id=33, width=1080, height=1920, fps=60.000004, vsync=60.000004, synthetic=false, alternativeRefreshRates=[15.000001], supportedHdrTypes=[]}, {id=34, width=1080, height=1920, fps=15.000001, vsync=15.000001, synthetic=false, alternativeRefreshRates=[60.000004], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities HdrCapabilities{mSupportedHdrTypes=[], mMaxLuminance=500.0, mMaxAverageLuminance=500.0, mMinLuminance=0.0}, isForceSdr false, allmSupported false, gameContentTypeSupported false, density 480, 480.0 x 480.0 dpi, appVsyncOff 1000000, presDeadline 16666666, touch INTERNAL, rotation 0, type INTERNAL, address {port=16, model=0x401cec5f098395}, deviceProductInfo DeviceProductInfo{name=mumuscreen016, manufacturerPnpId=GGL, productId=1, modelYear=null, manufactureDate=ManufactureDate{week=27, year=2006}, connectionToSinkType=1}, state ON, committedState ON, frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 1.0, brightnessDefault 0.5, brightnessDim -1.0, hdrSdrRatio NaN, FLAG_ALLOWED_TO_BE_DEFAULT_DISPLAY, FLAG_ROTATES_WITH_CONTENT, FLAG_SECURE, FLAG_SUPPORTS_PROTECTED_BUFFERS, FLAG_TRUSTED, installOrientation 0, displayShape DisplayShape{ spec=1673867177 displayWidth=1080 displayHeight=1920 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-15 07:36:28.342 D/BrightnessThermalClamper(  838): Thermal status observer already started
+11-15 07:36:28.342 I/InputManager-JNI(  838): Viewport [0] to add: local:4619827820427265280, isActive: true
+11-15 07:36:28.343 I/InputManager-JNI(  838): Viewport [1] to add: local:4619826851682279951, isActive: true
+11-15 07:36:28.343 I/InputManager-JNI(  838): Viewport [2] to add: local:4619827210700952848, isActive: true
+11-15 07:36:28.343 V/WindowManager(  838): Content Recording: Display 17 state was (0), is now (2), so update recording?
+11-15 07:36:28.343 D/HWUI    ( 1092): HOOK FAILED! Expected 3 got = 2
+11-15 07:36:28.347 D/gralloc_kona( 1092): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:28.353 V/WindowManager(  838): Sent Transition (#45) createdAt=11-15 07:36:28.267 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=255 effectiveUid=10055 displayId=16 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity } baseActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} topActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} origActivity=null realActivity=ComponentInfo{io.legado.flutter_legado/io.legado.flutter.MainActivity} numActivities=1 lastActiveTime=20000045 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{f1595e5 Task{e57f14f #255 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=Rect(0, 0 - 0, 0) topActivityInfo=ActivityInfo{d34b8f3 io.legado.flutter.MainActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=true isTopActivityNoDisplay=false isSleeping=false locusId=null displayAreaFeatureId=1 isTopActivityTransparent=false isActivityStackTransparent=false lastNonFullscreenBounds=Rect(237, 420 - 844, 1500) capturedLink=null capturedLinkTimestamp=0 requestedVisibleTypes=-9 topActivityRequestOpenInBrowserEducationTimestamp=0 appCompatTaskInfo=AppCompatTaskInfo { topActivityInSizeCompat=false eligibleForLetterboxEducation= false isLetterboxEducationEnabled= false isLetterboxDoubleTapEnabled= false eligibleForUserAspectRatioButton= false topActivityBoundsLetterboxed= false isFromLetterboxDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 topActivityLetterboxAppWidth=-1 topActivityLetterboxAppHeight=-1 isUserFullscreenOverrideEnabled=false isSystemFullscreenOverrideEnabled=false hasMinAspectRatioOverride=false topActivityLetterboxBounds=null cameraCompatTaskInfo=CameraCompatTaskInfo { freeformCameraCompatMode=inactive}} topActivityMainWindowFrame=null}, pipChange = null, remoteTransition = null, displayChange = null, flags = 0, debugId = 45 }
+11-15 07:36:28.353 V/WindowManager(  838):     startWCT=WindowContainerTransaction { changes= {} hops= [] errorCallbackToken=null taskFragmentOrganizer=null }
+11-15 07:36:28.353 V/WindowManager(  838):     info={id=45 t=OPEN f=0x0 trk=0 r=[16@Point(0, 0)] c=[
+11-15 07:36:28.353 V/WindowManager(  838):         {WCT{RemoteToken{f1595e5 Task{e57f14f #255 type=standard I=io.legado.flutter_legado/io.legado.flutter.MainActivity}}} m=OPEN f=NONE p=WCT{RemoteToken{69bae5d DefaultTaskDisplayArea@114012541}} leash=Surface(name=Task=255)/@0xde08707 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16 taskParent=-1},
+11-15 07:36:28.353 V/WindowManager(  838):         {WCT{RemoteToken{69bae5d DefaultTaskDisplayArea@114012541}} m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0x80f5946 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16}
+11-15 07:36:28.353 V/WindowManager(  838):     ]}
+11-15 07:36:28.354 V/WindowManagerShell( 1092): onTransitionReady(transaction=3599182609712)
+11-15 07:36:28.354 V/WindowManagerShell( 1092): onTransitionReady (#45) android.os.BinderProxy@34407bb: {id=45 t=OPEN f=0x0 trk=0 r=[16@Point(0, 0)] c=[
+11-15 07:36:28.354 V/WindowManagerShell( 1092):         {m=OPEN f=NONE p=WCT{android.window.IWindowContainerToken$Stub$Proxy@383305} leash=Surface(name=Task=255)/@0xa912b49 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16 taskParent=-1},
+11-15 07:36:28.354 V/WindowManagerShell( 1092):         {m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0xe75dc4e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16}
+11-15 07:36:28.354 V/WindowManagerShell( 1092):     ]}
+11-15 07:36:28.354 V/WindowManagerShell( 1092): Playing animation for (#45) android.os.BinderProxy@34407bb@0
+11-15 07:36:28.354 V/ShellRecents( 1092): RecentsTransitionHandler.startAnimation: no controller found
+11-15 07:36:28.354 V/WindowManagerShell( 1092): Transition doesn't have explicit remote, search filters for match for {id=45 t=OPEN f=0x0 trk=0 r=[16@Point(0, 0)] c=[{m=OPEN f=NONE p=WCT{android.window.IWindowContainerToken$Stub$Proxy@383305} leash=Surface(name=Task=255)/@0xa912b49 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16 taskParent=-1},{m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0xe75dc4e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16}]}
+11-15 07:36:28.354 V/WindowManagerShell( 1092):  Delegate animation for (#45) to null
+11-15 07:36:28.354 V/WindowManagerShell( 1092): start default transition animation, info = {id=45 t=OPEN f=0x0 trk=0 r=[16@Point(0, 0)] c=[{m=OPEN f=NONE p=WCT{android.window.IWindowContainerToken$Stub$Proxy@383305} leash=Surface(name=Task=255)/@0xa912b49 sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16 taskParent=-1},{m=TO_FRONT f=FLAG_IS_TASK_DISPLAY_AREA leash=Surface(name=DefaultTaskDisplayArea)/@0xe75dc4e sb=Rect(0, 0 - 1080, 1920) eb=Rect(0, 0 - 1080, 1920) epz=Point(1080, 1920) d=16}]}
+11-15 07:36:28.354 V/WindowManagerShell( 1092): loadAnimation: anim=android.view.animation.AnimationSet@cc4058b animAttr=0x4 type=OPEN isEntrance=true
+11-15 07:36:28.355 D/Zygote  (  659): Forked child process 33922
+11-15 07:36:28.355 W/ActivityManager(  838): Slow operation: 78ms so far, now at startProcess: returned from zygote!
+11-15 07:36:28.355 W/ActivityManager(  838): Slow operation: 78ms so far, now at startProcess: done updating battery stats
+11-15 07:36:28.355 W/ActivityManager(  838): Slow operation: 78ms so far, now at startProcess: building log message
+11-15 07:36:28.355 I/ActivityManager(  838): Start proc 33922:io.legado.flutter_legado/u0a55 for top-activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}
+11-15 07:36:28.355 W/ActivityManager(  838): Slow operation: 78ms so far, now at startProcess: starting to update pids map
+11-15 07:36:28.355 W/ActivityManager(  838): Slow operation: 78ms so far, now at startProcess: done updating pids map
+11-15 07:36:28.364 D/gralloc_kona(  706): gralloc_alloc: Creating ashmem region of size 8192
+11-15 07:36:28.366 D/gralloc_kona( 1092): gralloc_alloc: Creating ashmem region of size 2215936
+11-15 07:36:28.368 D/HWUI    ( 1092): HOOK FAILED! Expected 3 got = 2
+11-15 07:36:28.369 D/gralloc_kona( 1092): gralloc_alloc: Creating ashmem region of size 2215936
+11-15 07:36:28.370 D/EventHub(  838): configureBatteryLocked rawBatteryId 1 name battery
+11-15 07:36:28.370 D/EventHub(  838): No input device configuration file found for device 'Xiaomi Mouse'.
+11-15 07:36:28.370 I/EventHub(  838): usingClockIoctl=true
+11-15 07:36:28.370 I/EventHub(  838): New device: id=68, fd=637, path='/dev/input/event10', name='Xiaomi Mouse', classes=CURSOR | BATTERY | EXTERNAL, configuration='', keyLayout='', keyCharacterMap='', builtinKeyboard=false, 
+11-15 07:36:28.370 E/EventHub(  838): Could not get device name for /dev/input/mouse4: Inappropriate ioctl for device
+11-15 07:36:28.370 E/EventHub(  838): could not get driver version for /dev/input/mouse4, Inappropriate ioctl for device
+11-15 07:36:28.370 V/WindowManagerShell( 1092):  animated by com.android.wm.shell.transition.DefaultTransitionHandler@88a61d7
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): setPresentationRotation 0 for io.legado.flutter_legado:255
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): java.lang.Exception
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at android.os.Looper.loop(Looper.java:317)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-15 07:36:28.386 E/[MUMU]TaskTab(  838): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-15 07:36:28.389 E/ActivityManager(  838): Sending non-protected broadcast nemu.intent.action.NEW_TASK from system 838:system/1000 pkg android
+11-15 07:36:28.389 E/ActivityManager(  838): java.lang.Throwable
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.checkBroadcastFromSystem(BroadcastController.java:2118)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.broadcastIntentLockedTraced(BroadcastController.java:1635)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.broadcastIntentLocked(BroadcastController.java:807)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.am.BroadcastController.broadcastIntentWithFeature(BroadcastController.java:740)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.am.ActivityManagerService.broadcastIntentWithFeature(ActivityManagerService.java:14410)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.app.ContextImpl.sendBroadcastAsUser(ContextImpl.java:1509)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.content.ContextWrapper.sendBroadcastAsUser(ContextWrapper.java:603)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.wm.TaskUtils.$r8$lambda$JRBio5N1z1PXvDB9E_DBrd2vjYw(TaskUtils.java:2179)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.wm.TaskUtils$$ExternalSyntheticLambda2.run(R8$$SyntheticClass:0)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.os.Handler.handleCallback(Handler.java:991)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.os.Handler.dispatchMessage(Handler.java:102)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.os.Looper.loop(Looper.java:317)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-15 07:36:28.389 E/ActivityManager(  838): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-15 07:36:28.406 W/nativebridge(33922): Failed to bind-mount /system/etc/cpuinfo.x86_64.txt as /proc/cpuinfo: No such file or directory
+11-15 07:36:28.406 W/nativebridge(33922): Failed to bind-mount /system/lib64/x86_64/cpuinfo as /proc/cpuinfo: No such file or directory
+11-15 07:36:28.406 E/Zygote  (33922): pkg name is 0 => io.legado.flutter_legado, data dir is /data/user/0/io.legado.flutter_legado
+11-15 07:36:28.409 W/zygote64(33922): Thread Pool max thread count is 0. Cannot cache binder as linkToDeath cannot be implemented. serviceName: nemuhotd
+11-15 07:36:28.418 D/EventHub(  838): configureBatteryLocked rawBatteryId 1 name battery
+11-15 07:36:28.418 D/EventHub(  838): No input device configuration file found for device 'Xiaomi Joystick'.
+11-15 07:36:28.419 W/EventHub(  838): Unable to disable kernel key repeat for /dev/input/event11: Function not implemented
+11-15 07:36:28.419 I/EventHub(  838): usingClockIoctl=true
+11-15 07:36:28.419 I/EventHub(  838): New device: id=69, fd=642, path='/dev/input/event11', name='Xiaomi Joystick', classes=KEYBOARD | CURSOR | DPAD | GAMEPAD | JOYSTICK | VIBRATOR | BATTERY | EXTERNAL, configuration='', keyLayout='/system/usr/keylayout/Generic.kl', keyCharacterMap='/system/usr/keychars/Generic.kcm', builtinKeyboard=false, 
+11-15 07:36:28.419 W/InputReader(  838): Input device Xiaomi Joystick should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.419 E/InputReader(  838): Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-15 07:36:28.419 W/InputReader(  838): Input device Xiaomi Joystick should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.419 E/InputReader(  838): Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-15 07:36:28.419 I/InputReader(  838): Device added: id=68, eventHubId=69, name='Xiaomi Joystick', descriptor='3d987e3eb9ee04fee9b9b9ae5548421fa20dc9a7',sources=KEYBOARD | DPAD | GAMEPAD | MOUSE | JOYSTICK
+11-15 07:36:28.419 W/InputReader(  838): Input device Xiaomi Mouse should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.419 E/InputReader(  838): Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-15 07:36:28.419 W/InputReader(  838): Input device Xiaomi Mouse should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.419 E/InputReader(  838): Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE
+11-15 07:36:28.419 I/InputReader(  838): Device added: id=69, eventHubId=68, name='Xiaomi Mouse', descriptor='985220220bd57f34bdbec1832f7073675654e864',sources=MOUSE
+11-15 07:36:28.420 W/InputReader(  838): Input device Xiaomi Keyboard should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.420 W/InputReader(  838): Input device Xiaomi Keyboard should be associated with display id: 17 but the corresponding viewport cannot be found
+11-15 07:36:28.420 I/InputReader(  838): Device added: id=70, eventHubId=67, name='Xiaomi Keyboard', descriptor='a1676e39b4b3031b5dcbf0b8a6d9e9ce775e5d16',sources=KEYBOARD
+11-15 07:36:28.430 W/Scheduler(  706): No mode change to emit
+11-15 07:36:28.432 E/WindowManager(  838): Display reconfigured outside of a transition: Display{#16 state=ON size=1080x1920 ROTATION_0}
+11-15 07:36:28.432 E/WindowManager(  838): Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-15 07:36:28.433 D/BrightnessThermalClamper(  838): Thermal status observer already started
+11-15 07:36:28.433 I/WindowManager(  838): Override config changes=60 {0.0 ?mcc0mnc ?localeList ?layoutDir sw360dp w360dp h640dp 480dpi nrml long port ?uimode ?night -touch -keyb/v/v dpad/v winConfig={ mBounds=Rect(0, 0 - 1080, 1920) mAppBounds=Rect(0, 0 - 1080, 1920) mMaxBounds=Rect(0, 0 - 1080, 1920) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} ?fontWeightAdjustment} for displayId=17
+11-15 07:36:28.434 W/WindowTokenClientController(  838): Can't find attached WindowTokenClient for android.window.WindowTokenClient@94fe70d
+11-15 07:36:28.434 I/InputReader(  838): Reconfiguring input devices, changes=DISPLAY_INFO
+11-15 07:36:28.434 I/InputReader(  838): Device reconfigured: id=67, name='Xiaomi Touchscreen', size 1080x1920, orientation Rotation0, mode DIRECT, display id 17
+11-15 07:36:28.434 W/InputReader(  838): Input device Xiaomi integration should be associated with display id: 1794 but the corresponding viewport cannot be found
+11-15 07:36:28.436 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bcb738) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.436 V/ShellDragAndDrop( 1092): Display changed: 17
+11-15 07:36:28.453 I/Zygote  (33922): seccomp disabled by setenforce 0
+11-15 07:36:28.476 I/.flutter_legado(33922): Using CollectorTypeCMC GC.
+11-15 07:36:28.478 W/Scheduler(  706): No mode change to emit
+11-15 07:36:28.482 W/.flutter_legado(33922): Unexpected CPU variant for x86: x86_64.
+11-15 07:36:28.482 W/.flutter_legado(33922): Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, goldmont-without-sha-xsaves, tremont, kabylake, alderlake, default
+11-15 07:36:28.482 V/libnb   (33922): enter native_bridge2_initialize /data/user/0/io.legado.flutter_legado/code_cache arm64
+11-15 07:36:28.483 E/libnb   (33922): The translator implementation library has not been set.
+11-15 07:36:28.515 E/libnb   (33922): get_callbacks native_handle 0xf2f53a00d6ff3673: 1 libnb:/system/lib64/libhoudini.so
+11-15 07:36:28.515 I/libnb   (33922): Found /system/lib64/libhoudini.so version 7
+11-15 07:36:28.502 I/.flutter_legado(33922): type=1400 audit(0.0:1938): avc:  denied  { execmod } for  path="/system/lib64/libhoudini.so" dev="sda6" ino=2825 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:system_lib_file:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-15 07:36:28.525 E/WindowManager(  838): Display reconfigured outside of a transition: Display{#16 state=ON size=1080x1920 ROTATION_0}
+11-15 07:36:28.525 E/WindowManager(  838): Display reconfigured outside of a transition: Display{#0 state=ON size=1080x1920 ROTATION_0}
+11-15 07:36:28.525 I/WindowManager(  838): Override config changes=8 {0.0 ?mcc0mnc ?localeList ?layoutDir sw360dp w360dp h640dp 480dpi nrml long port ?uimode ?night finger -keyb/v/v dpad/v winConfig={ mBounds=Rect(0, 0 - 1080, 1920) mAppBounds=Rect(0, 0 - 1080, 1920) mMaxBounds=Rect(0, 0 - 1080, 1920) mDisplayRotation=ROTATION_0 mWindowingMode=fullscreen mActivityType=undefined mAlwaysOnTop=undefined mRotation=ROTATION_0} ?fontWeightAdjustment} for displayId=17
+11-15 07:36:28.525 W/WindowTokenClientController(  838): Can't find attached WindowTokenClient for android.window.WindowTokenClient@94fe70d
+11-15 07:36:28.527 I/ndroid.systemui( 1092): AssetManager2(0x7106b9bd0238) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.527 V/ShellDragAndDrop( 1092): Display changed: 17
+11-15 07:36:28.514 I/.flutter_legado(33922): type=1400 audit(0.0:1939): avc:  denied  { write } for  name="property_service" dev="tmpfs" ino=643 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:property_socket:s0 tclass=sock_file permissive=1 app=io.legado.flutter_legado
+11-15 07:36:28.534 I/houdini (33922): [33922] Houdini now in android app mode
+11-15 07:36:28.534 I/houdini (33922): [33922] Intel Bridge Technology for NetEase Mumu only, Copyright(C) Intel Corp. 2012-now.
+11-15 07:36:28.534 I/houdini (33922): [33922] Use permitted only under a valid commercial software license agreement - all other rights reserved.
+11-15 07:36:28.534 I/houdini (33922): [33922] Initialize library(version: 15.0.0.Netease_com3.0 RELEASE)... successfully.
+11-15 07:36:28.534 W/HP      (33922): x_initialize private_dir:/data/user/0/io.legado.flutter_legado/code_cache instruction_set:arm64 getMethodShorty:0x7105e5e48700 ret:1
+11-15 07:36:28.514 I/.flutter_legado(33922): type=1400 audit(0.0:1940): avc:  denied  { connectto } for  path="/dev/socket/property_service" scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:r:init:s0 tclass=unix_stream_socket permissive=1 app=io.legado.flutter_legado
+11-15 07:36:28.541 E/.flutter_legado(33922): Not starting debugger since process cannot load the jdwp agent.
+11-15 07:36:28.547 D/nativeloader(33922): Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+11-15 07:36:28.576 D/BackgroundInstallControlService(  838): Package event received: 0
+11-15 07:36:28.578 I/system_server(  838): AssetManager2(0x7106b9bce938) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.599 D/ApplicationLoaders(33922): Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+11-15 07:36:28.599 D/ApplicationLoaders(33922): Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+11-15 07:36:28.603 D/nativeloader(33922): Configuring clns-7 for other apk /data/app/~~FMw5-MgTw5hcnNdPcB-POw==/io.legado.flutter_legado-sHjsqit0ByQZE6SDyFKxwg==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~FMw5-MgTw5hcnNdPcB-POw==/io.legado.flutter_legado-sHjsqit0ByQZE6SDyFKxwg==/lib/x86_64:/data/app/~~FMw5-MgTw5hcnNdPcB-POw==/io.legado.flutter_legado-sHjsqit0ByQZE6SDyFKxwg==/base.apk!/lib/x86_64, permitted_path=/data:/mnt/expand:/data/user/0/io.legado.flutter_legado
+11-15 07:36:28.611 I/.flutter_legado(33922): AssetManager2(0x7106b9ba8e18) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.613 V/WindowManagerShell( 1092): Transition animation finished (aborted=false), notifying core (#45) android.os.BinderProxy@34407bb@0
+11-15 07:36:28.614 V/WindowManager(  838): Finish Transition (#45): created at 11-15 07:36:28.267 collect-started=0.036ms request-sent=8.991ms started=13.016ms ready=84.809ms sent=85.371ms finished=347.517ms
+11-15 07:36:28.615 V/WindowManagerShell( 1092): Track 0 became idle
+11-15 07:36:28.615 V/WindowManagerShell( 1092): All active transition animations finished
+11-15 07:36:28.621 V/GraphicsEnvironment(33922): Currently set values for:
+11-15 07:36:28.621 V/GraphicsEnvironment(33922):   angle_gl_driver_selection_pkgs=[]
+11-15 07:36:28.621 V/GraphicsEnvironment(33922):   angle_gl_driver_selection_values=[]
+11-15 07:36:28.622 V/GraphicsEnvironment(33922): io.legado.flutter_legado is not listed in per-application setting
+11-15 07:36:28.622 V/GraphicsEnvironment(33922): Neither updatable production driver nor prerelease driver is supported.
+11-15 07:36:28.630 W/Scheduler(  706): No mode change to emit
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): setPresentationRotation 0 for io.legado.flutter_legado:255
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): java.lang.Exception
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.mumu.tab.TaskTab.setPresentationRotation(TaskTab.java:52)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.TaskUtils.getTopTaskOnDisplay(TaskUtils.java:638)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.TaskUtils.updateTaskTabRotation(TaskUtils.java:1957)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.TaskUtils.notifyOpen(TaskUtils.java:222)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.wm.WmBridge.notifyOpen(WmBridge.java:496)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.mumu.wm.TaskHandler.handleMessage(TaskHandler.java:32)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at android.os.Handler.dispatchMessage(Handler.java:109)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at android.os.Looper.loopOnce(Looper.java:232)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at android.os.Looper.loop(Looper.java:317)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at android.os.HandlerThread.run(HandlerThread.java:85)
+11-15 07:36:28.646 E/[MUMU]TaskTab(  838): 	at com.android.server.ServiceThread.run(ServiceThread.java:49)
+11-15 07:36:28.646 D/BackgroundInstallControlService(  838): Package event received: 0
+11-15 07:36:28.647 D/BackgroundInstallControlService(  838): Package event received: 0
+11-15 07:36:28.652 I/.flutter_legado(33922): AssetManager2(0x7106b9ba4638) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.654 E/libEGL  (33922): intercept_property_get () for (persist.graphics.egl)
+11-15 07:36:28.678 I/EGL_emulation(33922): EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-15 07:36:28.678 W/Scheduler(  706): No mode change to emit
+11-15 07:36:28.685 D/FileUtils(  838): Rounded bytes from 6231212032 to 8000000000
+11-15 07:36:28.700 D/skia    (33922): [SkFontMgr Android Parser] '/product/etc/fonts_customization.xml' could not be opened
+11-15 07:36:28.732 I/.flutter_legado(33922): AssetManager2(0x7106b9ba8af8) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:28.769 E/vulkan  (33922): intercept_property_get () for (ro.hardware.vulkan)
+11-15 07:36:28.830 D/vulkan  (33922): searching for layers in '/data/app/~~FMw5-MgTw5hcnNdPcB-POw==/io.legado.flutter_legado-sHjsqit0ByQZE6SDyFKxwg==/lib/x86_64'
+11-15 07:36:28.836 D/vulkan  (33922): searching for layers in '/data/app/~~FMw5-MgTw5hcnNdPcB-POw==/io.legado.flutter_legado-sHjsqit0ByQZE6SDyFKxwg==/base.apk!/lib/x86_64'
+11-15 07:36:28.894 W/AccMsgReceiver( 2016): AccMsgReceiver: onReceive action = nemu.intent.action.NEW_TASK
+11-15 07:36:28.910 W/ActivityManager(  838): Foreground service started from background can not have location/camera/microphone access: service com.mumu.acc/.AccService
+11-15 07:36:28.911 W/AccServiceManager( 2016): onAppLaunch: packageName = io.legado.flutter_legado
+11-15 07:36:28.917 W/TranslateGameManager( 2016): onAppLaunch: packageName = io.legado.flutter_legado, hasPackageLaunchedBefore = false, supportTranslateReally = false, isLocalTranslateEnabled = false
+11-15 07:36:28.984 I/hwservicemanager(  479): getTransport: Cannot find entry android.hardware.configstore@1.0::ISurfaceFlingerConfigs/default in either framework or device VINTF manifest.
+11-15 07:36:28.984 E/HidlServiceManagement(33922): getService: Potential race detected, descriptor: android.hardware.configstore@1.0::ISurfaceFlingerConfigs instance: default
+11-15 07:36:29.023 I/MESA    (33922): on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x71055860f000 0x710558a0f000]
+11-15 07:36:29.033 I/flutter (33922): [IMPORTANT:flutter/shell/platform/android/android_context_vk_impeller.cc(62)] Using the Impeller rendering backend (Vulkan).
+11-15 07:36:29.062 D/com.llfbandit.app_links(33922): Intent { flg=0x10000000 cmp=io.legado.flutter_legado/io.legado.flutter.MainActivity }
+11-15 07:36:29.080 E/TTS     (33922): Failed to initialize TextToSpeech with status: -1
+11-15 07:36:29.147 W/Scheduler(  706): No mode change to emit
+11-15 07:36:29.160 I/.flutter_legado(33922): AssetManager2(0x7106b9ba6578) locale list changing from [] to [zh-Hans-CN]
+11-15 07:36:29.167 D/DesktopModeFlagsUtil(33922): Toggle override initialized to: OVERRIDE_OFF
+11-15 07:36:29.186 W/HWUI    (33922): Unknown dataspace 0
+11-15 07:36:29.213 I/Choreographer(33922): Skipped 34 frames!  The application may be doing too much work on its main thread.
+11-15 07:36:29.218 I/WindowExtensionsImpl(33922): Initializing Window Extensions, vendor API level=8, activity embedding enabled=true
+11-15 07:36:29.230 D/CoreBackPreview(  838): Window{5c910fe u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@519137b, mPriority=0, mIsAnimationCallback=false, mOverrideBehavior=0}
+11-15 07:36:29.239 I/EGL_emulation(33922): EGL display initialized (version 1.4, rendererVersion=0x3, configs=120)
+11-15 07:36:29.244 E/HidlServiceManagement(33922): getService: Potential race detected, descriptor: android.hardware.graphics.mapper@2.0::IMapper instance: default
+11-15 07:36:29.244 W/HWUI    (33922): Failed to choose config with EGL_SWAP_BEHAVIOR_PRESERVED, retrying without...
+11-15 07:36:29.246 E/HidlServiceManagement(33922): getService: Potential race detected, descriptor: android.hardware.graphics.allocator@2.0::IAllocator instance: default
+11-15 07:36:29.248 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 4096
+11-15 07:36:29.250 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 4096
+11-15 07:36:29.250 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 4096
+11-15 07:36:29.250 E/gralloc_kona(33922): gralloc_alloc: Unknown format 56
+11-15 07:36:29.250 E/GraphicBufferAllocator(33922): Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-15 07:36:29.250 E/AHardwareBuffer(33922): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-15 07:36:29.250 E/gralloc_kona(33922): gralloc_alloc: Unknown format 59
+11-15 07:36:29.251 E/GraphicBufferAllocator(33922): Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-15 07:36:29.251 E/AHardwareBuffer(33922): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-15 07:36:29.251 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 4096
+11-15 07:36:29.251 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 4096
+11-15 07:36:29.251 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 4096
+11-15 07:36:29.252 E/gralloc_kona(33922): gralloc_alloc: Unknown format 56
+11-15 07:36:29.252 E/GraphicBufferAllocator(33922): Failed to allocate (4 x 4) layerCount 1 format 56 usage b00: 3
+11-15 07:36:29.252 E/AHardwareBuffer(33922): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-15 07:36:29.252 E/gralloc_kona(33922): gralloc_alloc: Unknown format 59
+11-15 07:36:29.252 E/GraphicBufferAllocator(33922): Failed to allocate (4 x 4) layerCount 1 format 59 usage b00: 3
+11-15 07:36:29.252 E/AHardwareBuffer(33922): GraphicBuffer(w=4, h=4, lc=1) failed (Unknown error -3), handle=0x0
+11-15 07:36:29.253 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:29.258 E/HWComposer(  706): getSupportedContentTypes: getSupportedContentTypes failed for display 4619827820427265280: UNSUPPORTED (8)
+11-15 07:36:29.258 E/HWComposer(  706): getSupportedContentTypes: getSupportedContentTypes failed for display 4619826851682279951: UNSUPPORTED (8)
+11-15 07:36:29.258 E/HWComposer(  706): getSupportedContentTypes: getSupportedContentTypes failed for display 4619827210700952848: UNSUPPORTED (8)
+11-15 07:36:29.259 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:29.265 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:29.274 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:29.283 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:29.312 I/flutter (33922): [启动] CrashLogService 初始化耗时：112ms
+11-15 07:36:29.346 I/.flutter_legado(33922): type=1400 audit(0.0:1941): avc:  denied  { getattr } for  path="/sys/fs/cgroup/uid_10055/pid_33922/cgroup.controllers" dev="cgroup2" ino=54688 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-15 07:36:29.346 I/.flutter_legado(33922): type=1400 audit(0.0:1942): avc:  denied  { read } for  name="cpu.max" dev="cgroup2" ino=4284 scontext=u:r:untrusted_app:s0:c55,c256,c512,c768 tcontext=u:object_r:cgroup_v2:s0 tclass=file permissive=1 app=io.legado.flutter_legado
+11-15 07:36:29.398 D/WindowLayoutComponentImpl(33922): Register WindowLayoutInfoListener on Context=io.legado.flutter.MainActivity@59e8644, of which baseContext=android.app.ContextImpl@9e705f3
+11-15 07:36:29.511 I/flutter (33922): [RustApi] ttsSetCacheDir -> /data/user/0/io.legado.flutter_legado/files/tts_cache（ok=true）
+11-15 07:36:29.512 I/flutter (33922): [RustApi] setCacheDir -> /data/user/0/io.legado.flutter_legado/cache/js_cache
+11-15 07:36:29.513 I/flutter (33922): [RustApi] setImageCacheDir -> /data/user/0/io.legado.flutter_legado/cache/image_cache
+11-15 07:36:29.514 I/flutter (33922): [RustApi] setAudioCacheDir -> /data/user/0/io.legado.flutter_legado/cache/audio_cache
+11-15 07:36:29.522 I/flutter (33922): [RustApi] 设备 ID 注入完成：d4f2246244780bde
+11-15 07:36:29.524 I/flutter (33922): [RustApi] 主题注入完成（palette=def mode=0）
+11-15 07:36:29.526 I/flutter (33922): [RustApi] 阅读配置注入完成（bgIndex=0）
+11-15 07:36:29.526 I/flutter (33922): [启动] 并行初始化（prefs+FFI）耗时：210ms
+11-15 07:36:29.528 I/flutter (33922): [启动] 远程书库服务器迁移耗时：1ms
+11-15 07:36:29.528 I/flutter (33922): [启动] 语言/图片绘制偏好初始化耗时：0ms
+11-15 07:36:29.529 I/flutter (33922): [启动] 自动清除过期搜索：删除 0 条（阈值 -1 天）
+11-15 07:36:29.529 I/flutter (33922): [启动] UserAgent 同步耗时：0ms
+11-15 07:36:29.530 I/flutter (33922): [启动] 线程数同步耗时：0ms
+11-15 07:36:29.530 I/flutter (33922): [启动] 替换净化默认开关同步耗时：0ms
+11-15 07:36:29.530 I/flutter (33922): [启动] 总启动耗时：338ms
+11-15 07:36:29.687 I/MESA    (33922): on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 4194304 Range: [0x71054c7e4000 0x71054cbe4000]
+11-15 07:36:29.694 W/WindowOnBackDispatcher(33922): OnBackInvokedCallback is not enabled for the application.
+11-15 07:36:29.694 W/WindowOnBackDispatcher(33922): Set 'android:enableOnBackInvokedCallback="true"' in the application manifest.
+11-15 07:36:29.713 W/Scheduler(  706): No mode change to emit
+11-15 07:36:29.747 D/gralloc_kona(33922): gralloc_alloc: Creating ashmem region of size 8298496
+11-15 07:36:29.767 W/Scheduler(  706): No mode change to emit
+11-15 07:36:29.809 I/ImeTracker(  838): io.legado.flutter_legado:460d2c60: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+11-15 07:36:29.811 D/InsetsController(33922): hide(ime(), fromIme=false)
+11-15 07:36:29.811 I/ImeTracker(33922): io.legado.flutter_legado:460d2c60: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+11-15 07:36:29.812 I/ActivityTaskManager(  838): Displayed io.legado.flutter_legado/io.legado.flutter.MainActivity for user 0: +1s487ms
+11-15 07:36:29.812 I/ActivityTaskManager(  838): Fully drawn io.legado.flutter_legado/io.legado.flutter.MainActivity: +1s487ms
+11-15 07:36:29.827 D/BackgroundInstallControlService(  838): Package event received: 0
+11-15 07:36:29.831 W/Scheduler(  706): No mode change to emit
+11-15 07:36:29.844 W/WindowManager(  838): Failed looking up window session=Session{9050858 1489:1000} callers=com.android.server.wm.WindowManagerService.removeClientToken:2070 com.android.server.wm.Session.remove:269 android.view.IWindowSession$Stub.onTransact:696 
+11-15 07:36:29.852 W/Parcel  (  495): Expecting binder but got null!
+11-15 07:36:29.854 E/IME_SogouIME( 1489): Could not set IME callback false
+11-15 07:36:29.856 W/WindowTokenClientController( 1489): Can't find attached WindowTokenClient for android.window.WindowTokenClient@7e15f80
+11-15 07:36:29.880 I/BpBinder(  495): onLastStrongRef automatically unlinking death recipients: 
+11-15 07:36:29.880 W/Scheduler(  706): No mode change to emit
+11-15 07:36:29.892 I/ImeTracker(  838): system_server:fb20a7e6: onRequestHide at ORIGIN_SERVER reason HIDE_INPUT_TARGET_CHANGED fromUser false
+11-15 07:36:29.893 I/ImeTracker(  838): system_server:fb20a7e6: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-15 07:36:29.894 I/ImeTracker(  838): system_server:fb20a7e6: setFinished on previously finished token at PHASE_SERVER_UPDATE_CLIENT_VISIBILITY with STATUS_FAIL
+11-15 07:36:29.894 I/ImeTracker(  838): system_server:fb20a7e6: onFailed at PHASE_SERVER_UPDATE_CLIENT_VISIBILITY
+11-15 07:36:29.897 D/ViewRootImpl( 1489): Skip registering CompatOnBackInvokedCallback on IME dispatcher
+11-15 07:36:30.014 W/WindowOnBackDispatcher( 1092): sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@1c27a95
+11-15 07:36:30.014 W/Scheduler(  706): No mode change to emit
+11-15 07:36:30.014 D/CoreBackPreview(  838): Window{e299c9d u0 Splash Screen io.legado.flutter_legado EXITING}: Setting back callback null
+11-15 07:36:30.047 W/Scheduler(  706): No mode change to emit
+11-15 07:36:30.113 W/Scheduler(  706): No mode change to emit
+11-15 07:36:30.208 I/MESA    (33922): on_vkMapMemoryIntoAddressSpaceGOOGLE: Got new host visible alloc. Sizeof void: 8 map size: 2160000 Range: [0x71054c750000 0x71054c95f580]
+11-15 07:36:30.214 W/Scheduler(  706): No mode change to emit
+11-15 07:36:30.982 I/init    (34006): type=1400 audit(0.0:1944): avc:  denied  { transition } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-15 07:36:30.982 I/init    (34006): type=1400 audit(0.0:1945): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-15 07:36:30.982 I/init    (34006): type=1400 audit(0.0:1946): avc:  denied  { noatsecure } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-15 07:36:30.982 I/serial_console(34006): type=1400 audit(0.0:1947): avc:  denied  { rlimitinh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-15 07:36:30.982 I/serial_console(34006): type=1400 audit(0.0:1948): avc:  denied  { siginh } for  scontext=u:r:init:s0 tcontext=u:r:su:s0 tclass=process permissive=1
+11-15 07:36:32.247 W/Scheduler(  706): No mode change to emit
+11-15 07:36:32.838 D/ActivityManager(  838): freezing 3327 com.microsoft.launcher:hockeysender
+11-15 07:36:34.505 D/ProfileInstaller(33922): Installing profile for io.legado.flutter_legado
+11-15 07:36:35.974 I/init    (34008): type=1400 audit(0.0:1953): avc:  denied  { entrypoint } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-15 07:36:35.974 I/serial_console(34008): type=1400 audit(0.0:1954): avc:  denied  { map } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1
+11-15 07:36:35.974 I/serial_console(34008): type=1400 audit(0.0:1955): avc:  denied  { read execute } for  path="/system/xbin/serial_console" dev="sda6" ino=3982 scontext=u:r:su:s0 tcontext=u:object_r:system_file:s0 tclass=file permissive=1

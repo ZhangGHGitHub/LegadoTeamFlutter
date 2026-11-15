@@ -1,0 +1,50 @@
+[
+ {
+  "mode": "warm",
+  "row": "第17章 A4卷标题17",
+  "first_ms": 388,
+  "settle_ms": 498
+ },
+ {
+  "mode": "touch",
+  "row": "第22章 A4卷标题22",
+  "first_ms": 403,
+  "settle_ms": 507
+ },
+ {
+  "mode": "warm",
+  "row": "第27章 A4卷标题27",
+  "first_ms": 427,
+  "settle_ms": 427
+ },
+ {
+  "mode": "touch",
+  "row": "第32章 A4卷标题32",
+  "first_ms": 418,
+  "settle_ms": 520
+ },
+ {
+  "mode": "warm",
+  "row": "第37章 A4卷标题37",
+  "first_ms": 410,
+  "settle_ms": 516
+ },
+ {
+  "mode": "touch",
+  "row": "第42章 A4卷标题42",
+  "first_ms": 406,
+  "settle_ms": 510
+ },
+ {
+  "mode": "warm",
+  "row": "第47章 A4卷标题47",
+  "first_ms": 384,
+  "settle_ms": 487
+ },
+ {
+  "mode": "touch",
+  "row": "第52章 A4卷标题52",
+  "first_ms": 397,
+  "settle_ms": 506
+ }
+]

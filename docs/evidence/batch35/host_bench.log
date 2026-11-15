@@ -1,0 +1,261 @@
+    Updating crates.io index
+     Locking 252 packages to latest compatible versions
+      Adding generic-array v0.14.7 (available: v0.14.9)
+ Downloading crates ...
+  Downloaded jiff-static v0.2.44
+  Downloaded jiff-tzdb v0.1.10
+  Downloaded jiff-core v0.1.6
+  Downloaded jiff v0.2.44
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling version_check v0.9.5
+   Compiling cfg-if v1.0.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling memchr v2.8.3
+   Compiling windows-link v0.2.1
+   Compiling getrandom v0.4.3
+   Compiling find-msvc-tools v0.1.15
+   Compiling crc32fast v1.5.5
+   Compiling shlex v2.0.1
+   Compiling rustversion v1.0.23
+   Compiling regex-syntax v0.8.11
+   Compiling encoding_index_tests v0.1.4
+   Compiling syn v1.0.109
+   Compiling cpufeatures v0.3.1
+   Compiling cmov v0.5.4
+   Compiling proc-macro-hack v0.5.20+deprecated
+   Compiling simd-adler32 v0.3.10
+   Compiling winapi v0.3.9
+   Compiling generic-array v0.14.7
+   Compiling standback v0.2.17
+   Compiling ctutils v0.4.8
+   Compiling num-traits v0.2.19
+   Compiling aho-corasick v1.1.5
+   Compiling adler2 v2.0.1
+   Compiling log v0.4.35
+   Compiling jobserver v0.1.35
+   Compiling crossbeam-utils v0.8.23
+   Compiling rand_core v0.10.1
+   Compiling hybrid-array v0.4.15
+   Compiling scopeguard v1.2.0
+   Compiling pkg-config v0.3.34
+   Compiling byteorder v1.5.0
+   Compiling cc v1.11.2
+   Compiling const-oid v0.10.3
+   Compiling subtle v2.6.1
+   Compiling miniz_oxide v0.9.1
+   Compiling miniz_oxide v0.4.4
+   Compiling syn v2.0.119
+   Compiling crypto-common v0.1.7
+   Compiling syn v3.0.10
+   Compiling crypto-common v0.2.2
+   Compiling block-padding v0.3.3
+   Compiling block-buffer v0.10.4
+   Compiling windows-sys v0.61.2
+   Compiling crossbeam-epoch v0.9.21
+   Compiling adler32 v1.2.0
+   Compiling inout v0.1.4
+   Compiling digest v0.10.7
+   Compiling regex-automata v0.4.18
+   Compiling cipher v0.4.4
+   Compiling const_fn v0.4.12
+   Compiling equivalent v1.0.3
+   Compiling parking_lot_core v0.9.12
+   Compiling zerocopy v0.8.63
+   Compiling weezl v0.1.12
+   Compiling zlib-rs v0.6.8
+   Compiling num-integer v0.1.47
+   Compiling time-macros-impl v0.1.2
+   Compiling num-rational v0.3.2
+   Compiling time v0.2.27
+   Compiling serde_core v1.0.229
+   Compiling smallvec v1.16.5
+   Compiling crossbeam-deque v0.8.8
+   Compiling adler v1.0.2
+   Compiling zstd-sys v2.1.3+zstd.1.5.7
+   Compiling time-macros v0.1.1
+   Compiling chrono v0.4.45
+   Compiling miniz_oxide v0.3.7
+   Compiling deflate v0.8.6
+   Compiling lock_api v0.4.14
+   Compiling encoding-index-tradchinese v1.20141219.5
+   Compiling encoding-index-simpchinese v1.20141219.5
+   Compiling encoding-index-korean v1.20141219.5
+   Compiling flate2 v1.1.11
+   Compiling encoding-index-japanese v1.20141219.5
+   Compiling encoding-index-singlebyte v1.20141219.5
+   Compiling getrandom v0.2.17
+   Compiling jpeg-decoder v0.1.22
+   Compiling color_quant v1.1.0
+   Compiling rayon-core v1.13.0
+   Compiling libc v0.2.191
+   Compiling bstr v1.13.1
+   Compiling thiserror v2.0.21
+   Compiling bitflags v1.3.2
+   Compiling cpufeatures v0.2.17
+   Compiling pin-project-lite v0.2.17
+   Compiling zstd-safe v8.3.0
+   Compiling zmij v1.0.23
+   Compiling pom v3.4.0
+   Compiling png v0.16.8
+   Compiling futures-macro v0.3.34
+   Compiling thiserror-impl v2.0.21
+   Compiling tokio-macros v2.7.2
+   Compiling tiff v0.6.1
+   Compiling gif v0.11.4
+   Compiling rand_core v0.6.4
+   Compiling zeroize_derive v1.5.0
+   Compiling encoding v0.2.33
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.5
+   Compiling zeroize v1.9.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling parking_lot v0.12.5
+   Compiling block-buffer v0.12.1
+   Compiling digest v0.11.3
+   Compiling unrar_sys v0.5.8
+   Compiling num-iter v0.1.46
+   Compiling approx v0.3.2
+   Compiling ordered-float v1.1.1
+   Compiling inout v0.2.6
+   Compiling constant_time_eq v0.6.1
+   Compiling encoding_rs v0.8.44
+   Compiling stb_truetype v0.3.1
+   Compiling itoa v0.4.8
+   Compiling bytemuck v1.25.2
+   Compiling time-core v0.1.9
+   Compiling bytes v1.12.1
+   Compiling itoa v1.0.19
+   Compiling dtoa v0.4.8
+   Compiling allocator-api2 v0.2.21
+   Compiling deranged v0.5.9
+   Compiling num-conv v0.2.2
+   Compiling hashbrown v0.17.1
+   Compiling foldhash v0.1.5
+   Compiling serde_json v1.0.154
+   Compiling slab v0.4.12
+   Compiling futures-core v0.3.34
+   Compiling lzw v0.10.0
+   Compiling linked-hash-map v0.5.6
+   Compiling jiff-tzdb v0.1.10
+   Compiling powerfmt v0.2.1
+   Compiling serde v1.0.229
+   Compiling bit-vec v0.8.0
+   Compiling futures-task v0.3.34
+   Compiling tinyvec v1.13.3
+   Compiling indexmap v2.14.2
+   Compiling lopdf v0.26.0
+   Compiling jiff-tzdb-platform v0.1.3
+   Compiling tokio v1.54.1
+   Compiling futures-util v0.3.34
+   Compiling hashbrown v0.15.5
+   Compiling rusttype v0.8.3
+   Compiling image v0.23.14
+   Compiling bit-set v0.8.0
+   Compiling time v0.3.55
+   Compiling unicode-normalization v0.1.26
+   Compiling cipher v0.5.2
+   Compiling sha2 v0.11.1
+   Compiling hmac v0.13.0
+   Compiling rand_chacha v0.3.1
+   Compiling serde_derive v1.0.229
+   Compiling sha2 v0.10.9
+   Compiling aes v0.8.4
+   Compiling regex v1.13.1
+   Compiling cbc v0.1.2
+   Compiling ecb v0.1.2
+   Compiling hmac v0.12.1
+   Compiling chacha20 v0.10.2
+   Compiling libbz2-rs-sys v0.2.6
+   Compiling bitflags v2.13.2
+   Compiling cpubits v0.1.1
+   Compiling multiversion_no_op v1.0.0
+   Compiling core_detect v1.0.0
+   Compiling futures-sink v0.3.34
+   Compiling bumpalo v3.20.4
+   Compiling unicode-bidi v0.3.18
+   Compiling simdutf8 v0.1.5
+   Compiling either v1.19.0
+   Compiling jiff-core v0.1.6
+   Compiling unicode-properties v0.1.5
+   Compiling zopfli v0.8.4
+   Compiling bzip2 v0.6.1
+   Compiling stringprep v0.1.5
+   Compiling rayon v1.12.0
+   Compiling aes v0.9.4
+   Compiling jiff v0.2.44
+   Compiling rand v0.10.3
+   Compiling pbkdf2 v0.12.2
+   Compiling tokio-util v0.7.20
+   Compiling printpdf v0.3.4
+   Compiling lzma-rust2 v0.25.0
+   Compiling zstd v0.14.4
+   Compiling rand v0.8.8
+   Compiling pbkdf2 v0.13.0
+   Compiling lru v0.12.5
+   Compiling fancy-regex v0.19.2
+   Compiling sha1 v0.11.0
+   Compiling derive_more v0.99.20
+   Compiling uuid v1.29.2
+   Compiling des v0.8.1
+   Compiling md-5 v0.10.6
+   Compiling nom v8.0.0
+   Compiling rangemap v1.8.0
+   Compiling lzma-rust2 v0.23.0
+   Compiling typed-path v0.13.0
+   Compiling base64 v0.22.1
+   Compiling md5 v0.7.0
+   Compiling deflate64 v0.1.12
+   Compiling ttf-parser v0.25.1
+   Compiling widestring v1.2.1
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+   Compiling zip v9.5.1
+   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)
+   Compiling genpdf v0.2.0
+   Compiling quick-xml v0.42.0
+   Compiling filetime v0.2.29
+   Compiling lopdf v0.42.0
+   Compiling sevenz-rust2 v0.24.2
+   Compiling unrar v0.5.8
+   Compiling qa35-bench v0.1.0 (D:\OH-WorkSpace\LegadoTeam\qa35_bench)
+    Finished `release` profile [optimized] target(s) in 46.53s
+     Running `target\release\qa35-bench.exe`
+FIXTURE A path=D:\OH-WorkSpace\LegadoTeam\legado\tmp_batch35_qa\QA35_A_大文件.txt bytes=10818912 mtime=SystemTime { intervals: 134391726150688054 }
+FIXTURE B path=D:\OH-WorkSpace\LegadoTeam\legado\tmp_batch35_qa\QA35_B_大文件.txt bytes=10818912 mtime=SystemTime { intervals: 134391726150718137 }
+FIXTURE C path=D:\OH-WorkSpace\LegadoTeam\legado\tmp_batch35_qa\QA35_C_替换书.txt bytes=10733594 mtime=SystemTime { intervals: 134391726151302935 }
+[regex_safe] 首次编译 pattern（线程 main），前64字符: (?m)^\s{0,4}第[零一二三四五六七八九十百千万\d]+[章回节卷集部篇话]\s*.+$|(?m)^\s{0,4}Cha
+[regex_safe] 首次编译 pattern（线程 main），前64字符: 第[零一二三四五六七八九十百千万\d]+[卷部]
+A toc_cold_ms=18.21 chapters=240
+A cached_ch01 ms=0.160 chars=20855 marker_ok=true
+A cached_ch02 ms=0.090 chars=20855 marker_ok=true
+A cached_ch03 ms=0.075 chars=20855 marker_ok=true
+A cached_ch04 ms=0.073 chars=20855 marker_ok=true
+A cached_ch05 ms=0.072 chars=20855 marker_ok=true
+A cached_ch06 ms=0.072 chars=20855 marker_ok=true
+A cached_ch07 ms=0.076 chars=20855 marker_ok=true
+A cached_ch08 ms=0.073 chars=20855 marker_ok=true
+A cached_ch09 ms=0.072 chars=20855 marker_ok=true
+A cached_ch10 ms=0.076 chars=21101 marker_ok=true
+A prefixed_model_ch11 ms=3.374 marker_ok=true
+A prefixed_model_ch12 ms=3.084 marker_ok=true
+A prefixed_model_ch13 ms=3.083 marker_ok=true
+A prefixed_model_ch14 ms=3.085 marker_ok=true
+A prefixed_model_ch15 ms=3.084 marker_ok=true
+A prefixed_model_ch16 ms=3.184 marker_ok=true
+A prefixed_model_ch17 ms=3.280 marker_ok=true
+A prefixed_model_ch18 ms=3.217 marker_ok=true
+A prefixed_model_ch19 ms=3.182 marker_ok=true
+A prefixed_model_ch20 ms=3.773 marker_ok=true
+A SUMMARY cached_avg_ms=0.084 prefixed_model_avg_ms=3.235 speedup_x=38.5
+A/B alternate idx=1 ok (A_chars=20855 B_chars=20855)
+A/B alternate idx=6 ok (A_chars=20855 B_chars=20855)
+A/B alternate idx=51 ok (A_chars=21101 B_chars=21101)
+A/B alternate idx=121 ok (A_chars=21287 B_chars=21287)
+A/B alternate idx=240 ok (A_chars=21287 B_chars=21287)
+C marker_chapter_index=119 title=第120章 C卷标题120
+C before_marker_ok chars=21348
+C replaced: len=10733594 mtime=SystemTime { intervals: 134391726151302935 } (restored to FileTime { seconds: 13439172615, nanos: 130293500 })
+C after_ms=2.986 new_marker_detected=true chars=21348
+WROTE D:\OH-WorkSpace\LegadoTeam\legado\docs\evidence\batch35\host_bench_stdout.txt

@@ -1,0 +1,26 @@
+[
+ {
+  "book": "QA35_B_big",
+  "chapter": 8,
+  "toc_title": "第8章 B卷标题8",
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B_mix_B_ch8.png"
+ },
+ {
+  "book": "QA35_A_big",
+  "chapter": 8,
+  "toc_title": null,
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B_mix_A_ch8.png"
+ },
+ {
+  "book": "QA35_B_big",
+  "chapter": 10,
+  "toc_title": "第10章 B卷标题10",
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B_mix_B_ch10.png"
+ },
+ {
+  "book": "QA35_A_big",
+  "chapter": 10,
+  "toc_title": null,
+  "shot": "D:\\OH-WorkSpace\\LegadoTeam\\legado\\docs\\evidence\\batch35\\B_mix_A_ch10.png"
+ }
+]
