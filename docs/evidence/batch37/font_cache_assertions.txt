@@ -1,0 +1,22 @@
+=== 批37 字体缓存断言（debug 2.0.507/508）===
+字体缓存目录: /data/data/io.legado.flutter_legado/cache/legado_font_cache
+
+[1] A1 目标文件（valid.ttf）仍存在且 md5 与 mock 一致:
+8d48af0d037202f1251a44f522056c2d  cache/legado_font_cache/ba79adc8a00910c1138552e0594171d55505f83f0a4b47964873e001a6beb0a9.ttf
+期望(host): 8d48af0d037202f1251a44f522056c2d
+
+[2] A2 显式输出目录 qa37_poison_out 不存在:
+ABSENT
+
+[3] A3 默认输出目录（poison fontId 去扩展名）不存在:
+ABSENT
+
+[4] C 超限字体（big fontId.ttf）未落盘:
+ABSENT
+
+[5] 字体缓存目录内无子目录（find -type d 为空）:
+(以上为空)
+
+[6] 目录内全部文件（仅 2 个引擎缓存 .ttf）:
+9a9ec82ba4371760ee113d68c7991030bccb176d8090b8de4649167bb0922fb6.ttf
+ba79adc8a00910c1138552e0594171d55505f83f0a4b47964873e001a6beb0a9.ttf

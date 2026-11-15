@@ -1,0 +1,10 @@
+D/AndroidRuntime(12675): >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+I/AndroidRuntime(12675): Using default boot image
+I/AndroidRuntime(12675): Leaving lock profiling enabled
+D/AndroidRuntime(12675): Calling main entry com.android.commands.uiautomator.Launcher
+D/AndroidRuntime(12675): Shutting down VM
+D/AndroidRuntime(12701): >>>>>> START com.android.internal.os.RuntimeInit uid 0 <<<<<<
+I/AndroidRuntime(12701): Using default boot image
+I/AndroidRuntime(12701): Leaving lock profiling enabled
+D/AndroidRuntime(12701): Calling main entry com.android.commands.uiautomator.Launcher
+D/AndroidRuntime(12701): Shutting down VM

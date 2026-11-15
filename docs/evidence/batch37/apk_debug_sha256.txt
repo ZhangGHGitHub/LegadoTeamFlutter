@@ -1,0 +1,1 @@
+7f88c639981e2671e61485eee78057d2cfc08e6073638d9af60c89b0bcda37f9 *flutter_legado/build/app/outputs/flutter-apk/app-debug.apk

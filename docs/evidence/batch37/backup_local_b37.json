@@ -1,0 +1,271 @@
+{
+  "version": 6,
+  "backupTime": 1794719626569,
+  "books": [
+    {
+      "author": "QA作者",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "canUpdate": true,
+      "chapterInVolumeIndex": 0,
+      "disableReadRecord": false,
+      "downloadUrls": "",
+      "durChapterIndex": 3,
+      "durChapterPos": 0,
+      "durChapterTime": 1794719527049,
+      "durChapterTitle": "第四章",
+      "durVolumeIndex": 0,
+      "group": 0,
+      "intro": "用于批25 段评面板验收的本地书。",
+      "isPrivate": false,
+      "lastCheckCount": 0,
+      "lastCheckTime": 0,
+      "latestChapterTime": 1794708699220,
+      "latestChapterTitle": "第六章",
+      "name": "QA25 段评书",
+      "order": 0,
+      "origin": "http://192.168.100.52:8925",
+      "originBookUrl": "",
+      "originName": "QA25 段评源",
+      "originOrder": 0,
+      "syncTime": 0,
+      "tocUrl": "http://192.168.100.52:8925/book1.html",
+      "totalChapterNum": 6,
+      "type": 8
+    }
+  ],
+  "bookmarks": [],
+  "bookMarks": [],
+  "replaceRules": [],
+  "bookSources": [
+    {
+      "bookSourceGroup": "QA",
+      "bookSourceName": "QA25 段评源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:8925",
+      "bookUrlPattern": ".*192\\.168\\.100\\.52:8925/book1\\.html.*",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": true,
+      "enabledCookieJar": false,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 0,
+      "ruleBookInfo": {
+        "author": "class.author@text",
+        "intro": "class.intro@text",
+        "name": "class.name@text"
+      },
+      "ruleContent": {
+        "content": "class.content@html"
+      },
+      "ruleReview": {
+        "detailBadgeRule": "$.tag",
+        "detailContentRule": "$.text",
+        "detailIdRule": "$.id",
+        "detailListRule": "$.comments",
+        "detailNameRule": "$.user",
+        "enabled": true,
+        "reviewDetailUrl": "http://192.168.100.52:8925/review/detail",
+        "reviewQuoteUrl": "http://192.168.100.52:8925/review/reply",
+        "reviewSummaryUrl": "http://192.168.100.52:8925/review/summary",
+        "summaryCountRule": "$.cnt",
+        "summaryListRule": "$.data",
+        "summaryParagraphDataRule": "$.token",
+        "summaryParagraphIndexRule": "$.idx"
+      },
+      "ruleToc": {
+        "chapterList": "id.list@tag.li",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "weight": 0
+    },
+    {
+      "bookSourceGroup": "QA37",
+      "bookSourceName": "QA37 字体源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:8926/qa37-font",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": true,
+      "enabledCookieJar": false,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 0,
+      "ruleBookInfo": {
+        "author": "class.author@text",
+        "intro": "class.intro@text",
+        "name": "class.name@text",
+        "tocUrl": "class.toc@href"
+      },
+      "ruleContent": {
+        "content": "id.content@html"
+      },
+      "ruleSearch": {
+        "author": "class.skip@text",
+        "bookList": "class.item",
+        "bookUrl": "class.link@href",
+        "name": "@js:var b='http://192.168.100.52:8926';\nfunction P(s){java.post(b+'/report',s);}\nfunction T(name,fn){try{return fn();}catch(e){P(name+' EXC '+e);return null;}}\nfunction H(u,c){try{return JSON.parse(c===undefined?java.queryTTF(u):java.queryTTF(u,c));}catch(e){P('H EXC '+e);return null;}}\nvar u='http://192.168.100.52:8926/font/valid.ttf?r=b37r1';\nvar h1=H(u);\nP('B1 valid='+(h1&&h1.valid)+' type='+(h1&&h1.type)+' fontId='+(h1&&h1.fontId)+' hasErr='+(h1&&h1.error?'Y':'N'));\nvar h2=H(u);\nP('B2 valid='+(h2&&h2.valid)+' sameId='+(!!h1&&!!h2&&h1.fontId===h2.fontId));\nvar h3=H(u,false);\nP('B3 noCacheValid='+(h3&&h3.valid)+' sameId='+(!!h1&&!!h3&&h1.fontId===h3.fontId));\nvar vp='/data/data/io.legado.flutter_legado/cache/legado_font_cache/'+(h1&&h1.fontId)+'.ttf';\nP('B4 path='+vp);\nvar a1=T('A1',function(){deleteFile(vp);return 'NO_THROW';});\nP('A1 ret='+a1);\nvar z=T('A2d',function(){return downloadFile(b+'/arch/book.zip');});\nvar a2=T('A2',function(){return java.un7zFile(z, '/data/data/io.legado.flutter_legado/cache/legado_font_cache/qa37_poison_out');});\nP('A2 input='+z+' ret='+a2);\nvar hp=H('http://192.168.100.52:8926/font/poison.zip?r=b37r1');\nvar pp='/data/data/io.legado.flutter_legado/cache/legado_font_cache/'+(hp&&hp.fontId)+'.ttf';\nP('A3 path='+pp+' valid='+(hp&&hp.valid));\nvar a3=T('A3',function(){return java.unzipFile(pp);});\nP('A3 ret='+a3);\nvar hc=H('http://192.168.100.52:8926/font/big.ttf?r=b37r1');\nP('C valid='+(hc&&hc.valid)+' fontId='+(hc&&hc.fontId)+' error='+(hc&&hc.error));\nvar f1=T('R1',function(){return downloadFile(b+'/a/cover.jpg');});\nvar f2=T('R2',function(){return downloadFile(b+'/b/cover.jpg');});\nP('R A f1='+f1+' f2='+f2+' diff='+(f1!==f2)+' rel1='+(f1.indexOf('/')<0&&f1.indexOf(':')<0)+' rel2='+(f2.indexOf('/')<0&&f2.indexOf(':')<0));\nvar c1=java.readTxtFile(f1); var c2=java.readTxtFile(f2);\nP('R A3 len1='+c1.length+' head1='+c1.substring(4,8)+' len2='+c2.length+' head2='+c2.substring(4,8)+' same='+(c1===c2));\nvar fc=downloadFile(b+'/a.jpg,{\"type\":\"jpg\"}');\nP('R C f='+fc+' end='+fc.slice(-4));\nvar zp=T('R Cz',function(){return downloadFile(b+'/book2.zip');});\nvar d1=T('R D1u',function(){return java.unzipFile(zp);});\nvar t1=T('R D1g',function(){return getTxtInFolder(d1);});\nP('R D1 dir='+d1+' txt='+(t1===null?'NULL':t1.replace(/\\s+/g,';')));\nvar d2=T('R D2u',function(){return java.unzipFile(zp);});\nvar delr=T('R D2d',function(){return deleteFile(d2);});\nvar t3=T('R D2g',function(){return getTxtInFolder(d2);});\nP('R D2 dir='+d2+' delRet='+delr+' afterRead='+(t3===null?'NULL':t3.replace(/\\s+/g,';')));\n'done';"
+      },
+      "ruleToc": {
+        "chapterList": "class.ch",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "searchUrl": "http://192.168.100.52:8926/search?q={{key}}",
+      "weight": 0
+    },
+    {
+      "bookSourceGroup": "QA37",
+      "bookSourceName": "QA37 写缓存源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:8926/qa37-write",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": false,
+      "enabledCookieJar": false,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 0,
+      "ruleBookInfo": {
+        "author": "class.author@text",
+        "intro": "class.intro@text",
+        "name": "class.name@text",
+        "tocUrl": "class.toc@href"
+      },
+      "ruleContent": {
+        "content": "id.content@html"
+      },
+      "ruleSearch": {
+        "author": "class.skip@text",
+        "bookList": "class.item",
+        "bookUrl": "class.link@href",
+        "name": "@js:var b='http://192.168.100.52:8926';\nfunction P(s){java.post(b+'/report',s);}\nfunction T(name,fn){try{return fn();}catch(e){P(name+' EXC '+e);return null;}}\nvar k='qa37_clear_key';\ncache.put(k,'qa37_clear_val');\nP('D1 put=get='+(cache.get(k)===null?'NULL':cache.get(k))+' disk='+(cache.get(k,true)===null?'NULL':cache.get(k,true)));\n'done';"
+      },
+      "ruleToc": {
+        "chapterList": "class.ch",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "searchUrl": "http://192.168.100.52:8926/search?q={{key}}",
+      "weight": 0
+    },
+    {
+      "bookSourceGroup": "QA37",
+      "bookSourceName": "QA37 读缓存源",
+      "bookSourceType": 0,
+      "bookSourceUrl": "http://192.168.100.52:8926/qa37-read",
+      "customButton": false,
+      "customOrder": 0,
+      "enabled": false,
+      "enabledCookieJar": false,
+      "enabledExplore": false,
+      "eventListener": false,
+      "lastUpdateTime": 0,
+      "respondTime": 0,
+      "ruleBookInfo": {
+        "author": "class.author@text",
+        "intro": "class.intro@text",
+        "name": "class.name@text",
+        "tocUrl": "class.toc@href"
+      },
+      "ruleContent": {
+        "content": "id.content@html"
+      },
+      "ruleSearch": {
+        "author": "class.skip@text",
+        "bookList": "class.item",
+        "bookUrl": "class.link@href",
+        "name": "@js:var b='http://192.168.100.52:8926';\nfunction P(s){java.post(b+'/report',s);}\nfunction T(name,fn){try{return fn();}catch(e){P(name+' EXC '+e);return null;}}\nvar k='qa37_clear_key';\nP('D2 get='+(cache.get(k)===null?'NULL':cache.get(k))+' disk='+(cache.get(k,true)===null?'NULL':cache.get(k,true)));\n'done';"
+      },
+      "ruleToc": {
+        "chapterList": "class.ch",
+        "chapterName": "tag.a@text",
+        "chapterUrl": "tag.a@href"
+      },
+      "searchUrl": "http://192.168.100.52:8926/search?q={{key}}",
+      "weight": 0
+    }
+  ],
+  "rssSources": [],
+  "readRecords": [
+    {
+      "author": "",
+      "bookName": "QA25 段评书",
+      "coverUrl": null,
+      "deviceId": "",
+      "displayAuthor": "",
+      "displayBookName": "QA25 段评书",
+      "lastChapterIndex": -1,
+      "lastChapterPos": 0,
+      "lastChapterTitle": null,
+      "lastRead": 1794719527051,
+      "metadataEditedAt": 0,
+      "readTime": 352911,
+      "resolvedAuthor": null
+    }
+  ],
+  "bookMemos": [],
+  "bookGroups": [],
+  "rssStars": [],
+  "highlights": [
+    {
+      "bookAuthor": "QA作者",
+      "bookName": "QA25 段评书",
+      "bookText": "第二章第二段：普通正文。",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "chapterIndex": 1,
+      "chapterName": "第二章 后续",
+      "chapterPos": 13,
+      "chapterPosEnd": 25,
+      "chapterUrl": "http://192.168.100.52:8925/chapter2.html",
+      "layoutTitleLength": 0,
+      "note": "",
+      "style": "{\"type\":\"background\",\"color\":\"#FF90CAF9\"}",
+      "time": 1794708932625
+    },
+    {
+      "bookAuthor": "QA作者",
+      "bookName": "QA25 段评书",
+      "bookText": "第3章第一段：普通正文。",
+      "bookUrl": "http://192.168.100.52:8925/book1.html",
+      "chapterIndex": 2,
+      "chapterName": "第三章",
+      "chapterPos": 0,
+      "chapterPosEnd": 12,
+      "chapterUrl": "http://192.168.100.52:8925/chapter3.html",
+      "layoutTitleLength": 0,
+      "note": "",
+      "style": "{\"type\":\"background\",\"color\":\"#FF90CAF9\"}",
+      "time": 1794719495792
+    }
+  ],
+  "highlightRules": [],
+  "searchHistory": [
+    {
+      "lastUseTime": 1794719535544,
+      "usage": 5,
+      "word": "qa37"
+    },
+    {
+      "lastUseTime": 1794713770528,
+      "usage": 3,
+      "word": "qa36"
+    }
+  ],
+  "ruleSubs": [],
+  "txtTocRules": [],
+  "httpTTS": [],
+  "dictRules": [],
+  "keyboardAssists": [],
+  "servers": [],
+  "appPrefs": {
+    "process_text": true,
+    "reader_layout_is_night": false,
+    "reader_adv_letter_spacing_migrated": true,
+    "settingsMigrated_v271": true
+  }
+}

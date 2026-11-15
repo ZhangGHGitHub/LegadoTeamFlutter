@@ -1,0 +1,6 @@
+ 19465104  1981-01-01 01:01   lib/arm64-v8a/libapp.so
+ 36855888  1981-01-01 01:01   lib/arm64-v8a/liblegado_ffi.so
+ 21512780  1981-01-01 01:01   lib/armeabi-v7a/libapp.so
+ 23129148  1981-01-01 01:01   lib/armeabi-v7a/liblegado_ffi.so
+ 20054928  1981-01-01 01:01   lib/x86_64/libapp.so
+ 41203048  1981-01-01 01:01   lib/x86_64/liblegado_ffi.so

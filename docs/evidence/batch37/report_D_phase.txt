@@ -1,0 +1,18 @@
+B1 valid=true type=url fontId=ba79adc8a00910c1138552e0594171d55505f83f0a4b47964873e001a6beb0a9 hasErr=N
+B2 valid=true sameId=true
+B3 noCacheValid=true sameId=true
+B4 path=/data/data/io.legado.flutter_legado/cache/legado_font_cache/ba79adc8a00910c1138552e0594171d55505f83f0a4b47964873e001a6beb0a9.ttf
+A1 EXC Error: deleteFile: 文件访问被拒绝：字体缓存目录为共享只读缓存，书源仅可读取复用（写入/删除 /data/data/io.legado.flutter_legado/cache/legado_font_cache/ba79adc8a00910c1138552e0594171d55505f83f0a4b47964873e001a6beb0a9.ttf）
+A1 ret=null
+A2 input=f6de81c55313954b.zip ret=[ERROR] 文件访问被拒绝：字体缓存目录为共享只读缓存，书源仅可读取复用（写入/删除 /data/data/io.legado.flutter_legado/cache/legado_font_cache/qa37_poison_out）
+A3 path=/data/data/io.legado.flutter_legado/cache/legado_font_cache/9a9ec82ba4371760ee113d68c7991030bccb176d8090b8de4649167bb0922fb6.ttf valid=false
+A3 ret=[ERROR] 文件访问被拒绝：字体缓存目录为共享只读缓存，书源仅可读取复用（写入/删除 /data/data/io.legado.flutter_legado/cache/legado_font_cache/9a9ec82ba4371760ee113d68c7991030bccb176d8090b8de4649167bb0922fb6）
+C valid=false fontId=726570c24100faa7922229c2291edfbb5d581de8c1ab2673e0f637b44630c5b5 error=download font error: Network error: 下载超出大小上限：http://192.168.100.52:8926/font/big.ttf?r=b37r1 响应体 34603008 字节，超过上限 33554432 字节
+R A f1=43e5053ca35fe978.jpg f2=a2ade24b38732811.jpg diff=true rel1=true rel2=true
+R A3 len1=2000 head1=AAAA len2=2000 head2=BBBB same=false
+R C f=95ec7f468cc97771.jpg end=.jpg
+R D1 dir=/data/data/io.legado.flutter_legado/cache/js_cache/js_files/9c008bf411fffbc342a3f8ad3c345504/86e801dbd532d146 txt=QA36;line;one;QA36;line;two;
+R D2 dir=/data/data/io.legado.flutter_legado/cache/js_cache/js_files/9c008bf411fffbc342a3f8ad3c345504/86e801dbd532d146 delRet=true afterRead=[ERROR];Folder;not;found:;/data/data/io.legado.flutter_legado/cache/js_cache/js_files/9c008bf411fffbc342a3f8ad3c345504/86e801dbd532d146
+D1 put=get=qa37_clear_val disk=qa37_clear_val
+D2 get=qa37_clear_val disk=qa37_clear_val
+D2 get=NULL disk=NULL

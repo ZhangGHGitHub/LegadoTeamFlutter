@@ -1,0 +1,22 @@
+=== version ===
+    versionCode=508 minSdk=24 targetSdk=36
+    versionName=2.0.507
+=== pid ===
+13895
+=== db ===
+4
+1
+2
+=== font_cache ===
+total 20
+drwx--S--- 2 u0_a57 u0_a57_cache 4096 2026-11-15 13:05 .
+drwxrws--x 7 u0_a57 u0_a57_cache 4096 2026-11-15 13:05 ..
+-rw------- 1 u0_a57 u0_a57_cache  246 2026-11-15 13:05 9a9ec82ba4371760ee113d68c7991030bccb176d8090b8de4649167bb0922fb6.ttf
+-rw------- 1 u0_a57 u0_a57_cache 6000 2026-11-15 13:05 ba79adc8a00910c1138552e0594171d55505f83f0a4b47964873e001a6beb0a9.ttf
+=== js_cache ===
+total 12
+drwxrwsrwx 3 u0_a57 u0_a57_cache 4096 2026-11-15 13:08 .
+drwxrws--x 7 u0_a57 u0_a57_cache 4096 2026-11-15 13:05 ..
+drwx--S--- 3 u0_a57 u0_a57_cache 4096 2026-11-15 13:05 js_files
+=== crash grep ===
+=== end ===

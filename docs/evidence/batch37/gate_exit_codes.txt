@@ -1,0 +1,12 @@
+批37 门禁退出码（2026-11-15，HEAD 2363661594）
+1. cd rust && cargo fmt --all -- --check                      exit 0（无输出）
+2. cargo clippy --workspace --all-targets -- -D warnings      exit 0（Finished dev profile）
+3. cargo test --workspace                                     exit 0（4051 passed / 0 failed / 26 ignored；无已知 flaky 失败，无需复跑）
+4. cargo test -p legado-js -p legado-ffi --features quickjs   首跑 exit 101（LNK1104 无法打开 legado_ffi.dll，环境/并发链接冲突）
+                                                              重跑 exit 0（1777 passed / 0 failed / 48 ignored；lib 841 + ffi 766 全绿）
+5. cargo audit --no-fetch                                     exit 0（0 vulnerabilities，10 allowed warnings）
+6a. flutter analyze                                           exit 0（No issues found! ran in 26.9s）
+6b. flutter test                                              首跑 exit 1（1 failed：direct_link_upload_runtime_test「@js: 下载规则：result 绑定前序 JSONPath 结果」；
+                                                              根因：rust/target/debug/legado_ffi.dll 为无 quickjs 特性构建，测试要求 cargo build -p legado-ffi --features quickjs）
+                                                              重建 host DLL（exit 0）后单测 3/3 通过
+                                                              全量重跑 exit 0（+5886 ~1 All tests passed!）

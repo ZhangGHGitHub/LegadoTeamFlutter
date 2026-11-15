@@ -1,0 +1,24 @@
+=== RUN 1 ===
+  
+00:00 +0 -1: (tearDownAll)
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/ffi/direct_link_upload_runtime_test.dart: @js: 下载规则：result 绑定前序 JSONPath 结果
+EXIT=1
+=== RUN 2 ===
+  
+00:00 +0 -1: (tearDownAll)
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/ffi/direct_link_upload_runtime_test.dart: @js: 下载规则：result 绑定前序 JSONPath 结果
+EXIT=1
+=== RUN 3 ===
+  
+00:00 +0 -1: (tearDownAll)
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  D:/OH-WorkSpace/LegadoTeam/legado/flutter_legado/test/ffi/direct_link_upload_runtime_test.dart: @js: 下载规则：result 绑定前序 JSONPath 结果
+EXIT=1

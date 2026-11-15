@@ -1,0 +1,5 @@
+package: name='io.legado.flutter_legado' versionCode='508' versionName='2.0.507' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+application-label:'阅读'
+application-label-af:'阅读'
+application-label-am:'阅读'
+application-label-ar:'阅读'

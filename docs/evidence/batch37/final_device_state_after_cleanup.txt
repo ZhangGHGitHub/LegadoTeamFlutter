@@ -1,0 +1,14 @@
+=== 批37 终态（清理测试源后）===
+    versionCode=508 minSdk=24 targetSdk=36
+    versionName=2.0.507
+PID=16781
+--- sources ---
+http://192.168.100.52:8925|QA25 段评源|1
+--- books/highlights ---
+1
+2
+--- crash grep ---
+--- web port ---
+000
+--- mock ports ---
+no listening mock ports（8925/8926 无 LISTENING；上面的 TIME_WAIT/ESTABLISHED 行是宿主其他进程的临时端口，与 mock 无关）

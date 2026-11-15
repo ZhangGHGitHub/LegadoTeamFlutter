@@ -1,0 +1,9 @@
+批37 全程 mock 请求计数（两次字体源搜索：首轮 + 主流程搜索，期间多次冷启动）
+GET /font/valid.ttf?r=b37r1 => 1
+GET /font/big.ttf?r=b37r1 => 2
+GET /font/poison.zip?r=b37r1 => 1
+GET /search?q=qa37 => 5
+
+判定：valid 仅 1 次 -> 第 2/3 次 queryTTF 与第二次搜索均命中磁盘缓存；
+      big 每次尝试均被 Content-Length 超限拒绝（2 次搜索各 1 次）；
+      poison 仅首次下载，后续命中缓存。
