@@ -1,32 +1,46 @@
 //! 书源校验 API（Task #87）
 //!
-//! 对 `legado-net::source_checker::SourceChecker` 的纯 FFI 包装，
-//! 暴露单本校验与批量流式校验，供 Flutter 书源校验页面接入。
+//! 对 `legado-fetcher::source_check` 完整规则链的 FFI 包装，暴露单本校验与
+//! 批量流式校验，供 Flutter 书源校验页面接入。
 //!
-//! - 单本校验：[`check_source`]（搜索→详情→目录→正文四步 + 验证码/重定向检测）
+//! - 单本校验：[`check_source`]（搜索→详情→目录→正文 + 发现链 + 域名探测）
 //! - 批量校验：[`run_check_sources_stream`]（**串行**逐个回推进度，
-//!   对齐 Kotlin `CheckSourceService` 的 flow 顺序校验与
-//!   legado-server `/sources/check-batch` 的语义）
+//!   对齐 Kotlin `CheckSourceService` 的 flow 顺序校验）
 //!
-//! 与 server 端点的差异：批量校验采用串行执行（对齐 Kotlin 原版），
-//! 避免对书源站产生并发压力；取消为**会话级**（对齐 Kotlin `CheckSource.stop`，
-//! P1-1 修复：每个流持有独立令牌，互不干扰）。
+//! 与 server 端点的关系：规则级判定由 `legado-fetcher::source_check` 单一实现
+//! 承担（`legado-server` 的 `/startBookSourceCheck` 同一实现）。批量校验采用
+//! 串行执行（对齐 Kotlin 原版），避免对书源站产生并发压力；取消为**会话级**
+//! （对齐 Kotlin `CheckSource.stop`，P1-1 修复：每个流持有独立令牌，互不干扰）。
 //!
-//! P1-5（超时/取消接线）：`step_timeout_ms` 经 [`CheckerConfig`] 下传，
-//! 检查器对每个网络步骤（搜索/详情/目录/正文）施加 `tokio::time::timeout`，
-//! 并以整源总预算 `step_timeout_ms × 步数` 兜底；取消令牌在每步
-//! `select!` 中轮询，卡住的请求可在 100ms 内被丢弃。取消结果以
-//! [`CheckResult::cancelled`] 标记，不计为书源失败。
+//! 批44（失效分组落库）：
+//! - 每个源完成后把 [`SourceCheckOutcome::invalid_groups`] 按参考版语义写回
+//!   `book_sources.bookSourceGroup` + `bookSourceComment` **两列**
+//!   （失败追加具体分组 + `// Error:` 注释；成功清除旧失效分组与历史错误块）；
+//! - 写回带 `lastUpdateTime`/分组/注释快照 CAS（校验期间源被编辑 → 不写回）；
+//! - 不使用参考版的整行 `@Update`，避免覆盖并发编辑的其它列。
+//!
+//! 语义差异登记：`captcha` / `redirect` 字段与 `detect_captcha` / `detect_redirect`
+//! 配置保留（形状不变），但规则级链路不单独做验证码/重定向检测——与 Android
+//! 原版 `CheckSourceService` 一致（验证码拦截表现为搜索结果为空 → `搜索失效`）。
+//!
+//! P1-5（超时/取消接线）：`step_timeout_ms` 作为**整源总预算**（对齐原版
+//! `withTimeout(CheckSource.timeout)`），取消令牌经 `select!` 轮询，卡住的请求
+//! 可在 100ms 内被丢弃。取消结果以 [`CheckResult::cancelled`] 标记，不计为书源
+//! 失败，也不写回分组。
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex};
 
 use serde::{Deserialize, Serialize};
 
 use legado_core::models::BookSource;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::BookSourceRepository;
-use legado_net::source_checker::{CancelToken, CheckResult, CheckerConfig, SourceChecker};
+use legado_fetcher::source_check::{
+    add_error_comment, add_groups, remove_error_comment, remove_invalid_groups, run_source_check,
+    SourceCheckConfig, SourceCheckOutcome,
+};
+use legado_net::source_checker::CancelToken;
 
 use crate::db_state::with_database;
 
@@ -125,11 +139,14 @@ impl Drop for CheckSession {
 
 // ─── 配置 DTO ─────────────────────────────────────────────────────────────────
 
-/// 校验配置 JSON DTO（所有字段可选，缺省回落 [`CheckerConfig::default`]）
+/// 校验配置 JSON DTO（所有字段可选，缺省回落 [`SourceCheckConfig::default`]）
 ///
-/// 字段一一对应 `CheckerConfig`：
-/// `keyword` / `step_timeout_ms` / `check_search` / `check_toc` /
+/// 字段：`keyword` / `step_timeout_ms` / `check_search` / `check_toc` /
 /// `check_content` / `detect_captcha` / `detect_redirect`。
+///
+/// `detect_captcha` / `detect_redirect` 自批44 起**解析但不再影响判定**
+/// （规则级链路与 Android 原版一致，不做独立验证码/重定向检测），保留字段
+/// 以维持既有 configJson 契约不破坏。
 #[derive(Debug, Clone, Default, Deserialize)]
 struct CheckerConfigDto {
     keyword: Option<String>,
@@ -137,66 +154,163 @@ struct CheckerConfigDto {
     check_search: Option<bool>,
     check_toc: Option<bool>,
     check_content: Option<bool>,
+    /// 批44 起**解析但不再影响判定**（规则级链路与 Android 原版一致，不做独立
+    /// 验证码检测）。保留字段只为既有 configJson 契约不被破坏。
+    #[allow(dead_code)]
     detect_captcha: Option<bool>,
+    /// 同上：解析但不再影响判定（不做独立重定向检测）。
+    #[allow(dead_code)]
     detect_redirect: Option<bool>,
 }
 
 /// 解析校验配置 JSON（空字符串 / `"{}"` 均使用默认配置）
-fn parse_config(config_json: &str) -> LegadoResult<CheckerConfig> {
-    let defaults = CheckerConfig::default();
+fn parse_config(config_json: &str) -> LegadoResult<SourceCheckConfig> {
+    let defaults = SourceCheckConfig::default();
     if config_json.trim().is_empty() {
         return Ok(defaults);
     }
     let dto: CheckerConfigDto = serde_json::from_str(config_json)
         .map_err(|e| LegadoError::Ffi(format!("校验配置 JSON 解析失败: {e}")))?;
-    Ok(CheckerConfig {
+    Ok(SourceCheckConfig {
         keyword: dto
             .keyword
             .filter(|s| !s.is_empty())
             .unwrap_or(defaults.keyword),
-        step_timeout_ms: dto.step_timeout_ms.unwrap_or(defaults.step_timeout_ms),
+        timeout_ms: dto.step_timeout_ms.unwrap_or(defaults.timeout_ms),
         check_search: dto.check_search.unwrap_or(defaults.check_search),
-        check_toc: dto.check_toc.unwrap_or(defaults.check_toc),
+        check_category: dto.check_toc.unwrap_or(defaults.check_category),
         check_content: dto.check_content.unwrap_or(defaults.check_content),
-        detect_captcha: dto.detect_captcha.unwrap_or(defaults.detect_captcha),
-        detect_redirect: dto.detect_redirect.unwrap_or(defaults.detect_redirect),
+        // 规则级链路恒不单独探测验证码/重定向（对齐原版）
+        ..defaults
     })
 }
 
-/// 创建共享 HTTP 客户端上的书源检查器
+/// 组装 ffi 宿主注入面（共享客户端 + 登录头/DB 变量/setup + 副内容 sink）
 ///
-/// `cancel` — 可选取消令牌（批量校验注入**本会话**的 [`CheckSession`] 令牌；
-/// 单本校验传 `None`，仅受 `step_timeout_ms` 约束）
-fn create_checker(
-    config: CheckerConfig,
-    cancel: Option<CancelToken>,
-) -> LegadoResult<SourceChecker> {
-    // shared_client 内部为 Arc 全共享结构，clone 廉价；
-    // 校验链路复用全局连接池与 Cookie 存储（对齐搜索/取章链路）
-    let client = Arc::new(crate::http_state::shared_client()?);
-    let checker = SourceChecker::with_config(client, config);
-    Ok(match cancel {
-        Some(token) => checker.with_cancel_token(token),
-        None => checker,
-    })
+/// 复用 `web_book::ffi_deps()`（与搜索/取章链路同一注入面，避免漂移）。
+fn check_deps() -> LegadoResult<legado_fetcher::deps::FetcherDeps> {
+    crate::api::web_book::ffi_deps()
 }
 
 // ─── 单本校验 ─────────────────────────────────────────────────────────────────
 
-/// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
+/// 校验单个书源（搜索→详情→目录→正文 + 发现链 + 域名探测）
 ///
 /// `source_json` — BookSource JSON（字段名对齐 Android 原版 camelCase）
 /// `config_json` — 可选校验配置 JSON（见 [`CheckerConfigDto`]），空串使用默认配置
 ///
 /// 返回 [`CheckResult`]（同步阻塞执行，内部走全局 tokio runtime）。
+/// 单本校验**不写回**分组/注释（无并发快照语义，且调用方只关心判定结果）。
 pub fn check_source(source_json: &str, config_json: &str) -> LegadoResult<CheckResult> {
     let source: BookSource = serde_json::from_str(source_json)
         .map_err(|e| LegadoError::Ffi(format!("BookSource JSON 解析失败: {e}")))?;
     let config = parse_config(config_json)?;
-    let checker = create_checker(config, None)?;
+    let deps = check_deps()?;
     Ok(crate::runtime::block_on(async move {
-        checker.check_full(&source).await
+        let started = std::time::Instant::now();
+        let outcome = run_source_check(&deps, &source, &config, None).await;
+        let mut result = outcome_to_check_result(&source.book_source_url, outcome);
+        result.total_time_ms = started.elapsed().as_millis() as i64;
+        result
     }))
+}
+
+/// [`SourceCheckOutcome`] → FFI [`CheckResult`]
+///
+/// `total_time_ms` 由调用方按源计时后覆写（此处置 0 占位）。
+fn outcome_to_check_result(source_url: &str, outcome: SourceCheckOutcome) -> CheckResult {
+    CheckResult {
+        source_url: source_url.to_string(),
+        search_ok: outcome.search_ok,
+        toc_ok: outcome.toc_ok,
+        content_ok: outcome.content_ok,
+        search_error: outcome.search_error,
+        toc_error: outcome.toc_error,
+        content_error: outcome.content_error,
+        // 规则级链路不单独检测验证码/重定向（与 Android 原版一致）
+        captcha: None,
+        redirect: None,
+        cancelled: outcome.cancelled,
+        invalid_groups: outcome.invalid_groups,
+        total_time_ms: 0,
+    }
+}
+
+// ─── 校验结果 DTO（FFI 契约面） ───────────────────────────────────────────────
+
+/// 书源校验结果（FFI 契约 §2.3 `checkSource` / `CheckProgress.result`）
+///
+/// 独立于 `legado-net::source_checker::CheckResult`（后者服务 server 的
+/// `/api/sources/check*` 与 MCP，形状冻结），本 DTO 是 FFI 侧的契约形状：
+/// 在其基础上追加 `invalid_groups`（批44）。`serde` 键名与旧形状逐字一致，
+/// 新增字段 `#[serde(default)]`，旧 Dart 端忽略未知键不破坏反序列化。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckResult {
+    /// 书源 URL
+    pub source_url: String,
+    /// 搜索是否成功
+    pub search_ok: bool,
+    /// 目录是否成功
+    pub toc_ok: bool,
+    /// 内容是否成功
+    pub content_ok: bool,
+    /// 搜索阶段错误信息
+    pub search_error: Option<String>,
+    /// 目录阶段错误信息
+    pub toc_error: Option<String>,
+    /// 内容阶段错误信息
+    pub content_error: Option<String>,
+    /// 总耗时（毫秒）
+    pub total_time_ms: i64,
+    /// 验证码检测结果（批44 起规则级链路恒为 `None`，字段保留兼容）
+    pub captcha: Option<CaptchaInfo>,
+    /// 重定向检测结果（批44 起规则级链路恒为 `None`，字段保留兼容）
+    pub redirect: Option<RedirectInfo>,
+    /// 是否被用户主动取消
+    ///
+    /// `true` 表示校验在完成前收到取消请求，此时各步错误字段为
+    /// `"cancelled"` / `"skipped: cancelled"`，**不表示书源不可用**；
+    /// 批量流遇到该结果会静默结束，不再回推后续进度。
+    #[serde(default)]
+    pub cancelled: bool,
+    /// 失效分组名（批44，加法式）
+    ///
+    /// 由 `legado-fetcher::source_check` 完整规则链判定：`校验超时` / `js失效` /
+    /// `域名失效` / `搜索失效` / `发现失效` / `发现规则为空` / `${bookType}正文失效` /
+    /// `${bookType}目录失效` / `网站失效`。取消态恒为空数组。
+    #[serde(default)]
+    pub invalid_groups: Vec<String>,
+}
+
+impl CheckResult {
+    /// 是否被用户主动取消（取消不计为书源不可用）
+    fn is_cancelled(&self) -> bool {
+        self.cancelled
+    }
+}
+
+/// 验证码检测结果（契约形状保留；规则级链路不产生）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptchaInfo {
+    /// 是否检测到验证码
+    pub detected: bool,
+    /// 验证码类型描述
+    pub captcha_type: Option<String>,
+    /// 匹配到的关键词/元素
+    pub matched_keyword: Option<String>,
+}
+
+/// 重定向检测结果（契约形状保留；规则级链路不产生）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RedirectInfo {
+    /// 是否发生了重定向
+    pub redirected: bool,
+    /// 原始请求 URL
+    pub original_url: String,
+    /// 最终 URL
+    pub final_url: String,
+    /// 是否重定向到登录/验证页面
+    pub is_login_redirect: bool,
 }
 
 // ─── 批量流式校验 ─────────────────────────────────────────────────────────────
@@ -297,10 +411,10 @@ async fn run_check_sources_stream_inner<F>(
     }
 
     let config = parse_config(config_json).unwrap_or_default();
-    let checker = match create_checker(config, Some(token.clone())) {
-        Ok(c) => c,
+    let deps = match check_deps() {
+        Ok(deps) => deps,
         Err(e) => {
-            log::error!("书源校验：共享 HTTP 客户端初始化失败: {e}");
+            log::error!("书源校验：抓取组件初始化失败: {e}");
             return;
         }
     };
@@ -311,23 +425,34 @@ async fn run_check_sources_stream_inner<F>(
             break;
         }
 
-        let result = match source {
-            Some(ref src) => checker.check_full(src).await,
+        let started = std::time::Instant::now();
+        let (result, write_back) = match source {
+            Some(ref src) => {
+                let outcome = run_source_check(&deps, src, &config, Some(token.clone())).await;
+                let result = outcome_to_check_result(&src.book_source_url, outcome.clone());
+                (result, Some((src.clone(), outcome)))
+            }
             // 书源不存在：对齐 Kotlin source == null 分支，推送失败结果
-            None => CheckResult {
-                source_url: String::new(),
-                search_ok: false,
-                toc_ok: false,
-                content_ok: false,
-                search_error: Some("书源不存在".to_string()),
-                toc_error: Some("skipped".to_string()),
-                content_error: Some("skipped".to_string()),
-                total_time_ms: 0,
-                captcha: None,
-                redirect: None,
-                cancelled: false,
-            },
+            None => (
+                CheckResult {
+                    source_url: String::new(),
+                    search_ok: false,
+                    toc_ok: false,
+                    content_ok: false,
+                    search_error: Some("书源不存在".to_string()),
+                    toc_error: Some("skipped".to_string()),
+                    content_error: Some("skipped".to_string()),
+                    total_time_ms: 0,
+                    captcha: None,
+                    redirect: None,
+                    cancelled: false,
+                    invalid_groups: Vec::new(),
+                },
+                None,
+            ),
         };
+        let mut result = result;
+        result.total_time_ms = started.elapsed().as_millis() as i64;
 
         // P1-5：取消发生在某个书源内部时，该结果标记为「已取消」而非
         // 「书源不可用」——流按取消静默结束，不回推这条半成品结果
@@ -335,6 +460,12 @@ async fn run_check_sources_stream_inner<F>(
         if result.is_cancelled() {
             log::debug!("书源校验：用户取消，终止流（已完成 {index}/{total}）");
             break;
+        }
+
+        // 批44：按本次判定结果写回分组/注释（成功则清旧失效分组）。
+        // 写回失败不阻断流（分组是增强副作用，判定结果仍要回推）。
+        if let Some((source, outcome)) = write_back {
+            write_back_check_groups(&source, &outcome, config.w_source_comment);
         }
 
         let progress = CheckProgress {
@@ -354,6 +485,82 @@ async fn run_check_sources_stream_inner<F>(
                 break;
             }
         }
+    }
+}
+
+/// 写回单源校验分组与注释（批44，参考版语义 + 定向两列 CAS）
+///
+/// 语义（对齐原版 `CheckSourceService.doCheckSource` 的**先清后加** +
+/// 参考版 `BookSourceCheckRepository.kt` 的落库）：
+///
+/// 原版 `doCheckSource` 起始即 `removeInvalidGroups()` + `removeErrorComment()`，
+/// 随后按失败项 `addGroup(...)`，失败时再 `addErrorComment(本次异常)`。因此
+/// 一次校验的最终态是「**本次判定的失效分组**」而非「历史分组累积」：
+/// - **失败**：先清旧失效分组（含「失效」或等于「校验超时」），再追加本次
+///   判定的具体分组（`,` 分隔去重）；注释先清历史 `// Error:` 块，再前置本次
+///   `// Error: {消息}`（`w_source_comment=false` 时不写）；
+/// - **成功**：清除旧失效分组与历史 `// Error:` 块（正常分组/正常注释保留）；
+/// - **取消**：不改动（取消不计为源缺陷）。
+///
+/// **只更新 `bookSourceGroup` + `bookSourceComment` 两列**（不是参考版整行
+/// `@Update`），并带 `lastUpdateTime`/分组/注释快照 CAS——校验期间源被编辑
+/// 则整笔丢弃，不覆盖并发修改。
+fn write_back_check_groups(source: &BookSource, outcome: &SourceCheckOutcome, w_comment: bool) {
+    let url = &source.book_source_url;
+    if url.trim().is_empty() {
+        return;
+    }
+    let old_group = source.book_source_group.as_deref();
+    let old_comment = source.book_source_comment.as_deref();
+
+    let (new_group, new_comment) = if outcome.cancelled {
+        // 取消不计为源缺陷，也不改动分组/注释
+        return;
+    } else {
+        // 共同起点：清旧失效分组 + 清历史错误注释（对齐 doCheckSource 起始两步）
+        let base_group = remove_invalid_groups(old_group);
+        let base_comment = remove_error_comment(old_comment);
+        if outcome.is_failed() {
+            // 失败消息：硬失败消息优先，否则用分组串（对齐原版 resultMessage）
+            let message = outcome
+                .failure
+                .clone()
+                .unwrap_or_else(|| outcome.invalid_group_text());
+            let group = if outcome.invalid_groups.is_empty() {
+                base_group
+            } else {
+                add_groups(base_group.as_deref(), &outcome.invalid_groups)
+            };
+            let comment = if w_comment && !message.is_empty() {
+                add_error_comment(base_comment.as_deref(), &message)
+            } else {
+                base_comment
+            };
+            (group, comment)
+        } else {
+            (base_group, base_comment)
+        }
+    };
+
+    // 无变化则不发起写（避免无谓 DB 写与 CAS 竞争）
+    if new_group.as_deref() == old_group && new_comment.as_deref() == old_comment {
+        return;
+    }
+
+    let written = crate::db_state::with_database(|db| {
+        BookSourceRepository::new(db.connection()).update_check_groups_and_comment(
+            url,
+            new_group.as_deref(),
+            new_comment.as_deref(),
+            source.last_update_time,
+            old_group,
+            old_comment,
+        )
+    });
+    match written {
+        Ok(true) => {}
+        Ok(false) => log::debug!("书源 {url} 校验分组未写回：校验期间源已变更（CAS 未命中）"),
+        Err(e) => log::warn!("书源 {url} 校验分组写回失败: {e}"),
     }
 }
 
@@ -439,6 +646,7 @@ fn all_sources_as_options() -> LegadoResult<Vec<Option<BookSource>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legado_db::repository::Repository;
     use std::sync::atomic::Ordering;
 
     /// 流式测试共享进程级会话注册表，并行执行会互相影响取消目标，
@@ -519,10 +727,10 @@ mod tests {
     #[test]
     fn test_parse_config_empty_uses_default() {
         let cfg = parse_config("").unwrap();
-        let defaults = CheckerConfig::default();
+        let defaults = SourceCheckConfig::default();
         assert_eq!(cfg.keyword, defaults.keyword);
-        assert_eq!(cfg.step_timeout_ms, defaults.step_timeout_ms);
-        assert!(cfg.check_search && cfg.check_toc && cfg.check_content);
+        assert_eq!(cfg.timeout_ms, defaults.timeout_ms);
+        assert!(cfg.check_search && cfg.check_category && cfg.check_content);
     }
 
     #[test]
@@ -531,11 +739,11 @@ mod tests {
             parse_config(r#"{"keyword":"自定义","step_timeout_ms":5000,"check_content":false}"#)
                 .unwrap();
         assert_eq!(cfg.keyword, "自定义");
-        assert_eq!(cfg.step_timeout_ms, 5000);
+        assert_eq!(cfg.timeout_ms, 5000);
         assert!(!cfg.check_content);
         // 未指定字段回落默认
         assert!(cfg.check_search);
-        assert!(cfg.detect_captcha);
+        assert!(cfg.check_category);
     }
 
     #[test]
@@ -545,7 +753,7 @@ mod tests {
 
     // ─── 单本校验 ─────────────────────────────────────────────
 
-    /// 无 searchUrl 书源：四步全失败且携带错误信息（纯错误路径，无网络）
+    /// 无 searchUrl 规则源：搜索判失败（「搜索链接规则为空」），后续步骤跳过
     #[test]
     fn test_check_source_no_search_url() {
         let source = make_source_no_search("https://example.com", "测试源");
@@ -555,8 +763,12 @@ mod tests {
         assert!(!result.search_ok);
         assert!(!result.toc_ok);
         assert!(!result.content_ok);
-        assert!(result.search_error.unwrap().contains("searchUrl"));
-        assert!(result.total_time_ms >= 0);
+        assert!(
+            result.search_error.unwrap().contains("搜索链接规则为空"),
+            "规则级链路应判搜索规则为空（不是 searchUrl 解析错误）"
+        );
+        // 「搜索链接规则为空」对齐原版 NoStackTraceException：不加失效分组
+        assert!(result.invalid_groups.is_empty());
     }
 
     /// 自定义配置生效：关闭后续检查时 toc/content 直接置通过
@@ -568,7 +780,7 @@ mod tests {
         let result = check_source(&json, r#"{"check_toc":false,"check_content":false}"#)
             .expect("单本校验失败");
         assert!(!result.search_ok);
-        // 关闭的检查步骤直接视为通过（对齐 SourceChecker 语义）
+        // 关闭的检查步骤直接视为通过（对齐原版 checkInfo/checkCategory/checkContent）
         assert!(result.toc_ok);
         assert!(result.content_ok);
     }
@@ -579,12 +791,9 @@ mod tests {
         assert!(check_source("{not json", "").is_err());
     }
 
-    /// P1-5：DTO → `CheckerConfig` → `SourceChecker` 全链路字段不丢失
-    ///
-    /// 修复前 `step_timeout_ms` 只被解析、从未被检查器消费；本用例锁定
-    /// 「FFI 入口拿到的检查器确实带着请求里的配置」。
+    /// P1-5：DTO → `SourceCheckConfig` 全链路字段不丢失
     #[test]
-    fn test_create_checker_carries_all_config_fields() {
+    fn test_parse_config_carries_all_fields() {
         let config = parse_config(
             r#"{
                 "keyword":"校验词",
@@ -597,16 +806,16 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let checker = create_checker(config, Some(CancelToken::new())).expect("创建检查器");
-
-        let effective = checker.config();
-        assert_eq!(effective.keyword, "校验词");
-        assert_eq!(effective.step_timeout_ms, 5_000);
-        assert!(!effective.check_search);
-        assert!(!effective.check_toc);
-        assert!(!effective.check_content);
-        assert!(!effective.detect_captcha);
-        assert!(!effective.detect_redirect);
+        assert_eq!(config.keyword, "校验词");
+        assert_eq!(config.timeout_ms, 5_000);
+        assert!(!config.check_search);
+        assert!(!config.check_category);
+        assert!(!config.check_content);
+        // 规则级链路恒不单独探测验证码/重定向（字段解析但不影响判定）
+        assert_eq!(
+            config.w_source_comment,
+            SourceCheckConfig::default().w_source_comment
+        );
     }
 
     /// P1-1：会话级取消只影响目标会话；无参入口取消最近登记的会话
@@ -1085,6 +1294,7 @@ mod tests {
                 captcha: None,
                 redirect: None,
                 cancelled: false,
+                invalid_groups: vec!["搜索失效".to_string()],
             },
         };
         let json = serde_json::to_string(&progress).unwrap();
@@ -1099,8 +1309,228 @@ mod tests {
             "\"content_ok\"",
             "\"total_time_ms\"",
             "\"cancelled\"",
+            "\"invalid_groups\"",
         ] {
             assert!(json.contains(field), "缺少字段 {field}: {json}");
         }
+        assert!(
+            json.contains("\"invalid_groups\":[\"搜索失效\"]"),
+            "invalid_groups 应以数组形式序列化: {json}"
+        );
+    }
+
+    // ─── 批44：失效分组写回（参考版语义 + 定向两列 CAS） ─────────
+
+    /// 校验失败 → 追加具体分组 + `// Error:` 注释
+    #[test]
+    fn test_write_back_appends_groups_and_comment_on_failure() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-fail.example.com";
+        let mut source = make_source_no_search(url, "写回失败源");
+        source.book_source_group = Some("玄幻".to_string());
+        source.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            invalid_groups: vec!["搜索失效".to_string()],
+            failure: Some("搜索失效".to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&source, &outcome, true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            stored.book_source_group.as_deref(),
+            Some("玄幻,搜索失效"),
+            "失败应追加具体分组"
+        );
+        assert_eq!(
+            stored.book_source_comment.as_deref(),
+            Some("// Error: 搜索失效"),
+            "失败应写入本次错误注释"
+        );
+    }
+
+    /// 失败写回是「先清旧失效分组再追加本次」，不是历史累积
+    /// （对齐原版 `doCheckSource` 起始 `removeInvalidGroups()`）
+    #[test]
+    fn test_write_back_replaces_previous_invalid_groups_on_failure() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-replace.example.com";
+        let mut source = make_source_no_search(url, "替换分组源");
+        source.book_source_group = Some("玄幻,发现失效,网站失效".to_string());
+        source.book_source_comment = Some("// Error: 上一轮错误".to_string());
+        source.last_update_time = 150;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            invalid_groups: vec!["搜索失效".to_string()],
+            failure: Some("搜索失效".to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&source, &outcome, true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            stored.book_source_group.as_deref(),
+            Some("玄幻,搜索失效"),
+            "旧失效分组（发现失效/网站失效）应被清掉，只留本轮判定"
+        );
+        assert_eq!(
+            stored.book_source_comment.as_deref(),
+            Some("// Error: 搜索失效"),
+            "历史错误注释应被替换为本轮消息"
+        );
+    }
+
+    /// `w_source_comment=false` → 不写 `// Error:` 注释，但分组照常写回
+    #[test]
+    fn test_write_back_without_comment_when_disabled() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-nocomment.example.com";
+        let mut source = make_source_no_search(url, "无注释源");
+        source.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            invalid_groups: vec!["域名失效".to_string()],
+            failure: Some("源地址不可访问".to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&source, &outcome, false);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(stored.book_source_group.as_deref(), Some("域名失效"));
+        assert_eq!(
+            stored.book_source_comment, None,
+            "w_source_comment=false 时不得写错误注释"
+        );
+    }
+
+    /// 校验成功 → 清除旧失效分组与历史 `// Error:` 块
+    #[test]
+    fn test_write_back_clears_invalid_groups_on_success() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-ok.example.com";
+        let mut source = make_source_no_search(url, "写回成功源");
+        source.book_source_group = Some("玄幻,搜索失效,校验超时".to_string());
+        source.book_source_comment = Some("// Error: 旧错误\n\n正常注释".to_string());
+        source.last_update_time = 200;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome::default();
+        write_back_check_groups(&source, &outcome, true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            stored.book_source_group.as_deref(),
+            Some("玄幻"),
+            "成功应只保留正常分组"
+        );
+        assert_eq!(
+            stored.book_source_comment.as_deref(),
+            Some("正常注释"),
+            "成功应清除历史错误块、保留正常注释"
+        );
+    }
+
+    /// 并发安全：校验期间源被编辑（lastUpdateTime 变化）→ 不写回
+    #[test]
+    fn test_write_back_skipped_when_source_edited_during_check() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-cas.example.com";
+        let mut snapshot = make_source_no_search(url, "CAS 源");
+        snapshot.book_source_group = Some("玄幻".to_string());
+        snapshot.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&snapshot)
+        })
+        .unwrap();
+
+        // 模拟校验期间另一会话编辑了源（lastUpdateTime 推进 + 分组被改）
+        let mut edited = snapshot.clone();
+        edited.last_update_time = 300;
+        edited.book_source_group = Some("都市".to_string());
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&edited)
+        })
+        .unwrap();
+
+        // 用旧快照写回：CAS 应拒绝
+        let outcome = SourceCheckOutcome {
+            invalid_groups: vec!["搜索失效".to_string()],
+            failure: Some("搜索失效".to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&snapshot, &outcome, true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            stored.book_source_group.as_deref(),
+            Some("都市"),
+            "快照过期不得覆盖并发编辑"
+        );
+        assert_eq!(stored.book_source_comment, None);
+    }
+
+    /// 取消态不写回分组/注释
+    #[test]
+    fn test_write_back_skipped_when_cancelled() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-cancel.example.com";
+        let mut source = make_source_no_search(url, "取消源");
+        source.book_source_group = Some("玄幻".to_string());
+        source.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            cancelled: true,
+            search_error: Some("cancelled".to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&source, &outcome, true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(stored.book_source_group.as_deref(), Some("玄幻"));
+        assert_eq!(stored.book_source_comment, None);
     }
 }

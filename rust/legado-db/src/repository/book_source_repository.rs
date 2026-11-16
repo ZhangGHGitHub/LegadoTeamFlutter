@@ -159,6 +159,52 @@ impl<'a> BookSourceRepository<'a> {
         Ok(affected > 0)
     }
 
+    /// 定向更新书源分组与注释两列（书源校验写回，批44）
+    ///
+    /// 语义来源：参考版 `BookSourceCheckRepository.kt:133` 无条件 `updateSources`
+    /// 整行写回分组/注释；本实现**只写 `bookSourceGroup` + `bookSourceComment`
+    /// 两列**，规避整行覆盖并发编辑（规则/变量/启用态等其它列一律不动）。
+    ///
+    /// CAS 条件为调用方读取时的快照：
+    /// - `lastUpdateTime` 精确相等（源被编辑会刷新该值）；
+    /// - `bookSourceGroup` / `bookSourceComment` 空值安全比较（SQLite `IS`，
+    ///   两侧同为 NULL 时匹配，对齐 Kotlin `(col is null and :p is null) or col = :p`）。
+    ///
+    /// 返回 `Ok(true)` 表示命中并写入；`Ok(false)` 表示快照已过期（校验期间
+    /// 源被编辑/删除），调用方应丢弃本次写回。
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_check_groups_and_comment(
+        &self,
+        book_source_url: &str,
+        book_source_group: Option<&str>,
+        book_source_comment: Option<&str>,
+        expected_last_update_time: i64,
+        expected_book_source_group: Option<&str>,
+        expected_book_source_comment: Option<&str>,
+    ) -> LegadoResult<bool> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE book_sources SET
+                    bookSourceGroup = ?2,
+                    bookSourceComment = ?3
+                 WHERE bookSourceUrl = ?1
+                    AND lastUpdateTime = ?4
+                    AND bookSourceGroup IS ?5
+                    AND bookSourceComment IS ?6",
+                params![
+                    book_source_url,
+                    book_source_group,
+                    book_source_comment,
+                    expected_last_update_time,
+                    expected_book_source_group,
+                    expected_book_source_comment,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("CAS 更新书源分组/注释失败: {e}")))?;
+        Ok(affected > 0)
+    }
+
     /// 单列更新书源自定义变量（契约 §2.3 setSourceVariable 语义，台账 §5.11-3）
     ///
     /// 仅更新 `variable` 单列，规避 updateBookSource 全行更新风险（对齐原版
@@ -830,6 +876,108 @@ mod tests {
             .unwrap();
         assert!(!ok);
         assert_eq!(repo.find_by_url("u1").unwrap().unwrap().respond_time, 500);
+    }
+
+    /// 批44：定向更新只写 group/comment 两列，其它列（含 respondTime）不动
+    #[test]
+    fn test_update_check_groups_and_comment_only_two_columns() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = Some("玄幻".to_string());
+        src.book_source_comment = Some("旧备注".to_string());
+        src.last_update_time = 100;
+        src.respond_time = 500;
+        src.variable = "保留变量".to_string();
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_groups_and_comment(
+                "u1",
+                Some("玄幻,搜索失效"),
+                Some("// Error: 搜索失效"),
+                100,
+                Some("玄幻"),
+                Some("旧备注"),
+            )
+            .unwrap();
+        assert!(ok);
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.book_source_group.as_deref(), Some("玄幻,搜索失效"));
+        assert_eq!(
+            found.book_source_comment.as_deref(),
+            Some("// Error: 搜索失效")
+        );
+        // 未在 UPDATE 列表中的列保持原值（定向写回的核心保证）
+        assert_eq!(found.respond_time, 500);
+        assert_eq!(found.variable, "保留变量");
+        assert_eq!(found.last_update_time, 100);
+    }
+
+    /// 批44：CAS 快照不匹配（校验期间源被编辑）→ 不写回
+    #[test]
+    fn test_update_check_groups_and_comment_cas_rejects_stale_snapshot() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = Some("玄幻".to_string());
+        src.last_update_time = 200;
+        repo.insert(&src).unwrap();
+
+        // 调用方持有旧快照（lastUpdateTime=100），库内已推进到 200
+        let ok = repo
+            .update_check_groups_and_comment("u1", Some("搜索失效"), None, 100, Some("玄幻"), None)
+            .unwrap();
+        assert!(!ok, "快照过期不得写回");
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.book_source_group.as_deref(), Some("玄幻"));
+    }
+
+    /// 批44：CAS 的空值安全比较——两侧同为 NULL 时匹配
+    #[test]
+    fn test_update_check_groups_and_comment_null_snapshot_matches() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = None;
+        src.book_source_comment = None;
+        src.last_update_time = 100;
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_groups_and_comment("u1", Some("发现失效"), None, 100, None, None)
+            .unwrap();
+        assert!(ok);
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.book_source_group.as_deref(), Some("发现失效"));
+    }
+
+    /// 批44：成功校验清旧分组 → group/comment 写为 None 或空串均生效
+    #[test]
+    fn test_update_check_groups_and_comment_clears_on_success() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let mut src = make_source("u1", "s1");
+        src.book_source_group = Some("玄幻,搜索失效".to_string());
+        src.book_source_comment = Some("// Error: 搜索失效".to_string());
+        src.last_update_time = 100;
+        repo.insert(&src).unwrap();
+
+        let ok = repo
+            .update_check_groups_and_comment(
+                "u1",
+                Some("玄幻"),
+                Some(""),
+                100,
+                Some("玄幻,搜索失效"),
+                Some("// Error: 搜索失效"),
+            )
+            .unwrap();
+        assert!(ok);
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.book_source_group.as_deref(), Some("玄幻"));
+        assert_eq!(found.book_source_comment.as_deref(), Some(""));
     }
 
     /// 台账 §5.11-3：variable 随 insert/查询自然带出，默认空串
