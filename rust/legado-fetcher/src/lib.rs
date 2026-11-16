@@ -22,6 +22,10 @@ pub mod rate_limit;
 // [批15a | 2026-10-26] RSS 抓取引擎（默认解析等价 + 骨架）：
 // 列表请求编排对齐原版 `Rss.getArticlesAwait`，解析对齐 `RssParserDefault`。
 pub mod rss;
+// [批44 | 2026-11-16] 书源校验完整规则链（server `/startBookSourceCheck` 与
+// ffi `checkSource` / `checkSourcesStream` 单一实现）：对齐 Android 原版
+// `CheckSourceService.doCheckSource` / `checkBook`。
+pub mod source_check;
 pub mod source_setup;
 pub mod web_book;
 

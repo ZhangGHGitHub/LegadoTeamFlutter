@@ -28,6 +28,9 @@ log = "0.4"
 # `RssSourceExtensions.getSortUrlsKey()` 的 MD5Utils.md5Encode(sourceUrl + sortUrl)。
 # 与 legado-core / legado-db / legado-ffi 同版本，无新增 crate 版本面。
 md5 = "0.7"
+# [批44 | 2026-11-16] 书源校验源地址 TCP 探测端点解析（`source_check`）：
+# 仅新增直接依赖边，`url` 2.5.8 已由 legado-net 传递编译进产物，零新增 crate。
+url = "2"
 
 [dev-dependencies]
 base64 = { workspace = true }
