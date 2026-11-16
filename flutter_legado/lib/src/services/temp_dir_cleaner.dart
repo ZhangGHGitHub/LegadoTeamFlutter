@@ -39,6 +39,19 @@ class TempDirCleaner {
     'legado_webdav_restore_',
   ];
 
+  /// 本服务负责的**临时文件**前缀（B19）
+  ///
+  /// `WebDavRestoreService._writeJsonSkippingLocalBooks` 在系统临时目录写
+  /// `legado_restore_no_local_<micros>.json`（恢复时忽略本地书籍的过滤
+  /// 副本）。该文件是**明文备份**（含书源/配置等全量数据），正常路径在
+  /// finally 删除；进程被强杀时残留 = 明文备份长期躺在临时目录。
+  ///
+  /// 此前清扫器只处理目录（`if (entity is! Directory) continue;`），这类
+  /// 孤儿文件永远扫不到。
+  static const List<String> managedFilePrefixes = [
+    'legado_restore_no_local_',
+  ];
+
   final Directory Function() _tempDirProvider;
   final DateTime Function() _now;
 
@@ -51,7 +64,7 @@ class TempDirCleaner {
   /// 超过该时长未修改才视为残留（默认 1 小时）
   final Duration maxAge;
 
-  /// 扫描并清理一次，返回实际删除的目录数
+  /// 扫描并清理一次，返回实际删除的条目数（目录 + 文件）
   ///
   /// 任何异常都在内部消化（仅日志），调用方可直接 `unawaited(...)`。
   Future<int> sweep() async {
@@ -62,18 +75,33 @@ class TempDirCleaner {
       final current = _now();
 
       await for (final entity in base.list(followLinks: false)) {
-        if (entity is! Directory) continue;
-        if (!_isManaged(entity)) continue;
+        // [B19] 目录与「明文备份临时文件」都要扫：此前文件被直接跳过，
+        // 恢复过滤副本（含全量明文数据）在强杀后永久残留。
+        if (entity is Directory) {
+          if (!_isManaged(entity)) continue;
+          try {
+            final modified = await _modifiedTimeProvider(entity);
+            // 只清理严格超过 maxAge 的目录：新建/正在写入的目录最近活动时间
+            // 很新，留给创建方自己的 finally 清理。
+            if (current.difference(modified) <= maxAge) continue;
+            await (_deleteDir ?? _deleteRecursively)(entity);
+            deleted++;
+          } catch (e) {
+            // 单个目录失败（权限/占用/已删除）不影响其余目录，下次启动重试
+            debugPrint(
+                '[TempDirCleaner] 清理临时目录失败（忽略，路径=${entity.path}）：$e');
+          }
+          continue;
+        }
+        if (entity is! File || !_isManagedFile(entity)) continue;
         try {
-          final modified = await _modifiedTimeProvider(entity);
-          // 只清理严格超过 maxAge 的目录：新建/正在写入的目录最近活动时间
-          // 很新，留给创建方自己的 finally 清理。
+          final modified = await entity.lastModified();
           if (current.difference(modified) <= maxAge) continue;
-          await (_deleteDir ?? _deleteRecursively)(entity);
+          await entity.delete();
           deleted++;
         } catch (e) {
-          // 单个目录失败（权限/占用/已删除）不影响其余目录，下次启动重试
-          debugPrint('[TempDirCleaner] 清理临时目录失败（忽略，路径=${entity.path}）：$e');
+          debugPrint(
+              '[TempDirCleaner] 清理临时文件失败（忽略，路径=${entity.path}）：$e');
         }
       }
     } catch (e) {
@@ -90,6 +118,21 @@ class TempDirCleaner {
         .toList();
     final name = segments.isEmpty ? '' : segments.last;
     return managedPrefixes.any(name.startsWith);
+  }
+
+  /// 文件名是否命中本服务管理的**临时文件**前缀（B19）
+  ///
+  /// 只认 `legado_restore_no_local_<数字>.json`（前缀 + `.json` 后缀）：
+  /// 与 `WebDavRestoreService` 的写出命名逐字对应，避免命中同名用户文件。
+  bool _isManagedFile(File file) {
+    final segments = file.uri.pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .toList();
+    final name = segments.isEmpty ? '' : segments.last;
+    if (!name.endsWith('.json')) return false;
+    return managedFilePrefixes.any(
+      (prefix) => name.startsWith(prefix) && name.length > prefix.length + 5,
+    );
   }
 
   /// 目录最近活动时间：目录自身 mtime 与最新**直接子项** mtime 取较大者

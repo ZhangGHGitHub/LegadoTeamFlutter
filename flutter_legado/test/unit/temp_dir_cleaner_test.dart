@@ -62,7 +62,64 @@ void main() {
     expect(onlyDir.existsSync(), isFalse);
     expect(restoreDir.existsSync(), isFalse);
     expect(unrelated.existsSync(), isTrue, reason: '非本服务前缀不得删除');
-    expect(samePrefixFile.existsSync(), isTrue, reason: '同前缀普通文件不属于清扫范围');
+    expect(
+      samePrefixFile.existsSync(),
+      isTrue,
+      reason: '目录前缀的普通文件不属于清扫范围（只有 legado_restore_no_local_*.json 文件算）',
+    );
+  });
+
+  // ─── [B19] 孤儿明文备份文件清扫 ─────────────────────────────────
+
+  /// `legado_restore_no_local_<micros>.json` 是恢复时写出的**明文全量备份**
+  /// 过滤副本；强杀后残留必须被启动清扫删除。
+  test('B19：孤儿明文备份临时文件被删除', () async {
+    final orphan = File(
+      '${tempBase.path}${sep()}legado_restore_no_local_1700000000000000.json',
+    )..writeAsStringSync('{"books":[]}');
+
+    final deleted = await TempDirCleaner(
+      tempDirProvider: () => tempBase,
+      now: () => DateTime.now().add(const Duration(hours: 2)),
+    ).sweep();
+
+    expect(deleted, 1);
+    expect(orphan.existsSync(), isFalse, reason: '孤儿明文备份必须被清理');
+  });
+
+  test('B19：新写入的明文备份文件保留（进行中的恢复）', () async {
+    final fresh = File(
+      '${tempBase.path}${sep()}legado_restore_no_local_1700000000000001.json',
+    )..writeAsStringSync('{"books":[]}');
+
+    final deleted = await TempDirCleaner(
+      tempDirProvider: () => tempBase,
+    ).sweep();
+
+    expect(deleted, 0);
+    expect(fresh.existsSync(), isTrue, reason: '1 小时内的文件留给调用方 finally 清理');
+  });
+
+  test('B19：同前缀但非 .json / 非本服务命名不删', () async {
+    final notJson = File(
+      '${tempBase.path}${sep()}legado_restore_no_local_1700000000000002.txt',
+    )..writeAsStringSync('x');
+    final unrelatedJson = File(
+      '${tempBase.path}${sep()}user_notes.json',
+    )..writeAsStringSync('{}');
+    final shortName = File(
+      '${tempBase.path}${sep()}legado_restore_no_local_.json',
+    )..writeAsStringSync('{}');
+
+    final deleted = await TempDirCleaner(
+      tempDirProvider: () => tempBase,
+      now: () => DateTime.now().add(const Duration(hours: 2)),
+    ).sweep();
+
+    expect(deleted, 0);
+    expect(notJson.existsSync(), isTrue);
+    expect(unrelatedJson.existsSync(), isTrue, reason: '用户 JSON 不得误删');
+    expect(shortName.existsSync(), isTrue, reason: '空前缀不算本服务产物');
   });
 
   test('新建（未超过 1 小时）目录保留，交给创建方 finally 清理', () async {

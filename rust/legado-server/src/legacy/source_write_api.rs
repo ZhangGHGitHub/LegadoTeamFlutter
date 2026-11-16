@@ -487,7 +487,16 @@ pub async fn save_book_source(
                     match BookSourceRepository::new(db.connection())
                         .insert_with_check_state(&source)
                     {
-                        Ok(()) => ReturnData::success(Value::String(String::new())),
+                        Ok(()) => {
+                            drop(db);
+                            // [B20] 书源写路径统一失效图片动作引擎（jsLib/规则
+                            // 变更须即时生效；此前 Web 端写路径零调用，旧引擎
+                            // 会一直驻留到进程重启）
+                            legado_js::replace_rule_js::invalidate_image_action_engine(
+                                &source.book_source_url,
+                            );
+                            ReturnData::success(Value::String(String::new()))
+                        }
                         Err(e) => ReturnData::error(e.to_string()),
                     }
                 }
@@ -532,10 +541,19 @@ pub async fn save_book_sources(
                 match BookSourceRepository::new(db.connection())
                     .insert_batch_with_check_state(&ok_sources)
                 {
-                    Ok(()) => match serde_json::to_value(&ok_sources) {
-                        Ok(value) => ReturnData::success(value),
-                        Err(e) => ReturnData::error(e.to_string()),
-                    },
+                    Ok(()) => {
+                        drop(db);
+                        // [B20] 批量写后逐条失效图片动作引擎
+                        for s in &ok_sources {
+                            legado_js::replace_rule_js::invalidate_image_action_engine(
+                                &s.book_source_url,
+                            );
+                        }
+                        match serde_json::to_value(&ok_sources) {
+                            Ok(value) => ReturnData::success(value),
+                            Err(e) => ReturnData::error(e.to_string()),
+                        }
+                    }
                     Err(e) => ReturnData::error(e.to_string()),
                 }
             }
@@ -573,6 +591,7 @@ pub async fn delete_book_sources(
                 urls.dedup();
                 let db = state.db.lock().await;
                 let conn = db.connection();
+                let deleted_urls = urls.clone();
                 match in_transaction(conn, "批量删除书源", |conn| {
                     let repo = BookSourceRepository::new(conn);
                     let cache = CacheRepository::new(conn);
@@ -589,6 +608,11 @@ pub async fn delete_book_sources(
                         // 原版空 keys 早退，不做内存清理）
                         if !urls.is_empty() {
                             let _ = legado_js::host_api::variable_store::clear_source_variables();
+                        }
+                        // [B20] 删除后回收图片动作引擎（FFI 侧 delete_source 已有
+                        // 同语义调用，Web 端此前缺失）
+                        for url in &deleted_urls {
+                            legado_js::replace_rule_js::invalidate_image_action_engine(url);
                         }
                         ReturnData::success(Value::String("已执行".to_string()))
                     }
@@ -780,6 +804,12 @@ async fn save_js_source_into_db(
             if removed_old_source {
                 // 对齐 SourceHelp.deleteBookSource：删源后整体清内存 5 族
                 let _ = legado_js::host_api::variable_store::clear_source_variables();
+            }
+            // [B20] JS 源保存后失效图片动作引擎（mainJs/jsLib 变更即时生效；
+            // 换 URL 时旧 URL 的引擎也要回收）
+            legado_js::replace_rule_js::invalidate_image_action_engine(&source.book_source_url);
+            if let Some(old_url) = old_url_to_delete.as_ref() {
+                legado_js::replace_rule_js::invalidate_image_action_engine(old_url);
             }
             match serde_json::to_value(&source) {
                 Ok(value) => ReturnData::success(value),
@@ -1456,6 +1486,51 @@ mod tests {
         };
         clamp_test_replace_rule_timeout(&mut normal);
         assert_eq!(normal.timeout_millisecond, 500, "正常值不改写");
+    }
+
+    /// [B20] Web 源写路径必须调用 `invalidate_image_action_engine`
+    ///
+    /// 根因：`legado-server` 的书源写端点（saveBookSource / saveBookSources /
+    /// deleteBookSources / saveJsSource）此前**零调用**该失效函数，jsLib/
+    /// 规则改动后旧图片动作引擎会驻留到进程重启（FFI 侧三条路径都调了）。
+    ///
+    /// 本用例做源码级守卫：四条写路径的成功分支都必须出现该调用。用源码
+    /// 断言而非运行时断言，是因为触发引擎缓存需要真实 quickjs 求值，且
+    /// 缓存是进程级全局态，运行时断言会与并行用例互相干扰。
+    #[test]
+    fn test_web_source_write_paths_invalidate_image_action_engine() {
+        let source = include_str!("source_write_api.rs");
+        // 逐函数体切片，避免「任意位置有一次调用」就算通过的弱断言
+        let cases = [
+            ("save_book_source", "pub async fn save_book_source"),
+            ("save_book_sources", "pub async fn save_book_sources"),
+            ("delete_book_sources", "pub async fn delete_book_sources"),
+            ("save_js_source", "pub async fn save_js_source"),
+        ];
+        for (name, signature) in cases {
+            let start = source
+                .find(signature)
+                .unwrap_or_else(|| panic!("{name}: 未找到函数签名"));
+            // 函数体到下一个顶层 `pub async fn` / `pub fn` 之间
+            let rest = &source[start + signature.len()..];
+            let end = rest
+                .find(
+                    "
+pub async fn ",
+                )
+                .or_else(|| {
+                    rest.find(
+                        "
+pub fn ",
+                    )
+                })
+                .unwrap_or(rest.len());
+            let body = &rest[..end];
+            assert!(
+                body.contains("invalidate_image_action_engine"),
+                "{name} 必须调用 invalidate_image_action_engine（B20）"
+            );
+        }
     }
 
     /// P1-3：替换闭包必须离开 tokio worker 线程执行
