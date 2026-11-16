@@ -170,20 +170,16 @@ impl<'a> BookSourceRepository<'a> {
     /// - `bookSourceGroup` / `bookSourceComment` 空值安全比较（SQLite `IS`，
     ///   两侧同为 NULL 时匹配，对齐 Kotlin `(col is null and :p is null) or col = :p`）。
     ///
-    /// **实测更正（批39 审查 P2-4）**：`lastUpdateTime` 这条腿在本仓编辑路径
-    /// **恒命中、实际不起并发防护作用**——编辑保存载荷里该字段恒为 0
-    /// （`source_edit_screen_actions.part.dart` 的 `_buildSource()` 不传该字段，
-    /// 加上 `book_source.dart` 的 `@Default(0)`），所以「源被编辑会刷新该值」
-    /// 在 Flutter 侧不成立。真正的并发保护**只靠分组/注释两列快照**：
-    /// 校验期间若用户改了分组或注释，CAS 不命中、本次写回被丢弃。
+    /// **`lastUpdateTime` 腿的现状（B12 已修复）**：此前编辑保存载荷里该字段
+    /// 恒为 0（`source_edit_screen_actions.part.dart` 的 `_buildSource()` 不传、
+    /// Dart 模型 `@Default(0)`），所以该腿恒命中、只靠分组/注释两列做并发
+    /// 防护。B12 起 `legado-ffi::api::source::update_source` 在保存时按上游
+    /// `BookSourceEditViewModel.kt:57-59` 口径补齐：内容有变化才打当前时间戳，
+    /// 无变化沿用库内值。因此本函数的 `lastUpdateTime` 腿现在真正生效——
+    /// 校验期间用户编辑了源规则，CAS 不命中、本次写回被丢弃。
     ///
-    /// 因此本函数的不变量实际表述为：**仅分组/注释两列快照生效；
-    /// `lastUpdateTime` 腿恒命中**。若要让该腿真正工作，需另立小批给编辑
-    /// 保存路径打 `lastUpdateTime` 时间戳——牵动 `respondTime` 与订阅侧
-    /// 的 `lastUpdateTime` 门控（可能触发全量刷新），不在本次注释更正范围。
-    ///
-    /// 返回 `Ok(true)` 表示命中并写入；`Ok(false)` 表示分组/注释快照已过期
-    /// （校验期间用户编辑了分组/注释，或源被删除），调用方应丢弃本次写回。
+    /// 返回 `Ok(true)` 表示命中并写入；`Ok(false)` 表示快照已过期
+    /// （校验期间用户编辑了源，或源被删除），调用方应丢弃本次写回。
     #[allow(clippy::too_many_arguments)]
     pub fn update_check_groups_and_comment(
         &self,

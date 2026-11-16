@@ -78,11 +78,29 @@ pub fn add_source(source_json: &str) -> LegadoResult<BookSource> {
 }
 
 /// 更新书源
+///
+/// [B12] 保存时按上游 `BookSourceEditViewModel.kt:57-59` 打
+/// `lastUpdateTime`：仅当**内容确有变化**（`check_content()` 归一比较，
+/// 忽略 customOrder/enabled/respondTime/weight 等非内容列）时写
+/// `System.currentTimeMillis()`，否则保留库内既有值。
+///
+/// 为什么必须在 Rust 侧做：编辑页 `_buildSource()` 不传该字段（Dart 模型
+/// `@Default(0)`），载荷里恒为 0。若不补，`book_sources.lastUpdateTime`
+/// 永远是 0：
+/// - 书源校验写回（`update_check_groups_and_comment`）的 `lastUpdateTime`
+///   CAS 腿恒命中，只剩分组/注释两列在做并发防护；
+/// - 订阅更新门控（`rule_sub_apply`：远程 `lastUpdateTime <=` 本地即跳过）
+///   在本地恒 0 时永远认为远程更新，本地编辑过的源会被远程旧内容覆盖。
+///
+/// 仅当载荷 `lastUpdateTime` 为 0（即「未携带」）时才补：Web 端与
+/// `JsSourceUpsert` 已自行打戳的路径保持其值不变。
 pub fn update_source(source_json: &str) -> LegadoResult<()> {
-    let source: BookSource = serde_json::from_str(source_json)
+    let mut source: BookSource = serde_json::from_str(source_json)
         .map_err(|e| LegadoError::Ffi(format!("BookSource JSON 解析失败: {e}")))?;
     with_database(|db| {
         let repo = BookSourceRepository::new(db.connection());
+        let previous = repo.find_by_url(&source.book_source_url)?;
+        apply_last_update_time(&mut source, previous.as_ref());
         repo.update_with_check_state(&source)
     })?;
     // 写库成功后才刷新限速注册表（失败经 `?` 提前返回，不触发刷新）；
@@ -94,6 +112,34 @@ pub fn update_source(source_json: &str) -> LegadoResult<()> {
     // [批21-A] 书源更新后失效图片动作引擎缓存（jsLib/规则变更即时生效）
     legado_js::replace_rule_js::invalidate_image_action_engine(&source.book_source_url);
     Ok(())
+}
+
+/// 按上游 `prepareForSave` 口径补齐 `lastUpdateTime`（B12）
+///
+/// - 载荷已带非零时间戳 → 原样保留（Web/JS 源路径自行打戳）；
+/// - 内容有变化（或源为新增）→ 打当前毫秒时间戳；
+/// - 内容无变化 → 沿用库内既有值（不因「保存一次」就把订阅门控推后）。
+fn apply_last_update_time(source: &mut BookSource, previous: Option<&BookSource>) {
+    if source.last_update_time != 0 {
+        return;
+    }
+    match previous {
+        None => source.last_update_time = now_millis(),
+        Some(old) => {
+            if old.check_content() != source.check_content() {
+                source.last_update_time = now_millis();
+            } else {
+                source.last_update_time = old.last_update_time;
+            }
+        }
+    }
+}
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// 按 URL 删除书源
@@ -517,5 +563,115 @@ mod tests {
         for url in [url_a, url_b, url_zero] {
             delete_source(url).unwrap();
         }
+    }
+
+    // ─── [B12] 编辑保存补齐 lastUpdateTime ─────────────────────────────
+
+    fn find_source(url: &str) -> BookSource {
+        list_sources()
+            .unwrap()
+            .into_iter()
+            .find(|s| s.book_source_url == url)
+            .expect("书源应存在")
+    }
+
+    /// 编辑规则内容（载荷 lastUpdateTime=0，与 Flutter `_buildSource()` 一致）
+    /// → 落库时间戳非零，且 CAS 能判定「源已变更」。
+    #[test]
+    fn test_update_source_stamps_last_update_time_on_content_change() {
+        let _db_guard = setup_test_db();
+        let url = "https://b12-stamp.example.com";
+        add_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源\",\"searchUrl\":\"/s?q={{{{key}}}}\"}}"
+        ))
+        .unwrap();
+
+        let before = find_source(url);
+        assert_eq!(before.last_update_time, 0, "新增走 add_source，不打戳");
+
+        // 改搜索规则，载荷不带 lastUpdateTime
+        update_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源\",\"searchUrl\":\"/search?q={{{{key}}}}\"}}"
+        ))
+        .unwrap();
+
+        let after = find_source(url);
+        assert!(
+            after.last_update_time > 0,
+            "内容变化必须打 lastUpdateTime 时间戳（实际 {}）",
+            after.last_update_time
+        );
+        assert_ne!(
+            after.last_update_time, before.last_update_time,
+            "时间戳应相对旧值推进"
+        );
+        // CAS 用旧快照（lastUpdateTime=0）应不命中
+        let cas_hit = with_database(|db| {
+            BookSourceRepository::new(db.connection()).update_check_groups_and_comment(
+                url,
+                Some("失效"),
+                None,
+                0,
+                before.book_source_group.as_deref(),
+                before.book_source_comment.as_deref(),
+            )
+        })
+        .unwrap();
+        assert!(!cas_hit, "旧快照的 lastUpdateTime 腿必须不命中");
+
+        delete_source(url).unwrap();
+    }
+
+    /// 内容未变化（只改分组等非内容列）→ 保留库内既有时间戳，
+    /// 不因「保存一次」就把订阅更新门控推后。
+    #[test]
+    fn test_update_source_keeps_last_update_time_when_content_unchanged() {
+        let _db_guard = setup_test_db();
+        let url = "https://b12-nochange.example.com";
+        add_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源2\",\"searchUrl\":\"/s?q={{{{key}}}}\"}}"
+        ))
+        .unwrap();
+
+        // 先制造一次内容变更拿到时间戳
+        update_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源2\",\"searchUrl\":\"/s2?q={{{{key}}}}\"}}"
+        ))
+        .unwrap();
+        let stamped = find_source(url);
+        assert!(stamped.last_update_time > 0);
+
+        // 只改分组（check_content 忽略分组）→ 时间戳不变
+        update_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源2\",\"searchUrl\":\"/s2?q={{{{key}}}}\",\"bookSourceGroup\":\"新分组\"}}"
+        ))
+        .unwrap();
+        let after = find_source(url);
+        assert_eq!(
+            after.last_update_time, stamped.last_update_time,
+            "内容未变时不得推进 lastUpdateTime"
+        );
+        assert_eq!(after.book_source_group.as_deref(), Some("新分组"));
+
+        delete_source(url).unwrap();
+    }
+
+    /// 载荷自带非零时间戳（Web/JS 源路径）→ 原样保留，不覆盖
+    #[test]
+    fn test_update_source_preserves_explicit_last_update_time() {
+        let _db_guard = setup_test_db();
+        let url = "https://b12-explicit.example.com";
+        add_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源3\"}}"
+        ))
+        .unwrap();
+
+        update_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源3\",\"lastUpdateTime\":1700000000123}}"
+        ))
+        .unwrap();
+        assert_eq!(find_source(url).last_update_time, 1700000000123);
+
+        delete_source(url).unwrap();
     }
 }
