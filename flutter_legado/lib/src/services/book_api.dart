@@ -198,7 +198,7 @@ abstract class BookApi {
 
   // ========== 书源校验（Task #87） ==========
 
-  /// 校验单个书源（搜索→详情→目录→正文四步 + 验证码/重定向检测）
+  /// 校验单个书源（搜索→详情→目录→正文 + 发现链；批44 起走完整规则链）
   ///
   /// [sourceJson] — BookSource JSON（字段名对齐 Android 原版 camelCase）
   /// [configJson] — 可选校验配置 JSON：`keyword` / `step_timeout_ms` /
@@ -208,7 +208,10 @@ abstract class BookApi {
   /// 返回 CheckResult Map，字段：`source_url` / `search_ok` / `toc_ok` /
   /// `content_ok` / `search_error` / `toc_error` / `content_error` /
   /// `total_time_ms` / `captcha`（detected/captcha_type/matched_keyword）/
-  /// `redirect`（redirected/original_url/final_url/is_login_redirect）。
+  /// `redirect`（redirected/original_url/final_url/is_login_redirect）/
+  /// `invalid_groups`（失效分组名数组：`校验超时` / `js失效` / `域名失效` /
+  /// `搜索失效` / `发现失效` / `${bookType}正文失效` / `${bookType}目录失效` /
+  /// `网站失效` 等；缺键按空数组处理）。
   Future<Map<String, dynamic>> checkSource(
     String sourceJson, {
     String? configJson,

@@ -1,14 +1,16 @@
-/// 规则订阅 + 书源校验 + 失效分组回写 单元测试
+/// 规则订阅 + 书源校验 + 分组回写 单元测试
 ///
 /// 覆盖：
 /// - RuleSub 模型（契约 §2.39 RuleSubRecord JSON：sub_type 字符串 /
 ///   is_enabled / last_update / customOrder 驼峰）
 /// - RuleSubNotifier：loadSubs 排序 / findDuplicate / saveSub 排序追加 /
 ///   deleteSub / reorder 持久化 / setEnabled
-/// - CheckSourceNotifier：初始状态 / 关键词持久化 / 空列表守卫 / clearMessages
-/// - SourceNotifier.addGroupToUrls：校验失效分组回写（指定 URL、
-///   已有分组跳过、不退出批量模式）
+/// - CheckSourceNotifier：初始状态 / 关键词持久化 / 空列表守卫 / clearMessages /
+///   `invalid_groups` 文案展示 / 校验结束不再追加笼统「失效」分组（批44）
+/// - SourceNotifier.addGroupToUrls：手动「添加分组」批量操作（指定 URL、
+///   已有分组跳过、不退出批量模式）——**不再由校验流程调用**
 library;
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -298,9 +300,78 @@ void main() {
       expect(readState().hasSession, isFalse);
       expect(readState().messages, isEmpty);
     });
+
+    /// 批44：进度事件的 `invalid_groups` 直接决定展示文案（Rust 侧精确分组）
+    test('invalid_groups 直接作为失效文案展示', () async {
+      final controller = StreamController<Map<String, dynamic>>();
+      addTearDown(controller.close);
+      when(() => mockApi.checkSourcesStream(
+            any(),
+            configJson: any(named: 'configJson'),
+          )).thenAnswer((_) => controller.stream);
+
+      await readNotifier().start(sourceUrls: const ['https://a']);
+      controller.add({
+        'index': 0,
+        'total': 1,
+        'is_last': true,
+        'source_name': '源A',
+        'result': {
+          'source_url': 'https://a',
+          'search_ok': false,
+          'toc_ok': false,
+          'content_ok': false,
+          'search_error': '搜索失效',
+          'toc_error': 'skipped',
+          'content_error': 'skipped',
+          'total_time_ms': 120,
+          'cancelled': false,
+          'invalid_groups': ['搜索失效', '发现正文失效'],
+        },
+      });
+      await Future.delayed(Duration.zero);
+
+      final message = readState().messages['https://a'];
+      expect(message, isNotNull);
+      expect(message!.ok, isFalse);
+      expect(message.text, contains('搜索失效'));
+      expect(message.text, contains('发现正文失效'));
+      expect(message.text, contains('120ms'));
+      expect(readState().checking, isFalse);
+    });
+
+    /// 批44：不再产生笼统「失效」分组（删除 addGroupToUrls 副作用）
+    test('校验结束不再调用 updateBookSource 追加「失效」分组', () async {
+      final controller = StreamController<Map<String, dynamic>>();
+      addTearDown(controller.close);
+      when(() => mockApi.checkSourcesStream(
+            any(),
+            configJson: any(named: 'configJson'),
+          )).thenAnswer((_) => controller.stream);
+
+      await readNotifier().start(sourceUrls: const ['https://a']);
+      controller.add({
+        'index': 0,
+        'total': 1,
+        'is_last': true,
+        'source_name': '源A',
+        'result': {
+          'source_url': 'https://a',
+          'search_ok': false,
+          'toc_ok': false,
+          'content_ok': false,
+          'total_time_ms': 100,
+          'cancelled': false,
+          'invalid_groups': ['搜索失效'],
+        },
+      });
+      await Future.delayed(Duration.zero);
+
+      verifyNever(() => mockApi.updateBookSource(any()));
+    });
   });
 
-  group('SourceNotifier.addGroupToUrls（校验失效分组回写）', () {
+  group('SourceNotifier.addGroupToUrls（手动添加分组批量操作）', () {
     late MockRustApi mockApi;
     late ProviderContainer container;
 

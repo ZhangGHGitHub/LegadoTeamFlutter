@@ -381,7 +381,7 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
 
   // ========== 书源校验（Task #87） ==========
 
-  /// 构造 Mock 的 CheckResult（四步全部通过，无验证码/重定向）
+  /// 构造 Mock 的 CheckResult（四步全部通过，无失效分组/验证码/重定向）
   Map<String, dynamic> _mockCheckResult(String sourceUrl) => {
     'source_url': sourceUrl,
     'search_ok': true,
@@ -391,6 +391,7 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
     'toc_error': null,
     'content_error': null,
     'total_time_ms': 321,
+    'invalid_groups': const <String>[],
     'captcha': {
       'detected': false,
       'captcha_type': null,

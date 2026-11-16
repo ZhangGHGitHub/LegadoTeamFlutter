@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers.dart';
-import '../source/source_notifier.dart';
 
 /// 单个书源的校验结果消息（对标原版列表项 checkSourceMessage 展示）
 class CheckSourceMessage {
@@ -251,21 +250,21 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
       checking: !isLast,
     );
 
-    // 全部完成：对失效书源追加「失效」分组（对标原版 addGroup 副作用）
-    if (isLast) {
-      final invalidUrls = messages.entries
-          .where((e) => !e.value.ok)
-          .map((e) => e.key)
-          .toSet();
-      if (invalidUrls.isNotEmpty) {
-        ref
-            .read(sourceNotifierProvider.notifier)
-            .addGroupToUrls(invalidUrls, '失效');
-      }
-    }
+    // 失效分组由 Rust 侧按参考版语义精确写回（`book_sources.bookSourceGroup`
+    // + `bookSourceComment` 两列，带 revision 快照 CAS）：
+    // 失败追加具体分组（搜索失效 / 域名失效 / 搜索正文失效 …）与 `// Error:`
+    // 注释，成功清除旧失效分组与历史错误块。
+    //
+    // 此前这里在整批结束时对全部失败源追加笼统「失效」分组，与原版
+    // `BookSource.getInvalidGroupNames()` 的取值域不一致，且经
+    // `updateBookSource` 整行写源（会覆盖并发编辑）。批44 起删除该副作用，
+    // UI 只消费本层状态与 `result.invalid_groups`。
   }
 
   /// 由 CheckResult 构造展示消息（对标原版 checkSourceMessage 语义）
+  ///
+  /// 优先使用 Rust 侧判定的 `invalid_groups`（批44 起为规则级完整链判定）；
+  /// 无分组时回落分步状态，保证旧版 Rust / Mock 数据仍可展示。
   CheckSourceMessage _buildMessage(Map<String, dynamic> result) {
     final searchOk = result['search_ok'] == true;
     final tocOk = result['toc_ok'] == true;
@@ -277,10 +276,15 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
         ? (result['captcha'] as Map).cast<String, dynamic>()
         : null;
     final captchaDetected = captcha?['detected'] == true;
+    final invalidGroups = _invalidGroupsOf(result);
 
     String text;
     bool ok;
-    if (!searchOk) {
+    if (invalidGroups.isNotEmpty) {
+      // 具体分组名（如「搜索失效」「发现正文失效」）比笼统「失败」更贴近原版
+      text = invalidGroups.join('、');
+      ok = false;
+    } else if (!searchOk) {
       text = '搜索失败${_errorSuffix(result['search_error'])}';
       ok = false;
     } else if (!tocOk) {
@@ -295,6 +299,16 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
     }
     if (captchaDetected) text = '$text（疑似验证码拦截）';
     return CheckSourceMessage(text: '$text ${timeMs}ms', ok: ok);
+  }
+
+  /// 解析 `CheckResult.invalid_groups`（缺键/类型不符回落空列表）
+  List<String> _invalidGroupsOf(Map<String, dynamic> result) {
+    final raw = result['invalid_groups'];
+    if (raw is! List) return const [];
+    return raw
+        .map((g) => g.toString().trim())
+        .where((g) => g.isNotEmpty)
+        .toList(growable: false);
   }
 
   String _errorSuffix(Object? error) {
