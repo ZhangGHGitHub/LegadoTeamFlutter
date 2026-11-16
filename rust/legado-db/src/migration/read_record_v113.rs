@@ -161,19 +161,23 @@ fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
          ALTER TABLE readRecord_v113 RENAME TO readRecord;
          {backfill}"
     );
-    // [批27b P2-3] 用 rusqlite 事务对象而非把 BEGIN/COMMIT 塞进 execute_batch：
-    // 后者在任一语句失败时**不会**自动 ROLLBACK，事务保持打开，连接停留在
+    // [批27b P2-3] 用保存点而非裸 BEGIN/COMMIT：`execute_batch("BEGIN ...")`
+    // 在任一语句失败时**不会**自动 ROLLBACK，事务保持打开，连接停留在
     // autocommit=false，后续迁移语句与查询会被卷进这个悬空事务（且失败后
-    // 调用方仍可拿到一条「看似正常」的连接）。`unchecked_transaction` 的
-    // Drop 即 ROLLBACK，保证失败后连接回到 autocommit。
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|e| LegadoError::Database(format!("开启 readRecord 重建事务失败: {e}")))?;
-    tx.execute_batch(&sql)
-        .map_err(|e| LegadoError::Database(format!("重建 readRecord 表失败: {e}")))?;
-    tx.commit()
-        .map_err(|e| LegadoError::Database(format!("提交 readRecord 重建事务失败: {e}")))?;
-    Ok(())
+    // 调用方仍可拿到一条「看似正常」的连接）。
+    //
+    // [B18] 改用 SAVEPOINT：迁移注册表已用 SAVEPOINT 包裹每条迁移，这里若用
+    // `unchecked_transaction()` 会撞上 "cannot start a transaction within a
+    // transaction"；SAVEPOINT 可嵌套，失败时 `ROLLBACK TO` 只回滚本段。
+    crate::migration::with_savepoint(
+        conn,
+        "rebuild_read_record_v113",
+        "重建 readRecord 表",
+        |conn| {
+            conn.execute_batch(&sql)
+                .map_err(|e| LegadoError::Database(format!("重建 readRecord 表失败: {e}")))
+        },
+    )
 }
 
 /// 主键已正确时补缺列；补入 display 三列时按上游口径回填显示元数据

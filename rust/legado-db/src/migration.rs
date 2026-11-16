@@ -132,15 +132,24 @@ impl MigrationRegistry {
             .collect();
 
         for migration in applicable {
-            eprintln!(
-                "执行迁移 v{} -> v{}: {}",
-                migration.from_version(),
-                migration.to_version(),
-                migration.description()
-            );
-            migration.up(conn)?;
-            conn.pragma_update(None, "user_version", migration.to_version())
-                .map_err(|e| LegadoError::Database(format!("更新版本失败: {e}")))?;
+            let from = migration.from_version();
+            let to = migration.to_version();
+            eprintln!("执行迁移 v{from} -> v{to}: {}", migration.description());
+            // 每条迁移（含版本号推进）作为一个原子单元：中断/失败时整体回滚，
+            // 避免残留 `*_vNNN` 临时表或「表已删但版本号未推进」的半成品态
+            // 导致下次开库 "table already exists" 直接启动失败（B18）。
+            let savepoint = format!("migration_v{to}");
+            with_savepoint(
+                conn,
+                &savepoint,
+                &format!("迁移 v{from} -> v{to}"),
+                |conn| {
+                    migration.up(conn)?;
+                    conn.pragma_update(None, "user_version", to)
+                        .map_err(|e| LegadoError::Database(format!("更新版本失败: {e}")))?;
+                    Ok(())
+                },
+            )?;
         }
 
         Ok(())
@@ -163,6 +172,36 @@ impl Default for MigrationRegistry {
 
 /// 向后兼容的 MigrationManager 类型别名
 pub type MigrationManager = MigrationRegistry;
+
+/// 在 SAVEPOINT 内执行一段迁移逻辑（B18）
+///
+/// 用 SAVEPOINT 而非 `BEGIN`：迁移链可能被外层事务包裹（调用方已有事务），
+/// SAVEPOINT 允许嵌套且失败时 `ROLLBACK TO` 只回滚本段。成功 `RELEASE`。
+/// 失败路径上连接保持原有事务状态（不会留下悬空事务），由调用方决定外层回滚。
+pub(crate) fn with_savepoint<T, F>(
+    conn: &Connection,
+    name: &str,
+    context: &str,
+    f: F,
+) -> LegadoResult<T>
+where
+    F: FnOnce(&Connection) -> LegadoResult<T>,
+{
+    conn.execute_batch(&format!("SAVEPOINT {name}"))
+        .map_err(|e| LegadoError::Database(format!("{context}: 开启保存点失败: {e}")))?;
+    match f(conn) {
+        Ok(value) => {
+            conn.execute_batch(&format!("RELEASE {name}"))
+                .map_err(|e| LegadoError::Database(format!("{context}: 释放保存点失败: {e}")))?;
+            Ok(value)
+        }
+        Err(err) => {
+            // 回滚失败不覆盖原始错误（原始错误更有诊断价值）
+            let _ = conn.execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}"));
+            Err(err)
+        }
+    }
+}
 
 /// 安全添加列（如果不存在）
 ///

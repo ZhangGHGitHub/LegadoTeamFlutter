@@ -58,7 +58,37 @@ impl Migration for Migration103To104 {
     }
 }
 
+/// 重建中断恢复（B18）
+///
+/// 历史版本的表重建序列是「建临时表 → 搬数据 → DROP 原表 → RENAME 临时表」，
+/// 且不在事务内。若在 `DROP` 与 `RENAME` 之间中断，库里会留下
+/// 「原表已删 + `*_v104` 临时表在」的半成品态，下次开库时
+/// `CREATE TABLE ..._v104` 报 "table already exists" 直接启动失败。
+///
+/// 现在的迁移由 [`crate::migration::MigrationRegistry::migrate_to`] 用 SAVEPOINT
+/// 包住，正常不会再产生残留；本函数用于自愈**旧版本遗留**的残留：
+/// - 原表存在：临时表只是上一次未完成的中间产物，直接丢弃（后续按主键形态重跑）；
+/// - 原表不存在而临时表存在：数据只在临时表里，改名回原表而不是丢弃，避免丢数据。
+fn recover_interrupted_rebuild(
+    conn: &Connection,
+    table: &str,
+    temp_table: &str,
+) -> LegadoResult<()> {
+    if !table_exists(conn, temp_table)? {
+        return Ok(());
+    }
+    if table_exists(conn, table)? {
+        conn.execute_batch(&format!("DROP TABLE IF EXISTS {temp_table};"))
+            .map_err(|e| LegadoError::Database(format!("清理残留临时表 {temp_table} 失败: {e}")))?;
+        return Ok(());
+    }
+    conn.execute_batch(&format!("ALTER TABLE {temp_table} RENAME TO {table};"))
+        .map_err(|e| LegadoError::Database(format!("恢复中断重建的 {table} 失败: {e}")))?;
+    Ok(())
+}
+
 fn rebuild_rss_articles(conn: &Connection) -> LegadoResult<()> {
+    recover_interrupted_rebuild(conn, "rssArticles", "rssArticles_v104")?;
     if !table_exists(conn, "rssArticles")? {
         conn.execute_batch(CREATE_RSS_ARTICLES)
             .map_err(|e| LegadoError::Database(format!("创建 rssArticles 失败: {e}")))?;
@@ -70,7 +100,8 @@ fn rebuild_rss_articles(conn: &Connection) -> LegadoResult<()> {
     }
 
     conn.execute_batch(
-        "CREATE TABLE rssArticles_v104 (
+        "DROP TABLE IF EXISTS rssArticles_v104;
+         CREATE TABLE IF NOT EXISTS rssArticles_v104 (
             origin TEXT NOT NULL,
             sort TEXT NOT NULL,
             title TEXT NOT NULL,
@@ -160,6 +191,7 @@ fn expr_or_null(conn: &Connection, table: &str, column: &str) -> LegadoResult<St
 }
 
 fn rebuild_rss_stars(conn: &Connection) -> LegadoResult<()> {
+    recover_interrupted_rebuild(conn, "rssStars", "rssStars_v104")?;
     if !table_exists(conn, "rssStars")? {
         conn.execute_batch(CREATE_RSS_STARS)
             .map_err(|e| LegadoError::Database(format!("创建 rssStars 失败: {e}")))?;
@@ -171,7 +203,8 @@ fn rebuild_rss_stars(conn: &Connection) -> LegadoResult<()> {
     }
 
     conn.execute_batch(
-        "CREATE TABLE rssStars_v104 (
+        "DROP TABLE IF EXISTS rssStars_v104;
+         CREATE TABLE IF NOT EXISTS rssStars_v104 (
             origin TEXT NOT NULL,
             sort TEXT NOT NULL,
             title TEXT NOT NULL,
@@ -241,6 +274,7 @@ fn rebuild_rss_stars(conn: &Connection) -> LegadoResult<()> {
 }
 
 fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
+    recover_interrupted_rebuild(conn, "readRecord", "readRecord_v104")?;
     if !table_exists(conn, "readRecord")? {
         conn.execute_batch(CREATE_READ_RECORD)
             .map_err(|e| LegadoError::Database(format!("创建 readRecord 失败: {e}")))?;
@@ -255,7 +289,8 @@ fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
     }
 
     conn.execute_batch(
-        "CREATE TABLE readRecord_v104 (
+        "DROP TABLE IF EXISTS readRecord_v104;
+         CREATE TABLE IF NOT EXISTS readRecord_v104 (
             deviceId TEXT NOT NULL DEFAULT '',
             bookName TEXT NOT NULL,
             author TEXT NOT NULL DEFAULT '',
@@ -304,6 +339,7 @@ fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
 }
 
 fn rebuild_rss_read_records(conn: &Connection) -> LegadoResult<()> {
+    recover_interrupted_rebuild(conn, "rssReadRecords", "rssReadRecords_v104")?;
     if !table_exists(conn, "rssReadRecords")? {
         conn.execute_batch(CREATE_RSS_READ_RECORDS)
             .map_err(|e| LegadoError::Database(format!("创建 rssReadRecords 失败: {e}")))?;
@@ -316,7 +352,8 @@ fn rebuild_rss_read_records(conn: &Connection) -> LegadoResult<()> {
     }
 
     conn.execute_batch(
-        "CREATE TABLE rssReadRecords_v104 (
+        "DROP TABLE IF EXISTS rssReadRecords_v104;
+         CREATE TABLE IF NOT EXISTS rssReadRecords_v104 (
             record TEXT NOT NULL,
             title TEXT,
             readTime INTEGER,
@@ -470,6 +507,7 @@ fn add_is_enabled_if_needed(conn: &Connection) -> LegadoResult<()> {
 }
 
 fn rebuild_rss_sources_drop_enable_cookie_jar(conn: &Connection) -> LegadoResult<()> {
+    recover_interrupted_rebuild(conn, "rssSources", "rssSources_v104")?;
     if !table_exists(conn, "rssSources")? {
         return Ok(());
     }
@@ -479,7 +517,8 @@ fn rebuild_rss_sources_drop_enable_cookie_jar(conn: &Connection) -> LegadoResult
 
     // 读取列清单，重建时去掉 enableCookieJar，合并 cookie jar 语义
     conn.execute_batch(
-        "CREATE TABLE rssSources_v104 (
+        "DROP TABLE IF EXISTS rssSources_v104;
+         CREATE TABLE IF NOT EXISTS rssSources_v104 (
             sourceUrl TEXT NOT NULL,
             sourceName TEXT NOT NULL,
             sourceIcon TEXT NOT NULL DEFAULT '',
@@ -668,6 +707,7 @@ fn rebuild_rss_sources_drop_enable_cookie_jar(conn: &Connection) -> LegadoResult
 }
 
 fn rebuild_search_keywords(conn: &Connection) -> LegadoResult<()> {
+    recover_interrupted_rebuild(conn, "search_keywords", "search_keywords_v104")?;
     if !table_exists(conn, "search_keywords")? {
         conn.execute_batch(CREATE_SEARCH_KEYWORDS)
             .map_err(|e| LegadoError::Database(format!("创建 search_keywords 失败: {e}")))?;
@@ -681,7 +721,8 @@ fn rebuild_search_keywords(conn: &Connection) -> LegadoResult<()> {
     }
 
     conn.execute_batch(
-        "CREATE TABLE search_keywords_v104 (
+        "DROP TABLE IF EXISTS search_keywords_v104;
+         CREATE TABLE IF NOT EXISTS search_keywords_v104 (
             word TEXT NOT NULL,
             usage INTEGER NOT NULL DEFAULT 1,
             lastUseTime INTEGER NOT NULL,
@@ -919,5 +960,126 @@ mod tests {
         );
         assert!(table_exists(conn, "dictRules").unwrap());
         assert!(table_exists(conn, "ruleSubs").unwrap());
+    }
+
+    /// B18：上一次迁移在「建临时表之后、替换之前」中断，库里残留 `*_v104`。
+    /// 再次迁移必须幂等完成，而不是报 "table already exists" 导致开库失败。
+    #[test]
+    fn test_migration_103_to_104_tolerates_leftover_temp_tables() {
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE rssArticles (
+                origin TEXT NOT NULL, sort TEXT NOT NULL, title TEXT NOT NULL,
+                "order" INTEGER NOT NULL, link TEXT, PRIMARY KEY(origin, title)
+            );
+            CREATE TABLE rssStars (
+                origin TEXT NOT NULL, sort TEXT NOT NULL, title TEXT NOT NULL,
+                starTime INTEGER NOT NULL, link TEXT, PRIMARY KEY(origin, title)
+            );
+            CREATE TABLE readRecord (
+                deviceId TEXT NOT NULL DEFAULT '', bookName TEXT NOT NULL,
+                author TEXT NOT NULL DEFAULT '', readTime INTEGER NOT NULL,
+                lastRead INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(bookName)
+            );
+            CREATE TABLE rssReadRecords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                origin TEXT NOT NULL, title TEXT NOT NULL, readTime INTEGER NOT NULL, link TEXT
+            );
+            CREATE TABLE rssSources (
+                sourceUrl TEXT NOT NULL, sourceName TEXT NOT NULL,
+                enableCookieJar INTEGER DEFAULT 0, enabledCookieJar INTEGER DEFAULT 0,
+                PRIMARY KEY(sourceUrl)
+            );
+            CREATE TABLE search_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                keyword TEXT NOT NULL, time INTEGER NOT NULL
+            );
+            CREATE TABLE book_sources (
+                bookSourceUrl TEXT NOT NULL, bookSourceName TEXT NOT NULL,
+                variable TEXT DEFAULT '', PRIMARY KEY(bookSourceUrl)
+            );
+            -- 模拟中断残留（结构与正式建表一致，内容为半成品）
+            CREATE TABLE rssArticles_v104 (stale TEXT);
+            CREATE TABLE rssStars_v104 (stale TEXT);
+            CREATE TABLE readRecord_v104 (stale TEXT);
+            CREATE TABLE rssReadRecords_v104 (stale TEXT);
+            CREATE TABLE rssSources_v104 (stale TEXT);
+            CREATE TABLE search_keywords_v104 (stale TEXT);
+            "#,
+        )
+        .unwrap();
+        conn.execute(
+            r#"INSERT INTO rssArticles (origin, sort, title, "order", link)
+               VALUES ('https://rss.com', 's1', '文章A', 1, 'https://rss.com/a')"#,
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO readRecord (bookName, author, readTime) VALUES ('书A', '作者', 9)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO search_keywords (keyword, time) VALUES ('仙侠', 100)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 103).unwrap();
+
+        let registry = MigrationRegistry::new();
+        registry
+            .migrate_to_latest(conn)
+            .expect("残留临时表不应导致迁移失败");
+        assert_eq!(
+            MigrationRegistry::current_version(conn).unwrap(),
+            crate::schema::SCHEMA_VERSION
+        );
+        // 残留临时表被清理，正式表结构正确，数据未丢
+        assert!(!table_exists(conn, "rssArticles_v104").unwrap());
+        assert!(!table_exists(conn, "search_keywords_v104").unwrap());
+        assert_eq!(
+            primary_key_columns(conn, "rssArticles").unwrap(),
+            vec!["origin", "link", "sort"]
+        );
+        let title: String = conn
+            .query_row("SELECT title FROM rssArticles", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title, "文章A");
+        let word: String = conn
+            .query_row("SELECT word FROM search_keywords", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(word, "仙侠");
+        assert!(conn.is_autocommit(), "迁移结束后连接必须处于 autocommit");
+    }
+
+    /// B18：原表已删、只剩临时表（中断在 DROP 与 RENAME 之间）时不能丢数据
+    #[test]
+    fn test_migration_103_to_104_recovers_table_from_temp_when_original_missing() {
+        let db = Database::open_in_memory_raw().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE search_keywords_v104 (
+                word TEXT NOT NULL, usage INTEGER NOT NULL DEFAULT 1,
+                lastUseTime INTEGER NOT NULL, PRIMARY KEY(word)
+            );
+            INSERT INTO search_keywords_v104 (word, usage, lastUseTime) VALUES ('已搬迁', 2, 5);
+            "#,
+        )
+        .unwrap();
+
+        rebuild_search_keywords(conn).unwrap();
+
+        assert!(table_exists(conn, "search_keywords").unwrap());
+        assert!(!table_exists(conn, "search_keywords_v104").unwrap());
+        let (word, usage): (String, i64) = conn
+            .query_row("SELECT word, usage FROM search_keywords", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(word, "已搬迁");
+        assert_eq!(usage, 2);
     }
 }
