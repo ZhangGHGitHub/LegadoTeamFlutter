@@ -8,7 +8,7 @@
 /// - 密码错误 → 重开密码框并内联提示，允许重试；正确后以 password 调用；
 /// - 探测无需密码 → 不弹框，restore 的 password 为 null；
 /// - 中文/含空格密码原样透传（不 trim）；
-/// - `.json` 备份不调用 backupInspect；
+/// - [批44] JSON 容器同样探测：明文 JSON 不弹框、加密 JSON 弹框并以输入密码恢复；
 /// - 加密内容损坏 → 提示备份文件损坏，不进入重试；
 /// - [批17c P2-2] 空/纯空白密码提交 → 内联「请输入备份密码」，不调用 restore；
 /// - [批17c P3-5] `.json` 命名的加密 zip（按文件魔数判定）仍弹密码框；
@@ -539,10 +539,19 @@ void main() {
     expect(find.text('输入备份密码'), findsNothing);
   });
 
-  testWidgets('JSON 备份不探测密码（不调用 backupInspect）', (tester) async {
-    // 不 stub backupInspect：一旦误调用会抛 mocktail missing stub。
-    // .json 恢复链会触发真实文件 IO（FakeAsync 不驱动），故不进 pumpAndSettle，
-    // 只断言：确认后直接进入「恢复中…」，不出现「检查备份…」/密码框。
+  testWidgets('明文 JSON 备份：探测一次但不弹密码框', (tester) async {
+    // 批44：JSON 容器也会探测（自有备份可字段级加密），明文备份探测结果为
+    // passwordRequired=false → 不弹框。
+    //
+    // 注意：`.json` 恢复链会触发真实文件 IO（FakeAsync 不驱动），故不能用
+    // pumpAndSettle；只断言「已探测 + 无密码框」这一时点状态。
+    when(() => mockApi.backupInspect(any())).thenAnswer(
+      (_) async => const BackupInspectInfo(
+        format: BackupFormat.json,
+        passwordRequired: false,
+        passwordProtectedFiles: [],
+      ),
+    );
     final backupPath = fakeBackupPath('legado_backup_plain_pwd.json');
     _useFakeFilePicker(
       _FakeFilePicker(
@@ -559,12 +568,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('确认恢复吗？'), findsOneWidget);
     await tester.tap(dialogButton('恢复'));
-    await tester.pump();
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
 
-    expect(find.text('恢复中…'), findsOneWidget);
-    expect(find.text('检查备份…'), findsNothing);
     expect(find.text('输入备份密码'), findsNothing);
-    verifyNever(() => mockApi.backupInspect(any()));
+    verify(() => mockApi.backupInspect(backupPath)).called(1);
+  });
+
+  testWidgets('加密 JSON 备份：弹密码框列出受保护字段', (tester) async {
+    // 批44：自有 JSON 备份的字段级加密（servers[].config / 直链规则）。
+    // 同样避开 pumpAndSettle（后续恢复链有真实文件 IO）。
+    when(() => mockApi.backupInspect(any())).thenAnswer(
+      (_) async => const BackupInspectInfo(
+        format: BackupFormat.json,
+        passwordRequired: true,
+        passwordProtectedFiles: [
+          'servers.json',
+          'directLinkUploadRule.json',
+        ],
+        encryption: 'aes-ecb-md5',
+      ),
+    );
+    final backupPath = fakeBackupPath('legado_backup_encrypted.json');
+    _useFakeFilePicker(
+      _FakeFilePicker(
+        FilePickerResult([
+          PlatformFile(name: 'backup.json', size: 0, path: backupPath),
+        ]),
+      ),
+    );
+    await pumpScreen(tester);
+
+    await tester.scrollUntilVisible(find.text('恢复'), 100);
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('恢复'));
+    await tester.pumpAndSettle();
+    await tester.tap(dialogButton('恢复'));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+
+    expect(find.text('输入备份密码'), findsOneWidget);
+    expect(find.textContaining('直链上传规则'), findsOneWidget);
+    verify(() => mockApi.backupInspect(backupPath)).called(1);
+    // 弹框阶段尚未调用 restore（取消即中止、零写入）
+    verifyNever(() => mockApi.restore(any(), password: any(named: 'password')));
   });
 
   // ─── 批17c P2-2：空密码提交不得静默成功 ─────────────────────────────

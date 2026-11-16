@@ -901,12 +901,23 @@ abstract class BookApi {
   // ========== 备份操作 ==========
 
   /// 备份数据
-  Future<String> backup(String dirPath);
+  ///
+  /// [password]（契约 §2.11 批44）：非空时 Rust 对 `servers[].config` 与
+  /// `directLinkUploadRule` 做**字段级** AES-128-ECB 加密（值带 `ENC:` 前缀）
+  /// 并写 `encryption:"aes-ecb-md5"`；`null`/空串 = 明文备份（与 v7 一致）。
+  /// 真实实现从 `PrefKeys.localPassword` 取值（该键不进 `appPrefs`，
+  /// 不会二次外泄）。
+  Future<String> backup(String dirPath, {String? password});
 
   /// 恢复数据
   ///
-  /// [password] 为原版 zip 备份密码（契约 §2.11 批17a）：仅对原版多文件
-  /// zip 备份生效，`null`/空串等价空密码；我方单文件 JSON 备份忽略该参数。
+  /// [password] 同时用于两类备份（契约 §2.11 批17a/批44）：
+  /// - 原版多文件 zip 备份：解密 `servers.json`/`cookies.json`/
+  ///   `runtimeSourceCache.json`；
+  /// - 我方单文件 JSON 备份：解密带 `ENC:` 前缀的 `servers[].config` 与
+  ///   `directLinkUploadRule`（无前缀的旧备份不受影响）。
+  ///
+  /// `null`/空串等价空密码/未提供。
   Future<void> restore(String backupPath, {String? password});
 
   /// 探测备份是否需要密码（契约 §2.11 批17a，只读）

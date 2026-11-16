@@ -1543,10 +1543,11 @@ fn wire__crate__ffi__ffi__backup_create_impl(
             let mut deserializer =
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_path = <String>::sse_decode(&mut deserializer);
+            let api_password = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::backup_create(api_path)?;
+                    let output_ok = crate::ffi::ffi::backup_create(api_path, api_password)?;
                     Ok(output_ok)
                 })())
             }

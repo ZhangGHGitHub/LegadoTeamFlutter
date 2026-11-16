@@ -547,7 +547,7 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   // ========== 备份操作 ==========
 
   @override
-  Future<String> backup(String dirPath) async {
+  Future<String> backup(String dirPath, {String? password}) async {
     return '$dirPath/legado_backup_mock.json';
   }
 

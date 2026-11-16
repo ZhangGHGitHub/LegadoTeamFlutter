@@ -697,9 +697,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     if (!await _confirmLocalRestore()) return;
     if (!mounted) return;
 
-    // [批17b] 仅 zip 容器探测密码；探测只读，不写库、不落盘
+    // [批17b] 探测密码；批44 起 **JSON 容器也探测**（自有备份可字段级加密）。
+    // 探测只读，不写库、不落盘。
     BackupInspectInfo? inspect;
-    if (isZip) {
+    {
       final api = ref.read(bookApiProvider);
       final inspectResult = await _runWithProgress('检查备份…', () async {
         inspect = await api.backupInspect(backupPath);
@@ -1786,6 +1787,8 @@ class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
     'servers.json' => '服务器配置',
     'cookies.json' => '登录信息',
     'runtimeSourceCache.json' => '书源运行变量',
+    // 批44：JSON 备份的字段级加密条目（复用同一标签表）
+    'directLinkUploadRule.json' => '直链上传规则',
     _ => file,
   };
 

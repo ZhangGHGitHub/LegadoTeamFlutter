@@ -398,6 +398,21 @@ pub struct BackupData {
         deserialize_with = "deserialize_direct_link_upload_rule"
     )]
     pub direct_link_upload_rule: Option<String>,
+    /// 加密标记（批44，自有 JSON 备份字段级加密）
+    ///
+    /// 值固定为 [`BACKUP_ENCRYPTION_AES_ECB_MD5`]（`"aes-ecb-md5"`）；**不加密
+    /// 时省略该键**（`skip_serializing_if`），保证无密码备份的形状与 v7 一致。
+    /// 消费方：
+    /// - [`backup_inspect`]：非空 → `passwordRequired = true`，`passwordProtectedFiles`
+    ///   为 [`JSON_ENCRYPTED_FIELDS`]；
+    /// - 恢复侧**不依赖**该键（按字段 `ENC:` 前缀逐条判定，避免标记与实际内容
+    ///   不一致时误判）；该键仅作探测与人工可读性标记。
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "encryption"
+    )]
+    pub encryption: Option<String>,
     /// Cookie 列表（批17a，**仅**由原版 zip 适配层填充）
     ///
     /// 原版 `cookies.json` 元素形态 `{url, cookie}`。`serde(skip)`：我方单文件
@@ -488,6 +503,7 @@ impl BackupData {
             cover_rules: Vec::new(),
             chapter_reviews: Vec::new(),
             direct_link_upload_rule: None,
+            encryption: None,
             cookies: Vec::new(),
             runtime_source_caches: Vec::new(),
         }
@@ -582,7 +598,15 @@ pub struct RestoreStats {
     pub read_records: usize,
 }
 
-/// 创建备份到指定路径
+/// 创建备份到指定路径（无密码旧入口）
+///
+/// 兼容包装：等价于 [`backup_create_with_password`] 传 `None`（不加密）。
+/// 旧调用方（C bridge `ffi_backup_create`、既有单测）行为与 v7 完全一致。
+pub fn backup_create(path: &str) -> LegadoResult<String> {
+    backup_create_with_password(path, None)
+}
+
+/// 创建备份到指定路径（批44：支持字段级加密）
 ///
 /// 收集 BackupData 全部 20 类数据（v6 覆盖面，对齐原版 `Backup.kt:279-330`
 /// 中所有表已在库的类别，以及 `servers.json`/`directLinkUploadRule.json`/
@@ -596,7 +620,11 @@ pub struct RestoreStats {
 /// 批41 回修 P2-1：位于本机媒体根 `covers/`、`readRecordCovers/` 下的封面绝对
 /// 路径（zip 恢复 remap 写入的本地缓存引用）归一为 null，避免 JSON 备份外带
 /// 本机路径、异机恢复得到悬空引用。
-pub fn backup_create(path: &str) -> LegadoResult<String> {
+///
+/// 批44（`password` 非空时）：**仅**加密 `servers[].config` 与
+/// `directLinkUploadRule`（见 [`encrypt_json_backup_fields`]），并写
+/// `encryption: "aes-ecb-md5"`。`None`/空串 = 明文（不写该键）。
+pub fn backup_create_with_password(path: &str, password: Option<&str>) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -832,6 +860,8 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             cover_rules,
             chapter_reviews,
             direct_link_upload_rule,
+            // 批44：加密标记在写出前由 [`encrypt_json_backup_fields`] 决定
+            encryption: None,
             // 批17a：cookies / 运行时变量只走原版 zip 恢复，自有 JSON 备份不收集
             cookies: Vec::new(),
             runtime_source_caches: Vec::new(),
@@ -845,6 +875,14 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
         })?;
     }
 
+    // 批44：字段级加密（仅 servers[].config 与 directLinkUploadRule）。
+    // 必须在**序列化之前**对结构化数据动手（而不是对 JSON 文本做字符串替换），
+    // 这样 `ENC:` 前缀只会出现在这两个字段的值上，不会被误加到别处。
+    let mut backup_data = backup_data;
+    if let Some(password) = password.filter(|p| !p.is_empty()) {
+        encrypt_json_backup_fields(&mut backup_data, password)?;
+    }
+
     // 写入文件
     let json = serde_json::to_string_pretty(&backup_data)
         .map_err(|e| LegadoError::Internal(format!("备份序列化失败: {e}")))?;
@@ -852,6 +890,130 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("写入备份文件失败: {e}"))))?;
 
     Ok(path.to_string())
+}
+
+/// 对自有 JSON 备份的敏感字段做字段级加密（批44）
+///
+/// **只加密两个字段**（其余数据保持明文，保证 Dart 侧读改 JSON 的链路不被破坏）：
+/// - `servers[].config`：WebDAV/远程书库配置 JSON，内含明文 `password`；
+/// - `directLinkUploadRule`：直链上传规则 JSON，`uploadUrl` 的 options 可能含 token。
+///
+/// 加密值 = `"ENC:" + base64(AES-128-ECB/MD5 派生密钥)`，与恢复侧
+/// [`decrypt_json_backup_fields`] 严格互逆。`servers[].config` 为空/缺失时跳过
+/// （不写 `"ENC:"` 空壳）；`direct_link_upload_rule` 为 `None` 时跳过。
+///
+/// 同时写入 `encryption = "aes-ecb-md5"` 标记，供 [`backup_inspect`] 探测。
+fn encrypt_json_backup_fields(backup: &mut BackupData, password: &str) -> LegadoResult<()> {
+    let cipher = BackupCipher::new(Some(password));
+
+    for server in &mut backup.servers {
+        // 只在值是「非空字符串」时加密：`config` 为 null/缺失/空白都不加前缀，
+        // 避免产生「空内容的密文」这种既无用又需要密码才能解开的条目。
+        let Some(config) = server.get("config").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if config.trim().is_empty() || config.starts_with(BACKUP_ENC_PREFIX) {
+            continue;
+        }
+        let encrypted = cipher.encrypt_text(config)?;
+        server["config"] = serde_json::Value::String(format!("{BACKUP_ENC_PREFIX}{encrypted}"));
+    }
+
+    if let Some(rule) = backup.direct_link_upload_rule.as_deref() {
+        if !rule.trim().is_empty() && !rule.starts_with(BACKUP_ENC_PREFIX) {
+            let encrypted = cipher.encrypt_text(rule)?;
+            backup.direct_link_upload_rule = Some(format!("{BACKUP_ENC_PREFIX}{encrypted}"));
+        }
+    }
+
+    backup.encryption = Some(BACKUP_ENCRYPTION_AES_ECB_MD5.to_string());
+    Ok(())
+}
+
+/// 解密自有 JSON 备份中带 `ENC:` 前缀的字段（批44，恢复侧）
+///
+/// **fail-closed**：带前缀但无密码/解密失败/解出非 UTF-8 → 该条目只记 warn
+/// 并**清空该字段**（不把密文当明文写库）：
+/// - `servers[].config` 置 null（服务器条目其余列照常恢复）；
+/// - `direct_link_upload_rule` 置 `None`（库内既有配置保持不变）。
+///
+/// 不带前缀的字段原样保留——这保证「新版本读旧备份」零变化。
+/// 返回值仅用于日志（成功解密的条目数）。
+fn decrypt_json_backup_fields(backup: &mut BackupData, password: Option<&str>) -> usize {
+    let Some(password) = password.filter(|p| !p.is_empty()) else {
+        // 无密码：把所有带前缀的字段按「解不开」处理（fail-closed）
+        return drop_undecryptable_json_fields(backup);
+    };
+    let cipher = BackupCipher::new(Some(password));
+    let mut decrypted = 0usize;
+
+    for server in &mut backup.servers {
+        let Some(config) = server.get("config").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(payload) = config.strip_prefix(BACKUP_ENC_PREFIX) else {
+            continue;
+        };
+        match cipher.decrypt_text(payload) {
+            Ok(plain) => {
+                server["config"] = serde_json::Value::String(plain);
+                decrypted += 1;
+            }
+            Err(e) => {
+                // 只记条目名与错误类型，不打印密文/明文（服务器名可能含敏感信息）
+                log::warn!("服务器配置解密失败（已跳过该条目的 config）: {e}");
+                server["config"] = serde_json::Value::Null;
+            }
+        }
+    }
+
+    if let Some(rule) = backup.direct_link_upload_rule.clone() {
+        if let Some(payload) = rule.strip_prefix(BACKUP_ENC_PREFIX) {
+            match cipher.decrypt_text(payload) {
+                Ok(plain) => {
+                    backup.direct_link_upload_rule = Some(plain);
+                    decrypted += 1;
+                }
+                Err(e) => {
+                    log::warn!("直链上传规则解密失败（已跳过，库内既有配置保持不变）: {e}");
+                    backup.direct_link_upload_rule = None;
+                }
+            }
+        }
+    }
+
+    decrypted
+}
+
+/// 无密码时把所有带 `ENC:` 前缀的字段按「解不开」处理（fail-closed）
+///
+/// 与 [`decrypt_json_backup_fields`] 的失败分支同语义，抽出避免重复。
+fn drop_undecryptable_json_fields(backup: &mut BackupData) -> usize {
+    let mut dropped = 0usize;
+
+    for server in &mut backup.servers {
+        let is_encrypted = server
+            .get("config")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| s.starts_with(BACKUP_ENC_PREFIX));
+        if is_encrypted {
+            log::warn!("服务器配置已加密但未提供备份密码（已跳过该条目的 config）");
+            server["config"] = serde_json::Value::Null;
+            dropped += 1;
+        }
+    }
+
+    if backup
+        .direct_link_upload_rule
+        .as_deref()
+        .is_some_and(|s| s.starts_with(BACKUP_ENC_PREFIX))
+    {
+        log::warn!("直链上传规则已加密但未提供备份密码（已跳过，库内既有配置保持不变）");
+        backup.direct_link_upload_rule = None;
+        dropped += 1;
+    }
+
+    dropped
 }
 
 /// 从备份文件恢复（无密码旧入口）
@@ -937,6 +1099,14 @@ pub fn backup_restore_with_password(path: &str, password: Option<&str>) -> Legad
     // 恢复前按「目标存在才保留，否则 null」守卫（zip 分支已在 normalize_zip_* 处理）
     guard_json_backup_covers(&mut backup);
 
+    // 批44：字段级解密（仅带 `ENC:` 前缀的 servers[].config 与
+    // directLinkUploadRule）。无密码/解密失败按条目 warn 跳过（fail-closed，
+    // 不把密文当明文写库）；不带前缀的值原样使用（旧备份零变化）。
+    let decrypted = decrypt_json_backup_fields(&mut backup, password);
+    if decrypted > 0 {
+        log::info!("备份恢复：已解密 {decrypted} 个加密字段");
+    }
+
     restore_backup_data(&backup, replace_policy)
 }
 
@@ -995,7 +1165,30 @@ pub fn backup_inspect(path: &str) -> LegadoResult<String> {
             "不支持的备份格式：文件既不是原版 zip 备份，也不是本应用的 JSON 备份".to_string(),
         ));
     }
-    Ok(r#"{"format":"json","passwordRequired":false,"passwordProtectedFiles":[]}"#.to_string())
+
+    // 批44：自有 JSON 备份的字段级加密。只解析顶层 `encryption` 键——用
+    // 最小结构体反序列化，未知字段走 serde 的 `IgnoredAny`（逐 token 跳过、
+    // 不建 `Value` 树），避免为大备份付出「建整棵 JSON 树」的内存与 CPU。
+    let encryption = serde_json::from_slice::<JsonBackupEncryptionProbe>(&bytes)
+        .ok()
+        .and_then(|probe| probe.encryption)
+        .filter(|marker| !marker.trim().is_empty());
+
+    let result = match encryption {
+        Some(marker) => serde_json::json!({
+            "format": "json",
+            "passwordRequired": true,
+            "passwordProtectedFiles": JSON_ENCRYPTED_FIELDS,
+            "encryption": marker,
+        }),
+        None => serde_json::json!({
+            "format": "json",
+            "passwordRequired": false,
+            "passwordProtectedFiles": [],
+        }),
+    };
+    serde_json::to_string(&result)
+        .map_err(|e| LegadoError::Internal(format!("备份探测结果序列化失败: {e}")))
 }
 
 /// 探测单个可能加密的 zip 条目是否需要密码
@@ -3125,6 +3318,44 @@ impl BackupCipher {
         String::from_utf8(plain)
             .map_err(|e| LegadoError::Internal(format!("备份密文解密结果不是 UTF-8: {e}")))
     }
+
+    /// 加密为原版备份密文（UTF-8 → AES-128-ECB/PKCS5 → Base64）
+    ///
+    /// 与 [`Self::decrypt_text`] 严格互逆（同一密钥派生、同一算法、同一编码），
+    /// 供批44 的自有 JSON 备份**字段级**加密使用。复用
+    /// [`AesCrypto::encrypt_ecb`]，零新依赖。
+    fn encrypt_text(&self, text: &str) -> LegadoResult<String> {
+        let ciphertext = AesCrypto::encrypt_ecb(&self.key, text.as_bytes())?;
+        Ok(base64::engine::general_purpose::STANDARD.encode(ciphertext))
+    }
+}
+
+/// 自有 JSON 备份中「字段级加密值」的前缀标记（批44）
+///
+/// 只有 `servers[].config` 与 `directLinkUploadRule` 两个字段会带该前缀；
+/// 恢复侧见到前缀即要求密码解密，解不开按条目 warn 跳过（fail-closed，
+/// 不把密文当明文写库）。不带前缀的值一律按明文原样使用——这保证
+/// 「新版本读旧备份」零变化。
+const BACKUP_ENC_PREFIX: &str = "ENC:";
+
+/// 自有 JSON 备份的加密标记键与取值（批44）
+///
+/// 写在 `BackupData.encryption`（JSON 键名由 `#[serde(rename = "encryption")]`
+/// 固定，与本常量同源语义），供 `backup_inspect` 判定 `passwordRequired`。
+/// 不加密时**省略该键**（旧版本解析不受影响）。
+const BACKUP_ENCRYPTION_AES_ECB_MD5: &str = "aes-ecb-md5";
+
+/// 加密后需要标记为「受保护」的逻辑文件名（`backup_inspect` 复用 zip 的标签口径）
+const JSON_ENCRYPTED_FIELDS: [&str; 2] = ["servers.json", "directLinkUploadRule.json"];
+
+/// `backup_inspect` 的 JSON 容器最小探测结构（批44）
+///
+/// 只取顶层 `encryption` 键；其余字段一律被 serde 跳过（不建 `Value` 树），
+/// 因此对大备份探测的代价与文件体积线性但内存常量级。
+#[derive(Debug, Default, Deserialize)]
+struct JsonBackupEncryptionProbe {
+    #[serde(default, rename = "encryption")]
+    encryption: Option<String>,
 }
 
 /// 按空密码密钥解密（仅供单测锚定历史空密码向量）
@@ -10177,6 +10408,367 @@ mod tests {
             let rules = CoverRuleRepository::new(db.connection()).find_all()?;
             assert_eq!(rules.len(), 1, "坏 coverRule.json 不得清库: {rules:?}");
             assert_eq!(rules[0].id, 71);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ─── 批44：备份创建侧字段级加密 ─────────────────────────────
+
+    /// 加密种子：一条含明文密码的服务器配置
+    const ENC_SERVER_CONFIG: &str =
+        r#"{"url":"https://secret.example/dav/","username":"alice","password":"P@ssw0rd!"}"#;
+
+    /// 在库内写入一条带明文密码的 WebDAV 服务器配置
+    fn seed_encrypted_server() {
+        with_database(|db| {
+            ServerRepository::new(db.connection()).upsert(&legado_core::models::Server {
+                id: 1700000000999,
+                name: "加密测试服务器".to_string(),
+                server_type: legado_core::models::ServerType::WebDav,
+                config: Some(ENC_SERVER_CONFIG.to_string()),
+                sort_number: 9,
+            })?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+    }
+
+    /// [批44] 加密往返：备份 → 清库 → 用密码恢复 → 服务器配置逐字节一致
+    ///
+    /// 同时断言：
+    /// - 备份文件内**不含明文密码**（`P@ssw0rd!` 不出现在任何位置）；
+    /// - `servers[].config` 与 `directLinkUploadRule` 都带 `ENC:` 前缀；
+    /// - `encryption` 标记为 `aes-ecb-md5`；
+    /// - 恢复后配置文本与原始种子逐字节相同。
+    #[test]
+    fn test_backup_encryption_roundtrip_with_password() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_encrypted_server();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        let dir = std::env::temp_dir().join("legado_backup_encryption_roundtrip");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("encrypted_backup.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        backup_create_with_password(path_str, Some("secret-pw")).unwrap();
+
+        let content = fs::read_to_string(&backup_path).unwrap();
+        assert!(
+            !content.contains("P@ssw0rd!"),
+            "加密备份不得出现明文密码: {content}"
+        );
+        assert!(
+            !content.contains("secret.example"),
+            "加密备份不得出现服务器 URL 明文（config 整体加密）: {content}"
+        );
+
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            parsed.encryption.as_deref(),
+            Some("aes-ecb-md5"),
+            "加密备份应带 encryption 标记"
+        );
+        let server_config = parsed.servers[0]["config"].as_str().unwrap();
+        assert!(
+            server_config.starts_with(BACKUP_ENC_PREFIX),
+            "servers[].config 应带 ENC: 前缀: {server_config}"
+        );
+        let rule = parsed.direct_link_upload_rule.as_deref().unwrap();
+        assert!(
+            rule.starts_with(BACKUP_ENC_PREFIX),
+            "directLinkUploadRule 应带 ENC: 前缀: {rule}"
+        );
+        // 非敏感段保持明文（Dart 侧读改 JSON 的链路依赖）
+        assert!(
+            content.contains("\"version\""),
+            "顶层结构必须保持明文 JSON: {content}"
+        );
+
+        // 清库后用正确密码恢复
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM servers", [])
+                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        set_direct_link_rule_config(None);
+
+        backup_restore_with_password(path_str, Some("secret-pw")).unwrap();
+
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 1, "应恢复 1 条服务器配置");
+        assert_eq!(
+            restored[0].config.as_deref(),
+            Some(ENC_SERVER_CONFIG),
+            "解密后的 config 应与原始明文逐字节一致"
+        );
+
+        let rule = with_database(|db| {
+            CacheRepository::new(db.connection()).get(&direct_link_upload_rule_cache_key())
+        })
+        .unwrap();
+        assert_eq!(
+            rule.as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "解密后的直链规则应与原始明文逐字节一致"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批44] 错误密码恢复：加密字段按条目 warn 跳过（fail-closed）
+    ///
+    /// 断言：服务器行照常恢复（其余列不丢），但 `config` 被清空而非写入密文；
+    /// 直链规则**不写库**（库内既有配置保持不变）。
+    #[test]
+    fn test_backup_encryption_wrong_password_fails_closed() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_encrypted_server();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        let dir = std::env::temp_dir().join("legado_backup_encryption_wrong_pw");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("encrypted_backup.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        backup_create_with_password(path_str, Some("correct-pw")).unwrap();
+
+        // 清库：config 置 None、直链规则保留旧值以便断言「不被覆盖」
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM servers", [])
+                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        set_direct_link_rule_config(Some("{\"uploadUrl\":\"https://keep.example/\"}"));
+
+        backup_restore_with_password(path_str, Some("wrong-pw")).unwrap();
+
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 1, "服务器行仍应恢复（仅 config 跳过）");
+        assert_eq!(
+            restored[0].config, None,
+            "解密失败的 config 必须清空，不得把密文当明文写库"
+        );
+        assert_eq!(restored[0].name, "加密测试服务器", "非敏感列不受影响");
+
+        let rule = with_database(|db| {
+            CacheRepository::new(db.connection()).get(&direct_link_upload_rule_cache_key())
+        })
+        .unwrap();
+        assert_eq!(
+            rule.as_deref(),
+            Some("{\"uploadUrl\":\"https://keep.example/\"}"),
+            "解密失败的直链规则不得覆盖库内既有配置"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批44] 无密码恢复加密备份：同样 fail-closed
+    #[test]
+    fn test_backup_encryption_without_password_fails_closed() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_encrypted_server();
+
+        let dir = std::env::temp_dir().join("legado_backup_encryption_no_pw");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("encrypted_backup.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        backup_create_with_password(path_str, Some("correct-pw")).unwrap();
+
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM servers", [])
+                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        // 不传密码（旧调用形态）
+        backup_restore(path_str).unwrap();
+
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(
+            restored[0].config, None,
+            "无密码时加密 config 必须清空（不得写密文）"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批44] 无密码备份与 v7 完全一致：不写 `encryption` 键、配置保持明文
+    #[test]
+    fn test_backup_without_password_stays_plaintext() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_encrypted_server();
+
+        let dir = std::env::temp_dir().join("legado_backup_plaintext_shape");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("plain_backup.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        // 显式空串与 None 都必须走明文分支
+        for (idx, pw) in [None, Some("")].into_iter().enumerate() {
+            let path = if idx == 0 {
+                backup_path.clone()
+            } else {
+                dir.join("plain_backup_empty_pw.json")
+            };
+            backup_create_with_password(path.to_str().unwrap(), pw).unwrap();
+            let content = fs::read_to_string(&path).unwrap();
+            assert!(
+                !content.contains("\"encryption\""),
+                "无密码备份不得写 encryption 键: {content}"
+            );
+            assert!(
+                !content.contains(BACKUP_ENC_PREFIX),
+                "无密码备份不得出现 ENC: 前缀: {content}"
+            );
+            assert!(
+                content.contains("P@ssw0rd!"),
+                "无密码备份应保持明文（与 v7 一致）: {content}"
+            );
+        }
+
+        // 无密码恢复可正常读回明文
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM servers", [])
+                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        backup_restore(path_str).unwrap();
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(
+            restored[0].config.as_deref(),
+            Some(ENC_SERVER_CONFIG),
+            "明文备份恢复后配置应原样保留"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批44] `backup_inspect` 对 JSON 容器识别加密标记
+    #[test]
+    fn test_backup_inspect_json_encryption_marker() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        seed_encrypted_server();
+
+        let dir = std::env::temp_dir().join("legado_backup_inspect_json_enc");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // 加密备份
+        let enc_path = dir.join("enc.json");
+        backup_create_with_password(enc_path.to_str().unwrap(), Some("pw")).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_str(&backup_inspect(enc_path.to_str().unwrap()).unwrap()).unwrap();
+        assert_eq!(report["format"], "json");
+        assert_eq!(report["passwordRequired"], true);
+        assert_eq!(
+            report["passwordProtectedFiles"],
+            serde_json::json!(["servers.json", "directLinkUploadRule.json"]),
+            "JSON 加密应列出两个受保护字段"
+        );
+        assert_eq!(report["encryption"], "aes-ecb-md5");
+
+        // 明文备份
+        let plain_path = dir.join("plain.json");
+        backup_create(plain_path.to_str().unwrap()).unwrap();
+        let report: serde_json::Value =
+            serde_json::from_str(&backup_inspect(plain_path.to_str().unwrap()).unwrap()).unwrap();
+        assert_eq!(report["format"], "json");
+        assert_eq!(report["passwordRequired"], false);
+        assert_eq!(report["passwordProtectedFiles"], serde_json::json!([]));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批44] `encrypt_text` 与 `decrypt_text` 严格互逆
+    #[test]
+    fn test_backup_cipher_encrypt_decrypt_roundtrip() {
+        let cipher = BackupCipher::new(Some("secret"));
+        for plain in [
+            "hello",
+            "",
+            r#"{"url":"https://a.example/","password":"p"}"#,
+            "中文内容与 emoji 🫅",
+            // 恰为 16 字节整块边界（PKCS7 会补整块）
+            "0123456789abcdef",
+        ] {
+            let encrypted = cipher.encrypt_text(plain).unwrap();
+            assert!(!encrypted.contains(plain) || plain.is_empty());
+            assert_eq!(
+                cipher.decrypt_text(&encrypted).unwrap(),
+                plain,
+                "加解密应互逆: {plain}"
+            );
+        }
+        // 不同密码不能解开
+        assert!(
+            BackupCipher::new(Some("other"))
+                .decrypt_text(&cipher.encrypt_text("payload").unwrap())
+                .is_err(),
+            "错误密码解密应失败"
+        );
+    }
+
+    /// [批44] 原版 zip 备份的 `servers.json` 与本方加密值互操作
+    ///
+    /// 本方字段级加密与恢复侧 zip 整文件解密走同一 `BackupCipher`：把「整段
+    /// servers 数组文本」用同一密码加密后作为 zip 的 `servers.json` 条目，
+    /// 应能用同一密码解出并落库。
+    #[test]
+    fn test_backup_encryption_interop_with_zip_cipher() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let cipher = BackupCipher::new(Some("shared-pw"));
+        let servers_json = serde_json::to_string(&serde_json::json!([{
+            "id": 1700000000888_i64,
+            "name": "互操作",
+            "type": "WEBDAV",
+            "config": ENC_SERVER_CONFIG,
+            "sortNumber": 0,
+        }]))
+        .unwrap();
+        let encrypted = cipher.encrypt_text(&servers_json).unwrap();
+
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_backup_enc_interop",
+            &[("servers.json", encrypted.as_bytes())],
+        );
+        let _media_guard = set_test_media_root(&dir.join("media"));
+
+        backup_restore_with_password(&path, Some("shared-pw")).unwrap();
+
+        with_database(|db| {
+            let servers = ServerRepository::new(db.connection()).find_all()?;
+            assert_eq!(servers.len(), 1, "zip 加密 servers.json 应可解密恢复");
+            assert_eq!(servers[0].config.as_deref(), Some(ENC_SERVER_CONFIG));
             Ok::<(), LegadoError>(())
         })
         .unwrap();

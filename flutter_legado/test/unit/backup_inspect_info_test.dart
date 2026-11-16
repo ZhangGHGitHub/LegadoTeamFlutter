@@ -122,4 +122,48 @@ void main() {
       );
     });
   });
+
+  // ─── 批44：自有 JSON 备份的字段级加密标记 ─────────────────────────
+
+  group('BackupInspectInfo.decode（批44 JSON 加密标记）', () {
+    test('加密 JSON：passwordRequired + 两个受保护字段 + encryption 标记', () {
+      final info = BackupInspectInfo.decode(
+        '{"format":"json","passwordRequired":true,'
+        '"passwordProtectedFiles":["servers.json","directLinkUploadRule.json"],'
+        '"encryption":"aes-ecb-md5"}',
+      );
+
+      expect(info.format, BackupFormat.json);
+      expect(info.isZip, isFalse);
+      expect(info.passwordRequired, isTrue);
+      expect(info.passwordProtectedFiles, [
+        'servers.json',
+        'directLinkUploadRule.json',
+      ]);
+      expect(info.encryption, 'aes-ecb-md5');
+    });
+
+    test('明文 JSON：无 encryption 键 → encryption 为 null', () {
+      final info = BackupInspectInfo.decode(
+        '{"format":"json","passwordRequired":false,'
+        '"passwordProtectedFiles":[]}',
+      );
+
+      expect(info.encryption, isNull);
+    });
+
+    test('encryption 非字符串/空串 → 视为缺失（纯诊断字段不阻断恢复）', () {
+      final nonString = BackupInspectInfo.decode(
+        '{"format":"json","passwordRequired":false,'
+        '"passwordProtectedFiles":[],"encryption":123}',
+      );
+      expect(nonString.encryption, isNull);
+
+      final empty = BackupInspectInfo.decode(
+        '{"format":"json","passwordRequired":false,'
+        '"passwordProtectedFiles":[],"encryption":""}',
+      );
+      expect(empty.encryption, isNull);
+    });
+  });
 }

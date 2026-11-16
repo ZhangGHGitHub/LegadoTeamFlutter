@@ -504,8 +504,13 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   /// 备份数据（委托 Rust backup_create：收集全量数据写入 JSON 文件）
   ///
   /// 在 [dirPath] 下生成时间戳命名的备份文件，返回实际备份文件路径。
+  ///
+  /// [password]（契约 §2.11 批44）：非空时 Rust 对 `servers[].config` 与
+  /// `directLinkUploadRule` 做**字段级**加密。默认取 `PrefKeys.localPassword`
+  /// （Web 服务鉴权密码，已排除在 `appPrefs` 备份之外，不会二次外泄）；
+  /// 用户未设置该密码时按明文备份（与 v7 一致，不强制设密）。
   @override
-  Future<String> backup(String dirPath) async {
+  Future<String> backup(String dirPath, {String? password}) async {
     final dir = Directory(dirPath);
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -513,13 +518,21 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     final fileName =
         'legado_backup_${DateTime.now().millisecondsSinceEpoch}.json';
     final filePath = '$dirPath${Platform.pathSeparator}$fileName';
-    return bridge.backupCreate(path: filePath);
+    // 未显式传入时回落到本机密码；空串视同未设置（Rust 侧也会判空）
+    final effectivePassword =
+        password ?? await SettingsService().getStringPref(PrefKeys.localPassword);
+    return bridge.backupCreate(
+      path: filePath,
+      password: effectivePassword.isEmpty ? null : effectivePassword,
+    );
   }
 
   /// 恢复数据（委托 Rust backup_restore：从备份文件导入）
   ///
-  /// [password] 仅对原版 zip 备份生效（契约 §2.11 批17a），`null`/空串
-  /// 等价空密码；我方单文件 JSON 备份忽略该参数。
+  /// [password] 同时用于两类备份（契约 §2.11 批17a/批44）：原版 zip 的
+  /// `servers.json`/`cookies.json`/`runtimeSourceCache.json`，以及我方 JSON
+  /// 备份中带 `ENC:` 前缀的 `servers[].config` / `directLinkUploadRule`。
+  /// `null`/空串 = 未提供（JSON 备份中的加密字段按条目 warn 跳过）。
   @override
   Future<void> restore(String backupPath, {String? password}) async {
     final file = File(backupPath);

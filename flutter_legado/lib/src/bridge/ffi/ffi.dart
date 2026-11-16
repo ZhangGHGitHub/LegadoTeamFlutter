@@ -2157,8 +2157,14 @@ Future<String> audioGetChapterMedia({
 );
 
 /// 创建备份到指定路径，返回备份文件路径
-Future<String> backupCreate({required String path}) =>
-    RustLib.instance.api.crateFfiFfiBackupCreate(path: path);
+///
+/// 契约 §2.11（批44）：`password` 非空时对 `servers[].config` 与
+/// `directLinkUploadRule` 做字段级 AES-128-ECB 加密（加 `ENC:` 前缀），
+/// 并写 `encryption:"aes-ecb-md5"`；`None`/空串 = 明文（与 v7 一致）。
+Future<String> backupCreate({required String path, String? password}) => RustLib
+    .instance
+    .api
+    .crateFfiFfiBackupCreate(path: path, password: password);
 
 /// 从备份文件恢复，返回恢复统计（JSON）
 ///

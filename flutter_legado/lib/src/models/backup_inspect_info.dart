@@ -28,13 +28,15 @@ enum BackupFormat {
 /// `{"format":"zip"|"json","passwordRequired":bool,"passwordProtectedFiles":[string]}`
 ///
 /// [passwordProtectedFiles] 为「用空密码解不开」的加密条目（固定顺序：
-/// `servers.json` / `cookies.json` / `runtimeSourceCache.json`），
+/// `servers.json` / `cookies.json` / `runtimeSourceCache.json`；
+/// 批44 起 JSON 容器的字段级加密为 `servers.json` / `directLinkUploadRule.json`），
 /// [passwordRequired] 即该列表非空。UI 只消费本模型，不自行解析 JSON。
 class BackupInspectInfo {
   const BackupInspectInfo({
     required this.format,
     required this.passwordRequired,
     required this.passwordProtectedFiles,
+    this.encryption,
   });
 
   /// 备份容器格式
@@ -43,8 +45,13 @@ class BackupInspectInfo {
   /// 是否需要备份密码
   final bool passwordRequired;
 
-  /// 受密码保护的条目标识（zip 内文件名）
+  /// 受密码保护的条目标识（zip 内文件名 / JSON 的逻辑字段名）
   final List<String> passwordProtectedFiles;
+
+  /// 加密标记（批44；仅 JSON 容器可能返回，如 `aes-ecb-md5`）
+  ///
+  /// 仅供诊断展示，UI 行为只依赖 [passwordRequired]。
+  final String? encryption;
 
   /// 是否为原版 zip 备份
   bool get isZip => format == BackupFormat.zip;
@@ -77,10 +84,17 @@ class BackupInspectInfo {
       files.add(item);
     }
 
+    // 批44：加密标记为可选字段（旧后端不返回）；非字符串按缺失处理，
+    // 不让一个纯诊断字段阻断恢复流程。
+    final rawEncryption = json['encryption'];
+
     return BackupInspectInfo(
       format: format,
       passwordRequired: rawRequired,
       passwordProtectedFiles: List.unmodifiable(files),
+      encryption: rawEncryption is String && rawEncryption.isNotEmpty
+          ? rawEncryption
+          : null,
     );
   }
 

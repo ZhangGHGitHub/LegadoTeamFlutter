@@ -240,7 +240,10 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateFfiFfiAutoTaskUpdateRule({required String ruleJson});
 
-  Future<String> crateFfiFfiBackupCreate({required String path});
+  Future<String> crateFfiFfiBackupCreate({
+    required String path,
+    String? password,
+  });
 
   Future<String> crateFfiFfiBackupInspect({required String path});
 
@@ -2695,12 +2698,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<String> crateFfiFfiBackupCreate({required String path}) {
+  Future<String> crateFfiFfiBackupCreate({
+    required String path,
+    String? password,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
+          sse_encode_opt_String(password, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2713,14 +2720,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiBackupCreateConstMeta,
-        argValues: [path],
+        argValues: [path, password],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateFfiFfiBackupCreateConstMeta =>
-      const TaskConstMeta(debugName: "backup_create", argNames: ["path"]);
+  TaskConstMeta get kCrateFfiFfiBackupCreateConstMeta => const TaskConstMeta(
+    debugName: "backup_create",
+    argNames: ["path", "password"],
+  );
 
   @override
   Future<String> crateFfiFfiBackupInspect({required String path}) {

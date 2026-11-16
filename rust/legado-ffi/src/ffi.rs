@@ -2715,8 +2715,13 @@ pub mod ffi {
     // ─── 备份/恢复 ───────────────────────────────────────
 
     /// 创建备份到指定路径，返回备份文件路径
-    pub fn backup_create(path: String) -> Result<String, BridgeError> {
-        let result = crate::api::backup_api::backup_create(&path)?;
+    ///
+    /// 契约 §2.11（批44）：`password` 非空时对 `servers[].config` 与
+    /// `directLinkUploadRule` 做字段级 AES-128-ECB 加密（加 `ENC:` 前缀），
+    /// 并写 `encryption:"aes-ecb-md5"`；`None`/空串 = 明文（与 v7 一致）。
+    pub fn backup_create(path: String, password: Option<String>) -> Result<String, BridgeError> {
+        let result =
+            crate::api::backup_api::backup_create_with_password(&path, password.as_deref())?;
         Ok(result)
     }
 

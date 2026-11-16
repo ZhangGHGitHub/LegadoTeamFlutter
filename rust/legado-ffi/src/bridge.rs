@@ -1344,12 +1344,32 @@ pub unsafe extern "C" fn ffi_audio_get_chapter_media(
 
 // ─── 备份/恢复 FFI 函数 ─────────────────────────────────────
 
-/// 创建备份
+/// 创建备份（无密码兼容入口，等价密码为 null）
 #[no_mangle]
 pub unsafe extern "C" fn ffi_backup_create(path: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let p = c_char_to_str(path)?;
         crate::api::backup_api::backup_create(p)
+    }))
+}
+
+/// 创建备份（批44：带可选备份密码；password 传 NULL 等价不加密）
+///
+/// 非空密码时对 `servers[].config` 与 `directLinkUploadRule` 做字段级
+/// AES-128-ECB 加密，并写 `encryption:"aes-ecb-md5"`。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_backup_create_with_password(
+    path: *const c_char,
+    password: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        let pw = if password.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(password)?)
+        };
+        crate::api::backup_api::backup_create_with_password(p, pw)
     }))
 }
 
