@@ -6,9 +6,22 @@
 //! - setVariable(key, value) — 设置变量
 //! - removeVariable(key) — 删除变量
 //! - clearVariables() — 清空所有变量
+//!
+//! # 持久化（B6/A4）
+//!
+//! 对齐上游 `CacheManager`（`caches` 表，`deadline=0` 永久）：书源运行时
+//! 变量五族（`v_` / `userInfo_` / `loginHeader_` / `sourceVariable_` /
+//! `infoMap_`）经 [`VariableSink`] 写穿到 DB，进程启动时由
+//! [`backfill_from_sink`] 回填内存。其余键（`lgflow::` 会话层、
+//! `bookVar::` / `bookType::` 进程级绑定层、裸会话键）**不落库**——它们
+//! 的语义就是进程内/流程内，落库会改变语义（且备份格式的运行时缓存段
+//! 只覆盖上述五族，见 `legado-ffi` 备份实现）。
+//!
+//! `legado-js` 自身不依赖 DB：下沉由宿主（FFI / server）在 DB 初始化点
+//! 注册一次（first-wins），未注册时纯内存，行为与改造前一致。
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 /// 全局变量存储（线程安全单例）
 ///
@@ -16,6 +29,105 @@ use std::sync::{Arc, LazyLock, Mutex};
 /// 使用 `Arc<Mutex<HashMap>>` 保证线程安全。
 static GLOBAL_VARIABLES: LazyLock<Arc<Mutex<HashMap<String, String>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+/// 需持久化的书源运行时变量键前缀（对齐上游 `CacheDao.deleteSourceVariables`
+/// 的五族与备份格式 `runtimeSourceCache` 段）
+pub const PERSISTED_KEY_PREFIXES: [&str; 5] = [
+    "v_",
+    "userInfo_",
+    "loginHeader_",
+    "sourceVariable_",
+    "infoMap_",
+];
+
+/// 判断键是否属于需持久化的五族（前缀 + 非空后缀）
+pub fn is_persisted_key(key: &str) -> bool {
+    PERSISTED_KEY_PREFIXES
+        .iter()
+        .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
+}
+
+/// 变量持久化下沉（由宿主注入；`legado-js` 自身不依赖任何 DB）
+///
+/// 对齐上游 `CacheManager.put/get/delete` 落 `caches` 表（`deadline = 0`
+/// 永久）的语义：JS 侧 `source.put` / `source.setVariable` /
+/// `putLoginHeader` / `putLoginInfo` / `infoMap_*` 写入经此下沉落库，
+/// 进程启动时由 [`backfill_from_sink`] 回填内存，重启不丢。
+///
+/// 下沉调用发生在 JS 执行线程、且**在变量表锁释放之后**（不持锁跨 DB
+/// I/O）：实现必须 `Send + Sync` 且快速；失败仅记日志、绝不向 JS 传播
+/// （内存写入本身已成功，持久化失败不影响本进程读侧——对齐上游
+/// 「持久化宽容失败」方向）。
+pub trait VariableSink: Send + Sync {
+    /// upsert 单个键值（`deadline = 0` 永久）
+    fn upsert(&self, key: &str, value: &str);
+    /// 删除单个键（幂等）
+    fn remove(&self, key: &str);
+    /// 加载全部持久化行（键 → 值），供启动回填
+    fn load_all(&self) -> Vec<(String, String)>;
+}
+
+/// 全局持久化下沉（first-wins：宿主在 DB 初始化点注册一次，重复调用被忽略）
+static VARIABLE_SINK: OnceLock<Arc<dyn VariableSink>> = OnceLock::new();
+
+/// 注册变量持久化下沉（first-wins，后续调用被忽略）
+///
+/// 返回 `true` = 实际注册成功；`false` = 已存在下沉（忽略）。
+/// **默认未注册 → 纯内存**（测试 / 无 DB 环境不受影响）。
+pub fn set_variable_sink(sink: Arc<dyn VariableSink>) -> bool {
+    VARIABLE_SINK.set(sink).is_ok()
+}
+
+/// 是否有已注册的持久化下沉（测试/诊断用）
+pub fn has_variable_sink() -> bool {
+    VARIABLE_SINK.get().is_some()
+}
+
+/// 写穿（内存写已完成后调用，不持变量表锁）
+fn sink_upsert(key: &str, value: &str) {
+    if !is_persisted_key(key) {
+        return;
+    }
+    if let Some(sink) = VARIABLE_SINK.get() {
+        sink.upsert(key, value);
+    }
+}
+
+/// 删穿（内存删已完成后调用，不持变量表锁）
+fn sink_remove(key: &str) {
+    if !is_persisted_key(key) {
+        return;
+    }
+    if let Some(sink) = VARIABLE_SINK.get() {
+        sink.remove(key);
+    }
+}
+
+/// 将持久化行回填进内存存储（宿主注册后调用一次，即进程启动点）
+///
+/// **内存优先、miss 回落**：同名键以既有内存值胜出（内存态可能更新，
+/// 例如「模拟重启」前内存写入而 DB 行较旧）；DB 独有的键补齐。幂等：
+/// 重复调用不改变既有内存值。未注册下沉时 no-op。
+pub fn backfill_from_sink() {
+    let Some(sink) = VARIABLE_SINK.get() else {
+        return;
+    };
+    let rows = sink.load_all();
+    if rows.is_empty() {
+        return;
+    }
+    let mut store = match GLOBAL_VARIABLES.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    for (key, value) in rows {
+        // 只回填五族键：下沉实现若误存了会话/绑定键，不得污染内存语义
+        if !is_persisted_key(&key) {
+            continue;
+        }
+        store.entry(key).or_insert(value);
+    }
+}
 
 /// 获取全局变量映射的句柄（用于注入到 QuickJS 上下文）
 pub fn get_variable_store() -> Arc<Mutex<HashMap<String, String>>> {
@@ -32,26 +144,42 @@ pub fn get_variable(key: &str) -> Result<Option<String>, String> {
     Ok(store.get(key).cloned())
 }
 
-/// 设置变量值
+/// 设置变量值（五族键写穿持久层）
 ///
 /// 对应 Kotlin: `setVariable(key, value)`
 pub fn set_variable(key: &str, value: &str) -> Result<(), String> {
-    let mut store = GLOBAL_VARIABLES
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    store.insert(key.to_string(), value.to_string());
+    {
+        let mut store = GLOBAL_VARIABLES
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        store.insert(key.to_string(), value.to_string());
+    }
+    // 锁已释放再做 DB I/O（不持变量表锁跨库）
+    sink_upsert(key, value);
     Ok(())
 }
 
-/// 删除变量
+/// 删除变量（五族键同步删持久层）
 pub fn remove_variable(key: &str) -> Result<Option<String>, String> {
-    let mut store = GLOBAL_VARIABLES
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    Ok(store.remove(key))
+    let removed = {
+        let mut store = GLOBAL_VARIABLES
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        store.remove(key)
+    };
+    if removed.is_some() {
+        sink_remove(key);
+    }
+    Ok(removed)
 }
 
-/// 清空所有变量
+/// 清空所有变量（**仅内存**）
+///
+/// 与改造前语义一致：不触碰持久层。持久行的删除只由
+/// [`remove_variable`]（显式删键）与宿主侧按源清理
+/// （`CacheRepository::delete_source_variables`）发起——若此处连 DB 一起清，
+/// 备份恢复链路（先写运行时缓存行、再调清理让引擎从 DB 重载）会把刚恢复的
+/// 变量删掉。
 pub fn clear_variables() -> Result<(), String> {
     let mut store = GLOBAL_VARIABLES
         .lock()
@@ -74,17 +202,15 @@ pub fn clear_variables() -> Result<(), String> {
 ///
 /// 键空间隔离：`lgflow::`、`bookVar::`、`bookType::`、`bookReverseToc::`
 /// 等本轨新增前缀不在 5 族内，不受影响。
+///
+/// **只清内存**（与上游一致）：DB 行由调用方的 `delete_source_variables`
+/// 负责；备份恢复链路也调用本函数「让引擎从 DB 重载」，此处删行会把刚恢复
+/// 的运行时缓存抹掉。
 pub fn clear_source_variables() -> Result<(), String> {
     let mut store = GLOBAL_VARIABLES
         .lock()
         .map_err(|e| format!("Lock error: {}", e))?;
-    store.retain(|key, _| {
-        !(key.starts_with("v_")
-            || key.starts_with("userInfo_")
-            || key.starts_with("loginHeader_")
-            || key.starts_with("sourceVariable_")
-            || key.starts_with("infoMap_"))
-    });
+    store.retain(|key, _| !is_persisted_key(key));
     Ok(())
 }
 
@@ -200,12 +326,20 @@ pub fn current_flow_scope() -> Option<String> {
     FLOW_SCOPE.lock().ok().and_then(|g| g.clone())
 }
 
-/// 写会话变量（`java.__lgStorePut` 桥）
+/// 写会话变量（`java.put` / `java.__lgStorePut` 桥 / `source.put` 等共用入口）
 ///
-/// - scope 已设置 → 写 `lgflow::{scope}{key}`（按流程隔离）；
-/// - 无 scope（未走书籍流程入口的直用引擎/残留入口）→ 写裸键，行为与
-///   P2-9 ③ 引入前一致。
+/// 分派规则（B6/A4）：
+/// - **持久前缀键**（五族：`v_` / `userInfo_` / `loginHeader_` /
+///   `sourceVariable_` / `infoMap_`）→ 写**裸键持久层**（并经
+///   [`VariableSink`] 落 `caches` 表，重启不丢）。书源 setup 脚本的
+///   `source.put` / `source.setVariable` / `putLoginHeader` 等都走这条。
+/// - 其他键 + scope 已设置 → 写 `lgflow::{scope}{key}`（按流程隔离）；
+/// - 其他键 + 无 scope（未走书籍流程入口的直用引擎/残留入口）→ 写裸键，
+///   行为与 P2-9 ③ 引入前一致。
 pub fn put_flow_variable(key: &str, value: &str) -> Result<(), String> {
+    if is_persisted_key(key) {
+        return set_variable(key, value);
+    }
     let k = match current_flow_scope() {
         Some(scope) => flow_key(&scope, key),
         None => key.to_string(),
@@ -213,12 +347,14 @@ pub fn put_flow_variable(key: &str, value: &str) -> Result<(), String> {
     set_variable(&k, value)
 }
 
-/// 读会话变量（`java.__lgStoreGet` 桥 / 解析器 `@get` 全局兜底读者）
+/// 读会话变量（`java.get` / `__lgStoreGet` 桥 / `source.get` / 解析器 `@get` 兜底读者）
 ///
-/// 读取优先级（**既有链路逐层不变**，bookVar 兜底仅追加于链尾）：
-/// 1. scope 已设置 → `lgflow::{scope}{key}`（本流程会话层）；
-/// 2. 未命中 → 裸键 `{key}`（持久层：`cache.*`/源上下文裸 `java.put`
-///    等，上游 CacheManager 语义，跨书存活——P1-1 的持久键修复同一机制）；
+/// 读取优先级：
+/// 0. **持久前缀键**（五族）→ 直接读裸键持久层（唯一权威来源，不查流程层；
+///    跨书/跨源按 `v_{sourceUrl}_` 等前缀天然隔离）。
+/// 1. scope 已设置 → `lgflow::{scope}{key}`（本流程会话层）；
+/// 2. 未命中 → 裸键 `{key}`（历史裸键：`cache.*` 等，上游 CacheManager
+///    语义，跨书存活——P1-1 的持久键修复同一机制）；
 /// 3. 【P2-15】仍未命中且 scope 已设置 → `bookVar::{scope}::{key}`
 ///    （book 绑定写路径层，见下）；
 /// 4. 无 scope → 仅读裸键（与 P2-9 ③ 引入前一致，bookVar 兜底不生效）。
@@ -238,6 +374,9 @@ pub fn put_flow_variable(key: &str, value: &str) -> Result<(), String> {
 ///
 /// 锁失败/未命中一律返回 None（读者闭包不向 FFI 传播错误）。
 pub fn get_flow_variable(key: &str) -> Option<String> {
+    if is_persisted_key(key) {
+        return get_variable(key).ok().flatten();
+    }
     match current_flow_scope() {
         Some(scope) => {
             if let Some(v) = get_variable(&flow_key(&scope, key)).ok().flatten() {
@@ -760,5 +899,161 @@ mod tests {
             Some("bv".into()),
             "流程结束不清 bookVar 持久层"
         );
+    }
+
+    // ── B6/A4：持久化下沉 + 裸 put/get 作用域 ─────────────────────────
+
+    /// 五族键判定（前缀 + 非空后缀）
+    #[test]
+    fn test_is_persisted_key_families() {
+        for key in [
+            "v_https://x.com_k",
+            "userInfo_https://x.com",
+            "loginHeader_https://x.com",
+            "sourceVariable_https://x.com",
+            "infoMap_https://x.com",
+        ] {
+            assert!(is_persisted_key(key), "{key} 应属持久五族");
+        }
+        for key in [
+            "v_",
+            "userInfo_",
+            "lgflow:scope\u{1}k",
+            "bookVar::https://x.com/b::k",
+            "bookType::https://x.com/b",
+            "bare_key",
+        ] {
+            assert!(!is_persisted_key(key), "{key} 不应属持久五族");
+        }
+    }
+
+    /// B6：`source.put` 类持久键写穿下沉；清内存后回填仍可读（模拟重启）
+    #[test]
+    fn test_variable_sink_roundtrip_survives_memory_clear() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let sink = Arc::new(MemorySink::default());
+        // 本二进制可能已有其他测试注册下沉（first-wins），此处只在未注册时
+        // 注册本测试的 sink；已注册时跳过断言（下沉实现由 FFI 层单测覆盖）。
+        let registered = set_variable_sink(sink.clone());
+        if !registered {
+            return;
+        }
+
+        let key = "v_https://sink.example.com/source_token";
+        put_flow_variable(key, "tok").expect("写持久键");
+        assert_eq!(sink.get(key).as_deref(), Some("tok"), "应写穿持久层");
+
+        // 模拟重启：只清内存，持久行仍在
+        clear_variables().expect("清内存");
+        assert_eq!(get_variable(key).unwrap(), None, "内存已清");
+        backfill_from_sink();
+        assert_eq!(
+            get_flow_variable(key),
+            Some("tok".into()),
+            "重启回填后持久键应可读"
+        );
+
+        remove_variable(key).expect("删持久键");
+        assert_eq!(sink.get(key), None, "删键应同步删持久行");
+        sink.clear();
+    }
+
+    /// B6：跨源同名键不串（`v_源A_k` 与 `v_源B_k` 各自独立落库）
+    #[test]
+    fn test_variable_sink_cross_source_isolation() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let sink = Arc::new(MemorySink::default());
+        if !set_variable_sink(sink.clone()) {
+            return;
+        }
+        let a = "v_https://a.example.com_src_k";
+        let b = "v_https://b.example.com_src_k";
+        put_flow_variable(a, "from-a").expect("写源 A");
+        put_flow_variable(b, "from-b").expect("写源 B");
+        assert_eq!(sink.get(a).as_deref(), Some("from-a"));
+        assert_eq!(sink.get(b).as_deref(), Some("from-b"));
+
+        clear_variables().expect("清内存");
+        backfill_from_sink();
+        assert_eq!(get_flow_variable(a), Some("from-a".into()));
+        assert_eq!(get_flow_variable(b), Some("from-b".into()));
+        sink.clear();
+    }
+
+    /// A4：裸 `java.put`（无持久前缀）走 flow scope，不写持久层
+    #[test]
+    fn test_bare_put_uses_flow_scope_and_skips_sink() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let sink = Arc::new(MemorySink::default());
+        if !set_variable_sink(sink.clone()) {
+            return;
+        }
+        set_flow_scope("book-a").expect("设 scope");
+        put_flow_variable("mode", "audio").expect("写会话变量");
+        // 会话层可见
+        assert_eq!(get_flow_variable("mode"), Some("audio".into()));
+        // 裸键未被写入（不污染 @get 持久兜底层）
+        assert_eq!(get_variable("mode").unwrap(), None);
+        // 未落库（非五族）
+        assert!(sink.rows.lock().unwrap().is_empty(), "裸会话键不应落库");
+
+        // 换 scope：会话键不可见（跨书不串）
+        set_flow_scope("book-b").expect("换 scope");
+        assert_eq!(get_flow_variable("mode"), None);
+        clear_flow_scope().expect("清 scope");
+        sink.clear();
+    }
+
+    /// A4：持久前缀键在 scope 内也直读持久层（不被流程层遮蔽）
+    #[test]
+    fn test_persisted_key_reads_persistent_layer_even_in_scope() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        set_flow_scope("book-scope").expect("设 scope");
+        set_variable("sourceVariable_https://x.com", "sv").expect("写持久键");
+        // 流程层同名键不应遮蔽持久层（持久键写路径也落裸键）
+        assert_eq!(
+            get_flow_variable("sourceVariable_https://x.com"),
+            Some("sv".into())
+        );
+        clear_flow_scope().expect("清 scope");
+    }
+
+    /// 测试用内存型下沉（模拟 `caches` 表五族行）
+    #[derive(Default)]
+    struct MemorySink {
+        rows: Mutex<HashMap<String, String>>,
+    }
+
+    impl MemorySink {
+        fn get(&self, key: &str) -> Option<String> {
+            self.rows.lock().unwrap().get(key).cloned()
+        }
+        fn clear(&self) {
+            self.rows.lock().unwrap().clear();
+        }
+    }
+
+    impl VariableSink for MemorySink {
+        fn upsert(&self, key: &str, value: &str) {
+            self.rows
+                .lock()
+                .unwrap()
+                .insert(key.to_string(), value.to_string());
+        }
+        fn remove(&self, key: &str) {
+            self.rows.lock().unwrap().remove(key);
+        }
+        fn load_all(&self) -> Vec<(String, String)> {
+            self.rows
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        }
     }
 }

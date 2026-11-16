@@ -196,6 +196,11 @@ pub mod ffi {
         // 基于 CookieRepository 的持久化下沉并启动全量回填（内存优先、
         // miss 回落；幂等：下沉 first-wins，回填按键合并不覆盖内存值）
         crate::http_state::register_js_cookie_sink();
+        // [B6/A4] 书源运行时变量持久化：`source.put` / `source.setVariable` /
+        // `putLoginHeader` / `putLoginInfo` / `infoMap_*` 写穿 `caches` 表
+        // （deadline=0 永久），并在启动时回填内存变量表（内存优先、miss
+        // 回落）。未注册时纯内存，行为与改造前一致。
+        crate::api::variable_sink::register_js_variable_sink();
         // 设计项 A（2026-09-26，JS 桥共享客户端 cookie 持久化）：注入 DB
         // 持久化后端到 legado-js 池客户端钩子（first-wins）并兜底重置已
         // 构建池——正常时序本调用先于一切 JS 执行（池尚未构建）。仅

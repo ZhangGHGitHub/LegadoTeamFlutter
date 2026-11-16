@@ -2390,12 +2390,24 @@ fn register_variable_apis<'js>(
     )?;
 
     // 对齐 AnalyzeRule.put / get / setLocal（与 getVariable 共用全局表作 JS 会话变量）
+    //
+    // [B6/A4] 裸 `java.put`/`java.get`/`setLocal` 默认走 **flow 作用域**：
+    // - scope 已设置（书籍流程入口 `begin_book_flow`）→ 写/读
+    //   `lgflow::{scope}{key}`，跨书/跨源不再互串（此前写裸键，同名键在
+    //   换书后仍可见，且与 `source.put` 的持久前缀键空间混用）；
+    // - 无 scope（直用引擎/替换规则等无源上下文入口）→ 回落裸键，行为与
+    //   改造前一致。
+    //
+    // **持久层不受影响**：`source.put` 等写入的是 `v_{sourceUrl}_{k}` /
+    // `sourceVariable_*` 等带持久前缀的键（由书源 setup 脚本的
+    // `__mountBookSourceApi` 覆盖 java.put 实现），这些键经
+    // `variable_store` 的 `VariableSink` 落 `caches` 表；裸会话键不落库。
     mount_dual(
         java,
         globals,
         "put",
         rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> String {
-            let _ = variable_store::set_variable(&key, &value);
+            let _ = variable_store::put_flow_variable(&key, &value);
             value.0
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2406,10 +2418,7 @@ fn register_variable_apis<'js>(
         globals,
         "get",
         rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> String {
-            variable_store::get_variable(&key)
-                .ok()
-                .flatten()
-                .unwrap_or_default()
+            variable_store::get_flow_variable(&key).unwrap_or_default()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -2419,7 +2428,7 @@ fn register_variable_apis<'js>(
         globals,
         "setLocal",
         rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> bool {
-            variable_store::set_variable(&key, &value).is_ok()
+            variable_store::put_flow_variable(&key, &value).is_ok()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
