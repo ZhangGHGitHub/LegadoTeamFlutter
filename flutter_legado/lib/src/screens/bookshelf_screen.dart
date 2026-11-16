@@ -24,7 +24,7 @@ import '../providers/reader/reader_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart'
     show TopBarButtonStyle, uiSettingsListenable;
 import '../routes.dart';
-import '../services/book_api.dart' show DeleteBooksResult;
+import '../services/book_api.dart' show BookApi, DeleteBooksResult;
 import '../services/cover_aspect_ratio.dart';
 import '../services/local_book_store.dart';
 import '../utils/app_route_observer.dart';
@@ -3229,7 +3229,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         continue;
       }
       try {
-        final source = _matchSource(sources, url);
+        final source = await _matchSource(api, sources, url);
         Book? book;
         if (source != null) {
           final json = await api.webbookInfo(jsonEncode(source.toJson()), url);
@@ -3260,19 +3260,26 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// URL 匹配书源（对标 Kotlin addBookByUrl：先 bookUrlPattern 正则，
   /// 后按主域名兑底）
   ///
-  /// [P3-8/D-5 待裁决] 书源正则判定目前是 UI 侧临时实现，语义对应 Rust
-  /// `rust/legado-fetcher/src/web_book.rs::matches_book_url_pattern`。在
-  /// FFI 暴露 `matchesBookUrlPattern`（并更新契约）之前不新增契约项；
-  /// 后续下沉时本方法改为调用 FFI，删除这里的 Dart RegExp 实现。
-  BookSource? _matchSource(List<BookSource> sources, String url) {
+  /// [C7] 书源正则判定下沉 Rust `matches_book_url_pattern`（契约 §2.17）：
+  /// 此前本方法用 Dart `RegExp` 的 `hasMatch`（部分匹配）实现，
+  /// 与 Rust 侧的「锚定后全匹配」语义不同——`(https?://)?(www.)?m.qibuge.com`
+  /// 会把搜索页 `m.qibuge.com/s.php?q=x` 误判为详情页；且 Dart `RegExp`
+  /// 与 Rust `regex` 在 lookaround / `\p{...}` / 命名组上不等价。现统一走
+  /// FFI，Dart 侧不再编译书源 pattern。
+  ///
+  /// 主域名兜底保持 Dart 侧（Rust 无对应入口，且只是 URL host 相等比较，
+  /// 无正则语义分叉风险）。
+  Future<BookSource?> _matchSource(
+    BookApi api,
+    List<BookSource> sources,
+    String url,
+  ) async {
     for (final s in sources) {
       final pattern = s.bookUrlPattern;
-      if (pattern == null || pattern.isEmpty) continue;
-      try {
-        if (RegExp(pattern).hasMatch(url)) return s;
-      } catch (_) {
-        // 非法正则忽略（部分书源 pattern 非标准正则）
-      }
+      if (pattern == null || pattern.trim().isEmpty) continue;
+      // 非法/超长/嵌套过深的 pattern 由 Rust 侧静默返回 false（原版仅记
+      // 日志不中断后续规则），故无需 try/catch。
+      if (await api.matchesBookUrlPattern(pattern, url)) return s;
     }
     final uri = Uri.tryParse(url);
     if (uri != null && uri.host.isNotEmpty) {

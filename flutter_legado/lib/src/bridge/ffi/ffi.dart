@@ -1345,6 +1345,27 @@ Future<String> webbookContent({
   chapterJson: chapterJson,
 );
 
+/// 判断 URL 是否命中书源 `bookUrlPattern` 正则（契约 §2.17 C7）
+///
+/// 语义唯一真源在 `legado_fetcher::web_book::matches_book_url_pattern`：
+/// 正则锚定为 `^(?:pattern)$` 后**全匹配**（对齐 Kotlin
+/// `baseUrl.matches(pattern.toRegex())`；Rust `Regex::is_match` 是部分
+/// 匹配，会把搜索页误判为详情页）。非法/超长/嵌套过深的 pattern 返回
+/// `false`（不抛错，与 fetcher 内静默降级一致）。
+///
+/// 纯计算（无网络/无 DB），但正则编译走 `compile_regex_safe` 的隔离线程
+/// + LRU 缓存，放 `spawn_blocking` 避免占用 frb 异步执行器线程。
+///
+/// `pattern` — 书源 `bookUrlPattern` 原文（空串即未配置 → 返回 false）
+/// `url` — 待判定 URL
+Future<bool> matchesBookUrlPattern({
+  required String pattern,
+  required String url,
+}) => RustLib.instance.api.crateFfiFfiMatchesBookUrlPattern(
+  pattern: pattern,
+  url: url,
+);
+
 /// 解析 exploreUrl 为分类列表（返回 JSON 数组）
 ///
 /// `explore_url` — 书源的 exploreUrl 字段

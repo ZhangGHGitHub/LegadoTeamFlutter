@@ -689,6 +689,17 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
         ),
       );
 
+  /// 判断 URL 是否命中 `bookUrlPattern`（契约 §2.17 C7）
+  ///
+  /// 直通 Rust 唯一真源，**不做本地 RegExp 兜底**：Dart 侧兜底会重新引入
+  /// 语义分叉（见 [BookApi.matchesBookUrlPattern] 文档）。空 pattern 在
+  /// Dart 侧短路返回 false（省一次 FFI 往返；Rust 侧同语义）。
+  @override
+  Future<bool> matchesBookUrlPattern(String pattern, String url) async {
+    if (pattern.trim().isEmpty) return false;
+    return bridge.matchesBookUrlPattern(pattern: pattern, url: url);
+  }
+
   /// 流式书源调试（对齐 Debug.Callback）
   @override
   Stream<Map<String, dynamic>> debugBookSourceStream(

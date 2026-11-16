@@ -568,6 +568,24 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   Future<String> webbookContent(String sourceJson, String chapterJson) async =>
       '（Mock 章节内容）';
 
+  /// 判断 URL 是否命中 `bookUrlPattern`（契约 §2.17 C7）
+  ///
+  /// **仅 Mock**（无 DLL 的 UI 轨开发用）：按 Rust 同口径做「锚定后全匹配」
+  /// 的近似实现（`^(?:pattern)$`），非法 pattern 返回 false。真实语义由
+  /// Rust `legado_fetcher::web_book::matches_book_url_pattern` 唯一提供；
+  /// Dart `RegExp` 与 Rust `regex` 在 lookaround / `\p{...}` / 命名组上
+  /// 不等价，生产路径（[RustApi]）不得回退到本实现。
+  @override
+  Future<bool> matchesBookUrlPattern(String pattern, String url) async {
+    final p = pattern.trim();
+    if (p.isEmpty) return false;
+    try {
+      return RegExp('^(?:$p)\$').hasMatch(url);
+    } on FormatException {
+      return false;
+    }
+  }
+
   @override
   Stream<Map<String, dynamic>> debugBookSourceStream(
     String sourceUrl,

@@ -1364,6 +1364,18 @@ abstract class BookApi {
   /// 获取章节正文
   Future<String> webbookContent(String sourceJson, String chapterJson);
 
+  /// 判断 URL 是否命中书源 `bookUrlPattern` 正则（契约 §2.17，C7）
+  ///
+  /// 语义唯一真源在 Rust `legado_fetcher::web_book::matches_book_url_pattern`
+  /// （锚定 `^(?:pattern)$` 全匹配，对齐 Kotlin `baseUrl.matches(regex)`）。
+  /// Dart 侧**不再自行编译 RegExp**：Dart `RegExp` 与 Rust `regex` 在
+  /// lookaround / `\p{...}` / 命名组等语法上不等价，自行实现会与 Rust
+  /// 判定分叉（Rust 命中、Dart 抛错被吞 → 落不到书源）。
+  ///
+  /// 非法 / 超长 / 嵌套过深的 pattern 返回 `false`（Rust 侧静默降级）。
+  /// [pattern] 为空时返回 `false`（未配置 pattern 不参与详情直连判定）。
+  Future<bool> matchesBookUrlPattern(String pattern, String url);
+
   /// 流式书源调试（对齐 Kotlin Debug.Callback.printLog）
   ///
   /// 每条 Map：`state`（int）/ `msg`（String）。

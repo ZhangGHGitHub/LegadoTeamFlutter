@@ -22,10 +22,11 @@ use crate::runtime;
 pub use legado_fetcher::web_book::RealBookSourceFetcher;
 
 // ─── 兄弟模块引用收口（re-export：原 `api::web_book` 路径与签名不变）──────────
+// 注：`matches_book_url_pattern` 不在此 re-export——本模块下方定义了同名
+// `pub fn` 作为 FFI 入口（契约 §2.17 C7），其内部委托 fetcher 唯一真源。
 pub(crate) use legado_fetcher::web_book::{
     begin_book_flow, book_var_overlay_map, build_js_orchestrator, chapter_url_variables,
-    convert_js_search_results, matches_book_url_pattern, merge_variables_json,
-    record_next_chapter_map,
+    convert_js_search_results, merge_variables_json, record_next_chapter_map,
 };
 
 // ─── 宿主注入面组装 ───────────────────────────────────────────────────────────
@@ -172,6 +173,17 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
     ))
 }
 
+/// 判断 URL 是否命中书源 `bookUrlPattern` 正则（契约 §2.17，C7）
+///
+/// 纯计算（无网络/无 DB），直接委托 `legado_fetcher::web_book::matches_book_url_pattern`
+/// 这一唯一真源：正则锚定为 `^(?:pattern)$` 后全匹配（对齐 Kotlin
+/// `baseUrl.matches(pattern.toRegex())`），非法/超长/嵌套过深的 pattern 静默
+/// 返回 `false`。Dart 侧此前有两份 `RegExp` 实现，语义与 Rust `regex` 在
+/// lookaround / `\p{...}` / 命名组等语法上不等价，故下沉到本入口。
+pub fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
+    legado_fetcher::web_book::matches_book_url_pattern(pattern, url)
+}
+
 // ─── 宿主态测试助手（仅测试编译：包装层测试经宿主注入面驱动）──────────────────
 
 /// 以宿主注入面走「变量链」详情获取（单测可注入脚本化 fetcher）
@@ -262,8 +274,7 @@ mod tests {
         .expect("parse_book_info_from_body")
     }
 
-    /// 书山聚合目录回归：真实书源 + 真实 data: URI bookUrl 调 webbook_chapters。
-    /// 覆盖链路：data:URI hex 解码 → init 规则 java.ajax(/details)（带书源
+    /// 书山聚合目录回归：真实书源 + 真实 data: URI bookUrl 调 webbook_chapters。    /// 覆盖链路：data:URI hex 解码 → init 规则 java.ajax(/details)（带书源
     /// header 规则 X-Novel-Token + JSON Content-Type）→ tocUrl 规则产出
     /// catalogUrl → chapterList java.ajax(/catalog) → 章节列表。
     /// — 书山目录修复（2026-08-17）
@@ -2447,5 +2458,78 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             intro.contains("一部悬疑与幽默并存的经典动画"),
             "补后：多行规则末行 `str+result` 应追加 CSS 段（.video_detail_desc@text），实际: {intro}"
         );
+    }
+
+    // ─── C7：`matches_book_url_pattern` FFI 入口边界用例 ────────────────────
+    //
+    // 该函数是 Dart 两份 RegExp 实现的替代目标，语义必须与 Rust `regex` 侧
+    // 唯一真源完全一致：全匹配（锚定 `^(?:pattern)$`）、非法 pattern 静默
+    // false、空 pattern 不命中。边界覆盖见下列断言。
+
+    #[test]
+    fn test_ffi_matches_book_url_pattern_full_match_semantics() {
+        // 全匹配：搜索页不应被 `(https?://)?(www.)?m.qibuge.com` 命中
+        // （部分匹配会把 `m.qibuge.com/s.php?q=x` 误判为详情页）
+        assert!(!matches_book_url_pattern(
+            r"(https?://)?(www\.)?m\.qibuge\.com",
+            "https://m.qibuge.com/s.php?q=x"
+        ));
+        assert!(matches_book_url_pattern(
+            r"(https?://)?(www\.)?m\.qibuge\.com",
+            "https://m.qibuge.com"
+        ));
+        // `##` 不在 bookUrlPattern 语法内（原版为纯正则），按正则语义
+        // 作为字面 `##` 处理：仅当 URL 含 `##` 时才命中
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/##book",
+            "https://example.com/book"
+        ));
+        assert!(matches_book_url_pattern(
+            r"https://example\.com/##book",
+            "https://example.com/##book"
+        ));
+    }
+
+    #[test]
+    fn test_ffi_matches_book_url_pattern_empty_and_invalid() {
+        // 空 pattern：锚定为 `^(?:)$`，只匹配空串（书源未配置时上游语义即
+        // 「无 pattern 不参与详情直连判定」，调用方以 `pattern.is_empty()`
+        // 提前短路，此处仅固化函数自身语义）
+        assert!(!matches_book_url_pattern("", "https://example.com/book/1"));
+        assert!(matches_book_url_pattern("", ""));
+        // 非法正则 / 超长 / 病态嵌套：静默 false（不抛错，不 panic）
+        assert!(!matches_book_url_pattern("[invalid", "https://example.com"));
+        assert!(!matches_book_url_pattern(
+            &"(".repeat(64),
+            "https://example.com"
+        ));
+        assert!(!matches_book_url_pattern(
+            &"a".repeat(2048),
+            "https://example.com"
+        ));
+    }
+
+    #[test]
+    fn test_ffi_matches_book_url_pattern_regex_specials() {
+        // 正则特殊字符按正则语义生效（不是字面量比较）
+        assert!(matches_book_url_pattern(
+            r"https://example\.com/book/\d+\.html",
+            "https://example.com/book/123.html"
+        ));
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/book/\d+\.html",
+            "https://example.com/book/abc.html"
+        ));
+        // 分组与量词
+        assert!(matches_book_url_pattern(
+            r"https?://(www\.)?example\.(com|net)/.+",
+            "http://www.example.net/a/b"
+        ));
+        // Dart `RegExp` 支持而 Rust `regex` 不支持的前瞻：Rust 侧编译失败
+        // → false（这正是下沉 FFI 要消除的分叉点：Dart 会判 true）
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/book/(?=123)\d+",
+            "https://example.com/book/123"
+        ));
     }
 }
