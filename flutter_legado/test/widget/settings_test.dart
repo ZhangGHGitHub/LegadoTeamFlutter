@@ -25,6 +25,7 @@ import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
 import 'package:flutter_legado/src/services/web_service_wake_lock_service.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
+import 'package:flutter_legado/src/l10n/app_strings.dart';
 
 import '../mocks/fake_web_service_address_resolver.dart';
 import '../mocks/mocks.dart';
@@ -39,7 +40,11 @@ void main() {
   });
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    // 界面文案断言以中文为基准：prefs 固定 zh（'system' 现按系统 locale
+    // 解析，测试宿主默认 en_US 会渲染英文）；页面 _loadLocale 会按偏好
+    // 覆盖 AppStrings，故必须写偏好而非只调 setLocale。
+    AppStrings.setLocale('zh');
+    SharedPreferences.setMockInitialValues({'app_locale': 'zh'});
     mockApi = FakeServersRustApi();
     addressResolver = FakeWebServiceAddressResolver();
     container = ProviderContainer(
@@ -206,7 +211,10 @@ void main() {
     // 配置（PrefKeys.webPort）：原实现在此调 startServer() 不传参，恒用默认
     // 1122，设置页端口形同虚设（对齐原版 WebService.kt:244 启动读配置端口）。
     testWidgets('Web 服务开关：启动使用配置端口 webPort=8080', (tester) async {
-      SharedPreferences.setMockInitialValues({'webPort': 8080});
+      SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
+        'webPort': 8080,
+      });
       final startedPorts = <int>[];
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
       when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
@@ -265,7 +273,10 @@ void main() {
     });
 
     testWidgets('Web 服务开关：越界 webPort 回落默认 1122（防手改 prefs）', (tester) async {
-      SharedPreferences.setMockInitialValues({'webPort': 500});
+      SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
+        'webPort': 500,
+      });
       final startedPorts = <int>[];
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
       when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
@@ -429,6 +440,7 @@ void main() {
       });
       // 偏好开（其他设置 → Web 服务唤醒锁）
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.webServiceWakeLock: true,
       });
 
@@ -545,6 +557,7 @@ void main() {
         );
       });
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.webServiceWakeLock: true,
       });
 
@@ -614,6 +627,7 @@ void main() {
         );
       });
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.webServiceWakeLock: true,
       });
 
@@ -738,6 +752,7 @@ void main() {
         );
       });
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.webServiceWakeLock: true,
       });
 
@@ -808,6 +823,7 @@ void main() {
         );
       });
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.webServiceWakeLock: true,
       });
       when(() => mockApi.getConfig(any())).thenAnswer((inv) async {
@@ -1126,7 +1142,10 @@ void main() {
 
     // 批9b-2 审查回修：存量 >256 仅夹逼显示（不改写 prefs）
     testWidgets('线程数：存量 999 夹逼显示 256', (tester) async {
-      SharedPreferences.setMockInitialValues({PrefKeys.threadCount: 999});
+      SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
+        PrefKeys.threadCount: 999,
+      });
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
       when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
 

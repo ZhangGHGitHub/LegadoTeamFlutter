@@ -29,6 +29,7 @@ import 'package:flutter_legado/src/services/platform_channel.dart';
 import 'package:flutter_legado/src/services/system_tts_service.dart';
 import 'package:flutter_legado/src/utils/read_aloud_content_split.dart';
 import 'package:flutter_legado/src/widgets/reader/read_aloud_bar.dart';
+import 'package:flutter_legado/src/l10n/app_strings.dart';
 
 import '../mocks/mocks.dart';
 
@@ -150,7 +151,11 @@ void main() {
   });
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    // 界面文案断言以中文为基准：prefs 固定 zh（'system' 现按系统 locale
+    // 解析，测试宿主默认 en_US 会渲染英文）；页面 _loadLocale 会按偏好
+    // 覆盖 AppStrings，故必须写偏好而非只调 setLocale。
+    AppStrings.setLocale('zh');
+    SharedPreferences.setMockInitialValues({'app_locale': 'zh'});
     uiSettingsListenable.value = const UiSettingsState();
     tempDir = Directory.systemTemp.createTempSync('read_aloud_page_test');
     mockApi = MockRustApi();
@@ -642,6 +647,7 @@ void main() {
         'engine-b': [voiceB],
       };
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.systemTtsVoice: 'a',
         PrefKeys.systemTtsVoiceLocale: 'zh-CN',
       });
@@ -681,6 +687,7 @@ void main() {
         'engine-b': [SystemTtsVoice(name: 'b', locale: 'zh-CN')],
       };
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.systemTtsEngine: 'engine-a',
       });
       await pumpPage(tester);
@@ -819,6 +826,7 @@ void main() {
 
     testAndroid('标点至少保留一个：取消最后一个时不写入', (tester) async {
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.readAloudContentSplitMode: 'symbols',
         PrefKeys.readAloudContentSplitSymbols: '。',
       });
@@ -857,6 +865,7 @@ void main() {
 
     testAndroid('重启回显：模式/标点/间隔/分片方式/推理级别', (tester) async {
       SharedPreferences.setMockInitialValues({
+        'app_locale': 'zh',
         PrefKeys.readAloudContentSplitMode: 'symbols',
         // 参考版 StringSet/外部备份数组形态
         PrefKeys.readAloudContentSplitSymbols: <String>['。', '！'],

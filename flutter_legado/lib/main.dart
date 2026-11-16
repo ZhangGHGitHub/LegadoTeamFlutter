@@ -80,17 +80,18 @@ void main() {
     }
 
     // 5b. 全局偏好镜像与设备级启动设置（批9a，失败不阻断启动）：
-    // - 语言：冷启动读 app_locale 初始化 AppStrings（system→zh，与
-    //   other_settings_screen 约定一致）；运行中切换仍即时 setLocale（现行为），
-    //   AppStrings 无变更通知机制，重启生效语义与原版 attachBaseContext 一致。
+    // - 语言：冷启动读 app_locale 初始化 AppStrings（system→跟随系统 locale，
+    //   与 other_settings_screen 同一 startupLocaleOf 口径）；运行中切换仍即时
+    //   setLocale（现行为），AppStrings 无变更通知机制，重启生效语义与原版
+    //   attachBaseContext 一致。
     // - 抗锯齿/图片绘制缓存镜像：翻页 painter 与漫画绘制处的同步快照。
     // - 全局解码缓存上限：bitmapCacheSize（1..1024 MB，越界回落 50，
     //   对齐原版 ImageProvider.kt 的钳制）应用到 imageCache.maximumSizeBytes。
     sw = Stopwatch()..start();
     try {
       final locale = await SettingsService().getLocale();
-      // P3-1：启动映射抽为 AppStrings.startupLocaleOf（system 与脏值→zh，
-      // en/zh 直通），与单测共用同一口径
+      // P3-1：启动映射抽为 AppStrings.startupLocaleOf（system→跟随系统 locale，
+      // 脏值→zh，en/zh 直通），与单测共用同一口径
       AppStrings.setLocale(AppStrings.startupLocaleOf(locale));
       await ImagePaintPrefs.refresh();
       ImagePaintPrefs.applyImageCacheLimit();

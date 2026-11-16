@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/book.dart';
 import '../models/book_source.dart';
 import '../models/reader_tap_action.dart';
@@ -1140,7 +1141,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           // 入架失败：可见提示且不退出（项目规则：用户可见失败必须提示）
           final err = ref.read(bookshelfNotifierProvider).error;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(err != null ? '加入书架失败：${errorMessage(err)}' : '加入书架失败')),
+            SnackBar(
+              content: Text(
+                err != null
+                    ? AppStrings.addToShelfFailed(errorMessage(err))
+                    : AppStrings.addToShelfFailedNoReason,
+              ),
+            ),
           );
           return;
         }
@@ -1183,19 +1190,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('放入书架'),
-        content: Text('是否将《$bookName》放入书架？'),
+        title: Text(AppStrings.addToShelfTitle),
+        content: Text(AppStrings.addToShelfConfirm(bookName)),
         actionsAlignment: MainAxisAlignment.end,
         actionsPadding: const EdgeInsets.fromLTRB(12, 0, 16, 12),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           const SizedBox(width: 8),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认'),
+            child: Text(AppStrings.confirmLabel),
           ),
         ],
       ),
@@ -1468,7 +1475,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            '全局页 ${state.globalPageIndex + 1} / ${state.totalPages}',
+                            AppStrings.globalPageIndicator(
+                              state.globalPageIndex + 1,
+                              state.totalPages,
+                            ),
                             // [深色主题 Batch A-3] 白字 → surface（亮态 #F5F5F5≈白；
                             // 暗态 #424242 深字，与 onSurfaceVariant 亮底互为对比）
                             style: TextStyle(
@@ -1659,7 +1669,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (book == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('无法启动朗读：未打开书籍')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.readAloudNoBook)));
       return;
     }
     setState(() => _aloudBarHidden = false);
@@ -1818,7 +1828,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (book == null || chapter == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('无法添加书签：未打开书籍')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.bookmarkNoBook)));
       return;
     }
     final content = state.chapterContent;
@@ -1844,9 +1854,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
             chapterName: chapterName,
             bookText: bookmarkText,
           );
-      messenger?.showSnackBar(SnackBar(content: Text('已添加书签：$chapterName')));
+      messenger?.showSnackBar(
+        SnackBar(content: Text(AppStrings.bookmarkAdded(chapterName))),
+      );
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('添加书签失败：${errorMessage(e)}')));
+      messenger?.showSnackBar(
+        SnackBar(content: Text(AppStrings.bookmarkAddFailed(errorMessage(e)))),
+      );
     }
   }
 
@@ -1945,7 +1959,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (target == null) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('自动换源：无可用替代书源')));
+        ).showSnackBar(SnackBar(content: Text(AppStrings.autoChangeSourceNoSource)));
         return;
       }
       final updatedJson = await api.switchSource(
@@ -1977,7 +1991,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       await notifier.openBook(updated);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('章节加载失败，已自动换源：${target.sourceName}')),
+        SnackBar(
+          content: Text(AppStrings.autoChangeSourceDone(target.sourceName)),
+        ),
       );
       // 换源成功后重置尝试计数（新书源可再次触发）
       _autoSwitchAttempts = 0;
@@ -1985,7 +2001,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('自动换源失败: ${errorMessage(e)}')));
+        ).showSnackBar(
+        SnackBar(content: Text(AppStrings.autoChangeSourceFailed(errorMessage(e)))),
+      );
       }
     } finally {
       _autoSwitching = false;

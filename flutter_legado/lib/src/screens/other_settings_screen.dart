@@ -120,7 +120,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   Map<String, dynamic> _checkSourceConfig = {};
 
   /// Android 专属项统一灰字标注（与阅读设置面板刘海项先例一致）
-  static const _androidOnly = '仅 Android 生效';
+  static String get _androidOnly => AppStrings.androidOnlyLabel;
 
   @override
   void initState() {
@@ -131,11 +131,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
 
   Future<void> _loadLocale() async {
     _localeValue = await _settingsService.getLocale();
-    // 约定：'system' 不调用 setLocale，生效 AppStrings 默认值 'zh'（系统=中文，
-    // 与 _showLocalePicker 选“系统”时回退 'zh' 的行为保持一致）
-    if (_localeValue != 'system') {
-      AppStrings.setLocale(_localeValue);
-    }
+    // 'system' 跟随系统语言（对齐原版 AppContextWrapper：未显式选语言时读系统
+    // locale，中文环境 zh、其余 en）；zh/en 直通；脏值按 startupLocaleOf 兜底。
+    AppStrings.setLocale(AppStrings.startupLocaleOf(_localeValue));
     if (mounted) setState(() {});
   }
 
@@ -241,11 +239,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   String get _processTextSubtitle {
     switch (_processTextAvailability) {
       case ProcessTextAvailability.supported:
-        return '长按文字在操作菜单中显示阅读·搜索';
+        return AppStrings.processTextMenuLabelNoSuffix;
       case ProcessTextAvailability.unsupportedPlatform:
-        return '长按文字在操作菜单中显示阅读·搜索（$_androidOnly）';
+        return AppStrings.processTextMenuLabel(_androidOnly);
       case ProcessTextAvailability.bridgeUnavailable:
-        return '当前构建未接入系统文字操作菜单，开关不可用';
+        return AppStrings.processTextMenuUnsupported;
     }
   }
 
@@ -259,7 +257,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       // 系统拒绝（极少数定制 ROM 限制组件启停）：回滚 UI 与偏好并提示
       setState(() => _processText = !value);
       await _settingsService.setBoolPref(PrefKeys.processText, !value);
-      _toast('系统限制，文字操作菜单设置未生效');
+      _toast(AppStrings.processTextMenuSystemLimited);
     }
   }
 
@@ -267,7 +265,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   Widget build(BuildContext context) {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
-      topBar: LegadoAppBar(title: const Text('其他设置')),
+      topBar: LegadoAppBar(title: Text(AppStrings.otherSettingsTitle)),
       body: IosGroupedBody(
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
@@ -277,19 +275,19 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 children: [
               IosListTile(
                 icon: Symbols.language_rounded,
-                title: '语言',
+                title: AppStrings.language,
                 value: _localeLabel,
                 onTap: () => _showLocalePicker(context),
               ),
             ]),
 
             // ===== 主界面 =====
-            const IosSectionHeader('主界面'),
+            IosSectionHeader(AppStrings.mainInterfaceSection),
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 children: [
               SettingSwitchRow(
-                title: '自动刷新',
-                subtitle: '打开软件时自动更新书籍',
+                title: AppStrings.autoRefreshLabel,
+                subtitle: AppStrings.autoRefreshLabelDesc,
                 value: _autoRefresh,
                 onChanged: (v) {
                   setState(() => _autoRefresh = v);
@@ -298,8 +296,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
               ),
               if (_autoRefresh)
                 SettingSwitchRow(
-                  title: '仅更新已读完',
-                  subtitle: '自动刷新时，只更新已读完的书籍',
+                  title: AppStrings.onlyUpdateReadLabel,
+                  subtitle: AppStrings.onlyUpdateReadLabelDesc,
                   value: _onlyUpdateRead,
                   onChanged: (v) {
                     setState(() => _onlyUpdateRead = v);
@@ -307,8 +305,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   },
                 ),
               SettingSwitchRow(
-                title: '自动跳转最近阅读',
-                subtitle: '默认打开书架',
+                title: AppStrings.defaultToReadLabel,
+                subtitle: AppStrings.defaultToReadLabelDesc,
                 value: _defaultToRead,
                 onChanged: (v) {
                   setState(() => _defaultToRead = v);
@@ -320,30 +318,33 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             ]),
 
             // ===== 其他（顺序严格对齐 pref_config_other.xml）=====
-            const IosSectionHeader('其他设置'),
+            IosSectionHeader(AppStrings.otherSettingsTitle),
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 children: [
               IosListTile(
-                title: '设置本地密码',
-                subtitle:
-                    '本地密码用来对备份的敏感信息加密和解密,如需在不同设备之间同步,本地密码需一致.',
-                value: _localPassword.isEmpty ? '未设置' : '已设置',
+                title: AppStrings.setLocalPasswordLabel,
+                subtitle: AppStrings.localPasswordSummary,
+                value: _localPassword.isEmpty
+                    ? AppStrings.notSetLabel
+                    : AppStrings.isSetLabel,
                 onTap: _showLocalPasswordDialog,
               ),
               IosListTile(
-                title: '用户代理',
-                subtitle: _userAgent.isEmpty ? '默认' : _userAgent,
+                title: AppStrings.userAgentLabel,
+                subtitle: _userAgent.isEmpty
+                    ? AppStrings.defaultLabel
+                    : _userAgent,
                 onTap: _showUserAgentDialog,
               ),
               IosListTile(
-                title: '自定义Hosts',
+                title: AppStrings.customHostsLabel,
                 subtitle: _customHostsSummary.isEmpty
-                    ? '域名到IP的映射'
+                    ? AppStrings.domainToIpMapping
                     : _customHostsSummary,
                 onTap: _showCustomHostsDialog,
               ),
               SettingSwitchRow(
-                title: 'Web 服务唤醒锁',
+                title: AppStrings.webServiceWakeLockLabel,
                 subtitle: _androidOnly,
                 value: _webServiceWakeLock,
                 // 批9b-6 审查回修：非 Android 无平台实现 → 开关置灰
@@ -363,17 +364,17 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                     : null,
               ),
               IosListTile(
-                title: '书籍保存位置',
+                title: AppStrings.bookSaveLocationLabel,
                 subtitle: _defaultBookTreeUri.isEmpty
-                    ? '从其它应用打开的书籍保存位置'
+                    ? AppStrings.bookSaveLocationLabelDesc
                     : _defaultBookTreeUri,
                 onTap: _showBookTreeUriDialog,
               ),
               IosListTile(
-                title: '源编辑框最大行数',
+                title: AppStrings.sourceEditMaxLineLabel,
                 value: '$_sourceEditMaxLine',
                 onTap: () => _editIntPref(
-                  title: '源编辑框最大行数',
+                  title: AppStrings.sourceEditMaxLineLabel,
                   key: PrefKeys.sourceEditMaxLine,
                   current: _sourceEditMaxLine,
                   min: 10,
@@ -382,19 +383,19 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               IosListTile(
-                title: '校验设置',
+                title: AppStrings.checkSettingsLabel,
                 subtitle: _checkSourceConfigSummary,
                 onTap: _showCheckSourceConfigDialog,
               ),
               // 批16b：直链上传规则（规则配置 Sheet + 测试上传，契约 §2.51）
               IosListTile(
-                title: '直链上传规则',
-                subtitle: '用于导出书源书单时生成直链 URL',
+                title: AppStrings.directLinkUploadRulesLabel,
+                subtitle: AppStrings.directLinkUploadRulesLabelDesc,
                 onTap: () => DirectLinkUploadSettingsSheet.show(context),
               ),
               SettingSwitchRow(
-                title: '抗锯齿',
-                subtitle: '绘制图片时抗锯齿',
+                title: AppStrings.antiAliasLabel,
+                subtitle: AppStrings.antiAliasLabelDesc,
                 value: _antiAlias,
                 onChanged: (v) {
                   setState(() => _antiAlias = v);
@@ -405,10 +406,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               IosListTile(
-                title: '图片绘制缓存',
-                subtitle: '当前最大缓存 $_bitmapCacheSize MB',
+                title: AppStrings.imageCacheLabel,
+                subtitle: AppStrings.currentImageCache(_bitmapCacheSize),
                 onTap: () => _editIntPref(
-                  title: '图片绘制缓存（MB）',
+                  title: AppStrings.imageCacheMbLabel,
                   key: PrefKeys.bitmapCacheSize,
                   current: _bitmapCacheSize,
                   min: 1,
@@ -423,12 +424,12 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               IosListTile(
-                title: '漫画保留数量',
+                title: AppStrings.mangaRetainCountLabel,
                 subtitle: _imageRetainNum == 0
-                    ? '不清理已缓存图片（0=不清理）'
-                    : '保留已读章节数量 $_imageRetainNum',
+                    ? AppStrings.mangaRetainNone
+                    : AppStrings.mangaRetainSummary(_imageRetainNum),
                 onTap: () => _editIntPref(
-                  title: '漫画保留数量',
+                  title: AppStrings.mangaRetainCountLabel,
                   key: PrefKeys.imageRetainNum,
                   current: _imageRetainNum,
                   min: 0,
@@ -437,10 +438,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               IosListTile(
-                title: '预下载',
-                subtitle: '预先下载 $_preDownloadNum 章正文',
+                title: AppStrings.preDownloadLabel,
+                subtitle: AppStrings.preDownloadSummary(_preDownloadNum),
                 onTap: () => _editIntPref(
-                  title: '预下载章节数量',
+                  title: AppStrings.preDownloadCountLabel,
                   key: PrefKeys.preDownloadNum,
                   current: _preDownloadNum,
                   min: 0,
@@ -449,14 +450,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               SettingSwitchRow(
-                title: '默认启用替换净化',
-                subtitle: '新加入书架的书是否启用替换净化',
+                title: AppStrings.replacePurifyDefaultLabel,
+                subtitle: AppStrings.replacePurifyDefaultLabelDesc,
                 value: _replaceEnableDefault,
                 onChanged: _setReplaceEnableDefault,
               ),
               SettingSwitchRow(
-                title: '全程响应耳机按键',
-                subtitle: '退到后台（进程与 Flutter 引擎存活）时生效；结束应用后不生效',
+                title: AppStrings.headsetKeysAlwaysLabel,
+                subtitle: AppStrings.headsetKeysAlwaysLabelDesc,
                 value: _mediaButtonOnExit,
                 onChanged: (v) {
                   setState(() => _mediaButtonOnExit = v);
@@ -464,8 +465,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '耳机按键启动朗读',
-                subtitle: '通过耳机按键来启动朗读（进程被系统回收后不生效）',
+                title: AppStrings.headsetKeyReadAloudLabel,
+                subtitle: AppStrings.headsetKeyReadAloudLabelDesc,
                 value: _readAloudByMediaButton,
                 onChanged: (v) {
                   setState(() => _readAloudByMediaButton = v);
@@ -474,8 +475,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '自动清除过期搜索数据',
-                subtitle: '超过一天的搜索数据',
+                title: AppStrings.autoClearExpiredSearchLabel,
+                subtitle: AppStrings.autoClearExpiredSearchLabelDesc,
                 value: _autoClearExpired,
                 onChanged: (v) {
                   setState(() => _autoClearExpired = v);
@@ -483,8 +484,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '返回时提示放入书架',
-                subtitle: '阅读未放入书架的书籍在返回时提示放入书架',
+                title: AppStrings.promptAddToShelfOnBackLabel,
+                subtitle: AppStrings.promptAddToShelfOnBackLabelDesc,
                 value: _showAddToShelfAlert,
                 onChanged: (v) {
                   setState(() => _showAddToShelfAlert = v);
@@ -493,8 +494,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '自动更新',
-                subtitle: '每天自动检查软件是否更新',
+                title: AppStrings.autoUpdateLabel,
+                subtitle: AppStrings.autoUpdateLabelDesc,
                 value: _autoUpdateVariant,
                 onChanged: (v) {
                   setState(() => _autoUpdateVariant = v);
@@ -502,7 +503,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '漫画浏览',
+                title: AppStrings.mangaBrowseLabel,
                 value: _showMangaUi,
                 onChanged: (v) {
                   setState(() => _showMangaUi = v);
@@ -513,43 +514,45 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               IosListTile(
-                title: '视频设置',
-                subtitle: '自动播放、全屏播放等配置',
+                title: AppStrings.videoSettingsLabel,
+                subtitle: AppStrings.videoSettingsLabelDesc,
                 onTap: () => showVideoSettingsDialog(context),
               ),
               IosListTile(
-                title: 'Web 端口',
-                subtitle: '当前端口 $_webPort',
+                title: AppStrings.webPortLabel,
+                subtitle: AppStrings.currentPort(_webPort),
                 onTap: _showWebPortDialog,
               ),
               IosListTile(
-                title: 'MCP 端口',
-                subtitle: _mcpPort > 0 ? '当前端口 $_mcpPort' : '当前端口 0（已停止）',
+                title: AppStrings.mcpPortLabel,
+                subtitle: _mcpPort > 0
+                    ? AppStrings.currentPort(_mcpPort)
+                    : AppStrings.currentPortStopped(0),
                 onTap: _showMcpPortDialog,
               ),
               IosListTile(
-                title: 'Web 书源访问令牌',
+                title: AppStrings.webSourceTokenLabel,
                 subtitle: _jsSourceApiToken.isEmpty
-                    ? 'MCP、纯 JS、书源写入、搜索和调试接口均需要'
-                    : '已配置',
+                    ? AppStrings.saveTokenDesc
+                    : AppStrings.configuredLabel,
                 onTap: _editJsSourceApiToken,
               ),
               IosListTile(
-                title: '清理缓存',
+                title: AppStrings.clearCacheTitle,
                 // 批37 收尾：实测范围 = cached_chapters + DB caches +
                 // cache_store（JS 书源缓存），不含字体缓存与 js_files 下载文件
-                subtitle: '清除章节缓存与书源缓存',
+                subtitle: AppStrings.clearCacheSummary,
                 onTap: _cleanCache,
               ),
               IosListTile(
-                title: '清除 WebView 数据',
-                subtitle: '清除内置浏览器所有数据',
+                title: AppStrings.clearWebViewDataLabel,
+                subtitle: AppStrings.clearWebViewDataLabelDesc,
                 onTap: _clearWebViewData,
               ),
               // [批39] 拦截书源打开浏览器（对齐参考版 blockSourceBrowser）
               SettingSwitchRow(
-                title: '拦截书源打开浏览器',
-                subtitle: '开启后书源无法通过 java.startBrowser 等接口弹出浏览器',
+                title: AppStrings.blockSourceBrowserLabel,
+                subtitle: AppStrings.blockSourceBrowserLabelDesc,
                 value: _blockSourceBrowser,
                 onChanged: (v) {
                   setState(() => _blockSourceBrowser = v);
@@ -561,16 +564,16 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               IosListTile(
-                title: '压缩数据库',
-                subtitle: '减小数据库文件的大小',
+                title: AppStrings.compressDatabaseLabel,
+                subtitle: AppStrings.compressDatabaseLabelDesc,
                 onTap: _shrinkDatabase,
               ),
               IosListTile(
-                title: '更新和搜索线程数（太多会卡顿）',
-                subtitle: '搜索有效上限 32；离线缓存有效上限 8',
+                title: AppStrings.threadCountLabel,
+                subtitle: AppStrings.threadCountLabelDesc,
                 value: '$_threadCount',
                 onTap: () => _editIntPref(
-                  title: '线程数量',
+                  title: AppStrings.threadCountShortLabel,
                   key: PrefKeys.threadCount,
                   current: _threadCount,
                   // 批9b-2 审查回修：UI 范围保持参考版 1..256；
@@ -584,7 +587,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 ),
               ),
               SettingSwitchRow(
-                title: '文字操作显示搜索',
+                title: AppStrings.processTextSearchLabel,
                 subtitle: _processTextSubtitle,
                 value: _processText,
                 // 非 Android / 原生桥不可用的构建置灰：不留「可点但无效果」的
@@ -595,8 +598,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                     : null,
               ),
               SettingSwitchRow(
-                title: '记录日志',
-                subtitle: '记录调试日志',
+                title: AppStrings.recordLogLabel,
+                subtitle: AppStrings.recordLogLabelDesc,
                 value: _recordLog,
                 onChanged: (v) {
                   setState(() => _recordLog = v);
@@ -604,8 +607,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '记录 HTTP 请求',
-                subtitle: '在内存中保留最近 50 条已脱敏的请求与响应记录',
+                title: AppStrings.recordHttpLogLabel,
+                subtitle: AppStrings.recordHttpLogLabelDesc,
                 value: _recordHttpLog,
                 onChanged: (v) {
                   setState(() => _recordHttpLog = v);
@@ -622,8 +625,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               SettingSwitchRow(
-                title: '记录堆转储',
-                subtitle: '当应用发生OOM崩溃时保存堆转储',
+                title: AppStrings.recordHeapDumpLabel,
+                subtitle: AppStrings.recordHeapDumpLabelDesc,
                 value: _recordHeapDump,
                 onChanged: (v) {
                   setState(() => _recordHeapDump = v);
@@ -651,8 +654,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   /// 本地密码编辑（对齐原版 localPassword EditTextPreference）
   Future<void> _showLocalPasswordDialog() async {
     final value = await _showTextInputDialog(
-      title: '本地密码',
-      hint: '用于 Web 服务访问鉴权，留空清除',
+      title: AppStrings.localPasswordLabel,
+      hint: AppStrings.localPasswordLabelHint,
       current: _localPassword,
       obscure: true,
     );
@@ -690,7 +693,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         );
       } catch (e) {
         if (mounted) {
-          _toast('替换净化配置同步失败：${errorMessage(e)}');
+          _toast(AppStrings.replacePurifySyncFailed(errorMessage(e)));
         }
       }
     });
@@ -704,8 +707,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   /// 偏好（UI 真源已保存），仅提示网络层未更新。
   Future<void> _showUserAgentDialog() async {
     final value = await _showTextInputDialog(
-      title: '浏览器标识（UserAgent）',
-      hint: '留空使用默认 UserAgent',
+      title: AppStrings.browserUserAgentLabel,
+      hint: AppStrings.browserUserAgentLabelHint,
       current: _userAgent,
       maxLines: 3,
     );
@@ -722,7 +725,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await ref.read(bookApiProvider).setConfig(PrefKeys.userAgent, value);
     } catch (e) {
       if (mounted) {
-        _toast('已保存偏好，但同步网络层失败：${errorMessage(e)}');
+        _toast(AppStrings.prefsSavedNetworkSyncFailed(errorMessage(e)));
       }
     }
   }
@@ -732,21 +735,21 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('默认书籍保存位置'),
+        title: Text(AppStrings.defaultBookSaveLocationLabel),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 'select'),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('选择文件夹'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(AppStrings.chooseFolderLabel),
             ),
           ),
           if (_defaultBookTreeUri.isNotEmpty)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, 'clear'),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('清除'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(AppStrings.clear),
               ),
             ),
         ],
@@ -756,7 +759,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     if (!mounted) return;
     if (action == 'select') {
       final dir = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: '选择默认书籍保存位置',
+        dialogTitle: AppStrings.defaultBookSaveLocationLabel,
       );
       if (dir == null || !mounted) return;
       setState(() => _defaultBookTreeUri = dir);
@@ -771,7 +774,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   /// 经 BookApi.setServerPort 写入引擎配置，重启 Web 服务后生效）
   Future<void> _showWebPortDialog() async {
     final value = await _showNumberInputDialog(
-      title: 'Web 服务端口',
+      title: AppStrings.webPortTitle,
       current: _webPort,
       min: 1024,
       max: 60000,
@@ -783,10 +786,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     // 行为接通：同步到 Rust 引擎配置（对齐原版 webPort 变更重启 WebService）
     try {
       await ref.read(bookApiProvider).setServerPort(value);
-      _toast('端口已保存，重启 Web 服务后生效');
+      _toast(AppStrings.mcpPortSavedRestart);
     } catch (e) {
       debugPrint('OtherSettingsScreen 设置 Web 端口异常: $e');
-      _toast('端口已保存（引擎同步失败，重启应用后生效）');
+      _toast(AppStrings.mcpPortSavedSyncFailed);
     }
   }
 
@@ -798,14 +801,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   /// Task #74 §5.13-1） — Qoder
   String get _customHostsSummary {
     final trimmed = _customHostsJson.trim();
-    if (trimmed.isEmpty) return '未配置（域名 → IP 映射）';
+    if (trimmed.isEmpty) return AppStrings.notConfiguredLabel;
     try {
       final decoded = jsonDecode(trimmed);
-      if (decoded is Map) return '已配置 ${decoded.length} 条';
+      if (decoded is Map) return AppStrings.configuredCount(decoded.length);
     } catch (_) {
       // 解析失败仍显示已配置（保存路径已校验，此处仅兑底）
     }
-    return '已配置';
+    return AppStrings.configuredLabel;
   }
 
   /// MCP 服务端口设置（契约 §2.22.5，对齐原版 AppConfig.mcpPort：
@@ -824,12 +827,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       await ref.read(bookApiProvider).setMcpPort(value);
       if (!mounted) return;
       setState(() => _mcpPort = value);
-      _toast(value > 0
-          ? 'MCP 端口已保存：$value（独立服务已重启）'
-          : '独立 MCP 服务已停止');
+      _toast(
+        value > 0
+            ? AppStrings.mcpPortSaved(value)
+            : AppStrings.mcpServiceStopped,
+      );
     } catch (e) {
       debugPrint('OtherSettingsScreen 设置 MCP 端口异常: $e');
-      if (mounted) _toast('MCP 端口设置失败: ${_errMsg(e)}');
+      if (mounted) _toast(AppStrings.mcpPortSaveFailed(_errMsg(e)));
     }
   }
 
@@ -850,10 +855,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         await ref.read(bookApiProvider).setCustomHosts('');
         if (!mounted) return;
         setState(() => _customHostsJson = '');
-        _toast('自定义 hosts 已清除');
+        _toast(AppStrings.customHostsCleared);
       } catch (e) {
         debugPrint('OtherSettingsScreen 清除 customHosts 异常: $e');
-        if (mounted) _toast('自定义 hosts 清除失败: ${_errMsg(e)}');
+        if (mounted) _toast(AppStrings.customHostsClearFailed(_errMsg(e)));
       }
       return;
     }
@@ -862,21 +867,21 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     try {
       decoded = jsonDecode(trimmed);
     } catch (_) {
-      _toast('非法 JSON，未保存');
+      _toast(AppStrings.invalidJsonNotSaved);
       return;
     }
     if (decoded is! Map) {
-      _toast('须为 JSON 对象（域名 → IP），未保存');
+      _toast(AppStrings.hostsMustBeJsonObject);
       return;
     }
     try {
       await ref.read(bookApiProvider).setCustomHosts(trimmed);
       if (!mounted) return;
       setState(() => _customHostsJson = trimmed);
-      _toast('自定义 hosts 已保存（${decoded.length} 条）');
+      _toast(AppStrings.customHostsSaved(decoded.length));
     } catch (e) {
       debugPrint('OtherSettingsScreen 保存 customHosts 异常: $e');
-      if (mounted) _toast('自定义 hosts 保存失败: ${_errMsg(e)}');
+      if (mounted) _toast(AppStrings.customHostsSaveFailed(_errMsg(e)));
     }
   }
 
@@ -886,18 +891,21 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('JS 书源 API Token'),
+        title: Text(AppStrings.jsSourceApiTokenLabel),
         content: TextField(
           controller: ctrl,
-          decoration: const InputDecoration(
-            hintText: '用于 JS 书源调用外部 API 的令牌',
+          decoration: InputDecoration(
+            hintText: AppStrings.jsSourceApiTokenLabelDesc,
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppStrings.cancel),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('保存'),
+            child: Text(AppStrings.save),
           ),
         ],
       ),
@@ -911,9 +919,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         await api.setConfig('jsSourceApiToken', result);
       }
       setState(() => _jsSourceApiToken = result);
-      _toast(result.isEmpty ? '已清除 Token' : 'Token 已保存');
+      _toast(
+        result.isEmpty ? AppStrings.tokenCleared : AppStrings.tokenSaved,
+      );
     } catch (e) {
-      _toast('保存失败：${errorMessage(e)}');
+      _toast(AppStrings.saveFailedMsg(errorMessage(e)));
     }
   }
 
@@ -922,9 +932,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清理缓存'),
+        title: Text(AppStrings.clearCacheTitle),
         // 批37 收尾：与列表副标题同口径，不宣称清理字体缓存
-        content: const Text('清除章节缓存与书源缓存？'),
+        content: Text(AppStrings.clearCacheConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -932,7 +942,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清理'),
+            child: Text(AppStrings.clearLabelShort),
           ),
         ],
       ),
@@ -940,9 +950,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     if (ok != true || !mounted) return;
     try {
       await ref.read(bookApiProvider).clearCache();
-      if (mounted) _toast('成功清理缓存');
+      if (mounted) _toast(AppStrings.cacheClearedOk);
     } catch (e) {
-      if (mounted) _toast('清理失败：${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.clearFailed(errorMessage(e)));
     }
   }
 
@@ -950,20 +960,26 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清除 WebView 数据'),
-        content: const Text('将清除 WebView Cookie。确定继续吗？'),
+        title: Text(AppStrings.clearWebViewDataLabel),
+        content: Text(AppStrings.clearWebViewConfirm),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清除')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(AppStrings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(AppStrings.clear),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
     try {
       await WebViewCookieManager().clearCookies();
-      _toast('WebView Cookie 已清除');
+      _toast(AppStrings.webViewCookiesCleared);
     } catch (e) {
-      _toast('清除失败：${errorMessage(e)}');
+      _toast(AppStrings.webViewClearFailed(errorMessage(e)));
     }
   }
 
@@ -975,8 +991,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认'),
-        content: const Text('压缩数据库？'),
+        title: Text(AppStrings.confirmLabel),
+        content: Text(AppStrings.compressDatabaseConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -991,19 +1007,19 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     );
     // 异步对话框返回后先检查 mounted，再执行压缩
     if (confirmed != true || !mounted) return;
-    _toast('正在压缩数据库…');
+    _toast(AppStrings.compressingDatabase);
     try {
       final freed = await ref.read(bookApiProvider).shrinkDatabase();
       if (!mounted) return;
       if (freed <= 0) {
         // 契约约定：失败/未初始化降级返回 0
-        _toast('无需压缩或压缩失败');
+        _toast(AppStrings.nothingToCompress);
       } else {
-        _toast('压缩完成，释放 ${_formatBytes(freed)}');
+        _toast(AppStrings.compressDoneFreed(_formatBytes(freed)));
       }
     } catch (e) {
       debugPrint('OtherSettingsScreen 压缩数据库异常: $e');
-      if (mounted) _toast('压缩失败: ${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.compressFailed(errorMessage(e)));
     }
   }
 
@@ -1022,12 +1038,16 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final ms = (_checkSourceConfig['step_timeout_ms'] as num?)?.toInt() ??
         CheckSourceNotifier.defaultStepTimeoutMs;
     final items = <String>[
-      if (_checkSourceConfig['check_search'] == true) '搜索',
-      if (_checkSourceConfig['check_toc'] == true) '目录',
-      if (_checkSourceConfig['check_content'] == true) '正文',
+      if (_checkSourceConfig['check_search'] == true)
+        AppStrings.checkSearchLabel,
+      if (_checkSourceConfig['check_toc'] == true) AppStrings.checkTocLabel,
+      if (_checkSourceConfig['check_content'] == true)
+        AppStrings.checkContentLabel,
     ];
-    final itemText = items.isEmpty ? '未设置校验步骤' : '校验${items.join('、')}';
-    return '超时 ${ms ~/ 1000}秒 · $itemText';
+    final itemText = items.isEmpty
+        ? AppStrings.noStepsToCheck
+        : AppStrings.checkItemsSummary(items.join('、'));
+    return AppStrings.timeoutItemSummary(ms ~/ 1000, itemText);
   }
 
   /// 校验书源配置对话框（对齐原版 CheckSourceConfig：搜索关键词、校验超时、
@@ -1072,7 +1092,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         .saveCheckConfig(config);
     if (!mounted) return;
     setState(() => _checkSourceConfig = config);
-    _toast('配置已保存，下次校验时生效');
+    _toast(AppStrings.configSavedNextCheck);
   }
 
   /// 通用整数偏好编辑（输入校验 + 持久化 + 回写状态）
@@ -1112,10 +1132,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             PrefKeys.threadCount,
             '$value',
           );
-      if (mounted) _toast('线程数已保存，下次搜索/下载生效');
+      if (mounted) _toast(AppStrings.threadCountSaved);
     } catch (e) {
       debugPrint('OtherSettingsScreen 同步线程数到 Rust 失败: $e');
-      if (mounted) _toast('线程数已保存（引擎同步失败，重启应用后生效）');
+      if (mounted) _toast(AppStrings.threadCountSavedSyncFailed);
     }
   }
 
@@ -1146,7 +1166,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             onPressed: () {
               final parsed = int.tryParse(controller.text.trim());
               if (parsed == null || parsed < min || parsed > max) {
-                _toast('请输入 $min ~ $max 之间的数字');
+                _toast(AppStrings.numberRangeHint(min, max));
                 return;
               }
               Navigator.pop(ctx, parsed);
@@ -1208,15 +1228,10 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       if (selectedLocale == null || !mounted) return;
       setState(() => _localeValue = selectedLocale);
       await _settingsService.setLocale(selectedLocale);
-      // [UI-fix v2.0.5 | 2026-08-08] 项目约定：“跟随系统”=中文。
-      // AppStrings 无系统语言解析能力，其 _locale 默认值即 'zh'（冷启动时
-      // _loadLocale 对 'system' 不调用 setLocale，最终生效的就是默认 'zh'），
-      // 故此处选“系统”时立即回退 'zh'，与重启后效果保持一致 — Qoder
-      if (selectedLocale == 'system') {
-        AppStrings.setLocale('zh');
-      } else {
-        AppStrings.setLocale(selectedLocale);
-      }
+      // 对齐原版 AppContextWrapper.getSetLocale：'system' 跟随系统语言
+      // （PlatformDispatcher.locale，中文环境 zh、其余 en），zh/en 直通。
+      // 启动路径 main.dart 与 _loadLocale 共用 startupLocaleOf 同一口径。
+      AppStrings.setLocale(AppStrings.startupLocaleOf(selectedLocale));
       if (mounted) setState(() {});
     });
   }
@@ -1311,11 +1326,11 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
     final text = _timeoutController.text.trim();
     final seconds = int.tryParse(text);
     if (text.isEmpty) {
-      setState(() => _timeoutError = '超时时间不能为空');
+      setState(() => _timeoutError = AppStrings.checkTimeoutEmpty);
       return;
     }
     if (seconds == null || seconds <= 0) {
-      setState(() => _timeoutError = '超时时间必须大于 0 秒');
+      setState(() => _timeoutError = AppStrings.checkTimeoutPositive);
       return;
     }
     Navigator.pop(
@@ -1335,7 +1350,7 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('校验书源配置'),
+      title: Text(AppStrings.checkSourceConfigLabel),
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
@@ -1344,9 +1359,9 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
             children: [
               TextField(
                 controller: _keywordController,
-                decoration: const InputDecoration(
-                  labelText: '搜索关键词',
-                  hintText: '默认：我的',
+                decoration: InputDecoration(
+                  labelText: AppStrings.searchKeywordLabel,
+                  hintText: AppStrings.defaultMineLabel,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1359,8 +1374,8 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
                   }
                 },
                 decoration: InputDecoration(
-                  labelText: '校验超时（秒）',
-                  hintText: '单个校验步骤的超时时间',
+                  labelText: AppStrings.checkTimeoutSecondsLabel,
+                  hintText: AppStrings.stepTimeoutHint,
                   border: const OutlineInputBorder(),
                   errorText: _timeoutError,
                 ),
@@ -1369,8 +1384,8 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
               // 校验步骤级联（对齐原版 checkSearch→checkInfo→checkCategory
               // →checkContent 依赖链，映射到 Rust 侧三步开关）
               SwitchListTile(
-                title: const Text('校验搜索'),
-                subtitle: const Text('搜索关键词并校验结果'),
+                title: Text(AppStrings.checkSearchLabel),
+                subtitle: Text(AppStrings.checkSearchLabelDesc),
                 value: _checkSearch,
                 onChanged: (v) => setState(() {
                   _checkSearch = v;
@@ -1381,8 +1396,8 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
                 }),
               ),
               SwitchListTile(
-                title: const Text('校验目录'),
-                subtitle: const Text('依赖校验搜索结果'),
+                title: Text(AppStrings.checkTocLabel),
+                subtitle: Text(AppStrings.checkTocLabelDesc),
                 value: _checkToc,
                 // 上级步骤关闭时下级不可切换（对齐原版 isEnabled 联动）
                 onChanged: !_checkSearch
@@ -1393,22 +1408,22 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
                         }),
               ),
               SwitchListTile(
-                title: const Text('校验正文'),
-                subtitle: const Text('依赖校验目录结果'),
+                title: Text(AppStrings.checkContentLabel),
+                subtitle: Text(AppStrings.checkContentLabelDesc),
                 value: _checkContent,
                 onChanged: (!_checkSearch || !_checkToc)
                     ? null
                     : (v) => setState(() => _checkContent = v),
               ),
               SwitchListTile(
-                title: const Text('验证码拦截检测'),
-                subtitle: const Text('识别疑似验证码页面并标记'),
+                title: Text(AppStrings.checkCaptchaLabel),
+                subtitle: Text(AppStrings.checkCaptchaLabelDesc),
                 value: _detectCaptcha,
                 onChanged: (v) => setState(() => _detectCaptcha = v),
               ),
               SwitchListTile(
-                title: const Text('重定向检测'),
-                subtitle: const Text('识别登录/拦截重定向并标记'),
+                title: Text(AppStrings.checkRedirectLabel),
+                subtitle: Text(AppStrings.checkRedirectLabelDesc),
                 value: _detectRedirect,
                 onChanged: (v) => setState(() => _detectRedirect = v),
               ),
@@ -1468,11 +1483,11 @@ class _McpPortDialogState extends State<_McpPortDialog> {
     }
     final parsed = int.tryParse(text);
     if (parsed == null || parsed < 0) {
-      setState(() => _error = '请输入非负数字（0 表示停止）');
+      setState(() => _error = AppStrings.nonNegativeNumberHint);
       return;
     }
     if (parsed > 0 && (parsed < 1024 || parsed > 65530)) {
-      setState(() => _error = '端口区间 1024~65530，0 表示停止');
+      setState(() => _error = AppStrings.portRangeHint);
       return;
     }
     Navigator.pop(context, parsed);
@@ -1481,22 +1496,22 @@ class _McpPortDialogState extends State<_McpPortDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('MCP 服务端口'),
+      title: Text(AppStrings.mcpPortTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '独立 MCP 服务端口（对齐原版默认 1236）；'
-            '留空或 0 停止独立服务，Web 端 /mcp/* 不受影响。',
+          Text(
+            '${AppStrings.mcpStandalonePortDesc}'
+            '${AppStrings.mcpStandalonePortDesc2}',
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _controller,
             autofocus: true,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              hintText: '1024 ~ 65530，0 停止',
+            decoration: InputDecoration(
+              hintText: AppStrings.portRangeHintShort,
             ),
           ),
           if (_error != null)
@@ -1552,14 +1567,14 @@ class _CustomHostsDialogState extends State<_CustomHostsDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('自定义 hosts'),
+      title: Text(AppStrings.customHostsTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'JSON 对象格式：{"域名": "IP"} 或 {"域名": ["IP1","IP2"]}；'
-            '保存后即时生效，空内容清除并恢复系统 DNS。',
+          Text(
+            '${AppStrings.customHostsJsonHint}'
+            '${AppStrings.customHostsSaveHint}',
           ),
           const SizedBox(height: 12),
           ConstrainedBox(

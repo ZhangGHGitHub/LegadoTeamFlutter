@@ -227,7 +227,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   String get _webServiceAddressLabel {
     final host = Uri.tryParse(_webServiceAddress)?.host ?? '';
     return host == LanWebServiceAddressResolver.loopbackHost
-        ? '$_webServiceAddress（本机）'
+        ? AppStrings.webServiceAddressLocal(_webServiceAddress)
         : _webServiceAddress;
   }
 
@@ -390,7 +390,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Web 服务启动失败: 无法确认服务状态（${errorMessage(e)}）',
+                AppStrings.webServiceStartUnknown(errorMessage(e)),
               ),
             ),
           );
@@ -403,7 +403,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
           await _rollbackWebStart(api.stopServer);
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Web 服务启动失败: 服务状态异常（$status）')),
+            SnackBar(
+              content: Text(AppStrings.webServiceStartBadStatus(status)),
+            ),
           );
           return;
         }
@@ -424,7 +426,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         unawaited(_refreshWebAddress(status));
         if (!notificationGranted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('通知权限未授予：Web 服务前台通知不可见（局域网访问不受影响）')),
+            SnackBar(content: Text(AppStrings.webServiceNotifyMissing)),
           );
         }
       } else {
@@ -464,7 +466,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       // "Instance of 'BridgeError'"，改用统一提取器暴露 Rust 侧可读原因
       // （如「数据库未初始化」「端口绑定失败」）。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Web 服务切换失败: ${errorMessage(e)}')),
+        SnackBar(
+          content: Text(AppStrings.webServiceToggleFailed(errorMessage(e))),
+        ),
       );
     } finally {
       if (mounted) setState(() => _webServiceBusy = false);
@@ -476,12 +480,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   /// 而不是让用户点开关撞「Instance of BridgeError」后再猜。
   String get _mcpServiceSubtitle {
     if (_mcpService && _mcpPort > 0) {
-      return '端口 $_mcpPort（带令牌保护的书源开发工具）';
+      return AppStrings.mcpPortSubtitle(_mcpPort);
     }
     if (!_mcpTokenConfigured) {
-      return '需先配置「Web 书源访问令牌」（设置 → 高级 → 其他设置）';
+      return AppStrings.mcpTokenRequiredHint;
     }
-    return '带令牌保护的书源开发工具';
+    return AppStrings.mcpTokenProtectedDesc;
   }
 
   Future<void> _toggleMcpService(bool v) async {
@@ -510,7 +514,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       // [2026-10-06 iOS 实测修复] 同 Web 开关：BridgeError 取 message，
       // 暴露 Rust 侧真实失败原因（token 未配置 / 端口占用 / 端口越界）。
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('MCP 服务切换失败: ${errorMessage(e)}')),
+        SnackBar(
+          content: Text(AppStrings.mcpServiceToggleFailed(errorMessage(e))),
+        ),
       );
     } finally {
       if (mounted) setState(() => _mcpServiceBusy = false);
@@ -545,12 +551,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已复制访问地址')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.addressCopied)));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('复制地址失败: ${errorMessage(e)}')));
+      ).showSnackBar(
+        SnackBar(content: Text(AppStrings.copyAddressFailedMsg(errorMessage(e)))),
+      );
     }
   }
 
@@ -573,7 +581,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     if (!opened && mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('无法打开浏览器')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.cannotOpenBrowser)));
     }
   }
 
@@ -607,16 +615,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               ? _webServiceAddressLabel
               : (_webServiceStatus.isNotEmpty
                     ? _webServiceStatus
-                    : '用浏览器写源或看书'))
-        : '用浏览器写源或看书';
+                    : AppStrings.browserSourceHint))
+        : AppStrings.browserSourceHint;
     // [2026-10-07 保活批 | 方案 A 兜底] 保活启动失败 → 回退「仅前台可用」，
     // 仅副题提示（对齐需求：不阻断服务、UI 主形态不变）。
     // [批9b-6c 审查回修] Android 通知权限未授予 → FGS 与 LAN 访问不受影响，
     // 仅前台通知不可见，同样只加副题提示。
     final subtitle = enabled && _webKeepAliveUnavailable
-        ? '$baseSubtitle · 后台保活不可用，请保持 App 打开'
+        ? '$baseSubtitle · ${AppStrings.webServiceBackgroundHint}'
         : enabled && _webNotificationDegraded
-        ? '$baseSubtitle · 通知权限未授予，前台通知不可见'
+        ? '$baseSubtitle · ${AppStrings.webServiceNotifyHint}'
         : baseSubtitle;
     return IosGroup(
       margin: const EdgeInsets.only(top: 8),
@@ -634,13 +642,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                     key: const ValueKey('web-service-copy-address'),
                     onPressed: _copyWebServiceAddress,
                     icon: const Icon(Symbols.content_copy_rounded, size: 18),
-                    label: const Text('复制地址'),
+                    label: Text(AppStrings.copyAddressLabel),
                   ),
                   TextButton.icon(
                     key: const ValueKey('web-service-open-browser'),
                     onPressed: _openWebServiceAddress,
                     icon: const Icon(Symbols.open_in_browser_rounded, size: 18),
-                    label: const Text('在浏览器中打开'),
+                    label: Text(AppStrings.openInBrowserLabel),
                   ),
                 ],
               ),
@@ -663,7 +671,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   size: 24,
                   color: cs.onSurfaceVariant,
                 ),
-          title: 'Web 服务',
+          title: AppStrings.webServiceLabel,
           subtitle: subtitle,
           value: _webService,
           onChanged: _webServiceBusy ? null : _toggleWebService,
@@ -725,7 +733,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       chapterIndex = (result['chapterIndex'] as num?)?.toInt() ?? 0;
       chapterPos = (result['chapterPos'] as num?)?.toInt() ?? 0;
       if (bookName.isEmpty) {
-        _showMyPageMessage('书签信息不完整，无法打开');
+        _showMyPageMessage(AppStrings.bookmarkIncomplete);
         return;
       }
       final api = ref.read(bookApiProvider);
@@ -750,12 +758,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         }
       }
     } catch (e) {
-      _showMyPageMessage('打开书籍失败：${errorMessage(e)}');
+      _showMyPageMessage(AppStrings.openBookFailed(errorMessage(e)));
       return;
     }
     if (!mounted) return;
     if (found == null || !BookOpenUtils.isInBookshelf(found)) {
-      _showMyPageMessage('该书已不在书架');
+      _showMyPageMessage(AppStrings.bookNotOnShelf);
       return;
     }
     try {
@@ -771,7 +779,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      _showMyPageMessage('打开书籍失败：${errorMessage(e)}');
+      _showMyPageMessage(AppStrings.openBookFailed(errorMessage(e)));
     }
   }
 
@@ -780,14 +788,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     return showDialog<Book>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('选择书籍'),
+        title: Text(AppStrings.selectBookTitle),
         children: [
           for (final book in books)
             SimpleDialogOption(
               key: ValueKey('bookmarkBookChoice_${book.bookUrl}'),
               onPressed: () => Navigator.pop(dialogContext, book),
               child: Text(
-                '${book.name} · ${book.author.isEmpty ? '未知作者' : book.author}'
+                '${book.name} · ${book.author.isEmpty ? AppStrings.unknownAuthor : book.author}'
                 '${book.originName.isEmpty ? '' : '（${book.originName}）'}',
               ),
             ),
@@ -832,7 +840,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
         actions: [
           IconButton(
             icon: const Icon(Symbols.help_rounded),
-            tooltip: '帮助',
+            tooltip: AppStrings.helpLabel,
             onPressed: _showHelp,
           ),
         ],
@@ -846,28 +854,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               _buildWebServiceBlock(context),
 
               // ===== 规则分组（M1：收敛为 5 个规则入口）=====
-              const IosSectionHeader('规则'),
+              IosSectionHeader(AppStrings.rulesSection),
               IosGroup(
                 separatorIndent: 62,
                 children: [
                   _myEntry(
                     // [M2] 图标对齐参考版 ClickableSettingItem：Source
                     icon: Symbols.source_rounded,
-                    title: '书源管理',
-                    subtitle: '新建、导入、编辑或管理书源',
+                    title: AppStrings.sourceManagement,
+                    subtitle: AppStrings.sourcesEntryDesc,
                     route: AppRoutes.sources,
                   ),
                   _myEntry(
                     icon: Symbols.find_replace_rounded,
-                    title: '替换净化',
-                    subtitle: '配置替换净化规则',
+                    title: AppStrings.replacePurifyLabel,
+                    subtitle: AppStrings.replacePurifyLabelDesc,
                     route: AppRoutes.replaceRules,
                   ),
                   _myEntry(
                     // [M2] 图标对齐参考版：Rule
                     icon: Symbols.rule_rounded,
-                    title: 'TXT 目录规则',
-                    subtitle: '配置 TXT 目录规则',
+                    title: AppStrings.txtTocRulesLabel,
+                    subtitle: AppStrings.txtTocRulesLabelDesc,
                     route: AppRoutes.txtTocRules,
                   ),
                   // [M1 字典规则合并 | 2026-11-03 用户裁决] 原「字典规则」
@@ -879,15 +887,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   _myEntry(
                     // [M2] 图标对齐参考版：LibraryBooks
                     icon: Symbols.library_books_rounded,
-                    title: '字典规则',
-                    subtitle: '管理字典规则，查询词典释义',
+                    title: AppStrings.dictRulesLabel,
+                    subtitle: AppStrings.dictRulesLabelDesc,
                     route: AppRoutes.dictRule,
                   ),
                   _myEntry(
                     // [M2] 图标对齐参考版：Sell
                     icon: Symbols.sell_rounded,
-                    title: '高亮标签规则',
-                    subtitle: '自动高亮标注规则',
+                    title: AppStrings.highlightRulesLabel,
+                    subtitle: AppStrings.highlightRulesLabelDesc,
                     route: AppRoutes.highlightRules,
                   ),
                 ],
@@ -896,20 +904,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               // ===== 服务与工具分组 =====
               // [M1 用户裁决] 原版 pref_main 独有能力保留区：定时任务 /
               // 运行定时任务 / MCP 服务（主题模式不在此，统一从设置→外观）。
-              const IosSectionHeader('服务与工具'),
+              IosSectionHeader(AppStrings.servicesSection),
               IosGroup(
                 separatorIndent: 62,
                 children: [
                   _myEntry(
                     icon: Symbols.schedule_rounded,
-                    title: '定时任务',
-                    subtitle: '管理按计划执行的 JavaScript 任务',
+                    title: AppStrings.autoTasksEntry,
+                    subtitle: AppStrings.autoTasksEntryDesc,
                     route: AppRoutes.autoTasks,
                   ),
                   SettingSwitchRow(
                     icon: Symbols.autorenew_rounded,
-                    title: '运行定时任务',
-                    subtitle: '重启后保留计划；Android 可能延后实际执行时间',
+                    title: AppStrings.runScheduledTasksLabel,
+                    subtitle: AppStrings.runScheduledTasksLabelDesc,
                     value: _autoTaskService,
                     onChanged: _toggleAutoTaskService,
                   ),
@@ -926,7 +934,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                               context,
                             ).colorScheme.onSurfaceVariant,
                           ),
-                    title: 'MCP 服务',
+                    title: AppStrings.mcpServiceLabel,
                     subtitle: _mcpServiceSubtitle,
                     value: _mcpService,
                     onChanged: _mcpServiceBusy ? null : _toggleMcpService,
@@ -935,7 +943,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               ),
 
               // ===== 其他分组 =====
-              const IosSectionHeader('其他'),
+              IosSectionHeader(AppStrings.otherSection),
               IosGroup(
                 separatorIndent: 62,
                 children: [
@@ -943,8 +951,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   // 入口 + 明确「暂未支持」页面壳，不接任何 LLM。
                   _myEntry(
                     icon: Symbols.auto_awesome_rounded,
-                    title: 'AI 聊天',
-                    subtitle: '暂未支持，待 Rust 能力接入',
+                    title: AppStrings.aiChatLabel,
+                    subtitle: AppStrings.notSupportedYet,
                     route: AppRoutes.aiChat,
                   ),
                   // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页集中化：我的页
@@ -955,20 +963,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   // 「其他」组（对齐参考版顺序：AI 聊天 → 设置 → 书签 …）
                   _myEntry(
                     icon: Symbols.settings_rounded,
-                    title: '设置',
-                    subtitle: '外观 / 高级 / 阅读界面 / 备份 / 缓存',
+                    title: AppStrings.settings,
+                    subtitle: AppStrings.settingsEntryDesc,
                     route: AppRoutes.settingsHome,
                   ),
                   _myEntry(
                     icon: Symbols.bookmark_rounded,
-                    title: '书签',
-                    subtitle: '所有书签',
+                    title: AppStrings.bookmarksLabel,
+                    subtitle: AppStrings.allBookmarksLabel,
                     route: AppRoutes.bookmarks,
                   ),
                   _myEntry(
                     icon: Symbols.history_rounded,
-                    title: '阅读记录',
-                    subtitle: '阅读时间记录',
+                    title: AppStrings.readRecordLabel,
+                    subtitle: AppStrings.readTimeRecordLabel,
                     route: AppRoutes.readRecord,
                   ),
                   // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 补「缓存管理」入口
@@ -976,25 +984,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   // OfflineCacheScreen，此前入口仅在书架菜单「离线缓存」）— Qoder
                   _myEntry(
                     icon: Symbols.download_rounded,
-                    title: '缓存管理',
-                    subtitle: '书籍下载任务与缓存进度',
+                    title: AppStrings.cacheManagementEntry,
+                    subtitle: AppStrings.cacheManagementEntryDesc,
                     route: AppRoutes.offlineCache,
                   ),
                   _myEntry(
                     icon: Symbols.folder_rounded,
-                    title: '文件管理',
-                    subtitle: '管理私有文件夹的文件',
+                    title: AppStrings.fileManagementLabel,
+                    subtitle: AppStrings.fileManagementLabelDesc,
                     route: AppRoutes.fileManage,
                   ),
                   _myEntry(
                     icon: Symbols.info_rounded,
-                    title: '关于',
+                    title: AppStrings.aboutLabel,
                     route: AppRoutes.about,
                   ),
                   IosListTile(
                     // [M2] 图标对齐参考版：AutoMirrored ExitToApp
                     icon: Symbols.exit_to_app_rounded,
-                    title: '退出',
+                    title: AppStrings.exitLabel,
                     onTap: _confirmExit,
                   ),
                 ],
@@ -1015,8 +1023,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('退出'),
-        content: const Text('确定退出阅读吗？'),
+        title: Text(AppStrings.exitLabel),
+        content: Text(AppStrings.confirmExitReading),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

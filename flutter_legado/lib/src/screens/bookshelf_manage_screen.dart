@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
@@ -80,12 +81,12 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除书籍'),
-        content: Text('确定要删除选中的 $count 本书吗？'),
+        title: Text(AppStrings.deleteBooksTitle),
+        content: Text(AppStrings.confirmDeleteSelectedBooks(count)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -93,7 +94,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
               backgroundColor: cs.errorContainer,
               foregroundColor: cs.onErrorContainer,
             ),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -102,9 +103,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
       await _notifier.removeSelected();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('删除完成'),
-            duration: Duration(seconds: 1),
+          SnackBar(
+            content: Text(AppStrings.deleteCompleted),
+            duration: const Duration(seconds: 1),
           ),
         );
       }
@@ -118,7 +119,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取分组失败: ${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.loadGroupsFailed(errorMessage(e)))),
         );
       }
       return;
@@ -126,7 +127,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     if (!mounted || groups.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('暂无可用分组，请先在分组管理创建')),
+          SnackBar(content: Text(AppStrings.noAvailableGroup)),
         );
       }
       return;
@@ -135,12 +136,14 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final groupId = await showDialog<int>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('移动到分组'),
+        title: Text(AppStrings.moveToGroup),
         children: [
           for (final g in groups)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(dialogContext, g.groupId),
-              child: Text(g.groupName.isEmpty ? '未命名分组' : g.groupName),
+              child: Text(
+                g.groupName.isEmpty ? AppStrings.unnamedGroup : g.groupName,
+              ),
             ),
         ],
       ),
@@ -149,9 +152,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
       await _notifier.moveSelectedToGroup(groupId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已移动到分组'),
-            duration: Duration(seconds: 1),
+          SnackBar(
+            content: Text(AppStrings.movedToGroup),
+            duration: const Duration(seconds: 1),
           ),
         );
       }
@@ -162,9 +165,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     await _notifier.pinSelected();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('已置顶'),
-          duration: Duration(seconds: 1),
+        SnackBar(
+          content: Text(AppStrings.pinned),
+          duration: const Duration(seconds: 1),
         ),
       );
     }
@@ -181,7 +184,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('获取书源失败: ${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.loadSourcesFailed(errorMessage(e)))),
         );
       }
       return;
@@ -189,14 +192,14 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     if (!mounted) return;
     if (sources.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('暂无可用书源')),
+        SnackBar(content: Text(AppStrings.noAvailableSource)),
       );
       return;
     }
     final target = await showDialog<BookSource>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('选择目标书源'),
+        title: Text(AppStrings.selectTargetSource),
         children: [
           for (final s in sources)
             SimpleDialogOption(
@@ -218,33 +221,37 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         .toList();
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('选中书籍无可换源目标（本地书/已是该源）')),
+        SnackBar(content: Text(AppStrings.noSourceForSelectedBooks)),
       );
       return;
     }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('批量换源'),
+        title: Text(AppStrings.batchChangeSource),
         content: Text(
-          '确定将 ${candidates.length} 本书切换到'
-          '「${target.bookSourceName.isEmpty ? target.bookSourceUrl : target.bookSourceName}」吗？',
+          AppStrings.confirmSwitchSource(
+            candidates.length,
+            target.bookSourceName.isEmpty
+                ? target.bookSourceUrl
+                : target.bookSourceName,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('换源'),
+            child: Text(AppStrings.changeSource),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
     // 进度对话框（对标原版 i/N 进度提示）
-    final progress = ValueNotifier<String>('准备中...');
+    final progress = ValueNotifier<String>(AppStrings.preparing);
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -270,7 +277,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final (success, total) = await _notifier.switchSelectedSource(
       target.bookSourceUrl,
       onProgress: (done, total, name) {
-        progress.value = '换源 $done/$total：$name';
+        progress.value = AppStrings.changeSourceProgress(done, total, name);
       },
     );
     if (!mounted) {
@@ -280,7 +287,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     Navigator.pop(context); // 关闭进度对话框
     progress.dispose();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('批量换源完成：成功 $success/$total 本')),
+      SnackBar(
+        content: Text(AppStrings.batchChangeSourceDone(success, total)),
+      ),
     );
   }
 
@@ -299,7 +308,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
             controller: _searchCtrl,
             style: TextStyle(color: theme.colorScheme.onPrimary),
             decoration: InputDecoration(
-              hintText: '搜索书名',
+              hintText: AppStrings.searchBookNameHint,
               hintStyle: TextStyle(
                 color: theme.colorScheme.onPrimary.withValues(alpha: 0.7),
               ),
@@ -341,10 +350,14 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           PopupMenuButton<String>(
             onSelected: _handleMenu,
             itemBuilder: (_) => [
-              const PopupMenuItem(
-                  value: 'group_manage', child: Text('分组管理')),
-              const PopupMenuItem(
-                  value: 'export_all', child: Text('导出所有使用书源')),
+              PopupMenuItem(
+                value: 'group_manage',
+                child: Text(AppStrings.groupManagement),
+              ),
+              PopupMenuItem(
+                value: 'export_all',
+                child: Text(AppStrings.exportAllUsedSources),
+              ),
               PopupMenuItem(
                 value: 'open_by_title',
                 child: Row(
@@ -355,7 +368,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                           color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 6),
                     ],
-                    const Text('点击书名打开书籍信息'),
+                    Text(AppStrings.tapTitleForBookInfo),
                   ],
                 ),
               ),
@@ -408,7 +421,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         // [批16e 回修 | P3-4] 早返回补 mounted 检查：await 后页面可能已卸载
         if (!mounted) return;
         messenger.showSnackBar(
-          const SnackBar(content: Text('当前书架没有使用网络书源的书籍')),
+          SnackBar(content: Text(AppStrings.noSourceInShelf)),
         );
         return;
       }
@@ -421,7 +434,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         // 同上：await 后页面可能已卸载
         if (!mounted) return;
         messenger.showSnackBar(
-          const SnackBar(content: Text('未找到对应书源（可能已删除）')),
+          SnackBar(content: Text(AppStrings.sourceNotFound)),
         );
         return;
       }
@@ -431,14 +444,14 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         context,
         content: json,
         fileName: 'bookSource.json',
-        subject: '导出在用书源',
+        subject: AppStrings.exportAllUsedSources,
       );
       if (!mounted || result == null) return;
       messenger.showSnackBar(SnackBar(content: Text(result.message)));
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('导出失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.exportSourcesFailed(errorMessage(e)))),
       );
     }
   }
@@ -454,10 +467,10 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
       );
     }
     if (state.books.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.library_books_rounded,
-        title: '书架为空',
-        subtitle: '请先在书架添加书籍',
+        title: AppStrings.bookshelfEmpty,
+        subtitle: AppStrings.addBooksFirst,
       );
     }
     // 顶栏搜索框：UI 层按书名过滤（对标原版 searchView 实时筛选）
@@ -467,10 +480,10 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
             .where((b) => b.name.toLowerCase().contains(_filter))
             .toList();
     if (books.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.search_off_rounded,
-        title: '无匹配书籍',
-        subtitle: '试试其他关键词',
+        title: AppStrings.noMatchingBooksShelf,
+        subtitle: AppStrings.tryOtherKeywords,
       );
     }
     // [UI_SYNC_REFACTOR R3] 管理列表快速滚动条
@@ -524,7 +537,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    book.name.isEmpty ? '未命名书籍' : book.name,
+                    book.name.isEmpty ? AppStrings.unnamedBook : book.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
@@ -534,20 +547,24 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    book.author.isEmpty ? '未知作者' : book.author,
+                    book.author.isEmpty ? AppStrings.unknownAuthor : book.author,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: infoStyle,
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '来源：${book.originName.isEmpty ? '本地' : book.originName}',
+                    AppStrings.originLabel(
+                      book.originName.isEmpty
+                          ? AppStrings.bookTypeLocal
+                          : book.originName,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: infoStyle,
                   ),
                   Text(
-                    '分组：${_groupNames(book)}',
+                    AppStrings.groupNamesLabel(_groupNames(book)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: infoStyle,
@@ -559,7 +576,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           // 删除按钮（对标原版 tv_delete）
           IconButton(
             icon: const Icon(Symbols.delete_rounded, size: 20),
-            tooltip: '删除',
+            tooltip: AppStrings.delete,
             visualDensity: VisualDensity.compact,
             onPressed: () => _confirmDeleteSingle(book),
           ),
@@ -570,10 +587,10 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
 
   /// 分组显示名（2^n 位掩码 / 旧时间戳 exact 混合语义）
   String _groupNames(Book book) {
-    if (book.group == 0) return '未分组';
+    if (book.group == 0) return AppStrings.ungrouped;
     final groups = ref.watch(bookshelfNotifierProvider).groups;
     final names = bookGroupNames(book, groups);
-    return names.isEmpty ? '未分组' : names.join('，');
+    return names.isEmpty ? AppStrings.ungrouped : names.join('，');
   }
 
   /// 单本删除（对标原版 item 内 tv_delete）
@@ -583,12 +600,12 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除书籍'),
-        content: Text('确定要删除《${book.name}》吗？'),
+        title: Text(AppStrings.deleteBooksTitle),
+        content: Text(AppStrings.confirmDeleteBookNamed(book.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
@@ -596,7 +613,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
               backgroundColor: cs.errorContainer,
               foregroundColor: cs.onErrorContainer,
             ),
-            child: const Text('删除'),
+            child: Text(AppStrings.delete),
           ),
         ],
       ),
@@ -610,7 +627,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: ${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.deleteFailedShelf(errorMessage(e)))),
         );
       }
     }
@@ -634,7 +651,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                   allSelected ? _notifier.deselectAll() : _notifier.selectAll(),
             ),
             Text(
-              '已选 ${state.selectedUrls.length} 本',
+              AppStrings.selectedCountManage(state.selectedUrls.length),
               // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
               style: theme.textTheme.bodySmall,
             ),
@@ -642,20 +659,20 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
             TextButton(
               style: TextButton.styleFrom(foregroundColor: colorScheme.error),
               onPressed: () => _confirmDelete(state),
-              child: const Text('删除'),
+              child: Text(AppStrings.delete),
             ),
             TextButton(
               onPressed: () => _showGroupPicker(state),
-              child: const Text('分组'),
+              child: Text(AppStrings.groupName),
             ),
             TextButton(
               onPressed: _pinSelected,
-              child: const Text('置顶'),
+              child: Text(AppStrings.pinToTop),
             ),
             // [UI-fix v2.0.2 | 2026-08-06] 批量换源入口（对标原版 changeSource） — Qoder
             TextButton(
               onPressed: () => _switchSelectedSource(state),
-              child: const Text('换源'),
+              child: Text(AppStrings.changeSource),
             ),
           ],
         ),

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/pref_keys.dart' show PrefKeys;
+import '../l10n/app_strings.dart';
 import '../models/flip_mode.dart';
 import '../models/reader_tap_action.dart';
 import '../utils/page_key_codes.dart';
@@ -47,15 +48,15 @@ enum TapAction {
   String get label {
     switch (this) {
       case TapAction.none:
-        return '无操作';
+        return AppStrings.tapActionNone;
       case TapAction.prevPage:
-        return '上一页/章';
+        return AppStrings.tapActionPrevPage;
       case TapAction.nextPage:
-        return '下一页/章';
+        return AppStrings.tapActionNextPage;
       case TapAction.toggleControls:
-        return '切换工具栏';
+        return AppStrings.tapActionToggleControls;
       case TapAction.openCatalog:
-        return '打开目录';
+        return AppStrings.tapActionOpenCatalog;
     }
   }
 }
@@ -132,7 +133,7 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
   late ReaderAdvancedConfig _config = widget.config.copy();
 
   /// 当前阅读字体显示名（与 FontScreen 持久化键 reader_font_family 同步）
-  String _fontLabel = '默认字体';
+  String _fontLabel = AppStrings.defaultFont;
 
   /// 简繁转换类型（0=不转换 1=繁转简 2=简转繁，对标原版 chineseConvertType）
   int _convertType = 0;
@@ -255,8 +256,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
                 horizontal: 8,
               ),
               leading: const Icon(Icons.crop_free),
-              title: const Text('页面边距'),
-              subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
+              title: Text(AppStrings.pageMargins),
+              subtitle: Text(AppStrings.pageMarginsDesc),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => ReaderPaddingConfigSheet.show(
                 context,
@@ -275,7 +276,10 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         break;
       case ReaderConfigSection.all:
         children = [
-          Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            AppStrings.advancedReaderSettings,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 8),
           // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp，见 _groupCard）
           _groupCard(_buildFlipMode()),
@@ -303,8 +307,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
                     horizontal: 8,
                   ),
                   leading: const Icon(Icons.crop_free),
-                  title: const Text('页面边距'),
-                  subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
+                  title: Text(AppStrings.pageMargins),
+                  subtitle: Text(AppStrings.pageMarginsDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => ReaderPaddingConfigSheet.show(
                     context,
@@ -322,8 +326,8 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
                     horizontal: 8,
                   ),
                   leading: const Icon(Icons.info_outline),
-                  title: const Text('阅读提示信息'),
-                  subtitle: const Text('页眉页脚提示项与标题样式'),
+                  title: Text(AppStrings.readingTipInfo),
+                  subtitle: Text(AppStrings.readingTipInfoDesc),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => ReaderTipConfigSheet.show(
                     context,

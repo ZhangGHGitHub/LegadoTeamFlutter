@@ -16,6 +16,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/ios_widgets.dart';
+import 'package:flutter_legado/src/l10n/app_strings.dart';
 
 void main() {
   const channel = MethodChannel('legado/process_text');
@@ -26,7 +27,11 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    // 界面文案断言以中文为基准：prefs 固定 zh（'system' 现按系统 locale
+    // 解析，测试宿主默认 en_US 会渲染英文）；页面 _loadLocale 会按偏好
+    // 覆盖 AppStrings，故必须写偏好而非只调 setLocale。
+    AppStrings.setLocale('zh');
+    SharedPreferences.setMockInitialValues({'app_locale': 'zh'});
     api = MockBookApi();
     calls = <MethodCall>[];
     // Android 默认可用；setEnabled 返回 null 模拟原生未确认（回滚路径）

@@ -19,6 +19,7 @@ import 'package:flutter_legado/src/screens/direct_link_upload_settings_sheet.dar
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
 import 'package:flutter_legado/src/services/direct_link_upload_rule_service.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/l10n/app_strings.dart';
 
 /// 捕获 directLinkUpload 入参的 Mock（配置读写沿用 MockBookApi 内存实现）
 class _CapturingBookApi extends MockBookApi {
@@ -75,7 +76,12 @@ void main() {
   late DirectLinkUploadRuleService service;
 
   setUp(() {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
+    // 界面文案断言以中文为基准：prefs 固定 zh（页面 _loadLocale 会按
+    // 偏好覆盖 AppStrings，故必须写偏好而非只调 setLocale）。
+    AppStrings.setLocale('zh');
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'app_locale': 'zh',
+    });
     // rootBundle 会缓存 Future；跨 testWidgets 的 FakeAsync 区域复用旧
     // Future 会永不完成 → 逐用例清除默认规则资产缓存
     rootBundle.evict(DirectLinkUploadRuleService.defaultRulesAsset);

@@ -471,29 +471,31 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     return [
       IconButton(
         icon: const Icon(Icons.select_all),
-        tooltip: '全选',
+        tooltip: AppStrings.selectAll,
         onPressed: notifier.selectAll,
       ),
       IconButton(
         icon: const Icon(Icons.flip_rounded),
-        tooltip: '反选',
+        tooltip: AppStrings.invertSelection,
         onPressed: notifier.invertSelection,
       ),
       if (privacy.hasPassword)
         IconButton(
           key: const ValueKey('bookshelf-batch-private'),
           icon: const Icon(Symbols.lock_rounded),
-          tooltip: targetPrivate ? '设为私密' : '取消私密',
+          tooltip: targetPrivate
+              ? AppStrings.markPrivate
+              : AppStrings.unmarkPrivate,
           onPressed: () => _toggleSelectedPrivate(context, ref),
         ),
       IconButton(
         icon: const Icon(Icons.delete_rounded),
-        tooltip: '删除',
+        tooltip: AppStrings.delete,
         onPressed: () => _confirmDeleteSelected(context, ref),
       ),
       IconButton(
         icon: const Icon(Icons.close_rounded),
-        tooltip: '取消',
+        tooltip: AppStrings.cancel,
         onPressed: notifier.toggleBatchMode,
       ),
     ];
@@ -522,12 +524,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           .setBooksPrivate(urls, targetPrivate);
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('已更新 $updated 本书的私密状态')));
+        ..showSnackBar(
+          SnackBar(content: Text(AppStrings.privateUpdated(updated))),
+        );
     } catch (e) {
       final reason = e is BridgeError ? e.message : '$e';
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('设置私密状态失败：$reason')));
+        ..showSnackBar(
+          SnackBar(content: Text(AppStrings.privateUpdateFailed(reason))),
+        );
     }
   }
 
@@ -541,7 +547,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       context,
       ref,
       groupId: group.groupId,
-      title: '验证后查看「${group.groupName}」',
+      title: AppStrings.verifyToViewGroupNamed(group.groupName),
     );
   }
 
@@ -593,15 +599,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
-          title: const Text('删除书籍'),
+          title: Text(AppStrings.deleteBooksTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 hiddenCount > 0
-                    ? '已选$count本（另有$hiddenCount本未显示，不会删除）'
-                    : '已选$count本',
+                    ? AppStrings.selectedCountWithHidden(count, hiddenCount)
+                    : AppStrings.selectedCount(count),
               ),
               if (hasLocalBook)
                 InkWell(
@@ -616,7 +622,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                           onChanged: (v) =>
                               setDialogState(() => deleteOriginal = v ?? false),
                         ),
-                        const Text('删除源文件'),
+                        Text(AppStrings.deleteSourceFile),
                       ],
                     ),
                   ),
@@ -626,11 +632,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('删除'),
+              child: Text(AppStrings.delete),
             ),
           ],
         ),
@@ -649,18 +655,21 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       final reason = e is BridgeError ? e.message : '$e';
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('删除失败：$reason')));
+        ..showSnackBar(SnackBar(content: Text(AppStrings.deleteFailed(reason))));
       return;
     }
     if (!context.mounted) return;
     // [批35b P3-5] 用 Rust 返回的实际删除数（选中后已被并发删除的不计入）；
     // 文件删除失败不阻断记录删除：先报删除数，再逐条列出失败原因。
     final deletedText = result.missing > 0
-        ? '已删除 ${result.deleted} 本书籍（${result.missing} 本已不在书架）'
-        : '已删除 ${result.deleted} 本书籍';
+        ? AppStrings.deletedBooksWithMissing(result.deleted, result.missing)
+        : AppStrings.deletedBooks(result.deleted);
     final message = result.warnings.isEmpty
         ? deletedText
-        : '$deletedText；部分源文件未删除：${result.warnings.join('；')}';
+        : AppStrings.partialSourceDeleteFailed(
+            deletedText,
+            result.warnings.join('；'),
+          );
     messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
@@ -734,7 +743,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             IconButton(
               key: const ValueKey('bookshelf_group_menu_button'),
               icon: const Icon(Symbols.format_list_bulleted_rounded),
-              tooltip: '分组菜单',
+              tooltip: AppStrings.bookGroupMenu,
               onPressed: () => _showGroupMenu(context, ref, groups),
             ),
         ],
@@ -779,7 +788,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
               child: Text(
-                '选择分组',
+                AppStrings.selectGroup,
                 style: Theme.of(sheetContext).textTheme.titleMedium,
               ),
             ),
@@ -790,7 +799,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 subtitle:
                     showCounts &&
                         !state.isGroupContentLocked(group.groupId, privacy)
-                    ? Text('${state.bookCountOf(group)} 本')
+                    ? Text(AppStrings.bookCount(state.bookCountOf(group)))
                     : null,
                 trailing: group.groupId == selectedId
                     ? Icon(
@@ -805,7 +814,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               ListTile(
                 key: const ValueKey('bookshelf_group_manage_action'),
                 leading: const Icon(Icons.settings_outlined),
-                title: const Text('管理分组'),
+                title: Text(AppStrings.manageGroups),
                 onTap: () => Navigator.pop(sheetContext, manageAction),
               ),
             ],
@@ -921,11 +930,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           isDense: true,
-          hintText: '搜索书架中的书名或作者',
+          hintText: AppStrings.searchShelfHint,
           prefixIcon: const Icon(Symbols.search_rounded, size: 20),
           suffixIcon: IconButton(
             key: const ValueKey('bookshelf_filter_clear'),
-            tooltip: state.filterQuery.isEmpty ? '退出搜索' : '清除',
+            tooltip: state.filterQuery.isEmpty
+                ? AppStrings.exitSearch
+                : AppStrings.clear,
             icon: const Icon(Icons.close_rounded, size: 20),
             onPressed: () {
               if (state.filterQuery.isEmpty) {
@@ -962,7 +973,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Center(
                 child: Text(
-                  '待更新 $count',
+                  AppStrings.pendingUpdate(count),
                   key: const ValueKey('bookshelf_wait_up_count'),
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
@@ -976,7 +987,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // 「书架内过滤」。长按由外层 GestureDetector 承接，Tooltip 设 manual
       // 避免其默认长按触发抢占手势（仍保留语义标签供无障碍/自动化读取）。
       Tooltip(
-        message: directToSearch ? AppStrings.search : '书架内搜索',
+        message: directToSearch ? AppStrings.search : AppStrings.searchInBookshelf,
         triggerMode: TooltipTriggerMode.manual,
         child: GestureDetector(
           onLongPress: () => _onSearchButtonLongPress(
@@ -998,7 +1009,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // 替换原 PopupMenuButton 下拉形态（台账 1-4①：参考每项带图标+分体圆角卡）
       IconButton(
         icon: const Icon(Symbols.more_vert_rounded),
-        tooltip: '更多',
+        tooltip: AppStrings.moreActions,
         onPressed: () => _showCardMenu(context, ref),
       ),
     ];
@@ -1029,42 +1040,50 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // [P2-31] 图标逐项对齐参考版 BookshelfScreen 溢出菜单
       // （Wifi/Save/Refresh/GridView/ViewCarousel/Link/Edit/Bookmarks/
       // UploadFile/CloudDownload/History → 映射 material_symbols rounded）
-      _CardMenuItem('remote', '远程书籍', Symbols.wifi_rounded),
+      _CardMenuItem('remote', AppStrings.remoteBooks, Symbols.wifi_rounded),
       _CardMenuItem('import', AppStrings.addLocalBook, Symbols.save_rounded),
       _CardMenuItem(
         'update_all',
         AppStrings.updateAll,
         Symbols.refresh_rounded,
       ),
-      _CardMenuItem('layout', '布局设置', Symbols.grid_view_rounded),
-      _CardMenuItem('groups', '分组管理', Symbols.view_carousel_rounded),
-      _CardMenuItem('add_url', '添加网址', Symbols.link_rounded),
-      _CardMenuItem('select_mode', '选择模式', Symbols.edit_rounded),
+      _CardMenuItem('layout', AppStrings.layoutSettings, Symbols.grid_view_rounded),
+      _CardMenuItem('groups', AppStrings.groupManagement, Symbols.view_carousel_rounded),
+      _CardMenuItem('add_url', AppStrings.addUrl, Symbols.link_rounded),
+      _CardMenuItem('select_mode', AppStrings.selectionMode, Symbols.edit_rounded),
       _CardMenuItem(
         'manage',
         AppStrings.manageBookshelf,
         Symbols.bookmarks_rounded,
       ),
-      _CardMenuItem('export_list', '导出书单', Symbols.upload_file_rounded),
-      _CardMenuItem('import_list', '导入书单', Symbols.cloud_download_rounded),
-      _CardMenuItem('log', '日志', Symbols.history_rounded),
+      _CardMenuItem(
+        'export_list',
+        AppStrings.exportBookList,
+        Symbols.upload_file_rounded,
+      ),
+      _CardMenuItem(
+        'import_list',
+        AppStrings.importBookList,
+        Symbols.cloud_download_rounded,
+      ),
+      _CardMenuItem('log', AppStrings.log, Symbols.history_rounded),
       // 我方特有项（双基准原则保留不删）：离线缓存（对应原版
       // menu_download 缓存/导出）+ 分组展示模式 + 书源管理
-      _CardMenuItem('offline_cache', '离线缓存', Symbols.wifi_off_rounded),
+      _CardMenuItem('offline_cache', AppStrings.offlineCache, Symbols.wifi_off_rounded),
       // 分组模式三项：图标列用单选钮勾选态（对标原 _buildGroupModeItem 语义）
       _CardMenuItem(
         'group_none',
-        '不分组',
+        AppStrings.groupByNoneLabel,
         _radioIcon(state.groupMode == GroupMode.none),
       ),
       _CardMenuItem(
         'group_source',
-        '按来源分组',
+        AppStrings.groupBySourceLabel,
         _radioIcon(state.groupMode == GroupMode.bySource),
       ),
       _CardMenuItem(
         'group_group',
-        '按分组显示',
+        AppStrings.groupByGroupLabel,
         _radioIcon(state.groupMode == GroupMode.byGroup),
       ),
       _CardMenuItem(
@@ -1323,9 +1342,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final emptyNoMatch =
         state.isFiltering && filterMatched.isEmpty && groupBooks.isNotEmpty;
     final emptyTitle = emptyPrivacyOnly
-        ? '匹配的书籍均为私密内容，验证后查看'
+        ? AppStrings.privateContentMasked
         : emptyNoMatch
-        ? '未找到匹配的书籍'
+        ? AppStrings.noMatchingBooks
         : AppStrings.emptyBookshelf;
     final emptyIcon = emptyPrivacyOnly
         ? Symbols.lock_rounded
@@ -1440,14 +1459,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: PrivateLockedPage(
-                  title: '私密分组',
+                  title: AppStrings.privateGroup,
                   description: privacyLockedDescription(
                     privacy,
-                    fallback: '验证后查看分组内容',
+                    fallback: AppStrings.verifyToViewGroup,
                   ),
                   actionText: privacyLockedActionText(
                     privacy,
-                    fallback: '验证并查看',
+                    fallback: AppStrings.verifyAndView,
                   ),
                   onAction: () => _unlockGroup(context, ref, effectiveGroup),
                   onBiometric: privacy.biometricUsable
@@ -1579,7 +1598,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           if (settings.showBookCount && !groupLocked) ...[
             const SizedBox(width: 8),
             Text(
-              '$count 本',
+              AppStrings.bookCount(count),
               key: const ValueKey('bookshelf_folder_group_count'),
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1610,7 +1629,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     ? Symbols.search_off_rounded
                     : Icons.arrow_back_rounded,
               ),
-              tooltip: state.isFilterMode ? '退出搜索' : '返回分组',
+              tooltip: state.isFilterMode
+                  ? AppStrings.exitSearch
+                  : AppStrings.backToGroups,
               onPressed: state.isFilterMode
                   ? () => _exitShelfFilter(ref)
                   : _exitFolderToRoot,
@@ -1623,7 +1644,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 IconButton(
                   key: const ValueKey('bookshelf_folder_group_menu'),
                   icon: const Icon(Symbols.format_list_bulleted_rounded),
-                  tooltip: '分组菜单',
+                  tooltip: AppStrings.bookGroupMenu,
                   onPressed: () => _showGroupMenu(
                     context,
                     ref,
@@ -2035,7 +2056,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '手动排序需使用列表布局，已临时切换为列表',
+              AppStrings.sortNeedsListLayout,
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: cs.onSecondaryContainer),
@@ -2046,7 +2067,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               context,
               viewportWidth: _lastViewportWidth,
             ),
-            child: const Text('布局设置'),
+            child: Text(AppStrings.layoutSettings),
           ),
         ],
       ),
@@ -2083,7 +2104,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               IconButton(
                 key: const ValueKey('bookshelf_group_style_menu'),
                 icon: const Icon(Symbols.format_list_bulleted_rounded),
-                tooltip: '分组菜单',
+                tooltip: AppStrings.bookGroupMenu,
                 onPressed: () => _showGroupMenu(context, ref, visibleGroups),
               ),
           ],
@@ -2353,11 +2374,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 书籍类型标签（仅 `showTip` 开启；取值顺序对齐参考 BookItem.kt:655）
   String? _bookTypeLabel(BookshelfSettings settings, Book book) {
     if (!settings.showTip) return null;
-    if ((book.bookType & BookType.audio) != 0) return '音频';
-    if ((book.bookType & BookType.image) != 0) return '漫画';
-    if ((book.bookType & BookType.webFile) != 0) return '文件';
-    if (BookType.isLocalBook(book)) return '本地';
-    return '小说';
+    if ((book.bookType & BookType.audio) != 0) return AppStrings.bookTypeAudio;
+    if ((book.bookType & BookType.image) != 0) return AppStrings.bookTypeManga;
+    if ((book.bookType & BookType.webFile) != 0) return AppStrings.bookTypeFile;
+    if (BookType.isLocalBook(book)) return AppStrings.bookTypeLocal;
+    return AppStrings.bookTypeNovel;
   }
 
   /// 列表展示（1 列走自然高度 SliverList；2–5 列走 SliverGrid）
@@ -2578,7 +2599,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       context,
       ref,
       bookUrl: book.bookUrl,
-      title: '验证后打开',
+      title: AppStrings.verifyAndOpen,
     );
     if (!unlocked || !context.mounted) return;
     await _openBook(context, ref, book);
@@ -2645,7 +2666,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         debugPrint('[Bookshelf] 开书书源匹配失败，按已有类型位继续：$e');
         if (context.mounted) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(content: Text('书源信息读取失败，已按默认方式打开')),
+            SnackBar(content: Text(AppStrings.sourceInfoLoadFailed)),
           );
         }
       }
@@ -2782,7 +2803,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         } catch (e) {
           failures.add(file.name);
           if (failureDetails.length < 3) {
-            failureDetails.add('${file.name}：本地书持久化失败（${errorMessage(e)}）');
+            failureDetails.add(
+              AppStrings.localBookPersistFailed(file.name, errorMessage(e)),
+            );
           }
           continue;
         }
@@ -2803,13 +2826,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     await notifier.refresh();
 
     final messages = <String>[];
-    if (successCount > 0) messages.add('已导入 $successCount 本书籍');
+    if (successCount > 0) messages.add(AppStrings.importedBooks(successCount));
     if (failures.isNotEmpty) {
       final detail = failureDetails.join('；');
       final more = failures.length > failureDetails.length
-          ? ' 等 ${failures.length} 本'
+          ? AppStrings.failureCountSuffix(failures.length)
           : '';
-      messages.add('导入失败：$detail$more');
+      messages.add(AppStrings.importFailed(detail, more));
     }
     // [iOS 视角F C2] UI 提示：any 选择器下选到不可导入的扩展名时，
     // 显式说明「显示全部文件、仅电子书格式可导入」，避免静默困惑
@@ -2831,9 +2854,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           .where((e) => e.isNotEmpty)
           .toSet();
       if (pickedExts.difference(importable).isNotEmpty) {
-        messages.add(
-          'iOS 选择器显示全部文件，仅电子书格式（epub/txt/mobi/azw3/azw/pdf/umd/cbz）可导入',
-        );
+        messages.add(AppStrings.localFilePickerHint);
       }
     }
     if (messages.isEmpty) return;
@@ -3011,7 +3032,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (books.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('书架为空，无可导出的书单')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.emptyBookshelfNoExport)));
       return;
     }
     final data = books
@@ -3028,7 +3049,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       context,
       content: json,
       fileName: 'bookshelf.json',
-      subject: '导出书单',
+      subject: AppStrings.exportBookList,
     );
     if (!mounted || result == null) return;
     ScaffoldMessenger.of(
@@ -3059,7 +3080,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (targets.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('没有需要更新的书籍')));
+      ).showSnackBar(SnackBar(content: Text(AppStrings.noBooksToUpdate)));
       return;
     }
     // [设置批6a-1] 更新数量限制（0 = 不限制；超出部分截断并提示）
@@ -3069,7 +3090,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (truncated) {
       targets = targets.take(limit).toList();
     }
-    final progress = ValueNotifier<String>('准备中...');
+    final progress = ValueNotifier<String>(AppStrings.preparing);
     if (mounted) _waitUpCount.value = targets.length;
     showDialog<void>(
       context: context,
@@ -3096,7 +3117,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     var ok = 0;
     for (var i = 0; i < targets.length; i++) {
       final book = targets[i];
-      progress.value = '正在更新 ${i + 1}/${targets.length}：${book.name}';
+      progress.value = AppStrings.updatingProgress(
+        i + 1,
+        targets.length,
+        book.name,
+      );
       // 含当前这本在内的待更新数量（对齐参考版队列计数口径）
       if (mounted) _waitUpCount.value = targets.length - i;
       try {
@@ -3116,9 +3141,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     progress.dispose();
     ref.read(bookshelfNotifierProvider.notifier).refresh();
     final skipped = totalTargets - targets.length;
-    final limitNote = truncated ? '，限制 $limit 本（已跳过 $skipped 本）' : '';
+    final limitNote = truncated
+        ? AppStrings.tocUpdateLimit(limit, skipped)
+        : '';
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('目录更新完成：成功 $ok/${targets.length} 本$limitNote')),
+      SnackBar(
+        content: Text(
+          AppStrings.tocUpdateDone(ok, targets.length, limitNote),
+        ),
+      ),
     );
   }
 
@@ -3129,7 +3160,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('添加网址'),
+        title: Text(AppStrings.addUrlTitle),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3137,14 +3168,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               TextField(
                 controller: urlCtrl,
                 maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: '输入书籍详情页 URL（多行可加多本）',
+                decoration: InputDecoration(
+                  hintText: AppStrings.addUrlHint,
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: nameCtrl,
-                decoration: const InputDecoration(hintText: '书名（可选，无法获取详情时兑底）'),
+                decoration: InputDecoration(hintText: AppStrings.addUrlNameHint),
               ),
             ],
           ),
@@ -3152,11 +3183,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -3209,7 +3240,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         book ??= Book(
           bookUrl: url,
           name: fallbackName.isNotEmpty ? fallbackName : url,
-          originName: '网页书籍',
+          originName: AppStrings.webBook,
         );
         await api.addBook(book);
         existingUrls.add(url);
@@ -3222,7 +3253,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (!mounted) return;
     ref.read(bookshelfNotifierProvider.notifier).refresh();
     messenger.showSnackBar(
-      SnackBar(content: Text('添加网址完成：成功 $ok，跳过 $skip，失败 $fail')),
+      SnackBar(content: Text(AppStrings.addUrlDone(ok, skip, fail))),
     );
   }
 
@@ -3260,14 +3291,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('导入书单'),
+        title: Text(AppStrings.importBookList),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: ctrl,
               maxLines: 4,
-              decoration: const InputDecoration(hintText: '输入书单 URL 或 JSON 数组'),
+              decoration: InputDecoration(
+                hintText: AppStrings.importBookListHint,
+              ),
             ),
             Align(
               alignment: Alignment.centerLeft,
@@ -3288,7 +3321,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                     }
                   }
                 },
-                child: const Text('选择文件（txt/json）'),
+                child: Text(AppStrings.selectFile),
               ),
             ),
           ],
@@ -3296,11 +3329,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('导入'),
+            child: Text(AppStrings.importLabel),
           ),
         ],
       ),
@@ -3322,7 +3355,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         content = (await api.httpGet(content)).trim();
       } catch (e) {
         if (mounted) {
-          messenger.showSnackBar(SnackBar(content: Text('拉取书单失败: ${errorMessage(e)}')));
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(AppStrings.fetchBookListFailed(errorMessage(e))),
+            ),
+          );
         }
         return;
       }
@@ -3336,7 +3373,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (decoded is! List) {
       if (mounted) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('书单格式不对（应为 URL 或 JSON 数组）')),
+          SnackBar(content: Text(AppStrings.invalidBookListFormat)),
         );
       }
       return;
@@ -3382,7 +3419,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (!mounted) return;
     ref.read(bookshelfNotifierProvider.notifier).refresh();
     messenger.showSnackBar(
-      SnackBar(content: Text('书单导入完成：成功 $ok，跳过 $skip，失败 $fail')),
+      SnackBar(
+        content: Text(AppStrings.importBookListDone(ok, skip, fail)),
+      ),
     );
   }
 
@@ -3613,14 +3652,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               children: [
                 IconButton(
                   icon: const Icon(Icons.close, size: 20),
-                  tooltip: '退出选择',
+                  tooltip: AppStrings.exitSelection,
                   onPressed: () => ref
                       .read(bookshelfNotifierProvider.notifier)
                       .toggleBatchMode(),
                 ),
                 Flexible(
                   child: Text(
-                    '已选 $selectedCount 本',
+                    AppStrings.selectedCountManage(selectedCount),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -3630,7 +3669,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 ),
                 Flexible(
                   child: Text(
-                    ' · 共 $visibleCount 本',
+                    AppStrings.visibleCountLabel(visibleCount),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelSmall,
@@ -3666,29 +3705,29 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           children: [
             IconButton(
               icon: const Icon(Icons.select_all),
-              tooltip: '全选',
+              tooltip: AppStrings.selectAll,
               onPressed: () =>
                   ref.read(bookshelfNotifierProvider.notifier).selectAll(),
             ),
             IconButton(
               icon: const Icon(Icons.flip_rounded),
-              tooltip: '反选',
+              tooltip: AppStrings.invertSelection,
               onPressed: () => ref
                   .read(bookshelfNotifierProvider.notifier)
                   .invertSelection(),
             ),
             IconButton(
               icon: const Icon(Icons.download_rounded),
-              tooltip: '批量下载',
+              tooltip: AppStrings.batchDownload,
               onPressed: count > 0
-                  ? () => _showSnack('批量下载 $count 本（对标原版批量下载）')
+                  ? () => _showSnack(AppStrings.batchDownloadCount(count))
                   : null,
             ),
             IconButton(
               icon: const Icon(Icons.drive_file_move_rounded),
-              tooltip: '移动分组',
+              tooltip: AppStrings.moveToGroupTitle,
               onPressed: count > 0
-                  ? () => _showSnack('移动分组 $count 本（对标原版 GroupSelectSheet）')
+                  ? () => _showSnack(AppStrings.moveGroupCount(count))
                   : null,
             ),
           ],

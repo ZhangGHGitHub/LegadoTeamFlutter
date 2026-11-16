@@ -87,7 +87,7 @@ extension _SearchBuilders on _SearchScreenState {
           ),
         FloatingActionButton.small(
           onPressed: () => ref.read(searchNotifierProvider.notifier).stop(),
-          tooltip: '停止搜索',
+          tooltip: AppStrings.stopSearch,
           child: const Icon(Symbols.stop_rounded),
         ),
       ],
@@ -99,7 +99,7 @@ extension _SearchBuilders on _SearchScreenState {
   Widget _buildNextPageFab() {
     return FloatingActionButton.small(
       onPressed: () => ref.read(searchNotifierProvider.notifier).loadNextPage(),
-      tooltip: '加载下一页',
+      tooltip: AppStrings.loadNextPage,
       child: const Icon(Symbols.play_arrow_rounded),
     );
   }
@@ -143,8 +143,8 @@ extension _SearchBuilders on _SearchScreenState {
                     Expanded(
                       child: Text(
                         failures.length == 1
-                            ? '书源搜索失败：${failures.first.error}'
-                            : '${failures.length} 个书源搜索失败，点击展开',
+                            ? AppStrings.searchFailureSingle(failures.first.error)
+                            : AppStrings.searchFailureMultiple(failures.length),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall,
@@ -164,7 +164,7 @@ extension _SearchBuilders on _SearchScreenState {
                         size: 16,
                         color: cs.onSurfaceVariant,
                       ),
-                      tooltip: '复制全部失败详情',
+                      tooltip: AppStrings.copyAllFailures,
                       onPressed: () async {
                         final text = failures
                             .map((f) => '${f.sourceName}：${f.error}')
@@ -173,7 +173,9 @@ extension _SearchBuilders on _SearchScreenState {
                         await Clipboard.setData(ClipboardData(text: text));
                         messenger.showSnackBar(
                           SnackBar(
-                            content: Text('已复制 ${failures.length} 条书源失败详情'),
+                            content: Text(
+                              AppStrings.copiedFailureDetails(failures.length),
+                            ),
                           ),
                         );
                       },
@@ -361,7 +363,7 @@ extension _SearchBuilders on _SearchScreenState {
         // 图标对齐参考版：齿轮（Settings，非默认 ⋮），实心深色（onSurface）
         PopupMenuButton<String>(
           key: _menuButtonKey,
-          tooltip: '设置',
+          tooltip: AppStrings.settings,
           icon: Icon(
             Symbols.settings_rounded,
             color: Theme.of(context).colorScheme.onSurface,
@@ -375,7 +377,7 @@ extension _SearchBuilders on _SearchScreenState {
         _circleAction(
           context,
           icon: Symbols.center_focus_weak_rounded,
-          tooltip: '搜索范围',
+          tooltip: AppStrings.searchScope,
           onTap: _showSearchScopeDialog,
         ),
         // ③ 筛选（filter_list：三段递减横线，对齐参考版 ≡ 形态；
@@ -384,7 +386,9 @@ extension _SearchBuilders on _SearchScreenState {
         _circleAction(
           context,
           icon: Symbols.filter_list_rounded,
-          tooltip: _resultFilterWords.isEmpty ? '搜索结果过滤' : '搜索结果过滤（已开启）',
+          tooltip: _resultFilterWords.isEmpty
+              ? AppStrings.searchResultFilter
+              : AppStrings.searchResultFilterOn,
           active: _resultFilterWords.isNotEmpty,
           onTap: _showResultFilterDialog,
         ),
@@ -399,18 +403,18 @@ extension _SearchBuilders on _SearchScreenState {
       CheckedPopupMenuItem(
         value: 'precision',
         checked: _precision,
-        child: const Text('精准搜索'),
+        child: Text(AppStrings.preciseSearch),
       ),
       // 对标原版 show_search_read_record：「标识读过的书籍」
       CheckedPopupMenuItem(
         value: 'readRecord',
         checked: _showReadRecord,
-        child: const Text('标识读过的书籍'),
+        child: Text(AppStrings.markReadBooks),
       ),
-      const PopupMenuItem(value: 'sources', child: Text('书源管理')),
+      PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
       // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen
       //（对标原版 menu_log → AppLogDialog） — Qoder
-      const PopupMenuItem(value: 'log', child: Text('日志')),
+      PopupMenuItem(value: 'log', child: Text(AppStrings.log)),
     ];
   }
 
@@ -535,7 +539,9 @@ extension _SearchBuilders on _SearchScreenState {
                       label: Text(
                         state.selectedGroups.length == 1
                             ? state.selectedGroups.first
-                            : '${state.selectedGroups.length} 分组',
+                            : AppStrings.selectedGroupCount(
+                                state.selectedGroups.length,
+                              ),
                       ),
                       onPressed: () {
                         final kw = state.keyword;
@@ -771,7 +777,7 @@ extension _SearchBuilders on _SearchScreenState {
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        '最新：${book.latestChapterTitle}',
+                        AppStrings.latestChapter(book.latestChapterTitle ?? ''),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: infoStyle,
@@ -876,7 +882,11 @@ extension _SearchBuilders on _SearchScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('书源加载失败: ${errorMessage(e)}')));
+        ).showSnackBar(
+          SnackBar(
+            content: Text(AppStrings.sourceLoadFailed(errorMessage(e))),
+          ),
+        );
       }
       return;
     }
@@ -988,9 +998,9 @@ extension _SearchBuilders on _SearchScreenState {
 
     if (state.searchHistory.isEmpty && shelfMatches.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
-      return const EmptyState(
+      return EmptyState(
         icon: Symbols.search_rounded,
-        title: '搜索书名、作者',
+        title: AppStrings.searchBookKey,
         simple: true,
       );
     }
@@ -1040,7 +1050,7 @@ extension _SearchBuilders on _SearchScreenState {
                           padding: const EdgeInsets.only(top: 24),
                           child: Center(
                             child: Text(
-                              '无匹配的历史关键词',
+                              AppStrings.noMatchingHistory,
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: Theme.of(
@@ -1101,7 +1111,9 @@ extension _SearchBuilders on _SearchScreenState {
                                               context,
                                             ).showSnackBar(
                                               SnackBar(
-                                                content: Text('已删除「$keyword」'),
+                                                content: Text(
+                                                  AppStrings.deletedKeyword(keyword),
+                                                ),
                                               ),
                                             );
                                           },
@@ -1145,7 +1157,7 @@ extension _SearchBuilders on _SearchScreenState {
       Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Text(
-          '书架',
+          AppStrings.bookshelf,
           style: theme.textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.w600,
           ),
@@ -1240,16 +1252,16 @@ extension _SearchBuilders on _SearchScreenState {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('清空搜索历史'),
-        content: const Text('确定要清空所有搜索历史吗？'),
+        title: Text(AppStrings.clearSearchHistory),
+        content: Text(AppStrings.confirmClearSearchHistory),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -1263,25 +1275,29 @@ extension _SearchBuilders on _SearchScreenState {
   Future<void> _showEmptyScopeDialog(SearchState state) async {
     final displayScope = _formatSearchScope(state);
     final message = _precision
-        ? '$displayScope分组搜索结果为空，是否关闭精准搜索？'
-        : '$displayScope分组搜索结果为空，是否切换到全部分组？';
+        ? AppStrings.emptyScopeDisablePrecise(displayScope)
+        : AppStrings.emptyScopeSwitchAll(displayScope);
 
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('搜索结果为空'),
+        title: Text(AppStrings.searchResultEmpty),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(
               ctx,
               _precision ? 'disable_precision' : 'clear_scope',
             ),
-            child: Text(_precision ? '关闭精准搜索' : '切换全部分组'),
+            child: Text(
+              _precision
+                  ? AppStrings.disablePreciseSearch
+                  : AppStrings.switchToAllGroups,
+            ),
           ),
         ],
       ),
@@ -1308,7 +1324,7 @@ extension _SearchBuilders on _SearchScreenState {
       return state.selectedGroups.join('、');
     }
     if (state.selectedSourceUrls.isNotEmpty) {
-      return '指定书源';
+      return AppStrings.designatedSource;
     }
     return '';
   }
@@ -1361,12 +1377,12 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('搜索结果屏蔽词'),
+      title: Text(AppStrings.resultFilterTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '每行一个普通文本，匹配书名、作者或分类标签，忽略英文字母大小写',
+            AppStrings.resultFilterDesc,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -1379,7 +1395,7 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
             minLines: 4,
             maxLines: 8,
             autofocus: true,
-            decoration: const InputDecoration(hintText: '屏蔽词（每行一个）'),
+            decoration: InputDecoration(hintText: AppStrings.resultFilterHint),
           ),
         ],
       ),
@@ -1387,12 +1403,12 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
         TextButton(
           // 取消：返回 null（调用方保持既有屏蔽词表不变）
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         TextButton(
           // 确定：返回 trim 后文本（空串 = 清空屏蔽词表）
           onPressed: () => Navigator.pop(context, _controller.text.trim()),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

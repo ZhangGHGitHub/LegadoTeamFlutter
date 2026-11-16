@@ -2,7 +2,7 @@
 // 漫画浏览开关/自动更新每日一次/源编辑最大行数/预下载）
 //
 // 覆盖口径（任务要求）：默认值、开关切换、越界/异常回落、关闭态不回退。
-import 'dart:ui' show FilterQuality;
+import 'dart:ui' show FilterQuality, Locale;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -19,11 +19,33 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('项1 语言启动接线（AppStrings.startupLocaleOf，P3-1）', () {
-    test('system → zh（默认，与 other_settings_screen 约定一致）', () {
-      expect(AppStrings.startupLocaleOf('system'), 'zh');
-      AppStrings.setLocale(AppStrings.startupLocaleOf('system'));
+    test('system → 跟随系统 locale（中文环境 zh）', () {
+      // 'system' 按系统语言解析，不再无条件回落中文
+      //（对齐原版 AppContextWrapper.getSetLocale）
+      const zhCN = Locale('zh', 'CN');
+      expect(AppStrings.startupLocaleOf('system', systemLocaleOverride: zhCN),
+          'zh');
+      AppStrings.setLocale(
+        AppStrings.startupLocaleOf('system', systemLocaleOverride: zhCN),
+      );
       expect(AppStrings.locale, 'zh');
       expect(AppStrings.appTitle, '阅读');
+    });
+
+    test('system → 非中文环境解析为 en（英文基座）', () {
+      const enUS = Locale('en', 'US');
+      expect(AppStrings.startupLocaleOf('system', systemLocaleOverride: enUS),
+          'en');
+      AppStrings.setLocale(
+        AppStrings.startupLocaleOf('system', systemLocaleOverride: enUS),
+      );
+      expect(AppStrings.locale, 'en');
+      expect(AppStrings.appTitle, 'Legado');
+    });
+
+    test('system 无注入时读 PlatformDispatcher.locale（非中文 → en）', () {
+      // 单测宿主默认系统 locale 为 en_US，未注入时应解析为 en
+      expect(AppStrings.systemLocale(), 'en');
     });
 
     test('en 偏好按原值初始化', () {

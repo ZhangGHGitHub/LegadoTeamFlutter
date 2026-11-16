@@ -276,7 +276,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           _loginToastShownForSession = _searchSessionId;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$loginCount 个书源需要登录，请先在书源菜单中登录后重试'),
+              content: Text(AppStrings.loginRequiredToast(loginCount)),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -334,7 +334,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '搜索',
+                    AppStrings.search,
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -369,8 +369,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '结果 ${state.results.length} · '
-                      '进度 ${state.searchedCount}/${state.totalCount}',
+                      AppStrings.searchProgress(
+                        state.results.length,
+                        state.searchedCount,
+                        state.totalCount,
+                      ),
                       style: Theme.of(context).textTheme.labelMedium,
                     ),
                   ),

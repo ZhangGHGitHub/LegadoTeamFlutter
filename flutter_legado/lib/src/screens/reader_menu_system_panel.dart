@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../providers/reader/reader_menu_style_notifier.dart';
 import 'reader_config_panel.dart'
     show ReaderAdvancedConfig, readerAdvConfigProvider;
@@ -36,18 +37,30 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
   /// 0 全局 / 1 底栏布局 / 2 顶栏布局
   int _tab = 0;
 
-  static const _tabLabels = ['全局', '底栏布局', '顶栏布局'];
+  List<String> get _tabLabels => [
+        AppStrings.globalSection,
+        AppStrings.bottomBarLayout,
+        AppStrings.topBarLayout,
+      ];
 
-  static const _barStyleOptions = {'0': '跟随系统', '1': '跟随阅读背景', '2': '自定义'};
+  Map<String, String> get _barStyleOptions => {
+        '0': AppStrings.barFollowSystem,
+        '1': AppStrings.barFollowReadingBg,
+        '2': AppStrings.barCustom,
+      };
 
-  static const _iconStyleOptions = {'0': '无底衬', '1': '色调', '2': '描边'};
+  Map<String, String> get _iconStyleOptions => {
+        '0': AppStrings.iconStylePlain,
+        '1': AppStrings.iconStyleTint,
+        '2': AppStrings.iconStyleOutline,
+      };
 
-  static const _titleModeOptions = {
-    '0': '顶栏显示',
-    '1': '另起一行',
-    '2': '仅章节',
-    '3': '不显示',
-  };
+  Map<String, String> get _titleModeOptions => {
+        '0': AppStrings.titleModeTopBar,
+        '1': AppStrings.titleModeNewLine,
+        '2': AppStrings.titleModeChapterOnly,
+        '3': AppStrings.titleModeHidden,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +152,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           children: [
             _dropdownRow(
               key: const ValueKey('reader-menu-style-dropdown'),
-              title: '工具栏样式',
+              title: AppStrings.toolbarStyle,
               value: '${style.readBarStyle}',
               options: _barStyleOptions,
               onChanged: (v) => notifier.setReadBarStyle(int.parse(v)),
@@ -147,7 +160,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             if (showPalette)
               _dropdownRow(
                 key: const ValueKey('reader-menu-palette-dropdown'),
-                title: '调色板',
+                title: AppStrings.palette,
                 value: style.paletteStyle,
                 options: kReaderMenuPaletteLabels,
                 onChanged: notifier.setPaletteStyle,
@@ -155,22 +168,25 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             if (style.readBarStyle == ReaderMenuBarStyle.custom) ...[
               _dropdownRow(
                 key: const ValueKey('reader-menu-color-mode-dropdown'),
-                title: '颜色来源',
+                title: AppStrings.colorSource,
                 value: '${style.colorMode}',
-                options: const {'0': '种子色', '1': '自定义主题色'},
+                options: {
+                  '0': AppStrings.seedColor,
+                  '1': AppStrings.customThemeColor,
+                },
                 onChanged: (v) => notifier.setColorMode(int.parse(v)),
               ),
               if (style.colorMode == ReaderMenuColorMode.seed) ...[
                 _colorRow(
                   key: const ValueKey('reader-menu-color-accent-day'),
-                  title: '种子色（日）',
+                  title: AppStrings.seedColorDay,
                   value: style.accentColor,
                   isNight: false,
                   onPick: (v) => notifier.setAccentColor(v, isNight: false),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-accent-night'),
-                  title: '种子色（夜）',
+                  title: AppStrings.seedColorNight,
                   value: style.accentColorNight,
                   isNight: true,
                   onPick: (v) => notifier.setAccentColor(v, isNight: true),
@@ -178,56 +194,56 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
               ] else ...[
                 _colorRow(
                   key: const ValueKey('reader-menu-color-bg-day'),
-                  title: '背景颜色（日）',
+                  title: AppStrings.backgroundColorDay,
                   value: style.bgColor,
                   isNight: false,
                   onPick: (v) => notifier.setBgColor(v, isNight: false),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-bg-night'),
-                  title: '背景颜色（夜）',
+                  title: AppStrings.backgroundColorNight,
                   value: style.bgColorNight,
                   isNight: true,
                   onPick: (v) => notifier.setBgColor(v, isNight: true),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-accent-day-custom'),
-                  title: '强调色（日）',
+                  title: AppStrings.accentColorDay,
                   value: style.accentColor,
                   isNight: false,
                   onPick: (v) => notifier.setAccentColor(v, isNight: false),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-accent-night-custom'),
-                  title: '强调色（夜）',
+                  title: AppStrings.accentColorNight,
                   value: style.accentColorNight,
                   isNight: true,
                   onPick: (v) => notifier.setAccentColor(v, isNight: true),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-container-day'),
-                  title: '容器颜色（日）',
+                  title: AppStrings.containerColorDay,
                   value: style.containerColor,
                   isNight: false,
                   onPick: (v) => notifier.setContainerColor(v, isNight: false),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-container-night'),
-                  title: '容器颜色（夜）',
+                  title: AppStrings.containerColorNight,
                   value: style.containerColorNight,
                   isNight: true,
                   onPick: (v) => notifier.setContainerColor(v, isNight: true),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-text-day'),
-                  title: '文字颜色（日）',
+                  title: AppStrings.textColorDay,
                   value: style.textColor,
                   isNight: false,
                   onPick: (v) => notifier.setTextColor(v, isNight: false),
                 ),
                 _colorRow(
                   key: const ValueKey('reader-menu-color-text-night'),
-                  title: '文字颜色（夜）',
+                  title: AppStrings.textColorNight,
                   value: style.textColorNight,
                   isNight: true,
                   onPick: (v) => notifier.setTextColor(v, isNight: true),
@@ -237,9 +253,13 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             // [批3b] 亮度控件从「更多」页回迁（参考全局子页位置）
             _dropdownRow(
               key: const ValueKey('reader-menu-brightness-mode-dropdown'),
-              title: '亮度调节控件',
+              title: AppStrings.brightnessControl,
               value: adv.readBrightnessMode,
-              options: const {'0': '不显示', '1': '横排', '2': '竖排'},
+              options: {
+            '0': AppStrings.notShown,
+            '1': AppStrings.horizontal,
+            '2': AppStrings.vertical,
+          },
               onChanged: (v) {
                 final cfg = adv.copy()..readBrightnessMode = v;
                 _commitAdv(cfg);
@@ -248,9 +268,12 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             if (adv.readBrightnessMode == '2')
               _dropdownRow(
                 key: const ValueKey('reader-menu-brightness-pos-dropdown'),
-                title: '亮度条位置',
+                title: AppStrings.brightnessBarPosition,
                 value: adv.readBrightnessVwPos,
-                options: const {'0': '左侧', '1': '右侧'},
+                options: {
+                  '0': AppStrings.leftSide,
+                  '1': AppStrings.rightSide,
+                },
                 onChanged: (v) {
                   final cfg = adv.copy()..readBrightnessVwPos = v;
                   _commitAdv(cfg);
@@ -260,15 +283,15 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
               key: const ValueKey('reader-menu-border-switch'),
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('显示边框'),
-              subtitle: const Text('顶栏下边线 / 底栏整框'),
+              title: Text(AppStrings.showBorder),
+              subtitle: Text(AppStrings.showBorderDesc),
               value: style.borderWidth > 0,
               onChanged: (v) => notifier.setBorderWidth(v ? 1 : 0),
             ),
             if (style.borderWidth > 0) ...[
               _sliderRow(
                 key: const ValueKey('reader-menu-border-width-slider'),
-                title: '边框宽度',
+                title: AppStrings.borderWidth,
                 value: style.borderWidth.clamp(1, 4).toDouble(),
                 min: 1,
                 max: 4,
@@ -278,14 +301,14 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
               ),
               _colorRow(
                 key: const ValueKey('reader-menu-border-color-day'),
-                title: '边框颜色（日）',
+                title: AppStrings.borderColorDay,
                 value: style.borderColor,
                 isNight: false,
                 onPick: (v) => notifier.setBorderColor(v, isNight: false),
               ),
               _colorRow(
                 key: const ValueKey('reader-menu-border-color-night'),
-                title: '边框颜色（夜）',
+                title: AppStrings.borderColorNight,
                 value: style.borderColorNight,
                 isNight: true,
                 onPick: (v) => notifier.setBorderColor(v, isNight: true),
@@ -293,7 +316,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             ],
             _sliderRow(
               key: const ValueKey('reader-menu-blur-radius-slider'),
-              title: '模糊半径',
+              title: AppStrings.blurRadius,
               value: style.blurRadius.toDouble(),
               min: 0,
               max: 32,
@@ -303,7 +326,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             ),
             _sliderRow(
               key: const ValueKey('reader-menu-blur-alpha-slider'),
-              title: '模糊透明度',
+              title: AppStrings.blurOpacity,
               value: style.blurAlpha.toDouble(),
               min: 0,
               max: 100,
@@ -313,14 +336,14 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             ),
             _colorRow(
               key: const ValueKey('reader-menu-blur-color-day'),
-              title: '模糊底色（日）',
+              title: AppStrings.blurBaseDay,
               value: style.blurColor,
               isNight: false,
               onPick: (v) => notifier.setBlurColor(v, isNight: false),
             ),
             _colorRow(
               key: const ValueKey('reader-menu-blur-color-night'),
-              title: '模糊底色（夜）',
+              title: AppStrings.blurBaseNight,
               value: style.blurColorNight,
               isNight: true,
               onPick: (v) => notifier.setBlurColor(v, isNight: true),
@@ -329,7 +352,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
         ),
         const SizedBox(height: 8),
         Text(
-          '日间/夜间颜色分别用于对应主题',
+          AppStrings.dayNightColorHint,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -351,21 +374,21 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-icon-text-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('显示图标文字'),
-          subtitle: const Text('图标下方显示按钮名称'),
+          title: Text(AppStrings.showIconLabels),
+          subtitle: Text(AppStrings.showIconLabelsDesc),
           value: style.showIconText,
           onChanged: notifier.setShowIconText,
         ),
         _dropdownRow(
           key: const ValueKey('reader-menu-icon-style-dropdown'),
-          title: '图标容器样式',
+          title: AppStrings.iconContainerStyle,
           value: '${style.iconStyle}',
           options: _iconStyleOptions,
           onChanged: (v) => notifier.setIconStyle(int.parse(v)),
         ),
         _sliderRow(
           key: const ValueKey('reader-menu-items-per-row-slider'),
-          title: '每行图标数',
+          title: AppStrings.iconsPerRow,
           value: style.itemsPerRow.toDouble(),
           min: 2,
           max: 8,
@@ -375,7 +398,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
         ),
         _sliderRow(
           key: const ValueKey('reader-menu-row-count-slider'),
-          title: '图标行数',
+          title: AppStrings.iconRows,
           value: style.rowCount.toDouble(),
           min: 1,
           max: 2,
@@ -385,7 +408,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
         ),
         _sliderRow(
           key: const ValueKey('reader-menu-corner-slider'),
-          title: '底栏圆角',
+          title: AppStrings.bottomBarRadius,
           value: style.bottomCornerRadius.toDouble(),
           min: 0,
           max: 32,
@@ -397,8 +420,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-floating-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('浮动底栏'),
-          subtitle: const Text('四周留边；关闭后贴底全宽'),
+          title: Text(AppStrings.floatingBottomBar),
+          subtitle: Text(AppStrings.floatingBottomBarDesc),
           value: style.floatingBottomBar,
           onChanged: notifier.setFloatingBottomBar,
         ),
@@ -406,8 +429,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-bottom-blur-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('底栏模糊'),
-          subtitle: const Text('半透明背景 + 背景模糊'),
+          title: Text(AppStrings.bottomBarBlur),
+          subtitle: Text(AppStrings.translucentBlurDesc),
           value: style.bottomBarBlurMode != ReaderMenuBlurMode.none,
           onChanged: (v) => notifier.setBottomBarBlurMode(
             v ? ReaderMenuBlurMode.haze : ReaderMenuBlurMode.none,
@@ -416,7 +439,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
         if (!style.floatingBottomBar)
           _dropdownRow(
             key: const ValueKey('reader-menu-bottom-blur-style-dropdown'),
-            title: '模糊风格',
+            title: AppStrings.blurStyle,
             value: '${style.bottomBarBlurStyle}',
             options: const {'0': 'Solid', '1': 'Progressive'},
             onChanged: (v) => notifier.setBottomBarBlurStyle(int.parse(v)),
@@ -426,8 +449,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
             key: const ValueKey('reader-menu-bottom-liquid-switch'),
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: const Text('液态玻璃底栏'),
-            subtitle: const Text('模糊 + 高光描边 + 镜面渐变（近似）'),
+            title: Text(AppStrings.liquidGlassBottomBar),
+            subtitle: Text(AppStrings.liquidGlassBottomBarDesc),
             value:
                 style.bottomBarBlurMode == ReaderMenuBlurMode.liquidGlass,
             onChanged: (v) {
@@ -444,8 +467,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-bottom-glass-buttons-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('液态玻璃按钮'),
-          subtitle: const Text('底栏图标按钮半透明高光（近似）'),
+          title: Text(AppStrings.liquidGlassButtons),
+          subtitle: Text(AppStrings.liquidGlassBottomBarButtonsDesc),
           value: style.bottomBarLiquidGlassButtons,
           onChanged: notifier.setBottomBarLiquidGlassButtons,
         ),
@@ -466,8 +489,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-title-capsule-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('标题胶囊布局'),
-          subtitle: const Text('返回键右侧显示书名 + 章名胶囊'),
+          title: Text(AppStrings.titleCapsuleLayout),
+          subtitle: Text(AppStrings.titleCapsuleLayoutDesc),
           value: style.titleCapsule,
           onChanged: notifier.setTitleCapsule,
         ),
@@ -475,14 +498,14 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
         if (!style.titleCapsule)
           _dropdownRow(
             key: const ValueKey('reader-menu-title-mode-dropdown'),
-            title: '标题显示方式',
+            title: AppStrings.titleDisplayMode,
             value: style.titleBarMode,
             options: _titleModeOptions,
             onChanged: notifier.setTitleBarMode,
           ),
         _dropdownRow(
           key: const ValueKey('reader-menu-title-icon-style-dropdown'),
-          title: '图标容器样式',
+          title: AppStrings.iconContainerStyle,
           value: '${style.titleIconStyle}',
           options: _iconStyleOptions,
           onChanged: (v) => notifier.setTitleIconStyle(int.parse(v)),
@@ -491,8 +514,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-title-compact-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('紧凑标题'),
-          subtitle: const Text('顶栏只保留「更多」，其余动作移入菜单'),
+          title: Text(AppStrings.compactTitle),
+          subtitle: Text(AppStrings.compactTitleDesc),
           value: style.titleBarCompact,
           onChanged: notifier.setTitleBarCompact,
         ),
@@ -500,8 +523,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-top-blur-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('顶栏模糊'),
-          subtitle: const Text('半透明背景 + 背景模糊'),
+          title: Text(AppStrings.topBarBlur),
+          subtitle: Text(AppStrings.translucentBlurDesc),
           value: style.topBarBlurMode != ReaderMenuBlurMode.none,
           onChanged: (v) => notifier.setTopBarBlurMode(
             v ? ReaderMenuBlurMode.haze : ReaderMenuBlurMode.none,
@@ -509,7 +532,7 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
         ),
         _dropdownRow(
           key: const ValueKey('reader-menu-top-blur-style-dropdown'),
-          title: '模糊风格',
+          title: AppStrings.blurStyle,
           value: '${style.topBarBlurStyle}',
           options: const {'0': 'Solid', '1': 'Progressive'},
           onChanged: (v) => notifier.setTopBarBlurStyle(int.parse(v)),
@@ -518,8 +541,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-top-glass-buttons-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('液态玻璃按钮'),
-          subtitle: const Text('顶栏图标按钮半透明高光（近似）'),
+          title: Text(AppStrings.liquidGlassButtons),
+          subtitle: Text(AppStrings.liquidGlassTopBarButtonsDesc),
           value: style.topBarLiquidGlassButtons,
           onChanged: notifier.setTopBarLiquidGlassButtons,
         ),
@@ -527,8 +550,8 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
           key: const ValueKey('reader-menu-merge-switch'),
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('合并顶栏按钮'),
-          subtitle: const Text('将顶栏操作按钮合并为一个胶囊'),
+          title: Text(AppStrings.mergeTopBarButtons),
+          subtitle: Text(AppStrings.mergeTopBarButtonsDesc),
           value: style.mergeButtons,
           onChanged: notifier.setMergeButtons,
         ),
@@ -686,7 +709,9 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
               child: Text(title, style: Theme.of(context).textTheme.bodyLarge),
             ),
             Text(
-              value == 0 ? '默认' : '#${value.toRadixString(16).toUpperCase()}',
+              value == 0
+                  ? AppStrings.defaultLabelShort
+                  : '#${value.toRadixString(16).toUpperCase()}',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -710,7 +735,9 @@ class _ReaderMenuSystemPanelState extends ConsumerState<ReaderMenuSystemPanel> {
       builder: (_) => ContainerColorDialog(
         title: title,
         initialColor: initialColor,
-        defaultHint: isNight ? '恢复夜间默认' : '恢复日间默认',
+        defaultHint: isNight
+            ? AppStrings.restoreNightDefaults
+            : AppStrings.restoreDayDefaults,
         presetColors: kContainerColorPresets,
       ),
     );
