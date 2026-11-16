@@ -496,9 +496,12 @@ pub fn un7z_file(_seven_z_path: &str, _output_path: Option<&str>) -> Result<Stri
 /// / 归档损坏（沿用 Kotlin 的返回空串语义）」。
 pub const RAR_ENTRY_NAME_ERROR_PREFIX: &str = "RAR 条目名非法";
 
-/// 错误是否由 RAR 条目安全校验产生（条目名非法 / 解析后越界）
+/// 错误是否由 RAR 条目安全校验产生（条目名非法 / 解析后越界 / 产物越界）
 pub fn is_rar_security_error(err: &str) -> bool {
-    err.starts_with(RAR_ENTRY_NAME_ERROR_PREFIX) || err.starts_with("RAR 条目读取被拒绝")
+    err.starts_with(RAR_ENTRY_NAME_ERROR_PREFIX)
+        || err.starts_with("RAR 条目读取被拒绝")
+        // [B22] 解压后 containment 复核失败（符号链接 / 产物越界）
+        || err.starts_with("RAR 解压被拒绝")
 }
 
 /// 校验并规范化 RAR 条目名（`\` → `/`）
@@ -814,7 +817,59 @@ pub fn unrar_file(rar_path: &str, output_path: Option<&str>) -> Result<String, S
     rar::Archive::extract_all(rar_path, &out_dir, "")
         .map_err(|e| format!("RAR decompression failed: {e}"))?;
 
+    // [B22] 解压后 containment 复核
+    //
+    // 预扫描只校验了**头部声明的条目名**；rar crate 用原始条目名落盘，若
+    // 条目带符号链接属性（Unix attrs）或 crate 对名字做了不同解释，落盘结果
+    // 仍可能越界。此处对解压产物做一次 canonicalize 复核，并拒绝任何符号
+    // 链接（RAR 场景不需要它们，且 symlink 是最直接的越界载体）。
+    // 复核失败时删除已解压内容，不留半成品。
+    if let Err(err) = verify_extracted_tree_contained(Path::new(&out_dir)) {
+        let _ = fs::remove_dir_all(&out_dir);
+        return Err(err);
+    }
+
     Ok(out_dir)
+}
+
+/// 解压产物 containment 复核（B22）
+///
+/// 逐个条目 canonicalize，要求最终路径仍在输出目录的 canonical 根之下；
+/// 同时拒绝符号链接（`symlink_metadata().file_type().is_symlink()`）——
+/// 链接目标的解析结果可能与链接所在位置无关，canonicalize 也未必能覆盖
+/// 全部平台差异，直接拒绝最稳。
+///
+/// 错误前缀与 [`RAR_ENTRY_NAME_ERROR_PREFIX`] 区分（这是**落盘结果**越界，
+/// 不是条目名非法），便于 JS 侧分别提示。
+fn verify_extracted_tree_contained(out_dir: &Path) -> Result<(), String> {
+    let root = fs::canonicalize(out_dir)
+        .map_err(|e| format!("RAR 解压复核失败：无法解析输出目录（{e}）"))?;
+    let mut stack = vec![out_dir.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) => return Err(format!("RAR 解压复核失败：无法列举 {dir:?}（{e}）")),
+        };
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("RAR 解压复核失败：目录项读取失败（{e}）"))?;
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path)
+                .map_err(|e| format!("RAR 解压复核失败：无法读取 {path:?}（{e}）"))?;
+            if meta.file_type().is_symlink() {
+                return Err(format!("RAR 解压被拒绝（产物含符号链接）: {path:?}"));
+            }
+            if meta.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let canonical = fs::canonicalize(&path)
+                .map_err(|e| format!("RAR 解压复核失败：无法解析 {path:?}（{e}）"))?;
+            if !canonical.starts_with(&root) {
+                return Err(format!("RAR 解压被拒绝（产物越界）: {path:?}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// unrarFile — 无 quickjs feature 时的回退桩
@@ -1270,6 +1325,47 @@ mod tests {
             result2.err()
         );
         assert!(Path::new(&result2.unwrap()).join("hello.txt").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ─── [B22] 解压后 containment 复核 ─────────────────────────────
+
+    /// 正常解压产物通过复核
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_verify_extracted_tree_contained_accepts_normal_tree() {
+        let dir = std::env::temp_dir().join(format!("legado_rar_verify_ok_{}", uuid()));
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("a.txt"), b"a").unwrap();
+        fs::write(dir.join("sub/b.txt"), b"b").unwrap();
+
+        assert!(
+            verify_extracted_tree_contained(&dir).is_ok(),
+            "普通目录树应通过 containment 复核"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 产物含符号链接 → 拒绝（B22：预扫描只校验名字，落盘可能是链接）
+    #[test]
+    #[cfg(all(feature = "quickjs", unix))]
+    fn test_verify_extracted_tree_rejects_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let dir = std::env::temp_dir().join(format!("legado_rar_verify_link_{}", uuid()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = dir.join("outside.txt");
+        fs::write(&outside, b"x").unwrap();
+        let link = dir.join("link.txt");
+        symlink(&outside, &link).unwrap();
+
+        let err = verify_extracted_tree_contained(&dir).unwrap_err();
+        assert!(err.contains("符号链接"), "err = {err}");
+        assert!(
+            is_rar_security_error(&err),
+            "越界错误必须被 is_rar_security_error 识别: {err}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

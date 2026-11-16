@@ -120,7 +120,7 @@ pub fn with_collect<R>(f: impl FnOnce() -> R) -> (R, CollectedActions) {
     (result, collected)
 }
 
-/// 兼容旧 API（**仅供测试**，P3-6）：开启一次收集（同线程压栈；配对
+/// 兼容旧 API（**仅供测试**，P3-6/B23）：开启一次收集（同线程压栈；配对
 /// [`end_collect`] / [`discard_collect`]）。
 ///
 /// 生产代码一律使用 [`with_collect`]（RAII，求值失败/panic 自动丢弃会话）；
@@ -128,8 +128,14 @@ pub fn with_collect<R>(f: impl FnOnce() -> R) -> (R, CollectedActions) {
 /// 半开会话，**不得**在新生产路径使用。当前仓内仅
 /// `tests/ui_action_queue_isolation.rs` 与模块测试使用。
 ///
+/// [B23] 现在由 `cfg(any(test, feature = "test-support"))` 编译门控：
+/// 生产构建里这三个函数**不存在**，新代码误用会在编译期失败，而不是靠
+/// 注释约定。`tests/` 集成目标经 `dev-dependencies` 的 `test-support`
+/// feature 启用（见 `Cargo.toml`）。
+///
 /// 与旧语义的差异：不再清空进程级共享队列，而是压入新会话——嵌套/并发调用
 /// 各自隔离。旧调用面均为「begin → 同步求值 → end」的顶层顺序用法，语义等价。
+#[cfg(any(test, feature = "test-support"))]
 pub fn begin_collect() {
     SESSIONS.with(|sessions| sessions.borrow_mut().push(Session::default()));
 }
@@ -158,8 +164,11 @@ pub fn push_payload_json(payload_json: &str) {
     }
 }
 
-/// 兼容旧 API（**仅供测试**，P3-6）：结束收集并取出当前线程栈顶会话的
+/// 兼容旧 API（**仅供测试**，P3-6/B23）：结束收集并取出当前线程栈顶会话的
 /// 全部 action。生产请用 [`with_collect`]。
+///
+/// [B23] `cfg(any(test, feature = "test-support"))` 门控（见 [`begin_collect`]）。
+#[cfg(any(test, feature = "test-support"))]
 pub fn end_collect() -> Vec<Value> {
     pop_session().actions
 }
@@ -183,8 +192,11 @@ fn request_refresh_explore() {
     });
 }
 
-/// 兼容旧 API（**仅供测试**，P3-6）：丢弃栈顶会话并关闭收集（求值失败时
+/// 兼容旧 API（**仅供测试**，P3-6/B23）：丢弃栈顶会话并关闭收集（求值失败时
 /// 调用；作用域外为无操作）。生产请用 [`with_collect`]（panic 自动丢弃）。
+///
+/// [B23] `cfg(any(test, feature = "test-support"))` 门控（见 [`begin_collect`]）。
+#[cfg(any(test, feature = "test-support"))]
 pub fn discard_collect() {
     let _ = pop_session();
 }
