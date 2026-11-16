@@ -131,20 +131,115 @@ fn prefetch_cache_get(source_url: &str, book_url: &str) -> Option<SwitchPrefetch
         .and_then(|guard| guard.entries.get(&key).cloned())
 }
 
-// ─── 换源（预拉缓存版）应用取消代数（对齐上游 changeSourceCancelable /
+// ─── 换源（预拉缓存版）应用取消会话（对齐上游 changeSourceCancelable /
 //     cancelChangeSource，L692-721） ───
+//
+// [裁决 2 | 2026-11-16] 取消粒度收窄为「换源会话自身」：上游
+// `cancelChangeSource()` 只取消该换源任务的 Job，不会取消其他书籍的目录链。
+// 此处以「在途会话登记表」复刻该语义：
+// - apply 入口登记本书记数（`current` = 最近登记的会话，对应上游 ViewModel
+//   唯一的 changeSourceJob）；2a/2b/提交前各比对一次，失效即中止且不提交
+//   （DB 零变更）；
+// - 取消只注销目标会话（无 bookUrl 参数时 = 当前会话），**不触碰任何目录
+//   分页链**；
+// - 常规 `refresh_toc` / `webbook_chapters` 及其他书的 apply 完全不受影响。
 
-/// 应用取消代数：[`cancel_switch_apply`] +1；apply 前事务前比对，取消后
-/// 不提交（DB 零变更）。同时 bump 既有 TOC 刷新代数，使在途 nextTocUrl
-/// 分页链在下一页边界中止（复用 web_book.rs 既有 epoch 机制，不改签名）。
-static SWITCH_APPLY_EPOCH: AtomicU64 = AtomicU64::new(0);
+/// 在途换源 apply 会话表
+struct SwitchApplyRegistry {
+    /// bookUrl → 会话代数（在途会话；同书新 apply 覆盖旧代数）
+    sessions: HashMap<String, u64>,
+    /// 最近一次登记的会话（上游 ViewModel 唯一的 changeSourceJob）
+    current: Option<(String, u64)>,
+}
+
+static SWITCH_APPLY_REGISTRY: LazyLock<Mutex<SwitchApplyRegistry>> = LazyLock::new(|| {
+    Mutex::new(SwitchApplyRegistry {
+        sessions: HashMap::new(),
+        current: None,
+    })
+});
+
+/// 会话代数分配器（单调递增；每次 apply 登记取一个新世代）
+static SWITCH_APPLY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// 取会话表锁（中毒恢复：登记表不携带需保留的业务状态）
+fn switch_apply_registry() -> std::sync::MutexGuard<'static, SwitchApplyRegistry> {
+    SWITCH_APPLY_REGISTRY
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
+/// 换源 apply 会话守卫（RAII：离开作用域自动注销，防登记表泄漏）
+struct SwitchApplySession {
+    book_url: String,
+    generation: u64,
+}
+
+impl SwitchApplySession {
+    /// 登记新会话（同一本书的新 apply 覆盖旧代数 = 旧会话随即判失效，
+    /// 对齐上游「新一轮 changeSourceCancelable 是全新 Job」）
+    fn begin(book_url: &str) -> Self {
+        let generation = SWITCH_APPLY_COUNTER
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+        let mut registry = switch_apply_registry();
+        registry.sessions.insert(book_url.to_string(), generation);
+        registry.current = Some((book_url.to_string(), generation));
+        Self {
+            book_url: book_url.to_string(),
+            generation,
+        }
+    }
+
+    /// 本会话是否已被取消（登记项被移除或被同书新会话覆盖即视为取消）
+    fn is_cancelled(&self) -> bool {
+        switch_apply_registry().sessions.get(&self.book_url) != Some(&self.generation)
+    }
+}
+
+impl Drop for SwitchApplySession {
+    fn drop(&mut self) {
+        let mut registry = switch_apply_registry();
+        // 仅注销自己的世代：若已被同书新会话覆盖，保留新会话登记
+        if registry.sessions.get(&self.book_url) == Some(&self.generation) {
+            registry.sessions.remove(&self.book_url);
+        }
+        if registry.current.as_ref() == Some(&(self.book_url.clone(), self.generation)) {
+            registry.current = None;
+        }
+    }
+}
 
 /// 取消进行中的换源（预拉缓存版）应用（FFI `source_switch_apply_cancel`，
 /// 加法式；上游 `cancelChangeSource()` L715-721 的 FFI 化）
+///
+/// 只让**当前在途换源 apply 会话**判失效（DB 零变更）：其他书籍的在途 apply
+/// 与所有目录分页链都不受影响（上游只取消自己那个 Job）。
 pub fn cancel_switch_apply() {
-    SWITCH_APPLY_EPOCH.fetch_add(1, Ordering::SeqCst);
-    // 换源取消无具体书籍上下文：递增全局取消栅栏，中止所有在途目录链
-    super::web_book::bump_all_toc_fetch_epochs();
+    let mut registry = switch_apply_registry();
+    let Some((book_url, generation)) = registry.current.take() else {
+        return;
+    };
+    if registry.sessions.get(&book_url) == Some(&generation) {
+        registry.sessions.remove(&book_url);
+    }
+}
+
+/// 按书籍取消换源 apply（只让目标书的会话判失效）
+///
+/// FFI 面暂无 bookUrl 参数（契约冻结），本原语目前仅用于钉住「按书收窄」
+/// 语义的单测；后续若要加法式新增带 bookUrl 的取消入口，可直接复用。
+#[cfg(test)]
+fn cancel_switch_apply_for_book(book_url: &str) {
+    let mut registry = switch_apply_registry();
+    registry.sessions.remove(book_url);
+    if registry
+        .current
+        .as_ref()
+        .is_some_and(|(url, _)| url == book_url)
+    {
+        registry.current = None;
+    }
 }
 
 /// 增强预拉有界并发上限（保守值，论证见 [`enrich_switch_candidates_async`]
@@ -1076,9 +1171,9 @@ fn switch_book_source_with<F: BookSourceFetcher>(
 ///   **零网络**（2a/2b 均跳过；变量合并/陈旧 overlay 让位/空目录守卫/
 ///   单事务提交/下一章登记逐项不变）——「选中源即落地」的感知等待消除点；
 /// - **未命中**：详情 + 目录现场抓取（执行链与 [`switch_book_source_with`]
-///   一致），**可取消**——[`cancel_switch_apply`] 使 apply 代数 +1 并 bump
-///   TOC 刷新代数，事务前代数比对防取消后提交（DB 零变更），在途
-///   nextTocUrl 分页链在下一页边界中止。
+///   一致），**可取消**——[`cancel_switch_apply`] 注销本会话，事务前比对
+///   防取消后提交（DB 零变更）；取消只作用于本换源会话，不影响任何书的
+///   常规目录链（裁决 2）。
 ///
 /// `book_url` — 当前书籍的 bookUrl（稳定主键，换源后保持不变）
 /// `new_source_url` — 新书源的 URL
@@ -1107,12 +1202,12 @@ fn switch_book_source_prefetch_with<F: BookSourceFetcher>(
         ));
     }
 
-    // 取消代数：cancel_switch_apply +1；各网络步骤前与提交前比对，取消后
-    // 不提交（DB 零变更），并递增全局取消栅栏中止在途目录分页链
-    let apply_epoch = SWITCH_APPLY_EPOCH.load(Ordering::SeqCst);
-    let ensure_not_cancelled = |epoch: u64| -> LegadoResult<()> {
-        if epoch != SWITCH_APPLY_EPOCH.load(Ordering::SeqCst) {
-            super::web_book::bump_all_toc_fetch_epochs();
+    // 取消会话：本 apply 登记为「当前会话」，[`cancel_switch_apply`] 注销即
+    // 判失效。各网络步骤前与提交前比对，取消后不提交（DB 零变更）。
+    // 守卫 RAII 注销，不影响任何目录分页链（裁决 2）。
+    let session = SwitchApplySession::begin(book_url);
+    let ensure_not_cancelled = || -> LegadoResult<()> {
+        if session.is_cancelled() {
             return Err(LegadoError::Internal("换源已取消".into()));
         }
         Ok(())
@@ -1139,7 +1234,7 @@ fn switch_book_source_prefetch_with<F: BookSourceFetcher>(
     let info = match cached_info {
         Some(info) => info,
         None => {
-            ensure_not_cancelled(apply_epoch)?;
+            ensure_not_cancelled()?;
             runtime::block_on(async {
                 fetcher
                     .get_book_info_with_existing_and_vars(
@@ -1176,7 +1271,7 @@ fn switch_book_source_prefetch_with<F: BookSourceFetcher>(
     let web_chapters: Vec<WebChapter> = match cached_chapters {
         Some(chapters) => chapters,
         None => {
-            ensure_not_cancelled(apply_epoch)?;
+            ensure_not_cancelled()?;
             let toc_url = if info.toc_url.trim().is_empty() {
                 new_book_url.to_string()
             } else {
@@ -1204,7 +1299,7 @@ fn switch_book_source_prefetch_with<F: BookSourceFetcher>(
     };
 
     // 提交前取消兜底：2a/2b 均成功后若已取消 → 不提交（DB 零变更）
-    ensure_not_cancelled(apply_epoch)?;
+    ensure_not_cancelled()?;
 
     // 3+4. 空目录守卫 + 单事务提交 + 下一章登记 + 书籍 JSON（共用尾段）
     commit_source_switch(
@@ -3176,8 +3271,8 @@ mod tests {
 
     // ─── [2026-09-24 换源预拉缓存] 缓存/取消/增强 单测 ─────────────────────
     //
-    // 全部涉及进程级全局态（SWITCH_PREFETCH_CACHE / SWITCH_APPLY_EPOCH /
-    // TOC 刷新代数 / JS 全局表 flow scope），统一持 crate 级 test_support
+    // 全部涉及进程级全局态（SWITCH_PREFETCH_CACHE / SWITCH_APPLY_REGISTRY /
+    // JS 全局表 flow scope），统一持 crate 级 test_support
     // 锁串行执行（与 web_book / T2 换源链测试同一把锁，防串表）。
 
     /// 测试辅助：全字段 WebBookInfo（测试书/测试作者，目录页 = 入参）
@@ -3235,9 +3330,9 @@ mod tests {
         }
     }
 
-    /// 在途取消 mock：目录抓取时调 [`cancel_switch_apply`]（apply 代数 +1
-    /// 并 bump TOC 刷新代数）再返回 Ok —— 验证预拉缓存版 apply 事务前代数
-    /// 比对阻断提交（DB 零变更，对齐上游 cancelChangeSource L715-721）
+    /// 在途取消 mock：目录抓取时调 [`cancel_switch_apply`]（注销当前 apply
+    /// 会话）再返回 Ok —— 验证预拉缓存版 apply 事务前会话判活阻断提交
+    /// （DB 零变更，对齐上游 cancelChangeSource L715-721）
     struct CancelDuringTocFetcher {
         info: WebBookInfo,
         chapters: Vec<WebChapter>,
@@ -3479,24 +3574,58 @@ mod tests {
         prefetch_cache_clear();
     }
 
-    /// cancel_switch_apply：apply 代数 +1（重复取消累加），对齐上游
-    /// changeSourceCancelable 语义——取消后新一轮 apply 是全新代数（合法）
+    /// [裁决 2] cancel_switch_apply 只注销**当前**在途换源会话，其他书的
+    /// 会话保持有效（对齐上游 cancelChangeSource 只取消自己的 Job）。
     #[test]
-    fn test_cancel_switch_apply_bumps_apply_epoch() {
+    fn test_cancel_switch_apply_only_cancels_current_session() {
         let _lock = crate::test_support::lock_global_store();
-        let before = SWITCH_APPLY_EPOCH.load(Ordering::SeqCst);
+        let book_a = "https://cancel-scope.example.com/book/a";
+        let book_b = "https://cancel-scope.example.com/book/b";
+
+        let session_a = SwitchApplySession::begin(book_a);
+        let session_b = SwitchApplySession::begin(book_b);
+        assert!(!session_a.is_cancelled(), "A 刚登记不应判失效");
+        assert!(!session_b.is_cancelled(), "B 刚登记不应判失效");
+
+        // 当前会话 = B（最近登记）；取消只应命中 B
         cancel_switch_apply();
-        assert_eq!(
-            SWITCH_APPLY_EPOCH.load(Ordering::SeqCst),
-            before + 1,
-            "取消应使 apply 代数 +1"
+        assert!(session_b.is_cancelled(), "取消必须让当前会话（B）判失效");
+        assert!(
+            !session_a.is_cancelled(),
+            "其他书（A）的在途换源会话不得被取消"
         );
+
+        // 无在途会话时取消是安全 no-op（不 panic、不改登记）
         cancel_switch_apply();
-        assert_eq!(
-            SWITCH_APPLY_EPOCH.load(Ordering::SeqCst),
-            before + 2,
-            "重复取消应累加"
-        );
+        assert!(!session_a.is_cancelled(), "重复取消不得波及 A");
+    }
+
+    /// [裁决 2] 按书取消（`cancel_switch_apply_for_book`）只让目标书失效。
+    #[test]
+    fn test_cancel_switch_apply_for_book_only_targets_that_book() {
+        let _lock = crate::test_support::lock_global_store();
+        let book_a = "https://cancel-book-scope.example.com/book/a";
+        let book_b = "https://cancel-book-scope.example.com/book/b";
+
+        let session_a = SwitchApplySession::begin(book_a);
+        let session_b = SwitchApplySession::begin(book_b);
+
+        cancel_switch_apply_for_book(book_a);
+        assert!(session_a.is_cancelled(), "按书取消必须命中 A");
+        assert!(!session_b.is_cancelled(), "按书取消不得波及 B");
+    }
+
+    /// [裁决 2] 同书新一轮 apply 是全新会话（旧会话随即判失效），
+    /// 对齐上游 changeSourceCancelable 的 Job 语义。
+    #[test]
+    fn test_new_apply_session_supersedes_previous_same_book_session() {
+        let _lock = crate::test_support::lock_global_store();
+        let book_url = "https://cancel-renew.example.com/book/1";
+
+        let old = SwitchApplySession::begin(book_url);
+        let new = SwitchApplySession::begin(book_url);
+        assert!(old.is_cancelled(), "同书新会话必须让旧会话失效");
+        assert!(!new.is_cancelled(), "新会话自身不得失效");
     }
 
     /// 命中零抓取：缓存有完整条目（info + 非空目录）→ 2a/2b 全跳过

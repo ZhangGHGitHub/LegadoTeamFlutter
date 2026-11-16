@@ -41,8 +41,8 @@
 //!      前缀（对齐上游 body-null 语义，而非整刷失败）；
 //!    - `perf_serial_unbounded_chain_guarded`：无界新 URL 链按 MAX_TOC_PAGES
 //!      上限判停（防 600 页 × 每页 10s 的失控链）；
-//!    - `perf_stale_refresh_cancelled`：新刷新代数抢占在途旧刷新（换源场景
-//!      取消在途抓取）。
+//!    - `perf_stale_refresh_not_cancelled`：同书两路刷新各自独立跑完
+//!      （裁决 2：对齐上游 `ensureActive()` 只检查自身协程，后写者胜）。
 //!
 //! 运行完整矩阵（N=200 × D=300ms）：
 //! `TOC_PERF_FULL=1 cargo test -p legado-ffi --test toc_refresh_perf`
@@ -578,38 +578,38 @@ fn perf_serial_unbounded_chain_guarded() {
     eprintln!("[perf] 失控链 600 页 → 判停在 {toc_hits} 页，总耗时 {ms}ms");
 }
 
-/// 换源/重复刷新抢占：在途旧刷新的目录分页链应被新刷新代数取消
-/// （对齐上游 `ensureActive()` 判活语义；无状态 FFI 用进程级代数计数器）。
-/// 优化前旧刷新跑完全程（≈4.4s 后 Ok 返回）→ RED。
+/// [裁决 2 | 2026-11-16] 同书两路刷新互不取消：在途旧刷新与新刷新都跑完
+/// 并各自返回完整目录（对齐上游 `WebBook.getChapterList` 每次调用独立协程、
+/// `ensureActive()` 只检查自身的语义；后写者胜，无 superseded 错误）。
+///
+/// 反向证据：裁决 2 之前本用例为 `perf_stale_refresh_cancelled`（断言旧刷新
+/// 必须被新刷新代数抢占并 Err），移除 epoch 后该断言与新口径冲突。
 #[test]
-fn perf_stale_refresh_cancelled() {
+fn perf_stale_refresh_not_cancelled() {
     let _lock = lock_test();
     let (src, book, _stats) = setup_scenario(ServerCfg::serial(10, 400, None));
     // 旧刷新（线程 A）：10 页 × 400ms ≈ 4.4s 串行链
     let a_src = src.clone();
     let a_book = book.clone();
     let a = std::thread::spawn(move || run_refresh(&a_book, &a_src));
-    // 在途（约第 3~4 页）时发起新刷新（代数 +1 → 旧链应在下一页边界中止）
+    // 在途（约第 3~4 页）时发起新刷新：两路必须都能完成，互不取消
     std::thread::sleep(Duration::from_millis(1600));
     // 注意参数序：run_refresh(book_url, source_url)
     let (b_res, b_ms) = run_refresh(&book, &src);
-    eprintln!(
-        "[perf] B 刷新结果: {}",
-        match &b_res {
-            Ok(r) => format!("Ok(total={})", r.total),
-            Err(e) => format!("Err({e})"),
-        }
+    let b = b_res.unwrap_or_else(|e| panic!("新刷新应正常完成（b 耗时 {b_ms}ms）: {e}"));
+    assert_eq!(
+        b.total as u32,
+        10 * CH_PER_PAGE,
+        "新刷新应返回完整 10 页目录（b 耗时 {b_ms}ms）"
     );
-    assert!(b_res.is_ok(), "新刷新应正常完成（b 耗时 {b_ms}ms）");
     let (a_res, a_ms) = a.join().expect("旧刷新线程 join");
-    // 优化前 RED：A 跑完全程 ≈4.4s 且 Ok
-    assert!(
-        a_res.is_err(),
-        "旧刷新应被新代数抢占（在途分页链中止并报错），实际仍正常完成（{a_ms}ms）——10 分钟在途链换源时无法取消的根因"
+    let a = a_res.unwrap_or_else(|e| {
+        panic!("旧刷新不得被新刷新取消（对齐上游 ensureActive 只查自身；耗时 {a_ms}ms）: {e}")
+    });
+    assert_eq!(
+        a.total as u32,
+        10 * CH_PER_PAGE,
+        "旧刷新应返回完整 10 页目录（耗时 {a_ms}ms）"
     );
-    assert!(
-        a_ms < 3000,
-        "旧刷新应在新代数发起后约 1 页边界内中止（≤3s），实际 {a_ms}ms"
-    );
-    eprintln!("[perf] 取消抢占：旧刷新 {a_ms}ms 中止（Err），新刷新 {b_ms}ms 完成");
+    eprintln!("[perf] 两路同书刷新各自完成：旧 {a_ms}ms / 新 {b_ms}ms（互不取消）");
 }

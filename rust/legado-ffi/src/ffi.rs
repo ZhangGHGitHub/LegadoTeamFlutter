@@ -1494,8 +1494,9 @@ pub mod ffi {
     /// 取消进行中的「换源（预拉缓存版）」应用（2026-09-24 加法式；
     /// 契约 §2.4 `cancelSwitchSourceApply`；对齐上游 `cancelChangeSource()`）
     ///
-    /// apply 代数 +1 + bump 目录刷新代数：未提交的 apply 在提交前比对代数
-    /// 即中止（DB 零变更），在途目录分页链在下一页边界中止。
+    /// 只注销**当前在途换源 apply 会话**：未提交的 apply 在提交前比对会话
+    /// 判活即中止（DB 零变更）。取消粒度对齐上游「只取消自己的 Job」，
+    /// 不影响其他书的在途 apply，也不中止任何目录分页链（裁决 2）。
     pub fn source_switch_apply_cancel() -> Result<(), BridgeError> {
         crate::api::source_switch::cancel_switch_apply();
         Ok(())

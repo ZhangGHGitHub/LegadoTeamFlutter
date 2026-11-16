@@ -722,13 +722,12 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
     source_url: &str,
     engine: &WebBookEngine<F>,
 ) -> LegadoResult<ChapterListResponse> {
-    // [性能专项 2026-09-24 | 2026-11-13 键控] 刷新代数 +1（**只加本书的键**）：
-    // 本刷新成为本书最新代数，使本书在途旧刷新的目录分页链在下一页边界判活
-    // 失败而中止（换源场景取消 10 分钟在途链；对齐上游 ensureActive() 判活语义）。
-    // 键 = 书籍稳定主键 book_url，与 fetcher 目录链（book_meta.book_url）同键；
-    // 改前为进程级单计数器：自动刷新 A 书期间手动刷新 B 书会误杀 A 的在途链。
-    // 无具体书籍的取消（换源取消/应用中止）走 bump_all_toc_fetch_epochs。
-    crate::api::web_book::bump_toc_fetch_epoch(book_url);
+    // [裁决 2 | 2026-11-16] 目录刷新不再做跨调用取消：原版
+    // `WebBook.getChapterList` 每次调用新建独立 Job，`ensureActive()` 只检查
+    // 自身协程——同一本书的两路刷新互不取消（后写者胜），普通读取
+    // （webbook_chapters）也不会被同书 refresh 抢占成 1999 错误。
+    // 目录分页链自身只受页数上限与 visited 去重约束；DB 侧「删旧插新」仍在
+    // 单事务内完成（不暴露 0 章中间态）。
     // 1. 从数据库获取书源配置 + 书籍记录（书籍用于确定真实的目录抓取 URL）
     let (source, existing_book) = with_database(|db| {
         let source = BookSourceRepository::new(db.connection()).find_by_url(source_url)?;
@@ -1834,7 +1833,7 @@ fn get_chapter_index_title_variable(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legado_core::models::rule::ContentRule;
+    use legado_core::models::rule::{ContentRule, TocRule};
     use legado_core::models::BookSource;
 
     /// 初始化测试数据库并持锁（返回串行锁守卫，测试必须绑定到变量）
@@ -2760,6 +2759,286 @@ mod tests {
 
         let resp = refresh_toc(book_url, source_url).unwrap();
         assert!(resp.total >= 0);
+    }
+
+    // ─── 裁决 2（目录取消口径）回归：各调用独立、最后写者胜 ──────────────────
+    //
+    // 原版 `WebBook.getChapterList` 每次调用新建独立 Job，`ensureActive()`
+    // 只检查自身协程；同一本书两路刷新互不取消。修复前 `refresh_toc` 入口
+    // bump 本书记数，后发刷新会让先发的在途分页链在页边界返回 1999
+    // （toc refresh superseded），下列并发用例 expect Ok 即红。
+
+    /// 插入带 JSONPath 分页目录规则的书源（`$.next` 串行跟页）
+    fn insert_paging_source(source_url: &str) {
+        with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "分页目录测试源".to_string(),
+                rule_toc: Some(TocRule {
+                    chapter_list: Some("$.rows".to_string()),
+                    chapter_name: Some("$.name".to_string()),
+                    chapter_url: Some("$.url".to_string()),
+                    next_toc_url: Some("$.next".to_string()),
+                    ..TocRule::default()
+                }),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("分页书源写入失败");
+    }
+
+    /// 插入指向 `toc_url` 的在线书（刷新入口按 books.tocUrl 取址）
+    ///
+    /// 书名带 bookUrl 后缀：books 有二级唯一索引 (name, author)，并发夹具
+    /// 多书同源时必须避免相互替换（否则先插的书行被后插行 OR REPLACE）。
+    fn insert_online_book(book_url: &str, source_url: &str, toc_url: &str) {
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "分页目录测试源".to_string(),
+                name: format!("并发目录书-{book_url}"),
+                author: "测试作者".to_string(),
+                toc_url: toc_url.to_string(),
+                ..Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("书籍写入失败");
+    }
+
+    /// 分页目录回环服务器（JSON 规则夹具）。
+    ///
+    /// `body_for(path, port)` 返回响应体；`notify_path` 首次被请求时向
+    /// 调用方发信号（用于在「首路已进入分页抓取」后再启动第二路）；
+    /// `delays` 命中的请求在响应前延迟（模拟慢站点窗口；p2/p3 都延迟可
+    /// 把两路刷新的写库窗口错开，避免 SQLite WAL BUSY_SNAPSHOT 干扰）。
+    fn spawn_toc_json_server<F>(
+        notify_path: &'static str,
+        delays: &'static [(&'static str, std::time::Duration)],
+        body_for: F,
+    ) -> (u16, std::sync::mpsc::Receiver<()>)
+    where
+        F: Fn(&str, u16) -> String + Send + 'static,
+    {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::mpsc;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut notified = false;
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&head);
+                let target = head
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/");
+                let path = target.split('?').next().unwrap_or("/");
+                if !notified && path == notify_path {
+                    notified = true;
+                    let _ = tx.send(());
+                }
+                if let Some((_, delay)) = delays.iter().find(|(route, _)| *route == path) {
+                    std::thread::sleep(*delay);
+                }
+                let body = body_for(path, port);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (port, rx)
+    }
+
+    /// 3 页目录夹具（首页 → p2 → p3）；p2 请求到达时通知调用方，p2/p3
+    /// 各延迟 `page_delay`（首路分页在途窗口 + 两路写库错峰）。
+    fn spawn_three_page_toc_server(
+        prefix: &'static str,
+        page_delay: std::time::Duration,
+    ) -> (u16, std::sync::mpsc::Receiver<()>) {
+        let toc_route: &'static str = Box::leak(format!("{prefix}/toc").into_boxed_str());
+        let p2_route: &'static str = Box::leak(format!("{prefix}/p2").into_boxed_str());
+        let p3_route: &'static str = Box::leak(format!("{prefix}/p3").into_boxed_str());
+        let delays: &'static [(&'static str, std::time::Duration)] =
+            Box::leak(vec![(p2_route, page_delay), (p3_route, page_delay)].into_boxed_slice());
+        spawn_toc_json_server(p2_route, delays, move |path, port| match path {
+            p if p == toc_route => format!(
+                r#"{{"rows":[{{"name":"第一章","url":"/c/1"}}],"next":"http://127.0.0.1:{port}{p2_route}"}}"#
+            ),
+            p if p == p2_route => format!(
+                r#"{{"rows":[{{"name":"第二章","url":"/c/2"}}],"next":"http://127.0.0.1:{port}{p3_route}"}}"#
+            ),
+            p if p == p3_route => r#"{"rows":[{"name":"第三章","url":"/c/3"}]}"#.to_string(),
+            _ => r#"{"rows":[]}"#.to_string(),
+        })
+    }
+
+    /// 单页目录夹具（无 nextTocUrl，分页链不启动）
+    fn spawn_single_page_toc_server() -> u16 {
+        spawn_toc_json_server("/single", &[], |_path, _port| {
+            r#"{"rows":[{"name":"独章","url":"/c/1"}]}"#.to_string()
+        })
+        .0
+    }
+
+    fn refresh_toc_total(book_url: &str, source_url: &str) -> Result<i32, String> {
+        refresh_toc(book_url, source_url)
+            .map(|resp| resp.total)
+            .map_err(|err| err.to_string())
+    }
+
+    /// 同一本书两路并发刷新（首路已进入 p2 分页后再发第二路）→ 两路都
+    /// 必须成功。修复前 refresh_toc 入口 bump 本书代数，后发刷新会让首路在
+    /// p2 页边界返回 1999（toc refresh superseded），本用例红。
+    #[test]
+    fn test_concurrent_same_book_refresh_toc_both_succeed() {
+        // 锁序：先全局 store 锁、后测试 DB 锁（见 db_state::ensure_test_db 文档）
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let source_url = "https://toc-concurrent-src.example.com";
+        let book_url = "https://toc-concurrent.example.com/book/1";
+        let (port, p2_started) =
+            spawn_three_page_toc_server("", std::time::Duration::from_millis(250));
+        insert_paging_source(source_url);
+        insert_online_book(
+            book_url,
+            source_url,
+            &format!("http://127.0.0.1:{port}/toc"),
+        );
+
+        let spawn_refresh = |book_url: &str, source_url: &str| {
+            let book_url = book_url.to_string();
+            let source_url = source_url.to_string();
+            std::thread::spawn(move || refresh_toc_total(&book_url, &source_url))
+        };
+        let first = spawn_refresh(book_url, source_url);
+        p2_started
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("首路刷新应进入 p2 分页请求");
+        let second = spawn_refresh(book_url, source_url);
+
+        let first = first.join().expect("首路线程 panic");
+        let second = second.join().expect("第二路线程 panic");
+        // 红证据（修复前）：先发一路返回 1999「toc refresh superseded…」
+        assert_eq!(first, Ok(3), "先发刷新必须成功（不得被后发刷新取消）");
+        assert_eq!(second, Ok(3), "后发刷新必须成功");
+    }
+
+    /// 不同书的两路刷新互不影响：A 书 p2 在途时启动 B 书刷新，两路都成功
+    /// （2026-11-13 已按书键控；裁决 2 移除取消后仍须保持）。
+    #[test]
+    fn test_concurrent_different_books_refresh_toc_both_succeed() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let source_url = "https://toc-multi-book-src.example.com";
+        let book_a = "https://toc-multi-book.example.com/book/a";
+        let book_b = "https://toc-multi-book.example.com/book/b";
+        let (port_a, p2_started) =
+            spawn_three_page_toc_server("/a", std::time::Duration::from_millis(250));
+        // B 书页延迟取 500ms：A 路约 2×250ms 完成写库，B 路约 2×500ms，
+        // 两路写库窗口错开（避免 SQLite WAL BUSY_SNAPSHOT 干扰本用例）
+        let (port_b, _) = spawn_three_page_toc_server("/b", std::time::Duration::from_millis(500));
+        insert_paging_source(source_url);
+        insert_online_book(
+            book_a,
+            source_url,
+            &format!("http://127.0.0.1:{port_a}/a/toc"),
+        );
+        insert_online_book(
+            book_b,
+            source_url,
+            &format!("http://127.0.0.1:{port_b}/b/toc"),
+        );
+
+        let spawn_refresh = |book_url: &str, source_url: &str| {
+            let book_url = book_url.to_string();
+            let source_url = source_url.to_string();
+            std::thread::spawn(move || refresh_toc_total(&book_url, &source_url))
+        };
+        let first = spawn_refresh(book_a, source_url);
+        p2_started
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("A 书刷新应进入 p2 分页请求");
+        let second = spawn_refresh(book_b, source_url);
+
+        let first = first.join().expect("A 线程 panic");
+        let second = second.join().expect("B 线程 panic");
+        assert_eq!(first, Ok(3), "A 书刷新必须成功");
+        assert_eq!(second, Ok(3), "B 书刷新不得受 A 书影响");
+    }
+
+    /// 单页目录不会进入分页链：同书连续两次刷新都成功（无回归）。
+    /// 顺序执行（单页无在途分页窗口，并发写库只会引入与本修复无关的
+    /// SQLite WAL BUSY 噪声）。
+    #[test]
+    fn test_single_page_toc_refresh_not_cancelled() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let source_url = "https://toc-single-src.example.com";
+        let book_url = "https://toc-single.example.com/book/1";
+        let port = spawn_single_page_toc_server();
+        insert_paging_source(source_url);
+        insert_online_book(
+            book_url,
+            source_url,
+            &format!("http://127.0.0.1:{port}/single"),
+        );
+
+        assert_eq!(refresh_toc_total(book_url, source_url), Ok(1));
+        assert_eq!(refresh_toc_total(book_url, source_url), Ok(1));
+    }
+
+    /// `cancel_switch_apply` 只取消换源 apply 自己的目录链：其他书籍的
+    /// 常规刷新（refresh_toc）在途分页链不受影响。修复前全局 fence 会让
+    /// 该链在 p2 页边界返回 1999，本用例红。
+    #[test]
+    fn test_cancel_switch_apply_keeps_refresh_toc_chain() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let source_url = "https://toc-cancel-src.example.com";
+        let book_url = "https://toc-cancel.example.com/book/1";
+        let (port, p2_started) =
+            spawn_three_page_toc_server("", std::time::Duration::from_millis(250));
+        insert_paging_source(source_url);
+        insert_online_book(
+            book_url,
+            source_url,
+            &format!("http://127.0.0.1:{port}/toc"),
+        );
+
+        let handle = {
+            let book_url = book_url.to_string();
+            let source_url = source_url.to_string();
+            std::thread::spawn(move || refresh_toc_total(&book_url, &source_url))
+        };
+        p2_started
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("刷新应进入 p2 分页请求");
+        crate::api::source_switch::cancel_switch_apply();
+        let result = handle.join().expect("刷新线程 panic");
+        assert_eq!(result, Ok(3), "换源取消不得中止其他书的常规目录刷新链");
     }
 
     // ─── [P2-2] 存量坏 tocUrl 自愈测试 ─────────────────────────────────────
