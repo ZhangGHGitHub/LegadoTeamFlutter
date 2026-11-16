@@ -14,6 +14,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
 import '../constants/pref_keys.dart';
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart' show settingsProvider;
 import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';

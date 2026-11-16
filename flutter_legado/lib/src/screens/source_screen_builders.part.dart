@@ -413,12 +413,16 @@ extension _SourceBuilders on _SourceScreenState {
       final invalid = checkState.invalidCount;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        // 批39 审查 P2-3：文案须与真实写回行为一致。`d4a6a4ce8b` 已删除
+        // 「统一 addGroupToUrls(invalidUrls, '失效')」，现行为是**按原因写入
+        // 各自分组**（搜索失效/网站失效/校验超时…），成功校验还会清旧失效
+        // 分组 —— 旧文案「已归入「失效」分组」与实现矛盾。
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(checkState.cancelled
-              ? '已取消校验（完成 $invalid 个失效）'
+              ? AppStrings.checkCancelled(invalid)
               : (invalid > 0
-                  ? '校验完成：$invalid 个失效源已归入「失效」分组'
-                  : '校验完成：全部书源可用')),
+                  ? AppStrings.checkDoneInvalid(invalid)
+                  : AppStrings.checkDoneAllOk)),
         ));
       });
     }

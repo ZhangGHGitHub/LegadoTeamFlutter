@@ -585,6 +585,16 @@ class AppStrings {
   static String get checkTimeoutEmpty => _get('超时时间不能为空', 'Timeout cannot be empty');
   static String get checkTimeoutPositive =>
       _get('超时时间必须大于 0 秒', 'Timeout must be greater than 0 seconds');
+  // 书源校验完成提示（批39 审查 P2-3：文案须与真实写回行为一致——
+  // 失效源按原因写入各自分组，成功校验还会清掉旧失效分组，
+  // 不再有「统一归入『失效』分组」这回事）
+  static String checkDoneInvalid(int count) => _locale == 'zh'
+      ? '校验完成：$count 个书源失效（已按原因写入分组）'
+      : 'Check complete: $count source(s) failed (written to groups by cause)';
+  static String get checkDoneAllOk => _get('校验完成：全部书源可用', 'Check complete: all sources usable');
+  static String checkCancelled(int count) => _locale == 'zh'
+      ? '已取消校验（完成 $count 个失效）'
+      : 'Check cancelled ($count failure(s) so far)';
   static String get saveTokenDesc => _get(
       'MCP、纯 JS、书源写入、搜索和调试接口均需要',
       'Required by MCP, pure JS, source writing, search and debug APIs');
