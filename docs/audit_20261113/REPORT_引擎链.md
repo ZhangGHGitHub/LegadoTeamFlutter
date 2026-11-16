@@ -77,6 +77,8 @@
 
 #### P0-1 URL 窗口 pending 请求头无归属：失败残留 + 跨源注入
 
+> ✅ **已修复（批28，commit `3c9af1a003`/`7f7d3bc2da`）**：请求头收集器改为 RAII 窗口作用域，入口丢弃陈值、窗口外写入被拒、失败/panic 路径自动复位，杜绝跨源凭据外发。
+
 **证据链（我方）**
 
 1. 收集器是**无 owner 的线程局部 Vec**，没有任何 invocation id / scope：
@@ -123,6 +125,8 @@
 
 #### P1-1 生产沙箱不注册文件 API，与随包帮助文档/上游能力直接矛盾
 
+> ✅ **已修复（批33，commit `bc292ccf1f`）**：10 个文件 API 恢复生产注册并统一走 `FsPolicy` 限域（按源隔离沙箱根、32MB/64MB 上限、越界显式拒绝），`writeFile`/`fileExists`/二参 `downloadFile` 按审查意见保持 gated。
+
 **证据（我方）**
 
 - 注册门控：`rust/legado-js/src/host_api/quickjs_impl.rs:179-182`
@@ -158,6 +162,8 @@
 - 测试：两种 `allow_file_access` 模式下 `typeof java.downloadFile`/`cacheFile`/`importScript` 断言；受限模式下载到沙箱成功、越界拒绝；permissive 保持旧行为。
 
 #### P1-2 书源 setup 无条件覆盖 `cache` 对象：TTL/持久化/putFile 全部丢失
+
+> ✅ **已修复（批36，commit `d8c47cae44`）**：与 RSS 同款加 `typeof globalThis.cache === 'undefined'` 守卫，宿主 `cache_store`（TTL/磁盘/putFile）优先，`cacheFile` 映射读回，7/7 回归绿。
 
 **证据（我方）**
 
@@ -254,6 +260,8 @@
 
 #### P1-5 `step_timeout_ms` 契约字段未接线；取消只发生在源之间
 
+> ✅ **已修复（批31，commit `9ab1ebb261`）**：`check_full/check_search/quick_check` 每步 `tokio::time::timeout(min(单步, 剩余预算))` 接线，取消升级为会话级令牌并逐步轮询，新增 9 例（含卡死请求 <1s 返回）。
+
 **证据（我方）**
 
 - `CheckerConfig.step_timeout_ms` 定义/默认：`rust/legado-net/src/source_checker.rs:142,159`。
@@ -277,25 +285,38 @@
 ### 2.4 P2 详述（摘要式）
 
 - **P2-1 目录链 epoch 误取消**：`refresh_toc` 入口 bump（`rust/legado-ffi/src/api/reader.rs:725-731`），而 `get_chapters_with_hints` 的串行/并发分页链都读取同一 `book_url` 代数并在页边界比较（`rust/legado-fetcher/src/web_book.rs:2954-2958,2998-3007,3095-3121`）。普通 `webbook_chapters`（阅读端/Web `/api/webbook/chapters`）不 bump，但会被同书 refresh 抢占并返回 `Internal("toc refresh superseded…")`。上游语义是“协程取消只作用于自己的调用链”，不会跨调用取消。建议：链入口标记 `is_refresh_chain`，仅 refresh 链接受 supersede；或非 refresh 链在检测到抢占时返回 `Ok(已解析部分)` 并记录告警。
+  > ✅ **已修复（批39，commit `74e99cd17d`）**：移除 per-book 刷新代数，目录取消收窄为「单次调用独立」，普通 `webbook_chapters` 不再被同书 refresh 抢占成 `superseded`。
 - **P2-2 双 Cookie 罐 + 仅最终响应写回**：`rust/legado-net/src/client.rs:232` 打开 reqwest 内置 `cookie_store(true)`；`save_cookies_from_response` 只在 `collect_response/collect_raw_response` 对**最终响应**调用（`:1077,1130`）；`apply_headers_and_cookies` 用 App 罐拼出显式 `Cookie` 头（`:1544-1556`）。reqwest 0.12.28 只在请求**没有** `Cookie` 头时才从内置 jar 注入（`reqwest-0.12.28/src/cookie.rs:242`）。因此：登录 302 响应上的 `Set-Cookie` 只进 reqwest 内存 jar，不进 App 罐/DB/JS `getCookie`；当 App 罐对该域已有任意 cookie 时，显式头会完全屏蔽 jar 中的新会话值（同名旧值也可能压制新值）；重启后 3xx cookie 丢失。建议：逐跳捕获重定向响应（自定义 `redirect::Policy` 或在 `no_redirect` 下手动跟随），把每跳 `Set-Cookie` 写入 App 罐；`java.getCookie` 兜底读共享 CookieStore；长期收敛为单一罐。
 - **P2-3 字体句柄缓存无上限**：`HANDLE_CACHE` 是 `HashMap<String,String>`（`font_api.rs:47`），每次 `query_ttf_with_policy` 成功解析即 `cache.insert(cache_key, handle)`（`:204-212`），handle JSON 里 `"data": data` 回显完整输入（`:195-201`）。上游只有 `LruCache<String, QueryTTF>(4)`（`CacheManager.kt:12`）。逐章换字体（常见反爬）会让进程内累积 N 份字体串。建议：句柄缓存同容量 LRU（4），或只存 `fontId` 元数据，不回显原始 data。
+  > ✅ **已修复（批30，commit `fa0c22416a`）**：`HANDLE_CACHE` 改与 `FONT_LRU` 同容量 LRU(4)，对齐上游 `LruCache(4)`；`data` 保留供 `resolve_font` 未命中时重载（已在提交正文登记取舍）。
 - **P2-4 TXT 每次正文全文件读**：`get_chapter_content_with_charset` 每章 `read_file_bytes`（`txt.rs:247,315-320`）→ `decode_with_charset` 全量解码 → 切片（`:250-259`）。上游 `TextFile.getContent` 用 512KB 窗口 `bis.skip(bufferStart)` 只读附近块（`TextFile.kt:118-127`）。阅读翻页时每章重复 O(file) I/O/解码；大文件内存峰值 ≈ 原文件 + UTF-8 解码副本。建议：按 `(path, charset)` 做有界解码缓存或 mmap/seek 窗口读取；至少缓存最近一本书的解码文本。
+  > ✅ **已修复（批35，commit `0af3fa0178`/`2b5cb6cc9b`）**：新增 `txt_cache` 按 `(path, encoding)` 缓存最近 4 本解码文本（64MiB LRU，绑定长度+mtime+首中尾指纹），目录/正文共用；翻章仅 1 次全量解码。
 - **P2-5 JS 书源 URL 映射 jsLib 未解析**：`JsSourceEngine::new_quickjs` 直接 `engine_cache::get_or_create(..., config.js_lib.as_deref(), ...)`（`source_engine.rs:146-153`），`init_engine` 原样 `eval(js_lib)`（`engine_cache.rs:69-87`）；URL 映射 JSON 不是合法 JS → `js_lib_ok=false` → `new_quickjs` 返回 `Err("jsLib 求值失败")`（`source_engine.rs:171-176`）。普通规则源的 `QuickJsExecutor` 已显式检测并走 `run_fresh`（`executor.rs:207-219`）。建议：`new_quickjs` 复用 `jslib_loader::parse_js_lib_url_map` + `resolve_js_lib_url_map_with_status`。
+  > ✅ **已修复（批29，commit `95050931bc`/`ab72c9142c`）**：`new_quickjs` 复用 `jslib_loader::parse_js_lib_url_map` + `resolve_js_lib_url_map_with_status`，与 `QuickJsExecutor` 同源；空映射 `{}` 不再误硬失败。
 - **P2-6 engine_cache 持全局锁初始化**：`get_or_create_with_timeout` 在 `store().lock()` 后调用 `init_engine`（`engine_cache.rs:173-194`），而 `init_engine` 会 eval jsLib/setup/mainJs（`:69-139`）；jsLib 顶层 `java.ajax` 可阻塞到 60s。期间所有源的 `get_or_create`（含已缓存 key 的快路径）都在 Mutex 上排队。建议：读锁查表 → 未命中释放 → 锁外构建 → 写锁复查并装入（`http_state::shared_client` 已是此模式）。
+  > ✅ **已修复（批29，commit `275cfc7a45`）**：改为「短锁查表 → 锁外构建 → 写锁复查装入」，并加 per-key single-flight 与 jsLib 失败负缓存；新增「慢构建不阻塞已缓存快路径」并发用例。
 - **P2-7 `with_current_source_tag` 非 panic 安全**：`current_source.rs:49-60` 保存 prev → `f()` → 恢复；`f()` panic 时恢复代码不执行，blocking 线程复用时 tag 残留。后果：后续请求的 `global_headers`（`network.rs:690-712`）、验证码钩子、cookie 写侧门控都可能错源。建议：RAII `Drop` guard（可直接照抄 `ui_action_queue::ScopeGuard`）。
+  > ✅ **已修复（批29，commit `275cfc7a45`）**：改 RAII `SourceTagGuard`，`Drop` 恢复原值、`try_with` 避免 TLS 销毁期二次 panic；新增 panic 后 tag 恢复用例。
 - **P2-8 loginCheckJs 上下文缺 jsLib/source**：`execute_login_check_response` 只 `QuickJsExecutor::new(source_tag)`，只注入 `result`（`login_check.rs:83-106`），不加载 jsLib/setup、不绑定 `source/cookie/cache`；上游 `analyzeUrl.evalJS(checkJs, it)`（`WebBook.kt:74-99`）的 `evalJS` 会绑定 source/cookie/cache 并挂载 `SharedJsScope`（jsLib）。loginCheckJs 中使用 `jsLib` 函数或 `source.getVariable()` 的源会被判 `CastFailed/JsFailed`，且错误会沿登录检测上抛。建议：与规则执行器同构构造（jsLib + setup + bindings）。
+  > ✅ **已修复（批29，commit `95050931bc`）**：按规则执行器同构构造（jsLib + setup + bindings），jsLib 故障与真实未登录分流为 `JsEngine`/`LoginRequired`（`7bd823710d`）。
 - **P2-9 EnginePool 死代码/非 LRU/锁中毒 panic**：`EnginePool::get_or_create` 池满时 `pool.keys().next()` 删除任意项（`engine_pool.rs:73-78`，注释自述“后续可改为真正 LRU”）；`lock().unwrap()`（`:67`）与 `source_engine.rs:313` 在中毒后 panic。`EnginePool` 无生产调用点（`new_with_pool` 仅定义，`rg` 无调用）。建议：删除 `EnginePool` 与 `new_with_pool`（或迁移到 `engine_cache` 的 LRU 语义）；`unwrap` 改中毒恢复。
+  > ✅ **已修复（批29，commit `275cfc7a45`）**：删除 `EnginePool`/`new_with_pool`/`engine_pool` 字段与 lib 导出；池化路径锁中毒改 `into_inner` 恢复，不再连锁 panic。
 
 ---
 
 ### 2.5 P3
 
 - **P3-1 解压内存/大小无上限**：`unzip_file` 每条目 `read_to_end` 到 `Vec`（`archive_utils.rs:67-72`）；`get_zip_byte_array_content`/`zip_entry_bytes` 同样整条目入内存（`:100-127`）；`read_file_magic` 用 `fs::read` 读**整包**仅判前 4 字节（`:504-525`）；`unrar_file` 为预扫描整包读入（`:383-385`）。书源可控压缩包可造成数 GB 内存峰值。建议：流式 `io::copy` 到文件、单条目/总量上限、magic 只读 512B、预扫描流式。
+  > ✅ **已修复（批30，commit `fa0c22416a`）**：解压改流式落盘 + 单条目/总量上限，magic 只读头 512B，RAR 预扫描改流式；7z 限额与失败清理另由 `ed9c9f77c1` 补全。
 - **P3-2 TXT 编码检测样本过小**：`detect_encoding` 只读 4KB（`txt.rs:263-307`），且用“GB18030 解码无 errors 即判定”的启发式；长 ASCII 头 + 后段 GBK 的常见排版会被判 UTF-8，后段出现 U+FFFD。上游用 ICU `CharsetDetector`（8KB 采样，`EncodingDetect.kt:55-70`）。建议：扩样 + 置信度/统计检测（fetcher 已引入 chardetng，可复用）。
 - **P3-3 `legado-net/src/url_template.rs` 是第二套 URL 模板解析器**：仅 `{key}/<page>`/JSON 选项，不执行 JS，且全仓仅 re-export（`legado-net/src/lib.rs:74`），无调用方。建议删除或 `#[deprecated]` 并移除 re-export，避免误用。
+  > ✅ **已修复（批28，commit `3c9af1a003`）**：删除该模块与 `lib.rs` re-export（全仓裸名重搜确认零消费方），并清理两处文档引用。
 - **P3-4 `cache.put` 注释与实现不一致**：`quickjs_impl.rs:3700-3713` 称 `saveTime<=0` “仅内存（putMemory）”，实际 `cache_store::put` 写永久磁盘条目 + 内存（`cache_store.rs:257-300`）。建议统一注释/模块文档。
+  > ✅ **已修复（批29，commit `275cfc7a45`）**：注释改为「`saveTime<=0` 写永久磁盘条目并同步内存层」（行为未改，持久化口径另由批36 裁决）。
 - **P3-5 自定义 CA 失败静默**：`ssl_config.rs:57-68` 解析 PEM 失败只 `log::warn`，连接仍按默认根证书发起 → 用户配置私有 CA 后握手失败且无可见原因。建议返回错误或在 FFI 初始化期 fail-fast。
+  > ✅ **已修复（批29，commit `95050931bc`）**：`SslConfig::apply` 改返回 `LegadoResult`，`from_pem_bundle` 解析失败显式上抛，不再仅 `log::warn` 后静默忽略。
 - **P3-6 `ui_action_queue` 兼容 API 无 RAII**：`begin_collect/end_collect/discard_collect`（`ui_action_queue.rs:123-182`）若调用方漏配对，线程局部栈残留；生产已全部 `with_collect`（`rg`：`explore_api.rs:393`、`image_action_api.rs:197`、`review_api.rs:1087`、`source_callback_api.rs:154`、`rss_web_bridge.rs:1413`），仅测试使用旧 API。建议删除或标注 `#[cfg(test)]`。
+  > ✅ **已处置（批28，commit `3c9af1a003`，非删除）**：`begin_collect/end_collect/discard_collect` 标注「仅供测试，生产一律 `with_collect`」；未按建议删除，保留为同线程兼容包装。
 - **P3-7 server 批量校验每源新建客户端**：`legado-server/src/handlers/source_check.rs:63-70` 在并发循环内 `create_checker` → `LegadoClient::new(default)`，最多 20 个独立连接池；FFI 侧用 `shared_client`。建议复用共享客户端（注意 `no_proxy`/cookie 共享语义）。
 - **P3-8 RAR 安全仅单层（预扫描）**：`scan_rar5_entry_names`（`archive_utils.rs:280-363`）是自写的 RAR5 头解析器，与 `rar` crate 并行维护；解压后没有遍历产物做 containment 复核。建议解压完成后遍历 `out_dir`，对每个条目 `canonicalize` 并断言在 `canonical(out_dir)` 内（成本 O(条目数)），作为 crate 升级/边缘格式的第二道防线。
 

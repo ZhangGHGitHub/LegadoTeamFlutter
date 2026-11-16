@@ -1,5 +1,9 @@
 # 项目版本控制记录
 
+> ⚠️ **过期文档（2026-11-17 标注）**：本文最后更新于 **2026-07-30**（`v2.1.0`），内容为当时的一次版本决策记录，**不再维护**。
+> 当前版本号以 `flutter_legado/pubspec.yaml` 的 `version` 为准；版本变更历史见根目录 [`CHANGELOG.md`](../CHANGELOG.md) 与应用内 `flutter_legado/assets/updateLog.md`；
+> 当前任务与进度状态见 [`REFACTORING_ACTIVE_PLAN.md`](REFACTORING_ACTIVE_PLAN.md)。本文件仅作历史追溯保留。
+
 ## v2.1.0 - 重构功能修正版 (2026-07-30)
 
 ### 🔄 核心变更

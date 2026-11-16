@@ -47,6 +47,8 @@
 
 ### P2-1 rust-ci 的 quickjs clippy 档未覆盖 `legado-fetcher`
 
+> ✅ **已修复（批25，commit `d0652a12aa`）**：quickjs clippy 档补 `-p legado-fetcher`，与默认档 lint 面一致。
+
 **证据（我方）**
 
 - `.github/workflows/rust-ci.yml:26-28`：quickjs clippy 命令为
@@ -68,6 +70,8 @@
 
 ### P3-1 根 README.md 严重陈旧（版本、crate 数、页面数、提交规范四处失真）
 
+> ✅ **已修复（2026-11-17 文档卫生批）**：版本改 2.0.509+510、crate 数 8→9（补 `legado-fetcher`）、Screen 数 62→111（实测 `find screens -name "*.dart"`）、提交规范改为约定式提交。
+
 **证据（我方）**
 
 - `README.md:13`：「Rust 核心引擎（8 个 crate）」——实际 `rust/Cargo.toml:3-12` 的 workspace 成员为 **9 个**（含 2026-10-01 新增的 `legado-fetcher`）。
@@ -86,6 +90,8 @@
 
 ### P3-2 docs/DEVELOPMENT.md 陈旧：Schema v95 vs 实际 v119、8 crate、2026-08-02 测试统计
 
+> ✅ **已修复（2026-11-17 文档卫生批）**：Schema 版本改为引用 `rust/legado-db/src/schema.rs` 的 `SCHEMA_VERSION`（当前 119）、crate 数 8→9、页面数 40→111、测试数改为「以 CI 为准」并删除手写总计。
+
 **证据（我方）**
 
 - `docs/DEVELOPMENT.md:94`：「Rust workspace（8 个 crate）」。
@@ -102,6 +108,8 @@
 ---
 
 ### P3-3 rust/README.md 仍把 PROGRESS.md 当「完整进度跟踪文档」——第二状态源的第 5 条活链
+
+> ✅ **已修复（2026-11-17 文档卫生批）**：进度段加「历史快照」横幅并明确当前进度以 `docs/REFACTORING_ACTIVE_PLAN.md` 为准；同时补 `legado-fetcher` 到 Crate 表与目录树、移除已不存在的 `legacy-ffi/` 条目。
 
 **证据（我方）**
 
@@ -120,6 +128,8 @@
 ---
 
 ### P3-4 ACTIVE_PLAN 正文旧段与尾部日志仍有 10 处口径冲突（核心发现）
+
+> ✅ **已修复（2026-11-17 文档卫生批）**：逐条回销 L202/L262/L283/L294/L325/L336/L486/L489/L545/L583 与 L877/L879/L895/L1243 的旧「仍开放/待裁决/待补」段头，改为「已关闭（见批X）」并保留原文作历史。
 
 以下每条均为「正文仍写未修/开放/待裁决/待补」而「尾部日志（或验收文档）已关闭/已落地」。逐条给双侧行号。
 
@@ -146,6 +156,8 @@
 
 ### P3-5 ACTIVE_PLAN 尾部仍有 4 组未回销/失联登记项
 
+> ✅ **已修复（2026-11-17 文档卫生批）**：`custom_progress.dart` 等 7 个孤儿组件已核实零生产引用并登记 `docs/pending_deletion/README.md`（受当批 `flutter_legado/lib/**` 禁改边界，移动延后）；L1243 盘点追加 2026-11-17 回销注记。
+
 | # | 位置 | 原文要点 | 核验结果 |
 |---|---|---|---|
 | 1 | `:561` | 「**待办：2.0.325 装机冒烟 + V3 设备点验**（用非凡资源网视频书实测选集/倍速浮层）」 | 在后续 600 余行日志中未检索到该 2.0.325 冒烟/V3 点验的关闭记录；V3 属 P4-3 视频能力，后续视频轨道有相关交付，但未与 L561 待办串联回销 → 待核实（V-2） |
@@ -160,6 +172,8 @@
 ---
 
 ### P3-6 修订日志中的 hash 拼写错误（1 处）与 25 条「提交待收口」模板语
+
+> ✅ **已修复（2026-11-17 文档卫生批）**：`13b1b3b59` → `13b1b33b59`（`git cat-file -t` 验证为 commit）；25 条「提交待收口」统一改为「提交已收口」。
 
 **证据（我方）**
 
@@ -199,6 +213,8 @@
 
 ### P3-8 AGENTS.md 设备事实陈旧：root 状态、端点、设备可用性三处与最新验收冲突
 
+> ✅ **已修复（2026-11-17 文档卫生批）**：设备段改为「以当次 `adb shell id` 与 `MuMuManager info -v all` 实测为准」，补「2026-11-15 起设备已恢复可用」；2026-09-24 历史故障记录保留作排障参考（标题改为「历史故障记录·已恢复」）。
+
 **证据（我方）**
 
 - `AGENTS.md:71`：「2026-10-03 实测修正：该机 `adb shell` **非 root**（uid=2000，无 su），`/data/data/<pkg>/` 私有目录读写须 `run-as`（仅 debug 包可调试）」。
@@ -219,6 +235,8 @@
 
 ### P3-9 AGENTS.md 的 CI 引用与模块地图过期（4 个不存在的 workflow + 缺 legado-fetcher）
 
+> ✅ **已修复（2026-11-17 文档卫生批）**：CI 列表改为实际存在的 8 个 workflow（移除不存在的 test/release/BetaRelease/web），模块图补 `legado-fetcher`（9 crate）。
+
 **证据（我方）**
 
 - 实际 `.github/workflows/` 仅 8 个文件：`flutter-ci.yml`、`flutter-release.yml`、`integration-smoke.yml`、`ios-build.yml`、`pr-review.yml`、`rust-ci.yml`、`stale.yml`、`triage-labels.yml`。
@@ -237,6 +255,8 @@
 
 ### P3-10 仓库卫生：`.zcode/` 未入 ignore；根目录 68 个 `tmp_*` + `.tmp/` 4.5GB 本地杂物
 
+> ⚠️ **部分修复（2026-11-17 文档卫生批）**：`.zcode/` 已加入 `.gitignore`；根目录 69 个 `tmp_*`（合计 **60 GB**，其中 `tmp_debug/` 57 GB）与 `.tmp/`（**4.5 GB**）**仅统计未删除**，需用户确认后清理。
+
 **证据（我方）**
 
 - `git status --porcelain -uall` 中 `?? .zcode/plans/plan-sess_3b4caee6-b481-44e9-a4f0-d07f06f6caa5.md`；`git check-ignore -v .zcode` **无输出**（未忽略）；`.gitignore` 仅第 113 行忽略 `.zcodeignore`（文件），未忽略 `.zcode/`。
@@ -253,6 +273,8 @@
 
 ### P3-11 零引用死代码：6 个孤儿组件 + `custom_progress.dart` 仍只有测试引用
 
+> ⚠️ **部分修复（2026-11-17 文档卫生批）**：7 个文件已逐个类名 grep 确认生产引用为 0，并登记 `docs/pending_deletion/README.md`（含仅存测试引用方清单与后续处置步骤）；实际移动因当批禁止触碰 `flutter_legado/lib/**` 且会破坏 8 个测试 import 而延后。
+
 **证据（我方）**
 
 - 6 个组件文件仍在：`flutter_legado/lib/src/widgets/search_bar_widget.dart`、`swipe_action.dart`、`source_card.dart`、`tag_chip.dart`、`badge_widget.dart`、`chapter_tile.dart`。
@@ -267,6 +289,8 @@
 ---
 
 ### P3-12 docs/VERSION_CONTROL.md 冻结在 2026-07-30 的 v2.1.0，无失效标注
+
+> ✅ **已修复（2026-11-17 文档卫生批）**：文件头加「过期文档」横幅，指明当前版本以 `pubspec.yaml` 为准、变更历史见 `CHANGELOG.md`/`updateLog.md`、任务状态见 `REFACTORING_ACTIVE_PLAN.md`。
 
 **证据（我方）**
 

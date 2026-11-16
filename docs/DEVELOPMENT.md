@@ -12,7 +12,7 @@
 ┌─────────────────────────────────────────────────────┐
 │                   Flutter UI 层                      │
 │              (flutter_legado/)                       │
-│     40 个页面 · 952 个测试 · 103+ FFI 函数            │
+│     111 个页面 · 测试数以 CI 为准 · 103+ FFI 函数       │
 └────────────────────────┬────────────────────────────┘
                          │  flutter_rust_bridge (FFI)
 ┌────────────────────────▼────────────────────────────┐
@@ -35,9 +35,9 @@ legado-server — 独立 HTTP 服务（axum + 53 REST + 5 WS + MCP）
 - **JS 沙箱引擎**：QuickJS 真实实现，40+ 宿主 API，java 命名空间兼容
 - **网络引擎**：reqwest + 中间件链（重试/限流/Cookie）+ WebDAV 云同步
 - **书籍格式**：EPUB / TXT / MOBI / PDF 解析 + 导出
-- **数据库**：SQLite Schema v95 + 25 个 Repository + Room 数据导入
+- **数据库**：SQLite Schema（版本以 `rust/legado-db/src/schema.rs` 的 `SCHEMA_VERSION` 常量为唯一准，当前 119）+ 25 个 Repository + Room 数据导入
 - **HTTP 服务**：axum REST API + WebSocket 实时通道 + MCP Server
-- **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 40 个页面
+- **Flutter UI**：书架 / 阅读器 / 搜索 / 书源管理 / 设置 / RSS 等 111 个页面
 
 ---
 
@@ -91,13 +91,14 @@ flutter_rust_bridge_codegen --version
 
 ```
 legado/
-├── rust/                        # Rust workspace（8 个 crate）
+├── rust/                        # Rust workspace（9 个 crate）
 │   ├── legado-core/             # 公共基础层：数据模型、加密、排版、换源、WebBook
 │   ├── legado-parser/           # 书源规则解析：CSS/XPath/JsonPath/Regex/AnalyzeUrl
 │   ├── legado-net/              # 网络引擎：HTTP/Cookie/RSS/WebDAV/中间件
 │   ├── legado-js/               # JS 沙箱：QuickJS + 40+ 宿主 API
 │   ├── legado-book/             # 书籍格式：EPUB/TXT/MOBI/PDF 解析与导出 + TXT 搜索
-│   ├── legado-db/               # 数据库：SQLite Schema v95 + 17 Repository
+│   ├── legado-db/               # 数据库：SQLite（Schema 版本见 schema.rs 的 SCHEMA_VERSION）+ 17 Repository
+│   ├── legado-fetcher/          # 书源抓取编排：校验规则链、失效分组、搜索/详情/目录/正文
 │   ├── legado-ffi/              # FFI 出口：flutter_rust_bridge 聚合层
 │   ├── legado-server/           # HTTP 服务：axum REST + WS + MCP
 │   ├── Cargo.toml               # Workspace 配置
@@ -207,13 +208,14 @@ flutter test
 
 ### 测试统计
 
-| 组件 | 测试数 | 说明 |
+> 以下数字为历史实测快照，**当前测试数以 CI（`.github/workflows/rust-ci.yml`、`flutter-ci.yml`）的运行结果为准**，不在文档里维护手写计数。
+
+| 组件 | 测试数（历史快照） | 说明 |
 |------|--------|------|
-| Rust workspace（默认） | 1409 | 8 个 crate 全量测试 |
+| Rust workspace（默认） | 1409 | 9 个 crate 全量测试 |
 | Rust QuickJS feature | 327 | legado-js 含 QuickJS 额外测试 |
 | Rust legado-ffi | 105 | FFI 导出函数测试 |
 | Flutter | 952 | Widget + 单元测试（2026-08-02 实测，Phase 5.4 去重 bookshelf_provider_test 后） |
-| **总计** | **2361** | |
 
 ---
 

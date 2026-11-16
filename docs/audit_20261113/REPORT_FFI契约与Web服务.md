@@ -79,6 +79,8 @@
 
 ### P0-1 自研 `/api/webbook/*` 未鉴权执行请求体中的任意书源 JS（令牌面绕过）
 
+> ✅ **已修复（批23，commit `6ce1189059`）**：`/api/webbook/*` 4 条纳入源写令牌前置守卫（方法级匹配），未带 `x-legado-token` 在读取 body 前即返回令牌失败信封 + `Connection: close`。
+
 **分级：P0（安全 / 远程代码执行面）**
 
 **我方证据**
@@ -110,6 +112,8 @@
 ---
 
 ### P1-1 自研 `/api/sources` 与 `/api/sources/update` 绕过源写令牌面：可静默清空书源规则/注入源/SSRF
+
+> ✅ **已修复（批24，commit `43aa431dc1`/`ebb794f9d4`/`d72105dbf1`）**：`/api/sources` POST/PUT/DELETE 与 `/api/sources/update`、规则订阅 Web 写面全部纳入令牌守卫；同 URL POST 返回 409 不再 `INSERT OR REPLACE` 整行覆盖、PUT 改部分更新、`repo_url` 仅 http/https + 拒内网 + 逐跳校验 + 移除 `danger_accept_invalid_certs`。
 
 **分级：P1（安全 + 静默数据丢失；若 Web UI 或第三方客户端使用该面，应按 P0 处理）**
 
@@ -143,6 +147,8 @@
 
 ### P1-2 `GET /getBookSourcesForManagement` / `GET /getBookSourceCheckStates` 缺失令牌校验（原版受保护读面）
 
+> ✅ **已修复（批24，commit `3dd85ecf59`）**：两条 handler 增加 `has_valid_token` 前置校验并补 `Cache-Control: no-store`，同步修正三处「无令牌」注释与契约表述。
+
 **分级：P1（安全 / 敏感读暴露）**
 
 **我方证据**
@@ -172,6 +178,8 @@
 
 ### P1-3 `ruleSubApplyUpdate` / `/api/rule-update/apply` 只回写版本号，未应用任何规则（UI 显示成功计数）
 
+> ✅ **已修复（批24，commit `60b6b50e9a`/`3efbfc5986`/`381ec8c152`）**：新增 `legado-db::apply_rule_subscription` 单一实现（FFI/Web 共用）：按 `sub_type` typed diff + 单事务 upsert + 版本号最后写 + 失败整笔回滚；按用户裁决「仅 upsert 不删除」，并按 `lastUpdateTime` 逐条门控保留本地新内容。
+
 **分级：P1（用户可见功能缺陷 / 静默失败）**
 
 **我方证据**
@@ -198,6 +206,8 @@
 
 ### P2-1 段评两条写端点未纳入路由级令牌中间件（与上游 13 条集合不一致）
 
+> ✅ **已修复（批25，commit `2054b83167`）**：`/openLegacyReview`、`/runLegacyReview` 纳入 `PROTECTED_SOURCE_WRITE_ROUTES`（23→25），handler 内校验保留作纵深防御。
+
 **分级：P2（边界缺陷 / 防御纵深）**
 
 **我方证据**
@@ -217,6 +227,8 @@
 ---
 
 ### P2-2 契约门禁缺少「Rust FFI 导出面」这第三边，三方闭合只能靠人工
+
+> ✅ **已修复（批25，commit `09452186d9`）**：`api_contract_test.dart` 增加第 7 项，解析 `ffi.rs` 的 `pub fn`/`pub async fn` 与 `bridge/ffi/ffi.dart` wrapper 做双向差集。
 
 **分级：P2（测试不变量缺口）**
 
@@ -290,6 +302,8 @@
 ---
 
 ### P3-4 Web 敏感读响应头/注释卫生
+
+> ✅ **已修复（批24，commit `3dd85ecf59`）**：两条读端点补 `no-store`；`server.rs` 与 `source_api.rs` 的「12 条路由」「受保护 GET 面仅 getHttpLog(s)」错误注释已按实际（33 条 / 四条）更正。
 
 **我方证据**
 

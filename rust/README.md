@@ -36,6 +36,7 @@ Legado（阅读）是一款开源小说阅读器，本目录包含其 **Rust 核
 | **legado-js** | JavaScript 沙箱：执行书源中的 JS 脚本，支持 MD5/SHA/Base64 等加密函数（可选 feature）| rquickjs (optional) |
 | **legado-book** | 书籍文件处理：EPUB 解析、TXT 编码检测、ZIP 解压 | zip, quick-xml, encoding_rs |
 | **legado-db** | 本地 SQLite 数据库：书架、阅读进度、书源存储、书签、替换规则 | rusqlite (bundled) |
+| **legado-fetcher** | 书源抓取编排：搜索/详情/目录/正文规则链、书源校验与失效分组 | legado-parser, legado-net, legado-js |
 | **legado-ffi** | FFI 出口：聚合所有 crate，通过 `flutter_rust_bridge` 生成跨语言接口 | flutter_rust_bridge, tokio |
 | **legado-server** | HTTP 服务：axum Web 服务器，提供 REST API、静态文件服务、Web SPA 前端 | axum, tokio, tower-http |
 
@@ -189,22 +190,23 @@ rust/
 ├── legado-js/              # JavaScript 沙箱
 ├── legado-book/            # 书籍文件处理
 ├── legado-db/              # SQLite 数据库（含 Bookmark/ReplaceRule Repository）
+├── legado-fetcher/         # 书源抓取编排（校验规则链、失效分组、搜索/详情/目录/正文）
 ├── legado-ffi/             # FFI 出口（cdylib + staticlib，含 WebBook API）
 ├── legado-server/          # HTTP 服务（axum Web 服务器，含 WebBook/SourceCheck 端点）
 │   └── web-dist/           # Web SPA 前端静态资源
-├── legacy-ffi/             # ⚠️ 已废弃，不参与编译（见下方说明）
-└──
+└── PROGRESS.md             # 历史进度快照（2026-08-07 冻结，当前状态见 docs/REFACTORING_ACTIVE_PLAN.md）
 ```
 
-> **注意**：`legacy-ffi/` 为早期废弃模块，不在 workspace 成员中，不参与编译。保留仅供历史参考。
+> **说明**：`legacy-ffi/` 已从仓库移除，当前 workspace 成员以 `rust/Cargo.toml` 的 `members` 为准（共 9 个 crate）。
 
 ---
 
-## 项目进度（截至 2026-08-01）
+## 项目进度（历史快照，截至 2026-08-01）
 
-> 完整进度跟踪文档见 [PROGRESS.md](./PROGRESS.md)
+> ⚠️ **本文件为历史快照**：下方的进度百分比、测试计数与阶段清单均为 2026-08-01/02 的冻结记录，**不再更新**。
+> **当前进度以 [`docs/REFACTORING_ACTIVE_PLAN.md`](../docs/REFACTORING_ACTIVE_PLAN.md) 为准**；`PROGRESS.md` 同样只是历史快照，不再承担进度跟踪职责。
 
-### 当前状态：148/148 原子任务已完成，Rust 1409 测试默认通过 / Flutter 952 通过（2026-08-02 实测，Phase 5.4 去重 bookshelf_provider_test 后）
+### 当时状态：148/148 原子任务已完成，Rust 1409 测试默认通过 / Flutter 952 通过（2026-08-02 实测，Phase 5.4 去重 bookshelf_provider_test 后）
 
 | Crate | 测试数 | 状态 |
 |-------|--------|------|

@@ -10,16 +10,17 @@ Legado（阅读）是一款免费开源的小说阅读器，正在从 Android �
 ## 项目结构
 
 ```
-├── rust/               # Rust 核心引擎（8 个 crate）
+├── rust/               # Rust 核心引擎（9 个 crate）
 │   ├── legado-core/    # 公共基础层（数据模型、错误、加密、排版）
 │   ├── legado-parser/  # 书源规则解析（CSS/XPath/JsonPath/Regex）
 │   ├── legado-net/     # HTTP 网络引擎（reqwest + 中间件）
 │   ├── legado-js/      # JavaScript 沙箱（QuickJS）
 │   ├── legado-book/    # 书籍格式解析（EPUB/TXT/MOBI/PDF）
 │   ├── legado-db/      # SQLite 数据库（rusqlite）
+│   ├── legado-fetcher/ # 书源抓取与校验编排（规则链、失效分组）
 │   ├── legado-ffi/     # FFI 出口（flutter_rust_bridge）
 │   └── legado-server/  # HTTP 服务（axum）
-├── flutter_legado/     # Flutter UI 层（62 个 Screen 页面）
+├── flutter_legado/     # Flutter UI 层（111 个 Screen 页面）
 ├── app/                # [旧] Android 原生 Kotlin 代码
 ├── modules/            # [旧] Android 子模块（rhino/web/book）
 └── CHANGELOG.md        # 更新日志
@@ -67,10 +68,10 @@ flutter test
 
 ## 版本与发布
 
-- 当前版本：**2.0.60+62**（Flutter `pubspec.yaml`）
+- 当前版本：**2.0.509+510**（以 `flutter_legado/pubspec.yaml` 的 `version` 为准）
 - 功能基准：Android 原版 `com.legado.app.release` 3.26081008
 - 版本规范：[语义化版本](https://semver.org/lang/zh-CN/)
-- 提交规范：中文说明 + `[Rust]` / `[UI]` / `[docs]` 前缀
+- 提交规范：[约定式提交](https://www.conventionalcommits.org/zh-hans/)，形如 `fix(ui): …` / `feat(rust): …` / `docs: …` / `chore: …`（scope 用 `rust` / `ui` / `android` / `ios` / `bridge` / `contract` 等）
 
 ---
 

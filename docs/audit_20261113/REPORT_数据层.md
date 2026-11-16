@@ -30,6 +30,8 @@
 
 ### P1-1 `book_marks`（划线/笔记）双链缺失：自有备份不收集、原版 zip 恢复静默丢弃
 
+> ✅ **已修复（批27，commit `3e8d39fe74`/`46111cf924`）**：自有 JSON 备份 `BACKUP_VERSION` 5→6 新增 `bookMarks` 段（12 列），zip 恢复白名单 22→23 增 `bookMarking.json` 并走 `INSERT OR REPLACE` upsert；空 `anchorJson` 跳过并 warn；真机 E2E 逐字段一致。
+
 **我方证据**
 
 - 表与功能实现完整：`rust/legado-db/src/schema.rs:81-88`（v118 迁移注释）、`:540-573`（`book_marks` DDL）；`rust/legado-db/src/repository/book_marking_repository.rs:1-147`；`rust/legado-ffi/src/api/book_marking_api.rs`（§2.52 五个方法）。

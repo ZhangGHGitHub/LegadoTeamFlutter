@@ -123,3 +123,7 @@ docs/gate_baseline_test.txt
 docs/parity_shots/tmp_d11/
 # QA 代理过程草稿目录（正式证据归档至 docs/materials_1301/evidence/）
 .qa_scratch/
+
+# === 目录治理批⑨c（2026-11-17 文档卫生批）===
+# ZCode CLI 本地会话/缓存目录（每台机器独立生成，不入库）
+.zcode/

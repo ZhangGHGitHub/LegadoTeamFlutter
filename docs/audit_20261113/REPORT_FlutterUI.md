@@ -63,6 +63,8 @@
 
 #### P1-1 压缩包导入把「失败」计入「成功导入 N 本」——假成功 + 静默丢书
 
+> ✅ **已修复（批28，commit `ca9345b4b5`/`528a645718`）**：成功数仅在 try 成功分支自增，新增失败计数与「书名：原因」明细；零处理/空解压不再回落「成功导入 0 本」，导入期间禁改勾选与编码并阻止对话框关闭；编码转换改导入 `output_path`。
+
 - **等级**：P1（功能错误 / 静默失败）
 - **文件:行号**：
   - `flutter_legado/lib/src/screens/archive_import_dialog.dart:320-328`（逐本导入的 try/catch 与计数）
@@ -89,6 +91,8 @@
 ### P2（8 条）
 
 #### P2-1 段评摘要去重键在「成功前」就被消费，同章失败/竞态后永久不再加载（批25 修复的回修不彻底）
+
+> ✅ **已修复（批28，commit `9c92e17cf7`）**：去重键改为「成功/确定无需请求」后才提交，失败释放并按 2s 退避重试（同键上限 3 次），补失败重试/退避窗口/上限三条 widget 用例。
 
 - **等级**：P2（功能错误 / 静默失败）
 - **文件:行号**：
@@ -124,6 +128,8 @@
 
 #### P2-3 私密书「改名」后，阅读记录 / 书签的脱敏反查失效，原书名明文显示
 
+> ✅ **已修复（批31，commit `ee8bae3145`）**：新增 `PrivacyRecordAliasStore` 登记「旧名+旧作者 → bookUrl」（上限 1000），反查按 bookUrl 找回当前书并入索引、同键多候选取「任一私密即锁定」fail-closed；两个改名入口均登记别名，点击记录不再把旧书名发给第三方搜索。
+
 - **等级**：P2（隐私脱敏被绕过；非参考版行为，需裁决修法）
 - **文件:行号**：
   - `flutter_legado/lib/src/screens/edit_book_info_screen.dart:212-217`（编辑书籍信息直接 `book.copyWith(name: ..., author: ...)` 并 `updateBook`，改写 `books.name/author`）
@@ -147,6 +153,8 @@
 
 #### P2-4 用户可见错误文案直接插值原始异常：`BridgeError` 无 `toString()`，用户看到「Instance of 'BridgeError'」
 
+> ✅ **已修复（批30，commit `c9af1cf9e2`）**：screens/widgets/providers/services 共 182 处用户可见 `$e` 改为 `errorMessage(e)`（日志保留原始异常），并新增 UI 层静态守卫。
+
 - **等级**：P2（错误反馈失效 / 泄漏内部细节）
 - **文件:行号**（代表性站点，均已核实异常可为 `BridgeError` 或 FFI 错误）：
   - `screens/bookshelf_manage_screen.dart:609`（删除书 `deleteBook`）
@@ -168,6 +176,8 @@
 
 #### P2-5 书架点击书籍无重入保护：等待书源匹配期间双击会压入两个阅读器/详情页
 
+> ✅ **已修复（批30，commit `c9af1cf9e2`）**：`_openBook` 按 `bookUrl` 去重，等待书源匹配期间双击不再压入第二个阅读器/详情页。
+
 - **等级**：P2（导航错误 / 重复 push）
 - **文件:行号**：
   - `flutter_legado/lib/src/screens/bookshelf_screen.dart:2580`（`_openBook` 起点）
@@ -181,6 +191,8 @@
 
 #### P2-6 WebDAV「同步书库（合并）」进度文案写成「恢复中…」，与动作方向相反
 
+> ✅ **已修复（批28，commit `9c92e17cf7`）**：进度与完成文案改为「同步中/同步完成」，与「上传本地书架覆盖远端」的实际方向一致，并补文案断言。
+
 - **等级**：P2（误导性反馈）
 - **文件:行号**：`flutter_legado/lib/src/screens/webdav_settings_screen.dart:606`（`_runWithProgress('恢复中…', ...)`，位于 `_doSyncLibrary`）
 - **问题**：该动作经 `SyncNotifier.restoreFromWebDav` 实现，语义是「**上传本地书架覆盖远端 bookshelf.json**，再只回写远端书源」（见 `providers/sync/sync_notifier.dart:288-316` 与确认文案 `webdav_settings_screen.dart:534-553`）。进度条却写「恢复中…」；同文件其余三处「恢复中…」确实是恢复（:725/:913/:1107），只有这一处是上传。
@@ -188,6 +200,8 @@
 - **建议修法**：文案改为「同步中…（上传本地书架）」或按动作起两个不同标签；顺带把确认框里的「恢复/同步」术语与图标统一。
 
 #### P2-7 远程书库批量导入：部分失败被静默，仍提示「成功导入 N 本」
+
+> ✅ **已修复（批30，commit `c9af1cf9e2`）**：批量导入成功/失败分列，失败项带文件名与可读原因；`b79750515a` 另修早退清空导入结果。
 
 - **等级**：P2（静默失败）
 - **文件:行号**：
@@ -200,6 +214,8 @@
 
 #### P2-8 自动任务批量导入：写入失败被静默，提示只统计成功数
 
+> ✅ **已修复（批30，commit `c9af1cf9e2`）**：`createTaskRaw` 返回 false 不再静默，文案区分「解析无效 N 个 / 写入失败 M 个」。
+
 - **等级**：P2（静默失败）
 - **文件:行号**：`flutter_legado/lib/src/screens/auto_task_screen.dart:815-829`
 - **问题**：`try { await notifier.createTaskRaw(...); count++; } catch (_) { /* 单条失败不阻断整体导入 */ }`；结果提示 `errors.isEmpty ? '已导入 $count 个任务' : '已导入 $count 个任务，跳过 ${errors.length} 个无效任务'`。其中 `errors` 是**解析阶段**收集的「无效任务」，与写入阶段的失败不是同一集合。
@@ -211,6 +227,8 @@
 ### P3（10 条）
 
 #### P3-1 9 个页面的 `ScrollController` 从未 `dispose`
+
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：9 个页面补 `ScrollController.dispose`（`txt_toc_rules_screen` 新增 `dispose` 覆写），并加源码守卫测试。
 
 - **等级**：P3（资源卫生）
 - **文件:行号**（脚本全扫 + 逐文件人工确认 `dispose()` 体内确实没有对应释放）：
@@ -228,12 +246,16 @@
 
 #### P3-2 `SearchNotifier` 无 `onDispose`：节流 `Timer` 与流订阅不随 provider 销毁取消
 
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：`build()` 加 `ref.onDispose` 取消节流定时器与流订阅。
+
 - **等级**：P3（潜在风险；当前 provider 全局常驻，实际影响低）
 - **文件:行号**：`providers/search/search_notifier.dart:82`（`Timer? _resultsFlushTimer`）、`:259`（`_attachSearchStream` 赋值 `_searchSub`）、`:791-793`（provider 声明，无 `ref.onDispose`）
 - **问题**：`searchNotifierProvider` 是普通 `NotifierProvider`（非 autoDispose），进程内不会销毁，所以当前不会触发「dispose 后写 state」。但 `_resultsFlushTimer` 回调里直接写 `state`（`_flushResults`），一旦未来改成 `autoDispose` 或加作用域容器（测试、多实例），定时器会在销毁后写 state。
 - **建议修法**：在 `build()` 里加 `ref.onDispose(() { _resultsFlushTimer?.cancel(); _searchSub?.cancel(); });`，为后续改造留安全边界。
 
 #### P3-3 死状态 / 死开关：加载并持久化、但全仓无消费者
+
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：移除 `readMenuBrightness*`/`autoSync` 死状态及 9 个零调用方法（P3-8 的「临时实现」则按 D-5 仅登记待裁决）。
 
 - **等级**：P3（「看起来实现了但没生效」）
 - **证据**：
@@ -249,6 +271,8 @@
 
 #### P3-4 `read_record_daily_view` 组日期时 `int.parse` 无保护（同源数据的另一处有 try/catch）
 
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：抽 `parseDailyDate`，非数字/越界/ISO 日期不再抛 `FormatException`，两处共用。
+
 - **等级**：P3（防御性；当前数据源格式受 Rust 保证）
 - **文件:行号**：`screens/read_record_daily_view.dart:92-101`
 - **问题**：`final parts = date.split('-'); if (parts.length != 3) continue;` 之后直接 `int.parse(parts[0..2])`。若 `date` 形如 `2026-11-13T00:00:00`（仍 split 出 3 段）或含非数字（历史脏数据/手工改库/异常备份），`int.parse` 抛 `FormatException`，且该调用位于 `build`（`groupDailyByDay` 由 `build` 调用），**直接影响阅读记录页「按天」视图渲染**。
@@ -256,6 +280,8 @@
 - **建议修法**：抽一个共享的 `parseDailyDate(String) -> DateTime?`（try/catch + `DateTime.tryParse` 兜底），两处共用。
 
 #### P3-5 `video_screen` / `reader_comic_screen` 异步分支 `setState` 缺 `mounted` 检查
+
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：video/comic 异步分支补 `mounted` 守卫，漫画加迟加载回归测试。
 
 - **等级**：P3（debug 断言 / release 静默丢帧）
 - **文件:行号**：
@@ -266,6 +292,8 @@
 - **建议修法**：统一在每个 `setState` 前补 `if (!mounted) return;`（或改 `if (mounted) setState(...)`），与同文件其它分支保持一致。
 
 #### P3-6 详情页传入空 `bookUrl` 且无 `Book` 参数时，永久 Loading，无错误/空态
+
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：空 `bookUrl` 且无 `Book` 时给出「缺少书籍参数」终态，不再永久转圈。
 
 - **等级**：P3（边缘；路由参数异常/深链才可达）
 - **文件:行号**：
@@ -300,6 +328,8 @@
 
 #### P3-9 隐私闸门在标记加载期间返回无任何指示的空白页
 
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：阅读闸门未就绪时改用带锁占位替代完全空白页。
+
 - **等级**：P3（首帧体验）
 - **文件:行号**：`widgets/privacy/private_read_gate.dart:108-111`（`if (!privacy.loaded || !content.loaded) return const SizedBox.expand();`）
 - **问题**：与 `PrivacyAppStartGate` 有专门的 `_SplashPlaceholder`（同文件 `widgets/privacy/privacy_app_start_gate.dart:463+`）不同，阅读器闸门在策略/标记未就绪时是**完全空白**（无 spinner、无锁图标）。
@@ -307,6 +337,8 @@
 - **建议修法**：复用 `_SplashPlaceholder` 的样式（纯色 + 低透明度锁图标），避免「白屏 = 崩溃」的误判。
 
 #### P3-10 字体导入重复选择同一字体时列表与偏好重复累积
+
+> ✅ **已修复（批34，commit `6f3b3f4820`）**：按 `family` 原位覆盖去重，加载时清理历史重复项。
 
 - **等级**：P3（数据卫生）
 - **文件:行号**：`screens/font_screen.dart:211-213`（`list.add('$family|$_fontSubDir/$family.ttf')`，`_customFonts.add(...)` 均无去重）
