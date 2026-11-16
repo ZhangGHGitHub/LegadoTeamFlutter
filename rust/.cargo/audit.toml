@@ -6,7 +6,8 @@
 [advisories]
 # RUSTSEC-2026-0187 — lopdf 深度嵌套 PDF 对象栈溢出（severity high）
 #   豁免对象：lopdf 0.26.0，仅由 genpdf 0.2.0（crates.io 最新版，无新版本可升）
-#   及其依赖 printpdf 0.3.4 引入；我方直接依赖 lopdf 已升至 0.42.0（修复版本）。
+#   及其依赖 printpdf 0.3.4 引入；我方直接依赖 lopdf 已升至 0.47.0（修复版本，
+#   2026-11-16 由 0.42 升级，其 font_embedding feature 未启用故 ttf-parser 不入图）。
 #   风险接受理由：genpdf/printpdf 仅用于 PDF 导出渲染路径，输入为应用自身生成的
 #   文档对象，不解析外部不可信 PDF。P2 跟进：待 genpdf 上游发布或评估替代实现后移除本条。
 # RUSTSEC-2023-0071 — rsa Marvin Attack 时序侧信道（severity medium）
