@@ -1,0 +1,32 @@
+   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.54s
+     Running unittests src\lib.rs (target\debug\deps\legado_fetcher-65d91f3418d96a3e.exe)
+
+running 24 tests
+test source_check::tests::test_add_error_comment ... ok
+test source_check::tests::test_cancelled_outcome_not_failed ... ok
+test source_check::tests::test_add_groups_matches_upstream ... ok
+test source_check::tests::test_effective_timeout_clamps ... ok
+test source_check::tests::test_group_for_error_matches_upstream ... ok
+test source_check::tests::test_effective_keyword ... ok
+test source_check::tests::test_invalid_group_names ... ok
+test source_check::tests::test_is_invalid_group ... ok
+test source_check::tests::test_invalid_group_text_joins ... ok
+test source_check::tests::test_remove_stale_check_groups_clears_legacy_discovery_empty ... ok
+test source_check::tests::test_parse_check_source_endpoint ... ok
+test source_check::tests::test_persistable_groups_filters_out_of_domain_groups ... ok
+test source_check::tests::test_first_explore_category_url ... ok
+test source_check::tests::test_remove_invalid_groups ... ok
+test source_check::tests::test_fail_keeps_accumulated_groups ... ok
+test source_check::tests::test_remove_groups_matches_upstream ... ok
+test source_check::tests::test_remove_error_comment ... ok
+test source_check::tests::test_select_check_chapter_keeps_volume_with_real_url ... ok
+test source_check::tests::test_select_check_chapter_none_when_only_volume_headers ... ok
+test source_check::tests::test_select_check_chapter_skips_volume_header ... ok
+test source_check::tests::test_split_groups_accepts_all_separators ... ok
+test source_check::tests::test_timeout_outcome_has_group ... ok
+test source_check::tests::test_js_source_empty_toc_maps_to_search_toc_group ... ok
+test source_check::tests::test_explore_js_rule_evaluates_with_quickjs ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 196 filtered out; finished in 0.02s
+

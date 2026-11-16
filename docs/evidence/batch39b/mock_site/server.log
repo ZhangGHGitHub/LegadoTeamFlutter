@@ -1,0 +1,57 @@
+mock listening on 0.0.0.0:18090
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /search?kw=%E6%88%91%E7%9A%84%E6%B5%8B%E8%AF%95 HTTP/1.1" 200 -
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /content/1/1 HTTP/1.1" 200 -
+[mock] "GET /search?kw=%E6%88%91%E7%9A%84%E6%B5%8B%E8%AF%95 HTTP/1.1" 200 -
+[mock] "GET /search?kw=qa36 HTTP/1.1" 200 -
+[mock] "GET /search?kw=qa36 HTTP/1.1" 200 -
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /content/1/1 HTTP/1.1" 200 -
+[mock] "GET /content/1/2 HTTP/1.1" 200 -
+[mock] "GET /content/1/3 HTTP/1.1" 200 -
+[mock] "GET /content/1/3 HTTP/1.1" 200 -
+[mock] "GET /book/1 HTTP/1.1" 200 -
+[mock] "GET /search?kw=%E6%B5%8B%E8%AF%95 HTTP/1.1" 200 -
+[mock] "GET /search?kw=%E6%B5%8B%E8%AF%95 HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.63', 44976)
+----------------------------------------
+Exception occurred during processing of request from ('192.168.100.63', 53118)
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 691, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 361, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socketserver.py", line 755, in __init__
+    self.handle()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 438, in handle
+    self.handle_one_request()
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 404, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 436, in handle
+    self.handle_one_request()
+ConnectionResetError: [WinError 10054] 远程主机强迫关闭了一个现有的连接。
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\http\server.py", line 404, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+  File "C:\Users\admin\AppData\Local\Programs\Python\Python311\Lib\socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] 远程主机强迫关闭了一个现有的连接。
+----------------------------------------

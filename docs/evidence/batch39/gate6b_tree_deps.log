@@ -1,0 +1,42 @@
+===== lru =====
+lru v0.18.5
+├── legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)
+│   ├── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+│   │   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+│   │   └── legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+│   │       └── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+===== scraper =====
+scraper v0.29.0
+└── legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)
+    ├── legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    │   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+===== ego-tree =====
+ego-tree v0.11.1
+├── legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)
+│   ├── legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+│   │   ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+===== lopdf (ambiguous -> two versions) =====
+error: specification `lopdf` is ambiguous
+help: re-run this command with one of the following specifications
+  lopdf@0.26.0
+  lopdf@0.47.0
+===== lopdf@0.47.0 =====
+lopdf v0.47.0
+└── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+    ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    └── legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+        └── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+===== lopdf@0.26.0 (genpdf/printpdf chain) =====
+lopdf v0.26.0
+├── genpdf v0.2.0
+│   └── legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+│       ├── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+│       └── legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+│           └── legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+└── printpdf v0.3.4
+    └── genpdf v0.2.0 (*)
+===== ttf-parser (expect absent) =====
+error: package ID specification `ttf-parser` did not match any packages
+===== lock counts =====
+0
+0

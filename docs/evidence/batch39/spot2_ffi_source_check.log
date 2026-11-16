@@ -1,0 +1,41 @@
+===== SPOT2 source_check =====
+   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)
+   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)
+   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)
+   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 38.52s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-97b2bc7c54c73c19.exe)
+
+running 27 tests
+test api::source_check_api::tests::test_load_check_sources_invalid_json ... ok
+test api::source_check_api::tests::test_check_progress_serialize_contract ... ok
+test api::source_check_api::tests::test_parse_config_empty_uses_default ... ok
+test api::source_check_api::tests::test_parse_config_carries_all_fields ... ok
+test api::source_check_api::tests::test_check_source_invalid_json ... ok
+test api::source_check_api::tests::test_parse_config_invalid_json ... ok
+test api::source_check_api::tests::test_parse_config_partial_override ... ok
+test api::source_check_api::tests::test_cancel_during_source_load_window_stops_batch ... ok
+test api::source_check_api::tests::test_check_source_no_search_url ... ok
+test api::source_check_api::tests::test_check_source_with_config_skip_steps ... ok
+test api::source_check_api::tests::test_check_sources_stream_sink_closed ... ok
+test api::source_check_api::tests::test_write_back_without_comment_when_disabled ... ok
+test api::source_check_api::tests::test_write_back_appends_groups_and_comment_on_failure ... ok
+test api::source_check_api::tests::test_write_back_skipped_when_source_edited_during_check ... ok
+test api::source_check_api::tests::test_write_back_replaces_previous_invalid_groups_on_failure ... ok
+test api::source_check_api::tests::test_write_back_skipped_when_cancelled ... ok
+test api::source_check_api::tests::test_write_back_clears_invalid_groups_on_success ... ok
+test api::source_check_api::tests::test_new_session_does_not_clear_other_session_cancel ... ok
+test api::source_check_api::tests::test_check_sources_stream_order_and_progress ... ok
+test api::source_check_api::tests::test_cancel_current_session_does_not_cancel_concurrent_stream ... ok
+test api::source_check_api::tests::test_check_sources_stream_missing_source ... ok
+test api::source_check_api::tests::test_check_sources_stream_empty ... ok
+test api::source_check_api::tests::test_check_sources_stream_cancel ... ok
+test api::source_check_api::tests::test_session_cancel_isolation ... ok
+test api::source_check_api::tests::test_stream_cancel_interrupts_hanging_request ... ok
+test api::source_check_api::tests::test_stream_run_ignores_cancel_from_previous_session ... ok
+test api::source_check_api::tests::test_session_registry_cleaned_on_all_exit_paths ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 868 filtered out; finished in 1.42s
+
+EXIT=0

@@ -1,0 +1,33 @@
+{
+  "bookSourceName": "QA39B-A3-无搜索规则",
+  "bookSourceUrl": "http://192.168.100.52:18090/a3",
+  "bookSourceGroup": "QA39B",
+  "bookSourceType": 0,
+  "enabled": true,
+  "enabledExplore": false,
+  "searchUrl": "",
+  "ruleSearch": {
+    "bookList": "class.result@tag.li",
+    "name": "tag.a@text",
+    "author": "tag.span@text",
+    "bookUrl": "tag.a@href",
+    "intro": "",
+    "coverUrl": ""
+  },
+  "ruleBookInfo": {
+    "name": "tag.h1@text",
+    "tocUrl": ""
+  },
+  "ruleToc": {
+    "chapterList": "class.toc@tag.li",
+    "chapterName": "tag.a@text",
+    "chapterUrl": "tag.a@href"
+  },
+  "ruleContent": {
+    "content": "id.content@text"
+  },
+  "lastUpdateTime": 1700000000000,
+  "respondTime": 100,
+  "weight": 0,
+  "customOrder": 0
+}

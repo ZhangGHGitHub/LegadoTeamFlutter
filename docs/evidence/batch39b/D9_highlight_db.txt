@@ -1,0 +1,4 @@
+2
+Parse error near line 2: no such column: text
+  select bookUrl,chapterIndex,text from highlights limit 3;
+                error here ---^

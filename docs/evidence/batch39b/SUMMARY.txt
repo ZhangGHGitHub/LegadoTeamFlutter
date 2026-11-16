@@ -1,0 +1,60 @@
+批39b 门禁 + 设备验收证据索引
+HEAD: b742b3d7013fe88add656f2fd07448911b91e174
+设备: MuMu 实例 0「Test2」192.168.100.63:5555 (Android 15, 1080x1920 @480dpi)
+
+== 第一部分 门禁 ==
+gate1_fmt.log                    cargo fmt --all -- --check            exit 0（无输出）
+gate2_clippy_workspace.log       clippy --workspace --all-targets      exit 0
+gate3_clippy_quickjs.log         clippy 5 crate --features quickjs     exit 0
+gate4_test_workspace.log         cargo test --workspace                exit 0 / 81 测试二进制 / 4107 passed / 0 failed
+gate5_test_quickjs.log           cargo test 5 crate --features quickjs exit 0 / 2895 passed / 0 failed
+gate6_audit.log                  cargo audit --no-fetch                exit 0 / 0 vulnerabilities / 6 allowed warnings
+gate7_flutter_analyze.log        flutter analyze                       exit 0 / No issues found
+gate8_flutter_test.log           flutter test（首跑）                  exit 1 / 5936 passed / 1 failed（环境）
+gate8b_flutter_test_rerun_quickjs.log  flutter test（quickjs DLL 复跑） exit 0 / 5937 passed / 1 skipped / 0 failed
+
+== 重点抽查 ==
+spot1_p1_1_l10n_summary.log          P1-1 摘要双语       48 tests passed
+spot2_p1_2_write_back.log            P1-2 分组残留        9 passed（含 3 条新用例）
+spot3_p2_1_pagination_timeout.log    P2-1 分页 $timeout   1 passed
+spot4_p2_2_source_check.log          P2-2 JS 空目录       23 passed
+spot4b_p2_2_source_check_quickjs.log P2-2 quickjs 门控    24 passed（含 TocEmpty 专项）
+spot5_B_concurrent_refresh.log       B 目录并发           9 passed（含 same_book_both_succeed）
+
+== 第二部分 设备 ==
+build_so_release.log             三 ABI release .so 重建 exit 0
+build_apk_release.log            release 首构建        exit 1（与并发 flutter test 竞争 GeneratedPluginRegistrant）
+build_apk_release_retry.log      release 重构建        exit 0 / 206.6MB
+apk_sha256.txt                   sha256 6effcf9567e3d7b96e989a1694c64c5e85022b5744e860f8aeb08c27601cda05
+build_apk_debug.log              debug 构建            exit 0
+smoke_debug.log                  冒烟 -SkipBuild -CheckUI  7 PASS / 0 FAIL
+01_launch.png                    启动截图（display 0）
+02_launch_ui.xml                 启动 UI 树
+
+A（书源校验规则级）
+fixtures/A1_ok.json A2_bad_rule.json A3_no_search.json
+A_step1_groups_after_fail.txt      首轮：A1=QA39B,搜索目录失效 / A2=QA39B,搜索失效 / A3=QA39B
+A_step2_groups_after_success.txt   次轮：A1=QA39B（旧分组+Error 注释已清）/ A2 保持失效 / A3 无分组
+ui_after_check.xml                 首轮 UI（A2 判失败＝假阳回归拦截成功）
+ui_after_check2.xml                次轮 UI（A1「校验成功」）
+
+B（目录并发不取消）
+B6_chapters_after.txt / B7_chapters_list.txt  两次刷新后章节 3 条正确
+B8_first_done.xml / B9_second_done.xml / B10_final.xml
+mock_site/server.log              两次 /book/1 请求＝两次刷新均执行；logcat 无 superseded
+
+C（L10N）
+C1_en_settings.xml .. C16_zh_adv_check_summary.xml
+实际字符串：
+  zh 校验设置摘要 = "超时 180秒 · 校验搜索、目录、正文"
+  en 校验设置摘要 = "Timeout 180s · Check Search, TOC, Content"
+
+D（主流程）
+D1_open_book.xml .. D20_import_legacy.xml
+阅读/翻章/目录/高亮保存/搜索/备份恢复入口 均正常
+D11_highlight_saved.txt           高亮落库：测试书一 第2章 #FFFFE082
+D14_search_result.xml             搜索「结果 2 · 进度 4/4」
+
+== 清理 ==
+cleanup_result.txt  注入数据已删（remaining_sources=1, remaining_books=1）
+mock 服务已停止（18090 无监听）；设备 Web 服务未开启；应用未卸载

@@ -1,0 +1,23 @@
+    Blocking waiting for file lock on build directory
+   Compiling h2 v0.4.19
+   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)
+   Compiling zip v9.5.1
+   Compiling hyper v1.11.0
+   Compiling hyper-util v0.1.20
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)
+   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)
+   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)
+   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 08s
+     Running tests\source_check_rules.rs (target\debug\deps\source_check_rules-6d0fad4cb465b78a.exe)
+
+running 4 tests
+test test_empty_search_url_records_message_without_group ... ok
+test test_rule_level_detects_false_positive_when_rules_do_not_match ... ok
+test test_rule_level_passes_with_full_valid_rules ... ok
+test test_timeout_yields_timeout_group ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+

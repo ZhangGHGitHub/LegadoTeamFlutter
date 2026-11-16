@@ -1,0 +1,3 @@
+Parse error near line 1: no such column: content
+  select bookUrl,chapterIndex,substr(content,1,30),style from highlights;
+                       error here ---^

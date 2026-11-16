@@ -1,0 +1,4 @@
+http://192.168.100.52:18090/book/1|3|第3章|0
+Parse error near line 2: no such column: chapterIndex
+  select chapterIndex,title,url from chapters where bookUrl like '%18090%' order
+         ^--- error here

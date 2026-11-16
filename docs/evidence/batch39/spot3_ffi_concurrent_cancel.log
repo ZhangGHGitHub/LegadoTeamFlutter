@@ -1,0 +1,48 @@
+===== SPOT3a concurrent =====
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-97b2bc7c54c73c19.exe)
+
+running 9 tests
+test api::source_check_api::tests::test_cancel_current_session_does_not_cancel_concurrent_stream ... ok
+test api::audio_cache_api::tests::concurrent_same_key_downloads_are_serialized ... ok
+test api::video_api::tests::test_concurrent_same_chapter_capture_keeps_all_keys ... ok
+test api::privacy_api::tests::test_privacy_set_password_concurrent_serialized ... ok
+test api::backup_api::tests::test_restore_cookies_concurrent_jar_write_no_rollback ... ok
+test http_state::tests::test_shared_client_concurrent ... ok
+test api::net_api::tests::test_clear_cookie_concurrent_rmw_no_resurrection ... ok
+test api::reader::tests::test_concurrent_different_books_refresh_toc_both_succeed ... ok
+test api::reader::tests::test_concurrent_same_book_refresh_toc_both_succeed ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 886 filtered out; finished in 11.52s
+
+EXIT_CONCURRENT=0
+===== SPOT3b cancel =====
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-97b2bc7c54c73c19.exe)
+
+running 21 tests
+test api::search::error_class_tests::test_network_cancel_and_task_error_map_cancelled ... ok
+test api::source_check_api::tests::test_cancel_during_source_load_window_stops_batch ... ok
+test api::source_debug_api::tests::test_cancel_debug_sets_flag ... ok
+test api::source_check_api::tests::test_check_sources_stream_cancel ... ok
+test api::source_check_api::tests::test_write_back_skipped_when_cancelled ... ok
+test api::verification_api::tests::test_stream_cancel_flow ... ok
+test api::search::tests::test_drive_cancel_wakes_blocked_collect_promptly ... ok
+test api::audio_cache_api::tests::cancel_aborts_inflight_download ... ok
+test api::cache_download_api::tests::test_cancel_flag_set ... ok
+test api::source_check_api::tests::test_new_session_does_not_clear_other_session_cancel ... ok
+test api::reader::tests::test_cancel_switch_apply_keeps_refresh_toc_chain ... ok
+test api::cache_download_api::tests::test_download_cancel_queued_task_not_executed ... ok
+test api::source_check_api::tests::test_cancel_current_session_does_not_cancel_concurrent_stream ... ok
+test api::cache_download_api::tests::test_download_cancel_with_concurrency_stops_after_in_flight ... ok
+test api::reader::tests::test_single_page_toc_refresh_not_cancelled ... ok
+test api::source_switch::tests::test_cancel_during_apply_blocks_commit ... ok
+test api::source_switch::tests::test_cancel_switch_apply_for_book_only_targets_that_book ... ok
+test api::source_switch::tests::test_cancel_switch_apply_only_cancels_current_session ... ok
+test api::source_check_api::tests::test_session_cancel_isolation ... ok
+test api::source_check_api::tests::test_stream_cancel_interrupts_hanging_request ... ok
+test api::source_check_api::tests::test_stream_run_ignores_cancel_from_previous_session ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 874 filtered out; finished in 1.42s
+
+EXIT_CANCEL=0

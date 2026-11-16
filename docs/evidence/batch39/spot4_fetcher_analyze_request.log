@@ -1,0 +1,30 @@
+===== SPOT4 analyze_request =====
+   Compiling legado-fetcher v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-fetcher)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.91s
+     Running unittests src\lib.rs (target\debug\deps\legado_fetcher-0ffb7ae939a58b8d.exe)
+
+running 20 tests
+test analyze_request::tests::test_derived_request_timeout_matches_upstream_formula ... ok
+test analyze_request::tests::test_p2_15_send_text_non_base64_data_uri_decoded_locally ... ok
+test analyze_request::tests::test_p2_15_send_raw_empty_mime_type_option_returns_hex ... ok
+test analyze_request::tests::test_p2_15_send_raw_empty_mime_data_uri_decoded_locally ... ok
+test analyze_request::tests::test_p2_15_send_text_mime_data_uri_decoded_locally ... ok
+test analyze_request::tests::test_p2_15_invalid_base64_is_internal_not_reqwest ... ok
+test analyze_request::tests::test_p2_15_http_url_still_goes_through_client ... ok
+test analyze_request::tests::test_retry_stops_on_2xx_after_failures ... ok
+test analyze_request::tests::test_retry_resends_non_2xx_until_exhausted ... ok
+test analyze_request::tests::test_post_with_retry_resends ... ok
+test analyze_request::tests::test_follow_redirects_true_with_retry_follows_after_resend ... ok
+test analyze_request::tests::test_follow_redirects_false_returns_302_without_following ... ok
+test analyze_request::tests::test_retry_does_not_trigger_on_3xx ... ok
+test analyze_request::tests::test_follow_redirects_false_with_retry_keeps_no_redirect ... ok
+test analyze_request::tests::test_follow_redirects_default_and_true_follow ... ok
+test analyze_request::tests::test_send_text_retry_and_final_status ... ok
+test analyze_request::tests::test_retry_default_zero_does_not_resend ... ok
+test analyze_request::tests::test_without_timeout_uses_client_default_budget ... ok
+test analyze_request::tests::test_send_text_honors_timeout_option ... ok
+test analyze_request::tests::test_timeout_option_overrides_client_default_budget ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 166 filtered out; finished in 1.45s
+
+EXIT=0

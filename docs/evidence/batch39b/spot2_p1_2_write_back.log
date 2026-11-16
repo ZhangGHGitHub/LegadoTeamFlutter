@@ -1,0 +1,16 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.02s
+     Running unittests src\lib.rs (target\debug\deps\legado_ffi-97b2bc7c54c73c19.exe)
+
+running 9 tests
+test api::source_check_api::tests::test_write_back_does_not_persist_discovery_rule_empty_group ... ok
+test api::source_check_api::tests::test_write_back_clears_legacy_discovery_rule_empty_group ... ok
+test api::source_check_api::tests::test_write_back_skipped_when_source_edited_during_check ... ok
+test api::source_check_api::tests::test_write_back_replaces_previous_invalid_groups_on_failure ... ok
+test api::source_check_api::tests::test_write_back_clears_invalid_groups_on_success ... ok
+test api::source_check_api::tests::test_write_back_appends_groups_and_comment_on_failure ... ok
+test api::source_check_api::tests::test_write_back_without_comment_when_disabled ... ok
+test api::source_check_api::tests::test_write_back_skipped_when_cancelled ... ok
+test api::source_check_api::tests::test_write_back_discovery_rule_empty_then_success_leaves_group_clean ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 889 filtered out; finished in 0.09s
+
