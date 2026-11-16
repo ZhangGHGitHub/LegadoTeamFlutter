@@ -53,6 +53,12 @@ Future<void> setReadBookConfig({required String readJson}) =>
 /// `cache.put/get/putFile/getFile` 磁盘层落应用私有存储而非系统 temp
 /// 目录（未注入时回落 `<temp_dir>/legado-js-cache`，磁盘缓存随系统
 /// temp 清理而丢失）。
+///
+/// P1-1：同一注入点派生 JS 文件 API 的沙箱根 `<dir>/js_files`，使
+/// `downloadFile/cacheFile/importScript` 的落盘位置与 `readFile` /
+/// `readTxtFile` 等读取根一致，并避开系统 temp 清理（未注入时回落
+/// `<temp_dir>/legado_js_cache`）。注入的是共享父目录，实际沙箱根再按
+/// 书源 tag 分子目录（P2-2 跨书源隔离）。
 Future<void> setCacheDir({required String dir}) =>
     RustLib.instance.api.crateFfiFfiSetCacheDir(dir: dir);
 
@@ -269,7 +275,10 @@ Future<String> analyzeUrlToCurl({required String text}) =>
 ///
 /// 返回 CheckResult JSON：`source_url` / `search_ok` / `toc_ok` /
 /// `content_ok` / `search_error` / `toc_error` / `content_error` /
-/// `total_time_ms` / `captcha` / `redirect`。
+/// `total_time_ms` / `captcha` / `redirect` / `cancelled`。
+///
+/// `step_timeout_ms` 真正生效：每个网络步骤超时记为 `"timeout"`，
+/// 整源总预算为 `step_timeout_ms × 启用步数`。
 ///
 /// `source_json` — BookSource JSON（字段名对齐 Android 原版 camelCase）
 /// `config_json` — 可选校验配置 JSON（keyword/step_timeout_ms/check_search/
@@ -288,6 +297,11 @@ Future<String> sourceCheck({
 /// `source_name` / `result`（CheckResult）。流在所有书源完成、
 /// 取消或 sink 关闭后自然结束。
 ///
+/// 每次调用创建**独立**校验会话与取消令牌（P1-1）：并发流之间
+/// 互不干扰；[`Self::source_check_cancel`] 取消最近登记的会话，在
+/// 100ms 轮询周期内打断在途请求；被取消的书源不回推进度（不计为
+/// 书源失败）。
+///
 /// `source_urls_json` — 待校验书源 URL 的 JSON 数组；为空则校验全部书源
 /// `config_json` — 可选校验配置 JSON，空串用默认配置
 /// `sink` — flutter_rust_bridge 流式接收器，Dart 侧表现为 `Stream<String>`
@@ -299,7 +313,10 @@ Stream<String> sourceCheckStream({
   configJson: configJson,
 );
 
-/// 取消正在进行的批量书源校验
+/// 取消正在进行的批量书源校验（无会话 id 的兼容入口）
+///
+/// 取消最近登记的校验会话；正常 UI 同时只有一个流，等价于「停止
+/// 当前校验」。会话已结束时为 no-op（不会误伤后续会话）。
 Future<void> sourceCheckCancel() =>
     RustLib.instance.api.crateFfiFfiSourceCheckCancel();
 
@@ -1133,8 +1150,9 @@ Future<String> sourceSwitchApplyPrefetch({
 /// 取消进行中的「换源（预拉缓存版）」应用（2026-09-24 加法式；
 /// 契约 §2.4 `cancelSwitchSourceApply`；对齐上游 `cancelChangeSource()`）
 ///
-/// apply 代数 +1 + bump 目录刷新代数：未提交的 apply 在提交前比对代数
-/// 即中止（DB 零变更），在途目录分页链在下一页边界中止。
+/// 只注销**当前在途换源 apply 会话**：未提交的 apply 在提交前比对会话
+/// 判活即中止（DB 零变更）。取消粒度对齐上游「只取消自己的 Job」，
+/// 不影响其他书的在途 apply，也不中止任何目录分页链（裁决 2）。
 Future<void> sourceSwitchApplyCancel() =>
     RustLib.instance.api.crateFfiFfiSourceSwitchApplyCancel();
 
