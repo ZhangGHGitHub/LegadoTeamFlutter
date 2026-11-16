@@ -72,18 +72,34 @@ void main() {
   });
 
   group('C7 源码守卫：书架添加网址不再自行编译书源 pattern', () {
-    test('bookshelf_screen 无 RegExp(pattern) 且调用 matchesBookUrlPattern', () {
-      final src = File('lib/src/screens/bookshelf_screen.dart').readAsStringSync();
+    test('书架与共用工具均无 RegExp(pattern) 调用，且走 FFI', () {
+      final screen = File(
+        'lib/src/screens/bookshelf_screen.dart',
+      ).readAsStringSync();
       // 只查真实调用形态（文档注释里保留历史说明属正常）
       expect(
-        src.contains('RegExp(pattern).hasMatch'),
+        screen.contains('RegExp(pattern).hasMatch'),
         isFalse,
         reason: 'Dart 侧 RegExp 书源匹配已下沉 Rust（契约 §2.17 C7），不得回退',
       );
+      // [C4] 匹配实现已抽到共用工具，书架只做委托
       expect(
-        src.contains('api.matchesBookUrlPattern'),
+        screen.contains('matchBookSourceForUrl'),
         isTrue,
-        reason: '「添加网址」书源匹配必须走 FFI matchesBookUrlPattern',
+        reason: '「添加网址」书源匹配必须走共用匹配工具',
+      );
+      final shared = File(
+        'lib/src/utils/book_source_match.dart',
+      ).readAsStringSync();
+      expect(
+        shared.contains('api.matchesBookUrlPattern'),
+        isTrue,
+        reason: '共用匹配工具的正则段必须走 FFI matchesBookUrlPattern',
+      );
+      expect(
+        shared.contains('RegExp(pattern)'),
+        isFalse,
+        reason: '共用匹配工具不得自行编译书源 pattern',
       );
     });
 

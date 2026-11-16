@@ -30,6 +30,7 @@ import '../services/local_book_store.dart';
 import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/book_progress_utils.dart';
+import '../utils/book_source_match.dart';
 import '../utils/bookshelf_sort.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/app_progress_indicator.dart';
@@ -3267,29 +3268,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// 与 Rust `regex` 在 lookaround / `\p{...}` / 命名组上不等价。现统一走
   /// FFI，Dart 侧不再编译书源 pattern。
   ///
-  /// 主域名兜底保持 Dart 侧（Rust 无对应入口，且只是 URL host 相等比较，
-  /// 无正则语义分叉风险）。
+  /// [C4] 实现已抽到 `utils/book_source_match.dart`（与 RSS WebView
+  /// `java.addBook` 共用同一套三段匹配顺序），本方法只做委托。
   Future<BookSource?> _matchSource(
     BookApi api,
     List<BookSource> sources,
     String url,
-  ) async {
-    for (final s in sources) {
-      final pattern = s.bookUrlPattern;
-      if (pattern == null || pattern.trim().isEmpty) continue;
-      // 非法/超长/嵌套过深的 pattern 由 Rust 侧静默返回 false（原版仅记
-      // 日志不中断后续规则），故无需 try/catch。
-      if (await api.matchesBookUrlPattern(pattern, url)) return s;
-    }
-    final uri = Uri.tryParse(url);
-    if (uri != null && uri.host.isNotEmpty) {
-      for (final s in sources) {
-        final sUri = Uri.tryParse(s.bookSourceUrl);
-        if (sUri != null && sUri.host == uri.host) return s;
-      }
-    }
-    return null;
-  }
+  ) => matchBookSourceForUrl(api, sources, url);
 
   /// 导入书单对话框（对标 Kotlin importBookshelfAlert：
   /// url/json 输入框 + 选择 txt/json 文件）

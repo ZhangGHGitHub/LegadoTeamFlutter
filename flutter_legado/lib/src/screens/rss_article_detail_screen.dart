@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
+import '../l10n/app_strings.dart';
 import '../providers/providers.dart';
 import '../providers/rss_read_record_pref_notifier.dart';
 import '../services/crash_log_service.dart';
@@ -23,6 +24,8 @@ import '../services/rss_header.dart';
 import '../services/rss_web_bridge.dart';
 import '../services/rss_web_config.dart';
 import '../services/source_browser_block.dart';
+import '../utils/book_open_utils.dart';
+import '../utils/book_source_match.dart';
 import '../utils/legado_deep_link.dart';
 import '../utils/rss_read_record.dart';
 import '../widgets/empty_state.dart';
@@ -899,12 +902,106 @@ class _RssArticleDetailScreenState
         unawaited(openRssArticleSearch(context, key));
         return;
       case 'addBook':
-        // 原版 `AddToBookshelfDialog(bookUrl)`：按 URL 抓详情后选择分组；
-        // 本批未接线（登记差异）
-        debugPrint('[RSS WebView] java.addBook 未接线：${action.data['url']}');
+        final url = action.data['url']?.toString().trim() ?? '';
+        if (url.isEmpty) return;
+        unawaited(_addBookByUrl(url));
         return;
       default:
         debugPrint('[RSS WebView] 未处理动作：${action.name} ${action.data}');
+    }
+  }
+
+  /// `java.addBook(bookUrl)` → 按 URL 匹配书源并入库（C4）
+  ///
+  /// 对齐原版 `RssJsExtensions.addBook`（`RssJsExtensions.kt:87-90`）→
+  /// `AddToBookshelfDialog(bookUrl)`（`AddToBookshelfDialog.kt:74-152`）：
+  ///
+  /// 1. 已在书架 → 直接跳书籍详情（原版 `appDb.bookDao.getBook(bookUrl)` 命中即
+  ///    `BookInfoActivity.start`，不重复入库）；
+  /// 2. 解析复合 URL 的 `origin`（`UrlOption.origin` 指定书源）；
+  /// 3. 按 `utils/book_source_match.dart::matchBookSourceForUrl` 三段匹配书源
+  ///    （origin 精确 → 基地址精确 → `bookUrlPattern` 正则走 FFI → 主域名兜底）；
+  /// 4. 命中书源 → `webbookInfo` 抓详情 → 合并后 `addBook` 入库；
+  /// 5. 无书源 → 提示「未找到匹配书源」（对齐原版 `NoStackTraceException`）。
+  ///
+  /// 与原版的差异（已登记）：
+  /// - 原版 `AddToBookshelfDialog` 是**弹窗**（含加载动画 + 取消按钮）且成功后
+  ///   跳详情页；本实现直接后台执行并以 SnackBar 反馈，不弹窗、不自动跳转
+  ///   （RSS 阅读页是 WebView 阅读态，弹窗会遮挡正文；用户可从书架/通知确认）；
+  /// - 原版成功后另写 `searchBookDao`（搜索历史表），本实现不写（该表为搜索页
+  ///   专用，从 RSS 桥写入会污染用户搜索历史）；
+  /// - 原版 `getBookInfo` 失败静默返回 null 继续试下一个源；本实现同口径
+  ///   （每个候选源失败即换下一个，全部失败才提示）。
+  Future<void> _addBookByUrl(String rawUrl) async {
+    final api = ref.read(bookApiProvider);
+    final option = parseBookUrlOption(rawUrl);
+    final bookUrl = option.url;
+    if (bookUrl.isEmpty) return;
+    try {
+      // 1. 已在书架 → 直接提示（不重复入库，也不自动跳转打断阅读）
+      final existing = await api.getBook(bookUrl);
+      if (!mounted) return;
+      if (existing != null) {
+        _showBridgeSnack(
+          '《${existing.name.isEmpty ? bookUrl : existing.name}》已在书架',
+        );
+        return;
+      }
+      // 2. 书源列表（仅启用源，对齐原版 `enabled = 1` 过滤）
+      List<BookSource> sources;
+      try {
+        sources = await api.getEnabledBookSources();
+      } catch (_) {
+        sources = const [];
+      }
+      if (!mounted) return;
+      if (sources.isEmpty) {
+        _showBridgeSnack(AppStrings.noAvailableSource);
+        return;
+      }
+      // 3. 按 URL 匹配书源（origin 精确 → 基地址 → bookUrlPattern(FFI) → host）
+      final matched = await matchBookSourceForUrl(
+        api,
+        sources,
+        bookUrl,
+        preferredOrigin: option.origin,
+      );
+      if (!mounted) return;
+      if (matched == null) {
+        // 原版文案「未找到匹配书源」
+        _showBridgeSnack('未找到匹配书源：$bookUrl');
+        return;
+      }
+      // 4. 抓详情入库（原版 `WebBook.getBookInfoAwait(source, book)`）
+      Book book = Book(
+        bookUrl: bookUrl,
+        origin: matched.bookSourceUrl,
+        originName: matched.bookSourceName,
+      );
+      try {
+        final infoJson = await api.webbookInfo(
+          jsonEncode(matched.toJson()),
+          bookUrl,
+        );
+        book = BookOpenUtils.mergeWebInfo(book, infoJson);
+      } catch (e) {
+        // 原版 `getBookInfo` 失败返回 null → 整体报「未找到匹配书源」；
+        // 本实现保留书源匹配结果，以书源名 + URL 兜底入库（信息不全但可读）。
+        CrashLogService.instance.put(
+          '[RSS WebView] java.addBook 详情抓取失败（$bookUrl）：$e',
+        );
+      }
+      if (!mounted) return;
+      if (book.name.isEmpty) {
+        book = book.copyWith(name: bookUrl);
+      }
+      await api.addBook(book);
+      if (!mounted) return;
+      _showBridgeSnack('已加入书架：《${book.name}》');
+    } catch (e) {
+      if (!mounted) return;
+      CrashLogService.instance.put('[RSS WebView] java.addBook 失败（$bookUrl）：$e');
+      _showBridgeSnack('加入书架失败：${errorMessage(e)}');
     }
   }
 
