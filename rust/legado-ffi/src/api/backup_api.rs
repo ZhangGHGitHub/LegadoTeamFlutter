@@ -26,6 +26,21 @@
 //!   （`fileToListT<BookMarking>` → `bookMarkingDao.insert`），该能力自参考版
 //!   `488a375`（2026-09-28）起存在，早于批7b 立项——批7b「与参考版一致不纳入
 //!   备份」的登记前提不成立，本次按参考版补齐。
+//! - version=7（批43）：补齐四类此前漏备的数据面 + 恢复保主键 + 缺键不重置
+//!   用户开关：
+//!   - `readRecordDaily`（`[{date, durationSeconds}]`，每日阅读时长聚合，
+//!     **空表也写空数组**；恢复按 **max 合并**——同日取较大值，避免回滚）；
+//!   - `coverRules`（`[{id, name, rule, enable}]`，封面规则表同形；恢复按
+//!     `id` REPLACE 保留主键）；
+//!   - `chapterReviews`（`chapter_reviews` 表同形，段评/本章热评；恢复按
+//!     `id` REPLACE 保留主键）；
+//!   - `autoTasks` 由「仅 zip 恢复填充」改为自有 JSON 备份也收集（此前
+//!     `backup_create` 硬编码 `Vec::new()`，自有备份恒为空数组）。
+//!
+//!   同时 `replaceRules` / `bookmarks` 恢复改走「保原 `id` 的 REPLACE」
+//!   （此前自增 INSERT，同一备份恢复两次会翻倍）；`books` 段恢复对
+//!   `isPrivate` / `disableReadRecord` / `originBookUrl` 做**缺键合并**
+//!   （旧备份缺键时保留库内旧值，修复「私密标记被静默解除」的隐私回归）。
 //!
 //! 兼容语义（防复发规定 9：备份格式版本化）：恢复器按字段驱动解析，
 //! 全部列表字段 `#[serde(default)]`——旧备份（无 version 或 version<2）
@@ -38,6 +53,10 @@
 //! 空/空白值同样跳过并保留旧配置（**本地加固**：上游会把空文本 `ACache.put`
 //! 进去，等价清空并回落内置默认规则）；值必须是合法 JSON 对象，解析失败
 //! 只 warn 跳过，不让整次恢复失败。
+//!
+//! v7 新增段的「缺键不清库」口径与 v5 `bookMemos` / v6 `bookMarks` 一致：
+//! 旧备份缺 `readRecordDaily`/`coverRules`/`chapterReviews`/`autoTasks` 时
+//! 只解析为空数组，恢复体对空列表**零写入**，库内既有行保持不变。
 //!
 //! # 原版 zip 备份恢复（批9，用户裁决⑥）
 //!
@@ -78,11 +97,12 @@
 //! - `config.xml` 内的 `webDavPassword` 同密钥加密（本实现跳过整个偏好快照，见下）。
 //!
 //! 未映射项（本批登记，不静默）：`readConfig.json` / `shareReadConfig.json` /
-//! `themeConfig.json` / `coverRule.json` / `config.xml` / `videoConfig.xml` 只记
-//! warn 日志后跳过——我方没有等价的阅读主题配置面；书内指向 `.../covers/xxx` 的
+//! `themeConfig.json` / `config.xml` / `videoConfig.xml` 只记 warn 日志后跳过——
+//! 我方没有等价的阅读主题配置面；书内指向 `.../covers/xxx` 的
 //! 绝对封面路径按原版 remap 语义处理（媒体已恢复时改写为本地路径，否则置空回落
 //! 到书源封面 URL）。**批27 起** `bookMemo.json` 已从「未映射」移入数据映射
 //! （[`ZIP_DATA_FILES`]），`readRecord.json` 解析全部 13 字段。
+//! **批43 起** `coverRule.json` 同样移入数据映射（→ `coverRules` 段）。
 //!
 //! # 批9 审查回修登记（P2，仅登记，本批不实现）
 //!
@@ -229,11 +249,12 @@ use legado_db::repository::Repository;
 use legado_db::{
     AutoTaskRepository, BookGroup, BookGroupRepository, BookMarkingRepository, BookMemo,
     BookMemoRepository, BookRepository, BookSourceRepository, BookmarkRepository, CacheRepository,
-    CookieRepository, DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository,
-    HttpTts, HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord,
-    ReadRecordRepository, ReplaceRuleRepository, RssSourceRepository, RssStarRecord,
-    RssStarRepository, RuleSubRecord, RuleSubRepository, SearchKeywordRepository, ServerRepository,
-    TxtTocRuleRecord, TxtTocRuleRepository,
+    CookieRepository, CoverRule, CoverRuleRepository, DictRule, DictRuleRepository,
+    HighlightRepository, HighlightRuleRepository, HttpTts, HttpTtsRepository, KeyboardAssist,
+    KeyboardAssistRepository, ReadRecord, ReadRecordRepository, ReplaceRuleRepository,
+    ReviewRepository, RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord,
+    RuleSubRepository, SearchKeywordRepository, ServerRepository, TxtTocRuleRecord,
+    TxtTocRuleRepository,
 };
 
 use crate::api::config_api::CONFIG_PREFIX;
@@ -244,13 +265,18 @@ use crate::db_state::with_database;
 /// v4（批16f）：新增 `directLinkUploadRule`（直链上传规则配置）。
 /// v5（批27）：新增 `bookMemos`（书备忘）；`readRecords` 元素扩为 13 字段。
 /// v6（审查 20261113 P1-1）：新增 `bookMarks`（划线/笔记）。
-pub const BACKUP_VERSION: i32 = 6;
+/// v7（批43）：新增 `readRecordDaily`/`coverRules`/`chapterReviews`，
+/// `autoTasks` 纳入自有备份；`replaceRules`/`bookmarks` 恢复保主键；
+/// `books` 段缺键时保留库内用户开关（`isPrivate`/`disableReadRecord`/
+/// `originBookUrl`）。
+pub const BACKUP_VERSION: i32 = 7;
 
 /// 备份数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupData {
     /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表；v4=直链上传规则；
-    /// v5=书备忘 + readRecord 13 字段；v6=划线/笔记，见模块注释的版本语义）
+    /// v5=书备忘 + readRecord 13 字段；v6=划线/笔记；v7=每日时长/封面规则/
+    /// 段评/自动任务，见模块注释的版本语义）
     #[serde(default = "default_version")]
     pub version: i32,
     /// 备份时间戳（毫秒）
@@ -330,12 +356,32 @@ pub struct BackupData {
     pub servers: Vec<serde_json::Value>,
     /// 自动任务列表（批9 新增，对齐原版 `autoTask.json`）
     ///
-    /// 仅用于「恢复原版 zip 备份」：我方 `backup_create` 尚未收集该表，
-    /// 序列化时按 `skip_serializing_if` 省略，故自有 JSON 备份形状不受影响
-    /// （当前版本为 v6；该键仍只在恢复原版 zip 时出现）。收到该键时按主键
-    /// `id` REPLACE 写入。
+    /// **v7 起**自有 JSON 备份也收集该表（`AutoTaskRepository::find_all`）；
+    /// v6 及更早备份不含该键（`skip_serializing_if` 省略空列表），恢复侧
+    /// 收到该键时按主键 `id` REPLACE 写入，缺键/空列表不触碰库内既有任务。
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "autoTasks")]
     pub auto_tasks: Vec<serde_json::Value>,
+    /// 每日阅读时长列表（v7 新增，`readRecordDaily` 表同形）
+    ///
+    /// 元素 `{date: "YYYY-MM-DD", durationSeconds: i64}`。写入侧**空表也写空
+    /// 数组**（与 `bookMemos`/`bookMarks` 同口径）；旧备份缺该键时 serde 默认
+    /// 空数组，恢复器对空列表零写入（**不清库内既有每日时长**）。
+    /// 恢复语义为 **max 合并**（同日取较大值），见 [`ReadRecordRepository::restore_daily_seconds`]。
+    #[serde(default, rename = "readRecordDaily")]
+    pub read_record_daily: Vec<serde_json::Value>,
+    /// 封面规则列表（v7 新增，`coverRules` 表同形）
+    ///
+    /// 元素 `{id, name, rule, enable}`；`rule` 为
+    /// `{"searchUrl","coverRule"[,"enabledCookieJar"]}` JSON 文本。恢复按 `id`
+    /// REPLACE（保留主键），缺 `id` 回落自增。
+    #[serde(default, rename = "coverRules")]
+    pub cover_rules: Vec<serde_json::Value>,
+    /// 段评/本章热评列表（v7 新增，`chapter_reviews` 表同形）
+    ///
+    /// 元素 `{id, bookUrl, chapterIndex, paragraphIndex, content, author,
+    /// createdAt, likeCount}`。恢复按 `id` REPLACE（保留主键）。
+    #[serde(default, rename = "chapterReviews")]
+    pub chapter_reviews: Vec<serde_json::Value>,
     /// 直链上传规则（v4 新增，对齐原版 `directLinkUploadRule.json`）
     ///
     /// 值为 caches 配置键 `config:directLinkUploadRule` 的原始 JSON 文本（4 字段
@@ -438,6 +484,9 @@ impl BackupData {
             keyboard_assists: Vec::new(),
             servers: Vec::new(),
             auto_tasks: Vec::new(),
+            read_record_daily: Vec::new(),
+            cover_rules: Vec::new(),
+            chapter_reviews: Vec::new(),
             direct_link_upload_rule: None,
             cookies: Vec::new(),
             runtime_source_caches: Vec::new(),
@@ -711,6 +760,44 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .filter_map(|s| serde_json::to_value(&s).ok())
             .collect();
 
+        // 每日阅读时长（v7 B1：readRecordDaily 表全量；空表也写空数组）。
+        // 此前不在任何备份链 → 换机后 readRecord.readTime 有值、每日统计为空，
+        // 热力图与累计时长自相矛盾。
+        let read_record_daily: Vec<serde_json::Value> = ReadRecordRepository::new(conn)
+            .list_all_daily()?
+            .into_iter()
+            .map(|(date, duration_seconds)| {
+                serde_json::json!({ "date": date, "durationSeconds": duration_seconds })
+            })
+            .collect();
+
+        // 封面规则（v7 B2：coverRules 表全量，与表同形；空表也写空数组）。
+        // 该表有真实功能面（getCoverRule/saveCoverRule/searchCoverRules），
+        // 此前既不进备份、zip 恢复还把它判为「无对应配置面」。
+        let cover_rules: Vec<serde_json::Value> = CoverRuleRepository::new(conn)
+            .find_all()?
+            .into_iter()
+            .filter_map(|r| serde_json::to_value(&r).ok())
+            .collect();
+
+        // 段评/本章热评（v7 B11：chapter_reviews 表全量；空表也写空数组）。
+        // 该表有写面（legado-server POST /reviews），此前不进任何备份链。
+        let chapter_reviews: Vec<serde_json::Value> = ReviewRepository::new(conn)
+            .find_all()?
+            .into_iter()
+            .filter_map(|r| serde_json::to_value(&r).ok())
+            .collect();
+
+        // 自动任务（v7 B3：此前硬编码 Vec::new()，自有 JSON 备份恒为空数组；
+        // 恢复侧早已支持该段，仅创建侧漏收集）
+        let auto_tasks: Vec<serde_json::Value> =
+            <AutoTaskRepository as Repository<legado_core::models::AutoTaskRule>>::find_all(
+                &AutoTaskRepository::new(conn),
+            )?
+            .into_iter()
+            .filter_map(|t| serde_json::to_value(&t).ok())
+            .collect();
+
         // 直链上传规则（v4：短键 `directLinkUploadRule`（落库 `config:` 前缀）
         // 的原始 JSON 文本）。
         // 不存在/空串 → None（序列化时省略该键，备份形状保持旧版兼容）
@@ -740,7 +827,10 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             dict_rules,
             keyboard_assists,
             servers,
-            auto_tasks: Vec::new(),
+            auto_tasks,
+            read_record_daily,
+            cover_rules,
+            chapter_reviews,
             direct_link_upload_rule,
             // 批17a：cookies / 运行时变量只走原版 zip 恢复，自有 JSON 备份不收集
             cookies: Vec::new(),
@@ -1035,7 +1125,7 @@ const COVER_FONT_DIR: &str = "font";
 const BACKUP_MEDIA_DIR_ENV: &str = "LEGADO_BACKUP_MEDIA_DIR";
 
 /// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
-const ZIP_DATA_FILES: [&str; 23] = [
+const ZIP_DATA_FILES: [&str; 24] = [
     "bookshelf.json",
     "bookmark.json",
     // 划线/笔记（审查 20261113 P1-1：参考版 `Backup.kt:71,158` 固定写出；
@@ -1062,6 +1152,10 @@ const ZIP_DATA_FILES: [&str; 23] = [
     // 直链上传规则（批16f 映射：明文 JSON 对象 → 短键 directLinkUploadRule，
     // 落库 config: 前缀）
     "directLinkUploadRule.json",
+    // 封面规则（批43 B2：原版 `BookCover.configFileName = "coverRule.json"`，
+    // `Backup.kt:340-345` 以 `BookCover.getConfig()` 单对象写出；
+    // 此前在 ZIP_UNMAPPED_FILES → 包内数据被静默丢弃，且日志谎称「无对应配置面」）
+    "coverRule.json",
     "cookies.json",
     "runtimeSourceCache.json",
 ];
@@ -1072,11 +1166,11 @@ const ZIP_ENCRYPTED_FILES: [&str; 3] = ["servers.json", "cookies.json", "runtime
 /// 原版 zip 内存在、但本实现无对应落库面的文件（只报告不落库，登记见模块注释）
 ///
 /// 批41：`coverFont.ttf` 已移入媒体恢复（`<媒体根>/font/coverFont.ttf`）。
-const ZIP_UNMAPPED_FILES: [&str; 6] = [
+/// 批43：`coverRule.json` 已移入 [`ZIP_DATA_FILES`]（映射 `coverRules` 段）。
+const ZIP_UNMAPPED_FILES: [&str; 5] = [
     "readConfig.json",
     "shareReadConfig.json",
     "themeConfig.json",
-    "coverRule.json",
     "config.xml",
     "videoConfig.xml",
 ];
@@ -2623,6 +2717,10 @@ fn backup_data_from_zip(
         data.keyboard_assists = assists;
     }
     data.auto_tasks = zip_json_array(archive, "autoTask.json").unwrap_or_default();
+    // 封面规则（批43 B2：原版 `coverRule.json` 是 `BookCover.getConfig()` 的
+    // **单对象**，非数组；故不能走 `zip_json_array`。映射为 coverRules 表的
+    // 单行形态，见 [`zip_cover_rules`]）
+    data.cover_rules = zip_cover_rules(archive);
     data.servers = credentials.servers.unwrap_or_default();
     data.cookies = credentials.cookies.unwrap_or_default();
     data.runtime_source_caches = credentials.runtime.unwrap_or_default();
@@ -2649,6 +2747,66 @@ fn zip_json_array(archive: &ZipBackupArchive, name: &str) -> Option<Vec<serde_js
             None
         }
     }
+}
+
+/// 原版 `coverRule.json` → `coverRules` 段（单行形态）
+///
+/// 原版写出形态（`Backup.kt:340-345` + `BookCover.getConfig()`）：**单个 JSON
+/// 对象** `{enable, searchUrl, coverRule, concurrentRate?, loginUrl?, loginUi?,
+/// header?, jsLib?, enabledCookieJar?}`；恢复侧 `Restore.kt:435-440` 调
+/// `BookCover.saveCoverRule(json)` 原样存回单键配置。
+///
+/// 我方 `coverRules` 表是「一行 = 一条规则」形态（`CoverRuleRepository`），
+/// 故映射为单行：
+/// - `name` = `"legadoCoverRule"`（对齐 `cover_api.rs::PRIMARY_COVER_RULE_NAME`）；
+/// - `rule` = `{"searchUrl","coverRule"[, "enabledCookieJar"]}` 紧凑 JSON
+///   （与 `save_cover_rule` 落库形态一致；本实现未建模的 `concurrentRate`/
+///   `loginUrl`/`loginUi`/`header`/`jsLib` **原样保留**在文本内，不剥除未知键）；
+/// - `enable` 取顶层 `enable`（缺省 `true`，对齐原版 `CoverRule.enable = true`）；
+/// - `id` = 0（表自增；原版单配置无 id 概念）。
+///
+/// 文件缺失 → 空列表（不触碰库内既有规则）；非 UTF-8 / 非 JSON 对象 →
+/// warn 跳过该类（对齐原版 `runCatching` 语义），同样不触碰库内规则。
+fn zip_cover_rules(archive: &ZipBackupArchive) -> Vec<serde_json::Value> {
+    let Some(bytes) = archive.files.get("coverRule.json") else {
+        log::debug!("原版备份不含 coverRule.json，按原版语义跳过该类");
+        return Vec::new();
+    };
+    let Some(text) = decode_zip_text("coverRule.json", bytes) else {
+        return Vec::new();
+    };
+    let value: serde_json::Value = match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!("coverRule.json 解析失败（已跳过该类）: {e}");
+            return Vec::new();
+        }
+    };
+    let serde_json::Value::Object(map) = &value else {
+        // 原版固定写单对象；数组/标量属异常产物（旧版第三方工具）
+        log::warn!("coverRule.json 不是 JSON 对象（已跳过该类）");
+        return Vec::new();
+    };
+    let enable = map
+        .get("enable")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+    // 除顶层 `enable` 外的全部键原样搬进 `rule` 文本（含本实现未建模的
+    // `concurrentRate`/`loginUrl`/`loginUi`/`header`/`jsLib`）——与
+    // `save_cover_rule` 的「不剥除未知键」口径一致，避免静默丢字段。
+    let mut inner = serde_json::Map::new();
+    for (key, value) in map {
+        if key == "enable" {
+            continue;
+        }
+        inner.insert(key.clone(), value.clone());
+    }
+    vec![serde_json::json!({
+        "id": 0,
+        "name": "legadoCoverRule",
+        "rule": serde_json::Value::Object(inner).to_string(),
+        "enable": enable,
+    })]
 }
 
 /// 解出 zip 条目文本（UTF-8，容忍 BOM）；非 UTF-8 时 warn 并返回 `None`
@@ -2975,6 +3133,66 @@ fn decrypt_backup_payload(text: &str) -> LegadoResult<String> {
     BackupCipher::new(None).decrypt_text(text)
 }
 
+/// 备份 `books[]` 条目中「用户开关类」字段的原始键存在性
+///
+/// [批43 B4] 恢复必须区分「备份显式写了 `false`」与「备份根本没有这个键」：
+/// 前者是用户的真实选择（应覆盖），后者是旧格式缺字段（应保留库内旧值）。
+/// `serde(default)` 抹平了这两者，故在反序列化前从原始 JSON 取键存在性。
+#[derive(Debug, Clone, Copy, Default)]
+struct BookRestoreKeys {
+    is_private: bool,
+    disable_read_record: bool,
+    origin_book_url: bool,
+}
+
+impl BookRestoreKeys {
+    /// 从备份条目原始 JSON 提取键存在性（`null` 视同缺键）
+    fn from_json(value: &serde_json::Value) -> Self {
+        let present = |key: &str| !matches!(value.get(key), None | Some(serde_json::Value::Null));
+        Self {
+            is_private: present("isPrivate"),
+            disable_read_record: present("disableReadRecord"),
+            origin_book_url: present("originBookUrl"),
+        }
+    }
+}
+
+/// 缺键时用库内旧值补齐书籍的「用户开关类」字段（[批43 B4]）
+///
+/// 覆盖字段清单与判定依据（全量枚举 `legado-core/src/models/book.rs` 中
+/// 「用户设置 + 带 `#[serde(default)]` + 缺省值改变用户可见行为」的字段）：
+/// - `isPrivate`：缺键默认 `false` → 私密标记被静默解除（**隐私回归**）；
+/// - `disableReadRecord`：缺键默认 `false` → 书级阅读记录开关被重置；
+/// - `originBookUrl`：缺键默认 `""` → 换源书抓取回退旧源（换源失效）。
+///
+/// 不纳入的字段及理由见 `docs/API_CONTRACT.md` §2.11「B4 覆盖字段枚举依据」
+/// 表（`origin` 由既有 `merge_protected_columns` 保护；`canUpdate` 缺键回落
+/// `true` 与原版实体默认一致；其余数值/派生列为原版 Gson 同口径）。
+///
+/// 库内无同 `bookUrl` 行（新书）时不做任何合并——入参默认值即最终值。
+fn merge_missing_book_user_fields(
+    repo: &BookRepository<'_>,
+    book: &mut Book,
+    present: &BookRestoreKeys,
+) -> LegadoResult<()> {
+    if present.is_private && present.disable_read_record && present.origin_book_url {
+        return Ok(());
+    }
+    let Ok(Some(existing)) = repo.find_by_url(&book.book_url) else {
+        return Ok(());
+    };
+    if !present.is_private {
+        book.is_private = existing.is_private;
+    }
+    if !present.disable_read_record {
+        book.disable_read_record = existing.disable_read_record;
+    }
+    if !present.origin_book_url {
+        book.origin_book_url = existing.origin_book_url;
+    }
+    Ok(())
+}
+
 /// 恢复体：各表逐条恢复（单事务闭包内容，条目级错误 warn 跳过继续）
 ///
 /// 从 [`backup_restore`] 拆出以匹配 `in_transaction` 闭包签名，并供测试
@@ -3015,7 +3233,15 @@ fn restore_backup_in_tx(
     let mut restored_book_urls: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     for value in &backup.books {
-        if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
+        // [批43 B4] 缺键合并：旧备份条目缺 `isPrivate`/`disableReadRecord`/
+        // `originBookUrl` 时，`serde(default)` 会补成 `false`/`""` 并随 insert
+        // 全列写库——私密标记被静默解除（隐私回归）、书级阅读记录开关被重置、
+        // 换源书的当前详情页地址被清空。故恢复前按**原始 JSON 键存在性**判定，
+        // 缺键时读库内旧值合并（复用 bookshelf.rs::merge_missing_user_switches
+        // 的「只认缺键」手法）。
+        let present = BookRestoreKeys::from_json(value);
+        if let Ok(mut book) = serde_json::from_value::<Book>(value.clone()) {
+            merge_missing_book_user_fields(&book_repo, &mut book, &present)?;
             restored_book_urls.insert(book.book_url.clone());
             match book_repo.insert(&book) {
                 Ok(()) => {
@@ -3067,11 +3293,12 @@ fn restore_backup_in_tx(
         }
     }
 
-    // 恢复书签
+    // 恢复书签（[批43 B17] 保原 `id` REPLACE：此前自增 INSERT，同一备份恢复
+    // 两次会翻倍；缺 `id`/`id <= 0` 回落自增，与旧备份兼容）
     let bookmark_repo = BookmarkRepository::new(conn);
     for value in &backup.bookmarks {
         if let Ok(bm) = serde_json::from_value::<Bookmark>(value.clone()) {
-            match bookmark_repo.insert(&bm) {
+            match bookmark_repo.restore_upsert_preserving_id(&bm) {
                 Ok(_) => stats.bookmarks += 1,
                 Err(e) => log::warn!("恢复书签失败（已跳过）: {} - {e}", bm.book_name),
             }
@@ -3117,12 +3344,14 @@ fn restore_backup_in_tx(
         }
     }
 
-    // 恢复替换规则
+    // 恢复替换规则（[批43 B5] 保原 `id` REPLACE：此前自增 INSERT，同一备份
+    // 恢复两次会翻倍，且 `readConfig.manualReplaceRuleIds` 的 id 关联断裂；
+    // 缺 `id`/`id <= 0` 回落自增，与旧备份兼容）
     let rule_repo = ReplaceRuleRepository::new(conn);
     for value in &backup.replace_rules {
         if let Ok(rule) = serde_json::from_value::<legado_core::models::ReplaceRule>(value.clone())
         {
-            match rule_repo.insert(&rule) {
+            match rule_repo.restore_upsert_preserving_id(&rule) {
                 Ok(_) => stats.replace_rules += 1,
                 Err(e) => log::warn!("恢复替换规则失败（已跳过）: {} - {e}", rule.name),
             }
@@ -3183,13 +3412,28 @@ fn restore_backup_in_tx(
     // ─── v2 扩表恢复（逐表走各自 repository，单实现原则）────────────
 
     // 书籍分组（对齐原版 bookGroupDao.insert 的 REPLACE 语义）
+    //
+    // [批43 B4] 同 books 的缺键合并：旧备份 `bookGroup.json` 条目缺
+    // `isPrivate` 键时，`serde(default)` 会补 `false` 并全列写库，把私密分组
+    // 静默解除（与单本 isPrivate 同一隐私面）。其余 `#[serde(default = "default_true")]`
+    // 字段（enableRefresh/show）属展示偏好，缺键回落 true 与原版实体默认一致，
+    // 不纳入合并。
     let group_repo = BookGroupRepository::new(conn);
     for value in &backup.book_groups {
+        let is_private_present =
+            !matches!(value.get("isPrivate"), None | Some(serde_json::Value::Null));
         match serde_json::from_value::<legado_core::models::BookGroup>(value.clone()) {
-            Ok(group) => match group_repo.upsert(&from_core_book_group(group)) {
-                Ok(()) => {}
-                Err(e) => log::warn!("恢复书籍分组失败（已跳过）: {e}"),
-            },
+            Ok(mut group) => {
+                if !is_private_present {
+                    if let Ok(Some(existing)) = group_repo.find_by_id(group.group_id) {
+                        group.is_private = existing.is_private;
+                    }
+                }
+                match group_repo.upsert(&from_core_book_group(group)) {
+                    Ok(()) => {}
+                    Err(e) => log::warn!("恢复书籍分组失败（已跳过）: {e}"),
+                }
+            }
             Err(e) => log::warn!("恢复书籍分组解析失败（已跳过）: {e}"),
         }
     }
@@ -3371,7 +3615,7 @@ fn restore_backup_in_tx(
         }
     }
 
-    // 自动任务（批9：原版 autoTask.json；自有 JSON 备份暂无该段，空列表直接跳过）。
+    // 自动任务（批9：原版 autoTask.json；批43 起自有 JSON 备份也收集）。
     // 主键为字符串 id（原版 UUID）：缺失/空的条目无法定位行，warn 跳过而非写入
     // 空主键行（空主键行会与后续同 id 条目互相覆盖）。
     let auto_task_repo = AutoTaskRepository::new(conn);
@@ -3388,6 +3632,56 @@ fn restore_backup_in_tx(
                 }
             }
             Err(e) => log::warn!("恢复自动任务解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // ─── v7 新增段（[批43] 空列表 = 缺键 = 不触碰库内既有行）────────────
+
+    // 每日阅读时长：**max 合并**（同日取较大值）。
+    // 累加会让同一备份恢复两次翻倍；覆盖会让旧备份回滚恢复后新增的时长。
+    let daily_repo = ReadRecordRepository::new(conn);
+    for value in &backup.read_record_daily {
+        let Some(date) = value.get("date").and_then(serde_json::Value::as_str) else {
+            log::warn!("恢复每日阅读时长失败（已跳过）: 缺少 date 字段");
+            continue;
+        };
+        let seconds = value
+            .get("durationSeconds")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        match daily_repo.restore_daily_seconds(date, seconds) {
+            Ok(_) => {}
+            Err(e) => log::warn!("恢复每日阅读时长失败（已跳过）: {date} - {e}"),
+        }
+    }
+
+    // 封面规则：按 id REPLACE（保留主键）；`id <= 0` 回落自增。
+    let cover_repo = CoverRuleRepository::new(conn);
+    for value in &backup.cover_rules {
+        match serde_json::from_value::<CoverRule>(value.clone()) {
+            Ok(rule) => {
+                if let Err(e) = cover_repo.insert(&rule) {
+                    log::warn!("恢复封面规则失败（已跳过）: {} - {e}", rule.name);
+                }
+            }
+            Err(e) => log::warn!("恢复封面规则解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 段评/本章热评：按 id REPLACE（保留主键）。
+    let review_repo = ReviewRepository::new(conn);
+    for value in &backup.chapter_reviews {
+        match serde_json::from_value::<legado_core::review::ChapterReview>(value.clone()) {
+            Ok(review) => {
+                if let Err(e) = review_repo.restore_upsert_preserving_id(&review) {
+                    log::warn!(
+                        "恢复段评失败（已跳过）: {} / {} - {e}",
+                        review.book_url,
+                        review.id
+                    );
+                }
+            }
+            Err(e) => log::warn!("恢复段评解析失败（已跳过）: {e}"),
         }
     }
 
@@ -3745,6 +4039,19 @@ mod tests {
     fn clear_backup_tables() {
         with_database(|db| {
             let conn = db.connection();
+            // [批43 v7] readRecordDaily / coverRules 由 repository 按需建表，
+            // 共享测试库首次进入时可能尚未创建 → 先幂等建表再统一清空
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS readRecordDaily (\
+                 date TEXT PRIMARY KEY, durationSeconds INTEGER NOT NULL DEFAULT 0)",
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS coverRules (\
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT '', \
+                 rule TEXT NOT NULL DEFAULT '', enable INTEGER NOT NULL DEFAULT 1)",
+                [],
+            );
             for table in [
                 "books",
                 "bookmarks",
@@ -3767,6 +4074,10 @@ mod tests {
                 "auto_task_rules",
                 "cookies",
                 "book_memos",
+                // [批43 v7] 新增段对应表
+                "readRecordDaily",
+                "coverRules",
+                "chapter_reviews",
             ] {
                 conn.execute(&format!("DELETE FROM {table}"), [])
                     .map_err(|e| LegadoError::Database(format!("清空 {table} 失败: {e}")))?;
@@ -4216,7 +4527,7 @@ mod tests {
         backup_create(path_str).unwrap();
         let raw: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(path_str).unwrap()).unwrap();
-        assert_eq!(raw["version"], 6, "备份格式应升到 v6");
+        assert_eq!(raw["version"], 7, "备份格式应升到 v7");
         let marks = raw["bookMarks"].as_array().unwrap();
         assert_eq!(marks.len(), 1, "划线/笔记应写入 bookMarks 段: {marks:?}");
         assert_eq!(marks[0]["id"], "bm-roundtrip");
@@ -5443,9 +5754,18 @@ mod tests {
             Some(&Vec::new()),
             "划线/笔记空表应写出空数组而非省略键"
         );
+        // [批43 v7] 新增四段：readRecordDaily/coverRules/chapterReviews 空表写空
+        // 数组；autoTasks 空表按 skip_serializing_if 省略（非空时才写）
+        for key in ["readRecordDaily", "coverRules", "chapterReviews"] {
+            assert_eq!(
+                raw.get(key).and_then(|v| v.as_array()),
+                Some(&Vec::new()),
+                "v7 段 {key} 空表应写出空数组而非省略键"
+            );
+        }
         assert!(
             !content.contains("\"autoTasks\""),
-            "自有 JSON 备份形状不得因批9 autoTasks 字段变化（空列表应省略）：{content}"
+            "autoTasks 为空时仍应省略（skip_serializing_if）：{content}"
         );
 
         // 恢复备份
@@ -5734,7 +6054,7 @@ mod tests {
         let parsed: BackupData = serde_json::from_str(&content).unwrap();
         // 版本契约钉死一次字面量（P2-4）：常量若是误改，此处必须红
         // 批27：备份格式版本 4→5（新增 bookMemos）；审查 20261113 P1-1：5→6（新增 bookMarks）
-        assert_eq!(parsed.version, 6, "v6 契约版本");
+        assert_eq!(parsed.version, 7, "v7 契约版本");
         assert_eq!(
             parsed.direct_link_upload_rule.as_deref(),
             Some(DIRECT_LINK_RULE_SEED),
@@ -5812,7 +6132,8 @@ mod tests {
                 .expect("恢复后书籍应存在");
         assert!(restored.disable_read_record, "恢复后开关应为 true");
 
-        // 旧备份缺键 → false（默认照常记录）
+        // [批43 B4] 旧备份缺键 → **保留库内既有值**（不再回落 serde 默认 false）。
+        // 此前缺键会被静默重置为 false，导致「书级关闭阅读记录」开关丢失。
         let legacy = serde_json::json!({
             "version": BACKUP_VERSION,
             "books": [{
@@ -5832,7 +6153,10 @@ mod tests {
             with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
                 .expect("旧备份恢复后查询失败")
                 .expect("旧备份恢复后书籍应存在");
-        assert!(!legacy_book.disable_read_record, "旧备份缺键应恢复为 false");
+        assert!(
+            legacy_book.disable_read_record,
+            "旧备份缺键时应保留库内既有 true（B4：不得重置书级阅读记录开关）"
+        );
 
         with_database(|db| BookRepository::new(db.connection()).delete_by_url(book_url)).ok();
         let _ = fs::remove_dir_all(&dir);
@@ -9272,6 +9596,587 @@ mod tests {
             assert_eq!(books.len(), 1, "哨兵行应保留（零落库）");
             let servers = ServerRepository::new(conn).find_all()?;
             assert!(servers.is_empty(), "损坏校验必须先于任何落库");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ─── 批43：备份 v7（B1/B2/B3/B4/B5/B11/B17）──────────────────────────
+
+    /// 备份 v7 四类新增段 + 保 id 段的**全字段往返**（B1/B2/B3/B11/B5/B17）
+    ///
+    /// 种子 → 备份 → 清库 → 恢复 → 逐字段 diff。修复前红态：
+    /// - `readRecordDaily`/`coverRules`/`chapterReviews` 段根本不存在（`None`）；
+    /// - `autoTasks` 恒为空数组（`backup_create` 硬编码 `Vec::new()`）；
+    /// - `replaceRules`/`bookmarks` 恢复后 `id` 由自增重分配（与备份不一致）。
+    #[test]
+    fn test_backup_v7_new_sections_roundtrip() {
+        use legado_core::models::ReplaceRule;
+        use legado_core::review::ChapterReview;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v7_roundtrip");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("v7_roundtrip.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        // ── 种子 ──
+        with_database(|db| {
+            let conn = db.connection();
+            // B1 每日时长
+            let daily = ReadRecordRepository::new(conn);
+            daily.add_daily_seconds("2026-01-02", 600)?;
+            daily.add_daily_seconds("2026-11-17", 1234)?;
+            // B2 封面规则（显式 id 便于断言保主键）
+            CoverRuleRepository::new(conn).insert(&CoverRule {
+                id: 41,
+                name: "legadoCoverRule".to_string(),
+                rule: r#"{"searchUrl":"https://cover.example/s?q={{key}}","coverRule":"$.cover","enabledCookieJar":true}"#.to_string(),
+                enable: true,
+            })?;
+            // B3 自动任务
+            <AutoTaskRepository as Repository<legado_core::models::AutoTaskRule>>::insert(
+                &AutoTaskRepository::new(conn),
+                &legado_core::models::AutoTaskRule {
+                    id: "task-v7".to_string(),
+                    name: "v7 自动任务".to_string(),
+                    enable: false,
+                    cron: Some("0 7 * * *".to_string()),
+                    script: "v7()".to_string(),
+                    ..Default::default()
+                },
+            )?;
+            // B11 段评
+            ReviewRepository::new(conn).insert(&ChapterReview {
+                id: 0, // 自增，恢复后断言内容一致（id 由库分配）
+                book_url: "https://v7.example/book".to_string(),
+                chapter_index: 3,
+                paragraph_index: 7,
+                content: "v7 段评".to_string(),
+                author: "读者甲".to_string(),
+                created_at: 1_700_000_000_001,
+                like_count: 9,
+            })?;
+            // B5 替换规则（显式 id 41x）
+            ReplaceRuleRepository::new(conn).restore_upsert_preserving_id(&ReplaceRule {
+                id: 411,
+                name: "v7 替换规则".to_string(),
+                pattern: "旧".to_string(),
+                replacement: "新".to_string(),
+                order: 6,
+                ..ReplaceRule::default()
+            })?;
+            // B17 书签（显式 id 412）
+            BookmarkRepository::new(conn).restore_upsert_preserving_id(&Bookmark {
+                id: 412,
+                time: 1_700_000_000_002,
+                book_name: "v7 书".to_string(),
+                book_author: "作者".to_string(),
+                chapter_index: 2,
+                chapter_pos: 33,
+                chapter_name: "第三章".to_string(),
+                book_text: "书签文本".to_string(),
+                content: "备注".to_string(),
+            })?;
+            Ok(())
+        })
+        .unwrap();
+
+        let daily_before =
+            with_database(|db| ReadRecordRepository::new(db.connection()).list_all_daily())
+                .unwrap();
+        assert_eq!(daily_before.len(), 2, "种子每日时长应有 2 条");
+
+        // ── 备份 ──
+        backup_create(path_str).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&backup_path).unwrap()).unwrap();
+        assert_eq!(raw["version"], serde_json::json!(7), "版本应为 v7");
+        assert_eq!(
+            raw["readRecordDaily"].as_array().map(Vec::len),
+            Some(2),
+            "readRecordDaily 段应收集 2 条: {raw}"
+        );
+        assert_eq!(
+            raw["coverRules"].as_array().map(Vec::len),
+            Some(1),
+            "coverRules 段应收集 1 条"
+        );
+        assert_eq!(
+            raw["autoTasks"].as_array().map(Vec::len),
+            Some(1),
+            "autoTasks 段不应再恒为空数组（B3）"
+        );
+        assert_eq!(
+            raw["chapterReviews"].as_array().map(Vec::len),
+            Some(1),
+            "chapterReviews 段应收集 1 条"
+        );
+
+        // ── 清库 → 恢复 ──
+        clear_backup_tables();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            // B1：每日时长逐条一致
+            let daily_after = ReadRecordRepository::new(conn).list_all_daily()?;
+            assert_eq!(daily_after, daily_before, "readRecordDaily 应全字段往返");
+
+            // B2：封面规则内容与 id 一致
+            let covers = CoverRuleRepository::new(conn).find_all()?;
+            assert_eq!(covers.len(), 1, "coverRules 应恢复 1 条: {covers:?}");
+            assert_eq!(covers[0].id, 41, "coverRules 应保原 id");
+            assert_eq!(covers[0].name, "legadoCoverRule");
+            assert!(covers[0].enable);
+            assert!(
+                covers[0].rule.contains("cover.example"),
+                "rule 文本应原样往返: {}",
+                covers[0].rule
+            );
+            assert!(
+                covers[0].rule.contains("enabledCookieJar"),
+                "未知键不剥除: {}",
+                covers[0].rule
+            );
+
+            // B3：自动任务
+            let task =
+                <AutoTaskRepository as Repository<legado_core::models::AutoTaskRule>>::find_all(
+                    &AutoTaskRepository::new(conn),
+                )?
+                .into_iter()
+                .find(|t| t.id == "task-v7")
+                .expect("autoTasks 应恢复（B3）");
+            assert_eq!(task.name, "v7 自动任务");
+            assert!(!task.enable);
+            assert_eq!(task.cron.as_deref(), Some("0 7 * * *"));
+            assert_eq!(task.script, "v7()");
+
+            // B11：段评
+            let reviews = ReviewRepository::new(conn).find_all()?;
+            assert_eq!(reviews.len(), 1, "chapterReviews 应恢复: {reviews:?}");
+            assert_eq!(reviews[0].book_url, "https://v7.example/book");
+            assert_eq!(reviews[0].chapter_index, 3);
+            assert_eq!(reviews[0].paragraph_index, 7);
+            assert_eq!(reviews[0].content, "v7 段评");
+            assert_eq!(reviews[0].author, "读者甲");
+            assert_eq!(reviews[0].created_at, 1_700_000_000_001);
+            assert_eq!(reviews[0].like_count, 9);
+
+            // B5：替换规则保 id
+            let rules = ReplaceRuleRepository::new(conn).find_all()?;
+            assert_eq!(rules.len(), 1);
+            assert_eq!(rules[0].id, 411, "replaceRules 恢复应保原 id（B5）");
+            assert_eq!(rules[0].name, "v7 替换规则");
+            assert_eq!(rules[0].order, 6, "sortOrder 应往返");
+
+            // B17：书签保 id
+            let marks = BookmarkRepository::new(conn).find_all()?;
+            assert_eq!(marks.len(), 1);
+            assert_eq!(marks[0].id, 412, "bookmarks 恢复应保原 id（B17）");
+            assert_eq!(marks[0].book_text, "书签文本");
+            assert_eq!(marks[0].chapter_pos, 33);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B5/B17] 同一备份恢复两次不翻倍（保 id REPLACE 的幂等性）
+    #[test]
+    fn test_restore_v7_replace_rules_and_bookmarks_twice_idempotent() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v7_idempotent");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("twice.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        fs::write(
+            path_str,
+            r#"{"version":7,"backupTime":1,"books":[],
+                "replaceRules":[{"id":501,"name":"幂等规则","pattern":"a","replacement":"b",
+                                 "isEnabled":true,"isRegex":true,"timeoutMillisecond":3000,
+                                 "sortOrder":0,"scopeTitle":false,"scopeSource":false,
+                                 "scopeContent":true}],
+                "bookmarks":[{"id":502,"time":1000,"bookName":"幂等书","bookAuthor":"作者",
+                              "chapterIndex":0,"chapterPos":5,"chapterName":"第一章",
+                              "bookText":"文本","content":"备注"}]}"#,
+        )
+        .unwrap();
+
+        backup_restore(path_str).unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            let rules = ReplaceRuleRepository::new(conn).find_all()?;
+            assert_eq!(rules.len(), 1, "恢复两次不得翻倍: {rules:?}");
+            assert_eq!(rules[0].id, 501);
+
+            let marks = BookmarkRepository::new(conn).find_all()?;
+            assert_eq!(marks.len(), 1, "恢复两次不得翻倍: {marks:?}");
+            assert_eq!(marks[0].id, 502);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B1] `readRecordDaily` 恢复按 **max 合并**：同日取较大值
+    ///
+    /// 修复前红态：该段完全不存在，恢复后每日时长为零。
+    #[test]
+    fn test_restore_read_record_daily_merges_by_max() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v7_daily_max");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("daily.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        // 库内已有：2026-01-01 = 500（大于备份值），2026-01-02 无
+        with_database(|db| {
+            ReadRecordRepository::new(db.connection()).add_daily_seconds("2026-01-01", 500)
+        })
+        .unwrap();
+
+        fs::write(
+            path_str,
+            r#"{"version":7,"backupTime":1,"books":[],
+                "readRecordDaily":[
+                  {"date":"2026-01-01","durationSeconds":100},
+                  {"date":"2026-01-02","durationSeconds":900}
+                ]}"#,
+        )
+        .unwrap();
+        backup_restore(path_str).unwrap();
+
+        let daily = with_database(|db| ReadRecordRepository::new(db.connection()).list_all_daily())
+            .unwrap();
+        assert_eq!(
+            daily,
+            vec![
+                ("2026-01-01".to_string(), 500),
+                ("2026-01-02".to_string(), 900),
+            ],
+            "同日取较大值（不回滚）、缺失日期插入"
+        );
+
+        // 再恢复一次：max 合并幂等（不累加）
+        backup_restore(path_str).unwrap();
+        let daily = with_database(|db| ReadRecordRepository::new(db.connection()).list_all_daily())
+            .unwrap();
+        assert_eq!(
+            daily,
+            vec![
+                ("2026-01-01".to_string(), 500),
+                ("2026-01-02".to_string(), 900),
+            ],
+            "重复恢复不得累加每日时长"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B4 核心断言] 旧 v6 备份缺 `isPrivate`/`disableReadRecord`/`originBookUrl`
+    /// 键时**保留库内旧值**（隐私回归修复）
+    ///
+    /// 修复前红态：`serde(default)` 补 `false`/`""` 并全列写库 →
+    /// `isPrivate` 被静默解除、`disableReadRecord` 被重置、`originBookUrl` 被清空。
+    #[test]
+    fn test_restore_v6_backup_missing_book_user_switches_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v6_missing_switches");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("v6.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://privacy.example/v6-missing";
+        // 库内：私密 + 关闭阅读记录 + 已换源（originBookUrl 非空）
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "私密书".to_string(),
+                author: "作者".to_string(),
+                is_private: true,
+                disable_read_record: true,
+                origin_book_url: "https://new-source.example/detail".to_string(),
+                ..Book::default()
+            })
+        })
+        .unwrap();
+
+        // 分组：库内私密分组
+        with_database(|db| {
+            BookGroupRepository::new(db.connection()).upsert(&BookGroup {
+                group_id: 9,
+                group_name: "私密分组".to_string(),
+                is_private: true,
+                ..BookGroup::default()
+            })
+        })
+        .unwrap();
+
+        // v6 备份：book/分组条目**完全不含**用户开关键（模拟旧备份）
+        fs::write(
+            path_str,
+            format!(
+                r#"{{"version":6,"backupTime":1,"books":[
+                    {{"bookUrl":"{book_url}","name":"私密书","author":"作者"}}
+                ],"bookGroups":[
+                    {{"groupId":9,"groupName":"私密分组"}}
+                ]}}"#
+            ),
+        )
+        .unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let book = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("恢复后书籍应存在");
+            assert!(
+                book.is_private,
+                "缺 isPrivate 键时不得解除私密标记（B4 隐私回归）"
+            );
+            assert!(
+                book.disable_read_record,
+                "缺 disableReadRecord 键时不得重置书级阅读记录开关（B4）"
+            );
+            assert_eq!(
+                book.origin_book_url, "https://new-source.example/detail",
+                "缺 originBookUrl 键时不得清空换源地址（B4）"
+            );
+
+            let group = BookGroupRepository::new(db.connection())
+                .find_by_id(9)?
+                .expect("恢复后分组应存在");
+            assert!(
+                group.is_private,
+                "缺 bookGroups[].isPrivate 键时不得解除私密分组（B4）"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B4 反向] 备份**显式携带** `isPrivate: false` 时必须按备份写入
+    /// （区分「缺键」与「用户显式关闭」，不能一律保留库内值）
+    #[test]
+    fn test_restore_explicit_book_switches_override_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v7_explicit_switches");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("explicit.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://privacy.example/explicit";
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "显式书".to_string(),
+                author: "作者".to_string(),
+                is_private: true,
+                disable_read_record: true,
+                origin_book_url: "https://old.example/detail".to_string(),
+                ..Book::default()
+            })
+        })
+        .unwrap();
+
+        // 显式 false / 空串：用户真实选择，应覆盖
+        fs::write(
+            path_str,
+            format!(
+                r#"{{"version":7,"backupTime":1,"books":[
+                    {{"bookUrl":"{book_url}","name":"显式书","author":"作者",
+                      "isPrivate":false,"disableReadRecord":false,"originBookUrl":""}}
+                ]}}"#
+            ),
+        )
+        .unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let book = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("恢复后书籍应存在");
+            assert!(!book.is_private, "显式 isPrivate=false 应覆盖库内 true");
+            assert!(
+                !book.disable_read_record,
+                "显式 disableReadRecord=false 应覆盖库内 true"
+            );
+            assert_eq!(
+                book.origin_book_url, "",
+                "显式空 originBookUrl 应覆盖库内值"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B1/B2/B11 兼容] v6 备份缺新段时**不清库**（库内既有行保持不变）
+    #[test]
+    fn test_restore_v6_backup_missing_new_sections_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v6_missing_sections");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("v6_no_new.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            ReadRecordRepository::new(conn).add_daily_seconds("2026-05-05", 777)?;
+            CoverRuleRepository::new(conn).insert(&CoverRule {
+                id: 61,
+                name: "既有封面规则".to_string(),
+                rule: r#"{"searchUrl":"https://keep.example","coverRule":"$.c"}"#.to_string(),
+                enable: true,
+            })?;
+            ReviewRepository::new(conn).restore_upsert_preserving_id(
+                &legado_core::review::ChapterReview {
+                    id: 62,
+                    book_url: "https://keep.example/book".to_string(),
+                    chapter_index: 1,
+                    paragraph_index: -1,
+                    content: "既有段评".to_string(),
+                    author: "甲".to_string(),
+                    created_at: 1,
+                    like_count: 0,
+                },
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // v6 备份：不含 readRecordDaily / coverRules / chapterReviews / autoTasks
+        fs::write(path_str, r#"{"version":6,"backupTime":1,"books":[]}"#).unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            assert_eq!(
+                ReadRecordRepository::new(conn).list_all_daily()?,
+                vec![("2026-05-05".to_string(), 777)],
+                "缺 readRecordDaily 段不得清库"
+            );
+            let covers = CoverRuleRepository::new(conn).find_all()?;
+            assert_eq!(covers.len(), 1, "缺 coverRules 段不得清库: {covers:?}");
+            assert_eq!(covers[0].id, 61);
+            let reviews = ReviewRepository::new(conn).find_all()?;
+            assert_eq!(
+                reviews.len(),
+                1,
+                "缺 chapterReviews 段不得清库: {reviews:?}"
+            );
+            assert_eq!(reviews[0].id, 62);
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B2] 原版 zip 的 `coverRule.json`（单对象）映射为 `coverRules` 单行
+    ///
+    /// 修复前红态：`coverRule.json` 在 `ZIP_UNMAPPED_FILES`，只 warn 跳过，
+    /// 恢复后 `coverRules` 为空。
+    #[test]
+    fn test_restore_zip_cover_rule_maps_to_cover_rules() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let cover_rule = r#"{"enable":false,
+            "searchUrl":"https://zip-cover.example/s?q={{key}}",
+            "coverRule":"$.data.cover",
+            "enabledCookieJar":true,
+            "concurrentRate":"2"}"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_cover_rule",
+            &[("coverRule.json", cover_rule.as_bytes())],
+        );
+        let _media_guard = set_test_media_root(&dir.join("media"));
+
+        backup_restore(&path).unwrap();
+
+        with_database(|db| {
+            let rules = CoverRuleRepository::new(db.connection()).find_all()?;
+            assert_eq!(rules.len(), 1, "coverRule.json 应映射为 1 行: {rules:?}");
+            assert_eq!(rules[0].name, "legadoCoverRule");
+            assert!(!rules[0].enable, "enable 应取顶层值");
+            let inner: serde_json::Value = serde_json::from_str(&rules[0].rule).unwrap();
+            assert_eq!(
+                inner["searchUrl"], "https://zip-cover.example/s?q={{key}}",
+                "searchUrl 应映射进 rule 文本"
+            );
+            assert_eq!(inner["coverRule"], "$.data.cover");
+            assert_eq!(inner["enabledCookieJar"], true);
+            assert_eq!(
+                inner["concurrentRate"], "2",
+                "本实现未建模的键应原样保留在 rule 文本内"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [B2 负例] zip 内 `coverRule.json` 非对象（数组/坏 JSON）：该类跳过，
+    /// 库内既有封面规则不清除
+    #[test]
+    fn test_restore_zip_bad_cover_rule_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        with_database(|db| {
+            CoverRuleRepository::new(db.connection()).insert(&CoverRule {
+                id: 71,
+                name: "库内既有".to_string(),
+                rule: r#"{"searchUrl":"https://keep.example","coverRule":"$.c"}"#.to_string(),
+                enable: true,
+            })
+        })
+        .unwrap();
+
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_bad_cover_rule",
+            &[("coverRule.json", b"[1,2,3]")],
+        );
+        let _media_guard = set_test_media_root(&dir.join("media"));
+
+        backup_restore(&path).unwrap();
+
+        with_database(|db| {
+            let rules = CoverRuleRepository::new(db.connection()).find_all()?;
+            assert_eq!(rules.len(), 1, "坏 coverRule.json 不得清库: {rules:?}");
+            assert_eq!(rules[0].id, 71);
             Ok::<(), LegadoError>(())
         })
         .unwrap();

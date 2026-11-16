@@ -37,6 +37,42 @@ impl<'a> BookmarkRepository<'a> {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// 备份恢复写入：**原样保留 `id`**（`INSERT OR REPLACE`），返回实际落库 id
+    ///
+    /// [批43 B17] 备份恢复此前走 [`Self::insert`]（SQL 不含 `id`），同一备份恢复
+    /// 两次 → 书签翻倍。恢复路径按备份中的原主键 REPLACE，满足重复恢复幂等
+    /// （防复发规定 5）。
+    ///
+    /// 兼容：`bm.id <= 0`（旧备份缺 `id` 键 / 第三方产物）回落 [`Self::insert`]
+    /// 的自增语义，与旧行为一致。
+    ///
+    /// 仅备份恢复入口使用本方法（`legado_ffi::api::backup_api`）。
+    pub fn restore_upsert_preserving_id(&self, bm: &Bookmark) -> LegadoResult<i64> {
+        if bm.id <= 0 {
+            return self.insert(bm);
+        }
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO bookmarks
+                 (id, bookName, bookAuthor, chapterIndex, chapterPos,
+                  chapterName, bookText, content, time)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    bm.id,
+                    bm.book_name,
+                    bm.book_author,
+                    bm.chapter_index,
+                    bm.chapter_pos,
+                    bm.chapter_name,
+                    bm.book_text,
+                    bm.content,
+                    bm.time,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复书签失败: {e}")))?;
+        Ok(bm.id)
+    }
+
     /// 更新书签
     pub fn update(&self, bm: &Bookmark) -> LegadoResult<()> {
         self.conn
@@ -308,6 +344,36 @@ mod tests {
         repo.insert(&make_bookmark("book2", 0, "t2")).unwrap();
         let all = repo.find_all().unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    /// [批43 B17] 恢复保原 id：连续恢复两次不增殖，id 不变
+    #[test]
+    fn test_restore_upsert_preserving_id_is_idempotent() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookmarkRepository::new(db.connection());
+        let mut bm = make_bookmark("保id书", 1, "保id文本");
+        bm.id = 888;
+
+        assert_eq!(repo.restore_upsert_preserving_id(&bm).unwrap(), 888);
+        assert_eq!(repo.restore_upsert_preserving_id(&bm).unwrap(), 888);
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1, "连续恢复两次不得增殖: {all:?}");
+        assert_eq!(all[0].id, 888, "恢复必须保留备份中的原 id");
+        assert_eq!(all[0].book_text, "保id文本");
+    }
+
+    /// [批43 B17] 缺 id（`id <= 0`）回落自增，与旧备份兼容
+    #[test]
+    fn test_restore_upsert_preserving_id_falls_back_for_zero_id() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookmarkRepository::new(db.connection());
+        let mut bm = make_bookmark("无id书", 0, "无id文本");
+        bm.id = 0;
+
+        let id = repo.restore_upsert_preserving_id(&bm).unwrap();
+        assert!(id > 0, "缺 id 应分配自增主键");
+        assert_eq!(repo.find_all().unwrap().len(), 1);
     }
 
     #[test]

@@ -499,11 +499,19 @@ impl<'a> ReadRecordRepository<'a> {
     }
 
     /// 清空所有阅读记录，返回删除的行数
+    ///
+    /// [批43 B10] 同时清空 `readRecordDaily` 每日时长聚合：此前只删 `readRecord`，
+    /// 用户「清空阅读记录」后热力图仍显示历史每日时长，与「已清空」自相矛盾。
+    /// 返回值仍是 `readRecord` 的删除行数（既有 FFI 语义不变）。
     pub fn clear_all(&self) -> LegadoResult<usize> {
         let affected = self
             .conn
             .execute("DELETE FROM readRecord", [])
             .map_err(|e| LegadoError::Database(format!("清空阅读记录失败: {e}")))?;
+        self.ensure_daily_table()?;
+        self.conn
+            .execute("DELETE FROM readRecordDaily", [])
+            .map_err(|e| LegadoError::Database(format!("清空每日阅读时长失败: {e}")))?;
         Ok(affected)
     }
 
@@ -568,6 +576,51 @@ impl<'a> ReadRecordRepository<'a> {
             .filter_map(|r| r.ok())
             .collect();
         Ok(rows)
+    }
+
+    /// 查询全部每日阅读时长（备份收集用，按日期升序）
+    ///
+    /// [批43 B1] `readRecordDaily` 此前不在任何备份链，换机后 `readRecord.readTime`
+    /// 有值而每日统计为空，热力图与累计时长自相矛盾。备份创建侧经本方法收集全量。
+    pub fn list_all_daily(&self) -> LegadoResult<Vec<(String, i64)>> {
+        self.ensure_daily_table()?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT date, durationSeconds FROM readRecordDaily ORDER BY date ASC")
+            .map_err(|e| LegadoError::Database(format!("准备每日时长查询失败: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| LegadoError::Database(format!("查询每日时长失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// 备份恢复：按 **max 合并** 单日时长（同日取较大值），返回是否发生写入
+    ///
+    /// [批43 B1] 恢复语义为「取较大值」而非累加或覆盖：
+    /// - 累加会让「同一备份恢复两次」的每日时长翻倍；
+    /// - 直接覆盖会让旧备份把恢复后本机新增的阅读时长回滚。
+    ///
+    /// `date` 为空白或 `seconds < 0` 时跳过（返回 `false`），不写畸形行。
+    pub fn restore_daily_seconds(&self, date: &str, seconds: i64) -> LegadoResult<bool> {
+        if date.trim().is_empty() || seconds < 0 {
+            return Ok(false);
+        }
+        self.ensure_daily_table()?;
+        let affected = self
+            .conn
+            .execute(
+                "INSERT INTO readRecordDaily (date, durationSeconds) VALUES (?1, ?2) \
+                 ON CONFLICT(date) DO UPDATE SET durationSeconds = \
+                   CASE WHEN excluded.durationSeconds > durationSeconds \
+                        THEN excluded.durationSeconds ELSE durationSeconds END",
+                params![date, seconds],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复每日阅读时长失败: {e}")))?;
+        Ok(affected > 0)
     }
 }
 
@@ -646,6 +699,66 @@ mod tests {
         let deleted = repo.clear_all().unwrap();
         assert_eq!(deleted, 3);
         assert_eq!(repo.count().unwrap(), 0);
+    }
+
+    /// [批43 B10] `clear_all` 同步清空 readRecordDaily（每日时长聚合）
+    ///
+    /// 修复前红态：只删 `readRecord`，清空阅读记录后热力图仍显示历史每日时长。
+    #[test]
+    fn test_clear_all_also_clears_daily_seconds() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+        repo.upsert("book1", 1000).unwrap();
+        repo.add_daily_seconds("2026-03-01", 120).unwrap();
+        repo.add_daily_seconds("2026-03-02", 240).unwrap();
+        assert_eq!(repo.list_all_daily().unwrap().len(), 2);
+
+        repo.clear_all().unwrap();
+        assert!(
+            repo.list_all_daily().unwrap().is_empty(),
+            "清空阅读记录必须同时清空 readRecordDaily（B10）"
+        );
+    }
+
+    /// [批43 B1] restore_daily_seconds 按 max 合并：同日取较大值，缺失日期插入
+    #[test]
+    fn test_restore_daily_seconds_takes_max() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+        repo.add_daily_seconds("2026-01-01", 500).unwrap();
+
+        assert!(repo.restore_daily_seconds("2026-01-01", 100).unwrap());
+        assert_eq!(
+            repo.list_all_daily().unwrap(),
+            vec![("2026-01-01".to_string(), 500)],
+            "备份值更小时不得回滚库内时长"
+        );
+
+        assert!(repo.restore_daily_seconds("2026-01-01", 800).unwrap());
+        assert!(repo.restore_daily_seconds("2026-01-02", 900).unwrap());
+        assert_eq!(
+            repo.list_all_daily().unwrap(),
+            vec![
+                ("2026-01-01".to_string(), 800),
+                ("2026-01-02".to_string(), 900),
+            ],
+            "备份值更大时取较大值，缺失日期插入"
+        );
+
+        // 幂等：再恢复一次不累加
+        repo.restore_daily_seconds("2026-01-02", 900).unwrap();
+        assert_eq!(
+            repo.list_all_daily().unwrap(),
+            vec![
+                ("2026-01-01".to_string(), 800),
+                ("2026-01-02".to_string(), 900),
+            ]
+        );
+
+        // 非法输入跳过
+        assert!(!repo.restore_daily_seconds("  ", 10).unwrap());
+        assert!(!repo.restore_daily_seconds("2026-01-03", -1).unwrap());
+        assert_eq!(repo.list_all_daily().unwrap().len(), 2);
     }
 
     #[test]

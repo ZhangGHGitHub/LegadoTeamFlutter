@@ -333,4 +333,32 @@ mod tests {
         })
         .ok();
     }
+
+    /// [批43 B10] `clear_read_records` 同步清空 readRecordDaily
+    ///
+    /// 修复前红态：只清 `readRecord`，清空后热力图「每日时长」仍显示历史值，
+    /// 与「已清空」自相矛盾。
+    #[test]
+    fn test_clear_read_records_clears_daily_seconds() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let year: i32 = today[..4].parse().unwrap();
+
+        // 写入一条阅读记录并产生当日时长
+        upsert_read_record("清空每日书", 4000, None).unwrap();
+        let before = daily_seconds_today(&today, year);
+        assert!(before > 0, "写路径应产生当日时长");
+
+        clear_read_records().unwrap();
+
+        assert!(
+            get_read_records().unwrap().is_empty(),
+            "clearReadRecords 应清空 readRecord"
+        );
+        assert_eq!(
+            daily_seconds_today(&today, year),
+            0,
+            "clearReadRecords 必须同时清空 readRecordDaily（B10）"
+        );
+    }
 }

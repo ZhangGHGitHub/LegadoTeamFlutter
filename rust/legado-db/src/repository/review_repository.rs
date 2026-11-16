@@ -80,6 +80,57 @@ impl<'a> ReviewRepository<'a> {
         Ok(rows)
     }
 
+    /// 查询全部评论（备份收集用，按 id 升序）
+    ///
+    /// [批43 B11] `chapter_reviews` 有写面（`legado-server` `POST /reviews`）但
+    /// 此前不在任何备份链，换机后段评/本章热评全丢。备份创建侧经本方法收集。
+    pub fn find_all(&self) -> LegadoResult<Vec<ChapterReview>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, book_url, chapter_index, paragraph_index, content, author, created_at, like_count
+                 FROM chapter_reviews ORDER BY id ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let rows = stmt
+            .query_map([], row_to_review)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// 备份恢复写入：**原样保留 `id`**（`INSERT OR REPLACE`），返回实际落库 id
+    ///
+    /// [批43 B11] 恢复按备份原主键 REPLACE，保证重复恢复幂等与逐字段一致。
+    /// 兼容：`review.id <= 0`（旧备份缺 `id` 键）回落 [`Self::insert`] 自增语义。
+    ///
+    /// 仅备份恢复入口使用本方法（`legado_ffi::api::backup_api`）。
+    pub fn restore_upsert_preserving_id(&self, review: &ChapterReview) -> LegadoResult<i64> {
+        if review.id <= 0 {
+            return self.insert(review);
+        }
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO chapter_reviews
+                 (id, book_url, chapter_index, paragraph_index, content, author, created_at, like_count)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    review.id,
+                    review.book_url,
+                    review.chapter_index,
+                    review.paragraph_index,
+                    review.content,
+                    review.author,
+                    review.created_at,
+                    review.like_count,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复评论失败: {e}")))?;
+        Ok(review.id)
+    }
+
     /// 按 ID 删除评论
     pub fn delete(&self, id: i64) -> LegadoResult<usize> {
         let count = self
@@ -238,6 +289,38 @@ mod tests {
 
         let results = repo.get_by_chapter("book1", 0).unwrap();
         assert_eq!(results[0].like_count, 6);
+    }
+
+    /// [批43 B11] find_all 按 id 升序返回全表
+    #[test]
+    fn test_find_all_orders_by_id() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReviewRepository::new(db.connection());
+        repo.insert(&make_review("book1", 0, -1, "第一条", 0))
+            .unwrap();
+        repo.insert(&make_review("book2", 1, 2, "第二条", 0))
+            .unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all[0].id < all[1].id, "find_all 应按 id 升序");
+    }
+
+    /// [批43 B11] 恢复保原 id：连续恢复两次不增殖
+    #[test]
+    fn test_restore_upsert_preserving_id_is_idempotent() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReviewRepository::new(db.connection());
+        let mut review = make_review("book1", 0, -1, "保id评论", 3);
+        review.id = 999;
+
+        assert_eq!(repo.restore_upsert_preserving_id(&review).unwrap(), 999);
+        assert_eq!(repo.restore_upsert_preserving_id(&review).unwrap(), 999);
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1, "连续恢复两次不得增殖: {all:?}");
+        assert_eq!(all[0].id, 999);
+        assert_eq!(all[0].content, "保id评论");
     }
 
     #[test]

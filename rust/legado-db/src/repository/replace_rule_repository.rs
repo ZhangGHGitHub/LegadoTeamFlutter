@@ -46,6 +46,49 @@ impl<'a> ReplaceRuleRepository<'a> {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// 备份恢复写入：**原样保留 `id`**（`INSERT OR REPLACE`），返回实际落库 id
+    ///
+    /// [批43 B5] 备份恢复此前走 [`Self::insert`]（SQL 不含 `id`），同一备份恢复
+    /// 两次 → 规则翻倍，且 `readConfig.manualReplaceRuleIds` 里记录的旧 id 关联
+    /// 断裂。恢复路径必须按备份中的原主键 REPLACE，才能满足「导出 → 清库 →
+    /// 恢复」逐字段一致与重复恢复幂等（防复发规定 5）。
+    ///
+    /// 兼容：`rule.id <= 0`（旧备份缺 `id` 键 / 第三方产物）回落 [`Self::insert`]
+    /// 的自增语义，与旧行为一致。
+    ///
+    /// 仅备份恢复入口使用本方法（`legado_ffi::api::backup_api`）。
+    pub fn restore_upsert_preserving_id(&self, rule: &ReplaceRule) -> LegadoResult<i64> {
+        if rule.id <= 0 {
+            return self.insert(rule);
+        }
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO replace_rules
+                 (id, name, \"group\", pattern, replacement, scope, scopeTitle, scopeContent,
+                  excludeScope, isEnabled, isRegex, timeoutMillisecond, sortOrder,
+                  scopeSource)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                params![
+                    rule.id,
+                    rule.name,
+                    rule.group,
+                    rule.pattern,
+                    rule.replacement,
+                    rule.scope,
+                    rule.scope_title,
+                    rule.scope_content,
+                    rule.exclude_scope,
+                    rule.is_enabled,
+                    rule.is_regex,
+                    rule.timeout_millisecond,
+                    rule.order,
+                    rule.scope_source,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复替换规则失败: {e}")))?;
+        Ok(rule.id)
+    }
+
     /// 更新替换规则（**不写 `sortOrder`**，排序只经 [`Self::reorder`] 变更）
     ///
     /// 批12 P2：update 是「读-改-写」路径，调用方持有的 `rule.order` 可能是
@@ -702,6 +745,38 @@ mod tests {
             all.iter().map(|r| r.order).collect::<Vec<_>>(),
             vec![0, 1, 2]
         );
+    }
+
+    /// [批43 B5] 恢复保原 id：同一规则连续恢复两次不增殖，id 不变
+    #[test]
+    fn test_restore_upsert_preserving_id_is_idempotent() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReplaceRuleRepository::new(db.connection());
+        let mut rule = make_rule("保id规则", "x", "y", false);
+        rule.id = 777;
+
+        assert_eq!(repo.restore_upsert_preserving_id(&rule).unwrap(), 777);
+        assert_eq!(repo.restore_upsert_preserving_id(&rule).unwrap(), 777);
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1, "连续恢复两次不得增殖: {all:?}");
+        assert_eq!(all[0].id, 777, "恢复必须保留备份中的原 id");
+        assert_eq!(all[0].name, "保id规则");
+    }
+
+    /// [批43 B5] 缺 id（`id <= 0`）回落自增，与旧备份兼容
+    #[test]
+    fn test_restore_upsert_preserving_id_falls_back_for_zero_id() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReplaceRuleRepository::new(db.connection());
+        let mut rule = make_rule("无id规则", "x", "y", false);
+        rule.id = 0;
+
+        let id = repo.restore_upsert_preserving_id(&rule).unwrap();
+        assert!(id > 0, "缺 id 应分配自增主键");
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, id);
     }
 
     #[test]
