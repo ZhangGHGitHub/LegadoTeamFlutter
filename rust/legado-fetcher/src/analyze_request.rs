@@ -19,6 +19,14 @@
 //! `$timeout` 派生总超时语义）：
 //! - `web_book::RealBookSourceFetcher::fetch_page` 两分支（response_type/hex
 //!   与普通正文，含 POST 派发）；
+//! - `web_book::RealBookSourceFetcher::fetch_simple_cached`（正文
+//!   `nextContentUrl` 分页 / `subContent` 二次请求）与
+//!   `fetch_toc_page_optional`（目录 `nextTocUrl` 串行分页）——批39 审查 P2-1：
+//!   改前是裸 URL 直发，`$timeout` 与 `,{json}` 选项均不生效；现按上游
+//!   `BookContent.kt:86,113` / `BookChapterList.kt:74` 「每个分页页新建
+//!   AnalyzeUrl」语义经 `AnalyzeUrl::parse(url, vars, 0)` + 本模块发送；
+//! - 目录 `nextTocUrl` **并发**分页闭包（`web_book.rs` 的 `mapAsync` 等价
+//!   分支，上游 `BookChapterList.kt:104`）同上；
 //! - `legado_ffi::api::search::search_single_source` 两分支（charset 原始字节
 //!   与文本）；
 //! - `legado_ffi::api::dict::fetch_body`（词典取体；封面 `searchCoverRules`
@@ -30,10 +38,7 @@
 //!   与 `analyze_url.url()` 可不同——需先为本模块 helper 增加 URL override
 //!   参数，超出本批范围；
 //! - `legado_ffi::api::explore_api::explore_books_async`：现状强制 GET（不看
-//!   method），接线会顺带把 method 语义改为跟随 urlOption method，超本批；
-//! - `web_book.rs:1017/:1060/:2772` 等裸 URL 直发点（`fetch_simple_cached` /
-//!   `fetch_toc_page_optional` / 分页正文闭包）：不持 AnalyzeUrl，无 urlOption
-//!   可消费，天然不属本汇聚点范围。
+//!   method），接线会顺带把 method 语义改为跟随 urlOption method，超本批。
 //!
 //! ## 写侧 CookieJar 门控接线状态（批 2 尾批，2026-10-03）
 //!
@@ -72,8 +77,10 @@
 //! - 未配置 `$timeout` → 不覆写，沿用客户端默认 60s（与上游 callTimeout 60s 一致）；
 //! - 配置 → 覆写为 `max(60s, 2 × timeout_ms)`。
 //!
-//! 接线点在 [`send_raw`] / [`send_text`]（`web_book::fetch_page`、搜索、词典
-//! 共用）；裸 URL 直发点不持 `AnalyzeUrl`，无 `$timeout` 可消费。
+//! 接线点在 [`send_raw`] / [`send_text`]（`web_book::fetch_page`、
+//! `fetch_simple_cached` / `fetch_toc_page_optional`（含并发目录分页）、搜索、
+//! 词典共用）。批39 审查 P2-1 后正文/目录**分页**请求也走此汇聚点，
+//! `$timeout` 与 `,{json}` 选项对分页同样生效。
 
 use std::collections::HashMap;
 use std::future::Future;

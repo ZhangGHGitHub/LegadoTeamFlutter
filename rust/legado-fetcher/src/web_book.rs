@@ -1253,6 +1253,18 @@ impl RealBookSourceFetcher {
         self.fetch_simple_cached(url, source_headers, false).await
     }
 
+    /// 分页/副内容请求（正文 `nextContentUrl` 链、`subContent` 二次请求）
+    ///
+    /// [批39 审查 P2-1] 改前是**裸 URL 直发** `client.get_raw`：不经
+    /// `analyze_request::send_raw`，因此
+    /// - `$timeout` 不生效（慢速分页页仍被客户端默认 60s 掐断）；
+    /// - `,{json}` 请求选项（method/headers/charset/retry/followRedirects）
+    ///   被当成 URL 的一部分直接发出 → 分页请求 404/401；
+    /// - urlOption charset 不参与解码。
+    ///
+    /// 现按上游 `BookContent.kt:86,113`（每个分页页新建 `AnalyzeUrl`）语义，
+    /// 经 `AnalyzeUrl::parse(url, vars, 0)`（page=0 = 上游 `page = null`，
+    /// 不做页码替换）+ `send_raw` 发送，选项随 URL 生效。
     async fn fetch_simple_cached(
         &self,
         url: &str,
@@ -1270,15 +1282,21 @@ impl RealBookSourceFetcher {
                 return Ok(cached);
             }
         }
-        // 与 fetch_page 一致：按键合并请求 URL 属域的 JS cookie（改前缺口：
-        // 本路径漏注入 → 正文 nextUrl 分页 / subContent / 目录 nextTocUrl
-        // 分页等经 fetch_simple_cached 的请求丢失 JS cookie）
+        // 分页 URL 可能带「url,{json}」请求选项：必须经 AnalyzeUrl 解析，
+        // 直接 GET 会把 ,{json} 拼进请求（上游每页新建 AnalyzeUrl）。
+        let analyze_url = AnalyzeUrl::parse(url, &HashMap::new(), 0)
+            .map_err(|e| LegadoError::Internal(format!("分页 URL 解析失败: {e}")))?;
+        let request_url = analyze_url.url();
+        // 与 fetch_page 一致：源 header + urlOption header 合并后按键合并
+        // 请求 URL 属域的 JS cookie（改前缺口：本路径漏注入 → 正文 nextUrl
+        // 分页 / subContent / 目录 nextTocUrl 分页等请求丢失 JS cookie）
         let mut headers = source_headers.cloned().unwrap_or_default();
+        headers.extend(analyze_url.headers().clone());
         // 批29b 审查 P2-6：`proxy` 是源 header 的代理配置键，不是 HTTP 头；
         // 本助手承载正文/Toc 分页等合并后请求，发送前统一剔除（与
         // fetch_page 同一不变式，防代理凭据外泄）。
         strip_proxy_header(&mut headers);
-        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
+        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, request_url);
         let headers_opt = if headers.is_empty() {
             None
         } else {
@@ -1286,15 +1304,18 @@ impl RealBookSourceFetcher {
         };
         // 简单 GET 同样必须保留字节至 charset 检测结束：正文/目录 URL 通常
         // 没有显式 UrlOption.charset，只能依赖响应头或 HTML meta。
-        let response = self.deps.client.get_raw(url, headers_opt).await?;
+        // `send_raw` 统一消费 `$timeout` / `retry` / `followRedirects` /
+        // method（POST 分页）与 data: URI 短路。
+        let response =
+            crate::analyze_request::send_raw(&self.deps.client, &analyze_url, headers_opt).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
                 "HTTP {} for {}",
-                response.status, url
+                response.status, request_url
             )));
         }
-        check_redirect_log(url, &response.url);
-        let body = decode_web_response(&response.body, &response.headers, None);
+        check_redirect_log(request_url, &response.url);
+        let body = decode_web_response(&response.body, &response.headers, analyze_url.charset());
         if use_page_cache {
             cache_put_page_body(url, &body);
         }
@@ -1309,6 +1330,11 @@ impl RealBookSourceFetcher {
     ///   body-null 语义 = 截断保留前缀并判停，**不是**整刷失败（改前
     ///   `fetch_simple_cached(...)?` 把 4xx/5xx 当硬失败 → 单页 500 丢全目录）；
     /// - `Err`：I/O 级传输错误（超时/DNS/连接失败），对齐上游异常 → 整刷失败。
+    ///
+    /// [批39 审查 P2-1] 同 [`fetch_simple_cached`]：改前裸 URL 直发，
+    /// 慢速目录分页页不吃 `$timeout`、`,{json}` 选项丢失。现按上游
+    /// `BookChapterList.kt:74,104`（每个分页页新建 `AnalyzeUrl`）经
+    /// `AnalyzeUrl::parse` + `send_raw` 发送。
     async fn fetch_toc_page_optional(
         &self,
         url: &str,
@@ -1322,26 +1348,31 @@ impl RealBookSourceFetcher {
             eprintln!("[web_book] toc page cache hit: {url}");
             return Ok(Some(cached));
         }
+        let analyze_url = AnalyzeUrl::parse(url, &HashMap::new(), 0)
+            .map_err(|e| LegadoError::Internal(format!("目录分页 URL 解析失败: {e}")))?;
+        let request_url = analyze_url.url();
         let mut headers = source_headers.cloned().unwrap_or_default();
+        headers.extend(analyze_url.headers().clone());
         // 批29b 审查 P2-6：合并后的源 header 须剔除 `proxy` 伪头（同上，
         // 目录分页请求同样不得外泄代理凭据）
         strip_proxy_header(&mut headers);
-        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
+        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, request_url);
         let headers_opt = if headers.is_empty() {
             None
         } else {
             Some(headers)
         };
-        let response = self.deps.client.get_raw(url, headers_opt).await?;
+        let response =
+            crate::analyze_request::send_raw(&self.deps.client, &analyze_url, headers_opt).await?;
         if !response.is_success() {
             eprintln!(
-                "[web_book] toc page HTTP {} for {url} → 截断判停（对齐上游 body-null 保留前缀）",
+                "[web_book] toc page HTTP {} for {request_url} → 截断判停（对齐上游 body-null 保留前缀）",
                 response.status
             );
             return Ok(None);
         }
-        check_redirect_log(url, &response.url);
-        let body = decode_web_response(&response.body, &response.headers, None);
+        check_redirect_log(request_url, &response.url);
+        let body = decode_web_response(&response.body, &response.headers, analyze_url.charset());
         cache_put_page_body(url, &body);
         Ok(Some(body))
     }
@@ -3207,39 +3238,69 @@ impl RealBookSourceFetcher {
                                 if let Some(cached) = cache_get_page_body(&page_url) {
                                     (cached, page_url.clone())
                                 } else {
+                                    // [批39 审查 P2-1] 并发目录分页同串行：分页 URL 可能带
+                                    // 「url,{json}」请求选项（method/headers/charset/`$timeout`/
+                                    // retry/followRedirects），必须经 AnalyzeUrl 解析后经
+                                    // `send_raw` 发送（对齐上游 `BookChapterList.kt:104`
+                                    // 每个分页页新建 AnalyzeUrl）。改前裸 `client.get`：
+                                    // `,{json}` 拼进 URL → 404/401，`$timeout` 不生效。
+                                    let page_analyze = AnalyzeUrl::parse(
+                                        &page_url,
+                                        &HashMap::new(),
+                                        0,
+                                    )
+                                    .map_err(|e| {
+                                        LegadoError::Internal(format!("目录分页 URL 解析失败: {e}"))
+                                    })?;
+                                    let page_request_url = page_analyze.url();
                                     // 与 fetch_page / fetch_simple_cached 一致：按键合并
                                     // 请求属域 JS cookie（改前缺口：并发分页请求丢 JS cookie）；
                                     // 登录头按本页 URL 门控（跨域页不附加，原版 #1099）
                                     let mut req_headers = header_set
-                                        .for_request(&source_url, &page_url, Some(toc_final_url))
+                                        .for_request(
+                                            &source_url,
+                                            page_request_url,
+                                            Some(toc_final_url),
+                                        )
                                         .unwrap_or_default();
+                                    req_headers.extend(page_analyze.headers().clone());
                                     // 批29b 审查 P2-6：源 header 的 `proxy` 是代理配置
                                     // 键而非 HTTP 头，合并后发送前剔除（本分支直发
                                     // client，绕过 fetch_page/fetch_simple 的剔除点）
                                     strip_proxy_header(&mut req_headers);
                                     legado_js::host_api::cookie_store::merge_js_cookies(
                                         &mut req_headers,
-                                        &page_url,
+                                        page_request_url,
                                     );
                                     let req_headers = if req_headers.is_empty() {
                                         None
                                     } else {
                                         Some(req_headers)
                                     };
-                                    let response = client.get(&page_url, req_headers).await?;
+                                    let response = crate::analyze_request::send_raw(
+                                        &client,
+                                        &page_analyze,
+                                        req_headers,
+                                    )
+                                    .await?;
                                     if !response.is_success() {
                                         return Err(LegadoError::Network(format!(
                                             "HTTP {} for {}",
-                                            response.status, page_url
+                                            response.status, page_request_url
                                         )));
                                     }
-                                    cache_put_page_body(&page_url, &response.body);
+                                    let decoded = decode_web_response(
+                                        &response.body,
+                                        &response.headers,
+                                        page_analyze.charset(),
+                                    );
+                                    cache_put_page_body(&page_url, &decoded);
                                     let final_url = if response.url.is_empty() {
                                         page_url.clone()
                                     } else {
                                         response.url.clone()
                                     };
-                                    (response.body, final_url)
+                                    (decoded, final_url)
                                 }
                             };
                             // P2-9 ①：src = 本页响应体（先序列化再 move 进构造器）
@@ -5859,6 +5920,115 @@ mod tests {
         assert!(
             body.contains("斗破苍穹"),
             "无标识 GBK 正文页应经第四级探测正确解码，实际: {body:?}"
+        );
+    }
+
+    /// [批39 审查 P2-1] 正文/目录**分页**请求必须消费 `$timeout` 与 `,{json}`
+    ///
+    /// 改前 `fetch_simple_cached` / `fetch_toc_page_optional` 是裸 URL 直发
+    /// `client.get_raw`：`$timeout` 不生效（慢页被客户端默认掐断）、`,{json}`
+    /// 被当作 URL 一部分发出（服务端 404/401）。改后经
+    /// `AnalyzeUrl::parse(url, vars, 0)` + `send_raw`：
+    /// - `$timeout:120000` → 派生 `max(60s, 2×120s) = 240s`（不是默认 60s）；
+    /// - 选项从请求路径剥离，method/headers/charset 随 URL 生效。
+    ///
+    /// 放大差异手法同 `analyze_request` 的 `$timeout` 用例：客户端默认
+    /// 200ms + 慢服务器 700ms —— 未覆写必超时，覆写后必成功。
+    #[test]
+    fn test_pagination_page_honors_timeout_option_and_strips_json_options() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{Arc, Mutex};
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        // 记录服务端收到的请求路径（断言 ,{json} 未被发出）
+        let paths: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let paths_srv = Arc::clone(&paths);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let paths_srv = Arc::clone(&paths_srv);
+                std::thread::spawn(move || {
+                    let mut head: Vec<u8> = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        match stream.read(&mut byte) {
+                            Ok(1) => head.push(byte[0]),
+                            _ => return,
+                        }
+                        if head.len() > 16 * 1024 {
+                            return;
+                        }
+                    }
+                    let head_str = String::from_utf8_lossy(&head);
+                    let path = head_str
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("/")
+                        .to_string();
+                    paths_srv.lock().unwrap().push(path);
+                    // 慢响应：700ms > 客户端默认 200ms
+                    std::thread::sleep(Duration::from_millis(700));
+                    let body = "page-ok";
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                });
+            }
+        });
+
+        // 客户端默认总超时 200ms（放大「是否消费 $timeout」的差异）
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            read_timeout: Duration::from_millis(200),
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let fetcher = RealBookSourceFetcher::new(client);
+
+        // ① 正文 nextContentUrl 分页（fetch_simple_cached 承载）
+        let content_url = format!("http://127.0.0.1:{port}/content-page,{{\"timeout\":120000}}");
+        let body = block_on(fetcher.fetch_simple(&content_url, None))
+            .expect("正文分页必须消费 $timeout（派生 240s，不得被默认 60s/200ms 掐断）");
+        assert_eq!(body, "page-ok");
+
+        // ② 目录 nextTocUrl 分页（fetch_toc_page_optional 承载）
+        let toc_url = format!("http://127.0.0.1:{port}/toc-page,{{\"timeout\":120000}}");
+        let toc_body = block_on(fetcher.fetch_toc_page_optional(&toc_url, None))
+            .expect("目录分页必须消费 $timeout")
+            .expect("2xx 应返回 Some(body)");
+        assert_eq!(toc_body, "page-ok");
+
+        // ③ 未配置 $timeout → 仍按客户端默认超时（默认值未被意外改宽）
+        let plain_url = format!("http://127.0.0.1:{port}/plain-page");
+        let started = Instant::now();
+        let err = block_on(fetcher.fetch_simple(&plain_url, None))
+            .expect_err("未配置 $timeout 应沿用客户端默认总超时");
+        assert!(
+            matches!(err, LegadoError::Timeout(_)),
+            "应为超时错误: {err:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(700),
+            "应在客户端默认 200ms 附近超时，实测 {:?}",
+            started.elapsed()
+        );
+
+        // ④ `,{json}` 选项不得出现在实际请求路径中
+        let recorded = paths.lock().unwrap().clone();
+        assert_eq!(
+            recorded,
+            vec![
+                "/content-page".to_string(),
+                "/toc-page".to_string(),
+                "/plain-page".to_string()
+            ],
+            "分页请求路径不得携带 ,{{json}} 选项，实际: {recorded:?}"
         );
     }
 

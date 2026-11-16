@@ -37,8 +37,8 @@ use legado_core::models::BookSource;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::BookSourceRepository;
 use legado_fetcher::source_check::{
-    add_error_comment, add_groups, remove_error_comment, remove_invalid_groups, run_source_check,
-    SourceCheckConfig, SourceCheckOutcome,
+    add_error_comment, add_groups, persistable_groups, remove_error_comment,
+    remove_stale_check_groups, run_source_check, SourceCheckConfig, SourceCheckOutcome,
 };
 use legado_net::source_checker::CancelToken;
 
@@ -502,6 +502,14 @@ async fn run_check_sources_stream_inner<F>(
 /// - **成功**：清除旧失效分组与历史 `// Error:` 块（正常分组/正常注释保留）；
 /// - **取消**：不改动（取消不计为源缺陷）。
 ///
+/// **落库集合 = `is_invalid_group` 认可的域内分组**（批39 审查 P1-2）：
+/// `发现规则为空` 属「分组判定」但不在原版 `getInvalidGroupNames()` 取值域，
+/// 原版只把它当异常消息、从不 `addGroup`。若把它写进 `bookSourceGroup`，
+/// 后续成功清理匹配不到 → 永久残留且与已清掉的 `// Error:` 注释矛盾。
+/// 因此本函数用 [`persistable_groups`] 过滤后再追加，写集与清集天然一致；
+/// 该判定仍以 `// Error: 发现规则为空` 消息形式保留。
+/// 同时用 [`remove_stale_check_groups`] 清掉历史版本误写入的该分组（幂等）。
+///
 /// **只更新 `bookSourceGroup` + `bookSourceComment` 两列**（不是参考版整行
 /// `@Update`），并带 `lastUpdateTime`/分组/注释快照 CAS——校验期间源被编辑
 /// 则整笔丢弃，不覆盖并发修改。
@@ -517,8 +525,9 @@ fn write_back_check_groups(source: &BookSource, outcome: &SourceCheckOutcome, w_
         // 取消不计为源缺陷，也不改动分组/注释
         return;
     } else {
-        // 共同起点：清旧失效分组 + 清历史错误注释（对齐 doCheckSource 起始两步）
-        let base_group = remove_invalid_groups(old_group);
+        // 共同起点：清旧失效分组 + 历史遗留域外分组 + 清历史错误注释
+        // （对齐 doCheckSource 起始两步；域外分组清理见 P1-2 说明）
+        let base_group = remove_stale_check_groups(old_group);
         let base_comment = remove_error_comment(old_comment);
         if outcome.is_failed() {
             // 失败消息：硬失败消息优先，否则用分组串（对齐原版 resultMessage）
@@ -526,10 +535,12 @@ fn write_back_check_groups(source: &BookSource, outcome: &SourceCheckOutcome, w_
                 .failure
                 .clone()
                 .unwrap_or_else(|| outcome.invalid_group_text());
-            let group = if outcome.invalid_groups.is_empty() {
+            // P1-2：只落 `is_invalid_group` 域内的分组（`发现规则为空` 仅入消息）
+            let groups = persistable_groups(&outcome.invalid_groups);
+            let group = if groups.is_empty() {
                 base_group
             } else {
-                add_groups(base_group.as_deref(), &outcome.invalid_groups)
+                add_groups(base_group.as_deref(), &groups)
             };
             let comment = if w_comment && !message.is_empty() {
                 add_error_comment(base_comment.as_deref(), &message)
@@ -1532,5 +1543,150 @@ mod tests {
         .unwrap();
         assert_eq!(stored.book_source_group.as_deref(), Some("玄幻"));
         assert_eq!(stored.book_source_comment, None);
+    }
+
+    // ─── 批39 审查 P1-2：域外分组（发现规则为空）不得落库 ─────────────
+
+    /// 失败判定为 `发现规则为空` → 分组串**不含**该值，但错误消息仍保留
+    ///
+    /// 根因：`is_invalid_group` 只认「含『失效』」或「== 校验超时」，
+    /// `发现规则为空` 两条都不满足 → 一旦落库，后续任何成功校验的
+    /// `remove_invalid_groups` 都清不掉它（永久残留）。原版
+    /// `CheckSourceService` 也只把它当 `NoStackTraceException` 消息。
+    #[test]
+    fn test_write_back_does_not_persist_discovery_rule_empty_group() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-discovery-empty.example.com";
+        let mut source = make_source_no_search(url, "发现规则为空源");
+        source.book_source_group = Some("玄幻".to_string());
+        source.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            invalid_groups: vec![
+                legado_fetcher::source_check::GROUP_DISCOVERY_RULE_EMPTY.to_string()
+            ],
+            failure: Some(legado_fetcher::source_check::GROUP_DISCOVERY_RULE_EMPTY.to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&source, &outcome, true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        let group = stored.book_source_group.as_deref().unwrap_or("");
+        assert_eq!(
+            stored.book_source_group.as_deref(),
+            Some("玄幻"),
+            "「发现规则为空」不得写入分组，实际: {group}"
+        );
+        assert!(
+            !group.contains("发现规则为空"),
+            "分组串不得含域外判定，实际: {group}"
+        );
+        assert_eq!(
+            stored.book_source_comment.as_deref(),
+            Some("// Error: 发现规则为空"),
+            "该判定应作为错误消息呈现"
+        );
+    }
+
+    /// **失败 → 成功幂等回归**：`发现规则为空` 失败后，成功校验必须把分组清干净
+    ///
+    /// 现有 `test_write_back_clears_invalid_groups_on_success` 用「搜索失效」
+    /// （域内值）覆盖不到本路径；此处断言写集/清集一致。
+    #[test]
+    fn test_write_back_discovery_rule_empty_then_success_leaves_group_clean() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-discovery-empty-idem.example.com";
+        let mut source = make_source_no_search(url, "发现规则为空幂等源");
+        source.book_source_group = Some("玄幻".to_string());
+        source.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        // 第一轮：失败（发现规则为空）
+        let failed = SourceCheckOutcome {
+            invalid_groups: vec![
+                legado_fetcher::source_check::GROUP_DISCOVERY_RULE_EMPTY.to_string()
+            ],
+            failure: Some(legado_fetcher::source_check::GROUP_DISCOVERY_RULE_EMPTY.to_string()),
+            ..Default::default()
+        };
+        write_back_check_groups(&source, &failed, true);
+        let after_fail = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            after_fail.book_source_group.as_deref(),
+            Some("玄幻"),
+            "失败后分组仍应干净"
+        );
+
+        // 第二轮：成功（用第一轮后的库内快照，模拟下次校验读到最新值）
+        write_back_check_groups(&after_fail, &SourceCheckOutcome::default(), true);
+        let after_ok = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            after_ok.book_source_group.as_deref(),
+            Some("玄幻"),
+            "成功校验后分组必须干净（幂等）"
+        );
+        assert!(
+            after_ok
+                .book_source_comment
+                .as_deref()
+                .is_none_or(|c| c.trim().is_empty()),
+            "成功校验应清掉 // Error: 块（对齐原版 joinToString 空串语义），实际: {:?}",
+            after_ok.book_source_comment
+        );
+    }
+
+    /// 存量修复：历史版本误写入分组的 `发现规则为空` 会被成功校验清掉
+    ///
+    /// 幂等性：即便库内残留该值（旧版本写的），成功校验也必须剔除。
+    #[test]
+    fn test_write_back_clears_legacy_discovery_rule_empty_group() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://write-back-discovery-empty-legacy.example.com";
+        let mut source = make_source_no_search(url, "存量域外分组源");
+        // 模拟旧版本误写入的域外分组
+        source.book_source_group = Some("玄幻,发现规则为空,搜索失效".to_string());
+        source.book_source_comment = Some("// Error: 发现规则为空\n\n正常注释".to_string());
+        source.last_update_time = 100;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        write_back_check_groups(&source, &SourceCheckOutcome::default(), true);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            stored.book_source_group.as_deref(),
+            Some("玄幻"),
+            "存量域外分组 + 旧失效分组都应被清掉"
+        );
+        assert_eq!(
+            stored.book_source_comment.as_deref(),
+            Some("正常注释"),
+            "历史 // Error: 块应清除、正常注释保留"
+        );
     }
 }

@@ -148,6 +148,40 @@ pub fn remove_invalid_groups(group: Option<&str>) -> Option<String> {
     remove_groups(group, &names)
 }
 
+/// 本次判定中**可落库**的失效分组（域内过滤）
+///
+/// 批39 审查 P1-2：`发现规则为空` 这类「分组判定」不属于
+/// `is_invalid_group` 的取值域（原版 `getInvalidGroupNames()` 也不认它，
+/// 因此原版 `CheckSourceService` 只把它当异常消息、从不落库）。若把它写进
+/// `bookSourceGroup`，之后的成功清理（`remove_invalid_groups`）匹配不到它
+/// → 该分组永久留在用户分组里，且与「清掉 `// Error:` 注释」自相矛盾。
+///
+/// 因此落库集合 = `is_invalid_group` 认可的分组；域外判定只作为
+/// detail / 错误消息呈现。写集与清理集由此天然一致。
+pub fn persistable_groups(groups: &[String]) -> Vec<String> {
+    groups
+        .iter()
+        .filter(|group| is_invalid_group(group))
+        .cloned()
+        .collect()
+}
+
+/// 清除旧失效分组 + 历史遗留的域外判定分组（`发现规则为空`）
+///
+/// 批39 审查 P1-2 的**存量**修复：历史版本把 `发现规则为空` 写进了分组串，
+/// 而 `is_invalid_group` 不认可它 → 后续成功校验永远清不掉。本函数在
+/// [`remove_invalid_groups`] 之上额外剔除该遗留值。
+///
+/// 刻意不改 `is_invalid_group` 的语义（保持与原版 `getInvalidGroupNames()`
+/// 逐字一致）：清理只针对本模块自己曾误写入的域外值，且幂等。
+pub fn remove_stale_check_groups(group: Option<&str>) -> Option<String> {
+    let cleaned = remove_invalid_groups(group);
+    remove_groups(
+        cleaned.as_deref(),
+        &[GROUP_DISCOVERY_RULE_EMPTY.to_string()],
+    )
+}
+
 /// 清除历史 `// Error:` 注释块（对齐 `BookSource.removeErrorComment`）
 ///
 /// 原版按 `"\n\n"` 分段并丢弃以 `// Error: ` 开头的段，再以 `"\n"` 连接。
@@ -609,6 +643,18 @@ async fn check_book(
     .await
     {
         Ok(raw) => raw,
+        // 批39 审查 P2-2：JS 单文件源的 `getChapters` 空数组抛
+        // `LegadoError::TocEmpty`（`js_source_book.rs` 的 `get_chapter_list`），
+        // 与规则源「解析出 0 章」同属**目录为空**而非站点故障。对齐原版
+        // `checkBook` 的 `TocEmptyException → ${bookType}目录失效`：走与正文
+        // `ContentEmpty` 对称的分组分支，不再误判 `网站失效`。
+        Err(LegadoError::TocEmpty(_)) => {
+            let group = toc_group(label);
+            report.toc_ok = false;
+            report.toc_error = Some(group.clone());
+            report.group = Some(group);
+            return report;
+        }
         Err(e) => {
             report.failure = Some(format!("目录解析失败: {e}"));
             return report;
@@ -965,6 +1011,21 @@ mod tests {
         }
     }
 
+    /// 测试注入面：独立默认 HTTP 客户端 + 宿主闭包全 None（同 web_book 测试）
+    ///
+    /// 仅 quickjs 档的 JS 源用例使用（非 quickjs 档无调用者，按 feature 门控
+    /// 避免 `-D dead_code`）。
+    #[cfg(feature = "quickjs")]
+    fn test_deps() -> FetcherDeps {
+        static DEPS: std::sync::OnceLock<FetcherDeps> = std::sync::OnceLock::new();
+        DEPS.get_or_init(|| {
+            let client = legado_net::LegadoClient::new(legado_net::LegadoClientConfig::default())
+                .expect("test http client");
+            FetcherDeps::new(client)
+        })
+        .clone()
+    }
+
     /// 空 URL 卷章头（合成为 `{title}{index}`）不得当正文章抓取
     #[test]
     fn test_select_check_chapter_skips_volume_header() {
@@ -991,6 +1052,72 @@ mod tests {
         let chapters = vec![web_chapter(0, "第一卷", "第一卷0", true)];
         assert!(select_check_chapter(&chapters).is_none());
         assert!(select_check_chapter(&[]).is_none());
+    }
+
+    /// 批39 审查 P2-2：JS 单文件源空目录 → `搜索目录失效`（不是 `网站失效`）
+    ///
+    /// JS 源的 `getChapters` 返回空数组时抛 `LegadoError::TocEmpty`
+    /// （`legado_js::js_source::js_source_book::get_chapter_list`）。改前
+    /// `check_book` 的目录 `Err(e)` 分支一律 `report.failure = 目录解析失败`
+    /// → `check_source` 走 `fail_site` → 误判 `网站失效`；而原版
+    /// `checkBook` 把 `TocEmptyException` 归为 `${bookType}目录失效`。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_source_empty_toc_maps_to_search_toc_group() {
+        let source = BookSource {
+            book_source_url: "https://js-empty-toc.example.com".to_string(),
+            book_source_name: "JS 空目录源".to_string(),
+            main_js: Some(
+                r#"
+function search(key, page) {
+  return JSON.stringify([{name: '测试书', bookUrl: 'https://js-empty-toc.example.com/book/1'}]);
+}
+function getBookInfo(book) {
+  return JSON.stringify({name: '测试书', tocUrl: 'https://js-empty-toc.example.com/book/1'});
+}
+function getChapters(book) { return JSON.stringify([]); }
+function getContent(chapter, book) { return '正文内容'; }
+"#
+                .to_string(),
+            ),
+            ..BookSource::default()
+        };
+        let config = SourceCheckConfig {
+            check_search: true,
+            check_discovery: false,
+            check_info: true,
+            check_category: true,
+            check_content: true,
+            check_domain: false,
+            timeout_ms: 10_000,
+            ..SourceCheckConfig::default()
+        };
+
+        let outcome =
+            crate::test_support::block_on(run_source_check(&test_deps(), &source, &config, None));
+
+        assert!(
+            outcome
+                .invalid_groups
+                .iter()
+                .any(|g| g == &toc_group("搜索")),
+            "空目录应归入「搜索目录失效」，实际: {:?}",
+            outcome.invalid_groups
+        );
+        assert!(
+            !outcome
+                .invalid_groups
+                .iter()
+                .any(|g| g == GROUP_SITE_FAILED),
+            "空目录不得误判为「网站失效」，实际: {:?}",
+            outcome.invalid_groups
+        );
+        assert!(
+            outcome.failure.is_none(),
+            "空目录不是硬失败（应只记分组），实际 failure: {:?}",
+            outcome.failure
+        );
+        assert!(!outcome.toc_ok);
     }
 
     #[test]
@@ -1270,6 +1397,56 @@ mod tests {
             Some("玄幻,都市")
         );
         assert_eq!(remove_invalid_groups(None), None);
+    }
+
+    /// persistable_groups：只保留 `is_invalid_group` 域内分组
+    ///
+    /// 批39 审查 P1-2：`发现规则为空` 不在取值域（原版 `getInvalidGroupNames()`
+    /// 也不认它），落库前必须剔除，否则成功清理永远匹配不到 → 永久残留。
+    #[test]
+    fn test_persistable_groups_filters_out_of_domain_groups() {
+        let groups = vec![
+            GROUP_SEARCH_FAILED.to_string(),
+            GROUP_DISCOVERY_RULE_EMPTY.to_string(),
+            GROUP_TIMEOUT.to_string(),
+            GROUP_SITE_FAILED.to_string(),
+        ];
+        assert_eq!(
+            persistable_groups(&groups),
+            vec![
+                GROUP_SEARCH_FAILED.to_string(),
+                GROUP_TIMEOUT.to_string(),
+                GROUP_SITE_FAILED.to_string()
+            ],
+            "域外的「发现规则为空」不得进入落库集合"
+        );
+        assert!(
+            !is_invalid_group(GROUP_DISCOVERY_RULE_EMPTY),
+            "is_invalid_group 语义须与原版 getInvalidGroupNames 一致"
+        );
+        assert!(persistable_groups(&[GROUP_DISCOVERY_RULE_EMPTY.to_string()]).is_empty());
+        assert!(persistable_groups(&[]).is_empty());
+    }
+
+    /// remove_stale_check_groups：清理历史误写入的域外分组（幂等）
+    #[test]
+    fn test_remove_stale_check_groups_clears_legacy_discovery_empty() {
+        assert_eq!(
+            remove_stale_check_groups(Some("玄幻,发现规则为空,搜索失效,都市")).as_deref(),
+            Some("玄幻,都市"),
+            "存量域外分组与旧失效分组都应清掉"
+        );
+        // 已干净 → 原值不变（幂等）
+        assert_eq!(
+            remove_stale_check_groups(Some("玄幻,都市")).as_deref(),
+            Some("玄幻,都市")
+        );
+        // 只剩域外分组 → 空串（原版 removeGroup 语义）
+        assert_eq!(
+            remove_stale_check_groups(Some("发现规则为空")).as_deref(),
+            Some("")
+        );
+        assert_eq!(remove_stale_check_groups(None), None);
     }
 
     /// removeErrorComment：按空行分段丢弃 `// Error: ` 开头的段
