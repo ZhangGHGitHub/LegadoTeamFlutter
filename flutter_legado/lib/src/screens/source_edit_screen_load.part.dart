@@ -48,7 +48,7 @@ extension _SourceEditLoad on _SourceEditScreenState {
         _populateFields(source);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('未找到书源，可能已被删除')),
+          SnackBar(content: Text(AppStrings.sourceNotFoundHint)),
         );
       }
     });

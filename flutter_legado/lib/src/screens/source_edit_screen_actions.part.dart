@@ -290,14 +290,16 @@ extension _SourceEditActions on _SourceEditScreenState {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(isNew ? '书源已创建' : '书源已保存')));
+        ).showSnackBar(SnackBar(content: Text(isNew ?
+            AppStrings.sourceCreated
+            : AppStrings.sourceSaved)));
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('保存失败：${errorMessage(e)}')));
+        ).showSnackBar(SnackBar(content: Text(AppStrings.sourceSaveFailed(errorMessage(e)))));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -311,66 +313,66 @@ extension _SourceEditActions on _SourceEditScreenState {
     return [
       // 登录（对齐 menu_login：仅在配置了登录 URL 时显示）
       if (_ctrl('loginUrl').text.trim().isNotEmpty)
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'login',
           height: itemHeight,
-          child: Text('登录'),
+          child: Text(AppStrings.rssLogin),
         ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'search',
         height: itemHeight,
-        child: Text('搜索'),
+        child: Text(AppStrings.search),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'clear_cookie',
         height: itemHeight,
-        child: Text('清除Cookie'),
+        child: Text(AppStrings.sourceClearCookie),
       ),
       CheckedPopupMenuItem(
         value: 'auto_complete',
         height: itemHeight,
         checked: _autoComplete,
-        child: const Text('自动补全'),
+        child: Text(AppStrings.sourceAutoComplete),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'copy_source',
         height: itemHeight,
-        child: Text('拷贝源'),
+        child: Text(AppStrings.sourceCopy),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'paste_source',
         height: itemHeight,
-        child: Text('粘贴源'),
+        child: Text(AppStrings.sourcePaste),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'set_source_variable',
         height: itemHeight,
-        child: Text('设置源变量'),
+        child: Text(AppStrings.sourceSetVariable),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'import_qr',
         height: itemHeight,
-        child: Text('二维码导入'),
+        child: Text(AppStrings.rssImportQr),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'share_qr',
         height: itemHeight,
-        child: Text('二维码分享'),
+        child: Text(AppStrings.sourceQrShare),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'share_str',
         height: itemHeight,
-        child: Text('字符串分享'),
+        child: Text(AppStrings.sourceStringShare),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'log',
         height: itemHeight,
-        child: Text('日志'),
+        child: Text(AppStrings.log),
       ),
-      const PopupMenuItem(
+      PopupMenuItem(
         value: 'help',
         height: itemHeight,
-        child: Text('帮助'),
+        child: Text(AppStrings.helpLabel),
       ),
     ];
   }
@@ -411,7 +413,9 @@ extension _SourceEditActions on _SourceEditScreenState {
         setState(() => _autoComplete = !_autoComplete);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_autoComplete ? '自动补全已开启' : '自动补全已关闭'),
+            content: Text(_autoComplete ?
+                AppStrings.sourceAutoCompleteOn
+                : AppStrings.sourceAutoCompleteOff),
           ),
         );
       case 'copy_source':
@@ -451,7 +455,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('打开搜索失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.sourceOpenSearchFailed(errorMessage(e)))),
         );
       }
     } finally {
@@ -464,7 +468,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     final url = _ctrl('bookSourceUrl').text.trim();
     if (url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先填写书源 URL')),
+        SnackBar(content: Text(AppStrings.sourceFillUrlFirst)),
       );
       return;
     }
@@ -472,12 +476,12 @@ extension _SourceEditActions on _SourceEditScreenState {
       await ref.read(bookApiProvider).clearCookie(url);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cookie 已清除')),
+        SnackBar(content: Text(AppStrings.sourceCookieCleared)),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清除 Cookie 失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.sourceClearCookieFailed(errorMessage(e)))),
         );
       }
     }
@@ -495,11 +499,11 @@ extension _SourceEditActions on _SourceEditScreenState {
       final srcComment = (source.variableComment ?? '').trim();
       final comment = srcComment.isNotEmpty
           ? srcComment
-          : '源变量可在js中通过source.getVariable()获取';
+          : AppStrings.sourceVariableHint;
       final input = await showDialog<String>(
         context: context,
         builder: (ctx) => _SourceVariableDialog(
-          title: '设置源变量',
+          title: AppStrings.sourceSetVariable,
           comment: comment,
           initialText: _preservedVariable,
         ),
@@ -512,12 +516,14 @@ extension _SourceEditActions on _SourceEditScreenState {
       if (!mounted) return;
       setState(() => _preservedVariable = input);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(input.isEmpty ? '源变量已清除' : '源变量已保存')),
+        SnackBar(content: Text(input.isEmpty ?
+            AppStrings.sourceVariableCleared
+            : AppStrings.sourceVariableSaved)),
       );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('设置源变量失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.sourceSetVariableFailed(errorMessage(e)))),
         );
       }
     } finally {
@@ -531,14 +537,14 @@ extension _SourceEditActions on _SourceEditScreenState {
     if (json.length > 2000) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('内容过长，无法生成二维码，请使用字符串分享')),
+        SnackBar(content: Text(AppStrings.sourceTooLongForQr)),
       );
       return;
     }
     await showDialog<void>(
       context: context,
       builder: (ctx) => _QrShareDialog(
-        title: '分享书源',
+        title: AppStrings.sourceShare,
         payload: json,
       ),
     );
@@ -562,7 +568,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     await Clipboard.setData(ClipboardData(text: json));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已复制到剪贴板')),
+      SnackBar(content: Text(AppStrings.sourceCopied)),
     );
   }
 
@@ -573,7 +579,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     if (text == null || text.isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('剪贴板为空')));
+      messenger.showSnackBar(SnackBar(content: Text(AppStrings.sourceClipboardEmpty)));
       return;
     }
     try {
@@ -584,11 +590,11 @@ extension _SourceEditActions on _SourceEditScreenState {
       final source = BookSource.fromJson(map);
       _populateFields(source);
       messenger.showSnackBar(
-        SnackBar(content: Text('已粘贴书源：${source.bookSourceName}')),
+        SnackBar(content: Text(AppStrings.sourcePasted(source.bookSourceName))),
       );
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('剪贴板内容不是有效的书源 JSON')),
+        SnackBar(content: Text(AppStrings.sourceClipboardInvalid)),
       );
     }
   }
@@ -602,12 +608,12 @@ extension _SourceEditActions on _SourceEditScreenState {
       await file.writeAsString(json);
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/json')],
-        text: '书源分享',
+        text: AppStrings.sourceShareTitle,
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('分享失败：${errorMessage(e)}')),
+        SnackBar(content: Text(AppStrings.shareFailed(errorMessage(e)))),
       );
     }
   }
@@ -632,11 +638,11 @@ extension _SourceEditActions on _SourceEditScreenState {
         final source = BookSource.fromJson(map);
         _populateFields(source);
         messenger.showSnackBar(
-          SnackBar(content: Text('已导入书源：${source.bookSourceName}')),
+          SnackBar(content: Text(AppStrings.sourceImported(source.bookSourceName))),
         );
       } catch (_) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('扫码内容不是有效的书源 JSON')),
+          SnackBar(content: Text(AppStrings.sourceQrInvalid)),
         );
       }
       return;
@@ -644,13 +650,13 @@ extension _SourceEditActions on _SourceEditScreenState {
 
     if (trimmed.startsWith('legado://')) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('legado 协议链接请使用「关联导入」页处理')),
+        SnackBar(content: Text(AppStrings.sourceLegadoLinkHint)),
       );
       return;
     }
 
     messenger.showSnackBar(
-      const SnackBar(content: Text('URL 内容请使用书源管理页的网络导入处理')),
+      SnackBar(content: Text(AppStrings.sourceUrlContentHint)),
     );
   }
 
@@ -676,7 +682,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('调试失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.sourceDebugFailed(errorMessage(e)))),
         );
       }
     } finally {
@@ -691,7 +697,7 @@ extension _SourceEditActions on _SourceEditScreenState {
     final key = _focusedFieldKey;
     if (key == null || !_ctrls.containsKey(key)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先将光标放在要编辑的输入框')),
+        SnackBar(content: Text(AppStrings.sourceFocusFieldFirst)),
       );
       return;
     }

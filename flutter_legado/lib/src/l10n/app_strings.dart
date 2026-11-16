@@ -1052,4 +1052,732 @@ class AppStrings {
   static String get pause => _get('暂停', 'Pause');
   static String get prevChapterAudio => _get('上一章', 'Previous');
   static String get nextChapterAudio => _get('下一章', 'Next');
+
+  // ============== L10N 阶段 2：主题 / 朗读 / WebDAV / 订阅源 / 书源编辑 ==============
+  static String get launcherIcon1 => _get('图标 1', 'Icon 1');
+  static String get launcherIcon2 => _get('图标 2', 'Icon 2');
+  static String get launcherIcon3 => _get('图标 3', 'Icon 3');
+  static String get launcherIcon4 => _get('图标 4', 'Icon 4');
+  static String get launcherIcon5 => _get('图标 5', 'Icon 5');
+  static String get launcherIcon6 => _get('图标 6', 'Icon 6');
+  static String get fontColorDynamicHint => _get('与动态取色同时使用时可能影响对比度', 'May affect contrast when used with dynamic color');
+  static String get topBarStylePlain => _get('平面', 'Plain');
+  static String get topBarStyleTonal => _get('Tonal（默认）', 'Tonal (default)');
+  static String get topBarStyleGlass => _get('玻璃', 'Glass');
+  static String get topBarStyleLiquidGlass => _get('液态玻璃', 'Liquid glass');
+  static String get topBarButtonStyle => _get('顶栏按钮样式', 'Top Bar Button Style');
+  static String get topBarOpacity => _get('顶栏不透明度', 'Top Bar Opacity');
+  static String get bottomBarOpacity => _get('底栏不透明度', 'Bottom Bar Opacity');
+  static String get tabletModeAuto => _get('自动（宽屏 ≥600dp）', 'Auto (wide screen ≥600dp)');
+  static String get tabletModeAlways => _get('始终启用侧栏', 'Always use side bar');
+  static String get tabletModeLandscape => _get('仅横屏启用', 'Landscape only');
+  static String get tabletModeOff => _get('不启用', 'Disabled');
+  static String get tabletNavMode => _get('大屏导航形态', 'Large screen navigation');
+  static String get multiPaneAuto => _get('自动（宽窗口）', 'Auto (wide window)');
+  static String get multiPaneLandscape => _get('横屏开启（宽窗口）', 'On in landscape (wide window)');
+  static String get multiPaneAlways => _get('始终开启（空间足够时）', 'Always on (when space allows)');
+  static String get modeOff => _get('关闭', 'Off');
+  static String get multiPaneLayout => _get('多栏布局', 'Multi-column layout');
+  static String get paletteNone => _get('关闭（内置色板）', 'Off (built-in palette)');
+  static String get paletteTonalSpot => _get('Tonal Spot（默认）', 'Tonal Spot (default)');
+  static String get colorStyle => _get('配色风格', 'Color style');
+  static String get contrastMedium => _get('Medium（中）', 'Medium');
+  static String get contrastHigh => _get('High（高）', 'High');
+  static String get contrastDefault => _get('Default（默认）', 'Default');
+  static String get contrast => _get('对比度', 'Contrast');
+  static String get coverBlurOff => _get('显示封面（不模糊）', 'Show cover (no blur)');
+  static String get coverBlurOffForDefault => _get('隐藏（仅默认封面档）', 'Hidden (default cover tier only)');
+  static String get coverBlurOn => _get('模糊显示（默认）', 'Blurred (default)');
+  static String get hideLabel => _get('隐藏', 'Hide');
+  static String get coverBackground => _get('封面背景', 'Cover background');
+  static String get floatingBottomBarBlur => _get('悬浮底栏模糊', 'Floating bottom bar blur');
+  static String get themeEngine => _get('主题引擎', 'Theme engine');
+  static String get trueBlackMode => _get('纯黑深色模式', 'True Black Mode');
+  static String get trueBlackModeDesc => _get('暗色模式背景纯黑（省电护屏）', 'Pure black background in dark mode (saves power, easier on the eyes)');
+  static String get changeIcon => _get('切换图标', 'Change Icon');
+  static String get changeIconDesc => _get('切换软件显示在桌面的图标', 'Switch the software icon displayed on the desktop');
+  static String get themeManagement => _get('主题管理', 'Theme Management');
+  static String get themeManagementDesc => _get('使用、保存、导入或分享主题', 'Save, Import, Share theme');
+  static String get fontSettings => _get('字体设置', 'Font Settings');
+  static String get exportTheme => _get('导出主题', 'Export theme');
+  static String get exportThemeDesc => _get('将当前配色导出为 JSON 文件', 'Export the current colors as a JSON file');
+  static String get importTheme => _get('导入主题', 'Import theme');
+  static String get importThemeDesc => _get('导入主题 JSON 文件并应用', 'Import a theme JSON file and apply it');
+  static String get launchStyle => _get('启动界面样式', 'Launch interface style');
+  static String get launchStyleDesc => _get('设定显示时间，更改背景图片，是否显示文字等', 'Set display duration, background image, whether to show text and more');
+  static String get immersiveStatusBar => _get('沉浸式状态栏', 'Immersive status bar');
+  static String get immersiveStatusBarDesc => _get('状态栏颜色透明', 'The status bar color becomes transparent');
+  static String get immersiveNavBar => _get('沉浸式导航栏', 'Immersive navigation bar');
+  static String get immersiveNavBarDesc => _get('导航栏颜色透明', 'The navigation bar becomes transparent');
+  static String get navBarShadow => _get('导航栏阴影', 'Navigation bar shadow');
+  static String get bottomBarAtlas => _get('底栏图集', 'Bottom bar icon pack');
+  static String get bottomBarAtlasDesc => _get('导入 zip 自定义底栏图标', 'Import a zip to customize bottom bar icons');
+  static String get wallpaperColors => _get('跟随壁纸配色', 'Use wallpaper colors');
+  static String get wallpaperColorsDesc => _get('使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）', 'Generate day and night themes from the system wallpaper palette (Android 12+/iOS)');
+  static String get wallpaperAutoUpdate => _get('壁纸变化时自动更新', 'Update automatically when wallpaper changes');
+  static String get wallpaperAutoUpdateDesc => _get('系统壁纸变化后自动应用新色板', 'Apply the new palette automatically when the system wallpaper changes');
+  static String get homeAndNavigation => _get('首页与导航', 'Home and navigation');
+  static String get homeAndNavigationDesc => _get('设置首页、发现、订阅、默认主页和导航栏图标', 'Set home, discover, RSS, default start page and navigation bar icons');
+  static String get topBarCapsuleDesc => _get('顶栏按钮收进胶囊容器', 'Place top bar buttons in a capsule container');
+  static String get largeTopBar => _get('大顶栏形态', 'Large top bar');
+  static String get largeTopBarDesc => _get('书架/我的等根页使用可折叠大标题', 'Root pages such as Bookshelf and My use a collapsible large title');
+  static String get showBottomBar => _get('显示底栏', 'Show bottom bar');
+  static String get showBottomBarDesc => _get('隐藏后仅侧栏/手势切页', 'When hidden, switch pages only via the side bar or gestures');
+  static String get floatingBottomBarSection => _get('悬浮底栏', 'Floating Bottom Bar');
+  static String get floatingBottomBarSectionDesc => _get('64dp 胶囊悬浮形态（ Experimental）', '64dp floating capsule style (Experimental)');
+  static String get bookDetailPage => _get('书籍详情页', 'Book details');
+  static String get uiColorFromCover => _get('界面颜色跟随封面取色', 'Use colors from book cover');
+  static String get uiColorFromCoverDesc => _get('仅在显示背景封面时生效', 'Applied only while a background cover is visible');
+  static String get networkCoverBackground => _get('网络封面背景设置', 'Network cover background');
+  static String get defaultCoverBackground => _get('默认封面背景设置', 'Default cover background');
+  static String get eyeProtection => _get('护眼模式', 'Eye Protection');
+  static String get enableEyeProtection => _get('启用护眼模式', 'Enable Eye Protection');
+  static String get enableEyeProtectionDesc => _get('使用暖色调降低蓝光', 'Reduce blue light via warm color tint');
+  static String get eyeProtectionAutoDark => _get('深色模式时自动开启', 'Enable with dark reading mode');
+  static String get eyeProtectionAutoDarkDesc => _get('跟随阅读界面的深色/浅色模式自动切换', 'Automatically follow the reader day/night mode');
+  static String get eyeProtectionScheduled => _get('定时开启', 'Scheduled');
+  static String get eyeProtectionScheduledDesc => _get('仅在设定的时间段内生效', 'Only apply during the configured time range');
+  static String get startTime => _get('开始时间', 'Start Time');
+  static String get endTime => _get('结束时间', 'End Time');
+  static String get containerSection => _get('容器设置', 'Container');
+  static String get containerBackground => _get('容器背景图', 'Container background');
+  static String get containerBackgroundDesc => _get('大容器和项目卡面分别使用独立的日间/夜间图片', 'The container and item cards use separate day/night images');
+  static String get containerBackgroundDay => _get('容器背景图片（日间）', 'Container background image (day)');
+  static String get containerBackgroundNight => _get('容器背景图片（夜间）', 'Container background image (night)');
+  static String get itemBackgroundDay => _get('项目背景图片（日间）', 'Item background image (day)');
+  static String get itemBackgroundNight => _get('项目背景图片（夜间）', 'Item background image (night)');
+  static String get containerImageOpacity => _get('大容器背景图透明度', 'Container image opacity');
+  static String get containerImageOpacityHint => _get('0-100；仅作用于大容器背景图自身，与容器不透明度独立叠加（0=图片完全透明）', '0-100; applies only to the container background image itself and stacks independently of container opacity (0 = image fully transparent)');
+  static String get itemImageOpacity => _get('项目背景图透明度', 'Item image opacity');
+  static String get itemImageOpacityHint => _get('0-100；仅作用于设置页项目卡面图片自身，与容器不透明度独立叠加（0=图片完全透明）', '0-100; applies only to settings item card images and stacks independently of container opacity (0 = image fully transparent)');
+  static String get containerOpacity => _get('容器不透明度', 'Container opacity');
+  static String get containerOpacityHint => _get('0-100；作用于默认卡片（含自定义形状但未设色）与设置分组/设置首页卡面，越低底色越透（文字不受影响）', '0-100; applies to default cards (including custom-shaped cards without a color) and settings group/home cards; lower means a more transparent background (text is unaffected)');
+  static String get backgroundBlurDay => _get('背景图虚化（日间）', 'Background image blur (day)');
+  static String get backgroundBlurDesc => _get('仅作用于已设置的全局背景图，不影响内容/文字', 'Applies only to the configured global background image, not to content or text');
+  static String get backgroundBlurNight => _get('背景图虚化（夜间）', 'Background image blur (night)');
+  static String get disableGroupRadius => _get('关闭设置分组圆角', 'Disable setting group corner radius');
+  static String get disableGroupRadiusDesc => _get('分组卡片外角置 0；优先于卡片圆角覆盖', 'Sets the outer corners of group cards to 0; takes precedence over the card radius override');
+  static String get overrideCardRadius => _get('覆盖卡片圆角', 'Override card corner radius');
+  static String get overrideCardRadiusDesc => _get('覆盖使用默认卡片样式的卡片；字典/首页/阅读器内面板等自定义形状卡片不覆盖', 'Overrides cards that use the default card style; cards with custom shapes such as dictionary, home and in-reader panels are not overridden');
+  static String get cardRadius => _get('卡片圆角', 'Card corner radius');
+  static String get cardRadiusDesc => _get('0-40dp；0 = 直角（参考版滑杆 0..40）', '0-40dp; 0 = square corners (reference slider range 0..40)');
+  static String get overrideCardBorder => _get('覆盖卡片边框', 'Override card border');
+  static String get overrideCardBorderDesc => _get('覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；字典/首页/阅读器内面板等自定义形状卡片不覆盖', 'Overrides the border of cards using the default card style (color 0 follows the theme outline); cards with custom shapes such as dictionary, home and in-reader panels are not overridden');
+  static String get cardBorderWidthDesc => _get('0-5dp；0 = 不绘制（不改变卡片尺寸）', '0-5dp; 0 = not drawn (card size is unchanged)');
+  static String get dayBorderColor => _get('日间边框颜色', 'Day border color');
+  static String get nightBorderColor => _get('夜间边框颜色', 'Night border color');
+  static String get defaultFollowThemeBorder => _get('默认（跟随主题描边）', 'Default (follow theme outline)');
+  static String get restoreDefault => _get('恢复默认', 'Restore default');
+  static String get showDivider => _get('显示分隔线', 'Display divider');
+  static String get showDividerDesc => _get('在分组行之间绘制；关闭保持 2dp 间距', 'Draw between group rows; when off, a 2dp gap is kept');
+  static String get dividerWidth => _get('分隔线宽度', 'Divider width');
+  static String get dividerWidthDesc => _get('0-5dp；0 = 不绘制', '0-5dp; 0 = not drawn');
+  static String get dividerLength => _get('分隔线长度', 'Divider length');
+  static String get raChunkRuleAi => _get('规则+AI', 'Rules + AI');
+  static String get raChunkAi => _get('AI 理解', 'AI understanding');
+  static String get raChunkAiUnsupported => _get('AI 分片暂未支持，实际按规则分片', 'AI segmentation is not supported yet; rules are used instead');
+  static String get raChunkByRules => _get('按标点/段落规则分片', 'Split by punctuation/paragraph rules');
+  static String get raLevelAuto => _get('自动', 'Auto');
+  static String get raLevelLow => _get('低', 'Low');
+  static String get raLevelMiddle => _get('中', 'Medium');
+  static String get raLevelHigh => _get('高', 'High');
+  static String get raLevelVeryHigh => _get('极高', 'Very high');
+  static String get raLevelMaximum => _get('最高', 'Maximum');
+  static String get raUnitParagraph => _get('整段', 'Whole paragraph');
+  static String get raUnitPage => _get('整页', 'Whole page');
+  static String get raUnitSymbol => _get('按符号', 'By punctuation');
+  static String get raSplitByBlankLineDesc => _get('按空行分段落朗读（保留段内换行）', 'Read paragraph by paragraph on blank lines (line breaks within a paragraph are kept)');
+  static String get raSplitByPageDesc => _get('按阅读器当前章分页朗读；切章回退整段', 'Read page by page within the current chapter; falls back to whole paragraph on chapter change');
+  static String get raSplitBySymbolDesc => _get('按选中标点切分，连续标点同一单元', 'Split on selected punctuation; consecutive punctuation stays in one unit');
+  static String get raSplitFollowRulesDesc => _get('跟随规则分片，当前按整段朗读', 'Follows rule segmentation; currently read as whole paragraphs');
+  static String get raSystemDefault => _get('系统默认', 'System default');
+  static String get raDefaultInterface => _get('默认朗读界面', 'Default read aloud interface');
+  static String get raInterfaceClassic => _get('经典', 'Classic');
+  static String get raInterfaceClassicDesc => _get('阅读器内朗读控制条', 'Read-aloud control bar inside the reader');
+  static String get raInterfacePlayer => _get('播放器', 'Player');
+  static String get raInterfacePlayerDesc => _get('启动朗读后进入听书播放器', 'Open the audio player when read aloud starts');
+  static String get raPlayerBackground => _get('播放器背景', 'Player background');
+  static String get raPlayerBgSolid => _get('纯色', 'Solid');
+  static String get raPlayerBgSolidDesc => _get('跟随当前主题背景', 'Follow the current theme background');
+  static String get raPlayerBgTransparent => _get('透明', 'Transparent');
+  static String get raPlayerBgTransparentDesc => _get('露出全局背景图/壁纸', 'Reveal the global background image/wallpaper');
+  static String get raPlayerBgBlur => _get('模糊', 'Blur');
+  static String get raPlayerBgFlow => _get('流光', 'Flowing light');
+  static String get raChapterSplitMode => _get('章节分片方式', 'Chapter segmentation');
+  static String get raChapterSplitRulesOnly => _get('按标点/段落规则分片（当前唯一可用）', 'Split by punctuation/paragraph rules (currently the only option)');
+  static String get raContentSplitMode => _get('内容划分方式', 'Content split');
+  static String get raContentSplitBlankLine => _get('按空行分段落朗读', 'Read paragraph by paragraph on blank lines');
+  static String get raContentSplitPage => _get('按阅读器当前章分页朗读', 'Read page by page within the current chapter');
+  static String get raContentSplitSymbol => _get('按选中标点切分', 'Split on selected punctuation');
+  static String get raKeepOneSymbol => _get('至少保留一个标点', 'Keep at least one punctuation mark');
+  static String get raSwitchedToSystemTts => _get('已切换为系统 TTS', 'Switched to system TTS');
+  static String get raEngineSwitched => _get('已切换朗读引擎', 'Read-aloud engine switched');
+  static String get raFollowSystemTts => _get('跟随系统 TTS 设置', 'Follow system TTS settings');
+  static String get raSystemTtsEngine => _get('系统 TTS 引擎', 'System TTS engine');
+  static String get raEngineInitFailed => _get('引擎初始化失败', 'Engine initialization failed');
+  static String get raSystemEngineFallback => _get('已切换系统引擎；原音色不可用，已回退系统默认', 'Switched to the system engine; the previous voice was unavailable, fell back to the system default');
+  static String get raUsingSystemDefaultEngine => _get('已使用系统默认引擎', 'Using the system default engine');
+  static String get raSystemEngineSwitched => _get('已切换系统引擎', 'Switched to the system engine');
+  static String get raSystemTtsVoice => _get('系统 TTS 音色', 'System TTS voice');
+  static String get raUsingSystemDefaultVoice => _get('已使用系统默认音色', 'Using the system default voice');
+  static String get raSystemVoiceSwitched => _get('已切换系统音色', 'Switched to the system voice');
+  static String get raOpenSystemSettingsHint => _get('无法打开系统设置，请手动进入「系统设置 → 文字转语音」', 'Could not open system settings; go to System Settings → Text-to-speech manually');
+  static String get raOpenBatterySettingsHint => _get('无法打开电池优化设置，请手动在系统设置中关闭本应用电池优化', 'Could not open battery optimization settings; disable battery optimization for this app manually');
+  static String get raCacheRetention => _get('缓存保留时间', 'Cache retention');
+  static String get raCacheRetentionHint => _get('0 表示即听即焚：每段系统 TTS 播放完成/失败后立即删除；其余值在朗读开始时按修改时间清理过期缓存，正在播放的文件始终保留。HTTP 引擎（Rust）缓存不在此策略内。', '0 means delete right after playback: each system TTS segment is removed once it finishes or fails; other values clear expired cache by modification time when read aloud starts, and files being played are always kept. HTTP engine (Rust) cache is not covered by this policy.');
+  static String get raFinished => _get('完成', 'Finished');
+  static String get raTtsCache => _get('TTS 缓存', 'TTS cache');
+  static String get raCacheExplain => _get('缓存仅用于加速重复段落朗读，清理后可随时重新生成。', 'The cache only speeds up repeated paragraphs; it can be regenerated at any time after clearing.');
+  static String get raCacheClearHint => _get('清理不会删除正在播放的文件；HTTP 引擎（Rust）缓存不在此策略内。', 'Clearing never deletes files being played; HTTP engine (Rust) cache is not covered by this policy.');
+  static String get raTabGeneral => _get('常规', 'General');
+  static String get raTabEngine => _get('引擎与音色', 'Engine & voices');
+  static String get raTabRoles => _get('角色与配乐', 'Roles & music');
+  static String get raAndroidOnly => _get('仅 Android 支持', 'Android only');
+  static String get raBatteryOptimized => _get('已忽略电池优化', 'Battery optimization ignored');
+  static String get raBatteryNotOptimized => _get('未忽略电池优化，点击前往设置', 'Battery optimization not ignored; tap to open settings');
+  static String get raBatterySettingsHint => _get('点击前往系统电池优化设置', 'Tap to open the system battery optimization settings');
+  static String get raDefaultInterfaceDesc => _get('从阅读器启动朗读时进入的界面', 'The screen opened when read aloud starts from the reader');
+  static String get raPlayerBackgroundDesc => _get('听书播放器页的背景样式', 'Background style of the audio player page');
+  static String get raShowCapsule => _get('显示朗读胶囊', 'Show read-aloud capsule');
+  static String get raAutoShrinkCapsule => _get('自动收缩朗读胶囊', 'Auto-shrink read-aloud capsule');
+  static String get raResetCapsulePosition => _get('重置朗读胶囊位置', 'Reset capsule position');
+  static String get raIgnoreAudioFocus => _get('忽略音频焦点', 'Ignore Audio Focus');
+  static String get raIgnoreAudioFocusDesc => _get('允许与其他应用同时播放音频', 'Allow audio to be played at the same time as other applications');
+  static String get raWakeLock => _get('朗读唤醒锁', 'Read-aloud wake lock');
+  static String get raWakeLockDesc => _get('朗读期间保持 CPU 唤醒', 'Keep the CPU awake while reading aloud');
+  static String get raPauseOnCall => _get('来电时暂停朗读', 'Pause read aloud on incoming call');
+  static String get raPauseOnCallDesc => _get('需电话权限，暂未支持', 'Requires phone permission; not supported yet');
+  static String get raKeepAloudAfterExit => _get('退出阅读时继续朗读', 'Keep reading aloud after exit');
+  static String get raKeepAloudAfterExitDesc => _get('关闭时退出阅读器即停止本次朗读', 'When off, leaving the reader stops this read-aloud session');
+  static String get raMediaKeyChapter => _get('媒体键上一首/下一首翻章', 'Media keys previous/next chapter');
+  static String get raMediaKeyChapterDesc => _get('关闭时朗读按段落移动', 'When off, media keys move by paragraph instead of chapter');
+  static String get raAndroidMediaCompat => _get('安卓媒体控制兼容', 'Android media control compatibility');
+  static String get raStreamingReadAloud => _get('流式朗读', 'Streaming read aloud');
+  static String get raBackgroundKeepAlive => _get('后台保活 / 电池优化', 'Background keep-alive / battery optimization');
+  static String get raContentAnalysis => _get('内容分析', 'Content analysis');
+  static String get raReasoningLevel => _get('推理级别', 'Reasoning level');
+  static String get raReasoningLevelDesc => _get('仅 AI 分片时生效（暂未支持）', 'Only applies to AI segmentation (not supported yet)');
+  static String get raSplitSymbols => _get('切分标点（可多选）', 'Split punctuation (multiple allowed)');
+  static String get raSplitSymbolsDefault => _get('未选择时按句末标点 。！？… 划分', 'When nothing is selected, split on sentence-ending punctuation . ! ? …');
+  static String get raSplitSymbolsConsecutive => _get('连续标点归入同一单元', 'Consecutive punctuation stays in one unit');
+  static String get raParagraphIntervalDesc => _get('0 表示段间不额外等待；调整后下一次段落推进生效。', '0 means no extra wait between paragraphs; changes take effect on the next paragraph.');
+  static String get raParagraphInterval => _get('段落间隔', 'Paragraph interval');
+  static String get raCache => _get('缓存', 'Cache');
+  static String get raCacheZeroHint => _get('0 = 即听即焚；超时缓存在朗读开始时清理', '0 = delete right after playback; expired cache is cleared when read aloud starts');
+  static String get raSpeakEngine => _get('朗读引擎', 'Speak Engine');
+  static String get raSystemTts => _get('系统 TTS', 'System tts');
+  static String get raSystemTtsDesc => _get('使用系统内置语音引擎（无需网络）', 'Use the built-in system speech engine (no network needed)');
+  static String get raPlatformSupportHint => _get('仅 Android/iOS/macOS 支持', 'Android/iOS/macOS only');
+  static String get raManageEngines => _get('管理朗读引擎', 'Manage read-aloud engines');
+  static String get raNoHttpEngine => _get('暂无 HTTP 引擎，点击添加', 'No HTTP engine yet; tap to add');
+  static String get raHttpEngineDesc => _get('新增、编辑或删除 HTTP TTS 引擎', 'Add, edit or delete HTTP TTS engines');
+  static String get raSystemEngineAndVoice => _get('系统引擎与音色', 'System engine & voice');
+  static String get raSystemEngine => _get('系统引擎', 'System Engine');
+  static String get raNoSystemTtsEngine => _get('系统未安装 TTS 引擎', 'No TTS engine installed on the system');
+  static String get raPickSystemTtsEngine => _get('选择系统 TTS 引擎', 'Select system TTS engine');
+  static String get raVoice => _get('音色', 'Voice');
+  static String get raNoVoice => _get('无可用音色', 'No voice available');
+  static String get raPickSystemVoice => _get('选择系统 TTS 音色', 'Select system TTS voice');
+  static String get raSystemTtsSettings => _get('系统 TTS 设置', 'System tts Settings');
+  static String get raOpenTtsSettings => _get('打开系统「文字转语音」设置', 'Open the system Text-to-speech settings');
+  static String get raVoiceParams => _get('语音参数', 'Voice parameters');
+  static String get raVoiceParamsHint => _get('音调/音量仅对系统 TTS 生效；HTTP 引擎当前仅语速生效（Rust 合成管线限制，已登记）。', 'Pitch and volume only apply to system TTS; HTTP engines currently only support speed (a known limitation of the Rust synthesis pipeline).');
+  static String get raSpeed => _get('语速', 'Speed');
+  static String get raPitch => _get('音调', 'Pitch');
+  static String get raVolume => _get('音量', 'Volume');
+  static String get raRole => _get('角色', 'Role');
+  static String get raMultiSpeaker => _get('多角色朗读', 'Multi-speaker reading');
+  static String get raRoleAssignment => _get('角色分配', 'Role assignment');
+  static String get raCharacterVoices => _get('人物配音', 'Character voices');
+  static String get raVoicePool => _get('声音池', 'Voice pool');
+  static String get raMusic => _get('配乐', 'Music');
+  static String get raBgmAssignment => _get('BGM 分配', 'BGM assignment');
+  static String get raBgmPool => _get('BGM 池', 'BGM pool');
+  static String get raChapterBgm => _get('本章 BGM', 'Chapter BGM');
+  static String get raAiSceneDetection => _get('AI 场景识别', 'AI scene detection');
+  static String get webdavKeepCount => _get('WebDAV 备份保留数量', 'WebDAV backups to keep');
+  static String get webdavKeepCountDesc => _get('上传成功后保留最近几份备份；0 表示不自动清理（默认）。', 'Keep this many recent backups after a successful upload; 0 means no auto cleanup (default).');
+  static String get webdavDisabled => _get('已关闭', 'Off');
+  static String get webdavLocalAndRemote => _get('本地 + WebDAV', 'Local + WebDAV');
+  static String get webdavLocalOnly => _get('仅本地', 'Local only');
+  static String get webdavPickBackupDir => _get('选择备份路径', 'Select backup directory');
+  static String get webdavBackingUp => _get('备份中…', 'Backing up…');
+  static String get webdavConfirmSync => _get('确认同步吗？', 'Sync now?');
+  static String get webdavSyncConfirmDesc => _get('将上传本地书架并覆盖远端备份（bookshelf.json），同时回写远端书源；不会覆盖本地阅读进度。如需从备份覆盖本地，请使用「恢复」中的本地恢复或网络恢复。', 'This uploads the local bookshelf to overwrite the remote backup (bookshelf.json) and writes the remote sources back. Local reading progress is not overwritten. To overwrite local data from a backup, use Local restore or Network restore under Restore.');
+  static String get webdavSync => _get('同步', 'Sync');
+  static String get webdavConfirmRestore => _get('确认恢复吗？', 'Restore confirmation');
+  static String get webdavLocalRestoreConfirmDesc => _get('恢复书架会覆盖现有书架，包括已有书籍的阅读进度与书籍信息。确定继续吗？', 'Restoring the bookshelf overwrites the current bookshelf, including reading progress and book details of existing books. Continue?');
+  static String get webdavRestore => _get('恢复', 'Restore');
+  static String get webdavNotConfigured => _get('未配置 WebDAV，请先配置后再同步书库', 'WebDAV is not configured; configure it before syncing the library');
+  static String get webdavNeedCredentials => _get('同步书库需要账号密码，请先在 WebDAV 设置中填写', 'Syncing the library needs an account and password; fill them in WebDAV settings first');
+  static String get webdavSyncing => _get('同步中…', 'Syncing…');
+  static String get webdavSyncComplete => _get('同步完成', 'Sync complete');
+  static String get webdavPickLocalBackup => _get('选择本地备份文件（支持 .json 备份与 .zip 原版备份）', 'Select a local backup file (.json backups and .zip legacy backups are supported)');
+  static String get webdavZipBypassUnsupported => _get('zip 备份暂不支持忽略项过滤（将按备份内容恢复）', 'Bypass list filtering is not supported for zip backups (everything in the backup is restored)');
+  static String get webdavCheckingBackup => _get('检查备份…', 'Checking backup…');
+  static String get webdavRestoring => _get('恢复中…', 'Restoring…');
+  static String get webdavBusyHint => _get('正在备份或恢复，请稍候', 'A backup or restore is running; please wait');
+  static String get webdavFetchingRemoteList => _get('获取远端备份列表…', 'Fetching remote backup list…');
+  static String get webdavNoRemoteBackup => _get('未找到远端备份', 'No remote backup found');
+  static String get webdavRemoteListFailed => _get('网络备份列表获取失败', 'Failed to fetch the remote backup list');
+  static String get webdavRemoteListFailedAsk => _get('网络备份列表获取失败，是否改为本地恢复？', 'Failed to fetch the remote backup list. Restore from local instead?');
+  static String get webdavRestoreLocal => _get('本地恢复', 'Restore from Local');
+  static String get webdavEncryptedRemoteUnsupported => _get('暂不支持网络恢复密码备份，请使用本地恢复', 'Restoring a password-protected backup from the network is not supported; use Local restore');
+  static String get webdavStillNeedsPassword => _get('备份仍要求密码', 'The backup still requires a password');
+  static String get webdavFindingLocalBackup => _get('查找本地备份…', 'Looking for a local backup…');
+  static String get webdavNoLocalBackup => _get('未找到本地备份', 'No local backup found');
+  static String get webdavTooManyPasswordAttempts => _get('密码错误次数过多或备份文件损坏，已取消恢复', 'Too many wrong password attempts or the backup file is corrupted; restore cancelled');
+  static String get webdavWrongPassword => _get('密码错误或备份已损坏，请重试', 'Wrong password or the backup is corrupted; try again');
+  static String get webdavBackupCorrupted => _get('备份文件已损坏，无法恢复加密内容', 'The backup file is corrupted; encrypted content cannot be restored');
+  static String get webdavRestoreBypassSaved => _get('已保存恢复忽略项', 'Restore bypass list saved');
+  static String get webdavBackupBypass => _get('备份忽略', 'Backup bypass');
+  static String get webdavBackupBypassDesc => _get('勾选后备份时跳过对应项，不写入备份文件；恢复忽略请单独设置。', 'Checked items are skipped when backing up and are not written to the backup file; the restore bypass list is configured separately.');
+  static String get webdavSaveBackupBypassFailed => _get('保存备份忽略项失败', 'Failed to save the backup bypass list');
+  static String get webdavBackupBypassSaved => _get('已保存备份忽略项', 'Backup bypass list saved');
+  static String get webdavImporting => _get('导入中…', 'Importing…');
+  static String get webdavPickLegacyDir => _get('选择旧版备份目录', 'Select the legacy backup directory');
+  static String get webdavImportDone => _get('导入完成', 'Import completed');
+  static String get webdavFillServerFirst => _get('请先填写服务器地址', 'Fill in the server address first');
+  static String get webdavServerSchemeHint => _get('服务器地址需要以 http(s):// 开头', 'The server address must start with http(s)://');
+  static String get webdavConnected => _get('连接成功', 'Connected');
+  static String get webdavAuthFailed => _get('认证失败，请检查账号/密码', 'Authentication failed; check the account/password');
+  static String get webdavConnectTimeout => _get('连接超时（5 秒内未响应）', 'Connection timed out (no response within 5 seconds)');
+  static String get webdavNotTested => _get('未测试', 'Not tested');
+  static String get webdavTesting => _get('测试中…', 'Testing…');
+  static String get webdavConnectedCheck => _get('✓ 连接成功', '✓ Connected');
+  static String get webdavFailedCross => _get('✗ 失败', '✗ Failed');
+  static String get webdavImportLegacy => _get('导入旧版数据', 'Import Legacy Data');
+  static String get webdavSyncLibraryMerge => _get('同步书库（合并）', 'Sync library (merge)');
+  static String get webdavSettingsTitle => _get('WebDav 设置', 'WebDAV settings');
+  static String get webdavServerAddress => _get('WebDAV 服务器地址', 'WebDAV server address');
+  static String get webdavServerUrlHint => _get('输入你的服务器地址', 'Enter your server address');
+  static String get webdavAccount => _get('WebDAV 账号', 'WebDAV account');
+  static String get webdavAccountHint => _get('输入你的 WebDAV 账号', 'Enter your WebDAV account');
+  static String get webdavPassword => _get('WebDAV 密码', 'WebDAV password');
+  static String get webdavPasswordHint => _get('输入你的密码', 'Enter your password');
+  static String get webdavSubDir => _get('子目录', 'Subdirectory');
+  static String get webdavDeviceName => _get('设备名称', 'Device Name');
+  static String get webdavDeviceNameDesc => _get('用于区分不同设备的备份', 'Used to tell backups from different devices apart');
+  static String get webdavTestConfig => _get('测试配置', 'Test configuration');
+  static String get webdavTestConfigDesc => _get('连接测试服务器地址与账号', 'Test the server address and account');
+  static String get webdavKeepCountZero => _get('0（不自动清理）', '0 (no auto cleanup)');
+  static String get webdavUploadAfterImport => _get('导入后自动上传本地书', 'Upload local books after import');
+  static String get webdavUploadAfterImportDesc => _get('导入本地书后自动上传到 WebDAV 的 books 目录', 'Upload imported local books to the WebDAV books directory automatically');
+  static String get webdavSyncProgress => _get('同步书籍进度', 'Sync reading progress');
+  static String get webdavSyncProgressDesc => _get('在多设备间同步书籍阅读进度', 'Sync reading progress across devices');
+  static String get webdavSyncProgressEnhanced => _get('同步书籍进度增强', 'Enhanced progress sync');
+  static String get webdavSyncProgressEnhancedDesc => _get('同步更详细的阅读进度信息', 'Sync more detailed reading progress');
+  static String get webdavBackupPath => _get('备份路径', 'Backup Dir');
+  static String get webdavPickBackupPath => _get('请选择备份路径', 'Please select a backup path.');
+  static String get webdavPickBackupMethod => _get('选择备份方式', 'Select backup method');
+  static String get webdavPickRestoreMethod => _get('选择恢复方式', 'Select restore method');
+  static String get webdavRestoreBypassList => _get('恢复忽略列表', 'Bypass List');
+  static String get webdavRestoreBypassListDesc => _get('恢复时忽略一些内容不恢复，方便不同手机配置不同', 'Skip some content when restoring, so different phones can keep different settings');
+  static String get webdavBackupBypassList => _get('备份忽略列表', 'Backup Bypass List');
+  static String get webdavKeepLatestOnly => _get('仅保留最新备份', 'Keep Only the Latest Backup');
+  static String get webdavKeepLatestOnlyDesc => _get('本地备份仅保留最新备份文件', 'Local backup keeps only the latest backup file');
+  static String get webdavAutoBackup => _get('自动备份', 'Auto backup');
+  static String get webdavAutoCheckNewBackup => _get('自动检查新备份', 'Auto-Check for New Backups');
+  static String get webdavAutoCheckNewBackupDesc => _get('打开软件时检查是否有新备份，有新备份时提示是否更新', 'Check for new backups when opening the app, if new backups are found, prompt the user to update.');
+  static String get webdavServerConfig => _get('服务器配置', 'Server Configuration');
+  static String get webdavLoginInfo => _get('登录信息', 'Login information');
+  static String get webdavSourceVariables => _get('书源运行变量', 'Book source runtime variables');
+  static String get webdavEnterBackupPassword => _get('请输入备份密码', 'Enter the backup password');
+  static String get webdavBackupPasswordHint => _get('输入备份密码', 'Enter backup password');
+  static String get webdavEncryptedBackupHint => _get('该备份包含已加密的内容，请输入备份密码：', 'This backup contains encrypted content. Enter the backup password:');
+  static String get webdavBackupPassword => _get('备份密码', 'Backup password');
+  static String get webdavShowPassword => _get('显示密码', 'Show password');
+  static String get webdavHidePassword => _get('隐藏密码', 'Hide password');
+  static String get webdavPositiveIntHint => _get('请输入大于 0 的整数', 'Enter an integer greater than 0');
+  static String get webdavEnableAutoBackup => _get('启用自动备份', 'Enable auto backup');
+  static String get webdavEnableAutoBackupDesc => _get('启动或回到前台时检查，按间隔最多备份一次；手动备份不受影响', 'Checks on launch or when returning to the foreground, backing up at most once per interval; manual backups are unaffected');
+  static String get webdavBackupIntervalDays => _get('备份间隔（天）', 'Backup interval (days)');
+  static String get rssSearchHint => _get('搜索订阅源', 'Search RSS sources');
+  static String get rssEnabled => _get('已启用', 'Enabled');
+  static String get rssDisabled => _get('已禁用', 'Disabled');
+  static String get rssNeedLogin => _get('需登录', 'Requires login');
+  static String get rssUngrouped => _get('未分组', 'Ungrouped');
+  static String get rssMoreOptions => _get('更多选项', 'More options');
+  static String get rssAddSource => _get('新增订阅源', 'Add RSS source');
+  static String get rssImportLocal => _get('本地导入', 'Import local');
+  static String get rssImportOnline => _get('网络导入', 'Import online');
+  static String get rssImportQr => _get('二维码导入', 'Import from QR code');
+  static String get rssImportToken => _get('口令导入', 'Import by token');
+  static String get rssImportDefaultRules => _get('导入默认规则', 'Import default rules');
+  static String get rssRuleSubscription => _get('规则订阅', 'Rule subscription');
+  static String get rssExitBatchMode => _get('退出批量模式', 'Exit batch mode');
+  static String get rssEnableSelected => _get('启用选中', 'Enable selected');
+  static String get rssDisableSelected => _get('禁用选中', 'Disable selected');
+  static String get rssAddToGroup => _get('添加到分组', 'Add to group');
+  static String get rssRemoveFromGroup => _get('移除分组', 'Remove from Groups');
+  static String get rssPinSelected => _get('选中置顶', 'Pin selected');
+  static String get rssUnpinSelected => _get('选中置底', 'Unpin selected');
+  static String get rssExportSelected => _get('导出选中', 'Export selected');
+  static String get rssShareSources => _get('分享源', 'Share sources');
+  static String get rssSelectRange => _get('选择区间', 'Select range');
+  static String get rssLoadingSources => _get('加载订阅源...', 'Loading RSS sources...');
+  static String get rssNoSources => _get('暂无订阅源', 'No RSS sources');
+  static String get rssNoMatchingSources => _get('没有匹配的订阅源', 'No matching RSS sources');
+  static String get rssEmptyHint => _get('点击右上角菜单「新增订阅源」或导入订阅源', 'Use the "Add RSS source" menu in the top right, or import RSS sources');
+  static String get rssMoveToBottom => _get('置底', 'To Bottom');
+  static String get rssLogin => _get('登录', 'Login');
+  static String get rssLoginSuccess => _get('登录成功', 'Login successful');
+  static String get rssDeleteSource => _get('删除订阅源', 'Delete RSS source');
+  static String get rssSelectSourcesFirst => _get('请先选择订阅源', 'Select RSS sources first');
+  static String get rssEnabledSelected => _get('已启用所选订阅源', 'Selected RSS sources enabled');
+  static String get rssDisabledSelected => _get('已禁用所选订阅源', 'Selected RSS sources disabled');
+  static String get rssDeletedSelected => _get('已删除所选订阅源', 'Selected RSS sources deleted');
+  static String get rssPinnedSelected => _get('已置顶所选订阅源', 'Selected RSS sources pinned to top');
+  static String get rssUnpinnedSelected => _get('已置底所选订阅源', 'Selected RSS sources moved to bottom');
+  static String get rssEnterGroupName => _get('输入分组名称', 'Enter group name');
+  static String get rssNoGroupToRemove => _get('所选订阅源没有可移除的分组', 'The selected RSS sources have no groups to remove');
+  static String get rssExportSources => _get('导出订阅源', 'Export RSS sources');
+  static String get rssSelectAtLeastTwo => _get('请先选择两个以上的订阅源', 'Select at least two RSS sources first');
+  static String get rssInvalidSourceArray => _get('不是有效的订阅源数组', 'Not a valid RSS source array');
+  static String get rssInvalidSourceObject => _get('不是有效的订阅源对象', 'Not a valid RSS source object');
+  static String get rssParseNoSource => _get('格式错误，未解析到订阅源', 'Invalid format; no RSS source could be parsed');
+  static String get rssCannotGetFilePath => _get('无法获取文件路径', 'Unable to get the file path');
+  static String get rssQrInvalid => _get('扫码内容不是可识别的订阅源数据', 'The scanned content is not recognizable RSS source data');
+  static String get rssDefaultSynced => _get('默认订阅源已同步', 'Default RSS sources synced');
+  static String get rssImportFromUrl => _get('从 URL 导入订阅源', 'Import RSS sources from URL');
+  static String get rssSourceUrlHint => _get('输入订阅源 URL 地址', 'Enter the RSS source URL');
+  static String get rssHistory => _get('历史记录', 'History');
+  static String get sourceTypeText => _get('文本', 'Text');
+  static String get sourceTypeAudio => _get('音频', 'Audio');
+  static String get sourceTypeImage => _get('图片', 'Image');
+  static String get sourceTypeFile => _get('文件', 'File');
+  static String get sourceTypeVideo => _get('视频', 'Video');
+  static String get sourceFieldBookSourceUrl => _get('源 URL（sourceUrl）', 'Source url(sourceUrl)');
+  static String get sourceFieldBookSourceName => _get('源名称（sourceName）', 'Source Name(sourceName)');
+  static String get sourceFieldBookSourceGroup => _get('源分组（sourceGroup）', 'Source group(sourceGroup)');
+  static String get sourceFieldBookSourceComment => _get('源注释（sourceComment）', 'Source comment(sourceComment)');
+  static String get sourceFieldLoginUrl => _get('登录 URL(loginUrl)', 'Log in URL(loginUrl)');
+  static String get sourceFieldLoginUi => _get('登录 UI（loginUi）', 'Login UI(loginUi)');
+  static String get sourceFieldLoginCheckJs => _get('登录检查 JS（loginCheckJs）', 'Login check js(loginCheckJs)');
+  static String get sourceFieldCoverDecodeJs => _get('封面解密（coverDecodeJs）', 'Decode Cover Js(coverDecodeJs)');
+  static String get sourceFieldBookUrlPattern => _get('书籍 URL 正则（bookUrlPattern）', 'Book URL pattern(bookUrlPattern)');
+  static String get sourceFieldHeader => _get('请求头（header）', 'HTTP Header');
+  static String get sourceJsonFormatHint => _get('JSON 格式', 'JSON format');
+  static String get sourceFieldVariableComment => _get('变量说明(variableComment)', 'Variable Description (variableComment)');
+  static String get sourceFieldConcurrentRate => _get('并发率（concurrentRate）', 'Concurrency rate(concurrentRate)');
+  static String get sourceFieldSearchUrl => _get('搜索地址（url）', 'Search URL(url)');
+  static String get sourceFieldSearchUrlHint => _get('例如：https://example.com/search?q=searchKey', 'e.g. https://example.com/search?q=searchKey');
+  static String get sourceFieldCheckKeyWord => _get('校验关键字（checkKeyWord）', 'Check key word(checkKeyWord)');
+  static String get sourceFieldBookList => _get('书籍列表规则（bookList）', 'Book list(bookList)');
+  static String get sourceFieldName => _get('书名规则（name）', 'Book title(name)');
+  static String get sourceFieldAuthor => _get('作者规则（author）', 'Author(author)');
+  static String get sourceFieldKind => _get('分类规则（kind）', 'Classification(kind)');
+  static String get sourceFieldWordCount => _get('字数规则（wordCount）', 'Word count(wordCount)');
+  static String get sourceFieldLastChapter => _get('最新章节规则（lastChapter）', 'Last chapter(lastChapter)');
+  static String get sourceFieldIntro => _get('简介规则（intro）', 'Intro(intro)');
+  static String get sourceFieldCoverUrl => _get('封面规则（coverUrl）', 'CoverUrl(coverUrl)');
+  static String get sourceFieldBookUrl => _get('详情页 URL 规则（bookUrl）', 'Details page URL(bookUrl)');
+  static String get sourceFieldExploreUrl => _get('发现地址规则（url）', 'Discover URL(url)');
+  static String get sourceFieldExploreUrlHint => _get('例如：分类名::https://example.com/sort\n或 url 形式', 'e.g. Category::https://example.com/sort\nor a plain url');
+  static String get sourceFieldBookInfoInit => _get('预处理规则（bookInfoInit）', 'Book info init(bookInfoInit)');
+  static String get sourceFieldTocUrl => _get('目录 URL 规则（tocUrl）', 'TOC URL(tocUrl)');
+  static String get sourceFieldCanReName => _get('允许修改书名作者（canReName）', 'Can re name(canReName)');
+  static String get sourceFieldDownloadUrls => _get('下载URL规则(downloadUrls)', 'Download URL rules(downloadUrls)');
+  static String get sourceFieldPreUpdateJs => _get('更新之前 JS（preUpdateJs）', 'Js before update(preUpdateJs)');
+  static String get sourceFieldChapterList => _get('目录列表规则（chapterList）', 'Chapter list(chapterList)');
+  static String get sourceFieldChapterName => _get('章节名称规则（ChapterName）', 'Chapter name(chapterName)');
+  static String get sourceFieldChapterUrl => _get('章节 URL 规则（chapterUrl）', 'Chapter URL(chapterUrl)');
+  static String get sourceFieldFormatJs => _get('格式化规则(formatJs)', 'Format Rule (formatJs)');
+  static String get sourceFieldIsVolume => _get('Volume 标识（isVolume）', 'Is volume(isVolume)');
+  static String get sourceFieldChapterInfo => _get('章节信息（ChapterInfo）', 'Chapter info(ChapterInfo)');
+  static String get sourceFieldIsVip => _get('VIP 标识（isVip）', 'Is vip(isVip)');
+  static String get sourceFieldIsPay => _get('购买标识（isPay）', 'Is pay(isPay)');
+  static String get sourceFieldNextTocUrl => _get('目录下一页规则（nextTocUrl）', 'Next toc URL(nextTocUrl)');
+  static String get sourceFieldContent => _get('正文规则（content）', 'Content(content)');
+  static String get sourceFieldNextContentUrl => _get('正文下一页 URL 规则（nextContentUrl）', 'Next content url(nextContentUrl)');
+  static String get sourceFieldSubContent => _get('副文规则（subContent）', 'Sub content(subContent)');
+  static String get sourceFieldReplaceRegex => _get('替换规则（replaceRegex）', 'Replace regex(replaceRegex)');
+  static String get sourceFieldTitle => _get('标题（title）', 'Title(title)');
+  static String get sourceFieldSourceRegex => _get('资源正则（sourceRegex）', 'Source regex(sourceRegex)');
+  static String get sourceFieldImageStyle => _get('图片样式（imageStyle）', 'Image style(imageStyle)');
+  static String get sourceFieldImageDecode => _get('图片解密（imageDecode）', 'Decode Image(imageDecode)');
+  static String get sourceFieldPayAction => _get('购买操作（payAction）', 'Pay action(payAction)');
+  static String get sourceFieldCallBackJs => _get('回调操作（callBackJs）', 'Callback action(callBackJs)');
+  static String get sourceFieldReviewSummaryUrl => _get('段评统计 URL（reviewSummaryUrl）', 'Review summary URL(reviewSummaryUrl)');
+  static String get sourceFieldSummaryListRule => _get('段评统计列表（summaryListRule）', 'Review summary list(summaryListRule)');
+  static String get sourceFieldSummaryParagraphIndexRule => _get('段落索引（summaryParagraphIndexRule）', 'Paragraph index(summaryParagraphIndexRule)');
+  static String get sourceFieldSummaryCountRule => _get('段评数量（summaryCountRule）', 'Review count(summaryCountRule)');
+  static String get sourceFieldSummaryParagraphDataRule => _get('段落数据（summaryParagraphDataRule）', 'Paragraph data(summaryParagraphDataRule)');
+  static String get sourceFieldReviewDetailUrl => _get('段评详情 URL（reviewDetailUrl）', 'Review detail URL(reviewDetailUrl)');
+  static String get sourceFieldReviewDetailNextPageUrl => _get('段评下一页 URL（reviewDetailNextPageUrl）', 'Review next page URL(reviewDetailNextPageUrl)');
+  static String get sourceFieldDetailListRule => _get('段评详情列表（detailListRule）', 'Review detail list(detailListRule)');
+  static String get sourceFieldDetailIdRule => _get('段评 ID（detailIdRule）', 'Review ID(detailIdRule)');
+  static String get sourceFieldDetailAvatarRule => _get('头像（detailAvatarRule）', 'Avatar(detailAvatarRule)');
+  static String get sourceFieldDetailNameRule => _get('昵称（detailNameRule）', 'Nickname(detailNameRule)');
+  static String get sourceFieldDetailBadgeRule => _get('徽章（detailBadgeRule）', 'Badge(detailBadgeRule)');
+  static String get sourceFieldDetailContentRule => _get('评论内容协议（detailContentRule）', 'Comment content protocol(detailContentRule)');
+  static String get sourceFieldReviewQuoteUrl => _get('段评回复URL（reviewQuoteUrl）', 'Paragraph comment replied to URL（reviewQuoteUrl）');
+  static String get sourceFieldReplyListRule => _get('子评论列表（replyListRule）', 'Reply list(replyListRule)');
+  static String get sourceFieldReplyIdRule => _get('子评论 ID（replyIdRule）', 'Reply ID(replyIdRule)');
+  static String get sourceFieldReplyAvatarRule => _get('子评论头像（replyAvatarRule）', 'Reply avatar(replyAvatarRule)');
+  static String get sourceFieldReplyNameRule => _get('子评论昵称（replyNameRule）', 'Reply nickname(replyNameRule)');
+  static String get sourceFieldReplyBadgeRule => _get('子评论徽章（replyBadgeRule）', 'Reply badge(replyBadgeRule)');
+  static String get sourceFieldReplyContentRule => _get('子评论内容协议（replyContentRule）', 'Reply content protocol(replyContentRule)');
+  static String get sourceAdd => _get('新建书源', 'Add Book Source');
+  static String get sourceEdit => _get('编辑书源', 'Edit Book source');
+  static String get sourceEditContent => _get('编辑内容', 'Edit Content');
+  static String get sourceDebug => _get('调试源', 'Debug source');
+  static String get sourceBasicInfo => _get('基本信息', 'Basic info');
+  static String get sourceSearchRules => _get('搜索规则', 'Search rules');
+  static String get sourceExploreRules => _get('发现规则', 'Discover rules');
+  static String get sourceInfoRules => _get('详情规则', 'Details rules');
+  static String get sourceTocRules => _get('目录规则', 'TOC rules');
+  static String get sourceContentRules => _get('正文规则', 'Content rules');
+  static String get sourceReviewRules => _get('段评规则', 'Review rules');
+  static String get sourceCreated => _get('书源已创建', 'Book source created');
+  static String get sourceSaved => _get('书源已保存', 'Book source saved');
+  static String get sourceClearCookie => _get('清除Cookie', 'Clear cookies');
+  static String get sourceAutoComplete => _get('自动补全', 'Automatic completion');
+  static String get sourceCopy => _get('拷贝源', 'Copy source');
+  static String get sourcePaste => _get('粘贴源', 'Paste source');
+  static String get sourceSetVariable => _get('设置源变量', 'Set source variable');
+  static String get sourceQrShare => _get('二维码分享', 'QR code sharing');
+  static String get sourceStringShare => _get('字符串分享', 'Strings sharing');
+  static String get sourceAutoCompleteOn => _get('自动补全已开启', 'Automatic completion on');
+  static String get sourceAutoCompleteOff => _get('自动补全已关闭', 'Automatic completion off');
+  static String get sourceFillUrlFirst => _get('请先填写书源 URL', 'Fill in the book source URL first');
+  static String get sourceCookieCleared => _get('Cookie 已清除', 'Cookies cleared');
+  static String get sourceVariableHint => _get('源变量可在js中通过source.getVariable()获取', 'Source variables can be read in JS via source.getVariable()');
+  static String get sourceVariableCleared => _get('源变量已清除', 'Source variable cleared');
+  static String get sourceVariableSaved => _get('源变量已保存', 'Source variable saved');
+  static String get sourceTooLongForQr => _get('内容过长，无法生成二维码，请使用字符串分享', 'Content is too long to generate a QR code; use string sharing instead');
+  static String get sourceShare => _get('分享书源', 'Book sources sharing');
+  static String get sourceCopied => _get('已复制到剪贴板', 'Copied to clipboard');
+  static String get sourceClipboardEmpty => _get('剪贴板为空', 'Clipboard is empty');
+  static String get sourceClipboardInvalid => _get('剪贴板内容不是有效的书源 JSON', 'The clipboard content is not valid book source JSON');
+  static String get sourceShareTitle => _get('书源分享', 'Book source sharing');
+  static String get sourceQrInvalid => _get('扫码内容不是有效的书源 JSON', 'The scanned content is not valid book source JSON');
+  static String get sourceLegadoLinkHint => _get('legado 协议链接请使用「关联导入」页处理', 'Handle legado scheme links on the "Deep link import" page');
+  static String get sourceUrlContentHint => _get('URL 内容请使用书源管理页的网络导入处理', 'Handle URL content via network import on the book source management page');
+  static String get sourceFocusFieldFirst => _get('请先将光标放在要编辑的输入框', 'Place the cursor in the input field to edit first');
+  static String get sourceReview => _get('段评', 'Review');
+  static String get sourceEventListener => _get('事件监听', 'Event listener');
+  static String get sourceCustomButton => _get('定制按钮', 'Custom button');
+  static String get sourceTypePrefix => _get('类型：', 'Type: ');
+  static String get sourceCodeEdit => _get('代码编辑', 'Code editing');
+  static String get sourceVariableDialogHint => _get('输入源变量（空则清除）', 'Enter source variables (empty clears them)');
+  static String get sourceQrGenerateFailed => _get('二维码生成失败', 'Failed to generate the QR code');
+  static String get sourceShareImage => _get('分享图片', 'Share image');
+  static String get sourceNotFoundHint => _get('未找到书源，可能已被删除', 'Book source not found; it may have been deleted');
+  static String get sourceEnabledLabel => _get('启用', 'Enable');
+  static String get sourceExploreLabel => _get('发现', 'Discover');
+
+  // ----- L10N 阶段 2：参数化文案 -----
+  static String currentPercent(int value) =>
+      _locale == 'zh' ? '当前 $value%' : 'Current $value%';
+  static String blurRadiusValue(int value) =>
+      _locale == 'zh' ? '模糊半径 ${value}dp' : 'Blur radius ${value}dp';
+  static String blurAlphaValue(int value) =>
+      _locale == 'zh' ? '底色透明度 $value/255' : 'Base opacity $value/255';
+  static String navBarShadowValue(int value) =>
+      _locale == 'zh' ? '当前阴影大小（elevation）：$value' : 'Current elevation: $value';
+  static String raLoadFailed(String error) =>
+      _locale == 'zh' ? '读取朗读设置失败：$error' : 'Failed to read read-aloud settings: $error';
+  static String raCacheRetentionCurrent(String label) =>
+      _locale == 'zh' ? '当前：$label' : 'Current: $label';
+  static String raCacheStats(int count, String size) =>
+      _locale == 'zh' ? '系统 TTS 合成缓存：$count 个文件，共 $size。\n缓存仅用于加速重复段落朗读，清理后可随时重新生成。' : 'System TTS cache: $count files, $size in total.\n''The cache only speeds up repeated paragraphs; it can be regenerated at any time after clearing.';
+  static String raCacheRetentionInRow(String label) =>
+      _locale == 'zh' ? '当前保留：$label（在「缓存保留时间」行设置）' : 'Currently keeping: $label (set in the Cache retention row)';
+  static String raCacheCleared(int count) =>
+      _locale == 'zh' ? '已清理 $count 个缓存文件' : 'Cleared $count cache files';
+  static String raSplitSelected(int count) =>
+      _locale == 'zh' ? '已选 $count 个标点；连续标点归入同一单元' : '$count punctuation marks selected; consecutive punctuation stays in one unit';
+  static String raCacheSummary(int count, String size, String label) =>
+      _locale == 'zh' ? '$count 个文件 · $size · 保留 $label' : '$count files · $size · keeping $label';
+  static String webdavLoadConfigFailed(String error) =>
+      _locale == 'zh' ? '加载 WebDAV 配置失败：$error' : 'Failed to load WebDAV settings: $error';
+  static String webdavSaveConfigFailed(String error) =>
+      _locale == 'zh' ? '保存 WebDAV 配置失败：$error' : 'Failed to save WebDAV settings: $error';
+  static String webdavKeepCountInvalid(int max) =>
+      _locale == 'zh' ? '请输入 0~$max 的整数' : 'Enter an integer between 0 and $max';
+  static String webdavAutoBackupInterval(int days, String destination) =>
+      _locale == 'zh' ? '每 $days 天自动备份（$destination）' : 'Auto backup every $days days ($destination)';
+  static String backupFailedWithReason(String error) =>
+      _locale == 'zh' ? '备份失败：$error' : 'Backup failed: $error';
+  static String backupUploadedToWebDav(String name) =>
+      _locale == 'zh' ? '备份成功：已上传 WebDAV：$name' : 'Backup successful: uploaded to WebDAV: $name';
+  static String backupUploadedLocalOnly(String path) =>
+      _locale == 'zh' ? '备份成功：$path' : 'Backup successful: $path';
+  static String backupUploadedWithRemote(String path, String name) =>
+      _locale == 'zh' ? '备份成功：$path\n已上传 WebDAV：$name' : 'Backup successful: $path\nUploaded to WebDAV: $name';
+  static String backupUploadedWithError(String path, String error) =>
+      _locale == 'zh' ? '备份成功：$path\nWebDAV 上传失败：$error' : 'Backup successful: $path\nWebDAV upload failed: $error';
+  static String webdavUploadFailed(String error) =>
+      _locale == 'zh' ? 'WebDAV 上传失败：$error' : 'WebDAV upload failed: $error';
+  static String webdavUploaded(String name) =>
+      _locale == 'zh' ? '已上传 WebDAV：$name' : 'Uploaded to WebDAV: $name';
+  static String webdavInspectFailed(String error) =>
+      _locale == 'zh' ? '检查备份失败：$error' : 'Failed to inspect the backup: $error';
+  static String restoreFailedWithReason(String error) =>
+      _locale == 'zh' ? '恢复失败：$error' : 'Restore failed: $error';
+  static String checkedCount(int count) =>
+      _locale == 'zh' ? '已勾选 $count 项' : '$count selected';
+  static String legacyImportSummary(int books, int sources, int rules) =>
+      _locale == 'zh' ? '书架 $books · 书源 $sources · 替换规则 $rules' : 'Books $books · Sources $sources · Replace rules $rules';
+  static String webdavProbeFailedHttp(int code) =>
+      _locale == 'zh' ? '连接失败（HTTP $code）' : 'Connection failed (HTTP $code)';
+  static String webdavProbeFailed(String error) =>
+      _locale == 'zh' ? '连接失败：$error' : 'Connection failed: $error';
+  static String webdavKeepCountLabel(int count) =>
+      _locale == 'zh' ? '$count（仅保留最近 $count 份）' : '$count (keep only the latest $count)';
+  static String webdavLastSync(String label) =>
+      _locale == 'zh' ? '上次同步：$label' : 'Last sync: $label';
+  static String webdavRemoteRestoreConfirmDesc(String remoteName) =>
+      _locale == 'zh' ? '将下载远端备份「$remoteName」并覆盖本地书架，包括已有书籍的阅读进度与书籍信息。确定继续吗？' : 'This downloads the remote backup "$remoteName" and overwrites the local bookshelf, including reading progress and book details of existing books. Continue?';
+  static String rssSelectedCount(int count) =>
+      _locale == 'zh' ? '已选择 $count 项' : '$count selected';
+  static String rssSelectAllCount(int selected, int total) =>
+      _locale == 'zh' ? '全选 $selected/$total' : 'Select all $selected/$total';
+  static String rssToggleFailed(String error) =>
+      _locale == 'zh' ? '切换启用状态失败：$error' : 'Failed to toggle the enabled state: $error';
+  static String rssConfirmDeleteNamed(String name) =>
+      _locale == 'zh' ? '确定要删除订阅源「$name」吗？' : 'Delete the RSS source "$name"?';
+  static String rssDeleteFailed(String error) =>
+      _locale == 'zh' ? '删除失败：$error' : 'Delete failed: $error';
+  static String rssSaveOrderFailed(String error) =>
+      _locale == 'zh' ? '保存排序失败：$error' : 'Failed to save the order: $error';
+  static String rssOperationFailed(String error) =>
+      _locale == 'zh' ? '操作失败：$error' : 'Operation failed: $error';
+  static String rssConfirmDeleteSelected(int count) =>
+      _locale == 'zh' ? '确定要删除选中的 $count 个订阅源吗？' : 'Delete the $count selected RSS sources?';
+  static String rssGroupAdded(String name) =>
+      _locale == 'zh' ? '已为所选订阅源添加分组「$name」' : 'Added group "$name" to the selected RSS sources';
+  static String rssAddGroupFailed(String error) =>
+      _locale == 'zh' ? '添加分组失败：$error' : 'Failed to add the group: $error';
+  static String rssGroupRemoved(String name) =>
+      _locale == 'zh' ? '已从所选订阅源移除分组「$name」' : 'Removed group "$name" from the selected RSS sources';
+  static String rssRemoveGroupFailed(String error) =>
+      _locale == 'zh' ? '移除分组失败：$error' : 'Failed to remove the group: $error';
+  static String rssShareTitle(int count) =>
+      _locale == 'zh' ? '订阅源分享（$count 个）' : 'Share RSS sources ($count)';
+  static String shareFailed(String error) =>
+      _locale == 'zh' ? '分享失败：$error' : 'Share failed: $error';
+  static String rssImportFileFailed(String error) =>
+      _locale == 'zh' ? '从文件导入失败：$error' : 'Failed to import from file: $error';
+  static String rssFetchFailedHttp(int code) =>
+      _locale == 'zh' ? '获取订阅源失败：HTTP $code' : 'Failed to fetch RSS sources: HTTP $code';
+  static String rssFetchFailed(String error) =>
+      _locale == 'zh' ? '获取订阅源失败：$error' : 'Failed to fetch RSS sources: $error';
+  static String rssDefaultImported(int count) =>
+      _locale == 'zh' ? '已导入 $count 条默认订阅源' : 'Imported $count default RSS sources';
+  static String rssImportDefaultFailed(String error) =>
+      _locale == 'zh' ? '导入默认规则失败：$error' : 'Failed to import default rules: $error';
+  static String sourceSaveFailed(String error) =>
+      _locale == 'zh' ? '保存失败：$error' : 'Save failed: $error';
+  static String sourceOpenSearchFailed(String error) =>
+      _locale == 'zh' ? '打开搜索失败：$error' : 'Failed to open search: $error';
+  static String sourceClearCookieFailed(String error) =>
+      _locale == 'zh' ? '清除 Cookie 失败：$error' : 'Failed to clear cookies: $error';
+  static String sourceSetVariableFailed(String error) =>
+      _locale == 'zh' ? '设置源变量失败：$error' : 'Failed to set the source variable: $error';
+  static String sourcePasted(String name) =>
+      _locale == 'zh' ? '已粘贴书源：$name' : 'Pasted book source: $name';
+  static String sourceImported(String name) =>
+      _locale == 'zh' ? '已导入书源：$name' : 'Imported book source: $name';
+  static String sourceDebugFailed(String error) =>
+      _locale == 'zh' ? '调试失败：$error' : 'Debug failed: $error';
+  static String sourceSettingsSummary(String summary, bool expanded) =>
+      _locale == 'zh' ? '设置, $summary, ${expanded ? '收起' : '展开'}' : 'Settings, $summary, ${expanded ? 'collapse' : 'expand'}';
+  static String sourceFieldRequired(String label) =>
+      _locale == 'zh' ? '请输入$label' : 'Enter $label';
+
+  // ----- L10N 阶段 2 补遗（主题尾部 / 订阅源 / 书源编辑） -----
+  static String get dividerLengthDesc => _get('占分组可用宽度的百分比（30-100%）', 'Percentage of the group width available (30-100%)');
+  static String get dividerColor => _get('分隔线颜色', 'Divider color');
+  static String get dividerColorDefault => _get('默认（灰色半透明）', 'Default (translucent gray)');
+  static String get blurEffectsSection => _get('模糊效果', 'Blur Effects');
+  static String get enableBlur => _get('启用毛玻璃', 'Enable Blur');
+  static String get enableBlurDesc => _get('低端设备开启可能掉帧', 'May drop frames on low-end devices');
+  static String get enableBlurFirst => _get('需先启用毛玻璃', 'Enable blur first');
+  static String get customThemeDay => _get('自定义主题 · 白天', 'Custom theme · Day');
+  static String get customThemeNight => _get('自定义主题 · 夜间', 'Custom theme · Night');
+  static String get primaryColor => _get('主色调', 'Primary');
+  static String get accentColor => _get('强调色', 'Accent');
+  static String get primaryTextColor => _get('主要字体色', 'Primary Text Color');
+  static String get secondaryTextColor => _get('次要字体色', 'Secondary Text Color');
+  static String get navBarColor => _get('底部操作栏颜色', 'NavBar color');
+  static String get backgroundImages => _get('背景图片', 'Background Images');
+  static String get transparentNavBar => _get('透明导航栏', 'Transparent navigation bar');
+  static String get saveDayTheme => _get('保存白天主题', 'Save day theme');
+  static String get saveDayThemeDesc => _get('将当前白天颜色保存到主题列表', 'Save the current day colors to the theme list');
+  static String get saveNightTheme => _get('保存夜间主题', 'Save night theme');
+  static String get saveNightThemeDesc => _get('将当前夜间颜色保存到主题列表', 'Save the current night colors to the theme list');
+  static String get bgImageWallpaperFooter => _get('背景图片将作为全局窗口壁纸显示（分组列表卡片保持不透明底）', 'The background image is shown as a global window wallpaper (group list cards keep an opaque background)');
+  static String get dayBgTooDark => _get('白天背景不能太暗', 'Day background can not be too dark!');
+  static String get nightBgTooBright => _get('夜间背景不能太亮', 'Night background can not be too bright!');
+  static String get launcherIcon => _get('启动图标', 'Launcher icon');
+  static String get launcherIconChanged => _get('图标已切换，重启应用后生效', 'Icon changed; restart the app to apply');
+  static String get launcherIconUnsupported => _get('当前平台或系统版本不支持更换图标', 'Changing the icon is not supported on this platform or system version');
+  static String get noSavedThemes => _get('暂无保存的主题配置\n可在下方"保存白天/夜间主题"后于此切换', 'No saved themes yet\nSave a day/night theme below, then switch here');
+  static String get unnamedTheme => _get('未命名', 'Untitled');
+  static String get nightTheme => _get('夜间主题', 'Night theme');
+  static String get dayTheme => _get('白天主题', 'Day theme');
+  static String get exportThemePackage => _get('导出主题包', 'Export theme package');
+  static String get rename => _get('重命名', 'Rename');
+  static String get importThemePackage => _get('导入主题包', 'Import theme package');
+  static String get themeName => _get('主题名称', 'Theme name');
+  static String get themeApplied => _get('已应用主题', 'Theme applied');
+  static String get themeSaved => _get('已保存主题', 'Theme saved');
+  static String get exportThemePackageFailed => _get('导出主题包失败', 'Failed to export the theme package');
+  static String get themePackageImported => _get('已导入主题包', 'Theme package imported');
+  static String get importFailedShort => _get('导入失败', 'Import failed');
+  static String get importFailedNoFile => _get('导入失败：无法选择文件', 'Import failed: no file selected');
+  static String get exportFailed => _get('导出失败', 'Export failed');
+  static String get importFailedBadFormat => _get('导入失败：主题文件格式不正确', 'Import failed: invalid theme file format');
+  static String get themeImported => _get('主题已导入', 'Theme imported');
+  static String get fontLoading => _get('正在加载字体…', 'Loading font…');
+  static String get fontSystemDefault => _get('未设置（跟随系统默认字体）', 'Not set (follow the system default font)');
+  static String get fontCustom => _get('自定义字体', 'Custom font');
+  static String get fontApplied => _get('已设置', 'Set');
+  static String get fontLoadFailed => _get('加载失败，已回退默认字体', 'failed to load, fell back to the default font');
+  static String get pickFontFile => _get('选择字体文件', 'Select a font file');
+  static String get clearFont => _get('清除字体', 'Clear font');
+  static String get fontUpdated => _get('应用字体已更新', 'App font updated');
+  static String get fontRestoredDefault => _get('已恢复默认字体', 'Default font restored');
+  static String get pickImage => _get('选择图片', 'Select a picture');
+  static String get pickBackgroundImage => _get('选择背景图片', 'Select background image');
+  static String get fileMissingFallback => _get('文件缺失，已回落', 'file missing, fell back');
+  static String get pickContainerBackgroundImage => _get('选择容器背景图片', 'Select container background image');
+  static String get setContainerBackgroundFailed => _get('设置容器背景图失败', 'Failed to set the container background');
+  static String get pickItemBackgroundImage => _get('选择项目背景图片', 'Select item background image');
+  static String get setItemBackgroundFailed => _get('设置项目背景图失败', 'Failed to set the item background');
+  static String get clearImage => _get('清除图片', 'Clear image');
+  static String get fontScale => _get('字体缩放', 'Font scale');
+  static String get renameTheme => _get('重命名主题', 'Rename theme');
+  static String get rssEnable => _get('启用', 'Enable');
+  static String get rssDisable => _get('禁用', 'Disable');
+  static String get rssGroupMenu => _get('分组', 'Groups');
+  static String get sourceExploreUrlHintExample => _get('例如：分类名::https://example.com/sort\n或 url 形式', 'e.g. Category::https://example.com/sort\nor a plain url');
+
+  // ----- L10N 阶段 2 补遗：参数化文案 -----
+  static String blurDetailValue(int radius, int alpha) =>
+      _locale == 'zh' ? '半径 $radius dp · 底色 $alpha/255' : 'Radius $radius dp · Base $alpha/255';
+  static String themeAppliedNamed(String name) =>
+      _locale == 'zh' ? '已应用主题「$name」' : 'Applied theme "$name"';
+  static String themeSavedNamed(String name) =>
+      _locale == 'zh' ? '已保存主题「$name」' : 'Saved theme "$name"';
+  static String exportThemePackageFailedWithReason(String error) =>
+      _locale == 'zh' ? '导出主题包失败：$error' : 'Failed to export the theme package: $error';
+  static String themePackageImportedNamed(String name) =>
+      _locale == 'zh' ? '已导入主题包 $name' : 'Theme package $name imported';
+  static String importFailedShortWithReason(String error) =>
+      _locale == 'zh' ? '导入失败：$error' : 'Import failed: $error';
+  static String exportFailedWithReason(String error) =>
+      _locale == 'zh' ? '导出失败：$error' : 'Export failed: $error';
+  static String fontAppliedWithFailure(String name) =>
+      _locale == 'zh' ? '已设置：$name（加载失败，已回退默认字体）' : 'Set: $name (failed to load, fell back to the default font)';
+  static String fontAppliedValue(String name) =>
+      _locale == 'zh' ? '已设置：$name' : 'Set: $name';
+  static String fileMissingNamed(String name) =>
+      _locale == 'zh' ? '$name（文件缺失，已回落）' : '$name (file missing, fell back)';
+  static String numberRangeInputHint(num min, num max) =>
+      _locale == 'zh' ? '请输入 $min ~ $max 之间的数字' : 'Enter a number between $min and $max';
+  static String currentFontSize(String size) =>
+      _locale == 'zh' ? '当前字体大小: $size' : 'Current font size: $size';
 }

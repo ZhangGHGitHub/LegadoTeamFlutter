@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../l10n/app_strings.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
@@ -140,130 +141,141 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   );
 
   /// 书源类型（对标原版 sp_type / @array/source_type）
-  static const _typeLabels = ['文本', '音频', '图片', '文件', '视频'];
+  static List<String> get _typeLabels => [
+    AppStrings.sourceTypeText,
+    AppStrings.sourceTypeAudio,
+    AppStrings.sourceTypeImage,
+    AppStrings.sourceTypeFile,
+    AppStrings.sourceTypeVideo,
+  ];
 
   // ─── 基本信息字段（对齐原版 BookSourceEditActivity sourceEntities 顺序/标签） ───
-  static const _basicFields = [
-    _Field('bookSourceUrl', '源 URL（sourceUrl）', required: true, maxLines: 1),
-    _Field('bookSourceName', '源名称（sourceName）', required: true, maxLines: 1),
-    _Field('bookSourceGroup', '源分组（sourceGroup）', maxLines: 1),
-    _Field('bookSourceComment', '源注释（sourceComment）', maxLines: 3),
-    _Field('loginUrl', '登录 URL(loginUrl)', maxLines: 3),
-    _Field('loginUi', '登录 UI（loginUi）', maxLines: 4),
-    _Field('loginCheckJs', '登录检查 JS（loginCheckJs）', maxLines: 4),
-    _Field('coverDecodeJs', '封面解密（coverDecodeJs）', maxLines: 4),
-    _Field('bookUrlPattern', '书籍 URL 正则（bookUrlPattern）', maxLines: 2),
-    _Field('header', '请求头（header）', hint: 'JSON 格式', maxLines: 3),
-    _Field('variableComment', '变量说明(variableComment)', maxLines: 2),
-    _Field('concurrentRate', '并发率（concurrentRate）', maxLines: 1),
+  static List<_Field> get _basicFields => [
+    _Field('bookSourceUrl', AppStrings.sourceFieldBookSourceUrl, required: true, maxLines: 1),
+    _Field('bookSourceName', AppStrings.sourceFieldBookSourceName, required: true, maxLines: 1),
+    _Field('bookSourceGroup', AppStrings.sourceFieldBookSourceGroup, maxLines: 1),
+    _Field('bookSourceComment', AppStrings.sourceFieldBookSourceComment, maxLines: 3),
+    _Field('loginUrl', AppStrings.sourceFieldLoginUrl, maxLines: 3),
+    _Field('loginUi', AppStrings.sourceFieldLoginUi, maxLines: 4),
+    _Field('loginCheckJs', AppStrings.sourceFieldLoginCheckJs, maxLines: 4),
+    _Field('coverDecodeJs', AppStrings.sourceFieldCoverDecodeJs, maxLines: 4),
+    _Field('bookUrlPattern', AppStrings.sourceFieldBookUrlPattern, maxLines: 2),
+    _Field(
+      'header',
+      AppStrings.sourceFieldHeader,
+      hint: AppStrings.sourceJsonFormatHint,
+      maxLines: 3,
+    ),
+    _Field('variableComment', AppStrings.sourceFieldVariableComment, maxLines: 2),
+    _Field('concurrentRate', AppStrings.sourceFieldConcurrentRate, maxLines: 1),
     _Field('jsLib', 'jsLib', maxLines: 8),
   ];
 
   // ─── 搜索规则字段（对齐原版 searchEntities 顺序/标签） ──────────
-  static const _searchFields = [
+  static List<_Field> get _searchFields => [
     _Field(
       'searchUrl',
-      '搜索地址（url）',
+      AppStrings.sourceFieldSearchUrl,
       maxLines: 1,
-      hint: '例如：https://example.com/search?q=searchKey',
+      hint: AppStrings.sourceFieldSearchUrlHint,
     ),
-    _Field('s_checkKeyWord', '校验关键字（checkKeyWord）'),
-    _Field('s_bookList', '书籍列表规则（bookList）'),
-    _Field('s_name', '书名规则（name）'),
-    _Field('s_author', '作者规则（author）'),
-    _Field('s_kind', '分类规则（kind）'),
-    _Field('s_wordCount', '字数规则（wordCount）'),
-    _Field('s_lastChapter', '最新章节规则（lastChapter）'),
-    _Field('s_intro', '简介规则（intro）'),
-    _Field('s_coverUrl', '封面规则（coverUrl）'),
-    _Field('s_bookUrl', '详情页 URL 规则（bookUrl）'),
+    _Field('s_checkKeyWord', AppStrings.sourceFieldCheckKeyWord),
+    _Field('s_bookList', AppStrings.sourceFieldBookList),
+    _Field('s_name', AppStrings.sourceFieldName),
+    _Field('s_author', AppStrings.sourceFieldAuthor),
+    _Field('s_kind', AppStrings.sourceFieldKind),
+    _Field('s_wordCount', AppStrings.sourceFieldWordCount),
+    _Field('s_lastChapter', AppStrings.sourceFieldLastChapter),
+    _Field('s_intro', AppStrings.sourceFieldIntro),
+    _Field('s_coverUrl', AppStrings.sourceFieldCoverUrl),
+    _Field('s_bookUrl', AppStrings.sourceFieldBookUrl),
   ];
 
   // ─── 发现规则字段（对齐原版 exploreEntities 顺序/标签） ──────────
-  static const _exploreFields = [
+  static List<_Field> get _exploreFields => [
     _Field(
       'exploreUrl',
-      '发现地址规则（url）',
+      AppStrings.sourceFieldExploreUrl,
       maxLines: 3,
-      hint: '例如：分类名::https://example.com/sort\n或 url 形式',
+      hint: AppStrings.sourceExploreUrlHintExample,
     ),
-    _Field('e_bookList', '书籍列表规则（bookList）'),
-    _Field('e_name', '书名规则（name）'),
-    _Field('e_author', '作者规则（author）'),
-    _Field('e_kind', '分类规则（kind）'),
-    _Field('e_wordCount', '字数规则（wordCount）'),
-    _Field('e_lastChapter', '最新章节规则（lastChapter）'),
-    _Field('e_intro', '简介规则（intro）'),
-    _Field('e_coverUrl', '封面规则（coverUrl）'),
-    _Field('e_bookUrl', '详情页 URL 规则（bookUrl）'),
+    _Field('e_bookList', AppStrings.sourceFieldBookList),
+    _Field('e_name', AppStrings.sourceFieldName),
+    _Field('e_author', AppStrings.sourceFieldAuthor),
+    _Field('e_kind', AppStrings.sourceFieldKind),
+    _Field('e_wordCount', AppStrings.sourceFieldWordCount),
+    _Field('e_lastChapter', AppStrings.sourceFieldLastChapter),
+    _Field('e_intro', AppStrings.sourceFieldIntro),
+    _Field('e_coverUrl', AppStrings.sourceFieldCoverUrl),
+    _Field('e_bookUrl', AppStrings.sourceFieldBookUrl),
   ];
 
   // ─── 详情规则字段（对齐原版 infoEntities 顺序/标签） ─────────────
-  static const _infoFields = [
-    _Field('i_init', '预处理规则（bookInfoInit）'),
-    _Field('i_name', '书名规则（name）'),
-    _Field('i_author', '作者规则（author）'),
-    _Field('i_kind', '分类规则（kind）'),
-    _Field('i_wordCount', '字数规则（wordCount）'),
-    _Field('i_lastChapter', '最新章节规则（lastChapter）'),
-    _Field('i_intro', '简介规则（intro）'),
-    _Field('i_coverUrl', '封面规则（coverUrl）'),
-    _Field('i_tocUrl', '目录 URL 规则（tocUrl）'),
-    _Field('i_canReName', '允许修改书名作者（canReName）'),
-    _Field('i_downloadUrls', '下载URL规则(downloadUrls)'),
+  static List<_Field> get _infoFields => [
+    _Field('i_init', AppStrings.sourceFieldBookInfoInit),
+    _Field('i_name', AppStrings.sourceFieldName),
+    _Field('i_author', AppStrings.sourceFieldAuthor),
+    _Field('i_kind', AppStrings.sourceFieldKind),
+    _Field('i_wordCount', AppStrings.sourceFieldWordCount),
+    _Field('i_lastChapter', AppStrings.sourceFieldLastChapter),
+    _Field('i_intro', AppStrings.sourceFieldIntro),
+    _Field('i_coverUrl', AppStrings.sourceFieldCoverUrl),
+    _Field('i_tocUrl', AppStrings.sourceFieldTocUrl),
+    _Field('i_canReName', AppStrings.sourceFieldCanReName),
+    _Field('i_downloadUrls', AppStrings.sourceFieldDownloadUrls),
   ];
 
   // ─── 目录规则字段（对齐原版 tocEntities 顺序/标签） ─────────────
-  static const _tocFields = [
-    _Field('t_preUpdateJs', '更新之前 JS（preUpdateJs）'),
-    _Field('t_chapterList', '目录列表规则（chapterList）'),
-    _Field('t_chapterName', '章节名称规则（ChapterName）'),
-    _Field('t_chapterUrl', '章节 URL 规则（chapterUrl）'),
-    _Field('t_formatJs', '格式化规则(formatJs)'),
-    _Field('t_isVolume', 'Volume 标识（isVolume）'),
-    _Field('t_updateTime', '章节信息（ChapterInfo）'),
-    _Field('t_isVip', 'VIP 标识（isVip）'),
-    _Field('t_isPay', '购买标识（isPay）'),
-    _Field('t_nextTocUrl', '目录下一页规则（nextTocUrl）'),
+  static List<_Field> get _tocFields => [
+    _Field('t_preUpdateJs', AppStrings.sourceFieldPreUpdateJs),
+    _Field('t_chapterList', AppStrings.sourceFieldChapterList),
+    _Field('t_chapterName', AppStrings.sourceFieldChapterName),
+    _Field('t_chapterUrl', AppStrings.sourceFieldChapterUrl),
+    _Field('t_formatJs', AppStrings.sourceFieldFormatJs),
+    _Field('t_isVolume', AppStrings.sourceFieldIsVolume),
+    _Field('t_updateTime', AppStrings.sourceFieldChapterInfo),
+    _Field('t_isVip', AppStrings.sourceFieldIsVip),
+    _Field('t_isPay', AppStrings.sourceFieldIsPay),
+    _Field('t_nextTocUrl', AppStrings.sourceFieldNextTocUrl),
   ];
 
   // ─── 正文规则字段（对齐原版 contentEntities 顺序/标签） ──────────
-  static const _contentFields = [
-    _Field('c_content', '正文规则（content）', maxLines: 3),
-    _Field('c_nextContentUrl', '正文下一页 URL 规则（nextContentUrl）'),
-    _Field('c_subContent', '副文规则（subContent）'),
-    _Field('c_replaceRegex', '替换规则（replaceRegex）', maxLines: 4),
-    _Field('c_title', '标题（title）'),
-    _Field('c_sourceRegex', '资源正则（sourceRegex）'),
-    _Field('c_imageStyle', '图片样式（imageStyle）'),
-    _Field('c_imageDecode', '图片解密（imageDecode）'),
+  static List<_Field> get _contentFields => [
+    _Field('c_content', AppStrings.sourceFieldContent, maxLines: 3),
+    _Field('c_nextContentUrl', AppStrings.sourceFieldNextContentUrl),
+    _Field('c_subContent', AppStrings.sourceFieldSubContent),
+    _Field('c_replaceRegex', AppStrings.sourceFieldReplaceRegex, maxLines: 4),
+    _Field('c_title', AppStrings.sourceFieldTitle),
+    _Field('c_sourceRegex', AppStrings.sourceFieldSourceRegex),
+    _Field('c_imageStyle', AppStrings.sourceFieldImageStyle),
+    _Field('c_imageDecode', AppStrings.sourceFieldImageDecode),
     _Field('c_webJs', 'WebView JS（webJs）', maxLines: 4),
-    _Field('c_payAction', '购买操作（payAction）'),
-    _Field('c_callBackJs', '回调操作（callBackJs）'),
+    _Field('c_payAction', AppStrings.sourceFieldPayAction),
+    _Field('c_callBackJs', AppStrings.sourceFieldCallBackJs),
   ];
 
   // ─── 段评规则字段（对齐原版 reviewEntities 顺序/标签） ───────────
-  static const _reviewFields = [
-    _Field('r_reviewSummaryUrl', '段评统计 URL（reviewSummaryUrl）'),
-    _Field('r_summaryListRule', '段评统计列表（summaryListRule）'),
-    _Field('r_summaryParagraphIndexRule', '段落索引（summaryParagraphIndexRule）'),
-    _Field('r_summaryCountRule', '段评数量（summaryCountRule）'),
-    _Field('r_summaryParagraphDataRule', '段落数据（summaryParagraphDataRule）'),
-    _Field('r_reviewDetailUrl', '段评详情 URL（reviewDetailUrl）'),
-    _Field('r_reviewDetailNextPageUrl', '段评下一页 URL（reviewDetailNextPageUrl）'),
-    _Field('r_detailListRule', '段评详情列表（detailListRule）'),
-    _Field('r_detailIdRule', '段评 ID（detailIdRule）'),
-    _Field('r_detailAvatarRule', '头像（detailAvatarRule）'),
-    _Field('r_detailNameRule', '昵称（detailNameRule）'),
-    _Field('r_detailBadgeRule', '徽章（detailBadgeRule）'),
-    _Field('r_detailContentRule', '评论内容协议（detailContentRule）', maxLines: 3),
-    _Field('r_reviewQuoteUrl', '段评回复URL（reviewQuoteUrl）'),
-    _Field('r_replyListRule', '子评论列表（replyListRule）'),
-    _Field('r_replyIdRule', '子评论 ID（replyIdRule）'),
-    _Field('r_replyAvatarRule', '子评论头像（replyAvatarRule）'),
-    _Field('r_replyNameRule', '子评论昵称（replyNameRule）'),
-    _Field('r_replyBadgeRule', '子评论徽章（replyBadgeRule）'),
-    _Field('r_replyContentRule', '子评论内容协议（replyContentRule）', maxLines: 3),
+  static List<_Field> get _reviewFields => [
+    _Field('r_reviewSummaryUrl', AppStrings.sourceFieldReviewSummaryUrl),
+    _Field('r_summaryListRule', AppStrings.sourceFieldSummaryListRule),
+    _Field('r_summaryParagraphIndexRule', AppStrings.sourceFieldSummaryParagraphIndexRule),
+    _Field('r_summaryCountRule', AppStrings.sourceFieldSummaryCountRule),
+    _Field('r_summaryParagraphDataRule', AppStrings.sourceFieldSummaryParagraphDataRule),
+    _Field('r_reviewDetailUrl', AppStrings.sourceFieldReviewDetailUrl),
+    _Field('r_reviewDetailNextPageUrl', AppStrings.sourceFieldReviewDetailNextPageUrl),
+    _Field('r_detailListRule', AppStrings.sourceFieldDetailListRule),
+    _Field('r_detailIdRule', AppStrings.sourceFieldDetailIdRule),
+    _Field('r_detailAvatarRule', AppStrings.sourceFieldDetailAvatarRule),
+    _Field('r_detailNameRule', AppStrings.sourceFieldDetailNameRule),
+    _Field('r_detailBadgeRule', AppStrings.sourceFieldDetailBadgeRule),
+    _Field('r_detailContentRule', AppStrings.sourceFieldDetailContentRule, maxLines: 3),
+    _Field('r_reviewQuoteUrl', AppStrings.sourceFieldReviewQuoteUrl),
+    _Field('r_replyListRule', AppStrings.sourceFieldReplyListRule),
+    _Field('r_replyIdRule', AppStrings.sourceFieldReplyIdRule),
+    _Field('r_replyAvatarRule', AppStrings.sourceFieldReplyAvatarRule),
+    _Field('r_replyNameRule', AppStrings.sourceFieldReplyNameRule),
+    _Field('r_replyBadgeRule', AppStrings.sourceFieldReplyBadgeRule),
+    _Field('r_replyContentRule', AppStrings.sourceFieldReplyContentRule, maxLines: 3),
   ];
 
   @override
@@ -339,7 +351,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
       topBar: LegadoAppBar(
         // 标题字号 20sp 与原版 ToolbarTitle 一致；防极端设备字号缩放截断
         title: Text(
-          isNew ? '新建书源' : '编辑书源',
+          isNew ? AppStrings.sourceAdd : AppStrings.sourceEdit,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -347,7 +359,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
           // 全屏代码编辑（对齐原版 menu_fullscreen_edit → 编辑内容，图标位）
           IconButton(
             icon: const Icon(Symbols.code_rounded),
-            tooltip: '编辑内容',
+            tooltip: AppStrings.sourceEditContent,
             // 压缩触控区 48→40dp：给标题留出更多空间（字体放大时标题
             // 保持原版字号完整显示，避免截断/缩放）
             visualDensity: VisualDensity.compact,
@@ -356,14 +368,14 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
           // 保存（对齐原版 menu_save：仅图标，无文字）
           IconButton(
             icon: const Icon(Symbols.save_rounded),
-            tooltip: '保存',
+            tooltip: AppStrings.save,
             visualDensity: VisualDensity.compact,
             onPressed: _saving ? null : _save,
           ),
           // 调试源（对齐原版 menu_debug_source，图标位）
           IconButton(
             icon: const Icon(Symbols.bug_report_rounded),
-            tooltip: '调试源',
+            tooltip: AppStrings.sourceDebug,
             visualDensity: VisualDensity.compact,
             onPressed: _saving ? null : _debugSource,
           ),
@@ -373,7 +385,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
           Builder(
             builder: (btnContext) => IconButton(
               icon: const Icon(Symbols.more_vert_rounded),
-              tooltip: '更多选项',
+              tooltip: AppStrings.rssMoreOptions,
               visualDensity: VisualDensity.compact,
               onPressed: () => _showOverflowMenu(btnContext),
             ),
@@ -389,13 +401,13 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
           padding: const EdgeInsets.only(bottom: 24),
           children: [
             _buildSettingsSection(),
-            _buildFormSection('基本信息', _basicFields),
-            _buildFormSection('搜索规则', _searchFields),
-            _buildFormSection('发现规则', _exploreFields),
-            _buildFormSection('详情规则', _infoFields),
-            _buildFormSection('目录规则', _tocFields),
-            _buildFormSection('正文规则', _contentFields),
-            _buildFormSection('段评规则', _reviewFields),
+            _buildFormSection(AppStrings.sourceBasicInfo, _basicFields),
+            _buildFormSection(AppStrings.sourceSearchRules, _searchFields),
+            _buildFormSection(AppStrings.sourceExploreRules, _exploreFields),
+            _buildFormSection(AppStrings.sourceInfoRules, _infoFields),
+            _buildFormSection(AppStrings.sourceTocRules, _tocFields),
+            _buildFormSection(AppStrings.sourceContentRules, _contentFields),
+            _buildFormSection(AppStrings.sourceReviewRules, _reviewFields),
           ],
         ),
       ),

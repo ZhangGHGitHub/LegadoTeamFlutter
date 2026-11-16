@@ -18,6 +18,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:path_provider/path_provider.dart';
+import '../l10n/app_strings.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/container_color_dialog.dart';
 import '../widgets/legado_app_bar.dart';
@@ -100,21 +101,22 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     'icon6',
   ];
 
-  static const _launcherIconLabels = [
-    '默认',
-    '图标 1',
-    '图标 2',
-    '图标 3',
-    '图标 4',
-    '图标 5',
-    '图标 6',
+  /// 启动图标可选值文案（L10N 阶段 2：随 locale 切换，故不再是 const）
+  static List<String> get _launcherIconLabels => [
+    AppStrings.defaultLabelShort,
+    AppStrings.launcherIcon1,
+    AppStrings.launcherIcon2,
+    AppStrings.launcherIcon3,
+    AppStrings.launcherIcon4,
+    AppStrings.launcherIcon5,
+    AppStrings.launcherIcon6,
   ];
 
   /// Android 专属项统一灰字标注（与阅读设置面板刘海项先例一致）
-  static const _androidOnly = '仅 Android 生效';
+  static String get _androidOnly => AppStrings.androidOnlyLabel;
 
   /// [批13] 字体色行副标题：提示与动态取色叠加时的对比度风险（不改映射）
-  static const _fontColorHint = '与动态取色同时使用时可能影响对比度';
+  static String get _fontColorHint => AppStrings.fontColorDynamicHint;
 
   @override
   void initState() {
@@ -259,11 +261,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   // ===== [UI_SYNC_REFACTOR B2] 顶栏与布局开关 =====
 
   String _topBarStyleLabel(TopBarButtonStyle s) => switch (s) {
-    TopBarButtonStyle.plain => '平面',
-    TopBarButtonStyle.tonal => 'Tonal（默认）',
-    TopBarButtonStyle.outlined => '描边',
-    TopBarButtonStyle.glass => '玻璃',
-    TopBarButtonStyle.liquidGlass => '液态玻璃',
+    TopBarButtonStyle.plain => AppStrings.topBarStylePlain,
+    TopBarButtonStyle.tonal => AppStrings.topBarStyleTonal,
+    TopBarButtonStyle.outlined => AppStrings.iconStyleOutline,
+    TopBarButtonStyle.glass => AppStrings.topBarStyleGlass,
+    TopBarButtonStyle.liquidGlass => AppStrings.topBarStyleLiquidGlass,
   };
 
   Future<void> _showTopBarStylePicker() async {
@@ -271,7 +273,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final selected = await showDialog<TopBarButtonStyle>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('顶栏按钮样式'),
+        title: Text(AppStrings.topBarButtonStyle),
         children: [
           for (final s in TopBarButtonStyle.values)
             SimpleDialogOption(
@@ -305,7 +307,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('顶栏不透明度'),
+          title: Text(AppStrings.topBarOpacity),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -317,17 +319,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                 label: '${value.round()}%',
                 onChanged: (v) => setDialogState(() => value = v),
               ),
-              Text('当前 ${value.round()}%'),
+              Text(AppStrings.currentPercent(value.round())),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -346,7 +348,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('底栏不透明度'),
+          title: Text(AppStrings.bottomBarOpacity),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -358,17 +360,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                 label: '${value.round()}%',
                 onChanged: (v) => setDialogState(() => value = v),
               ),
-              Text('当前 ${value.round()}%'),
+              Text(AppStrings.currentPercent(value.round())),
             ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -382,10 +384,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _tabletLabel(TabletInterfaceMode m) => switch (m) {
-    TabletInterfaceMode.auto => '自动（宽屏 ≥600dp）',
-    TabletInterfaceMode.always => '始终启用侧栏',
-    TabletInterfaceMode.landscape => '仅横屏启用',
-    TabletInterfaceMode.off => '不启用',
+    TabletInterfaceMode.auto => AppStrings.tabletModeAuto,
+    TabletInterfaceMode.always => AppStrings.tabletModeAlways,
+    TabletInterfaceMode.landscape => AppStrings.tabletModeLandscape,
+    TabletInterfaceMode.off => AppStrings.tabletModeOff,
   };
 
   Future<void> _showTabletModePicker() async {
@@ -393,7 +395,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final selected = await showDialog<TabletInterfaceMode>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('大屏导航形态'),
+        title: Text(AppStrings.tabletNavMode),
         children: [
           for (final m in TabletInterfaceMode.values)
             SimpleDialogOption(
@@ -421,10 +423,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   /// [设置批2b-2b] 多栏布局档位文案（对齐参考版 multi_pane.xml 中文条目）
   String _multiPaneLabel(MultiPaneMode m) => switch (m) {
-    MultiPaneMode.auto => '自动（宽窗口）',
-    MultiPaneMode.landscape => '横屏开启（宽窗口）',
-    MultiPaneMode.always => '始终开启（空间足够时）',
-    MultiPaneMode.off => '关闭',
+    MultiPaneMode.auto => AppStrings.multiPaneAuto,
+    MultiPaneMode.landscape => AppStrings.multiPaneLandscape,
+    MultiPaneMode.always => AppStrings.multiPaneAlways,
+    MultiPaneMode.off => AppStrings.modeOff,
   };
 
   Future<void> _showMultiPanePicker() async {
@@ -432,7 +434,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final selected = await showDialog<MultiPaneMode>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('多栏布局'),
+        title: Text(AppStrings.multiPaneLayout),
         children: [
           for (final m in MultiPaneMode.values)
             SimpleDialogOption(
@@ -459,8 +461,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _styleLabel(String v) => switch (v) {
-    'none' => '关闭（内置色板）',
-    'tonalSpot' => 'Tonal Spot（默认）',
+    'none' => AppStrings.paletteNone,
+    'tonalSpot' => AppStrings.paletteTonalSpot,
     'neutral' => 'Neutral',
     'vibrant' => 'Vibrant',
     'expressive' => 'Expressive',
@@ -474,9 +476,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
   Future<void> _showThemeStylePicker() async {
     final current = ref.read(uiSettingsProvider).themeStyle;
-    const options = <(String, String)>[
-      ('none', '关闭（内置色板）'),
-      ('tonalSpot', 'Tonal Spot（默认）'),
+    final options = <(String, String)>[
+      ('none', AppStrings.paletteNone),
+      ('tonalSpot', AppStrings.paletteTonalSpot),
       ('neutral', 'Neutral'),
       ('vibrant', 'Vibrant'),
       ('expressive', 'Expressive'),
@@ -489,7 +491,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final selected = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('配色风格'),
+        title: Text(AppStrings.colorStyle),
         children: [
           for (final (value, label) in options)
             SimpleDialogOption(
@@ -516,22 +518,22 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _contrastLabel(String v) => switch (v) {
-    '0.5' => 'Medium（中）',
-    '1.0' => 'High（高）',
-    _ => 'Default（默认）',
+    '0.5' => AppStrings.contrastMedium,
+    '1.0' => AppStrings.contrastHigh,
+    _ => AppStrings.contrastDefault,
   };
 
   Future<void> _showContrastPicker() async {
     final current = ref.read(uiSettingsProvider).themeContrastLevel;
-    const options = <(String, String)>[
-      ('0.0', 'Default（默认）'),
-      ('0.5', 'Medium（中）'),
-      ('1.0', 'High（高）'),
+    final options = <(String, String)>[
+      ('0.0', AppStrings.contrastDefault),
+      ('0.5', AppStrings.contrastMedium),
+      ('1.0', AppStrings.contrastHigh),
     ];
     final selected = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('对比度'),
+        title: Text(AppStrings.contrast),
         children: [
           for (final (value, label) in options)
             SimpleDialogOption(
@@ -560,9 +562,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   }
 
   String _coverBgLabel(String v) => switch (v) {
-    'off' => '显示封面（不模糊）',
-    'off_for_default' => '隐藏（仅默认封面档）',
-    _ => '模糊显示（默认）',
+    'off' => AppStrings.coverBlurOff,
+    'off_for_default' => AppStrings.coverBlurOffForDefault,
+    _ => AppStrings.coverBlurOn,
   };
 
   Future<void> _showCoverBgPicker(bool isDefaultCover) async {
@@ -570,15 +572,15 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final current = isDefaultCover
         ? uiNow.bookInfoDefaultCoverBackground
         : uiNow.bookInfoNetworkCoverBackground;
-    const options = <(String, String)>[
-      ('on', '模糊显示（默认）'),
-      ('off', '显示封面（不模糊）'),
-      ('off_for_default', '隐藏'),
+    final options = <(String, String)>[
+      ('on', AppStrings.coverBlurOn),
+      ('off', AppStrings.coverBlurOff),
+      ('off_for_default', AppStrings.hideLabel),
     ];
     final selected = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('封面背景'),
+        title: Text(AppStrings.coverBackground),
         children: [
           for (final (value, label) in options)
             SimpleDialogOption(
@@ -626,7 +628,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('模糊半径 ${radius.round()}dp'),
+              Text(AppStrings.blurRadiusValue(radius.round())),
               Slider(
                 value: radius,
                 min: 0,
@@ -634,7 +636,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                 divisions: 12,
                 onChanged: (v) => setDialogState(() => radius = v),
               ),
-              Text('底色透明度 ${alpha.round()}/255'),
+              Text(AppStrings.blurAlphaValue(alpha.round())),
               Slider(
                 value: alpha,
                 min: 0,
@@ -647,11 +649,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -667,7 +669,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final uiNow = ref.read(uiSettingsProvider);
     final notifier = ref.read(uiSettingsProvider.notifier);
     await _showBlurRadiusDialog(
-      title: '顶栏模糊',
+      title: AppStrings.topBarBlur,
       currentRadius: uiNow.topBarBlurRadius,
       currentAlpha: uiNow.topBarBlurAlpha,
       onRadius: notifier.setTopBarBlurRadius,
@@ -679,7 +681,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final uiNow = ref.read(uiSettingsProvider);
     final notifier = ref.read(uiSettingsProvider.notifier);
     await _showBlurRadiusDialog(
-      title: '悬浮底栏模糊',
+      title: AppStrings.floatingBottomBarBlur,
       currentRadius: uiNow.bottomBarBlurRadius,
       currentAlpha: uiNow.bottomBarBlurAlpha,
       onRadius: notifier.setBottomBarBlurRadius,
@@ -723,7 +725,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       // [队列⑦c A3] 页标题对齐参考 R.string.theme_setting=外观
-      topBar: LegadoAppBar(title: const Text('外观')),
+      topBar: LegadoAppBar(title: Text(AppStrings.appearanceEntry)),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : IosGroupedBody(
@@ -743,7 +745,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // ThemeNotifier.setThemeMode，非新增功能。
                   // 原「主题导出/导入」独立分区并入下方通用组（对齐参考主题管理
                   // 同簇）；[B3-C1 A3] 导出/导入能力保留不动。
-                  const IosSectionHeader('主题模式'),
+                  IosSectionHeader(AppStrings.themeMode),
                   IosGroup(
                     children: [
                       // 参考 ThemeModeSelector（:974-1012）material 引擎分支：
@@ -765,17 +767,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // 对比度；参考版无对应分组——参考"主题风格"=compose 引擎
                   // 开关，属参考独有，仅登记不实现）。[队列⑦c A3] AMOLED 纯黑
                   // 移出本组，改入通用组首位（对齐参考 纯黑深色模式 首位） ===
-                  const IosSectionHeader('主题引擎'),
+                  IosSectionHeader(AppStrings.themeEngine),
                   IosGroup(
                     children: [
                       IosListTile(
-                        title: '配色风格',
+                        title: AppStrings.colorStyle,
                         subtitle: _styleLabel(ui.themeStyle),
                         onTap: _showThemeStylePicker,
                       ),
                       if (ui.themeStyle != 'none')
                         IosListTile(
-                          title: '对比度',
+                          title: AppStrings.contrast,
                           subtitle: _contrastLabel(ui.themeContrastLevel),
                           onTap: _showContrastPicker,
                         ),
@@ -796,8 +798,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 纯黑深色模式（参考 pure_black=纯黑深色模式；原"AMOLED
                       // 纯黑"，标题对齐参考，副标题保留）
                       SettingSwitchRow(
-                        title: '纯黑深色模式',
-                        subtitle: '暗色模式背景纯黑（省电护屏）',
+                        title: AppStrings.trueBlackMode,
+                        subtitle: AppStrings.trueBlackModeDesc,
                         value: ui.themeAmoled,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -808,8 +810,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // Android/iOS 支持，Windows 等桌面端整项隐藏）
                       if (LauncherIconService.isSupported)
                         IosListTile(
-                          title: '切换图标',
-                          subtitle: '切换软件显示在桌面的图标',
+                          title: AppStrings.changeIcon,
+                          subtitle: AppStrings.changeIconDesc,
                           value:
                               _launcherIconLabels[_launcherIcons
                                   .indexOf(_launcherIcon)
@@ -819,7 +821,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 字体大小（参考 font_scale=字体大小；摘要半角冒号对齐
                       // font_scale_summary「当前字体大小: %.1f」，见 theme_state）
                       IosListTile(
-                        title: '字体大小',
+                        title: AppStrings.fontSize,
                         subtitle: themeState.fontScaleLabel,
                         onTap: () => _showFontScalePicker(
                           context,
@@ -830,15 +832,15 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 主题管理（参考 theme_pack=主题管理；原"主题列表"改名，
                       // 副标题保留；参考完整主题包管理屏属参考独有，仅登记）
                       IosListTile(
-                        title: '主题管理',
-                        subtitle: '使用、保存、导入或分享主题',
+                        title: AppStrings.themeManagement,
+                        subtitle: AppStrings.themeManagementDesc,
                         onTap: _showThemeListDialog,
                       ),
                       // 字体设置（参考版外观页「字体设置」，位于主题管理之后、
                       // 背景图片之前；日/夜共用，仅影响 App 界面文字。参考版
                       // 与阅读正文字体分离——正文仍由阅读设置/字体页管理）
                       IosListTile(
-                        title: '字体设置',
+                        title: AppStrings.fontSettings,
                         subtitle: _appFontSubtitle(appFont),
                         onTap: _showAppFontDialog,
                       ),
@@ -846,19 +848,19 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // ThemeNotifier，全部经主题槽位，无硬编码色值）
                       IosListTile(
                         icon: Symbols.ios_share_rounded,
-                        title: '导出主题',
-                        subtitle: '将当前配色导出为 JSON 文件',
+                        title: AppStrings.exportTheme,
+                        subtitle: AppStrings.exportThemeDesc,
                         onTap: _exportTheme,
                       ),
                       IosListTile(
                         icon: Symbols.download_rounded,
-                        title: '导入主题',
-                        subtitle: '导入主题 JSON 文件并应用',
+                        title: AppStrings.importTheme,
+                        subtitle: AppStrings.importThemeDesc,
                         onTap: _importTheme,
                       ),
                       IosListTile(
-                        title: '启动界面样式',
-                        subtitle: '设定显示时间，更改背景图片，是否显示文字等',
+                        title: AppStrings.launchStyle,
+                        subtitle: AppStrings.launchStyleDesc,
                         onTap: () {
                           Navigator.of(
                             context,
@@ -866,8 +868,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         },
                       ),
                       SettingSwitchRow(
-                        title: '沉浸式状态栏',
-                        subtitle: '状态栏颜色透明',
+                        title: AppStrings.immersiveStatusBar,
+                        subtitle: AppStrings.immersiveStatusBarDesc,
                         value: _transparentStatusBar,
                         onChanged: (v) async {
                           setState(() => _transparentStatusBar = v);
@@ -877,8 +879,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         },
                       ),
                       SettingSwitchRow(
-                        title: '沉浸式导航栏',
-                        subtitle: '导航栏颜色透明',
+                        title: AppStrings.immersiveNavBar,
+                        subtitle: AppStrings.immersiveNavBarDesc,
                         value: _immNavigationBar,
                         onChanged: (v) async {
                           setState(() => _immNavigationBar = v);
@@ -888,21 +890,21 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         },
                       ),
                       IosListTile(
-                        title: '导航栏阴影',
-                        subtitle: '当前阴影大小（elevation）：$_barElevation',
+                        title: AppStrings.navBarShadow,
+                        subtitle: AppStrings.navBarShadowValue(_barElevation),
                         onTap: _showBarElevationDialog,
                       ),
                       IosListTile(
-                        title: '底栏图集',
-                        subtitle: '导入 zip 自定义底栏图标',
+                        title: AppStrings.bottomBarAtlas,
+                        subtitle: AppStrings.bottomBarAtlasDesc,
                         onTap: () => Navigator.pushNamed(
                           context,
                           AppRoutes.bottomBarSkin,
                         ),
                       ),
                       SettingSwitchRow(
-                        title: '跟随壁纸配色',
-                        subtitle: '使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）',
+                        title: AppStrings.wallpaperColors,
+                        subtitle: AppStrings.wallpaperColorsDesc,
                         value: _wallpaperColorFollow,
                         onChanged: (v) {
                           setState(() => _wallpaperColorFollow = v);
@@ -918,8 +920,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       if (_wallpaperColorFollow)
                         SettingSwitchRow(
-                          title: '壁纸变化时自动更新',
-                          subtitle: '系统壁纸变化后自动应用新色板',
+                          title: AppStrings.wallpaperAutoUpdate,
+                          subtitle: AppStrings.wallpaperAutoUpdateDesc,
                           value: _wallpaperColorAutoUpdate,
                           onChanged: (v) {
                             setState(() => _wallpaperColorAutoUpdate = v);
@@ -936,7 +938,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // [队列⑦c A3] 合并原"顶栏与布局"+"底栏与导航"两组为参考的单
                   // 主界面组，设置经 uiSettings 即时全局生效；参考 首页与导航/
                   // 显示状态栏/启用滑动时动画 属参考独有，仅登记不实现） ===
-                  const IosSectionHeader('主界面'),
+                  IosSectionHeader(AppStrings.mainInterfaceSection),
                   IosGroup(
                     children: [
                       // [设置批2b-2a] 参考版「首页与导航」独立设置项
@@ -945,68 +947,68 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 外观页「主界面」组首位，本项同位置对齐 — 全栈工程师
                       IosListTile(
                         icon: Symbols.explore_rounded,
-                        title: '首页与导航',
-                        subtitle: '设置首页、发现、订阅、默认主页和导航栏图标',
+                        title: AppStrings.homeAndNavigation,
+                        subtitle: AppStrings.homeAndNavigationDesc,
                         onTap: () => MainNavigationSettingsSheet.show(context),
                       ),
                       IosListTile(
-                        title: '顶栏按钮样式',
+                        title: AppStrings.topBarButtonStyle,
                         subtitle: _topBarStyleLabel(ui.topBarButtonStyle),
                         onTap: _showTopBarStylePicker,
                       ),
                       SettingSwitchRow(
-                        title: '合并顶栏按钮',
-                        subtitle: '顶栏按钮收进胶囊容器',
+                        title: AppStrings.mergeTopBarButtons,
+                        subtitle: AppStrings.topBarCapsuleDesc,
                         value: ui.mergeTopBarActions,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
                             .setMergeTopBarActions(v),
                       ),
                       SettingSwitchRow(
-                        title: '大顶栏形态',
-                        subtitle: '书架/我的等根页使用可折叠大标题',
+                        title: AppStrings.largeTopBar,
+                        subtitle: AppStrings.largeTopBarDesc,
                         value: ui.useFlexibleTopAppBar,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
                             .setUseFlexibleTopAppBar(v),
                       ),
                       IosListTile(
-                        title: '顶栏不透明度',
-                        subtitle: '当前 ${ui.topBarOpacity}%',
+                        title: AppStrings.topBarOpacity,
+                        subtitle: AppStrings.currentPercent(ui.topBarOpacity),
                         onTap: _showTopBarOpacityDialog,
                       ),
                       SettingSwitchRow(
-                        title: '显示底栏',
-                        subtitle: '隐藏后仅侧栏/手势切页',
+                        title: AppStrings.showBottomBar,
+                        subtitle: AppStrings.showBottomBarDesc,
                         value: ui.showBottomView,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
                             .setShowBottomView(v),
                       ),
                       SettingSwitchRow(
-                        title: '悬浮底栏',
-                        subtitle: '64dp 胶囊悬浮形态（ Experimental）',
+                        title: AppStrings.floatingBottomBarSection,
+                        subtitle: AppStrings.floatingBottomBarSectionDesc,
                         value: ui.useFloatingBottomBar,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
                             .setUseFloatingBottomBar(v),
                       ),
                       IosListTile(
-                        title: '底栏不透明度',
-                        subtitle: '当前 ${ui.bottomBarOpacity}%',
+                        title: AppStrings.bottomBarOpacity,
+                        subtitle: AppStrings.currentPercent(ui.bottomBarOpacity),
                         onTap: _showBottomBarOpacityDialog,
                       ),
                       // 大屏导航形态（参考 main_activity 组 tabletInterface=平板界面；
                       // 四档 自动/始终/仅横屏/关闭）
                       IosListTile(
-                        title: '大屏导航形态',
+                        title: AppStrings.tabletNavMode,
                         subtitle: _tabletLabel(ui.tabletInterface),
                         onTap: _showTabletModePicker,
                       ),
                       // [设置批2b-2b] 多栏布局（参考版主界面组 multiPaneMode
                       // 紧随 tabletInterface：四档 auto/landscape/always/off）
                       IosListTile(
-                        title: '多栏布局',
+                        title: AppStrings.multiPaneLayout,
                         subtitle: _multiPaneLabel(ui.multiPaneMode),
                         onTap: _showMultiPanePicker,
                       ),
@@ -1016,14 +1018,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === 分组 5「书籍详情页」（参考 R.string.book_info_page=
                   // 书籍详情页；原"详情与圆角"的封面三行；卡片圆角/分隔线移入
                   // 下方"容器设置"组） ===
-                  const IosSectionHeader('书籍详情页'),
+                  IosSectionHeader(AppStrings.bookDetailPage),
                   IosGroup(
                     children: [
                       // 参考 book_info_follow_cover_color=界面颜色跟随封面取色，
                       // 摘要 book_info_follow_cover_color_s=仅在显示背景封面时生效
                       SettingSwitchRow(
-                        title: '界面颜色跟随封面取色',
-                        subtitle: '仅在显示背景封面时生效',
+                        title: AppStrings.uiColorFromCover,
+                        subtitle: AppStrings.uiColorFromCoverDesc,
                         value: ui.bookInfoFollowCoverColor,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -1031,7 +1033,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       // 参考 book_info_network_cover_background=网络封面背景设置
                       IosListTile(
-                        title: '网络封面背景设置',
+                        title: AppStrings.networkCoverBackground,
                         subtitle: _coverBgLabel(
                           ui.bookInfoNetworkCoverBackground,
                         ),
@@ -1039,7 +1041,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       // 参考 book_info_default_cover_background=默认封面背景设置
                       IosListTile(
-                        title: '默认封面背景设置',
+                        title: AppStrings.defaultCoverBackground,
                         subtitle: _coverBgLabel(
                           ui.bookInfoDefaultCoverBackground,
                         ),
@@ -1053,18 +1055,18 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // 深色模式时自动开启 → 已配置时展开「色温」滑杆 → 定时开启 →
                   // 起止时间。值经 ThemeSettings 六键持久化，全局叠加见
                   // EyeProtectionLayer） ===
-                  const IosSectionHeader('护眼模式'),
+                  IosSectionHeader(AppStrings.eyeProtection),
                   IosGroup(
                     children: [
                       SettingSwitchRow(
-                        title: '启用护眼模式',
-                        subtitle: '使用暖色调降低蓝光',
+                        title: AppStrings.enableEyeProtection,
+                        subtitle: AppStrings.enableEyeProtectionDesc,
                         value: eyeProtection.enabled,
                         onChanged: eyeProtectionNotifier.setEnabled,
                       ),
                       SettingSwitchRow(
-                        title: '深色模式时自动开启',
-                        subtitle: '跟随阅读界面的深色/浅色模式自动切换',
+                        title: AppStrings.eyeProtectionAutoDark,
+                        subtitle: AppStrings.eyeProtectionAutoDarkDesc,
                         value: eyeProtection.autoNight,
                         onChanged: eyeProtectionNotifier.setAutoNight,
                       ),
@@ -1076,14 +1078,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                           onChanged: eyeProtectionNotifier.setIntensity,
                         ),
                         SettingSwitchRow(
-                          title: '定时开启',
-                          subtitle: '仅在设定的时间段内生效',
+                          title: AppStrings.eyeProtectionScheduled,
+                          subtitle: AppStrings.eyeProtectionScheduledDesc,
                           value: eyeProtection.schedule,
                           onChanged: eyeProtectionNotifier.setSchedule,
                         ),
                         if (eyeProtection.schedule) ...[
                           IosListTile(
-                            title: '开始时间',
+                            title: AppStrings.startTime,
                             value: eyeProtection.startTime,
                             onTap: () => pickEyeProtectionTime(
                               context,
@@ -1092,7 +1094,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                             ),
                           ),
                           IosListTile(
-                            title: '结束时间',
+                            title: AppStrings.endTime,
                             value: eyeProtection.endTime,
                             onTap: () => pickEyeProtectionTime(
                               context,
@@ -1161,13 +1163,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   //   设置首页仍不渲染大容器图（appColumn 在该页无视觉作用）；
                   //   IosGroup(flat) 扁平模式无卡片面，不参与容器背景/不透明度/
                   //   圆角/边框/分隔线开关；虚化行常显。
-                  const IosSectionHeader('容器设置'),
+                  IosSectionHeader(AppStrings.containerSection),
                   IosGroup(
                     children: [
                       // 参考 容器背景图 总开关（enableContainerBackgroundImage）
                       SettingSwitchRow(
-                        title: '容器背景图',
-                        subtitle: '大容器和项目卡面分别使用独立的日间/夜间图片',
+                        title: AppStrings.containerBackground,
+                        subtitle: AppStrings.containerBackgroundDesc,
                         value: ui.enableContainerBackgroundImage,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -1178,7 +1180,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       if (ui.enableContainerBackgroundImage) ...[
                         IosListTile(
                           icon: Symbols.wallpaper_rounded,
-                          title: '容器背景图片（日间）',
+                          title: AppStrings.containerBackgroundDay,
                           subtitle: _containerBgLabel(
                             ui.largeContainerBackgroundImageLight,
                           ),
@@ -1187,7 +1189,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         ),
                         IosListTile(
                           icon: Symbols.wallpaper_rounded,
-                          title: '容器背景图片（夜间）',
+                          title: AppStrings.containerBackgroundNight,
                           subtitle: _containerBgLabel(
                             ui.largeContainerBackgroundImageDark,
                           ),
@@ -1197,7 +1199,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         // item_light/item_dark，渲染于设置页行卡与设置首页卡片。
                         IosListTile(
                           icon: Symbols.wallpaper_rounded,
-                          title: '项目背景图片（日间）',
+                          title: AppStrings.itemBackgroundDay,
                           subtitle: _containerBgLabel(
                             ui.itemBackgroundImageLight,
                           ),
@@ -1205,7 +1207,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         ),
                         IosListTile(
                           icon: Symbols.wallpaper_rounded,
-                          title: '项目背景图片（夜间）',
+                          title: AppStrings.itemBackgroundNight,
                           subtitle: _containerBgLabel(
                             ui.itemBackgroundImageDark,
                           ),
@@ -1217,10 +1219,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // [P2-3] 参考版该滑杆位于图片管理面板内，仅图片存在时可见。
                       if (showAppColumnBackgroundOpacity)
                         SettingSliderRow(
-                          title: '大容器背景图透明度',
-                          subtitle:
-                              '0-100；仅作用于大容器背景图自身，'
-                              '与容器不透明度独立叠加（0=图片完全透明）',
+                          title: AppStrings.containerImageOpacity,
+                          subtitle: AppStrings.containerImageOpacityHint,
                           value: ui.appColumnBackgroundOpacity,
                           min: 0,
                           max: 100,
@@ -1233,10 +1233,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // containerOpacity/大容器图透明度三者独立叠加。
                       if (showGlassCardBackgroundOpacity)
                         SettingSliderRow(
-                          title: '项目背景图透明度',
-                          subtitle:
-                              '0-100；仅作用于设置页项目卡面图片自身，'
-                              '与容器不透明度独立叠加（0=图片完全透明）',
+                          title: AppStrings.itemImageOpacity,
+                          subtitle: AppStrings.itemImageOpacityHint,
                           value: ui.glassCardBackgroundOpacity,
                           min: 0,
                           max: 100,
@@ -1246,10 +1244,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         ),
                       // 参考 container_opacity 滑杆：0..100，默认 100
                       SettingSliderRow(
-                        title: '容器不透明度',
-                        subtitle:
-                            '0-100；作用于默认卡片（含自定义形状但未设色）'
-                            '与设置分组/设置首页卡面，越低底色越透（文字不受影响）',
+                        title: AppStrings.containerOpacity,
+                        subtitle: AppStrings.containerOpacityHint,
                         value: ui.containerOpacity,
                         min: 0,
                         max: 100,
@@ -1261,8 +1257,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 我方按用户指令并入「容器设置」分组，仅影响全局壁纸。
                       // 登记：虚化行常显（无背景图时调值不产生视觉变化）。
                       SettingSliderRow(
-                        title: '背景图虚化（日间）',
-                        subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
+                        title: AppStrings.backgroundBlurDay,
+                        subtitle: AppStrings.backgroundBlurDesc,
                         value: ui.bgImageBlurring,
                         min: 0,
                         max: 100,
@@ -1271,8 +1267,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                             .setBgImageBlurring(night: false, value: v),
                       ),
                       SettingSliderRow(
-                        title: '背景图虚化（夜间）',
-                        subtitle: '仅作用于已设置的全局背景图，不影响内容/文字',
+                        title: AppStrings.backgroundBlurNight,
+                        subtitle: AppStrings.backgroundBlurDesc,
                         value: ui.bgImageDarkBlurring,
                         min: 0,
                         max: 100,
@@ -1283,8 +1279,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 参考 disable_spliced_group_corner_radius：分组外角 0，
                       // 优先级高于下方圆角覆盖（参考 SplicedColumnGroup.kt:50-53）
                       SettingSwitchRow(
-                        title: '关闭设置分组圆角',
-                        subtitle: '分组卡片外角置 0；优先于卡片圆角覆盖',
+                        title: AppStrings.disableGroupRadius,
+                        subtitle: AppStrings.disableGroupRadiusDesc,
                         value: ui.disableSplicedColumnGroupCornerRadius,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -1292,10 +1288,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       // 参考 覆盖卡片圆角 开关 + 卡片圆角滑杆（0..40dp）
                       SettingSwitchRow(
-                        title: '覆盖卡片圆角',
-                        subtitle:
-                            '覆盖使用默认卡片样式的卡片；'
-                            '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
+                        title: AppStrings.overrideCardRadius,
+                        subtitle: AppStrings.overrideCardRadiusDesc,
                         value: ui.overrideBaseCardCornerRadius,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -1303,8 +1297,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       if (ui.overrideBaseCardCornerRadius)
                         SettingSliderRow(
-                          title: '卡片圆角',
-                          subtitle: '0-40dp；0 = 直角（参考版滑杆 0..40）',
+                          title: AppStrings.cardRadius,
+                          subtitle: AppStrings.cardRadiusDesc,
                           value: ui.baseCardCornerRadius,
                           min: 0,
                           max: 40,
@@ -1315,10 +1309,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         ),
                       // 参考 覆盖卡片边框 开关 + 宽度 + 日/夜颜色
                       SettingSwitchRow(
-                        title: '覆盖卡片边框',
-                        subtitle:
-                            '覆盖使用默认卡片样式的卡片边框（0 色跟随主题描边）；'
-                            '字典/首页/阅读器内面板等自定义形状卡片不覆盖',
+                        title: AppStrings.overrideCardBorder,
+                        subtitle: AppStrings.overrideCardBorderDesc,
                         value: ui.overrideBaseCardBorder,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -1326,8 +1318,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       if (ui.overrideBaseCardBorder) ...[
                         SettingSliderRow(
-                          title: '边框宽度',
-                          subtitle: '0-5dp；0 = 不绘制（不改变卡片尺寸）',
+                          title: AppStrings.borderWidth,
+                          subtitle: AppStrings.cardBorderWidthDesc,
                           value: ui.baseCardBorderWidth,
                           min: 0,
                           max: 5,
@@ -1337,28 +1329,28 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                               .setBaseCardBorderWidth(v),
                         ),
                         _containerColorTile(
-                          title: '日间边框颜色',
+                          title: AppStrings.dayBorderColor,
                           color: ui.baseCardBorderColor,
-                          defaultHint: '默认（跟随主题描边）',
+                          defaultHint: AppStrings.defaultFollowThemeBorder,
                           showDotWhenZero: true,
                           onTap: () => _showContainerColorPicker(
-                            title: '日间边框颜色',
+                            title: AppStrings.dayBorderColor,
                             initialColor: ui.baseCardBorderColor,
-                            defaultHint: '恢复默认',
+                            defaultHint: AppStrings.restoreDefault,
                             onSelected: (v) => ref
                                 .read(uiSettingsProvider.notifier)
                                 .setBaseCardBorderColor(v),
                           ),
                         ),
                         _containerColorTile(
-                          title: '夜间边框颜色',
+                          title: AppStrings.nightBorderColor,
                           color: ui.baseCardBorderColorNight,
-                          defaultHint: '默认（跟随主题描边）',
+                          defaultHint: AppStrings.defaultFollowThemeBorder,
                           showDotWhenZero: true,
                           onTap: () => _showContainerColorPicker(
-                            title: '夜间边框颜色',
+                            title: AppStrings.nightBorderColor,
                             initialColor: ui.baseCardBorderColorNight,
-                            defaultHint: '恢复默认',
+                            defaultHint: AppStrings.restoreDefault,
                             onSelected: (v) => ref
                                 .read(uiSettingsProvider.notifier)
                                 .setBaseCardBorderColorNight(v),
@@ -1367,8 +1359,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ],
                       // 参考 show_divider_line：行之间显示分隔线
                       SettingSwitchRow(
-                        title: '显示分隔线',
-                        subtitle: '在分组行之间绘制；关闭保持 2dp 间距',
+                        title: AppStrings.showDivider,
+                        subtitle: AppStrings.showDividerDesc,
                         value: ui.enableItemDivider,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
@@ -1376,8 +1368,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       if (ui.enableItemDivider) ...[
                         SettingSliderRow(
-                          title: '分隔线宽度',
-                          subtitle: '0-5dp；0 = 不绘制',
+                          title: AppStrings.dividerWidth,
+                          subtitle: AppStrings.dividerWidthDesc,
                           value: ui.itemDividerWidth,
                           min: 0,
                           max: 5,
@@ -1387,8 +1379,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                               .setItemDividerWidth(v),
                         ),
                         SettingSliderRow(
-                          title: '分隔线长度',
-                          subtitle: '占分组可用宽度的百分比（30-100%）',
+                          title: AppStrings.dividerLength,
+                          subtitle: AppStrings.dividerLengthDesc,
                           value: ui.itemDividerLength,
                           min: 30,
                           max: 100,
@@ -1398,15 +1390,15 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                               .setItemDividerLength(v),
                         ),
                         _containerColorTile(
-                          title: '分隔线颜色',
+                          title: AppStrings.dividerColor,
                           color: ui.itemDividerColor,
-                          defaultHint: '默认（灰色半透明）',
+                          defaultHint: AppStrings.dividerColorDefault,
                           showDotWhenZero: false,
                           showChevron: ui.itemDividerColor != 0,
                           onTap: () => _showContainerColorPicker(
-                            title: '分隔线颜色',
+                            title: AppStrings.dividerColor,
                             initialColor: ui.itemDividerColor,
-                            defaultHint: '恢复默认',
+                            defaultHint: AppStrings.restoreDefault,
                             onSelected: (v) => ref
                                 .read(uiSettingsProvider.notifier)
                                 .setItemDividerColor(v),
@@ -1420,30 +1412,33 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // [队列⑦c A3] 原"毛玻璃"改组名对齐参考；我方 启用毛玻璃 +
                   // 顶栏/悬浮底栏模糊参数，参考 启用控件模糊/启用渐变模糊 开关
                   // 结构属参考独有，仅登记；默认关——低端机掉帧保护） ===
-                  const IosSectionHeader('模糊效果'),
+                  IosSectionHeader(AppStrings.blurEffectsSection),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
                     children: [
                       SettingSwitchRow(
-                        title: '启用毛玻璃',
-                        subtitle: '低端设备开启可能掉帧',
+                        title: AppStrings.enableBlur,
+                        subtitle: AppStrings.enableBlurDesc,
                         value: ui.enableBlur,
                         onChanged: (v) => ref
                             .read(uiSettingsProvider.notifier)
                             .setEnableBlur(v),
                       ),
                       IosListTile(
-                        title: '顶栏模糊',
+                        title: AppStrings.topBarBlur,
                         subtitle: ui.enableBlur
-                            ? '半径 ${ui.topBarBlurRadius}dp · 底色 ${ui.topBarBlurAlpha}/255'
-                            : '需先启用毛玻璃',
+                            ? AppStrings.blurDetailValue(ui.topBarBlurRadius, ui.topBarBlurAlpha)
+                            : AppStrings.enableBlurFirst,
                         onTap: ui.enableBlur ? _showTopBarBlurDialog : null,
                       ),
                       IosListTile(
-                        title: '悬浮底栏模糊',
+                        title: AppStrings.floatingBottomBarBlur,
                         subtitle: ui.enableBlur
-                            ? '半径 ${ui.bottomBarBlurRadius}dp · 底色 ${ui.bottomBarBlurAlpha}/255'
-                            : '需先启用毛玻璃',
+                            ? AppStrings.blurDetailValue(
+                              ui.bottomBarBlurRadius,
+                              ui.bottomBarBlurAlpha,
+                            )
+                            : AppStrings.enableBlurFirst,
                         onTap: ui.enableBlur ? _showBottomBarBlurDialog : null,
                       ),
                     ],
@@ -1451,43 +1446,43 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
                   // === 自定义主题·白天（对齐原版 day category，themeConfigList
                   // 功能完整保留——UI_MD3_PLAN.md 第九节） ===
-                  const IosSectionHeader('自定义主题 · 白天'),
+                  IosSectionHeader(AppStrings.customThemeDay),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
                     children: [
-                      _colorTile(PrefKeys.cPrimary, '主色调', colors),
-                      _colorTile(PrefKeys.cAccent, '强调色', colors),
+                      _colorTile(PrefKeys.cPrimary, AppStrings.primaryColor, colors),
+                      _colorTile(PrefKeys.cAccent, AppStrings.accentColor, colors),
                       // [批13] 字体色两行：顺序对齐参考 CustomThemeScreen
                       // CustomColorSettings（主题色→次要主题色→主要字体色→
                       // 次要字体色→背景色→标签容器色）。第 6 槽我方是底部
                       // 操作栏色、参考是标签容器色，构成不同见状态类注释。
                       _colorTile(
                         PrefKeys.cPrimaryText,
-                        '主要字体色',
+                        AppStrings.primaryTextColor,
                         colors,
                         subtitle: _fontColorHint,
                       ),
                       _colorTile(
                         PrefKeys.cSecondaryText,
-                        '次要字体色',
+                        AppStrings.secondaryTextColor,
                         colors,
                         subtitle: _fontColorHint,
                       ),
                       _colorTile(
                         PrefKeys.cBackground,
-                        '背景色',
+                        AppStrings.bgColor,
                         colors,
                         isBackground: true,
                       ),
-                      _colorTile(PrefKeys.cBBackground, '底部操作栏颜色', colors),
+                      _colorTile(PrefKeys.cBBackground, AppStrings.navBarColor, colors),
                       IosListTile(
                         icon: Symbols.wallpaper_rounded,
-                        title: '背景图片',
-                        subtitle: _bgImage.isEmpty ? '未设置' : _bgImage,
+                        title: AppStrings.backgroundImages,
+                        subtitle: _bgImage.isEmpty ? AppStrings.notSetLabel : _bgImage,
                         onTap: () => _showBgImageDialog(PrefKeys.bgImage),
                       ),
                       SettingSwitchRow(
-                        title: '透明导航栏',
+                        title: AppStrings.transparentNavBar,
                         subtitle: _androidOnly,
                         value: _transparentNavBar,
                         onChanged: (v) {
@@ -1497,27 +1492,27 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       IosListTile(
                         icon: Symbols.save_rounded,
-                        title: '保存白天主题',
-                        subtitle: '将当前白天颜色保存到主题列表',
+                        title: AppStrings.saveDayTheme,
+                        subtitle: AppStrings.saveDayThemeDesc,
                         onTap: () => _saveTheme(isNight: false),
                       ),
                     ],
                   ),
 
                   // === 自定义主题·夜间（对齐原版 night category）===
-                  const IosSectionHeader('自定义主题 · 夜间'),
+                  IosSectionHeader(AppStrings.customThemeNight),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
                     children: [
                       _colorTile(
                         PrefKeys.cNPrimary,
-                        '主色调',
+                        AppStrings.primaryColor,
                         colors,
                         isNight: true,
                       ),
                       _colorTile(
                         PrefKeys.cNAccent,
-                        '强调色',
+                        AppStrings.accentColor,
                         colors,
                         isNight: true,
                       ),
@@ -1526,39 +1521,39 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       // 显式选择夜间独立值
                       _colorTile(
                         PrefKeys.cNPrimaryText,
-                        '主要字体色',
+                        AppStrings.primaryTextColor,
                         colors,
                         isNight: true,
                         subtitle: _fontColorHint,
                       ),
                       _colorTile(
                         PrefKeys.cNSecondaryText,
-                        '次要字体色',
+                        AppStrings.secondaryTextColor,
                         colors,
                         isNight: true,
                         subtitle: _fontColorHint,
                       ),
                       _colorTile(
                         PrefKeys.cNBackground,
-                        '背景色',
+                        AppStrings.bgColor,
                         colors,
                         isNight: true,
                         isBackground: true,
                       ),
                       _colorTile(
                         PrefKeys.cNBBackground,
-                        '底部操作栏颜色',
+                        AppStrings.navBarColor,
                         colors,
                         isNight: true,
                       ),
                       IosListTile(
                         icon: Symbols.wallpaper_rounded,
-                        title: '背景图片',
-                        subtitle: _bgImageNight.isEmpty ? '未设置' : _bgImageNight,
+                        title: AppStrings.backgroundImages,
+                        subtitle: _bgImageNight.isEmpty ? AppStrings.notSetLabel : _bgImageNight,
                         onTap: () => _showBgImageDialog(PrefKeys.bgImageN),
                       ),
                       SettingSwitchRow(
-                        title: '透明导航栏',
+                        title: AppStrings.transparentNavBar,
                         subtitle: _androidOnly,
                         value: _transparentNavBarNight,
                         onChanged: (v) {
@@ -1571,13 +1566,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                       IosListTile(
                         icon: Symbols.save_rounded,
-                        title: '保存夜间主题',
-                        subtitle: '将当前夜间颜色保存到主题列表',
+                        title: AppStrings.saveNightTheme,
+                        subtitle: AppStrings.saveNightThemeDesc,
                         onTap: () => _saveTheme(isNight: true),
                       ),
                     ],
                   ),
-                  const IosSectionFooter('背景图片将作为全局窗口壁纸显示（分组列表卡片保持不透明底）'),
+                  IosSectionFooter(AppStrings.bgImageWallpaperFooter),
                 ],
               ),
             ),
@@ -1604,7 +1599,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       icon: Symbols.palette_rounded,
       title: title,
       subtitle: subtitle,
-      value: isUnset ? '默认' : null,
+      value: isUnset ? AppStrings.defaultLabel : null,
       trailing: isUnset
           ? null
           : Row(
@@ -1735,11 +1730,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               ref.read(themeColorsProvider.notifier).setColor(key, null);
               Navigator.pop(ctx);
             },
-            child: const Text('恢复默认'),
+            child: Text(AppStrings.restoreDefault),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
         ],
       ),
@@ -1753,11 +1748,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           ThemeData.estimateBrightnessForColor(Color(selected)) ==
           Brightness.light;
       if (!isNight && !isLight) {
-        _toast('白天背景不能太暗');
+        _toast(AppStrings.dayBgTooDark);
         return;
       }
       if (isNight && isLight) {
-        _toast('夜间背景不能太亮');
+        _toast(AppStrings.nightBgTooBright);
         return;
       }
     }
@@ -1769,7 +1764,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final selected = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('启动图标'),
+        title: Text(AppStrings.launcherIcon),
         children: [
           // 用 RadioGroup 统一管理选中值（避免 groupValue/onChanged 废弃 API）
           RadioGroup<String>(
@@ -1798,12 +1793,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (!mounted) return;
     if (result.ok) {
       if (LauncherIconService.isIos) {
-        _toast('图标已切换，重启应用后生效');
+        _toast(AppStrings.launcherIconChanged);
       }
     } else {
       // 展示原生侧真实错误（如 iOS"本次启动已切换过一次"、Android API<26），
       // 不再笼统提示"当前平台或系统版本不支持"
-      _toast(result.message ?? '当前平台或系统版本不支持更换图标');
+      _toast(result.message ?? AppStrings.launcherIconUnsupported);
     }
   }
 
@@ -1842,7 +1837,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
           // [队列⑦c A3] 对话框标题与入口行一致（主题管理）
-          title: const Text('主题管理'),
+          title: Text(AppStrings.themeManagement),
           // [批14] 列表行增加导出按钮后，用更小的水平留白换取标题宽度
           //（360dp 下 8 个中文字符仍可完整显示）。
           insetPadding: const EdgeInsets.symmetric(
@@ -1854,9 +1849,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           content: SizedBox(
             width: 320,
             child: list.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('暂无保存的主题配置\n可在下方"保存白天/夜间主题"后于此切换'),
+                ? Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(AppStrings.noSavedThemes),
                   )
                 : ListView.builder(
                     shrinkWrap: true,
@@ -1905,7 +1900,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      '${item['name'] ?? '未命名'}',
+                                      '${item['name'] ?? AppStrings.unnamedTheme}',
                                       // [批14 回修] 窄屏 + 大字体允许两行，
                                       // 避免新增导出按钮后标题被省略号截断。
                                       maxLines: 2,
@@ -1914,7 +1909,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      isNight ? '夜间主题' : '白天主题',
+                                      isNight ? AppStrings.nightTheme : AppStrings.dayTheme,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: subtitleStyle,
@@ -1928,7 +1923,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                   Symbols.ios_share_rounded,
                                   size: 18,
                                 ),
-                                tooltip: '导出主题包',
+                                tooltip: AppStrings.exportThemePackage,
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
@@ -1943,7 +1938,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                   Symbols.edit_rounded,
                                   size: 18,
                                 ),
-                                tooltip: '重命名',
+                                tooltip: AppStrings.rename,
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
@@ -1962,7 +1957,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                                   Symbols.delete_rounded,
                                   size: 18,
                                 ),
-                                tooltip: '删除',
+                                tooltip: AppStrings.delete,
                                 visualDensity: VisualDensity.compact,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints.tightFor(
@@ -1989,11 +1984,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
             TextButton(
               key: const ValueKey('theme-package-import'),
               onPressed: () => _importThemePackage(list, setDialogState),
-              child: const Text('导入主题包'),
+              child: Text(AppStrings.importThemePackage),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('关闭'),
+              child: Text(AppStrings.modeOff),
             ),
           ],
         ),
@@ -2007,7 +2002,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     int index,
     StateSetter setDialogState,
   ) async {
-    final current = '${list[index]['name'] ?? '未命名'}';
+    final current = '${list[index]['name'] ?? AppStrings.unnamedTheme}';
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => _ThemeConfigRenameDialog(initialValue: current),
@@ -2101,7 +2096,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         });
       }
     }
-    _toast('已应用主题「${config['name'] ?? '未命名'}」');
+    _toast(
+      AppStrings.themeAppliedNamed(config['name'] ?? AppStrings.unnamedTheme),
+    );
   }
 
   /// 已保存主题中的背景图引用 → 可用文件绝对路径（缺失/非法返回 null）
@@ -2120,20 +2117,20 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(isNight ? '保存夜间主题' : '保存白天主题'),
+        title: Text(isNight ? AppStrings.saveNightTheme : AppStrings.saveDayTheme),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '主题名称'),
+          decoration: InputDecoration(hintText: AppStrings.themeName),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -2159,7 +2156,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           : colors.secondaryTextColor,
     });
     await _settings.setStringPref(_themeListKey, jsonEncode(list));
-    _toast('已保存主题「$name」');
+    _toast(AppStrings.themeSavedNamed(name));
   }
 
   // ===== [批14 | 全栈工程师 + UI] 主题包 zip：单条导出 / 导入 =====
@@ -2185,7 +2182,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   /// 背景图只取条目内记录的 `bgImage`/`bgImageNight`（主题包导入时落盘）；
   /// 旧版保存的主题没有这两个字段，按「无背景」导出，不回落到当前全局壁纸。
   Future<void> _exportSavedTheme(Map<String, dynamic> item) async {
-    final name = '${item['name'] ?? '未命名'}';
+    final name = '${item['name'] ?? AppStrings.unnamedTheme}';
     final isNight = item['isNight'] == true;
     final colors = _colorsFromSavedTheme(item, isNight: isNight);
     final paletteId = ThemeConfigJson.asInt(item['paletteId']);
@@ -2221,7 +2218,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       );
     } catch (e) {
       debugPrint('ThemeConfigScreen._exportSavedTheme 异常: $e');
-      if (mounted) _toast('导出主题包失败：${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.exportThemePackageFailedWithReason(errorMessage(e)));
     } finally {
       if (tempPath != null) {
         try {
@@ -2375,12 +2372,12 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       await _settings.setStringPref(_themeListKey, jsonEncode(list));
       if (!mounted) return;
       setDialogState(() {});
-      _toast('已导入主题包 $name');
+      _toast(AppStrings.themePackageImportedNamed(name));
     } on ThemePackageException catch (e) {
-      if (mounted) _toast('导入失败：${e.message}');
+      if (mounted) _toast(AppStrings.importFailedShortWithReason(e.message));
     } catch (e) {
       debugPrint('ThemeConfigScreen._importThemePackage 异常: $e');
-      if (mounted) _toast('导入失败：${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.importFailedShortWithReason(errorMessage(e)));
     }
   }
 
@@ -2390,14 +2387,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (injected != null) return injected();
     try {
       final result = await FilePicker.platform.pickFiles(
-        dialogTitle: '导入主题包',
+        dialogTitle: AppStrings.importThemePackage,
         type: FileType.custom,
         allowedExtensions: ['zip'],
       );
       return result?.files.single.path;
     } catch (e) {
       debugPrint('ThemeConfigScreen._pickThemePackagePath 异常: $e');
-      if (mounted) _toast('导入失败：无法选择文件');
+      if (mounted) _toast(AppStrings.importFailedNoFile);
       return null;
     }
   }
@@ -2436,14 +2433,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       _toast(service.savedMessage(saved: saved, requestedFileName: fileName));
     } catch (e) {
       debugPrint('ThemeConfigScreen._exportTheme 写入异常: $e');
-      if (mounted) _toast('导出失败：${errorMessage(e)}');
+      if (mounted) _toast(AppStrings.exportFailedWithReason(errorMessage(e)));
     }
   }
 
   /// 导入主题 JSON 并应用（日/夜颜色组 + paletteId + 主题模式）
   Future<void> _importTheme() async {
     final result = await FilePicker.platform.pickFiles(
-      dialogTitle: '导入主题',
+      dialogTitle: AppStrings.importTheme,
       type: FileType.custom,
       allowedExtensions: ['json'],
     );
@@ -2454,11 +2451,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       decoded = jsonDecode(await File(path).readAsString());
     } catch (e) {
       debugPrint('ThemeConfigScreen._importTheme 解析异常: $e');
-      _toast('导入失败：主题文件格式不正确');
+      _toast(AppStrings.importFailedBadFormat);
       return;
     }
     if (decoded is! Map<String, dynamic>) {
-      _toast('导入失败：主题文件格式不正确');
+      _toast(AppStrings.importFailedBadFormat);
       return;
     }
 
@@ -2482,7 +2479,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           .read(themeNotifierProvider.notifier)
           .setThemeMode(importedThemeMode);
     }
-    if (mounted) _toast('主题已导入');
+    if (mounted) _toast(AppStrings.themeImported);
   }
 
   /// 应用字体行副标题：未设置 / 文件名 / 加载失败提示
@@ -2490,14 +2487,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   /// 文件名截断到 24 字符：IosListTile 副标题允许换行，但长文件名在
   /// 360dp + 大字体下会明显撑高行；截断只影响展示，不改偏好值。
   String _appFontSubtitle(AppFontState state) {
-    if (!state.initialized || state.loading) return '正在加载字体…';
-    if (!state.isSet) return '未设置（跟随系统默认字体）';
-    final name = state.displayName ?? '自定义字体';
+    if (!state.initialized || state.loading) return AppStrings.fontLoading;
+    if (!state.isSet) return AppStrings.fontSystemDefault;
+    final name = state.displayName ?? AppStrings.fontCustom;
     final short = name.length <= 24 ? name : '${name.substring(0, 23)}…';
     if (state.errorMessage != null) {
-      return '已设置：$short（加载失败，已回退默认字体）';
+      return AppStrings.fontAppliedWithFailure(short);
     }
-    return '已设置：$short';
+    return AppStrings.fontAppliedValue(short);
   }
 
   /// 应用字体选择/清除（参考版外观页「字体设置」；日/夜共用）
@@ -2509,21 +2506,21 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('字体设置'),
+        title: Text(AppStrings.fontSettings),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 'select'),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('选择字体文件'),
+              child: Text(AppStrings.pickFontFile),
             ),
           ),
           if (appFont.isSet)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, 'clear'),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('清除字体'),
+                child: Text(AppStrings.clearFont),
               ),
             ),
         ],
@@ -2538,11 +2535,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         _toast(outcome.error!);
         return;
       }
-      _toast('应用字体已更新');
+      _toast(AppStrings.fontUpdated);
     } else if (action == 'clear') {
       await ref.read(appFontProvider.notifier).clear();
       if (!mounted) return;
-      _toast('已恢复默认字体');
+      _toast(AppStrings.fontRestoredDefault);
     }
   }
 
@@ -2554,21 +2551,21 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('背景图片'),
+        title: Text(AppStrings.backgroundImages),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 'select'),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('选择图片'),
+              child: Text(AppStrings.pickImage),
             ),
           ),
           if (current.isNotEmpty)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, 'delete'),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('删除'),
+                child: Text(AppStrings.delete),
               ),
             ),
         ],
@@ -2579,7 +2576,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (action == 'select') {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
-        dialogTitle: '选择背景图片',
+        dialogTitle: AppStrings.pickBackgroundImage,
       );
       final path = result?.files.single.path;
       if (path == null || !mounted) return;
@@ -2619,14 +2616,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   /// （参考版备份/存量），故统一经 store 解析后取文件名；解析不到或文件
   /// 不存在时明确提示「已回落」，与 IosGroup 实际渲染行为一致。
   String _containerBgLabel(String stored) {
-    if (stored.isEmpty) return '未设置';
+    if (stored.isEmpty) return AppStrings.notSetLabel;
     final resolved = ThemeBackgroundImageStore.resolveSync(stored);
     // 相对标识用 `/`（Windows 未预热时 resolveSync 原样返回），绝对路径用
     // 平台分隔符；统一按 `/` 切分取末段文件名。
     final name = resolved.replaceAll('\\', '/').split('/').last;
     return ThemeBackgroundImageStore.isUsableSync(stored)
         ? name
-        : '$name（文件缺失，已回落）';
+        : AppStrings.fileMissingNamed(name);
   }
 
   /// 大容器背景图选择/清除（日/夜独立）
@@ -2637,15 +2634,15 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   Future<void> _showContainerBgImageDialog({required bool night}) {
     final ui = ref.read(uiSettingsProvider);
     return _showBackgroundImageDialog(
-      title: night ? '容器背景图片（夜间）' : '容器背景图片（日间）',
+      title: night ? AppStrings.containerBackgroundNight : AppStrings.containerBackgroundDay,
       current: night
           ? ui.largeContainerBackgroundImageDark
           : ui.largeContainerBackgroundImageLight,
       slot: night
           ? ThemeBackgroundImageStore.largeDarkSlot
           : ThemeBackgroundImageStore.largeLightSlot,
-      pickerTitle: '选择容器背景图片',
-      failurePrefix: '设置容器背景图失败',
+      pickerTitle: AppStrings.pickContainerBackgroundImage,
+      failurePrefix: AppStrings.setContainerBackgroundFailed,
       apply: (stored) => ref
           .read(uiSettingsProvider.notifier)
           .setLargeContainerBackgroundImage(night: night, storedPath: stored),
@@ -2659,13 +2656,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   Future<void> _showItemBgImageDialog({required bool night}) {
     final ui = ref.read(uiSettingsProvider);
     return _showBackgroundImageDialog(
-      title: night ? '项目背景图片（夜间）' : '项目背景图片（日间）',
+      title: night ? AppStrings.itemBackgroundNight : AppStrings.itemBackgroundDay,
       current: night ? ui.itemBackgroundImageDark : ui.itemBackgroundImageLight,
       slot: night
           ? ThemeBackgroundImageStore.itemDarkSlot
           : ThemeBackgroundImageStore.itemLightSlot,
-      pickerTitle: '选择项目背景图片',
-      failurePrefix: '设置项目背景图失败',
+      pickerTitle: AppStrings.pickItemBackgroundImage,
+      failurePrefix: AppStrings.setItemBackgroundFailed,
       apply: (stored) => ref
           .read(uiSettingsProvider.notifier)
           .setItemBackgroundImage(night: night, storedPath: stored),
@@ -2693,17 +2690,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, 'select'),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('选择图片'),
+              child: Text(AppStrings.pickImage),
             ),
           ),
           if (current.isNotEmpty)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, 'delete'),
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
-                child: Text('清除图片'),
+                child: Text(AppStrings.clearImage),
               ),
             ),
         ],
@@ -2746,7 +2743,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
   /// 导航栏阴影数值设置（对齐原版 barElevation NumberPicker 0~32）
   Future<void> _showBarElevationDialog() async {
     final value = await _showNumberInputDialog(
-      title: '导航栏阴影',
+      title: AppStrings.navBarShadow,
       current: _barElevation,
       min: 0,
       max: 32,
@@ -2778,18 +2775,18 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
               final parsed = int.tryParse(controller.text.trim());
               if (parsed == null || parsed < min || parsed > max) {
-                _toast('请输入 $min ~ $max 之间的数字');
+                _toast(AppStrings.numberRangeInputHint(min, max));
                 return;
               }
               Navigator.pop(ctx, parsed);
             },
-            child: const Text('确定'),
+            child: Text(AppStrings.confirm),
           ),
         ],
       ),
@@ -2811,7 +2808,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('字体缩放'),
+          title: Text(AppStrings.fontScale),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2819,7 +2816,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               // 「当前字体大小: %.1f」（values-zh-rCN/strings.xml :1203），
               // 与 theme_state.fontScaleLabel 保持一致
               Text(
-                '当前字体大小: ${(current / 10).toStringAsFixed(1)}',
+                AppStrings.currentFontSize((current / 10).toStringAsFixed(1)),
                 style: Theme.of(ctx).textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
@@ -2840,18 +2837,18 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                 notifier.setFontScale(0);
                 Navigator.pop(ctx);
               },
-              child: const Text('跟随系统'),
+              child: Text(AppStrings.themeSystem),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: Text(AppStrings.cancel),
             ),
             FilledButton(
               onPressed: () {
                 notifier.setFontScale(current.round());
                 Navigator.pop(ctx);
               },
-              child: const Text('确定'),
+              child: Text(AppStrings.confirm),
             ),
           ],
         ),
@@ -2885,9 +2882,9 @@ class _ThemeModeSelector extends StatelessWidget {
             Expanded(
               child: _ModeSegment(
                 label: switch (mode) {
-                  ThemeMode.system => '跟随系统',
-                  ThemeMode.light => '浅色',
-                  ThemeMode.dark => '深色',
+                  ThemeMode.system => AppStrings.themeSystem,
+                  ThemeMode.light => AppStrings.themeLight,
+                  ThemeMode.dark => AppStrings.themeDark,
                 },
                 selected: mode == selected,
                 onTap: () => onChanged(mode),
@@ -3169,24 +3166,24 @@ class _ThemeConfigRenameDialogState extends State<_ThemeConfigRenameDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('重命名主题'),
+      title: Text(AppStrings.renameTheme),
       content: TextField(
         key: const ValueKey('theme-config-rename-field'),
         controller: _controller,
         autofocus: true,
         maxLength: 40,
-        decoration: const InputDecoration(hintText: '主题名称'),
+        decoration: InputDecoration(hintText: AppStrings.themeName),
         onSubmitted: (_) => _confirm(),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           key: const ValueKey('theme-config-rename-confirm'),
           onPressed: _confirm,
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );

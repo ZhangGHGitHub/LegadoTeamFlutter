@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../l10n/app_strings.dart';
 import '../constants/pref_keys.dart';
 import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
@@ -105,46 +106,46 @@ class _ReadAloudSettingsScreenState
       readAloudSymbolSet(_contentSplitSymbols);
 
   String get _speechAnalysisModeLabel => switch (_speechAnalysisMode) {
-    'rule_with_ai' => '规则+AI',
-    'ai_understanding' => 'AI 理解',
-    _ => '规则',
+    'rule_with_ai' => AppStrings.raChunkRuleAi,
+    'ai_understanding' => AppStrings.raChunkAi,
+    _ => AppStrings.rulesSection,
   };
 
   String get _speechAnalysisModeSummary => switch (_speechAnalysisMode) {
-    'rule_with_ai' || 'ai_understanding' => 'AI 分片暂未支持，实际按规则分片',
-    _ => '按标点/段落规则分片',
+    'rule_with_ai' || 'ai_understanding' => AppStrings.raChunkAiUnsupported,
+    _ => AppStrings.raChunkByRules,
   };
 
   String get _reasoningLevelLabel =>
       switch (_speechAnalysisReasoningLevel.toLowerCase()) {
-        'off' => '关闭',
-        'auto' => '自动',
-        'low' => '低',
-        'medium' => '中',
-        'high' => '高',
-        'xhigh' => '极高',
-        'max' => '最高',
+        'off' => AppStrings.modeOff,
+        'auto' => AppStrings.raLevelAuto,
+        'low' => AppStrings.raLevelLow,
+        'medium' => AppStrings.raLevelMiddle,
+        'high' => AppStrings.raLevelHigh,
+        'xhigh' => AppStrings.raLevelVeryHigh,
+        'max' => AppStrings.raLevelMaximum,
         _ => _speechAnalysisReasoningLevel,
       };
 
   String get _contentSplitModeLabel => switch (_contentSplitMode) {
-    ReadAloudContentSplitMode.paragraph => '整段',
-    ReadAloudContentSplitMode.page => '整页',
-    ReadAloudContentSplitMode.symbols => '按符号',
-    ReadAloudContentSplitMode.defaultMode => '默认',
+    ReadAloudContentSplitMode.paragraph => AppStrings.raUnitParagraph,
+    ReadAloudContentSplitMode.page => AppStrings.raUnitPage,
+    ReadAloudContentSplitMode.symbols => AppStrings.raUnitSymbol,
+    ReadAloudContentSplitMode.defaultMode => AppStrings.defaultLabel,
   };
 
   String get _contentSplitModeSummary => switch (_contentSplitMode) {
-    ReadAloudContentSplitMode.paragraph => '按空行分段落朗读（保留段内换行）',
-    ReadAloudContentSplitMode.page => '按阅读器当前章分页朗读；切章回退整段',
-    ReadAloudContentSplitMode.symbols => '按选中标点切分，连续标点同一单元',
-    ReadAloudContentSplitMode.defaultMode => '跟随规则分片，当前按整段朗读',
+    ReadAloudContentSplitMode.paragraph => AppStrings.raSplitByBlankLineDesc,
+    ReadAloudContentSplitMode.page => AppStrings.raSplitByPageDesc,
+    ReadAloudContentSplitMode.symbols => AppStrings.raSplitBySymbolDesc,
+    ReadAloudContentSplitMode.defaultMode => AppStrings.raSplitFollowRulesDesc,
   };
 
   /// 系统引擎展示名（未选择/已卸载时回退原始值）
   String get systemEngineLabel {
     final name = _selectedSystemEngine;
-    if (name == null) return '系统默认';
+    if (name == null) return AppStrings.raSystemDefault;
     for (final engine in _systemEngines) {
       if (engine.name == name) return engine.displayName;
     }
@@ -295,7 +296,7 @@ class _ReadAloudSettingsScreenState
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      _toast('读取朗读设置失败：${errorMessage(e)}');
+      _toast(AppStrings.raLoadFailed(errorMessage(e)));
     }
   }
 
@@ -314,10 +315,10 @@ class _ReadAloudSettingsScreenState
 
   Future<void> _pickDefaultInterface() async {
     final result = await _showChoiceDialog<String>(
-      title: '默认朗读界面',
-      options: const [
-        ('classic', '经典', '阅读器内朗读控制条'),
-        ('player', '播放器', '启动朗读后进入听书播放器'),
+      title: AppStrings.raDefaultInterface,
+      options: [
+        ('classic', AppStrings.raInterfaceClassic, AppStrings.raInterfaceClassicDesc),
+        ('player', AppStrings.raInterfacePlayer, AppStrings.raInterfacePlayerDesc),
       ],
       current: _defaultInterface,
     );
@@ -329,12 +330,12 @@ class _ReadAloudSettingsScreenState
 
   Future<void> _pickPlayerBackground() async {
     final result = await _showChoiceDialog<String>(
-      title: '播放器背景',
-      options: const [
-        ('solid', '纯色', '跟随当前主题背景'),
-        ('transparent', '透明', '露出全局背景图/壁纸'),
-        ('blur', '模糊', '暂未支持'),
-        ('flow', '流光', '暂未支持'),
+      title: AppStrings.raPlayerBackground,
+      options: [
+        ('solid', AppStrings.raPlayerBgSolid, AppStrings.raPlayerBgSolidDesc),
+        ('transparent', AppStrings.raPlayerBgTransparent, AppStrings.raPlayerBgTransparentDesc),
+        ('blur', AppStrings.raPlayerBgBlur, AppStrings.notSupportedYet),
+        ('flow', AppStrings.raPlayerBgFlow, AppStrings.notSupportedYet),
       ],
       current: _playerBackground,
       disabledValues: const {'blur', 'flow'},
@@ -350,11 +351,11 @@ class _ReadAloudSettingsScreenState
   /// 章节分片方式：仅「规则」可选；AI 两项保留展示但置灰
   Future<void> _pickSpeechAnalysisMode() async {
     final result = await _showChoiceDialog<String>(
-      title: '章节分片方式',
-      options: const [
-        ('rule', '规则', '按标点/段落规则分片（当前唯一可用）'),
-        ('rule_with_ai', '规则+AI', '暂未支持'),
-        ('ai_understanding', 'AI 理解', '暂未支持'),
+      title: AppStrings.raChapterSplitMode,
+      options: [
+        ('rule', AppStrings.rulesSection, AppStrings.raChapterSplitRulesOnly),
+        ('rule_with_ai', AppStrings.raChunkRuleAi, AppStrings.notSupportedYet),
+        ('ai_understanding', AppStrings.raChunkAi, AppStrings.notSupportedYet),
       ],
       current: _speechAnalysisMode,
       disabledValues: const {'rule_with_ai', 'ai_understanding'},
@@ -368,12 +369,24 @@ class _ReadAloudSettingsScreenState
   /// 内容划分方式：default/paragraph/page/symbols
   Future<void> _pickContentSplitMode() async {
     final result = await _showChoiceDialog<ReadAloudContentSplitMode>(
-      title: '内容划分方式',
-      options: const [
-        (ReadAloudContentSplitMode.defaultMode, '默认', '跟随规则分片，当前按整段朗读'),
-        (ReadAloudContentSplitMode.paragraph, '整段', '按空行分段落朗读'),
-        (ReadAloudContentSplitMode.page, '整页', '按阅读器当前章分页朗读'),
-        (ReadAloudContentSplitMode.symbols, '按符号', '按选中标点切分'),
+      title: AppStrings.raContentSplitMode,
+      options: [
+        (
+          ReadAloudContentSplitMode.defaultMode,
+          AppStrings.defaultLabel,
+          AppStrings.raSplitFollowRulesDesc,
+        ),
+        (
+          ReadAloudContentSplitMode.paragraph,
+          AppStrings.raUnitParagraph,
+          AppStrings.raContentSplitBlankLine,
+        ),
+        (ReadAloudContentSplitMode.page, AppStrings.raUnitPage, AppStrings.raContentSplitPage),
+        (
+          ReadAloudContentSplitMode.symbols,
+          AppStrings.raUnitSymbol,
+          AppStrings.raContentSplitSymbol,
+        ),
       ],
       current: _contentSplitMode,
     );
@@ -399,7 +412,7 @@ class _ReadAloudSettingsScreenState
     final next = {..._effectiveSplitSymbols};
     if (!next.remove(symbol)) next.add(symbol);
     if (next.isEmpty) {
-      _toast('至少保留一个标点');
+      _toast(AppStrings.raKeepOneSymbol);
       return;
     }
     final encoded = encodeReadAloudSymbols(next);
@@ -432,7 +445,9 @@ class _ReadAloudSettingsScreenState
     await notifier.setGlobalTtsEngine(url);
     if (!mounted) return;
     setState(() => _effectiveEngine = url);
-    _toast(url == kSystemTtsEngineUrl ? '已切换为系统 TTS' : '已切换朗读引擎');
+    _toast(url == kSystemTtsEngineUrl ?
+        AppStrings.raSwitchedToSystemTts
+        : AppStrings.raEngineSwitched);
   }
 
   Future<void> _openEngineManager() async {
@@ -443,12 +458,12 @@ class _ReadAloudSettingsScreenState
 
   Future<void> _pickSystemEngine() async {
     final options = <(String?, String, String)>[
-      (null, '系统默认', '跟随系统 TTS 设置'),
+      (null, AppStrings.raSystemDefault, AppStrings.raFollowSystemTts),
       for (final engine in _systemEngines)
         (engine.name, engine.displayName, engine.name),
     ];
     final result = await _showChoiceDialog<String?>(
-      title: '系统 TTS 引擎',
+      title: AppStrings.raSystemTtsEngine,
       options: options,
       current: _selectedSystemEngine,
     );
@@ -467,7 +482,7 @@ class _ReadAloudSettingsScreenState
         _selectedSystemEngine = _systemTts.selectedEngineName;
         _selectedSystemVoice = _systemTts.selectedVoice;
       });
-      _toast('引擎初始化失败');
+      _toast(AppStrings.raEngineInitFailed);
       return;
     }
     final voiceCleared = hadVoice && _systemTts.selectedVoice == null;
@@ -481,8 +496,10 @@ class _ReadAloudSettingsScreenState
     });
     _toast(
       voiceCleared
-          ? '已切换系统引擎；原音色不可用，已回退系统默认'
-          : (engineName == null ? '已使用系统默认引擎' : '已切换系统引擎'),
+          ? AppStrings.raSystemEngineFallback
+          : (engineName == null ?
+              AppStrings.raUsingSystemDefaultEngine
+              : AppStrings.raSystemEngineSwitched),
     );
   }
 
@@ -499,13 +516,13 @@ class _ReadAloudSettingsScreenState
     String voiceKey(SystemTtsVoice voice) =>
         '${voice.name}\u0001${voice.locale}';
     final options = <(String?, String, String)>[
-      (null, '系统默认', '跟随系统 TTS 设置'),
+      (null, AppStrings.raSystemDefault, AppStrings.raFollowSystemTts),
       for (final voice in sorted)
         (voiceKey(voice), voice.displayName, voice.locale),
     ];
     final currentVoice = _selectedSystemVoice;
     final result = await _showChoiceDialog<String?>(
-      title: '系统 TTS 音色',
+      title: AppStrings.raSystemTtsVoice,
       options: options,
       current: currentVoice == null ? null : voiceKey(currentVoice),
     );
@@ -522,14 +539,14 @@ class _ReadAloudSettingsScreenState
     await _systemTts.selectVoice(voice);
     if (!mounted) return;
     setState(() => _selectedSystemVoice = voice);
-    _toast(voice == null ? '已使用系统默认音色' : '已切换系统音色');
+    _toast(voice == null ? AppStrings.raUsingSystemDefaultVoice : AppStrings.raSystemVoiceSwitched);
   }
 
   Future<void> _openSystemTtsSettings() async {
     final ok = await PlatformChannel.openTtsSettings();
     if (!mounted) return;
     if (!ok) {
-      _toast('无法打开系统设置，请手动进入「系统设置 → 文字转语音」');
+      _toast(AppStrings.raOpenSystemSettingsHint);
     }
   }
 
@@ -537,7 +554,7 @@ class _ReadAloudSettingsScreenState
     final ok = await PlatformChannel.openBatteryOptimizationSettings();
     if (!mounted) return;
     if (!ok) {
-      _toast('无法打开电池优化设置，请手动在系统设置中关闭本应用电池优化');
+      _toast(AppStrings.raOpenBatterySettingsHint);
       return;
     }
     // 用户可能在设置页停留后返回：回到前台时由 _load 刷新状态
@@ -593,14 +610,14 @@ class _ReadAloudSettingsScreenState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('缓存保留时间'),
+          title: Text(AppStrings.raCacheRetention),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '当前：${readAloudCacheRetentionLabel(draftMinutes)}',
+                  AppStrings.raCacheRetentionCurrent(readAloudCacheRetentionLabel(draftMinutes)),
                   key: const ValueKey('cache-retention-dialog-label'),
                 ),
                 Slider(
@@ -639,9 +656,7 @@ class _ReadAloudSettingsScreenState
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '0 表示即听即焚：每段系统 TTS 播放完成/失败后立即删除；'
-                  '其余值在朗读开始时按修改时间清理过期缓存，正在播放的文件'
-                  '始终保留。HTTP 引擎（Rust）缓存不在此策略内。',
+                  AppStrings.raCacheRetentionHint,
                   style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                     color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                   ),
@@ -652,7 +667,7 @@ class _ReadAloudSettingsScreenState
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('完成'),
+              child: Text(AppStrings.raFinished),
             ),
           ],
         ),
@@ -676,27 +691,28 @@ class _ReadAloudSettingsScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('TTS 缓存'),
+        title: Text(AppStrings.raTtsCache),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '系统 TTS 合成缓存：${_cacheStats.fileCount} 个文件，'
-                '共 ${_formatBytes(_cacheStats.totalBytes)}。\n'
-                '缓存仅用于加速重复段落朗读，清理后可随时重新生成。',
+                AppStrings.raCacheStats(
+                  _cacheStats.fileCount,
+                  _formatBytes(_cacheStats.totalBytes),
+                ),
               ),
               const SizedBox(height: 16),
               Text(
-                '当前保留：${readAloudCacheRetentionLabel(_cacheRetentionMinutes)}'
-                '（在「缓存保留时间」行设置）',
+                AppStrings.raCacheRetentionInRow(
+                  readAloudCacheRetentionLabel(_cacheRetentionMinutes),
+                ),
                 key: const ValueKey('tts-cache-retention-label'),
               ),
               const SizedBox(height: 8),
               Text(
-                '清理不会删除正在播放的文件；HTTP 引擎（Rust）缓存'
-                '不在此策略内。',
+                AppStrings.raCacheClearHint,
                 style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
                   color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                 ),
@@ -707,11 +723,11 @@ class _ReadAloudSettingsScreenState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清理'),
+            child: Text(AppStrings.clearLabelShort),
           ),
         ],
       ),
@@ -725,7 +741,7 @@ class _ReadAloudSettingsScreenState
     );
     await _reloadCacheStats();
     if (!mounted) return;
-    _toast('已清理 $deleted 个缓存文件');
+    _toast(AppStrings.raCacheCleared(deleted));
   }
 
   static String _formatBytes(int bytes) {
@@ -744,12 +760,12 @@ class _ReadAloudSettingsScreenState
       length: 3,
       child: AppScaffold(
         topBar: LegadoAppBar(
-          title: const Text('朗读设置'),
-          bottom: const TabBar(
+          title: Text(AppStrings.readAloudEntry),
+          bottom: TabBar(
             tabs: [
-              Tab(text: '常规'),
-              Tab(text: '引擎与音色'),
-              Tab(text: '角色与配乐'),
+              Tab(text: AppStrings.raTabGeneral),
+              Tab(text: AppStrings.raTabEngine),
+              Tab(text: AppStrings.raTabRoles),
             ],
           ),
         ),
@@ -804,7 +820,7 @@ class _ReadAloudSettingsScreenState
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, _ChoiceResult<T>.cancelled()),
-            child: const Text('取消'),
+            child: Text(AppStrings.cancel),
           ),
         ],
       ),
@@ -845,57 +861,61 @@ class _GeneralTab extends StatelessWidget {
     final state = _stateOf(context);
     final isAndroid = state._isAndroid;
     final batterySubtitle = !isAndroid
-        ? '仅 Android 支持'
+        ? AppStrings.raAndroidOnly
         : switch (state._batteryOptimizationIgnored) {
-            true => '已忽略电池优化',
-            false => '未忽略电池优化，点击前往设置',
-            null => '点击前往系统电池优化设置',
+            true => AppStrings.raBatteryOptimized,
+            false => AppStrings.raBatteryNotOptimized,
+            null => AppStrings.raBatterySettingsHint,
           };
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
-        const IosSectionHeader('界面'),
+        IosSectionHeader(AppStrings.interfaceSetting),
         IosGroup(
           flat: true,
           children: [
             IosListTile(
-              title: '默认朗读界面',
-              subtitle: '从阅读器启动朗读时进入的界面',
-              value: state._defaultInterface == 'player' ? '播放器' : '经典',
+              title: AppStrings.raDefaultInterface,
+              subtitle: AppStrings.raDefaultInterfaceDesc,
+              value: state._defaultInterface == 'player' ?
+                  AppStrings.raInterfacePlayer
+                  : AppStrings.raInterfaceClassic,
               onTap: state._pickDefaultInterface,
             ),
             IosListTile(
-              title: '播放器背景',
-              subtitle: '听书播放器页的背景样式',
-              value: state._playerBackground == 'transparent' ? '透明' : '纯色',
+              title: AppStrings.raPlayerBackground,
+              subtitle: AppStrings.raPlayerBackgroundDesc,
+              value: state._playerBackground == 'transparent' ?
+                  AppStrings.raPlayerBgTransparent
+                  : AppStrings.raPlayerBgSolid,
               onTap: state._pickPlayerBackground,
             ),
-            const SettingSwitchRow(
-              title: '显示朗读胶囊',
-              subtitle: '暂未支持',
+            SettingSwitchRow(
+              title: AppStrings.raShowCapsule,
+              subtitle: AppStrings.notSupportedYet,
               value: false,
               onChanged: null,
             ),
-            const SettingSwitchRow(
-              title: '自动收缩朗读胶囊',
-              subtitle: '暂未支持',
+            SettingSwitchRow(
+              title: AppStrings.raAutoShrinkCapsule,
+              subtitle: AppStrings.notSupportedYet,
               value: false,
               onChanged: null,
             ),
-            const IosListTile(
-              title: '重置朗读胶囊位置',
-              subtitle: '暂未支持',
+            IosListTile(
+              title: AppStrings.raResetCapsulePosition,
+              subtitle: AppStrings.notSupportedYet,
               enabled: false,
             ),
           ],
         ),
-        const IosSectionHeader('播放'),
+        IosSectionHeader(AppStrings.play),
         IosGroup(
           flat: true,
           children: [
             SettingSwitchRow(
-              title: '忽略音频焦点',
-              subtitle: '允许与其他应用同时播放音频',
+              title: AppStrings.raIgnoreAudioFocus,
+              subtitle: AppStrings.raIgnoreAudioFocusDesc,
               value: state._ignoreAudioFocus,
               onChanged: (v) {
                 state.apply(() => state._ignoreAudioFocus = v);
@@ -903,8 +923,8 @@ class _GeneralTab extends StatelessWidget {
               },
             ),
             SettingSwitchRow(
-              title: '朗读唤醒锁',
-              subtitle: isAndroid ? '朗读期间保持 CPU 唤醒' : '仅 Android 支持',
+              title: AppStrings.raWakeLock,
+              subtitle: isAndroid ? AppStrings.raWakeLockDesc : AppStrings.raAndroidOnly,
               value: state._readAloudWakeLock,
               onChanged: isAndroid
                   ? (v) {
@@ -920,15 +940,15 @@ class _GeneralTab extends StatelessWidget {
                     }
                   : null,
             ),
-            const SettingSwitchRow(
-              title: '来电时暂停朗读',
-              subtitle: '需电话权限，暂未支持',
+            SettingSwitchRow(
+              title: AppStrings.raPauseOnCall,
+              subtitle: AppStrings.raPauseOnCallDesc,
               value: false,
               onChanged: null,
             ),
             SettingSwitchRow(
-              title: '退出阅读时继续朗读',
-              subtitle: '关闭时退出阅读器即停止本次朗读',
+              title: AppStrings.raKeepAloudAfterExit,
+              subtitle: AppStrings.raKeepAloudAfterExitDesc,
               value: state._keepReadAloudOnExit,
               onChanged: (v) {
                 state.apply(() => state._keepReadAloudOnExit = v);
@@ -936,8 +956,8 @@ class _GeneralTab extends StatelessWidget {
               },
             ),
             SettingSwitchRow(
-              title: '媒体键上一首/下一首翻章',
-              subtitle: isAndroid ? '关闭时朗读按段落移动' : '仅 Android 支持',
+              title: AppStrings.raMediaKeyChapter,
+              subtitle: isAndroid ? AppStrings.raMediaKeyChapterDesc : AppStrings.raAndroidOnly,
               value: state._mediaButtonPerNext,
               onChanged: isAndroid
                   ? (v) {
@@ -954,46 +974,46 @@ class _GeneralTab extends StatelessWidget {
                   : null,
             ),
             SettingSwitchRow(
-              title: '安卓媒体控制兼容',
-              subtitle: isAndroid ? '暂未支持' : '仅 Android 支持',
+              title: AppStrings.raAndroidMediaCompat,
+              subtitle: isAndroid ? AppStrings.notSupportedYet : AppStrings.raAndroidOnly,
               value: false,
               onChanged: null,
             ),
-            const SettingSwitchRow(
-              title: '流式朗读',
-              subtitle: '暂未支持',
+            SettingSwitchRow(
+              title: AppStrings.raStreamingReadAloud,
+              subtitle: AppStrings.notSupportedYet,
               value: false,
               onChanged: null,
             ),
             IosListTile(
-              title: '后台保活 / 电池优化',
+              title: AppStrings.raBackgroundKeepAlive,
               subtitle: batterySubtitle,
               enabled: isAndroid,
               onTap: isAndroid ? state._openBatteryOptimizationSettings : null,
             ),
           ],
         ),
-        const IosSectionHeader('内容分析'),
+        IosSectionHeader(AppStrings.raContentAnalysis),
         IosGroup(
           flat: true,
           children: [
             IosListTile(
               key: const ValueKey('read-aloud-analysis-mode'),
-              title: '章节分片方式',
+              title: AppStrings.raChapterSplitMode,
               subtitle: state._speechAnalysisModeSummary,
               value: state._speechAnalysisModeLabel,
               onTap: state._pickSpeechAnalysisMode,
             ),
             IosListTile(
               key: const ValueKey('read-aloud-reasoning-level'),
-              title: '推理级别',
-              subtitle: '仅 AI 分片时生效（暂未支持）',
+              title: AppStrings.raReasoningLevel,
+              subtitle: AppStrings.raReasoningLevelDesc,
               value: state._reasoningLevelLabel,
               enabled: false,
             ),
             IosListTile(
               key: const ValueKey('read-aloud-content-split-mode'),
-              title: '内容划分方式',
+              title: AppStrings.raContentSplitMode,
               subtitle: state._contentSplitModeSummary,
               value: state._contentSplitModeLabel,
               onTap: state._pickContentSplitMode,
@@ -1007,7 +1027,7 @@ class _GeneralTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '切分标点（可多选）',
+                  AppStrings.raSplitSymbols,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const SizedBox(height: 8),
@@ -1027,9 +1047,10 @@ class _GeneralTab extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   state._contentSplitSymbols.trim().isEmpty
-                      ? '未选择时按句末标点 。！？… 划分'
-                      : '已选 ${state._effectiveSplitSymbols.length} 个标点；'
-                            '连续标点归入同一单元',
+                      ? AppStrings.raSplitSymbolsDefault
+                      : AppStrings.raSplitSelected(
+                          state._effectiveSplitSymbols.length,
+                        ),
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -1039,11 +1060,11 @@ class _GeneralTab extends StatelessWidget {
           ),
         IosGroup(
           flat: true,
-          footer: const IosSectionFooter('0 表示段间不额外等待；调整后下一次段落推进生效。'),
+          footer: IosSectionFooter(AppStrings.raParagraphIntervalDesc),
           children: [
             _SliderRow(
               key: const ValueKey('read-aloud-paragraph-interval-slider'),
-              title: '段落间隔',
+              title: AppStrings.raParagraphInterval,
               valueLabel: '${state._ttsParagraphInterval} ms',
               value: state._ttsParagraphInterval.toDouble(),
               min: 0,
@@ -1060,23 +1081,26 @@ class _GeneralTab extends StatelessWidget {
             ),
           ],
         ),
-        const IosSectionHeader('缓存'),
+        IosSectionHeader(AppStrings.raCache),
         IosGroup(
           flat: true,
           children: [
             IosListTile(
               key: const ValueKey('read-aloud-cache-retention'),
-              title: '缓存保留时间',
-              subtitle: '0 = 即听即焚；超时缓存在朗读开始时清理',
+              title: AppStrings.raCacheRetention,
+              subtitle: AppStrings.raCacheZeroHint,
               value: readAloudCacheRetentionLabel(state._cacheRetentionMinutes),
               onTap: state._showCacheRetentionDialog,
             ),
             IosListTile(
-              title: 'TTS 缓存',
-              subtitle:
-                  '${state._cacheStats.fileCount} 个文件 · '
-                  '${_ReadAloudSettingsScreenState._formatBytes(state._cacheStats.totalBytes)} · '
-                  '保留 ${readAloudCacheRetentionLabel(state._cacheRetentionMinutes)}',
+              title: AppStrings.raTtsCache,
+              subtitle: AppStrings.raCacheSummary(
+                state._cacheStats.fileCount,
+                _ReadAloudSettingsScreenState._formatBytes(
+                  state._cacheStats.totalBytes,
+                ),
+                readAloudCacheRetentionLabel(state._cacheRetentionMinutes),
+              ),
               onTap: state._showCacheDialog,
             ),
           ],
@@ -1098,21 +1122,21 @@ class _EngineTab extends StatelessWidget {
     final systemSelected = state._systemSelected;
     final selectedEngineLabel = state.systemEngineLabel;
     final selectedVoiceLabel =
-        state._selectedSystemVoice?.displayName ?? '系统默认';
+        state._selectedSystemVoice?.displayName ?? AppStrings.raSystemDefault;
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
       children: [
-        const IosSectionHeader('朗读引擎'),
+        IosSectionHeader(AppStrings.raSpeakEngine),
         IosGroup(
           flat: true,
           children: [
             IosListTile(
               key: const ValueKey('read-aloud-engine-system'),
-              title: '系统 TTS',
+              title: AppStrings.raSystemTts,
               subtitle: supportsSystemTts
-                  ? '使用系统内置语音引擎（无需网络）'
-                  : '仅 Android/iOS/macOS 支持',
+                  ? AppStrings.raSystemTtsDesc
+                  : AppStrings.raPlatformSupportHint,
               trailing: Icon(
                 systemSelected
                     ? Icons.radio_button_checked
@@ -1149,26 +1173,26 @@ class _EngineTab extends StatelessWidget {
                 },
               ),
             IosListTile(
-              title: '管理朗读引擎',
+              title: AppStrings.raManageEngines,
               subtitle: state._httpEngines.isEmpty
-                  ? '暂无 HTTP 引擎，点击添加'
-                  : '新增、编辑或删除 HTTP TTS 引擎',
+                  ? AppStrings.raNoHttpEngine
+                  : AppStrings.raHttpEngineDesc,
               onTap: state._openEngineManager,
             ),
           ],
         ),
-        const IosSectionHeader('系统引擎与音色'),
+        IosSectionHeader(AppStrings.raSystemEngineAndVoice),
         IosGroup(
           flat: true,
           children: [
             IosListTile(
               key: const ValueKey('read-aloud-system-engine'),
-              title: '系统引擎',
+              title: AppStrings.raSystemEngine,
               subtitle: !isAndroid
-                  ? '仅 Android 支持'
+                  ? AppStrings.raAndroidOnly
                   : (state._systemEngines.isEmpty
-                        ? '系统未安装 TTS 引擎'
-                        : '选择系统 TTS 引擎'),
+                        ? AppStrings.raNoSystemTtsEngine
+                        : AppStrings.raPickSystemTtsEngine),
               value: selectedEngineLabel,
               enabled: isAndroid && state._systemEngines.isNotEmpty,
               onTap: isAndroid && state._systemEngines.isNotEmpty
@@ -1177,10 +1201,12 @@ class _EngineTab extends StatelessWidget {
             ),
             IosListTile(
               key: const ValueKey('read-aloud-system-voice'),
-              title: '音色',
+              title: AppStrings.raVoice,
               subtitle: !supportsSystemTts
-                  ? '仅 Android/iOS/macOS 支持'
-                  : (state._systemVoices.isEmpty ? '无可用音色' : '选择系统 TTS 音色'),
+                  ? AppStrings.raPlatformSupportHint
+                  : (state._systemVoices.isEmpty ?
+                      AppStrings.raNoVoice
+                      : AppStrings.raPickSystemVoice),
               value: selectedVoiceLabel,
               enabled: supportsSystemTts && state._systemVoices.isNotEmpty,
               onTap: supportsSystemTts && state._systemVoices.isNotEmpty
@@ -1188,24 +1214,23 @@ class _EngineTab extends StatelessWidget {
                   : null,
             ),
             IosListTile(
-              title: '系统 TTS 设置',
-              subtitle: isAndroid ? '打开系统「文字转语音」设置' : '仅 Android 支持',
+              title: AppStrings.raSystemTtsSettings,
+              subtitle: isAndroid
+                  ? AppStrings.raOpenTtsSettings
+                  : AppStrings.raAndroidOnly,
               enabled: isAndroid,
               onTap: isAndroid ? state._openSystemTtsSettings : null,
             ),
           ],
         ),
-        const IosSectionHeader('语音参数'),
+        IosSectionHeader(AppStrings.raVoiceParams),
         IosGroup(
           flat: true,
-          footer: const IosSectionFooter(
-            '音调/音量仅对系统 TTS 生效；HTTP 引擎当前仅语速生效'
-            '（Rust 合成管线限制，已登记）。',
-          ),
+          footer: IosSectionFooter(AppStrings.raVoiceParamsHint),
           children: [
             _SliderRow(
               key: const ValueKey('read-aloud-speed-slider'),
-              title: '语速',
+              title: AppStrings.raSpeed,
               valueLabel: '${state._speed.toStringAsFixed(1)}x',
               value: state._speed,
               min: kMinTtsSpeed,
@@ -1224,7 +1249,7 @@ class _EngineTab extends StatelessWidget {
             ),
             _SliderRow(
               key: const ValueKey('read-aloud-pitch-slider'),
-              title: '音调',
+              title: AppStrings.raPitch,
               valueLabel: state._pitch.toStringAsFixed(1),
               value: state._pitch,
               min: 0.5,
@@ -1240,7 +1265,7 @@ class _EngineTab extends StatelessWidget {
             ),
             _SliderRow(
               key: const ValueKey('read-aloud-volume-slider'),
-              title: '音量',
+              title: AppStrings.raVolume,
               valueLabel: '${(state._volume * 100).round()}%',
               value: state._volume,
               min: 0.0,
@@ -1269,25 +1294,57 @@ class _RoleTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.only(bottom: 32),
-      children: const [
-        IosSectionHeader('角色'),
+      children: [
+        IosSectionHeader(AppStrings.raRole),
         IosGroup(
           flat: true,
           children: [
-            IosListTile(title: '多角色朗读', subtitle: '暂未支持', enabled: false),
-            IosListTile(title: '角色分配', subtitle: '暂未支持', enabled: false),
-            IosListTile(title: '人物配音', subtitle: '暂未支持', enabled: false),
-            IosListTile(title: '声音池', subtitle: '暂未支持', enabled: false),
+            IosListTile(
+              title: AppStrings.raMultiSpeaker,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
+            IosListTile(
+              title: AppStrings.raRoleAssignment,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
+            IosListTile(
+              title: AppStrings.raCharacterVoices,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
+            IosListTile(
+              title: AppStrings.raVoicePool,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
           ],
         ),
-        IosSectionHeader('配乐'),
+        IosSectionHeader(AppStrings.raMusic),
         IosGroup(
           flat: true,
           children: [
-            IosListTile(title: 'BGM 分配', subtitle: '暂未支持', enabled: false),
-            IosListTile(title: 'BGM 池', subtitle: '暂未支持', enabled: false),
-            IosListTile(title: '本章 BGM', subtitle: '暂未支持', enabled: false),
-            IosListTile(title: 'AI 场景识别', subtitle: '暂未支持', enabled: false),
+            IosListTile(
+              title: AppStrings.raBgmAssignment,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
+            IosListTile(
+              title: AppStrings.raBgmPool,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
+            IosListTile(
+              title: AppStrings.raChapterBgm,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
+            IosListTile(
+              title: AppStrings.raAiSceneDetection,
+              subtitle: AppStrings.notSupportedYet,
+              enabled: false,
+            ),
           ],
         ),
       ],

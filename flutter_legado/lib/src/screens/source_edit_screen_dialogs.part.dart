@@ -49,8 +49,8 @@ class _SourceVariableDialogState extends State<_SourceVariableDialog> {
               controller: _controller,
               maxLines: 6,
               autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '输入源变量（空则清除）',
+              decoration: InputDecoration(
+                hintText: AppStrings.sourceVariableDialogHint,
               ),
             ),
           ],
@@ -59,11 +59,11 @@ class _SourceVariableDialogState extends State<_SourceVariableDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppStrings.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, _controller.text),
-          child: const Text('确定'),
+          child: Text(AppStrings.confirm),
         ),
       ],
     );
@@ -98,7 +98,7 @@ class _QrShareDialog extends StatelessWidget {
       if (imageData == null) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('二维码生成失败')),
+            SnackBar(content: Text(AppStrings.sourceQrGenerateFailed)),
           );
         }
         return;
@@ -113,7 +113,7 @@ class _QrShareDialog extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败：${errorMessage(e)}')),
+          SnackBar(content: Text(AppStrings.shareFailed(errorMessage(e)))),
         );
       }
     }
@@ -138,11 +138,11 @@ class _QrShareDialog extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
+          child: Text(AppStrings.modeOff),
         ),
         FilledButton(
           onPressed: () => _shareImage(context),
-          child: const Text('分享图片'),
+          child: Text(AppStrings.sourceShareImage),
         ),
       ],
     );
