@@ -317,11 +317,11 @@
 - **需裁决**：是补齐 DB 写穿（推荐，恢复上游语义并让备份链生效），还是明确“App 的 JS 缓存只驻内存”（则必须同步修改帮助文档/契约、删除备份链对 `v_*` 的预期，并移除 `saveTime` 语义；但这会让依赖 TTL 的源行为异常）。
 - **补充事实**：当前状态不是“有意的内存实现”，因为 `cache_store` 已实现 TTL/磁盘/`putFile`，却被 setup 覆盖；这更像漏加守卫的回归。
 
-### 3.3 HTTP 总超时口径（60s total vs 上游无 callTimeout）
+### 3.3 HTTP 总超时口径（60s total vs 上游 callTimeout 60s）
 
 - **我方**：`LegadoClientConfig::default` 的 `read_timeout=60s` 作为 reqwest 客户端 `.timeout()`（`legado-net/src/client.rs:229-230`），是**总请求超时**；仅分片上传按载荷覆写（`API_CONTRACT.md:1595` 已登记），普通 GET/正文/图片未覆写。
-- **上游**：OkHttp 只设 `connectTimeout(15s)`/`readTimeout(60s)`（每次读操作），无 `callTimeout`；慢但持续有数据的响应不会被 60s 总超时掐断。
-- **需裁决**：是否将普通请求改为“只在无数据进展时超时”（reqwest 无直接 read-timeout 语义，可通过 `timeout` 取消 + 自定义流读取看门狗近似），或维持现状并在契约登记“大响应/慢链 60s 上限”。
+- **上游（2026-11-15 事实更正）**：OkHttp 设置为 `connectTimeout(15s)` / `writeTimeout(15s)` / `readTimeout(60s)` / **`callTimeout(60s)`** + `retryOnConnectionFailure(true)`（`app/src/main/java/io/legado/app/help/http/HttpHelper.kt:58-65`；参考版 `HttpHelper.kt:83-91` 一致）。原报告「仅设 connect/read、无 callTimeout」的前提有误——上游本就有 60s 总超时，慢但持续有数据的响应同样会在 60s 被掐断；且 urlOption `$timeout`（毫秒）会把 readTimeout 设为该值并派生 `callTimeout = max(60s, 2×timeout)`（`AnalyzeUrlNetworkOptions.kt:9,77-84,104-119`），并非「总请求无上限」。
+- **需裁决（前提更正后）**：是否按上游派生规则，在 `$timeout` 存在时把单请求总超时覆写为 `max(60s, 2×timeout)`（reqwest 无 read-idle 语义，只能以总超时近似 OkHttp 的 readTimeout + callTimeout）；无 `$timeout` 时维持 60s 默认值与上游一致。
 
 ### 3.4 书源校验的产品语义
 

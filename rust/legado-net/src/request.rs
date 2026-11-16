@@ -72,7 +72,11 @@ pub struct LegadoRequest {
     pub headers: HashMap<String, String>,
     /// 请求体（仅 POST/PUT 等使用）
     pub body: Option<String>,
-    /// 请求超时（覆盖客户端默认值）
+    /// 请求总超时（覆盖客户端默认值）
+    ///
+    /// reqwest `RequestBuilder::timeout` 语义：整次请求（连接 + 发送 +
+    /// 等待/读取响应）的总超时，对齐 OkHttp `callTimeout`，**非 read-idle**；
+    /// `$timeout` 派生链路经此覆写客户端默认 60s。
     #[serde(skip)]
     pub timeout: Option<Duration>,
 }

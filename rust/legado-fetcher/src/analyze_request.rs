@@ -1,4 +1,5 @@
-//! AnalyzeUrl 请求选项接线（HTTP P2-19 批3）：`followRedirects` / `retry`
+//! AnalyzeUrl 请求选项接线：`followRedirects` / `retry`（HTTP P2-19 批3）/
+//! `$timeout` 派生总超时（2026-11-15 裁决 1）
 //!
 //! 上游语义（`app/src/main/java/io/legado/app/model/analyzeRule/AnalyzeUrl.kt`
 //! `getClient()` + `app/src/main/java/io/legado/app/help/http/OkHttpUtils.kt`
@@ -14,7 +15,8 @@
 //!
 //! ## 覆盖范围（2026-10-01 批3 现状）
 //!
-//! 已接线（持 AnalyzeUrl 且经本模块发送，共享 followRedirects / retry 语义）：
+//! 已接线（持 AnalyzeUrl 且经本模块发送，共享 followRedirects / retry /
+//! `$timeout` 派生总超时语义）：
 //! - `web_book::RealBookSourceFetcher::fetch_page` 两分支（response_type/hex
 //!   与普通正文，含 POST 派发）；
 //! - `legado_ffi::api::search::search_single_source` 两分支（charset 原始字节
@@ -61,9 +63,21 @@
 //! `send_text` 入口统一短路本地解码（判定与解码仍由 `legado-parser`
 //! `AnalyzeUrl::is_data_uri` / `get_byte_array_if_data_uri` 单一真源，
 //! 空 mime 与原版 `^data:.*?;base64,(.*)` 同样命中）。
+//!
+//! ## `$timeout` 派生总超时（2026-11-15，裁决 1）
+//!
+//! 上游 `$timeout`（毫秒）写入 OkHttp `readTimeout`，并派生
+//! `callTimeout = max(60s, 2×timeout)`（`AnalyzeUrlNetworkOptions.kt:9,77-84,104-119`）。
+//! reqwest 无 read-idle 原语，故以**单请求总超时**近似 callTimeout：
+//! - 未配置 `$timeout` → 不覆写，沿用客户端默认 60s（与上游 callTimeout 60s 一致）；
+//! - 配置 → 覆写为 `max(60s, 2 × timeout_ms)`。
+//!
+//! 接线点在 [`send_raw`] / [`send_text`]（`web_book::fetch_page`、搜索、词典
+//! 共用）；裸 URL 直发点不持 `AnalyzeUrl`，无 `$timeout` 可消费。
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::time::Duration;
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::{LegadoClient, LegadoRawResponse, LegadoResponse};
@@ -118,6 +132,19 @@ fn is_settled_status(status: u16) -> bool {
     (200..400).contains(&status)
 }
 
+/// `$timeout`（毫秒）→ 单请求总超时（对齐上游 callTimeout 派生）
+///
+/// 上游 `$timeout` 设置 OkHttp `readTimeout`，无显式 callTimeout 时派生
+/// `max(60s, 2×timeout)`（`AnalyzeUrlNetworkOptions.kt:9,77-84,104-119`）。
+/// reqwest 无 read-idle 原语，本函数把派生值用作**整次请求总超时**近似：
+///
+/// - `None`（未配置 `$timeout`）→ `None`，沿用客户端默认 60s（与上游
+///   callTimeout 60s 一致）；
+/// - `Some(ms)` → `max(60s, 2×ms)`（`ms` 为毫秒；0 或小于 30s 也落到 60s）。
+pub fn derived_request_timeout(timeout_ms: Option<u64>) -> Option<Duration> {
+    timeout_ms.map(|ms| Duration::from_millis(ms.saturating_mul(2)).max(Duration::from_secs(60)))
+}
+
 /// 状态码提取（raw / text 两种响应形态共用重试循环）
 trait StatusCode {
     fn status_code(&self) -> u16;
@@ -153,17 +180,21 @@ pub async fn send_raw(
     let url = analyze_url.url().to_string();
     let body = analyze_url.request_body().to_string();
     let is_post = *analyze_url.method() == RequestMethod::Post;
+    // `$timeout` → 单请求总超时（未配置时 None，沿用客户端默认 60s）
+    let timeout = derived_request_timeout(analyze_url.timeout());
     send_with_options(client, analyze_url, move |effective| {
         let url = url.clone();
         let body = body.clone();
         let headers = headers.clone();
         async move {
             if is_post {
-                effective.post_raw(&url, &body, headers).await
+                effective
+                    .post_raw_with_timeout(&url, &body, headers, timeout)
+                    .await
             } else {
                 // 现状口径：非 POST（含 HEAD/GET）一律按 GET 发送，与既有
                 // 调用点逐字一致（HEAD 支持不在本批范围）
-                effective.get_raw(&url, headers).await
+                effective.get_raw_with_timeout(&url, headers, timeout).await
             }
         }
     })
@@ -188,15 +219,19 @@ pub async fn send_text(
     let url = analyze_url.url().to_string();
     let body = analyze_url.request_body().to_string();
     let is_post = *analyze_url.method() == RequestMethod::Post;
+    // `$timeout` → 单请求总超时（未配置时 None，沿用客户端默认 60s）
+    let timeout = derived_request_timeout(analyze_url.timeout());
     send_with_options(client, analyze_url, move |effective| {
         let url = url.clone();
         let body = body.clone();
         let headers = headers.clone();
         async move {
             if is_post {
-                effective.post(&url, &body, headers).await
+                effective
+                    .post_with_timeout(&url, &body, headers, timeout)
+                    .await
             } else {
-                effective.get(&url, headers).await
+                effective.get_with_timeout(&url, headers, timeout).await
             }
         }
     })
@@ -299,6 +334,15 @@ mod tests {
     where
         F: Fn(usize, &str) -> (u16, Option<String>, String) + Send + Sync + 'static,
     {
+        spawn_server_with_delay(Duration::ZERO, responder).await
+    }
+
+    /// 同 [`spawn_server`]，但在读取完请求头后延迟 `delay` 再响应
+    /// （`$timeout` 慢服务器夹具）
+    async fn spawn_server_with_delay<F>(delay: Duration, responder: F) -> (SocketAddr, Arc<HitLog>)
+    where
+        F: Fn(usize, &str) -> (u16, Option<String>, String) + Send + Sync + 'static,
+    {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
@@ -363,6 +407,9 @@ mod tests {
 
                     let (status, location, body) = responder(i, &path);
                     log.record(&path, &method);
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
 
                     let mut resp = format!("HTTP/1.1 {status} {}\r\n", reason(status));
                     if let Some(loc) = location {
@@ -754,5 +801,126 @@ mod tests {
 
         assert_eq!(String::from_utf8_lossy(&raw.body), "http-ok");
         assert_eq!(log.total(), 1, "http URL 仍走网络路径");
+    }
+
+    // ─── P2-19 尾项（2026-11-15 裁决 1）：$timeout → 单请求总超时 ─────────
+    //
+    // 上游：$timeout 写 readTimeout，派生 callTimeout = max(60s, 2×timeout)
+    //（AnalyzeUrlNetworkOptions.kt:9,77-84,104-119）。reqwest 无 read-idle
+    // 原语，故以总超时近似。精确 240s 无法在单测内真等，派生值用纯函数断言；
+    // 接线用「客户端默认 200ms + 慢服务器 700ms」放大差异：未覆写必超时，
+    // 覆写后必成功。
+
+    /// 派生公式（含边界）：未配置 → None；≤30s → 60s；>30s → 2×timeout。
+    #[test]
+    fn test_derived_request_timeout_matches_upstream_formula() {
+        assert_eq!(
+            derived_request_timeout(None),
+            None,
+            "未配置 $timeout 不覆写"
+        );
+        assert_eq!(
+            derived_request_timeout(Some(0)),
+            Some(Duration::from_secs(60)),
+            "0 落到 callTimeout 下限 60s"
+        );
+        assert_eq!(
+            derived_request_timeout(Some(5_000)),
+            Some(Duration::from_secs(60)),
+            "$timeout:5000 → max(60s, 10s) = 60s"
+        );
+        assert_eq!(
+            derived_request_timeout(Some(30_000)),
+            Some(Duration::from_secs(60)),
+            "$timeout:30000 → max(60s, 60s) = 60s"
+        );
+        assert_eq!(
+            derived_request_timeout(Some(60_000)),
+            Some(Duration::from_secs(120)),
+            "$timeout:60000 → 2× = 120s"
+        );
+        assert_eq!(
+            derived_request_timeout(Some(120_000)),
+            Some(Duration::from_secs(240)),
+            "$timeout:120000 → 2× = 240s（不是默认 60s）"
+        );
+    }
+
+    /// 客户端默认总超时 200ms（放大「是否覆写」差异）
+    fn slow_default_client() -> LegadoClient {
+        LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            read_timeout: Duration::from_millis(200),
+            ..LegadoClientConfig::default()
+        })
+        .unwrap()
+    }
+
+    /// `$timeout:120000`（派生 240s）与 `$timeout:5000`（派生 60s）都覆写
+    /// 客户端默认 200ms：700ms 慢响应必须成功。
+    #[tokio::test]
+    async fn test_timeout_option_overrides_client_default_budget() {
+        let (addr, log) = spawn_server_with_delay(Duration::from_millis(700), |_i, _p| {
+            (200, None, "slow-ok".to_string())
+        })
+        .await;
+        let client = slow_default_client();
+
+        let started = std::time::Instant::now();
+        for timeout_ms in [120_000u64, 5_000] {
+            let url = format!("http://{addr}/slow,{{\"timeout\":{timeout_ms}}}");
+            let raw = send_raw(&client, &analyze(&url), None)
+                .await
+                .expect("$timeout 派生总超时必须覆写客户端默认 200ms");
+            assert_eq!(String::from_utf8_lossy(&raw.body), "slow-ok");
+        }
+        assert_eq!(log.total(), 2);
+        assert!(
+            started.elapsed() >= Duration::from_millis(1_300),
+            "两次请求各等待约 700ms，证明未按客户端默认 200ms 掐断"
+        );
+    }
+
+    /// 未配置 `$timeout`：维持客户端默认（200ms），700ms 慢响应在约 200ms
+    /// 内报超时——证明默认值未被意外改宽/收紧。
+    #[tokio::test]
+    async fn test_without_timeout_uses_client_default_budget() {
+        let (addr, _log) = spawn_server_with_delay(Duration::from_millis(700), |_i, _p| {
+            (200, None, "slow-ok".to_string())
+        })
+        .await;
+        let client = slow_default_client();
+
+        let started = std::time::Instant::now();
+        let err = send_raw(&client, &analyze(&format!("http://{addr}/slow")), None)
+            .await
+            .expect_err("未配置 $timeout 应沿用客户端默认总超时");
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(err, LegadoError::Timeout(_)),
+            "应为超时错误: {err:?}"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(150) && elapsed < Duration::from_secs(5),
+            "超时应出现在客户端默认 200ms 附近（实测 {elapsed:?}）"
+        );
+    }
+
+    /// 文本路径（搜索/词典）同样消费 `$timeout`。
+    #[tokio::test]
+    async fn test_send_text_honors_timeout_option() {
+        let (addr, _log) = spawn_server_with_delay(Duration::from_millis(700), |_i, _p| {
+            (200, None, "text-ok".to_string())
+        })
+        .await;
+        let client = slow_default_client();
+        let url = format!("http://{addr}/text,{{\"timeout\":120000}}");
+
+        let resp = send_text(&client, &analyze(&url), None)
+            .await
+            .expect("send_text 也应覆写客户端默认总超时");
+
+        assert_eq!(resp.body, "text-ok");
     }
 }

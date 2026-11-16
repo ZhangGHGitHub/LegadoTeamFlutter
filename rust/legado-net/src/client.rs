@@ -89,7 +89,13 @@ pub fn cookie_jar_marker_present(headers: Option<&HashMap<String, String>>) -> b
 pub struct LegadoClientConfig {
     /// 连接超时，默认 15s（对应 OkHttp `.connectTimeout(15, TimeUnit.SECONDS)`）
     pub connect_timeout: Duration,
-    /// 读取超时，默认 60s（对应 OkHttp `.readTimeout(60, TimeUnit.SECONDS)`）
+    /// 请求总超时，默认 60s（对齐 OkHttp `.callTimeout(60, TimeUnit.SECONDS)`）
+    ///
+    /// **命名注意**：reqwest `.timeout()` 是**整次请求**超时（连接 + 发送 +
+    /// 等待/读取响应），与 OkHttp `readTimeout` 的「两次读操作间空闲上限」
+    /// 语义不同；本字段对齐上游 `callTimeout`，**不是 read-idle**。OkHttp 的
+    /// `readTimeout(60s)` 在 reqwest 中无直接对应原语；单请求可用
+    /// [`LegadoClient::get_with_timeout`] 等方法覆写本值（`$timeout` 派生用）。
     pub read_timeout: Duration,
     /// User-Agent 字符串（轮换优先级低于 `user_agents`）
     ///
@@ -447,6 +453,21 @@ impl LegadoClient {
         url: &str,
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
+        self.get_with_timeout(url, headers, None).await
+    }
+
+    /// 发送 GET 请求（可覆写本请求的总超时）
+    ///
+    /// `timeout` 直接设置 reqwest `RequestBuilder::timeout`：**整次请求**总超时
+    /// （连接 + 发送 + 等待/读取响应），覆盖客户端默认 `.timeout(read_timeout)`；
+    /// `None` 沿用客户端默认。上游 `$timeout`（OkHttp readTimeout）派生
+    /// callTimeout 的接线经此覆写单请求总超时（reqwest 无 read-idle 原语）。
+    pub async fn get_with_timeout(
+        &self,
+        url: &str,
+        headers: Option<HashMap<String, String>>,
+        timeout: Option<Duration>,
+    ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
@@ -473,6 +494,9 @@ impl LegadoClient {
                     cookie_ctx.begin_attempt();
                     with_cookie_context(cookie_ctx, async move {
                         let mut req = client.get(&url);
+                        if let Some(t) = timeout {
+                            req = req.timeout(t);
+                        }
                         req = apply_default_headers_static(req);
                         req =
                             apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
@@ -569,6 +593,19 @@ impl LegadoClient {
         url: &str,
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
+        self.get_raw_with_timeout(url, headers, None).await
+    }
+
+    /// 发送 GET 请求并返回无损原始字节（可覆写本请求的总超时）
+    ///
+    /// `timeout` 语义同 [`Self::get_with_timeout`]：整次请求总超时，覆盖客户端
+    /// 默认值；`None` 沿用默认。
+    pub async fn get_raw_with_timeout(
+        &self,
+        url: &str,
+        headers: Option<HashMap<String, String>>,
+        timeout: Option<Duration>,
+    ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
@@ -591,6 +628,9 @@ impl LegadoClient {
                     cookie_ctx.begin_attempt();
                     with_cookie_context(cookie_ctx, async move {
                         let mut req = client.get(&url);
+                        if let Some(t) = timeout {
+                            req = req.timeout(t);
+                        }
                         req = apply_default_headers_static(req);
                         req =
                             apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
@@ -639,6 +679,20 @@ impl LegadoClient {
         body: &str,
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
+        self.post_raw_with_timeout(url, body, headers, None).await
+    }
+
+    /// 发送 POST 请求并返回无损原始字节（可覆写本请求的总超时）
+    ///
+    /// `timeout` 语义同 [`Self::get_with_timeout`]：整次请求总超时，覆盖客户端
+    /// 默认值；`None` 沿用默认。
+    pub async fn post_raw_with_timeout(
+        &self,
+        url: &str,
+        body: &str,
+        headers: Option<HashMap<String, String>>,
+        timeout: Option<Duration>,
+    ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
@@ -663,6 +717,9 @@ impl LegadoClient {
                     cookie_ctx.begin_attempt();
                     with_cookie_context(cookie_ctx, async move {
                         let mut req = client.post(&url).body(body);
+                        if let Some(t) = timeout {
+                            req = req.timeout(t);
+                        }
                         req = apply_default_headers_static(req);
                         req =
                             apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
@@ -709,6 +766,20 @@ impl LegadoClient {
         body: &str,
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
+        self.post_with_timeout(url, body, headers, None).await
+    }
+
+    /// 发送 POST 请求（可覆写本请求的总超时）
+    ///
+    /// `timeout` 语义同 [`Self::get_with_timeout`]：整次请求总超时，覆盖客户端
+    /// 默认值；`None` 沿用默认。
+    pub async fn post_with_timeout(
+        &self,
+        url: &str,
+        body: &str,
+        headers: Option<HashMap<String, String>>,
+        timeout: Option<Duration>,
+    ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let fallback_ua = self.request_default_user_agent();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
@@ -733,6 +804,9 @@ impl LegadoClient {
                     cookie_ctx.begin_attempt();
                     with_cookie_context(cookie_ctx, async move {
                         let mut req = client.post(&url).body(body);
+                        if let Some(t) = timeout {
+                            req = req.timeout(t);
+                        }
                         req = apply_default_headers_static(req);
                         req =
                             apply_headers_and_cookies(req, (*headers).clone(), fallback_ua.clone());
