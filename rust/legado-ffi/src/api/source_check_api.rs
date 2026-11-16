@@ -466,6 +466,11 @@ async fn run_check_sources_stream_inner<F>(
         // 写回失败不阻断流（分组是增强副作用，判定结果仍要回推）。
         if let Some((source, outcome)) = write_back {
             write_back_check_groups(&source, &outcome, config.w_source_comment);
+            // [B13] 响应时间写回（对齐原版 `Debug.getRespondTime` 与
+            // Web 侧 `legado-server/src/legacy/source_check_api.rs`）：
+            // 此前 FFI 校验链完全不写 `respondTime`，书源管理页的响应耗时
+            // 永远停在导入值（默认 180000），校验结果对用户不可见。
+            write_back_respond_time(&source, &outcome, &config, result.total_time_ms);
         }
 
         let progress = CheckProgress {
@@ -572,6 +577,42 @@ fn write_back_check_groups(source: &BookSource, outcome: &SourceCheckOutcome, w_
         Ok(true) => {}
         Ok(false) => log::debug!("书源 {url} 校验分组未写回：校验期间源已变更（CAS 未命中）"),
         Err(e) => log::warn!("书源 {url} 校验分组写回失败: {e}"),
+    }
+}
+
+/// 写回单源校验耗时到 `book_sources.respondTime`（B13）
+///
+/// 口径逐条对齐原版 `Debug.getRespondTime(...)` 与 Web 侧实现
+/// （`legado-server/src/legacy/source_check_api.rs::write_back_check_result`）：
+/// - **失败** → `timeout_ms + 实测耗时`（超时基数 + 实际等待）；
+/// - **成功 / 不可判定** → 实测耗时；
+/// - **取消** → 不写（取消不计为源性能）。
+///
+/// 单列 UPDATE，不参与分组/注释的 CAS（响应耗时是观测值，不构成并发写回
+/// 风险）；写失败只记日志，不影响校验判定结果。
+fn write_back_respond_time(
+    source: &BookSource,
+    outcome: &SourceCheckOutcome,
+    config: &SourceCheckConfig,
+    total_time_ms: i64,
+) {
+    if outcome.cancelled {
+        return;
+    }
+    let url = &source.book_source_url;
+    if url.trim().is_empty() {
+        return;
+    }
+    let elapsed = total_time_ms.max(0);
+    let respond_time = if outcome.is_failed() {
+        config.timeout_ms as i64 + elapsed
+    } else {
+        elapsed
+    };
+    if let Err(e) = crate::db_state::with_database(|db| {
+        BookSourceRepository::new(db.connection()).update_respond_time(url, respond_time)
+    }) {
+        log::warn!("书源 {url} 响应时间写回失败: {e}");
     }
 }
 
@@ -1688,5 +1729,100 @@ mod tests {
             Some("正常注释"),
             "历史 // Error: 块应清除、正常注释保留"
         );
+    }
+
+    // ─── [B13] 校验耗时写回 respondTime ─────────────────────────────
+
+    /// 失败 → `timeout_ms + 实测耗时`（对齐原版 Debug.getRespondTime）
+    #[test]
+    fn test_write_back_respond_time_on_failure_adds_timeout_base() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://b13-respond-fail.example.com";
+        let source = make_source_no_search(url, "响应时间失败源");
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            invalid_groups: vec!["搜索失效".to_string()],
+            failure: Some("搜索失效".to_string()),
+            ..Default::default()
+        };
+        let config = SourceCheckConfig {
+            timeout_ms: 5000,
+            ..Default::default()
+        };
+        write_back_respond_time(&source, &outcome, &config, 1234);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            stored.respond_time, 6234,
+            "失败应叠加超时基数（5000 + 1234）"
+        );
+
+        crate::db_state::with_database(|db| BookSourceRepository::new(db.connection()).delete(url))
+            .unwrap();
+    }
+
+    /// 成功 → 实测耗时（不加超时基数）
+    #[test]
+    fn test_write_back_respond_time_on_success_uses_elapsed() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://b13-respond-ok.example.com";
+        let source = make_source_no_search(url, "响应时间成功源");
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let config = SourceCheckConfig {
+            timeout_ms: 5000,
+            ..Default::default()
+        };
+        write_back_respond_time(&source, &SourceCheckOutcome::default(), &config, 777);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(stored.respond_time, 777, "成功只写实测耗时");
+
+        crate::db_state::with_database(|db| BookSourceRepository::new(db.connection()).delete(url))
+            .unwrap();
+    }
+
+    /// 取消 → 不写（取消不计为源性能）
+    #[test]
+    fn test_write_back_respond_time_skipped_when_cancelled() {
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://b13-respond-cancel.example.com";
+        let mut source = make_source_no_search(url, "响应时间取消源");
+        source.respond_time = 999;
+        crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&source)
+        })
+        .unwrap();
+
+        let outcome = SourceCheckOutcome {
+            cancelled: true,
+            ..Default::default()
+        };
+        write_back_respond_time(&source, &outcome, &SourceCheckConfig::default(), 5000);
+
+        let stored = crate::db_state::with_database(|db| {
+            BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(stored.respond_time, 999, "取消态不得改动 respondTime");
+
+        crate::db_state::with_database(|db| BookSourceRepository::new(db.connection()).delete(url))
+            .unwrap();
     }
 }

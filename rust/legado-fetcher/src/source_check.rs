@@ -62,12 +62,46 @@ pub fn content_group(book_type_label: &str) -> String {
     format!("{book_type_label}正文失效")
 }
 
-/// 失效分组判定：含「失效」子串或等于「校验超时」
+/// 本模块可产生的全部失效分组名（**精确匹配白名单**）
 ///
-/// 对齐原版 `BookSource.getInvalidGroupNames()`：
-/// `"失效" in it || it == "校验超时"`。用于校验成功时清除旧失效分组。
+/// [B14] 原判定用 `group.contains("失效")`，会把用户自建的普通分组
+/// （如「玄幻失效专区」「失效预警」）当成校验产物，在下一次校验成功时
+/// 被 `remove_invalid_groups` **误删**——用户分组不是本模块写的，本模块
+/// 无权删除。
+///
+/// 因此改为精确匹配本模块自己会写入的取值域：
+/// - 固定名：[`GROUP_TIMEOUT`] / [`GROUP_JS_FAILED`] / [`GROUP_DOMAIN_FAILED`] /
+///   [`GROUP_SEARCH_FAILED`] / [`GROUP_DISCOVERY_FAILED`] /
+///   [`GROUP_SITE_FAILED`]（[`GROUP_DISCOVERY_RULE_EMPTY`] 刻意不在域内，
+///   见 [`persistable_groups`]）；
+/// - 前缀型：`搜索目录失效` / `发现目录失效` / `搜索正文失效` / `发现正文失效`
+///   （[`toc_group`] / [`content_group`] 的取值，对齐原版 `checkBook`
+///   的 `isSearchBook` 两分支，仅这两种 bookType 标签）。
+///
+/// 与上游 `BookSource.getInvalidGroupNames()` 的 `"失效" in it` 是**有意
+/// 偏离**：上游会把用户自建含「失效」的分组一并清掉，我方按用户授权
+/// （B 类缺陷清单 B14）收窄为白名单，避免误删用户数据。
+pub fn invalid_group_names_domain() -> &'static [&'static str] {
+    &[
+        GROUP_TIMEOUT,
+        GROUP_JS_FAILED,
+        GROUP_DOMAIN_FAILED,
+        GROUP_SEARCH_FAILED,
+        GROUP_DISCOVERY_FAILED,
+        GROUP_SITE_FAILED,
+        "搜索目录失效",
+        "发现目录失效",
+        "搜索正文失效",
+        "发现正文失效",
+    ]
+}
+
+/// 失效分组判定：**精确匹配**本模块的取值域
+///
+/// [B14] 见 [`invalid_group_names_domain`]：不再用 `contains("失效")`，
+/// 避免把用户自建分组误判为校验产物。
 pub fn is_invalid_group(group: &str) -> bool {
-    group.contains("失效") || group == GROUP_TIMEOUT
+    invalid_group_names_domain().contains(&group)
 }
 
 /// 是否为「异常归类」类分组（而非「分组判定」类）
@@ -1229,15 +1263,47 @@ function getContent(chapter, book) { return '正文内容'; }
         ));
     }
 
-    /// 失效分组判定（对齐 `getInvalidGroupNames`）
+    /// 失效分组判定（B14：精确匹配本模块取值域，不再 `contains("失效")`）
     #[test]
     fn test_is_invalid_group() {
-        assert!(is_invalid_group("搜索失效"));
-        assert!(is_invalid_group("域名失效"));
-        assert!(is_invalid_group("发现正文失效"));
-        assert!(is_invalid_group("校验超时"));
-        assert!(!is_invalid_group("玄幻"));
-        assert!(!is_invalid_group("校验成功"));
+        // 本模块会写入的取值域 → 认
+        for group in [
+            GROUP_TIMEOUT,
+            GROUP_JS_FAILED,
+            GROUP_DOMAIN_FAILED,
+            GROUP_SEARCH_FAILED,
+            GROUP_DISCOVERY_FAILED,
+            GROUP_SITE_FAILED,
+            "搜索目录失效",
+            "发现目录失效",
+            "搜索正文失效",
+            "发现正文失效",
+        ] {
+            assert!(is_invalid_group(group), "{group} 应属失效分组域");
+        }
+        // 域外：用户自建分组 / 成功态 / 域外判定名
+        for group in [
+            "玄幻",
+            "校验成功",
+            GROUP_DISCOVERY_RULE_EMPTY,
+            // B14 核心回归：用户自建含「失效」的分组不得被认作校验产物
+            "玄幻失效专区",
+            "失效预警",
+            "我的失效书源",
+        ] {
+            assert!(!is_invalid_group(group), "{group} 不得属失效分组域");
+        }
+    }
+
+    /// B14：成功校验的清理**不得**删除用户自建的含「失效」分组
+    #[test]
+    fn test_remove_invalid_groups_keeps_user_groups_with_failed_word() {
+        let raw = Some("玄幻,玄幻失效专区,搜索失效,失效预警,校验超时,我的失效书源");
+        let cleaned = remove_invalid_groups(raw).unwrap();
+        assert_eq!(
+            cleaned, "玄幻,玄幻失效专区,失效预警,我的失效书源",
+            "只清本模块写入的失效分组，用户自建分组原样保留"
+        );
     }
 
     /// 错误归类：JS 异常 → js失效，其余 → 网站失效
