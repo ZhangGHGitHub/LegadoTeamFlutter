@@ -179,12 +179,6 @@ void main() {
       expect(await service.getProxyHost(), '192.168.1.10');
       expect(await service.getProxyPort(), 1080);
     });
-
-    test('请求超时默认 30 秒且读写一致', () async {
-      expect(await service.getRequestTimeout(), 30);
-      await service.setRequestTimeout(15);
-      expect(await service.getRequestTimeout(), 15);
-    });
   });
 
   group('SettingsService WebDAV 云同步配置', () {

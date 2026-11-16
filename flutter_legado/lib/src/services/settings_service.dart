@@ -492,7 +492,6 @@ class SettingsService {
   static const _keyProxyType = 'net_proxy_type'; // none / http / socks5
   static const _keyProxyHost = 'net_proxy_host';
   static const _keyProxyPort = 'net_proxy_port';
-  static const _keyRequestTimeout = 'net_request_timeout';
 
   Future<String> getProxyType() async {
     try {
@@ -548,27 +547,6 @@ class SettingsService {
       await prefs.setInt(_keyProxyPort, port);
     } catch (e) {
       debugPrint('SettingsService.setProxyPort 异常: $e');
-    }
-  }
-
-  // ===== 网络设置：请求超时（秒） =====
-
-  Future<int> getRequestTimeout() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getInt(_keyRequestTimeout) ?? 30;
-    } catch (e) {
-      debugPrint('SettingsService.getRequestTimeout 异常: $e');
-      return 30;
-    }
-  }
-
-  Future<void> setRequestTimeout(int seconds) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_keyRequestTimeout, seconds);
-    } catch (e) {
-      debugPrint('SettingsService.setRequestTimeout 异常: $e');
     }
   }
 
