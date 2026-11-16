@@ -369,6 +369,81 @@ void main() {
 
       verifyNever(() => mockApi.updateBookSource(any()));
     });
+
+    /// [B15] 有 invalid_groups 时追加首个根因错误（不再只显示分组名）
+    test('invalid_groups 后追加首个根因错误（B15）', () async {
+      final controller = StreamController<Map<String, dynamic>>();
+      addTearDown(controller.close);
+      when(() => mockApi.checkSourcesStream(
+            any(),
+            configJson: any(named: 'configJson'),
+          )).thenAnswer((_) => controller.stream);
+
+      await readNotifier().start(sourceUrls: const ['https://a']);
+      controller.add({
+        'index': 0,
+        'total': 1,
+        'is_last': true,
+        'source_name': '源A',
+        'result': {
+          'source_url': 'https://a',
+          'search_ok': false,
+          'toc_ok': false,
+          'content_ok': false,
+          'search_error': '网络请求失败: dns error',
+          'toc_error': 'skipped',
+          'content_error': 'skipped',
+          'total_time_ms': 120,
+          'cancelled': false,
+          'invalid_groups': ['搜索失效'],
+        },
+      });
+      await Future.delayed(Duration.zero);
+
+      final message = readState().messages['https://a']!;
+      expect(message.text, contains('搜索失效'), reason: '分组名保留');
+      expect(
+        message.text,
+        contains('网络请求失败: dns error'),
+        reason: 'B15：必须显示根因，不能只有分组名',
+      );
+    });
+
+    /// [B15] `skipped` 占位串不算根因（只显示分组名）
+    test('skipped 占位串不作为根因展示（B15）', () async {
+      final controller = StreamController<Map<String, dynamic>>();
+      addTearDown(controller.close);
+      when(() => mockApi.checkSourcesStream(
+            any(),
+            configJson: any(named: 'configJson'),
+          )).thenAnswer((_) => controller.stream);
+
+      await readNotifier().start(sourceUrls: const ['https://a']);
+      controller.add({
+        'index': 0,
+        'total': 1,
+        'is_last': true,
+        'source_name': '源A',
+        'result': {
+          'source_url': 'https://a',
+          'search_ok': false,
+          'toc_ok': false,
+          'content_ok': false,
+          'search_error': '搜索失效',
+          'toc_error': 'skipped',
+          'content_error': 'skipped: cancelled',
+          'total_time_ms': 90,
+          'cancelled': false,
+          'invalid_groups': ['搜索失效'],
+        },
+      });
+      await Future.delayed(Duration.zero);
+
+      final text = readState().messages['https://a']!.text;
+      expect(text, contains('搜索失效'));
+      expect(text, isNot(contains('skipped')));
+      expect(text, isNot(contains('搜索失效：搜索失效')), reason: '根因等于分组名时不重复');
+    });
   });
 
   group('SourceNotifier.addGroupToUrls（手动添加分组批量操作）', () {

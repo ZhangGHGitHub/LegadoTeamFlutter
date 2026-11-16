@@ -265,6 +265,12 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
   ///
   /// 优先使用 Rust 侧判定的 `invalid_groups`（批44 起为规则级完整链判定）；
   /// 无分组时回落分步状态，保证旧版 Rust / Mock 数据仍可展示。
+  ///
+  /// [B15] 有 `invalid_groups` 时**追加首个根因错误**：此前只显示分组名
+  /// （如「搜索失效」），用户看不到「为什么失效」——而 `search_error` /
+  /// `toc_error` / `content_error` 里恰恰是网络错误、规则求值异常等根因。
+  /// 现在展示为「搜索失效：<首个 error>」，分组名保留（与原版分组标签一致），
+  /// 根因作为括号内补充；error 为空/等于分组名时退化为纯分组名。
   CheckSourceMessage _buildMessage(Map<String, dynamic> result) {
     final searchOk = result['search_ok'] == true;
     final tocOk = result['toc_ok'] == true;
@@ -282,7 +288,12 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
     bool ok;
     if (invalidGroups.isNotEmpty) {
       // 具体分组名（如「搜索失效」「发现正文失效」）比笼统「失败」更贴近原版
-      text = invalidGroups.join('、');
+      final groups = invalidGroups.join('、');
+      // [B15] 首个根因（按失败阶段顺序取第一个非空 error）
+      final rootCause = _firstRootCause(result);
+      text = (rootCause == null || invalidGroups.contains(rootCause))
+          ? groups
+          : '$groups：$rootCause';
       ok = false;
     } else if (!searchOk) {
       text = '搜索失败${_errorSuffix(result['search_error'])}';
@@ -299,6 +310,20 @@ class CheckSourceNotifier extends Notifier<CheckSourceState> {
     }
     if (captchaDetected) text = '$text（疑似验证码拦截）';
     return CheckSourceMessage(text: '$text ${timeMs}ms', ok: ok);
+  }
+
+  /// 首个根因错误（B15）：按「搜索 → 目录 → 正文」阶段顺序取第一个非空值
+  ///
+  /// `skipped` / `skipped: cancelled` 是流程跳过的占位串，不是根因，跳过。
+  String? _firstRootCause(Map<String, dynamic> result) {
+    for (final key in const ['search_error', 'toc_error', 'content_error']) {
+      final raw = (result[key] ?? '').toString().trim();
+      if (raw.isEmpty) continue;
+      if (raw == 'skipped' || raw.startsWith('skipped:')) continue;
+      if (raw == 'cancelled') continue;
+      return raw;
+    }
+    return null;
   }
 
   /// 解析 `CheckResult.invalid_groups`（缺键/类型不符回落空列表）

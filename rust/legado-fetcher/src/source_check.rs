@@ -891,10 +891,22 @@ fn eval_explore_kinds_js(
     let engine = QuickJsEngine::new(sandbox)
         .map_err(|e| ExploreRuleError::Eval(format!("JS 引擎初始化失败: {e}")))?;
 
-    // 前导：jsLib（去 Rhino 特有行）+ 书源 setup + 检验场景常量
+    // 前导：jsLib（去 Rhino 特有行）+ mainJs（JS 单文件源）+ 书源 setup
+    // + 检验场景常量
+    //
+    // [B16] JS 单文件源的 `exploreUrl` 常写成 `@js: ...` 并调用 mainJs 里
+    // 定义的函数（如 `getExploreKinds()`）。此前前导只载 jsLib 与 setup
+    // 脚本，**没有 mainJs** → 这类源的发现分类求值恒报
+    // `xxx is not defined`，被误判「发现失效」。
+    // mainJs 与 jsLib 同序（先 jsLib 后 mainJs），与
+    // `JsSourceConfig::with_js_lib` 的加载顺序一致。
     let mut prelude = String::new();
     if let Some(js_lib) = source.js_lib.as_deref().filter(|s| !s.trim().is_empty()) {
         prelude.push_str(&crate::js_adapter::sanitize_js_lib_for_quickjs(js_lib));
+        prelude.push('\n');
+    }
+    if let Some(main_js) = source.main_js.as_deref().filter(|s| !s.trim().is_empty()) {
+        prelude.push_str(main_js);
         prelude.push('\n');
     }
     if let Some(setup) = setup_script.filter(|s| !s.trim().is_empty()) {
@@ -1261,6 +1273,42 @@ function getContent(chapter, book) { return '正文内容'; }
             first_explore_category_url("@js:throw new Error('boom')", &source, None),
             Err(ExploreRuleError::Eval(message)) if message.contains("boom")
         ));
+    }
+
+    /// [B16] JS 单文件源的 `exploreUrl` 调用 mainJs 内定义的函数
+    ///
+    /// 此前前导不载 mainJs → `getExploreKinds is not defined`，被误判
+    /// 「发现失效」。修复后 mainJs 与前导一同载入，函数可见。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_js_rule_sees_main_js_functions() {
+        let mut source = source("https://b16.example.com");
+        source.main_js = Some(
+            "function getExploreKinds(){ return [{title:'玄幻',url:'https://b16.example.com/xh'}]; }"
+                .to_string(),
+        );
+        assert_eq!(
+            first_explore_category_url("@js:getExploreKinds()", &source, None).unwrap(),
+            "https://b16.example.com/xh",
+            "mainJs 内定义的函数必须对发现规则可见"
+        );
+    }
+
+    /// [B16] 无 mainJs 时行为不变（不因新增前导而报错）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_js_rule_without_main_js_unchanged() {
+        let source = source("https://b16b.example.com");
+        assert!(source.main_js.is_none());
+        assert_eq!(
+            first_explore_category_url(
+                "@js:[{title:'玄幻',url:'https://b16b.example.com/xh'}]",
+                &source,
+                None
+            )
+            .unwrap(),
+            "https://b16b.example.com/xh"
+        );
     }
 
     /// 失效分组判定（B14：精确匹配本模块取值域，不再 `contains("失效")`）
