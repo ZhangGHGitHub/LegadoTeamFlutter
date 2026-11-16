@@ -22,7 +22,10 @@ zip = { version = "9", default-features = false, features = [
 quick-xml = "0.42"
 encoding_rs = "0.8"
 regex = "1"
-lopdf = "0.42"
+# [依赖安全批 | 2026-11-16] 0.42 → 0.47：0.47 用 skrifa（可选 font_embedding
+# feature）取代 ttf-parser，清除 RUSTSEC-2026-0192（ttf-parser unmaintained）。
+# 默认 features 不含 font_embedding，故不引入 skrifa。
+lopdf = "0.47"
 # PDF 导出：纯 Rust 实现（printpdf + rusttype），支持 Android 交叉编译
 # images feature：启用 genpdf 的图片嵌入能力（图片书/漫画 PDF 导出）
 genpdf = { version = "0.2", features = ["images"] }
