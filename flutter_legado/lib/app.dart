@@ -8,6 +8,7 @@ import 'src/models/models.dart';
 import 'src/providers/backup_restore_refresh.dart';
 import 'src/providers/bookshelf/bookshelf_notifier.dart';
 import 'src/providers/privacy/privacy_notifier.dart';
+import 'src/providers/privacy/privacy_content_notifier.dart';
 import 'src/providers/providers.dart';
 import 'src/providers/ui_settings/ui_settings_notifier.dart';
 import 'src/providers/theme/app_font_notifier.dart';
@@ -34,6 +35,7 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'src/theme/md3_colors.dart';
 import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
+import 'src/utils/private_book_access.dart';
 import 'src/widgets/system_bar_binder.dart';
 import 'src/widgets/cover_settings_bootstrap.dart';
 import 'src/widgets/eye_protection_layer.dart';
@@ -330,7 +332,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // （attach 会拉取冷启动经 MainActivity Intent 带回的播放状态）
     VideoFloatWindowCoordinator.instance
       ..openFullscreen = _openVideoFromFloatWindow
-      ..onNotice = _showFloatWindowNotice;
+      ..onNotice = _showFloatWindowNotice
+      // [A3] 浮窗入口私密闸门：浮窗不走路由，创建点静默判定（不弹框）
+      ..canEnterWindowForBook = _canEnterFloatWindowForBook;
     VideoFloatWindowBridge.instance.attach();
     // [批9a 项5] 自动更新：启动后延迟检查（每日最多一次，语义对齐原版
     // MainActivity.upVersion 的 lastCheckUpdate+24h 门）。偏好关/Mock/DEBUG
@@ -401,6 +405,25 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
           navigator.pushNamed(AppRoutes.video, arguments: args),
       onTimeout: () => debugPrint('[VideoFloat] 闪屏未在等待窗口内退出，放弃本次回全屏导航（停留当前页）'),
     );
+  }
+
+  /// [A3] 浮窗入口私密判定（无 BuildContext，故只做静默判定不弹框）
+  ///
+  /// 悬浮窗可能在原生事件回调里创建，无法承载验证对话框；未授权即拒绝
+  /// 创建，并提示用户回应用内验证（与 `PrivateBookGate` 同一判定链）。
+  /// 判定链任何异常按 fail-open 放行，绝不因一次 IO 失败锁死播放。
+  Future<bool> _canEnterFloatWindowForBook(Book book) async {
+    try {
+      await ref.read(privacyNotifierProvider.notifier).ensureLoaded();
+      final content = await ref
+          .read(privacyContentProvider.notifier)
+          .ensureLoaded();
+      final privacy = ref.read(privacyNotifierProvider);
+      return isBookAllowedWithoutPrompt(book, privacy, content);
+    } catch (e) {
+      debugPrint('[VideoFloat] 私密闸门判定失败（放行）：$e');
+      return true;
+    }
   }
 
   /// [V-B3] 悬浮窗用户可见提示（经全局 Navigator context）

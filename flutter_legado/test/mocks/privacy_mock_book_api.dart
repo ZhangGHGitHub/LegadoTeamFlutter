@@ -14,15 +14,20 @@ class PrivacyMockBookApi extends MockBookApi {
     List<BookGroup> groups = const [],
     List<ReadRecord> readRecords = const [],
     List<Bookmark> bookmarks = const [],
+    List<Map<String, dynamic>> daily = const [],
   }) : books = List<Book>.of(books),
        groups = List<BookGroup>.of(groups),
        readRecords = List<ReadRecord>.of(readRecords),
-       bookmarks = List<Bookmark>.of(bookmarks);
+       bookmarks = List<Bookmark>.of(bookmarks),
+       daily = List<Map<String, dynamic>>.of(daily);
 
   final List<Book> books;
   final List<BookGroup> groups;
   final List<ReadRecord> readRecords;
   final List<Bookmark> bookmarks;
+
+  /// 每日阅读时长（readRecordDailyList 返回值，`[{date, seconds}]`）
+  final List<Map<String, dynamic>> daily;
 
   /// 记录 setBooksPrivate / setBookGroupPrivate 调用（链路断言）
   final List<({List<String> bookUrls, bool isPrivate})> setBooksPrivateCalls =
@@ -41,11 +46,17 @@ class PrivacyMockBookApi extends MockBookApi {
   bool failDeleteReadRecord = false;
   bool failDeleteBookmark = false;
 
+  /// 媒体阅读器闸门测试：未授权时这些取数方法必须零调用
+  int getBookCalls = 0;
+  int getChaptersCalls = 0;
+  int refreshTocCalls = 0;
+
   @override
   Future<List<Book>> getBooks() async => List<Book>.of(books);
 
   @override
   Future<Book?> getBook(String bookUrl) async {
+    getBookCalls++;
     for (final book in books) {
       if (book.bookUrl == bookUrl) return book;
     }
@@ -137,7 +148,16 @@ class PrivacyMockBookApi extends MockBookApi {
   }
 
   @override
-  Future<List<BookChapter>> getChapters(String bookUrl) async => const [];
+  Future<List<BookChapter>> getChapters(String bookUrl) async {
+    getChaptersCalls++;
+    return const [];
+  }
+
+  @override
+  Future<List<BookChapter>> refreshToc(String bookUrl, String sourceUrl) async {
+    refreshTocCalls++;
+    return const [];
+  }
 
   @override
   Future<List<BookSource>> getBookSources() async => const [];
@@ -148,7 +168,7 @@ class PrivacyMockBookApi extends MockBookApi {
 
   @override
   Future<List<Map<String, dynamic>>> readRecordDailyList(int year) async =>
-      const [];
+      List<Map<String, dynamic>>.of(daily);
 
   @override
   Future<void> deleteReadRecord(String bookName) async {

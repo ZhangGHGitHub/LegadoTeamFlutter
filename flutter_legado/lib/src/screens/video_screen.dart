@@ -775,7 +775,15 @@ class _VideoScreenState extends State<VideoScreen> {
       // [W2/W4] 失败提示按原因分流：权限缺失 → 引导授权；FGS 后台启动受限
       // → 引导回应用内重试；其他 → 中性失败提示
       final reason = coordinator.lastEnterError;
-      if (reason == 'no_overlay_permission') {
+      if (reason == 'private_locked') {
+        // [A3] 私密书未验证：浮窗入口不弹框（可能在原生回调里创建），
+        // 留在本页并提示先在应用内验证后再移交。
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('私密视频需先在应用内验证，再转入悬浮窗')),
+          );
+        }
+      } else if (reason == 'no_overlay_permission') {
         await coordinator.requestOverlayPermission();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

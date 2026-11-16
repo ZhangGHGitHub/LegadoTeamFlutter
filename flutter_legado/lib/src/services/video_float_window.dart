@@ -342,6 +342,13 @@ class VideoFloatWindowCoordinator {
   /// app.dart 注入：用户可见提示
   void Function(String message)? onNotice;
 
+  /// app.dart 注入：私密书籍是否允许创建悬浮窗（A3）
+  ///
+  /// 悬浮窗创建点没有页面上下文（可能在原生事件回调里触发），无法弹
+  /// 验证框，故只做静默判定：返回 false 时拒绝创建并提示回应用内验证。
+  /// null = 未装配（测试/降级路径）→ 不做私密判定。
+  Future<bool> Function(Book book)? canEnterWindowForBook;
+
   Book? _book;
   List<BookChapter> _chapters = const [];
   Map<String, String> _sourceHeaders = const {};
@@ -367,6 +374,24 @@ class VideoFloatWindowCoordinator {
     BookApi? api,
   }) async {
     lastEnterError = null;
+    // [A3] 私密闸门（浮窗入口）：悬浮窗不走路由，故在创建点判定。
+    // 未授权 → 不创建原生服务（不联网、不显示标题/封面），返回
+    // `private_locked` 供调用方给出「回应用内验证」提示。
+    final guard = canEnterWindowForBook;
+    if (book != null && guard != null) {
+      bool allowed;
+      try {
+        allowed = await guard(book);
+      } catch (e) {
+        // 判定链异常按 fail-open 放行（与 ensurePrivateAccess 同口径）
+        debugPrint('[VideoFloat] 私密判定失败（放行）：$e');
+        allowed = true;
+      }
+      if (!allowed) {
+        lastEnterError = 'private_locked';
+        return false;
+      }
+    }
     final ok = await bridge.show(state);
     if (ok) {
       _book = book;

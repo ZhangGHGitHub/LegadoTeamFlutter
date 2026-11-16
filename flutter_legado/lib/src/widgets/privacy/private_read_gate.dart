@@ -4,9 +4,11 @@
 // 取代内容（不是“先打开再遮住”）；进入自动弹一次验证，取消退回上一页，
 // 成功继续。离开阅读器（gate dispose / 换书）撤销 EveryTime 目标授权。
 //
-// 仅文本阅读器（`/reader`）；漫画参考版无 gate，本批不接入。
+// 仅文本阅读器（`/reader`）——文本阅读器的书由 ReaderNotifier 持有，
+// 路由层闸门读它即可；漫画/听书/视频由 [PrivateBookGate] 按路由参数判定
+//（A3 补齐，含悬浮窗入口）。
 //
-// 编写：全栈工程师（批9c） ｜ 2026-11-09
+// 编写：全栈工程师（批9c / A3） ｜ 2026-11-09 / 2026-11-17
 import 'dart:async';
 
 import 'package:flutter/material.dart';

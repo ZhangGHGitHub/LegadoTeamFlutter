@@ -21,11 +21,27 @@ class ReadAchievementCard extends StatelessWidget {
     required this.readBooks,
     required this.totalDurationText,
     this.onClearAll,
+    this.pending = false,
+    this.masked = false,
   });
+
+  /// [A3] 隐私快照未就绪（首帧竞态）：不显示真实本数/时长
+  final bool pending;
+
+  /// [A3] 存在私密未授权记录：本数/时长按已剔除口径显示（调用方已算好）
+  final bool masked;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final booksText = pending ? '已读 — 本' : '已读 $readBooks 本';
+    // 文案只说「未解锁内容」而非强调私密身份：解释被剔除的口径即可
+    //（锁定行本身在列表里已可见）。
+    final durationText = pending
+        ? '累计 —'
+        : masked
+        ? '累计 $totalDurationText（不含未解锁内容）'
+        : '累计 $totalDurationText';
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Card(
@@ -43,7 +59,7 @@ class ReadAchievementCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '已读 $readBooks 本',
+                      booksText,
                       style: Theme.of(context)
                           .textTheme
                           .titleMedium
@@ -51,7 +67,7 @@ class ReadAchievementCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '累计 $totalDurationText',
+                      durationText,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
@@ -143,16 +159,41 @@ class ReadRecordDailyView extends StatelessWidget {
   /// 加载失败时的重试（为 null 时显示空态）
   final VoidCallback? onRetry;
 
+  /// [A3] 统计被私密脱敏拦截（存在私密未授权记录 → 每日时长聚合不可信）
+  final bool privacyMasked;
+
+  /// [A3] 隐私快照尚未就绪（首帧竞态 → 只显示中性占位）
+  final bool privacyPending;
+
   const ReadRecordDailyView({
     super.key,
     required this.daily,
     required this.formatSeconds,
     this.onRetry,
+    this.privacyMasked = false,
+    this.privacyPending = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // [A3] 首帧竞态：策略/标记未就绪时绝不先渲染真实时长（空快照会把
+    // 私密书判成非私密，fail-open）；先给中性占位。
+    if (privacyPending) {
+      return const ReadStatsPrivacyPlaceholder(
+        key: ValueKey('readRecordDailyPrivacyPending'),
+        message: '正在准备阅读统计…',
+      );
+    }
+    // [A3] readRecordDaily 只有「日期 + 秒数」两列，无法从聚合值里剔除
+    // 私密书贡献的秒数 → 存在私密未授权记录时整段时长不可展示
+    //（fail-closed：宁可少展示，也不泄漏私密阅读时长）。
+    if (privacyMasked) {
+      return const ReadStatsPrivacyPlaceholder(
+        key: ValueKey('readRecordDailyPrivacyMasked'),
+        message: '私密书籍未验证，暂不显示每日阅读时长',
+      );
+    }
     final data = daily;
     if (data == null) {
       return const Center(child: CircularProgressIndicator());
@@ -209,6 +250,46 @@ class ReadRecordDailyView extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: rows,
+    );
+  }
+}
+
+/// [A3] 统计区隐私占位：锁图标 + 中性说明，不渲染任何真实时长/日期
+///
+/// 两种用途：
+/// - 首帧竞态（策略/私密标记未就绪）：不得先渲染明文统计；
+/// - 已确认存在私密未授权记录：每日时长聚合不可信（无书籍维度可剔除）。
+class ReadStatsPrivacyPlaceholder extends StatelessWidget {
+  const ReadStatsPrivacyPlaceholder({super.key, required this.message});
+
+  /// 中性说明文案（不得包含书名/作者/时长）
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Symbols.lock_rounded,
+            size: 36,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

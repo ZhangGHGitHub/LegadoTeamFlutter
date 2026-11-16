@@ -238,6 +238,62 @@ void main() {
       expect(coord.isCapturing, isFalse);
     });
 
+    // [A3] 浮窗入口私密闸门：悬浮窗不走路由，须在创建点判定；
+    // 未授权时不得调用原生 show（不联网、不显示标题/封面）。
+    test('私密书未授权：拒绝创建悬浮窗（零 show 调用）', () async {
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge)
+        ..canEnterWindowForBook = (_) async => false;
+      final ok = await coord.enterWindow(
+        state: _state(bookUrl: 'book://secret'),
+        book: Book(name: '私密书', bookUrl: 'book://secret', origin: 'o'),
+        api: _FakeBookApi(),
+      );
+      expect(ok, isFalse);
+      expect(bridge.shown, isEmpty, reason: '未授权不得拉起原生悬浮窗');
+      expect(coord.isCapturing, isFalse);
+      expect(coord.lastEnterError, 'private_locked');
+    });
+
+    test('私密书已授权：正常创建悬浮窗', () async {
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge)
+        ..canEnterWindowForBook = (_) async => true;
+      final ok = await coord.enterWindow(
+        state: _state(bookUrl: 'book://secret'),
+        book: Book(name: '私密书', bookUrl: 'book://secret', origin: 'o'),
+        api: _FakeBookApi(),
+      );
+      expect(ok, isTrue);
+      expect(bridge.shown, hasLength(1));
+    });
+
+    test('判定链异常按 fail-open 放行（不锁死播放）', () async {
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge)
+        ..canEnterWindowForBook = (_) async => throw StateError('io');
+      final ok = await coord.enterWindow(
+        state: _state(bookUrl: 'book://x'),
+        book: Book(name: '书', bookUrl: 'book://x', origin: 'o'),
+        api: _FakeBookApi(),
+      );
+      expect(ok, isTrue, reason: '判定失败不得把用户挡在播放外');
+      expect(bridge.shown, hasLength(1));
+    });
+
+    test('直链模式（无 book）不做私密判定', () async {
+      final bridge = _FakeBridge();
+      var called = 0;
+      final coord = VideoFloatWindowCoordinator(bridge: bridge)
+        ..canEnterWindowForBook = (_) async {
+          called++;
+          return false;
+        };
+      final ok = await coord.enterWindow(state: _state(), api: _FakeBookApi());
+      expect(ok, isTrue);
+      expect(called, 0);
+    });
+
     test('onCompleted 推进下一集并 ACTION_REPLACE 续播', () async {
       final bridge = _FakeBridge();
       final coord = VideoFloatWindowCoordinator(bridge: bridge);

@@ -15,6 +15,7 @@ import '../providers/read_record/read_record_notifier.dart';
 import '../routes.dart';
 import '../services/privacy_content_service.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/read_stats_privacy.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/md3_fast_scroller.dart';
 import '../widgets/empty_state.dart';
@@ -91,6 +92,29 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final state = ref.watch(readRecordNotifierProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
+    // [A3] 阅读统计（成就卡/热力图/按天视图）的私密脱敏口径：
+    // - pending：策略或私密标记尚未就绪（首帧竞态）→ 只显示中性占位；
+    // - masked：存在私密且未获准的记录 → readRecordDaily 无书籍维度，
+    //   每日时长聚合不可信；本数/时长改用「已剔除」口径。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
+    final statsPending = !readStatsPrivacyReady(privacy, privacyContent);
+    // 统计口径用未过滤全量记录（搜索词只影响下方列表，不影响累计统计）
+    final statsRecords = ref
+        .read(readRecordNotifierProvider.notifier)
+        .allRecords;
+    final statsMasked =
+        !statsPending &&
+        hasLockedRecordsForStats(statsRecords, privacy, privacyContent);
+    final visibleRecords = statsPending
+        ? const <ReadRecordShow>[]
+        : filterLockedRecords(statsRecords, privacy, privacyContent);
+    final visibleReadBooks = visibleRecords.where((r) => r.readTime > 0).length;
+    final visibleReadTimeMs = visibleRecords.fold<int>(
+      0,
+      (sum, r) => sum + r.readTime,
+    );
+
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
@@ -146,8 +170,10 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         children: [
           // 差异清单 C5：累计成就卡（已读 N 本 / 累计 X）+ 清空入口
           ReadAchievementCard(
-            readBooks: state.records.where((r) => r.readTime > 0).length,
-            totalDurationText: formatDuring(state.totalReadTimeMs),
+            readBooks: visibleReadBooks,
+            totalDurationText: formatDuring(visibleReadTimeMs),
+            pending: statsPending,
+            masked: statsMasked,
             onClearAll: state.records.isEmpty && state.totalReadTimeMs == 0
                 ? null
                 : () => _confirmClearAll(context),
@@ -176,6 +202,8 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
                     daily: _daily,
                     formatSeconds: (sec) => formatDuring(sec * 1000),
                     onRetry: _loadDailyForView,
+                    privacyPending: statsPending,
+                    privacyMasked: statsMasked,
                   )
                 : _buildBody(context, state),
           ),
@@ -204,6 +232,10 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     // 只留模糊封面（时间保留）；反查不到书籍按非私密处理（fail-open）。
     final privacy = ref.watch(privacyNotifierProvider);
     final privacyContent = ref.watch(privacyContentProvider);
+    // 热力图统计口径：未按搜索词过滤的全量记录（与成就卡同源）
+    final statsRecords = ref
+        .read(readRecordNotifierProvider.notifier)
+        .allRecords;
     // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
     // [UI_SYNC_REFACTOR R3] 千级记录快速滚动条
     return CustomRefreshIndicator(
@@ -241,7 +273,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  children: [_HeatmapSection(records: state.records)],
+                  children: [_HeatmapSection(records: statsRecords)],
                 ),
               );
             }
@@ -663,8 +695,22 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
 
   @override
   Widget build(BuildContext context) {
+    // [A3] 私密脱敏：本数模式的数据源是逐条记录，可真正按书剔除；
+    // 时长模式的数据源 readRecordDaily 只有「日期 + 秒数」，一旦存在
+    // 私密未授权记录就无法剔除其贡献 → 该模式下隐藏时长序列（fail-closed）。
+    final privacy = ref.watch(privacyNotifierProvider);
+    final privacyContent = ref.watch(privacyContentProvider);
+    final pending = !readStatsPrivacyReady(privacy, privacyContent);
+    final visibleRecords = pending
+        ? const <ReadRecordShow>[]
+        : filterLockedRecords(widget.records, privacy, privacyContent);
+    final masked =
+        !pending &&
+        hasLockedRecordsForStats(widget.records, privacy, privacyContent);
+    // 存在私密未授权记录时，时长序列不可信：丢弃已加载的每日秒数，
+    // 并按「本数」模式渲染（模式切换控件保留，切到时长显示占位说明）。
     final dailyCounts = Md3HeatmapCalendar.aggregateDailyBookCount(
-      widget.records.map((r) => (bookName: r.bookName, lastRead: r.lastRead)),
+      visibleRecords.map((r) => (bookName: r.bookName, lastRead: r.lastRead)),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -688,7 +734,23 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
           style: const ButtonStyle(visualDensity: VisualDensity.compact),
         ),
         const SizedBox(height: 12),
-        if (_error != null)
+        if (pending)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: ReadStatsPrivacyPlaceholder(
+              key: ValueKey('readRecordHeatmapPrivacyPending'),
+              message: '正在准备阅读统计…',
+            ),
+          )
+        else if (masked && _mode == Md3HeatmapMode.duration)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: ReadStatsPrivacyPlaceholder(
+              key: ValueKey('readRecordHeatmapPrivacyMasked'),
+              message: '私密书籍未验证，暂不显示每日阅读时长',
+            ),
+          )
+        else if (_error != null)
           Text(
             '每日时长加载失败：$_error',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -697,9 +759,13 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
           )
         else
           Md3HeatmapCalendar(
-            dailySeconds: _dailySeconds ?? const {},
+            // 私密未授权时不得把含私密时长的聚合值传给日历（即使当前是
+            // 本数模式，也不在内存里保留可被后续切换误用的明文序列）。
+            dailySeconds: masked ? const {} : (_dailySeconds ?? const {}),
             dailyCounts: dailyCounts,
-            mode: _dailySeconds == null && _mode == Md3HeatmapMode.duration
+            mode: masked
+                ? Md3HeatmapMode.count
+                : _dailySeconds == null && _mode == Md3HeatmapMode.duration
                 ? Md3HeatmapMode.count
                 : _mode,
             endDate: DateTime.now(),

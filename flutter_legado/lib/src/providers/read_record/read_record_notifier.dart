@@ -75,6 +75,12 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
   /// 全量原始记录（未过滤），供搜索重算
   List<ReadRecordShow> _all = const [];
 
+  /// 全量记录快照（未按搜索词过滤）
+  ///
+  /// 阅读记录页的成就卡/统计口径必须用未过滤快照：`state.records` 是搜索
+  /// 过滤后的展示列表，用它会让「搜一下累计时长就变」。
+  List<ReadRecordShow> get allRecords => _all;
+
   @override
   ReadRecordState build() => const ReadRecordState();
 

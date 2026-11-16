@@ -46,6 +46,8 @@ import 'screens/settings_placeholder_screen.dart';
 import 'screens/settings_screen.dart';
 // [批9c] 文本阅读器私密闸门（深链兜底；openBook 正常路径已先行验证）
 import 'widgets/privacy/private_read_gate.dart';
+// [A3] 媒体阅读器私密闸门（漫画/听书/视频）
+import 'widgets/privacy/private_book_gate.dart';
 import 'screens/source_screen.dart';
 import 'screens/source_edit_screen.dart';
 import 'screens/rss_source_edit_screen.dart';
@@ -180,7 +182,14 @@ class AppRoutes {
       final bookUrl = args is String
           ? args
           : (args is Map ? (args['bookUrl'] as String? ?? '') : '');
-      return ReaderComicScreen(bookUrl: bookUrl);
+      // [A3] 漫画阅读器私密闸门：未授权时不组合阅读器（不取目录/不联网）
+      return PrivateBookGate(
+        bookUrl: bookUrl,
+        title: '私密漫画',
+        description: '验证后继续阅读本漫画',
+        actionText: '验证并阅读',
+        child: ReaderComicScreen(bookUrl: bookUrl),
+      );
     },
     search: (context) {
       final args = ModalRoute.of(context)?.settings.arguments;
@@ -240,17 +249,32 @@ class AppRoutes {
     audio: (context) {
       final args = ModalRoute.of(context)?.settings.arguments;
       // 路由参数规范化：优先接收 Book 对象
-      if (args is Book) {
-        return AudioScreen(book: args);
+      final Book? book = args is Book ? args : null;
+      final String bookUrl;
+      final String bookName;
+      if (book != null) {
+        bookUrl = book.bookUrl;
+        bookName = book.name;
+      } else if (args is Map<String, String>) {
+        bookUrl = args['bookUrl'] ?? '';
+        bookName = args['bookName'] ?? '';
+      } else {
+        bookUrl = '';
+        bookName = '';
       }
-      // 向后兼容：支持 Map<String, String> 传参
-      if (args is Map<String, String>) {
-        return AudioScreen(
-          bookUrl: args['bookUrl'] ?? '',
-          bookName: args['bookName'] ?? '',
-        );
-      }
-      return const AudioScreen();
+      // [A3] 听书播放器私密闸门：未授权时不组合播放器（不取章节/不联网）
+      return PrivateBookGate(
+        bookUrl: bookUrl,
+        book: book,
+        title: '私密音频',
+        description: '验证后继续收听本书',
+        actionText: '验证并收听',
+        child: book != null
+            ? AudioScreen(book: book)
+            : bookUrl.isEmpty && bookName.isEmpty
+            ? const AudioScreen()
+            : AudioScreen(bookUrl: bookUrl, bookName: bookName),
+      );
     },
     bookInfo: (context) {
       final args = ModalRoute.of(context)?.settings.arguments;
@@ -457,29 +481,51 @@ class AppRoutes {
       final args = ModalRoute.of(context)?.settings.arguments;
       // [V-B3] 悬浮窗回全屏：原生交回已解析 URL/位置，直接续播
       if (args is VideoScreenArgs) {
-        return VideoScreen(
-          videoUrl: args.videoUrl,
-          title: args.title,
+        return PrivateBookGate(
+          // 直链回全屏（book == null）没有书籍身份：不做私密判定
+          bookUrl: args.book?.bookUrl ?? '',
           book: args.book,
-          presetUrl: args.presetUrl,
-          presetHeaders: args.presetHeaders,
-          presetMpdPath: args.presetMpdPath,
-          initialResumeMs: args.initialResumeMs,
-          initialChapterIndex: args.initialChapterIndex,
-          initialSpeed: args.initialSpeed,
-          initialPlaying: args.initialPlaying,
+          title: '私密视频',
+          description: '验证后继续播放本视频',
+          actionText: '验证并播放',
+          child: VideoScreen(
+            videoUrl: args.videoUrl,
+            title: args.title,
+            book: args.book,
+            presetUrl: args.presetUrl,
+            presetHeaders: args.presetHeaders,
+            presetMpdPath: args.presetMpdPath,
+            initialResumeMs: args.initialResumeMs,
+            initialChapterIndex: args.initialChapterIndex,
+            initialSpeed: args.initialSpeed,
+            initialPlaying: args.initialPlaying,
+          ),
         );
       }
       if (args is Map<String, String>) {
-        return VideoScreen(
-          videoUrl: args['videoUrl'] ?? '',
-          title: args['title'] ?? '视频播放',
+        // 直链播放无书籍身份：无法判定私密，闸门按空 URL 放行
+        return PrivateBookGate(
+          bookUrl: '',
+          title: '私密视频',
+          description: '验证后继续播放本视频',
+          actionText: '验证并播放',
+          child: VideoScreen(
+            videoUrl: args['videoUrl'] ?? '',
+            title: args['title'] ?? '视频播放',
+          ),
         );
       }
       // [UI-fix v2.0.12] 视频源书籍：章节列表 + 当前章播放（对齐原版
       // VideoPlayerActivity 接收 bookUrl 语义）— Reasonix
       if (args is Book) {
-        return VideoScreen(videoUrl: '', title: args.name, book: args);
+        return PrivateBookGate(
+          bookUrl: args.bookUrl,
+          book: args,
+          title: '私密视频',
+          description: '验证后继续播放本视频',
+          actionText: '验证并播放',
+          child: VideoScreen(videoUrl: '', title: args.name, book: args),
+        );
       }
       return const VideoScreen(videoUrl: '');
     },
