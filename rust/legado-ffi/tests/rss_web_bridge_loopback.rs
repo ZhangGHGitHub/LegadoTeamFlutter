@@ -201,9 +201,7 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     legado_js::host_api::cache_store::set_cache_dir(temp_cache_dir());
     // C5：文件 API（downloadFileAwait）落盘根——与 `ffi::set_cache_dir` 同型，
     // 注入 `<缓存目录>/js_files` 作为沙箱父目录（再按 RSS 源 tag 分子目录）
-    legado_js::host_api::file_utils::set_sandbox_root(
-        temp_cache_dir().join("js_files"),
-    );
+    legado_js::host_api::file_utils::set_sandbox_root(temp_cache_dir().join("js_files"));
 
     let routes: Routes = Arc::new(|target: &str| match target {
         "/ajax" => ("200 OK".to_string(), "ajax-body-ok".to_string()),
@@ -401,11 +399,7 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     // 成功时返回**相对文件名** `<md5Encode16(url)>.<type>`，且文件真实落盘
     // 在当前 RSS 源的沙箱根下（`<cache_dir>/<SHA-256(sourceUrl) 前16字节>`）。
     let download_url = format!("{base}/download.bin");
-    let env = call(
-        SOURCE_URL,
-        "downloadFileAwait",
-        json!([download_url]),
-    );
+    let env = call(SOURCE_URL, "downloadFileAwait", json!([download_url]));
     assert_eq!(env["ok"], true, "downloadFileAwait 应已接线: {env}");
     let relative = env["value"]
         .as_str()

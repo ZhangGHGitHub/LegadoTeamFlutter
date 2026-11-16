@@ -28,11 +28,11 @@ import '../utils/book_open_utils.dart';
 import '../utils/book_source_match.dart';
 import '../utils/legado_deep_link.dart';
 import '../utils/rss_read_record.dart';
+import '../utils/rss_source_login.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 import 'rss_articles_screen.dart';
 import 'search_screen.dart';
-import 'source_login_screen.dart';
 import '../utils/error_message.dart';
 
 /// RSS 文章详情 / 阅读页面
@@ -1156,23 +1156,16 @@ class _RssArticleDetailScreenState
 
   /// `java.open('login')`：源配置了 loginUrl/loginUi 才进入登录页
   Future<void> _openBridgeLogin(RssSource target) async {
-    final hasLogin = (target.loginUrl?.trim().isNotEmpty ?? false) ||
-        (target.loginUi?.trim().isNotEmpty ?? false);
-    if (!hasLogin) {
+    if (!rssSourceHasLogin(target)) {
       _showBridgeSnack('源未配置登录');
       return;
     }
     if (!mounted) return;
-    // [2b-2c 复核 P1] 登录属 standalone：详情页在右栏时也固定 root 全屏
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => SourceLoginScreen(
-          sourceUrl: target.sourceUrl,
-          sourceName: target.sourceName,
-          loginUrl: target.loginUrl,
-        ),
-      ),
-    );
+    // [C3] 统一走 RSS 登录入口（V2 对话框 / 经典 loginUi 表单 / WebView
+    // 三路分流；此前固定打开手动凭据页，表单与 V2 源无从执行）。
+    final ok = await showRssSourceLogin(context, ref, target);
+    if (!mounted) return;
+    if (ok) _showBridgeSnack('登录成功');
   }
 
   void _showBridgeSnack(

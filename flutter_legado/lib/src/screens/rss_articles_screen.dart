@@ -30,9 +30,9 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/navigation/main_detail_pane_scope.dart';
+import '../utils/rss_source_login.dart';
 import 'rss_article_detail_screen.dart';
 import 'rss_source_edit_screen.dart';
-import 'source_login_screen.dart';
 import 'video_screen.dart';
 
 /// 打开 RSS 文章（按 `type` 分流，对齐 `ReadRss.kt:48-98`）
@@ -1382,16 +1382,10 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     switch (value) {
       case 'login':
         // 对标原版 menu_login → SourceLoginActivity(type=rssSource)
-        // [2b-2c 复核 P1] 登录属 standalone：列表在右栏时也固定 root 全屏
-        Navigator.of(context, rootNavigator: true).push(
-          MaterialPageRoute(
-            builder: (_) => SourceLoginScreen(
-              sourceUrl: widget.source.sourceUrl,
-              sourceName: widget.source.sourceName,
-              loginUrl: widget.source.loginUrl,
-            ),
-          ),
-        );
+        // [C3] 改走 RSS 登录统一入口：V2 对话框 / 经典 loginUi 表单 /
+        // WebView 三路分流（此前固定打开手动凭据页，loginUi 表单与 V2 协议
+        // 的源无从执行）。登录态落 source_login_cache，后续列表请求立即生效。
+        showRssSourceLogin(context, ref, widget.source);
       case 'refreshSort':
         // 对标原版 menu_refresh_sort：清分类脚本缓存后重新解析分类，
         // 再刷新当前分类列表（批15d 替代旧「重新拉列表」伪实现）

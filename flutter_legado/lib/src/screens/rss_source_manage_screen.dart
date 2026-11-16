@@ -30,6 +30,7 @@ import '../widgets/loading_indicator.dart';
 import '../widgets/passphrase_import.dart';
 import '../widgets/rss_group_manage_dialog.dart';
 import '../utils/error_message.dart';
+import '../utils/rss_source_login.dart';
 import 'rss_source_edit_screen.dart';
 import 'rss_source_import_confirm_screen.dart';
 
@@ -726,6 +727,14 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
               title: const Text('置底'),
               onTap: () => Navigator.pop(ctx, 'bottom'),
             ),
+            // [C3] 登录入口（对齐原版 rss_source_item.xml：仅 loginUrl /
+            // loginUi 非空时显示「登录」）
+            if (rssSourceHasLogin(source))
+              ListTile(
+                leading: const Icon(Symbols.login_rounded),
+                title: const Text('登录'),
+                onTap: () => Navigator.pop(ctx, 'login'),
+              ),
             ListTile(
               leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
               title:
@@ -746,6 +755,12 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
         if (index >= 0 && index < _sources.length - 1) {
           await _reorder(index, _sources.length - 1);
         }
+      case 'login':
+        // [C3] 登录执行入口（V2 对话框 / 经典表单 / WebView 三路分流）
+        if (!mounted) return;
+        final ok = await showRssSourceLogin(context, ref, source);
+        if (!mounted) return;
+        if (ok) _toast('登录成功');
       case 'delete':
         final confirmed = await showConfirmDialog(
           context,

@@ -1438,6 +1438,22 @@ fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<Strin
         actions.push(json!({ "action": "refreshExplore" }));
     }
 
+    // C3（2026-11-17）：JS 侧 `source.putLoginHeader(...)` / `source.putLoginInfo(...)`
+    // 写的是引擎变量表（`loginHeader_<url>` / `userInfo_<url>` 裸键），
+    // 请求路径读的是 `source_login_cache`。此前只有 `__store loginHeaderSet/
+    // loginInfoSet`（WebView 垫片路径）会双向同步，`run` 里直接调
+    // `source.putLoginHeader` 的**登录脚本**（loginUrl 为 JS 形态，如
+    // `@js:...source.putLoginHeader(JSON.stringify({Cookie:...}))`）写完后
+    // 不落库，下一次列表请求读不到登录头 —— 即 RSS 登录链路「执行成功但
+    // 没生效」。此处按 V1/V2 登录同款收尾补同步（`sync_login_cache_from_js`
+    // 为单一实现，读变量表两族键后写 source_login_cache）。
+    //
+    // 仅在 `run` 上做：其余白名单方法（ajaxAwait/getAwait/...）不执行用户
+    // 登录脚本；`__store` 已在写入点同步，重复同步是幂等覆盖。
+    if method == "run" {
+        crate::api::source_login_cache::sync_login_cache_from_js(&source.source_url);
+    }
+
     match result {
         Ok(text) => {
             if text.len() > MAX_RESULT_BYTES {
@@ -1769,6 +1785,52 @@ mod tests {
         );
 
         // 清理
+        crate::api::source_login_cache::remove_login_info(url).ok();
+        crate::api::rss::delete_rss_source(url).ok();
+    }
+
+    /// C3：`run` 内执行 RSS 登录脚本后，`source.putLoginHeader` /
+    /// `source.putLoginInfo` 必须真正落 `source_login_cache`
+    ///
+    /// 这是「RSS 登录执行成功但下一次列表请求读不到登录态」的根因：JS 只
+    /// 写引擎变量表，请求路径读 `source_login_cache`。此前仅
+    /// `__store loginHeaderSet/loginInfoSet`（WebView 垫片）双向同步，
+    /// `run`（登录脚本形态 `@js:...source.putLoginHeader(...)`）不落库。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn run_login_script_persists_login_cache() {
+        let _guard = crate::test_support::lock_global_store();
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://rss-web-bridge-run-login.test/feed";
+        add_source(url, json!({}));
+        // 确保初始无登录态（内存 + DB 双清）
+        crate::api::source_login_cache::remove_login_header(url).ok();
+        crate::api::source_login_cache::remove_login_info(url).ok();
+
+        // 典型 RSS 登录脚本形态：JS 内 source.putLoginHeader(JSON 串)
+        let env = call(
+            url,
+            "run",
+            json!([
+                r#"source.putLoginHeader(JSON.stringify({Cookie: 'sid=from-run'})); source.putLoginInfo(JSON.stringify({u: 'alice'})); 'ok'"#
+            ]),
+        );
+        assert_eq!(env["ok"], true, "{env}");
+        assert_eq!(env["value"], "ok", "{env}");
+
+        let header = crate::api::source_login_cache::get_login_header(url);
+        assert!(
+            header.unwrap_or_default().contains("sid=from-run"),
+            "run 内 putLoginHeader 必须落 source_login_cache（否则列表请求读不到登录态）"
+        );
+        let info = crate::api::source_login_cache::get_login_info(url);
+        assert!(
+            info.unwrap_or_default().contains("alice"),
+            "run 内 putLoginInfo 必须落 source_login_cache"
+        );
+
+        // 清理
+        crate::api::source_login_cache::remove_login_header(url).ok();
         crate::api::source_login_cache::remove_login_info(url).ok();
         crate::api::rss::delete_rss_source(url).ok();
     }
