@@ -94,8 +94,6 @@ class AppStrings {
   static String get addBook => _get('添加书籍', 'Add Book');
   static String get addLocalBook => _get('添加本地', 'Add Local Book');
   static String get emptyBookshelf => _get('书架还空着，先去搜索书籍或从发现里添加吧！', 'Bookshelf is empty, search or add from discover!');
-  static String get emptyBookshelfHint =>
-      _get('', '');
   static String get loadingBookshelf => _get('加载书架...', 'Loading bookshelf...');
   static String get recentReading => _get('最近阅读', 'Recent Reading');
   static String get allBooks => _get('全部', 'All');
@@ -106,8 +104,6 @@ class AppStrings {
   static String get editInfo => _get('编辑信息', 'Edit Info');
   static String get group => _get('分组', 'Group');
   static String get deleteBook => _get('删除书籍', 'Delete Book');
-  static String get confirmDeleteBook =>
-      _get('确定要从书架中删除', 'Are you sure you want to delete');
   static String get checkingUpdate => _get('正在检查更新...', 'Checking for updates...');
   static String get selectLocalBook => _get('选择本地书籍文件', 'Select local book file');
 
@@ -291,11 +287,11 @@ class AppStrings {
   static String get deleteBooksTitle => _get('删除书籍', 'Delete Book');
 
   static String batchDownloadCount(int count) => _locale == 'zh'
-      ? '批量下载 $count 本（对标原版批量下载）'
+      ? '批量下载 $count 本'
       : 'Batch download $count book(s)';
 
   static String moveGroupCount(int count) => _locale == 'zh'
-      ? '移动分组 $count 本（对标原版 GroupSelectSheet）'
+      ? '移动分组 $count 本'
       : 'Move $count book(s) to a group';
 
   static String groupNamesLabel(String names) =>
@@ -350,7 +346,7 @@ class AppStrings {
   static String get cloudSync => _get('云同步', 'Cloud Sync');
   static String get clearCache => _get('清除缓存', 'Clear Cache');
   static String get appearanceSettings => _get('外观设置', 'Appearance');
-  static String get readingSettings => _get('阅读设置', 'Reading');
+  static String get readingSettings => _get('阅读设置', 'Reading Settings');
   static String get networkSettings => _get('网络设置', 'Network');
   static String get dataManagement => _get('数据管理', 'Data Management');
   static String get otherSettings => _get('其他', 'Other');
@@ -403,7 +399,7 @@ class AppStrings {
   // 设置（阶段 1 抽取：settings_home_screen / settings_screen / other_settings_screen）
   static String get appearanceEntry => _get('外观', 'Theme Settings');
   static String get appearanceEntryDesc => _get('主题配色与显示模式', 'Theme colors and display mode');
-  static String get advancedEntry => _get('高级', 'Other Settings');
+  static String get advancedEntry => _get('高级', 'Advanced');
   static String get advancedEntryDesc => _get('功能相关的一些设置', 'Miscellaneous settings');
   static String get readingInterfaceEntry => _get('阅读界面', 'Reading Interface Settings');
   static String get readingInterfaceEntryDesc =>
@@ -510,7 +506,6 @@ class AppStrings {
   static String configuredCount(int count) =>
       _locale == 'zh' ? '已配置 $count 条' : '$count entries configured';
   static String get webPortTitle => _get('Web 服务端口', 'Web service port');
-  static String get configuredCountPlaceholder => _get('', '');
 
   static String get notConfiguredLabel => _get('未配置（域名 → IP 映射）', 'Not configured (domain → IP)');
   static String get clearCacheTitle => _get('清理缓存', 'Clear cache');
@@ -569,6 +564,12 @@ class AppStrings {
   static String get checkTocLabelDesc => _get('依赖校验搜索结果', 'Depends on the search check result');
   static String get checkContentLabel => _get('校验正文', 'Check content');
   static String get checkContentLabelDesc => _get('依赖校验目录结果', 'Depends on the TOC check result');
+  // 校验摘要用的裸步骤名（不带「校验」前缀；摘要统一加一次前缀，
+  // 见 checkItemsSummary。批39 P1-1：摘要曾误用 checkXxxLabel 导致
+  // 「校验校验搜索」与英文「Check Check search」）
+  static String get checkStepSearch => _get('搜索', 'Search');
+  static String get checkStepToc => _get('目录', 'TOC');
+  static String get checkStepContent => _get('正文', 'Content');
   static String get checkCaptchaLabel => _get('验证码拦截检测', 'Captcha interception detection');
   static String get checkCaptchaLabelDesc => _get('识别疑似验证码页面并标记', 'Detect and mark suspected captcha pages');
   static String get checkRedirectLabel => _get('重定向检测', 'Redirect detection');
@@ -654,7 +655,7 @@ class AppStrings {
   static String get nonNegativeNumberHint =>
       _get('请输入非负数字（0 表示停止）', 'Enter a non-negative number (0 to stop)');
   static String get mcpStandalonePortDesc =>
-      _get('独立 MCP 服务端口（对齐原版默认 1236）；', 'Standalone MCP service port (default 1236 as upstream);');
+      _get('独立 MCP 服务端口；', 'Standalone MCP service port (default 1236 as upstream);');
   static String get mcpStandalonePortDesc2 => _get(
       '留空或 0 停止独立服务，Web 端 /mcp/* 不受影响。',
       'Leave empty or 0 to stop the standalone service; Web /mcp/* is unaffected.');
@@ -755,8 +756,17 @@ class AppStrings {
   static String webViewClearFailed(String error) =>
       _locale == 'zh' ? '清除失败：$error' : 'Clear failed: $error';
 
-  static String checkItemsSummary(String items) =>
-      _locale == 'zh' ? '校验$items' : 'Check $items';
+  /// 列表连接分隔符：中文用顿号，英文用逗号加空格。
+  ///
+  /// 批39 P1-1：此前摘要里写死 `'、'`，英文 locale 下输出
+  /// `Check Search、TOC、Content` 混排。
+  static String get listSeparator => _locale == 'zh' ? '、' : ', ';
+
+  /// 校验步骤摘要（前缀「校验/Check」只加一次，[items] 传入裸步骤名，
+  /// 如 checkStepSearch）。
+  static String checkItemsSummary(List<String> items) => _locale == 'zh'
+      ? '校验${items.join(listSeparator)}'
+      : 'Check ${items.join(listSeparator)}';
 
   static String timeoutItemSummary(int seconds, String item) =>
       _locale == 'zh' ? '超时 $seconds秒 · $item' : 'Timeout ${seconds}s · $item';

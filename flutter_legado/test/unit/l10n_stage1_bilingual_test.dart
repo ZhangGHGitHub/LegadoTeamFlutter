@@ -152,6 +152,35 @@ void main() {
       expect(AppStrings.currentPortStopped(0), 'Current port: 0 (stopped)');
       expect(AppStrings.configuredCount(4), '4 entries configured');
     });
+
+    // 批39 P1-1：校验设置摘要曾把开关行标题（值本身已含「校验」）当步骤名，
+    // 且分隔符写死中文顿号 →「校验校验搜索、校验目录、校验正文」/
+    // 「Check Check search、Check TOC、Check content」。
+    test('设置：校验配置摘要（步骤名裸值 + 按 locale 分隔符）', () {
+      List<String> steps() => <String>[
+            AppStrings.checkStepSearch,
+            AppStrings.checkStepToc,
+            AppStrings.checkStepContent,
+          ];
+
+      AppStrings.setLocale('zh');
+      expect(AppStrings.listSeparator, '、');
+      expect(AppStrings.checkItemsSummary(steps()), '校验搜索、目录、正文');
+      expect(
+        AppStrings.timeoutItemSummary(
+            180, AppStrings.checkItemsSummary(steps())),
+        '超时 180秒 · 校验搜索、目录、正文',
+      );
+
+      AppStrings.setLocale('en');
+      expect(AppStrings.listSeparator, ', ');
+      expect(AppStrings.checkItemsSummary(steps()), 'Check Search, TOC, Content');
+      expect(
+        AppStrings.timeoutItemSummary(
+            180, AppStrings.checkItemsSummary(steps())),
+        'Timeout 180s · Check Search, TOC, Content',
+      );
+    });
   });
 
   group('L10N 阶段 1：system locale 语义（跟随系统，不再固定中文）', () {

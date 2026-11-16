@@ -1039,14 +1039,14 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         CheckSourceNotifier.defaultStepTimeoutMs;
     final items = <String>[
       if (_checkSourceConfig['check_search'] == true)
-        AppStrings.checkSearchLabel,
-      if (_checkSourceConfig['check_toc'] == true) AppStrings.checkTocLabel,
+        AppStrings.checkStepSearch,
+      if (_checkSourceConfig['check_toc'] == true) AppStrings.checkStepToc,
       if (_checkSourceConfig['check_content'] == true)
-        AppStrings.checkContentLabel,
+        AppStrings.checkStepContent,
     ];
     final itemText = items.isEmpty
         ? AppStrings.noStepsToCheck
-        : AppStrings.checkItemsSummary(items.join('、'));
+        : AppStrings.checkItemsSummary(items);
     return AppStrings.timeoutItemSummary(ms ~/ 1000, itemText);
   }
 
