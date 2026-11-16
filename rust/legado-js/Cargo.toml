@@ -29,7 +29,8 @@ hex      = { version = "0.4", optional = true }
 rsa       = { version = "0.9", features = ["pem", "hazmat"], optional = true }
 signature = { version = "2", optional = true }
 rand_core = { version = "0.6", features = ["getrandom"], optional = true }
-lru      = { version = "0.12" }
+# [依赖安全批 | 2026-11-16] 0.12 → 0.18：与 legado-core 同步，清除 2 项 lru unsound
+lru      = { version = "0.18" }
 percent-encoding = { version = "2", optional = true }
 
 # 新增：字符串、JSON、正则、时间、UUID 工具

@@ -19,7 +19,9 @@ regex = "1"
 # HighlightRule.uuid 随机生成与合法性校验（P2-11，对齐原版 java.util.UUID）
 uuid = { workspace = true }
 # 安全正则编译缓存的 LRU 淘汰（任务 #60 ④，与 legado-js 同版本）
-lru = "0.12"
+# [依赖安全批 | 2026-11-16] 0.12 → 0.18：清除 RUSTSEC-2026-0002（IterMut 违反
+# Stacked Borrows）与 RUSTSEC-2026-0253（pop() 缺 panic 安全致 UAF）两项 unsound。
+lru = "0.18"
 # Java 正则方言支持（lookbehind / backreference / 原子组等 regex crate 不支持的语法）
 fancy-regex = "0.19.0"
 # [批15 回修] 替换规则错误/超时 debug 日志（不打印正文内容；同版本已在工作区依赖图）
