@@ -659,6 +659,14 @@ impl<'a> BookRepository<'a> {
     }
 
     /// 同名同作者冲突时：迁移 chapters/相关表的 bookUrl，再替换 books 行（保目录）
+    ///
+    /// [B9] `book_memos` 也要迁移：该表主键是 `bookUrl`、且**无级联外键**
+    /// （原版 `BookMemo.kt:5` 明确无 ForeignKey），旧实现漏迁 → 换 URL 后
+    /// 备忘直接变成孤儿行（新 URL 下读不到，旧 URL 已不在书架，备份的
+    /// `list_for_bookshelf()` 也取不到）。
+    ///
+    /// 合并规则：新旧 URL **都有**备忘时按 `updatedAt` 取较新者（对齐
+    /// `BookMemoRepository::upsert_if_newer` 语义），不静默丢用户的较新内容。
     fn remap_book_url_preserving_chapters(&self, old_url: &str, item: &Book) -> LegadoResult<()> {
         let new_url = &item.book_url;
         if old_url == new_url {
@@ -688,6 +696,8 @@ impl<'a> BookRepository<'a> {
                 "UPDATE download_tasks SET book_url = ?1 WHERE book_url = ?2",
                 params![new_url, old_url],
             );
+            // [B9] 备忘迁移（主键 bookUrl，无级联外键）
+            self.remap_book_memo(old_url, new_url)?;
             self.conn
                 .execute("DELETE FROM books WHERE bookUrl = ?1", params![old_url])
                 .map_err(|e| LegadoError::Database(format!("删除冲突书籍失败: {e}")))?;
@@ -698,6 +708,61 @@ impl<'a> BookRepository<'a> {
             .execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| LegadoError::Database(format!("恢复外键失败: {e}")))?;
         result
+    }
+
+    /// 把 `book_memos` 的旧 URL 行搬到新 URL（B9）
+    ///
+    /// - 只有旧行 → 直接改主键；
+    /// - 新旧都有 → 按 `updatedAt` 保留较新内容，删旧行；
+    /// - 只有新行 → 无需处理。
+    fn remap_book_memo(&self, old_url: &str, new_url: &str) -> LegadoResult<()> {
+        let old_row: Option<(String, i64)> = self
+            .conn
+            .query_row(
+                "SELECT content, updatedAt FROM book_memos WHERE bookUrl = ?1",
+                params![old_url],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        let Some((old_content, old_updated_at)) = old_row else {
+            return Ok(());
+        };
+        let new_row: Option<(String, i64)> = self
+            .conn
+            .query_row(
+                "SELECT content, updatedAt FROM book_memos WHERE bookUrl = ?1",
+                params![new_url],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+        match new_row {
+            Some((_, new_updated_at)) if new_updated_at >= old_updated_at => {
+                // 新行更新（或同龄）：丢弃旧行
+                self.conn
+                    .execute(
+                        "DELETE FROM book_memos WHERE bookUrl = ?1",
+                        params![old_url],
+                    )
+                    .map_err(|e| LegadoError::Database(format!("清理旧备忘失败: {e}")))?;
+            }
+            _ => {
+                // 旧行更新：内容搬到新 URL，再删旧行
+                self.conn
+                    .execute(
+                        "INSERT OR REPLACE INTO book_memos (bookUrl, content, updatedAt)
+                         VALUES (?1, ?2, ?3)",
+                        params![new_url, old_content, old_updated_at],
+                    )
+                    .map_err(|e| LegadoError::Database(format!("迁移备忘失败: {e}")))?;
+                self.conn
+                    .execute(
+                        "DELETE FROM book_memos WHERE bookUrl = ?1",
+                        params![old_url],
+                    )
+                    .map_err(|e| LegadoError::Database(format!("清理旧备忘失败: {e}")))?;
+            }
+        }
+        Ok(())
     }
 
     /// 批量更新书籍排序（对齐原版拖拽排序后 updateBook 持久化 order 字段）
@@ -1553,6 +1618,104 @@ mod tests {
             2,
             "name+author 冲突预检必须保留 chapters"
         );
+    }
+
+    /// [B9] 同名同作者换 URL 时 `book_memos` 必须跟着迁移（无级联外键，
+    /// 漏迁会变孤儿行：新 URL 读不到、旧 URL 已不在书架）。
+    #[test]
+    fn test_insert_name_author_conflict_migrates_book_memo() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let memo_repo = crate::BookMemoRepository::new(conn);
+
+        let old_url = "https://old.example/memo";
+        let new_url = "https://new.example/memo";
+        repo.insert(&make_book(old_url, "备忘书", "作者")).unwrap();
+        memo_repo
+            .upsert(&crate::BookMemo {
+                book_url: old_url.to_string(),
+                content: "旧源备忘内容".to_string(),
+                updated_at: 1000,
+            })
+            .unwrap();
+
+        repo.insert(&make_book(new_url, "备忘书", "作者")).unwrap();
+
+        assert!(
+            memo_repo.get(old_url).unwrap().is_none(),
+            "旧 URL 的备忘行应被清理，不留孤儿"
+        );
+        let migrated = memo_repo.get(new_url).unwrap().expect("备忘应迁到新 URL");
+        assert_eq!(migrated.content, "旧源备忘内容");
+        assert_eq!(migrated.updated_at, 1000);
+    }
+
+    /// [B9] 新旧 URL 都有备忘时按 updatedAt 取较新者（不静默丢新内容）
+    #[test]
+    fn test_insert_name_author_conflict_merges_memo_by_updated_at() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let memo_repo = crate::BookMemoRepository::new(conn);
+
+        let old_url = "https://old2.example/memo";
+        let new_url = "https://new2.example/memo";
+        repo.insert(&make_book(old_url, "备忘书2", "作者")).unwrap();
+        // 旧行较新 → 应胜出
+        memo_repo
+            .upsert(&crate::BookMemo {
+                book_url: old_url.to_string(),
+                content: "旧但较新".to_string(),
+                updated_at: 5000,
+            })
+            .unwrap();
+        memo_repo
+            .upsert(&crate::BookMemo {
+                book_url: new_url.to_string(),
+                content: "新但较旧".to_string(),
+                updated_at: 1000,
+            })
+            .unwrap();
+
+        repo.insert(&make_book(new_url, "备忘书2", "作者")).unwrap();
+
+        let merged = memo_repo.get(new_url).unwrap().expect("应有合并后的备忘");
+        assert_eq!(merged.content, "旧但较新", "按 updatedAt 取较新者");
+        assert!(memo_repo.get(old_url).unwrap().is_none());
+    }
+
+    /// [B9] 新 URL 的备忘更新时保留新内容（旧行丢弃，不回退）
+    #[test]
+    fn test_insert_name_author_conflict_keeps_newer_target_memo() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookRepository::new(conn);
+        let memo_repo = crate::BookMemoRepository::new(conn);
+
+        let old_url = "https://old3.example/memo";
+        let new_url = "https://new3.example/memo";
+        repo.insert(&make_book(old_url, "备忘书3", "作者")).unwrap();
+        memo_repo
+            .upsert(&crate::BookMemo {
+                book_url: old_url.to_string(),
+                content: "旧且较旧".to_string(),
+                updated_at: 100,
+            })
+            .unwrap();
+        memo_repo
+            .upsert(&crate::BookMemo {
+                book_url: new_url.to_string(),
+                content: "新且较新".to_string(),
+                updated_at: 9000,
+            })
+            .unwrap();
+
+        repo.insert(&make_book(new_url, "备忘书3", "作者")).unwrap();
+
+        let kept = memo_repo.get(new_url).unwrap().expect("应有备忘");
+        assert_eq!(kept.content, "新且较新", "目标行更新时不得被旧行覆盖");
+        assert!(memo_repo.get(old_url).unwrap().is_none());
     }
 
     /// P2-1：自愈回写用单列 update_toc_url —— 只改 tocUrl，其它列
