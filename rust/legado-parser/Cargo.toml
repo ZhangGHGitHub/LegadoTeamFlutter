@@ -7,8 +7,8 @@ edition = "2021"
 legado-core = { path = "../legado-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-scraper = "0.22"
-ego-tree = "0.10"
+scraper = "0.29"
+ego-tree = "0.11"
 sxd-xpath = "0.4"
 sxd-document = "0.3"
 regex = "1"

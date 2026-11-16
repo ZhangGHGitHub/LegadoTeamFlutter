@@ -326,8 +326,11 @@ impl XPathParser {
                     // 进入该命名空间，无前缀 XPath（//dd、//a 等）全部失配
                     //（仅 //* 与谓词字符串比较可命中）——实测思兔 sto66 等
                     // 声明 xmlns 的页面目录/正文/详情规则整体失效 — Reasonix
-                    if qname.local.as_ref() == "xmlns"
-                        || qname.prefix.as_ref().map(|p| p.as_ref()) == Some("xmlns")
+                    // [scraper 0.29] string_cache 0.11 的 Atom 同时实现
+                    // AsRef<[u8]> 与 AsRef<str>，裸 `as_ref()` 无法推断目标类型，
+                    // 须显式指定 `AsRef::<str>::as_ref`。
+                    if AsRef::<str>::as_ref(&qname.local) == "xmlns"
+                        || qname.prefix.as_ref().map(AsRef::<str>::as_ref) == Some("xmlns")
                     {
                         continue;
                     }
