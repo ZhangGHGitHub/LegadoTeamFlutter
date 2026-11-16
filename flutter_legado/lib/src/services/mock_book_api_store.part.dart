@@ -17,6 +17,9 @@ mixin MockBookApiStore {
   final List<HttpTts> _httpTtsList = [];
   // 字典规则内存态（契约 §2.45：dictRule* 七方法；REPLACE by name 语义）
   final List<Map<String, dynamic>> _dictRules = [];
+  // TXT 目录规则内存态（B8：txtTocRule* 八方法；REPLACE by name 语义）
+  final List<Map<String, dynamic>> _txtTocRules = [];
+  int _nextTxtTocRuleId = 1;
   // servers 表内存态（契约 §2.28：webdavServers* 三方法；REPLACE by id 语义）
   final List<Map<String, dynamic>> _servers = [];
   final Map<String, String> _configs = {};

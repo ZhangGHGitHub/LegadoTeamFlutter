@@ -38,7 +38,6 @@ import 'package:flutter_legado/src/providers/association/association_notifier.da
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/audio/http_tts_seed.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
-import 'package:flutter_legado/src/providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import 'package:flutter_legado/src/screens/auto_task_screen.dart';
 import 'package:flutter_legado/src/screens/bookshelf_manage_screen.dart';
 import 'package:flutter_legado/src/screens/bookshelf_screen.dart';
@@ -112,7 +111,6 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       // 跳过首启种子导入（各页有版本门控）
       kHttpTtsSeedVersionKey: kHttpTtsSeedVersion,
-      kTxtTocRuleVersionKey: kTxtTocRuleVersion,
     });
     // rootBundle 缓存跨 FakeAsync 复用会永不完成 → 逐用例清除
     rootBundle.evict(DirectLinkUploadRuleService.defaultRulesAsset);
@@ -515,8 +513,9 @@ void main() {
 
   group('TXT 目录规则导出', () {
     testWidgets('菜单「导出规则」触发 Sheet（exportTxtTocRule.json，数组内容）', (tester) async {
-      when(() => mockApi.getConfig('txt_toc_rules')).thenAnswer(
-        (_) async => jsonEncode([
+      // B8：规则库唯一存储是 txtTocRules 表（此前读 config:txt_toc_rules）
+      when(() => mockApi.txtTocRuleList()).thenAnswer(
+        (_) async => [
           {
             'id': 1,
             'name': '章节',
@@ -526,7 +525,7 @@ void main() {
             'serialNumber': 0,
             'enable': true,
           },
-        ]),
+        ],
       );
 
       await tester.pumpWidget(wrap(const TxtTocRulesScreen()));

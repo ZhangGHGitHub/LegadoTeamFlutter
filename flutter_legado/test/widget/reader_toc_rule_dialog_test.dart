@@ -4,8 +4,6 @@
 // - 恢复默认 → 「已恢复默认目录规则」（usedCustomRule=false 属预期）
 // - 重载失败 → 展示失败原因，不得提示成功
 // - 非本地 TXT → 入口兜底提示，不打开弹层
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -14,7 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart' show bookApiProvider;
-import 'package:flutter_legado/src/providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_toc_rule_dialog.dart';
 
@@ -39,13 +36,17 @@ void main() {
   late MockBookApi api;
 
   setUp(() async {
-    // 版本号已升级 → 跳过内置默认规则灌入，只保留本用例注入的规则
-    SharedPreferences.setMockInitialValues({kTxtTocRuleVersionKey: kTxtTocRuleVersion});
+    SharedPreferences.setMockInitialValues({});
     api = MockBookApi();
     await api.addBook(book);
-    await api.setConfig(
-      'txt_toc_rules',
-      jsonEncode([rule.toJson()]),
+    // B8：规则库唯一存储是 txtTocRules 表（此前写 config:txt_toc_rules）
+    await api.txtTocRuleAdd(
+      name: rule.name,
+      rule: rule.rule,
+      replacement: rule.replacement,
+      enable: rule.enable,
+      example: rule.example,
+      serialNumber: rule.serialNumber,
     );
   });
 

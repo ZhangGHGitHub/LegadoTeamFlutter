@@ -65,7 +65,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => -905874848;
+  int get rustContentHash => -573197190;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1213,6 +1213,43 @@ abstract class RustLibApi extends BaseApi {
     required String pattern,
     required bool caseSensitive,
     required int maxResults,
+  });
+
+  Future<PlatformInt64> crateFfiFfiTxtTocRuleAdd({
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  });
+
+  Future<bool> crateFfiFfiTxtTocRuleDelete({required PlatformInt64 id});
+
+  Future<int> crateFfiFfiTxtTocRuleImport({
+    required String jsonOrUrl,
+    required String kind,
+  });
+
+  Future<int> crateFfiFfiTxtTocRuleImportDefault();
+
+  Future<String> crateFfiFfiTxtTocRuleList();
+
+  Future<int> crateFfiFfiTxtTocRuleReorder({required String idsJson});
+
+  Future<bool> crateFfiFfiTxtTocRuleSetEnabled({
+    required PlatformInt64 id,
+    required bool enabled,
+  });
+
+  Future<bool> crateFfiFfiTxtTocRuleUpdate({
+    required PlatformInt64 id,
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
   });
 
   Future<void> crateFfiFfiUpdateSearchBookScore({
@@ -11198,6 +11235,294 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<PlatformInt64> crateFfiFfiTxtTocRuleAdd({
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(name, serializer);
+          sse_encode_String(rule, serializer);
+          sse_encode_String(replacement, serializer);
+          sse_encode_bool(enable, serializer);
+          sse_encode_opt_String(example, serializer);
+          sse_encode_i_32(serialNumber, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 303,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleAddConstMeta,
+        argValues: [name, rule, replacement, enable, example, serialNumber],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleAddConstMeta => const TaskConstMeta(
+    debugName: "txt_toc_rule_add",
+    argNames: [
+      "name",
+      "rule",
+      "replacement",
+      "enable",
+      "example",
+      "serialNumber",
+    ],
+  );
+
+  @override
+  Future<bool> crateFfiFfiTxtTocRuleDelete({required PlatformInt64 id}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 304,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleDeleteConstMeta,
+        argValues: [id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleDeleteConstMeta =>
+      const TaskConstMeta(debugName: "txt_toc_rule_delete", argNames: ["id"]);
+
+  @override
+  Future<int> crateFfiFfiTxtTocRuleImport({
+    required String jsonOrUrl,
+    required String kind,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(jsonOrUrl, serializer);
+          sse_encode_String(kind, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 305,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_32,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleImportConstMeta,
+        argValues: [jsonOrUrl, kind],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleImportConstMeta =>
+      const TaskConstMeta(
+        debugName: "txt_toc_rule_import",
+        argNames: ["jsonOrUrl", "kind"],
+      );
+
+  @override
+  Future<int> crateFfiFfiTxtTocRuleImportDefault() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 306,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_32,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleImportDefaultConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleImportDefaultConstMeta =>
+      const TaskConstMeta(
+        debugName: "txt_toc_rule_import_default",
+        argNames: [],
+      );
+
+  @override
+  Future<String> crateFfiFfiTxtTocRuleList() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 307,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleListConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleListConstMeta =>
+      const TaskConstMeta(debugName: "txt_toc_rule_list", argNames: []);
+
+  @override
+  Future<int> crateFfiFfiTxtTocRuleReorder({required String idsJson}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(idsJson, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 308,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_32,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleReorderConstMeta,
+        argValues: [idsJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleReorderConstMeta =>
+      const TaskConstMeta(
+        debugName: "txt_toc_rule_reorder",
+        argNames: ["idsJson"],
+      );
+
+  @override
+  Future<bool> crateFfiFfiTxtTocRuleSetEnabled({
+    required PlatformInt64 id,
+    required bool enabled,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          sse_encode_bool(enabled, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 309,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleSetEnabledConstMeta,
+        argValues: [id, enabled],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleSetEnabledConstMeta =>
+      const TaskConstMeta(
+        debugName: "txt_toc_rule_set_enabled",
+        argNames: ["id", "enabled"],
+      );
+
+  @override
+  Future<bool> crateFfiFfiTxtTocRuleUpdate({
+    required PlatformInt64 id,
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_i_64(id, serializer);
+          sse_encode_String(name, serializer);
+          sse_encode_String(rule, serializer);
+          sse_encode_String(replacement, serializer);
+          sse_encode_bool(enable, serializer);
+          sse_encode_opt_String(example, serializer);
+          sse_encode_i_32(serialNumber, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 310,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiTxtTocRuleUpdateConstMeta,
+        argValues: [id, name, rule, replacement, enable, example, serialNumber],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiTxtTocRuleUpdateConstMeta =>
+      const TaskConstMeta(
+        debugName: "txt_toc_rule_update",
+        argNames: [
+          "id",
+          "name",
+          "rule",
+          "replacement",
+          "enable",
+          "example",
+          "serialNumber",
+        ],
+      );
+
+  @override
   Future<void> crateFfiFfiUpdateSearchBookScore({
     required String bookUrl,
     required int score,
@@ -11211,7 +11536,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 303,
+            funcId: 311,
             port: port_,
           );
         },
@@ -11242,7 +11567,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 304,
+            funcId: 312,
             port: port_,
           );
         },
@@ -11269,7 +11594,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 305,
+            funcId: 313,
             port: port_,
           );
         },
@@ -11299,7 +11624,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 306,
+              funcId: 314,
               port: port_,
             );
           },
@@ -11336,7 +11661,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 307,
+            funcId: 315,
             port: port_,
           );
         },
@@ -11366,7 +11691,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 308,
+            funcId: 316,
             port: port_,
           );
         },
@@ -11402,7 +11727,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 309,
+            funcId: 317,
             port: port_,
           );
         },
@@ -11436,7 +11761,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 310,
+            funcId: 318,
             port: port_,
           );
         },
@@ -11470,7 +11795,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 311,
+            funcId: 319,
             port: port_,
           );
         },
@@ -11506,7 +11831,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 312,
+            funcId: 320,
             port: port_,
           );
         },
@@ -11540,7 +11865,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 313,
+            funcId: 321,
             port: port_,
           );
         },
@@ -11574,7 +11899,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 314,
+            funcId: 322,
             port: port_,
           );
         },
@@ -11610,7 +11935,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 315,
+            funcId: 323,
             port: port_,
           );
         },
@@ -11647,7 +11972,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 316,
+            funcId: 324,
             port: port_,
           );
         },
@@ -11681,7 +12006,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 317,
+            funcId: 325,
             port: port_,
           );
         },
@@ -11717,7 +12042,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 318,
+            funcId: 326,
             port: port_,
           );
         },
@@ -11748,7 +12073,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 319,
+            funcId: 327,
             port: port_,
           );
         },
@@ -11778,7 +12103,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 320,
+            funcId: 328,
             port: port_,
           );
         },
@@ -11808,7 +12133,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 321,
+            funcId: 329,
             port: port_,
           );
         },
@@ -11842,7 +12167,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 322,
+            funcId: 330,
             port: port_,
           );
         },
@@ -11878,7 +12203,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 323,
+            funcId: 331,
             port: port_,
           );
         },
@@ -11909,7 +12234,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 324,
+            funcId: 332,
             port: port_,
           );
         },
@@ -11936,7 +12261,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 325,
+            funcId: 333,
             port: port_,
           );
         },
@@ -11966,7 +12291,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 326,
+              funcId: 334,
               port: port_,
             );
           },
@@ -12003,7 +12328,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 327,
+            funcId: 335,
             port: port_,
           );
         },
@@ -12039,7 +12364,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 328,
+            funcId: 336,
             port: port_,
           );
         },

@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
@@ -13,148 +12,158 @@ import 'txt_toc_rules_state.dart';
 
 export 'txt_toc_rules_state.dart';
 
-/// 对齐 Android `LocalConfig.needUpTxtTocRule` 的版本号
-const kTxtTocRuleVersionKey = 'txtTocRuleVersion';
-const kTxtTocRuleVersion = 1;
-
 /// 默认 TXT 目录规则（对齐 `app/src/main/assets/defaultData/txtTocRule.json`）
 const kDefaultTxtTocRulesAsset = 'assets/default_data/txtTocRule.json';
 
+/// 历史配置键（B8 迁移来源，迁移后删除）
+///
+/// 早期实现把 TXT 目录规则序列化进 `caches` 的 `config:txt_toc_rules`，
+/// 而备份导出/恢复与目录解析读的是 `txtTocRules` 表——用户自建规则既不
+/// 进备份（换机即丢），也不在真正的规则库里。现在唯一存储是
+/// `txtTocRules` 表（FFI `txtTocRule*`），本键只作一次性迁移来源。
+const kLegacyTxtTocRulesConfigKey = 'txt_toc_rules';
+
 /// 对齐 Android `DefaultData.importDefaultTocRules`：删除默认 id(<0) 后灌入原版规则。
 ///
-/// [replaceAll] 为 true 时整表覆盖（首启从错误内置默认迁移时用）。
-Future<int> syncDefaultTxtTocRules(
-  BookApi api, {
-  String? jsonOverride,
-  bool replaceAll = false,
-}) async {
-  final text =
-      jsonOverride ?? await rootBundle.loadString(kDefaultTxtTocRulesAsset);
-  final list = jsonDecode(text) as List<dynamic>;
-  final defaults = list
-      .whereType<Map<String, dynamic>>()
-      .map(TxtTocRule.fromJson)
-      .toList();
-
-  List<TxtTocRule> merged;
-  if (replaceAll) {
-    merged = defaults;
-  } else {
-    final raw = await api.getConfig('txt_toc_rules');
-    final existing = <TxtTocRule>[];
-    if (raw != null && raw.isNotEmpty) {
-      final decoded = jsonDecode(raw) as List<dynamic>;
-      for (final item in decoded.whereType<Map<String, dynamic>>()) {
-        final rule = TxtTocRule.fromJson(item);
-        // 对标 deleteDefault：仅移除 id < 0 的默认规则，保留用户自定义
-        if (rule.id >= 0) existing.add(rule);
-      }
-    }
-    merged = [...defaults, ...existing];
+/// 走 FFI `txtTocRuleImportDefault`（Rust 侧内置同源 JSON），保留用户自建
+/// 规则（id > 0）。[jsonOverride] 非空时改走导入面（REPLACE by name），
+/// 供迁移/测试注入自定义内容。
+Future<int> syncDefaultTxtTocRules(BookApi api, {String? jsonOverride}) async {
+  if (jsonOverride == null) {
+    return api.txtTocRuleImportDefault();
   }
-  await api.setConfig(
-    'txt_toc_rules',
-    jsonEncode(merged.map((r) => r.toJson()).toList()),
-  );
-  return defaults.length;
+  return api.txtTocRuleImport(jsonOrUrl: jsonOverride, kind: 'text');
 }
 
 /// TXT 目录规则 Riverpod Notifier
 ///
-/// 规则列表经 BookApi.getConfig/setConfig 持久化，键 `txt_toc_rules`。
-/// 首启/「导入默认」对齐 Android DefaultData.txtTocRules。
+/// 规则库**唯一存储**为 `txtTocRules` 表（FFI `txtTocRule*`）：备份
+/// 导出/恢复、目录解析、UI 编辑读写同一张表（B8 修复）。
 class TxtTocRulesNotifier extends Notifier<TxtTocRulesState> {
-  static const _configKey = 'txt_toc_rules';
-
   @override
   TxtTocRulesState build() => const TxtTocRulesState();
 
-  /// 加载规则列表；首启写入原版默认规则
+  /// 加载规则列表（按 serialNumber 升序）
   Future<void> load() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
-      await _ensureDefaultTxtTocRules(api);
-      final raw = await api.getConfig(_configKey);
-      final rules = (raw == null || raw.isEmpty) ? <TxtTocRule>[] : _decode(raw);
-      state = state.copyWith(rules: rules, isLoading: false);
+      await _migrateLegacyConfig(api);
+      final rows = await api.txtTocRuleList();
+      state = state.copyWith(rules: _decodeRows(rows), isLoading: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isLoading: false);
     }
   }
 
-  Future<void> _ensureDefaultTxtTocRules(BookApi api) async {
-    final prefs = await SharedPreferences.getInstance();
-    final version = prefs.getInt(kTxtTocRuleVersionKey) ?? 0;
-    if (version >= kTxtTocRuleVersion) return;
-    // 版本 0→1：覆盖错误内置默认（id 1/2/3），对齐原版 assets
-    await syncDefaultTxtTocRules(api, replaceAll: true);
-    await prefs.setInt(kTxtTocRuleVersionKey, kTxtTocRuleVersion);
-  }
-
-  /// 菜单「导入默认」：覆盖默认规则（保留用户自定义 id>=0）
+  /// 菜单「导入默认」：删除默认行后重灌原版规则（保留用户自建）
   Future<int> importDefaultRules() async {
     final api = ref.read(bookApiProvider);
     final n = await syncDefaultTxtTocRules(api);
-    final raw = await api.getConfig(_configKey);
-    final rules = (raw == null || raw.isEmpty) ? <TxtTocRule>[] : _decode(raw);
-    state = state.copyWith(rules: rules, error: null);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(kTxtTocRuleVersionKey, kTxtTocRuleVersion);
+    await _reload(api);
     return n;
   }
 
+  /// 新增规则（追加到末尾）
   Future<void> addRule(TxtTocRule rule) async {
-    final nextId =
-        state.rules.fold<int>(0, (m, r) => r.id > m ? r.id : m) + 1;
-    final added = rule.copyWith(id: nextId, serialNumber: state.rules.length);
-    final rules = [...state.rules, added];
-    state = state.copyWith(rules: rules);
-    await _persist(rules);
-  }
-
-  Future<void> updateRule(TxtTocRule rule) async {
-    final idx = state.rules.indexWhere((r) => r.id == rule.id);
-    if (idx < 0) return;
-    final rules = [...state.rules];
-    rules[idx] = rule;
-    state = state.copyWith(rules: rules);
-    await _persist(rules);
-  }
-
-  Future<void> deleteRule(int id) async {
-    final rules = state.rules.where((r) => r.id != id).toList();
-    state = state.copyWith(rules: rules);
-    await _persist(rules);
-  }
-
-  Future<void> setEnabled(int id, bool enable) async {
-    final idx = state.rules.indexWhere((r) => r.id == id);
-    if (idx < 0) return;
-    final rules = [...state.rules];
-    rules[idx] = rules[idx].copyWith(enable: enable);
-    state = state.copyWith(rules: rules);
-    await _persist(rules);
-  }
-
-  Future<void> _persist(List<TxtTocRule> rules) async {
+    final api = ref.read(bookApiProvider);
     try {
-      await ref.read(bookApiProvider).setConfig(_configKey, _encode(rules));
+      await api.txtTocRuleAdd(
+        name: rule.name,
+        rule: rule.rule,
+        replacement: rule.replacement,
+        enable: rule.enable,
+        example: rule.example,
+        serialNumber: state.rules.length,
+      );
+      await _reload(api);
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
+      rethrow;
     }
   }
 
-  String _encode(List<TxtTocRule> rules) =>
-      jsonEncode(rules.map((r) => r.toJson()).toList());
-
-  List<TxtTocRule> _decode(String raw) {
-    final list = jsonDecode(raw) as List<dynamic>;
-    return list
-        .whereType<Map<String, dynamic>>()
-        .map(TxtTocRule.fromJson)
-        .toList();
+  /// 更新规则（按 id）
+  Future<void> updateRule(TxtTocRule rule) async {
+    final api = ref.read(bookApiProvider);
+    try {
+      await api.txtTocRuleUpdate(
+        id: rule.id,
+        name: rule.name,
+        rule: rule.rule,
+        replacement: rule.replacement,
+        enable: rule.enable,
+        example: rule.example,
+        serialNumber: rule.serialNumber,
+      );
+      await _reload(api);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+      rethrow;
+    }
   }
+
+  /// 删除规则（按 id）
+  Future<void> deleteRule(int id) async {
+    final api = ref.read(bookApiProvider);
+    try {
+      await api.txtTocRuleDelete(id);
+      await _reload(api);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+      rethrow;
+    }
+  }
+
+  /// 启用/禁用（按 id）
+  Future<void> setEnabled(int id, bool enable) async {
+    final api = ref.read(bookApiProvider);
+    try {
+      await api.txtTocRuleSetEnabled(id: id, enabled: enable);
+      await _reload(api);
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+      rethrow;
+    }
+  }
+
+  /// 一次性迁移：把历史 `config:txt_toc_rules` 导入表并清键
+  ///
+  /// 内容非法时保留原键（不丢用户数据）并记 error，不阻断加载。
+  Future<void> _migrateLegacyConfig(BookApi api) async {
+    final String? raw;
+    try {
+      raw = await api.getConfig(kLegacyTxtTocRulesConfigKey);
+    } catch (_) {
+      return;
+    }
+    if (raw == null || raw.trim().isEmpty) {
+      return;
+    }
+    try {
+      await api.txtTocRuleImport(jsonOrUrl: raw, kind: 'text');
+    } catch (e) {
+      state = state.copyWith(error: 'TXT 目录规则迁移失败：${_mapError(e)}');
+      return;
+    }
+    try {
+      await api.deleteConfig(kLegacyTxtTocRulesConfigKey);
+    } catch (_) {
+      // 清键失败最多导致下次重复导入（REPLACE by name 幂等）
+    }
+  }
+
+  Future<void> _reload(BookApi api) async {
+    final rows = await api.txtTocRuleList();
+    state = state.copyWith(rules: _decodeRows(rows), error: null);
+  }
+
+  /// FFI 行 → `TxtTocRule` 模型
+  ///
+  /// 行字段为 `{id, name, rule, replacement, serialNumber, enable, example}`，
+  /// 与 Dart 模型 JSON 键一致，直接复用 `fromJson`。
+  List<TxtTocRule> _decodeRows(List<Map<String, dynamic>> rows) =>
+      [for (final row in rows) TxtTocRule.fromJson(row)];
 
   String _mapError(Object e) {
     if (e is BridgeError) return e.message;
@@ -166,3 +175,11 @@ final txtTocRulesNotifierProvider =
     NotifierProvider<TxtTocRulesNotifier, TxtTocRulesState>(
   TxtTocRulesNotifier.new,
 );
+
+/// 供迁移/测试使用的旧配置键编码（保留以兼容既有调用点）
+String encodeTxtTocRulesForLegacyConfig(List<TxtTocRule> rules) =>
+    jsonEncode(rules.map((r) => r.toJson()).toList());
+
+/// 读取内置默认规则资产（供 UI 预览/测试用，不再用于持久化）
+Future<String> loadDefaultTxtTocRulesAsset() =>
+    rootBundle.loadString(kDefaultTxtTocRulesAsset);

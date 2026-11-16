@@ -544,6 +544,179 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     _dictRules.add({'id': _nextDictRuleId++, ...rule});
   }
 
+  // ========== TXT 目录规则操作（B8，mock 内存态） ==========
+  //
+  // 对齐 Rust txt_toc_rule_* 语义：ORDER BY serialNumber / REPLACE by name /
+  // reorder 重编号 / importDefault 保留 id<0 的默认行语义（mock 用递减负数
+  // 表示默认行，保证再次 importDefault 能精确替换）。
+
+  @override
+  Future<List<Map<String, dynamic>>> txtTocRuleList() async {
+    final ordered = List<Map<String, dynamic>>.from(_txtTocRules)
+      ..sort((a, b) {
+        final bySerial = (a['serialNumber'] as int).compareTo(
+          b['serialNumber'] as int,
+        );
+        return bySerial != 0 ? bySerial : (a['id'] as int).compareTo(
+          b['id'] as int,
+        );
+      });
+    return ordered.map((r) => Map<String, dynamic>.from(r)).toList();
+  }
+
+  @override
+  Future<int> txtTocRuleAdd({
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  }) async {
+    final order = serialNumber >= 0 ? serialNumber : _txtTocRules.length;
+    final id = _nextTxtTocRuleId++;
+    _txtTocRules.add({
+      'id': id,
+      'name': name,
+      'rule': rule,
+      'replacement': replacement,
+      'serialNumber': order,
+      'enable': enable,
+      'example': example,
+    });
+    return id;
+  }
+
+  @override
+  Future<bool> txtTocRuleUpdate({
+    required int id,
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  }) async {
+    final hits = _txtTocRules.where((r) => r['id'] == id).toList();
+    if (hits.isEmpty) return false;
+    final row = hits.first;
+    row['name'] = name;
+    row['rule'] = rule;
+    row['replacement'] = replacement;
+    row['enable'] = enable;
+    row['example'] = example;
+    row['serialNumber'] = serialNumber;
+    return true;
+  }
+
+  @override
+  Future<bool> txtTocRuleDelete(int id) async {
+    final before = _txtTocRules.length;
+    _txtTocRules.removeWhere((r) => r['id'] == id);
+    return _txtTocRules.length < before;
+  }
+
+  @override
+  Future<bool> txtTocRuleSetEnabled({
+    required int id,
+    required bool enabled,
+  }) async {
+    if (!_txtTocRules.any((r) => r['id'] == id)) return false;
+    for (final r in _txtTocRules) {
+      if (r['id'] == id) r['enable'] = enabled;
+    }
+    return true;
+  }
+
+  @override
+  Future<int> txtTocRuleReorder(String idsJson) async {
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(idsJson);
+    } on FormatException {
+      throw Exception('解析 reorder IDs JSON 失败: $idsJson');
+    }
+    if (decoded is! List) {
+      throw Exception('reorder IDs 须为 JSON 数组: $idsJson');
+    }
+    final ids = decoded.map((e) => (e as num).toInt()).toList();
+    for (var idx = 0; idx < ids.length; idx++) {
+      for (final r in _txtTocRules) {
+        if (r['id'] == ids[idx]) r['serialNumber'] = idx;
+      }
+    }
+    return ids.length;
+  }
+
+  @override
+  Future<int> txtTocRuleImport({
+    required String jsonOrUrl,
+    required String kind,
+  }) async {
+    if (kind == 'url') {
+      throw Exception('mock 不支持 URL 导入（无网络能力）: $jsonOrUrl');
+    }
+    final trimmed = jsonOrUrl.trim();
+    if (trimmed.isEmpty) throw Exception('导入内容为空');
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(trimmed);
+    } on FormatException {
+      throw Exception('解析导入 JSON 失败: $jsonOrUrl');
+    }
+    final List<dynamic> items;
+    if (decoded is List) {
+      items = decoded;
+    } else if (decoded is Map) {
+      items = [decoded];
+    } else {
+      throw Exception('解析导入 JSON 失败: 须为对象数组或单对象');
+    }
+    var count = 0;
+    for (final dynamic e in items) {
+      if (e is! Map) continue;
+      final name = (e['name'] ?? '').toString().trim();
+      final rule = (e['rule'] ?? '').toString();
+      if (name.isEmpty || rule.trim().isEmpty) continue;
+      final serial = e['serialNumber'] is num
+          ? (e['serialNumber'] as num).toInt()
+          : 0;
+      final enable = e['enable'] is bool ? e['enable'] as bool : true;
+      final example = e['example']?.toString();
+      final replacement = (e['replacement'] ?? '').toString();
+      final existing = _txtTocRules
+          .where((r) => r['name'] == name)
+          .toList();
+      if (existing.isNotEmpty) {
+        final row = existing.first;
+        row['rule'] = rule;
+        row['replacement'] = replacement;
+        row['enable'] = enable;
+        row['example'] = example;
+      } else {
+        _txtTocRules.add({
+          'id': _nextTxtTocRuleId++,
+          'name': name,
+          'rule': rule,
+          'replacement': replacement,
+          'serialNumber': serial,
+          'enable': enable,
+          'example': example,
+        });
+      }
+      count++;
+    }
+    return count;
+  }
+
+  @override
+  Future<int> txtTocRuleImportDefault() async {
+    // 对齐 Rust：删除 id<0 的默认行后重灌；mock 无内置 JSON 资产，
+    // 仅模拟「删除默认行」的语义并返回 0（默认规则由 Rust 侧提供）
+    _txtTocRules.removeWhere((r) => (r['id'] as int) < 0);
+    return 0;
+  }
+
   // ========== 备份操作 ==========
 
   @override

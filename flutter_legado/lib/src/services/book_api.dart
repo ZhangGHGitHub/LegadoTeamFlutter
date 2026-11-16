@@ -898,6 +898,52 @@ abstract class BookApi {
   /// [kind] = `url`：[jsonOrUrl] 为 URL，先经既有抓取链路取 body 再解析。
   Future<int> dictRuleImport({required String jsonOrUrl, required String kind});
 
+  // ========== TXT 目录规则操作（B8，规则库唯一存储 txtTocRules 表）==========
+
+  /// 列出全部 TXT 目录规则（`ORDER BY serialNumber`）
+  ///
+  /// 每行 `{id, name, rule, replacement, serialNumber, enable, example}`。
+  Future<List<Map<String, dynamic>>> txtTocRuleList();
+
+  /// 新增 TXT 目录规则，返回新行 id；[serialNumber] < 0 = 追加到末尾
+  Future<int> txtTocRuleAdd({
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  });
+
+  /// 更新 TXT 目录规则（全可变列），返回是否实际更新
+  Future<bool> txtTocRuleUpdate({
+    required int id,
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  });
+
+  /// 删除 TXT 目录规则（按 id），返回是否实际删除
+  Future<bool> txtTocRuleDelete(int id);
+
+  /// 设置 TXT 目录规则启用/禁用（按 id），返回是否实际更新
+  Future<bool> txtTocRuleSetEnabled({required int id, required bool enabled});
+
+  /// 按给定 ID 顺序重编号 serialNumber（0..n），返回重排条数
+  Future<int> txtTocRuleReorder(String idsJson);
+
+  /// 导入 TXT 目录规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+  Future<int> txtTocRuleImport({
+    required String jsonOrUrl,
+    required String kind,
+  });
+
+  /// 导入原版默认 TXT 目录规则（删除 id<0 的默认行后重灌），返回导入条数
+  Future<int> txtTocRuleImportDefault();
+
   // ========== 备份操作 ==========
 
   /// 备份数据

@@ -278,7 +278,8 @@ class AssociationNotifier extends Notifier<AssociationState> {
           // B7：唯一存储是 dictRules 表（契约 §2.45），不再读 config:dict_rules
           return await _api.dictRuleList();
         case ImportType.txtTocRule:
-          return await _readConfigList('txt_toc_rules');
+          // B8：唯一存储是 txtTocRules 表（FFI txtTocRuleList）
+          return await _api.txtTocRuleList();
         case ImportType.highlightRule:
           return _decodeMapList(await _api.highlightRuleList());
         case ImportType.autoTask:
@@ -289,16 +290,6 @@ class AssociationNotifier extends Notifier<AssociationState> {
       }
     } catch (_) {
       return null;
-    }
-  }
-
-  /// 读取配置键中的 JSON 列表（失败返回空列表）
-  Future<List<Map<String, dynamic>>> _readConfigList(String key) async {
-    try {
-      final raw = await _api.getConfig(key);
-      return _decodeMapList(raw);
-    } catch (_) {
-      return const [];
     }
   }
 
@@ -724,44 +715,32 @@ class AssociationNotifier extends Notifier<AssociationState> {
     );
   }
 
-  /// 导入 TXT 目录规则（按名称 upsert 合并写入配置键 txt_toc_rules）
+  /// 导入 TXT 目录规则（B8：走 FFI `txtTocRuleImport`，REPLACE by name）
+  ///
+  /// 唯一存储是 `txtTocRules` 表——与备份导出/恢复、目录解析同一数据源。
+  /// 此前写 `config:txt_toc_rules`，导致导入的规则既不进备份也不被解析使用。
   Future<ImportResult> _importTxtTocRules(
     ImportType type,
     List<Map<String, dynamic>> items,
   ) async {
-    final existing = await _readConfigList('txt_toc_rules');
-    var nextId = existing.fold<int>(
-      0,
-      (m, e) => ((e['id'] as num?)?.toInt() ?? 0) > m
-          ? (e['id'] as num).toInt()
-          : m,
-    );
     var success = 0;
     final errors = <String>[];
     for (final item in items) {
       try {
-        var rule = TxtTocRule.fromJson(item);
+        final rule = TxtTocRule.fromJson(item);
         if (rule.name.isEmpty || rule.rule.isEmpty) {
           throw Exception('缺少名称或正则');
         }
-        final idx = existing.indexWhere((e) => e['name'] == rule.name);
-        if (idx >= 0) {
-          rule = rule.copyWith(id: (existing[idx]['id'] as num?)?.toInt() ?? 1);
-          existing[idx] = rule.toJson(); // 同名覆盖（对应原版 importSelect）
-        } else {
-          if (rule.id <= 0) nextId++;
-          rule = rule.copyWith(
-            id: rule.id > 0 ? rule.id : nextId++,
-            serialNumber: existing.length,
-          );
-          existing.add(rule.toJson());
-        }
+        // 逐条导入：单条失败可定位到具体规则名（批量失败无此粒度）
+        await _api.txtTocRuleImport(
+          jsonOrUrl: jsonEncode(item),
+          kind: 'text',
+        );
         success++;
       } catch (e) {
         errors.add('导入 TXT 规则「${item['name']}」失败：${errorMessage(e)}');
       }
     }
-    await _api.setConfig('txt_toc_rules', jsonEncode(existing));
     return ImportResult(
       total: items.length,
       success: success,

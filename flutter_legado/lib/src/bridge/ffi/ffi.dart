@@ -1080,6 +1080,78 @@ Future<int> dictRuleImport({required String jsonOrUrl, required String kind}) =>
       kind: kind,
     );
 
+/// 列出全部 TXT 目录规则（JSON 数组，按 serialNumber 升序）
+Future<String> txtTocRuleList() =>
+    RustLib.instance.api.crateFfiFfiTxtTocRuleList();
+
+/// 新增 TXT 目录规则，返回新行 id
+///
+/// `serial_number < 0` = 追加到末尾。
+Future<PlatformInt64> txtTocRuleAdd({
+  required String name,
+  required String rule,
+  required String replacement,
+  required bool enable,
+  String? example,
+  required int serialNumber,
+}) => RustLib.instance.api.crateFfiFfiTxtTocRuleAdd(
+  name: name,
+  rule: rule,
+  replacement: replacement,
+  enable: enable,
+  example: example,
+  serialNumber: serialNumber,
+);
+
+/// 更新 TXT 目录规则（全可变列），返回是否实际更新
+Future<bool> txtTocRuleUpdate({
+  required PlatformInt64 id,
+  required String name,
+  required String rule,
+  required String replacement,
+  required bool enable,
+  String? example,
+  required int serialNumber,
+}) => RustLib.instance.api.crateFfiFfiTxtTocRuleUpdate(
+  id: id,
+  name: name,
+  rule: rule,
+  replacement: replacement,
+  enable: enable,
+  example: example,
+  serialNumber: serialNumber,
+);
+
+/// 删除 TXT 目录规则（按 id），返回是否实际删除
+Future<bool> txtTocRuleDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiTxtTocRuleDelete(id: id);
+
+/// 设置 TXT 目录规则启用/禁用（按 id），返回是否实际更新
+Future<bool> txtTocRuleSetEnabled({
+  required PlatformInt64 id,
+  required bool enabled,
+}) => RustLib.instance.api.crateFfiFfiTxtTocRuleSetEnabled(
+  id: id,
+  enabled: enabled,
+);
+
+/// 按给定 ID 顺序重编号 serialNumber（0..n），返回重排条数
+Future<int> txtTocRuleReorder({required String idsJson}) =>
+    RustLib.instance.api.crateFfiFfiTxtTocRuleReorder(idsJson: idsJson);
+
+/// 导入 TXT 目录规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+Future<int> txtTocRuleImport({
+  required String jsonOrUrl,
+  required String kind,
+}) => RustLib.instance.api.crateFfiFfiTxtTocRuleImport(
+  jsonOrUrl: jsonOrUrl,
+  kind: kind,
+);
+
+/// 导入原版默认 TXT 目录规则（删除 id<0 的默认行后重灌），返回导入条数
+Future<int> txtTocRuleImportDefault() =>
+    RustLib.instance.api.crateFfiFfiTxtTocRuleImportDefault();
+
 /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
 ///
 /// `book_name` — 当前书籍名称

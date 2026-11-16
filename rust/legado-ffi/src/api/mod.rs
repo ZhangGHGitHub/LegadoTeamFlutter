@@ -67,6 +67,8 @@ pub mod source_rate_limit;
 pub mod source_switch;
 pub mod tts_speak_api;
 pub mod txt_search_api;
+/// [B8 | 2026-11-17] TXT 目录规则表 CRUD（契约 §2.45 同族）
+pub mod txt_toc_rule_api;
 /// [B6/A4 | 2026-11-17] 书源运行时变量持久化下沉（caches 表五族键）
 pub mod variable_sink;
 pub mod verification_api;

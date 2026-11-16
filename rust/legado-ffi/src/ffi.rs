@@ -1414,6 +1414,88 @@ pub mod ffi {
         Ok(crate::api::dict_api::dict_rule_import(&json_or_url, &kind)?)
     }
 
+    // ─── TXT 目录规则（B8：规则库唯一存储为 txtTocRules 表）────────
+
+    /// 列出全部 TXT 目录规则（JSON 数组，按 serialNumber 升序）
+    pub fn txt_toc_rule_list() -> Result<String, BridgeError> {
+        let rules = crate::api::txt_toc_rule_api::txt_toc_rule_list()?;
+        to_json(&rules)
+    }
+
+    /// 新增 TXT 目录规则，返回新行 id
+    ///
+    /// `serial_number < 0` = 追加到末尾。
+    pub fn txt_toc_rule_add(
+        name: String,
+        rule: String,
+        replacement: String,
+        enable: bool,
+        example: Option<String>,
+        serial_number: i32,
+    ) -> Result<i64, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_add(
+            &name,
+            &rule,
+            &replacement,
+            enable,
+            example.as_deref(),
+            serial_number,
+        )?)
+    }
+
+    /// 更新 TXT 目录规则（全可变列），返回是否实际更新
+    pub fn txt_toc_rule_update(
+        id: i64,
+        name: String,
+        rule: String,
+        replacement: String,
+        enable: bool,
+        example: Option<String>,
+        serial_number: i32,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_update(
+            id,
+            &name,
+            &rule,
+            &replacement,
+            enable,
+            example.as_deref(),
+            serial_number,
+        )?)
+    }
+
+    /// 删除 TXT 目录规则（按 id），返回是否实际删除
+    pub fn txt_toc_rule_delete(id: i64) -> Result<bool, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_delete(id)?)
+    }
+
+    /// 设置 TXT 目录规则启用/禁用（按 id），返回是否实际更新
+    pub fn txt_toc_rule_set_enabled(id: i64, enabled: bool) -> Result<bool, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_set_enabled(
+            id, enabled,
+        )?)
+    }
+
+    /// 按给定 ID 顺序重编号 serialNumber（0..n），返回重排条数
+    pub fn txt_toc_rule_reorder(ids_json: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_reorder(
+            &ids_json,
+        )?)
+    }
+
+    /// 导入 TXT 目录规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+    pub fn txt_toc_rule_import(json_or_url: String, kind: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_import(
+            &json_or_url,
+            &kind,
+        )?)
+    }
+
+    /// 导入原版默认 TXT 目录规则（删除 id<0 的默认行后重灌），返回导入条数
+    pub fn txt_toc_rule_import_default() -> Result<i32, BridgeError> {
+        Ok(crate::api::txt_toc_rule_api::txt_toc_rule_import_default()?)
+    }
+
     // ─── 换源 ───────────────────────────────────────────────
 
     /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）

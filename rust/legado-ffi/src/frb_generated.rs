@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -905874848;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -573197190;
 
 // Section: executor
 
@@ -10624,6 +10624,297 @@ fn wire__crate__ffi__ffi__txt_search_regex_impl(
         },
     )
 }
+fn wire__crate__ffi__ffi__txt_toc_rule_add_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_add",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_rule = <String>::sse_decode(&mut deserializer);
+            let api_replacement = <String>::sse_decode(&mut deserializer);
+            let api_enable = <bool>::sse_decode(&mut deserializer);
+            let api_example = <Option<String>>::sse_decode(&mut deserializer);
+            let api_serial_number = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_add(
+                        api_name,
+                        api_rule,
+                        api_replacement,
+                        api_enable,
+                        api_example,
+                        api_serial_number,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_delete_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_delete",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_delete(api_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_import_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_import",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_json_or_url = <String>::sse_decode(&mut deserializer);
+            let api_kind = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok =
+                        crate::ffi::ffi::txt_toc_rule_import(api_json_or_url, api_kind)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_import_default_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_import_default",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_import_default()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_list_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_list",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_list()?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_reorder_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_reorder",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ids_json = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_reorder(api_ids_json)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_set_enabled_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_set_enabled",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            let api_enabled = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_set_enabled(api_id, api_enabled)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__ffi__ffi__txt_toc_rule_update_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "txt_toc_rule_update",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            let api_rule = <String>::sse_decode(&mut deserializer);
+            let api_replacement = <String>::sse_decode(&mut deserializer);
+            let api_enable = <bool>::sse_decode(&mut deserializer);
+            let api_example = <Option<String>>::sse_decode(&mut deserializer);
+            let api_serial_number = <i32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
+                    let output_ok = crate::ffi::ffi::txt_toc_rule_update(
+                        api_id,
+                        api_name,
+                        api_rule,
+                        api_replacement,
+                        api_enable,
+                        api_example,
+                        api_serial_number,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__ffi__ffi__update_search_book_score_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -12276,41 +12567,56 @@ fn pde_ffi_dispatcher_primary_impl(
         300 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
         301 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
         302 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
-        303 => {
-            wire__crate__ffi__ffi__update_search_book_score_impl(port, ptr, rust_vec_len, data_len)
-        }
-        304 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
-        305 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
-        306 => wire__crate__ffi__ffi__verification_request_stream_impl(
+        303 => wire__crate__ffi__ffi__txt_toc_rule_add_impl(port, ptr, rust_vec_len, data_len),
+        304 => wire__crate__ffi__ffi__txt_toc_rule_delete_impl(port, ptr, rust_vec_len, data_len),
+        305 => wire__crate__ffi__ffi__txt_toc_rule_import_impl(port, ptr, rust_vec_len, data_len),
+        306 => wire__crate__ffi__ffi__txt_toc_rule_import_default_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        307 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
-        308 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
-        309 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
-        310 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
-        311 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
-        312 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
-        313 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
-        314 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
-        315 => wire__crate__ffi__ffi__webdav_download_file_impl(port, ptr, rust_vec_len, data_len),
-        316 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
-        317 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
-        318 => wire__crate__ffi__ffi__webdav_prune_backups_impl(port, ptr, rust_vec_len, data_len),
-        319 => wire__crate__ffi__ffi__webdav_server_delete_impl(port, ptr, rust_vec_len, data_len),
-        320 => wire__crate__ffi__ffi__webdav_server_save_impl(port, ptr, rust_vec_len, data_len),
-        321 => wire__crate__ffi__ffi__webdav_servers_list_impl(port, ptr, rust_vec_len, data_len),
-        322 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
-        323 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
-        324 => wire__crate__ffi__ffi__webview_cancel_impl(port, ptr, rust_vec_len, data_len),
-        325 => wire__crate__ffi__ffi__webview_pending_impl(port, ptr, rust_vec_len, data_len),
-        326 => {
+        307 => wire__crate__ffi__ffi__txt_toc_rule_list_impl(port, ptr, rust_vec_len, data_len),
+        308 => wire__crate__ffi__ffi__txt_toc_rule_reorder_impl(port, ptr, rust_vec_len, data_len),
+        309 => {
+            wire__crate__ffi__ffi__txt_toc_rule_set_enabled_impl(port, ptr, rust_vec_len, data_len)
+        }
+        310 => wire__crate__ffi__ffi__txt_toc_rule_update_impl(port, ptr, rust_vec_len, data_len),
+        311 => {
+            wire__crate__ffi__ffi__update_search_book_score_impl(port, ptr, rust_vec_len, data_len)
+        }
+        312 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
+        313 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
+        314 => wire__crate__ffi__ffi__verification_request_stream_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        315 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
+        316 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
+        317 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
+        318 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
+        319 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
+        320 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
+        321 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
+        322 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
+        323 => wire__crate__ffi__ffi__webdav_download_file_impl(port, ptr, rust_vec_len, data_len),
+        324 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
+        325 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
+        326 => wire__crate__ffi__ffi__webdav_prune_backups_impl(port, ptr, rust_vec_len, data_len),
+        327 => wire__crate__ffi__ffi__webdav_server_delete_impl(port, ptr, rust_vec_len, data_len),
+        328 => wire__crate__ffi__ffi__webdav_server_save_impl(port, ptr, rust_vec_len, data_len),
+        329 => wire__crate__ffi__ffi__webdav_servers_list_impl(port, ptr, rust_vec_len, data_len),
+        330 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
+        331 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
+        332 => wire__crate__ffi__ffi__webview_cancel_impl(port, ptr, rust_vec_len, data_len),
+        333 => wire__crate__ffi__ffi__webview_pending_impl(port, ptr, rust_vec_len, data_len),
+        334 => {
             wire__crate__ffi__ffi__webview_request_stream_impl(port, ptr, rust_vec_len, data_len)
         }
-        327 => wire__crate__ffi__ffi__webview_submit_impl(port, ptr, rust_vec_len, data_len),
-        328 => wire__crate__ffi__ffi__webview_submit_result_with_cookies_impl(
+        335 => wire__crate__ffi__ffi__webview_submit_impl(port, ptr, rust_vec_len, data_len),
+        336 => wire__crate__ffi__ffi__webview_submit_result_with_cookies_impl(
             port,
             ptr,
             rust_vec_len,

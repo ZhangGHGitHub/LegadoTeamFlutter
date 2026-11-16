@@ -478,6 +478,72 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     required String kind,
   }) => bridge.dictRuleImport(jsonOrUrl: jsonOrUrl, kind: kind);
 
+  // ========== TXT 目录规则操作（B8，规则库唯一存储 txtTocRules 表）==========
+
+  @override
+  Future<List<Map<String, dynamic>>> txtTocRuleList() async {
+    final json = await bridge.txtTocRuleList();
+    return _decodeList(json, 'txtTocRuleList').cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<int> txtTocRuleAdd({
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  }) => bridge.txtTocRuleAdd(
+    name: name,
+    rule: rule,
+    replacement: replacement,
+    enable: enable,
+    example: example,
+    serialNumber: serialNumber,
+  );
+
+  @override
+  Future<bool> txtTocRuleUpdate({
+    required int id,
+    required String name,
+    required String rule,
+    required String replacement,
+    required bool enable,
+    String? example,
+    required int serialNumber,
+  }) => bridge.txtTocRuleUpdate(
+    id: id,
+    name: name,
+    rule: rule,
+    replacement: replacement,
+    enable: enable,
+    example: example,
+    serialNumber: serialNumber,
+  );
+
+  @override
+  Future<bool> txtTocRuleDelete(int id) => bridge.txtTocRuleDelete(id: id);
+
+  @override
+  Future<bool> txtTocRuleSetEnabled({
+    required int id,
+    required bool enabled,
+  }) => bridge.txtTocRuleSetEnabled(id: id, enabled: enabled);
+
+  @override
+  Future<int> txtTocRuleReorder(String idsJson) =>
+      bridge.txtTocRuleReorder(idsJson: idsJson);
+
+  @override
+  Future<int> txtTocRuleImport({
+    required String jsonOrUrl,
+    required String kind,
+  }) => bridge.txtTocRuleImport(jsonOrUrl: jsonOrUrl, kind: kind);
+
+  @override
+  Future<int> txtTocRuleImportDefault() => bridge.txtTocRuleImportDefault();
+
   // ========== 应用日志（appLog FFI） ==========
   // [审计修复 §1.2] 接通契约 §2.38 appLog* 五方法（frb 绑定已生成） — QoderCN
 
