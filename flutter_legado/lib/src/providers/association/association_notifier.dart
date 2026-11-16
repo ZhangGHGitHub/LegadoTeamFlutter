@@ -275,7 +275,8 @@ class AssociationNotifier extends Notifier<AssociationState> {
           }
           return map;
         case ImportType.dictRule:
-          return await _readConfigList('dict_rules');
+          // B7：唯一存储是 dictRules 表（契约 §2.45），不再读 config:dict_rules
+          return await _api.dictRuleList();
         case ImportType.txtTocRule:
           return await _readConfigList('txt_toc_rules');
         case ImportType.highlightRule:
@@ -692,30 +693,27 @@ class AssociationNotifier extends Notifier<AssociationState> {
     );
   }
 
-  /// 导入字典规则（按名称 upsert 合并写入配置键 dict_rules）
+  /// 导入字典规则（B7：走契约 §2.45 `dictRuleImport`，REPLACE by name）
+  ///
+  /// 唯一存储是 `dictRules` 表——与 `dictLookup` 查询同一数据源。此前写
+  /// `config:dict_rules` 导致「导入成功但查询不用」。
   Future<ImportResult> _importDictRules(
     ImportType type,
     List<Map<String, dynamic>> items,
   ) async {
-    final existing = await _readConfigList('dict_rules');
     var success = 0;
     final errors = <String>[];
     for (final item in items) {
       try {
-        final rule = DictRule.fromJson(item);
-        if (rule.name.isEmpty) throw Exception('缺少名称');
-        final idx = existing.indexWhere((e) => e['name'] == rule.name);
-        if (idx >= 0) {
-          existing[idx] = rule.toJson(); // 同名覆盖（对应原版 importSelect）
-        } else {
-          existing.add(rule.toJson());
-        }
+        final name = item['name']?.toString().trim() ?? '';
+        if (name.isEmpty) throw Exception('缺少名称');
+        // 逐条导入：单条失败可定位到具体规则名（批量失败无此粒度）
+        await _api.dictRuleImport(jsonOrUrl: jsonEncode(item), kind: 'text');
         success++;
       } catch (e) {
         errors.add('导入字典规则「${item['name']}」失败：${errorMessage(e)}');
       }
     }
-    await _api.setConfig('dict_rules', jsonEncode(existing));
     return ImportResult(
       total: items.length,
       success: success,

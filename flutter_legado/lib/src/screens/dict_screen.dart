@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../providers/dict/dict_notifier.dart';
 import '../routes.dart';
+import '../utils/error_message.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 
@@ -331,9 +332,19 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                           trailing: IconButton(
                             icon: const Icon(Symbols.delete_rounded, size: 20),
                             onPressed: () async {
-                              await ref
-                                  .read(dictNotifierProvider.notifier)
-                                  .deleteRule(index);
+                              // B7：删除走 §2.45 FFI（按行 id），失败提示
+                              // 提示器在 await 前取好，避免跨异步间隙用 context
+                              final messenger =
+                                  ScaffoldMessenger.of(this.context);
+                              try {
+                                await ref
+                                    .read(dictNotifierProvider.notifier)
+                                    .deleteRule(index);
+                              } catch (e) {
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text('删除失败：${errorMessage(e)}')),
+                                );
+                              }
                               setDialogState(() {});
                             },
                           ),
@@ -411,9 +422,20 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               final name = nameCtrl.text.trim();
               final url = urlCtrl.text.trim();
               if (name.isEmpty || url.isEmpty) return;
-              await ref
-                  .read(dictNotifierProvider.notifier)
-                  .addRule(DictRule(name: name, urlRule: url));
+              // B7：保存走 §2.45 FFI（写 dictRules 表，查询立即可见）；
+              // 名称重复由 Rust UNIQUE 约束报错，此处提示而不是静默关闭
+              try {
+                await ref
+                    .read(dictNotifierProvider.notifier)
+                    .addRule(DictRule(name: name, urlRule: url));
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('保存失败：${errorMessage(e)}')),
+                  );
+                }
+                return;
+              }
               onSaved(() {});
               if (editCtx.mounted) Navigator.of(editCtx).pop();
             },
