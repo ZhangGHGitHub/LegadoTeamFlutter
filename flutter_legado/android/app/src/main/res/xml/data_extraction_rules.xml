@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+（API 31+）数据提取规则（云备份 + 设备间迁移）
+
+  与 res/xml/backup_rules.xml 保持同一排除口径（Android 12 起本文件优先，
+  fullBackupContent 对云备份不再生效；两份必须同步维护）。
+
+  disableIfNoEncryptionCapabilities="true"：设备不支持客户端加密时**整机
+  不备份**（fail-closed），避免明文数据落进未加密的云备份。
+
+  排除项理由见 backup_rules.xml 头部注释。
+-->
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <!-- 业务数据库（含 WAL 伴生文件）：全量私密数据面 -->
+        <exclude
+            domain="root"
+            path="app_flutter/legado.db" />
+        <exclude
+            domain="root"
+            path="app_flutter/legado.db-wal" />
+        <exclude
+            domain="root"
+            path="app_flutter/legado.db-shm" />
+
+        <!-- 偏好文件：含 Web 服务密码 / 私密策略 / 私密书旧名登记 -->
+        <exclude
+            domain="sharedpref"
+            path="FlutterSharedPreferences.xml" />
+        <exclude
+            domain="sharedpref"
+            path="FlutterSharedPreferences.xml.bak" />
+
+        <!-- 设备级状态：分享文本消费标记、SAF 保存目录 -->
+        <exclude
+            domain="sharedpref"
+            path="shared_text_once.xml" />
+        <exclude
+            domain="sharedpref"
+            path="legado_file_save.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- 设备间迁移同样排除（D2D 也可能经厂商云中转） -->
+        <exclude
+            domain="root"
+            path="app_flutter/legado.db" />
+        <exclude
+            domain="root"
+            path="app_flutter/legado.db-wal" />
+        <exclude
+            domain="root"
+            path="app_flutter/legado.db-shm" />
+        <exclude
+            domain="sharedpref"
+            path="FlutterSharedPreferences.xml" />
+        <exclude
+            domain="sharedpref"
+            path="FlutterSharedPreferences.xml.bak" />
+        <exclude
+            domain="sharedpref"
+            path="shared_text_once.xml" />
+        <exclude
+            domain="sharedpref"
+            path="legado_file_save.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -39,7 +39,16 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
 
+    <!-- [A1 隐私] 系统自动备份：保留 allowBackup（换机迁移/云备份仍有价值），
+         但按 res/xml/backup_rules.xml（Android 11 及以下）与
+         res/xml/data_extraction_rules.xml（Android 12+，云备份 + 设备迁移）
+         排除私密数据面：业务库 app_flutter/legado.db（含 -wal/-shm）与含
+         Web 服务密码/私密策略的 FlutterSharedPreferences.xml。
+         两份 XML 必须同步维护（Android 12 起 fullBackupContent 对云备份失效）。 -->
     <application
+        android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="阅读"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
