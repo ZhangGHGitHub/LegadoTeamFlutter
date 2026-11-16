@@ -11,7 +11,8 @@
 //! ajaxAwait → 回环响应体；服务端收到源静态 header + __prepare UA
 //! getAwait  → 回环响应体；调用方 header 覆盖/追加源 header
 //! run / getStringAwait / 加解密往返
-//! downloadFileAwait → 明确不支持
+//! downloadFileAwait → 回环下载成功、相对名 + 真实落盘、readTxtFileAwait 读回、
+//!                     404 返回 [ERROR] 前缀（C5 接线）
 //! run 超大结果 → ok:false「结果超限」
 //! __cookieSet → cookies_for_url 可读 + cookies 表落库（先持久化）
 //! __store loginHeaderSet → 登录头落库 + Cookie 键同步
@@ -198,10 +199,16 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     legado_ffi::ffi::ffi::db_open(db_path.to_string_lossy().into_owned()).expect("db_open");
     // cache_store 磁盘层落独立临时目录（独立测试进程，无并发漂移）
     legado_js::host_api::cache_store::set_cache_dir(temp_cache_dir());
+    // C5：文件 API（downloadFileAwait）落盘根——与 `ffi::set_cache_dir` 同型，
+    // 注入 `<缓存目录>/js_files` 作为沙箱父目录（再按 RSS 源 tag 分子目录）
+    legado_js::host_api::file_utils::set_sandbox_root(
+        temp_cache_dir().join("js_files"),
+    );
 
     let routes: Routes = Arc::new(|target: &str| match target {
         "/ajax" => ("200 OK".to_string(), "ajax-body-ok".to_string()),
         "/get" => ("200 OK".to_string(), "get-body-ok".to_string()),
+        "/download.bin" => ("200 OK".to_string(), "download-body-ok".to_string()),
         "/jslib.js" => (
             "200 OK".to_string(),
             "var __JSLIB_VALUE = 'jslib-ok';".to_string(),
@@ -389,16 +396,75 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     assert_eq!(plain["ok"], true, "{plain}");
     assert_eq!(plain["value"], "明文 round-trip", "{plain}");
 
-    // ─── 5) 未支持/超限/未知/源不存在 ──────────────────────────────────
+    // ─── 5) 文件下载 / 超限 / 未知 / 源不存在 ─────────────────────────
+    // C5：`downloadFileAwait` 已接线（委托 `java.downloadFile`）——回环下载
+    // 成功时返回**相对文件名** `<md5Encode16(url)>.<type>`，且文件真实落盘
+    // 在当前 RSS 源的沙箱根下（`<cache_dir>/<SHA-256(sourceUrl) 前16字节>`）。
+    let download_url = format!("{base}/download.bin");
     let env = call(
         SOURCE_URL,
         "downloadFileAwait",
-        json!(["https://example.com/a.bin"]),
+        json!([download_url]),
     );
-    assert_eq!(env["ok"], false);
+    assert_eq!(env["ok"], true, "downloadFileAwait 应已接线: {env}");
+    let relative = env["value"]
+        .as_str()
+        .expect("downloadFileAwait 返回相对文件名")
+        .to_string();
     assert!(
-        env["error"].as_str().unwrap_or_default().contains("不支持"),
-        "{env}"
+        relative.ends_with(".bin"),
+        "文件名应带 URL 后缀: {relative}"
+    );
+    assert!(
+        !relative.contains('/') && !relative.contains('\\'),
+        "返回值应为相对名而非绝对路径: {relative}"
+    );
+    // 落盘位置：当前 RSS 源沙箱根下（宿主按 current_source_tag 哈希分目录，
+    // 具体目录名由 legado-js 内部算法决定，测试按「在注入根下能找到该相对名」
+    // 断言，避免在集成测试里复刻哈希实现）
+    fn find_under(root: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+        let entries = std::fs::read_dir(root).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(hit) = find_under(&path, name) {
+                    return Some(hit);
+                }
+            } else if path.file_name().and_then(|n| n.to_str()) == Some(name) {
+                return Some(path);
+            }
+        }
+        None
+    }
+    let landed = find_under(&temp_cache_dir(), &relative).unwrap_or_else(|| {
+        panic!(
+            "downloadFileAwait 必须真实落盘：{} 下未找到 {relative}",
+            temp_cache_dir().display()
+        )
+    });
+    assert_eq!(
+        std::fs::read(&landed).expect("读取下载文件"),
+        b"download-body-ok",
+        "落盘内容必须与响应体字节一致（原始字节，不做文本转换）"
+    );
+    // 该文件可被同源 `readTxtFileAwait` 读回（相对名按同一沙箱根解析）
+    let env = call(SOURCE_URL, "readTxtFileAwait", json!([relative]));
+    assert_eq!(env["ok"], true, "{env}");
+    assert_eq!(env["value"], "download-body-ok", "{env}");
+
+    // 下载失败（404）时明确报错，不静默返回空串
+    let env = call(
+        SOURCE_URL,
+        "downloadFileAwait",
+        json!([format!("{base}/not-found.bin")]),
+    );
+    assert_eq!(env["ok"], true, "文件 API 以 [ERROR] 文本返回: {env}");
+    assert!(
+        env["value"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("[ERROR]"),
+        "404 下载应返回 [ERROR] 前缀: {env}"
     );
 
     let env = call(SOURCE_URL, "run", json!(["'x'.repeat(5 * 1024 * 1024)"]));

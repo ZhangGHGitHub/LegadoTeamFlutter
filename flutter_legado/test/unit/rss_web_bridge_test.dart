@@ -709,7 +709,7 @@ void main() {
       expect(reply, contains('网络错误'));
     });
 
-    test('downloadFileAwait 在白名单内（由 Rust 返回明确不支持）', () {
+    test('downloadFileAwait 在白名单内（C5 已由 Rust 真接线）', () {
       expect(kRssWebBridgeHostMethods, contains('downloadFileAwait'));
       expect(kRssWebBridgeHostMethods, contains('getStringAwait'));
     });

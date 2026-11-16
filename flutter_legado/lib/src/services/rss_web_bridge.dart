@@ -55,7 +55,10 @@ import 'package:webview_flutter/webview_flutter.dart'
 import 'book_api.dart';
 import 'rss_web_config.dart' show kRssConsoleHookScript;
 
-/// 对外方法白名单（与 Rust `rss_web_bridge::PUBLIC_METHODS` 对齐）
+  /// 对外方法白名单（与 Rust `rss_web_bridge::PUBLIC_METHODS` 对齐）
+  ///
+  /// `downloadFileAwait` 自 C5（2026-11-17）起由 Rust 侧真接线（委托引擎
+  /// 文件 API `java.downloadFile`），返回相对文件名并真实落盘。
 const Set<String> kRssWebBridgeHostMethods = <String>{
   'run',
   'ajaxAwait',

@@ -25,7 +25,10 @@
 //! - 同步网络 API（`java.ajax`/`connect`/`get`/`post`/`head`/`webView*`）在
 //!   页面垫片中抛错并引导使用 `*Await`（原版经 `@JavascriptInterface` 同步可用）；
 //! - `cache.get` 同步读基于页面镜像（跨页面首次 miss 返回 `null`，写异步落库）；
-//! - `downloadFileAwait` 本批明确返回不支持（文件 API 后置）；
+//! - `downloadFileAwait` **自 C5（2026-11-17）起已接线**：委托引擎文件 API
+//!   `java.downloadFile`（沙箱根按 RSS 源 tag 分子目录、单文件 32MB 上限、
+//!   原始字节落盘），返回相对文件名 `<md5Encode16(url)>.<type>`；仅支持
+//!   单参形态（原版 `downloadFile(contentHex, url)` 废弃重载不暴露）；
 //! - `@js:`/`<js>` 形式的源 `header` 规则不求值（仅静态 JSON header）；
 //! - `run` 在宿主引擎全局作用域执行，不注入 `*Await`（无事件循环）；
 //!   其内嵌 `java.ajax` 也不经源级限流（限流按宿主调用粒度，网络类方法
@@ -88,8 +91,8 @@ const HOST_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30
 
 /// 对外方法白名单（与 `WebJsExtensions.request` 的 funName 对齐）
 ///
-/// `downloadFileAwait` 保留在白名单内以便返回**明确的不支持**错误
-/// （文件 API 后置，避免与「未知方法」混淆）。
+/// `downloadFileAwait` 自 C5（2026-11-17）起已接线（委托 `java.downloadFile`），
+/// 不再是「明确不支持」占位。
 const PUBLIC_METHODS: &[&str] = &[
     "run",
     "ajaxAwait",
@@ -123,6 +126,8 @@ const NETWORK_METHODS: &[&str] = &[
     "webViewAwait",
     "webViewGetSourceAwait",
     "importScriptAwait",
+    // C5：`downloadFileAwait` 走网络下载并落盘，与 `importScriptAwait` 同类
+    "downloadFileAwait",
 ];
 
 /// 每源宿主调用并发上限（批21c：独立复核 P2-10，取 2-4 区间的上界）
@@ -1270,6 +1275,15 @@ globalThis.__lgWebHost = {
       .setPrivateKey(String(privateKey))
       .signHex(String(data)));
   },
+  // C5（2026-11-17）：`downloadFileAwait` 接到引擎既有文件 API
+  // （`java.downloadFile`：沙箱根按 RSS 源 tag 分子目录、单文件 32MB 上限、
+  // 原始字节落盘，见 `legado-js::host_api::file_utils::download_file`）。
+  // 返回**相对文件名** `<md5Encode16(url)>.<type>`（与原版
+  // `JsExtensions.downloadFile` 的 `path.substring(getCachePath().length)` 同形）；
+  // 越界/超限/网络失败由 `java.downloadFile` 返回 `[ERROR] ...`（既有语义）。
+  downloadFileAwait: function (url) {
+    return String(java.downloadFile(String(url)));
+  },
   readTxtFileAwait: function (path) {
     return String(java.readTxtFile(String(path)));
   },
@@ -1318,11 +1332,12 @@ fn apply_source_global_headers(source: &RssSource) {
 
 #[cfg(feature = "quickjs")]
 fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<String> {
-    if method == "downloadFileAwait" {
-        return Ok(envelope_error(
-            "downloadFileAwait 暂不支持：文件 API 后置（本批仅网络/加解密/解析宿主面）",
-        ));
-    }
+    // C5（2026-11-17）：`downloadFileAwait` 已接入引擎文件 API（见
+    // HOST_SHIM_JS 同名条目），不再在此提前返回「不支持」。它属于网络类
+    // 方法（下载落盘），在下方 NETWORK_METHODS 中参与源级 concurrentRate
+    // 限流；沙箱根按当前 RSS 源 tag 分子目录（`with_current_source_tag`
+    // 在调用 JS 前已绑定），故 `java.downloadFile` 的落盘位置与
+    // `readTxtFileAwait` / `importScriptAwait` 的读取根一致。
     let Some(source) = load_rss_source(source_url)? else {
         return Ok(envelope_error(format!("RSS 源不存在：{source_url}")));
     };
