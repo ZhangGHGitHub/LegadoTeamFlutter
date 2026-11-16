@@ -623,7 +623,12 @@ mod tests {
     }
 
     /// 内容未变化（只改分组等非内容列）→ 保留库内既有时间戳，
-    /// 不因「保存一次」就把订阅更新门控推后。
+    /// 归一列变化（`weight` / `respondTime` / `enabled` / `customOrder`）→
+    /// 保留库内既有时间戳，不因「保存一次」就把订阅更新门控推后。
+    ///
+    /// 注：`bookSourceGroup` 在上游 `equal()` 里**算内容**（改了分组应视为
+    /// 源已变更），故这里用 `check_content()` 明确归零的 `weight` 作无变化
+    /// 用例。
     #[test]
     fn test_update_source_keeps_last_update_time_when_content_unchanged() {
         let _db_guard = setup_test_db();
@@ -641,15 +646,44 @@ mod tests {
         let stamped = find_source(url);
         assert!(stamped.last_update_time > 0);
 
-        // 只改分组（check_content 忽略分组）→ 时间戳不变
+        // 只改 weight（check_content 归一为 0）→ 时间戳不变
         update_source(&format!(
-            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源2\",\"searchUrl\":\"/s2?q={{{{key}}}}\",\"bookSourceGroup\":\"新分组\"}}"
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源2\",\"searchUrl\":\"/s2?q={{{{key}}}}\",\"weight\":42}}"
         ))
         .unwrap();
         let after = find_source(url);
         assert_eq!(
             after.last_update_time, stamped.last_update_time,
-            "内容未变时不得推进 lastUpdateTime"
+            "归一列变化时不得推进 lastUpdateTime"
+        );
+        assert_eq!(after.weight, 42, "weight 本身仍应落库");
+
+        delete_source(url).unwrap();
+    }
+
+    /// 改分组算内容变更（对齐上游 `equal()` 比较 `bookSourceGroup`）→ 推进
+    #[test]
+    fn test_update_source_stamps_when_group_changed() {
+        let _db_guard = setup_test_db();
+        let url = "https://b12-group.example.com";
+        add_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源4\",\"searchUrl\":\"/s?q={{{{key}}}}\"}}"
+        ))
+        .unwrap();
+        update_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源4\",\"searchUrl\":\"/s?q={{{{key}}}}\"}}"
+        ))
+        .unwrap();
+        let stamped = find_source(url);
+
+        update_source(&format!(
+            "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"B12 源4\",\"searchUrl\":\"/s?q={{{{key}}}}\",\"bookSourceGroup\":\"新分组\"}}"
+        ))
+        .unwrap();
+        let after = find_source(url);
+        assert!(
+            after.last_update_time > stamped.last_update_time,
+            "分组属上游 equal() 比较范围，改动应推进时间戳"
         );
         assert_eq!(after.book_source_group.as_deref(), Some("新分组"));
 

@@ -49,10 +49,14 @@ use encoding_rs::{Encoding, UTF_8};
 
 use legado_core::LegadoResult;
 
-use crate::txt::{decode_text, detect_encoding_from_sample, encoding_for_label, read_up_to};
+use crate::txt::{
+    decode_text, detect_encoding_from_sample, encoding_for_label, read_up_to, ENCODING_SAMPLE_LEN,
+};
 
-/// 文件首/中/尾采样长度（同时作为编码检测样本的上限，与
-/// [`crate::txt::TxtParser::detect_encoding`] 的 4KB 口径一致）
+/// 文件首/中/尾**指纹**采样长度（内容戳用）
+///
+/// 与编码检测样本长度（[`ENCODING_SAMPLE_LEN`]，B21 起 64KB）分离：指纹
+/// 只需覆盖首尾中三段的字节内容，长度越大缓存命中时的 I/O 越贵。
 const SAMPLE_LEN: usize = 4096;
 
 /// 全文件读取的预分配上限：文件元数据长度不可信（稀疏/损坏/超大）时，
@@ -198,23 +202,29 @@ struct OpenedText {
     head: Vec<u8>,
 }
 
-/// 打开文件并采集内容戳；`head` 为前 4KB 样本（编码检测复用）
+/// 打开文件并采集内容戳；`head` 为前 [`ENCODING_SAMPLE_LEN`] 样本（编码检测复用）
 ///
-/// 指纹采样首/中/尾三段各最多 4KB。中段仅在 `len > 2 * SAMPLE_LEN`
-/// （首尾两段之间确实存在未覆盖区间）时读取，因此小文件不会重复读同一段
-/// 字节；每次缓存命中只多 4KB I/O（相比整文件读取仍是极小开销）。
+/// 指纹采样首/中/尾三段各最多 [`SAMPLE_LEN`]；`head` 单独按编码检测口径
+/// 读得更长（B21：4KB → 64KB），但**只有前 [`SAMPLE_LEN`] 参与指纹**，
+/// 指纹语义与 [`fingerprint_bytes`] 保持一致。
+///
+/// 中段仅在 `len > 2 * SAMPLE_LEN`（首尾两段之间确实存在未覆盖区间）时读取，
+/// 因此小文件不会重复读同一段字节。
 fn open_and_stamp(path: &str) -> LegadoResult<OpenedText> {
     let mut file = File::open(path)?;
     let meta = file.metadata()?;
     let len = meta.len();
 
-    let head_len = usize::try_from(len.min(SAMPLE_LEN as u64)).unwrap_or(0);
+    // [B21] 编码检测样本扩大（与 TxtParser::detect_encoding 同口径），
+    // 避免「前 4KB 纯 ASCII 前言」把后面的 GBK 正文误判成 UTF-8。
+    let head_len = usize::try_from(len.min(ENCODING_SAMPLE_LEN as u64)).unwrap_or(0);
     let mut head = vec![0u8; head_len];
     let filled = read_up_to(&mut file, &mut head)?;
     head.truncate(filled);
 
     let mut hasher = DefaultHasher::new();
-    head.hash(&mut hasher);
+    // 指纹只取前 SAMPLE_LEN，保持与 fingerprint_bytes 一致
+    head[..head.len().min(SAMPLE_LEN)].hash(&mut hasher);
     if len > SAMPLE_LEN as u64 {
         file.seek(SeekFrom::Start(len - SAMPLE_LEN as u64))?;
         let mut tail = vec![0u8; SAMPLE_LEN];

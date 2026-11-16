@@ -265,12 +265,16 @@ impl TxtParser {
     }
 
     /// 检测文件编码
+    ///
+    /// [B21] 样本从 4KB 扩大到 [`ENCODING_SAMPLE_LEN`]（64KB）：4KB 对
+    /// GBK/BIG5 这类需要统计判定的编码样本太小——短样本里若恰好没有非法
+    /// 字节，`gb18030` 的有损解码会「成功」，把其它编码误判成 GBK。样本
+    /// 上限仍远小于常见 TXT 体积。
     pub fn detect_encoding(path: &str) -> LegadoResult<String> {
         let mut file =
             File::open(path).map_err(|e| LegadoError::BookParse(format!("无法打开文件: {e}")))?;
 
-        // 读取前 4KB 用于检测
-        let mut buf = [0u8; 4096];
+        let mut buf = vec![0u8; ENCODING_SAMPLE_LEN];
         let n = read_up_to(&mut file, &mut buf)?;
 
         Ok(detect_encoding_from_sample(&buf[..n]))
@@ -281,10 +285,20 @@ impl TxtParser {
 // 辅助函数
 // ---------------------------------------------------------------------------
 
+/// 编码检测采样长度（B21：由 4KB 扩到 64KB）
+pub(crate) const ENCODING_SAMPLE_LEN: usize = 64 * 1024;
+
 /// 编码检测（按文件头样本）
 ///
-/// 抽成纯函数供 [`crate::txt_cache`] 复用同一份 4KB 样本：缓存校验已经读过
-/// 文件头时不再二次打开文件。检测顺序与原实现逐条一致。
+/// 抽成纯函数供 [`crate::txt_cache`] 复用同一份样本：缓存校验已经读过
+/// 文件头时不再二次打开文件。检测顺序：
+/// 1. BOM（UTF-8 / UTF-16LE / UTF-16BE）——权威；
+/// 2. 整段样本是合法 UTF-8 → utf-8；
+/// 3. encoding_rs 的 BOM 表兜底；
+/// 4. 常见中文/东亚编码逐一无损试解（gb18030/gbk/big5/shift_jis/euc-kr）；
+/// 5. **[B21] chardetng 统计探测兜底**——前面全部失败时用探测器给出最可能
+///    编码；只接受**能无损解码**的猜测，否则仍回退 utf-8；
+/// 6. 回退 utf-8。
 pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
     // UTF-8 BOM
     if sample.starts_with(&[0xEF, 0xBB, 0xBF]) {
@@ -316,6 +330,25 @@ pub(crate) fn detect_encoding_from_sample(sample: &[u8]) -> String {
             if !had_errors {
                 return name.to_string();
             }
+        }
+    }
+
+    // [B21] 统计探测兜底（chardetng：encoding_rs 同作者的纯 Rust 探测器）
+    //
+    // 口径对齐 `legado-fetcher::web_book::decode_detected_or_lossy`：TLD
+    // hint 为 None、ISO-2022-JP 按 Web 内容指引 Deny、UTF-8 探测 Allow。
+    // 只接受**能无损解码**的猜测——否则随机字节被猜成某个编码会让整本书
+    // 乱码，不如回退 UTF-8 的有损解码（至少 ASCII 部分正确）。
+    if !sample.is_empty() {
+        let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Deny);
+        let _ = detector.feed(sample, true);
+        let guessed = detector.guess(None, chardetng::Utf8Detection::Allow);
+        if guessed != UTF_8
+            && guessed
+                .decode_without_bom_handling_and_without_replacement(sample)
+                .is_some()
+        {
+            return guessed.name().to_string();
         }
     }
 
@@ -673,6 +706,79 @@ mod tests {
         assert_eq!(result, "BOM content");
     }
 
+    // ─── [B21] 编码检测：扩大样本 + chardetng 兜底 ─────────────────────
+
+    /// 4KB 样本全 ASCII 会判 UTF-8；扩到 64KB 后能看见中文并判出真实编码
+    ///
+    /// 这正是 B21 的场景：真实 TXT 常有超过 4KB 的纯 ASCII 前言/版权页，
+    /// 4KB 采样完全看不到正文的中文。
+    #[test]
+    fn test_detect_encoding_larger_sample_sees_chinese() {
+        // 8KB ASCII 前言 + GBK 正文
+        let mut bytes = vec![b'A'; 8 * 1024];
+        let (gbk_body, _, _) = encoding_rs::GBK.encode("第一章 起始\n这是正文内容。\n");
+        bytes.extend_from_slice(&gbk_body);
+
+        // 4KB 样本（旧口径）：全 ASCII → 合法 UTF-8 → 误判 utf-8
+        assert_eq!(detect_encoding_from_sample(&bytes[..4096]), "utf-8");
+
+        // 64KB 样本（新口径）：能看到 GBK 中文 → 判出 gb18030/gbk 族
+        let detected = detect_encoding_from_sample(&bytes);
+        assert!(
+            detected == "gb18030" || detected == "gbk",
+            "扩大样本后应识别出 GBK 族，实际: {detected}"
+        );
+    }
+
+    /// 大样本下 UTF-8 中文仍判 utf-8（不得因扩大样本而回归）
+    #[test]
+    fn test_detect_encoding_large_utf8_sample_still_utf8() {
+        let text = "第一章 起始\n".repeat(2000);
+        assert_eq!(detect_encoding_from_sample(text.as_bytes()), "utf-8");
+    }
+
+    /// 非常见编码（windows-1252 高字节区）走 chardetng 兜底
+    ///
+    /// 该字节序列不是合法 UTF-8、也不在 gb18030/gbk/big5/shift_jis/euc-kr
+    /// 的无损域内 → 只能由统计探测给出结论。
+    #[test]
+    fn test_detect_encoding_chardetng_fallback_for_western_text() {
+        // 法文/德文常见重音字符的 windows-1252 编码（0xE9=é, 0xE8=è, 0xFC=ü）
+        // 逐字节构造，避免源码里出现非 ASCII 字节串字面量。
+        let line: Vec<u8> = vec![
+            b'C', b'a', b'f', 0xE9, b' ', b'c', b'r', 0xE8, b'm', b'e', b' ', b'b', b'r', 0xFC,
+            b'l', 0xE9, b'e', b'.', b' ',
+        ];
+        let mut bytes = Vec::new();
+        for _ in 0..500 {
+            bytes.extend_from_slice(&line);
+        }
+        let detected = detect_encoding_from_sample(&bytes);
+        // 探测器可能给 windows-1252 或同类单字节西欧编码；关键是不再回退
+        // 到 utf-8（那样整段会变成替换字符）
+        assert_ne!(
+            detected, "utf-8",
+            "统计探测应给出非 UTF-8 结论（实际 {detected}）"
+        );
+        let enc = Encoding::for_label(detected.as_bytes()).expect("探测结果必须是合法编码标签");
+        let (decoded, _, had_errors) = enc.decode(&bytes);
+        assert!(!had_errors, "探测结果必须能无损解码");
+        assert!(decoded.contains('é') || decoded.contains('è') || decoded.contains('ü'));
+    }
+
+    /// 纯 ASCII 样本仍判 utf-8（兜底不改变既有行为）
+    #[test]
+    fn test_detect_encoding_ascii_unchanged() {
+        assert_eq!(
+            detect_encoding_from_sample(
+                b"Hello World
+"
+            ),
+            "utf-8"
+        );
+        assert_eq!(detect_encoding_from_sample(b""), "utf-8");
+    }
+
     #[test]
     fn test_normalize_charset_aliases_and_unknown() {
         assert_eq!(normalize_charset("utf-8").unwrap(), "UTF-8");
@@ -686,8 +792,13 @@ mod tests {
         );
     }
 
-    /// [批37b P1-1] 红→绿：GBK 正文 + 前 4KB 纯 ASCII（检测阶段误判 UTF-8）
-    /// → 无覆盖时乱码；显式 charset=GBK 后目录与正文都正确解码。
+    /// [批37b P1-1] GBK 正文 + 前 4KB 纯 ASCII：**显式 charset=GBK** 时
+    /// 目录与正文都正确解码。
+    ///
+    /// [B21] 更新：自动检测的样本已从 4KB 扩到 64KB，本用例的 GBK 正文
+    /// 落在 64KB 窗口内，因此**自动检测现在也能判出 GBK 族**（这正是 B21
+    /// 要修的缺陷）。本用例保留「显式 charset 覆盖」这一半断言；自动检测
+    /// 侧的期望改为「能正确解码」。
     #[test]
     fn test_charset_override_decodes_gbk_after_ascii_prefix() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -699,8 +810,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("gbk.txt");
 
-        // 前 4096 字节全 ASCII（末位换行）：detect_encoding 的 UTF-8 探测
-        // 会成功，从而把后续 GBK 中文误判为 UTF-8
+        // 前 4096 字节全 ASCII（末位换行）+ GBK 正文
         let mut bytes = vec![b'A'; 4095];
         bytes.push(b'\n');
         let (gbk_body, _, _) = encoding_rs::GBK
@@ -709,14 +819,21 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
         let path_str = path.to_str().unwrap();
 
-        // 自动检测：前 4KB ASCII → utf-8，中文标题乱码 → 内置规则零命中 →
-        // [批1b-3] 按长度分章：4096 ASCII + 38 个替换字符（共 4149 字符
-        // > 3000）→ 超限点后最近 \n 在 4095 → 首章 0..4095；尾段 135 字节
-        // > 100 → 自成末章（乱码内容按长度切成两章，无丢字）
+        // [B21] 自动检测：64KB 样本能看到 GBK 正文 → 判出 GBK 族，
+        // 目录与正文都能正确解码（修复前 4KB 采样会误判 UTF-8 而乱码）。
         let auto = TxtParser::get_chapters(path_str).unwrap();
-        assert_eq!(auto.len(), 2, "无覆盖时长文应按默认档位切章: {auto:?}");
-        assert_ne!(auto[0].title, "全文");
-        assert_eq!(auto[0].start, Some(0));
+        assert_eq!(
+            auto.len(),
+            2,
+            "B21：扩大样本后自动检测应正确识别两章: {auto:?}"
+        );
+        assert_eq!(auto[0].title, "第一章 起始");
+        assert_eq!(auto[1].title, "第二章 继续");
+        let auto_content = TxtParser::get_chapter_content(path_str, &auto[1]).unwrap();
+        assert!(
+            auto_content.contains("更多正文内容"),
+            "B21：自动检测路径正文应正确解码: {auto_content}"
+        );
 
         // 显式 GBK：目录按 GBK 解码后正确分章
         let chapters = TxtParser::get_chapters_with_charset(path_str, Some("GBK")).unwrap();
@@ -731,12 +848,6 @@ mod tests {
         assert!(
             content.contains("更多正文内容"),
             "GBK 覆盖后正文应正确解码: {content}"
-        );
-        // 对照：无覆盖（UTF-8）拿不到正确文本
-        let auto_content = TxtParser::get_chapter_content(path_str, &chapters[1]).unwrap();
-        assert!(
-            !auto_content.contains("更多正文内容"),
-            "无覆盖时应为乱码（红）: {auto_content}"
         );
 
         // 不支持的编码：fail-closed

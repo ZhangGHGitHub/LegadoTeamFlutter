@@ -2037,16 +2037,16 @@ mod tests {
         let book_url = res.book.as_ref().unwrap().book_url.clone();
         assert_eq!(book_url, "books/gbk.txt");
 
-        // 红：未设置编码时按 UTF-8 解码 → 标题乱码 → 内置规则零命中 →
-        // [批1b-3] 按默认 3000 字符档位长度分章（4230 字节 ≈ 4149 字符
-        // > 3000 → 切 2 章；内容仍为乱码，仅长度分章语义生效）
+        // [B21] 编码检测样本由 4KB 扩到 64KB 后，自动检测能看见 4KB 之后的
+        // GBK 正文并判出 GBK 族——此前这里会按 UTF-8 解码成乱码再按长度分章。
+        // 现在自动检测直接得到正确目录（显式设置编码的断言保持不变）。
         let auto = get_chapters(&book_url).unwrap();
         assert_eq!(
             auto.total, 2,
-            "乱码长文应按默认档位长度分章: {:?}",
+            "B21：自动检测应正确识别两章: {:?}",
             auto.chapters
         );
-        assert_eq!(auto.chapters[0].title, "第1章(1)");
+        assert_eq!(auto.chapters[0].title, "第一章 起始");
 
         // 造未建模 readConfig 键 + 进度，验证单列写不回退
         with_database(|db| {

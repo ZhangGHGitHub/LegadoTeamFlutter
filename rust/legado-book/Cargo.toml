@@ -21,6 +21,8 @@ zip = { version = "9", default-features = false, features = [
 ] }
 quick-xml = "0.42"
 encoding_rs = "0.8"
+# [B21] TXT 编码检测的统计探测兜底（与 legado-fetcher 同一探测器）
+chardetng = "1.0"
 regex = "1"
 # [依赖安全批 | 2026-11-16] 0.42 → 0.47：0.47 用 skrifa（可选 font_embedding
 # feature）取代 ttf-parser，清除 RUSTSEC-2026-0192（ttf-parser unmaintained）。
