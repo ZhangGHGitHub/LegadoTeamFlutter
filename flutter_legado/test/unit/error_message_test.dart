@@ -283,4 +283,32 @@ void main() {
       expect(errorDetailMessage(const RustApiException('')), kUnknownErrorMessage);
     });
   });
+
+  // [B25] BridgeError 无自定义 toString()：裸插值会渲染成
+  // 「Instance of 'BridgeError'」。本组锁定「风险真实存在 + helper 已兜住」，
+  // 并与 user_visible_error_interpolation_guard_test 的源码级门禁互补：
+  // 那边禁止裸插值，这边保证 helper 的兜底行为不被改坏。
+  group('BridgeError toString 风险（B25）', () {
+    test('裸 toString 泄漏类名（风险证据，不应直接展示给用户）', () {
+      const e = BridgeError(message: '网络连接超时');
+      expect(e.toString(), contains("Instance of 'BridgeError'"));
+      expect(e.toString(), isNot(contains('网络连接超时')));
+    });
+
+    test('errorMessage 取 message 而不泄漏类名', () {
+      const e = BridgeError(message: '网络连接超时');
+      expect(errorMessage(e), '网络连接超时');
+      expect(errorMessage(e), isNot(contains('Instance of')));
+      expect(rawErrorMessage(e), '网络连接超时');
+      expect(errorDetailMessage(e), '网络连接超时');
+    });
+
+    test('message 为空/全空白 → 兜底文案（不出现空文案）', () {
+      expect(errorMessage(const BridgeError(message: '')), kUnknownErrorMessage);
+      expect(
+        errorMessage(const BridgeError(message: '   ')),
+        kUnknownErrorMessage,
+      );
+    });
+  });
 }
