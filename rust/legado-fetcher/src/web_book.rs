@@ -4387,12 +4387,29 @@ fn optional_field(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> Option<S
 /// 而错误进入"详情页直连"分支，导致搜索结果页被当详情页解析 → 搜索 0 结果。
 /// 修复：锚定后全匹配（与 Kotlin matches 语义一致）。
 ///
-/// 正则非法/编译失败（compile_regex_safe 栈溢出防护）时静默返回 false，不影响主流程。
+/// [C7 审查 P1-2] **lookaround 回退**：Rust `regex` crate 不支持 lookahead/
+/// lookbehind，`compile_regex_safe` 对这类 pattern 必然编译失败 → 修复前
+/// 静默返回 false，源**永不匹配**（表现为「未找到匹配书源」）。仓内真实源
+/// 「📂书斋阁」的 `bookUrlPattern` 即
+/// `https://www\.shuzhaige\.com/(?!e/search/).+/`（见
+/// `docs/evidence/batch34b/backup_b34b.json`），而 Kotlin 原版用 JVM
+/// `Pattern` 支持 lookaround，行为是**能匹配**。
+///
+/// 因此：`compile_regex_safe` 失败时回退 `compile_fancy_regex_safe`
+/// （fancy-regex 方言，支持 lookaround；`set_book_toc_rule` 的目录规则解析
+/// 已在用同一入口），两者都失败才返回 false。
 pub fn matches_book_url_pattern(pattern: &str, url: &str) -> bool {
-    let anchored = format!("^(?:{})$", pattern);
-    compile_regex_safe(&anchored)
-        .map(|re| re.is_match(url))
-        .unwrap_or(false)
+    // [C7] 走 legado_core 的锚定编译入口：长度上限按**原始 pattern** 判定，
+    // 锚定包装（`^(?:` + `)$`，+6 字节）不占用户额度——修复前先拼锚再交给
+    // `compile_regex_safe`，1019..=1024 字节的合法 pattern 会被误拒。
+    if let Some(re) = legado_core::compile_full_match_regex_safe(pattern) {
+        return re.is_match(url);
+    }
+    // [C7] lookaround 等 regex crate 不支持的方言：回退 fancy-regex。
+    // fancy 的 `is_match` 返回 Result（运行时回溯/复杂度错误），按「不命中」
+    // 处理即可，不影响主流程。
+    legado_core::compile_full_match_fancy_regex_safe(pattern)
+        .is_some_and(|re| re.is_match(url).unwrap_or(false))
 }
 
 /// 将 WebBookInfo 转为 WebSearchResult（详情页直连搜索项，对标 Kotlin `Book.toSearchBook()`）
@@ -7551,6 +7568,80 @@ mod tests {
         ));
         // 非法正则静默返回 false
         assert!(!matches_book_url_pattern("[invalid", "https://example.com"));
+    }
+
+    /// [C7 审查 P1-2] lookaround pattern 必须仍能命中（不得静默失效）
+    ///
+    /// Rust `regex` crate 不支持 lookahead，`compile_regex_safe` 必然失败；
+    /// 修复前直接返回 false，等价于该源永不匹配。Kotlin 原版用 JVM
+    /// `Pattern`（支持 lookaround），语义是**能命中**——这里锚定同一语义。
+    #[test]
+    fn test_matches_book_url_pattern_lookahead_still_matches() {
+        assert!(matches_book_url_pattern(
+            r"https://example\.com/book/(?=123)\d+",
+            "https://example.com/book/123"
+        ));
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/book/(?=123)\d+",
+            "https://example.com/book/456"
+        ));
+        // lookbehind（regex crate 同样不支持）：全匹配语义下 lookbehind 必须
+        // 用在已被前置部分消费的位置，这里锚定「以 3 结尾」
+        assert!(matches_book_url_pattern(
+            r"https://example\.com/book/\d+(?<=3)",
+            "https://example.com/book/123"
+        ));
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/book/\d+(?<=3)",
+            "https://example.com/book/124"
+        ));
+    }
+
+    /// [C7 审查 P1-2] 仓内真实源「📂书斋阁」回归：lookahead 排除搜索页
+    ///
+    /// pattern 取自 `docs/evidence/batch34b/backup_b34b.json` 的真实书源；
+    /// 修复前该源下沉 FFI 后永不匹配（「未找到匹配书源」）。
+    #[test]
+    fn test_matches_book_url_pattern_shuzhaige_lookahead_regression() {
+        // 真实 pattern 原文（JSON 转义已还原）
+        let pattern = r"https://www\.shuzhaige\.com/(?!e/search/).+/";
+        // 书籍详情页：应命中
+        assert!(
+            matches_book_url_pattern(pattern, "https://www.shuzhaige.com/book/12345/"),
+            "书斋阁书籍页必须命中（修复前 lookahead 编译失败 → 永不匹配）"
+        );
+        // 搜索页：lookahead 排除，不应命中
+        assert!(
+            !matches_book_url_pattern(pattern, "https://www.shuzhaige.com/e/search/?q=x"),
+            "书斋阁搜索页应被 lookahead 排除"
+        );
+        // 同站其它路径（非搜索）：命中（pattern 结尾要求 `/`，真实站点 URL
+        // 以目录斜杠收尾）
+        assert!(matches_book_url_pattern(
+            pattern,
+            "https://www.shuzhaige.com/gudianwenxue/1.html/"
+        ));
+    }
+
+    /// [C7 审查 P1-2] 锚定包装不占长度额度：1019..=1024 字节的合法 pattern
+    /// 不得因「加锚后超限」被误拒
+    #[test]
+    fn test_matches_book_url_pattern_length_near_limit() {
+        // 构造恰好 1024 字节的合法 pattern：`https://example\.com/` + 填充 + 结尾
+        let head = r"https://example\.com/";
+        let tail = r"/book/\d+";
+        let filler_len = 1024 - head.len() - tail.len();
+        let pattern = format!("{head}{}{tail}", "a".repeat(filler_len));
+        assert_eq!(pattern.len(), 1024, "夹具应恰好 1024 字节");
+        let url = format!("https://example.com/{}/book/7", "a".repeat(filler_len));
+        assert!(
+            matches_book_url_pattern(&pattern, &url),
+            "1024 字节 pattern 加锚后仍须命中（长度上限按原始 pattern 判定）"
+        );
+        // 超过上限 1 字节：仍拒绝
+        let too_long = format!("{pattern}a");
+        assert_eq!(too_long.len(), 1025);
+        assert!(!matches_book_url_pattern(&too_long, &url));
     }
 
     #[test]

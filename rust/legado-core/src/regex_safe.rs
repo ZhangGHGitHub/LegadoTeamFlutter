@@ -214,12 +214,17 @@ pub fn compile_regex_safe(pattern: &str) -> Option<Arc<Regex>> {
 
 /// 长度/嵌套预检 + 隔离线程编译，返回缓存条目（成功或失败原因）
 fn compile_pattern_checked(pattern: &str) -> Result<Arc<Regex>, String> {
-    if pattern.len() > MAX_REGEX_PATTERN_LEN {
-        let msg = format!(
-            "pattern too long: {}B > {}B limit",
-            pattern.len(),
-            MAX_REGEX_PATTERN_LEN
-        );
+    compile_pattern_checked_with_limit(pattern, MAX_REGEX_PATTERN_LEN)
+}
+
+/// 同 [`compile_pattern_checked`]，但长度上限由调用方给出
+///
+/// 用途：[`compile_full_match_regex_safe`] 在编译前会给 pattern 加
+/// `^(?:` / `)$` 锚定包装（+6 字节），长度判定必须按**用户原始 pattern**
+/// 的口径执行，否则 1019..=1024 字节的合法 pattern 会被锚定后误拒。
+fn compile_pattern_checked_with_limit(pattern: &str, max_len: usize) -> Result<Arc<Regex>, String> {
+    if pattern.len() > max_len {
+        let msg = format!("pattern too long: {}B > {}B limit", pattern.len(), max_len);
         regex_safe_log(&format!(
             "拒绝超长 pattern（{}），前64字符: {}",
             msg,
@@ -255,6 +260,62 @@ fn compile_pattern_checked(pattern: &str) -> Result<Arc<Regex>, String> {
     }
 }
 
+/// 全匹配锚定前缀（与 [`crate::regex_safe::FULL_MATCH_ANCHOR_SUFFIX`] 成对）
+pub const FULL_MATCH_ANCHOR_PREFIX: &str = "^(?:";
+
+/// 全匹配锚定后缀
+pub const FULL_MATCH_ANCHOR_SUFFIX: &str = ")$";
+
+/// 锚定包装的额外字节数（`^(?:` + `)$` 共 6 字节）
+pub const FULL_MATCH_ANCHOR_OVERHEAD: usize =
+    FULL_MATCH_ANCHOR_PREFIX.len() + FULL_MATCH_ANCHOR_SUFFIX.len();
+
+/// 构造全匹配 pattern：`^(?:pattern)$`
+///
+/// 语义等价 Kotlin `String.matches(regex)`（整串匹配）。抽成公开函数是为了
+/// 让调用方不必各自拼锚（拼错 `(?:` 会改变分组/优先级语义）。
+pub fn full_match_pattern(pattern: &str) -> String {
+    format!("{FULL_MATCH_ANCHOR_PREFIX}{pattern}{FULL_MATCH_ANCHOR_SUFFIX}")
+}
+
+/// 安全编译「全匹配」正则（`^(?:pattern)$`，regex 方言）
+///
+/// 长度上限按**原始 pattern** 判定：锚定包装多出的
+/// [`FULL_MATCH_ANCHOR_OVERHEAD`] 字节不计入用户额度——修复前调用方先拼锚
+/// 再交给 [`compile_regex_safe`]，1019..=1024 字节的合法 pattern 会被
+/// 「加锚后超限」误拒。
+pub fn compile_full_match_regex_safe(pattern: &str) -> Option<Arc<Regex>> {
+    let anchored = full_match_pattern(pattern);
+    let mut cache = REGEX_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(entry) = cache.get(&anchored) {
+        return entry.clone().ok();
+    }
+    regex_safe_log(&format!(
+        "首次编译全匹配 pattern（线程 {}），前64字符: {}",
+        current_thread_name(),
+        pattern_head(pattern)
+    ));
+    let entry = compile_pattern_checked_with_limit(
+        &anchored,
+        MAX_REGEX_PATTERN_LEN + FULL_MATCH_ANCHOR_OVERHEAD,
+    );
+    let result = entry.clone().ok();
+    cache.put(anchored, entry);
+    result
+}
+
+/// 安全编译「全匹配」fancy 正则（支持 lookaround 等 regex crate 不支持的方言）
+///
+/// 与 [`compile_fancy_regex_safe`] 同样按**原始 pattern** 判长度上限
+/// （锚定包装不占用户额度）。
+pub fn compile_full_match_fancy_regex_safe(pattern: &str) -> Option<fancy_regex::Regex> {
+    let anchored = full_match_pattern(pattern);
+    compile_fancy_regex_checked_with_limit(
+        &anchored,
+        MAX_REGEX_PATTERN_LEN + FULL_MATCH_ANCHOR_OVERHEAD,
+    )
+}
+
 /// 安全编译 fancy-regex 方言 pattern（lookbehind/lookahead/backreference/原子组）。
 ///
 /// 与 [`compile_regex_safe`] 相同的预检防御（1KB 上限 + 非递归嵌套预检），
@@ -262,11 +323,19 @@ fn compile_pattern_checked(pattern: &str) -> Result<Arc<Regex>, String> {
 /// （lookaround/backreference），缓存键空间不同，按需编译。
 /// 编译同样放在 8MB 栈独立线程兜底。失败返回 None，调用方降级。
 pub fn compile_fancy_regex_safe(pattern: &str) -> Option<fancy_regex::Regex> {
-    if pattern.len() > MAX_REGEX_PATTERN_LEN {
+    compile_fancy_regex_checked_with_limit(pattern, MAX_REGEX_PATTERN_LEN)
+}
+
+/// [`compile_fancy_regex_safe`] 的实现体，长度上限由调用方给出
+fn compile_fancy_regex_checked_with_limit(
+    pattern: &str,
+    max_len: usize,
+) -> Option<fancy_regex::Regex> {
+    if pattern.len() > max_len {
         regex_safe_log(&format!(
             "拒绝超长 fancy pattern（{}B > {}B 上限），前64字符: {}",
             pattern.len(),
-            MAX_REGEX_PATTERN_LEN,
+            max_len,
             pattern_head(pattern)
         ));
         return None;
@@ -549,5 +618,49 @@ mod tests {
         handle
             .join()
             .expect("小栈线程上调用 compile_regex_safe 不应崩溃");
+    }
+
+    // ─── [C7 审查 P1-2] 全匹配锚定入口 ─────────────────────────────
+
+    #[test]
+    fn test_full_match_pattern_wraps_without_changing_groups() {
+        assert_eq!(full_match_pattern(r"a|b"), r"^(?:a|b)$");
+        // 交替语义不被锚定包装改变：`^(?:a|b)$` 只匹配单字符
+        let re = compile_full_match_regex_safe("a|b").expect("编译成功");
+        assert!(re.is_match("a"));
+        assert!(!re.is_match("ab"));
+    }
+
+    /// 锚定包装（+6 字节）不得占用用户的 1KB 额度
+    #[test]
+    fn test_compile_full_match_regex_safe_length_headroom() {
+        // 恰好 1024 字节的原始 pattern：加锚后 1030 字节，仍须编译成功
+        let head = r"https://example\.com/";
+        let tail = r"/x";
+        let filler = 1024 - head.len() - tail.len();
+        let pattern = format!("{head}{}{tail}", "a".repeat(filler));
+        assert_eq!(pattern.len(), MAX_REGEX_PATTERN_LEN);
+        assert!(
+            compile_full_match_regex_safe(&pattern).is_some(),
+            "1024 字节 pattern 加锚后应仍编译成功（长度按原始 pattern 判定）"
+        );
+        // 超限 1 字节仍拒绝
+        assert!(compile_full_match_regex_safe(&format!("{pattern}a")).is_none());
+        // fancy 入口同一口径
+        assert!(compile_full_match_fancy_regex_safe(&pattern).is_some());
+        assert!(compile_full_match_fancy_regex_safe(&format!("{pattern}a")).is_none());
+    }
+
+    /// regex 方言不支持 lookahead → None；fancy 全匹配入口应能编译并生效
+    #[test]
+    fn test_compile_full_match_fancy_supports_lookahead() {
+        let pattern = r"https://example\.com/(?!e/search/).+/";
+        assert!(
+            compile_full_match_regex_safe(pattern).is_none(),
+            "regex crate 不支持 lookahead，应返回 None 由调用方回退"
+        );
+        let re = compile_full_match_fancy_regex_safe(pattern).expect("fancy 应编译成功");
+        assert!(re.is_match("https://example.com/book/1/").unwrap());
+        assert!(!re.is_match("https://example.com/e/search/?q=x").unwrap());
     }
 }

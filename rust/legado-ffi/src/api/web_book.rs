@@ -2525,11 +2525,33 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             r"https?://(www\.)?example\.(com|net)/.+",
             "http://www.example.net/a/b"
         ));
-        // Dart `RegExp` 支持而 Rust `regex` 不支持的前瞻：Rust 侧编译失败
-        // → false（这正是下沉 FFI 要消除的分叉点：Dart 会判 true）
-        assert!(!matches_book_url_pattern(
+        // Dart `RegExp` 支持而 Rust `regex` 不支持的前瞻：修复前编译失败
+        // → false（静默失效，等于该源永不匹配）。[C7 审查 P1-2] 现在回退
+        // fancy-regex 方言，与 Dart/Kotlin 语义一致：应判 true。
+        assert!(matches_book_url_pattern(
             r"https://example\.com/book/(?=123)\d+",
             "https://example.com/book/123"
+        ));
+        // 前瞻不成立时不命中
+        assert!(!matches_book_url_pattern(
+            r"https://example\.com/book/(?=123)\d+",
+            "https://example.com/book/456"
+        ));
+    }
+
+    /// [C7 审查 P1-2] 仓内真实源「📂书斋阁」的 lookahead pattern 经 FFI 入口
+    /// 必须命中（修复前该源永不匹配 → 「未找到匹配书源」）
+    #[test]
+    fn test_ffi_matches_book_url_pattern_shuzhaige_real_source() {
+        // 取自 docs/evidence/batch34b/backup_b34b.json
+        let pattern = r"https://www\.shuzhaige\.com/(?!e/search/).+/";
+        assert!(matches_book_url_pattern(
+            pattern,
+            "https://www.shuzhaige.com/book/12345/"
+        ));
+        assert!(!matches_book_url_pattern(
+            pattern,
+            "https://www.shuzhaige.com/e/search/?q=x"
         ));
     }
 }

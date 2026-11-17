@@ -112,11 +112,32 @@ void main() {
         isTrue,
         reason: 'Rust 唯一真源缺失',
       );
-      // 锚定全匹配（对齐 Kotlin String.matches）
+      // [C7 审查 P1-2] 锚定全匹配（对齐 Kotlin String.matches）已收敛到
+      // `legado_core::compile_full_match_regex_safe`（长度上限按原始 pattern
+      // 判定，锚定包装 +6 字节不占用户额度），fetcher 必须走该入口。
       expect(
-        src.contains(r'^(?:{})$'),
+        src.contains('compile_full_match_regex_safe'),
         isTrue,
-        reason: 'Rust 侧必须锚定全匹配（^(?:pattern)\$），否则语义退化为部分匹配',
+        reason: 'Rust 侧必须走锚定全匹配入口（否则语义退化为部分匹配）',
+      );
+      // lookaround 等 regex crate 不支持的方言必须回退 fancy，否则静默失效
+      expect(
+        src.contains('compile_full_match_fancy_regex_safe'),
+        isTrue,
+        reason: 'lookahead/lookbehind pattern 必须回退 fancy-regex，否则永不匹配',
+      );
+      final core = File(
+        '../rust/legado-core/src/regex_safe.rs',
+      ).readAsStringSync();
+      expect(
+        core.contains(r'^(?:'),
+        isTrue,
+        reason: r'锚定实现必须仍是 ^(?:pattern)$ 全匹配语义',
+      );
+      expect(
+        core.contains(r'FULL_MATCH_ANCHOR_SUFFIX: &str = ")$"'),
+        isTrue,
+        reason: r'锚定后缀必须仍为 )$',
       );
     });
   });
